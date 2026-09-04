@@ -1751,9 +1751,17 @@ if _tab_active(0):
         _f15 = pa_frames.get("15m") if ("pa_frames" in locals() and pa_frames) else None
         _r1_val = float(lv.r1) if ("lv" in locals() and hasattr(lv, "r1")) else None
         _s1_val = float(lv.s1) if ("lv" in locals() and hasattr(lv, "s1")) else None
-        _sniper_rep = _tbs.evaluate_sniper(_f5, _f15, spot, r1=_r1_val, s1=_s1_val)
+        _r2_val = float(lv.r2) if ("lv" in locals() and hasattr(lv, "r2")) else None
+        _s2_val = float(lv.s2) if ("lv" in locals() and hasattr(lv, "s2")) else None
+        _pdh = float(vb_daily["High"].iloc[-1]) if ("vb_daily" in locals() and vb_daily is not None and len(vb_daily)) else None
+        _pdl = float(vb_daily["Low"].iloc[-1]) if ("vb_daily" in locals() and vb_daily is not None and len(vb_daily)) else None
+        _pdc = float(vb_daily["Close"].iloc[-1]) if ("vb_daily" in locals() and vb_daily is not None and len(vb_daily)) else None
+        _sniper_rep = _tbs.evaluate_sniper(
+            _f5, _f15, spot, r1=_r1_val, s1=_s1_val, r2=_r2_val, s2=_s2_val,
+            pdh=_pdh, pdl=_pdl, pdc=_pdc, round_step=100
+        )
         _tbs.render_sniper_card(_sniper_rep)
-    except Exception:
+    except Exception as _tb_err:
         pass
 
     _nar_mod.render_cockpit(master_cockpit, spot, lv, sig, dte, nse_ts)
