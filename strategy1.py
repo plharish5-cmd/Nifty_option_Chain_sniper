@@ -635,11 +635,18 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
                     rally_dir, traded_this_rally = direction, False
 
                 block = g.blocked(direction)
+                trades_done = sum(1 for s in res.signals if s.entered)
+                max_day = p.get("max_trades_day", 0)
                 if block:
                     res.alerts.append(Alert(
                         "GATE", "info", k.ts,
                         f"{k.ts:%H:%M} closed {'above' if crossed_up else 'below'} "
                         f"the 8 EMA — but skipped.", block))
+                elif max_day and trades_done >= max_day:
+                    res.alerts.append(Alert(
+                        "GATE", "info", k.ts,
+                        f"{k.ts:%H:%M} closed beyond the 8 EMA — but skipped.",
+                        f"Daily cap reached ({trades_done}/{max_day} trades taken). Sushen: '1 or 2 trades a day is enough'."))
                 elif traded_this_rally:
                     res.alerts.append(Alert(
                         "GATE", "info", k.ts,
