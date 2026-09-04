@@ -1764,6 +1764,22 @@ if _tab_active(0):
     except Exception as _tb_err:
         pass
 
+    try:
+        import three_drive_scalper as _tds
+        _fut1 = pa_frames.get("1m") if ("pa_frames" in locals() and pa_frames) else None
+        _kl_cockpit = {}
+        if "_r1_val" in locals() and _r1_val: _kl_cockpit["R1 Pivot"] = _r1_val
+        if "_s1_val" in locals() and _s1_val: _kl_cockpit["S1 Pivot"] = _s1_val
+        if "_pdh" in locals() and _pdh: _kl_cockpit["PDH"] = _pdh
+        if "_pdl" in locals() and _pdl: _kl_cockpit["PDL"] = _pdl
+        if "_pdc" in locals() and _pdc: _kl_cockpit["PDC"] = _pdc
+        _td_setup = _tds.evaluate_three_drive(_fut1, spot, key_levels=_kl_cockpit)
+        if _td_setup and _td_setup.status in ("ARMED_AWAITING_MSS", "TRIGGERED_MSS_CONFIRMED"):
+            with st.expander(f"⚡ 1m 3-Drive Institutional Scalp: {_td_setup.side.replace('_', ' ')} ({_td_setup.status})", expanded=True):
+                _tds.render_three_drive_card(_td_setup)
+    except Exception:
+        pass
+
     _nar_mod.render_cockpit(master_cockpit, spot, lv, sig, dte, nse_ts)
 
 if _tab_active(1):
@@ -3883,6 +3899,25 @@ if _tab_active(19):
                     st.caption(_q.note)
         except Exception as _bqe:                           # noqa: BLE001
             st.caption(f"breakout quality unavailable: {_bqe}")
+
+        # ── 1-Minute 3-Drive Institutional Scalper (Priyank Sharma Setup) ──
+        st.divider()
+        try:
+            import three_drive_scalper as _tds
+            _fut1 = pa_frames.get("1m") if ("pa_frames" in locals() and pa_frames) else None
+            _kl_smc = {}
+            if "read" in locals() and hasattr(read, "levels"):
+                _lv_s = read.levels
+                if hasattr(_lv_s, "r1") and _lv_s.r1: _kl_smc["R1 Pivot"] = float(_lv_s.r1)
+                if hasattr(_lv_s, "s1") and _lv_s.s1: _kl_smc["S1 Pivot"] = float(_lv_s.s1)
+            if "vb_daily" in locals() and vb_daily is not None and len(vb_daily):
+                _kl_smc["PDH (Prev Day High)"] = float(vb_daily["High"].iloc[-1])
+                _kl_smc["PDL (Prev Day Low)"] = float(vb_daily["Low"].iloc[-1])
+                _kl_smc["PDC (Prev Day Close)"] = float(vb_daily["Close"].iloc[-1])
+            _td_setup_smc = _tds.evaluate_three_drive(_fut1, spot, key_levels=_kl_smc)
+            _tds.render_three_drive_card(_td_setup_smc)
+        except Exception as _tde:
+            st.caption(f"1m 3-Drive Scalper unavailable: {_tde}")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Tab 20 — Trading Journal & Anti-Impulse Coach
