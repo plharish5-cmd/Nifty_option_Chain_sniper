@@ -1,0 +1,1 @@
+trade_id,entry_time,exit_time,symbol,strike,opt_type,lots,quantity,entry_price,exit_price,pnl_pts,pnl_rupees,pnl_pct,exit_reason,setup_tag,entry_spot,exit_spot,balance_after

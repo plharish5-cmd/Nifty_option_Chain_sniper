@@ -181,12 +181,65 @@ NIFTY 50 options writers (institutions and large prop desks) deploy massive capi
 
 ## 9. Tab-by-Tab Visual Reference
 
-* **Tab 0 (🎯 Decision Cockpit):** The master dashboard. Shows the 2-Phase Session Road Map, Top & Bottom 15m Reversal Cards, the live 1m 3-Drive Scalper alert expander, and Master Cockpit bias metrics.
+* **Tab 0 (🎯 Decision Cockpit):** The master dashboard. Shows the 2-Phase Session Road Map, Top & Bottom 15m Reversal Cards, the live 1m 3-Drive Scalper alert expander, Master Cockpit bias metrics, Spoon-Fed Red Bar callouts, and the 15-Minute Live Trade Advisor.
 * **Tab 1 (📊 Option Chain & OI Profile):** Visual bar chart of Call and Put Open Interest walls. Displays Net Gamma Exposure (GEX), GEX flip level, and Straddle decay.
 * **Tab 2 (Change in OI):** Intraday shifts in institutional positions. Shows whether call writers or put writers are aggressively adding or unwinding contracts.
 * **Tab 7 (📈 Price Action):** Multi-timeframe view (1m, 5m, 15m) with true futures VWAP and EMAs (4, 8, 20, 50, 200).
 * **Tab 19 (SMC - Smart Money Concepts):** Structural analysis (BOS / CHoCH), Dealing Range (Premium vs Discount), Unmitigated Order Blocks, Fair Value Gaps (FVG), Order Flow Speed, and Priyank Sharma's 1-Minute 3-Drive Institutional Scalper.
 * **Tab 20 (📓 Trading Journal):** Anti-impulse coach and trade logger to review discipline and track profit consistency.
+* **Tab 22 (📐 VAWM & 15m Matrix):** V-A-W-M pattern scanner and the 10 Mentor Session Reversal Setups evaluated on closed 15m candles with the 15m Trade Advisor.
+* **Tab 23 (⚔️ WAR Setup):** 30-minute first-candle FII strategy across 5 gap scenarios with < ₹100 option contract rules.
+* **Tab 24 (🔴 Red Bar & Asian Sweep):** Dr. Devendra Pratap Singh's Advanced Red Bar strategy with Candle 1 POB (0.44–0.56), 150m mean deflection, and European Open Asian Sweep (Profit Factor 3.02).
+* **Tab 25 (📝 Paper Trading & Impulse Control):** Risk-free virtual trading with ₹1,00,000 capital, real-time Dhan LTP, the Discipline Gate (win rate preview & impulse tagging), active positions book, and interactive equity curve.
 
 ---
-*Document Version: 2.0 · Comprehensive System Manual · NIFTY Option Chain Sniper Terminal*
+
+## 10. Dr. Devendra Pratap Singh's Advanced Red Bar & Asian Sweep Strategy
+
+Implemented in `red_bar_strategy.py` and rendered in **Tab 24** and **Tab 0**.
+
+### Core Pillars
+1. **Point of Balance (POB 0.44 – 0.56):** Never react impulsively to Candle 1 (09:15–09:20). Compute the Point of Balance zone (0.44 to 0.56 ratio of Candle 1's range).
+2. **Setup 1 (Morning POB Retest):** Wait for price to pull back to the POB zone. Enter on rejection wick confirmation. (59.0% Win Rate, +87.5 pts across 64 backtested days).
+3. **Setup 5 (European Open Asian Liquidity Sweep — 12:45 to 14:15):**
+   * Institutions sweep the Asian session High ($H_{\text{asia}}$) or Low ($L_{\text{asia}}$) established between 09:15 and 12:30.
+   * When price sweeps the extreme and immediately reclaims back inside the range, enter in the reversal direction.
+   * **Institutional Quantitative Verification (64 Historical Sessions):**
+     * **Profit Factor: 3.02**
+     * **Win Rate: 67.9% (1:1 R:R) / 57.1% (1:1.5 R:R)**
+     * **Net Spot Gain: +235.6 points (+₹8,836 per lot)**
+     * **Average Risk: Just 10.6 pts (~₹400 / lot)**
+
+---
+
+## 11. The WAR Setup (The 30-Min First-Candle FII Strategy)
+
+Implemented in `war_setup.py` and rendered in **Tab 23**.
+* **Core Philosophy:** FII institutional positioning is concentrated in the first 30 minutes (09:15–09:45). The High and Low of Candle 1 establish the intraday battle lines.
+* **5 Gap Scenarios:** Evaluates whether market is Gap Up, Gap Down, or Flat, and triggers when the 30-minute High or Low breaks.
+* **Strict Premium Rule:** Focuses on Call or Put priced **< ₹100** for optimal gamma acceleration and limited downside.
+
+---
+
+## 12. The 15-Minute Live Trade Advisor & Strike Decision Box
+
+Implemented in `trade_advisor_15m.py` and available in **Tab 0** and **Tab 22**.
+* **Answers the 4 Trader Dilemmas:**
+  1. *Shall I Buy CE, Buy PE, Wait, or Exit?*
+  2. *What is the statistical WIN RATE for this trade right now?*
+  3. *Safe to hold, or safe to exit when?*
+  4. *What are the exact points to take Stop Loss and Targets (Spot & Option LTP ₹)?*
+* **Dynamic Bayesian Probability Model:** Combines 15m candle geometry, 8 EMA / VWAP slope, the 10 Mentor Reversal setups, and Option Chain OI buildup/unwinding into an instant statistical Win Rate % (25% to 86%).
+
+---
+
+## 13. Paper Trading & Impulse Control Terminal
+
+Implemented in `paper_trading.py` and rendered in **Tab 25**.
+* **Virtual Capital Account:** Starts with ₹1,00,000. Features 1-click refill (+₹50k, +₹100k) or clean reset.
+* **The "Discipline Gate":** Before entering any trade, the system previews the 15m win rate, checks for midday freeze (11:30–13:15), checks for contratrend entries against 8 EMA, flags position sizing (>20% capital), and mandates a setup tag.
+* **Active Positions Book:** Real-time P&L (₹ and %) updated live from Dhan option chain, with 1-click individual exit and "Square Off All" panic button.
+* **Scorecard & Analytics:** Win Rate %, Profit Factor, Interactive Equity Curve, Strategy vs Impulse breakdown, and persistent CSV logging (`data/paper_trading/trades.csv`).
+
+---
+*Document Version: 3.0 · Comprehensive Master Trading Manual · NIFTY Option Chain Sniper Terminal*

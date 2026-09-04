@@ -26,7 +26,6 @@ import timeline as tl
 import outcomes as oc
 import alerts as al
 import strategy1_tab
-import btst_tab
 import context_tab
 import levels as lv_mod
 import confluence as cf
@@ -40,6 +39,9 @@ import greeks as gk
 import view_building as vb
 import view_building_tab
 import chart_patterns_tab
+import war_tab
+import red_bar_tab
+import paper_trading_tab
 
 st.set_page_config(page_title="NIFTY Chain Scanner", layout="wide",
                    initial_sidebar_state="expanded")
@@ -1664,6 +1666,7 @@ st.markdown(
 _ORDERED_ALL_TABS = [
     # ── Tier 1: Core Trade Execution (Most Useful) ────────
     "🎯 Decision Cockpit",
+    "📝 Paper Trading & Impulse Control",
     "📐 VAWM & 15m Matrix",
     "📈 Price Action (1m/5m/15m)",
     "📊 Option Chain (OI Profile)",
@@ -1671,6 +1674,8 @@ _ORDERED_ALL_TABS = [
 
     # ── Tier 2: Setup & Strategy Triggers ────────────────
     "8 Setups",
+    "⚔️ WAR Setup (FII 30m)",
+    "🔴 Red Bar & Asian Sweep",
     "VWAP/EMA",
     "SMC",
     "Price levels",
@@ -1688,7 +1693,6 @@ _ORDERED_ALL_TABS = [
     "Context",
     "View Building",
     "Rulebook",
-    "⚡ BTST Suite",
     "Session",
     "Timeline",
     "📓 Trading Journal",
@@ -1726,8 +1730,10 @@ _LABEL_TO_TAB_INDEX = {
     "VWAP/EMA": 18,
     "SMC": 19,
     "📓 Trading Journal": 20,
-    "⚡ BTST Suite": 21,
     "📐 VAWM & 15m Matrix": 22,
+    "⚔️ WAR Setup (FII 30m)": 23,
+    "🔴 Red Bar & Asian Sweep": 24,
+    "📝 Paper Trading & Impulse Control": 25,
 }
 
 _active_tab_idx = _LABEL_TO_TAB_INDEX.get(_selected_tab_str, 0)
@@ -1777,6 +1783,51 @@ if _tab_active(0):
         if _td_setup and _td_setup.status in ("ARMED_AWAITING_MSS", "TRIGGERED_MSS_CONFIRMED"):
             with st.expander(f"⚡ 1m 3-Drive Institutional Scalp: {_td_setup.side.replace('_', ' ')} ({_td_setup.status})", expanded=True):
                 _tds.render_three_drive_card(_td_setup)
+    except Exception:
+        pass
+
+    try:
+        import red_bar_strategy as _rbs
+        _f5_rb = pa_frames.get("5m") if ("pa_frames" in locals() and pa_frames) else None
+        if _f5_rb is not None and not _f5_rb.empty:
+            _rb_info = _rbs.get_spoon_fed_signal(_f5_rb, spot=spot, chain_df=df if "df" in locals() else None, current_time=now if "now" in locals() else None)
+            if _rb_info.get("has_signal"):
+                _act_col = "#2FBF71" if _rb_info["direction"] == "BULLISH" else "#E8503A"
+                st.markdown(
+                    f"""
+                    <div style="background: rgba(14, 34, 56, 0.95); border: 2px solid {_act_col}; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="font-size: 16px; font-weight: 800; color: {_act_col};">
+                                🎯 SPOON-FED SNIPER: {_rb_info['action_text']} | {_rb_info['setup_name']}
+                            </div>
+                            <div style="font-size: 14px; font-weight: 700; color: #FFD166; font-family: monospace;">
+                                {_rb_info['opt_symbol']} @ ₹{_rb_info['opt_ltp']:.1f}
+                            </div>
+                        </div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; font-size: 13px; font-family: monospace;">
+                            <div><b>BUY AT:</b> <span style="color: #FFD166;">{_rb_info['entry_level']:,.1f}</span></div>
+                            <div><b>STOP LOSS:</b> <span style="color: #E8503A;">{_rb_info['sl_level']:,.1f}</span> (SL: ₹{_rb_info['opt_sl_price']:.1f} | -₹{_rb_info['risk_rupees']:,.0f})</div>
+                            <div><b>TARGET 1:</b> <span style="color: #2FBF71;">{_rb_info['target_1']:,.1f}</span> (T1: ₹{_rb_info['opt_t1_price']:.1f} | +₹{_rb_info['gain_t1_rupees']:,.0f})</div>
+                            <div><b>TARGET 2:</b> <span style="color: #00E676;">{_rb_info['target_2']:,.1f}</span> (T2: ₹{_rb_info['opt_t2_price']:.1f} | +₹{_rb_info['gain_t2_rupees']:,.0f})</div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+    except Exception:
+        pass
+
+    try:
+        import trade_advisor_15m as _ta15
+        _pc15_adv = _pc15 if "_pc15" in locals() else (_prev_close if "_prev_close" in locals() else None)
+        with st.expander("⚡ 15-Minute Live Trade Advisor & Strike Decision Box (Ask Win Rate & SL)", expanded=True):
+            _ta15.render_15m_trade_advisor_ui(
+                pa_frames=pa_frames if "pa_frames" in locals() else None,
+                spot=spot if "spot" in locals() else 0.0,
+                chain_df=df if "df" in locals() else None,
+                prev_close=_pc15_adv,
+                now=now if "now" in locals() else None,
+            )
     except Exception:
         pass
 
@@ -3926,21 +3977,6 @@ if _tab_active(20):
     import trading_journal as _tj_mod
     _tj_mod.render_journal_tab()
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Tab 21 — BTST Suite (Stock Momentum Basket + Index Long Straddle)
-# ═══════════════════════════════════════════════════════════════════════════
-if _tab_active(21):
-    try:
-        btst_tab.render(
-            chain_df=df if "df" in locals() else None,
-            spot=spot if "spot" in locals() else 0.0,
-            expiry=expiry if "expiry" in locals() else "",
-            dte=dte if "dte" in locals() else 4.0,
-            vix=vix.value if ("vix" in locals() and vix is not None) else None,
-        )
-    except Exception as _btst_err:
-        st.error(f"BTST Suite encountered an error: {_btst_err}")
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Tab 22 — V-A-W-M Chart Patterns & Session Reversal Matrix (15m)
@@ -3959,4 +3995,48 @@ if _tab_active(22):
         st.error(f"VAWM & Reversal Matrix tab encountered an error: {_pat_err}")
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Tab 23 — WAR Setup (30-Min First-Candle FII Strategy)
+# ═══════════════════════════════════════════════════════════════════════════
+if _tab_active(23):
+    try:
+        _pc15_war = _pc15 if "_pc15" in locals() else (_prev_close if "_prev_close" in locals() else None)
+        war_tab.render(
+            pa_frames=pa_frames if "pa_frames" in locals() else None,
+            prev_close=_pc15_war,
+            chain_df=df if "df" in locals() else None,
+            spot=spot if "spot" in locals() else 0.0,
+        )
+    except Exception as _war_err:
+        st.error(f"WAR Setup tab encountered an error: {_war_err}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tab 24 — Red Bar & Asian Sweep Sniper (Dr. Devendra Pratap Singh)
+# ═══════════════════════════════════════════════════════════════════════════
+if _tab_active(24):
+    try:
+        red_bar_tab.render_red_bar_tab(
+            pa_frames=pa_frames if "pa_frames" in locals() else None,
+            spot=spot if "spot" in locals() else 0.0,
+            chain_df=df if "df" in locals() else None,
+            now=now if "now" in locals() else None,
+        )
+    except Exception as _rb_err:
+        st.error(f"Red Bar & Asian Sweep tab encountered an error: {_rb_err}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tab 25 — Paper Trading & Impulse Control Terminal
+# ═══════════════════════════════════════════════════════════════════════════
+if _tab_active(25):
+    try:
+        paper_trading_tab.render_paper_trading_tab(
+            pa_frames=pa_frames if "pa_frames" in locals() else None,
+            spot=spot if "spot" in locals() else 0.0,
+            chain_df=df if "df" in locals() else None,
+            now=now if "now" in locals() else None,
+        )
+    except Exception as _pt_err:
+        st.error(f"Paper Trading tab encountered an error: {_pt_err}")
 

@@ -1,0 +1,10 @@
+{
+  "initial_capital": 100000.0,
+  "cash_balance": 100000.0,
+  "used_margin": 0.0,
+  "realized_pnl": 0.0,
+  "unrealized_pnl": 0.0,
+  "total_trades_count": 0,
+  "open_positions": [],
+  "last_updated": "2026-09-04T20:30:03.629498"
+}

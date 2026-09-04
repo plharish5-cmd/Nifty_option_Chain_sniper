@@ -186,7 +186,23 @@ def render(
     st.markdown("---")
 
     # ═══════════════════════════════════════════════════════════════════════
-    # SECTION 2: SESSION REVERSAL MATRIX (15m) — THE 10 MENTOR CONDITIONS
+    # SECTION 2: 15-MINUTE LIVE TRADE ADVISOR & STRIKE DECISION BOX
+    # ═══════════════════════════════════════════════════════════════════════
+    try:
+        import trade_advisor_15m as ta15
+        ta15.render_15m_trade_advisor_ui(
+            pa_frames=pa_frames,
+            spot=spot or 0.0,
+            chain_df=df,
+            prev_close=prev_close,
+        )
+    except Exception as _adv_err:
+        st.error(f"15m Trade Advisor encountered an error: {_adv_err}")
+
+    st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # SECTION 3: SESSION REVERSAL MATRIX (15m) — THE 10 MENTOR CONDITIONS
     # ═══════════════════════════════════════════════════════════════════════
     st.markdown("#### 🛡️ Session Reversal Matrix (15m) — 10 Institutional Setups")
     st.caption("Systematically evaluates today's 15-minute closed candles against all 10 Mentor resistance and support reversal points.")

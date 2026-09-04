@@ -59,15 +59,17 @@ it cannot fix a blocked IP.
 
 ## What you get
 
-| Panel | What it tells you |
+| Panel / Tab | What it tells you |
 |---|---|
-| **Market state** | BULLISH / BEARISH / RANGEBOUND / CONSOLIDATION / BREAKOUT / BREAKDOWN, with the bias score |
-| **Signal** | BUY CE, BUY PE, or NO TRADE — plus the specific strike, premium, cost per lot, and delta |
-| **Metrics** | Spot, S1/S2, R1/R2, PCR, max pain, IV skew |
-| **OI profile** | Bar chart of call and put OI by strike — the walls, visually |
-| **Change in OI** | Today's OI change per strike. This is the live signal, not the absolute level |
-| **Session** | Spot vs S1 vs R1 over the day, with bias score and PCR beneath. The migration of the walls is the strongest intraday signal here |
-| **Score breakdown** | Every component of the bias score and its contribution, so nothing is a black box |
+| **🎯 Decision Cockpit (Tab 0)** | Unified trading cockpit with 2-Phase Session Road Map, 15m Top/Bottom Reversals, live 1m 3-Drive Scalper alerts, Spoon-Fed Red Bar callouts, and the interactive 15m Live Trade Advisor. |
+| **📝 Paper Trading & Impulse Control (Tab 25)** | Full virtual trading station starting with ₹1,00,000 capital. Real-time Dhan LTP execution, lot size selector, open positions book, live P&L, 1-click square-off, equity curve, and the "Discipline Gate" with 15m win rate checks and impulse trade tagging. |
+| **⚡ 15-Minute Live Trade Advisor** | Interactive strike decision terminal (in Tab 0 & Tab 22). Answers *"Shall I buy CE, PE, Hold, Wait, or Exit?"* with statistical Win Rate % at that moment, exact Stop Loss points (Spot & Option LTP ₹), and exit checklists. |
+| **🔴 Red Bar & Asian Sweep Sniper (Tab 24)** | Dr. Devendra Pratap Singh's Advanced Red Bar strategy: Candle 1 Point of Balance (POB 0.44–0.56), 150-Min 30 EMA mean deflection, and European Open Asian Liquidity Sweep (12:45–14:15). Verified Profit Factor 3.02 across 64 sessions. 100% spoon-fed Buy, SL, Targets, and ATM contract. |
+| **⚔️ WAR Setup (FII 30m) (Tab 23)** | The 30-min first candle FII strategy across 5 gap scenarios with price < ₹100 filters, strict trailing rules, and interactive trade card. |
+| **📐 VAWM & 15m Matrix (Tab 22)** | Interactive V-A-W-M pattern detector and the 10 Mentor Session Reversal Setups strictly evaluated on closed 15m candles. |
+| **🌊 1m 3-Drive Institutional Scalper** | Priyank Sharma's 3-Drive liquidity sweep & MSS scalper with RSI divergence and volume expansion. |
+| **📊 Option Chain & Change in OI** | Live NSE/Dhan option chain with Open Interest walls, intraday OI shifts, PCR, Net Gamma Exposure (GEX), and straddle decay. |
+| **Session & Timeline** | Spot vs S1/R1 migration over the day, wall break detection, and bias scoring. |
 
 ---
 
@@ -97,6 +99,7 @@ The scanner refuses to emit a signal when any of these apply. They come from
 your own course notes:
 
 - First 15 minutes — opening OI is chaotic
+- Midday freeze (11:30–13:15) — theta acceleration warning; blocks premature buys
 - After 3:00 PM — no fresh entries
 - A regime flip must hold for 2 consecutive polls before it is reported
 - Maximum 3 attempts in a rangebound market
@@ -111,52 +114,36 @@ your own course notes:
 In `config.py`:
 
 ```python
-CAPITAL   = 20_000   # your actual trading capital
-LOT_SIZE  = 65       # verify against NSE — it gets revised
+CAPITAL   = 100_000   # your configured paper / live capital
+LOT_SIZE  = 75        # NIFTY lot size
 ```
-
-`LOT_SIZE` moved from 75 to 65 in the January 2026 series. Every rupee figure
-in the app depends on it.
-
----
-
-## The log is the point
-
-Every poll appends a row to `data/signal_log.csv` and saves the full chain to
-`data/snapshots/YYYY-MM-DD/`. Two columns in the log are left blank on
-purpose: `spot_plus_30min` and `outcome`.
-
-Fill them in. After a couple of months you will have a real dataset and can
-answer, on your own data, whether the score predicts anything — instead of
-having an opinion about it. If a component turns out not to earn its weight,
-delete it from `analytics.analyse()`.
-
-That is the entire reason for building this rather than renting one.
 
 ---
 
 ## Files
 
 ```
-config.py         all tunables and thresholds — edit here, not in logic files
-nse_client.py     session bootstrap, retries, throttling
-chain_parser.py   NSE JSON and NSE CSV -> one dataframe shape; spot inference
-analytics.py      levels, quadrants, bias score, regime, signal, greeks
-store.py          snapshot persistence and cross-poll session state
-dashboard.py      streamlit UI and charts
-selftest.py       offline end-to-end run against the sample file
+dashboard.py            main streamlit application and multi-tier ribbon
+paper_trading.py        paper trading account manager, order execution, & analytics
+paper_trading_tab.py    paper trading terminal UI, discipline gate, & journal
+trade_advisor_15m.py    15m live trade advisor & strike decision box (win rate & SL)
+red_bar_strategy.py     Dr. Devendra Red Bar & Asian Sweep strategy engine
+red_bar_tab.py          Red Bar & Asian Sweep UI terminal & Plotly chart
+war_setup.py            WAR Setup (30m FII First-Candle) strategy engine
+war_tab.py              WAR Setup UI terminal
+session_reversal_matrix.py 15m session reversal matrix (10 mentor setups)
+chart_patterns.py       V-A-W-M chart pattern recognition engine
+chart_patterns_tab.py   VAWM patterns and 15m matrix UI tab
+three_drive_scalper.py  Priyank Sharma 1m 3-Drive institutional scalper
+dhan_client.py          DhanHQ v2 API client for live intraday futures & option quotes
+analytics.py            levels, quadrants, bias score, regime, signal, greeks
+chain_parser.py         NSE JSON and NSE CSV -> one dataframe shape; spot inference
+store.py                snapshot persistence and cross-poll session state
+selftest.py             offline end-to-end run against sample data
 ```
 
 ---
 
 ## What this is not
 
-It is a decision-support tool. It tells you where the levels are and what the
-positioning flow is doing. It does not tell you when to click buy — that comes
-from your price-action setup. A chain read is a reason to have an opinion and
-a direction filter; it is not an entry trigger, and the OI signal lags price.
-
-The chain also cannot show you intent. Heavy call OI at a strike might be a
-naked directional write, one leg of a spread, or a hedge against a cash
-position. Those mean completely different things and look identical in the OI
-column.
+It is a complete algorithmic decision-support and simulated execution system. It provides high-probability setups, exact spoon-fed entries, stop losses, targets, and paper execution to eliminate emotional impulse trading. Always manage risk and preserve trading capital.
