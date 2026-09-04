@@ -1,0 +1,33 @@
+# systemd user service — keeps the scheduler running across reboots.
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp nifty-scanner.service ~/.config/systemd/user/
+#   # edit WorkingDirectory and ExecStart below to your actual path first
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now nifty-scanner
+#   loginctl enable-linger $USER      # so it runs when you are logged out
+#
+# Watch it:
+#   systemctl --user status nifty-scanner
+#   journalctl --user -u nifty-scanner -f
+#
+# Stop it:
+#   systemctl --user stop nifty-scanner
+
+[Unit]
+Description=NIFTY chain scanner scheduler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Documents/Swathi K N/1 Trading/option chain/OC
+ExecStart=%h/Documents/Swathi K N/1 Trading/option chain/OC/.venv/bin/python scheduler.py
+Restart=always
+RestartSec=60
+StandardOutput=append:%h/Documents/Swathi K N/1 Trading/option chain/OC/data/scheduler.log
+StandardError=append:%h/Documents/Swathi K N/1 Trading/option chain/OC/data/scheduler.log
+
+[Install]
+WantedBy=default.target

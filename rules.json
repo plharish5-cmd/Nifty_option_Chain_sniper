@@ -1,0 +1,81 @@
+{
+  "version": "1.0",
+  "_comment": "Every threshold the rulebook engines use. Edit here, not in Python — a rule you cannot see is a rule you cannot argue with, and each of these is a judgement call rather than a fact.",
+
+  "bias_engine": {
+    "neutral_bias_ratio": 1.15,
+    "strong_bias_ratio": 1.60,
+    "_note": "ATM call/put OI ratio. Inside 1/1.15 to 1.15 reads NEUTRAL; beyond 1.60 either way reads STRONG."
+  },
+
+  "true_level_engine": {
+    "true_level_gap_threshold": 8.0,
+    "contested_build_threshold": 10.0,
+    "contested_gap_threshold": 8.0,
+    "_note": "OI %% points. One side must exceed the other by the gap threshold to be TRUE; both must clear the build threshold and stay within the gap threshold of each other to be CONTESTED."
+  },
+
+  "oi_state_engine": {
+    "min_oi_change": 1.0,
+    "min_oi_pct": 0.0,
+    "_note": "BUILD_UP needs BOTH oi_change and oi_pct positive. Either alone is not enough."
+  },
+
+  "trap_engine": {
+    "dual_buildup_threshold": 10.0,
+    "price_lock_points": 45.0,
+    "major_unwind_pct": -5.0,
+    "_note": "PINNED needs both sides above dual_buildup_threshold, neither below major_unwind_pct, and price range under price_lock_points."
+  },
+
+  "breakout_engine": {
+    "accept_closes": 2,
+    "next_level_min_pct": 10.0,
+    "old_level_max_pct": -5.0,
+    "_note": "REAL_BREAKOUT needs the old level unwinding past old_level_max_pct, the next level building past next_level_min_pct, and accept_closes consecutive closes beyond."
+  },
+
+  "trend_strength_engine": {
+    "dominant_side_strong_pct": 20.0,
+    "_note": "OI %% on the winning side that counts as aggressive enough to reinforce a trend."
+  },
+
+  "actionability_engine": {
+    "min_live_polls": 2,
+    "_note": "Polls the bias must hold before a live read is allowed to be ACTIONABLE."
+  },
+
+  "density_engine": {
+    "very_thin_ratio": 0.15,
+    "thin_ratio": 0.35,
+    "moderate_ratio": 0.70,
+    "_note": "Mean OI between two levels divided by the mean OI at the levels themselves."
+  },
+
+  "session_reversal_matrix": {
+    "gap_pts": 25.0,
+    "round_number_step": 500,
+    "round_proximity_pts": 25.0,
+    "extremum_proximity_pts": 25.0,
+    "chain_wall_proximity_pts": 25.0,
+    "doji_body_pct": 0.12,
+    "hammer_wick_ratio": 2.0,
+    "hammer_opp_ratio": 0.6,
+    "inverted_hammer_wick_ratio": 2.0,
+    "inverted_hammer_opp_ratio": 0.6,
+    "engulf_ratio": 1.1,
+    "default_sl_buffer_pts": 1.0,
+    "_note": "Session Reversal Matrix (15m): 10 Mentor reversal setups evaluated strictly on 15m closed candles."
+  },
+
+  "chart_patterns": {
+    "swing_lookback": 2,
+    "double_extremum_tol_pct": 0.0035,
+    "min_pattern_depth_pts": 30.0,
+    "v_drop_min_pts": 35.0,
+    "v_rebound_min_ratio": 0.50,
+    "a_rise_min_pts": 35.0,
+    "a_drop_min_ratio": 0.50,
+    "_note": "V, A, W, M chart pattern detector configuration for 15m and 30m charts."
+  }
+}

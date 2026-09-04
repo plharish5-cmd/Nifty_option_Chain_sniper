@@ -1,0 +1,54 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary & backup files
+*.bak
+*.working
+*.swp
+*.swo
+*~
+
+# Credentials & environment files — NEVER commit
+.env
+.env*
+.env.save
+!.env.example
+
+# Virtual environments & IDE
+.venv/
+venv/
+.streamlit/
+.idea/
+.vscode/
+
+# Runtime data caches & logs
+data/snapshots/
+data/candles/
+data/candles_15m/
+data/candles_5m/
+data/dhan_option_chains/
+data/option_candles_5m/
+data/order_book/
+data/strike_vwap/
+data/timeline/
+data/strategy1_log/
+data/history/
+data/basis/
+data/ohlc_corrupt_*/
+data/*corrupt*
+data/*.log
+data/*.csv
+!data/sample_chain.csv
+!data/master_levels.csv
+!data/ohlc/*.csv
+data/test_*.png
+data/open_straddle.json
+data/ViewBuilding_*.png
+data/ViewBuilding_*.xlsx
+data/historical_key_levels.xlsx
+
+# Archives
+*.zip
+*.tar.gz
