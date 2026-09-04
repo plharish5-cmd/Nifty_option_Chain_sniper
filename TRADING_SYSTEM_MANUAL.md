@@ -1,0 +1,192 @@
+# NIFTY 50 INSTITUTIONAL SNIPER & PRICE ACTION SYSTEM
+## Comprehensive Master Trading Manual & Technical Architecture
+
+---
+
+## 1. Executive Summary & Core Philosophy
+
+This system is an institutional-grade algorithmic and visual trading terminal designed specifically for **NIFTY 50 index options and futures**. It integrates two complementary trading disciplines:
+1. **Derivatives Quantitative Mechanics:** NSE Option Chain Open Interest (OI) walls, Put-Call Ratio (PCR), Intraday Flow, GEX (Gamma Exposure), and Max Pain.
+2. **Institutional Price Action & SMC:** 15-Minute Structural Maturity, The 8-EMA Follow-Through Law, The 2-Phase Session Gap Road Map, and Priyank Sharma's 1-Minute 3-Drive Liquidity Sweep Scalper.
+
+### The Trader's Goal: The 20–40 Point Law
+* **Daily Target:** 20 to 40 index points (representing 10 to 25 points in At-The-Money option premium).
+* **The Reality:** 20 clean points per day in NIFTY 50 yields over 400+ points monthly. Consistency in 1 or 2 clean trades per day eliminates overtrading, emotional fatigue, and brokerage erosion.
+* **The Golden Rule:** Once Target 1 (+20 pts) is achieved, immediately trail Stop-Loss to Cost (Breakeven). When Target 2 (+40 to +65 pts) is achieved, close the terminal and protect capital.
+
+---
+
+## 2. Technical Architecture & Multi-Timeframe Synthesis
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                           TIMEFRAME HIERARCHY                            │
+├───────────────────┬───────────────────────────────┬──────────────────────┤
+│ Timeframe         │ Primary Purpose               │ Key Indicators       │
+├───────────────────┼───────────────────────────────┼──────────────────────┤
+│ Daily / HTF       │ Master Levels, CPR, PDC/PDH   │ Pivot Points, CPR    │
+│ 1-Hour / 30-Min   │ Mother Trend & Structural Bias│ Major Swing High/Low │
+│ 15-Minute (Core)  │ Primary Execution & Direction │ 8 EMA, BB (20,2), DL │
+│ 5-Minute          │ Early Rejection & Compression │ BB Width (>60 pts)   │
+│ 1-Minute (Scalp)  │ 3-Drive Sweeps & MSS Entries  │ 14 RSI, Volume Spike │
+└───────────────────┴───────────────────────────────┴──────────────────────┘
+```
+
+### Data Pipeline Architecture
+* **Intraday OHLCV Candles:** Fetched via DhanHQ API v2 (with real NIFTY Futures volume for true session VWAP) or free fallback (yfinance).
+* **Derivatives Feed:** Live NSE option chain polled every 3 minutes, calculating net delta, IV skew, quadrant migration, and call/put writer dominance.
+* **Master Levels Engine:** Automatically tracks Previous Day Close (PDC), Previous Day High (PDH), Previous Day Low (PDL), Camarilla/Floor Pivots (R1–R4, S1–S4), and 100-Point Institutional Strike Barriers.
+
+---
+
+## 3. The 2-Phase Session Gap Road Map (Anti-Trap Architecture)
+
+Retail traders lose the majority of their capital during the market opening (09:15 to 10:15 AM) due to **chasing gaps**. The system divides every gap session into two distinct chronological phases.
+
+### A. The Gap-Up Protocol
+
+```
+GAP-UP SESSION ARCHITECTURE
+09:15 AM Open (+35 pts or more above PDC)
+   │
+   ├──► PHASE 1: CHASE TRAP ZONE 🚫
+   │    • Market Condition: Spot is extended near Day High.
+   │    • Institutional Action: Institutional buyers take profit; market cools down.
+   │    • Retail Trap: Amateurs buy Calls at the top out of FOMO.
+   │    • System Directive: CALL BUYS ARE LOCKED. Scan for Top Reversals (PE Fade)
+   │      or wait patiently for Phase 2.
+   │
+   └──► PHASE 2: WHOLESALE VALUE DIP-BUY ZONE 💎 (The Pro CE Trade!)
+        • Market Condition: Spot pulls back 40 to 80+ points to test major support:
+          - PDC (Gap Fill zone)
+          - PDL (Previous Day Low)
+          - S1 (Pivot Support)
+          - 100-Pt Round Strike (e.g. 24,100 / 24,200)
+        • Institutional Action: Smart money defends the bullish higher timeframe trend.
+        • Entry Trigger: 15m Hammer, Double Hammer, or Bullish Engulfing closing above 8 EMA with Follow-Through.
+        • Execution: BUY CE AT WHOLESALE SUPPORT.
+        • Risk/Reward: Strict 10-15 pt SL below support; Target 1 = +20 pts; Target 2 = Day High / R1.
+```
+
+### B. The Gap-Down Protocol
+
+```
+GAP-DOWN SESSION ARCHITECTURE
+09:15 AM Open (-35 pts or more below PDC)
+   │
+   ├──► PHASE 1: PANIC SELL TRAP 🚫
+   │    • Market Condition: Spot is depressed near Day Low.
+   │    • Institutional Action: Short covering begins; institutional absorption.
+   │    • Retail Trap: Amateurs panic and buy Puts at the absolute bottom.
+   │    • System Directive: PUT BUYS ARE LOCKED. Scan for Bottom Reversals (CE Bounce)
+   │      or wait patiently for Phase 2.
+   │
+   └──► PHASE 2: HEAVY SUPPLY RESISTANCE RIP-FADE 🎯 (The Pro PE Trade!)
+        • Market Condition: Short-covering rally pushes spot up 60 to 100+ points into tough resistance:
+          - PDH (Previous Day High)
+          - PDC (Gap Fill zone)
+          - R1 (Pivot Resistance)
+          - 100-Pt Round Barrier (e.g. 24,300)
+        • Institutional Action: Institutional sellers defend supply zones to resume the downtrend.
+        • Entry Trigger: 15m Inverted Hammer, Shooting Star, or Bearish Engulfing rolling below 8 EMA with Follow-Through.
+        • Execution: BUY PE AT TOUGH RESISTANCE PEAK.
+        • Risk/Reward: Strict 10-15 pt SL above resistance; Target 1 = +20 pts; Target 2 = Day Low / S1.
+```
+
+---
+
+## 4. The 15-Minute Structural Maturity & 8-EMA Follow-Through Law
+
+### Why 1-Minute and 5-Minute Charts Deceive
+On 1m and 5m charts, market noise constantly prints fake hammers, shooting stars, and dojis that reverse on the very next bar, leading to multiple stop-outs. As taught in the LTA sessions:
+> *"15 minutes is a mature timeframe. Double hammers, double inverted hammers, and EMA closes on 15m represent genuine institutional commitments."*
+
+### The 8-EMA Follow-Through Law
+A candle closing above or below the 8 EMA is **not an entry signal on its own**. 
+* **The Rule:** An entry is valid **ONLY** if the subsequent candle breaks the high (for long) or low (for short) of the trigger candle.
+* **Status States in the App:**
+  * `ARMED (PENDING_NEXT_BAR)`: 15m candle closed with favorable geometry. Standing by.
+  * `TRIGGERED (CONFIRMED)`: Next candle has broken the trigger price. Enter trade immediately.
+  * `INVALIDATED`: Price broke the opposite extreme before confirming follow-through. Zero capital risked.
+
+---
+
+## 5. "Respect the Doji" — The Exit & Profit-Booking Rule
+
+### Doji is an EXIT Signal, NOT an Entry Signal
+A common retail error is buying a Put simply because a Doji formed, or buying a Call because a Dragonfly Doji appeared. In trending or range-expansion phases, Nifty will break the Doji high and continue rallying.
+
+* **The Core Rule:** Respect the Doji as an **Emergency Invalidation & Exit Signal**:
+  * If you are in a **Call (CE) trade** and a 15m Doji appears at Day High, Upper BB, or Major Resistance: **EXIT ALL CALLS IMMEDIATELY**. The expected target for a top Doji is a pullback to Day Low or PDC.
+  * If you are in a **Put (PE) trade** and a 15m Doji appears at Day Low, Lower BB, or Major Support: **EXIT ALL PUTS IMMEDIATELY**. The expected target is a recovery to Day High or PDC.
+* **App Banner:** Whenever a Doji prints at an extreme, the system flashes a high-visibility amber/blue alert:
+  `⚠️ RESPECT THE DOJI: EXIT CALL (CE) POSITIONS NOW`
+
+---
+
+## 6. Priyank Sharma's 1-Minute 3-Drive Institutional Scalper
+
+Implemented in `three_drive_scalper.py` and rendered in **Tab 19 (SMC)** and **Tab 0 (Decision Cockpit)**.
+
+```
+          BULLISH 3-DRIVE LIQUIDITY SWEEP & MSS SCALP
+ ────────────────────────────────────────────────────────────────────────
+    Key HTF Level (PDL / S1 / 100-pt Strike)
+          │
+          ├─► Drive 1: Initial touch & local bounce (High 1 formed)
+          │
+          ├─► Drive 2: SWEEP 1 — Drops below Drive 1, triggers retail sell-stops,
+          │            wicks back up. Creates Intermediate High 2 (MSS Line).
+          │
+          ├─► Drive 3: SWEEP 2 — Final panic flush. 
+          │            ⚡ RSI Bullish Divergence (Price Lower Low, RSI Higher Low).
+          │
+          └─► MARKET STRUCTURE SHIFT (MSS) 🚀:
+              1-minute candle CLOSES ABOVE Intermediate High 2.
+              👉 ENTER LONG (CE) ON CLOSE.
+              • Stop-Loss: Placed 1.5 pts below lowest sweep wick (8–14 pts risk).
+              • Target 1: 1:1 RR (+8 to +14 pts) -> Trail SL to Cost immediately.
+              • Target 2: Origin of Move before Drive 1 (1:2.5 to 1:4 RR runner).
+```
+
+### The Institutional Logic: Why It Works
+1. **Liquidity Pools:** Retail stop-losses on longs are market sell orders. Large institutions require large blocks of sell orders to absorb their buy limits without causing slippage.
+2. **Zero Anticipation:** Never buy during Drive 2 or Drive 3 sweeps. Wait for the **1-minute close above the MSS level**. The break of structure confirms institutional absorption is complete.
+3. **Optional Confirmation ("Ingredients"):**
+   * **RSI Divergence:** 14-period RSI on 1m chart fails to make a new low during Drive 3.
+   * **Volume Expansion:** The MSS breakout candle shows a volume spike > 1.25x the 15-period rolling average.
+
+---
+
+## 7. 100-Point Institutional Strike Psychology
+
+NIFTY 50 options writers (institutions and large prop desks) deploy massive capital on round 100 strikes:
+* `24,000`, `24,100`, `24,200`, `24,300`, `24,400`, `24,500`.
+* The system automatically maps these strikes as primary resistance and support barriers alongside classical pivot points. When a 15m reversal or a 1m 3-Drive sweep occurs at a 100-point strike, the setup carries institutional grade confluence.
+
+---
+
+## 8. Daily Operational Playbook: Pre-Market to Close
+
+| Time Window | Operational Phase | Terminal Focus & Action |
+|---|---|---|
+| **08:30 – 09:07 AM** | **Pre-Market Orientation** | Check GIFT Nifty, overnight global markets, PDC levels, and View Building macro indicators. Identify today's S1/R1 and CPR width. |
+| **09:15 – 09:30 AM** | **Opening Auction Freeze** | **ZERO TRADES.** Observe gap size in Tab 0. Check whether Market is in Gap-Up Phase 1 or Gap-Down Phase 1. Let opening volatility settle. |
+| **09:30 – 11:30 AM** | **Prime Institutional Execution** | **Golden Trading Window.** Watch for Phase 2 Retracements to Support/Resistance or 1m 3-Drive MSS setups. Aim for 20–40 pts. |
+| **11:30 – 01:15 PM** | **Midday Decay Freeze** | **NO FRESH BUY ENTRIES.** Theta accelerates rapidly while volume dries up. Tighten trailing stops on active runners to cost. |
+| **01:30 – 03:00 PM** | **European Open / Trend Resumption** | Secondary execution window. Look for afternoon 15m 8-EMA continuations or SMC Order Block defenses. |
+| **03:00 – 03:30 PM** | **Cash Close & Auction Window** | **TERMINAL CLOSED.** Avoid the 03:15–03:28 PM cash close auction candles due to rollover distortions. |
+
+---
+
+## 9. Tab-by-Tab Visual Reference
+
+* **Tab 0 (🎯 Decision Cockpit):** The master dashboard. Shows the 2-Phase Session Road Map, Top & Bottom 15m Reversal Cards, the live 1m 3-Drive Scalper alert expander, and Master Cockpit bias metrics.
+* **Tab 1 (📊 Option Chain & OI Profile):** Visual bar chart of Call and Put Open Interest walls. Displays Net Gamma Exposure (GEX), GEX flip level, and Straddle decay.
+* **Tab 2 (Change in OI):** Intraday shifts in institutional positions. Shows whether call writers or put writers are aggressively adding or unwinding contracts.
+* **Tab 7 (📈 Price Action):** Multi-timeframe view (1m, 5m, 15m) with true futures VWAP and EMAs (4, 8, 20, 50, 200).
+* **Tab 19 (SMC - Smart Money Concepts):** Structural analysis (BOS / CHoCH), Dealing Range (Premium vs Discount), Unmitigated Order Blocks, Fair Value Gaps (FVG), Order Flow Speed, and Priyank Sharma's 1-Minute 3-Drive Institutional Scalper.
+* **Tab 20 (📓 Trading Journal):** Anti-impulse coach and trade logger to review discipline and track profit consistency.
+
+---
+*Document Version: 2.0 · Comprehensive System Manual · NIFTY Option Chain Sniper Terminal*
