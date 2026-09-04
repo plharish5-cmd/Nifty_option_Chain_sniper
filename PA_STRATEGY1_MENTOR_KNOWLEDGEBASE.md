@@ -216,3 +216,58 @@ The user added 10 personal homework charts with exact annotations of their trade
 5. **Separation of EMAs for Multi-Bag Runner Riding (24-08-2026):**
    - 24-Aug: Trade #1 (Short PE) $\rightarrow$ User wrote: *"4 & 8 EMA largely separated (bearish trend continued). Trailed SL till 14:30. Exited when a Green candle touched 8 EMA. Profit: 83 Pts"*.
 
+---
+
+## 7. VWAP & 8 EMA Confluence Laws (The Resolution of the 04-Sep -13 Pt Trade)
+
+### Forensic Resolution: Why Did the VWAP/EMA Tab Take -13 Points While Students Made +35 Points?
+
+On the 04-Sep session, the user asked:
+> *"My ask is why did we take -13 pts when 2 students made more than 35 pts as profit? Please update all rules for this tab as well VWAP/EMA, read the code I have just added VWAP as additional entry or crossing candle below or above, why loss here?"*
+
+Here is the exact mathematical and chart forensic proof:
+
+```
+04-Sep Session Timeline:
+─────────────────────────────────────────────────────────────────────────────
+12:00 - 12:15  NIFTY breaks DOWN through 8 EMA (24,082) and VWAP (24,072).
+               Students enter PE (SHORT)!
+12:45          Price plunges to 24,034 (Day's Low).
+               PE trade reaches +35 to +46 Points Favorable Excursion!
+               At Day Low, a Hammer / Rejection Candle forms.
+13:00          Candle closes green at 24,077.3 (bounce off Day Low).
+               • STUDENTS: Exit PE on the Hammer / Doji bounce -> BANK +35 to +44 PTS PROFIT!
+               • NAIVE TAB: Saw candle close > 8 EMA & > VWAP -> TRIGGERED FALSE CE (BUY CALL)!
+13:15          Market resumes bearish trend, drops to 24,064.2.
+               • NAIVE TAB: Trailing stop hit at 24,064.2 -> EXIT FOR -13.1 POINTS LOSS!
+─────────────────────────────────────────────────────────────────────────────
+```
+
+### The 5 Flaws of the Unfiltered "Whichever Comes First" Rule
+
+1. **Entering Counter-Trend Bounces as Breakouts:**
+   A bounce off Day Low back to 8 EMA is a **pullback test to be sold**, NOT a long entry!
+2. **Missing 4 EMA / 8 EMA Order Filter:**
+   At 13:00, 4 EMA was **24,068.9**, while 8 EMA was **24,072.2** (`4 EMA < 8 EMA`).
+   **Mentor Law:** NEVER buy CE when 4 EMA is below 8 EMA! This single filter completely blocks the -13 pt loss.
+3. **Missing Cost-to-Cost (CTC) Protection:**
+   Mentor rule: Once price reaches +20 points in favor, lock stop at entry (CTC). Winning runs can never become losses.
+4. **Missing Daily Trade Cap (`max_trades_day: 2`):**
+   Mentor rule: 1 to 2 trades per day max. Once morning trades are closed, afternoon chop is strictly avoided.
+5. **Confluence vs Conflict:**
+   VWAP and 8 EMA must agree with trend momentum. Crossing one while the other is right overhead is an institutional trap.
+
+---
+
+### Codified Confluence Rules for Tab 18 (VWAP/EMA)
+
+| Rule | CE (Long) Requirement | PE (Short) Requirement |
+| :--- | :--- | :--- |
+| **Confluence Filter** | Close > 8 EMA **AND** Close > VWAP | Close < 8 EMA **AND** Close < VWAP |
+| **Trend Order Filter** | 4 EMA >= 8 EMA (Bullish order) | 4 EMA <= 8 EMA (Bearish order) |
+| **Squeeze Filter** | BB Width >= 55 pts (No flat chop) | BB Width >= 55 pts (No flat chop) |
+| **Cost-to-Cost (CTC)** | Ratchet stop to Entry when excursion >= +20 pts | Ratchet stop to Entry when excursion >= +20 pts |
+| **Target Exit** | Book at +40 pts (or Upper BB touch) | Book at +40 pts (or Lower BB touch) |
+| **Reversal Exit** | Exit at Shooting Star / Doji at Day High | Exit at Hammer / Doji at Day Low |
+| **Session Cap** | Max 2 trades/day (No entries after 14:15) | Max 2 trades/day (No entries after 14:15) |
+

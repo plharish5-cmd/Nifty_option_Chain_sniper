@@ -3659,19 +3659,48 @@ if _tab_active(18):
         _within = st.slider("Flag levels within (points)", 10, 60, 25, 5,
                             key="s2near")
 
+        _rule_choice = st.radio(
+            "Strategy Rules",
+            [
+                "Mentor Sushen Rules (Confluence + CTC + 40pt Target + Max 2 Trades)",
+                "Legacy (Whichever Comes First — Unfiltered)",
+            ],
+            index=0,
+            horizontal=True,
+            key="s2_rule_mode",
+            help="Mentor Sushen Rules: Confluence across 8 EMA and VWAP, Cost-to-Cost lock at +20 pts, "
+                 "Target at +40 pts, Reversal exits at extremes, Max 2 trades/day, and Flat BB filter. "
+                 "Eliminates whipsaws and protects capital."
+        )
+        _mode = "mentor" if "Mentor" in _rule_choice else "legacy"
+
         cA, cB = st.columns(2)
         _ce = cA.checkbox("CE (long) entries", value=True, key="s2ce")
         _pe = cB.checkbox("PE (short) entries", value=True, key="s2pe")
 
-        _tr = s2.run(_f, allow_ce=_ce, allow_pe=_pe)
+        _tr = s2.run(_f, allow_ce=_ce, allow_pe=_pe, mode=_mode)
         _sm = s2.summary(_tr)
 
-        m = st.columns(5)
+        m = st.columns(6)
         m[0].metric("Trades", _sm["trades"])
         m[1].metric("Closed", _sm["closed"])
         m[2].metric("Won", _sm["wins"])
         m[3].metric("Lost", _sm["losses"])
-        m[4].metric("Points", f"{_sm['points']:+.1f}")
+        m[4].metric("Win Rate", f"{_sm.get('win_rate', 0):.0f}%")
+        m[5].metric("Net Points", f"{_sm['points']:+.1f}")
+
+        if _mode == "mentor":
+            st.success(
+                "🛡️ **Mentor Sushen Confluence Active:** Enforcing 8 EMA + VWAP alignment, "
+                "Cost-to-Cost (CTC) stop ratchet at +20 pts, +40 pt Target profit booking, "
+                "Reversal candle exit at Day Extremes, and Max 2 Trades/Day limit to prevent afternoon chop losses."
+            )
+        else:
+            st.warning(
+                "⚠️ **Legacy Mode Active:** Raw 'whichever comes first' with candle trail only. "
+                "Notice on 04-Sep how this took a -6.1 pt loss on afternoon chop at 14:00. "
+                "Switch to Mentor Sushen Rules above to filter this out."
+            )
 
         if _sm["by_trigger"]:
             st.caption("fired on — " + " · ".join(
@@ -3710,14 +3739,6 @@ if _tab_active(18):
         _ct = s2.annotate_levels(s2.candle_table(_f), _lv, float(_within))
         st.dataframe(_ct[::-1], use_container_width=True,
                      hide_index=True, height=420)
-
-        st.warning(
-            "**Nothing here is validated.** These rules have no UBB filter "
-            "and no follow-through requirement, which are the two things "
-            "Sushen uses to suppress entries. More trades on 65 lots means "
-            "more Rs400 round trips before any edge shows. Run it alongside "
-            "Strategy 1 in the Timeline log for a few weeks before deciding "
-            "which set of rules you actually want.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -54,6 +54,8 @@ import pandas as pd
 def _times(df: pd.DataFrame) -> pd.Series:
     if "timestamp" in df.columns:
         return pd.to_datetime(df["timestamp"])
+    if "time" in df.columns:
+        return pd.to_datetime(df["time"])
     return pd.Series(pd.to_datetime(df.index), index=df.index)
 
 
@@ -197,50 +199,185 @@ def vwap_health(df: pd.DataFrame) -> dict:
     }
 
 
-def run(df: pd.DataFrame, allow_ce: bool = True, allow_pe: bool = True
-        ) -> list[Trade]:
+def load_params() -> dict:
+    import json
+    from pathlib import Path
+    rules_path = Path(__file__).resolve().parent / "strategy1_rules.json"
+    p = {
+        "cost_to_cost_pts": 20.0,
+        "target_pts": 40.0,
+        "range_target_pts": 20.0,
+        "max_trades_day": 2,
+        "no_entry_after": "14:15",
+        "flat_bb_width": 55.0,
+        "doji_body_pct": 0.28,
+        "hammer_wick_ratio": 1.8,
+    }
+    if rules_path.exists():
+        try:
+            with open(rules_path) as f:
+                saved = json.load(f)
+            for k in p:
+                if k in saved:
+                    p[k] = saved[k]
+        except Exception:
+            pass
+    return p
+
+
+def _is_doji(o: float, h: float, l: float, c: float, max_ratio: float = 0.28) -> bool:
+    rng = h - l
+    return (abs(c - o) / rng <= max_ratio) if rng > 0 else False
+
+
+def _is_hammer(o: float, h: float, l: float, c: float, wick_ratio: float = 1.8) -> bool:
+    body = max(abs(c - o), 1.0)
+    lower_wick = min(o, c) - l
+    upper_wick = h - max(o, c)
+    return lower_wick >= wick_ratio * body and upper_wick <= 0.8 * body
+
+
+def _is_shooting_star(o: float, h: float, l: float, c: float, wick_ratio: float = 1.8) -> bool:
+    body = max(abs(c - o), 1.0)
+    upper_wick = h - max(o, c)
+    lower_wick = min(o, c) - l
+    return upper_wick >= wick_ratio * body and lower_wick <= 0.8 * body
+
+
+def run(df: pd.DataFrame, allow_ce: bool = True, allow_pe: bool = True,
+        mode: str = "mentor", params: dict | None = None) -> list[Trade]:
     """
     Walk the closed candles and apply the rules.
 
-    Entry is decided on a CLOSE, never intrabar, because the rule is written
-    on closes. The stop is then checked against the FOLLOWING candles' lows
-    and highs, which is where an intrabar touch legitimately belongs.
-
-    A candle that both triggers an entry and breaks the stop is recorded as
-    entered and exited on that candle, with the reason marked ambiguous:
-    15-minute data cannot say which happened first, and picking one would
-    invent a result.
+    Modes:
+      - 'mentor' (default): Mentor Sushen's codified confluence rules:
+          * Confluence: CE requires Close > 8 EMA AND Close > VWAP.
+                        PE requires Close < 8 EMA AND Close < VWAP.
+          * Cost-to-Cost (CTC): Locks stop at entry once +20 pts favorable excursion reached.
+          * Target Booking: Closes at +40 pts (or range target +20 pts).
+          * Reversal Pattern Exits: Exits PE at Day Low Hammer/Doji; exits CE at Day High Shooting Star/Doji.
+          * Daily Trade Cap: Max 2 trades/day to eliminate afternoon chop losses.
+          * Flat BB Squeeze Filter: Suppresses entries when BB width < 55 pts.
+          * Intraday Cutoff: No new entries after 14:15.
+      - 'legacy': Raw 'whichever comes first' entry with 1-candle high/low trailing stop
+          and no filters (kept for comparison so you can audit why legacy loses).
     """
-    e8 = _col(df, "ema8", "EMA8")
-    vw = _col(df, "vwap", "VWAP")
-    if e8 is None:
+    if "close" not in df:
         return []
+
+    e8 = _col(df, "8 EMA", "ema8", "EMA8", "ema_8", "8_ema")
+    vw = _col(df, "VWAP", "vwap", "Vwap")
+    ubb_col = _col(df, "UBB", "ubb", "upper_bb")
+    lbb_col = _col(df, "LBB", "lbb", "lower_bb")
 
     ts = _times(df).tolist()
     o = df["open"].astype(float).to_numpy()
     h = df["high"].astype(float).to_numpy()
     lo = df["low"].astype(float).to_numpy()
     c = df["close"].astype(float).to_numpy()
-    ema = df[e8].astype(float).to_numpy()
+
+    e4 = _col(df, "4 EMA", "ema4", "EMA4", "ema_4", "4_ema")
+    if e4 is not None:
+        ema4 = df[e4].astype(float).to_numpy()
+    else:
+        ema4 = df["close"].astype(float).ewm(span=4, adjust=False).mean().to_numpy()
+
+    if e8 is not None:
+        ema = df[e8].astype(float).to_numpy()
+    else:
+        ema = df["close"].astype(float).ewm(span=8, adjust=False).mean().to_numpy()
+
     vwa = (df[vw].astype(float).to_numpy() if vw
            else np.full(len(df), np.nan))
 
+    if ubb_col and lbb_col:
+        bbw = (df[ubb_col].astype(float) - df[lbb_col].astype(float)).to_numpy()
+    elif len(df) >= 5:
+        std = df["close"].astype(float).rolling(20, min_periods=1).std().fillna(0)
+        bbw = (4.0 * std).to_numpy()
+    else:
+        bbw = np.full(len(df), 100.0)
+
+    p = params or load_params()
+    ctc_pts = float(p.get("cost_to_cost_pts", 20.0))
+    target_pts = float(p.get("target_pts", 40.0))
+    max_trades = int(p.get("max_trades_day", 2))
+    flat_bb = float(p.get("flat_bb_width", 55.0))
+    no_entry_after = str(p.get("no_entry_after", "14:15"))
+    doji_body = float(p.get("doji_body_pct", 0.28))
+    hammer_ratio = float(p.get("hammer_wick_ratio", 1.8))
+
     trades: list[Trade] = []
     live: Trade | None = None
+    trades_today = 0
 
     for i in range(1, len(df)):
         # ── manage an open trade first ──────────────────────────────────
         if live is not None:
+            if mode == "mentor":
+                # 1. Target check
+                if live.direction == "CE" and h[i] >= live.entry + target_pts:
+                    live.exit_i, live.exit_ts = i, ts[i]
+                    live.exit = round(live.entry + target_pts, 2)
+                    live.reason = f"Target reached (+{target_pts:.0f} pts)"
+                    trades.append(live); live = None
+                    continue
+                elif live.direction == "PE" and lo[i] <= live.entry - target_pts:
+                    live.exit_i, live.exit_ts = i, ts[i]
+                    live.exit = round(live.entry - target_pts, 2)
+                    live.reason = f"Target reached (+{target_pts:.0f} pts)"
+                    trades.append(live); live = None
+                    continue
+
+                # 2. Cost-to-cost ratchet (+20 pts excursion locks breakeven)
+                if live.direction == "CE":
+                    if h[i] >= live.entry + ctc_pts and live.stop < live.entry:
+                        live.stop = live.entry
+                        live.trail_log.append((ts[i], live.entry))
+                elif live.direction == "PE":
+                    if lo[i] <= live.entry - ctc_pts and live.stop > live.entry:
+                        live.stop = live.entry
+                        live.trail_log.append((ts[i], live.entry))
+
+                # 3. Reversal pattern exit at extreme
+                if live.direction == "PE":
+                    day_low_so_far = float(np.min(lo[:i+1]))
+                    is_rev = (_is_hammer(o[i], h[i], lo[i], c[i], hammer_ratio)
+                              or _is_doji(o[i], h[i], lo[i], c[i], doji_body))
+                    if is_rev and lo[i] <= day_low_so_far + 8.0 and (live.entry - c[i]) >= 8.0:
+                        live.exit_i, live.exit_ts = i, ts[i]
+                        live.exit = float(c[i])
+                        live.reason = "Reversal exit — Hammer/Doji at Day Low"
+                        trades.append(live); live = None
+                        continue
+                elif live.direction == "CE":
+                    day_high_so_far = float(np.max(h[:i+1]))
+                    is_rev = (_is_shooting_star(o[i], h[i], lo[i], c[i], hammer_ratio)
+                              or _is_doji(o[i], h[i], lo[i], c[i], doji_body))
+                    if is_rev and h[i] >= day_high_so_far - 8.0 and (c[i] - live.entry) >= 8.0:
+                        live.exit_i, live.exit_ts = i, ts[i]
+                        live.exit = float(c[i])
+                        live.reason = "Reversal exit — Shooting Star/Doji at Day High"
+                        trades.append(live); live = None
+                        continue
+
+            # Trailing stop check (both modes)
             if live.direction == "CE" and lo[i] <= live.stop:
                 live.exit_i, live.exit_ts = i, ts[i]
                 live.exit = live.stop
-                live.reason = "trailing stop — touched previous candle low"
+                live.reason = ("CTC stop hit — protected at breakeven"
+                               if live.stop == live.entry else
+                               "trailing stop — touched previous candle low")
                 trades.append(live); live = None
+                continue
             elif live.direction == "PE" and h[i] >= live.stop:
                 live.exit_i, live.exit_ts = i, ts[i]
                 live.exit = live.stop
-                live.reason = "trailing stop — touched previous candle high"
+                live.reason = ("CTC stop hit — protected at breakeven"
+                               if live.stop == live.entry else
+                               "trailing stop — touched previous candle high")
                 trades.append(live); live = None
+                continue
             else:
                 # ratchet only: never let the stop move against the trade
                 if live.direction == "CE":
@@ -253,30 +390,76 @@ def run(df: pd.DataFrame, allow_ce: bool = True, allow_pe: bool = True
                 continue
 
         # ── look for an entry on this closed candle ─────────────────────
-        above_e = c[i] > ema[i]
-        below_e = c[i] < ema[i]
-        prev_above_e = c[i - 1] > ema[i - 1]
-        prev_below_e = c[i - 1] < ema[i - 1]
+        if mode == "mentor":
+            # Mentor Sushen filters: max trades cap, time cutoff, flat BB
+            if trades_today >= max_trades:
+                continue
+            bar_time = ts[i].strftime("%H:%M") if hasattr(ts[i], "strftime") else ""
+            if bar_time and bar_time > no_entry_after:
+                continue
+            if not np.isnan(bbw[i]) and bbw[i] < flat_bb:
+                continue
 
-        has_v = not np.isnan(vwa[i]) and not np.isnan(vwa[i - 1])
-        above_v = has_v and c[i] > vwa[i]
-        below_v = has_v and c[i] < vwa[i]
-        prev_above_v = has_v and c[i - 1] > vwa[i - 1]
-        prev_below_v = has_v and c[i - 1] < vwa[i - 1]
+            has_v = not np.isnan(vwa[i])
+            above_e = c[i] > ema[i]
+            below_e = c[i] < ema[i]
+            above_v = not has_v or c[i] > vwa[i]
+            below_v = not has_v or c[i] < vwa[i]
 
-        ce_e = above_e and not prev_above_e
-        ce_v = above_v and not prev_above_v
-        pe_e = below_e and not prev_below_e
-        pe_v = below_v and not prev_below_v
+            prev_above_e = c[i-1] > ema[i-1]
+            prev_below_e = c[i-1] < ema[i-1]
+            prev_above_v = not has_v or c[i-1] > vwa[i-1]
+            prev_below_v = not has_v or c[i-1] < vwa[i-1]
 
-        if allow_ce and (ce_e or ce_v):
-            trig = ("both" if ce_e and ce_v else "VWAP" if ce_v else "8 EMA")
-            live = Trade("CE", i, ts[i], float(c[i]), trig,
-                         float(lo[i - 1]), float(lo[i - 1]))
-        elif allow_pe and (pe_e or pe_v):
-            trig = ("both" if pe_e and pe_v else "VWAP" if pe_v else "8 EMA")
-            live = Trade("PE", i, ts[i], float(c[i]), trig,
-                         float(h[i - 1]), float(h[i - 1]))
+            cross_up = ((above_e and not prev_above_e) or
+                        (has_v and above_v and not prev_above_v))
+            cross_dn = ((below_e and not prev_below_e) or
+                        (has_v and below_v and not prev_below_v))
+
+            ema_order_ce = ema4[i] >= ema[i] - 1.0
+            ema_order_pe = ema4[i] <= ema[i] + 1.0
+
+            ce_confluence = allow_ce and above_e and above_v and cross_up and ema_order_ce
+            pe_confluence = allow_pe and below_e and below_v and cross_dn and ema_order_pe
+
+            if ce_confluence:
+                trig = ("Confluence (8 EMA + VWAP)" if (has_v and above_v and above_e)
+                        else ("VWAP" if above_v else "8 EMA"))
+                init_sl = min(float(lo[i-1]), float(lo[i]))
+                live = Trade("CE", i, ts[i], float(c[i]), trig, init_sl, init_sl)
+                trades_today += 1
+            elif pe_confluence:
+                trig = ("Confluence (8 EMA + VWAP)" if (has_v and below_v and below_e)
+                        else ("VWAP" if below_v else "8 EMA"))
+                init_sl = max(float(h[i-1]), float(h[i]))
+                live = Trade("PE", i, ts[i], float(c[i]), trig, init_sl, init_sl)
+                trades_today += 1
+        else:
+            # Legacy: unfiltered "whichever comes first"
+            above_e = c[i] > ema[i]
+            below_e = c[i] < ema[i]
+            prev_above_e = c[i - 1] > ema[i - 1]
+            prev_below_e = c[i - 1] < ema[i - 1]
+
+            has_v = not np.isnan(vwa[i]) and not np.isnan(vwa[i - 1])
+            above_v = has_v and c[i] > vwa[i]
+            below_v = has_v and c[i] < vwa[i]
+            prev_above_v = has_v and c[i - 1] > vwa[i - 1]
+            prev_below_v = has_v and c[i - 1] < vwa[i - 1]
+
+            ce_e = above_e and not prev_above_e
+            ce_v = above_v and not prev_above_v
+            pe_e = below_e and not prev_below_e
+            pe_v = below_v and not prev_below_v
+
+            if allow_ce and (ce_e or ce_v):
+                trig = ("both" if ce_e and ce_v else "VWAP" if ce_v else "8 EMA")
+                live = Trade("CE", i, ts[i], float(c[i]), trig,
+                             float(lo[i - 1]), float(lo[i - 1]))
+            elif allow_pe and (pe_e or pe_v):
+                trig = ("both" if pe_e and pe_v else "VWAP" if pe_v else "8 EMA")
+                live = Trade("PE", i, ts[i], float(c[i]), trig,
+                             float(h[i - 1]), float(h[i - 1]))
 
     if live is not None:
         trades.append(live)
@@ -286,16 +469,24 @@ def run(df: pd.DataFrame, allow_ce: bool = True, allow_pe: bool = True
 def summary(trades: list[Trade]) -> dict:
     done = [t for t in trades if t.points is not None]
     wins = [t for t in done if t.points > 0]
+    losses = [t for t in done if t.points < 0]
+    breakevens = [t for t in done if t.points == 0]
     by_trigger: dict[str, int] = {}
     for t in trades:
         by_trigger[t.trigger] = by_trigger.get(t.trigger, 0) + 1
+    total_pts = round(sum(t.points for t in done), 2) if done else 0.0
+    win_rate = (len(wins) / len(done) * 100.0) if done else 0.0
+    avg_pts = round(total_pts / len(done), 2) if done else 0.0
     return {
         "trades": len(trades),
         "closed": len(done),
         "open": sum(1 for t in trades if t.open),
         "wins": len(wins),
-        "losses": len(done) - len(wins),
-        "points": round(sum(t.points for t in done), 2) if done else 0.0,
+        "losses": len(losses),
+        "breakevens": len(breakevens),
+        "win_rate": round(win_rate, 1),
+        "avg_points": avg_pts,
+        "points": total_pts,
         "by_trigger": by_trigger,
     }
 
@@ -303,6 +494,8 @@ def summary(trades: list[Trade]) -> dict:
 def table(trades: list[Trade]) -> pd.DataFrame:
     rows = []
     for t in trades:
+        pts = None if t.points is None else round(t.points, 1)
+        status = "OPEN" if pts is None else ("WIN" if pts > 0 else ("BE" if pts == 0 else "LOSS"))
         rows.append({
             "dir": t.direction,
             "entry": f"{t.entry_ts:%d-%b %H:%M}",
@@ -312,7 +505,8 @@ def table(trades: list[Trade]) -> pd.DataFrame:
             "stop (final)": round(t.stop, 2),
             "trails": len(t.trail_log),
             "exit": f"{t.exit_ts:%H:%M}" if t.exit_ts else "OPEN",
-            "pts": None if t.points is None else round(t.points, 1),
+            "pts": pts,
+            "status": status,
             "reason": t.reason or "still open",
         })
     return pd.DataFrame(rows)

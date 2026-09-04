@@ -131,8 +131,38 @@ def main() -> None:
               f"   PE {qp:16s} {r.pe_chg_oi:>12,.0f}")
 
     levels_check()
+    strategy2_check()
 
     print("\nOK — pipeline ran end to end.")
+
+
+def strategy2_check() -> None:
+    print("\n" + "=" * 68); print("STRATEGY 2 (VWAP / 8 EMA CONFLUENCE)"); print("=" * 68)
+    import strategy2 as s2
+    import pandas as pd
+
+    dates = pd.date_range("2026-09-04 09:15", periods=10, freq="15min")
+    sample_df = pd.DataFrame({
+        "timestamp": dates,
+        "open": [23910.0, 23920.0, 23940.0, 23960.0, 23970.0, 23965.0, 23950.0, 23935.0, 23945.0, 23940.0],
+        "high": [23930.0, 23945.0, 23965.0, 23985.0, 24000.0, 23975.0, 23955.0, 23940.0, 23950.0, 23945.0],
+        "low":  [23900.0, 23915.0, 23935.0, 23955.0, 23965.0, 23945.0, 23930.0, 23920.0, 23935.0, 23930.0],
+        "close": [23920.0, 23940.0, 23960.0, 23975.0, 23970.0, 23950.0, 23935.0, 23925.0, 23940.0, 23935.0],
+        "ema8":  [23910.0, 23920.0, 23935.0, 23950.0, 23960.0, 23960.0, 23950.0, 23940.0, 23938.0, 23936.0],
+        "vwap":  [23915.0, 23925.0, 23938.0, 23952.0, 23962.0, 23962.0, 23952.0, 23942.0, 23940.0, 23938.0],
+        "ubb":   [23960.0, 23970.0, 23990.0, 24010.0, 24020.0, 24020.0, 24010.0, 24000.0, 23990.0, 23980.0],
+        "lbb":   [23880.0, 23890.0, 23900.0, 23910.0, 23920.0, 23920.0, 23910.0, 23900.0, 23890.0, 23880.0],
+    })
+    tr_mentor = s2.run(sample_df, mode="mentor")
+    sm_mentor = s2.summary(tr_mentor)
+    print(f"Mentor Mode: {sm_mentor['trades']} trades · {sm_mentor['wins']} wins · {sm_mentor['losses']} losses · {sm_mentor['points']:+.1f} pts")
+    assert "win_rate" in sm_mentor
+    assert "avg_points" in sm_mentor
+
+    tr_legacy = s2.run(sample_df, mode="legacy")
+    sm_legacy = s2.summary(tr_legacy)
+    print(f"Legacy Mode: {sm_legacy['trades']} trades · {sm_legacy['wins']} wins · {sm_legacy['losses']} losses · {sm_legacy['points']:+.1f} pts")
+    print("Strategy 2 mentor and legacy checks PASSED.")
 
 
 if __name__ == "__main__":

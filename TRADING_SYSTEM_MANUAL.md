@@ -195,6 +195,8 @@ NIFTY 50 options writers (institutions and large prop desks) deploy massive capi
 * **Tab 1 (📊 Option Chain & OI Profile):** Visual bar chart of Call and Put Open Interest walls. Displays Net Gamma Exposure (GEX), GEX flip level, and Straddle decay.
 * **Tab 2 (Change in OI):** Intraday shifts in institutional positions. Shows whether call writers or put writers are aggressively adding or unwinding contracts.
 * **Tab 7 (📈 Price Action):** Multi-timeframe view (1m, 5m, 15m) with true futures VWAP and EMAs (4, 8, 20, 50, 200).
+* **Tab 17 (🎯 PA Strategy 1):** Mentor Sushen's core 4/8 EMA 15-minute system with Bollinger Bands, UBB/LBB slope filters, Cost-to-Cost (CTC) capital protection, Doji/Hammer reversal exits, and 2-trade daily cap.
+* **Tab 18 (⚡ VWAP/EMA):** Dynamic VWAP & 8 EMA confluence engine with dual-filter alignment, 4 EMA order protection (eliminates counter-trend traps), CTC ratchet at +20 pts, +40 pt Target booking, and legacy comparison toggle.
 * **Tab 19 (SMC - Smart Money Concepts):** Structural analysis (BOS / CHoCH), Dealing Range (Premium vs Discount), Unmitigated Order Blocks, Fair Value Gaps (FVG), Order Flow Speed, and Priyank Sharma's 1-Minute 3-Drive Institutional Scalper.
 * **Tab 20 (📓 Trading Journal):** Anti-impulse coach and trade logger to review discipline and track profit consistency.
 * **Tab 22 (📐 VAWM & 15m Matrix):** V-A-W-M pattern scanner and the 10 Mentor Session Reversal Setups evaluated on closed 15m candles with the 15m Trade Advisor.
