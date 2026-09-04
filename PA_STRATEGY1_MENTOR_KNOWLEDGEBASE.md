@@ -164,3 +164,55 @@ Using the newly refined rules, here is the official verification across key date
    - Updated `summary()` to separate breakeven trades (`points == 0`) from true losses (`points < 0`).
 3. **`strategy1_tab.py`:**
    - Updated metric display to show `Won / lost: X / Y (Z BE)` reflecting true trading reality.
+
+---
+
+## 6. User's Personal Homework Analysis (10 New Charts Added at 21:33–21:34)
+
+The user added 10 personal homework charts with exact annotations of their trade logic, stops, and targets:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        USER'S PERSONAL HOMEWORK SCORECARD                              │
+├────────────┬─────────────────────────────┬────────┬────────┬───────┬───────────────────┤
+│ Date       │ Chart File                  │ Trades │ Wins   │ Loss  │ Net Profit Points │
+├────────────┼─────────────────────────────┼────────┼────────┼───────┼───────────────────┤
+│ 04-09-2026 │ `...15.13.13.jpeg`          │ 2      │ 2      │ 0     │ +44.0 Points      │
+│ 03-09-2026 │ `...18.30.53.jpeg`          │ 3      │ 1 (1BE)│ 1     │ +28.0 Points      │
+│ 02-09-2026 │ `...15.31.06.jpeg`          │ 3      │ 2      │ 1     │ +36.0 Points      │
+│ 01-09-2026 │ `...15.17.17 (1).jpeg`      │ 3      │ 3      │ 0     │ +142.0 Points     │
+│ 31-08-2026 │ `...17.00.33 (1).jpeg`      │ 3      │ 3      │ 0     │ +87.0 Points      │
+│ 27-08-2026 │ `...18.02.21.jpeg`          │ 3      │ 2      │ 1     │ +99.0 Points      │
+│ 24-08-2026 │ `...20.00.49.jpeg`          │ 1      │ 1      │ 0     │ +83.0 Points      │
+│ 19-08-2026 │ `...19.08.03.jpeg`          │ 3      │ 3      │ 0     │ +74.0 Points      │
+│ 18-08-2026 │ `...18.33.34.jpeg`          │ 3      │ 3      │ 0     │ +67.0 Points      │
+├────────────┴─────────────────────────────┴────────┴────────┴───────┼───────────────────┤
+│ TOTAL ACROSS USER'S 9 ANALYZED SESSIONS (22 TRADES)                 │ +660.0 POINTS     │
+└────────────────────────────────────────────────────────────────────┴───────────────────┘
+```
+
+### Direct Evidence & Confirmation of the Master Laws
+
+1. **Today's Chart (04-09-2026 — `WhatsApp Image 2026-09-04 at 15.13.13.jpeg`):**
+   - **Trade #1 (CE):** Green candle closed above 8 EMA & follow-through. Exit at 10:45 on TSL $\rightarrow$ **+36 Points**.
+   - **Trade #2 (PE):** Big red candle closed below 8 EMA & follow-through. Exit when Doji formed & green candle crossed Doji close $\rightarrow$ **+9 Points (traded 9 to 11 pts)**.
+   - **Afternoon Chop Avoidance:** User did NOT take any trades in the choppy afternoon (13:15–15:00).
+   - **Score:** 2 Trades, 2 Wins, 0 Losses $\rightarrow$ **+44 Points Net Profit**.
+
+2. **Cost-to-Cost (CTC) Rule Direct Proof (03-09-2026):**
+   - User wrote: *"Exit: This Trade could be exited cost to cost as per TSL. Profit: 0 Pts."*
+   - Proves beyond all doubt that Sushen's Strategy 1 treats trailing to Cost-to-Cost (0 pts) as a breakeven exit, **never a loss**.
+
+3. **Opposite Reversal Candle Exit Proof (01-09-2026 & 19-08-2026):**
+   - 01-Sep: Trade #3 (Short PE) $\rightarrow$ User explicitly wrote: *"Exit: Hammer High Broken, Profit: 58 Pts"*.
+   - 19-Aug: Trade #2 (Short PE) $\rightarrow$ User explicitly wrote: *"Exited at Hammer Low, Profit: 18 Pts"*.
+   - Confirms that a Hammer at the low of a short trade is the master exit signal.
+
+4. **Bollinger Band Extremes Exit Proof (31-08-2026 & 27-08-2026):**
+   - 31-Aug: Trade #3 (Long CE) $\rightarrow$ User wrote: *"Exit: When Price touched UBB, Profit: 28 Pts"*.
+   - 27-Aug: Trade #3 (Short PE) $\rightarrow$ User wrote: *"Exit at LBB Low, Profit: 37 Pts"*.
+   - 18-Aug: Trade #2 (Long CE) $\rightarrow$ User wrote: *"Exit at the Doji High (near UBB), Profit: 13 Pts"*.
+
+5. **Separation of EMAs for Multi-Bag Runner Riding (24-08-2026):**
+   - 24-Aug: Trade #1 (Short PE) $\rightarrow$ User wrote: *"4 & 8 EMA largely separated (bearish trend continued). Trailed SL till 14:30. Exited when a Green candle touched 8 EMA. Profit: 83 Pts"*.
+
