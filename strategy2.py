@@ -45,7 +45,7 @@ backtest you are reading is not the strategy you described.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time as dtime
 
 import numpy as np
 import pandas as pd
@@ -54,12 +54,20 @@ import pandas as pd
 def _times(df: pd.DataFrame) -> pd.Series:
     if "timestamp" in df.columns:
         return pd.to_datetime(df["timestamp"])
+    if isinstance(df.index, pd.DatetimeIndex):
+        return pd.Series(df.index, index=df.index)
     if "time" in df.columns:
-        return pd.to_datetime(df["time"])
+        try:
+            return pd.to_datetime(df["time"])
+        except Exception:
+            pass
     return pd.Series(pd.to_datetime(df.index), index=df.index)
 
 
 def _col(df: pd.DataFrame, *names) -> str | None:
+    for n in names:
+        if n in df.columns and df[n].notna().any():
+            return n
     for n in names:
         if n in df.columns:
             return n
@@ -279,11 +287,15 @@ def run(df: pd.DataFrame, allow_ce: bool = True, allow_pe: bool = True,
     e4 = _col(df, "4 EMA", "ema4", "EMA4", "ema_4", "4_ema")
     if e4 is not None:
         ema4 = df[e4].astype(float).to_numpy()
+        if np.isnan(ema4).all() or np.isnan(ema4).sum() > len(ema4) / 2:
+            ema4 = df["close"].astype(float).ewm(span=4, adjust=False).mean().to_numpy()
     else:
         ema4 = df["close"].astype(float).ewm(span=4, adjust=False).mean().to_numpy()
 
     if e8 is not None:
         ema = df[e8].astype(float).to_numpy()
+        if np.isnan(ema).all() or np.isnan(ema).sum() > len(ema) / 2:
+            ema = df["close"].astype(float).ewm(span=8, adjust=False).mean().to_numpy()
     else:
         ema = df["close"].astype(float).ewm(span=8, adjust=False).mean().to_numpy()
 
@@ -462,6 +474,12 @@ def run(df: pd.DataFrame, allow_ce: bool = True, allow_pe: bool = True,
                              float(h[i - 1]), float(h[i - 1]))
 
     if live is not None:
+        if len(df) > 0 and len(ts) > 0:
+            last_t = ts[-1]
+            if hasattr(last_t, "time") and last_t.time() >= dtime(15, 15):
+                live.exit_i, live.exit_ts = len(df) - 1, last_t
+                live.exit = float(c[-1])
+                live.reason = "EOD square-off (15:15)"
         trades.append(live)
     return trades
 

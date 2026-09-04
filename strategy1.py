@@ -161,8 +161,15 @@ def _times(df: pd.DataFrame) -> pd.Series:
     a second copy of the fix is a second thing to forget.
     """
     if "timestamp" in df.columns:
-        return df["timestamp"]
-    return pd.Series(df.index, index=df.index)
+        return pd.to_datetime(df["timestamp"])
+    if isinstance(df.index, pd.DatetimeIndex):
+        return pd.Series(df.index, index=df.index)
+    if "time" in df.columns:
+        try:
+            return pd.to_datetime(df["time"])
+        except Exception:
+            pass
+    return pd.Series(pd.to_datetime(df.index), index=df.index)
 
 
 def _row(df: pd.DataFrame, i: int) -> Candle:
@@ -368,8 +375,14 @@ def gates(df: pd.DataFrame, prev_close: float | None, p: dict) -> Gates:
     # absence from the system.
     mode = p.get("gap_mode", "warn")
 
+    # Find today's first candle when history contains multiple sessions
+    ts = _times(df)
+    today_date = ts.dt.date.iloc[-1]
+    today_mask = (ts.dt.date == today_date)
+    first_i = int(today_mask.values.argmax()) if today_mask.any() else 0
+
     if prev_close and mode != "off":
-        g.gap = float(df["open"].iloc[0]) - float(prev_close)
+        g.gap = float(df["open"].iloc[first_i]) - float(prev_close)
         if g.gap >= p["gap_pts"]:
             g.gap_kind = "GAP UP"
             g.block_ce = (mode == "block")
@@ -391,7 +404,7 @@ def gates(df: pd.DataFrame, prev_close: float | None, p: dict) -> Gates:
                  f"so a PE carries that risk — worth knowing, not a reason "
                  f"to refuse the setup."))
 
-    k = _row(df, 0)
+    k = _row(df, first_i)
     g.first_candle_pts = k.rng
     g.first_candle_colour = "GREEN" if k.bull else ("RED" if k.bear else "FLAT")
     g.first_candle_big = k.rng >= p["big_candle_pts"]
@@ -508,10 +521,15 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
     now = now or datetime.now()
 
     d = df15.copy()
+    if "timestamp" not in d.columns:
+        if isinstance(d.index, pd.DatetimeIndex):
+            d["timestamp"] = d.index
+        elif d.index.name in ("timestamp", "time"):
+            d["timestamp"] = pd.to_datetime(d.index)
     if "timestamp" in d.columns and not pd.api.types.is_datetime64_any_dtype(d["timestamp"]):
         d["timestamp"] = pd.to_datetime(d["timestamp"])
     if "closed" in d.columns:
-        d = d[d["closed"]].reset_index(drop=True)
+        d = d[d["closed"].fillna(True).astype(bool)].reset_index(drop=True)
     if "timestamp" in d.columns:
         d = d.drop_duplicates(subset=["timestamp"], keep="last").reset_index(drop=True)
     if d.empty:
@@ -540,11 +558,33 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
     rally_dir: str | None = None            # direction of the rally in progress
     traded_this_rally = False
 
+    session_first_i = 0
     for i in range(1, len(d)):
         k = _row(d, i)
         prev = _row(d, i - 1)
         ema8 = float(d["ema8"].iloc[i])
         t = k.ts.time() if hasattr(k.ts, "time") else now.time()
+
+        # Session boundary check
+        k_date = k.ts.date() if hasattr(k.ts, "date") else None
+        prev_date = prev.ts.date() if hasattr(prev.ts, "date") else None
+        if k_date is not None and prev_date is not None and k_date != prev_date:
+            session_first_i = i
+            rally_dir, traded_this_rally = None, False
+            if active and active.state == "OPEN":
+                active.exit_i, active.exit_ts = i - 1, prev.ts
+                active.exit_price = prev.c
+                active.exit_reason = "EOD square-off"
+                active.points = (prev.c - active.trigger) if active.direction == "LONG" else (active.trigger - prev.c)
+                active = None
+
+        # Track rally direction on every candle
+        crossed_up = prev.c <= float(d["ema8"].iloc[i - 1]) and k.c > ema8
+        crossed_dn = prev.c >= float(d["ema8"].iloc[i - 1]) and k.c < ema8
+        if crossed_up and rally_dir != "LONG":
+            rally_dir, traded_this_rally = "LONG", False
+        elif crossed_dn and rally_dir != "SHORT":
+            rally_dir, traded_this_rally = "SHORT", False
 
         # 1 ── manage an open position first
         if active and active.state == "OPEN":
@@ -611,9 +651,15 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
         # 2 ── trigger a previously armed signal
         armed = res.armed_signal
         if armed and not active:
+            armed_date = armed.armed_ts.date() if hasattr(armed.armed_ts, "date") else None
+            is_new_day = (k_date is not None and armed_date is not None and k_date != armed_date)
+            is_stale = (i - armed.armed_i > 2)
+            invalidated = ((armed.direction == "LONG" and k.c < ema8) or
+                           (armed.direction == "SHORT" and k.c > ema8))
+
             hit = (k.h >= armed.trigger) if armed.direction == "LONG" \
                   else (k.l <= armed.trigger)
-            if hit:
+            if hit and not is_new_day:
                 broke_stop = (k.l <= armed.stop) if armed.direction == "LONG" \
                              else (k.h >= armed.stop)
                 armed.entered, armed.entry_i, armed.entry_ts = True, i, k.ts
@@ -624,18 +670,21 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
                         "came first is unknowable from 15-minute data.")
                 active = armed
                 traded_this_rally = True
+            elif is_new_day or is_stale or invalidated:
+                armed.exit_i = i
+                armed.exit_ts = k.ts
+                armed.exit_reason = ("Expired at session close" if is_new_day else
+                                     "Invalidated — closed back across 8 EMA" if invalidated else
+                                     "Expired — no trigger within 2 candles")
+                armed = None
 
         # 3 ── arm a new signal on a close beyond the 8 EMA
         if not active and not res.armed_signal and t < cutoff:
-            crossed_up = prev.c <= float(d["ema8"].iloc[i - 1]) and k.c > ema8
-            crossed_dn = prev.c >= float(d["ema8"].iloc[i - 1]) and k.c < ema8
             if crossed_up or crossed_dn:
                 direction = "LONG" if crossed_up else "SHORT"
-                if rally_dir != direction:
-                    rally_dir, traded_this_rally = direction, False
-
                 block = g.blocked(direction)
-                trades_done = sum(1 for s in res.signals if s.entered)
+                k_date = k.ts.date() if hasattr(k.ts, "date") else None
+                trades_done = sum(1 for s in res.signals if s.entered and (k_date is None or (hasattr(s.armed_ts, "date") and s.armed_ts.date() == k_date)))
                 max_day = p.get("max_trades_day", 0)
                 if block:
                     res.alerts.append(Alert(
@@ -652,7 +701,7 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
                         "GATE", "info", k.ts,
                         f"{k.ts:%H:%M} closed beyond the 8 EMA — but skipped.",
                         "One trade per rally. This rally has already had its trade."))
-                elif i == 0 or (g.first_candle_big and i == 1):
+                elif i == session_first_i or (g.first_candle_big and i == session_first_i + 1):
                     res.alerts.append(Alert(
                         "GATE", "info", k.ts,
                         f"{k.ts:%H:%M} skipped.",
@@ -670,7 +719,7 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
                             f"{k.rng:.0f} pts against a {p['fixed_sl_pts']:.0f}-pt "
                             f"budget. Either skip this, or take "
                             f"{p['small_target_pts']:.0f} pts and get out.")
-                    run = abs(k.c - float(d["open"].iloc[0]))
+                    run = abs(k.c - float(d["open"].iloc[session_first_i]))
                     if run >= p["exhaust_pts"]:
                         s.small_target = True
                         s.notes.append(

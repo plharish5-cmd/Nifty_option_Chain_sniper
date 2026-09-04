@@ -34,6 +34,7 @@ data/order_book/
 data/strike_vwap/
 data/timeline/
 data/strategy1_log/
+data/strategy2_log/
 data/history/
 data/basis/
 data/ohlc_corrupt_*/

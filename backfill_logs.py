@@ -45,7 +45,29 @@ import config
 
 
 def fetch_15m(since: date) -> pd.DataFrame:
-    """15-minute bars from Dhan, market hours only."""
+    """15-minute bars from local candles_15m store (with Dhan fallback), market hours only."""
+    from pathlib import Path
+    candle_dir = config.DATA_DIR / "candles_15m"
+    dfs = []
+    if candle_dir.exists():
+        for f in sorted(candle_dir.glob("*.csv")):
+            try:
+                d = date.fromisoformat(f.stem)
+                if d >= since:
+                    sub_df = pd.read_csv(f)
+                    if "timestamp" in sub_df.columns:
+                        sub_df["timestamp"] = pd.to_datetime(sub_df["timestamp"])
+                        dfs.append(sub_df)
+            except ValueError:
+                continue
+    if dfs:
+        bars = pd.concat(dfs, ignore_index=True)
+        ts = pd.to_datetime(bars["timestamp"])
+        keep = (ts.dt.time >= config.MARKET_OPEN) & (ts.dt.time <= config.MARKET_CLOSE)
+        out = bars[keep].copy()
+        out["session"] = pd.to_datetime(out["timestamp"]).dt.date
+        return out.sort_values("timestamp").drop_duplicates(subset=["timestamp"]).reset_index(drop=True)
+
     import dhan_client as dc
     days = (date.today() - since).days + 2
     if days > 90:
@@ -62,29 +84,39 @@ def fetch_15m(since: date) -> pd.DataFrame:
     return out.sort_values("timestamp").reset_index(drop=True)
 
 
-def daily_closes() -> dict:
+def daily_closes(bars: pd.DataFrame | None = None) -> dict:
     """Previous-session close per date, for Strategy 1's gap gate."""
+    out = {}
     try:
         import build_master as bm
         h = bm.load_all(config.OHLC_DIR)
         h["Date"] = pd.to_datetime(h["Date"]).dt.date
         h = h.sort_values("Date")
-        return {d: c for d, c in zip(h["Date"].shift(-1), h["Close"])}
+        out = {d: c for d, c in zip(h["Date"].shift(-1), h["Close"])}
     except Exception:                                       # noqa: BLE001
-        return {}
+        pass
+    if bars is not None and "session" in bars and "close" in bars:
+        day_closes = bars.groupby("session")["close"].last()
+        prev_series = day_closes.shift(1)
+        for d, c in prev_series.dropna().items():
+            if d not in out or pd.isna(out[d]):
+                out[d] = float(c)
+    return out
 
 
-def run(since: date, sessions_back: int | None = None) -> dict:
+def run(since: date, sessions_back: int | None = None, overwrite: bool = True) -> dict:
     import setups as su
     import strategy1 as s1
     import strategy1_log as s1log
     import strategy2 as s2
 
-    bars = fetch_15m(since)
-    days = sorted(set(bars["session"]))
+    warmup_since = since - timedelta(days=45)
+    bars = fetch_15m(warmup_since)
+    all_days = sorted(set(bars["session"]))
+    days = [d for d in all_days if d >= since]
     if sessions_back:
         days = days[-sessions_back:]
-    prev_close = daily_closes()
+    prev_close = daily_closes(bars)
 
     s1_rows, s2_rows, per_day = [], [], []
 
@@ -130,7 +162,7 @@ def run(since: date, sessions_back: int | None = None) -> dict:
             print(f"  {d}: strategy 1 failed — {exc}")
 
         try:
-            for t in s2.run(today):
+            for t in s2.run(today, mode="mentor"):
                 s2_rows.append({
                     "day": d.isoformat(), "direction": t.direction,
                     "entry_ts": str(t.entry_ts), "entry": round(t.entry, 2),
@@ -148,25 +180,31 @@ def run(since: date, sessions_back: int | None = None) -> dict:
 
         per_day.append((d, n1, n2))
 
-    # write, keeping backfill separate from anything already logged live
+    # write backfilled logs cleanly
     if s1_rows:
         s1log.DIR.mkdir(parents=True, exist_ok=True)
         for d, grp in pd.DataFrame(s1_rows).groupby("day"):
             p = s1log.DIR / f"{d}.csv"
-            existing = pd.read_csv(p) if p.exists() else pd.DataFrame()
-            if len(existing) and "source" in existing:
-                existing = existing[existing["source"] != "backfill"]
-            pd.concat([existing, grp], ignore_index=True).to_csv(p, index=False)
+            if overwrite or not p.exists():
+                grp.to_csv(p, index=False)
+            else:
+                existing = pd.read_csv(p) if p.exists() else pd.DataFrame()
+                if len(existing) and "source" in existing:
+                    existing = existing[existing["source"] != "backfill"]
+                pd.concat([existing, grp], ignore_index=True).to_csv(p, index=False)
 
     s2dir = config.DATA_DIR / "strategy2_log"
     if s2_rows:
         s2dir.mkdir(parents=True, exist_ok=True)
         for d, grp in pd.DataFrame(s2_rows).groupby("day"):
             p = s2dir / f"{d}.csv"
-            existing = pd.read_csv(p) if p.exists() else pd.DataFrame()
-            if len(existing) and "source" in existing:
-                existing = existing[existing["source"] != "backfill"]
-            pd.concat([existing, grp], ignore_index=True).to_csv(p, index=False)
+            if overwrite or not p.exists():
+                grp.to_csv(p, index=False)
+            else:
+                existing = pd.read_csv(p) if p.exists() else pd.DataFrame()
+                if len(existing) and "source" in existing:
+                    existing = existing[existing["source"] != "backfill"]
+                pd.concat([existing, grp], ignore_index=True).to_csv(p, index=False)
 
     return {"sessions": len(per_day), "s1": len(s1_rows), "s2": len(s2_rows),
             "per_day": per_day,
