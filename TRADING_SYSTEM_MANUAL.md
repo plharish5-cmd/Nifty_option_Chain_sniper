@@ -111,16 +111,26 @@ A candle closing above or below the 8 EMA is **not an entry signal on its own**.
 
 ---
 
-## 5. "Respect the Doji" — The Exit & Profit-Booking Rule
+## 5. Mentor Sushen's Exit & Trailing Laws (Strategy 1)
 
-### Doji is an EXIT Signal, NOT an Entry Signal
+### A. Doji is an EXIT Signal, NOT an Entry Signal
 A common retail error is buying a Put simply because a Doji formed, or buying a Call because a Dragonfly Doji appeared. In trending or range-expansion phases, Nifty will break the Doji high and continue rallying.
-
 * **The Core Rule:** Respect the Doji as an **Emergency Invalidation & Exit Signal**:
-  * If you are in a **Call (CE) trade** and a 15m Doji appears at Day High, Upper BB, or Major Resistance: **EXIT ALL CALLS IMMEDIATELY**. The expected target for a top Doji is a pullback to Day Low or PDC.
-  * If you are in a **Put (PE) trade** and a 15m Doji appears at Day Low, Lower BB, or Major Support: **EXIT ALL PUTS IMMEDIATELY**. The expected target is a recovery to Day High or PDC.
-* **App Banner:** Whenever a Doji prints at an extreme, the system flashes a high-visibility amber/blue alert:
-  `⚠️ RESPECT THE DOJI: EXIT CALL (CE) POSITIONS NOW`
+  * If in a **Call (CE) trade** and a 15m Doji appears at Day High, Upper BB, or Major Resistance: **EXIT ALL CALLS IMMEDIATELY**.
+  * If in a **Put (PE) trade** and a 15m Doji appears at Day Low, Lower BB, or Major Support: **EXIT ALL PUTS IMMEDIATELY**.
+
+### B. Opposite Reversal Candlestick Exit
+* **When SHORT (PE):** A **Hammer**, **Double Hammer**, or **Dragonfly Doji** (lower wick rejection) closing at Day Low or Lower BB is an **IMMEDIATE PROFIT-BOOKING EXIT** (or exit on break of its high).
+* **When LONG (CE):** An **Inverted Hammer**, **Double IH**, or **Shooting Star** (upper wick rejection) closing at Day High or Upper BB is an **IMMEDIATE PROFIT-BOOKING EXIT** (or exit on break of its low).
+
+### C. The Cost-to-Cost (CTC) Breakeven Law
+* **The Golden Rule:** As soon as a trade achieves $+15$ to $+20$ points of favorable excursion, immediately move the Stop-Loss to Cost-to-Cost (Entry Price / Trigger).
+* **Capital Protection:** A trade that was $+20$ points in profit must **NEVER** turn into a negative loss.
+
+### D. Bollinger Band Targets & Stage 1 Targets
+* **Trending Stages (Stage 2 & 3):** Ride runners candle-by-candle until the Upper BB (Long) or Lower BB (Short) is touched.
+* **Rangebound Stage 1 (BB Width < 60 pts):** Take profit at **10 to 15 points** (maximum 20 points). Max 2 to 3 attempts.
+* **Master Documentation:** For full details and the complete audit of 67 mentor/student charts, see `PA_STRATEGY1_MENTOR_KNOWLEDGEBASE.md`.
 
 ---
 

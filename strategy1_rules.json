@@ -1,7 +1,9 @@
 {
   "_comment": "Thresholds for strategy1.py. Edit here, not in Python. Every number below is a judgement call, not a fact \u2014 if a day's read changes when you nudge one, the read was about the threshold.",
-  "doji_body_pct": 0.12,
-  "_doji_body_pct": "Body <= this fraction of the candle's range = Doji. 0.10 is stricter, 0.15 catches more.",
+  "doji_body_pct": 0.28,
+  "_doji_body_pct": "Body <= this fraction of candle range = Doji / Spinning Top. 0.28 matches mentor & student homework charts where 5-pt body on 19-pt range candle at extreme was exited as Doji.",
+  "cost_to_cost_pts": 20.0,
+  "_cost_to_cost_pts": "When trade moves >= this many points in favor, stop loss moves to entry (CTC breakeven). Never let a winning trade become a loss.",
   "hammer_wick_ratio": 2.0,
   "_hammer_wick_ratio": "Long wick must be this many times the body.",
   "hammer_opp_ratio": 0.6,

@@ -280,7 +280,8 @@ def render(pa_frames: dict | None, prev_close: float | None = None,
         m = st.columns(5)
         m[0].metric("Armed", summ["armed"])
         m[1].metric("Taken", summ["taken"])
-        m[2].metric("Won / lost", f"{summ['wins']} / {summ['losses']}")
+        be_str = f" ({summ['breakeven']} BE)" if summ.get("breakeven") else ""
+        m[2].metric("Won / lost", f"{summ['wins']} / {summ['losses']}{be_str}")
         m[3].metric("Points", f"{summ['points']:+.0f}")
         m[4].metric("Ambiguous", summ["ambiguous"],
                     help="Trigger and stop broke in the same candle. Order "

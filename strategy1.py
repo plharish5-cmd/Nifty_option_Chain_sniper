@@ -73,7 +73,7 @@ import setups as su
 # ── thresholds ──────────────────────────────────────────────────────────────
 PARAMS: dict = {
     # candle geometry
-    "doji_body_pct":      0.12,   # body <= this fraction of range = Doji
+    "doji_body_pct":      0.28,   # body <= this fraction of range = Doji / Spinning Top
     "hammer_wick_ratio":  2.0,    # long wick >= this x body
     "hammer_opp_ratio":   0.6,    # opposite wick <= this x body
     "engulf_ratio":       1.1,    # body must be this much bigger than prior
@@ -84,6 +84,7 @@ PARAMS: dict = {
                                   # stop behind a candle this size is refused.
     "exhaust_pts":        60.0,   # move already run = rally is spent
     "fixed_sl_pts":       40.0,   # the reference stop the sizing assumes
+    "cost_to_cost_pts":   20.0,   # favorable excursion >= this locks stop at entry
     "gap_pts":            30.0,   # open vs prev close = a gap worth gating on
     "small_target_pts":   20.0,   # take-what-it-gives after an exhausted move
 
@@ -507,8 +508,12 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
     now = now or datetime.now()
 
     d = df15.copy()
+    if "timestamp" in d.columns and not pd.api.types.is_datetime64_any_dtype(d["timestamp"]):
+        d["timestamp"] = pd.to_datetime(d["timestamp"])
     if "closed" in d.columns:
         d = d[d["closed"]].reset_index(drop=True)
+    if "timestamp" in d.columns:
+        d = d.drop_duplicates(subset=["timestamp"], keep="last").reset_index(drop=True)
     if d.empty:
         return Result(frame=d, patterns=[], gates=Gates(),
                       notes=["No closed 15-minute candles yet."])
@@ -551,6 +556,9 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
                     active = None
                 else:
                     active.stop = max(active.stop, prev.l)
+                    # Cost-to-Cost rule: once moved favorably >= cost_to_cost_pts, lock entry price
+                    if (k.h - active.trigger) >= p.get("cost_to_cost_pts", 20.0):
+                        active.stop = max(active.stop, active.trigger)
             else:
                 if k.h >= active.stop:
                     active.exit_i, active.exit_ts = i, k.ts
@@ -559,14 +567,32 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
                     active = None
                 else:
                     active.stop = min(active.stop, prev.h)
+                    # Cost-to-Cost rule: once moved favorably >= cost_to_cost_pts, lock entry price
+                    if (active.trigger - k.l) >= p.get("cost_to_cost_pts", 20.0):
+                        active.stop = min(active.stop, active.trigger)
 
-        # doji close, and the band — both are exits, not stops
+        # Reversal candles (Doji/Hammer/IH) and Band — both are exits, not stops
         if active and active.state == "OPEN":
-            if "DOJI" in pats[i]:
+            day_high = float(d["high"].iloc[:i + 1].max())
+            day_low = float(d["low"].iloc[:i + 1].min())
+
+            revs = ["DOJI", "DOUBLE DOJI"]
+            if active.direction == "SHORT":
+                revs.extend(["HAMMER", "DOUBLE HAMMER"])
+                near_ext = abs(k.l - day_low) <= p.get("band_touch_pts", 15.0)
+                cur_pts = active.trigger - k.c
+            else:
+                revs.extend(["INVERTED HAMMER", "DOUBLE IH"])
+                near_ext = abs(k.h - day_high) <= p.get("band_touch_pts", 15.0)
+                cur_pts = k.c - active.trigger
+
+            matched = [pat for pat in revs if pat in pats[i]]
+            # Exit if reversal candle closed at Day Extreme or in profit
+            if matched and (near_ext or cur_pts >= 10.0):
                 active.exit_i, active.exit_ts = i, k.ts
-                active.exit_price, active.exit_reason = k.c, "Doji closed — profit secured"
-                active.points = (k.c - active.trigger) if active.direction == "LONG" \
-                                else (active.trigger - k.c)
+                active.exit_price = k.c
+                active.exit_reason = f"{matched[0]} at extreme / in profit — profit secured"
+                active.points = cur_pts
                 active = None
             else:
                 band = "ubb" if active.direction == "LONG" else "lbb"
@@ -683,7 +709,8 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
                 f"{s.exit_ts:%H:%M} exit — {s.exit_reason}.",
                 f"{s.points:+.0f} pts." if s.points is not None else ""))
 
-    if kl.ts.time() >= cutoff:
+    t_last = kl.ts.time() if hasattr(kl.ts, "time") else now.time()
+    if t_last >= cutoff:
         res.notes.append(f"Past {p['no_entry_after']} — no fresh entries.")
     if res.stage.startswith("STAGE 1"):
         done = sum(1 for s in res.signals if s.entered)
@@ -712,12 +739,15 @@ def summary(res: Result) -> dict:
     done = [s for s in res.signals if s.exit_i is not None and s.points is not None]
     clean = [s for s in done if not s.ambiguous]
     wins = [s for s in clean if s.points > 0]
+    losses = [s for s in clean if s.points < 0]
+    be = [s for s in clean if s.points == 0]
     return {
         "armed": len(res.signals),
         "taken": sum(1 for s in res.signals if s.entered),
         "closed": len(done),
         "wins": len(wins),
-        "losses": len(clean) - len(wins),
+        "losses": len(losses),
+        "breakeven": len(be),
         "ambiguous": sum(1 for s in done if s.ambiguous),
         "scored": len(clean),
         "points": sum(s.points for s in clean),
