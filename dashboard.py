@@ -2161,6 +2161,7 @@ _ORDERED_ALL_TABS = [
     "⚡ Option Chain & OI Analysis",
     "📊 Option Chain / Key Levels",
     "Change in OI",
+    "⚡ OI Timeline (Per-Strike)",
     "📈 Price Action (1m/5m/15m)",
     "🏹 Breakout & Trap Scanner",
     "📝 Paper Trading & Impulse Control",
@@ -2254,6 +2255,8 @@ _LABEL_TO_TAB_INDEX = {
     "Option-Chain Key Levels": 1,
     "Key Levels": 1,
     "Change in OI": 2,
+    "⚡ OI Timeline (Per-Strike)": 39,
+    "OI Timeline": 39,
     "Session": 3,
     "Score breakdown": 4,
     "Price levels": 5,
@@ -4930,6 +4933,18 @@ if _tab_active(38):
         )
     except Exception as _pat_tab_err:
         st.error(f"Candlestick Patterns & 15m Early Read tab error: {_pat_tab_err}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tab 39 — ⚡ OI Timeline (Per-Strike Intraday Flow)
+# ═══════════════════════════════════════════════════════════════════════════
+if _tab_active(39):
+    try:
+        import views.oi_timeline_tab as _voitm
+        _voitm.render(CTX)
+    except Exception as _oit_err:                           # noqa: BLE001
+        st.error(f"OI Timeline tab encountered an error: {_oit_err}")
+
 
 
 
