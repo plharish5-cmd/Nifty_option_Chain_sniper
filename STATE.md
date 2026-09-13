@@ -24,6 +24,13 @@
 - **14:14 Multi-Strike Discontinuity (2026-09-11)**: Occurred during the uncaptured 14:00–14:30 interval; cannot be validated from existing single-expiry data.
 - **Multi-Expiry External Reconciliation (OptionTick 2026-09-11)**: Historical snapshots captured only nearest expiry; magnitude divergence cannot be reconciled without live multi-expiry captures.
 
+## Quadrant Agreement Columns Definition
+- **`agreement_cum` (Naive OI vs Cumulative Buyer Quadrant, `oi_timeline.py:680-689`)**: Compares full-day net OI direction against cumulative LTP quadrant. When day spread $\ge +25,000$ contracts (naive Put Writing), it checks if `pe_quad_cum == 'long_buildup'` (Put Buying). If yes $\rightarrow$ `DISAGREE`; else `AGREE`. Tests against full-day threshold (`dom_min = 25,000`).
+- **`agreement_local` (Local Naive Flow vs Local Buyer Quadrant, `oi_timeline.py:691-698`)**: Compares recent 15m delta-OI direction against local 15m LTP quadrant. Tests against time-scaled threshold (`local_dom_thresh = 25,000 * 15/375 = 1,000`). If 15m `local_spread >= 1,000` and `pe_quad_local == 'long_buildup'` $\rightarrow$ `DISAGREE`; else `AGREE`.
+- **`cum_vs_local_agreement` (Cumulative Flow vs Local Flow Alignment, `oi_timeline.py:700-706`)**: Directly tests if current 15m quadrant matches cumulative quadrant (`pe_quad_cum == pe_quad_local` for PE-dominant; both match for balanced).
+- **Row 2 of `2026-08-21.csv` Explanation**: At 09:21, spread is $+2,539$. In `agreement_cum`, $2,539 < 25,000$ so the cumulative threshold is not met $\rightarrow$ `AGREE`. In `agreement_local`, $2,539 \ge 1,000$ (scaled threshold) and PE LTP rose ($+4.0$), flagging local Put Buying $\rightarrow$ `DISAGREE`. In `cum_vs_local_agreement`, `pe_quad_cum` and `pe_quad_local` are both `long_buildup`, so they match $\rightarrow$ `AGREE`.
+- **Assessment**: The columns compare different pairs and different thresholds: `agreement_cum` and `agreement_local` are intent disambiguators (Buyer vs Writer at macro vs micro scale), while `cum_vs_local_agreement` is a momentum-continuation flag. None is undefined, but `agreement_local` is the most sensitive to early morning noise due to the scaled 1,000-contract threshold.
+
 ## Next Priorities (In Strict Order)
 1. **Live Session Capture**: Let the persistent poller run undisturbed to accumulate clean, multi-expiry market-hour sessions.
 2. **Permutation Control**: At $\approx 20$ clean sessions, run the shuffled-baseline permutation control on `crossovers.csv` (identical to the cross-disagreement benchmark).
