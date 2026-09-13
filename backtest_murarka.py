@@ -50,7 +50,7 @@ from murarka_strategy import (
 )
 
 STRIKE_STEP = getattr(config, "STRIKE_STEP", 50)
-LOT_SIZE = getattr(config, "NIFTY_LOT_SIZE", 75)
+LOT_SIZE = getattr(config, "LOT_SIZE", getattr(config, "NIFTY_LOT_SIZE", 65))
 
 
 @dataclass

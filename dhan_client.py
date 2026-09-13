@@ -51,17 +51,28 @@ class DhanError(RuntimeError):
     pass
 
 
-def _load_env() -> None:
+_env_last_mtime: float = 0.0
+
+
+def _load_env(force: bool = False) -> None:
     """Minimal .env reader — avoids adding python-dotenv as a dependency."""
+    global _env_last_mtime
     env = Path(__file__).parent / ".env"
     if not env.exists():
         return
+    try:
+        mtime = env.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    if not force and mtime == _env_last_mtime and os.environ.get("DHAN_ACCESS_TOKEN"):
+        return
+    _env_last_mtime = mtime
     for line in env.read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        os.environ[k.strip()] = v.strip().strip('"').strip("'")
 
 
 def token() -> str:
@@ -76,6 +87,140 @@ def token() -> str:
             "APIs. Never paste it into a source file or a chat."
         )
     return t
+
+
+def save_token(new_token: str, client_id: str | None = None) -> None:
+    """
+    Save Dhan access token (and optional client ID) to .env and os.environ.
+    Sets file permissions to 0600.
+    """
+    new = new_token.strip()
+    if not new:
+        raise DhanError("Cannot save an empty token.")
+
+    env = Path(__file__).parent / ".env"
+    lines, seen_token, seen_cid = [], False, False
+    if env.exists():
+        for ln in env.read_text().splitlines():
+            if ln.strip().startswith("DHAN_ACCESS_TOKEN="):
+                lines.append(f"DHAN_ACCESS_TOKEN={new}")
+                seen_token = True
+            elif client_id is not None and client_id.strip() and ln.strip().startswith("DHAN_CLIENT_ID="):
+                lines.append(f"DHAN_CLIENT_ID={client_id.strip()}")
+                seen_cid = True
+            else:
+                lines.append(ln)
+    if not seen_token:
+        lines.append(f"DHAN_ACCESS_TOKEN={new}")
+    if client_id is not None and client_id.strip() and not seen_cid:
+        lines.append(f"DHAN_CLIENT_ID={client_id.strip()}")
+
+    env.write_text("\n".join(lines) + "\n")
+    try:
+        env.chmod(0o600)
+    except Exception:
+        pass
+
+    global _env_last_mtime
+    try:
+        _env_last_mtime = env.stat().st_mtime
+    except OSError:
+        pass
+
+    os.environ["DHAN_ACCESS_TOKEN"] = new
+    if client_id is not None and client_id.strip():
+        os.environ["DHAN_CLIENT_ID"] = client_id.strip()
+    log.info("Dhan access token updated successfully.")
+
+
+def verify_token(test_token: str | None = None, client_id: str | None = None) -> tuple[bool, str]:
+    """
+    Live-test whether the given (or currently configured) Dhan token is active and working.
+    Queries Dhan's intraday candle API for NIFTY index (IDX_I / 13).
+    Returns (is_working: bool, message: str).
+    """
+    if test_token is not None:
+        tok = test_token.strip()
+        if not tok:
+            return False, "Token cannot be empty."
+    else:
+        _load_env()
+        tok = os.environ.get("DHAN_ACCESS_TOKEN", "").strip()
+        if not tok:
+            return False, "No Dhan access token configured in .env."
+
+    cid = (client_id if client_id is not None else "").strip()
+    if not cid:
+        _load_env()
+        cid = os.environ.get("DHAN_CLIENT_ID", "").strip()
+
+    h = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "access-token": tok,
+    }
+    if cid:
+        h["client-id"] = cid
+
+    end = datetime.now()
+    start = end - timedelta(days=1)
+    body = {
+        "securityId": str(getattr(config, "DHAN_INDEX_SECURITY_ID", "13")),
+        "exchangeSegment": "IDX_I",
+        "instrument": "INDEX",
+        "interval": "1",
+        "oi": False,
+        "fromDate": start.strftime("%Y-%m-%d %H:%M:%S"),
+        "toDate": end.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    try:
+        r = requests.post(
+            f"{BASE}/charts/intraday",
+            json=body,
+            headers=h,
+            timeout=getattr(config, "REQUEST_TIMEOUT", 10),
+        )
+        if r.status_code == 200:
+            return True, "Access key is working! Dhan Market Data connected successfully."
+
+        raw = r.text[:300]
+        try:
+            body_json = r.json()
+            err_type = body_json.get("errorType", "")
+            err_desc = body_json.get("errorMessage", "")
+            err_code = body_json.get("errorCode", "")
+        except Exception:
+            err_type, err_desc, err_code = "", raw, ""
+
+        combined = f"{err_type} {err_desc} {raw}".lower()
+        if "invalid_authentication" in combined or "expired" in combined or err_code == "DH-901":
+            return False, f"Token expired or invalid ({err_code or 'DH-901'}). Generate a fresh token from web.dhan.co -> Profile -> DhanHQ Trading APIs."
+        elif "not subscribed" in combined or "entitle" in combined or "subscription" in combined:
+            return False, "Token authenticated, but account is NOT subscribed to Data API (Rs499/mo required for live candles & VWAP)."
+        else:
+            return False, f"Dhan error ({r.status_code}): {err_desc or raw}"
+    except requests.exceptions.Timeout:
+        return False, "Connection timed out while reaching api.dhan.co."
+    except requests.exceptions.ConnectionError:
+        return False, "Network connection error — check internet connectivity."
+    except Exception as exc:
+        return False, f"Verification error: {exc}"
+
+
+def token_preview() -> dict:
+    """Safe masked info about the currently configured token."""
+    _load_env()
+    t = os.environ.get("DHAN_ACCESS_TOKEN", "").strip()
+    cid = os.environ.get("DHAN_CLIENT_ID", "").strip()
+    if not t:
+        return {"configured": False, "length": 0, "preview": "None", "client_id": cid}
+    masked = t[-6:] if len(t) >= 6 else t
+    return {
+        "configured": True,
+        "length": len(t),
+        "preview": f"...{masked}",
+        "client_id": cid,
+    }
 
 
 def refresh_token() -> str:
@@ -131,20 +276,7 @@ def refresh_token() -> str:
     if not new:
         raise DhanError(f"no accessToken in response: {list(body)[:8]}")
 
-    # rewrite just that one line of .env, leaving everything else alone
-    env = Path(__file__).with_name(".env")
-    lines, seen = [], False
-    if env.exists():
-        for ln in env.read_text().splitlines():
-            if ln.startswith("DHAN_ACCESS_TOKEN="):
-                lines.append(f"DHAN_ACCESS_TOKEN={new}"); seen = True
-            else:
-                lines.append(ln)
-    if not seen:
-        lines.append(f"DHAN_ACCESS_TOKEN={new}")
-    env.write_text("\n".join(lines) + "\n")
-    env.chmod(0o600)
-    os.environ["DHAN_ACCESS_TOKEN"] = new
+    save_token(new)
     log.info("access token refreshed, expires %s", body.get("expiryTime"))
     return new
 
@@ -320,6 +452,12 @@ def intraday(security_id: str, segment: str, instrument: str,
 def nifty_index_candles(days_back: int = 1) -> pd.DataFrame:
     """NIFTY 50 index. Volume is always zero here — that is correct, not a bug."""
     return intraday(config.DHAN_INDEX_SECURITY_ID, "IDX_I", "INDEX", days_back)
+
+
+def banknifty_index_candles(days_back: int = 1) -> pd.DataFrame:
+    """BANKNIFTY index from Dhan API (Security ID: 25, IDX_I segment)."""
+    sec_id = getattr(config, "DHAN_BANKNIFTY_SECURITY_ID", "25")
+    return intraday(sec_id, "IDX_I", "INDEX", days_back)
 
 
 def futures_sanity(fut: pd.DataFrame | None, index_close: float | None
@@ -734,3 +872,32 @@ def backfill_5m_candles(days_back: int = 15) -> list[Path]:
         saved.append(p)
 
     return saved
+
+
+if __name__ == "__main__":
+    import sys
+    args = sys.argv[1:]
+    if "--set" in args:
+        idx = args.index("--set")
+        if idx + 1 < len(args):
+            t = args[idx + 1]
+            print("Verifying token with Dhan API...")
+            ok, msg = verify_token(t)
+            if ok:
+                save_token(t)
+                print(f"[PASS] {msg}")
+                sys.exit(0)
+            else:
+                print(f"[FAIL] {msg}")
+                sys.exit(1)
+        else:
+            print("Usage: python dhan_client.py --set <access_token>")
+            sys.exit(1)
+    else:
+        print("Testing currently configured Dhan token...")
+        ok, msg = verify_token()
+        info = token_preview()
+        print(f"Configured: {info['configured']}, Length: {info['length']}, Preview: {info['preview']}")
+        print(f"Result: {'PASS' if ok else 'FAIL'} - {msg}")
+        sys.exit(0 if ok else 1)
+

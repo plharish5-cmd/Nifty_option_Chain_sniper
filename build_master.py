@@ -50,17 +50,27 @@ log = logging.getLogger(__name__)
 GANN_DEGREES = (45, 90, 135, 180)
 GANN_TIME_CYCLES = (30, 45, 60, 90, 120, 135, 144, 180, 225, 270, 315, 360)
 ROLLING_WINDOW = 252          # ~1 trading year, for local cycle anchors
-GAP_MIN = 5.0                 # points; smaller than this is not a gap
+GAP_MIN = getattr(config, "GAP_MIN", 15.0)  # points; minimum gap size (noise filter)
+LEVEL_MIN_SEPARATION = getattr(config, "LEVEL_MIN_SEPARATION", 20.0)  # points; minimum spacing between levels
 
-# your spec: support broken -> green, resistance broken -> red
-BREAK_SUPPORT_FILL = PatternFill("solid", start_color="C6EFCE")
-BREAK_SUPPORT_FONT = Font(name="Arial", color="006100", bold=True)
-BREAK_RESISTANCE_FILL = PatternFill("solid", start_color="FFC7CE")
-BREAK_RESISTANCE_FONT = Font(name="Arial", color="9C0006", bold=True)
+# Exact spec / NIFTY50.PY styling:
+# Resistances / Upper Gaps / Gann R hit next day -> Soft Green (#C6EFCE / #006100)
+# Supports / Lower Gaps / Gann S hit next day -> Soft Red (#FFC7CE / #9C0006)
+# Time Cycle Alert -> Soft Amber (#FFEB9C / #9C5700)
+HIT_GREEN_FILL = PatternFill("solid", start_color="C6EFCE")
+HIT_GREEN_FONT = Font(name="Arial", color="006100", bold=True)
+HIT_RED_FILL = PatternFill("solid", start_color="FFC7CE")
+HIT_RED_FONT = Font(name="Arial", color="9C0006", bold=True)
 CYCLE_FILL = PatternFill("solid", start_color="FFEB9C")
 CYCLE_FONT = Font(name="Arial", color="9C5700", bold=True)
 HEADER_FILL = PatternFill("solid", start_color="1F497D")
 HEADER_FONT = Font(name="Arial", color="FFFFFF", bold=True)
+
+# Compatibility aliases
+BREAK_SUPPORT_FILL = HIT_RED_FILL
+BREAK_SUPPORT_FONT = HIT_RED_FONT
+BREAK_RESISTANCE_FILL = HIT_GREEN_FILL
+BREAK_RESISTANCE_FONT = HIT_GREEN_FONT
 
 
 def gann_sq9(price: float, degrees: float) -> float:
@@ -197,39 +207,49 @@ def build_rows(df: pd.DataFrame) -> pd.DataFrame:
         # and what lets you check afterwards whether it held.
         R = [np.nan] * 4
         RD = [""] * 4
-        seq = [(H, i)]
-        for j in range(i - 1, -1, -1):
-            if highs[j] > seq[-1][0]:
-                seq.append((highs[j], j))
-                if len(seq) == 4:
-                    break
-        for k, (v, j) in enumerate(seq):
+        seq_r = [(H, i)]
+        j = i - 1
+        while j >= 0 and len(seq_r) < 4:
+            if highs[j] >= seq_r[-1][0] + LEVEL_MIN_SEPARATION:
+                best_h, best_idx = highs[j], j
+                k = j - 1
+                while k >= 0 and highs[k] > best_h and (highs[k] - best_h) < LEVEL_MIN_SEPARATION:
+                    best_h, best_idx = highs[k], k
+                    k -= 1
+                seq_r.append((best_h, best_idx))
+                j = k
+            else:
+                j -= 1
+        for k, (v, j_idx) in enumerate(seq_r):
             R[k] = round(v, 2)
-            RD[k] = dstr(j)
+            RD[k] = dstr(j_idx)
 
-        # ── S1-S4 mirrored ──────────────────────────────────────────────────
+        # ── S1-S4: today's low, then progressively lower prior lows with >= 20 pt separation ─────────
         S = [np.nan] * 4
         SD = [""] * 4
-        seq = [(L, i)]
+        seq_s = [(L, i)]
         for j in range(i - 1, -1, -1):
-            if lows[j] < seq[-1][0]:
-                seq.append((lows[j], j))
-                if len(seq) == 4:
+            if lows[j] <= seq_s[-1][0] - LEVEL_MIN_SEPARATION:
+                seq_s.append((lows[j], j))
+                if len(seq_s) == 4:
                     break
-        for k, (v, j) in enumerate(seq):
+        for k, (v, j_idx) in enumerate(seq_s):
             S[k] = round(v, 2)
-            SD[k] = dstr(j)
+            SD[k] = dstr(j_idx)
 
-        # ── gaps: expire the filled, create the new ─────────────────────────
-        open_gaps = [g for g in open_gaps
-                     if not ((g["type"] == "UP" and L <= g["price"])
-                             or (g["type"] == "DOWN" and H >= g["price"]))]
+
+        # ── gaps: create new FIRST, check fills SECOND (catches same-day fills)
         if i:
             pc = closes[i - 1]
-            if O - pc > GAP_MIN:
-                open_gaps.append({"type": "UP", "price": pc, "date": dstr(i)})
-            elif pc - O > GAP_MIN:
-                open_gaps.append({"type": "DOWN", "price": pc, "date": dstr(i)})
+            gap_points = round(O - pc, 2)
+            if gap_points > GAP_MIN:
+                open_gaps.append({"type": "GAP_UP", "price": round(pc, 2), "date": dstr(i)})
+            elif gap_points < -GAP_MIN:
+                open_gaps.append({"type": "GAP_DOWN", "price": round(pc, 2), "date": dstr(i)})
+
+        open_gaps = [g for g in open_gaps
+                     if not ((g["type"] == "GAP_UP" and L <= g["price"])
+                             or (g["type"] in ("GAP_DOWN", "DOWN") and H >= g["price"]))]
 
         up = sorted((g for g in open_gaps if g["price"] > C),
                     key=lambda g: g["price"])[:3]
@@ -268,6 +288,7 @@ def build_rows(df: pd.DataFrame) -> pd.DataFrame:
                 if 0 < dd and abs(dd - c) <= 1:
                     local.append(f"LocalBtm+{c}D")
 
+        alert_str = " ".join(alerts) or "None"
         rows.append({
             "Date": cur, "Open": O, "High": H, "Low": L, "Close": C,
             "Gap_Points": gap,
@@ -281,13 +302,18 @@ def build_rows(df: pd.DataFrame) -> pd.DataFrame:
             "Lower_Gap_1": D[0], "Lower_Gap_1_Date": DD[0],
             "Lower_Gap_2": D[1], "Lower_Gap_2_Date": DD[1],
             "Lower_Gap_3": D[2], "Lower_Gap_3_Date": DD[2],
+            "Gann_R1(45°)": gR[0], "Gann_R2(90°)": gR[1],
+            "Gann_R3(135°)": gR[2], "Gann_R4(180°)": gR[3],
+            "Gann_S1(45°)": gS[0], "Gann_S2(90°)": gS[1],
+            "Gann_S3(135°)": gS[2], "Gann_S4(180°)": gS[3],
             "Gann_R1_45": gR[0], "Gann_R2_90": gR[1],
             "Gann_R3_135": gR[2], "Gann_R4_180": gR[3],
             "Gann_S1_45": gS[0], "Gann_S2_90": gS[1],
             "Gann_S3_135": gS[2], "Gann_S4_180": gS[3],
             "Days_from_Major_High": d_hi if d_hi >= 0 else np.nan,
             "Days_from_Major_Low": d_lo if d_lo >= 0 else np.nan,
-            "Time_Cycle_Global": " ".join(alerts) or "None",
+            "Time_Cycle_Alert": alert_str,
+            "Time_Cycle_Global": alert_str,
             "Time_Cycle_Local": " ".join(local) or "None",
         })
 
@@ -295,103 +321,147 @@ def build_rows(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Excel
+# Excel Export & Forward Hit Backtest Engine
 # ═══════════════════════════════════════════════════════════════════════════
 
-RES_COLS = ["R1", "R2", "R3", "R4", "Upper_Gap_1", "Upper_Gap_2", "Upper_Gap_3",
-            "Gann_R1_45", "Gann_R2_90", "Gann_R3_135", "Gann_R4_180"]
-SUP_COLS = ["S1", "S2", "S3", "S4", "Lower_Gap_1", "Lower_Gap_2", "Lower_Gap_3",
-            "Gann_S1_45", "Gann_S2_90", "Gann_S3_135", "Gann_S4_180"]
+EXCEL_HEADERS = [
+    'Date', 'Open', 'High', 'Low', 'Close', 'Gap_Points',
+    'R1', 'R2', 'R3', 'R4',
+    'S1', 'S2', 'S3', 'S4',
+    'Upper_Gap_1', 'Upper_Gap_2', 'Upper_Gap_3',
+    'Lower_Gap_1', 'Lower_Gap_2', 'Lower_Gap_3',
+    'Gann_R1(45°)', 'Gann_R2(90°)', 'Gann_R3(135°)', 'Gann_R4(180°)',
+    'Gann_S1(45°)', 'Gann_S2(90°)', 'Gann_S3(135°)', 'Gann_S4(180°)',
+    'Days_from_Major_High', 'Days_from_Major_Low', 'Time_Cycle_Alert'
+]
 
 
 def write_excel(m: pd.DataFrame, path: Path) -> None:
     wb = Workbook()
     ws = wb.active
-    ws.title = "NIFTY Master Levels"
+    ws.title = "NIFTY Ultimate Master View"
 
-    headers = list(m.columns)
-    ws.append(headers)
-    idx = {h: i + 1 for i, h in enumerate(headers)}
-
-    arial = Font(name="Arial")
-    centre = Alignment(horizontal="center", vertical="center")
-    thin = Border(*[Side(style="thin", color="D9D9D9")] * 4)
+    ws.append(EXCEL_HEADERS)
 
     hi = m["High"].values
     lo = m["Low"].values
 
     for i in range(len(m)):
         r = m.iloc[i]
-        ws.append([r["Date"].strftime("%d-%b-%Y") if h == "Date"
-                   else (None if pd.isna(r[h]) else r[h]) for h in headers])
-        row = ws.max_row
+        excel_row = [
+            r["Date"].strftime("%d-%b-%Y") if pd.notna(r["Date"]) else "",
+            r["Open"], r["High"], r["Low"], r["Close"], r["Gap_Points"],
+            r["R1"], r["R2"], r["R3"], r["R4"],
+            r["S1"], r["S2"], r["S3"], r["S4"],
+            r["Upper_Gap_1"], r["Upper_Gap_2"], r["Upper_Gap_3"],
+            r["Lower_Gap_1"], r["Lower_Gap_2"], r["Lower_Gap_3"],
+            r["Gann_R1(45°)"], r["Gann_R2(90°)"], r["Gann_R3(135°)"], r["Gann_R4(180°)"],
+            r["Gann_S1(45°)"], r["Gann_S2(90°)"], r["Gann_S3(135°)"], r["Gann_S4(180°)"],
+            r["Days_from_Major_High"] if pd.notna(r["Days_from_Major_High"]) and r["Days_from_Major_High"] >= 0 else None,
+            r["Days_from_Major_Low"] if pd.notna(r["Days_from_Major_Low"]) and r["Days_from_Major_Low"] >= 0 else None,
+            r["Time_Cycle_Alert"]
+        ]
+        ws.append(excel_row)
+        curr_row_idx = ws.max_row
 
-        # colour a level on the day it was PROJECTED, based on the NEXT day
+        # Forward hit audit against session t+1 extremes
         if i < len(m) - 1:
-            nh, nl = hi[i + 1], lo[i + 1]
-            for h in SUP_COLS:                     # support broken -> GREEN
-                v = r[h]
-                if pd.notna(v) and nl <= v:
-                    c = ws.cell(row=row, column=idx[h])
-                    c.fill, c.font = BREAK_SUPPORT_FILL, BREAK_SUPPORT_FONT
-            for h in RES_COLS:                     # resistance broken -> RED
-                v = r[h]
-                if pd.notna(v) and nh >= v:
-                    c = ws.cell(row=row, column=idx[h])
-                    c.fill, c.font = BREAK_RESISTANCE_FILL, BREAK_RESISTANCE_FONT
+            next_H = hi[i + 1]
+            next_L = lo[i + 1]
 
-        for h in ("Time_Cycle_Global", "Time_Cycle_Local"):
-            if r[h] != "None":
-                c = ws.cell(row=row, column=idx[h])
-                c.fill, c.font = CYCLE_FILL, CYCLE_FONT
+            # Resistances (Columns 7 to 10: R1..R4)
+            for col_idx in range(7, 11):
+                val = ws.cell(row=curr_row_idx, column=col_idx).value
+                if val is not None and not pd.isna(val) and next_H >= val:
+                    ws.cell(row=curr_row_idx, column=col_idx).fill = HIT_GREEN_FILL
+                    ws.cell(row=curr_row_idx, column=col_idx).font = HIT_GREEN_FONT
 
-    for col in range(1, len(headers) + 1):
-        letter = get_column_letter(col)
-        # date columns need less room than prices
-        ws.column_dimensions[letter].width = 12 if headers[col-1].endswith("_Date") else 15
-        hc = ws.cell(row=1, column=col)
-        hc.fill, hc.font, hc.alignment = HEADER_FILL, HEADER_FONT, centre
+            # Supports (Columns 11 to 14: S1..S4)
+            for col_idx in range(11, 15):
+                val = ws.cell(row=curr_row_idx, column=col_idx).value
+                if val is not None and not pd.isna(val) and next_L <= val:
+                    ws.cell(row=curr_row_idx, column=col_idx).fill = HIT_RED_FILL
+                    ws.cell(row=curr_row_idx, column=col_idx).font = HIT_RED_FONT
 
-    for row_cells in ws.iter_rows(min_row=2):
-        for c in row_cells:
-            c.alignment = centre
-            c.border = thin
-            if c.font is None or c.font.name != "Arial":
-                if not c.fill or c.fill.start_color.rgb in (None, "00000000"):
-                    c.font = arial
+            # Upper Gaps (Columns 15 to 17: Upper_Gap_1..3)
+            for col_idx in range(15, 18):
+                val = ws.cell(row=curr_row_idx, column=col_idx).value
+                if val is not None and not pd.isna(val) and next_H >= val:
+                    ws.cell(row=curr_row_idx, column=col_idx).fill = HIT_GREEN_FILL
+                    ws.cell(row=curr_row_idx, column=col_idx).font = HIT_GREEN_FONT
 
-    ws.column_dimensions[get_column_letter(idx["Time_Cycle_Global"])].width = 22
-    ws.column_dimensions[get_column_letter(idx["Time_Cycle_Local"])].width = 22
+            # Lower Gaps (Columns 18 to 20: Lower_Gap_1..3)
+            for col_idx in range(18, 21):
+                val = ws.cell(row=curr_row_idx, column=col_idx).value
+                if val is not None and not pd.isna(val) and next_L <= val:
+                    ws.cell(row=curr_row_idx, column=col_idx).fill = HIT_RED_FILL
+                    ws.cell(row=curr_row_idx, column=col_idx).font = HIT_RED_FONT
+
+            # Gann R1-R4 (Columns 21 to 24)
+            for col_idx in range(21, 25):
+                val = ws.cell(row=curr_row_idx, column=col_idx).value
+                if val is not None and not pd.isna(val) and next_H >= val:
+                    ws.cell(row=curr_row_idx, column=col_idx).fill = HIT_GREEN_FILL
+                    ws.cell(row=curr_row_idx, column=col_idx).font = HIT_GREEN_FONT
+
+            # Gann S1-S4 (Columns 25 to 28)
+            for col_idx in range(25, 29):
+                val = ws.cell(row=curr_row_idx, column=col_idx).value
+                if val is not None and not pd.isna(val) and next_L <= val:
+                    ws.cell(row=curr_row_idx, column=col_idx).fill = HIT_RED_FILL
+                    ws.cell(row=curr_row_idx, column=col_idx).font = HIT_RED_FONT
+
+            alert_msg = r["Time_Cycle_Alert"]
+            if alert_msg and alert_msg != "None":
+                ws.cell(row=curr_row_idx, column=31).fill = CYCLE_FILL
+                ws.cell(row=curr_row_idx, column=31).font = CYCLE_FONT
+        else:
+            alert_msg = r["Time_Cycle_Alert"]
+            if alert_msg and alert_msg != "None":
+                ws.cell(row=curr_row_idx, column=31).fill = CYCLE_FILL
+                ws.cell(row=curr_row_idx, column=31).font = CYCLE_FONT
+
+    center_align = Alignment(horizontal="center", vertical="center")
+    thin_border = Border(left=Side(style='thin', color='CCCCCC'),
+                         right=Side(style='thin', color='CCCCCC'),
+                         top=Side(style='thin', color='CCCCCC'),
+                         bottom=Side(style='thin', color='CCCCCC'))
+
+    for col_idx, col in enumerate(ws.columns, 1):
+        letter = col[0].column_letter
+        ws.column_dimensions[letter].width = 14
+        ws.cell(row=1, column=col_idx).fill = HEADER_FILL
+        ws.cell(row=1, column=col_idx).font = HEADER_FONT
+
+    for row_cells in ws.iter_rows():
+        for cell in row_cells:
+            cell.alignment = center_align
+            cell.border = thin_border
+            if pd.isna(cell.value):
+                cell.value = ""
+
+    ws.column_dimensions['AE'].width = 18
     ws.freeze_panes = "B2"
 
-    # legend, so the colours are self-explaining
+    # Sheet 2: Legend & Calculation reference
     leg = wb.create_sheet("Legend")
-    leg["A1"] = "NIFTY Master Levels — legend"
+    leg["A1"] = "NIFTY Ultimate Master View — Calculation Guide & Legend"
     leg["A1"].font = Font(name="Arial", bold=True, size=13)
     notes = [
         ("", ""),
-        ("GREEN fill", "A SUPPORT level that was broken the following day "
-                       "(next day's low went below it)"),
-        ("RED fill", "A RESISTANCE level that was broken the following day "
-                     "(next day's high went above it)"),
-        ("AMBER fill", "A Gann time-cycle day"),
+        ("GREEN fill (#C6EFCE)", "A RESISTANCE level that was hit the following day (next day's High >= level)"),
+        ("RED fill (#FFC7CE)", "A SUPPORT level that was hit the following day (next day's Low <= level)"),
+        ("AMBER fill (#FFEB9C)", "A Gann Time Cycle resonance alert (+/- 1 calendar day window)"),
         ("", ""),
-        ("R1-R4", "Today's high, then progressively higher prior highs walking back"),
-        ("S1-S4", "Today's low, then progressively lower prior lows walking back"),
-        ("Upper/Lower Gap", "Unfilled gap closes above / below today's close"),
-        ("Gann R/S", "(sqrt(Close) + deg/180)^2 at 45/90/135/180 degrees. "
-                     "Note these sit at a near-constant PERCENTAGE from price "
-                     "(~0.32/0.65/0.97/1.29%), so they are a percentage grid "
-                     "rather than discovered structure."),
-        ("*_Date columns", "The session that FORMED each level. R1 is today's "
-                           "high, R2 the next higher high walking backwards — "
-                           "which can be weeks or months old, and that is "
-                           "correct, not a gap in the data. The date is what "
-                           "goes on the chart label."),
-        ("Time_Cycle_Global", "Days from the single highest high / lowest low "
-                              "in the whole file"),
-        ("Time_Cycle_Local", "Days from the rolling 252-day high / low — fires "
-                             "far more often and is anchored to recent structure"),
+        ("R1-R4", "Dynamic Stepped Resistances: Today's High, then walking backwards finding higher prior highs"),
+        ("S1-S4", "Dynamic Stepped Supports: Today's Low, then walking backwards finding lower prior lows"),
+        ("Upper Gaps (U1-U3)", "Unfilled gaps above today's close (> Close_t), sorted in ascending order"),
+        ("Lower Gaps (Low_G1-3)", "Unfilled gaps below today's close (< Close_t), sorted in descending order"),
+        ("Gann R1-R4", "Gann Square of 9 bullish harmonics: (sqrt(Close) + deg/180)^2 for 45°, 90°, 135°, 180°"),
+        ("Gann S1-S4", "Gann Square of 9 bearish harmonics: (sqrt(Close) - deg/180)^2 for 45°, 90°, 135°, 180°"),
+        ("Days from Major High", "Calendar days elapsed from the global highest high in the dataset"),
+        ("Days from Major Low", "Calendar days elapsed from the global lowest low in the dataset"),
+        ("Time Cycle Alert", "Harmonic resonance notifications across cycle set: 30, 45, 60, 90, 120, 135, 144, 180, 225, 270, 315, 360 days"),
     ]
     for i, (a, b) in enumerate(notes, start=2):
         leg[f"A{i}"] = a
@@ -399,7 +469,7 @@ def write_excel(m: pd.DataFrame, path: Path) -> None:
         leg[f"A{i}"].font = Font(name="Arial", bold=True)
         leg[f"B{i}"].font = Font(name="Arial")
         leg[f"B{i}"].alignment = Alignment(wrap_text=True, vertical="top")
-    leg.column_dimensions["A"].width = 22
+    leg.column_dimensions["A"].width = 24
     leg.column_dimensions["B"].width = 95
 
     wb.save(path)
@@ -499,39 +569,64 @@ def dated_levels(df: pd.DataFrame, as_of: int | None = None,
     def dstr(j):
         return dates.iloc[j].strftime("%d-%m-%Y")
 
-    # ── resistances: today's high, then higher highs going back ─────────────
+    # ── resistances: today's high, then higher highs going back with >= 20 pt separation ─────────────
     res = [(dstr(i), float(highs[i]))]
-    for j in range(i - 1, -1, -1):
-        if highs[j] > res[-1][1]:
-            res.append((dstr(j), float(highs[j])))
-            if len(res) == n_levels:
-                break
+    j = i - 1
+    while j >= 0 and len(res) < n_levels:
+        if highs[j] >= res[-1][1] + LEVEL_MIN_SEPARATION:
+            best_h, best_idx = float(highs[j]), j
+            k = j - 1
+            while k >= 0 and highs[k] > best_h and (highs[k] - best_h) < LEVEL_MIN_SEPARATION:
+                best_h, best_idx = float(highs[k]), k
+                k -= 1
+            res.append((dstr(best_idx), best_h))
+            j = k
+        else:
+            j -= 1
 
+    # ── supports: today's low, then lower lows going back with >= 20 pt separation ─────────────────
     sup = [(dstr(i), float(lows[i]))]
     for j in range(i - 1, -1, -1):
-        if lows[j] < sup[-1][1]:
+        if lows[j] <= sup[-1][1] - LEVEL_MIN_SEPARATION:
             sup.append((dstr(j), float(lows[j])))
             if len(sup) == n_levels:
                 break
+
 
     # ── unfilled gaps, walked forward so fills are honoured ─────────────────
     open_gaps: list[dict] = []
     for k in range(1, i + 1):
         o, h, l = opens[k], highs[k], lows[k]
-        open_gaps = [g for g in open_gaps
-                     if not ((g["type"] == "UP" and l <= g["price"])
-                             or (g["type"] == "DOWN" and h >= g["price"]))]
         pc = closes[k - 1]
-        if o - pc > GAP_MIN:
-            open_gaps.append({"type": "UP", "price": float(pc), "date": dstr(k)})
-        elif pc - o > GAP_MIN:
-            open_gaps.append({"type": "DOWN", "price": float(pc), "date": dstr(k)})
+        gap_points = round(o - pc, 2)
+        if gap_points > GAP_MIN:
+            open_gaps.append({"type": "GAP_UP", "price": round(float(pc), 2), "date": dstr(k)})
+        elif gap_points < -GAP_MIN:
+            open_gaps.append({"type": "GAP_DOWN", "price": round(float(pc), 2), "date": dstr(k)})
+
+        open_gaps = [g for g in open_gaps
+                     if not ((g["type"] == "GAP_UP" and l <= g["price"])
+                             or (g["type"] in ("GAP_DOWN", "DOWN") and h >= g["price"]))]
 
     c = float(closes[i])
     upper = sorted((g for g in open_gaps if g["price"] > c),
                    key=lambda g: g["price"])[:n_gaps]
     lower = sorted((g for g in open_gaps if g["price"] < c),
                    key=lambda g: -g["price"])[:n_gaps]
+
+    gR = [gann_sq9(c, d) for d in GANN_DEGREES]
+    gS = [gann_sq9(c, -d) for d in GANN_DEGREES]
+
+    g_hi_i, g_lo_i = int(np.argmax(highs)), int(np.argmin(lows))
+    cur_dt = dates.iloc[i]
+    d_hi = (cur_dt - dates.iloc[g_hi_i]).days
+    d_lo = (cur_dt - dates.iloc[g_lo_i]).days
+    alerts = []
+    for lbl, dd in (("Top", d_hi), ("Btm", d_lo)):
+        if dd > 0:
+            for c_day in GANN_TIME_CYCLES:
+                if abs(dd - c_day) <= 1:
+                    alerts.append(f"{lbl}+{c_day}D")
 
     return {
         "date": dates.iloc[i].strftime("%d-%m-%Y"),
@@ -540,6 +635,11 @@ def dated_levels(df: pd.DataFrame, as_of: int | None = None,
         "supports": sup,
         "upper_gaps": [(g["date"], g["price"]) for g in upper],
         "lower_gaps": [(g["date"], g["price"]) for g in lower],
+        "gann_r": gR,
+        "gann_s": gS,
+        "days_from_major_high": d_hi if d_hi >= 0 else None,
+        "days_from_major_low": d_lo if d_lo >= 0 else None,
+        "time_cycle_alert": " ".join(alerts) or "None",
     }
 
 

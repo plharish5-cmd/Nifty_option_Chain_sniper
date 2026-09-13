@@ -77,22 +77,6 @@ def render(ctx, refresh_control=None, ohlc_cache=None,
     if refresh_control is not None:
         refresh_control("chartlevels", (ohlc_cache,) if ohlc_cache else (),
                         pull_ohlc=True, note="daily OHLC")
-    try:
-        import build_master as _bmx
-        _nw = _bmx.load_all(config.OHLC_DIR, quiet=True)["Date"].max().date()
-        _bh = (now.date() - _nw).days
-        if _bh > 1:
-            _sessions = sum(1 for i in range(1, _bh + 1)
-                            if (now.date() - timedelta(days=i)).weekday() < 5)
-            st.error(
-                f"**Levels are built from {_nw:%d-%b}, which is {_bh} days "
-                f"and about {_sessions} trading sessions ago.** Every number "
-                f"below is therefore stale — they are correct for that close "
-                f"and wrong for today. Press Refresh above; it now fetches "
-                f"missing sessions at any hour rather than only after "
-                f"{config.OHLC_APPEND_AFTER:%H:%M}.")
-    except Exception:                                       # noqa: BLE001
-        pass
     st.caption("Dated levels for marking up your chart. Copy the block, paste "
                "into Kite or TradingView. Rebuilt automatically whenever the "
                "daily OHLC updates after 15:30.")
@@ -120,25 +104,46 @@ def render(ctx, refresh_control=None, ohlc_cache=None,
         except Exception as _pe:                            # noqa: BLE001
             _txt += f"\n\n🟣 PDC unavailable: {_pe}"
 
-        # How old is the underlying file? This is the thing that was silently
-        # wrong: Refresh re-read a CSV that was itself a day behind, so the
-        # levels were correct for the data and stale for the market.
+        # How old is the underlying file? Check against completed trading sessions
+        # rather than pure calendar days, so pre-market, intraday, and weekends
+        # correctly reflect the most recent settled close.
         _last = _ohlc["Date"].max()
-        _age = (pd.Timestamp(now.date()) - _last).days
-        if _age >= 1:
+        _last_dt = _last.date() if hasattr(_last, "date") else _last
+        _append_cutoff = getattr(config, "OHLC_APPEND_AFTER", config.MARKET_CLOSE)
+        _missing_sessions = [
+            _last_dt + timedelta(days=i)
+            for i in range(1, (now.date() - _last_dt).days + 1)
+            if (_last_dt + timedelta(days=i)).weekday() < 5
+            and ((_last_dt + timedelta(days=i)) < now.date() or now.time() >= _append_cutoff)
+        ]
+        _sessions_behind = len(_missing_sessions)
+
+        if _sessions_behind > 0:
             _b1, _b2 = st.columns([3, 1])
             _b1.error(
-                f"**Levels are from {_last:%d-%b-%Y} — {_age} session(s) "
+                f"**Levels are from {_last:%d-%b-%Y} — {_sessions_behind} session(s) "
                 f"behind.** Today is {now:%d-%b-%Y}. The OHLC file has not "
                 f"been updated, so these levels do not include the most "
-                f"recent session(s). Refresh only re-reads the file; it does "
-                f"not fetch a new bar.")
+                f"recent completed session(s). Refresh only re-reads the file; "
+                f"it does not fetch a new bar.")
             if _b2.button("Pull latest bar now", use_container_width=True,
                           key="pull_bar_chart"):
                 try:
-                    import nse_client as _pc
-                    _pcl = _pc.NSEClient(); _pcl._bootstrap()
-                    _ok, _m = md.backfill_ohlc(_pcl, config.OHLC_BACKFILL_DAYS)
+                    _ok, _m = False, ""
+                    # 1. Primary: DhanHQ
+                    try:
+                        _ok, _m = md.backfill_ohlc_dhan(config.OHLC_BACKFILL_DAYS)
+                    except Exception:
+                        pass
+                    # 2. Fallback: NSE
+                    if not _ok:
+                        try:
+                            import nse_client as _pc
+                            _pcl = _pc.NSEClient(); _pcl._bootstrap()
+                            _ok, _m = md.backfill_ohlc(_pcl, config.OHLC_BACKFILL_DAYS)
+                        except Exception as _ne:
+                            _m = f"NSE unreachable: {_ne}"
+
                     if _ok:
                         st.success(_m)
                         import build_master as _b

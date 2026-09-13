@@ -24,8 +24,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import streamlit as st
 
 import config
+from ui_utils import render_html, _render_html
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("journal")
@@ -578,17 +580,16 @@ def render_journal_tab():
         m5.metric("Session Discipline", audit.overtrading_level)
 
         # 3. Behavioral Anti-Impulse Coach Card
-        st.markdown(
+        feedback_html = "".join(f"<div style='margin-bottom: 6px; color: #cbd5e1;'>{h}</div>" for h in audit.coach_feedback)
+        border_col = '#E8503A' if audit.revenge_trades_count > 0 or audit.total_trades >= 6 else '#0F9D58'
+        _render_html(
             f"""
-            <div style="background: #1E222D; border: 2px solid {'#E8503A' if audit.revenge_trades_count > 0 or audit.total_trades >= 6 else '#0F9D58'}; border-radius: 10px; padding: 16px 22px; margin: 15px 0;">
-                <b style="font-size: 16px; color: #FFF;">🧠 Anti-Impulse Psychological Audit</b>
-                <div style="margin-top: 8px;">
-            """,
-            unsafe_allow_html=True
+            <div style="background: #1E222D; border: 2px solid {border_col}; border-radius: 10px; padding: 16px 22px; margin: 15px 0;">
+                <div style="font-size: 16px; font-weight: 700; color: #FFF; margin-bottom: 8px;">🧠 Anti-Impulse Psychological Audit</div>
+                {feedback_html}
+            </div>
+            """
         )
-        for h in audit.coach_feedback:
-            st.markdown(h)
-        st.markdown("</div></div>", unsafe_allow_html=True)
 
         # 4. Detailed Trade-by-Trade Table
         st.markdown("### 📊 Completed Trades & Brokerage Audit")
@@ -630,15 +631,16 @@ def render_journal_tab():
             tot_s = sum(t.charges["stt"] for t in trades)
             tot_e = sum(t.charges["exchange"] for t in trades)
             tot_g = sum(t.charges["gst"] for t in trades)
-            st.markdown(
+            _render_html(
                 f"""
-                - **Dhan Brokerage** (₹20/order): **₹{tot_b:,.2f}**
-                - **STT (Securities Transaction Tax - 0.125%)**: **₹{tot_s:,.2f}**
-                - **NSE Exchange Charges (0.05%)**: **₹{tot_e:,.2f}**
-                - **GST (18% on Brokerage + Exch)**: **₹{tot_g:,.2f}**
-                - **Total Drain on Account**: <span style="color:#E8503A;font-weight:700;">₹{audit.total_charges:,.2f}</span>
-                """,
-                unsafe_allow_html=True
+                <div style="font-size: 13px; line-height: 1.6; color: #cbd5e1;">
+                    • <b>Dhan Brokerage</b> (₹20/order): <b>₹{tot_b:,.2f}</b><br>
+                    • <b>STT (Securities Transaction Tax - 0.125%)</b>: <b>₹{tot_s:,.2f}</b><br>
+                    • <b>NSE Exchange Charges (0.05%)</b>: <b>₹{tot_e:,.2f}</b><br>
+                    • <b>GST (18% on Brokerage + Exch)</b>: <b>₹{tot_g:,.2f}</b><br>
+                    • <b>Total Drain on Account</b>: <span style="color:#E8503A;font-weight:700;">₹{audit.total_charges:,.2f}</span>
+                </div>
+                """
             )
     else:
         st.info("💡 Paste your copied Dhan order lines above or click **'📋 Load Sample Trades'** to see the P&L calculator and Anti-Impulse Coach in action.")

@@ -16,14 +16,28 @@ Canonical columns:
 from __future__ import annotations
 
 import re
+from datetime import datetime
 import numpy as np
 import pandas as pd
 
 COLUMNS = [
-    "strike",
+    "strike", "expiry",
     "ce_oi", "ce_chg_oi", "ce_vol", "ce_iv", "ce_ltp", "ce_chg", "ce_bid", "ce_ask",
     "pe_oi", "pe_chg_oi", "pe_vol", "pe_iv", "pe_ltp", "pe_chg", "pe_bid", "pe_ask",
 ]
+
+
+def _norm_exp(exp: str | None) -> str | None:
+    """Normalize expiry date string to '%d-%b-%Y' (e.g. '15-Sep-2026')."""
+    if not exp:
+        return None
+    s = str(exp).strip()
+    for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%d-%b-%Y")
+        except ValueError:
+            pass
+    return s
 
 
 def _num(v) -> float:
@@ -46,24 +60,34 @@ def parse_json(payload: dict, expiry: str | None = None) -> pd.DataFrame:
     containing every expiry, filtered here) and the v3 endpoint (already
     filtered server-side by the expiry parameter).
 
-    If filtering by expiry yields nothing, we assume the payload was already
-    filtered and use every row — otherwise a v3 response whose rows carry no
-    expiryDate field would silently produce an empty chain.
+    If expiry='all', captures all expiries present without filtering.
+    Always adds 'expiry' column to the returned DataFrame.
     """
     records = payload.get("records", payload)
     rows_in = records.get("data") or payload.get("filtered", {}).get("data") or []
-    if expiry is None:
-        dates = records.get("expiryDates") or payload.get("expiryDates") or []
-        expiry = dates[0] if dates else None
+    dates = records.get("expiryDates") or payload.get("expiryDates") or []
+
+    filter_all = (expiry == "all")
+    if expiry is None or expiry == "nearest":
+        target_expiry = dates[0] if dates else None
+    elif expiry == "all":
+        target_expiry = None
+    else:
+        target_expiry = expiry
+
+    norm_target = _norm_exp(target_expiry)
 
     def _rows(match_expiry: bool) -> list[dict]:
         out: list[dict] = []
         for item in rows_in:
-            if match_expiry and expiry and item.get("expiryDate") != expiry:
-                continue
             ce, pe = item.get("CE") or {}, item.get("PE") or {}
+            raw_item_exp = item.get("expiryDate") or ce.get("expiryDate") or pe.get("expiryDate") or target_expiry
+            norm_item_exp = _norm_exp(raw_item_exp)
+            if match_expiry and norm_target and norm_item_exp != norm_target:
+                continue
             out.append({
                 "strike":     _num(item.get("strikePrice")),
+                "expiry":     norm_item_exp or (str(raw_item_exp) if raw_item_exp else None),
                 "ce_oi":      _num(ce.get("openInterest")),
                 "ce_chg_oi":  _num(ce.get("changeinOpenInterest")),
                 "ce_vol":     _num(ce.get("totalTradedVolume")),
@@ -83,7 +107,7 @@ def parse_json(payload: dict, expiry: str | None = None) -> pd.DataFrame:
             })
         return out
 
-    rows = _rows(match_expiry=True) or _rows(match_expiry=False)
+    rows = _rows(match_expiry=(not filter_all)) or _rows(match_expiry=False)
     if not rows:
         raise ValueError(
             f"no option rows in payload (keys={list(payload)[:6]}, "
@@ -91,7 +115,8 @@ def parse_json(payload: dict, expiry: str | None = None) -> pd.DataFrame:
         )
 
     df = pd.DataFrame(rows, columns=COLUMNS)
-    return df.dropna(subset=["strike"]).sort_values("strike").reset_index(drop=True)
+    sort_cols = ["strike", "expiry"] if "expiry" in df.columns else ["strike"]
+    return df.dropna(subset=["strike"]).sort_values(sort_cols).reset_index(drop=True)
 
 
 # ── CSV export ───────────────────────────────────────────────────────────────
@@ -120,6 +145,7 @@ def parse_csv(path: str) -> pd.DataFrame:
     for c in _CSV_ORDER:
         raw[c] = raw[c].map(_num)
 
+    raw["expiry"] = None
     df = raw[COLUMNS].copy()
     return df.dropna(subset=["strike"]).sort_values("strike").reset_index(drop=True)
 
@@ -157,3 +183,42 @@ def is_expired_chain(df: pd.DataFrame, spot: float, tol: float = 0.5) -> bool:
         if not np.isnan(r.pe_ltp):
             tv.append(r.pe_ltp - max(0.0, r.strike - spot))
     return bool(tv) and float(np.nanmedian(tv)) <= tol
+
+
+# ── Aliases & Unified parse() entrypoint ─────────────────────────────────────
+load_csv = parse_csv
+
+
+def parse(raw, expiry: str | None = None) -> tuple[pd.DataFrame, dict]:
+    """
+    Unified entrypoint returning (df, meta).
+    Handles JSON payload dict, CSV file path, or existing DataFrame.
+    """
+    from pathlib import Path
+    if isinstance(raw, dict):
+        df = parse_json(raw, expiry=expiry)
+        try:
+            spot = infer_spot(df)
+        except Exception:
+            records = raw.get("records", raw)
+            spot = float(records.get("underlyingValue", 0.0) or 0.0)
+        records = raw.get("records", raw) if isinstance(raw, dict) else {}
+        ts = records.get("timestamp", "") if isinstance(records, dict) else ""
+        meta = {"spot": spot, "timestamp": ts, "expiry": expiry}
+        return df, meta
+    elif isinstance(raw, (str, Path)):
+        df = parse_csv(str(raw))
+        try:
+            spot = infer_spot(df)
+        except Exception:
+            spot = 0.0
+        meta = {"spot": spot, "timestamp": "", "expiry": expiry}
+        return df, meta
+    elif isinstance(raw, pd.DataFrame):
+        try:
+            spot = infer_spot(raw)
+        except Exception:
+            spot = 0.0
+        meta = {"spot": spot, "timestamp": "", "expiry": expiry}
+        return raw, meta
+    return pd.DataFrame(), {"spot": 0.0, "timestamp": "", "expiry": expiry}

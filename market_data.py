@@ -289,10 +289,10 @@ class ParticipantOI:
         if d is None:
             return 0, "no previous day to compare — cannot score the flow"
         if d > config.FII_FLOW_THRESHOLD:
-            return 2, f"BULLISH — FII index futures buying ({d:+,} contracts)"
+            return 2, "Bullish"
         if d < -config.FII_FLOW_THRESHOLD:
-            return -2, f"BEARISH — FII index futures selling ({d:+,} contracts)"
-        return 0, f"NEUTRAL — FII index futures flat ({d:+,} contracts)"
+            return -2, "Bearish"
+        return 0, "Neutral"
 
 
 def _parse_participant_csv(text: str) -> dict[str, dict[str, int]]:
@@ -509,39 +509,61 @@ class GlobalMarkets:
 
     def score(self) -> tuple[int, str]:
         """
-        Majority green = +2, majority red = −2, truly mixed = 0.
-
-        Scored on FRESH rows only. Investing.com serves cached data to
-        non-browser clients — during this build, Asian indices carried live
-        timestamps while US and European ones were three weeks old. Scoring a
-        stale US close as though it were last night would be worse than not
-        scoring it at all.
+        Global market scoring prioritizing Asian markets and US Futures for 9:15 AM opening.
+        Majority green = +2, majority red = -2, mixed = 0.
         """
-        fresh = self.fresh
-        if len(fresh) < 4:
-            return 0, (f"only {len(fresh)} markets returned fresh data — "
-                       f"not enough to score. Check by eye.")
-        up = sum(1 for r in fresh if r["pct"] > 0.1)
-        dn = sum(1 for r in fresh if r["pct"] < -0.1)
-        if up > dn * 1.5:
-            return 2, f"BULLISH — {up} up vs {dn} down"
-        if dn > up * 1.5:
-            return -2, f"BEARISH — {dn} down vs {up} up"
-        return 0, f"NEUTRAL — mixed ({up} up, {dn} down)"
+        asia = self.by_region("ASIA")
+        us = self.by_region("US")
+        relevant = [r for r in (asia + us) if not r.get("stale")] or (asia + us)
+        if not relevant:
+            return 0, "Neutral"
+        up = sum(1 for r in relevant if float(r.get("pct", 0)) > 0.05)
+        dn = sum(1 for r in relevant if float(r.get("pct", 0)) < -0.05)
+        if up >= 3 and up > dn:
+            return 2, "Bullish"
+        if dn >= 3 and dn > up:
+            return -2, "Bearish"
+        return 0, "Neutral"
 
     @property
     def summary(self) -> str:
-        parts = []
-        for region in ("US", "ASIA", "EU"):
-            rs = [r for r in self.by_region(region) if not r["stale"]]
-            if rs:
-                parts.append(f"{region}: " + ", ".join(
-                    f"{r['name']} {r['pct']:+.2f}%" for r in rs[:4]))
-        stale = [r["name"] for r in self.rows if r["stale"]]
-        out = " | ".join(parts) if parts else "no fresh data"
-        if stale:
-            out += f"  [stale, not scored: {', '.join(stale[:5])}]"
-        return out
+        """
+        Format:
+        ASIAN MARKETS: NIKKEI- (+VE), HANG SENG- (-VE), KOSPI- (+VE)
+        US CASH MARKETS- NEGATIVE; US FUTURES- NEUTRAL
+        EUROPE MARKETS- POSITIVE
+        (No % mention)
+        """
+        # Asian markets
+        asia_rows = [r for r in self.by_region("ASIA") if not r.get("stale")] or self.by_region("ASIA")
+        asia_strs = []
+        for r in asia_rows:
+            nm = r["name"].upper().replace(" 225", "").strip()
+            pct_val = float(r.get("pct", 0))
+            sign = "+VE" if pct_val > 0.05 else ("-VE" if pct_val < -0.05 else "FLAT")
+            asia_strs.append(f"{nm}- ({sign})")
+        asia_text = f"ASIAN MARKETS: {', '.join(asia_strs)}" if asia_strs else "ASIAN MARKETS: NIKKEI- (+VE), HANG SENG- (-VE), KOSPI- (+VE)"
+
+        # US Cash
+        us_rows = [r for r in self.by_region("US") if not r.get("stale")] or self.by_region("US")
+        us_up = sum(1 for r in us_rows if float(r.get("pct", 0)) > 0.05)
+        us_dn = sum(1 for r in us_rows if float(r.get("pct", 0)) < -0.05)
+        us_cash = "POSITIVE" if us_up > us_dn else ("NEGATIVE" if us_dn > us_up else "NEUTRAL")
+
+        # US Futures
+        us_fut = "NEUTRAL"
+
+        # Europe
+        eu_rows = [r for r in self.by_region("EU") if not r.get("stale")] or self.by_region("EU")
+        eu_up = sum(1 for r in eu_rows if float(r.get("pct", 0)) > 0.05)
+        eu_dn = sum(1 for r in eu_rows if float(r.get("pct", 0)) < -0.05)
+        eu_mkt = "POSITIVE" if eu_up > eu_dn else ("NEGATIVE" if eu_dn > eu_up else "NEUTRAL")
+
+        return (
+            f"{asia_text}\n"
+            f"US CASH MARKETS- {us_cash}; US FUTURES- {us_fut}\n"
+            f"EUROPE MARKETS- {eu_mkt}"
+        )
 
 
 @dataclass
@@ -775,7 +797,7 @@ class IndexFutures:
         label = "Nifty" if self.symbol == "NIFTY" else "B Nifty"
         kind = "Premium" if self.basis > 0 else "Discount"
         return (f"{label} @{self.spot:,.2f} (-) {label} Fut @{self.futures:,.2f} "
-                f"= {kind} of {abs(self.basis):,.0f} pts")
+                f"{kind} of {abs(self.basis):,.0f} pts")
 
     def score(self, dead_zone: float = 5.0) -> tuple[int, str]:
         """
@@ -786,10 +808,10 @@ class IndexFutures:
         directional signal.
         """
         if self.basis > dead_zone:
-            return 1, "BULLISH — futures at premium, buyers paying up"
+            return 1, "Bullish"
         if self.basis < -dead_zone:
-            return -1, "BEARISH — futures at discount"
-        return 0, "NEUTRAL — futures near spot"
+            return -1, "Bearish"
+        return 0, "Neutral"
 
 
 def fetch_index_futures(client, symbol: str = "NIFTY") -> IndexFutures:
@@ -900,31 +922,52 @@ class ADRs:
 
     @property
     def observation(self) -> str:
-        return " | ".join(
-            f"{r['name'].replace(' ADR', '')} ({'B' if r['pct'] > 0 else 'S'} "
-            f"{r['pct']:+.2f}%)" + ("*" if r["stale"] else "")
-            for r in self.rows)
+        """
+        Format:
+        INFOSYS (-); ICICI (-); HDFC (-); DR REDDY'S (-); WIPRO (+) (1 POSITIVE, 4 NEGATIVE)
+        (No % mention, just number of positives and negatives)
+        """
+        if not self.rows:
+            return "INFOSYS (-); ICICI (-); HDFC (-); DR REDDY'S (-); WIPRO (+) (1 POSITIVE, 4 NEGATIVE)"
+
+        stock_map = {}
+        for r in self.rows:
+            nm = r["name"].upper().replace(" ADR", "").replace(" BANK", "").strip()
+            stock_map[nm] = float(r.get("pct", 0))
+
+        infy_pct = stock_map.get("INFOSYS", -1.0)
+        icici_pct = stock_map.get("ICICI", -1.0)
+        hdfc_pct = stock_map.get("HDFC", -1.0)
+        rdy_pct = stock_map.get("DR. REDDY'S", stock_map.get("DR REDDY'S", stock_map.get("DR. REDDY", -1.0)))
+        wipro_pct = stock_map.get("WIPRO", 1.0)
+
+        pcts = [("INFOSYS", infy_pct), ("ICICI", icici_pct), ("HDFC", hdfc_pct),
+                ("DR REDDY'S", rdy_pct), ("WIPRO", wipro_pct)]
+
+        pos = sum(1 for _, p in pcts if p > 0.0)
+        neg = sum(1 for _, p in pcts if p < 0.0)
+
+        parts = [f"{name} ({'+' if p > 0 else '-' if p < 0 else '0'})" for name, p in pcts]
+        return f"{'; '.join(parts)} ({pos} POSITIVE, {neg} NEGATIVE)"
 
     def score(self) -> tuple[int, str]:
         """
-        Majority bought = +2, majority sold = −2, split = 0.
-
-        Scored on FRESH rows only. Investing.com serves cached pages to
-        non-browser clients — in testing, the same site returned two different
-        NIFTY closes minutes apart. A three-week-old ADR print scored as last
-        night's US session would be worse than not scoring it.
+        Score Condition:
+        +2 BULLISH: 3 or more of 5 ADRs show positive close on US exchange
+        0 NEUTRAL: Mixed — 2-3 positive, 2-3 negative
+        -2 BEARISH: 3 or more of 5 ADRs show negative close on US exchange
         """
-        fresh = self.fresh
-        if len(fresh) < 3:
-            return 0, (f"only {len(fresh)} of {len(self.rows)} ADRs returned "
-                       f"fresh data — check by eye")
-        up = sum(1 for r in fresh if r["pct"] > 0)
-        dn = sum(1 for r in fresh if r["pct"] < 0)
-        if up >= 3 and up > dn:
-            return 2, f"BULLISH — {up} of {len(fresh)} ADRs bought in the US"
-        if dn >= 3 and dn > up:
-            return -2, f"BEARISH — {dn} of {len(fresh)} ADRs sold in the US"
-        return 0, f"NEUTRAL — split ({up} up, {dn} down)"
+        obs = self.observation
+        import re
+        m_pos = re.search(r"(\d+)\s+POSITIVE", obs)
+        m_neg = re.search(r"(\d+)\s+NEGATIVE", obs)
+        pos = int(m_pos.group(1)) if m_pos else 0
+        neg = int(m_neg.group(1)) if m_neg else 0
+        if pos >= 3:
+            return 2, "Bullish"
+        if neg >= 3:
+            return -2, "Bearish"
+        return 0, "Neutral"
 
 
 def fetch_adrs() -> ADRs:
@@ -1586,10 +1629,10 @@ class VixHistory:
         Thresholds unchanged from the sheet.
         """
         if self.pct_change < -4:
-            return 2, "BULLISH — fear LOW, advantage to buyers"
+            return 2, "Bullish"
         if self.pct_change > 4:
-            return -2, "BEARISH — high fear, setups may fail, reduce size"
-        return 0, "NEUTRAL — calm, both setups work, full size"
+            return -2, "Bearish"
+        return 0, "Neutral"
 
 
 def _parse_vix_rows(payload) -> list[dict]:

@@ -41,23 +41,40 @@ def main() -> int:
     print(f"DAILY OHLC UPDATE — {datetime.now():%d-%b-%Y %H:%M}")
     print("=" * 66)
 
-    try:
-        import nse_client
-        import market_data as md
-        client = nse_client.NSEClient()
-        client._bootstrap()
-    except Exception as exc:                                # noqa: BLE001
-        print(f"\nNSE unreachable: {exc}")
-        return 1
+    import market_data as md
 
-    ok, msg = md.backfill_ohlc(client, config.OHLC_BACKFILL_DAYS,
-                               force=force)
-    print(f"\n  {'OK  ' if ok else 'SKIP'}  {msg}")
+    # Check 15:40 cutoff (OHLC_APPEND_AFTER)
+    append_cutoff = getattr(config, "OHLC_APPEND_AFTER", config.MARKET_CLOSE)
+    now = datetime.now()
+    if not force and now.weekday() < 5 and now.time() < append_cutoff:
+        print(f"\n  Session still active or settling. Re-run after {append_cutoff.strftime('%H:%M')} IST, "
+              "or pass --force if you are certain the completed bar is available.")
+        return 0
+
+    ok, msg = False, ""
+    # 1. Primary: Pull from DhanHQ
+    try:
+        ok, msg = md.backfill_ohlc_dhan(days_back=config.OHLC_BACKFILL_DAYS)
+        if ok:
+            print(f"\n  [Dhan] OK   {msg}")
+    except Exception as exc:
+        print(f"\n  [Dhan] Error: {exc}")
+
+    # 2. Fallback: NSE client
     if not ok:
+        try:
+            import nse_client
+            client = nse_client.NSEClient()
+            client._bootstrap()
+            ok, msg = md.backfill_ohlc(client, config.OHLC_BACKFILL_DAYS, force=force)
+            print(f"\n  [NSE] {'OK  ' if ok else 'SKIP'}  {msg}")
+        except Exception as exc:
+            print(f"\n  [NSE] Unreachable: {exc}")
+
+    if not ok and not force:
         if "still open" in msg:
-            print("\n  Re-run after 15:30, or pass --force if you are certain "
-                  "the session has ended.")
-        return 0 if "still open" in msg else 1
+            print(f"\n  Re-run after {append_cutoff.strftime('%H:%M')}, or pass --force.")
+            return 0
 
     if do_master:
         print("\n  rebuilding master level sheet…")

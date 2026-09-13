@@ -22,6 +22,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import strategy1 as s1
+from ui_utils import render_html, _render_html
 
 GREEN, RED, SLATE, GOLD = "#2FBF71", "#E8503A", "#8FA6B8", "#C9A227"
 BLUE, AMBER = "#4A9BD1", "#E0A030"
@@ -145,14 +146,28 @@ def render(pa_frames: dict | None, prev_close: float | None = None,
     d, pats = res.frame, res.patterns
     summ = s1.summary(res)
 
+    # ── Multi-Timeframe Higher High / Lower High / Higher Low / Lower Low Structure ──
+    try:
+        import market_structure
+        _spot = float(d["close"].iloc[-1]) if not d.empty else None
+        market_structure.render_market_structure_component(
+            spot=_spot,
+            pa_frames=pa_frames,
+            compact=True,
+            title="🏛️ Higher Timeframe Structural Alignment (1M · 1W · 1D · 30M · 15M)"
+        )
+    except Exception:
+        pass
+
     # ── the banner ──────────────────────────────────────────────────────────
     live = res.open_signal
     armed = res.armed_signal
     if live:
         colour, head = (GREEN if live.direction == "LONG" else RED), \
             f"IN {'CE' if live.direction == 'LONG' else 'PE'} TRADE"
+        runner_extra = f" · ⚡ <b>SMC RUNNER ACTIVE</b> (Target: {live.smc_target:,.0f})" if getattr(live, "smc_runner", False) and live.smc_target else ""
         sub = (f"Entered {live.trigger:,.0f} at {live.entry_ts:%H:%M} · "
-               f"stop now {live.stop:,.0f} · trailing every candle")
+               f"stop now {live.stop:,.0f} · trailing every candle{runner_extra}")
     elif armed:
         colour, head = GOLD, f"{'CE' if armed.direction == 'LONG' else 'PE'} ARMED"
         sub = (f"Break {armed.trigger:,.0f} to enter · stop {armed.stop:,.0f} · "
@@ -161,12 +176,11 @@ def render(pa_frames: dict | None, prev_close: float | None = None,
         colour, head = SLATE, "NOTHING ARMED"
         sub = "No candle has closed beyond the 8 EMA into a tradable setup."
 
-    st.markdown(
+    _render_html(
         f"<div style='background:#0B2035;border-left:5px solid {colour};"
         f"padding:14px 18px;border-radius:0 10px 10px 0;margin-bottom:12px'>"
         f"<div style='font-size:26px;font-weight:700;color:{colour}'>{head}</div>"
-        f"<div style='color:{SLATE};font-size:14px'>{sub}</div></div>",
-        unsafe_allow_html=True)
+        f"<div style='color:{SLATE};font-size:14px'>{sub}</div></div>")
 
     c = st.columns(5)
     c[0].metric("Stage", res.stage.split(" — ")[0],
@@ -200,11 +214,10 @@ def render(pa_frames: dict | None, prev_close: float | None = None,
         st.caption("Nothing on the last closed candle.")
     for a in live_alerts:
         icon, colour = URGENCY.get(a.urgency, ("·", SLATE))
-        st.markdown(
+        _render_html(
             f"<div style='border-left:3px solid {colour};padding:6px 12px;"
             f"margin-bottom:6px'><b style='color:{colour}'>{icon} {a.text}</b>"
-            f"<br><span style='color:{SLATE};font-size:13px'>{a.detail}</span></div>",
-            unsafe_allow_html=True)
+            f"<br><span style='color:{SLATE};font-size:13px'>{a.detail}</span></div>")
 
     # Trend strength on the open position — hold through, or take the exit?
     if getattr(res, "open_signal", None) is not None:
@@ -212,10 +225,10 @@ def render(pa_frames: dict | None, prev_close: float | None = None,
             _st = s1.trend_strength(d, len(d) - 1,
                                     res.open_signal.direction, p)
             _col = "#2E7D32" if _st.hold else "#E65100"
-            st.markdown(
+            _render_html(
                 f"<div style='padding:8px 12px;border-left:3px solid {_col};"
                 f"background:#fafbfc'><b style='color:{_col}'>{_st.verdict}"
-                f"</b> — {_st.note}</div>", unsafe_allow_html=True)
+                f"</b> — {_st.note}</div>")
             for _n, (_ok, _dt) in _st.checks.items():
                 _m = "✓" if _ok else ("·" if _ok is None else "✗")
                 st.caption(f"{_m} **{_n}** — {_dt}")

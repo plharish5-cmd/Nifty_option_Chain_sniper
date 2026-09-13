@@ -276,6 +276,71 @@ def fetch_native(timeframe: str) -> pd.DataFrame | None:
     return None
 
 
+def store_banknifty_candles(df: pd.DataFrame) -> None:
+    """Store BANKNIFTY 1-min candles locally to disk for resilience and offline support."""
+    if df is None or df.empty:
+        return
+    try:
+        folder = getattr(config, "CANDLE_BANKNIFTY_DIR", config.DATA_DIR / "candles_banknifty")
+        folder.mkdir(parents=True, exist_ok=True)
+        ts = pd.to_datetime(df["timestamp"])
+        day = ts.dt.date.max()
+        if day:
+            path = folder / f"{day:%Y-%m-%d}.csv"
+            cols = [c for c in ["timestamp", "open", "high", "low", "close", "volume"] if c in df.columns]
+            out = df[cols].copy()
+            out["timestamp"] = pd.to_datetime(out["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+            out.to_csv(path, index=False)
+    except Exception as exc:
+        log.debug("Failed storing BANKNIFTY candles: %s", exc)
+
+
+def fetch_banknifty(days_back: int = 2) -> pd.DataFrame | None:
+    """
+    Fetch BANKNIFTY 1-minute index candles for SMT Divergence evaluation.
+    Tries live Dhan API first, persists to data/candles_banknifty/, and falls
+    back to local stored BankNifty data if the API is offline.
+    """
+    # 1. Attempt Dhan Live API
+    name = getattr(config, "CANDLE_SOURCE", "dhan")
+    if name in ("dhan", "nse", "auto"):
+        try:
+            import dhan_client as dc
+            df = dc.banknifty_index_candles(days_back=days_back)
+            if df is not None and not df.empty and len(df) >= 5:
+                store_banknifty_candles(df)
+                return df
+        except Exception as exc:
+            log.warning("Dhan BANKNIFTY live fetch failed: %s", exc)
+
+    # 2. Fallback to locally stored candles
+    folder = getattr(config, "CANDLE_BANKNIFTY_DIR", config.DATA_DIR / "candles_banknifty")
+    if folder and folder.exists():
+        files = sorted(folder.glob("20*.csv"))
+        if files:
+            selected_files = files[-days_back:] if days_back else files
+            frames = []
+            for f in selected_files:
+                try:
+                    d = pd.read_csv(f)
+                    if not d.empty and "timestamp" in d and "close" in d:
+                        frames.append(d)
+                except Exception:
+                    continue
+            if frames:
+                comb = pd.concat(frames, ignore_index=True)
+                comb["timestamp"] = pd.to_datetime(comb["timestamp"], errors="coerce")
+                for c in ("open", "high", "low", "close"):
+                    comb[c] = pd.to_numeric(comb[c], errors="coerce")
+                if "volume" in comb:
+                    comb["volume"] = pd.to_numeric(comb["volume"], errors="coerce").fillna(0)
+                else:
+                    comb["volume"] = 0.0
+                return comb.dropna(subset=["timestamp", "close"]).sort_values("timestamp").drop_duplicates("timestamp").reset_index(drop=True)
+
+    return None
+
+
 def describe() -> dict:
     """For the dashboard caption — what you are looking at and its limits."""
     name = getattr(config, "CANDLE_SOURCE", "dhan")

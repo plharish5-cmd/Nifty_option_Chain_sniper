@@ -87,6 +87,9 @@ def record(spot: float, futures: float, now: datetime | None = None,
     """
     now = now or datetime.now()
     b = Basis(float(spot), float(futures), now, days_to_expiry)
+    # WEEKEND IMMUNITY: Never store basis data on Saturday (5) or Sunday (6) no matter what!
+    if now.weekday() >= 5:
+        return b
     DIR.mkdir(parents=True, exist_ok=True)
     p = _path(now.date())
 

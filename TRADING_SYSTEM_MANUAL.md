@@ -180,51 +180,34 @@ NIFTY 50 options writers (institutions and large prop desks) deploy massive capi
 
 | Time Window | Operational Phase | Terminal Focus & Action |
 |---|---|---|
-| **08:30 – 09:07 AM** | **Pre-Market Orientation** | Check GIFT Nifty, overnight global markets, PDC levels, and View Building macro indicators. Identify today's S1/R1 and CPR width. |
-| **09:15 – 09:30 AM** | **Opening Auction Freeze** | **ZERO TRADES.** Observe gap size in Tab 0. Check whether Market is in Gap-Up Phase 1 or Gap-Down Phase 1. Let opening volatility settle. |
-| **09:30 – 11:30 AM** | **Prime Institutional Execution** | **Golden Trading Window.** Watch for Phase 2 Retracements to Support/Resistance or 1m 3-Drive MSS setups. Aim for 20–40 pts. |
-| **11:30 – 01:15 PM** | **Midday Decay Freeze** | **NO FRESH BUY ENTRIES.** Theta accelerates rapidly while volume dries up. Tighten trailing stops on active runners to cost. |
+| **21:00 PM (Prior Night)** | **Evening Data Harvesting** | Collect FII/DII cash & F&O positioning, closing futures basis, advances/declines, and daily candle patterns. |
+| **07:30 – 08:00 AM** | **Pre-Market View Building** | Compare GIFT Nifty against NIFTY FUTURES close (±100 pts threshold). Refresh Asian markets, Crude (< or > ₹6,500), and Stoch RSI. Submit View Building Sheet before 08:00 AM. |
+| **08:55 – 09:00 AM** | **Trading Room Assembly** | Join mentor live market room. Verify 11-instrument watchlist and chart styling. |
+| **09:00 – 11:00 AM** | **Prime Institutional Execution** | **Active Trading Window.** Strictly trade according to pre-market view, S&R levels, and 15m/1m setups. Aim for 20–40 pts. Screen exit at 11:00 AM. |
+| **11:00 – 01:15 PM** | **Midday Decay Freeze** | **NO FRESH BUY ENTRIES.** Capital preservation mode. Trailing stops tightened to Cost-to-Cost. |
 | **01:30 – 03:00 PM** | **European Open / Trend Resumption** | Secondary execution window. Look for afternoon 15m 8-EMA continuations or SMC Order Block defenses. |
-| **03:00 – 03:30 PM** | **Cash Close & Auction Window** | **TERMINAL CLOSED.** Avoid the 03:15–03:28 PM cash close auction candles due to rollover distortions. |
+| **15:30 PM** | **Daily Review & Homework** | Mentor posts daily review chart. Reconcile trades, mark S1/S2/S3 & R1/R2/R3, and prepare for tomorrow's View Building. |
 
 ---
 
 ## 9. Tab-by-Tab Visual Reference
 
-* **Tab 0 (🎯 Decision Cockpit):** The master dashboard. Shows the 2-Phase Session Road Map, Top & Bottom 15m Reversal Cards, the live 1m 3-Drive Scalper alert expander, Master Cockpit bias metrics, Spoon-Fed Red Bar callouts, and the 15-Minute Live Trade Advisor.
+* **Tab 0 (🎯 Decision Cockpit):** The unified master confluence dashboard. Synthesizes all tabs in real time: Live Level Striking & Proximity Radar (tells you whether to Buy CE, Buy PE, or Wait when striking key support/resistance/breakout), Dual-Timeframe Candle Confluence (15m vs 5m alignment, 8 EMA, VWAP), All-Tab Confluence Radar (voting across all 7 engines), Spoon-Fed Order Placement Ticket (Contract, LTP, Spot SL, Option SL ₹, Target 1 +20 pts CTC, Target 2), and specialized deep-dive panels (Top/Bottom Reversal Sniper, 1m 3-Drive Scalper, Historical Wicks, and TimesFM AI).
 * **Tab 1 (📊 Option Chain & OI Profile):** Visual bar chart of Call and Put Open Interest walls. Displays Net Gamma Exposure (GEX), GEX flip level, and Straddle decay.
 * **Tab 2 (Change in OI):** Intraday shifts in institutional positions. Shows whether call writers or put writers are aggressively adding or unwinding contracts.
 * **Tab 7 (📈 Price Action):** Multi-timeframe view (1m, 5m, 15m) with true futures VWAP and EMAs (4, 8, 20, 50, 200).
+* **Tab 10 (📋 View Building Studio):** Pre-market 17-parameter institutional diagnostic sheet auto-evaluating futures basis, VIX % change, crude economics, GIFT Nifty vs Futures, Daily Stoch RSI market shapes, advances/declines with market-cap trap filter, 5 core sectors, PCR seller psychology, and FII flows.
 * **Tab 17 (🎯 PA Strategy 1):** Mentor Sushen's core 4/8 EMA 15-minute system with Bollinger Bands, UBB/LBB slope filters, Cost-to-Cost (CTC) capital protection, Doji/Hammer reversal exits, and 2-trade daily cap.
 * **Tab 18 (⚡ VWAP/EMA):** Dynamic VWAP & 8 EMA confluence engine with dual-filter alignment, 4 EMA order protection (eliminates counter-trend traps), CTC ratchet at +20 pts, +40 pt Target booking, and legacy comparison toggle.
 * **Tab 19 (SMC - Smart Money Concepts):** Structural analysis (BOS / CHoCH), Dealing Range (Premium vs Discount), Unmitigated Order Blocks, Fair Value Gaps (FVG), Order Flow Speed, and Priyank Sharma's 1-Minute 3-Drive Institutional Scalper.
 * **Tab 20 (📓 Trading Journal):** Anti-impulse coach and trade logger to review discipline and track profit consistency.
 * **Tab 22 (📐 VAWM & 15m Matrix):** V-A-W-M pattern scanner and the 10 Mentor Session Reversal Setups evaluated on closed 15m candles with the 15m Trade Advisor.
 * **Tab 23 (⚔️ WAR Setup):** 30-minute first-candle FII strategy across 5 gap scenarios with < ₹100 option contract rules.
-* **Tab 24 (🔴 Red Bar & Asian Sweep):** Dr. Devendra Pratap Singh's Advanced Red Bar strategy with Candle 1 POB (0.44–0.56), 150m mean deflection, and European Open Asian Sweep (Profit Factor 3.02).
 * **Tab 25 (📝 Paper Trading & Impulse Control):** Risk-free virtual trading with ₹1,00,000 capital, real-time Dhan LTP, the Discipline Gate (win rate preview & impulse tagging), active positions book, and interactive equity curve.
 
 ---
 
-## 10. Dr. Devendra Pratap Singh's Advanced Red Bar & Asian Sweep Strategy
-
-Implemented in `red_bar_strategy.py` and rendered in **Tab 24** and **Tab 0**.
-
-### Core Pillars
-1. **Point of Balance (POB 0.44 – 0.56):** Never react impulsively to Candle 1 (09:15–09:20). Compute the Point of Balance zone (0.44 to 0.56 ratio of Candle 1's range).
-2. **Setup 1 (Morning POB Retest):** Wait for price to pull back to the POB zone. Enter on rejection wick confirmation. (59.0% Win Rate, +87.5 pts across 64 backtested days).
-3. **Setup 5 (European Open Asian Liquidity Sweep — 12:45 to 14:15):**
-   * Institutions sweep the Asian session High ($H_{\text{asia}}$) or Low ($L_{\text{asia}}$) established between 09:15 and 12:30.
-   * When price sweeps the extreme and immediately reclaims back inside the range, enter in the reversal direction.
-   * **Institutional Quantitative Verification (64 Historical Sessions):**
-     * **Profit Factor: 3.02**
-     * **Win Rate: 67.9% (1:1 R:R) / 57.1% (1:1.5 R:R)**
-     * **Net Spot Gain: +235.6 points (+₹8,836 per lot)**
-     * **Average Risk: Just 10.6 pts (~₹400 / lot)**
-
----
-
-## 11. The WAR Setup (The 30-Min First-Candle FII Strategy)
+## 10. The WAR Setup (The 30-Min First-Candle FII Strategy)
 
 Implemented in `war_setup.py` and rendered in **Tab 23**.
 * **Core Philosophy:** FII institutional positioning is concentrated in the first 30 minutes (09:15–09:45). The High and Low of Candle 1 establish the intraday battle lines.
@@ -233,7 +216,7 @@ Implemented in `war_setup.py` and rendered in **Tab 23**.
 
 ---
 
-## 12. The 15-Minute Live Trade Advisor & Strike Decision Box
+## 11. The 15-Minute Live Trade Advisor & Strike Decision Box
 
 Implemented in `trade_advisor_15m.py` and available in **Tab 0** and **Tab 22**.
 * **Answers the 4 Trader Dilemmas:**
@@ -245,7 +228,7 @@ Implemented in `trade_advisor_15m.py` and available in **Tab 0** and **Tab 22**.
 
 ---
 
-## 13. Paper Trading & Impulse Control Terminal
+## 12. Paper Trading & Impulse Control Terminal
 
 Implemented in `paper_trading.py` and rendered in **Tab 25**.
 * **Virtual Capital Account:** Starts with ₹1,00,000. Features 1-click refill (+₹50k, +₹100k) or clean reset.
@@ -254,4 +237,39 @@ Implemented in `paper_trading.py` and rendered in **Tab 25**.
 * **Scorecard & Analytics:** Win Rate %, Profit Factor, Interactive Equity Curve, Strategy vs Impulse breakdown, and persistent CSV logging (`data/paper_trading/trades.csv`).
 
 ---
-*Document Version: 3.0 · Comprehensive Master Trading Manual · NIFTY Option Chain Sniper Terminal*
+
+## 13. Pre-Market View Building System & Market Shape Engine
+
+Codified comprehensively in [VIEW_BUILDING_MENTOR_KNOWLEDGEBASE.md](file:///home/harish/Documents/Swathi%20K%20N/1%20Trading/option%20chain/OC/VIEW_BUILDING_MENTOR_KNOWLEDGEBASE.md) based on Mentor Manjunath's master live training sessions:
+
+1. **The 17 Quantitative Pre-Market Parameters:**
+   - **#1 & #2 (Basis):** Nifty & Bank Nifty Futures vs Spot. Premium = Institutional demand (+1); Discount = Institutional exit/shorting (-1).
+   - **#3 (India VIX):** Day-over-day change. $<-4\%$ is Bullish (+2); $>+4\%$ is Bearish (-2); $\pm 4\%$ is Neutral (0).
+   - **#4 (Crude Oil):** Benchmark ₹6,500/bbl ($65/bbl). $<6500$ = Bullish (+1); $>6500$ = Bearish (-1).
+   - **#5 (GIFT Nifty Gap Prediction):** Measured against **NIFTY FUTURES CLOSE** at **07:30 AM IST** (NEVER spot!). Difference $\ge +100$ pts = Gap Up; $\le -100$ pts = Gap Down; between $-100$ and $+100$ pts = Flat Open.
+   - **#6 (Daily Trend):** Candle above 8 EMA + rising UBB = +2 Bullish; below 8 EMA + falling LBB = -2 Bearish.
+   - **#7 (Stochastic RSI):** Evaluated strictly on **Daily chart** (intraday shape) and **Weekly chart** (investing). $<20$ = Oversold (V-Shape); $>80$ = Overbought (A-Shape). Weekly near 0 = Wealth creation entry for 10%–23%+ multi-month rally.
+   - **#8 & #9 (S1–S3 & R1–R3):** Swing levels and gaps defining bounce and reversal destinations.
+   - **#10 & #11 (Advances/Declines):** Sourced from Moneycontrol for Nifty 50 and Bank Nifty. **Trap Filter:** Check top 2 lines of market-cap heavyweights (Reliance, HDFC, ICICI, SBI, TCS) — if $\ge 4\text{–}5$ are RED, ignore raw counts and do NOT score Bullish!
+   - **#12 (5 Foundation Sectors):** IT, Banking (Highest Priority), Infrastructure, Auto, Metals. $\ge 3$ positive = +2; $\ge 3$ negative = -2.
+   - **#13 (PCR):** Total Put OI / Total Call OI. $<0.5$ = Oversold (V-Shape bounce); $>1.4$ = Overbought (A-Shape rollover).
+   - **#14 (FII/DII Confluence):** FII Cash + Index Futures + Stock Futures. Buying Cash/Stock Futures while selling Index Futures creates a **two-sided volatile / W-pattern day** rather than a 1-sided dump.
+   - **#15 (Option Chain Defended Levels):** S&R defended, quadrant flows, and market state classification.
+   - **#16 & #17 (Global Markets & US ADRs):** US futures + Asian morning cues; top 5 Indian ADRs (Infosys, Wipro, ICICI, HDFC, Dr. Reddy's).
+
+2. **The 4 Market Shapes Anticipated:**
+   - **V-Shape (Oversold):** Stoch RSI $<20$ and/or $\text{PCR} < 0.5$ &rarr; Early drop into S1/S2 &rarr; Demand absorption &rarr; Massive +100 to +200 pt rally to R1.
+   - **A-Shape (Overbought):** Stoch RSI $>80$ and/or $\text{PCR} > 1.4$ &rarr; Early rally into R1/R2 &rarr; Supply exhaustion &rarr; Deep +100 to +200 pt collapse to S1.
+   - **W-Shape (Two-Sided Double Bottom):** Initial drop &rarr; 8 EMA bounce &rarr; Double bottom retest &rarr; Afternoon breakout.
+   - **M-Shape (Two-Sided Double Top):** Initial push &rarr; 8 EMA pullback &rarr; Double top failure &rarr; Afternoon breakdown.
+
+3. **Mandatory 11-Asset Morning Watchlist:**
+   `Nifty 50`, `Nifty Current Month Fut`, `Bank Nifty`, `Bank Nifty Current Month Fut`, `India VIX`, `Crude Oil Fut`, `GIFT Nifty`, `Nifty BeES`, `Bank BeES`, `Gold BeES`, `Silver BeES`.
+
+4. **TradingView Visual Discipline:**
+   - Bollinger Bands: Median SMA removed/hidden; Upper = Dark Red, Lower = Dark Green.
+   - EMA Cross: Fast = 4 EMA (Green), Slow = 8 EMA (Red); cross marks disabled.
+   - Candles: Solid Black Borders on all candles for sharp visual edge recognition.
+
+---
+*Document Version: 4.0 · Comprehensive Master Trading Manual · NIFTY Option Chain Sniper Terminal*

@@ -40,8 +40,11 @@ def main() -> int:
     try:
         import dhan_client as dc
         t = dc.token()
-        show(f"token found, {len(t)} chars, ends ...{t[-6:]}", True,
-             "Never paste this anywhere. It is read from .env and stays there.")
+        ok, msg = dc.verify_token()
+        if ok:
+            show(f"token found and working ({len(t)} chars, ends ...{t[-6:]})", True, msg)
+        else:
+            show(f"token found ({len(t)} chars, ends ...{t[-6:]}) but verification failed", False, msg)
     except Exception as exc:                                # noqa: BLE001
         show("no usable token", False, exc)
         return 1

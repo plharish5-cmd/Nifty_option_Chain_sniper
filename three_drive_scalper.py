@@ -22,10 +22,12 @@ Based on Priyank Sharma's (SEBI RA) Price Action & Institutional Framework:
 """
 from __future__ import annotations
 
+from typing import Any
 from dataclasses import dataclass, field
 from datetime import datetime
 import numpy as np
 import pandas as pd
+from ui_utils import render_html, _render_html
 
 
 @dataclass
@@ -58,6 +60,24 @@ class ThreeDriveSetup:
     volume_expansion: bool      # Volume > 1.3x rolling avg on MSS
     live_pnl_pts: float | None  # Running PnL from trigger
     action_plan: str            # Tactical execution guidance
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Dict-like access compatibility for safety across UI callers."""
+        if key == "actionable":
+            return self.status in ("ARMED_AWAITING_MSS", "TRIGGERED_MSS_CONFIRMED")
+        if key in ("direction", "side"):
+            return "CALL" if "BULLISH" in str(self.side) else "PUT"
+        if key in ("stop", "stop_loss"):
+            return self.stop_loss
+        if key in ("target", "target_1"):
+            return self.target_1
+        return getattr(self, key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        res = self.get(key)
+        if res is None and not hasattr(self, key):
+            raise KeyError(key)
+        return res
 
 
 def compute_rsi(series: pd.Series, period: int = 14) -> pd.Series:
@@ -354,7 +374,7 @@ def render_three_drive_card(setup: ThreeDriveSetup | None):
     """Renders the 1-Minute 3-Drive Institutional Scalper Card in Streamlit."""
     import streamlit as st
 
-    st.markdown(
+    _render_html(
         """
         <div style="margin-top: 10px; margin-bottom: 8px;">
             <span style="font-size: 1.15em; font-weight: 800; color: #F8FAFC; letter-spacing: 0.04em;">
@@ -364,8 +384,7 @@ def render_three_drive_card(setup: ThreeDriveSetup | None):
                 Monitors Stop-Loss Hunts (Liquidity Sweeps) at Key HTF Levels + Market Structure Shift (MSS) + RSI Divergence.
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
     if setup is None:
@@ -389,7 +408,7 @@ def render_three_drive_card(setup: ThreeDriveSetup | None):
 
     pnl_str = f" · Live: <b>{setup.live_pnl_pts:+.1f} pts</b>" if setup.live_pnl_pts is not None else ""
 
-    st.markdown(
+    _render_html(
         f"""
         <div style="background: {card_bg}33; border: 1.5px solid {card_border}; border-radius: 8px; padding: 14px 18px; margin-bottom: 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -420,6 +439,5 @@ def render_three_drive_card(setup: ThreeDriveSetup | None):
                 {setup.action_plan}
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )

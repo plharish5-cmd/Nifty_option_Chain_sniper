@@ -1050,6 +1050,7 @@ def migration_ladder(chain: pd.DataFrame, spot: float, side: str = "ce",
     shifting up or down — which the notes call out as essential and which no
     single-strike view can show.
     """
+    from analytics import quadrant_strict
     step = config.STRIKE_STEP
     atm = int(round(spot / step) * step)
     out = []

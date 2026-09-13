@@ -69,7 +69,15 @@ def save_state(st: dict) -> None:
 
 
 def log(msg: str) -> None:
-    print(f"[{datetime.now():%d-%b %H:%M:%S}] {msg}", flush=True)
+    line = f"[{datetime.now():%d-%b %H:%M:%S}] {msg}"
+    print(line, flush=True)
+    try:
+        log_path = config.DATA_DIR / "scheduler.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
 
 
 def in_window(now: dtime, window: tuple[dtime, dtime]) -> bool:
@@ -83,34 +91,224 @@ def in_window(now: dtime, window: tuple[dtime, dtime]) -> bool:
 # Jobs
 # ═══════════════════════════════════════════════════════════════════════════
 
+_NSE_CLIENT = None
+_CONSECUTIVE_CHAIN_FAILURES = 0
+_LAST_PAYLOAD_HASH = None
+
+
+def get_nse_client():
+    """Persists a singleton NSEClient instance across polls to reuse cookies."""
+    global _NSE_CLIENT
+    if _NSE_CLIENT is None:
+        import nse_client
+        _NSE_CLIENT = nse_client.NSEClient()
+    return _NSE_CLIENT
+
+
+def record_heartbeat(outcome: str, spot: float | None = None,
+                     exc: Exception | None = None,
+                     skip_reason: str | None = None,
+                     drift_minutes: float | None = None) -> None:
+    """Writes data/scheduler_heartbeat.json (latest) AND appends to data/scheduler_heartbeat.jsonl (forensics)."""
+    global _CONSECUTIVE_CHAIN_FAILURES
+    hb_path = config.DATA_DIR / "scheduler_heartbeat.json"
+    jsonl_path = config.DATA_DIR / "scheduler_heartbeat.jsonl"
+    now_str = datetime.now().isoformat()
+    record = {
+        "timestamp": now_str,
+        "job": "chain",
+        "outcome": outcome,
+        "spot": spot,
+        "consecutive_failures": _CONSECUTIVE_CHAIN_FAILURES,
+        "error_class": exc.__class__.__name__ if exc else None,
+        "error_message": str(exc) if exc else None,
+        "skip_reason": skip_reason,
+        "drift_minutes": drift_minutes,
+    }
+    try:
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        # 1. Latest snapshot for fast status / UI staleness checks
+        hb_path.write_text(json.dumps(record, indent=2))
+
+        # 2. Append-only ledger for gap forensics
+        with open(jsonl_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+    except Exception as e:
+        log(f"heartbeat write failed: {e}")
+
+
+def find_heartbeat_gaps(session_date: date | str, min_gap_minutes: float = 6.0,
+                        jsonl_path: Path | None = None) -> list[dict]:
+    """
+    Reads data/scheduler_heartbeat.jsonl and reports, for a given session date,
+    every gap longer than min_gap_minutes with start, end, duration, and cause attribution.
+    """
+    path = jsonl_path or (config.DATA_DIR / "scheduler_heartbeat.jsonl")
+    if not path.exists():
+        return []
+
+    target_str = str(session_date)
+    records = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+                ts_str = rec.get("timestamp", "")
+                if ts_str.startswith(target_str):
+                    ts = datetime.fromisoformat(ts_str)
+                    records.append((ts, rec))
+            except Exception:
+                continue
+
+    if not records:
+        return []
+
+    records.sort(key=lambda x: x[0])
+    gaps = []
+    for i in range(1, len(records)):
+        prev_t, prev_rec = records[i - 1]
+        curr_t, curr_rec = records[i]
+        diff_mins = (curr_t - prev_t).total_seconds() / 60.0
+        if diff_mins >= min_gap_minutes:
+            cause = "NO_RECORDED_HEARTBEAT (machine sleep, service stopped, or lid closed)"
+            if prev_rec.get("outcome") == "FAILURE":
+                cause = f"Repeated failures ({prev_rec.get('error_class')}: {prev_rec.get('error_message')})"
+            elif prev_rec.get("outcome") == "SKIPPED":
+                cause = f"Skipped ({prev_rec.get('skip_reason')})"
+
+            gaps.append({
+                "gap_start": prev_t.strftime("%H:%M:%S"),
+                "gap_end": curr_t.strftime("%H:%M:%S"),
+                "gap_minutes": round(diff_mins, 1),
+                "last_status_before_gap": prev_rec.get("outcome"),
+                "resumed_status": curr_rec.get("outcome"),
+                "attributed_cause": cause,
+            })
+    return gaps
+
+
 def job_chain(st: dict) -> None:
     """Fetch the chain, score it, append a row to the signal log."""
+    global _CONSECUTIVE_CHAIN_FAILURES, _LAST_PAYLOAD_HASH
     try:
-        import nse_client
+        import hashlib
         import chain_parser as cp
         import analytics as an
         import store
 
-        client = nse_client.NSEClient()
+        client = get_nse_client()
         payload = client.fetch_raw()
-        expiry = client.expiries(payload)[config.EXPIRY_INDEX]
-        df = cp.parse_json(payload, expiry)
+        now = datetime.now()
+
+        # Check payload staleness via hash
+        payload_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
+        payload_hash = hashlib.sha256(payload_bytes).hexdigest()
+        is_stale = (_LAST_PAYLOAD_HASH is not None and payload_hash == _LAST_PAYLOAD_HASH)
+        _LAST_PAYLOAD_HASH = payload_hash
+
+        # Check NSE timestamp vs local clock for clock drift (warning only, never raise)
+        drift_minutes = None
+        payload_ts_str = client.timestamp(payload)
+        if payload_ts_str:
+            try:
+                payload_dt = datetime.strptime(payload_ts_str, "%d-%b-%Y %H:%M:%S")
+                if now.weekday() < 5 and dtime(9, 15) <= now.time() <= dtime(15, 30):
+                    if payload_dt.date() == now.date():
+                        clock_drift_sec = abs((now - payload_dt).total_seconds())
+                        drift_minutes = round(clock_drift_sec / 60.0, 1)
+                        if clock_drift_sec > 900:  # 15 min limit
+                            log(
+                                f"CLOCK_DRIFT WARNING: local clock ({now:%H:%M:%S}) and NSE timestamp ({payload_dt:%H:%M:%S}) "
+                                f"diverge by {drift_minutes} minutes (>15m limit). Continuing poll."
+                            )
+                    else:
+                        # Payload is from a previous session (e.g. weekend or pre-market cache), not clock drift
+                        drift_minutes = None
+            except ValueError:
+                pass
+
+        expiries = client.expiries(payload)
+        expiry = expiries[config.EXPIRY_INDEX] if expiries else None
+
+        # Real continuous fractional calendar DTE
+        days_to_expiry = None
+        if expiry:
+            for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
+                try:
+                    exp_dt = datetime.strptime(expiry, fmt).replace(hour=15, minute=30, second=0)
+                    days_to_expiry = max(0.0, (exp_dt - now).total_seconds() / 86400.0)
+                    break
+                except ValueError:
+                    pass
+
+        # Capture all option rows present in payload (all expiries)
+        df_all = cp.parse_json(payload, expiry="all")
         spot = client.spot(payload)
 
-        read = an.analyse(df, spot)
-        now = datetime.now()
-        sig = an.make_signal(df, read, now,
-                             days_to_expiry=1.0, confirmed=True)
+        # Slice nearest expiry for analysis
+        if expiry and "expiry" in df_all.columns:
+            norm_exp = cp._norm_exp(expiry)
+            df_nearest = df_all[df_all["expiry"] == norm_exp]
+            if df_nearest.empty:
+                df_nearest = df_all
+        else:
+            df_nearest = df_all
+
+        read = an.analyse(df_nearest, spot)
+        sig = an.make_signal(df_nearest, read, now,
+                             days_to_expiry=days_to_expiry, confirmed=True)
         store.append_log(an.signal_to_row(read, sig, now))
-        store.save_snapshot(df, spot, now)
+
+        # Dual snapshot persistence:
+        # 1. Single-expiry (nearest) slice saved to data/snapshots/ (protects existing pipeline)
+        store.save_snapshot(df_nearest, spot, now, expiry=expiry)
+
+        # 2. 3-expiry subset (current weekly, next weekly, monthly) saved to data/snapshots_multi/
+        raw_dates = payload.get("records", {}).get("expiryDates") or payload.get("expiryDates") or []
+        target_3 = []
+        if raw_dates:
+            target_3.append(raw_dates[0])
+            if len(raw_dates) > 1:
+                target_3.append(raw_dates[1])
+            try:
+                dt0 = datetime.strptime(raw_dates[0], "%d-%b-%Y")
+                month_dates = [d for d in raw_dates if datetime.strptime(d, "%d-%b-%Y").month == dt0.month]
+                if month_dates and month_dates[-1] not in target_3:
+                    target_3.append(month_dates[-1])
+                elif len(raw_dates) > 2 and raw_dates[2] not in target_3:
+                    target_3.append(raw_dates[2])
+            except Exception:
+                if len(raw_dates) > 2 and raw_dates[2] not in target_3:
+                    target_3.append(raw_dates[2])
+
+        if target_3 and "expiry" in df_all.columns:
+            norm_3 = {cp._norm_exp(d) for d in target_3}
+            df_3 = df_all[df_all["expiry"].isin(norm_3)]
+        else:
+            df_3 = df_all
+        store.save_snapshot(df_3, spot, now, expiry=expiry, base_dir=config.SNAPSHOT_MULTI_DIR)
 
         st["chain_polls"] += 1
         st["last_chain"] = now.strftime("%H:%M:%S")
+        _CONSECUTIVE_CHAIN_FAILURES = 0
+        outcome = "SUCCESS_STALE" if is_stale else "SUCCESS"
+        record_heartbeat(outcome, spot=spot, drift_minutes=drift_minutes)
+
         log(f"chain  spot {spot:,.2f}  {read.regime}  "
             f"score {read.bias_score:+.1f}  S1 {read.levels.s1} "
             f"R1 {read.levels.r1}  (poll {st['chain_polls']})")
     except Exception as exc:                                # noqa: BLE001
-        log(f"chain  FAILED: {exc}")
+        _CONSECUTIVE_CHAIN_FAILURES += 1
+        record_heartbeat("FAILURE", exc=exc)
+        exc_class = exc.__class__.__name__
+        exc_msg = str(exc)
+        if _CONSECUTIVE_CHAIN_FAILURES >= 3:
+            log(f"chain CRITICAL [{_CONSECUTIVE_CHAIN_FAILURES} consecutive failures] ({exc_class}): {exc_msg}")
+        else:
+            log(f"chain FAILED (attempt {_CONSECUTIVE_CHAIN_FAILURES}, {exc_class}): {exc_msg}")
 
 
 def job_ohlc(st: dict) -> None:
@@ -122,11 +320,9 @@ def job_ohlc(st: dict) -> None:
     if st.get("ohlc_done"):
         return
     try:
-        import nse_client
         import market_data as md
 
-        client = nse_client.NSEClient()
-        client._bootstrap()
+        client = get_nse_client()
         st["ohlc_attempts"] += 1
         ok, msg = md.backfill_ohlc(client, config.OHLC_BACKFILL_DAYS)
         st["ohlc_message"] = msg
@@ -149,6 +345,17 @@ def job_ohlc(st: dict) -> None:
 
         st["ohlc_done"] = True
         log("ohlc   done for today — will not run again until tomorrow")
+        try:
+            rules_path = config.ROOT / "strategy1_rules.json"
+            retention = 90
+            if rules_path.exists():
+                cfg = json.loads(rules_path.read_text())
+                retention = cfg.get("greeks", {}).get("multi_expiry_retention_days", 90)
+            pruned = store.prune_multi_snapshots(retention)
+            if len(pruned) > 0:
+                log(f"retention: pruned {len(pruned)} old multi-expiry snapshot folder(s) (> {retention} days): {pruned}")
+        except Exception as p_exc:                          # noqa: BLE001
+            log(f"retention check failed: {p_exc}")
     except Exception as exc:                                # noqa: BLE001
         log(f"ohlc   FAILED (attempt {st['ohlc_attempts']}): {exc}")
 
@@ -228,6 +435,14 @@ def main() -> int:
         return status()
     once = "--once" in sys.argv
 
+    # Assert system timezone is Asia/Kolkata (UTC+5:30) at startup
+    tz_offset = (datetime.now() - datetime.utcnow()).total_seconds()
+    if not (19700 <= tz_offset <= 19900):  # 5.5 hours = 19800 seconds
+        raise RuntimeError(
+            f"Scheduler must run in Asia/Kolkata timezone (UTC+05:30), but detected offset {tz_offset/3600:.2f}h. "
+            "Configure system timezone with `timedatectl set-timezone Asia/Kolkata` or set TZ=Asia/Kolkata."
+        )
+
     log("scheduler starting")
     log(f"  chain  {config.CHAIN_WINDOW[0]:%H:%M}-{config.CHAIN_WINDOW[1]:%H:%M}"
         f"  every {config.POLL_SECONDS}s")
@@ -237,17 +452,38 @@ def main() -> int:
         f"{config.OHLC_RETRY_UNTIL:%H:%M}  retry every "
         f"{config.OHLC_RETRY_MINUTES}m until it lands")
 
+    try:
+        rules_path = config.ROOT / "strategy1_rules.json"
+        retention = 90
+        if rules_path.exists():
+            cfg = json.loads(rules_path.read_text())
+            retention = cfg.get("greeks", {}).get("multi_expiry_retention_days", 90)
+        pruned = store.prune_multi_snapshots(retention)
+        if len(pruned) > 0:
+            log(f"startup retention: pruned {len(pruned)} old multi-expiry snapshot folder(s) (> {retention} days): {pruned}")
+    except Exception as p_exc:                              # noqa: BLE001
+        log(f"startup retention check failed: {p_exc}")
+
     next_chain = next_view = next_ohlc = datetime.min
+    last_skip_hb = datetime.min
 
     try:
         while True:
             st = load_state()
             now = datetime.now()
             t = now.time()
+            is_mkt_day = now.weekday() < 5
+            in_chain_win = in_window(t, config.CHAIN_WINDOW)
 
-            if in_window(t, config.CHAIN_WINDOW) and now >= next_chain:
-                job_chain(st)
-                next_chain = now + timedelta(seconds=config.POLL_SECONDS)
+            if is_mkt_day and in_chain_win:
+                if now >= next_chain:
+                    job_chain(st)
+                    next_chain = now + timedelta(seconds=config.POLL_SECONDS)
+            else:
+                if (now - last_skip_hb).total_seconds() >= 60:
+                    reason = "Weekend (market closed)" if not is_mkt_day else f"Outside window {config.CHAIN_WINDOW[0]:%H:%M}-{config.CHAIN_WINDOW[1]:%H:%M}"
+                    record_heartbeat("SKIPPED", skip_reason=reason)
+                    last_skip_hb = now
 
             if in_window(t, config.VIEW_WINDOW) and now >= next_view:
                 job_view(st)

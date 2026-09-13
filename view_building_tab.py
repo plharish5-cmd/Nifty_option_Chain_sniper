@@ -26,6 +26,7 @@ import streamlit as st
 import config
 import market_data as md
 import view_building as vb
+from ui_utils import render_html, _render_html
 
 GREEN, RED, SLATE, GOLD = "#2FBF71", "#E8503A", "#8FA6B8", "#C9A227"
 BLUE, AMBER, PURPLE = "#4A9BD1", "#E0A030", "#9B51E0"
@@ -47,16 +48,29 @@ def generate_whatsapp_text(
     # Extract highlights
     gift_obs = next((p.observation for p in params if p.no == 5), "Tracking")
     vix_obs = next((p.observation for p in params if p.no == 3), "Normal")
-    fii_obs = next((p.observation for p in params if p.no == 14), "Analyzing")
+    p14 = next((p for p in params if p.no == 14), None)
+    if p14 and p14.observation:
+        fii_lines = [l.strip() for l in p14.observation.splitlines() if l.strip()]
+        dedup_fii = []
+        for fl in fii_lines:
+            if fl not in dedup_fii:
+                dedup_fii.append(fl)
+        fii_obs = "\n• *FII & DII F&O:* ".join(dedup_fii) if len(dedup_fii) > 1 else (dedup_fii[0] if dedup_fii else "Analyzing")
+    else:
+        fii_obs = "Analyzing"
     pcr_obs = next((p.observation for p in params if p.no == 13), "Neutral")
-    s_levels = next((p.observation for p in params if p.no == 8), "Key Supports")
-    r_levels = next((p.observation for p in params if p.no == 9), "Key Resistances")
+    p8 = next((p for p in params if p.no == 8), None)
+    p9 = next((p for p in params if p.no == 9), None)
+    s_levels = p8.observation if p8 and p8.observation else "Key Supports"
+    r_levels = p9.observation if p9 and p9.observation else "Key Resistances"
+    s_strong = f" (Strong Support: {p8.verdict_word})" if p8 and p8.verdict_word not in ("NA", "") else ""
+    r_strong = f" (Strong Resistance: {p9.verdict_word})" if p9 and p9.verdict_word not in ("NA", "") else ""
 
     lines = [
         f"📊 *NIFTY 50 & BANK NIFTY — PRE-MARKET VIEW*",
         f"📅 *Date:* {when:%d-%b-%Y (%A)} | 08:30 AM IST",
         f"────────────────────────",
-        f"🎯 *OVERALL STANCE:* {stance_emoji} *{vname} (Score: {score:+d} / 34)*",
+        f"🎯 *OVERALL STANCE:* {stance_emoji} *{vname} (Score: {score:+d})*",
         f"────────────────────────",
         f"🌐 *Macro & Opening Cues:*",
         f"• *GIFT Nifty:* {gift_obs}",
@@ -68,21 +82,21 @@ def generate_whatsapp_text(
         f"",
         f"📐 *Key Structural Levels (NIFTY):*",
         f"• *Spot Reference:* {spot:,.1f}" if spot else "• *Spot Reference:* Live",
-        f"• *Key Supports (S1-S3):* {s_levels}",
-        f"• *Key Resistances (R1-R3):* {r_levels}",
+        f"• *Key Supports (S1-S3):* {s_levels}{s_strong}",
+        f"• *Key Resistances (R1-R3):* {r_levels}{r_strong}",
     ]
 
     p15 = next((p for p in params if p.no == 15), None)
     if p15 and p15.observation:
         lines.append("")
-        lines.append(f"⚡ *#15 Session Narrative & Action (9:15–3:45 PM):*")
+        lines.append(f"⚡ *#15 Option Chain Analysis:*")
         lines.append(f"• *Observation:* {p15.observation}")
         if p15.verdict_word:
-            lines.append(f"• *Market State:* {p15.verdict_word}")
+            lines.append(f"• *Option Chain Stance:* {p15.verdict_word}")
     elif brief and brief.get("condition"):
         c = brief["condition"]
         lines.append("")
-        lines.append(f"⚡ *Session Reading:* {c.get('text', 'Analyzing')}")
+        lines.append(f"⚡ *Option Chain Reading:* {c.get('text', 'Analyzing')}")
 
     lines.extend([
         f"",
@@ -134,6 +148,12 @@ def render(
         st.session_state.vb_overrides = {}
 
     _cond = getattr(read, "condition", None)
+    if _cond is None and df is not None and not df.empty and spot:
+        try:
+            import setups as su
+            _cond = su.chain_condition(df, spot)
+        except Exception:
+            pass
     _chain_live = getattr(read, "live", True)
 
     params = vb.build(
@@ -143,6 +163,7 @@ def render(
         nifty_ad=vb_ad_n,
         bn_ad=vb_ad_b,
         pcr=getattr(read, "pcr_oi", None),
+        pcr_bnf=getattr(read, "pcr_bnf", None),
         flows=flows,
         poi=vb_poi,
         gift=vb_gift,
@@ -158,6 +179,8 @@ def render(
         chain_live=_chain_live,
         chain_stamp=nse_ts,
         candles=candles,
+        df=df,
+        read=read,
         overrides=st.session_state.vb_overrides,
     )
 
@@ -169,7 +192,7 @@ def render(
     # ═══════════════════════════════════════════════════════════════════════
     # TOP EXECUTIVE VERDICT COCKPIT
     # ═══════════════════════════════════════════════════════════════════════
-    st.markdown(
+    _render_html(
         f"""
         <div style="
             background: linear-gradient(135deg, #101726 0%, #172238 100%);
@@ -188,23 +211,22 @@ def render(
                         {vname} BIAS
                     </div>
                 </div>
-                <div style="text-align: right; background: #0b111c; padding: 6px 18px; border-radius: 6px; border: 1px solid #212c40;">
+                <div style="text-align: right; background: #0b111c; padding: 6px 18px; border-radius: 6px; border-left: 1px solid #212c40;">
                     <div style="font-size: 0.72em; color: #8fa6b8;">TOTAL SCORE</div>
                     <div style="font-size: 1.55em; font-weight: 800; color: {v_badge_color};">
-                        {score:+d} <span style="font-size: 0.6em; color: #8fa6b8;">/ 34</span>
+                        {score:+d}
                     </div>
                 </div>
             </div>
             <div style="margin-top: 10px; font-size: 0.9em; color: #cbd5e1;">
                 {
-                    "Above +16 = Strong Bullish Trend conviction." if vcol == "green"
-                    else "Below +7 = Strong Bearish Pressure conviction." if vcol == "red"
-                    else "Score between 7 and 16 = Rangebound / Neutral Chop. Trade mean-reversion."
+                    "Above +14 = Strong Bullish Trend conviction." if vcol == "green"
+                    else "Below 0 = Strong Bearish Pressure conviction." if vcol == "red"
+                    else "Score between 0 and +14 = Rangebound / Neutral Chop. Trade mean-reversion."
                 }
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
     h1, h2, h3, h4 = st.columns(4)
@@ -219,6 +241,19 @@ def render(
     with h4:
         vix_val = next((p.score for p in params if p.no == 3), None)
         st.metric("Manual Inputs", f"{man} parameters")
+
+    try:
+        xl_cockpit = vb.to_excel_bytes(params, when=now.date())
+        st.download_button(
+            label="📥 Download View Building Excel (.xlsx)",
+            data=xl_cockpit,
+            file_name=f"ViewBuilding_{now:%Y-%m-%d}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="btn_dl_vb_cockpit_excel",
+        )
+    except Exception:
+        pass
 
     # ═══════════════════════════════════════════════════════════════════════
     # THREE-LINE ACTIONABLE MORNING BRIEF
@@ -237,7 +272,7 @@ def render(
             c = _br.get("condition") or {}
             c_tint = GREEN if c.get("score", 0) > 0 else RED if c.get("score", 0) < 0 else SLATE
             st.markdown(f"**1 · Chain Reading**")
-            st.markdown(f"<span style='color:{c_tint};font-weight:700;font-size:1.05em;'>{c.get('text', 'Analyzing')}</span>", unsafe_allow_html=True)
+            _render_html(f"<div><span style='color:{c_tint};font-weight:700;font-size:1.05em;'>{c.get('text', 'Analyzing')}</span></div>")
             if not c.get("live"):
                 st.caption("Using previous session close — refresh after 09:15.")
         with b2:
@@ -304,27 +339,87 @@ def render(
         st.code(wa_text, language="markdown")
 
         # Excel Export Option
-        st.markdown("##### 📊 Spreadsheet Archive")
+        st.markdown("##### 📊 Official Excel Sheet (.xlsx)")
         xl_name = f"ViewBuilding_{now:%Y-%m-%d}.xlsx"
-        xl_path = config.DATA_DIR / xl_name
         try:
-            vb.to_excel(params, xl_path, now.date())
-            with open(xl_path, "rb") as f_xl:
-                st.download_button(
-                    label="📥 Download Excel Sheet (.xlsx)",
-                    data=f_xl.read(),
-                    file_name=xl_name,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                )
+            xl_bytes = vb.to_excel_bytes(params, when=now.date())
+            st.download_button(
+                label="📥 Download View Building Excel (.xlsx)",
+                data=xl_bytes,
+                file_name=xl_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="btn_dl_vb_studio_excel",
+            )
         except Exception as _xe:
             st.caption(f"Excel export unavailable: {_xe}")
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # PARTICIPANT-WISE OPEN INTEREST & OPTION CHAIN MASTER EXCEL GENERATOR
+    # ═══════════════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown("### 📊 Participant-Wise Open Interest & Option Chain Master Excel")
+    st.caption("Generate and download the complete institutional multi-tab workbook (Retailers, DII, FII, PRO, Volume, and Dhan Option Chain Analysis) compiled across all available historical sessions.")
+
+    excel_file = config.DATA_DIR / "NSE_Participant_OI_and_Option_Chain_Master.xlsx"
+    p_box1, p_box2 = st.columns([1.1, 1.1])
+    with p_box1:
+        if st.button("⚡ Generate Master Participant Excel", type="primary", use_container_width=True, key="btn_generate_participant_excel"):
+            with st.spinner("Compiling NSE Clearing participant files & pulling Dhan live Option Chain..."):
+                try:
+                    import build_participant_excel as bpe
+                    out_p = bpe.generate_master_excel()
+                    st.success(f"✓ Successfully generated! ({out_p.stat().st_size / 1024:.1f} KB, 65+ sessions)")
+                except Exception as _bpe_err:
+                    st.error(f"Error generating workbook: {_bpe_err}")
+
+    with p_box2:
+        if excel_file.exists():
+            with open(excel_file, "rb") as _f_xl:
+                _xl_data = _f_xl.read()
+            st.download_button(
+                label="📥 Download Master Excel (.xlsx)",
+                data=_xl_data,
+                file_name="NSE_Participant_OI_and_Option_Chain_Master.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="btn_download_participant_master_excel",
+            )
+        else:
+            st.info("Click 'Generate' to create the master Excel workbook.")
+
+    if excel_file.exists():
+        with st.expander("👁️ View Included Sheets & Summary Breakdown", expanded=False):
+            st.markdown("""
+            - 📑 **`Retailers`**: Client Index Futures (Long/Short + Changes), Stock Futures, Call/Put Options, Net CE, Net PE, Net Options Positions, Net Futures, Spot.
+            - 📑 **`DII`**: Domestic Institutional Investors: Futures, Options, Net Options, Net Futures, Cash Equity Flows (Cr), Spot, % Change.
+            - 📑 **`FII`**: Foreign Institutional Investors: Index & Stock Futures, Call/Put Options, Net CE, Net PE, Net Options Positions, Net Futures.
+            - 📑 **`PRO`**: Proprietary Trading Desks: Futures & Options Positioning, Net Greeks, Net Options Positions, Net Futures.
+            - 📑 **`Participant Wise Open Interest`**: Raw clearing daily snapshot across Client, DII, FII, Pro, and Total.
+            - 📑 **`Volume`**: Participant-wise trading volume file from NSE Clearing.
+            - 📑 **`Analysis`**: Strike-by-strike Option Chain from Dhan API with Buildup categorizations, Max Pain, PCR, and Spot price.
+            """)
 
     # ═══════════════════════════════════════════════════════════════════════
     # 18 PARAMETERS DETAILED INSPECTION
     # ═══════════════════════════════════════════════════════════════════════
     st.markdown("---")
-    st.markdown("### 🔍 18-Parameter Quantitative Table")
+    t_hdr1, t_hdr2 = st.columns([2.2, 1.2])
+    with t_hdr1:
+        st.markdown("### 🔍 18-Parameter Quantitative Table")
+    with t_hdr2:
+        try:
+            xl_bytes_t = vb.to_excel_bytes(params, when=now.date())
+            st.download_button(
+                label="📥 Download Excel (.xlsx)",
+                data=xl_bytes_t,
+                file_name=f"ViewBuilding_{now:%Y-%m-%d}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="btn_dl_vb_table_excel",
+            )
+        except Exception:
+            pass
 
     table_filter = st.radio("Filter Parameters", ["All (18)", "Auto-Sourced (14)", "Manual Overrides (4)"], horizontal=True)
 
@@ -337,7 +432,6 @@ def render(
     p_records = []
     for p in filtered_params:
         vw = p.verdict_word
-        vw_icon = "🟢 " if "BULLISH" in vw else "🔴 " if "BEARISH" in vw else "🟡 " if "CONSOL" in vw or "NEUTRAL" in vw else "⚪ "
         sc_str = f"{p.score:+d}" if p.scored else "NA"
         p_records.append({
             "#": p.no,
@@ -345,37 +439,37 @@ def render(
             "Source": "🤖 Auto-NSE" if p.auto else "✍️ Manual",
             "Observation / Reading": p.observation or "—",
             "Score": sc_str,
-            "Verdict": f"{vw_icon}{vw}",
+            "View": vw,
         })
 
     st.dataframe(pd.DataFrame(p_records), hide_index=True, use_container_width=True)
 
-    with st.expander("📖 #15 Session Narrative, Market States & Action Rules (9:15–3:45 PM)", expanded=False):
+    with st.expander("📖 #15 Option Chain Analysis, Market States & Action Rules", expanded=False):
         st.markdown("""
-        **Session Narrative Engine:** Synthesizes intraday price action (open, high, low, close), VWAP posture, and option chain quadrants.
+        **Option Chain Analysis Engine:** Synthesizes option chain positioning from the previous market closed day, including quadrant flow, defended Strong Support, Resistance, and Strong Resistance looking for today.
         
         | Market State | Conviction / Flow Characteristics | Score | Actionable Trade Rule |
         | :--- | :--- | :--- | :--- |
-        | **BULLISH** | Price > VWAP, Higher Highs, Call Buying Dominant (ITM/OTM Green) | **+2** | 🚀 **TRAIL to 100–400 pts** |
-        | **BEARISH** | Price < VWAP, Lower Lows, Put Buying Dominant (ITM/OTM Green) | **-2** | 🔻 **TRAIL to 100–400 pts** |
-        | **BULLISH CONSOLIDATION** | Holding VWAP/Support in tight range, Call ITM accumulation | **+1** | 🎯 **Exit strictly at 40 pts only** |
-        | **BEARISH CONSOLIDATION** | Holding VWAP/Resistance in tight range, Put ITM accumulation | **-1** | 🎯 **Exit strictly at 40 pts only** |
-        | **CONSOLIDATION** / **""** | Range-bound chop, two-way option writing, no directional breakout | **0** | ⏸️ **Range-bound day, scalp 40 pts max or wait** |
+        | **BULLISH** | Call Buying Dominant (ITM/OTM Green), Put unwinding | **+2** | 🚀 **TRAIL to 100–400 pts** |
+        | **BEARISH** | Put Buying Dominant (ITM/OTM Green), Call unwinding | **-2** | 🔻 **TRAIL to 100–400 pts** |
+        | **BULLISH CONSOLIDATION** | Call ITM accumulation, OTM Call/Put selling caps extension | **+1** | 🎯 **Exit strictly at 40 pts only** |
+        | **BEARISH CONSOLIDATION** | Put ITM accumulation, Call selling caps upside | **-1** | 🎯 **Exit strictly at 40 pts only** |
+        | **CONSOLIDATION** / **""** | Two-way option writing with premium decay, range-bound boundaries | **0** | ⏸️ **Range-bound day, scalp 40 pts max or wait** |
 
-        - 💡 **Action Guidance:** Always adhere to the concrete action to take defined for each session state.
-        - 🔁 **Continuous Tracking:** Dynamic session narrative updates throughout 9:15 AM to 3:45 PM.
+        - 💡 **Action Guidance:** Always adhere to the concrete action to take defined for each option chain state.
+        - 📐 **Key Defended Levels:** Uses Strong Support (major Put OI wall), Resistance (nearest Call hurdle), and Strong Resistance (major Call OI wall) to forecast today's operational bounds.
         """)
 
     # ═══════════════════════════════════════════════════════════════════════
     # MANUAL PARAMETER OVERRIDE FORM
     # ═══════════════════════════════════════════════════════════════════════
-    with st.expander("✍️ Adjust / Override Manual Inputs & Session Narrative", expanded=False):
-        st.caption("Enter your own narrative from 9:15 to 3:45 PM, customize your action plan, or tweak parameter scores. Your inputs will be reflected immediately in the WhatsApp image.")
+    with st.expander("✍️ Adjust / Override Manual Inputs & Option Chain Analysis", expanded=False):
+        st.caption("Customize option chain analysis, tweak your action plan, or adjust parameter scores. Your inputs will be reflected immediately in the WhatsApp image.")
         with st.form("vb_manual_form"):
             new_overrides = {}
 
-            # Dedicated #15 Custom Narrative & Action Section
-            st.markdown("##### ⚡ #15 Session Narrative & Action (9:15–3:45 PM)")
+            # Dedicated #15 Option Chain Analysis Section
+            st.markdown("##### ⚡ #15 Option Chain Analysis")
             p15_item = next((p for p in params if p.no == 15), None)
             curr_obs = p15_item.observation if p15_item else ""
             curr_vw = p15_item.view if p15_item else "BEARISH"
@@ -390,12 +484,12 @@ def render(
                 c_narr = curr_obs
                 c_act = ""
 
-            user_narrative = st.text_area("What happened from 9:15 to 3:45 PM", value=c_narr, height=75, key="vb_custom_narrative")
+            user_narrative = st.text_area("Option Chain Analysis (Yesterday's Behavior & Defended Levels)", value=c_narr, height=75, key="vb_custom_narrative")
             user_action = st.text_input("Action to take", value=c_act, key="vb_custom_action",
                                         placeholder="e.g. Action: Buy dips near VWAP with trailing SL · Target: 100–400 pts")
             state_options = ["BULLISH", "BEARISH", "BULLISH CONSOLIDATION", "BEARISH CONSOLIDATION", "CONSOLIDATION", ""]
             curr_st_idx = state_options.index(curr_vw) if curr_vw in state_options else 0
-            user_state = st.selectbox("Market State", state_options, index=curr_st_idx, key="vb_custom_state")
+            user_state = st.selectbox("Option Chain Stance (Market State)", state_options, index=curr_st_idx, key="vb_custom_state")
 
             score_map = {
                 "BULLISH": 2,
@@ -413,7 +507,7 @@ def render(
             st.markdown("---")
             st.markdown("##### 📝 Other Manual Inputs (Futures, Global, ADRs)")
             for p in params:
-                if p.auto and p.no != 15:
+                if p.auto and p.no not in (8, 9):
                     continue
                 if p.no == 15:
                     continue
@@ -421,14 +515,17 @@ def render(
                 p_curr_obs = p.observation or ""
                 inp_obs = c1.text_input(f"#{p.no} {p.name}", value=p_curr_obs, key=f"vbo_{p.no}")
                 inp_score = None
-                if p.importance != "NA":
+                inp_view = None
+                if p.no in (8, 9):
+                    inp_view = c2.text_input(f"#{p.no} Strong Level", value=p.view, key=f"vbv_{p.no}")
+                elif p.importance != "NA":
                     lim = int(p.importance)
                     score_opts = list(range(lim, -lim - 1, -1))
                     curr_sc = p.score if p.score is not None else 0
                     idx = score_opts.index(curr_sc) if curr_sc in score_opts else 0
                     inp_score = c2.selectbox("Score", score_opts, index=idx, key=f"vbs_{p.no}")
-                if inp_obs != p_curr_obs or (inp_score is not None and inp_score != p.score):
-                    new_overrides[p.no] = (inp_obs, inp_score)
+                if inp_obs != p_curr_obs or (inp_score is not None and inp_score != p.score) or (inp_view is not None and inp_view != p.view):
+                    new_overrides[p.no] = (inp_obs, inp_score, inp_view)
 
             if st.form_submit_button("Update Sheet & Regenerate Image", use_container_width=True):
                 st.session_state.vb_overrides.update(new_overrides)

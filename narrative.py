@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 import config
+from ui_utils import render_html, _render_html
 
 
 @dataclass
@@ -555,6 +556,43 @@ def build_master_cockpit(
     )
 
 
+def generate_confluence_factors(
+    spot: float = 0.0,
+    df=None,
+    pa_frames=None,
+    read=None,
+    vb_daily=None,
+    CTX=None,
+    **kwargs,
+) -> list[ConfluenceFactor]:
+    """
+    Stand-alone helper to evaluate and return institutional confluence factors.
+    Delegates to build_master_cockpit if `read` is provided, otherwise returns factors
+    from an existing cockpit or empty list.
+    """
+    if read is not None:
+        c = build_master_cockpit(
+            read=read,
+            sig=kwargs.get("sig", None),
+            spot=spot,
+            vix=kwargs.get("vix", None),
+            flows=kwargs.get("flows", None),
+            gex=kwargs.get("gex", None),
+            cpr_meta=kwargs.get("cpr_meta", None),
+            pa_frames=pa_frames,
+            order_flow_res=kwargs.get("order_flow_res", None),
+            smc_res=kwargs.get("smc_res", None),
+            liq_res=kwargs.get("liq_res", None),
+            xcheck=kwargs.get("xcheck", None),
+            lot_size=kwargs.get("lot_size", getattr(config, "LOT_SIZE", 65)),
+        )
+        return c.factors
+    cockpit = kwargs.get("cockpit", None)
+    if cockpit and hasattr(cockpit, "factors"):
+        return cockpit.factors
+    return []
+
+
 def render_cockpit(cockpit: MasterDecisionCockpit, spot: float, lv, sig, dte: float, nse_ts: str):
     """
     Renders the rich, zero-dilemma Decision Cockpit in Streamlit.
@@ -567,7 +605,7 @@ def render_cockpit(cockpit: MasterDecisionCockpit, spot: float, lv, sig, dte: fl
     score_pct = int((cockpit.institutional_score + 100) / 2)  # 0 to 100%
     gauge_col = cockpit.action_color
 
-    st.markdown(
+    _render_html(
         f"""
         <div style="background: #191D26; border: 2px solid {gauge_col}; border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
@@ -593,8 +631,7 @@ def render_cockpit(cockpit: MasterDecisionCockpit, spot: float, lv, sig, dte: fl
                 </div>
             </div>
         </div>
-        """,
-        unsafe_allow_html=True
+        """
     )
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -620,14 +657,13 @@ def render_cockpit(cockpit: MasterDecisionCockpit, spot: float, lv, sig, dte: fl
     t_col3.metric("Target 1 (Wall)", f"{t.target_1:,.0f}", f"+{t.target_1_pts:.0f} pts reward", delta_color="normal")
     t_col4.metric("Risk : Reward (RRR)", t.risk_reward_ratio, f"Risk ₹{t.risk_per_lot_inr:,.0f} / lot", delta_color="off")
 
-    st.markdown(
+    _render_html(
         f"""
         <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 12px 18px; margin-bottom: 20px;">
             <b>🎯 Execution Trigger:</b> <span style="color:#FFF;">{t.entry_trigger}</span><br>
             <b>💰 Capital & P&L Math:</b> Risk per lot: <b>₹{t.risk_per_lot_inr:,.0f}</b> · Target 1 Reward per lot: <b>₹{t.reward_per_lot_inr:,.0f}</b> · Target 2: <b>{t.target_2:,.0f} (+{t.target_2_pts:.0f} pts)</b>
         </div>
-        """,
-        unsafe_allow_html=True
+        """
     )
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -636,26 +672,20 @@ def render_cockpit(cockpit: MasterDecisionCockpit, spot: float, lv, sig, dte: fl
     st.markdown("### 📊 14-Parameter Institutional Confluence Matrix")
     st.caption("Complete breakdown of every mathematical engine evaluated.")
 
-    cat_cols = st.columns(3)
-    categories = ["Options", "Price Action", "Order Flow", "SMC & Structure", "Macro"]
-
-    table_rows = []
-    for f in cockpit.factors:
-        sent_badge = {
-            "BULLISH": "🟢 Bullish",
-            "BEARISH": "🔴 Bearish",
-            "NEUTRAL": "🟡 Neutral"
-        }.get(f.sentiment, "⚪")
-        table_rows.append({
+    matrix_factors = getattr(cockpit, "factors", []) if cockpit else []
+    
+    rows = []
+    for f in matrix_factors:
+        s_icon = "🟢" if f.sentiment == "BULLISH" else ("🔴" if f.sentiment == "BEARISH" else "⚪")
+        rows.append({
             "Engine": f.category,
             "Indicator": f.name,
             "Reading": f.value_str,
-            "Sentiment": sent_badge,
-            "Impact Score": f"{f.score:+} / {f.weight}",
+            "Sentiment": f"{s_icon} {f.sentiment.title() if f.sentiment else 'Neutral'}",
+            "Impact Score": f"{f.score:+d} / {f.weight}",
             "Meaning for Your Trade": f.plain_meaning
         })
-
-    df_mat = pd.DataFrame(table_rows)
+    df_mat = pd.DataFrame(rows)
     st.dataframe(
         df_mat,
         use_container_width=True,
@@ -670,7 +700,7 @@ def render_cockpit(cockpit: MasterDecisionCockpit, spot: float, lv, sig, dte: fl
         }
     )
 
-    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+    _render_html("<div style='margin-top: 15px;'></div>")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # 5. Playbook & The 5-Minute Story
@@ -678,7 +708,7 @@ def render_cockpit(cockpit: MasterDecisionCockpit, spot: float, lv, sig, dte: fl
     c_p1, c_p2 = st.columns([1.2, 1])
     with c_p1:
         st.markdown("### ⚡ 5-Minute Action Playbooks")
-        st.markdown(
+        _render_html(
             f"""
             <div style="background: rgba(15, 157, 88, 0.08); border-left: 4px solid #0F9D58; padding: 12px; border-radius: 4px; margin-bottom: 10px;">
                 <b style="color: #0F9D58;">📈 Call Buyer Playbook (CE)</b><br>
@@ -692,8 +722,7 @@ def render_cockpit(cockpit: MasterDecisionCockpit, spot: float, lv, sig, dte: fl
                 <b style="color: #E65100;">🛡️ Option Seller Playbook (Theta)</b><br>
                 <span style="font-size: 13px; color: #E0E0E0;">{cockpit.seller_playbook}</span>
             </div>
-            """,
-            unsafe_allow_html=True
+            """
         )
     with c_p2:
         st.markdown("### 📖 The 5-Minute Story")
@@ -701,7 +730,7 @@ def render_cockpit(cockpit: MasterDecisionCockpit, spot: float, lv, sig, dte: fl
             for p in cockpit.story_paragraphs:
                 st.markdown(p)
 
-    st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
+    _render_html("<div style='margin-top: 20px;'></div>")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # 6. Best Instruments to Trade (Copy-Paste Watchlist) & Greeks Hierarchy

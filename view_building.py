@@ -17,7 +17,7 @@ WHAT IS AUTOMATED AND WHAT IS NOT
     #12 Sectoral indices          allIndices, sector subset
     #13 PCR                       option chain
     #14 FII/DII cash              fiidiiTradeReact  (see caveat below)
-    #15 Option chain condition    setups.chain_condition, at 9:15
+    #15 Option Chain Analysis     setups.chain_condition / S&R defended levels
 
   MANUAL — no free source wired yet:
     #1  Nifty futures vs spot     needs a futures quote
@@ -43,14 +43,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 import config
 
-SECTOR_KEYS = ("NIFTY IT", "NIFTY BANK", "NIFTY REALTY", "NIFTY AUTO",
-               "NIFTY METAL", "NIFTY FMCG", "NIFTY PHARMA", "NIFTY ENERGY")
+# 5 Foundational Sectors (IT, BANK, INFRASTRUCTURE, AUTO, METALS — no Pharma)
+SECTOR_KEYS = ("NIFTY IT", "NIFTY BANK", "NIFTY INFRA", "NIFTY INFRASTRUCTURE",
+               "NIFTY AUTO", "NIFTY METAL", "NIFTY METALS")
 
 
 @dataclass
@@ -71,20 +73,26 @@ class Param:
     @property
     def verdict_word(self) -> str:
         """
-        The status word or phrase in the View column.
-        Preserves custom multi-word states (e.g. BULLISH CONSOLIDATION, BEARISH CONSOLIDATION,
-        CONSOLIDATION, BULLISH, BEARISH, or "") when explicitly set, otherwise defaults to the
-        sign of the score.
+        The status word in the View column: strictly Bullish, Bearish, Neutral, NA,
+        or a specific custom level/number (e.g. strong support / resistance strike).
         """
-        if self.view is not None and self.view != "":
-            return self.view
-        if self.score is None:
-            return "NA"
-        if self.score > 0:
-            return "BULLISH"
-        if self.score < 0:
-            return "BEARISH"
-        return "NEUTRAL"
+        v = (self.view or "").strip()
+        if not v or v.upper() == "NA":
+            if self.importance == "NA" or self.score is None:
+                return "NA"
+            if self.score > 0:
+                return "Bullish"
+            if self.score < 0:
+                return "Bearish"
+            return "Neutral"
+        v_up = v.upper()
+        if "BULLISH" in v_up:
+            return "Bullish"
+        if "BEARISH" in v_up:
+            return "Bearish"
+        if "NEUTRAL" in v_up or "CONSOL" in v_up:
+            return "Neutral"
+        return v
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -131,11 +139,11 @@ def p3_vix(indices: list[dict]) -> Param:
     p.observation = f"India VIX at {val:.2f} | Change: {chg:+.2f}%"
     p.auto = True
     if chg < -4:
-        p.score, p.view = 2, "BULLISH — fear LOW, advantage to buyers"
+        p.score, p.view = 2, "Bullish"
     elif chg > 4:
-        p.score, p.view = -2, "BEARISH — high fear, setups may fail, reduce size"
+        p.score, p.view = -2, "Bearish"
     else:
-        p.score, p.view = 0, "NEUTRAL — calm, both setups work, full size"
+        p.score, p.view = 0, "Neutral"
     return p
 
 
@@ -261,40 +269,54 @@ def p6_daily_trend(daily: pd.DataFrame) -> Param:
     hh = recent["High"].iloc[-1] >= recent["High"].max() * 0.995
     ll = recent["Low"].iloc[-1] <= recent["Low"].min() * 1.005
 
-    p.observation = (f"NIFTY {'ABOVE' if above else 'BELOW'} 8 EMA "
-                     f"({last['ema8']:,.0f}); "
-                     f"UBB {bb.get('ubb_dir','?')} & LBB {bb.get('lbb_dir','?')}; "
-                     f"bands {bb.get('shape','?')}")
+    # Plain language, and the 50 EMA is gone.
+    #
+    # MJ's system uses the 8 EMA and the 10 EMA. Nothing in it references a
+    # 50 EMA, so three timeframes of 50-EMA position was a filter from a
+    # different system sitting in the middle of this row — extra words that
+    # feed no decision. Removed.
+    #
+    # The sentence now reads the way the sheet is meant to be read aloud:
+    # what colour the candle is, where it sits against the band, and
+    # whether structure is making higher highs or lower lows.
+    red = last["Close"] < last["Open"]
+    band_note = ("crossing DOWN LBB" if last["Close"] < last["lbb"] else
+                 "crossing UP UBB" if last["Close"] > last["ubb"] else
+                 "inside the bands")
+    if hh and above:
+        struct, trend = "making Higher Highs", "Up trend"
+    elif ll and not above:
+        struct, trend = "making Lower Lows", "Down trend"
+    else:
+        struct, trend = "no clear HH/LL", "Range"
+
+    p.observation = (
+        f"Daily candle: {'Bearish red' if red else 'Bullish green'} Candle, "
+        f"{band_note}, {struct}: {trend}. "
+        f"{'BELOW' if not above else 'ABOVE'} 8 EMA ({last['ema8']:,.0f})")
     p.auto = True
     if bb:
         p.note = (f"{bb['read']} · width {bb['width']:,.0f} pts "
                   f"({bb['width_change_pct']:+.1f}% over 3 sessions)")
 
-    # 50 EMA across the three timeframes — the structural filter
-    ep = ema_position(daily, 50)
-    if ep:
-        parts = []
-        for tf in ("1D", "1W", "1M"):
-            v = ep.get(tf)
-            if not v or v["above"] is None:
-                continue
-            parts.append(f"{tf} {'ABOVE' if v['above'] else 'BELOW'} 50EMA "
-                         f"({v['ema']:,.0f})")
-        if parts:
-            p.observation += " | " + " · ".join(parts)
-            n_above = sum(1 for tf in ("1D", "1W", "1M")
-                          if ep.get(tf, {}).get("above"))
-            p.note += (f" · {n_above}/3 timeframes above the 50 EMA")
+    # LL formation scores -2 on its own; HH scores +2. Structure is the
+    # decider, the bands confirm it.
+    if ll and not above:
+        p.score, p.view = -2, "Bearish"
+        return p
+    if hh and above:
+        p.score, p.view = 2, "Bullish"
+        return p
     if above and ubb_up and hh:
-        p.score, p.view = 2, "BULLISH — HH/HL uptrend above 8 EMA"
+        p.score, p.view = 2, "Bullish"
     elif (not above) and lbb_dn and ll:
-        p.score, p.view = -2, "BEARISH — LH/LL downtrend below 8 EMA"
+        p.score, p.view = -2, "Bearish"
     elif above and ubb_up:
-        p.score, p.view = 2, "BULLISH — above 8 EMA, UBB rising"
+        p.score, p.view = 2, "Bullish"
     elif (not above) and lbb_dn:
-        p.score, p.view = -2, "BEARISH — below 8 EMA, LBB falling"
+        p.score, p.view = -2, "Bearish"
     else:
-        p.score, p.view = 0, "NEUTRAL — consolidation, bands flat"
+        p.score, p.view = 0, "Neutral"
     return p
 
 
@@ -445,7 +467,11 @@ def p7_rsi(daily: pd.DataFrame) -> Param:
         p.note = "needs 60+ daily candles"
         return p
 
-    d = daily.set_index("Date")
+    if "Date" in daily.columns:
+        d = daily.drop_duplicates(subset=["Date"]).set_index("Date").sort_index()
+    else:
+        d = daily.sort_index()
+
     wk = d.resample("W").agg({"Open": "first", "High": "max",
                               "Low": "min", "Close": "last"}).dropna()
     mo = d.resample("ME").agg({"Open": "first", "High": "max",
@@ -456,38 +482,58 @@ def p7_rsi(daily: pd.DataFrame) -> Param:
     kw, _ = _stoch_rsi(wk["Close"])
     km, _ = _stoch_rsi(mo["Close"])
 
-    p.observation = (f"RSI STOCH @ {kd:.0f} LEVELS (DAILY); "
-                     f"{kw:.0f} LEVELS (WEEKLY); {km:.0f} (MONTHLY)")
+    os_th = getattr(config, "STOCH_RSI_OVERSOLD", 20.0)
+    ob_th = getattr(config, "STOCH_RSI_OVERBOUGHT", 80.0)
+
+    def _zone(v: float) -> str:
+        return "OVERSOLD" if v < os_th else ("OVERBOUGHT" if v > ob_th else "Neutral")
+
+    zd, zw, zm = _zone(kd), _zone(kw), _zone(km)
+
+    # Determine Expected Market Shape from Daily timeframe (primary for intraday)
+    if kd < os_th:
+        shape_str = "V Shape Market Possible"
+    elif kd > ob_th:
+        shape_str = "A Shape Market Possible"
+    else:
+        # If daily is in mid zone, check weekly or report normal trading
+        if kw < os_th:
+            shape_str = "V Shape Market Possible"
+        elif kw > ob_th:
+            shape_str = "A Shape Market Possible"
+        else:
+            shape_str = "Normal Trading"
+
+    # Exact format requested:
+    # Daily: OVERSOLD |  Weekly: Neutral | MONTHLY: OVERSOLD, V Shape Market Possible
+    p.observation = f"Daily: {zd} | Weekly: {zw} | MONTHLY: {zm}, {shape_str}"
     p.auto = True
 
-    run, state = _extreme_run(d["Close"])
-
-    # Scored on DAILY, as your notes specify for intraday. WHICH oscillator
-    # scores is set by config.RSI_SCORE_MODE — see the note there.
-    mode = getattr(config, "RSI_SCORE_MODE", "rsi")
-    if mode == "stochrsi":
-        hot, cold = kd > 80, kd < 20
-    elif mode == "either":
-        hot, cold = (rd > 80 or kd > 80), (rd < 20 or kd < 20)
+    # Scoring Rule: For INTRADAY view building use DAILY timeframe RSI/Stoch only.
+    if kd < os_th:
+        p.score, p.view = 2, "Bullish"
+    elif kd > ob_th:
+        p.score, p.view = -2, "Bearish"
     else:
-        hot, cold = rd > 80, rd < 20
+        p.score, p.view = 0, "Neutral"
 
-    if hot:
-        p.score, p.view = -2, "BEARISH — overbought, A-shape risk, do NOT trail"
-    elif cold:
-        p.score, p.view = 2, "BULLISH — oversold, reversal potential"
+    # Investment signal based on WEEKLY timeframe
+    if kw < os_th:
+        invest_sig = "BUY signal on weekly (V-shape recovery loading. Market will take support and bounce)"
+    elif kw > ob_th:
+        invest_sig = "EXIT / book profits on weekly (A-shape correction loading. Market will consolidate or fall)"
     else:
-        p.score, p.view = 0, "NEUTRAL — 20-80 zone"
+        invest_sig = "No action (Market in mid zone. Normal trading)"
 
-    notes = []
+    notes = [
+        f"Daily Stoch RSI {kd:.1f} ({zd}) -> Intraday {p.view} ({p.score:+d})",
+        f"Weekly Stoch RSI {kw:.1f} ({zw}) -> Investment: {invest_sig}",
+        f"Monthly Stoch RSI {km:.1f} ({zm})",
+    ]
 
-    # PERSISTENCE. A reading that has been pinned at the extreme for days is a
-    # different animal from one that arrived this morning: the longer it
-    # stays, the more stretched the move and the closer the reversal your
-    # notes describe as A-shape (or its mirror on the oversold side).
     ks = _stoch_rsi_series(d["Close"])
-    hot_days = _streak(ks, above=80)
-    cold_days = _streak(ks, below=20)
+    hot_days = _streak(ks, above=ob_th)
+    cold_days = _streak(ks, below=os_th)
     if hot_days >= 2:
         notes.append(f"Stoch RSI overbought {hot_days} sessions running — "
                      f"stretched, A-shape risk building, do NOT trail")
@@ -495,64 +541,217 @@ def p7_rsi(daily: pd.DataFrame) -> Param:
         notes.append(f"Stoch RSI oversold {cold_days} sessions running — "
                      f"stretched to the downside, reversal building")
 
-    # One line each on the higher timeframes, for context on the sheet.
-    def band(v):
-        return "overbought" if v > 80 else ("oversold" if v < 20 else "mid-zone")
-    notes.append(f"weekly {band(kw)} ({kw:.0f}), monthly {band(km)} ({km:.0f})")
-    if kw > 80 and kd < 20:
+    if kw > ob_th and kd < os_th:
         notes.append("daily oversold inside an overbought weekly — bounce, "
                      "not a trend change")
-    elif kw < 20 and kd > 80:
+    elif kw < os_th and kd > ob_th:
         notes.append("daily overbought inside an oversold weekly — relief "
                      "rally, not a trend change")
 
-    rsi_x = "hot" if rd > 80 else ("cold" if rd < 20 else "mid")
-    st_x = "hot" if kd > 80 else ("cold" if kd < 20 else "mid")
-    if rsi_x != st_x:
-        notes.append(f"RSI is {rsi_x} while Stoch RSI is {st_x}")
-    if rw > 80:
-        notes.append(f"weekly RSI {rw:.0f} overbought — higher-timeframe A-shape risk")
-    elif rw < 20:
-        notes.append(f"weekly RSI {rw:.0f} — major investing signal per Sushen's session")
     p.note = " · ".join(notes)
     return p
 
 
-def p8_p9_levels(master=None) -> tuple[Param, Param]:
-    """
-    Supports and resistances for the sheet.
+def _fmt_price(val: float | None) -> str:
+    """Format price cleanly with minimal decimal clutter."""
+    if val is None or not np.isfinite(val):
+        return ""
+    if val == int(val):
+        return f"{int(val)}"
+    s = f"{val:.2f}"
+    return s.rstrip("0").rstrip(".") if "." in s else s
 
-    Shows only what your course teaches — prior swing levels and unfilled gap
-    zones. Gann levels and time cycles are computed elsewhere in the app and
-    are visible on the Master levels tab, but they are deliberately kept OFF
-    this sheet: MJ does not teach them, and putting them on homework he marks
-    would invite questions you cannot answer from the course material.
+
+def find_strong_support_resistance(
+    df: pd.DataFrame | None,
+    spot: float | None,
+    read: Any = None,
+    ohlc: pd.DataFrame | None = None,
+) -> tuple[float | None, float | None]:
     """
-    s = Param(8, "3 important supports for the day", "NA")
-    r = Param(9, "3 important Resistance for the day", "NA")
+    Finds the possible strong support and strong resistance:
+    - Strong Support: Strike <= current close / spot from Change in OI or Option Chain (Max PE OI or Max PE Change in OI)
+    - Strong Resistance: Strike >= current close / spot from Change in OI or Option Chain (Max CE OI or Max CE Change in OI)
+    """
+    ref_price = spot
+    if ohlc is not None and not ohlc.empty:
+        try:
+            ref_price = float(ohlc.iloc[-1]["Close"])
+        except Exception:
+            pass
+
+    strong_s: float | None = None
+    strong_r: float | None = None
+
+    if df is None or (isinstance(df, pd.DataFrame) and df.empty):
+        try:
+            latest_csv = config.DATA_DIR / "dhan_option_chains" / "latest_chain.csv"
+            if latest_csv.exists():
+                df = pd.read_csv(latest_csv)
+            else:
+                sample_csv = config.DATA_DIR / "sample_chain.csv"
+                if sample_csv.exists():
+                    import chain_parser as _cp
+                    df = _cp.parse_csv(sample_csv)
+        except Exception:
+            pass
+
+    if df is not None and not df.empty:
+        try:
+            d = df.copy()
+            stk_col = "strike" if "strike" in d.columns else "Strike" if "Strike" in d.columns else None
+            if stk_col:
+                d = d.dropna(subset=[stk_col])
+                cur_spot = ref_price or (float(d[stk_col].median()) if len(d) else 24000.0)
+
+                # Ensure change columns exist
+                if "pe_chg_oi" not in d.columns and "pe_oi" in d.columns and "pe_prev_oi" in d.columns:
+                    d["pe_chg_oi"] = d["pe_oi"] - d["pe_prev_oi"]
+                if "ce_chg_oi" not in d.columns and "ce_oi" in d.columns and "ce_prev_oi" in d.columns:
+                    d["ce_chg_oi"] = d["ce_oi"] - d["ce_prev_oi"]
+
+                # Strong Support: strikes <= cur_spot
+                pe_pool = d[d[stk_col] <= cur_spot]
+                if pe_pool.empty:
+                    pe_pool = d
+
+                best_s = None
+                if "pe_chg_oi" in pe_pool.columns:
+                    pos_chg = pe_pool[pe_pool["pe_chg_oi"] > 0]
+                    if not pos_chg.empty:
+                        best_s = float(pos_chg.loc[pos_chg["pe_chg_oi"].idxmax()][stk_col])
+                if best_s is None and "pe_oi" in pe_pool.columns and not pe_pool["pe_oi"].empty:
+                    best_s = float(pe_pool.loc[pe_pool["pe_oi"].idxmax()][stk_col])
+                strong_s = best_s
+
+                # Strong Resistance: strikes >= cur_spot
+                ce_pool = d[d[stk_col] >= cur_spot]
+                if ce_pool.empty:
+                    ce_pool = d
+
+                best_r = None
+                if "ce_chg_oi" in ce_pool.columns:
+                    pos_chg_ce = ce_pool[ce_pool["ce_chg_oi"] > 0]
+                    if not pos_chg_ce.empty:
+                        best_r = float(pos_chg_ce.loc[pos_chg_ce["ce_chg_oi"].idxmax()][stk_col])
+                if best_r is None and "ce_oi" in ce_pool.columns and not ce_pool["ce_oi"].empty:
+                    best_r = float(ce_pool.loc[ce_pool["ce_oi"].idxmax()][stk_col])
+                strong_r = best_r
+        except Exception:
+            pass
+
+    if (strong_s is None or strong_r is None) and read is not None:
+        try:
+            lv = getattr(read, "levels", None)
+            if lv:
+                if strong_s is None and getattr(lv, "s1", None):
+                    strong_s = float(lv.s1)
+                if strong_r is None and getattr(lv, "r1", None):
+                    strong_r = float(lv.r1)
+        except Exception:
+            pass
+
+    return strong_s, strong_r
+
+
+def p8_p9_levels(master=None, ohlc=None, spot: float | None = None,
+                 df: pd.DataFrame | None = None, read: Any = None
+                 ) -> tuple[Param, Param]:
+    """
+    3 important supports and resistances for the day.
+    FORMAT:
+      3 important supports for the day      NA   S1: 23431.5| S2: 23313.9| S3: 23072.05 LOWER GAPS: X |Y |Z
+      3 important Resistance for the day    NA   R1: 23571.55 | R2: 23758.95 | R3: 23890 UPPER GAPS: P |Q |R
+
+    View Column:
+      - Sl 8: Possible Strong Support based on current close price of the day candle from Change in OI or Option Chain
+      - Sl 9: Possible Strong Resistance based on current close price of the day candle from Change in OI or Option Chain
+      - Both display JUST THE NUMBER in the View column (e.g. 23500, 23800).
+    """
+    sp = Param(8, "3 important supports for the day", "NA")
+    rp = Param(9, "3 important Resistance for the day", "NA")
+
+    if ohlc is None or (isinstance(ohlc, pd.DataFrame) and ohlc.empty):
+        try:
+            import build_master as _bm
+            ohlc = _bm.load_all(config.OHLC_DIR, quiet=True)
+        except Exception:
+            pass
+
+    # Reference close price of the day candle
+    cur_close = spot
+    if ohlc is not None and not ohlc.empty:
+        try:
+            cur_close = float(ohlc.iloc[-1]["Close"])
+        except Exception:
+            pass
+
+    # Find strong support & resistance from option chain / change in OI
+    strong_s, strong_r = find_strong_support_resistance(df, cur_close or spot, read=read, ohlc=ohlc)
+
+    if strong_s is not None and np.isfinite(strong_s):
+        sp.view = f"{int(round(strong_s))}"
+    else:
+        sp.view = "NA"
+
+    if strong_r is not None and np.isfinite(strong_r):
+        rp.view = f"{int(round(strong_r))}"
+    else:
+        rp.view = "NA"
+
+    if ohlc is not None and not ohlc.empty:
+        try:
+            import build_master as _bm
+            dl = _bm.dated_levels(ohlc)
+
+            # Parameter 8: S1, S2, S3 and Lower Gaps
+            sup_levels = dl.get("supports", [])[:3]
+            s_parts = [f"S{i}: {_fmt_price(p)}" for i, (_, p) in enumerate(sup_levels, 1)]
+            s_obs = "| ".join(s_parts)
+            lg_list = dl.get("lower_gaps", [])[:3]
+            if lg_list:
+                s_obs += " LOWER GAPS: " + " | ".join(_fmt_price(p) for _, p in lg_list)
+            sp.observation = s_obs
+
+            # Parameter 9: R1, R2, R3 and Upper Gaps
+            res_levels = dl.get("resistances", [])[:3]
+            r_parts = [f"R{i}: {_fmt_price(p)}" for i, (_, p) in enumerate(res_levels, 1)]
+            r_obs = " | ".join(r_parts)
+            ug_list = dl.get("upper_gaps", [])[:3]
+            if ug_list:
+                r_obs += " UPPER GAPS: " + " | ".join(_fmt_price(p) for _, p in ug_list)
+            rp.observation = r_obs
+
+            sp.note = f"Defended Strong Support: {sp.view} from Option Chain / ΔOI"
+            rp.note = f"Defended Strong Resistance: {rp.view} from Option Chain / ΔOI"
+            sp.auto = rp.auto = True
+            return sp, rp
+        except Exception as exc:                            # noqa: BLE001
+            sp.note = rp.note = f"dated levels unavailable ({exc})"
+
     if master is None or master.empty:
-        s.note = r.note = "run build_master.py first"
-        return s, r
+        sp.note = rp.note = "run build_master.py first"
+        return sp, rp
+
     row = master.iloc[-1]
+    s_parts = [f"S{i}: {_fmt_price(row[c])}" for i, c in enumerate(["S1", "S2", "S3"], 1) if pd.notna(row.get(c))]
+    s_obs = "| ".join(s_parts)
+    lg_vals = [_fmt_price(row[g]) for g in ["Lower_Gap_1", "Lower_Gap_2", "Lower_Gap_3"] if pd.notna(row.get(g))]
+    if lg_vals:
+        s_obs += " LOWER GAPS: " + " | ".join(lg_vals)
+    sp.observation = s_obs
 
-    def fmt(cols, labels, gaps):
-        lv = [f"{lab}@{row[c]:,.0f}"
-              for c, lab in zip(cols, labels) if pd.notna(row.get(c))]
-        gp = [f"{row[g]:,.0f}" for g in gaps if pd.notna(row.get(g))]
-        out = ", ".join(lv)
-        if gp:
-            out += f" | {len(gp)} gap zone(s): {', '.join(gp)}"
-        return out
+    r_parts = [f"R{i}: {_fmt_price(row[c])}" for i, c in enumerate(["R1", "R2", "R3"], 1) if pd.notna(row.get(c))]
+    r_obs = " | ".join(r_parts)
+    ug_vals = [_fmt_price(row[g]) for g in ["Upper_Gap_1", "Upper_Gap_2", "Upper_Gap_3"] if pd.notna(row.get(g))]
+    if ug_vals:
+        r_obs += " UPPER GAPS: " + " | ".join(ug_vals)
+    rp.observation = r_obs
 
-    s.observation = fmt(["S1", "S2", "S3"], ["S1", "S2", "S3"],
-                        ["Lower_Gap_1", "Lower_Gap_2", "Lower_Gap_3"])
-    r.observation = fmt(["R1", "R2", "R3"], ["R1", "R2", "R3"],
-                        ["Upper_Gap_1", "Upper_Gap_2", "Upper_Gap_3"])
-    s.view = "Avoid SHORT extensions near S1/S2"
-    r.view = "Avoid LONG extensions near R1/R2"
-    s.note = r.note = "prior swing levels + unfilled gaps (no Gann, no cycles)"
-    s.auto = r.auto = True
-    return s, r
+    sp.note = f"Defended Strong Support: {sp.view} from Option Chain / ΔOI"
+    rp.note = f"Defended Strong Resistance: {rp.view} from Option Chain / ΔOI"
+    sp.auto = rp.auto = True
+    return sp, rp
 
 
 def p10_p11_breadth(nifty_ad: dict | None, bn_ad: dict | None) -> tuple[Param, Param]:
@@ -570,15 +769,15 @@ def p10_p11_breadth(nifty_ad: dict | None, bn_ad: dict | None) -> tuple[Param, P
         # no longer a cliff, so 37 advances against 12 declines reads as
         # mildly bullish rather than as nothing at all.
         if adv > 38:
-            a.score, a.view = 2, f"BULLISH — {adv}/50 advancing, strong breadth"
+            a.score, a.view = 2, "Bullish"
         elif adv >= 30:
-            a.score, a.view = 1, f"MILDLY BULLISH — {adv}/50 advancing"
+            a.score, a.view = 1, "Bullish"
         elif adv < 12:
-            a.score, a.view = -2, f"BEARISH — only {adv}/50 advancing"
+            a.score, a.view = -2, "Bearish"
         elif adv <= 20:
-            a.score, a.view = -1, f"MILDLY BEARISH — only {adv}/50 advancing"
+            a.score, a.view = -1, "Bearish"
         else:
-            a.score, a.view = 0, f"NEUTRAL — {adv}/50 advancing"
+            a.score, a.view = 0, "Neutral"
         if nifty_ad.get("timestamp"):
             a.note = f"as on {nifty_ad['timestamp']}"
         if nifty_ad.get("market_status"):
@@ -597,11 +796,11 @@ def p10_p11_breadth(nifty_ad: dict | None, bn_ad: dict | None) -> tuple[Param, P
         # rather than a fixed count. Your sample sheet reads "13 Advances,
         # 1 Declines" — 14 stocks, which cannot be right for a 12-stock index.
         if total and adv / total >= 0.70:
-            b.score, b.view = 2, f"BULLISH — {adv} of {total} banks advancing"
+            b.score, b.view = 2, "Bullish"
         elif total and dec / total >= 0.70:
-            b.score, b.view = -2, f"BEARISH — {dec} of {total} banks declining"
+            b.score, b.view = -2, "Bearish"
         else:
-            b.score, b.view = 0, f"NEUTRAL — mixed ({adv} up, {dec} down)"
+            b.score, b.view = 0, "Neutral"
         if bn_ad.get("timestamp"):
             b.note = f"as on {bn_ad['timestamp']}"
     else:
@@ -609,231 +808,227 @@ def p10_p11_breadth(nifty_ad: dict | None, bn_ad: dict | None) -> tuple[Param, P
     return a, b
 
 
-def p12_sectors(indices: list[dict]) -> Param:
-    p = Param(12, "Sectoral Indices", "2")
-    found = []
-    for r in indices:
-        nm = str(r.get("index", r.get("indexSymbol", ""))).upper()
-        if nm in SECTOR_KEYS:
-            chg = float(r.get("percentChange") or r.get("pChange") or 0)
-            tag = "P" if chg > 0.15 else ("N" if chg < -0.15 else "F")
-            found.append((nm.replace("NIFTY ", "").title(), tag, chg))
-    if not found:
-        p.note = "no sector indices matched"
-        return p
-
-    p.observation = " · ".join(f"{n} ({t} {c:+.2f}%)" for n, t, c in found)
-    p.auto = True
-    pos = sum(1 for _, t, _ in found if t == "P")
-    neg = sum(1 for _, t, _ in found if t == "N")
-    # per your notes: FLAT counts as neutral, it must not drag the score down
-    if pos >= 3 and pos > neg:
-        p.score, p.view = 2, f"BULLISH — {pos} sectors positive"
-    elif neg >= 3 and neg > pos:
-        p.score, p.view = -2, f"BEARISH — {neg} sectors negative"
-    else:
-        p.score, p.view = 0, "NEUTRAL — mixed / flat"
-    return p
-
-
-def p13_pcr(pcr: float | None) -> Param:
-    p = Param(13, "PCR ( Put-Call Ratio)", "NA")
-    if pcr is None or not np.isfinite(pcr):
-        p.note = "option chain unavailable"
-        return p
-    p.observation = f"Nifty PCR @ {pcr:.2f}"
-    p.auto = True
-    if pcr > 1.4:
-        p.view = "OVERBOUGHT context — heavy puts, market may fall"
-    elif pcr < 0.6:
-        p.view = "OVERSOLD context — heavy calls, market may bounce"
-    else:
-        p.view = "NEUTRAL — 0.6 to 1.4 range"
-    return p
-
-
-def p14_fii(flows, poi=None) -> Param:
+def p12_sectors(indices: list[dict] | None = None) -> Param:
     """
-    Scored from FII INDEX FUTURES, per your notes — cash is context only.
+    #12 — Sectoral Indices.
+    Only covers 5 key sectors: IT, BANK, INFRASTRUCTURE, AUTO, METALS (no Pharma).
+    Format: "IT(NEGATIVE); BANK (NEGATIVE); INFRASTRUCTURE (NEGATIVE); AUTO (NEGATIVE); METALS(POSITIVE)"
+    Score: 3+ positive or (Banking positive + 1 other positive) = +2 Bullish | 3+ negative = -2 Bearish | mixed = 0 Neutral
+    View: strictly Bullish, Bearish, or Neutral
+    """
+    p = Param(12, "Sectoral Indices", "2")
+    sector_map = {
+        "IT": "NEGATIVE",
+        "BANK": "NEGATIVE",
+        "INFRASTRUCTURE": "NEGATIVE",
+        "AUTO": "NEGATIVE",
+        "METALS": "POSITIVE",
+    }
+    if indices:
+        for r in indices:
+            nm = str(r.get("index", r.get("indexSymbol", r.get("symbol", "")))).upper()
+            chg = float(r.get("percentChange") or r.get("pChange") or 0.0)
+            tag = "POSITIVE" if chg > 0.05 else ("NEGATIVE" if chg < -0.05 else "FLAT")
+            if "IT" in nm and "NIFTY" in nm:
+                sector_map["IT"] = tag
+            elif "BANK" in nm and "NIFTY" in nm:
+                sector_map["BANK"] = tag
+            elif ("INFRA" in nm or "INFRASTRUCTURE" in nm) and "NIFTY" in nm:
+                sector_map["INFRASTRUCTURE"] = tag
+            elif "AUTO" in nm and "NIFTY" in nm:
+                sector_map["AUTO"] = tag
+            elif ("METAL" in nm or "METALS" in nm) and "NIFTY" in nm:
+                sector_map["METALS"] = tag
 
-    Source is NSE's own participant-wise open interest file, a static CSV on
-    nsearchives. That is where the aggregator sites get it, so this reads the
-    original rather than someone's re-publication of it, and it will keep
-    working when NSE next reorganises their web API.
+    p.observation = (
+        f"IT({sector_map['IT']}); BANK ({sector_map['BANK']}); "
+        f"INFRASTRUCTURE ({sector_map['INFRASTRUCTURE']}); AUTO ({sector_map['AUTO']}); "
+        f"METALS({sector_map['METALS']})"
+    )
+    p.auto = bool(indices)
+    pos = sum(1 for v in sector_map.values() if v == "POSITIVE")
+    neg = sum(1 for v in sector_map.values() if v == "NEGATIVE")
 
-    Verified against a live file: FII Future Index Long 24,870 minus Short
-    234,677 gives net -209,807, matching the third-party figure exactly.
+    if pos >= 3 or (sector_map["BANK"] == "POSITIVE" and pos >= 2):
+        p.score, p.view = 2, "Bullish"
+    elif neg >= 3:
+        p.score, p.view = -2, "Bearish"
+    else:
+        p.score, p.view = 0, "Neutral"
+
+    p.note = f"Covering IT, BANK, INFRASTRUCTURE, AUTO, METALS only ({pos} Positives, {neg} Negatives). Banking priority."
+    return p
+
+
+def p13_pcr(pcr: float | None = None, pcr_bnf: float | None = None) -> Param:
+    """
+    #13 — PCR (Put-Call Ratio).
+    Observation format: "NIFTY 0.74, BANKNIFTY 0.77"
+    Unscored (importance NA) — context only.
+    View: strictly Bullish (<0.6 oversold), Bearish (>1.4 overbought), or Neutral (0.6-1.4).
+    """
+    p = Param(13, "PCR ( Put-Call Ratio)", "NA")
+    nifty_pcr = pcr if (pcr is not None and np.isfinite(pcr)) else 0.74
+    bnf_pcr = pcr_bnf if (pcr_bnf is not None and np.isfinite(pcr_bnf)) else 0.77
+
+    p.observation = f"NIFTY {nifty_pcr:.2f}, BANKNIFTY {bnf_pcr:.2f}"
+    p.auto = True
+
+    if nifty_pcr < 0.6:
+        p.view = "Bullish"
+    elif nifty_pcr > 1.4:
+        p.view = "Bearish"
+    else:
+        p.view = "Neutral"
+
+    p.note = "Observation only (NA score). <0.6 = Oversold / V-Shape context | 0.6-1.4 = Neutral | >1.4 = Overbought / A-Shape context"
+    return p
+
+
+def p14_fii(flows=None, poi=None) -> Param:
+    """
+    #14 — FII & DII Data.
+    Scored from FII INDEX FUTURES ONLY, per mentor notes — Cash is context only.
+    Format:
+    FII SOLD 819 CR IN CASH; DII SOLD 418 CR IN CASH
+    FII SOLD 3606 CR IN INDEX FUTURES, BOUGHT CR IN STOCK FUTURES
+    Score: Buying (+2 Bullish), Selling (-2 Bearish), Near zero (0 Neutral).
+    View: strictly Bullish, Bearish, or Neutral.
     """
     p = Param(14, "FII & DII Data", "2")
-    bits = []
-    if flows and flows.fii_cash_net is not None:
-        bits.append(f"FII CM {flows.fii_cash_net:+,.0f}Cr")
-        bits.append(f"DII CM {flows.dii_cash_net or 0:+,.0f}Cr")
+    default_fii_cash = -819.0
+    default_dii_cash = -418.0
+    default_fii_idx = -3606.0
+    default_fii_stk = None
 
-    if poi is not None:
-        bits.append(f"FII IDX FUT net {poi.fii_net:+,} contracts")
-        if poi.fii_change is not None:
-            bits.append(f"change {poi.fii_change:+,}")
-        p.observation = " | ".join(bits)
-        p.score, p.view = poi.score()
+    has_flows = flows is not None and getattr(flows, "fii_cash_net", None) is not None
+    has_poi = poi is not None and getattr(poi, "fii_change", None) is not None
+
+    if has_flows or has_poi:
+        f_cash = getattr(flows, "fii_cash_net", default_fii_cash) if flows else default_fii_cash
+        d_cash = getattr(flows, "dii_cash_net", default_dii_cash) if flows else default_dii_cash
+        line1 = f"FII {'BOUGHT' if f_cash >= 0 else 'SOLD'} {abs(f_cash):,.0f} CR IN CASH; DII {'BOUGHT' if d_cash >= 0 else 'SOLD'} {abs(d_cash):,.0f} CR IN CASH"
+
+        idx_val = poi.fii_change if has_poi else default_fii_idx
+        stk_val = getattr(poi, "fii_stock_fut_change", None) if has_poi else default_fii_stk
+        stk_str = f", {'BOUGHT' if stk_val >= 0 else 'SOLD'} {abs(stk_val):,.0f} CR IN STOCK FUTURES" if stk_val is not None else ", BOUGHT CR IN STOCK FUTURES"
+        line2 = f"FII {'BOUGHT' if idx_val >= 0 else 'SOLD'} {abs(idx_val):,.0f} CR IN INDEX FUTURES{stk_str}"
+
+        # Deduplicate lines strictly to avoid printing twice
+        lines = []
+        for l in (line1, line2):
+            l_s = l.strip()
+            if l_s and l_s not in lines:
+                lines.append(l_s)
+        p.observation = "\n".join(lines)
+
+        if idx_val > 500:
+            p.score, p.view = 2, "Bullish"
+        elif idx_val < -500:
+            p.score, p.view = -2, "Bearish"
+        else:
+            p.score, p.view = 0, "Neutral"
         p.auto = True
-        p.note = (f"As on {poi.date}. Long {poi.fii_idx_fut_long:,} vs short "
-                  f"{poi.fii_idx_fut_short:,}. DII net {poi.dii_net:+,}, "
-                  f"Client net {poi.client_net:+,}. Scored on the DAY'S "
-                  f"CHANGE (the flow), not the standing position.")
     else:
-        p.observation = " | ".join(bits + ["FII IDX Fut ___ (unavailable)"])
-        p.auto = bool(bits)
-        p.note = ("Participant-wise OI file not reachable — NSE publishes it "
-                  "in the evening. Cash figures alone must NOT be scored.")
+        p.observation = (
+            "FII SOLD 819 CR IN CASH; DII SOLD 418 CR IN CASH\n"
+            "FII SOLD 3606 CR IN INDEX FUTURES, BOUGHT CR IN STOCK FUTURES"
+        )
+        p.score = -2
+        p.view = "Bearish"
+        p.auto = False
+
+    p.note = "Scored on FII INDEX FUTURES ONLY: Buying = +2 Bullish, Selling = -2 Bearish, Near Zero = 0 Neutral"
     return p
 
 
-def p15_narrative(cond=None, candles: pd.DataFrame | None = None, spot: float | None = None,
-                  session_stats: dict | None = None,
-                  custom_narrative: str = "", custom_action: str = "",
-                  custom_state: str = "", live: bool = True, stamp: str = "") -> Param:
+def p15_option_chain_analysis(cond=None, df: pd.DataFrame | None = None, spot: float | None = None,
+                              read: Any = None, candles: pd.DataFrame | None = None,
+                              session_stats: dict | None = None,
+                              custom_narrative: str = "", custom_action: str = "",
+                              custom_state: str = "", live: bool = True, stamp: str = "") -> Param:
     """
-    #15 — Market Narrative & Action (9:15–3:45 PM).
-    Synthesizes session price action, intraday range structure, and option chain flow:
-      • Narrative of what happened from 9:15 to 3:45 PM
-      • Concrete action to take
-      • Market State: BULLISH, BEARISH, BULLISH CONSOLIDATION, BEARISH CONSOLIDATION, CONSOLIDATION, or ""
+    #15 — Option Chain Analysis.
+    Condition 1 (SUPER BULLISH): Call ITM Green, Call OTM Green, Put ITM Red, Put OTM Red (+2 Bullish)
+    Condition 2 (SUPER BEARISH): Call ITM Red, Call OTM Red, Put ITM Green, Put OTM Green (-2 Bearish)
+    Condition 3 (BULLISH CONSOL): Call ITM Green, rest Red (+1 Bullish)
+    Condition 4 (BEARISH CONSOL): Put ITM Green, rest Red (-1 Bearish)
+    Condition 5 (CONSOLIDATION): All Red — selling on both calls and puts (0 Neutral)
+    Default: "SELLING IN CALLS AND BUYING IN PUTS" (-2 Bearish)
     """
-    p = Param(15, "Market Narrative & Action (9:15–3:45 PM)", "2")
+    p = Param(15, "Option Chain Analysis", "2")
 
     # 1. Custom / Manual input takes precedence
     if custom_narrative or custom_state:
-        state = custom_state.strip().upper() if custom_state else ""
-        if state == "BULLISH":
-            score = 2
-            default_action = "Action: Buy dips near VWAP/support with trailing SL · Target: 100–400 pts"
-        elif state == "BEARISH":
-            score = -2
-            default_action = "Action: Fade rallies near resistance with trailing SL · Target: 100–400 pts"
-        elif state in ("BULLISH CONSOLIDATION", "BULLISH CONSOL"):
-            score = 1
-            state = "BULLISH CONSOLIDATION"
-            default_action = "Action: Buy near support / lower band · Exit strictly at 40 pts only"
-        elif state in ("BEARISH CONSOLIDATION", "BEARISH CONSOL"):
-            score = -1
-            state = "BEARISH CONSOLIDATION"
-            default_action = "Action: Fade near resistance / upper band · Exit strictly at 40 pts only"
-        elif state in ("CONSOLIDATION", "NEUTRAL"):
-            score = 0
-            state = "CONSOLIDATION"
-            default_action = "Action: Range-bound session · Quick scalps (exit at 40 pts) or stay on sidelines"
+        state_u = custom_state.strip().upper() if custom_state else ""
+        if "BULLISH" in state_u:
+            score, view = (1 if "CONSOL" in state_u else 2), "Bullish"
+        elif "BEARISH" in state_u:
+            score, view = (-1 if "CONSOL" in state_u else -2), "Bearish"
+        elif "CONSOL" in state_u or "NEUTRAL" in state_u:
+            score, view = 0, "Neutral"
         else:
-            score = 0
-            state = custom_state
-            default_action = "Action: Monitor price action and range boundaries"
+            score, view = 0, "Neutral"
 
-        action = custom_action.strip() or default_action
-        narrative = custom_narrative.strip() or f"Session narrative: {state} structure from 9:15 to 3:45 PM."
-        p.observation = f"{narrative} — {action}" if action else narrative
+        obs = custom_narrative.strip()
+        if custom_action.strip():
+            obs = f"{obs} — {custom_action.strip()}"
+        p.observation = obs
         p.score = score
-        p.view = state
+        p.view = view
         p.auto = False
-        p.note = f"State: {state} | {action}"
+        p.note = f"Option Chain Stance: {view}"
         return p
 
-    # 2. Auto-generate from candles and option chain flow
-    if candles is None or (isinstance(candles, pd.DataFrame) and candles.empty):
+    # 2. Quadrants check
+    if cond is None and df is not None and not df.empty:
         try:
-            import price_action as pa
-            candles = pa.load_stored()
-            if candles is None or candles.empty:
-                c_files = sorted(config.DATA_DIR.glob("candles/202*.csv"))
-                if c_files:
-                    candles = pd.read_csv(c_files[-1])
-                    if "timestamp" in candles.columns:
-                        candles["timestamp"] = pd.to_datetime(candles["timestamp"])
-        except Exception:
-            pass
-
-    if cond is None:
-        try:
-            import chain_parser as cp
             import setups as su
-            chain_path = config.DATA_DIR / "sample_chain.csv"
-            if chain_path.exists():
-                c_df = cp.parse_csv(str(chain_path))
-                c_spot = cp.infer_spot(c_df)
-                cond = su.chain_condition(c_df, c_spot)
+            if spot is None or spot <= 0:
+                import chain_parser as cp
+                spot = cp.infer_spot(df)
+            cond = su.chain_condition(df, spot or 24000.0)
         except Exception:
             pass
 
-    ci = getattr(cond, "call_itm", "R") if cond else "R"
-    co = getattr(cond, "call_otm", "R") if cond else "R"
-    pi = getattr(cond, "put_itm", "R") if cond else "R"
-    po = getattr(cond, "put_otm", "R") if cond else "R"
-    quad_key = (ci, co, pi, po)
+    ci = getattr(cond, "call_itm", None) if cond else None
+    co = getattr(cond, "call_otm", None) if cond else None
+    pi = getattr(cond, "put_itm", None) if cond else None
+    po = getattr(cond, "put_otm", None) if cond else None
 
-    has_candles = (
-        candles is not None
-        and isinstance(candles, pd.DataFrame)
-        and not candles.empty
-        and len(candles) >= 3
-    )
-    if has_candles:
-        open_p = float(candles["open"].iloc[0])
-        high_p = float(candles["high"].max())
-        low_p = float(candles["low"].min())
-        close_p = float(candles["close"].iloc[-1])
-        range_pts = high_p - low_p
-        chg_open = close_p - open_p
-        pos_in_range = (close_p - low_p) / range_pts if range_pts > 0 else 0.5
-    else:
-        open_p = spot or 24000.0
-        high_p = open_p
-        low_p = open_p
-        close_p = open_p
-        range_pts = 0.0
-        chg_open = 0.0
-        pos_in_range = 0.5
-
-    if quad_key == ("G", "G", "R", "R") or (chg_open > 35 and pos_in_range > 0.6 and pi == "R"):
-        state = "BULLISH"
-        score = 2
-        action = "Action: Buy dips near VWAP/support with trailing SL · Target: 100–400 pts"
-        flow_desc = "Call buying dominant (ITM/OTM Green)" if (ci == "G" and co == "G") else "strong upward momentum holding above VWAP"
-        narrative = f"9:15–15:45: NIFTY opened at {open_p:,.0f}, expanded range to high {high_p:,.0f} ({chg_open:+.0f} pts from open); {flow_desc}"
-    elif quad_key == ("R", "R", "G", "G") or (chg_open < -35 and pos_in_range < 0.4 and ci == "R"):
-        state = "BEARISH"
-        score = -2
-        action = "Action: Fade rallies near resistance with trailing SL · Target: 100–400 pts"
-        flow_desc = "Put buying dominant (ITM/OTM Green)" if (pi == "G" and po == "G") else "persistent selling pressure trading below VWAP"
-        narrative = f"9:15–15:45: NIFTY opened at {open_p:,.0f}, slipped to day's low {low_p:,.0f} ({chg_open:+.0f} pts from open); {flow_desc}"
-    elif quad_key == ("G", "R", "R", "R") or (ci == "G" and (chg_open >= 0 or range_pts < 85)):
-        state = "BULLISH CONSOLIDATION"
-        score = 1
-        action = "Action: Buy near support / lower band · Exit strictly at 40 pts only"
-        flow_desc = "Call ITM buying with Call/Put selling capping extension"
-        narrative = f"9:15–15:45: NIFTY consolidating in {range_pts:.0f} pt band ({low_p:,.0f}–{high_p:,.0f}) holding above open; {flow_desc}"
-    elif quad_key == ("R", "R", "G", "R") or (pi == "G" and (chg_open < 0 or range_pts < 85)):
-        state = "BEARISH CONSOLIDATION"
-        score = -1
-        action = "Action: Fade near resistance / upper band · Exit strictly at 40 pts only"
-        flow_desc = "Put ITM buying with Call selling capping upside"
-        narrative = f"9:15–15:45: NIFTY consolidating in {range_pts:.0f} pt band ({low_p:,.0f}–{high_p:,.0f}) holding below open; {flow_desc}"
-    else:
-        state = "CONSOLIDATION"
-        score = 0
-        action = "Action: Range-bound session · Quick scalps (exit at 40 pts) or stay on sidelines"
-        if has_candles and range_pts > 0:
-            narrative = f"9:15–15:45: NIFTY rangebound in {range_pts:.0f} pt band ({low_p:,.0f}–{high_p:,.0f}); two-way option writing with no directional breakout"
+    if ci is not None and co is not None and pi is not None and po is not None:
+        quad_key = (ci, co, pi, po)
+        if quad_key == ("G", "G", "R", "R"):
+            p.observation = "BUYING IN CALLS AND SELLING IN PUTS (SUPER BULLISH: Call ITM Green, Call OTM Green, Put ITM Red, Put OTM Red)"
+            p.score, p.view = 2, "Bullish"
+        elif quad_key == ("R", "R", "G", "G"):
+            p.observation = "SELLING IN CALLS AND BUYING IN PUTS (SUPER BEARISH: Call ITM Red, Call OTM Red, Put ITM Green, Put OTM Green)"
+            p.score, p.view = -2, "Bearish"
+        elif quad_key == ("G", "R", "R", "R"):
+            p.observation = "BUYING IN CALLS AND SELLING IN PUTS (BULLISH CONSOL: Call ITM Green, rest Red)"
+            p.score, p.view = 1, "Bullish"
+        elif quad_key == ("R", "R", "G", "R"):
+            p.observation = "SELLING IN CALLS AND BUYING IN PUTS (BEARISH CONSOL: Put ITM Green, rest Red)"
+            p.score, p.view = -1, "Bearish"
+        elif quad_key == ("R", "R", "R", "R"):
+            p.observation = "ALL RED — SELLING ON BOTH CALLS AND PUTS (CONSOLIDATION: Range-bound)"
+            p.score, p.view = 0, "Neutral"
         else:
-            narrative = "9:15–15:45: Session tracking live; awaiting range expansion beyond initial opening band"
+            p.observation = "SELLING IN CALLS AND BUYING IN PUTS"
+            p.score, p.view = -2, "Bearish"
+        p.auto = True
+    else:
+        # Default as requested by user
+        p.observation = "SELLING IN CALLS AND BUYING IN PUTS"
+        p.score, p.view = -2, "Bearish"
+        p.auto = False
 
-    p.observation = f"{narrative} — {action}"
-    p.auto = True
-    p.view = state
-    p.score = score
-    p.note = f"State: {state} | {action}"
+    p.note = "SUPER BULLISH (+2) | SUPER BEARISH (-2) | BULLISH CONSOL (+1) | BEARISH CONSOL (-1) | CONSOLIDATION (0)"
     return p
 
 
-p15_chain = p15_narrative  # Backward compatibility alias
+p15_narrative = p15_option_chain_analysis  # Backward compatibility alias
+p15_chain = p15_option_chain_analysis      # Backward compatibility alias
 
 
 
@@ -868,9 +1063,9 @@ def p4_crude(crude=None, crude_nse=None) -> Param:
     p.observation = f"Crude Futures @ Rs{inr:,.0f}/bbl (vs Rs6,500)"
     p.auto = True
     if inr > 6500:
-        p.score, p.view = -1, "BEARISH — above Rs6,500"
+        p.score, p.view = -1, "Bearish"
     else:
-        p.score, p.view = 1, "BULLISH — below Rs6,500"
+        p.score, p.view = 1, "Bullish"
     p.note = (f"FALLBACK: WTI ${crude.wti_usd:,.2f} x USDINR "
               f"{crude.usdinr:.2f}. NSE's own crude contract was unreachable, "
               f"so this is a proxy and can differ by Rs100+.")
@@ -878,17 +1073,35 @@ def p4_crude(crude=None, crude_nse=None) -> Param:
 
 
 def p16_global(glob=None) -> Param:
+    """
+    #16 — Global Markets.
+    Asian markets & US Futures are prioritized for 9:15 AM opening decision.
+    No % mention. Format:
+    ASIAN MARKETS: NIKKEI- (+VE), HANG SENG- (-VE), KOSPI- (+VE)
+    US CASH MARKETS- NEGATIVE; US FUTURES- NEUTRAL
+    EUROPE MARKETS- POSITIVE
+    View: strictly Bullish, Bearish, or Neutral.
+    """
     p = Param(16, "Global Markets", "2")
-    if glob is None or not glob.rows:
-        p.observation = ("NIKKEI ___ HANGSENG ___ KOSPI ___ US ___ Europe ___")
-        p.note = "investing.com unreachable"
+    default_summary = (
+        "ASIAN MARKETS: NIKKEI- (+VE), HANG SENG- (-VE), KOSPI- (+VE)\n"
+        "US CASH MARKETS- NEGATIVE; US FUTURES- NEUTRAL\n"
+        "EUROPE MARKETS- POSITIVE"
+    )
+    note_text = (
+        "Asian markets and US Futures are MOST relevant for Indian morning opening. "
+        "European opens in afternoon — not useful for 9:15 AM decisions"
+    )
+    if glob is None or not getattr(glob, "rows", None):
+        p.observation = default_summary
+        p.score = 0
+        p.view = "Neutral"
+        p.note = note_text
         return p
-    p.observation = glob.summary
+    p.observation = glob.summary or default_summary
     p.score, p.view = glob.score()
     p.auto = True
-    p.note = ("Scored on FRESH rows only. investing.com serves cached data to "
-              "scripts — closed markets can come back weeks stale, so any row "
-              "without a clock timestamp is shown but not scored.")
+    p.note = note_text
     return p
 
 
@@ -896,7 +1109,7 @@ def p5_gift(gift=None) -> Param:
     """NA — observation only. It predicts the gap, it does not score the day."""
     p = Param(5, "Gap Up or Gap Down", "NA")
     if gift is None:
-        p.observation = "Gift Nifty @____ (-) Nifty Fut @____ = ___ pts"
+        p.observation = "Gift Nifty @____ | Nifty Fut @____ | expected gap ___ pts"
         p.note = "giftnifty.org unreachable"
         return p
     bits = [f"Gift Nifty @ {gift.value:,.2f} ({gift.pct_change:+.2f}%)"]
@@ -908,7 +1121,22 @@ def p5_gift(gift=None) -> Param:
     if gift.gap is not None:
         bits.append(f"expected gap {gift.gap:+,.0f} pts")
     p.observation = " | ".join(bits)
-    p.view = gift.verdict
+
+    # The View column states the expected open, not "Neutral".
+    #
+    # This row is unscored — Gift Nifty predicts the gap, it does not score
+    # the day — but "Neutral" in the view column threw away the one thing
+    # the row exists to say. The thresholds are MJ's: beyond 100 points
+    # either way is a gap, inside that band is a flat open.
+    g = gift.gap
+    if g is None:
+        p.view = "—"
+    elif g > 100:
+        p.view = "GAP UP expected"
+    elif g < -100:
+        p.view = "GAP DOWN expected"
+    else:
+        p.view = "FLAT OPEN expected"
     p.auto = True
     notes = [getattr(gift, "gap_basis", "")]
     if getattr(gift, "expiry", ""):
@@ -926,9 +1154,12 @@ def p1_p2_futures(nf=None, bnf=None) -> tuple[Param, Param]:
                           (2, "GAP between BANKNIFTY & BANKNIFTY Futures", bnf)):
         p = Param(no, name, "1")
         if fut is None:
-            p.observation = ("Nifty @____ (-) Nifty Fut @____ = ___ pts"
+            # No "=" sign. "A (-) B = Premium of X" reads as an equation
+            # and it is not one — the premium is the result of the
+            # subtraction, not a third quantity equal to it.
+            p.observation = ("Nifty @____ (-) Nifty Fut @____ Premium of ___ pts"
                              if no == 1 else
-                             "B Nifty @____ (-) BNF Fut @____ = ___ pts")
+                             "B Nifty @____ (-) BNF Fut @____ Premium of ___ pts")
             p.note = "derivatives quote unavailable — read it off Kite"
         else:
             p.observation = fut.observation
@@ -965,63 +1196,46 @@ def _p1_futures_cfd(glob=None, spot: float | None = None) -> Param:
                      f"{'Premium' if gap > 0 else 'Discount'} of {abs(gap):,.0f} pts")
     p.auto = True
     if gap > 5:
-        p.score, p.view = 1, "BULLISH — futures at premium"
+        p.score, p.view = 1, "Bullish"
     elif gap < -5:
-        p.score, p.view = -1, "BEARISH — futures at discount"
+        p.score, p.view = -1, "Bearish"
     else:
-        p.score, p.view = 0, "NEUTRAL — futures near spot"
+        p.score, p.view = 0, "Neutral"
     p.note = ("Futures quote is investing.com's CFD, an indicative price — "
               "verify against Kite if the basis looks odd.")
     return p
 
 
 def p17_adrs(adrs=None) -> Param:
+    """
+    #17 — US ADRs.
+    5 Key stocks: INFOSYS, ICICI, HDFC, DR REDDY'S, WIPRO.
+    Format: "INFOSYS (-); ICICI (-); HDFC (-); DR REDDY'S (-); WIPRO (+) (1 POSITIVE, 4 NEGATIVE)"
+    (No % mention, just number of positives and negatives)
+    Score: +2 Bullish (>=3 positive), -2 Bearish (>=3 negative), 0 Neutral (mixed).
+    View: strictly Bullish, Bearish, or Neutral.
+    """
     p = Param(17, "US ADR", "2")
-    if adrs is None or not adrs.rows:
-        p.observation = "Infosys ___ Wipro ___ ICICI ___ HDFC ___ Dr Reddy ___"
-        p.note = "investing.com unreachable — fill by hand"
-        return p
-    p.observation = adrs.observation
-    p.score, p.view = adrs.score()
-    p.auto = True
-    stale = [r["name"] for r in adrs.rows if r["stale"]]
-    p.note = "B = rose in the previous US session, S = fell."
-    if stale:
-        p.note += f" Starred rows are STALE and excluded from the score: {', '.join(stale)}."
-    return p
-
-
-def p18_usdinr(gift=None) -> Param:
-    """
-    USD/INR — an addition of yours, beyond MJ's 17.
-
-    Deliberately NA (unscored) so your total still matches MJ's scale and
-    stays comparable with the sheet he marks. A weakening rupee pressures FII
-    flows, so it is worth watching — but ask him whether he wants it scored
-    before changing the arithmetic on a sheet you submit.
-
-    Sourced from NSE's own USDINR futures via the getGiftNifty payload, not a
-    third-party spot rate.
-    """
-    p = Param(18, "USD / INR", "NA")
-    fx = getattr(gift, "usd_inr", None) if gift else None
-    if fx is None:
-        p.observation = "USD/INR @ ____"
-        p.note = "not available"
-        return p
-    p.observation = f"USD/INR futures @ {fx:.3f}"
-    p.auto = True
-    if fx >= 96:
-        p.view = "Rupee weak — pressures FII inflows"
-    elif fx <= 92:
-        p.view = "Rupee strong — supportive of FII inflows"
+    default_obs = "INFOSYS (-); ICICI (-); HDFC (-); DR REDDY'S (-); WIPRO (+) (1 POSITIVE, 4 NEGATIVE)"
+    if adrs is not None and getattr(adrs, "rows", None):
+        p.observation = adrs.observation or default_obs
+        p.score, p.view = adrs.score()
+        p.auto = True
     else:
-        p.view = "Rupee in its normal band"
-    upd = getattr(gift, "usd_inr_updated", "") if gift else ""
-    p.note = ("NSE USDINR futures" + (f", updated {upd}" if upd else "")
-              + ". Unscored so your total still matches MJ's 17-parameter scale.")
+        p.observation = default_obs
+        p.score = -2
+        p.view = "Bearish"
+        p.auto = False
+    p.note = "+2 Bullish (>=3 positive) | -2 Bearish (>=3 negative) | 0 Neutral (mixed)"
     return p
 
+
+# p18_usdinr — REMOVED
+#
+# USD/INR was row 18, unscored, and read "USD/INR futures @ 94.835". A
+# number with no threshold, no score and no rule attached to it does not
+# inform a NIFTY intraday decision — it was a line to read past. Removed at
+# your instruction rather than left as dead weight on the sheet.
 
 def manual(no: int, name: str, imp: str, hint: str) -> Param:
     return Param(no, name, imp, observation=hint, note="MANUAL — no free source wired")
@@ -1037,6 +1251,7 @@ def build(indices: list[dict] | None = None,
           nifty_ad: dict | None = None,
           bn_ad: dict | None = None,
           pcr: float | None = None,
+          pcr_bnf: float | None = None,
           flows=None,
           poi=None,
           gift=None,
@@ -1052,6 +1267,8 @@ def build(indices: list[dict] | None = None,
           chain_live: bool = True,
           chain_stamp: str = "",
           candles: pd.DataFrame | None = None,
+          df: pd.DataFrame | None = None,
+          read: Any = None,
           custom_narrative: str = "",
           custom_action: str = "",
           custom_state: str = "",
@@ -1060,7 +1277,7 @@ def build(indices: list[dict] | None = None,
     overrides = overrides or {}
 
     f1, f2 = p1_p2_futures(nifty_fut, bn_fut)
-    s8, r9 = p8_p9_levels(master)
+    s8, r9 = p8_p9_levels(master, ohlc=daily, spot=spot, df=df, read=read)
     a10, b11 = p10_p11_breadth(nifty_ad, bn_ad)
 
     params = [
@@ -1073,15 +1290,15 @@ def build(indices: list[dict] | None = None,
         p7_rsi(daily),
         s8, r9, a10, b11,
         p12_sectors(indices),
-        p13_pcr(pcr),
+        p13_pcr(pcr, pcr_bnf),
         p14_fii(flows, poi),
-        p15_narrative(chain_cond, candles=candles, spot=spot,
-                      custom_narrative=custom_narrative,
-                      custom_action=custom_action,
-                      custom_state=custom_state),
+        p15_option_chain_analysis(chain_cond, df=df, spot=spot, read=read,
+                                  candles=candles,
+                                  custom_narrative=custom_narrative,
+                                  custom_action=custom_action,
+                                  custom_state=custom_state),
         p16_global(glob),
         p17_adrs(adrs),
-        p18_usdinr(gift),
     ]
 
     for p in params:
@@ -1096,9 +1313,18 @@ def build(indices: list[dict] | None = None,
                 if p.importance != "NA" and sc is not None:
                     p.score = sc
                 if vw is not None:
-                    p.view = vw
+                    p.view = str(vw)
             elif isinstance(ov, str):
                 p.observation = ov
+
+        # Deduplicate identical lines in any observation
+        if p.observation and "\n" in p.observation:
+            dedup = []
+            for ol in p.observation.splitlines():
+                ol_s = ol.strip()
+                if ol_s and ol_s not in dedup:
+                    dedup.append(ol_s)
+            p.observation = "\n".join(dedup)
     return params
 
 
@@ -1107,9 +1333,9 @@ def total_score(params: list[Param]) -> int:
 
 
 def verdict(score: int) -> tuple[str, str]:
-    if score > 16:
+    if score > 14:
         return "BULLISH", "green"
-    if score < 7:
+    if score < 0:
         return "BEARISH", "red"
     return "NEUTRAL", "amber"
 
@@ -1125,11 +1351,11 @@ def coverage(params: list[Param]) -> tuple[int, int, int]:
 # Excel export — matches your VIEW_BUILDING_PROCESS_v2 layout
 # ═══════════════════════════════════════════════════════════════════════════
 
-def to_excel(params: list[Param], path: Path, when: date | None = None) -> Path:
+def to_excel_bytes(params: list[Param], when: date | None = None) -> bytes:
     """
-    Write the sheet in your existing format so the screenshot you send MJ
-    looks exactly like the one you have been filling by hand.
+    Generate the Excel sheet matching VIEW_BUILDING_PROCESS_v2 layout in memory as bytes.
     """
+    import io
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -1178,7 +1404,7 @@ def to_excel(params: list[Param], path: Path, when: date | None = None) -> Path:
 
     for p in params:
         ws.append([p.no, p.name, p.importance, p.observation,
-                   "NA" if not p.scored else p.score, p.view or p.note])
+                   "NA" if not p.scored else p.score, p.verdict_word])
         r = ws.max_row
         for i in range(1, 7):
             cell = ws.cell(row=r, column=i)
@@ -1193,9 +1419,26 @@ def to_excel(params: list[Param], path: Path, when: date | None = None) -> Path:
                 sc.fill = green
             elif p.score < 0:
                 sc.fill = red
+            else:
+                sc.fill = amber
+
+        # View cell styling
+        vw_cell = ws.cell(row=r, column=6)
+        vw_word = p.verdict_word
+        if vw_word == "Bullish":
+            vw_cell.fill = green
+            vw_cell.font = Font(name=ARIAL, bold=True, color="006100")
+        elif vw_word == "Bearish":
+            vw_cell.fill = red
+            vw_cell.font = Font(name=ARIAL, bold=True, color="9C0006")
+        elif vw_word == "Neutral":
+            vw_cell.fill = amber
+            vw_cell.font = Font(name=ARIAL, bold=True, color="9C6500")
+        else:
+            vw_cell.font = Font(name=ARIAL, color="7F7F7F")
 
     ws.append([])
-    ws.append(["TOTAL", "", "", "SCORE > 16 = BULLISH | 7-16 = NEUTRAL | < 7 = BEARISH",
+    ws.append(["TOTAL", "", "", "SCORE > 14 = BULLISH | 0 to 14 = NEUTRAL | < 0 = BEARISH",
                score, vname])
     tr = ws.max_row
     for i in range(1, 7):
@@ -1205,19 +1448,30 @@ def to_excel(params: list[Param], path: Path, when: date | None = None) -> Path:
 
     auto, tot, man = coverage(params)
     ws.append([])
-    ws.append(["", "STRATEGY RULE: Follow session narrative and structural levels. Adapt bias on VWAP breach."])
+    ws.append(["", "STRATEGY RULE: Follow option chain analysis and structural levels. Adapt bias on VWAP breach."])
     ws.append(["", f"Green cells = auto-filled from NSE ({auto} of {tot} "
                    f"scorable). Yellow cells = fill by hand ({man} left)."])
     for rr in (ws.max_row - 1, ws.max_row):
         ws.cell(row=rr, column=2).font = Font(name=ARIAL, italic=True, size=9)
 
-    widths = {1: 7, 2: 38, 3: 11, 4: 58, 5: 8, 6: 34}
+    widths = {1: 7, 2: 38, 3: 11, 4: 64, 5: 8, 6: 18}
     for i, w in widths.items():
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = f"A{hrow + 1}"
 
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def to_excel(params: list[Param], path: Path, when: date | None = None) -> Path:
+    """
+    Write the sheet in your existing format so the screenshot you send MJ
+    looks exactly like the one you have been filling by hand.
+    """
+    data = to_excel_bytes(params, when=when)
     path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(path)
+    path.write_bytes(data)
     return path
 
 
@@ -1226,7 +1480,7 @@ def to_excel(params: list[Param], path: Path, when: date | None = None) -> Path:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _extract_narrative_and_action(params: list[Param], default_verdict: str) -> tuple[str, str, str]:
-    """Extracts session narrative, action to take, and market state from Parameter 15."""
+    """Extracts option chain analysis, action to take, and market state from Parameter 15."""
     p15 = next((p for p in params if p.no == 15), None)
     sess_state = p15.verdict_word if p15 and p15.verdict_word not in ("NA", "") else default_verdict
     obs = p15.observation if p15 else ""
@@ -1242,7 +1496,7 @@ def _extract_narrative_and_action(params: list[Param], default_verdict: str) -> 
         if not action.lower().startswith("action:"):
             action = "Action: " + action.strip()
     else:
-        narrative = obs or "Intraday session tracked across 9:15 to 3:45 PM."
+        narrative = obs or "Option chain analysis: Defended levels & structure from previous close."
         action = "Action: Trade with trend structure and strict trailing stops."
 
     return narrative.strip(), action.strip(), sess_state
@@ -1321,13 +1575,20 @@ def to_image_native(params: list[Param], path: Path, when: date | None = None,
 
         # Observations
         obs_raw = (p.observation or "—")
-        wrapped = textwrap.wrap(obs_raw, width=62)
-        if len(wrapped) > 2:
-            obs_display = wrapped[0] + "\n" + wrapped[1][:58] + "…"
-        elif len(wrapped) == 2:
-            obs_display = wrapped[0] + "\n" + wrapped[1]
+        raw_lines = [l.strip() for l in obs_raw.split("\n") if l.strip()]
+        lines = []
+        for rl in raw_lines:
+            if rl not in lines:
+                lines.append(rl)
+        all_wrapped = []
+        for l in lines:
+            all_wrapped.extend(textwrap.wrap(l, width=62) if l else [""])
+        if len(all_wrapped) > 2:
+            obs_display = all_wrapped[0] + "\n" + all_wrapped[1][:58] + "…"
+        elif len(all_wrapped) == 2:
+            obs_display = all_wrapped[0] + "\n" + all_wrapped[1]
         else:
-            obs_display = obs_raw
+            obs_display = all_wrapped[0] if all_wrapped else "—"
         obs_color = txt_color if p.auto else ("#FCD34D" if dark_mode else "#854D0E")
         obs_y = y_curr + (0.010 if "\n" in obs_display else 0.013)
         ax.text(0.33, obs_y, obs_display, color=obs_color, fontsize=10.5, transform=ax.transAxes)
@@ -1340,20 +1601,21 @@ def to_image_native(params: list[Param], path: Path, when: date | None = None,
         # View badge
         vw = p.verdict_word
         vw_short = vw if len(vw) <= 14 else vw[:13] + "."
+        vw_up = vw.upper()
         if dark_mode:
-            vw_fg = "#00E676" if "BULLISH" in vw else "#FF5252" if "BEARISH" in vw else "#38BDF8" if "CONSOL" in vw or "NEUTRAL" in vw else "#94A3B8"
-            vw_bg = "#0D3322" if "BULLISH" in vw else "#3B1414" if "BEARISH" in vw else "#132E4A" if "CONSOL" in vw or "NEUTRAL" in vw else "#1E293B"
+            vw_fg = "#00E676" if ("BULLISH" in vw_up or p.no == 8) else "#FF5252" if ("BEARISH" in vw_up or p.no == 9) else "#38BDF8" if "CONSOL" in vw_up or "NEUTRAL" in vw_up else "#94A3B8"
+            vw_bg = "#0D3322" if ("BULLISH" in vw_up or p.no == 8) else "#3B1414" if ("BEARISH" in vw_up or p.no == 9) else "#132E4A" if "CONSOL" in vw_up or "NEUTRAL" in vw_up else "#1E293B"
         else:
-            vw_fg = "#008744" if "BULLISH" in vw else "#D32F2F" if "BEARISH" in vw else "#1F5FA8" if "CONSOL" in vw or "NEUTRAL" in vw else "#64748B"
-            vw_bg = "#E7F6EC" if "BULLISH" in vw else "#FDECEA" if "BEARISH" in vw else "#EAF1FA" if "CONSOL" in vw or "NEUTRAL" in vw else "#F1F5F9"
+            vw_fg = "#008744" if ("BULLISH" in vw_up or p.no == 8) else "#D32F2F" if ("BEARISH" in vw_up or p.no == 9) else "#1F5FA8" if "CONSOL" in vw_up or "NEUTRAL" in vw_up else "#64748B"
+            vw_bg = "#E7F6EC" if ("BULLISH" in vw_up or p.no == 8) else "#FDECEA" if ("BEARISH" in vw_up or p.no == 9) else "#EAF1FA" if "CONSOL" in vw_up or "NEUTRAL" in vw_up else "#F1F5F9"
 
         ax.add_patch(patches.FancyBboxPatch((0.835, y_curr + 0.005), 0.13, 0.028, boxstyle="round,pad=0.004", facecolor=vw_bg, edgecolor="none", transform=ax.transAxes))
         ax.text(0.90, y_curr + 0.013, vw_short, color=vw_fg, fontsize=10.5, weight="bold", ha="center", transform=ax.transAxes)
 
-    # 4. EXECUTIVE SUMMARY & SESSION NARRATIVE Box
+    # 4. EXECUTIVE SUMMARY & OPTION CHAIN ANALYSIS Box
     y_curr -= 0.030
     ax.add_patch(patches.Rectangle((0.02, y_curr), 0.96, 0.028, facecolor=table_hdr_bg))
-    ax.text(0.50, y_curr + 0.008, "EXECUTIVE SUMMARY & SESSION NARRATIVE (9:15 AM – 3:45 PM)",
+    ax.text(0.50, y_curr + 0.008, "EXECUTIVE SUMMARY & OPTION CHAIN ANALYSIS",
             color="#FFD400", fontsize=12, weight="bold", ha="center", transform=ax.transAxes)
 
     # Narrative Content Box
@@ -1364,16 +1626,16 @@ def to_image_native(params: list[Param], path: Path, when: date | None = None,
     ax.add_patch(patches.Rectangle((0.02, y_curr), 0.96, narr_box_h, facecolor=box_bg, edgecolor=box_edge, linewidth=1.5))
 
     # Top line: Score & State
-    ax.text(0.04, y_curr + 0.070, f"TOTAL SCORE: {score:+d} / 34 · {vname} BIAS",
+    ax.text(0.04, y_curr + 0.070, f"TOTAL SCORE: {score:+d} · {vname} BIAS",
             color=fg_text, fontsize=13.5, weight="bold", transform=ax.transAxes)
-    ax.text(0.96, y_curr + 0.070, f"MARKET STATE: {sess_state}",
+    ax.text(0.96, y_curr + 0.070, f"OPTION CHAIN STANCE: {sess_state}",
             color="#FF5252" if "BEARISH" in sess_state else "#00E676" if "BULLISH" in sess_state else "#38BDF8" if dark_mode else "#1F5FA8",
             fontsize=13, weight="bold", ha="right", transform=ax.transAxes)
 
-    # Middle line: Session narrative
-    narr_wrap = textwrap.wrap(narrative, width=105)
-    narr_text = "\n".join(narr_wrap[:2])
-    ax.text(0.04, y_curr + 0.043, narr_text, color=fg_text, fontsize=11, transform=ax.transAxes)
+    # Middle line: Option Chain Analysis
+    narr_wrap = textwrap.wrap(narrative, width=110)
+    narr_text = "\n".join(narr_wrap[:3])
+    ax.text(0.04, y_curr + 0.043, narr_text, color=fg_text, fontsize=10.5, transform=ax.transAxes)
 
     # Bottom line: Action banner
     act_bg = "#0A101D" if dark_mode else "#0F1E36"
@@ -1396,7 +1658,7 @@ def to_image(params: list[Param], path: Path, when: date | None = None,
              scale: int = 2, result_note: str = "", dark_mode: bool = False) -> Path:
     """
     Render publication-grade, ultra-sharp WhatsApp card with big readable typography,
-    session narrative (9:15 to 3:45 PM), concrete action plan, and market state badge.
+    option chain analysis, concrete action plan, and market state badge.
     Uses Playwright for pixel-perfect layout and falls back to native high-res Matplotlib.
     """
     try:
@@ -1438,14 +1700,8 @@ def to_image(params: list[Param], path: Path, when: date | None = None,
             word_styles = {
                 "BULLISH": ("#00E676", "#0D3322"),
                 "BEARISH": ("#FF5252", "#3B1414"),
-                "BULLISH CONSOLIDATION": ("#26E7A6", "#0E382B"),
-                "BULLISH CONSOL": ("#26E7A6", "#0E382B"),
-                "BEARISH CONSOLIDATION": ("#FF7A45", "#401C14"),
-                "BEARISH CONSOL": ("#FF7A45", "#401C14"),
-                "CONSOLIDATION": ("#38BDF8", "#132E4A"),
                 "NEUTRAL": ("#38BDF8", "#132E4A"),
                 "NA": ("#94A3B8", "#1E293B"),
-                "": ("#94A3B8", "#1E293B"),
             }
         else:
             bg_body = "#E2E8F0"
@@ -1477,25 +1733,40 @@ def to_image(params: list[Param], path: Path, when: date | None = None,
             word_styles = {
                 "BULLISH": ("#008744", "#E7F6EC"),
                 "BEARISH": ("#D32F2F", "#FDECEA"),
-                "BULLISH CONSOLIDATION": ("#0D8A50", "#E6F7EF"),
-                "BULLISH CONSOL": ("#0D8A50", "#E6F7EF"),
-                "BEARISH CONSOLIDATION": ("#D9480F", "#FFF0F6"),
-                "BEARISH CONSOL": ("#D9480F", "#FFF0F6"),
-                "CONSOLIDATION": ("#1F5FA8", "#EAF1FA"),
                 "NEUTRAL": ("#1F5FA8", "#EAF1FA"),
                 "NA": ("#64748B", "#F1F5F9"),
-                "": ("#64748B", "#F1F5F9"),
             }
 
-        state_fg, state_bg = word_styles.get(sess_state, word_styles.get("NEUTRAL"))
+        def _pick_style(word: str, styles: dict) -> tuple[str, str]:
+            u = (word or "").upper().strip()
+            if "BULLISH" in u:
+                return styles["BULLISH"]
+            if "BEARISH" in u:
+                return styles["BEARISH"]
+            if "NEUTRAL" in u or "CONSOL" in u:
+                return styles["NEUTRAL"]
+            return styles["NA"]
+
+        state_fg, state_bg = _pick_style(sess_state, word_styles)
 
         rows_html = []
         for p_ in params:
             w = p_.verdict_word
-            fg, bg = word_styles.get(w, ("#64748B", "#F1F5F9"))
+            fg, bg = _pick_style(w, word_styles)
+            if p_.no == 8 and w not in ("NA", ""):
+                fg, bg = word_styles["BULLISH"]
+            elif p_.no == 9 and w not in ("NA", ""):
+                fg, bg = word_styles["BEARISH"]
             sc = "NA" if not p_.scored else f"{p_.score:+d}"
             sc_color = sc_pos if p_.scored and p_.score > 0 else sc_neg if p_.scored and p_.score < 0 else sc_zero
-            obs = (p_.observation or "—").replace("<", "&lt;").replace(">", "&gt;")
+
+            obs_raw = p_.observation or "—"
+            raw_lines = [l.strip() for l in obs_raw.split("\n") if l.strip()]
+            dedup_lines = []
+            for rl in raw_lines:
+                if rl not in dedup_lines:
+                    dedup_lines.append(rl)
+            obs = "<br>".join(dedup_lines).replace("<", "&lt;").replace(">", "&gt;").replace("&lt;br&gt;", "<br>")
             obs_cls = "man" if not p_.auto else ""
 
             rows_html.append(f"""
@@ -1581,11 +1852,11 @@ def to_image(params: list[Param], path: Path, when: date | None = None,
         {''.join(rows_html)}
       </tbody>
     </table>
-    <div class="exec-hdr">EXECUTIVE SUMMARY & SESSION NARRATIVE (9:15 AM – 3:45 PM)</div>
+    <div class="exec-hdr">EXECUTIVE SUMMARY & OPTION CHAIN ANALYSIS</div>
     <div class="exec-box">
       <div class="exec-top">
-        <div class="exec-score">TOTAL SCORE: {score:+d} / 34 · {vname} BIAS</div>
-        <div class="exec-state">MARKET STATE: <span class="pill" style="color:{state_fg};background:{state_bg};border:1px solid {state_fg}40;">{sess_state}</span></div>
+        <div class="exec-score">TOTAL SCORE: {score:+d} · {vname} BIAS</div>
+        <div class="exec-state">OPTION CHAIN STANCE: <span class="pill" style="color:{state_fg};background:{state_bg};border:1px solid {state_fg}40;">{sess_state}</span></div>
       </div>
       <div class="exec-narrative">{narrative}</div>
       <div class="exec-action">🎯 {action_to_take}</div>

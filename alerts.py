@@ -63,6 +63,8 @@ COOLDOWN = {
     "breakout": timedelta(minutes=15),
     "level": timedelta(minutes=15),
     "iceberg": timedelta(minutes=10),
+    "smc_sniper": timedelta(minutes=15),
+    "smc_bridge": timedelta(minutes=15),
 }
 
 MAX_PER_DAY = getattr(config, "ALERT_MAX_PER_DAY", 8)
@@ -234,7 +236,7 @@ def from_strategy1(res, now: datetime) -> list[Alert]:
 
 def check(gate: Gate, now: datetime, align: Alignment,
           prev_align: str | None, breakout=None, icebergs=None,
-          s1_result=None) -> list[Alert]:
+          s1_result=None, smc_sigs: list[dict] | None = None) -> list[Alert]:
     """
     Build the candidate alerts for this poll and see which survive the gate.
 
@@ -265,6 +267,15 @@ def check(gate: Gate, now: datetime, align: Alignment,
             "iceberg", "Institutional size in one poll",
             f"{getattr(big, 'strike', '?')} {getattr(big, 'side', '')} — "
             f"{getattr(big, 'pillar', 'position')}", now))
+
+    if smc_sigs:
+        for s in smc_sigs:
+            out.append(Alert(
+                "smc_sniper",
+                s.get("title", "SMC Sniper Alert"),
+                s.get("detail", ""),
+                now,
+                urgent=s.get("urgent", True)))
 
     return [a for a in out if gate.offer(a)]
 

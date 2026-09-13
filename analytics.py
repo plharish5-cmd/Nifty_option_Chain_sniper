@@ -102,12 +102,44 @@ def max_pain(df: pd.DataFrame) -> int:
     return int(strikes[int(np.argmin(pain))])
 
 
+def deduplicate_strikes_live(df: pd.DataFrame, context: str = "") -> pd.DataFrame:
+    """
+    Live consumer guard: logs an error, drops duplicates keeping nearest expiry (or first),
+    tags df.attrs['duplicate_strikes_dropped'] = True, and CONTINUES. Never raises.
+    """
+    if df is None or df.empty or "strike" not in df.columns or not df["strike"].duplicated().any():
+        return df
+    import logging
+    logger = logging.getLogger("scanner")
+    logger.error("[%s] Duplicate strikes detected (%d duplicate rows); dropping duplicates keeping nearest/first",
+                 context, df["strike"].duplicated().sum())
+    d = df.copy()
+    if "expiry" in d.columns:
+        def _parse_exp_dt(exp_val):
+            if not exp_val or exp_val != exp_val:
+                return datetime.max
+            s = str(exp_val).strip()
+            for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
+                try:
+                    return datetime.strptime(s, fmt)
+                except ValueError:
+                    pass
+            return datetime.max
+        d["_exp_dt"] = d["expiry"].apply(_parse_exp_dt)
+        d = d.sort_values(["strike", "_exp_dt"]).drop_duplicates(subset=["strike"], keep="first").drop(columns=["_exp_dt"])
+    else:
+        d = d.drop_duplicates(subset=["strike"], keep="first")
+    d.attrs["duplicate_strikes_dropped"] = True
+    return d
+
+
 def compute_levels(df: pd.DataFrame, spot: float) -> Levels:
     """
     Walls come from the analysis window, not the full chain. Far strikes carry
     large legacy OI from positional traders and will drag your levels 500
     points away from anything that matters intraday.
     """
+    df = deduplicate_strikes_live(df, "compute_levels")
     w = window(df, spot, config.WINDOW_STRIKES + 3)
 
     # Resistance must sit ABOVE spot and support BELOW it.
@@ -367,6 +399,8 @@ def analyse(df: pd.DataFrame, spot: float,
             baseline: Levels | None = None,
             peaks: dict | None = None,
             spot_prev: float | None = None) -> Read:
+    df = deduplicate_strikes_live(df, "analyse")
+
     peaks = peaks or {}
     levels = compute_levels(df, spot)
     w = window(df, spot)
@@ -433,9 +467,11 @@ def analyse(df: pd.DataFrame, spot: float,
 # Greeks
 # ═══════════════════════════════════════════════════════════════════════════
 
-def bs_delta(spot: float, strike: float, iv_pct: float,
-             days: float, is_call: bool, r: float = 0.065) -> float:
+def bs_delta(spot: float, strike: float, iv_pct: float | None,
+             days: float | None, is_call: bool, r: float = 0.065) -> float:
     """Black-Scholes delta. Used only to size expectations, not to price."""
+    if days is None or iv_pct is None:
+        return np.nan
     if any(np.isnan(x) for x in (iv_pct, days)) or iv_pct <= 0 or days <= 0:
         return np.nan
     t = days / 365.0
@@ -478,7 +514,7 @@ def _pick_strike(df: pd.DataFrame, read: Read, side: str) -> tuple[int, float, f
 
 
 def make_signal(df: pd.DataFrame, read: Read, now: datetime,
-                days_to_expiry: float, confirmed: bool = True,
+                days_to_expiry: float | None, confirmed: bool = True,
                 rangebound_trades: int = 0,
                 expiry_today: bool = False,
                 stops_today: int = 0) -> Signal:
@@ -512,7 +548,9 @@ def make_signal(df: pd.DataFrame, read: Read, now: datetime,
             f"Conditions are misaligned with the model. Close the terminal.")
     if expiry_today:
         warnings.append("EXPIRY DAY — theta is brutal and OI levels stop holding")
-    if days_to_expiry <= 0.5:
+    if days_to_expiry is None:
+        warnings.append("Expiry date unknown — delta and DTE-dependent terms skipped")
+    elif days_to_expiry <= 0.5:
         warnings.append("Under half a day to expiry — premium decays fast")
 
     # ── direction ───────────────────────────────────────────────────────────
@@ -550,8 +588,12 @@ def make_signal(df: pd.DataFrame, read: Read, now: datetime,
 
     strike, ltp, iv, _oi = pick
     cost = ltp * config.LOT_SIZE
-    delta = bs_delta(lv.spot, strike, iv, days_to_expiry, side == "ce")
-    move50 = abs(delta) * 50 * config.LOT_SIZE if not np.isnan(delta) else np.nan
+    if days_to_expiry is not None:
+        delta = bs_delta(lv.spot, strike, iv, days_to_expiry, side == "ce")
+        move50 = abs(delta) * 50 * config.LOT_SIZE if not np.isnan(delta) else np.nan
+    else:
+        delta = np.nan
+        move50 = np.nan
 
     return Signal(action, strike, ltp, cost, delta, move50, reason, blocks, warnings)
 

@@ -441,6 +441,8 @@ class Signal:
     points: float | None = None
     ambiguous: bool = False
     small_target: bool = False
+    smc_runner: bool = False
+    smc_target: float | None = None
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -616,6 +618,17 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
             day_high = float(d["high"].iloc[:i + 1].max())
             day_low = float(d["low"].iloc[:i + 1].min())
 
+            # SMC Runner Target Check
+            if active.smc_runner and active.smc_target is not None:
+                hit_target = (k.h >= active.smc_target) if active.direction == "LONG" else (k.l <= active.smc_target)
+                if hit_target:
+                    active.exit_i, active.exit_ts = i, k.ts
+                    active.exit_price = active.smc_target
+                    active.exit_reason = f"SMC Runner Target Reached ({active.direction} Liquidity Expansion)"
+                    active.points = (active.smc_target - active.trigger) if active.direction == "LONG" else (active.trigger - active.smc_target)
+                    active = None
+
+        if active and active.state == "OPEN":
             revs = ["DOJI", "DOUBLE DOJI"]
             if active.direction == "SHORT":
                 revs.extend(["HAMMER", "DOUBLE HAMMER"])
@@ -629,11 +642,19 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
             matched = [pat for pat in revs if pat in pats[i]]
             # Exit if reversal candle closed at Day Extreme or in profit
             if matched and (near_ext or cur_pts >= 10.0):
-                active.exit_i, active.exit_ts = i, k.ts
-                active.exit_price = k.c
-                active.exit_reason = f"{matched[0]} at extreme / in profit — profit secured"
-                active.points = cur_pts
-                active = None
+                is_ctc_locked = (active.stop >= active.trigger) if active.direction == "LONG" else (active.stop <= active.trigger)
+                if active.smc_runner and cur_pts < 40.0 and is_ctc_locked:
+                    # Runner protected at CTC: trail stop tighter behind candle extreme rather than cutting runner early
+                    if active.direction == "LONG":
+                        active.stop = max(active.stop, prev.l)
+                    else:
+                        active.stop = min(active.stop, prev.h)
+                else:
+                    active.exit_i, active.exit_ts = i, k.ts
+                    active.exit_price = k.c
+                    active.exit_reason = f"{matched[0]} at extreme / in profit — profit secured"
+                    active.points = cur_pts
+                    active = None
             else:
                 band = "ubb" if active.direction == "LONG" else "lbb"
                 if band in d.columns and pd.notna(d[band].iloc[i]):
@@ -670,6 +691,28 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
                         "came first is unknowable from 15-minute data.")
                 active = armed
                 traded_this_rally = True
+
+                # Option B: SMC BOS/CHoCH Runner Multiplier
+                if p.get("enable_smc_runner", False):
+                    try:
+                        import smc as _smc_eval
+                        _smc_r = _smc_eval.read(d.iloc[:i + 1], n=2)
+                        _smc_st = _smc_r.get("structure")
+                        _smc_pools = _smc_r.get("liquidity_pools", [])
+                        if _smc_st and _smc_st.trend in ("BULLISH", "BEARISH"):
+                            if (active.direction == "LONG" and _smc_st.trend == "BULLISH") or \
+                               (active.direction == "SHORT" and _smc_st.trend == "BEARISH"):
+                                active.smc_runner = True
+                                opp_k = "EQH" if active.direction == "LONG" else "EQL"
+                                cand_pools = [p for p in _smc_pools if p.kind == opp_k and not p.swept]
+                                if cand_pools:
+                                    active.smc_target = cand_pools[-1].level
+                                else:
+                                    active.smc_target = active.trigger + 75.0 if active.direction == "LONG" else active.trigger - 75.0
+                                res.alerts.append(Alert("RUNNER", "info", k.ts,
+                                    f"SMC Runner Multiplier Active ({_smc_st.trend} Structure). Extended target {active.smc_target:,.0f}."))
+                    except Exception:
+                        pass
             elif is_new_day or is_stale or invalidated:
                 armed.exit_i = i
                 armed.exit_ts = k.ts

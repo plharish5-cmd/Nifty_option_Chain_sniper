@@ -61,10 +61,9 @@ it cannot fix a blocked IP.
 
 | Panel / Tab | What it tells you |
 |---|---|
-| **🎯 Decision Cockpit (Tab 0)** | Unified trading cockpit with 2-Phase Session Road Map, 15m Top/Bottom Reversals, live 1m 3-Drive Scalper alerts, Spoon-Fed Red Bar callouts, and the interactive 15m Live Trade Advisor. |
+| **🎯 Decision Cockpit (Tab 0)** | Unified trading cockpit with 2-Phase Session Road Map, 15m Top/Bottom Reversals, live 1m 3-Drive Scalper alerts, and the interactive 15m Live Trade Advisor. |
 | **📝 Paper Trading & Impulse Control (Tab 25)** | Full virtual trading station starting with ₹1,00,000 capital. Real-time Dhan LTP execution, lot size selector, open positions book, live P&L, 1-click square-off, equity curve, and the "Discipline Gate" with 15m win rate checks and impulse trade tagging. |
 | **⚡ 15-Minute Live Trade Advisor** | Interactive strike decision terminal (in Tab 0 & Tab 22). Answers *"Shall I buy CE, PE, Hold, Wait, or Exit?"* with statistical Win Rate % at that moment, exact Stop Loss points (Spot & Option LTP ₹), and exit checklists. |
-| **🔴 Red Bar & Asian Sweep Sniper (Tab 24)** | Dr. Devendra Pratap Singh's Advanced Red Bar strategy: Candle 1 Point of Balance (POB 0.44–0.56), 150-Min 30 EMA mean deflection, and European Open Asian Liquidity Sweep (12:45–14:15). Verified Profit Factor 3.02 across 64 sessions. 100% spoon-fed Buy, SL, Targets, and ATM contract. |
 | **⚔️ WAR Setup (FII 30m) (Tab 23)** | The 30-min first candle FII strategy across 5 gap scenarios with price < ₹100 filters, strict trailing rules, and interactive trade card. |
 | **📐 VAWM & 15m Matrix (Tab 22)** | Interactive V-A-W-M pattern detector and the 10 Mentor Session Reversal Setups strictly evaluated on closed 15m candles. |
 | **🌊 1m 3-Drive Institutional Scalper** | Priyank Sharma's 3-Drive liquidity sweep & MSS scalper with RSI divergence and volume expansion. |
@@ -127,8 +126,6 @@ dashboard.py            main streamlit application and multi-tier ribbon
 paper_trading.py        paper trading account manager, order execution, & analytics
 paper_trading_tab.py    paper trading terminal UI, discipline gate, & journal
 trade_advisor_15m.py    15m live trade advisor & strike decision box (win rate & SL)
-red_bar_strategy.py     Dr. Devendra Red Bar & Asian Sweep strategy engine
-red_bar_tab.py          Red Bar & Asian Sweep UI terminal & Plotly chart
 war_setup.py            WAR Setup (30m FII First-Candle) strategy engine
 war_tab.py              WAR Setup UI terminal
 session_reversal_matrix.py 15m session reversal matrix (10 mentor setups)

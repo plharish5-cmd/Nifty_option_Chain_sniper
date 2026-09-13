@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import numpy as np
+import pandas as pd
 
 import config
 import chain_parser as cp
@@ -163,6 +164,14 @@ def strategy2_check() -> None:
     sm_legacy = s2.summary(tr_legacy)
     print(f"Legacy Mode: {sm_legacy['trades']} trades · {sm_legacy['wins']} wins · {sm_legacy['losses']} losses · {sm_legacy['points']:+.1f} pts")
     print("Strategy 2 mentor and legacy checks PASSED.")
+
+
+def synth(scenario: str = "sample") -> pd.DataFrame:
+    """Returns sample chain DataFrame for offline simulation in run.py."""
+    sample_p = config.DATA_DIR / "sample_chain.csv"
+    if sample_p.exists():
+        return cp.parse_csv(str(sample_p))
+    return pd.DataFrame()
 
 
 if __name__ == "__main__":

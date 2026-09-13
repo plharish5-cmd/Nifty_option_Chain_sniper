@@ -271,3 +271,54 @@ Here is the exact mathematical and chart forensic proof:
 | **Reversal Exit** | Exit at Shooting Star / Doji at Day High | Exit at Hammer / Doji at Day Low |
 | **Session Cap** | Max 2 trades/day (No entries after 14:15) | Max 2 trades/day (No entries after 14:15) |
 
+---
+
+## 8. Batch 2 Student Homework Evaluation (5 New Screenshots — Uploaded 05-Sep 16:46)
+
+### Scorecard Table: 5 Evaluated Screenshot Charts
+
+| Chart File | Session / Gap Context | 1st 15m Candle | Trades Taken | Entries & Exits | Result (W / L / BE) | Net Points | Master Strategy 1 Rule Demonstrated |
+|---|---|---|:---:|---|:---:|:---:|---|
+| `...11.15.29 AM.jpeg` | Gap Down -437 Pts | Inverted Hammer | 1 | **Trade 1 (CE):** Entry 23,772 (11:30 8 EMA close break) &rarr; Exit near Doji (12:45) | 1 Win / 0 Loss | **+68.0 Pts** | **Law 5 & Law 3:** On extreme gap-down, don't chase PE; wait for 8 EMA reclaim. Exit at Doji near resistance. |
+| `...11.15.27 AM.jpeg` | Gap Up +321 Pts | Inverted Hammer | 1 | **Trade 1 (CE):** Entry 24,221 (13:45 breakout) &rarr; Exit near Doji (14:15) for +10 pts | 1 Win / 0 Loss | **+10.0 Pts** | **Law 4 (Stage 1 Squeeze):** BB width narrow after gap up; quick 10–15 pt target scalp, exit on Doji pause. |
+| `...11.15.28 AM (2).jpeg` | Gap Up +148 Pts | Hammer (High Pinbar) | 2 | **Trade 1 (PE):** Entry 24,251 (11:45 breakdown) &rarr; Exit near Doji at LBB (+107 pts)<br>**Trade 2 (CE):** Entry 24,186 (14:15 bounce) &rarr; Exit near Doji (+43 pts) | 2 Wins / 0 Loss | **+150.0 Pts** | **Law 1, 4 & 3:** 8 EMA breakdown rode along LBB for runner (+107 pts); exit at bottom Doji; reversal bounce (+43 pts). |
+| `...11.15.28 AM (1).jpeg` | Gap Up +203 Pts | Hammer | 2 | **Trade 1 (CE):** Entry 24,345 (10:00 8 EMA break) &rarr; Exit at Day High (+74 pts)<br>**Trade 2 (PE):** Entry 24,394 (13:00 break) &rarr; Trailed stop, Exit Cost-to-Cost (0 pts) | 1 Win / 1 BE / 0 Loss | **+74.0 Pts** | **Law 2 (Cost-to-Cost):** Morning runner locked +74 pts. Trade 2 stalled &rarr; stop moved to entry &rarr; 0 loss breakeven exit! |
+| `...11.15.28 AM.jpeg` | Gap Up +90 Pts | Green Candle | 0 | **No Trades** (Horizontal chop around 8 EMA all day; BB squeezed) | 0 Trades | **0.0 Pts** | **Golden Discipline Law:** Flat Bollinger Bands & 8 EMA straddle = NO TRADE. Capital and mental energy preserved. |
+
+### Summary Statistics (Batch of 5 Charts)
+* **Total Trading Sessions:** 5
+* **Total Trades Taken:** 6
+* **Wins:** 4 (66.7%)
+* **Breakeven (Cost-to-Cost):** 1 (16.7%)
+* **Losses:** 0 (0.0% Loss Rate)
+* **No Trade Days:** 1 (Disciplined avoidance of sideways chop)
+* **Total Net Points Captured:** **+302.0 Spot Points** (Average +60.4 pts per session)
+
+---
+
+### Key Retraining Insights & Algorithmic Alignments
+1. **Doji Exits are Universal:** In 4 out of 5 winning trades, the exit reason is explicitly noted as *"Exit near Doji"*. When a candle loses momentum at an extreme (Day High, Day Low, or Upper/Lower BB), the mentor/student closes the trade immediately.
+2. **Cost-to-Cost is an Exit, Not a Loss:** `...11.15.28 AM (1).jpeg` Trade #2 proves that moving stop to entry once a trade shows profit guarantees zero loss even when the trade stalls.
+3. **The Power of "No Trade":** `...11.15.28 AM.jpeg` confirms that when the 8 EMA is flat and candles straddle the line, the best trade is no trade.
+
+---
+
+## 9. Strict Data Integrity Law: Weekend Data Immunity (No Sat/Sun Logging)
+
+### Core Mandate:
+**NEVER store or record live/trial data, option chain snapshots, signal logs, basis tracking, or timeline transitions on Saturdays or Sundays (weekends) under ANY circumstances.**
+
+### Rationale & Rules:
+1. **Market Closed = Poison Risk:** Any data pulled on Saturday or Sunday is a static post-market artifact, testing ping, or mock run stamped as "Market closed". Storing it in `signal_log.csv`, `snapshots/`, `timeline/`, `basis/`, or `strategy1_log/` corrupts historical backtest datasets, inflates trade counts with ghost entries, and pollutes decision metrics.
+2. **Codebase-Wide Enforcement:**
+   - `store.save_snapshot()`: Immediately returns `None` if `ts.weekday() >= 5`.
+   - `store.append_log()`: Immediately discards records if timestamp falls on Saturday or Sunday.
+   - `basis.record()`: Returns in-memory object without writing to `data/basis/` on weekends.
+   - `timeline.record()`: Returns empty transitions without writing to `data/timeline/` on weekends.
+   - `strategy1_log.record()`: Returns 0 without writing to `data/strategy1_log/` on weekends.
+   - `scheduler.py`: Skips option chain polling on weekends (`now.weekday() < 5`).
+   - `dashboard.py`: All file-writing routines are strictly guarded by `now.weekday() < 5`.
+3. **Historical Audit Note (05-Sep-2026):** All trial run files stamped 05-09-2026 (`snapshots/2026-09-05`, `basis/2026-09-05.csv`, `timeline/2026-09-05.csv`, `strategy1_log/2026-09-05.csv`, and 189 rows in `signal_log.csv`) have been permanently purged.
+
+
+

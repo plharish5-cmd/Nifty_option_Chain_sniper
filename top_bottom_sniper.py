@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import pandas as pd
 import numpy as np
+from ui_utils import render_html, _render_html
 
 
 @dataclass
@@ -503,7 +504,7 @@ def render_sniper_card(report: SniperReport):
     import streamlit as st
 
     # ── 1. Header & Two-Phase Session Road Map ───────────────────────────────
-    st.markdown(
+    _render_html(
         f"""
         <div style="background: #0f172a; border: 1.5px solid #334155; border-radius: 8px; padding: 12px 16px; margin-top: 10px; margin-bottom: 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
@@ -521,8 +522,7 @@ def render_sniper_card(report: SniperReport):
                 {report.phase_action}
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
     # ── 2. "Respect the Doji" Emergency Exit Flasher ─────────────────────────
@@ -530,7 +530,7 @@ def render_sniper_card(report: SniperReport):
         d_al = report.doji_alert
         border_col = "#eab308" if d_al.side == "EXIT_CE" else "#38bdf8"
         bg_col = "#713f1233" if d_al.side == "EXIT_CE" else "#0369a133"
-        st.markdown(
+        _render_html(
             f"""
             <div style="background: {bg_col}; border: 1.5px solid {border_col}; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
@@ -545,8 +545,7 @@ def render_sniper_card(report: SniperReport):
                     {d_al.message}
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
     # ── 3. Two Sniper Cards (Short PE vs Long CE) ────────────────────────────
@@ -565,7 +564,7 @@ def render_sniper_card(report: SniperReport):
         t2_str = f"{top.target_2:,.2f} (+40 pts · Full Exit)" if top.target_2 else "—"
         confl_html = "".join(f"<li style='margin-bottom: 2px;'>{c}</li>" for c in top.confluences) or "<li>Scanning resistance & 100-pt strikes...</li>"
 
-        st.markdown(
+        _render_html(
             f"""
             <div style="background: {bg_color}33; border: 1.5px solid {border_color}; border-radius: 8px; padding: 12px 16px; min-height: 250px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -590,8 +589,7 @@ def render_sniper_card(report: SniperReport):
                     {top.action_note}
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
     # Bottom Sniper Card (Green / Long)
@@ -607,7 +605,7 @@ def render_sniper_card(report: SniperReport):
         t2_str = f"{bot.target_2:,.2f} (+40 pts · Full Exit)" if bot.target_2 else "—"
         confl_html = "".join(f"<li style='margin-bottom: 2px;'>{c}</li>" for c in bot.confluences) or "<li>Scanning support & 100-pt strikes...</li>"
 
-        st.markdown(
+        _render_html(
             f"""
             <div style="background: {bg_color}33; border: 1.5px solid {border_color}; border-radius: 8px; padding: 12px 16px; min-height: 250px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -632,6 +630,5 @@ def render_sniper_card(report: SniperReport):
                     {bot.action_note}
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )

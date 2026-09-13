@@ -93,6 +93,8 @@ def weight_balance(df: pd.DataFrame, centre: int, n: int = 5) -> Weight | None:
     """
     if df is None or df.empty:
         return None
+    from analytics import deduplicate_strikes_live
+    df = deduplicate_strikes_live(df, "weight_balance")
     step = getattr(config, "STRIKE_STEP", 50)
     up = [centre + i * step for i in range(1, n + 1)]
     dn = [centre - i * step for i in range(1, n + 1)]

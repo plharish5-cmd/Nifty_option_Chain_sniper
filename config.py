@@ -8,6 +8,7 @@ from pathlib import Path
 # ── Instrument ───────────────────────────────────────────────────────────────
 SYMBOL          = "NIFTY"       # index symbol on NSE
 LOT_SIZE        = 65            # NIFTY lot size, revised from 75 in Jan-2026.
+NIFTY_LOT_SIZE  = LOT_SIZE      # Alias for modules referencing NIFTY_LOT_SIZE
                                 # VERIFY THIS against NSE before trading — it
                                 # gets revised periodically and every rupee
                                 # figure in this app depends on it.
@@ -22,6 +23,7 @@ AUTO_REFRESH_START    = time(7, 30)   # 07:30 AM IST (starts pre-market prep)
 AUTO_REFRESH_END      = time(15, 45)  # 03:45 PM IST (stops auto-pinging after session close)
 MARKET_OPEN           = time(9, 15)
 MARKET_CLOSE          = time(15, 30)
+ALLOW_WEEKEND_STORAGE = False         # STRICT RULE: NEVER store live/trial pings, snapshots or logs on Sat & Sun no matter what!
 
 # ── Scheduler windows (scheduler.py) ─────────────────────────────────────────
 # Option chain, levels and the signal log. Active 07:30 to 15:45 IST.
@@ -229,6 +231,10 @@ RECLAIM_BUFFER       = 15     # points a level must be cleared by to count as
                               # genuinely broken (or reclaimed). Without this,
                               # a retest that merely touches the level reads as
                               # a reclaim and the retest signal destroys itself.
+LEVEL_MIN_SEPARATION = 20.0   # points; minimum separation between consecutive stepped pivots
+                              # (R1-R4, S1-S4). Levels within 20 pts belong to the same cluster.
+GAP_MIN              = 15.0   # points; minimum gap size for NIFTY (noise filter)
+
 
 # ── Market context (India VIX + institutional flows) ─────────────────────────
 USE_VIX              = True
@@ -274,6 +280,7 @@ CANDLE_SOURCE          = "dhan"    # "dhan" (paid, real futures VWAP)
 YF_SYMBOL              = "^NSEI"       # NIFTY 50 on Yahoo
 CANDLE_DAYS_BACK       = 2
 DHAN_INDEX_SECURITY_ID = "13"     # NIFTY 50 index, IDX_I segment
+DHAN_BANKNIFTY_SECURITY_ID = "25" # BANKNIFTY index, IDX_I segment
 DHAN_FUTURES_SECURITY_ID = None   # set this to pin the futures contract
                                   # when the scrip-master matcher picks the
                                   # wrong row. diagnose_dhan.py prints the
@@ -299,8 +306,9 @@ OPENING_RANGE_MINUTES  = 15
 # CONFIRMED by you 20-Aug: use STOCH RSI on daily. RSI still displayed.
 #   "stochrsi" score on Stoch RSI only
 #   "either"   either at an extreme triggers it — as literally written
-# Worth settling with MJ. Both values are always displayed either way.
 RSI_SCORE_MODE       = "stochrsi"
+STOCH_RSI_OVERSOLD   = 20.0
+STOCH_RSI_OVERBOUGHT  = 80.0
 
 # ── Validation assumptions (validate.py) ─────────────────────────────────────
 ASSUMED_DELTA        = 0.55   # ATM-ish option, for turning index points into
@@ -316,11 +324,13 @@ ROUND_TRIP_COST      = 400.0  # Rs per lot, round trip. Taken from your course
 # ── Storage ──────────────────────────────────────────────────────────────────
 DATA_DIR         = Path(__file__).parent / "data"
 SNAPSHOT_DIR     = DATA_DIR / "snapshots"
+SNAPSHOT_MULTI_DIR = DATA_DIR / "snapshots_multi"
 SESSION_LOG      = DATA_DIR / "session_log.csv"
 SIGNAL_LOG       = DATA_DIR / "signal_log.csv"
 CANDLE_DIR       = DATA_DIR / "candles"      # one CSV per session, 1-min bars
 CANDLE_5M_DIR    = DATA_DIR / "candles_5m"   # one CSV per session, 5-min OHLCV + VWAP
 CANDLE_15M_DIR   = DATA_DIR / "candles_15m"  # one CSV per session, 15-min bars
+CANDLE_BANKNIFTY_DIR = DATA_DIR / "candles_banknifty" # one CSV per session, 1-min BANKNIFTY bars
 SCHEDULER_STATE  = DATA_DIR / "scheduler_state.json"
 HISTORY_DIR      = DATA_DIR / "history"      # bulk historical intraday for backtests
 

@@ -24,6 +24,7 @@ import btst_scanner as bs
 import config
 import market_data as md
 import nse_client
+from ui_utils import render_html, _render_html
 
 GREEN, RED, SLATE, GOLD = "#2FBF71", "#E8503A", "#8FA6B8", "#C9A227"
 BLUE, AMBER = "#4A9BD1", "#E0A030"
@@ -50,7 +51,7 @@ def _fetch_stock_universe(symbol: str = "NIFTY 100") -> list[dict[str, Any]]:
 
 def _render_timing_banner(timing: bs.TimingStatus) -> None:
     """Displays the market timing status badge."""
-    st.markdown(
+    _render_html(
         f"""
         <div style="
             background: #1e222d;
@@ -75,8 +76,7 @@ def _render_timing_banner(timing: bs.TimingStatus) -> None:
                 <span style="color: #ffffff; font-weight: 600;">3:10 PM - 3:25 PM</span>
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -247,7 +247,7 @@ def _render_straddle_btst_section(
 
     # Verdict Card
     vcol = "#2FBF71" if analysis.verdict == "FAVORABLE" else ("#E8503A" if analysis.verdict == "AVOID" else "#E0A030")
-    st.markdown(
+    _render_html(
         f"""
         <div style="
             background: #1e222d;
@@ -263,8 +263,7 @@ def _render_straddle_btst_section(
                 {analysis.verdict_reason}
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
     # Key Metrics

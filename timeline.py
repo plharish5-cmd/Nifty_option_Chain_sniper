@@ -112,13 +112,10 @@ def record(states: dict[str, str], now: datetime, spot: float,
            day: date | None = None) -> list[Transition]:
     """
     Compare the current reading against the last one and write the changes.
-
-    `states` maps a field name from TRACKED to its current value. Fields that
-    are absent or None are skipped entirely rather than logged as UNKNOWN —
-    a detector that could not run is not the same as one that ran and found
-    nothing, and collapsing the two would put noise in a record whose whole
-    purpose is to be checked.
     """
+    # WEEKEND IMMUNITY: Never store timeline data on Saturday (5) or Sunday (6) no matter what!
+    if now.weekday() >= 5 or (day and day.weekday() >= 5):
+        return []
     DIR.mkdir(parents=True, exist_ok=True)
     prune(config.TIMELINE_KEEP_DAYS)     # roll the window as each day starts
     existing = load_today(day)

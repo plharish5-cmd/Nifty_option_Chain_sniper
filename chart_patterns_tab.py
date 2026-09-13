@@ -9,12 +9,14 @@ Features:
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 import chart_patterns as cp
 import session_reversal_matrix as srm
+from ui_utils import render_html, _render_html
 
 GREEN, RED, SLATE, GOLD = "#2FBF71", "#E8503A", "#8FA6B8", "#C9A227"
 CYAN, BLUE, AMBER = "#00D2D3", "#4A9BD1", "#E0A030"
@@ -152,7 +154,7 @@ def render(
     if filtered_patterns:
         sel_p = filtered_patterns[active_pat_idx]
         with st.container():
-            st.markdown(
+            _render_html(
                 f"""
                 <div style="background-color: #0e2238; padding: 14px 18px; border-radius: 8px; border-left: 4px solid {sel_p.badge_color}; margin-bottom: 15px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -168,8 +170,7 @@ def render(
                         <b>Description:</b> {sel_p.description}
                     </div>
                 </div>
-                """,
-                unsafe_allow_html=True
+                """
             )
 
             mcol1, mcol2, mcol3, mcol4, mcol5 = st.columns(5)
@@ -232,13 +233,12 @@ def render(
 
     # ── PART 1: UPSIDE / SHORT SETUPS ─────────────────────────────────────
     with col_short:
-        st.markdown(
+        _render_html(
             f"""
             <div style="background-color: rgba(232, 80, 58, 0.12); padding: 8px 12px; border-radius: 6px; border-left: 4px solid {RED}; margin-bottom: 12px;">
                 <b style="color: {RED}; font-size: 15px;">PART 1: Upside / Short Setups (Resistance & Reversal)</b>
             </div>
-            """,
-            unsafe_allow_html=True
+            """
         )
 
         for s in short_setups:
@@ -246,13 +246,12 @@ def render(
 
     # ── PART 2: DOWNSIDE / LONG SETUPS ────────────────────────────────────
     with col_long:
-        st.markdown(
+        _render_html(
             f"""
             <div style="background-color: rgba(47, 191, 113, 0.12); padding: 8px 12px; border-radius: 6px; border-left: 4px solid {GREEN}; margin-bottom: 12px;">
                 <b style="color: {GREEN}; font-size: 15px;">PART 2: Downside / Long Setups (Support & Reversal)</b>
             </div>
-            """,
-            unsafe_allow_html=True
+            """
         )
 
         for s in long_setups:
@@ -266,7 +265,7 @@ def _render_setup_card(s: srm.ReversalSetup) -> None:
     bg_col = "#0e2238" if s.status != "INACTIVE" else "#0a1726"
 
     with st.container():
-        st.markdown(
+        _render_html(
             f"""
             <div style="background-color: {bg_col}; padding: 10px 14px; border-radius: 6px; border-left: 3px solid {border_col}; margin-bottom: 10px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -281,8 +280,7 @@ def _render_setup_card(s: srm.ReversalSetup) -> None:
                     {s.confluence_detail}
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True
+            """
         )
 
         # If Active or Triggered, show execution strip

@@ -26,6 +26,7 @@ import pandas as pd
 import config
 import levels
 import price_action
+from ui_utils import render_html, _render_html
 
 log = logging.getLogger(__name__)
 
@@ -511,7 +512,7 @@ def render_cockpit_card(
             f'<div style="margin-top: 10px; background: rgba(0,0,0,0.35); padding: 10px 14px; border-radius: 8px; border-left: 4px solid #F59E0B; color: #FEF3C7; font-size: 13.5px;"><b>Trade Strategy:</b> {plan}</div>'
             f'</div>'
         )
-        st.markdown(card_html, unsafe_allow_html=True)
+        _render_html(card_html)
 
         if len(alerts_20) > 1:
             with st.expander(f"📋 See {len(alerts_20) - 1} other historical level(s) within 20 pts", expanded=False):

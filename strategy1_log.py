@@ -96,6 +96,9 @@ def record(res, d: date | None = None) -> int:
     afternoon adds nothing.
     """
     d = d or datetime.now().date()
+    # WEEKEND IMMUNITY: Never store strategy 1 logs on Saturday (5) or Sunday (6) no matter what!
+    if d.weekday() >= 5:
+        return 0
     DIR.mkdir(parents=True, exist_ok=True)
     prune()
 

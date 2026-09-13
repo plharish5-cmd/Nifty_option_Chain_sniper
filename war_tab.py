@@ -20,6 +20,7 @@ import streamlit as st
 
 import config
 import war_setup as ws
+from ui_utils import render_html, _render_html
 
 GREEN, RED, SLATE, GOLD = "#2FBF71", "#E8503A", "#8FA6B8", "#C9A227"
 BLUE, AMBER, PURPLE = "#4A9BD1", "#E0A030", "#9B51E0"
@@ -183,7 +184,7 @@ def render(
     """
     Renders the WAR SETUP UI tab inside dashboard.py.
     """
-    st.markdown(
+    _render_html(
         """
         <div style="background: #1e222d; padding: 14px 20px; border-radius: 8px; border-left: 6px solid #C9A227; margin-bottom: 16px;">
             <div style="font-size: 18px; font-weight: 700; color: #ffffff;">
@@ -193,8 +194,7 @@ def render(
                 Strict Institutional Curation: Filters out low-conviction chop and targets FII battle lines established in the first 30 minutes.
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
     if not pa_frames or "5m" not in pa_frames or pa_frames["5m"].empty:
@@ -287,7 +287,7 @@ def render(
             box_col = GREEN if latest_sig.direction == "BUY_CE" else RED
             badge = "🟢 BUY CALL" if latest_sig.direction == "BUY_CE" else "🔴 BUY PUT"
 
-            st.markdown(
+            _render_html(
                 f"""
                 <div style="background: #1a1e29; border: 2px solid {box_col}; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
                     <div style="font-size: 16px; font-weight: 700; color: {box_col};">
@@ -302,8 +302,7 @@ def render(
                         <div><b>Target 2 (+120p):</b> {latest_sig.target_120:,.1f}</div>
                     </div>
                 </div>
-                """,
-                unsafe_allow_html=True,
+                """
             )
         else:
             st.info(
@@ -325,7 +324,7 @@ def render(
         opt_choice = _select_sub_100_option(chain_df, active_dir)
 
         if opt_choice:
-            st.markdown(
+            _render_html(
                 f"""
                 <div style="background: #141720; border: 1px solid #2a2e39; border-radius: 8px; padding: 14px;">
                     <div style="font-size: 15px; font-weight: 700; color: {GOLD};">
@@ -339,8 +338,7 @@ def render(
                         • <b>Projected Target (+120p Spot):</b> ~₹{opt_choice['est_target_120']:.1f}
                     </div>
                 </div>
-                """,
-                unsafe_allow_html=True,
+                """
             )
         else:
             st.caption(
