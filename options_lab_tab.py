@@ -672,22 +672,22 @@ def render() -> None:
     with t1:
         for key, fn in (("pcr", chart_pcr), ("chg", chart_chg), ("total", chart_total),
                         ("pe_ce", chart_pe_ce), ("volpcr", chart_volpcr)):
-            st.plotly_chart(fn(s), width="stretch", key=f"olab_{key}")
+            st.plotly_chart(fn(s), use_container_width=True, key=f"olab_{key}")
             _panel(key, *reads[key])
     with t2:
         if len(c):
-            st.plotly_chart(chart_flow(c, tf), width="stretch", key="olab_flow")
+            st.plotly_chart(chart_flow(c, tf), use_container_width=True, key="olab_flow")
         _panel("flow", *reads["flow"])
     with t3:
         if g is not None:
-            st.plotly_chart(chart_gex(g, latest[1]), width="stretch", key="olab_gex")
+            st.plotly_chart(chart_gex(g, latest[1]), use_container_width=True, key="olab_gex")
         _panel("gex", *reads["gex"])
         if s["call_vega"].notna().any():
-            st.plotly_chart(chart_vega(s), width="stretch", key="olab_vega")
+            st.plotly_chart(chart_vega(s), use_container_width=True, key="olab_vega")
         _panel("vega", *reads["vega"])
     with t4:
         if h is not None and h["iv_hv"].notna().any():
-            st.plotly_chart(chart_ivhv(h), width="stretch", key="olab_ivhv")
+            st.plotly_chart(chart_ivhv(h), use_container_width=True, key="olab_ivhv")
         else:
             st.info("IV − HV needs at least ~10 stored days (or a real daily OHLC file in data/ohlc).")
         _panel("ivhv", *reads["ivhv"])

@@ -595,5 +595,60 @@
     "_note": "FII/DII Cash Market + Summary (fii_dii_panel.py), sub-tabs of Participant Positioning & History.",
     "table_days": 60,
     "chart_days": 250
+  },
+  "greeks_scenario": {
+    "_note": "Greeks Scenario Lab in Strike Selection (greeks_scenario.py). Black-Scholes repricing anchored to live LTP.",
+    "strike_step": 50,
+    "near_otm_steps": 2,
+    "far_otm_steps": 8,
+    "min_delta": 0.3,
+    "max_wait_theta_pct": 15.0,
+    "late_hours": [
+      0,
+      6,
+      24,
+      48,
+      72
+    ]
+  },
+  "smc_trade_desk": {
+    "_note": "SMC Trade Desk at top of Breakout & Trap tab (smc_trade_desk.py). One verdict BUY/SELL/WAIT/AVOID.",
+    "pivot_n": 2,
+    "consolidation_bars": 12,
+    "consolidation_atr_mult": 3.0,
+    "min_rr": 1.5,
+    "sl_buffer_pts": 5.0,
+    "no_new_trades_after": "15:00",
+    "zone_proximity_pts": 10.0,
+    "choch_recent_bars": 8,
+    "premium_avoid_pct": 0.8,
+    "discount_avoid_pct": 0.2,
+    "_premium_avoid_note": "Position on the current leg: >=0.8 = don't chase longs; 0.5-0.8 = wait; <=0.5 = buy zone (mirror for shorts)."
+  },
+  "smc_five_rule": {
+    "_note": "5-Rule SMC model (smc_five_rule.py): bias(15m external + validated daily) · time · liquidation · 1m CHoCH in zone · 5m OB/FVG/IFVG entry with R:R.",
+    "windows": [
+      [
+        "09:30",
+        "11:30"
+      ],
+      [
+        "13:30",
+        "14:45"
+      ]
+    ],
+    "_windows_note": "NIFTY equivalents of the course's London/NY windows — tune with a backtest.",
+    "opening_range_minutes": 15,
+    "ib_minutes": 60,
+    "min_rr": 3.0,
+    "sl_buffer_pts": 5.0,
+    "min_sl_pts": 15.0,
+    "zone_tap_lookback_min": 45,
+    "ltf_lookback_bars": 120,
+    "min_pullback_bars": 3,
+    "pivot_n": 2,
+    "draw_min_edge_pts": 3.0,
+    "draw_max_p": 0.01,
+    "_draw_note": "Daily draw (PDH after BULL / PDL after BEAR) is used as TP1 only for the side that beats chance by ≥ draw_min_edge_pts with p ≤ draw_max_p in backtest_daily_bias.py. Your NIFTY 2019–2026 run: BEAR→PDL +5.1 pts p<0.001 (used), BULL→PDH +2.0 pts p=0.046 (not used)."
   }
 }

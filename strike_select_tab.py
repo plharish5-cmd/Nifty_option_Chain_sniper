@@ -69,7 +69,29 @@ def _provenance_badge(text: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Hero Component: The 24x Outcome Reality Check
 # ─────────────────────────────────────────────────────────────────────────────
-def _render_reality_check_hero(ref_strikes: List[Dict[str, Any]], target_pts: float = 40.0) -> None:
+def build_live_reference(candidates, target_pts: float, capital: float, band=(200.0, 300.0),
+                         capital_limit_pct: float = 30.0) -> List[Dict[str, Any]]:
+    """Pick Deep ITM / In-band / Deep OTM from TODAY's candidates (replaces the static course example)."""
+    cs = [c for c in candidates if c.premium and c.premium > 0.5]
+    if len(cs) < 3:
+        return []
+    itm = max(cs, key=lambda c: c.abs_delta)
+    in_band = [c for c in cs if band[0] <= c.premium <= band[1]]
+    mid = min(in_band or cs, key=lambda c: abs(c.premium - sum(band) / 2))
+    otm_pool = [c for c in cs if c.abs_delta <= 0.15] or sorted(cs, key=lambda c: c.abs_delta)[:1]
+    otm = max(otm_pool, key=lambda c: c.abs_delta)
+    def d(c, label):
+        return {"strike": int(c.strike), "option_type": c.option_type, "label": label, "premium": c.premium,
+                "delta": c.abs_delta, "gain_40pt": c.expected_premium_gain, "rupees_40pt": c.expected_rupees,
+                "lot_cost": c.lot_cost, "capital_pct": c.cost_capital_pct, "roc_pct": c.roc_pct,
+                "in_band": bool(in_band) and c is mid, "capital_limit_pct": capital_limit_pct}
+    return [d(itm, "Deep ITM (High Delta / High Capital)"),
+            d(mid, "Premium band ₹200–300 (Optimal Balance)" if in_band else "Closest to ₹200–300 band"),
+            d(otm, "Deep OTM (Low Delta / Capital Trap)")]
+
+
+def _render_reality_check_hero(ref_strikes: List[Dict[str, Any]], target_pts: float = 40.0,
+                               source_badge: str = "SOURCE LIVE CASE") -> None:
     """
     Displays the dramatic demonstration from the source transcript:
     Three traders with identical directional calls and identical 40-pt targets,
@@ -79,6 +101,17 @@ def _render_reality_check_hero(ref_strikes: List[Dict[str, Any]], target_pts: fl
         return
 
     s1, s2, s3 = ref_strikes[0], ref_strikes[1], ref_strikes[2]
+    ot = s1.get("option_type", "CE")
+    ratio = (s1.get("rupees_40pt", 0) / s3.get("rupees_40pt", 1)) if s3.get("rupees_40pt", 0) > 0 else float("nan")
+    ratio_txt = f"{ratio:.0f}× LESS" if ratio == ratio and ratio >= 1.5 else "LOW DELTA"
+    lim = s1.get("capital_limit_pct", 30.0)
+    w1 = (f"Ties up ₹{s1.get('lot_cost', 0) / 1000:,.0f}k for intrinsic value you do not need."
+          + (" Exceeds standard capital limit." if s1.get("capital_pct", 0) > lim else ""))
+    b2 = "RECOMMENDED BAND (₹200–300)" if s2.get("in_band", True) else "CLOSEST TO BAND"
+    w2 = ("✅ Optimal sweet-spot: sufficient delta, tolerable theta, capital-efficient conversion." if s2.get("in_band", True)
+          else "ℹ️ No strike is inside ₹200–300 right now — this is the nearest one.")
+    w3 = (f"⚠️ Makes only ₹{s3.get('rupees_40pt', 0):,.0f} vs ₹{s1.get('rupees_40pt', 0):,.0f} "
+          + (f"({ratio:.0f}× less)" if ratio == ratio else "") + ". High ROC % is deceptive because absolute return is negligible.")
 
     hero_html = f"""
     <div style="background:{DARK_CARD}; border:1px solid {BORDER}; border-radius:8px; padding:16px; margin-bottom:20px;">
@@ -92,7 +125,7 @@ def _render_reality_check_hero(ref_strikes: List[Dict[str, Any]], target_pts: fl
           </div>
         </div>
         <span style="background:rgba(56, 189, 248, 0.15); color:{BLUE}; border:1px solid {BLUE}; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:700;">
-          SOURCE LIVE CASE
+          {source_badge}
         </span>
       </div>
 
@@ -100,7 +133,7 @@ def _render_reality_check_hero(ref_strikes: List[Dict[str, Any]], target_pts: fl
         <!-- Strike 1: Deep ITM -->
         <div style="background:{DARK_BG}; border:1px solid rgba(239, 68, 68, 0.4); border-radius:6px; padding:12px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-weight:700; color:#F8FAFC; font-size:13px;">{s1.get('strike'):,} CE</span>
+            <span style="font-weight:700; color:#F8FAFC; font-size:13px;">{s1.get('strike'):,} {ot}</span>
             <span style="color:{RED}; font-size:11px; font-weight:700; background:rgba(239, 68, 68, 0.15); padding:2px 6px; border-radius:3px;">
               CAPITAL STRAIN ({s1.get('capital_pct'):.0f}%)
             </span>
@@ -113,16 +146,16 @@ def _render_reality_check_hero(ref_strikes: List[Dict[str, Any]], target_pts: fl
             • Return on Capital: <b style="color:{AMBER};">{s1.get('roc_pct'):.1f}%</b>
           </div>
           <div style="margin-top:6px; font-size:10.5px; color:#FCA5A5;">
-            ⚠️ Ties up ₹37k capital for intrinsic value you do not need. Exceeds standard capital limit.
+            ⚠️ {w1}
           </div>
         </div>
 
         <!-- Strike 2: Recommended Band -->
         <div style="background:{DARK_BG}; border:2px solid {GREEN}; border-radius:6px; padding:12px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-weight:700; color:#F8FAFC; font-size:13px;">{s2.get('strike'):,} CE</span>
+            <span style="font-weight:700; color:#F8FAFC; font-size:13px;">{s2.get('strike'):,} {ot}</span>
             <span style="color:{GREEN}; font-size:11px; font-weight:700; background:rgba(16, 185, 129, 0.15); padding:2px 6px; border-radius:3px;">
-              RECOMMENDED BAND (₹200–300)
+              {b2}
             </span>
           </div>
           <div style="font-size:11px; color:{SLATE}; margin-top:2px;">{s2.get('label')}</div>
@@ -133,16 +166,16 @@ def _render_reality_check_hero(ref_strikes: List[Dict[str, Any]], target_pts: fl
             • Return on Capital: <b style="color:{GREEN};">{s2.get('roc_pct'):.1f}%</b>
           </div>
           <div style="margin-top:6px; font-size:10.5px; color:#6EE7B7;">
-            ✅ Optimal sweet-spot: sufficient delta, tolerable theta, capital-efficient conversion.
+            {w2}
           </div>
         </div>
 
         <!-- Strike 3: Deep OTM -->
         <div style="background:{DARK_BG}; border:1px solid rgba(245, 158, 11, 0.4); border-radius:6px; padding:12px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-weight:700; color:#F8FAFC; font-size:13px;">{s3.get('strike'):,} CE</span>
+            <span style="font-weight:700; color:#F8FAFC; font-size:13px;">{s3.get('strike'):,} {ot}</span>
             <span style="color:{AMBER}; font-size:11px; font-weight:700; background:rgba(245, 158, 11, 0.15); padding:2px 6px; border-radius:3px;">
-              DELTA DRAG (24× LESS)
+              DELTA DRAG ({ratio_txt})
             </span>
           </div>
           <div style="font-size:11px; color:{SLATE}; margin-top:2px;">{s3.get('label')}</div>
@@ -153,7 +186,7 @@ def _render_reality_check_hero(ref_strikes: List[Dict[str, Any]], target_pts: fl
             • Return on Capital: <b style="color:{AMBER};">{s3.get('roc_pct'):.1f}%</b>
           </div>
           <div style="margin-top:6px; font-size:10.5px; color:#FDE68A;">
-            ⚠️ Makes only ₹104 vs ₹2,470 (24× less). High ROC % is deceptive because absolute return is negligible.
+            {w3}
           </div>
         </div>
       </div>
@@ -631,7 +664,13 @@ def render(ctx: Optional[Any] = None) -> None:
         _render_html(sub10_html)
 
     # 7. Hero Reality Check Component
-    _render_reality_check_hero(result.reference_comparison, target_pts=float(target_pts))
+    _live_refs = build_live_reference(result.candidates, float(target_pts), capital,
+                                      (float(result.premium_min), float(result.premium_max)),
+                                      float(rules.get("capital_max_lot_pct", 30)))
+    if _live_refs:
+        _render_reality_check_hero(_live_refs, target_pts=float(target_pts), source_badge="LIVE · TODAY'S CHAIN")
+    else:
+        _render_reality_check_hero(result.reference_comparison, target_pts=40.0, source_badge="COURSE EXAMPLE (40 PTS)")
 
     # 8. Candidate Selection Table
     _render_selection_table(result, rules)
@@ -670,6 +709,14 @@ def render(ctx: Optional[Any] = None) -> None:
             rules=rules,
         ).decay_projection
         _render_theta_decay_panel(decay_proj, lot_size=lot_size)
+
+    # 10b. Greeks Scenario Lab (Delta + Gamma + Theta + Vega together — Greeks lecture)
+    st.write("---")
+    try:
+        import greeks_scenario
+        greeks_scenario.render(df, spot, direction, dte, float(target_pts), float(stop_pts), lot_size)
+    except Exception as _gs_err:                           # noqa: BLE001
+        st.error(f"Greeks Scenario Lab encountered an error: {_gs_err}")
 
     # 11. Wall Intent Panel
     st.write("---")

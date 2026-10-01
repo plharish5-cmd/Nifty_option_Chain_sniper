@@ -337,10 +337,10 @@ def render_cash() -> None:
         st.markdown(cash_table(cc, int(r["table_days"]) if yr == "Last 1 year" else len(cc)), unsafe_allow_html=True)
     with right:
         if view == "Chart":
-            st.plotly_chart(chart_cash(cc), width="stretch", key="fd_chart")
+            st.plotly_chart(chart_cash(cc), use_container_width=True, key="fd_chart")
         else:
-            st.plotly_chart(chart_heatmap(c if yr == "All" else cc, "fii", "FII Net by month (₹ Cr)"), width="stretch", key="fd_h1")
-            st.plotly_chart(chart_heatmap(c if yr == "All" else cc, "dii", "DII Net by month (₹ Cr)"), width="stretch", key="fd_h2")
+            st.plotly_chart(chart_heatmap(c if yr == "All" else cc, "fii", "FII Net by month (₹ Cr)"), use_container_width=True, key="fd_h1")
+            st.plotly_chart(chart_heatmap(c if yr == "All" else cc, "dii", "DII Net by month (₹ Cr)"), use_container_width=True, key="fd_h2")
     _box("cash", *read_cash(c))
     if view == "Heatmap":
         _box("heat")

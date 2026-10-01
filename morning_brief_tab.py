@@ -81,16 +81,26 @@ def _get_active_session_data(ctx: Optional[Dict[str, Any]] = None) -> Tuple[date
     return target_date, latest_ts, latest_spot, latest_df, all_snaps, rules
 
 
+def _ordinal(n: int) -> str:
+    """Format integer with proper English ordinal suffix: 1st, 2nd, 3rd, 4th, 22nd, etc."""
+    n_abs = abs(int(n))
+    if 11 <= (n_abs % 100) <= 13:
+        return f"{n}th"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(n_abs % 10, "th")
+    return f"{n}{suffix}"
+
+
 def _compute_smart_money(target_date: date, rules: dict) -> Dict[str, Any]:
     """Extracts institutional context metrics from participant_history.py."""
     res = {
         "pro_str": "N/A",
+        "fii_fut_str": "N/A",
+        "fii_hedge_str": "N/A",
         "retail_str": "N/A",
         "spread_str": "N/A",
         "day_bias": "NEUTRAL",
         "bias_color": "#9ca3af",
         "post_expiry": False,
-        "fii_fut_str": None,
     }
     try:
         tidy_df = ph.load()
@@ -124,28 +134,60 @@ def _compute_smart_money(target_date: date, rules: dict) -> Dict[str, Any]:
         if pcts_df.empty:
             return res
 
-        # PRO fut_long
-        pro_row = pcts_df[(pcts_df["participant"] == "PRO") & (pcts_df["series"] == "fut_long")]
-        pro_fut_pct = float(pro_row["percentile_rank"].iloc[0]) if not pro_row.empty else 50.0
-
         inst_cfg = rules.get("institutional_context", {})
         pro_bullish_thresh = float(inst_cfg.get("pro_bias", {}).get("bullish_pct", 70.0))
         pro_bearish_thresh = float(inst_cfg.get("pro_bias", {}).get("bearish_pct", 30.0))
+        low_conv = float(inst_cfg.get("percentile_conviction", {}).get("low", 20.0))
+        high_conv = float(inst_cfg.get("percentile_conviction", {}).get("high", 80.0))
+
+        # 1. PRO fut_long
+        pro_row = pcts_df[(pcts_df["participant"] == "PRO") & (pcts_df["series"] == "fut_long")]
+        pro_fut_pct = float(pro_row["percentile_rank"].iloc[0]) if not pro_row.empty else 50.0
 
         if pro_fut_pct > pro_bullish_thresh:
-            res["pro_str"] = f"BULLISH ▲ ({int(pro_fut_pct)}th pct)"
-            res["day_bias"] = "CE BUY"
-            res["bias_color"] = "#10b981"
+            pro_bias = "BULLISH"
+            res["pro_str"] = f"BULLISH ▲ ({_ordinal(int(pro_fut_pct))} pct)"
         elif pro_fut_pct < pro_bearish_thresh:
-            res["pro_str"] = f"BEARISH ▼ ({int(pro_fut_pct)}th pct)"
-            res["day_bias"] = "PE BUY"
-            res["bias_color"] = "#ef4444"
+            pro_bias = "BEARISH"
+            res["pro_str"] = f"BEARISH ▼ ({_ordinal(int(pro_fut_pct))} pct)"
         else:
-            res["pro_str"] = f"NEUTRAL → ({int(pro_fut_pct)}th pct)"
-            res["day_bias"] = "NEUTRAL"
-            res["bias_color"] = "#9ca3af"
+            pro_bias = "NEUTRAL"
+            res["pro_str"] = f"NEUTRAL → ({_ordinal(int(pro_fut_pct))} pct)"
 
-        # Retail net_ce / net_pe
+        # 2. FII Futures (net_fut)
+        fii_fut_row = pcts_df[(pcts_df["participant"] == "FII") & (pcts_df["series"] == "net_fut")]
+        if not fii_fut_row.empty:
+            fii_fut_pct = float(fii_fut_row["percentile_rank"].iloc[0])
+            if fii_fut_pct <= low_conv:
+                res["fii_fut_str"] = f"NET SHORT extreme ({_ordinal(int(fii_fut_pct))} pct)"
+            elif fii_fut_pct <= 35.0:
+                res["fii_fut_str"] = f"NET SHORT ({_ordinal(int(fii_fut_pct))} pct)"
+            elif fii_fut_pct >= high_conv:
+                res["fii_fut_str"] = f"NET LONG extreme ({_ordinal(int(fii_fut_pct))} pct)"
+            elif fii_fut_pct >= 65.0:
+                res["fii_fut_str"] = f"NET LONG ({_ordinal(int(fii_fut_pct))} pct)"
+            else:
+                res["fii_fut_str"] = f"BALANCED ({_ordinal(int(fii_fut_pct))} pct)"
+        else:
+            res["fii_fut_str"] = "n/a"
+
+        # 3. FII Hedge (PE long / Net PE)
+        fii_net_pe_row = pcts_df[(pcts_df["participant"] == "FII") & (pcts_df["series"] == "net_pe")]
+        fii_pe_long_row = pcts_df[(pcts_df["participant"] == "FII") & (pcts_df["series"] == "pe_long")]
+        fii_net_pe_pct = float(fii_net_pe_row["percentile_rank"].iloc[0]) if not fii_net_pe_row.empty else 50.0
+        fii_pe_long_pct = float(fii_pe_long_row["percentile_rank"].iloc[0]) if not fii_pe_long_row.empty else 50.0
+        fii_pe_pct = max(fii_net_pe_pct, fii_pe_long_pct)
+
+        if post_expiry:
+            res["fii_hedge_str"] = "n/a — post-expiry (OI reset)"
+        elif fii_pe_pct >= high_conv:
+            res["fii_hedge_str"] = f"HEAVY (PE long {_ordinal(int(fii_pe_pct))} pct — normal posture)"
+        elif fii_pe_pct <= low_conv:
+            res["fii_hedge_str"] = f"LIGHT (PE long {_ordinal(int(fii_pe_pct))} pct — unusual)"
+        else:
+            res["fii_hedge_str"] = f"NORMAL (PE long {_ordinal(int(fii_pe_pct))} pct)"
+
+        # 4. Retail net_ce / net_pe
         ret_net_ce_row = pcts_df[(pcts_df["participant"] == "Retailers") & (pcts_df["series"] == "net_ce")]
         ret_net_pe_row = pcts_df[(pcts_df["participant"] == "Retailers") & (pcts_df["series"] == "net_pe")]
         ret_net_ce_pct = float(ret_net_ce_row["percentile_rank"].iloc[0]) if not ret_net_ce_row.empty else 50.0
@@ -153,29 +195,29 @@ def _compute_smart_money(target_date: date, rules: dict) -> Dict[str, Any]:
 
         ret_extreme = float(inst_cfg.get("retail_trap", {}).get("net_ce_extreme_pct", 90.0))
         ret_pe_extreme = float(inst_cfg.get("retail_trap", {}).get("net_pe_extreme_pct", 90.0))
-        high_conv = float(inst_cfg.get("percentile_conviction", {}).get("high", 80.0))
 
+        retail_trap_side = None
         if post_expiry:
             res["retail_str"] = "n/a — post-expiry (OI reset)"
         elif ret_net_ce_pct > ret_extreme:
             res["retail_str"] = "WRONG SIDE (calls extreme)"
+            retail_trap_side = "CE"
         elif ret_net_pe_pct > ret_pe_extreme:
             res["retail_str"] = "WRONG SIDE (puts extreme)"
+            retail_trap_side = "PE"
         elif ret_net_ce_pct > high_conv:
-            res["retail_str"] = f"CALL HEAVY ({int(ret_net_ce_pct)}th pct)"
+            res["retail_str"] = f"CALL HEAVY ({_ordinal(int(ret_net_ce_pct))} pct)"
         elif ret_net_pe_pct > high_conv:
-            res["retail_str"] = f"PUT HEAVY ({int(ret_net_pe_pct)}th pct)"
+            res["retail_str"] = f"PUT HEAVY ({_ordinal(int(ret_net_pe_pct))} pct)"
         else:
             res["retail_str"] = "BALANCED"
 
-        # Spread
+        # 5. Spread
         spreads = div_dict.get("spreads", {})
         pe_spread_pct = float(spreads.get("pe_spread", {}).get("percentile_rank", 50.0) or 50.0)
         ce_spread_pct = float(spreads.get("ce_spread", {}).get("percentile_rank", 50.0) or 50.0)
         fut_spread_pct = float(spreads.get("fut_spread", {}).get("percentile_rank", 50.0) or 50.0)
-        # A spread is extreme ABOVE the 90th OR BELOW the 10th percentile —
-        # both tails mean FII and retail are maximally opposed. Rank by
-        # distance from the median so a 0th-pct reading is not called NORMAL.
+
         def _two_sided(v: float) -> float:
             return max(float(v), 100.0 - float(v))
 
@@ -184,7 +226,7 @@ def _compute_smart_money(target_date: date, rules: dict) -> Dict[str, Any]:
         spread_high_thresh = float(spread_cfg.get("high_pct", 70.0))
 
         if post_expiry:
-            raw_spread_pct = fut_spread_pct          # CE/PE spreads distorted
+            raw_spread_pct = fut_spread_pct
             spread_suffix = " [futures only]"
         else:
             raw_spread_pct = max((pe_spread_pct, ce_spread_pct, fut_spread_pct), key=_two_sided)
@@ -192,24 +234,28 @@ def _compute_smart_money(target_date: date, rules: dict) -> Dict[str, Any]:
         spread_pct = _two_sided(raw_spread_pct)
 
         if spread_pct >= spread_extreme_thresh:
-            res["spread_str"] = f"EXTREME ({int(raw_spread_pct)}th pct){spread_suffix} — big move coming"
+            res["spread_str"] = f"EXTREME ({_ordinal(int(raw_spread_pct))} pct){spread_suffix} — big move coming"
         elif spread_pct >= spread_high_thresh:
-            res["spread_str"] = f"HIGH ({int(raw_spread_pct)}th pct){spread_suffix} — directional pressure building"
+            res["spread_str"] = f"HIGH ({_ordinal(int(raw_spread_pct))} pct){spread_suffix} — directional pressure building"
         else:
-            res["spread_str"] = f"NORMAL ({int(raw_spread_pct)}th pct){spread_suffix}"
+            res["spread_str"] = f"NORMAL ({_ordinal(int(raw_spread_pct))} pct){spread_suffix}"
 
-        # Post-expiry, FII futures stance is the one clean cross-session read.
-        if post_expiry:
-            fii_fut_row = pcts_df[(pcts_df["participant"] == "FII") & (pcts_df["series"] == "net_fut")]
-            if not fii_fut_row.empty:
-                fii_fut_pct = float(fii_fut_row["percentile_rank"].iloc[0])
-                low_conv = float(inst_cfg.get("percentile_conviction", {}).get("low", 20.0))
-                if fii_fut_pct <= low_conv:
-                    res["fii_fut_str"] = f"NET SHORT extreme ({int(fii_fut_pct)}th pct)"
-                elif fii_fut_pct >= high_conv:
-                    res["fii_fut_str"] = f"NET LONG extreme ({int(fii_fut_pct)}th pct)"
-                else:
-                    res["fii_fut_str"] = f"neutral ({int(fii_fut_pct)}th pct)"
+        # 6. Day bias calculation (Retail Trap vs Directional Bias)
+        if retail_trap_side == "CE" and pro_bias == "BEARISH":
+            res["day_bias"] = "TRAP SETUP (Retail Squeeze)"
+            res["bias_color"] = "#ef4444"
+        elif retail_trap_side == "PE" and pro_bias == "BULLISH":
+            res["day_bias"] = "TRAP SETUP (Retail Short Squeeze)"
+            res["bias_color"] = "#10b981"
+        elif pro_bias == "BEARISH":
+            res["day_bias"] = "BEARISH (PE Bias)"
+            res["bias_color"] = "#ef4444"
+        elif pro_bias == "BULLISH":
+            res["day_bias"] = "BULLISH (CE Bias)"
+            res["bias_color"] = "#10b981"
+        else:
+            res["day_bias"] = "NEUTRAL"
+            res["bias_color"] = "#9ca3af"
 
     except Exception as e:
         logger.warning(f"Error computing smart money metrics: {e}")
@@ -378,23 +424,26 @@ def render(ctx: Optional[Dict[str, Any]] = None) -> None:
     rvol_display = rvol_gate.get_rvol_display(target_date, now_t)
     gate_decision = rvol_gate.get_gate_decision(target_date, now_t)
 
+    is_ce_bias = day_bias in ("BULLISH (CE Bias)", "TRAP SETUP (Retail Short Squeeze)", "CE BUY")
+    is_pe_bias = day_bias in ("BEARISH (PE Bias)", "TRAP SETUP (Retail Squeeze)", "PE BUY")
+
     if is_eod:
         action_text = "➡️ EOD — no new trades, close open positions"
         action_style = "background: #78350f; border: 2px solid #f59e0b; color: #ffedd5;"
         header_color = "#f59e0b"
         header_bg = "linear-gradient(90deg, #451a03 0%, #78350f 100%)"
-    elif gate_decision.get("status") == "SUPPRESSED" and (day_bias in ("CE BUY", "PE BUY") or score >= 5):
+    elif gate_decision.get("status") == "SUPPRESSED" and (is_ce_bias or is_pe_bias or score >= 5):
         action_text = "⚠️ CHOP ZONE — 77% breakouts fail. Wait for RVOL > 0.85 before any entry."
         action_style = "background: #78350f; border: 2px solid #f59e0b; color: #fef3c7;"
         header_color = "#f59e0b"
         header_bg = "linear-gradient(90deg, #451a03 0%, #78350f 100%)"
-    elif score >= 5 and day_bias == "CE BUY":
+    elif score >= 5 and is_ce_bias:
         extra_note = " | 🚀 TREND DAY — hold to full target." if rvol_display.get("trend_day") else ""
         action_text = f"✅ CE BUY SETUP — confirm 8 EMA on chart{extra_note}"
         action_style = "background: #064e3b; border: 2px solid #10b981; color: #ecfdf5;"
         header_color = "#10b981"
         header_bg = "linear-gradient(90deg, #064e3b 0%, #047857 100%)"
-    elif score >= 5 and day_bias == "PE BUY":
+    elif score >= 5 and is_pe_bias:
         extra_note = " | 🚀 TREND DAY — hold to full target." if rvol_display.get("trend_day") else ""
         action_text = f"✅ PE BUY SETUP — confirm 8 EMA on chart{extra_note}"
         action_style = "background: #7f1d1d; border: 2px solid #ef4444; color: #fef2f2;"
@@ -441,44 +490,47 @@ def render(ctx: Optional[Dict[str, Any]] = None) -> None:
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     colA, colB, colC = st.columns(3)
 
+    expiry_block = (
+        '<div style="color:#f59e0b; font-size:0.82rem; margin-top:6px;">⚠️ Prev session was EXPIRY — option OI reset at settlement. Futures readings only; option percentiles suppressed.</div>'
+        if smart_money.get("post_expiry")
+        else ""
+    )
+
     with colA:
         st.markdown(
-            f"""
-            <div style="background: #131722; border: 1px solid #2a2e39; border-radius: 8px; padding: 16px; min-height: 220px;">
-                <div style="font-weight: 800; color: #60a5fa; font-size: 0.95rem; border-bottom: 1px solid #2a2e39; padding-bottom: 8px; margin-bottom: 12px; letter-spacing: 0.5px;">
-                    COLUMN A: SMART MONEY
-                </div>
-                <div style="font-size: 0.92rem; line-height: 1.9; color: #e5e7eb;">
-                    <div><span style="color:#9ca3af;">PRO:</span> &nbsp;&nbsp;<b>{smart_money['pro_str']}</b></div>
-                    <div><span style="color:#9ca3af;">Retail:</span> &nbsp;&nbsp;<b>{smart_money['retail_str']}</b></div>
-                    <div><span style="color:#9ca3af;">Spread:</span> &nbsp;&nbsp;<b>{smart_money['spread_str']}</b></div>
-                    {f'<div><span style="color:#9ca3af;">FII futures:</span> &nbsp;&nbsp;<b>{smart_money["fii_fut_str"]}</b></div>' if smart_money.get("fii_fut_str") else ''}
-                    {'<div style="color:#f59e0b; font-size:0.82rem; margin-top:6px;">⚠️ Prev session was EXPIRY — option OI reset at settlement. Futures readings only; option percentiles suppressed.</div>' if smart_money.get("post_expiry") else ''}
-                    <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #2a2e39;">
-                        <span style="color:#9ca3af;">Day bias:</span> &nbsp;&nbsp;<span style="font-weight: 800; color: {smart_money['bias_color']}; font-size: 1.05rem;">{smart_money['day_bias']}</span>
-                    </div>
-                </div>
-            </div>
-            """,
+            (
+                '<div style="background: #131722; border: 1px solid #2a2e39; border-radius: 8px; padding: 16px; min-height: 250px;">'
+                '<div style="font-weight: 800; color: #60a5fa; font-size: 0.95rem; border-bottom: 1px solid #2a2e39; padding-bottom: 8px; margin-bottom: 12px; letter-spacing: 0.5px;">COLUMN A: SMART MONEY</div>'
+                '<div style="font-size: 0.92rem; line-height: 1.9; color: #e5e7eb;">'
+                f'<div><span style="color:#9ca3af;">PRO:</span> &nbsp;&nbsp;<b>{smart_money["pro_str"]}</b></div>'
+                f'<div><span style="color:#9ca3af;">FII Futures:</span> &nbsp;&nbsp;<b>{smart_money["fii_fut_str"]}</b></div>'
+                f'<div><span style="color:#9ca3af;">FII Hedge:</span> &nbsp;&nbsp;<b>{smart_money["fii_hedge_str"]}</b></div>'
+                f'<div><span style="color:#9ca3af;">Retail:</span> &nbsp;&nbsp;<b>{smart_money["retail_str"]}</b></div>'
+                f'<div><span style="color:#9ca3af;">Spread:</span> &nbsp;&nbsp;<b>{smart_money["spread_str"]}</b></div>'
+                f'{expiry_block}'
+                '<div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #2a2e39;">'
+                f'<span style="color:#9ca3af;">Day bias:</span> &nbsp;&nbsp;<span style="font-weight: 800; color: {smart_money["bias_color"]}; font-size: 1.05rem;">{smart_money["day_bias"]}</span>'
+                '</div>'
+                '</div>'
+                '</div>'
+            ),
             unsafe_allow_html=True,
         )
 
     with colB:
         st.markdown(
-            f"""
-            <div style="background: #131722; border: 1px solid #2a2e39; border-radius: 8px; padding: 16px; min-height: 220px;">
-                <div style="font-weight: 800; color: #f59e0b; font-size: 0.95rem; border-bottom: 1px solid #2a2e39; padding-bottom: 8px; margin-bottom: 12px; letter-spacing: 0.5px;">
-                    COLUMN B: TODAY'S CONDITIONS
-                </div>
-                <div style="font-size: 0.92rem; line-height: 1.9; color: #e5e7eb;">
-                    <div><span style="color:#9ca3af;">GEX:</span> &nbsp;&nbsp;<b>{cond['gex_str']}</b></div>
-                    <div><span style="color:#9ca3af;">RVOL:</span> &nbsp;&nbsp;<b>{rvol_display['label']}</b></div>
-                    <div><span style="color:#9ca3af;">IV:</span> &nbsp;&nbsp;<b>{cond['iv_str']}</b></div>
-                    <div><span style="color:#9ca3af;">Floor:</span> &nbsp;&nbsp;<b>{cond['floor_str']}</b></div>
-                    <div><span style="color:#9ca3af;">Ceiling:</span> &nbsp;&nbsp;<b>{cond['ceiling_str']}</b></div>
-                </div>
-            </div>
-            """,
+            (
+                '<div style="background: #131722; border: 1px solid #2a2e39; border-radius: 8px; padding: 16px; min-height: 250px;">'
+                '<div style="font-weight: 800; color: #f59e0b; font-size: 0.95rem; border-bottom: 1px solid #2a2e39; padding-bottom: 8px; margin-bottom: 12px; letter-spacing: 0.5px;">COLUMN B: TODAY\'S CONDITIONS</div>'
+                '<div style="font-size: 0.92rem; line-height: 1.9; color: #e5e7eb;">'
+                f'<div><span style="color:#9ca3af;">GEX:</span> &nbsp;&nbsp;<b>{cond["gex_str"]}</b></div>'
+                f'<div><span style="color:#9ca3af;">RVOL:</span> &nbsp;&nbsp;<b>{rvol_display["label"]}</b></div>'
+                f'<div><span style="color:#9ca3af;">IV:</span> &nbsp;&nbsp;<b>{cond["iv_str"]}</b></div>'
+                f'<div><span style="color:#9ca3af;">Floor:</span> &nbsp;&nbsp;<b>{cond["floor_str"]}</b></div>'
+                f'<div><span style="color:#9ca3af;">Ceiling:</span> &nbsp;&nbsp;<b>{cond["ceiling_str"]}</b></div>'
+                '</div>'
+                '</div>'
+            ),
             unsafe_allow_html=True,
         )
 
@@ -499,19 +551,17 @@ def render(ctx: Optional[Dict[str, Any]] = None) -> None:
         verdict_clean = verdict.replace("✅", "").replace("❌", "").replace("⚠️", "").strip()
 
         st.markdown(
-            f"""
-            <div style="background: #131722; border: 1px solid #2a2e39; border-radius: 8px; padding: 16px; min-height: 220px;">
-                <div style="font-weight: 800; color: #10b981; font-size: 0.95rem; border-bottom: 1px solid #2a2e39; padding-bottom: 8px; margin-bottom: 12px; letter-spacing: 0.5px;">
-                    COLUMN C: TRADE GATE
-                </div>
-                <div style="font-size: 0.92rem; line-height: 1.8; color: #e5e7eb;">
-                    {chk_boxes_html}
-                    <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #2a2e39; font-weight: 800; font-size: 1rem;">
-                        SCORE: {score}/6 — <span style="color: {verdict_color};">{verdict_clean}</span>
-                    </div>
-                </div>
-            </div>
-            """,
+            (
+                '<div style="background: #131722; border: 1px solid #2a2e39; border-radius: 8px; padding: 16px; min-height: 250px;">'
+                '<div style="font-weight: 800; color: #10b981; font-size: 0.95rem; border-bottom: 1px solid #2a2e39; padding-bottom: 8px; margin-bottom: 12px; letter-spacing: 0.5px;">COLUMN C: TRADE GATE</div>'
+                '<div style="font-size: 0.92rem; line-height: 1.8; color: #e5e7eb;">'
+                f'{chk_boxes_html}'
+                '<div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #2a2e39; font-weight: 800; font-size: 1rem;">'
+                f'SCORE: {score}/6 — <span style="color: {verdict_color};">{verdict_clean}</span>'
+                '</div>'
+                '</div>'
+                '</div>'
+            ),
             unsafe_allow_html=True,
         )
 

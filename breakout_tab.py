@@ -218,6 +218,28 @@ def render_breakout_tab(
         st.warning(f"Insufficient candle data for timeframe {tf}. Need at least 5 candles.")
         return
 
+    # 1b. VWAP fix — the incoming 'vwap' column was not reset per session (showed 23,170 with
+    #     price at 22,420). Recompute a session-anchored VWAP; drop it when there is no real volume.
+    try:
+        import smc_trade_desk as _desk
+        df_raw = df_raw.copy()
+        if "timestamp" not in df_raw.columns and isinstance(df_raw.index, pd.DatetimeIndex):
+            df_raw = df_raw.reset_index().rename(columns={df_raw.index.name or "index": "timestamp"})
+        _vw = _desk.session_vwap(df_raw)
+        if _vw is not None:
+            df_raw["vwap"] = _vw.values
+        elif "vwap" in df_raw.columns:
+            df_raw = df_raw.drop(columns=["vwap"])
+    except Exception as _vw_err:                           # noqa: BLE001
+        st.caption(f"VWAP recompute skipped: {_vw_err}")
+
+    # 1c. SMC TRADE DESK — one verdict (BUY / SELL / WAIT / AVOID) with entry, SL, targets
+    try:
+        import smc_trade_desk as _desk
+        _desk.render(df_raw, (pa_frames or {}).get("15m"), tf, frames=pa_frames)
+    except Exception as _desk_err:                         # noqa: BLE001
+        st.caption(f"SMC Trade Desk unavailable: {_desk_err}")
+
     # 2. Derive Key Levels (BSL, HTF Liquidity, Option Chain Walls, Equal Lows)
     ps = pivots(df_raw, n=2)
     swing_highs = [p.price for p in ps if p.kind == "HIGH"]
@@ -273,7 +295,10 @@ def render_breakout_tab(
     # ═══════════════════════════════════════════════════════════════════════
     if view_mode == "🛡️ Fakeout Avoidance (Liquidity Sweeps & FVG)":
         # Run structural scan for active sweep setup
-        all_sweeps = [x for x in smc.liquidity(df_raw, ps) if x.kind == "SWEEP" and x.direction == "ABOVE"]
+        # only RECENT sweeps count (a morning sweep must not mark "BSL swept ✓" at 15:00)
+        _recent_from = max(0, len(df_raw) - 30)
+        all_sweeps = [x for x in smc.liquidity(df_raw, ps)
+                      if x.kind == "SWEEP" and x.direction == "ABOVE" and x.i >= _recent_from]
         fvg_tracker = FVG_Tracker(df_raw)
         fvgs = [g for g in fvg_tracker.fvgs if g.direction == "BEARISH"]
 

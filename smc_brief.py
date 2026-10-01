@@ -270,6 +270,19 @@ def build_block(tf: str, now: datetime | None = None) -> str:
             what = "trend flip" if (last_ev.is_mss or last_ev.kind in ("CHOCH", "MSS")) else "trend continued"
             out.append(f"  Last {tf} event: {what} {last_ev.direction.lower()} at {last_ev.level:,.0f} ({last_ev.at:%H:%M}) [{last_ev.kind}]")
         out.append("  Info only — not advice. Zones are where to LOOK, the trigger is the CLOSE.")
+        try:
+            import smc_five_rule as fr
+            one = _read_dir(getattr(config, "CANDLE_DIR", None), int(r["days_back"]))
+            if one is not None:
+                one = one[one["timestamp"] + timedelta(minutes=1) <= now].reset_index(drop=True)
+            d5 = load_candles("5m", now, r)
+            d15 = load_candles("15m", now, r)
+            if d5 is not None:
+                res = fr.evaluate(one, d5, d15, now, fr.best_daily(one if one is not None else d5))
+                out.append("")
+                out.append(fr.text_block(res))
+        except Exception as _e:                              # noqa: BLE001
+            out.append(f"5-RULE: N/A ({_e})")
         return "\n".join(out)
     except Exception as e:
         return f"{hdr}\nSMC: N/A ({type(e).__name__}: {e})"

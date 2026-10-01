@@ -439,9 +439,9 @@ def render() -> None:
         st.write("")
         _panel("table", *read_table(t))
     if view in ("Chart", "Table + Chart"):
-        st.plotly_chart(chart_smart(t, tf), width="stretch", key="pece_smart")
+        st.plotly_chart(chart_smart(t, tf), use_container_width=True, key="pece_smart")
         _panel("smart", *read_smart(t))
-        st.plotly_chart(chart_oi_day(t), width="stretch", key="pece_oiday")
+        st.plotly_chart(chart_oi_day(t), use_container_width=True, key="pece_oiday")
         _panel("oi_day", *read_oi_day(t))
-        st.plotly_chart(chart_pcr(t), width="stretch", key="pece_pcr")
+        st.plotly_chart(chart_pcr(t), use_container_width=True, key="pece_pcr")
         _panel("pcr", *read_pcr2(t))

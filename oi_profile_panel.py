@@ -319,12 +319,12 @@ def render(day: date | None = None) -> None:
     score, label = sentiment(o, r)
     insight, text = analysis(o, label)
 
-    st.plotly_chart(chart_profile(o, step), width="stretch", key="oip_profile")
+    st.plotly_chart(chart_profile(o, step), use_container_width=True, key="oip_profile")
     _box("profile")
 
     left, right = st.columns([1, 2])
     with left:
-        st.plotly_chart(chart_gauge(score, label), width="stretch", key="oip_gauge")
+        st.plotly_chart(chart_gauge(score, label), use_container_width=True, key="oip_gauge")
         pcr_d = o["pcr1"] - o["pcr0"] if pd.notna(o["pcr0"]) else np.nan
         dc = RED if (pd.notna(pcr_d) and pcr_d < 0) else GREEN
         st.markdown(
@@ -342,9 +342,9 @@ def render(day: date | None = None) -> None:
     _box("sentiment", f"Score {score:+.2f} → {label}.", label)
 
     k1, k2, k3 = st.columns(3)
-    k1.plotly_chart(chart_pair("Open Interest Change", o["dce"], o["dpe"]), width="stretch", key="oip_chg")
-    k2.plotly_chart(chart_pair("Total Open Interest", o["ce1"], o["pe1"]), width="stretch", key="oip_tot")
-    k3.plotly_chart(chart_pcr_donut(o["ce1"], o["pe1"]), width="stretch", key="oip_pcr")
+    k1.plotly_chart(chart_pair("Open Interest Change", o["dce"], o["dpe"]), use_container_width=True, key="oip_chg")
+    k2.plotly_chart(chart_pair("Total Open Interest", o["ce1"], o["pe1"]), use_container_width=True, key="oip_tot")
+    k3.plotly_chart(chart_pcr_donut(o["ce1"], o["pe1"]), use_container_width=True, key="oip_pcr")
     side = "CALL side added more → bearish lean" if o["dce"] > o["dpe"] else "PUT side added more → bullish lean"
     _box("cards", f"Change since {o['start_label']}: Call **{fmt(o['dce'])}**, Put **{fmt(o['dpe'])}** → {side}. "
                   f"Total: Call **{fmt(o['ce1'])}**, Put **{fmt(o['pe1'])}**.")

@@ -20,12 +20,28 @@ def test_morning_brief_tab_data_loading():
 
 def test_morning_brief_tab_smart_money():
     rules = {"window_sessions": 65, "institutional_context": {"pro_bias": {"bullish_pct": 70.0, "bearish_pct": 30.0}}}
-    sm = morning_brief_tab._compute_smart_money(date(2026, 9, 18), rules)
-    assert "pro_str" in sm
-    assert "retail_str" in sm
-    assert "spread_str" in sm
-    assert "day_bias" in sm
-    assert sm["day_bias"] in ("CE BUY", "PE BUY", "NEUTRAL")
+    valid_biases = {
+        "BEARISH (PE Bias)",
+        "BULLISH (CE Bias)",
+        "TRAP SETUP (Retail Squeeze)",
+        "TRAP SETUP (Retail Short Squeeze)",
+        "NEUTRAL",
+    }
+    sm_sep18 = morning_brief_tab._compute_smart_money(date(2026, 9, 18), rules)
+    assert "pro_str" in sm_sep18
+    assert "fii_fut_str" in sm_sep18
+    assert "fii_hedge_str" in sm_sep18
+    assert "retail_str" in sm_sep18
+    assert "spread_str" in sm_sep18
+    assert "day_bias" in sm_sep18
+    assert sm_sep18["day_bias"] in valid_biases
+    assert sm_sep18["day_bias"] == "BULLISH (CE Bias)"
+
+    sm_oct01 = morning_brief_tab._compute_smart_money(date(2026, 10, 1), rules)
+    assert "fii_fut_str" in sm_oct01
+    assert "fii_hedge_str" in sm_oct01
+    assert sm_oct01["day_bias"] in valid_biases
+    assert sm_oct01["day_bias"] == "TRAP SETUP (Retail Squeeze)"
 
 
 def test_morning_brief_tab_conditions():
@@ -50,6 +66,7 @@ def test_corrupt_snapshot_resilience(tmp_path):
     import config
     old_snap_dir = config.SNAPSHOT_DIR
     config.SNAPSHOT_DIR = tmp_path
+    store.enable_writes("pytest")
     try:
         today_str = date.today().strftime("%Y-%m-%d")
         day_dir = tmp_path / today_str
@@ -75,5 +92,6 @@ def test_corrupt_snapshot_resilience(tmp_path):
         assert len(all_s) == 1
         assert spot == 23400.0
     finally:
+        store.disable_writes()
         config.SNAPSHOT_DIR = old_snap_dir
 
