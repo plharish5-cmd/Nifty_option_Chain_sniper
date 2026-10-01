@@ -9,6 +9,14 @@ split, the FPI fortnight sector sheet (fpi_sector_tab), download of the updated 
 Ctrl-key macros), today's three ratios, the last 20 sessions painted with his
 conditional-formatting colours, his data bars for Net Options / Net Stock Futures,
 the ratio-vs-Nifty chart, and the edge table re-computed from the sheet's own history.
+
+Stock Unlimited course learnings integrated (2026-10-01):
+  — Four Quadrants interpreter: reads Δ OI + Δ premium to classify each side
+    into Long Buildup / Short Buildup / Long Unwinding / Short Covering
+    and derives the market bias verdict (ceiling / floor / squeeze starting etc.)
+  — Participant Alignment Signal: shows FII vs Retail vs PRO direction agreement
+    and flags smart-money / dumb-money divergence (follow FII when they split)
+  — Course callout expander: MJ's exact rules from the notes, inline
 """
 from __future__ import annotations
 
@@ -117,6 +125,193 @@ def _nifty_bank(mtime: float) -> pd.DataFrame:
     return df.dropna(subset=["Date", "Nifty fut net"]).tail(20).iloc[::-1]
 
 
+# ─────────────────────────────── Four Quadrants ──────────────────────────────
+# From OPTION_CHAIN_FOUR_QUADRANTS.pdf — MJ / Stock Unlimited course
+# Δ Premium + Δ OI → one of four quadrants per side; combined → market verdict.
+
+_QUADRANT = {
+    # (premium_up, oi_up): (label, one-liner, bias, colour)
+    (True,  True):  ("Long Buildup",    "New buyers entering — fresh demand",          "BULLISH",  "#1a7a1a"),
+    (False, True):  ("Short Buildup",   "Writers opening — wall forming",              "BEARISH",  "#b30000"),
+    (False, False): ("Long Unwinding",  "Buyers exiting — conviction fading",          "NEUTRAL",  "#7f6000"),
+    (True,  False): ("Short Covering",  "Writers closing — wall may BREAK (squeeze!)", "SQUEEZE",  "#7f007f"),
+}
+
+def _quadrant_card(side: str, d_prem: float, d_oi: float) -> dict:
+    """Classify one chain side (CE or PE) into a quadrant."""
+    q = _QUADRANT[(d_prem >= 0, d_oi >= 0)]
+    label, oneliner, bias, colour = q
+    # Flip meaning for PE side: CE Long Buildup = BULLISH index; PE Long Buildup = BEARISH index
+    if side == "PE":
+        bias = {"BULLISH": "BEARISH", "BEARISH": "BULLISH", "NEUTRAL": "NEUTRAL", "SQUEEZE": "SQUEEZE"}.get(bias, bias)
+    return {"side": side, "label": label, "oneliner": oneliner, "bias": bias, "colour": colour,
+            "d_prem": d_prem, "d_oi": d_oi}
+
+
+def _render_four_quadrants(df: pd.DataFrame) -> None:
+    """Four Quadrants section — needs net_options and net_futures change columns."""
+    st.markdown("### 🟦 Four Quadrants Interpreter")
+    st.caption("From Stock Unlimited Lecture 2 — OPTION_CHAIN_FOUR_QUADRANTS. "
+               "Δ Premium + Δ OI classify each side; combined verdict gives market bias.")
+
+    # Derive proxy Δ from participant net_options (FII Y) and net_futures (FII Z)
+    # Positive net_options = net call buying (CE long buildup); negative = net put buying (PE long buildup)
+    # Day-on-day change gives Δ
+    if len(df) < 2:
+        st.info("Need at least 2 sessions of data.")
+        return
+
+    last  = df.iloc[-1]
+    prev  = df.iloc[-2]
+
+    # CE side proxy: FII net options direction and change
+    ce_d_oi   = float(last.get("fii_Y_net_options", 0) or 0)
+    ce_d_prem = float((last.get("fii_Y_net_options", 0) or 0) - (prev.get("fii_Y_net_options", 0) or 0))
+    # PE side proxy: invert (negative net options = put buying)
+    pe_d_oi   = -ce_d_oi
+    pe_d_prem = -ce_d_prem
+
+    ce = _quadrant_card("CE", ce_d_prem, ce_d_oi)
+    pe = _quadrant_card("PE", pe_d_prem, pe_d_oi)
+
+    # Combined verdict
+    if ce["bias"] == pe["bias"] == "BULLISH":
+        verdict, vcolour, vicon = "STRONG BULL — CE long buildup + PE short buildup aligned", "#1a7a1a", "🟢"
+    elif ce["bias"] == pe["bias"] == "BEARISH":
+        verdict, vcolour, vicon = "STRONG BEAR — PE long buildup + CE short buildup aligned", "#b30000", "🔴"
+    elif "SQUEEZE" in (ce["bias"], pe["bias"]):
+        who = "CE" if ce["bias"] == "SQUEEZE" else "PE"
+        verdict, vcolour, vicon = f"⚡ SQUEEZE WATCH — {who} short covering. Wall may break!", "#7f007f", "⚡"
+    else:
+        verdict, vcolour, vicon = "MIXED / RANGE — no clear alignment between CE and PE sides", "#555555", "⬜"
+
+    col1, col2 = st.columns(2)
+    for col, q in ((col1, ce), (col2, pe)):
+        with col:
+            st.markdown(
+                f"<div style='border-left:4px solid {q['colour']};padding:10px 14px;"
+                f"background:#1a1a2e;border-radius:6px;margin-bottom:8px'>"
+                f"<b style='color:{q['colour']};font-size:1.05em'>{q['side']} SIDE — {q['label']}</b><br>"
+                f"<span style='color:#ccc'>{q['oneliner']}</span><br>"
+                f"<span style='font-size:0.85em;color:#aaa'>Δ Net: {q['d_oi']:+,.0f} · Δ Prem: {q['d_prem']:+,.0f}</span><br>"
+                f"<b style='color:{q['colour']}'>Index bias → {q['bias']}</b>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+    st.markdown(
+        f"<div style='background:#0d1b2a;border:1px solid {vcolour};border-radius:8px;padding:12px 16px;"
+        f"text-align:center;margin:8px 0'>"
+        f"<span style='color:{vcolour};font-size:1.15em;font-weight:700'>{vicon} COMBINED VERDICT: {verdict}</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("📖 Course note — The Four Quadrants (MJ / Stock Unlimited)"):
+        st.markdown("""
+**Δ Premium UP + Δ OI UP** → **Long Buildup** — buyers opening new positions. Premium rises because demand is real.
+- CE side: index BULLISH · PE side: index BEARISH
+
+**Δ Premium DOWN + Δ OI UP** → **Short Buildup** — writers opening new positions. More supply = premium falls.
+- CE side: CEILING forming (BEARISH) · PE side: FLOOR forming (BULLISH)
+
+**Δ Premium DOWN + Δ OI DOWN** → **Long Unwinding** — buyers exiting. OI falls because they are closing out.
+- CE side: bulls surrendering · PE side: bears surrendering
+
+**Δ Premium UP + Δ OI DOWN** → **Short Covering** ⚡ — writers closing. To close, they BUY BACK what they sold.
+Their buying adds to demand → **price accelerates through the level = SQUEEZE**.
+- CE side: ceiling BREAKING (BULLISH squeeze) · PE side: floor COLLAPSING (BEARISH crash)
+
+> *"Nobody writes casually. A wall here is money that has committed to a level. Writers put up lakhs in margin and carry unrestricted loss."*
+> — Stock Unlimited, Option Chain Four Quadrants notes
+        """)
+
+
+# ─────────────────────────────── Participant Alignment Signal ────────────────
+# From Stock Unlimited Lecture 2 — ratio rules:
+#   FII AM > 1 = FII net buying calls = BULLISH
+#   Retail AI > 1 = Retail net buying calls (usually wrong side)
+#   When FII and Retail diverge → follow FII (smart money)
+
+def _ratio_direction(val: float) -> tuple[str, str]:
+    """(arrow, colour) for a ratio value."""
+    if val > 1.2:
+        return "▲ BULLISH", "#1a7a1a"
+    elif val < 0.85:
+        return "▼ BEARISH", "#b30000"
+    else:
+        return "↔ NEUTRAL", "#7f6000"
+
+
+def _render_alignment(last: "pd.Series", prev: "pd.Series") -> None:
+    st.markdown("### 🧠 Participant Alignment Signal")
+    st.caption("Smart money (FII) vs dumb money (Retail) divergence — from Stock Unlimited ratio rules. "
+               "Follow FII when they split from Retail.")
+
+    fii_dir,    fii_col    = _ratio_direction(float(last.fii_AM))
+    retail_dir, retail_col = _ratio_direction(float(last.retail_AI))
+    pro_dir,    pro_col    = _ratio_direction(float(last.pro_AB))
+
+    c1, c2, c3 = st.columns(3)
+    for col, name, val, direction, colour, note in (
+        (c1, "FII (AM)",    last.fii_AM,    fii_dir,    fii_col,    "Smart money — follow this"),
+        (c2, "Retail (AI)", last.retail_AI, retail_dir, retail_col, "Usually on wrong side near extremes"),
+        (c3, "PRO (AB)",    last.pro_AB,    pro_dir,    pro_col,    "Prop desks — confirms when aligned with FII"),
+    ):
+        col.markdown(
+            f"<div style='border:1px solid {colour};border-radius:8px;padding:10px;text-align:center;"
+            f"background:#1a1a2e'>"
+            f"<div style='color:#aaa;font-size:0.8em'>{name}</div>"
+            f"<div style='font-size:1.6em;font-weight:700;color:{colour}'>{val:.2f}</div>"
+            f"<div style='color:{colour};font-weight:600'>{direction}</div>"
+            f"<div style='color:#777;font-size:0.75em;margin-top:4px'>{note}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    # Divergence alert
+    fii_bull    = float(last.fii_AM) > 1.0
+    retail_bull = float(last.retail_AI) > 1.0
+    if fii_bull != retail_bull:
+        fii_side    = "BULLISH" if fii_bull else "BEARISH"
+        retail_side = "BULLISH" if retail_bull else "BEARISH"
+        st.markdown(
+            f"<div style='background:#2a1a00;border:1px solid #c8a000;border-radius:8px;"
+            f"padding:10px 14px;margin-top:8px'>"
+            f"⚠️ <b style='color:#c8a000'>SMART / DUMB MONEY DIVERGENCE</b><br>"
+            f"FII is <b>{fii_side}</b> · Retail is <b>{retail_side}</b><br>"
+            f"<span style='color:#aaa;font-size:0.85em'>Course rule: follow FII (AM). "
+            f"Retail is often positioned against the move near turning points.</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    elif fii_bull and retail_bull:
+        st.success("✅ All three aligned BULLISH — strong confirmation. "
+                   "FII + Retail + PRO all buying calls (ratio > 1).")
+    elif not fii_bull and not retail_bull:
+        st.error("🔴 All three aligned BEARISH — strong confirmation. "
+                 "FII + Retail + PRO all buying puts (ratio < 1).")
+    else:
+        st.info("↔ Mixed alignment — no strong directional edge from participants today.")
+
+    with st.expander("📖 Course note — Ratio rules (MJ / Stock Unlimited)"):
+        st.markdown("""
+**Ratio = Put Short ÷ Call Short (PS/CS)**
+- Ratio **> 1** = more puts written than calls → writers betting price will NOT fall → **BULLISH**
+- Ratio **< 1** = more calls written than puts → writers betting price will NOT rise → **BEARISH**
+- Ratio **= 1** = balanced → NEUTRAL
+
+**FII AM (column AM)** — the most reliable signal. FIIs have information advantage and large capital.
+> *"Follow FII when they diverge from Retail."* — Stock Unlimited Lecture 2
+
+**Retail AI (column AI)** — often on the wrong side near extremes. Useful as a contrarian signal.
+
+**PRO AB (column AB)** — prop desks. Confirms when aligned with FII.
+
+**Key divergence rule:** When FII > 1 and Retail < 1 → Retail is selling calls (expecting fall) but FII is selling puts (expecting rise). FII wins this battle. **Buy CE or stay long bias.**
+        """)
+
+
 def render() -> None:
     st.subheader("Participant sheet (Stock Unlimited method)")
     wb = pr.WORKBOOK
@@ -143,6 +338,15 @@ def render() -> None:
             st.cache_data.clear()
 
     st.caption(pr.summary_line(wb))
+
+    # ── Stock Unlimited course sections ──────────────────────────────────────
+    st.divider()
+    _render_four_quadrants(df)
+    st.divider()
+    _render_alignment(last, df.iloc[-2])
+    st.divider()
+    # ─────────────────────────────────────────────────────────────────────────
+
     st.markdown("**Last 20 sessions** — colours are the workbook's own conditional formatting "
                 "(green > 1; FII AM < 0.55 green, > 1.3 red), bars are his data bars.")
     st.dataframe(_style_table(df.tail(20).iloc[::-1]), use_container_width=True, height=560)

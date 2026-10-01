@@ -577,13 +577,29 @@ def render(ctx: Optional[Any] = None) -> None:
     _render_top_strip(percentiles_df, divergence_dict, prov)
     _render_executive_findings(baseline_dict, prov)
 
-    tab_overview, tab_baseline, tab_divergence, tab_chart, tab_outcomes = st.tabs([
+    tab_cash, tab_fsum, tab_overview, tab_baseline, tab_divergence, tab_chart, tab_outcomes = st.tabs([
+        "💵 FII/DII Cash Market",
+        "🧾 FII/DII Summary",
         "📋 Overview & Percentiles",
         "🏛️ Structural Baseline",
         "⚖️ Divergence Engine",
         "📈 65-Session Chart",
         "🎯 Outcome Reality Audit",
     ])
+
+    with tab_cash:
+        try:
+            import fii_dii_panel
+            fii_dii_panel.render_cash()
+        except Exception as _fdc_err:                      # noqa: BLE001
+            st.error(f"FII/DII Cash Market view encountered an error: {_fdc_err}")
+
+    with tab_fsum:
+        try:
+            import fii_dii_panel
+            fii_dii_panel.render_summary()
+        except Exception as _fds_err:                      # noqa: BLE001
+            st.error(f"FII/DII Summary view encountered an error: {_fds_err}")
 
     with tab_overview:
         st.markdown("#### Participant Positioning — Current Session vs 65-Session Trailing Window")

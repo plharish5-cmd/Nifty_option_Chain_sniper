@@ -322,6 +322,128 @@ def verdict_text(tf: str = "15m") -> str:
         return f"not tested yet - run ema8_signals.py --backtest --tf {tf}"
 
 
+# ─────────────────────────────── candle context ─────────────────────────────
+def candle_context(c: pd.DataFrame, R: dict | None = None, only_day: date | None = None) -> list[dict]:
+    """For every closed 15m candle (or only_day), describe WHERE it sits — body type, EMA side,
+    BB position, signal status. Returns a list of dicts, one per candle."""
+    R = R or rules_for("15m")
+    a = _arrays(c, R)
+    S = R["signal"]
+    rows = []
+    n = a["n"]
+    for i in range(1, n):
+        d = a["days"][i]
+        if only_day is not None and d != only_day:
+            continue
+        tod = a["tod"][i]
+        O, H, L, C = a["O"][i], a["H"][i], a["L"][i], a["C"][i]
+        ema = a["ema"][i]
+        bbu = a["bbu"][i - 1] if i > 0 else float("nan")
+        bbl = a["bbl"][i - 1] if i > 0 else float("nan")
+        rng = H - L
+        body = abs(C - O)
+        body_share = body / rng if rng > 0 else 0
+
+        # ── candle body type ──────────────────────────────────────────────
+        if body_share <= R["exit"]["doji_body_share"]:
+            ctype = "DOJI"
+        elif body_share >= 0.85 and (H - max(O, C)) < 0.07 * rng and (min(O, C) - L) < 0.07 * rng:
+            ctype = "MARUBOZU"
+        elif (H - max(O, C)) > 0.55 * rng and body_share < 0.35:
+            ctype = "SHOOTING STAR" if C < O else "INVERTED HAMMER"
+        elif (min(O, C) - L) > 0.55 * rng and body_share < 0.35:
+            ctype = "HAMMER" if C > O else "HANGING MAN"
+        elif body_share >= 0.5:
+            ctype = "STRONG"
+        else:
+            ctype = "NORMAL"
+
+        # ── EMA side ──────────────────────────────────────────────────────
+        if C > ema:
+            ema_side = "ABOVE"
+        elif C < ema:
+            ema_side = "BELOW"
+        else:
+            ema_side = "ON"
+        ema_dist = round(abs(C - ema), 1)
+
+        # ── fresh cross? stage3? ──────────────────────────────────────────
+        prev_C = a["C"][i - 1]
+        prev_ema = a["ema"][i - 1]
+        up_cross = C > ema and prev_C <= prev_ema
+        dn_cross = C < ema and prev_C >= prev_ema
+        tol = S.get("stage3_touch_points", 3)
+        stage3_ce = (C > ema and prev_C > prev_ema and L <= ema + tol and C > O)
+        stage3_pe = (C < ema and prev_C < prev_ema and H >= ema - tol and C < O)
+        signal_kind = None
+        signal_side = None
+        if up_cross and body_share >= S["body_min_share"]:
+            signal_kind, signal_side = "cross", "CE"
+        elif dn_cross and body_share >= S["body_min_share"]:
+            signal_kind, signal_side = "cross", "PE"
+        elif stage3_ce and body_share >= S["body_min_share"]:
+            signal_kind, signal_side = "stage3", "CE"
+        elif stage3_pe and body_share >= S["body_min_share"]:
+            signal_kind, signal_side = "stage3", "PE"
+
+        # ── BB position ───────────────────────────────────────────────────
+        bb_pos = "inside"
+        if not (np.isnan(bbu) or np.isnan(bbl)):
+            if H >= bbu:
+                bb_pos = "touching/above UPPER BB"
+            elif L <= bbl:
+                bb_pos = "touching/below LOWER BB"
+            elif C > (bbu + bbl) / 2:
+                bb_pos = "upper half"
+            else:
+                bb_pos = "lower half"
+
+        rows.append({
+            "day": d, "time": tod, "open": O, "high": H, "low": L, "close": C,
+            "ema8": round(ema, 1), "bbu": round(bbu, 1) if not np.isnan(bbu) else None,
+            "bbl": round(bbl, 1) if not np.isnan(bbl) else None,
+            "body_type": ctype, "candle_dir": "GREEN" if C >= O else "RED",
+            "ema_side": ema_side, "ema_dist": ema_dist,
+            "bb_pos": bb_pos, "signal_kind": signal_kind, "signal_side": signal_side,
+        })
+    return rows
+
+
+def fmt_candle_context(rows: list[dict]) -> str:
+    """Pretty-print candle context rows for CLI / log."""
+    lines = []
+    for r in rows:
+        sig = ""
+        if r["signal_side"]:
+            sig = f"  ⚡ {r['signal_side']} SIGNAL ({r['signal_kind']})"
+        bb_str = ""
+        if r["bbu"]:
+            bb_str = f"  BB {r['bb_pos']} (U {r['bbu']:,.0f} / L {r['bbl']:,.0f})"
+        lines.append(
+            f"{r['time']}  {r['candle_dir']:5} {r['body_type']:16} "
+            f"O {r['open']:,.0f}  H {r['high']:,.0f}  L {r['low']:,.0f}  C {r['close']:,.0f}  "
+            f"EMA8 {r['ema8']:,.1f} [{r['ema_side']} {r['ema_dist']:.0f}pts]{bb_str}{sig}"
+        )
+    return "\n".join(lines)
+
+
+def candle_context_live(now: datetime | None = None) -> list[dict]:
+    """Candle context for all closed 15m candles today (live use)."""
+    now = now or datetime.now()
+    R = rules_for("15m")
+    try:
+        c = pa.tf_candles("15m", now.date(), 5)
+    except Exception as exc:
+        log.info("15m candles unavailable: %s", exc)
+        return []
+    if c is None or not len(c):
+        return []
+    c = c[pd.to_datetime(c["timestamp"]) + timedelta(minutes=15) <= now].reset_index(drop=True)
+    if not len(c):
+        return []
+    return candle_context(c, R, only_day=now.date())
+
+
 # ─────────────────────────────── live ───────────────────────────────────────
 def live(now: datetime | None = None, tfs: list[str] | None = None) -> dict:
     base = rules()
@@ -481,6 +603,7 @@ def main() -> int:
     ap.add_argument("--day")
     ap.add_argument("--tf", default="all")
     ap.add_argument("--journal", action="store_true", help="5-year trade journal in your homework format")
+    ap.add_argument("--context", action="store_true", help="show candle-by-candle location table for the day")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     pd.set_option("display.width", 260, "display.max_columns", 20, "display.max_colwidth", 60)
@@ -489,6 +612,17 @@ def main() -> int:
     if a.journal:
         for tf in tfs:
             write_journal(tf)
+        return 0
+    if a.context:
+        day = pd.Timestamp(a.day).date() if a.day else date.today()
+        R = rules_for("15m")
+        c = pa.tf_candles("15m", day, 5)
+        if c is None or day not in set(pd.to_datetime(c["timestamp"]).dt.date):
+            print(f"no 15m candles for {day}")
+            return 1
+        rows = candle_context(c, R, only_day=day)
+        print(f"\n===== 15m CANDLE CONTEXT — {day:%a %d-%b-%Y} ({len(rows)} candles) =====")
+        print(fmt_candle_context(rows))
         return 0
     if a.backtest:
         try:

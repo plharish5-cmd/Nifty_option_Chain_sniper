@@ -83,7 +83,7 @@
  "timeframes_rule": "Only 15-min: add \"5m\", \"3m\" here to bring those back.",
  "filters": {
   "_rule": "Used by ema8_filtered.py. Set any of trend / separation / max_sl / no_lunch / day_limits / exit to false to switch it off. trend_ema_span 80 on 15-min = 1-hour EMA 20. cost_points_per_trade = brokerage + slippage taken off every trade. train_until = last date of the tuning years.",
-  "trend": true,
+  "trend": false,
   "trend_ema_span": 80,
   "separation": true,
   "sep_min_points": 5,

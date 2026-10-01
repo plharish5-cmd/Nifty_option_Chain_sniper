@@ -18,3 +18,12 @@ if tf:
     if w_table:
         print(w_table)
         print()
+
+# SMC in plain English (BUY / SELL / GET READY / WAIT + trigger levels)
+if tf:
+    try:
+        import smc_brief
+        print(smc_brief.build_block(tf, now))
+        print()
+    except Exception as _e:
+        print(f"SMC: N/A ({_e})")

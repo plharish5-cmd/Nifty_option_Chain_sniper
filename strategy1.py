@@ -443,6 +443,10 @@ class Signal:
     small_target: bool = False
     smc_runner: bool = False
     smc_target: float | None = None
+    # SMC Sniper Gate — populated when enable_smc_sniper_gate is True
+    smc_gate_status: str = ""            # TRIGGERED | ARMED | FORMING | MONITORING | BYPASSED
+    smc_gate_score: int = 0              # 0–4 condition count from detect_sniper_confluence
+    smc_gate_detail: str = ""            # human-readable condition breakdown
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -508,6 +512,38 @@ def _stage(d: pd.DataFrame, p: dict) -> tuple[str, str, str]:
     if lbb == "DOWN":
         return "STAGE 3 — downtrend", ubb, lbb
     return "STAGE 1 — rangebound", ubb, lbb
+
+
+_SNIPER_RANK = {"MONITORING": 0, "FORMING": 1, "ARMED": 2, "TRIGGERED": 3}
+
+
+def _sniper_block(d: pd.DataFrame, i: int, direction: str, p: dict) -> str | None:
+    """
+    Optional SMC Sniper Gate (MJ / Stock Unlimited 4-condition entry).
+
+    Runs smc.read() on candles 0..i only (closed bars, pivot confirmation lag
+    built into smc) — no lookahead. Returns a skip reason if the sniper setup
+    in the trade's direction is below `smc_sniper_min_status`, else None.
+    Fails OPEN: if smc errors, the 8 EMA signal is allowed and a note says so.
+    """
+    if not p.get("enable_smc_sniper_gate", False):
+        return None
+    need = str(p.get("smc_sniper_min_status", "ARMED")).upper()
+    try:
+        import smc as _smc
+        r = _smc.read(d.iloc[:i + 1], n=int(p.get("smc_pivot_n", 2)))
+        key = "bullish" if direction == "LONG" else "bearish"
+        setup = (r.get("sniper_confluence") or {}).get(key)
+        if setup is None:
+            return "SMC Sniper Gate: no sniper read available."
+        if _SNIPER_RANK.get(setup.status, 0) >= _SNIPER_RANK.get(need, 2):
+            return None
+        pending = "; ".join(setup.conditions_pending[:2]) or "—"
+        return (f"SMC Sniper Gate: {key} setup is {setup.status} "
+                f"({setup.score}/4), needs {need}. Pending: {pending}")
+    except Exception as e:                                   # fail open
+        return None if p.get("smc_sniper_fail_open", True) else \
+            f"SMC Sniper Gate errored ({type(e).__name__}) — skipped (fail_closed)."
 
 
 def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
@@ -749,6 +785,11 @@ def evaluate(df15: pd.DataFrame, prev_close: float | None = None,
                         "GATE", "info", k.ts,
                         f"{k.ts:%H:%M} skipped.",
                         "First candle was large. Wait for the pullback to the 8 EMA."))
+                elif (sn_block := _sniper_block(d, i, direction, p)):
+                    res.alerts.append(Alert(
+                        "GATE", "info", k.ts,
+                        f"{k.ts:%H:%M} closed beyond the 8 EMA — but skipped.",
+                        sn_block))
                 else:
                     s = Signal(
                         direction=direction, armed_i=i, armed_ts=k.ts,

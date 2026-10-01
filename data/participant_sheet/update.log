@@ -64,3 +64,28 @@
 2026-09-30 21:20:20,794 Workbook already up to date (last day 2026-09-30).
 2026-09-30 22:20:20,051 Workbook already up to date (last day 2026-09-30).
 2026-10-01 05:57:13,990 2026-10-01: HTTPSConnectionPool(host='nsearchives.nseindia.com', port=443): Max retries exceeded with url: /content/nsccl/fao_participant_oi_01102026.csv (Caused by NameResolutionError("HTTPSConnection(host='nsearchives.nseindia.com', port=443): Failed to resolve 'nsearchives.nseindia.com' ([Errno -3] Temporary failure in name resolution)")) — stopping before writing.
+2026-10-01 19:20:30,784 2026-10-01: NSE files not published yet — will retry later.
+2026-10-01 19:20:33,145 Workbook already up to date (last day 2026-09-30).
+2026-10-01 20:20:29,521 2026-10-01: NSE files parsed (FII put short 448195 / call short 1101948)
+2026-10-01 20:20:31,140 Writing 1 day(s), 0 BD value(s) with LibreOffice…
+2026-10-01 20:20:50,529   2026-10-01: Retailers row 1654 written, 3 formulas filled
+2026-10-01 20:20:50,530   2026-10-01: DII row 1498 written, 4 formulas filled
+2026-10-01 20:20:50,530   2026-10-01: FII row 1701 written, 2 formulas filled
+2026-10-01 20:20:50,530   2026-10-01: PRO row 1705 written, 13 formulas filled
+2026-10-01 20:20:50,530   2026-10-01: FII Index row 1441, 0 formulas filled
+2026-10-01 20:20:50,530   2026-10-01: FII Stocks row 1445, 2 formulas filled
+2026-10-01 20:20:50,530   2026-10-01: Nifty & Bank row 914, 4 formula columns filled
+2026-10-01 20:20:50,531   2026-10-01: FII Vol row 933, 16 formulas filled
+2026-10-01 20:20:50,531   2026-10-01: Daily Equity row 1348, 2 formula columns filled
+2026-10-01 20:20:50,531   CHART_EXTEND|OI vs Spot|1699|1700
+2026-10-01 20:20:50,531   analysis tab 'OI vs Spot': +1 rows (now to row 1700)
+2026-10-01 20:20:50,531   CHART_EXTEND|Cumulative|1345|1346
+2026-10-01 20:20:50,531   analysis tab 'Cumulative': +1 rows (now to row 1346)
+2026-10-01 20:20:50,531   saved /tmp/tmp_r7zya8e/Partcipant_Data_Sheet_NEW.xlsm
+2026-10-01 20:20:53,137 Chart ranges extended: 5 (OI vs Spot to row 1700, Cumulative to row 1346)
+2026-10-01 20:20:53,138 Macros restored (19 sheet code names, 94720 bytes of VBA)
+2026-10-01 20:20:58,149 participants.parquet: +4 rows (refused 0)
+2026-10-01 20:21:02,277 Participants 01-Oct: FII 0.41 | Retail 0.93 | PRO 0.68 -> ALL BELOW 1 (FII below 1 for 152 sessions)
+2026-10-01 20:21:06,611 Correlation 01-Oct: bias SELL ON RISE | Y -1,098,043 (below scaled line) | AM 0.41 | portfolio HOLD 5/5 (scaled view: STAY OUT)
+2026-10-01 20:21:06,611 Done: 2026-10-01
+2026-10-01 21:20:30,894 Workbook already up to date (last day 2026-10-01).

@@ -2164,6 +2164,7 @@ _ORDERED_ALL_TABS = [
     "📊 Option Chain / Key Levels",
     "Change in OI",
     "⚡ OI Timeline (Per-Strike)",
+    "🧪 Options Lab (PCR · OI · Gamma · Vega)",
     "📈 Price Action (1m/5m/15m)",
     "🏹 Breakout & Trap Scanner",
     "📝 Paper Trading & Impulse Control",
@@ -2192,6 +2193,7 @@ _ORDERED_ALL_TABS = [
     # ── Tier 4: 🏛️ Pre-Market Prep, Participant Bias & Regimes ──────────────────
     "🌅 Opening Gap Planner & Confluence",
     "🏛️ Participant Positioning & History",
+    "📊 Trainer's Participant Sheet",
     "Market State",
     "Four Pillars",
     "Flow",
@@ -2249,6 +2251,12 @@ _LABEL_TO_TAB_INDEX = {
     "Participant Positioning & History": 34,
     "Participant Positioning": 34,
     "Participant History": 34,
+    "📊 Trainer's Participant Sheet": 43,
+    "🧪 Options Lab (PCR · OI · Gamma · Vega)": 44,
+    "Options Lab": 44,
+    "Trainer's Participant Sheet": 43,
+    "Trainer Sheet": 43,
+    "Participant Sheet": 43,
     "🎯 Decision Cockpit": 0,
     "OI profile": 1,
     "📊 Option Chain (OI Profile)": 1,
@@ -4992,3 +5000,23 @@ if _tab_active(42):
         st.error(f"Snapshots tab encountered an error: {_snap_err}")
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Tab 43 — 📊 Trainer's Participant Sheet (Workbook + Lecture-2 Correlation)
+# ═══════════════════════════════════════════════════════════════════════════
+if _tab_active(43):
+    try:
+        import participant_sheet_tab
+        participant_sheet_tab.render()
+    except Exception as _pst_err:                          # noqa: BLE001
+        st.error(f"Trainer's Participant Sheet tab encountered an error: {_pst_err}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tab 44 — 🧪 Options Lab (PCR · OI change · Total OI · Writer Flow · Vega · GEX · IV−HV)
+# ═══════════════════════════════════════════════════════════════════════════
+if _tab_active(44):
+    try:
+        import options_lab_tab
+        options_lab_tab.render()
+    except Exception as _olab_err:                         # noqa: BLE001
+        st.error(f"Options Lab tab encountered an error: {_olab_err}")

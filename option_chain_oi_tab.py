@@ -1215,10 +1215,11 @@ def render_option_chain_oi_tab(
     st.markdown("## ⚡ Option Chain & Open Interest Analysis")
     st.caption("Institutional quantitative engine analyzing writer positioning, breakout validity, and 30–50 pt anti-trap zones.")
 
-    tab_oi, tab_strike_select, tab_writers_graph = st.tabs([
+    tab_oi, tab_strike_select, tab_writers_graph, tab_pe_ce = st.tabs([
         "⚡ OI Breakout & Anti-Trap Analysis",
         "🎯 Strike Selection & Premium Behaviour (₹200–₹300 Rule)",
         "📊 Call vs Put Writers Graph (3m / 5m / 15m)",
+        "🟥 PE − CE OI Table & Smart OI",
     ])
 
     with tab_oi:
@@ -1373,3 +1374,11 @@ def render_option_chain_oi_tab(
         except Exception as _wge_err:
             log.exception(f"Call vs Put Writers Graph encountered an error: {_wge_err}")
             st.error(f"Call vs Put Writers Graph encountered an error: {_wge_err}")
+
+    with tab_pe_ce:
+        try:
+            import pe_ce_panel
+            pe_ce_panel.render()
+        except Exception as _pece_err:
+            log.exception(f"PE − CE OI Table encountered an error: {_pece_err}")
+            st.error(f"PE − CE OI Table encountered an error: {_pece_err}")
