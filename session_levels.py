@@ -43,7 +43,8 @@ question — did the level break properly or not — and leaves the rest alone.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import date, datetime, time
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -274,3 +275,98 @@ def near_extreme(price: float, hi: Extreme | None, lo: Extreme | None,
                     "most days the extreme holds. A reversal setup is a "
                     "different question and this check cannot tell them "
                     "apart.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Prior-Day Levels (PDH, PDL, PDC, PDO)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def load_prior_day_levels(
+    target_date: date,
+    ohlc_path: Path | None = None,
+    candles_dir: Path | None = None,
+) -> dict[str, float]:
+    """
+    Computes prior-session key levels (PDH, PDL, PDC, PDO) from the complete
+    previous session candle file (candles_5m), falling back to OHLC.csv.
+    Finds the session immediately preceding target_date.
+    """
+    base_dir = Path(__file__).resolve().parent
+    if candles_dir is None:
+        candles_dir = base_dir / "data" / "candles_5m"
+    if ohlc_path is None:
+        ohlc_path = base_dir / "data" / "ohlc" / "OHLC.csv"
+
+    target_str = target_date.strftime("%Y-%m-%d")
+
+    # 1. Attempt loading from complete previous session in candles_5m
+    if candles_dir.exists():
+        try:
+            csv_files = {p.stem: p for p in candles_dir.glob("*.csv")}
+            pq_files = {p.stem: p for p in candles_dir.glob("*.parquet")}
+            all_stems = sorted(set(csv_files.keys()) | set(pq_files.keys()))
+            prior_stems = [s for s in all_stems if s < target_str and len(s) == 10 and s[4] == "-" and s[7] == "-"]
+
+            if prior_stems:
+                prev_date_str = prior_stems[-1]
+                path_to_read = csv_files.get(prev_date_str) or pq_files.get(prev_date_str)
+                if path_to_read:
+                    is_pq = path_to_read.suffix == ".parquet"
+                    df = pd.read_parquet(path_to_read) if is_pq else pd.read_csv(path_to_read)
+                    df = df.rename(columns={c: c.lower() for c in df.columns})
+                    if not df.empty and len(df) >= 60 and "high" in df.columns and "low" in df.columns and "close" in df.columns and "open" in df.columns:
+                        res = {
+                            "PDH": float(df["high"].max()),
+                            "PDL": float(df["low"].min()),
+                            "PDC": float(df["close"].iloc[-1]),
+                            "PDO": float(df["open"].iloc[0]),
+                            "date": prev_date_str,
+                        }
+                        if len(prior_stems) >= 2:
+                            prev2_date_str = prior_stems[-2]
+                            p2_path = csv_files.get(prev2_date_str) or pq_files.get(prev2_date_str)
+                            if p2_path:
+                                is_pq2 = p2_path.suffix == ".parquet"
+                                df2 = pd.read_parquet(p2_path) if is_pq2 else pd.read_csv(p2_path)
+                                df2 = df2.rename(columns={c: c.lower() for c in df2.columns})
+                                if not df2.empty and len(df2) >= 60 and "close" in df2.columns:
+                                    res["P2DC"] = float(df2["close"].iloc[-1])
+                                    res["P2_date"] = prev2_date_str
+                        return res
+        except Exception:
+            pass
+
+    # 2. Fallback to OHLC.csv
+    if not ohlc_path.exists():
+        return {}
+
+    try:
+        df = pd.read_csv(ohlc_path)
+        if df.empty or "Date" not in df.columns:
+            return {}
+
+        if "partial" in df.columns:
+            df = df[~df["partial"].astype(str).str.lower().isin(["true", "1"])]
+
+        df["Date_str"] = df["Date"].astype(str).str.strip()
+        prior_df = df[df["Date_str"] < target_str]
+        if prior_df.empty:
+            return {}
+
+        prev_row = prior_df.iloc[-1]
+        res = {
+            "PDH": float(prev_row["High"]),
+            "PDL": float(prev_row["Low"]),
+            "PDC": float(prev_row["Close"]),
+            "PDO": float(prev_row["Open"]),
+            "date": str(prev_row["Date"]),
+        }
+        if len(prior_df) >= 2:
+            prev2_row = prior_df.iloc[-2]
+            res["P2DC"] = float(prev2_row["Close"])
+            res["P2_date"] = str(prev2_row["Date"])
+
+        return res
+    except Exception:
+        return {}
+

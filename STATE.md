@@ -2,7 +2,9 @@
 
 ## Working and Verified
 - **Poller Architecture**: Persistent `NSEClient`, systemd user unit enabled with lingering, `systemd-inhibit` (lid-close/sleep immunity), zero live `raise` on data conditions, and deterministic audit trail in `data/scheduler_heartbeat.jsonl`.
-- **OI Timeline Engine**: Pure-Python computation in `oi_timeline.py` with 12 unit tests passing; resamples 1m/cadence snapshots into 3m bins, tracks per-strike cumulative flows (dCE, dPE, spread, strike PCR), and computes deterministic missed opening OI.
+- **OI Timeline Engine & Strike Multiples**: Pure-Python computation in `oi_timeline.py` with 15 unit tests passing; resamples 1m/cadence snapshots into 3m bins, tracks per-strike cumulative flows (dCE, dPE, spread, strike PCR), and computes deterministic missed opening OI.
+- **Dynamic Current Spot Anchoring & 100-Level Strikes**: Solved stale morning ATM anchoring bug by dynamically referencing latest/current Nifty spot (`mkt_snaps[-1][1]`) and supporting 100-point institutional round strikes (e.g., 23300, 23400, 23500, 23600) alongside 50-point strikes and custom multi-strike selectors.
+- **OptionTick Visual Fidelity Alignment**: Styled after OptionTick UI (`views/oi_timeline_tab.py`) with active strike pills/chips (`Strike : 23300`), clean red/green Plotly curves scaled in Lakhs (`ticksuffix="L"`), and exact 6-metric footer cards (CE ΔOI, PE ΔOI, SPOT, PCR, CALL OI, PUT OI). Fast session discovery indexed in <100ms without cold-start parquet freezes.
 - **Single-IV Parity Greeks**: OTM-sourced implied volatility with put-call parity derivation ($\Delta_{\text{put}} = \Delta_{\text{call}} - e^{-qT}$, $\Gamma_{\text{put}} = \Gamma_{\text{call}}$); eliminates independent IV skew divergence; 12 unit tests passing.
 - **Historical Quality Gate**: Successfully validates 4 gate-passing sessions (`2026-08-21`, `2026-08-31`, `2026-09-01`, `2026-09-02`) with $\ge 86\%$ coverage, lateness $\le 3.0\text{m}$, and continuous intraday flow.
 - **Multi-Expiry Retention Pruner**: Prunes `snapshots_multi/` older than 90 days on startup and post-market OHLC; hardcoded path check refuses execution if directed at primary `snapshots/`.

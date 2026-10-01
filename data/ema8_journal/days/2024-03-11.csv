@@ -1,0 +1,11 @@
+Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
+11-03-2024,1,PE,09:30,22462.3,"09:15 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 22,518; red 1st candle, flat open",22518.5,56.2,11:30,22426.5,trailing SL (candle high),35.8,0.0,66.4,YES,YES,
+11-03-2024,2,PE,10:00,22457.2,"09:30 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 22,499; red 1st candle, flat open",22498.5,41.3,11:30,22426.5,trailing SL (candle high),30.7,0.0,61.3,YES,YES,
+11-03-2024,3,PE,10:00,22462.7,"09:45 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 22,487; red 1st candle, flat open",22486.8,24.2,11:30,22426.5,trailing SL (candle high),36.2,0.0,66.8,YES,YES,
+11-03-2024,4,PE,11:15,22414.5,"11:00 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 22,447; red 1st candle, flat open",22446.9,32.4,12:30,22394.2,trailing SL (candle high),20.3,0.0,46.8,YES,YES,
+11-03-2024,5,CE,12:45,22423.5,"12:30 candle close above 8 EMA, break of its high; SL candle low 22,377; red 1st candle, flat open",22377.2,46.3,14:00,22376.2,stop loss hit,0.0,-47.3,2.5,no,no,
+11-03-2024,6,PE,13:15,22387.3,"13:00 candle close below 8 EMA, break of its low; SL candle high 22,415; red 1st candle, flat open",22414.6,27.3,13:15,22415.6,stop loss hit,0.0,-28.3,0.0,no,no,
+11-03-2024,7,CE,13:30,22422.5,"13:15 candle close above 8 EMA, break of its high; SL candle low 22,385; red 1st candle, flat open",22384.8,37.7,14:00,22383.8,stop loss hit,0.0,-38.7,3.5,no,no,
+11-03-2024,8,PE,13:45,22394.9,"13:30 candle close below 8 EMA, break of its low; SL candle high 22,427; red 1st candle, flat open",22427.0,32.1,14:30,22387.5,trailing SL (candle high),7.4,0.0,51.6,YES,YES,
+11-03-2024,9,PE,14:15,22373.8,"14:00 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 22,409; red 1st candle, flat open",22409.0,35.2,14:30,22387.5,trailing SL (candle high),0.0,-13.8,30.5,YES,YES,
+11-03-2024,10,CE,15:00,22408.6,"14:45 candle close above 8 EMA, break of its high; SL candle low 22,387; red 1st candle, flat open",22387.3,21.3,15:00,22386.3,stop loss hit,0.0,-22.3,0.0,no,no,-20.0

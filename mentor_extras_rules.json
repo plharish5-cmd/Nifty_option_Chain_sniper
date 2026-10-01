@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "_source": "Stock Unlimited, final class (the longer 'Lecture 6' recording, 1:36 h). Edit numbers here, not in code.",
+
+  "risk": {"min_rr": 1.0, "sl_buffer_points": 2},
+
+  "divergence": {
+    "_rule": "RSI divergence (tops): price makes a higher high but RSI a lower high -> no strength, can fall. Positive divergence (lows): price higher low, RSI lower low -> up. Negative divergence (highs): price lower high, RSI higher high -> down. Works 7-8 of 10, not every time (1:03:24-1:10:13).",
+    "rsi_length": 14,
+    "swing_bars_each_side": {"15m": 3, "1d": 3},
+    "max_gap_bars": {"15m": 60, "1d": 40},
+    "max_bars": {"15m": 26, "1d": 10}
+  },
+
+  "expiry_straddle": {
+    "_rule": "At the open of the Nifty monthly-expiry day (on futures) buy a NEXT-week long straddle/strangle ~50 pts OTM each side; target = futures +-300 from that open, exit both together. Bank Nifty +-600 (now monthly only - not worth it). Best when India VIX is low (11-12); with high VIX (15-16) skip or wait 15 min. Skip the October week (holiday). He says it failed only once in several years (1:14:28-1:26:19).",
+    "points": 300,
+    "points_reference_level": 24000,
+    "recent_from": "2023-01-01",
+    "low_vix": 12,
+    "high_vix": 15
+  },
+
+  "red_expiry_btst": {
+    "_rule": "A student's rule he said he would check: monthly expiry day closes red -> buy an OTM call at the close (BTST); next day it often gaps up / runs (1:26:29-1:31:21).",
+    "next_day_up_points": 100
+  },
+
+  "history": {"min_sample_size": 20}
+}

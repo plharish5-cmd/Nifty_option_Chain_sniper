@@ -1,0 +1,10 @@
+Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
+19-12-2022,1,CE,09:45,18315.1,"09:30 candle close above 8 EMA, break of its high; SL candle low 18,266; red 1st candle, flat open",18265.8,49.2,10:45,18330.4,trailing SL (candle low),15.3,0.0,38.9,YES,YES,
+19-12-2022,2,CE,10:00,18323.8,"09:45 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 18,280; red 1st candle, flat open",18280.5,43.3,10:45,18330.4,trailing SL (candle low),6.6,0.0,30.1,YES,YES,
+19-12-2022,3,CE,11:15,18346.9,"11:00 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 18,322; red 1st candle, flat open",18321.9,25.0,12:00,18359.1,trailing SL (candle low),12.2,0.0,25.0,YES,YES,
+19-12-2022,4,CE,12:15,18377.2,"12:00 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 18,352; red 1st candle, flat open",18352.4,24.8,12:30,18368.0,trailing SL (candle low),0.0,-9.2,6.2,no,no,
+19-12-2022,5,PE,12:45,18351.4,"12:30 candle close below 8 EMA, break of its low; SL candle high 18,384; red 1st candle, flat open",18384.2,32.8,13:15,18343.7,trailing SL (candle high),7.8,0.0,29.4,YES,YES,
+19-12-2022,6,PE,13:00,18336.5,"12:45 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 18,355; red 1st candle, flat open",18355.4,18.9,13:15,18343.7,trailing SL (candle high),0.0,-7.2,14.4,no,no,
+19-12-2022,7,CE,13:30,18353.6,"13:15 candle close above 8 EMA, break of its high; SL candle low 18,327; red 1st candle, flat open",18326.6,27.0,14:00,18358.6,trailing SL (candle low),5.0,0.0,22.1,YES,YES,
+19-12-2022,8,CE,13:45,18368.1,"13:30 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 18,348; red 1st candle, flat open",18347.8,20.3,14:00,18358.6,trailing SL (candle low),0.0,-9.5,7.6,no,no,
+19-12-2022,9,CE,14:45,18402.4,"14:30 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 18,360; red 1st candle, flat open",18360.3,42.1,15:15,18426.2,15:15 day end,23.8,0.0,28.8,YES,YES,44.8

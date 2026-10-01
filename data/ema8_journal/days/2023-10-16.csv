@@ -1,0 +1,12 @@
+Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
+16-10-2023,1,CE,10:15,19756.0,"10:00 candle close above 8 EMA, break of its high; SL candle low 19,724; red 1st candle, flat open",19723.5,32.5,10:45,19749.9,trailing SL (candle low),0.0,-6.1,11.5,no,no,
+16-10-2023,2,CE,11:30,19752.0,"11:15 candle close above 8 EMA, break of its high; SL candle low 19,730; red 1st candle, flat open",19730.3,21.7,12:00,19757.8,trailing SL (candle low),5.8,0.0,28.5,YES,YES,
+16-10-2023,3,CE,11:45,19777.5,"11:30 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 19,747; red 1st candle, flat open",19746.8,30.8,13:15,19745.8,stop loss hit,0.0,-31.8,3.7,no,no,
+16-10-2023,4,CE,12:30,19772.3,"12:15 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 19,754; red 1st candle, flat open",19754.5,17.8,13:00,19753.5,stop loss hit,0.0,-18.8,5.4,no,no,
+16-10-2023,5,CE,13:00,19779.8,"12:45 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 19,764; red 1st candle, flat open",19764.2,15.5,13:00,19763.2,stop loss hit,0.0,-16.5,0.0,no,no,
+16-10-2023,6,PE,13:15,19749.7,"13:00 candle close below 8 EMA, break of its low; SL candle high 19,782; red 1st candle, flat open",19782.2,32.5,15:15,19731.0,15:15 day end,18.7,0.0,30.9,YES,YES,
+16-10-2023,7,CE,14:00,19772.0,"13:45 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 19,755; red 1st candle, flat open",19754.7,17.4,14:00,19753.7,stop loss hit,0.0,-18.4,0.0,no,no,
+16-10-2023,8,PE,14:15,19750.5,"14:00 candle close below 8 EMA, break of its low; SL candle high 19,773; red 1st candle, flat open",19772.8,22.2,15:15,19731.0,15:15 day end,19.5,0.0,31.7,YES,YES,
+16-10-2023,9,CE,14:30,19771.2,"14:15 candle close above 8 EMA, break of its high; SL candle low 19,747; red 1st candle, flat open",19746.7,24.5,15:00,19745.7,stop loss hit,0.0,-25.5,0.3,no,no,
+16-10-2023,10,PE,14:45,19753.0,"14:30 candle close below 8 EMA, break of its low; SL candle high 19,772; red 1st candle, flat open",19772.5,19.5,15:15,19731.0,15:15 day end,22.1,0.0,34.2,YES,YES,
+16-10-2023,11,PE,15:00,19747.3,"14:45 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 19,768; red 1st candle, flat open",19767.5,20.2,15:15,19731.0,15:15 day end,16.3,0.0,28.5,YES,YES,-34.7

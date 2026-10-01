@@ -1,0 +1,233 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RVOL Scanner</title>
+<style>
+  :root{--bg:#0b0e14;--panel:#11161f;--line:#232b3a;--ink:#cdd6e4;--muted:#8fa1bd;
+        --acc:#5892ff;--hot:#F87171;--warm:#FBBF24;--cool:#4b5costs;--ok:#34D399}
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font:14px/1.55 'Segoe UI',system-ui,sans-serif}
+  .wrap{max-width:1180px;margin:0 auto;padding:26px 20px 70px}
+  .top{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  h1{font-size:21px;margin:0;font-weight:700;letter-spacing:-.02em}
+  a.back{color:var(--muted);text-decoration:none;font-size:13px;font-weight:600}
+  a.back:hover{color:var(--acc)}
+  .sub{color:var(--muted);font-size:13px;margin:6px 0 0}
+  .bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:18px 0 4px;
+       background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 18px}
+  .bar label{color:var(--muted);font-size:12px;font-weight:600}
+  input[type=range]{width:280px;vertical-align:middle}
+  .clock{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--acc);
+         min-width:74px;display:inline-block}
+  button{background:#1b2637;border:1px solid var(--line);border-radius:9px;color:var(--ink);
+    padding:8px 15px;font:13px 'Segoe UI';cursor:pointer;font-weight:600}
+  button:hover{border-color:var(--acc)}
+  button.primary{background:var(--acc);border-color:var(--acc);color:#08101f;font-weight:700}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  @media(max-width:960px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card h2{font-size:13px;margin:0 0 12px;color:var(--muted);font-weight:650;
+           letter-spacing:.06em;text-transform:uppercase}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{border-bottom:1px solid #1a2130;padding:7px 8px;text-align:right;white-space:nowrap}
+  th{color:var(--muted);font-weight:600;font-size:11px;letter-spacing:.05em;
+     text-transform:uppercase;position:sticky;top:0;background:var(--panel)}
+  td:nth-child(2),th:nth-child(2){text-align:left;font-weight:700}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:#151d2b}
+  tbody tr.sel{background:#182338;box-shadow:inset 3px 0 0 var(--acc)}
+  .num{font-variant-numeric:tabular-nums}
+  .rv{font-weight:800}
+  .hot{color:var(--hot)}.warm{color:var(--warm)}.dim{color:#6b7a90}
+  .rank{color:#5c6a82;font-size:11px}
+  .scroll{max-height:520px;overflow:auto}
+  .thin{margin-top:12px;color:#5c6a82;font-size:11.5px;line-height:1.6}
+  #cv{width:100%;height:330px;display:block}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:8px}
+  .sw{display:inline-block;width:22px;height:3px;vertical-align:middle;margin-right:6px}
+  .kv{display:flex;gap:20px;flex-wrap:wrap;margin-top:12px}
+  .kv div .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .kv div .v{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
+  .msg{color:var(--muted);font-size:13px;padding:10px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/setup">&#9881; setup</a>
+  <div class="top"><h1>RVOL Scanner</h1><span class="sub" id="meta">loading&hellip;</span></div>
+  <p class="sub">Today&rsquo;s volume vs this stock&rsquo;s <b>own</b> normal, at the <b>same
+    time of day</b>, averaged over its last 10 sessions. Live from the Dhan API.</p>
+
+  <div class="bar">
+    <label>As of</label>
+    <span class="clock" id="clk">09:45</span>
+    <input type="range" id="cut" min="570" max="930" step="5" value="585">
+    <button id="go" class="primary">Scan</button>
+    <button id="now">Now</button>
+    <span class="sub" id="status"></span>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>The scan — ranked by RVOL</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>#</th><th>Symbol</th><th>RVOL</th><th>Today</th>
+                     <th>Normal</th><th>Turnover</th></tr></thead>
+          <tbody id="rows"><tr><td colspan="6" class="msg">loading&hellip;</td></tr></tbody>
+        </table>
+      </div>
+      <div class="thin" id="thinlist"></div>
+    </div>
+
+    <div class="card">
+      <h2 id="ctitle">Click a stock — today vs its usual pace</h2>
+      <canvas id="cv"></canvas>
+      <div class="legend">
+        <span><span class="sw" style="background:#F87171"></span>today (stops at the last candle)</span>
+        <span><span class="sw" style="background:#8fa1bd"></span>usual — 10-session average, full day</span>
+        <span><span class="sw" style="background:#2a3550"></span>the range those 10 days covered</span>
+      </div>
+      <div class="kv" id="ckv"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const fmt=n=>n>=1e7?(n/1e7).toFixed(2)+' cr':n>=1e5?(n/1e5).toFixed(2)+' L':n.toLocaleString('en-IN');
+const hm=m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+let SCAN=null, SEL=null;
+
+$('cut').oninput=()=>{$('clk').textContent=hm(+$('cut').value);};
+$('now').onclick=()=>{
+  const d=new Date(Date.now()+ (new Date().getTimezoneOffset()+330)*60000);
+  let m=d.getHours()*60+d.getMinutes();
+  m=Math.max(570,Math.min(930,Math.round(m/5)*5));
+  $('cut').value=m; $('clk').textContent=hm(m); scan();
+};
+$('go').onclick=()=>scan();
+
+async function scan(){
+  $('status').textContent='scanning…';
+  $('rows').innerHTML='<tr><td colspan="6" class="msg">pulling from Dhan…</td></tr>';
+  try{
+    const r=await fetch('/api/scan?cutoff='+encodeURIComponent(hm(+$('cut').value)));
+    SCAN=await r.json();
+    if(SCAN.error){
+      // almost always a missing or expired token — point at the fix, don't
+      // just say "failed"
+      $('status').innerHTML=SCAN.error
+        +' &nbsp;<a href="/setup" style="color:#5892ff;font-weight:700">open setup &rarr;</a>';
+      $('rows').innerHTML='<tr><td colspan="6" class="msg">'+SCAN.error+'</td></tr>';
+      return;}
+    paint();
+    $('status').textContent='';
+  }catch(e){$('status').textContent='failed: '+e.message;}
+}
+
+function paint(){
+  $('meta').textContent=SCAN.date+' · '+SCAN.n+' of '+SCAN.universe+' stocks · baseline '
+    +SCAN.base_days+' sessions';
+  const rows=SCAN.rows;
+  if(!rows.length){$('rows').innerHTML='<tr><td colspan="6" class="msg">nothing above the floor</td></tr>';return;}
+  $('rows').innerHTML=rows.map((r,i)=>{
+    const cls=r.rvol>=2?'hot':r.rvol>=1.2?'warm':'dim';
+    return '<tr data-s="'+r.symbol+'"><td class="rank">'+(i+1)+'</td>'
+      +'<td>'+r.symbol+'</td>'
+      +'<td class="num rv '+cls+'">'+r.rvol.toFixed(2)+'&times;</td>'
+      +'<td class="num">'+fmt(r.today)+'</td>'
+      +'<td class="num dim">'+fmt(r.normal)+'</td>'
+      +'<td class="num">&#8377;'+fmt(r.turnover)+'</td></tr>';
+  }).join('');
+  for(const tr of document.querySelectorAll('#rows tr'))
+    tr.onclick=()=>{select(tr.dataset.s);};
+  $('thinlist').innerHTML=SCAN.thin.length
+    ? '<b>Below the &#8377;'+(SCAN.min_turnover/1e7).toFixed(0)+' cr turnover floor</b> — a big '
+      +'ratio on a thin stock is still thin: '+SCAN.thin.map(t=>t.symbol).join(', ')
+    : '';
+  select(rows[0].symbol);
+}
+
+async function select(sym){
+  SEL=sym;
+  for(const tr of document.querySelectorAll('#rows tr'))
+    tr.classList.toggle('sel',tr.dataset.s===sym);
+  $('ctitle').textContent=sym+' — today vs its usual pace';
+  const r=await fetch('/api/curve?symbol='+encodeURIComponent(sym));
+  const c=await r.json();
+  if(c.error){$('ckv').innerHTML='<div class="msg">'+c.error+'</div>';return;}
+  draw(c);
+  const row=(SCAN.rows.concat(SCAN.thin)).find(x=>x.symbol===sym)||{};
+  $('ckv').innerHTML=
+     kv('RVOL',(row.rvol||0).toFixed(2)+'×')
+    +kv('Today so far',fmt(row.today||0))
+    +kv('Its normal',fmt(row.normal||0))
+    +kv('Turnover','₹'+fmt(row.turnover||0))
+    +kv('Last candle',c.last_time);
+}
+const kv=(k,v)=>'<div><div class="k">'+k+'</div><div class="v">'+v+'</div></div>';
+
+function draw(c){
+  const cv=$('cv'), dpr=window.devicePixelRatio||1;
+  const W=cv.clientWidth, H=330;
+  cv.width=W*dpr; cv.height=H*dpr;
+  const X=cv.getContext('2d'); X.scale(dpr,dpr);
+  X.clearRect(0,0,W,H);
+  const L=58,R=12,T=14,B=26, pw=W-L-R, ph=H-T-B;
+  const n=c.times.length;
+  let max=0;
+  for(const v of c.hi) if(v>max) max=v;
+  for(const v of c.today) if(v!=null&&v>max) max=v;
+  max=max*1.06||1;
+  const px=i=>L+i/(n-1)*pw, py=v=>T+ph-(v/max)*ph;
+
+  // y grid
+  X.font='11px Segoe UI'; X.textAlign='right'; X.textBaseline='middle';
+  for(let k=0;k<=4;k++){
+    const v=max*k/4, y=py(v);
+    X.strokeStyle='rgba(42,50,66,.6)'; X.lineWidth=1;
+    X.beginPath(); X.moveTo(L,y); X.lineTo(W-R,y); X.stroke();
+    X.fillStyle='#5c6a82'; X.fillText(fmt(Math.round(v)),L-8,y);
+  }
+  // x labels every hour
+  X.textAlign='center'; X.textBaseline='top';
+  for(let i=0;i<n;i++){
+    if(!/:00$/.test(c.times[i])) continue;
+    X.fillStyle='#5c6a82'; X.fillText(c.times[i],px(i),H-B+7);
+  }
+  // the band those 10 days covered
+  X.beginPath();
+  for(let i=0;i<n;i++){const x=px(i),y=py(c.hi[i]); i?X.lineTo(x,y):X.moveTo(x,y);}
+  for(let i=n-1;i>=0;i--){X.lineTo(px(i),py(c.lo[i]));}
+  X.closePath(); X.fillStyle='rgba(42,53,80,.55)'; X.fill();
+  // usual (average) — full session, dashed
+  X.setLineDash([5,4]); X.strokeStyle='#8fa1bd'; X.lineWidth=2; X.beginPath();
+  for(let i=0;i<n;i++){const x=px(i),y=py(c.avg[i]); i?X.lineTo(x,y):X.moveTo(x,y);}
+  X.stroke(); X.setLineDash([]);
+  // today — stops where the data stops
+  X.strokeStyle='#F87171'; X.lineWidth=2.6; X.beginPath();
+  let started=false, lastI=-1;
+  for(let i=0;i<n;i++){
+    const v=c.today[i]; if(v==null) continue;
+    const x=px(i),y=py(v); started?X.lineTo(x,y):X.moveTo(x,y); started=true; lastI=i;
+  }
+  X.stroke();
+  // shade the gap between today and usual — this IS the RVOL
+  if(lastI>0){
+    X.beginPath(); X.moveTo(px(0),py(c.today[0]||0));
+    for(let i=0;i<=lastI;i++) X.lineTo(px(i),py(c.today[i]||0));
+    for(let i=lastI;i>=0;i--) X.lineTo(px(i),py(c.avg[i]));
+    X.closePath(); X.fillStyle='rgba(248,113,113,.16)'; X.fill();
+    X.fillStyle='#F87171'; X.beginPath();
+    X.arc(px(lastI),py(c.today[lastI]),3.5,0,7); X.fill();
+  }
+}
+
+scan();
+</script>
+</body>
+</html>

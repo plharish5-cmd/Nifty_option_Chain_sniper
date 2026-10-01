@@ -1,0 +1,9 @@
+[Unit]
+Description=Update the trainer's participant workbook from NSE (Stock Unlimited method)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/harish/Documents/Swathi K N/1 Trading/option chain/OC
+ExecStart=/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/.venv/bin/python update_participant_sheet.py
+TimeoutStartSec=1500

@@ -1,0 +1,322 @@
+{
+  "metadata": {
+    "sessions_count": 18,
+    "date_range": "2026-08-19 to 2026-09-16",
+    "total_pivots": 95,
+    "swing_lows_count": 55,
+    "swing_highs_count": 40,
+    "fixed_threshold": 1.35,
+    "min_sample_size": 30,
+    "generated_at": "2026-09-17T08:03:58.195567"
+  },
+  "swing_lows": {
+    "baseline": {
+      "n": 55,
+      "wins": 21,
+      "win_rate": 38.18181818181819,
+      "wilson_lower": 26.515975051707784,
+      "wilson_upper": 51.39075311017641,
+      "avg_mfe": 36.13363636363653,
+      "avg_mae": 93.80090909090887,
+      "reward_risk": 0.38521627043738943,
+      "avg_30m": 1.162727272727286
+    },
+    "support": {
+      "n": 10,
+      "wins": 6,
+      "win_rate": 60.0,
+      "wilson_lower": 31.26742368657031,
+      "wilson_upper": 83.18193662123929,
+      "edge_vs_baseline": 21.818181818181813,
+      "is_sufficient_sample": false,
+      "avg_mfe": 44.09500000000007,
+      "avg_mae": 52.73499999999949,
+      "reward_risk": 0.8361619417844031,
+      "avg_30m": 10.495000000000072
+    },
+    "contested": {
+      "n": 24,
+      "wins": 9,
+      "win_rate": 37.5,
+      "wilson_lower": 21.15939346202729,
+      "wilson_upper": 57.28999956492905,
+      "edge_vs_baseline": -0.681818181818187,
+      "is_sufficient_sample": false,
+      "avg_mfe": 45.1270833333333,
+      "avg_mae": 59.60208333333367,
+      "reward_risk": 0.7571393617393081,
+      "avg_30m": -4.233333333333424
+    }
+  },
+  "swing_highs": {
+    "baseline": {
+      "n": 40,
+      "wins": 21,
+      "win_rate": 52.5,
+      "wilson_lower": 37.49739034643474,
+      "wilson_upper": 67.0645032728132,
+      "avg_mfe": 45.23125,
+      "avg_mae": 37.271250000000144,
+      "reward_risk": 1.2135694402522006,
+      "avg_30m": -0.7700000000002547
+    },
+    "resistance": {
+      "n": 12,
+      "wins": 6,
+      "win_rate": 50.0,
+      "wilson_lower": 25.378197680636088,
+      "wilson_upper": 74.62180231936391,
+      "edge_vs_baseline": -2.5,
+      "is_sufficient_sample": false,
+      "avg_mfe": 60.07499999999982,
+      "avg_mae": 43.19583333333321,
+      "reward_risk": 1.3907591395775052,
+      "avg_30m": 1.2124999999996362
+    },
+    "contested": {
+      "n": 19,
+      "wins": 15,
+      "win_rate": 78.94736842105263,
+      "wilson_lower": 56.66576977021035,
+      "wilson_upper": 91.49230808377337,
+      "edge_vs_baseline": 26.44736842105263,
+      "is_sufficient_sample": false,
+      "avg_mfe": 50.336842105263045,
+      "avg_mae": 39.30789473684222,
+      "reward_risk": 1.280578429403488,
+      "avg_30m": 5.557894736841837
+    }
+  },
+  "threshold_ladder": [
+    {
+      "threshold": 1.0,
+      "is_fixed_default": false,
+      "swing_low_n": 31,
+      "swing_low_win_rate": 38.70967741935484,
+      "swing_low_lower": 23.733126431466147,
+      "swing_low_upper": 56.175857362642176,
+      "swing_low_edge": 0.5278592375366529,
+      "swing_high_n": 21,
+      "swing_high_win_rate": 28.57142857142857,
+      "swing_high_lower": 13.813883663724372,
+      "swing_high_upper": 49.956337224970525,
+      "swing_high_edge": -23.92857142857143
+    },
+    {
+      "threshold": 1.2,
+      "is_fixed_default": false,
+      "swing_low_n": 9,
+      "swing_low_win_rate": 55.55555555555556,
+      "swing_low_lower": 26.665173025527867,
+      "swing_low_upper": 81.12211368594863,
+      "swing_low_edge": 17.37373737373737,
+      "swing_high_n": 12,
+      "swing_high_win_rate": 50.0,
+      "swing_high_lower": 25.378197680636088,
+      "swing_high_upper": 74.62180231936391,
+      "swing_high_edge": -2.5
+    },
+    {
+      "threshold": 1.35,
+      "is_fixed_default": true,
+      "swing_low_n": 9,
+      "swing_low_win_rate": 55.55555555555556,
+      "swing_low_lower": 26.665173025527867,
+      "swing_low_upper": 81.12211368594863,
+      "swing_low_edge": 17.37373737373737,
+      "swing_high_n": 12,
+      "swing_high_win_rate": 50.0,
+      "swing_high_lower": 25.378197680636088,
+      "swing_high_upper": 74.62180231936391,
+      "swing_high_edge": -2.5
+    },
+    {
+      "threshold": 1.5,
+      "is_fixed_default": false,
+      "swing_low_n": 9,
+      "swing_low_win_rate": 55.55555555555556,
+      "swing_low_lower": 26.665173025527867,
+      "swing_low_upper": 81.12211368594863,
+      "swing_low_edge": 17.37373737373737,
+      "swing_high_n": 12,
+      "swing_high_win_rate": 50.0,
+      "swing_high_lower": 25.378197680636088,
+      "swing_high_upper": 74.62180231936391,
+      "swing_high_edge": -2.5
+    },
+    {
+      "threshold": 1.8,
+      "is_fixed_default": false,
+      "swing_low_n": 9,
+      "swing_low_win_rate": 55.55555555555556,
+      "swing_low_lower": 26.665173025527867,
+      "swing_low_upper": 81.12211368594863,
+      "swing_low_edge": 17.37373737373737,
+      "swing_high_n": 11,
+      "swing_high_win_rate": 45.45454545454545,
+      "swing_high_lower": 21.27130637056702,
+      "swing_high_upper": 71.99080442003186,
+      "swing_high_edge": -7.045454545454547
+    },
+    {
+      "threshold": 2.0,
+      "is_fixed_default": false,
+      "swing_low_n": 9,
+      "swing_low_win_rate": 55.55555555555556,
+      "swing_low_lower": 26.665173025527867,
+      "swing_low_upper": 81.12211368594863,
+      "swing_low_edge": 17.37373737373737,
+      "swing_high_n": 11,
+      "swing_high_win_rate": 45.45454545454545,
+      "swing_high_lower": 21.27130637056702,
+      "swing_high_upper": 71.99080442003186,
+      "swing_high_edge": -7.045454545454547
+    }
+  ],
+  "per_day_breakdown": [
+    {
+      "session": "2026-08-19",
+      "pivots_count": 5,
+      "wins_count": 3,
+      "is_one_way_day": false,
+      "win_rate": 60.0,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-08-20",
+      "pivots_count": 8,
+      "wins_count": 3,
+      "is_one_way_day": false,
+      "win_rate": 37.5,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-08-21",
+      "pivots_count": 5,
+      "wins_count": 1,
+      "is_one_way_day": false,
+      "win_rate": 20.0,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-08-24",
+      "pivots_count": 4,
+      "wins_count": 2,
+      "is_one_way_day": false,
+      "win_rate": 50.0,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-08-25",
+      "pivots_count": 5,
+      "wins_count": 3,
+      "is_one_way_day": false,
+      "win_rate": 60.0,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-08-26",
+      "pivots_count": 5,
+      "wins_count": 2,
+      "is_one_way_day": false,
+      "win_rate": 40.0,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-08-27",
+      "pivots_count": 5,
+      "wins_count": 1,
+      "is_one_way_day": false,
+      "win_rate": 20.0,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-08-31",
+      "pivots_count": 3,
+      "wins_count": 3,
+      "is_one_way_day": false,
+      "win_rate": 100.0,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-09-01",
+      "pivots_count": 3,
+      "wins_count": 3,
+      "is_one_way_day": false,
+      "win_rate": 100.0,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-09-02",
+      "pivots_count": 4,
+      "wins_count": 2,
+      "is_one_way_day": false,
+      "win_rate": 50.0,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-09-03",
+      "pivots_count": 16,
+      "wins_count": 3,
+      "is_one_way_day": false,
+      "win_rate": 18.75,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-09-04",
+      "pivots_count": 5,
+      "wins_count": 3,
+      "is_one_way_day": false,
+      "win_rate": 60.0,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-09-07",
+      "pivots_count": 2,
+      "wins_count": 1,
+      "is_one_way_day": false,
+      "win_rate": 50.0,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-09-08",
+      "pivots_count": 7,
+      "wins_count": 3,
+      "is_one_way_day": false,
+      "win_rate": 42.857142857142854,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-09-09",
+      "pivots_count": 6,
+      "wins_count": 4,
+      "is_one_way_day": true,
+      "win_rate": 66.66666666666666,
+      "note": "\u26a0\ufe0f One-Way Trending Day (>70% single colour candles)"
+    },
+    {
+      "session": "2026-09-11",
+      "pivots_count": 5,
+      "wins_count": 1,
+      "is_one_way_day": false,
+      "win_rate": 20.0,
+      "note": "Balanced Session"
+    },
+    {
+      "session": "2026-09-15",
+      "pivots_count": 2,
+      "wins_count": 1,
+      "is_one_way_day": true,
+      "win_rate": 50.0,
+      "note": "\u26a0\ufe0f One-Way Trending Day (>70% single colour candles)"
+    },
+    {
+      "session": "2026-09-16",
+      "pivots_count": 5,
+      "wins_count": 3,
+      "is_one_way_day": false,
+      "win_rate": 60.0,
+      "note": "Balanced Session"
+    }
+  ]
+}

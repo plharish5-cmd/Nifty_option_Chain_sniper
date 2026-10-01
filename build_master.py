@@ -33,6 +33,7 @@ you can compare.
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import logging
@@ -145,6 +146,8 @@ def load_all(folder: Path, quiet: bool = False) -> pd.DataFrame:
                 if have.lower().replace(" ", "") == want.lower():
                     ren[have] = want
         d = d.rename(columns=ren)
+        if "partial" in d.columns:
+            d = d[~d["partial"].astype(str).str.lower().isin(["true", "1"])]
         missing = {"Date", "Open", "High", "Low", "Close"} - set(d.columns)
         if missing:
             report.append(f"  {f.name:<16} SKIPPED — missing {sorted(missing)}")
@@ -166,6 +169,47 @@ def load_all(folder: Path, quiet: bool = False) -> pd.DataFrame:
              .sort_values("Date")
              .drop_duplicates(subset=["Date"], keep="last")
              .reset_index(drop=True))
+
+    # Reconcile completed Dhan session candles (data/candles/20*.csv) so partial/stale bars never corrupt master levels
+    candle_dir = getattr(config, "CANDLE_DIR", None)
+    if candle_dir and candle_dir.exists():
+        now_dt = datetime.now()
+        today = now_dt.date()
+        is_market_open = (now_dt.weekday() < 5 and now_dt.time() < config.MARKET_CLOSE)
+        for cf in sorted(candle_dir.glob("20*.csv")):
+            try:
+                f_date = datetime.strptime(cf.stem[:10], "%Y-%m-%d").date()
+                if f_date == today and is_market_open:
+                    continue
+                cdf = pd.read_csv(cf)
+                if cdf.empty or "open" not in cdf or "close" not in cdf:
+                    continue
+                # A completed trading session has at least 200 bars (375 1m bars for full day)
+                if len(cdf) < 200:
+                    continue
+                c_open = float(cdf["open"].iloc[0])
+                c_high = float(cdf["high"].max())
+                c_low = float(cdf["low"].min())
+                c_close = float(cdf["close"].iloc[-1])
+                mask = out["Date"].dt.date == f_date
+                if mask.any():
+                    cur = out.loc[mask].iloc[0]
+                    if (abs(cur["Low"] - c_low) > 0.05 or
+                        abs(cur["High"] - c_high) > 0.05 or
+                        abs(cur["Close"] - c_close) > 0.05):
+                        out.loc[mask, "Open"] = c_open
+                        out.loc[mask, "High"] = c_high
+                        out.loc[mask, "Low"] = c_low
+                        out.loc[mask, "Close"] = c_close
+                else:
+                    new_row = pd.DataFrame([{
+                        "Date": pd.Timestamp(f_date),
+                        "Open": c_open, "High": c_high, "Low": c_low, "Close": c_close
+                    }])
+                    out = pd.concat([out, new_row], ignore_index=True).sort_values("Date").reset_index(drop=True)
+            except Exception as e:
+                log.warning("build_master.load_all: error reconciling candle %s: %s", cf.name, e)
+
     return out
 
 

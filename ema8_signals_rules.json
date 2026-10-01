@@ -1,0 +1,134 @@
+{
+ "version": "1.0",
+ "_source": "Harish's homework batches 1+2 (04-Aug .. 30-Sep-2026): most trades are 8 EMA trades. Candle CLOSES above the 8 EMA + follow-through = buy CE; closes below + follow-through = buy PE. SL = the signal candle's low (CE) / high (PE). Exits: trail under each candle, doji, Bollinger band touch, day high/low. Edit numbers here, not in code.",
+ "timeframes": [
+  "15m"
+ ],
+ "signal": {
+  "_rule": "Signal candle = the first close on the other side of the 8 EMA (previous close was on this side or on the EMA). body_min_share: the signal candle's body must be at least this share of its range (skips dojis as signals). start/end: candle start times allowed. stage3: also signal when price is already on that side, the candle pulls back into the 8 EMA (within stage3_touch_points) and closes away from it in the trend direction.",
+  "ema_span": 8,
+  "fast_ema_span": 4,
+  "body_min_share": 0.3,
+  "stage3": true,
+  "stage3_touch_points": 3,
+  "start": "09:15",
+  "end": "14:45"
+ },
+ "trigger": {
+  "_rule": "Follow-through = a later candle trades beyond the signal candle's high (CE) / low (PE) by buffer_points within trigger_bars candles, same day. No break = no trade.",
+  "buffer_points": 1,
+  "trigger_bars": 2
+ },
+ "risk": {
+  "_rule": "SL = signal candle low (CE) / high (PE) -/+ sl_buffer_points. Trades with SL smaller than min or bigger than max are skipped (bigger = the signal candle was too long; your homework skips those too). stop_slip_points: the break entry and SL / TSL / doji exits fill this much worse than the level (keeps the backtest honest).",
+  "sl_buffer_points": 1,
+  "min_sl_points": 5,
+  "max_sl_points": 90,
+  "stop_slip_points": 1.0
+ },
+ "exit": {
+  "_rule": "trail: from the next candle the SL follows each closed candle's low (CE) / high (PE) - your TSL. doji: a doji (body <= doji_body_share of range) forms -> exit on the break of its low (CE) / high (PE). bb: exit when price touches the Bollinger band (bb_period, bb_std) on the trade side. ema: close back through the 8 EMA. All out by exit_by.",
+  "trail_after_r": 0.0,
+  "doji_body_share": 0.15,
+  "bb_period": 20,
+  "bb_std": 2.0,
+  "exit_by": "15:15",
+  "max_points": 120,
+  "beginner_points": [
+   15,
+   20
+  ],
+  "_beginner": "cap mode = your beginner plan: TSL under each 15-min candle low (CE) / high (PE), book everything at +max_points. The journal marks whether the trade reached +15 / +20 (beginner_points) before the exit."
+ },
+ "tags": {
+  "_rule": "Shown with every signal and split out in the backtest - NOT filters until the backtest says so. gap_points: open vs previous close. max_entry_of_day: your 'avoid the late 3rd entry' rule is tagged when this side already had this many trades today.",
+  "gap_points": 40,
+  "sep_min_points": 5,
+  "max_entry_of_day": 2
+ },
+ "tf_overrides": {
+  "5m": {
+   "risk": {
+    "min_sl_points": 3,
+    "max_sl_points": 40
+   }
+  },
+  "3m": {
+   "risk": {
+    "min_sl_points": 3,
+    "max_sl_points": 25
+   },
+   "tags": {
+    "max_entry_of_day": 3
+   }
+  }
+ },
+ "telegram": {
+  "send_signals": true,
+  "send_triggers": true,
+  "send_exit_hints": true,
+  "send_5m": false,
+  "send_3m": false,
+  "send_day_journal": true,
+  "day_journal_after": "15:20"
+ },
+ "history": {
+  "min_sample_size": 20,
+  "beats_by_r": 0.1,
+  "min_z": 2.0,
+  "min_trades_for_star": 200,
+  "cost_r": 0.05,
+  "min_net_r": 0.05
+ },
+ "timeframes_rule": "Only 15-min: add \"5m\", \"3m\" here to bring those back.",
+ "filters": {
+  "_rule": "Used by ema8_filtered.py. Set any of trend / separation / max_sl / no_lunch / day_limits / exit to false to switch it off. trend_ema_span 80 on 15-min = 1-hour EMA 20. cost_points_per_trade = brokerage + slippage taken off every trade. train_until = last date of the tuning years.",
+  "trend": true,
+  "trend_ema_span": 80,
+  "separation": true,
+  "sep_min_points": 5,
+  "max_sl": true,
+  "max_sl_points": 40,
+  "no_lunch": true,
+  "lunch_from": "13:00",
+  "lunch_to": "14:30",
+  "day_limits": true,
+  "max_trades_per_day": 2,
+  "max_losses_per_day": 2,
+  "stop_after_win_pts": 20,
+  "exit": true,
+  "partial_pts": 20,
+  "breakeven_pts": 15,
+  "max_pts": 120,
+  "cost_points_per_trade": 2.5,
+  "train_until": "2024-12-31"
+ },
+ "pa1": {
+  "_rule": "Used by pa1_strategy.py (Price Action Strategy 1 notes v4.1). bb_slope_*: UBB/LBB slope over N candles decides the bias; rangebound_width: BB width below this = Stage 1, no 8 EMA trades. t1/t2: the +15 / +20 exit columns. cost_to_cost_at: SL to entry in the trail column. level_near_pts: signal candle low/high this close to PDH/PDL/PDC/pivot/wick = at a level.",
+  "bb_slope_bars": 3,
+  "bb_slope_min_pts": 3,
+  "rangebound_width": 60,
+  "skip_first_candle": true,
+  "max_sl": 40,
+  "min_sl": 5,
+  "no_new_after": "13:00",
+  "max_trades_per_day": 3,
+  "max_losses_per_day": 2,
+  "one_trade_per_rally": true,
+  "level_near_pts": 20,
+  "wick_days": 3,
+  "wick_share": 0.3,
+  "t1": 15,
+  "t2": 20,
+  "cost_to_cost_at": 20,
+  "max_pts": 120,
+  "level_min_gap": 15,
+  "doji_share": 0.15,
+  "cost_points_per_trade": 2.5,
+  "train_until": "2024-12-31",
+  "exit_by": "15:15",
+  "sl_mode": "signal",
+  "mixed_by_mid": false,
+  "_sl_mode": "signal = signal candle low/high (your rule). follow = the follow-through candle's low/high (tighter, Sushen 'previous candle' at entry). mixed_by_mid: when both bands expand (breakout), buy above the BB middle line, sell below."
+ }
+}

@@ -1,0 +1,209 @@
+{
+  "version": "1.0",
+  "_source": "Stock Unlimited, Lecture 7 'Double bottoms and other important things'. Edit numbers here, not in code. Times in brackets point to the video.",
+  "risk": {
+    "_rule": "Take a trade only if the target is at least as far as the SL: minimum 1:1. '50 points risk for 30 points reward - why would I take that?' (11:27-11:48, 25:02-25:43)",
+    "min_rr": 1.0,
+    "sl_buffer_points": 2,
+    "min_sl_points": {
+      "15m": 10,
+      "1d": 0
+    },
+    "_min_sl": "Signals whose SL is closer than min_sl_points are skipped; min_sl_points_by_rule overrides per rule. 29-Sep-2026 test: 10 pts made the 15-min body void stronger (+0.47 R vs -0.01 shuffled) but cut the 15-min swing sweep to no edge (+0.14 vs +0.07), so sweeps keep 0. Tight stops cost more in real slippage than the backtest shows.",
+    "min_sl_points_by_rule": {
+      "swing_sweep": {
+        "15m": 0
+      },
+      "candle_sweep": {
+        "15m": 0
+      }
+    }
+  },
+  "double_bottom": {
+    "_rule": "When no order block is available: a bottom candle (any colour, ideally sweeping the previous low) followed by a candle that CLOSES above it. The whole bottom candle is the buy zone. Enter on the retest, no extra confirmation. SL below the bottom candle; exit when it breaks, and re-enter if the day closes back above the zone. Target = the latest swing high. Mirror for a top (0:30-13:25, 47:52-48:25, 53:05).",
+    "bottom_lookback_bars": 5,
+    "swing_lookback_bars": 20,
+    "max_wait_bars_for_retest": 26,
+    "max_bars_in_trade": 40,
+    "reentry_on_day_close": true,
+    "_rule_final": "Final class (20:09-28:53, 1:05:54-1:12:50): only the SECOND candle matters (its close above the bottom candle); the bottom candle's colour doesn't. Enter in the bottom candle (its open area), exit when a candle CLOSES below it, target the previous high. People wait for the break of the neckline and miss the move. A day-chart double bottom + a 15-min sweep of the low = two correlations, higher probability. If an OB zone is too wide, refine it on 5-min (it may then be missed)."
+  },
+  "sweep": {
+    "_rule": "A candle goes above the previous candle's high but CLOSES below it -> intent is down; it tries to reach at least the low of that range. Mirror at lows. Same rule on 1-min, 15-min, day, week, month; only the distance (risk:reward) changes (27:58-32:29, 37:43-39:57, 51:48-52:47). Same with the latest swing: above the swing high without a close above it -> down towards the swing low (40:05-41:07).",
+    "min_poke_points": 0,
+    "max_bars": {
+      "15m": 26,
+      "1d": 5,
+      "1w": 4,
+      "1M": 3
+    }
+  },
+  "swing_range": {
+    "_rule": "Mark the latest 15-min swing high and swing low. An open between them is a useless market (call writers above, put writers below defend both). A 15-min CLOSE above the swing high -> long; first target = the lowest point of the imbalance above. A close below the swing low -> short. Don't short until the low breaks (40:19-42:21, 47:27-48:48).",
+    "trend_day_body_share": 0.5
+  },
+  "void": {
+    "_rule": "Void = an empty area between two candles (a gap between one candle's wick and the next one's, or a 3-candle imbalance). Price comes back to it; the FIRST time it does NOT fill it (about 7-8 of 10), takes support/rejection and moves on; later it may break it. No close beyond the void -> reversal; a close beyond it -> continuation (14:59-16:18, 22:16-22:59, 45:56-46:17, 59:47-1:01:44).",
+    "min_points": {
+      "15m": 5,
+      "1d": 20
+    },
+    "away_multiple": 1.0,
+    "look_bars": 26
+  },
+  "stops": {
+    "_rule": "Untouched swing lows are buyers' stop losses (untouched swing highs = sellers'). When many sit close together the market often takes them all in one or two candles - that is the target (33:00-35:02, 48:48-49:16, 54:04-57:58).",
+    "cluster_points": 80,
+    "cluster_min_count": 3
+  },
+  "volume": {
+    "_rule": "At a real bottom the volume is HIGH: the high-volume candle (well above average) is usually the LAST candle, then momentum. High volume on a red candle near a top -> may fall (1:03:05-1:05:45). Index candles carry no volume, so this is checked only on futures candles.",
+    "look_bars": 20,
+    "climax_multiple": 2.0,
+    "_rule_final": "Final class: he has seen the high-volume-bottom rule only with RED candles at a bottom; a high-volume green candle at a top he has NOT seen reverse reliably - test it yourself (18:06-19:22)."
+  },
+  "higher_timeframe": {
+    "_rule": "What the bigger timeframe says is followed on the smaller one: a 15-min bullish setup failed because the day chart was bearish (1:06:42-1:08:20). Day/week setups take weeks to months, so prefer WRITING (put writing for a buy zone, call writing for a sell zone) with a fixed SL at the same level (16:24-19:59). Day-timeframe trades: next month or the one after; if the signal comes at the very start of the month (~20 trading days left), the current month's contract is fine (20:08-21:34).",
+    "current_month_if_trading_days_left_at_least": 15
+  },
+  "patterns": {
+    "_rule": "Confirmations at a zone: bullish engulfing, morning star (3 candles), bullish mother-baby (red mother, green baby inside it); mirrors for tops: bearish engulfing, evening star (17:42-19:55, 24:47, 1:04:55).",
+    "star_middle_body_share": 0.35
+  },
+  "portfolio": {
+    "_rule": "No reason to exit a portfolio until price is near the Fibonacci 1.4 level AND the data turns negative (their stock futures emptied); then book (55:38-56:11). Three buckets: extra money = investment; swing = about one month; intraday = day + 15-min charts (49:54-50:09)."
+  },
+  "history": {
+    "min_sample_size": 20,
+    "verdict_file": "data/mentor_sweeps_verdicts.json",
+    "control_shuffles": 5,
+    "min_trades_for_star": 200,
+    "_control": "Random controls pool control_shuffles shuffles; a rule gets the Telegram star only if it BEATS RANDOM on at least min_trades_for_star trades (29-Sep-2026, after the 5-year re-test)."
+  },
+  "verdicts_default": {
+    "run": "28-Sep-2026 (your first run)",
+    "data": "Jan-2019..28-Sep-2026",
+    "rules": {
+      "swing_sweep_15m": {
+        "key": "swing_sweep_15m",
+        "rule": "Swing sweep (15-min)",
+        "verdict": "BEATS RANDOM",
+        "level": 1,
+        "detail": "+0.24 R vs +0.05 R on shuffled bars, 365 cases"
+      },
+      "swing_sweep_1d": {
+        "key": "swing_sweep_1d",
+        "rule": "Swing sweep (day)",
+        "verdict": "BEATS RANDOM",
+        "level": 1,
+        "detail": "+0.26 R vs +0.00 R on shuffled bars, 125 cases"
+      },
+      "candle_sweep_15m": {
+        "key": "candle_sweep_15m",
+        "rule": "Candle sweep (15-min)",
+        "verdict": "NO EDGE",
+        "level": 0,
+        "detail": "+0.03 R vs +0.01 R on shuffled bars, 1126 cases"
+      },
+      "candle_sweep_1d": {
+        "key": "candle_sweep_1d",
+        "rule": "Candle sweep (day)",
+        "verdict": "NO EDGE",
+        "level": 0,
+        "detail": "+0.19 R vs +0.17 R on shuffled bars, 329 cases"
+      },
+      "sweep_1w": {
+        "key": "sweep_1w",
+        "rule": "Week-candle sweep",
+        "verdict": "WORSE THAN RANDOM",
+        "level": -1,
+        "detail": "-0.12 R vs +0.38 R on shuffled bars, 65 cases"
+      },
+      "double_15m": {
+        "key": "double_15m",
+        "rule": "Double bottom/top (15-min)",
+        "verdict": "WORSE THAN RANDOM",
+        "level": -1,
+        "detail": "+0.06 R vs +0.42 R on shuffled bars, 411 cases"
+      },
+      "double_with_day_15m": {
+        "key": "double_with_day_15m",
+        "rule": "Double bottom/top WITH vs AGAINST the day trend",
+        "verdict": "WITH THE DAY TREND IS BETTER",
+        "level": 1,
+        "detail": "+0.13 R vs -0.02 R against the day trend, 411 cases"
+      },
+      "double_1d": {
+        "key": "double_1d",
+        "rule": "Double bottom/top (day)",
+        "verdict": "NO EDGE",
+        "level": 0,
+        "detail": "+0.11 R vs +0.02 R on shuffled bars, 152 cases"
+      },
+      "reentry_15m": {
+        "key": "reentry_15m",
+        "rule": "Re-entry after SL when the day closes back",
+        "verdict": "POSITIVE, SMALL SAMPLE",
+        "detail": "+0.28 R, 81 re-entries",
+        "level": 1
+      },
+      "gap_first_return": {
+        "key": "gap_first_return",
+        "rule": "Gap NOT filled on the first return (he said 70-80%)",
+        "verdict": "NOT CONFIRMED",
+        "level": -1,
+        "detail": "39% vs 35% on shuffled bars, 103 cases"
+      },
+      "void_close_rule": {
+        "key": "void_close_rule",
+        "rule": "Void close rule (no close beyond = reversal)",
+        "verdict": "NO EDGE",
+        "level": 0,
+        "detail": "51% vs 50% (coin flip), 1092 cases"
+      },
+      "useless_open": {
+        "key": "useless_open",
+        "rule": "Open inside the swing range = useless day",
+        "verdict": "NOT CONFIRMED",
+        "level": -1,
+        "detail": "inside-open days: range 231 pts, 56% trend days; outside: 223 pts, 48%"
+      },
+      "swing_break": {
+        "key": "swing_break",
+        "rule": "15-min close beyond the swing range, T1 = imbalance edge",
+        "verdict": "NO EDGE",
+        "level": 0,
+        "detail": "+0.00 R vs -0.05 R on shuffled bars, 158 cases"
+      }
+    }
+  },
+  "body_void": {
+    "_rule": "Lecture 6 (48:18-59:46): void = gap between two candles' BODIES. Price returns into it; no close beyond the far edge -> trade away from it, SL beyond that candle's wick, target = the extreme made since the void formed. A close beyond it = no trade. Size doesn't matter (1 point minimum here only to skip rounding noise). Use it while the 15-min structure is not complete.",
+    "min_points": {
+      "15m": 1,
+      "1d": 5
+    },
+    "max_bars": {
+      "15m": 26,
+      "1d": 5
+    }
+  },
+  "volume_profile": {
+    "_rule": "Lecture 6 (1:02:06-1:06:05), his own observation: day 1 closes above its point of control (POC); day 2 closes below day 1's close while its POC moves UP -> divergence -> momentum next day, either way: he buys a call AND a put before the close. Mirror too. Needs futures volume. Backtest: next day's range vs the average of the previous days.",
+    "bin_points": 10,
+    "min_bars_per_day": 100,
+    "avg_days": 10,
+    "momentum_x_avg_range": 1.3,
+    "alert_after": "15:00"
+  },
+  "options": {
+    "_rule": "Lecture 6: writing is preferred (sideways still pays theta). If buying: in-the-money or slightly ITM, never OTM, and the NEXT week's expiry. Hedge a written option with a far OTM buy on the same side: limits a gap loss and cuts margin (~70-80k to ~25k). Exit both legs at the SL. Trade 1 lot until profitable for a month, then 1 -> 2 -> 4 (28:52-29:00, 43:17-48:18, 42:38-42:53)."
+  },
+  "targets": {
+    "_rule": "Final class (40:40-40:58): put targets where the BODIES closed, not at the wick extremes - stops sit there. Work top-down: data first (FII PCR < 1 = bearish), then the day chart, then 15-min. Draw levels on the FUTURES chart, pick strikes from spot."
+  },
+  "telegram": {
+    "_rule": "Signals against the day structure are kept OFF Telegram (still shown in the tabs and replay_day.py). His 'bigger timeframe wins'; 28-Sep-2026 replay: all 6 counter-trend buys hit SL. Set false to get them again.",
+    "only_with_day_trend": true
+  }
+}

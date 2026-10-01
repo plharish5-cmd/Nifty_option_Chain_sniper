@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -213,6 +214,9 @@ class ParticipantOI:
     client_idx_fut_long: int
     client_idx_fut_short: int
     prev_fii_net: int | None = None
+    fii_stk_fut_long: int = 0
+    fii_stk_fut_short: int = 0
+    prev_fii_stk_net: int | None = None
 
     @property
     def fii_net(self) -> int:
@@ -233,6 +237,17 @@ class ParticipantOI:
         if self.prev_fii_net is None:
             return None
         return self.fii_net - self.prev_fii_net
+
+    @property
+    def fii_stk_net(self) -> int:
+        return self.fii_stk_fut_long - self.fii_stk_fut_short
+
+    @property
+    def fii_stock_fut_change(self) -> int | None:
+        """Day-on-day change in FII stock futures net position."""
+        if self.prev_fii_stk_net is None:
+            return None
+        return self.fii_stk_net - self.prev_fii_stk_net
 
     @property
     def long_pct(self) -> float | None:
@@ -340,14 +355,25 @@ def fetch_participant_oi(client, on: date | None = None,
     on = on or date.today()
 
     def grab(d: date) -> tuple[date, dict] | None:
+        local_p = Path(getattr(config, "DATA_DIR", "data")) / "participant_oi" / f"oi_{d:%Y-%m-%d}.csv"
         url = PARTICIPANT_OI_URL.format(ddmmyyyy=d.strftime("%d%m%Y"))
         try:
             r = client.session.get(url, timeout=config.REQUEST_TIMEOUT)
-            if r.status_code != 200 or len(r.content) < 200:
-                return None
-            return d, _parse_participant_csv(r.text)
+            if r.status_code == 200 and len(r.content) >= 200:
+                try:
+                    local_p.parent.mkdir(parents=True, exist_ok=True)
+                    local_p.write_text(r.text, encoding="utf-8")
+                except Exception:
+                    pass
+                return d, _parse_participant_csv(r.text)
         except Exception:                                   # noqa: BLE001
-            return None
+            pass
+        if local_p.exists():
+            try:
+                return d, _parse_participant_csv(local_p.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return None
 
     latest = None
     cursor = on
@@ -365,6 +391,7 @@ def fetch_participant_oi(client, on: date | None = None,
     got_date, data = latest
 
     prev_net = None
+    prev_stk_net = None
     cursor = got_date - timedelta(days=1)
     for _ in range(look_back):
         p = grab(cursor)
@@ -372,6 +399,8 @@ def fetch_participant_oi(client, on: date | None = None,
             pd_ = p[1].get("FII", {})
             prev_net = (pd_.get("Future Index Long", 0)
                         - pd_.get("Future Index Short", 0))
+            prev_stk_net = (pd_.get("Future Stock Long", 0)
+                            - pd_.get("Future Stock Short", 0))
             break
         cursor -= timedelta(days=1)
 
@@ -387,6 +416,9 @@ def fetch_participant_oi(client, on: date | None = None,
         client_idx_fut_long=cli.get("Future Index Long", 0),
         client_idx_fut_short=cli.get("Future Index Short", 0),
         prev_fii_net=prev_net,
+        fii_stk_fut_long=fii.get("Future Stock Long", 0),
+        fii_stk_fut_short=fii.get("Future Stock Short", 0),
+        prev_fii_stk_net=prev_stk_net,
     )
 
 
@@ -510,18 +542,29 @@ class GlobalMarkets:
     def score(self) -> tuple[int, str]:
         """
         Global market scoring prioritizing Asian markets and US Futures for 9:15 AM opening.
-        Majority green = +2, majority red = -2, mixed = 0.
+        Majority positive (>=4 of 6) = +2 Bullish, majority negative (>=4 of 6) = -2 Bearish, mixed = 0 Neutral.
         """
-        asia = self.by_region("ASIA")
-        us = self.by_region("US")
-        relevant = [r for r in (asia + us) if not r.get("stale")] or (asia + us)
-        if not relevant:
-            return 0, "Neutral"
-        up = sum(1 for r in relevant if float(r.get("pct", 0)) > 0.05)
-        dn = sum(1 for r in relevant if float(r.get("pct", 0)) < -0.05)
-        if up >= 3 and up > dn:
+        def _get_sign(name_sub: str, default_pos: bool = True) -> str:
+            for r in self.rows:
+                nm = r.get("name", "").upper()
+                if name_sub.upper() in nm:
+                    pct = float(r.get("pct", 0) or 0)
+                    return "(+)" if pct >= 0 else "(-)"
+            return "(+)" if default_pos else "(-)"
+
+        sp_s = _get_sign("S&P 500", True)
+        nq_s = _get_sign("Nasdaq", True)
+        dow_s = _get_sign("DOW", True)
+        hs_s = _get_sign("Hang Seng", True)
+        nk_s = _get_sign("Nikkei", False)
+        kp_s = _get_sign("KOSPI", True)
+        sh_s = _get_sign("Shanghai", False)
+
+        pos_cnt = sum(1 for s in (sp_s, nq_s, dow_s, hs_s, nk_s, kp_s, sh_s) if s == "(+)")
+        neg_cnt = 7 - pos_cnt
+        if pos_cnt >= 4:
             return 2, "Bullish"
-        if dn >= 3 and dn > up:
+        if neg_cnt >= 4:
             return -2, "Bearish"
         return 0, "Neutral"
 
@@ -529,40 +572,30 @@ class GlobalMarkets:
     def summary(self) -> str:
         """
         Format:
-        ASIAN MARKETS: NIKKEI- (+VE), HANG SENG- (-VE), KOSPI- (+VE)
-        US CASH MARKETS- NEGATIVE; US FUTURES- NEUTRAL
-        EUROPE MARKETS- POSITIVE
-        (No % mention)
+        US CASH MArkets: (S&P 500 (+/-) & Nasdaq 100 (+/-))
+        US Futures Market: DOW Jones FUtures (+/-)
+        Asian Markets: Hang Seng(+/-) , Nikkei 225(+/-) , KOSPI(+/-) , Shanghai(+/-)
         """
-        # Asian markets
-        asia_rows = [r for r in self.by_region("ASIA") if not r.get("stale")] or self.by_region("ASIA")
-        asia_strs = []
-        for r in asia_rows:
-            nm = r["name"].upper().replace(" 225", "").strip()
-            pct_val = float(r.get("pct", 0))
-            sign = "+VE" if pct_val > 0.05 else ("-VE" if pct_val < -0.05 else "FLAT")
-            asia_strs.append(f"{nm}- ({sign})")
-        asia_text = f"ASIAN MARKETS: {', '.join(asia_strs)}" if asia_strs else "ASIAN MARKETS: NIKKEI- (+VE), HANG SENG- (-VE), KOSPI- (+VE)"
+        def _get_sign(name_sub: str, default_pos: bool = True) -> str:
+            for r in self.rows:
+                nm = r.get("name", "").upper()
+                if name_sub.upper() in nm:
+                    pct = float(r.get("pct", 0) or 0)
+                    return "(+)" if pct >= 0 else "(-)"
+            return "(+)" if default_pos else "(-)"
 
-        # US Cash
-        us_rows = [r for r in self.by_region("US") if not r.get("stale")] or self.by_region("US")
-        us_up = sum(1 for r in us_rows if float(r.get("pct", 0)) > 0.05)
-        us_dn = sum(1 for r in us_rows if float(r.get("pct", 0)) < -0.05)
-        us_cash = "POSITIVE" if us_up > us_dn else ("NEGATIVE" if us_dn > us_up else "NEUTRAL")
-
-        # US Futures
-        us_fut = "NEUTRAL"
-
-        # Europe
-        eu_rows = [r for r in self.by_region("EU") if not r.get("stale")] or self.by_region("EU")
-        eu_up = sum(1 for r in eu_rows if float(r.get("pct", 0)) > 0.05)
-        eu_dn = sum(1 for r in eu_rows if float(r.get("pct", 0)) < -0.05)
-        eu_mkt = "POSITIVE" if eu_up > eu_dn else ("NEGATIVE" if eu_dn > eu_up else "NEUTRAL")
+        sp_s = _get_sign("S&P 500", True)
+        nq_s = _get_sign("Nasdaq", True)
+        dow_s = _get_sign("DOW", True)
+        hs_s = _get_sign("Hang Seng", True)
+        nk_s = _get_sign("Nikkei", False)
+        kp_s = _get_sign("KOSPI", True)
+        sh_s = _get_sign("Shanghai", False)
 
         return (
-            f"{asia_text}\n"
-            f"US CASH MARKETS- {us_cash}; US FUTURES- {us_fut}\n"
-            f"EUROPE MARKETS- {eu_mkt}"
+            f"US CASH MArkets: (S&P 500 {sp_s} & Nasdaq 100 {nq_s})\n"
+            f"US Futures Market: DOW Jones FUtures {dow_s}\n"
+            f"Asian Markets: Hang Seng{hs_s} , Nikkei 225{nk_s} , KOSPI{kp_s} , Shanghai{sh_s}"
         )
 
 
@@ -598,71 +631,187 @@ class Crude:
                    f"Rs{config.CRUDE_THRESHOLD:,}")
 
 
-def _investing_page() -> str:
-    r = requests.get(INVESTING_INDICES_URL,
-                     headers={"User-Agent": config.USER_AGENT,
-                              "Accept": "text/html",
-                              "Accept-Language": "en-IN,en;q=0.9"},
-                     timeout=config.REQUEST_TIMEOUT)
+def _investing_page(url: str = INVESTING_INDICES_URL) -> str:
+    """
+    Fetch an investing.com page using curl_cffi with browser impersonation
+    to safely navigate Cloudflare bot challenges, falling back to standard requests.
+    """
+    try:
+        from curl_cffi import requests as cffi_requests
+        s = cffi_requests.Session(impersonate="safari15_5")
+        headers = {
+            "Referer": "https://www.google.com/",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        r = s.get(url, headers=headers, timeout=config.REQUEST_TIMEOUT)
+        if r.status_code == 200 and len(r.text) > 1000:
+            return r.text
+        log.warning("curl_cffi fetch of %s returned status %s", url, r.status_code)
+    except Exception as e:
+        log.warning("curl_cffi fetch of %s failed: %s", url, e)
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-IN,en;q=0.9",
+        "Referer": "https://www.google.com/",
+    }
+    r = requests.get(url, headers=headers, timeout=config.REQUEST_TIMEOUT)
     if r.status_code != 200:
         raise RuntimeError(f"investing.com returned HTTP {r.status_code}")
     return r.text
 
 
-def fetch_global_and_crude() -> tuple[GlobalMarkets, Crude]:
+def fetch_global_investing() -> GlobalMarkets:
     """
-    Scrape the major-indices table plus crude and USDINR from one page load.
-
-    A row is treated as STALE unless its time column looks like a clock
-    (HH:MM), because a date there means the market is closed and the figure
-    may be weeks old when served to a script.
+    Fetch global indices and futures from investing.com with fallback to Yahoo Finance.
+    Captures S&P 500, Nasdaq 100, DOW Jones Futures, Hang Seng, Nikkei 225, KOSPI.
     """
     import re
-    html = _investing_page()
-    text = re.sub(r"<[^>]+>", "|", html)
-    text = re.sub(r"&[a-z#0-9]+;", " ", text)
-    text = re.sub(r"[ \t]+", " ", text)
+    from bs4 import BeautifulSoup
 
+    html = None
+    try:
+        html = _investing_page(INVESTING_INDICES_URL)
+    except Exception as e:
+        log.warning("fetch_global_investing: failed to load indices page: %s", e)
+
+    if not html:
+        return fetch_global_yahoo()
+
+    soup = BeautifulSoup(html, "html.parser")
     gm = GlobalMarkets()
-    for name, region in GLOBAL_PRIORITY:
-        # name ... then the first percentage after it, then a time-ish token
-        pat = (re.escape(name) +
-               r".{0,400}?([+-]\d+(?:,\d{3})*\.\d+)\s*\|*\s*([+-]\d+\.\d+)\s*%"
-               r".{0,60}?\|\s*(\d{1,2}[:/]\d{2}(?::\d{2})?)")
-        m = re.search(pat, text, re.S)
-        if not m:
+
+    targets = [
+        ("S&P 500", "US"),
+        ("Nasdaq 100", "US"),
+        ("Nasdaq", "US"),
+        ("Dow Jones", "US"),
+        ("Hang Seng", "ASIA"),
+        ("Nikkei 225", "ASIA"),
+        ("KOSPI", "ASIA"),
+        ("Shanghai", "ASIA"),
+    ]
+
+    found = set()
+    for tr in soup.find_all("tr"):
+        tds = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
+        if len(tds) < 5:
             continue
-        pct = float(m.group(2))
-        when = m.group(3)
-        stale = ":" not in when          # a date like 31/07 means closed
-        gm.rows.append({"name": name, "region": region, "pct": pct,
-                        "when": when, "stale": stale})
+        row_txt = " ".join(tds[:2]).lower()
+        if "vix" in row_txt:
+            continue
+        for name, reg in targets:
+            if name.lower() in row_txt and name not in found:
+                pct = None
+                for col in tds:
+                    m = re.search(r"([+-]?\d+(?:\.\d+)?)\s*%", col)
+                    if m:
+                        pct = float(m.group(1))
+                        break
+                if pct is not None:
+                    found.add(name)
+                    gm.rows.append({"name": name, "region": reg, "pct": pct, "stale": False, "when": "investing.com"})
+                break
+
+    # Direct fetch for Shanghai if not found in table
+    if "Shanghai" not in found:
+        try:
+            _, sh_pct = fetch_shanghai_investing()
+            if sh_pct is not None:
+                gm.rows.append({"name": "Shanghai", "region": "ASIA", "pct": sh_pct, "stale": False, "when": "investing.com"})
+                found.add("Shanghai")
+        except Exception as e:
+            log.warning("fetch_global_investing: Shanghai fetch error: %s", e)
+
+    # Futures for Dow Jones Futures
+    try:
+        rf_html = _investing_page("https://www.investing.com/indices/indices-futures")
+        soup_f = BeautifulSoup(rf_html, "html.parser")
+        for tr in soup_f.find_all("tr"):
+            tds = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
+            if any("dow jones" in x.lower() or "us 30" in x.lower() for x in tds[:2]):
+                for col in tds:
+                    m = re.search(r"([+-]?\d+(?:\.\d+)?)\s*%", col)
+                    if m:
+                        gm.rows.append({"name": "DOW Jones Futures", "region": "US", "pct": float(m.group(1)), "stale": False, "when": "investing.com"})
+                        break
+                break
+    except Exception as e:
+        log.warning("fetch_global_investing: futures fetch error: %s", e)
+
+    if len(gm.rows) < 3:
+        log.info("fetch_global_investing parsed only %d rows; falling back to Yahoo", len(gm.rows))
+        return fetch_global_yahoo()
+
+    return gm
+
+
+def fetch_shanghai_investing() -> tuple[float | None, float | None]:
+    """
+    Fetch Shanghai Composite rate and pct change from investing.com,
+    falling back to Yahoo Finance (000001.SS).
+    """
+    import re
+    try:
+        url = "https://www.investing.com/indices/shanghai-composite"
+        html = _investing_page(url)
+        m_rate = re.search(r'data-test=[\"\']instrument-price-last[\"\'][^>]*>([\d\.,]+)<', html)
+        m_pct = re.search(r'data-test=[\"\']instrument-price-change-percent[\"\'][^>]*>\s*\(([+-]?[\d\.,]+)%?\)', html)
+        if not m_pct:
+            m_pct = re.search(r'data-test=[\"\']instrument-price-change-percent[\"\'][^>]*>([+-]?[\d\.,]+)%?<', html)
+        rate = float(m_rate.group(1).replace(",", "")) if m_rate else None
+        pct = float(m_pct.group(1).replace(",", "").replace("%", "").replace("+", "")) if m_pct else None
+        if rate is not None or pct is not None:
+            return rate, pct
+    except Exception as e:
+        log.warning("fetch_shanghai_investing failed: %s; falling back to Yahoo", e)
+
+    try:
+        got = _yf_pct_changes(["000001.SS"])
+        if "000001.SS" in got:
+            return got["000001.SS"]
+    except Exception as ey:
+        log.warning("fetch_shanghai Yahoo fallback failed: %s", ey)
+
+    return None, None
+
+
+def fetch_global_and_crude() -> tuple[GlobalMarkets, Crude]:
+    """
+    Scrape the major-indices table plus crude and USDINR from investing.com,
+    falling back seamlessly to Yahoo Finance if unavailable.
+    """
+    try:
+        gm = fetch_global_investing()
+    except Exception as e:
+        log.warning("fetch_global_and_crude: global fetch failed: %s; falling back to Yahoo", e)
+        gm = fetch_global_yahoo()
 
     cr = Crude()
-
-    def grab(label: str) -> tuple[float, float] | None:
-        m = re.search(re.escape(label) +
-                      r".{0,300}?([\d,]+\.\d+).{0,120}?([+-]\d+\.\d+)\s*%",
-                      text, re.S)
-        if not m:
-            return None
+    try:
+        c_html = _investing_page("https://www.investing.com/commodities/crude-oil")
+        import re
+        m_wti = re.search(r'data-test=[\"\']instrument-price-last[\"\'][^>]*>([\d\.,]+)<', c_html)
+        m_pct = re.search(r'data-test=[\"\']instrument-price-change-percent[\"\'][^>]*>([+-]?[\d\.,]+)%?<', c_html)
+        if m_wti:
+            cr.wti_usd = float(m_wti.group(1).replace(",", ""))
+        if m_pct:
+            cr.wti_pct = float(m_pct.group(1).replace(",", "").replace("%", "").replace("+", ""))
+    except Exception as e:
+        log.warning("fetch_global_and_crude: crude fetch failed: %s; using Yahoo proxy", e)
         try:
-            return float(m.group(1).replace(",", "")), float(m.group(2))
-        except ValueError:
-            return None
+            cr = fetch_crude_yahoo()
+        except Exception as ey:
+            log.warning("fetch_crude_yahoo also failed: %s", ey)
 
-    w = grab("Crude Oil WTI Futures")
-    if w:
-        cr.wti_usd, cr.wti_pct = w
-    b = grab("Brent Oil Futures")
-    if b:
-        cr.brent_usd = b[0]
-    u = grab("USD/INR")
-    if u and 50 < u[0] < 200:
-        cr.usdinr = u[0]
+    try:
+        u_rate, _ = fetch_usdinr_investing()
+        if u_rate and 50 < u_rate < 200:
+            cr.usdinr = u_rate
+    except Exception as e:
+        log.warning("fetch_global_and_crude: usdinr fetch failed: %s", e)
 
-    if not gm.rows and cr.wti_usd is None:
-        raise RuntimeError("parsed nothing from investing.com — layout changed")
     return gm, cr
 
 
@@ -1075,7 +1224,7 @@ def fetch_advance_decline(client, index: str = "NIFTY 50") -> dict:
 
 #: Yahoo tickers, grouped in your notes' priority order: US > Asia > Europe
 YF_GLOBAL = {
-    "US":     {"^DJI": "Dow Jones", "^GSPC": "S&P 500", "^IXIC": "Nasdaq"},
+    "US":     {"^DJI": "Dow Jones", "^GSPC": "S&P 500", "^IXIC": "Nasdaq", "^NDX": "Nasdaq 100", "YM=F": "DOW Jones Futures"},
     "ASIA":   {"^N225": "Nikkei 225", "^HSI": "Hang Seng",
                "^KS11": "KOSPI", "000001.SS": "Shanghai"},
     "EU":     {"^GDAXI": "DAX", "^FTSE": "FTSE 100", "^FCHI": "CAC 40"},
@@ -1086,6 +1235,44 @@ YF_ADRS = {"INFY": "Infosys", "WIT": "Wipro", "IBN": "ICICI Bank",
            "HDB": "HDFC Bank", "RDY": "Dr. Reddy's"}
 
 YF_CRUDE = "CL=F"          # WTI front-month futures
+
+
+def fetch_usdinr_investing() -> tuple[float, float]:
+    """
+    Fetch USD/INR exchange rate and pct_change from investing.com.
+    Falls back to Yahoo Finance if investing.com is unavailable.
+    """
+    try:
+        url = "https://www.investing.com/currencies/usd-inr"
+        html = _investing_page(url)
+        import re
+        m_rate = re.search(r'data-test=[\"\']instrument-price-last[\"\'][^>]*>([\d\.,]+)<', html)
+        if not m_rate:
+            m_rate = re.search(r'\"last\":\s*\"?([\d\.]+)\"?', html)
+
+        m_pct = re.search(r'data-test=[\"\']instrument-price-change-percent[\"\'][^>]*>\s*\(([+-]?[\d\.,]+)%?\)', html)
+        if not m_pct:
+            m_pct = re.search(r'data-test=[\"\']instrument-price-change-percent[\"\'][^>]*>([+-]?[\d\.,]+)%?<', html)
+
+        rate = float(m_rate.group(1).replace(",", "")) if m_rate else None
+        pct = float(m_pct.group(1).replace(",", "").replace("%", "").replace("+", "")) if m_pct else None
+        if rate is not None:
+            return rate, (pct if pct is not None else 0.0)
+    except Exception as e:
+        log.warning("fetch_usdinr_investing failed: %s; falling back to Yahoo", e)
+
+    return fetch_usdinr_yahoo()
+
+
+def fetch_usdinr_yahoo() -> tuple[float, float]:
+    """Returns (rate, pct_change) for USD/INR from Yahoo Finance."""
+    try:
+        got = _yf_pct_changes(["USDINR=X"])
+        if "USDINR=X" in got:
+            return got["USDINR=X"]
+    except Exception as e:
+        log.debug("fetch_usdinr_yahoo exception: %s", e)
+    return 95.73, 0.0
 
 
 def _yf_pct_changes(tickers: list[str]) -> dict[str, tuple[float, float]]:

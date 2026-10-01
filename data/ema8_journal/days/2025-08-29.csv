@@ -1,0 +1,10 @@
+Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
+29-08-2025,1,PE,10:00,24479.8,"09:30 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 24,538; green 1st candle, gap-down",24538.2,58.4,10:15,24495.3,trailing SL (candle high),0.0,-15.5,15.6,YES,no,
+29-08-2025,2,CE,11:00,24554.8,"10:30 candle close above 8 EMA, break of its high; SL candle low 24,509; green 1st candle, gap-down",24508.7,46.1,11:45,24552.5,trailing SL (candle low),0.0,-2.2,15.5,YES,no,
+29-08-2025,3,CE,11:30,24566.0,"11:00 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 24,521; green 1st candle, gap-down",24521.0,45.0,11:45,24552.5,trailing SL (candle low),0.0,-13.5,4.3,no,no,
+29-08-2025,4,PE,12:30,24521.2,"12:15 candle close below 8 EMA, break of its low; SL candle high 24,556; green 1st candle, gap-down",24555.7,34.4,14:15,24518.0,trailing SL (candle high),3.2,0.0,44.5,YES,YES,
+29-08-2025,5,PE,13:00,24514.0,"12:45 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 24,551; green 1st candle, gap-down",24550.6,36.6,14:15,24518.0,trailing SL (candle high),0.0,-4.0,37.2,YES,YES,
+29-08-2025,6,PE,13:45,24500.8,"13:30 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 24,523; green 1st candle, gap-down",24523.0,22.2,14:15,24519.0,trailing SL (candle high),0.0,-18.3,24.0,YES,YES,
+29-08-2025,7,PE,14:00,24477.5,"13:45 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 24,518; green 1st candle, gap-down",24518.0,40.6,14:15,24519.0,stop loss hit,0.0,-41.6,0.7,no,no,
+29-08-2025,8,CE,14:15,24518.0,"14:00 candle close above 8 EMA, break of its high; SL candle low 24,476; green 1st candle, gap-down",24475.8,42.2,14:15,24474.8,stop loss hit,0.0,-43.2,0.0,no,no,
+29-08-2025,9,PE,14:30,24468.0,"14:15 candle close below 8 EMA, break of its low; SL candle high 24,554; green 1st candle, gap-down",24553.5,85.5,14:45,24487.8,trailing SL (candle high),0.0,-19.7,26.2,YES,YES,-154.8

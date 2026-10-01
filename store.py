@@ -10,6 +10,7 @@ whether any of this actually predicts anything on your data.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict
 from datetime import datetime, date, timedelta
 from pathlib import Path
@@ -18,6 +19,28 @@ import pandas as pd
 
 import config
 
+logger = logging.getLogger(__name__)
+
+
+_WRITES_ENABLED = False
+
+
+def enable_writes(owner: str) -> None:
+    """Called ONCE by scheduler.py at startup. Nothing else."""
+    global _WRITES_ENABLED
+    _WRITES_ENABLED = True
+    logger.info(f"store: writes enabled by {owner}")
+
+
+def disable_writes() -> None:
+    """Explicitly disable writes (e.g. for testing)."""
+    global _WRITES_ENABLED
+    _WRITES_ENABLED = False
+
+
+def writes_enabled() -> bool:
+    return _WRITES_ENABLED
+
 
 def _ensure() -> None:
     config.SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
@@ -25,6 +48,8 @@ def _ensure() -> None:
 
 def save_snapshot(df: pd.DataFrame, spot: float, ts: datetime, expiry: str | None = None,
                   base_dir: Path | None = None) -> Path | None:
+    if not _WRITES_ENABLED:
+        return None  # read-only process
     # WEEKEND IMMUNITY: Never store snapshots on Saturday (5) or Sunday (6) unless explicitly enabled
     if ts.weekday() >= 5 and not getattr(config, "ALLOW_WEEKEND_STORAGE", False):
         return None
@@ -44,13 +69,18 @@ def save_snapshot(df: pd.DataFrame, spot: float, ts: datetime, expiry: str | Non
     if exp_val:
         out.attrs["expiry"] = str(exp_val)
         
-    out.to_parquet(path, index=False)
+    # Write atomically via temp file to avoid partial writes / corrupt snappy data
+    tmp_path = path.with_suffix(".parquet.tmp")
+    out.to_parquet(tmp_path, index=False)
+    tmp_path.replace(path)
+
     meta_payload = {"spot": spot, "timestamp": ts.isoformat()}
     if exp_val:
         meta_payload["expiry"] = str(exp_val)
-    (day / f"{ts.strftime('%H%M%S')}.meta.json").write_text(
-        json.dumps(meta_payload)
-    )
+    meta_path = day / f"{ts.strftime('%H%M%S')}.meta.json"
+    tmp_meta = meta_path.with_suffix(".json.tmp")
+    tmp_meta.write_text(json.dumps(meta_payload))
+    tmp_meta.replace(meta_path)
     return path
 
 
@@ -63,18 +93,22 @@ def load_day(day: date | None = None) -> list[tuple[datetime, float, pd.DataFram
         return []
     out = []
     for meta in sorted(folder.glob("*.meta.json")):
-        info = json.loads(meta.read_text())
-        pq = meta.with_suffix("").with_suffix(".parquet")
-        if pq.exists():
-            df_snap = pd.read_parquet(pq)
-            if "expiry" in info:
-                df_snap.attrs["expiry"] = info["expiry"]
-            elif "expiry" in df_snap.columns:
-                valid_exp = df_snap["expiry"].dropna()
-                if not valid_exp.empty:
-                    df_snap.attrs["expiry"] = str(valid_exp.iloc[0])
-            out.append((datetime.fromisoformat(info["timestamp"]),
-                        float(info["spot"]), df_snap))
+        try:
+            info = json.loads(meta.read_text())
+            pq = meta.with_suffix("").with_suffix(".parquet")
+            if pq.exists():
+                df_snap = pd.read_parquet(pq)
+                if "expiry" in info:
+                    df_snap.attrs["expiry"] = info["expiry"]
+                elif "expiry" in df_snap.columns:
+                    valid_exp = df_snap["expiry"].dropna()
+                    if not valid_exp.empty:
+                        df_snap.attrs["expiry"] = str(valid_exp.iloc[0])
+                out.append((datetime.fromisoformat(info["timestamp"]),
+                            float(info["spot"]), df_snap))
+        except Exception as e:
+            logger.warning("Error reading snapshot %s: %s; skipping", meta, e)
+            continue
     return out
 
 
@@ -86,77 +120,121 @@ def load_day_multi(day: date | None = None) -> list[tuple[datetime, float, pd.Da
         return []
     out = []
     for meta in sorted(folder.glob("*.meta.json")):
-        info = json.loads(meta.read_text())
-        pq = meta.with_suffix("").with_suffix(".parquet")
-        if pq.exists():
-            df_snap = pd.read_parquet(pq)
-            if "expiry" in info:
-                df_snap.attrs["expiry"] = info["expiry"]
-            # Multi-expiry integrity guard: hard raise on corrupt data conditions
-            if "strike" in df_snap.columns and "expiry" in df_snap.columns:
-                if df_snap.duplicated(subset=["strike", "expiry"]).any():
-                    raise ValueError(f"Corrupt multi-expiry snapshot {pq.name}: duplicate strikes found within the same expiry")
-            elif "strike" in df_snap.columns and "expiry" not in df_snap.columns:
-                if df_snap["strike"].duplicated().any():
-                    raise ValueError(f"Corrupt multi-expiry snapshot {pq.name}: lacks 'expiry' column and contains duplicate strikes")
-            out.append((datetime.fromisoformat(info["timestamp"]),
-                        float(info["spot"]), df_snap))
+        try:
+            info = json.loads(meta.read_text())
+            pq = meta.with_suffix("").with_suffix(".parquet")
+            if pq.exists():
+                df_snap = pd.read_parquet(pq)
+                if "expiry" in info:
+                    df_snap.attrs["expiry"] = info["expiry"]
+                # Multi-expiry integrity guard: warn and skip on corrupt data conditions
+                if "strike" in df_snap.columns and "expiry" in df_snap.columns:
+                    if df_snap.duplicated(subset=["strike", "expiry"]).any():
+                        logger.warning("Corrupt multi-expiry snapshot %s: duplicate strikes found within the same expiry; skipping", pq.name)
+                        continue
+                elif "strike" in df_snap.columns and "expiry" not in df_snap.columns:
+                    if df_snap["strike"].duplicated().any():
+                        logger.warning("Corrupt multi-expiry snapshot %s: lacks 'expiry' column and contains duplicate strikes; skipping", pq.name)
+                        continue
+                out.append((datetime.fromisoformat(info["timestamp"]),
+                            float(info["spot"]), df_snap))
+        except Exception as e:
+            logger.warning("Error reading multi-expiry snapshot %s: %s; skipping", meta, e)
+            continue
     return out
 
 
 def prune_multi_snapshots(retention_days: int = 90, dry_run: bool = False,
-                          base_dir: Path | None = None) -> list[str]:
+                          base_dir: Path | None = None,
+                          min_keep_sessions: int | None = None) -> list[str]:
     """
     Remove snapshot directories in SNAPSHOT_MULTI_DIR older than retention_days.
     
     SAFETY CONSTRAINTS:
     - Target directory must literally be named 'snapshots_multi'.
     - If pointed at 'snapshots' or any other folder, execution REFUSES immediately with ValueError.
+    - NEVER touches data/observations/, data/rvol_gate_log.jsonl, data/backtest/, or data/candles_*/.
+    - Always keeps at least rvol.baseline_sessions (10) plus a safety margin (5) = 15 most recent sessions.
     - Returns list of deleted (or candidate in dry_run) folder names.
     - Logs every deletion to data/scheduler_heartbeat.jsonl.
     """
     multi_dir = base_dir if base_dir is not None else getattr(config, "SNAPSHOT_MULTI_DIR", config.DATA_DIR / "snapshots_multi")
-    resolved_name = multi_dir.resolve().name
+    resolved_multi = multi_dir.resolve()
+    resolved_name = resolved_multi.name
     if resolved_name != "snapshots_multi":
         raise ValueError(
             f"SAFETY VIOLATION: prune_multi_snapshots refused execution. "
             f"Target directory name must literally be 'snapshots_multi', but got '{resolved_name}' ({multi_dir}). "
             f"Primary snapshots under 'snapshots/' can NEVER be deleted."
         )
+
+    # Forbid running on or inside any protected directories
+    forbidden_names = {"observations", "candles", "candles_5m", "candles_15m", "candles_banknifty", "backtest", "rvol_gate_log.jsonl"}
+    for part in resolved_multi.parts:
+        if part in forbidden_names or part.startswith("candles"):
+            raise ValueError(f"SAFETY VIOLATION: prune_multi_snapshots cannot run inside protected path: {part}")
+
     if not multi_dir.exists():
         return []
-    cutoff_date = date.today() - timedelta(days=retention_days)
-    pruned = []
+
+    # Determine minimum sessions to preserve
+    if min_keep_sessions is None:
+        baseline = 10
+        safety_margin = 5
+        try:
+            rules_path = getattr(config, "ROOT", Path(__file__).resolve().parent) / "strategy1_rules.json"
+            if rules_path.exists():
+                cfg = json.loads(rules_path.read_text(encoding="utf-8"))
+                baseline = int(cfg.get("rvol", {}).get("baseline_sessions", 10))
+        except Exception:
+            pass
+        min_keep_sessions = baseline + safety_margin
+
+    valid_folders = []
     for day_folder in sorted(multi_dir.iterdir()):
         if not day_folder.is_dir():
             continue
         try:
             folder_date = datetime.strptime(day_folder.name, "%Y-%m-%d").date()
-            if folder_date < cutoff_date:
-                if not dry_run:
-                    import shutil
-                    shutil.rmtree(day_folder)
-                    # Log deletion to scheduler_heartbeat.jsonl
-                    hb_line = {
-                        "timestamp": datetime.now().isoformat(),
-                        "job": "retention_prune",
-                        "outcome": "PRUNED",
-                        "folder": day_folder.name,
-                        "retention_days": retention_days,
-                    }
-                    hb_file = config.DATA_DIR / "scheduler_heartbeat.jsonl"
-                    try:
-                        with hb_file.open("a", encoding="utf-8") as f:
-                            f.write(json.dumps(hb_line) + "\n")
-                    except Exception:                       # noqa: BLE001
-                        pass
-                pruned.append(day_folder.name)
+            valid_folders.append((folder_date, day_folder))
         except ValueError:
             continue
+
+    valid_folders.sort(key=lambda x: x[0])
+
+    # The most recent min_keep_sessions dates are strictly protected from deletion
+    protected_dates = {d for d, _ in valid_folders[-min_keep_sessions:]} if min_keep_sessions > 0 else set()
+
+    cutoff_date = date.today() - timedelta(days=retention_days)
+    pruned = []
+    for folder_date, day_folder in valid_folders:
+        if folder_date in protected_dates:
+            continue
+        if folder_date < cutoff_date:
+            if not dry_run:
+                import shutil
+                shutil.rmtree(day_folder)
+                # Log deletion to scheduler_heartbeat.jsonl
+                hb_line = {
+                    "timestamp": datetime.now().isoformat(),
+                    "job": "retention_prune",
+                    "outcome": "PRUNED",
+                    "folder": day_folder.name,
+                    "retention_days": retention_days,
+                }
+                hb_file = config.DATA_DIR / "scheduler_heartbeat.jsonl"
+                try:
+                    with hb_file.open("a", encoding="utf-8") as f:
+                        f.write(json.dumps(hb_line) + "\n")
+                except Exception:                       # noqa: BLE001
+                    pass
+            pruned.append(day_folder.name)
     return pruned
 
 
 def append_log(row: dict, path: Path | None = None) -> None:
+    if not _WRITES_ENABLED:
+        return None  # read-only process
     # WEEKEND IMMUNITY: Never store signal logs on Saturday (5) or Sunday (6) no matter what!
     row_ts = row.get("timestamp") or row.get("time")
     if row_ts:

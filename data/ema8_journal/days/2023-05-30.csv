@@ -1,0 +1,10 @@
+Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
+30-05-2023,1,PE,10:45,18622.0,"10:30 candle close below 8 EMA, break of its low; SL candle high 18,639; green 1st candle, flat open",18638.8,16.8,11:30,18616.6,trailing SL (candle high),5.4,0.0,30.8,YES,YES,
+30-05-2023,2,PE,11:00,18591.8,"10:45 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 18,633; green 1st candle, flat open",18632.8,40.9,12:45,18612.3,trailing SL (candle high),0.0,-20.5,1.9,no,no,
+30-05-2023,3,PE,12:00,18598.0,"11:45 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 18,620; green 1st candle, flat open",18620.5,22.5,12:00,18621.5,stop loss hit,0.0,-23.5,0.0,no,no,
+30-05-2023,4,CE,12:15,18624.2,"12:00 candle close above 8 EMA, break of its high; SL candle low 18,597; green 1st candle, flat open",18597.3,26.8,12:30,18596.3,stop loss hit,0.0,-27.8,2.8,no,no,
+30-05-2023,5,PE,12:30,18601.3,"12:15 candle close below 8 EMA, break of its low; SL candle high 18,628; green 1st candle, flat open",18628.0,26.6,12:45,18612.3,trailing SL (candle high),0.0,-11.0,11.4,no,no,
+30-05-2023,6,PE,12:45,18588.0,"12:30 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 18,611; green 1st candle, flat open",18611.3,23.3,12:45,18612.3,stop loss hit,0.0,-24.3,0.0,no,no,
+30-05-2023,7,CE,13:00,18614.2,"12:45 candle close above 8 EMA, break of its high; SL candle low 18,587; green 1st candle, flat open",18586.7,27.6,14:00,18609.5,trailing SL (candle low),0.0,-4.8,8.5,no,no,
+30-05-2023,8,CE,14:00,18624.8,"13:30 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 18,610; green 1st candle, flat open",18610.5,14.3,14:00,18609.5,stop loss hit,0.0,-15.3,0.0,no,no,
+30-05-2023,9,CE,14:15,18630.5,"14:00 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 18,607; green 1st candle, flat open",18607.3,23.2,15:00,18628.8,trailing SL (candle low),0.0,-1.8,16.2,YES,no,-123.6

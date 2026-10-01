@@ -1,0 +1,2 @@
+Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
+18-05-2024,1,CE,12:15,22512.6,"12:00 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 22,486; red 1st candle, gap-up",22486.4,26.2,12:30,22506.8,15:15 day end,0.0,-5.8,0.0,no,no,-5.8

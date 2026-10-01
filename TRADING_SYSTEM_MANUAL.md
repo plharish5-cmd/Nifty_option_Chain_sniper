@@ -272,4 +272,133 @@ Codified comprehensively in [VIEW_BUILDING_MENTOR_KNOWLEDGEBASE.md](file:///home
    - Candles: Solid Black Borders on all candles for sharp visual edge recognition.
 
 ---
-*Document Version: 4.0 · Comprehensive Master Trading Manual · NIFTY Option Chain Sniper Terminal*
+*Document Version: 4.1 · Comprehensive Master Trading Manual · NIFTY Option Chain Sniper Terminal*
+
+---
+
+## 14. Module H (Final) — RVOL Gate, Ported from Validated Build
+
+```plain
+====================
+MODULE H (FINAL) — RVOL GATE, PORTED FROM VALIDATED BUILD
+====================
+Do NOT rewrite the RVOL engine. Port the existing, tested module:
+
+1. REUSE AS-IS:
+   - Copy rvol_gate.py into the Streamlit project unchanged. It is the 
+     sole source of truth for RVOL (132 passing tests, do not fork the 
+     formula).
+   - Reuse strategy1_rules.json "rvol" block: chop_zone 0.85, 
+     trend_day 1.8, baseline_sessions 10, gate_start 09:30, 
+     recheck_times ["12:30","14:00"]. Streamlit reads it; never 
+     hardcodes.
+   - Same data source: data/candles_5m/ parquet (futures volume).
+   - Same output format: dict with rvol, regime, banner, allowed.
+
+2. WIRE INTO STREAMLIT SIGNAL STACK:
+   - RVOL gate sits at Layer 3 of the 7-layer stack:
+     L1 Institutional Context (Hedge / True Trend / Pure Expiry)
+     L2 GEX (structural support/resistance, flip point)
+     L3 RVOL Gate (chop filter — NEW)
+     L4 IV & Greeks (HV/IV spread, edge check)
+     L5 Pre-Trade Checklist (6 boxes)
+     L6 False Breakdown / Trap Detection
+     L7 8 EMA Alignment (entry trigger)
+   - Gate veto order: If L1 or L2 or L3 fails → NO TRADE, regardless of L4–L7.
+   - RVOL < 0.85: suppresses BUY signals (CE BUY, PE BUY, breakout trades). Range trades (iron condor, fade the wall) still allowed.
+   - RVOL > 1.8: TREND DAY mode — disables range trades, promotes breakout trades, appends "🚀 hold to full target, don't exit at first wall" to trade banner.
+   - RVOL 0.85–1.8: NORMAL — all setups allowed.
+   - Re-check at 12:30 and 14:00: if regime flips, log to session state and update action banner. Open trades re-rated (if CHOP → tighten stop; if TREND → let run).
+
+3. STREAMLIT UI INTEGRATION:
+   - Decision Dashboard (main view):
+     - RVOL metric card next to GEX / Inst Context:
+       Displays current RVOL (e.g. "0.82×"), regime badge (CHOP ZONE / NORMAL / TREND DAY with color coding: red/green/gold), and a mini sparkline of today's volume curve vs 10-day average curve.
+     - Action banner respects RVOL: if CHOP ZONE, banner shows:
+       "⚠️ CHOP ZONE — 77% breakouts fail. Wait for RVOL > 0.85 before any entry."
+   - Trade Ticket / Execution tab:
+     - Pre-trade checklist Box 6: "RVOL gate: not CHOP ZONE" (auto-checked if RVOL ≥ 0.85 or trade is range-type).
+     - "Log trade" button disabled if Box 6 fails and trade is breakout-type.
+   - Alerts Engine (Telegram / Webhook):
+     - Fire alert on regime change: CHOP → NORMAL (signals active again), NORMAL → TREND (switch to trend-day rules).
+     - Fire alert if RVOL ≥ 3.0 at 09:30 ("Unusual open volume — potential trend day").
+   - Trade Journal tab:
+     - Store RVOL and regime at time of trade entry.
+     - Win-rate analytics broken down by regime (Chop vs Normal vs Trend).
+
+4. VERIFICATION & MICROSTRUCTURE REFERENCE (18-SEP 13:20 AUDIT):
+   - Under uniform NIFTY futures contract volume (`data/candles_futures/`), 18-Sep morning traded only 628k contracts vs 1.87M baseline mean:
+     - 13:20 cumulative RVOL = 0.34 (DEAD ZONE).
+     - Formally accepted as BLOCKED by Layer 3 (RVOL Gate).
+     - Architecture note: The 18-Sep 13:20 trade succeeded in market reality due to Option Chain OI structure (Put writers defending 23,300, Call unwinding -12k), not institutional index futures participation. That edge belongs strictly to Layer 5 (Walls & Flow), not Layer 3. The L3 RVOL gate operates purely on institutional futures volume and correctly vetoes the trade under system discipline.
+```
+
+---
+
+## 15. Gamma Exposure (GEX) Reference Guide & Volatility Regime Architecture
+
+### 1. Executive Summary & Core Alpha Disclaimer
+
+> [!CAUTION]
+> **GEX HAS NO DIRECTIONAL ALPHA ($p = 0.68 / p = 0.74$)**  
+> Empirical statistical audits confirm that Gamma Exposure has **zero statistically significant directional predictive edge**:
+> - Forward return correlation in Positive GEX: $p = 0.68$ (not significant).
+> - Forward return correlation in Negative GEX: $p = 0.74$ (not significant).  
+>
+> GEX does **NOT** predict whether the index will rise or fall. It is mathematically invalid to buy calls simply because GEX is positive, or buy puts because GEX is negative. Real trading capital must **never** be deployed based on GEX direction.
+
+### 2. The True Role: Volatility Regime Indicator
+
+In this terminal, GEX is utilized strictly as a **volatility regime indicator** (convexity environment filter):
+
+```
+┌─────────────────────────┬───────────────────────────┬───────────────────────────────────────────┐
+│ GEX Regime              │ Mathematical Threshold    │ Operational Trading Rule                  │
+├─────────────────────────┼───────────────────────────┼───────────────────────────────────────────┤
+│ **SHORT Gamma Proxy**   │ Total GEX > +₹25 Cr       │ **Volatility Expansion / Trending Regime**│
+│ (CE-dominated convexity)│                           │ Breakouts follow through. Walls cascade.  │
+│                         │                           │ Allow runners to Target 2 (+40 to +65 pt).│
+├─────────────────────────┼───────────────────────────┼───────────────────────────────────────────┤
+│ **LONG Gamma Proxy**    │ Total GEX < -₹25 Cr       │ **Volatility Dampening / Absorption**     │
+│ (PE-dominated convexity)│                           │ Mean-reverting regime. Walls are sticky.  │
+│                         │                           │ Strict Target 1 (+20 pt) book & exit.     │
+├─────────────────────────┼───────────────────────────┼───────────────────────────────────────────┤
+│ **NEUTRAL Gamma Band**  │ Within ±₹25 Cr            │ **No Structural Regime Active**           │
+│                         │                           │ Zero gamma amplification or dampening.    │
+│                         │                           │ Trade strictly on PA and Flow signals.    │
+└─────────────────────────┴───────────────────────────┴───────────────────────────────────────────┘
+```
+
+### 3. Deconstruction of US Dealer-Hedging vs Indian Participant Reality
+
+Classical financial literature (SqueezeMetrics, SpotGamma) imports a US equity model assuming:
+1. Market makers (dealers) are net short calls (sold to retail) and net long puts (bought by institutions for downside protection).
+2. Dealers hedge dynamically in underlying stock/futures: selling into falling markets and buying into rallies when short gamma, thereby mechanically exacerbating moves.
+
+**Why this US narrative fails in NSE India (NIFTY 50 Options):**
+* **Participant Structure Contradiction:** NSE daily participant open interest reports reveal that Indian retail traders actively **write (sell) options** for theta decay, while proprietary trading desks and algorithmic market makers frequently hold **long-volatility books** or dynamic delta-neutral multi-leg strangles and spreads.
+* **Empirical Proxy Classification:** The formula:
+  $$\text{GEX}_K = (\text{CE\_OI}_K - \text{PE\_OI}_K) \times \Gamma_K \times S \times \text{lot\_size}$$
+  is strictly an **empirical volatility correlation proxy**, **NOT** a literal measurement of dealer hedging obligations. 
+* **Operational Discipline:** The system strips all speculative assumptions of "dealer entrapment." The sign conventions are treated purely as observed historical tendencies of volatility expansion versus volatility dampening.
+
+### 4. Mathematical Definition & Noise Filtration
+
+* **Strike Exposure:**
+  $$\text{GEX}_K = (\text{CE\_OI}_K - \text{PE\_OI}_K) \times \Gamma_K \times S \times \text{lot\_size}$$
+  Where:
+  - $S$ = Spot price (₹)
+  - $\text{lot\_size} = 65$ shares
+  - $\Gamma_K$ = Black-Scholes gamma derived from continuous ATM IV interpolation
+* **Total Chain Exposure:**
+  $$\text{Total GEX (₹Cr / pt)} = \frac{\sum_K \text{GEX}_K}{10^7}$$
+  *(Dimension: ₹ Crores of delta hedge / convexity exposure per 1 index point move)*
+* **The ±₹25 Cr Neutral Deadband:**
+  Raw GEX frequently oscillates around zero due to minor tick fluctuations. Without a threshold, the scanner flips between "SHORT" and "LONG" multiple times per hour on noise. A rigorous deadband (`gex_neutral_band_cr = 25.0` in `strategy1_rules.json`) classifies values within $[-25, +25]\text{ ₹Cr}$ as `NEUTRAL`, eliminating false regime flips.
+
+### 5. Integration in the 7-Layer Signal Stack
+
+In the institutional signal hierarchy:
+* **Layer 2 (GEX Regime Filter):** Works with Layer 1 (Institutional Context) and Layer 3 (RVOL Gate).
+* **Pre-Trade Checklist (Box 4):** Ensures the trader's target expectations match market convexity. In Long Gamma, never anticipate 100-point runaway moves; in Short Gamma, never stubbornly fade a 15m breakout at the first resistance wall.
+

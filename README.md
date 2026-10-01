@@ -141,6 +141,23 @@ selftest.py             offline end-to-end run against sample data
 
 ---
 
+## Single-Writer Architecture & Data Persistence Limits
+
+### 1. Capability Flag Single-Writer Model
+To eliminate dual-writer race conditions, schema divergence, and data corruption:
+- `scheduler.py` is the **ONLY authorized writer** of option chain snapshots (`data/snapshots/`), 5-minute candles (`data/candles_5m/`), and daily observation logs (`data/observations/`).
+- `dashboard.py` is strictly a read-only presentation process. `store.py` and `price_action.py` enforce an explicit capability flag (`_WRITES_ENABLED = False` by default). Writes are enabled exclusively when `scheduler.py` invokes `store.enable_writes("scheduler")`.
+- `agt_briefing.py` run from the command line is strictly **read-only**: it computes and renders terminal outputs without appending to observation logs or dispatching Telegram notifications.
+
+### 2. Hard Data Limitation: No Intraday Historical Option Chain API
+> [!IMPORTANT]
+> **Permanent Data Source Constraint:**  
+> Dhan serves only the **CURRENT** option chain snapshot. There is **no historical intraday option chain / OI endpoint** provided by the broker.  
+> If `scheduler.py` was not running during a market window, that window's open interest, GEX, option walls, PCR, and writer dominance are **permanently unrecoverable**.  
+> The system strictly reports these as **unrecoverable data gaps**. Under no circumstances are missing option chain snapshots interpolated or carried forward from stale data. 5-minute price action candles (OHLCV), however, are fully recoverable and self-healed via historical candle backfill from Dhan.
+
+---
+
 ## What this is not
 
 It is a complete algorithmic decision-support and simulated execution system. It provides high-probability setups, exact spoon-fed entries, stop losses, targets, and paper execution to eliminate emotional impulse trading. Always manage risk and preserve trading capital.

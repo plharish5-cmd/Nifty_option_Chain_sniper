@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "_comment": "Participant positioning history rules and calibration thresholds. Edit here, not in code.",
+  "_disclaimer": "This data represents end-of-day positioning published by NSE after market close (18:00 IST). It provides macro context for the upcoming session, NEVER an intraday trigger. 'Client' category includes all non-institutional participants (retail, HNIs, family offices, proprietary client codes) and must not be treated as pure retail. Futures shorts are frequently hedges against cash equity portfolios.",
+
+  "window_sessions": 65,
+  "min_window_sessions": 20,
+
+  "percentile_thresholds": {
+    "extreme_high": 95.0,
+    "high": 80.0,
+    "normal_upper": 80.0,
+    "normal_lower": 20.0,
+    "low": 20.0,
+    "extreme_low": 5.0,
+    "_note": "Percentile boundaries for classifying raw contracts and day-over-day changes."
+  },
+
+  "divergence_thresholds": {
+    "upper_pct": 90.0,
+    "lower_pct": 10.0,
+    "_note": "FII-minus-Retail spread triggers an extreme divergence flag ONLY when outside the 10th-90th percentile band."
+  },
+
+  "outcome_scoring": {
+    "min_sample_size": 10,
+    "deciles": {
+      "top": 90.0,
+      "bottom": 10.0
+    },
+    "horizons_days": [1, 3],
+    "_note": "Rules enforced: Any bucket with n < min_sample_size (10) MUST be reported as INSUFFICIENT SAMPLE, never as a win rate or percentage. No predictive claim without out-of-sample validation."
+  },
+
+  "paths": {
+    "master_excel": "data/NSE_Participant_OI_and_Option_Chain_Master.xlsx",
+    "parquet_cache": "data/participants.parquet",
+    "daily_csv_dir": "data/participant_oi",
+    "ohlc_csv": "data/ohlc/OHLC.csv"
+  }
+}

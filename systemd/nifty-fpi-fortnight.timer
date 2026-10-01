@@ -1,0 +1,9 @@
+[Unit]
+Description=Check NSDL for a new fortnightly FPI sector report (daily; it appears 2-4 days after the 15th / month end)
+
+[Timer]
+OnCalendar=*-*-* 20:45:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

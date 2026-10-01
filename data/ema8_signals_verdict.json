@@ -1,0 +1,135 @@
+{
+ "15m": {
+  "trail": {
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 6654,
+   "detail": "-0.01 R vs -0.06 R at random times, 6654 trades, gap 3.2x noise"
+  },
+  "doji": {
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 6654,
+   "detail": "+0.00 R vs -0.00 R at random times, 6654 trades, gap 0.3x noise"
+  },
+  "bb": {
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 6654,
+   "detail": "-0.03 R vs +0.01 R at random times, 6654 trades, gap -2.5x noise"
+  },
+  "ema": {
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 6654,
+   "detail": "+0.01 R vs -0.05 R at random times, 6654 trades, gap 3.6x noise"
+  },
+  "mix": {
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 6654,
+   "detail": "-0.05 R vs -0.09 R at random times, 6654 trades, gap 2.6x noise"
+  },
+  "context_mix": {
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 1526,
+   "detail": "-0.06 R vs -0.09 R at random times, 1526 trades, gap 1.2x noise"
+  },
+  "all": {
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 6654,
+   "detail": "-0.05 R vs -0.09 R at random times, 6654 trades, gap 2.6x noise"
+  }
+ },
+ "5m": {
+  "trail": {
+   "verdict": "BETTER THAN RANDOM BUT LOSES",
+   "level": 0,
+   "n": 8881,
+   "detail": "-0.07 R vs -0.20 R at random times, 8881 trades, gap 9.3x noise"
+  },
+  "doji": {
+   "verdict": "BETTER THAN RANDOM BUT LOSES",
+   "level": 0,
+   "n": 8881,
+   "detail": "-0.05 R vs -0.18 R at random times, 8881 trades, gap 7.2x noise"
+  },
+  "bb": {
+   "verdict": "BETTER THAN RANDOM BUT LOSES",
+   "level": 0,
+   "n": 8881,
+   "detail": "-0.08 R vs -0.19 R at random times, 8881 trades, gap 8.0x noise"
+  },
+  "ema": {
+   "verdict": "BETTER THAN RANDOM BUT LOSES",
+   "level": 0,
+   "n": 8881,
+   "detail": "-0.03 R vs -0.20 R at random times, 8881 trades, gap 9.8x noise"
+  },
+  "mix": {
+   "verdict": "BETTER THAN RANDOM BUT LOSES",
+   "level": 0,
+   "n": 8881,
+   "detail": "-0.10 R vs -0.21 R at random times, 8881 trades, gap 10.6x noise"
+  },
+  "context_mix": {
+   "verdict": "BETTER THAN RANDOM BUT LOSES",
+   "level": 0,
+   "n": 1671,
+   "detail": "-0.07 R vs -0.21 R at random times, 1671 trades, gap 6.5x noise"
+  },
+  "all": {
+   "verdict": "BETTER THAN RANDOM BUT LOSES",
+   "level": 0,
+   "n": 8881,
+   "detail": "-0.10 R vs -0.21 R at random times, 8881 trades, gap 10.6x noise"
+  }
+ },
+ "3m": {
+  "trail": {
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 15542,
+   "detail": "-0.08 R vs -0.18 R at random times, 15542 trades, gap 8.9x noise"
+  },
+  "doji": {
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 15542,
+   "detail": "-0.06 R vs -0.16 R at random times, 15542 trades, gap 7.0x noise"
+  },
+  "bb": {
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 15542,
+   "detail": "-0.08 R vs -0.16 R at random times, 15542 trades, gap 8.2x noise"
+  },
+  "ema": {
+   "verdict": "BETTER THAN RANDOM BUT LOSES",
+   "level": 0,
+   "n": 15542,
+   "detail": "-0.05 R vs -0.16 R at random times, 15542 trades, gap 9.3x noise"
+  },
+  "mix": {
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 15542,
+   "detail": "-0.10 R vs -0.18 R at random times, 15542 trades, gap 10.5x noise"
+  },
+  "context_mix": {
+   "verdict": "BETTER THAN RANDOM BUT LOSES",
+   "level": 0,
+   "n": 1802,
+   "detail": "-0.05 R vs -0.18 R at random times, 1802 trades, gap 6.0x noise"
+  },
+  "all": {
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 15542,
+   "detail": "-0.10 R vs -0.18 R at random times, 15542 trades, gap 10.5x noise"
+  }
+ },
+ "run": "2026-09-30"
+}

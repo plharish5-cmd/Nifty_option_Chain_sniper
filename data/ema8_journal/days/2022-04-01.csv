@@ -1,0 +1,5 @@
+Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
+01-04-2022,1,CE,09:45,17497.3,"09:30 candle close above 8 EMA, break of its high; SL candle low 17,459; green 1st candle, flat open",17459.3,38.0,10:45,17525.8,trailing SL (candle low),28.5,0.0,49.8,YES,YES,
+01-04-2022,2,CE,12:30,17543.9,"12:15 candle close above 8 EMA, break of its high; SL candle low 17,515; green 1st candle, flat open",17515.3,28.6,13:00,17535.1,trailing SL (candle low),0.0,-8.8,8.2,no,no,
+01-04-2022,3,CE,13:30,17567.3,"13:15 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 17,536; green 1st candle, flat open",17536.3,31.0,14:15,17577.2,trailing SL (candle low),9.8,0.0,26.0,YES,YES,
+01-04-2022,4,CE,14:45,17594.2,"14:30 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 17,569; green 1st candle, flat open",17569.1,25.1,15:15,17688.3,15:15 day end,94.2,0.0,108.3,YES,YES,123.7

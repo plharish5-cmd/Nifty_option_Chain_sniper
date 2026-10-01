@@ -59,12 +59,25 @@ def generate_whatsapp_text(
     else:
         fii_obs = "Analyzing"
     pcr_obs = next((p.observation for p in params if p.no == 13), "Neutral")
+    p16 = next((p for p in params if p.no == 16), None)
+    p18 = next((p for p in params if p.no == 18), None)
     p8 = next((p for p in params if p.no == 8), None)
     p9 = next((p for p in params if p.no == 9), None)
     s_levels = p8.observation if p8 and p8.observation else "Key Supports"
     r_levels = p9.observation if p9 and p9.observation else "Key Resistances"
     s_strong = f" (Strong Support: {p8.verdict_word})" if p8 and p8.verdict_word not in ("NA", "") else ""
     r_strong = f" (Strong Resistance: {p9.verdict_word})" if p9 and p9.verdict_word not in ("NA", "") else ""
+
+    macro_cues = [
+        f"• *GIFT Nifty:* {gift_obs}",
+        f"• *India VIX:* {vix_obs}",
+        f"• *PCR Ratio:* {pcr_obs}",
+    ]
+    if p18 and p18.observation:
+        macro_cues.append(f"• *USD/INR:* {p18.observation}")
+    if p16 and p16.observation:
+        g_lines = [l.strip() for l in p16.observation.splitlines() if l.strip()]
+        macro_cues.append("• *Global Markets:* " + " · ".join(g_lines))
 
     lines = [
         f"📊 *NIFTY 50 & BANK NIFTY — PRE-MARKET VIEW*",
@@ -73,9 +86,7 @@ def generate_whatsapp_text(
         f"🎯 *OVERALL STANCE:* {stance_emoji} *{vname} (Score: {score:+d})*",
         f"────────────────────────",
         f"🌐 *Macro & Opening Cues:*",
-        f"• *GIFT Nifty:* {gift_obs}",
-        f"• *India VIX:* {vix_obs}",
-        f"• *PCR Ratio:* {pcr_obs}",
+        *macro_cues,
         f"",
         f"🏛️ *Smart Money & Institutional Flows:*",
         f"• *FII & DII:* {fii_obs}",

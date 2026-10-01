@@ -1,0 +1,15 @@
+{
+  "description": "Rules and parameters for Writers Ratio (Support / Resistance Labels) and Honest Backtest",
+  "ratio_threshold": 1.35,
+  "ratio_ladder": [1.0, 1.2, 1.35, 1.5, 1.8, 2.0],
+  "strike_window_steps": 2,
+  "strike_step": 50,
+  "churn_cutoff": 3.0,
+  "min_sample_size": 30,
+  "max_snapshot_gap_minutes": 20.0,
+  "swing_n": 2,
+  "mfe_target_pts": 25.0,
+  "mae_stop_pts": 25.0,
+  "fwd_horizon_mins": 30,
+  "one_way_day_threshold": 0.70
+}

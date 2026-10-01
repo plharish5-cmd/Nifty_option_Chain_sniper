@@ -1,12 +1,28 @@
 {
   "initial_capital": 100000.0,
-  "cash_balance": 100000.0,
+  "cash_balance": 89718.67,
   "used_margin": 0.0,
-  "realized_pnl": 0.0,
+  "realized_pnl": -10281.33,
   "unrealized_pnl": 0.0,
-  "total_trades_count": 0,
+  "total_trades_count": 9,
   "open_positions": [],
-  "recent_alerts": [],
-  "total_charges_paid": 0.0,
-  "last_updated": "2026-09-11T21:51:26.485092"
+  "recent_alerts": [
+    "\ud83d\uded2 BUY 10 Lot(s) of NIFTY 23250 CE [INTRADAY] @ \u20b962.50.",
+    "\ud83d\uded1 NIFTY 23250 CE (BUY): Stop Loss triggered @ \u20b956.40.",
+    "\ud83d\uded1 NIFTY 23250 CE (BUY): Stop Loss triggered @ \u20b950.90.",
+    "\ud83d\uded2 BUY 5 Lot(s) of NIFTY 23250 CE [INTRADAY] @ \u20b9174.30.",
+    "\ud83d\uded2 BUY 5 Lot(s) of NIFTY 23400 PE [INTRADAY] @ \u20b9221.45.",
+    "\ud83c\udfaf NIFTY 23400 PE (BUY): Target 2 reached @ \u20b9221.35.",
+    "\ud83d\uded2 BUY 2 Lot(s) of NIFTY 23000 CE [INTRADAY] @ \u20b9343.90.",
+    "\ud83c\udfaf NIFTY 23000 CE (BUY): Target 2 reached @ \u20b9347.70.",
+    "\ud83d\uded2 BUY 2 Lot(s) of NIFTY 23000 CE [INTRADAY] @ \u20b9347.80.",
+    "\ud83c\udfaf NIFTY 23000 CE (BUY): Target 2 reached @ \u20b9347.70.",
+    "\ud83d\uded2 BUY 2 Lot(s) of NIFTY 23000 CE [INTRADAY] @ \u20b9347.80.",
+    "\ud83c\udfaf NIFTY 23000 CE (BUY): Target 2 reached @ \u20b9347.70.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 23250 CE [INTRADAY] @ \u20b9175.95.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 23250 PE [INTRADAY] @ \u20b9155.35.",
+    "\ud83d\uded1 NIFTY 23250 PE (BUY): Stop Loss triggered @ \u20b9155.25."
+  ],
+  "total_charges_paid": 1093.58,
+  "last_updated": "2026-09-16T11:31:58.598175"
 }

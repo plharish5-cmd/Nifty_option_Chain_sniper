@@ -596,10 +596,26 @@ def render_paper_trading_tab(
                 key="pt_override_risk_check",
             )
 
-        # Place Order Button
+        # RVOL Gate evaluation (Layer 3 Chop Filter — Ported from Validated Build)
+        import rvol_gate
+        cur_d = cur_time.date()
+        cur_t = cur_time.time()
+        rvol_dec = rvol_gate.get_gate_decision(cur_d, cur_t)
+        rvol_val = rvol_dec.get("rvol_at_gate")
+        rvol_regime = rvol_dec.get("regime", "NA")
+
+        # Range structure check: wall fades, iron condors, strangles are allowed in chop
+        is_range_structure = any(term in chosen_tag.lower() for term in ["fade", "range", "condor", "bounce", "strangle", "iron", "scalp"])
+        is_breakout_type = not is_range_structure
+
+        # Box 6: RVOL gate: not CHOP ZONE (auto-checked if RVOL >= 0.85 or trade is range-type)
+        box6_passed = (rvol_dec.get("status") != "SUPPRESSED") or is_range_structure
+        rvol_blocked = (not box6_passed) and is_breakout_type
+
+        # Place Order Button ("Log trade" disabled if Box 6 fails and trade is breakout-type)
         can_afford = req_margin <= acc.cash_balance
         breaker_blocked = daily_summary["is_circuit_breaker_triggered"] and not override_lock
-        btn_disabled = (not can_afford) or breaker_blocked
+        btn_disabled = (not can_afford) or breaker_blocked or rvol_blocked
 
         action_emoji = "🚀" if clean_side == "BUY" else "🔻"
         btn_label = f"{action_emoji} {clean_side} {lots} LOT(S) ({total_qty} Qty) [{clean_product}] @ ₹{live_ltp:.1f}"
@@ -620,12 +636,21 @@ def render_paper_trading_tab(
                 trailing_sl_pts=trailing_sl_pts,
                 notes=trade_notes,
                 override_risk_limit=override_lock,
+                rvol=rvol_val,
+                rvol_regime=rvol_regime,
             )
             if ok:
                 st.success(f"✅ {msg}")
                 st.rerun()
             else:
                 st.error(f"❌ {msg}")
+
+        if rvol_blocked:
+            rvol_str = f"{rvol_val:.2f}×" if rvol_val is not None else "N/A"
+            st.error(
+                f"⚠️ **Log Trade Disabled by RVOL Gate (Box 6 Fail):** RVOL is {rvol_str} ({rvol_regime}). "
+                "False breakouts common below 1.30. Wait for RVOL >= 1.30 before any entry, or select a Range Structure (e.g. Wall Fade / Condor)."
+            )
 
         if not can_afford:
             st.error(f"⚠️ Insufficient capital! Required ₹{req_margin:,.2f} for {clean_side} but available cash is ₹{acc.cash_balance:,.2f}.")
@@ -647,7 +672,7 @@ def render_paper_trading_tab(
 
         _render_html(
             f"""
-            <div style="background: #0E2238; border: 1px solid {wr_color}; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
+            <div style="background: #0E2238; border: 1px solid {wr_color}; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span style="font-size: 13px; font-weight: 700; color: #FFFFFF;">15m Structural Win Rate:</span>
                     <span style="font-size: 16px; font-weight: 800; color: {wr_color}; font-family: monospace;">
@@ -656,6 +681,34 @@ def render_paper_trading_tab(
                 </div>
                 <div style="font-size: 12px; color: #CCD6F6; margin-top: 4px;">
                     {eval_advice.headline} — {eval_advice.sub_headline}
+                </div>
+            </div>
+            """
+        )
+
+        # Pre-trade Checklist Box 6: RVOL Trend Zone (>=1.30)
+        if rvol_dec.get("status") == "HOLD":
+            b6_badge = "HOLD ⏸️ (<09:30)"
+            b6_color = SLATE
+            b6_desc = "First RVOL reading available from 09:30 onward."
+        elif box6_passed:
+            b6_badge = f"PASS ✅ ({rvol_val:.2f}× · {rvol_regime})" if rvol_val else f"PASS ✅ ({rvol_regime})"
+            b6_color = GREEN
+            b6_desc = "RVOL in trend zone (>=1.30) — volume runway clear." if not is_range_structure else "Range structure permitted in chop/trap zone."
+        else:
+            b6_badge = f"FAIL ❌ ({rvol_val:.2f}× · {rvol_regime})"
+            b6_color = RED
+            b6_desc = "⚠️ RVOL < 1.30 (DEAD/TRAP ZONE). Wait for RVOL >= 1.30 before any entry."
+
+        _render_html(
+            f"""
+            <div style="background: #0E2238; border: 1.5px solid {b6_color}; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 12.5px; font-weight: 700; color: #FFFFFF;">Checklist Box 6: RVOL Trend Zone (>=1.30)</span>
+                    <span style="font-size: 11.5px; font-weight: 800; color: {b6_color}; font-family: monospace;">{b6_badge}</span>
+                </div>
+                <div style="font-size: 11px; color: #CCD6F6; margin-top: 3px;">
+                    {b6_desc}
                 </div>
             </div>
             """

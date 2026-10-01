@@ -1,0 +1,9 @@
+[Unit]
+Description=Add the new NSDL fortnightly sector-wise FPI report to the trainer's FPI workbook
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/harish/Documents/Swathi K N/1 Trading/option chain/OC
+ExecStart=/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/.venv/bin/python update_fpi_fortnight.py
+TimeoutStartSec=600

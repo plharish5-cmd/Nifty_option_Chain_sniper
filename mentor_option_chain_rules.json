@@ -1,0 +1,57 @@
+{
+  "version": "1.0",
+  "_source": "Stock Unlimited, Lecture 3 'Option Chain + Basic Candles' (video 4). Edit here, not in code.",
+
+  "ladder": {
+    "_rule": "He reads strikes 100 apart (50-strikes only build OI on/just before expiry), ATM +/- 200-300 pts; far OTM = hedges, ignore (9:35-11:11, 46:50-48:05).",
+    "strike_step": 100,
+    "window_pts": 300,
+    "top_n_max_oi": 2
+  },
+
+  "writer_aggression": {
+    "_rule": "Net = put change-in-OI minus call change-in-OI over ALL strikes of the expiry (his N9-M9). Negative = call writers aggressive (sideways/down, red); positive = put writers aggressive (support, green). Use change in OI, not total OI (11:18-14:34). Works ~8/10, only with price action.",
+    "use_change_in_oi": true
+  },
+
+  "volume_side": {
+    "_rule": "Net volume = CE total volume minus PE total volume (his D3-F3). The side with more volume is where the market tends to go: negative (put volume higher) = down, positive = up. Both this and writer aggression red = good odds of down; opposite colours = confusion. He has NOT fully backtested it; test 1-2 weeks before using; may not work on expiry day (35:29-41:55).",
+    "unproven": true
+  },
+
+  "sr_zones": {
+    "_rule": "Resistance zone = max call-OI strike (near ATM) + that call's premium (e.g. 23,500 CE at 81 -> 23,560-23,580). Above it call writers exit -> short covering. Support zone = max put-OI strike - that put's premium (23,400 PE at 38 -> 23,360-23,380). Below it put writers exit -> long unwinding (42:09-44:38).",
+    "zone_buffer_fraction": 0.25
+  },
+
+  "itm_trap": {
+    "_rule": "Big moves come when IN-THE-MONEY writers are trapped (~8 of 10). ITM call writers (strikes below spot) are trapped if price rises -> SL = call buying -> short covering. ITM put writers (strikes above spot) are trapped if price falls -> long unwinding. Watch 1-2 strikes ITM (100-200 pts): positions being ADDED there = that side is confident; being CLOSED = the move against them has started (15:10-19:39, 26:28-29:47).",
+    "min_itm_pts": 100,
+    "max_itm_pts": 200,
+    "min_add_contracts": 0
+  },
+
+  "buildup": {
+    "_rule": "Price up + OI up = long buildup; price down + OI up = short buildup (writing); price up + OI down = short covering; price down + OI down = long unwinding. Read from the writer's side: call short buildup = bearish, call short covering = bullish; put short buildup = bullish, put short covering (writers exiting) = bearish."
+  },
+
+  "candles": {
+    "_rule": "A candle is valid only if it breaks (or equals) the previous VALID candle's high or low; the close doesn't matter. Inside candles are ignored when drawing structure; same rule on every timeframe (49:04-1:00:04).",
+    "timeframe_minutes": 15
+  },
+
+  "backtest": {
+    "forward_minutes": [15, 30, 60],
+    "skip_first_minutes": 5,
+    "zone_follow_through_pct": 0.25,
+    "trap_move_pct": 0.40,
+    "min_sample_size": 10
+  },
+
+  "watch": {
+    "_rule": "Telegram only when something changes: writer side flips, a zone breaks, an ITM trap appears. His live routine: refresh every 3-5 min after 09:20.",
+    "start": "09:20",
+    "end": "15:30",
+    "state_file": "data/mentor_oc_watch_state.json"
+  }
+}

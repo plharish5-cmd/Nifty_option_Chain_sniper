@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "_source": "YouTube 'I Copied a World Champion's Method on NIFTY' (Trading Siddhant, Sep-2026): Direction -> Area -> Trigger. Edit numbers here, not in code.",
+  "direction": {
+    "_rule": "Direction (his 'environment') on the 1-hour chart: up, down or sideways/choppy. Change of direction only after the extreme breaks AND is retested (N shape); moves inside that range are smaller structure. Uses the app's BOS/CHoCH engine on 1-hour candles built from 15-min."
+  },
+  "area": {
+    "_rule": "Swing low -> high on 1-hour, Fibonacci retracement 0.705 / 0.79 / 0.886. Uptrend: between 0.705 and 0.886 = DISCOUNT = buy area; below 0.886 = idea invalid, no trade. Downtrend mirror = PREMIUM sell area. Other areas he marks: previous highs/lows where price stopped, gaps, round numbers (24,000).",
+    "levels": [0.705, 0.79, 0.886],
+    "swing_k": 2,
+    "min_swing_points": 60
+  },
+  "trigger": {
+    "_rule": "Pin bar on 15-min inside the zone (wick >= 2x body and >= half the candle), closing back on the trend side of the 0.886 level. He also needs footprint delta (aggressive sellers at the top of a bearish pin, 400% imbalance) - no footprint data here, candle only.",
+    "wick_body_ratio": 2.0,
+    "wick_range_share": 0.5,
+    "min_range_points": 15,
+    "zone_tolerance_points": 5
+  },
+  "risk": {
+    "_rule": "Target = the swing extreme (previous swing high for a buy). He takes 1.5-2 R and wins 60-65%. SL beyond the pin bar or the 0.886 level, whichever is further.",
+    "min_rr": 1.5,
+    "sl_buffer_points": 2,
+    "min_sl_points": 10
+  },
+  "time": {
+    "_rule": "Trade only while volume is there: the first ~1.5 hours (he trades 09:15-11:00) and the post-lunch spike; dead volume gives no move. Intraday: anything open is closed at the session's last candle.",
+    "entry_from": "09:15",
+    "morning_until": "11:00",
+    "post_lunch_from": "12:00",
+    "post_lunch_until": "13:30"
+  },
+  "discipline": {
+    "_rule": "No trade some days; no back-to-back trades; journal every trade; no revenge trade, no over-sizing. The line in the sand must be kept. (Reminder only.)"
+  },
+  "context_in_app": {
+    "_rule": "Also in his checklist and already in your briefing: option-chain OI read the WRITERS' way (more call OI = call writers = bearish), and GEX (positive gamma = dealers sell rips / buy dips = range; negative = trending)."
+  },
+  "telegram": {"only_with_day_trend": false},
+  "history": {"min_sample_size": 20, "control_shuffles": 5, "beats_by_r": 0.1, "min_trades_for_star": 200}
+}

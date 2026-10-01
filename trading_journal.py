@@ -208,6 +208,8 @@ class CompletedTrade:
     net_pnl: float
     trade_type: str        # "LONG" | "SHORT"
     impulse_flags: list[str] # ["REVENGE", "PANIC_SCALP", "MIDDAY_FREEZE", "DISCIPLINED"]
+    rvol: Optional[float] = None
+    rvol_regime: str = ""
 
 
 def match_trades_fifo(raw_df: pd.DataFrame, session_date: str = "") -> list[CompletedTrade]:
@@ -259,35 +261,45 @@ def match_trades_fifo(raw_df: pd.DataFrame, session_date: str = "") -> list[Comp
             # Hold duration
             duration = 5.0  # default
             try:
-                fmt = "%H:%M:%S"
-                t1 = datetime.strptime(entry_t.split()[-1], fmt)
-                t2 = datetime.strptime(exit_t.split()[-1], fmt)
-                duration = round(abs((t2 - t1).total_seconds()) / 60.0, 1)
+                t1 = datetime.strptime(str(entry_t).split()[-1], "%H:%M:%S")
+                t2 = datetime.strptime(str(exit_t).split()[-1], "%H:%M:%S")
+                duration = max(0.5, (t2 - t1).total_seconds() / 60.0)
             except Exception:
                 pass
 
-            # Behavioral / Impulse Diagnostics
+            # Detect Impulse Habits
             flags = []
-            if duration <= 1.5:
-                flags.append("⚡ Panic Scalp (< 90s)")
+            if duration < 1.5:
+                flags.append("⚡ Panic Scalp (<90s)")
 
-            # Check Midday Freeze (11:30 - 13:15)
             try:
-                t_chk = datetime.strptime(entry_t.split()[-1], "%H:%M:%S").time()
-                if config.FREEZE_START <= t_chk <= config.FREEZE_END:
-                    flags.append("❄️ Midday Freeze Violation")
+                e_hour = datetime.strptime(str(entry_t).split()[-1], "%H:%M:%S").time()
+                if datetime.strptime("11:30", "%H:%M").time() <= e_hour <= datetime.strptime("13:15", "%H:%M").time():
+                    flags.append("🥪 Midday Freeze Violation")
             except Exception:
                 pass
 
             if not flags:
                 flags.append("🟢 Disciplined")
 
+            # RVOL at trade entry (Layer 3 Chop Filter — Ported from Validated Build)
+            rvol_val = None
+            rvol_reg = "NORMAL"
+            try:
+                import rvol_gate
+                t_str_clean = str(entry_t).split()[-1]
+                t_val = datetime.strptime(t_str_clean, "%H:%M:%S").time()
+                rvol_val = rvol_gate.compute_rvol(session_date, t_val)
+                rvol_reg = rvol_gate.get_rvol_regime(rvol_val)
+            except Exception:
+                pass
+
             trade_obj = CompletedTrade(
-                trade_id=f"{session_date}_{len(completed)+1}",
+                trade_id=f"DH-{len(completed)+1:03d}",
                 symbol=sym,
                 entry_time=entry_t,
                 exit_time=exit_t,
-                hold_duration_mins=duration,
+                hold_duration_mins=round(duration, 1),
                 buy_price=b_price,
                 sell_price=s_price,
                 qty=matched_qty,
@@ -296,6 +308,8 @@ def match_trades_fifo(raw_df: pd.DataFrame, session_date: str = "") -> list[Comp
                 net_pnl=net_pnl,
                 trade_type="LONG",
                 impulse_flags=flags,
+                rvol=rvol_val,
+                rvol_regime=rvol_reg,
             )
             completed.append(trade_obj)
 
@@ -480,6 +494,8 @@ def save_to_journal(trades: list[CompletedTrade], session_date: str = "") -> int
             "total_charges": t.charges["total_charges"],
             "net_pnl": t.net_pnl,
             "behavior_tags": " · ".join(t.impulse_flags),
+            "rvol": t.rvol,
+            "rvol_regime": t.rvol_regime,
         })
 
     new_df = pd.DataFrame(rows)
@@ -591,11 +607,47 @@ def render_journal_tab():
             """
         )
 
+        # 3b. Win-Rate Analytics Broken Down by RVOL Regime (Chop vs Normal vs Trend)
+        st.markdown("##### 📊 Win-Rate Analytics Broken Down by RVOL Regime")
+        regime_stats = {
+            "CHOP_ZONE": {"trades": 0, "wins": 0, "net": 0.0},
+            "NORMAL": {"trades": 0, "wins": 0, "net": 0.0},
+            "TREND_DAY": {"trades": 0, "wins": 0, "net": 0.0},
+        }
+
+        for t in trades:
+            reg = getattr(t, "rvol_regime", "NORMAL") or "NORMAL"
+            if reg in regime_stats:
+                regime_stats[reg]["trades"] += 1
+                if t.net_pnl > 0:
+                    regime_stats[reg]["wins"] += 1
+                regime_stats[reg]["net"] += t.net_pnl
+
+        rc1, rc2, rc3 = st.columns(3)
+        for col, (reg_key, reg_name, icon) in zip(
+            [rc1, rc2, rc3],
+            [
+                ("CHOP_ZONE", "Chop Zone (<0.85×)", "⚠️"),
+                ("NORMAL", "Normal (0.85–1.8×)", "✅"),
+                ("TREND_DAY", "Trend Day (>1.8×)", "🚀"),
+            ]
+        ):
+            st_data = regime_stats[reg_key]
+            n_t = st_data["trades"]
+            wr = (st_data["wins"] / n_t * 100) if n_t > 0 else 0.0
+            col.metric(
+                label=f"{icon} {reg_name}",
+                value=f"{wr:.0f}% Win Rate" if n_t > 0 else "0 Trades",
+                delta=f"{st_data['wins']}W / {n_t - st_data['wins']}L (₹{st_data['net']:+,.0f})" if n_t > 0 else "No data",
+                delta_color="normal" if st_data["net"] >= 0 else "inverse",
+            )
+
         # 4. Detailed Trade-by-Trade Table
         st.markdown("### 📊 Completed Trades & Brokerage Audit")
         t_rows = []
         for t in trades:
             t_col = "🟢" if t.net_pnl > 0 else "🔴"
+            rvol_str = f"{t.rvol:.2f}× ({t.rvol_regime})" if t.rvol is not None else (t.rvol_regime or "N/A")
             t_rows.append({
                 "Result": t_col,
                 "Instrument": t.symbol,
@@ -603,6 +655,7 @@ def render_journal_tab():
                 "Entry": f"₹{t.buy_price:.2f} ({t.entry_time})",
                 "Exit": f"₹{t.sell_price:.2f} ({t.exit_time})",
                 "Hold Time": f"{t.hold_duration_mins:.1f}m",
+                "RVOL Regime": rvol_str,
                 "Gross P&L": f"₹{t.gross_pnl:+,.2f}",
                 "Charges (Dhan)": f"₹{t.charges['total_charges']:,.2f}",
                 "Net P&L": f"₹{t.net_pnl:+,.2f}",
@@ -618,6 +671,7 @@ def render_journal_tab():
                 "Instrument": st.column_config.TextColumn("Contract", width="medium"),
                 "Qty": st.column_config.NumberColumn("Qty", width="small"),
                 "Hold Time": st.column_config.TextColumn("Duration", width="small"),
+                "RVOL Regime": st.column_config.TextColumn("RVOL Regime", width="medium"),
                 "Gross P&L": st.column_config.TextColumn("Gross", width="small"),
                 "Charges (Dhan)": st.column_config.TextColumn("Dhan Fees", width="small"),
                 "Net P&L": st.column_config.TextColumn("Net In Hand", width="small"),

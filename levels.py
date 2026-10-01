@@ -36,6 +36,7 @@ Look at them; do not trade them.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -44,6 +45,8 @@ import numpy as np
 import pandas as pd
 
 import config
+
+log = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -138,8 +141,13 @@ def load_ohlc(folder: Path | str | None = None) -> pd.DataFrame:
         )
 
     archive = folder / config.OHLC_ARCHIVE_FILE
-    incoming = sorted((p for p in folder.glob("*.csv") if p.name != archive.name),
-                      key=lambda p: p.stat().st_mtime)
+    incoming = sorted(
+        (p for p in folder.glob("*.csv")
+         if p.name != archive.name
+         and not p.name.endswith("_dhan.csv")
+         and not any(x in p.name.lower() for x in ("1m", "5m", "15m", "minute", "candle"))),
+        key=lambda p: p.stat().st_mtime
+    )
 
     if not incoming and not archive.exists():
         raise FileNotFoundError(
@@ -152,60 +160,104 @@ def load_ohlc(folder: Path | str | None = None) -> pd.DataFrame:
     if archive.exists():
         try:
             frames.append(_read_one(archive))
-        except Exception:                                   # noqa: BLE001
-            pass                                            # corrupt archive is not fatal
+        except Exception as _ae:
+            logging.warning("levels.load_ohlc: archive read error: %s", _ae)
     for f in incoming:
-        frames.append(_read_one(f))
+        try:
+            frames.append(_read_one(f))
+        except Exception as _fe:
+            logging.warning("levels.load_ohlc: skipping non-daily or malformed file %s: %s", f.name, _fe)
 
     out = pd.concat(frames, ignore_index=True).dropna(subset=["Date", "Close"])
+    if "partial" in out.columns:
+        out = out[~out["partial"].astype(str).str.lower().isin(["true", "1"])]
     out = (out.sort_values("Date")
               .drop_duplicates(subset=["Date"], keep="last")
               .reset_index(drop=True))
 
     # Sync from local Dhan candles (data/candles/*.csv)
-    # If there are completed session files from Dhan with dates not yet in the daily OHLC files,
-    # synthesize the daily bar and merge it so levels are never stale.
+    # If there are completed session files from Dhan, synthesize/reconcile the daily bar
+    # and merge it so levels are never stale or corrupted by mid-session partial bars.
     candle_dir = getattr(config, "CANDLE_DIR", None)
     if candle_dir and candle_dir.exists():
         try:
             candle_files = sorted(candle_dir.glob("20*.csv"))
+            now_dt = datetime.now()
+            today = now_dt.date()
+            is_market_open = (now_dt.weekday() < 5 and now_dt.time() < config.MARKET_CLOSE)
             existing_dates = set(out["Date"].dt.date)
             new_bars = []
+            updated = False
+
             for cf in candle_files:
                 try:
                     f_date = datetime.strptime(cf.stem[:10], "%Y-%m-%d").date()
+                    # Rule: NEVER process today's candle file during active market hours
+                    if f_date == today and is_market_open:
+                        continue
+                    cdf = pd.read_csv(cf)
+                    if cdf.empty or "open" not in cdf or "close" not in cdf:
+                        continue
+                    # A completed trading session has at least 200 bars (375 1m bars for full day)
+                    # Never sync a partial or incomplete session (< 200 bars)
+                    if len(cdf) < 200:
+                        continue
+
+                    c_open = float(cdf["open"].iloc[0])
+                    c_high = float(cdf["high"].max())
+                    c_low = float(cdf["low"].min())
+                    c_close = float(cdf["close"].iloc[-1])
+
                     if f_date not in existing_dates:
-                        cdf = pd.read_csv(cf)
-                        if not cdf.empty and "open" in cdf and "close" in cdf:
-                            new_bars.append({
-                                "Date": pd.Timestamp(f_date),
-                                "Open": float(cdf["open"].iloc[0]),
-                                "High": float(cdf["high"].max()),
-                                "Low": float(cdf["low"].min()),
-                                "Close": float(cdf["close"].iloc[-1]),
-                            })
-                            existing_dates.add(f_date)
-                except Exception:
+                        new_bars.append({
+                            "Date": pd.Timestamp(f_date),
+                            "Open": c_open,
+                            "High": c_high,
+                            "Low": c_low,
+                            "Close": c_close,
+                        })
+                        existing_dates.add(f_date)
+                    else:
+                        # Reconcile if an existing row was partial or inaccurate
+                        mask = out["Date"].dt.date == f_date
+                        if mask.any():
+                            cur = out.loc[mask].iloc[0]
+                            if (abs(cur["Low"] - c_low) > 0.05 or
+                                abs(cur["High"] - c_high) > 0.05 or
+                                abs(cur["Close"] - c_close) > 0.05):
+                                out.loc[mask, "Open"] = c_open
+                                out.loc[mask, "High"] = c_high
+                                out.loc[mask, "Low"] = c_low
+                                out.loc[mask, "Close"] = c_close
+                                updated = True
+                except Exception as cf_err:
+                    log.warning(f"levels.py: could not parse candle file {cf.name}: {cf_err}")
                     continue
+
             if new_bars:
                 out = pd.concat([out, pd.DataFrame(new_bars)], ignore_index=True)
                 out = (out.sort_values("Date")
                           .drop_duplicates(subset=["Date"], keep="last")
                           .reset_index(drop=True))
-                # Also append to OHLC.csv if it exists
+                updated = True
+
+            # Sync any new or corrected rows to OHLC.csv
+            if updated:
                 ohlc_file = folder / config.OHLC_FILE
                 if ohlc_file.exists():
                     try:
                         raw_ohlc = pd.read_csv(ohlc_file)
                         raw_ohlc["Date"] = pd.to_datetime(raw_ohlc["Date"], errors="coerce")
-                        raw_combined = pd.concat([raw_ohlc, pd.DataFrame(new_bars)], ignore_index=True)
-                        raw_combined = raw_combined.sort_values("Date").drop_duplicates(subset=["Date"], keep="last")
-                        raw_combined["Date"] = raw_combined["Date"].dt.strftime("%Y-%m-%d")
-                        raw_combined.to_csv(ohlc_file, index=False)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                        combined = pd.concat([raw_ohlc, out], ignore_index=True)
+                        combined = combined.sort_values("Date").drop_duplicates(subset=["Date"], keep="last")
+                        combined["Date"] = combined["Date"].dt.strftime("%Y-%m-%d")
+                        for col in ("Open", "High", "Low", "Close"):
+                            combined[col] = combined[col].map(lambda x: f"{float(x):.2f}" if pd.notna(x) else "")
+                        combined.to_csv(ohlc_file, index=False)
+                    except Exception as o_err:
+                        log.warning(f"levels.py: failed to sync corrected bar to {ohlc_file}: {o_err}")
+        except Exception as e:
+            log.warning(f"levels.py: candle sync failed: {e}")
 
     # Safety: strictly drop any future dates
     out = out[out["Date"] <= pd.Timestamp.now().normalize()].reset_index(drop=True)

@@ -1,0 +1,9 @@
+[Unit]
+Description=Participant workbook: try at 19:20, then hourly until 23:20 (NSE publishes late some days)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 19,20,21,22,23:20:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

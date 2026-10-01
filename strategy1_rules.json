@@ -1,5 +1,5 @@
 {
-  "_comment": "Thresholds for strategy1.py. Edit here, not in Python. Every number below is a judgement call, not a fact \u2014 if a day's read changes when you nudge one, the read was about the threshold.",
+  "_comment": "Thresholds for strategy1.py. Edit here, not in Python. Every number below is a judgement call, not a fact — if a day's read changes when you nudge one, the read was about the threshold.",
   "doji_body_pct": 0.28,
   "_doji_body_pct": "Body <= this fraction of candle range = Doji / Spinning Top. 0.28 matches mentor & student homework charts where 5-pt body on 19-pt range candle at extreme was exited as Doji.",
   "cost_to_cost_pts": 20.0,
@@ -15,7 +15,7 @@
   "big_candle_pts": 55.0,
   "_big_candle_pts": "Your number. At or above this the candle is large and a stop behind it exceeds the 40-pt budget.",
   "exhaust_pts": 60.0,
-  "_exhaust_pts": "Move already run from the open. Beyond this the rally is spent \u2014 small target only.",
+  "_exhaust_pts": "Move already run from the open. Beyond this the rally is spent — small target only.",
   "fixed_sl_pts": 40.0,
   "_fixed_sl_pts": "The reference stop the sizing assumes. Drives the big-candle refusal.",
   "gap_pts": 30.0,
@@ -29,15 +29,18 @@
   "flat_bb_width": 60.0,
   "_flat_bb_width": "BB width below this = Stage 1, rangebound.",
   "no_entry_after": "15:00",
+  "eod_no_trade_from": "15:00",
   "max_trades_range": 3,
   "gap_mode": "block",
-  "_gap_mode_note": "block | warn | off. BLOCK is correct \u2014 confirmed by Sushen in the LTA session: 'On a gap up day, don't look for calls. On a gap down day, don't look for puts.' Stated as a whole-session rule.",
+  "_gap_mode_note": "block | warn | off. BLOCK is correct — confirmed by Sushen in the LTA session: 'On a gap up day, don't look for calls. On a gap down day, don't look for puts.' Stated as a whole-session rule.",
   "range_target_pts": 15.0,
   "_range_target_note": "Rangebound days target 10-15 points, not 40. Sushen: 'extreme rangebound market it will not work... in rangebound market will trade in 10 points target, optionally 15 points'.",
   "max_trades_day": 2,
   "_max_trades_note": "'One trade or two trades in a day is enough. There is no need to take 10 trades in a day.' Distinct from max_trades_range, which caps rangebound attempts specifically.",
   "enable_smc_runner": true,
   "_enable_smc_runner_note": "When Strategy 1 trade aligns with 15m SMC BOS/CHoCH, activate Runner Multiplier: lock stop at CTC and trail for extended 60-100+ pt liquidity pool target.",
+  "writers_ratio_early_session_threshold": 1.3,
+  "writers_ratio_early_session_until": "10:45",
   "vpin": {
     "_comment": "VPIN parameters per Easley, Lopez de Prado & O'Hara (2010)",
     "bucket_volume": null,
@@ -45,13 +48,13 @@
     "sigma_window": 250,
     "n_buckets": 50,
     "cdf_window": 250,
-    "cdf_threshold": 0.90,
+    "cdf_threshold": 0.9,
     "duration_window": 20,
     "spike_threshold": 2.0,
-    "calm_max": 0.30,
+    "calm_max": 0.3,
     "coil_min_buckets": 8,
     "bb_width_coil_threshold": 60.0,
-    "expand_min": 0.80,
+    "expand_min": 0.8,
     "dir_min": 0.15,
     "reversal_confirm_buckets": 3,
     "bvc_flat_tolerance_z": 0.125,
@@ -73,7 +76,7 @@
     "crossover_confirm_minutes": 9,
     "unwind_lookback_minutes": 9,
     "stale_minutes": 10,
-    "min_coverage": 0.80,
+    "min_coverage": 0.8,
     "dominance_min_contracts": 50000.0,
     "dominance_min_lakhs": 5.0,
     "divergence_tolerance_contracts": 2500.0,
@@ -84,8 +87,16 @@
     "multistrike_discontinuity_min_strikes": 3,
     "multistrike_discontinuity_threshold_contracts": 50000.0,
     "expiry_scope": "nearest",
+    "default_strike_step": 100.0,
+    "strike_step_options": [
+      100.0,
+      50.0
+    ],
+    "default_strike_mode": "100_levels",
+    "display_units": "lakhs",
+    "display_lot_size": 65,
     "lot_size": null,
-    "_lot_size_note": "Nullable: null by default so numbers display in CONTRACTS. If set (e.g. 65), displays in lakhs as (contracts * lot_size / 100000)."
+    "_lot_size_note": "Nullable: null by default so raw engine metrics remain in CONTRACTS. UI display scales by display_lot_size (65) to show Lakhs (L)."
   },
   "greeks": {
     "_comment": "Black-Scholes & Put-Call Parity conventions. Spot with non-zero risk-free rate and dividend yield q.",
@@ -98,5 +109,427 @@
     "bisection_tol": 0.0001,
     "bisection_max_iter": 100,
     "multi_expiry_retention_days": 90
+  },
+  "writers_graph": {
+    "focus_window_default_radius": 450,
+    "available_timeframes": [
+      "3m",
+      "5m",
+      "15m"
+    ],
+    "default_timeframe": "5m",
+    "stabilization_time": "10:15",
+    "warmup_time": "09:45",
+    "trap_drop_pts": 15.0,
+    "trap_rally_pts": 15.0,
+    "ratio_dominant": 1.35,
+    "ratio_overwhelming": 1.8,
+    "net_diff_min_contracts": 25000.0,
+    "strike_dominance_ratio": 1.35,
+    "strike_min_diff_contracts": 15000.0,
+    "reversal_prob_high": 85.0,
+    "reversal_prob_med": 70.0,
+    "reversal_prob_low": 55.0,
+    "display_lot_size": 65,
+    "colors": {
+      "ce_writers": "#EF4444",
+      "pe_writers": "#10B981",
+      "diff_pe_dominant": "#10B981",
+      "diff_ce_dominant": "#EF4444",
+      "spot_line": "#F59E0B",
+      "bg_dark": "#0B1120"
+    }
+  },
+  "oi_alerts": {
+    "_comment": "OI Dominance Telegram Alert configuration for scheduler.py",
+    "enabled": true,
+    "warmup_until": "09:50",
+    "eod_from": "15:00",
+    "eod_no_trade_from": "15:00",
+    "freeze_start": "00:00",
+    "freeze_end": "00:00",
+    "allowed_transitions": [
+      [
+        "BALANCED",
+        "PE_DOMINANT"
+      ],
+      [
+        "BALANCED",
+        "CE_DOMINANT"
+      ],
+      [
+        "*",
+        "CROSSOVER"
+      ]
+    ],
+    "target_strike_mode": "atm",
+    "step": 100.0,
+    "major_wall_threshold": 75000.0,
+    "writers_ratio_pe_threshold": 1.5,
+    "writers_ratio_ce_threshold": 0.67,
+    "writers_ratio_early_session_threshold": 1.3,
+    "writers_ratio_early_session_until": "10:45",
+    "sr_approach_threshold_pts": 15.0,
+    "sr_approach_cooldown_minutes": 30,
+    "freeze_end_alert_enabled": false,
+    "freeze_end_alert_scope": "near",
+    "eod_summary_time": "15:25",
+    "eod_summary_enabled": true,
+    "s1_reclaim_trap_alert_enabled": true,
+    "telegram_briefing_enabled": true,
+    "floor_weakening_consecutive_bars": 2
+  },
+  "writer_dominance": {
+    "_comment": "Writer Dominance, Structure Classifier, Asymmetry & Risk Staging (Rule 4: Zero Hardcoding)",
+    "enabled": true,
+    "atm_steps": 2,
+    "dominance_strike_span": 2,
+    "bands": {
+      "balanced_max": 1.3,
+      "mild_max": 2.0,
+      "clear_max": 3.0
+    },
+    "labels": {
+      "balanced": "BALANCED",
+      "mild": "MILD",
+      "clear": "CLEAR",
+      "heavy": "HEAVY"
+    },
+    "structure": {
+      "range_min_width_pts": 100,
+      "compression_max_width_pts": 50,
+      "trending_threshold": 2.0
+    },
+    "asymmetry": {
+      "min_gap": 2.0,
+      "conviction_bands": {
+        "weak_max": 1.5,
+        "firm_max": 3.0
+      },
+      "conviction_labels": {
+        "weak": "WEAK",
+        "firm": "FIRM",
+        "strong": "STRONG"
+      }
+    },
+    "risk_staging": {
+      "cascade_delta_threshold": -25000,
+      "proximity_pts": 25.0
+    },
+    "telegram_line_enabled": true
+  },
+  "institutional_barrier_alerts": {
+    "_comment": "Alert when Spot approaches highest OI institutional support or resistance wall",
+    "enabled": true,
+    "approach_pts": 25.0,
+    "min_wall_contracts": 50000.0,
+    "cooldown_minutes": 60,
+    "warmup_until": "09:50",
+    "eod_from": "15:00",
+    "freeze_start": "00:00",
+    "freeze_end": "00:00"
+  },
+  "floor_ceiling_alerts": {
+    "_comment": "Floor / Ceiling Approach Telegram and Observation Alerts (Spot within 25pts of PE floor or CE wall)",
+    "enabled": true,
+    "proximity_pts": 25.0,
+    "min_wall_oi_lakhs": 100.0,
+    "cooldown_minutes": 30,
+    "window_start": "09:20",
+    "window_end": "14:45",
+    "freeze_start": "00:00",
+    "freeze_end": "00:00",
+    "target_offset_pts": 50.0,
+    "lot_size": 65,
+    "major_wall_oi_lakhs": 200.0,
+    "major_floor_proximity_pts": 15.0,
+    "major_floor_cooldown_minutes": 30
+  },
+  "cascade_alerts": {
+    "_comment": "Floor CASCADE + Ceiling BREAKOUT: nearest major wall losing OI for N consecutive intervals",
+    "enabled": true,
+    "min_consecutive": 5,
+    "cooldown_minutes": 20,
+    "window_start": "09:20",
+    "window_end": "14:45",
+    "streak_interval_minutes": 3,
+    "min_wall_oi_lakhs": 100.0,
+    "ceiling_enabled": true,
+    "ceiling_min_consecutive": 5,
+    "ceiling_cooldown_minutes": 20,
+    "ceiling_max_distance_pts": 60.0
+  },
+  "floor_weakening": {
+    "_comment": "Empirically calibrated weakening streak thresholds (Rule 4: Zero hardcoding)",
+    "min_streak": 5,
+    "ceiling_min_streak": 5
+  },
+  "wall_test_counter": {
+    "_comment": "Counts tests within proximity of major wall; shadow mode alert on 3rd test",
+    "proximity_pts": 15.0,
+    "min_wall_oi_lakhs": 100.0,
+    "shadow_mode": true
+  },
+  "wall_migration": {
+    "_comment": "Inter-session wall dominance flip tracking",
+    "enabled": true,
+    "proximity_pts": 200.0,
+    "ratio_threshold": 1.2
+  },
+  "put_writer_defense": {
+    "_comment": "Alert when put writers ADD >= min_pe_add_contracts (raw contracts, same unit as briefing flow) near a major floor over lookback_minutes",
+    "enabled": true,
+    "min_pe_add_contracts": 25000,
+    "max_spot_distance_pts": 20.0,
+    "min_wall_oi_lakhs": 150.0,
+    "cooldown_minutes": 15,
+    "window_start": "09:20",
+    "window_end": "14:45",
+    "freeze_start": "00:00",
+    "freeze_end": "00:00",
+    "lookback_minutes": 15
+  },
+  "mj_mode": {
+    "_comment": "MJ price action mode shown in briefing when RVOL is in TRAP ZONE (0.85-1.30)",
+    "enabled": true,
+    "shadow_logging": true,
+    "lot_size_mj": 1,
+    "target_pts": 25,
+    "no_trade_after": "14:00"
+  },
+  "alerts": {
+    "_comment": "False breakdown and bounce strength alert thresholds",
+    "min_false_breakdown_reclaim_pts": 15
+  },
+  "liquidity_trap_alerts": {
+    "_comment": "Alert when key reference level or institutional barrier is swept by wick and reclaimed",
+    "enabled": true,
+    "sweep_min_pts": 2.0,
+    "sweep_max_pts": 25.0,
+    "reclaim_pts": 1.5,
+    "min_false_breakdown_reclaim_pts": 15,
+    "cooldown_minutes": 30,
+    "lookback_snapshots": 15,
+    "warmup_until": "09:50",
+    "eod_from": "15:00",
+    "freeze_start": "00:00",
+    "freeze_end": "00:00"
+  },
+  "gex": {
+    "_comment": "Gamma Exposure (GEX) parameters and thresholds",
+    "lot_size": 65,
+    "max_null_gamma_pct": 0.3,
+    "neutral_pct": 0.1,
+    "neutral_band_cr": 25.0,
+    "extreme_distance_pts": 200.0
+  },
+  "expiry_mode": {
+    "_comment": "Expiry Day Mode parameters and thresholds",
+    "enabled": true,
+    "pcr_swing_threshold": 1.0,
+    "pcr_swing_cooldown_minutes": 15,
+    "unwind_cutoff_time": "14:00",
+    "max_pain_telegram_time": "13:00",
+    "expiry_summary_time": "13:15",
+    "expiry_weekday": 1,
+    "_expiry_weekday_note": "0=Mon,1=Tue. Fallback only; snapshot meta expiry is preferred. Used to suppress option percentiles in the post-expiry (Wed) institutional context.",
+    "_max_pain_note": "Max pain is display-only (informational only — no edge on Nifty, p=1.0000 on 22 sessions). Excluded from pre-trade checklist and signal generation."
+  },
+  "iv_context": {
+    "_comment": "ATM Implied Volatility context and baseline thresholds",
+    "window_minutes": 30,
+    "cheap_percentile": 35.0,
+    "expensive_percentile": 65.0,
+    "min_sessions_required": 3,
+    "max_pct_jump_per_poll": 25.0,
+    "iv_carry_max_polls": 5,
+    "reference_mode": "interpolate",
+    "reliable_baseline": 60
+  },
+  "flow": {
+    "_comment": "Delta OI flow normalization and lookback parameters (Rule 4: Zero Hardcoding)",
+    "normalise_by_time": true,
+    "standard_window_seconds": 900
+  },
+  "data_gap": {
+    "_comment": "Data gap awareness and change-based signal invalidation thresholds (Rule 4: Zero Hardcoding)",
+    "max_gap_seconds": 180
+  },
+  "checklist": {
+    "_comment": "5-Box Pre-Trade Checklist parameters and thresholds",
+    "box1_min_wall_contracts": 50000.0,
+    "box2_surge_limit_contracts": 5000.0,
+    "box3_expensive_percentile": 65.0,
+    "box4_gex_threshold_cr": 10.0,
+    "box5_market_open_time": "09:20",
+    "box5_freeze_start": "00:00",
+    "box5_freeze_end": "00:00",
+    "box5_freeze_grace_end": "00:00",
+    "box5_late_cutoff_time": "14:45",
+    "box5_fresh_data_minutes": 5.0
+  },
+  "institutional_context": {
+    "_comment": "Institutional Context Morning Telegram Briefing (09:15)",
+    "enabled": true,
+    "time": "09:15",
+    "percentile_conviction": {
+      "extreme": 95.0,
+      "high": 80.0,
+      "low": 20.0
+    },
+    "pro_bias": {
+      "bullish_pct": 70.0,
+      "bearish_pct": 30.0
+    },
+    "retail_trap": {
+      "net_ce_extreme_pct": 90.0,
+      "net_pe_extreme_pct": 90.0
+    },
+    "spread": {
+      "extreme_pct": 90.0,
+      "high_pct": 70.0
+    }
+  },
+  "rvol": {
+    "_comment": "calibrated on uniform Nifty futures contract volume (security 68407), 23 sessions Aug-Sep 2026, backtest expectancy +0.42 pts/trade at 0.85 threshold, drawdown -322 pts",
+    "dead_zone": 0.85,
+    "trend_zone": 1.3,
+    "extreme_zone": 2.5,
+    "expiry_eve_chop_zone": 0.45,
+    "expiry_eve_trap_zone": 0.7,
+    "baseline_sessions": 10,
+    "min_baseline_sessions": 5,
+    "gate_start": "09:30",
+    "recheck_times": [
+      "12:30",
+      "14:00"
+    ],
+    "filter_expiry_sessions": true,
+    "expiry_weekdays": [1, 3],
+    "excluded_dates": ["2026-09-22"],
+    "primary_metric": "cumulative",
+    "labels": {
+      "< 0.85": "DEAD ZONE — no trade",
+      "0.85-1.30": "TRAP ZONE — no trade (false breakouts)",
+      "1.30-2.50": "TREND ZONE — trade with system",
+      "> 2.50": "EXTREME ZONE — caution, watch reversal"
+    }
+  },
+  "order_flow": {
+    "_comment": "Module I Order Flow Layer (Strike-Level DOM) thresholds and configuration",
+    "enabled": true,
+    "paper_trade_mode": true,
+    "paper_trade_weeks": 2,
+    "wall_threshold": 25000,
+    "wall_min_seconds": 20,
+    "absorb_threshold": 15000,
+    "absorb_window_seconds": 10,
+    "absorb_max_ticks": 2,
+    "absorb_near_wall_ticks": 3,
+    "absorb_min_pulses": 2,
+    "pulse_min_volume": 10000,
+    "sweep_ratio": 0.5,
+    "break_multiplier": 1.5,
+    "break_window_seconds": 5,
+    "cvd_slope_flip_seconds": 60,
+    "cvd_divergence_window_seconds": 300,
+    "target_spot_shift_pts": 50.0,
+    "strike_step": 50.0,
+    "strike_offsets": [
+      0,
+      0,
+      50,
+      50
+    ],
+    "strike_types": [
+      "ATM_CE",
+      "ATM_PE",
+      "ATM_P50_CE",
+      "ATM_P50_PE"
+    ],
+    "min_confirm_win_rate": 0.6,
+    "min_multi_day_required": 5,
+    "min_multi_day_regimes": [
+      "trend-up",
+      "trend-down",
+      "chop"
+    ],
+    "paper_trade_clock_started": false,
+    "veto_mode": "SIM_ONLY",
+    "outcome_horizon_mins": [
+      5,
+      15
+    ],
+    "profit_threshold_pct": 1.0,
+    "recorded_data_dir": "data/recorded",
+    "journal_log_path": "data/order_flow_journal.jsonl",
+    "rotation_log_path": "data/order_flow_rotation.jsonl"
+  },
+  "observations": {
+    "_comment": "Daily Observation Log System configuration (appended every 3 minutes by briefing daemon)",
+    "enabled": true,
+    "dir": "data/observations",
+    "market_open_time": "09:15",
+    "freeze_end_time": "13:15",
+    "eod_summary_time": "15:25"
+  },
+  "fast_poll_window": {
+    "_comment": "Dhan API limits: 20 req/sec rate limit, ~5000-10000 req/day quota. 20s interval during 09:15-09:30 uses ~45 req, well within limits.",
+    "enabled": true,
+    "start": "09:15",
+    "end": "09:30",
+    "interval_seconds": 20,
+    "chain_interval_seconds": 20
+  },
+  "prior_day_levels": {
+    "_comment": "Prior-day levels (PDH, PDL, PDC, PDO) proximity alerts and briefing integration",
+    "enabled": true,
+    "proximity_pts": 15.0,
+    "cooldown_minutes": 20,
+    "window_start": "09:15",
+    "window_end": "14:45",
+    "freeze_start": "00:00",
+    "freeze_end": "00:00",
+    "ohlc_csv_path": "data/ohlc/OHLC.csv"
+  },
+  "writer_gap": {
+    "_comment": "WRITER GAP + WRITER LINES thresholds and parameters",
+    "delta_min": 0.25,
+    "delta_max": 0.75,
+    "atm_range": 200.0,
+    "top_n_strikes": 3,
+    "basket_hold_minutes": 30,
+    "basket_spot_exit_strikes": 1,
+    "lot_size": 65,
+    "intertwined_pct": 0.15,
+    "sign_flips_threshold": 2,
+    "sign_flips_window_min": 30,
+    "iv_noise": 0.3,
+    "resid_noise": 0.1,
+    "min_gap_lakhs": 20.0,
+    "crossover_confirm_polls": 2,
+    "bend_z_threshold": 2.5,
+    "bend_min_lakhs": 10.0,
+    "bend_mild_z_threshold": 1.0,
+    "breadth_min": 2,
+    "wall_migration_lookback_min": 30,
+    "expiry_suppress_telegram_from": "14:00",
+    "telegram_combined_window_min": 5,
+    "log_csv_path": "data/writer_gap.csv",
+    "buckets": {
+      "_comment": "WRITER BUCKETS thresholds and configuration (Rule 4: Zero Hardcoding)",
+      "enabled": true,
+      "width_strikes": 7,
+      "max_width_strikes": 12,
+      "step": 50.0,
+      "score_bullish_threshold": 0.2,
+      "score_bearish_threshold": -0.2,
+      "bend_z_threshold": 2.5,
+      "bend_min_lakhs": 10.0,
+      "bend_mild_z_threshold": 1.0,
+      "score_bend_z_threshold": 2.5,
+      "score_bend_mild_z_threshold": 1.0,
+      "score_bend_min_delta": 0.04
+    }
   }
 }

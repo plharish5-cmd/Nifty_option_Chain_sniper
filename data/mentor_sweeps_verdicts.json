@@ -1,0 +1,139 @@
+{
+ "run": "29-Sep-2026 23:52",
+ "data": "Jan-2019..02-Oct-2026",
+ "rules": {
+  "swing_sweep_15m": {
+   "key": "swing_sweep_15m",
+   "rule": "Swing sweep (15-min)",
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 1693,
+   "detail": "+0.05 R vs +0.08 R on shuffled bars, 1693 cases"
+  },
+  "swing_sweep_major_15m": {
+   "key": "swing_sweep_major_15m",
+   "rule": "Swing sweep on MAJOR swings only (15-min, Lecture 6)",
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 1373,
+   "detail": "+0.09 R vs +0.13 R on shuffled bars, 1373 cases"
+  },
+  "swing_sweep_1d": {
+   "key": "swing_sweep_1d",
+   "rule": "Swing sweep (day)",
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 125,
+   "detail": "+0.26 R vs +0.18 R on shuffled bars, 125 cases"
+  },
+  "candle_sweep_15m": {
+   "key": "candle_sweep_15m",
+   "rule": "Candle sweep (15-min)",
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 5908,
+   "detail": "+0.01 R vs -0.04 R on shuffled bars, 5908 cases"
+  },
+  "candle_sweep_1d": {
+   "key": "candle_sweep_1d",
+   "rule": "Candle sweep (day)",
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 329,
+   "detail": "+0.19 R vs +0.13 R on shuffled bars, 329 cases"
+  },
+  "sweep_1w": {
+   "key": "sweep_1w",
+   "rule": "Week-candle sweep",
+   "verdict": "WORSE THAN RANDOM",
+   "level": -1,
+   "n": 65,
+   "detail": "-0.12 R vs +0.21 R on shuffled bars, 65 cases"
+  },
+  "double_15m": {
+   "key": "double_15m",
+   "rule": "Double bottom/top (15-min)",
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 1990,
+   "detail": "+0.04 R vs +0.05 R on shuffled bars, 1990 cases"
+  },
+  "double_with_day_15m": {
+   "key": "double_with_day_15m",
+   "rule": "Double bottom/top WITH vs AGAINST the day trend",
+   "verdict": "SMALL / NO DIFFERENCE",
+   "level": 0,
+   "n": 1989,
+   "detail": "+0.09 R vs -0.01 R against the day trend, 1989 cases"
+  },
+  "double_1d": {
+   "key": "double_1d",
+   "rule": "Double bottom/top (day)",
+   "verdict": "WORSE THAN RANDOM",
+   "level": -1,
+   "n": 152,
+   "detail": "+0.11 R vs +0.27 R on shuffled bars, 152 cases"
+  },
+  "reentry_15m": {
+   "key": "reentry_15m",
+   "rule": "Re-entry after SL when the day closes back",
+   "verdict": "NO EDGE",
+   "detail": "+0.03 R, 411 re-entries",
+   "level": 0
+  },
+  "gap_first_return": {
+   "key": "gap_first_return",
+   "rule": "Gap NOT filled on the first return (he said 70-80%)",
+   "verdict": "NOT CONFIRMED",
+   "level": -1,
+   "n": 530,
+   "detail": "37% vs 33% on shuffled bars, 530 cases"
+  },
+  "void_close_rule": {
+   "key": "void_close_rule",
+   "rule": "Void close rule (no close beyond = reversal)",
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 5343,
+   "detail": "50% vs 50% (coin flip), 5343 cases"
+  },
+  "useless_open": {
+   "key": "useless_open",
+   "rule": "Open inside the swing range = useless day",
+   "verdict": "NOT CONFIRMED",
+   "level": -1,
+   "detail": "inside-open days: range 214 pts, 49% trend days; outside: 214 pts, 50%"
+  },
+  "swing_break": {
+   "key": "swing_break",
+   "rule": "15-min close beyond the swing range, T1 = imbalance edge",
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 796,
+   "detail": "+0.07 R vs +0.20 R on shuffled bars, 796 cases"
+  },
+  "body_void_15m": {
+   "key": "body_void_15m",
+   "rule": "Body void rejection (15-min, Lecture 6)",
+   "verdict": "NO EDGE",
+   "level": 0,
+   "n": 662,
+   "detail": "-0.07 R vs +0.02 R on shuffled bars, 662 cases"
+  },
+  "body_void_1d": {
+   "key": "body_void_1d",
+   "rule": "Body void rejection (day, Lecture 6)",
+   "verdict": "WORSE THAN RANDOM",
+   "level": -1,
+   "n": 322,
+   "detail": "+0.25 R vs +0.42 R on shuffled bars, 322 cases"
+  },
+  "vp_divergence": {
+   "key": "vp_divergence",
+   "rule": "Volume-profile divergence -> big move next day (Lecture 6)",
+   "verdict": "NOT ENOUGH DATA",
+   "detail": "9 cases",
+   "level": 0
+  }
+ }
+}

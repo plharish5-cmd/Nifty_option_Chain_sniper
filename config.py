@@ -19,14 +19,14 @@ EXPIRY_INDEX    = 0             # 0 = nearest expiry (the 1st dropdown entry)
 
 # ── Polling & Active Market Window ──────────────────────────────────────────
 POLL_SECONDS          = 60            # 60s for ultra-fresh data during active market
-AUTO_REFRESH_START    = time(7, 30)   # 07:30 AM IST (starts pre-market prep)
+AUTO_REFRESH_START    = time(9, 0)    # 09:00 AM IST (starts pre-market prep; avoid overnight polling on stale chain)
 AUTO_REFRESH_END      = time(15, 45)  # 03:45 PM IST (stops auto-pinging after session close)
 MARKET_OPEN           = time(9, 15)
 MARKET_CLOSE          = time(15, 30)
 ALLOW_WEEKEND_STORAGE = False         # STRICT RULE: NEVER store live/trial pings, snapshots or logs on Sat & Sun no matter what!
 
 # ── Scheduler windows (scheduler.py) ─────────────────────────────────────────
-# Option chain, levels and the signal log. Active 07:30 to 15:45 IST.
+# Option chain, levels and the signal log. Active 09:00 to 15:45 IST.
 CHAIN_WINDOW          = (AUTO_REFRESH_START, AUTO_REFRESH_END)
 
 # View Building. Runs through the small hours so the sheet is ready when you
@@ -170,9 +170,11 @@ MAX_STOPS_PER_DAY      = 2
 # Midday freeze for OPTION BUYERS. Theta accelerates while volume drops, so a
 # fresh naked buy in this window pays maximum decay for minimum movement.
 # Fresh directional entries before 10:30 or after 13:30.
-BUYER_FREEZE_FROM      = time(11, 30)
-BUYER_FREEZE_UNTIL     = time(13, 15)
-ENFORCE_BUYER_FREEZE   = True
+# Freeze REMOVED 29-Sep-2026 at Harish's request (it blocked the 12:00 day-high reversal).
+# 00:00-00:00 = never inside market hours. To restore: 11:30 / 13:15 / True.
+BUYER_FREEZE_FROM      = time(0, 0)
+BUYER_FREEZE_UNTIL     = time(0, 0)
+ENFORCE_BUYER_FREEZE   = False
 
 # ── Position sizing / risk ───────────────────────────────────────────────────
 CAPITAL              = 20_000   # <-- SET THIS to your actual trading capital
@@ -322,7 +324,9 @@ ROUND_TRIP_COST      = 400.0  # Rs per lot, round trip. Taken from your course
                               # exactly the 59% the course states. NOT 50%.
 
 # ── Storage ──────────────────────────────────────────────────────────────────
-DATA_DIR         = Path(__file__).parent / "data"
+ROOT             = Path(__file__).resolve().parent
+BASE_DIR         = ROOT
+DATA_DIR         = ROOT / "data"
 SNAPSHOT_DIR     = DATA_DIR / "snapshots"
 SNAPSHOT_MULTI_DIR = DATA_DIR / "snapshots_multi"
 SESSION_LOG      = DATA_DIR / "session_log.csv"
@@ -393,9 +397,9 @@ _FALLBACKS = {
     "LOT_SIZE": 65,
     "ROUND_TRIP_COST": 400,
     # session windows
-    "BUYER_FREEZE_FROM": time(11, 30),
-    "BUYER_FREEZE_UNTIL": time(13, 15),
-    "ENFORCE_BUYER_FREEZE": True,
+    "BUYER_FREEZE_FROM": time(0, 0),
+    "BUYER_FREEZE_UNTIL": time(0, 0),
+    "ENFORCE_BUYER_FREEZE": False,
     "MARKET_OPEN": time(9, 15),
     "MARKET_CLOSE": time(15, 30),
     # polling and data
@@ -426,6 +430,9 @@ _FALLBACKS = {
     "ALERT_COOLDOWN_MINS": 20,
     "ALERT_MAX_PER_DAY": 8,
     "ALERT_SOUND": True,
+    # paths
+    "ROOT": Path(__file__).resolve().parent,
+    "BASE_DIR": Path(__file__).resolve().parent,
 }
 
 MISSING_KEYS: list[str] = []

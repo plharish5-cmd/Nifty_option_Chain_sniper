@@ -1,0 +1,10 @@
+Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
+30-01-2024,1,CE,10:00,21767.1,"09:30 candle close above 8 EMA, break of its high; SL candle low 21,689; red 1st candle, flat open",21688.8,78.2,10:45,21687.8,stop loss hit,0.0,-79.2,5.9,no,no,
+30-01-2024,2,PE,10:30,21721.5,"10:15 candle close below 8 EMA, break of its low; SL candle high 21,772; red 1st candle, flat open",21771.9,50.4,11:30,21701.0,trailing SL (candle high),20.5,0.0,65.3,YES,YES,
+30-01-2024,3,PE,10:45,21710.9,"10:30 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 21,746; red 1st candle, flat open",21745.6,34.7,11:30,21701.0,trailing SL (candle high),9.9,0.0,54.7,YES,YES,
+30-01-2024,4,CE,11:45,21725.7,"11:30 candle close above 8 EMA, break of its high; SL candle low 21,691; red 1st candle, flat open",21691.3,34.4,12:00,21702.4,trailing SL (candle low),0.0,-23.3,8.0,no,no,
+30-01-2024,5,PE,12:15,21696.0,"12:00 candle close below 8 EMA, break of its low; SL candle high 21,732; red 1st candle, flat open",21732.5,36.4,13:30,21694.7,trailing SL (candle high),1.4,0.0,52.5,YES,YES,
+30-01-2024,6,PE,12:45,21676.2,"12:30 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 21,712; red 1st candle, flat open",21712.5,36.2,14:15,21671.0,trailing SL (candle high),5.3,0.0,41.7,YES,YES,
+30-01-2024,7,PE,13:15,21666.5,"13:00 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 21,703; red 1st candle, flat open",21702.7,36.2,14:15,21671.0,trailing SL (candle high),0.0,-4.5,31.9,YES,YES,
+30-01-2024,8,PE,14:00,21653.0,"13:45 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 21,689; red 1st candle, flat open",21688.5,35.5,15:00,21533.0,+120 max target,120.0,0.0,150.7,YES,YES,
+30-01-2024,9,PE,14:30,21613.9,"14:15 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 21,672; red 1st candle, flat open",21672.0,58.1,15:15,21530.5,15:15 day end,83.4,0.0,111.6,YES,YES,133.5

@@ -1,0 +1,107 @@
+{
+  "version": "1.0",
+  "_source": "Harish's daily homework (29 and 30-Sep-2026 charts): hammer / double hammer at support, inverted hammer at resistance (day high/low, previous-day high = R1, swing high/low), entry on the follow-through break, exits at the opposite level, 8 EMA or a trailing SL. Edit numbers here, not in code.",
+  "pattern": {
+    "_rule": "Hammer: lower wick >= wick_body_ratio x body AND >= wick_share of the candle, upper wick <= other_wick_max of the candle. Inverted hammer: the mirror. Double hammer: two candles in a row, both with a lower wick >= double_wick_share of their range, lows within double_low_tolerance points.",
+    "wick_body_ratio": 1.5,
+    "wick_share": 0.4,
+    "other_wick_max": 0.35,
+    "double_wick_share": 0.3,
+    "double_low_tolerance": 15,
+    "min_range_points": 10
+  },
+  "levels": {
+    "_rule": "Candle extreme within tolerance_points of: today's high/low so far, previous day H/L/C, a 15-min swing high/low (swing_k candles each side, known only after it forms, from the last swing_lookback_bars candles), previous wick_days days' long wicks, OI walls (live), manual levels.",
+    "tolerance_points": 15,
+    "swing_k": 2,
+    "swing_lookback_bars": 75,
+    "wick_days": 5,
+    "wick_share_of_day": 0.3
+  },
+  "trigger": {
+    "_rule": "Follow-through = a later candle trades beyond the pattern candle's high (CE) / low (PE) by buffer_points, within trigger_bars candles, same day.",
+    "buffer_points": 1,
+    "trigger_bars": 2
+  },
+  "risk": {
+    "sl_buffer_points": 2,
+    "min_sl_points": 8,
+    "max_sl_points": 60,
+    "min_rr": 1.0
+  },
+  "exit": {
+    "_rule": "T1 = nearest opposite level >= 1R (else fallback_r). Trail: once a candle closes trail_after_r in profit, the SL follows each closed candle's low (CE) / high (PE). 8 EMA: exit on a close through it. Everything out by exit_by.",
+    "ema_span": 8,
+    "fallback_r": 2.0,
+    "trail_after_r": 1.0,
+    "exit_by": "15:15"
+  },
+  "confluence": {
+    "_rule": "Shown with every setup, NOT used as a filter until the homework / backtest show which ones matter.",
+    "wall_near_points": 25,
+    "pcr_bull": 1.0,
+    "pcr_bear": 0.9,
+    "rvol_min": 1.0
+  },
+  "telegram": {
+    "send_setups": true,
+    "send_triggers": true,
+    "send_exit_hints": true,
+    "_rule": "15-min signals go out as their own Telegram message (SUPER); 5-min and 3-min together in a second message. Set send_5m / send_3m false to silence them.",
+    "send_5m": true,
+    "send_3m": true
+  },
+  "history": {
+    "min_sample_size": 20,
+    "beats_by_r": 0.1,
+    "min_z": 2.0,
+    "min_trades_for_star": 200,
+    "cost_r": 0.05,
+    "min_net_r": 0.05,
+    "_cost": "A setup only gets BEATS RANDOM if its average R minus cost_r (brokerage + slippage) is at least min_net_r. 30-Sep-2026: 15m 0.00 R, 5m -0.03 R, 3m +0.01 R over 5 years - all better than random candles but ~breakeven."
+  },
+  "timeframes": [
+    "15m",
+    "5m",
+    "3m"
+  ],
+  "tf_overrides": {
+    "_rule": "15-min uses the base numbers above. 5-min and 3-min candles are smaller, so tolerance, candle size, SL limits and swing windows are smaller and the follow-through window is 3 candles.",
+    "5m": {
+      "levels": {
+        "tolerance_points": 10,
+        "swing_k": 3,
+        "swing_lookback_bars": 150
+      },
+      "pattern": {
+        "min_range_points": 6,
+        "double_low_tolerance": 8
+      },
+      "risk": {
+        "min_sl_points": 5,
+        "max_sl_points": 35
+      },
+      "trigger": {
+        "trigger_bars": 3
+      }
+    },
+    "3m": {
+      "levels": {
+        "tolerance_points": 8,
+        "swing_k": 3,
+        "swing_lookback_bars": 250
+      },
+      "pattern": {
+        "min_range_points": 5,
+        "double_low_tolerance": 6
+      },
+      "risk": {
+        "min_sl_points": 4,
+        "max_sl_points": 25
+      },
+      "trigger": {
+        "trigger_bars": 3
+      }
+    }
+  }
+}

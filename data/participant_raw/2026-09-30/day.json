@@ -1,0 +1,400 @@
+{
+ "date": "2026-09-30",
+ "oi": {
+  "Client": {
+   "fut_idx_long": 301040.0,
+   "fut_idx_short": 58614.0,
+   "fut_stk_long": 3453975.0,
+   "fut_stk_short": 154613.0,
+   "opt_idx_call_long": 3334467.0,
+   "opt_idx_put_long": 1980918.0,
+   "opt_idx_call_short": 2900690.0,
+   "opt_idx_put_short": 2823611.0,
+   "opt_stk_call_long": 1368687.0,
+   "opt_stk_put_long": 543310.0,
+   "opt_stk_call_short": 770156.0,
+   "opt_stk_put_short": 834210.0,
+   "total_long": 10982397.0,
+   "total_short": 7541894.0
+  },
+  "DII": {
+   "fut_idx_long": 49642.0,
+   "fut_idx_short": 17592.0,
+   "fut_stk_long": 245443.0,
+   "fut_stk_short": 4554998.0,
+   "opt_idx_call_long": 8483.0,
+   "opt_idx_put_long": 46958.0,
+   "opt_idx_call_short": 2932.0,
+   "opt_idx_put_short": 300.0,
+   "opt_stk_call_long": 2112.0,
+   "opt_stk_put_long": 43447.0,
+   "opt_stk_call_short": 177732.0,
+   "opt_stk_put_short": 20228.0,
+   "total_long": 396085.0,
+   "total_short": 4773782.0
+  },
+  "FII": {
+   "fut_idx_long": 29394.0,
+   "fut_idx_short": 312264.0,
+   "fut_stk_long": 3360170.0,
+   "fut_stk_short": 2870621.0,
+   "opt_idx_call_long": 466513.0,
+   "opt_idx_put_long": 1032048.0,
+   "opt_idx_call_short": 932096.0,
+   "opt_idx_put_short": 363923.0,
+   "opt_stk_call_long": 92210.0,
+   "opt_stk_put_long": 198506.0,
+   "opt_stk_call_short": 179833.0,
+   "opt_stk_put_short": 71258.0,
+   "total_long": 5178842.0,
+   "total_short": 4729996.0
+  },
+  "Pro": {
+   "fut_idx_long": 35278.0,
+   "fut_idx_short": 26884.0,
+   "fut_stk_long": 826666.0,
+   "fut_stk_short": 306022.0,
+   "opt_idx_call_long": 1052809.0,
+   "opt_idx_put_long": 789280.0,
+   "opt_idx_call_short": 1026555.0,
+   "opt_idx_put_short": 661370.0,
+   "opt_stk_call_long": 594084.0,
+   "opt_stk_put_long": 752690.0,
+   "opt_stk_call_short": 929372.0,
+   "opt_stk_put_short": 612257.0,
+   "total_long": 4050807.0,
+   "total_short": 3562460.0
+  },
+  "TOTAL": {
+   "fut_idx_long": 415354.0,
+   "fut_idx_short": 415354.0,
+   "fut_stk_long": 7886254.0,
+   "fut_stk_short": 7886254.0,
+   "opt_idx_call_long": 4862273.0,
+   "opt_idx_put_long": 3849205.0,
+   "opt_idx_call_short": 4862273.0,
+   "opt_idx_put_short": 3849205.0,
+   "opt_stk_call_long": 2057093.0,
+   "opt_stk_put_long": 1537953.0,
+   "opt_stk_call_short": 2057093.0,
+   "opt_stk_put_short": 1537953.0,
+   "total_long": 20608131.0,
+   "total_short": 20608131.0
+  }
+ },
+ "vol": {
+  "Client": {
+   "fut_idx_long": 55356.0,
+   "fut_idx_short": 36743.0,
+   "fut_stk_long": 247343.0,
+   "fut_stk_short": 223402.0,
+   "opt_idx_call_long": 14623692.0,
+   "opt_idx_put_long": 14866108.0,
+   "opt_idx_call_short": 14506570.0,
+   "opt_idx_put_short": 14962832.0,
+   "opt_stk_call_long": 1018164.0,
+   "opt_stk_put_long": 442091.0,
+   "opt_stk_call_short": 923819.0,
+   "opt_stk_put_short": 472067.0,
+   "total_long": 31252754.0,
+   "total_short": 31125433.0
+  },
+  "DII": {
+   "fut_idx_long": 361.0,
+   "fut_idx_short": 3819.0,
+   "fut_stk_long": 65203.0,
+   "fut_stk_short": 74203.0,
+   "opt_idx_call_long": 3785.0,
+   "opt_idx_put_long": 1864.0,
+   "opt_idx_call_short": 2806.0,
+   "opt_idx_put_short": 4600.0,
+   "opt_stk_call_long": 4313.0,
+   "opt_stk_put_long": 9263.0,
+   "opt_stk_call_short": 54500.0,
+   "opt_stk_put_short": 10307.0,
+   "total_long": 84789.0,
+   "total_short": 150235.0
+  },
+  "FII": {
+   "fut_idx_long": 16356.0,
+   "fut_idx_short": 31919.0,
+   "fut_stk_long": 236162.0,
+   "fut_stk_short": 243021.0,
+   "opt_idx_call_long": 2292022.0,
+   "opt_idx_put_long": 2353705.0,
+   "opt_idx_call_short": 2336142.0,
+   "opt_idx_put_short": 2336837.0,
+   "opt_stk_call_long": 160542.0,
+   "opt_stk_put_long": 107663.0,
+   "opt_stk_call_short": 168329.0,
+   "opt_stk_put_short": 103586.0,
+   "total_long": 5166450.0,
+   "total_short": 5219834.0
+  },
+  "Pro": {
+   "fut_idx_long": 24329.0,
+   "fut_idx_short": 23921.0,
+   "fut_stk_long": 295109.0,
+   "fut_stk_short": 303191.0,
+   "opt_idx_call_long": 15387114.0,
+   "opt_idx_put_long": 15003427.0,
+   "opt_idx_call_short": 15461095.0,
+   "opt_idx_put_short": 14920835.0,
+   "opt_stk_call_long": 1967674.0,
+   "opt_stk_put_long": 1224627.0,
+   "opt_stk_call_short": 2004045.0,
+   "opt_stk_put_short": 1197684.0,
+   "total_long": 33902280.0,
+   "total_short": 33910771.0
+  },
+  "TOTAL": {
+   "fut_idx_long": 96402.0,
+   "fut_idx_short": 96402.0,
+   "fut_stk_long": 843817.0,
+   "fut_stk_short": 843817.0,
+   "opt_idx_call_long": 32306613.0,
+   "opt_idx_put_long": 32225104.0,
+   "opt_idx_call_short": 32306613.0,
+   "opt_idx_put_short": 32225104.0,
+   "opt_stk_call_long": 3150693.0,
+   "opt_stk_put_long": 1783644.0,
+   "opt_stk_call_short": 3150693.0,
+   "opt_stk_put_short": 1783644.0,
+   "total_long": 70406273.0,
+   "total_short": 70406273.0
+  }
+ },
+ "fii_stats": {
+  "INDEX FUTURES": [
+   16356.0,
+   2515.77,
+   31919.0,
+   4807.47,
+   341658.0,
+   51849.01
+  ],
+  "INDEX OPTIONS": [
+   4645727.0,
+   694748.98,
+   4672979.0,
+   698633.5,
+   2794581.0,
+   418251.52
+  ],
+  "STOCK FUTURES": [
+   236162.0,
+   15641.06,
+   243021.0,
+   15955.71,
+   6230791.0,
+   399169.81
+  ],
+  "STOCK OPTIONS": [
+   268205.0,
+   17886.54,
+   271915.0,
+   18033.53,
+   541807.0,
+   33300.5
+  ]
+ },
+ "fii_stats_all": {
+  "FII DERIVATIVES STATISTICS FOR 30-SEP-2026": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "INDEX FUTURES": [
+   16356.0,
+   2515.77,
+   31919.0,
+   4807.47,
+   341658.0,
+   51849.01
+  ],
+  "BANKNIFTY FUTURES": [
+   4510.0,
+   745.98,
+   3510.0,
+   581.12,
+   55186.0,
+   9108.48
+  ],
+  "FINNIFTY FUTURES": [
+   16.0,
+   2.38,
+   15.0,
+   2.23,
+   316.0,
+   47.01
+  ],
+  "MIDCPNIFTY FUTURES": [
+   527.0,
+   87.71,
+   548.0,
+   91.17,
+   23516.0,
+   3893.63
+  ],
+  "NIFTY FUTURES": [
+   11298.0,
+   1678.82,
+   27832.0,
+   4130.47,
+   262207.0,
+   38724.1
+  ],
+  "NIFTYFPI FUTURES": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "NIFTYNXT50 FUTURES": [
+   5.0,
+   0.88,
+   14.0,
+   2.47,
+   433.0,
+   75.79
+  ],
+  "INDEX OPTIONS": [
+   4645727.0,
+   694748.98,
+   4672979.0,
+   698633.5,
+   2794581.0,
+   418251.52
+  ],
+  "BANKNIFTY OPTIONS": [
+   290147.0,
+   48375.04,
+   286544.0,
+   47743.88,
+   403709.0,
+   66167.56
+  ],
+  "FINNIFTY OPTIONS": [
+   3673.0,
+   561.43,
+   4233.0,
+   646.8,
+   1765.0,
+   261.04
+  ],
+  "MIDCPNIFTY OPTIONS": [
+   29001.0,
+   4862.04,
+   30623.0,
+   5147.57,
+   30736.0,
+   5064.51
+  ],
+  "NIFTY OPTIONS": [
+   4322895.0,
+   640948.54,
+   4351568.0,
+   645093.32,
+   2358364.0,
+   346757.19
+  ],
+  "NIFTYFPI OPTIONS": [
+   8.0,
+   1.39,
+   8.0,
+   1.39,
+   0.0,
+   0.0
+  ],
+  "NIFTYNXT50 OPTIONS": [
+   3.0,
+   0.53,
+   3.0,
+   0.53,
+   7.0,
+   1.22
+  ],
+  "STOCK FUTURES": [
+   236162.0,
+   15641.06,
+   243021.0,
+   15955.71,
+   6230791.0,
+   399169.81
+  ],
+  "STOCK OPTIONS": [
+   268205.0,
+   17886.54,
+   271915.0,
+   18033.53,
+   541807.0,
+   33300.5
+  ],
+  "NOTES:": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "BOTH BUY AND SELL POSITIONS HAVE BEEN CONSIDERED": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "OPTIONS VALUE (BUY/SELL) = STRIKE PRICE * QTY": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "FUTURES VALUE (BUY/SELL) = TRADED PRICE * QTY": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "VALUE & OPEN INTEREST AT THE END OF DAY:": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "OPTIONS VALUE (END OF DAY) = UNDERLYING CLOSE PRICE * QTY": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "FUTURES VALUE (END OF DAY) = CLOSING FUTURES PRICE * QTY  (CLOSING PRICE IS THE DAILY SETTLEMENT PRICE OF FUTURES CONTRACTS)": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ]
+ },
+ "nifty_close": 22630.7,
+ "banknifty_close": 54633.05,
+ "fii_equity_cr": -10148.41,
+ "dii_equity_cr": 11271.73,
+ "fii_equity_final_prev_cr": null
+}

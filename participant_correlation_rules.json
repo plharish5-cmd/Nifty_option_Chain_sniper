@@ -1,0 +1,98 @@
+{
+  "version": "1.0",
+  "_source": "Stock Unlimited, Lecture 2 'Data Correlation' (video 3). Edit thresholds here, not in code.",
+  "portfolio_stock_futures": {
+    "_rule": "FII!AE (net stock futures). Start the portfolio when AE > entry; add 1/5 tranche for every +step; book part near partial; exit fully below exit; re-enter above entry again (0:00-9:24, 26:05-27:30, 30:14-31:21).",
+    "entry": 220000,
+    "add_step": 100000,
+    "partial_book": 125000,
+    "exit": 100000,
+    "tranche_fraction": 0.2,
+    "calibration_median_2021_22": 133000,
+    "scaled_window_sessions": 250,
+    "_scaled_note": "His numbers date from 2021-22. FII stock-futures OI is ~5-10x larger since 2024, so the app also shows the same rule scaled by (rolling-250 median AE / 2021-22 median)."
+  },
+  "net_options_Y": {
+    "_rule": "FII!Y net options. Below the line = bearish, above = bullish; believe it only after 2-3 days in a row (10:52-12:49). Lot size halved -> line doubles (24:47-25:33).",
+    "line": -80000,
+    "line_lot_basis": 50,
+    "confirm_days": 2,
+    "strong_confirm_days": 3,
+    "scaled_window_sessions": 250,
+    "nifty_lot_schedule": [
+      [
+        "2019-01-01",
+        75
+      ],
+      [
+        "2021-07-01",
+        50
+      ],
+      [
+        "2024-04-26",
+        25
+      ],
+      [
+        "2024-11-20",
+        75
+      ],
+      [
+        "2025-12-30",
+        65
+      ]
+    ],
+    "_lot_note": "Dates are approximate; verify against NSE circulars. Used only for the lot-adjusted view."
+  },
+  "put_call_short_AM": {
+    "_rule": "FII!AM put short / call short. >1 = buy on dip. Use ~0.97 rather than 1, needs 2-3 days in a row; 2 days below 0.95 = bearish (9:48-10:36, 14:11-14:32).",
+    "bull_line": 0.97,
+    "bear_line": 0.95,
+    "confirm_days": 2
+  },
+  "all_three_above_1": {
+    "_rule": "FII AM, PRO AB and Retail AI all > 1 for 2 days in a row -> market near a bottom, goes up (42:24-43:09).",
+    "line": 1.0,
+    "confirm_days": 2
+  },
+  "pro_monday_short_covering": {
+    "_rule": "Thursday-expiry era (2022): on Monday, PRO net CE (PRO!T = call long - call short) more negative than -2.6/-2.7 lakh -> Monday dips below Friday's high, then by expiry the market crosses Friday's high (short covering). Target = Friday high (46:25-52:31).",
+    "net_ce_line": -260000,
+    "signal_cycle_day": 2,
+    "reference_cycle_day": 1
+  },
+  "fii_pre_expiry_reversal": {
+    "_rule": "Day before expiry (Wednesday then): FII added call long, cut call short, and added more put long than put short -> expiry day opens gap-up, then an engulfing red candle; buy puts after the gap-up, target below the pre-expiry low (52:31-56:05).",
+    "min_call_long_add": 0,
+    "max_call_short_change": 0
+  },
+  "fii_vol_momentum": {
+    "_rule": "FII Vol sheet: on expiry day, FII net CE vol (O) and net PE vol (P) both clearly negative -> next day has momentum; long straddle at open (after the first 15-min candle). Also: both negative on the two days before expiry and more negative on the second -> expiry-day momentum (56:12-1:03:24).",
+    "strong_percentile": 20,
+    "percentile_window_sessions": 250,
+    "momentum_move_pct": 0.8,
+    "_momentum_note": "A day counts as 'momentum' when the biggest move away from the open (high-open or open-low) is at least this % of the open (~185 pts at 23,000), roughly what a long ATM straddle needs."
+  },
+  "expiry_calendar": {
+    "_rule": "Nifty weekly expiry weekday by period (0=Mon ... 3=Thu). A holiday moves it to the previous trading day.",
+    "weekday_schedule": [
+      [
+        "2019-01-01",
+        3
+      ],
+      [
+        "2025-09-01",
+        1
+      ]
+    ]
+  },
+  "outcome_scoring": {
+    "min_sample_size": 10,
+    "_note": "Any bucket with fewer days is shown as INSUFFICIENT SAMPLE, never as a percentage."
+  },
+  "paths": {
+    "ohlc_csv": "data/ohlc/OHLC.csv",
+    "ohlc_dhan_cache": "data/ohlc/nifty_daily_dhan.csv",
+    "yf_symbol": "^NSEI",
+    "_note": "Dhan first (your Data API); yfinance only for dates before Dhan's intraday history."
+  }
+}

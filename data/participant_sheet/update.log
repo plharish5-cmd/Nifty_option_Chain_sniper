@@ -1,0 +1,66 @@
+2026-09-26 10:34:46,660 Put the trainer's workbook at /home/harish/Documents/Swathi K N/1 Trading/option chain/OC/data/participant_sheet/Partcipant_Data_Sheet_NEW.xlsm first.
+2026-09-26 10:35:56,852 Saved the trainer's original workbook to /home/harish/Documents/Swathi K N/1 Trading/option chain/OC/data/participant_sheet/original/Partcipant_Data_Sheet_NEW.xlsm (source of his macros).
+2026-09-26 10:35:57,903 Workbook already up to date (last day 2026-09-25).
+2026-09-29 19:21:02,038 2026-09-28: NSE files parsed (FII put short 765968 / call short 1390097)
+2026-09-29 19:21:02,647 2026-09-29: Nifty close not found — AZ left blank (pass --nifty).
+2026-09-29 19:21:02,647 2026-09-29: NSE files parsed (FII put short 279566 / call short 762901)
+2026-09-29 19:21:04,341 Writing 2 day(s), 0 BD value(s) with LibreOffice…
+2026-09-29 19:21:26,718   2026-09-28: Retailers row 1651 written, 0 formulas filled
+2026-09-29 19:21:26,718   2026-09-28: DII row 1495 written, 2 formulas filled
+2026-09-29 19:21:26,718   2026-09-28: FII row 1698 written, 2 formulas filled
+2026-09-29 19:21:26,718   2026-09-28: PRO row 1702 written, 1 formulas filled
+2026-09-29 19:21:26,719   2026-09-28: FII Index row 1438, 0 formulas filled
+2026-09-29 19:21:26,719   2026-09-28: FII Stocks row 1442, 0 formulas filled
+2026-09-29 19:21:26,719   2026-09-28: Nifty & Bank row 911, 4 formula columns filled
+2026-09-29 19:21:26,720   2026-09-28: FII Vol row 930, 0 formulas filled
+2026-09-29 19:21:26,720   2026-09-28: Daily Equity row 1345, 2 formula columns filled
+2026-09-29 19:21:26,720   2026-09-29: Retailers row 1652 written, 3 formulas filled
+2026-09-29 19:21:26,720   2026-09-29: DII row 1496 written, 2 formulas filled
+2026-09-29 19:21:26,720   2026-09-29: FII row 1699 written, 2 formulas filled
+2026-09-29 19:21:26,720   2026-09-29: PRO row 1703 written, 3 formulas filled
+2026-09-29 19:21:26,720   2026-09-29: FII Index row 1439, 0 formulas filled
+2026-09-29 19:21:26,720   2026-09-29: FII Stocks row 1443, 0 formulas filled
+2026-09-29 19:21:26,720   2026-09-29: Nifty & Bank row 912, 4 formula columns filled
+2026-09-29 19:21:26,720   2026-09-29: FII Vol row 931, 2 formulas filled
+2026-09-29 19:21:26,720   2026-09-29: Daily Equity row 1346, 2 formula columns filled
+2026-09-29 19:21:26,721   CHART_EXTEND|OI vs Spot|1695|1698
+2026-09-29 19:21:26,721   analysis tab 'OI vs Spot': +3 rows (now to row 1698)
+2026-09-29 19:21:26,721   CHART_EXTEND|Cumulative|1341|1344
+2026-09-29 19:21:26,721   analysis tab 'Cumulative': +3 rows (now to row 1344)
+2026-09-29 19:21:26,721   saved /tmp/tmpaagd7u9k/Partcipant_Data_Sheet_NEW.xlsm
+2026-09-29 19:21:29,357 Chart ranges extended: 5 (OI vs Spot to row 1698, Cumulative to row 1344)
+2026-09-29 19:21:29,357 Macros restored (19 sheet code names, 94720 bytes of VBA)
+2026-09-29 19:21:34,426 participants.parquet: +6223 rows (refused 0)
+2026-09-29 19:21:38,642 Participants 29-Sep: FII 0.37 | Retail 1.14 | PRO 0.76 -> MIXED (FII below 1 for 150 sessions)
+2026-09-29 19:21:42,894 Correlation 28-Sep: bias SELL ON RISE | Y -920,269 (below scaled line) | AM 0.55 | portfolio HOLD 5/5 (scaled view: STAY OUT)
+2026-09-29 19:21:42,894 Done: 2026-09-28, 2026-09-29
+2026-09-29 20:30:45,047 Workbook already up to date (last day 2026-09-29).
+2026-09-29 21:21:04,773 Workbook already up to date (last day 2026-09-29).
+2026-09-29 22:21:07,465 Workbook already up to date (last day 2026-09-29).
+2026-09-29 23:21:01,536 Workbook already up to date (last day 2026-09-29).
+2026-09-30 19:20:17,185 2026-09-30: NSE files parsed (FII put short 363923 / call short 932096)
+2026-09-30 19:20:19,707 Writing 1 day(s), 0 BD value(s) with LibreOffice…
+2026-09-30 19:20:50,852   2026-09-30: Retailers row 1653 written, 3 formulas filled
+2026-09-30 19:20:50,853   2026-09-30: DII row 1497 written, 4 formulas filled
+2026-09-30 19:20:50,853   2026-09-30: FII row 1700 written, 2 formulas filled
+2026-09-30 19:20:50,853   2026-09-30: PRO row 1704 written, 13 formulas filled
+2026-09-30 19:20:50,854   2026-09-30: FII Index row 1440, 0 formulas filled
+2026-09-30 19:20:50,854   2026-09-30: FII Stocks row 1444, 0 formulas filled
+2026-09-30 19:20:50,854   2026-09-30: Nifty & Bank row 913, 4 formula columns filled
+2026-09-30 19:20:50,854   2026-09-30: FII Vol row 932, 16 formulas filled
+2026-09-30 19:20:50,855   2026-09-30: Daily Equity row 1347, 2 formula columns filled
+2026-09-30 19:20:50,855   CHART_EXTEND|OI vs Spot|1698|1699
+2026-09-30 19:20:50,855   analysis tab 'OI vs Spot': +1 rows (now to row 1699)
+2026-09-30 19:20:50,855   CHART_EXTEND|Cumulative|1344|1345
+2026-09-30 19:20:50,856   analysis tab 'Cumulative': +1 rows (now to row 1345)
+2026-09-30 19:20:50,856   saved /tmp/tmpiuhd8j9f/Partcipant_Data_Sheet_NEW.xlsm
+2026-09-30 19:20:55,118 Chart ranges extended: 5 (OI vs Spot to row 1699, Cumulative to row 1345)
+2026-09-30 19:20:55,119 Macros restored (19 sheet code names, 94720 bytes of VBA)
+2026-09-30 19:21:03,066 participants.parquet: +4 rows (refused 0)
+2026-09-30 19:21:09,736 Participants 30-Sep: FII 0.39 | Retail 0.97 | PRO 0.64 -> ALL BELOW 1 (FII below 1 for 151 sessions)
+2026-09-30 19:21:16,659 Correlation 30-Sep: bias SELL ON RISE | Y -1,133,708 (below scaled line) | AM 0.39 | portfolio HOLD 5/5 (scaled view: STAY OUT)
+2026-09-30 19:21:16,660 Done: 2026-09-30
+2026-09-30 20:20:17,284 Workbook already up to date (last day 2026-09-30).
+2026-09-30 21:20:20,794 Workbook already up to date (last day 2026-09-30).
+2026-09-30 22:20:20,051 Workbook already up to date (last day 2026-09-30).
+2026-10-01 05:57:13,990 2026-10-01: HTTPSConnectionPool(host='nsearchives.nseindia.com', port=443): Max retries exceeded with url: /content/nsccl/fao_participant_oi_01102026.csv (Caused by NameResolutionError("HTTPSConnection(host='nsearchives.nseindia.com', port=443): Failed to resolve 'nsearchives.nseindia.com' ([Errno -3] Temporary failure in name resolution)")) — stopping before writing.

@@ -1,0 +1,17 @@
+{
+  "dhan": {
+    "client_id": "",
+    "access_token": ""
+  },
+  "scan": {
+    "base_days": 10,
+    "min_turnover_cr": 5,
+    "default_cutoff": "09:45",
+    "universe": "nifty50",
+    "custom": []
+  },
+  "server": {
+    "port": 7710,
+    "open_browser": true
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "version": "1.0",
+  "_source": "Your 29-Sep-2026 homework (hammer at the 06-Apr 22,542 support, inverted hammer at the day's high, 8 EMA exit) + MJ / Stock Unlimited wick-at-level teaching. Edit numbers here, not in code.",
+  "pattern": {
+    "_rule": "Rejection candle: the wick on the level side is at least wick_body_ratio x the body AND at least wick_range_share of the whole candle. The wick touches/pierces the level (within tolerance) but the candle CLOSES back on the right side. Next candle must follow through (same direction, closes beyond the rejection candle's close) - that close is the entry.",
+    "wick_body_ratio": 2.0,
+    "wick_range_share": 0.5,
+    "min_range_points": {
+      "15m": 15,
+      "3m": 6
+    },
+    "min_bars_into_day": {
+      "15m": 1,
+      "3m": 3
+    }
+  },
+  "levels": {
+    "_rule": "Swing = daily low/high with swing_k lower/higher days each side (known only swing_k days later), from the last swing_lookback_days days. Plus previous day high/low/close, today's high/low so far, and your manual levels (data/manual_levels.json, live only).",
+    "swing_k": 3,
+    "swing_lookback_days": 250,
+    "tolerance_points": {
+      "15m": 15,
+      "3m": 10
+    }
+  },
+  "risk": {
+    "min_rr": 1.0,
+    "sl_buffer_points": 2,
+    "min_sl_points": {
+      "15m": 10,
+      "3m": 5
+    }
+  },
+  "exit": {
+    "_rule": "Target = the nearest opposite level at least 1R away (any level, today's open/high/low); if none, fallback_r x risk. Also tested: exit on a close beyond the 8 EMA against the trade, and whichever of the two comes first. Intraday: anything open is closed at the session's last candle.",
+    "ema_span": 8,
+    "fallback_r": 2.0
+  },
+  "telegram": {
+    "_rule": "Reversal trades are often AGAINST the day trend (your trade 1 was a CE buy on a bearish day), so the day-trend filter is off for this rule by default. Signals are marked ★ MAIN only if their level type beats random in the backtest.",
+    "only_with_day_trend": false
+  },
+  "history": {
+    "min_sample_size": 20,
+    "beats_by_r": 0.1,
+    "control_shuffles": 5,
+    "min_trades_for_star": 200
+  }
+}

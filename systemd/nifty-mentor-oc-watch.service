@@ -1,0 +1,8 @@
+[Unit]
+Description=Trainer's option-chain read (Lecture 3): Telegram only when writer side, zone or ITM traps change
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/harish/Documents/Swathi K N/1 Trading/option chain/OC
+ExecStart=/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/.venv/bin/python mentor_oc_watch.py
+TimeoutStartSec=120

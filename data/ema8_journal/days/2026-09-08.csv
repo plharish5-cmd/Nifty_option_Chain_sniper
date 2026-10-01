@@ -1,0 +1,10 @@
+Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
+08-09-2026,1,PE,10:30,23684.6,"10:15 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 23,718; red 1st candle, flat open",23718.2,33.7,11:15,23683.1,trailing SL (candle high),1.5,0.0,22.5,YES,YES,
+08-09-2026,2,PE,11:00,23665.8,"10:30 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 23,703; red 1st candle, flat open",23702.6,36.8,12:15,23660.5,trailing SL (candle high),5.2,0.0,28.0,YES,YES,
+08-09-2026,3,PE,11:30,23668.7,"11:15 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 23,689; red 1st candle, flat open",23688.6,19.9,12:15,23660.5,trailing SL (candle high),8.1,0.0,30.9,YES,YES,
+08-09-2026,4,PE,12:00,23651.0,"11:45 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 23,678; red 1st candle, flat open",23678.2,27.2,12:15,23660.5,trailing SL (candle high),0.0,-9.5,13.2,no,no,
+08-09-2026,5,PE,13:15,23646.3,"12:45 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 23,665; red 1st candle, flat open",23664.8,18.5,14:00,23647.7,trailing SL (candle high),0.0,-1.3,23.2,YES,YES,
+08-09-2026,6,PE,13:30,23643.6,"13:15 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 23,664; red 1st candle, flat open",23663.8,20.2,14:00,23647.7,trailing SL (candle high),0.0,-4.1,20.5,YES,YES,
+08-09-2026,7,PE,13:45,23636.1,"13:30 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 23,655; red 1st candle, flat open",23655.0,18.9,14:00,23647.7,trailing SL (candle high),0.0,-11.6,13.0,no,no,
+08-09-2026,8,PE,14:45,23643.5,"14:30 candle close below 8 EMA, break of its low; SL candle high 23,660; red 1st candle, flat open",23659.8,16.3,15:15,23635.1,15:15 day end,8.4,0.0,9.4,no,no,
+08-09-2026,9,PE,15:00,23635.5,"14:45 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 23,650; red 1st candle, flat open",23650.2,14.7,15:00,23651.2,stop loss hit,0.0,-15.7,0.0,no,no,-19.0

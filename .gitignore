@@ -5,6 +5,7 @@ __pycache__/
 
 # Temporary & backup files
 *.bak
+*.bak*
 *.working
 *.swp
 *.swo
@@ -25,6 +26,8 @@ venv/
 
 # Runtime data caches & logs
 data/snapshots/
+data/snapshots_multi/
+data/*.pid
 data/candles/
 data/candles_15m/
 data/candles_5m/

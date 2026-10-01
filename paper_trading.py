@@ -126,6 +126,8 @@ class PaperPosition:
     trailing_sl_pts: float = 0.0     # Dynamic trailing offset (0 = disabled)
     emotion_tag: str = "Disciplined"
     notes: str = ""
+    rvol: Optional[float] = None
+    rvol_regime: str = ""
 
 
 @dataclass
@@ -615,6 +617,8 @@ def place_paper_order(
     trailing_sl_pts: float = 0.0,
     notes: str = "",
     override_risk_limit: bool = False,
+    rvol: Optional[float] = None,
+    rvol_regime: str = "",
 ) -> Tuple[bool, str, PaperAccount]:
     """
     Executes a paper order for Nifty options:
@@ -690,6 +694,8 @@ def place_paper_order(
         trailing_sl_pts=trailing_sl_pts,
         emotion_tag="Disciplined Entry",
         notes=notes,
+        rvol=rvol,
+        rvol_regime=rvol_regime,
     )
 
     account.open_positions.append(new_pos)
@@ -775,6 +781,8 @@ def exit_paper_position(
         "exit_spot": spot,
         "balance_after": account.cash_balance,
         "notes": notes or target_pos.notes,
+        "rvol": target_pos.rvol,
+        "rvol_regime": target_pos.rvol_regime,
     }
     _log_trade_to_csv(trade_record)
 

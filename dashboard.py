@@ -2156,6 +2156,8 @@ _render_html(
 
 _ORDERED_ALL_TABS = [
     # ── Tier 1: 🚨 Live In-Trade Execution & Active Risk Defense (Most Critical) ──
+    "🌅 MORNING BRIEF",
+    "📸 Snapshots",
     "🎯 Decision Cockpit",
     "🛡️ Anti-Fakeout & Real-Time Pressure",
     "⚡ Option Chain & OI Analysis",
@@ -2180,6 +2182,7 @@ _ORDERED_ALL_TABS = [
     "PA Strategy 1",
     "SMC",
     "🔮 AI Forecast & Signals (5m/15m)",
+    "⏱️ Next 15m Candle Predictor",
     "🕯️ Candlestick Patterns & 15m Early Read",
     "📐 Price Action Basics",
     "🎯 Price Levels & AI Confluence",
@@ -2284,6 +2287,15 @@ _LABEL_TO_TAB_INDEX = {
     "🌅 Opening Gap Planner & Confluence": 27,
     "🌅 Monday Gap Planner & Confluence": 27,
     "🏹 Breakout & Trap Scanner": 28,
+    "⏱️ Next 15m Candle Predictor": 40,
+    "Next 15m Candle Predictor": 40,
+    "Next 15m Candle": 40,
+    "Next Candle": 40,
+    "🌅 MORNING BRIEF": 41,
+    "MORNING BRIEF": 41,
+    "Morning Brief": 41,
+    "📸 Snapshots": 42,
+    "Snapshots": 42,
 }
 
 _active_tab_idx = _LABEL_TO_TAB_INDEX.get(_selected_tab_str, 0)
@@ -4946,7 +4958,37 @@ if _tab_active(39):
         st.error(f"OI Timeline tab encountered an error: {_oit_err}")
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Tab 40 — ⏱️ Next 15m Candle Predictor & 1st-Bar Genesis
+# ═══════════════════════════════════════════════════════════════════════════
+if _tab_active(40):
+    try:
+        import next_candle_tab as _nct
+        _pc = _prev_close if "_prev_close" in locals() else (prev_close if "prev_close" in locals() else None)
+        _nct.render(CTX, prev_close=_pc)
+    except Exception as _nct_err:                           # noqa: BLE001
+        st.error(f"Next 15m Candle tab encountered an error: {_nct_err}")
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Tab 41 — 🌅 MORNING BRIEF (Consolidated Daily Decision View)
+# ═══════════════════════════════════════════════════════════════════════════
+if _tab_active(41):
+    try:
+        import morning_brief_tab
+        morning_brief_tab.render(ctx=CTX if "CTX" in locals() else None)
+    except Exception as _mb_err:                            # noqa: BLE001
+        st.error(f"Morning Brief tab encountered an error: {_mb_err}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tab 42 — 📸 Snapshots (5-MIN & 15-MIN Periodic Snapshots)
+# ═══════════════════════════════════════════════════════════════════════════
+if _tab_active(42):
+    try:
+        import snapshots_tab
+        snapshots_tab.render_snapshots_tab(target_date=now.date() if "now" in locals() else None)
+    except Exception as _snap_err:                          # noqa: BLE001
+        st.error(f"Snapshots tab encountered an error: {_snap_err}")
 
 

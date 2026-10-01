@@ -1,0 +1,18 @@
+//@version=5
+// Inside candles by the trainer's rule: a candle counts (is "valid") only if it breaks OR equals the high or low
+// of the last VALID candle. Every other candle is an inside candle - painted black, ignored for structure.
+// Paste into TradingView > Pine Editor > "Add to chart". Works on any timeframe.
+indicator("Inside candles vs last valid candle (mentor rule)", overlay = true)
+var float refHigh = na
+var float refLow = na
+bool inside = false
+if na(refHigh)
+    refHigh := high
+    refLow := low
+else if high >= refHigh or low <= refLow
+    refHigh := high
+    refLow := low
+else
+    inside := true
+barcolor(inside ? color.black : na)
+plotshape(inside, title = "inside", style = shape.circle, location = location.abovebar, color = color.new(color.gray, 0), size = size.tiny)

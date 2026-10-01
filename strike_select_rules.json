@@ -1,0 +1,91 @@
+{
+  "_comment": "Configuration rules and thresholds for strike_select.py and strike_select_tab.py. Everything tunable lives here — no hardcoded numbers in logic.",
+  "premium_band_min": 200.0,
+  "_premium_band_min_note": "Lower bound of recommended option buying premium band in rupees (Source rule: ₹200–₹300). Below ₹200, delta is too low to convert moves.",
+  "premium_band_max": 300.0,
+  "_premium_band_max_note": "Upper bound of recommended option buying premium band in rupees. Above ₹300, trader pays for unnecessary intrinsic value and ties up capital.",
+  "capital_max_lot_pct": 30.0,
+  "_capital_max_lot_pct_note": "Capital risk guardrail: Flag strikes where 1 lot cost exceeds this percentage of account capital (e.g. 30% of ₹20,000 = ₹6,000 max).",
+  "default_target_pts": 40.0,
+  "_default_target_pts_note": "Default spot target in index points (Source setup: 40 points).",
+  "default_stop_pts": 40.0,
+  "_default_stop_pts_note": "Default spot stop loss in index points (Source setup: 40 points).",
+  "iv_bands": {
+    "sub_10": {
+      "max_iv": 10.0,
+      "momentum": "very slow",
+      "option_buyers": "BAD — premium barely moves",
+      "option_sellers": "VERY GOOD",
+      "badge": "VERY SLOW",
+      "color": "#EF4444",
+      "description": "Momentum is sluggish. Correct directional calls often fail to gain premium (Source live case: 20 pt spot move produced only 3 pt option gain)."
+    },
+    "normal_10_20": {
+      "min_iv": 10.0,
+      "max_iv": 20.0,
+      "momentum": "normal",
+      "option_buyers": "GOOD — tradeable",
+      "option_sellers": "risky",
+      "badge": "NORMAL",
+      "color": "#10B981",
+      "description": "Ideal momentum regime. Greeks behave predictably and delta converts directional moves without excessive premium churn."
+    },
+    "excessive_above_20": {
+      "min_iv": 20.0,
+      "momentum": "excessive",
+      "option_buyers": "NOT good — whipsaw",
+      "option_sellers": "DANGEROUS",
+      "badge": "EXCESSIVE",
+      "color": "#F59E0B",
+      "description": "Elevated implied volatility. Rapid swings and IV crush risk make naked buying prone to whipsaws."
+    }
+  },
+  "vega_iv_shift_points": 2.0,
+  "_vega_iv_shift_points_note": "Standard IV shock in percentage points to model vega impact (±2 IV points).",
+  "default_lot_size": 65,
+  "_default_lot_size_note": "NIFTY lot size fallback if not found in config.",
+  "default_capital": 20000.0,
+  "_default_capital_note": "Trading capital fallback in rupees if not found in config.",
+  "min_bid_price": 0.05,
+  "_min_bid_price_note": "Minimum bid price in rupees to filter out dead/illiquid strikes.",
+  "focus_strikes_count": 8,
+  "_focus_strikes_count_note": "Number of strikes above and below ATM to include in candidate table.",
+  "source_reference_strikes": [
+    {
+      "strike": 22900,
+      "option_type": "CE",
+      "label": "Deep ITM (High Delta / High Capital)",
+      "premium": 570.0,
+      "delta": 0.95,
+      "gain_40pt": 38.0,
+      "rupees_40pt": 2470.0,
+      "lot_cost": 37050.0,
+      "capital_pct": 185.25,
+      "roc_pct": 6.67
+    },
+    {
+      "strike": 23400,
+      "option_type": "CE",
+      "label": "Recommended Band / ATM (Optimal Balance)",
+      "premium": 133.0,
+      "delta": 0.60,
+      "gain_40pt": 24.0,
+      "rupees_40pt": 1560.0,
+      "lot_cost": 8645.0,
+      "capital_pct": 43.23,
+      "roc_pct": 18.05
+    },
+    {
+      "strike": 23900,
+      "option_type": "CE",
+      "label": "Deep OTM (Low Delta / Capital Trap)",
+      "premium": 4.0,
+      "delta": 0.04,
+      "gain_40pt": 1.6,
+      "rupees_40pt": 104.0,
+      "lot_cost": 260.0,
+      "capital_pct": 1.30,
+      "roc_pct": 40.0
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "version": "1.0",
+  "_source": "Stock Unlimited, 'Market Structure + Fibo + Doubts' class (SBI Life, Reliance, Nifty 15-min). Edit numbers here, not in code.",
+  "risk": {
+    "min_rr": 1.0,
+    "sl_buffer_points": 2,
+    "min_sl_points": {
+      "15m": 10,
+      "1d": 0
+    },
+    "_min_sl": "Signals whose SL is closer than this are skipped (29-Sep replay: a 2-point SL). Set 0 to switch off."
+  },
+  "fib": {
+    "_rule": "After a CLOSE above the high (the 348 level example) the market tries to reach Fib 1.2 / 1.4 of the leg - in one day or two. Draw high->low for upside targets; after a CHoCH down draw low->high for downside targets. Book most at the previous high, the rest at the Fib level. He prefers futures charts for drawing (next-month futures open at a premium after the monthly expiry) (4:00-8:30, 33:40-34:55).",
+    "levels": [
+      1.2,
+      1.4
+    ],
+    "leg_lookback_bars": {
+      "15m": 20,
+      "1d": 20
+    },
+    "max_bars": {
+      "15m": 26,
+      "1d": 10
+    }
+  },
+  "imbalance_hold": {
+    "_rule": "Only the LATEST 3-candle imbalance (1-2-3). A candle trades into it, may even go below it, but CLOSES back in the zone -> buy, SL = that candle's low, target 1.2 (or at least the recent high). A close below = no trade (sometimes you miss it when a long wick makes R:R bad). Once a newer imbalance is respected, trail the SL to it. Mirror for sells. Use this and double bottoms when the 15-min order blocks are far away (35:24-39:25, 44:32-45:44, 1:00:30-1:00:50).",
+    "min_points": {
+      "15m": 1,
+      "1d": 5
+    },
+    "max_wait_bars": {
+      "15m": 26,
+      "1d": 10
+    },
+    "max_bars": {
+      "15m": 26,
+      "1d": 10
+    },
+    "latest_only": true,
+    "intraday_only": true,
+    "target": "fib1.2"
+  },
+  "notes": {
+    "_carry": "Almost never carry forward, especially option buys; intraday gives buy and sell setups every day (34:55-35:24).",
+    "_expiry": "Monthly-expiry +-300 straddle repeated (50:47-55:24): already in mentor_extras (low India VIX 11-13, ~50 pts OTM, exit both legs together). New: if neither side is hit by Wednesday and price hovers near one side, a small extra put/call for Thursday - he calls it 'tukka' (luck) trading.",
+    "_stocks": "Stocks (SBI Life): structure from a comfortable point, inducement can be taken by a wick, keep first and last OB only, SL = daily CLOSE below the OB. Fundamentals before buying: rising quarterly/annual profit, reserves > borrowings, positive operating cash flow, working-capital days, promoters steady, FII/DII rising, public falling.",
+    "_fii": "FII net stocks cumulative in the sheet can differ from NSDL (NSDL comes a day later). They keep buying stock futures on dips; the portfolio is safe until that data empties (~1-1.5 lakh) near a top."
+  },
+  "history": {
+    "min_sample_size": 20,
+    "beats_by_r": 0.1,
+    "min_trades_for_star": 200
+  }
+}

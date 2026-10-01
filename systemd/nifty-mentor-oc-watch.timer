@@ -1,0 +1,9 @@
+[Unit]
+Description=Every 3 minutes during market hours (the script itself limits to 09:20-15:30)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 09..15:00/3:40
+Persistent=false
+
+[Install]
+WantedBy=timers.target

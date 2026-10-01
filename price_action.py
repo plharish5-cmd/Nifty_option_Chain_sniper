@@ -42,6 +42,28 @@ import config
 
 TIMEFRAMES = {"1m": 1, "5m": 5, "15m": 15, "30m": 30}
 
+import logging
+_log = logging.getLogger(__name__)
+
+_WRITES_ENABLED = False
+
+
+def enable_writes(owner: str) -> None:
+    """Called ONCE by scheduler.py at startup. Nothing else."""
+    global _WRITES_ENABLED
+    _WRITES_ENABLED = True
+    _log.info(f"price_action: writes enabled by {owner}")
+
+
+def disable_writes() -> None:
+    """Explicitly disable writes (e.g. for testing)."""
+    global _WRITES_ENABLED
+    _WRITES_ENABLED = False
+
+
+def writes_enabled() -> bool:
+    return _WRITES_ENABLED
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Resampling
@@ -509,6 +531,8 @@ def cross_check(reads: dict[str, TrendRead], regime: str) -> tuple[str, str]:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def store_candles(one_min: pd.DataFrame, day: date | None = None) -> Path | None:
+    if not _WRITES_ENABLED:
+        return None  # read-only process
     """
     Write today's 1-minute candles to data/candles/YYYY-MM-DD.csv.
 
@@ -538,6 +562,8 @@ def store_candles(one_min: pd.DataFrame, day: date | None = None) -> Path | None
 
 
 def store_5m_candles(five_min: pd.DataFrame, day: date | None = None) -> Path | None:
+    if not _WRITES_ENABLED:
+        return None  # read-only process
     """
     Write today's completed 5-minute candles to data/candles_5m/YYYY-MM-DD.csv.
     Includes Open, High, Low, Close, Volume, and session VWAP.
@@ -596,6 +622,8 @@ def load_stored_5m(day: date | None = None) -> pd.DataFrame:
 
 
 def store_15m_candles(fifteen_min: pd.DataFrame, day: date | None = None) -> Path | None:
+    if not _WRITES_ENABLED:
+        return None  # read-only process
     """Write today's completed 15-minute candles to data/candles_15m/YYYY-MM-DD.csv."""
     if fifteen_min is None or fifteen_min.empty:
         return None

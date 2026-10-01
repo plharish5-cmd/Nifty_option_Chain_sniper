@@ -1,0 +1,49 @@
+{
+  "version": "1.0",
+  "_source": "Stock Unlimited, Lecture 5 'Imbalance + Order Blocks' (video 6). Edit here, not in code.",
+  "structure": {
+    "_rule": "BOS / CHoCH only on a candle CLOSE beyond the level. A higher high (or lower low) is marked only when price takes the INDUCEMENT = the latest pullback of the leg (a wick is enough). The inducement shifts to each newer pullback. After a BOS the lowest point of the range becomes the higher low (highest point -> lower high) (0:00-18:22).",
+    "seed_bars": 6,
+    "timeframe_minutes": 15,
+    "negate_inside_swings": false,
+    "shifting": true,
+    "_rule_l6": "Lecture 6: (a) a swing that forms inside the previous swing's high-low range is ignored, like an inside candle (13:25-18:29); (b) SHIFTING: after a BOS, if price runs on with no pullback and comes straight back below the marked low, it is not a CHoCH - the high shifts to the new top, the marked low becomes the inducement and the low goes back to the previous structure's low (1:06:09-1:15:17). Set false to get the Lecture 5 behaviour.",
+    "_note_28sep": "negate_inside_swings turned OFF after the 28-Sep-2026 backtest: order blocks -0.84 R with it, -0.36 R without (shuffled control 0.00). Shifting and old-OB cancelling stay on.",
+    "live_source": "index",
+    "_live_source": "Live alerts use INDEX 15-min candles (same as every backtest and level). 'futures' = the old behaviour; futures trade at a premium after a monthly rollover."
+  },
+  "imbalance": {
+    "_rule": "3 candles: bullish gap = candle-1 high below candle-3 low; bearish gap = candle-1 low above candle-3 high. Any size counts the same. Once price trades back into it, it is used up. Wick into it + close back outside (green candle for bullish) = likely continuation, ~7/10 (19:08-32:17)."
+  },
+  "order_block": {
+    "_rule": "Bullish OB (near the bottom, between the low and the inducement): (1) the LOWEST candle of the pullback, any colour; (2) it sweeps the previous candle's low (nice to have, 50-50); (3) MOST IMPORTANT: an imbalance right after it (candle-1 = OB high vs candle-3 low). No imbalance -> shift to the next candle and test again. Zone = OB candle + its imbalance; if the imbalance is very large use the OB candle only. Of several OBs in a leg the FIRST and the LAST matter; middle ones rarely hold (36:18-1:03:42).",
+    "max_shift_candles": 8,
+    "large_imbalance_x_ob_range": 2.0,
+    "require_unfilled_imbalance": true,
+    "cancel_on_next_break": true,
+    "_rule_l6": "Lecture 6: draw OBs only once the inducement is taken - bearish from the top down to the inducement, bullish from the bottom up. An OB price already traded into before that is useless. After the structure breaks again (new BOS/CHoCH) the older OBs don't matter. FIRST ~50%, MIDDLE ones he deletes, LAST kept (19:06-27:51, 35:30-36:02, 38:47-39:56).",
+    "partial_tap_ob_only": false,
+    "_rule_final": "Final doubts class (7:34-8:26): if price has already wicked into part of the imbalance before the setup, mark ONLY the OB candle, not the imbalance. An OB is valid for one visit only - once price has been in it, delete it (4:57-5:31). Keep the FIRST and LAST OB, delete the middle ones (10:56-11:26)."
+  },
+  "trade": {
+    "_rule": "Entry on the tap of the zone; SL below the OB candle (above it for bearish); T1 = previous high (book most here); T2 = Fibonacci 1.2 of the leg (low->high, 1.2 level). Candlestick confirmation (engulfing, morning star) is optional for a later entry. Works ~7/10 (54:01-55:08, 1:02:15-1:03:42).",
+    "sl_buffer_points": 2,
+    "fib_extension": 1.2,
+    "max_bars_after_tap": 40,
+    "_rule_l6": "Lecture 6: the whole OB candle including its wick is the zone. He takes the SL as soon as price trades beyond the zone (not on a close); if that candle then closes back inside (only a wick) he re-enters with the SL beyond the new wick, same target. Book most at T1 (previous low/high), some at Fib 1.2 (reached 6-7 of 10). Inducement swept with a wick and no close beyond it = another entry towards the previous high, 50-50 (29:12-32:50, 1:07:35-1:08:30)."
+  },
+  "history": {
+    "dhan_interval": "15",
+    "days": 1825,
+    "cache": "data/ohlc/nifty_15m_dhan.csv",
+    "min_sample_size": 20,
+    "verdict_file": "data/mentor_structure_verdict.json"
+  },
+  "verdict_default": {
+    "run": "28-Sep-2026",
+    "avg_r": -0.36,
+    "control_r": 0.0,
+    "trades": 62,
+    "verdict": "LOSES IN BACKTEST"
+  }
+}

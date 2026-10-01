@@ -65,6 +65,11 @@ COOLDOWN = {
     "iceberg": timedelta(minutes=10),
     "smc_sniper": timedelta(minutes=15),
     "smc_bridge": timedelta(minutes=15),
+    "wall_break": timedelta(minutes=10),
+    "absorption": timedelta(minutes=5),
+    "cvd_divergence": timedelta(minutes=10),
+    "floor_test": timedelta(minutes=30),
+    "ceiling_test": timedelta(minutes=30),
 }
 
 MAX_PER_DAY = getattr(config, "ALERT_MAX_PER_DAY", 8)

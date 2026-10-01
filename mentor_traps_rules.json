@@ -1,0 +1,40 @@
+{
+  "version": "1.0",
+  "_source": "Liquidity-trap alert from scheduler.py (live numbers are read from strategy1_rules.json -> liquidity_trap_alerts and override the defaults below) + the 'cliff behind a wall' idea from the Trading with Siddhant option-chain video (14:50). Edit numbers here, not in code.",
+  "trap": {
+    "sweep_min_pts": 2.0,
+    "sweep_max_pts": 25.0,
+    "reclaim_pts": 1.5,
+    "min_false_breakdown_reclaim_pts": 15,
+    "cooldown_minutes": 30,
+    "lookback_snapshots": 15,
+    "warmup_until": "09:50",
+    "eod_from": "15:00"
+  },
+  "risk": {
+    "sl_buffer_points": 2,
+    "targets_r": [
+      1,
+      2
+    ],
+    "exit_by": "15:15",
+    "min_sl_points": 10
+  },
+  "cliff": {
+    "_rule": "Wall = max-OI put strike at/below spot (call strike at/above), within window_pts. Cliff ratio = average OI of the next 2 strikes beyond the wall / wall OI; thin if below thin_below. Break = spot moves from the wall's side to beyond it by break_buffer_pts between two snapshots.",
+    "strike_step": 50,
+    "window_pts": 600,
+    "thin_below": 0.5,
+    "break_buffer_pts": 5,
+    "thin_runs_x": 1.3
+  },
+  "history": {
+    "minute_days": 1825,
+    "minute_cache": "data/ohlc/nifty_1m_dhan.csv",
+    "min_sample_size": 20,
+    "beats_by_r": 0.1,
+    "min_trades_for_star": 200,
+    "min_z": 2.0,
+    "_min_z": "The gap vs the shuffled control must also be at least min_z standard errors - on made-up random data a 0.11 R gap on 228 trades appeared by luck (1.4 x noise)."
+  }
+}

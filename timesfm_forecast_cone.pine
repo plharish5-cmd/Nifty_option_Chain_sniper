@@ -1,0 +1,116 @@
+//@version=6
+indicator("TimesFM / Volatility Forecast Cone", overlay=true, max_lines_count=500, max_labels_count=50)
+
+// -------------------------------------------------------------------------------------
+// 📋 PASTE ZONE: Copy the 4 array lines printed by `python timesfm_nifty.py` below
+// -------------------------------------------------------------------------------------
+var int[]   f_t   = array.from(1788515700000, 1788752700000, 1788753000000, 1788753300000, 1788753600000, 1788753900000, 1788754200000, 1788754500000, 1788754800000, 1788755100000, 1788755400000, 1788755700000, 1788756000000, 1788756300000, 1788756600000, 1788756900000, 1788757200000, 1788757500000, 1788757800000, 1788758100000, 1788758400000, 1788758700000, 1788759000000, 1788759300000, 1788759600000, 1788759900000)
+var float[] f_q50 = array.from(23897.70, 23897.58, 23897.45, 23897.33, 23897.20, 23897.08, 23896.95, 23896.83, 23896.70, 23896.58, 23896.45, 23896.33, 23896.20, 23896.08, 23895.95, 23895.83, 23895.70, 23895.58, 23895.45, 23895.33, 23895.20, 23895.08, 23894.96, 23894.83, 23894.71, 23894.58)
+var float[] f_q10 = array.from(23897.70, 23884.00, 23878.26, 23873.82, 23870.06, 23866.74, 23863.72, 23860.93, 23858.33, 23855.88, 23853.56, 23851.34, 23849.22, 23847.18, 23845.21, 23843.31, 23841.46, 23839.67, 23837.93, 23836.23, 23834.57, 23832.95, 23831.37, 23829.82, 23828.29, 23826.80)
+var float[] f_q90 = array.from(23897.70, 23911.16, 23916.66, 23920.85, 23924.37, 23927.45, 23930.23, 23932.77, 23935.13, 23937.34, 23939.42, 23941.40, 23943.28, 23945.08, 23946.80, 23948.46, 23950.07, 23951.62, 23953.12, 23954.58, 23955.99, 23957.37, 23958.71, 23960.02, 23961.30, 23962.55)
+// -------------------------------------------------------------------------------------
+
+// --- Display Customizations ---
+group_style    = "Visual Styling"
+col_med_in     = input.color(#00E5FF, "Median Trajectory Color", group=group_style)
+col_cone_in    = input.color(color.new(#00E5FF, 82), "Cone Fill Color", group=group_style)
+col_q90_in     = input.color(#FF5252, "q90 Resistance Cap Color", group=group_style)
+col_q10_in     = input.color(#4CAF50, "q10 Support Floor Color", group=group_style)
+show_labels    = input.bool(true, "Show Endpoint Labels", group=group_style)
+
+// Storage for drawing instances to clean up across script updates
+var line[]     drawn_lines  = array.new_line()
+var linefill[] drawn_fills  = array.new_linefill()
+var label[]    drawn_labels = array.new_label()
+
+// Cleanup previous drawings
+f_clean_drawings() =>
+    if array.size(drawn_fills) > 0
+        for i = 0 to array.size(drawn_fills) - 1
+            linefill.delete(array.get(drawn_fills, i))
+        array.clear(drawn_fills)
+
+    if array.size(drawn_lines) > 0
+        for i = 0 to array.size(drawn_lines) - 1
+            line.delete(array.get(drawn_lines, i))
+        array.clear(drawn_lines)
+
+    if array.size(drawn_labels) > 0
+        for i = 0 to array.size(drawn_labels) - 1
+            label.delete(array.get(drawn_labels, i))
+        array.clear(drawn_labels)
+
+// Render on the last confirmed historical / realtime bar
+if barstate.islast
+    f_clean_drawings()
+
+    int n_t   = array.size(f_t)
+    int n_q50 = array.size(f_q50)
+    int n_q10 = array.size(f_q10)
+    int n_q90 = array.size(f_q90)
+
+    // Check array integrity
+    bool valid = (n_t >= 2) and (n_t == n_q50) and (n_t == n_q10) and (n_t == n_q90)
+
+    if not valid
+        label.new(
+            x=time, 
+            y=close, 
+            text="⚠️ TimesFM Cone Error:\nArray lengths mismatch!\nEnsure all 4 arrays are updated.", 
+            xloc=xloc.bar_time, 
+            style=label.style_label_down, 
+            color=color.red, 
+            textcolor=color.white
+        )
+    else
+        // Draw segments connecting each forecast bar
+        for i = 0 to n_t - 2
+            int   t1 = array.get(f_t, i)
+            int   t2 = array.get(f_t, i + 1)
+            
+            float med1 = array.get(f_q50, i)
+            float med2 = array.get(f_q50, i + 1)
+            
+            float q90_1 = array.get(f_q90, i)
+            float q90_2 = array.get(f_q90, i + 1)
+            
+            float q10_1 = array.get(f_q10, i)
+            float q10_2 = array.get(f_q10, i + 1)
+
+            // Median Line (cyan solid)
+            line l_med = line.new(t1, med1, t2, med2, xloc=xloc.bar_time, color=col_med_in, width=2, style=line.style_solid)
+            array.push(drawn_lines, l_med)
+
+            // Upper Bound (q90 resistance dashed)
+            line l_q90 = line.new(t1, q90_1, t2, q90_2, xloc=xloc.bar_time, color=col_q90_in, width=1, style=line.style_dashed)
+            array.push(drawn_lines, l_q90)
+
+            // Lower Bound (q10 support dashed)
+            line l_q10 = line.new(t1, q10_1, t2, q10_2, xloc=xloc.bar_time, color=col_q10_in, width=1, style=line.style_dashed)
+            array.push(drawn_lines, l_q10)
+
+            // Fill probability cone area between q90 and q10
+            linefill lf = linefill.new(l_q90, l_q10, col_cone_in)
+            array.push(drawn_fills, lf)
+
+        // Add endpoint badges at the forecast horizon
+        if show_labels
+            int   last_t   = array.get(f_t, n_t - 1)
+            float last_med = array.get(f_q50, n_t - 1)
+            float last_q90 = array.get(f_q90, n_t - 1)
+            float last_q10 = array.get(f_q10, n_t - 1)
+            float start_p  = array.get(f_q50, 0)
+            float chg_pct  = ((last_med / start_p) - 1.0) * 100.0
+
+            string sign = chg_pct >= 0 ? "+" : ""
+            string med_txt = "🎯 Median: " + str.tostring(last_med, "#.##") + " (" + sign + str.tostring(chg_pct, "#.##") + "%)"
+            string q90_txt = "🛡️ Cap: " + str.tostring(last_q90, "#.##")
+            string q10_txt = "⚓ Floor: " + str.tostring(last_q10, "#.##")
+
+            label lb_med = label.new(last_t, last_med, med_txt, xloc=xloc.bar_time, style=label.style_label_left, color=color.new(#0A0B10, 20), textcolor=col_med_in, size=size.small)
+            label lb_q90 = label.new(last_t, last_q90, q90_txt, xloc=xloc.bar_time, style=label.style_label_left, color=color.new(#0A0B10, 20), textcolor=col_q90_in, size=size.small)
+            label lb_q10 = label.new(last_t, last_q10, q10_txt, xloc=xloc.bar_time, style=label.style_label_left, color=color.new(#0A0B10, 20), textcolor=col_q10_in, size=size.small)
+
+            array.push(drawn_labels, lb_med)
+            array.push(drawn_labels, lb_q90)
+            array.push(drawn_labels, lb_q10)
