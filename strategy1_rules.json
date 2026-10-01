@@ -650,5 +650,27 @@
     "draw_min_edge_pts": 3.0,
     "draw_max_p": 0.01,
     "_draw_note": "Daily draw (PDH after BULL / PDL after BEAR) is used as TP1 only for the side that beats chance by ≥ draw_min_edge_pts with p ≤ draw_max_p in backtest_daily_bias.py. Your NIFTY 2019–2026 run: BEAR→PDL +5.1 pts p<0.001 (used), BULL→PDH +2.0 pts p=0.046 (not used)."
+  },
+  "decision_desk": {
+    "_note": "Decision Desk at top of Decision Cockpit (decision_desk.py). Weighted vote of all engines → BUY CE/PE / ON PULLBACK / WAIT / NO TRADE.",
+    "weights": {
+      "structure": 2.0,
+      "smc_desk": 1.5,
+      "five_rule": 2.0,
+      "smart_oi": 1.0,
+      "writers": 1.0,
+      "oi_buildup": 1.0,
+      "pcr": 0.75,
+      "vol_pcr": 0.5,
+      "iv_vega": 0.5,
+      "fii_dii": 0.5
+    },
+    "lean_threshold": 0.2,
+    "act_threshold": 0.35,
+    "no_new_trades_after": "15:00",
+    "fallback_sl_pts": 30.0,
+    "hold_hours": 1.0,
+    "sub10_iv_warning": 10.0,
+    "min_target_r": 1.5
   }
 }

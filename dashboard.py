@@ -2178,6 +2178,8 @@ _ORDERED_ALL_TABS = [
     "⚡ Institutional Quant Terminal",
 
     # ── Tier 3: 🎯 Strategy Setup Scanners & Signal Triggers ───────────────────
+    "⚔️ WAR Setup (FII 30m)",
+    "8 Setups",
     "PA Strategy 1",
     "SMC",
     "🔮 AI Forecast & Signals (5m/15m)",
@@ -2192,8 +2194,15 @@ _ORDERED_ALL_TABS = [
     "🌅 Opening Gap Planner & Confluence",
     "🏛️ Participant Positioning & History",
     "📊 Trainer's Participant Sheet",
+    "Market State",
+    "Four Pillars",
+    "Flow",
     "Context",
+    "Score breakdown",
     "View Building",
+    "Rulebook",
+    "Session",
+    "Timeline",
 
     # ── Tier 5: 📋 Post-Market Review & Journal (After 3:30 PM) ────────────────
     "📋 EOD Day Report (What Worked / What Failed)",
@@ -2259,19 +2268,28 @@ _LABEL_TO_TAB_INDEX = {
     "Change in OI": 2,
     "⚡ OI Timeline (Per-Strike)": 39,
     "OI Timeline": 39,
+    "Session": 3,
+    "Score breakdown": 4,
     "Price levels": 5,
     "🎯 Price Levels & AI Confluence": 5,
     "Context": 6,
     "Price action": 7,
     "📈 Price Action (1m/5m/15m)": 7,
+    "8 Setups": 8,
     "Master levels": 9,
     "View Building": 10,
     "Chart levels": 11,
+    "Four Pillars": 12,
+    "Market State": 13,
+    "Rulebook": 14,
+    "Flow": 15,
+    "Timeline": 16,
     "PA Strategy 1": 17,
     "VWAP/EMA": 18,
     "SMC": 19,
     "📓 Trading Journal": 20,
     "📐 VAWM & 15m Matrix": 22,
+    "⚔️ WAR Setup (FII 30m)": 23,
     "📝 Paper Trading & Impulse Control": 25,
     "🔮 AI Forecast & Signals (5m/15m)": 26,
     "🌅 Opening Gap Planner & Confluence": 27,
@@ -2295,6 +2313,21 @@ def _tab_active(i: int) -> bool:
 
 st.divider()
 if _tab_active(0):
+    # ── 🎯 Decision Desk (one-screen confluence: SMC · 5-Rule · Options Lab · OI · strikes) ──
+    try:
+        import decision_desk as _ddk
+        _ddk.render(
+            spot=spot if "spot" in locals() else 0.0,
+            chain_df=df if "df" in locals() else None,
+            pa_frames=pa_frames if "pa_frames" in locals() else None,
+            now=now if "now" in locals() else None,
+            dte=float(dte) if "dte" in locals() and dte else 1.0,
+            prev_close=locals().get("_pc15", locals().get("_prev_close", None)),
+        )
+    except Exception as _ddk_err:                              # noqa: BLE001
+        st.error(f"Decision Desk encountered an error: {_ddk_err}")
+    _show_legacy_cockpit = st.toggle("Show legacy detailed cockpit (older engines)", value=False, key="legacy_cockpit_toggle")
+if _tab_active(0) and _show_legacy_cockpit:
     # ── Unified Master Decision Cockpit & All-Tab Confluence ──────────────────
     try:
         import decision_cockpit_view as _dcv
@@ -2787,6 +2820,65 @@ if _tab_active(2):
         _ocn.render_tab2_oi_change_narratives(df, read, spot)
     except Exception as _ocn_err2:
         st.caption(f"Intraday OI shift narratives unavailable: {_ocn_err2}")
+if _tab_active(3):
+    refresh_control("session", (fetch_live,), "option chain", nse_ts)
+
+    try:
+        _crosses = None
+        _f5 = pa_frames.get("5m")
+        if _f5 is not None and "vwap" in _f5 and _f5["vwap"].notna().any():
+            _c5 = _f5[_f5["closed"]]
+            _side = np.sign(_c5["close"] - _c5["vwap"]).dropna()
+            _crosses = int((_side.diff().fillna(0) != 0).sum())
+
+        _reg = an.day_regime(df, spot, read.levels, STATE.baseline,
+                             vix.pct_change if vix else None,
+                             _crosses, an.intraday_pcr(df, spot))
+        _box = {"TREND": st.success, "RANGE": st.warning,
+                "UNCLEAR": st.info}[_reg.verdict]
+        _box(f"**{_reg.verdict} DAY** — {_reg.agreed} of 4 checks agree "
+             f"(score {_reg.score:+d})")
+        st.dataframe(pd.DataFrame([{"Check": n, "Reads": v, "Detail": w}
+                                   for n, v, w in _reg.checks]),
+                     use_container_width=True, hide_index=True)
+        st.caption(f"**Playbook:** {_reg.playbook}")
+        st.caption(f"**Instruments:** {_reg.instruments}")
+
+        if _f5 is not None:
+            _pdh = _pdl = _pc = None
+            if vb_daily is not None and len(vb_daily) > 1:
+                _prev = vb_daily.iloc[-1]
+                _pdh, _pdl, _pc = (float(_prev["High"]), float(_prev["Low"]),
+                                   float(_prev["Close"]))
+            _tr = an.vwap_trap(_f5, df, spot, read.levels, _pdh, _pdl, _pc)
+            if _tr:
+                _msg = (f"**VWAP TRAP — {_tr.direction}** · {_tr.detail}\n\n"
+                        f"Stop {_tr.stop:,.0f} · target {_tr.target:,.0f} · "
+                        f"RR {_tr.rr:.2f}")
+                (st.success if _tr.valid_rr else st.warning)(
+                    _msg + ("" if _tr.valid_rr else
+                            "\n\nRR below 1:2 — the notes say skip it."))
+    except Exception as _e:                                 # noqa: BLE001
+        st.caption(f"regime read unavailable: {_e}")
+    hist = STATE.frame
+    if len(hist) >= 2:
+        st.plotly_chart(chart_migration(hist), use_container_width=True)
+    else:
+        st.info(f"Collecting snapshots — the session chart needs at least two polls "
+                f"({config.POLL_SECONDS}s apart). This is the most useful view; "
+                f"leave it running.")
+if _tab_active(4):
+    refresh_control("score", (fetch_live,), "option chain", nse_ts)
+    try:
+        import score_tab
+        score_tab.render_score_breakdown(
+            spot=spot,
+            df=df,
+            read=read,
+            pa_frames=pa_frames if "pa_frames" in locals() else None,
+        )
+    except Exception as _st_err:
+        st.error(f"Score Breakdown Module Error: {_st_err}")
 
 if _tab_active(5):
     refresh_control("price_levels", (fetch_live, load_ohlc_cached,),
@@ -3305,8 +3397,112 @@ if _tab_active(7):
             st.caption(f"1-minute candles are stored to "
                        f"`{config.CANDLE_DIR.name}/YYYY-MM-DD.csv` every poll, "
                        f"full session 09:15–15:30. Only 1m is stored — 5m and "
-                        f"15m are derived, so saving them could drift out of "
-                        f"sync with the source.")
+                       f"15m are derived, so saving them could drift out of "
+                       f"sync with the source.")
+
+if _tab_active(8):
+    refresh_control("setups", (fetch_live, fetch_price_action,),
+                    "chain + candles", nse_ts)
+    st.caption("This checks the objective preconditions and — the part that "
+               "matters — the SKIP conditions. Your entry trigger stays yours: "
+               "the 8 EMA touch, the rejection, the pattern break, read off "
+               "your own Kite chart.")
+
+    if not pa_frames or "5m" not in pa_frames:
+        st.info("Needs price action data. Check the Price action tab first.")
+    else:
+        f5 = su.prepare(pa_frames["5m"])
+        f15 = su.prepare(pa_frames["15m"])
+        ctx = su.context_summary(f5, f15, now)
+
+        if not ctx:
+            st.info("Not enough closed 5-minute candles yet — the Bollinger "
+                    "Bands need 20.")
+        else:
+            k = st.columns(6)
+            k[0].metric("15-min trend", ctx["trend15"])
+            k[1].metric("BB width", f"{ctx['bb_width']:.0f}",
+                        "OK" if ctx["bb_width_ok"] else "TOO NARROW",
+                        delta_color="normal" if ctx["bb_width_ok"] else "inverse")
+            k[2].metric("UBB slope", ctx["ubb_slope"])
+            k[3].metric("LBB slope", ctx["lbb_slope"])
+            k[4].metric("8 EMA", f"{ctx['ema8']:,.0f}",
+                        f"{ctx['dist_to_ema8']:+.0f} pts", delta_color="off")
+            k[5].metric("Party switch", ctx["party"])
+
+            if ctx["after_3pm"]:
+                st.error("**After 3:00 PM — no new entries.** Course rule.")
+            if ctx["trend15"] == "CONSOLIDATION":
+                st.warning("15-min shows CONSOLIDATION — the filter says skip "
+                           "the entire day.")
+
+            cc = None
+            try:
+                cc = su.chain_condition(df, spot)
+                box = st.success if cc.score > 0 else (st.error if cc.score < 0 else st.info)
+                box(f"**Option chain: {cc.name}** · {cc.pattern}")
+                if cc.exact:
+                    cl = st.columns(3)
+                    cl[0].markdown(f"**Trailing:** {cc.trail}")
+                    cl[1].markdown(f"**Best:** {', '.join(cc.best)}")
+                    cl[2].markdown(f"**Avoid:** {', '.join(cc.avoid)}")
+                else:
+                    st.caption("This colour combination is not one of the five "
+                               "named conditions. Saying so rather than forcing "
+                               "it into the nearest one — an unmapped chain is "
+                               "real information.")
+                st.caption("Colours here are derived from net CHANGE IN OI per "
+                           "quadrant, scanning 500 pts each side. Worth "
+                           "confirming with MJ that this matches what he means "
+                           "by green/red on the NSE screen.")
+            except Exception as exc:                        # noqa: BLE001
+                st.caption(f"Chain condition unavailable: {exc}")
+
+            cA, cB, cC = st.columns(3)
+            s2_stop = cA.checkbox("Stage 2 stop taken today")
+            s3_stop = cB.checkbox("Stage 3 stop taken today")
+            n_rally = cC.number_input("Trades already in this rally", 0, 5, 0)
+
+            res = [z.price for z in zones if z.kind == "resistance"] or \
+                  [l.price for l in price_lv if l.kind == "resistance"]
+            sup = [z.price for z in zones if z.kind == "support"] or \
+                  [l.price for l in price_lv if l.kind == "support"]
+
+            checks = su.check_setups(f5, f15, spot, now, res, sup, cc,
+                                     s2_stop, s3_stop, int(n_rally))
+
+            ready = [c for c in checks if c.stage.startswith("I+C")]
+            if ready:
+                st.success("**Preconditions met on: "
+                           + ", ".join(f"#{c.number} {c.name}" for c in ready)
+                           + "** — now watch for your own entry trigger.")
+
+            for c in checks:
+                colour = {"I+C READY — watch for your entry trigger": "🟢",
+                          "INDICATION only — not a trade": "🟡",
+                          "BLOCKED": "🔴", "MANUAL ONLY": "⚪",
+                          "NOT SET UP": "⚫"}.get(c.stage, "⚫")
+                with st.expander(f"{colour} #{c.number} · {c.name} · "
+                                 f"{c.direction} · {c.win_rate} · {c.stage}"):
+                    st.caption(f"Target / stop: {c.target_stop}")
+                    if c.indication:
+                        st.markdown("**I — Indication**")
+                        for t, v in c.indication:
+                            st.markdown(("- ✅ " if v else "- ❌ " if v is not None
+                                         else "- ❓ ") + t)
+                    if c.confirmation:
+                        st.markdown("**C — Confirmation**")
+                        for t, v in c.confirmation:
+                            st.markdown(("- ✅ " if v else "- ❌ " if v is not None
+                                         else "- ❓ ") + t)
+                    if c.skips:
+                        st.markdown("**Blocked by**")
+                        for x in c.skips:
+                            st.markdown(f"- 🚫 {x}")
+                    if c.manual:
+                        st.markdown("**E — Entry, and what stays yours**")
+                        for x in c.manual:
+                            st.markdown(f"- {x}")
 
 if _tab_active(9):
     refresh_control("master", (load_ohlc_cached,), pull_ohlc=True, note="master_levels.csv")
@@ -3464,6 +3660,561 @@ if _tab_active(11):
             st.error(f"Chart levels failed: {_ve}")
             st.exception(_ve)
 
+if _tab_active(12):
+    refresh_control("pillars", (fetch_live,), "option chain", nse_ts)
+
+    try:
+        _fp = an.four_pillars(df, spot)
+        _cl = an.chain_levels(df, spot)
+        _atm_row = _fp["atm_row"]
+
+        # ── ATM battle ──────────────────────────────────────────────────────
+        st.markdown(f"### ATM {_fp['atm']}")
+        _b1, _b2 = st.columns(2)
+        for _col, _side, _lbl in ((_b1, "ce", "CALL"), (_b2, "pe", "PUT")):
+            _sr = getattr(_atm_row, _side) if _atm_row else None
+            with _col:
+                st.markdown(f"**{_lbl}**")
+                if _sr is None:
+                    st.caption("ATM strike not in the window")
+                    continue
+                st.markdown(
+                    f"LTP&nbsp;&nbsp;&nbsp;&nbsp;**{_sr.ltp:,.2f}**  \n"
+                    f"Price&nbsp;&nbsp;**{_sr.ltp_pct:+.1f}%**  \n"
+                    f"OI&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**{_sr.oi:,.0f}**  \n"
+                    f"OI chg&nbsp;**{_sr.oi_chg:+,.0f}**  \n"
+                    f"OI %&nbsp;&nbsp;&nbsp;**{_sr.oi_pct:+.2f}%**"
+                    if _sr.ltp and _sr.ltp_pct is not None and _sr.oi_pct is not None
+                    else f"OI **{_sr.oi:,.0f}**, change **{_sr.oi_chg:+,.0f}**",
+                    unsafe_allow_html=True)
+                _c = {"HIGH": st.success, "MODERATE": st.info,
+                      "WEAK": st.warning, "NONE": st.error}[_sr.confidence]
+                _c(f"**{_sr.state}** · confidence {_sr.confidence}  \n"
+                   f"*{_sr.why}*")
+
+        # bullish / bearish factors, counted not scored
+        _bull = _bear = 0
+        for r in _fp["rows"]:
+            if r.ce.pillar == "short_covering": _bull += 1
+            if r.ce.pillar == "short_buildup": _bear += 1
+            if r.pe.pillar == "short_buildup": _bull += 1
+            if r.pe.pillar == "short_covering": _bear += 1
+        _tot = _bull + _bear
+        _bias = ("BULLISH" if _bull > _bear * 1.5 else
+                 "BEARISH" if _bear > _bull * 1.5 else "NEUTRAL")
+        _strength = ("STRONG" if _tot and abs(_bull - _bear) / max(_tot, 1) > 0.5
+                     else "MODERATE" if _tot and abs(_bull - _bear) / max(_tot, 1) > 0.25
+                     else "WEAK")
+        _f1, _f2, _f3 = st.columns(3)
+        _f1.metric("Bullish factors", _bull)
+        _f2.metric("Bearish factors", _bear)
+        _f3.metric("ATM battle", _bias, _strength, delta_color="off")
+        st.caption("Deliberately WEAK / MODERATE / STRONG rather than a "
+                   "percentage. A number like \"72%\" implies calibration "
+                   "that has not been done — it would be false precision.")
+
+        _d = {"FRESH PARTICIPATION": st.success, "EXIT-DRIVEN": st.warning,
+              "MIXED": st.info, "NO FLOW": st.info}[_fp["drive"]]
+        _d(f"**{_fp['drive']}** — {_fp['drive_note']}")
+
+        # ── full evidence table ─────────────────────────────────────────────
+        st.markdown("##### Every strike — the full evidence")
+        # how long each strike has held its pillar — one observation versus
+        # a position being worked
+        _dur = {}
+        if _snaps:
+            for _r in _fp["rows"]:
+                for _sd in ("ce", "pe"):
+                    try:
+                        _d0 = fl.state_duration(_snaps, _r.strike, _sd, now)
+                        if _d0:
+                            _dur[(_r.strike, _sd)] = _d0
+                    except Exception:                       # noqa: BLE001
+                        pass
+
+        def _lbl(row, side):
+            sr = getattr(row, side)
+            d0 = _dur.get((row.strike, side))
+            if d0 and d0.get("minutes", 0) >= 3 and d0["pillar"] == sr.pillar:
+                return f"{sr.state} ({d0['minutes']:.0f}m)"
+            return sr.state
+
+        def _grk(row, side, col):
+            v = df[df.strike == row.strike]
+            if v.empty:
+                return "—"
+            x = v.iloc[0].get(f"{side}_{col}")
+            return f"{x:.4f}" if x == x and x is not None else "—"
+
+        _rows = []
+        for r in _fp["rows"]:
+            def _f(v, fmt="{:,.2f}"):
+                return fmt.format(v) if v is not None else "—"
+            _rows.append({
+                "Strike": r.strike, "ATM": "★" if r.is_atm else "",
+                "CE LTP": _f(r.ce.ltp), "CE Δ%": _f(r.ce.ltp_pct, "{:+.1f}%"),
+                "CE OI": f"{r.ce.oi:,.0f}", "CE ΔOI": f"{r.ce.oi_chg:+,.0f}",
+                "CE ΔOI%": _f(r.ce.oi_pct, "{:+.1f}%"),
+                "CE Δ": _grk(r, "ce", "delta"), "CE Γ": _grk(r, "ce", "gamma"),
+                "CE STATE": _lbl(r, "ce"), "CE CONF": r.ce.confidence,
+                "PE LTP": _f(r.pe.ltp), "PE Δ%": _f(r.pe.ltp_pct, "{:+.1f}%"),
+                "PE OI": f"{r.pe.oi:,.0f}", "PE ΔOI": f"{r.pe.oi_chg:+,.0f}",
+                "PE ΔOI%": _f(r.pe.oi_pct, "{:+.1f}%"),
+                "PE Δ": _grk(r, "pe", "delta"), "PE Γ": _grk(r, "pe", "gamma"),
+                "PE STATE": _lbl(r, "pe"), "PE CONF": r.pe.confidence})
+        _pdf = pd.DataFrame(_rows)
+
+        def _sty(row):
+            out = [""] * len(row)
+            for col in ("CE STATE", "PE STATE"):
+                i = list(row.index).index(col)
+                v = str(row[col]).split(" (")[0]
+                if v in ("SHORT COVERING", "LONG BUILD-UP"):
+                    out[i] = "background-color:rgba(16,185,129,0.22);color:#6ee7b7;font-weight:700"
+                elif v in ("SHORT BUILD-UP", "LONG UNWINDING"):
+                    out[i] = "background-color:rgba(239,68,68,0.22);color:#fca5a5;font-weight:700"
+                elif v == "UNKNOWN":
+                    out[i] = "background-color:#1e293b;color:#94a3b8"
+
+            # Heatmapping on CE ΔOI% and PE ΔOI% (> 50% = vivid glow, > 20% = subtle)
+            for col, is_ce in (("CE ΔOI%", True), ("PE ΔOI%", False)):
+                i = list(row.index).index(col)
+                val_str = str(row[col]).replace("%", "").replace("+", "").strip()
+                try:
+                    pct_val = float(val_str)
+                    if abs(pct_val) >= 50:
+                        out[i] = "background-color:rgba(239,68,68,0.25);color:#fca5a5;font-weight:800;" if is_ce else "background-color:rgba(16,185,129,0.25);color:#6ee7b7;font-weight:800;"
+                    elif abs(pct_val) >= 20:
+                        out[i] = "background-color:rgba(239,68,68,0.12);color:#f87171;" if is_ce else "background-color:rgba(16,185,129,0.12);color:#34d399;"
+                except Exception:
+                    pass
+
+            if row["ATM"] == "★":
+                out = [(x + ";border-top:2px solid #facc15;border-bottom:2px solid #facc15;font-weight:bold;") if x else "border-top:2px solid #facc15;border-bottom:2px solid #facc15;font-weight:bold;"
+                       for x in out]
+            return out
+
+        st.dataframe(_pdf.style.apply(_sty, axis=1),
+                     use_container_width=True, hide_index=True)
+        st.caption("Δ and Γ are computed from NSE's IV via Black-Scholes. "
+                   "A dash means the IV was unusable on that strike — NSE "
+                   "publishes 0 or absurd values on illiquid options, and a "
+                   "gamma of 0.0 that means 'bad input' is indistinguishable "
+                   "from one meaning 'no convexity'. State labels carry how "
+                   "long the strike has held that pillar.")
+        st.caption("A pillar is NEVER inferred from OI change alone. Price "
+                   "direction and OI direction are both required — OI rising "
+                   "says positions were created and nothing about which side "
+                   "created them. Where the price leg is missing or flat the "
+                   "state reads UNKNOWN rather than a guess.")
+
+        # ── levels ──────────────────────────────────────────────────────────
+        if _gz:
+            st.markdown("##### Gamma squeeze zones — where price gets sticky")
+            for _z in _gz:
+                (_c := st.warning if _z.share >= 25 else st.info)(
+                    f"**{_z.strike}** ({_z.distance:+.0f} pts) — "
+                    f"**{_z.label}**  \n{_z.note}")
+            st.caption("Ranked by gamma x OI. Dealers hedging a high-gamma "
+                       "strike buy dips and sell rallies around it, which "
+                       "dampens movement — sticky until it breaks, fast "
+                       "once it does. Computed from NSE's IV via "
+                       "Black-Scholes, with time to expiry in TRADING "
+                       "minutes.")
+            st.markdown("---")
+
+        # ── 🪜 Option-Chain Key Levels — Price Ladder Grid ─────────────────
+        render_price_ladder_grid(df, spot)
+
+        st.caption("High OI is positioning CONCENTRATION — not proof of "
+                   "writing, and not proof the level holds. State combines OI "
+                   "change with PRICE direction: at a call strike, OI up with "
+                   "premium DOWN is short buildup and hardens resistance, "
+                   "while OI up with premium UP is long buildup — speculators, "
+                   "not a wall. MIGRATING means the next strike out is "
+                   "building while this one bleeds; CONTESTED means both sides "
+                   "are adding here.")
+    except Exception as _e:                                 # noqa: BLE001
+        st.error("Four pillars unavailable.")
+        st.code(str(_e), language="text")
+
+if _tab_active(13):
+    refresh_control("mstate", (fetch_live, fetch_price_action,),
+                    "chain + candles", nse_ts)
+
+    def _evidence(v, title=None):
+        if title:
+            st.markdown(f"**{title}**")
+        box = {"STRONG": st.success, "MODERATE": st.info,
+               "WEAK": st.warning}.get(v.confidence, st.info)
+        box(f"**{v.state}** · confidence {v.confidence}"
+            + (f"  \n{v.detail}" if v.detail else ""))
+        c1, c2 = st.columns(2)
+        c1.markdown("*Supporting*")
+        for x in v.supporting:
+            c1.markdown(f"✓ {x}")
+        if not v.supporting:
+            c1.caption("none")
+        c2.markdown("*Contradicting*")
+        for x in v.contradicting:
+            c2.markdown(f"⚠ {x}")
+        if not v.contradicting:
+            c2.caption("none")
+
+    try:
+        _f5 = pa_frames.get("5m")
+        _fp = an.four_pillars(df, spot)
+        _cl = an.chain_levels(df, spot)
+
+        _trend = ms.trend_structure(_f5) if _f5 is not None else None
+        _vside = None
+        if _f5 is not None and "vwap" in _f5:
+            _vr = pa.vwap_read(_f5, "5m")
+            _vside = _vr.side if _vr.vwap else None
+
+        _press = ms.market_pressure(_fp, _cl, _trend, _vside)
+
+        st.markdown("### Market pressure")
+        _evidence(_press)
+        st.caption("Factors are listed, not netted. Four supports with three "
+                   "contradictions is a different situation from four with "
+                   "none, and a single score would hide that.")
+
+        st.markdown("---")
+        st.markdown("### Narrative")
+        _brk = _pin = _rng = None
+        if _f5 is not None and len(_f5) > 8:
+            if _cl["resistance"]:
+                _r = _cl["resistance"][0]
+                _nxt = _r.neighbour_building
+                _brk = ms.breakout(_f5, spot, float(_r.strike), "resistance",
+                                   _r, _nxt)
+            _pin = ms.pinning(df, spot, _f5, _fp["atm"])
+            if _cl["resistance"] and _cl["support"]:
+                _rng = ms.range_trap(_f5, float(_cl["resistance"][0].strike),
+                                     float(_cl["support"][0].strike))
+        st.info(ms.narrative(spot, _fp["atm"], _fp, _cl, _trend, _brk,
+                             _pin, _rng))
+
+        st.markdown("---")
+        st.markdown("### Engines")
+        if _trend:
+            _evidence(_trend, "Market structure")
+            st.markdown("")
+        if _brk:
+            _evidence(_brk, "Breakout engine")
+            st.markdown("")
+        if _rng:
+            _evidence(_rng, "Range trap")
+            st.markdown("")
+        if _pin:
+            _evidence(_pin, "Pinning / ATM fight")
+
+        st.markdown("---")
+        st.markdown("### What changed")
+        try:
+            _log = store.load_log()
+            _ch = ms.what_changed(_log, now)
+            if not _ch or not any(c.get("available") for c in _ch):
+                st.caption("Not enough logged history yet — this fills in as "
+                           "the scanner runs.")
+            else:
+                _cc = st.columns(len(_ch))
+                for _col, _c in zip(_cc, _ch):
+                    if not _c.get("available"):
+                        _col.metric(_c["window"], "—")
+                        continue
+                    _col.metric(f"last {_c['window']}",
+                                f"{_c['spot']:+,.0f} pts",
+                                f"score {_c['score']:+.1f}",
+                                delta_color="off")
+                    if _c["regime_changed"]:
+                        _col.warning(f"regime {_c['regime_then']} → "
+                                     f"{_c['regime_now']}")
+                    if _c["walls_moved"]:
+                        _col.info("OI walls moved")
+        except Exception:                                   # noqa: BLE001
+            st.caption("signal log unavailable")
+    except Exception as _e:                                 # noqa: BLE001
+        st.error("Market state unavailable.")
+        st.code(str(_e), language="text")
+
+if _tab_active(14):
+    refresh_control("rulebook", (fetch_live,), "option chain", nse_ts)
+    st.caption("The strict rules, implemented literally. Kept separate from "
+               "the rest of the app so the two can be compared — where they "
+               "disagree, both are shown rather than one quietly winning.")
+
+    try:
+        _ab = rb.atm_bias(df, spot)
+        if _ab:
+            st.markdown("##### Bias — ATM only")
+            _bc = st.columns(4)
+            _bc[0].metric("ATM", f"{_ab.atm}")
+            _bc[1].metric("Call OI", f"{_ab.call_oi:,.0f}")
+            _bc[2].metric("Put OI", f"{_ab.put_oi:,.0f}")
+            _bc[3].metric(_ab.label, f"{_ab.ratio:.2f}", _ab.strength,
+                          delta_color="off")
+            st.caption(f"{_ab.why}. One comparison, nothing else — you can "
+                       f"check this against the NSE screen in three seconds, "
+                       f"which the app's five-input bias does not allow.")
+            try:
+                if DEC is not None and DEC.bias.value not in _ab.label:
+                    st.warning(f"**The two bias readings DISAGREE** — rulebook "
+                               f"says {_ab.label}, the app's multi-factor read "
+                               f"says {DEC.bias.value}. Neither is corrected "
+                               f"to match the other.")
+            except Exception:                               # noqa: BLE001
+                pass
+
+        st.markdown("---")
+        st.markdown("##### True levels — comparing both sides at each strike")
+        _tl = rb.true_levels(df, spot, 6)
+        _shown = [v for v in _tl if v.label not in ("QUIET", "NO CLEAR SIDE")]
+        if _shown:
+            for v in _shown:
+                _ic = {"TRUE SUPPORT": "🟢", "TRUE RESISTANCE": "🔴",
+                       "CONTESTED": "⚔️", "BOTH UNWINDING": "🟠",
+                       "UNKNOWN": "⬜"}.get(v.label, "⬜")
+                st.markdown(f"{_ic} **{v.strike}** ({v.distance:+.0f} pts) — "
+                            f"**{v.label}**  \n*{v.why}*")
+        else:
+            st.info("No strike shows clear one-sided dominance right now — "
+                    "everything nearby is quiet or evenly matched.")
+        with st.expander("All strikes, including the quiet ones"):
+            st.dataframe(pd.DataFrame([{
+                "Strike": v.strike, "Dist": f"{v.distance:+.0f}",
+                "CE OI%": f"{v.ce_pct:+.1f}" if v.ce_pct is not None else "—",
+                "PE OI%": f"{v.pe_pct:+.1f}" if v.pe_pct is not None else "—",
+                "CE OI": f"{v.ce_oi:,.0f}", "PE OI": f"{v.pe_oi:,.0f}",
+                "Verdict": v.label} for v in _tl]),
+                use_container_width=True, hide_index=True)
+        st.caption("A level is TRUE SUPPORT only when put-side OI% clearly "
+                   "exceeds call-side OI% AT THE SAME STRIKE. Judging one "
+                   "side alone cannot tell a defended floor from a strike "
+                   "where both sides are piling in.")
+
+        st.markdown("---")
+        st.markdown("##### Levels ranked by SIZE vs by PROXIMITY")
+        _bysize = rb.levels_by_size(df, spot)
+        _wl = fl.weighted_levels(df, spot, 3, spot_change=_spot_chg)
+        _byprox = an.chain_levels(df, spot)
+        _rows = []
+        for kind in ("resistance", "support"):
+            _tag = "R" if kind == "resistance" else "S"
+            for i in range(4):
+                a_ = _bysize[kind][i] if i < len(_bysize[kind]) else None
+                p_ = _byprox[kind][i] if i < len(_byprox[kind]) else None
+                _rows.append({
+                    "": f"{_tag}{i+1}",
+                    "By SIZE (rulebook)": f"{a_.strike}" if a_ else "—",
+                    "OI": f"{a_.oi:,.0f}" if a_ else "—",
+                    "By PROXIMITY (app)": f"{p_.strike}" if p_ else "—",
+                    "OI ": f"{p_.oi:,.0f}" if p_ else "—",
+                    "Same?": "✓" if a_ and p_ and a_.strike == p_.strike else "✗"})
+        st.dataframe(pd.DataFrame(_rows), use_container_width=True,
+                     hide_index=True)
+        if _wl["resistance"] or _wl["support"]:
+            st.markdown("**Weighted and approach-adjusted** — "
+                        "OI + (change x 2), re-ranked by direction of travel")
+            _wc = st.columns(2)
+            for _col, _kind in ((_wc[0], "resistance"), (_wc[1], "support")):
+                _col.markdown(f"*{_kind.title()}*")
+                for _lv in _wl[_kind]:
+                    _col.markdown(f"**{_lv.strike}** ({_lv.distance:+.0f}) — "
+                                  f"strength {_lv.strength:,.0f}")
+            st.caption("Fresh addition counts double, and a wall price is "
+                       "walking INTO ranks above one it is walking away from. "
+                       "The direction weighting nudges rather than overrides "
+                       "— it will not flip a wall 40% larger, but it decides "
+                       "between two of similar size, which is the case where "
+                       "direction actually matters.")
+            st.markdown("---")
+
+        st.caption("A real conflict, not a bug. Size answers *where is the "
+                   "most money*; proximity answers *what do I hit first*. "
+                   "Both are defensible and on most chains they name "
+                   "different strikes, so both are shown.")
+
+        st.markdown("---")
+        st.markdown("##### OI density between levels")
+        _dens = []
+        for kind, side in (("support", "pe"), ("resistance", "ce")):
+            lst = _bysize[kind]
+            for i in range(min(2, len(lst) - 1)):
+                dn = rb.density_between(df, lst[i].strike, lst[i+1].strike, side)
+                if dn:
+                    _dens.append((kind, dn))
+        if _dens:
+            for kind, dn in _dens:
+                _ic = "🟥" if dn.label in ("VERY THIN", "THIN") else "🟩"
+                st.markdown(f"{_ic} **{dn.from_strike} → {dn.to_strike}** "
+                            f"({kind}) — **{dn.label}**  \n*{dn.note}*")
+        else:
+            st.caption("not enough levels to measure density between")
+
+        st.markdown("---")
+        st.markdown("##### Breakout — literal, five conditions")
+        try:
+            _bs = rb.levels_by_size(df, spot)
+            if len(_bs["resistance"]) >= 2:
+                _o, _n = _bs["resistance"][0].strike, _bs["resistance"][1].strike
+                _acc = spot > _o
+                _lv = rb.real_breakout(df, _o, _n, "ce", _acc)
+                (st.success if _lv.label == "REAL_BREAKOUT"
+                 else st.error if _lv.label == "FAKE_BREAKOUT"
+                 else st.info)(
+                    f"**{_lv.label}** — {_lv.met}/{_lv.total} conditions "
+                    f"[{_lv.confidence}]")
+                for _c, _ok in _lv.conditions:
+                    st.markdown(f"{'✓' if _ok else '✗'} {_c}")
+                st.caption(_lv.why)
+
+                _ts = rb.trend_strength(df, _o, _n, "ce", _acc)
+                st.markdown(f"**Trend strength: {_ts.label}** "
+                            f"({_ts.met}/{_ts.total}) — {_ts.why}")
+        except Exception as _e:                             # noqa: BLE001
+            st.caption(f"literal breakout unavailable: {_e}")
+
+        st.markdown("---")
+        st.markdown("##### Pinning — strict test")
+        _pr = None
+        _f5r = pa_frames.get("5m")
+        if _f5r is not None and len(_f5r) >= 6:
+            _c5 = _f5r[_f5r["closed"]] if "closed" in _f5r else _f5r
+            _pr = float(_c5["high"].tail(6).max() - _c5["low"].tail(6).min())
+        _pv = rb.pinned_strict(df, spot, _pr)
+        if _pv:
+            (st.warning if _pv.label.startswith("PINNED") else st.info)(
+                f"**{_pv.label}**")
+            for w in _pv.why:
+                st.markdown(f"- {w}")
+            st.caption("Requires all three: both sides building, neither "
+                       "unwinding, price locked. Checking only that both are "
+                       "building would call a strike pinned while one side "
+                       "quietly leaves.")
+        st.markdown("---")
+        with st.expander("Thresholds in use — edit rules.json to change them"):
+            st.caption(f"loaded from `{rb.RULES.get('_source')}` "
+                       f"(v{rb.RULES.get('_version', '?')})")
+            _rr = []
+            for _sec, _vals in rb.RULES.items():
+                if _sec.startswith("_") or not isinstance(_vals, dict):
+                    continue
+                for _k, _v in _vals.items():
+                    _rr.append({"Engine": _sec, "Threshold": _k, "Value": _v})
+            st.dataframe(pd.DataFrame(_rr), use_container_width=True,
+                         hide_index=True)
+            st.caption("Every one of these is a judgement, not a fact. Kept "
+                       "in a file rather than buried in Python so you can "
+                       "read them all in twenty seconds and change one "
+                       "without touching code.")
+            if "defaults" in str(rb.RULES.get("_source", "")):
+                st.warning("rules.json was NOT found — running on built-in "
+                           "defaults. Anything you tuned is not being used.")
+
+        with st.expander("Display contract — is everything required on screen?"):
+            import pathlib as _pl
+            _srcs = {f.name: f.read_text()
+                     for f in _pl.Path(__file__).parent.glob("*.py")}
+            _chk = rb.display_contract_check(_srcs)
+            _ok_n = sum(1 for _, o in _chk if o)
+            (st.success if _ok_n == len(_chk) else st.warning)(
+                f"{_ok_n}/{len(_chk)} required elements present")
+            for _k, _ok in _chk:
+                st.markdown(f"{'✓' if _ok else '✗ **MISSING**'} {_k}")
+            st.caption("A spec nobody checks drifts from the code within a "
+                       "week. This greps every module for a marker per "
+                       "required element.")
+    except Exception as _e:                                 # noqa: BLE001
+        st.error("Rulebook unavailable.")
+        st.code(str(_e), language="text")
+
+if _tab_active(15):
+    refresh_control("flow", (fetch_live,), "option chain", nse_ts)
+    try:
+        _pcrs = fl.three_pcrs(df, spot)
+        _pv = fl.pcr_by_volume(df, spot)
+        _mp = an.max_pain(df)
+        _mpr = fl.MaxPainRead(_mp, spot, now, expiry_today)
+
+        _sm = None
+        try:
+            _sr2 = an.straddle_range(df, spot)
+            if _sr2:
+                _sm = fl.straddle_move(store.load_log(), _sr2.premium, now, 10)
+        except Exception:                                   # noqa: BLE001
+            pass
+
+        _meter = fl.regime_meter(df, spot, _pcrs,
+                                 _sm.state if _sm else None,
+                                 _mpr.distance)
+        _box = {"CONSOLIDATION": st.warning, "TRENDING": st.success,
+                "MIXED": st.info}[_meter.label]
+        _box(f"**{_meter.label}** — {_meter.consolidation}% consolidation / "
+             f"{_meter.trending}% trending")
+        for _n, _d, _hit in _meter.checks:
+            st.markdown(f"{'✓' if _hit else '✗'} **{_n}** — {_d}")
+        st.caption(_meter.note)
+
+        st.markdown("---")
+        st.markdown("##### Four PCRs")
+        _pc = st.columns(4)
+        for _col, (_nm, _blk) in zip(_pc, list(_pcrs.items()) +
+                                     [("volume", _pv)]):
+            _v = (_blk or {}).get("value")
+            _col.metric(_nm.upper(), f"{_v:.2f}" if _v else "—")
+            _col.caption((_blk or {}).get("note", "")[:60])
+
+        st.markdown("---")
+        st.markdown("##### Levels by weighted strength")
+        st.caption(f"strength = OI + (ΔOI × {config.FRESH_OI_WEIGHT}) — fresh "
+                   f"positioning counts more than a wall that has sat there "
+                   f"since Tuesday. A level bleeding OI scores BELOW its raw "
+                   f"size, which is intended.")
+        _wl = fl.weighted_levels(df, spot, 3)
+        _wc1, _wc2 = st.columns(2)
+        for _col, _kind in ((_wc1, "resistance"), (_wc2, "support")):
+            _col.markdown(f"**{_kind.title()}s**")
+            for _lv in _wl[_kind]:
+                _col.markdown(f"**{_lv.strike}** ({_lv.distance:+.0f} pts)  \n"
+                              f"OI {_lv.oi:,.0f} · ΔOI {_lv.oi_chg:+,.0f}  \n"
+                              f"strength **{_lv.strength:,.0f}** "
+                              f"({_lv.vs_raw:+,.0f} vs raw)")
+
+        st.markdown("---")
+        st.markdown("##### Max pain")
+        st.info(_mpr.note)
+
+        if _sm:
+            st.markdown("---")
+            st.markdown("##### Straddle")
+            (st.warning if "EXPAND" in _sm.state else st.info)(
+                f"**{_sm.state}** — {_sm.note}")
+
+        st.markdown("---")
+        st.markdown("##### OI heatmap")
+        try:
+            _snaps = store.recent_snapshots(now.date(), limit=12)
+            if len(_snaps) >= 2:
+                _side = st.radio("side", ["ce", "pe"], horizontal=True,
+                                 key="hm_side")
+                _hm = fl.oi_heatmap(_snaps, spot, _side, 6)
+                st.dataframe(fl.heat_style(_hm, invert=(_side == "ce")),
+                             use_container_width=True)
+                st.caption("Rows are strikes, columns are polls. A band of "
+                           "colour marching up or down the rows IS the "
+                           "migration the other panels describe in words.")
+            else:
+                st.caption(f"{len(_snaps)} snapshot(s) stored today — the "
+                           f"heatmap needs a few polls before it shows "
+                           f"anything.")
+        except Exception as _he:                            # noqa: BLE001
+            st.caption(f"heatmap unavailable: {_he}")
+    except Exception as _e:                                 # noqa: BLE001
+        st.error("Flow unavailable.")
+        st.code(str(_e), language="text")
+
 # ── log ─────────────────────────────────────────────────────────────────────
 # Demo runs must never touch the log — it is your backtest dataset, and rows
 # generated from a static sample file (repeatedly, every refresh) would poison it.
@@ -3488,6 +4239,136 @@ if auto:
     except ImportError:
         time.sleep(_cur_interval)
         st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tab 16 — Timeline
+# ═══════════════════════════════════════════════════════════════════════════
+if _tab_active(16):
+    st.subheader("State changes")
+    _days_avail = tl.available_days(config.TIMELINE_KEEP_DAYS)
+    st.caption(
+        f"Rolling {config.TIMELINE_KEEP_DAYS} sessions · "
+        f"{len(_days_avail)} stored · oldest drops off automatically")
+
+    v1, v2 = st.columns([1, 1])
+    _win = v1.radio("Window", ["Latest session", "Last 7 sessions",
+                               f"Last {config.TIMELINE_KEEP_DAYS} sessions"],
+                    horizontal=True, key="tl_win")
+    _fld = v2.selectbox("Field", ["All fields"] + [f for f, _ in tl.TRACKED],
+                        key="tl_fld")
+    _n = (1 if _win.startswith("Latest") else
+          7 if "7" in _win else config.TIMELINE_KEEP_DAYS)
+    if _n == 1 and _days_avail and _days_avail[0] != now.date():
+        st.caption(f"No session logged today — showing "
+                   f"{_days_avail[0].strftime('%a %d %b')}, the most recent.")
+
+    _rows = tl.table_range(_n, _fld)
+    if _rows.empty:
+        st.info("Nothing logged for this window yet. The first poll of each "
+                "session writes an opening row per field; after that only "
+                "changes are recorded.")
+    else:
+        _fs = tl.field_stats(_n)
+        _dd = tl.by_day(_n)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Changes", len(_rows))
+        m2.metric("Sessions", len(_dd))
+        m3.metric("Busiest day",
+                  _dd.loc[_dd["Changes"].idxmax(), "Date"] if len(_dd) else "—")
+
+        _rest = _fs[_fs["Steadiness"] == "RESTLESS"]["Field"].tolist()
+        if _rest:
+            st.warning(
+                "**Restless across this window: " + ", ".join(_rest) + "**  \n"
+                "Averaging more than eight changes a session means the field "
+                "is turning over faster than the market is. Over one day that "
+                "is bad luck; over weeks it means the field is not usable and "
+                "no chart comparison will rescue it.")
+
+        if _n > 1:
+            st.markdown("**By session**")
+            st.caption("The regime sequence is what to read against a daily "
+                       "chart. Changes is the flip count.")
+            st.dataframe(_dd, use_container_width=True, hide_index=True,
+                         height=min(60 + 35 * len(_dd), 400))
+
+            st.markdown("**By field**")
+            st.caption("Steadiness says a field is calm enough to be usable. "
+                       "It does not say it was right — only your chart "
+                       "comparison can say that.")
+            st.dataframe(_fs, use_container_width=True, hide_index=True)
+
+        st.markdown("**Every change, with what happened next**")
+        o1, o2 = st.columns(2)
+        _hz = o1.slider("Look-forward (minutes)", 10, 90,
+                        config.OUTCOME_HORIZON_MINS, step=5, key="tl_hz")
+        _th = o2.slider("Move threshold (points)", 10.0, 60.0,
+                        config.OUTCOME_THRESHOLD_PTS, step=5.0, key="tl_th")
+
+        _ann = oc.annotate(_n, _fld, _hz, _th)
+        if _ann.empty:
+            st.dataframe(_rows, use_container_width=True, hide_index=True,
+                         height=min(60 + 35 * len(_rows), 620))
+        else:
+            _graded = _ann[_ann.Verdict != "—"]
+            if len(_graded):
+                g1, g2, g3 = st.columns(3)
+                g1.metric("Matched", int((_graded.Verdict == "MATCHED").sum()))
+                g2.metric("Opposed", int((_graded.Verdict == "OPPOSED").sum()))
+                g3.metric("Went nowhere",
+                          int(_graded.Verdict.isin(["MISSED", "NOISY"]).sum()))
+
+            def _vtint(v):
+                return {"MATCHED": "background-color:#0F9D5822",
+                        "OPPOSED": "background-color:#E8503A22",
+                        "MISSED": "background-color:#C79A2018",
+                        "NOISY": "background-color:#C79A2018"}.get(v, "")
+
+            st.dataframe(
+                _ann.style.map(_vtint, subset=["Verdict"]),
+                use_container_width=True, hide_index=True,
+                height=min(60 + 35 * len(_ann), 620))
+
+            _sc = oc.scorecard(_n, _hz, _th)
+            if not _sc.empty:
+                st.markdown("**Agreement by field**")
+                st.dataframe(_sc, use_container_width=True, hide_index=True)
+                _thin = _sc[_sc["Enough data"] == "NO"]["Field"].tolist()
+                if _thin:
+                    st.caption(
+                        "No percentage shown for " + ", ".join(_thin)
+                        + f" — fewer than {config.OUTCOME_MIN_SAMPLE} graded "
+                        "changes. Three out of three is three observations, "
+                        "not a hundred percent.")
+
+            st.warning(
+                "**This is not a win rate.** It asks only whether spot moved "
+                f"{_th:.0f} points within {_hz} minutes, and which way first. "
+                "It ignores option premium, so a matched call can still lose "
+                "money to theta and spread. It ignores stops, so a trade that "
+                "came good after a deep adverse excursion counts as matched "
+                "here and would have been stopped out in reality. It ignores "
+                "the ₹400 round trip. Move the two sliders above: any field "
+                "that only looks good at one setting was never good.")
+
+        st.download_button(
+            f"Download {str(_n) + ' sessions' if _n > 1 else 'this session'}"
+            f" (CSV)",
+            (_ann if not _ann.empty else _rows).to_csv(index=False).encode(),
+            file_name=f"timeline_{_n}d_{now.date().isoformat()}.csv",
+            mime="text/csv")
+
+    st.divider()
+    st.caption(
+        "**How to use this.** Open the 5-minute chart for a session, mark the "
+        "times, and look at what price did next. You do not have to do it the "
+        "same evening — the last "
+        f"{config.TIMELINE_KEEP_DAYS} sessions are kept, so a missed week is "
+        "still reviewable. A change logged here is a claim the app made, not "
+        "a claim it got right; the app cannot grade itself, and this table is "
+        "the only thing that will tell you which of these fields deserve your "
+        "attention.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3833,6 +4714,24 @@ if _tab_active(22):
         )
     except Exception as _pat_err:
         st.error(f"VAWM & Reversal Matrix tab encountered an error: {_pat_err}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tab 23 — WAR Setup (30-Min First-Candle FII Strategy)
+# ═══════════════════════════════════════════════════════════════════════════
+if _tab_active(23):
+    try:
+        _pc15_war = _pc15 if "_pc15" in locals() else (_prev_close if "_prev_close" in locals() else None)
+        war_tab.render(
+            pa_frames=pa_frames if "pa_frames" in locals() else None,
+            prev_close=_pc15_war,
+            chain_df=df if "df" in locals() else None,
+            spot=spot if "spot" in locals() else 0.0,
+        )
+    except Exception as _war_err:
+        st.error(f"WAR Setup tab encountered an error: {_war_err}")
+
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════
