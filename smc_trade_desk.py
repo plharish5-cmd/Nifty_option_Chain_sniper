@@ -444,14 +444,43 @@ def render_five_rule(df_full: pd.DataFrame, df15: pd.DataFrame | None, frames: d
               if draw_ok else "Daily-candle bias failed your NIFTY backtest — ignored."))
     nxt = (f"<div style='margin-top:6px;color:{AMBER}'>Next needed: <b>{res.next_needed}</b></div>"
            if res.next_needed and "TAKE" not in res.verdict else "")
+    ev = fr.edge_validation()
+    ecol = GREEN if ev and ev["passed"] else AMBER
+    edge = (f"<div style='margin-top:8px;padding:6px 10px;border-left:3px solid {ecol};color:{ecol};font-size:0.85rem'>"
+            f"{'✔' if ev and ev['passed'] else '⚠'} {fr.edge_line()}</div>")
     st.markdown(f"""<div style="background:{NAVY};border:2px solid {col};border-radius:10px;padding:14px 18px;margin:0 0 14px 0">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
         <span style="color:{GOLD};font-weight:800">🧭 5-RULE SMC MODEL · {res.side.lower()} side · {res.score}/5</span>
         <span style="background:{col};color:#000;font-weight:900;padding:4px 14px;border-radius:6px">{res.verdict}</span></div>
-      <div style="margin-top:8px">{rows}</div>{plan}{nxt}
+      <div style="margin-top:8px">{rows}</div>{plan}{nxt}{edge}
       <div style="color:{MUTED};font-size:0.8rem;margin-top:8px">{vnote} Rule 1 uses EXTERNAL 15m structure — only swings that
       broke structure count; breaks inside the swing range are inducement. All 5 ✔ = take trade. Info only — not advice.</div>
     </div>""", unsafe_allow_html=True)
+
+
+def _render_orderflow_check(desk) -> None:
+    """One line: does real NIFTY 50 order flow (orderflow_recorder.py) back the desk's idea?"""
+    import streamlit as st
+    try:
+        import nifty_orderflow as nf
+        f = nf.today_flow(5)
+    except Exception:                                         # noqa: BLE001
+        return
+    direction = 1 if desk.action == "BUY" or (desk.action != "SELL" and desk.trend_tf == "BULLISH") else \
+        -1 if desk.action == "SELL" or desk.trend_tf == "BEARISH" else 0
+    if f is None:
+        st.caption("🌊 Order-flow check: no recording for today — start orderflow_recorder.py to see real buying/selling here.")
+        return
+    if direction == 0:
+        st.caption(f"🌊 Order flow: {f.state['label']} · day CVD ₹{f.totals['cvd']:+,.0f} Cr")
+        return
+    s, why = nf.confirm(f, direction)
+    col = {"CONFIRMED": GREEN, "AGAINST": RED}.get(s, MUTED)
+    st.markdown(f"<div style='border-left:4px solid {col};background:{NAVY};padding:6px 12px;border-radius:4px;margin:0 0 10px 0;"
+                f"color:{WHITE}'>🌊 <b>Order flow vs this {'long' if direction > 0 else 'short'} idea: "
+                f"<span style='color:{col}'>{s}</span></b> — {why} · day CVD ₹{f.totals['cvd']:+,.0f} Cr "
+                f"<span style='color:{AMBER};font-size:0.8rem'>(untested until backtest_orderflow.py passes)</span></div>",
+                unsafe_allow_html=True)
 
 
 def render(df: pd.DataFrame, df15: pd.DataFrame | None, tf: str, frames: dict | None = None) -> None:
@@ -507,6 +536,7 @@ def render(df: pd.DataFrame, df15: pd.DataFrame | None, tf: str, frames: dict | 
     </div>""", unsafe_allow_html=True)
 
     render_five_rule(df if "timestamp" in df else d0, df15, frames)
+    _render_orderflow_check(desk)
 
     st.plotly_chart(chart(d0, desk, f"SMC map — structure, zones, liquidity ({tf})"), use_container_width=True, key=f"smcdesk_{tf}")
 

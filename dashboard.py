@@ -4873,12 +4873,11 @@ if _tab_active(32):
 # ═══════════════════════════════════════════════════════════════════════════
 if _tab_active(33):
     try:
-        import market_depth_tab
-        market_depth_tab.render(
+        # Real NIFTY 50 order flow (orderflow_recorder.py). The old market_depth_tab view drew
+        # simulated footprints/CVD/walls from random numbers and is no longer shown.
+        import nifty_orderflow_tab
+        nifty_orderflow_tab.render(
             spot=spot if "spot" in locals() else None,
-            read=read if "read" in locals() else None,
-            df=idx_c if ("idx_c" in locals() and idx_c is not None and not idx_c.empty) else None,
-            fut_c=fut_c if "fut_c" in locals() else None,
             pa_frames=pa_frames if "pa_frames" in locals() else None,
         )
     except Exception as _md_err:

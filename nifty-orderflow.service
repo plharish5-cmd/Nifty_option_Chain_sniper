@@ -1,0 +1,13 @@
+[Unit]
+Description=NIFTY 50 order-flow recorder (Dhan live feed, 50 index stocks)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/harish/Documents/Swathi K N/1 Trading/option chain/OC
+ExecStart=/usr/bin/systemd-inhibit --what=sleep:idle:handle-lid-switch --why="NIFTY order-flow recorder active" "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/.venv/bin/python" orderflow_recorder.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal

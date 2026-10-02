@@ -31,6 +31,7 @@ import smc
 ROOT = Path(__file__).parent
 RULES_PATH = ROOT / "strategy1_rules.json"
 BT_PATH = ROOT / "data" / "backtests" / "daily_bias.json"
+EDGE_PATH = ROOT / "data" / "backtests" / "five_rule.json"   # written by backtest_five_rule.py
 _DEF = {"windows": [["09:30", "11:30"], ["13:30", "14:45"]], "opening_range_minutes": 15,
         "ib_minutes": 60, "min_rr": 3.0, "sl_buffer_pts": 5.0, "zone_tap_lookback_min": 45,
         "ltf_lookback_bars": 120, "min_pullback_bars": 3, "pivot_n": 2, "min_sl_pts": 15.0,
@@ -179,6 +180,31 @@ def bias_validation() -> dict | None:
         return json.loads(BT_PATH.read_text())
     except Exception:
         return None
+
+
+def edge_validation() -> dict | None:
+    """Headline result of backtest_five_rule.py on YOUR NIFTY data (None = not run yet)."""
+    try:
+        r = json.loads(EDGE_PATH.read_text())
+        h = r.get("headline", {})
+        s, n = h.get("stats", {}), h.get("null", {})
+        return dict(passed=bool(r.get("passed")), n=int(s.get("n", 0)), avg_R=float(s.get("avg_R", 0.0)),
+                    total_R=float(s.get("total_R", 0.0)), win=float(s.get("win_rate", 0.0)),
+                    p_time=float(n.get("p_time", 1.0)), p_side=float(n.get("p_side", 1.0)),
+                    sessions=int(r.get("scored_sessions", 0)), generated=str(r.get("generated", ""))[:10])
+    except Exception:
+        return None
+
+
+def edge_line() -> str:
+    v = edge_validation()
+    if v is None:
+        return "Backtest: not run yet — run backtest_five_rule.py; until then treat this as a checklist."
+    core = (f"{v['n']} trades / {v['sessions']} sessions · avg {v['avg_R']:+.2f}R · "
+            f"random-time p={v['p_time']:.2f} · random-side p={v['p_side']:.2f} ({v['generated']})")
+    if v["passed"]:
+        return "Backtest: EDGE on your NIFTY data — " + core
+    return "Backtest: UNPROVEN on your NIFTY data — checklist only, not a signal · " + core
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -331,7 +357,7 @@ def evaluate(df1: pd.DataFrame | None, df5: pd.DataFrame, df15: pd.DataFrame | N
     prev = daily[pd.to_datetime(daily["day"]).dt.date < today].tail(1)
     if len(prev):
         lv["PDH"], lv["PDL"] = float(prev.high.iloc[0]), float(prev.low.iloc[0])
-    out.levels = lv
+    out.levels.update(lv)          # keep the daily-draw set in Rule 1 (was overwritten before)
     swept = []
     after = s5[~or_mask] if or_mask.any() else s5
     lows, highs = after["low"].to_numpy(float), after["high"].to_numpy(float)
@@ -458,4 +484,5 @@ def text_block(fr: FiveRule) -> str:
                  + f" · TP2 {fr.tp:,.0f} (external)" + (f" · R:R {fr.rr:.1f} to TP2" if fr.rr else ""))
     if fr.next_needed and "TAKE" not in fr.verdict:
         L.append(f"  Next needed: {fr.next_needed}")
+    L.append("  " + edge_line())
     return "\n".join(L)

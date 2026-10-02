@@ -36,6 +36,7 @@ _DEF = {
                 "oi_buildup": 1.0, "pcr": 0.75, "vol_pcr": 0.5, "iv_vega": 0.5, "fii_dii": 0.5},
     "lean_threshold": 0.20, "act_threshold": 0.35, "no_new_trades_after": "15:00",
     "fallback_sl_pts": 30.0, "hold_hours": 1.0, "sub10_iv_warning": 10.0, "min_target_r": 1.5,
+    "five_rule_can_trigger": "auto",   # auto = only if backtest_five_rule.py passed · true · false
 }
 NAVY, PANEL, GRID, GOLD, WHITE, MUTED = "#0b1a33", "#10223f", "#1e3358", "#d4af37", "#f1f5f9", "#94a3b8"
 GREEN, RED, AMBER, BLUE, PURPLE = "#22c55e", "#ef4444", "#f59e0b", "#38bdf8", "#a78bfa"
@@ -149,8 +150,11 @@ def collect(spot: float, chain_df: pd.DataFrame | None, pa_frames: dict | None, 
 
     def v_five():
         v = _V.get(five.side, 0)
+        ev = sfr.edge_validation()
+        tag = "" if ev and ev["passed"] else (" · ⚠ unproven (backtest not run)" if ev is None else
+                                               f" · ⚠ unproven (backtest avg {ev['avg_R']:+.2f}R, no edge vs random)")
         return Vote("five_rule", "5-Rule SMC model", v, five.score / 5, f"{five.score}/5 · {five.verdict}"
-                    + (f" · next: {five.next_needed}" if five.next_needed and 'TAKE' not in five.verdict else ""))
+                    + (f" · next: {five.next_needed}" if five.next_needed and 'TAKE' not in five.verdict else "") + tag)
 
     for fn, k, n in ((v_struct, "structure", "Structure · 15m external"), (v_desk, "smc_desk", "SMC Trade Desk · 5m"),
                      (v_five, "five_rule", "5-Rule SMC model")):
@@ -222,6 +226,26 @@ def collect(spot: float, chain_df: pd.DataFrame | None, pa_frames: dict | None, 
         return Vote("daily_draw", "Daily draw (validated target)", 0, 0,
                     "no validated draw today (only BEAR→PDL passed your NIFTY backtest)", context_only=True)
     d.votes.append(_safe(v_draw, "daily_draw", "Daily draw (validated target)", True))
+
+    def v_of():
+        import nifty_orderflow as nf
+        f = nf.today_flow(5)
+        if f is None:
+            return Vote("orderflow", "NIFTY 50 order flow", 0, 0, "no recording today — run orderflow_recorder.py",
+                        available=False, context_only=True)
+        try:
+            w = float(json.loads(nf.RULES_PATH.read_text()).get("decision_desk_weight", 0.0))
+        except Exception:
+            w = 0.0
+        code = f.state.get("code", 0)
+        v = 1 if code > 0 else -1 if code < 0 else 0
+        valid = any(x.get("passed") for x in nf.validation().get("signals", {}).values())
+        rr["weights"]["orderflow"] = w
+        return Vote("orderflow", "NIFTY 50 order flow" + ("" if (w > 0 and valid) else " (context · untested)"),
+                    v, min(1.0, abs(code) / 2), f"{f.state['label']} · day CVD ₹{f.totals['cvd']:+,.0f} Cr · "
+                    f"last candle breadth {int(f.candles['breadth_up'].iloc[-1])}↑/{int(f.candles['breadth_dn'].iloc[-1])}↓",
+                    context_only=not (w > 0 and valid))
+    d.votes.append(_safe(v_of, "orderflow", "NIFTY 50 order flow", True))
     return d, ctx
 
 
@@ -258,7 +282,12 @@ def decide(d: Desk, ctx: dict, now: datetime, chain_df: pd.DataFrame | None, rr:
     if desk and desk.phase == "CONSOLIDATION":
         d.warnings.append("5m is consolidating — trade only a candle CLOSE out of the box.")
 
-    five_take = five is not None and "TAKE" in five.verdict and _V.get(five.side, 0) == sgn
+    import smc_five_rule as sfr
+    trig = rr.get("five_rule_can_trigger", "auto")
+    ev = sfr.edge_validation()
+    five_ok = (trig is True or str(trig).lower() == "true" or
+               (str(trig).lower() == "auto" and ev is not None and ev["passed"]))
+    five_take = five_ok and five is not None and "TAKE" in five.verdict and _V.get(five.side, 0) == sgn
     desk_go = desk is not None and ((desk.action == "BUY" and sgn > 0) or (desk.action == "SELL" and sgn < 0))
     opt = "CE" if sgn > 0 else "PE"
     if late:
@@ -278,7 +307,8 @@ def decide(d: Desk, ctx: dict, now: datetime, chain_df: pd.DataFrame | None, rr:
     # plan (spot levels) — prefer 5-Rule plan, then Trade Desk plan
     if five and five.entry and five.sl and _V.get(five.side, 0) == sgn:
         tp1 = five.levels.get("TP1") or five.tp
-        d.plan = dict(entry=five.entry, sl=five.sl, tp1=tp1, tp2=five.tp, src="5-Rule model",
+        d.plan = dict(entry=five.entry, sl=five.sl, tp1=tp1, tp2=five.tp,
+                      src="5-Rule model" if five_ok else "5-Rule model (unproven — levels only)",
                       tp1_name=five.levels.get("TP1_name", "nearest swing"))
     elif desk and desk.entry and desk.sl:
         d.plan = dict(entry=desk.entry, sl=desk.sl, tp1=desk.tp1, tp2=desk.tp2, src="SMC Trade Desk",
@@ -556,7 +586,7 @@ def render(spot: float, chain_df: pd.DataFrame | None, pa_frames: dict | None, n
       <div style="color:{GOLD};font-weight:700">HOW THE DECISION IS MADE</div>
       <ul style="margin:4px 0 0 18px;color:#cbd5e1">
         <li>Each engine votes bull / bear / neutral with a strength; the weighted average is the <b>confluence score</b> (−1 … +1).</li>
-        <li><b>BUY CE / BUY PE</b> = score ≥ {rr['act_threshold']:.2f} in that direction <b>and</b> the execution model is green (5-Rule TAKE TRADE or Trade Desk BUY/SELL).</li>
+        <li><b>BUY CE / BUY PE</b> = score ≥ {rr['act_threshold']:.2f} in that direction <b>and</b> the execution model is green (Trade Desk BUY/SELL, or a 5-Rule TAKE TRADE — the 5-Rule counts only once backtest_five_rule.py shows an edge).</li>
         <li><b>ON PULLBACK</b> = direction agreed (score ≥ {rr['lean_threshold']:.2f}) but price is not at the entry zone — place a limit / alert at the zone, don't chase.</li>
         <li><b>WAIT</b> = engines disagree, or short-term flow fights the 15m external structure. <b>NO TRADE</b> = after {rr['no_new_trades_after']}.</li>
         <li>Context rows (gamma, daily draw) don't vote — they change <i>how</i> you trade (target size, pinning, likely level to be taken).</li>

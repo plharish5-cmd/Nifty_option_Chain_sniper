@@ -1,0 +1,12 @@
+{
+ "updated": "2026-10-02T22:40:21",
+ "day": "2026-10-02",
+ "status": "stopped",
+ "packets": 20,
+ "trades": 0,
+ "stocks_streaming": 19,
+ "stocks_subscribed": 50,
+ "index_ltp": 0.0,
+ "error": "",
+ "pid": 25785
+}

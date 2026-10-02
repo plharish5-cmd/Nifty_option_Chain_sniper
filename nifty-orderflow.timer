@@ -1,0 +1,9 @@
+[Unit]
+Description=Start the NIFTY 50 order-flow recorder every weekday morning
+
+[Timer]
+OnCalendar=Mon..Fri 09:02
+Persistent=true
+
+[Install]
+WantedBy=timers.target

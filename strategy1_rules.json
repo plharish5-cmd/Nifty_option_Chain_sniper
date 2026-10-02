@@ -656,7 +656,7 @@
     "weights": {
       "structure": 2.0,
       "smc_desk": 1.5,
-      "five_rule": 2.0,
+      "five_rule": 0.5,
       "smart_oi": 1.0,
       "writers": 1.0,
       "oi_buildup": 1.0,
@@ -671,6 +671,8 @@
     "fallback_sl_pts": 30.0,
     "hold_hours": 1.0,
     "sub10_iv_warning": 10.0,
-    "min_target_r": 1.5
+    "min_target_r": 1.5,
+    "five_rule_can_trigger": "auto",
+    "_five_rule_note": "2026-10-02 backtest on 241 NIFTY sessions: 258 trades, +0.04R/trade, random-time p=0.20, random-side p=0.48 -> no proven edge. Weight cut 2.0 -> 0.5; 'auto' lets a 5-Rule TAKE trigger BUY CE/PE only after data/backtests/five_rule.json says passed."
   }
 }

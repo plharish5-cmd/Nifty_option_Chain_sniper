@@ -673,34 +673,34 @@ class VolumeProfileChartBuilder:
         return fig
 
 
-# =============================================================================
-# Helper: Synthetic Data Generator (Fallback outside market hours)
-# =============================================================================
+def _real_volume(chart_df: pd.DataFrame, tf_choice: str) -> pd.DataFrame:
+    """The NIFTY 50 index has no traded volume. Use the real ₹ traded in its 50 stocks (orderflow_recorder.py)
+    when today's recording exists; otherwise build a TIME-at-price profile and say so — never invent volume."""
+    import streamlit as st
+    vol = chart_df["volume"].fillna(0) if "volume" in chart_df else pd.Series(0.0, index=chart_df.index)
+    if float(vol.sum()) > 0:
+        return chart_df
+    try:
+        import nifty_orderflow as nf
+        m = int(str(tf_choice).rstrip("m"))
+        f = nf.today_flow(m)
+    except Exception:
+        f = None
+    if f is not None and not f.candles.empty:
+        ts = pd.to_datetime(chart_df["timestamp"]) if "timestamp" in chart_df else pd.to_datetime(chart_df.index)
+        v = pd.Series(f.candles.set_index("t")["vol"])
+        chart_df = chart_df.copy()
+        chart_df["volume"] = pd.Series(ts).map(v).fillna(0.0).to_numpy() * 1e7      # ₹ (crore → rupees)
+        if float(chart_df["volume"].sum()) > 0:
+            st.caption("Volume = real ₹ traded in the 50 NIFTY stocks per candle (from the order-flow recorder).")
+            return chart_df
+    chart_df = chart_df.copy()
+    chart_df["volume"] = 1.0
+    st.warning("The NIFTY 50 index has no traded volume, and there is no order-flow recording for today — this is a "
+               "TIME-at-price profile (how long price spent at each level), not a volume profile. "
+               "Start orderflow_recorder.py for a real ₹ volume profile.")
+    return chart_df
 
-def _generate_synthetic_nifty(timeframe: str = "5m", spot: float = 24550.0) -> pd.DataFrame:
-    dates = pd.date_range("2026-09-04 09:15", "2026-09-04 15:25", freq=timeframe)
-    n = len(dates)
-    np.random.seed(42)
-
-    p = spot
-    prices = [p]
-    for i in range(1, n):
-        p += np.random.randn() * 9.5
-        prices.append(p)
-    prices = np.array(prices)
-
-    return pd.DataFrame({
-        "open": prices + np.random.uniform(-4, 4, n),
-        "high": prices + np.random.uniform(4, 18, n),
-        "low": prices - np.random.uniform(4, 18, n),
-        "close": prices + np.random.uniform(-4, 4, n),
-        "volume": np.random.randint(65000, 240000, n).astype(float),
-    }, index=dates)
-
-
-# =============================================================================
-# Main Tab Render Function
-# =============================================================================
 
 def render(
     pa_frames: Optional[Dict[str, pd.DataFrame]] = None,
@@ -785,8 +785,10 @@ def render(
     if pa_frames and tf_choice in pa_frames and not pa_frames[tf_choice].empty:
         chart_df = pa_frames[tf_choice].copy()
     else:
-        ref_spot = float(spot) if spot and not np.isnan(spot) else 24550.0
-        chart_df = _generate_synthetic_nifty(timeframe=tf_choice, spot=ref_spot)
+        # No made-up candles: the old synthetic fallback has been removed.
+        st.info("No NIFTY candles loaded for this timeframe yet — the volume profile appears once real candles arrive.")
+        return
+    chart_df = _real_volume(chart_df, tf_choice)
 
     engine = VolumeProfileEngine(bin_size=5.0, value_area_pct=0.70)
     res = engine.compute_profile(chart_df)
