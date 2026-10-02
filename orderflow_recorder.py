@@ -199,6 +199,8 @@ class Recorder:
         self.url = url
         self.state: dict[str, dict] = {}
         self.idx_ltp = 0.0
+        self.idx_seen = 0.0
+        self.idx_source = "feed"
         self.tick_buf, self.book_buf, self.idx_buf = [], [], []
         self.lock = threading.Lock()
         self.n_packets = self.n_trades = 0
@@ -240,7 +242,12 @@ class Recorder:
                 print(f"  {datetime.now():%H:%M:%S} code={p['code']} {p['seg']}:{nm} "
                       + " ".join(f"{k}={v:.2f}" if isinstance(v, float) else f"{k}={v}"
                                  for k, v in p.items() if k not in ("code", "seg", "sid")))
-                if self.n_packets >= self.diagnose:
+                if p["seg"] == "IDX_I":
+                    self.idx_diag = True
+                if self.n_packets >= self.diagnose and (getattr(self, "idx_diag", False) or self.n_packets >= 5 * self.diagnose):
+                    if not getattr(self, "idx_diag", False):
+                        print("  ! no NIFTY 50 index packet yet — normal when the market is closed; during market hours "
+                              "the recorder also falls back to REST for the index price.")
                     self.stop_flag = True
                     ws.close()
                     return
@@ -249,6 +256,7 @@ class Recorder:
                 print("  !", self.err)
             if p["seg"] == "IDX_I" and p["sid"] == self.idx_id and p.get("ltp"):
                 self.idx_ltp = float(p["ltp"])
+                self.idx_seen = now
                 with self.lock:
                     self.idx_buf.append((round(now, 3), round(self.idx_ltp, 2)))
                 continue
@@ -288,10 +296,7 @@ class Recorder:
         if dq >= 0:
             st["vol"] = vol
         st["ltp"], st["tbq"], st["tsq"] = ltp, p.get("tbq", 0), p.get("tsq", 0)
-        if bid > 0:
-            st["bid"] = bid
-        if ask > 0:
-            st["ask"] = ask
+        st["bid"], st["ask"] = bid, ask          # 0 = that side is empty → quote rule skipped, tick rule used
 
     def on_error(self, ws, err):
         self.err = str(err)[:300]
@@ -332,11 +337,32 @@ class Recorder:
     def heartbeat(self):
         hb = dict(updated=datetime.now().isoformat(timespec="seconds"), day=self.day, status=self.status,
                   packets=self.n_packets, trades=self.n_trades, stocks_streaming=len(self.seen),
-                  stocks_subscribed=len(self.id2sym), index_ltp=self.idx_ltp, error=self.err, pid=os.getpid())
+                  stocks_subscribed=len(self.id2sym), index_ltp=self.idx_ltp, index_source=self.idx_source,
+                  error=self.err, pid=os.getpid())
         try:
             (OF_DIR / "recorder_heartbeat.json").write_text(json.dumps(hb, indent=1))
         except Exception:
             pass
+
+    # ── index price safety net ───────────────────────────────────────────
+    def _index_poller(self):
+        """If the websocket stops sending NIFTY 50 ticks for >10 s, fetch the index LTP over REST every 2 s,
+        so stock trades can still be placed on the index price."""
+        import dhan_client as dc
+        while not self.stop_flag:
+            time.sleep(2)
+            if self.diagnose or time.time() - self.idx_seen < 10:
+                continue
+            try:
+                r = dc._post("/marketfeed/ltp", {self.r.get("index_segment", "IDX_I"): [int(self.idx_id)]})
+                d = (r.get("data") or {}).get(self.r.get("index_segment", "IDX_I"), {}).get(self.idx_id, {})
+                px = float(d.get("last_price") or 0)
+                if px > 0:
+                    self.idx_ltp, self.idx_source = px, "rest"
+                    with self.lock:
+                        self.idx_buf.append((round(time.time(), 3), round(px, 2)))
+            except Exception as e:                           # noqa: BLE001
+                self.err = f"index REST fallback: {str(e)[:120]}"
 
     # ── main loop with reconnect ─────────────────────────────────────────
     def run(self, stop_at: datetime | None):
@@ -349,6 +375,8 @@ class Recorder:
                 sys.exit("DHAN_CLIENT_ID is missing from .env — the live feed needs it (token alone is not enough).")
             url = (f"{self.r.get('ws_url', 'wss://api-feed.dhan.co')}?version={self.r.get('feed_version', '2')}"
                    f"&token={dc.token()}&clientId={cid}&authType={self.r.get('auth_type', '2')}")
+        if self.url is None and not self.diagnose:
+            threading.Thread(target=self._index_poller, daemon=True).start()
         wait = 2
         while not self.stop_flag:
             if stop_at and datetime.now() >= stop_at:
