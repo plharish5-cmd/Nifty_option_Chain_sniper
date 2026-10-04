@@ -1,0 +1,73 @@
+{
+  "_note": "ICT 2022 Mentorship model, written as explicit rules for NIFTY 5-minute candles. Every number here was fixed BEFORE looking at any result. Change one, rerun backtest_ict.py, and the Evidence Board re-labels it. Information only - not financial advice.",
+  "tf_minutes": 5,
+  "liquidity": [
+    "pd",
+    "swing",
+    "or"
+  ],
+  "_liquidity_note": "pd = previous day high/low; swing = confirmed 5m swing highs/lows made earlier today; or = opening-range high/low (first or_minutes).",
+  "swing_n": 2,
+  "or_minutes": 15,
+  "reclaim_candles": 2,
+  "mss_window_candles": 12,
+  "pre_lookback_candles": 6,
+  "disp_body_atr": 0.8,
+  "atr_n": 12,
+  "min_fvg_pts": 3.0,
+  "ote_lo": 0.62,
+  "ote_hi": 0.79,
+  "entry": "ce",
+  "tp": "2",
+  "mode": "be75",
+  "pd_filter": "eq",
+  "_pd_filter_note": "none | eq (buy only below 50% of today's range so far, sell only above) | open (buy only below today's open, sell only above). Fixed in advance as eq because six episodes stress premium/discount.",
+  "fill_wait_min": 60,
+  "sl_buffer_pts": 2.0,
+  "min_risk_pts": 8,
+  "max_risk_pts": 60,
+  "min_signal": "09:25",
+  "last_signal": "14:45",
+  "max_trades_day": 2,
+  "windows": {
+    "A morning 09:15-11:45": [
+      "09:15",
+      "11:45"
+    ],
+    "B lunch 11:45-13:30": [
+      "11:45",
+      "13:30"
+    ],
+    "C afternoon 13:30-15:00": [
+      "13:30",
+      "15:00"
+    ]
+  },
+  "validation": {
+    "reps": 1000,
+    "grid_reps": 200,
+    "min_trades": 30,
+    "p_max": 0.05
+  },
+  "smt_filter": "none",
+  "_smt_note": "none | require (only setups where Bank Nifty did NOT confirm the sweep). Needs Bank Nifty 1m history: backtest_ict.py --fetch-bn 730",
+  "turtle_soup": {
+    "min_pts": 2.0,
+    "max_pts": 10.0,
+    "liquidity": [
+      "pd",
+      "swing",
+      "or",
+      "eq"
+    ],
+    "eq_tol_pts": 3.0,
+    "horizons_min": [
+      15,
+      30,
+      60
+    ],
+    "primary_horizon_min": 30,
+    "open_pool_minutes": 90,
+    "_note": "Wick past a liquidity pool by min_pts..max_pts, candle CLOSES back inside. Primary test: 30 minutes after the close, signed in the reversal direction."
+  }
+}

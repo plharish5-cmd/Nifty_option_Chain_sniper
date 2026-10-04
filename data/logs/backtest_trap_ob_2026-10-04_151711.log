@@ -1,0 +1,78 @@
+$ backtest_trap_ob.py
+494 stored sessions · testing 494 (2024-10-03 → 2026-10-01)
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+30-MINUTE ZONES: 5928 bars → 303 zones (289 trap / 14 break block) → 36 confirmed first-retest signals
+PRIMARY: target 2R · be75 · no trend filter · 1000 random reps
+                                        n    win      avg    totalrnd-timernd-side  p time/side  halves       verdict
+  ALL 30m ZONES                        30    23%   -0.38R   -11.3R   -0.37   +0.01  0.500/0.969  -0.12/-0.64  ✘ no edge
+  1 bear trap → buy                    14    14%   -0.78R   -10.9R   -0.78   +0.02  0.419/0.988  -0.75/-0.81  too few
+  2 bull trap → sell                   14    36%   +0.12R    +1.7R   -0.01   +0.16  0.365/0.548  +0.85/-0.61  too few
+  4 bear break block → sell             2     0%   -1.04R    -2.1R    +nan    +nan    n/a        -1.04/-1.04  too few
+  window A morning 09:15-11:45          6    50%   +0.31R    +1.9R   -0.15   +0.08  0.123/0.311  +1.33/-0.71  too few
+  window B lunch 11:45-13:30           13    23%   -0.27R    -3.5R   -0.41   -0.05  0.296/0.743  -0.22/-0.32  too few
+  window C afternoon 13:30-15:00       11     9%   -0.88R    -9.7R   -0.42   -0.03  0.976/0.994  -0.69/-1.04  too few
+  grid (transparency, not a menu): target × management × trend filter
+    2R · tp · trend none               30    30%   -0.28R    -8.3R   -0.33   +0.05  0.373/0.910  -0.12/-0.44  ✘ no edge
+    2R · tp · trend d5                 17    41%   +0.01R    +0.2R   -0.35   +0.30  0.050/0.756  +0.31/-0.25  too few
+    2R · be75 · trend none             30    23%   -0.38R   -11.3R   -0.36   +0.03  0.512/0.965  -0.12/-0.64  ✘ no edge
+    2R · be75 · trend d5               17    35%   -0.10R    -1.8R   -0.34   +0.22  0.139/0.826  +0.31/-0.47  too few
+    3R · tp · trend none               30    27%   -0.32R    -9.6R   -0.36   +0.07  0.413/0.945  -0.22/-0.41  ✘ no edge
+    3R · tp · trend d5                 17    35%   -0.01R    -0.1R   -0.33   +0.37  0.090/0.846  +0.11/-0.11  too few
+    3R · be75 · trend none             30    27%   -0.32R    -9.6R   -0.35   +0.06  0.418/0.945  -0.22/-0.41  ✘ no edge
+    3R · be75 · trend d5               17    35%   -0.01R    -0.1R   -0.33   +0.36  0.080/0.846  +0.11/-0.11  too few
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+60-MINUTE ZONES: 2964 bars → 158 zones (141 trap / 17 break block) → 25 confirmed first-retest signals
+PRIMARY: target 2R · be75 · no trend filter · 1000 random reps
+                                        n    win      avg    totalrnd-timernd-side  p time/side  halves       verdict
+  ALL 60m ZONES                        21    43%   +0.18R    +3.8R   +0.08   -0.01  0.324/0.198  +0.80/-0.38  too few
+  1 bear trap → buy                     6    50%   +0.47R    +2.8R   +0.01   +0.28  0.084/0.407  +0.97/-0.03  too few
+  2 bull trap → sell                   14    36%   +0.04R    +0.6R   +0.09   -0.12  0.536/0.267  +0.73/-0.64  too few
+  3 bull break block → buy              1   100%   +0.38R    +0.4R    +nan    +nan    n/a           —         too few
+  window A morning 09:15-11:45          6    33%   +0.13R    +0.8R   +0.02   -0.14  0.356/0.323  +0.97/-0.71  too few
+  window B lunch 11:45-13:30            6    50%   +0.54R    +3.2R   +0.48   +0.01  0.425/0.126  +1.29/-0.22  too few
+  window C afternoon 13:30-15:00        9    44%   -0.02R    -0.2R   -0.08   +0.10  0.428/0.677  +0.31/-0.28  too few
+  grid (transparency, not a menu): target × management × trend filter
+    2R · tp · trend none               21    48%   +0.18R    +3.8R   +0.05   -0.09  0.293/0.139  +0.70/-0.29  too few
+    2R · tp · trend d5                 14    57%   +0.49R    +6.8R   +0.14   +0.08  0.134/0.100  +1.27/-0.29  too few
+    2R · be75 · trend none             21    43%   +0.18R    +3.8R   +0.08   -0.01  0.343/0.194  +0.80/-0.38  too few
+    2R · be75 · trend d5               14    50%   +0.42R    +5.8R   +0.17   +0.04  0.184/0.104  +1.42/-0.58  too few
+    3R · tp · trend none               21    43%   +0.16R    +3.3R   -0.02   -0.09  0.214/0.199  +0.70/-0.34  too few
+    3R · tp · trend d5                 14    50%   +0.56R    +7.8R   +0.10   +0.09  0.085/0.119  +1.26/-0.15  too few
+    3R · be75 · trend none             21    43%   +0.16R    +3.3R   -0.00   -0.09  0.239/0.199  +0.70/-0.34  too few
+    3R · be75 · trend d5               14    50%   +0.56R    +7.8R   +0.12   +0.09  0.100/0.110  +1.26/-0.15  too few
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+240-MINUTE ZONES: 988 bars → 49 zones (44 trap / 5 break block) → 11 confirmed first-retest signals
+PRIMARY: target 2R · be75 · no trend filter · 1000 random reps
+                                        n    win      avg    totalrnd-timernd-side  p time/side  halves       verdict
+  ALL 240m ZONES                       10    40%   +0.26R    +2.6R   -0.14   +0.07  0.107/0.305  +0.96/-0.44  too few
+  1 bear trap → buy                     3    67%   +0.95R    +2.9R    +nan    +nan    n/a        +1.98/+0.44  too few
+  2 bull trap → sell                    5    40%   +0.35R    +1.8R   +0.04   +0.02  0.275/0.305  +0.96/-0.05  too few
+  3 bull break block → buy              2     0%   -1.02R    -2.0R    +nan    +nan    n/a        -1.02/-1.02  too few
+  window A morning 09:15-11:45          5    60%   +0.76R    +3.8R   +0.42   +0.24  0.443/0.270  +1.94/-0.03  too few
+  window B lunch 11:45-13:30            2     0%   -0.54R    -1.1R    +nan    +nan    n/a        -0.05/-1.04  too few
+  window C afternoon 13:30-15:00        3    33%   -0.04R    -0.1R    +nan    +nan    n/a        -1.02/+0.45  too few
+  grid (transparency, not a menu): target × management × trend filter
+    2R · tp · trend none               10    40%   +0.16R    +1.6R   -0.13   +0.04  0.284/0.378  +0.76/-0.44  too few
+    2R · tp · trend d5                  6    50%   +0.46R    +2.8R   +0.23   +0.17  0.517/0.363  +0.95/-0.04  too few
+    2R · be75 · trend none             10    40%   +0.26R    +2.6R   -0.11   +0.04  0.104/0.289  +0.96/-0.44  too few
+    2R · be75 · trend d5                6    50%   +0.46R    +2.8R   +0.22   +0.11  0.458/0.279  +0.95/-0.04  too few
+    3R · tp · trend none               10    30%   -0.13R    -1.3R   -0.13   -0.23  0.463/0.403  +0.56/-0.82  too few
+    3R · tp · trend d5                  6    33%   +0.29R    +1.8R   +0.35   -0.20  0.502/0.085  +0.29/+0.30  too few
+    3R · be75 · trend none             10    20%   -0.04R    -0.4R   -0.11   -0.14  0.408/0.378  +0.76/-0.84  too few
+    3R · be75 · trend d5                6    33%   +0.46R    +2.8R   +0.39   -0.03  0.423/0.110  +0.62/+0.30  too few
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+HEADLINE — ALL TIMEFRAMES POOLED (30m + 1h + 4h zones, max 2 trades/day) · target 2R · be75 · 1000 random reps
+                                        n    win      avg    totalrnd-timernd-side  p time/side  halves       verdict
+  ALL ZONES POOLED                     51    31%   -0.13R    -6.7R   -0.26   +0.02  0.167/0.828  +0.24/-0.49  ✘ no edge
+  1 bear trap → buy                    20    30%   -0.26R    -5.1R   -0.54   +0.08  0.060/0.895  -0.36/-0.17  too few
+  2 bull trap → sell                   26    35%   +0.08R    +2.2R   -0.07   +0.02  0.225/0.404  +0.68/-0.52  too few
+  3 bull break block → buy              3    33%   -0.55R    -1.7R    +nan    +nan    n/a        +0.38/-1.02  too few
+  4 bear break block → sell             2     0%   -1.04R    -2.1R    +nan    +nan    n/a        -1.04/-1.04  too few
+  only with daily trend (d5)           31    39%   +0.06R    +1.9R   -0.19   +0.13  0.084/0.635  +0.75/-0.58  ✘ no edge
+
+Per-timeframe passes: none · grid 0 of 24 variants pass (≈0.06 expected by luck on both controls). The pooled line above is the single pre-declared verdict.
+Saved /home/harish/Documents/Swathi K N/1 Trading/option chain/OC/data/backtests/trap_ob.json. Information only — not financial advice.

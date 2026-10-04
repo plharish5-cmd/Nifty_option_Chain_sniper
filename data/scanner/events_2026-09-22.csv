@@ -1,0 +1,15 @@
+logged_at,day,event_t,token,kind,side,level_kind,level,depth,close_inside,smt,entry_ce,sl,flow,flow_note,chain,call_wall,put_wall,net_bias,squeeze,ref_strike,score,unvalidated
+2026-10-04T15:00:58,2026-09-22,2026-09-22 10:10:00,13,TURTLE_SOUP,BEARISH,pd,23466.8,3.1,False,True,,,NO DATA,no recorded ticks for this day,OK,23500.0,23400.0,0.29,,23450,1,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 10:25:00,13,TURTLE_SOUP,BULLISH,swing,23449.5,13.8,False,False,,,NO DATA,no recorded ticks for this day,OK,23500.0,23400.0,0.0,,23450,1,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 10:35:00,13,TURTLE_SOUP,BULLISH,or,23425.7,11.5,False,False,,,NO DATA,no recorded ticks for this day,OK,23500.0,23400.0,-0.29,,23400,1,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 10:40:00,13,ICT_SETUP,BEARISH,PDL,23466.8,,True,True,23426.8,23472.6,NO DATA,no recorded ticks for this day,OK,23500.0,23400.0,-0.86,,23400,2,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 11:15:00,13,TURTLE_SOUP,BEARISH,swing,23390.8,4.35,False,True,,,NO DATA,no recorded ticks for this day,OK,23500.0,23300.0,-1.14,,23400,2,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 11:45:00,13,TURTLE_SOUP,BULLISH,swing,23368.8,2.9,True,False,,,NO DATA,no recorded ticks for this day,OK,23500.0,23300.0,-1.14,,23350,1,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 11:50:00,13,TURTLE_SOUP,BULLISH,swing,23363.0,5.9,True,False,,,NO DATA,no recorded ticks for this day,OK,23400.0,23300.0,-1.14,,23350,1,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 12:45:00,13,TURTLE_SOUP,BULLISH,swing,23350.0,5.55,False,False,,,NO DATA,no recorded ticks for this day,OK,23400.0,23300.0,-1.14,,23350,1,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 13:35:00,13,TURTLE_SOUP,BEARISH,swing,23344.0,3.35,True,True,,,NO DATA,no recorded ticks for this day,NO DATA,,,,,23350,1,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 13:50:00,13,TURTLE_SOUP,BULLISH,swing,23325.7,4.35,True,False,,,NO DATA,no recorded ticks for this day,NO DATA,,,,,23350,1,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 13:55:00,13,TURTLE_SOUP,BULLISH,pd,23314.8,15.55,False,False,,,NO DATA,no recorded ticks for this day,NO DATA,,,,,23350,1,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 14:15:00,13,TURTLE_SOUP,BEARISH,swing,23355.3,28.55,False,False,,,NO DATA,no recorded ticks for this day,NO DATA,,,,,23350,1,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 15:00:00,13,TURTLE_SOUP,BULLISH,swing,23359.9,9.15,False,False,,,NO DATA,no recorded ticks for this day,OK,23400.0,23300.0,-0.86,,23350,1,True
+2026-10-04T15:00:58,2026-09-22,2026-09-22 15:30:00,13,TURTLE_SOUP,BULLISH,swing,23346.7,17.7,False,False,,,NO DATA,no recorded ticks for this day,OK,23350.0,23300.0,-0.86,,23350,1,True

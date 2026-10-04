@@ -1,0 +1,11 @@
+logged_at,day,event_t,token,kind,side,level_kind,level,depth,close_inside,smt,entry_ce,sl,flow,flow_note,chain,call_wall,put_wall,net_bias,squeeze,ref_strike,score,unvalidated
+2026-10-04T14:59:04,2026-09-01,2026-09-01 09:45:00,13,TURTLE_SOUP,BULLISH,or,24027.8,2.6,True,False,,,NO DATA,no recorded ticks for this day,OK,24100.0,24000.0,-0.86,,24050,1,True
+2026-10-04T14:59:04,2026-09-01,2026-09-01 10:55:00,13,TURTLE_SOUP,BEARISH,or,24082.6,10.05,False,True,,,NO DATA,no recorded ticks for this day,OK,24100.0,24000.0,-0.57,,24100,2,True
+2026-10-04T14:59:04,2026-09-01,2026-09-01 11:10:00,13,TURTLE_SOUP,BEARISH,swing,24092.7,3.65,False,False,,,NO DATA,no recorded ticks for this day,OK,24100.0,24000.0,-0.29,,24100,2,True
+2026-10-04T14:59:04,2026-09-01,2026-09-01 12:25:00,13,TURTLE_SOUP,BULLISH,swing,24104.0,7.0,False,False,,,NO DATA,no recorded ticks for this day,OK,24200.0,24000.0,0.0,,24100,1,True
+2026-10-04T14:59:04,2026-09-01,2026-09-01 12:55:00,13,TURTLE_SOUP,BULLISH,swing,24094.7,2.35,False,False,,,NO DATA,no recorded ticks for this day,OK,24200.0,24000.0,0.0,,24100,1,True
+2026-10-04T14:59:04,2026-09-01,2026-09-01 13:15:00,13,TURTLE_SOUP,BULLISH,swing,24058.6,8.8,False,True,,,NO DATA,no recorded ticks for this day,NO DATA,,,,,24100,1,True
+2026-10-04T14:59:04,2026-09-01,2026-09-01 13:40:00,13,TURTLE_SOUP,BULLISH,swing,24041.8,8.5,False,False,,,NO DATA,no recorded ticks for this day,OK,24100.0,24000.0,-0.86,,24050,1,True
+2026-10-04T14:59:04,2026-09-01,2026-09-01 13:55:00,13,TURTLE_SOUP,BULLISH,pd,23993.6,5.75,True,True,,,NO DATA,no recorded ticks for this day,OK,24100.0,23950.0,-1.14,,24000,1,True
+2026-10-04T14:59:04,2026-09-01,2026-09-01 15:00:00,13,TURTLE_SOUP,BEARISH,swing,23989.7,3.65,True,False,,,NO DATA,no recorded ticks for this day,OK,24100.0,23950.0,-1.14,,24000,2,True
+2026-10-04T14:59:04,2026-09-01,2026-09-01 15:30:00,13,TURTLE_SOUP,BEARISH,eq,23990.2,65.55,False,False,,,NO DATA,no recorded ticks for this day,OK,24100.0,23950.0,-0.29,,24000,2,True

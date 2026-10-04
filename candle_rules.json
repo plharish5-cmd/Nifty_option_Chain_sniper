@@ -1,0 +1,54 @@
+{
+  "_note": "Candlestick patterns on 15m / 30m / 1h NIFTY bars. Every number is fixed BEFORE any result. Information only - not financial advice.",
+  "timeframes": [
+    15,
+    30,
+    60
+  ],
+  "atr_n": 14,
+  "trend_bars": 5,
+  "trend_atr": 1.0,
+  "min_range_atr": 0.3,
+  "tol_atr": 0.1,
+  "big_body_atr": 0.6,
+  "doji_body": 0.1,
+  "spin_body": 0.3,
+  "spin_wick": 0.25,
+  "shadow_min": 0.6,
+  "opp_wick_max": 0.15,
+  "body_min": 0.08,
+  "pin_body_max": 0.25,
+  "maru_body": 0.9,
+  "maru_range_atr": 0.8,
+  "soldier_body": 0.6,
+  "soldier_wick_max": 0.3,
+  "star_body_frac": 0.3,
+  "harami_frac": 0.5,
+  "validation": {
+    "reps": 500,
+    "horizons_bars": [
+      1,
+      2,
+      4
+    ],
+    "primary_bars": 2,
+    "min_events": 60,
+    "p_max": 0.05,
+    "min_events_level": 40
+  },
+  "brief": {
+    "timeframes": [
+      15,
+      30,
+      60
+    ],
+    "days_back": 8,
+    "last_bars": 1,
+    "forming_min_frac": 0.2
+  },
+  "wick": {
+    "long": 0.5,
+    "min_range_atr": 0.5,
+    "level_tol_atr": 0.25
+  }
+}

@@ -238,6 +238,12 @@ def build_block(tf: str, now: datetime | None = None) -> str:
             out.append(evidence_board.summary_line())
         except Exception:                                     # noqa: BLE001
             pass
+        try:                                                  # candlestick patterns on the last closed 15m/30m/1h bars (names + tested verdict)
+            import candle_patterns
+            _cb = candle_patterns.rules()["brief"]
+            out.extend(candle_patterns.brief_lines(_read_1m(int(_cb["days_back"]), now.date()), now))
+        except Exception as _ce:                              # noqa: BLE001
+            out.append(f"CANDLE PATTERNS: N/A ({_ce})")
 
         # Decide
         need = _RANK.get(str(r["min_status_ready"]).upper(), 2)

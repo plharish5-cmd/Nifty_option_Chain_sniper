@@ -146,6 +146,159 @@ def collect() -> list[dict]:
                          f"{su.get('n', 0)} trades · avg {su.get('avg_R', 0):+.2f}R · vs random time p={su.get('p_time', 1):.2f} · "
                          f"vs coin-flip p={su.get('p_side', 1):.2f}", "Card + trades tab", cmdo, _date(o)))
 
+    # ── ICT 2022 model + time windows ────────────────────────────────────
+    cmdi = ".venv/bin/python backtest_ict.py"
+    for fn, nm, cmd in (("ict.json", "ICT 2022 model (sweep → MSS → FVG limit entry)", cmdi),
+                        ("ict_test.json", "ICT 2022 model · untouched year",
+                         cmdi + " --after 2025-10-03 --tag test")):
+        f = _j(fn)
+        if not f:
+            rows.append(_row(nm, "ICT 2022", "NOT RUN", "no result file yet", "Research only — not in the app", cmd))
+            continue
+        h = f.get("headline", {})
+        pr = f.get("primary", {})
+        n = int(h.get("n", 0) or 0)
+        verdict = "EDGE" if h.get("passed") else "NO EDGE"
+        pdv = f.get("pd_variants", {})
+        pdtxt = " · ".join(f"{k}: {v.get('avg_R', 0):+.2f}R (n={v.get('n', 0)})" for k, v in pdv.items() if v.get("n"))
+        rows.append(_row(nm, "ICT 2022", verdict,
+                         f"{n} trades / {f.get('sessions', 0)} sessions {f.get('from', '')}→{f.get('to', '')} · "
+                         f"limit {pr.get('entry', '')} · {pr.get('tp', '')}R · {pr.get('mode', '')} · filter {pr.get('pd_filter', '')} · "
+                         f"avg {h.get('avg_R', 0):+.2f}R · win {h.get('win_rate', 0) * 100:.0f}% · "
+                         f"vs random time p={h.get('p_time', 1):.2f} · vs coin-flip p={h.get('p_side', 1):.2f}"
+                         + (f" · filters → {pdtxt}" if pdtxt else "")
+                         + (f" · grid: {f.get('grid_passed', 0)}/18 variants pass" if "grid_passed" in f else ""),
+                         "May be added to the briefing" if h.get("passed") else "Research only — not in the app", cmd, _date(f)))
+    f = _j("ict.json")
+    ws = (f or {}).get("window_study")
+    if ws:
+        from math import comb
+        testable = [r for r in ws if r.get("cont_p") is not None]
+        sig = [r for r in testable if r["cont_p"] < 0.05]
+        k, m = len(sig), len(testable)
+        tail = sum(comb(m, i) * 0.05 ** i * 0.95 ** (m - i) for i in range(k, m + 1)) if m else 1.0
+        bits = [f"{r['bucket']} {'continues' if r['cont_pts'] > 0 else 'reverses'} {r['cont_pts']:+.1f} pts (p={r['cont_p']:.3f})"
+                for r in sig[:4]]
+        first = ws[0] if ws else {}
+        rows.append(_row("Time windows — do 30-min buckets continue or reverse?", "ICT 2022",
+                         "EDGE" if (k >= 2 and tail < 0.05) else "NO EDGE",
+                         f"{k} of {m} buckets significant at p<0.05 ({0.05 * m:.1f} expected by luck; chance of this many = {tail:.2f})"
+                         + (" · " + " · ".join(bits) if bits else "")
+                         + f" · opening 30 min = {first.get('share_of_day', 0) * 100:.0f}% of the day's range",
+                         "Not used — no window rule in the app" if k < 2 or tail >= 0.05 else "Window rule can be tested further",
+                         cmdi, _date(f)))
+    else:
+        rows.append(_row("Time windows — do 30-min buckets continue or reverse?", "ICT 2022", "NOT RUN", "no result file yet",
+                         "Research only", cmdi))
+
+    # ── turtle soup (fake breakouts) ─────────────────────────────────────
+    cmdt = ".venv/bin/python backtest_turtle_soup.py --fetch-bn 730"
+    for fn, nm, cmd in (("turtle_soup.json", "Turtle soup — do fake breakouts (wick 2-10 pts past a pool, close back inside) reverse?", cmdt),
+                        ("turtle_soup_test.json", "Turtle soup · untouched year", cmdt + " --after 2025-10-03 --tag test"),
+                        ("turtle_soup_open.json", "Fake move through the day's open — Power of 3 (T.A.M. Ep. 1)",
+                         ".venv/bin/python backtest_turtle_soup.py --pools open --tag open")):
+        f = _j(fn)
+        if not f:
+            rows.append(_row(nm, "ICT 2022", "NOT RUN", "no result file yet", "Research only — not in the app", cmd))
+            continue
+        h = f.get("headline", {})
+        n = int(h.get("n", 0) or 0)
+        beyond = f.get("closed_beyond", {})
+        smt = f.get("smt", {})
+        smt_txt = " · ".join(f"{k}: {v.get('avg_pts', 0):+.1f} pts (n={v.get('n', 0)})" for k, v in smt.items() if v.get("n"))
+        rows.append(_row(nm, "ICT 2022", "EDGE" if h.get("passed") else ("PENDING" if n < 30 else "NO EDGE"),
+                         f"{n} events / {f.get('sessions', 0)} sessions {f.get('from', '')}→{f.get('to', '')} · "
+                         f"{f.get('primary_horizon_min', 30)} min after the close · avg {h.get('avg_pts', 0):+.1f} pts "
+                         f"(random same-time {h.get('null_avg', 0):+.1f}) · hit {h.get('hit', 0) * 100:.0f}% · p={h.get('p', 1):.3f} · "
+                         f"halves {h.get('half1')}/{h.get('half2')}"
+                         + (f" · closed BEYOND the pool (real breakout): {beyond.get('avg_pts', 0):+.1f} pts" if beyond.get("n") else "")
+                         + (f" · SMT split → {smt_txt}" if smt_txt else ""),
+                         "May be added to the briefing" if h.get("passed") else "Research only — not in the app", cmd, _date(f)))
+    f = _j("ict.json")
+    sp = (f or {}).get("smt_split") or {}
+    if sp:
+        a_, b_ = sp.get("SMT present", {}), sp.get("no SMT", {})
+        ok = bool(a_.get("passed"))
+        rows.append(_row("ICT + SMT — does Bank Nifty not confirming the sweep improve the ICT model?", "ICT 2022",
+                         "EDGE" if ok else ("PENDING" if int(a_.get("n", 0) or 0) < 30 else "NO EDGE"),
+                         f"with SMT: {a_.get('n', 0)} trades avg {a_.get('avg_R', 0):+.2f}R (p vs random time {a_.get('p_time', 1):.2f}) · "
+                         f"without: {b_.get('n', 0)} trades avg {b_.get('avg_R', 0):+.2f}R",
+                         "Can be set as smt_filter=require in ict_rules.json" if ok else "Research only — not in the app",
+                         ".venv/bin/python backtest_ict.py --fetch-bn 730", _date(f)))
+    else:
+        rows.append(_row("ICT + SMT — does Bank Nifty not confirming the sweep improve the ICT model?", "ICT 2022", "NOT RUN",
+                         "no Bank Nifty split yet", "Research only", ".venv/bin/python backtest_ict.py --fetch-bn 730"))
+    c = _j("confluence.json")
+    if c:
+        t = c.get("test", {})
+        st = c.get("status", "PENDING")
+        by = c.get("by_score", {})
+        bytxt = " · ".join(f"score {k}: n={v['n']} avg {v['avg_pts']:+.1f} pts" for k, v in sorted(by.items()))
+        rows.append(_row("Confluence — ICT event + order flow + option chain (NiftyScanner)", "ICT 2022", st,
+                         f"{c.get('events', 0)} events / {c.get('sessions', 0)} sessions logged · order-flow sessions {c.get('flow_sessions', 0)} · "
+                         f"chain sessions {c.get('chain_sessions', 0)}" + (f" · {bytxt}" if bytxt else "")
+                         + (f" · score-3 vs ≤1: {t.get('diff_pts', 0):+.1f} pts, p={t.get('p', 1):.3f}" if t else
+                            f" · needs ≥{c.get('min_events', 30)} events at score 3 and at ≤1"),
+                         "Logged only — never a signal until EDGE", ".venv/bin/python nifty_scanner.py --report", _date(c)))
+    else:
+        rows.append(_row("Confluence — ICT event + order flow + option chain (NiftyScanner)", "ICT 2022", "PENDING",
+                         "scanner has not logged any events yet", "Logged only — never a signal until EDGE",
+                         ".venv/bin/python nifty_scanner.py --backfill 30"))
+
+    # ── trap / break-block entries on 30m / 1h / 4h zones ─────────────────
+    cmdz = ".venv/bin/python backtest_trap_ob.py"
+    for fn, nm, cmd in (("trap_ob.json", "Trap & break-block entries on 30m/1h/4h zones (AirForexOne)", cmdz),
+                        ("trap_ob_test.json", "Trap & break-block entries · untouched year", cmdz + " --after 2025-10-03 --tag test")):
+        f = _j(fn)
+        if not f:
+            rows.append(_row(nm, "Price action", "NOT RUN", "no result file yet", "Research only — not in the app", cmd))
+            continue
+        h = f.get("headline", {})
+        n = int(h.get("n", 0) or 0)
+        per = " · ".join(f"{tf}m: n={r['headline'].get('n', 0)} avg {r['headline'].get('avg_R', 0):+.2f}R"
+                         for tf, r in f.get("tfs", {}).items() if r.get("headline", {}).get("n"))
+        rows.append(_row(nm, "Price action", "EDGE" if h.get("passed") else ("PENDING" if n < 30 else "NO EDGE"),
+                         f"{n} trades pooled / {f.get('sessions', 0)} sessions {f.get('from', '')}→{f.get('to', '')} · "
+                         f"{f.get('rules', {}).get('tp', '2')}R · {f.get('rules', {}).get('mode', '')} · avg {h.get('avg_R', 0):+.2f}R · "
+                         f"win {h.get('win_rate', 0) * 100:.0f}% · vs random time p={h.get('p_time', 1):.2f} · vs coin-flip p={h.get('p_side', 1):.2f}"
+                         + (f" · {per}" if per else "") + f" · grid {f.get('grid_passed', 0)}/{f.get('grid_n', 0)} pass",
+                         "May be added to the briefing" if h.get("passed") else "Research only — not in the app", cmd, _date(f)))
+
+    # ── positional breakout from consolidation, NIFTY 50 stocks ───────────
+    cmdp = ".venv/bin/python backtest_positional.py"
+    for fn, nm, cmd in (("positional.json", "Positional: breakout from consolidation in an uptrend (NIFTY 50 stocks, daily)", cmdp),
+                        ("positional_test.json", "Positional breakout · untouched period", cmdp + " --after 2023-01-01 --tag test")):
+        f = _j(fn)
+        if not f:
+            rows.append(_row(nm, "Positional", "NOT RUN", "no result file yet — first: positional_scan.py --fetch", "Research only — not in the app", cmd))
+            continue
+        h = f.get("headline", {})
+        n = int(h.get("n", 0) or 0)
+        rows.append(_row(nm, "Positional", "EDGE" if h.get("passed") else ("PENDING" if n < 30 else "NO EDGE"),
+                         f"{n} breakouts / {f.get('stocks', 0)} stocks {f.get('from', '')}→{f.get('to', '')} · stop box low · "
+                         f"{f.get('rules', {}).get('target_r', 2)}R · avg {h.get('avg_R', 0):+.2f}R · win {h.get('win_rate', 0) * 100:.0f}% · "
+                         f"+40d {h.get('avg_f40', 0):+.1f}% · vs random date p={h.get('p_a_R', 1):.2f} · vs trending-day p={h.get('p_b_R', 1):.2f}"
+                         f" · grid {f.get('grid_passed', 0)}/4 pass",
+                         "Daily list can be used as a watch-list" if h.get("passed") else "Research only — not in the app", cmd, _date(f)))
+
+    # ── candlestick patterns (15m / 30m / 1h) ─────────────────────────────
+    cmdc = ".venv/bin/python backtest_candles.py"
+    for fn, nm, cmd in (("candles.json", "Candle patterns: does price move the textbook way after hammer, engulfing, stars … (15m/30m/1h)", cmdc),
+                        ("candles_test.json", "Candle patterns · untouched period", cmdc + " --after 2025-10-03 --tag test")):
+        f = _j(fn)
+        if not f:
+            rows.append(_row(nm, "Price action", "NOT RUN", "no result file yet", "Names shown in the briefing; no direction claimed", cmd))
+            continue
+        ps = f.get("patterns", {})
+        npass, nlean, ninv = f.get("passed", []), f.get("lean", []), f.get("inverse", [])
+        npl, nll = f.get("passed_level", []), f.get("lean_level", [])
+        rows.append(_row(nm, "Price action", "EDGE" if (npass or npl) else "NO EDGE",
+                         f"{f.get('events', 0)} events / {f.get('sessions', 0)} sessions {f.get('from', '')}→{f.get('to', '')} · {f.get('n_tests', 0)} patterns tested, p corrected for that · "
+                         + (f"proven: {', '.join(npass)}" if npass else "none proven")
+                         + (f" · weak lead only: {', '.join(nlean)}" if nlean else "") + (f" · opposite to textbook: {', '.join(ninv)}" if ninv else "")
+                         + (f" · AT A LEVEL proven: {', '.join(npl)}" if npl else " · at a level: none proven") + (f" (weak leads: {', '.join(nll)})" if nll else ""),
+                         "Briefing shows the pattern with this verdict" if (npass or npl) else "Names only — direction not claimed", cmd, _date(f)))
+
     # ── never tested on their own ────────────────────────────────────────
     for nm, used in (("SMC sniper (BUY NOW / SELL NOW in the briefing)", "Shown as is — treat as untested"),
                      ("SMC Trade Desk (BUY / SELL / AVOID)", "Can trigger Decision Desk — untested"),
@@ -157,7 +310,9 @@ def collect() -> list[dict]:
 def summary_line(rows: list[dict] | None = None) -> str:
     rows = rows or collect()
     pick = {"EDGE": [], "SMALL EDGE": [], "NO EDGE": [], "PENDING": []}
-    short = {"Daily DRAW": "daily draw", "GARCH": "GARCH box", "5-Rule SMC model (headline": "5-Rule",
+    short = {"ICT 2022 model · untouched": "ICT test", "ICT 2022 model": "ICT model", "Time windows": "time windows", "Turtle soup · untouched": "fake-breakout test", "Fake move through the day": "open fake-move",
+             "Turtle soup": "fake breakouts", "Trap & break-block entries · untouched": "trap/OB test", "Trap & break-block": "trap/OB", "Positional breakout · untouched": "positional test", "Candle patterns · untouched": "candles test", "Candle patterns": "candle patterns", "Positional": "positional", "ICT + SMT": "ICT+SMT", "Confluence": "confluence",
+             "Daily DRAW": "daily draw", "GARCH": "GARCH box", "5-Rule SMC model (headline": "5-Rule",
              "5-Rule SMC · out-of-sample": "5-Rule OOS", "Session sweeps": "session sweeps",
              "NIFTY 50 order-flow": "order flow", "Delta + VWAP": "Delta+VWAP", "Daily candle → tomorrow": "daily direction",
              "5-Rule freshness": "freshness"}

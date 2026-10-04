@@ -1,0 +1,28 @@
+{
+  "_note": "Positional breakout-from-consolidation on the NIFTY 50 stocks (daily candles), from the 'positional trading screener' video. Every number fixed BEFORE any result. Information only - not financial advice.",
+  "history_years": 10,
+  "ema_fast": 20,
+  "ema_slow": 50,
+  "ema_slope_days": 20,
+  "pivot_n": 5,
+  "rsi_n": 14,
+  "vol_avg_n": 20,
+  "vol_mult": 1.2,
+  "box_days": 30,
+  "box_max_width_pct": 12.0,
+  "max_risk_pct": 15.0,
+  "cooldown_days": 20,
+  "target_r": 2.0,
+  "max_hold_days": 60,
+  "cost_pct": 0.2,
+  "warmup_days": 90,
+  "setup": {
+    "ret5_min": 3.5,
+    "ret5_max": 7.0,
+    "rsi_min": 40,
+    "rsi_max": 60,
+    "near_top_frac": 0.25,
+    "_note": "the video's pre-breakout candidate filter: +3.5..7% in the last week, RSI 40..60, price in the top quarter of the box"
+  },
+  "validation": {"reps": 500, "grid_reps": 150, "min_events": 30, "p_max": 0.05}
+}

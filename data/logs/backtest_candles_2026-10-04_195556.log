@@ -1,0 +1,83 @@
+$ backtest_candles.py --before 2025-10-03 --tag train
+494 NIFTY sessions stored · testing 248 (2024-10-03 → 2025-10-01) · timeframes [15, 30, 60] min
+4593 pattern events · 14 patterns have >= 60 events (p is multiplied by 14) · primary: 2 bars after the pattern bar closes, in ATR units · 500 control draws
+
+pattern                textbook      n  moved textbook way  control  avg move  edge ATR   p_adj        halves  verdict
+Hammer                        ↑    106                 53%      47%     +1.9p    +0.132   0.810   +0.08/+0.19  NONE
+Inverted hammer               ↑    103                 51%      48%     -2.9p    +0.001   1.000   -0.03/+0.03  NONE
+Hanging man                   ↓     78                 51%      47%     +1.3p    +0.119   1.000   +0.10/+0.14  NONE
+Shooting star                 ↓     80                 48%      48%     -4.2p    -0.040   1.000   -0.13/+0.05  NONE
+Bullish pin bar               ↑    400                 50%      50%     -1.4p    +0.017   1.000   -0.04/+0.07  NONE
+Bearish pin bar               ↓    366                 49%      50%     -2.0p    -0.025   1.000   -0.01/-0.04  NONE
+Doji                          ~    967                 48%      48%     -3.1p    -0.021   1.000   -0.06/+0.02  NONE
+Spinning top                  ~    852                 50%      48%     +1.1p    +0.048   0.587   +0.04/+0.05  LEAN
+Bullish marubozu              ↑    135                 50%      50%     +1.2p    +0.036   1.000   -0.02/+0.09  NONE
+Bearish marubozu              ↓    130                 48%      50%     +0.2p    -0.017   1.000   +0.02/-0.06  NONE
+Bullish engulfing             ↑    111                 43%      48%     -2.8p    -0.085   1.000   -0.05/-0.12  NONE
+Bearish engulfing             ↓    105                 41%      48%     -8.3p    -0.096   1.000   -0.25/+0.06  NONE
+Bullish harami                ↑     52                 42%      47%     +8.3p    +0.195   1.000   +0.21/+0.18  FEW
+Bearish harami                ↓     44                 52%      48%     -2.8p    -0.065   1.000   +0.05/-0.19  FEW
+Piercing line                 ↑     50                 46%      48%     -9.1p    -0.117   1.000   -0.17/-0.06  FEW
+Dark cloud cover              ↓     40                 50%      49%     -5.7p    -0.052   1.000   -0.01/-0.10  FEW
+Tweezer bottom                ↑    140                 45%      48%     -1.3p    -0.046   1.000   -0.03/-0.07  NONE
+Tweezer top                   ↓    162                 40%      48%     -3.5p    -0.076   1.000   -0.07/-0.08  NONE
+Morning star                  ↑      7                 43%      48%    -16.2p    -0.094   1.000   -0.09/-0.10  FEW
+Evening star                  ↓      6                 33%      48%    -15.9p    -0.285   1.000   -0.31/-0.24  FEW
+Three white soldiers          ↑      2                  0%      50%    -85.8p    -1.070   0.894   -1.07/+nan  FEW
+Three black crows             ↓      3                 33%      45%     -4.0p    -0.275   1.000   -0.12/-0.59  FEW
+
+Edge (ATR) by timeframe — pattern · 15m / 30m / 1h  (n, edge):
+  Hammer                  64 +0.21   |     34 -0.01   |      8 +0.09
+  Inverted hammer         62 +0.15   |     28 -0.25   |     13 -0.18
+  Hanging man             42 +0.13   |     26 +0.24   |     10 -0.21
+  Shooting star           53 -0.09   |     20 +0.14   |      7 -0.17
+  Bullish pin bar        256 +0.04   |    105 -0.04   |     39 -0.02
+  Bearish pin bar        239 -0.05   |     99 +0.01   |     28 +0.07
+  Doji                   624 -0.02   |    241 +0.03   |    102 -0.15
+  Spinning top           509 +0.02   |    244 +0.07   |     99 +0.11
+  Bullish marubozu        86 +0.10   |     31 -0.12   |     18 -0.03
+  Bearish marubozu        87 -0.04   |     27 +0.14   |     16 -0.18
+  Bullish engulfing       73 -0.18   |     30 -0.05   |      8 +0.67
+  Bearish engulfing       74 -0.17   |     27 +0.08   |      4 +0.06
+  Bullish harami          28 +0.02   |     17 +0.61   |      7 -0.11
+  Bearish harami          31 -0.10   |     11 -0.03   |      2 +0.38
+  Piercing line           34 -0.09   |     11 -0.36   |      5 +0.20
+  Dark cloud cover        27 -0.06   |     10 -0.11   |      3 +0.22
+  Tweezer bottom          89 -0.11   |     36 +0.02   |     15 +0.18
+  Tweezer top             93 -0.06   |     57 -0.15   |     12 +0.14
+  Morning star             3 +0.39   |      3 -0.66   |      1 +0.13
+  Evening star             4 -0.49   |      1 +0.47   |      1 -0.21
+  Three white soldiers     -        |      1 -0.49   |      1 -1.65
+  Three black crows        2 -0.81   |      1 +0.80   |      -     
+
+Edge (ATR) by horizon — pattern · 1 / 2 / 4 bars after:
+  Hammer                -0.013   |   +0.132   |   -0.023
+  Inverted hammer       -0.025   |   +0.001   |   +0.181
+  Hanging man           +0.045   |   +0.119   |   -0.089
+  Shooting star         -0.112   |   -0.040   |   +0.016
+  Bullish pin bar       +0.016   |   +0.017   |   -0.055
+  Bearish pin bar       -0.025   |   -0.025   |   -0.086
+  Doji                  -0.018   |   -0.021   |   -0.039
+  Spinning top          +0.025   |   +0.048   |   +0.013
+  Bullish marubozu      +0.055   |   +0.036   |   -0.085
+  Bearish marubozu      -0.023   |   -0.017   |   +0.005
+  Bullish engulfing     +0.055   |   -0.085   |   -0.360
+  Bearish engulfing     -0.056   |   -0.096   |   -0.178
+  Bullish harami        +0.034   |   +0.195   |   +0.074
+  Bearish harami        -0.059   |   -0.065   |   -0.162
+  Piercing line         -0.048   |   -0.117   |   +0.196
+  Dark cloud cover      +0.008   |   -0.052   |   -0.018
+  Tweezer bottom        +0.027   |   -0.046   |   -0.120
+  Tweezer top           -0.028   |   -0.076   |   -0.085
+  Morning star          -0.001   |   -0.094   |   -0.008
+  Evening star          +0.073   |   -0.285   |   -0.144
+  Three white soldiers  +0.048   |   -1.070   |   -0.518
+  Three black crows     +0.231   |   -0.275   |   -0.528
+
+LEAN (significant alone, NOT after the multiple-test correction — not proven, check the untouched period): Spinning top
+
+HEADLINE: 0 of 14 patterns show a textbook-direction edge after the multiple-test correction
+(With 14 patterns you would expect ~0.7 'passes' at plain p<0.05 from luck alone — that is why p is multiplied.)
+
+saved data/backtests/candles_train.json
+Information only — not financial advice.

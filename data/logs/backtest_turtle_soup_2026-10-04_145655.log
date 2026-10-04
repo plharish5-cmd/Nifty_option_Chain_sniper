@@ -1,0 +1,37 @@
+$ backtest_turtle_soup.py --after 2025-10-03 --tag test
+494 NIFTY sessions stored · testing 246 (2025-10-03 → 2026-10-01) · Bank Nifty sessions stored: 493
+2549 sweep events (903 closed back inside / 1646 closed beyond) · primary set (depth 2-10 pts, closed inside): 752 events on 236 sessions
+
+PRIMARY: fake breakout/breakdown, depth 2-10 pts, closed inside, 30 min after the close, 1000 random reps
+                                        n  avg pts     hit   random       p  halves       verdict
+  ALL pools                           711     -1.6     51%     -0.0   0.856  +0.6/-3.6    ✘ no edge
+
+  by horizon
+    15 min after the close            736     +0.4     50%     -0.0   0.344  +1.3/-0.5    ✘ no edge
+    30 min after the close            711     -1.6     51%     +0.1   0.844  +0.6/-3.6    ✘ no edge
+    60 min after the close            631     -2.1     49%     +0.1   0.835  +3.2/-7.0    ✘ no edge
+  by pool
+    eq                                118     -0.1     55%     -0.1   0.488  -1.9/+1.7    ✘ no edge
+    or                                 79     -3.2     54%     +0.3   0.775  +2.1/-8.7    ✘ no edge
+    pd                                 32     -5.0     34%     -0.2   0.751  -11.9/+1.8   ✘ no edge
+    swing                             482     -1.4     51%     -0.1   0.772  +0.2/-3.1    ✘ no edge
+  by direction
+    fake breakOUT → down (sell)       347     +0.1     54%     +0.8   0.641  +0.6/-0.4    ✘ no edge
+    fake breakDOWN → up (buy)         364     -3.1     49%     -0.7   0.922  -0.8/-5.5    ✘ no edge
+  by sweep depth (closed inside)
+    2-10 pts                          711     -1.6     51%     +0.1   0.844  +0.6/-3.6    ✘ no edge
+    10-25 pts                         126     +0.6     56%     +0.1   0.425  +7.8/-7.7    ✘ no edge
+    25+ pts                            12    -24.1     25%     +0.3   0.970  -31.4/-16.8  too few
+  by time of day
+    A morning 09:15-11:45             245     -1.6     50%     +0.3   0.817  +0.3/-3.6    ✘ no edge
+    B lunch 11:45-13:30               243     -4.4     47%     -0.1   0.973  -4.2/-4.6    ✘ no edge
+    C afternoon 13:30-15:00           210     +0.9     56%     +0.3   0.407  +0.4/+1.5    ✘ no edge
+    OUT                                13    +12.8     77%     -0.2   0.168  +18.9/+7.5   too few
+  fake vs REAL breakout (same sign convention: positive = reversed)
+    closed BEYOND the pool            664     +1.6     49%     +0.0   0.153  +2.1/+1.0    ✘ no edge
+  SMT (Bank Nifty did not confirm the sweep)
+    SMT present                       335     -1.1     49%     -0.3   0.665  +1.9/-3.9    ✘ no edge
+    no SMT                            376     -1.9     53%     +0.3   0.871  -1.3/-2.6    ✘ no edge
+
+  ~20 cuts shown, so about 1.0 would show p<0.05 by luck alone — trust the PRIMARY line and anything that repeats in the untouched year.
+Saved /home/harish/Documents/Swathi K N/1 Trading/option chain/OC/data/backtests/turtle_soup_test.json. Information only — not financial advice.

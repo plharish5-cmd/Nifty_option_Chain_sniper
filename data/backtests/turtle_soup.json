@@ -1,0 +1,226 @@
+{
+  "generated": "2026-10-04T15:23:44",
+  "tag": "",
+  "sessions": 494,
+  "events": 4972,
+  "from": "2024-10-03",
+  "to": "2026-10-01",
+  "primary_horizon_min": 30,
+  "depth": [
+    2.0,
+    10.0
+  ],
+  "bn_sessions": 493,
+  "headline": {
+    "n": 1324,
+    "avg_pts": -1.15,
+    "hit": 0.51,
+    "null_avg": -0.0,
+    "p": 0.8671,
+    "half1": -0.87,
+    "half2": -1.4,
+    "passed": false
+  },
+  "horizons": {
+    "15": {
+      "n": 1385,
+      "avg_pts": 0.06,
+      "hit": 0.516,
+      "null_avg": -0.04,
+      "p": 0.4521,
+      "half1": -0.32,
+      "half2": 0.4,
+      "passed": false
+    },
+    "30": {
+      "n": 1324,
+      "avg_pts": -1.15,
+      "hit": 0.51,
+      "null_avg": -0.04,
+      "p": 0.8413,
+      "half1": -0.87,
+      "half2": -1.4,
+      "passed": false
+    },
+    "60": {
+      "n": 1176,
+      "avg_pts": -1.79,
+      "hit": 0.488,
+      "null_avg": -0.16,
+      "p": 0.8593,
+      "half1": -0.9,
+      "half2": -2.61,
+      "passed": false
+    }
+  },
+  "kinds": {
+    "eq": {
+      "n": 213,
+      "avg_pts": 2.1,
+      "hit": 0.563,
+      "null_avg": -0.41,
+      "p": 0.1677,
+      "half1": 4.52,
+      "half2": -0.4,
+      "passed": false
+    },
+    "or": {
+      "n": 161,
+      "avg_pts": -2.59,
+      "hit": 0.516,
+      "null_avg": -0.1,
+      "p": 0.7695,
+      "half1": -2.05,
+      "half2": -3.13,
+      "passed": false
+    },
+    "pd": {
+      "n": 58,
+      "avg_pts": 0.47,
+      "hit": 0.448,
+      "null_avg": 0.6,
+      "p": 0.503,
+      "half1": 8.92,
+      "half2": -7.97,
+      "passed": false
+    },
+    "swing": {
+      "n": 892,
+      "avg_pts": -1.78,
+      "hit": 0.5,
+      "null_avg": -0.08,
+      "p": 0.9042,
+      "half1": -2.08,
+      "half2": -1.51,
+      "passed": false
+    }
+  },
+  "sides": {
+    "BEARISH": {
+      "n": 623,
+      "avg_pts": -0.32,
+      "hit": 0.526,
+      "null_avg": 0.75,
+      "p": 0.7216,
+      "half1": 0.36,
+      "half2": -0.95,
+      "passed": false
+    },
+    "BULLISH": {
+      "n": 701,
+      "avg_pts": -1.9,
+      "hit": 0.495,
+      "null_avg": -0.65,
+      "p": 0.8263,
+      "half1": -0.32,
+      "half2": -3.29,
+      "passed": false
+    }
+  },
+  "depths": {
+    "2-10 pts": {
+      "n": 1324,
+      "avg_pts": -1.15,
+      "hit": 0.51,
+      "null_avg": -0.04,
+      "p": 0.8413,
+      "half1": -0.87,
+      "half2": -1.4,
+      "passed": false
+    },
+    "10-25 pts": {
+      "n": 286,
+      "avg_pts": 2.51,
+      "hit": 0.57,
+      "null_avg": -0.13,
+      "p": 0.1707,
+      "half1": 4.25,
+      "half2": 0.61,
+      "passed": false
+    },
+    "25+ pts": {
+      "n": 29,
+      "avg_pts": -6.68,
+      "hit": 0.379,
+      "null_avg": -0.81,
+      "p": 0.7814,
+      "half1": 10.37,
+      "half2": -22.59,
+      "passed": false
+    }
+  },
+  "windows": {
+    "A morning 09:15-11:45": {
+      "n": 490,
+      "avg_pts": -0.27,
+      "hit": 0.52,
+      "null_avg": 0.04,
+      "p": 0.5689,
+      "half1": 1.1,
+      "half2": -1.63,
+      "passed": false
+    },
+    "B lunch 11:45-13:30": {
+      "n": 416,
+      "avg_pts": -2.72,
+      "hit": 0.49,
+      "null_avg": 0.07,
+      "p": 0.9341,
+      "half1": 0.28,
+      "half2": -5.55,
+      "passed": false
+    },
+    "C afternoon 13:30-15:00": {
+      "n": 398,
+      "avg_pts": -1.14,
+      "hit": 0.508,
+      "null_avg": -0.04,
+      "p": 0.6946,
+      "half1": -3.35,
+      "half2": 0.97,
+      "passed": false
+    },
+    "OUT": {
+      "n": 20,
+      "avg_pts": 9.25,
+      "hit": 0.7,
+      "null_avg": -1.01,
+      "p": 0.1737,
+      "half1": 11.78,
+      "half2": 6.71,
+      "passed": false
+    }
+  },
+  "smt": {
+    "SMT present": {
+      "n": 627,
+      "avg_pts": -0.65,
+      "hit": 0.504,
+      "null_avg": -0.06,
+      "p": 0.6437,
+      "half1": 0.31,
+      "half2": -1.55,
+      "passed": false
+    },
+    "no SMT": {
+      "n": 694,
+      "avg_pts": -1.4,
+      "hit": 0.517,
+      "null_avg": -0.0,
+      "p": 0.8234,
+      "half1": -0.82,
+      "half2": -1.93,
+      "passed": false
+    }
+  },
+  "closed_beyond": {
+    "n": 1193,
+    "avg_pts": 1.07,
+    "hit": 0.526,
+    "null_avg": -0.02,
+    "p": 0.1737,
+    "half1": 0.29,
+    "half2": 1.73,
+    "passed": false
+  }
+}

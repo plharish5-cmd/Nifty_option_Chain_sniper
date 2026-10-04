@@ -1,0 +1,61 @@
+$ backtest_ict.py --after 2025-10-03 --tag test
+494 stored sessions (2024-10-03 → 2026-10-01) · testing 246 (2025-10-03 → 2026-10-01)
+ICT model found 222 setups (107 buy / 115 sell) on 164 sessions
+
+PRIMARY: limit at FVG-CE · target 2R · management be75 · premium/discount filter: eq · 1000 random reps
+                                        n    win      avg    totalrnd-timernd-side  p time/side  halves       verdict
+  ALL TRADES                           38    34%   -0.18R    -6.7R   -0.12   +0.12  0.670/0.933  +0.08/-0.44  ✘ no edge
+  window A morning 09:15-11:45          9    22%   -0.25R    -2.3R   -0.16   -0.10  0.650/0.683  +0.47/-0.83  too few
+  window B lunch 11:45-13:30           11    27%   -0.06R    -0.6R   -0.21   +0.32  0.219/0.820  +0.17/-0.24  too few
+  window C afternoon 13:30-15:00       18    44%   -0.21R    -3.9R   -0.04   +0.10  0.805/0.880  -0.44/+0.01  too few
+  side BUY                             16    25%   -0.45R    -7.1R   -0.18   -0.11  0.883/0.895  -0.30/-0.59  too few
+  side SELL                            22    41%   +0.02R    +0.4R   -0.09   +0.28  0.275/0.823  +0.28/-0.24  too few
+  pool OR low                           1     0%   -1.04R    -1.0R    +nan    +nan    n/a           —         too few
+  pool PDL                              1   100%   +0.03R    +0.0R    +nan    +nan    n/a           —         too few
+  pool swing low                       36    33%   -0.16R    -5.7R   -0.08   +0.13  0.687/0.915  +0.14/-0.46  ✘ no edge
+
+VARIANT GRID (all 18 variants, 200 reps each — transparency, not a menu to pick the winner from)
+                                        n    win      avg    totalrnd-timernd-side  p time/side  halves       verdict
+  fvg · 2R · tp                        38    32%   -0.32R   -12.1R   -0.22   +0.09  0.771/0.990  -0.08/-0.56  ✘ no edge
+  fvg · 2R · be75                      38    32%   -0.32R   -12.1R   -0.19   +0.10  0.851/0.995  -0.08/-0.56  ✘ no edge
+  fvg · 3R · tp                        41    32%   -0.24R    -9.9R   -0.23   +0.09  0.537/0.955  +0.17/-0.64  ✘ no edge
+  fvg · 3R · be75                      41    32%   -0.24R    -9.9R   -0.23   +0.08  0.552/0.955  +0.17/-0.64  ✘ no edge
+  fvg · liq · tp                       33    30%   -0.45R   -14.9R   -0.40   +0.11  0.707/0.995  -0.19/-0.70  ✘ no edge
+  fvg · liq · be75                     33    30%   -0.45R   -14.9R   -0.37   +0.11  0.771/0.995  -0.19/-0.70  ✘ no edge
+  ce · 2R · tp                         38    37%   -0.15R    -5.7R   -0.16   +0.13  0.517/0.925  +0.08/-0.39  ✘ no edge
+  ce · 2R · be75                       38    34%   -0.18R    -6.7R   -0.12   +0.13  0.662/0.940  +0.08/-0.44  ✘ no edge
+  ce · 3R · tp                         39    36%   -0.08R    -3.0R   -0.18   +0.18  0.229/0.910  +0.18/-0.32  ✘ no edge
+  ce · 3R · be75                       39    36%   -0.08R    -3.0R   -0.19   +0.15  0.174/0.876  +0.18/-0.32  ✘ no edge
+  ce · liq · tp                        37    35%   -0.17R    -6.2R   -0.30   +0.17  0.159/0.945  +0.10/-0.43  ✘ no edge
+  ce · liq · be75                      37    35%   -0.17R    -6.2R   -0.28   +0.17  0.189/0.940  +0.10/-0.43  ✘ no edge
+  ote · 2R · tp                        16    50%   +0.38R    +6.1R   +0.03   +0.20  0.139/0.348  +0.45/+0.31  too few
+  ote · 2R · be75                      16    50%   +0.38R    +6.1R   +0.01   +0.14  0.090/0.254  +0.45/+0.31  too few
+  ote · 3R · tp                        35    31%   +0.06R    +1.9R   -0.43   +0.13  0.010/0.622  +0.15/-0.05  ✘ no edge
+  ote · 3R · be75                      35    31%   +0.08R    +2.9R   -0.39   +0.16  0.010/0.617  +0.21/-0.05  ✘ no edge
+  ote · liq · tp                       36    25%   -0.18R    -6.3R   -0.55   +0.08  0.020/0.886  -0.04/-0.31  ✘ no edge
+  ote · liq · be75                     36    25%   -0.18R    -6.3R   -0.53   +0.09  0.025/0.895  -0.04/-0.31  ✘ no edge
+  → 0 of 18 variants pass; about 0.05 would be expected by luck on both controls (0.05 × 0.05 × 18), so a single lone pass is weak evidence.
+
+PREMIUM / DISCOUNT FILTER on the primary variant (buy only in discount, sell only in premium)
+                                        n    win      avg    totalrnd-timernd-side  p time/side  halves       verdict
+  filter none                          87    36%   -0.15R   -13.4R   -0.10   -0.00  0.743/0.937  -0.06/-0.26  ✘ no edge
+  filter eq                            38    34%   -0.18R    -6.7R   -0.12   +0.12  0.650/0.931  +0.08/-0.44  ✘ no edge
+  filter open                          38    37%   -0.12R    -4.6R   -0.11   +0.17  0.542/0.922  +0.08/-0.33  ✘ no edge
+
+TIME-WINDOW STUDY (no strategy) — per 30-minute bucket: avg range · share of the day's range · does the PREVIOUS 30 min continue (+) or reverse (−)?
+  bucket    days  avg range  % of day  continue pts      t       p
+  09:15      246      112.2     53.6%          +nan    nan     nan
+  09:45      246       62.9     30.7%         +0.32   0.12   0.901
+  10:15      246       56.5     27.6%         +0.26   0.11   0.912
+  10:45      246       51.0     24.5%         -2.95  -1.38   0.168
+  11:15      246       49.2     23.5%         -4.26  -1.89   0.059
+  11:45      246       47.8     22.9%         -0.37  -0.18   0.857
+  12:15      246       51.0     23.2%         +5.75   2.36   0.018  ◀
+  12:45      246       47.1     22.4%         +1.39   0.65   0.517
+  13:15      246       51.9     24.6%         -0.23  -0.10   0.923
+  13:45      246       53.0     25.3%         -1.00  -0.41   0.683
+  14:15      246       57.0     26.6%         +1.79   0.67   0.503
+  14:45      246       65.7     30.8%         -1.95  -0.62   0.536
+  → 1 of 12 buckets show p<0.05; about 0.6 would by luck alone.
+
+Saved /home/harish/Documents/Swathi K N/1 Trading/option chain/OC/data/backtests/ict_test.json. A model passes only with positive average R, p<0.05 against BOTH random controls and both halves positive. Information only — not financial advice.

@@ -1,8 +1,8 @@
 {
   "date": "2026-10-04",
-  "ohlc_done": false,
-  "ohlc_attempts": 0,
-  "ohlc_message": "",
+  "ohlc_done": true,
+  "ohlc_attempts": 1,
+  "ohlc_message": "Dhan: 0 session(s) added, 1922 rows total, newest 01-Oct \u2014 via /charts/historical; newest there was 2026-10-01, expected 02-Oct \u2014 trying intraday; filled from hourly intraday bars",
   "chain_polls": 0,
   "view_refreshes": 7,
   "last_chain": "",
