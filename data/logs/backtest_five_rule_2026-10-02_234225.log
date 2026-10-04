@@ -1,0 +1,48 @@
+$ backtest_five_rule.py --fetch 730 --before 2025-10-03 --entry limit --tag oos
+Downloading ~730 days of 1m NIFTY candles from Dhan …
+  fetched 2024-10-02 → 2024-12-26: 58 sessions
+  fetched 2024-12-27 → 2025-03-22: 60 sessions
+  fetched 2025-03-23 → 2025-06-16: 56 sessions
+  fetched 2025-06-17 → 2025-09-10: 60 sessions
+  fetched 2025-09-11 → 2025-12-05: 59 sessions
+  fetched 2025-12-06 → 2026-03-01: 58 sessions
+  fetched 2026-03-02 → 2026-05-26: 56 sessions
+  fetched 2026-05-27 → 2026-08-20: 60 sessions
+  fetched 2026-08-21 → 2026-10-02: 29 sessions
+  saved 496 sessions to /home/harish/Documents/Swathi K N/1 Trading/option chain/OC/data/candles_hist
+Loaded 494 sessions of 1m NIFTY: 2024-10-03 → 2026-10-01
+Scanning 243 sessions minute by minute on 11 worker(s)… (roughly 7 min; cached afterwards)
+  10/243 sessions scanned · 1226 TAKE-minutes so far
+  20/243 sessions scanned · 1778 TAKE-minutes so far
+  30/243 sessions scanned · 2198 TAKE-minutes so far
+Traceback (most recent call last):
+  File "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/backtest_five_rule.py", line 231, in scan_all
+    for k, res in enumerate(ex.map(scan_day, tasks, chunksize=1), 1):
+  File "/home/harish/anaconda3/lib/python3.9/concurrent/futures/process.py", line 559, in _chain_from_iterable_of_lists
+    for element in iterable:
+  File "/home/harish/anaconda3/lib/python3.9/concurrent/futures/_base.py", line 609, in result_iterator
+    yield fs.pop().result()
+  File "/home/harish/anaconda3/lib/python3.9/concurrent/futures/_base.py", line 441, in result
+    self._condition.wait(timeout)
+  File "/home/harish/anaconda3/lib/python3.9/threading.py", line 312, in wait
+    waiter.acquire()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/backtest_five_rule.py", line 703, in <module>
+    main()
+  File "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/backtest_five_rule.py", line 579, in main
+    sig = scan_all(m1, a.step, a.workers, after, before)
+  File "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/backtest_five_rule.py", line 234, in scan_all
+    print(f"  {k}/{len(tasks)} sessions scanned · {len(rows)} TAKE-minutes so far")
+  File "/home/harish/anaconda3/lib/python3.9/concurrent/futures/_base.py", line 637, in __exit__
+    self.shutdown(wait=True)
+  File "/home/harish/anaconda3/lib/python3.9/concurrent/futures/process.py", line 740, in shutdown
+    self._executor_manager_thread.join()
+  File "/home/harish/anaconda3/lib/python3.9/threading.py", line 1053, in join
+    self._wait_for_tstate_lock()
+  File "/home/harish/anaconda3/lib/python3.9/threading.py", line 1073, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+KeyboardInterrupt

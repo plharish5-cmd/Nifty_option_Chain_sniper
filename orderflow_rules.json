@@ -86,7 +86,26 @@
     "trend_min_delta_pct": 5.0,
     "big_delta_quantile": 0.85,
     "confirm_lookback_candles": 3,
+    "roll_delta_candles": 5,
+    "roll_delta_min_pct": 5.0,
+    "surge_mult": 1.5,
+    "surge_min_candle": 6,
+    "absorb_window": 4,
+    "absorb_window_min_pct": 12.0,
+    "absorb_window_max_move_atr": 0.6,
+    "fade_ratio": 0.35,
+    "fade_min_pct": 10.0,
     "_units": "Money is ₹ crore of stock traded (price × quantity). '_pct' thresholds are relative to the candle's (or window's) own traded value, so they work on quiet and busy days."
+  },
+  "setup": {
+    "_note": "Delta + VWAP setup: last-N-candle delta ≥ ±roll_delta_min_pct of their ₹ value on the same side of the flow VWAP → enter on a break of that candle's high/low, SL beyond VWAP, target rr × risk.",
+    "rr": 1.5,
+    "trigger_valid_candles": 3,
+    "sl_buffer_pts": 2.0,
+    "min_risk_pts": 8.0,
+    "no_new_after": "14:45",
+    "exit_at": "15:15",
+    "max_risk_pts": 40.0
   },
   "validation": {
     "_note": "Every order-flow signal is shown as UNTESTED until backtest_orderflow.py beats random times on your own recorded sessions.",

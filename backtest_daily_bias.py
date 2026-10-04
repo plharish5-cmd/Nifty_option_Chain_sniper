@@ -259,6 +259,8 @@ def report(res: dict) -> str:
 
 
 if __name__ == "__main__":
+    import runlog
+    runlog.start("backtest_daily_bias")
     p = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     d = load(p)
     res = evaluate(d)

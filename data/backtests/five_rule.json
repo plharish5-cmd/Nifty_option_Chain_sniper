@@ -1,7 +1,9 @@
 {
-  "generated": "2026-10-02T16:21:40",
+  "generated": "2026-10-02T23:37:38",
   "sessions": 246,
   "scored_sessions": 241,
+  "scored_from": "2025-10-10",
+  "scored_to": "2026-10-01",
   "take_minutes": 18093,
   "cost_pts": 1.0,
   "windows": [
@@ -15,6 +17,8 @@
     ]
   ],
   "min_rr": 3.0,
+  "headline_entry": "market",
+  "tag": "",
   "headline": {
     "stats": {
       "n": 258,
@@ -417,6 +421,67 @@
         "p_side": 0.04780876494023904
       }
     }
+  },
+  "fresh_test": {
+    "sweep_max_min": 90.0,
+    "choch_max_min": 30.0,
+    "Fresh \u00b7 market (headline entry)": {
+      "stats": {
+        "n": 211,
+        "days": 138,
+        "win_rate": 0.393,
+        "avg_R": 0.061,
+        "total_R": 12.9,
+        "avg_win_R": 1.67,
+        "avg_loss_R": -0.98,
+        "max_dd_R": 20.9,
+        "half1_avg_R": -0.025,
+        "half2_avg_R": 0.148,
+        "buy_n": 69,
+        "sell_n": 142,
+        "outcomes": {
+          "SL": 119,
+          "EOD": 52,
+          "TP": 40
+        }
+      },
+      "null": {
+        "real": 0.061061611374407604,
+        "time_null": 0.02950786929176783,
+        "p_time": 0.3665338645418327,
+        "side_null": 0.010565837871031613,
+        "p_side": 0.2589641434262948
+      }
+    },
+    "Fresh \u00b7 limit": {
+      "stats": {
+        "n": 178,
+        "days": 115,
+        "win_rate": 0.27,
+        "avg_R": 0.205,
+        "total_R": 36.4,
+        "avg_win_R": 3.52,
+        "avg_loss_R": -1.02,
+        "max_dd_R": 22.3,
+        "half1_avg_R": 0.156,
+        "half2_avg_R": 0.257,
+        "buy_n": 59,
+        "sell_n": 119,
+        "outcomes": {
+          "SL": 125,
+          "EOD": 38,
+          "TP": 15
+        }
+      },
+      "null": {
+        "real": 0.20463483146067415,
+        "time_null": -0.06852991662980659,
+        "p_time": 0.027888446215139442,
+        "side_null": 0.038321351528558464,
+        "p_side": 0.11155378486055777
+      }
+    },
+    "passed": false
   },
   "session_sweeps": {
     "Opening range (first 15 min)": {

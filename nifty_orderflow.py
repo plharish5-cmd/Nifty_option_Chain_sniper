@@ -33,7 +33,11 @@ _DEF = {"bucket_pts": 5, "value_area_pct": 0.70, "imbalance_ratio": 3.0, "imbala
         "stack_min": 3, "divergence_min_delta_pct": 8.0, "absorption_min_delta_pct": 15.0,
         "absorption_max_range_mult": 0.6, "unfinished_min_side_pct": 10.0, "cvd_pivot_lookback": 6,
         "trend_lookback_candles": 6, "trend_min_delta_pct": 5.0, "big_delta_quantile": 0.85,
-        "confirm_lookback_candles": 3}
+        "confirm_lookback_candles": 3, "roll_delta_candles": 5, "roll_delta_min_pct": 5.0,
+        "surge_mult": 1.5, "surge_min_candle": 6, "absorb_window": 4, "absorb_window_min_pct": 12.0,
+        "absorb_window_max_move_atr": 0.6, "fade_ratio": 0.35, "fade_min_pct": 10.0}
+_SETUP = {"rr": 1.5, "trigger_valid_candles": 3, "sl_buffer_pts": 2.0, "min_risk_pts": 8.0, "max_risk_pts": 40.0,
+          "no_new_after": "14:45", "exit_at": "15:15"}
 OPEN, CLOSE = dtime(9, 15), dtime(15, 30)
 
 SIGNALS = {   # key: (title, side-neutral meaning shown in the tab)
@@ -45,8 +49,14 @@ SIGNALS = {   # key: (title, side-neutral meaning shown in the tab)
     "div_bear": ("Bearish delta divergence", "Green candle but sellers were the aggressors (negative delta)."),
     "cvd_div_bull": ("Bullish CVD divergence", "Price made a lower low but cumulative delta made a higher low — selling is drying up."),
     "cvd_div_bear": ("Bearish CVD divergence", "Price made a higher high but cumulative delta made a lower high — buying is drying up."),
+    "surge_bull": ("Delta SURGE (buying)", "Candle delta bigger than every candle since the open — a major move often starts here."),
+    "surge_bear": ("Delta SURGE (selling)", "Candle delta more negative than every candle since the open — a major move often starts here."),
+    "absorb_zone_bear": ("Sustained absorption (sellers)", "Several candles of strong BUYING delta but price flat — a large passive seller is filling every buyer; breaks lower once buying stops."),
+    "absorb_zone_bull": ("Sustained absorption (buyers)", "Several candles of strong SELLING delta but price flat — a large passive buyer is filling every seller."),
+    "fade_buying": ("Buying fading", "Delta still positive but shrinking fast while price stalls — early warning the up-move is tiring."),
+    "fade_selling": ("Selling fading", "Delta still negative but shrinking fast while price stalls — early warning the down-move is tiring."),
 }
-BULLISH = {"stacked_buy", "absorb_bull", "div_bull", "cvd_div_bull"}
+BULLISH = {"stacked_buy", "absorb_bull", "div_bull", "cvd_div_bull", "surge_bull", "absorb_zone_bull", "fade_selling"}
 # Unfinished auctions are shown per candle in the footprint table only. With 50 stocks pooled onto one
 # index price, both sides almost always trade at the extremes, so as a signal it fires on nearly every
 # candle — noise, so it is deliberately NOT in the signal list.
@@ -58,7 +68,9 @@ def rules() -> dict:
     except Exception:
         r = {}
     e = {k: v for k, v in (r.get("engine") or {}).items() if not k.startswith("_")}
-    return {**_DEF, **e}
+    out = {**_DEF, **e}
+    out["setup"] = {**_SETUP, **{k: v for k, v in (r.get("setup") or {}).items() if not k.startswith("_")}}
+    return out
 
 
 def validation() -> dict:
@@ -161,6 +173,8 @@ class Flow:
     state: dict
     totals: dict
     notes: list = field(default_factory=list)
+    trades: pd.DataFrame = field(default_factory=pd.DataFrame)   # Delta + VWAP setup trades
+    setup: dict = field(default_factory=dict)                     # current setup status
 
 
 def _index_ohlc(data: dict, minutes: int) -> pd.DataFrame:
@@ -237,6 +251,14 @@ def compute(data: dict, minutes: int = 5, R: dict | None = None, day: str = "") 
     c["delta"] = c["buy"] - c["sell"]
     c["delta_pct"] = np.where(c["vol"] > 0, 100 * c["delta"] / c["vol"], 0.0)
     c["cvd"] = c["delta"].cumsum()
+    # NIFTY 50 "flow VWAP": index price weighted by ₹ traded in its 50 stocks (the index itself has no volume)
+    t = t.sort_values("ts")
+    vw = (t["idx"] * t["val"]).cumsum() / t["val"].cumsum()
+    c = c.merge(pd.DataFrame({"bin": t["bin"].values, "vwap": vw.values}).groupby("bin")["vwap"].last(),
+                left_on="t", right_index=True, how="left")
+    nr = int(R["roll_delta_candles"])
+    c["d_roll"] = c["delta"].rolling(nr, min_periods=1).sum()
+    c["d_roll_pct"] = 100 * c["d_roll"] / c["vol"].rolling(nr, min_periods=1).sum().replace(0, np.nan)
     per_stock = t.groupby(["bin", "sym"])["net"].sum()
     br = per_stock.groupby(level=0).agg(lambda s: int((s > 0).sum())).rename("breadth_up")
     bn = per_stock.groupby(level=0).agg(lambda s: int((s < 0).sum())).rename("breadth_dn")
@@ -314,7 +336,44 @@ def compute(data: dict, minutes: int = 5, R: dict | None = None, day: str = "") 
             ev.append(dict(t=c["t"].iloc[i], i=i, kind="cvd_div_bull", price=L[i],
                            detail=f"low {L[i]:,.0f} < {L[j_lo]:,.0f} but CVD ₹{CV[i]:+,.0f} > ₹{CV[j_lo]:+,.0f} Cr"))
             last_lo_sig = i
+    # delta SURGE: bigger than every earlier candle of the session (ignores the first few candles)
+    D = c["delta"].to_numpy()
+    for i in range(int(R["surge_min_candle"]), len(c)):
+        prev = np.abs(D[1:i]).max() if i > 1 else 0
+        if prev > 0 and abs(D[i]) > R["surge_mult"] * prev and not any(
+                e_["kind"].startswith("surge") and i - e_["i"] < 3 for e_ in ev):
+            k = "surge_bull" if D[i] > 0 else "surge_bear"
+            ev.append(dict(t=c["t"].iloc[i], i=i, kind=k, price=c["l"].iloc[i] if D[i] > 0 else c["h"].iloc[i],
+                           detail=f"delta ₹{D[i]:+,.0f} Cr vs previous session max ₹{prev:,.0f} Cr"))
+    # SUSTAINED absorption: strong one-sided delta over a window while price goes nowhere
+    w = int(R["absorb_window"])
+    last_abs = -10
+    for i in range(w, len(c)):
+        win = c.iloc[i - w + 1:i + 1]
+        dsum, vsum = float(win["delta"].sum()), float(win["vol"].sum())
+        pct = 100 * dsum / vsum if vsum else 0
+        move = float(win["c"].iloc[-1] - c["c"].iloc[i - w])
+        atr = float(win["range"].mean()) or 1e-9
+        if abs(pct) >= R["absorb_window_min_pct"] and abs(move) <= R["absorb_window_max_move_atr"] * atr \
+                and np.sign(win["delta"]).eq(np.sign(dsum)).sum() >= w - 1 and i - last_abs >= w:
+            k = "absorb_zone_bear" if dsum > 0 else "absorb_zone_bull"
+            ev.append(dict(t=c["t"].iloc[i], i=i, kind=k, price=float(win["h"].max() if dsum > 0 else win["l"].min()),
+                           detail=f"{w} candles delta {pct:+.0f}% (₹{dsum:+,.0f} Cr) but price moved only {move:+.0f} pts"))
+            last_abs = i
+    # FADING: same-sign delta, last 3 candles much smaller than the 3 before, price stalling
+    fr_ = float(R["fade_ratio"])
+    for i in range(6, len(c)):
+        a, b = D[i - 5:i - 2], D[i - 2:i + 1]
+        if (np.all(a > 0) and np.all(b > 0)) or (np.all(a < 0) and np.all(b < 0)):
+            pa = 100 * abs(a.sum()) / max(float(c["vol"].iloc[i - 5:i - 2].sum()), 1e-9)
+            if pa >= R["fade_min_pct"] and abs(b.mean()) <= fr_ * abs(a.mean()) and \
+                    abs(c["c"].iloc[i] - c["c"].iloc[i - 2]) <= 0.6 * float(c["range"].iloc[i - 2:i + 1].mean()):
+                k = "fade_buying" if a.sum() > 0 else "fade_selling"
+                if not any(e_["kind"] == k and i - e_["i"] < 3 for e_ in ev):
+                    ev.append(dict(t=c["t"].iloc[i], i=i, kind=k, price=c["c"].iloc[i],
+                                   detail=f"avg delta fell from ₹{a.mean():+,.0f} to ₹{b.mean():+,.0f} Cr per candle"))
     events = pd.DataFrame(ev, columns=["t", "i", "kind", "price", "detail"]).sort_values(["t", "kind"]).reset_index(drop=True)
+    trades, setup = delta_vwap_setup(c, R, minutes)
 
     # ── session profile ─────────────────────────────────────────────────
     prof = t.groupby("level").agg(buy=("buy", "sum"), sell=("sell", "sum")).reset_index().sort_values("level")
@@ -365,7 +424,110 @@ def compute(data: dict, minutes: int = 5, R: dict | None = None, day: str = "") 
                   cvd=float(c["cvd"].iloc[-1]), stocks=int(t["sym"].nunique()),
                   last_t=t["t"].max(), first_t=t["t"].min(), trades=int(len(t)))
     return Flow(day=day, minutes=minutes, candles=c, footprint=fps, zones=zones, events=events, profile=prof,
-                poc=poc, vah=vah, val=val, stocks=stocks, book=book, state=state, totals=totals)
+                poc=poc, vah=vah, val=val, stocks=stocks, book=book, state=state, totals=totals,
+                trades=trades, setup=setup)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Delta + VWAP setup (the Dhan "beginner order-flow strategy", made mechanical)
+#   LONG : last-N-candle delta ≥ +X% of their value AND the candle closes ABOVE the flow VWAP
+#          → buy when price breaks that candle's HIGH (within K candles) · SL just below VWAP
+#   SHORT: mirror (delta ≤ −X%, close BELOW VWAP, sell on a break of the candle's LOW, SL above VWAP)
+#   Target = rr × risk · flat at 15:15 · no new setups after 14:45 · one position at a time.
+# ═══════════════════════════════════════════════════════════════════════════
+def _hm(s: str) -> dtime:
+    h, m = map(int, s.split(":"))
+    return dtime(h, m)
+
+
+def simulate(c: pd.DataFrame, j: int, side: int, entry: float, sl: float, tp: float, exit_at: dtime):
+    """From candle j (entry candle) onward. SL wins if SL and TP fall in the same candle."""
+    for k in range(j, len(c)):
+        r = c.iloc[k]
+        if k > j and r["t"].time() >= exit_at:
+            return float(r["o"]) , k, "TIME"
+        lo, hi = float(r["l"]), float(r["h"])
+        if k == j:                                     # entry candle: only its close can stop us out
+            if (side > 0 and r["c"] <= sl) or (side < 0 and r["c"] >= sl):
+                return float(r["c"]), k, "SL"
+            if (side > 0 and r["c"] >= tp) or (side < 0 and r["c"] <= tp):
+                return tp, k, "TP"
+            continue
+        if (side > 0 and lo <= sl) or (side < 0 and hi >= sl):
+            return sl, k, "SL"
+        if (side > 0 and hi >= tp) or (side < 0 and lo <= tp):
+            return tp, k, "TP"
+    return float(c["c"].iloc[-1]), len(c) - 1, "OPEN" if len(c) else "EOD"
+
+
+def delta_vwap_setup(c: pd.DataFrame, R: dict, minutes: int):
+    S = R["setup"]
+    thr, K, rr = float(R["roll_delta_min_pct"]), int(S["trigger_valid_candles"]), float(S["rr"])
+    buf, min_risk = float(S["sl_buffer_pts"]), float(S["min_risk_pts"])
+    stop_new, exit_at = _hm(S["no_new_after"]), _hm(S["exit_at"])
+    trades, armed, busy_until = [], None, -1
+    status = dict(state="NONE", text="No Delta + VWAP setup right now.")
+    for i in range(len(c)):
+        r = c.iloc[i]
+        if i <= busy_until:
+            continue
+        # trigger an armed setup
+        if armed is not None:
+            if i - armed["i"] > K:
+                armed = None
+            else:
+                side = armed["side"]
+                hit = (side > 0 and r["h"] > armed["trigger"]) or (side < 0 and r["l"] < armed["trigger"])
+                if hit:
+                    entry = max(armed["trigger"], float(r["o"])) if side > 0 else min(armed["trigger"], float(r["o"]))
+                    vw = float(r["vwap"]) if pd.notna(r["vwap"]) else float(armed["vwap"])
+                    sl = vw - buf if side > 0 else vw + buf
+                    if side * (entry - sl) < min_risk:
+                        sl = entry - side * min_risk
+                    risk = side * (entry - sl)
+                    if risk > float(S["max_risk_pts"]):          # VWAP too far away → stop too wide, skip
+                        armed = None
+                        continue
+                    tp = entry + side * rr * risk
+                    px, k, how = simulate(c, i, side, entry, sl, tp, exit_at)
+                    trades.append(dict(setup_t=armed["t"], entry_t=r["t"], exit_t=c["t"].iloc[k], side="LONG" if side > 0 else "SHORT",
+                                       entry=round(entry, 1), sl=round(sl, 1), tp=round(tp, 1), exit=round(px, 1),
+                                       outcome=how, pts=round(side * (px - entry), 1), R=round(side * (px - entry) / risk, 2),
+                                       i=i, setup_i=armed["i"], d_roll_pct=round(armed["d_roll_pct"], 1)))
+                    busy_until, armed = k, None
+                    continue
+        if r["t"].time() >= stop_new or pd.isna(r.get("vwap")) or pd.isna(r.get("d_roll_pct")):
+            continue
+        if r["d_roll_pct"] >= thr and r["c"] > r["vwap"]:
+            armed = dict(i=i, t=r["t"], side=1, trigger=float(r["h"]), vwap=float(r["vwap"]), d_roll_pct=float(r["d_roll_pct"]))
+        elif r["d_roll_pct"] <= -thr and r["c"] < r["vwap"]:
+            armed = dict(i=i, t=r["t"], side=-1, trigger=float(r["l"]), vwap=float(r["vwap"]), d_roll_pct=float(r["d_roll_pct"]))
+    tr = pd.DataFrame(trades)
+    last = c.iloc[-1]
+    if len(tr) and tr["outcome"].iloc[-1] == "OPEN":
+        t_ = tr.iloc[-1]
+        status = dict(state=f"IN {t_['side']}", side=1 if t_["side"] == "LONG" else -1,
+                      text=f"{t_['side']} from {t_['entry']:,.1f} ({t_['entry_t']:%H:%M}) · SL {t_['sl']:,.1f} · target {t_['tp']:,.1f} · "
+                           f"now {t_['pts']:+.1f} pts ({t_['R']:+.2f}R)")
+    elif armed is not None and len(c) - 1 - armed["i"] <= K:
+        sd = armed["side"]
+        vw = float(last["vwap"])
+        sl = vw - buf if sd > 0 else vw + buf
+        if sd * (armed["trigger"] - sl) < min_risk:
+            sl = armed["trigger"] - sd * min_risk
+        tp = armed["trigger"] + sd * rr * sd * (armed["trigger"] - sl)
+        status = dict(state="LONG ARMED" if sd > 0 else "SHORT ARMED", side=sd,
+                      text=(f"{'Buy above' if sd > 0 else 'Sell below'} {armed['trigger']:,.1f} (the {armed['t']:%H:%M} candle's "
+                            f"{'high' if sd > 0 else 'low'}) · SL {sl:,.1f} ({'below' if sd > 0 else 'above'} VWAP {vw:,.1f}) · "
+                            f"target {tp:,.1f} ({rr:g}R) · valid {K} candles · last {int(R['roll_delta_candles'])} candles delta "
+                            f"{armed['d_roll_pct']:+.0f}%"))
+    else:
+        side_txt = "above" if pd.notna(last.get("vwap")) and last["c"] > last["vwap"] else "below"
+        status = dict(state="NONE", side=0,
+                      text=f"No setup · price {side_txt} VWAP {last.get('vwap', float('nan')):,.1f} · last "
+                           f"{int(R['roll_delta_candles'])} candles delta {last.get('d_roll_pct', 0):+.0f}% (needs ±{thr:g}% "
+                           f"on the same side as VWAP)")
+    return tr, status
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -379,10 +541,13 @@ def confirm(f: Flow | None, direction: int, R: dict | None = None) -> tuple[str,
     n = int(R["confirm_lookback_candles"])
     last = f.candles.tail(n)
     recent = f.events[f.events["i"] >= last.index.min()] if len(f.events) else f.events
-    good = {"stacked_buy", "absorb_bull", "div_bull", "cvd_div_bull"} if direction > 0 else \
-        {"stacked_sell", "absorb_bear", "div_bear", "cvd_div_bear"}
-    bad = {"stacked_sell", "absorb_bear", "div_bear", "cvd_div_bear"} if direction > 0 else \
-        {"stacked_buy", "absorb_bull", "div_bull", "cvd_div_bull"}
+    bull_k = {"stacked_buy", "absorb_bull", "div_bull", "cvd_div_bull", "surge_bull", "absorb_zone_bull", "fade_selling"}
+    bear_k = {"stacked_sell", "absorb_bear", "div_bear", "cvd_div_bear", "surge_bear", "absorb_zone_bear", "fade_buying"}
+    good, bad = (bull_k, bear_k) if direction > 0 else (bear_k, bull_k)
+    lr = f.candles.iloc[-1]
+    if pd.notna(lr.get("vwap")) and direction * (lr["c"] - lr["vwap"]) < 0:
+        return "AGAINST", (f"price {'below' if direction > 0 else 'above'} the flow VWAP {lr['vwap']:,.1f} — "
+                           f"{'buy only above' if direction > 0 else 'sell only below'} VWAP")
     d = float(last["delta"].sum())
     meaningful = abs(d) >= R["trend_min_delta_pct"] / 100 * max(float(last["vol"].sum()), 1e-9)
     g = recent[recent["kind"].isin(good)] if len(recent) else recent

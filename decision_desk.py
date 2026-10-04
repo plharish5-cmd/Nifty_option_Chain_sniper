@@ -246,6 +246,22 @@ def collect(spot: float, chain_df: pd.DataFrame | None, pa_frames: dict | None, 
                     f"last candle breadth {int(f.candles['breadth_up'].iloc[-1])}↑/{int(f.candles['breadth_dn'].iloc[-1])}↓",
                     context_only=not (w > 0 and valid))
     d.votes.append(_safe(v_of, "orderflow", "NIFTY 50 order flow", True))
+
+    def v_garch():
+        import garch_range as gr
+        b = gr.box_for(now.date())
+        if b is None:
+            return Vote("garch", "GARCH expected move (context)", 0, 0, "needs ≥300 daily closes", available=False,
+                        context_only=True)
+        z = (spot - b["ref_close"]) / (b["pts1"] or 1)
+        where = "outside 2σ — extreme" if abs(z) >= 2 else "outside 1σ — stretched" if abs(z) >= 1 else "inside 1σ"
+        if abs(z) >= 1:
+            d.warnings.append(f"NIFTY is {z:+.1f}σ from yesterday's close (GARCH box ±{b['pts1']:,.0f} pts) — the day's normal "
+                              f"move is largely used up; chasing further {'up' if z > 0 else 'down'} has less room.")
+        return Vote("garch", "GARCH expected move (context)", 0, 0,
+                    f"1σ {b['lo1']:,.0f}–{b['hi1']:,.0f} (±{b['pts1']:,.0f}) · 2σ ±{b['pts2']:,.0f} · now {z:+.1f}σ ({where})",
+                    context_only=True)
+    d.votes.append(_safe(v_garch, "garch", "GARCH expected move (context)", True))
     return d, ctx
 
 

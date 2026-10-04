@@ -1,0 +1,543 @@
+{
+  "generated": "2026-10-04T01:27:54",
+  "sessions": 494,
+  "scored_sessions": 243,
+  "scored_from": "2024-10-10",
+  "scored_to": "2025-10-01",
+  "take_minutes": 21795,
+  "cost_pts": 1.0,
+  "windows": [
+    [
+      "09:30",
+      "11:30"
+    ],
+    [
+      "13:30",
+      "14:45"
+    ]
+  ],
+  "min_rr": 3.0,
+  "headline_entry": "limit",
+  "tag": "oos",
+  "headline": {
+    "stats": {
+      "n": 242,
+      "days": 138,
+      "win_rate": 0.256,
+      "avg_R": -0.107,
+      "total_R": -26.0,
+      "avg_win_R": 2.6,
+      "avg_loss_R": -1.04,
+      "max_dd_R": 34.2,
+      "half1_avg_R": -0.103,
+      "half2_avg_R": -0.112,
+      "buy_n": 121,
+      "sell_n": 121,
+      "outcomes": {
+        "SL": 173,
+        "EOD": 54,
+        "TP": 15
+      }
+    },
+    "null": {
+      "real": -0.10738016528925619,
+      "time_null": -0.3163097855461585,
+      "p_time": 0.023952095808383235,
+      "side_null": -0.009746396488417318,
+      "p_side": 0.8023952095808383
+    }
+  },
+  "windows_test": {
+    "W1 09:30\u201311:30": {
+      "stats": {
+        "n": 169,
+        "days": 119,
+        "win_rate": 0.325,
+        "avg_R": -0.055,
+        "total_R": -9.3,
+        "avg_win_R": 1.84,
+        "avg_loss_R": -0.97,
+        "max_dd_R": 20.0,
+        "half1_avg_R": -0.083,
+        "half2_avg_R": -0.027,
+        "buy_n": 83,
+        "sell_n": 86,
+        "outcomes": {
+          "SL": 105,
+          "EOD": 33,
+          "TP": 31
+        }
+      },
+      "null": {
+        "real": -0.055142011834319514,
+        "time_null": -0.20012360944056098,
+        "p_time": 0.055776892430278883,
+        "side_null": 0.1401204876681846,
+        "p_side": 0.9641434262948207
+      }
+    },
+    "W2 13:30\u201314:45": {
+      "stats": {
+        "n": 177,
+        "days": 129,
+        "win_rate": 0.407,
+        "avg_R": -0.112,
+        "total_R": -19.8,
+        "avg_win_R": 0.99,
+        "avg_loss_R": -0.87,
+        "max_dd_R": 24.2,
+        "half1_avg_R": -0.118,
+        "half2_avg_R": -0.105,
+        "buy_n": 91,
+        "sell_n": 86,
+        "outcomes": {
+          "SL": 82,
+          "EOD": 74,
+          "TP": 21
+        }
+      },
+      "null": {
+        "real": -0.11161581920903951,
+        "time_null": -0.2010427955797922,
+        "p_time": 0.07171314741035857,
+        "side_null": -0.03609342777249366,
+        "p_side": 0.7888446215139442
+      }
+    },
+    "Outside windows": {
+      "stats": {
+        "n": 215,
+        "days": 147,
+        "win_rate": 0.451,
+        "avg_R": 0.153,
+        "total_R": 32.8,
+        "avg_win_R": 1.38,
+        "avg_loss_R": -0.86,
+        "max_dd_R": 11.3,
+        "half1_avg_R": 0.138,
+        "half2_avg_R": 0.169,
+        "buy_n": 95,
+        "sell_n": 120,
+        "outcomes": {
+          "SL": 89,
+          "EOD": 85,
+          "TP": 41
+        }
+      },
+      "null": {
+        "real": 0.15269302325581396,
+        "time_null": 0.018312926359050623,
+        "p_time": 0.0199203187250996,
+        "side_null": 0.059246493328519396,
+        "p_side": 0.16733067729083664
+      }
+    }
+  },
+  "rr_test": {
+    "1.0": {
+      "stats": {
+        "n": 365,
+        "days": 163,
+        "win_rate": 0.452,
+        "avg_R": -0.047,
+        "total_R": -17.3,
+        "avg_win_R": 0.99,
+        "avg_loss_R": -0.91,
+        "max_dd_R": 35.7,
+        "half1_avg_R": 0.017,
+        "half2_avg_R": -0.113,
+        "buy_n": 200,
+        "sell_n": 165,
+        "outcomes": {
+          "SL": 167,
+          "TP": 107,
+          "EOD": 91
+        }
+      },
+      "null": {
+        "real": -0.04744657534246575,
+        "time_null": -0.13538359578615433,
+        "p_time": 0.043824701195219126,
+        "side_null": 0.07184034691902082,
+        "p_side": 0.9561752988047809
+      }
+    },
+    "1.5": {
+      "stats": {
+        "n": 341,
+        "days": 162,
+        "win_rate": 0.431,
+        "avg_R": -0.048,
+        "total_R": -16.4,
+        "avg_win_R": 1.11,
+        "avg_loss_R": -0.93,
+        "max_dd_R": 33.5,
+        "half1_avg_R": 0.008,
+        "half2_avg_R": -0.105,
+        "buy_n": 182,
+        "sell_n": 159,
+        "outcomes": {
+          "SL": 166,
+          "EOD": 88,
+          "TP": 87
+        }
+      },
+      "null": {
+        "real": -0.048155425219941345,
+        "time_null": -0.15163185565106663,
+        "p_time": 0.01195219123505976,
+        "side_null": 0.08586063171088165,
+        "p_side": 0.9561752988047809
+      }
+    },
+    "2.0": {
+      "stats": {
+        "n": 330,
+        "days": 161,
+        "win_rate": 0.409,
+        "avg_R": -0.058,
+        "total_R": -19.2,
+        "avg_win_R": 1.2,
+        "avg_loss_R": -0.93,
+        "max_dd_R": 36.1,
+        "half1_avg_R": 0.005,
+        "half2_avg_R": -0.117,
+        "buy_n": 170,
+        "sell_n": 160,
+        "outcomes": {
+          "SL": 168,
+          "EOD": 87,
+          "TP": 75
+        }
+      },
+      "null": {
+        "real": -0.05810303030303031,
+        "time_null": -0.16786245698161628,
+        "p_time": 0.03187250996015936,
+        "side_null": 0.0738448148526634,
+        "p_side": 0.9561752988047809
+      }
+    },
+    "3.0": {
+      "stats": {
+        "n": 292,
+        "days": 156,
+        "win_rate": 0.37,
+        "avg_R": -0.068,
+        "total_R": -19.8,
+        "avg_win_R": 1.42,
+        "avg_loss_R": -0.94,
+        "max_dd_R": 32.1,
+        "half1_avg_R": -0.053,
+        "half2_avg_R": -0.084,
+        "buy_n": 148,
+        "sell_n": 144,
+        "outcomes": {
+          "SL": 161,
+          "EOD": 80,
+          "TP": 51
+        }
+      },
+      "null": {
+        "real": -0.06785616438356162,
+        "time_null": -0.18335672939218062,
+        "p_time": 0.03187250996015936,
+        "side_null": 0.10278219069010384,
+        "p_side": 0.9840637450199203
+      }
+    },
+    "4.0": {
+      "stats": {
+        "n": 258,
+        "days": 148,
+        "win_rate": 0.353,
+        "avg_R": -0.05,
+        "total_R": -12.9,
+        "avg_win_R": 1.58,
+        "avg_loss_R": -0.94,
+        "max_dd_R": 25.1,
+        "half1_avg_R": -0.026,
+        "half2_avg_R": -0.074,
+        "buy_n": 125,
+        "sell_n": 133,
+        "outcomes": {
+          "SL": 145,
+          "EOD": 76,
+          "TP": 37
+        }
+      },
+      "null": {
+        "real": -0.05017441860465116,
+        "time_null": -0.22132182201081646,
+        "p_time": 0.00796812749003984,
+        "side_null": 0.11548393450943296,
+        "p_side": 0.9402390438247012
+      }
+    }
+  },
+  "exit_test": {
+    "Full TP2 (external swing)": {
+      "stats": {
+        "n": 292,
+        "days": 156,
+        "win_rate": 0.37,
+        "avg_R": -0.068,
+        "total_R": -19.8,
+        "avg_win_R": 1.42,
+        "avg_loss_R": -0.94,
+        "max_dd_R": 32.1,
+        "half1_avg_R": -0.053,
+        "half2_avg_R": -0.084,
+        "buy_n": 148,
+        "sell_n": 144,
+        "outcomes": {
+          "SL": 161,
+          "EOD": 80,
+          "TP": 51
+        }
+      },
+      "null": {
+        "real": -0.06785616438356162,
+        "time_null": -0.18335672939218062,
+        "p_time": 0.03187250996015936,
+        "side_null": 0.10278219069010384,
+        "p_side": 0.9840637450199203
+      }
+    },
+    "Breakeven at +1R": {
+      "stats": {
+        "n": 316,
+        "days": 156,
+        "win_rate": 0.313,
+        "avg_R": -0.014,
+        "total_R": -4.5,
+        "avg_win_R": 1.49,
+        "avg_loss_R": -0.7,
+        "max_dd_R": 20.8,
+        "half1_avg_R": -0.005,
+        "half2_avg_R": -0.024,
+        "buy_n": 162,
+        "sell_n": 154,
+        "outcomes": {
+          "SL": 140,
+          "EOD": 77,
+          "BE": 57,
+          "TP": 42
+        }
+      },
+      "null": {
+        "real": -0.014306962025316453,
+        "time_null": -0.16604246124470134,
+        "p_time": 0.00796812749003984,
+        "side_null": 0.05750812760914835,
+        "p_side": 0.8286852589641435
+      }
+    },
+    "50% at TP1, rest BE\u2192TP2": {
+      "stats": {
+        "n": 371,
+        "days": 156,
+        "win_rate": 0.553,
+        "avg_R": -0.012,
+        "total_R": -4.4,
+        "avg_win_R": 0.72,
+        "avg_loss_R": -0.92,
+        "max_dd_R": 22.0,
+        "half1_avg_R": 0.03,
+        "half2_avg_R": -0.058,
+        "buy_n": 194,
+        "sell_n": 177,
+        "outcomes": {
+          "SL": 142,
+          "TP1+BE": 113,
+          "EOD": 65,
+          "TP": 36,
+          "TP1+TP2": 15
+        }
+      },
+      "null": {
+        "real": -0.011781671159029648,
+        "time_null": -0.0841153480167816,
+        "p_time": 0.035856573705179286,
+        "side_null": 0.058498838942113426,
+        "p_side": 0.8884462151394422
+      }
+    }
+  },
+  "entry_test": {
+    "Market at next 1m open": {
+      "stats": {
+        "n": 292,
+        "days": 156,
+        "win_rate": 0.37,
+        "avg_R": -0.068,
+        "total_R": -19.8,
+        "avg_win_R": 1.42,
+        "avg_loss_R": -0.94,
+        "max_dd_R": 32.1,
+        "half1_avg_R": -0.053,
+        "half2_avg_R": -0.084,
+        "buy_n": 148,
+        "sell_n": 144,
+        "outcomes": {
+          "SL": 161,
+          "EOD": 80,
+          "TP": 51
+        }
+      },
+      "null": {
+        "real": -0.06785616438356162,
+        "time_null": -0.18335672939218062,
+        "p_time": 0.03187250996015936,
+        "side_null": 0.10278219069010384,
+        "p_side": 0.9840637450199203
+      }
+    },
+    "Limit at zone middle (30m)": {
+      "stats": {
+        "n": 242,
+        "days": 138,
+        "win_rate": 0.256,
+        "avg_R": -0.107,
+        "total_R": -26.0,
+        "avg_win_R": 2.6,
+        "avg_loss_R": -1.04,
+        "max_dd_R": 34.2,
+        "half1_avg_R": -0.103,
+        "half2_avg_R": -0.112,
+        "buy_n": 121,
+        "sell_n": 121,
+        "outcomes": {
+          "SL": 173,
+          "EOD": 54,
+          "TP": 15
+        }
+      },
+      "null": {
+        "real": -0.10738016528925619,
+        "time_null": -0.3091225009970434,
+        "p_time": 0.02390438247011952,
+        "side_null": -0.004736355435426602,
+        "p_side": 0.8207171314741036
+      }
+    }
+  },
+  "fresh_test": {
+    "sweep_max_min": 90.0,
+    "choch_max_min": 30.0,
+    "Fresh \u00b7 limit (headline entry)": {
+      "stats": {
+        "n": 187,
+        "days": 117,
+        "win_rate": 0.241,
+        "avg_R": -0.06,
+        "total_R": -11.2,
+        "avg_win_R": 3.02,
+        "avg_loss_R": -1.04,
+        "max_dd_R": 22.8,
+        "half1_avg_R": -0.177,
+        "half2_avg_R": 0.061,
+        "buy_n": 97,
+        "sell_n": 90,
+        "outcomes": {
+          "SL": 135,
+          "EOD": 40,
+          "TP": 12
+        }
+      },
+      "null": {
+        "real": -0.06009090909090906,
+        "time_null": -0.27592143390457646,
+        "p_time": 0.0398406374501992,
+        "side_null": 0.05405600361069508,
+        "p_side": 0.7888446215139442
+      }
+    },
+    "Fresh \u00b7 market": {
+      "stats": {
+        "n": 217,
+        "days": 135,
+        "win_rate": 0.332,
+        "avg_R": -0.063,
+        "total_R": -13.6,
+        "avg_win_R": 1.74,
+        "avg_loss_R": -0.96,
+        "max_dd_R": 29.4,
+        "half1_avg_R": -0.085,
+        "half2_avg_R": -0.04,
+        "buy_n": 112,
+        "sell_n": 105,
+        "outcomes": {
+          "SL": 129,
+          "EOD": 59,
+          "TP": 29
+        }
+      },
+      "null": {
+        "real": -0.06275115207373273,
+        "time_null": -0.18429439092654065,
+        "p_time": 0.0398406374501992,
+        "side_null": 0.15207789781937137,
+        "p_side": 0.9960159362549801
+      }
+    },
+    "passed": false
+  },
+  "session_sweeps": {
+    "Opening range (first 15 min)": {
+      "days": 243,
+      "both": 0.444,
+      "chance": 0.418,
+      "edge_pts": 2.6,
+      "p": 0.304,
+      "by_open_range": {
+        "small": {
+          "n": 81,
+          "range_pts": "35\u201372",
+          "both": 0.506,
+          "chance": 0.524
+        },
+        "medium": {
+          "n": 81,
+          "range_pts": "73\u2013101",
+          "both": 0.481,
+          "chance": 0.415
+        },
+        "large": {
+          "n": 81,
+          "range_pts": "102\u2013359",
+          "both": 0.346,
+          "chance": 0.316
+        }
+      }
+    },
+    "First hour (IB)": {
+      "days": 243,
+      "both": 0.206,
+      "chance": 0.196,
+      "edge_pts": 1.0,
+      "p": 0.63,
+      "by_open_range": {
+        "small": {
+          "n": 81,
+          "range_pts": "52\u2013110",
+          "both": 0.296,
+          "chance": 0.296
+        },
+        "medium": {
+          "n": 81,
+          "range_pts": "110\u2013147",
+          "both": 0.21,
+          "chance": 0.196
+        },
+        "large": {
+          "n": 81,
+          "range_pts": "148\u2013446",
+          "both": 0.111,
+          "chance": 0.095
+        }
+      }
+    }
+  },
+  "passed": false
+}

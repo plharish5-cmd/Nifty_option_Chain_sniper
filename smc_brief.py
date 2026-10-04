@@ -7,6 +7,11 @@ brackets only so you can match it to Tab 19.
 
     .venv/bin/python smc_brief.py          # auto: 15m on :00/:15/:30/:45, 5m on other 5-min marks, else 3m
     .venv/bin/python smc_brief.py 3m       # force a timeframe (3m | 5m | 15m)
+    .venv/bin/python smc_brief.py --replay 2026-09-29            # replay a past day every 15 min (09:30–15:15)
+    .venv/bin/python smc_brief.py --replay 2026-09-29 --every 5 --tf 5m --from 09:20 --to 15:00
+    .venv/bin/python smc_brief.py --at "2026-10-01 11:05"        # one block as it would have printed then
+    Replay prints every block plus a SIGNAL TIMELINE with what NIFTY did 30 / 60 min after each call,
+    and saves it to data/replay/smc_brief_<day>.txt. Order flow appears only for days orderflow_recorder.py ran.
 
 HOW IT DECIDES (MJ / Stock Unlimited multi-timeframe rule)
   * 15m candles  -> the TREND (big picture). Never trade against it.
@@ -51,10 +56,14 @@ def _rules() -> dict:
 
 
 # ── candles (stored CSVs only — no web) ───────────────────────────────────
-def _read_dir(d: Path | None, days: int) -> pd.DataFrame | None:
+def _read_dir(d: Path | None, days: int, upto=None) -> pd.DataFrame | None:
+    """Last `days` session files on or before `upto` (a date) — so a replay of a past day sees only its past."""
     if not d or not Path(d).exists():
         return None
-    files = sorted(Path(d).glob("20*.csv"))[-days:]
+    files = sorted(Path(d).glob("20*.csv"))
+    if upto is not None:
+        files = [f for f in files if f.stem[:10] <= f"{upto:%Y-%m-%d}"]
+    files = files[-days:]
     frames = []
     for f in files:
         try:
@@ -77,6 +86,18 @@ def _read_dir(d: Path | None, days: int) -> pd.DataFrame | None:
                .drop_duplicates("timestamp").sort_values("timestamp").reset_index(drop=True))
 
 
+def _read_1m(days: int, upto=None) -> pd.DataFrame | None:
+    """1-min NIFTY candles: live folder (config.CANDLE_DIR) + data/candles_hist (backtest download); live wins."""
+    parts = [x for x in (_read_dir(Path(config.DATA_DIR) / "candles_hist", days, upto),
+                         _read_dir(getattr(config, "CANDLE_DIR", None), days, upto)) if x is not None]
+    if not parts:
+        return None
+    out = pd.concat(parts, ignore_index=True).drop_duplicates("timestamp", keep="last")
+    out = out.sort_values("timestamp")
+    keep = sorted(out["timestamp"].dt.date.unique())[-days:]
+    return out[out["timestamp"].dt.date.isin(keep)].reset_index(drop=True)
+
+
 def _resample(df1: pd.DataFrame, minutes: int) -> pd.DataFrame:
     parts = []
     for _, day in df1.groupby(df1["timestamp"].dt.date):
@@ -93,9 +114,11 @@ def load_candles(tf: str, now: datetime, r: dict) -> pd.DataFrame | None:
     days = int(r["days_back"])
     native = {"5m": getattr(config, "CANDLE_5M_DIR", None),
               "15m": getattr(config, "CANDLE_15M_DIR", None)}.get(tf)
-    df = _read_dir(native, days) if native else None
+    df = _read_dir(native, days, now.date()) if native else None
+    if df is not None and now.date() not in set(df["timestamp"].dt.date):
+        df = None                                   # native folder lacks this day → rebuild from 1-min
     if df is None:
-        one = _read_dir(getattr(config, "CANDLE_DIR", None), days)
+        one = _read_1m(days, now.date())
         if one is None:
             return None
         df = _resample(one, mins)
@@ -205,6 +228,16 @@ def build_block(tf: str, now: datetime | None = None) -> str:
         if dr:
             side = "CHEAP side → look to BUY only" if dr.position_pct < 0.5 else "EXPENSIVE side → look to SELL only"
             out.append(f"WHERE IN RANGE: {dr.position_pct*100:.0f}% of {dr.low:,.0f}–{dr.high:,.0f} · {side}")
+        try:
+            import garch_range
+            out.append(garch_range.text_line(now.date(), spot))
+        except Exception as _ge:                              # noqa: BLE001
+            out.append(f"GARCH RANGE: N/A ({_ge})")
+        try:
+            import evidence_board
+            out.append(evidence_board.summary_line())
+        except Exception:                                     # noqa: BLE001
+            pass
 
         # Decide
         need = _RANK.get(str(r["min_status_ready"]).upper(), 2)
@@ -272,7 +305,7 @@ def build_block(tf: str, now: datetime | None = None) -> str:
         out.append("  Info only — not advice. Zones are where to LOOK, the trigger is the CLOSE.")
         try:
             import smc_five_rule as fr
-            one = _read_dir(getattr(config, "CANDLE_DIR", None), int(r["days_back"]))
+            one = _read_1m(int(r["days_back"]), now.date())
             if one is not None:
                 one = one[one["timestamp"] + timedelta(minutes=1) <= now].reset_index(drop=True)
             d5 = load_candles("5m", now, r)
@@ -283,9 +316,116 @@ def build_block(tf: str, now: datetime | None = None) -> str:
                 out.append(fr.text_block(res))
         except Exception as _e:                              # noqa: BLE001
             out.append(f"5-RULE: N/A ({_e})")
+        out.append("")
+        out.append(orderflow_block(now))
         return "\n".join(out)
     except Exception as e:
         return f"{hdr}\nSMC: N/A ({type(e).__name__}: {e})"
+
+
+# ── NIFTY 50 order flow (orderflow_recorder.py) ───────────────────────────
+def orderflow_block(now: datetime, minutes: int = 5) -> str:
+    hdr = f"ORDER FLOW · NIFTY 50 (50 stocks, real aggressive buy/sell) · {minutes}m"
+    try:
+        import nifty_orderflow as nf
+        day = f"{now:%Y-%m-%d}"
+        if day not in nf.recorded_days():
+            first = (nf.recorded_days() or [None])[0]
+            return (f"{hdr}\n  N/A — no order-flow recording for {day}. Order flow cannot be downloaded for past days; it exists"
+                    f" only for days orderflow_recorder.py ran" + (f" (first recorded day: {first})." if first else "."))
+        data = nf.load_day(day)
+        cut = pd.Timestamp(now)
+        for k in ("ticks", "index"):
+            if len(data[k]):
+                data[k] = data[k][data[k]["t"] < cut].reset_index(drop=True)
+        if len(data["book"]):
+            data["book"] = data["book"][data["book"]["t"] < cut]
+        # only fully closed candles
+        start = cut.floor(f"{minutes}min") if minutes > 1 else cut.floor("min")
+        for k in ("ticks", "index"):
+            if len(data[k]):
+                data[k] = data[k][data[k]["t"] < start]
+        f = nf.compute(data, minutes, day=day)
+        if f is None or f.candles.empty:
+            return f"{hdr}\n  N/A — no closed candles with classified trades yet."
+        R, val = nf.rules(), nf.validation()
+        c = f.candles.iloc[-1]
+        vw = c.get("vwap")
+        L = [hdr,
+             f"  Day CVD ₹{f.totals['cvd']:+,.0f} Cr · last candle {c['t']:%H:%M} delta ₹{c['delta']:+,.0f} Cr ({c['delta_pct']:+.0f}%) · "
+             f"breadth {int(c['breadth_up'])}↑/{int(c['breadth_dn'])}↓",
+             f"  Price vs delta: {f.state['label']}",
+             (f"  Flow VWAP {vw:,.1f} → price {'ABOVE (buys only)' if c['c'] > vw else 'BELOW (sells only)'} · "
+              f"last {int(R['roll_delta_candles'])} candles delta {c.get('d_roll_pct', 0):+.0f}%") if pd.notna(vw) else "  Flow VWAP: n/a"]
+        su = f.setup or {}
+        sv = (val.get("setup") or {})
+        sst = "VALIDATED" if sv.get("passed") else ("UNTESTED" if not sv else "not proven")
+        L.append(f"  DELTA+VWAP SETUP: {su.get('state', 'NONE')} — {su.get('text', '')} [{sst}]")
+        for d_, nm in ((1, "LONG / BUY CE"), (-1, "SHORT / BUY PE")):
+            s_, why = nf.confirm(f, d_, R)
+            L.append(f"  For a {nm} idea: {s_} — {why}")
+        ev = f.events[f.events["i"] >= len(f.candles) - 6] if len(f.events) else f.events
+        for e in ev.tail(4).itertuples():
+            L.append(f"   • {e.t:%H:%M} {nf.SIGNALS[e.kind][0]} — {e.detail} [{nf.status_of(e.kind, val)}]")
+        return "\n".join(L)
+    except Exception as e:                                    # noqa: BLE001
+        return f"{hdr}\n  N/A ({type(e).__name__}: {e})"
+
+
+# ── replay a past day ─────────────────────────────────────────────────────
+def _future_move(one: pd.DataFrame | None, at: datetime, mins: int) -> float | None:
+    if one is None or one.empty:
+        return None
+    a = one[one["timestamp"] <= pd.Timestamp(at) - timedelta(minutes=1)]
+    b = one[(one["timestamp"] <= pd.Timestamp(at) + timedelta(minutes=mins - 1)) & (one["timestamp"].dt.date == at.date())]
+    if a.empty or b.empty or b["timestamp"].iloc[-1] <= a["timestamp"].iloc[-1]:
+        return None
+    return float(b["close"].iloc[-1] - a["close"].iloc[-1])
+
+
+def _summ(block: str) -> tuple[str, str, str]:
+    act = next((l.split(">>> ACTION:")[1].strip() for l in block.splitlines() if ">>> ACTION:" in l), "N/A")
+    five = next((l.split("→")[1].strip() for l in block.splitlines() if l.startswith("5-RULE SMC MODEL") and "→" in l), "N/A")
+    of = next((l.split("DELTA+VWAP SETUP:")[1].split("—")[0].strip() for l in block.splitlines() if "DELTA+VWAP SETUP:" in l),
+              "no recording")
+    return act, five, of
+
+
+def replay(day: str, tf: str | None, every: int, t_from: str, t_to: str) -> str:
+    d = datetime.strptime(day, "%Y-%m-%d")
+    t = datetime.combine(d.date(), dtime(*map(int, t_from.split(":"))))
+    end = datetime.combine(d.date(), dtime(*map(int, t_to.split(":"))))
+    one = _read_1m(1, d.date())
+    if one is None or one.empty or d.date() not in set(one["timestamp"].dt.date):
+        return (f"No stored 1-min NIFTY candles for {day}. Download them first:\n"
+                f"  .venv/bin/python backtest_five_rule.py --fetch 10   (saves data/candles_hist/)")
+    blocks, rows = [], []
+    while t <= end:
+        tf_ = tf or auto_tf(t.time())
+        b = build_block(tf_, t)
+        blocks.append(f"\n{'═' * 100}\nREPLAY {day} {t:%H:%M}\n{b}")
+        act, five, of = _summ(b)
+        rows.append((t, tf_, act, five, of, _future_move(one, t, 30), _future_move(one, t, 60)))
+        t += timedelta(minutes=every)
+    L = [f"\n{'═' * 100}\nSIGNAL TIMELINE {day} · what NIFTY did AFTER each call (close-to-close, points)\n{'═' * 100}",
+         f"{'time':<6}{'tf':<5}{'SMC action':<44}{'5-Rule':<34}{'Order-flow setup':<18}{'+30m':>7}{'+60m':>7}"]
+    for t_, tf_, act, five, of, m30, m60 in rows:
+        f30 = f"{m30:+.0f}" if m30 is not None else "—"
+        f60 = f"{m60:+.0f}" if m60 is not None else "—"
+        L.append(f"{t_:%H:%M} {tf_:<5}{act[:43]:<44}{five[:33]:<34}{of[:17]:<18}{f30:>7}{f60:>7}")
+    calls = [(a, m) for _, _, a, _, _, _, m in rows if a.startswith(("BUY NOW", "SELL NOW")) and m is not None]
+    if calls:
+        good = sum(1 for a, m in calls if (m > 0) == a.startswith("BUY"))
+        L.append(f"\nSMC BUY NOW / SELL NOW calls: {len(calls)} · right direction after 60 min: {good}/{len(calls)}")
+    takes = [(f_, m) for _, _, _, f_, _, _, m in rows if f_.startswith("TAKE TRADE") and m is not None]
+    if takes:
+        good = sum(1 for f_, m in takes if (m > 0) == ("BUY" in f_))
+        L.append(f"5-Rule TAKE TRADE calls: {len(takes)} · right direction after 60 min: {good}/{len(takes)}")
+    if not calls and not takes:
+        L.append("\nNo firm calls today (SMC BUY/SELL NOW or 5-Rule TAKE TRADE).")
+    L.append("One day is an anecdote, not a test — use backtest_five_rule.py / backtest_orderflow.py for evidence. "
+             "Information only — not financial advice.")
+    return "\n".join(blocks + L)
 
 
 def auto_tf(t: dtime) -> str:
@@ -297,6 +437,30 @@ def auto_tf(t: dtime) -> str:
 
 
 if __name__ == "__main__":
-    now = datetime.now()
-    tf = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in _TF_MIN else auto_tf(now.time())
-    print(build_block(tf, now))
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("tf", nargs="?", choices=list(_TF_MIN))
+    ap.add_argument("--replay", help="YYYY-MM-DD: replay a past session")
+    ap.add_argument("--at", help='"YYYY-MM-DD HH:MM": one block as of that moment')
+    ap.add_argument("--tf", dest="tf2", choices=list(_TF_MIN), help="fixed trigger timeframe in replay")
+    ap.add_argument("--every", type=int, default=15)
+    ap.add_argument("--from", dest="t_from", default="09:30")
+    ap.add_argument("--to", dest="t_to", default="15:15")
+    a = ap.parse_args()
+    if a.replay or a.at:
+        import runlog
+        runlog.start(f"smc_brief_{'replay_' + a.replay if a.replay else 'at'}")
+    if a.replay:
+        txt = replay(a.replay, a.tf2 or a.tf, a.every, a.t_from, a.t_to)
+        print(txt)
+        try:
+            out = Path(config.DATA_DIR) / "replay"
+            out.mkdir(parents=True, exist_ok=True)
+            (out / f"smc_brief_{a.replay}.txt").write_text(txt)
+            print(f"\nSaved {out / f'smc_brief_{a.replay}.txt'}")
+        except Exception:
+            pass
+    else:
+        now = datetime.strptime(a.at, "%Y-%m-%d %H:%M") if a.at else datetime.now()
+        tf = a.tf or a.tf2 or auto_tf(now.time())
+        print(build_block(tf, now))

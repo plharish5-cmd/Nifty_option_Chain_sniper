@@ -2159,6 +2159,7 @@ _ORDERED_ALL_TABS = [
     "🌅 MORNING BRIEF",
     "📸 Snapshots",
     "🎯 Decision Cockpit",
+    "🧾 Evidence Board (what's proven)",
     "🛡️ Anti-Fakeout & Real-Time Pressure",
     "⚡ Option Chain & OI Analysis",
     "📊 Option Chain / Key Levels",
@@ -2253,6 +2254,8 @@ _LABEL_TO_TAB_INDEX = {
     "Participant History": 34,
     "📊 Trainer's Participant Sheet": 43,
     "🧪 Options Lab (PCR · OI · Gamma · Vega)": 44,
+    "🧾 Evidence Board (what's proven)": 45,
+    "Evidence Board": 45,
     "Options Lab": 44,
     "Trainer's Participant Sheet": 43,
     "Trainer Sheet": 43,
@@ -5034,3 +5037,14 @@ if _tab_active(44):
         options_lab_tab.render()
     except Exception as _olab_err:                         # noqa: BLE001
         st.error(f"Options Lab tab encountered an error: {_olab_err}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tab 45 — 🧾 Evidence Board (verdicts read from data/backtests/*.json)
+# ═══════════════════════════════════════════════════════════════════════════
+if _tab_active(45):
+    try:
+        import evidence_board
+        evidence_board.render()
+    except Exception as _evb_err:                          # noqa: BLE001
+        st.error(f"Evidence Board tab encountered an error: {_evb_err}")

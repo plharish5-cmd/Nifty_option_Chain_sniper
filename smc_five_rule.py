@@ -33,6 +33,7 @@ RULES_PATH = ROOT / "strategy1_rules.json"
 BT_PATH = ROOT / "data" / "backtests" / "daily_bias.json"
 EDGE_PATH = ROOT / "data" / "backtests" / "five_rule.json"   # written by backtest_five_rule.py
 _DEF = {"windows": [["09:30", "11:30"], ["13:30", "14:45"]], "opening_range_minutes": 15,
+        "fresh_sweep_max_min": 0, "fresh_choch_max_min": 0,     # 0 = off (freshness test, see backtest_five_rule.py)
         "ib_minutes": 60, "min_rr": 3.0, "sl_buffer_pts": 5.0, "zone_tap_lookback_min": 45,
         "ltf_lookback_bars": 120, "min_pullback_bars": 3, "pivot_n": 2, "min_sl_pts": 15.0,
         "draw_min_edge_pts": 3.0, "draw_max_p": 0.01}
@@ -361,19 +362,29 @@ def evaluate(df1: pd.DataFrame | None, df5: pd.DataFrame, df15: pd.DataFrame | N
     swept = []
     after = s5[~or_mask] if or_mask.any() else s5
     lows, highs = after["low"].to_numpy(float), after["high"].to_numpy(float)
+    t_after = _ts(after).reset_index(drop=True)
+    sweep_ts = []
     for name in (("OR low", "IB low", "PDL") if sgn > 0 else ("OR high", "IB high", "PDH")):
         if name not in lv:
             continue
         x = lv[name]
-        hit = (lows < x).any() if sgn > 0 else (highs > x).any()
+        hm = (lows < x) if sgn > 0 else (highs > x)
         reclaimed = spot > x if sgn > 0 else spot < x
-        if hit and reclaimed:
+        if hm.any() and reclaimed:
             swept.append((name, x))
+            sweep_ts.append(t_after.iloc[int(np.nonzero(hm)[0][-1])])
     t15 = _ts(df15)
     for i, kind, lvl in ext.sweeps:
         if (kind == "LOW") == (sgn > 0) and i < len(t15) and t15.iloc[i].date() == today:
             swept.append(("15m swing " + ("low" if sgn > 0 else "high"), lvl))
+            sweep_ts.append(t15.iloc[i])
+    if sweep_ts:
+        out.levels["sweep_t"] = max(sweep_ts)
     ok3 = bool(swept)
+    fs = float(rr.get("fresh_sweep_max_min") or 0)
+    if ok3 and fs > 0 and sweep_ts and (pd.Timestamp(now) - max(sweep_ts)) > pd.Timedelta(minutes=fs):
+        ok3 = False
+        swept = [(n + f" (stale: last sweep {max(sweep_ts):%H:%M}, > {fs:.0f} min ago)", x) for n, x in swept]
     det3 = (("Swept & reclaimed: " + ", ".join(f"{n} {x:,.0f}" for n, x in swept)) if ok3 else
             "No " + ("sell-side" if sgn > 0 else "buy-side") + " level swept yet today (" +
             ", ".join(f"{k} {v:,.0f}" for k, v in lv.items() if (("low" in k or k == "PDL") if sgn > 0 else ("high" in k or k == "PDH"))) + ")")
@@ -410,11 +421,17 @@ def evaluate(df1: pd.DataFrame | None, df5: pd.DataFrame, df15: pd.DataFrame | N
     except Exception:
         pass
     ok4 = bool(tapped and shift)
+    if shift is not None:
+        out.levels["choch_t"] = pd.Timestamp(shift.at)
+    fc = float(rr.get("fresh_choch_max_min") or 0)
+    stale4 = bool(ok4 and fc > 0 and (pd.Timestamp(now) - pd.Timestamp(shift.at)) > pd.Timedelta(minutes=fc))
     det4 = (f"Tapped {zside.lower()} {tapped[2]} {tapped[0]:,.0f}–{tapped[1]:,.0f}, then {ltf_name} CHoCH "
             f"{'up' if sgn > 0 else 'down'} at {pd.Timestamp(shift.at):%H:%M} ({shift.level:,.0f})" if ok4 else
             (f"Zone tapped ({tapped[2]} {tapped[0]:,.0f}–{tapped[1]:,.0f}) — waiting for {ltf_name} CHoCH "
              f"{'up' if sgn > 0 else 'down'}" if tapped else
              f"Price has not tapped a {zside.lower()} zone in the last {rr['zone_tap_lookback_min']} min"))
+    if stale4:
+        ok4, det4 = False, det4 + f" — STALE (> {fc:.0f} min old)"
     out.rules.append(("4 · LTF confirmation", ok4, det4))
 
     # RULE 5 — entry zone + R:R

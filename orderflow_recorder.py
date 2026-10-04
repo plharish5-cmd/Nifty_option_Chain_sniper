@@ -410,6 +410,8 @@ class Recorder:
 
 
 def main():
+    import runlog
+    runlog.start("orderflow_recorder")
     ap = argparse.ArgumentParser()
     ap.add_argument("--diagnose", type=int, default=0, help="print N decoded packets and exit (nothing saved)")
     ap.add_argument("--now", action="store_true", help="start immediately, ignore the 09:08–15:35 window")

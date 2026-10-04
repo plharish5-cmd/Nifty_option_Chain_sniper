@@ -1,0 +1,83 @@
+$ backtest_five_rule.py
+Loaded 246 sessions of 1m NIFTY: 2025-10-03 → 2026-10-01
+Scanning 241 sessions minute by minute on 11 worker(s)… (roughly 7 min; cached afterwards)
+  10/241 sessions scanned · 623 TAKE-minutes so far
+  20/241 sessions scanned · 1571 TAKE-minutes so far
+  30/241 sessions scanned · 2743 TAKE-minutes so far
+  40/241 sessions scanned · 3503 TAKE-minutes so far
+  50/241 sessions scanned · 4091 TAKE-minutes so far
+  60/241 sessions scanned · 4869 TAKE-minutes so far
+  70/241 sessions scanned · 5316 TAKE-minutes so far
+  80/241 sessions scanned · 6429 TAKE-minutes so far
+  90/241 sessions scanned · 7644 TAKE-minutes so far
+  100/241 sessions scanned · 8259 TAKE-minutes so far
+  110/241 sessions scanned · 8817 TAKE-minutes so far
+  120/241 sessions scanned · 9366 TAKE-minutes so far
+  130/241 sessions scanned · 10013 TAKE-minutes so far
+  140/241 sessions scanned · 10880 TAKE-minutes so far
+  150/241 sessions scanned · 11713 TAKE-minutes so far
+  160/241 sessions scanned · 12492 TAKE-minutes so far
+  170/241 sessions scanned · 12989 TAKE-minutes so far
+  180/241 sessions scanned · 13541 TAKE-minutes so far
+  190/241 sessions scanned · 14440 TAKE-minutes so far
+  200/241 sessions scanned · 15213 TAKE-minutes so far
+  210/241 sessions scanned · 15786 TAKE-minutes so far
+  220/241 sessions scanned · 16576 TAKE-minutes so far
+  230/241 sessions scanned · 17310 TAKE-minutes so far
+  240/241 sessions scanned · 17947 TAKE-minutes so far
+  241/241 sessions scanned · 18093 TAKE-minutes so far
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+5-RULE SMC MODEL · walk-forward on 241 sessions · cost 1.0 pt/trade · SL wins ties · flat 15:15 · 500 random shuffles
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+HEADLINE (R:R ≥ 3, windows W1+W2, market entry at next 1m open, full TP2)
+  5-Rule                       n= 258  win  39.1%  avg +0.04R  total    +9.8R  maxDD 23.4R  | random-time -0.02R p=0.202  random-side +0.03R p=0.475
+  avg win +1.62R · avg loss -0.98R · halves -0.02R / +0.10R · BUY 87 / SELL 171 · {'SL': 145, 'EOD': 59, 'TP': 54}
+
+WHICH TIME WINDOW? (R:R ≥ 3, market, full TP2)
+  W1 09:30–11:30               n= 142  win  37.3%  avg +0.09R  total   +12.9R  maxDD 16.3R  | random-time +0.06R p=0.355  random-side -0.00R p=0.191
+  W2 13:30–14:45               n= 161  win  40.4%  avg -0.02R  total    -3.5R  maxDD 15.3R  | random-time -0.09R p=0.195  random-side +0.03R p=0.661
+  Outside windows              n= 192  win  40.1%  avg +0.08R  total   +15.0R  maxDD 22.7R  | random-time +0.01R p=0.235  random-side -0.01R p=0.187
+
+MINIMUM R:R (W1+W2, market, full TP2)
+  R:R ≥ 1                      n= 300  win  42.7%  avg -0.01R  total    -3.2R  maxDD 20.6R  | random-time -0.05R p=0.251  random-side +0.01R p=0.625
+  R:R ≥ 1.5                    n= 292  win  42.8%  avg +0.02R  total    +6.0R  maxDD 19.6R  | random-time -0.05R p=0.096  random-side +0.02R p=0.470
+  R:R ≥ 2                      n= 286  win  42.7%  avg +0.03R  total    +9.8R  maxDD 21.3R  | random-time -0.03R p=0.139  random-side +0.02R p=0.402
+  R:R ≥ 3                      n= 258  win  39.1%  avg +0.04R  total    +9.8R  maxDD 23.4R  | random-time -0.02R p=0.227  random-side +0.03R p=0.470
+  R:R ≥ 4                      n= 228  win  34.6%  avg +0.04R  total    +9.8R  maxDD 23.7R  | random-time -0.02R p=0.191  random-side +0.02R p=0.398
+
+EXIT STYLE (R:R ≥ 3, W1+W2, market)
+  Full TP2 (external swing)    n= 258  win  39.1%  avg +0.04R  total    +9.8R  maxDD 23.4R  | random-time -0.02R p=0.227  random-side +0.03R p=0.470
+  Breakeven at +1R             n= 279  win  28.3%  avg +0.02R  total    +6.6R  maxDD 23.5R  | random-time -0.04R p=0.171  random-side +0.01R p=0.446
+  50% at TP1, rest BE→TP2      n= 319  win  51.7%  avg +0.03R  total   +10.3R  maxDD 17.7R  | random-time -0.03R p=0.048  random-side -0.04R p=0.052
+
+ENTRY STYLE (R:R ≥ 3, W1+W2, full TP2)
+  Market at next 1m open       n= 258  win  39.1%  avg +0.04R  total    +9.8R  maxDD 23.4R  | random-time -0.02R p=0.227  random-side +0.03R p=0.470
+  Limit at zone middle (30m)   n= 223  win  26.5%  avg +0.20R  total   +43.8R  maxDD 33.1R  | random-time -0.09R p=0.020  random-side +0.02R p=0.048
+
+FRESHNESS TEST — fixed BEFORE the run: liquidation sweep ≤ 90 min old AND 1m CHoCH ≤ 30 min old
+  Fresh · market (headline entry) n= 211  win  39.3%  avg +0.06R  total   +12.9R  maxDD 20.9R  | random-time +0.03R p=0.367  random-side +0.01R p=0.259
+      halves -0.03R / +0.15R · BUY 69 / SELL 142
+  Fresh · limit                n= 178  win  27.0%  avg +0.20R  total   +36.4R  maxDD 22.3R  | random-time -0.07R p=0.028  random-side +0.04R p=0.112
+      halves +0.16R / +0.26R · BUY 59 / SELL 119
+  → ✘ freshness rule does not prove an edge either — leave it off
+
+SESSION-SWEEP CHECK — does NIFTY take BOTH sides of the opening range / first hour more than chance?
+  Opening range (first 15 min)   both sides taken  43.9% of 246 days · shuffled-day chance  42.4% · edge +1.5 pts · p=0.608
+      small  range     40–73 pts  both  48.8% vs chance  46.5%  (n=82)
+      medium range    73–103 pts  both  42.7% vs chance  41.9%  (n=82)
+      large  range   104–577 pts  both  40.2% vs chance  38.7%  (n=82)
+  First hour (IB)                both sides taken  26.0% of 246 days · shuffled-day chance  23.3% · edge +2.8 pts · p=0.221
+      small  range     41–99 pts  both  31.7% vs chance  29.4%  (n=82)
+      medium range    99–138 pts  both  24.4% vs chance  25.2%  (n=82)
+      large  range   140–700 pts  both  22.0% vs chance  15.2%  (n=82)
+
+VERDICT
+  ✘ NO PROVEN EDGE YET: random entry times did about as well (p=0.20); coin-flip direction did about as well (p=0.48); not positive in both halves.
+    Treat the 5-Rule panel as a checklist, not a signal. Don't build Step 2 on it yet.
+  Note: the best row in any table above will look good partly by luck (many rows tested).
+        Trust the HEADLINE, which uses the settings fixed before the test.
+
+Saved: /home/harish/Documents/Swathi K N/1 Trading/option chain/OC/data/backtests/five_rule.json · trades: /home/harish/Documents/Swathi K N/1 Trading/option chain/OC/data/backtests/five_rule_trades.csv
+Information only — not financial advice.

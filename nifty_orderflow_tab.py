@@ -20,7 +20,19 @@ GREEN, RED, BLUE, AMBER, PURPLE = "#22c55e", "#ef4444", "#38bdf8", "#f59e0b", "#
 MARK = {"stacked_buy": ("triangle-up", GREEN), "stacked_sell": ("triangle-down", RED),
         "absorb_bull": ("diamond", GREEN), "absorb_bear": ("diamond", RED),
         "div_bull": ("circle", "#86efac"), "div_bear": ("circle", "#fca5a5"),
-        "cvd_div_bull": ("star", GREEN), "cvd_div_bear": ("star", RED)}
+        "cvd_div_bull": ("star", GREEN), "cvd_div_bear": ("star", RED),
+        "surge_bull": ("arrow-up", GREEN), "surge_bear": ("arrow-down", RED),
+        "absorb_zone_bull": ("square", GREEN), "absorb_zone_bear": ("square", RED),
+        "fade_selling": ("x", "#86efac"), "fade_buying": ("x", "#fca5a5")}
+
+
+def setup_status(val: dict) -> str:
+    v = (val or {}).get("setup")
+    if not v:
+        return "UNTESTED"
+    if v.get("passed"):
+        return "VALIDATED"
+    return f"TOO FEW (n={v.get('n', 0)})" if v.get("n", 0) < 30 else "FAILED"
 
 
 def _cr(x: float) -> str:
@@ -60,7 +72,7 @@ def chart_main(f: nf.Flow, n_show: int, val: dict):
     c = f.candles.tail(n_show)
     i0 = c.index.min()
     fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.025, row_heights=[0.52, 0.16, 0.18, 0.14],
-                        subplot_titles=("", "Delta per candle (₹ Cr) — aggressive buy − sell", "Cumulative delta (₹ Cr)",
+                        subplot_titles=("", "Delta per candle (bars) and last-5-candle delta (gold line), ₹ Cr", "Cumulative delta (₹ Cr)",
                                         "Breadth — stocks net buying minus net selling"))
     fig.add_trace(go.Candlestick(x=c["t"], open=c["o"], high=c["h"], low=c["l"], close=c["c"], name="NIFTY 50",
                                  increasing_line_color=GREEN, decreasing_line_color=RED), 1, 1)
@@ -83,11 +95,26 @@ def chart_main(f: nf.Flow, n_show: int, val: dict):
         fig.add_trace(go.Scatter(x=g["t"], y=y, mode="markers", name=f"{nf.SIGNALS[kind][0]} ({nf.status_of(kind, val)})",
                                  marker=dict(symbol=sym, size=11, color=col, line=dict(width=1, color="#000")),
                                  text=g["detail"], hovertemplate="%{text}<extra>" + nf.SIGNALS[kind][0] + "</extra>"), 1, 1)
+    if "vwap" in c:
+        fig.add_trace(go.Scatter(x=c["t"], y=c["vwap"], name="Flow VWAP", line=dict(color=PURPLE, width=2)), 1, 1)
+    tr = f.trades[f.trades["entry_t"] >= c["t"].iloc[0]] if len(f.trades) else f.trades
+    for sd, col_, sym in (("LONG", GREEN, "triangle-up"), ("SHORT", RED, "triangle-down")):
+        g = tr[tr["side"] == sd] if len(tr) else tr
+        if len(g):
+            fig.add_trace(go.Scatter(x=g["entry_t"], y=g["entry"], mode="markers", name=f"Delta+VWAP {sd.lower()} entry",
+                                     marker=dict(symbol=sym, size=15, color=col_, line=dict(width=2, color=WHITE)),
+                                     text=[f"{r.side} {r.entry:,.1f} · SL {r.sl:,.1f} · TP {r.tp:,.1f} → {r.outcome} {r.R:+.2f}R"
+                                           for r in g.itertuples()], hovertemplate="%{text}<extra></extra>"), 1, 1)
+            fig.add_trace(go.Scatter(x=g["exit_t"], y=g["exit"], mode="markers", name=f"{sd.lower()} exit", showlegend=False,
+                                     marker=dict(symbol="x-thin", size=12, color=WHITE, line=dict(width=2, color=WHITE))), 1, 1)
     if f.poc:
         fig.add_hline(y=f.poc, line=dict(color=GOLD, dash="dot", width=1), annotation_text=f"Day POC {f.poc:,.0f}",
                       annotation_font_color=GOLD, row=1, col=1)
     fig.add_trace(go.Bar(x=c["t"], y=c["delta"], name="Delta", marker_color=np.where(c["delta"] >= 0, GREEN, RED),
                          showlegend=False), 2, 1)
+    if "d_roll" in c:
+        fig.add_trace(go.Scatter(x=c["t"], y=c["d_roll"], name=f"Last {int(nf.rules()['roll_delta_candles'])} candles delta",
+                                 line=dict(color=GOLD, width=2)), 2, 1)
     fig.add_trace(go.Scatter(x=c["t"], y=c["cvd"], name="CVD", line=dict(color=BLUE, width=2), fill="tozeroy",
                              fillcolor="rgba(56,189,248,0.12)", showlegend=False), 3, 1)
     net = c["breadth_up"] - c["breadth_dn"]
@@ -270,6 +297,10 @@ def render(spot: float | None = None, pa_frames: dict | None = None, **_ignored)
               "stocks net buying / net selling", GREEN if last["breadth_up"] > last["breadth_dn"] else RED),
         _card(f"PRICE vs DELTA ({st_.get('k', 0)} candles)", st_["label"].split(" — ")[0],
               (st_["label"].split(" — ")[1] if " — " in st_["label"] else ""), scol),
+        _card("PRICE vs FLOW VWAP", (f"{last['c'] - last['vwap']:+,.1f} pts" if pd.notna(last.get("vwap")) else "—"),
+              (f"{'ABOVE' if last['c'] > last['vwap'] else 'BELOW'} VWAP {last['vwap']:,.1f} → "
+               f"{'buys only' if last['c'] > last['vwap'] else 'sells only'}" if pd.notna(last.get("vwap")) else "no VWAP yet"),
+              GREEN if pd.notna(last.get("vwap")) and last["c"] > last["vwap"] else RED),
         _card("RESTING ORDER BOOK", f"{bk['ratio']:.2f}× bid/ask" if bk.get("ratio") else "—",
               (f"₹{bk['bid_cr']:,.0f} Cr bids vs ₹{bk['ask_cr']:,.0f} Cr offers (context only — can be pulled)" if bk else "no snapshot"),
               BLUE),
@@ -284,7 +315,7 @@ def render(spot: float | None = None, pa_frames: dict | None = None, **_ignored)
 
     def tag(s):
         return {"CONFIRMED": GREEN, "AGAINST": RED, "NEUTRAL": MUTED, "NO DATA": MUTED}[s]
-    any_valid = any(v.get("passed") for v in val.get("signals", {}).values())
+    any_valid = any(v.get("passed") for v in val.get("signals", {}).values()) or bool((val.get("setup") or {}).get("passed"))
     vnote = ("Some signal types passed your backtest — see the badges." if any_valid else
              "No order-flow signal has passed a backtest on your data yet — treat this as context, not a trade trigger."
              if val else "Not backtested yet — run backtest_orderflow.py after ~20 recorded sessions.")
@@ -294,9 +325,46 @@ def render(spot: float | None = None, pa_frames: dict | None = None, **_ignored)
       <div style="color:{WHITE};margin-top:3px">For a <b>SHORT / BUY PE</b> idea: <b style="color:{tag(sht)}">{sht}</b> — {sht_why}</div>
       <div style="color:{AMBER};font-size:0.8rem;margin-top:6px">⚠ {vnote}</div></div>""", unsafe_allow_html=True)
 
+    su = f.setup or {}
+    sst = setup_status(val)
+    scol2 = GREEN if su.get("side", 0) > 0 else RED if su.get("side", 0) < 0 else MUTED
+    bcol = GREEN if sst == "VALIDATED" else RED if sst == "FAILED" else AMBER
+    st.markdown(f"""<div style="background:{NAVY};border:2px solid {scol2};border-radius:10px;padding:10px 16px;margin:0 0 10px 0">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <span style="color:{GOLD};font-weight:800">🎯 DELTA + VWAP SETUP · {tf}-min</span>
+        <span><span style="background:{scol2};color:#000;font-weight:900;padding:3px 12px;border-radius:6px">{su.get('state', 'NONE')}</span>
+        <span style="background:{bcol};color:#000;font-weight:800;font-size:0.7rem;padding:2px 6px;border-radius:4px;margin-left:6px">{sst}</span></span></div>
+      <div style="color:{WHITE};margin-top:6px">{su.get('text', '')}</div>
+      <div style="color:{MUTED};font-size:0.78rem;margin-top:4px">Rule: buy only ABOVE the flow VWAP when the last
+      {int(R['roll_delta_candles'])} candles' delta is ≥ +{R['roll_delta_min_pct']:g}% of their value; sell only BELOW it when ≤
+      −{R['roll_delta_min_pct']:g}%. Enter on a break of the signal candle's high/low, stop beyond VWAP, target {R['setup']['rr']:g}R.</div>
+    </div>""", unsafe_allow_html=True)
+
     st.plotly_chart(chart_main(f, n_show, val), use_container_width=True, key="of_main")
 
-    t1, t2, t3, t4, t5 = st.tabs(["🔬 Footprint", "📊 Volume profile", "🚨 Signals", "🏦 Stocks driving flow", "📖 How to read"])
+    t1, t6, t2, t3, t4, t5 = st.tabs(["🔬 Footprint", "🎯 Delta + VWAP trades", "📊 Volume profile", "🚨 Signals",
+                                      "🏦 Stocks driving flow", "📖 How to read"])
+    with t6:
+        if f.trades.empty:
+            st.info("No Delta + VWAP setups triggered in this session.")
+        else:
+            tr = f.trades.copy()
+            for k_ in ("setup_t", "entry_t", "exit_t"):
+                tr[k_] = pd.to_datetime(tr[k_]).dt.strftime("%H:%M")
+            done = tr[tr["outcome"] != "OPEN"]
+            st.markdown(f"<div style='background:{NAVY};padding:8px 12px;border-radius:6px;color:{WHITE}'>Today: "
+                        f"<b>{len(done)}</b> closed · win <b>{(done['R'] > 0).mean() * 100 if len(done) else 0:.0f}%</b> · "
+                        f"net <b style='color:{GREEN if done['R'].sum() >= 0 else RED}'>{done['R'].sum():+.2f}R</b> "
+                        f"({done['pts'].sum():+.1f} NIFTY pts) · backtest <b>{setup_status(val)}</b></div>", unsafe_allow_html=True)
+            st.dataframe(tr[["setup_t", "entry_t", "side", "entry", "sl", "tp", "exit_t", "exit", "outcome", "pts", "R",
+                             "d_roll_pct"]].rename(columns={"setup_t": "Signal", "entry_t": "Entry", "exit_t": "Exit",
+                                                            "d_roll_pct": "5-candle delta %"}),
+                         hide_index=True, use_container_width=True)
+        bv = val.get("setup") if val else None
+        if bv and bv.get("n"):
+            st.caption(f"Backtest on {val.get('sessions')} recorded sessions: {bv['n']} trades · win {bv['win'] * 100:.0f}% · "
+                       f"avg {bv['avg_R']:+.2f}R · random-time {bv['random_time']:+.2f}R (p={bv['p_time']:.3f}) · "
+                       f"random-side {bv['random_side']:+.2f}R (p={bv['p_side']:.3f})")
     with t1:
         opts = [i for i in c.tail(n_show).index if i in f.footprint]
         lab = {i: f"{c.loc[i, 't']:%H:%M}  ·  delta {_cr(c.loc[i, 'delta'])}" for i in opts}
@@ -351,6 +419,13 @@ def render(spot: float | None = None, pa_frames: dict | None = None, **_ignored)
         closes through it.<br>
         <b style="color:{GOLD}">Absorption</b> = a big delta (≥ {R['absorption_min_delta_pct']:g}% of the candle) with almost no price
         progress — the passive side won.<br>
+        <b style="color:{GOLD}">Flow VWAP</b> = the NIFTY 50 price weighted by the ₹ traded in its 50 stocks (the index has no volume of
+        its own). Rule 1 from the order-flow sessions: <b>buy only above VWAP, sell only below it</b>.<br>
+        <b style="color:{GOLD}">Last-5-candle delta</b> (gold line) = the trend indicator: strongly positive + price above VWAP = long
+        bias; strongly negative + below VWAP = short bias. If delta keeps rising but price will not, that is absorption — the
+        market tends to fall hard once the buying stops.<br>
+        <b style="color:{GOLD}">Delta surge</b> = a candle delta bigger than {R['surge_mult']:g}× anything since the open — a major move
+        often starts there. <b>Buying/selling fading</b> = delta still on one side but shrinking fast while price stalls.<br>
         <b style="color:{GOLD}">Use it as the execution layer</b>: direction from structure (15m), options flow and levels; order flow
         only confirms or vetoes the entry. Signals stay <b>UNTESTED</b> until <code>backtest_orderflow.py</code> beats random
         times on your recorded sessions.<br>

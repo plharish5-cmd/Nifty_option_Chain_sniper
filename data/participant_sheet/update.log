@@ -94,3 +94,5 @@
 2026-10-02 21:46:58,893 2026-10-02: HTTPSConnectionPool(host='nsearchives.nseindia.com', port=443): Max retries exceeded with url: /content/nsccl/fao_participant_oi_02102026.csv (Caused by NameResolutionError("HTTPSConnection(host='nsearchives.nseindia.com', port=443): Failed to resolve 'nsearchives.nseindia.com' ([Errno -3] Temporary failure in name resolution)")) — stopping before writing.
 2026-10-02 22:20:47,859 2026-10-02: NSE files not published yet — will retry later.
 2026-10-02 22:20:51,589 Workbook already up to date (last day 2026-10-01).
+2026-10-02 23:20:48,925 2026-10-02: NSE files not published yet — will retry later.
+2026-10-02 23:20:53,064 Workbook already up to date (last day 2026-10-01).

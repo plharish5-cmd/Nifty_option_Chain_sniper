@@ -1,0 +1,14 @@
+$ garch_range.py --test
+Daily NIFTY closes available: 1922 (2019-01-02 → 2026-10-01)
+Traceback (most recent call last):
+  File "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/garch_range.py", line 312, in <module>
+    run_test()
+  File "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/garch_range.py", line 268, in run_test
+    w = walk_forward(d)
+  File "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/garch_range.py", line 234, in walk_forward
+    s_g = math.sqrt(_filter(hist, p["mu"], p["omega"], p["alpha"], p["beta"])[-1])
+  File "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/garch_range.py", line 126, in _filter
+    s0 = float(np.var(r))
+  File "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/.venv/lib/python3.9/site-packages/numpy/_core/fromnumeric.py", line 3806, in _var_dispatcher
+    def _var_dispatcher(a, axis=None, dtype=None, out=None, ddof=None,
+KeyboardInterrupt

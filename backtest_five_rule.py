@@ -193,10 +193,13 @@ def scan_day(args) -> list[dict]:
                     f = None
                 if f is not None and f.verdict.startswith("TAKE") and f.entry and f.sl and f.tp:
                     det5 = f.rules[4][2] if len(f.rules) > 4 else ""
+                    sw_t, ch_t = f.levels.get("sweep_t"), f.levels.get("choch_t")
                     out.append(dict(day=str(day), now=now.strftime("%Y-%m-%d %H:%M:%S"),
                                     side=f.side, lo=f.entry[0], hi=f.entry[1], sl=f.sl, tp=f.tp,
                                     tp1=f.levels.get("TP1"), rr=f.rr,
-                                    kind=det5.split()[1] if det5.startswith("5m ") else ""))
+                                    kind=det5.split()[1] if det5.startswith("5m ") else "",
+                                    sweep_age=(now - pd.Timestamp(sw_t)).total_seconds() / 60 if sw_t is not None else np.nan,
+                                    choch_age=(now - pd.Timestamp(ch_t)).total_seconds() / 60 if ch_t is not None else np.nan))
         now += pd.Timedelta(minutes=step)
     return out
 
@@ -324,10 +327,14 @@ def window_of(ts: pd.Timestamp, windows) -> str:
 
 
 def simulate(sig: pd.DataFrame, days: dict, windows, min_rr=3.0, allow=("W1", "W2"),
-             mode="tp2", entry="market", fill_wait=30, cost=COST_PTS) -> pd.DataFrame:
+             mode="tp2", entry="market", fill_wait=30, cost=COST_PTS, fresh=None) -> pd.DataFrame:
     trades = []
     if sig is None or sig.empty:
         return pd.DataFrame()
+    if fresh:                                    # (max sweep age, max CHoCH age) in minutes
+        if "sweep_age" not in sig or "choch_age" not in sig:
+            raise SystemExit("The cached signal scan is from before the freshness test — rerun with --rescan.")
+        sig = sig[(sig["sweep_age"] <= fresh[0]) & (sig["choch_age"] <= fresh[1])]
     for day, g in sig.groupby("day", sort=True):
         D = days.get(day)
         if D is None:
@@ -514,6 +521,8 @@ def _row(name, s, nl=None):
 
 
 def main():
+    import runlog
+    runlog.start("backtest_five_rule")
     ap = argparse.ArgumentParser()
     ap.add_argument("--fetch", type=int, default=0, help="download N calendar days of 1m history from Dhan first")
     ap.add_argument("--reps", type=int, default=500)
@@ -525,6 +534,8 @@ def main():
     ap.add_argument("--entry", choices=("market", "limit"), default="market",
                     help="entry style for the HEADLINE (fix it BEFORE looking at results)")
     ap.add_argument("--tag", default="", help="suffix for output files, e.g. oos → five_rule_oos.json")
+    ap.add_argument("--fresh-sweep", type=float, default=90, help="freshness test: max minutes since the liquidation sweep")
+    ap.add_argument("--fresh-choch", type=float, default=30, help="freshness test: max minutes since the 1m CHoCH")
     a = ap.parse_args()
     after = datetime.strptime(a.after, "%Y-%m-%d").date() if a.after else None
     before = datetime.strptime(a.before, "%Y-%m-%d").date() if a.before else None
@@ -557,6 +568,8 @@ def main():
     if sig_cache.exists() and not a.rescan:
         try:
             cached = pd.read_csv(sig_cache)
+            if "sweep_age" not in cached:                 # scan made before the freshness test → rescan
+                raise ValueError("old cache")
             if (sig_cache.with_suffix(".key").read_text().strip() == key):
                 sig = cached
                 print(f"Using cached signal scan ({len(sig)} TAKE-minutes). Add --rescan after changing rules.")
@@ -626,6 +639,25 @@ def main():
         if ent == "limit":
             tr.to_csv(OUT_DIR / f"five_rule{sfx}_trades_limit.csv", index=False)
     head.to_csv(OUT_DIR / f"five_rule{sfx}_trades.csv", index=False)
+
+    fr_cfg = (float(a.fresh_sweep), float(a.fresh_choch))
+    print(f"\nFRESHNESS TEST — fixed BEFORE the run: liquidation sweep ≤ {fr_cfg[0]:g} min old AND 1m CHoCH ≤ {fr_cfg[1]:g} min old")
+    res["fresh_test"] = {"sweep_max_min": fr_cfg[0], "choch_max_min": fr_cfg[1]}
+    for nm, ent in (("Fresh · " + ("market" if a.entry == "market" else "limit") + " (headline entry)", a.entry),
+                    ("Fresh · " + ("limit" if a.entry == "market" else "market"), "limit" if a.entry == "market" else "market")):
+        tr = simulate(sig, days, windows, min_rr, ("W1", "W2"), "tp2", ent, fresh=fr_cfg)
+        s_, n_ = stats(tr), nulls(tr, days, windows, "tp2", max(100, a.reps // 2))
+        res["fresh_test"][nm] = dict(stats=s_, null=n_)
+        print(_row(nm, s_, n_))
+        if s_.get("n"):
+            print(f"      halves {s_['half1_avg_R']:+.2f}R / {s_['half2_avg_R']:+.2f}R · BUY {s_['buy_n']} / SELL {s_['sell_n']}")
+    hf = res["fresh_test"][next(k for k in res["fresh_test"] if k.endswith("(headline entry)"))]
+    fs_, fn_ = hf["stats"], hf["null"]
+    fok = (fs_.get("n", 0) >= 30 and fs_.get("avg_R", 0) > 0 and fn_.get("p_time", 1) < 0.05 and fn_.get("p_side", 1) < 0.05
+           and (fs_.get("half1_avg_R") or 0) > 0 and (fs_.get("half2_avg_R") or 0) > 0)
+    res["fresh_test"]["passed"] = bool(fok)
+    print("  → " + ("✔ freshness rule PASSES — worth switching on (fresh_sweep_max_min / fresh_choch_max_min in the rules file)"
+                    if fok else "✘ freshness rule does not prove an edge either — leave it off"))
 
     print("\nSESSION-SWEEP CHECK — does NIFTY take BOTH sides of the opening range / first hour more than chance?")
     sw = session_sweeps(m1[m1["timestamp"].dt.date.isin(set(scored))] if (after or before) else m1)
