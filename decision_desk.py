@@ -32,10 +32,11 @@ import config
 ROOT = Path(__file__).parent
 RULES_PATH = ROOT / "strategy1_rules.json"
 _DEF = {
-    "weights": {"structure": 2.0, "smc_desk": 1.5, "five_rule": 2.0, "smart_oi": 1.0, "writers": 1.0,
+    "weights": {"structure": 2.0, "smc_desk": 0.5, "five_rule": 0.0, "smart_oi": 1.0, "writers": 1.0,
                 "oi_buildup": 1.0, "pcr": 0.75, "vol_pcr": 0.5, "iv_vega": 0.5, "fii_dii": 0.5},
     "lean_threshold": 0.20, "act_threshold": 0.35, "no_new_trades_after": "15:00",
     "fallback_sl_pts": 30.0, "hold_hours": 1.0, "sub10_iv_warning": 10.0, "min_target_r": 1.5,
+    "smc_desk_can_trigger": False,
     "five_rule_can_trigger": "auto",   # auto = only if backtest_five_rule.py passed · true · false
 }
 NAVY, PANEL, GRID, GOLD, WHITE, MUTED = "#0b1a33", "#10223f", "#1e3358", "#d4af37", "#f1f5f9", "#94a3b8"
@@ -304,7 +305,8 @@ def decide(d: Desk, ctx: dict, now: datetime, chain_df: pd.DataFrame | None, rr:
     five_ok = (trig is True or str(trig).lower() == "true" or
                (str(trig).lower() == "auto" and ev is not None and ev["passed"]))
     five_take = five_ok and five is not None and "TAKE" in five.verdict and _V.get(five.side, 0) == sgn
-    desk_go = desk is not None and ((desk.action == "BUY" and sgn > 0) or (desk.action == "SELL" and sgn < 0))
+    desk_ok = str(rr.get("smc_desk_can_trigger", False)).lower() == "true"
+    desk_go = desk_ok and desk is not None and ((desk.action == "BUY" and sgn > 0) or (desk.action == "SELL" and sgn < 0))
     opt = "CE" if sgn > 0 else "PE"
     if late:
         d.decision, d.headline = "NO TRADE", f"After {rr['no_new_trades_after']} — manage open positions only."
@@ -319,6 +321,10 @@ def decide(d: Desk, ctx: dict, now: datetime, chain_df: pd.DataFrame | None, rr:
         d.decision = f"BUY {opt} ON PULLBACK"
         why = desk.headline if desk else "wait for the entry zone"
         d.headline = f"{'Bullish' if sgn > 0 else 'Bearish'} lean {abs(d.score) * 100:.0f}% — but not at a good price yet: {why}"
+        if not (five_ok or desk_ok):
+            d.decision = f"LEAN {opt} (unvalidated)"
+            d.headline = (f"{'Bullish' if sgn > 0 else 'Bearish'} lean {abs(d.score) * 100:.0f}% — no engine has a proven edge yet, "
+                          f"so this is where to LOOK, not a trade signal. {why}")
 
     # plan (spot levels) — prefer 5-Rule plan, then Trade Desk plan
     if five and five.entry and five.sl and _V.get(five.side, 0) == sgn:

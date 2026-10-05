@@ -545,6 +545,8 @@
     }
   },
   "smc_brief": {
+    "min_dealing_range_pts": 50,
+    "_min_dealing_range_note": "2026-10-05: a dealing range narrower than this is noise — the briefing does not call cheap/expensive and that check is not counted. 50 pts ≈ two ordinary 15m NIFTY candles; chosen, not tuned.",
     "_note": "Plain-English SMC block printed by smc_brief.py / snap_watch.py. 15m = trend, 3m/5m/15m = trigger. Info only.",
     "days_back": 3,
     "pivot_n": 2,
@@ -655,8 +657,8 @@
     "_note": "Decision Desk at top of Decision Cockpit (decision_desk.py). Weighted vote of all engines → BUY CE/PE / ON PULLBACK / WAIT / NO TRADE.",
     "weights": {
       "structure": 2.0,
-      "smc_desk": 1.5,
-      "five_rule": 0.5,
+      "smc_desk": 0.5,
+      "five_rule": 0.0,
       "smart_oi": 1.0,
       "writers": 1.0,
       "oi_buildup": 1.0,
@@ -673,6 +675,8 @@
     "sub10_iv_warning": 10.0,
     "min_target_r": 1.5,
     "five_rule_can_trigger": "auto",
+    "smc_desk_can_trigger": false,
+    "_smc_desk_note": "2026-10-05: no backtest shows the SMC Trade Desk BUY/SELL has an edge (candle patterns and price-action breaks also failed out-of-sample on 464 sessions). Weights cut: smc_desk 1.5 -> 0.5, five_rule 0.5 -> 0. Set smc_desk_can_trigger true only after a backtest passes.",
     "_five_rule_note": "2026-10-02 backtest on 241 NIFTY sessions: 258 trades, +0.04R/trade, random-time p=0.20, random-side p=0.48 -> no proven edge. Weight cut 2.0 -> 0.5; 'auto' lets a 5-Rule TAKE trigger BUY CE/PE only after data/backtests/five_rule.json says passed."
   }
 }

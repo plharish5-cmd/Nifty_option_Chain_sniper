@@ -42,7 +42,10 @@ import config
 
 RULES_PATH = Path(__file__).parent / "strategy1_rules.json"
 _DEFAULTS = {"days_back": 3, "pivot_n": 2, "trend_tf": "15m",
-             "min_status_ready": "ARMED", "session_start": "09:15", "session_end": "15:30"}
+             "min_status_ready": "ARMED", "session_start": "09:15", "session_end": "15:30",
+             "min_dealing_range_pts": 50}
+# min_dealing_range_pts: below this the dealing range is noise — "cheap / expensive side" is not called and does not count as a check.
+# 50 pts ≈ two ordinary 15m NIFTY candles; chosen, not tuned.
 _RANK = {"MONITORING": 0, "FORMING": 1, "ARMED": 2, "TRIGGERED": 3}
 _TF_MIN = {"3m": 3, "5m": 5, "15m": 15}
 
@@ -171,6 +174,43 @@ def _plain(line: str) -> str:
     return line
 
 
+def _drop_location(s, dr, min_rng):
+    """Tiny dealing range: the premium / discount check is noise — move it to 'pending' and re-score the setup (same 4-check ladder as smc.py)."""
+    if s is None:
+        return None
+    try:
+        import dataclasses
+        loc = [x for x in s.conditions_met if x.lower().startswith(("discount zone", "premium zone"))]
+        if not loc:
+            return s
+        met = [x for x in s.conditions_met if x not in loc]
+        pend = list(s.conditions_pending) + [f"Range too small ({dr.high - dr.low:,.0f} pts < {min_rng:.0f}) — cheap / expensive not counted"]
+        sc = len(met)
+        st = "TRIGGERED" if sc == 4 else ("ARMED" if sc == 3 else ("FORMING" if sc == 2 else "MONITORING"))
+        return dataclasses.replace(s, conditions_met=met, conditions_pending=pend, score=sc, status=st,
+                                   trigger_alert=(st == "TRIGGERED"))
+    except Exception:                                         # noqa: BLE001
+        return s
+
+
+def _trend_check(swing_trend: str, ext) -> str:
+    """Two 15m trends that measure different things: recent swing highs/lows (this block) vs the 5-Rule EXTERNAL structure,
+    which flips only on a 15m CLOSE beyond the bigger swing. Say which is which so UP vs BEARISH does not read as a bug."""
+    try:
+        if ext is None or getattr(ext, "trend", None) not in ("BULLISH", "BEARISH"):
+            return ""
+        w = {"BULLISH": "UP", "BEARISH": "DOWN"}
+        s, e = w.get(swing_trend, "SIDEWAYS"), w[ext.trend]
+        rng = f"{ext.swing_low:,.0f}–{ext.swing_high:,.0f}"
+        if s == e:
+            return f"TREND CHECK: agree — recent 15m swings {s} and the 15m EXTERNAL structure ({rng}) {e}"
+        flip = (f"a 15m CLOSE above {ext.swing_high:,.0f}" if e == "DOWN" else f"a 15m CLOSE below {ext.swing_low:,.0f}")
+        return (f"TREND CHECK: recent 15m swings {s}, but the bigger 15m EXTERNAL structure ({rng}, used by the 5-Rule) is still {e} — "
+                f"it flips only on {flip}. Short-term {s.lower() if s != 'SIDEWAYS' else 'sideways'} inside a bigger {e.lower()} swing.")
+    except Exception:                                         # noqa: BLE001
+        return ""
+
+
 def _trend_word(t: str) -> str:
     return {"BULLISH": "UP   (higher highs + higher lows)",
             "BEARISH": "DOWN (lower highs + lower lows)"}.get(t, "SIDEWAYS (no clear direction)")
@@ -223,9 +263,15 @@ def build_block(tf: str, now: datetime | None = None) -> str:
         bull, bear = sc.get("bullish"), sc.get("bearish")
 
         out = [hdr, f"Spot {spot:,.1f}  (last closed {tf} candle {trig['timestamp'].iloc[-1]:%H:%M})",
-               f"BIG TREND (15m): {_trend_word(trend)}"]
+               f"BIG TREND (15m swings, last {r['days_back']} days): {_trend_word(trend)}"]
         dr = rt.get("dealing_range")
-        if dr:
+        min_rng = float(r.get("min_dealing_range_pts", 50))
+        tiny = bool(dr) and (float(dr.high) - float(dr.low)) < min_rng
+        if dr and tiny:
+            out.append(f"WHERE IN RANGE: {dr.position_pct*100:.0f}% of {dr.low:,.0f}–{dr.high:,.0f} · range only "
+                       f"{dr.high - dr.low:,.0f} pts (< {min_rng:.0f}) — too small to call cheap / expensive, so that check is not counted")
+            bull, bear = _drop_location(bull, dr, min_rng), _drop_location(bear, dr, min_rng)
+        elif dr:
             side = "CHEAP side → look to BUY only" if dr.position_pct < 0.5 else "EXPENSIVE side → look to SELL only"
             out.append(f"WHERE IN RANGE: {dr.position_pct*100:.0f}% of {dr.low:,.0f}–{dr.high:,.0f} · {side}")
         try:
@@ -275,11 +321,11 @@ def build_block(tf: str, now: datetime | None = None) -> str:
         else:
             act, s = best
             if s.status == "TRIGGERED":
-                out.append(f"\n>>> ACTION: {act} NOW  (all 4 checks ✔, 15m trend agrees)")
+                out.append(f"\n>>> ACTION: {act} NOW  (all 4 checks ✔, 15m trend agrees) — UNVALIDATED checklist, no proven edge")
                 out.append(f"    Entry ~{s.entry_price:,.0f} · Stop {s.stop_loss:,.0f} "
                            f"({s.risk_pts:.0f} pts) · Target 1 {s.target_1:,.0f} · Target 2 {s.target_2:,.0f} ({s.target_name})")
             else:
-                out.append(f"\n>>> ACTION: GET READY TO {act}  (3 of 4 checks ✔ — one missing)")
+                out.append(f"\n>>> ACTION: GET READY TO {act}  (3 of 4 checks ✔ — one missing) — unvalidated")
                 out.append(f"    If it completes: Stop ~{s.stop_loss:,.0f} · Target {s.target_2:,.0f} ({s.target_name})")
             show = [(act, s)]
 
@@ -318,6 +364,9 @@ def build_block(tf: str, now: datetime | None = None) -> str:
             d15 = load_candles("15m", now, r)
             if d5 is not None:
                 res = fr.evaluate(one, d5, d15, now, fr.best_daily(one if one is not None else d5))
+                tc = _trend_check(trend, getattr(res, "external", None))
+                if tc:
+                    out.insert(3, tc)
                 out.append("")
                 out.append(fr.text_block(res))
         except Exception as _e:                              # noqa: BLE001

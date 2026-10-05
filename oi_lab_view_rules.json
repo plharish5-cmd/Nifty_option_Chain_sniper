@@ -1,0 +1,31 @@
+{
+  "_note": "Thresholds for oi_lab_view.py (briefing-terminal view of the Options Lab readings). Fixed before any result. Information only - not financial advice.",
+  "lookback_minutes": 30,
+  "strikes_each_side": 3,
+  "min_change_pct": 1.5,
+  "min_change_contracts": 3000,
+  "writer_ratio_bull": 1.35,
+  "price_move_pts": 15,
+  "lean_score": 2,
+  "act_score": 4,
+  "buyer_freeze": [
+    "11:30",
+    "13:15"
+  ],
+  "floor_ceiling_window_pts": 300,
+  "backtest": {
+    "horizons_min": [
+      30,
+      60
+    ],
+    "primary_h": 60,
+    "sample_every_min": 15,
+    "start": "10:00",
+    "end": "14:45",
+    "max_snapshot_age_min": 6,
+    "reps": 2000,
+    "min_days": 15,
+    "p_max": 0.05,
+    "context_days": 6
+  }
+}

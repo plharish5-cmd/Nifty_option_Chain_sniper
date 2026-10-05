@@ -1,10 +1,10 @@
 {
-  "generated": "2026-10-02T23:37:38",
-  "sessions": 246,
-  "scored_sessions": 241,
-  "scored_from": "2025-10-10",
+  "generated": "2026-10-05T14:53:49",
+  "sessions": 494,
+  "scored_sessions": 489,
+  "scored_from": "2024-10-10",
   "scored_to": "2026-10-01",
-  "take_minutes": 18093,
+  "take_minutes": 39989,
   "cost_pts": 1.0,
   "windows": [
     [
@@ -21,404 +21,404 @@
   "tag": "",
   "headline": {
     "stats": {
-      "n": 258,
-      "days": 148,
-      "win_rate": 0.391,
-      "avg_R": 0.038,
-      "total_R": 9.8,
-      "avg_win_R": 1.62,
-      "avg_loss_R": -0.98,
-      "max_dd_R": 23.4,
-      "half1_avg_R": -0.019,
-      "half2_avg_R": 0.097,
-      "buy_n": 87,
-      "sell_n": 171,
+      "n": 552,
+      "days": 307,
+      "win_rate": 0.382,
+      "avg_R": -0.014,
+      "total_R": -7.9,
+      "avg_win_R": 1.51,
+      "avg_loss_R": -0.96,
+      "max_dd_R": 43.5,
+      "half1_avg_R": -0.075,
+      "half2_avg_R": 0.05,
+      "buy_n": 237,
+      "sell_n": 315,
       "outcomes": {
-        "SL": 145,
-        "EOD": 59,
-        "TP": 54
+        "SL": 306,
+        "EOD": 140,
+        "TP": 106
       }
     },
     "null": {
-      "real": 0.03794961240310078,
-      "time_null": -0.020299310098925147,
-      "p_time": 0.20159680638722555,
-      "side_null": 0.031222544259775494,
-      "p_side": 0.4750499001996008
+      "real": -0.014269927536231878,
+      "time_null": -0.10506533709088887,
+      "p_time": 0.023952095808383235,
+      "side_null": 0.06785796775655885,
+      "p_side": 0.9141716566866267
     }
   },
   "windows_test": {
     "W1 09:30\u201311:30": {
       "stats": {
-        "n": 142,
-        "days": 113,
-        "win_rate": 0.373,
-        "avg_R": 0.091,
-        "total_R": 12.9,
-        "avg_win_R": 1.93,
-        "avg_loss_R": -1.0,
-        "max_dd_R": 16.3,
-        "half1_avg_R": 0.055,
-        "half2_avg_R": 0.13,
-        "buy_n": 46,
-        "sell_n": 96,
+        "n": 313,
+        "days": 235,
+        "win_rate": 0.348,
+        "avg_R": 0.017,
+        "total_R": 5.4,
+        "avg_win_R": 1.89,
+        "avg_loss_R": -0.99,
+        "max_dd_R": 20.4,
+        "half1_avg_R": -0.065,
+        "half2_avg_R": 0.11,
+        "buy_n": 130,
+        "sell_n": 183,
         "outcomes": {
-          "SL": 86,
-          "TP": 32,
-          "EOD": 24
+          "SL": 192,
+          "TP": 63,
+          "EOD": 58
         }
       },
       "null": {
-        "real": 0.0907605633802817,
-        "time_null": 0.05839052019245577,
-        "p_time": 0.3545816733067729,
-        "side_null": -0.0004461243610291228,
-        "p_side": 0.19123505976095617
+        "real": 0.017166134185303522,
+        "time_null": -0.08518423625179544,
+        "p_time": 0.04780876494023904,
+        "side_null": 0.09865017228750418,
+        "p_side": 0.8326693227091634
       }
     },
     "W2 13:30\u201314:45": {
       "stats": {
-        "n": 161,
-        "days": 116,
-        "win_rate": 0.404,
-        "avg_R": -0.022,
-        "total_R": -3.5,
-        "avg_win_R": 1.35,
-        "avg_loss_R": -0.95,
-        "max_dd_R": 15.3,
-        "half1_avg_R": -0.147,
-        "half2_avg_R": 0.103,
-        "buy_n": 52,
-        "sell_n": 109,
+        "n": 339,
+        "days": 247,
+        "win_rate": 0.407,
+        "avg_R": -0.071,
+        "total_R": -23.9,
+        "avg_win_R": 1.15,
+        "avg_loss_R": -0.91,
+        "max_dd_R": 39.2,
+        "half1_avg_R": -0.117,
+        "half2_avg_R": -0.023,
+        "buy_n": 144,
+        "sell_n": 195,
         "outcomes": {
-          "SL": 84,
-          "EOD": 52,
-          "TP": 25
+          "SL": 166,
+          "EOD": 126,
+          "TP": 47
         }
       },
       "null": {
-        "real": -0.02152173913043476,
-        "time_null": -0.08951159735121406,
-        "p_time": 0.1952191235059761,
-        "side_null": 0.025918436218751593,
-        "p_side": 0.6613545816733067
+        "real": -0.07056932153392328,
+        "time_null": -0.14465127623785068,
+        "p_time": 0.05976095617529881,
+        "side_null": -0.011779290591368083,
+        "p_side": 0.8326693227091634
       }
     },
     "Outside windows": {
       "stats": {
-        "n": 192,
-        "days": 124,
-        "win_rate": 0.401,
-        "avg_R": 0.078,
-        "total_R": 15.0,
-        "avg_win_R": 1.61,
-        "avg_loss_R": -0.95,
-        "max_dd_R": 22.7,
-        "half1_avg_R": 0.001,
-        "half2_avg_R": 0.163,
-        "buy_n": 67,
-        "sell_n": 125,
+        "n": 410,
+        "days": 273,
+        "win_rate": 0.429,
+        "avg_R": 0.118,
+        "total_R": 48.2,
+        "avg_win_R": 1.47,
+        "avg_loss_R": -0.9,
+        "max_dd_R": 24.9,
+        "half1_avg_R": 0.15,
+        "half2_avg_R": 0.087,
+        "buy_n": 163,
+        "sell_n": 247,
         "outcomes": {
-          "SL": 101,
-          "EOD": 56,
-          "TP": 35
+          "SL": 191,
+          "EOD": 142,
+          "TP": 77
         }
       },
       "null": {
-        "real": 0.07807812500000004,
-        "time_null": 0.00938992064739733,
-        "p_time": 0.2350597609561753,
-        "side_null": -0.006641092683987887,
-        "p_side": 0.18725099601593626
+        "real": 0.11761219512195124,
+        "time_null": 0.011802482015494508,
+        "p_time": 0.04780876494023904,
+        "side_null": 0.02583641243784494,
+        "p_side": 0.07171314741035857
       }
     }
   },
   "rr_test": {
     "1.0": {
       "stats": {
-        "n": 300,
-        "days": 154,
-        "win_rate": 0.427,
-        "avg_R": -0.011,
-        "total_R": -3.2,
-        "avg_win_R": 1.26,
-        "avg_loss_R": -0.96,
-        "max_dd_R": 20.6,
-        "half1_avg_R": -0.027,
+        "n": 667,
+        "days": 320,
+        "win_rate": 0.442,
+        "avg_R": -0.027,
+        "total_R": -17.7,
+        "avg_win_R": 1.11,
+        "avg_loss_R": -0.93,
+        "max_dd_R": 44.9,
+        "half1_avg_R": -0.056,
         "half2_avg_R": 0.007,
-        "buy_n": 110,
-        "sell_n": 190,
+        "buy_n": 313,
+        "sell_n": 354,
         "outcomes": {
-          "SL": 154,
-          "TP": 81,
-          "EOD": 65
+          "SL": 321,
+          "TP": 189,
+          "EOD": 157
         }
       },
       "null": {
-        "real": -0.010606666666666651,
-        "time_null": -0.0460185400388659,
-        "p_time": 0.250996015936255,
-        "side_null": 0.009243875779141432,
-        "p_side": 0.6254980079681275
+        "real": -0.02650224887556222,
+        "time_null": -0.09259765335526039,
+        "p_time": 0.04780876494023904,
+        "side_null": 0.03679871751078504,
+        "p_side": 0.8804780876494024
       }
     },
     "1.5": {
       "stats": {
-        "n": 292,
-        "days": 154,
-        "win_rate": 0.428,
-        "avg_R": 0.021,
-        "total_R": 6.0,
-        "avg_win_R": 1.33,
-        "avg_loss_R": -0.96,
-        "max_dd_R": 19.6,
-        "half1_avg_R": -0.003,
-        "half2_avg_R": 0.047,
-        "buy_n": 103,
-        "sell_n": 189,
+        "n": 636,
+        "days": 319,
+        "win_rate": 0.432,
+        "avg_R": -0.012,
+        "total_R": -7.7,
+        "avg_win_R": 1.21,
+        "avg_loss_R": -0.94,
+        "max_dd_R": 39.7,
+        "half1_avg_R": -0.056,
+        "half2_avg_R": 0.037,
+        "buy_n": 289,
+        "sell_n": 347,
         "outcomes": {
-          "SL": 149,
-          "TP": 78,
-          "EOD": 65
+          "SL": 315,
+          "TP": 167,
+          "EOD": 154
         }
       },
       "null": {
-        "real": 0.020708904109589057,
-        "time_null": -0.05176602266644572,
-        "p_time": 0.09561752988047809,
-        "side_null": 0.01799346046627838,
-        "p_side": 0.4701195219123506
+        "real": -0.012075471698113195,
+        "time_null": -0.0987832750945852,
+        "p_time": 0.02390438247011952,
+        "side_null": 0.05466977145983639,
+        "p_side": 0.9163346613545816
       }
     },
     "2.0": {
       "stats": {
-        "n": 286,
-        "days": 154,
-        "win_rate": 0.427,
-        "avg_R": 0.034,
-        "total_R": 9.8,
-        "avg_win_R": 1.37,
-        "avg_loss_R": -0.96,
-        "max_dd_R": 21.3,
-        "half1_avg_R": -0.003,
-        "half2_avg_R": 0.075,
-        "buy_n": 102,
-        "sell_n": 184,
+        "n": 620,
+        "days": 318,
+        "win_rate": 0.421,
+        "avg_R": -0.011,
+        "total_R": -6.9,
+        "avg_win_R": 1.27,
+        "avg_loss_R": -0.95,
+        "max_dd_R": 43.9,
+        "half1_avg_R": -0.07,
+        "half2_avg_R": 0.053,
+        "buy_n": 276,
+        "sell_n": 344,
         "outcomes": {
-          "SL": 148,
-          "TP": 74,
-          "EOD": 64
+          "SL": 316,
+          "EOD": 152,
+          "TP": 152
         }
       },
       "null": {
-        "real": 0.03412587412587413,
-        "time_null": -0.03258736011528141,
-        "p_time": 0.1394422310756972,
-        "side_null": 0.016989653359632234,
-        "p_side": 0.40239043824701193
+        "real": -0.011080645161290321,
+        "time_null": -0.10742317801799581,
+        "p_time": 0.01195219123505976,
+        "side_null": 0.0452052249869997,
+        "p_side": 0.8884462151394422
       }
     },
     "3.0": {
       "stats": {
-        "n": 258,
-        "days": 148,
-        "win_rate": 0.391,
-        "avg_R": 0.038,
-        "total_R": 9.8,
-        "avg_win_R": 1.62,
-        "avg_loss_R": -0.98,
-        "max_dd_R": 23.4,
-        "half1_avg_R": -0.019,
-        "half2_avg_R": 0.097,
-        "buy_n": 87,
-        "sell_n": 171,
+        "n": 552,
+        "days": 307,
+        "win_rate": 0.382,
+        "avg_R": -0.014,
+        "total_R": -7.9,
+        "avg_win_R": 1.51,
+        "avg_loss_R": -0.96,
+        "max_dd_R": 43.5,
+        "half1_avg_R": -0.075,
+        "half2_avg_R": 0.05,
+        "buy_n": 237,
+        "sell_n": 315,
         "outcomes": {
-          "SL": 145,
-          "EOD": 59,
-          "TP": 54
+          "SL": 306,
+          "EOD": 140,
+          "TP": 106
         }
       },
       "null": {
-        "real": 0.03794961240310078,
-        "time_null": -0.01932145915042665,
-        "p_time": 0.22709163346613545,
-        "side_null": 0.032875776813889104,
-        "p_side": 0.4701195219123506
+        "real": -0.014269927536231878,
+        "time_null": -0.10187929783688278,
+        "p_time": 0.03187250996015936,
+        "side_null": 0.06496634805221896,
+        "p_side": 0.896414342629482
       }
     },
     "4.0": {
       "stats": {
-        "n": 228,
-        "days": 131,
-        "win_rate": 0.346,
-        "avg_R": 0.043,
-        "total_R": 9.8,
-        "avg_win_R": 1.96,
-        "avg_loss_R": -0.97,
-        "max_dd_R": 23.7,
-        "half1_avg_R": 0.03,
-        "half2_avg_R": 0.057,
-        "buy_n": 75,
-        "sell_n": 153,
+        "n": 487,
+        "days": 282,
+        "win_rate": 0.353,
+        "avg_R": -0.0,
+        "total_R": -0.2,
+        "avg_win_R": 1.75,
+        "avg_loss_R": -0.96,
+        "max_dd_R": 34.3,
+        "half1_avg_R": -0.049,
+        "half2_avg_R": 0.049,
+        "buy_n": 201,
+        "sell_n": 286,
         "outcomes": {
-          "SL": 136,
-          "EOD": 56,
-          "TP": 36
+          "SL": 281,
+          "EOD": 133,
+          "TP": 73
         }
       },
       "null": {
-        "real": 0.0431315789473684,
-        "time_null": -0.018855493372434317,
-        "p_time": 0.19123505976095617,
-        "side_null": 0.020777480121571556,
-        "p_side": 0.398406374501992
+        "real": -0.00041273100616015805,
+        "time_null": -0.12342044595581604,
+        "p_time": 0.01195219123505976,
+        "side_null": 0.0724312822960103,
+        "p_side": 0.8844621513944223
       }
     }
   },
   "exit_test": {
     "Full TP2 (external swing)": {
       "stats": {
-        "n": 258,
-        "days": 148,
-        "win_rate": 0.391,
-        "avg_R": 0.038,
-        "total_R": 9.8,
-        "avg_win_R": 1.62,
-        "avg_loss_R": -0.98,
-        "max_dd_R": 23.4,
-        "half1_avg_R": -0.019,
-        "half2_avg_R": 0.097,
-        "buy_n": 87,
-        "sell_n": 171,
+        "n": 552,
+        "days": 307,
+        "win_rate": 0.382,
+        "avg_R": -0.014,
+        "total_R": -7.9,
+        "avg_win_R": 1.51,
+        "avg_loss_R": -0.96,
+        "max_dd_R": 43.5,
+        "half1_avg_R": -0.075,
+        "half2_avg_R": 0.05,
+        "buy_n": 237,
+        "sell_n": 315,
         "outcomes": {
-          "SL": 145,
-          "EOD": 59,
-          "TP": 54
+          "SL": 306,
+          "EOD": 140,
+          "TP": 106
         }
       },
       "null": {
-        "real": 0.03794961240310078,
-        "time_null": -0.01932145915042665,
-        "p_time": 0.22709163346613545,
-        "side_null": 0.032875776813889104,
-        "p_side": 0.4701195219123506
+        "real": -0.014269927536231878,
+        "time_null": -0.10187929783688278,
+        "p_time": 0.03187250996015936,
+        "side_null": 0.06496634805221896,
+        "p_side": 0.896414342629482
       }
     },
     "Breakeven at +1R": {
       "stats": {
-        "n": 279,
-        "days": 148,
-        "win_rate": 0.283,
-        "avg_R": 0.024,
-        "total_R": 6.6,
-        "avg_win_R": 1.92,
-        "avg_loss_R": -0.73,
-        "max_dd_R": 23.5,
-        "half1_avg_R": -0.009,
-        "half2_avg_R": 0.057,
-        "buy_n": 93,
-        "sell_n": 186,
+        "n": 597,
+        "days": 307,
+        "win_rate": 0.303,
+        "avg_R": 0.014,
+        "total_R": 8.2,
+        "avg_win_R": 1.68,
+        "avg_loss_R": -0.71,
+        "max_dd_R": 22.2,
+        "half1_avg_R": -0.019,
+        "half2_avg_R": 0.049,
+        "buy_n": 257,
+        "sell_n": 340,
         "outcomes": {
-          "SL": 135,
-          "BE": 53,
-          "EOD": 50,
-          "TP": 41
+          "SL": 273,
+          "EOD": 130,
+          "BE": 111,
+          "TP": 83
         }
       },
       "null": {
-        "real": 0.023526881720430118,
-        "time_null": -0.039490339194711226,
-        "p_time": 0.17131474103585656,
-        "side_null": 0.01350547004797631,
-        "p_side": 0.44621513944223107
+        "real": 0.013705192629815755,
+        "time_null": -0.10453058365683825,
+        "p_time": 0.01195219123505976,
+        "side_null": 0.0364221615749491,
+        "p_side": 0.6414342629482072
       }
     },
     "50% at TP1, rest BE\u2192TP2": {
       "stats": {
-        "n": 319,
-        "days": 148,
-        "win_rate": 0.517,
-        "avg_R": 0.032,
-        "total_R": 10.3,
-        "avg_win_R": 0.89,
-        "avg_loss_R": -0.88,
-        "max_dd_R": 17.7,
-        "half1_avg_R": 0.029,
-        "half2_avg_R": 0.036,
-        "buy_n": 111,
-        "sell_n": 208,
+        "n": 694,
+        "days": 307,
+        "win_rate": 0.539,
+        "avg_R": 0.012,
+        "total_R": 8.2,
+        "avg_win_R": 0.79,
+        "avg_loss_R": -0.9,
+        "max_dd_R": 26.1,
+        "half1_avg_R": -0.016,
+        "half2_avg_R": 0.042,
+        "buy_n": 307,
+        "sell_n": 387,
         "outcomes": {
-          "SL": 128,
-          "TP1+BE": 90,
-          "EOD": 51,
-          "TP": 39,
-          "TP1+TP2": 11
+          "SL": 270,
+          "TP1+BE": 204,
+          "EOD": 117,
+          "TP": 77,
+          "TP1+TP2": 26
         }
       },
       "null": {
-        "real": 0.032357366771159864,
-        "time_null": -0.027796354621950514,
-        "p_time": 0.04780876494023904,
-        "side_null": -0.044416169636018375,
-        "p_side": 0.05179282868525897
+        "real": 0.011750720461095107,
+        "time_null": -0.05600407368990887,
+        "p_time": 0.00796812749003984,
+        "side_null": 0.01167000530116096,
+        "p_side": 0.49800796812749004
       }
     }
   },
   "entry_test": {
     "Market at next 1m open": {
       "stats": {
-        "n": 258,
-        "days": 148,
-        "win_rate": 0.391,
-        "avg_R": 0.038,
-        "total_R": 9.8,
-        "avg_win_R": 1.62,
-        "avg_loss_R": -0.98,
-        "max_dd_R": 23.4,
-        "half1_avg_R": -0.019,
-        "half2_avg_R": 0.097,
-        "buy_n": 87,
-        "sell_n": 171,
+        "n": 552,
+        "days": 307,
+        "win_rate": 0.382,
+        "avg_R": -0.014,
+        "total_R": -7.9,
+        "avg_win_R": 1.51,
+        "avg_loss_R": -0.96,
+        "max_dd_R": 43.5,
+        "half1_avg_R": -0.075,
+        "half2_avg_R": 0.05,
+        "buy_n": 237,
+        "sell_n": 315,
         "outcomes": {
-          "SL": 145,
-          "EOD": 59,
-          "TP": 54
+          "SL": 306,
+          "EOD": 140,
+          "TP": 106
         }
       },
       "null": {
-        "real": 0.03794961240310078,
-        "time_null": -0.01932145915042665,
-        "p_time": 0.22709163346613545,
-        "side_null": 0.032875776813889104,
-        "p_side": 0.4701195219123506
+        "real": -0.014269927536231878,
+        "time_null": -0.10187929783688278,
+        "p_time": 0.03187250996015936,
+        "side_null": 0.06496634805221896,
+        "p_side": 0.896414342629482
       }
     },
     "Limit at zone middle (30m)": {
       "stats": {
-        "n": 223,
-        "days": 130,
-        "win_rate": 0.265,
-        "avg_R": 0.196,
-        "total_R": 43.8,
-        "avg_win_R": 3.58,
-        "avg_loss_R": -1.02,
-        "max_dd_R": 33.1,
-        "half1_avg_R": 0.082,
-        "half2_avg_R": 0.318,
-        "buy_n": 75,
-        "sell_n": 148,
+        "n": 466,
+        "days": 269,
+        "win_rate": 0.262,
+        "avg_R": 0.049,
+        "total_R": 22.8,
+        "avg_win_R": 3.1,
+        "avg_loss_R": -1.03,
+        "max_dd_R": 50.1,
+        "half1_avg_R": -0.116,
+        "half2_avg_R": 0.214,
+        "buy_n": 196,
+        "sell_n": 270,
         "outcomes": {
-          "SL": 158,
-          "EOD": 45,
-          "TP": 20
+          "SL": 331,
+          "EOD": 99,
+          "TP": 36
         }
       },
       "null": {
-        "real": 0.19646188340807175,
-        "time_null": -0.08590647524635273,
-        "p_time": 0.0199203187250996,
-        "side_null": 0.02297040874137034,
-        "p_side": 0.04780876494023904
+        "real": 0.04895922746781119,
+        "time_null": -0.19960391362627194,
+        "p_time": 0.00398406374501992,
+        "side_null": -0.00797191343190569,
+        "p_side": 0.24701195219123506
       }
     }
   },
@@ -427,114 +427,114 @@
     "choch_max_min": 30.0,
     "Fresh \u00b7 market (headline entry)": {
       "stats": {
-        "n": 211,
-        "days": 138,
-        "win_rate": 0.393,
-        "avg_R": 0.061,
-        "total_R": 12.9,
-        "avg_win_R": 1.67,
-        "avg_loss_R": -0.98,
-        "max_dd_R": 20.9,
-        "half1_avg_R": -0.025,
-        "half2_avg_R": 0.148,
-        "buy_n": 69,
-        "sell_n": 142,
+        "n": 430,
+        "days": 275,
+        "win_rate": 0.363,
+        "avg_R": -0.001,
+        "total_R": -0.3,
+        "avg_win_R": 1.7,
+        "avg_loss_R": -0.97,
+        "max_dd_R": 33.2,
+        "half1_avg_R": -0.046,
+        "half2_avg_R": 0.046,
+        "buy_n": 182,
+        "sell_n": 248,
         "outcomes": {
-          "SL": 119,
-          "EOD": 52,
-          "TP": 40
+          "SL": 249,
+          "EOD": 111,
+          "TP": 70
         }
       },
       "null": {
-        "real": 0.061061611374407604,
-        "time_null": 0.02950786929176783,
-        "p_time": 0.3665338645418327,
-        "side_null": 0.010565837871031613,
-        "p_side": 0.2589641434262948
+        "real": -0.0006767441860464877,
+        "time_null": -0.08483556333129041,
+        "p_time": 0.0398406374501992,
+        "side_null": 0.07817960339543466,
+        "p_side": 0.8685258964143426
       }
     },
     "Fresh \u00b7 limit": {
       "stats": {
-        "n": 178,
-        "days": 115,
-        "win_rate": 0.27,
-        "avg_R": 0.205,
-        "total_R": 36.4,
-        "avg_win_R": 3.52,
-        "avg_loss_R": -1.02,
-        "max_dd_R": 22.3,
-        "half1_avg_R": 0.156,
-        "half2_avg_R": 0.257,
-        "buy_n": 59,
-        "sell_n": 119,
+        "n": 366,
+        "days": 233,
+        "win_rate": 0.254,
+        "avg_R": 0.065,
+        "total_R": 23.6,
+        "avg_win_R": 3.27,
+        "avg_loss_R": -1.03,
+        "max_dd_R": 32.0,
+        "half1_avg_R": -0.055,
+        "half2_avg_R": 0.188,
+        "buy_n": 156,
+        "sell_n": 210,
         "outcomes": {
-          "SL": 125,
-          "EOD": 38,
-          "TP": 15
+          "SL": 261,
+          "EOD": 77,
+          "TP": 28
         }
       },
       "null": {
-        "real": 0.20463483146067415,
-        "time_null": -0.06852991662980659,
-        "p_time": 0.027888446215139442,
-        "side_null": 0.038321351528558464,
-        "p_side": 0.11155378486055777
+        "real": 0.06456010928961751,
+        "time_null": -0.16612688065542164,
+        "p_time": 0.00796812749003984,
+        "side_null": 0.03523388739456361,
+        "p_side": 0.3944223107569721
       }
     },
     "passed": false
   },
   "session_sweeps": {
     "Opening range (first 15 min)": {
-      "days": 246,
-      "both": 0.439,
-      "chance": 0.424,
-      "edge_pts": 1.5,
-      "p": 0.608,
+      "days": 494,
+      "both": 0.441,
+      "chance": 0.419,
+      "edge_pts": 2.2,
+      "p": 0.217,
       "by_open_range": {
         "small": {
-          "n": 82,
-          "range_pts": "40\u201373",
-          "both": 0.488,
-          "chance": 0.465
+          "n": 165,
+          "range_pts": "35\u201372",
+          "both": 0.479,
+          "chance": 0.49
         },
         "medium": {
-          "n": 82,
-          "range_pts": "73\u2013103",
-          "both": 0.427,
-          "chance": 0.419
+          "n": 164,
+          "range_pts": "72\u2013102",
+          "both": 0.463,
+          "chance": 0.421
         },
         "large": {
-          "n": 82,
-          "range_pts": "104\u2013577",
-          "both": 0.402,
-          "chance": 0.387
+          "n": 165,
+          "range_pts": "103\u2013577",
+          "both": 0.382,
+          "chance": 0.347
         }
       }
     },
     "First hour (IB)": {
-      "days": 246,
-      "both": 0.26,
-      "chance": 0.233,
-      "edge_pts": 2.8,
-      "p": 0.221,
+      "days": 494,
+      "both": 0.233,
+      "chance": 0.216,
+      "edge_pts": 1.7,
+      "p": 0.239,
       "by_open_range": {
         "small": {
-          "n": 82,
-          "range_pts": "41\u201399",
-          "both": 0.317,
-          "chance": 0.294
+          "n": 165,
+          "range_pts": "41\u2013101",
+          "both": 0.297,
+          "chance": 0.302
         },
         "medium": {
-          "n": 82,
-          "range_pts": "99\u2013138",
-          "both": 0.244,
-          "chance": 0.252
+          "n": 164,
+          "range_pts": "102\u2013144",
+          "both": 0.232,
+          "chance": 0.22
         },
         "large": {
-          "n": 82,
-          "range_pts": "140\u2013700",
-          "both": 0.22,
-          "chance": 0.152
+          "n": 165,
+          "range_pts": "145\u2013700",
+          "both": 0.17,
+          "chance": 0.127
         }
       }
     }

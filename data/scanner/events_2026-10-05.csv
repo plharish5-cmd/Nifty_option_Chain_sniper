@@ -1,0 +1,14 @@
+logged_at,day,event_t,token,kind,side,level_kind,level,depth,close_inside,smt,entry_ce,sl,flow,flow_note,chain,call_wall,put_wall,net_bias,squeeze,ref_strike,score,unvalidated
+2026-10-05T11:48:39,2026-10-05,2026-10-05 09:35:00,13,TURTLE_SOUP,BEARISH,or,22571.3,24.1,False,,,,AGAINST,"price above the flow VWAP 22,549.2 — sell only below VWAP",OK,23000.0,22500.0,2.0,,22600,1,True
+2026-10-05T11:48:39,2026-10-05,2026-10-05 09:50:00,13,TURTLE_SOUP,BEARISH,pd,22610.6,4.95,True,,,,AGAINST,"price above the flow VWAP 22,559.4 — sell only below VWAP",OK,23000.0,22500.0,2.0,,22600,1,True
+2026-10-05T11:48:39,2026-10-05,2026-10-05 10:25:00,13,TURTLE_SOUP,BULLISH,or,22506.3,2.4,False,,,,AGAINST,"price below the flow VWAP 22,562.6 — buy only above VWAP",OK,22600.0,22500.0,2.0,,22500,2,True
+2026-10-05T11:48:40,2026-10-05,2026-10-05 10:25:00,13,ICT_SETUP,BEARISH,swing low,22595.4,,True,,22586.0,22623.8,NEUTRAL,last 3 candles: delta ₹+12 Cr · no decisive footprint,OK,22600.0,22500.0,2.0,,22500,1,True
+2026-10-05T11:48:40,2026-10-05,2026-10-05 11:00:00,13,TURTLE_SOUP,BULLISH,swing,22468.7,7.85,True,,,,AGAINST,"price below the flow VWAP 22,548.3 — buy only above VWAP",OK,22600.0,22500.0,1.14,,22500,2,True
+2026-10-05T11:48:41,2026-10-05,2026-10-05 11:25:00,13,TURTLE_SOUP,BULLISH,swing,22460.8,9.1,True,,,,AGAINST,"price below the flow VWAP 22,541.0 — buy only above VWAP",OK,22600.0,22000.0,0.29,,22450,2,True
+2026-10-05T11:48:41,2026-10-05,2026-10-05 11:35:00,13,TURTLE_SOUP,BEARISH,swing,22511.9,11.55,True,,,,NEUTRAL,last 3 candles: delta ₹+54 Cr · no decisive footprint,OK,22600.0,22500.0,1.57,,22500,1,True
+2026-10-05T11:55:59,2026-10-05,2026-10-05 11:55:00,13,TURTLE_SOUP,BULLISH,swing,22451.7,11.65,True,,,,AGAINST,"price below the flow VWAP 22,532.4 — buy only above VWAP",OK,22600.0,22000.0,0.57,,22450,2,True
+2026-10-05T12:51:27,2026-10-05,2026-10-05 12:50:00,13,TURTLE_SOUP,BEARISH,swing,22464.5,13.65,True,,,,AGAINST,last 3 candles: delta ₹+59 Cr · STRONG BULLISH — price ↑ with delta ↑,OK,22600.0,22400.0,0.29,,22500,1,True
+2026-10-05T13:21:02,2026-10-05,2026-10-05 13:20:00,13,TURTLE_SOUP,BEARISH,swing,22481.0,2.95,True,,,,AGAINST,last 3 candles: delta ₹+108 Cr · STRONG BULLISH — price ↑ with delta ↑,OK,22600.0,22400.0,0.0,,22500,1,True
+2026-10-05T13:42:08,2026-10-05,2026-10-05 13:40:00,13,TURTLE_SOUP,BEARISH,swing,22485.1,23.3,False,,,,AGAINST,last 3 candles: delta ₹+80 Cr · STRONG BULLISH — price ↑ with delta ↑,OK,22600.0,22400.0,0.86,,22500,1,True
+2026-10-05T13:46:54,2026-10-05,2026-10-05 13:45:00,13,TURTLE_SOUP,BEARISH,swing,22523.5,35.6,False,,,,AGAINST,"price above the flow VWAP 22,510.5 — sell only below VWAP",OK,22600.0,22500.0,1.71,,22550,1,True
+2026-10-05T15:31:03,2026-10-05,2026-10-05 15:30:00,13,TURTLE_SOUP,BEARISH,swing,22551.9,3.85,False,,,,AGAINST,"price above the flow VWAP 22,519.0 — sell only below VWAP",OK,23000.0,22500.0,1.14,,22550,1,True

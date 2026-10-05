@@ -1,14 +1,12 @@
 {
   "initial_capital": 100000.0,
-  "cash_balance": 89718.67,
+  "cash_balance": 95545.46,
   "used_margin": 0.0,
-  "realized_pnl": -10281.33,
+  "realized_pnl": -4454.54,
   "unrealized_pnl": 0.0,
-  "total_trades_count": 9,
+  "total_trades_count": 10,
   "open_positions": [],
   "recent_alerts": [
-    "\ud83d\uded2 BUY 10 Lot(s) of NIFTY 23250 CE [INTRADAY] @ \u20b962.50.",
-    "\ud83d\uded1 NIFTY 23250 CE (BUY): Stop Loss triggered @ \u20b956.40.",
     "\ud83d\uded1 NIFTY 23250 CE (BUY): Stop Loss triggered @ \u20b950.90.",
     "\ud83d\uded2 BUY 5 Lot(s) of NIFTY 23250 CE [INTRADAY] @ \u20b9174.30.",
     "\ud83d\uded2 BUY 5 Lot(s) of NIFTY 23400 PE [INTRADAY] @ \u20b9221.45.",
@@ -21,8 +19,10 @@
     "\ud83c\udfaf NIFTY 23000 CE (BUY): Target 2 reached @ \u20b9347.70.",
     "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 23250 CE [INTRADAY] @ \u20b9175.95.",
     "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 23250 PE [INTRADAY] @ \u20b9155.35.",
-    "\ud83d\uded1 NIFTY 23250 PE (BUY): Stop Loss triggered @ \u20b9155.25."
+    "\ud83d\uded1 NIFTY 23250 PE (BUY): Stop Loss triggered @ \u20b9155.25.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22550 PE [INTRADAY] @ \u20b91.50.",
+    "\ud83c\udfaf NIFTY 22550 PE (BUY): Target 2 reached @ \u20b992.00."
   ],
-  "total_charges_paid": 1093.58,
-  "last_updated": "2026-09-16T11:31:58.598175"
+  "total_charges_paid": 1149.29,
+  "last_updated": "2026-10-05T09:24:35.330465"
 }

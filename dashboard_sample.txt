@@ -1,0 +1,250 @@
+══════════════════════════════════════ NIFTY DASHBOARD · Mon 05 Oct 11:57 ══════════════════════════════════════
+DATA: ok
+┌─ NIFTY · at a glance ────────────────────────────────────────────────────────────────────────────────────────┐
+│ Now   │ Spot (option chain) │ Last candle close │ Bias      │ SMC action │ Checklist  │ Regime               │
+├───────┼─────────────────────┼───────────────────┼───────────┼────────────┼────────────┼──────────────────────┤
+│ 11:57 │ 22,460 @ 11:50      │ 22,441 @ 11:50    │ BULLISH ▲ │ WAIT       │ 4/6 — WAIT │ WARMUP → PE_DOMINANT │
+│       │                     │                   │           │            │            │ (123 min)            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ ALERTS · latest from the option-chain / price-action watchers ──────────────────────────────────────────────┐
+│ Time  │ Source │ Alert                                                                                       │
+├───────┼────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 11:52 │ OC     │ ITM put writers CLOSING at 22700 (249 pts ITM): ITM put writers exiting -> long unwinding,  │
+│       │        │ market pushes DOWN                                                                          │
+│ 11:55 │ PA 5m  │ ● PA SETUP · CE · 11:50 candle · HAMMER at DAY LOW 22,452 · BUY CE above 22,470             │
+│       │        │ (follow-through) · SL 22,438 · valid for 3 candles · Confluence 4/7                         │
+│ 11:55 │ PA 5m  │ ! EXIT HINT for the 11:30 PE: hammer at DAY LOW 22,452 on the 11:50 candle - you exit PE    │
+│       │        │ trades here                                                                                 │
+│ 11:55 │ PA 5m  │ ! EXIT HINT for the 11:40 PE: hammer at DAY LOW 22,452 on the 11:50 candle - you exit PE    │
+│       │        │ trades here                                                                                 │
+│ 11:55 │ PA 3m  │ ● PA SETUP · CE · 11:51 candle · DOUBLE HAMMER at DAY LOW 22,440 · BUY CE above 22,466      │
+│       │        │ (follow-through) · SL 22,438 · valid for 3 candles · Confluence 4/7                         │
+│ 11:55 │ PA 3m  │ ! EXIT HINT for the 10:09 PE: double hammer at DAY LOW 22,440 on the 11:51 candle - you     │
+│       │        │ exit PE trades here                                                                         │
+│ 11:55 │ OC     │ Writer side flipped: PUT WRITERS AGGRESSIVE -> CALL WRITERS AGGRESSIVE (net chg OI -90,758) │
+│ 11:55 │ OC     │ ITM put writers ADDING at 22700 (235 pts ITM): ITM put writers confident (bullish) —        │
+│       │        │ trapped if price falls: long-unwinding risk                                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ OPTION CHAIN · ATM ± 2 strikes (L = lakh contracts, k = thousand) ──────────────────────────────────────────┐
+│                              Strike                             │ CE OI  │  CE ΔOI │ PCR  │ PE OI  │  PE ΔOI │
+├─────────────────────────────────────────────────────────────────┼────────┼─────────┼──────┼────────┼─────────┤
+│                                                           22550 │ 130.2L │ +133.3k │ 0.53 │  68.5L │  +89.4k │
+│                                                           22500 │ 189.6L │ +185.8k │ 1.12 │ 212.4L │ +251.2k │
+│                                                     22450 ◀ ATM │  50.9L │  +42.9k │ 2.38 │ 121.0L │ +153.9k │
+│                                                           22400 │  39.0L │   +5.2k │ 3.58 │ 139.7L │ +149.7k │
+│                                                           22350 │  11.7L │   +1.3k │ 5.29 │  61.8L │  +58.7k │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ OPTION CHAIN · OI FLOW, last 15 min ────────────────────────────────────────────────────────────────────────┐
+│ CE ΔOI │ -292  (Call unwinding ↓)                                                                            │
+│ PE ΔOI │ +21,071  (Put buying ↑)                                                                             │
+│ Spread │ +21,363 contracts                                                                                   │
+│ Flow   │ BUILDING                                                                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ LEVELS · walls, support / resistance, prior day (price ladder, distance from spot in pts) ──────────────────┐
+│ Type    │ Strike │ What                                                              │ OI wall   │ From spot │
+├─────────┼────────┼───────────────────────────────────────────────────────────────────┼───────────┼───────────┤
+│ RESIST  │ 22,650 │ Major wall                                                        │ CE 208.3L │      +190 │
+│ REF     │ 22,611 │ Prior-day high                                                    │           │      +151 │
+│ RESIST  │ 22,600 │ Max Resistance · R2                                               │ CE 230.7L │      +140 │
+│ REF     │ 22,544 │ Prior-day open                                                    │           │       +84 │
+│ RESIST  │ 22,500 │ R1                                                                │ CE 189.6L │       +40 │
+│         │ 22,460 │ ◀ SPOT (ATM 22,450)                                               │           │           │
+│ REF     │ 22,422 │ Prior-day close                                                   │           │       -38 │
+│ SUPPORT │ 22,400 │ S1                                                                │ PE 139.7L │       -60 │
+│ SUPPORT │ 22,300 │ S2                                                                │ PE 121.4L │      -160 │
+│ REF     │ 22,217 │ Prior-day low                                                     │           │      -243 │
+│ SUPPORT │ 22,000 │ Max Support                                                       │ PE 147.4L │      -460 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ INSTITUTIONAL · who is writing options and how firmly ──────────────────────────────────────────────────────┐
+│ PE writers building support    │ YES  ✔                                                                      │
+│ CE writers building resistance │ NO  ✘                                                                       │
+│ DOMINANCE                      │ PUTS 1.9× MILD (PE +703k vs CE +368k)                                       │
+│                                │ Heaviest: 22,350 PE 44.1× | 22,400 PE 28.8×                                 │
+│ STRUCTURE                      │ RANGE 22,350–22,550 (edges defended both sides)                             │
+│                                │ Floor conviction 44.1× STRONG | Ceiling 1.5× WEAK                           │
+│                                │ → Asymmetric: floor firm, lid thin. Upside breakout likelier than a         │
+│                                │   downside break.                                                           │
+│                                │ → Floor being built 60-110 pts below spot                                   │
+│                                │ → Risk to put writers: close below 22,350 = cascade                         │
+│ Sudden OI spike (>50k, 1 bar)  │ NO  ✘                                                                       │
+│ Roll hazard detected           │ NO  ✘                                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ INSTITUTIONAL · writer gap (L = lakh contracts) ────────────────────────────────────────────────────────────┐
+│ Gap trend: narrowing (+3.6L vs 15m ago)  ·  Last cross: 10:45 BEARISH via CE WRITING  ·  Walls: walls steady │
+│ (CE 22600→22600, PE 22500→22500)                                                                             │
+├─────────┬─────────┬─────────┬─────────┬──────────────────────────────────────────────────────────────────────┤
+│  Strike │  CE ΔOI │  PE ΔOI │   Gap   │ Side                                                                 │
+├─────────┼─────────┼─────────┼─────────┼──────────────────────────────────────────────────────────────────────┤
+│  22,500 │ +118.7L │ +164.8L │  +46.0L │ PE_ABOVE                                                             │
+│  22,550 │  +86.3L │  +57.5L │  -28.8L │ CE_ABOVE                                                             │
+│  22,600 │ +167.8L │  +54.6L │ -113.2L │ CE_ABOVE                                                             │
+│ NET (3) │ +372.8L │ +276.9L │  -95.9L │ INTERTWINED                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ MARKET METRICS · gamma, volatility, PCR, writers ───────────────────────────────────────────────────────────┐
+│ BIAS                │ BULLISH  ▲                                                                             │
+│ REGIME              │ WARMUP → PE_DOMINANT (123 min)                                                         │
+│ GEX                 │ +₹15.1Cr (NEUTRAL gamma — no regime)                                                   │
+│ IV (ATM)            │ 21.1%  |  Avg: 11.7%  |  EXPENSIVE (rank 99%) (29-session baseline — tails unreliable  │
+│                     │ below 60 sessions)                                                                     │
+│ Zero gamma          │ 23,100 (640 pts above — entire session in NEUTRAL gamma zone — no regime)              │
+│ MAX PAIN            │ 22,500 (spot 22,460 — 40 pts below) (informational only — no edge on Nifty)            │
+│ DAY RANGE           │ Low 22,440.05 (11:50) ↔ High 22,621.80 (09:50) (182 pts)                               │
+│ PCR (ATM 22,450)    │ 2.38  ↑                                                                                │
+│ PCR (max OI 22,500) │ 1.12  ↑  ← price magnet                                                                │
+│ PCR (flow)          │ 3.59                                                                                   │
+│ WRITERS RATIO       │ 1.91x  (PE dominant — floor defending)                                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ TRADE CHECK · what the option chain allows / forbids ───────────────────────────────────────────────────────┐
+│   │ Guidance                                                                                                 │
+├───┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ✘ │ Do NOT short — PE writers dominant                                                                       │
+│ ✔ │ CE buy bias — but confirm 8 EMA on 15m chart first                                                       │
+│ ‖ │ Buyer freeze: 11:30–13:15 — ACTIVE (observe only)                                                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ TRADE CHECK · pre-trade checklist ──────────────────────────────────────────────────────────────────────────┐
+│ SCORE 4/6 — WAIT   ·   still missing: IV, Timing                                                             │
+├───┬─────────────────────────────────────────────────────────────────────────────────────────────────┬────────┤
+│   │ Check                                                                                           │ Result │
+├───┼─────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+│ ✔ │ Walls defined                                                                                   │ PASS   │
+│ ✔ │ Flow aligned                                                                                    │ PASS   │
+│ ✘ │ IV not expensive                                                                                │ FAIL   │
+│ ✔ │ GEX supports                                                                                    │ PASS   │
+│ ✘ │ No danger zone                                                                                  │ FAIL   │
+│ ✔ │ RVOL (futures vol) (>=1.30)                                                                     │ PASS   │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ SMC · plain read  (5m trigger · 15m trend · 11:55) ─────────────────────────────────────────────────────────┐
+│ Spot / last candle │ 22,441.0  (last closed 5m candle 11:50)                                                 │
+│ Big trend (15m)    │ UP   (higher highs + higher lows)                                                       │
+│ Where in range     │ -15% of 22,452–22,523 · CHEAP side → look to BUY only                                   │
+│ ACTION             │ WAIT  — no setup has 3 of 4 checks yet                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ SMC · BUY / SELL checklist (3 of 4 = get ready, 4 of 4 = act) ──────────────────────────────────────────────┐
+│ Side     │   │ Condition                                                                                     │
+├──────────┼───┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ BUY 2/4  │ ✔ │ Price is on the CHEAP side of the range (good place to buy)                                   │
+│ BUY 2/4  │ ✔ │ Price is inside a BUY zone now                                                                │
+│ BUY 2/4  │ ✘ │ Waiting for a stop hunt BELOW a recent low (fake breakdown)                                   │
+│ BUY 2/4  │ ✘ │ Waiting for a candle to CLOSE above the last swing high (trend flip up)                       │
+│ SELL 2/4 │ ✔ │ Stop hunt above the high DONE — buyers' stops taken, price came back down                     │
+│ SELL 2/4 │ ✔ │ Trend flipped DOWN — a candle CLOSED below the last swing low                                 │
+│ SELL 2/4 │ ✘ │ Price not yet on the expensive side of the range                                              │
+│ SELL 2/4 │ ✘ │ Waiting for price to bounce back into a SELL zone                                             │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ SMC · levels to watch (zones are where to LOOK, the CLOSE is the trigger) ──────────────────────────────────┐
+│ What        │     Price     │ Meaning                                                                        │
+├─────────────┼───────────────┼────────────────────────────────────────────────────────────────────────────────┤
+│ TRIGGER ▲   │        22,523 │ 5m candle must CLOSE above → buyers take control (BOS/CHoCH up)                │
+│ TRIGGER ▼   │        22,452 │ 5m candle must CLOSE below → sellers take control (BOS/CHoCH down)             │
+│ SELL zone ▲ │ 22,461–22,468 │ gap price may refill (FVG)                                                     │
+│ SELL zone ▲ │ 22,492–22,494 │ gap price may refill (FVG)                                                     │
+│ BUY zone ▼  │ 22,401–22,417 │ gap price may refill (FVG)                                                     │
+│ BUY zone ▼  │ 22,383–22,401 │ buyers' zone (order block)                                                     │
+│ Last event  │               │ Last 5m event: trend continued bearish at 22,452 (11:50) [BOS]                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ SMC · 5-RULE MODEL (checklist only — UNPROVEN, not a signal) ───────────────────────────────────────────────┐
+│ 5-RULE SMC MODEL · bearish side · 4/5 → SETUP VALID · OUTSIDE TIME WINDOW                                    │
+├───┬───┬──────────────────┬───────────────────────────────────────────────────────────────────────────────────┤
+│ # │   │ Rule             │ Detail                                                                            │
+├───┼───┼──────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+│ 1 │ ✔ │ Bias             │ 15m external structure bearish (swing 22,217–22,611); daily candle says bearish   │
+│   │   │                  │ (yesterday closed below PDL 22,595) [not used for direction (failed the NIFTY     │
+│   │   │                  │ direction test); daily draw PDL 22,217 likely to be taken today (62% on your      │
+│   │   │                  │ NIFTY data vs 57% chance)]                                                        │
+│ 2 │ ✘ │ Time window      │ 11:55 · windows 09:30–11:30, 13:30–14:45                                          │
+│ 3 │ ✔ │ Liquidation      │ Swept & reclaimed: OR high 22,571, PDH 22,611, 15m swing high 22,611              │
+│ 4 │ ✔ │ LTF confirmation │ Tapped bearish FVG 22,461–22,468, then 1m CHoCH down at 11:44 (22,472)            │
+│ 5 │ ✔ │ Entry & R:R      │ 5m FVG 22,461–22,468 · SL 22,528 · TP 22,217 (15m external swing low) · R:R 3.9 ≥ │
+│   │   │                  │ 3.0                                                                               │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ SMC · 5-RULE plan and backtest ─────────────────────────────────────────────────────────────────────────────┐
+│ Plan     │ entry 22,461–22,468 · SL 22,528 · TP1 22,217 (PDL (validated daily draw)) · TP2 22,217 (external) │
+│          │ · R:R 3.9 to TP2                                                                                  │
+│ Backtest │ UNPROVEN on your NIFTY data — checklist only, not a signal · 258 trades / 241 sessions · avg      │
+│          │ +0.04R · random-time p=0.20 · random-side p=0.48 (2026-10-02)                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ CANDLES · last closed bar and the bar forming now, 15m / 30m / 1h ──────────────────────────────────────────┐
+│ long wicks and patterns, 15m / 30m / 1h: no pattern has a proven edge on your NIFTY data — this is what the  │
+│ candle IS, not a signal.                                                                                     │
+├─────┬─────────┬─────────────────────┬────────┬────────┬────────┬────────┬────────┬──────┬─────────┬──────────┤
+│ TF  │ Bar     │ Window              │ Colour │  Open  │  High  │  Low   │ Close  │ Body │ Up wick │ Low wick │
+├─────┼─────────┼─────────────────────┼────────┼────────┼────────┼────────┼────────┼──────┼─────────┼──────────┤
+│ 15m │ Closed  │ 11:30–11:45         │ RED    │ 22,499 │ 22,523 │ 22,468 │ 22,468 │  54% │     45% │       1% │
+│ 15m │ Forming │ 11:45 (11/15m)      │ GREEN  │ 22,468 │ 22,474 │ 22,440 │ 22,469 │   4% │     16% │      80% │
+│ 30m │ Closed  │ 11:15–11:45         │ RED    │ 22,488 │ 22,523 │ 22,452 │ 22,468 │  27% │     50% │      23% │
+│ 30m │ Forming │ 11:45 (11/30m)      │ GREEN  │ 22,468 │ 22,474 │ 22,440 │ 22,469 │   4% │     16% │      80% │
+│ 1h  │ Closed  │ 10:15–11:15         │ RED    │ 22,544 │ 22,560 │ 22,461 │ 22,488 │  56% │     17% │      27% │
+│ 1h  │ Forming │ 11:15 (41/60m)      │ RED    │ 22,488 │ 22,523 │ 22,440 │ 22,469 │  22% │     43% │      35% │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ CANDLES · wicks and patterns on those bars ─────────────────────────────────────────────────────────────────┐
+│ Bar         │ Read                                       │ Tested on your NIFTY data                         │
+├─────────────┼────────────────────────────────────────────┼───────────────────────────────────────────────────┤
+│ 15m Forming │ LONG LOWER WICK (buyers rejected lower     │ no proven edge (see note above)                   │
+│             │ prices)                                    │                                                   │
+│             │ — low 22,440 is at day low so far (12 pts  │                                                   │
+│             │   away)                                    │                                                   │
+│ 15m Forming │ if it closed now: Bullish pin bar          │ ✘ at a level: no edge (48% vs 49% control, n=281) │
+│             │ (textbook ↑) · AT A LEVEL                  │                                                   │
+│ 15m Forming │ if it closed now: Doji (textbook ↑) [after │ ✘ at a level: no edge (48% vs 48% control, n=843) │
+│             │ a fall → reversal ↑ expected] · AT A LEVEL │                                                   │
+│ 30m Forming │ LONG LOWER WICK (buyers rejected lower     │ no proven edge (see note above)                   │
+│             │ prices)                                    │                                                   │
+│             │ — low 22,440 is at day low so far (12 pts  │                                                   │
+│             │   away)                                    │                                                   │
+│ 30m Forming │ if it closed now: Bullish pin bar          │ ✘ at a level: no edge (48% vs 49% control, n=281) │
+│             │ (textbook ↑) · AT A LEVEL                  │                                                   │
+│ 30m Forming │ if it closed now: Doji (textbook ↓) [after │ ✘ no edge (49% vs 48% control, n=1895)            │
+│             │ a rise → reversal ↓ expected]              │                                                   │
+│ 1h Forming  │ if it closed now: Spinning top (textbook   │ ✘ at a level: no edge (49% vs 48% control, n=756) │
+│             │ ↑) [after a fall → reversal ↑ expected] ·  │                                                   │
+│             │ AT A LEVEL                                 │                                                   │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ ORDER FLOW · NIFTY 50 aggressive buy / sell · 5m candles ───────────────────────────────────────────────────┐
+│ Delta = money bought at the ask minus sold at the bid. Tags: UNTESTED / not proven means no backtest edge    │
+│ yet.                                                                                                         │
+├───────────────────────────────┬──────────────────────────────────────────────────────────────────────────────┤
+│ Day CVD (cumulative buy−sell) │ ₹+1,012 Cr                                                                   │
+│ Last candle 11:50             │ delta ₹-31 Cr (-7%)                                                          │
+│ Breadth (stocks up / down)    │ 29↑/21↓                                                                      │
+│ Price vs delta                │ BALANCED — no clear aggressor                                                │
+│ Flow VWAP                     │ 22,532.4 → price BELOW (sells only) · last 5 candles delta +4%               │
+│ DELTA+VWAP SETUP              │ NONE — No setup · price below VWAP 22,532.4 · last 5 candles delta +4%       │
+│                               │ (needs ±5% on the same side as VWAP) [UNTESTED]                              │
+│ For a LONG / BUY CE idea      │ AGAINST — price below the flow VWAP 22,532.4 — buy only above VWAP           │
+│ For a SHORT / BUY PE idea     │ AGAINST — last 3 candles: delta ₹+68 Cr · Bullish delta divergence, Bullish  │
+│                               │ CVD divergence                                                               │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ ORDER FLOW · recent events ─────────────────────────────────────────────────────────────────────────────────┐
+│ Time  │ Event                                                                                     │ Status   │
+├───────┼───────────────────────────────────────────────────────────────────────────────────────────┼──────────┤
+│ 11:45 │ Bullish delta divergence — red candle, delta +21%                                         │ UNTESTED │
+│ 11:50 │ Bullish CVD divergence — low 22,440 < 22,452 but CVD ₹+1,012 > ₹+890 Cr                   │ UNTESTED │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ SCANNER · ICT sweep→FVG and fake-breakout events ───────────────────────────────────────────────────────────┐
+│ No events yet                                                                                                │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ SIZE OF THE MOVE · GARCH range (size, not direction) ───────────────────────────────────────────────────────┐
+│ GARCH RANGE (size of the move, not direction) · from 2026-10-01 close 22,422 · σ 0.83% (13% annualised) ·    │
+│ vol half-life 31 days                                                                                        │
+│ 1σ box 22,236 – 22,608 (±186 pts) · 2σ box 22,051 – 22,793 (±371) · 5-day 1σ ±417 · on your data the close   │
+│ stayed inside 1σ 75% / 2σ 96% of days                                                                        │
+│ Now 22,441 = +19 pts (+0.1σ) from yesterday's close → inside the 1σ box — a normal day so far                │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ EVIDENCE BOARD · what has been tested on YOUR NIFTY data ───────────────────────────────────────────────────┐
+│ Only ideas under PROVEN deserve weight. Full list: .venv/bin/python evidence_board.py                        │
+├─────────────────────────────────┬────┬───────────────────────────────────────────────────────────────────────┤
+│ Verdict                         │ n  │ Ideas                                                                 │
+├─────────────────────────────────┼────┼───────────────────────────────────────────────────────────────────────┤
+│ ✔ PROVEN on your data           │  2 │ GARCH box, daily draw                                                 │
+│ ✘ NO EDGE found                 │ 16 │ daily direction, 5-Rule, freshness, 5-Rule OOS, session sweeps, ICT   │
+│                                 │    │ model, ICT test, time windows, fake breakouts, fake-breakout test,    │
+│                                 │    │ open fake-move, trap/OB, positional, positional test, candle          │
+│                                 │    │ patterns, candles test                                                │
+│ … PENDING (not enough data yet) │  4 │ order flow, Delta+VWAP, confluence, trap/OB test                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ DATA HEALTH ────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Last snapshot  │ 11:50:43  (1m 38s ago) ✔                                                                    │
+│ Coverage today │ 52/125 bins  !                                                                              │
+│ Stale feed     │ NO                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+Information only — not financial advice.

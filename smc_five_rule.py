@@ -276,6 +276,7 @@ def evaluate(df1: pd.DataFrame | None, df5: pd.DataFrame, df15: pd.DataFrame | N
     t5 = _ts(df5)
     now = now or t5.iloc[-1].to_pydatetime()
     today = t5.iloc[-1].date()
+    out.levels["asof"] = now
     spot = float(df5["close"].iloc[-1])
     df15 = df15 if df15 is not None and len(df15) >= 15 else (
         df5.set_index(t5).resample("15min", origin="start_day", offset="15min")
@@ -490,6 +491,37 @@ def evaluate(df1: pd.DataFrame | None, df5: pd.DataFrame, df15: pd.DataFrame | N
     return out
 
 
+def reach_line(fr: FiveRule, flat: str = "15:15") -> str:
+    """Reality check on the printed R:R (display only — the rules and the backtest are unchanged).
+    A 1σ move for the time left = GARCH daily 1σ (pts) × √(minutes left to the flat time / 375). If the target is further than that,
+    show the R:R you get if price only travels that far."""
+    try:
+        if not (fr.entry and fr.sl and fr.tp):
+            return ""
+        now = fr.levels.get("asof")
+        if now is None:
+            return ""
+        import math
+        import garch_range
+        mid = (fr.entry[0] + fr.entry[1]) / 2
+        risk = abs(mid - fr.sl)
+        dist = abs(fr.tp - mid)
+        hh, mm = map(int, flat.split(":"))
+        left = (hh * 60 + mm) - (now.hour * 60 + now.minute)
+        if left <= 0:
+            return f"Reach: after {flat} — no time left today for a {dist:,.0f}-pt target; the R:R above is not reachable intraday."
+        b = garch_range.box_for(now.date())
+        if not b or not risk:
+            return ""
+        one = float(b["pts1"]) * math.sqrt(left / 375.0)
+        if dist <= one:
+            return f"Reach: target {dist:,.0f} pts is inside a 1σ move for the {left} min left (±{one:,.0f} pts, GARCH)."
+        return (f"Reach: target {dist:,.0f} pts away, but a 1σ move for the {left} min left to {flat} is ±{one:,.0f} pts (GARCH) → "
+                f"R:R ≈ {one / risk:.1f} if price only gets that far. R:R {fr.rr or 0:.1f} assumes the full target is hit.")
+    except Exception:                                           # noqa: BLE001
+        return ""
+
+
 def text_block(fr: FiveRule) -> str:
     L = [f"5-RULE SMC MODEL · {fr.side.lower()} side · {fr.score}/5 → {fr.verdict}"]
     for nm, ok, det in fr.rules:
@@ -499,6 +531,9 @@ def text_block(fr: FiveRule) -> str:
         L.append(f"  Plan: entry {fr.entry[0]:,.0f}–{fr.entry[1]:,.0f} · SL {fr.sl:,.0f}"
                  + (f" · TP1 {tp1:,.0f} ({fr.levels.get('TP1_name', 'nearest swing')})" if tp1 else "")
                  + f" · TP2 {fr.tp:,.0f} (external)" + (f" · R:R {fr.rr:.1f} to TP2" if fr.rr else ""))
+    reach = reach_line(fr)
+    if reach:
+        L.append("  " + reach)
     if fr.next_needed and "TAKE" not in fr.verdict:
         L.append(f"  Next needed: {fr.next_needed}")
     L.append("  " + edge_line())

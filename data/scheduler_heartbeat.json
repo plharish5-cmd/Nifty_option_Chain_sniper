@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-10-04T23:47:42.997205",
+  "timestamp": "2026-10-06T01:01:08.151465",
   "job": "chain",
   "outcome": "SKIPPED",
   "spot": null,
   "consecutive_failures": 0,
   "error_class": null,
   "error_message": null,
-  "skip_reason": "Weekend (market closed)",
+  "skip_reason": "Outside window 09:00-15:45",
   "drift_minutes": null
 }
