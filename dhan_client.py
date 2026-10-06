@@ -802,6 +802,27 @@ def futures_market_depth() -> dict | None:
         return None
 
 
+# EXPIRYROLL — one rule for the whole app: an expiry is LIVE until ROLL_AT IST on its own day.
+ROLL_AT = "16:00"
+
+
+def live_expiries(exps) -> list:
+    """Drop expired dates (and today's after ROLL_AT IST), keep the original strings, sort nearest first."""
+    import pandas as _pd
+    from datetime import datetime as _dt, timedelta as _td
+    now = _dt.utcnow() + _td(hours=5, minutes=30)
+    roll = _dt.strptime(ROLL_AT, "%H:%M").time()
+    keep = []
+    for e in exps or []:
+        d = _pd.to_datetime(str(e), errors="coerce", dayfirst=not str(e)[:4].isdigit())
+        if _pd.isna(d):
+            continue
+        if d.date() > now.date() or (d.date() == now.date() and now.time() < roll):
+            keep.append((d, e))
+    keep.sort(key=lambda x: x[0])
+    return [e for _, e in keep] or list(exps or [])
+
+
 def fetch_dhan_expiries() -> list[str]:
     """Fetch list of valid expiry dates for NIFTY from Dhan."""
     try:
@@ -810,7 +831,7 @@ def fetch_dhan_expiries() -> list[str]:
                                 "UnderlyingSeg": "IDX_I"},
                           headers=_headers(), timeout=config.REQUEST_TIMEOUT)
         if r.status_code == 200:
-            return r.json().get("data", [])
+            return live_expiries(r.json().get("data", []))          # EXPIRYROLL
         return []
     except Exception as exc:                                # noqa: BLE001
         log.warning("fetch_dhan_expiries failed: %s", exc)

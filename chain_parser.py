@@ -69,7 +69,11 @@ def parse_json(payload: dict, expiry: str | None = None) -> pd.DataFrame:
 
     filter_all = (expiry == "all")
     if expiry is None or expiry == "nearest":
-        target_expiry = dates[0] if dates else None
+        try:                                                    # EXPIRYROLL — first LIVE expiry
+            from dhan_client import live_expiries
+            target_expiry = (live_expiries(dates) or [None])[0] if dates else None
+        except Exception:                                       # noqa: BLE001
+            target_expiry = dates[0] if dates else None
     elif expiry == "all":
         target_expiry = None
     else:
