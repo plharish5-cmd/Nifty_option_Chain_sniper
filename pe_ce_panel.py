@@ -87,7 +87,8 @@ def per_snapshot(snaps: list, window: tuple[float, float] | None, mult: float) -
         rows.append(dict(ts=pd.Timestamp(ts), spot=float(spot), ce_oi=ce_oi, pe_oi=pe_oi,
                          ce_day=num("ce_chg_oi").sum() * mult if has_chg else np.nan,
                          pe_day=num("pe_chg_oi").sum() * mult if has_chg else np.nan,
-                         ce_vol=num("ce_vol").sum(), pe_vol=num("pe_vol").sum()))
+                         ce_vol=num("ce_vol").sum(), pe_vol=num("pe_vol").sum(),
+                         **__import__("pece_pro").extra(d, ts)))                     # PECEPRO
     s = pd.DataFrame(rows)
     if s.empty:
         return s
@@ -115,6 +116,7 @@ def table_rows(s: pd.DataFrame, tf_min: int) -> pd.DataFrame:
     t["vol_pcr"] = t["pe_vol"] / t["ce_vol"].replace(0, np.nan)
     t["px_chg"] = t["close"].diff().fillna(t["close"] - t["open"])
     t["read"] = [_label(r) for r in t.itertuples()]
+    t = __import__("pece_pro").add(t, s, tf_min)                                     # PECEPRO
     return t
 
 
@@ -182,10 +184,10 @@ def render_table(t: pd.DataFrame, show: str, height: int) -> str:
     show_day, show_tot = show in ("OI Change (Day)", "All"), show in ("Total OI", "All")
 
     side_cols = (["Total"] if show_tot else []) + (["Change (Day)"] if show_day else []) + ["Change"]
-    sub = side_cols + side_cols + ["Change (Day)", "Change", "Change (Day)", "Change", "OI", "Vol", "Spot", "Signal", "Meaning"]
+    sub = side_cols + side_cols + ["Change (Day)", "Change", "Change (Day)", "Change", "OI", "Vol", "Spot", "Signal", "Meaning", "Context · strength"]
     grp_cols = [("Put OI", len(side_cols), "#fee2e2", "#b91c1c"), ("Call OI", len(side_cols), "#dcfce7", "#15803d"),
                 ("PE − CE OI", 2, "#f3e8ff", "#7e22ce"), ("PE − CE OI Bar", 2, "#e0f2fe", "#0369a1"),
-                ("PCR", 2, "#fef9c3", "#a16207"), ("NIFTY", 1, "#e0f2fe", "#0369a1"), ("READ", 2, NAVY, GOLD)]
+                ("PCR", 2, "#fef9c3", "#a16207"), ("NIFTY", 1, "#e0f2fe", "#0369a1"), ("READ", 2, NAVY, GOLD), ("★ PRO READ", 1, GOLD, NAVY)]
 
     th = "position:sticky;z-index:2;padding:6px 8px;font-weight:600;border-bottom:1px solid #cbd5e1;white-space:nowrap"
     head1 = (f"<th rowspan=2 style='{th};top:0;background:#f1f5f9;color:{_TXT};left:0;z-index:3'>Time</th>" +
@@ -219,6 +221,7 @@ def render_table(t: pd.DataFrame, show: str, height: int) -> str:
                            {"bull": "#15803d", "bear": "#b91c1c"}.get(k, "#64748b"), k != "flat", "left"))
         cells.append(f"<td style='color:#334155;text-align:left;padding:5px 8px;border-bottom:1px solid #e2e8f0;"
                      f"white-space:normal;min-width:240px;font-size:0.8rem'>{html.escape(MEANING.get(txt, ''))}</td>")
+        cells.append(__import__("pece_pro").cell(r))                                  # PECEPRO
         body.append("<tr>" + "".join(cells) + "</tr>")
 
     return (f"<div style='max-height:{height}px;overflow:auto;border:1px solid {GOLD};border-radius:8px;"
@@ -452,6 +455,8 @@ def render() -> None:
 
     if view in ("Table", "Table + Chart"):
         st.markdown(render_table(t, show, int(r["table_height_px"])), unsafe_allow_html=True)
+        with st.expander("★ How to read the PRO READ column"):                        # PECEPRO
+            st.markdown("<br>".join(__import__("pece_pro").GUIDE), unsafe_allow_html=True)
         st.write("")
         _panel("table", *read_table(t))
     if view in ("Chart", "Table + Chart"):

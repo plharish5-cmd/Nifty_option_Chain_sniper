@@ -1020,6 +1020,11 @@ def refresh_control(key: str, caches=(), note: str = "", stamp: str = "",
     c2.caption(" · ".join(bits))
 
 
+try:                                                        # PAPERDESK — one-click paper trading on every tab
+    import paper_desk
+    paper_desk.render_sidebar()
+except Exception as _pdesk_err:                             # noqa: BLE001
+    st.sidebar.caption(f"Paper desk error: {_pdesk_err}")
 st.sidebar.title("Scanner")
 
 # scheduler heartbeat — the dashboard and the background job are separate
