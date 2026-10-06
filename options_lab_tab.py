@@ -662,9 +662,10 @@ def render() -> None:
         <div style="color:{MUTED};font-size:0.8rem;margin-top:6px">A vote count, not a signal. Info only — not advice.</div>
         </div>""", unsafe_allow_html=True)
 
-    t0, t1, t2, t3, t4, t5, t6, t7 = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV",
+    t0, t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV",
                                               "📊 Call vs Put Writers (3m / 5m / 15m)", "🟥 PE − CE OI Table",
-                                              "📈 Multi-strike OI"])   # TABMOVE MULTISTRIKE
+                                              "📈 Multi-strike OI",
+                                              "📉 Vega Analysis"])   # TABMOVE MULTISTRIKE VEGAPRO
     with t0:
         try:
             import oi_profile_panel
@@ -677,6 +678,13 @@ def render() -> None:
             st.plotly_chart(fn(s), use_container_width=True, key=f"olab_{key}")
             _panel(key, *reads[key])
     with t2:
+        try:                                                    # SMARTOI_PRO — StockMojo-style Smart OI dashboard
+            import smart_oi_pro
+            smart_oi_pro.render(day)
+        except Exception as _sop_err:                           # noqa: BLE001
+            st.error(f"Smart OI dashboard encountered an error: {_sop_err}")
+        st.markdown("---")
+        st.caption("Earlier Smart OI view (unchanged)")
         if len(c):
             st.plotly_chart(chart_flow(c, tf), use_container_width=True, key="olab_flow")
         _panel("flow", *reads["flow"])
@@ -711,3 +719,9 @@ def render() -> None:
             multistrike_panel.render(day)
         except Exception as _ms_err:                            # noqa: BLE001
             st.error(f"Multi-strike OI encountered an error: {_ms_err}")
+    with t8:                                                    # VEGAPRO — StockMojo-style Vega Analysis
+        try:
+            import vega_pro
+            vega_pro.render(day)
+        except Exception as _vg_err:                            # noqa: BLE001
+            st.error(f"Vega Analysis encountered an error: {_vg_err}")
