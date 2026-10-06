@@ -558,7 +558,7 @@
   },
   "options_lab": {
     "_note": "Options Lab tab (options_lab_tab.py). Info only.",
-    "oi_multiplier": 1,
+    "oi_multiplier": 65,
     "_oi_multiplier_note": "1 = OI as stored. If your Change (Day) numbers are ~65x smaller than StockMojo's, set 65 (lot size): StockMojo shows OI in shares.",
     "strike_band_pts": null,
     "_strike_band_pts_note": "null = all strikes; e.g. 1000 = only spot ± 1000 in PCR/OI totals.",

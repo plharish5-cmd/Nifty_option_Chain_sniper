@@ -1252,6 +1252,14 @@ def check_major_floor_test_alert(
         lot_size = float(rules_data.get("display_lot_size", 65))
         mult = lot_size / 100000.0
 
+        rearm_pts = float(fc_cfg.get("major_floor_rearm_pts", 25.0))          # OBSFIX-3 once per test
+        rearm_sec = int(fc_cfg.get("major_floor_rearm_minutes", 60)) * 60
+        for _k in [k for k in list(st.keys()) if str(k).startswith("major_floor_test_armed_")]:
+            try:
+                if abs(spot - float(str(_k).rsplit("_", 1)[1])) > prox + rearm_pts:
+                    st[_k] = True                                         # price left the level → next touch is a new test
+            except Exception:
+                pass
         pe_near = df[(df["strike"] >= spot - prox) & (df["strike"] <= spot)]
         for _, row in pe_near.iterrows():
             stk = float(row["strike"])
@@ -1262,9 +1270,13 @@ def check_major_floor_test_alert(
             dist = spot - stk
             level_int = int(round(stk))
             cd_key = f"major_floor_test_{level_int}"
+            arm_key = f"major_floor_test_armed_{level_int}"
             if (now.timestamp() - st.get(cd_key, 0)) < cooldown_sec:
                 continue
+            if not st.get(arm_key, True) and (now.timestamp() - st.get(cd_key, 0)) < rearm_sec:
+                continue                                                  # same test still running — stay quiet
             st[cd_key] = now.timestamp()
+            st[arm_key] = False
 
             msg = (
                 f"🔴 MAJOR FLOOR TEST: Spot {int(round(spot)):,} → {level_int:,} PE [{int(round(oi_l))}L]\n"

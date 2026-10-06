@@ -3016,8 +3016,9 @@ def append_observation_log(
         writer_lines_str=writer_lines_str,
     )
 
-    with open(file_path, "a", encoding="utf-8") as f:
-        f.write(entry_text + "\n\n")
+    if not _obs_is_repeat(content, entry_text, tf, latest_ts, rules):   # OBSFIX-2 change-only logging
+        with open(file_path, "a", encoding="utf-8") as f:
+            f.write(entry_text + "\n\n")
 
     # Milestone 2: EOD Summary separator (15:25)
     eod_sum_str = rules.get("observations_eod_summary_time", rules.get("eod_summary_time", "15:25"))
@@ -4741,6 +4742,56 @@ def get_snapshot_tf_for_time(t: Union[dtime, datetime, str]) -> Optional[str]:
     return "5m"
 
 
+# OBSFIX helpers ─────────────────────────────────────────────────────────────
+def _obs_is_repeat(content: str, entry_text: str, tf, latest_ts, rules: dict) -> bool:
+    """OBSFIX-2: True when this entry has the same label and action as the previous entry of the same kind
+    (briefing / 5m / 15m), written less than observations_heartbeat_minutes ago."""
+    try:
+        hb = int(rules.get("observations_heartbeat_minutes", 15))
+        if hb <= 0:
+            return False
+        want = f"tf: {tf}" if tf is not None else None
+        last = None
+        for blk in re.findall(r"^##\s+\d\d:\d\d\b.*?(?=(?:\n##\s|\Z))", content, flags=re.MULTILINE | re.DOTALL):
+            if "- Checklist:" not in blk and "- GEX:" not in blk:
+                continue                                   # alert-only chunks are not entries of this kind
+            if (want and want in blk) or (want is None and "<!-- tf:" not in blk):
+                last = blk
+        if not last:
+            return False
+        hdr = lambda s: re.match(r"##\s+(\d\d):(\d\d)\s*\|[^|]*\|\s*(.*)", s)
+        act = lambda s: (re.search(r"^- Action:\s*(.*)$", s, flags=re.MULTILINE) or [None, ""])[1].strip()
+        h_old, h_new = hdr(last), hdr(entry_text.lstrip())
+        if not h_old or not h_new:
+            return False
+        if h_old.group(3).strip() != h_new.group(3).strip() or act(last) != act(entry_text):
+            return False
+        gap = (latest_ts.hour * 60 + latest_ts.minute) - (int(h_old.group(1)) * 60 + int(h_old.group(2)))
+        return 0 <= gap < hb
+    except Exception:
+        return False
+
+
+def _expiry_unwind_now(target_date, latest_ts, latest_df, rules: dict) -> bool:
+    """OBSFIX-1: expiry day and at/after the unwind time (rules expiry_unwind_time, default 14:00)."""
+    try:
+        exp = None
+        if latest_df is not None and "expiry" in getattr(latest_df, "columns", []):
+            vals = latest_df["expiry"].dropna()
+            exp = str(vals.iloc[0]) if len(vals) else None
+        if not exp:
+            folder = config.SNAPSHOT_DIR / target_date.strftime("%Y-%m-%d")
+            metas = sorted(folder.glob("*.meta.json"))
+            if metas:
+                exp = json.loads(metas[-1].read_text()).get("expiry")
+        exp_d = parse_expiry_date(exp)
+        if exp_d is None or exp_d != target_date:
+            return False
+        cut = str(rules.get("expiry_unwind_time", "14:00"))
+        return latest_ts.time() >= datetime.strptime(cut, "%H:%M").time()
+    except Exception:
+        return False
+
 def build_periodic_snapshot(
     timeframe: str,
     target_date: date,
@@ -5057,7 +5108,10 @@ def build_periodic_snapshot(
         bias_word = "NEUTRAL →"
 
     # 10. Action Line (STAND ASIDE / WATCH FOR PULLBACK / READY SHORT / READY LONG)
-    if is_pre_market or is_data_gap or is_freeze or is_eod or is_stale_feed:
+    _exp_unwind = _expiry_unwind_now(target_date, latest_ts, latest_df, rules)   # OBSFIX-1
+    if _exp_unwind:
+        bias_word = "EXPIRY UNWIND ⚠️"
+    if is_pre_market or is_data_gap or is_freeze or is_eod or is_stale_feed or _exp_unwind:
         act_str = "STAND ASIDE"
     elif regime_code == "DEAD_ZONE" or (rvol_val is not None and rvol_val < float(rules.get("rvol", {}).get("dead_zone", 0.85))):
         act_str = "STAND ASIDE"

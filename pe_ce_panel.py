@@ -118,6 +118,20 @@ def table_rows(s: pd.DataFrame, tf_min: int) -> pd.DataFrame:
     return t
 
 
+MEANING = {
+    "Short covering ▲": "Call writers buying back as price rises — fuels the up-move",
+    "Put writing ▲": "Put writers adding as price holds/rises — floor being built below",
+    "Dip defended ▲": "Price dipped but puts were sold into it — writers defending support",
+    "Call writing ▼": "Call writers adding as price falls/holds — ceiling being built above",
+    "Rally sold ▼": "Price rose but calls were sold into it — writers capping the rally",
+    "Put unwinding ▼": "Put writers exiting as price falls — floor giving way",
+    "Calls exiting": "Call writers booking profit on a fall — ceiling thinning (weak ▲)",
+    "Puts exiting": "Put writers booking profit on a rise — floor thinning (weak ▼)",
+    "Mixed": "Both sides active, no clear lead",
+    "—": "No meaningful OI change this candle",
+}
+
+
 def _label(r) -> tuple[str, str]:
     """Plain-English read for one candle → (text, 'bull'|'bear'|'flat')."""
     dp, dc, px = r.pe_chg, r.ce_chg, r.px_chg
@@ -168,10 +182,10 @@ def render_table(t: pd.DataFrame, show: str, height: int) -> str:
     show_day, show_tot = show in ("OI Change (Day)", "All"), show in ("Total OI", "All")
 
     side_cols = (["Total"] if show_tot else []) + (["Change (Day)"] if show_day else []) + ["Change"]
-    sub = side_cols + side_cols + ["Change (Day)", "Change", "Change (Day)", "Change", "OI", "Vol", "Spot", "Signal"]
+    sub = side_cols + side_cols + ["Change (Day)", "Change", "Change (Day)", "Change", "OI", "Vol", "Spot", "Signal", "Meaning"]
     grp_cols = [("Put OI", len(side_cols), "#fee2e2", "#b91c1c"), ("Call OI", len(side_cols), "#dcfce7", "#15803d"),
                 ("PE − CE OI", 2, "#f3e8ff", "#7e22ce"), ("PE − CE OI Bar", 2, "#e0f2fe", "#0369a1"),
-                ("PCR", 2, "#fef9c3", "#a16207"), ("NIFTY", 1, "#e0f2fe", "#0369a1"), ("READ", 1, NAVY, GOLD)]
+                ("PCR", 2, "#fef9c3", "#a16207"), ("NIFTY", 1, "#e0f2fe", "#0369a1"), ("READ", 2, NAVY, GOLD)]
 
     th = "position:sticky;z-index:2;padding:6px 8px;font-weight:600;border-bottom:1px solid #cbd5e1;white-space:nowrap"
     head1 = (f"<th rowspan=2 style='{th};top:0;background:#f1f5f9;color:{_TXT};left:0;z-index:3'>Time</th>" +
@@ -203,6 +217,8 @@ def render_table(t: pd.DataFrame, show: str, height: int) -> str:
         txt, k = r.read
         cells.append(_cell(html.escape(txt), {"bull": _LG, "bear": _LR}.get(k, ""),
                            {"bull": "#15803d", "bear": "#b91c1c"}.get(k, "#64748b"), k != "flat", "left"))
+        cells.append(f"<td style='color:#334155;text-align:left;padding:5px 8px;border-bottom:1px solid #e2e8f0;"
+                     f"white-space:normal;min-width:240px;font-size:0.8rem'>{html.escape(MEANING.get(txt, ''))}</td>")
         body.append("<tr>" + "".join(cells) + "</tr>")
 
     return (f"<div style='max-height:{height}px;overflow:auto;border:1px solid {GOLD};border-radius:8px;"
@@ -349,7 +365,7 @@ GUIDE = {
               ["Cell colours: green = OI went UP this candle, red = went DOWN (dark cell = the day's highest)",
                "PE − CE (Day) red and getting MORE negative = call writers taking control → bearish",
                "PE − CE (Day) red but getting LESS negative (green Change) = call writers covering → bullish turn",
-               "The READ column labels each candle: Short covering ▲, Put writing ▲, Dip defended ▲, Call writing ▼, Rally sold ▼, Put unwinding ▼",
+               "The READ column labels each candle (Short covering ▲, Put writing ▲, Dip defended ▲, Call writing ▼, Rally sold ▼, Put unwinding ▼); MEANING beside it says what that label means in plain words",
                "Look for STREAKS: 4–5 same-colour Change cells in a row matters more than one big candle"]),
     "smart": ("Smart OI = PE − CE change in each candle (put OI added − call OI added). Volume = calls and puts traded in that candle.",
               ["Green bar under a green candle = writers support the rise",

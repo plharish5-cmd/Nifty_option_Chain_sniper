@@ -6684,3 +6684,6 @@ Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit
 05-10-2026,2,PE,11:15,22483.9,"11:00 candle close below 8 EMA, break of its low; SL candle high 22,510; green 1st candle, gap-up",22509.8,25.9,11:30,22510.8,stop loss hit,0.0,-26.9,32.2,YES,YES,
 05-10-2026,3,PE,11:45,22465.6,"11:30 candle close below 8 EMA, break of its low; SL candle high 22,524; green 1st candle, gap-up",22524.5,58.9,12:15,22454.5,trailing SL (candle high),11.1,0.0,68.5,YES,YES,
 05-10-2026,4,CE,13:15,22477.2,"13:00 candle close above 8 EMA, break of its high; SL candle low 22,442; green 1st candle, gap-up",22442.2,35.0,14:00,22530.4,trailing SL (candle low),53.2,0.0,92.2,YES,YES,49.6
+06-10-2026,1,CE,12:30,22697.2,"12:15 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 22,669; red 1st candle, gap-up",22668.6,28.6,13:00,22699.5,trailing SL (candle low),2.4,0.0,31.0,YES,YES,
+06-10-2026,2,CE,14:00,22719.2,"13:45 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 22,697; red 1st candle, gap-up",22697.4,21.8,14:15,22709.6,trailing SL (candle low),0.0,-9.7,12.6,no,no,
+06-10-2026,3,CE,15:00,22717.2,"14:30 candle close above 8 EMA, break of its high; SL candle low 22,685; red 1st candle, gap-up",22684.8,32.4,15:00,22717.4,OPEN (running),0.2,0.0,4.5,no,no,-7.1

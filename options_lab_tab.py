@@ -662,7 +662,9 @@ def render() -> None:
         <div style="color:{MUTED};font-size:0.8rem;margin-top:6px">A vote count, not a signal. Info only — not advice.</div>
         </div>""", unsafe_allow_html=True)
 
-    t0, t1, t2, t3, t4 = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV"])
+    t0, t1, t2, t3, t4, t5, t6, t7 = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV",
+                                              "📊 Call vs Put Writers (3m / 5m / 15m)", "🟥 PE − CE OI Table",
+                                              "📈 Multi-strike OI"])   # TABMOVE MULTISTRIKE
     with t0:
         try:
             import oi_profile_panel
@@ -691,3 +693,21 @@ def render() -> None:
         else:
             st.info("IV − HV needs at least ~10 stored days (or a real daily OHLC file in data/ohlc).")
         _panel("ivhv", *reads["ivhv"])
+    with t5:                                                    # TABMOVE — moved from ⚡ Option Chain & OI Analysis
+        try:
+            import writers_graph_engine
+            writers_graph_engine.render_writers_graph_ui(df=latest[2], spot=float(latest[1]), pa_frames=None, read=None)
+        except Exception as _wge_err:                           # noqa: BLE001
+            st.error(f"Call vs Put Writers Graph encountered an error: {_wge_err}")
+    with t6:                                                    # TABMOVE — moved from ⚡ Option Chain & OI Analysis
+        try:
+            import pe_ce_panel
+            pe_ce_panel.render()
+        except Exception as _pece_err:                          # noqa: BLE001
+            st.error(f"PE − CE OI Table encountered an error: {_pece_err}")
+    with t7:                                                    # MULTISTRIKE — top-N strikes' OI through the day
+        try:
+            import multistrike_panel
+            multistrike_panel.render(day)
+        except Exception as _ms_err:                            # noqa: BLE001
+            st.error(f"Multi-strike OI encountered an error: {_ms_err}")
