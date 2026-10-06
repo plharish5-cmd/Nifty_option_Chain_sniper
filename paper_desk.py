@@ -61,6 +61,7 @@ def load_state() -> dict:
     s["weights"] = {**DEFAULTS["weights"], **(d.get("weights") or {})}
     s["ids"] = d.get("ids", {})            # position_id → {sid, expiry, hi}
     s["orders"] = d.get("orders", [])
+    s["meta"] = d.get("meta", {})          # position_id → {expiry, strike, side, product} — kept for P&L reports
     return s
 
 
@@ -289,6 +290,8 @@ def _fill_buy(o: dict, px: float, s: dict, spot: float, src: str) -> tuple[bool,
     if ok:
         pid = acc.open_positions[-1].position_id
         s["ids"][pid] = {"sid": o.get("sid", ""), "expiry": o["expiry"], "hi": px}
+        s.setdefault("meta", {})[pid] = {"expiry": str(o["expiry"]), "strike": int(o["strike"]), "side": o["side"],
+                                         "product": o.get("product", "INTRADAY")}
         o.update(status="FILLED", fill_px=round(px, 2), fill_ts=ist_now().isoformat(timespec="seconds"), pid=pid,
                  msg=f"Bought {int(o['lots']) * LOT} @ {px:.2f}")
     else:
@@ -738,6 +741,7 @@ def _positions(st, s, now, chain_for, live_ok) -> float:
     acc = pt.load_paper_account()
     g = groups(acc, s)
     mtm = 0.0
+    st.session_state["_pd_open"] = {}
     if not g:
         return mtm
     sids = []
@@ -757,6 +761,8 @@ def _positions(st, s, now, chain_for, live_ok) -> float:
         ltp = p["ltp"] if p and np.isfinite(p["ltp"]) else float(ps[0].current_price or avg)
         pnl = (ltp - avg) * qty
         mtm += pnl
+        st.session_state.setdefault("_pd_open", {})[k] = dict(strike=int(strike), side=side, expiry=e, qty=qty, avg=avg,
+                                                              ltp=ltp, pnl=pnl, product=prod)
         pct = 100 * (ltp - avg) / avg if avg else 0
         sl = ps[0].stop_loss
         tg = ps[0].target_1
@@ -866,6 +872,145 @@ def _orders(st, s) -> None:
                     unsafe_allow_html=True)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 7 · P&L by instrument + day report for the mentor
+# ═══════════════════════════════════════════════════════════════════════════
+import re as _re
+
+_MON = {m: i for i, m in enumerate(["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"], 1)}
+
+
+def _expiry_of(row, s: dict) -> str:
+    """Expiry of a closed trade: desk meta → order log → the 'NIFTY 13 OCT 22750 CE' text in its notes."""
+    pid = _re.sub(r"-P\d+$", "", str(row.get("trade_id", "")))
+    m = (s.get("meta") or {}).get(pid)
+    if m and m.get("expiry"):
+        return str(m["expiry"])
+    for o in s.get("orders", []):
+        if o.get("pid") == pid and o.get("expiry"):
+            return str(o["expiry"])
+    mm = _re.search(r"NIFTY (\d{2}) ([A-Z]{3}) \d+ (?:CE|PE)", str(row.get("notes", "")))
+    if mm:
+        d = int(mm.group(1)); mo = _MON.get(mm.group(2), 0)
+        y = int(str(row.get("entry_time", ""))[:4] or ist_now().year)
+        if mo:
+            yy = y + (1 if mo < int(str(row.get("entry_time", "0000-01"))[5:7] or 1) else 0)
+            return f"{yy:04d}-{mo:02d}-{d:02d}"
+    return ""
+
+
+def day_trades(day: date, s: dict) -> pd.DataFrame:
+    """Every closed trade (and partial exit) whose exit was on `day`, with its expiry and instrument name."""
+    h = pt.load_trade_history()
+    if h.empty or "exit_time" not in h:
+        return pd.DataFrame()
+    t = h[h["exit_time"].astype(str).str.startswith(day.strftime("%Y-%m-%d"))].copy()
+    if t.empty:
+        return t
+    t["expiry"] = [_expiry_of(r, s) for r in t.to_dict("records")]
+    t["instrument"] = [name(k, sd, e) for k, sd, e in zip(t["strike"], t["opt_type"], t["expiry"])]
+    for c in ("quantity", "entry_price", "exit_price", "pnl_rupees", "charges_rupees", "net_pnl_rupees"):
+        t[c] = pd.to_numeric(t[c], errors="coerce").fillna(0)
+    return t.sort_values("exit_time")
+
+
+def by_instrument(t: pd.DataFrame, open_pos: dict) -> pd.DataFrame:
+    """One row per strike · side · expiry: qty, avg buy, avg sell, gross, charges, NET realised, open MTM, total."""
+    rows = {}
+    for r in t.to_dict("records"):
+        k = (int(float(r["strike"])), r["opt_type"], r["expiry"])
+        x = rows.setdefault(k, dict(strike=k[0], side=k[1], expiry=k[2], qty=0, buy_val=0.0, sell_val=0.0, gross=0.0,
+                                    charges=0.0, net=0.0, trades=0, open_qty=0, open_pnl=0.0))
+        q = float(r["quantity"])
+        x["qty"] += q; x["buy_val"] += q * r["entry_price"]; x["sell_val"] += q * r["exit_price"]
+        x["gross"] += r["pnl_rupees"]; x["charges"] += r["charges_rupees"]; x["net"] += r["net_pnl_rupees"]; x["trades"] += 1
+    for o in (open_pos or {}).values():
+        k = (int(o["strike"]), o["side"], o["expiry"])
+        x = rows.setdefault(k, dict(strike=k[0], side=k[1], expiry=k[2], qty=0, buy_val=0.0, sell_val=0.0, gross=0.0,
+                                    charges=0.0, net=0.0, trades=0, open_qty=0, open_pnl=0.0))
+        x["open_qty"] += o["qty"]; x["open_pnl"] += o["pnl"]
+    out = pd.DataFrame(rows.values())
+    if out.empty:
+        return out
+    out["avg_buy"] = out["buy_val"] / out["qty"].replace(0, np.nan)
+    out["avg_sell"] = out["sell_val"] / out["qty"].replace(0, np.nan)
+    out["total"] = out["net"] + out["open_pnl"]
+    out["instrument"] = [name(k, sd, e) for k, sd, e in zip(out["strike"], out["side"], out["expiry"])]
+    return out.sort_values("total")
+
+
+def report_text(day: date, t: pd.DataFrame, inst: pd.DataFrame) -> str:
+    """Plain text for WhatsApp / e-mail to the mentor."""
+    L = [f"PAPER TRADES — {day:%a %d %b %Y}", ""]
+    if inst.empty:
+        return "\n".join(L + ["No trades."])
+    L.append("P&L BY STRIKE (net of charges)")
+    for r in inst.sort_values("total", ascending=False).to_dict("records"):
+        sign = "+" if r["total"] >= 0 else "−"
+        extra = f"  [open {int(r['open_qty'])} qty, MTM {'+' if r['open_pnl'] >= 0 else '−'}₹{abs(r['open_pnl']):,.0f}]" if r["open_qty"] else ""
+        bs = (f"  {int(r['qty'])} qty · buy {r['avg_buy']:.2f} → sell {r['avg_sell']:.2f}" if r["qty"] else "")
+        L.append(f"{r['instrument']:<28} {sign}₹{abs(r['total']):,.0f}{bs}{extra}")
+    L += ["", "TRADES"]
+    for i, r in enumerate(t.to_dict("records"), 1):
+        sign = "+" if r["net_pnl_rupees"] >= 0 else "−"
+        L.append(f"{i:>2}. {str(r['entry_time'])[11:16]}→{str(r['exit_time'])[11:16]}  {r['instrument']}  "
+                 f"{int(r['quantity'])} @ {r['entry_price']:.2f} → {r['exit_price']:.2f}  {sign}₹{abs(r['net_pnl_rupees']):,.0f}"
+                 f"  ({r.get('exit_reason', '')})")
+    net, gross, ch = t["net_pnl_rupees"].sum(), t["pnl_rupees"].sum(), t["charges_rupees"].sum()
+    wins = int((t["net_pnl_rupees"] > 0).sum())
+    op = float(inst["open_pnl"].sum())
+    L += ["", f"Booked NET: {'+' if net >= 0 else '−'}₹{abs(net):,.0f}  (gross {'+' if gross >= 0 else '−'}₹{abs(gross):,.0f}, "
+              f"charges ₹{ch:,.0f})",
+          f"Trades: {len(t)} · wins {wins} · losses {len(t) - wins} · win rate {100 * wins / len(t):.0f}%" if len(t) else "Trades: 0"]
+    if op:
+        L.append(f"Open positions MTM: {'+' if op >= 0 else '−'}₹{abs(op):,.0f}")
+    if len(t):
+        best, worst = t.loc[t["net_pnl_rupees"].idxmax()], t.loc[t["net_pnl_rupees"].idxmin()]
+        L.append(f"Best: {best['instrument']} +₹{best['net_pnl_rupees']:,.0f} · Worst: {worst['instrument']} "
+                 f"{'+' if worst['net_pnl_rupees'] >= 0 else '−'}₹{abs(worst['net_pnl_rupees']):,.0f}")
+    return "\n".join(L)
+
+
+def _pnl_view(st, s: dict) -> None:
+    today = datetime.now().date()                 # same clock the engine stamps trades with
+    day = st.date_input("Day", value=today, max_value=max(today, ist_now().date()), key="pd_pnl_day",
+                        label_visibility="collapsed", format="DD/MM/YYYY")
+    t = day_trades(day, s)
+    open_pos = st.session_state.get("_pd_open", {}) if day in (today, ist_now().date()) else {}
+    inst = by_instrument(t, open_pos)
+    if inst.empty:
+        st.caption(f"No paper trades on {day:%d %b %Y}.")
+        return
+    tot = float(inst["total"].sum())
+    net = float(t["net_pnl_rupees"].sum()) if len(t) else 0.0
+    ch = float(t["charges_rupees"].sum()) if len(t) else 0.0
+    wins = int((t["net_pnl_rupees"] > 0).sum()) if len(t) else 0
+    st.markdown(f"<div class='pd-box'><span class='pd-h'>P&L {day:%d %b}</span><br><span class='pd-big'>{_money(tot)}</span>"
+                f"<span class='pd-m'> total · booked {_money(net)} · charges ₹{ch:,.0f}<br>"
+                f"{len(t)} closed · {wins} wins · {len(t) - wins} losses"
+                f"{f' · win {100 * wins / len(t):.0f}%' if len(t) else ''}</span></div>", unsafe_allow_html=True)
+    st.markdown("<div class='pd-sec'>BY STRIKE · EXPIRY</div>", unsafe_allow_html=True)
+    for r in inst.sort_values("total").to_dict("records"):
+        cls = r["side"].lower()
+        line2 = (f"{int(r['qty'])} qty · buy {r['avg_buy']:.2f} → sell {r['avg_sell']:.2f} · charges ₹{r['charges']:,.0f}"
+                 if r["qty"] else "")
+        op = (f"{' · ' if line2 else ''}open {int(r['open_qty'])} · MTM {_money(r['open_pnl'])}" if r["open_qty"] else "")
+        st.markdown(f"<div class='pd-row {cls}'><b>{r['instrument']}</b><span style='float:right' class='pd-big'>"
+                    f"{_money(r['total'])}</span><br><span class='pd-m'>{line2}{op}</span></div>", unsafe_allow_html=True)
+    txt = report_text(day, t, inst)
+    c = st.columns(2)
+    csv = t[["entry_time", "exit_time", "instrument", "strike", "opt_type", "expiry", "quantity", "entry_price", "exit_price",
+             "pnl_rupees", "charges_rupees", "net_pnl_rupees", "exit_reason"]].rename(columns={
+        "opt_type": "type", "quantity": "qty", "entry_price": "buy", "exit_price": "sell", "pnl_rupees": "gross_pnl",
+        "charges_rupees": "charges", "net_pnl_rupees": "net_pnl", "exit_reason": "exit_reason"}) if len(t) else pd.DataFrame()
+    c[0].download_button("⬇ Excel (CSV)", csv.to_csv(index=False).encode("utf-8"), file_name=f"paper_trades_{day:%Y-%m-%d}.csv",
+                         mime="text/csv", use_container_width=True, key="pd_dl_csv", disabled=csv.empty)
+    c[1].download_button("⬇ Report (TXT)", txt.encode("utf-8"), file_name=f"paper_report_{day:%Y-%m-%d}.txt",
+                         mime="text/plain", use_container_width=True, key="pd_dl_txt")
+    with st.expander("📋 Copy for WhatsApp / mentor"):
+        st.code(txt, language=None)
+
+
 def _settings_ui(st, s: dict) -> None:
     pop = st.popover("⚙ Desk settings", use_container_width=True) if hasattr(st, "popover") else st.expander("⚙ Desk settings")
     with pop:
@@ -889,7 +1034,7 @@ def _settings_ui(st, s: dict) -> None:
         s["refresh_s"] = c[1].selectbox("Refresh (s)", opts, index=opts.index(int(s["refresh_s"])) if int(s["refresh_s"]) in opts else 1,
                                         key="pd_rf")
         disk = load_state()
-        keep = ("ids", "orders")
+        keep = ("ids", "orders", "meta")
         if {k: v for k, v in s.items() if k not in keep} != {k: v for k, v in disk.items() if k not in keep}:
             for k in keep:
                 s[k] = disk[k]
@@ -949,14 +1094,16 @@ def desk_body() -> None:
         f"{ds['trades']} trades · {ds['win_pct']:.0f}% win · cash ₹{acc.cash_balance:,.0f}</span></div>",
         unsafe_allow_html=True)
 
-    view = _seg(st, "View", ["★ Picks", "⛓ Chain", "🧾 Orders"], "pd_view", "★ Picks")
-    if exps and view != "🧾 Orders":
+    view = _seg(st, "View", ["★ Picks", "⛓ Chain", "🧾 Orders", "📊 P&L"], "pd_view", "★ Picks")
+    if exps and view in ("★ Picks", "⛓ Chain"):
         st.selectbox("Expiry", exps[:4], key="pd_exp", label_visibility="collapsed",
                      format_func=lambda x: f"Expiry {_d(x):%a %d %b}" + (" · nearest" if x == exps[0] else ""))
     if view == "⛓ Chain":
         _ladder(st, s, chain)
     elif view == "🧾 Orders":
         _orders(st, s)
+    elif view == "📊 P&L":
+        _pnl_view(st, s)
     else:
         _picks(st, s, chain)
     _settings_ui(st, s)

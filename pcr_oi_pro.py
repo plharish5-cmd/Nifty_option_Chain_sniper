@@ -115,7 +115,10 @@ def build(snaps: list, tf: str, mode: str, n: int, mult: float, fut: pd.DataFram
         else x.reset_index()
     f = fut.set_index("ts")["fut"].sort_index()
     f = f.resample(f"{m}min", origin="start_day", offset="15min").last().dropna() if m > 1 else f
-    t = pd.merge_asof(t.sort_values("ts"), f.rename("fut").reset_index().sort_values("ts"), on="ts",
+    f = f.rename("fut").reset_index()
+    f["ts"] = pd.to_datetime(f["ts"]).dt.tz_localize(None).astype("datetime64[ns]")   # Dhan = µs, snapshots = ns
+    t["ts"] = pd.to_datetime(t["ts"]).astype("datetime64[ns]")
+    t = pd.merge_asof(t.sort_values("ts"), f.sort_values("ts"), on="ts",
                       direction="nearest", tolerance=pd.Timedelta(minutes=max(3, m)))
     t["fut"] = t["fut"].interpolate(limit_direction="both")
     t["pcr"] = t["pe_oi"] / t["ce_oi"].replace(0, np.nan)
@@ -258,6 +261,132 @@ def chart_pair(t, a_col, b_col, title, fut_label, unwind):
     return fig
 
 
+def flow_frame(t: pd.DataFrame, minutes: int = 30) -> pd.DataFrame:
+    """Per candle: Δput − Δcall (writer flow), 30-min writers balance and its regime (olab_pro rules)."""
+    import olab_pro as op
+    f = pd.DataFrame({"ts": t["ts"], "spot": t["fut"], "ce": t["ce_oi"].astype(float), "pe": t["pe_oi"].astype(float)})
+    b = op.regimes(op.balance(f, minutes))
+    b["flow"] = f["pe"].diff().fillna(0).values - f["ce"].diff().fillna(0).values
+    a = b["flow"].abs()
+    base = a.shift(1).expanding(min_periods=6).median()
+    b["sig"] = (a >= 2.5 * base) & (a > 0)
+    return b
+
+
+def chart_pair_flow(t, a_col, b_col, title, fut_label, unwind):
+    try:
+        return _chart_pair_flow(t, a_col, b_col, title, fut_label, unwind)
+    except ImportError:                                         # olab_pro.py missing → previous chart
+        return chart_pair(t, a_col, b_col, title, fut_label, unwind)
+
+
+def _chart_pair_flow(t, a_col, b_col, title, fut_label, unwind):
+    """Call vs Put lines (gap shaded) + a FLOW strip underneath: per-candle Δput − Δcall bars, 30-min writers balance,
+    regime bands, ▲▼ where the balance flips (trend-change alarm) and ◆ on unusually large writer candles."""
+    import olab_pro as op
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.66, 0.34], vertical_spacing=0.05,
+                        specs=[[{"secondary_y": True}], [{"secondary_y": True}]])
+    fig.add_trace(go.Scatter(x=t["ts"], y=t["fut"], name=fut_label, line=dict(color=FUT, dash="dot", width=1.4),
+                             hovertemplate="Future %{y:,.1f}<extra></extra>"), 1, 1, secondary_y=False)
+    ce, pe = t[a_col].astype(float).ffill(), t[b_col].astype(float).ffill()
+    hi, lo = np.maximum(ce, pe), np.minimum(ce, pe)
+    put_ahead = pe >= ce
+    for mask, col in ((put_ahead, "rgba(34,197,94,0.13)"), (~put_ahead, "rgba(239,68,68,0.13)")):
+        fig.add_trace(go.Scatter(x=t["ts"], y=lo.where(mask), line=dict(width=0), showlegend=False, hoverinfo="skip"),
+                      1, 1, secondary_y=True)
+        fig.add_trace(go.Scatter(x=t["ts"], y=hi.where(mask), line=dict(width=0), fill="tonexty", fillcolor=col,
+                                 showlegend=False, hoverinfo="skip"), 1, 1, secondary_y=True)
+    fig.add_trace(go.Scatter(x=t["ts"], y=ce, name="Call", line=dict(color=GREEN, width=2.4),
+                             customdata=[fmt(v) for v in ce], hovertemplate="Call %{customdata}<extra></extra>"),
+                  1, 1, secondary_y=True)
+    fig.add_trace(go.Scatter(x=t["ts"], y=pe, name="Put", line=dict(color=RED, width=2.4),
+                             customdata=[fmt(v) for v in pe], hovertemplate="Put %{customdata}<extra></extra>"),
+                  1, 1, secondary_y=True)
+    b = flow_frame(t)
+    # flow strip
+    fig.add_trace(go.Bar(x=b["ts"], y=b["flow"], name="Writer flow / candle (Δput − Δcall)",
+                         marker_color=["rgba(34,197,94,.8)" if v >= 0 else "rgba(239,68,68,.8)" for v in b["flow"]],
+                         customdata=[fmt(v) for v in b["flow"]], hovertemplate="flow %{customdata}<extra></extra>"),
+                  2, 1, secondary_y=False)
+    fig.add_trace(go.Scatter(x=b["ts"], y=b["bal"], name="Writers balance 30m", line=dict(color=GOLD, width=2),
+                             hovertemplate="balance %{y:+.2f}<extra></extra>"), 2, 1, secondary_y=True)
+    for y in (op.BAL_ON, -op.BAL_ON):
+        fig.add_hline(y=y, line=dict(color=MUTED, dash="dot", width=1), row=2, col=1, secondary_y=True)
+    # regime bands over both rows
+    cur, start = None, None
+    for ts, r in zip(list(b["ts"]) + [None], list(b["regime"]) + [None]):
+        if r != cur:
+            if cur in ("BULL", "BEAR") and start is not None:
+                fig.add_vrect(x0=start, x1=ts or b["ts"].iloc[-1], line_width=0, layer="below",
+                              fillcolor="rgba(34,197,94,.07)" if cur == "BULL" else "rgba(239,68,68,.07)")
+            cur, start = r, ts
+    fl = b[b["tflip"]]
+    if len(fl):
+        y = t.set_index("ts")["fut"].reindex(fl["ts"]).values
+        fig.add_trace(go.Scatter(x=fl["ts"], y=y, mode="markers+text", name="Trend flip (writers)",
+                                 text=["▲ BULL" if r == "BULL" else "▼ BEAR" for r in fl["regime"]],
+                                 textposition=["bottom center" if r == "BULL" else "top center" for r in fl["regime"]],
+                                 textfont=dict(color=[GREEN if r == "BULL" else RED for r in fl["regime"]], size=12),
+                                 marker=dict(symbol=["triangle-up" if r == "BULL" else "triangle-down" for r in fl["regime"]],
+                                             size=13, color=[GREEN if r == "BULL" else RED for r in fl["regime"]],
+                                             line=dict(color=WHITE, width=1)),
+                                 hovertemplate="%{x|%H:%M} writers flipped → %{text}<extra></extra>"), 1, 1, secondary_y=False)
+    sg = b[b["sig"]]
+    if len(sg):
+        fig.add_trace(go.Scatter(x=sg["ts"], y=sg["flow"], mode="markers", name="Unusual writer candle (≥ 2.5× normal)",
+                                 marker=dict(symbol="diamond", size=9, color=GOLD, line=dict(color=WHITE, width=1)),
+                                 customdata=[fmt(v) for v in sg["flow"]],
+                                 hovertemplate="unusual flow %{customdata}<extra></extra>"), 2, 1, secondary_y=False)
+    if unwind:
+        fig.add_vrect(x0=unwind[0], x1=unwind[1], fillcolor="rgba(212,175,55,0.10)", line_width=0,
+                      annotation_text="EXPIRY UNWIND — both sides closing, not a direction",
+                      annotation_position="top left", annotation_font_color=GOLD)
+    ol._layout(fig, title, h=620)
+    fig.update_layout(hovermode="x unified", margin=dict(l=60, r=80, t=60, b=40), bargap=0.15,
+                      legend=dict(orientation="h", x=1, xanchor="right", y=1.1))
+    fig.update_yaxes(title_text="NIFTY future", tickformat=",.0f", showgrid=False, row=1, col=1, secondary_y=False)
+    v = pd.concat([ce, pe]).dropna()
+    if len(v):
+        ticks = np.linspace(float(v.min()), float(v.max()), 6)
+        fig.update_yaxes(tickvals=ticks, ticktext=[fmt(x) for x in ticks], row=1, col=1, secondary_y=True)
+    fv = b["flow"].dropna()
+    if len(fv) and fv.abs().max() > 0:
+        m = float(fv.abs().max())
+        ticks = np.linspace(-m, m, 5)
+        fig.update_yaxes(tickvals=ticks, ticktext=[fmt(x) for x in ticks], title_text="flow", row=2, col=1, secondary_y=False)
+    fig.update_yaxes(range=[-1.05, 1.05], tickvals=[-1, -0.25, 0, 0.25, 1], title_text="balance", showgrid=False,
+                     row=2, col=1, secondary_y=True)
+    gap = pe - ce                                               # lead flips of the two lines (hysteresis 5 %)
+    band = 0.05 * float(gap.abs().max() or 0)
+    idx, side_ = [], 0
+    for i, g_ in zip(t.index, gap):
+        nw = 1 if g_ > band else -1 if g_ < -band else 0
+        if nw and side_ and nw != side_:
+            idx.append(i)
+        if nw:
+            side_ = nw
+    if idx:
+        fig.add_trace(go.Scatter(x=t.loc[idx, "ts"], y=pe.loc[idx], mode="markers", name="Lines crossed (lead flipped)",
+                                 marker=dict(symbol="x", size=10, color=GOLD),
+                                 hovertemplate="Put / Call lines crossed<extra></extra>"), 1, 1, secondary_y=True)
+    _tag(fig, t["ts"].iloc[-1], pe.iloc[-1], fmt(pe.iloc[-1]), RED)
+    _tag(fig, t["ts"].iloc[-1], ce.iloc[-1], fmt(ce.iloc[-1]), GREEN)
+    return fig
+
+
+def flow_note(t: pd.DataFrame) -> str:
+    b = flow_frame(t)
+    l = b.iloc[-1]
+    fl = b[b["tflip"]]
+    lab = {"BULL": "PUT writers lead (bullish)", "BEAR": "CALL writers lead (bearish)", "UNWIND": "both sides unwinding",
+           "BAL": "balanced — nobody in control"}[l["regime"]]
+    last = (f" Last trend flip {fl['ts'].iloc[-1]:%H:%M} → {'▲ BULL' if fl['regime'].iloc[-1] == 'BULL' else '▼ BEAR'}."
+            if len(fl) else " No trend flip today.")
+    n_sig = int(b["sig"].tail(10).sum())
+    return (f" <b>Flow strip:</b> 30-min writers balance {l['bal']:+.2f} → {lab}.{last}"
+            + (f" {n_sig} unusual writer candle(s) in the last 10 — someone big is positioning." if n_sig else ""))
+
+
 def chart_daywise(dw: pd.DataFrame) -> go.Figure:
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     cols = [GREEN if v >= 1 else RED if v < 0.7 else GOLD for v in dw["pcr"]]
@@ -324,6 +453,15 @@ HOW = {
             "The gap between the lines is the PCR in money terms. A widening gap confirms the lean; a narrowing gap = the leader is closing out.",
             "On expiry day both fall into the close (contracts expire). Use the NEXT expiry's chain for tomorrow's levels."],
 }
+
+
+HOW_FLOW = ["<b>Flow strip (bottom):</b> each bar = puts added − calls added in that candle. Green = put writers "
+            "stronger, red = call writers stronger. ◆ = a candle ≥ 2.5× the day's normal size: someone big positioning.",
+            "<b>Gold line</b> = 30-min writers balance (−1 only calls … +1 only puts). Above the upper dotted line = bullish "
+            "regime (green band), below the lower = bearish (red band).",
+            "<b>▲ BULL / ▼ BEAR on the future line</b> = the balance flipped: the trend-change alarm. Experienced readers "
+            "do NOT trade against the latest flip, and take the first pullback after it.",
+            "A flip that reverses within ~15 min is noise. Flips during an expiry-afternoon unwind band are not direction."]
 
 
 def _box(title, read, how):
@@ -407,10 +545,14 @@ def render(day: date | None = None) -> None:
     if len(dw) >= 2:
         right.plotly_chart(chart_daywise(dw), use_container_width=True, key="pcrp_dw")
     st.markdown(_box("PUT-CALL RATIO — now", rd["pcr"], HOW["pcr"]), unsafe_allow_html=True)
-    st.plotly_chart(chart_pair(t, "ce_day", "pe_day", "OI Change (Call vs Put) — since yesterday", label, uw),
+    st.plotly_chart(chart_pair_flow(t, "ce_day", "pe_day", "OI Change (Call vs Put) — since yesterday", label, uw),
                     use_container_width=True, key="pcrp_chg_chart")
-    st.markdown(_box("OI CHANGE — now", rd["chg"], HOW["chg"]), unsafe_allow_html=True)
-    st.plotly_chart(chart_pair(t, "ce_oi", "pe_oi", "Total OI (Call vs Put)", label, uw),
+    try:
+        fnote = flow_note(t)
+    except Exception:                                           # noqa: BLE001
+        fnote = ""
+    st.markdown(_box("OI CHANGE — now", rd["chg"] + fnote, HOW["chg"] + HOW_FLOW), unsafe_allow_html=True)
+    st.plotly_chart(chart_pair_flow(t, "ce_oi", "pe_oi", "Total OI (Call vs Put)", label, uw),
                     use_container_width=True, key="pcrp_tot")
     st.markdown(_box("TOTAL OI — now", rd["tot"], HOW["tot"]), unsafe_allow_html=True)
     st.caption("Information only — not a trading signal.")

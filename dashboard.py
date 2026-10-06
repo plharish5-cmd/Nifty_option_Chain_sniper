@@ -428,9 +428,18 @@ def load_demo() -> tuple[pd.DataFrame, float, str, str]:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
-def load_ohlc_cached():
-    """Daily history changes once a day; no need to re-read it every poll."""
+def _load_ohlc_cached(_stamp):
     return lv_mod.load_ohlc()
+
+
+def load_ohlc_cached():
+    """GAPFIX — re-read the moment any CSV in data/ohlc changes (e.g. today's 15:40 appended candle)."""
+    try:
+        stamp = tuple(sorted((p.name, p.stat().st_mtime, p.stat().st_size)
+                             for p in __import__("pathlib").Path(config.OHLC_DIR).glob("*.csv")))
+    except Exception:                                       # noqa: BLE001
+        stamp = None
+    return _load_ohlc_cached(stamp)
 
 
 def _render_html(html_str: str) -> None:

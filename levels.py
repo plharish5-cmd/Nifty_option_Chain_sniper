@@ -346,7 +346,7 @@ def swing_levels(df: pd.DataFrame, spot: float, n: int = 4,
 
 
 def unfilled_gaps(df: pd.DataFrame, spot: float,
-                  min_points: float = getattr(config, "GAP_MIN", 15.0), n: int = 3) -> list[PriceLevel]:
+                  min_points: float = 5.0, n: int = 3) -> list[PriceLevel]:
     """
     Walk the whole history tracking gaps that have never been filled.
 
@@ -359,17 +359,16 @@ def unfilled_gaps(df: pd.DataFrame, spot: float,
         o, h, lo = df.loc[i, "Open"], df.loc[i, "High"], df.loc[i, "Low"]
         prev_c = df.loc[i-1, "Close"]
         gap_pts = round(o - prev_c, 2)
-
+        # GAPFIX — FIRST drop gaps today's range filled, THEN add today's gap
+        open_gaps = [g for g in open_gaps
+                     if not ((g["type"] == "up" and lo <= g["price"])
+                             or (g["type"] == "down" and h >= g["price"]))]
         if gap_pts > min_points:
             open_gaps.append({"type": "up", "price": prev_c,
                               "date": df.loc[i, "Date"], "size": gap_pts})
         elif gap_pts < -min_points:
             open_gaps.append({"type": "down", "price": prev_c,
                               "date": df.loc[i, "Date"], "size": -gap_pts})
-
-        open_gaps = [g for g in open_gaps
-                     if not ((g["type"] == "up" and lo <= g["price"])
-                             or (g["type"] == "down" and h >= g["price"]))]
 
     out: list[PriceLevel] = []
     above = sorted([g for g in open_gaps if g["price"] > spot],

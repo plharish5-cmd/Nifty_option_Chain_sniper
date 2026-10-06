@@ -20,3 +20,8 @@
 2026-10-04 21:51:11,271 NSDL report for 2026-09-30 could not be read: HTTPSConnectionPool(host='www.fpi.nsdl.co.in', port=443): Max retries exceeded with url: /web/StaticReports/Fortnightly_Sector_wise_FII_Investment_Data/FIIInvestSector_Sep302026.html (Caused by NameResolutionError("HTTPSConnection(host='www.fpi.nsdl.co.in', port=443): Failed to resolve 'www.fpi.nsdl.co.in' ([Errno -3] Temporary failure in name resolution)"))
 2026-10-06 00:15:43,497 Sheet2 last fortnight: Sep 1-15 (column BA)
 2026-10-06 00:15:43,505 NSDL report for 2026-09-30 could not be read: HTTPSConnectionPool(host='www.fpi.nsdl.co.in', port=443): Max retries exceeded with url: /web/StaticReports/Fortnightly_Sector_wise_FII_Investment_Data/FIIInvestSector_Sep302026.html (Caused by NameResolutionError("HTTPSConnection(host='www.fpi.nsdl.co.in', port=443): Failed to resolve 'www.fpi.nsdl.co.in' ([Errno -3] Temporary failure in name resolution)"))
+2026-10-06 20:45:23,328 Sheet2 last fortnight: Sep 1-15 (column BA)
+2026-10-06 20:45:23,919 NSDL Sep 16-30: 24 sectors, Grand Total -21,745
+2026-10-06 20:45:24,085 Sep 16-30 -> Sheet2 column BB (Grand Total -21,745)
+2026-10-06 20:45:24,092 Power Query 'Table 0' URL now ends _Sep302026.html
+2026-10-06 20:45:24,368 Done: Sep 16-30

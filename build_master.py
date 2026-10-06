@@ -74,6 +74,9 @@ BREAK_RESISTANCE_FILL = HIT_GREEN_FILL
 BREAK_RESISTANCE_FONT = HIT_GREEN_FONT
 
 
+GAPFIX_PTS = 5.0   # GAPFIX — your rule: a gap is |open − previous close| > 5 pts
+
+
 def gann_sq9(price: float, degrees: float) -> float:
     """(sqrt(P) + deg/180)^2 — the standard retail Square-of-9 step."""
     if pd.isna(price) or price <= 0:
@@ -245,55 +248,39 @@ def build_rows(df: pd.DataFrame) -> pd.DataFrame:
         O, H, L, C = opens[i], highs[i], lows[i], closes[i]
         gap = round(O - closes[i - 1], 2) if i else np.nan
 
-        # ── R1-R4: today's high, then progressively higher prior highs ──────
-        # The source DATE travels with each level. A level is "14-08-2026 H
-        # R1", not just a number — the date is what goes on the chart label
-        # and what lets you check afterwards whether it held.
+        # ── GAPFIX — your master-sheet rules ─────────────────────────────────
         R = [np.nan] * 4
         RD = [""] * 4
         seq_r = [(H, i)]
-        j = i - 1
-        while j >= 0 and len(seq_r) < 4:
-            if highs[j] >= seq_r[-1][0] + LEVEL_MIN_SEPARATION:
-                best_h, best_idx = highs[j], j
-                k = j - 1
-                while k >= 0 and highs[k] > best_h and (highs[k] - best_h) < LEVEL_MIN_SEPARATION:
-                    best_h, best_idx = highs[k], k
-                    k -= 1
-                seq_r.append((best_h, best_idx))
-                j = k
-            else:
-                j -= 1
+        for j in range(i - 1, -1, -1):
+            if highs[j] > seq_r[-1][0]:
+                seq_r.append((highs[j], j))
+            if len(seq_r) == 4:
+                break
         for k, (v, j_idx) in enumerate(seq_r):
             R[k] = round(v, 2)
             RD[k] = dstr(j_idx)
-
-        # ── S1-S4: today's low, then progressively lower prior lows with >= 20 pt separation ─────────
         S = [np.nan] * 4
         SD = [""] * 4
         seq_s = [(L, i)]
         for j in range(i - 1, -1, -1):
-            if lows[j] <= seq_s[-1][0] - LEVEL_MIN_SEPARATION:
+            if lows[j] < seq_s[-1][0]:
                 seq_s.append((lows[j], j))
-                if len(seq_s) == 4:
-                    break
+            if len(seq_s) == 4:
+                break
         for k, (v, j_idx) in enumerate(seq_s):
             S[k] = round(v, 2)
             SD[k] = dstr(j_idx)
-
-
-        # ── gaps: create new FIRST, check fills SECOND (catches same-day fills)
-        if i:
-            pc = closes[i - 1]
-            gap_points = round(O - pc, 2)
-            if gap_points > GAP_MIN:
-                open_gaps.append({"type": "GAP_UP", "price": round(pc, 2), "date": dstr(i)})
-            elif gap_points < -GAP_MIN:
-                open_gaps.append({"type": "GAP_DOWN", "price": round(pc, 2), "date": dstr(i)})
-
+        # gaps: FIRST drop the ones today's range filled, THEN add today's (> 5 pts)
         open_gaps = [g for g in open_gaps
                      if not ((g["type"] == "GAP_UP" and L <= g["price"])
                              or (g["type"] in ("GAP_DOWN", "DOWN") and H >= g["price"]))]
+        if i:
+            pc = closes[i - 1]
+            if O - pc > GAPFIX_PTS:
+                open_gaps.append({"type": "GAP_UP", "price": round(pc, 2), "date": dstr(i)})
+            elif O - pc < -GAPFIX_PTS:
+                open_gaps.append({"type": "GAP_DOWN", "price": round(pc, 2), "date": dstr(i)})
 
         up = sorted((g for g in open_gaps if g["price"] > C),
                     key=lambda g: g["price"])[:3]
@@ -614,43 +601,34 @@ def dated_levels(df: pd.DataFrame, as_of: int | None = None,
         return dates.iloc[j].strftime("%d-%m-%Y")
 
     # ── resistances: today's high, then higher highs going back with >= 20 pt separation ─────────────
+    # ── GAPFIX — your master-sheet rules ─────────────────────────────────────
+    # R: today's high, then walking back each prior high STRICTLY higher than the last
     res = [(dstr(i), float(highs[i]))]
-    j = i - 1
-    while j >= 0 and len(res) < n_levels:
-        if highs[j] >= res[-1][1] + LEVEL_MIN_SEPARATION:
-            best_h, best_idx = float(highs[j]), j
-            k = j - 1
-            while k >= 0 and highs[k] > best_h and (highs[k] - best_h) < LEVEL_MIN_SEPARATION:
-                best_h, best_idx = float(highs[k]), k
-                k -= 1
-            res.append((dstr(best_idx), best_h))
-            j = k
-        else:
-            j -= 1
-
-    # ── supports: today's low, then lower lows going back with >= 20 pt separation ─────────────────
+    for j in range(i - 1, -1, -1):
+        if highs[j] > res[-1][1]:
+            res.append((dstr(j), float(highs[j])))
+        if len(res) == n_levels:
+            break
+    # S: today's low, then walking back each prior low STRICTLY lower than the last
     sup = [(dstr(i), float(lows[i]))]
     for j in range(i - 1, -1, -1):
-        if lows[j] <= sup[-1][1] - LEVEL_MIN_SEPARATION:
+        if lows[j] < sup[-1][1]:
             sup.append((dstr(j), float(lows[j])))
-            if len(sup) == n_levels:
-                break
-
-
-    # ── unfilled gaps, walked forward so fills are honoured ─────────────────
+        if len(sup) == n_levels:
+            break
+    # Gaps: each day FIRST drop the gaps its range filled, THEN add the gap it opened with (> 5 pts)
     open_gaps: list[dict] = []
-    for k in range(1, i + 1):
-        o, h, l = opens[k], highs[k], lows[k]
-        pc = closes[k - 1]
-        gap_points = round(o - pc, 2)
-        if gap_points > GAP_MIN:
-            open_gaps.append({"type": "GAP_UP", "price": round(float(pc), 2), "date": dstr(k)})
-        elif gap_points < -GAP_MIN:
-            open_gaps.append({"type": "GAP_DOWN", "price": round(float(pc), 2), "date": dstr(k)})
-
+    for k in range(0, i + 1):
+        h, l = highs[k], lows[k]
         open_gaps = [g for g in open_gaps
                      if not ((g["type"] == "GAP_UP" and l <= g["price"])
-                             or (g["type"] in ("GAP_DOWN", "DOWN") and h >= g["price"]))]
+                             or (g["type"] == "GAP_DOWN" and h >= g["price"]))]
+        if k > 0:
+            pc = closes[k - 1]
+            if opens[k] - pc > GAPFIX_PTS:
+                open_gaps.append({"type": "GAP_UP", "price": round(float(pc), 2), "date": dstr(k)})
+            elif opens[k] - pc < -GAPFIX_PTS:
+                open_gaps.append({"type": "GAP_DOWN", "price": round(float(pc), 2), "date": dstr(k)})
 
     c = float(closes[i])
     upper = sorted((g for g in open_gaps if g["price"] > c),

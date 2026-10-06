@@ -49,6 +49,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Automobile and Auto Components,4405.0
 2026-08-31,Aug 16-31,Automobile and Auto Components,-1299.0
 2026-09-15,Sep 1-15,Automobile and Auto Components,-2670.0
+2026-09-30,Sep 16-30,Automobile and Auto Components,-3542.0
 2024-06-30,Jun 16-30,Capital Goods,2929.0
 2024-07-15,Jul 1-15,Capital Goods,3612.0
 2024-07-31,Jul 16-31,Capital Goods,1315.0
@@ -99,6 +100,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Capital Goods,-1556.0
 2026-08-31,Aug 16-31,Capital Goods,2162.0
 2026-09-15,Sep 1-15,Capital Goods,-108.0
+2026-09-30,Sep 16-30,Capital Goods,-1353.0
 2024-06-30,Jun 16-30,Chemicals,1037.0
 2024-07-15,Jul 1-15,Chemicals,-118.0
 2024-07-31,Jul 16-31,Chemicals,-394.0
@@ -149,6 +151,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Chemicals,315.0
 2026-08-31,Aug 16-31,Chemicals,543.0
 2026-09-15,Sep 1-15,Chemicals,228.0
+2026-09-30,Sep 16-30,Chemicals,-133.0
 2024-06-30,Jun 16-30,Construction,-63.0
 2024-07-15,Jul 1-15,Construction,-902.0
 2024-07-31,Jul 16-31,Construction,-627.0
@@ -199,6 +202,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Construction,-404.0
 2026-08-31,Aug 16-31,Construction,442.0
 2026-09-15,Sep 1-15,Construction,930.0
+2026-09-30,Sep 16-30,Construction,381.0
 2024-06-30,Jun 16-30,Construction Materials,1475.0
 2024-07-15,Jul 1-15,Construction Materials,194.0
 2024-07-31,Jul 16-31,Construction Materials,486.0
@@ -249,6 +253,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Construction Materials,384.0
 2026-08-31,Aug 16-31,Construction Materials,-250.0
 2026-09-15,Sep 1-15,Construction Materials,-358.0
+2026-09-30,Sep 16-30,Construction Materials,-847.0
 2024-06-30,Jun 16-30,Consumer Durables,1038.0
 2024-07-15,Jul 1-15,Consumer Durables,125.0
 2024-07-31,Jul 16-31,Consumer Durables,-313.0
@@ -299,6 +304,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Consumer Durables,1472.0
 2026-08-31,Aug 16-31,Consumer Durables,2431.0
 2026-09-15,Sep 1-15,Consumer Durables,-397.0
+2026-09-30,Sep 16-30,Consumer Durables,-1508.0
 2024-06-30,Jun 16-30,Consumer Services,3097.0
 2024-07-15,Jul 1-15,Consumer Services,1642.0
 2024-07-31,Jul 16-31,Consumer Services,1787.0
@@ -349,6 +355,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Consumer Services,3398.0
 2026-08-31,Aug 16-31,Consumer Services,5019.0
 2026-09-15,Sep 1-15,Consumer Services,422.0
+2026-09-30,Sep 16-30,Consumer Services,1911.0
 2024-06-30,Jun 16-30,Diversified,109.0
 2024-07-15,Jul 1-15,Diversified,316.0
 2024-07-31,Jul 16-31,Diversified,54.0
@@ -399,6 +406,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Diversified,-18.0
 2026-08-31,Aug 16-31,Diversified,-4.0
 2026-09-15,Sep 1-15,Diversified,-23.0
+2026-09-30,Sep 16-30,Diversified,115.0
 2024-06-30,Jun 16-30,Fast Moving Consumer Goods,-677.0
 2024-07-15,Jul 1-15,Fast Moving Consumer Goods,1809.0
 2024-07-31,Jul 16-31,Fast Moving Consumer Goods,-834.0
@@ -449,6 +457,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Fast Moving Consumer Goods,-189.0
 2026-08-31,Aug 16-31,Fast Moving Consumer Goods,-1727.0
 2026-09-15,Sep 1-15,Fast Moving Consumer Goods,-2029.0
+2026-09-30,Sep 16-30,Fast Moving Consumer Goods,-972.0
 2024-06-30,Jun 16-30,Financial Services,8162.0
 2024-07-15,Jul 1-15,Financial Services,471.0
 2024-07-31,Jul 16-31,Financial Services,-8119.0
@@ -499,6 +508,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Financial Services,6535.0
 2026-08-31,Aug 16-31,Financial Services,3959.0
 2026-09-15,Sep 1-15,Financial Services,-6204.0
+2026-09-30,Sep 16-30,Financial Services,-6943.0
 2024-06-30,Jun 16-30,Forest Materials,162.0
 2024-07-15,Jul 1-15,Forest Materials,43.0
 2024-07-31,Jul 16-31,Forest Materials,107.0
@@ -549,6 +559,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Forest Materials,-9.0
 2026-08-31,Aug 16-31,Forest Materials,-7.0
 2026-09-15,Sep 1-15,Forest Materials,7.0
+2026-09-30,Sep 16-30,Forest Materials,6.0
 2024-06-30,Jun 16-30,Healthcare,2886.0
 2024-07-15,Jul 1-15,Healthcare,2378.0
 2024-07-31,Jul 16-31,Healthcare,2676.0
@@ -599,6 +610,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Healthcare,2910.0
 2026-08-31,Aug 16-31,Healthcare,3021.0
 2026-09-15,Sep 1-15,Healthcare,2114.0
+2026-09-30,Sep 16-30,Healthcare,3.0
 2024-06-30,Jun 16-30,Information Technology,1578.0
 2024-07-15,Jul 1-15,Information Technology,2765.0
 2024-07-31,Jul 16-31,Information Technology,8998.0
@@ -649,6 +661,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Information Technology,2530.0
 2026-08-31,Aug 16-31,Information Technology,1573.0
 2026-09-15,Sep 1-15,Information Technology,-960.0
+2026-09-30,Sep 16-30,Information Technology,-38.0
 2024-06-30,Jun 16-30,"Media, Entertainment & Publication",-3.0
 2024-07-15,Jul 1-15,"Media, Entertainment & Publication",338.0
 2024-07-31,Jul 16-31,"Media, Entertainment & Publication",136.0
@@ -699,6 +712,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,"Media, Entertainment & Publication",-6.0
 2026-08-31,Aug 16-31,"Media, Entertainment & Publication",72.0
 2026-09-15,Sep 1-15,"Media, Entertainment & Publication",-93.0
+2026-09-30,Sep 16-30,"Media, Entertainment & Publication",31.0
 2024-06-30,Jun 16-30,Metals & Mining,-1128.0
 2024-07-15,Jul 1-15,Metals & Mining,1969.0
 2024-07-31,Jul 16-31,Metals & Mining,5341.0
@@ -749,6 +763,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Metals & Mining,720.0
 2026-08-31,Aug 16-31,Metals & Mining,1087.0
 2026-09-15,Sep 1-15,Metals & Mining,-681.0
+2026-09-30,Sep 16-30,Metals & Mining,-2322.0
 2024-06-30,Jun 16-30,"Oil, Gas & Consumable Fuels",1048.0
 2024-07-15,Jul 1-15,"Oil, Gas & Consumable Fuels",1944.0
 2024-07-31,Jul 16-31,"Oil, Gas & Consumable Fuels",-325.0
@@ -799,6 +814,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,"Oil, Gas & Consumable Fuels",490.0
 2026-08-31,Aug 16-31,"Oil, Gas & Consumable Fuels",-2251.0
 2026-09-15,Sep 1-15,"Oil, Gas & Consumable Fuels",-2385.0
+2026-09-30,Sep 16-30,"Oil, Gas & Consumable Fuels",-4469.0
 2024-06-30,Jun 16-30,Power,-2439.0
 2024-07-15,Jul 1-15,Power,-891.0
 2024-07-31,Jul 16-31,Power,-2905.0
@@ -849,6 +865,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Power,-1164.0
 2026-08-31,Aug 16-31,Power,-389.0
 2026-09-15,Sep 1-15,Power,-1653.0
+2026-09-30,Sep 16-30,Power,-570.0
 2024-06-30,Jun 16-30,Realty,918.0
 2024-07-15,Jul 1-15,Realty,192.0
 2024-07-31,Jul 16-31,Realty,36.0
@@ -899,6 +916,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Realty,-1014.0
 2026-08-31,Aug 16-31,Realty,420.0
 2026-09-15,Sep 1-15,Realty,-762.0
+2026-09-30,Sep 16-30,Realty,19.0
 2024-06-30,Jun 16-30,Services,375.0
 2024-07-15,Jul 1-15,Services,547.0
 2024-07-31,Jul 16-31,Services,-2021.0
@@ -949,6 +967,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Services,590.0
 2026-08-31,Aug 16-31,Services,1193.0
 2026-09-15,Sep 1-15,Services,905.0
+2026-09-30,Sep 16-30,Services,1397.0
 2024-06-30,Jun 16-30,Telecommunication,6208.0
 2024-07-15,Jul 1-15,Telecommunication,934.0
 2024-07-31,Jul 16-31,Telecommunication,2204.0
@@ -999,6 +1018,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Telecommunication,-3322.0
 2026-08-31,Aug 16-31,Telecommunication,-1661.0
 2026-09-15,Sep 1-15,Telecommunication,-991.0
+2026-09-30,Sep 16-30,Telecommunication,-2423.0
 2024-06-30,Jun 16-30,Textiles,151.0
 2024-07-15,Jul 1-15,Textiles,41.0
 2024-07-31,Jul 16-31,Textiles,53.0
@@ -1049,6 +1069,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Textiles,1.0
 2026-08-31,Aug 16-31,Textiles,-294.0
 2026-09-15,Sep 1-15,Textiles,10.0
+2026-09-30,Sep 16-30,Textiles,636.0
 2024-06-30,Jun 16-30,Utilities,-88.0
 2024-07-15,Jul 1-15,Utilities,-38.0
 2024-07-31,Jul 16-31,Utilities,28.0
@@ -1099,6 +1120,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Utilities,7.0
 2026-08-31,Aug 16-31,Utilities,-38.0
 2026-09-15,Sep 1-15,Utilities,194.0
+2026-09-30,Sep 16-30,Utilities,-33.0
 2024-06-30,Jun 16-30,Sovereign,0.0
 2024-07-15,Jul 1-15,Sovereign,0.0
 2024-07-31,Jul 16-31,Sovereign,0.0
@@ -1149,6 +1171,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Sovereign,0.0
 2026-08-31,Aug 16-31,Sovereign,0.0
 2026-09-15,Sep 1-15,Sovereign,0.0
+2026-09-30,Sep 16-30,Sovereign,0.0
 2024-06-30,Jun 16-30,Others,800.0
 2024-07-15,Jul 1-15,Others,357.0
 2024-07-31,Jul 16-31,Others,808.0
@@ -1199,6 +1222,7 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Others,543.0
 2026-08-31,Aug 16-31,Others,-992.0
 2026-09-15,Sep 1-15,Others,388.0
+2026-09-30,Sep 16-30,Others,-1091.0
 2024-06-30,Jun 16-30,Grand Total,29628.0
 2024-07-15,Jul 1-15,Grand Total,20720.0
 2024-07-31,Jul 16-31,Grand Total,11645.0
@@ -1248,3 +1272,4 @@ end,label,sector,net_cr
 2026-08-15,Aug 1-15,Grand Total,16621.0
 2026-08-31,Aug 16-31,Grand Total,13010.0
 2026-09-15,Sep 1-15,Grand Total,-14116.0
+2026-09-30,Sep 16-30,Grand Total,-21745.0

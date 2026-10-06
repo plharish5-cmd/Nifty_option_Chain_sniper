@@ -662,12 +662,17 @@ def render() -> None:
         <div style="color:{MUTED};font-size:0.8rem;margin-top:6px">A vote count, not a signal. Info only — not advice.</div>
         </div>""", unsafe_allow_html=True)
 
+    try:                                                    # OLABPRO — ★ PRO DECISION BRIEF
+        __import__("olab_pro").brief(day)
+    except Exception as _opb_err:                           # noqa: BLE001
+        st.caption(f"PRO brief unavailable: {_opb_err}")
     t0, t1, t2, t3, t4, t5, t6, t7, t8, t9 = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV",
                                               "📊 Call vs Put Writers (3m / 5m / 15m)", "🟥 PE − CE OI Table",
                                               "📈 Multi-strike OI",
                                               "📉 Vega Analysis",
                                               "⏳ Premium Decay"])   # TABMOVE MULTISTRIKE VEGAPRO PREMIUMPRO
     with t0:
+        __import__("olab_pro").tab("oi", day)                       # OLABPRO
         try:
             import oi_profile_panel
             oi_profile_panel.render(day)
@@ -697,6 +702,7 @@ def render() -> None:
             st.plotly_chart(chart_flow(c, tf), use_container_width=True, key="olab_flow")
         _panel("flow", *reads["flow"])
     with t3:
+        __import__("olab_pro").tab("gex", day)                       # OLABPRO
         if g is not None:
             st.plotly_chart(chart_gex(g, latest[1]), use_container_width=True, key="olab_gex")
         _panel("gex", *reads["gex"])
@@ -704,12 +710,14 @@ def render() -> None:
             st.plotly_chart(chart_vega(s), use_container_width=True, key="olab_vega")
         _panel("vega", *reads["vega"])
     with t4:
+        __import__("olab_pro").tab("iv", day)                       # OLABPRO
         if h is not None and h["iv_hv"].notna().any():
             st.plotly_chart(chart_ivhv(h), use_container_width=True, key="olab_ivhv")
         else:
             st.info("IV − HV needs at least ~10 stored days (or a real daily OHLC file in data/ohlc).")
         _panel("ivhv", *reads["ivhv"])
     with t5:                                                    # TABMOVE — moved from ⚡ Option Chain & OI Analysis
+        __import__("olab_pro").tab("writers", day)                       # OLABPRO
         try:
             import writers_graph_engine
             writers_graph_engine.render_writers_graph_ui(df=latest[2], spot=float(latest[1]), pa_frames=None, read=None)
@@ -722,6 +730,7 @@ def render() -> None:
         except Exception as _pece_err:                          # noqa: BLE001
             st.error(f"PE − CE OI Table encountered an error: {_pece_err}")
     with t7:                                                    # MULTISTRIKE — top-N strikes' OI through the day
+        __import__("olab_pro").tab("roll", day)                       # OLABPRO
         try:
             import multistrike_panel
             multistrike_panel.render(day)
@@ -734,6 +743,7 @@ def render() -> None:
         except Exception as _vg_err:                            # noqa: BLE001
             st.error(f"Vega Analysis encountered an error: {_vg_err}")
     with t9:                                                    # PREMIUMPRO — StockMojo-style Premium Decay
+        __import__("olab_pro").tab("decay", day)                       # OLABPRO
         try:
             import premium_decay_pro
             premium_decay_pro.render(day)

@@ -85,7 +85,9 @@ def build(ce: pd.DataFrame, pe: pd.DataFrame, strikes: list[int], tf: str, fut: 
     t["net"] = t["ce_chg"] + t["pe_chg"]
     t["straddle"] = t["ce_prem"] + t["pe_prem"]
     t = t.reset_index().rename(columns={"index": "ts"})
-    f = fut.sort_values("ts")
+    f = fut.sort_values("ts").copy()
+    f["ts"] = pd.to_datetime(f["ts"]).dt.tz_localize(None).astype("datetime64[ns]")   # Dhan = µs, snapshots = ns
+    t["ts"] = pd.to_datetime(t["ts"]).astype("datetime64[ns]")
     t = pd.merge_asof(t.sort_values("ts"), f, on="ts", direction="nearest", tolerance=pd.Timedelta(minutes=max(3, m)))
     t["fut"] = t["fut"].interpolate(limit_direction="both")
     return t
@@ -244,11 +246,11 @@ def render(day: date | None = None) -> None:
         return
     c = st.columns([1.5, 1.5, 2.0, 1.0, 1.8])
     day = c[0].selectbox("Session", days, index=days.index(day) if day in days else 0,
-                         format_func=lambda d: d.strftime("%a %d %b %Y"), key="pd_day")
-    tf = c[1].radio("Time", list(TF), index=0, horizontal=True, key="pd_tf")
-    mode = c[2].radio("Strikes", ["ATM ± range", "Fixed", "Custom"], horizontal=True, key="pd_mode")
-    n = c[3].selectbox("± range", [1, 2, 3, 4, 5, 6, 8, 10], index=2, key="pd_n", disabled=(mode == "Custom"))
-    src = c[4].radio("Future line", ["NIFTY future", "Synth future"], horizontal=True, key="pd_src")
+                         format_func=lambda d: d.strftime("%a %d %b %Y"), key="pdec_day")
+    tf = c[1].radio("Time", list(TF), index=0, horizontal=True, key="pdec_tf")
+    mode = c[2].radio("Strikes", ["ATM ± range", "Fixed", "Custom"], horizontal=True, key="pdec_mode")
+    n = c[3].selectbox("± range", [1, 2, 3, 4, 5, 6, 8, 10], index=2, key="pdec_n", disabled=(mode == "Custom"))
+    src = c[4].radio("Future line", ["NIFTY future", "Synth future"], horizontal=True, key="pdec_src")
 
     @st.cache_data(ttl=60, show_spinner=False)
     def _load(d: date, n_files: int):
@@ -265,20 +267,20 @@ def render(day: date | None = None) -> None:
     atm0 = float(round(last / step) * step)
     centre, custom = None, []
     if mode == "Fixed":
-        centre = st.number_input("Centre strike", value=atm0, step=step, key="pd_centre")
+        centre = st.number_input("Centre strike", value=atm0, step=step, key="pdec_centre")
     elif mode == "Custom":
         opts = sorted(ce.columns, key=lambda k: abs(k - last))[:40]
         custom = st.multiselect("Strikes", sorted(opts), default=[k for k in sorted(opts) if abs(k - atm0) <= 3 * step],
-                                key="pd_custom")
+                                key="pdec_custom")
     m = {"ATM ± range": "ATM", "Fixed": "Fixed", "Custom": "Custom"}[mode]
     strikes = pick_strikes(ce, spot, m, int(n), centre, [int(x) for x in custom], step)
     if not strikes:
         st.info("Pick at least one strike.")
         return
     o = st.columns([1, 1, 1, 3])
-    show_net = o[0].checkbox("NET (CE + PE)", value=True, key="pd_net")
-    show_str = o[1].checkbox("Straddle line", value=False, key="pd_str")
-    view = o[2].radio("View", ["Chart", "Chart + Table"], horizontal=True, key="pd_view")
+    show_net = o[0].checkbox("NET (CE + PE)", value=True, key="pdec_net")
+    show_str = o[1].checkbox("Straddle line", value=False, key="pdec_str")
+    view = o[2].radio("View", ["Chart", "Chart + Table"], horizontal=True, key="pdec_view")
 
     fut, label, why = future_line(snaps, day, src == "NIFTY future")
     t = build(ce, pe, strikes, tf, fut)
@@ -291,8 +293,8 @@ def render(day: date | None = None) -> None:
     st.caption(f"Expiry {exp} ({dte}) · strikes {min(strikes):,} – {max(strikes):,} ({len(strikes)}) · "
                f"from {t.ts.iloc[0]:%H:%M} · future line: {why}")
 
-    st.plotly_chart(chart_decay(t, label, show_net), use_container_width=True, key="pd_decay")
-    st.plotly_chart(chart_premium(t, label, show_str), use_container_width=True, key="pd_prem")
+    st.plotly_chart(chart_decay(t, label, show_net), use_container_width=True, key="pdec_decay")
+    st.plotly_chart(chart_premium(t, label, show_str), use_container_width=True, key="pdec_prem")
     st.markdown(f"<div style='background:{NAVY};border:1px solid {GOLD};border-radius:8px;padding:10px 14px;margin:6px 0'>"
                 f"<div style='color:{GOLD};font-weight:700'>PREMIUM DECAY — now</div>"
                 f"<div style='color:{WHITE};margin-top:4px;line-height:1.6'>{reads(t, f'{len(strikes)}', expiry_day)}</div></div>",

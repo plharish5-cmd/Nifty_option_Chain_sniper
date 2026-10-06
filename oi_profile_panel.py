@@ -162,17 +162,40 @@ def chart_profile(o: dict, step: float):
         cd = np.c_[[fmt(v) for v in oi1], [fmt(v) for v in oi1 - oi0], p["strike"]]
         ht = f"<b>%{{customdata[2]:,.0f}} {name}</b><br>OI %{{customdata[0]}}<br>Change %{{customdata[1]}}<extra></extra>"
         fig.add_trace(go.Bar(x=x, y=solid, width=w, marker_color=color, name=f"{name} OI",
-                             customdata=cd, hovertemplate=ht))
+                             hoverinfo="skip"))
         fig.add_trace(go.Bar(x=x, y=inc, base=solid, width=w, name=f"{name} OI increase",
                              marker=dict(color="rgba(255,255,255,0.9)", line=dict(color=color, width=1),
                                          pattern=dict(shape="/", fgcolor=color, size=6, solidity=0.45)),
-                             customdata=cd, hovertemplate=ht))
+                             hoverinfo="skip"))
         fig.add_trace(go.Bar(x=x, y=dec, base=solid, width=w, name=f"{name} OI decrease",
                              marker=dict(color="rgba(255,255,255,0.95)", line=dict(color=color, width=1.6)),
-                             customdata=cd, hovertemplate=ht))
+                             hoverinfo="skip"))
 
     side(p["strike"] - off, p["ce0"], p["ce1"], GREEN, "Call")
     side(p["strike"] + off, p["pe0"], p["pe1"], RED, "Put")
+    # OLABPRO — one tooltip per strike (invisible full-height bar) instead of 3 per side
+    def _rd(dc, dp):
+        if dp > 0 and dc <= 0:
+            return "put writing + call covering → support / bullish"
+        if dc > 0 and dp <= 0:
+            return "call writing + put covering → resistance / bearish"
+        if dc > 0 and dp > 0:
+            return "both sides writing → range being set here" if min(dc, dp) > 0.5 * max(dc, dp) else (
+                "more call writing → cap" if dc > dp else "more put writing → floor")
+        if dc < 0 and dp < 0:
+            return "both sides unwinding → this strike losing importance"
+        return "little change"
+    top = np.maximum(np.maximum(p["ce0"], p["ce1"]), np.maximum(p["pe0"], p["pe1"]))
+    pcr_k = [f"{pe / ce:.2f}" if ce else "—" for ce, pe in zip(p["ce1"], p["pe1"])]
+    cdh = np.c_[p["strike"], [fmt(v) for v in p["ce1"]], [fmt(v) for v in p["ce1"] - p["ce0"]],
+                [fmt(v) for v in p["pe1"]], [fmt(v) for v in p["pe1"] - p["pe0"]], pcr_k,
+                [_rd(c, q) for c, q in zip(p["ce1"] - p["ce0"], p["pe1"] - p["pe0"])]]
+    fig.add_trace(go.Bar(x=p["strike"], y=top, width=step * 0.95, marker_color="rgba(0,0,0,0)", showlegend=False,
+                         name="", customdata=cdh,
+                         hovertemplate=("<b>%{customdata[0]:,.0f}</b><br><span style='color:#22c55e'>CALL</span> OI "
+                                        "%{customdata[1]} · chg %{customdata[2]}<br><span style='color:#ef4444'>PUT</span> OI "
+                                        "%{customdata[3]} · chg %{customdata[4]}<br>strike PCR %{customdata[5]}<br>"
+                                        "<i>%{customdata[6]}</i><extra></extra>")))
     fig.add_vline(x=o["spot"], line=dict(color=WHITE, dash="dot", width=1.6),
                   annotation_text=f"Spot {o['spot']:,.2f}", annotation_position="top",
                   annotation_font_color=WHITE, annotation_bgcolor=NAVY)
