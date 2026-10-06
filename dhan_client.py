@@ -346,25 +346,37 @@ def _post(path: str, body: dict) -> dict:
 # Instrument lookup
 # ═══════════════════════════════════════════════════════════════════════════
 
-_futures_cache: dict[str, str] = {}
+_futures_cache: dict = {}          # FUTFIX: {id, symbol, expiry (date), checked (date), fail_at}
 
 
-def nifty_futures_security_id(force: bool = False) -> str | None:
+def _ist_now() -> datetime:
+    return datetime.utcnow() + timedelta(hours=5, minutes=30)
+
+
+def nifty_futures_contract(force: bool = False) -> dict | None:
     """
-    Current-month NIFTY futures security ID from Dhan's scrip master.
+    CURRENT NIFTY futures contract from Dhan's scrip master: {"id", "symbol", "expiry"}.
 
-    The ID changes every expiry, so it is looked up rather than hardcoded and
-    cached for the session. Returns None on failure — VWAP is then simply
-    unavailable rather than the whole price-action layer breaking.
+    Re-checked every trading day (IST) and rolled to the next month after 15:30 IST on expiry day, so a
+    scheduler / dashboard left running over the monthly expiry never keeps reading the dead contract.
+    Returns None on failure (VWAP then simply unavailable).
     """
+    from datetime import time as _t
     pinned = getattr(config, "DHAN_FUTURES_SECURITY_ID", None)
     if pinned:
-        return str(pinned)
-    if _futures_cache.get("id") and not force:
-        return _futures_cache["id"]
+        log.warning("config.DHAN_FUTURES_SECURITY_ID is pinned (%s) — it will NOT roll at expiry", pinned)
+        return {"id": str(pinned), "symbol": "pinned in config", "expiry": None}
+    now = _ist_now()
+    today, after_close = now.date(), now.time() >= _t(15, 30)
+    c = _futures_cache
+    if not force and c.get("id") and c.get("checked") == today and c.get("expiry") \
+            and (c["expiry"] > today or (c["expiry"] == today and not after_close)):
+        return {k: c[k] for k in ("id", "symbol", "expiry")}
+    if not force and c.get("fail_at") and (now - c["fail_at"]).total_seconds() < 600:
+        return None
     try:
         df = pd.read_csv(SCRIP_MASTER, low_memory=False)
-        cols = {c.upper().replace(" ", "_"): c for c in df.columns}
+        cols = {c_.upper().replace(" ", "_"): c_ for c_ in df.columns}
 
         def col(*names):
             for n in names:
@@ -377,27 +389,39 @@ def nifty_futures_security_id(force: bool = False) -> str | None:
         under = col("SEM_TRADING_SYMBOL", "TRADING_SYMBOL")
         expiry = col("SEM_EXPIRY_DATE", "EXPIRY_DATE")
         sid = col("SEM_SMST_SECURITY_ID", "SECURITY_ID")
-        if not all([seg, under, expiry, sid]):
+        if not all([seg, inst, under, expiry, sid]):
             log.warning("scrip master columns unexpected: %s", list(df.columns)[:10])
+            c["fail_at"] = now
             return None
 
         m = df[(df[seg].astype(str).str.upper() == "NSE")
-               & (df[under].astype(str).str.upper().str.startswith("NIFTY"))]
-        if inst:
-            m = m[m[inst].astype(str).str.upper().str.contains("FUT", na=False)]
+               & (df[under].astype(str).str.upper().str.startswith("NIFTY"))
+               & (df[inst].astype(str).str.upper().str.contains("FUT", na=False))]
         m = m[~m[under].astype(str).str.upper().str.contains("BANK|FIN|MID|NXT|FPI|IT|PSE|CPSE|REIT", na=False)]
-        m = m.assign(_exp=pd.to_datetime(m[expiry], errors="coerce"))
-        m = m[m._exp >= pd.Timestamp.today().normalize()].sort_values("_exp")
+        m = m.assign(_exp=pd.to_datetime(m[expiry], errors="coerce")).dropna(subset=["_exp"])
+        d = m["_exp"].dt.date
+        m = m[(d > today) | ((d == today) & (not after_close))].sort_values("_exp")
         if m.empty:
+            c["fail_at"] = now
             return None
         chosen = m.iloc[0]
-        _futures_cache["id"] = str(int(chosen[sid]))
-        log.info("NIFTY futures: %s expiry %s -> id %s",
-                 chosen[under], chosen._exp.date(), _futures_cache["id"])
-        return _futures_cache["id"]
+        new_id = str(int(chosen[sid]))
+        if c.get("id") and c["id"] != new_id:
+            log.warning("NIFTY futures ROLLED: %s -> %s (%s expiry %s)", c["id"], new_id,
+                        chosen[under], chosen._exp.date())
+        c.update(id=new_id, symbol=str(chosen[under]), expiry=chosen._exp.date(), checked=today, fail_at=None)
+        log.info("NIFTY futures: %s expiry %s -> id %s", chosen[under], chosen._exp.date(), new_id)
+        return {k: c[k] for k in ("id", "symbol", "expiry")}
     except Exception as exc:                                # noqa: BLE001
         log.warning("futures lookup failed (%s) — VWAP will be unavailable", exc)
+        c["fail_at"] = now
         return None
+
+
+def nifty_futures_security_id(force: bool = False) -> str | None:
+    """Security id of the CURRENT NIFTY future (see nifty_futures_contract)."""
+    k = nifty_futures_contract(force)
+    return k["id"] if k else None
 
 
 # ═══════════════════════════════════════════════════════════════════════════

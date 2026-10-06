@@ -662,10 +662,11 @@ def render() -> None:
         <div style="color:{MUTED};font-size:0.8rem;margin-top:6px">A vote count, not a signal. Info only — not advice.</div>
         </div>""", unsafe_allow_html=True)
 
-    t0, t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV",
+    t0, t1, t2, t3, t4, t5, t6, t7, t8, t9 = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV",
                                               "📊 Call vs Put Writers (3m / 5m / 15m)", "🟥 PE − CE OI Table",
                                               "📈 Multi-strike OI",
-                                              "📉 Vega Analysis"])   # TABMOVE MULTISTRIKE VEGAPRO
+                                              "📉 Vega Analysis",
+                                              "⏳ Premium Decay"])   # TABMOVE MULTISTRIKE VEGAPRO PREMIUMPRO
     with t0:
         try:
             import oi_profile_panel
@@ -673,6 +674,13 @@ def render() -> None:
         except Exception as _oip_err:                       # noqa: BLE001
             st.error(f"Open Interest view encountered an error: {_oip_err}")
     with t1:
+        try:                                                    # PCROI_PRO — PCR / OI Change / Total OI vs NIFTY future
+            import pcr_oi_pro
+            pcr_oi_pro.render(day)
+        except Exception as _pcr_err:                           # noqa: BLE001
+            st.error(f"PCR & OI vs Future encountered an error: {_pcr_err}")
+        st.markdown("---")
+        st.caption("Earlier PCR & OI charts (unchanged)")
         for key, fn in (("pcr", chart_pcr), ("chg", chart_chg), ("total", chart_total),
                         ("pe_ce", chart_pe_ce), ("volpcr", chart_volpcr)):
             st.plotly_chart(fn(s), use_container_width=True, key=f"olab_{key}")
@@ -725,3 +733,9 @@ def render() -> None:
             vega_pro.render(day)
         except Exception as _vg_err:                            # noqa: BLE001
             st.error(f"Vega Analysis encountered an error: {_vg_err}")
+    with t9:                                                    # PREMIUMPRO — StockMojo-style Premium Decay
+        try:
+            import premium_decay_pro
+            premium_decay_pro.render(day)
+        except Exception as _pd_err:                            # noqa: BLE001
+            st.error(f"Premium Decay encountered an error: {_pd_err}")

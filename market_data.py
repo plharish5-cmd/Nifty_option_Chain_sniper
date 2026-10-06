@@ -1003,7 +1003,8 @@ def fetch_index_futures(client, symbol: str = "NIFTY") -> IndexFutures:
     # 152 points away from the live one. Nothing errors, the number looks
     # entirely plausible, and #1 scores off a price nobody can trade.
     today = datetime.now().date()
-    live = [x for x in futs if expiry_key(x).date() >= today]
+    _after = datetime.now().time() >= datetime.strptime("15:30", "%H:%M").time()      # FUTFIX: roll after close
+    live = [x for x in futs if expiry_key(x).date() > today or (expiry_key(x).date() == today and not _after)]
     if not live:
         raise RuntimeError(
             f"every {symbol} futures contract in the payload has expired "
@@ -1578,7 +1579,7 @@ def freshness_report(*, gift=None, nf=None, bnf=None, crude_nse=None,
     def expiry_check(exp: str) -> tuple[str, bool]:
         try:
             e = datetime.strptime(str(exp), "%d-%b-%Y")
-            days = (e - datetime.now()).days
+            days = (e.date() - datetime.now().date()).days          # FUTFIX: dates, not times
             if days < 0:
                 return f"EXPIRED {abs(days)} days ago", False
             if days > 75:
@@ -1624,7 +1625,7 @@ def freshness_report(*, gift=None, nf=None, bnf=None, crude_nse=None,
         problem = ""
         try:
             e = datetime.strptime(exp, "%d-%b-%Y")
-            days = (e - datetime.now()).days
+            days = (e.date() - datetime.now().date()).days          # FUTFIX: dates, not times
             if days < 0:
                 problem = (f"EXPIRED {abs(days)} days ago — this is a stale "
                            f"contract, not the near month")
