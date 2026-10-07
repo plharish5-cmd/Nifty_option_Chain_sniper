@@ -1,13 +1,13 @@
 {
- "updated": "2026-10-06T15:35:00",
- "day": "2026-10-06",
- "status": "stopped",
- "packets": 1415375,
- "trades": 752907,
+ "updated": "2026-10-07T13:23:01",
+ "day": "2026-10-07",
+ "status": "connected",
+ "packets": 972297,
+ "trades": 494142,
  "stocks_streaming": 50,
  "stocks_subscribed": 50,
- "index_ltp": 22776.099609375,
- "index_source": "rest",
- "error": "[Errno -3] Temporary failure in name resolution",
- "pid": 3428
+ "index_ltp": 22575.150390625,
+ "index_source": "feed",
+ "error": "",
+ "pid": 18968
 }

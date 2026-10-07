@@ -52,11 +52,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "initial_capital": 100000.0,
     "default_lot_size": 65,
     "brokerage_per_order": 20.0,
-    "stt_sell_rate": 0.001,
+    "stt_sell_rate": 0.0015,              # DHANCHARGES: 0.15 % since 1 Apr 2026
     "exchange_txn_fee_rate": 0.0003503,
     "sebi_turnover_rate": 0.000001,
     "stamp_duty_buy_rate": 0.00003,
-    "ipft_rate": 0.0000005,
+    "ipft_rate": 0.000005,                # DHANCHARGES: IPFT 0.0005 %
     "gst_rate": 0.18,
     "daily_max_loss_limit": 3000.0,
     "max_capital_allocation_pct": 25.0,
@@ -161,11 +161,11 @@ def calculate_trade_charges(
     """
     Computes exact Indian F&O regulatory charges & brokerage as per Dhan App:
       - Brokerage: ₹20 buy + ₹20 sell = ₹40 flat per round trip
-      - STT: 0.1% strictly on Sell-side premium turnover (Buy side is ₹0)
+      - STT: 0.15% strictly on Sell-side premium turnover (Buy side is ₹0)
       - Exchange Transaction Charges (NSE): 0.03503% on total premium turnover
       - SEBI Turnover Charges: ₹10 per crore (0.0001%) on total premium turnover
       - Stamp Duty: 0.003% strictly on Buy-side premium turnover (Sell side is ₹0)
-      - IPFT: ₹0.5 per crore (0.00005%) on total premium turnover
+      - IPFT: 0.0005% on total premium turnover (Dhan txn = 0.03503% + 0.0005% = 0.03553%)
       - GST: 18% on (Brokerage + Exchange Transaction Charges + SEBI charges)
     """
     if cfg is None:
@@ -187,7 +187,7 @@ def calculate_trade_charges(
     brokerage = float(cfg.get("brokerage_per_order", 20.0) * 2)
 
     # 2. STT: Applicable ONLY on Sell side of options (Buy is ₹0)
-    stt = round(float(sell_turnover * cfg.get("stt_sell_rate", 0.001)), 2)
+    stt = round(float(sell_turnover * cfg.get("stt_sell_rate", 0.0015)), 2)
 
     # 3. Exchange Transaction Charges (NSE Options 0.03503%)
     exchange_fee = round(float(total_turnover * cfg.get("exchange_txn_fee_rate", 0.0003503)), 2)
@@ -199,10 +199,10 @@ def calculate_trade_charges(
     stamp_duty = round(float(buy_turnover * cfg.get("stamp_duty_buy_rate", 0.00003)), 2)
 
     # 6. IPFT (NSE ₹0.5/crore = 0.00005%)
-    ipft_fee = round(float(total_turnover * cfg.get("ipft_rate", 0.0000005)), 2)
+    ipft_fee = round(float(total_turnover * cfg.get("ipft_rate", 0.000005)), 2)
 
     # 7. GST: 18% on (Brokerage + Exchange Txn Fee + SEBI Fee)
-    gst_base = brokerage + exchange_fee + sebi_fee
+    gst_base = brokerage + exchange_fee + ipft_fee + sebi_fee   # DHANCHARGES: Dhan GST base includes IPFT
     gst = round(float(gst_base * cfg.get("gst_rate", 0.18)), 2)
 
     total_charges = round(brokerage + stt + exchange_fee + sebi_fee + stamp_duty + ipft_fee + gst, 2)
