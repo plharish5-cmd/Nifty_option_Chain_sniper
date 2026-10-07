@@ -36,6 +36,15 @@ import pandas as pd
 import config
 import paper_trading as pt
 
+# PROFILES — PAPER_PROFILE=wife keeps a completely separate account in data/paper_trading/profiles/wife/
+import os as _os
+SHARED_DIR = pt.PAPER_DIR                    # shared by every profile: Dhan price cache only
+PROFILE = (_os.environ.get("PAPER_PROFILE") or "").strip().lower()
+if PROFILE:
+    _pdir = SHARED_DIR / "profiles" / PROFILE
+    _pdir.mkdir(parents=True, exist_ok=True)
+    pt.PAPER_DIR, pt.ACCOUNT_FILE = _pdir, _pdir / "account.json"
+    pt.TRADES_CSV, pt.CONFIG_FILE = _pdir / "trades.csv", _pdir / "paper_config.json"
 DESK_FILE = pt.PAPER_DIR / "desk.json"
 DEFAULTS = {
     "lots": 1, "sl_pts": 0.0, "tgt_pts": 0.0, "trail_pts": 0.0, "product": "INTRADAY",
@@ -232,11 +241,59 @@ def _snapshot_chain() -> dict | None:
         return None
 
 
+class _SLock:
+    """Lock shared by every desk process (dashboard sidebar, phone page, every profile)."""
+    def __init__(self, name):
+        self.p = SHARED_DIR / f"_{name}.lock"
+
+    def __enter__(self):
+        self.f = None
+        try:
+            import fcntl
+            self.f = open(self.p, "w")
+            fcntl.flock(self.f, fcntl.LOCK_EX)
+        except Exception:                                   # noqa: BLE001
+            pass
+        return self
+
+    def __exit__(self, *a):
+        try:
+            if self.f:
+                import fcntl
+                fcntl.flock(self.f, fcntl.LOCK_UN)
+                self.f.close()
+        except Exception:                                   # noqa: BLE001
+            pass
+
+
+def _shared_chain_fetch(exp: str):
+    """ONE Dhan option-chain call per expiry per 3 s across all desk processes (Dhan's limit)."""
+    import pickle
+    f = SHARED_DIR / f"_chain_{exp}.pkl"
+    with _SLock(f"chain_{exp}"):
+        try:                                                # file time = when that fetch STARTED
+            if f.exists() and _time.time() - f.stat().st_mtime < CHAIN_EVERY - 0.05:
+                return pickle.loads(f.read_bytes())
+        except Exception:                                   # noqa: BLE001
+            pass
+        import dhan_client as dc
+        t0 = _time.time()
+        data = dc.fetch_dhan_option_chain(exp)
+        if data:
+            try:
+                tmp = f.with_suffix(f".{_os.getpid()}.tmp")
+                tmp.write_bytes(pickle.dumps(data))
+                _os.utime(tmp, (t0, t0))
+                tmp.replace(f)
+            except Exception:                               # noqa: BLE001
+                pass
+        return data
+
+
 def get_chain(expiry: str | None, now: datetime) -> dict | None:
     try:
-        import dhan_client as dc
         exp = expiry or (live_expiries(now) or [None])[0]
-        data = dc.fetch_dhan_option_chain(exp) if exp else None
+        data = _shared_chain_fetch(exp) if exp else None
         if data:
             rows, spot = parse_chain(data)
             if len(rows):
@@ -291,6 +348,37 @@ def quotes(sids: list[str]) -> dict:
 
 
 def _quotes_direct(sids: list[str], cache: bool = True) -> dict:
+    """Dhan /marketfeed/quote at most once per second across ALL desk processes; every process's wanted ids are
+    fetched together and shared through a small cache file."""
+    import pickle
+    f = SHARED_DIR / "_quotes.pkl"
+    now = _time.time()
+    with _SLock("quotes"):
+        try:
+            sh = pickle.loads(f.read_bytes()) if f.exists() else {}
+        except Exception:                                   # noqa: BLE001
+            sh = {}
+        sh.setdefault("q", {}); sh.setdefault("want", {}); sh.setdefault("last", 0.0)
+        for x in sids:
+            sh["want"][x] = now
+        sh["want"] = {k: v for k, v in sh["want"].items() if now - v < 60}
+        if now - sh["last"] >= 1.0:
+            got = _quotes_fetch(sorted(sh["want"]))
+            ts = _time.time()
+            for k, v in got.items():
+                sh["q"][k] = (ts, v)
+            sh["last"] = ts
+            sh["q"] = {k: v for k, v in sh["q"].items() if ts - v[0] < 120}
+            try:
+                tmp = f.with_suffix(f".{_os.getpid()}.tmp")
+                tmp.write_bytes(pickle.dumps(sh))
+                tmp.replace(f)
+            except Exception:                               # noqa: BLE001
+                pass
+    return {x: sh["q"][x][1] for x in sids if x in sh["q"] and _time.time() - sh["q"][x][0] <= 5}
+
+
+def _quotes_fetch(sids: list[str], cache: bool = False) -> dict:
     key = (tuple(sids), int(_time.time() // 2))
     if cache and key in _mem["qq"]:
         return _mem["qq"][key]
@@ -1872,7 +1960,7 @@ def desk_body(mobile: bool = False) -> None:
               if not market_open(now) else "<span class='pd-r'>● STALE</span>")
     acc = pt.load_paper_account()
     hdr.markdown(
-        f"<div class='pd-box'><span class='pd-h'>📝 PAPER DESK</span> &nbsp;{status}<br>"
+        f"<div class='pd-box'><span class='pd-h'>📝 PAPER DESK{(' · ' + PROFILE.upper()) if PROFILE else ''}</span> &nbsp;{status}<br>"
         f"<span class='pd-m'>NIFTY <b class='pd-w'>{chain['spot']:,.1f}</b> · {f'{e:%d %b}' if e else '?'} ({dte}) · {chain['source']} · "
         f"{_ago(age)}</span><br><span class='pd-big'>{_money(ds['realised'] + ds['open'])}</span>"
         f"<span class='pd-m'> today · booked {_money(ds['realised'])} · open {_money(ds['open'])}<br>"

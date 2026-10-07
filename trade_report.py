@@ -79,8 +79,8 @@ def newest_dhan() -> Path | None:
     return cands[-1] if cands else None
 
 
-def load_paper() -> pd.DataFrame:
-    f = DATA / "paper_trading" / "trades.csv"
+def load_paper(profile: str = "") -> pd.DataFrame:
+    f = (DATA / "paper_trading" / "profiles" / profile / "trades.csv") if profile else (DATA / "paper_trading" / "trades.csv")
     if not f.exists():
         return pd.DataFrame()
     t = pd.read_csv(f)
@@ -409,7 +409,9 @@ def main():
     ap.add_argument("--dhan", help="Dhan Global Transaction CSV (default: newest in data/dhan_reports/ or here)")
     ap.add_argument("--paper-only", action="store_true")
     ap.add_argument("--out", help="output HTML path")
+    ap.add_argument("--profile", default="", help="paper profile, e.g. wife (default: your own account)")
     a = ap.parse_args()
+    a.profile = (a.profile or "").strip().lower()
     df = None
     if not a.paper_only:
         f = Path(a.dhan) if a.dhan else newest_dhan()
@@ -418,8 +420,11 @@ def main():
             print(f"Dhan: {f.name} · {len(df)} rows")
         else:
             print("no Dhan CSV found — paper-only report")
-    paper = load_paper()
-    out = Path(a.out) if a.out else DATA / "reports" / f"trade_report_{date.today():%Y-%m-%d}.html"
+    paper = load_paper(a.profile)
+    if a.profile:
+        df = None if not a.dhan else df                     # a profile's report is paper-only unless --dhan is given
+    tag = f"_{a.profile}" if a.profile else ""
+    out = Path(a.out) if a.out else DATA / "reports" / f"trade_report{tag}_{date.today():%Y-%m-%d}.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(build(df, paper), encoding="utf-8")
     print(f"report → {out}")
