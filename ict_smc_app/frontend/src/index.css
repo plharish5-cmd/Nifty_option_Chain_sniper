@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body { font-feature-settings: "tnum" 1; -webkit-font-smoothing: antialiased; }
+.num { font-family: theme("fontFamily.mono"); font-variant-numeric: tabular-nums; }
+.card { @apply bg-ink-900 border border-ink-700 rounded-xl; }
+.card-h { @apply px-4 py-2.5 border-b border-ink-700 flex items-center justify-between gap-2; }
+.card-t { @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-gold-400; }
+.pill { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold; }
+.tab { @apply px-2.5 py-1 rounded-md text-xs font-semibold text-slate-400 hover:text-slate-100 hover:bg-ink-800; }
+.tab-on { @apply bg-gold-500/15 text-gold-400 ring-1 ring-gold-500/40; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #1d2a45; border-radius: 8px; }
