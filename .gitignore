@@ -71,3 +71,4 @@ ict_smc_app/backend/*.db
 ict_smc_app/backend/data_replay/
 ict_smc_app/backend/data/*.sqlite3*
 ict_smc_app/backend/tests/.data/
+data/participant_sheet/update.log
