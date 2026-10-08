@@ -1,0 +1,83 @@
+{
+  "_note": "Every threshold lives here. Edit, then restart the backend. Points are NIFTY index points.",
+
+  "instruments": {
+    "nifty_security_id": "13",
+    "vix_security_id": "21",
+    "_vix_note": "INDIA VIX in IDX_I. The backend checks Dhan's scrip master on start and overrides this if it differs.",
+    "segment": "IDX_I"
+  },
+
+  "session": {
+    "open": "09:15",
+    "close": "15:30",
+    "opening_range_end": "09:30",
+    "initial_balance_end": "10:15",
+    "trade_windows": [["09:30", "11:30"], ["13:30", "14:45"]],
+    "_trade_windows_note": "Indian 'kill zones': after the opening range settles, and the post-lunch institutional window. No new paper entries outside these.",
+    "last_entry": "14:45",
+    "square_off": "15:15",
+    "weekly_expiry_weekday": 1,
+    "_expiry_note": "Tuesday (Mon=0). Only used as a label - real expiry dates always come from Dhan's expiry list."
+  },
+
+  "data": {
+    "backfill_days": 30,
+    "_backfill_note": "1-minute candles fetched on start (one call; Dhan allows 90 days per call). 30 days gives the 1h chart ~200 bars.",
+    "daily_days": 40,
+    "chain_expiries": 2,
+    "chain_min_gap_s": 3.1,
+    "chain_snapshot_every_s": 60,
+    "chain_keep_days": 5,
+    "candles_keep_days": 400,
+    "feed_stale_s": 10,
+    "rest_ltp_every_s": 2,
+    "reconnect_max_wait_s": 60
+  },
+
+  "engine": {
+    "timeframes": ["1m", "5m", "15m", "1h"],
+    "pivot_n": {"1m": 3, "5m": 2, "15m": 2, "1h": 2, "1D": 2},
+    "atr_len": 14,
+    "lookback_bars": 300,
+    "eq_tolerance_pts": 4.0,
+    "eq_tolerance_atr": 0.15,
+    "sweep_min_pen_pts": 0.5,
+    "false_breakout_max_bars": 2,
+    "fvg_min_pts": 3.0,
+    "fvg_min_atr": 0.10,
+    "displacement_body_atr": 1.0,
+    "displacement_body_ratio": 0.6,
+    "ob_max_age_bars": 120,
+    "ote_levels": [0.618, 0.705, 0.79]
+  },
+
+  "playbook": {
+    "primary_tf": "5m",
+    "bias_tf": "15m",
+    "require_bias_alignment": true,
+    "sweep_to_mss_max_bars": 12,
+    "mss_to_entry_max_bars": 10,
+    "require_displacement": true,
+    "require_premium_discount": true,
+    "sl_buffer_pts": 2.0,
+    "min_rr": 1.5,
+    "min_risk_pts": 8.0,
+    "max_risk_pts": 45.0
+  },
+
+  "alerts": {
+    "cooldown_min": 15,
+    "max_per_day": 10,
+    "telegram": false,
+    "send_info_alerts": false,
+    "_note": "Info alerts (BOS, OTE touch) show in the app; only trade setups go to Telegram unless send_info_alerts is true."
+  },
+
+  "paper": {
+    "enabled": true,
+    "lots": 1,
+    "lot_size": 65,
+    "_lot_note": "NIFTY lot = 65 (same as your Paper Desk). Paper P&L is index points x lot_size, a rough proxy for an ITM option. The app never places real orders."
+  }
+}

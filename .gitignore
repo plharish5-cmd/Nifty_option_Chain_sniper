@@ -58,3 +58,14 @@ data/historical_key_levels.xlsx
 # Archives
 *.zip
 *.tar.gz
+
+# Runtime data files written by OC app daily
+data/logs/
+data/*.parquet
+data/order_flow_journal.jsonl
+data/scheduler_heartbeat*
+
+# ICT/SMC app runtime
+ict_smc_app/backend/.venv/
+ict_smc_app/backend/*.db
+ict_smc_app/backend/data_replay/

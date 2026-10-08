@@ -1,0 +1,7 @@
+# Python 3.9+ (tested on 3.9.23 — same as your OC .venv). Exact versions that resolved on 3.9:
+fastapi==0.128.8
+uvicorn[standard]==0.39.0
+httpx==0.28.1
+websockets==15.0.1
+numpy==2.0.2
+pytest==8.4.2
