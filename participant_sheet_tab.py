@@ -227,89 +227,116 @@ Their buying adds to demand → **price accelerates through the level = SQUEEZE*
         """)
 
 
-# ─────────────────────────────── Participant Alignment Signal ────────────────
-# From Stock Unlimited Lecture 2 — ratio rules:
-#   FII AM > 1 = FII net buying calls = BULLISH
-#   Retail AI > 1 = Retail net buying calls (usually wrong side)
-#   When FII and Retail diverge → follow FII (smart money)
+# ─────────────────────────────── Participant Alignment Signal ──────────────── ALIGNFIX
+# Ratios exactly as the trainer's workbook: FII!AM, Retailers!AI, PRO!AB = Put SHORT ÷ Call SHORT (R / P).
+#   > 1  more puts written than calls → writers expect NO fall → bullish lean   (his green)
+#   < 1  more calls written than puts → writers expect NO rise → bearish lean
+#   FII AM < 0.55 / > 1.3 → his two EXTREME colours (green / red) — shown as "extreme", with their record.
 
-def _ratio_direction(val: float) -> tuple[str, str]:
-    """(arrow, colour) for a ratio value."""
-    if val > 1.2:
-        return "▲ BULLISH", "#1a7a1a"
-    elif val < 0.85:
-        return "▼ BEARISH", "#b30000"
-    else:
-        return "↔ NEUTRAL", "#7f6000"
+import html as _h
 
 
-def _render_alignment(last: "pd.Series", prev: "pd.Series") -> None:
+def _ratio_direction(val: float, fii: bool = False) -> tuple[str, str]:
+    """(label, colour) using HIS thresholds."""
+    if fii and val > 1.3:
+        return "▲ BULLISH · EXTREME (his red)", "#d97706"
+    if fii and val < 0.55:
+        return "▼ BEARISH · EXTREME (his green)", "#d97706"
+    if val > 1.0:
+        return "▲ BULLISH (> 1)", "#1a7a1a"
+    if val < 1.0:
+        return "▼ BEARISH (< 1)", "#b30000"
+    return "↔ NEUTRAL (= 1)", "#7f6000"
+
+
+def _edge(df: "pd.DataFrame", mask: "pd.Series", years: float | None = None) -> tuple[int, float, float]:
+    """(days, next-day up %, next-5-day up %) for a reading, from the workbook's own NIFTY column."""
+    n = df["nifty"]
+    r1, r5 = n.shift(-1) / n - 1, n.shift(-5) / n - 1
+    m = mask & r5.notna()
+    if years:
+        m &= df.index >= df.index.max() - pd.Timedelta(days=int(365 * years))
+    if m.sum() == 0:
+        return 0, float("nan"), float("nan")
+    return int(m.sum()), 100 * float((r1[m] > 0).mean()), 100 * float((r5[m] > 0).mean())
+
+
+def _render_alignment(last: "pd.Series", prev: "pd.Series", df: "pd.DataFrame | None" = None) -> None:
     st.markdown("### 🧠 Participant Alignment Signal")
-    st.caption("Smart money (FII) vs dumb money (Retail) divergence — from Stock Unlimited ratio rules. "
-               "Follow FII when they split from Retail.")
-
-    fii_dir,    fii_col    = _ratio_direction(float(last.fii_AM))
-    retail_dir, retail_col = _ratio_direction(float(last.retail_AI))
-    pro_dir,    pro_col    = _ratio_direction(float(last.pro_AB))
-
-    c1, c2, c3 = st.columns(3)
-    for col, name, val, direction, colour, note in (
-        (c1, "FII (AM)",    last.fii_AM,    fii_dir,    fii_col,    "Smart money — follow this"),
-        (c2, "Retail (AI)", last.retail_AI, retail_dir, retail_col, "Usually on wrong side near extremes"),
-        (c3, "PRO (AB)",    last.pro_AB,    pro_dir,    pro_col,    "Prop desks — confirms when aligned with FII"),
-    ):
+    st.caption("Put SHORT ÷ Call SHORT for FII (AM), Retail (AI) and PRO (AB) — exactly the trainer's columns and "
+               "colours. Below each reading: what NIFTY did next in HIS sheet's own history.")
+    F, R, P = float(last.fii_AM), float(last.retail_AI), float(last.pro_AB)
+    cards = ((F, "FII (AM)", True, "Big money — the lead signal"),
+             (R, "Retail (AI)", False, "Clients"),
+             (P, "PRO (AB)", False, "Prop desks — confirms FII when aligned"))
+    cols = st.columns(3)
+    for col, (val, name, is_fii, note) in zip(cols, cards):
+        lab, colour = _ratio_direction(val, is_fii)
         col.markdown(
-            f"<div style='border:1px solid {colour};border-radius:8px;padding:10px;text-align:center;"
-            f"background:#1a1a2e'>"
+            f"<div style='border:1px solid {colour};border-radius:8px;padding:10px;text-align:center;background:#0b1a33'>"
             f"<div style='color:#aaa;font-size:0.8em'>{name}</div>"
             f"<div style='font-size:1.6em;font-weight:700;color:{colour}'>{val:.2f}</div>"
-            f"<div style='color:{colour};font-weight:600'>{direction}</div>"
-            f"<div style='color:#777;font-size:0.75em;margin-top:4px'>{note}</div>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+            f"<div style='color:{colour};font-weight:600'>{_h.escape(lab)}</div>"
+            f"<div style='color:#777;font-size:0.75em;margin-top:4px'>{note}</div></div>", unsafe_allow_html=True)
 
-    # Divergence alert
-    fii_bull    = float(last.fii_AM) > 1.0
-    retail_bull = float(last.retail_AI) > 1.0
-    if fii_bull != retail_bull:
-        fii_side    = "BULLISH" if fii_bull else "BEARISH"
-        retail_side = "BULLISH" if retail_bull else "BEARISH"
-        st.markdown(
-            f"<div style='background:#2a1a00;border:1px solid #c8a000;border-radius:8px;"
-            f"padding:10px 14px;margin-top:8px'>"
-            f"⚠️ <b style='color:#c8a000'>SMART / DUMB MONEY DIVERGENCE</b><br>"
-            f"FII is <b>{fii_side}</b> · Retail is <b>{retail_side}</b><br>"
-            f"<span style='color:#aaa;font-size:0.85em'>Course rule: follow FII (AM). "
-            f"Retail is often positioned against the move near turning points.</span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-    elif fii_bull and retail_bull:
-        st.success("✅ All three aligned BULLISH — strong confirmation. "
-                   "FII + Retail + PRO all buying calls (ratio > 1).")
-    elif not fii_bull and not retail_bull:
-        st.error("🔴 All three aligned BEARISH — strong confirmation. "
-                 "FII + Retail + PRO all buying puts (ratio < 1).")
+    fb, rb, pb = F > 1, R > 1, P > 1
+    if fb and rb and pb:
+        state, colour = "ALL THREE > 1 — every group writing more puts than calls (bullish alignment)", "#1a7a1a"
+    elif not fb and not rb and not pb:
+        state, colour = "ALL THREE < 1 — every group writing more calls than puts (bearish alignment)", "#b30000"
+    elif fb and not rb:
+        state, colour = "DIVERGENCE: FII > 1 (puts written) · Retail < 1 (calls written)", "#c8a000"
+    elif not fb and rb:
+        state, colour = "DIVERGENCE: FII < 1 (calls written) · Retail > 1 (puts written)", "#c8a000"
     else:
-        st.info("↔ Mixed alignment — no strong directional edge from participants today.")
+        state, colour = "MIXED — FII and Retail agree, PRO does not", "#7f6000"
 
-    with st.expander("📖 Course note — Ratio rules (MJ / Stock Unlimited)"):
+    lines = []
+    if df is not None and "nifty" in df:
+        Fs, Rs, Ps = df.fii_AM, df.retail_AI, df.pro_AB
+        today = {
+            "ALL THREE > 1": (Fs > 1) & (Rs > 1) & (Ps > 1), "ALL THREE < 1": (Fs < 1) & (Rs < 1) & (Ps < 1),
+            "DIVERGENCE: FII > 1": (Fs > 1) & (Rs < 1), "DIVERGENCE: FII < 1": (Fs < 1) & (Rs > 1),
+            "MIXED": ((Fs > 1) == (Rs > 1)) & ((Fs > 1) != (Ps > 1)),
+        }
+        key = next(k for k in today if state.startswith(k))
+        base_all, base_2y = _edge(df, Fs.notna()), _edge(df, Fs.notna(), 2)
+        for lab, m in (("This alignment", today[key]),
+                       ("FII > 1" if fb else "FII < 1", (Fs > 1) if fb else (Fs < 1))):
+            a, b = _edge(df, m), _edge(df, m, 2)
+            lines.append(f"<b>{_h.escape(lab)}</b>: since 2019 {a[0]} days → next day up <b>{a[1]:.0f}%</b>, 5 days up <b>{a[2]:.0f}%</b>"
+                         f" · last 2 years {b[0]} days → {b[1]:.0f}% / {b[2]:.0f}%")
+        if F < 0.55 or F > 1.3:
+            m = (Fs < 0.55) if F < 0.55 else (Fs > 1.3)
+            a, b = _edge(df, m), _edge(df, m, 2)
+            lines.append(f"<b>FII extreme ({'&lt; 0.55' if F < 0.55 else '&gt; 1.3'})</b>: since 2019 {a[0]} days → "
+                         f"{a[1]:.0f}% / {a[2]:.0f}% · last 2 years {b[0]} days → {b[1]:.0f}% / {b[2]:.0f}%")
+        lines.append(f"<span style='color:#94a3b8'>Baseline, any day: since 2019 {base_all[1]:.0f}% / {base_all[2]:.0f}% · "
+                     f"last 2 years {base_2y[1]:.0f}% / {base_2y[2]:.0f}%. A reading only matters if it beats this.</span>")
+        below = (Fs < 1)[::-1]
+        streak = int(below.cumprod().sum()) if bool(below.iloc[0]) else 0
+        if streak >= 3:
+            lines.append(f"FII AM has been below 1 for <b>{streak} sessions</b> in a row.")
+    st.markdown(f"<div style='background:#0b1a33;border:1px solid {colour};border-radius:8px;padding:10px 14px;margin-top:8px;color:#f1f5f9'>"
+                f"<b style='color:{colour}'>{_h.escape(state)}</b><br>" + "<br>".join(lines) + "</div>", unsafe_allow_html=True)
+
+    with st.expander("📖 How to read it — trainer's rules + what his data shows"):
         st.markdown("""
-**Ratio = Put Short ÷ Call Short (PS/CS)**
-- Ratio **> 1** = more puts written than calls → writers betting price will NOT fall → **BULLISH**
-- Ratio **< 1** = more calls written than puts → writers betting price will NOT rise → **BEARISH**
-- Ratio **= 1** = balanced → NEUTRAL
+**Ratio = Put Short ÷ Call Short** (FII!AM, Retailers!AI, PRO!AB — formula `=R/P` in his sheet)
+- **> 1** → more puts written than calls → writers expect NIFTY **not to fall** → bullish lean (his green)
+- **< 1** → more calls written than puts → writers expect NIFTY **not to rise** → bearish lean
+- **FII AM < 0.55** and **> 1.3** are his two *extreme* colours. Treat them as "positioning stretched — watch", not as a
+  trade by themselves; their record is shown live above.
 
-**FII AM (column AM)** — the most reliable signal. FIIs have information advantage and large capital.
-> *"Follow FII when they diverge from Retail."* — Stock Unlimited Lecture 2
+**What his own sheet shows (Dec-2019 → Oct-2026, next-day / 5-day NIFTY up %; any day ≈ 54 / 55):**
+- **All three > 1** ≈ 63 / 60 — the strongest bullish reading. **All three < 1** ≈ 48 / 51 (last 2 years ≈ 44 / 42 — bearish).
+- **FII > 1** ≈ 59 / 59 vs **FII < 1** ≈ 49 / 52 — FII direction helps, mildly.
+- **Retail > 1** ≈ 58 / 58 — Retail moved WITH the market in this data, not against it.
+- **FII > 1 & Retail < 1** ≈ 50 / 61 — no next-day edge; at most a few-day long lean (few days).
+- **FII < 0.55** ≈ 50 / 40 — his green extreme did NOT mark bottoms; the following week leaned down.
 
-**Retail AI (column AI)** — often on the wrong side near extremes. Useful as a contrarian signal.
-
-**PRO AB (column AB)** — prop desks. Confirms when aligned with FII.
-
-**Key divergence rule:** When FII > 1 and Retail < 1 → Retail is selling calls (expecting fall) but FII is selling puts (expecting rise). FII wins this battle. **Buy CE or stay long bias.**
-        """)
+Use it as the **day's bias**, then take entries only with your price-action setup. Not financial advice.
+""")
 
 
 def render() -> None:
@@ -343,7 +370,7 @@ def render() -> None:
     st.divider()
     _render_four_quadrants(df)
     st.divider()
-    _render_alignment(last, df.iloc[-2])
+    _render_alignment(last, df.iloc[-2], df)                 # ALIGNFIX
     st.divider()
     # ─────────────────────────────────────────────────────────────────────────
 

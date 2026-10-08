@@ -1,0 +1,15 @@
+{
+  "initial_capital": 100000.0,
+  "cash_balance": 107175.6,
+  "used_margin": 0.0,
+  "realized_pnl": 7175.6,
+  "unrealized_pnl": 0.0,
+  "total_trades_count": 2,
+  "open_positions": [],
+  "recent_alerts": [
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22600 PE [INTRADAY] @ \u20b9167.10.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22700 PE [INTRADAY] @ \u20b9228.05."
+  ],
+  "total_charges_paid": 169.4,
+  "last_updated": "2026-10-08T10:26:18.439533"
+}

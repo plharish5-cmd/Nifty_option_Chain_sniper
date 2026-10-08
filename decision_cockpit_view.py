@@ -581,7 +581,7 @@ def evaluate_all_tabs_radar(
             pass
 
     items.append(TabConfluenceItem(
-        tab_name="Tab 37: Anti-Fakeout & Pressure",
+        tab_name="Anti-Fakeout & Pressure Engine",
         feature="200-Pt Core Pressure Index & Fakeout Shield",
         signal=p37_sig,
         badge_color=GREEN if p37_sig == "BULLISH" else (RED if p37_sig == "BEARISH" else SLATE),

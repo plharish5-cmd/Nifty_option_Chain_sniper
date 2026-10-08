@@ -634,8 +634,17 @@ class PriceActionBreakoutEngine:
                 # Pattern B: Inside Bar Trap / Immediate Reversal -> TRAP_IMMEDIATE_REVERSAL
                 # Candle 1 closed beyond L. Candle 2 immediately reverses and closes back inside.
                 if i >= 1 and trap_signal[i] == "":
+                    # FAKEOUTFIX: a trap needs a real break in the last 1–2 candles — a close on the other side of
+                    # the level at i-2 or i-3. Before, a plain support break after hours above it was called a "bull trap".
+                    def _inside(j, up, _lvl=lvl, _Lp=L_prev):
+                        if j < 0:
+                            return False
+                        Lj = _lvl.get_price_at(j)
+                        if np.isnan(Lj):
+                            Lj = _Lp
+                        return bool(c[j] <= Lj) if up else bool(c[j] >= Lj)
                     # Bullish Trap (Longs trapped above resistance):
-                    c1_above = c_prev > L_prev
+                    c1_above = (c_prev > L_prev) and (_inside(i - 2, True) or _inside(i - 3, True))
                     c2_back_below = (c[i] < L) and (c[i] < o[i])
                     if c1_above and c2_back_below:
                         trap_signal[i] = "TRAP_IMMEDIATE_REVERSAL"
@@ -649,7 +658,7 @@ class PriceActionBreakoutEngine:
                         )
 
                     # Bearish Trap (Shorts trapped below support):
-                    c1_below = c_prev < L_prev
+                    c1_below = (c_prev < L_prev) and (_inside(i - 2, False) or _inside(i - 3, False))   # FAKEOUTFIX
                     c2_back_above = (c[i] > L) and (c[i] > o[i])
                     if c1_below and c2_back_above:
                         trap_signal[i] = "TRAP_IMMEDIATE_REVERSAL"

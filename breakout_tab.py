@@ -294,63 +294,45 @@ def render_breakout_tab(
     # VIEW A: FAKEOUT AVOIDANCE TERMINAL (COMPONENTS 2 & 3)
     # ═══════════════════════════════════════════════════════════════════════
     if view_mode == "🛡️ Fakeout Avoidance (Liquidity Sweeps & FVG)":
-        # Run structural scan for active sweep setup
-        # only RECENT sweeps count (a morning sweep must not mark "BSL swept ✓" at 15:00)
-        _recent_from = max(0, len(df_raw) - 30)
-        all_sweeps = [x for x in smc.liquidity(df_raw, ps)
-                      if x.kind == "SWEEP" and x.direction == "ABOVE" and x.i >= _recent_from]
-        fvg_tracker = FVG_Tracker(df_raw)
-        fvgs = [g for g in fvg_tracker.fvgs if g.direction == "BEARISH"]
+        # FAKEOUTFIX — rules live in fakeout_engine.py: closed candles only, FVG ≥ 3 pts / 0.1×ATR, sweep cancelled
+        # by a close above the swept high, entry only after the MSS, stop above the true high, every entry logged.
+        import fakeout_engine as _fx
+        _closed = _fx.closed_only(df_raw)
+        _fxs = _fx.find_setup(_closed)
+        active_setup = {k: v for k, v in _fxs.items()
+                        if k in ("sweep_bar_idx", "sweep_price", "mss_level", "mss_bar_idx", "fvg_top",
+                                 "fvg_bottom", "fvg_start_idx", "entry_bar_idx", "entry_price")}
+        all_sweeps = [_fxs] if "sweep_bar_idx" in _fxs else []
+        try:
+            _fx.log_signal(_fxs, tf, now=now)
+        except Exception as _log_err:                      # noqa: BLE001
+            _fx.LAST_ERROR = f"signal log not saved: {_log_err}"
+        _status = _fxs.get("status", "")
+        # TP line only when there is a trade, and only the swing low KNOWN at the entry candle
+        equal_lows = float(_fxs.get("ssl_target") or 0.0) if _status == "ENTRY" else 0.0
 
-        active_setup: Dict[str, Any] = {}
-        if all_sweeps:
-            latest_sw = all_sweeps[-1]
-            active_setup["sweep_bar_idx"] = latest_sw.i
-            active_setup["sweep_price"] = latest_sw.wick
-
-            st_struct = structure(df_raw, ps)
-            bear_chochs = [ev for ev in st_struct.events if ev.direction == "BEARISH" and ev.i >= latest_sw.i]
-            if bear_chochs:
-                active_setup["mss_level"] = bear_chochs[-1].level
-                active_setup["mss_bar_idx"] = bear_chochs[-1].i
-
-            post_fvgs = [g for g in fvgs if g.i >= latest_sw.i]
-            if post_fvgs:
-                target_fvg = post_fvgs[0]
-                active_setup["fvg_top"] = target_fvg.top
-                active_setup["fvg_bottom"] = target_fvg.bottom
-                active_setup["fvg_start_idx"] = target_fvg.i
-
-                for k in range(target_fvg.i + 1, len(df_raw)):
-                    if df_raw["high"].iloc[k] >= target_fvg.bottom:
-                        active_setup["entry_bar_idx"] = k
-                        active_setup["entry_price"] = float(df_raw["close"].iloc[k])
-                        break
-
-        # Setup state for Kanban Tracker
         is_forming_last = bool(not df_raw.iloc[-1].get("closed", True)) if "closed" in df_raw.columns else False
-        c_last = float(df_raw["close"].iloc[-1])
         h_last = float(df_raw["high"].iloc[-1])
-
         is_mid_testing = (h_last >= bsl_level) and is_forming_last
-        bsl_swept_done = (len(all_sweeps) > 0) or (h_last >= bsl_level and not is_forming_last and c_last <= bsl_level)
-        rejection_done = bool(all_sweeps)
-        mss_done = bool(active_setup.get("mss_level"))
-        fvg_done = bool(active_setup.get("fvg_top"))
-        entry_done = bool(active_setup.get("entry_bar_idx"))
-
+        entry_done = _status == "ENTRY"
+        _sw_ok = "sweep_bar_idx" in _fxs
+        _mss_ok = "mss_level" in _fxs
+        _fvg_ok = "fvg_top" in _fxs
         kanban_state = {
-            "bsl_swept": bsl_swept_done,
+            "bsl_swept": _sw_ok,
             "bsl_waiting_close": is_mid_testing,
-            "bsl_detail": f"Probed BSL ({bsl_level:,.1f})",
-            "rejection_closed": rejection_done,
-            "rejection_detail": f"Sweep confirmed bar {all_sweeps[-1].i}" if all_sweeps else "Waiting for rejection wick",
-            "mss_shifted": mss_done,
-            "mss_detail": f"Low broken at {active_setup.get('mss_level', 0.0):,.1f}" if mss_done else "Displacement required",
-            "fvg_formed": fvg_done,
-            "fvg_detail": f"Gap: {active_setup.get('fvg_bottom', 0.0):,.1f}-{active_setup.get('fvg_top', 0.0):,.1f}" if fvg_done else "Awaiting 3-bar imbalance",
+            "bsl_detail": (f"{_fxs['sweep_time']} wick {_fxs['sweep_price']:,.1f} over {_fxs['sweep_level']:,.1f}" if _sw_ok
+                           else ("Last sweep cancelled — closed back above" if _fxs.get("cancelled") else f"BSL {bsl_level:,.1f}")),
+            "rejection_closed": _sw_ok,
+            "rejection_detail": "Closed back below, no close above since" if _sw_ok else "Waiting for a CLOSED rejection",
+            "mss_shifted": _mss_ok,
+            "mss_detail": f"{_fxs['mss_time']} closed below {_fxs['mss_level']:,.1f}" if _mss_ok else "Needs a CLOSE below a swing low",
+            "fvg_formed": _fvg_ok,
+            "fvg_detail": (f"{_fxs['fvg_bottom']:,.1f}–{_fxs['fvg_top']:,.1f} ({_fxs['fvg_top'] - _fxs['fvg_bottom']:.1f} pts)" if _fvg_ok
+                           else f"Needs a gap ≥ {_fx.MIN_FVG_PTS:g} pts / {_fx.MIN_FVG_ATR:g}×ATR"),
             "entry_active": entry_done,
-            "entry_detail": f"Entry at {active_setup.get('entry_price', 0.0):,.1f}" if entry_done else "Awaiting FVG tap",
+            "entry_detail": (f"{_fxs['entry_time']} close {_fxs['entry_price']:,.1f}" if entry_done
+                             else "After the MSS: a CLOSED candle inside the FVG"),
         }
 
         # Component 2: Annotation Switchboard
@@ -382,23 +364,59 @@ def render_breakout_tab(
         st.markdown("#### 🚦 Institutional Setup Kanban (Real-Time Execution Pipeline)")
         faui.render_kanban_actionability_panel(kanban_state)
 
-        # Execution Advice Card
+        # Execution card — FAKEOUTFIX
         if entry_done:
-            ent = active_setup["entry_price"]
-            sl = float(all_sweeps[-1].wick) + 2.0
-            risk = max(5.0, sl - ent)
-            tp1 = ent - risk
-            tp2 = ent - (2 * risk)
-            st.success(
-                f"🎯 **ACTIONABLE REVERSAL EXECUTION (BUY PE / SHORT)**  \n"
-                f"• **Entry:** `{ent:,.1f}` (Inside FVG Killzone) | **Stop Loss:** `{sl:,.1f}` (Risk: `{risk:,.1f}` pts)  \n"
-                f"• **Target 1 (1:1):** `{tp1:,.1f}` | **Target 2 (Equal Lows):** `{tp2:,.1f}` (R:R 2.0x)"
+            _res = _fxs.get("result", "OPEN")
+            _rr = float(_fxs.get("r") or 0.0)
+            _res_txt = {"OPEN": "running", "T1": f"T1 hit at {_fxs.get('result_time', '')} (+1R)",
+                        "SL": f"stopped at {_fxs.get('result_time', '')} (−1R)",
+                        "EOD": f"no target or stop by the close ({_rr:+.2f}R)"}.get(_res, _res)
+            (st.success if _res in ("OPEN", "T1") else st.warning)(
+                f"🎯 **SHORT / BUY PE — {_fxs['entry_time']} candle CLOSED inside the FVG**  \n"
+                f"• **Entry:** `{_fxs['entry_price']:,.1f}` | **Stop:** `{_fxs['sl']:,.1f}` (highest high since the sweep "
+                f"+ {_fx.SL_BUFFER:g} · risk `{_fxs['risk']:,.1f}` pts)  \n"
+                f"• **T1 (1R):** `{_fxs['t1']:,.1f}` | **T2 (2R):** `{_fxs['t2']:,.1f}`"
+                + (f" | SSL known at entry: `{_fxs['ssl_target']:,.1f}`" if _fxs.get("ssl_target") else "")
+                + f"  \n• **Status:** {_res_txt}" + (" · T2 reached" if _fxs.get("t2_hit") else "")
             )
         elif is_mid_testing:
             st.warning(
-                f"⚠️ **MID-CANDLE ALERT:** Price is actively probing BSL ({bsl_level:,.1f}). **DO NOT ENTER LONG.** "
-                f"Wait for the {tf} candle to close to verify whether institutions accept value or sweep liquidity."
+                f"⚠️ **MID-CANDLE ALERT:** Price is actively probing BSL ({bsl_level:,.1f}). **DO NOT ENTER.** "
+                f"Wait for the {tf} candle to close — nothing on this tab is painted from a forming candle."
             )
+        else:
+            _why = {"NO_SWEEP": "no sweep above a swing high yet", "CANCELLED": "the last sweep was cancelled",
+                    "WAIT_MSS": "sweep standing, waiting for the MSS close", "WAIT_FVG": "MSS done, no qualifying FVG",
+                    "WAIT_FVG_TAP": "waiting for a closed candle back inside the FVG"}.get(_status, _status)
+            st.info(f"💡 **No short setup** — {_why}.")
+
+        with st.expander("🧾 Rule check — why the tab says what it says", expanded=not entry_done):
+            for _n in _fxs.get("notes", []):
+                st.markdown(f"- {_n}")
+            st.caption(f"Rules: closed candles only · FVG ≥ {_fx.MIN_FVG_PTS:g} pts or {_fx.MIN_FVG_ATR:g}×ATR · "
+                       f"sweep cancelled by a close above the swept high · entry only after the MSS candle · "
+                       f"stop = highest high since the sweep + {_fx.SL_BUFFER:g} · T1 1R, T2 2R.")
+
+        with st.expander("📒 Track record — every entry, logged when the app first showed it", expanded=False):
+            _tr = _fx.track_record(live_only=True)
+            if _tr["n"] == 0:
+                st.info("No live signals logged yet. Entries first seen after the market closes are kept as "
+                        "'backfill' and not counted — only what you could actually have traded counts.")
+            else:
+                _m = st.columns(5)
+                _m[0].metric("Live signals", _tr["n"])
+                _m[1].metric("T1 hit", f"{_tr['t1']}/{_tr['done']}" if _tr["done"] else "—")
+                _m[2].metric("Stopped", f"{_tr['sl']}/{_tr['done']}" if _tr["done"] else "—")
+                _m[3].metric("T2 reached", f"{_tr['t2']}/{_tr['done']}" if _tr["done"] else "—")
+                _m[4].metric("Avg R", f"{_tr['avg_r']:+.2f}" if _tr["done"] else "—")
+                _cols = ["date", "tf", "entry_time", "entry", "sl", "t1", "t2", "first_seen", "lag_min", "result", "result_time", "r"]
+                st.dataframe(_tr["rows"][_cols].tail(20), use_container_width=True, hide_index=True)
+                if _tr["done"] < 20:
+                    st.caption(f"Only {_tr['done']} finished live signal(s) — fewer than 20 is too few to call it an edge.")
+            if _tr.get("backfill"):
+                st.caption(f"{_tr['backfill']} backfill signal(s) (first seen after the candle was long closed) not counted.")
+            if getattr(_fx, "LAST_ERROR", ""):
+                st.caption(_fx.LAST_ERROR)
 
     # ═══════════════════════════════════════════════════════════════════════
     # VIEW B: BREAKOUT & RETEST ENGINE (ANATOMY & S/R RETEST)
@@ -418,6 +436,15 @@ def render_breakout_tab(
             retest_max_bars=retest_bars,
         )
         df_signals = engine.apply_breakout_signals(df_raw, key_levels)
+        # FAKEOUTFIX — the forming candle never carries a signal; it is judged once it closes
+        if "closed" in df_raw.columns and len(df_signals) and not bool(df_raw["closed"].iloc[-1]):
+            _last = df_signals.index[-1]
+            for _col in ("breakout_signal", "trap_signal", "actionable_retest_entry", "primary_signal"):
+                if _col in df_signals.columns:
+                    df_signals.loc[_last, _col] = ""
+            for _col in ("entry_price", "stop_loss", "target_1", "target_2", "risk_pts", "rr_ratio"):
+                if _col in df_signals.columns:
+                    df_signals.loc[_last, _col] = np.nan
         stats = engine.get_summary_stats(df_signals)
 
         # Executive KPI Tiles

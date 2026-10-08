@@ -2174,7 +2174,6 @@ _ORDERED_ALL_TABS = [
     "📸 Snapshots",
     "🎯 Decision Cockpit",
     "🧾 Evidence Board (what's proven)",
-    "🛡️ Anti-Fakeout & Real-Time Pressure",
     "⚡ Option Chain & OI Analysis",
     "📊 Option Chain / Key Levels",
     "Change in OI",
@@ -2237,11 +2236,6 @@ _LABEL_TO_TAB_INDEX = {
     "Candlestick Patterns & 15m Early Read": 38,
     "Candlestick Patterns": 38,
     "Patterns": 38,
-    "🛡️ Anti-Fakeout & Real-Time Pressure": 37,
-    "Anti-Fakeout & Real-Time Pressure": 37,
-    "Anti-Fakeout": 37,
-    "Real-Time Pressure": 37,
-    "Pressure Gauge": 37,
     "⚡ Option Chain & OI Analysis": 36,
     "Option Chain & OI Analysis": 36,
     "Option Chain & Open Interest": 36,
@@ -4950,22 +4944,6 @@ if _tab_active(36):
     except Exception as _oc_oi_err:
         st.error(f"Option Chain & OI Analysis tab encountered an error: {_oc_oi_err}")
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Tab 37 — 🛡️ Anti-Fakeout & Real-Time Pressure Engine
-# ═══════════════════════════════════════════════════════════════════════════
-if _tab_active(37):
-    refresh_control("anti_fakeout_pressure", (fetch_live,), "option chain", nse_ts)
-    try:
-        import anti_fakeout_pressure_tab
-        anti_fakeout_pressure_tab.render_anti_fakeout_tab(
-            df=df,
-            spot=spot,
-            pa_frames=pa_frames if "pa_frames" in locals() else None,
-            read=read if "read" in locals() else None,
-        )
-    except Exception as _afp_err:
-        st.error(f"Anti-Fakeout & Real-Time Pressure tab encountered an error: {_afp_err}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

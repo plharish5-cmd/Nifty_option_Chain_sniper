@@ -161,3 +161,28 @@
 2026-10-07 22:02:35,771 Workbook already up to date (last day 2026-10-07).
 2026-10-07 22:21:41,568 Workbook already up to date (last day 2026-10-07).
 2026-10-07 23:20:21,342 Workbook already up to date (last day 2026-10-07).
+2026-10-08 19:20:18,447 2026-10-08: NSE files parsed (FII put short 456760 / call short 1141437)
+2026-10-08 19:20:20,382 Writing 1 day(s), 0 BD value(s) with LibreOffice…
+2026-10-08 19:20:47,537   2026-10-08: Retailers row 1658 written, 4 formulas filled
+2026-10-08 19:20:47,538   2026-10-08: DII row 1502 written, 9 formulas filled
+2026-10-08 19:20:47,538   2026-10-08: FII row 1705 written, 22 formulas filled
+2026-10-08 19:20:47,538   2026-10-08: PRO row 1709 written, 15 formulas filled
+2026-10-08 19:20:47,538   2026-10-08: FII Index row 1445, 4 formulas filled
+2026-10-08 19:20:47,538   2026-10-08: FII Stocks row 1449, 4 formulas filled
+2026-10-08 19:20:47,538   2026-10-08: Nifty & Bank row 918, 4 formula columns filled
+2026-10-08 19:20:47,539   2026-10-08: FII Vol row 937, 16 formulas filled
+2026-10-08 19:20:47,539   2026-10-08: Daily Equity row 1352, 2 formula columns filled
+2026-10-08 19:20:47,539   CHART_EXTEND|OI vs Spot|1703|1704
+2026-10-08 19:20:47,539   analysis tab 'OI vs Spot': +1 rows (now to row 1704)
+2026-10-08 19:20:47,539   CHART_EXTEND|Cumulative|1349|1350
+2026-10-08 19:20:47,539   analysis tab 'Cumulative': +1 rows (now to row 1350)
+2026-10-08 19:20:47,539   saved /tmp/tmp9ozxkv4w/Partcipant_Data_Sheet_NEW.xlsm
+2026-10-08 19:20:50,340 Chart ranges extended: 5 (OI vs Spot to row 1704, Cumulative to row 1350)
+2026-10-08 19:20:50,340 Macros restored (19 sheet code names, 94720 bytes of VBA)
+2026-10-08 19:20:55,521 participants.parquet: +4 rows (refused 0)
+2026-10-08 19:20:59,951 Participants 08-Oct: FII 0.40 | Retail 0.87 | PRO 0.67 -> ALL BELOW 1 (FII below 1 for 156 sessions)
+2026-10-08 19:21:04,776 Correlation 08-Oct: bias SELL ON RISE | Y -1,070,361 (below scaled line) | AM 0.40 | portfolio HOLD 5/5 (scaled view: STAY OUT)
+2026-10-08 19:21:04,776 Done: 2026-10-08
+2026-10-08 20:20:20,166 Workbook already up to date (last day 2026-10-08).
+2026-10-08 21:20:19,730 Workbook already up to date (last day 2026-10-08).
+2026-10-08 22:20:23,227 Workbook already up to date (last day 2026-10-08).

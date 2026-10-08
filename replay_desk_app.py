@@ -1,19 +1,29 @@
 """
 replay_desk_app.py — ⏪ Replay Trading: practise a PAST session on the Paper Desk at 1×–30× speed.
 
-  .venv/bin/streamlit run replay_desk_app.py --server.port 8505                      → your replay account
-  REPLAY_FOR=wife .venv/bin/streamlit run replay_desk_app.py --server.port 8506      → your wife's replay account
+  .venv/bin/streamlit run replay_desk_app.py --server.port 8505      → Harish's replay account  (profile "replay")
+  .venv/bin/streamlit run replay_desk_app.py --server.port 8506      → wife's replay account    (profile "replay_wife")
+  The PORT picks the account (REPLAY_FOR=… still overrides), so the two can never mix.
   phone (Tailscale): http://100.113.93.21:8505   (once: sudo ufw allow in on tailscale0 to any port 8505)
   report:  .venv/bin/python trade_report.py --profile replay        (wife: --profile replay_wife)
 
 Uses a SEPARATE account (profile "replay" / "replay_wife") — your live paper P&L and readiness checklist are untouched.
 """
 import os
+import sys
 
+import streamlit as st
+
+# WHOSE replay account — decided BEFORE the desk loads, so the two accounts can never mix:
+#   REPLAY_FOR=wife / harish wins; otherwise the PORT decides: 8506 = wife, anything else = Harish.
 _who = (os.environ.get("REPLAY_FOR") or "").strip().lower()
-os.environ["PAPER_PROFILE"] = "replay" + (f"_{_who}" if _who and _who != "harish" else "")
-
-import streamlit as st  # noqa: E402
+if not _who:
+    try:
+        _port = int(st.get_option("server.port"))
+    except Exception:                                           # noqa: BLE001
+        _port = 8505
+    _who = "wife" if _port == 8506 else "harish"
+os.environ["PAPER_PROFILE"] = "replay" if _who == "harish" else f"replay_{_who}"
 
 st.set_page_config(page_title="Replay Desk", page_icon="⏪", layout="centered")
 st.markdown("""<style>
@@ -33,6 +43,10 @@ import replay_desk  # noqa: E402
 
 replay_desk.install(paper_desk)
 st.markdown(paper_desk.CSS, unsafe_allow_html=True)
+_col = "#e879a4" if _who == "wife" else "#d4af37"
+st.markdown(f"<div style='background:{_col};color:#0b1a33;border-radius:8px;padding:6px 10px;font-weight:800;"
+            f"text-align:center;margin-bottom:4px'>REPLAY ACCOUNT · {_who.upper()} · {paper_desk.pt.PAPER_DIR.name}</div>",
+            unsafe_allow_html=True)
 replay_desk.controls(st)
 frag = getattr(st, "fragment", None)
 

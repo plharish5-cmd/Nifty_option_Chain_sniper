@@ -130,7 +130,7 @@ def evaluate_active_candle_state(
                 "badge_label": "⚠️ TESTING BSL — DO NOT ENTER",
                 "badge_class": "hud-badge-warn",
                 "badge_color": COLOR_WARN_YELLOW,
-                "desc": f"Price is probing BSL ({bsl_level:,.1f}). Candle still forming! Unclosed breakouts have 78% failure rate.",
+                "desc": f"Price is probing BSL ({bsl_level:,.1f}). Candle still forming — judge it only when it closes.",
                 "is_forming": True,
             }
         else:
