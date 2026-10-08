@@ -35,6 +35,21 @@
    "sid": "44600",
    "expiry": "2026-10-13",
    "hi": 115.5
+  },
+  "PT-1008140457-3": {
+   "sid": "44572",
+   "expiry": "2026-10-13",
+   "hi": 314.5
+  },
+  "PT-1008140459-4": {
+   "sid": "44572",
+   "expiry": "2026-10-13",
+   "hi": 314.5
+  },
+  "PT-1008140550-5": {
+   "sid": "44572",
+   "expiry": "2026-10-13",
+   "hi": 314.5
   }
  },
  "orders": [
@@ -1667,6 +1682,72 @@
    "fill_ts": "2026-10-08T13:43:07",
    "pid": "PT-1008134307-2",
    "msg": "Bought 65 @ 114.35"
+  },
+  {
+   "status": "FILLED",
+   "side_": "BUY",
+   "strike": 22000,
+   "side": "CE",
+   "expiry": "2026-10-13",
+   "sid": "44572",
+   "lots": 1,
+   "otype": "MARKET",
+   "limit": 0.0,
+   "product": "NORMAL",
+   "sl_pts": 0.0,
+   "tgt_pts": 0.0,
+   "trail_pts": 0.0,
+   "oid": "367cd7e9",
+   "ts": "2026-10-08T14:04:57",
+   "amo": false,
+   "fill_px": 305.85,
+   "fill_ts": "2026-10-08T14:04:57",
+   "pid": "PT-1008140457-3",
+   "msg": "Bought 65 @ 305.85"
+  },
+  {
+   "status": "FILLED",
+   "side_": "BUY",
+   "strike": 22000,
+   "side": "CE",
+   "expiry": "2026-10-13",
+   "sid": "44572",
+   "lots": 1,
+   "otype": "MARKET",
+   "limit": 0.0,
+   "product": "NORMAL",
+   "sl_pts": 0.0,
+   "tgt_pts": 0.0,
+   "trail_pts": 0.0,
+   "oid": "1088ec4a",
+   "ts": "2026-10-08T14:04:59",
+   "amo": false,
+   "fill_px": 305.9,
+   "fill_ts": "2026-10-08T14:04:59",
+   "pid": "PT-1008140459-4",
+   "msg": "Bought 65 @ 305.90"
+  },
+  {
+   "status": "FILLED",
+   "side_": "BUY",
+   "strike": 22000,
+   "side": "CE",
+   "expiry": "2026-10-13",
+   "sid": "44572",
+   "lots": 1,
+   "otype": "MARKET",
+   "limit": 0.0,
+   "product": "NORMAL",
+   "sl_pts": 0.0,
+   "tgt_pts": 0.0,
+   "trail_pts": 0.0,
+   "oid": "af493816",
+   "ts": "2026-10-08T14:05:50",
+   "amo": false,
+   "fill_px": 310.7,
+   "fill_ts": "2026-10-08T14:05:50",
+   "pid": "PT-1008140550-5",
+   "msg": "Bought 65 @ 310.70"
   }
  ],
  "meta": {
@@ -1955,6 +2036,24 @@
   "PT-1008134307-2": {
    "expiry": "2026-10-13",
    "strike": 22350,
+   "side": "CE",
+   "product": "NORMAL"
+  },
+  "PT-1008140457-3": {
+   "expiry": "2026-10-13",
+   "strike": 22000,
+   "side": "CE",
+   "product": "NORMAL"
+  },
+  "PT-1008140459-4": {
+   "expiry": "2026-10-13",
+   "strike": 22000,
+   "side": "CE",
+   "product": "NORMAL"
+  },
+  "PT-1008140550-5": {
+   "expiry": "2026-10-13",
+   "strike": 22000,
    "side": "CE",
    "product": "NORMAL"
   }

@@ -35,6 +35,26 @@
    "sid": "44592",
    "expiry": "2026-10-13",
    "hi": 193.75
+  },
+  "PT-1008140318-38": {
+   "sid": "44572",
+   "expiry": "2026-10-13",
+   "hi": 317.55
+  },
+  "PT-1008140509-39": {
+   "sid": "44572",
+   "expiry": "2026-10-13",
+   "hi": 314.5
+  },
+  "PT-1008140511-40": {
+   "sid": "44572",
+   "expiry": "2026-10-13",
+   "hi": 314.5
+  },
+  "PT-1008140514-41": {
+   "sid": "44572",
+   "expiry": "2026-10-13",
+   "hi": 314.5
   }
  },
  "orders": [
@@ -1384,6 +1404,94 @@
    "fill_ts": "2026-10-08T13:43:14",
    "pid": "PT-1008134314-37",
    "msg": "Bought 65 @ 193.75"
+  },
+  {
+   "status": "FILLED",
+   "side_": "BUY",
+   "strike": 22000,
+   "side": "CE",
+   "expiry": "2026-10-13",
+   "sid": "44572",
+   "lots": 1,
+   "otype": "MARKET",
+   "limit": 0.0,
+   "product": "INTRADAY",
+   "sl_pts": 0.0,
+   "tgt_pts": 0.0,
+   "trail_pts": 0.0,
+   "oid": "ff4f5220",
+   "ts": "2026-10-08T14:03:18",
+   "amo": false,
+   "fill_px": 313.6,
+   "fill_ts": "2026-10-08T14:03:18",
+   "pid": "PT-1008140318-38",
+   "msg": "Bought 65 @ 313.60"
+  },
+  {
+   "status": "FILLED",
+   "side_": "BUY",
+   "strike": 22000,
+   "side": "CE",
+   "expiry": "2026-10-13",
+   "sid": "44572",
+   "lots": 1,
+   "otype": "MARKET",
+   "limit": 0.0,
+   "product": "INTRADAY",
+   "sl_pts": 0.0,
+   "tgt_pts": 0.0,
+   "trail_pts": 0.0,
+   "oid": "8b328639",
+   "ts": "2026-10-08T14:05:09",
+   "amo": false,
+   "fill_px": 305.65,
+   "fill_ts": "2026-10-08T14:05:09",
+   "pid": "PT-1008140509-39",
+   "msg": "Bought 65 @ 305.65"
+  },
+  {
+   "status": "FILLED",
+   "side_": "BUY",
+   "strike": 22000,
+   "side": "CE",
+   "expiry": "2026-10-13",
+   "sid": "44572",
+   "lots": 1,
+   "otype": "MARKET",
+   "limit": 0.0,
+   "product": "INTRADAY",
+   "sl_pts": 0.0,
+   "tgt_pts": 0.0,
+   "trail_pts": 0.0,
+   "oid": "d12b8db4",
+   "ts": "2026-10-08T14:05:11",
+   "amo": false,
+   "fill_px": 305.4,
+   "fill_ts": "2026-10-08T14:05:11",
+   "pid": "PT-1008140511-40",
+   "msg": "Bought 65 @ 305.40"
+  },
+  {
+   "status": "FILLED",
+   "side_": "BUY",
+   "strike": 22000,
+   "side": "CE",
+   "expiry": "2026-10-13",
+   "sid": "44572",
+   "lots": 1,
+   "otype": "MARKET",
+   "limit": 0.0,
+   "product": "INTRADAY",
+   "sl_pts": 0.0,
+   "tgt_pts": 0.0,
+   "trail_pts": 0.0,
+   "oid": "9f3c2b64",
+   "ts": "2026-10-08T14:05:14",
+   "amo": false,
+   "fill_px": 303.85,
+   "fill_ts": "2026-10-08T14:05:14",
+   "pid": "PT-1008140514-41",
+   "msg": "Bought 65 @ 303.85"
   }
  ],
  "meta": {
@@ -1606,6 +1714,30 @@
   "PT-1008134314-37": {
    "expiry": "2026-10-13",
    "strike": 22200,
+   "side": "CE",
+   "product": "INTRADAY"
+  },
+  "PT-1008140318-38": {
+   "expiry": "2026-10-13",
+   "strike": 22000,
+   "side": "CE",
+   "product": "INTRADAY"
+  },
+  "PT-1008140509-39": {
+   "expiry": "2026-10-13",
+   "strike": 22000,
+   "side": "CE",
+   "product": "INTRADAY"
+  },
+  "PT-1008140511-40": {
+   "expiry": "2026-10-13",
+   "strike": 22000,
+   "side": "CE",
+   "product": "INTRADAY"
+  },
+  "PT-1008140514-41": {
+   "expiry": "2026-10-13",
+   "strike": 22000,
    "side": "CE",
    "product": "INTRADAY"
   }

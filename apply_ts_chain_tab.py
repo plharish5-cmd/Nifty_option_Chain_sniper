@@ -1,7 +1,7 @@
 """
 apply_ts_chain_tab.py — adds a "⏱ Time-series Chain" sub-tab (ts_chain_pro.py, StockMojo's Timewise OI grid) as the LAST tab of 🧪 Options Lab.
 Edits YOUR options_lab_tab.py in place (backup first: options_lab_tab.py.bak_tschain). Every existing tab is untouched.
-Needs the 🎯 Time-series Chain tab already added (apply_ts_chain_tab.py).
+Needs the 🎯 Max Pain tab already added (apply_maxpain_tab.py).
 
   .venv/bin/python apply_ts_chain_tab.py --check
   .venv/bin/python apply_ts_chain_tab.py

@@ -666,13 +666,14 @@ def render() -> None:
         __import__("olab_pro").brief(day)
     except Exception as _opb_err:                           # noqa: BLE001
         st.caption(f"PRO brief unavailable: {_opb_err}")
-    t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV",
+    t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV",
                                               "📊 Call vs Put Writers (3m / 5m / 15m)", "🟥 PE − CE OI Table",
                                               "📈 Multi-strike OI",
                                               "📉 Vega Analysis",
                                               "⏳ Premium Decay",
                                               "🎯 Max Pain",
-                                              "⏱ Time-series Chain"])   # TABMOVE MULTISTRIKE VEGAPRO PREMIUMPRO MAXPAINPRO TSCHAINPRO
+                                              "⏱ Time-series Chain",
+                                              "🧭 Strike Advisor"])   # TABMOVE MULTISTRIKE VEGAPRO PREMIUMPRO MAXPAINPRO TSCHAINPRO STRIKEADVPRO
     with t0:
         __import__("olab_pro").tab("oi", day)                       # OLABPRO
         try:
@@ -763,3 +764,9 @@ def render() -> None:
             ts_chain_pro.render(day)
         except Exception as _tsc_err:                           # noqa: BLE001
             st.error(f"Time-series Chain encountered an error: {_tsc_err}")
+    with t12:                                                    # STRIKEADVPRO — move map + best CE / PE strike
+        try:
+            import strike_advisor_pro
+            strike_advisor_pro.render(day)
+        except Exception as _sad_err:                           # noqa: BLE001
+            st.error(f"Strike Advisor encountered an error: {_sad_err}")
