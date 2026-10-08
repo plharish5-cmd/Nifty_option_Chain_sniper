@@ -14,3 +14,64 @@
   External URL: http://152.57.110.93:8503
 
   Stopping...
+2026-10-08 09:17:23.112 Did not auto detect external IP.
+Please go to https://docs.streamlit.io/ for debugging hints.
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8503
+  Network URL: http://127.0.0.1:8503
+
+  Stopping...
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8503
+  Network URL: http://192.168.0.109:8503
+  External URL: http://49.205.33.28:8503
+
+  Stopping...
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8503
+  Network URL: http://192.168.0.109:8503
+  External URL: http://49.205.33.28:8503
+
+  Stopping...
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8503
+  Network URL: http://192.168.0.109:8503
+  External URL: http://49.205.33.28:8503
+
+  Stopping...
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8503
+  Network URL: http://192.168.0.109:8503
+  External URL: http://49.205.33.28:8503
+
+  Stopping...
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8503
+  Network URL: http://192.168.0.109:8503
+  External URL: http://49.205.33.28:8503
+
+Task exception was never retrieved
+future: <Task finished name='Task-170608' coro=<WebSocketProtocol13.write_message.<locals>.wrapper() done, defined at /home/harish/Documents/Swathi K N/1 Trading/option chain/OC/.venv/lib/python3.9/site-packages/tornado/websocket.py:1111> exception=WebSocketClosedError()>
+Traceback (most recent call last):
+  File "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/.venv/lib/python3.9/site-packages/tornado/websocket.py", line 1113, in wrapper
+    await fut
+tornado.iostream.StreamClosedError: Stream is closed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/.venv/lib/python3.9/site-packages/tornado/websocket.py", line 1115, in wrapper
+    raise WebSocketClosedError()
+tornado.websocket.WebSocketClosedError

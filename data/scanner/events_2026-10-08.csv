@@ -1,0 +1,10 @@
+logged_at,day,event_t,token,kind,side,level_kind,level,depth,close_inside,smt,entry_ce,sl,flow,flow_note,chain,call_wall,put_wall,net_bias,squeeze,ref_strike,score,unvalidated
+2026-10-08T10:55:53,2026-10-08,2026-10-08 09:25:00,13,TURTLE_SOUP,BULLISH,pd,22546.3,31.8,False,,,,AGAINST,"price below the flow VWAP 22,532.3 — buy only above VWAP",OK,23000.0,22500.0,-2.0,,22550,1,True
+2026-10-08T10:55:53,2026-10-08,2026-10-08 09:45:00,13,TURTLE_SOUP,BULLISH,or,22475.8,16.05,False,,,,AGAINST,"price below the flow VWAP 22,507.1 — buy only above VWAP",OK,23000.0,22000.0,-2.0,,22500,1,True
+2026-10-08T10:55:53,2026-10-08,2026-10-08 10:15:00,13,TURTLE_SOUP,BEARISH,swing,22486.3,11.8,False,,,,AGAINST,last 3 candles: delta ₹+125 Cr · Bullish delta divergence,OK,22700.0,22000.0,-2.0,,22500,2,True
+2026-10-08T10:55:54,2026-10-08,2026-10-08 10:25:00,13,TURTLE_SOUP,BULLISH,swing,22460.4,20.9,False,,,,AGAINST,"price below the flow VWAP 22,490.5 — buy only above VWAP",OK,22700.0,22000.0,-2.0,,22450,1,True
+2026-10-08T10:55:54,2026-10-08,2026-10-08 10:40:00,13,ICT_SETUP,BEARISH,swing low,22486.3,,True,,22463.55,22500.1,AGAINST,last 3 candles: delta ₹+107 Cr · Bullish delta divergence,OK,22700.0,21500.0,-2.0,,22450,2,True
+2026-10-08T11:25:59,2026-10-08,2026-10-08 11:25:00,13,TURTLE_SOUP,BULLISH,eq,22419.5,27.05,False,,,,AGAINST,"price below the flow VWAP 22,470.6 — buy only above VWAP",OK,22700.0,21500.0,-2.0,,22400,1,True
+2026-10-08T13:12:47,2026-10-08,2026-10-08 12:20:00,13,TURTLE_SOUP,BULLISH,swing,22340.2,21.05,False,,,,AGAINST,"price below the flow VWAP 22,437.2 — buy only above VWAP",OK,22600.0,22200.0,-2.0,,22350,1,True
+2026-10-08T13:12:49,2026-10-08,2026-10-08 13:00:00,13,TURTLE_SOUP,BULLISH,swing,22272.9,18.6,False,,,,AGAINST,"price below the flow VWAP 22,414.7 — buy only above VWAP",OK,22500.0,22200.0,-2.0,,22250,1,True
+2026-10-08T13:21:40,2026-10-08,2026-10-08 13:20:00,13,TURTLE_SOUP,BULLISH,swing,22254.3,11.0,False,,,,AGAINST,"price below the flow VWAP 22,405.8 — buy only above VWAP",OK,22500.0,22200.0,-2.0,,22250,1,True

@@ -6692,3 +6692,4 @@ Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit
 07-10-2026,3,PE,12:45,22643.9,"12:15 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 22,686; red 1st candle, gap-down",22685.8,41.9,13:30,22601.3,trailing SL (candle high),42.6,0.0,91.3,YES,YES,
 07-10-2026,4,PE,13:00,22619.7,"12:45 candle Stage 3 pullback to 8 EMA, break of its low; SL candle high 22,670; red 1st candle, gap-down",22669.8,50.1,13:30,22601.3,trailing SL (candle high),18.3,0.0,67.1,YES,YES,
 07-10-2026,5,PE,15:00,22580.0,"14:45 candle close below 8 EMA, break of its low; SL candle high 22,624; red 1st candle, gap-down",22623.8,43.8,15:00,22615.5,OPEN (running),0.0,-35.5,5.6,no,no,-65.9
+08-10-2026,0,,,,,,,,,no trade,,,,,,0.0

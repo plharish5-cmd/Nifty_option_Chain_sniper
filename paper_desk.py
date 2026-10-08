@@ -50,6 +50,9 @@ DEFAULTS = {
     "lots": 1, "sl_pts": 0.0, "tgt_pts": 0.0, "trail_pts": 0.0, "product": "INTRADAY",
     "weights": {"delta": 40, "theta": 30, "gamma": 20, "vega": 10},
     "delta_target": 0.50, "top_n": 3, "window_strikes": 8, "ladder": 6, "min_premium": 5.0,
+    # STRIKE STYLE — "course" = MJ's rule (ITM 100–200 pts, multiples of 100, premium ≈ ₹200, Δ ≈ 0.6) ranked by
+    # Dr. Priyanka's Greeks check; "greeks" = the old pure Greek-weight score (ATM-centred)
+    "style": "course", "itm_min": 50, "itm_max": 250, "prem_target": 200.0, "round100": True, "course_delta": 0.60,
     "refresh_s": 1, "stale_s": 120, "squareoff": "15:20", "_feed_v1": False,
 }
 STEP = float(getattr(config, "STRIKE_STEP", 50))
@@ -481,6 +484,62 @@ def _ask(p):
 # 3 · strike ranking — Delta › Theta › Gamma › Vega (weights editable)
 # ═══════════════════════════════════════════════════════════════════════════
 def rank(rows: pd.DataFrame, spot: float, side: str, s: dict) -> pd.DataFrame:
+    if s.get("style", "course") == "course":
+        return rank_course(rows, spot, side, s)
+    return rank_greeks(rows, spot, side, s)
+
+
+def rank_course(rows: pd.DataFrame, spot: float, side: str, s: dict) -> pd.DataFrame:
+    """MJ's strike rule, re-centred on the LIVE spot every refresh, then ranked by the Greeks (Dr. Priyanka):
+       1 ITM only, 100–200 pts deep (CE = spot − 100…200, PE = spot + 100…200; setting: ITM min–max)
+       2 multiples of 100 (≈4× the OI → tight spread)          3 premium ≈ ₹200 and |Δ| ≈ 0.6 (asymmetric win/loss)
+       Score: Δ fit 35 · premium fit 20 · low θ % of premium 20 · γ per ₹ 10 · low ν per ₹ 5 · liquidity 10.
+       If nothing passes (expiry-day premium collapse), the rule is relaxed step by step and the pick says so."""
+    x = rows[(rows["side"] == side) & (rows["ltp"] >= float(s["min_premium"]))].copy()
+    if x.empty or not np.isfinite(spot):
+        return x
+    x = x.dropna(subset=["delta"])
+    x["itm"] = (spot - x["strike"]) if side == "CE" else (x["strike"] - spot)
+    lo, hi = float(s.get("itm_min", 50)), float(s.get("itm_max", 250))
+    tries = [(lo, hi, bool(s.get("round100", True)), ""), (lo, hi, False, "×50 allowed"),
+             (0.0, hi + 150, False, "rule relaxed: shallow / deep ITM"), (-STEP, hi + 300, False, "rule relaxed: no ITM strike fits")]
+    y, note = x.iloc[0:0], ""
+    for a, b, r100, why in tries:
+        m = (x["itm"] >= a) & (x["itm"] <= b)
+        if r100:
+            m &= (x["strike"] % 100 == 0)
+        y = x[m]
+        if len(y):
+            note = why
+            break
+    if y.empty:
+        return y
+    y = y.copy()
+    tgt_d, tgt_p = float(s.get("course_delta", 0.60)), float(s.get("prem_target", 200.0))
+    y["s_delta"] = (1 - (y["delta"].abs() - tgt_d).abs() / 0.25).clip(0, 1)
+    y["s_prem"] = (1 - (y["ltp"] - tgt_p).abs() / tgt_p).clip(0, 1)
+    th = (y["theta"].abs() / y["ltp"]).fillna(0)
+    y["s_theta"] = (1 - th / 0.15).clip(0, 1)                               # 15 %/day of premium = worst
+    gp = (y["gamma"] / y["ltp"]).fillna(0)
+    y["s_gamma"] = (gp / gp.max()).fillna(0) if gp.max() > 0 else 0.5
+    vp = (y["vega"] / y["ltp"]).fillna(0)
+    y["s_vega"] = (1 - vp / vp.max()).fillna(0) if vp.max() > 0 else 0.5
+    y["spread_pct"] = 100 * (y["ask"] - y["bid"]) / y["ltp"]
+    oi = y["oi"].fillna(0) if "oi" in y else pd.Series(0, index=y.index)
+    liq = (oi.rank(pct=True) if oi.max() > 0 else 0.5) * 0.6 + (1 - (y["spread_pct"].fillna(1) / 3).clip(0, 1)) * 0.4
+    y["s_liq"] = liq
+    y["score"] = 100 * (0.35 * y["s_delta"] + 0.20 * y["s_prem"] + 0.20 * y["s_theta"] + 0.10 * y["s_gamma"]
+                        + 0.05 * y["s_vega"] + 0.10 * y["s_liq"])
+    # what a 40-pt NIFTY move does to this premium (delta + ½ gamma · move²) — MJ's 40-pt SL / target example
+    g2 = 0.5 * y["gamma"].fillna(0) * 1600
+    y["win40"] = (y["delta"].abs() * 40 + g2)
+    y["loss40"] = (y["delta"].abs() * 40 - g2).clip(lower=0)
+    y["theta_pct"] = 100 * th
+    y["note"] = note
+    return y.sort_values("score", ascending=False).head(int(s["top_n"]))
+
+
+def rank_greeks(rows: pd.DataFrame, spot: float, side: str, s: dict) -> pd.DataFrame:
     """Buyer score 0–100: |Δ| near target · low θ/premium · high γ/premium · low ν/premium (vs strikes on screen)."""
     w = s["weights"]
     x = rows[(rows["side"] == side) & (rows["ltp"] >= float(s["min_premium"]))].copy()
@@ -947,6 +1006,7 @@ def cb_modify_open(key: str, where: str = "pos") -> None:
         return
     p = ps[0]
     st.session_state["pd_mod"] = key
+    st.session_state.pop("pd_m_err", None)
     st.session_state["pd_m_sl"] = float(p.stop_loss or 0)
     st.session_state["pd_m_tg"] = float(p.target_1 or 0)
     st.session_state["pd_m_tr"] = float(p.trailing_sl_pts or 0)
@@ -957,13 +1017,40 @@ def cb_preset(field: str, val: float) -> None:
     st.session_state[{"sl": "pd_m_sl", "tg": "pd_m_tg", "tr": "pd_m_tr"}[field]] = float(val)
 
 
+def sl_target_problem(sl: float, tg: float, tr: float, ltp: float, hi: float) -> str | None:
+    """Dhan-style checks for a BOUGHT option. A stop at/above the current price (or a target at/below it) would
+    trigger at once and sell you at the market — Dhan rejects such SL orders, so the desk does too."""
+    if not (np.isfinite(ltp) and ltp > 0):
+        return None
+    if sl and sl >= ltp:
+        return (f"SL {sl:.2f} is ABOVE the current price {ltp:.2f} — it would sell you right now at ~{ltp:.2f}. "
+                f"A stop must be BELOW the price (e.g. ≤ {ltp - 0.5:.2f}). Breakeven SL works only once the "
+                f"option trades above your breakeven. Want out now? Use EXIT.")
+    if tg and tg <= ltp:
+        return (f"Target {tg:.2f} is BELOW the current price {ltp:.2f} — it would sell you right now. "
+                f"A target must be ABOVE the price. Want to book now? Use EXIT.")
+    if tr and np.isfinite(hi) and hi > 0 and hi - tr >= ltp:
+        return (f"Trail {tr:.0f} pts from the high {hi:.2f} = stop {hi - tr:.2f}, which is above the current price "
+                f"{ltp:.2f} — it would sell you right now. Use a trail bigger than {hi - ltp:.1f} pts.")
+    return None
+
+
 def cb_modify_save() -> None:
     import streamlit as st
-    key = st.session_state.pop("pd_mod", None)
+    key = st.session_state.get("pd_mod")
     if not key:
         return
-    s, ps = _group_now(key)
     ss = st.session_state
+    i = ss.get("_pd_pos_info", {}).get(key) or {}
+    why = sl_target_problem(float(ss["pd_m_sl"] or 0), float(ss["pd_m_tg"] or 0), float(ss["pd_m_tr"] or 0),
+                            float(i.get("ltp", np.nan)), float(i.get("hi", np.nan)))
+    if why:
+        ss["pd_m_err"] = why                                    # keep the editor open, nothing saved
+        _msg(st, "Not saved — " + why.split(" — ")[0], "⚠️")
+        return
+    ss.pop("pd_m_err", None)
+    ss.pop("pd_mod", None)
+    s, ps = _group_now(key)
     for p in ps:
         pt.update_paper_position_sl_target(p.position_id, new_sl=float(ss["pd_m_sl"]) or None,
                                            new_t1=float(ss["pd_m_tg"]) or None, trailing_sl_pts=float(ss["pd_m_tr"]))
@@ -980,6 +1067,7 @@ def cb_modify_save() -> None:
 def cb_modify_close() -> None:
     import streamlit as st
     st.session_state.pop("pd_mod", None)
+    st.session_state.pop("pd_m_err", None)
 
 
 def cb_cancel(oid: str) -> None:
@@ -1189,14 +1277,23 @@ def _mod_panel(st, k: str, avg: float, ltp: float, be: float, hi: float) -> None
                 f"<b>{ltp:.2f}</b> · <span class='pd-m'>breakeven</span> <b>{be:.2f}</b> · <span class='pd-m'>high</span> "
                 f"<b>{hi:.2f}</b><br><span class='pd-m'>SL = premium price that exits you · Target = price that books "
                 f"profit · Trail = pts below the highest bid</span></div>", unsafe_allow_html=True)
+    err = st.session_state.get("pd_m_err")
+    if err:
+        st.markdown(f"<div class='pd-row' style='border-left:3px solid #ef4444'><b class='pd-r'>⚠ Not saved</b> · "
+                    f"<span class='pd-w'>{err}</span></div>", unsafe_allow_html=True)
+    live = np.isfinite(ltp) and ltp > 0
+    be_ok, sl15_ok, tg_ok = (not live or be < ltp), (not live or avg * 0.85 < ltp), (not live or avg * 1.25 > ltp)
     pc = st.columns(2)
-    pc[0].button("SL = breakeven", key=f"pd_ps_be_{k}", use_container_width=True, on_click=cb_preset, args=("sl", round(be, 2)),
-                 help="Stop at breakeven (no loss after charges)")
-    pc[1].button("SL −15%", key=f"pd_ps_sl_{k}", use_container_width=True, on_click=cb_preset,
-                 args=("sl", round(avg * 0.85, 2)), help=f"Stop at {avg * 0.85:.2f}")
+    pc[0].button("SL = breakeven" if be_ok else f"BE {be:.2f} > now", key=f"pd_ps_be_{k}", use_container_width=True,
+                 on_click=cb_preset, args=("sl", round(be, 2)), disabled=not be_ok,
+                 help="Stop at breakeven (no loss after charges)" if be_ok else
+                 f"Not available: price {ltp:.2f} is below your breakeven {be:.2f} — a stop there would sell you at once")
+    pc[1].button("SL −15%" if sl15_ok else "SL −15% > now", key=f"pd_ps_sl_{k}", use_container_width=True,
+                 on_click=cb_preset, args=("sl", round(avg * 0.85, 2)), disabled=not sl15_ok,
+                 help=f"Stop at {avg * 0.85:.2f}")
     pc = st.columns(2)
     pc[0].button("Target +25%", key=f"pd_ps_tg_{k}", use_container_width=True, on_click=cb_preset,
-                 args=("tg", round(avg * 1.25, 2)), help=f"Target {avg * 1.25:.2f}")
+                 args=("tg", round(avg * 1.25, 2)), disabled=not tg_ok, help=f"Target {avg * 1.25:.2f}")
     pc[1].button("Trail 10 pts", key=f"pd_ps_tr_{k}", use_container_width=True, on_click=cb_preset, args=("tr", 10.0),
                  help="Exit if the bid falls 10 pts below its highest since entry")
     c = st.columns(3)
@@ -1212,8 +1309,16 @@ def _picks(st, s, chain) -> None:
     w = s["weights"]
     for side, col in (("CE", "pd-g"), ("PE", "pd-r")):
         top = rank(chain["rows"], chain["spot"], side, s)
-        st.markdown(f"<div class='pd-sec'><b class='{col}'>BUY {side}</b><span class='pd-m'> · Δ{w['delta']} θ{w['theta']} "
-                    f"γ{w['gamma']} ν{w['vega']} · {lots} lot = {lots * LOT}</span></div>", unsafe_allow_html=True)
+        course = s.get("style", "course") == "course"
+        if course:
+            band = (f"{chain['spot'] - s['itm_max']:,.0f}–{chain['spot'] - s['itm_min']:,.0f}" if side == "CE" else
+                    f"{chain['spot'] + s['itm_min']:,.0f}–{chain['spot'] + s['itm_max']:,.0f}")
+            sub = (f"ITM {int(s['itm_min'])}–{int(s['itm_max'])} pts → strikes {band}{' · ×100' if s.get('round100', True) else ''}"
+                   f" · ≈₹{s['prem_target']:.0f} · Δ≈{s['course_delta']:.2f} · re-centred on spot {chain['spot']:,.0f}")
+        else:
+            sub = f"Δ{w['delta']} θ{w['theta']} γ{w['gamma']} ν{w['vega']}"
+        st.markdown(f"<div class='pd-sec'><b class='{col}'>BUY {side}</b><span class='pd-m'> · {sub} · {lots} lot = "
+                    f"{lots * LOT}</span></div>", unsafe_allow_html=True)
         if top.empty:
             st.caption("no tradable strikes")
             continue
@@ -1221,9 +1326,14 @@ def _picks(st, s, chain) -> None:
             px = r.ask if np.isfinite(r.ask) and r.ask > 0 else r.ltp
             warn = " ⚠" if np.isfinite(r.spread_pct) and r.spread_pct > 2 else ""
             c = st.columns([3.0, 1.15, 0.55])
+            if course:
+                extra = (f"ITM {r.itm:,.0f} · Δ {r.delta:+.2f} · θ {r.theta:.1f}/day ({r.theta_pct:.0f}%) · ★{r.score:.0f}"
+                         f"<br>40-pt move ≈ <span class='pd-g'>+{r.win40:.0f}</span> / SL 40 ≈ <span class='pd-r'>−{r.loss40:.0f}</span>"
+                         f" pts · ₹{px * lots * LOT:,.0f}" + (f" · <span class='pd-y'>{r.note}</span>" if r.note else ""))
+            else:
+                extra = f"Δ {r.delta:+.2f} · θ {r.theta:.1f} · ★{r.score:.0f} · ₹{px * lots * LOT:,.0f}"
             c[0].markdown(f"<div class='pd-row {side.lower()}'><b>{int(r.strike)} {side}</b> {px:.2f}{warn}<br>"
-                          f"<span class='pd-m'>Δ {r.delta:+.2f} · θ {r.theta:.1f} · ★{r.score:.0f} · ₹{px * lots * LOT:,.0f}"
-                          f"</span></div>", unsafe_allow_html=True)
+                          f"<span class='pd-m'>{extra}</span></div>", unsafe_allow_html=True)
             c[1].button("BUY", key=f"pd_b_{side}_{int(r.strike)}", use_container_width=True,
                         on_click=cb_quick_buy, args=(side, int(r.strike), chain["expiry"], r.sid),
                         help=f"Market BUY {lots} lot at the ask (~{px:.2f})")
@@ -1253,7 +1363,7 @@ def _ladder(st, s, chain) -> None:
                            use_container_width=True, on_click=cb_open_ticket,
                            args=(side, int(k), chain["expiry"], r.sid, _ask(dict(ltp=r.ltp, bid=r.bid, ask=r.ask))))
         c[1].markdown(f"<div class='pd-k {'atm' if k == atm else ''}'>{int(k)}</div>", unsafe_allow_html=True)
-    st.caption("Tap a price → order ticket · ★ = top-ranked by your Greek weights · shaded = in-the-money")
+    st.caption("Tap a price → order ticket · ★ = today's top picks (your strike style) · shaded = in-the-money")
 
 
 def _working(st, s) -> None:
@@ -1547,11 +1657,24 @@ def _settings_ui(st, s: dict) -> None:
         s["tgt_pts"] = c[1].number_input("Target", 0.0, 2000.0, float(s["tgt_pts"]), 1.0, key="pd_tg")
         s["trail_pts"] = c[2].number_input("Trail", 0.0, 1000.0, float(s["trail_pts"]), 1.0, key="pd_tr")
         st.caption("0 = off. Used by one-click BUY and as ticket defaults.")
-        st.caption("Greek weights — order of importance: Delta › Theta › Gamma › Vega")
-        w = s["weights"]
-        for g_, lab in (("delta", "Delta"), ("theta", "Theta"), ("gamma", "Gamma"), ("vega", "Vega")):
-            w[g_] = st.slider(lab, 0, 100, int(w[g_]), key=f"pd_w{g_}")
-        s["delta_target"] = st.slider("Preferred |Delta|", 0.20, 0.80, float(s["delta_target"]), 0.05, key="pd_dt")
+        sty = st.radio("Strike picks", ["Course ITM (MJ + Greeks)", "Greek weights (ATM)"], horizontal=True,
+                       index=0 if s.get("style", "course") == "course" else 1, key="pd_style",
+                       help="Course = ITM 100–200 pts, multiples of 100, premium ≈ ₹200, Δ ≈ 0.6, ranked by Greeks. "
+                            "Greek weights = the old ATM-centred score.")
+        s["style"] = "course" if sty.startswith("Course") else "greeks"
+        if s["style"] == "course":
+            a_, b_ = st.slider("ITM depth (pts)", 0, 400, (int(s["itm_min"]), int(s["itm_max"])), 25, key="pd_itm")
+            s["itm_min"], s["itm_max"] = int(a_), int(b_)
+            c = st.columns(2)
+            s["prem_target"] = float(c[0].number_input("Premium ≈ ₹", 50.0, 600.0, float(s["prem_target"]), 10.0, key="pd_pt"))
+            s["course_delta"] = float(c[1].number_input("|Δ| ≈", 0.40, 0.90, float(s["course_delta"]), 0.05, key="pd_cd"))
+            s["round100"] = st.checkbox("Multiples of 100 only", value=bool(s["round100"]), key="pd_r100")
+        else:
+            st.caption("Greek weights — order of importance: Delta › Theta › Gamma › Vega")
+            w = s["weights"]
+            for g_, lab in (("delta", "Delta"), ("theta", "Theta"), ("gamma", "Gamma"), ("vega", "Vega")):
+                w[g_] = st.slider(lab, 0, 100, int(w[g_]), key=f"pd_w{g_}")
+            s["delta_target"] = st.slider("Preferred |Delta|", 0.20, 0.80, float(s["delta_target"]), 0.05, key="pd_dt")
         c = st.columns(2)
         s["top_n"] = c[0].selectbox("Picks per side", [1, 2, 3, 4, 5], index=[1, 2, 3, 4, 5].index(int(s["top_n"])), key="pd_n")
         opts = [1, 2, 3, 5, 10]

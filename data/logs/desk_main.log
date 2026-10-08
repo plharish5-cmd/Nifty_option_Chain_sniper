@@ -15,3 +15,55 @@
   External URL: http://152.57.110.93:8502
 
   Stopping...
+2026-10-08 09:17:23.113 Did not auto detect external IP.
+Please go to https://docs.streamlit.io/ for debugging hints.
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8502
+  Network URL: http://127.0.0.1:8502
+
+  Stopping...
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8502
+  Network URL: http://192.168.0.109:8502
+  External URL: http://49.205.33.28:8502
+
+  Stopping...
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8502
+  Network URL: http://192.168.0.109:8502
+  External URL: http://49.205.33.28:8502
+
+2026-10-08 11:54:33.336 The fragment with id 28b9e36c029eef18cbe6e9fe67a5935d does not exist anymore - it might have been removed during a preceding full-app rerun.
+  Stopping...
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8502
+  Network URL: http://192.168.0.109:8502
+  External URL: http://49.205.33.28:8502
+
+  Stopping...
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8502
+  Network URL: http://192.168.0.109:8502
+  External URL: http://49.205.33.28:8502
+
+2026-10-08 11:57:42.170 The fragment with id 28b9e36c029eef18cbe6e9fe67a5935d does not exist anymore - it might have been removed during a preceding full-app rerun.
+  Stopping...
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8502
+  Network URL: http://192.168.0.109:8502
+  External URL: http://49.205.33.28:8502
+
+2026-10-08 11:59:06.815 The fragment with id 28b9e36c029eef18cbe6e9fe67a5935d does not exist anymore - it might have been removed during a preceding full-app rerun.
+Failed to load paper account: Expecting value: line 1 column 1 (char 0)

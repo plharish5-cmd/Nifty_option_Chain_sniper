@@ -1,0 +1,19 @@
+$ orderflow_recorder.py
+  ! download failed https://www.niftyindices.com/IndexConstituent/ind_nifty50list.csv: HTTPSConnectionPool(host='www.niftyindices.com', port=443): Max retries exceeded with url: /IndexConstituent/ind_nifty50list.csv (Caused by NameResolutionError("HTTPSConnection(host='www.niftyindices.com', port=443): Failed to resolve 'www.niftyindices.com' ([Errno -3] Temporary failure in name resolution)"))
+NIFTY 50 order-flow recorder · 50 stocks mapped
+  ! websocket error: [Errno -3] Temporary failure in name resolution
+  websocket closed (None )
+  reconnecting in 4s …
+  ! websocket error: [Errno -3] Temporary failure in name resolution
+  websocket closed (None )
+  reconnecting in 8s …
+  ! websocket error: [Errno -3] Temporary failure in name resolution
+  websocket closed (None )
+  reconnecting in 16s …
+  ! websocket error: [Errno -3] Temporary failure in name resolution
+  websocket closed (None )
+  reconnecting in 32s …
+  ! websocket error: [Errno -3] Temporary failure in name resolution
+  websocket closed (None )
+  reconnecting in 60s …
+  subscribed 50 stocks (code 21) + NIFTY index (code 15)
