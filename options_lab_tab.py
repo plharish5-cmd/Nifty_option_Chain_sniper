@@ -666,14 +666,19 @@ def render() -> None:
         __import__("olab_pro").brief(day)
     except Exception as _opb_err:                           # noqa: BLE001
         st.caption(f"PRO brief unavailable: {_opb_err}")
-    t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV",
+    t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17 = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV",
                                               "📊 Call vs Put Writers (3m / 5m / 15m)", "🟥 PE − CE OI Table",
                                               "📈 Multi-strike OI",
                                               "📉 Vega Analysis",
                                               "⏳ Premium Decay",
                                               "🎯 Max Pain",
                                               "⏱ Time-series Chain",
-                                              "🧭 Strike Advisor"])   # TABMOVE MULTISTRIKE VEGAPRO PREMIUMPRO MAXPAINPRO TSCHAINPRO STRIKEADVPRO
+                                              "🧭 Strike Advisor",
+                                              "📉 Straddle",
+                                              "😨 Volatility Skew",
+                                              "🏛 NIFTY Heavyweights",
+                                              "🌏 Pre-market & Gap",
+                                              "📅 Events"])   # TABMOVE MULTISTRIKE VEGAPRO PREMIUMPRO MAXPAINPRO TSCHAINPRO STRIKEADVPRO STRADDLEPRO VOLSKEWPRO HEAVYPRO GLOBALCUES EVENTSCAL
     with t0:
         __import__("olab_pro").tab("oi", day)                       # OLABPRO
         try:
@@ -770,3 +775,33 @@ def render() -> None:
             strike_advisor_pro.render(day)
         except Exception as _sad_err:                           # noqa: BLE001
             st.error(f"Strike Advisor encountered an error: {_sad_err}")
+    with t13:                                                    # STRADDLEPRO
+        try:
+            import straddle_pro
+            straddle_pro.render(day)
+        except Exception as _std_err:                           # noqa: BLE001
+            st.error(f"Straddle encountered an error: {_std_err}")
+    with t14:                                                    # VOLSKEWPRO
+        try:
+            import vol_skew_pro
+            vol_skew_pro.render(day)
+        except Exception as _vsk_err:                           # noqa: BLE001
+            st.error(f"Volatility Skew encountered an error: {_vsk_err}")
+    with t15:                                                    # HEAVYPRO
+        try:
+            import index_heavy_pro
+            index_heavy_pro.render(day)
+        except Exception as _ihp_err:                           # noqa: BLE001
+            st.error(f"NIFTY Heavyweights encountered an error: {_ihp_err}")
+    with t16:                                                    # GLOBALCUES
+        try:
+            import global_cues
+            global_cues.render(day)
+        except Exception as _gc_err:                           # noqa: BLE001
+            st.error(f"Pre-market & Gap encountered an error: {_gc_err}")
+    with t17:                                                    # EVENTSCAL
+        try:
+            import events_cal
+            events_cal.render(day)
+        except Exception as _ev_err:                           # noqa: BLE001
+            st.error(f"Events encountered an error: {_ev_err}")

@@ -9,3 +9,4 @@ logged_at,day,event_t,token,kind,side,level_kind,level,depth,close_inside,smt,en
 2026-10-08T13:12:49,2026-10-08,2026-10-08 13:00:00,13,TURTLE_SOUP,BULLISH,swing,22272.9,18.6,False,,,,AGAINST,"price below the flow VWAP 22,414.7 — buy only above VWAP",OK,22500.0,22200.0,-2.0,,22250,1,True
 2026-10-08T13:21:40,2026-10-08,2026-10-08 13:20:00,13,TURTLE_SOUP,BULLISH,swing,22254.3,11.0,False,,,,AGAINST,"price below the flow VWAP 22,405.8 — buy only above VWAP",OK,22500.0,22200.0,-2.0,,22250,1,True
 2026-10-08T14:06:11,2026-10-08,2026-10-08 14:05:00,13,TURTLE_SOUP,BULLISH,swing,22228.0,17.55,False,,,,AGAINST,"price below the flow VWAP 22,381.7 — buy only above VWAP",OK,22500.0,22000.0,-2.0,,22250,1,True
+2026-10-08T15:10:57,2026-10-08,2026-10-08 15:10:00,13,TURTLE_SOUP,BULLISH,swing,22190.0,10.1,False,,,,AGAINST,"price below the flow VWAP 22,340.1 — buy only above VWAP",OK,22500.0,22000.0,-2.0,,22200,1,True

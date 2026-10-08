@@ -1,13 +1,13 @@
 {
- "updated": "2026-10-08T14:10:19",
+ "updated": "2026-10-08T15:35:00",
  "day": "2026-10-08",
- "status": "connected",
- "packets": 1138202,
- "trades": 684187,
+ "status": "stopped",
+ "packets": 1402731,
+ "trades": 868259,
  "stocks_streaming": 50,
  "stocks_subscribed": 50,
- "index_ltp": 22208.44921875,
+ "index_ltp": 22231.80078125,
  "index_source": "rest",
- "error": "index REST fallback: HTTPSConnectionPool(host='api.dhan.co', port=443): Max retries exceeded with url: /v2/marketfeed/ltp (Caused by NameReso",
+ "error": "index REST fallback: /marketfeed/ltp returned HTTP 429: '{\"data\":{\"805\":\"Too many requests. Further requests may result in the user being blo",
  "pid": 3596
 }

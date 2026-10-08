@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-10-08T14:09:36.834918",
+  "timestamp": "2026-10-08T16:07:04.399085",
   "job": "chain",
-  "outcome": "SUCCESS",
-  "spot": 22217.0,
+  "outcome": "SKIPPED",
+  "spot": null,
   "consecutive_failures": 0,
   "error_class": null,
   "error_message": null,
-  "skip_reason": null,
-  "drift_minutes": 0.6
+  "skip_reason": "Outside window 09:00-15:45",
+  "drift_minutes": null
 }

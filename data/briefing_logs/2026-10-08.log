@@ -8595,3 +8595,2757 @@ DATA HEALTH
   Coverage today: 97/125 bins  ⚠️
   Stale feed:     NO
 ═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 14:10 ────
+OC (mentor) 14:09 spot 22,217.0
+ITM put writers ADDING at 22300 (83 pts ITM): ITM put writers confident (bullish) — trapped if price falls: long-unwinding risk
+
+
+──── 🟦 5-MIN 14:10 ────
+🟦 5-MIN | 14:10 | Spot 22,208 | BEARISH ▼
+Day range: Low 22,206.65 (14:10) ↔ High 22,599.05 (09:15)
+GEX: +₹39Cr SHORT gamma (trending)
+RVOL: 1.53× TREND ZONE
+IV: 89th pct EXPENSIVE
+Floor: 22,200 PE [77L] | Ceiling: 22,500 CE [142L]
+Flow (5m): Puts adding +5k | Calls adding +25k
+Dominance: CALLS 2.1× CLEAR (CE +218k vs PE +105k)
+Structure: RANGE 22,100–22,300 (edges defended both sides)
+Floor weakening: 7th consecutive
+Checklist: 4/6 WAIT (Flow, IV failing)
+Action: WATCH FOR PULLBACK
+mj_shadow: CE setup 22,200 PE [77L] | PE setup 22,500 CE [142L] | RVOL 1.53 TREND
+Alert: [APPROACHING FLOOR]
+Alert: [Spot 22,208 → S1 22,200 PE 77.2L only 8 pts away]
+Alert: [FLOOR_WEAKENING (7th consecutive)]
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:11  |  Spot 22,208
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (264 min)
+GEX:                  +₹37.5Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             14.2%  |  Avg: 11.5%  |  EXPENSIVE (rank 89%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,700 (492 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,208 — 192 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,206.65 (14:10) ↔ High 22,599.05 (09:15) (392 pts)
+PCR (ATM 22,200):     2.16  ↓
+PCR (max OI 22,300):  0.77  ↓  ← price magnet
+PCR (flow):           0.51
+WRITERS RATIO:        0.48x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [142.2L] — 292 pts above spot
+  MAX SUPPORT:    22,000 PE [87.5L] — 208 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 142.2L CE writers]
+  R2:  22,600  [OI wall: 128.7L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 77.2L PE writers]
+  S2:  22,000  [OI wall: 87.5L PE writers]
+  MAJOR WALL: 22400 CE [142.7L] — 191 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,300 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:  +10,439  (Call writing ↑)
+  PE ΔOI:   -3,509  (Put unwinding ↓)
+  Spread:  -13,948 contracts
+  Flow:    FLAT
+  ⚠️ Floor weakening — 8th consecutive warning
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 2.1× CLEAR (CE +218k vs PE +105k)
+     Heaviest: 22,300 CE 4.3× | 22,250 CE 2.1×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 2.4× FIRM | Ceiling 4.3× STRONG
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 42-92 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +31.6L |   +16.8L |   -14.9L | CE_ABOVE
+  22,300   |   +69.0L |   +15.9L |   -53.1L | CE_ABOVE
+  22,400   |   +83.9L |    +0.4L |   -83.5L | CE_ABOVE
+  NET (3)  |  +184.6L |   +33.0L |  -151.5L | CE_ABOVE
+  Gap trend: widening (-20.5L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 22200→21200)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  72.1L  | +106.6k  |  0.77 |  55.7L  |  +24.8k
+  22250   |  31.4L  |  +47.0k  |  0.89 |  28.0L  |  +22.2k
+  22200   |  35.7L  |  +49.6k  |  2.16 |  77.2L  |  +25.4k  ← ATM
+  22150   |   4.3L  |   +6.2k  |  4.70 |  20.4L  |  +11.3k
+  22100   |   6.9L  |   +8.8k  |  6.57 |  45.2L  |  +21.2k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               FAIL ✗  ║
+  ║  □ No danger zone:             PASS ✅ ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 4/6 — WAIT ❌                  ║
+  ║  Missing: IV, GEX                      ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:11:37  (1m 22s ago) ✅
+  Coverage today: 98/125 bins  ⚠️
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+⚠️ APPROACHING FLOOR
+Spot 22,208 → S1 22,200 PE 77.2L only 8 pts away
+If bounce candle forms → CE buy opportunity
+➡️ WATCH for bounce at 22,200
+
+──── 🟧 MENTOR 14:13 ────
+OC (mentor) 14:12 spot 22,210.9
+ITM call writers CLOSING at 22100 (110 pts ITM): ITM call writers covering -> short covering, market pushes UP
+ITM put writers CLOSING at 22300 (89 pts ITM): ITM put writers exiting -> long unwinding, market pushes DOWN
+
+
+──── 🟪 15-MIN 14:15 ────
+🟪 15-MIN | 14:15 | Spot 22,235 | BEARISH ▼
+Day range: Low 22,204.5 (14:10) ↔ High 22,599.05 (09:15)
+GEX: +₹53Cr SHORT gamma (trending)
+RVOL: 1.55× TREND ZONE
+IV: 89th pct EXPENSIVE
+Floor: 22,200 PE [77L] | Ceiling: 22,500 CE [138L]
+Flow (15m): Puts adding +40k | Calls adding +53k
+Dominance: CALLS 3.1× HEAVY (CE +275k vs PE +90k)
+Structure: RANGE 22,150–22,350 (edges defended both sides)
+Floor weakening: 8th consecutive
+Checklist: 4/6 WAIT (Flow, IV failing)
+Action: WATCH FOR PULLBACK
+mj_shadow: CE setup 22,200 PE [77L] | PE setup 22,500 CE [138L] | RVOL 1.55 TREND
+Alert: [FLOOR_WEAKENING (8th consecutive)]
+
+
+──── 🟧 MENTOR 14:16 ────
+🟪🟪 PA 15-MIN SUPER SIGNAL 14:15 spot 22,235.1
+
+[PA 15m SUPER] 🟪🟪 15-MIN SUPER SIGNAL
+🟢 PA SETUP · CE · 14:00 candle
+HAMMER at DAY LOW 22,228; lower wick 01-Oct 22,217; 22,200 PE wall 22,200
+BUY CE above 22,244 (follow-through) · SL 22,202 · valid for 2 candles
+Confluence 4/8: ✔ PE floor 22,200 at the level · ✔ PCR 2.16 · ✘ writers ratio 0.48x (CE side) · ✘ dominance calls · ✔ RVOL 1.55x · ✘ short gamma (trending - reversals fail more) · ✘ IV 89th pct expensive · ✔ previous-day wick at this level
+Backtest (15m): BETTER THAN RANDOM, ~BREAKEVEN AFTER COSTS (+0.00 R vs -0.14 R at random times, 4662 trades, gap 5.9x noise)
+
+
+──── 🟧 MENTOR 14:16 ────
+PA 5-min / 3-min 14:15 spot 22,235.1
+
+[PA 3m] 🟨 3-MIN signal (noisy)
+✅ PA TRIGGERED · CE at 22,231 (14:12 broke the hammer high)
+SL 22,208 (23 pts) · T1 22,291 · then trail under each closed 3-min candle, or exit on a close below the 3m 8 EMA
+
+
+──── 🟧 MENTOR 14:16 ────
+OC (mentor) 14:15 spot 22,235.1
+ITM call writers CLOSING at 22000 (235 pts ITM): ITM call writers covering -> short covering, market pushes UP
+ITM put writers ADDING at 22300 (64 pts ITM): ITM put writers confident (bullish) — trapped if price falls: long-unwinding risk
+DAT (champion): Direction (1-hour structure): DOWN (sell only, in premium) | PREMIUM sell zone 0.705-0.886: 22,566 - 22,659 (0.79 = 22,610); a close beyond 22,659 = no trade; target 22,204
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:15  |  Spot 22,235
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (267 min)
+GEX:                  +₹52.9Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             14.4%  |  Avg: 11.5%  |  EXPENSIVE (rank 89%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,650 (415 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,235 — 165 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,204.5 (14:10) ↔ High 22,599.05 (09:15) (395 pts)
+PCR (ATM 22,250):     0.82  ↓
+PCR (max OI 22,300):  0.76  ↓  ← price magnet
+PCR (flow):           0.42
+WRITERS RATIO:        0.33x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [138.1L] — 265 pts above spot
+  MAX SUPPORT:    22,000 PE [89.5L] — 235 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 138.1L CE writers]
+  R2:  22,600  [OI wall: 125.7L CE writers]
+  ATM: 22,250  ← You are here
+  S1:  22,200  [OI wall: 77.3L PE writers]
+  S2:  22,000  [OI wall: 89.5L PE writers]
+  MAJOR WALL: 22400 CE [147.7L] — 164 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,250 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,300 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:  +11,555  (Call writing ↑)
+  PE ΔOI:   -5,294  (Put unwinding ↓)
+  Spread:  -16,849 contracts
+  Flow:    FLAT
+  ⚠️ Floor weakening — 8th consecutive warning
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 3.1× HEAVY (CE +275k vs PE +90k)
+     Heaviest: 22,350 CE 6.5× | 22,300 CE 4.5×
+  🔒 STRUCTURE: RANGE 22,150–22,350 (edges defended both sides)
+     Floor conviction 1.6× FIRM | Ceiling 6.5× STRONG
+     → Asymmetric: lid firm, floor thin. Downside drift likelier than an upside break.
+     → Ceiling being built 65-115 pts above spot
+     → Risk to call writers: close above 22,350 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +33.9L |   +16.9L |   -17.1L | CE_ABOVE
+  22,300   |   +69.5L |   +15.5L |   -54.0L | CE_ABOVE
+  22,400   |   +87.8L |    -0.1L |   -87.9L | CE_ABOVE
+  NET (3)  |  +191.3L |   +32.3L |  -159.0L | CE_ABOVE
+  Gap trend: widening (-23.8L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21800→21200)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22350   |  39.5L  |  +59.1k  |  0.44 |  17.3L  |   +9.1k
+  22300   |  72.3L  | +106.9k  |  0.76 |  55.1L  |  +23.9k
+  22250   |  32.8L  |  +49.1k  |  0.82 |  27.0L  |  +20.8k  ← ATM
+  22200   |  37.9L  |  +52.9k  |  2.04 |  77.3L  |  +25.5k
+  22150   |   4.9L  |   +7.0k  |  4.14 |  20.2L  |  +10.9k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               FAIL ✗  ║
+  ║  □ No danger zone:             PASS ✅ ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 4/6 — WAIT ❌                  ║
+  ║  Missing: IV, GEX                      ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:15:38  (59s ago) ✅
+  Coverage today: 100/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 14:19 ────
+PA 5-min / 3-min 14:18 spot 22,226.7
+
+[PA 3m] ⚠️ EXIT HINT for the 14:03 CE: 14:15 candle closed below the 3m 8 EMA (22,226 vs 22,229)
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:19  |  Spot 22,220
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (273 min)
+GEX:                  +₹45.1Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             14.4%  |  Avg: 11.5%  |  EXPENSIVE (rank 90%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,650 (430 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,220 — 180 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,204.5 (14:10) ↔ High 22,599.05 (09:15) (395 pts)
+PCR (ATM 22,200):     2.07  ↓
+PCR (max OI 22,300):  0.77  ↓  ← price magnet
+PCR (flow):           0.51
+WRITERS RATIO:        0.48x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [140.7L] — 280 pts above spot
+  MAX SUPPORT:    22,000 PE [90.6L] — 220 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 140.7L CE writers]
+  R2:  22,600  [OI wall: 125.2L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 78.0L PE writers]
+  S2:  22,000  [OI wall: 90.6L PE writers]
+  MAJOR WALL: 22400 CE [148.7L] — 180 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,300 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   +6,550  (Call buying ↑)
+  PE ΔOI:   +1,788  (Put writing ↑)
+  Spread:   -4,762 contracts
+  Flow:    BUILDING
+
+INSTITUTIONAL READ
+  PE writers building support:   YES  ✅
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 2.1× CLEAR (CE +224k vs PE +109k)
+     Heaviest: 22,300 CE 4.4× | 22,250 CE 2.3×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 2.6× FIRM | Ceiling 4.4× STRONG
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 30-80 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +34.1L |   +16.7L |   -17.4L | CE_ABOVE
+  22,300   |   +68.9L |   +15.6L |   -53.3L | CE_ABOVE
+  22,400   |   +88.1L |    -0.2L |   -88.3L | CE_ABOVE
+  NET (3)  |  +191.1L |   +32.1L |  -159.0L | CE_ABOVE
+  Gap trend: widening (-23.4L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21800→21200)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  71.9L  | +106.3k  |  0.77 |  55.4L  |  +24.4k
+  22250   |  32.8L  |  +49.2k  |  0.84 |  27.6L  |  +21.7k
+  22200   |  37.7L  |  +52.5k  |  2.07 |  78.0L  |  +26.6k  ← ATM
+  22150   |   4.8L  |   +6.9k  |  4.30 |  20.7L  |  +11.7k
+  22100   |   7.2L  |   +9.4k  |  6.54 |  47.2L  |  +24.3k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               FAIL ✗  ║
+  ║  □ No danger zone:             PASS ✅ ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 4/6 — WAIT ❌                  ║
+  ║  Missing: IV, GEX                      ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:19:40  (32s ago) ✅
+  Coverage today: 101/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟦 5-MIN 14:20 ────
+🟦 5-MIN | 14:20 | Spot 22,217 | BEARISH ▼
+Day range: Low 22,204.5 (14:10) ↔ High 22,599.05 (09:15)
+GEX: +₹44Cr SHORT gamma (trending)
+RVOL: 1.57× TREND ZONE
+IV: 90th pct EXPENSIVE
+Floor: 22,200 PE [78L] | Ceiling: 22,500 CE [141L]
+Flow (5m): Puts adding +18k | Calls adding +9k
+Dominance: CALLS 2.0× CLEAR (CE +223k vs PE +110k)
+Structure: RANGE 22,100–22,300 (edges defended both sides)
+Floor weakening: 11th consecutive
+Checklist: 4/6 WAIT (Flow, IV failing)
+Action: WATCH FOR PULLBACK
+mj_shadow: CE setup 22,200 PE [78L] | PE setup 22,500 CE [141L] | RVOL 1.57 TREND
+Alert: [FLOOR_WEAKENING (11th consecutive)]
+
+
+──── 🟧 MENTOR 14:22 ────
+OC (mentor) 14:21 spot 22,209.8
+ITM call writers ADDING at 22000 (209 pts ITM): ITM call writers confident (bearish) — trapped if price rises: short-covering risk
+ITM call writers ADDING at 22100 (109 pts ITM): ITM call writers confident (bearish) — trapped if price rises: short-covering risk
+ITM put writers CLOSING at 22300 (90 pts ITM): ITM put writers exiting -> long unwinding, market pushes DOWN
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:22  |  Spot 22,200
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (276 min)
+GEX:                  +₹35.4Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             14.2%  |  Avg: 11.5%  |  EXPENSIVE (rank 87%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,700 (500 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,200 — 200 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,200.15 (14:22) ↔ High 22,599.05 (09:15) (399 pts)
+PCR (ATM 22,200):     2.09  ↓
+PCR (max OI 22,300):  0.77  →  ← price magnet
+PCR (flow):           0.51
+WRITERS RATIO:        0.49x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [140.7L] — 300 pts above spot
+  MAX SUPPORT:    22,000 PE [91.0L] — 200 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 140.7L CE writers]
+  R2:  22,600  [OI wall: 124.3L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 78.0L PE writers]
+  S2:  22,000  [OI wall: 91.0L PE writers]
+  MAJOR WALL: 22400 CE [151.0L] — 199 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,300 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   +3,203  (Call writing ↑)
+  PE ΔOI:   +1,607  (Put buying ↑)
+  Spread:   -1,596 contracts
+  Flow:    FLAT
+
+INSTITUTIONAL READ
+  PE writers building support:   YES  ✅
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 2.0× CLEAR (CE +223k vs PE +109k)
+     Heaviest: 22,300 CE 4.4× | 22,250 CE 2.2×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 2.7× FIRM | Ceiling 4.4× STRONG
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 50-100 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +33.8L |   +17.6L |   -16.2L | CE_ABOVE
+  22,300   |   +69.0L |   +15.9L |   -53.1L | CE_ABOVE
+  22,400   |   +88.7L |    -0.3L |   -89.0L | CE_ABOVE
+  NET (3)  |  +191.6L |   +33.2L |  -158.4L | CE_ABOVE
+  Gap trend: widening (-18.6L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→21200)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  72.0L  | +106.5k  |  0.77 |  55.4L  |  +24.4k
+  22250   |  32.0L  |  +48.0k  |  0.87 |  27.7L  |  +21.9k
+  22200   |  37.4L  |  +52.1k  |  2.09 |  78.0L  |  +26.7k  ← ATM
+  22150   |   5.0L  |   +7.2k  |  4.10 |  20.6L  |  +11.5k
+  22100   |   7.1L  |   +9.2k  |  6.68 |  47.5L  |  +24.8k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             PASS ✅ ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 5/6 — CAUTION ⚠️               ║
+  ║  Issue: IV expensive (87%)             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:22:41  (1m 13s ago) ✅
+  Coverage today: 102/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+⚠️ APPROACHING FLOOR
+Spot 22,200 → S1 22,200 PE 78.0L only 0 pts away
+If bounce candle forms → CE buy opportunity
+➡️ WATCH for bounce at 22,200
+
+──── 🟧 MENTOR 14:25 ────
+PA 5-min / 3-min 14:24 spot 22,211.7
+
+[PA 5m] 🟦 5-MIN signal
+🟢 PA SETUP · CE · 14:20 candle
+HAMMER at DAY LOW 22,204; lower wick 01-Oct 22,217; 22,200 PE wall 22,200
+BUY CE above 22,220 (follow-through) · SL 22,188 · valid for 3 candles
+Confluence 4/8: ✔ PE floor 22,200 at the level · ✔ PCR 2.09 · ✘ writers ratio 0.49x (CE side) · ✘ dominance calls · ✔ RVOL 1.57x · ✘ short gamma (trending - reversals fail more) · ✘ IV 90th pct expensive · ✔ previous-day wick at this level
+Backtest (5m): BETTER THAN RANDOM BUT LOSES (-0.03 R vs -0.16 R at random times, 14244 trades, gap 9.9x noise)
+
+[PA 3m] 🟨 3-MIN signal (noisy)
+🟢 PA SETUP · CE · 14:21 candle
+HAMMER at DAY LOW 22,204; lower wick 01-Oct 22,217; 22,200 PE wall 22,200
+BUY CE above 22,219 (follow-through) · SL 22,188 · valid for 3 candles
+Confluence 4/8: ✔ PE floor 22,200 at the level · ✔ PCR 2.09 · ✘ writers ratio 0.49x (CE side) · ✘ dominance calls · ✔ RVOL 1.57x · ✘ short gamma (trending - reversals fail more) · ✘ IV 90th pct expensive · ✔ previous-day wick at this level
+Backtest (3m): BETTER THAN RANDOM, ~BREAKEVEN AFTER COSTS (+0.01 R vs -0.12 R at random times, 23512 trades, gap 11.2x noise)
+
+[PA 3m] ⚠️ EXIT HINT for the 11:06 PE: hammer at DAY LOW 22,204; lower wick 01-Oct 22,217; 22,200 PE wall 22,200 on the 14:21 candle - you exit PE trades here
+
+[PA 3m] ⚠️ EXIT HINT for the 11:15 PE: hammer at DAY LOW 22,204; lower wick 01-Oct 22,217; 22,200 PE wall 22,200 on the 14:21 candle - you exit PE trades here
+
+
+──── 🟦 5-MIN 14:25 ────
+🟦 5-MIN | 14:25 | Spot 22,208 | BEARISH ▼
+Day range: Low 22,190 (14:20) ↔ High 22,599.05 (09:15)
+GEX: +₹42Cr SHORT gamma (trending)
+RVOL: 1.55× TREND ZONE
+IV: 87th pct EXPENSIVE
+Floor: 22,200 PE [75L] | Ceiling: 22,500 CE [139L]
+Flow (5m): Puts leaving -22k | Calls leaving -3k
+Dominance: CALLS 2.3× CLEAR (CE +231k vs PE +101k)
+Structure: RANGE 22,100–22,300 (edges defended both sides)
+Floor weakening: 2nd consecutive
+Checklist: 4/6 WAIT (Flow, IV failing)
+Action: WATCH FOR PULLBACK
+mj_shadow: CE setup 22,200 PE [75L] | PE setup 22,500 CE [139L] | RVOL 1.55 TREND
+Alert: [APPROACHING FLOOR]
+Alert: [Spot 22,208 → S1 22,200 PE 74.9L only 8 pts away]
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:26  |  Spot 22,210
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (279 min)
+GEX:                  +₹43.3Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             14.2%  |  Avg: 11.4%  |  EXPENSIVE (rank 87%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,650 (440 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,210 — 190 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,190 (14:20) ↔ High 22,599.05 (09:15) (409 pts)
+PCR (ATM 22,200):     1.84  ↓
+PCR (max OI 22,300):  0.76  →  ← price magnet
+PCR (flow):           0.40
+WRITERS RATIO:        0.44x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [139.3L] — 290 pts above spot
+  MAX SUPPORT:    22,000 PE [90.6L] — 210 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 139.3L CE writers]
+  R2:  22,600  [OI wall: 124.0L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 75.9L PE writers]
+  S2:  22,000  [OI wall: 90.6L PE writers]
+  MAJOR WALL: 22400 CE [154.6L] — 189 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,250 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,300 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:  +11,229  (Call buying ↑)
+  PE ΔOI:   -1,851  (Put unwinding ↓)
+  Spread:  -13,080 contracts
+  Flow:    FLAT
+  ⚠️ Floor weakening — 2nd consecutive warning
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 2.3× CLEAR (CE +234k vs PE +104k)
+     Heaviest: 22,300 CE 4.5× | 22,250 CE 2.7×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 2.6× FIRM | Ceiling 4.5× STRONG
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 40-90 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +34.3L |   +14.9L |   -19.5L | CE_ABOVE
+  22,300   |   +69.2L |   +15.5L |   -53.8L | CE_ABOVE
+  22,400   |   +91.0L |    -0.8L |   -91.8L | CE_ABOVE
+  NET (3)  |  +194.6L |   +29.6L |  -165.0L | CE_ABOVE
+  Gap trend: widening (-13.5L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→21200)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  72.5L  | +107.2k  |  0.76 |  55.0L  |  +23.7k
+  22250   |  33.6L  |  +50.4k  |  0.76 |  25.5L  |  +18.5k
+  22200   |  41.2L  |  +58.0k  |  1.84 |  75.9L  |  +23.4k  ← ATM
+  22150   |   5.7L  |   +8.2k  |  3.60 |  20.3L  |  +11.1k
+  22100   |   7.8L  |  +10.2k  |  6.29 |  48.9L  |  +26.9k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               FAIL ✗  ║
+  ║  □ No danger zone:             PASS ✅ ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 4/6 — WAIT ❌                  ║
+  ║  Missing: IV, GEX                      ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:26:43  (52s ago) ✅
+  Coverage today: 103/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+⚠️ APPROACHING FLOOR
+Spot 22,210 → S1 22,200 PE 75.9L only 10 pts away
+If bounce candle forms → CE buy opportunity
+➡️ WATCH for bounce at 22,200
+
+──── 🟧 MENTOR 14:28 ────
+OC (mentor) 14:27 spot 22,203.8
+ITM call writers CLOSING at 22000 (203 pts ITM): ITM call writers covering -> short covering, market pushes UP
+ITM put writers ADDING at 22300 (96 pts ITM): ITM put writers confident (bullish) — trapped if price falls: long-unwinding risk
+
+
+──── 🟪 15-MIN 14:30 ────
+🟪 15-MIN | 14:30 | Spot 22,217 | BEARISH ▼
+Day range: Low 22,190 (14:20) ↔ High 22,599.05 (09:15)
+GEX: +₹45Cr SHORT gamma (trending)
+RVOL: 1.54× TREND ZONE
+IV: 87th pct EXPENSIVE
+Floor: 22,200 PE [77L] | Ceiling: 22,500 CE [140L]
+Flow (15m): Puts adding +14k | Calls adding +15k
+Dominance: CALLS 2.2× CLEAR (CE +240k vs PE +110k)
+Structure: RANGE 22,100–22,300 (edges defended both sides)
+Floor weakening: 3rd consecutive
+Checklist: 4/6 WAIT (Flow, IV failing)
+Action: WATCH FOR PULLBACK
+mj_shadow: CE setup 22,200 PE [77L] | PE setup 22,500 CE [140L] | RVOL 1.54 TREND
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:30  |  Spot 22,217
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (282 min)
+GEX:                  +₹45.5Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             14.2%  |  Avg: 11.4%  |  EXPENSIVE (rank 87%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,650 (433 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,217 — 183 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,190 (14:20) ↔ High 22,599.05 (09:15) (409 pts)
+PCR (ATM 22,200):     1.78  ↓
+PCR (max OI 22,300):  0.76  →  ← price magnet
+PCR (flow):           0.41
+WRITERS RATIO:        0.46x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [139.5L] — 283 pts above spot
+  MAX SUPPORT:    22,000 PE [92.5L] — 217 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 139.5L CE writers]
+  R2:  22,600  [OI wall: 122.9L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 76.9L PE writers]
+  S2:  22,000  [OI wall: 92.5L PE writers]
+  MAJOR WALL: 22400 CE [154.1L] — 183 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,250 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,300 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   +8,584  (Call writing ↑)
+  PE ΔOI:     -687  (Put unwinding ↓)
+  Spread:   -9,271 contracts
+  Flow:    FLAT
+  ⚠️ Floor weakening — 3rd consecutive warning
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 2.2× CLEAR (CE +240k vs PE +110k)
+     Heaviest: 22,300 CE 4.4× | 22,200 CE 2.5×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 2.3× FIRM | Ceiling 4.4× STRONG
+     → Asymmetric: lid firm, floor thin. Downside drift likelier than an upside break.
+     → Ceiling being built 83 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +38.1L |   +16.8L |   -21.2L | CE_ABOVE
+  22,300   |   +69.8L |   +15.9L |   -53.9L | CE_ABOVE
+  22,400   |   +92.3L |    -1.0L |   -93.3L | CE_ABOVE
+  NET (3)  |  +200.2L |   +31.8L |  -168.4L | CE_ABOVE
+  Gap trend: widening (-9.4L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→21200)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  73.0L  | +108.0k  |  0.76 |  55.6L  |  +24.6k
+  22250   |  34.2L  |  +51.3k  |  0.81 |  27.6L  |  +21.6k
+  22200   |  43.2L  |  +61.0k  |  1.78 |  76.9L  |  +24.9k  ← ATM
+  22150   |   5.8L  |   +8.3k  |  3.64 |  21.0L  |  +12.1k
+  22100   |   8.6L  |  +11.4k  |  5.70 |  48.8L  |  +26.8k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               FAIL ✗  ║
+  ║  □ No danger zone:             PASS ✅ ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 4/6 — WAIT ❌                  ║
+  ║  Missing: IV, GEX                      ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:30:44  (33s ago) ✅
+  Coverage today: 105/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 14:31 ────
+🟪🟪 PA 15-MIN SUPER SIGNAL 14:30 spot 22,216.9
+
+[PA 15m SUPER] 🟪🟪 15-MIN SUPER SIGNAL
+✅ PA TRIGGERED · CE at 22,244 (14:15 broke the hammer high)
+SL 22,202 (41 pts) · T1 22,500 · then trail under each closed 15-min candle, or exit on a close below the 15m 8 EMA
+
+[PA 15m SUPER] 🟪🟪 15-MIN SUPER SIGNAL
+🟢 PA SETUP · CE · 14:15 candle
+DOUBLE HAMMER at DAY LOW 22,204; lower wick 01-Oct 22,217; 22,200 PE wall 22,200
+BUY CE above 22,246 (follow-through) · SL 22,188 · valid for 2 candles
+Confluence 4/8: ✔ PE floor 22,200 at the level · ✔ PCR 1.84 · ✘ writers ratio 0.44x (CE side) · ✘ dominance calls · ✔ RVOL 1.54x · ✘ short gamma (trending - reversals fail more) · ✘ IV 87th pct expensive · ✔ previous-day wick at this level
+Backtest (15m): BETTER THAN RANDOM, ~BREAKEVEN AFTER COSTS (+0.00 R vs -0.14 R at random times, 4662 trades, gap 5.9x noise)
+
+[PA 15m SUPER] ⚠️ EXIT HINT for the 14:00 CE: 14:15 candle closed below the 15m 8 EMA (22,215 vs 22,259)
+
+
+──── 🟧 MENTOR 14:31 ────
+PA 5-min / 3-min 14:30 spot 22,216.9
+
+[PA 5m] 🟦 5-MIN signal
+🟢 PA SETUP · CE · 14:25 candle
+DOUBLE HAMMER at DAY LOW 22,190; lower wick 01-Oct 22,217; 22,200 PE wall 22,200
+BUY CE above 22,217 (follow-through) · SL 22,188 · valid for 3 candles
+Confluence 4/8: ✔ PE floor 22,200 at the level · ✔ PCR 1.84 · ✘ writers ratio 0.44x (CE side) · ✘ dominance calls · ✔ RVOL 1.54x · ✘ short gamma (trending - reversals fail more) · ✘ IV 87th pct expensive · ✔ previous-day wick at this level
+Backtest (5m): BETTER THAN RANDOM BUT LOSES (-0.03 R vs -0.16 R at random times, 14244 trades, gap 9.9x noise)
+
+[PA 5m] 🟦 5-MIN signal
+✅ PA TRIGGERED · CE at 22,217 (14:31 broke the double hammer high)
+SL 22,188 (29 pts) · T1 22,275 · then trail under each closed 5-min candle, or exit on a close below the 5m 8 EMA
+
+
+──── 🟧 MENTOR 14:31 ────
+OC (mentor) 14:30 spot 22,216.9
+ITM call writers ADDING at 22000 (216 pts ITM): ITM call writers confident (bearish) — trapped if price rises: short-covering risk
+
+
+──── 🟧 MENTOR 14:34 ────
+PA 5-min / 3-min 14:33 spot 22,241.0
+
+[PA 5m] 🟦 5-MIN signal
+✅ PA TRIGGERED · CE at 22,220 (14:34 broke the hammer high)
+SL 22,188 (32 pts) · T1 22,285 · then trail under each closed 5-min candle, or exit on a close below the 5m 8 EMA
+
+
+──── 🟧 MENTOR 14:34 ────
+OC (mentor) 14:33 spot 22,241.0
+ITM call writers CLOSING at 22000 (240 pts ITM): ITM call writers covering -> short covering, market pushes UP
+ITM call writers CLOSING at 22100 (140 pts ITM): ITM call writers covering -> short covering, market pushes UP
+ITM put writers CLOSING at 22300 (59 pts ITM): ITM put writers exiting -> long unwinding, market pushes DOWN
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:33  |  Spot 22,241
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (285 min)
+GEX:                  +₹57.0Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             14.1%  |  Avg: 11.3%  |  EXPENSIVE (rank 87%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,600 (359 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,241 — 159 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,190 (14:20) ↔ High 22,599.05 (09:15) (409 pts)
+PCR (ATM 22,250):     0.79  ↓
+PCR (max OI 22,300):  0.76  →  ← price magnet
+PCR (flow):           0.41
+WRITERS RATIO:        0.31x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [140.8L] — 259 pts above spot
+  MAX SUPPORT:    22,000 PE [92.9L] — 241 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 140.8L CE writers]
+  R2:  22,600  [OI wall: 123.3L CE writers]
+  ATM: 22,250  ← You are here
+  S1:  22,200  [OI wall: 75.1L PE writers]
+  S2:  22,000  [OI wall: 92.9L PE writers]
+  MAJOR WALL: 22100 PE [75.7L] — 140 pts below spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,250 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,300 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   +3,629  (Call buying ↑)
+  PE ΔOI:      -69  (Put unwinding ↓)
+  Spread:   -3,698 contracts
+  Flow:    BUILDING
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 3.3× HEAVY (CE +290k vs PE +89k)
+     Heaviest: 22,350 CE 7.7× | 22,300 CE 4.5×
+  🔒 STRUCTURE: RANGE 22,150–22,350 (edges defended both sides)
+     Floor conviction 1.6× FIRM | Ceiling 7.7× STRONG
+     → Asymmetric: lid firm, floor thin. Downside drift likelier than an upside break.
+     → Ceiling being built 59-109 pts above spot
+     → Risk to call writers: close above 22,350 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +39.3L |   +15.0L |   -24.3L | CE_ABOVE
+  22,300   |   +69.8L |   +15.8L |   -54.0L | CE_ABOVE
+  22,400   |   +91.8L |    -1.1L |   -92.8L | CE_ABOVE
+  NET (3)  |  +200.9L |   +29.7L |  -171.2L | CE_ABOVE
+  Gap trend: widening (-12.2L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→21200)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22350   |  40.8L  |  +61.1k  |  0.41 |  16.6L  |   +8.0k
+  22300   |  73.0L  | +108.0k  |  0.76 |  55.3L  |  +24.3k
+  22250   |  35.0L  |  +52.6k  |  0.79 |  27.6L  |  +21.6k  ← ATM
+  22200   |  42.5L  |  +60.0k  |  1.77 |  75.1L  |  +22.2k
+  22150   |   5.5L  |   +7.9k  |  3.90 |  21.5L  |  +12.9k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               FAIL ✗  ║
+  ║  □ No danger zone:             PASS ✅ ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 4/6 — WAIT ❌                  ║
+  ║  Missing: IV, GEX                      ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:33:45  (1m 8s ago) ✅
+  Coverage today: 106/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟦 5-MIN 14:35 ────
+🟦 5-MIN | 14:35 | Spot 22,236 | BEARISH ▼
+Day range: Low 22,190 (14:20) ↔ High 22,599.05 (09:15)
+GEX: +₹53Cr SHORT gamma (trending)
+RVOL: 1.56× TREND ZONE
+IV: 87th pct EXPENSIVE
+Floor: 22,200 PE [75L] | Ceiling: 22,500 CE [140L]
+Flow (5m): Puts adding +7k | Calls leaving -11k
+Dominance: CALLS 3.1× HEAVY (CE +286k vs PE +91k)
+Structure: RANGE 22,150–22,350 (edges defended both sides)
+Floor weakening: 2nd consecutive
+Checklist: 5/6 CAUTION (IV failing)
+Action: READY SHORT
+mj_shadow: CE setup 22,200 PE [75L] | PE setup 22,500 CE [140L] | RVOL 1.56 TREND
+
+
+──── 🟧 MENTOR 14:37 ────
+PA 5-min / 3-min 14:36 spot 22,240.3
+
+[PA 3m] 🟨 3-MIN signal (noisy)
+🟢 PA SETUP · CE · 14:33 candle
+HAMMER at swing low 08-Oct 13:30 22,228
+BUY CE above 22,247 (follow-through) · SL 22,229 · valid for 3 candles
+Confluence 1/7: ✘ PE floor 22,200 31 pts from the level · ✘ PCR 0.79 · ✘ writers ratio 0.31x (CE side) · ✘ dominance calls · ✔ RVOL 1.56x · ✘ short gamma (trending - reversals fail more) · ✘ IV 87th pct expensive
+Backtest (3m): BETTER THAN RANDOM, ~BREAKEVEN AFTER COSTS (+0.01 R vs -0.12 R at random times, 23512 trades, gap 11.2x noise)
+
+[PA 3m] ⚠️ EXIT HINT for the 11:06 PE: hammer at swing low 08-Oct 13:30 22,228 on the 14:33 candle - you exit PE trades here
+
+[PA 3m] ⚠️ EXIT HINT for the 11:15 PE: hammer at swing low 08-Oct 13:30 22,228 on the 14:33 candle - you exit PE trades here
+
+
+──── 🟧 MENTOR 14:37 ────
+OC (mentor) 14:36 spot 22,240.3
+ITM put writers ADDING at 22300 (59 pts ITM): ITM put writers confident (bullish) — trapped if price falls: long-unwinding risk
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:37  |  Spot 22,237
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (291 min)
+GEX:                  +₹51.9Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             14.2%  |  Avg: 11.3%  |  EXPENSIVE (rank 87%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,650 (413 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,237 — 163 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,190 (14:20) ↔ High 22,599.05 (09:15) (409 pts)
+PCR (ATM 22,250):     0.83  ↓
+PCR (max OI 22,300):  0.79  →  ← price magnet
+PCR (flow):           0.45
+WRITERS RATIO:        0.35x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [141.2L] — 263 pts above spot
+  MAX SUPPORT:    22,000 PE [98.2L] — 237 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 141.2L CE writers]
+  R2:  22,600  [OI wall: 123.5L CE writers]
+  ATM: 22,250  ← You are here
+  S1:  22,200  [OI wall: 77.0L PE writers]
+  S2:  22,000  [OI wall: 98.2L PE writers]
+  MAJOR WALL: 22100 PE [75.5L] — 137 pts below spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,300 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   +3,376  (Call buying ↑)
+  PE ΔOI:   +7,303  (Put writing ↑)
+  Spread:   +3,927 contracts
+  Flow:    BUILDING
+
+INSTITUTIONAL READ
+  PE writers building support:   YES  ✅
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 2.9× CLEAR (CE +289k vs PE +100k)
+     Heaviest: 22,350 CE 7.7× | 22,300 CE 3.7×
+  🔒 STRUCTURE: RANGE 22,150–22,350 (edges defended both sides)
+     Floor conviction 1.8× FIRM | Ceiling 7.7× STRONG
+     → Asymmetric: lid firm, floor thin. Downside drift likelier than an upside break.
+     → Ceiling being built 63-113 pts above spot
+     → Risk to call writers: close above 22,350 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +37.6L |   +14.7L |   -22.9L | CE_ABOVE
+  22,300   |   +69.7L |   +16.6L |   -53.0L | CE_ABOVE
+  22,400   |   +92.9L |    -1.3L |   -94.2L | CE_ABOVE
+  NET (3)  |  +200.2L |   +30.1L |  -170.1L | CE_ABOVE
+  Gap trend: widening (-11.8L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→21200)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22350   |  41.6L  |  +62.3k  |  0.40 |  16.7L  |   +8.1k
+  22300   |  74.5L  | +110.2k  |  0.79 |  58.7L  |  +29.5k
+  22250   |  34.4L  |  +51.6k  |  0.83 |  28.7L  |  +23.3k  ← ATM
+  22200   |  40.6L  |  +57.1k  |  1.89 |  77.0L  |  +25.0k
+  22150   |   5.2L  |   +7.5k  |  4.22 |  22.1L  |  +13.8k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             PASS ✅ ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 5/6 — CAUTION ⚠️               ║
+  ║  Issue: IV expensive (87%)             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:37:47  (44s ago) ✅
+  Coverage today: 107/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 14:40 ────
+🟪🟪 PA 15-MIN SUPER SIGNAL 14:39 spot 22,249.8
+
+[PA 15m SUPER] 🟪🟪 15-MIN SUPER SIGNAL
+✅ PA TRIGGERED · CE at 22,246 (14:40 broke the double hammer high)
+SL 22,188 (58 pts) · T1 22,362 · then trail under each closed 15-min candle, or exit on a close below the 15m 8 EMA
+
+
+──── 🟧 MENTOR 14:40 ────
+PA 5-min / 3-min 14:39 spot 22,249.8
+
+[PA 3m] 🟨 3-MIN signal (noisy)
+✅ PA TRIGGERED · CE at 22,247 (14:36 broke the hammer high)
+SL 22,229 (18 pts) · T1 22,291 · then trail under each closed 3-min candle, or exit on a close below the 3m 8 EMA
+
+[PA 3m] 🟨 3-MIN signal (noisy)
+🟢 PA SETUP · CE · 14:36 candle
+DOUBLE HAMMER at swing low 08-Oct 13:30 22,228
+BUY CE above 22,255 (follow-through) · SL 22,229 · valid for 3 candles
+Confluence 1/7: ✘ PE floor 22,200 31 pts from the level · ✘ PCR 0.83 · ✘ writers ratio 0.35x (CE side) · ✘ dominance calls · ✔ RVOL 1.56x · ✘ short gamma (trending - reversals fail more) · ✘ IV 87th pct expensive
+Backtest (3m): BETTER THAN RANDOM, ~BREAKEVEN AFTER COSTS (+0.01 R vs -0.12 R at random times, 23512 trades, gap 11.2x noise)
+
+[PA 3m] ⚠️ EXIT HINT for the 11:06 PE: double hammer at swing low 08-Oct 13:30 22,228 on the 14:36 candle - you exit PE trades here
+
+[PA 3m] ⚠️ EXIT HINT for the 11:15 PE: double hammer at swing low 08-Oct 13:30 22,228 on the 14:36 candle - you exit PE trades here
+
+
+──── 🟦 5-MIN 14:40 ────
+🟦 5-MIN | 14:40 | Spot 22,250 | BEARISH ▼
+Day range: Low 22,190 (14:20) ↔ High 22,599.05 (09:15)
+GEX: +₹58Cr SHORT gamma (trending)
+RVOL: 1.59× TREND ZONE
+IV: 87th pct EXPENSIVE
+Floor: 22,200 PE [77L] | Ceiling: 22,500 CE [143L]
+Flow (5m): Puts adding +37k | Calls adding +17k
+Dominance: CALLS 2.7× CLEAR (CE +298k vs PE +109k)
+Structure: RANGE 22,150–22,350 (edges defended both sides)
+Checklist: 4/6 WAIT (Flow, IV failing)
+Action: WATCH FOR PULLBACK
+mj_shadow: CE setup 22,200 PE [77L] | PE setup 22,500 CE [143L] | RVOL 1.59 TREND
+
+
+──── 🟧 MENTOR 14:40 ────
+OC (mentor) 14:39 spot 22,249.8
+ITM call writers ADDING at 22000 (249 pts ITM): ITM call writers confident (bearish) — trapped if price rises: short-covering risk
+ITM put writers ADDING at 22400 (150 pts ITM): ITM put writers confident (bullish) — trapped if price falls: long-unwinding risk
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:40  |  Spot 22,250
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (294 min)
+GEX:                  +₹58.1Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             14.1%  |  Avg: 11.2%  |  EXPENSIVE (rank 87%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,650 (400 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,250 — 150 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,190 (14:20) ↔ High 22,599.05 (09:15) (409 pts)
+PCR (ATM 22,250):     0.84  ↑
+PCR (max OI 22,300):  0.80  ↑  ← price magnet
+PCR (flow):           0.48
+WRITERS RATIO:        0.37x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [143.0L] — 250 pts above spot
+  MAX SUPPORT:    22,000 PE [101.1L] — 250 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 143.0L CE writers]
+  R2:  22,600  [OI wall: 123.4L CE writers]
+  ATM: 22,250  ← You are here
+  S1:  22,200  [OI wall: 77.0L PE writers]
+  S2:  22,000  [OI wall: 101.1L PE writers]
+  MAJOR WALL: 22100 PE [76.4L] — 149 pts below spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,300 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   +4,720  (Call buying ↑)
+  PE ΔOI:   +8,086  (Put writing ↑)
+  Spread:   +3,366 contracts
+  Flow:    BUILDING
+
+INSTITUTIONAL READ
+  PE writers building support:   YES  ✅
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 2.7× CLEAR (CE +298k vs PE +109k)
+     Heaviest: 22,350 CE 7.9× | 22,300 CE 3.3×
+  🔒 STRUCTURE: RANGE 22,150–22,350 (edges defended both sides)
+     Floor conviction 1.9× FIRM | Ceiling 7.9× STRONG
+     → Asymmetric: lid firm, floor thin. Downside drift likelier than an upside break.
+     → Ceiling being built 50-100 pts above spot
+     → Risk to call writers: close above 22,350 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +37.1L |   +15.8L |   -21.3L | CE_ABOVE
+  22,300   |   +72.7L |   +19.9L |   -52.7L | CE_ABOVE
+  22,400   |   +92.9L |    -0.8L |   -93.7L | CE_ABOVE
+  NET (3)  |  +202.7L |   +34.9L |  -167.8L | CE_ABOVE
+  Gap trend: widening (-2.7L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→21200)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22350   |  42.6L  |  +63.9k  |  0.39 |  16.7L  |   +8.1k
+  22300   |  77.4L  | +114.8k  |  0.80 |  62.1L  |  +34.7k
+  22250   |  36.2L  |  +54.5k  |  0.84 |  30.5L  |  +26.1k  ← ATM
+  22200   |  40.5L  |  +56.9k  |  1.90 |  77.0L  |  +25.1k
+  22150   |   5.4L  |   +7.7k  |  4.23 |  22.7L  |  +14.7k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             PASS ✅ ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 5/6 — CAUTION ⚠️               ║
+  ║  Issue: IV expensive (87%)             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:40:50  (1m 17s ago) ✅
+  Coverage today: 108/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 14:43 ────
+OC (mentor) 14:42 spot 22,248.0
+ITM call writers CLOSING at 22000 (247 pts ITM): ITM call writers covering -> short covering, market pushes UP
+ITM call writers ADDING at 22100 (147 pts ITM): ITM call writers confident (bearish) — trapped if price rises: short-covering risk
+ITM put writers CLOSING at 22400 (152 pts ITM): ITM put writers exiting -> long unwinding, market pushes DOWN
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:44  |  Spot 22,236
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (297 min)
+GEX:                  +₹49.6Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.5%  |  Avg: 11.2%  |  EXPENSIVE (rank 86%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,650 (414 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,236 — 164 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,190 (14:20) ↔ High 22,599.05 (09:15) (409 pts)
+PCR (ATM 22,250):     0.89  ↑
+PCR (max OI 22,300):  0.81  ↑  ← price magnet
+PCR (flow):           0.52
+WRITERS RATIO:        0.38x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [143.7L] — 264 pts above spot
+  MAX SUPPORT:    22,000 PE [102.5L] — 236 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 143.7L CE writers]
+  R2:  22,600  [OI wall: 123.8L CE writers]
+  ATM: 22,250  ← You are here
+  S1:  22,200  [OI wall: 77.7L PE writers]
+  S2:  22,000  [OI wall: 102.5L PE writers]
+  MAJOR WALL: 22100 PE [75.9L] — 136 pts below spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,300 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   +1,952  (Call buying ↑)
+  PE ΔOI:   +6,775  (Put writing ↑)
+  Spread:   +4,823 contracts
+  Flow:    BUILDING
+
+INSTITUTIONAL READ
+  PE writers building support:   YES  ✅
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 2.6× CLEAR (CE +296k vs PE +112k)
+     Heaviest: 22,350 CE 8.1× | 22,300 CE 3.2×
+  🔒 STRUCTURE: RANGE 22,150–22,350 (edges defended both sides)
+     Floor conviction 1.9× FIRM | Ceiling 8.1× STRONG
+     → Asymmetric: lid firm, floor thin. Downside drift likelier than an upside break.
+     → Ceiling being built 64-114 pts above spot
+     → Risk to call writers: close above 22,350 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +37.0L |   +16.5L |   -20.5L | CE_ABOVE
+  22,300   |   +75.2L |   +23.4L |   -51.8L | CE_ABOVE
+  22,400   |   +94.0L |    -0.9L |   -94.9L | CE_ABOVE
+  NET (3)  |  +206.2L |   +39.0L |  -167.1L | CE_ABOVE
+  Gap trend: narrowing (+2.8L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22350   |  42.6L  |  +63.9k  |  0.39 |  16.6L  |   +7.9k
+  22300   |  78.0L  | +115.6k  |  0.81 |  63.3L  |  +36.6k
+  22250   |  35.3L  |  +53.0k  |  0.89 |  31.4L  |  +27.6k  ← ATM
+  22200   |  39.6L  |  +55.5k  |  1.96 |  77.7L  |  +26.2k
+  22150   |   5.3L  |   +7.6k  |  4.23 |  22.3L  |  +14.1k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             PASS ✅ ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 5/6 — CAUTION ⚠️               ║
+  ║  Issue: IV expensive (86%)             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:44:49  (1m 3s ago) ✅
+  Coverage today: 109/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟪 15-MIN 14:45 ────
+🟪 15-MIN | 14:45 | Spot 22,226 | BEARISH ▼
+Day range: Low 22,190 (14:20) ↔ High 22,599.05 (09:15)
+GEX: +₹43Cr SHORT gamma (trending)
+RVOL: 1.60× TREND ZONE
+IV: 86th pct EXPENSIVE
+Floor: 22,200 PE [78L] | Ceiling: 22,500 CE [144L]
+Flow (15m): Puts adding +56k | Calls adding +4k
+Dominance: CALLS 2.6× CLEAR (CE +290k vs PE +113k)
+Structure: RANGE 22,150–22,350 (edges defended both sides)
+Checklist: 4/6 WAIT (IV, Timing failing)
+Action: WATCH FOR PULLBACK
+mj_shadow: CE setup 22,200 PE [78L] | PE setup 22,500 CE [144L] | RVOL 1.60 TREND
+
+
+──── 🟧 MENTOR 14:46 ────
+🟪🟪 PA 15-MIN SUPER SIGNAL 14:45 spot 22,226.5
+
+[PA 15m SUPER] ⚠️ EXIT HINT for the 14:15 CE: 14:30 candle closed below the 15m 8 EMA (22,226 vs 22,252)
+
+
+──── 🟧 MENTOR 14:46 ────
+PA 5-min / 3-min 14:45 spot 22,226.5
+
+[PA 5m] ⚠️ EXIT HINT for the 14:20 CE: 14:40 candle closed below the 5m 8 EMA (22,226 vs 22,230)
+
+[PA 5m] ⚠️ EXIT HINT for the 14:25 CE: 14:40 candle closed below the 5m 8 EMA (22,226 vs 22,230)
+
+[PA 3m] ⚠️ EXIT HINT for the 14:33 CE: 14:42 candle closed below the 3m 8 EMA (22,226 vs 22,234)
+
+
+──── 🟧 MENTOR 14:47 ────
+OC (mentor) 14:45 spot 22,226.5
+ITM call writers ADDING at 22000 (226 pts ITM): ITM call writers confident (bearish) — trapped if price rises: short-covering risk
+ITM call writers CLOSING at 22100 (126 pts ITM): ITM call writers covering -> short covering, market pushes UP
+ITM put writers CLOSING at 22300 (73 pts ITM): ITM put writers exiting -> long unwinding, market pushes DOWN
+15-min close BELOW the swing low 22,546 at 09:15: no imbalance target - no trade
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:48  |  Spot 22,220
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (300 min)
+GEX:                  +₹40.5Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.6%  |  Avg: 11.1%  |  EXPENSIVE (rank 86%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,700 (480 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,220 — 180 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,190 (14:20) ↔ High 22,599.05 (09:15) (409 pts)
+PCR (ATM 22,200):     1.96  ↑
+PCR (max OI 22,300):  0.83  ↑  ← price magnet
+PCR (flow):           0.42
+WRITERS RATIO:        0.51x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [141.3L] — 280 pts above spot
+  MAX SUPPORT:    22,000 PE [102.8L] — 220 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 141.3L CE writers]
+  R2:  22,600  [OI wall: 122.6L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 75.3L PE writers]
+  S2:  22,000  [OI wall: 102.8L PE writers]
+  MAJOR WALL: 22400 CE [155.8L] — 179 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   -6,664  (Call unwinding ↓)
+  PE ΔOI:     +316  (Put buying ↑)
+  Spread:   +6,980 contracts
+  Flow:    UNWINDING
+
+INSTITUTIONAL READ
+  PE writers building support:   YES  ✅
+  CE writers building resistance: NO  ✗
+  ⚖️ DOMINANCE: CALLS 1.9× MILD (CE +236k vs PE +122k)
+     Heaviest: 22,300 CE 3.0× | 22,200 CE 2.4×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 2.4× FIRM | Ceiling 3.0× FIRM
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 80 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +34.9L |   +14.1L |   -20.8L | CE_ABOVE
+  22,300   |   +74.2L |   +24.7L |   -49.5L | CE_ABOVE
+  22,400   |   +92.9L |    -1.9L |   -94.8L | CE_ABOVE
+  NET (3)  |  +202.0L |   +36.9L |  -165.1L | CE_ABOVE
+  Gap trend: narrowing (+6.1L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  77.0L  | +114.1k  |  0.83 |  64.3L  |  +38.0k
+  22250   |  34.2L  |  +51.3k  |  0.87 |  29.8L  |  +25.0k
+  22200   |  38.4L  |  +53.6k  |  1.96 |  75.3L  |  +22.5k  ← ATM
+  22150   |   5.0L  |   +7.2k  |  4.10 |  20.5L  |  +11.4k
+  22100   |   7.7L  |  +10.0k  |  6.19 |  47.4L  |  +24.6k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 4/6 — WAIT ❌                  ║
+  ║  Missing: IV, Timing                   ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:48:52  (47s ago) ✅
+  Coverage today: 111/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 14:50 ────
+OC (mentor) 14:47 spot 22,228.1
+ITM put writers ADDING at 22300 (71 pts ITM): ITM put writers confident (bullish) — trapped if price falls: long-unwinding risk
+
+
+──── 🟦 5-MIN 14:50 ────
+🟦 5-MIN | 14:50 | Spot 22,220 | NEUTRAL →
+Day range: Low 22,190 (14:20) ↔ High 22,599.05 (09:15)
+GEX: +₹39Cr SHORT gamma (trending)
+RVOL: 1.59× TREND ZONE
+IV: 87th pct EXPENSIVE
+Floor: 22,200 PE [77L] | Ceiling: 22,500 CE [143L]
+Flow (5m): Puts leaving -15k | Calls leaving -9k
+Dominance: CALLS 1.8× MILD (CE +233k vs PE +127k)
+Structure: RANGE 22,100–22,300 (edges defended both sides)
+Checklist: 3/6 WAIT (Flow, IV, Timing failing)
+Action: STAND ASIDE
+mj_shadow: CE setup 22,200 PE [77L] | PE setup 22,500 CE [143L] | RVOL 1.59 TREND
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:51  |  Spot 22,222
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (303 min)
+GEX:                  +₹44.7Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.6%  |  Avg: 11.1%  |  EXPENSIVE (rank 87%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,650 (428 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,222 — 178 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,190 (14:20) ↔ High 22,599.05 (09:15) (409 pts)
+PCR (ATM 22,200):     2.04  ↑
+PCR (max OI 22,300):  0.84  ↑  ← price magnet
+PCR (flow):           0.48
+WRITERS RATIO:        0.55x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [143.0L] — 278 pts above spot
+  MAX SUPPORT:    22,000 PE [104.2L] — 222 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 143.0L CE writers]
+  R2:  22,600  [OI wall: 122.5L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 76.9L PE writers]
+  S2:  22,000  [OI wall: 104.2L PE writers]
+  MAJOR WALL: 22400 CE [155.8L] — 177 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   -4,873  (Call unwinding ↓)
+  PE ΔOI:      -62  (Put unwinding ↓)
+  Spread:   +4,811 contracts
+  Flow:    UNWINDING
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: NO  ✗
+  ⚖️ DOMINANCE: CALLS 1.8× MILD (CE +233k vs PE +127k)
+     Heaviest: 22,300 CE 2.9× | 22,200 CE 2.1×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 2.5× FIRM | Ceiling 2.9× FIRM
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 78 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +34.1L |   +16.2L |   -17.9L | CE_ABOVE
+  22,300   |   +75.0L |   +25.8L |   -49.2L | CE_ABOVE
+  22,400   |   +93.1L |    -2.3L |   -95.4L | CE_ABOVE
+  NET (3)  |  +202.2L |   +39.8L |  -162.5L | CE_ABOVE
+  Gap trend: narrowing (+7.7L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  77.8L  | +115.4k  |  0.84 |  65.4L  |  +39.7k
+  22250   |  31.8L  |  +47.7k  |  0.94 |  29.9L  |  +25.1k
+  22200   |  37.6L  |  +52.5k  |  2.04 |  76.9L  |  +25.0k  ← ATM
+  22150   |   5.2L  |   +7.4k  |  4.09 |  21.2L  |  +12.5k
+  22100   |   7.6L  |   +9.9k  |  6.25 |  47.4L  |  +24.6k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               FAIL ✗  ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 3/6 — WAIT ❌                  ║
+  ║  Missing: Flow, IV, Timing             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:51:54  (1m 22s ago) ✅
+  Coverage today: 112/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 14:56 ────
+OC (mentor) 14:54 spot 22,225.0
+ITM call writers ADDING at 22100 (125 pts ITM): ITM call writers confident (bearish) — trapped if price rises: short-covering risk
+
+
+──── 🟦 5-MIN 14:55 ────
+🟦 5-MIN | 14:55 | Spot 22,216 | NEUTRAL →
+Day range: Low 22,190 (14:20) ↔ High 22,599.05 (09:15)
+GEX: +₹43Cr SHORT gamma (trending)
+RVOL: 1.60× TREND ZONE
+IV: 88th pct EXPENSIVE
+Floor: 22,200 PE [79L] | Ceiling: 22,500 CE [145L]
+Flow (5m): Puts adding +9k | Calls adding +28k
+Dominance: CALLS 1.8× MILD (CE +239k vs PE +132k)
+Structure: RANGE 22,100–22,300 (edges defended both sides)
+Checklist: 3/6 WAIT (Flow, IV, Timing failing)
+Action: STAND ASIDE
+mj_shadow: CE setup 22,200 PE [79L] | PE setup 22,500 CE [145L] | RVOL 1.60 TREND
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:55  |  Spot 22,216
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (309 min)
+GEX:                  +₹42.9Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.6%  |  Avg: 11.0%  |  EXPENSIVE (rank 88%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,650 (434 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,216 — 184 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,190 (14:20) ↔ High 22,599.05 (09:15) (409 pts)
+PCR (ATM 22,200):     2.03  ↑
+PCR (max OI 22,300):  0.84  ↑  ← price magnet
+PCR (flow):           0.52
+WRITERS RATIO:        0.55x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [145.3L] — 284 pts above spot
+  MAX SUPPORT:    22,000 PE [105.5L] — 216 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 145.3L CE writers]
+  R2:  22,600  [OI wall: 122.0L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 79.1L PE writers]
+  S2:  22,000  [OI wall: 105.5L PE writers]
+  MAJOR WALL: 22400 CE [169.8L] — 184 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   -2,371  (Call unwinding ↓)
+  PE ΔOI:   +2,944  (Put buying ↑)
+  Spread:   +5,315 contracts
+  Flow:    BUILDING
+
+INSTITUTIONAL READ
+  PE writers building support:   YES  ✅
+  CE writers building resistance: NO  ✗
+  ⚖️ DOMINANCE: CALLS 1.8× MILD (CE +239k vs PE +132k)
+     Heaviest: 22,300 CE 2.9× | 22,250 CE 2.1×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 2.5× FIRM | Ceiling 2.9× FIRM
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 34-84 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +35.6L |   +17.9L |   -17.7L | CE_ABOVE
+  22,300   |   +75.6L |   +25.9L |   -49.7L | CE_ABOVE
+  22,400   |   +97.2L |    -2.4L |   -99.6L | CE_ABOVE
+  NET (3)  |  +208.5L |   +41.5L |  -167.0L | CE_ABOVE
+  Gap trend: steady (+0.8L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  78.6L  | +116.5k  |  0.84 |  65.7L  |  +40.2k
+  22250   |  33.4L  |  +50.1k  |  0.87 |  29.0L  |  +23.9k
+  22200   |  39.0L  |  +54.6k  |  2.03 |  79.1L  |  +28.3k  ← ATM
+  22150   |   5.4L  |   +7.8k  |  4.07 |  22.0L  |  +13.7k
+  22100   |   7.7L  |  +10.2k  |  6.20 |  47.9L  |  +25.4k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 4/6 — WAIT ❌                  ║
+  ║  Missing: IV, Timing                   ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:55:55  (58s ago) ✅
+  Coverage today: 113/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 14:59 ────
+OC (mentor) 14:57 spot 22,211.3
+ITM put writers CLOSING at 22300 (88 pts ITM): ITM put writers exiting -> long unwinding, market pushes DOWN
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  14:59  |  Spot 22,207
+═══════════════════════════════════════════════════
+
+BIAS:                 NEUTRAL  →
+REGIME:               WARMUP → BALANCED (312 min)
+GEX:                  +₹39.2Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.6%  |  Avg: 10.9%  |  EXPENSIVE (rank 88%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,700 (493 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,207 — 193 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,190 (14:20) ↔ High 22,599.05 (09:15) (409 pts)
+PCR (ATM 22,200):     1.99  ↑
+PCR (max OI 22,300):  0.84  ↑  ← price magnet
+PCR (flow):           0.50
+WRITERS RATIO:        0.53x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [145.1L] — 293 pts above spot
+  MAX SUPPORT:    22,000 PE [106.3L] — 207 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 145.1L CE writers]
+  R2:  22,600  [OI wall: 121.1L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 78.4L PE writers]
+  S2:  22,000  [OI wall: 106.3L PE writers]
+  MAJOR WALL: 22400 CE [171.8L] — 192 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   +1,906  (Call writing ↑)
+  PE ΔOI:     +840  (Put buying ↑)
+  Spread:   -1,065 contracts
+  Flow:    BUILDING
+
+INSTITUTIONAL READ
+  PE writers building support:   YES  ✅
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 1.9× MILD (CE +240k vs PE +128k)
+     Heaviest: 22,300 CE 2.9× | 22,250 CE 2.2×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 2.3× FIRM | Ceiling 2.9× FIRM
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 43-93 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +34.9L |   +18.4L |   -16.5L | CE_ABOVE
+  22,300   |   +75.5L |   +26.2L |   -49.4L | CE_ABOVE
+  22,400   |  +102.7L |    -2.6L |  -105.3L | CE_ABOVE
+  NET (3)  |  +213.1L |   +42.0L |  -171.1L | CE_ABOVE
+  Gap trend: widening (-4.0L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  78.0L  | +115.7k  |  0.84 |  65.3L  |  +39.7k
+  22250   |  33.7L  |  +50.5k  |  0.85 |  28.5L  |  +23.0k
+  22200   |  39.4L  |  +55.1k  |  1.99 |  78.4L  |  +27.3k  ← ATM
+  22150   |   5.5L  |   +7.9k  |  3.88 |  21.4L  |  +12.7k
+  22100   |   8.3L  |  +11.1k  |  5.73 |  47.7L  |  +25.1k
+
+VETO / ACTION GUIDANCE
+  ⚠️  No clear edge — balanced market
+  ⏸  Wait for directional expansion
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 4/6 — WAIT ❌                  ║
+  ║  Missing: IV, Timing                   ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  14:59:58  (32s ago) ✅
+  Coverage today: 114/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+⚠️ APPROACHING FLOOR
+Spot 22,207 → S1 22,200 PE 78.4L only 7 pts away
+If bounce candle forms → CE buy opportunity
+➡️ WATCH for bounce at 22,200
+
+──── 🟪 15-MIN 15:00 ────
+🟪 15-MIN | 15:00 | Spot 22,203 | EOD UNWIND ⚠️
+Day range: Low 22,190 (14:20) ↔ High 22,599.05 (09:15)
+GEX: +₹37Cr SHORT gamma (trending)
+RVOL: 1.61× TREND ZONE
+IV: 88th pct EXPENSIVE
+Floor: 22,200 PE [79L] | Ceiling: 22,500 CE [145L]
+Flow (15m): Puts leaving -6k | Calls adding +29k
+Dominance: CALLS 1.9× MILD (CE +243k vs PE +129k)
+Structure: RANGE 22,100–22,300 (edges defended both sides)
+Checklist: 3/6 WAIT (IV, GEX, Timing failing)
+Action: STAND ASIDE
+mj_shadow: CE setup 22,200 PE [79L] | PE setup 22,500 CE [145L] | RVOL 1.61 TREND
+Alert: [APPROACHING FLOOR]
+Alert: [Spot 22,203 → S1 22,200 PE 78.7L only 3 pts away]
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  15:02  |  Spot 22,206
+═══════════════════════════════════════════════════
+
+BIAS:                 EOD UNWIND ⚠️
+REGIME:               EOD_UNWIND (6 min)
+GEX:                  +₹37.6Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.8%  |  Avg: 10.8%  |  EXPENSIVE (rank 89%) (32-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,700 (494 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,206 — 194 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,190 (14:20) ↔ High 22,599.05 (09:15) (409 pts)
+PCR (ATM 22,200):     1.93  →
+PCR (max OI 22,300):  0.83  →  ← price magnet
+PCR (flow):           0.48
+WRITERS RATIO:        0.52x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [144.2L] — 294 pts above spot
+  MAX SUPPORT:    22,000 PE [106.9L] — 206 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 144.2L CE writers]
+  R2:  22,600  [OI wall: 115.0L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 78.3L PE writers]
+  S2:  22,000  [OI wall: 106.9L PE writers]
+  MAJOR WALL: 22400 CE [173.7L] — 194 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,250 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,300 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   +3,560  (Call writing ↑)
+  PE ΔOI:   +5,085  (Put buying ↑)
+  Spread:   +1,525 contracts
+  Flow:    FLAT
+
+INSTITUTIONAL READ
+  PE writers building support:   YES  ✅
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 1.9× MILD (CE +244k vs PE +127k)
+     Heaviest: 22,300 CE 3.0× | 22,250 CE 2.3×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 2.2× FIRM | Ceiling 3.0× FIRM
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 44-94 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +35.8L |   +17.8L |   -18.1L | CE_ABOVE
+  22,300   |   +75.2L |   +25.8L |   -49.4L | CE_ABOVE
+  22,400   |  +103.5L |    -2.6L |  -106.2L | CE_ABOVE
+  NET (3)  |  +214.6L |   +40.9L |  -173.6L | CE_ABOVE
+  Gap trend: widening (-8.5L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  78.6L  | +116.6k  |  0.83 |  65.2L  |  +39.4k
+  22250   |  34.3L  |  +51.4k  |  0.82 |  28.0L  |  +22.4k
+  22200   |  40.5L  |  +56.8k  |  1.93 |  78.3L  |  +27.0k  ← ATM
+  22150   |   5.6L  |   +8.0k  |  3.89 |  21.6L  |  +13.1k
+  22100   |   8.5L  |  +11.3k  |  5.63 |  47.8L  |  +25.2k
+
+VETO / ACTION GUIDANCE
+  ⚠️  EOD UNWIND — close positions, no new entry
+  ➡️ EOD — no new trades, close open positions
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 4/6 — WAIT ❌                  ║
+  ║  Missing: IV, Timing                   ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  15:02:59  (1m 12s ago) ✅
+  Coverage today: 115/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+⚠️ APPROACHING FLOOR
+Spot 22,206 → S1 22,200 PE 78.3L only 6 pts away
+If bounce candle forms → CE buy opportunity
+➡️ WATCH for bounce at 22,200
+
+──── 🟧 MENTOR 15:04 ────
+OC (mentor) 15:04 spot 22,205.9
+ITM call writers CLOSING at 22100 (105 pts ITM): ITM call writers covering -> short covering, market pushes UP
+
+
+──── 🟧 MENTOR 15:07 ────
+OC (mentor) 15:07 spot 22,185.0
+ITM call writers CLOSING at 22000 (185 pts ITM): ITM call writers covering -> short covering, market pushes UP
+ITM put writers ADDING at 22300 (114 pts ITM): ITM put writers confident (bullish) — trapped if price falls: long-unwinding risk
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  15:07  |  Spot 22,185
+═══════════════════════════════════════════════════
+
+BIAS:                 EOD UNWIND ⚠️
+REGIME:               EOD_UNWIND (9 min)
+GEX:                  +₹25.7Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.9%  |  Avg: 10.7%  |  EXPENSIVE (rank 89%) (31-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,800 (615 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,185 — 215 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,185.05 (15:07) ↔ High 22,599.05 (09:15) (414 pts)
+PCR (ATM 22,200):     2.05  →
+PCR (max OI 22,200):  2.05  →  ← price magnet
+PCR (flow):           0.50
+WRITERS RATIO:        0.51x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [143.9L] — 315 pts above spot
+  MAX SUPPORT:    22,000 PE [109.2L] — 185 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 143.9L CE writers]
+  R2:  22,600  [OI wall: 112.6L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,000  [OI wall: 109.2L PE writers]
+  S2:  21,800  [OI wall: 67.4L PE writers]
+  MAJOR WALL: 22400 CE [170.4L] — 214 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:     +805  (Call writing ↑)
+  PE ΔOI:   +1,754  (Put buying ↑)
+  Spread:     +949 contracts
+  Flow:    UNWINDING
+
+INSTITUTIONAL READ
+  PE writers building support:   YES  ✅
+  CE writers building resistance: YES  ✅
+  ⚖️ DOMINANCE: CALLS 1.9× MILD (CE +236k vs PE +121k)
+     Heaviest: 22,300 CE 3.0× | 22,250 CE 2.2×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 2.0× FIRM | Ceiling 3.0× FIRM
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 65-115 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +35.2L |   +18.0L |   -17.2L | CE_ABOVE
+  22,300   |   +74.9L |   +24.8L |   -50.1L | CE_ABOVE
+  22,400   |  +104.4L |    -3.1L |  -107.5L | CE_ABOVE
+  NET (3)  |  +214.5L |   +39.7L |  -174.8L | CE_ABOVE
+  Gap trend: widening (-12.4L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  77.1L  | +114.2k  |  0.83 |  64.3L  |  +38.1k
+  22250   |  33.0L  |  +49.5k  |  0.84 |  27.9L  |  +22.1k
+  22200   |  38.1L  |  +53.2k  |  2.05 |  78.0L  |  +26.7k  ← ATM
+  22150   |   5.6L  |   +8.0k  |  3.75 |  20.9L  |  +12.0k
+  22100   |   8.4L  |  +11.2k  |  5.50 |  46.1L  |  +22.6k
+
+VETO / ACTION GUIDANCE
+  ⚠️  EOD UNWIND — close positions, no new entry
+  ➡️ EOD — no new trades, close open positions
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               PASS ✅ ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 4/6 — WAIT ❌                  ║
+  ║  Missing: IV, Timing                   ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  15:07:05  (44s ago) ✅
+  Coverage today: 117/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 15:10 ────
+OC (mentor) 15:10 spot 22,186.5
+ITM call writers ADDING at 22000 (186 pts ITM): ITM call writers confident (bearish) — trapped if price rises: short-covering risk
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  15:10  |  Spot 22,186
+═══════════════════════════════════════════════════
+
+BIAS:                 EOD UNWIND ⚠️
+REGIME:               EOD_UNWIND (12 min)
+GEX:                  +₹25.1Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.9%  |  Avg: 10.6%  |  EXPENSIVE (rank 89%) (31-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,800 (614 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,186 — 214 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,179.9 (15:05) ↔ High 22,599.05 (09:15) (419 pts)
+PCR (ATM 22,200):     2.06  ↑
+PCR (max OI 22,200):  2.06  ↑  ← price magnet
+PCR (flow):           0.48
+WRITERS RATIO:        0.51x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [145.6L] — 314 pts above spot
+  MAX SUPPORT:    22,000 PE [111.2L] — 186 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 145.6L CE writers]
+  R2:  22,600  [OI wall: 112.8L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,000  [OI wall: 111.2L PE writers]
+  S2:  21,800  [OI wall: 68.1L PE writers]
+  MAJOR WALL: 22400 CE [168.1L] — 213 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   -1,991  (Call unwinding ↓)
+  PE ΔOI:   -2,353  (Put unwinding ↓)
+  Spread:     -362 contracts
+  Flow:    UNWINDING
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: NO  ✗
+  ⚖️ DOMINANCE: CALLS 2.0× MILD (CE +233k vs PE +119k)
+     Heaviest: 22,300 CE 3.0× | 22,250 CE 2.3×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 2.0× FIRM | Ceiling 3.0× FIRM
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 64-114 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +34.6L |   +16.6L |   -18.0L | CE_ABOVE
+  22,300   |   +73.5L |   +24.6L |   -48.9L | CE_ABOVE
+  22,400   |  +102.1L |    -3.6L |  -105.7L | CE_ABOVE
+  NET (3)  |  +210.2L |   +37.6L |  -172.6L | CE_ABOVE
+  Gap trend: widening (-5.6L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 21200→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  76.4L  | +113.2k  |  0.84 |  64.2L  |  +38.0k
+  22250   |  32.5L  |  +48.7k  |  0.84 |  27.3L  |  +21.1k
+  22200   |  37.5L  |  +52.3k  |  2.06 |  77.2L  |  +25.3k  ← ATM
+  22150   |   5.7L  |   +8.2k  |  3.78 |  21.6L  |  +13.1k
+  22100   |   8.1L  |  +10.7k  |  5.60 |  45.3L  |  +21.3k
+
+VETO / ACTION GUIDANCE
+  ⚠️  EOD UNWIND — close positions, no new entry
+  ➡️ EOD — no new trades, close open positions
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               FAIL ✗  ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 3/6 — WAIT ❌                  ║
+  ║  Missing: Flow, IV, Timing             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  15:10:03  (1m 17s ago) ✅
+  Coverage today: 118/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 15:13 ────
+PA 5-min / 3-min 15:13 spot 22,194.7
+
+[PA 3m] 🟨 3-MIN signal (noisy)
+🟢 PA SETUP · CE · 15:09 candle
+DOUBLE HAMMER at DAY LOW 22,181; 22,200 PE wall 22,200
+BUY CE above 22,201 (follow-through) · SL 22,178 · valid for 3 candles
+Confluence 3/7: ✔ PE floor 22,200 at the level · ✔ PCR 2.06 · ✘ writers ratio 0.51x (CE side) · ✘ dominance calls · ✔ RVOL 1.61x · ✘ short gamma (trending - reversals fail more) · ✘ IV 88th pct expensive
+Backtest (3m): BETTER THAN RANDOM, ~BREAKEVEN AFTER COSTS (+0.01 R vs -0.12 R at random times, 23512 trades, gap 11.2x noise)
+
+[PA 3m] ⚠️ EXIT HINT for the 11:06 PE: double hammer at DAY LOW 22,181; 22,200 PE wall 22,200 on the 15:09 candle - you exit PE trades here
+
+[PA 3m] ⚠️ EXIT HINT for the 11:15 PE: double hammer at DAY LOW 22,181; 22,200 PE wall 22,200 on the 15:09 candle - you exit PE trades here
+
+
+──── 🟧 MENTOR 15:13 ────
+OC (mentor) 15:13 spot 22,194.7
+ITM call writers CLOSING at 22000 (194 pts ITM): ITM call writers covering -> short covering, market pushes UP
+ITM put writers CLOSING at 22300 (105 pts ITM): ITM put writers exiting -> long unwinding, market pushes DOWN
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  15:14  |  Spot 22,203
+═══════════════════════════════════════════════════
+
+BIAS:                 EOD UNWIND ⚠️
+REGIME:               EOD_UNWIND (18 min)
+GEX:                  +₹27.9Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.7%  |  Avg: 10.6%  |  EXPENSIVE (rank 89%) (31-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,800 (597 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,203 — 197 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,179.9 (15:05) ↔ High 22,599.05 (09:15) (419 pts)
+PCR (ATM 22,200):     2.09  ↑
+PCR (max OI 22,300):  0.83  →  ← price magnet
+PCR (flow):           0.50
+WRITERS RATIO:        0.50x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [139.6L] — 297 pts above spot
+  MAX SUPPORT:    22,000 PE [111.9L] — 203 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 139.6L CE writers]
+  R2:  22,600  [OI wall: 111.9L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 77.7L PE writers]
+  S2:  22,000  [OI wall: 111.9L PE writers]
+  MAJOR WALL: 22400 CE [168.6L] — 196 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,300 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   -5,153  (Call unwinding ↓)
+  PE ΔOI:   -1,959  (Put unwinding ↓)
+  Spread:   +3,194 contracts
+  Flow:    UNWINDING
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: NO  ✗
+  ⚖️ DOMINANCE: CALLS 2.0× MILD (CE +229k vs PE +115k)
+     Heaviest: 22,300 CE 3.2× | 22,250 CE 2.3×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 1.9× FIRM | Ceiling 3.2× STRONG
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 47-97 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +34.0L |   +16.4L |   -17.6L | CE_ABOVE
+  22,300   |   +73.2L |   +24.2L |   -49.0L | CE_ABOVE
+  22,400   |  +100.9L |    -4.2L |  -105.1L | CE_ABOVE
+  NET (3)  |  +208.1L |   +36.5L |  -171.7L | CE_ABOVE
+  Gap trend: steady (-0.5L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 22000→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  75.2L  | +111.3k  |  0.83 |  62.3L  |  +35.1k
+  22250   |  31.5L  |  +47.2k  |  0.86 |  27.1L  |  +20.9k
+  22200   |  37.2L  |  +51.8k  |  2.09 |  77.7L  |  +26.1k  ← ATM
+  22150   |   5.5L  |   +7.9k  |  4.02 |  22.0L  |  +13.6k
+  22100   |   7.9L  |  +10.4k  |  5.58 |  44.2L  |  +19.6k
+
+VETO / ACTION GUIDANCE
+  ⚠️  EOD UNWIND — close positions, no new entry
+  ➡️ EOD — no new trades, close open positions
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               FAIL ✗  ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 3/6 — WAIT ❌                  ║
+  ║  Missing: Flow, IV, Timing             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  15:14:05  (44s ago) ✅
+  Coverage today: 119/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+⚠️ APPROACHING FLOOR
+Spot 22,203 → S1 22,200 PE 77.7L only 3 pts away
+If bounce candle forms → CE buy opportunity
+➡️ WATCH for bounce at 22,200
+
+──── 🟧 MENTOR 15:16 ────
+🟪🟪 PA 15-MIN SUPER SIGNAL 15:16 spot 22,216.0
+
+[PA 15m SUPER] 🟪🟪 15-MIN SUPER SIGNAL
+🟢 PA SETUP · CE · 15:00 candle
+HAMMER at DAY LOW 22,190; swing low 08-Oct 14:15 22,190; lower wick 01-Oct 22,217
+BUY CE above 22,220 (follow-through) · SL 22,178 · valid for 2 candles
+Confluence 4/8: ✔ PE floor 22,200 at the level · ✔ PCR 2.09 · ✘ writers ratio 0.50x (CE side) · ✘ dominance calls · ✔ RVOL 1.61x · ✘ short gamma (trending - reversals fail more) · ✘ IV 88th pct expensive · ✔ previous-day wick at this level
+Backtest (15m): BETTER THAN RANDOM, ~BREAKEVEN AFTER COSTS (+0.00 R vs -0.14 R at random times, 4662 trades, gap 5.9x noise)
+
+
+──── 🟧 MENTOR 15:16 ────
+PA 5-min / 3-min 15:16 spot 22,216.0
+
+[PA 3m] 🟨 3-MIN signal (noisy)
+✅ PA TRIGGERED · CE at 22,201 (15:12 broke the double hammer high)
+SL 22,178 (23 pts) · T1 22,245 · then trail under each closed 3-min candle, or exit on a close below the 3m 8 EMA
+
+
+──── 🟧 MENTOR 15:16 ────
+OC (mentor) 15:16 spot 22,216.0
+ITM call writers ADDING at 22000 (216 pts ITM): ITM call writers confident (bearish) — trapped if price rises: short-covering risk
+ITM put writers ADDING at 22300 (84 pts ITM): ITM put writers confident (bullish) — trapped if price falls: long-unwinding risk
+ITM put writers ADDING at 22400 (184 pts ITM): ITM put writers confident (bullish) — trapped if price falls: long-unwinding risk
+DAT (champion): Direction (1-hour structure): DOWN (sell only, in premium) | PREMIUM sell zone 0.705-0.886: 22,559 - 22,656 (0.79 = 22,605); a close beyond 22,656 = no trade; target 22,180
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  15:17  |  Spot 22,216
+═══════════════════════════════════════════════════
+
+BIAS:                 EOD UNWIND ⚠️
+REGIME:               EOD_UNWIND (21 min)
+GEX:                  +₹33.2Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.7%  |  Avg: 10.5%  |  EXPENSIVE (rank 88%) (31-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,750 (534 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,216 — 184 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,179.9 (15:05) ↔ High 22,599.05 (09:15) (419 pts)
+PCR (ATM 22,200):     2.16  ↑
+PCR (max OI 22,300):  0.85  ↑  ← price magnet
+PCR (flow):           0.53
+WRITERS RATIO:        0.52x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [138.2L] — 284 pts above spot
+  MAX SUPPORT:    22,000 PE [113.3L] — 216 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 138.2L CE writers]
+  R2:  22,600  [OI wall: 111.8L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 77.9L PE writers]
+  S2:  22,000  [OI wall: 113.3L PE writers]
+  MAJOR WALL: 22400 CE [168.2L] — 184 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   -7,733  (Call unwinding ↓)
+  PE ΔOI:   -1,285  (Put unwinding ↓)
+  Spread:   +6,448 contracts
+  Flow:    FLAT
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: NO  ✗
+  ⚖️ DOMINANCE: CALLS 1.9× MILD (CE +223k vs PE +117k)
+     Heaviest: 22,300 CE 3.1× | 22,250 CE 2.3×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 1.9× FIRM | Ceiling 3.1× STRONG
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 34-84 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +33.6L |   +17.0L |   -16.7L | CE_ABOVE
+  22,300   |   +72.3L |   +22.8L |   -49.5L | CE_ABOVE
+  22,400   |  +101.5L |    -4.3L |  -105.8L | CE_ABOVE
+  NET (3)  |  +207.5L |   +35.5L |  -172.0L | CE_ABOVE
+  Gap trend: narrowing (+1.6L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 22000→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  73.3L  | +108.4k  |  0.85 |  62.3L  |  +35.1k
+  22250   |  31.1L  |  +46.5k  |  0.86 |  26.8L  |  +20.5k
+  22200   |  36.0L  |  +50.0k  |  2.16 |  77.9L  |  +26.5k  ← ATM
+  22150   |   5.4L  |   +7.8k  |  4.27 |  23.3L  |  +15.6k
+  22100   |   7.7L  |  +10.1k  |  5.72 |  44.0L  |  +19.4k
+
+VETO / ACTION GUIDANCE
+  ⚠️  EOD UNWIND — close positions, no new entry
+  ➡️ EOD — no new trades, close open positions
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               FAIL ✗  ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 3/6 — WAIT ❌                  ║
+  ║  Missing: Flow, IV, Timing             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  15:17:07  (1m 14s ago) ✅
+  Coverage today: 120/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 15:19 ────
+OC (mentor) 15:19 spot 22,216.0
+ITM call writers ADDING at 22100 (116 pts ITM): ITM call writers confident (bearish) — trapped if price rises: short-covering risk
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  15:21  |  Spot 22,216
+═══════════════════════════════════════════════════
+
+BIAS:                 EOD UNWIND ⚠️
+REGIME:               EOD_UNWIND (24 min)
+GEX:                  +₹33.8Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.7%  |  Avg: 10.5%  |  EXPENSIVE (rank 88%) (30-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,750 (534 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,216 — 184 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,179.9 (15:05) ↔ High 22,599.05 (09:15) (419 pts)
+PCR (ATM 22,200):     2.15  ↑
+PCR (max OI 22,300):  0.84  →  ← price magnet
+PCR (flow):           0.48
+WRITERS RATIO:        0.50x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [136.7L] — 284 pts above spot
+  MAX SUPPORT:    22,000 PE [113.2L] — 216 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 136.7L CE writers]
+  R2:  22,600  [OI wall: 112.0L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 76.0L PE writers]
+  S2:  22,000  [OI wall: 113.2L PE writers]
+  MAJOR WALL: 22400 CE [165.5L] — 184 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   -4,806  (Call unwinding ↓)
+  PE ΔOI:   -3,413  (Put unwinding ↓)
+  Spread:   +1,393 contracts
+  Flow:    UNWINDING
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: NO  ✗
+  ⚖️ DOMINANCE: CALLS 2.0× CLEAR (CE +220k vs PE +110k)
+     Heaviest: 22,300 CE 3.3× | 22,250 CE 2.3×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 1.7× FIRM | Ceiling 3.3× STRONG
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 34-84 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +32.0L |   +16.4L |   -15.5L | CE_ABOVE
+  22,300   |   +70.2L |   +21.9L |   -48.3L | CE_ABOVE
+  22,400   |   +99.5L |    -5.1L |  -104.5L | CE_ABOVE
+  NET (3)  |  +201.6L |   +33.3L |  -168.3L | CE_ABOVE
+  Gap trend: narrowing (+6.5L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 22000→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  73.0L  | +107.9k  |  0.84 |  61.1L  |  +33.1k
+  22250   |  30.6L  |  +45.9k  |  0.87 |  26.6L  |  +20.1k
+  22200   |  35.3L  |  +48.9k  |  2.15 |  76.0L  |  +23.6k  ← ATM
+  22150   |   5.2L  |   +7.5k  |  4.57 |  24.0L  |  +16.7k
+  22100   |   7.4L  |   +9.7k  |  5.68 |  42.1L  |  +16.4k
+
+VETO / ACTION GUIDANCE
+  ⚠️  EOD UNWIND — close positions, no new entry
+  ➡️ EOD — no new trades, close open positions
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               FAIL ✗  ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 3/6 — WAIT ❌                  ║
+  ║  Missing: Flow, IV, Timing             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  15:21:10  (39s ago) ✅
+  Coverage today: 122/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 15:22 ────
+🟪🟪 PA 15-MIN SUPER SIGNAL 15:22 spot 22,216.0
+
+[8EMA 15m SUPER] 📒 8 EMA JOURNAL 08-10-2026: no trades
+
+
+──── 🟧 MENTOR 15:22 ────
+OC (mentor) 15:22 spot 22,216.0
+ITM call writers CLOSING at 22100 (116 pts ITM): ITM call writers covering -> short covering, market pushes UP
+ITM put writers CLOSING at 22400 (184 pts ITM): ITM put writers exiting -> long unwinding, market pushes DOWN
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  15:24  |  Spot 22,216
+═══════════════════════════════════════════════════
+
+BIAS:                 EOD UNWIND ⚠️
+REGIME:               EOD_UNWIND (27 min)
+GEX:                  +₹35.3Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.4%  |  Avg: 10.4%  |  EXPENSIVE (rank 87%) (30-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,750 (534 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,216 — 184 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,179.9 (15:05) ↔ High 22,599.05 (09:15) (419 pts)
+PCR (ATM 22,200):     2.17  ↑
+PCR (max OI 22,300):  0.84  →  ← price magnet
+PCR (flow):           0.47
+WRITERS RATIO:        0.49x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [135.2L] — 284 pts above spot
+  MAX SUPPORT:    22,000 PE [111.7L] — 216 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 135.2L CE writers]
+  R2:  22,600  [OI wall: 110.9L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 75.5L PE writers]
+  S2:  22,000  [OI wall: 111.7L PE writers]
+  MAJOR WALL: 22400 CE [164.7L] — 184 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   -4,586  (Call unwinding ↓)
+  PE ΔOI:   -2,844  (Put unwinding ↓)
+  Spread:   +1,742 contracts
+  Flow:    UNWINDING
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: NO  ✗
+  ⚖️ DOMINANCE: CALLS 2.0× CLEAR (CE +214k vs PE +105k)
+     Heaviest: 22,300 CE 3.3× | 22,250 CE 2.3×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 1.7× FIRM | Ceiling 3.3× STRONG
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 34-84 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +31.5L |   +15.2L |   -16.3L | CE_ABOVE
+  22,300   |   +70.0L |   +21.7L |   -48.3L | CE_ABOVE
+  22,400   |   +99.4L |    -5.4L |  -104.8L | CE_ABOVE
+  NET (3)  |  +200.9L |   +31.5L |  -169.3L | CE_ABOVE
+  Gap trend: narrowing (+3.2L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 22000→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  71.3L  | +105.4k  |  0.84 |  60.1L  |  +31.6k
+  22250   |  29.1L  |  +43.5k  |  0.89 |  25.9L  |  +19.1k
+  22200   |  34.8L  |  +48.2k  |  2.17 |  75.5L  |  +22.8k  ← ATM
+  22150   |   5.2L  |   +7.4k  |  4.58 |  23.6L  |  +16.1k
+  22100   |   7.2L  |   +9.3k  |  5.81 |  41.7L  |  +15.8k
+
+VETO / ACTION GUIDANCE
+  ⚠️  EOD UNWIND — close positions, no new entry
+  ➡️ EOD — no new trades, close open positions
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               FAIL ✗  ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 3/6 — WAIT ❌                  ║
+  ║  Missing: Flow, IV, Timing             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  15:24:11  (1m 4s ago) ✅
+  Coverage today: 123/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+──── 🟧 MENTOR 15:25 ────
+OC (mentor) 15:24 spot 22,216.0
+ITM put writers CLOSING at 22300 (84 pts ITM): ITM put writers exiting -> long unwinding, market pushes DOWN
+
+
+──── 🟧 MENTOR 15:28 ────
+OC (mentor) 15:27 spot 22,216.0
+ITM put writers ADDING at 22300 (84 pts ITM): ITM put writers confident (bullish) — trapped if price falls: long-unwinding risk
+
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  15:28  |  Spot 22,216
+═══════════════════════════════════════════════════
+
+BIAS:                 EOD UNWIND ⚠️
+REGIME:               EOD_UNWIND (30 min)
+GEX:                  +₹35.0Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.4%  |  Avg: 10.4%  |  EXPENSIVE (rank 87%) (29-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,750 (534 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,216 — 184 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,179.9 (15:05) ↔ High 22,599.05 (09:15) (419 pts)
+PCR (ATM 22,200):     2.14  ↑
+PCR (max OI 22,300):  0.85  ↑  ← price magnet
+PCR (flow):           0.46
+WRITERS RATIO:        0.49x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [134.3L] — 284 pts above spot
+  MAX SUPPORT:    22,000 PE [111.7L] — 216 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 134.3L CE writers]
+  R2:  22,600  [OI wall: 110.2L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 75.1L PE writers]
+  S2:  22,000  [OI wall: 111.7L PE writers]
+  MAJOR WALL: 22400 CE [164.3L] — 184 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   -3,447  (Call unwinding ↓)
+  PE ΔOI:   -2,825  (Put unwinding ↓)
+  Spread:     +622 contracts
+  Flow:    UNWINDING
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: NO  ✗
+  ⚖️ DOMINANCE: CALLS 2.0× CLEAR (CE +214k vs PE +104k)
+     Heaviest: 22,300 CE 3.2× | 22,250 CE 2.3×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 1.6× FIRM | Ceiling 3.2× STRONG
+     → Symmetric range: balanced defense both sides.
+     → Ceiling being built 34-84 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +31.4L |   +14.0L |   -17.4L | CE_ABOVE
+  22,300   |   +68.8L |   +21.3L |   -47.4L | CE_ABOVE
+  22,400   |   +99.0L |    -5.8L |  -104.8L | CE_ABOVE
+  NET (3)  |  +199.2L |   +29.6L |  -169.6L | CE_ABOVE
+  Gap trend: narrowing (+2.1L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 22000→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  71.6L  | +105.9k  |  0.85 |  61.1L  |  +33.2k
+  22250   |  28.8L  |  +43.0k  |  0.89 |  25.5L  |  +18.4k
+  22200   |  35.0L  |  +48.5k  |  2.14 |  75.1L  |  +22.1k  ← ATM
+  22150   |   5.1L  |   +7.2k  |  4.65 |  23.5L  |  +16.0k
+  22100   |   7.0L  |   +9.0k  |  5.87 |  41.0L  |  +14.8k
+
+VETO / ACTION GUIDANCE
+  ⚠️  EOD UNWIND — close positions, no new entry
+  ➡️ EOD — no new trades, close open positions
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               FAIL ✗  ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 3/6 — WAIT ❌                  ║
+  ║  Missing: Flow, IV, Timing             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  15:28:14  (27s ago) ✅
+  Coverage today: 124/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+📋 TODAY'S SUMMARY | 08 Oct
+Day range: 22,179 → 22,599 (420 pts)
+Floor held: 22,200 ✅
+Ceiling held: 22,599 (R2 22,600) ✅
+Signals logged: PE BUY
+Tomorrow watch: 22,200 and 22,500
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  15:29  |  Spot 22,216
+═══════════════════════════════════════════════════
+
+BIAS:                 EOD UNWIND ⚠️
+REGIME:               EOD_UNWIND (33 min)
+GEX:                  +₹34.9Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.4%  |  Avg: 10.4%  |  EXPENSIVE (rank 87%) (28-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,750 (534 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,216 — 184 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,179.9 (15:05) ↔ High 22,599.05 (09:15) (419 pts)
+PCR (ATM 22,200):     2.19  ↑
+PCR (max OI 22,300):  0.86  ↑  ← price magnet
+PCR (flow):           0.46
+WRITERS RATIO:        0.48x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [132.7L] — 284 pts above spot
+  MAX SUPPORT:    22,000 PE [111.4L] — 216 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 132.7L CE writers]
+  R2:  22,600  [OI wall: 109.1L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 74.8L PE writers]
+  S2:  22,000  [OI wall: 111.4L PE writers]
+  MAJOR WALL: 22400 CE [164.7L] — 184 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   -4,419  (Call unwinding ↓)
+  PE ΔOI:   -6,532  (Put unwinding ↓)
+  Spread:   -2,113 contracts
+  Flow:    UNWINDING
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: NO  ✗
+  ⚖️ DOMINANCE: CALLS 2.1× CLEAR (CE +209k vs PE +100k)
+     Heaviest: 22,300 CE 3.2× | 22,250 CE 2.4×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 1.5× WEAK | Ceiling 3.2× STRONG
+     → Asymmetric: lid firm, floor thin. Downside drift likelier than an upside break.
+     → Ceiling being built 34-84 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +31.4L |   +14.0L |   -17.4L | CE_ABOVE
+  22,300   |   +68.8L |   +21.3L |   -47.4L | CE_ABOVE
+  22,400   |   +99.0L |    -5.8L |  -104.8L | CE_ABOVE
+  NET (3)  |  +199.2L |   +29.6L |  -169.6L | CE_ABOVE
+  Gap trend: narrowing (+2.1L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 22000→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  71.1L  | +105.0k  |  0.86 |  60.9L  |  +32.9k
+  22250   |  27.8L  |  +41.5k  |  0.90 |  24.9L  |  +17.6k
+  22200   |  34.1L  |  +47.1k  |  2.19 |  74.8L  |  +21.7k  ← ATM
+  22150   |   4.9L  |   +7.0k  |  4.63 |  22.8L  |  +14.9k
+  22100   |   6.7L  |   +8.6k  |  5.89 |  39.7L  |  +12.7k
+
+VETO / ACTION GUIDANCE
+  ⚠️  EOD UNWIND — close positions, no new entry
+  ➡️ EOD — no new trades, close open positions
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               FAIL ✗  ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 3/6 — WAIT ❌                  ║
+  ║  Missing: Flow, IV, Timing             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  15:29:15  (2m 51s ago) ✅
+  Coverage today: 124/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+📋 TODAY'S SUMMARY | 08 Oct
+Day range: 22,179 → 22,599 (420 pts)
+Floor held: 22,200 ✅
+Ceiling held: 22,599 (R2 22,600) ✅
+Signals logged: PE BUY
+Tomorrow watch: 22,200 and 22,500
+═══════════════════════════════════════════════════
+NIFTY LIVE BRIEFING  |  15:29  |  Spot 22,216
+═══════════════════════════════════════════════════
+
+BIAS:                 EOD UNWIND ⚠️
+REGIME:               EOD_UNWIND (33 min)
+GEX:                  +₹34.9Cr (SHORT gamma — trending day, breakouts follow through)
+IV (ATM):             13.4%  |  Avg: 10.4%  |  EXPENSIVE (rank 87%) (28-session baseline — tails unreliable below 60 sessions)
+Zero gamma:           22,750 (534 pts above — entire session in SHORT gamma zone — all moves amplified)
+MAX PAIN:             22,400 (spot 22,216 — 184 pts below) (informational only — no edge on Nifty)
+DAY RANGE:            Low 22,179.9 (15:05) ↔ High 22,599.05 (09:15) (419 pts)
+PCR (ATM 22,200):     2.19  ↑
+PCR (max OI 22,300):  0.86  ↑  ← price magnet
+PCR (flow):           0.46
+WRITERS RATIO:        0.48x  (CE dominant — ceiling defending)
+
+MAX INSTITUTIONAL WALLS
+  MAX RESISTANCE: 22,500 CE [132.7L] — 284 pts above spot
+  MAX SUPPORT:    22,000 PE [111.4L] — 216 pts below spot
+
+SUPPORT / RESISTANCE
+  R1:  22,500  [OI wall: 132.7L CE writers]
+  R2:  22,600  [OI wall: 109.1L CE writers]
+  ATM: 22,200  ← You are here
+  S1:  22,200  [OI wall: 74.8L PE writers]
+  S2:  22,000  [OI wall: 111.4L PE writers]
+  MAJOR WALL: 22400 CE [164.7L] — 184 pts above spot
+  PRIOR DAY:  PDH 22,718 | PDL 22,546 | PDC 22,603 | PDO 22,690
+  🏛️ MIGRATION: 22,350 conquered by bears — Put writers surrendered, Call writers established lid
+  🏛️ MIGRATION: 22,400 conquered by bears — Put writers surrendered, Call writers established lid
+
+OI FLOW (last 15 min)
+  CE ΔOI:   -4,419  (Call unwinding ↓)
+  PE ΔOI:   -6,532  (Put unwinding ↓)
+  Spread:   -2,113 contracts
+  Flow:    UNWINDING
+
+INSTITUTIONAL READ
+  PE writers building support:   NO  ✗
+  CE writers building resistance: NO  ✗
+  ⚖️ DOMINANCE: CALLS 2.1× CLEAR (CE +209k vs PE +100k)
+     Heaviest: 22,300 CE 3.2× | 22,250 CE 2.4×
+  🔒 STRUCTURE: RANGE 22,100–22,300 (edges defended both sides)
+     Floor conviction 1.5× WEAK | Ceiling 3.2× STRONG
+     → Asymmetric: lid firm, floor thin. Downside drift likelier than an upside break.
+     → Ceiling being built 34-84 pts above spot
+     → Risk to call writers: close above 22,300 = squeeze
+  Sudden OI spike (>50k, 1 bar): NO  ✗
+  Roll hazard detected:           NO  ✗
+
+── WRITER GAP ──────────────────────────────────────────
+  Strike   |  CE ΔOI  |  PE ΔOI  |   Gap   | Side
+  22,200   |   +31.4L |   +14.0L |   -17.4L | CE_ABOVE
+  22,300   |   +68.8L |   +21.3L |   -47.4L | CE_ABOVE
+  22,400   |   +99.0L |    -5.8L |  -104.8L | CE_ABOVE
+  NET (3)  |  +199.2L |   +29.6L |  -169.6L | CE_ABOVE
+  Gap trend: narrowing (+2.1L vs 15m ago)
+  Last cross: None today
+  Walls: walls steady (CE 22500→22500, PE 22000→22000)
+
+OPTION CHAIN SNAPSHOT  (ATM ± 2 strikes)
+  Strike  |  CE OI  |  CE ΔOI  |  PCR  |  PE OI  |  PE ΔOI
+  22300   |  71.1L  | +105.0k  |  0.86 |  60.9L  |  +32.9k
+  22250   |  27.8L  |  +41.5k  |  0.90 |  24.9L  |  +17.6k
+  22200   |  34.1L  |  +47.1k  |  2.19 |  74.8L  |  +21.7k  ← ATM
+  22150   |   4.9L  |   +7.0k  |  4.63 |  22.8L  |  +14.9k
+  22100   |   6.7L  |   +8.6k  |  5.89 |  39.7L  |  +12.7k
+
+VETO / ACTION GUIDANCE
+  ⚠️  EOD UNWIND — close positions, no new entry
+  ➡️ EOD — no new trades, close open positions
+
+  ╔════════════════════════════════════════╗
+  ║  PRE-TRADE CHECKLIST                   ║
+  ╠════════════════════════════════════════╣
+  ║  □ Walls defined:              PASS ✅ ║
+  ║  □ Flow aligned:               FAIL ✗  ║
+  ║  □ IV not expensive:           FAIL ✗  ║
+  ║  □ GEX supports:               PASS ✅ ║
+  ║  □ No danger zone:             FAIL ✗  ║
+  ║  □ RVOL (futures vol) (>=1.30): PASS ✅║
+  ╠════════════════════════════════════════╣
+  ║  SCORE: 3/6 — WAIT ❌                  ║
+  ║  Missing: Flow, IV, Timing             ║
+  ╚════════════════════════════════════════╝
+
+DATA HEALTH
+  Last snapshot:  15:29:15  (6m 16s ago) ✅
+  Coverage today: 124/125 bins  ✅
+  Stale feed:     NO
+═══════════════════════════════════════════════════
+
+📋 TODAY'S SUMMARY | 08 Oct
+Day range: 22,179 → 22,599 (420 pts)
+Floor held: 22,200 ✅
+Ceiling held: 22,599 (R2 22,600) ✅
+Signals logged: PE BUY
+Tomorrow watch: 22,200 and 22,500

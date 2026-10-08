@@ -17,3 +17,9 @@ NIFTY 50 order-flow recorder · 50 stocks mapped
   websocket closed (None )
   reconnecting in 60s …
   subscribed 50 stocks (code 21) + NIFTY index (code 15)
+  ! websocket error: ping/pong timed out
+  websocket closed (None )
+  reconnecting in 2s …
+  subscribed 50 stocks (code 21) + NIFTY index (code 15)
+  websocket closed (None )
+Done · 1,402,731 packets · 868,259 classified trades · 50/50 stocks streamed → /home/harish/Documents/Swathi K N/1 Trading/option chain/OC/data/orderflow/ticks/2026-10-08.csv

@@ -75,3 +75,4 @@ Traceback (most recent call last):
   File "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/.venv/lib/python3.9/site-packages/tornado/websocket.py", line 1115, in wrapper
     raise WebSocketClosedError()
 tornado.websocket.WebSocketClosedError
+  Stopping...

@@ -67,3 +67,4 @@ Please go to https://docs.streamlit.io/ for debugging hints.
 
 2026-10-08 11:59:06.815 The fragment with id 28b9e36c029eef18cbe6e9fe67a5935d does not exist anymore - it might have been removed during a preceding full-app rerun.
 Failed to load paper account: Expecting value: line 1 column 1 (char 0)
+  Stopping...
