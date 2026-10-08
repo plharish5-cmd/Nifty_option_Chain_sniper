@@ -26,5 +26,20 @@
     "stoch_rsi_oversold": 20.0,
     "stoch_rsi_overbought": 80.0,
     "daily_candles_min": 20
+  },
+  "sushen_homework_strategy": {
+    "bb_length": 20,
+    "bb_mult": 2.0,
+    "ema_fast": 4,
+    "ema_slow": 8,
+    "bb_width_squeeze": 60.0,
+    "cost_to_cost_pts": 20.0,
+    "default_target_pts": 40.0,
+    "max_stop_pts": 40.0,
+    "gap_threshold_pts": 35.0,
+    "doji_body_pct": 0.25,
+    "max_pullbacks_per_trend": 2,
+    "session_exit_time": "15:15",
+    "trail_candle_by_candle": true
   }
 }

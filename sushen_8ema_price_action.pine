@@ -1,0 +1,233 @@
+//@version=5
+strategy("Sushen 8 EMA Price Action Strategy (Dhan & TradingView)", overlay=true, initial_capital=100000, default_qty_type=strategy.fixed, default_qty_value=50, currency=currency.INR)
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 1. INPUTS & CONFIGURATION (Mentor Manjunath & Sushen Rules)
+// ═════════════════════════════════════════════════════════════════════════════
+grp_ind   = "Indicator Settings"
+bbLen     = input.int(20, "Bollinger Bands Length", group=grp_ind)
+bbMult    = input.float(2.0, "Bollinger Bands StdDev", group=grp_ind)
+fastEmaLen= input.int(4, "Fast EMA Length", group=grp_ind)
+slowEmaLen= input.int(8, "Slow EMA Length (The Law)", group=grp_ind)
+bbSqueeze = input.float(60.0, "Stage 1 Rangebound Squeeze (BB Width pts)", group=grp_ind)
+
+grp_strat = "Risk & Trade Management"
+maxRiskPts= input.float(40.0, "Maximum Index Stop Loss (Points)", group=grp_strat)
+c2cPts    = input.float(20.0, "Cost-to-Cost Lock Level (Points)", group=grp_strat)
+targetPts = input.float(40.0, "Target 1 (Points)", group=grp_strat)
+trailCandle=input.bool(true, "Candle-by-Candle Trailing Stop", group=grp_strat)
+maxTradesPerTrend = input.int(2, "Max Pullback Trades Per Trend Leg (Avoid 3rd)", group=grp_strat)
+
+grp_sess  = "Session Settings"
+sessTime  = input.session("0915-1515", "Intraday Trading Session", group=grp_sess)
+exitTime  = input.string("15:15", "Mandatory Square-off Time", group=grp_sess)
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 2. INDICATOR ENGINE
+// ═════════════════════════════════════════════════════════════════════════════
+ema4 = ta.ema(close, fastEmaLen)
+ema8 = ta.ema(close, slowEmaLen)
+
+[bbMid, bbUpper, bbLower] = ta.bb(close, bbLen, bbMult)
+bbWidth = bbUpper - bbLower
+
+// Plotting Bollinger Bands (Mentor Rule: No middle SMA line!)
+p_ubb = plot(bbUpper, "Upper Bollinger Band (UBB)", color=color.new(color.red, 20), linewidth=2)
+p_lbb = plot(bbLower, "Lower Bollinger Band (LBB)", color=color.new(color.green, 20), linewidth=2)
+
+// Plotting 4/8 EMA Cloud
+p_ema4 = plot(ema4, "4 EMA (Fast)", color=color.new(color.green, 0), linewidth=1)
+p_ema8 = plot(ema8, "8 EMA (Slow)", color=color.new(color.red, 0), linewidth=2)
+fillColor = ema4 >= ema8 ? color.new(color.green, 85) : color.new(color.red, 85)
+fill(p_ema4, p_ema8, color=fillColor, title="4/8 EMA Cloud")
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 3. CANDLESTICK & SESSION ANALYSIS
+// ═════════════════════════════════════════════════════════════════════════════
+cRange = high - low
+cBody  = math.abs(close - open)
+isGreen= close > open
+isRed  = close < open
+isDoji = cRange > 0 and (cBody <= cRange * 0.25)
+isHammer = (math.min(open, close) - low) >= 2.0 * cBody and (high - math.max(open, close)) <= 0.6 * cBody and cRange > 0
+isIH     = (high - math.max(open, close)) >= 2.0 * cBody and (math.min(open, close) - low) <= 0.6 * cBody and cRange > 0
+isBullEngulf = isGreen and isRed[1] and close >= open[1] and open <= close[1] and cBody >= cBody[1] * 1.1
+isBearEngulf = isRed and isGreen[1] and open >= close[1] and close <= open[1] and cBody >= cBody[1] * 1.1
+
+// Session & 1st 15m candle tracking
+var float dayHigh = na
+var float dayLow  = na
+var float firstOpen = na
+var float firstClose= na
+var float firstHigh = na
+var float firstLow  = na
+var int   firstBias = 0 // 1: Bullish, -1: Bearish, 0: Doji/Neutral
+var int   pullbackCount = 0
+
+isNewDay = ta.change(time("D")) != 0
+
+if isNewDay
+    dayHigh := high
+    dayLow  := low
+    firstOpen := open
+    firstClose:= close
+    firstHigh := high
+    firstLow  := low
+    pullbackCount := 0
+    firstBias := close > open ? 1 : close < open ? -1 : 0
+else
+    dayHigh := math.max(dayHigh, high)
+    dayLow  := math.min(dayLow, low)
+
+// Market Stage
+isStage1 = bbWidth < bbSqueeze
+isStage2 = not isStage1 and (bbUpper > bbUpper[1] and close > ema8)
+isStage3 = not isStage1 and (bbLower < bbLower[1] and close < ema8)
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 4. STRATEGY SIGNALS (FOLLOW-THROUGH LAW)
+// ═════════════════════════════════════════════════════════════════════════════
+var bool pendingBuy = false
+var float buyTrigger = na
+var float buyStop = na
+var string buySetup = ""
+
+var bool pendingSell = false
+var float sellTrigger = na
+var float sellStop = na
+var string sellSetup = ""
+
+inSession = not na(time(timeframe.period, sessTime))
+
+// Reset pending signals if expired
+if not inSession or isNewDay
+    pendingBuy := false
+    pendingSell := false
+
+// Reset pullback count on EMA cross
+if ta.cross(close, ema8)
+    pullbackCount := 0
+
+// Setup Detection (on bar close)
+if inSession and not isStage1
+    // Long Setup 1: Fresh 8 EMA close above + green candle
+    if ta.crossover(close, ema8) and isGreen
+        pendingBuy := true
+        buyTrigger := high
+        buyStop    := math.max(low, high - maxRiskPts)
+        buySetup   := "Stage 2 Breakout"
+
+    // Long Setup 2: Stage 3 Pullback to 8 EMA bounce
+    if close > ema8 and low <= ema8 and isGreen and pullbackCount < maxTradesPerTrend
+        pendingBuy := true
+        buyTrigger := high
+        buyStop    := math.max(low, high - maxRiskPts)
+        buySetup   := "Stage 3 8EMA Pullback"
+        pullbackCount += 1
+
+    // Long Setup 3: Doji / Hammer bounce at Day Low or LBB
+    if (isHammer or isDoji) and low <= bbLower and close >= ema4
+        pendingBuy := true
+        buyTrigger := high
+        buyStop    := math.max(low, high - maxRiskPts)
+        buySetup   := "Support Hammer/Doji"
+
+    // Short Setup 1: Fresh 8 EMA close below + red candle
+    if ta.crossunder(close, ema8) and isRed
+        pendingSell := true
+        sellTrigger := low
+        sellStop    := math.min(high, low + maxRiskPts)
+        sellSetup   := "Stage 3 Breakdown"
+
+    // Short Setup 2: Stage 3 Pullback to 8 EMA rejection
+    if close < ema8 and high >= ema8 and isRed and pullbackCount < maxTradesPerTrend
+        pendingSell := true
+        sellTrigger := low
+        sellStop    := math.min(high, low + maxRiskPts)
+        sellSetup   := "Stage 3 8EMA Rejection"
+        pullbackCount += 1
+
+    // Short Setup 3: Doji / Inverted Hammer / Evening Star at Day High or UBB
+    if (isIH or isDoji) and high >= bbUpper and close <= ema4
+        pendingSell := true
+        sellTrigger := low
+        sellStop    := math.min(high, low + maxRiskPts)
+        sellSetup   := "Supply Rejection"
+
+// Execution on Follow-Through (Price breaks trigger level)
+var float activeEntry = na
+var float activeSL = na
+var float activeTarget = na
+var float highestRun = na
+var float lowestRun = na
+
+if inSession and pendingBuy and strategy.position_size == 0
+    if high > buyTrigger
+        strategy.entry("CE_LONG", strategy.long, stop=buyTrigger)
+        activeEntry := buyTrigger
+        activeSL := buyStop
+        activeTarget := buyTrigger + targetPts
+        highestRun := buyTrigger
+        pendingBuy := false
+
+if inSession and pendingSell and strategy.position_size == 0
+    if low < sellTrigger
+        strategy.entry("PE_SHORT", strategy.short, stop=sellTrigger)
+        activeEntry := sellTrigger
+        activeSL := sellStop
+        activeTarget := sellTrigger - targetPts
+        lowestRun := sellTrigger
+        pendingSell := false
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 5. TRADE MANAGEMENT & CANDLE-BY-CANDLE TRAILING STOP
+// ═════════════════════════════════════════════════════════════════════════════
+if strategy.position_size > 0
+    highestRun := math.max(highestRun, high)
+    
+    // Cost-to-cost rule at +20 pts
+    if highestRun - activeEntry >= c2cPts
+        activeSL := math.max(activeSL, activeEntry)
+        
+    // Candle-by-candle trailing stop: low of previous green bar
+    if trailCandle and isGreen[1]
+        activeSL := math.max(activeSL, low[1])
+        
+    // Target: Touch Upper Bollinger Band or Target Points
+    if high >= bbUpper or high >= activeTarget
+        strategy.close("CE_LONG", comment="Target/UBB Reached")
+    else if low <= activeSL
+        strategy.close("CE_LONG", comment="Trailing SL Hit")
+    else if isDoji and high >= dayHigh - 10
+        strategy.close("CE_LONG", comment="Doji at Day High")
+
+if strategy.position_size < 0
+    lowestRun := math.min(lowestRun, low)
+    
+    // Cost-to-cost rule at +20 pts
+    if activeEntry - lowestRun >= c2cPts
+        activeSL := math.min(activeSL, activeEntry)
+        
+    // Candle-by-candle trailing stop: high of previous red bar
+    if trailCandle and isRed[1]
+        activeSL := math.min(activeSL, high[1])
+        
+    // Target: Touch Lower Bollinger Band or Target Points
+    if low <= bbLower or low <= activeTarget
+        strategy.close("PE_SHORT", comment="Target/LBB Reached")
+    else if high >= activeSL
+        strategy.close("PE_SHORT", comment="Trailing SL Hit")
+    else if isDoji and low <= dayLow + 10
+        strategy.close("PE_SHORT", comment="Doji at Day Low")
+
+// Mandatory Square-off at 15:15
+if (hour == 15 and minute >= 15) or (hour > 15)
+    strategy.close_all(comment="Mandatory 15:15 Square-off")
+
+// Plot Entry & Exit Shapes
+plotshape(ta.crossover(strategy.position_size, 0), title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.normal, text="CE BUY")
+plotshape(ta.crossunder(strategy.position_size, 0), title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.normal, text="PE BUY")
+
+// Alert Conditions for Dhan Webhook / TradingView Alerts
+alertcondition(ta.crossover(strategy.position_size, 0), title="CE Entry Alert", message="NIFTY 50 15M: Buy CE Setup Triggered!")
+alertcondition(ta.crossunder(strategy.position_size, 0), title="PE Entry Alert", message="NIFTY 50 15M: Buy PE Setup Triggered!")
