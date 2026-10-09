@@ -149,6 +149,23 @@ export default function Guide() {
           <p className="text-slate-400">Chart: blue dashed box = yesterday's value, solid blue line = pPOC, pink dashed = today's developing POC, grey box = balance. Markers: ▲▼ ACC (accepted), ● REJ (rejected), ● NoFT (no follow-through).</p>
         </S>
 
+        <S title="11 · Real volume — NIFTY future, VWAP, estimated delta">
+          <p>The index has no volume, so the desk reads the <Y>current-month NIFTY future</Y> (Dhan scrip master, accepted only if it trades within 2.5 % of the index; rolls to next month in expiry week when that month trades more). Every price is <b>basis-adjusted</b> (future − spot, minute by minute) so the levels sit on the NIFTY chart. Volume = <b>activity</b>, never direction.</p>
+          <T head={["Layer", "What volume adds"]} rows={[
+            ["Volume strip", "Bars under the chart. Bright = ≥ 1.5× normal volume for that time of day (RVOL), grey = ≤ 0.7×."],
+            ["VWAP + bands", "White line = session VWAP (resets 09:15), dashed ±1σ, dotted ±2σ. Above VWAP = buyers since the open are in profit; ±2σ = stretched."],
+            ["Anchored VWAP", <>Violet = from the start of the leg that made the last <b>MSS</b>; amber = from the active <b>CRT</b> candle. A pullback that holds the AVWAP = the move's owners defend it.</>],
+            ["vPOC · HVN · LVN", "Today's volume POC (gold), HVNs (acceptance — price slows), LVNs (thin — price moves fast through them). Naked POC (orange) = an older POC never revisited: a magnet like untaken liquidity."],
+            ["Order blocks · FVG", <>Label shows <b>vol 1.8×</b> = RVOL of the displacement candle (OB) or the gap candle (FVG). A zone born from a high-volume displacement is the stronger zone.</>],
+            ["BOS / MSS · sweeps", <><b>V2.1</b> on the marker = the break / sweep printed 2.1× normal volume; <b>lowV</b> = a break nobody joined — treat with suspicion.</>],
+            ["CRT + TBS", "CRT box label shows the CRT candle's RVOL; the amber AVWAP runs from that candle."],
+            ["Auction", "Value area and POC now come from VOLUME (TPO only as a fallback). Effort = estimated delta + FUT RVOL + options activity."],
+          ]} />
+          <p><Y>Estimated delta</Y> (Delta / Footprint → source "Estimated (FUT quote rule)", now the default): each print of the future is classed buy if it traded at or above the previous ask, sell at or below the bid, tick rule in between. Dhan sends snapshots, not every trade — a good estimate, not exchange truth. Live only: history starts the first market session the desk runs. It feeds the existing aggression / absorption / flip / imbalance rules.</p>
+          <p><b>Options activity</b>: new option volume × |delta| over ±10 strikes of ATM (nearest expiry), per minute — participation, direction unknown. Live only.</p>
+          <p className="text-slate-400">None of this changes a trigger, a zone, a signal, a paper trade or the scorecard (baseline lock still passes). Delta only nudges A / C confidence, as before.</p>
+        </S>
+
         <S title="7 · Pro habits that keep you alive">
           <ul className="list-disc ml-4 space-y-1">
             <li>No setup = no trade. Zero trades is a good day if the setups were not there (8 Oct was exactly that).</li>

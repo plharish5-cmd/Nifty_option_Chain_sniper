@@ -8,12 +8,15 @@ const KIND: Record<string, [string, string]> = {
   AUCTION_NO_FOLLOW: ["No follow-through", "text-slate-300"], TESTING: ["Testing", "text-gold-400"],
 };
 
-function Profile({ p, title, px }: { p: TpoProfile; title: string; px: number | null }) {
+const compact = (n: number) => n >= 1e7 ? `${(n / 1e7).toFixed(1)}Cr` : n >= 1e5 ? `${(n / 1e5).toFixed(1)}L` : n >= 1e3 ? `${(n / 1e3).toFixed(0)}K` : `${n}`;
+
+function Profile({ p, title, px }: { p: TpoProfile & { hvn?: number[]; lvn?: number[] }; title: string; px: number | null }) {
   const rows = [...p.hist].reverse();
   const max = Math.max(1, ...rows.map((r) => r[1]));
   return (
     <div className="min-w-0">
-      <div className="text-[11px] text-slate-400 mb-1">{title} · POC <b className="text-slate-200">{p.poc.toFixed(1)}</b> · value {p.val.toFixed(0)}–{p.vah.toFixed(0)}</div>
+      <div className="text-[11px] text-slate-400 mb-1">{title} · POC <b className="text-slate-200">{p.poc.toFixed(1)}</b> · value {p.val.toFixed(0)}–{p.vah.toFixed(0)}
+        {p.hvn?.length ? <> · HVN {p.hvn.map((x) => x.toFixed(0)).join(", ")}</> : null}{p.lvn?.length ? <> · LVN {p.lvn.map((x) => x.toFixed(0)).join(", ")}</> : null}</div>
       <div className="max-h-[220px] overflow-auto pr-1">
         {rows.map(([price, n]) => {
           const inVa = price >= p.val - 1e-6 && price < p.vah, poc = Math.abs(price + p.step / 2 - p.poc) < p.step / 2 + 1e-6;
@@ -24,7 +27,7 @@ function Profile({ p, title, px }: { p: TpoProfile; title: string; px: number | 
               <div className="flex-1 h-[9px] bg-ink-800 rounded-sm overflow-hidden">
                 <div style={{ width: `${(n / max) * 100}%` }} className={`h-full ${poc ? "bg-sky-400" : inVa ? "bg-sky-700" : "bg-slate-600"}`} />
               </div>
-              <span className="w-8 text-slate-500">{n}</span>
+              <span className="w-10 text-slate-500">{compact(n)}</span>
             </div>
           );
         })}
@@ -40,6 +43,7 @@ export default function AuctionPanel({ tick }: { tick: number }) {
   const r = a?.read;
   const resp = r?.response.kind ? KIND[r.response.kind] : null;
   const px = a?.last_close ?? null;
+  const kind = a?.profile_kind?.startsWith("VOLUME") ? "volume, NIFTY FUT" : "TPO";
   const steps: [string, string, React.ReactNode][] = r ? [
     ["1", "Location", r.location.text],
     ["2", "Effort", <span className={r.effort.available ? "" : "text-slate-400"}>{r.effort.text}</span>],
@@ -67,8 +71,8 @@ export default function AuctionPanel({ tick }: { tick: number }) {
             </tbody>
           </table>
           <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.3fr] gap-3">
-            {a.prev ? <Profile p={a.prev} title="Previous day (TPO)" px={px} /> : <div className="text-slate-500">No previous-day profile yet.</div>}
-            {a.today ? <Profile p={a.today} title="Today, developing (TPO)" px={px} /> : <div className="text-slate-500">No candles today yet.</div>}
+            {a.prev ? <Profile p={a.prev} title={`Previous day (${kind})`} px={px} /> : <div className="text-slate-500">No previous-day profile yet.</div>}
+            {a.today ? <Profile p={a.today} title={`Today, developing (${kind})`} px={px} /> : <div className="text-slate-500">No candles today yet.</div>}
             <div className="min-w-0 space-y-2">
               <div>
                 <div className="text-[11px] text-slate-400 mb-1">References today</div>

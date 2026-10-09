@@ -94,7 +94,7 @@ def test_no_look_ahead():
 def test_effort_unavailable_is_honest():
     res = auction.compute(an_of([22000, 22001, 21999, 22000, 22014]), prev_day_1m())
     eff = res["read"]["effort"]
-    assert eff["available"] is False and "Delta unavailable" in eff["text"] and eff["z"] is None
+    assert eff["available"] is False and "Unavailable" in eff["text"] and eff["z"] is None
     assert "TPO" in res["profile_kind"]
 
 

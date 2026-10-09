@@ -102,14 +102,18 @@ def refs_for(day: str, profiles: Dict[str, Dict[str, Any]]) -> List[Dict[str, An
 
 # ── bar scan ─────────────────────────────────────────────────────────────────
 def compute(an, rows_1m: List[Dict[str, float]], delta_bars: Optional[Dict[int, float]] = None,
-            delta_label: str = "unavailable") -> Dict[str, Any]:
+            delta_label: str = "unavailable", vol: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """vol (optional): {"profiles": day → VOLUME profile (NIFTY FUT, basis-adjusted), "rvol": bar ts → {rvol},
+    "act": bar ts → {z} (options activity)}. With volume profiles the references are volume-based; else TPO."""
     """an: engine Analysis of the chart tf (closed bars). delta_bars: {bar ts → delta z} from a REAL delta source,
     or None. Returns profiles, balance boxes, events, the 5-question read, and chart markers."""
     C = cfg()
     b, A = an.bars, an.atr
     N = len(b)
     step = float(C["step_pts"])
-    profiles = day_profiles(rows_1m, step, float(C["value_area_pct"]))
+    vol = vol or {}
+    use_vol = bool(vol.get("profiles"))
+    profiles = vol["profiles"] if use_vol else day_profiles(rows_1m, step, float(C["value_area_pct"]))
     events: List[Dict[str, Any]] = []
     boxes: List[Dict[str, Any]] = []
     pending: Dict[str, Dict[str, Any]] = {}
@@ -199,14 +203,15 @@ def compute(an, rows_1m: List[Dict[str, float]], delta_bars: Optional[Dict[int, 
                   "start": hm(int(b.ts[x["start_i"]])), "end": hm(int(b.ts[x["end_i"]])), "bars": x["end_i"] - x["start_i"] + 1,
                   "active": x["end_i"] == last_i and x["escaped"] is None})
     today = ist_date(int(b.ts[last_i])).isoformat()
-    res = {"tf": an.tf, "profile_kind": "TPO (time at price) — NIFTY index has no volume",
+    res = {"tf": an.tf, "profile_kind": ("VOLUME profile — current-month NIFTY future, basis-adjusted to index prices"
+                                         if use_vol else "TPO (time at price) — no futures volume loaded yet"),
            "today": profiles.get(today), "prev": profiles.get(max([d for d in profiles if d < today], default="")) if profiles else None,
            "refs": refs_for(today, profiles), "boxes": [x for x in boxes if ist_date(int(b.ts[x["end_i"]])).isoformat() == today][-6:],
            "events": events,
            "pending": [{"ref": p["ref"]["name"], "level": p["ref"]["price"], "since": hm(int(b.ts[p["k"]])),
                         "side": "above" if p["up"] else "below"} for p in pending.values()],
            "delta_label": delta_label, "last_close": float(b.c[last_i])}
-    res["read"] = read(an, res, delta_bars, delta_label, C)
+    res["read"] = read(an, res, delta_bars, delta_label, C, vol)
     for k in ("today", "prev"):
         if res[k]:
             res[k] = {kk: v for kk, v in res[k].items() if kk != "hist"} | {"hist": res[k]["hist"][-160:]}
@@ -214,7 +219,8 @@ def compute(an, rows_1m: List[Dict[str, float]], delta_bars: Optional[Dict[int, 
 
 
 # ── the 5 questions ──────────────────────────────────────────────────────────
-def read(an, res: Dict[str, Any], delta_bars: Optional[Dict[int, float]], delta_label: str, C: Dict[str, Any]) -> Dict[str, Any]:
+def read(an, res: Dict[str, Any], delta_bars: Optional[Dict[int, float]], delta_label: str, C: Dict[str, Any],
+         vol: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     b, A = an.bars, an.atr
     i = len(b) - 1
     c, atr = float(b.c[i]), max(float(A[i]), 1e-9)
@@ -237,18 +243,36 @@ def read(an, res: Dict[str, Any], delta_bars: Optional[Dict[int, float]], delta_
     loc = {"text": where + (f" · at {', '.join(r['name'] + ' ' + format(r['price'], ',.1f') for r in at)}" if at else ""),
            "at_ref": bool(at) or edge in ("at the balance high", "at the balance low")}
 
-    # 2 EFFORT (real delta only)
-    if delta_bars:
+    # 2 EFFORT — delta (who attacked) if a source is connected; volume + options activity (how much traded)
+    vol = vol or {}
+    parts, high = [], False
+    z = None
+    if delta_bars is not None:
         zs = [delta_bars.get(int(b.ts[k])) for k in range(max(0, i - 2), i + 1)]
-        zs = [z for z in zs if z is not None]
+        zs = [x for x in zs if x is not None]
         z = zs[-1] if zs else None
-        eff = {"available": True, "z": z, "text": (f"delta z {z:+.1f} on the last closed candle ({delta_label})" if z is not None
-                                                   else f"no delta reading on the last candle ({delta_label})"),
-               "high": z is not None and abs(z) >= float(C["effort_high_z"])}
+        if z is not None:
+            parts.append(f"delta z {z:+.1f} ({delta_label})")
+            high |= abs(z) >= float(C["effort_high_z"])
+        else:
+            parts.append(f"no delta reading on the last candle yet ({delta_label} — needs ≥ 80 % of its minutes recorded)")
+    rv = (vol.get("rvol") or {}).get(int(b.ts[i])) or {}
+    rvol = rv.get("rvol")
+    if rvol is not None:
+        parts.append(f"FUT volume {rvol:.1f}× normal for this time of day")
+        high |= rvol >= float(C.get("effort_high_rvol", 1.5))
+    act = (vol.get("act") or {}).get(int(b.ts[i])) or {}
+    az = act.get("z")
+    if az is not None:
+        parts.append(f"options activity z {az:+.1f} (direction unknown)")
+        high |= az >= float(C.get("effort_high_act_z", 2.0))
+    if parts:
+        eff = {"available": True, "z": z, "rvol": rvol, "act_z": az, "high": high, "text": " · ".join(parts)
+               + ("" if delta_bars is not None else " — volume says how much traded, not who won: no delta source yet")}
     else:
-        eff = {"available": False, "z": None, "high": False,
-               "text": "Delta unavailable — the NIFTY index has no volume and no aggressor-tagged source is connected. "
-                       "Effort can't be measured honestly; judge on location + response only (structure only)."}
+        eff = {"available": False, "z": None, "rvol": None, "act_z": None, "high": False,
+               "text": "Unavailable — no futures volume, options activity or delta source yet. Judge on location + "
+                       "response only (structure only)."}
 
     # 3 RESULT
     k0 = max(0, i - 2)

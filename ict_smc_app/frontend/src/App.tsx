@@ -15,7 +15,7 @@ const TFS: TF[] = ["1m", "5m", "15m", "1h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "1h": 30, "1D": 60 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
-  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"],
+  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"],
 ];
 
 export default function App() {
@@ -24,7 +24,7 @@ export default function App() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [layers, setLayers] = useState<Layers>({ ob: true, fvg: true, liq: true, structure: true, swings: false, range: true, session: true, delta: true, deltaDetail: false, crt: true, auction: true });
+  const [layers, setLayers] = useState<Layers>({ ob: true, fvg: true, liq: true, structure: true, swings: false, range: true, session: true, delta: true, deltaDetail: false, crt: true, auction: true, volume: true });
   const [bottom, setBottom] = useState<"chain" | "paper" | "delta" | "auction">("chain");
   const [chainTick, setChainTick] = useState(0);
   const [storyTick, setStoryTick] = useState(0);
@@ -89,6 +89,9 @@ export default function App() {
               {analysis?.range && <span>Range {analysis.range.low.toFixed(1)}–{analysis.range.high.toFixed(1)} · EQ {analysis.range.eq.toFixed(1)} · price in <b className={analysis.range.zone === "premium" ? "text-bear-400" : "text-bull-400"}>{analysis.range.zone}</b> ({analysis.range.pos_pct} %)</span>}
               {analysis?.experimental && <span className="text-amber-300 font-semibold">{analysis.instrument?.label} · {analysis.experimental}</span>}
               {analysis?.proxy?.enabled && <span className="text-amber-300">{analysis.proxy.label}: {analysis.proxy.available ? "on" : analysis.proxy.message}</span>}
+              {analysis?.volume && (analysis.volume.available
+                ? <span className="text-slate-300">Volume: NIFTY FUT {analysis.volume.contract?.split(" (")[0]} · basis {analysis.volume.basis?.toFixed(1)}{analysis.volume.last_vwap ? ` · VWAP ${analysis.volume.last_vwap.v.toFixed(1)}` : ""}{analysis.volume.last?.last_rvol != null ? ` · last bar ${analysis.volume.last.last_rvol.toFixed(1)}× vol` : ""}{analysis.volume.avwaps?.length ? ` · AVWAP: ${analysis.volume.avwaps.map((x, i) => `${i ? "amber" : "violet"} = ${x.label.replace("AVWAP · ", "")}`).join(", ")}` : ""}</span>
+                : <span className="text-slate-500">Volume: {analysis.volume.message}</span>)}
               {analysis?.delta && <span className={analysis.delta.mock ? "text-amber-300" : analysis.delta.available ? "text-slate-300" : "text-slate-500"}>
                 Delta: {analysis.delta.available ? `${analysis.delta.adapter}${analysis.delta.mock ? " (MOCK)" : ""}` : "unavailable"}</span>}
               <span className="text-slate-500">Overlays use CLOSED candles only — the forming candle never paints a signal.</span>

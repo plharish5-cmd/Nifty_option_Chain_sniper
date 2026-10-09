@@ -115,8 +115,8 @@
   },
   "delta": {
     "_note": "Positive delta = buyers attacking (market buys > market sells). Negative = sellers attacking. NIFTY index has no volume: delta needs futures footprint data, a CSV, or the mock (dev only).",
-    "adapter": "none",
-    "_adapter_note": "none (Unavailable, default) | footprint_feed (Real-feed: stub until wired) | csv | mock (deterministic fake, banner, never stored)",
+    "adapter": "fut_quote_rule",
+    "_adapter_note": "fut_quote_rule (default: ESTIMATED delta recorded live from the NIFTY future — quote/tick rule on Dhan Full packets) | none (Unavailable) | footprint_feed (stub) | csv | mock (dev only)",
     "timeframes": [
       "1m",
       "5m",
@@ -163,7 +163,8 @@
       "min_wick_ratio": 0.4,
       "_note": "Without price levels: delta spike + a wick >= min_wick_ratio of the range in the delta's direction, at a zone = 'Proxy imbalance' (labelled, never called footprint)."
     },
-    "keep_days": 10
+    "keep_days": 10,
+    "fut_level_step": 5.0
   },
   "confluence": {
     "_note": "Only adjusts confidence of Setup A/C. Never creates, removes or changes a trade or its status.",
@@ -347,5 +348,42 @@
     "effort_high_z": 2.0,
     "result_low_atr": 0.35,
     "response_lookback_bars": 6
+  },
+  "futures": {
+    "_note": "Current-month NIFTY future = the only real NIFTY volume. Resolved from Dhan's scrip master, accepted only if it trades within max_basis_pct of the index. Pin with security_id (or env NIFTY_FUT_ID).",
+    "enabled": true,
+    "security_id": null,
+    "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
+    "max_candidates": 3,
+    "max_basis_pct": 2.5,
+    "rollover_days": 4,
+    "backfill_days": 7,
+    "candle_fetch_delay_s": 4,
+    "resolve_every_s": 3600
+  },
+  "volume": {
+    "_note": "Real volume from the basis-adjusted NIFTY future. Activity, never direction. Display only: never changes a trigger, a zone or a signal.",
+    "step_pts": 5.0,
+    "value_area_pct": 0.7,
+    "rvol_days": 10,
+    "rvol_min_days": 2,
+    "rvol_fallback_bars": 20,
+    "rvol_high": 1.5,
+    "rvol_low": 0.7,
+    "min_coverage": 0.8,
+    "hvn_ratio": 1.3,
+    "lvn_ratio": 0.5,
+    "max_nodes": 3,
+    "naked_poc_days": 5,
+    "vwap_bands": [
+      1,
+      2
+    ]
+  },
+  "activity": {
+    "_note": "Options ACTIVITY gauge: new volume × |delta| over the strikes within ±strikes_each_side of ATM, nearest expiry. Live only. Direction unknown.",
+    "strikes_each_side": 10,
+    "z_window": 30,
+    "high_z": 2.0
   }
 }

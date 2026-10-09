@@ -17,6 +17,10 @@ Binary replies are little-endian. Header = 8 bytes:
   byte 3      exchange segment (0 = IDX_I, 1 = NSE_EQ, 2 = NSE_FNO …)
   bytes 4-7   int32 security id
 Ticker body: float32 LTP, int32 LTT.   Prev-close body: float32 prev close, int32 prev OI.
+Quote (4) / Full (8), offsets from the packet start: 8 LTP f32 · 12 LTQ i16 · 14 LTT i32 · 18 ATP f32 · 22 cumulative
+day volume i32 · 26 total sell qty i32 · 30 total buy qty i32 · (full: 34-45 OI / OI high / OI low, 46-61 O C H L)
+· full 62-161 = 5 depth levels of 20 bytes: bid qty i32, ask qty i32, bid orders i16, ask orders i16, bid f32, ask f32.
+The NIFTY future is subscribed in FULL mode (RequestCode 21) for the volume recorder; the index stays on ticker.
 Disconnect body: int16 reason (805 too many connections, 807 token expired, 808 auth failed, 809 token invalid …).
 
 LTT TIME BASE. Different Dhan feeds have been seen stamping LTT either as a true epoch or as IST wall-clock
@@ -42,6 +46,7 @@ log = logging.getLogger("dhan.feed")
 HDR = struct.Struct("<BHBI")
 TICK = struct.Struct("<fi")
 PREV = struct.Struct("<fi")
+DEPTH = struct.Struct("<iihhff")     # full packet depth level: bid qty, ask qty, bid orders, ask orders, bid px, ask px
 SEG = {0: "IDX_I", 1: "NSE_EQ", 2: "NSE_FNO", 3: "NSE_CURRENCY", 4: "BSE_EQ", 5: "MCX_COMM", 7: "BSE_CURRENCY", 8: "BSE_FNO"}
 DISCONNECT_REASON = {805: "too many connections/requests (max 5 sockets per user)", 806: "Data API not subscribed",
                      807: "access token expired", 808: "authentication failed", 809: "access token invalid",
@@ -69,6 +74,14 @@ def decode(buf: bytes) -> List[dict]:
                 p["ltp"] = struct.unpack_from("<f", buf, body)[0]
                 if body + 14 <= n:
                     p["ltt"] = struct.unpack_from("<i", buf, body + 6)[0]
+                if i + 34 <= n:                                   # LTQ, ATP, cumulative day volume, total sell/buy qty
+                    p["ltq"] = struct.unpack_from("<h", buf, i + 12)[0]
+                    p["atp"], p["volume"] = struct.unpack_from("<fi", buf, i + 18)
+                    p["tot_sell"], p["tot_buy"] = struct.unpack_from("<ii", buf, i + 26)
+                if code == 8 and i + 62 + 20 <= n:                # full: best bid / ask = first of 5 depth levels
+                    bq, aq, _bo, _ao, bp, ap = DEPTH.unpack_from(buf, i + 62)
+                    if 0 < bp <= ap:
+                        p["bid"], p["ask"], p["bid_qty"], p["ask_qty"] = bp, ap, bq, aq
         except struct.error:
             pass
         out.append(p)
@@ -77,13 +90,17 @@ def decode(buf: bytes) -> List[dict]:
 
 
 TickCB = Callable[[str, float, float], Awaitable[None]]
+FullCB = Callable[[dict, float], Awaitable[None]]
 PrevCB = Callable[[str, float], Awaitable[None]]
 
 
 class Feed:
     def __init__(self, ids: List[str], on_tick: TickCB, on_prev: Optional[PrevCB] = None,
-                 segment: str = "IDX_I") -> None:
+                 segment: str = "IDX_I", on_full: Optional[FullCB] = None) -> None:
         self.ids, self.segment = [str(x) for x in ids], segment
+        self.full: Dict[str, str] = {}                      # sid → segment, subscribed in FULL mode (futures)
+        self.on_full = on_full
+        self._ws = None
         self.on_tick, self.on_prev = on_tick, on_prev
         self.status = "idle"
         self.last_tick: Dict[str, float] = {}
@@ -141,6 +158,7 @@ class Feed:
                                               close_timeout=5, max_size=2 ** 22) as ws:
                     self.connects += 1
                     self.status = "connected"
+                    self._ws = ws
                     await self._subscribe(ws)
                     async for msg in ws:
                         if self._stop.is_set():
@@ -157,6 +175,7 @@ class Feed:
                 if "401" in self.last_error or "403" in self.last_error:
                     self.token_blocked = True
                     self.status = "token rejected — update DHAN_ACCESS_TOKEN in .env"
+            self._ws = None
             if self._stop.is_set():
                 break
             lived = time.monotonic() - t0
@@ -178,9 +197,35 @@ class Feed:
             await ws.send(json.dumps({"RequestCode": 15, "InstrumentCount": len(chunk),
                                       "InstrumentList": [{"ExchangeSegment": self.segment, "SecurityId": s} for s in chunk]}))
 
+        for sid, seg in self.full.items():
+            await ws.send(json.dumps({"RequestCode": 21, "InstrumentCount": 1,
+                                      "InstrumentList": [{"ExchangeSegment": seg, "SecurityId": sid}]}))
+
+    async def subscribe_full(self, seg: str, sid: str) -> None:
+        """Add (or swap to) a FULL-mode instrument; sent at once when connected, and on every reconnect."""
+        sid = str(sid)
+        old = [s for s in self.full if s != sid]
+        self.full = {sid: seg}
+        ws = self._ws
+        if ws is None:
+            return
+        try:
+            for o in old:
+                await ws.send(json.dumps({"RequestCode": 22, "InstrumentCount": 1,
+                                          "InstrumentList": [{"ExchangeSegment": seg, "SecurityId": o}]}))
+            await ws.send(json.dumps({"RequestCode": 21, "InstrumentCount": 1,
+                                      "InstrumentList": [{"ExchangeSegment": seg, "SecurityId": sid}]}))
+        except Exception as e:                               # noqa: BLE001 — the reconnect resubscribes anyway
+            log.warning("full subscribe failed: %s", e)
+
     async def _handle(self, msg: bytes) -> None:
         for p in decode(msg):
             code = p["code"]
+            if p["sid"] in self.full and code in (4, 8):
+                if self.on_full and p.get("ltp"):
+                    self.last_tick[p["sid"]] = time.time()
+                    await self.on_full(p, self._tick_time(p.get("ltt")))
+                continue
             if code in (1, 2, 4, 8) and p.get("ltp"):
                 t = self._tick_time(p.get("ltt"))
                 self.last_tick[p["sid"]] = time.time()

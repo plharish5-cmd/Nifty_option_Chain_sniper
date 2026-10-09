@@ -587,3 +587,46 @@ Cards 3, 4, 6 (aggression ≠ success, passive liquidity, positive delta + falli
 Delta / Footprint absorption rules 1 and 2 — they work once a real delta source is connected.
 
 Rules: `rules.json → auction`. API: `GET /api/auction?tf=5m`. Tests: `tests/test_auction.py`.
+
+## 12 · Real volume — NIFTY future, VWAP, estimated delta, options activity (added 10 Oct 2026)
+
+The NIFTY index (IDX_I 13) has volume 0. The desk now reads the **current-month NIFTY future** (NSE_FNO FUTIDX).
+Display / context only: no trigger, zone, signal, paper trade or scorecard row changes (baseline lock passes).
+
+### 12.1 Which contract (market/futures.py)
+* Dhan scrip master → NSE FUTIDX rows whose symbol starts with `NIFTY-` (BANKNIFTY / NIFTYNXT50 excluded), nearest
+  unexpired first; cached daily in `data/scrip_master_futidx.csv`.
+* **Price check**: accepted only within `futures.max_basis_pct` (2.5 %) of the index — a name match alone once
+  produced VWAP from an instrument at 1,580 (your dhan_client.py lesson).
+* **Rollover**: within `rollover_days` (4) of expiry, if next month traded more today, next month is used.
+* Pin: `rules.json → futures.security_id` or env `NIFTY_FUT_ID`. Status: dashboard / `GET /api/volume`.
+* Candles: REST 1-minute with volume (7 days on start, then each minute + 4 s), sec_id `FUT`.
+* **Basis-adjusted**: every minute, future OHLC − (future close − spot close) → levels sit on the NIFTY chart.
+
+### 12.2 Volume engine (engine/volume.py)
+| Item | Rule |
+|------|------|
+| Volume profile | each minute's volume spread evenly over the 5-pt buckets it traded; POC; value area 70 %; HVN = local peak ≥ 1.3× mean; LVN = local trough ≤ 0.5× mean between two HVNs |
+| Naked POC | an earlier day's POC no later minute has traded through (last 5 days) |
+| VWAP | Σ(typical × vol)/Σ vol from 09:15; σ = volume-weighted std; bands ±1σ, ±2σ; plotted at each candle's close |
+| Anchored VWAP | from the start of the leg of the last MSS; from the newest active CRT candle |
+| RVOL | candle volume ÷ average of the same clock slot over the previous ≤ 10 days (≥ 2 needed), else previous 20 candles; only earlier data; ≥ 80 % minute coverage |
+| Annotations | OB = displacement candle RVOL · FVG = gap candle · BOS/MSS/sweep marker `V2.1` (≥ 1.5×) or `lowV` (≤ 0.7×) · CRT candle RVOL |
+
+### 12.3 Estimated delta (delta/recorder.py, adapter `fut_quote_rule`, now the default)
+Dhan v2 Full packet (RequestCode 21) of the future: LTP, cumulative volume, best bid/ask. Δ volume between packets is
+classed: price ≥ previous ask → buy; ≤ previous bid → sell; else tick rule; else unclassified (never guessed).
+Levels mapped to index prices with a smoothed live basis, `delta.fut_level_step` (5) points per row. Stored in
+delta_bars / footprint_levels (inst `FUTQR`) — survives restarts. **Limits**: snapshots, not every trade; no history
+before the first recorded session; index only (strike flow stays on its own sources). Labelled "ESTIMATED" everywhere.
+It also writes a provisional FUT 1-minute candle the instant a minute closes; REST overwrites it with Dhan's numbers.
+
+### 12.4 Options activity (market/activity.py)
+Nearest expiry, ±10 strikes of ATM: new volume since the previous chain poll × |delta| → per minute (table
+`opt_activity`). z-score vs the previous 30 candles. Participation only, direction unknown. Live only.
+
+### 12.5 Auction now uses volume
+Value area / POC references come from the volume profile (TPO only when no futures data). Effort (question 2) =
+estimated delta z + FUT RVOL + options activity z; "high effort, low result" fires on any of them.
+
+Rules: `futures`, `volume`, `activity`, `delta.fut_level_step`. API: `GET /api/volume?tf=5m`. Tests: `tests/test_volume.py`.

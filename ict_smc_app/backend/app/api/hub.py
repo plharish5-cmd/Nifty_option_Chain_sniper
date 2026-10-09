@@ -32,6 +32,10 @@ from ..strikes.selector import StrikeBook, select_strikes
 from ..delta import confluence
 from ..delta import engine as delta_engine
 from ..engine import auction as auction_mod
+from ..engine import volume as vol_mod
+from ..market import activity as act_mod
+from ..market import futures as fut_mod
+from ..delta.recorder import FutRecorder
 from ..engine import registry
 from ..engine.analyze import Analysis, analyze, to_json
 from ..market.candles import Candles, backfill, backfill_daily, session_filter
@@ -56,7 +60,13 @@ class Hub:
         self.bias_tf = config.rule("playbook", "bias_tf", "15m")
         self.rest = DhanREST()
         self.candles = Candles(self.on_close_1m)
-        self.feed = Feed([self.nifty, self.vix], self.on_tick, self.on_prev)
+        self.feed = Feed([self.nifty, self.vix], self.on_tick, self.on_prev, on_full=self.on_full)
+        # real volume: current-month NIFTY future (REST candles + live Full packets) and options activity
+        self.fut: Optional[Dict[str, Any]] = None
+        self.fut_status = "not resolved yet"
+        self.recorder = FutRecorder(lambda: self.candles.last_price.get(self.nifty))
+        self.activity = act_mod.Activity()
+        self.volume: Dict[str, Dict[str, Any]] = {}
         self.chain = ChainPoller(self.rest, self.on_chain)
         self.alerts = alerts_mod.Alerts(self.broadcast)
         self.clients: Set[WebSocket] = set()
@@ -95,8 +105,10 @@ class Hub:
     async def start(self) -> None:
         db.conn()
         await self.repair(full=True)
+        await self.setup_futures()
         self.recompute_all(after_repair=True)
-        for coro in (self.feed.run(), self.candles.sweep_timer(), self.chain.run(), self.watchdog(), self.housekeeping()):
+        for coro in (self.feed.run(), self.candles.sweep_timer(), self.chain.run(), self.watchdog(), self.housekeeping(),
+                     self.futures_loop()):
             self._tasks.append(asyncio.create_task(coro))
 
     async def stop(self) -> None:
@@ -114,6 +126,8 @@ class Hub:
             if full:
                 await backfill_daily(self.rest, self.nifty, int(D["daily_days"]))
             self.status["backfill"] = f"ok · {n} one-minute candles · {now_ist():%H:%M:%S}"
+            if self.fut and not full:
+                await fut_mod.refresh(self.rest, self.fut["sid"], 1)
             self.status["token"] = "valid"
         except TokenError as e:
             self.status["token"] = "expired / invalid — paste a fresh DHAN_ACCESS_TOKEN in .env"
@@ -136,12 +150,72 @@ class Hub:
             self._last_tick_push = time.time()
             await self.broadcast({"type": "quote", "quote": self.quote()})
 
+    async def on_full(self, p: Dict[str, Any], t: float) -> None:
+        """NIFTY future Full packet → estimated delta + provisional FUT 1m volume (recorder)."""
+        try:
+            self.recorder.on_packet(p, t)
+        except Exception:                                    # noqa: BLE001 — never lose the feed over the recorder
+            log.exception("recorder")
+
+    # ── futures (real volume) ─────────────────────────────────────────────
+    async def setup_futures(self) -> None:
+        if not config.rule("futures", "enabled", True):
+            self.fut_status = "disabled in rules.json (futures.enabled)"
+            return
+        q = self.quote()
+        try:
+            pick, why = await fut_mod.resolve(self.rest, float(q.get("spot") or 0))
+        except Exception as e:                               # noqa: BLE001
+            pick, why = None, f"resolve failed: {str(e)[:160]}"
+        if not pick:
+            self.fut_status = f"unavailable — {why}"
+            log.warning("NIFTY future: %s", self.fut_status)
+            return
+        changed = not self.fut or self.fut["sid"] != pick["sid"]
+        self.fut = pick
+        self.fut_status = f"{pick['symbol']} (id {pick['sid']}" + (f", expiry {pick['expiry']})" if pick.get("expiry") else ")")
+        try:
+            n = await fut_mod.refresh(self.rest, pick["sid"], int(config.rule("futures", "backfill_days", 7)) if changed else 1)
+            self.fut_status += f" · {n} one-minute candles"
+        except DhanError as e:
+            self.fut_status += f" · candles failed: {str(e)[:100]}"
+        if changed:
+            await self.feed.subscribe_full("NSE_FNO", pick["sid"])
+            log.info("NIFTY future: %s — %s", self.fut_status, why)
+
+    async def futures_loop(self) -> None:
+        """Re-resolve hourly (rollover) and fetch the official FUT candle a few seconds after each minute."""
+        last_resolve = time.time()
+        while True:
+            await asyncio.sleep(5)
+            try:
+                if time.time() - last_resolve > float(config.rule("futures", "resolve_every_s", 3600)) or not self.fut:
+                    last_resolve = time.time()
+                    if market_open_now() or not self.fut:
+                        await self.setup_futures()
+            except Exception:                                # noqa: BLE001
+                log.exception("futures loop")
+
+    async def _fut_after_close(self) -> None:
+        await asyncio.sleep(float(config.rule("futures", "candle_fetch_delay_s", 4)))
+        if self.fut:
+            try:
+                await fut_mod.refresh(self.rest, self.fut["sid"], 1)
+            except DhanError as e:
+                self.fut_status = self.fut_status.split(" · ")[0] + f" · refresh failed: {str(e)[:80]}"
+
     async def on_prev(self, sid: str, pc: float) -> None:
         self.prev_close[sid] = pc
 
     async def on_close_1m(self, sid: str, c: Dict[str, float]) -> None:
         if sid != self.nifty:
             return
+        try:
+            self.recorder.close_minute(int(c["ts"]))           # estimated delta + provisional FUT volume first
+        except Exception:                                    # noqa: BLE001
+            log.exception("recorder close")
+        if self.fut:
+            asyncio.create_task(self._fut_after_close())
         for closed_trade in paper.on_1m_close_all(c):
             await self.broadcast({"type": "paper", "trade": closed_trade})
         end = c["ts"] + 60
@@ -164,6 +238,11 @@ class Hub:
             asyncio.create_task(self._options_after_close())
 
     async def on_chain(self, expiry: str, ch: Dict[str, Any]) -> None:
+        if self.chain.expiries and expiry == self.chain.expiries[0]:
+            try:
+                self.activity.ingest(ch)
+            except Exception:                                # noqa: BLE001
+                log.exception("activity")
         await self.broadcast({"type": "chain", "expiry": expiry, "summary": self.chain.summary(expiry)})
         if expiry == self.sel_expiry() and config.rule("strikes", "enabled", True):
             try:
@@ -368,6 +447,7 @@ class Hub:
             log.exception("delta %s failed", tf)
             dres = {"tf": tf, "available": False, "mock": False, "message": f"delta error: {e}", "events": [], "bars": []}
         self.delta[tf] = dres
+        vctx = self.volume_for(tf, an, j)
         first_ts = int(an.bars.ts[max(0, len(an.bars) - 150)])
         j["markers"] = sorted(j["markers"] + delta_engine.markers(dres["events"], first_ts), key=lambda m: m["time"])
         self._mk[tf] = list(j["markers"])
@@ -379,7 +459,7 @@ class Hub:
             real = dres.get("available") and not dres.get("mock")
             dz = {int(x["ts"]): x["z"] for x in dres.get("bars", []) if x.get("z") is not None} if dres.get("available") else None
             lbl = f"{dres.get('adapter')}{' (MOCK)' if dres.get('mock') else ''}" if dres.get("available") else "unavailable"
-            ares = auction_mod.compute(an, self.rows_1m(4), dz if (real or dres.get("mock")) else None, lbl)
+            ares = auction_mod.compute(an, self.rows_1m(4), dz if (real or dres.get("mock")) else None, lbl, vctx)
             self.auction[tf] = ares
             j["auction"] = {k: ares[k] for k in ("today", "prev", "boxes", "read", "refs")} | {
                 "markers": auction_mod.markers(ares, int(an.bars.ts[max(0, len(an.bars) - 150)]))}
@@ -430,6 +510,91 @@ class Hub:
                 if t:
                     await self.broadcast({"type": "paper", "trade": t})
 
+    # ── volume (NIFTY FUT, basis-adjusted) ────────────────────────────────
+    def mapped_1m(self) -> List[Dict[str, float]]:
+        key = (db.last_candle_ts(fut_mod.SEC), db.last_candle_ts(self.nifty))
+        if getattr(self, "_mp_key", None) != key:
+            self._mp_key = key
+            self._mp = fut_mod.mapped(self.rows_1m(8), fut_mod.rows_1m(8)) if key[0] else []
+            self._rv_cache: Dict[str, Any] = {}
+        return self._mp
+
+    def rvol_tf(self, tf: str) -> Dict[int, Dict[str, Any]]:
+        mp = self.mapped_1m()
+        if tf not in self._rv_cache:
+            self._rv_cache[tf] = vol_mod.rvol(mp, tf) if mp else {}
+        return self._rv_cache[tf]
+
+    def volume_for(self, tf: str, an, j: Dict[str, Any]) -> Dict[str, Any]:
+        """Volume layer for one chart tf + RVOL annotations on OB / FVG / BOS / MSS / sweeps. Display only.
+        Returns the context the auction read uses (volume profiles, RVOL, options activity)."""
+        try:
+            mp = self.mapped_1m()
+            b, N = an.bars, len(an.bars)
+            t0 = int(b.ts[max(0, N - 300)])
+            act = act_mod.per_bar(act_mod.rows_since(t0 - 6 * 3600), tf, int(config.rule("activity", "z_window", 30)))
+            if not mp:
+                j["volume"] = {"available": False, "message": f"NIFTY future: {self.fut_status}",
+                               "act_last": act.get(int(b.ts[-1]))}
+                return {"act": act}
+            rv = self.rvol_tf(tf)
+            summ = vol_mod.annotate(j, an, rv)
+            profiles = vol_mod.day_profiles(mp)
+            today = ist_date(int(b.ts[-1])).isoformat()
+            step = TF_SECONDS[tf]
+            bars, idx = [], {}
+            for k in range(max(0, N - 300), N):
+                ts = int(b.ts[k])
+                x = rv.get(ts) or {}
+                bars.append({"time": chart_time(ts), "v": x.get("v", 0), "rvol": x.get("rvol"), "up": bool(b.c[k] >= b.o[k])})
+                idx[ts] = k
+
+            def sample(series: List[Dict[str, Any]], from_ts: int = 0) -> List[Dict[str, Any]]:
+                by = {p["ts"]: p for p in series}
+                out = []
+                for ts in idx:
+                    if ts < from_ts:
+                        continue
+                    p = None
+                    for mm in range(ts + step - 60, ts - 60, -60):   # value at the bar's last minute (its close)
+                        p = by.get(mm)
+                        if p:
+                            break
+                    if p:
+                        out.append({"time": chart_time(ts), "v": p["vwap"], "sd": p["sd"]})
+                return out
+
+            days = sorted({ist_date(ts).isoformat() for ts in idx})
+            vw: List[Dict[str, Any]] = []
+            for d in days:
+                vw += sample(vol_mod.session_vwap(mp, d))
+            avwaps = []
+            mss = next((e for e in reversed(an.events) if e.is_mss), None)
+            if mss is not None:
+                a_ts = int(b.ts[mss.origin_i])
+                avwaps.append({"label": f"AVWAP · MSS leg {hm(a_ts)}", "anchor": chart_time(a_ts), "dir": mss.dir,
+                               "points": sample(vol_mod.vwap_series(mp, a_ts), a_ts)})
+            crs = [r for pr in self.crt.values() for r in pr.get("ranges", []) if r.get("status") in ("armed", "tbs", "entered")]
+            if crs:
+                cr = max(crs, key=lambda r: r["k_ts"])
+                avwaps.append({"label": f"AVWAP · CRT {cr['htf']} {hm(cr['k_ts'])}", "anchor": chart_time(cr["k_ts"]),
+                               "dir": "flat", "points": sample(vol_mod.vwap_series(mp, int(cr["k_ts"])), int(cr["k_ts"]))})
+            strip = lambda p: {k: v for k, v in p.items() if k != "hist"} if p else None   # noqa: E731
+            prev_day = max([d for d in profiles if d < today], default=None)
+            naked = vol_mod.naked_pocs(profiles, mp, today)
+            last_vw = vw[-1] if vw else None
+            j["volume"] = {"available": True, "contract": self.fut_status, "basis": mp[-1]["basis"], "bars": bars,
+                           "vwap": vw, "bands": config.rule("volume", "vwap_bands", [1, 2]), "avwaps": avwaps,
+                           "today": strip(profiles.get(today)), "prev": strip(profiles.get(prev_day)) if prev_day else None,
+                           "naked": naked, "last": summ, "act_last": act.get(int(b.ts[-1])),
+                           "last_vwap": last_vw, "rvol_method": summ.get("method")}
+            self.volume[tf] = dict(j["volume"], profiles={d: profiles[d] for d in sorted(profiles)[-3:]})
+            return {"profiles": profiles, "rvol": rv, "act": act}
+        except Exception as e:                               # noqa: BLE001 — never lose the chart over volume
+            log.exception("volume %s failed", tf)
+            j["volume"] = {"available": False, "message": f"volume error: {e}"}
+            return {}
+
     def crt_view(self, tf: str) -> Dict[str, Any]:
         """Ranges + markers for a chart tf: every pair whose LTF is as fine or finer than the chart, bucketed."""
         out = {"ranges": [], "markers": [], "pairs": []}
@@ -439,7 +604,9 @@ class Hub:
             if TF_SECONDS[r["ltf"]] > TF_SECONDS[tf] and r["htf"] != tf:
                 continue
             out["pairs"].append({"pair": pid, "name": r["name"], "message": r.get("message", "")})
-            out["ranges"] += [dict(x, pair_name=r["name"]) for x in r["ranges"][-4:]]
+            rv = self.rvol_tf(r["htf"]) if self.mapped_1m() else {}
+            out["ranges"] += [dict(x, pair_name=r["name"], rvol=(rv.get(int(x["k_ts"])) or {}).get("rvol"))
+                              for x in r["ranges"][-4:]]
             if TF_SECONDS[r["ltf"]] <= TF_SECONDS[tf]:
                 out["markers"] += crt_tbs.markers(r, tf, 0)
         out["markers"].sort(key=lambda m: m["time"])
@@ -570,6 +737,25 @@ class Hub:
                 r = an.rng
                 parts.append(f"in {r['zone']} ({r['pos_pct']:.0f} %) of {r['low']:,.0f}–{r['high']:,.0f}")
             out.append(f"{tf}: " + " · ".join(parts))
+        v = self.volume.get(self.primary)
+        p = self.analyses.get(self.primary)
+        if v and v.get("available") and p is not None:
+            px = float(p.bars.c[-1])
+            bits = []
+            lv = v.get("last_vwap")
+            if lv:
+                sdv = (px - lv["v"]) / lv["sd"] if lv["sd"] else 0.0
+                bits.append(f"{abs(px - lv['v']):,.0f} pts {'above' if px >= lv['v'] else 'below'} VWAP {lv['v']:,.1f} ({sdv:+.1f}σ)")
+            lr = (v.get("last") or {}).get("last_rvol")
+            if lr is not None:
+                bits.append(f"last candle volume {lr:.1f}× normal")
+            if v.get("naked"):
+                bits.append("naked POC " + ", ".join(f"{n['price']:,.1f} ({n['day'][5:]})" for n in v["naked"][-2:]))
+            al = v.get("act_last") or {}
+            if al.get("z") is not None:
+                bits.append(f"options activity z {al['z']:+.1f}")
+            if bits:
+                out.append(f"Volume ({self.primary}, NIFTY FUT): " + " · ".join(bits))
         a = self.auction.get(self.primary)
         if a and a.get("read"):
             r = a["read"]
@@ -604,7 +790,7 @@ class Hub:
         return sorted([s for s in self.signals if s.ts >= o] + self.crt_signals_today(), key=lambda s: s.ts)
 
     def status_view(self) -> Dict[str, Any]:
-        return {**self.status, "feed": self.feed.status, "feed_error": self.feed.last_error,
+        return {**self.status, "futures": self.fut_status, "recorder": self.recorder.status(), "feed": self.feed.status, "feed_error": self.feed.last_error,
                 "feed_connects": self.feed.connects, "ltt_mode": self.feed.ltt_mode,
                 "tick_age_s": round(self.feed.tick_age(self.nifty), 1) if self.feed.tick_age(self.nifty) < 1e8 else None,
                 "chain": self.chain.status, "chain_error": self.chain.last_error,

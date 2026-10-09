@@ -1,0 +1,14 @@
+INFO:     Started server process [33397]
+INFO:     Waiting for application startup.
+2026-10-10 01:19:47,728 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-10 01:19:48,077 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8600 (Press CTRL+C to quit)
+2026-10-10 01:19:49,537 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain/expirylist "HTTP/1.1 200 OK"
+2026-10-10 01:19:52,658 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+2026-10-10 01:19:52,862 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-10 01:19:53,068 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [33397]

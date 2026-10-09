@@ -129,6 +129,7 @@ export default function DeltaPanel({ tick, strikes }: { tick: number; strikes?: 
         {d?.has_levels && <span className="pill bg-ink-800 text-sky-300">footprint levels</span>}
       </div>
       {st?.mock && <div className="rounded border border-amber-400/60 bg-amber-400/10 px-3 py-1.5 text-[12px] text-amber-200">MOCK delta — deterministic fake numbers to test the screen. Never trade from it.</div>}
+      {st?.name === "fut_quote_rule" && <div className="rounded border border-sky-400/50 bg-sky-400/10 px-3 py-1.5 text-[12px] text-sky-200">ESTIMATED delta — each print of the NIFTY future is classed buy / sell by where it traded against the previous bid / ask (tick rule in between). Dhan sends snapshots, not every trade, so read it as a good estimate, not exchange-tagged truth. Recorded live only: no history before the desk first ran in market hours.</div>}
       {!(st?.mock && d?.available) && <div className={`text-[12px] ${d?.available ? "text-slate-300" : "text-amber-300"}`}>
         {d?.available ? (st?.message ?? "") : `Delta unavailable — ${d?.message || st?.message || "no source"}`}
       </div>}

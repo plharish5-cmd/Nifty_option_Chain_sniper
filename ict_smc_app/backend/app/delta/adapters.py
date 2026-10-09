@@ -413,8 +413,37 @@ class MockAdapter(DeltaAdapter):
         return out
 
 
-_REGISTRY = {"none": NullAdapter, "footprint_feed": FootprintFeedAdapter, "csv": CsvAdapter, "mock": MockAdapter}
-LABELS = {"none": "Unavailable", "footprint_feed": "Real-feed", "csv": "CSV", "mock": "Mock"}
+class FutQuoteRuleAdapter(CsvAdapter):
+    """ESTIMATED delta / footprint recorded live from the NIFTY future (delta/recorder.py). Index only — strike
+    flow (options) has no recorder, so it stays unavailable there."""
+    name = "fut_quote_rule"
+    estimated = True
+    _KEY = type("K", (), {"key": "FUTQR"})()
+
+    def status(self):
+        r = db.query("SELECT COUNT(*) n, MIN(ts) a, MAX(ts) b FROM delta_bars WHERE inst='FUTQR'")[0]
+        if not r["n"]:
+            return {"name": self.name, "available": False, "mock": False, "estimated": True,
+                    "message": "Estimated delta (NIFTY FUT, quote rule) — nothing recorded yet. It records live from "
+                               "the futures feed during market hours; there is no history before the first session."}
+        a, b = to_ist(r["a"]).strftime("%d %b %H:%M"), to_ist(r["b"]).strftime("%d %b %H:%M")
+        return {"name": self.name, "available": True, "mock": False, "estimated": True,
+                "message": f"ESTIMATED delta — quote/tick rule on NIFTY FUT Full packets (snapshots, not every trade) · "
+                           f"{r['n']} minutes recorded · {a} → {b} IST"}
+
+    def prepare(self, tf, t0, t1, instrument=None):
+        if instrument is None or instrument is self._KEY:
+            super().prepare(tf, t0, t1, self._KEY)
+
+    def get_delta(self, candle, tf, instrument=None):
+        return None if instrument is not None else super().get_delta(candle, tf, self._KEY)
+
+    def get_footprint_levels(self, candle, tf, instrument=None):
+        return None if instrument is not None else super().get_footprint_levels(candle, tf, self._KEY)
+
+
+_REGISTRY = {"fut_quote_rule": FutQuoteRuleAdapter, "none": NullAdapter, "footprint_feed": FootprintFeedAdapter, "csv": CsvAdapter, "mock": MockAdapter}
+LABELS = {"fut_quote_rule": "Estimated (FUT quote rule)", "none": "Unavailable", "footprint_feed": "Real-feed", "csv": "CSV", "mock": "Mock"}
 
 
 def make(name: str) -> DeltaAdapter:
@@ -424,4 +453,4 @@ def make(name: str) -> DeltaAdapter:
 
 
 def names() -> List[str]:
-    return ["none", "csv", "footprint_feed", "mock"]
+    return ["fut_quote_rule", "none", "csv", "footprint_feed", "mock"]

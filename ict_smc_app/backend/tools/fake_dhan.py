@@ -123,6 +123,40 @@ def build_path():
 PATH = build_path()
 BY_TS = {c["ts"]: c for c in PATH}
 
+# ── synthetic NIFTY futures: Oct (front, carries the volume) and Nov (thin) ─────────────────────────────────
+FUTS = {35001: ("NIFTY-Oct2026-FUT", "2026-10-27", 82.0, 1.0), 35002: ("NIFTY-Nov2026-FUT", "2026-11-24", 205.0, 0.08)}
+SCRIP = ("SEM_EXM_EXCH_ID,SEM_SEGMENT,SEM_SMST_SECURITY_ID,SEM_INSTRUMENT_NAME,SEM_TRADING_SYMBOL,SEM_EXPIRY_DATE\n"
+         "NSE,D,35003,FUTIDX,BANKNIFTY-Oct2026-FUT,2026-10-27 14:30:00\n"
+         + "".join(f"NSE,D,{k},FUTIDX,{v[0]},{v[1]} 14:30:00\n" for k, v in FUTS.items())
+         + "NSE,D,40100,OPTIDX,NIFTY-Oct2026-22000-CE,2026-10-13 14:30:00\n")
+
+
+def basis_at(sid: int, t: float) -> float:
+    return FUTS[sid][2] - 0.0004 * ((t - 1791344700) / 60) + 1.5 * math.sin(t / 700.0)
+
+
+def fut_vol(sid: int, c) -> float:
+    """U-shaped day (busy open and close) × how much the minute moved, deterministic."""
+    d0 = datetime.fromtimestamp(c["ts"], IST).replace(hour=9, minute=15, second=0).timestamp()
+    m = (c["ts"] - d0) / 60
+    shape = 1 + 1.6 * math.exp(-m / 25) + 0.9 * math.exp(-(374 - m) / 20)
+    move = abs(c["c"] - c["o"]) / max(1.0, c["h"] - c["l"])
+    seed = random.Random(int(c["ts"]) // 60)
+    return float(int(9000 * shape * (0.6 + 2.5 * move) * (0.7 + 0.6 * seed.random()) * FUTS[sid][3]))
+
+
+def fut_cum(sid: int, t: float) -> int:
+    """Cumulative day volume up to t (the current minute pro-rata)."""
+    d0 = datetime.fromtimestamp(t, IST).replace(hour=9, minute=15, second=0).timestamp()
+    tot = 0.0
+    for c in PATH:
+        if d0 <= c["ts"] < t:
+            v = fut_vol(sid, c)
+            tot += v if c["ts"] + 60 <= t else v * (t - c["ts"]) / 60
+    return int(tot)
+
+
+
 
 def price_at(t: float) -> float:
     m = int(t // 60 * 60)
@@ -165,6 +199,10 @@ async def intraday(req: Request):
     to = datetime.strptime(body["toDate"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=IST).timestamp()
     src = [c for c in PATH if frm <= c["ts"] <= to and c["ts"] + 60 <= now]
     sid = int(float(body.get("securityId", 13)))
+    if body.get("exchangeSegment") == "NSE_FNO" and sid in FUTS:
+        src = [{"ts": c["ts"], "o": c["o"] + basis_at(sid, c["ts"]), "h": c["h"] + basis_at(sid, c["ts"]),
+                "l": c["l"] + basis_at(sid, c["ts"]), "c": c["c"] + basis_at(sid, c["ts"]), "v": fut_vol(sid, c)}
+               for c in src]
     if body.get("exchangeSegment") == "NSE_FNO" and sid >= 40000:   # synthetic option candles (Black-Scholes on the path)
         call = sid < 70000                                  # CE ids = 40000 + K (~6xxxx), PE ids = 50000 + K (~7xxxx)
         K = sid - (40000 if call else 50000)
@@ -262,6 +300,12 @@ async def optionchain(req: Request):
     return {"data": {"last_price": round(S, 2), "oc": oc}, "status": "success"}
 
 
+@app.get("/scrip.csv")
+async def scrip():
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(SCRIP)
+
+
 @app.post("/v2/marketfeed/ltp")
 async def ltp(req: Request):
     bad = _auth(req)
@@ -293,6 +337,12 @@ def pkt_ticker(sid: int, ltp: float, ltt: int) -> bytes:
     return struct.pack("<BHBI", 2, 16, 0, sid) + struct.pack("<fi", ltp, ltt)
 
 
+def pkt_full(sid: int, ltp: float, ltt: int, vol: int, bid: float, ask: float) -> bytes:
+    body = struct.pack("<fhifiiiiiiffff", ltp, 75, ltt, ltp, vol, 0, 0, 0, 0, 0, ltp, ltp, ltp, ltp)
+    depth = b"".join(struct.pack("<iihhff", 750, 900, 5, 6, bid - 0.05 * k, ask + 0.05 * k) for k in range(5))
+    return struct.pack("<BHBI", 8, 162, 2, sid) + body + depth
+
+
 def pkt_prev(sid: int, pc: float) -> bytes:
     return struct.pack("<BHBI", 6, 16, 0, sid) + struct.pack("<fi", pc, 0)
 
@@ -309,22 +359,48 @@ async def feed(ws: WebSocket):
         await ws.close()
         return
     t_open = time.time()
-    try:
-        msg = await ws.receive_text()
-        sub = json.loads(msg)
-        ids = [int(x["SecurityId"]) for x in sub.get("InstrumentList", [])]
-        for sid in ids:
-            await ws.send_bytes(pkt_prev(sid, PREV_CLOSE if sid == 13 else 11.5))
+    subs = {"tick": [], "full": set()}
+
+    async def reader():
         while True:
+            sub = json.loads(await ws.receive_text())
+            ids = [int(x["SecurityId"]) for x in sub.get("InstrumentList", [])]
+            rc = sub.get("RequestCode")
+            if rc == 15:
+                subs["tick"] += [i for i in ids if i not in subs["tick"]]
+                for sid in ids:
+                    await ws.send_bytes(pkt_prev(sid, PREV_CLOSE if sid == 13 else 11.5))
+            elif rc == 21:
+                subs["full"] |= set(ids)
+            elif rc == 22:
+                subs["full"] -= set(ids)
+
+    rd = asyncio.create_task(reader())
+    last = {}
+    try:
+        while True:
+            if rd.done():
+                return
             now = sim_now()
             ltt = int(now) + (19800 if LTT_MODE == "ist" else 0)
             frames = b""
-            for sid in ids:
+            for sid in subs["tick"]:
                 px = price_at(now) if sid == 13 else vix_at(now)
                 frames += pkt_ticker(sid, px, ltt)
-            await ws.send_bytes(frames)                      # several packets in one message, like Dhan
+            for sid in subs["full"]:
+                if sid not in FUTS:
+                    continue
+                mid = price_at(now) + basis_at(sid, now)
+                up = mid >= last.get(sid, mid)
+                last[sid] = mid
+                bid = math.floor(mid * 20) / 20 - 0.05
+                ask = bid + 0.15
+                frames += pkt_full(sid, ask if up else bid, ltt, fut_cum(sid, now), bid, ask)
+            if frames:
+                await ws.send_bytes(frames)                  # several packets in one message, like Dhan
             await asyncio.sleep(0.25)
             if DROP_AFTER and time.time() - t_open > DROP_AFTER:
+                rd.cancel()
                 await ws.close()
                 return
     except (WebSocketDisconnect, RuntimeError):

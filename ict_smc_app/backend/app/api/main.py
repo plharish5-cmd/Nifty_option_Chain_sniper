@@ -273,6 +273,16 @@ def crt(tf: str = Query("5m")):
             "rules": {k: v for k, v in _cfg.rules().get("crt_tbs", {}).items() if not k.startswith("_")}}
 
 
+@app.get("/api/volume")
+def volume(tf: str = Query("5m")):
+    """Real volume from the current-month NIFTY future (basis-adjusted): profiles, VWAP, AVWAPs, RVOL, activity."""
+    h = _h()
+    v = h.volume.get(tf)
+    if not v:
+        return {"tf": tf, "available": False, "message": f"NIFTY future: {h.fut_status}"}
+    return {"tf": tf, **v, "futures": h.fut_status, "recorder": h.recorder.status()}
+
+
 @app.get("/api/auction")
 def auction(tf: str = Query("5m")):
     """Auction read (observation only): TPO profile, balance boxes, accept / reject events, the 5 questions."""
