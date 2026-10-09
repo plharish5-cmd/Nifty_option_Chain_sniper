@@ -140,8 +140,7 @@ class Hub:
     async def on_close_1m(self, sid: str, c: Dict[str, float]) -> None:
         if sid != self.nifty:
             return
-        closed_trade = paper.on_1m_close(c)
-        if closed_trade:
+        for closed_trade in paper.on_1m_close_all(c):
             await self.broadcast({"type": "paper", "trade": closed_trade})
         end = c["ts"] + 60
         _, sess_close = session_bounds(ist_date(c["ts"]))
@@ -211,8 +210,9 @@ class Hub:
 
     def option_instruments(self) -> List[instr.Instrument]:
         out = [i for i in self.book.instruments() if i.security_id]
-        t = paper.open_trade()
-        if t and t.get("opt_sid") and t.get("opt_key"):
+        for t in paper.open_trades():
+            if not (t.get("opt_sid") and t.get("opt_key")):
+                continue
             try:
                 pi = instr.parse_key(t["opt_key"])
                 pi = instr.option(pi.expiry, pi.strike, pi.right, t["opt_sid"])
@@ -569,7 +569,7 @@ class Hub:
         return {"quote": self.quote(), "bias": bias, "narrative": self.narrative(),
                 "session": p.sess if p else {}, "chain": self.chain.summary(),
                 "expiries": self.chain.expiries, "signals": [s.to_dict() for s in self.today_signals()][-15:],
-                "alerts": alerts_mod.recent(20), "paper_open": paper.open_trade(), "paper_stats": paper.stats(),
+                "alerts": alerts_mod.recent(20), "paper_open": paper.open_trade(), "paper_open_all": paper.open_trades(), "paper_stats": paper.stats(),
                 "delta": self.delta_status(), "strikes": self.strikes_view(), "mode": self.mode,
                 "proxy": {"enabled": self.proxy_on, "label": proxy_mod.LABEL},
                 "status": self.status_view()}

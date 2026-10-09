@@ -1,7 +1,7 @@
 // App.tsx — layout + data flow. REST for the initial state (so a refresh restores everything from SQLite),
 // WebSocket for changes. Candles/analysis are re-fetched whenever the backend says a candle CLOSED.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Analysis, type Candle, type Dashboard, type LiveMsg, type PaperStats, type PaperTrade, type Quote, type Strikes, type TF, useLive } from "./api";
+import { api, type Analysis, type Candle, type Dashboard, type LiveMsg, type PaperStats, type PaperTrade, type Quote, type Scorecard, type Strikes, type TF, useLive } from "./api";
 import InstrumentPanel from "./components/InstrumentPanel";
 import Chart, { type Layers } from "./components/Chart";
 import OptionChain from "./components/OptionChain";
@@ -31,7 +31,7 @@ export default function App() {
   const [chartInst, setChartInst] = useState("NIFTY");
   const instRef = useRef(chartInst);
   instRef.current = chartInst;
-  const [paper, setPaper] = useState<{ trades: PaperTrade[]; stats: PaperStats } | null>(null);
+  const [paper, setPaper] = useState<{ trades: PaperTrade[]; stats: PaperStats; scorecard?: Scorecard } | null>(null);
   const tfRef = useRef(tf);
   tfRef.current = tf;
   const lastChain = useRef(0);
@@ -112,7 +112,7 @@ export default function App() {
             <div className="flex-1 min-h-0">
               {bottom === "chain" ? <OptionChain expiries={dash?.expiries ?? []} tick={chainTick} />
                 : bottom === "delta" ? <DeltaPanel tick={storyTick} strikes={strikes} />
-                : paper ? <Paper trades={paper.trades} stats={paper.stats} /> : null}
+                : paper ? <Paper trades={paper.trades} stats={paper.stats} scorecard={paper.scorecard} /> : null}
             </div>
           </div>
         </section>
@@ -139,11 +139,16 @@ export default function App() {
             <div className="card-h"><span className="card-t">Alerts</span></div>
             <div className="px-3 py-1 max-h-[32vh] overflow-auto">{dash && <Alerts list={dash.alerts} />}</div>
           </div>
-          {dash?.paper_open && (
+          {(dash?.paper_open_all ?? (dash?.paper_open ? [dash.paper_open] : [])).length > 0 && (
             <div className="card border-gold-500/60">
-              <div className="card-h"><span className="card-t">Open paper trade</span></div>
-              <div className="px-3 py-2 text-[12px] num">
-                {dash.paper_open.side.toUpperCase()} {dash.paper_open.setup} @ {dash.paper_open.entry} · SL {dash.paper_open.sl} · TP {dash.paper_open.tp} · MFE {dash.paper_open.mfe_r}R
+              <div className="card-h"><span className="card-t">Open paper trades</span></div>
+              <div className="px-3 py-2 text-[12px] num space-y-1">
+                {(dash?.paper_open_all ?? [dash!.paper_open!]).map((t) => (
+                  <div key={t.id}>
+                    <span className="text-slate-500">{t.slot ?? t.setup}</span> · {t.side.toUpperCase()} @ {t.entry} · SL {t.sl}
+                    {t.tp1 != null ? ` · TP-1 ${t.tp1}${t.half_done ? " ✓ (BE)" : ""}` : ""} · TP {t.tp} · MFE {t.mfe_r}R
+                  </div>
+                ))}
               </div>
             </div>
           )}

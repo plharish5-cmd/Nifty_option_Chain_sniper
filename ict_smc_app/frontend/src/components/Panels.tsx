@@ -1,5 +1,5 @@
 // Panels.tsx — header, playbook signals, alerts, bias grid, narrative, OI builds, paper trades.
-import type { AlertRow, Bias, Build, Dashboard, PaperStats, PaperTrade, Quote, Signal } from "../api";
+import type { AlertRow, Bias, Build, Dashboard, PaperStats, PaperTrade, Quote, Scorecard, Signal } from "../api";
 import { fmt, lakh } from "../api";
 
 const up = (x: number | null | undefined) => (x ?? 0) >= 0;
@@ -173,9 +173,44 @@ export function Builds({ list }: { list: Build[] }) {
   );
 }
 
-export function Paper({ trades, stats }: { trades: PaperTrade[]; stats: PaperStats }) {
+function ScoreTable({ sc }: { sc: Scorecard }) {
+  const r = (v: number | null, d = 2) => (v == null ? "—" : v.toFixed(d));
+  const col = (v: number | null) => (v == null || v === 0 ? "text-slate-300" : v > 0 ? "text-bull-400" : "text-bear-400");
+  return (
+    <div>
+      <div className="flex items-baseline justify-between">
+        <div className="text-[11px] uppercase tracking-wide text-gold-400 font-semibold">Scorecard — which strategy works</div>
+        <div className="text-[10px] text-slate-500">{sc.first ? `since ${sc.first}` : ""}</div>
+      </div>
+      <table className="w-full text-[12px] num mt-1">
+        <thead className="text-[10px] uppercase text-slate-400"><tr>
+          <th className="text-left py-1">Strategy</th><th className="text-right">Trades</th><th className="text-right">Win</th><th className="text-right">Loss</th>
+          <th className="text-right">Flat</th><th className="text-right" title="D: TP-1 booked, rest stopped at breakeven">BE</th><th className="text-right">Win %</th>
+          <th className="text-right">Avg R</th><th className="text-right">Total R</th><th className="text-right">Best / worst R</th><th className="text-right">₹ premium</th><th className="text-center">30+</th></tr></thead>
+        <tbody>
+          {sc.rows.map((x) => (
+            <tr key={x.label} className={`border-b border-ink-800 ${x.group === "setup" || x.group === "total" ? "font-semibold" : "text-slate-400"} ${x.group === "total" ? "border-t border-gold-500/40" : ""}`}>
+              <td className={`py-1 ${x.group === "pair" || x.group === "model" ? "pl-4" : ""}`}>{x.label}</td>
+              <td className="text-right">{x.trades}</td><td className="text-right text-bull-400">{x.wins}</td><td className="text-right text-bear-400">{x.losses}</td>
+              <td className="text-right">{x.flat}</td><td className="text-right">{x.be_after_tp1 || ""}</td>
+              <td className="text-right">{x.win_rate == null ? "—" : `${x.win_rate} %`}</td>
+              <td className={`text-right ${col(x.avg_r)}`}>{r(x.avg_r)}</td><td className={`text-right ${col(x.total_r)}`}>{r(x.total_r)}</td>
+              <td className="text-right">{x.trades ? `${r(x.best_r, 1)} / ${r(x.worst_r, 1)}` : "—"}</td>
+              <td className={`text-right ${col(x.premium_rs)}`}>{x.premium_rs ? `₹${fmt(x.premium_rs, 0)}` : "—"}</td>
+              <td className="text-center">{x.enough ? <span className="text-bull-400">✓</span> : <span className="text-slate-600">{x.trades}/30</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="text-[10px] text-slate-500 mt-1">Win = R &gt; 0. Avg R matters more than win % — a 40 % strategy at +2R beats a 70 % one at −0.2R. {sc.note} Each strategy has its own slot, so one never blocks another.</div>
+    </div>
+  );
+}
+
+export function Paper({ trades, stats, scorecard }: { trades: PaperTrade[]; stats: PaperStats; scorecard?: Scorecard }) {
   return (
     <div className="p-4 space-y-3 overflow-auto h-full">
+      {scorecard && <ScoreTable sc={scorecard} />}
       <div className="flex flex-wrap gap-4 text-xs">
         <Stat k="Closed trades" v={String(stats.n)} />
         <Stat k="Win rate" v={stats.n ? `${stats.win_rate} %` : "—"} />
@@ -194,7 +229,7 @@ export function Paper({ trades, stats }: { trades: PaperTrade[]; stats: PaperSta
           {trades.length === 0 && <tr><td colSpan={13} className="py-3 text-slate-500">No paper trades yet.</td></tr>}
           {trades.map((t) => (
             <tr key={t.id} className="border-b border-ink-800">
-              <td className="py-1">{t.opened}</td><td>{t.setup} · {t.tf}</td>
+              <td className="py-1">{t.opened}</td><td>{t.setup} · {t.pair ? t.pair.replace(">", "→") : t.tf}{t.model && t.setup === "D" ? ` · ${t.model}` : ""}</td>
               <td className={t.side === "long" ? "text-bull-400" : "text-bear-400"}>{t.side}</td>
               <td className="text-right">{fmt(t.entry)}</td><td className="text-right">{fmt(t.sl)}</td><td className="text-right">{fmt(t.tp)}</td>
               <td className="text-right">{fmt(t.exit)}</td>

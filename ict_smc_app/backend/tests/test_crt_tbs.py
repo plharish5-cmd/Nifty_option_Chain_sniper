@@ -262,3 +262,33 @@ def test_inside_bar_crt_moves_manipulation_to_third_candle():
         assert run(hrows, lrows)["signals"] == []                             # the 2nd candle had no TBS
     finally:
         C["inside_bar_crt"] = True
+
+
+# ── per-strategy paper slots + scorecard ──────────────────────────────────────
+def _a_signal(ts, key="A|5m|short|1|2"):
+    from app.signals.playbook import Signal
+    return Signal(key, "A", "Raid → MSS → FVG", "5m", "short", 1, ts, "TRADE", entry=22092.0, sl=22114.0,
+                  tp=22048.0, risk=22.0, rr=2.0, target_src="2R", story=["a"])
+
+
+def test_setups_trade_in_their_own_slots_and_score_separately():
+    db.execute("DELETE FROM paper_trades")
+    (d,) = run(htf_rows(), ltf_sell())["signals"]
+    assert paper.maybe_open(d)["slot"] == "D|1h>1m"
+    a = paper.maybe_open(_a_signal(d.ts - 240))
+    assert a and a["slot"] == "A"                                         # D open does NOT block A any more
+    assert paper.maybe_open(_a_signal(d.ts, key="A|5m|short|9|9")) is None # but a 2nd A waits for the 1st
+    assert len(paper.open_trades()) == 2
+    m0 = D8 + 7200 + 420
+    paper.on_1m_close_all(h(m0, 22092, 22095, 22060, 22065))
+    closed = paper.on_1m_close_all(h(m0 + 60, 22065, 22066, 22040, 22045))  # A hits its TP 22048; D books TP-1
+    assert [t["setup"] for t in closed] == ["A"] and paper.open_trade("D|1h>1m")["half_done"] == 1
+    closed = paper.on_1m_close_all(h(m0 + 120, 22045, 22046, 21990, 21994))  # D reaches TP-2 21995
+    assert [(t["setup"], t["status"]) for t in closed] == [("D", "TP")]
+    sc = {r["label"]: r for r in paper.scorecard()["rows"]}
+    assert sc["A · Raid → MSS → FVG"]["trades"] == 1 and sc["A · Raid → MSS → FVG"]["win_rate"] == 100.0
+    dd = sc["D · CRT + TBS (all pairs)"]
+    assert dd["trades"] == 1 and dd["total_r"] == round((0.5 * 44.5 + 0.5 * 97) / 22, 2)
+    assert sc["D · 1h→1m"]["trades"] == 1 and sc["D · Model #1 order block"]["trades"] == 1
+    assert sc["All setups"]["trades"] == 2 and not sc["All setups"]["enough"]
+    db.execute("DELETE FROM paper_trades")

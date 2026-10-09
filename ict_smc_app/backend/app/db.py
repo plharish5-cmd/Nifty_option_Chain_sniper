@@ -101,7 +101,8 @@ def _add_columns(c: sqlite3.Connection) -> None:
     for col, typ in (("instrument_mode", "TEXT"), ("strikes_snapshot", "TEXT"), ("opt_key", "TEXT"),
                      ("opt_sid", "TEXT"), ("opt_entry", "REAL"), ("opt_exit", "REAL"), ("opt_pnl_pts", "REAL"),
                      ("opt_pnl_rs", "REAL"), ("confidence", "REAL"), ("confidence_parts", "TEXT"),
-                     ("tp1", "REAL"), ("half_done", "INTEGER"), ("partial_pts", "REAL"), ("half_ts", "INTEGER")):
+                     ("tp1", "REAL"), ("half_done", "INTEGER"), ("partial_pts", "REAL"), ("half_ts", "INTEGER"),
+                     ("slot", "TEXT"), ("pair", "TEXT"), ("model", "TEXT")):
         if col not in have:
             c.execute(f"ALTER TABLE paper_trades ADD COLUMN {col} {typ}")
 

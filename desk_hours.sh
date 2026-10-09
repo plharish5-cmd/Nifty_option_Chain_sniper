@@ -16,8 +16,8 @@ if [ "$dow" -le 5 ] && [ "$hm" -ge 855 ] && [ "$hm" -lt 1600 ]; then
     done
     kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
   done
-  for s in paperdesk-awake paperdesk-main paperdesk-second paperdesk-strategies; do systemctl is-active --quiet $s || systemctl start $s; done
+  for s in paperdesk-awake paperdesk-main paperdesk-second paperdesk-strategies paperdesk-ict; do systemctl is-active --quiet $s || systemctl start $s; done
 else
-  for s in paperdesk-main paperdesk-second paperdesk-strategies paperdesk-awake; do systemctl is-active --quiet $s && systemctl stop $s; done
+  for s in paperdesk-main paperdesk-second paperdesk-strategies paperdesk-ict paperdesk-awake; do systemctl is-active --quiet $s && systemctl stop $s; done
 fi
 exit 0

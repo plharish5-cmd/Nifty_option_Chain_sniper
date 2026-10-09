@@ -544,3 +544,15 @@ cap). Paper: one open trade at a time, shared with A / C; new status **BE** = se
 | **3-candle model** | "pros enter on the 2nd candle, others wait for its close and enter on the 3rd" | the TBS must be in the manipulation candle; the entry may come until the next HTF candle closes |
 | Timing / session | "not a matter if your analysis is correct" | no session filter added; the desk's own trade windows stay |
 | "80–95 % win rate" | sketch-map card | a marketing claim, not a rule — nothing implemented, and the 8 Oct replay (3 losing longs) is a reason to measure your own |
+
+### 10.6 Paper slots, scorecard, service (added 10 Oct 2026)
+
+* **One open trade per strategy slot**: A, C, and one per CRT + TBS pair (D|1h>1m, D|4h>5m, D|1D>1h). A trade in one
+  slot never blocks a signal in another, so every strategy gets every chance and the comparison is fair. A second
+  signal in the SAME slot still waits until that slot's trade closes.
+* **Scorecard** (Paper tab, `GET /api/paper/scorecard`): per setup, per D pair, per D entry model, and all setups —
+  trades, wins, losses, flat, BE (TP-1 booked then breakeven), win %, avg R, total R, best / worst R, ₹ premium, and
+  a ✓ once a row has 30 closed trades. Win = R > 0. Judge on avg R and total R, not win %.
+* **Service**: `./install_ict_service.sh` (OC folder) installs `paperdesk-ict`, adds it to `desk_hours.sh`
+  (08:55–16:00 Mon–Fri) and to the watchdog. Log: `ict_smc_app/backend/ict_desk.log`. `./install_ict_service.sh remove`
+  undoes it.

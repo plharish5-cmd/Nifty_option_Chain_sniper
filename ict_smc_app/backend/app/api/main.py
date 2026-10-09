@@ -156,7 +156,13 @@ def alerts(grade: Optional[str] = None, limit: int = 60):
 
 @app.get("/api/paper")
 def paper_view():
-    return {"trades": paper.trades(100), "stats": paper.stats(), "open": paper.open_trade()}
+    return {"trades": paper.trades(100), "stats": paper.stats(), "open": paper.open_trade(),
+            "open_all": paper.open_trades(), "scorecard": paper.scorecard()}
+
+
+@app.get("/api/paper/scorecard")
+def paper_scorecard():
+    return paper.scorecard()
 
 
 @app.post("/api/repair")
