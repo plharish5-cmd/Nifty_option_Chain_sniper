@@ -14,7 +14,7 @@ const TFS: TF[] = ["1m", "5m", "15m", "1h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "1h": 30, "1D": 60 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
-  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"],
+  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"],
 ];
 
 export default function App() {
@@ -23,7 +23,7 @@ export default function App() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [layers, setLayers] = useState<Layers>({ ob: true, fvg: true, liq: true, structure: true, swings: false, range: true, session: true, delta: true, deltaDetail: false });
+  const [layers, setLayers] = useState<Layers>({ ob: true, fvg: true, liq: true, structure: true, swings: false, range: true, session: true, delta: true, deltaDetail: false, crt: true });
   const [bottom, setBottom] = useState<"chain" | "paper" | "delta">("chain");
   const [chainTick, setChainTick] = useState(0);
   const [storyTick, setStoryTick] = useState(0);

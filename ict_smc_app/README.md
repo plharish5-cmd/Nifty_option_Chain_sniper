@@ -63,7 +63,7 @@ ENV_FILE=tools/fake.env .venv/bin/python -m uvicorn app.api.main:app --port 8600
 
 ## 5 · Tests
 ```bash
-cd backend && .venv/bin/python -m pytest -q        # 43 tests: engine on real 8-Oct candles, 8-Oct baseline lock, playbook, paper, alerts, feed decoder, zone registry, delta rules, CSV alignment, strike selector parity, strike flow, proxy
+cd backend && .venv/bin/python -m pytest -q        # 55 tests: engine on real 8-Oct candles, 8-Oct baseline lock, CRT + TBS (setup D), playbook, paper, alerts, feed decoder, zone registry, delta rules, CSV alignment, strike selector parity, strike flow, proxy
 ```
 
 ## 6 · Ports in use on your laptop
@@ -101,6 +101,12 @@ with your OC Strike Advisor rule (MJ course pick), shows OI / ΔOI / IV / Greeks
 switches the active strike only on a 3-minute close. Those strikes feed delta (when a source exists), the opt-in
 **Options Flow Proxy — PROXY (not real delta)**, and premium P&L on paper trades. *Option chart* mode is
 experimental. Needs `pip install -r requirements.txt` again (adds pandas). See GUIDE §9.
+
+## 7d · Setup D — CRT + TBS
+AR's Candle Range Theory + Turtle Body Soup on three timeframe pairs (1h→1m, 4h→5m, 1D→1h). HTF CRT candle with a
+keylevel (OHP / OLP / OB / FVG) → next HTF candle manipulates CRTH / CRTL → LTF TBS (body close beyond) → Model #1 →
+entry on the close beyond Model #1. Half at the 50 % with the stop to breakeven, rest to the opposite CRT extreme.
+Separate engine; A / B / C are unchanged. Settings in `rules.json → crt_tbs`. See GUIDE §10.
 
 ## 8 · Not in v1 (on purpose)
 No order placement. No futures volume / VWAP (the NIFTY index has no volume — use your OC app's futures VWAP).

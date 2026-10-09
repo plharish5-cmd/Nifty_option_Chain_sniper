@@ -484,3 +484,49 @@ fade_min_follow_pts 2, fade_min_follow_atr 0.1, min_candle_range_atr 0.15 ·
   "not recorded".
 * The Priyanka/MJ weights and the 0.05 / 0.15 confluence weights are not backtested. Judge them only after 30+
   paper trades.
+
+---
+
+## 10 · Setup D — CRT + TBS (added 9 Oct 2026)
+
+AR's Candle Range Theory + Turtle Body Soup, built from the 14 course PDFs. A **separate engine**
+(`backend/app/engine/crt_tbs.py`). It never changes Setup A / B / C: the previous release and this build give
+byte-identical A/B/C signals on the same 8 Oct replay candles, and `tests/test_baseline_lock.py` still passes.
+
+### 10.1 Rules as implemented
+
+| Step | TF | Rule (course) | Implementation |
+|---|---|---|---|
+| CRT candle | HTF | body thicker than the wick; always choose a thick candle | closed candle, body ≥ 50 % of range, range ≥ 0.8× ATR (≥ 1.2× = A+) |
+| Keylevel | same HTF | OHP · OLP · OB · FVG, found after the CRT candle | OHP/OLP = CRT candle took an untaken, already-confirmed swing; OB / FVG = CRT candle traded into one that was valid before it. Sets the bias |
+| Manipulation | next HTF candle | "as soon as the 2nd candle got manipulated, switch to LTF" | only LTF candles inside that HTF candle are searched |
+| TBS | LTF | first candle that manipulates the old high/low with a **body close** | first close beyond CRTH (sell) / CRTL (buy) by ≥ 0.5 pt; a wick poke is not a TBS |
+| A+ TBS | LTF | 2–6 candles inside (validation page) | consecutive closes inside the level before the TBS; reported, not required |
+| Model #1 | LTF | sell: the thick buy candle after TBS (the order block); buy: the thick sell candle | body ≥ 50 % of range, opposite colour; the latest one before the break |
+| Entry | LTF | next candle closes beyond Model #1 | entry at that close, within 20 LTF candles of the TBS |
+| Stop | LTF | extreme high / low; no tiny stop | extreme since TBS ± 2 pts |
+| TP-1 | — | 50 % of the CRT: close half, then breakeven — not before TP-1 | paper books ½ at 50 %, stop → entry |
+| TP-2 | — | the CRT low (sell) / high (buy) | rest of the position |
+
+Pairs (course "timeframe alignment"): **1h → 1m** scalping · **4h → 5m** short-term · **1D → 1h** day trading.
+NSE 4h candles are 09:15–13:15 and 13:15–15:30.
+
+### 10.2 Desk filters (not AR's — shown on the card when they apply)
+
+Trade windows (09:30–11:30, 13:30–14:45) · R:R ≥ 1.0 to TP-1 · stop size per pair (1h→1m 5–40, 4h→5m 8–70,
+1D→1h 15–150 pts) · entry not already past the 50 % · **optional** `require_bias_alignment` (off by default).
+
+### 10.3 What the 8 Oct replay showed
+
+The 1h → 1m pair fired three longs (11:35, 12:37, 13:21), each from a bullish 1h FVG keylevel. 8 Oct trended down
+and all three would have been **stopped, −3R**. They were skipped only because they closed outside the trade
+windows. Every one was against the 15m structure (bearish all day), so `require_bias_alignment: true` would have
+skipped them for a real reason. One day proves nothing either way; collect 30+ D paper trades before deciding.
+
+### 10.4 Where it shows
+
+Chart layer **CRT + TBS**: gold box = CRT candle → end of the manipulation candle (edge red = bearish, green =
+bullish), dashed line = 50 %, ■ TBS, ● M1, ▲/▼ CRT▶ entry. A pair shows on any chart as fine as its LTF (1m events
+sit on their 5m candle). Playbook cards show TP-1 (½ + BE) and TP-2 with both R:Rs. `GET /api/crt?tf=5m` returns
+every pair's ranges, events and signals. Alerts and Telegram use the existing alert engine (same cooldown and daily
+cap). Paper: one open trade at a time, shared with A / C; new status **BE** = second half stopped at entry.

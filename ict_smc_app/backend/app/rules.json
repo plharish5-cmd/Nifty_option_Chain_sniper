@@ -52,7 +52,8 @@
       "5m": 2,
       "15m": 2,
       "1h": 2,
-      "1D": 2
+      "1D": 2,
+      "4h": 2
     },
     "atr_len": 14,
     "lookback_bars": 300,
@@ -240,5 +241,81 @@
     "fade_min_follow_pts": 2.0,
     "fade_min_follow_atr": 0.1,
     "min_candle_range_atr": 0.15
+  },
+  "crt_tbs": {
+    "_note": "Setup D — CRT (Candle Range Theory) + TBS (Turtle Body Soup), AR's method. Separate engine: never changes playbook A/B/C. HTF CRT candle + keylevel (OHP/OLP/OB/FVG) → next HTF candle manipulates CRTH/CRTL → LTF TBS (body close beyond) → Model #1 → entry on the close beyond Model #1. SL extreme high/low; TP-1 = CRT 50 % (book half, SL → breakeven); TP-2 = opposite CRT extreme.",
+    "enabled": true,
+    "pairs": [
+      {
+        "htf": "1h",
+        "ltf": "1m",
+        "name": "Scalping 1h→1m",
+        "enabled": true
+      },
+      {
+        "htf": "4h",
+        "ltf": "5m",
+        "name": "Short-term 4h→5m",
+        "enabled": true
+      },
+      {
+        "htf": "1D",
+        "ltf": "1h",
+        "name": "Day trading 1D→1h",
+        "enabled": true
+      }
+    ],
+    "_pairs_note": "Course timeframe alignment: 1h→1m scalping, 4h→5m short-term, 1D→1h day trading (1W→4h and 1M→1D are positional, not used on an intraday desk). NSE 4h candles = 09:15–13:15 and 13:15–15:30.",
+    "min_body_ratio": 0.5,
+    "_body_note": "CRT candle: body ≥ 50 % of range = body bigger than both wicks together.",
+    "min_range_atr": 0.8,
+    "aplus_range_atr": 1.2,
+    "_thick_note": "'Always choose a thick candle' — range ≥ 0.8× ATR to qualify, ≥ 1.2× ATR = A+.",
+    "require_keylevel": true,
+    "require_aplus_crt": false,
+    "require_bias_alignment": false,
+    "_bias_note": "Desk filter, NOT in the course: skip a CRT trade that is against the playbook bias timeframe's (15m) structure at the entry time. On the 8 Oct replay the method fired three 1h→1m longs on a down day; all three would have been stopped (−3R). Off by default to stay faithful to AR's rules.",
+    "tbs_min_pen_pts": 0.5,
+    "_tbs_note": "TBS = first LTF candle whose CLOSE is beyond CRTH / CRTL by at least this many points (body close, not a wick).",
+    "aplus_inside_min": 2,
+    "aplus_inside_max": 6,
+    "require_aplus_tbs": false,
+    "_aplus_note": "Validation page: 2–6 candles closed inside the level just before the TBS = A+ TBS. Reported on every setup; required only if require_aplus_tbs is true.",
+    "m1_min_body_ratio": 0.5,
+    "m1_max_bars": 20,
+    "_m1_note": "Model #1 = thick candle (body ≥ 50 % of range) of the opposite colour after the TBS; entry must come within m1_max_bars LTF candles of the TBS.",
+    "sl_buffer_pts": 2.0,
+    "min_rr_tp1": 1.0,
+    "risk": {
+      "1h>1m": {
+        "min_risk_pts": 5,
+        "max_risk_pts": 40
+      },
+      "4h>5m": {
+        "min_risk_pts": 8,
+        "max_risk_pts": 70
+      },
+      "1D>1h": {
+        "min_risk_pts": 15,
+        "max_risk_pts": 150
+      }
+    },
+    "htf_lookback": 12,
+    "max_ranges_shown": 6,
+    "days": {
+      "htf": {
+        "1h": 20,
+        "4h": 60,
+        "1D": 120
+      },
+      "ltf": {
+        "1m": 2,
+        "5m": 6,
+        "1h": 15
+      }
+    },
+    "alerts": true,
+    "paper": true,
+    "_paper_note": "Paper: one open trade at a time (shared with A/C). Half booked at TP-1, stop moved to entry, rest to TP-2 / stop / 15:15 square-off."
   }
 }

@@ -256,6 +256,17 @@ async def ws(websocket: WebSocket):
 _last_select = {"t": 0.0}
 
 
+@app.get("/api/crt")
+def crt(tf: str = Query("5m")):
+    """Setup D — CRT + TBS: every pair's CRT ranges, TBS / Model #1 / entry events and signals."""
+    from .. import config as _cfg
+    h = _h()
+    pairs = [{**{k: v for k, v in r.items() if k != "signals"}, "signals": [s.to_dict() for s in r["signals"]]}
+             for r in h.crt.values()]
+    return {"pairs": pairs, "view": h.crt_view(tf),
+            "rules": {k: v for k, v in _cfg.rules().get("crt_tbs", {}).items() if not k.startswith("_")}}
+
+
 @app.get("/api/strikes")
 def strikes():
     return _h().strikes_view()

@@ -58,8 +58,17 @@ export function SignalCard({ s }: { s: Signal }) {
       {s.setup !== "B" && (
         <div className="mt-1 text-[12px] num">
           <span className={`font-semibold ${sideCls}`}>{s.side === "long" ? "▲ LONG" : "▼ SHORT"}</span>
-          <span className="text-slate-300"> @ {fmt(s.entry, 1)} · SL {fmt(s.sl, 1)} · TP {fmt(s.tp, 1)}</span>
-          <span className="text-slate-500"> · risk {fmt(s.risk, 1)} · R:R {fmt(s.rr, 1)}</span>
+          {s.setup === "D" ? (
+            <>
+              <span className="text-slate-300"> @ {fmt(s.entry, 1)} · SL {fmt(s.sl, 1)} · TP-1 {fmt(s.ctx?.tp1 ?? null, 1)} <span className="text-slate-500">(½ + BE)</span> · TP-2 {fmt(s.tp, 1)}</span>
+              <span className="text-slate-500"> · risk {fmt(s.risk, 1)} · R:R {fmt(s.ctx?.rr1 ?? null, 1)} / {fmt(s.rr, 1)}</span>
+            </>
+          ) : (
+            <>
+              <span className="text-slate-300"> @ {fmt(s.entry, 1)} · SL {fmt(s.sl, 1)} · TP {fmt(s.tp, 1)}</span>
+              <span className="text-slate-500"> · risk {fmt(s.risk, 1)} · R:R {fmt(s.rr, 1)}</span>
+            </>
+          )}
         </div>
       )}
       {s.confidence != null && (

@@ -24,6 +24,7 @@ from ..dhan.feed import Feed
 from ..dhan.rest import DhanError, DhanREST, TokenError
 from ..delta import adapters as delta_adapters
 from ..delta import proxy as proxy_mod
+from ..engine import crt_tbs
 from ..market import instruments as instr
 from ..market import options as optc
 from ..strikes import context as sctx
@@ -78,6 +79,9 @@ class Hub:
         if self.proxy_on is None:
             self.proxy_on = bool(config.rule("options_flow_proxy", "enabled", False))
         self._opt_busy = False
+        # setup D — CRT + TBS (separate engine, never touches A/B/C)
+        self.crt: Dict[str, Dict[str, Any]] = {}                  # pair id "1h>1m" → evaluate_pair() result
+        self._crt_an: Dict[str, Any] = {}                          # htf → (last closed htf ts, Analysis)
         self.prev_close: Dict[str, float] = {}
         self.price_source = "feed"
         self.status: Dict[str, Any] = {"backfill": "pending", "token": "unknown", "errors": []}
@@ -149,6 +153,11 @@ class Hub:
                 if tf == self.primary:
                     await self.run_playbook()
                 await self.broadcast({"type": "analysis", "tf": tf, "analysis": self.json.get(tf)})
+        for pair in self.crt_pairs():
+            ltf = pair["ltf"]
+            if end == bucket_start(c["ts"], ltf) + TF_SECONDS[ltf] or end >= sess_close:
+                fresh = self.recompute_crt(pair)
+                await self.act_on_crt(fresh)
         await self.broadcast({"type": "candle", "tf": "1m", "candle": _cj(c)})
         if self.option_instruments():
             asyncio.create_task(self._options_after_close())
@@ -362,8 +371,69 @@ class Hub:
         self._mk[tf] = list(j["markers"])
         j["delta"] = {k: dres.get(k) for k in ("adapter", "available", "mock", "message", "has_levels")}
         j["registry"] = {"zones": len(zs), "active": sum(1 for z in zs if z.active_for(int(an.bars.ts[-1]) + 1))}
+        j["crt"] = self.crt_view(tf)
         self.json[tf] = j
         self.recompute_flow(tf)
+
+    # ── setup D: CRT + TBS ────────────────────────────────────────────────
+    def crt_pairs(self) -> List[Dict[str, Any]]:
+        C = config.rules().get("crt_tbs", {})
+        if not C.get("enabled", True):
+            return []
+        return [p for p in C.get("pairs", []) if p.get("enabled", True)]
+
+    def recompute_crt(self, pair: Dict[str, Any]) -> List[Signal]:
+        """Re-evaluate one pair on CLOSED candles; returns signals whose entry candle just closed."""
+        D = config.rules().get("crt_tbs", {}).get("days", {})
+        htf, ltf = pair["htf"], pair["ltf"]
+        try:
+            hr = [r for r in self.candles.frame(self.nifty, htf, days=int(D.get("htf", {}).get(htf, 30)),
+                                                include_forming=False) if r.get("closed", True)]
+            lr = self.candles.frame(self.nifty, ltf, days=int(D.get("ltf", {}).get(ltf, 3)), include_forming=False)
+            key = hr[-1]["ts"] if hr else None
+            cached = self._crt_an.get(htf)
+            an = cached[1] if cached and cached[0] == key else analyze(hr, htf)
+            self._crt_an[htf] = (key, an)
+            res = crt_tbs.evaluate_pair(pair, hr, lr, now_epoch(), an=an, bias_an=self.analyses.get(self.bias_tf))
+        except Exception as e:                               # noqa: BLE001 — never lose the desk over setup D
+            log.exception("crt %s>%s failed", htf, ltf)
+            self.status["errors"] = (self.status["errors"] + [f"crt {htf}>{ltf}: {e}"])[-5:]
+            return []
+        self.crt[res["pair"]] = res
+        for tf, j in self.json.items():
+            j["crt"] = self.crt_view(tf)
+        return crt_tbs.live(res, int(lr[-1]["ts"]) if lr else None)
+
+    async def act_on_crt(self, fresh: List[Signal]) -> None:
+        if not fresh:
+            return
+        C = config.rules().get("crt_tbs", {})
+        if C.get("alerts", True):
+            await self.alerts.handle(fresh)
+        if market_open_now():
+            for s in fresh:
+                t = paper.maybe_open(s, strikes=self.book.current(), mode=self.mode)
+                if t:
+                    await self.broadcast({"type": "paper", "trade": t})
+
+    def crt_view(self, tf: str) -> Dict[str, Any]:
+        """Ranges + markers for a chart tf: every pair whose LTF is as fine or finer than the chart, bucketed."""
+        out = {"ranges": [], "markers": [], "pairs": []}
+        if tf not in TF_SECONDS:
+            return out
+        for pid, r in self.crt.items():
+            if TF_SECONDS[r["ltf"]] > TF_SECONDS[tf] and r["htf"] != tf:
+                continue
+            out["pairs"].append({"pair": pid, "name": r["name"], "message": r.get("message", "")})
+            out["ranges"] += [dict(x, pair_name=r["name"]) for x in r["ranges"][-4:]]
+            if TF_SECONDS[r["ltf"]] <= TF_SECONDS[tf]:
+                out["markers"] += crt_tbs.markers(r, tf, 0)
+        out["markers"].sort(key=lambda m: m["time"])
+        return out
+
+    def crt_signals_today(self) -> List[Signal]:
+        o, _ = session_bounds(now_ist().date())
+        return [s for r in self.crt.values() for s in r.get("signals", []) if s.ts >= o]
 
     def evaluate_primary(self) -> List[Signal]:
         p = self.analyses.get(self.primary)
@@ -383,6 +453,8 @@ class Hub:
                 self.status["errors"] = (self.status["errors"] + [f"analysis {tf}: {e}"])[-5:]
         if self.analyses.get(self.primary):
             self.signals = self.evaluate_primary()
+        for pair in self.crt_pairs():
+            self.recompute_crt(pair)                          # startup / repair: no alerting from history
 
     async def run_playbook(self) -> None:
         p = self.analyses.get(self.primary)
@@ -511,7 +583,7 @@ class Hub:
 
     def today_signals(self) -> List[Signal]:
         o, _ = session_bounds(now_ist().date())
-        return [s for s in self.signals if s.ts >= o]
+        return sorted([s for s in self.signals if s.ts >= o] + self.crt_signals_today(), key=lambda s: s.ts)
 
     def status_view(self) -> Dict[str, Any]:
         return {**self.status, "feed": self.feed.status, "feed_error": self.feed.last_error,

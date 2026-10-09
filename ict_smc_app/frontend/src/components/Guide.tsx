@@ -120,6 +120,22 @@ export default function Guide() {
           <p>Delta <b>never</b> creates a trade. It only moves the confidence bar on Setup A / C, with the reason written on the card. No delta source = "Delta unavailable" (the NIFTY index has no volume; use a CSV or a futures footprint feed). <b>MOCK</b> = fake numbers for testing the screen only.</p>
         </S>
 
+        <S title="9 · Setup D — CRT + TBS (Candle Range Theory + Turtle Body Soup)">
+          <p>AR's method, a <Y>separate setup</Y>. It never changes A / B / C. Two timeframes: the <b>HTF</b> gives the bias, the <b>LTF</b> gives the entry.</p>
+          <T head={["Step", "Where", "Rule"]} rows={[
+            ["1 · CRT candle", "HTF", "A closed candle whose body is bigger than its two wicks together, and thick (≥ 0.8× ATR; ≥ 1.2× = A+). CRTH = high, CRTL = low, 50 % = middle."],
+            ["2 · Keylevel", "same HTF", <>The CRT candle purged an old high (<R>OHP</R>), an old low (<G>OLP</G>), or traded into an order block / FVG. Sets the bias. No keylevel → no setup.</>],
+            ["3 · Manipulation", "next HTF candle", "Only inside this candle do we look for the entry."],
+            ["4 · TBS", "LTF", <>The first candle whose <b>body closes</b> beyond the level — above CRTH for a sell, below CRTL for a buy. A wick poke is <b>not</b> a TBS.</>],
+            ["5 · Model #1", "LTF", "Sell: the thick buy candle at / after the TBS (it is the order block). Buy: the thick sell candle."],
+            ["6 · Entry", "LTF", "The first close below Model #1's low (sell) or above its high (buy). Entry = that close."],
+            ["7 · Exits", "", <>Stop at the extreme high / low (no tiny stops). <Y>TP-1 = 50 %</Y>: book half, then stop → entry (breakeven) — never before TP-1. TP-2 = the other CRT extreme.</>],
+          ]} />
+          <T head={["Pair", "Style"]} rows={[["1h → 1m", "Scalping"], ["4h → 5m", "Short-term (NSE 4h = 09:15–13:15, 13:15–15:30)"], ["1D → 1h", "Day trading"]]} />
+          <p>On the chart: the <Y>gold box</Y> is the CRT range (edge red = bearish, green = bullish), the dashed line is the 50 %. <Y>■ TBS</Y>, ● M1 and the arrow <b>CRT▶</b> mark the LTF steps; a 1m event sits on its 5m candle on a 5m chart. Toggle with "CRT + TBS".</p>
+          <p className="text-slate-400">Our reading of two course points, both shown on every card: "A+ TBS" = 2–6 candles closed inside the level just before the TBS (reported, not required); the trade windows, risk limits and R:R ≥ 1 to TP-1 are this desk's filters, not AR's.</p>
+        </S>
+
         <S title="7 · Pro habits that keep you alive">
           <ul className="list-disc ml-4 space-y-1">
             <li>No setup = no trade. Zero trades is a good day if the setups were not there (8 Oct was exactly that).</li>

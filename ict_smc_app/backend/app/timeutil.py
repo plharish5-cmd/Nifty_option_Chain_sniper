@@ -16,7 +16,7 @@ from . import config
 IST = timezone(timedelta(hours=5, minutes=30))
 IST_OFFSET_S = 19800
 
-TF_SECONDS = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "1D": 86400}
+TF_SECONDS = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1D": 86400}
 
 
 # TEST ONLY — simulated clock for replaying a past session after hours with tools/fake_dhan.py.

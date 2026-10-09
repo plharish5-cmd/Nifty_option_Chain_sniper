@@ -8,7 +8,7 @@ import type { Analysis, Candle, TF } from "../api";
 import { bucket } from "../api";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -132,6 +132,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           boxes.push({ from: t0, to: lastTime, top: S.or.h, bottom: S.or.l, fill: "rgba(148,163,184,0.04)", stroke: "rgba(148,163,184,0.25)", dash: true, label: "Opening range 09:15–09:30" });
         }
       }
+      // setup D — CRT range (CRT candle → end of the manipulation candle), its 50 % (TP-1) and the CRTH / CRTL edges
+      if (layers.crt && a.crt) {
+        for (const r of a.crt.ranges) {
+          const bear = r.biases.includes("bear") && !r.biases.includes("bull");
+          const bull = r.biases.includes("bull") && !r.biases.includes("bear");
+          const edge = bear ? "rgba(239,68,68,0.75)" : bull ? "rgba(16,185,129,0.75)" : "rgba(232,195,90,0.75)";
+          const kl = r.keylevels.map((k) => k.kind).join("+");
+          boxes.push({ from: r.chart_from, to: r.chart_to, top: r.crth, bottom: r.crtl, fill: "rgba(232,195,90,0.05)", stroke: edge,
+            label: `CRT ${r.htf} ${r.time}${r.aplus ? " A+" : ""} · ${kl} · ${r.status}`, labelColor: C.gold });
+          boxes.push({ from: r.chart_from, to: r.chart_to, top: r.mid, bottom: r.mid, fill: "rgba(232,195,90,0.9)", stroke: "rgba(232,195,90,0.9)", dash: true });
+        }
+      }
     }
     zones.current.set(boxes, segs, lastTime);
 
@@ -168,6 +180,19 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           color: isStruct ? (bull ? C.bull : C.bear) : (m.kind === "SWEEP" ? "#f59e0b" : "#a78bfa"),
           text: m.text,
           size: isStruct ? 1 : 0.6,
+        });
+      }
+    }
+    if (a && layers.crt && a.crt) {
+      for (const m of a.crt.markers) {
+        const bull = m.dir === "bull";
+        const entry = m.kind === "CRT_ENTRY", tbs = m.kind === "CRT_TBS";
+        ms.push({
+          time: m.time as UTCTimestamp,
+          position: tbs ? (bull ? "belowBar" : "aboveBar") : (bull ? "belowBar" : "aboveBar"),
+          shape: entry ? (bull ? "arrowUp" : "arrowDown") : tbs ? "square" : "circle",
+          color: entry ? (bull ? "#22c55e" : "#ef4444") : tbs ? "#e8c35a" : "#cbd5e1",
+          text: m.text, size: entry ? 1.2 : 0.7,
         });
       }
     }
