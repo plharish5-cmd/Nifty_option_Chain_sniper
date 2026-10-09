@@ -1,13 +1,13 @@
 {
- "updated": "2026-10-08T15:35:00",
- "day": "2026-10-08",
- "status": "stopped",
- "packets": 1402731,
- "trades": 868259,
+ "updated": "2026-10-09T12:21:45",
+ "day": "2026-10-09",
+ "status": "connected",
+ "packets": 680427,
+ "trades": 334119,
  "stocks_streaming": 50,
  "stocks_subscribed": 50,
- "index_ltp": 22231.80078125,
+ "index_ltp": 22468.30078125,
  "index_source": "rest",
  "error": "index REST fallback: /marketfeed/ltp returned HTTP 429: '{\"data\":{\"805\":\"Too many requests. Further requests may result in the user being blo",
- "pid": 3596
+ "pid": 25066
 }

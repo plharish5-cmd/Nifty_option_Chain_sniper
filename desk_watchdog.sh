@@ -15,7 +15,7 @@ for path in ("/_stcore/health", "/healthz", "/"):     # newer and older Streamli
 sys.exit(1)
 PY
 }
-for pair in "paperdesk-main:8502" "paperdesk-second:8503"; do
+for pair in "paperdesk-main:8502" "paperdesk-second:8503" "paperdesk-strategies:8504"; do
   svc=${pair%%:*}; port=${pair##*:}
   systemctl is-active --quiet "$svc" || continue          # stopped on purpose / still starting → leave it
   up=$(( $(date +%s) - $(date -d "$(systemctl show -p ActiveEnterTimestamp --value "$svc")" +%s 2>/dev/null || echo 0) ))

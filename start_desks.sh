@@ -12,10 +12,10 @@ TS=$(tailscale ip -4 2>/dev/null | head -1)
 
 if [ -f /etc/systemd/system/paperdesk-main.service ]; then
   case "$ARG" in
-    stop)   sudo systemctl stop paperdesk-main paperdesk-second; echo "stopped (they will start again on next boot)";;
-    status) systemctl --no-pager --lines=0 status paperdesk-main paperdesk-second | grep -E "●|Active";;
-    *)      sudo systemctl restart paperdesk-main paperdesk-second; sleep 5
-            systemctl is-active paperdesk-main paperdesk-second | paste -sd' ' | sed 's/^/services: /'
+    stop)   sudo systemctl stop paperdesk-main paperdesk-second paperdesk-strategies; echo "stopped (they will start again on next boot)";;
+    status) systemctl --no-pager --lines=0 status paperdesk-main paperdesk-second paperdesk-strategies | grep -E "●|Active";;
+    *)      sudo systemctl restart paperdesk-main paperdesk-second paperdesk-strategies; sleep 5
+            systemctl is-active paperdesk-main paperdesk-second paperdesk-strategies | paste -sd' ' | sed 's/^/services: /'
             echo "Harish → http://${TS:-<tailscale-ip>}:8502   second desk → http://${TS:-<tailscale-ip>}:8503";;
   esac
   exit 0
