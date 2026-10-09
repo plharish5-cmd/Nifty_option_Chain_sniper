@@ -12,8 +12,11 @@ HTF — the bias
                  OLP  the CRT candle took out an older, untaken, confirmed swing low       → bullish
                  OB   the CRT candle traded into a supply / demand order block            → bearish / bullish
                  FVG  the CRT candle traded into an open bearish / bullish fair value gap  → bearish / bullish
+                 RB   the CRT candle traded into a rejection block — the long-wick part of a swing candle
+                      (upper wick of a swing high → bearish, lower wick of a swing low → bullish)
   Manipulation the NEXT HTF candle. We act only inside its window ("as soon as the 2nd candle got manipulated we
-               need to switch to LTF").
+               need to switch to LTF"). INSIDE-BAR CRT: if that 2nd candle closed fully inside the CRT range it
+               manipulated nothing, so the 3rd candle becomes the manipulation candle.
 
 LTF — the entry (every candle CLOSED; nothing repaints)
   TBS          the first candle whose BODY closes beyond the CRT level: above CRTH for a sell, below CRTL for a buy.
@@ -21,8 +24,12 @@ LTF — the entry (every candle CLOSED; nothing repaints)
                reported, not required unless crt_tbs.require_aplus_tbs).
   Model #1     sell: the thick BUY candle at / after the TBS (body ≥ m1_min_body_ratio of range) — the last one before
                the break (it is the order block). Buy: the thick SELL candle.
-  Entry        the first candle that CLOSES beyond Model #1: below its low for a sell, above its high for a buy.
-               Entry price = that close.
+  Entry        whichever entry model confirms FIRST (all on closed LTF candles, after the TBS):
+                 Model #1  order block — close beyond the thick opposite-colour candle (below its low for a sell)
+                 Model #2  fair value gap — a 3-candle gap in the trade direction forms (entry at its 3rd candle)
+                 Model #3  break of structure — close beyond the last LTF swing low (sell) / high (buy) before TBS
+               Entry price = that close. 3-candle model: "pros enter on the manipulation candle, others wait for it
+               to close and enter on the next one" → the entry may come until the next HTF candle closes.
   Stop         the extreme high / low since the TBS, plus sl_buffer_pts ("don't get greedy, no tiny stop").
   TP-1         the CRT 50 %: book HALF there, then move the stop to entry (breakeven) — never before TP-1.
   TP-2         the opposite CRT extreme (CRTL for a sell, CRTH for a buy).
@@ -42,7 +49,7 @@ from .. import config
 from ..signals.playbook import Signal
 from ..timeutil import TF_SECONDS, bucket_start, chart_time, hm, in_windows, session_bounds, to_ist
 from .analyze import Analysis, analyze
-from .primitives import Bars
+from .primitives import Bars, pivots
 
 
 def R() -> Dict[str, Any]:
@@ -67,6 +74,7 @@ class CRTRange:
     keylevels: List[Dict[str, Any]] = field(default_factory=list)   # [{kind, dir, price | top/bottom, text}]
     biases: List[str] = field(default_factory=list)                   # "bear" (watch CRTH) / "bull" (watch CRTL)
     status: str = "armed"           # armed · tbs · entered · no-entry · expired
+    inside_bar: bool = False        # 2nd candle was an inside bar → the 3rd candle is the manipulation
     live: bool = False              # manipulation candle still forming
 
     def to_dict(self) -> Dict[str, Any]:
@@ -127,6 +135,29 @@ def keylevels(an: Analysis, k: int) -> List[Dict[str, Any]]:
             out.append({"kind": "FVG", "dir": g.dir, "top": round(g.top, 2), "bottom": round(g.bottom, 2),
                         "ts": int(g.ts), "text": f"FVG — {'bearish' if g.dir == 'bear' else 'bullish'} "
                                                  f"{_fmt(g.bottom)}–{_fmt(g.top)}"})
+    # RB — rejection block: the long-wick part of a confirmed swing candle, not closed through before k
+    wr = float(R().get("rb_min_wick_ratio", 0.5))
+    for s_ in an.swings:
+        if s_.i >= k or s_.confirm_i >= k:
+            continue
+        i = s_.i
+        rng = float(b.h[i] - b.l[i])
+        if rng <= 0:
+            continue
+        if s_.kind == "H":
+            top, bot = float(b.h[i]), float(max(b.o[i], b.c[i]))
+            if (top - bot) / rng < wr or (b.c[i + 1:k] > top).any():
+                continue
+            d = "bear"
+        else:
+            top, bot = float(min(b.o[i], b.c[i])), float(b.l[i])
+            if (top - bot) / rng < wr or (b.c[i + 1:k] < bot).any():
+                continue
+            d = "bull"
+        if hi >= bot and lo <= top:
+            out.append({"kind": "RB", "dir": d, "top": round(top, 2), "bottom": round(bot, 2), "ts": int(s_.ts),
+                        "text": f"RB — {'upper' if d == 'bear' else 'lower'}-wick rejection block "
+                                f"{_fmt(bot)}–{_fmt(top)} ({hm(s_.ts)})"})
     # keep the nearest of each (kind, dir) so the card stays short
     seen, keep = set(), []
     for x in sorted(out, key=lambda z: -int(z["ts"])):
@@ -162,14 +193,17 @@ def crt_candles(an: Analysis, pair: str, htf: str, ltf: str, lookback: int) -> L
 # ═══════════════════════════════════════════════════════════════════════════
 # LTF — TBS → Model #1 → entry
 # ═══════════════════════════════════════════════════════════════════════════
-def _scan(cr: CRTRange, bias: str, lb: Bars, win: List[int]) -> Dict[str, Any]:
-    """win = LTF bar indices inside the manipulation candle (closed only). Returns the TBS / M1 / entry story."""
+def _scan(cr: CRTRange, bias: str, lb: Bars, win: List[int], deadline: int) -> Dict[str, Any]:
+    """win = LTF bar indices of the manipulation candle (closed only); the entry may come until LTF bar `deadline`.
+    Returns the TBS → entry-model story. The first model to confirm wins."""
     C = R()
     pen = float(C.get("tbs_min_pen_pts", 0.5))
     m1r = float(C.get("m1_min_body_ratio", 0.5))
+    models = set(C.get("models", ["M1", "M2", "M3"]))
     sell = bias == "bear"
     lv = cr.crth if sell else cr.crtl
-    res: Dict[str, Any] = {"bias": bias, "level": lv, "tbs": None, "m1": None, "entry": None, "inside": 0}
+    res: Dict[str, Any] = {"bias": bias, "level": lv, "tbs": None, "m1": None, "entry": None, "inside": 0,
+                           "model": None, "model_px": None}
     tbs = next((t for t in win if (lb.c[t] > lv + pen if sell else lb.c[t] < lv - pen)), None)
     if tbs is None:
         return res
@@ -179,17 +213,36 @@ def _scan(cr: CRTRange, bias: str, lb: Bars, win: List[int]) -> Dict[str, Any]:
         n, j = n + 1, j - 1
     res.update(tbs=tbs, inside=n, inside_txt=f"{n}+" if n >= cap else str(n),
                aplus_tbs=int(C.get("aplus_inside_min", 2)) <= n <= int(C.get("aplus_inside_max", 6)))
+    # Model #3 level: the last LTF swing low (sell) / high (buy) known before the TBS
+    piv = pivots(lb, int(C.get("m3_pivot_n", 2)))
+    sw = [x for x in piv if x.confirm_i <= tbs and x.i < tbs and x.kind == ("L" if sell else "H")]
+    bos = sw[-1].price if sw and "M3" in models else None
+    res["bos_level"] = bos
+    fvg_min = float(C.get("m2_min_gap_pts", 1.0))
     want_up = sell                                   # Model #1 is a BUY candle for a sell, a SELL candle for a buy
     is_m1 = lambda t: _thick(lb, t, m1r) and ((lb.c[t] > lb.o[t]) == want_up)   # noqa: E731
     m = tbs if is_m1(tbs) else None
-    last = min(len(lb) - 1, tbs + int(C.get("m1_max_bars", 20)))
+    cap_bars = C.get("m1_max_bars")
+    last = min(len(lb) - 1, deadline, tbs + int(cap_bars) if cap_bars else 10 ** 9)
     for t in range(tbs + 1, last + 1):
-        if m is not None and (lb.c[t] < lb.l[m] if sell else lb.c[t] > lb.h[m]):
-            res.update(m1=m, entry=t)
+        hit = None
+        if "M1" in models and m is not None and (lb.c[t] < lb.l[m] if sell else lb.c[t] > lb.h[m]):
+            hit = ("M1", float(lb.l[m] if sell else lb.h[m]))
+        elif "M2" in models and t - 2 > tbs - 1 and t >= 2 and \
+                ((lb.l[t - 2] - lb.h[t] >= fvg_min) if sell else (lb.l[t] - lb.h[t - 2] >= fvg_min)):
+            hit = ("M2", float(lb.h[t] if sell else lb.l[t]))
+        elif bos is not None and (lb.c[t] < bos if sell else lb.c[t] > bos):
+            hit = ("M3", float(bos))
+        if hit:
+            res.update(m1=m if hit[0] == "M1" else t, entry=t, model=hit[0], model_px=hit[1],
+                       m2_gap=((float(lb.h[t]), float(lb.l[t - 2])) if sell else (float(lb.h[t - 2]), float(lb.l[t])))
+                       if hit[0] == "M2" else None)
             return res
         if is_m1(t):
             m = t
     res["m1"] = m
+    if m is not None:
+        res["model"] = "M1"
     return res
 
 
@@ -230,13 +283,30 @@ def evaluate_pair(pair: Dict[str, Any], htf_rows: List[Dict[str, float]], ltf_ro
             cr.win_end, cr.live, cr.status = cr.win_ts + TF_SECONDS.get(htf, 0), True, "armed"
             out["ranges"].append(cr.to_dict())
             continue
-        w0 = int(bucket_start(int(lb.ts[after[0]]), htf))
+        buckets: List[int] = []
+        for t in after:
+            bb = int(bucket_start(int(lb.ts[t]), htf))
+            if not buckets or buckets[-1] != bb:
+                buckets.append(bb)
+            if len(buckets) > 3:
+                break
+        w0 = buckets[0]
+        # INSIDE-BAR CRT: a closed 2nd candle that stayed inside the CRT range manipulated nothing → use the 3rd
+        hb = np.nonzero(an.bars.ts == w0)[0]
+        if C.get("inside_bar_crt", True) and len(hb) and len(buckets) > 1 and \
+                an.bars.h[hb[0]] <= cr.crth and an.bars.l[hb[0]] >= cr.crtl:
+            cr.inside_bar = True
+            w0 = buckets[1]
         cr.win_ts, cr.win_end = w0, _end(w0, htf)
         win = [int(t) for t in after if int(bucket_start(int(lb.ts[t]), htf)) == w0]
+        nxt = [b_ for b_ in buckets if b_ > w0]
+        dl_ts = _end(nxt[0], htf) if (nxt and C.get("entry_next_htf_candle", True)) else cr.win_end
+        dl = [int(t) for t in after if int(lb.ts[t]) + lstep <= dl_ts]
+        deadline = dl[-1] if dl else (win[-1] if win else -1)
         cr.live = now < cr.win_end
         best = "armed" if cr.live else "expired"
         for bias in cr.biases:
-            r = _scan(cr, bias, lb, win)
+            r = _scan(cr, bias, lb, win, max(deadline, win[-1] if win else -1))
             if r["tbs"] is not None:
                 out["events"].append(_ev("TBS", cr, r, lb, r["tbs"], ltf))
                 best = "tbs" if best in ("armed", "expired") else best
@@ -263,14 +333,30 @@ def _ev(kind: str, cr: CRTRange, r: Dict[str, Any], lb: Bars, t: int, ltf: str) 
         text = (f"TBS: {ltf} body closed {'above CRTH' if sell else 'below CRTL'} {_fmt(r['level'])} "
                 f"({r['inside_txt']} inside · {'A+' if r.get('aplus_tbs') else 'not A+'})")
     elif kind == "M1":
-        px = float(lb.l[t] if sell else lb.h[t])
-        text = f"Model #1: {'buy' if sell else 'sell'} candle, trigger {'below' if sell else 'above'} {_fmt(px)}"
+        mdl = r.get("model") or "M1"
+        px = float(r.get("model_px") or (lb.l[t] if sell else lb.h[t]))
+        text = {"M1": f"Model #1 (order block): {'buy' if sell else 'sell'} candle, trigger "
+                      f"{'below' if sell else 'above'} {_fmt(px)}",
+                "M2": f"Model #2 (FVG): {'bearish' if sell else 'bullish'} gap formed after the TBS",
+                "M3": f"Model #3 (BOS): close {'below swing low' if sell else 'above swing high'} {_fmt(px)}"}[mdl]
     else:
         px = float(lb.c[t])
-        text = f"Entry: close {_fmt(px)} {'below' if sell else 'above'} Model #1 → {'SELL' if sell else 'BUY'}"
+        text = f"Entry: close {_fmt(px)} — Model #{(r.get('model') or 'M1')[1]} → {'SELL' if sell else 'BUY'}"
     return {"id": f"CRT|{kind}|{cr.pair}|{cr.k_ts}|{r['bias']}", "kind": f"CRT_{kind}", "ts": ts, "time": hm(ts),
+            "model": r.get("model") or "M1",
             "chart_time": chart_time(ts), "dir": "bear" if sell else "bull", "price": round(px, 2), "text": text,
             "pair": cr.pair, "ltf": ltf, "crt_ts": cr.k_ts}
+
+
+def _model_line(r: Dict[str, Any], lb: Bars, m: int, sell: bool) -> str:
+    mdl = r["model"]
+    if mdl == "M1":
+        return (f"{hm(int(lb.ts[m]))} Model #1 (order block) — {'buy' if sell else 'sell'} candle "
+                f"{'low' if sell else 'high'} {_fmt(float(lb.l[m] if sell else lb.h[m]))}")
+    if mdl == "M2":
+        lo, hi = r["m2_gap"]
+        return f"{hm(int(lb.ts[r['entry']]))} Model #2 (FVG) — {'bearish' if sell else 'bullish'} gap {_fmt(lo)}–{_fmt(hi)}"
+    return f"Model #3 (BOS) — last {'swing low' if sell else 'swing high'} before the TBS {_fmt(r['bos_level'])}"
 
 
 def _signal(cr: CRTRange, r: Dict[str, Any], lb: Bars, ltf: str, name: str, S: Dict[str, Any],
@@ -309,14 +395,14 @@ def _signal(cr: CRTRange, r: Dict[str, Any], lb: Bars, ltf: str, name: str, S: D
         reasons.append(f"against the {bias_an.tf} structure ({tr}) — desk filter, not part of the course")
     kl = [x for x in cr.keylevels if x["dir"] == r["bias"]]
     story = [
-        f"{cr.htf} CRT candle {hm(cr.k_ts)}: body {cr.body_ratio:.0%} of range, {cr.range_atr:.1f}× ATR"
+        ("Inside-bar CRT: the 2nd candle stayed inside, the 3rd candle is the manipulation · " if cr.inside_bar else "")
+        + f"{cr.htf} CRT candle {hm(cr.k_ts)}: body {cr.body_ratio:.0%} of range, {cr.range_atr:.1f}× ATR"
         f"{' (A+ thick)' if cr.aplus else ''} · CRTH {_fmt(cr.crth)} · 50 % {_fmt(cr.mid)} · CRTL {_fmt(cr.crtl)}",
         "Keylevel: " + "; ".join(x["text"] for x in kl) + f" → {'bearish' if sell else 'bullish'} bias",
         f"{hm(int(lb.ts[tbs]))} {ltf} TBS — body closed {'above CRTH' if sell else 'below CRTL'} "
         f"{_fmt(r['level'])} ({r['inside_txt']} candles inside — {'A+ TBS' if r.get('aplus_tbs') else 'not A+'})",
-        f"{hm(int(lb.ts[m]))} Model #1 — {'buy' if sell else 'sell'} candle "
-        f"{'low' if sell else 'high'} {_fmt(float(lb.l[m] if sell else lb.h[m]))}",
-        f"{hm(int(lb.ts[t]))} close {_fmt(entry)} {'below' if sell else 'above'} Model #1 → "
+        _model_line(r, lb, m, sell),
+        f"{hm(int(lb.ts[t]))} close {_fmt(entry)} → Model #{r['model'][1]} confirmed → "
         f"{'SELL' if sell else 'BUY'} · SL {_fmt(sl)} (extreme {'high' if sell else 'low'}) · "
         f"TP-1 {_fmt(tp1)} (50 %, book half, SL → breakeven) · TP-2 {_fmt(tp2)} ({'CRTL' if sell else 'CRTH'})",
     ]
@@ -324,7 +410,7 @@ def _signal(cr: CRTRange, r: Dict[str, Any], lb: Bars, ltf: str, name: str, S: D
                name=f"CRT + TBS {cr.htf}→{ltf}", tf=ltf, side="short" if sell else "long", i=t, ts=int(lb.ts[t]),
                status="SKIP" if reasons else "TRADE", entry=entry, sl=sl, tp=tp2, risk=risk, rr=rr2,
                target_src=f"{'CRTL' if sell else 'CRTH'} TP-2", reasons=reasons, story=story)
-    s.ctx = {"tp1": tp1, "rr1": rr1, "crt": {"htf": cr.htf, "k_ts": cr.k_ts, "crth": cr.crth, "crtl": cr.crtl,
+    s.ctx = {"model": r["model"], "inside_bar": cr.inside_bar, "tp1": tp1, "rr1": rr1, "crt": {"htf": cr.htf, "k_ts": cr.k_ts, "crth": cr.crth, "crtl": cr.crtl,
                                              "mid": cr.mid, "keylevels": kl, "aplus": cr.aplus},
              "tbs_ts": int(lb.ts[tbs]), "m1_ts": int(lb.ts[m]), "aplus_tbs": bool(r.get("aplus_tbs")),
              "inside": r["inside"], "pair": cr.pair, "name": name, "bias_trend": tr}
@@ -339,11 +425,12 @@ def live(res: Dict[str, Any], last_ltf_ts: Optional[int]) -> List[Signal]:
 def markers(res: Dict[str, Any], chart_tf: str, since_ts: int) -> List[Dict[str, Any]]:
     """TBS / Model #1 / entry markers aligned to the chart's own candles (a 1m event sits on its 5m candle)."""
     out = []
-    lab = {"CRT_TBS": "TBS", "CRT_M1": "M1", "CRT_ENTRY": "CRT▶"}
+    lab = {"CRT_TBS": "TBS", "CRT_M1": "M", "CRT_ENTRY": "CRT▶"}
     for e in res.get("events", []):
         if e["ts"] < since_ts:
             continue
         t = chart_time(int(bucket_start(e["ts"], chart_tf))) if chart_tf != "1D" else e["chart_time"]
+        txt = e.get("model", "M1") if e["kind"] == "CRT_M1" else lab[e["kind"]]
         out.append({"time": t, "kind": e["kind"], "dir": e["dir"], "price": e["price"],
-                    "text": lab[e["kind"]], "at": e["time"], "id": e["id"], "pair": e["pair"]})
+                    "text": txt, "at": e["time"], "id": e["id"], "pair": e["pair"]})
     return out

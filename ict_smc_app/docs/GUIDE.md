@@ -530,3 +530,17 @@ bullish), dashed line = 50 %, ■ TBS, ● M1, ▲/▼ CRT▶ entry. A pair show
 sit on their 5m candle). Playbook cards show TP-1 (½ + BE) and TP-2 with both R:Rs. `GET /api/crt?tf=5m` returns
 every pair's ranges, events and signals. Alerts and Telegram use the existing alert engine (same cooldown and daily
 cap). Paper: one open trade at a time, shared with A / C; new status **BE** = second half stopped at entry.
+
+
+### 10.5 Second batch of course cards (added 10 Oct 2026)
+
+| Concept | Card | Implementation |
+|---|---|---|
+| **RB — Rejection Block** keylevel | "five keylevels: OB, FVG, RB, OHP, OLP" | the wick of a confirmed swing candle when that wick is ≥ 50 % of its range (upper → bearish, lower → bullish), valid until a close through its extreme |
+| **Model #2 — FVG** entry | CRT + TBS Model #2 | after the TBS, a 3-candle gap in the trade direction (≥ 1 pt) → entry at the close of its 3rd candle |
+| **Model #3 — BOS** entry | CRT + TBS Model #3 | close beyond the last LTF swing low (sell) / high (buy) confirmed before the TBS |
+| Which model | "entry Models (Model #1, #2 or #3)" | the first to confirm wins; `crt_tbs.models` can restrict it |
+| **Inside-bar CRT** | Inside bar — CRT (bearish model) | if the 2nd HTF candle closed fully inside the CRT range, the 3rd candle is the manipulation candle |
+| **3-candle model** | "pros enter on the 2nd candle, others wait for its close and enter on the 3rd" | the TBS must be in the manipulation candle; the entry may come until the next HTF candle closes |
+| Timing / session | "not a matter if your analysis is correct" | no session filter added; the desk's own trade windows stay |
+| "80–95 % win rate" | sketch-map card | a marketing claim, not a rule — nothing implemented, and the 8 Oct replay (3 losing longs) is a reason to measure your own |

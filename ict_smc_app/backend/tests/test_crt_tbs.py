@@ -201,3 +201,64 @@ def test_optional_bias_filter_uses_trend_known_at_entry():
         assert s.status == "SKIP" and any("against the 15m structure" in x for x in s.reasons)
     finally:
         C["require_bias_alignment"] = False
+
+
+# ── concepts from the second batch of course cards ─────────────────────────────
+def _at(rows, ts):
+    return next(k for k, x in enumerate(rows) if x["ts"] == ts)
+
+
+def test_model2_fvg_entry_when_no_close_beyond_model1():
+    rows = ltf_sell(upto_min=4)                                              # up to the 11:19 TBS
+    t = D8 + 7200
+    rows += [h(t + 300, 22106, 22109, 22100, 22101),                         # 11:20
+             h(t + 360, 22101, 22102, 22096, 22097),                         # 11:21 holds above Model #1 low 22095
+             h(t + 420, 22097, 22098, 22095.5, 22096)]                       # 11:22 high 22098 < 11:20 low 22100 → bear FVG
+    (s,) = run(htf_rows(), rows)["signals"]
+    assert s.ctx["model"] == "M2" and s.ts == t + 420 and s.entry == 22096.0
+    assert s.sl == 22111.0 and "Model #2 (FVG)" in s.story[3]
+
+
+def test_model3_bos_entry_on_close_below_last_swing_low():
+    C = config.rules()["crt_tbs"]
+    old = C["models"]
+    rows = ltf_sell()
+    t = D8 + 7200
+    rows[_at(rows, t + 60)] = h(t + 60, 22094, 22099, 22080, 22097)        # 11:16 swing low 22080 (confirmed 11:18)
+    rows.append(h(t + 480, 22082, 22083, 22070, 22075))                     # 11:23 close 22075 < 22080 → BOS
+    try:
+        C["models"] = ["M3"]
+        (s,) = run(htf_rows(), rows)["signals"]
+        assert s.ctx["model"] == "M3" and s.ts == t + 480 and s.entry == 22075.0
+        assert "Model #3 (BOS)" in s.story[3] and "22,080.0" in s.story[3]
+        C["models"] = ["M1", "M2", "M3"]
+        (s,) = run(htf_rows(), rows)["signals"]
+        assert s.ctx["model"] == "M1" and s.ts == t + 360                   # Model #1 confirmed first (11:21)
+    finally:
+        C["models"] = old
+
+
+def test_rejection_block_keylevel():
+    rows = htf_rows(flat=True)
+    k = _at(rows, D7 + 3 * 3600)
+    rows[k] = h(D7 + 3 * 3600, 21995, 22095, 21990, 21998)                 # swing high with a 92 % upper wick
+    cr = run(rows, ltf_sell())["ranges"][-1]
+    rb = [x for x in cr["keylevels"] if x["kind"] == "RB"]
+    assert rb and rb[0]["dir"] == "bear" and (rb[0]["bottom"], rb[0]["top"]) == (21998.0, 22095.0)
+
+
+def test_inside_bar_crt_moves_manipulation_to_third_candle():
+    hrows = htf_rows() + [h(D8 + 7200, 22090, 22099, 22040, 22060)]         # 11:15 1h candle stays inside 21995–22100
+    lrows = [x for x in ltf_sell() if x["ts"] < D8 + 7200]
+    lrows += [h(D8 + 7200 + m * 60, 22060, 22070, 22050, 22060) for m in range(60)]   # the inside hour
+    lrows += [dict(x, ts=x["ts"] + 3600) for x in ltf_sell() if x["ts"] >= D8 + 7200]  # TBS hour now 12:15
+    r = run(hrows, lrows)
+    (s,) = r["signals"]
+    assert r["ranges"][-1]["inside_bar"] and s.ctx["inside_bar"] and s.ts == D8 + 3 * 3600 + 360
+    assert s.story[0].startswith("Inside-bar CRT")
+    C = config.rules()["crt_tbs"]
+    C["inside_bar_crt"] = False
+    try:
+        assert run(hrows, lrows)["signals"] == []                             # the 2nd candle had no TBS
+    finally:
+        C["inside_bar_crt"] = True
