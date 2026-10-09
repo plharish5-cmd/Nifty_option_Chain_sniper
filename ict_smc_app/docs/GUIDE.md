@@ -556,3 +556,34 @@ cap). Paper: one open trade at a time, shared with A / C; new status **BE** = se
 * **Service**: `./install_ict_service.sh` (OC folder) installs `paperdesk-ict`, adds it to `desk_hours.sh`
   (08:55–16:00 Mon–Fri) and to the watchdog. Log: `ict_smc_app/backend/ict_desk.log`. `./install_ict_service.sh remove`
   undoes it.
+
+## 11 · Auction read — "don't confuse activity with control" (added 10 Oct 2026)
+
+From Viswas Yadav's 10 order-flow / auction cards. **Observation only**: it never opens a paper trade, never
+changes Setups A / B / C / D (the 8 Oct baseline lock still passes), and it is not part of the scorecard.
+
+### 11.1 The 5 questions (tab **Auction**, 5m / 15m / 1h)
+| # | Question | How the desk answers it |
+|---|----------|-------------------------|
+| 1 | Location | above / inside / below yesterday's value area · inside today's developing value · at pVAH / pVAL / pPOC / PDH / PDL (within 0.35 ATR) · at the edge of a live balance box |
+| 2 | Effort | real delta z of the last closed candle. NIFTY index has no volume → with no real source: **"Delta unavailable"** (never guessed) |
+| 3 | Result | move of the last 3 closed candles in ATR. High effort (|z| ≥ 2) + result ≤ 0.35 ATR → "activity without control" |
+| 4 | Response | **Accepted** = after a close beyond a reference, still beyond 2 closes later with ≥ 0.6 ATR follow-through (closes, not wicks) · **Rejected** = a close back on the old side, or a wick probe ≥ 3 pts beyond that closes back · **No follow-through** = still beyond after 6 closes without the 0.6 ATR |
+| 5 | Decision | text that combines 1–4: accepted → only pullbacks that hold the level, with a playbook / CRT entry · rejected → failed auction, expect rotation into value · balance / testing → wait |
+
+### 11.2 Profile and balance
+* **TPO (time-at-price) profile** from closed 1-minute candles, 5-point buckets — each minute adds 1 to every bucket
+  it traded through. Value area = 70 % of the time around the POC. Labelled TPO everywhere: it is not volume.
+* References for a day = the previous day's VAH / VAL / POC + PDH / PDL (all known before the open → no look-ahead).
+* **Balance box** = ≥ 8 closed candles inside 2 × ATR. A close beyond the box is a break test of its edge (Bal-H / Bal-L).
+
+### 11.3 Chart layer "Auction (value · accept / reject)"
+Blue dashed box = yesterday's value · solid blue = pPOC · pink dashed = today's developing POC · grey box = balance.
+Markers: ▲▼ **ACC** accepted · ● **REJ** rejected · ● **NoFT** no follow-through; references resolved on the same
+candle are joined (ACC pVAH·pPOC·PDH). The dashboard "Read of the market" gets an "Auction (5m)" line.
+
+### 11.4 What the cards say that the desk already did
+Cards 3, 4, 6 (aggression ≠ success, passive liquidity, positive delta + falling price) are the existing
+Delta / Footprint absorption rules 1 and 2 — they work once a real delta source is connected.
+
+Rules: `rules.json → auction`. API: `GET /api/auction?tf=5m`. Tests: `tests/test_auction.py`.

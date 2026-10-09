@@ -330,5 +330,22 @@
     "inside_bar_crt": true,
     "_inside_note": "Inside-bar CRT: if the 2nd HTF candle closed inside the CRT range, the 3rd candle is the manipulation candle.",
     "entry_next_htf_candle": true
+  },
+  "auction": {
+    "_note": "Auction read (Market Profile context). Observation only — never opens a paper trade, never changes A/B/C/D. Profile is TPO (time at price) from closed 1m candles: the NIFTY index has no volume.",
+    "step_pts": 5.0,
+    "value_area_pct": 0.7,
+    "_balance_note": "Balance / stall = at least balance_min_bars closed candles whose whole range is <= balance_max_atr x ATR.",
+    "balance_min_bars": 8,
+    "balance_max_atr": 2.0,
+    "_accept_note": "After a close beyond a reference: ACCEPT = still beyond after accept_bars more closes AND progress >= follow_atr x ATR. REJECT = any close back on the old side. NO_FOLLOW = still beyond after accept_bars+max_wait_bars without that progress. Probe = wick >= probe_min_pen_pts beyond, close back inside.",
+    "accept_bars": 2,
+    "follow_atr": 0.6,
+    "max_wait_bars": 4,
+    "probe_min_pen_pts": 3.0,
+    "near_ref_atr": 0.35,
+    "effort_high_z": 2.0,
+    "result_low_atr": 0.35,
+    "response_lookback_bars": 6
   }
 }

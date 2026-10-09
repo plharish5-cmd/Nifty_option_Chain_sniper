@@ -136,6 +136,19 @@ export default function Guide() {
           <p className="text-slate-400">Our reading of two course points, both shown on every card: "A+ TBS" = 2–6 candles closed inside the level just before the TBS (reported, not required); the trade windows, risk limits and R:R ≥ 1 to TP-1 are this desk's filters, not AR's.</p>
         </S>
 
+        <S title="10 · Auction — don't confuse activity with control">
+          <p>From the order-flow / auction cards. <Y>Observation only</Y>: it never opens a paper trade and never changes Setups A / B / C / D. It answers the 5 questions before you act on any setup — tab <b>Auction</b>, chart layer "Auction".</p>
+          <T head={["Question", "What the desk checks"]} rows={[
+            ["1 · Location", "Above / inside / below yesterday's value area, inside today's developing value, at a reference (pVAH, pVAL, pPOC, PDH, PDL), or at the edge of a balance box."],
+            ["2 · Effort", <>Real delta z on the last closed candle. <R>The NIFTY index has no volume</R>: with no real delta source this says <b>Delta unavailable</b> — never guessed.</>],
+            ["3 · Result", "How far price actually moved over the last 3 closed candles, in ATR. High effort + low result = activity without control (possible absorption)."],
+            ["4 · Response", <>After a close beyond a reference: <b className="text-sky-300">Accepted</b> = still beyond after 2 more closes with ≥ 0.6 ATR follow-through · <b className="text-orange-300">Rejected</b> = a close back inside, or a wick probe that closes back · <b>No follow-through</b> = holds beyond but doesn't travel.</>],
+            ["5 · Decision", "Accepted → trade only pullbacks that hold the level, with a playbook / CRT entry. Rejected → failed auction, expect rotation back into value. Balance / testing → wait."],
+          ]} />
+          <p>The profile is a <b>TPO (time-at-price)</b> profile from closed 1-minute candles — every minute counts once at each price it traded — because the index has no volume. Value area = 70 % of the time around the POC. A <b>balance box</b> is ≥ 8 closed candles inside 2 × ATR: stalling is not the answer, the escape and its acceptance are.</p>
+          <p className="text-slate-400">Chart: blue dashed box = yesterday's value, solid blue line = pPOC, pink dashed = today's developing POC, grey box = balance. Markers: ▲▼ ACC (accepted), ● REJ (rejected), ● NoFT (no follow-through).</p>
+        </S>
+
         <S title="7 · Pro habits that keep you alive">
           <ul className="list-disc ml-4 space-y-1">
             <li>No setup = no trade. Zero trades is a good day if the setups were not there (8 Oct was exactly that).</li>

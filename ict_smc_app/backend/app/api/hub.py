@@ -31,6 +31,7 @@ from ..strikes import context as sctx
 from ..strikes.selector import StrikeBook, select_strikes
 from ..delta import confluence
 from ..delta import engine as delta_engine
+from ..engine import auction as auction_mod
 from ..engine import registry
 from ..engine.analyze import Analysis, analyze, to_json
 from ..market.candles import Candles, backfill, backfill_daily, session_filter
@@ -64,6 +65,7 @@ class Hub:
         self.signals: List[Signal] = []
         self.zones: Dict[str, List[registry.Zone]] = {}
         self.delta: Dict[str, Dict[str, Any]] = {}
+        self.auction: Dict[str, Dict[str, Any]] = {}
         self.delta_adapter = self._make_adapter(db.kv_get("delta_adapter") or config.rule("delta", "adapter", "none"))
         # strike mode
         self.book = StrikeBook()
@@ -372,6 +374,18 @@ class Hub:
         j["delta"] = {k: dres.get(k) for k in ("adapter", "available", "mock", "message", "has_levels")}
         j["registry"] = {"zones": len(zs), "active": sum(1 for z in zs if z.active_for(int(an.bars.ts[-1]) + 1))}
         j["crt"] = self.crt_view(tf)
+        # auction read — observation only (never trades, never touches A/B/C/D)
+        try:
+            real = dres.get("available") and not dres.get("mock")
+            dz = {int(x["ts"]): x["z"] for x in dres.get("bars", []) if x.get("z") is not None} if dres.get("available") else None
+            lbl = f"{dres.get('adapter')}{' (MOCK)' if dres.get('mock') else ''}" if dres.get("available") else "unavailable"
+            ares = auction_mod.compute(an, self.rows_1m(4), dz if (real or dres.get("mock")) else None, lbl)
+            self.auction[tf] = ares
+            j["auction"] = {k: ares[k] for k in ("today", "prev", "boxes", "read", "refs")} | {
+                "markers": auction_mod.markers(ares, int(an.bars.ts[max(0, len(an.bars) - 150)]))}
+        except Exception as e:                               # noqa: BLE001 — never lose the chart over the auction read
+            log.exception("auction %s failed", tf)
+            j["auction"] = None
         self.json[tf] = j
         self.recompute_flow(tf)
 
@@ -556,6 +570,10 @@ class Hub:
                 r = an.rng
                 parts.append(f"in {r['zone']} ({r['pos_pct']:.0f} %) of {r['low']:,.0f}–{r['high']:,.0f}")
             out.append(f"{tf}: " + " · ".join(parts))
+        a = self.auction.get(self.primary)
+        if a and a.get("read"):
+            r = a["read"]
+            out.append(f"Auction ({self.primary}): {r['location']['text']} · {r['response']['text']} → {r['decision']['text']}")
         return out
 
     def dashboard(self) -> Dict[str, Any]:

@@ -11,7 +11,19 @@ export interface RangeInfo { dir: "bull" | "bear"; event: string; high: number; 
 export interface Session { date?: string; open?: number; high?: number; low?: number; prev?: { d: string; h: number; l: number; c: number }; or?: { h: number; l: number }; ib?: { h: number; l: number } }
 export interface CrtRange { pair: string; pair_name: string; htf: string; ltf: string; k_ts: number; time: string; win_time: string; chart_from: number; chart_to: number; crth: number; crtl: number; mid: number; body_ratio: number; range_atr: number; aplus: boolean; keylevels: { kind: string; dir: "bull" | "bear"; text: string }[]; biases: ("bull" | "bear")[]; status: string; live: boolean }
 export interface CrtView { ranges: CrtRange[]; markers: Marker[]; pairs: { pair: string; name: string; message: string }[] }
-export interface Analysis { crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
+export interface TpoProfile { poc: number; vah: number; val: number; high: number; low: number; minutes: number; step: number; hist: [number, number][] }
+export interface BalanceBox { start_i: number; end_i: number; hi: number; lo: number; escaped: "up" | "down" | null; from: number; to: number; start: string; end: string; bars: number; active: boolean }
+export interface AuctionEvent { kind: "AUCTION_ACCEPT" | "AUCTION_REJECT" | "AUCTION_NO_FOLLOW"; i: number; ts: number; time: number; at: string; day: string; ref: string; level: number; dir: string; text: string; probe?: boolean; progress_atr?: number }
+export interface AuctionRead {
+  location: { text: string; at_ref: boolean };
+  effort: { available: boolean; z: number | null; high: boolean; text: string };
+  result: { atr: number; pts: number; text: string };
+  response: { kind: string | null; text: string };
+  decision: { text: string; bias: string | null; note: string };
+}
+export interface AuctionView { today: TpoProfile | null; prev: TpoProfile | null; boxes: BalanceBox[]; read: AuctionRead; refs: { name: string; price: number }[]; markers: Marker[] }
+export interface AuctionRes extends Partial<AuctionView> { tf: string; available: boolean; message?: string; profile_kind?: string; events?: AuctionEvent[]; pending?: { ref: string; level: number; since: string; side: string }[]; delta_label?: string; last_close?: number; rules?: Record<string, unknown> }
+export interface Analysis { auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
 export interface Quote { spot: number | null; prev_close: number | null; chg: number | null; chg_pct: number | null; vix: number | null; vix_chg: number | null; source: string; market_open: boolean; ts: number }
 export interface Signal { ctx?: { tp1?: number; rr1?: number; pair?: string; aplus_tbs?: boolean; [k: string]: unknown }; key: string; setup: "A" | "B" | "C" | "D"; name: string; tf: string; side: "long" | "short"; status: "TRADE" | "SKIP" | "INFO"; time: string; entry: number | null; sl: number | null; tp: number | null; risk: number | null; rr: number | null; target_src: string; reasons: string[]; story: string[]; confidence?: number | null; confluence?: string[]; confidence_parts?: { structure: number; options_context: number | null; flow: number; flow_source: string } | null }
 export interface AlertRow { id: number; ts: number; time: string; grade: "trade" | "skip" | "info"; kind: string; side: string; tf: string; title: string; body: string; price: number | null }
@@ -57,6 +69,7 @@ export const api = {
   paper: () => get<{ trades: PaperTrade[]; stats: PaperStats; open: PaperTrade | null; scorecard?: Scorecard }>("/api/paper"),
   repair: () => fetch("/api/repair", { method: "POST" }).then((r) => r.json()),
   delta: (tf: TF) => get<DeltaRes>(`/api/delta?tf=${tf}`),
+  auction: (tf: TF) => get<AuctionRes>(`/api/auction?tf=${tf}`),
   events: (tf: TF) => get<{ tf: TF; events: EventRec[] }>(`/api/events?tf=${tf}&limit=300`),
   zones: (tf: TF, active = 1) => get<{ tf: TF; zones: ZoneRec[] }>(`/api/zones?tf=${tf}&active=${active}`),
   setAdapter: async (name: string) => {

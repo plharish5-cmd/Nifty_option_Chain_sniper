@@ -9,12 +9,13 @@ import { Alerts, BiasGrid, Builds, Header, Paper, Signals } from "./components/P
 import Story from "./components/Story";
 import Guide from "./components/Guide";
 import DeltaPanel from "./components/DeltaPanel";
+import AuctionPanel from "./components/AuctionPanel";
 
 const TFS: TF[] = ["1m", "5m", "15m", "1h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "1h": 30, "1D": 60 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
-  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"],
+  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"],
 ];
 
 export default function App() {
@@ -23,8 +24,8 @@ export default function App() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [layers, setLayers] = useState<Layers>({ ob: true, fvg: true, liq: true, structure: true, swings: false, range: true, session: true, delta: true, deltaDetail: false, crt: true });
-  const [bottom, setBottom] = useState<"chain" | "paper" | "delta">("chain");
+  const [layers, setLayers] = useState<Layers>({ ob: true, fvg: true, liq: true, structure: true, swings: false, range: true, session: true, delta: true, deltaDetail: false, crt: true, auction: true });
+  const [bottom, setBottom] = useState<"chain" | "paper" | "delta" | "auction">("chain");
   const [chainTick, setChainTick] = useState(0);
   const [storyTick, setStoryTick] = useState(0);
   const [strikes, setStrikes] = useState<Strikes | null>(null);
@@ -107,11 +108,13 @@ export default function App() {
                 <button className={`tab ${bottom === "chain" ? "tab-on" : ""}`} onClick={() => setBottom("chain")}>Option chain</button>
                 <button className={`tab ${bottom === "paper" ? "tab-on" : ""}`} onClick={() => setBottom("paper")}>Paper trades</button>
                 <button className={`tab ${bottom === "delta" ? "tab-on" : ""}`} onClick={() => setBottom("delta")}>Delta / Footprint</button>
+                <button className={`tab ${bottom === "auction" ? "tab-on" : ""}`} onClick={() => setBottom("auction")}>Auction</button>
               </div>
             </div>
             <div className="flex-1 min-h-0">
               {bottom === "chain" ? <OptionChain expiries={dash?.expiries ?? []} tick={chainTick} />
                 : bottom === "delta" ? <DeltaPanel tick={storyTick} strikes={strikes} />
+                : bottom === "auction" ? <AuctionPanel tick={storyTick} />
                 : paper ? <Paper trades={paper.trades} stats={paper.stats} scorecard={paper.scorecard} /> : null}
             </div>
           </div>

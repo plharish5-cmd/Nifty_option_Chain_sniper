@@ -273,6 +273,18 @@ def crt(tf: str = Query("5m")):
             "rules": {k: v for k, v in _cfg.rules().get("crt_tbs", {}).items() if not k.startswith("_")}}
 
 
+@app.get("/api/auction")
+def auction(tf: str = Query("5m")):
+    """Auction read (observation only): TPO profile, balance boxes, accept / reject events, the 5 questions."""
+    from .. import config as _cfg
+    h = _h()
+    a = h.auction.get(tf)
+    if not a:
+        return {"tf": tf, "available": False, "message": "no closed candles analysed yet for this timeframe"}
+    return {"available": True, **a,
+            "rules": {k: v for k, v in _cfg.rules().get("auction", {}).items() if not k.startswith("_")}}
+
+
 @app.get("/api/strikes")
 def strikes():
     return _h().strikes_view()

@@ -8,7 +8,7 @@ import type { Analysis, Candle, TF } from "../api";
 import { bucket } from "../api";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -144,6 +144,22 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           boxes.push({ from: r.chart_from, to: r.chart_to, top: r.mid, bottom: r.mid, fill: "rgba(232,195,90,0.9)", stroke: "rgba(232,195,90,0.9)", dash: true });
         }
       }
+      // auction: previous-day value (VAH / VAL / POC, TPO time profile), today's developing POC, balance boxes
+      if (layers.auction && a.auction) {
+        const A = a.auction;
+        const t0 = candles.find((c) => Math.floor(c.time / 86400) === Math.floor(lastTime / 86400))?.time ?? lastTime;
+        if (A.prev) {
+          boxes.push({ from: t0, to: lastTime, top: A.prev.vah, bottom: A.prev.val, fill: "rgba(56,189,248,0.04)", stroke: "rgba(56,189,248,0.35)", dash: true,
+            label: `Prev value (TPO) ${A.prev.val.toFixed(0)}–${A.prev.vah.toFixed(0)}`, labelColor: "#7dd3fc" });
+          segs.push({ from: t0, price: A.prev.poc, color: "rgba(56,189,248,0.9)", width: 1.5, label: `pPOC ${A.prev.poc.toFixed(1)}` });
+        }
+        if (A.today) segs.push({ from: t0, price: A.today.poc, color: "rgba(232,121,249,0.85)", dash: true, label: `dev POC ${A.today.poc.toFixed(1)}` });
+        for (const x of A.boxes) {
+          boxes.push({ from: x.from, to: x.active ? lastTime : x.to, top: x.hi, bottom: x.lo, fill: "rgba(226,232,240,0.05)",
+            stroke: x.active ? "rgba(226,232,240,0.7)" : "rgba(226,232,240,0.3)", dash: !x.active,
+            label: `Balance ${x.bars} bars${x.escaped ? ` · escaped ${x.escaped}` : x.active ? " · live" : ""}`, labelColor: "#cbd5e1" });
+        }
+      }
     }
     zones.current.set(boxes, segs, lastTime);
 
@@ -194,6 +210,14 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           color: entry ? (bull ? "#22c55e" : "#ef4444") : tbs ? "#e8c35a" : "#cbd5e1",
           text: m.text, size: entry ? 1.2 : 0.7,
         });
+      }
+    }
+    if (a && layers.auction && a.auction) {
+      for (const m of a.auction.markers) {
+        const acc = m.kind === "AUCTION_ACCEPT", rej = m.kind === "AUCTION_REJECT";
+        const bull = m.dir === "bull";
+        ms.push({ time: m.time as UTCTimestamp, position: bull ? "belowBar" : "aboveBar", shape: acc ? (bull ? "arrowUp" : "arrowDown") : "circle",
+          color: acc ? "#38bdf8" : rej ? "#fb923c" : "#94a3b8", text: m.text, size: acc ? 0.9 : 0.7 });
       }
     }
     ms.sort((x, y) => (x.time as number) - (y.time as number));
