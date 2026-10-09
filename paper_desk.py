@@ -12,7 +12,8 @@ Feels like Dhan / Kite, fills like the exchange:
 
 Fill rules (exchange-like, no free lunches):
   BUY MARKET at the best ASK · exit MARKET at the best BID · resting BUY LIMIT fills at its limit once ask ≤ limit
-  (fills at the ask at once if already marketable) · TARGET = resting sell limit (fills at the target when bid ≥ it) ·
+  (fills at the ask at once if already marketable) · TARGET = resting sell limit (fills at the target when bid ≥ it;
+  a target set at/below the bid is marketable and sells AT THE BID at once, like the exchange) ·
   STOP-LOSS = SL-M (exits at the bid once bid ≤ stop) · trailing SL follows the highest bid · INTRADAY squared off 15:20 ·
   AMO orders fill at the first live price after 09:15 · CARRY positions left at expiry settle at intrinsic value on the
   expiry-day close · charges = paper_trading.calculate_trade_charges (Dhan tariff).
@@ -940,7 +941,7 @@ def _live_px(s, strike, side, expiry, sid):
     return price(strike, side, expiry, sid, ch, quotes([sid]) if str(ch.get("expiry")) != str(expiry) else {}), ch["spot"]
 
 
-def cb_exit(key: str, frac: float = 1.0, n_lots: int | None = None) -> None:
+def cb_exit(key: str, frac: float = 1.0, n_lots: int | None = None, reason_: str | None = None) -> None:
     import streamlit as st
     if not _once(st, f"x{key}{frac}{n_lots or ''}"):
         return
@@ -957,7 +958,7 @@ def cb_exit(key: str, frac: float = 1.0, n_lots: int | None = None) -> None:
     total = sum(x.lots for x in ps)
     left = min(int(n_lots), total) if n_lots else (total if frac >= 1 else max(1, int(total * frac)))
     sold = left
-    reason = "Manual exit" if (frac >= 1 and not n_lots) else f"Sold {sold} lot"
+    reason = reason_ or ("Manual exit" if (frac >= 1 and not n_lots) else f"Sold {sold} lot")
     first, done_lots, pid0 = True, 0, ps[0].position_id
     for x in sorted(ps, key=lambda y: -y.lots):
         if left <= 0:
@@ -972,7 +973,8 @@ def cb_exit(key: str, frac: float = 1.0, n_lots: int | None = None) -> None:
         _log(s, side_="SELL", strike=int(strike), side=side, expiry=expiry, lots=done_lots, otype="MARKET",
              status="FILLED", fill_px=round(b, 2), fill_ts=ist_now().isoformat(timespec="seconds"), msg=reason, pid=pid0)
     save_state(s)
-    _msg(st, f"✅ SOLD {name(strike, side, expiry)} ×{sold * LOT} @ {b:.2f}")
+    _msg(st, f"✅ SOLD {name(strike, side, expiry)} ×{sold * LOT} @ {b:.2f}"
+             + (" — marketable limit, filled at the bid" if reason_ else ""))
 
 
 def cb_exit_all() -> None:
@@ -1018,17 +1020,17 @@ def cb_preset(field: str, val: float) -> None:
 
 
 def sl_target_problem(sl: float, tg: float, tr: float, ltp: float, hi: float) -> str | None:
-    """Dhan-style checks for a BOUGHT option. A stop at/above the current price (or a target at/below it) would
-    trigger at once and sell you at the market — Dhan rejects such SL orders, so the desk does too."""
+    """Dhan-style checks for a BOUGHT option. A STOP at/above the current price would trigger at once and sell you
+    at the market — Dhan rejects such SL orders, so the desk does too. A TARGET at/below the price is NOT an error:
+    it is a marketable sell limit, filled at once at the bid (handled in cb_modify_save)."""
     if not (np.isfinite(ltp) and ltp > 0):
         return None
     if sl and sl >= ltp:
         return (f"SL {sl:.2f} is ABOVE the current price {ltp:.2f} — it would sell you right now at ~{ltp:.2f}. "
                 f"A stop must be BELOW the price (e.g. ≤ {ltp - 0.5:.2f}). Breakeven SL works only once the "
                 f"option trades above your breakeven. Want out now? Use EXIT.")
-    if tg and tg <= ltp:
-        return (f"Target {tg:.2f} is BELOW the current price {ltp:.2f} — it would sell you right now. "
-                f"A target must be ABOVE the price. Want to book now? Use EXIT.")
+    # A target at or below the market is a MARKETABLE sell limit, not an error: the exchange fills it at once
+    # against the best bid, at a BETTER price than the limit, and so does Dhan. cb_modify_save() executes it.
     if tr and np.isfinite(hi) and hi > 0 and hi - tr >= ltp:
         return (f"Trail {tr:.0f} pts from the high {hi:.2f} = stop {hi - tr:.2f}, which is above the current price "
                 f"{ltp:.2f} — it would sell you right now. Use a trail bigger than {hi - ltp:.1f} pts.")
@@ -1042,7 +1044,22 @@ def cb_modify_save() -> None:
         return
     ss = st.session_state
     i = ss.get("_pd_pos_info", {}).get(key) or {}
-    why = sl_target_problem(float(ss["pd_m_sl"] or 0), float(ss["pd_m_tg"] or 0), float(ss["pd_m_tr"] or 0),
+    tg_ = float(ss["pd_m_tg"] or 0)
+    # MARKETABLE TARGET — a sell limit at or below the best bid is marketable: the exchange matches it immediately
+    # against that bid, so you get the BID (better than your limit), not a rejection. Resting targets above the
+    # market are untouched and still fill at the target price in process().
+    if tg_ > 0:
+        s_, ps_ = _group_now(key)
+        if ps_:
+            k_st, k_sd, k_ex, _k = key.split("|")
+            sid_ = (s_["ids"].get(ps_[0].position_id) or {}).get("sid", "")
+            p_, _sp = _live_px(s_, float(k_st), k_sd, k_ex, sid_)
+            if p_ and np.isfinite(p_["ltp"]) and _bid(p_) >= tg_:
+                ss.pop("pd_m_err", None)
+                ss.pop("pd_mod", None)
+                cb_exit(key, reason_=f"Target {tg_:.2f} (marketable limit)")
+                return
+    why = sl_target_problem(float(ss["pd_m_sl"] or 0), tg_, float(ss["pd_m_tr"] or 0),
                             float(i.get("ltp", np.nan)), float(i.get("hi", np.nan)))
     if why:
         ss["pd_m_err"] = why                                    # keep the editor open, nothing saved
