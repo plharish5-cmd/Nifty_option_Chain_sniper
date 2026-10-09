@@ -164,6 +164,20 @@ async def intraday(req: Request):
     frm = datetime.strptime(body["fromDate"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=IST).timestamp()
     to = datetime.strptime(body["toDate"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=IST).timestamp()
     src = [c for c in PATH if frm <= c["ts"] <= to and c["ts"] + 60 <= now]
+    sid = int(float(body.get("securityId", 13)))
+    if body.get("exchangeSegment") == "NSE_FNO" and sid >= 40000:   # synthetic option candles (Black-Scholes on the path)
+        call = sid < 70000                                  # CE ids = 40000 + K (~6xxxx), PE ids = 50000 + K (~7xxxx)
+        K = sid - (40000 if call else 50000)
+        ed = datetime(2026, 10, 13, 15, 30, tzinfo=IST).timestamp()
+        skew = lambda S: 0.125 + 0.00004 * max(0, 22300 - K) + 0.00001 * abs(K - S) / 10 + (0 if call else 0.01)  # noqa: E731
+        prem = lambda S, t: _bs(S, K, max(1e-4, (ed - t) / (365 * 86400)), skew(S), call)[0]                     # noqa: E731
+        opt = []
+        for c in src:
+            ps = [prem(c[k], c["ts"] + 30) for k in ("o", "h", "l", "c")]
+            seed = (c["ts"] // 60 + K) % 97
+            opt.append({"ts": c["ts"], "o": ps[0], "h": max(ps), "l": min(ps), "c": ps[3],
+                        "v": int(65 * (40 + seed + 900 * abs(c["c"] - c["o"]) / max(1.0, c["h"] - c["l"] + 1)))})
+        src = opt
     out = {"open": [], "high": [], "low": [], "close": [], "volume": [], "timestamp": []}
     buckets = {}
     for c in src:
@@ -174,11 +188,12 @@ async def intraday(req: Request):
             buckets[b] = dict(c, ts=b)
         else:
             x["h"], x["l"], x["c"] = max(x["h"], c["h"]), min(x["l"], c["l"]), c["c"]
+            x["v"] = x.get("v", 0) + c.get("v", 0)
     for b in sorted(buckets):
         x = buckets[b]
         for k, kk in (("open", "o"), ("high", "h"), ("low", "l"), ("close", "c")):
             out[k].append(round(x[kk], 2))
-        out["volume"].append(0)
+        out["volume"].append(int(x.get("v", 0)))
         out["timestamp"].append(b)
     return out
 

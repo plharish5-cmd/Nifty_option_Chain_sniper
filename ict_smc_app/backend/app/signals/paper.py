@@ -7,6 +7,10 @@ signals/paper.py — paper trading of the playbook. NO real orders exist anywher
       stop hit → −1R; target hit → +R:R; a 1m candle that touches BOTH counts as the stop (worst case).
       Still open at square_off (15:15) → closed at that minute's close (EOD).
   * Logs MFE (best R reached) so you can see trades that went your way and came back.
+  * Strike mode (9 Oct 2026): entry / stop / target are STILL the NIFTY index levels. The trade also stores the
+    strikes selected at decision time and the premium of the strike it would use (long CE for a long, long PE for
+    a short): opt_entry = that strike's 1m close at the entry minute, opt_exit = its 1m close at the exit minute,
+    opt_pnl = (exit − entry) × lot. Filled as soon as those option candles exist (REST, a few seconds later).
 """
 from __future__ import annotations
 
@@ -23,16 +27,47 @@ def open_trade() -> Optional[Dict[str, Any]]:
     return dict(r[0]) if r else None
 
 
-def maybe_open(s: Signal) -> Optional[Dict[str, Any]]:
+def maybe_open(s: Signal, strikes: Optional[Dict[str, Any]] = None, mode: str = "INDEX") -> Optional[Dict[str, Any]]:
+    """strikes = {"CE": pick record | None, "PE": pick record | None} selected at decision time."""
     if not config.rule("paper", "enabled", True) or s.status != "TRADE" or s.setup not in ("A", "C"):
         return None
     if open_trade() is not None:
         return None
     opened = int(s.ts) + TF_SECONDS[s.tf]                     # the entry candle's CLOSE time
+    use = (strikes or {}).get("CE" if s.side == "long" else "PE") if config.rule("paper", "premium_pnl", True) else None
+    inst = (use or {}).get("instrument") or {}
     db.execute("INSERT OR IGNORE INTO paper_trades (signal_key, setup, tf, side, opened_ts, entry, sl, tp, risk, rr, "
-               "status, mfe_r, notes) VALUES (?,?,?,?,?,?,?,?,?,?, 'OPEN', 0, ?)",
-               (s.key, s.setup, s.tf, s.side, opened, s.entry, s.sl, s.tp, s.risk, s.rr, json.dumps(s.story)))
+               "status, mfe_r, notes, instrument_mode, strikes_snapshot, opt_key, opt_sid, confidence, confidence_parts) "
+               "VALUES (?,?,?,?,?,?,?,?,?,?, 'OPEN', 0, ?,?,?,?,?,?,?)",
+               (s.key, s.setup, s.tf, s.side, opened, s.entry, s.sl, s.tp, s.risk, s.rr, json.dumps(s.story),
+                mode, json.dumps(strikes or {}), inst.get("key"), inst.get("security_id"),
+                getattr(s, "confidence", None), json.dumps(getattr(s, "confidence_parts", None))))
+    fill_option_prices()
     return open_trade()
+
+
+def fill_option_prices() -> List[Dict[str, Any]]:
+    """Fill opt_entry / opt_exit / opt_pnl from stored option 1m candles. Safe to call any time (idempotent)."""
+    from ..market.options import close_at
+    lot = int(config.rule("paper", "lot_size", 65)) * int(config.rule("paper", "lots", 1))
+    done = []
+    for r in db.query("SELECT * FROM paper_trades WHERE opt_sid IS NOT NULL AND "
+                      "(opt_entry IS NULL OR (closed_ts IS NOT NULL AND opt_exit IS NULL))"):
+        t = dict(r)
+        key = f"O:{t['opt_sid']}"
+        ent = t["opt_entry"] if t["opt_entry"] is not None else close_at(key, int(t["opened_ts"]) - 60)
+        ext = t["opt_exit"]
+        if t["closed_ts"] and ext is None:
+            ext = close_at(key, int(t["closed_ts"]) - 60)
+        pts = rs = None
+        if ent is not None and ext is not None:
+            pts = round(ext - ent, 2)                             # always a LONG option: CE for longs, PE for shorts
+            rs = round(pts * lot, 0)
+        db.execute("UPDATE paper_trades SET opt_entry=?, opt_exit=?, opt_pnl_pts=?, opt_pnl_rs=? WHERE id=?",
+                   (ent, ext, pts, rs, t["id"]))
+        if pts is not None:
+            done.append(t)
+    return done
 
 
 def on_1m_close(c: Dict[str, float]) -> Optional[Dict[str, Any]]:
@@ -71,10 +106,11 @@ def trades(limit: int = 100) -> List[Dict[str, Any]]:
         d = dict(r)
         d["opened"] = to_ist(d["opened_ts"]).strftime("%d %b %H:%M") if d["opened_ts"] else ""
         d["closed"] = to_ist(d["closed_ts"]).strftime("%H:%M") if d["closed_ts"] else ""
-        try:
-            d["notes"] = json.loads(d["notes"] or "[]")
-        except ValueError:
-            d["notes"] = []
+        for k, dflt in (("notes", []), ("strikes_snapshot", {}), ("confidence_parts", None)):
+            try:
+                d[k] = json.loads(d.get(k) or "null") or dflt
+            except (ValueError, TypeError):
+                d[k] = dflt
         out.append(d)
     return out
 
@@ -90,5 +126,7 @@ def stats() -> Dict[str, Any]:
             "avg_r": round(sum(rs) / len(rs), 2), "total_r": round(sum(rs), 2),
             "pnl_pts": round(sum(float(t["pnl_pts"] or 0) for t in done), 1),
             "pnl_rs_proxy": round(sum(float(t["pnl_pts"] or 0) for t in done) * lot, 0), "lot_qty": lot,
+            "premium_trades": sum(1 for t in done if t.get("opt_pnl_rs") is not None),
+            "premium_pnl_rs": round(sum(float(t.get("opt_pnl_rs") or 0) for t in done), 0),
             "by_setup": {k: sum(1 for t in done if t["setup"] == k) for k in ("A", "C")},
             "note": "Under 30 closed trades is too few to call an edge."}

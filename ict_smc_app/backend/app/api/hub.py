@@ -22,6 +22,15 @@ from fastapi import WebSocket
 from .. import config, db
 from ..dhan.feed import Feed
 from ..dhan.rest import DhanError, DhanREST, TokenError
+from ..delta import adapters as delta_adapters
+from ..delta import proxy as proxy_mod
+from ..market import instruments as instr
+from ..market import options as optc
+from ..strikes import context as sctx
+from ..strikes.selector import StrikeBook, select_strikes
+from ..delta import confluence
+from ..delta import engine as delta_engine
+from ..engine import registry
 from ..engine.analyze import Analysis, analyze, to_json
 from ..market.candles import Candles, backfill, backfill_daily, session_filter
 from ..market.chain import ChainPoller
@@ -52,6 +61,23 @@ class Hub:
         self.analyses: Dict[str, Analysis] = {}
         self.json: Dict[str, Dict[str, Any]] = {}
         self.signals: List[Signal] = []
+        self.zones: Dict[str, List[registry.Zone]] = {}
+        self.delta: Dict[str, Dict[str, Any]] = {}
+        self.delta_adapter = self._make_adapter(db.kv_get("delta_adapter") or config.rule("delta", "adapter", "none"))
+        # strike mode
+        self.book = StrikeBook()
+        self.flow: Dict[str, Dict[str, Dict[str, Any]]] = {}       # tf → {"CE": delta res, "PE": delta res}
+        self.proxy: Dict[str, Dict[str, Any]] = {}                 # tf → proxy res
+        self._mk: Dict[str, List[Dict[str, Any]]] = {}             # tf → markers without strike flow
+        self.mode = db.kv_get("inst_mode") or "INDEX"               # INDEX | OPTION_CHART (experimental view)
+        self.strike_expiry: Optional[str] = db.kv_get("strike_expiry")
+        self.auto_strikes = db.kv_get("auto_strikes")
+        if self.auto_strikes is None:
+            self.auto_strikes = bool(config.rule("strikes", "auto_refresh", True))
+        self.proxy_on = db.kv_get("proxy_on")
+        if self.proxy_on is None:
+            self.proxy_on = bool(config.rule("options_flow_proxy", "enabled", False))
+        self._opt_busy = False
         self.prev_close: Dict[str, float] = {}
         self.price_source = "feed"
         self.status: Dict[str, Any] = {"backfill": "pending", "token": "unknown", "errors": []}
@@ -63,7 +89,7 @@ class Hub:
     async def start(self) -> None:
         db.conn()
         await self.repair(full=True)
-        self.recompute_all()
+        self.recompute_all(after_repair=True)
         for coro in (self.feed.run(), self.candles.sweep_timer(), self.chain.run(), self.watchdog(), self.housekeeping()):
             self._tasks.append(asyncio.create_task(coro))
 
@@ -124,45 +150,252 @@ class Hub:
                     await self.run_playbook()
                 await self.broadcast({"type": "analysis", "tf": tf, "analysis": self.json.get(tf)})
         await self.broadcast({"type": "candle", "tf": "1m", "candle": _cj(c)})
+        if self.option_instruments():
+            asyncio.create_task(self._options_after_close())
 
     async def on_chain(self, expiry: str, ch: Dict[str, Any]) -> None:
         await self.broadcast({"type": "chain", "expiry": expiry, "summary": self.chain.summary(expiry)})
+        if expiry == self.sel_expiry() and config.rule("strikes", "enabled", True):
+            try:
+                await self.reselect(force=False)
+            except Exception as e:                           # noqa: BLE001
+                log.exception("strike selection failed")
+                self.status["errors"] = (self.status["errors"] + [f"strikes: {e}"])[-5:]
+
+    # ── strike mode ───────────────────────────────────────────────────────
+    def sel_expiry(self) -> Optional[str]:
+        ex = self.chain.expiries or sorted(self.chain.chains)
+        if self.strike_expiry and self.strike_expiry in self.chain.chains:
+            return self.strike_expiry
+        k = int(config.rule("strikes", "expiry_index", 0))
+        return ex[min(k, len(ex) - 1)] if ex else None
+
+    def snapshot(self) -> Optional[Dict[str, Any]]:
+        exp = self.sel_expiry()
+        ch = self.chain.chains.get(exp) if exp else None
+        if not ch:
+            return None
+        q = self.quote()
+        today = self.candles.today_ohlc(self.nifty) or {}
+        return {"expiry": exp, "spot": q.get("spot") or ch.get("spot"), "chain": ch, "open": today.get("o"),
+                "prev_close": self.prev_close.get(self.nifty)}
+
+    async def reselect(self, force: bool = False) -> Dict[str, Any]:
+        snap = self.snapshot()
+        if not snap:
+            return {"reasons": ["No option chain loaded yet."], "calls": [], "puts": []}
+        before = {k: (v or {}).get("instrument", {}).get("key") for k, v in self.book.current().items()}
+        res = select_strikes(snap)
+        if self.auto_strikes or force:
+            notes = self.book.update(res, now_epoch(), force=force)
+        else:
+            self.book.last, notes = res, []
+        after = {k: (v or {}).get("instrument", {}).get("key") for k, v in self.book.current().items()}
+        if after != before:
+            db.execute("INSERT OR REPLACE INTO strike_picks (ts, expiry, ce_key, pe_key, payload) VALUES (?,?,?,?,?)",
+                       (int(now_epoch()), snap["expiry"], after.get("CE"), after.get("PE"),
+                        json.dumps({"current": self.book.current(), "notes": notes, "reasons": res["reasons"]},
+                                   default=_jdefault)))
+            asyncio.create_task(self.refresh_options())
+            await self.broadcast({"type": "strikes", "strikes": self.strikes_view()})
+        return res
+
+    def option_instruments(self) -> List[instr.Instrument]:
+        out = [i for i in self.book.instruments() if i.security_id]
+        t = paper.open_trade()
+        if t and t.get("opt_sid") and t.get("opt_key"):
+            try:
+                pi = instr.parse_key(t["opt_key"])
+                pi = instr.option(pi.expiry, pi.strike, pi.right, t["opt_sid"])
+                if pi.key not in {i.key for i in out}:
+                    out.append(pi)
+            except ValueError:
+                pass
+        return out
+
+    async def refresh_options(self) -> None:
+        if self._opt_busy:
+            return
+        self._opt_busy = True
+        try:
+            for inst in self.option_instruments():
+                try:
+                    await optc.refresh(self.rest, inst, int(config.rule("strikes", "candles_days", 2)))
+                except (DhanError, ValueError) as e:
+                    self.status["option_candles"] = f"{inst.label}: {str(e)[:120]}"
+            paper.fill_option_prices()
+            for tf in self.tfs:
+                self.recompute_flow(tf)
+            if self.analyses.get(self.primary):
+                self.signals = self.evaluate_primary()           # confidence picks up the strike flow
+            await self.broadcast({"type": "analysis", "tf": self.primary, "analysis": self.json.get(self.primary)})
+        finally:
+            self._opt_busy = False
+
+    async def _options_after_close(self) -> None:
+        await asyncio.sleep(float(config.rule("strikes", "candle_fetch_delay_s", 4)))
+        await self.refresh_options()
+
+    def recompute_flow(self, tf: str) -> None:
+        an, zs = self.analyses.get(tf), self.zones.get(tf)
+        if an is None or zs is None:
+            return
+        cur = self.book.current()
+        sides: Dict[str, Dict[str, Any]] = {}
+        res: Dict[str, Dict[str, Any]] = {}
+        for right in ("CE", "PE"):
+            rec = cur.get(right)
+            if not rec or not rec["instrument"].get("security_id"):
+                continue
+            i = rec["instrument"]
+            inst = instr.option(i["expiry"], i["strike"], i["right"], i["security_id"])
+            candles = optc.by_ts(inst, tf, int(config.rule("strikes", "candles_days", 2)))
+            sides[right] = {"instrument": inst, "candles": candles, "abs_delta": abs(rec.get("delta") or 1.0)}
+            try:
+                r = delta_engine.compute(an, zs, self.delta_adapter, flow={"instrument": inst, "candles": candles})
+                if r["available"] and not r["mock"]:
+                    delta_engine.persist(r["events"])
+            except Exception as e:                           # noqa: BLE001
+                r = {"available": False, "mock": False, "events": [], "bars": [], "message": f"strike delta error: {e}"}
+            res[right] = r
+        self.flow[tf] = res
+        try:
+            self.proxy[tf] = proxy_mod.compute(an, zs, sides.get("CE"), sides.get("PE"), enabled=self.proxy_on)
+        except Exception as e:                               # noqa: BLE001
+            self.proxy[tf] = {"enabled": self.proxy_on, "available": False, "events": [], "bars": [],
+                              "label": proxy_mod.LABEL, "message": f"proxy error: {e}"}
+        j = self.json.get(tf)
+        if j is not None:
+            first_ts = int(an.bars.ts[max(0, len(an.bars) - 150)])
+            extra = []
+            for r in res.values():
+                extra += delta_engine.markers(r.get("events", []), first_ts)
+            extra += proxy_mod.markers(self.proxy[tf], first_ts)
+            j["markers"] = sorted(self._mk.get(tf, []) + extra, key=lambda m: m["time"])
+            j["proxy"] = {k: self.proxy[tf].get(k) for k in ("enabled", "available", "label", "message")}
+            j["strike_flow"] = {k: {"instrument": v.get("instrument_label"), "available": v.get("available"),
+                                    "message": v.get("message")} for k, v in res.items()}
+
+    def combined_flow(self, tf: str) -> Dict[str, Any]:
+        """Index delta + strike delta (already in NIFTY direction) as one source for confluence."""
+        parts = [self.delta.get(tf) or {}] + list((self.flow.get(tf) or {}).values())
+        av = [p for p in parts if p.get("available")]
+        return {"available": bool(av), "mock": any(p.get("mock") for p in av),
+                "events": sorted([e for p in av for e in p.get("events", [])], key=lambda e: e["ts"])}
+
+    def foci(self) -> List[Dict[str, Any]]:
+        out = []
+        for right, rec in self.book.current().items():
+            if not rec:
+                continue
+            i = rec["instrument"]
+            inst = instr.option(i["expiry"], i["strike"], i["right"], i.get("security_id"))
+            out.append(sctx.focus(right, instr.chain_row(inst, self.chain.chains), inst.label))
+        return out
+
+    def direction(self) -> Optional[str]:
+        live_sig = [s for s in self.today_signals() if s.setup in ("A", "C")]
+        if live_sig:
+            return live_sig[-1].side
+        p = self.analyses.get(self.primary)
+        return {"bull": "long", "bear": "short"}.get(p.trend) if p else None
+
+    def strikes_view(self) -> Dict[str, Any]:
+        foci = self.foci()
+        last = self.book.last or {}
+        return {"expiry": self.sel_expiry(), "expiries": self.chain.expiries, "auto": self.auto_strikes,
+                "mode": self.mode, "current": self.book.current(),
+                "manual": {k: bool(v) for k, v in self.book.manual.items()},
+                "candidates": {"calls": last.get("calls", []), "puts": last.get("puts", [])},
+                "reasons": last.get("reasons", []), "picks": last.get("picks", {}), "log": self.book.log[-12:],
+                "focus": foci, "verdict": sctx.verdict(self.direction(), foci),
+                "switch_rule": f"switch only on a {config.rule('strikes', 'switch_tf', '3m')} close, "
+                               f"≥ {int(100 * float(config.rule('strikes', 'switch_min_improve', 0.15)))} % better",
+                "proxy_on": self.proxy_on, "proxy_label": proxy_mod.LABEL}
 
     # ── analysis ──────────────────────────────────────────────────────────
     def rows_1m(self, days: int = 3) -> List[Dict[str, float]]:
         return self.candles.frame(self.nifty, "1m", days=days, include_forming=False)
 
-    def recompute(self, tf: str) -> None:
+    def _make_adapter(self, name: str):
+        try:
+            return delta_adapters.make(name)
+        except ValueError:
+            log.warning("unknown delta adapter %s — using footprint_feed", name)
+            return delta_adapters.make("footprint_feed")
+
+    def set_adapter(self, name: str) -> Dict[str, Any]:
+        self.delta_adapter = delta_adapters.make(name)              # raises ValueError on a bad name
+        db.kv_set("delta_adapter", name)
+        self.recompute_all()
+        return self.delta_adapter.status()
+
+    def recompute(self, tf: str, after_repair: bool = False) -> None:
         rows = self.candles.frame(self.nifty, tf, days=DAYS_FOR_TF.get(tf, 5), include_forming=False)
         an = analyze(rows, tf, rows_1m=self.rows_1m(2), daily=db.daily(self.nifty, 10))
         if an is None:
             return
         self.analyses[tf] = an
-        self.json[tf] = to_json(an)
+        j = to_json(an)
+        # zone registry: normalize → forward-only merge with SQLite (void only after a REST repair)
+        E = config.rules()["engine"]
+        guard = (int(E["atr_len"]) * 3 + int(E["pivot_n"].get(tf, 2))) * TF_SECONDS[tf]   # warm-up bars can differ
+        try:
+            zs = registry.reconcile(tf, registry.build(an), (int(an.bars.ts[0]), int(an.bars.ts[-1])),
+                                    after_repair=after_repair, guard_s=guard)
+        except Exception as e:                               # noqa: BLE001 — never lose the chart over the registry
+            log.exception("registry %s failed", tf)
+            zs = registry.build(an)
+            self.status["errors"] = (self.status["errors"] + [f"registry {tf}: {e}"])[-5:]
+        self.zones[tf] = zs
+        # delta / footprint (closed candles only — compute() re-checks against the clock)
+        try:
+            dres = delta_engine.compute(an, zs, self.delta_adapter)
+            if dres["available"] and not dres["mock"]:
+                delta_engine.persist(dres["events"])
+        except Exception as e:                               # noqa: BLE001
+            log.exception("delta %s failed", tf)
+            dres = {"tf": tf, "available": False, "mock": False, "message": f"delta error: {e}", "events": [], "bars": []}
+        self.delta[tf] = dres
+        first_ts = int(an.bars.ts[max(0, len(an.bars) - 150)])
+        j["markers"] = sorted(j["markers"] + delta_engine.markers(dres["events"], first_ts), key=lambda m: m["time"])
+        self._mk[tf] = list(j["markers"])
+        j["delta"] = {k: dres.get(k) for k in ("adapter", "available", "mock", "message", "has_levels")}
+        j["registry"] = {"zones": len(zs), "active": sum(1 for z in zs if z.active_for(int(an.bars.ts[-1]) + 1))}
+        self.json[tf] = j
+        self.recompute_flow(tf)
 
-    def recompute_all(self) -> None:
+    def evaluate_primary(self) -> List[Signal]:
+        p = self.analyses.get(self.primary)
+        if not p:
+            return []
+        sigs = evaluate(p, self.analyses.get(self.bias_tf))
+        return confluence.apply(sigs, self.combined_flow(self.primary), proxy_res=self.proxy.get(self.primary),
+                                context={"foci": self.foci()} if any(self.book.current().values()) else None,
+                                live_i=p.last_i)
+
+    def recompute_all(self, after_repair: bool = False) -> None:
         for tf in self.tfs:
             try:
-                self.recompute(tf)
+                self.recompute(tf, after_repair=after_repair)
             except Exception as e:                           # noqa: BLE001
                 log.exception("analysis %s failed", tf)
                 self.status["errors"] = (self.status["errors"] + [f"analysis {tf}: {e}"])[-5:]
-        p = self.analyses.get(self.primary)
-        if p:
-            self.signals = evaluate(p, self.analyses.get(self.bias_tf))
+        if self.analyses.get(self.primary):
+            self.signals = self.evaluate_primary()
 
     async def run_playbook(self) -> None:
         p = self.analyses.get(self.primary)
         if not p:
             return
-        self.signals = evaluate(p, self.analyses.get(self.bias_tf))
+        self.signals = self.evaluate_primary()
         fresh = live(self.signals, p)
         if not fresh:
             return
         await self.alerts.handle(fresh)
         if market_open_now():
             for s in fresh:
-                t = paper.maybe_open(s)
+                t = paper.maybe_open(s, strikes=self.book.current(), mode=self.mode)
                 if t:
                     await self.broadcast({"type": "paper", "trade": t})
 
@@ -176,7 +409,7 @@ class Hub:
                 if self.feed.connects > self._seen_connects:
                     if self._seen_connects > 0 and market_open_now():
                         await self.repair(full=False)          # fill the minutes missed while disconnected
-                        self.recompute_all()
+                        self.recompute_all(after_repair=True)
                     self._seen_connects = self.feed.connects
                 if market_open_now() and self.feed.tick_age(self.nifty) > float(D["feed_stale_s"]):
                     q = await self.rest.ltp({"IDX_I": [int(self.nifty), int(self.vix)]})
@@ -206,7 +439,7 @@ class Hub:
                     done["eod"] = day
                     await self.repair(full=False)              # official candles replace tick-built ones
                     await backfill_daily(self.rest, self.nifty, 5)
-                    self.recompute_all()
+                    self.recompute_all(after_repair=True)
                 if hhmm >= "08:35" and done.get("renew") != day and config.env("AUTO_RENEW_TOKEN") == "1":
                     done["renew"] = day
                     from ..dhan.auth import renew_into_env
@@ -265,7 +498,16 @@ class Hub:
                 "session": p.sess if p else {}, "chain": self.chain.summary(),
                 "expiries": self.chain.expiries, "signals": [s.to_dict() for s in self.today_signals()][-15:],
                 "alerts": alerts_mod.recent(20), "paper_open": paper.open_trade(), "paper_stats": paper.stats(),
+                "delta": self.delta_status(), "strikes": self.strikes_view(), "mode": self.mode,
+                "proxy": {"enabled": self.proxy_on, "label": proxy_mod.LABEL},
                 "status": self.status_view()}
+
+    def delta_status(self) -> Dict[str, Any]:
+        st = self.delta_adapter.status()
+        d = self.delta.get(self.primary) or {}
+        return {**st, "adapters": delta_adapters.names(), "labels": delta_adapters.LABELS, "tf": self.primary,
+                "available_on_tf": bool(d.get("available")), "has_levels": bool(d.get("has_levels")),
+                "tf_message": d.get("message", "")}
 
     def today_signals(self) -> List[Signal]:
         o, _ = session_bounds(now_ist().date())

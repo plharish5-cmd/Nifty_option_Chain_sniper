@@ -5,3 +5,4 @@ httpx==0.28.1
 websockets==15.0.1
 numpy==2.0.2
 pytest==8.4.2
+pandas==2.2.3

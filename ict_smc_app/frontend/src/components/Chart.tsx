@@ -8,7 +8,7 @@ import type { Analysis, Candle, TF } from "../api";
 import { bucket } from "../api";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -136,9 +136,30 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     zones.current.set(boxes, segs, lastTime);
 
     const ms: SeriesMarker<Time>[] = [];
-    if (a && layers.structure) {
+    if (a && (layers.structure || layers.delta)) {  // Delta = absorption + flip; Δ detail adds aggression + imbalance
       for (const m of a.markers) {
         const bull = m.dir === "bull";
+        const isDelta = m.kind.startsWith("DELTA_") || m.kind === "FOOTPRINT_IMBALANCE" || m.kind.startsWith("PROXY_FLOW");
+        if (isDelta ? !layers.delta : !layers.structure) continue;
+        // main layer: aggression + absorption (+ proxy fade); detail layer adds flips, imbalances, proxy surges
+        if (isDelta && !layers.deltaDetail && (m.kind === "DELTA_FLIP" || m.kind === "FOOTPRINT_IMBALANCE" || m.kind === "PROXY_FLOW_SURGE")) continue;
+        if (m.kind.startsWith("PROXY_FLOW")) {
+          ms.push({ time: m.time as UTCTimestamp, position: bull ? "belowBar" : "aboveBar", shape: "circle",
+            color: "#fb923c", text: `${m.text} (proxy)`, size: 0.6 });
+          continue;
+        }
+        if (isDelta) {
+          const abs = m.kind === "DELTA_ABSORPTION", flip = m.kind === "DELTA_FLIP";
+          ms.push({
+            time: m.time as UTCTimestamp,
+            position: m.kind === "DELTA_AGGRESSION" ? (bull ? "belowBar" : "aboveBar") : (bull ? "belowBar" : "aboveBar"),
+            shape: abs ? "circle" : "square",
+            color: abs ? "#e8c35a" : flip ? "#e2e8f0" : m.kind === "FOOTPRINT_IMBALANCE" ? (bull ? "#22d3ee" : "#f472b6") : (bull ? "#34d399" : "#f87171"),
+            text: m.text,
+            size: abs ? 0.9 : 0.5,
+          });
+          continue;
+        }
         const isStruct = m.kind === "BOS" || m.kind === "MSS";
         ms.push({
           time: m.time as UTCTimestamp,

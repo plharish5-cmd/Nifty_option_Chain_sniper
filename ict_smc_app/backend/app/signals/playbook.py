@@ -52,6 +52,10 @@ class Signal:
     target_src: str = ""
     reasons: List[str] = field(default_factory=list)
     story: List[str] = field(default_factory=list)
+    confidence: Optional[float] = None          # set by delta/confluence.py for A/C only; never changes status
+    confluence: List[str] = field(default_factory=list)
+    ctx: Dict[str, Any] = field(default_factory=dict)
+    confidence_parts: Optional[Dict[str, Any]] = None      # structure / options_context / flow (+ flow_source)
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -175,7 +179,8 @@ def setup_a(an: Analysis, bias: Optional[Analysis]) -> List[Signal]:
             story.append(f"{hm(int(b.ts[k]))} retest closed {entry:,.1f} inside/through the gap")
             out.append(Signal(f"A|{an.tf}|{side}|{rd.ts}|{int(b.ts[k])}", "A", "Raid → MSS → FVG", an.tf, side, k,
                               int(b.ts[k]), "SKIP" if f["reasons"] else "TRADE", entry, sl, f["target"], f["risk"],
-                              round(f["rr"], 2), f["tsrc"], f["reasons"], story))
+                              round(f["rr"], 2), f["tsrc"], f["reasons"], story,
+                              ctx={"raid_ts": rd.ts, "raid_level": rd.level, "mss_ts": mss.ts, "fvg_ts": g.ts}))
             break
     return out
 

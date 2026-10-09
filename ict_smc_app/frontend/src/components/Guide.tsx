@@ -108,6 +108,18 @@ export default function Guide() {
           <p><Y>Every row points the same way: bearish.</Y> 22,300–22,500 is now a ceiling of written calls. Combined with four bearish structure breaks, a pro does not buy this market. The only trade is a short on a pull-back into premium (toward 22,300–22,400), after a closed candle inside a bearish FVG or the OTE band — or nothing at all.</p>
         </S>
 
+        <S title="8 · Delta / Footprint — who is attacking, and did it work?">
+          <p><G>Positive delta</G> = buyers attacking (more market buys). <R>Negative delta</R> = sellers attacking. On its own that means little. What matters is <Y>what price did about it, at a zone</Y>.</p>
+          <T head={["Marker", "Name", "Read"]} rows={[
+            [<Y>ABS</Y>, "Absorption", "Heavy attack at an OB / FVG / pool, but the candle went nowhere, or the next candle didn't follow. The other side absorbed it. Expect the attackers to give up."],
+            ["FLIP", "Delta flip", "Delta changed sign at a zone or right after a sweep. Control is changing hands."],
+            ["Δ+ / Δ−", "Aggression (Δ detail)", "Delta far outside its normal range. Information only."],
+            ["IMB / pIMB", "Footprint / proxy imbalance (Δ detail)", "Where the attack hit (stacked imbalances, or a delta spike plus a wick when there is no footprint)."],
+          ]} />
+          <p><b>The money pattern:</b> price comes back up into a <R>supply OB</R>, buyers attack (big positive delta), but the candle closes weak → <Y>ABS</Y>. With the bearish MSS already done, that short has more weight.</p>
+          <p>Delta <b>never</b> creates a trade. It only moves the confidence bar on Setup A / C, with the reason written on the card. No delta source = "Delta unavailable" (the NIFTY index has no volume; use a CSV or a futures footprint feed). <b>MOCK</b> = fake numbers for testing the screen only.</p>
+        </S>
+
         <S title="7 · Pro habits that keep you alive">
           <ul className="list-disc ml-4 space-y-1">
             <li>No setup = no trade. Zero trades is a good day if the setups were not there (8 Oct was exactly that).</li>

@@ -8,6 +8,9 @@ What is stored — and what deliberately is NOT (mistake #4):
   chain_latest the latest full option chain per expiry (so the table survives a refresh / restart).
   chain_snap   per-strike OI/LTP once a minute, kept chain_keep_days days (for intraday OI change charts).
   alerts, paper_trades, kv.
+  zones        the zone registry (pools / OBs / FVGs, forward-only states)        — engine/registry.py
+  events       delta / footprint events log (unique id → no duplicates)          — delta/engine.py
+  delta_bars, footprint_levels   imported CSV delta (per candle start, IST-aligned) — delta/adapters.py
   Raw ticks are NEVER written. A tick only updates the forming 1m candle in memory.
 """
 from __future__ import annotations
@@ -44,6 +47,22 @@ CREATE TABLE IF NOT EXISTS paper_trades (
   status TEXT, closed_ts INTEGER, exit REAL, r REAL, pnl_pts REAL, mfe_r REAL, notes TEXT);
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 CREATE INDEX IF NOT EXISTS ix_alerts_ts ON alerts(ts);
+CREATE TABLE IF NOT EXISTS zones (
+  id TEXT PRIMARY KEY, tf TEXT NOT NULL, type TEXT NOT NULL, side TEXT, low REAL, high REAL,
+  created_at INTEGER NOT NULL, mitigated_at INTEGER, invalidated_at INTEGER, state TEXT,
+  source_event_id TEXT, payload TEXT, updated INTEGER);
+CREATE INDEX IF NOT EXISTS ix_zones_tf ON zones(tf, created_at);
+CREATE TABLE IF NOT EXISTS events (
+  id TEXT PRIMARY KEY, ts INTEGER NOT NULL, tf TEXT, type TEXT, dir TEXT, zone_id TEXT, payload TEXT);
+CREATE INDEX IF NOT EXISTS ix_events_ts ON events(tf, ts);
+CREATE TABLE IF NOT EXISTS delta_bars (
+  inst TEXT NOT NULL DEFAULT 'NIFTY', ts INTEGER NOT NULL, secs INTEGER NOT NULL DEFAULT 60, buy REAL, sell REAL,
+  delta REAL NOT NULL, src TEXT, PRIMARY KEY (inst, ts)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS footprint_levels (
+  inst TEXT NOT NULL DEFAULT 'NIFTY', ts INTEGER NOT NULL, price REAL NOT NULL, buy REAL NOT NULL, sell REAL NOT NULL,
+  PRIMARY KEY (inst, ts, price)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS strike_picks (
+  ts INTEGER NOT NULL, expiry TEXT, ce_key TEXT, pe_key TEXT, payload TEXT, PRIMARY KEY (ts)) WITHOUT ROWID;
 """
 
 
@@ -55,8 +74,35 @@ def conn() -> sqlite3.Connection:
             _conn.row_factory = sqlite3.Row
             _conn.execute("PRAGMA journal_mode=WAL")
             _conn.execute("PRAGMA synchronous=NORMAL")
+            _migrate(_conn)
             _conn.executescript(SCHEMA)
+            _add_columns(_conn)
         return _conn
+
+
+def _cols(c: sqlite3.Connection, table: str) -> List[str]:
+    return [r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()]
+
+
+def _migrate(c: sqlite3.Connection) -> None:
+    """9 Oct 2026: delta_bars / footprint_levels gained an `inst` key (index vs option strike). Old rows = NIFTY."""
+    for t, cols in (("delta_bars", "ts, secs, buy, sell, delta, src"), ("footprint_levels", "ts, price, buy, sell")):
+        have = _cols(c, t)
+        if have and "inst" not in have:
+            c.execute(f"ALTER TABLE {t} RENAME TO {t}_old")
+            c.executescript(SCHEMA)
+            c.execute(f"INSERT OR IGNORE INTO {t} (inst, {cols}) SELECT 'NIFTY', {cols} FROM {t}_old")
+            c.execute(f"DROP TABLE {t}_old")
+
+
+def _add_columns(c: sqlite3.Connection) -> None:
+    """Additive columns on paper_trades (old rows keep NULL = index-only trades)."""
+    have = _cols(c, "paper_trades")
+    for col, typ in (("instrument_mode", "TEXT"), ("strikes_snapshot", "TEXT"), ("opt_key", "TEXT"),
+                     ("opt_sid", "TEXT"), ("opt_entry", "REAL"), ("opt_exit", "REAL"), ("opt_pnl_pts", "REAL"),
+                     ("opt_pnl_rs", "REAL"), ("confidence", "REAL"), ("confidence_parts", "TEXT")):
+        if col not in have:
+            c.execute(f"ALTER TABLE paper_trades ADD COLUMN {col} {typ}")
 
 
 def execmany(sql: str, rows: Iterable[tuple]) -> None:
@@ -159,4 +205,8 @@ def prune() -> Dict[str, int]:
     keep_s = int(config.rule("data", "chain_keep_days", 5)) * 86400
     a = execute("DELETE FROM candles_1m WHERE ts < ?", (now - keep_c,)).rowcount
     b = execute("DELETE FROM chain_snap WHERE ts < ?", (now - keep_s,)).rowcount
-    return {"candles_deleted": a, "chain_snaps_deleted": b}
+    keep_d = int(config.rule("delta", "keep_days", 10)) * 86400
+    keep_z = int(config.rule("zones", "keep_days", 10)) * 86400
+    z = execute("DELETE FROM zones WHERE created_at < ?", (now - keep_z,)).rowcount
+    e = execute("DELETE FROM events WHERE ts < ?", (now - keep_d,)).rowcount
+    return {"candles_deleted": a, "chain_snaps_deleted": b, "zones_deleted": z, "events_deleted": e}

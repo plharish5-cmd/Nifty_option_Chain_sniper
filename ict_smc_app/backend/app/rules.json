@@ -1,26 +1,32 @@
 {
   "_note": "Every threshold lives here. Edit, then restart the backend. Points are NIFTY index points.",
-
   "instruments": {
     "nifty_security_id": "13",
     "vix_security_id": "21",
     "_vix_note": "INDIA VIX in IDX_I. The backend checks Dhan's scrip master on start and overrides this if it differs.",
     "segment": "IDX_I"
   },
-
   "session": {
     "open": "09:15",
     "close": "15:30",
     "opening_range_end": "09:30",
     "initial_balance_end": "10:15",
-    "trade_windows": [["09:30", "11:30"], ["13:30", "14:45"]],
+    "trade_windows": [
+      [
+        "09:30",
+        "11:30"
+      ],
+      [
+        "13:30",
+        "14:45"
+      ]
+    ],
     "_trade_windows_note": "Indian 'kill zones': after the opening range settles, and the post-lunch institutional window. No new paper entries outside these.",
     "last_entry": "14:45",
     "square_off": "15:15",
     "weekly_expiry_weekday": 1,
     "_expiry_note": "Tuesday (Mon=0). Only used as a label - real expiry dates always come from Dhan's expiry list."
   },
-
   "data": {
     "backfill_days": 30,
     "_backfill_note": "1-minute candles fetched on start (one call; Dhan allows 90 days per call). 30 days gives the 1h chart ~200 bars.",
@@ -34,10 +40,20 @@
     "rest_ltp_every_s": 2,
     "reconnect_max_wait_s": 60
   },
-
   "engine": {
-    "timeframes": ["1m", "5m", "15m", "1h"],
-    "pivot_n": {"1m": 3, "5m": 2, "15m": 2, "1h": 2, "1D": 2},
+    "timeframes": [
+      "1m",
+      "5m",
+      "15m",
+      "1h"
+    ],
+    "pivot_n": {
+      "1m": 3,
+      "5m": 2,
+      "15m": 2,
+      "1h": 2,
+      "1D": 2
+    },
     "atr_len": 14,
     "lookback_bars": 300,
     "eq_tolerance_pts": 4.0,
@@ -45,13 +61,17 @@
     "sweep_min_pen_pts": 0.5,
     "false_breakout_max_bars": 2,
     "fvg_min_pts": 3.0,
-    "fvg_min_atr": 0.10,
+    "fvg_min_atr": 0.1,
     "displacement_body_atr": 1.0,
     "displacement_body_ratio": 0.6,
     "ob_max_age_bars": 120,
-    "ote_levels": [0.618, 0.705, 0.79]
+    "ote_levels": [
+      0.618,
+      0.705,
+      0.79
+    ],
+    "_fvg_note": "FVG kept only if size >= max(fvg_min_pts, fvg_min_atr x ATR). OB needs a displacement break: body >= displacement_body_atr x ATR AND body >= displacement_body_ratio of range, OR the leg left an FVG."
   },
-
   "playbook": {
     "primary_tf": "5m",
     "bias_tf": "15m",
@@ -65,7 +85,6 @@
     "min_risk_pts": 8.0,
     "max_risk_pts": 45.0
   },
-
   "alerts": {
     "cooldown_min": 15,
     "max_per_day": 10,
@@ -73,11 +92,153 @@
     "send_info_alerts": false,
     "_note": "Info alerts (BOS, OTE touch) show in the app; only trade setups go to Telegram unless send_info_alerts is true."
   },
-
   "paper": {
     "enabled": true,
     "lots": 1,
     "lot_size": 65,
-    "_lot_note": "NIFTY lot = 65 (same as your Paper Desk). Paper P&L is index points x lot_size, a rough proxy for an ITM option. The app never places real orders."
+    "_lot_note": "NIFTY lot = 65 (same as your Paper Desk). Paper P&L is index points x lot_size, a rough proxy for an ITM option. The app never places real orders.",
+    "premium_pnl": true,
+    "_premium_note": "Entry/SL/TP stay on NIFTY index levels. P&L also recorded in option premium of the strike selected at entry (long CE for longs, long PE for shorts), from that strike's 1m candles."
+  },
+  "zones": {
+    "_note": "Zone registry: liquidity pools, order blocks and FVGs in one record shape. Ids come from candle timestamps, so a REST re-download never duplicates a zone.",
+    "persist": true,
+    "forward_only": true,
+    "_forward_note": "A stored timestamp (mitigated_at, invalidated_at...) is never moved or cleared, and state never goes backwards.",
+    "void_missing_after_repair": true,
+    "_void_note": "If corrected candles no longer produce a stored zone created inside the recomputed window, it is marked 'void' (e.g. a fake FVG from a feed stall). History is kept, never deleted.",
+    "price_round": 0.05,
+    "keep_days": 10,
+    "touch_tolerance_pts": 1.0,
+    "touch_tolerance_atr": 0.05
+  },
+  "delta": {
+    "_note": "Positive delta = buyers attacking (market buys > market sells). Negative = sellers attacking. NIFTY index has no volume: delta needs futures footprint data, a CSV, or the mock (dev only).",
+    "adapter": "none",
+    "_adapter_note": "none (Unavailable, default) | footprint_feed (Real-feed: stub until wired) | csv | mock (deterministic fake, banner, never stored)",
+    "timeframes": [
+      "1m",
+      "5m",
+      "15m",
+      "1h"
+    ],
+    "min_coverage": 0.8,
+    "_coverage_note": "For a 5m/15m/1h candle built from 1m CSV rows, at least this share of the minutes must have data, else delta = unavailable for that candle.",
+    "baseline_window": 30,
+    "baseline_min_bars": 15,
+    "baseline_method": "zscore",
+    "_baseline_note": "zscore: (delta - mean)/std of the previous baseline_window CLOSED candles (the current candle is never in its own baseline). percentile: |delta| rank vs the same window.",
+    "aggression_z": 2.0,
+    "aggression_percentile": 90,
+    "aggression_min_abs": 0,
+    "min_candle_range_atr": 0.15,
+    "_min_range_note": "Candles with range < this x ATR are skipped for absorption/flip/imbalance (a flat feed-stall candle is not 'low progress').",
+    "_min_abs_note": "Ignore 'extreme' delta smaller than this many contracts. 0 = off. Set it once you know your data's scale.",
+    "absorption": {
+      "rule1_max_body_ratio": 0.35,
+      "rule1_min_close_off_extreme": 0.5,
+      "_rule1_note": "Low progress = body/range <= rule1_max_body_ratio OR the close sits >= rule1_min_close_off_extreme x range away from the extreme in the delta's direction.",
+      "rule2_min_follow_pts": 2.0,
+      "rule2_min_follow_atr": 0.1,
+      "_rule2_note": "Failure to continue = the NEXT closed candle does not close beyond the entry candle's close by max(pts, atr x ATR) in the delta's direction. Event is stamped on that next candle (no look-ahead)."
+    },
+    "flip": {
+      "min_z": 1.0,
+      "max_bars": 2,
+      "_note": "Delta sign change between closed candles, both |z| >= min_z, at a zone or within max_bars after a sweep."
+    },
+    "footprint": {
+      "imbalance_ratio": 3.0,
+      "imbalance_mode": "diagonal",
+      "_mode_note": "diagonal: ask(buy) at price p vs bid(sell) at p - 1 level (standard footprint). horizontal: buy vs sell at the same price.",
+      "min_level_volume": 1,
+      "stacked_min": 3,
+      "_stacked_note": "N or more consecutive imbalanced levels on one side = a stacked imbalance (where aggression hit).",
+      "boundary_tolerance_pts": 3.0
+    },
+    "proxy": {
+      "enabled": true,
+      "min_z": 2.0,
+      "min_wick_ratio": 0.4,
+      "_note": "Without price levels: delta spike + a wick >= min_wick_ratio of the range in the delta's direction, at a zone = 'Proxy imbalance' (labelled, never called footprint)."
+    },
+    "keep_days": 10
+  },
+  "confluence": {
+    "_note": "Only adjusts confidence of Setup A/C. Never creates, removes or changes a trade or its status.",
+    "base": 0.5,
+    "lookback_bars": 3,
+    "ob_absorption_bonus": 0.15,
+    "sweep_flip_bonus": 0.15,
+    "fvg_absorption_bonus": 0.1,
+    "imbalance_bonus": 0.05,
+    "against_aggression_penalty": 0.15,
+    "delta_unavailable_note": true,
+    "options_context": {
+      "_note": "Focused-strike OI read vs the setup direction. Context only.",
+      "supportive": 0.05,
+      "opposing": -0.05
+    },
+    "proxy_surge_bonus": 0.05,
+    "proxy_against_penalty": 0.05
+  },
+  "strikes": {
+    "_note": "Strike selection = the OC 'Strike Advisor' (strike_advisor_pro.py: scenarios + pick + path_levels), unchanged. Defaults below are the OC values.",
+    "enabled": true,
+    "expiry_index": 0,
+    "_expiry_note": "0 = nearest expiry from Dhan's expiry list, 1 = next.",
+    "stop_pts": 40,
+    "_stop_note": "OC 'Stop (NIFTY pts)' default — MJ's fixed 40-pt stop.",
+    "hold_min": 30,
+    "_hold_note": "OC 'Hold (min)' default — sets the theta cost.",
+    "target_mode": "fixed",
+    "_target_note": "fixed = OC 'Fixed pts'; first_level = OC 'First level' (first wall / max pain / gamma / prev close / open within reach).",
+    "target_pts": 40,
+    "reach_fallback_pts": 60,
+    "_reach_note": "OC fallback reach when the straddle σ is unknown (olab_pro move_map not ported).",
+    "iv_change_win": 0.0,
+    "iv_change_loss": -0.5,
+    "priyanka": {
+      "window_pts": 300,
+      "min_ltp": 1.0,
+      "max_spread_pct": 3.0,
+      "course_strike_multiple": 100,
+      "course_itm_min": 50,
+      "course_itm_max": 250,
+      "course_ltp_min": 120,
+      "course_ltp_max": 320,
+      "course_premium": 200,
+      "course_premium_span": 400,
+      "fit_floor": 0.2,
+      "fast_itm_min": -100,
+      "fast_itm_max": 25,
+      "kind_band_pts": 25
+    },
+    "filters": {
+      "_note": "Optional pre-filters BEFORE the OC rule. null/0 = off (OC behaviour).",
+      "delta_range_ce": null,
+      "delta_range_pe": null,
+      "min_oi": 0,
+      "min_oi_chg": null,
+      "min_volume": 0
+    },
+    "auto_refresh": true,
+    "switch_tf": "3m",
+    "switch_min_improve": 0.15,
+    "_switch_note": "Scores refresh on every chain update (~60 s); the active strike may change only on a 3-minute close and only if the new best scores 15 % better (or the old one stops qualifying).",
+    "candles_days": 2,
+    "candle_fetch_delay_s": 4,
+    "_candle_note": "Option 1m candles come from REST /charts/intraday (NSE_FNO/OPTIDX) a few seconds after each minute closes — closed candles only, Dhan's own numbers."
+  },
+  "options_flow_proxy": {
+    "_note": "PROXY (not real delta). Opt-in. Uses only observable option data: LTP change x volume per closed candle on the SELECTED CE and PE. Emits PROXY_FLOW_* events only.",
+    "enabled": false,
+    "weight_by_delta": true,
+    "baseline_window": 30,
+    "baseline_min_bars": 10,
+    "surge_z": 2.0,
+    "fade_min_follow_pts": 2.0,
+    "fade_min_follow_atr": 0.1,
+    "min_candle_range_atr": 0.15
   }
 }
