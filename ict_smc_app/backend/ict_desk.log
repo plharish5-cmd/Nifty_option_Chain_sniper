@@ -80,3 +80,23 @@ INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
 INFO:     Finished server process [16148]
+INFO:     Started server process [11093]
+INFO:     Waiting for application startup.
+2026-10-10 22:52:27,222 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-10 22:52:27,819 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-10 22:52:28,036 INFO httpx: HTTP Request: GET https://images.dhan.co/api-data/api-scrip-master.csv "HTTP/1.1 200 OK"
+2026-10-10 22:52:36,075 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-10 22:52:36,265 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-10 22:52:36,648 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-10 22:52:36,853 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-10 22:52:36,979 INFO hub: NIFTY future: NIFTY-Oct2026-FUT (id 48704, expiry 2026-10-27) · 1875 one-minute candles — NIFTY-Oct2026-FUT (48704): ok — 22,615.0, basis +94.5, volume today 3,811,340; NIFTY-Nov2026-FUT (61471): ok — 22,713.0, basis +192.5, volume today 368,550; NIFTY-Dec2026-FUT (58875): ok — 22,836.6, basis +316.1, volume today 186,875
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8600 (Press CTRL+C to quit)
+2026-10-10 22:52:40,458 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain/expirylist "HTTP/1.1 200 OK"
+2026-10-10 22:52:43,582 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+2026-10-10 22:52:43,894 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-10 22:52:44,195 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [11093]

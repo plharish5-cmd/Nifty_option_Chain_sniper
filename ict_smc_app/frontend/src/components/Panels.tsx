@@ -29,6 +29,14 @@ export function Header({ q, live, status }: { q: Quote | null; live: string; sta
         <span className={`pill ${q?.market_open ? "bg-bull-900 text-bull-400" : "bg-ink-800 text-slate-400"}`}>{q?.market_open ? "● Market open" : "Market closed"}</span>
         <span className={`pill ${live === "live" ? "bg-ink-800 text-slate-300" : "bg-bear-900 text-bear-400"}`}>App link: {live}</span>
         <span className="pill bg-ink-800 text-slate-300">Price: {q?.source ?? "—"}</span>
+        {(() => {
+          const u = (status as unknown as { dhan_calls?: { data: number; data_limit: number; desk_budget: number; data_pct: number; chain: number; rate_limited: number; over_budget: boolean } } | null)?.dhan_calls;
+          if (!u) return null;
+          const warn = u.over_budget || u.data_pct >= 70;
+          return <span title={`This desk today: ${u.data} data calls (Dhan limit ${u.data_limit}/day for the whole account — other apps on your token count too) · ${u.chain} option-chain calls · ${u.rate_limited} rate-limited answers. Over ${u.desk_budget}, strike / futures candle refreshes slow to every 5th minute.`}
+            className={`pill ${u.over_budget ? "bg-bear-900 text-bear-400" : warn ? "bg-amber-900/60 text-amber-300" : "bg-ink-800 text-slate-300"}`}>
+            Dhan API: {u.data.toLocaleString("en-IN")} / {u.data_limit.toLocaleString("en-IN")}{u.rate_limited ? ` · ${u.rate_limited} limited` : ""}{u.over_budget ? " · saving calls" : ""}</span>;
+        })()}
         {tokenBad && <span className="pill bg-bear-900 text-bear-400">Dhan token expired — update .env</span>}
       </div>
     </header>

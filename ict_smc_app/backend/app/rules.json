@@ -38,7 +38,13 @@
     "candles_keep_days": 400,
     "feed_stale_s": 10,
     "rest_ltp_every_s": 2,
-    "reconnect_max_wait_s": 60
+    "reconnect_max_wait_s": 60,
+    "chain_poll_every_s": 6,
+    "chain_far_every": 4,
+    "_chain_note": "One chain call every chain_poll_every_s (Dhan allows 1 per 3 s PER ACCOUNT — leave room for the OC scanner). Nearest expiry on 3 of 4 polls.",
+    "daily_data_limit": 7000,
+    "desk_data_budget": 5000,
+    "_budget_note": "Dhan Data APIs: 7,000 calls/day per ACCOUNT. After desk_data_budget calls this desk pauses optional candle refreshes (strike + futures) — the feed, recorder and repairs keep running."
   },
   "engine": {
     "timeframes": [

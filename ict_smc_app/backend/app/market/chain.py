@@ -128,8 +128,12 @@ class ChainPoller:
                     self.status = "no expiries returned"
                     await asyncio.sleep(30)
                     continue
-                exp = self.expiries[i % len(self.expiries)]
+                # nearest expiry on most polls, the next one every 4th (OI / IV don't move every 3 s, and the
+                # 1-per-3-s chain limit is shared by every app on your Dhan account)
+                every = max(1, int(config.rule("data", "chain_far_every", 4)))
+                exp = self.expiries[1] if len(self.expiries) > 1 and i % every == every - 1 else self.expiries[0]
                 i += 1
+                t_poll = time.time()
                 raw = await self.rest.option_chain(exp)
                 ch = normalize(raw, exp)
                 if ch["rows"]:
@@ -138,6 +142,9 @@ class ChainPoller:
                     self._snapshot(exp, ch)
                     await self.on_update(exp, ch)
                 self.status = "live" if market_open_now() else "after hours (last snapshot)"
+                gap = float(config.rule("data", "chain_poll_every_s", 6))
+                if market_open_now() and time.time() - t_poll < gap:
+                    await asyncio.sleep(gap - (time.time() - t_poll))
                 if not market_open_now():
                     await asyncio.sleep(60)                 # nothing changes after hours; be polite
             except asyncio.CancelledError:

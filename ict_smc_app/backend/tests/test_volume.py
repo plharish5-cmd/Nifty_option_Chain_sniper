@@ -114,3 +114,16 @@ def test_options_activity_delta_weighted_and_live_only():
     A.ingest(ch(D8 + 20, 1200, 1100), force=True)
     r = activity.rows_since(D8)[0]
     assert r["raw"] == 600 and r["ce"] == 0.5 * 200 + 0.05 * 100 and r["pe"] == 0.5 * 200 + 0.95 * 100
+
+
+def test_dhan_call_counter_and_budget():
+    from app.dhan.rest import DhanREST
+    r = DhanREST()
+    r.usage_d = {"day": r.usage_d["day"], "data": 0, "chain": 0, "quote": 0, "misc": 0, "rate_limited": 0}
+    for _ in range(3):
+        r._count("data")
+    r._count("chain")
+    u = r.usage()
+    assert u["data"] == 3 and u["chain"] == 1 and not u["over_budget"]
+    r.usage_d["data"] = u["desk_budget"]
+    assert r.over_budget() and r.usage()["over_budget"]

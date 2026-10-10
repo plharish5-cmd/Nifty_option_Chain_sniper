@@ -87,6 +87,45 @@ class DhanREST:
         self.token_ok: Optional[bool] = None
         self.last_error = ""
         self.calls = 0
+        self._load_usage()
+
+    # ── daily call counter (Dhan's limits are per ACCOUNT: every app on your token shares them) ─────────
+    def _load_usage(self) -> None:
+        from .. import db
+        from ..timeutil import now_ist
+        day = now_ist().date().isoformat()
+        try:
+            u = db.kv_get("dhan_calls") or {}
+        except Exception:                                    # noqa: BLE001
+            u = {}
+        self.usage_d = u if u.get("day") == day else {"day": day, "data": 0, "chain": 0, "quote": 0, "misc": 0, "rate_limited": 0}
+
+    def _count(self, bucket: str, limited: bool = False) -> None:
+        from .. import db
+        from ..timeutil import now_ist
+        day = now_ist().date().isoformat()
+        if self.usage_d.get("day") != day:
+            self.usage_d = {"day": day, "data": 0, "chain": 0, "quote": 0, "misc": 0, "rate_limited": 0}
+        self.usage_d[bucket] = self.usage_d.get(bucket, 0) + 1
+        if limited:
+            self.usage_d["rate_limited"] += 1
+        if self.usage_d[bucket] % 10 == 0 or limited:
+            try:
+                db.kv_set("dhan_calls", self.usage_d)
+            except Exception:                                # noqa: BLE001
+                pass
+
+    def usage(self) -> Dict[str, Any]:
+        lim = int(config.rule("data", "daily_data_limit", 7000))
+        bud = int(config.rule("data", "desk_data_budget", 5000))
+        d = self.usage_d.get("data", 0)
+        return {**self.usage_d, "data_limit": lim, "desk_budget": bud, "data_pct": round(100 * d / lim, 1),
+                "over_budget": d >= bud}
+
+    def over_budget(self) -> bool:
+        """True once THIS desk has used its share of the account's daily Data-API calls — optional refreshes
+        (option / futures candles) then pause; the live feed, recorder and repairs keep working."""
+        return self.usage_d.get("data", 0) >= int(config.rule("data", "desk_data_budget", 5000))
 
     # ── plumbing ──────────────────────────────────────────────────────────
     @staticmethod
@@ -121,6 +160,7 @@ class DhanREST:
                 if extra_headers:
                     h.update(extra_headers)
                 self.calls += 1
+                self._count(bucket)
                 r = await self.client.request(method, url, json=body, headers=h)
             except (httpx.TransportError, httpx.TimeoutException) as e:
                 self.last_error = f"{path}: network {type(e).__name__}"
@@ -143,6 +183,7 @@ class DhanREST:
             err = self._classify(r.status_code, r.text)
             self.last_error = f"{path}: {err}"
             if isinstance(err, RateLimited):
+                self.usage_d["rate_limited"] = self.usage_d.get("rate_limited", 0) + 1
                 b.punish()
                 if attempt < retries:
                     continue

@@ -644,3 +644,12 @@ Once a minute from the chain (nearest expiry): ATM IV = mean of ATM CE / PE IV; 
 (table `iv_series`). Live only — Dhan keeps no IV history. Trend over 60 min (±0.5 IV pts = falling / rising);
 strike |Δ| over the day (±0.08). ATM IV is the orange line above the volume strip.
 Not added on purpose: "delta falling + moving-average sell" — both read the same price move, not two confirmations.
+
+### 12.8 Dhan API budget (added 10 Oct 2026)
+Dhan's limits are per ACCOUNT — the 8600 desk, the paper desks, the OC scanner, recorders and the Dhan MCP all share
+them: Data APIs 7,000 calls/day · option chain 1 per 3 s · quotes 1/s.
+* Header pill **Dhan API: n / 7,000** = this desk's data calls today (hover: chain calls, rate-limited answers).
+  Amber at 70 %, red once over `data.desk_data_budget` (5,000): strike and futures candle refreshes then run only
+  every 5th minute. The feed, estimated delta recorder (provisional futures volume) and repairs keep running.
+* Option chain: one call every `data.chain_poll_every_s` (6 s, was ~3 s); nearest expiry on 3 of 4 polls
+  (`chain_far_every`). Normal use ≈ 1,100–1,500 data calls a day.

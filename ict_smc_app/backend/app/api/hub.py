@@ -199,9 +199,16 @@ class Hub:
             except Exception:                                # noqa: BLE001
                 log.exception("futures loop")
 
+    def _budget_skip(self) -> bool:
+        """Over this desk's daily Data-API budget: optional refreshes run only every 5th minute."""
+        if not self.rest.over_budget():
+            return False
+        self._bud_n = getattr(self, "_bud_n", 0) + 1
+        return self._bud_n % 5 != 0
+
     async def _fut_after_close(self) -> None:
         await asyncio.sleep(float(config.rule("futures", "candle_fetch_delay_s", 4)))
-        if self.fut:
+        if self.fut and not self._budget_skip():
             try:
                 await fut_mod.refresh(self.rest, self.fut["sid"], 1)
             except DhanError as e:
@@ -313,7 +320,7 @@ class Hub:
         return out
 
     async def refresh_options(self) -> None:
-        if self._opt_busy:
+        if self._opt_busy or self._budget_skip():
             return
         self._opt_busy = True
         try:
@@ -837,7 +844,7 @@ class Hub:
         return sorted([s for s in self.signals if s.ts >= o] + self.crt_signals_today(), key=lambda s: s.ts)
 
     def status_view(self) -> Dict[str, Any]:
-        return {**self.status, "futures": self.fut_status, "recorder": self.recorder.status(), "feed": self.feed.status, "feed_error": self.feed.last_error,
+        return {**self.status, "dhan_calls": self.rest.usage(), "futures": self.fut_status, "recorder": self.recorder.status(), "feed": self.feed.status, "feed_error": self.feed.last_error,
                 "feed_connects": self.feed.connects, "ltt_mode": self.feed.ltt_mode,
                 "tick_age_s": round(self.feed.tick_age(self.nifty), 1) if self.feed.tick_age(self.nifty) < 1e8 else None,
                 "chain": self.chain.status, "chain_error": self.chain.last_error,
