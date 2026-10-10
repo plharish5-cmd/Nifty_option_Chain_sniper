@@ -71,6 +71,8 @@ class FutRecorder:
         rec = self.min.setdefault(m, {"lv": defaultdict(lambda: [0.0, 0.0]), "buy": 0.0, "sell": 0.0, "unc": 0.0,
                                       "o": px, "h": px, "l": px, "c": px, "v": 0.0})
         rec["h"], rec["l"], rec["c"] = max(rec["h"], px), min(rec["l"], px), px
+        if p.get("oi"):
+            rec["oi"] = float(p["oi"])
         if self.prev_vol is not None and vol > self.prev_vol:
             dv = float(vol - self.prev_vol)
             rec["v"] += dv
@@ -132,6 +134,8 @@ class FutRecorder:
                 have = db.query("SELECT 1 FROM candles_1m WHERE sec_id=? AND ts=?", (fut_mod.SEC, k))
                 if not have:
                     db.upsert_candles(fut_mod.SEC, [{"ts": k, "o": r["o"], "h": r["h"], "l": r["l"], "c": r["c"], "v": r["v"]}])
+            if r.get("oi"):                                  # provisional OI; REST (oi=True) replaces it
+                db.execute("INSERT OR IGNORE INTO fut_oi (ts, oi, src) VALUES (?,?,?)", (k, r["oi"], "feed"))
             if k == m:
                 out = {"ts": k, "buy": r["buy"], "sell": r["sell"], "unclassified": r["unc"], "v": r["v"]}
         return out

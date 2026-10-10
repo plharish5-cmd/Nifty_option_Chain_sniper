@@ -163,6 +163,11 @@ export default function Guide() {
           ]} />
           <p><Y>Estimated delta</Y> (Delta / Footprint → source "Estimated (FUT quote rule)", now the default): each print of the future is classed buy if it traded at or above the previous ask, sell at or below the bid, tick rule in between. Dhan sends snapshots, not every trade — a good estimate, not exchange truth. Live only: history starts the first market session the desk runs. It feeds the existing aggression / absorption / flip / imbalance rules.</p>
           <p><b>Options activity</b>: new option volume × |delta| over ±10 strikes of ATM (nearest expiry), per minute — participation, direction unknown. Live only.</p>
+          <T head={["Futures price", "Futures OI", "Read"]} rows={[
+            [<G>up</G>, "up", <G>Long build-up — new longs paying up</G>], [<R>down</R>, "up", <R>Short build-up — new shorts pressing</R>],
+            [<G>up</G>, "down", "Short covering — shorts buying back; fades once covering is done"], [<R>down</R>, "down", "Long unwinding — longs bailing out"],
+          ]} />
+          <p>OI build-up is read per candle (ΔOI ≥ 0.05 % and a move ≥ 0.1 ATR, same session only) and backfilled from Dhan. It shows in the Auction tab, the effort line and the chart footer. <b>ATM IV</b> (orange line above the volume strip) and your selected strikes' delta / IV are recorded once a minute from the option chain — live only. Falling IV in a trend = orderly, cleaner move; rising IV = fear, wider swings; a CE whose |Δ| keeps falling is drifting out of the money.</p>
           <p className="text-slate-400">None of this changes a trigger, a zone, a signal, a paper trade or the scorecard (baseline lock still passes). Delta only nudges A / C confidence, as before.</p>
         </S>
 

@@ -25,7 +25,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const zones = useRef(new ZonesPrimitive());
   const volS = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const vwapS = useRef<ISeriesApi<"Line">[]>([]);          // [vwap, +1σ, −1σ, +2σ, −2σ, avwap1, avwap2]
+  const vwapS = useRef<ISeriesApi<"Line">[]>([]);
+  const ivS = useRef<ISeriesApi<"Line"> | null>(null);          // [vwap, +1σ, −1σ, +2σ, −2σ, avwap1, avwap2]
   const last = useRef<Candle | null>(null);
 
   // create once
@@ -58,6 +59,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       line("rgba(245,245,244,0.25)", 1, LineStyle.Dotted), line("rgba(245,245,244,0.25)", 1, LineStyle.Dotted)];
     vwapS.current = [...set5(), line("#c084fc", 2, LineStyle.Solid), line("#fbbf24", 2, LineStyle.Solid), ...set5()];
     volS.current = vs;
+    // ATM IV (live only) on its own scale, in a band just above the volume strip
+    const iv = ch.addSeries(LineSeries, { color: "#fb923c", lineWidth: 1, priceScaleId: "iv", priceLineVisible: false,
+      lastValueVisible: true, crosshairMarkerVisible: false, title: "ATM IV" });
+    ch.priceScale("iv").applyOptions({ scaleMargins: { top: 0.66, bottom: 0.18 }, visible: false });
+    ivS.current = iv;
     chart.current = ch; series.current = s; zz.current = z;
     markers.current = createSeriesMarkers(s, []);
     return () => { ch.remove(); chart.current = null; series.current = null; };
@@ -268,6 +274,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       const av = on ? V!.avwaps ?? [] : [];
       for (let q = 0; q < 2; q++) L[5 + q].setData((av[q]?.points ?? []).map((p) => ({ time: p.time as UTCTimestamp, value: p.v })));
     }
+    ivS.current?.setData(a && layers.volume ? (V?.iv ?? []).map((p) => ({ time: p.time as UTCTimestamp, value: p.iv })) : []);
     zz.current.setData(a && layers.swings ? dedupe(a.zigzag).map((p) => ({ time: p.time as UTCTimestamp, value: p.price })) : []);
   }, [analysis, layers, candles]);
 

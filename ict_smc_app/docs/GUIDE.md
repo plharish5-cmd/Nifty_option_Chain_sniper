@@ -630,3 +630,17 @@ Value area / POC references come from the volume profile (TPO only when no futur
 estimated delta z + FUT RVOL + options activity z; "high effort, low result" fires on any of them.
 
 Rules: `futures`, `volume`, `activity`, `delta.fut_level_step`. API: `GET /api/volume?tf=5m`. Tests: `tests/test_volume.py`.
+
+### 12.6 Futures OI build-up (engine/oi.py) — added 10 Oct 2026
+REST candles of the future are fetched with `oi=True` (table `fut_oi`, backfilled 7 days); the live Full packet's OI
+fills the newest minute until REST replaces it. Per candle: ΔOI = OI at its last minute − OI at the previous candle's
+last minute (same session only). Counted if |ΔOI| ≥ `oi.oi_min_pct` (0.05 %) of OI and |Δprice| ≥ 0.1 ATR:
+price ↑ OI ↑ long build-up · price ↓ OI ↑ short build-up · price ↑ OI ↓ short covering · price ↓ OI ↓ long unwinding.
+Summary over the last 12 candles (dominant build-up, net ΔOI). Shown in the Auction tab, the effort line, the footer
+and the narrative. Context only.
+
+### 12.7 IV and delta over time (market/ivtrack.py)
+Once a minute from the chain (nearest expiry): ATM IV = mean of ATM CE / PE IV; the selected strikes' IV, delta, LTP
+(table `iv_series`). Live only — Dhan keeps no IV history. Trend over 60 min (±0.5 IV pts = falling / rising);
+strike |Δ| over the day (±0.08). ATM IV is the orange line above the volume strip.
+Not added on purpose: "delta falling + moving-average sell" — both read the same price move, not two confirmations.

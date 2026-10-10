@@ -1,7 +1,36 @@
 // AuctionPanel.tsx — "Read the auction, verify the response". The 5 questions (location · effort · result · response ·
 // decision), the TPO value profile, balance boxes and the accept / reject log. Observation only — it never trades.
 import { useEffect, useState } from "react";
-import { api, type AuctionRes, type TF, type TpoProfile } from "../api";
+import { api, type AuctionRes, type TF, type TpoProfile, type VolumeView } from "../api";
+
+const BUILD_CLR: Record<string, string> = { "long build-up": "text-bull-400", "short covering": "text-emerald-300",
+  "short build-up": "text-bear-400", "long unwinding": "text-rose-300", flat: "text-slate-500" };
+
+function OiIv({ v }: { v: VolumeView | null }) {
+  if (!v) return null;
+  const recent = (v.bars ?? []).filter((b) => b.build).slice(-12);
+  const s = v.oi_summary;
+  return (
+    <div className="rounded-lg border border-ink-700 p-2 space-y-1">
+      <div className="text-[11px] text-slate-400">Futures OI build-up (last {recent.length} candles) · ATM IV · strike delta</div>
+      {recent.length === 0 ? <div className="text-slate-500">No futures OI yet{v.message ? ` — ${v.message}` : ""}.</div> : (
+        <div className="flex flex-wrap gap-1">
+          {recent.map((b) => (
+            <span key={b.time} title={`OI ${b.oi?.toLocaleString("en-IN")} · ΔOI ${b.doi?.toLocaleString("en-IN")}`}
+              className={`pill bg-ink-800 ${BUILD_CLR[b.build ?? "flat"]}`}>{new Date((b.time - 19800) * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} {b.build === "flat" ? "·" : b.build}</span>
+          ))}
+        </div>
+      )}
+      {s && s.dominant !== "flat" && <div>Dominant: <b className={BUILD_CLR[s.dominant]}>{s.dominant}</b> · net ΔOI {s.net_doi.toLocaleString("en-IN")} · OI {s.oi.toLocaleString("en-IN")}</div>}
+      <div>ATM IV: {v.iv_last ? <b>{v.iv_last.iv.toFixed(2)}</b> : <span className="text-slate-500">not recorded yet (live only)</span>}
+        {v.iv_trend && <> · {v.iv_trend.word} {v.iv_trend.from.toFixed(1)}→{v.iv_trend.to.toFixed(1)} in {v.iv_trend.minutes} min{v.iv_trend.word === "falling" ? " — orderly, cleaner move" : v.iv_trend.word === "rising" ? " — fear: wider swings" : ""}</>}</div>
+      {(v.strike_greeks ?? []).map((g) => (
+        <div key={g.side}>{g.label}: Δ {g.delta != null ? g.delta.toFixed(2) : "—"} · IV {g.iv != null ? g.iv.toFixed(1) : "—"}
+          {g.delta_trend && <span className="text-slate-400"> · today |Δ| {Math.abs(g.delta_trend.from).toFixed(2)}→{Math.abs(g.delta_trend.to).toFixed(2)} ({g.delta_trend.word})</span>}</div>
+      ))}
+    </div>
+  );
+}
 
 const KIND: Record<string, [string, string]> = {
   AUCTION_ACCEPT: ["Accepted", "text-sky-300"], AUCTION_REJECT: ["Rejected", "text-orange-300"],
@@ -39,7 +68,8 @@ function Profile({ p, title, px }: { p: TpoProfile & { hvn?: number[]; lvn?: num
 export default function AuctionPanel({ tick }: { tick: number }) {
   const [tf, setTf] = useState<TF>("5m");
   const [a, setA] = useState<AuctionRes | null>(null);
-  useEffect(() => { api.auction(tf).then(setA).catch(() => setA(null)); }, [tf, tick]);
+  const [vol, setVol] = useState<VolumeView | null>(null);
+  useEffect(() => { api.auction(tf).then(setA).catch(() => setA(null)); api.volume(tf).then(setVol).catch(() => setVol(null)); }, [tf, tick]);
   const r = a?.read;
   const resp = r?.response.kind ? KIND[r.response.kind] : null;
   const px = a?.last_close ?? null;
@@ -70,6 +100,7 @@ export default function AuctionPanel({ tick }: { tick: number }) {
               ))}
             </tbody>
           </table>
+          <OiIv v={vol} />
           <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.3fr] gap-3">
             {a.prev ? <Profile p={a.prev} title={`Previous day (${kind})`} px={px} /> : <div className="text-slate-500">No previous-day profile yet.</div>}
             {a.today ? <Profile p={a.today} title={`Today, developing (${kind})`} px={px} /> : <div className="text-slate-500">No candles today yet.</div>}

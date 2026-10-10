@@ -155,11 +155,11 @@ class DhanREST:
 
     # ── data endpoints ────────────────────────────────────────────────────
     async def intraday(self, security_id: str, frm: datetime, to: datetime, interval: str = "1",
-                       segment: str = "IDX_I", instrument: str = "INDEX") -> List[Dict[str, float]]:
+                       segment: str = "IDX_I", instrument: str = "INDEX", oi: bool = False) -> List[Dict[str, float]]:
         """POST /charts/intraday. interval ∈ {1,5,15,25,60}; at most 90 days per call; 5 years of history.
         Returns candles as dicts {ts (epoch, candle start), o, h, l, c, v}. NIFTY index volume is always 0."""
         body = {"securityId": str(security_id), "exchangeSegment": segment, "instrument": instrument,
-                "interval": str(interval), "oi": False,
+                "interval": str(interval), "oi": bool(oi),
                 "fromDate": frm.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S"),
                 "toDate": to.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S")}
         d = await self._call("POST", "/charts/intraday", "data", body)
@@ -203,12 +203,15 @@ def _arrays_to_candles(d: Dict[str, Any]) -> List[Dict[str, float]]:
     ts = d.get("timestamp") or d.get("start_Time") or []
     o, h, l, c = d.get("open") or [], d.get("high") or [], d.get("low") or [], d.get("close") or []
     v = d.get("volume") or [0] * len(ts)
+    oi = d.get("open_interest") or []                        # only when requested with oi=True (F&O)
     n = min(len(ts), len(o), len(h), len(l), len(c))
     out = []
     for k in range(n):
         try:
             out.append({"ts": int(float(ts[k])), "o": float(o[k]), "h": float(h[k]), "l": float(l[k]),
                         "c": float(c[k]), "v": float(v[k] if k < len(v) else 0)})
+            if k < len(oi) and oi[k] is not None:
+                out[-1]["oi"] = float(oi[k])
         except (TypeError, ValueError):
             continue
     return out

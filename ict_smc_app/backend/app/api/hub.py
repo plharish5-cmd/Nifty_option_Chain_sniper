@@ -36,6 +36,8 @@ from ..engine import volume as vol_mod
 from ..market import activity as act_mod
 from ..market import futures as fut_mod
 from ..delta.recorder import FutRecorder
+from ..engine import oi as oi_mod
+from ..market import ivtrack as iv_mod
 from ..engine import registry
 from ..engine.analyze import Analysis, analyze, to_json
 from ..market.candles import Candles, backfill, backfill_daily, session_filter
@@ -66,6 +68,7 @@ class Hub:
         self.fut_status = "not resolved yet"
         self.recorder = FutRecorder(lambda: self.candles.last_price.get(self.nifty))
         self.activity = act_mod.Activity()
+        self.ivtrack = iv_mod.IVTrack()
         self.volume: Dict[str, Dict[str, Any]] = {}
         self.chain = ChainPoller(self.rest, self.on_chain)
         self.alerts = alerts_mod.Alerts(self.broadcast)
@@ -241,8 +244,14 @@ class Hub:
         if self.chain.expiries and expiry == self.chain.expiries[0]:
             try:
                 self.activity.ingest(ch)
+                picks = {}
+                for side, rec in self.book.current().items():
+                    ins = (rec or {}).get("instrument") or {}
+                    if ins.get("expiry") == expiry and ins.get("strike") is not None:
+                        picks[side] = {"strike": float(ins["strike"]), "key": ins.get("key") or f"{side}{ins['strike']}"}
+                self.ivtrack.ingest(ch, picks)
             except Exception:                                # noqa: BLE001
-                log.exception("activity")
+                log.exception("activity / iv")
         await self.broadcast({"type": "chain", "expiry": expiry, "summary": self.chain.summary(expiry)})
         if expiry == self.sel_expiry() and config.rule("strikes", "enabled", True):
             try:
@@ -533,10 +542,13 @@ class Hub:
             b, N = an.bars, len(an.bars)
             t0 = int(b.ts[max(0, N - 300)])
             act = act_mod.per_bar(act_mod.rows_since(t0 - 6 * 3600), tf, int(config.rule("activity", "z_window", 30)))
+            iv = self.iv_view(tf, an)
             if not mp:
                 j["volume"] = {"available": False, "message": f"NIFTY future: {self.fut_status}",
-                               "act_last": act.get(int(b.ts[-1]))}
-                return {"act": act}
+                               "act_last": act.get(int(b.ts[-1])), **iv}
+                return {"act": act, "iv_trend": iv.get("iv_trend")}
+            oib = oi_mod.per_bar(an, fut_mod.oi_rows(8))
+            ois = oi_mod.summary(an, oib, int(config.rule("oi", "summary_bars", 12)))
             rv = self.rvol_tf(tf)
             summ = vol_mod.annotate(j, an, rv)
             profiles = vol_mod.day_profiles(mp)
@@ -546,7 +558,9 @@ class Hub:
             for k in range(max(0, N - 300), N):
                 ts = int(b.ts[k])
                 x = rv.get(ts) or {}
-                bars.append({"time": chart_time(ts), "v": x.get("v", 0), "rvol": x.get("rvol"), "up": bool(b.c[k] >= b.o[k])})
+                o = oib.get(ts) or {}
+                bars.append({"time": chart_time(ts), "v": x.get("v", 0), "rvol": x.get("rvol"), "up": bool(b.c[k] >= b.o[k]),
+                             "oi": o.get("oi"), "doi": o.get("doi"), "build": o.get("build")})
                 idx[ts] = k
 
             def sample(series: List[Dict[str, Any]], from_ts: int = 0) -> List[Dict[str, Any]]:
@@ -587,13 +601,35 @@ class Hub:
                            "vwap": vw, "bands": config.rule("volume", "vwap_bands", [1, 2]), "avwaps": avwaps,
                            "today": strip(profiles.get(today)), "prev": strip(profiles.get(prev_day)) if prev_day else None,
                            "naked": naked, "last": summ, "act_last": act.get(int(b.ts[-1])),
-                           "last_vwap": last_vw, "rvol_method": summ.get("method")}
+                           "last_vwap": last_vw, "rvol_method": summ.get("method"),
+                           "oi_last": oib.get(int(b.ts[-1])), "oi_summary": ois, **iv}
             self.volume[tf] = dict(j["volume"], profiles={d: profiles[d] for d in sorted(profiles)[-3:]})
-            return {"profiles": profiles, "rvol": rv, "act": act}
+            return {"profiles": profiles, "rvol": rv, "act": act, "oi": oib, "iv_trend": iv.get("iv_trend")}
         except Exception as e:                               # noqa: BLE001 — never lose the chart over volume
             log.exception("volume %s failed", tf)
             j["volume"] = {"available": False, "message": f"volume error: {e}"}
             return {}
+
+    def iv_view(self, tf: str, an) -> Dict[str, Any]:
+        """ATM IV line (one point per candle, its close) + trend, and the selected strikes' delta drift. Live only."""
+        b = an.bars
+        t0 = int(b.ts[max(0, len(b) - 300)])
+        atm = iv_mod.series("ATM", t0)
+        pb = iv_mod.per_bar(atm, tf)
+        pts = [{"time": chart_time(int(t)), "iv": pb[int(t)]["iv"]} for t in b.ts[-300:] if int(t) in pb]
+        tr = iv_mod.trend(atm, int(config.rule("iv", "trend_minutes", 60)))
+        strikes = []
+        for side, rec in self.book.current().items():
+            ins = (rec or {}).get("instrument") or {}
+            key = ins.get("key")
+            if not key:
+                continue
+            rows = iv_mod.series(key, int(now_epoch()) - 86400)
+            d = iv_mod.trend(rows, 375, "delta")
+            last = rows[-1] if rows else None
+            strikes.append({"side": side, "label": ins.get("label") or key, "delta": last.get("delta") if last else None,
+                            "iv": last.get("iv") if last else None, "delta_trend": d})
+        return {"iv": pts, "iv_trend": tr, "iv_last": atm[-1] if atm else None, "strike_greeks": strikes}
 
     def crt_view(self, tf: str) -> Dict[str, Any]:
         """Ranges + markers for a chart tf: every pair whose LTF is as fine or finer than the chart, bucketed."""
@@ -751,6 +787,17 @@ class Hub:
                 bits.append(f"last candle volume {lr:.1f}× normal")
             if v.get("naked"):
                 bits.append("naked POC " + ", ".join(f"{n['price']:,.1f} ({n['day'][5:]})" for n in v["naked"][-2:]))
+            os_ = v.get("oi_summary") or {}
+            if os_.get("dominant") and os_["dominant"] != "flat":
+                bits.append(f"futures: {os_['dominant']} over the last {os_['bars']} candles (net OI {os_['net_doi']:+,})")
+            it = v.get("iv_trend") or {}
+            if it.get("word"):
+                bits.append(f"ATM IV {it['word']} {it['from']:.1f}→{it['to']:.1f} in {it['minutes']} min"
+                            + (" (orderly move)" if it["word"] == "falling" else " (wider swings)" if it["word"] == "rising" else ""))
+            for g in v.get("strike_greeks") or []:
+                dt = g.get("delta_trend") or {}
+                if dt.get("word") == "falling" and g["side"] == "CE" or dt.get("word") == "rising" and g["side"] == "PE":
+                    bits.append(f"{g['label']} |Δ| {abs(dt['from']):.2f}→{abs(dt['to']):.2f}: drifting out of the money")
             al = v.get("act_last") or {}
             if al.get("z") is not None:
                 bits.append(f"options activity z {al['z']:+.1f}")

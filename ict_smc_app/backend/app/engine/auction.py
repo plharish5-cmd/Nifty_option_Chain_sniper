@@ -266,6 +266,9 @@ def read(an, res: Dict[str, Any], delta_bars: Optional[Dict[int, float]], delta_
     if az is not None:
         parts.append(f"options activity z {az:+.1f} (direction unknown)")
         high |= az >= float(C.get("effort_high_act_z", 2.0))
+    ob = (vol.get("oi") or {}).get(int(b.ts[i])) or {}
+    if ob.get("build") and ob["build"] != "flat":
+        parts.append(f"futures {ob['build']} (OI {ob.get('doi', 0):+,})")
     if parts:
         eff = {"available": True, "z": z, "rvol": rvol, "act_z": az, "high": high, "text": " · ".join(parts)
                + ("" if delta_bars is not None else " — volume says how much traded, not who won: no delta source yet")}
@@ -281,6 +284,10 @@ def read(an, res: Dict[str, Any], delta_bars: Optional[Dict[int, float]], delta_
     result = {"atr": round(res_atr, 2), "pts": round(move, 1),
               "text": f"last 3 closed candles moved {move:+,.1f} pts ({res_atr:.1f} ATR)"
                       + (" — limited progress" if res_atr <= float(C["result_low_atr"]) else "")}
+    it = vol.get("iv_trend") or {}
+    if it.get("word") in ("falling", "rising"):
+        result["text"] += (f" · ATM IV {it['word']} {it['from']:.1f}→{it['to']:.1f} in {it['minutes']} min ("
+                           + ("orderly, cleaner move" if it["word"] == "falling" else "fear: wider swings") + ")")
     if eff["high"] and res_atr <= float(C["result_low_atr"]):
         result["text"] += " · HIGH EFFORT, LOW RESULT: activity without control (possible absorption — wait for the response)"
 

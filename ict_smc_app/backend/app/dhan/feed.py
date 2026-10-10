@@ -78,6 +78,8 @@ def decode(buf: bytes) -> List[dict]:
                     p["ltq"] = struct.unpack_from("<h", buf, i + 12)[0]
                     p["atp"], p["volume"] = struct.unpack_from("<fi", buf, i + 18)
                     p["tot_sell"], p["tot_buy"] = struct.unpack_from("<ii", buf, i + 26)
+                if code == 8 and i + 38 <= n:
+                    p["oi"] = struct.unpack_from("<i", buf, i + 34)[0]
                 if code == 8 and i + 62 + 20 <= n:                # full: best bid / ask = first of 5 depth levels
                     bq, aq, _bo, _ao, bp, ap = DEPTH.unpack_from(buf, i + 62)
                     if 0 < bp <= ap:

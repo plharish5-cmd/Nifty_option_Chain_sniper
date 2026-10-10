@@ -385,5 +385,17 @@
     "strikes_each_side": 10,
     "z_window": 30,
     "high_z": 2.0
+  },
+  "oi": {
+    "_note": "Futures OI build-up per candle: price up+OI up long build-up, down+up short build-up, up+down short covering, down+down long unwinding. Context only.",
+    "oi_min_pct": 0.05,
+    "price_min_atr": 0.1,
+    "summary_bars": 12
+  },
+  "iv": {
+    "_note": "ATM IV and selected strikes' IV/delta once a minute from the option chain. Live only. Falling IV in a trend = cleaner move; rising IV = wider swings.",
+    "trend_minutes": 60,
+    "trend_min_pts": 0.5,
+    "delta_min_chg": 0.08
   }
 }

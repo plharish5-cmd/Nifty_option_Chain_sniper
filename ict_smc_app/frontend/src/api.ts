@@ -27,7 +27,12 @@ export interface VolPoint { time: number; v: number; sd: number }
 export interface VolProfile { kind: string; poc: number; vah: number; val: number; high: number; low: number; minutes: number; volume: number; step: number; hvn: number[]; lvn: number[]; hist?: [number, number][] }
 export interface VolumeView {
   available: boolean; message?: string; contract?: string; basis?: number;
-  bars?: { time: number; v: number; rvol: number | null; up: boolean }[];
+  bars?: { time: number; v: number; rvol: number | null; up: boolean; oi?: number | null; doi?: number | null; build?: string | null }[];
+  oi_last?: { oi: number; doi?: number; doi_pct?: number; build?: string } | null;
+  oi_summary?: { net_doi: number; dominant: string; bias: string | null; counts: Record<string, number>; bars: number; last_build: string; last_doi: number | null; oi: number } | null;
+  iv?: { time: number; iv: number }[]; iv_trend?: { from: number; to: number; chg: number; word: string; minutes: number } | null;
+  iv_last?: { ts: number; iv: number } | null;
+  strike_greeks?: { side: string; label: string; delta: number | null; iv: number | null; delta_trend: { from: number; to: number; word: string } | null }[];
   vwap?: VolPoint[]; bands?: number[]; avwaps?: { label: string; anchor: number; dir: string; points: VolPoint[] }[];
   today?: VolProfile | null; prev?: VolProfile | null; naked?: { day: string; price: number }[];
   last?: { last_rvol: number | null; last_v: number | null; method: string | null }; act_last?: { act: number; raw: number; z: number | null } | null;
@@ -80,6 +85,7 @@ export const api = {
   repair: () => fetch("/api/repair", { method: "POST" }).then((r) => r.json()),
   delta: (tf: TF) => get<DeltaRes>(`/api/delta?tf=${tf}`),
   auction: (tf: TF) => get<AuctionRes>(`/api/auction?tf=${tf}`),
+  volume: (tf: TF) => get<VolumeView>(`/api/volume?tf=${tf}`),
   events: (tf: TF) => get<{ tf: TF; events: EventRec[] }>(`/api/events?tf=${tf}&limit=300`),
   zones: (tf: TF, active = 1) => get<{ tf: TF; zones: ZoneRec[] }>(`/api/zones?tf=${tf}&active=${active}`),
   setAdapter: async (name: string) => {

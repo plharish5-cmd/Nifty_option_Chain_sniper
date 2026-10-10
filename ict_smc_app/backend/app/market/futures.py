@@ -148,11 +148,20 @@ async def resolve(rest, index_close: float) -> Tuple[Optional[Dict[str, Any]], s
 async def refresh(rest, sid: str, days: int = 1) -> int:
     to = now_ist()
     frm = (to - timedelta(days=max(0, days - 1))).replace(hour=9, minute=0, second=0, microsecond=0)
-    rows = session_filter(await rest.intraday(sid, frm, to, "1", "NSE_FNO", "FUTIDX"))
+    rows = session_filter(await rest.intraday(sid, frm, to, "1", "NSE_FNO", "FUTIDX", oi=True))
     now = now_epoch()
     rows = [r for r in rows if r["ts"] <= now and is_closed(r["ts"], "1m", now)]
     db.upsert_candles(SEC, rows)
+    oi = [(int(r["ts"]), r["oi"], "rest") for r in rows if r.get("oi")]
+    if oi:
+        db.execmany("INSERT OR REPLACE INTO fut_oi (ts, oi, src) VALUES (?,?,?)", oi)
     return len(rows)
+
+
+def oi_rows(days: int = 5) -> Dict[int, float]:
+    """minute ts → futures open interest at the end of that minute (REST; live feed fills the newest minute)."""
+    since = int((now_ist() - timedelta(days=days + 3)).timestamp())
+    return {int(r["ts"]): float(r["oi"]) for r in db.query("SELECT ts, oi FROM fut_oi WHERE ts>=? ORDER BY ts", (since,))}
 
 
 def rows_1m(days: int = 5) -> List[Dict[str, float]]:
