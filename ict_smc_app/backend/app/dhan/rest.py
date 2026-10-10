@@ -62,10 +62,13 @@ class _Bucket:
         self.gap = gap_s
         self.next_ok = 0.0
         self.penalty = 0.0
-        self.lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None          # created on first use, inside the event loop
+                                                            # (Python 3.9 can't make one outside a running loop)
 
     async def wait(self) -> None:
-        async with self.lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        async with self._lock:
             now = time.monotonic()
             if now < self.next_ok:
                 await asyncio.sleep(self.next_ok - now)
