@@ -23,8 +23,6 @@ import config
 import chain_parser as cp
 import analytics as an
 import store
-import timeline as tl
-import outcomes as oc
 import alerts as al
 import context_tab
 import levels as lv_mod
@@ -33,7 +31,6 @@ import market_data as md
 import price_action as pa
 import setups as su
 import market_state as ms
-import rulebook as rb
 import flow as fl
 import greeks as gk
 import view_building as vb
@@ -1751,24 +1748,6 @@ try:
     DEC = ms.decision(_prd, _trd, _brd, _pind, _rngd, _trust, _tnote,
                       sig.blocks)
 
-    # Write down what the app is saying, so it can be checked later against
-    # the chart instead of being taken on trust.
-    # WEEKEND IMMUNITY: Never store timeline on Saturday or Sunday!
-    if now.weekday() < 5:
-        try:
-            tl.record({
-                "Regime":     read.regime,
-                "Bias":       DEC.bias.value,
-                "Structure":  _trd.state if _trd else None,
-                "Breakout":   _brd.state if _brd else None,
-                "Range":      _rngd.state if _rngd else None,
-                "Pinning":    _pind.state if _pind else None,
-                "Agreement":  (_agree or {}).get("state"),
-                "Actionable": DEC.actionability.value,
-            }, now, spot)
-        except Exception:                                       # noqa: BLE001
-            pass
-
         # ── Refresh aligned to candle closes ────────────────────────────────
     #
     # A fixed 180-second poll lands wherever it lands: a 15-minute candle
@@ -2177,7 +2156,6 @@ _ORDERED_ALL_TABS = [
     "Change in OI",
     "⚡ OI Timeline (Per-Strike)",
     "🧪 Options Lab (PCR · OI · Gamma · Vega)",
-    "📈 Price Action (1m/5m/15m)",
     "🏹 Breakout & Trap Scanner",
     "📝 Paper Trading & Impulse Control",
 
@@ -2193,7 +2171,6 @@ _ORDERED_ALL_TABS = [
     "SMC",
     "🔮 AI Forecast & Signals (5m/15m)",
     "🕯️ Candlestick Patterns & 15m Early Read",
-    "📐 Price Action Basics",
     "🎯 Price Levels & AI Confluence",
     "Master levels",
     "Chart levels",
@@ -2202,12 +2179,10 @@ _ORDERED_ALL_TABS = [
     "🌅 Opening Gap Planner & Confluence",
     "🏛️ Participant Positioning & History",
     "📊 Trainer's Participant Sheet",
-    "Market State",
     "Four Pillars",
     "Context",
     "View Building",
     "Session",
-    "Timeline",
 
     # ── Tier 5: 📋 Post-Market Review & Journal (After 3:30 PM) ────────────────
     "📋 EOD Day Report (What Worked / What Failed)",
@@ -2236,8 +2211,6 @@ _LABEL_TO_TAB_INDEX = {
     "EOD Day Report": 35,
     "Day Report": 35,
     "⚡ Institutional Quant Terminal": 29,
-    "📐 Price Action Basics": 30,
-    "Price Action Basics": 30,
     "💧 Liquidity & Smart Money Terminal": 31,
     "Liquidity & Smart Money Terminal": 31,
     "💧 Liquidity & Level Strength": 31,
@@ -2274,14 +2247,10 @@ _LABEL_TO_TAB_INDEX = {
     "Price levels": 5,
     "🎯 Price Levels & AI Confluence": 5,
     "Context": 6,
-    "Price action": 7,
-    "📈 Price Action (1m/5m/15m)": 7,
     "Master levels": 9,
     "View Building": 10,
     "Chart levels": 11,
     "Four Pillars": 12,
-    "Market State": 13,
-    "Timeline": 16,
     "VWAP/EMA": 18,
     "SMC": 19,
     "📓 Trading Journal": 20,
@@ -3188,198 +3157,6 @@ if _tab_active(6):
     except Exception as _ctx_err:
         st.error(f"Context Module Error: {_ctx_err}")
 
-if _tab_active(7):
-    refresh_control("price_action", (fetch_price_action,), "candles")
-    if pa_err:
-        st.warning("Price action unavailable.")
-        st.code(pa_err, language="text")
-        if any(k in pa_err.lower() for k in ("invalid_authentication", "expired", "dh-901")):
-            st.error("🔑 **Dhan Access Token is Expired or Invalid (DH-901).**")
-            with st.expander("Update Dhan Access Token Here", expanded=True):
-                _in_tok = st.text_area("Paste token", height=70, key="pa_tab_inline_token",
-                                       placeholder="Paste your 24-hr access token copied from Dhan app...",
-                                       label_visibility="collapsed")
-                if st.button("⚡ Test & Save Token", key="pa_tab_inline_save"):
-                    if not _in_tok.strip():
-                        st.warning("Please paste an access token.")
-                    else:
-                        with st.spinner("Testing with Dhan API..."):
-                            _ok, _msg = dc.verify_token(_in_tok.strip())
-                        if _ok:
-                            dc.save_token(_in_tok.strip())
-                            st.session_state["dhan_verify_status"] = {
-                                "ok": True,
-                                "msg": "Access key is working! Connected to Dhan Market Data.",
-                                "time": datetime.now().strftime("%H:%M:%S")
-                            }
-                            st.cache_data.clear()
-                            st.success("✅ **Access key is working!** Token saved.")
-                            st.rerun()
-                        else:
-                            st.session_state["dhan_verify_status"] = {
-                                "ok": False,
-                                "msg": _msg,
-                                "time": datetime.now().strftime("%H:%M:%S")
-                            }
-                            st.error(f"❌ Verification failed: {_msg}")
-        else:
-            st.info(f"Current source: **{config.CANDLE_SOURCE}**. For yfinance, "
-                    f"`pip install yfinance` and note 1-minute data only covers "
-                    f"about the last 7 days. For Dhan, run "
-                    f"`python diagnose_dhan.py` — and remember the Data API needs "
-                    f"a paid subscription separate from the free Trading API.")
-    elif not pa_frames:
-        st.info("Price action is off, or you are in demo mode.")
-    else:
-        if pa_stats:
-            q = st.columns(6)
-            q[0].metric("Day open", f"{pa_stats['open']:,.0f}")
-            q[1].metric("Day high", f"{pa_stats['high']:,.0f}")
-            q[2].metric("Day low", f"{pa_stats['low']:,.0f}")
-            q[3].metric("Range", f"{pa_stats['range']:,.0f} pts")
-            q[4].metric("In range", f"{pa_stats['pos_in_range']*100:.0f}%",
-                        help="0% at the low, 100% at the high")
-            q[5].metric("From open", f"{pa_stats['from_open']:+,.0f}")
-        if pa_stats.get("extremes_source"):
-            st.caption(f"Day high/low from: **{pa_stats['extremes_source']}**"
-                       + ("" if pa_stats["extremes_source"] == "exchange" else
-                          " — the price series samples ~1/min and undershoots "
-                          "the true extremes, so treat the range as indicative"))
-        if pa_orb:
-            st.caption(f"Opening range ({pa_orb['minutes']}m): "
-                       f"{pa_orb['low']:,.0f} – {pa_orb['high']:,.0f}"
-                       + ("" if pa_orb.get("complete") else "  · still forming"))
-
-        import candle_source as _cs
-        _src = _cs.describe()
-        st.caption(f"Source: **{_src['name']}** · {_src['symbol']} · "
-                   f"VWAP {'available' if _src['vwap'] else 'NOT available'}")
-        with st.expander("About this data source and its limits"):
-            st.write(_src["note"])
-
-        _rt = {tf: (fr.attrs or {}).get("candle_route", "?")
-               for tf, fr in pa_frames.items()}
-        _resampled = [tf for tf, r in _rt.items() if "resampled" in str(r)]
-        if _resampled:
-            _cov = []
-            for _tf in _resampled:
-                _rp = pa.coverage_report(pa_frames[_tf])
-                if _rp.get("known"):
-                    _cov.append(f"{_tf} {_rp['coverage_pct']:.0f}% "
-                                f"({_rp['thin']} thin)")
-            st.warning(
-                "**Candles built by resampling: " + ", ".join(_resampled) + "**"
-                + (("  \n" + " · ".join(_cov)) if _cov else "")
-                + "  \nA resampled candle keeps the right CLOSE but takes its "
-                  "high and low only from the minutes that arrived. Missing "
-                  "minutes make wicks too short, so these will not match "
-                  "TradingView candle for candle even though the prices and "
-                  "timings are correct.")
-        else:
-            st.caption("Candles: " + " · ".join(f"{k} {v}" for k, v in _rt.items()))
-
-        sub = st.radio("Timeframe", list(pa_frames.keys()), horizontal=True,
-                       index=1, key="pa_tf",
-                       help="15m for bias, 5m for the decision, 1m for entry "
-                            "timing and stop placement — not for deciding.")
-        d, r = pa_frames[sub], pa_reads[sub]
-
-        m = st.columns(5)
-        m[0].metric("Trend", r.trend)
-        m[1].metric("EMA 8", f"{r.ema8:,.0f}" if r.ema8 else "—")
-        m[2].metric("EMA 10", f"{r.ema10:,.0f}" if r.ema10 else "—")
-        m[3].metric("VWAP", f"{r.vwap:,.0f}" if r.vwap else "n/a",
-                    "above" if r.above_vwap else ("below" if r.above_vwap is False else ""),
-                    delta_color="normal" if r.above_vwap else "inverse")
-        m[4].metric("ATR", f"{r.atr:,.0f} pts" if r.atr else "—",
-                    help="Use this to size your stop, then your position.")
-        if r.volume_read:
-            vm = st.columns(3)
-            vm[0].metric("Bar volume", f"{r.vol_last:,.0f}" if r.vol_last else "—",
-                         help="Lakhs of constituent shares in this bar.")
-            vm[1].metric("20-bar avg", f"{r.vol_avg:,.0f}" if r.vol_avg else "—")
-            vm[2].metric("Ratio",
-                         f"{r.vol_last / r.vol_avg:.1f}x" if r.vol_avg else "—")
-            matched = (pa_frames.get("1m").attrs.get("volume_matched_bars")
-                       if pa_frames.get("1m") is not None else None)
-            st.caption(
-                f"Volume is INDEX volume — summed shares across all 50 "
-                f"constituents, differenced from NSE's cumulative day figure. "
-                f"It builds up as the app runs"
-                + (f" ({matched} bars have it so far)" if matched else "")
-                + ". Good for asking whether a move has participation behind "
-                  "it. NOT a VWAP source: real NIFTY VWAP comes from futures "
-                  "volume, so a line built from this would not match anyone "
-                  "else's chart.")
-
-        if r.forming:
-            st.warning(f"The current {sub} candle is still FORMING — shown on "
-                       f"the chart but excluded from the trend read. If you "
-                       f"trade {sub} closes, this candle can still change its "
-                       f"mind.")
-        for n in r.notes:
-            if "FORMING" not in n:
-                st.info(n)
-
-        st.markdown("##### VWAP")
-        _vrows = []
-        for _tf, _fr in pa_frames.items():
-            _vr = pa.vwap_read(_fr, _tf)
-            _vrows.append({
-                "TF": _tf,
-                "VWAP": f"{_vr.vwap:,.1f}" if _vr.vwap else "—",
-                "Close": f"{_vr.close:,.1f}",
-                "Distance": f"{_vr.distance:+,.0f}" if _vr.distance is not None else "—",
-                "Position": _vr.status,
-                "Bars": _vr.bars,
-                "Note": _vr.note,
-            })
-        st.dataframe(pd.DataFrame(_vrows), use_container_width=True,
-                     hide_index=True)
-        # Is this VWAP anchored from 09:15, or from when the app started?
-        try:
-            _f1 = pa_frames.get("1m")
-            if _f1 is not None and "vwap_bars" in _f1 and len(_f1):
-                _vb = int(_f1["vwap_bars"].iloc[-1])
-                _vt = fl.vwap_trust(_vb, now, 1)
-                (st.success if _vt.usable else st.error)(
-                    f"**VWAP {'anchored properly' if _vt.usable else 'NOT TRUSTWORTHY'}**"
-                    f"  \n{_vt.note}")
-        except Exception:                                   # noqa: BLE001
-            pass
-
-        _crossed = [r for r in _vrows if "CROSSED" in r["Position"]]
-        if _crossed:
-            st.warning("**VWAP cross on " +
-                       ", ".join(r["TF"] for r in _crossed) +
-                       "** — the level a lot of intraday desks watch.")
-        st.caption("VWAP is built from INDEX volume (all 50 constituents), "
-                   "session-anchored, hlc3 — the same basis as the "
-                   "\"VWAP hlc3 Session\" indicator on your chart. Compare the "
-                   "two once: if they line up, trust it; if not, this is a "
-                   "different line and should be read as such. It can only "
-                   "accumulate from the first bar this app saw, so the Bars "
-                   "column tells you how well anchored it is.")
-
-        st.plotly_chart(candle_chart(d, sub), use_container_width=True)
-
-        with st.expander("All three timeframes at a glance"):
-            st.dataframe(pd.DataFrame([{
-                "TF": rr.timeframe, "Trend": rr.trend,
-                "Close": f"{rr.close:,.1f}",
-                "EMA8": f"{rr.ema8:,.1f}" if rr.ema8 else "—",
-                "EMA10": f"{rr.ema10:,.1f}" if rr.ema10 else "—",
-                "VWAP": f"{rr.vwap:,.1f}" if rr.vwap else "n/a",
-                "ATR": f"{rr.atr:,.1f}" if rr.atr else "—",
-                "Closed bars": rr.bars_closed,
-                "Forming": "yes" if rr.forming else "no",
-            } for rr in pa_reads.values()]), use_container_width=True, hide_index=True)
-            st.caption(f"1-minute candles are stored to "
-                       f"`{config.CANDLE_DIR.name}/YYYY-MM-DD.csv` every poll, "
-                       f"full session 09:15–15:30. Only 1m is stored — 5m and "
-                       f"15m are derived, so saving them could drift out of "
-                       f"sync with the source.")
-
 if _tab_active(9):
     refresh_control("master", (load_ohlc_cached,), pull_ohlc=True, note="master_levels.csv")
     mpath = config.DATA_DIR / "master_levels.csv"
@@ -3714,298 +3491,6 @@ if _tab_active(12):
         st.error("Four pillars unavailable.")
         st.code(str(_e), language="text")
 
-if _tab_active(13):
-    refresh_control("mstate", (fetch_live, fetch_price_action,),
-                    "chain + candles", nse_ts)
-
-    def _evidence(v, title=None):
-        if title:
-            st.markdown(f"**{title}**")
-        box = {"STRONG": st.success, "MODERATE": st.info,
-               "WEAK": st.warning}.get(v.confidence, st.info)
-        box(f"**{v.state}** · confidence {v.confidence}"
-            + (f"  \n{v.detail}" if v.detail else ""))
-        c1, c2 = st.columns(2)
-        c1.markdown("*Supporting*")
-        for x in v.supporting:
-            c1.markdown(f"✓ {x}")
-        if not v.supporting:
-            c1.caption("none")
-        c2.markdown("*Contradicting*")
-        for x in v.contradicting:
-            c2.markdown(f"⚠ {x}")
-        if not v.contradicting:
-            c2.caption("none")
-
-    try:
-        _f5 = pa_frames.get("5m")
-        _fp = an.four_pillars(df, spot)
-        _cl = an.chain_levels(df, spot)
-
-        _trend = ms.trend_structure(_f5) if _f5 is not None else None
-        _vside = None
-        if _f5 is not None and "vwap" in _f5:
-            _vr = pa.vwap_read(_f5, "5m")
-            _vside = _vr.side if _vr.vwap else None
-
-        _press = ms.market_pressure(_fp, _cl, _trend, _vside)
-
-        st.markdown("### Market pressure")
-        _evidence(_press)
-        st.caption("Factors are listed, not netted. Four supports with three "
-                   "contradictions is a different situation from four with "
-                   "none, and a single score would hide that.")
-
-        st.markdown("---")
-        st.markdown("### Narrative")
-        _brk = _pin = _rng = None
-        if _f5 is not None and len(_f5) > 8:
-            if _cl["resistance"]:
-                _r = _cl["resistance"][0]
-                _nxt = _r.neighbour_building
-                _brk = ms.breakout(_f5, spot, float(_r.strike), "resistance",
-                                   _r, _nxt)
-            _pin = ms.pinning(df, spot, _f5, _fp["atm"])
-            if _cl["resistance"] and _cl["support"]:
-                _rng = ms.range_trap(_f5, float(_cl["resistance"][0].strike),
-                                     float(_cl["support"][0].strike))
-        st.info(ms.narrative(spot, _fp["atm"], _fp, _cl, _trend, _brk,
-                             _pin, _rng))
-
-        st.markdown("---")
-        st.markdown("### Engines")
-        if _trend:
-            _evidence(_trend, "Market structure")
-            st.markdown("")
-        if _brk:
-            _evidence(_brk, "Breakout engine")
-            st.markdown("")
-        if _rng:
-            _evidence(_rng, "Range trap")
-            st.markdown("")
-        if _pin:
-            _evidence(_pin, "Pinning / ATM fight")
-
-        st.markdown("---")
-        st.markdown("### What changed")
-        try:
-            _log = store.load_log()
-            _ch = ms.what_changed(_log, now)
-            if not _ch or not any(c.get("available") for c in _ch):
-                st.caption("Not enough logged history yet — this fills in as "
-                           "the scanner runs.")
-            else:
-                _cc = st.columns(len(_ch))
-                for _col, _c in zip(_cc, _ch):
-                    if not _c.get("available"):
-                        _col.metric(_c["window"], "—")
-                        continue
-                    _col.metric(f"last {_c['window']}",
-                                f"{_c['spot']:+,.0f} pts",
-                                f"score {_c['score']:+.1f}",
-                                delta_color="off")
-                    if _c["regime_changed"]:
-                        _col.warning(f"regime {_c['regime_then']} → "
-                                     f"{_c['regime_now']}")
-                    if _c["walls_moved"]:
-                        _col.info("OI walls moved")
-        except Exception:                                   # noqa: BLE001
-            st.caption("signal log unavailable")
-    except Exception as _e:                                 # noqa: BLE001
-        st.error("Market state unavailable.")
-        st.code(str(_e), language="text")
-
-if _tab_active(14):
-    refresh_control("rulebook", (fetch_live,), "option chain", nse_ts)
-    st.caption("The strict rules, implemented literally. Kept separate from "
-               "the rest of the app so the two can be compared — where they "
-               "disagree, both are shown rather than one quietly winning.")
-
-    try:
-        _ab = rb.atm_bias(df, spot)
-        if _ab:
-            st.markdown("##### Bias — ATM only")
-            _bc = st.columns(4)
-            _bc[0].metric("ATM", f"{_ab.atm}")
-            _bc[1].metric("Call OI", f"{_ab.call_oi:,.0f}")
-            _bc[2].metric("Put OI", f"{_ab.put_oi:,.0f}")
-            _bc[3].metric(_ab.label, f"{_ab.ratio:.2f}", _ab.strength,
-                          delta_color="off")
-            st.caption(f"{_ab.why}. One comparison, nothing else — you can "
-                       f"check this against the NSE screen in three seconds, "
-                       f"which the app's five-input bias does not allow.")
-            try:
-                if DEC is not None and DEC.bias.value not in _ab.label:
-                    st.warning(f"**The two bias readings DISAGREE** — rulebook "
-                               f"says {_ab.label}, the app's multi-factor read "
-                               f"says {DEC.bias.value}. Neither is corrected "
-                               f"to match the other.")
-            except Exception:                               # noqa: BLE001
-                pass
-
-        st.markdown("---")
-        st.markdown("##### True levels — comparing both sides at each strike")
-        _tl = rb.true_levels(df, spot, 6)
-        _shown = [v for v in _tl if v.label not in ("QUIET", "NO CLEAR SIDE")]
-        if _shown:
-            for v in _shown:
-                _ic = {"TRUE SUPPORT": "🟢", "TRUE RESISTANCE": "🔴",
-                       "CONTESTED": "⚔️", "BOTH UNWINDING": "🟠",
-                       "UNKNOWN": "⬜"}.get(v.label, "⬜")
-                st.markdown(f"{_ic} **{v.strike}** ({v.distance:+.0f} pts) — "
-                            f"**{v.label}**  \n*{v.why}*")
-        else:
-            st.info("No strike shows clear one-sided dominance right now — "
-                    "everything nearby is quiet or evenly matched.")
-        with st.expander("All strikes, including the quiet ones"):
-            st.dataframe(pd.DataFrame([{
-                "Strike": v.strike, "Dist": f"{v.distance:+.0f}",
-                "CE OI%": f"{v.ce_pct:+.1f}" if v.ce_pct is not None else "—",
-                "PE OI%": f"{v.pe_pct:+.1f}" if v.pe_pct is not None else "—",
-                "CE OI": f"{v.ce_oi:,.0f}", "PE OI": f"{v.pe_oi:,.0f}",
-                "Verdict": v.label} for v in _tl]),
-                use_container_width=True, hide_index=True)
-        st.caption("A level is TRUE SUPPORT only when put-side OI% clearly "
-                   "exceeds call-side OI% AT THE SAME STRIKE. Judging one "
-                   "side alone cannot tell a defended floor from a strike "
-                   "where both sides are piling in.")
-
-        st.markdown("---")
-        st.markdown("##### Levels ranked by SIZE vs by PROXIMITY")
-        _bysize = rb.levels_by_size(df, spot)
-        _wl = fl.weighted_levels(df, spot, 3, spot_change=_spot_chg)
-        _byprox = an.chain_levels(df, spot)
-        _rows = []
-        for kind in ("resistance", "support"):
-            _tag = "R" if kind == "resistance" else "S"
-            for i in range(4):
-                a_ = _bysize[kind][i] if i < len(_bysize[kind]) else None
-                p_ = _byprox[kind][i] if i < len(_byprox[kind]) else None
-                _rows.append({
-                    "": f"{_tag}{i+1}",
-                    "By SIZE (rulebook)": f"{a_.strike}" if a_ else "—",
-                    "OI": f"{a_.oi:,.0f}" if a_ else "—",
-                    "By PROXIMITY (app)": f"{p_.strike}" if p_ else "—",
-                    "OI ": f"{p_.oi:,.0f}" if p_ else "—",
-                    "Same?": "✓" if a_ and p_ and a_.strike == p_.strike else "✗"})
-        st.dataframe(pd.DataFrame(_rows), use_container_width=True,
-                     hide_index=True)
-        if _wl["resistance"] or _wl["support"]:
-            st.markdown("**Weighted and approach-adjusted** — "
-                        "OI + (change x 2), re-ranked by direction of travel")
-            _wc = st.columns(2)
-            for _col, _kind in ((_wc[0], "resistance"), (_wc[1], "support")):
-                _col.markdown(f"*{_kind.title()}*")
-                for _lv in _wl[_kind]:
-                    _col.markdown(f"**{_lv.strike}** ({_lv.distance:+.0f}) — "
-                                  f"strength {_lv.strength:,.0f}")
-            st.caption("Fresh addition counts double, and a wall price is "
-                       "walking INTO ranks above one it is walking away from. "
-                       "The direction weighting nudges rather than overrides "
-                       "— it will not flip a wall 40% larger, but it decides "
-                       "between two of similar size, which is the case where "
-                       "direction actually matters.")
-            st.markdown("---")
-
-        st.caption("A real conflict, not a bug. Size answers *where is the "
-                   "most money*; proximity answers *what do I hit first*. "
-                   "Both are defensible and on most chains they name "
-                   "different strikes, so both are shown.")
-
-        st.markdown("---")
-        st.markdown("##### OI density between levels")
-        _dens = []
-        for kind, side in (("support", "pe"), ("resistance", "ce")):
-            lst = _bysize[kind]
-            for i in range(min(2, len(lst) - 1)):
-                dn = rb.density_between(df, lst[i].strike, lst[i+1].strike, side)
-                if dn:
-                    _dens.append((kind, dn))
-        if _dens:
-            for kind, dn in _dens:
-                _ic = "🟥" if dn.label in ("VERY THIN", "THIN") else "🟩"
-                st.markdown(f"{_ic} **{dn.from_strike} → {dn.to_strike}** "
-                            f"({kind}) — **{dn.label}**  \n*{dn.note}*")
-        else:
-            st.caption("not enough levels to measure density between")
-
-        st.markdown("---")
-        st.markdown("##### Breakout — literal, five conditions")
-        try:
-            _bs = rb.levels_by_size(df, spot)
-            if len(_bs["resistance"]) >= 2:
-                _o, _n = _bs["resistance"][0].strike, _bs["resistance"][1].strike
-                _acc = spot > _o
-                _lv = rb.real_breakout(df, _o, _n, "ce", _acc)
-                (st.success if _lv.label == "REAL_BREAKOUT"
-                 else st.error if _lv.label == "FAKE_BREAKOUT"
-                 else st.info)(
-                    f"**{_lv.label}** — {_lv.met}/{_lv.total} conditions "
-                    f"[{_lv.confidence}]")
-                for _c, _ok in _lv.conditions:
-                    st.markdown(f"{'✓' if _ok else '✗'} {_c}")
-                st.caption(_lv.why)
-
-                _ts = rb.trend_strength(df, _o, _n, "ce", _acc)
-                st.markdown(f"**Trend strength: {_ts.label}** "
-                            f"({_ts.met}/{_ts.total}) — {_ts.why}")
-        except Exception as _e:                             # noqa: BLE001
-            st.caption(f"literal breakout unavailable: {_e}")
-
-        st.markdown("---")
-        st.markdown("##### Pinning — strict test")
-        _pr = None
-        _f5r = pa_frames.get("5m")
-        if _f5r is not None and len(_f5r) >= 6:
-            _c5 = _f5r[_f5r["closed"]] if "closed" in _f5r else _f5r
-            _pr = float(_c5["high"].tail(6).max() - _c5["low"].tail(6).min())
-        _pv = rb.pinned_strict(df, spot, _pr)
-        if _pv:
-            (st.warning if _pv.label.startswith("PINNED") else st.info)(
-                f"**{_pv.label}**")
-            for w in _pv.why:
-                st.markdown(f"- {w}")
-            st.caption("Requires all three: both sides building, neither "
-                       "unwinding, price locked. Checking only that both are "
-                       "building would call a strike pinned while one side "
-                       "quietly leaves.")
-        st.markdown("---")
-        with st.expander("Thresholds in use — edit rules.json to change them"):
-            st.caption(f"loaded from `{rb.RULES.get('_source')}` "
-                       f"(v{rb.RULES.get('_version', '?')})")
-            _rr = []
-            for _sec, _vals in rb.RULES.items():
-                if _sec.startswith("_") or not isinstance(_vals, dict):
-                    continue
-                for _k, _v in _vals.items():
-                    _rr.append({"Engine": _sec, "Threshold": _k, "Value": _v})
-            st.dataframe(pd.DataFrame(_rr), use_container_width=True,
-                         hide_index=True)
-            st.caption("Every one of these is a judgement, not a fact. Kept "
-                       "in a file rather than buried in Python so you can "
-                       "read them all in twenty seconds and change one "
-                       "without touching code.")
-            if "defaults" in str(rb.RULES.get("_source", "")):
-                st.warning("rules.json was NOT found — running on built-in "
-                           "defaults. Anything you tuned is not being used.")
-
-        with st.expander("Display contract — is everything required on screen?"):
-            import pathlib as _pl
-            _srcs = {f.name: f.read_text()
-                     for f in _pl.Path(__file__).parent.glob("*.py")}
-            _chk = rb.display_contract_check(_srcs)
-            _ok_n = sum(1 for _, o in _chk if o)
-            (st.success if _ok_n == len(_chk) else st.warning)(
-                f"{_ok_n}/{len(_chk)} required elements present")
-            for _k, _ok in _chk:
-                st.markdown(f"{'✓' if _ok else '✗ **MISSING**'} {_k}")
-            st.caption("A spec nobody checks drifts from the code within a "
-                       "week. This greps every module for a marker per "
-                       "required element.")
-    except Exception as _e:                                 # noqa: BLE001
-        st.error("Rulebook unavailable.")
-        st.code(str(_e), language="text")
-
 # ── log ─────────────────────────────────────────────────────────────────────
 # Demo runs must never touch the log — it is your backtest dataset, and rows
 # generated from a static sample file (repeatedly, every refresh) would poison it.
@@ -4030,139 +3515,6 @@ if auto:
     except ImportError:
         time.sleep(_cur_interval)
         st.rerun()
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Tab 16 — Timeline
-# ═══════════════════════════════════════════════════════════════════════════
-if _tab_active(16):
-    st.subheader("State changes")
-    _days_avail = tl.available_days(config.TIMELINE_KEEP_DAYS)
-    st.caption(
-        f"Rolling {config.TIMELINE_KEEP_DAYS} sessions · "
-        f"{len(_days_avail)} stored · oldest drops off automatically")
-
-    v1, v2 = st.columns([1, 1])
-    _win = v1.radio("Window", ["Latest session", "Last 7 sessions",
-                               f"Last {config.TIMELINE_KEEP_DAYS} sessions"],
-                    horizontal=True, key="tl_win")
-    _fld = v2.selectbox("Field", ["All fields"] + [f for f, _ in tl.TRACKED],
-                        key="tl_fld")
-    _n = (1 if _win.startswith("Latest") else
-          7 if "7" in _win else config.TIMELINE_KEEP_DAYS)
-    if _n == 1 and _days_avail and _days_avail[0] != now.date():
-        st.caption(f"No session logged today — showing "
-                   f"{_days_avail[0].strftime('%a %d %b')}, the most recent.")
-
-    _rows = tl.table_range(_n, _fld)
-    if _rows.empty:
-        st.info("Nothing logged for this window yet. The first poll of each "
-                "session writes an opening row per field; after that only "
-                "changes are recorded.")
-    else:
-        _fs = tl.field_stats(_n)
-        _dd = tl.by_day(_n)
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Changes", len(_rows))
-        m2.metric("Sessions", len(_dd))
-        m3.metric("Busiest day",
-                  _dd.loc[_dd["Changes"].idxmax(), "Date"] if len(_dd) else "—")
-
-        _rest = _fs[_fs["Steadiness"] == "RESTLESS"]["Field"].tolist()
-        if _rest:
-            st.warning(
-                "**Restless across this window: " + ", ".join(_rest) + "**  \n"
-                "Averaging more than eight changes a session means the field "
-                "is turning over faster than the market is. Over one day that "
-                "is bad luck; over weeks it means the field is not usable and "
-                "no chart comparison will rescue it.")
-
-        if _n > 1:
-            st.markdown("**By session**")
-            st.caption("The regime sequence is what to read against a daily "
-                       "chart. Changes is the flip count.")
-            st.dataframe(_dd, use_container_width=True, hide_index=True,
-                         height=min(60 + 35 * len(_dd), 400))
-
-            st.markdown("**By field**")
-            st.caption("Steadiness says a field is calm enough to be usable. "
-                       "It does not say it was right — only your chart "
-                       "comparison can say that.")
-            st.dataframe(_fs, use_container_width=True, hide_index=True)
-
-        st.markdown("**Every change, with what happened next**")
-        o1, o2 = st.columns(2)
-        _hz = o1.slider("Look-forward (minutes)", 10, 90,
-                        config.OUTCOME_HORIZON_MINS, step=5, key="tl_hz")
-        _th = o2.slider("Move threshold (points)", 10.0, 60.0,
-                        config.OUTCOME_THRESHOLD_PTS, step=5.0, key="tl_th")
-
-        _ann = oc.annotate(_n, _fld, _hz, _th)
-        if _ann.empty:
-            st.dataframe(_rows, use_container_width=True, hide_index=True,
-                         height=min(60 + 35 * len(_rows), 620))
-        else:
-            _graded = _ann[_ann.Verdict != "—"]
-            if len(_graded):
-                g1, g2, g3 = st.columns(3)
-                g1.metric("Matched", int((_graded.Verdict == "MATCHED").sum()))
-                g2.metric("Opposed", int((_graded.Verdict == "OPPOSED").sum()))
-                g3.metric("Went nowhere",
-                          int(_graded.Verdict.isin(["MISSED", "NOISY"]).sum()))
-
-            def _vtint(v):
-                return {"MATCHED": "background-color:#0F9D5822",
-                        "OPPOSED": "background-color:#E8503A22",
-                        "MISSED": "background-color:#C79A2018",
-                        "NOISY": "background-color:#C79A2018"}.get(v, "")
-
-            st.dataframe(
-                _ann.style.map(_vtint, subset=["Verdict"]),
-                use_container_width=True, hide_index=True,
-                height=min(60 + 35 * len(_ann), 620))
-
-            _sc = oc.scorecard(_n, _hz, _th)
-            if not _sc.empty:
-                st.markdown("**Agreement by field**")
-                st.dataframe(_sc, use_container_width=True, hide_index=True)
-                _thin = _sc[_sc["Enough data"] == "NO"]["Field"].tolist()
-                if _thin:
-                    st.caption(
-                        "No percentage shown for " + ", ".join(_thin)
-                        + f" — fewer than {config.OUTCOME_MIN_SAMPLE} graded "
-                        "changes. Three out of three is three observations, "
-                        "not a hundred percent.")
-
-            st.warning(
-                "**This is not a win rate.** It asks only whether spot moved "
-                f"{_th:.0f} points within {_hz} minutes, and which way first. "
-                "It ignores option premium, so a matched call can still lose "
-                "money to theta and spread. It ignores stops, so a trade that "
-                "came good after a deep adverse excursion counts as matched "
-                "here and would have been stopped out in reality. It ignores "
-                "the ₹400 round trip. Move the two sliders above: any field "
-                "that only looks good at one setting was never good.")
-
-        st.download_button(
-            f"Download {str(_n) + ' sessions' if _n > 1 else 'this session'}"
-            f" (CSV)",
-            (_ann if not _ann.empty else _rows).to_csv(index=False).encode(),
-            file_name=f"timeline_{_n}d_{now.date().isoformat()}.csv",
-            mime="text/csv")
-
-    st.divider()
-    st.caption(
-        "**How to use this.** Open the 5-minute chart for a session, mark the "
-        "times, and look at what price did next. You do not have to do it the "
-        "same evening — the last "
-        f"{config.TIMELINE_KEEP_DAYS} sessions are kept, so a missed week is "
-        "still reviewable. A change logged here is a claim the app made, not "
-        "a claim it got right; the app cannot grade itself, and this table is "
-        "the only thing that will tell you which of these fields deserve your "
-        "attention.")
-
-
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Tab 18 — VWAP / 8 EMA whichever-comes-first, with a candle trail
@@ -4578,21 +3930,6 @@ if _tab_active(29):
         )
     except Exception as _term_err:
         st.error(f"Institutional Quant Terminal encountered an error: {_term_err}")
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Tab 30 — Price Action Basics Tab (Trendlines, RSI Crossing, ATR Stops, Patterns)
-# ═══════════════════════════════════════════════════════════════════════════
-if _tab_active(30):
-    try:
-        import pa_basics_tab
-        pa_basics_tab.render(
-            pa_frames=pa_frames if "pa_frames" in locals() else None,
-            df=idx_c if ("idx_c" in locals() and idx_c is not None and not idx_c.empty) else None,
-            spot=spot if "spot" in locals() else 24150.0,
-            levels=read.levels if ("read" in locals() and hasattr(read, "levels")) else None,
-        )
-    except Exception as _pab_err:
-        st.error(f"Price Action Basics tab encountered an error: {_pab_err}")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Tab 31 — Liquidity & Smart Money Terminal (12 Concepts, Institutional HUD)
