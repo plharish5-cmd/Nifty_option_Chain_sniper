@@ -845,31 +845,6 @@ def chart_oi_change(df: pd.DataFrame, read: an.Read) -> go.Figure:
     return fig
 
 
-def chart_migration(hist: pd.DataFrame) -> go.Figure:
-    """Wall migration through the session — the strongest intraday signal."""
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                        row_heights=[.62, .38], vertical_spacing=.07,
-                        subplot_titles=("Spot vs the walls", "Bias score & PCR"))
-    fig.add_trace(go.Scatter(x=hist.timestamp, y=hist.r1, name="R1",
-                             line=dict(color=RED, width=2, shape="hv")), 1, 1)
-    fig.add_trace(go.Scatter(x=hist.timestamp, y=hist.s1, name="S1",
-                             line=dict(color=GREEN, width=2, shape="hv"),
-                             fill="tonexty", fillcolor="rgba(201,162,39,.10)"), 1, 1)
-    fig.add_trace(go.Scatter(x=hist.timestamp, y=hist.spot, name="Spot",
-                             line=dict(color=GOLD, width=2.5)), 1, 1)
-    fig.add_trace(go.Scatter(x=hist.timestamp, y=hist.max_pain, name="Max pain",
-                             line=dict(color=SLATE, width=1, dash="dot")), 1, 1)
-    fig.add_trace(go.Bar(x=hist.timestamp, y=hist.bias_score, name="Bias score",
-                         marker_color=[GREEN if v >= 0 else RED for v in hist.bias_score]), 2, 1)
-    fig.add_trace(go.Scatter(x=hist.timestamp, y=hist.pcr_oi, name="PCR",
-                             line=dict(color=BLUE, width=2), yaxis="y4"), 2, 1)
-    fig.update_layout(height=560, template="plotly_dark",
-                      paper_bgcolor=NAVY2, plot_bgcolor=NAVY2,
-                      margin=dict(l=10, r=10, t=50, b=10),
-                      legend=dict(orientation="h", y=1.08))
-    return fig
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 # Sidebar
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2182,7 +2157,6 @@ _ORDERED_ALL_TABS = [
     "Four Pillars",
     "Context",
     "View Building",
-    "Session",
 
     # ── Tier 5: 📋 Post-Market Review & Journal (After 3:30 PM) ────────────────
     "📋 EOD Day Report (What Worked / What Failed)",
@@ -2243,7 +2217,6 @@ _LABEL_TO_TAB_INDEX = {
     "Change in OI": 2,
     "⚡ OI Timeline (Per-Strike)": 39,
     "OI Timeline": 39,
-    "Session": 3,
     "Price levels": 5,
     "🎯 Price Levels & AI Confluence": 5,
     "Context": 6,
@@ -2781,53 +2754,6 @@ if _tab_active(2):
         _ocn.render_tab2_oi_change_narratives(df, read, spot)
     except Exception as _ocn_err2:
         st.caption(f"Intraday OI shift narratives unavailable: {_ocn_err2}")
-if _tab_active(3):
-    refresh_control("session", (fetch_live,), "option chain", nse_ts)
-
-    try:
-        _crosses = None
-        _f5 = pa_frames.get("5m")
-        if _f5 is not None and "vwap" in _f5 and _f5["vwap"].notna().any():
-            _c5 = _f5[_f5["closed"]]
-            _side = np.sign(_c5["close"] - _c5["vwap"]).dropna()
-            _crosses = int((_side.diff().fillna(0) != 0).sum())
-
-        _reg = an.day_regime(df, spot, read.levels, STATE.baseline,
-                             vix.pct_change if vix else None,
-                             _crosses, an.intraday_pcr(df, spot))
-        _box = {"TREND": st.success, "RANGE": st.warning,
-                "UNCLEAR": st.info}[_reg.verdict]
-        _box(f"**{_reg.verdict} DAY** — {_reg.agreed} of 4 checks agree "
-             f"(score {_reg.score:+d})")
-        st.dataframe(pd.DataFrame([{"Check": n, "Reads": v, "Detail": w}
-                                   for n, v, w in _reg.checks]),
-                     use_container_width=True, hide_index=True)
-        st.caption(f"**Playbook:** {_reg.playbook}")
-        st.caption(f"**Instruments:** {_reg.instruments}")
-
-        if _f5 is not None:
-            _pdh = _pdl = _pc = None
-            if vb_daily is not None and len(vb_daily) > 1:
-                _prev = vb_daily.iloc[-1]
-                _pdh, _pdl, _pc = (float(_prev["High"]), float(_prev["Low"]),
-                                   float(_prev["Close"]))
-            _tr = an.vwap_trap(_f5, df, spot, read.levels, _pdh, _pdl, _pc)
-            if _tr:
-                _msg = (f"**VWAP TRAP — {_tr.direction}** · {_tr.detail}\n\n"
-                        f"Stop {_tr.stop:,.0f} · target {_tr.target:,.0f} · "
-                        f"RR {_tr.rr:.2f}")
-                (st.success if _tr.valid_rr else st.warning)(
-                    _msg + ("" if _tr.valid_rr else
-                            "\n\nRR below 1:2 — the notes say skip it."))
-    except Exception as _e:                                 # noqa: BLE001
-        st.caption(f"regime read unavailable: {_e}")
-    hist = STATE.frame
-    if len(hist) >= 2:
-        st.plotly_chart(chart_migration(hist), use_container_width=True)
-    else:
-        st.info(f"Collecting snapshots — the session chart needs at least two polls "
-                f"({config.POLL_SECONDS}s apart). This is the most useful view; "
-                f"leave it running.")
 
 if _tab_active(5):
     refresh_control("price_levels", (fetch_live, load_ohlc_cached,),
