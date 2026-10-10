@@ -1,15 +1,24 @@
 {
   "initial_capital": 100000.0,
-  "cash_balance": 101430.48,
+  "cash_balance": 102083.77,
   "used_margin": 0.0,
-  "realized_pnl": 1430.48,
+  "realized_pnl": 2083.77,
   "unrealized_pnl": 0.0,
-  "total_trades_count": 2,
+  "total_trades_count": 11,
   "open_positions": [],
   "recent_alerts": [
     "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22600 PE [INTRADAY] @ \u20b9186.90.",
-    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22300 CE [INTRADAY] @ \u20b9232.15."
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22300 CE [INTRADAY] @ \u20b9232.15.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22600 PE [INTRADAY] @ \u20b9149.00.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22600 PE [INTRADAY] @ \u20b9142.10.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22600 PE [INTRADAY] @ \u20b9140.80.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22600 PE [INTRADAY] @ \u20b9140.45.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22700 PE [INTRADAY] @ \u20b9182.50.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22700 PE [INTRADAY] @ \u20b9179.40.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22700 PE [INTRADAY] @ \u20b9164.40.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22700 PE [INTRADAY] @ \u20b9163.80.",
+    "\ud83d\uded2 BUY 1 Lot(s) of NIFTY 22400 CE [INTRADAY] @ \u20b9203.20."
   ],
-  "total_charges_paid": 162.02,
-  "last_updated": "2026-10-09T12:07:18.334876"
+  "total_charges_paid": 815.23,
+  "last_updated": "2026-10-09T15:15:18.932101"
 }

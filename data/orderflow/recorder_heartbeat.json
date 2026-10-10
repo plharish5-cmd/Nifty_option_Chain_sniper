@@ -1,13 +1,13 @@
 {
- "updated": "2026-10-09T12:21:45",
+ "updated": "2026-10-09T15:35:00",
  "day": "2026-10-09",
- "status": "connected",
- "packets": 680427,
- "trades": 334119,
+ "status": "stopped",
+ "packets": 1367379,
+ "trades": 682649,
  "stocks_streaming": 50,
  "stocks_subscribed": 50,
- "index_ltp": 22468.30078125,
+ "index_ltp": 22520.44921875,
  "index_source": "rest",
- "error": "index REST fallback: /marketfeed/ltp returned HTTP 429: '{\"data\":{\"805\":\"Too many requests. Further requests may result in the user being blo",
+ "error": "ping/pong timed out",
  "pid": 25066
 }

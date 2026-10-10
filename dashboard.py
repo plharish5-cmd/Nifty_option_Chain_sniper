@@ -26,7 +26,6 @@ import store
 import timeline as tl
 import outcomes as oc
 import alerts as al
-import strategy1_tab
 import context_tab
 import levels as lv_mod
 import confluence as cf
@@ -40,7 +39,6 @@ import greeks as gk
 import view_building as vb
 import view_building_tab
 import chart_patterns_tab
-import war_tab
 import paper_trading_tab
 import timesfm_tab
 import volume_profile_tab
@@ -2192,12 +2190,8 @@ _ORDERED_ALL_TABS = [
     "⚡ Institutional Quant Terminal",
 
     # ── Tier 3: 🎯 Strategy Setup Scanners & Signal Triggers ───────────────────
-    "⚔️ WAR Setup (FII 30m)",
-    "8 Setups",
-    "PA Strategy 1",
     "SMC",
     "🔮 AI Forecast & Signals (5m/15m)",
-    "⏱️ Next 15m Candle Predictor",
     "🕯️ Candlestick Patterns & 15m Early Read",
     "📐 Price Action Basics",
     "🎯 Price Levels & AI Confluence",
@@ -2210,11 +2204,8 @@ _ORDERED_ALL_TABS = [
     "📊 Trainer's Participant Sheet",
     "Market State",
     "Four Pillars",
-    "Flow",
     "Context",
-    "Score breakdown",
     "View Building",
-    "Rulebook",
     "Session",
     "Timeline",
 
@@ -2280,36 +2271,26 @@ _LABEL_TO_TAB_INDEX = {
     "⚡ OI Timeline (Per-Strike)": 39,
     "OI Timeline": 39,
     "Session": 3,
-    "Score breakdown": 4,
     "Price levels": 5,
     "🎯 Price Levels & AI Confluence": 5,
     "Context": 6,
     "Price action": 7,
     "📈 Price Action (1m/5m/15m)": 7,
-    "8 Setups": 8,
     "Master levels": 9,
     "View Building": 10,
     "Chart levels": 11,
     "Four Pillars": 12,
     "Market State": 13,
-    "Rulebook": 14,
-    "Flow": 15,
     "Timeline": 16,
-    "PA Strategy 1": 17,
     "VWAP/EMA": 18,
     "SMC": 19,
     "📓 Trading Journal": 20,
     "📐 VAWM & 15m Matrix": 22,
-    "⚔️ WAR Setup (FII 30m)": 23,
     "📝 Paper Trading & Impulse Control": 25,
     "🔮 AI Forecast & Signals (5m/15m)": 26,
     "🌅 Opening Gap Planner & Confluence": 27,
     "🌅 Monday Gap Planner & Confluence": 27,
     "🏹 Breakout & Trap Scanner": 28,
-    "⏱️ Next 15m Candle Predictor": 40,
-    "Next 15m Candle Predictor": 40,
-    "Next 15m Candle": 40,
-    "Next Candle": 40,
     "🌅 MORNING BRIEF": 41,
     "MORNING BRIEF": 41,
     "Morning Brief": 41,
@@ -2878,18 +2859,6 @@ if _tab_active(3):
         st.info(f"Collecting snapshots — the session chart needs at least two polls "
                 f"({config.POLL_SECONDS}s apart). This is the most useful view; "
                 f"leave it running.")
-if _tab_active(4):
-    refresh_control("score", (fetch_live,), "option chain", nse_ts)
-    try:
-        import score_tab
-        score_tab.render_score_breakdown(
-            spot=spot,
-            df=df,
-            read=read,
-            pa_frames=pa_frames if "pa_frames" in locals() else None,
-        )
-    except Exception as _st_err:
-        st.error(f"Score Breakdown Module Error: {_st_err}")
 
 if _tab_active(5):
     refresh_control("price_levels", (fetch_live, load_ohlc_cached,),
@@ -3410,110 +3379,6 @@ if _tab_active(7):
                        f"full session 09:15–15:30. Only 1m is stored — 5m and "
                        f"15m are derived, so saving them could drift out of "
                        f"sync with the source.")
-
-if _tab_active(8):
-    refresh_control("setups", (fetch_live, fetch_price_action,),
-                    "chain + candles", nse_ts)
-    st.caption("This checks the objective preconditions and — the part that "
-               "matters — the SKIP conditions. Your entry trigger stays yours: "
-               "the 8 EMA touch, the rejection, the pattern break, read off "
-               "your own Kite chart.")
-
-    if not pa_frames or "5m" not in pa_frames:
-        st.info("Needs price action data. Check the Price action tab first.")
-    else:
-        f5 = su.prepare(pa_frames["5m"])
-        f15 = su.prepare(pa_frames["15m"])
-        ctx = su.context_summary(f5, f15, now)
-
-        if not ctx:
-            st.info("Not enough closed 5-minute candles yet — the Bollinger "
-                    "Bands need 20.")
-        else:
-            k = st.columns(6)
-            k[0].metric("15-min trend", ctx["trend15"])
-            k[1].metric("BB width", f"{ctx['bb_width']:.0f}",
-                        "OK" if ctx["bb_width_ok"] else "TOO NARROW",
-                        delta_color="normal" if ctx["bb_width_ok"] else "inverse")
-            k[2].metric("UBB slope", ctx["ubb_slope"])
-            k[3].metric("LBB slope", ctx["lbb_slope"])
-            k[4].metric("8 EMA", f"{ctx['ema8']:,.0f}",
-                        f"{ctx['dist_to_ema8']:+.0f} pts", delta_color="off")
-            k[5].metric("Party switch", ctx["party"])
-
-            if ctx["after_3pm"]:
-                st.error("**After 3:00 PM — no new entries.** Course rule.")
-            if ctx["trend15"] == "CONSOLIDATION":
-                st.warning("15-min shows CONSOLIDATION — the filter says skip "
-                           "the entire day.")
-
-            cc = None
-            try:
-                cc = su.chain_condition(df, spot)
-                box = st.success if cc.score > 0 else (st.error if cc.score < 0 else st.info)
-                box(f"**Option chain: {cc.name}** · {cc.pattern}")
-                if cc.exact:
-                    cl = st.columns(3)
-                    cl[0].markdown(f"**Trailing:** {cc.trail}")
-                    cl[1].markdown(f"**Best:** {', '.join(cc.best)}")
-                    cl[2].markdown(f"**Avoid:** {', '.join(cc.avoid)}")
-                else:
-                    st.caption("This colour combination is not one of the five "
-                               "named conditions. Saying so rather than forcing "
-                               "it into the nearest one — an unmapped chain is "
-                               "real information.")
-                st.caption("Colours here are derived from net CHANGE IN OI per "
-                           "quadrant, scanning 500 pts each side. Worth "
-                           "confirming with MJ that this matches what he means "
-                           "by green/red on the NSE screen.")
-            except Exception as exc:                        # noqa: BLE001
-                st.caption(f"Chain condition unavailable: {exc}")
-
-            cA, cB, cC = st.columns(3)
-            s2_stop = cA.checkbox("Stage 2 stop taken today")
-            s3_stop = cB.checkbox("Stage 3 stop taken today")
-            n_rally = cC.number_input("Trades already in this rally", 0, 5, 0)
-
-            res = [z.price for z in zones if z.kind == "resistance"] or \
-                  [l.price for l in price_lv if l.kind == "resistance"]
-            sup = [z.price for z in zones if z.kind == "support"] or \
-                  [l.price for l in price_lv if l.kind == "support"]
-
-            checks = su.check_setups(f5, f15, spot, now, res, sup, cc,
-                                     s2_stop, s3_stop, int(n_rally))
-
-            ready = [c for c in checks if c.stage.startswith("I+C")]
-            if ready:
-                st.success("**Preconditions met on: "
-                           + ", ".join(f"#{c.number} {c.name}" for c in ready)
-                           + "** — now watch for your own entry trigger.")
-
-            for c in checks:
-                colour = {"I+C READY — watch for your entry trigger": "🟢",
-                          "INDICATION only — not a trade": "🟡",
-                          "BLOCKED": "🔴", "MANUAL ONLY": "⚪",
-                          "NOT SET UP": "⚫"}.get(c.stage, "⚫")
-                with st.expander(f"{colour} #{c.number} · {c.name} · "
-                                 f"{c.direction} · {c.win_rate} · {c.stage}"):
-                    st.caption(f"Target / stop: {c.target_stop}")
-                    if c.indication:
-                        st.markdown("**I — Indication**")
-                        for t, v in c.indication:
-                            st.markdown(("- ✅ " if v else "- ❌ " if v is not None
-                                         else "- ❓ ") + t)
-                    if c.confirmation:
-                        st.markdown("**C — Confirmation**")
-                        for t, v in c.confirmation:
-                            st.markdown(("- ✅ " if v else "- ❌ " if v is not None
-                                         else "- ❓ ") + t)
-                    if c.skips:
-                        st.markdown("**Blocked by**")
-                        for x in c.skips:
-                            st.markdown(f"- 🚫 {x}")
-                    if c.manual:
-                        st.markdown("**E — Entry, and what stays yours**")
-                        for x in c.manual:
-                            st.markdown(f"- {x}")
 
 if _tab_active(9):
     refresh_control("master", (load_ohlc_cached,), pull_ohlc=True, note="master_levels.csv")
@@ -4141,91 +4006,6 @@ if _tab_active(14):
         st.error("Rulebook unavailable.")
         st.code(str(_e), language="text")
 
-if _tab_active(15):
-    refresh_control("flow", (fetch_live,), "option chain", nse_ts)
-    try:
-        _pcrs = fl.three_pcrs(df, spot)
-        _pv = fl.pcr_by_volume(df, spot)
-        _mp = an.max_pain(df)
-        _mpr = fl.MaxPainRead(_mp, spot, now, expiry_today)
-
-        _sm = None
-        try:
-            _sr2 = an.straddle_range(df, spot)
-            if _sr2:
-                _sm = fl.straddle_move(store.load_log(), _sr2.premium, now, 10)
-        except Exception:                                   # noqa: BLE001
-            pass
-
-        _meter = fl.regime_meter(df, spot, _pcrs,
-                                 _sm.state if _sm else None,
-                                 _mpr.distance)
-        _box = {"CONSOLIDATION": st.warning, "TRENDING": st.success,
-                "MIXED": st.info}[_meter.label]
-        _box(f"**{_meter.label}** — {_meter.consolidation}% consolidation / "
-             f"{_meter.trending}% trending")
-        for _n, _d, _hit in _meter.checks:
-            st.markdown(f"{'✓' if _hit else '✗'} **{_n}** — {_d}")
-        st.caption(_meter.note)
-
-        st.markdown("---")
-        st.markdown("##### Four PCRs")
-        _pc = st.columns(4)
-        for _col, (_nm, _blk) in zip(_pc, list(_pcrs.items()) +
-                                     [("volume", _pv)]):
-            _v = (_blk or {}).get("value")
-            _col.metric(_nm.upper(), f"{_v:.2f}" if _v else "—")
-            _col.caption((_blk or {}).get("note", "")[:60])
-
-        st.markdown("---")
-        st.markdown("##### Levels by weighted strength")
-        st.caption(f"strength = OI + (ΔOI × {config.FRESH_OI_WEIGHT}) — fresh "
-                   f"positioning counts more than a wall that has sat there "
-                   f"since Tuesday. A level bleeding OI scores BELOW its raw "
-                   f"size, which is intended.")
-        _wl = fl.weighted_levels(df, spot, 3)
-        _wc1, _wc2 = st.columns(2)
-        for _col, _kind in ((_wc1, "resistance"), (_wc2, "support")):
-            _col.markdown(f"**{_kind.title()}s**")
-            for _lv in _wl[_kind]:
-                _col.markdown(f"**{_lv.strike}** ({_lv.distance:+.0f} pts)  \n"
-                              f"OI {_lv.oi:,.0f} · ΔOI {_lv.oi_chg:+,.0f}  \n"
-                              f"strength **{_lv.strength:,.0f}** "
-                              f"({_lv.vs_raw:+,.0f} vs raw)")
-
-        st.markdown("---")
-        st.markdown("##### Max pain")
-        st.info(_mpr.note)
-
-        if _sm:
-            st.markdown("---")
-            st.markdown("##### Straddle")
-            (st.warning if "EXPAND" in _sm.state else st.info)(
-                f"**{_sm.state}** — {_sm.note}")
-
-        st.markdown("---")
-        st.markdown("##### OI heatmap")
-        try:
-            _snaps = store.recent_snapshots(now.date(), limit=12)
-            if len(_snaps) >= 2:
-                _side = st.radio("side", ["ce", "pe"], horizontal=True,
-                                 key="hm_side")
-                _hm = fl.oi_heatmap(_snaps, spot, _side, 6)
-                st.dataframe(fl.heat_style(_hm, invert=(_side == "ce")),
-                             use_container_width=True)
-                st.caption("Rows are strikes, columns are polls. A band of "
-                           "colour marching up or down the rows IS the "
-                           "migration the other panels describe in words.")
-            else:
-                st.caption(f"{len(_snaps)} snapshot(s) stored today — the "
-                           f"heatmap needs a few polls before it shows "
-                           f"anything.")
-        except Exception as _he:                            # noqa: BLE001
-            st.caption(f"heatmap unavailable: {_he}")
-    except Exception as _e:                                 # noqa: BLE001
-        st.error("Flow unavailable.")
-        st.code(str(_e), language="text")
-
 # ── log ─────────────────────────────────────────────────────────────────────
 # Demo runs must never touch the log — it is your backtest dataset, and rows
 # generated from a static sample file (repeatedly, every refresh) would poison it.
@@ -4382,20 +4162,6 @@ if _tab_active(16):
         "attention.")
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Tab 17 — Price Action Strategy 1 (15-minute, UBB-slope system)
-# ═══════════════════════════════════════════════════════════════════════════
-if _tab_active(17):
-    _pc15 = None
-    try:
-        if vb_daily is not None and len(vb_daily):
-            _pc15 = float(vb_daily.iloc[-1]["Close"])
-    except Exception:                                       # noqa: BLE001
-        pass
-    try:
-        strategy1_tab.render(pa_frames, prev_close=_pc15)
-    except Exception as _se:                                # noqa: BLE001
-        st.error(f"Strategy 1 tab failed: {_se}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -4728,24 +4494,6 @@ if _tab_active(22):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Tab 23 — WAR Setup (30-Min First-Candle FII Strategy)
-# ═══════════════════════════════════════════════════════════════════════════
-if _tab_active(23):
-    try:
-        _pc15_war = _pc15 if "_pc15" in locals() else (_prev_close if "_prev_close" in locals() else None)
-        war_tab.render(
-            pa_frames=pa_frames if "pa_frames" in locals() else None,
-            prev_close=_pc15_war,
-            chain_df=df if "df" in locals() else None,
-            spot=spot if "spot" in locals() else 0.0,
-        )
-    except Exception as _war_err:
-        st.error(f"WAR Setup tab encountered an error: {_war_err}")
-
-
-
-
-# ═══════════════════════════════════════════════════════════════════════════
 # Tab 25 — Paper Trading & Impulse Control Terminal
 # ═══════════════════════════════════════════════════════════════════════════
 if _tab_active(25):
@@ -4973,18 +4721,6 @@ if _tab_active(39):
         _voitm.render(CTX)
     except Exception as _oit_err:                           # noqa: BLE001
         st.error(f"OI Timeline tab encountered an error: {_oit_err}")
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Tab 40 — ⏱️ Next 15m Candle Predictor & 1st-Bar Genesis
-# ═══════════════════════════════════════════════════════════════════════════
-if _tab_active(40):
-    try:
-        import next_candle_tab as _nct
-        _pc = _prev_close if "_prev_close" in locals() else (prev_close if "prev_close" in locals() else None)
-        _nct.render(CTX, prev_close=_pc)
-    except Exception as _nct_err:                           # noqa: BLE001
-        st.error(f"Next 15m Candle tab encountered an error: {_nct_err}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
