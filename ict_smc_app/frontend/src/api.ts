@@ -32,6 +32,10 @@ export interface VolumeView {
   oi_summary?: { net_doi: number; dominant: string; bias: string | null; counts: Record<string, number>; bars: number; last_build: string; last_doi: number | null; oi: number } | null;
   iv?: { time: number; iv: number }[]; iv_trend?: { from: number; to: number; chg: number; word: string; minutes: number } | null;
   iv_last?: { ts: number; iv: number } | null;
+  oi_line?: { time: number; ts: number; oi: number; ema: number; doi: number | null; build: string | null; surge: boolean; surge_x: number | null }[];
+  oi_surge_last?: { ts: number; surge_x: number | null } | null;
+  banknifty?: { available: boolean; message?: string; contract?: string; summary?: { dominant: string; bias: string | null; net_doi: number; bars: number } | null; last_build?: string | null; oi?: number; recent?: { time: number; build: string | null; doi: number | null }[] };
+  oi_compare?: { verdict: string; text: string; nifty: string; banknifty: string } | null;
   strike_greeks?: { side: string; label: string; delta: number | null; iv: number | null; delta_trend: { from: number; to: number; word: string } | null }[];
   vwap?: VolPoint[]; bands?: number[]; avwaps?: { label: string; anchor: number; dir: string; points: VolPoint[] }[];
   today?: VolProfile | null; prev?: VolProfile | null; naked?: { day: string; price: number }[];

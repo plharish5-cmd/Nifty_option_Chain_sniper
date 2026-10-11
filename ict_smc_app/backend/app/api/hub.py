@@ -66,6 +66,8 @@ class Hub:
         # real volume: current-month NIFTY future (REST candles + live Full packets) and options activity
         self.fut: Optional[Dict[str, Any]] = None
         self.fut_status = "not resolved yet"
+        self.bn: Optional[Dict[str, Any]] = None
+        self.bn_status = "not resolved yet"
         self.recorder = FutRecorder(lambda: self.candles.last_price.get(self.nifty))
         self.activity = act_mod.Activity()
         self.ivtrack = iv_mod.IVTrack()
@@ -185,6 +187,30 @@ class Hub:
         if changed:
             await self.feed.subscribe_full("NSE_FNO", pick["sid"])
             log.info("NIFTY future: %s — %s", self.fut_status, why)
+        await self.setup_banknifty()
+
+    async def setup_banknifty(self) -> None:
+        """BANKNIFTY current-month future — OI build-up as confirmation (REST only, 1 call a minute)."""
+        if not config.rule("futures", "banknifty", True):
+            self.bn_status = "disabled in rules.json (futures.banknifty)"
+            return
+        try:
+            idx = await fut_mod.index_close(self.rest, str(config.rule("futures", "banknifty_index_id", "25")))
+            pick, why = await fut_mod.resolve(self.rest, float(idx or 0), "BANKNIFTY-")
+        except Exception as e:                               # noqa: BLE001
+            pick, why = None, f"resolve failed: {str(e)[:160]}"
+        if not pick:
+            self.bn_status = f"unavailable — {why}"
+            return
+        changed = not self.bn or self.bn["sid"] != pick["sid"]
+        self.bn = pick
+        self.bn_status = f"{pick['symbol']} (id {pick['sid']})"
+        try:
+            n = await fut_mod.refresh(self.rest, pick["sid"], int(config.rule("futures", "backfill_days", 7)) if changed else 1,
+                                      fut_mod.BN_SEC)
+            self.bn_status += f" · {n} one-minute candles"
+        except DhanError as e:
+            self.bn_status += f" · candles failed: {str(e)[:100]}"
 
     async def futures_loop(self) -> None:
         """Re-resolve hourly (rollover) and fetch the official FUT candle a few seconds after each minute."""
@@ -213,6 +239,11 @@ class Hub:
                 await fut_mod.refresh(self.rest, self.fut["sid"], 1)
             except DhanError as e:
                 self.fut_status = self.fut_status.split(" · ")[0] + f" · refresh failed: {str(e)[:80]}"
+            if self.bn:
+                try:
+                    await fut_mod.refresh(self.rest, self.bn["sid"], 1, fut_mod.BN_SEC)
+                except DhanError as e:
+                    self.bn_status = self.bn_status.split(" · ")[0] + f" · refresh failed: {str(e)[:80]}"
 
     async def on_prev(self, sid: str, pc: float) -> None:
         self.prev_close[sid] = pc
@@ -556,6 +587,9 @@ class Hub:
                 return {"act": act, "iv_trend": iv.get("iv_trend")}
             oib = oi_mod.per_bar(an, fut_mod.oi_rows(8))
             ois = oi_mod.summary(an, oib, int(config.rule("oi", "summary_bars", 12)))
+            oil = oi_mod.oi_line(an, oib)
+            bnv = self.bn_view(tf, an)
+            cmp = oi_mod.compare(ois, bnv.get("summary"), (oib.get(int(b.ts[-1])) or {}).get("build"), bnv.get("last_build"))
             rv = self.rvol_tf(tf)
             summ = vol_mod.annotate(j, an, rv)
             profiles = vol_mod.day_profiles(mp)
@@ -609,13 +643,38 @@ class Hub:
                            "today": strip(profiles.get(today)), "prev": strip(profiles.get(prev_day)) if prev_day else None,
                            "naked": naked, "last": summ, "act_last": act.get(int(b.ts[-1])),
                            "last_vwap": last_vw, "rvol_method": summ.get("method"),
-                           "oi_last": oib.get(int(b.ts[-1])), "oi_summary": ois, **iv}
+                           "oi_last": oib.get(int(b.ts[-1])), "oi_summary": ois,
+                           "oi_line": [dict(x, time=chart_time(x["ts"])) for x in oil[-300:]],
+                           "oi_surge_last": next((x for x in reversed(oil) if x["surge"]), None),
+                           "banknifty": bnv, "oi_compare": cmp, **iv}
             self.volume[tf] = dict(j["volume"], profiles={d: profiles[d] for d in sorted(profiles)[-3:]})
-            return {"profiles": profiles, "rvol": rv, "act": act, "oi": oib, "iv_trend": iv.get("iv_trend")}
+            return {"profiles": profiles, "rvol": rv, "act": act, "oi": oib, "iv_trend": iv.get("iv_trend"),
+                    "oi_line": {x["ts"]: x for x in oil}, "oi_compare": cmp}
         except Exception as e:                               # noqa: BLE001 — never lose the chart over volume
             log.exception("volume %s failed", tf)
             j["volume"] = {"available": False, "message": f"volume error: {e}"}
             return {}
+
+    def bn_view(self, tf: str, an) -> Dict[str, Any]:
+        """BANKNIFTY future on the same timeframe: build-up per candle + summary over the same window."""
+        from types import SimpleNamespace
+        from ..engine.primitives import Bars, atr as atr_fn
+        from ..market.candles import resample
+        rows = fut_mod.sym_rows_1m(fut_mod.BN_SEC, 8)
+        if not rows:
+            return {"available": False, "message": f"BANKNIFTY future: {self.bn_status}"}
+        bars = [r for r in resample(rows, tf) if r["closed"] and int(r["ts"]) <= int(an.bars.ts[-1])]
+        if len(bars) < 3:
+            return {"available": False, "message": "BANKNIFTY future: not enough candles yet"}
+        bb = Bars.from_rows(bars)
+        abn = SimpleNamespace(tf=tf, bars=bb, atr=atr_fn(bb, 14))
+        pb = oi_mod.per_bar(abn, fut_mod.sym_oi_rows(fut_mod.BN_SEC, 8))
+        summ = oi_mod.summary(abn, pb, int(config.rule("oi", "summary_bars", 12)))
+        last = pb.get(int(bb.ts[-1])) or {}
+        recent = [{"time": chart_time(int(t)), "build": pb[int(t)].get("build"), "doi": pb[int(t)].get("doi")}
+                  for t in bb.ts[-12:] if int(t) in pb and "build" in pb[int(t)]]
+        return {"available": True, "contract": self.bn_status, "summary": summ, "last_build": last.get("build"),
+                "oi": last.get("oi"), "recent": recent, "close": float(bb.c[-1])}
 
     def iv_view(self, tf: str, an) -> Dict[str, Any]:
         """ATM IV line (one point per candle, its close) + trend, and the selected strikes' delta drift. Live only."""
@@ -797,6 +856,12 @@ class Hub:
             os_ = v.get("oi_summary") or {}
             if os_.get("dominant") and os_["dominant"] != "flat":
                 bits.append(f"futures: {os_['dominant']} over the last {os_['bars']} candles (net OI {os_['net_doi']:+,})")
+            sl = v.get("oi_surge_last")
+            if sl and p is not None and sl["ts"] >= int(p.bars.ts[-1]) - 3 * TF_SECONDS[self.primary]:
+                bits.append(f"OI SURGE at {hm(sl['ts'])} ({sl['surge_x']}× normal ΔOI, OI above its 8-EMA): big move building")
+            cp = v.get("oi_compare") or {}
+            if cp.get("text"):
+                bits.append(f"NIFTY vs BANKNIFTY futures: {cp['text']}")
             it = v.get("iv_trend") or {}
             if it.get("word"):
                 bits.append(f"ATM IV {it['word']} {it['from']:.1f}→{it['to']:.1f} in {it['minutes']} min"
@@ -844,7 +909,7 @@ class Hub:
         return sorted([s for s in self.signals if s.ts >= o] + self.crt_signals_today(), key=lambda s: s.ts)
 
     def status_view(self) -> Dict[str, Any]:
-        return {**self.status, "dhan_calls": self.rest.usage(), "futures": self.fut_status, "recorder": self.recorder.status(), "feed": self.feed.status, "feed_error": self.feed.last_error,
+        return {**self.status, "dhan_calls": self.rest.usage(), "futures": self.fut_status, "banknifty": self.bn_status, "recorder": self.recorder.status(), "feed": self.feed.status, "feed_error": self.feed.last_error,
                 "feed_connects": self.feed.connects, "ltt_mode": self.feed.ltt_mode,
                 "tick_age_s": round(self.feed.tick_age(self.nifty), 1) if self.feed.tick_age(self.nifty) < 1e8 else None,
                 "chain": self.chain.status, "chain_error": self.chain.last_error,

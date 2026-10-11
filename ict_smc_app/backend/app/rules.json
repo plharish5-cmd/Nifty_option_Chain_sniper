@@ -365,7 +365,11 @@
     "rollover_days": 4,
     "backfill_days": 7,
     "candle_fetch_delay_s": 4,
-    "resolve_every_s": 3600
+    "resolve_every_s": 3600,
+    "banknifty": true,
+    "banknifty_index_id": "25",
+    "banknifty_security_id": null,
+    "_banknifty_note": "BANKNIFTY current-month future: OI build-up as a confirmation of NIFTY's. 1 extra Dhan data call a minute."
   },
   "volume": {
     "_note": "Real volume from the basis-adjusted NIFTY future. Activity, never direction. Display only: never changes a trigger, a zone or a signal.",
@@ -396,7 +400,11 @@
     "_note": "Futures OI build-up per candle: price up+OI up long build-up, down+up short build-up, up+down short covering, down+down long unwinding. Context only.",
     "oi_min_pct": 0.05,
     "price_min_atr": 0.1,
-    "summary_bars": 12
+    "summary_bars": 12,
+    "ema_len": 8,
+    "surge_k": 2.5,
+    "surge_window": 20,
+    "_surge_note": "OI surge = ΔOI ≥ surge_k × average |ΔOI| of the previous surge_window candles (same session) and OI above its EMA(ema_len). Big move building — direction from build-up + structure."
   },
   "iv": {
     "_note": "ATM IV and selected strikes' IV/delta once a minute from the option chain. Live only. Falling IV in a trend = cleaner move; rising IV = wider swings.",

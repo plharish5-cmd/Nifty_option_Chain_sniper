@@ -168,6 +168,7 @@ export default function Guide() {
             [<G>up</G>, "down", "Short covering — shorts buying back; fades once covering is done"], [<R>down</R>, "down", "Long unwinding — longs bailing out"],
           ]} />
           <p>OI build-up is read per candle (ΔOI ≥ 0.05 % and a move ≥ 0.1 ATR, same session only) and backfilled from Dhan. It shows in the Auction tab, the effort line and the chart footer. <b>ATM IV</b> (orange line above the volume strip) and your selected strikes' delta / IV are recorded once a minute from the option chain — live only. Falling IV in a trend = orderly, cleaner move; rising IV = fear, wider swings; a CE whose |Δ| keeps falling is drifting out of the money.</p>
+          <p><Y>Futures OI · EMA 8</Y> (layer): a pane under the chart with the futures OI line and its 8-EMA, and ΔOI bars coloured by build-up (amber = surge). <b>OI⚡</b> on a candle = ΔOI ≥ 2.5× normal with OI above its EMA: a big move is building — direction from the build-up colour and structure. <b>BANKNIFTY</b>: its future's build-up is read the same way; same side as NIFTY = broad move, opposite = narrow move, more likely to fail (where CRT traps work). Shown in the Auction tab, the effort line and "Read of the market".</p>
           <p className="text-slate-400">None of this changes a trigger, a zone, a signal, a paper trade or the scorecard (baseline lock still passes). Delta only nudges A / C confidence, as before.</p>
         </S>
 

@@ -35,7 +35,9 @@ log = logging.getLogger("futures")
 
 SEC = "FUT"
 SCRIP_MASTER = "https://images.dhan.co/api-data/api-scrip-master.csv"
-CACHE = config.DATA_DIR / "scrip_master_futidx.csv"
+CACHE = config.DATA_DIR / "scrip_master_futidx_v2.csv"     # NIFTY- and BANKNIFTY- FUTIDX rows
+BN_SEC = "BNFUT"
+PREFIXES = ("NIFTY-", "BANKNIFTY-")
 
 
 def _cfg(k: str, d: Any) -> Any:
@@ -50,7 +52,7 @@ def _col(cols: Dict[str, str], *names: str) -> Optional[str]:
     return None
 
 
-def parse_master(text: str, today: Optional[date] = None) -> List[Dict[str, Any]]:
+def parse_master(text: str, today: Optional[date] = None, prefix: str = "NIFTY-") -> List[Dict[str, Any]]:
     """NIFTY index futures from the scrip master, nearest expiry first. Only FUTIDX rows on NSE whose trading
     symbol is exactly NIFTY-<month>-FUT (BANKNIFTY / FINNIFTY / NIFTYNXT50 … are excluded by the 'NIFTY-' prefix)."""
     today = today or now_ist().date()
@@ -66,7 +68,7 @@ def parse_master(text: str, today: Optional[date] = None) -> List[Dict[str, Any]
         if str(r[exch]).upper() != "NSE" or str(r[inst]).upper() != "FUTIDX":
             continue
         s = str(r[sym]).upper()
-        if not s.startswith("NIFTY-"):
+        if not s.startswith(prefix):
             continue
         try:
             d = datetime.strptime(str(r[exp])[:10], "%Y-%m-%d").date()
@@ -77,7 +79,7 @@ def parse_master(text: str, today: Optional[date] = None) -> List[Dict[str, Any]
     return sorted(out, key=lambda x: x["expiry"])
 
 
-async def load_master() -> List[Dict[str, Any]]:
+async def load_master(prefix: str = "NIFTY-") -> List[Dict[str, Any]]:
     """Downloads the (≈30 MB) scrip master at most once a day; keeps only the NIFTY FUTIDX rows on disk."""
     fresh = CACHE.exists() and time.time() - CACHE.stat().st_mtime < 20 * 3600
     if not fresh:
@@ -85,13 +87,13 @@ async def load_master() -> List[Dict[str, Any]]:
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=15.0)) as cl:
             r = await cl.get(url)
             r.raise_for_status()
-        rows = parse_master(r.text)
+        rows = [x for p in PREFIXES for x in parse_master(r.text, prefix=p)]
         with CACHE.open("w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["SEM_EXM_EXCH_ID", "SEM_INSTRUMENT_NAME", "SEM_TRADING_SYMBOL", "SEM_EXPIRY_DATE", "SEM_SMST_SECURITY_ID"])
             for x in rows:
                 w.writerow(["NSE", "FUTIDX", x["symbol"], x["expiry"], x["sid"]])
-    return parse_master(CACHE.read_text())
+    return parse_master(CACHE.read_text(), prefix=prefix)
 
 
 # ── resolve ──────────────────────────────────────────────────────────────────
@@ -101,18 +103,20 @@ async def _today_rows(rest, sid: str) -> List[Dict[str, float]]:
     return session_filter(await rest.intraday(sid, frm, to, "1", "NSE_FNO", "FUTIDX"))
 
 
-async def resolve(rest, index_close: float) -> Tuple[Optional[Dict[str, Any]], str]:
-    """→ ({sid, symbol, expiry, basis, why}, explanation) or (None, explanation)."""
-    pinned = config.env("NIFTY_FUT_ID") or _cfg("security_id", None)
+async def resolve(rest, index_close: float, prefix: str = "NIFTY-") -> Tuple[Optional[Dict[str, Any]], str]:
+    """→ ({sid, symbol, expiry, basis, why}, explanation) or (None, explanation). prefix "BANKNIFTY-" for BANKNIFTY."""
+    bank = prefix.startswith("BANK")
+    pinned = (config.env("BANKNIFTY_FUT_ID") or _cfg("banknifty_security_id", None)) if bank else \
+        (config.env("NIFTY_FUT_ID") or _cfg("security_id", None))
     if pinned:
         return {"sid": str(pinned), "symbol": "pinned", "expiry": None, "basis": None,
                 "why": "pinned (rules futures.security_id / env NIFTY_FUT_ID)"}, "pinned contract"
     try:
-        cands = (await load_master())[: int(_cfg("max_candidates", 3))]
+        cands = (await load_master(prefix))[: int(_cfg("max_candidates", 3))]
     except Exception as e:                                   # noqa: BLE001
         return None, f"could not read Dhan's scrip master: {str(e)[:160]}"
     if not cands:
-        return None, "no NIFTY FUTIDX rows in the scrip master"
+        return None, f"no {prefix.rstrip('-')} FUTIDX rows in the scrip master"
     lines, ok = [], []
     tol = float(_cfg("max_basis_pct", 2.5))
     for c in cands:
@@ -145,17 +149,37 @@ async def resolve(rest, index_close: float) -> Tuple[Optional[Dict[str, Any]], s
 
 
 # ── candles ──────────────────────────────────────────────────────────────────
-async def refresh(rest, sid: str, days: int = 1) -> int:
+async def refresh(rest, sid: str, days: int = 1, sec: str = SEC) -> int:
     to = now_ist()
     frm = (to - timedelta(days=max(0, days - 1))).replace(hour=9, minute=0, second=0, microsecond=0)
     rows = session_filter(await rest.intraday(sid, frm, to, "1", "NSE_FNO", "FUTIDX", oi=True))
     now = now_epoch()
     rows = [r for r in rows if r["ts"] <= now and is_closed(r["ts"], "1m", now)]
-    db.upsert_candles(SEC, rows)
+    db.upsert_candles(sec, rows)
     oi = [(int(r["ts"]), r["oi"], "rest") for r in rows if r.get("oi")]
-    if oi:
+    if oi and sec == SEC:
         db.execmany("INSERT OR REPLACE INTO fut_oi (ts, oi, src) VALUES (?,?,?)", oi)
+    elif oi:
+        db.execmany("INSERT OR REPLACE INTO fut_oi_sym (sym, ts, oi) VALUES (?,?,?)", [(sec, t, v) for t, v, _ in oi])
     return len(rows)
+
+
+async def index_close(rest, security_id: str) -> Optional[float]:
+    """Last close of an index (e.g. BANKNIFTY = IDX_I 25) — used once, to price-check its future."""
+    to = now_ist()
+    rows = await rest.intraday(str(security_id), to - timedelta(days=4), to, "60", "IDX_I", "INDEX")
+    return float(rows[-1]["c"]) if rows else None
+
+
+def sym_oi_rows(sec: str, days: int = 5) -> Dict[int, float]:
+    since = int((now_ist() - timedelta(days=days + 3)).timestamp())
+    return {int(r["ts"]): float(r["oi"]) for r in
+            db.query("SELECT ts, oi FROM fut_oi_sym WHERE sym=? AND ts>=? ORDER BY ts", (sec, since))}
+
+
+def sym_rows_1m(sec: str, days: int = 5) -> List[Dict[str, float]]:
+    since = int((now_ist() - timedelta(days=days + 3)).timestamp())
+    return session_filter(db.candles_1m(sec, since))
 
 
 def oi_rows(days: int = 5) -> Dict[int, float]:

@@ -64,3 +64,27 @@ def test_iv_track_atm_and_strikes_and_trend():
     d = ivtrack.trend(ivtrack.series("K-CE", D8), 375, "delta")
     assert d["word"] == "falling"
     assert ivtrack.per_bar(atm, "15m")[D8 + 1800]["iv"] == round(14.0 - 0.3 * 4 + 0.5, 2)
+
+
+def test_oi_line_ema_and_surge():
+    closes = [22000 + 2 * k for k in range(30)]
+    an = an_of(closes)
+    oi = {}
+    v = 1e7
+    for k in range(30):
+        v += 3000 if k != 25 else 40000                     # one candle adds OI far faster than normal
+        oi[D8 + 300 * k + 240] = v
+    line = oi_mod.oi_line(an, oi_mod.per_bar(an, oi))
+    by = {x["ts"]: x for x in line}
+    assert by[D8 + 300 * 25]["surge"] and by[D8 + 300 * 25]["surge_x"] >= 2
+    assert not any(x["surge"] for x in line if x["ts"] != D8 + 300 * 25)
+    assert by[D8 + 300 * 29]["ema"] < by[D8 + 300 * 29]["oi"]        # EMA lags a rising OI
+
+
+def test_nifty_banknifty_compare():
+    bear = {"dominant": "short build-up", "bias": "bear"}
+    bull = {"dominant": "short covering", "bias": "bull"}
+    assert oi_mod.compare(bear, bear, None, None)["verdict"] == "aligned"
+    d = oi_mod.compare(bear, bull, None, None)
+    assert d["verdict"] == "diverging" and "more likely to fail" in d["text"]
+    assert oi_mod.compare(bear, None, None, None) is None

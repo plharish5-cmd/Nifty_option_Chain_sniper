@@ -666,7 +666,7 @@ def render() -> None:
         __import__("olab_pro").brief(day)
     except Exception as _opb_err:                           # noqa: BLE001
         st.caption(f"PRO brief unavailable: {_opb_err}")
-    t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17 = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV",
+    t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t_futoi = st.tabs(["📊 Open Interest", "📈 PCR & OI", "🕯️ Smart OI", "🧲 Gamma & Vega", "📅 IV − HV",
                                               "📊 Call vs Put Writers (3m / 5m / 15m)", "🟥 PE − CE OI Table",
                                               "📈 Multi-strike OI",
                                               "📉 Vega Analysis",
@@ -678,7 +678,8 @@ def render() -> None:
                                               "😨 Volatility Skew",
                                               "🏛 NIFTY Heavyweights",
                                               "🌏 Pre-market & Gap",
-                                              "📅 Events"])   # TABMOVE MULTISTRIKE VEGAPRO PREMIUMPRO MAXPAINPRO TSCHAINPRO STRIKEADVPRO STRADDLEPRO VOLSKEWPRO HEAVYPRO GLOBALCUES EVENTSCAL
+                                              "📅 Events",
+                                              "📈 Futures OI · EMA 8"])   # TABMOVE MULTISTRIKE VEGAPRO PREMIUMPRO MAXPAINPRO TSCHAINPRO STRIKEADVPRO STRADDLEPRO VOLSKEWPRO HEAVYPRO GLOBALCUES EVENTSCAL # FUTOI
     with t0:
         __import__("olab_pro").tab("oi", day)                       # OLABPRO
         try:
@@ -805,3 +806,10 @@ def render() -> None:
             events_cal.render(day)
         except Exception as _ev_err:                           # noqa: BLE001
             st.error(f"Events encountered an error: {_ev_err}")
+
+    with t_futoi:                                               # FUTOI — NIFTY + BANKNIFTY futures OI · EMA 8
+        try:
+            import futures_oi_panel
+            futures_oi_panel.render(day, tf)
+        except Exception as _fo_err:                            # noqa: BLE001
+            st.error(f"Futures OI encountered an error: {_fo_err}")

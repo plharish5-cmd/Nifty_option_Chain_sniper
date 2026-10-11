@@ -653,3 +653,15 @@ them: Data APIs 7,000 calls/day · option chain 1 per 3 s · quotes 1/s.
   every 5th minute. The feed, estimated delta recorder (provisional futures volume) and repairs keep running.
 * Option chain: one call every `data.chain_poll_every_s` (6 s, was ~3 s); nearest expiry on 3 of 4 polls
   (`chain_far_every`). Normal use ≈ 1,100–1,500 data calls a day.
+
+### 12.9 Futures OI · EMA 8, OI surge, BANKNIFTY confirmation (added 11 Oct 2026)
+* Chart layer **Futures OI · EMA 8**: pane 1 = NIFTY futures OI + its 8-EMA (`oi.ema_len`); pane 2 = ΔOI per candle,
+  coloured by build-up (green long build-up, light green short covering, red short build-up, pink long unwinding,
+  amber = surge).
+* **OI surge** (`OI⚡n×` marker): ΔOI ≥ `oi.surge_k` (2.5) × the average |ΔOI| of the previous `oi.surge_window` (20)
+  candles of the same session, and OI above its 8-EMA. Big move building — no direction implied.
+* **BANKNIFTY future** (`futures.banknifty`): resolved like NIFTY's (scrip master, price-checked against the
+  BANKNIFTY index IDX_I 25), REST candles with OI every minute (1 extra data call/min), stored as sec_id `BNFUT` and
+  table `fut_oi_sym`. Build-up on the same timeframe; **aligned** (same bias) = broad move, **diverging** = narrow
+  move, more likely to fail. Auction tab, effort line, narrative.
+* Same rules in 🧪 Options Lab → "📈 Futures OI · EMA 8" (`futures_oi_panel.py`, OC folder).

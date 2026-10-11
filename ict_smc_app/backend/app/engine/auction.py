@@ -269,6 +269,13 @@ def read(an, res: Dict[str, Any], delta_bars: Optional[Dict[int, float]], delta_
     ob = (vol.get("oi") or {}).get(int(b.ts[i])) or {}
     if ob.get("build") and ob["build"] != "flat":
         parts.append(f"futures {ob['build']} (OI {ob.get('doi', 0):+,})")
+    ol = (vol.get("oi_line") or {}).get(int(b.ts[i])) or {}
+    if ol.get("surge"):
+        parts.append(f"OI SURGE {ol.get('surge_x')}× (OI above its 8-EMA) — big move building, direction from structure")
+        high = True
+    cp = vol.get("oi_compare") or {}
+    if cp.get("verdict") in ("aligned", "diverging"):
+        parts.append(f"BANKNIFTY: {cp['text']}")
     if parts:
         eff = {"available": True, "z": z, "rvol": rvol, "act_z": az, "high": high, "text": " · ".join(parts)
                + ("" if delta_bars is not None else " — volume says how much traded, not who won: no delta source yet")}

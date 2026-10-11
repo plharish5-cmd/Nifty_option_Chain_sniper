@@ -75,3 +75,59 @@ def summary(an, bars: Dict[int, Dict[str, Any]], lookback: int = 12) -> Optional
     last = recs[-1]
     return {"net_doi": round(net), "dominant": top, "bias": BIAS.get(top), "counts": counts, "bars": len(recs),
             "last_build": last["build"], "last_doi": last.get("doi"), "oi": last["oi"]}
+
+
+# ── OI line with its 8-EMA, ΔOI bars and the OI SURGE flag ───────────────────
+def ema(vals: List[float], n: int) -> List[float]:
+    k = 2.0 / (n + 1)
+    out: List[float] = []
+    for v in vals:
+        out.append(v if not out else out[-1] + k * (v - out[-1]))
+    return out
+
+
+def oi_line(an, bars: Dict[int, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Per candle that has OI: {ts, oi, ema, doi, build, surge}. EMA length = oi.ema_len (8).
+    SURGE = ΔOI ≥ oi.surge_k × the average |ΔOI| of the previous oi.surge_window candles (same session, earlier
+    candles only) AND OI above its EMA → positions are being added unusually fast: a big move is building.
+    Direction is NOT implied — the build-up type (price + OI) and structure decide that."""
+    n = int(config.rule("oi", "ema_len", 8))
+    k = float(config.rule("oi", "surge_k", 2.0))
+    W = int(config.rule("oi", "surge_window", 20))
+    pts = [(int(t), bars[int(t)]) for t in an.bars.ts if int(t) in bars]
+    if not pts:
+        return []
+    e = ema([float(r["oi"]) for _, r in pts], n)
+    out: List[Dict[str, Any]] = []
+    hist: List[float] = []
+    day = None
+    for (ts, r), ev in zip(pts, e):
+        d = ist_date(ts)
+        if d != day:
+            day, hist = d, []
+        doi = r.get("doi")
+        base = sum(hist[-W:]) / len(hist[-W:]) if len(hist) >= 5 else None
+        surge = bool(doi is not None and doi > 0 and base and doi >= k * base and r["oi"] > ev)
+        out.append({"ts": ts, "oi": r["oi"], "ema": round(ev), "doi": doi, "build": r.get("build"), "surge": surge,
+                    "surge_x": round(doi / base, 1) if (doi and base) else None})
+        if doi is not None:
+            hist.append(abs(doi))
+    return out
+
+
+def compare(n_sum: Optional[Dict[str, Any]], b_sum: Optional[Dict[str, Any]],
+            n_last: Optional[str], b_last: Optional[str]) -> Optional[Dict[str, Any]]:
+    """NIFTY vs BANKNIFTY futures build-up. Same side → broad move (higher confidence); opposite → narrow move
+    (more likely to fail — where CRT traps work)."""
+    if not n_sum or not b_sum:
+        return None
+    nb, bb = n_sum.get("bias"), b_sum.get("bias")
+    if nb and bb and nb == bb:
+        verdict, word = "aligned", f"broad {'buying' if nb == 'bull' else 'selling'}: both show {n_sum['dominant']} / {b_sum['dominant']}"
+    elif nb and bb:
+        verdict, word = "diverging", (f"narrow move: NIFTY {n_sum['dominant']} but BANKNIFTY {b_sum['dominant']} — "
+                                     f"more likely to fail")
+    else:
+        verdict, word = "unclear", "one side flat — no confirmation"
+    return {"verdict": verdict, "text": word, "nifty": n_sum.get("dominant"), "banknifty": b_sum.get("dominant"),
+            "nifty_last": n_last, "banknifty_last": b_last}

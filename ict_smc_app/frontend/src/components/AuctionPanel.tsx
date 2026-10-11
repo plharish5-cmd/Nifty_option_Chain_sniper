@@ -12,7 +12,7 @@ function OiIv({ v }: { v: VolumeView | null }) {
   const s = v.oi_summary;
   return (
     <div className="rounded-lg border border-ink-700 p-2 space-y-1">
-      <div className="text-[11px] text-slate-400">Futures OI build-up (last {recent.length} candles) · ATM IV · strike delta</div>
+      <div className="text-[11px] text-slate-400">NIFTY futures OI build-up (last {recent.length} candles) · BANKNIFTY confirmation · ATM IV · strike delta</div>
       {recent.length === 0 ? <div className="text-slate-500">No futures OI yet{v.message ? ` — ${v.message}` : ""}.</div> : (
         <div className="flex flex-wrap gap-1">
           {recent.map((b) => (
@@ -21,6 +21,16 @@ function OiIv({ v }: { v: VolumeView | null }) {
           ))}
         </div>
       )}
+      {v.banknifty?.available && (v.banknifty.recent ?? []).length > 0 && (
+        <div className="flex flex-wrap gap-1 items-center"><span className="text-slate-400 text-[11px] mr-1">BANKNIFTY fut:</span>
+          {(v.banknifty.recent ?? []).map((b) => (
+            <span key={b.time} className={`pill bg-ink-800 ${BUILD_CLR[b.build ?? "flat"]}`}>{new Date((b.time - 19800) * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} {b.build === "flat" ? "·" : b.build}</span>
+          ))}
+        </div>
+      )}
+      {v.banknifty && !v.banknifty.available && <div className="text-slate-500">{v.banknifty.message}</div>}
+      {v.oi_compare && <div>NIFTY vs BANKNIFTY: <b className={v.oi_compare.verdict === "aligned" ? "text-sky-300" : v.oi_compare.verdict === "diverging" ? "text-orange-300" : "text-slate-400"}>{v.oi_compare.verdict}</b> — {v.oi_compare.text}</div>}
+      {v.oi_surge_last && <div className="text-amber-300">OI⚡ surge at {new Date(v.oi_surge_last.ts * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} ({v.oi_surge_last.surge_x}× normal ΔOI, OI above its 8-EMA) — big move building; direction from build-up + structure</div>}
       {s && s.dominant !== "flat" && <div>Dominant: <b className={BUILD_CLR[s.dominant]}>{s.dominant}</b> · net ΔOI {s.net_doi.toLocaleString("en-IN")} · OI {s.oi.toLocaleString("en-IN")}</div>}
       <div>ATM IV: {v.iv_last ? <b>{v.iv_last.iv.toFixed(2)}</b> : <span className="text-slate-500">not recorded yet (live only)</span>}
         {v.iv_trend && <> · {v.iv_trend.word} {v.iv_trend.from.toFixed(1)}→{v.iv_trend.to.toFixed(1)} in {v.iv_trend.minutes} min{v.iv_trend.word === "falling" ? " — orderly, cleaner move" : v.iv_trend.word === "rising" ? " — fear: wider swings" : ""}</>}</div>

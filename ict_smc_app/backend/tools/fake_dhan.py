@@ -161,6 +161,24 @@ def _build_oi():
 OI_BY_TS = _build_oi()
 
 
+def _build_oi_bn():
+    """BANKNIFTY OI: follows NIFTY's in the morning, then covers in the afternoon (a divergence to test)."""
+    out, oi, day = {}, 0.0, None
+    rng = random.Random(31)
+    for c in PATH:
+        d = datetime.fromtimestamp(c["ts"], IST).date()
+        if d != day:
+            day, oi = d, 2.1e6
+        hh = datetime.fromtimestamp(c["ts"], IST).hour
+        sgn = -1 if hh < 13 else 1
+        oi += sgn * (c["c"] - c["o"]) * 300 + rng.gauss(0, 250)
+        out[c["ts"]] = int(oi)
+    return out
+
+
+OI_BN = _build_oi_bn()
+
+
 def fut_cum(sid: int, t: float) -> int:
     """Cumulative day volume up to t (the current minute pro-rata)."""
     d0 = datetime.fromtimestamp(t, IST).replace(hour=9, minute=15, second=0).timestamp()
@@ -215,11 +233,17 @@ async def intraday(req: Request):
     to = datetime.strptime(body["toDate"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=IST).timestamp()
     src = [c for c in PATH if frm <= c["ts"] <= to and c["ts"] + 60 <= now]
     sid = int(float(body.get("securityId", 13)))
+    BN = 2.26                                              # synthetic BANKNIFTY = NIFTY path × 2.26
+    if body.get("exchangeSegment") == "IDX_I" and sid == 25:
+        src = [{"ts": c["ts"], "o": c["o"] * BN, "h": c["h"] * BN, "l": c["l"] * BN, "c": c["c"] * BN, "v": 0} for c in src]
+    if body.get("exchangeSegment") == "NSE_FNO" and sid == 35003:
+        src = [{"ts": c["ts"], "o": c["o"] * BN + 180, "h": c["h"] * BN + 180, "l": c["l"] * BN + 180,
+                "c": c["c"] * BN + 180, "v": fut_vol(35001, c) * 0.4, "oi": OI_BN.get(c["ts"], 0)} for c in src]
     if body.get("exchangeSegment") == "NSE_FNO" and sid in FUTS:
         src = [{"ts": c["ts"], "o": c["o"] + basis_at(sid, c["ts"]), "h": c["h"] + basis_at(sid, c["ts"]),
                 "l": c["l"] + basis_at(sid, c["ts"]), "c": c["c"] + basis_at(sid, c["ts"]), "v": fut_vol(sid, c)}
                for c in src]
-        if body.get("oi"):
+        if body.get("oi") and sid in FUTS:
             for c in src:
                 c["oi"] = OI_BY_TS.get(c["ts"], 0) * (1 if sid == 35001 else 0.2)
     if body.get("exchangeSegment") == "NSE_FNO" and sid >= 40000:   # synthetic option candles (Black-Scholes on the path)

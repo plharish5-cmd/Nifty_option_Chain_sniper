@@ -8,7 +8,7 @@ import type { Analysis, Candle, TF } from "../api";
 import { bucket } from "../api";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -26,7 +26,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const zones = useRef(new ZonesPrimitive());
   const volS = useRef<ISeriesApi<"Histogram"> | null>(null);
   const vwapS = useRef<ISeriesApi<"Line">[]>([]);
-  const ivS = useRef<ISeriesApi<"Line"> | null>(null);          // [vwap, +1σ, −1σ, +2σ, −2σ, avwap1, avwap2]
+  const ivS = useRef<ISeriesApi<"Line"> | null>(null);
+  const oiS = useRef<{ oi: ISeriesApi<"Line">; ema: ISeriesApi<"Line">; doi: ISeriesApi<"Histogram"> } | null>(null);          // [vwap, +1σ, −1σ, +2σ, −2σ, avwap1, avwap2]
   const last = useRef<Candle | null>(null);
 
   // create once
@@ -250,6 +251,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           color: acc ? "#38bdf8" : rej ? "#fb923c" : "#94a3b8", text: m.text, size: acc ? 0.9 : 0.7 });
       }
     }
+    if (a && layers.oi) {
+      for (const x of a.volume?.oi_line ?? []) {
+        if (x.surge) ms.push({ time: x.time as UTCTimestamp, position: "aboveBar", shape: "square", color: "#f59e0b", text: `OI⚡${x.surge_x ?? ""}×`, size: 0.6 });
+      }
+    }
     ms.sort((x, y) => (x.time as number) - (y.time as number));
     markers.current.setMarkers(ms);
 
@@ -275,6 +281,32 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       for (let q = 0; q < 2; q++) L[5 + q].setData((av[q]?.points ?? []).map((p) => ({ time: p.time as UTCTimestamp, value: p.v })));
     }
     ivS.current?.setData(a && layers.volume ? (V?.iv ?? []).map((p) => ({ time: p.time as UTCTimestamp, value: p.iv })) : []);
+    // futures OI pane (pane 1): OI line + its 8-EMA; ΔOI bars coloured by build-up (pane 2). Created only when shown,
+    // removed when hidden, so the price chart keeps its full height otherwise.
+    const ch = chart.current;
+    const ol = a && layers.oi ? (a.volume?.oi_line ?? []) : [];
+    if (ch && ol.length && !oiS.current) {
+      const o = ch.addSeries(LineSeries, { color: "#38bdf8", lineWidth: 2, priceLineVisible: false, title: "FUT OI",
+        priceFormat: { type: "volume" } }, 1);
+      const e = ch.addSeries(LineSeries, { color: "#e8c35a", lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+        title: "EMA 8", priceFormat: { type: "volume" } }, 1);
+      const d = ch.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, title: "ΔOI", priceFormat: { type: "volume" } }, 2);
+      try {
+        const P = ch.panes();
+        P[0]?.setStretchFactor(5); P[1]?.setStretchFactor(1.6); P[2]?.setStretchFactor(1);
+      } catch { /* older lib */ }
+      oiS.current = { oi: o, ema: e, doi: d };
+    } else if (ch && !ol.length && oiS.current) {
+      ch.removeSeries(oiS.current.oi); ch.removeSeries(oiS.current.ema); ch.removeSeries(oiS.current.doi);
+      oiS.current = null;
+    }
+    if (oiS.current && ol.length) {
+      const BC: Record<string, string> = { "long build-up": "#22c55e", "short covering": "#86efac", "short build-up": "#ef4444", "long unwinding": "#fca5a5" };
+      oiS.current.oi.setData(ol.map((x) => ({ time: x.time as UTCTimestamp, value: x.oi })));
+      oiS.current.ema.setData(ol.map((x) => ({ time: x.time as UTCTimestamp, value: x.ema })));
+      oiS.current.doi.setData(ol.filter((x) => x.doi != null).map((x) => ({ time: x.time as UTCTimestamp, value: x.doi as number,
+        color: x.surge ? "#f59e0b" : (BC[x.build ?? ""] ?? "rgba(148,163,184,0.5)") })));
+    }
     zz.current.setData(a && layers.swings ? dedupe(a.zigzag).map((p) => ({ time: p.time as UTCTimestamp, value: p.price })) : []);
   }, [analysis, layers, candles]);
 
