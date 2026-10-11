@@ -1,12 +1,12 @@
 {
-  "date": "2026-10-10",
-  "ohlc_done": true,
-  "ohlc_attempts": 1,
-  "ohlc_message": "Dhan: 0 session(s) added, 1927 rows total, newest 09-Oct \u2014 via /charts/historical",
+  "date": "2026-10-11",
+  "ohlc_done": false,
+  "ohlc_attempts": 0,
+  "ohlc_message": "",
   "chain_polls": 0,
-  "view_refreshes": 10,
+  "view_refreshes": 3,
   "last_chain": "",
-  "last_view": "09:44:32",
+  "last_view": "06:17:43",
   "last_oi_dominance": "WARMUP",
   "last_oi_alert_msg": "",
   "last_oi_alert_time": "",
@@ -31,6 +31,5 @@
   "rvol_signals_suppressed": 0,
   "rvol_signals_allowed": 0,
   "fast_window_chain_polls": 0,
-  "last_rvol_signal_counted_minute": "",
-  "fast_window_active": false
+  "last_rvol_signal_counted_minute": ""
 }
