@@ -10,12 +10,13 @@ import Story from "./components/Story";
 import Guide from "./components/Guide";
 import DeltaPanel from "./components/DeltaPanel";
 import AuctionPanel from "./components/AuctionPanel";
+import { AlertControls, AlertToasts, useRvolAlerts } from "./components/rvolAlerts";
 
 const TFS: TF[] = ["1m", "5m", "15m", "1h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "1h": 30, "1D": 60 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
-  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI · EMA 8"],
+  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI · EMA 8"], ["rvol", "Cumulative RVOL"],
 ];
 
 export default function App() {
@@ -24,7 +25,7 @@ export default function App() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [layers, setLayers] = useState<Layers>({ ob: true, fvg: true, liq: true, structure: true, swings: false, range: true, session: true, delta: true, deltaDetail: false, crt: true, auction: true, volume: true, oi: true });
+  const [layers, setLayers] = useState<Layers>({ ob: true, fvg: true, liq: true, structure: true, swings: false, range: true, session: true, delta: true, deltaDetail: false, crt: true, auction: true, volume: true, oi: true, rvol: true });
   const [bottom, setBottom] = useState<"chain" | "paper" | "delta" | "auction">("chain");
   const [chainTick, setChainTick] = useState(0);
   const [storyTick, setStoryTick] = useState(0);
@@ -36,6 +37,9 @@ export default function App() {
   const tfRef = useRef(tf);
   tfRef.current = tf;
   const lastChain = useRef(0);
+  const ra = useRvolAlerts();
+  const fireRef = useRef(ra.fire);
+  fireRef.current = ra.fire;
 
   const loadChart = useCallback(async (t: TF) => {
     const inst = instRef.current;
@@ -59,7 +63,10 @@ export default function App() {
       if (m.tf === "5m") { loadDash(); setStoryTick((x) => x + 1); }
     } else if (m.type === "chain") {
       if (Date.now() - lastChain.current > 5000) { lastChain.current = Date.now(); setChainTick((x) => x + 1); }
-    } else if (m.type === "alert" || m.type === "paper") { loadDash(); loadPaper(); }
+    } else if (m.type === "alert" || m.type === "paper") {
+      if (m.type === "alert" && m.alert?.grade === "rvol") fireRef.current(m.alert);
+      loadDash(); loadPaper();
+    }
     else if (m.type === "strikes") setStrikes(m.strikes);
   });
 
@@ -67,6 +74,21 @@ export default function App() {
   return (
     <div className="min-h-full flex flex-col">
       <Header q={q} live={live} status={dash?.status ?? null} />
+      <AlertToasts toasts={ra.toasts} dismiss={ra.dismiss} />
+      {(() => {
+        const rs = analysis?.volume?.rvol_state;
+        const C: Record<string, string> = { ACTIVE: "bg-bull-900/70 border-bull-400 text-bull-400", ABSENT: "bg-ink-850 border-slate-600 text-slate-400",
+          NORMAL: "bg-ink-850 border-ink-700 text-slate-300", UNKNOWN: "bg-ink-850 border-ink-700 text-slate-500" };
+        return (
+          <div className={`mx-3 mt-3 rounded-lg border px-3 py-1.5 text-[12px] flex flex-wrap items-center gap-x-3 gap-y-1 ${C[rs?.state ?? "UNKNOWN"]}`}>
+            <b className="tracking-wide">{rs?.state === "ACTIVE" ? "⚡ RVOL ACTIVE" : rs?.state === "ABSENT" ? "RVOL LOW" : rs?.state === "NORMAL" ? "RVOL NORMAL" : "RVOL"}</b>
+            {rs?.value != null && <span className="num text-base font-semibold">{rs.value.toFixed(2)}×</span>}
+            {rs?.trend && <span>{rs.trend === "BUILDING" ? "▲ building" : rs.trend === "FADING" ? "▼ fading" : "■ holding"}</span>}
+            <span className="text-slate-400">{rs?.text ?? "cumulative RVOL of the NIFTY future — loading"}</span>
+            <span className="ml-auto"><AlertControls prefs={ra.prefs} setPrefs={ra.setPrefs} enable={ra.enable} /></span>
+          </div>
+        );
+      })()}
       <main className="flex-1 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-3 p-3">
         <section className="flex flex-col gap-3 min-w-0">
           <div className="card flex flex-col h-[62vh] min-h-[420px]">

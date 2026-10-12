@@ -63,6 +63,23 @@ class Alerts:
         return sent
 
 
+async def notify_event(alerts_obj, e: Dict[str, Any], max_age_s: int = 600) -> Optional[Dict[str, Any]]:
+    """RVOL (and other context) events → the same alert log + live push + optional Telegram. Deduplicated by key,
+    and only FRESH events alert (a restart never replays the morning)."""
+    if now_epoch() - int(e["ts"]) > max_age_s or db.query("SELECT 1 FROM alerts WHERE key = ?", (e["key"],)):
+        return None
+    row = {"ts": int(now_epoch()), "key": e["key"], "tf": e.get("tf"), "kind": e["kind"], "side": e.get("dir"),
+           "grade": "rvol", "title": e["title"], "body": e["body"], "price": e.get("price"), "payload": json.dumps(e)}
+    db.execute("INSERT OR IGNORE INTO alerts (ts,key,tf,kind,side,grade,title,body,price,payload) "
+               "VALUES (:ts,:key,:tf,:kind,:side,:grade,:title,:body,:price,:payload)", row)
+    out = dict(row, payload=e)
+    await alerts_obj.broadcast({"type": "alert", "alert": out})
+    A = config.rules()["alerts"]
+    if A.get("telegram") and config.rule("rvol", "telegram", True):
+        await telegram(f"📊 {e['title']}\n{e['body']}")
+    return out
+
+
 async def telegram(text: str) -> bool:
     tok, chats = config.env("TELEGRAM_BOT_TOKEN"), config.env("TELEGRAM_CHAT_ID")
     if not tok or not chats:

@@ -179,6 +179,27 @@ def _build_oi_bn():
 OI_BN = _build_oi_bn()
 
 
+def fut_history(frm: float):
+    """Synthetic sessions before 7 Oct (weekdays from `frm`): a flat tape at ~0.7× the volume of the real days, so
+    8 Oct's sell-off shows up as cumulative RVOL > 1 — the baseline the RVOL tests need."""
+    out = []
+    t7 = int(datetime(2026, 10, 7, 9, 15, tzinfo=IST).timestamp())
+    rng = random.Random(5)
+    d = datetime.fromtimestamp(max(frm, t7 - 40 * 86400), IST).replace(hour=9, minute=15, second=0, microsecond=0)
+    while d.timestamp() < t7:
+        if d.weekday() < 5:
+            p = 22300.0
+            for m in range(375):
+                ts = int(d.timestamp()) + 60 * m
+                np_ = p + rng.gauss(0, 2.5)
+                c = {"ts": ts, "o": p, "h": max(p, np_) + 1, "l": min(p, np_) - 1, "c": np_}
+                c["v"] = fut_vol(35001, c) * 0.7
+                out.append(c)
+                p = np_
+        d += timedelta(days=1)
+    return out
+
+
 def fut_cum(sid: int, t: float) -> int:
     """Cumulative day volume up to t (the current minute pro-rata)."""
     d0 = datetime.fromtimestamp(t, IST).replace(hour=9, minute=15, second=0).timestamp()
@@ -240,6 +261,7 @@ async def intraday(req: Request):
         src = [{"ts": c["ts"], "o": c["o"] * BN + 180, "h": c["h"] * BN + 180, "l": c["l"] * BN + 180,
                 "c": c["c"] * BN + 180, "v": fut_vol(35001, c) * 0.4, "oi": OI_BN.get(c["ts"], 0)} for c in src]
     if body.get("exchangeSegment") == "NSE_FNO" and sid in FUTS:
+        src = [c for c in fut_history(frm) if c["ts"] + 60 <= now] + src      # quieter earlier sessions (RVOL baseline)
         src = [{"ts": c["ts"], "o": c["o"] + basis_at(sid, c["ts"]), "h": c["h"] + basis_at(sid, c["ts"]),
                 "l": c["l"] + basis_at(sid, c["ts"]), "c": c["c"] + basis_at(sid, c["ts"]), "v": fut_vol(sid, c)}
                for c in src]

@@ -363,7 +363,7 @@
     "max_candidates": 3,
     "max_basis_pct": 2.5,
     "rollover_days": 4,
-    "backfill_days": 7,
+    "backfill_days": 35,
     "candle_fetch_delay_s": 4,
     "resolve_every_s": 3600,
     "banknifty": true,
@@ -411,5 +411,20 @@
     "trend_minutes": 60,
     "trend_min_pts": 0.5,
     "delta_min_chg": 0.08
+  },
+  "rvol": {
+    "_note": "Cumulative RVOL of the NIFTY future: volume since 09:15 vs the average up to the same minute over the previous 20 / 5 sessions. Participation, never direction. Alerts go to the app (sound, voice, desktop notification) and Telegram if alerts.telegram is on.",
+    "active": 1.5,
+    "fade_below": 1.2,
+    "spike": 2.5,
+    "confirm_minutes": 3,
+    "trend_minutes": 15,
+    "trend_min_chg": 0.1,
+    "min_days_5": 3,
+    "min_days_20": 10,
+    "breakout_bar_rvol": 1.5,
+    "history_days": 40,
+    "alert_max_age_s": 600,
+    "telegram": true
   }
 }

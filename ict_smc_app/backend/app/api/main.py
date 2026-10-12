@@ -149,6 +149,20 @@ def dashboard():
     return _h().dashboard()
 
 
+@app.post("/api/alerts/test-rvol")
+async def test_rvol_alert():
+    """Sends a TEST RVOL alert through the real path: alert log → live push (sound / voice / desktop) → Telegram (if on)."""
+    from ..signals import alerts as _al
+    from ..timeutil import chart_time, hm, now_epoch
+    h = _h()
+    t = int(now_epoch())
+    e = {"kind": "RVOL_ACTIVATED", "ts": t, "value": 1.8, "time": chart_time(t), "at": hm(t), "key": f"RVOL|TEST|{t}",
+         "title": "TEST — RVOL ACTIVATED 1.80× (this is a test)",
+         "body": "If you hear a chime + voice and see a desktop notification (and Telegram, if enabled), RVOL alerts work."}
+    out = await _al.notify_event(h.alerts, e)
+    return {"sent": bool(out)}
+
+
 @app.get("/api/alerts")
 def alerts(grade: Optional[str] = None, limit: int = 60):
     return {"alerts": alerts_mod.recent(limit, grade)}

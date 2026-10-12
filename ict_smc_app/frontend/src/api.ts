@@ -36,6 +36,10 @@ export interface VolumeView {
   oi_surge_last?: { ts: number; surge_x: number | null } | null;
   banknifty?: { available: boolean; message?: string; contract?: string; summary?: { dominant: string; bias: string | null; net_doi: number; bars: number } | null; last_build?: string | null; oi?: number; recent?: { time: number; build: string | null; doi: number | null }[] };
   oi_compare?: { verdict: string; text: string; nifty: string; banknifty: string } | null;
+  rvol_state?: { state: "ACTIVE" | "NORMAL" | "ABSENT" | "UNKNOWN"; trend?: string | null; value?: number | null; c20?: number | null; c5?: number | null; base?: string; text: string; at?: string };
+  crvol?: { time: number; c20: number | null; c5: number | null }[];
+  rvol_events?: { kind: string; time: number; at: string; title: string; value: number }[];
+  rvol_days?: number;
   strike_greeks?: { side: string; label: string; delta: number | null; iv: number | null; delta_trend: { from: number; to: number; word: string } | null }[];
   vwap?: VolPoint[]; bands?: number[]; avwaps?: { label: string; anchor: number; dir: string; points: VolPoint[] }[];
   today?: VolProfile | null; prev?: VolProfile | null; naked?: { day: string; price: number }[];
@@ -45,7 +49,7 @@ export interface VolumeView {
 export interface Analysis { volume?: VolumeView; auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
 export interface Quote { spot: number | null; prev_close: number | null; chg: number | null; chg_pct: number | null; vix: number | null; vix_chg: number | null; source: string; market_open: boolean; ts: number }
 export interface Signal { ctx?: { tp1?: number; rr1?: number; pair?: string; aplus_tbs?: boolean; [k: string]: unknown }; key: string; setup: "A" | "B" | "C" | "D"; name: string; tf: string; side: "long" | "short"; status: "TRADE" | "SKIP" | "INFO"; time: string; entry: number | null; sl: number | null; tp: number | null; risk: number | null; rr: number | null; target_src: string; reasons: string[]; story: string[]; confidence?: number | null; confluence?: string[]; confidence_parts?: { structure: number; options_context: number | null; flow: number; flow_source: string } | null }
-export interface AlertRow { id: number; ts: number; time: string; grade: "trade" | "skip" | "info"; kind: string; side: string; tf: string; title: string; body: string; price: number | null }
+export interface AlertRow { id: number; ts: number; time: string; grade: "trade" | "skip" | "info" | "rvol"; kind: string; side: string; tf: string; title: string; body: string; price: number | null }
 export interface Side { ltp: number; chg: number; oi: number; oi_chg: number; oi_chg_pct: number | null; iv: number; vol: number; delta: number; gamma: number; theta: number; vega: number; bid: number; ask: number }
 export interface ChainRow { strike: number; ce: Side; pe: Side }
 export interface Build { strike: number; side: "CE" | "PE"; oi_chg: number; chg: number; ltp: number; kind: string }

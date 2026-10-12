@@ -37,6 +37,7 @@ from ..market import activity as act_mod
 from ..market import futures as fut_mod
 from ..delta.recorder import FutRecorder
 from ..engine import oi as oi_mod
+from ..engine import rvol as rvol_mod
 from ..market import ivtrack as iv_mod
 from ..engine import registry
 from ..engine.analyze import Analysis, analyze, to_json
@@ -277,6 +278,10 @@ class Hub:
         await self.broadcast({"type": "candle", "tf": "1m", "candle": _cj(c)})
         if self.option_instruments():
             asyncio.create_task(self._options_after_close())
+        try:
+            await self.rvol_alerts()
+        except Exception:                                    # noqa: BLE001 — alerts must never break the loop
+            log.exception("rvol alerts")
 
     async def on_chain(self, expiry: str, ch: Dict[str, Any]) -> None:
         if self.chain.expiries and expiry == self.chain.expiries[0]:
@@ -646,14 +651,26 @@ class Hub:
                            "oi_last": oib.get(int(b.ts[-1])), "oi_summary": ois,
                            "oi_line": [dict(x, time=chart_time(x["ts"])) for x in oil[-300:]],
                            "oi_surge_last": next((x for x in reversed(oil) if x["surge"]), None),
-                           "banknifty": bnv, "oi_compare": cmp, **iv}
+                           "banknifty": bnv, "oi_compare": cmp, **iv, **self.rvol_view(tf, an, rv)}
             self.volume[tf] = dict(j["volume"], profiles={d: profiles[d] for d in sorted(profiles)[-3:]})
             return {"profiles": profiles, "rvol": rv, "act": act, "oi": oib, "iv_trend": iv.get("iv_trend"),
+                    "crvol": j["volume"].get("rvol_state"),
                     "oi_line": {x["ts"]: x for x in oil}, "oi_compare": cmp}
         except Exception as e:                               # noqa: BLE001 — never lose the chart over volume
             log.exception("volume %s failed", tf)
             j["volume"] = {"available": False, "message": f"volume error: {e}"}
             return {}
+
+    def rvol_view(self, tf: str, an, rv: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
+        crv = self.rvol_now()
+        if not crv.get("available"):
+            return {"rvol_state": {"state": "UNKNOWN", "text": crv.get("message", "no data")}, "crvol": [], "rvol_events": []}
+        ts = [int(t) for t in an.bars.ts[-300:]]
+        pb = rvol_mod.per_bar(crv, tf, ts)
+        evs = rvol_mod.events(crv, rv, self.breakouts(an), tf)
+        return {"rvol_state": rvol_mod.state(crv), "rvol_days": crv.get("days"), "rvol_baseline": crv.get("baseline"),
+                "crvol": [{"time": chart_time(t), "c20": p.get("c20"), "c5": p.get("c5")} for t, p in sorted(pb.items())],
+                "rvol_events": [{k: e[k] for k in ("kind", "time", "at", "title", "value")} for e in evs]}
 
     def bn_view(self, tf: str, an) -> Dict[str, Any]:
         """BANKNIFTY future on the same timeframe: build-up per candle + summary over the same window."""
@@ -675,6 +692,37 @@ class Hub:
                   for t in bb.ts[-12:] if int(t) in pb and "build" in pb[int(t)]]
         return {"available": True, "contract": self.bn_status, "summary": summ, "last_build": last.get("build"),
                 "oi": last.get("oi"), "recent": recent, "close": float(bb.c[-1])}
+
+    # ── cumulative RVOL (NIFTY future) ────────────────────────────────────
+    def rvol_now(self) -> Dict[str, Any]:
+        key = db.last_candle_ts(fut_mod.SEC)
+        if getattr(self, "_crv_key", None) != key:
+            self._crv_key = key
+            self._crv = rvol_mod.cumulative(fut_mod.rows_1m(int(config.rule("rvol", "history_days", 40)))) if key else \
+                {"available": False, "message": f"NIFTY future: {self.fut_status}"}
+        return self._crv
+
+    def breakouts(self, an) -> List[Dict[str, Any]]:
+        """BOS / MSS of this timeframe + CRT TBS candles — the 'breakouts' RVOL is asked to confirm."""
+        out = [{"ts": int(e.ts), "kind": "MSS" if e.is_mss else "BOS", "dir": e.dir,
+                "text": f"{'MSS' if e.is_mss else 'BOS'} {e.dir} through {e.level:,.1f}"} for e in an.events]
+        step = TF_SECONDS[an.tf]
+        for r in self.crt.values():
+            for ev in r.get("events", []):
+                if ev.get("kind") == "CRT_TBS" and ev.get("ts"):
+                    out.append({"ts": bucket_start(int(ev["ts"]), an.tf), "kind": "CRT TBS", "dir": ev.get("dir", ""),
+                                "text": f"CRT TBS ({r.get('name', '')})"})
+        return [b for b in out if b["ts"] + step <= int(an.bars.ts[-1]) + step]
+
+    async def rvol_alerts(self) -> None:
+        an = self.analyses.get(self.primary)
+        crv = self.rvol_now()
+        if an is None or not crv.get("available"):
+            return
+        evs = rvol_mod.events(crv, self.rvol_tf(self.primary) if self.mapped_1m() else {}, self.breakouts(an), self.primary)
+        for e in evs:
+            e["tf"] = self.primary
+            await alerts_mod.notify_event(self.alerts, e, int(config.rule("rvol", "alert_max_age_s", 600)))
 
     def iv_view(self, tf: str, an) -> Dict[str, Any]:
         """ATM IV line (one point per candle, its close) + trend, and the selected strikes' delta drift. Live only."""
@@ -856,6 +904,9 @@ class Hub:
             os_ = v.get("oi_summary") or {}
             if os_.get("dominant") and os_["dominant"] != "flat":
                 bits.append(f"futures: {os_['dominant']} over the last {os_['bars']} candles (net OI {os_['net_doi']:+,})")
+            rs = v.get("rvol_state") or {}
+            if rs.get("value") is not None:
+                bits.insert(0, rs["text"])
             sl = v.get("oi_surge_last")
             if sl and p is not None and sl["ts"] >= int(p.bars.ts[-1]) - 3 * TF_SECONDS[self.primary]:
                 bits.append(f"OI SURGE at {hm(sl['ts'])} ({sl['surge_x']}× normal ΔOI, OI above its 8-EMA): big move building")

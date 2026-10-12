@@ -8,7 +8,7 @@ import type { Analysis, Candle, TF } from "../api";
 import { bucket } from "../api";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -27,6 +27,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const volS = useRef<ISeriesApi<"Histogram"> | null>(null);
   const vwapS = useRef<ISeriesApi<"Line">[]>([]);
   const ivS = useRef<ISeriesApi<"Line"> | null>(null);
+  const rvS = useRef<{ h: ISeriesApi<"Histogram">; l: ISeriesApi<"Line"> } | null>(null);
   const oiS = useRef<{ oi: ISeriesApi<"Line">; ema: ISeriesApi<"Line">; doi: ISeriesApi<"Histogram"> } | null>(null);          // [vwap, +1σ, −1σ, +2σ, −2σ, avwap1, avwap2]
   const last = useRef<Candle | null>(null);
 
@@ -251,6 +252,14 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           color: acc ? "#38bdf8" : rej ? "#fb923c" : "#94a3b8", text: m.text, size: acc ? 0.9 : 0.7 });
       }
     }
+    if (a && layers.rvol) {
+      const RC: Record<string, string> = { RVOL_ACTIVATED: "#22c55e", BREAKOUT_WITH_RVOL: "#22c55e", RVOL_SPIKE: "#e8c35a", RVOL_FADING: "#94a3b8", BREAKOUT_NO_RVOL: "#ef4444" };
+      const RT: Record<string, string> = { RVOL_ACTIVATED: "RVOL▲", BREAKOUT_WITH_RVOL: "BO✓vol", RVOL_SPIKE: "RVOL⚡", RVOL_FADING: "RVOL▼", BREAKOUT_NO_RVOL: "BO✗vol" };
+      for (const e of a.volume?.rvol_events ?? []) {
+        ms.push({ time: bucket(e.time, tf) as UTCTimestamp, position: "aboveBar", shape: e.kind === "BREAKOUT_NO_RVOL" ? "arrowDown" : "circle",
+          color: RC[e.kind] ?? "#e8c35a", text: `${RT[e.kind] ?? e.kind} ${e.value.toFixed(1)}×`, size: 0.7 });
+      }
+    }
     if (a && layers.oi) {
       for (const x of a.volume?.oi_line ?? []) {
         if (x.surge) ms.push({ time: x.time as UTCTimestamp, position: "aboveBar", shape: "square", color: "#f59e0b", text: `OI⚡${x.surge_x ?? ""}×`, size: 0.6 });
@@ -306,6 +315,25 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       oiS.current.ema.setData(ol.map((x) => ({ time: x.time as UTCTimestamp, value: x.ema })));
       oiS.current.doi.setData(ol.filter((x) => x.doi != null).map((x) => ({ time: x.time as UTCTimestamp, value: x.doi as number,
         color: x.surge ? "#f59e0b" : (BC[x.build ?? ""] ?? "rgba(148,163,184,0.5)") })));
+    }
+    // cumulative RVOL pane: histogram = 20-day cRVOL (5-day if 20 sessions aren't stored yet), white line = 5-day.
+    // Lines at 1.0 (a normal day) and 1.5 (in play).
+    const cr = a && layers.rvol ? (a.volume?.crvol ?? []).filter((p) => (p.c20 ?? p.c5) != null) : [];
+    if (ch && cr.length && !rvS.current) {
+      const idx = oiS.current ? 3 : 1;
+      const h = ch.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: true, title: "cRVOL", base: 0 }, idx);
+      const l = ch.addSeries(LineSeries, { color: "#f1f5f9", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: "5d" }, idx);
+      h.createPriceLine({ price: 1, color: "rgba(148,163,184,0.7)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "normal" });
+      h.createPriceLine({ price: 1.5, color: "rgba(34,197,94,0.8)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "in play" });
+      try { ch.panes()[idx]?.setStretchFactor(1.2); } catch { /* older lib */ }
+      rvS.current = { h, l };
+    } else if (ch && !cr.length && rvS.current) {
+      ch.removeSeries(rvS.current.h); ch.removeSeries(rvS.current.l); rvS.current = null;
+    }
+    if (rvS.current && cr.length) {
+      rvS.current.h.setData(cr.map((p) => { const v = (p.c20 ?? p.c5) as number; return { time: p.time as UTCTimestamp, value: v,
+        color: v >= 2.5 ? "#e8c35a" : v >= 1.5 ? "#22c55e" : v >= 1 ? "rgba(45,212,191,0.6)" : "rgba(100,116,139,0.6)" }; }));
+      rvS.current.l.setData(cr.filter((p) => p.c5 != null && p.c20 != null).map((p) => ({ time: p.time as UTCTimestamp, value: p.c5 as number })));
     }
     zz.current.setData(a && layers.swings ? dedupe(a.zigzag).map((p) => ({ time: p.time as UTCTimestamp, value: p.price })) : []);
   }, [analysis, layers, candles]);

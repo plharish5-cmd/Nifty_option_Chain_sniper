@@ -136,7 +136,7 @@ export function Alerts({ list }: { list: AlertRow[] }) {
       {list.map((a) => (
         <li key={a.id} className="py-1.5 flex gap-2">
           <span className="text-slate-500 num shrink-0">{a.time}</span>
-          <span className={a.grade === "trade" ? "text-gold-400 font-semibold" : a.grade === "skip" ? "text-slate-400" : "text-slate-300"}>{a.title}</span>
+          <span className={a.grade === "trade" ? "text-gold-400 font-semibold" : a.grade === "rvol" ? "text-emerald-300" : a.grade === "skip" ? "text-slate-400" : "text-slate-300"}>{a.title}</span>
         </li>
       ))}
     </ul>

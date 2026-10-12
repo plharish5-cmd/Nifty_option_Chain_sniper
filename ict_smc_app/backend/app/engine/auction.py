@@ -269,6 +269,10 @@ def read(an, res: Dict[str, Any], delta_bars: Optional[Dict[int, float]], delta_
     ob = (vol.get("oi") or {}).get(int(b.ts[i])) or {}
     if ob.get("build") and ob["build"] != "flat":
         parts.append(f"futures {ob['build']} (OI {ob.get('doi', 0):+,})")
+    cr = vol.get("crvol") or {}
+    if cr.get("value") is not None:
+        parts.insert(0, f"cumulative RVOL {cr['value']:.2f}× ({cr['base']}, {cr['trend'].lower()}) — "
+                        + ("NIFTY in play" if cr["state"] == "ACTIVE" else "below a normal day" if cr["state"] == "ABSENT" else "normal"))
     ol = (vol.get("oi_line") or {}).get(int(b.ts[i])) or {}
     if ol.get("surge"):
         parts.append(f"OI SURGE {ol.get('surge_x')}× (OI above its 8-EMA) — big move building, direction from structure")

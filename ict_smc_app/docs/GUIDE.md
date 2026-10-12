@@ -665,3 +665,17 @@ them: Data APIs 7,000 calls/day · option chain 1 per 3 s · quotes 1/s.
   table `fut_oi_sym`. Build-up on the same timeframe; **aligned** (same bias) = broad move, **diverging** = narrow
   move, more likely to fail. Auction tab, effort line, narrative.
 * Same rules in 🧪 Options Lab → "📈 Futures OI · EMA 8" (`futures_oi_panel.py`, OC folder).
+
+### 12.10 Cumulative RVOL + alerts (added 13 Oct 2026)
+`engine/rvol.py`. cRVOL(t) = NIFTY-future volume from 09:15 to minute t ÷ the average volume to the same minute over
+the previous 20 sessions (5-session line too). Time-matched, so the busy 09:15 open never inflates it; earlier
+sessions only → no look-ahead. Futures backfill raised to 35 calendar days so the 20-day baseline exists on day one.
+* States: ACTIVE ≥ `rvol.active` (1.5) · NORMAL · ABSENT < 1.0; trend over 15 min: building / holding / fading.
+* Events (once per session, fresh only — a restart never replays the morning): RVOL_ACTIVATED (holds 3 min),
+  RVOL_SPIKE (a candle ≥ 2.5× its slot), RVOL_FADING (< 1.2 after active), BREAKOUT_NO_RVOL (BOS / MSS / CRT TBS while
+  cRVOL < 1.0), BREAKOUT_WITH_RVOL (cRVOL ≥ 1.5 and the candle ≥ 1.5×). Checked every minute.
+* Alerts: alerts log (grade `rvol`) + live push → browser chime, voice, desktop notification, toast, tab-title flash,
+  phone vibration; Telegram when `alerts.telegram` and `rvol.telegram`. `POST /api/alerts/test-rvol` = test button.
+* Desktop notifications need a "secure" page: they work at http://localhost:8600 / 127.0.0.1 on the laptop; on the
+  phone over Tailscale (plain http) the browser blocks them — sound, voice, toast and Telegram still work there.
+* Display / context only: no trigger, zone, signal, paper trade or scorecard change.
