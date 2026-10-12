@@ -96,3 +96,16 @@ def test_alert_is_fresh_only_and_sent_once():
     assert asyncio.run(al.notify_event(A(), e)) is None          # never twice
     assert asyncio.run(al.notify_event(A(), old)) is None        # a restart never replays the morning
     assert len(sent) == 1 and sent[0]["alert"]["grade"] == "rvol"
+
+
+def test_rollover_keeps_old_history():
+    from app import db
+    from app.market import futures
+    sec = "FUT_T"
+    db.execute("DELETE FROM kv WHERE k = ?", (f"fut_sid_{sec}",))
+    db.execute("DELETE FROM candles_1m WHERE sec_id = ?", (sec,))
+    assert futures.history_days(sec, "35001", 35)[0] == 35          # first ever run: full history
+    db.upsert_candles(sec, [{"ts": D0, "o": 1, "h": 1, "l": 1, "c": 1, "v": 10}])
+    assert futures.history_days(sec, "35001", 35)[0] == 35          # same contract after a restart: full
+    days, note = futures.history_days(sec, "35002", 35)              # expiry rollover
+    assert days == 1 and "rollover" in note

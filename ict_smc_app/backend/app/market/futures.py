@@ -164,6 +164,19 @@ async def refresh(rest, sid: str, days: int = 1, sec: str = SEC) -> int:
     return len(rows)
 
 
+def history_days(sec: str, sid: str, full_days: int) -> Tuple[int, str]:
+    """How many days of candles to download for contract `sid` stored under `sec`.
+    Same contract as last time (or first ever run) → the full history. A NEW contract (expiry rollover) while history
+    of the old one is stored → today only: the new contract's earlier weeks were the thin BACK month, and writing them
+    over the old history would make cumulative RVOL read 5–10× 'in play' for weeks after every rollover."""
+    last = db.kv_get(f"fut_sid_{sec}")
+    have = db.last_candle_ts(sec)
+    db.kv_set(f"fut_sid_{sec}", str(sid))
+    if last and str(last) != str(sid) and have:
+        return 1, f"rollover {last} → {sid}: kept the old contract's history, new contract from today"
+    return full_days, ""
+
+
 async def index_close(rest, security_id: str) -> Optional[float]:
     """Last close of an index (e.g. BANKNIFTY = IDX_I 25) — used once, to price-check its future."""
     to = now_ist()

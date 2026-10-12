@@ -181,8 +181,12 @@ class Hub:
         self.fut = pick
         self.fut_status = f"{pick['symbol']} (id {pick['sid']}" + (f", expiry {pick['expiry']})" if pick.get("expiry") else ")")
         try:
-            n = await fut_mod.refresh(self.rest, pick["sid"], int(config.rule("futures", "backfill_days", 7)) if changed else 1)
-            self.fut_status += f" · {n} one-minute candles"
+            days, note = (fut_mod.history_days(fut_mod.SEC, pick["sid"], int(config.rule("futures", "backfill_days", 35)))
+                          if changed else (1, ""))
+            n = await fut_mod.refresh(self.rest, pick["sid"], days)
+            self.fut_status += f" · {n} one-minute candles" + (f" · {note}" if note else "")
+            if note:
+                log.warning("NIFTY future %s", note)
         except DhanError as e:
             self.fut_status += f" · candles failed: {str(e)[:100]}"
         if changed:
@@ -207,8 +211,9 @@ class Hub:
         self.bn = pick
         self.bn_status = f"{pick['symbol']} (id {pick['sid']})"
         try:
-            n = await fut_mod.refresh(self.rest, pick["sid"], int(config.rule("futures", "backfill_days", 7)) if changed else 1,
-                                      fut_mod.BN_SEC)
+            days, _ = (fut_mod.history_days(fut_mod.BN_SEC, pick["sid"], int(config.rule("futures", "backfill_days", 35)))
+                       if changed else (1, ""))
+            n = await fut_mod.refresh(self.rest, pick["sid"], days, fut_mod.BN_SEC)
             self.bn_status += f" · {n} one-minute candles"
         except DhanError as e:
             self.bn_status += f" · candles failed: {str(e)[:100]}"
