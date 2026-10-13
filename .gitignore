@@ -72,3 +72,22 @@ ict_smc_app/backend/data_replay/
 ict_smc_app/backend/data/*.sqlite3*
 ict_smc_app/backend/tests/.data/
 data/participant_sheet/update.log
+
+# --- never commit: secrets, data, environments, builds ---
+.env
+*.env
+!tools/fake.env
+data/
+**/data/
+*.parquet
+*.db
+*.sqlite*
+*.log
+.venv/
+**/.venv/
+**/node_modules/
+__pycache__/
+*.bak_*
+*.bak
+frontend/src.bak_*/
+frontend/dist.bak_*/

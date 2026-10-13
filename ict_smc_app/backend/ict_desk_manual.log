@@ -1067,3 +1067,19 @@ INFO:     127.0.0.1:59130 - "GET /api/dashboard HTTP/1.1" 200 OK
 INFO:     127.0.0.1:38514 - "GET /api/dashboard HTTP/1.1" 200 OK
 2026-10-13 21:10:23,601 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
 INFO:     127.0.0.1:50758 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50492 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 21:11:23,897 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:55482 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51196 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 21:12:24,475 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:53324 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52950 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 21:13:24,959 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:47724 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54508 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 21:14:25,440 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:55198 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33050 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 21:15:25,772 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:36770 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "GET /api/dashboard HTTP/1.1" 200 OK
