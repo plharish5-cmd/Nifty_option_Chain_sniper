@@ -713,7 +713,7 @@ def compute_writer_dominance(
                 structure_state = "RANGE"
                 floor_strike = p_edge
                 ceil_strike = c_edge
-                structure_line = f"  🔒 STRUCTURE: RANGE {int(round(floor_strike)):,}–{int(round(ceil_strike)):,} (edges defended both sides)"
+                structure_line = _range_line(floor_strike, ceil_strike, latest_spot, step)
                 structure_summary = f"RANGE {int(round(floor_strike)):,}–{int(round(ceil_strike)):,}"
 
         elif agg_ratio >= trending_threshold:
@@ -741,7 +741,7 @@ def compute_writer_dominance(
                     structure_state = "RANGE"
                     floor_strike = min_s
                     ceil_strike = max_s
-                    structure_line = f"  🔒 STRUCTURE: RANGE {int(round(floor_strike)):,}–{int(round(ceil_strike)):,} (edges defended both sides)"
+                    structure_line = _range_line(floor_strike, ceil_strike, latest_spot, step)
                     structure_summary = f"RANGE {int(round(floor_strike)):,}–{int(round(ceil_strike)):,}"
                 else:
                     structure_state = "COMPRESSION"
@@ -1235,6 +1235,119 @@ def _extract_snap_atm_iv(item: Tuple[str, Path]) -> Optional[Tuple[str, float]]:
         return None
 
 
+# ── BRFIX (13-Oct log review) ─────────────────────────────────────────────
+# Tunables live under "briefing_fixes" in strategy1_rules.json (all optional).
+_BRFIX_STATE: Dict[Any, Any] = {}
+
+
+def _brfix_cfg(rules) -> dict:
+    try:
+        return dict((rules or {}).get("briefing_fixes", {}) or {})
+    except Exception:
+        return {}
+
+
+def _rvol_slope(target_date, t, rules) -> dict:
+    """BRFIX-4: RVOL rising over the last N minutes and above a floor."""
+    cfg = _brfix_cfg(rules)
+    look = int(cfg.get("rvol_slope_minutes", 15))
+    floor = float(cfg.get("rvol_slope_floor", 1.10))
+    gain = float(cfg.get("rvol_slope_min_gain", 0.05))
+    try:
+        import rvol_gate
+        base = datetime.combine(target_date, t)
+        vals = []
+        for m in (look, (look * 2) // 3, look // 3, 0):
+            v = rvol_gate.compute_rvol(target_date, (base - timedelta(minutes=m)).time())
+            if v is None:
+                return {"value": None, "start": None, "rising": None}
+            vals.append(float(v))
+        steady = all(b >= a - 0.01 for a, b in zip(vals, vals[1:]))
+        rising = steady and (vals[-1] - vals[0]) >= gain and vals[-1] >= floor
+        return {"value": vals[-1], "start": vals[0], "rising": bool(rising)}
+    except Exception:
+        return {"value": None, "start": None, "rising": None}
+
+
+def _expiry_trend(series, latest_ts, rules, rvol_rising) -> Optional[dict]:
+    """BRFIX-1 (v2): expiry-day trend after 14:00, with hysteresis.
+    A trend STARTS at any point since 14:00 where spot moved >= N pts over the window with the opposite writers
+    covering (UP: ATM dCE falling; DOWN: ATM dPE falling). It STAYS on until price gives back > R pts from the
+    extreme made since it started. Stateless (recomputed from the series) so replays and restarts agree."""
+    cfg = _brfix_cfg(rules)
+    if not bool(cfg.get("expiry_trend_enabled", True)) or not series:
+        return None
+    look = int(cfg.get("expiry_trend_minutes", 30))
+    pts = float(cfg.get("expiry_trend_points", 35))
+    give = float(cfg.get("expiry_trend_retrace_points", 35))
+    if rvol_rising is False and bool(cfg.get("expiry_trend_needs_rvol", False)):
+        return None
+    start_t = datetime.combine(latest_ts.date(), dtime(14, 0))
+    pts_ = [p for p in series if p.timestamp <= latest_ts]
+    for idx, p in enumerate(pts_):
+        if p.timestamp < start_t:
+            continue
+        ref = None
+        for q in reversed(pts_[:idx]):
+            if q.timestamp <= p.timestamp - timedelta(minutes=look):
+                ref = q
+                break
+        if ref is None:
+            continue
+        mv = float(p.spot) - float(ref.spot)
+        d = None
+        # writers on the right side: UP = calls covering OR puts being written (the ATM strike changes as price
+        # runs, so either leg can carry the evidence); DOWN mirrors it
+        if mv >= pts and (float(p.ce_chg_oi) < float(ref.ce_chg_oi) or float(p.pe_chg_oi) > float(ref.pe_chg_oi)):
+            d = "UP"
+        elif mv <= -pts and (float(p.pe_chg_oi) < float(ref.pe_chg_oi) or float(p.ce_chg_oi) > float(ref.ce_chg_oi)):
+            d = "DOWN"
+        if d is None:
+            continue
+        after = [float(x.spot) for x in pts_[idx:]]
+        now = after[-1]
+        if d == "UP" and now >= max(after) - give:
+            return {"dir": "UP", "move": now - float(ref.spot), "mins": int((latest_ts - ref.timestamp).total_seconds() // 60),
+                    "why": "calls covering", "since": p.timestamp.strftime("%H:%M")}
+        if d == "DOWN" and now <= min(after) + give:
+            return {"dir": "DOWN", "move": now - float(ref.spot), "mins": int((latest_ts - ref.timestamp).total_seconds() // 60),
+                    "why": "puts unwinding", "since": p.timestamp.strftime("%H:%M")}
+    return None
+
+
+def _expiry_trend_cached(latest_ts) -> Optional[dict]:
+    st = _BRFIX_STATE.get("expiry_trend")
+    if st and st.get("ts") == latest_ts:
+        return st.get("trend")
+    return None
+
+
+def _range_line(floor_strike, ceil_strike, spot, step) -> str:
+    """BRFIX-5: say 'defended' only while spot is inside the range."""
+    f, c = int(round(floor_strike)), int(round(ceil_strike))
+    near = float(step) * 0.3
+    if spot > ceil_strike + float(step) * 0.1:
+        return f"  🔒 STRUCTURE: RANGE {f:,}–{c:,} — CEILING {c:,} BROKEN (spot {spot:,.0f} above, not defended)"
+    if spot < floor_strike - float(step) * 0.1:
+        return f"  🔒 STRUCTURE: RANGE {f:,}–{c:,} — FLOOR {f:,} BROKEN (spot {spot:,.0f} below, not defended)"
+    if ceil_strike - spot <= near:
+        return f"  🔒 STRUCTURE: RANGE {f:,}–{c:,} (testing ceiling {c:,})"
+    if spot - floor_strike <= near:
+        return f"  🔒 STRUCTURE: RANGE {f:,}–{c:,} (testing floor {f:,})"
+    return f"  🔒 STRUCTURE: RANGE {f:,}–{c:,} (edges defended both sides)"
+
+
+def _is_expiry_for(target_date) -> bool:
+    try:
+        folder = config.SNAPSHOT_DIR / target_date.strftime("%Y-%m-%d")
+        metas = sorted(folder.glob("*.meta.json"))
+        if not metas:
+            return False
+        return parse_expiry_date(json.loads(metas[-1].read_text()).get("expiry")) == target_date
+    except Exception:
+        return False
+
+
 def compute_iv_context(
     latest_df: pd.DataFrame,
     latest_spot: float,
@@ -1518,6 +1631,10 @@ def compute_pretrade_checklist(
         b3_pass = False
         b3_status = "N/A"
         b3_issue = "IV data unavailable"
+    elif bool(_brfix_cfg(rules).get("iv_neutral_on_expiry", True)) and _is_expiry_for(target_date):
+        b3_pass = True
+        b3_status = "HOLD ⏸"
+        b3_issue = None   # BRFIX-5: IV percentile is meaningless on expiry day
     else:
         b3_pass = (iv_percentile < exp_thresh)
         b3_status = "PASS ✅" if b3_pass else "FAIL ✗"
@@ -1607,6 +1724,10 @@ def compute_pretrade_checklist(
                 b6_pass = False
                 b6_status = "N/A"
                 b6_issue = "RVOL data unavailable"
+            elif rvol_val >= dead_thresh and _rvol_slope(target_date, chk_time, rules).get("rising"):
+                b6_pass = True
+                b6_status = "RISING ↗"   # BRFIX-4: building participation counts
+                b6_issue = None
             elif rvol_val < trend_thresh:
                 b6_pass = False
                 b6_status = "FAIL ✗"
@@ -3108,6 +3229,8 @@ def build_telegram_briefing(
         bias_word = "PRE-MARKET"
     elif is_data_gap:
         bias_word = "INVALID (data gap)"
+    elif _expiry_trend_cached(latest_ts):
+        bias_word = "BULLISH ▲ (expiry SC)" if _expiry_trend_cached(latest_ts)["dir"] == "UP" else "BEARISH ▼ (expiry unwind)"
     elif is_expiry_day and latest_ts.time() >= dtime(14, 0):
         bias_word = "EXPIRY UNWIND ⚠️"
     elif is_eod_no_trade or eff_dom == "EOD_UNWIND":
@@ -3359,6 +3482,10 @@ def build_telegram_briefing(
         line8 = "➡️ PRE-MARKET — no signal (stale spot, no RVOL/GEX)"
     elif is_stale:
         line8 = f"➡️ NO DATA since {latest_ts.strftime('%H:%M')} — cannot read market"
+    elif _expiry_trend_cached(latest_ts):
+        _d = _expiry_trend_cached(latest_ts)
+        line8 = ("➡️ EXPIRY SHORT-COVERING TREND ▲ — no shorts; with-trend CE only, small" if _d["dir"] == "UP"
+                 else "➡️ EXPIRY PUT-UNWIND TREND ▼ — no longs; with-trend PE only, small")
     elif is_expiry_day and latest_ts.time() >= dtime(14, 0):
         line8 = "➡️ EXPIRY UNWIND — OI data unreliable"
     elif is_eod_no_trade:
@@ -4043,6 +4170,32 @@ def build_briefing(target_date: date, target_time: Optional[dtime] = None, appen
             else:
                 eff_dom = "BALANCED"
 
+        # BRFIX-1: expiry trend detection (only after 14:00 on expiry day)
+        _xt = None
+        if is_expiry_day and latest_ts.time() >= dtime(14, 0):
+            _rv = _rvol_slope(target_date, latest_ts.time(), rules)
+            _xt = _expiry_trend(tl.series, latest_ts, rules, _rv.get("rising"))
+        _BRFIX_STATE["expiry_trend"] = {"ts": latest_ts, "trend": _xt}
+
+        # BRFIX-2: bias persistence — a side held for K points keeps its bias through a Flat PCR
+        # or a single BALANCED blip; it drops only when PCR turns against it.
+        _k = int(_brfix_cfg(rules).get("bias_persist_points", 3))
+        _dmin = float(rules.get("dominance_min_contracts", 50000.0))
+        _doms = [("PE_DOMINANT" if p.spread >= _dmin else "CE_DOMINANT" if p.spread <= -_dmin else p.dominance)
+                 if p.dominance in ("WARMUP", "EXPIRY_DAY") else p.dominance for p in tl.series]   # warm-up still has a side
+        _hold_pe = len(_doms) >= _k and all(d == "PE_DOMINANT" for d in _doms[-_k:])
+        _hold_ce = len(_doms) >= _k and all(d == "CE_DOMINANT" for d in _doms[-_k:])
+        _sp15 = None
+        for _p in reversed(tl.series):
+            if _p.timestamp <= latest_ts - timedelta(minutes=15):
+                _sp15 = float(_p.spread)
+                break
+        _shrink = float(_brfix_cfg(rules).get("bias_drop_spread_shrink", 0.25))
+        _pe_crack = _sp15 is not None and _sp15 > 0 and latest_pt.spread < (1 - _shrink) * _sp15
+        _ce_crack = _sp15 is not None and _sp15 < 0 and latest_pt.spread > (1 - _shrink) * _sp15
+        _blip_pe = len(_doms) > _k and all(d == "PE_DOMINANT" for d in _doms[-_k - 1:-1]) and latest_pt.spread > 0
+        _blip_ce = len(_doms) > _k and all(d == "CE_DOMINANT" for d in _doms[-_k - 1:-1]) and latest_pt.spread < 0
+
         # Expiry Day Unwind Override after 14:00
         if is_pre_market:
             eff_dom = "PRE_MARKET"
@@ -4052,6 +4205,14 @@ def build_briefing(target_date: date, target_time: Optional[dtime] = None, appen
             eff_dom = "INVALID"
             regime_str = "DATA GAP — signals invalid"
             bias_str = "INVALID (data gap)"
+        elif _xt is not None:
+            eff_dom = "EXPIRY TREND"
+            if _xt["dir"] == "UP":
+                regime_str = f"EXPIRY SHORT-COVERING TREND ▲ (+{_xt['move']:.0f} pts/{_xt['mins']}m, {_xt['why']})"
+                bias_str = "BULLISH  ▲ (expiry short-covering)"
+            else:
+                regime_str = f"EXPIRY UNWIND TREND ▼ ({_xt['move']:.0f} pts/{_xt['mins']}m, {_xt['why']})"
+                bias_str = "BEARISH  ▼ (expiry put unwinding)"
         elif is_expiry_day and latest_ts.time() >= dtime(14, 0):
             eff_dom = "EXPIRY UNWIND"
             regime_str = "EXPIRY UNWIND — OI data unreliable"
@@ -4060,10 +4221,14 @@ def build_briefing(target_date: date, target_time: Optional[dtime] = None, appen
             eff_dom = "EOD_UNWIND"
             regime_str = f"EOD_UNWIND ({duration_mins} min)"
             bias_str = "EOD UNWIND ⚠️"
-        elif eff_dom == "PE_DOMINANT" and "Rising" in pcr_trend:
+        elif eff_dom == "PE_DOMINANT" and ("Rising" in pcr_trend or (_hold_pe and not ("Falling" in pcr_trend and _pe_crack))):
             bias_str = "BULLISH  ▲"
-        elif eff_dom == "CE_DOMINANT" and "Falling" in pcr_trend:
+        elif eff_dom == "CE_DOMINANT" and ("Falling" in pcr_trend or (_hold_ce and not ("Rising" in pcr_trend and _ce_crack))):
             bias_str = "BEARISH  ▼"
+        elif eff_dom == "BALANCED" and _blip_pe and "Falling" not in pcr_trend:
+            bias_str = "BULLISH  ▲ (holding)"
+        elif eff_dom == "BALANCED" and _blip_ce and "Rising" not in pcr_trend:
+            bias_str = "BEARISH  ▼ (holding)"
         elif eff_dom == "BALANCED":
             bias_str = "NEUTRAL  →"
         else:
@@ -4210,6 +4375,15 @@ def build_briefing(target_date: date, target_time: Optional[dtime] = None, appen
     elif is_pre_market:
         veto1 = "⏸  PRE-MARKET — market opens at 09:15"
         veto2 = "➡️ PRE-MARKET — no signal (stale spot, no RVOL/GEX)"
+    elif eff_dom == "EXPIRY TREND":
+        _xtv = _expiry_trend_cached(latest_ts) or {}
+        _late = is_eod_no_trade
+        if _xtv.get("dir") == "UP":
+            veto1 = "❌ Do NOT short — expiry short-covering trend (wall broken, calls covering)"
+            veto2 = "⏸  After 15:00 — manage/trail only, no fresh entries" if _late else "✅ With-trend CE only, small size, tight SL — expiry gamma"
+        else:
+            veto1 = "❌ Do NOT go long — expiry put-unwinding trend"
+            veto2 = "⏸  After 15:00 — manage/trail only, no fresh entries" if _late else "✅ With-trend PE only, small size, tight SL — expiry gamma"
     elif is_expiry_day and latest_ts.time() >= dtime(14, 0):
         veto1 = "⚠️  EXPIRY UNWIND — OI data unreliable"
         veto2 = "⏸  Positions settling — avoid directional trades"
@@ -5109,7 +5283,17 @@ def build_periodic_snapshot(
 
     # 10. Action Line (STAND ASIDE / WATCH FOR PULLBACK / READY SHORT / READY LONG)
     _exp_unwind = _expiry_unwind_now(target_date, latest_ts, latest_df, rules)   # OBSFIX-1
+    _xt_snap = None
     if _exp_unwind:
+        try:   # BRFIX-1
+            _rv = _rvol_slope(target_date, latest_ts.time(), rules)
+            _xt_snap = _expiry_trend(tl.series if (tl and tl.series) else [], latest_ts, rules, _rv.get("rising"))
+        except Exception:
+            _xt_snap = None
+    if _xt_snap:
+        _exp_unwind = False
+        bias_word = "BULLISH ▲ (expiry SC)" if _xt_snap["dir"] == "UP" else "BEARISH ▼ (expiry unwind)"
+    elif _exp_unwind:
         bias_word = "EXPIRY UNWIND ⚠️"
     if is_pre_market or is_data_gap or is_freeze or is_eod or is_stale_feed or _exp_unwind:
         act_str = "STAND ASIDE"

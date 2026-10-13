@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 CLOSE = time(15, 30)
-UNWIND_FROM = time(13, 30)
+UNWIND_FROM = time(14, 30)   # expiry unwind is a last-hour event; earlier "both down" is position trimming
 
 
 # ─── per snapshot (called from pe_ce_panel.per_snapshot) ──────────────────────
@@ -45,6 +45,8 @@ def extra(d: pd.DataFrame, ts) -> dict:
         if "expiry" in d and len(d):
             e = pd.to_datetime(d["expiry"].iloc[0], errors="coerce")
             out["exp_day"] = bool(pd.notna(e) and e.date() == pd.Timestamp(ts).date())
+        import levels_read                                      # LEVELS: OI by strike for support / resistance
+        out.update(levels_read.maps(d))
     except Exception:                                           # noqa: BLE001
         pass
     return out
@@ -54,13 +56,18 @@ def extra(d: pd.DataFrame, ts) -> dict:
 def add(t: pd.DataFrame, s: pd.DataFrame, tf_min: int) -> pd.DataFrame:
     if t.empty:
         return t
-    cols = [c for c in ("pe_wall", "ce_wall", "exp_day") if c in s.columns]
+    cols = [c for c in ("pe_wall", "ce_wall", "exp_day", "pe_map", "ce_map") if c in s.columns]
     if cols:
         w = s.set_index("ts")[cols].resample(f"{tf_min}min", origin="start_day", offset="15min").last()
         t = t.drop(columns=[c for c in cols if c in t.columns]).merge(w.reset_index(), on="ts", how="left")
         for c in ("pe_wall", "ce_wall"):
             if c in t:
                 t[c] = t[c].ffill()
+    try:
+        import levels_read                                      # LEVELS
+        t = levels_read.annotate(t, tf_min)
+    except Exception:                                           # noqa: BLE001
+        t["lv_state"] = ""
     t["pro"] = pro_reads(t, tf_min)
     return t
 
@@ -87,7 +94,8 @@ def pro_reads(t: pd.DataFrame, tf_min: int) -> list[tuple[str, str, str, str]]:
         if tm >= CLOSE:
             out.append(("After close — frozen spot / closing-price print, ignore", "skip", "", wall)); continue
         if bool(r.get("exp_day", False)) and tm >= UNWIND_FROM and i >= K \
-                and r.pe_day < t["pe_day"].iloc[i - K] and r.ce_day < t["ce_day"].iloc[i - K]:
+                and r.pe_day < t["pe_day"].iloc[i - K] and r.ce_day < t["ce_day"].iloc[i - K] \
+                and abs(float(r.close - t["close"].iloc[i - K])) < 30 and not r.get("lv_state", ""):   # FIX-1
             out.append(("Expiry unwind — both sides closing, not direction", "skip", dots, wall)); continue
         lo = max(0, i - L)
         prev = t.iloc[lo:i]
@@ -106,6 +114,8 @@ def pro_reads(t: pd.DataFrame, tf_min: int) -> list[tuple[str, str, str, str]]:
         if i >= K:
             w_tr = float(r.pe_ce_day - t["pe_ce_day"].iloc[i - K])
             p_tr = float(r.close - t["close"].iloc[i - K])
+            if abs(p_tr) < 10:                                  # FIX-2: < 10 pts in 15 min is drift, not a trend
+                p_tr = 0.0
             cand = r.read[1] if isinstance(r.read, tuple) else "flat"
             if w_tr > 0 and p_tr > 0:
                 if cand == "bear":

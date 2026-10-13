@@ -626,6 +626,8 @@ def evaluate_strike_timeline(
 
     unwind_steps = max(1, unwind_min // resample_min)
     crossover_steps = max(1, confirm_min // resample_min)
+    # BRFIX-3: a flip must also clear dominance by a margin (default 1.5x), not just change sign
+    crossover_margin = float(r.get("crossover_margin_mult", 1.5))
 
     # Track signs of (dPE - dCE)
     sign_history: List[int] = []  # +1 for PE > CE, -1 for CE > PE, 0 for equal
@@ -749,7 +751,7 @@ def evaluate_strike_timeline(
             if prior_dominant_side in ("PE_DOMINANT", "CE_DOMINANT") and target_dom in ("PE_DOMINANT", "CE_DOMINANT") and target_dom != prior_dominant_side:
                 if i >= crossover_steps:
                     recent_signs = sign_history[-crossover_steps:]
-                    if len(set(recent_signs)) == 1 and recent_signs[0] == current_sign:
+                    if len(set(recent_signs)) == 1 and recent_signs[0] == current_sign and abs(spread) >= dom_min * crossover_margin:
                         dominance = "CROSSOVER"
                         flip_dir = f"{prior_dominant_side} → {target_dom}"
                         crossover_points.append((ts.strftime("%H:%M"), flip_dir, spread))

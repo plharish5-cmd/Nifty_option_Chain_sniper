@@ -1,13 +1,13 @@
 {
- "updated": "2026-10-09T15:35:00",
- "day": "2026-10-09",
- "status": "stopped",
- "packets": 1367379,
- "trades": 682649,
+ "updated": "2026-10-13T12:47:51",
+ "day": "2026-10-13",
+ "status": "connected",
+ "packets": 840601,
+ "trades": 418514,
  "stocks_streaming": 50,
  "stocks_subscribed": 50,
- "index_ltp": 22520.44921875,
- "index_source": "rest",
- "error": "ping/pong timed out",
- "pid": 25066
+ "index_ltp": 22539.849609375,
+ "index_source": "feed",
+ "error": "",
+ "pid": 21692
 }

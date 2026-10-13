@@ -1,0 +1,76 @@
+09:20  NEUTRAL  →                          WARMUP (9 min)                                  ⚠️  No clear edge — balanced market
+09:25  NEUTRAL  →                          WARMUP (15 min)                                 ⚠️  No clear edge — balanced market
+09:30  BULLISH  ▲                          WARMUP (18 min)                                 ❌ Do NOT short — PE writers dominant
+09:35  NEUTRAL  →                          WARMUP (24 min)                                 ⚠️  No clear edge — balanced market
+09:40  BULLISH  ▲                          WARMUP (30 min)                                 ❌ Do NOT short — PE writers dominant
+09:45  NEUTRAL  →                          WARMUP (33 min)                                 ⚠️  No clear edge — balanced market
+09:50  BULLISH  ▲                          WARMUP (39 min)                                 ❌ Do NOT short — PE writers dominant
+09:55  BULLISH  ▲                          WARMUP → PE_DOMINANT (9 min)                    ❌ Do NOT short — PE writers dominant
+10:00  BULLISH  ▲                          WARMUP → PE_DOMINANT (12 min)                   ❌ Do NOT short — PE writers dominant
+10:05  BULLISH  ▲                          WARMUP → PE_DOMINANT (18 min)                   ❌ Do NOT short — PE writers dominant
+10:10  BULLISH  ▲                          WARMUP → PE_DOMINANT (24 min)                   ❌ Do NOT short — PE writers dominant
+10:15  BULLISH  ▲                          WARMUP → PE_DOMINANT (27 min)                   ❌ Do NOT short — PE writers dominant
+10:20  BULLISH  ▲                          WARMUP → PE_DOMINANT (33 min)                   ❌ Do NOT short — PE writers dominant
+10:25  NEUTRAL  →                          WARMUP → PE_DOMINANT (39 min)                   ❌ Do NOT short — PE writers dominant
+10:30  NEUTRAL  →                          WARMUP → PE_DOMINANT (42 min)                   ❌ Do NOT short — PE writers dominant
+10:35  NEUTRAL  →                          WARMUP → PE_DOMINANT (48 min)                   ❌ Do NOT short — PE writers dominant
+10:40  NEUTRAL  →                          WARMUP → PE_DOMINANT (54 min)                   ❌ Do NOT short — PE writers dominant
+10:45  NEUTRAL  →                          WARMUP → PE_DOMINANT (57 min)                   ❌ Do NOT short — PE writers dominant
+10:50  NEUTRAL  →                          WARMUP → PE_DOMINANT (63 min)                   ❌ Do NOT short — PE writers dominant
+10:55  NEUTRAL  →                          WARMUP → PE_DOMINANT (69 min)                   ❌ Do NOT short — PE writers dominant
+11:00  NEUTRAL  →                          WARMUP → PE_DOMINANT (72 min)                   ❌ Do NOT short — PE writers dominant
+11:05  BULLISH  ▲                          WARMUP → PE_DOMINANT (78 min)                   ❌ Do NOT short — PE writers dominant
+11:10  BULLISH  ▲                          WARMUP → PE_DOMINANT (84 min)                   ❌ Do NOT short — PE writers dominant
+11:15  BULLISH  ▲                          WARMUP → PE_DOMINANT (87 min)                   ❌ Do NOT short — PE writers dominant
+11:20  BULLISH  ▲                          WARMUP → PE_DOMINANT (93 min)                   ❌ Do NOT short — PE writers dominant
+11:25  BULLISH  ▲                          WARMUP → PE_DOMINANT (96 min)                   ❌ Do NOT short — PE writers dominant
+11:30  NEUTRAL  →                          WARMUP → PE_DOMINANT (102 min)                  ❌ Do NOT short — PE writers dominant
+11:35  NEUTRAL  →                          WARMUP → PE_DOMINANT (108 min)                  ❌ Do NOT short — PE writers dominant
+11:40  NEUTRAL  →                          WARMUP → PE_DOMINANT (114 min)                  ❌ Do NOT short — PE writers dominant
+11:45  NEUTRAL  →                          WARMUP → PE_DOMINANT (117 min)                  ❌ Do NOT short — PE writers dominant
+11:50  BULLISH  ▲                          WARMUP → PE_DOMINANT (123 min)                  ❌ Do NOT short — PE writers dominant
+11:55  NEUTRAL  →                          WARMUP → PE_DOMINANT (129 min)                  ❌ Do NOT short — PE writers dominant
+12:00  BULLISH  ▲                          WARMUP → PE_DOMINANT (132 min)                  ❌ Do NOT short — PE writers dominant
+12:05  BULLISH  ▲                          WARMUP → PE_DOMINANT (138 min)                  ❌ Do NOT short — PE writers dominant
+12:10  BULLISH  ▲                          WARMUP → PE_DOMINANT (144 min)                  ❌ Do NOT short — PE writers dominant
+12:15  BULLISH  ▲                          WARMUP → PE_DOMINANT (147 min)                  ❌ Do NOT short — PE writers dominant
+12:20  BEARISH  ▼                          CROSSOVER → CE_DOMINANT (42 min)                ❌ Do NOT go long — CE writers dominant
+12:25  BEARISH  ▼                          CROSSOVER → CE_DOMINANT (48 min)                ❌ Do NOT go long — CE writers dominant
+12:30  NEUTRAL  →                          CE_DOMINANT → BALANCED (3 min)                  ⚠️  No clear edge — balanced market
+12:35  NEUTRAL  →                          CE_DOMINANT → BALANCED (9 min)                  ⚠️  No clear edge — balanced market
+12:40  NEUTRAL  →                          CE_DOMINANT → BALANCED (15 min)                 ⚠️  No clear edge — balanced market
+12:45  NEUTRAL  →                          CE_DOMINANT → BALANCED (18 min)                 ⚠️  No clear edge — balanced market
+12:50  NEUTRAL  →                          CE_DOMINANT → BALANCED (21 min)                 ⚠️  No clear edge — balanced market
+12:55  INVALID (data gap)                  DATA GAP — signals invalid                      ⏸  Buyer freeze: 11:30–13:15 — ACTIVE (observe only)
+13:00  NEUTRAL  →                          CE_DOMINANT → BALANCED (33 min)                 ⚠️  No clear edge — balanced market
+13:05  NEUTRAL  →                          BALANCED → CE_DOMINANT (6 min)                  ❌ Do NOT go long — CE writers dominant
+13:10  NEUTRAL  →                          CE_DOMINANT → BALANCED (3 min)                  ⚠️  No clear edge — balanced market
+13:15  NEUTRAL  →                          BALANCED → CE_DOMINANT (3 min)                  ❌ Do NOT go long — CE writers dominant
+13:20  BULLISH  ▲                          CROSSOVER → PE_DOMINANT (3 min)                 ❌ Do NOT short — PE writers dominant
+13:25  BULLISH  ▲                          CROSSOVER → PE_DOMINANT (6 min)                 ❌ Do NOT short — PE writers dominant
+13:30  BULLISH  ▲ (holding)                PE_DOMINANT → BALANCED (3 min)                  ⚠️  No clear edge — balanced market
+13:35  NEUTRAL  →                          PE_DOMINANT → BALANCED (9 min)                  ⚠️  No clear edge — balanced market
+13:40  NEUTRAL  →                          BALANCED → PE_DOMINANT (3 min)                  ❌ Do NOT short — PE writers dominant
+13:45  BULLISH  ▲                          BALANCED → PE_DOMINANT (6 min)                  ❌ Do NOT short — PE writers dominant
+13:50  BULLISH  ▲                          BALANCED → PE_DOMINANT (12 min)                 ❌ Do NOT short — PE writers dominant
+13:55  BULLISH  ▲                          BALANCED → PE_DOMINANT (18 min)                 ❌ Do NOT short — PE writers dominant
+14:00  BULLISH  ▲                          BALANCED → PE_DOMINANT (21 min)                 ❌ Do NOT short — PE writers dominant
+14:05  EXPIRY UNWIND ⚠️                    EXPIRY UNWIND — OI data unreliable              ⚠️  EXPIRY UNWIND — OI data unreliable
+14:10  EXPIRY UNWIND ⚠️                    EXPIRY UNWIND — OI data unreliable              ⚠️  EXPIRY UNWIND — OI data unreliable
+14:15  EXPIRY UNWIND ⚠️                    EXPIRY UNWIND — OI data unreliable              ⚠️  EXPIRY UNWIND — OI data unreliable
+14:20  EXPIRY UNWIND ⚠️                    EXPIRY UNWIND — OI data unreliable              ⚠️  EXPIRY UNWIND — OI data unreliable
+14:25  EXPIRY UNWIND ⚠️                    EXPIRY UNWIND — OI data unreliable              ⚠️  EXPIRY UNWIND — OI data unreliable
+14:30  EXPIRY UNWIND ⚠️                    EXPIRY UNWIND — OI data unreliable              ⚠️  EXPIRY UNWIND — OI data unreliable
+14:35  EXPIRY UNWIND ⚠️                    EXPIRY UNWIND — OI data unreliable              ⚠️  EXPIRY UNWIND — OI data unreliable
+14:40  EXPIRY UNWIND ⚠️                    EXPIRY UNWIND — OI data unreliable              ⚠️  EXPIRY UNWIND — OI data unreliable
+14:45  BULLISH  ▲ (expiry short-covering)  EXPIRY SHORT-COVERING TREND ▲ (+78 pts/30m, ca  ❌ Do NOT short — expiry short-covering trend (wall broken, c
+14:50  EXPIRY UNWIND ⚠️                    EXPIRY UNWIND — OI data unreliable              ⚠️  EXPIRY UNWIND — OI data unreliable
+14:55  BULLISH  ▲ (expiry short-covering)  EXPIRY SHORT-COVERING TREND ▲ (+108 pts/30m, c  ❌ Do NOT short — expiry short-covering trend (wall broken, c
+15:00  BULLISH  ▲ (expiry short-covering)  EXPIRY SHORT-COVERING TREND ▲ (+106 pts/30m, c  ❌ Do NOT short — expiry short-covering trend (wall broken, c
+15:05  BULLISH  ▲ (expiry short-covering)  EXPIRY SHORT-COVERING TREND ▲ (+63 pts/30m, ca  ❌ Do NOT short — expiry short-covering trend (wall broken, c
+15:10  BULLISH  ▲ (expiry short-covering)  EXPIRY SHORT-COVERING TREND ▲ (+59 pts/30m, ca  ❌ Do NOT short — expiry short-covering trend (wall broken, c
+15:15  BULLISH  ▲ (expiry short-covering)  EXPIRY SHORT-COVERING TREND ▲ (+78 pts/30m, ca  ❌ Do NOT short — expiry short-covering trend (wall broken, c
+15:20  EXPIRY UNWIND ⚠️                    EXPIRY UNWIND — OI data unreliable              ⚠️  EXPIRY UNWIND — OI data unreliable
+15:25  EXPIRY UNWIND ⚠️                    EXPIRY UNWIND — OI data unreliable              ⚠️  EXPIRY UNWIND — OI data unreliable
+
+bias changes: 24

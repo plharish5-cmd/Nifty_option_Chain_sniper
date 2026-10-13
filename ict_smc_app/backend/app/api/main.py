@@ -425,4 +425,5 @@ if (config.FRONTEND_DIST / "index.html").exists():
         f = (root / path).resolve()
         if path and f.is_file() and root in f.parents:            # no path traversal out of dist/
             return FileResponse(str(f))
-        return FileResponse(str(config.FRONTEND_DIST / "index.html"))
+        # never cache index.html — it names the current JS bundle, so a cached copy would keep loading an old chart
+        return FileResponse(str(config.FRONTEND_DIST / "index.html"), headers={"Cache-Control": "no-store, must-revalidate"})

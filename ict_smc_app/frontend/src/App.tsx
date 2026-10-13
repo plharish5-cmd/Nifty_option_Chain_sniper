@@ -16,7 +16,16 @@ const TFS: TF[] = ["1m", "5m", "15m", "1h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "1h": 30, "1D": 60 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
-  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI · EMA 8"], ["rvol", "Cumulative RVOL"],
+  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"],
+];
+
+const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false };
+const PRESETS: [string, string, Partial<Layers>][] = [
+  ["Clean", "structure + key levels + VWAP", { structure: true, session: true, volume: true }],
+  ["SMC", "order blocks, FVG, liquidity, BOS/MSS, OTE", { ob: true, fvg: true, liq: true, structure: true, range: true, session: true }],
+  ["CRT", "CRT ranges, TBS, structure", { crt: true, structure: true, session: true }],
+  ["Order flow", "delta, auction value, volume, RVOL", { delta: true, auction: true, volume: true, rvol: true }],
+  ["Futures", "volume, futures OI, RVOL panes", { volume: true, oi: true, rvol: true, structure: true }],
 ];
 
 export default function App() {
@@ -25,7 +34,27 @@ export default function App() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [layers, setLayers] = useState<Layers>({ ob: true, fvg: true, liq: true, structure: true, swings: false, range: true, session: true, delta: true, deltaDetail: false, crt: true, auction: true, volume: true, oi: true, rvol: true });
+  const [layers, setLayers] = useState<Layers>(() => {
+    try { const s = localStorage.getItem("ict_layers"); if (s) return { ...OFF, ...JSON.parse(s) }; } catch { /* private mode */ }
+    return { ...OFF, ob: true, fvg: true, liq: true, structure: true, range: true, session: true };
+  });
+  useEffect(() => { try { localStorage.setItem("ict_layers", JSON.stringify(layers)); } catch { /* ignore */ } }, [layers]);
+  const [full, setFull] = useState(false);
+  const chartCard = useRef<HTMLDivElement>(null);
+  // Full view = real browser full screen of the chart card (hides tabs/address bar); falls back to a page overlay.
+  const toggleFull = useCallback(() => {
+    const el = chartCard.current;
+    if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+    if (full) { setFull(false); return; }
+    if (el?.requestFullscreen) el.requestFullscreen().then(() => setFull(true)).catch(() => setFull(true));
+    else setFull(true);
+  }, [full]);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.fullscreenElement) setFull(false); };
+    const fs = () => { if (!document.fullscreenElement) setFull(false); };
+    window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
+    return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
+  }, []);
   const [bottom, setBottom] = useState<"chain" | "paper" | "delta" | "auction">("chain");
   const [chainTick, setChainTick] = useState(0);
   const [storyTick, setStoryTick] = useState(0);
@@ -91,10 +120,20 @@ export default function App() {
       })()}
       <main className="flex-1 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-3 p-3">
         <section className="flex flex-col gap-3 min-w-0">
-          <div className="card flex flex-col h-[62vh] min-h-[420px]">
+          <div ref={chartCard} className={full ? "card fixed inset-0 z-50 flex flex-col rounded-none !bg-[#0b1220]" : "card flex flex-col h-[62vh] min-h-[420px]"}>
             <div className="card-h flex-wrap">
               <div className="flex gap-1">
                 {TFS.map((t) => <button key={t} onClick={() => setTf(t)} className={`tab ${t === tf ? "tab-on" : ""}`}>{t}</button>)}
+                <button onClick={toggleFull} title={full ? "Back to normal view (Esc)" : "Chart full screen (Esc to exit)"}
+                  className="tab ml-2 !border-gold-500/70 !text-gold-400 font-semibold">{full ? "▣ Normal view" : "⛶ Full view"}</button>
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="mr-0.5 text-[10px] uppercase tracking-wider text-slate-500">View</span>
+                {PRESETS.map(([name, hint, l]) => {
+                  const on = (Object.keys(OFF) as (keyof Layers)[]).every((k) => !!l[k] === layers[k]);
+                  return <button key={name} title={hint} onClick={() => setLayers({ ...OFF, ...l })}
+                    className={`tab ${on ? "tab-on" : ""} !border-gold-500/40`}>{name}</button>;
+                })}
               </div>
               <div className="flex flex-wrap gap-1">
                 {LAYER_NAMES.map(([k, label]) => (
@@ -104,7 +143,7 @@ export default function App() {
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} />
+              <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} />
             </div>
             <div className="px-4 py-1.5 text-[11px] text-slate-400 border-t border-ink-700 flex flex-wrap gap-x-4">
               {analysis && <span>ATR {analysis.atr} pts · trend <b className={analysis.trend === "bull" ? "text-bull-400" : analysis.trend === "bear" ? "text-bear-400" : ""}>{analysis.trend}</b></span>}

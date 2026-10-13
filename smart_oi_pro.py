@@ -79,6 +79,16 @@ def divergences(t: pd.DataFrame, candles: pd.DataFrame, pct: float = 0.75) -> pd
     red = m["close"] < m["open"]
     m["kind"] = np.where((m["smart_oi"] >= thr) & red, "defended",
                          np.where((m["smart_oi"] <= -thr) & ~red, "sold", ""))
+    # FIX-3: "rally sold" inside a confirmed resistance break (or "dip defended" inside a support break) is writers
+    # exiting/adjusting, not capping — and expiry-afternoon call OI changes are mostly exits. Drop those markers.
+    if "lv_state" in t:
+        stt = t[["ts", "lv_state"]].merge(m[["ts"]], on="ts", how="right")["lv_state"].fillna("").values
+        m.loc[(m["kind"] == "sold") & (stt == "UP"), "kind"] = ""
+        m.loc[(m["kind"] == "defended") & (stt == "DN"), "kind"] = ""
+    if "exp_day" in t:
+        ex = t[["ts", "exp_day"]].merge(m[["ts"]], on="ts", how="right")["exp_day"].fillna(False).astype(bool).values
+        late = m["ts"].dt.time >= __import__("datetime").time(14, 30)
+        m.loc[ex & late.values, "kind"] = ""
     return m[m["kind"] != ""]
 
 
@@ -108,6 +118,26 @@ def _inr_ticks(fig, vals, **sel):
         hi = lo + 1
     ticks = np.linspace(lo, hi, 6)
     fig.update_yaxes(tickvals=ticks, ticktext=[fmt(x) for x in ticks], **sel)
+
+
+def align_zero(fig, left, right, row=1, col=1):
+    """FIX-7: put 0 at the same height on both y-axes so lines only 'cross' where they really do."""
+    a, b = pd.Series(left, dtype=float).dropna(), pd.Series(right, dtype=float).dropna()
+    if a.empty or b.empty:
+        return
+    la, ha = min(float(a.min()), 0.0), max(float(a.max()), 0.0)
+    lb, hb = min(float(b.min()), 0.0), max(float(b.max()), 0.0)
+    fa = -la / (ha - la) if ha > la else 0.5                   # where zero sits (0 = bottom, 1 = top)
+    fb = -lb / (hb - lb) if hb > lb else 0.5
+    f = max(fa, fb)
+    f = min(max(f, 0.05), 0.95)
+    def rng(lo, hi):
+        span = max(hi / (1 - f) if hi > 0 else 0, -lo / f if lo < 0 else 0) or 1.0
+        return [-f * span * 1.05, (1 - f) * span * 1.05]
+    ra, rb = rng(la, ha), rng(lb, hb)
+    ta, tb = np.linspace(ra[0], ra[1], 6), np.linspace(rb[0], rb[1], 6)
+    fig.update_yaxes(range=ra, tickvals=ta, ticktext=[fmt(x) for x in ta], row=row, col=col, secondary_y=False)
+    fig.update_yaxes(range=rb, tickvals=tb, ticktext=[fmt(x) for x in tb], row=row, col=col, secondary_y=True)
 
 
 def _legend_below(fig: go.Figure) -> go.Figure:
@@ -151,6 +181,9 @@ def chart_left(t: pd.DataFrame, candles: pd.DataFrame, dv: pd.DataFrame, tf: str
     _inr_ticks(fig, t["smart_oi"], row=2, col=1, secondary_y=False)
     _inr_ticks(fig, t["cum_smart"], row=2, col=1, secondary_y=True)
     _inr_ticks(fig, pd.concat([t["call_vol"], t["put_vol"]]), row=3, col=1)
+    pc.clip_volume(fig, pd.concat([t["call_vol"], t["put_vol"]]), row=3, col=1)           # FIX-6
+    align_zero(fig, t["smart_oi"], t["cum_smart"], row=2, col=1)                           # FIX-7
+    pc.add_levels(fig, t, row=1, col=1)                                                    # LEVELS
     return _legend_below(ol._layout(fig, f"NIFTY · Smart OI · Volume ({tf})", h=800))
 
 
@@ -180,6 +213,7 @@ def chart_right(t: pd.DataFrame, cr: pd.DataFrame) -> go.Figure:
     fig.update_yaxes(title_text="PCR", row=2, col=1)
     _inr_ticks(fig, pd.concat([t["pe_day"], t["ce_day"]]), row=1, col=1, secondary_y=False)
     _inr_ticks(fig, t["pe_ce_day"], row=1, col=1, secondary_y=True)
+    align_zero(fig, pd.concat([t["pe_day"], t["ce_day"]]), t["pe_ce_day"], row=1, col=1)     # FIX-7
     for a in fig.layout.annotations:
         a.font = dict(color=GOLD, size=13)
     return _legend_below(ol._layout(fig, "Writers & PCR", h=800))

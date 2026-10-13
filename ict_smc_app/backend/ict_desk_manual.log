@@ -561,3 +561,509 @@ INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
 INFO:     Finished server process [9449]
+INFO:     Started server process [6758]
+INFO:     Waiting for application startup.
+2026-10-13 16:17:11,800 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 16:17:12,803 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 16:17:12,928 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 16:17:13,267 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 16:17:13,520 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 16:17:13,811 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 16:17:14,369 INFO hub: NIFTY future: NIFTY-Oct2026-FUT (id 48704, expiry 2026-10-27) · 8625 one-minute candles — NIFTY-Oct2026-FUT (48704): ok — 22,848.0, basis +126.0, volume today 3,712,345; NIFTY-Nov2026-FUT (61471): ok — 22,947.2, basis +225.2, volume today 399,490; NIFTY-Dec2026-FUT (58875): ok — 23,086.0, basis +364.0, volume today 219,115
+2026-10-13 16:17:14,431 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 16:17:14,635 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 16:17:14,916 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 16:17:15,078 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 16:17:15,356 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8600 (Press CTRL+C to quit)
+2026-10-13 16:17:19,685 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain/expirylist "HTTP/1.1 200 OK"
+2026-10-13 16:17:19,864 INFO dhan.feed: feed LTT time base detected: ist
+INFO:     127.0.0.1:58364 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58372 - "GET /api/chain HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58422 - "WebSocket /ws" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:58438 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58388 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58392 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58406 - "GET /api/paper HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58406 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58406 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+2026-10-13 16:17:22,861 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58406 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+2026-10-13 16:17:23,480 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:58392 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58438 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58406 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58388 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34636 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:17:39,722 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 16:17:39,976 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 16:17:40,156 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:34550 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41924 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58466 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:18:23,187 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:43902 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53578 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60904 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48964 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:19:24,114 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57516 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:20:24,317 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 16:20:26,376 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60854 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:21:26,532 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:40064 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:22:26,866 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:54078 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49558 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46724 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47538 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:23:27,127 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57262 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55958 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60748 - "GET /api/chain HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60758 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49346 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44646 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:24:27,574 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:44668 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42178 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57436 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55914 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:25:27,928 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:59228 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59888 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:26:28,558 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:46588 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38738 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:27:28,859 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:41970 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58584 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:28:29,166 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:43848 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52080 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:29:29,350 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50084 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47160 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:30:29,584 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:33570 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60192 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:31:30,069 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:44018 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51026 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:32:30,323 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 16:32:32,390 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52178 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56862 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:33:32,528 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:37594 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52960 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:34:32,731 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:33182 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34250 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:35:33,150 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:47774 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40614 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:36:33,393 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:46472 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60508 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:37:33,779 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:53284 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59066 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:38:34,083 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50546 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48518 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:39:34,352 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:53354 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56012 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:40:34,782 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 16:40:36,967 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:55300 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52552 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:41:37,128 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:54862 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45404 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:42:37,350 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52960 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48836 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:43:37,600 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:54888 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51618 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:44:37,881 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:48898 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58850 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:45:38,082 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:47280 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35050 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:46:38,491 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58004 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41482 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:47:38,730 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:33256 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41334 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:48:38,972 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50994 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50218 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:49:39,200 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:37874 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48132 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:50:39,461 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:39766 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59300 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:51:39,735 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60570 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50450 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:52:40,245 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 16:52:42,297 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 16:52:46,386 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:48530 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42554 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:53:46,659 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50124 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36460 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:54:46,970 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:44500 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60176 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:55:47,230 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:37512 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43846 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:56:47,497 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:54508 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54450 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:57:47,657 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:49770 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36306 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:58:47,919 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:37582 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33382 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 16:59:48,223 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:46900 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54232 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:00:48,481 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 17:00:50,682 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 17:00:54,730 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 17:01:02,797 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 17:01:02,806 WARNING chain: chain poll failed: RateLimited: HTTP 429: {"data":{"805":"Too many requests. Further requests may result in the user being blocked."},"status":"failed"}
+2026-10-13 17:01:18,942 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:37760 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37760 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:02:19,208 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:33998 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33998 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37706 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:03:19,482 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:59376 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59376 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36736 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39530 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53970 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:04:19,728 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:57132 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:04:22,017 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 17:04:26,594 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:54504 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54510 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56852 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34482 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44008 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:05:27,386 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:46226 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46242 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54890 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36832 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36834 - "GET /api/analysis?tf=15m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36832 - "GET /api/candles?tf=15m&days=8&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36832 - "GET /api/analysis?tf=1h&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36834 - "GET /api/candles?tf=1h&days=30&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39202 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:06:27,627 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:44848 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44864 - "GET /api/analysis?tf=15m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44848 - "GET /api/candles?tf=15m&days=8&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44848 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60926 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51018 - "GET /api/analysis?tf=1h&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51016 - "GET /api/candles?tf=1h&days=30&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51016 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51018 - "GET /api/analysis?tf=15m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51016 - "GET /api/candles?tf=15m&days=8&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51102 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:07:27,853 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:44544 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44558 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58066 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35568 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51664 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:08:28,086 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 17:08:30,263 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 17:08:34,350 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:51714 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51714 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39302 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44392 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60736 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:09:34,567 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:36054 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36054 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36468 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37778 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55360 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:10:34,829 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56702 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56702 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33032 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53078 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55536 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:11:35,069 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:43746 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41744 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:12:35,327 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-13 17:12:37,394 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50988 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36848 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:13:37,623 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56174 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56080 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:14:37,896 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58318 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47198 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:15:38,143 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:36012 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41894 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:16:38,379 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:43838 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36906 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:17:38,554 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain/expirylist "HTTP/1.1 200 OK"
+2026-10-13 17:17:41,608 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:36646 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36646 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36646 - "GET / HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:36654 - "GET /assets/index-DTl9qSdN.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:36646 - "GET /assets/index-G4a5LBj9.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:36646 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36654 - "GET /api/chain HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36682 - "WebSocket /ws" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:36646 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36686 - "GET /favicon.ico HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36660 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36664 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36668 - "GET /api/paper HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36668 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36668 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36668 - "GET / HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:60184 - "WebSocket /ws" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:36668 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60144 - "GET /api/chain HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60188 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60160 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60162 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60174 - "GET /api/paper HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60174 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60174 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40784 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53140 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46822 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:18:41,830 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60910 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40852 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39966 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40796 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:19:42,186 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:40608 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42514 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42410 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58286 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60842 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:20:42,422 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60896 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41046 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49538 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     connection closed
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6758]
+INFO:     Started server process [18160]
+INFO:     Waiting for application startup.
+2026-10-13 17:22:12,870 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 17:22:14,822 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 17:22:15,072 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 17:22:15,403 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 17:22:15,532 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 17:22:15,949 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 17:22:16,359 INFO hub: NIFTY future: NIFTY-Oct2026-FUT (id 48704, expiry 2026-10-27) · 8625 one-minute candles — NIFTY-Oct2026-FUT (48704): ok — 22,848.0, basis +126.0, volume today 3,712,345; NIFTY-Nov2026-FUT (61471): ok — 22,947.2, basis +225.2, volume today 399,490; NIFTY-Dec2026-FUT (58875): ok — 23,086.0, basis +364.0, volume today 219,115
+2026-10-13 17:22:16,427 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 17:22:16,800 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 17:22:17,008 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 17:22:17,511 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 17:22:17,783 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8600 (Press CTRL+C to quit)
+2026-10-13 17:22:21,515 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain/expirylist "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58712 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58712 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58726 - "GET /api/chain HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58762 - "WebSocket /ws" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:58776 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58732 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58740 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58752 - "GET /api/paper HTTP/1.1" 200 OK
+2026-10-13 17:22:22,560 INFO dhan.feed: feed LTT time base detected: ist
+INFO:     127.0.0.1:58752 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58752 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+2026-10-13 17:22:24,616 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58752 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+2026-10-13 17:22:25,019 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:58740 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58776 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58752 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58732 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38386 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:22:41,245 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 17:22:41,408 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 17:22:41,629 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:49408 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36748 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39470 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:23:24,962 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:39470 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48256 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49622 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51404 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56718 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:24:25,179 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56718 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41592 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54410 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33004 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56980 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38874 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38874 - "GET / HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:38874 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38880 - "WebSocket /ws" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:38882 - "GET /api/chain HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38928 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38886 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38896 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38912 - "GET /api/paper HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38912 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38896 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+2026-10-13 17:25:25,420 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:38896 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47958 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55648 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48300 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35616 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:26:25,591 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:35616 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34206 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49396 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58228 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50228 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:27:25,863 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50228 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60104 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56564 - "GET /api/analysis?tf=1h&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56562 - "GET /api/candles?tf=1h&days=30&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56562 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35094 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39668 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:28:26,125 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:39668 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47638 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53764 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33372 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51378 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:29:26,355 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:51378 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51918 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45414 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56142 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40080 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:30:26,502 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:40080 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33694 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60136 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34710 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57952 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:31:26,730 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57952 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56772 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58736 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47060 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60450 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 17:32:26,943 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60450 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     connection closed
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [18160]
+INFO:     Started server process [9227]
+INFO:     Waiting for application startup.
+2026-10-13 21:06:59,730 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 21:07:00,361 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 21:07:00,664 INFO httpx: HTTP Request: GET https://images.dhan.co/api-data/api-scrip-master.csv "HTTP/1.1 200 OK"
+2026-10-13 21:07:10,977 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 21:07:11,205 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 21:07:11,420 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 21:07:11,696 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 21:07:12,277 INFO hub: NIFTY future: NIFTY-Oct2026-FUT (id 48704, expiry 2026-10-27) · 8625 one-minute candles — NIFTY-Oct2026-FUT (48704): ok — 22,848.0, basis +126.0, volume today 3,712,345; NIFTY-Nov2026-FUT (61471): ok — 22,947.2, basis +225.2, volume today 399,490; NIFTY-Dec2026-FUT (58875): ok — 23,086.0, basis +364.0, volume today 219,115
+2026-10-13 21:07:12,387 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 21:07:12,633 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 21:07:12,812 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 21:07:12,991 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 21:07:13,326 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8600 (Press CTRL+C to quit)
+2026-10-13 21:07:19,006 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain/expirylist "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:51862 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51862 - "GET /assets/index-D2oBjbNn.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:51872 - "GET /assets/index-BkK3zLNZ.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:51874 - "WebSocket /ws" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:51862 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51890 - "GET /api/chain HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51862 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51914 - "GET /favicon.ico HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51872 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51906 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51910 - "GET /api/paper HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51910 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51910 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+2026-10-13 21:07:22,094 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:51910 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+2026-10-13 21:07:22,595 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:51906 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51862 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51910 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51872 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53214 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 21:07:39,033 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 21:07:39,222 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-13 21:07:39,433 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:47436 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34516 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59200 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 21:08:22,488 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:59200 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51514 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41652 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59834 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53798 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 21:09:22,959 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:53798 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59130 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38514 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-13 21:10:23,601 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50758 - "GET /api/chain?expiry=2026-10-13 HTTP/1.1" 200 OK

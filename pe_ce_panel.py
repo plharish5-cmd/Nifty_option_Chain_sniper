@@ -105,6 +105,7 @@ def table_rows(s: pd.DataFrame, tf_min: int) -> pd.DataFrame:
         open=("spot", "first"), high=("spot", "max"), low=("spot", "min"), close=("spot", "last"),
         ce_oi=("ce_oi", "last"), pe_oi=("pe_oi", "last"), ce_day=("ce_day", "last"), pe_day=("pe_day", "last"),
         ce_vol=("ce_vol", "last"), pe_vol=("pe_vol", "last")).dropna(subset=["close"]).reset_index()
+    t = t[t["ts"].dt.time >= __import__("datetime").time(9, 15)].reset_index(drop=True)   # drop pre-open (09:00–09:12) rows
     t["pe_ce_day"] = t["pe_day"] - t["ce_day"]
     # first row's "Change" = its Change (Day), exactly like StockMojo's 09:15 row
     for a, b in (("pe_chg", "pe_day"), ("ce_chg", "ce_day"), ("pe_ce_chg", "pe_ce_day")):
@@ -184,10 +185,13 @@ def render_table(t: pd.DataFrame, show: str, height: int) -> str:
     show_day, show_tot = show in ("OI Change (Day)", "All"), show in ("Total OI", "All")
 
     side_cols = (["Total"] if show_tot else []) + (["Change (Day)"] if show_day else []) + ["Change"]
-    sub = side_cols + side_cols + ["Change (Day)", "Change", "Change (Day)", "Change", "OI", "Vol", "Spot", "Signal", "Meaning", "Context · strength"]
+    sub = side_cols + side_cols + ["Change (Day)", "Change", "Change (Day)", "Change", "OI", "Vol", "Spot",
+                                   "Support", "Resistance", "Level event", "Action",
+                                   "Signal", "Meaning", "Context · strength"]
     grp_cols = [("Put OI", len(side_cols), "#fee2e2", "#b91c1c"), ("Call OI", len(side_cols), "#dcfce7", "#15803d"),
                 ("PE − CE OI", 2, "#f3e8ff", "#7e22ce"), ("PE − CE OI Bar", 2, "#e0f2fe", "#0369a1"),
-                ("PCR", 2, "#fef9c3", "#a16207"), ("NIFTY", 1, "#e0f2fe", "#0369a1"), ("READ", 2, NAVY, GOLD), ("★ PRO READ", 1, GOLD, NAVY)]
+                ("PCR · table strikes", 2, "#fef9c3", "#a16207"), ("NIFTY", 1, "#e0f2fe", "#0369a1"),
+                ("🎯 LEVELS · ACTION", 4, "#1e293b", "#facc15"), ("READ", 2, NAVY, GOLD), ("★ PRO READ", 1, GOLD, NAVY)]
 
     th = "position:sticky;z-index:2;padding:6px 8px;font-weight:600;border-bottom:1px solid #cbd5e1;white-space:nowrap"
     head1 = (f"<th rowspan=2 style='{th};top:0;background:#f1f5f9;color:{_TXT};left:0;z-index:3'>Time</th>" +
@@ -216,13 +220,16 @@ def render_table(t: pd.DataFrame, show: str, height: int) -> str:
         cells.append(_cell(f"{r.pcr:.2f}", "", _DG if r.pcr >= prev.pcr else _DR))
         cells.append(_cell(f"{r.vol_pcr:.2f}" if pd.notna(r.vol_pcr) else "—", "", "#a16207"))
         cells.append(_cell(f"{r.close:,.1f}", "", _DG if r.close >= prev.close else _DR))
+        cells.append(__import__("levels_read").cells(r))                               # LEVELS
         txt, k = r.read
         cells.append(_cell(html.escape(txt), {"bull": _LG, "bear": _LR}.get(k, ""),
                            {"bull": "#15803d", "bear": "#b91c1c"}.get(k, "#64748b"), k != "flat", "left"))
         cells.append(f"<td style='color:#334155;text-align:left;padding:5px 8px;border-bottom:1px solid #e2e8f0;"
                      f"white-space:normal;min-width:240px;font-size:0.8rem'>{html.escape(MEANING.get(txt, ''))}</td>")
         cells.append(__import__("pece_pro").cell(r))                                  # PECEPRO
-        body.append("<tr>" + "".join(cells) + "</tr>")
+        p_ = getattr(r, "pro", None)                                                   # FIX-8: dim noise rows
+        dim = isinstance(p_, tuple) and p_[2] == "·" and not (isinstance(getattr(r, "lv", None), tuple) and r.lv[1] in ("bull", "bear"))
+        body.append(f"<tr style='opacity:{0.45 if dim else 1}'>" + "".join(cells) + "</tr>")
 
     return (f"<div style='max-height:{height}px;overflow:auto;border:1px solid {GOLD};border-radius:8px;"
             f"background:#fff;font-size:0.84rem'><table style='border-collapse:separate;border-spacing:0;width:100%'>"
@@ -264,7 +271,52 @@ def chart_smart(t: pd.DataFrame, tf: str):
     fig.update_yaxes(title_text="Volume", row=3, col=1)
     _inr_axis(fig, [t["smart_oi"]], row=2, col=1)
     _inr_axis(fig, [t["call_vol"], t["put_vol"]], row=3, col=1)
+    clip_volume(fig, pd.concat([t["call_vol"], t["put_vol"]]), row=3, col=1)                # FIX-6
+    add_levels(fig, t, row=1, col=1)                                                        # LEVELS
     return ol._layout(fig, f"NIFTY · Smart OI · Volume ({tf})", h=640)
+
+
+def clip_volume(fig, v, **sel):
+    """FIX-6: the 09:15 bar is often 20× the rest — cap the axis at the 98th percentile so the day is readable."""
+    v = pd.Series(v, dtype=float).dropna()
+    if len(v) > 10:
+        cap = float(v.quantile(0.98)) * 1.3
+        if cap > 0 and float(v.max()) > cap:
+            ticks = np.linspace(0, cap, 5)
+            fig.update_yaxes(range=[0, cap], tickvals=ticks, ticktext=[fmt(x) for x in ticks], **sel)
+
+
+def add_levels(fig, t: pd.DataFrame, row=1, col=1, **kw):
+    """LEVELS: support / resistance step lines + ⬆⬇ break and 🟢🔴 building markers on the price pane."""
+    if "sup" not in t:
+        return
+    sup = pd.to_numeric(pd.Series(t["sup"]), errors="coerce")
+    res = pd.to_numeric(pd.Series(t["res"]), errors="coerce")
+    fig.add_trace(go.Scatter(x=t["ts"], y=sup, name="Support (max put OI)", mode="lines",
+                             line=dict(color=GREEN, width=1.6, dash="dot", shape="hv"),
+                             hovertemplate="Support %{y:,.0f}<extra></extra>"), row, col, **kw)
+    fig.add_trace(go.Scatter(x=t["ts"], y=res, name="Resistance (max call OI)", mode="lines",
+                             line=dict(color=RED, width=1.6, dash="dot", shape="hv"),
+                             hovertemplate="Resistance %{y:,.0f}<extra></extra>"), row, col, **kw)
+    ev = t["lv"].map(lambda x: x[2] if isinstance(x, tuple) else "")
+    txt = t["lv"].map(lambda x: x[0] if isinstance(x, tuple) else "")
+    spec = {"break_up": ("triangle-up", GREEN, 16, "⬆ R broken", "high", 8),
+            "break_dn": ("triangle-down", RED, 16, "⬇ S broken", "low", -8),
+            "fail": ("x", GOLD, 12, "✖ failed", "close", 0),
+            "s_build": ("circle", GREEN, 7, "", "low", -4),
+            "r_build": ("circle", RED, 7, "", "high", 4)}
+    for k, (sym, colr, size, lab, base, off) in spec.items():
+        m = ev == k
+        if not m.any():
+            continue
+        fig.add_trace(go.Scatter(x=t.loc[m, "ts"], y=t.loc[m, base] + off, mode="markers+text" if lab else "markers",
+                                 text=[lab] * int(m.sum()) if lab else None,
+                                 textposition="top center" if off >= 0 else "bottom center",
+                                 textfont=dict(color=colr, size=11),
+                                 name={"break_up": "Resistance broken ⬆", "break_dn": "Support broken ⬇", "fail": "Break failed ✖",
+                                       "s_build": "Support being built", "r_build": "Resistance being built"}[k],
+                                 marker=dict(symbol=sym, size=size, color=colr, line=dict(color=WHITE, width=1)),
+                                 customdata=txt[m], hovertemplate="%{customdata}<extra></extra>"), row, col, **kw)
 
 
 def chart_oi_day(t: pd.DataFrame):
@@ -456,7 +508,8 @@ def render() -> None:
     if view in ("Table", "Table + Chart"):
         st.markdown(render_table(t, show, int(r["table_height_px"])), unsafe_allow_html=True)
         with st.expander("★ How to read the PRO READ column"):                        # PECEPRO
-            st.markdown("<br>".join(__import__("pece_pro").GUIDE), unsafe_allow_html=True)
+            st.markdown("<br>".join(__import__("levels_read").GUIDE + [""] + __import__("pece_pro").GUIDE),
+                        unsafe_allow_html=True)
         st.write("")
         _panel("table", *read_table(t))
     if view in ("Chart", "Table + Chart"):

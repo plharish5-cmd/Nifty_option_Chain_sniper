@@ -127,7 +127,25 @@ def regimes(b: pd.DataFrame) -> pd.DataFrame:
     b["flip"] = b["regime"].ne(b["regime"].shift()) & b.index.to_series().gt(0)
     # TREND flip = the writers' DIRECTION changed (BULL ↔ BEAR), ignoring quiet BAL / UNWIND spells in between
     d = b["regime"].map({"BULL": 1.0, "BEAR": -1.0}).ffill()          # numeric → no pandas FutureWarning
-    b["tflip"] = d.ne(d.shift()) & d.notna() & d.shift().notna()
+    # FIX-4: a direction change counts only after the new side has held ~15 min (marker sits on the CONFIRM candle,
+    # so there is no look-ahead). Today's 9 flips between 10:30 and 13:40 were chop that reversed inside 15 min.
+    try:
+        bar_min = max(1.0, float(pd.to_datetime(b["ts"]).diff().dt.total_seconds().median()) / 60)
+    except Exception:                                                   # noqa: BLE001
+        bar_min = 3.0
+    hold = max(2, int(round(15 / bar_min)))
+    conf, cur_, run, last = [], np.nan, 0, np.nan
+    for v in d.values:
+        if pd.isna(v):
+            conf.append(cur_); continue
+        run = run + 1 if v == last else 1
+        last = v
+        if pd.isna(cur_) or (v != cur_ and run >= hold):
+            cur_ = v
+        conf.append(cur_)
+    cd = pd.Series(conf, index=b.index)
+    b["tflip"] = cd.ne(cd.shift()) & cd.notna() & cd.shift().notna()
+    b["regime_confirmed"] = cd.map({1.0: "BULL", -1.0: "BEAR"})
     return b
 
 
@@ -500,7 +518,7 @@ def brief(day: date | None = None) -> None:
         # flow
         b15, b30 = a["b15"].iloc[-1], a["b30"].iloc[-1]
         lf = a["last_flip"]
-        flip = (f"<br>Last TREND flip: <b>{lf['ts']:%H:%M}</b> → {_reg_html(lf['regime'])}" if lf is not None else "<br>No trend flip today")
+        flip = (f"<br>Last TREND flip: <b>{lf['ts']:%H:%M}</b> → {_reg_html(lf['regime_confirmed'])}" if lf is not None else "<br>No trend flip today")
         c2.markdown(_card("2 · WHO IS WRITING (ATM ±5)",
                           f"30 min: {_reg_html(b30['regime'])} · balance {_c(b30['bal'], f'{b30.bal:+.2f}')}"
                           f"<br><span style='color:{MUTED}'>Δput {fmt(b30['dpe'])} · Δcall {fmt(b30['dce'])} · NIFTY {b30['px']:+.0f}</span>"
@@ -673,11 +691,11 @@ def _t_writers(st, a, snaps):
     fl = b[b["tflip"]]
     if len(fl):
         fig.add_trace(go.Scatter(x=fl["ts"], y=fl["bal"], mode="markers+text", name="Trend flip",
-                                 text=[{"BULL": "▲", "BEAR": "▼", "UNWIND": "◆", "BAL": "•"}[r] for r in fl["regime"]],
+                                 text=[{"BULL": "▲", "BEAR": "▼", "UNWIND": "◆", "BAL": "•"}[r] for r in fl["regime_confirmed"]],
                                  textposition="top center", textfont=dict(color=GOLD, size=14),
                                  marker=dict(color=GOLD, size=7),
                                  hovertemplate="%{x|%H:%M} regime → " + "%{customdata}<extra></extra>",
-                                 customdata=fl["regime"]), secondary_y=True)
+                                 customdata=fl["regime_confirmed"]), secondary_y=True)
     for y in (BAL_ON, -BAL_ON):
         fig.add_hline(y=y, line=dict(color=MUTED, dash="dot", width=1), secondary_y=True)
     fig.update_yaxes(title_text="NIFTY", secondary_y=False, showgrid=False, tickformat=",.0f")

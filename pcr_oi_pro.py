@@ -159,9 +159,20 @@ def unwind_window(t: pd.DataFrame, expiry_day: bool) -> tuple | None:
     hit = pm[(ce_dd > 0.15) & (pe_dd > 0.15)]
     if hit.empty:
         return None
-    # walk back to where the slide began (both below 97 % of high)
-    early = pm[(ce_dd > 0.03) & (pe_dd > 0.03) & (pm["ts"] <= hit["ts"].iloc[0])]
-    return (early["ts"].iloc[0] if len(early) else hit["ts"].iloc[0]), t["ts"].iloc[-1]
+    # FIX-1: walk back only while BOTH sides are falling together (15-min change < 0 on each). A stretch where calls
+    # cover but puts hold is a short-covering TREND, not an unwind, and must stay unshaded.
+    step = max(1, int(round(15 / max(1.0, (t["ts"].diff().dt.total_seconds().median() or 60) / 60))))
+    both = (t["ce_oi"].diff(step) < 0) & (t["pe_oi"].diff(step) < 0)
+    k = int(hit.index[0])
+    while k - 1 in both.index and bool(both.loc[k - 1]) and t.loc[k - 1, "ts"].hour >= 12:
+        k -= 1
+    if not bool(both.loc[int(hit.index[0])]):
+        nxt = both.loc[int(hit.index[0]):]
+        nxt = nxt[nxt]
+        if nxt.empty:
+            return None
+        k = int(nxt.index[0])
+    return t.loc[k, "ts"], t["ts"].iloc[-1]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -324,11 +335,11 @@ def _chart_pair_flow(t, a_col, b_col, title, fut_label, unwind):
     if len(fl):
         y = t.set_index("ts")["fut"].reindex(fl["ts"]).values
         fig.add_trace(go.Scatter(x=fl["ts"], y=y, mode="markers+text", name="Trend flip (writers)",
-                                 text=["▲ BULL" if r == "BULL" else "▼ BEAR" for r in fl["regime"]],
-                                 textposition=["bottom center" if r == "BULL" else "top center" for r in fl["regime"]],
-                                 textfont=dict(color=[GREEN if r == "BULL" else RED for r in fl["regime"]], size=12),
-                                 marker=dict(symbol=["triangle-up" if r == "BULL" else "triangle-down" for r in fl["regime"]],
-                                             size=13, color=[GREEN if r == "BULL" else RED for r in fl["regime"]],
+                                 text=["▲ BULL" if r == "BULL" else "▼ BEAR" for r in fl["regime_confirmed"]],
+                                 textposition=["bottom center" if r == "BULL" else "top center" for r in fl["regime_confirmed"]],
+                                 textfont=dict(color=[GREEN if r == "BULL" else RED for r in fl["regime_confirmed"]], size=12),
+                                 marker=dict(symbol=["triangle-up" if r == "BULL" else "triangle-down" for r in fl["regime_confirmed"]],
+                                             size=13, color=[GREEN if r == "BULL" else RED for r in fl["regime_confirmed"]],
                                              line=dict(color=WHITE, width=1)),
                                  hovertemplate="%{x|%H:%M} writers flipped → %{text}<extra></extra>"), 1, 1, secondary_y=False)
     sg = b[b["sig"]]
@@ -380,7 +391,7 @@ def flow_note(t: pd.DataFrame) -> str:
     fl = b[b["tflip"]]
     lab = {"BULL": "PUT writers lead (bullish)", "BEAR": "CALL writers lead (bearish)", "UNWIND": "both sides unwinding",
            "BAL": "balanced — nobody in control"}[l["regime"]]
-    last = (f" Last trend flip {fl['ts'].iloc[-1]:%H:%M} → {'▲ BULL' if fl['regime'].iloc[-1] == 'BULL' else '▼ BEAR'}."
+    last = (f" Last trend flip {fl['ts'].iloc[-1]:%H:%M} → {'▲ BULL' if fl['regime_confirmed'].iloc[-1] == 'BULL' else '▼ BEAR'}."
             if len(fl) else " No trend flip today.")
     n_sig = int(b["sig"].tail(10).sum())
     return (f" <b>Flow strip:</b> 30-min writers balance {l['bal']:+.2f} → {lab}.{last}"

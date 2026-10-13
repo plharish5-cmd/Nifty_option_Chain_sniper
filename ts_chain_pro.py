@@ -241,7 +241,7 @@ def grid_html(g: dict, mode: str, atm: int, tf: str, opt: dict | None = None) ->
     td = f"padding:6px 4px;border:1px solid #eef2f7;text-align:center;font-size:{fs}px;white-space:nowrap"
     n = len(cols)
     head1 = (f"<tr><th colspan='{n}' style='{th};background:#ecfdf5;color:#047857'>Call</th>"
-             f"<th rowspan='3' style='{th};background:#fefce8;width:80px'>Strike</th>"
+             f"<th rowspan='{4 if opt.get('sig') else 3}' style='{th};background:#fefce8;width:80px'>Strike</th>"
              f"<th colspan='{n}' style='{th};background:#fef2f2;color:#b91c1c'>Put</th></tr>")
     last_lab = lambda c: g["labels"].get(c, tl(c)) + (" ⏳" if (c == cols[-1] and g.get("partial")) else "")
     head2 = ("<tr>" + "".join(f"<th style='{th}'>{last_lab(c)}</th>" for c in cols) +
@@ -250,6 +250,13 @@ def grid_html(g: dict, mode: str, atm: int, tf: str, opt: dict | None = None) ->
     spc = [f"{v:,.0f}" if np.isfinite(v) else "—" for v in sp.values]
     head3 = ("<tr>" + "".join(f"<th style='{th};color:#64748b;font-size:11px'>NIFTY {s}</th>" for s in spc) +
              "".join(f"<th style='{th};color:#64748b;font-size:11px'>NIFTY {s}</th>" for s in reversed(spc)) + "</tr>")
+    sig = opt.get("sig") or {}
+    head4 = ""
+    if sig:                                                      # 🎯 signal row: one badge per bucket, mirrored both sides
+        import ts_signals
+        b_ = lambda c: sig.get(pd.Timestamp(c), ("", "flat"))
+        head4 = ("<tr>" + "".join(ts_signals.badge_cell(b_(c), th) for c in cols) +
+                 "".join(ts_signals.badge_cell(b_(c), th) for c in reversed(cols)) + "</tr>")
     cmax = {s: d.max(axis=0) for s, d in (("ce", ce), ("pe", pe))}
     cmin = {s: d.min(axis=0) for s, d in (("ce", ce), ("pe", pe))}
     body = []
@@ -280,7 +287,7 @@ def grid_html(g: dict, mode: str, atm: int, tf: str, opt: dict | None = None) ->
     return ("<style>.tsc-g tr:hover td{filter:brightness(.88)}</style>"
             f"<div style='overflow-x:auto;border:1px solid #e5e7eb;border-radius:6px;background:#fff'>"
             f"<table class='tsc-g' style='border-collapse:collapse;width:100%;font-family:Inter,system-ui,sans-serif'>"
-            f"{head1}{head2}{head3}{''.join(body)}</table></div>")
+            f"{head1}{head2}{head3}{head4}{''.join(body)}</table></div>")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -523,7 +530,10 @@ def render(day: date | None = None) -> None:
         custom = sorted(int(k) for k in c2[2].multiselect("Strikes", opts, key="tsc_custom",
                                                           default=[k for k in opts if abs(k - atm0) <= 4 * step0]))
     live = day == max(days) and day == date.today()
-    replay = st.toggle("Replay (pick an end time)", value=False, key="tsc_replay")
+    cc_ = st.columns([1, 1, 4])
+    replay = cc_[0].toggle("Replay (pick an end time)", value=False, key="tsc_replay")
+    show_sig = cc_[1].toggle("🎯 Signals", value=True, key="tsc_sig",
+                             help="Support / resistance built · broken · reversal · fake breakout — a row in the grid + a card below it")
 
     def body():
         _, e2, x = _frame(day, _n(day), exp)
@@ -567,7 +577,20 @@ def render(day: date | None = None) -> None:
                     f"<span>{fut_txt}NIFTY <b>{spot_now:,.1f}</b> · {pd.Timestamp(g['now_ts']):%d %b %H:%M:%S}"
                     f"{' · live, refreshes every 30 s' if live and opt['auto'] and not replay else ''}</span></div>",
                     unsafe_allow_html=True)
-        st.markdown(grid_html(g, mode, atm, tf, dict(opt, lot_div=lot if opt["lot"] else 1)), unsafe_allow_html=True)
+        sg = None
+        if show_sig:
+            try:
+                import ts_signals
+                sg = ts_signals.compute(x, TF[tf], end)
+            except Exception as e_:                             # noqa: BLE001
+                st.caption(f"🎯 signals unavailable: {e_}")
+        sig_map = {pd.Timestamp(r_.ts): r_.badge for r_ in sg.itertuples()} if sg is not None and len(sg) else {}
+        st.markdown(grid_html(g, mode, atm, tf, dict(opt, lot_div=lot if opt["lot"] else 1, sig=sig_map)), unsafe_allow_html=True)
+        if sg is not None and len(sg):
+            import ts_signals
+            st.markdown(_card(f"🎯 LEVEL SIGNALS — {tf} · buy / sell · built / broken / reversal / fake-out",
+                              ts_signals.card_html(sg, g["cols"], g["labels"], WHITE, MUTED, GOLD, GREEN, RED)),
+                        unsafe_allow_html=True)
 
         chg = g if mode == "OI Change" else g["chg"]
         rd = pro_read(chg, atm, step, spot_now)

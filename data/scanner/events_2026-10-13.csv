@@ -1,0 +1,14 @@
+logged_at,day,event_t,token,kind,side,level_kind,level,depth,close_inside,smt,entry_ce,sl,flow,flow_note,chain,call_wall,put_wall,net_bias,squeeze,ref_strike,score,unvalidated
+2026-10-13T10:56:14,2026-10-13,2026-10-13 09:35:00,13,TURTLE_SOUP,BEARISH,or,22478.2,17.85,False,,,,AGAINST,"price above the flow VWAP 22,423.8 — sell only below VWAP",OK,22600.0,22300.0,2.0,,22500,1,True
+2026-10-13T11:31:23,2026-10-13,2026-10-13 11:30:00,13,TURTLE_SOUP,BULLISH,swing,22486.0,5.15,True,,,,AGAINST,"price below the flow VWAP 22,499.2 — buy only above VWAP",OK,22600.0,22400.0,1.43,,22500,2,True
+2026-10-13T12:20:54,2026-10-13,2026-10-13 12:20:00,13,TURTLE_SOUP,BEARISH,eq,22526.8,13.45,False,,,,AGAINST,"price above the flow VWAP 22,501.6 — sell only below VWAP",OK,22600.0,22500.0,1.43,,22550,1,True
+2026-10-13T12:35:55,2026-10-13,2026-10-13 12:35:00,13,TURTLE_SOUP,BEARISH,swing,22540.3,17.65,False,,,,AGAINST,"price above the flow VWAP 22,503.9 — sell only below VWAP",OK,22600.0,22500.0,1.71,,22550,1,True
+2026-10-13T13:16:03,2026-10-13,2026-10-13 13:15:00,13,TURTLE_SOUP,BEARISH,swing,22554.1,6.25,False,,,,AGAINST,"price above the flow VWAP 22,505.5 — sell only below VWAP",OK,22600.0,22500.0,1.43,,22550,1,True
+2026-10-13T13:25:58,2026-10-13,2026-10-13 13:25:00,13,TURTLE_SOUP,BULLISH,eq,22528.8,6.95,True,,,,CONFIRMED,last 3 candles: delta ₹+41 Cr · Bullish delta divergence,OK,22600.0,22500.0,1.14,,22550,3,True
+2026-10-13T13:56:30,2026-10-13,2026-10-13 13:55:00,13,TURTLE_SOUP,BEARISH,eq,22560.4,3.9,True,,,,AGAINST,"price above the flow VWAP 22,505.5 — sell only below VWAP",OK,22600.0,22500.0,1.43,,22550,1,True
+2026-10-13T14:11:36,2026-10-13,2026-10-13 14:10:00,13,TURTLE_SOUP,BEARISH,swing,22581.2,5.0,True,,,,AGAINST,"price above the flow VWAP 22,505.5 — sell only below VWAP",OK,22600.0,22500.0,1.43,,22600,1,True
+2026-10-13T14:11:38,2026-10-13,2026-10-13 14:10:00,13,ICT_SETUP,BULLISH,swing low,22530.3,,True,,22560.725,22519.9,CONFIRMED,last 3 candles: delta ₹+41 Cr · Bullish delta divergence,OK,22600.0,22500.0,1.43,,22600,3,True
+2026-10-13T14:36:37,2026-10-13,2026-10-13 14:35:00,13,TURTLE_SOUP,BEARISH,swing,22605.7,30.3,False,,,,AGAINST,"price above the flow VWAP 22,505.5 — sell only below VWAP",OK,22700.0,22550.0,1.43,,22650,1,True
+2026-10-13T14:46:42,2026-10-13,2026-10-13 14:45:00,13,TURTLE_SOUP,BEARISH,pd,22651.1,9.25,False,,,,AGAINST,"price above the flow VWAP 22,505.5 — sell only below VWAP",OK,22700.0,22600.0,1.43,,22650,1,True
+2026-10-13T15:15:57,2026-10-13,2026-10-13 15:15:00,13,TURTLE_SOUP,BEARISH,swing,22713.2,6.05,True,,,,AGAINST,"price above the flow VWAP 22,505.5 — sell only below VWAP",OK,22750.0,22600.0,1.43,,22700,1,True
+2026-10-13T15:31:01,2026-10-13,2026-10-13 15:30:00,13,TURTLE_SOUP,BEARISH,swing,22719.2,2.7,False,,,,AGAINST,"price above the flow VWAP 22,505.5 — sell only below VWAP",OK,22750.0,22700.0,1.14,,22700,1,True
