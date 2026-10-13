@@ -5,6 +5,8 @@ Feels like Dhan / Kite, fills like the exchange:
   ORDER TICKET   tap any price → BUY ticket: lots stepper, MARKET / LIMIT, INTRADAY / CARRY, SL · Target · Trailing SL,
                  live 5-level market depth, value, margin, charges & breakeven, max loss at SL.  AMO when market is shut.
   ★ PICKS        best CE / PE strikes by your Greek weights (Delta › Theta › Gamma › Vega) — one-click BUY.
+  ₹200 WATCH     every CE / PE priced inside your premium bucket (default ₹180–250, aim ₹200 — the mentor's
+                 "trade 200-plus strikes"), as a dropdown + one-tap BUY / order ticket; bucket saved per desk.
   ⛓ CHAIN        tap-to-trade option-chain ladder (ATM ± 6), expiry selector (weekly expiries roll automatically:
                  after 15:30 on expiry Tuesday the next week's series is used; new Wednesday strikes appear on their own).
   POSITIONS      netted per instrument like a broker: avg price, LTP, P&L ₹ / %, EXIT · +1 lot · ½ exit · ✎ modify.
@@ -55,6 +57,9 @@ DEFAULTS = {
     # Dr. Priyanka's Greeks check; "greeks" = the old pure Greek-weight score (ATM-centred)
     "style": "course", "itm_min": 50, "itm_max": 250, "prem_target": 200.0, "round100": True, "course_delta": 0.60,
     "refresh_s": 1, "stale_s": 120, "squareoff": "15:20", "_feed_v1": False,
+    # ₹200 WATCH — the mentor's rule: trade strikes whose premium is ₹200-plus; the bucket lists every CE / PE whose
+    # price sits inside [bucket_min, bucket_max], closest to bucket_aim first
+    "bucket_min": 180.0, "bucket_max": 250.0, "bucket_aim": 200.0,
 }
 STEP = float(getattr(config, "STRIKE_STEP", 50))
 LOT = int(getattr(config, "LOT_SIZE", 65))
@@ -1359,6 +1364,91 @@ def _picks(st, s, chain) -> None:
                         help="Order ticket (limit, lots, SL/target)")
 
 
+def bucket_rows(rows: pd.DataFrame, spot: float, side: str, lo: float, hi: float, aim: float) -> pd.DataFrame:
+    """Strikes of one side whose tradable price (ask, else LTP) is inside [lo, hi]. The mentor's '200 plus' first:
+    strikes priced ≥ aim (closest to aim first), then the ones just below aim (closest first)."""
+    r = rows[rows["side"] == side].copy()
+    if r.empty:
+        return r
+    r["px"] = np.where(np.isfinite(r["ask"]) & (r["ask"] > 0), r["ask"], r["ltp"])
+    r = r[np.isfinite(r["px"]) & (r["px"] >= lo) & (r["px"] <= hi)].copy()
+    if r.empty:
+        return r
+    r["dist"] = (r["px"] - aim).abs()
+    r["plus"] = r["px"] >= aim
+    r["itm_pts"] = (spot - r["strike"]) if side == "CE" else (r["strike"] - spot)
+    r["spread_pct"] = np.where((r["bid"] > 0) & (r["ask"] > 0), 100 * (r["ask"] - r["bid"]) / r["px"], np.nan)
+    return r.sort_values(["plus", "dist"], ascending=[False, True])
+
+
+def _bucket(st, s, chain) -> None:
+    """₹200 WATCH — every CE and PE in the premium bucket (default ₹180–250), as a dropdown + one-tap BUY."""
+    lots = int(s["lots"])
+    c = st.columns([1, 1, 1])
+    lo = float(c[0].number_input("Min ₹", 10.0, 2000.0, float(s.get("bucket_min", 180.0)), 10.0, key="pd_bk_lo"))
+    hi = float(c[1].number_input("Max ₹", 10.0, 3000.0, float(s.get("bucket_max", 250.0)), 10.0, key="pd_bk_hi"))
+    aim = float(c[2].number_input("Aim ₹", 10.0, 3000.0, float(s.get("bucket_aim", 200.0)), 10.0, key="pd_bk_aim",
+                                  help="Strikes priced at or above this come first (closest first), then the ones just below it"))
+    if hi < lo:
+        lo, hi = hi, lo
+    if (lo, hi, aim) != (float(s.get("bucket_min")), float(s.get("bucket_max")), float(s.get("bucket_aim"))):
+        disk = load_state()
+        disk.update(bucket_min=lo, bucket_max=hi, bucket_aim=aim)
+        save_state(disk)
+        s.update(bucket_min=lo, bucket_max=hi, bucket_aim=aim)
+    sides = {"CE": bucket_rows(chain["rows"], chain["spot"], "CE", lo, hi, aim),
+             "PE": bucket_rows(chain["rows"], chain["spot"], "PE", lo, hi, aim)}
+    # the dropdown: both sides, best (closest to aim) first
+    opts = []
+    for side in ("CE", "PE"):
+        for r in sides[side].itertuples():
+            depth = f"ITM {r.itm_pts:,.0f}" if r.itm_pts > 0 else f"OTM {-r.itm_pts:,.0f}"
+            opts.append((r.dist, f"{int(r.strike)} {side} · ₹{r.px:.2f}{' · 200+' if r.plus else ''} · Δ {r.delta:+.2f} · {depth}",
+                         side, int(r.strike), r.sid, float(r.px)))
+    opts.sort(key=lambda x: (0 if " 200+" in x[1] else 1, x[0]))      # 200-plus first, then closest to the aim
+    st.markdown(f"<div class='pd-sec'><b class='pd-y'>₹{lo:.0f}–{hi:.0f} WATCH</b><span class='pd-m'> · {len(sides['CE'])} CE · "
+                f"{len(sides['PE'])} PE · expiry {chain['expiry']} · spot {chain['spot']:,.0f} · {lots} lot = {lots * LOT}</span></div>",
+                unsafe_allow_html=True)
+    if not opts:
+        st.caption(f"No strike is priced between ₹{lo:.0f} and ₹{hi:.0f} on this expiry right now — widen the bucket "
+                   f"or pick another expiry.")
+        return
+    labels = [o[1] for o in opts]
+    pick = st.selectbox("Strike in the bucket", labels, key="pd_bk_pick",
+                        help="Every CE and PE whose price is inside the bucket — 200-plus first, closest to the aim first")
+    o = opts[labels.index(pick)] if pick in labels else opts[0]
+    c = st.columns([1.2, 1])
+    c[0].button(f"BUY {o[3]} {o[2]} · ~₹{o[5]:.2f}", key="pd_bk_buy", use_container_width=True, type="primary",
+                on_click=cb_quick_buy, args=(o[2], o[3], chain["expiry"], o[4]),
+                help=f"Market BUY {lots} lot at the ask")
+    c[1].button("⋯ Order ticket", key="pd_bk_tkt", use_container_width=True,
+                on_click=cb_open_ticket, args=(o[2], o[3], chain["expiry"], o[4], o[5]))
+    # the full list, CE then PE
+    for side, col in (("CE", "pd-g"), ("PE", "pd-r")):
+        rows = sides[side]
+        st.markdown(f"<div class='pd-sec'><b class='{col}'>{side}</b><span class='pd-m'> · {len(rows)} in ₹{lo:.0f}–{hi:.0f}"
+                    f"</span></div>", unsafe_allow_html=True)
+        if rows.empty:
+            st.caption(f"no {side} in the bucket")
+            continue
+        for r in rows.itertuples():
+            warn = " ⚠ wide spread" if np.isfinite(r.spread_pct) and r.spread_pct > 2 else ""
+            depth = f"ITM {r.itm_pts:,.0f} pts" if r.itm_pts > 0 else f"OTM {-r.itm_pts:,.0f} pts"
+            tag = " <b class='pd-y'>200+</b>" if r.plus else ""
+            c = st.columns([3.0, 1.15, 0.55])
+            c[0].markdown(f"<div class='pd-row {side.lower()}'><b>{int(r.strike)} {side}</b> {r.px:.2f}"
+                          f"{tag}{warn}<br><span class='pd-m'>{depth} · Δ {r.delta:+.2f} · "
+                          f"θ {r.theta:.1f}/day · IV {r.iv:.1f} · ₹{r.px * lots * LOT:,.0f}</span></div>", unsafe_allow_html=True)
+            c[1].button("BUY", key=f"pd_bk_b_{side}_{int(r.strike)}", use_container_width=True,
+                        on_click=cb_quick_buy, args=(side, int(r.strike), chain["expiry"], r.sid),
+                        help=f"Market BUY {lots} lot at the ask (~{r.px:.2f})")
+            c[2].button("⋯", key=f"pd_bk_t_{side}_{int(r.strike)}", use_container_width=True,
+                        on_click=cb_open_ticket, args=(side, int(r.strike), chain["expiry"], r.sid, float(r.px)),
+                        help="Order ticket (limit, lots, SL/target)")
+    st.caption("Price = the ask (what a BUY pays), else LTP · 200+ strikes first (premium at or above the aim — the "
+               "mentor's zone), closest to the aim first, then the ones just below · prices refresh with the desk.")
+
+
 def _ladder(st, s, chain) -> None:
     rows = chain["rows"]
     atm = round(chain["spot"] / STEP) * STEP
@@ -2110,11 +2200,11 @@ def desk_body(mobile: bool = False) -> None:
     if mobile:
         _header_done = True
         if tab == "★ Watch":
-            v2 = _seg(st, "Watch", ["★ Picks", "⛓ Chain"], "pd_mwatch", "★ Picks")
+            v2 = _seg(st, "Watch", ["★ Picks", "₹200 Watch", "⛓ Chain"], "pd_mwatch", "★ Picks")
             if exps:
                 st.selectbox("Expiry", exps[:4], key="pd_exp", label_visibility="collapsed",
                              format_func=lambda x: f"Expiry {_d(x):%a %d %b}" + (" · nearest" if x == exps[0] else ""))
-            _ladder(st, s, chain) if v2 == "⛓ Chain" else _picks(st, s, chain)
+            _ladder(st, s, chain) if v2 == "⛓ Chain" else _bucket(st, s, chain) if v2 == "₹200 Watch" else _picks(st, s, chain)
         elif tab == "Orders":
             _orders(st, s)
             with st.expander("📊 Day report · mentor · CSV"):
@@ -2124,12 +2214,14 @@ def desk_body(mobile: bool = False) -> None:
         elif tab == "Charges":
             _charges_tab(st, s)
         return
-    view = _seg(st, "View", ["★ Picks", "⛓ Chain", "🧾 Orders", "📊 P&L"], "pd_view", "★ Picks")
-    if exps and view in ("★ Picks", "⛓ Chain"):
+    view = _seg(st, "View", ["★ Picks", "₹200 Watch", "⛓ Chain", "🧾 Orders", "📊 P&L"], "pd_view", "★ Picks")
+    if exps and view in ("★ Picks", "₹200 Watch", "⛓ Chain"):
         st.selectbox("Expiry", exps[:4], key="pd_exp", label_visibility="collapsed",
                      format_func=lambda x: f"Expiry {_d(x):%a %d %b}" + (" · nearest" if x == exps[0] else ""))
     if view == "⛓ Chain":
         _ladder(st, s, chain)
+    elif view == "₹200 Watch":
+        _bucket(st, s, chain)
     elif view == "🧾 Orders":
         _orders(st, s)
     elif view == "📊 P&L":
