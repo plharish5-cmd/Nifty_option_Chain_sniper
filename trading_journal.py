@@ -43,39 +43,141 @@ DAILY_PNL_FILE = JOURNAL_DIR / "daily_pnl.csv"
 
 def calculate_dhan_charges(buy_price: float, sell_price: float, qty: int) -> dict:
     """
-    Computes exact Dhan charges for Equity Option round-trip trade:
-      - Brokerage: ₹20 per executed order (Buy ₹20 + Sell ₹20 = ₹40)
-      - STT: 0.125% on Sell Turnover
-      - Exchange Transaction Charges (NSE): 0.05% on total turnover
-      - SEBI Turnover Charges: ₹10 per crore (0.0001%)
-      - Stamp Duty: 0.003% on Buy Turnover
-      - GST: 18% on (Brokerage + Exchange + SEBI)
+    Dhan charges for one option round trip — the SAME calculator the Paper Desk uses
+    (paper_trading.calculate_trade_charges, rates editable in paper_config.json), so journal and paper desk agree:
+      Brokerage ₹20 per executed order (₹40 round trip) · STT 0.1 % of SELL premium · NSE exchange 0.03503 % of
+      total premium · SEBI ₹10/crore · Stamp duty 0.003 % of BUY premium · IPFT ₹0.5/crore ·
+      GST 18 % on (brokerage + exchange + SEBI).
     """
     buy_turnover = float(buy_price) * int(qty)
     sell_turnover = float(sell_price) * int(qty)
-    total_turnover = buy_turnover + sell_turnover
-
-    brokerage = 40.0  # ₹20 per leg
-    stt = round(sell_turnover * 0.00125, 2)
-    exchange = round(total_turnover * 0.0005, 2)
-    sebi = round(total_turnover * 0.000001, 2)
-    stamp_duty = round(buy_turnover * 0.00003, 2)
-    gst = round((brokerage + exchange + sebi) * 0.18, 2)
-
-    total_charges = round(brokerage + stt + exchange + sebi + stamp_duty + gst, 2)
-
+    try:
+        import paper_trading as _pt
+        c = _pt.calculate_trade_charges(float(buy_price), float(sell_price), int(qty), side="BUY")
+        brokerage, stt = float(c.get("brokerage", 40.0)), float(c.get("stt", 0.0))
+        exchange, sebi = float(c.get("exchange_fee", 0.0)), float(c.get("sebi_fee", 0.0))
+        stamp, ipft, gst = float(c.get("stamp_duty", 0.0)), float(c.get("ipft_fee", 0.0)), float(c.get("gst", 0.0))
+        total = float(c.get("total_charges", brokerage + stt + exchange + sebi + stamp + ipft + gst))
+    except Exception:                                       # noqa: BLE001 — same current rates, inline
+        tt = buy_turnover + sell_turnover
+        brokerage = 40.0
+        stt = round(sell_turnover * 0.001, 2)
+        exchange = round(tt * 0.0003503, 2)
+        sebi = round(tt * 0.000001, 2)
+        stamp = round(buy_turnover * 0.00003, 2)
+        ipft = round(tt * 0.0000005, 2)
+        gst = round((brokerage + exchange + sebi) * 0.18, 2)
+        total = round(brokerage + stt + exchange + sebi + stamp + ipft + gst, 2)
     return {
-        "brokerage": brokerage,
-        "stt": stt,
-        "exchange": exchange,
-        "sebi": sebi,
-        "stamp_duty": stamp_duty,
-        "gst": gst,
-        "total_charges": total_charges,
-        "buy_turnover": buy_turnover,
-        "sell_turnover": sell_turnover,
-        "total_turnover": total_turnover,
+        "brokerage": brokerage, "stt": stt, "exchange": exchange, "sebi": sebi, "stamp_duty": stamp, "ipft": ipft,
+        "gst": gst, "total_charges": round(total, 2),
+        "buy_turnover": buy_turnover, "sell_turnover": sell_turnover, "total_turnover": buy_turnover + sell_turnover,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 1b. Dhan ORDER-BOOK paste (web / app "Orders" list) — multi-line blocks, no Buy/Sell column
+# ═══════════════════════════════════════════════════════════════════════════
+_T_RE = re.compile(r"^\s*(\d{1,2}:\d{2}:\d{2})\s*$")
+_SYM_RE = re.compile(r"\b(NIFTY|BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX|BANKEX)\b.*\b(CALL|PUT|CE|PE|FUT)\b", re.I)
+_QTY_RE = re.compile(r"^\s*(\d+)\s*/\s*(\d+)\s*$")
+_OK = ("success", "succes", "traded", "complete", "executed", "filled")
+_BAD = ("reject", "cancel", "pending", "open", "trigger", "expired", "transit", "fail")
+
+
+def looks_like_orderbook(text: str) -> bool:
+    lines = [l for l in str(text).splitlines() if l.strip()]
+    return sum(1 for l in lines if _T_RE.match(l)) >= 1 and any(_SYM_RE.search(l) for l in lines) \
+        and any(_QTY_RE.match(l.replace("\t", " ")) for l in lines)
+
+
+def parse_dhan_orderbook(text: str) -> pd.DataFrame:
+    """Each order = a time line, then contract / exchange / product / 'filled / qty' / order type /
+    'price  LTP  status'. Buy/Sell is a coloured badge on Dhan and does not copy — if a BUY / SELL word is present
+    it is used, otherwise it is INFERRED per contract in time order (flat → BUY, holding → SELL) and marked so you
+    can flip it. Only executed orders (Success / Traded) count; rejected / cancelled / pending are listed and skipped."""
+    blocks, cur = [], None
+    for raw in str(text).splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        m = _T_RE.match(line)
+        if m:
+            if cur:
+                blocks.append(cur)
+            cur = {"time": m.group(1), "lines": []}
+        elif cur is not None:
+            cur["lines"].append(line)
+    if cur:
+        blocks.append(cur)
+    rows = []
+    for b in blocks:
+        sym = side = product = otype = status = None
+        qty = None
+        price = None
+        for line in b["lines"]:
+            flat = line.replace("\t", "  ")
+            u = flat.upper()
+            if sym is None and _SYM_RE.search(flat):
+                sym = re.sub(r"\s+", " ", flat).strip()
+                continue
+            if re.fullmatch(r"(BUY|SELL|B|S)", u.strip()):
+                side = "BUY" if u.strip() in ("BUY", "B") else "SELL"
+                continue
+            if u.strip() in ("NORMAL", "NRML", "INTRADAY", "MIS", "MTF", "CNC", "DELIVERY", "CARRY"):
+                product = u.strip()
+                continue
+            q = _QTY_RE.match(flat)
+            if q:
+                qty = int(q.group(1))                       # FILLED quantity (first number of "65 / 65")
+                continue
+            if u.strip() in ("LIMIT", "MARKET", "SL", "SL-M", "SLM", "STOP LOSS", "SL-L"):
+                otype = u.strip()
+                continue
+            nums = re.findall(r"\d+(?:\.\d+)?", flat.replace(",", ""))
+            words = re.sub(r"[\d.,\s]+", " ", flat).strip().lower()
+            if nums and price is None and (not words or any(w in words for w in _OK + _BAD)):
+                price = float(nums[0])                      # first number = executed / order price; 2nd = LTP
+                if words:
+                    status = words
+                continue
+            if any(w in line.lower() for w in _OK + _BAD) and status is None:
+                status = line.lower()
+            if re.search(r"\b(BUY|SELL)\b", u) and side is None:
+                side = "BUY" if "BUY" in u else "SELL"
+        if not sym or qty is None or price is None:
+            continue
+        ok = status is None or any(w in status for w in _OK)
+        rows.append({"time": b["time"], "symbol": sym.upper(), "side": side, "qty": qty, "price": price,
+                     "product": product or "", "otype": otype or "", "status": (status or "success").strip(),
+                     "executed": bool(ok and qty > 0), "inferred": side is None})
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    df["_t"] = pd.to_datetime(df["time"], format="%H:%M:%S", errors="coerce")
+    df = df.sort_values("_t", kind="stable").drop(columns="_t").reset_index(drop=True)    # Dhan lists newest first
+    pos: dict = {}
+    for i, r in df.iterrows():                              # infer missing sides per contract, in time order
+        if not r["executed"]:
+            continue
+        p = pos.get(r["symbol"], 0)
+        if r["side"] is None:
+            df.at[i, "side"] = "BUY" if p <= 0 else "SELL"
+        pos[r["symbol"]] = p + (r["qty"] if df.at[i, "side"] == "BUY" else -r["qty"])
+    return df
+
+
+def open_positions(df: pd.DataFrame) -> list[dict]:
+    """Quantity still open per contract after the pasted orders (e.g. a buy with no exit yet)."""
+    out = []
+    if df is None or df.empty:
+        return out
+    ex = df[df.get("executed", True) == True] if "executed" in df else df   # noqa: E712
+    for sym, g in ex.groupby("symbol"):
+        net = int((g["qty"] * np.where(g["side"] == "BUY", 1, -1)).sum())
+        if net:
+            out.append({"symbol": sym, "qty": net})
+    return out
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -546,7 +648,7 @@ def render_journal_tab():
             raw_paste = st.text_area(
                 "Paste copied orders from Dhan web (or press 'Load Sample' to test)",
                 height=130,
-                placeholder="Example paste from Dhan:\n09:25:14\tNIFTY 03 Sep 24150 CE\tBUY\t65\t120.50\tTRADED\n09:42:30\tNIFTY 03 Sep 24150 CE\tSELL\t65\t145.00\tTRADED",
+                placeholder="Paste Dhan's Orders list as it copies (time / contract / NSE / Normal / 65 / 65 / Limit / price LTP Success …),\nor one line per trade: 09:25:14  NIFTY 03 Sep 24150 CE  BUY  65  120.50  TRADED",
                 key="dhan_journal_paste"
             )
         with in_col2:
@@ -567,6 +669,33 @@ def render_journal_tab():
         st.session_state["dhan_journal_paste"] = raw_paste
 
     parsed_df = pd.DataFrame()
+    ob_df = pd.DataFrame()
+    if not uploaded_file and raw_paste and looks_like_orderbook(raw_paste):
+        ob_df = parse_dhan_orderbook(raw_paste)
+    if not ob_df.empty:
+        n_inf = int(ob_df["inferred"].sum())
+        st.markdown("##### 🧾 Orders read from your Dhan order-book paste")
+        if n_inf:
+            st.caption(f"Dhan's Buy/Sell badge does not copy, so {n_inf} side(s) were INFERRED per contract in time "
+                       f"order (no position → BUY, holding → SELL). Check the Side column and flip any that are wrong.")
+        ed = st.data_editor(
+            ob_df[["time", "symbol", "side", "qty", "price", "otype", "product", "status", "executed", "inferred"]],
+            hide_index=True, use_container_width=True, key="dhan_ob_editor",
+            column_config={
+                "side": st.column_config.SelectboxColumn("Side", options=["BUY", "SELL"], required=True),
+                "time": st.column_config.TextColumn("Time", disabled=True),
+                "symbol": st.column_config.TextColumn("Contract", disabled=True),
+                "qty": st.column_config.NumberColumn("Filled qty", disabled=True),
+                "price": st.column_config.NumberColumn("Price ₹", format="%.2f"),
+                "otype": st.column_config.TextColumn("Type", disabled=True),
+                "product": st.column_config.TextColumn("Product", disabled=True),
+                "status": st.column_config.TextColumn("Status", disabled=True),
+                "executed": st.column_config.CheckboxColumn("Counted", help="Only executed orders count"),
+                "inferred": st.column_config.CheckboxColumn("Side guessed", disabled=True),
+            })
+        parsed_df = ed[ed["executed"] == True][["time", "symbol", "side", "qty", "price"]].reset_index(drop=True)   # noqa: E712
+        for op in open_positions(ed):
+            st.warning(f"Still OPEN after these orders: {op['symbol']} · {op['qty']:+d} qty — not in the P&L until it is closed.")
     if uploaded_file:
         try:
             if uploaded_file.name.endswith(".csv"):
@@ -576,7 +705,7 @@ def render_journal_tab():
             parsed_df = parse_dhan_input(up_df)
         except Exception as exc:
             st.error(f"Failed to read file: {exc}")
-    elif raw_paste:
+    elif raw_paste and ob_df.empty:
         parsed_df = parse_dhan_input(raw_paste)
 
     trades = match_trades_fifo(parsed_df) if not parsed_df.empty else []
@@ -685,13 +814,19 @@ def render_journal_tab():
             tot_s = sum(t.charges["stt"] for t in trades)
             tot_e = sum(t.charges["exchange"] for t in trades)
             tot_g = sum(t.charges["gst"] for t in trades)
+            tot_sb = sum(t.charges.get("sebi", 0.0) for t in trades)
+            tot_sd = sum(t.charges.get("stamp_duty", 0.0) for t in trades)
+            tot_ip = sum(t.charges.get("ipft", 0.0) for t in trades)
             _render_html(
                 f"""
                 <div style="font-size: 13px; line-height: 1.6; color: #cbd5e1;">
                     • <b>Dhan Brokerage</b> (₹20/order): <b>₹{tot_b:,.2f}</b><br>
-                    • <b>STT (Securities Transaction Tax - 0.125%)</b>: <b>₹{tot_s:,.2f}</b><br>
-                    • <b>NSE Exchange Charges (0.05%)</b>: <b>₹{tot_e:,.2f}</b><br>
-                    • <b>GST (18% on Brokerage + Exch)</b>: <b>₹{tot_g:,.2f}</b><br>
+                    • <b>STT</b> (0.1% of sell premium): <b>₹{tot_s:,.2f}</b><br>
+                    • <b>NSE exchange charges</b> (0.03503% of turnover): <b>₹{tot_e:,.2f}</b><br>
+                    • <b>SEBI fee</b> (₹10/crore): <b>₹{tot_sb:,.2f}</b><br>
+                    • <b>Stamp duty</b> (0.003% of buy premium): <b>₹{tot_sd:,.2f}</b><br>
+                    • <b>IPFT</b> (₹0.5/crore): <b>₹{tot_ip:,.2f}</b><br>
+                    • <b>GST</b> (18% on brokerage + exchange + SEBI): <b>₹{tot_g:,.2f}</b><br>
                     • <b>Total Drain on Account</b>: <span style="color:#E8503A;font-weight:700;">₹{audit.total_charges:,.2f}</span>
                 </div>
                 """
