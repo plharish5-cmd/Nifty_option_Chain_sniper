@@ -1,6 +1,0 @@
-Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
-04-09-2023,1,CE,11:15,19475.0,"11:00 candle close above 8 EMA, break of its high; SL candle low 19,435; red 1st candle, gap-up",19434.8,40.2,12:45,19500.0,trailing SL (candle low),24.9,0.0,39.7,YES,YES,
-04-09-2023,2,CE,11:45,19474.5,"11:30 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 19,458; red 1st candle, gap-up",19458.3,16.2,12:45,19500.0,trailing SL (candle low),25.5,0.0,40.2,YES,YES,
-04-09-2023,3,CE,12:00,19489.3,"11:45 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 19,467; red 1st candle, gap-up",19466.8,22.6,12:45,19500.0,trailing SL (candle low),10.6,0.0,25.4,YES,YES,
-04-09-2023,4,CE,14:30,19516.5,"14:00 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 19,494; red 1st candle, gap-up",19493.7,22.8,15:00,19514.0,trailing SL (candle low),0.0,-2.4,18.8,YES,no,
-04-09-2023,5,CE,14:45,19533.0,"14:30 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 19,498; red 1st candle, gap-up",19497.7,35.4,15:15,19534.8,15:15 day end,1.8,0.0,10.7,no,no,60.4

@@ -1,4 +1,0 @@
-Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
-30-05-2022,1,CE,13:00,16674.9,"12:30 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 16,651; green 1st candle, gap-up",16651.3,23.6,13:00,16650.3,stop loss hit,0.0,-24.6,0.0,no,no,
-30-05-2022,2,PE,14:15,16623.8,"14:00 candle close below 8 EMA, break of its low; SL candle high 16,666; green 1st candle, gap-up",16665.8,42.0,14:45,16666.8,stop loss hit,0.0,-43.0,11.7,no,no,
-30-05-2022,3,CE,15:15,16672.3,"14:45 candle close above 8 EMA, break of its high; SL candle low 16,626; green 1st candle, gap-up",16626.0,46.3,15:15,16668.2,15:15 day end,0.0,-4.1,0.4,no,no,-71.7

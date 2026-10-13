@@ -1,8 +1,0 @@
-Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
-14-03-2024,1,CE,10:00,22040.5,"09:45 candle close above 8 EMA, break of its high; SL candle low 21,974; green 1st candle, flat open",21973.8,66.8,11:30,22160.5,+120 max target,120.0,0.0,137.3,YES,YES,
-14-03-2024,2,CE,10:30,22038.3,"10:15 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 22,003; green 1st candle, flat open",22002.7,35.6,11:30,22158.3,+120 max target,120.0,0.0,139.5,YES,YES,
-14-03-2024,3,CE,10:45,22090.5,"10:30 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 22,011; green 1st candle, flat open",22011.2,79.3,12:30,22165.1,trailing SL (candle low),74.5,0.0,113.6,YES,YES,
-14-03-2024,4,CE,13:00,22163.2,"12:45 candle Stage 3 pullback to 8 EMA, break of its high; SL candle low 22,127; green 1st candle, flat open",22127.0,36.2,13:30,22144.2,trailing SL (candle low),0.0,-19.0,15.3,YES,no,
-14-03-2024,5,PE,13:45,22110.0,"13:30 candle close below 8 EMA, break of its low; SL candle high 22,170; green 1st candle, flat open",22169.7,59.7,14:15,22118.0,trailing SL (candle high),0.0,-8.0,29.5,YES,YES,
-14-03-2024,6,PE,14:45,22103.5,"14:30 candle close below 8 EMA, break of its low; SL candle high 22,140; green 1st candle, flat open",22139.8,36.2,15:00,22140.8,stop loss hit,0.0,-37.2,6.8,no,no,
-14-03-2024,7,CE,15:00,22134.0,"14:45 candle close above 8 EMA, break of its high; SL candle low 22,096; green 1st candle, flat open",22095.8,38.3,15:15,22153.0,15:15 day end,19.0,0.0,29.7,YES,YES,269.3

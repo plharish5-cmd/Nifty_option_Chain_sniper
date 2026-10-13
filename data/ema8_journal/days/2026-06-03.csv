@@ -1,2 +1,0 @@
-Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
-03-06-2026,1,CE,12:30,23243.7,"12:15 candle close above 8 EMA, break of its high; SL candle low 23,176; red 1st candle, gap-down",23175.5,68.1,13:45,23363.7,+120 max target,120.0,0.0,183.4,YES,YES,120.0

@@ -1,6 +1,0 @@
-logged_at,day,event_t,token,kind,side,level_kind,level,depth,close_inside,smt,entry_ce,sl,flow,flow_note,chain,call_wall,put_wall,net_bias,squeeze,ref_strike,score,unvalidated
-2026-10-12T10:55:46,2026-10-12,2026-10-12 09:45:00,13,TURTLE_SOUP,BULLISH,or,22512.0,3.7,True,,,,AGAINST,"price below the flow VWAP 22,572.1 — buy only above VWAP",OK,22600.0,22500.0,-1.71,,22500,1,True
-2026-10-12T10:55:46,2026-10-12,2026-10-12 10:30:00,13,TURTLE_SOUP,BULLISH,swing,22472.2,9.2,False,,,,AGAINST,"price below the flow VWAP 22,542.7 — buy only above VWAP",OK,22600.0,22400.0,-2.0,,22500,1,True
-2026-10-12T10:55:46,2026-10-12,2026-10-12 10:50:00,13,TURTLE_SOUP,BULLISH,swing,22455.1,4.65,True,,,,AGAINST,"price below the flow VWAP 22,530.7 — buy only above VWAP",OK,22600.0,22400.0,-2.0,,22450,1,True
-2026-10-12T11:51:16,2026-10-12,2026-10-12 11:50:00,13,TURTLE_SOUP,BULLISH,swing,22370.7,10.0,True,,,,AGAINST,"price below the flow VWAP 22,487.1 — buy only above VWAP",OK,22600.0,22000.0,-2.0,,22400,1,True
-2026-10-12T12:11:24,2026-10-12,2026-10-12 12:10:00,13,TURTLE_SOUP,BULLISH,swing,22360.7,6.15,False,,,,AGAINST,"price below the flow VWAP 22,477.2 — buy only above VWAP",OK,22600.0,22300.0,-2.0,,22350,1,True

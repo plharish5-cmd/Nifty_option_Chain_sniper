@@ -1,6 +1,0 @@
-$ orderflow_recorder.py
-NIFTY 50 order-flow recorder · 50 stocks mapped
-Waiting until 09:08 …
-  subscribed 50 stocks (code 21) + NIFTY index (code 15)
-  websocket closed (None )
-Done · 1,426,638 packets · 805,875 classified trades · 50/50 stocks streamed → /home/harish/Documents/Swathi K N/1 Trading/option chain/OC/data/orderflow/ticks/2026-10-05.csv

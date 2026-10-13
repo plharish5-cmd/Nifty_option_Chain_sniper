@@ -1,4 +1,0 @@
-Date,Trade #,Side,Entry time,Entry price,Entry reason,SL,Risk pts,Exit time,Exit price,Exit reason,Profit,Loss,Max move pts,15 pts worked,20 pts worked,Day total
-22-08-2024,1,PE,13:00,24820.7,"12:30 candle close below 8 EMA, break of its low; SL candle high 24,835; red 1st candle, gap-up",24835.4,14.8,13:45,24819.2,trailing SL (candle high),1.5,0.0,19.8,YES,no,
-22-08-2024,2,CE,14:00,24835.4,"13:45 candle close above 8 EMA, break of its high; SL candle low 24,814; red 1st candle, gap-up",24814.5,21.0,14:15,24813.5,stop loss hit,0.0,-22.0,2.3,no,no,
-22-08-2024,3,PE,14:30,24802.2,"14:15 candle close below 8 EMA, break of its low; SL candle high 24,836; red 1st candle, gap-up",24836.2,34.0,15:15,24810.9,15:15 day end,0.0,-8.7,5.5,no,no,-29.2
