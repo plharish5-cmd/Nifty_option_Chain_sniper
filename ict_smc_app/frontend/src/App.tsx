@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Analysis, type Candle, type Dashboard, type LiveMsg, type PaperStats, type PaperTrade, type Quote, type Scorecard, type Strikes, type TF, useLive } from "./api";
 import InstrumentPanel from "./components/InstrumentPanel";
 import Chart, { type Layers } from "./components/Chart";
-import { FullPanel, PeceTable, WritersFlow, useOcSummary } from "./components/OcLab";
+import { DragBar, FullPanel, PeceTable, WritersFlow, useOcSummary, useStoredHeight } from "./components/OcLab";
 import { Alerts, BiasGrid, Builds, Header, Paper, Signals } from "./components/Panels";
 import Story from "./components/Story";
 import Guide from "./components/Guide";
@@ -40,6 +40,11 @@ export default function App() {
   });
   useEffect(() => { try { localStorage.setItem("ict_layers", JSON.stringify(layers)); } catch { /* ignore */ } }, [layers]);
   const [full, setFull] = useState(false);
+  const defChart = Math.max(420, Math.round(window.innerHeight * 0.62));
+  const [chartH0, setChartH0] = useStoredHeight("ict_h_chart", defChart);
+  const [oiH0, setOiH0] = useStoredHeight("ict_h_oi", 460);
+  const chartH = chartH0 > 0 ? chartH0 : defChart, oiH = oiH0 > 0 ? oiH0 : 460;
+  const setChartH = (v: number) => setChartH0(v < 0 ? defChart : v), setOiH = (v: number) => setOiH0(v < 0 ? 460 : v);
   // right panel (Instrument · strikes, bias, playbook, builds, alerts) — hide to give the charts the full width
   const [side, setSide] = useState<boolean>(() => { try { return localStorage.getItem("ict_side") !== "0"; } catch { return true; } });
   useEffect(() => { try { localStorage.setItem("ict_side", side ? "1" : "0"); } catch { /* ignore */ } }, [side]);
@@ -130,7 +135,8 @@ export default function App() {
       )}
       <main className={`flex-1 grid grid-cols-1 ${side ? "xl:grid-cols-[minmax(0,1fr)_380px]" : ""} gap-3 p-3`}>
         <section className="flex flex-col gap-3 min-w-0">
-          <div ref={chartCard} className={full ? "card fixed inset-0 z-50 flex flex-col rounded-none !bg-[#0b1220]" : "card flex flex-col h-[62vh] min-h-[420px]"}>
+          <div ref={chartCard} className={full ? "card fixed inset-0 z-50 flex flex-col rounded-none !bg-[#0b1220]" : "card flex flex-col"}
+            style={full ? undefined : { height: chartH }}>
             <div className="card-h flex-wrap">
               <div className="flex gap-1">
                 {TFS.map((t) => <button key={t} onClick={() => setTf(t)} className={`tab ${t === tf ? "tab-on" : ""}`}>{t}</button>)}
@@ -168,15 +174,17 @@ export default function App() {
               <span className="text-slate-500">Overlays use CLOSED candles only — the forming candle never paints a signal.</span>
             </div>
           </div>
+          <DragBar h={chartH} setH={setChartH} min={320} label="main chart" />
           {/* PE − CE OI table + call vs put writers flow, right under the main chart (each has its own Full view) */}
           <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-3">
-            <FullPanel title="PE − CE OI table" hint="same as Options Lab · 🎯 levels · ★ pro read" h="h-[460px]">
+            <FullPanel title="PE − CE OI table" hint="same as Options Lab · 🎯 levels · ★ pro read" h={oiH}>
               <PeceTable tick={chainTick} />
             </FullPanel>
-            <FullPanel title="OI change · call vs put writers" hint="since yesterday · writer-flow strip · 30-min balance" h="h-[460px]">
+            <FullPanel title="OI change · call vs put writers" hint="since yesterday · writer-flow strip · 30-min balance" h={oiH}>
               <WritersFlow tick={chainTick} />
             </FullPanel>
           </div>
+          <DragBar h={oiH} setH={setOiH} min={240} label="PE − CE table and writers chart" />
           <div className="card flex flex-col h-[560px]">
             <div className="card-h">
               <div className="flex gap-1">

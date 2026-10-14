@@ -195,7 +195,7 @@ export function WritersFlow({ tick }: { tick: number }) {
 
 
 // ─────────────────────────────── a card with its own Full view / Normal view ───────────────────────────────
-export function FullPanel({ title, hint, h, children }: { title: string; hint?: string; h: string; children: ReactNode }) {
+export function FullPanel({ title, hint, h, children }: { title: string; hint?: string; h: number; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [full, setFull] = useState(false);
   const toggle = useCallback(() => {
@@ -211,7 +211,8 @@ export function FullPanel({ title, hint, h, children }: { title: string; hint?: 
     return () => { document.removeEventListener("fullscreenchange", fs); window.removeEventListener("keydown", k); };
   }, []);
   return (
-    <div ref={ref} className={full ? "card fixed inset-0 z-50 flex flex-col rounded-none !bg-[#0b1220]" : `card flex flex-col ${h} min-w-0`}>
+    <div ref={ref} className={full ? "card fixed inset-0 z-50 flex flex-col rounded-none !bg-[#0b1220]" : "card flex flex-col min-w-0"}
+      style={full ? undefined : { height: h }}>
       <div className="card-h">
         <span className="card-t">{title}</span>
         {hint && <span className="text-[10px] text-slate-500">{hint}</span>}
@@ -235,4 +236,33 @@ export function useOcSummary(tick: number): OcSummary | null {
     return () => { dead = true; window.clearInterval(id); };
   }, [tick]);
   return d;
+}
+
+
+// ─────────────────────────── drag bar: pull up / down to resize the block above it ───────────────────────────
+export function useStoredHeight(key: string, def: number): [number, (v: number) => void] {
+  const [h, setH] = useState<number>(() => { try { const v = Number(localStorage.getItem(key)); return v > 0 ? v : def; } catch { return def; } });
+  const set = useCallback((v: number) => { setH(v); try { localStorage.setItem(key, String(Math.round(v))); } catch { /* ignore */ } }, [key]);
+  return [h, set];
+}
+
+export function DragBar({ h, setH, min = 260, max = 1600, label }: { h: number; setH: (v: number) => void; min?: number; max?: number; label: string }) {
+  const start = useRef<{ y: number; h: number } | null>(null);
+  const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    start.current = { y: e.clientY, h };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    document.body.style.cursor = "row-resize"; document.body.style.userSelect = "none";
+  };
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!start.current) return;
+    setH(Math.max(min, Math.min(max, start.current.h + e.clientY - start.current.y)));
+  };
+  const onUp = () => { start.current = null; document.body.style.cursor = ""; document.body.style.userSelect = ""; };
+  return (
+    <div onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onDoubleClick={() => setH(-1)}
+      title={`Drag up / down to resize the ${label} · double-click to reset`}
+      className="group -my-1.5 flex h-3 cursor-row-resize items-center justify-center select-none">
+      <div className="h-1 w-24 rounded-full bg-ink-600 transition group-hover:w-40 group-hover:bg-gold-500" />
+    </div>
+  );
 }
