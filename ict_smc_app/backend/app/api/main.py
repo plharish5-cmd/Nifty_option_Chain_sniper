@@ -297,6 +297,15 @@ def volume(tf: str = Query("5m")):
     return {"tf": tf, **v, "futures": h.fut_status, "recorder": h.recorder.status()}
 
 
+@app.get("/api/oclab/{what}")
+async def oclab(what: str, tf: str = Query("3m"), mode: str = Query("auto"), n: int = Query(10), day: Optional[str] = Query(None)):
+    """Options Lab views from the OC app (PE − CE OI table, OI-change writer flow). Fresh on every new snapshot."""
+    if what not in ("pece", "flow") or mode not in ("auto", "all") or tf not in ("1m", "3m", "5m", "15m", "1h"):
+        raise HTTPException(400, "bad parameters")
+    from ..oclab import run
+    return await run(what, tf, mode, max(3, min(int(n), 25)), day)
+
+
 @app.get("/api/auction")
 def auction(tf: str = Query("5m")):
     """Auction read (observation only): TPO profile, balance boxes, accept / reject events, the 5 questions."""

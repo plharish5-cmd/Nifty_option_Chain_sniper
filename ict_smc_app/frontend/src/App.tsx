@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Analysis, type Candle, type Dashboard, type LiveMsg, type PaperStats, type PaperTrade, type Quote, type Scorecard, type Strikes, type TF, useLive } from "./api";
 import InstrumentPanel from "./components/InstrumentPanel";
 import Chart, { type Layers } from "./components/Chart";
-import OptionChain from "./components/OptionChain";
+import { PeceTable, WritersFlow } from "./components/OcLab";
 import { Alerts, BiasGrid, Builds, Header, Paper, Signals } from "./components/Panels";
 import Story from "./components/Story";
 import Guide from "./components/Guide";
@@ -55,7 +55,7 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"chain" | "paper" | "delta" | "auction">("chain");
+  const [bottom, setBottom] = useState<"pece" | "flow" | "paper" | "delta" | "auction">("pece");
   const [chainTick, setChainTick] = useState(0);
   const [storyTick, setStoryTick] = useState(0);
   const [strikes, setStrikes] = useState<Strikes | null>(null);
@@ -166,17 +166,19 @@ export default function App() {
           </div>
           <Story dash={dash} tick={storyTick} />
           <Guide />
-          <div className="card flex flex-col h-[520px]">
+          <div className="card flex flex-col h-[640px]">
             <div className="card-h">
               <div className="flex gap-1">
-                <button className={`tab ${bottom === "chain" ? "tab-on" : ""}`} onClick={() => setBottom("chain")}>Option chain</button>
+                <button className={`tab ${bottom === "pece" ? "tab-on" : ""}`} onClick={() => setBottom("pece")}>PE − CE OI table</button>
+                <button className={`tab ${bottom === "flow" ? "tab-on" : ""}`} onClick={() => setBottom("flow")}>OI change · writers flow</button>
                 <button className={`tab ${bottom === "paper" ? "tab-on" : ""}`} onClick={() => setBottom("paper")}>Paper trades</button>
                 <button className={`tab ${bottom === "delta" ? "tab-on" : ""}`} onClick={() => setBottom("delta")}>Delta / Footprint</button>
                 <button className={`tab ${bottom === "auction" ? "tab-on" : ""}`} onClick={() => setBottom("auction")}>Auction</button>
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "chain" ? <OptionChain expiries={dash?.expiries ?? []} tick={chainTick} />
+              {bottom === "pece" ? <PeceTable tick={chainTick} />
+                : bottom === "flow" ? <WritersFlow tick={chainTick} />
                 : bottom === "delta" ? <DeltaPanel tick={storyTick} strikes={strikes} />
                 : bottom === "auction" ? <AuctionPanel tick={storyTick} />
                 : paper ? <Paper trades={paper.trades} stats={paper.stats} scorecard={paper.scorecard} /> : null}
