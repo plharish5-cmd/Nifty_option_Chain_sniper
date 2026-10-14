@@ -155,6 +155,14 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         segs.push({ from: r.from, price: r.eq, color: "rgba(232,195,90,0.8)", label: `EQ 50 % ${r.eq.toFixed(1)}`, dash: true });
       }
       for (const z of a.zones) {
+        if (z.type === "IFVG") {                     // inversion FVG: failed gap that flipped role (orange = sell zone, teal = buy zone)
+          if (!layers.fvg) continue;
+          const sell = z.dir === "bear";
+          boxes.push({ from: z.from, to: z.to, top: z.top, bottom: z.bottom,
+            fill: sell ? "rgba(251,146,60,0.15)" : "rgba(45,212,191,0.13)", stroke: sell ? "rgba(251,146,60,0.85)" : "rgba(45,212,191,0.85)",
+            dash: true, label: z.label, labelColor: sell ? "#fdba74" : "#5eead4" });
+          continue;
+        }
         const isOB = z.type !== "FVG";
         if (isOB && !layers.ob) continue;
         if (!isOB && !layers.fvg) continue;
@@ -233,9 +241,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     const evs: Ev[] = [];
     const push = (e: Ev) => evs.push(e);
     const side = (bull: boolean): "above" | "below" => (bull ? "below" : "above");
-    if (a && (layers.structure || layers.delta)) {
+    if (a && (layers.structure || layers.delta || layers.fvg)) {
       for (const m of a.markers) {
         const bull = m.dir === "bull";
+        if (m.kind.startsWith("IFVG")) {
+          if (!layers.fvg) continue;
+          const sig = m.kind !== "IFVG_FLIP", sell = m.dir === "bear";
+          push({ time: m.time, side: sell ? "above" : "below", dir: m.dir, kind: m.kind, layer: "IFVG", full: m.text,
+            short: sig ? (sell ? "IFVG▼ sell" : "IFVG▲ buy") : "inv", pri: sig ? 3 : 1, size: sig ? 1.15 : 0.5,
+            shape: sig ? (sell ? "arrowDown" : "arrowUp") : "circle", color: sell ? "#fb923c" : "#2dd4bf" });
+          continue;
+        }
+        if (!(layers.structure || layers.delta)) continue;
         const isDelta = m.kind.startsWith("DELTA_") || m.kind === "FOOTPRINT_IMBALANCE" || m.kind.startsWith("PROXY_FLOW");
         if (isDelta ? !layers.delta : !layers.structure) continue;
         if (isDelta && !layers.deltaDetail && (m.kind === "DELTA_FLIP" || m.kind === "FOOTPRINT_IMBALANCE" || m.kind === "PROXY_FLOW_SURGE")) continue;
@@ -436,7 +453,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
 }
 
 const LEGEND: [keyof Layers, string, string][] = [
-  ["ob", "Order block", "rgba(16,185,129,0.6)"], ["fvg", "FVG", "rgba(56,189,248,0.7)"], ["liq", "Liquidity BSL/SSL", "#f59e0b"],
+  ["ob", "Order block", "rgba(16,185,129,0.6)"], ["fvg", "FVG · IFVG (orange sell / teal buy)", "rgba(251,146,60,0.85)"], ["liq", "Liquidity BSL/SSL", "#f59e0b"],
   ["structure", "BOS ▲▼ · MSS (big) · bos (weak, faint)", C.bull], ["range", "OTE / EQ", C.gold], ["session", "PDH · PDL · OR", "#38bdf8"],
   ["delta", "ABS ● · Δ± ■", "#e8c35a"], ["crt", "CRT box · TBS ■ · CRT▶", C.gold], ["auction", "Value · ACC / REJ", "#38bdf8"],
   ["volume", "VWAP · vPOC · vol", "#f5f5f4"], ["oi", "FUT OI build-up bars", "#22c55e"], ["rvol", "cRVOL", "#22c55e"],

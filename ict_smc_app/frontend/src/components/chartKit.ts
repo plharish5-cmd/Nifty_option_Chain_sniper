@@ -31,6 +31,9 @@ export const MEANING: Record<string, string> = {
   RVOL_FADING: "RVOL fading — participation dropping back",
   BREAKOUT_WITH_RVOL: "Breakout WITH volume — more likely to hold",
   BREAKOUT_NO_RVOL: "Breakout WITHOUT volume — trap risk",
+  IFVG_FLIP: "FVG inverted — price CLOSED through the gap, so the old support is now resistance (or vice versa)",
+  IFVG_SELL: "IFVG SELL — price came back into the inverted gap (now resistance) and closed back below it: sell / buy PE, SL above the zone",
+  IFVG_BUY: "IFVG BUY — price came back into the inverted gap (now support) and closed back above it: buy CE, SL below the zone",
   OI_SURGE: "Futures OI surge — unusual position change this bar",
 };
 

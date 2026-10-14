@@ -86,3 +86,81 @@ def find_fvgs(b: Bars, atr_arr: np.ndarray, min_pts: float, min_atr: float) -> L
                     g.invalid_i = j
                     break
     return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# IFVG — Inversion Fair Value Gap (ICT)
+# ═══════════════════════════════════════════════════════════════════════════
+# When price CLOSES through an FVG, the gap failed — and flips role:
+#   bullish FVG closed below its bottom  → BEARISH IFVG (old support = new resistance → SELL on the retest)
+#   bearish FVG closed above its top     → BULLISH IFVG (old resistance = new support → BUY on the retest)
+# Tracked from the bar after the inversion (no look-ahead):
+#   retest     price trades back into the zone
+#   rejected   a retest bar CLOSES back on the inversion side → the trade signal (first rejection only)
+#   invalid    a CLOSE beyond the far edge — the inversion failed
+@dataclass
+class IFVG:
+    dir: str                 # "bear" = sell zone, "bull" = buy zone
+    src_i: int               # bar of the original FVG
+    i: int                   # inversion bar (close through the gap)
+    ts: int
+    bottom: float
+    top: float
+    retest_i: Optional[int] = None
+    reject_i: Optional[int] = None
+    invalid_i: Optional[int] = None
+
+    @property
+    def size(self) -> float:
+        return self.top - self.bottom
+
+    def state_at(self, j: int) -> str:
+        if self.invalid_i is not None and self.invalid_i <= j:
+            return "invalid"
+        if self.reject_i is not None and self.reject_i <= j:
+            return "rejected"
+        if self.retest_i is not None and self.retest_i <= j:
+            return "retest"
+        return "fresh"
+
+
+def find_ifvgs(b: Bars, fvgs: List[FVG], max_age: int = 120, atr_arr: Optional[np.ndarray] = None,
+               max_atr: float = 3.0, body_atr: float = 0.3) -> List[IFVG]:
+    """Quality filters: the gap must be ≤ max_atr × ATR (no overnight-gap 'FVGs'), the inversion must be a real
+    candle body ≥ body_atr × ATR, and never the session's first candle (an opening gap is not an inversion)."""
+    out: List[IFVG] = []
+    N = len(b)
+    day = (b.ts + 19800) // 86400
+    for g in fvgs:
+        if g.invalid_i is None:
+            continue
+        k = g.invalid_i
+        A = float(atr_arr[k]) if atr_arr is not None else 0.0
+        if A > 0 and (g.size > max_atr * A or abs(b.c[k] - b.o[k]) < body_atr * A):
+            continue
+        if k > 0 and day[k] != day[k - 1]:
+            continue
+        if day[g.i] != day[g.i - 2]:                          # the gap itself spans the overnight gap
+            continue
+        x = IFVG("bear" if g.dir == "bull" else "bull", g.i, g.invalid_i, int(b.ts[g.invalid_i]), g.bottom, g.top)
+        for j in range(x.i + 1, min(N, x.i + 1 + max_age)):
+            if x.dir == "bear":                              # sell zone above price
+                if b.c[j] > x.top:
+                    x.invalid_i = j
+                    break
+                if b.h[j] >= x.bottom:
+                    if x.retest_i is None:
+                        x.retest_i = j
+                    if x.reject_i is None and b.c[j] < x.bottom:
+                        x.reject_i = j
+            else:                                            # buy zone below price
+                if b.c[j] < x.bottom:
+                    x.invalid_i = j
+                    break
+                if b.l[j] <= x.top:
+                    if x.retest_i is None:
+                        x.retest_i = j
+                    if x.reject_i is None and b.c[j] > x.top:
+                        x.reject_i = j
+        out.append(x)
+    return out
