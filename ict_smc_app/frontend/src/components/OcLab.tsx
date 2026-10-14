@@ -2,7 +2,7 @@
 //   PeceTable   — the PE − CE OI table row for row (🎯 LEVELS · ACTION, READ, ★ PRO READ), newest candle on top
 //   WritersFlow — "OI Change (Call vs Put) — since yesterday" + writer-flow strip (Δput − Δcall, 30-min balance)
 // Both refresh every 30 s; the backend recomputes only when a new snapshot has been stored (never stale).
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp,
@@ -191,4 +191,48 @@ export function WritersFlow({ tick }: { tick: number }) {
       {(d?.read || d?.note) && <div className="border-t border-ink-700 px-3 py-1.5 text-[11.5px] text-slate-300">{clean(`${d?.read ?? ""} ${d?.note ?? ""}`)}</div>}
     </div>
   );
+}
+
+
+// ─────────────────────────────── a card with its own Full view / Normal view ───────────────────────────────
+export function FullPanel({ title, hint, h, children }: { title: string; hint?: string; h: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [full, setFull] = useState(false);
+  const toggle = useCallback(() => {
+    if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+    if (full) { setFull(false); return; }
+    const el = ref.current;
+    if (el?.requestFullscreen) el.requestFullscreen().then(() => setFull(true)).catch(() => setFull(true)); else setFull(true);
+  }, [full]);
+  useEffect(() => {
+    const fs = () => { if (!document.fullscreenElement) setFull(false); };
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.fullscreenElement) setFull(false); };
+    document.addEventListener("fullscreenchange", fs); window.addEventListener("keydown", k);
+    return () => { document.removeEventListener("fullscreenchange", fs); window.removeEventListener("keydown", k); };
+  }, []);
+  return (
+    <div ref={ref} className={full ? "card fixed inset-0 z-50 flex flex-col rounded-none !bg-[#0b1220]" : `card flex flex-col ${h} min-w-0`}>
+      <div className="card-h">
+        <span className="card-t">{title}</span>
+        {hint && <span className="text-[10px] text-slate-500">{hint}</span>}
+        <button onClick={toggle} className="tab ml-auto !border-gold-500/70 !text-gold-400 font-semibold">{full ? "▣ Normal view" : "⛶ Full view"}</button>
+      </div>
+      <div className="min-h-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
+export type OcBeat = { time: string; tone: "bull" | "bear" | "wait" | "info" | "trade"; title: string; meaning: string; action: string };
+export type OcSummary = { ok: boolean; lines: string[]; beats: OcBeat[]; message?: string };
+
+export function useOcSummary(tick: number): OcSummary | null {
+  const [d, setD] = useState<OcSummary | null>(null);
+  useEffect(() => {
+    let dead = false;
+    const go = () => fetch("/api/oclab-summary").then((r) => r.json()).then((j) => { if (!dead) setD(j); }).catch(() => {});
+    go();
+    const id = window.setInterval(go, 60000);
+    return () => { dead = true; window.clearInterval(id); };
+  }, [tick]);
+  return d;
 }

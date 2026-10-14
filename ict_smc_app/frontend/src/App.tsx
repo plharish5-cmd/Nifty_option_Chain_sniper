@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Analysis, type Candle, type Dashboard, type LiveMsg, type PaperStats, type PaperTrade, type Quote, type Scorecard, type Strikes, type TF, useLive } from "./api";
 import InstrumentPanel from "./components/InstrumentPanel";
 import Chart, { type Layers } from "./components/Chart";
-import { PeceTable, WritersFlow } from "./components/OcLab";
+import { FullPanel, PeceTable, WritersFlow, useOcSummary } from "./components/OcLab";
 import { Alerts, BiasGrid, Builds, Header, Paper, Signals } from "./components/Panels";
 import Story from "./components/Story";
 import Guide from "./components/Guide";
@@ -55,7 +55,7 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"pece" | "flow" | "paper" | "delta" | "auction">("pece");
+  const [bottom, setBottom] = useState<"paper" | "delta" | "auction">("paper");
   const [chainTick, setChainTick] = useState(0);
   const [storyTick, setStoryTick] = useState(0);
   const [strikes, setStrikes] = useState<Strikes | null>(null);
@@ -99,6 +99,7 @@ export default function App() {
     else if (m.type === "strikes") setStrikes(m.strikes);
   });
 
+  const oc = useOcSummary(storyTick + chainTick);
   const q = quote ?? dash?.quote ?? null;
   return (
     <div className="min-h-full flex flex-col">
@@ -158,32 +159,38 @@ export default function App() {
               <span className="text-slate-500">Overlays use CLOSED candles only — the forming candle never paints a signal.</span>
             </div>
           </div>
-          <div className="card">
-            <div className="card-h"><span className="card-t">Read of the market</span></div>
-            <ul className="px-4 py-2 space-y-1 text-[12px] text-slate-300">
-              {(dash?.narrative ?? []).map((n, i) => <li key={i}><span className="text-gold-400 font-semibold">{n.split(":")[0]}</span>{n.slice(n.indexOf(":"))}</li>)}
-            </ul>
+          {/* PE − CE OI table + call vs put writers flow, right under the main chart (each has its own Full view) */}
+          <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-3">
+            <FullPanel title="PE − CE OI table" hint="same as Options Lab · 🎯 levels · ★ pro read" h="h-[460px]">
+              <PeceTable tick={chainTick} />
+            </FullPanel>
+            <FullPanel title="OI change · call vs put writers" hint="since yesterday · writer-flow strip · 30-min balance" h="h-[460px]">
+              <WritersFlow tick={chainTick} />
+            </FullPanel>
           </div>
-          <Story dash={dash} tick={storyTick} />
-          <Guide />
-          <div className="card flex flex-col h-[640px]">
+          <div className="card flex flex-col h-[560px]">
             <div className="card-h">
               <div className="flex gap-1">
-                <button className={`tab ${bottom === "pece" ? "tab-on" : ""}`} onClick={() => setBottom("pece")}>PE − CE OI table</button>
-                <button className={`tab ${bottom === "flow" ? "tab-on" : ""}`} onClick={() => setBottom("flow")}>OI change · writers flow</button>
                 <button className={`tab ${bottom === "paper" ? "tab-on" : ""}`} onClick={() => setBottom("paper")}>Paper trades</button>
                 <button className={`tab ${bottom === "delta" ? "tab-on" : ""}`} onClick={() => setBottom("delta")}>Delta / Footprint</button>
                 <button className={`tab ${bottom === "auction" ? "tab-on" : ""}`} onClick={() => setBottom("auction")}>Auction</button>
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "pece" ? <PeceTable tick={chainTick} />
-                : bottom === "flow" ? <WritersFlow tick={chainTick} />
-                : bottom === "delta" ? <DeltaPanel tick={storyTick} strikes={strikes} />
+              {bottom === "delta" ? <DeltaPanel tick={storyTick} strikes={strikes} />
                 : bottom === "auction" ? <AuctionPanel tick={storyTick} />
                 : paper ? <Paper trades={paper.trades} stats={paper.stats} scorecard={paper.scorecard} /> : null}
             </div>
           </div>
+          <div className="card">
+            <div className="card-h"><span className="card-t">Read of the market</span></div>
+            <ul className="px-4 py-2 space-y-1 text-[12px] text-slate-300">
+              {(dash?.narrative ?? []).map((n, i) => <li key={i}><span className="text-gold-400 font-semibold">{n.split(":")[0]}</span>{n.slice(n.indexOf(":"))}</li>)}
+              {(oc?.lines ?? []).map((n, i) => <li key={`oc${i}`}><span className="text-gold-400 font-semibold">{n.split(":")[0]}</span>{n.slice(n.indexOf(":"))}</li>)}
+            </ul>
+          </div>
+          <Story dash={dash} tick={storyTick} oc={oc} />
+          <Guide />
         </section>
         <aside className="flex flex-col gap-3 min-w-0">
           <div className="card">

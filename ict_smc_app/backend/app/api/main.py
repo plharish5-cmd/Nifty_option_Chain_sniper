@@ -297,6 +297,13 @@ def volume(tf: str = Query("5m")):
     return {"tf": tf, **v, "futures": h.fut_status, "recorder": h.recorder.status()}
 
 
+@app.get("/api/oclab-summary")
+async def oclab_summary():
+    """PE − CE table + writers-flow, condensed into narrative lines and story beats."""
+    from ..oclab import summary
+    return await summary()
+
+
 @app.get("/api/oclab/{what}")
 async def oclab(what: str, tf: str = Query("3m"), mode: str = Query("auto"), n: int = Query(10), day: Optional[str] = Query(None)):
     """Options Lab views from the OC app (PE − CE OI table, OI-change writer flow). Fresh on every new snapshot."""

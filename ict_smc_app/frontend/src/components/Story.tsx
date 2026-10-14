@@ -3,6 +3,7 @@
 // It never invents a level: every number comes from the engine.
 import { useEffect, useState } from "react";
 import { api, fmt, lakh, type Analysis, type Dashboard, type Marker, type Signal } from "../api";
+import type { OcSummary } from "./OcLab";
 
 type Tone = "bull" | "bear" | "wait" | "info" | "trade";
 interface Beat { time: string; tone: Tone; title: string; meaning: string; action: string }
@@ -138,7 +139,7 @@ function verdict(a: Analysis | null, d: Dashboard): { tone: Tone; head: string; 
   return { tone: "wait", head: "WAIT — no clear structure yet", lines: ["No confirmed BOS/MSS on 5m. Let the market show its hand: which side's liquidity gets swept first?", ...lines] };
 }
 
-export default function Story({ dash, tick }: { dash: Dashboard | null; tick: number }) {
+export default function Story({ dash, tick, oc }: { dash: Dashboard | null; tick: number; oc?: OcSummary | null }) {
   const [a5, setA5] = useState<Analysis | null>(null);
   useEffect(() => { api.analysis("5m").then(setA5).catch(() => {}); }, [tick]);
   if (!dash) return null;
@@ -147,9 +148,11 @@ export default function Story({ dash, tick }: { dash: Dashboard | null; tick: nu
   const beats: Beat[] = [
     ...(a5?.markers ?? []).filter((m) => Math.floor(m.time / 86400) === lastDay).map(markerBeat),
     ...dash.signals.map(signalBeat).filter((x): x is Beat => !!x),
+    ...((oc?.beats ?? []) as Beat[]),                      // OI writers: level built / broken, writer-flow flips
   ].sort((x, y) => x.time.localeCompare(y.time))
    .filter((b, i, arr) => arr.findIndex((o) => o.time === b.time && o.title === b.title) === i);
-  const v = verdict(a5, dash);
+  const v0 = verdict(a5, dash);
+  const v = { ...v0, lines: [...v0.lines, ...(oc?.lines ?? []).map((l) => `OI writers — ${l}`)] };
 
   return (
     <div className="card">
