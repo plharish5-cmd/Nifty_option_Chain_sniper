@@ -40,6 +40,9 @@ export default function App() {
   });
   useEffect(() => { try { localStorage.setItem("ict_layers", JSON.stringify(layers)); } catch { /* ignore */ } }, [layers]);
   const [full, setFull] = useState(false);
+  // right panel (Instrument · strikes, bias, playbook, builds, alerts) — hide to give the charts the full width
+  const [side, setSide] = useState<boolean>(() => { try { return localStorage.getItem("ict_side") !== "0"; } catch { return true; } });
+  useEffect(() => { try { localStorage.setItem("ict_side", side ? "1" : "0"); } catch { /* ignore */ } }, [side]);
   const chartCard = useRef<HTMLDivElement>(null);
   // Full view = real browser full screen of the chart card (hides tabs/address bar); falls back to a page overlay.
   const toggleFull = useCallback(() => {
@@ -119,7 +122,13 @@ export default function App() {
           </div>
         );
       })()}
-      <main className="flex-1 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-3 p-3">
+      {!side && (
+        <button onClick={() => setSide(true)} title="Show the right panel (instrument, strikes, bias, playbook, alerts)"
+          className="fixed right-0 top-1/3 z-40 rounded-l-lg border border-r-0 border-gold-500/70 bg-ink-900/95 px-1.5 py-3 text-[11px] font-semibold text-gold-400 shadow-lg [writing-mode:vertical-rl] hover:bg-ink-850">
+          ◀ Show panel
+        </button>
+      )}
+      <main className={`flex-1 grid grid-cols-1 ${side ? "xl:grid-cols-[minmax(0,1fr)_380px]" : ""} gap-3 p-3`}>
         <section className="flex flex-col gap-3 min-w-0">
           <div ref={chartCard} className={full ? "card fixed inset-0 z-50 flex flex-col rounded-none !bg-[#0b1220]" : "card flex flex-col h-[62vh] min-h-[420px]"}>
             <div className="card-h flex-wrap">
@@ -192,7 +201,9 @@ export default function App() {
           <Story dash={dash} tick={storyTick} oc={oc} />
           <Guide />
         </section>
-        <aside className="flex flex-col gap-3 min-w-0">
+        <aside className={side ? "flex flex-col gap-3 min-w-0" : "hidden"}>
+          <button onClick={() => setSide(false)} title="Hide this panel — the charts and tables take the full width"
+            className="tab self-end !border-gold-500/70 !text-gold-400 font-semibold">Hide panel ▶</button>
           <div className="card">
             <div className="card-h"><span className="card-t">Instrument · strikes</span>
               <span className="text-[10px] text-slate-500">{strikes?.mode === "OPTION_CHART" ? "option chart (experimental)" : "structure on NIFTY"}</span></div>
