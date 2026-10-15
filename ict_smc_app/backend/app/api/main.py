@@ -287,6 +287,31 @@ def crt(tf: str = Query("5m")):
             "rules": {k: v for k, v in _cfg.rules().get("crt_tbs", {}).items() if not k.startswith("_")}}
 
 
+@app.get("/api/crt-phase")
+def crt_phase(keep: int = Query(4)):
+    """DISPLAY-ONLY CRT phase cockpit: where each Setup D range is in its 3-candle story. Changes nothing."""
+    from ..engine import crt_phase as cp
+    h = _h()
+    absorb = {int(e["ts"]) for d in h.delta.values() for e in (d.get("events") or [])
+              if e.get("event_type") == "DELTA_ABSORPTION"}
+    try:
+        strikes = h.book.current()
+    except Exception:                                        # noqa: BLE001
+        strikes = None
+    out, errs = [], []
+    for r in list(h.crt.values()):
+        try:
+            ltf = r.get("ltf") or "1m"
+            rows = h.candles.frame(h.nifty, ltf, days=2, include_forming=False)
+            rv = h.rvol_tf(ltf) if h.mapped_1m() else {}
+            out += cp.phases(r, rows, rv, absorb, strikes, max(1, min(int(keep), 10)))
+        except Exception as e:                               # noqa: BLE001
+            errs.append(f"{r.get('pair')}: {e}")
+    rank = {"TRADE LIVE": 0, "WATCH — sweep done, waiting for the LTF MSS": 1, "WAITING for the manipulation candle": 2}
+    out.sort(key=lambda x: (rank.get(x["ready"], 3), -x["k_ts"]))
+    return {"rows": out, "errors": errs, "order": cp.ORDER}
+
+
 @app.get("/api/volume")
 def volume(tf: str = Query("5m")):
     """Real volume from the current-month NIFTY future (basis-adjusted): profiles, VWAP, AVWAPs, RVOL, activity."""
@@ -329,7 +354,7 @@ async def oclab_summary():
 @app.get("/api/oclab/{what}")
 async def oclab(what: str, tf: str = Query("3m"), mode: str = Query("auto"), n: int = Query(10), day: Optional[str] = Query(None)):
     """Options Lab views from the OC app (PE − CE OI table, OI-change writer flow). Fresh on every new snapshot."""
-    if what not in ("pece", "flow") or mode not in ("auto", "all") or tf not in ("1m", "3m", "5m", "15m", "1h"):
+    if what not in ("pece", "flow", "gex") or mode not in ("auto", "all") or tf not in ("1m", "3m", "5m", "15m", "1h"):
         raise HTTPException(400, "bad parameters")
     from ..oclab import run
     return await run(what, tf, mode, max(3, min(int(n), 25)), day)

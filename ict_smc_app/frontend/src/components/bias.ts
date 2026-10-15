@@ -5,15 +5,16 @@ import type { Analysis, Candle } from "../api";
 import type { FpBar } from "./footprint";
 
 export type Vote = "bull" | "bear" | null;
-export const FACTORS = ["FVG/IFVG", "Order block", "CRT/TBS", "Footprint", "RVOL", "VWAP", "Structure", "PE−CE action", "Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip"] as const;
+export const FACTORS = ["FVG/IFVG", "Order block", "CRT/TBS", "Footprint", "RVOL", "VWAP", "Structure", "PE−CE action", "Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip", "PCR trend"] as const;
 // Options Lab feeds (from 8501 via /api/oclab): PE−CE table rows (3m, ATM ±10) and the writer-flow points (1m, all strikes)
-export type OcRow = { ts: string; act: [string, string, string?, string?] | null; pe_ce_day: number | null };
+export type OcRow = { ts: string; act: [string, string, string?, string?] | null; pe_ce_day: number | null; pcr?: number | null };
 export type OcPt = { t: number; ce: number | null; pe: number | null; flow: number | null; bal: number | null; sig: boolean;
   flip?: boolean; regime?: string; conf?: string | null };
-export type OcFeed = { pece: OcRow[]; flow: OcPt[] };
+export type Gex = { ok: boolean; spot?: number; flip?: number | null; regime?: string; pin?: number; accel?: number | null; message?: string };
+export type OcFeed = { pece: OcRow[]; flow: OcPt[]; gex?: Gex | null; day?: string };
 export type Factor = typeof FACTORS[number];
 export type BiasRow = { time: number; o: number; h: number; l: number; c: number; votes: Record<Factor, Vote>; why: Record<Factor, string>;
-  bull: number; bear: number; avail: number; verdict: "BUY" | "SELL" | "MIXED"; strong: boolean; forming?: boolean };
+  bull: number; bear: number; avail: number; verdict: "BUY" | "SELL" | "MIXED"; strong: boolean; forming?: boolean; warn?: string };
 
 const FLOW = new Set(["STACKED_BUY", "STACKED_SELL", "ACCUMULATION", "DISTRIBUTION", "INITIATIVE", "MANIPULATION", "ABSORPTION"]);
 
@@ -94,12 +95,14 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
 
     // 8 PE−CE table action at the candle close ("BUY CE…", "CE on dip…" → BUY · "…PE…" → SELL · WAIT / no entry → no vote)
     const cut = hmOf(tEnd);
-    const pr = [...pece].reverse().find((r) => r.ts <= cut);
+    const dayOf = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
+    const sameDay = !oc?.day || dayOf(c.time) === oc.day;           // 8501 data is for ONE session — never borrow it for other days
+    const pr = sameDay ? [...pece].reverse().find((r) => r.ts <= cut) : undefined;
     const act = (pr?.act?.[0] ?? "").replace(/<[^>]+>/g, "");
     votes["PE−CE action"] = /\bCE\b/.test(act) && !/no fresh|after close/i.test(act) ? "bull" : /\bPE\b/.test(act) && !/no fresh|after close/i.test(act) ? "bear" : null;
     why["PE−CE action"] = pr ? `${pr.ts} ${act || "—"}` : "";
     // 9 Writers gap (put − call OI change since yesterday): which way the gap moved over the last 30 min
-    const f0 = flowAt(tEnd), f30 = flowAt(tEnd - 1800);
+    const f0 = sameDay ? flowAt(tEnd) : undefined, f30 = sameDay ? flowAt(tEnd - 1800) : undefined;
     let gv: Vote = null, gw = "";
     if (f0 && f0.pe != null && f0.ce != null) {
       const gap = f0.pe - f0.ce, prev = f30 && f30.pe != null && f30.ce != null ? f30.pe - f30.ce : gap, ch = gap - prev;
@@ -109,7 +112,7 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     }
     votes["Writers gap"] = gv; why["Writers gap"] = gw;
     // 10 Δput−Δcall flow strip: an unusual (≥2.5×) writer candle inside this candle decides; else the 30-min balance (±0.25)
-    const inBar = flow.filter((p) => p.t >= c.time && p.t < tEnd && p.flow != null);
+    const inBar = !sameDay ? [] : flow.filter((p) => p.t >= c.time && p.t < tEnd && p.flow != null);
     const spike = inBar.filter((p) => p.sig).sort((x, y) => Math.abs(y.flow!) - Math.abs(x.flow!))[0];
     let fv2: Vote = null, fw2 = "";
     if (spike) { fv2 = spike.flow! > 0 ? "bull" : "bear"; fw2 = `unusual writer candle ${(spike.flow! / 1e5).toFixed(1)}L (${spike.flow! > 0 ? "put writing" : "call writing"})`; }
@@ -127,25 +130,40 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     }
     votes["Writer dominance"] = dv; why["Writer dominance"] = dw;
     // 12 Writer flip: the ▲ BULL / ▼ BEAR regime-flip marker on the writers chart, if it fired in the last 6 candles
-    const flipPt = [...flow].reverse().find((p) => p.flip && p.t < tEnd && p.t >= c.time - 5 * barSec);
+    const flipPt = !sameDay ? undefined : [...flow].reverse().find((p) => p.flip && p.t < tEnd && p.t >= c.time - 5 * barSec);
     const fr = (flipPt?.conf ?? flipPt?.regime ?? "").toString();
     votes["Writer flip"] = flipPt ? (/bull/i.test(fr) ? "bull" : /bear/i.test(fr) ? "bear" : null) : null;
     why["Writer flip"] = flipPt ? `${/bull/i.test(fr) ? "▲ BULL" : /bear/i.test(fr) ? "▼ BEAR" : fr} flip at ${hmOf(flipPt.t)}` : "no flip in the last 6 candles";
+
+    // 13 PCR trend (OI PCR from the PE−CE table, ATM ±10): rising over 30 min = put writing = BUY, falling = SELL
+    //    + ⚠ crowding: PCR > 1.5 and turning down, or < 0.5 and turning up → reversal risk (shown on the badge, not a vote)
+    let pv: Vote = null, pw = "", warn = "";
+    const pNow = sameDay ? [...pece].reverse().find((r) => r.ts <= cut && r.pcr != null) : undefined;
+    const pThen = !sameDay ? undefined : [...pece].reverse().find((r) => r.ts <= hmOf(tEnd - 1800) && r.pcr != null);
+    if (pNow?.pcr != null) {
+      const d = pThen?.pcr != null ? pNow.pcr - pThen.pcr : 0;
+      pv = d >= 0.03 ? "bull" : d <= -0.03 ? "bear" : null;
+      pw = `PCR ${pNow.pcr.toFixed(2)} (${d >= 0 ? "+" : ""}${d.toFixed(2)} in 30 min)`;
+      const settled = cut >= "10:15";                         // PCR (from OI change) always starts tiny at the open
+      if (settled && pNow.pcr > 1.5 && d < -0.01) warn = `⚠ PCR crowded ${pNow.pcr.toFixed(2)} and turning down — reversal risk`;
+      if (settled && pNow.pcr < 0.5 && d > 0.01) warn = `⚠ PCR crowded ${pNow.pcr.toFixed(2)} and turning up — reversal risk`;
+    }
+    votes["PCR trend"] = pv; why["PCR trend"] = pw;
 
     // factors with no data today don't count (e.g. futures volume missing → RVOL & VWAP can't vote)
     if (!hasVol) why.RVOL = "no futures volume today";
     if (!hasVwap) why.VWAP = "no VWAP (futures volume missing)";
     if (!hasFp) why.Footprint = "no recorded ticks for this tf";
-    if (!hasPece) why["PE−CE action"] = "Options Lab (8501) data not available";
+    if (!hasPece) { why["PE−CE action"] = "Options Lab (8501) data not available"; why["PCR trend"] = "Options Lab (8501) data not available"; }
     if (!hasFlow) for (const k of ["Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip"] as Factor[]) why[k] = "Options Lab (8501) data not available";
     if (isLive) why.Footprint = "footprint only for closed candles";
-    const avail = FACTORS.length - (hasVol ? 0 : 1) - (hasVwap ? 0 : 1) - (hasFp && !isLive ? 0 : 1) - (hasPece ? 0 : 1) - (hasFlow ? 0 : 4);
+    const avail = FACTORS.length - (hasVol ? 0 : 1) - (hasVwap ? 0 : 1) - (hasFp && !isLive ? 0 : 1) - (hasPece ? 0 : 2) - (hasFlow ? 0 : 4);
     const vals = Object.values(votes);
     const bull = vals.filter((x) => x === "bull").length, bear = vals.filter((x) => x === "bear").length;
     const req = Math.max(3, Math.round(pct * avail));             // e.g. 10 factors → 7 must agree; 7 → 5
     const maxAgainst = avail >= 10 ? 3 : avail >= 8 ? 2 : 1;
     const verdict = bull >= req && bear <= maxAgainst ? "BUY" : bear >= req && bull <= maxAgainst ? "SELL" : "MIXED";
     return { time: c.time, o: c.open, h: c.high, l: c.low, c: c.close, votes, why, bull, bear, avail, verdict,
-      strong: Math.max(bull, bear) >= Math.round(0.85 * avail), forming: isLive };
+      strong: Math.max(bull, bear) >= Math.round(0.85 * avail), forming: isLive, warn: warn || undefined };
   });
 }

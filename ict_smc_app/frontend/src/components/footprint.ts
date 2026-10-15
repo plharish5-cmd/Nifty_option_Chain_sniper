@@ -109,7 +109,7 @@ class Renderer implements IPrimitivePaneRenderer {
         const buy = r.verdict === "BUY", n = buy ? r.bull : r.bear;
         const y0 = series.priceToCoordinate(buy ? r.l : r.h);
         if (y0 === null) continue;
-        const txt = `${buy ? "▲" : "▼"}${n}/${r.avail}${r.strong ? "★" : ""}`;
+        const txt = `${r.warn ? "⚠ " : ""}${buy ? "▲" : "▼"}${n}/${r.avail}${r.strong ? "★" : ""}`;
         const w = ctx.measureText(txt).width + 8;
         const yy = buy ? (y0 as number) + (bars.length ? 50 : 16) : (y0 as number) - (bars.length ? 58 : 12);
         ctx.fillStyle = "rgba(11,18,32,0.9)"; ctx.fillRect(x - w / 2, yy - 10, w, 14);
@@ -150,7 +150,7 @@ export class FootprintPrimitive implements ISeriesPrimitive<Time> {
   chart: IChartApi | null = null;
   series: ISeriesApi<SeriesType> | null = null;
   bars: FpBar[] = [];
-  bias: { time: number; h: number; l: number; verdict: string; bull: number; bear: number; avail: number; strong: boolean }[] = [];
+  bias: { time: number; h: number; l: number; verdict: string; bull: number; bear: number; avail: number; strong: boolean; warn?: string }[] = [];
   private views = [new View(this)];
   private request: (() => void) | null = null;
   attached(p: SeriesAttachedParameter<Time>) { this.chart = p.chart as IChartApi; this.series = p.series; this.request = p.requestUpdate; }

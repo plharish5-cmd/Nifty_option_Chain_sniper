@@ -490,6 +490,13 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             <span key={l} className="mr-2" title={m}><b className="rounded bg-teal-500/80 px-1 text-[#0b1220]">{l}</b> {w}</span>))}
           <span className="text-slate-500">teal = bull · pink = bear · gold tick = POC · <b className="text-slate-300">BUY/SELL ✓3</b> = footprint + delta + structure agree</span>
         </div>}
+        {layers.bias && ocFeed?.gex?.ok && (() => { const g = ocFeed.gex!; const sp = g.spot ?? 0;
+          const pinNear = g.pin != null && Math.abs(sp - g.pin) <= sp * 0.0025;
+          const txt = pinNear ? `📌 PIN zone ${g.pin!.toLocaleString("en-IN")} — biggest gamma, spot ${Math.abs(sp - g.pin!).toFixed(0)} pts away: expect a range, fade the edges, don't chase breakouts`
+            : g.regime === "negative" ? `⚡ TREND zone (negative gamma${g.flip ? `, flip ${g.flip.toLocaleString("en-IN")}` : ""}) — moves can run, breakout badges more reliable`
+            : `〰 Range-prone (positive gamma${g.flip ? `, flip ${g.flip.toLocaleString("en-IN")}` : ""}) — moves get absorbed; magnet ${g.pin?.toLocaleString("en-IN")}`;
+          return <div className="pointer-events-auto rounded bg-[#060b16]/85 px-2 py-0.5 text-[10.5px] text-violet-200 ring-1 ring-violet-400/30"
+            title="GEX from 8501 Options Lab (latest snapshot). Context, not a vote. Dealer-sign convention is the US one — treat as a hint.">{txt}</div>; })()}
         {fpMsg && <div className="rounded bg-[#060b16]/85 px-2 py-0.5 text-[10px] text-amber-300">{fpMsg}</div>}
         {latest.length > 0 && (
           <div className="rounded bg-[#060b16]/85 px-2 py-1 text-[11px] ring-1 ring-white/5">
@@ -532,6 +539,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
               <span className={`font-bold ${br.verdict === "BUY" ? "text-bull-400" : br.verdict === "SELL" ? "text-bear-400" : "text-slate-400"}`}>
                 {br.verdict === "MIXED" ? "mixed" : br.verdict} · <span className="text-bull-400">{br.bull}▲</span> <span className="text-bear-400">{br.bear}▼</span> of {br.avail}</span>
             </div>
+            {br.warn && <div className="mb-0.5 font-semibold text-amber-300">{br.warn}</div>}
             {FACTORS.map((f) => { const v = br.votes[f]; return (
               <div key={f} className="flex gap-1 leading-tight">
                 <span className={`w-3 shrink-0 font-bold ${v === "bull" ? "text-bull-400" : v === "bear" ? "text-bear-400" : "text-slate-600"}`}>{v === "bull" ? "▲" : v === "bear" ? "▼" : "·"}</span>
@@ -577,7 +585,7 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["delta", "ABS ● · Δ± ■", "#e8c35a"], ["crt", "CRT box · TBS ■ · CRT▶", C.gold], ["auction", "Value · ACC / REJ", "#38bdf8"],
   ["volume", "VWAP · vPOC · vol", "#f5f5f4"], ["oi", "FUT OI build-up bars", "#22c55e"], ["rvol", "cRVOL", "#22c55e"], ["qml", "QML · RBS/SBR · cyan = close line", "#22d3ee"],
   ["fp", "Footprint (est.): Δ under candle · gold = POC · A/D/C/M/S/I", "#facc15"],
-  ["bias", "⚖ Bias 12: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
+  ["bias", "⚖ Bias 13: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {

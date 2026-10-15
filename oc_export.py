@@ -116,9 +116,35 @@ def flow(day: date, tf: str, mode: str, n: int) -> dict:
             "read": rd, "note": note, "points": pts}
 
 
+def gex(day: date, tf: str, mode: str, n: int) -> dict:
+    """Latest gamma picture, same functions as 8501's Options Lab GEX chart (olab_pro.gamma_state + gex_by_strike)."""
+    import store
+    import options_lab_tab as ol
+    import olab_pro as op
+    snaps = store.load_day(day)
+    if not snaps:
+        return {"ok": False, "message": "No snapshots for this session yet."}
+    g = None
+    for ts, spot, df in reversed(snaps[-6:]):                  # latest snapshot whose greeks can be computed
+        spot = float(spot) if spot else None
+        if not spot:
+            continue
+        g = ol.gex_by_strike(df, spot)
+        if g is not None and not g.empty:
+            break
+    if g is None or g.empty:
+        return {"ok": False, "message": "gamma not available (IV / greeks missing in the latest snapshots)"}
+    st = op.gamma_state(df, spot) or {}
+    pin = float(g.loc[g["abs_gex"].idxmax(), "strike"])              # biggest total GEX = magnet
+    return {"ok": True, "day": str(day), "ts": str(ts), "spot": _f(spot), "flip": _f(st.get("flip")),
+            "regime": st.get("regime"), "pin": pin, "pin_net": _f(float(g.loc[g["abs_gex"].idxmax(), "net_gex"])),
+            "accel": _f(st.get("accel")), "total": _f(st.get("total")),
+            "strikes": [dict(k=_f(r.strike), net=_f(r.net_gex), abs=_f(r.abs_gex)) for r in g.itertuples()]}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=["pece", "flow"])
+    ap.add_argument("what", choices=["pece", "flow", "gex"])
     ap.add_argument("--day", default=None)
     ap.add_argument("--tf", default="3m")
     ap.add_argument("--mode", default="auto", choices=["auto", "all"])
@@ -132,7 +158,7 @@ def main() -> None:
                 import options_lab_tab as ol
                 ds = ol._days_available()
                 day = ds[0] if ds else date.today()
-            out = pece(day, a.tf, a.mode, a.n) if a.what == "pece" else flow(day, a.tf, a.mode, a.n)
+            out = {"pece": pece, "flow": flow, "gex": gex}[a.what](day, a.tf, a.mode, a.n)
     except Exception as e:                                      # noqa: BLE001
         out = {"ok": False, "message": f"{type(e).__name__}: {e}"}
     sys.stdout.write(json.dumps(out, default=str))
