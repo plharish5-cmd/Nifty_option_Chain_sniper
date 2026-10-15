@@ -18640,3 +18640,21 @@ INFO:     127.0.0.1:56090 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 2
 INFO:     127.0.0.1:56106 - "GET /api/oclab-summary HTTP/1.1" 200 OK
 INFO:     127.0.0.1:56106 - "GET /api/oclab-summary HTTP/1.1" 200 OK
 2026-10-15 14:20:21,324 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     Started server process [35022]
+INFO:     Waiting for application startup.
+2026-10-15 14:21:13,036 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:21:15,164 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:21:15,348 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:21:15,500 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:21:15,726 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:21:16,032 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:21:16,305 INFO hub: NIFTY future: NIFTY-Oct2026-FUT (id 48704, expiry 2026-10-27) · 8556 one-minute candles — NIFTY-Oct2026-FUT (48704): ok — 23,050.0, basis +27.8, volume today 4,045,275; NIFTY-Nov2026-FUT (61471): ok — 23,163.4, basis +141.2, volume today 610,935; NIFTY-Dec2026-FUT (58875): ok — 23,280.6, basis +258.4, volume today 190,970
+2026-10-15 14:21:16,690 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:21:16,776 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:21:17,040 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:21:17,331 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:21:17,567 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8600 (Press CTRL+C to quit)
+2026-10-15 14:21:21,270 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain/expirylist "HTTP/1.1 200 OK"
+2026-10-15 14:21:21,413 INFO dhan.feed: feed LTT time base detected: ist
