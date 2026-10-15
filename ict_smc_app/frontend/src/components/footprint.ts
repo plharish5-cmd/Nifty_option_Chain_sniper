@@ -40,8 +40,8 @@ type Target = { useMediaCoordinateSpace: (f: (s: MediaScope) => void) => void };
 class Renderer implements IPrimitivePaneRenderer {
   constructor(private p: FootprintPrimitive) {}
   draw(target: Target) {
-    const { chart, series, bars } = this.p;
-    if (!chart || !series || !bars.length) return;
+    const { chart, series, bars, bias } = this.p;
+    if (!chart || !series || (!bars.length && !bias.length)) return;
     const ts = chart.timeScale();
     const spacing = ts.options().barSpacing;
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
@@ -101,6 +101,21 @@ class Renderer implements IPrimitivePaneRenderer {
           }
         }
       }
+      // ⚖ 7-factor bias badges (outlined so they don't clash with ✓3)
+      ctx.font = "bold 10px Inter, system-ui, sans-serif";
+      for (const r of bias) {
+        const x = ts.timeToCoordinate(r.time as Time);
+        if (x === null || x < -20 || x > mediaSize.width + 20) continue;
+        const buy = r.verdict === "BUY", n = buy ? r.bull : r.bear;
+        const y0 = series.priceToCoordinate(buy ? r.l : r.h);
+        if (y0 === null) continue;
+        const txt = `${buy ? "▲" : "▼"}${n}/${r.avail}${r.strong ? "★" : ""}`;
+        const w = ctx.measureText(txt).width + 8;
+        const yy = buy ? (y0 as number) + (bars.length ? 50 : 16) : (y0 as number) - (bars.length ? 58 : 12);
+        ctx.fillStyle = "rgba(11,18,32,0.9)"; ctx.fillRect(x - w / 2, yy - 10, w, 14);
+        ctx.strokeStyle = buy ? "#22c55e" : "#ef4444"; ctx.lineWidth = 1.5; ctx.strokeRect(x - w / 2, yy - 10, w, 14);
+        ctx.fillStyle = buy ? "#4ade80" : "#f87171"; ctx.fillText(txt, x, yy + 1);
+      }
     });
   }
 }
@@ -135,10 +150,11 @@ export class FootprintPrimitive implements ISeriesPrimitive<Time> {
   chart: IChartApi | null = null;
   series: ISeriesApi<SeriesType> | null = null;
   bars: FpBar[] = [];
+  bias: { time: number; h: number; l: number; verdict: string; bull: number; bear: number; avail: number; strong: boolean }[] = [];
   private views = [new View(this)];
   private request: (() => void) | null = null;
   attached(p: SeriesAttachedParameter<Time>) { this.chart = p.chart as IChartApi; this.series = p.series; this.request = p.requestUpdate; }
   detached() { this.chart = null; this.series = null; this.request = null; }
   paneViews() { return this.views; }
-  set(bars: FpBar[]) { this.bars = bars; this.request?.(); }
+  set(bars: FpBar[], bias: FootprintPrimitive["bias"] = []) { this.bars = bars; this.bias = bias; this.request?.(); }
 }

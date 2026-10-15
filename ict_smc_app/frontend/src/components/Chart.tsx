@@ -6,11 +6,12 @@ import {
 } from "lightweight-charts";
 import type { Analysis, Candle, TF } from "../api";
 import { bucket } from "../api";
+import { computeBias } from "./bias";
 import { confluence, FootprintPrimitive, FP_MEANING, FP_WORD, kfmt, type FpBar } from "./footprint";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -429,8 +430,9 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
 
   // ESTIMATED footprint on the chart (5m / 15m / 1h; closed candles from the desk's recorded FUT ticks)
   useEffect(() => {
-    const ok = !!layers.fp && (tf === "5m" || tf === "15m" || tf === "1h");
-    if (!ok) { fpPrim.current.set([]); setFpBars([]); setFpMsg(layers.fp ? "Footprint: 5m / 15m / 1h only" : ""); return; }
+    const want = !!layers.fp || !!layers.bias;
+    const ok = want && (tf === "5m" || tf === "15m" || tf === "1h");
+    if (!ok) { fpPrim.current.set([]); setFpBars([]); setFpMsg(layers.fp ? "Footprint: 5m / 15m / 1h only" : ""); if (!want) return; if (!ok) return; }
     let dead = false;
     const go = () => fetch(`/api/footprints?tf=${tf}&n=30`).then((r) => r.json()).then((j) => {
       if (dead) return;
@@ -441,7 +443,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     go();
     const id = window.setInterval(go, 30000);
     return () => { dead = true; window.clearInterval(id); };
-  }, [tf, layers.fp]);
+  }, [tf, layers.fp, layers.bias]);
 
   useEffect(() => {
     const a = analysis;
@@ -451,9 +453,10 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     for (const m of a?.crt?.markers ?? []) if (m.kind === "CRT_ENTRY") marks.push({ time: m.time, dir: m.dir, label: "CRT entry" });
     for (const m of a?.auction?.markers ?? []) if (m.kind === "AUCTION_ACCEPT") marks.push({ time: m.time, dir: m.dir, label: "auction ACC" });
     for (const m of a?.qml?.markers ?? []) if (m.kind.endsWith("_TRIG")) marks.push({ time: m.time, dir: m.dir, label: m.kind.replace("_TRIG", "") });
-    const withConf = confluence(fpBars, marks, BAR_SEC[tf] ?? 300);
-    fpPrim.current.set(withConf);
-  }, [fpBars, analysis, tf]);
+    const withConf = layers.fp ? confluence(fpBars, marks, BAR_SEC[tf] ?? 300) : [];
+    const bias = layers.bias ? computeBias(candles, a, fpBars, BAR_SEC[tf] ?? 300).filter((r) => r.verdict !== "MIXED") : [];
+    fpPrim.current.set(withConf, bias);
+  }, [fpBars, analysis, tf, layers.fp, layers.bias, candles]);
 
   const hm = (t: number) => { const d = new Date(t * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
   const hc = hover ? cMap.current.get(hover.t) : undefined;
@@ -555,6 +558,7 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["delta", "ABS ● · Δ± ■", "#e8c35a"], ["crt", "CRT box · TBS ■ · CRT▶", C.gold], ["auction", "Value · ACC / REJ", "#38bdf8"],
   ["volume", "VWAP · vPOC · vol", "#f5f5f4"], ["oi", "FUT OI build-up bars", "#22c55e"], ["rvol", "cRVOL", "#22c55e"], ["qml", "QML · RBS/SBR · cyan = close line", "#22d3ee"],
   ["fp", "Footprint (est.): Δ under candle · gold = POC · A/D/C/M/S/I", "#facc15"],
+  ["bias", "⚖ Bias: BUY/SELL n/7 = ≥5 of 7 factors agree", "#e8c35a"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {
