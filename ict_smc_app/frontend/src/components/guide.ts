@@ -1,0 +1,58 @@
+// guide.ts — plain-language explainer for every chart layer: what it is, and what to DO with its latest signal.
+export const GUIDE: Record<string, { name: string; what: string; act: string }> = {
+  ob: { name: "Order blocks", what: "Last opposite candle before a strong move — big orders sat there. Violet = breaker / RJB.",
+    act: "Price returning to a bull OB = look for CE with SL below it; bear OB = PE with SL above." },
+  fvg: { name: "FVG · IFVG", what: "Gaps left by a fast move (orange sell / teal buy boxes). IFVG = a gap price closed THROUGH, now acting the other way.",
+    act: "IFVG▲ buy → CE, SL below the zone · IFVG▼ sell → PE, SL above the zone · plain FVG = magnet / target." },
+  liq: { name: "Liquidity", what: "Stop-loss pools: BSL above old highs, SSL below old lows (orange / violet lines).",
+    act: "Don't enter AT a pool — wait for the sweep (wick through, close back) and trade the reversal." },
+  structure: { name: "BOS / MSS", what: "BOS = trend continues (close beyond last swing) · MSS = first break AGAINST the trend (possible reversal).",
+    act: "Trade WITH the last BOS; after an MSS stop trading the old direction and wait for a pullback entry the new way." },
+  swings: { name: "Swings", what: "Zig-zag of swing highs / lows (HH, HL, LH, LL).", act: "HH + HL = uptrend (CE on HL) · LH + LL = downtrend (PE on LH)." },
+  range: { name: "Premium / OTE", what: "EQ 50 % = middle of the swing range. Above = premium (expensive), below = discount (cheap). OTE 61.8–79 % = best pullback entry band.",
+    act: "Uptrend: buy CE when price dips into the OTE / discount band · Downtrend: sell (PE) in the premium OTE band. Never buy CE in premium." },
+  session: { name: "PDH · PDL · OR", what: "Previous-day high / low / close and the opening range.", act: "Common reaction and target levels — expect a pause or a sweep there." },
+  delta: { name: "Aggression / Absorption", what: "Futures order flow: ABS = heavy volume, price didn't move (big passive orders) · Δ± = aggressive buyers / sellers.",
+    act: "ABS at support = buyers defending (CE bias) · at resistance = sellers defending (PE bias). Needs Delta source = Estimated." },
+  deltaDetail: { name: "All delta detail", what: "Adds delta flips and per-price imbalances to the Aggression layer.", act: "Context only — confirms or questions the main delta marks." },
+  crt: { name: "CRT + TBS", what: "Higher-timeframe candle range (box). TBS = a body closed back inside after a sweep · CRT▶ = entry (Setup D).",
+    act: "CRT▶ = trade toward the other side of the box; TP1 = 50 % (CRM), TP2 = opposite extreme; SL beyond the sweep wick." },
+  auction: { name: "Auction", what: "Value area. ACC = two closes beyond a level (value moving there) · REJ = probed and closed back.",
+    act: "ACC ▲ = buyers accepted higher prices (CE bias) · REJ = fade the probe." },
+  volume: { name: "Volume · VWAP", what: "Futures VWAP (white) + σ bands, vPOC, volume bars.", act: "Above VWAP = buyers in control (prefer CE); below = sellers (prefer PE). vPOC = magnet." },
+  oi: { name: "Futures OI build-up", what: "Green / red bars: long / short build-up, short covering, long unwinding.", act: "Price ▲ + OI ▲ = real buying; price ▲ + OI ▼ = short covering (weaker)." },
+  rvol: { name: "Cumulative RVOL", what: "Today's volume vs normal for this time of day.", act: "Breakout WITH RVOL ≥ 1.5× = trust it · breakout without = trap risk." },
+  qml: { name: "QML · RBS / SBR", what: "Cyan line = CLOSE prices only (wicks ignored). QML = quasimodo reversal; RBS = old resistance now support; SBR = old support now resistance.",
+    act: "‘armed’ = WAIT for price to return to the level · QML▲/RBS▲ arrow = CE · QML▼/SBR▼ = PE · SL beyond the wick. Details in the QML tab." },
+  fp: { name: "Footprint Δ (est.)", what: "Delta under each candle, gold tick = POC, pills = ABSORB / DISTRIB / ACCUM / TRAP / STACK / PUSH.",
+    act: "Act when pill + delta colour + a structure mark agree (BUY/SELL ✓3)." },
+  bias: { name: "⚖ Bias 14", what: "14 factors vote BUY / SELL per closed candle. Badge ▲n/N when ≥ 70 % agree. ⚠ = PCR crowded. Chip = GEX pin / trend.",
+    act: "Use the badge as the DIRECTION filter, enter on your setup with a fixed SL. Hover a candle for every vote." },
+  dol: { name: "D.O.L (IRL ⇄ ERL)", what: "ERL = old highs / lows (stops). IRL = FVGs. After an ERL sweep price draws to the nearest FVG; after the FVG holds it draws back to the old high / low.",
+    act: "The violet box / line is the current TARGET — take profit there, don't enter against it." },
+  heat: { name: "Heatmap", what: "Each candle's price levels shaded by how much traded there (blue = little, yellow/red = a lot). Estimated from recorded FUT ticks.",
+    act: "Hot band at a candle's HIGH with a weak close = sellers absorbing (PE bias) · at the LOW with a strong close = buyers absorbing (CE bias). Hot rows stacking at one price across candles = acceptance / magnet." },
+  ocAct: { name: "PE−CE action", what: "The 🎯 Action column of the 8501 PE−CE table: green lane = CE, red = PE, grey = WAIT. Arrow on the chart only when it SWITCHES to CE or PE.",
+    act: "Take the arrow only in the direction of VWAP / structure; SL as the table says (e.g. 'SL below 23,000')." },
+  smt: { name: "SMT (vs BankNifty)", what: "Pink line = BANKNIFTY. SMT▼ = one index made a higher high, the other didn't (weak sweep); SMT▲ the same at lows.",
+    act: "SMT▼ at a high = don't buy, look for PE on the MSS · SMT▲ at a low = look for CE." },
+};
+
+// what the latest signal of a layer means right now
+export const KIND_ACT: Record<string, string> = {
+  BOS: "trend continues — trade with it", MSS: "possible reversal — wait for a pullback entry the new way",
+  SWEEP: "stops taken — watch for the reversal close", IFVG_BUY: "BUY CE · SL below the zone", IFVG_SELL: "SELL / PE · SL above the zone",
+  IFVG_FLIP: "gap inverted — watch for the retest", CRT_ENTRY: "Setup D entry — toward the other side of the CRT box",
+  CRT_TBS: "body back inside — entry model next", CRT_M: "manipulation candle — wait for TBS", AUCTION_ACCEPT: "value moving — follow it",
+  AUCTION_REJECT: "probe refused — fade it", DELTA_ABSORPTION: "big passive orders — turn risk", DELTA_AGGRESSION: "aggressive side in control",
+  QML_ARMED: "WAIT for the retest", QML_TRIG: "entry triggered", RBS_ARMED: "WAIT — buy the first retest", RBS_TRIG: "BUY CE", SBR_ARMED: "WAIT — sell the first retest",
+  SBR_TRIG: "SELL / PE", SNR_UPTHRUST: "bear trap above — PE bias", SNR_SPRING: "bull trap below — CE bias", DOL: "target set", DOL_HIT: "target reached — book profit",
+  SMT: "weak sweep — expect a turn", OC_ACT: "option writers favour this side", RVOL_ACTIVATED: "participation on", BREAKOUT_WITH_RVOL: "breakout with volume — trust it",
+  BREAKOUT_NO_RVOL: "breakout without volume — trap risk", RVOL_FADING: "participation fading", OI_SURGE: "big positioning change",
+};
+
+// chart layer key → Ev.layer names used by chartKit markers
+export const EV_LAYER: Record<string, string[]> = {
+  fvg: ["IFVG"], structure: ["Structure", "Liquidity"], delta: ["Delta"], deltaDetail: ["Delta"], crt: ["CRT"], auction: ["Auction"],
+  rvol: ["RVOL"], oi: ["Futures OI"], qml: ["QML"], dol: ["D.O.L"], smt: ["SMT"], ocAct: ["PE−CE action"],
+};

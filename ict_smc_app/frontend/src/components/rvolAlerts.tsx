@@ -4,6 +4,7 @@
 // Settings are per browser (localStorage); the alert itself is also in the Alerts log and on Telegram (if on).
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AlertRow } from "../api";
+import { SIG_SOUND } from "./signalAlerts";
 
 export type AlertPrefs = { sound: boolean; voice: boolean; desktop: boolean; enabled: boolean };
 const KEY = "ict_rvol_alert_prefs";
@@ -57,12 +58,14 @@ export function useRvolAlerts() {
     setToasts((t) => [a, ...t].slice(0, 4));
     window.setTimeout(() => setToasts((t) => t.filter((x) => x !== a)), 45000);
     if (!prefs.enabled) return;
-    if (prefs.sound) tones(SOUND[kind] ?? [[880, 0.2], [880, 0.2]]);
+    const sig = kind.startsWith("SIG_");
+    if (prefs.sound) tones(sig ? (kind.startsWith("SIG_APLUS") ? SIG_SOUND.APLUS : SIG_SOUND[a.side] ?? SIG_SOUND.INFO) : SOUND[kind] ?? [[880, 0.2], [880, 0.2]]);
     if (prefs.voice && "speechSynthesis" in window) {
-      try { const u = new SpeechSynthesisUtterance(`${SAY[kind] ?? "Alert"}. ${a.title.replace(/×/g, " times").replace(/RVOL/g, "R VOL")}`); u.rate = 1.05; speechSynthesis.speak(u); } catch { /* ignore */ }
+      try { const said = sig ? `${a.title.replace(/^\S+ (\d\d):(\d\d) · /, "$1 $2. ").replace(/✓3/g, "check 3").replace(/★ ?A\+/g, "A plus").replace(/[▲▼→—★]/g, " ").replace(/PE−CE/g, "P E C E").replace(/≥/g, "at least")}` : `${SAY[kind] ?? "Alert"}. ${a.title.replace(/×/g, " times").replace(/RVOL/g, "R VOL")}`;
+      const u = new SpeechSynthesisUtterance(said); u.rate = 1.05; speechSynthesis.speak(u); } catch { /* ignore */ }
     }
     if (prefs.desktop && "Notification" in window && Notification.permission === "granted") {
-      try { new Notification(a.title, { body: a.body, tag: a.title, requireInteraction: kind === "RVOL_ACTIVATED" || kind === "BREAKOUT_NO_RVOL" }); } catch { /* ignore */ }
+      try { new Notification(a.title, { body: a.body, tag: a.title, requireInteraction: kind.startsWith("SIG_APLUS") || kind === "RVOL_ACTIVATED" || kind === "BREAKOUT_NO_RVOL" }); } catch { /* ignore */ }
     }
     try { navigator.vibrate?.([200, 100, 200, 100, 400]); } catch { /* ignore */ }
     const base = document.title.replace(/^⚡ .*? · /, "");

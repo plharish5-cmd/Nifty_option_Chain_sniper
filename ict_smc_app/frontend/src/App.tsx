@@ -15,20 +15,21 @@ import CrtCockpit from "./components/CrtCockpit";
 import BiasPanel from "./components/BiasPanel";
 import FootprintPanel from "./components/FootprintPanel";
 import { AlertControls, AlertToasts, useRvolAlerts } from "./components/rvolAlerts";
+import { SignalControls, useSigPrefs } from "./components/signalAlerts";
 
 const TFS: TF[] = ["1m", "5m", "15m", "1h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "1h": 30, "1D": 60 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
-  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"], ["fp", "Footprint Δ (est.)"], ["dol", "D.O.L (IRL⇄ERL)"], ["smt", "SMT (vs BankNifty)"], ["bias", "⚖ Bias 14"],
+  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"], ["fp", "Footprint Δ (est.)"], ["heat", "Heatmap"], ["ocAct", "PE−CE action"], ["dol", "D.O.L (IRL⇄ERL)"], ["smt", "SMT (vs BankNifty)"], ["bias", "⚖ Bias 14"],
 ];
 
-const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false, qml: false, fp: false, bias: false, dol: false, smt: false };
+const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false, qml: false, fp: false, bias: false, dol: false, smt: false, heat: false, ocAct: false };
 const PRESETS: [string, string, Partial<Layers>][] = [
   ["Clean", "structure + key levels + VWAP", { structure: true, session: true, volume: true }],
   ["SMC", "order blocks, FVG, liquidity, BOS/MSS, OTE", { ob: true, fvg: true, liq: true, structure: true, range: true, session: true }],
   ["CRT", "CRT ranges, TBS, structure, D.O.L, SMT", { crt: true, structure: true, session: true, dol: true, smt: true, fvg: true }],
-  ["Order flow", "delta, auction value, volume, RVOL", { delta: true, auction: true, volume: true, rvol: true, fp: true }],
+  ["Order flow", "delta, auction value, volume, RVOL", { delta: true, auction: true, volume: true, rvol: true, fp: true, heat: true }],
   ["Futures", "volume, futures OI, RVOL panes", { volume: true, oi: true, rvol: true, structure: true }],
 ];
 
@@ -79,6 +80,7 @@ export default function App() {
   tfRef.current = tf;
   const lastChain = useRef(0);
   const ra = useRvolAlerts();
+  const [sig, setSig] = useSigPrefs();
   const fireRef = useRef(ra.fire);
   fireRef.current = ra.fire;
 
@@ -127,7 +129,7 @@ export default function App() {
             {rs?.value != null && <span className="num text-base font-semibold">{rs.value.toFixed(2)}×</span>}
             {rs?.trend && <span>{rs.trend === "BUILDING" ? "▲ building" : rs.trend === "FADING" ? "▼ fading" : "■ holding"}</span>}
             <span className="text-slate-400">{rs?.text ?? "cumulative RVOL of the NIFTY future — loading"}</span>
-            <span className="ml-auto"><AlertControls prefs={ra.prefs} setPrefs={ra.setPrefs} enable={ra.enable} /></span>
+            <span className="ml-auto flex flex-wrap items-center gap-2"><SignalControls p={sig} setP={setSig} /><AlertControls prefs={ra.prefs} setPrefs={ra.setPrefs} enable={ra.enable} /></span>
           </div>
         );
       })()}
@@ -163,7 +165,7 @@ export default function App() {
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} />
+              <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} />
             </div>
             <div className="px-4 py-1.5 text-[11px] text-slate-400 border-t border-ink-700 flex flex-wrap gap-x-4">
               {analysis && <span>ATR {analysis.atr} pts · trend <b className={analysis.trend === "bull" ? "text-bull-400" : analysis.trend === "bear" ? "text-bear-400" : ""}>{analysis.trend}</b></span>}

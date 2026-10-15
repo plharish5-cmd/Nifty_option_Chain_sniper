@@ -44,6 +44,7 @@ export const MEANING: Record<string, string> = {
   SNR_UPTHRUST: "Upthrust fakeout — wick above a line-chart peak, body closed back below: bearish trap",
   SNR_SPRING: "Spring fakeout — wick below a line-chart valley, body closed back above: bullish trap",
   OI_SURGE: "Futures OI surge — unusual position change this bar",
+  OC_ACT: "PE−CE table action switched — option writers' positioning now favours this side (from 8501). Strongest when price structure agrees",
   DOL: "Draw on liquidity — after an ERL sweep price tends to rebalance into the nearest FVG (IRL); after an FVG tap it tends to run to the next old high/low (ERL)",
   DOL_HIT: "D.O.L reached — the target was traded into",
   SMT: "SMT divergence — NIFTY and BANKNIFTY disagree at a swing (one makes a new high/low, the other doesn't): the sweep is weak, expect a turn",

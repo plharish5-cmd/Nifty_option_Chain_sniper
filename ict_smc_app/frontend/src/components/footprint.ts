@@ -37,6 +37,11 @@ export const kfmt = (v: number) => { const a = Math.abs(v); const s = v < 0 ? "�
 type MediaScope = { context: CanvasRenderingContext2D; mediaSize: { width: number; height: number } };
 type Target = { useMediaCoordinateSpace: (f: (s: MediaScope) => void) => void };
 
+// label size for footprint / heat annotations (A− / A+ on the chart; remembered per browser)
+export let FP_SCALE = (() => { try { return Number(localStorage.getItem("ict_fp_scale")) || 1.5; } catch { return 1.5; } })();
+export function setFpScale(v: number) { FP_SCALE = Math.min(2.5, Math.max(0.8, v)); try { localStorage.setItem("ict_fp_scale", String(FP_SCALE)); } catch { /* ignore */ } }
+const F = (px: number) => `bold ${Math.round(px * FP_SCALE)}px Inter, system-ui, sans-serif`;
+
 class Renderer implements IPrimitivePaneRenderer {
   constructor(private p: FootprintPrimitive) {}
   draw(target: Target) {
@@ -45,7 +50,8 @@ class Renderer implements IPrimitivePaneRenderer {
     const ts = chart.timeScale();
     const spacing = ts.options().barSpacing;
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
-      const showNum = spacing >= 18, showTags = spacing >= 9;
+      const S = FP_SCALE, showNum = spacing >= 18 * Math.min(S, 1.3), showTags = spacing >= 5;
+      ctx.textBaseline = "alphabetic";
       ctx.textAlign = "center";
       for (const b of bars) {
         const x = ts.timeToCoordinate(b.time as Time);
@@ -63,23 +69,23 @@ class Renderer implements IPrimitivePaneRenderer {
         }
         // delta under the candle
         if (showNum && b.rows.length) {
-          ctx.font = "bold 10px Inter, system-ui, sans-serif";
+          ctx.font = F(10);
           ctx.fillStyle = b.delta >= 0 ? "#34d399" : "#f87171";
-          ctx.fillText(kfmt(b.delta), x, (yl as number) + 13);
+          ctx.fillText(kfmt(b.delta), x, (yl as number) + 13 * S);
         } else if (b.rows.length) {                      // narrow candles: a coloured dot instead of a number
           ctx.fillStyle = b.delta >= 0 ? "#34d399" : "#f87171";
-          ctx.beginPath(); ctx.arc(x, (yl as number) + 6, 2, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x, (yl as number) + 6 * S, 2.5 * S, 0, Math.PI * 2); ctx.fill();
         }
         // ✓3 confluence badge: below the delta for BUY, above the pills for SELL
         if (b.conf) {
           const buy = b.conf.dir === "bull", txt = buy ? "BUY ✓3" : "SELL ✓3";
-          ctx.font = "bold 11px Inter, system-ui, sans-serif";
+          ctx.font = F(11);
           const w = ctx.measureText(txt).width + 10;
-          const yy = buy ? (yl as number) + 30 : (yh as number) - 22 - 14 * b.tags.filter((t) => FP_LETTER[t.k]).length;
+          const yy = buy ? (yl as number) + 30 * S : (yh as number) - (22 + 14 * b.tags.filter((t) => FP_LETTER[t.k]).length) * S;
           ctx.fillStyle = buy ? "#22c55e" : "#ef4444";
-          ctx.fillRect(x - w / 2, yy - 11, w, 15);
-          ctx.strokeStyle = "#facc15"; ctx.lineWidth = 1; ctx.strokeRect(x - w / 2, yy - 11, w, 15);
-          ctx.fillStyle = "#ffffff"; ctx.fillText(txt, x, yy);
+          ctx.fillRect(x - w / 2, yy - 11 * S, w, 15 * S);
+          ctx.strokeStyle = "#facc15"; ctx.lineWidth = 1; ctx.strokeRect(x - w / 2, yy - 11 * S, w, 15 * S);
+          ctx.fillStyle = "#ffffff"; ctx.fillText(txt, x, yy + 1 * S);
         }
         // tags above: full words when the candle is wide, letters when narrow, coloured pill per tag
         if (showTags && b.tags.length) {
@@ -88,21 +94,21 @@ class Renderer implements IPrimitivePaneRenderer {
             const L = FP_LETTER[t.k]; if (!L || seen.has(L)) continue; seen.add(L);
             items.push({ txt: spacing >= 34 ? FP_WORD[t.k] : L, bear: t.dir === "bear" });
           }
-          ctx.font = "bold 9px Inter, system-ui, sans-serif";
-          let yy = (yh as number) - 6;
+          ctx.font = F(9);
+          let yy = (yh as number) - 6 * S;
           for (const it of items.reverse()) {
             const w = ctx.measureText(it.txt).width + 6;
-            ctx.fillStyle = it.bear ? "rgba(244,63,94,0.85)" : "rgba(20,184,166,0.85)";
+            ctx.fillStyle = it.bear ? "rgba(225,29,72,0.95)" : "rgba(13,148,136,0.95)";
             ctx.beginPath(); (ctx as CanvasRenderingContext2D & { roundRect?: Function }).roundRect
-              ? (ctx as any).roundRect(x - w / 2, yy - 10, w, 12, 3) : ctx.rect(x - w / 2, yy - 10, w, 12);
+              ? (ctx as any).roundRect(x - w / 2, yy - 10 * S, w, 12 * S, 3) : ctx.rect(x - w / 2, yy - 10 * S, w, 12 * S);
             ctx.fill();
-            ctx.fillStyle = "#0b1220"; ctx.fillText(it.txt, x, yy - 1);
-            yy -= 14;
+            ctx.fillStyle = "#ffffff"; ctx.fillText(it.txt, x, yy - 1 * S);
+            yy -= 14 * S;
           }
         }
       }
       // ⚖ 7-factor bias badges (outlined so they don't clash with ✓3)
-      ctx.font = "bold 10px Inter, system-ui, sans-serif";
+      const S2 = FP_SCALE; ctx.font = F(10);
       for (const r of bias) {
         const x = ts.timeToCoordinate(r.time as Time);
         if (x === null || x < -20 || x > mediaSize.width + 20) continue;
@@ -111,13 +117,47 @@ class Renderer implements IPrimitivePaneRenderer {
         if (y0 === null) continue;
         const txt = `${r.warn ? "⚠ " : ""}${buy ? "▲" : "▼"}${n}/${r.avail}${r.strong ? "★" : ""}`;
         const w = ctx.measureText(txt).width + 8;
-        const yy = buy ? (y0 as number) + (bars.length ? 50 : 16) : (y0 as number) - (bars.length ? 58 : 12);
-        ctx.fillStyle = "rgba(11,18,32,0.9)"; ctx.fillRect(x - w / 2, yy - 10, w, 14);
-        ctx.strokeStyle = buy ? "#22c55e" : "#ef4444"; ctx.lineWidth = 1.5; ctx.strokeRect(x - w / 2, yy - 10, w, 14);
-        ctx.fillStyle = buy ? "#4ade80" : "#f87171"; ctx.fillText(txt, x, yy + 1);
+        const yy = buy ? (y0 as number) + (bars.length ? 50 : 16) * S2 : (y0 as number) - (bars.length ? 58 : 12) * S2;
+        ctx.fillStyle = "rgba(11,18,32,0.9)"; ctx.fillRect(x - w / 2, yy - 10 * S2, w, 14 * S2);
+        ctx.strokeStyle = buy ? "#22c55e" : "#ef4444"; ctx.lineWidth = 1.5; ctx.strokeRect(x - w / 2, yy - 10 * S2, w, 14 * S2);
+        ctx.fillStyle = buy ? "#4ade80" : "#f87171"; ctx.fillText(txt, x, yy + 1 * S2);
       }
     });
   }
+}
+
+class HeatRenderer implements IPrimitivePaneRenderer {
+  constructor(private p: FootprintPrimitive) {}
+  draw() { /* background only */ }
+  drawBackground(target: Target) {
+    const { chart, series, heat } = this.p;
+    if (!chart || !series || !heat.length) return;
+    const ts = chart.timeScale(), spacing = ts.options().barSpacing;
+    const maxV = Math.max(1, ...heat.flatMap((b) => b.rows.map((r) => r.v)));
+    target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+      for (const b of heat) {
+        const x = ts.timeToCoordinate(b.time as Time);
+        if (x === null || x < -spacing || x > mediaSize.width + spacing) continue;
+        const step = b.rows.length > 1 ? Math.abs(b.rows[0].p - b.rows[1].p) : 5;
+        for (const r of b.rows) {
+          const y1 = series.priceToCoordinate(r.p + step / 2), y2 = series.priceToCoordinate(r.p - step / 2);
+          if (y1 === null || y2 === null) continue;
+          const k = Math.sqrt(r.v / maxV);                         // sqrt → mid volumes still visible
+          // cold → hot: blue → teal → yellow → orange → red
+          const hue = 220 - 220 * k, light = 22 + 33 * k;
+          ctx.fillStyle = `hsla(${hue}, 85%, ${light}%, ${0.18 + 0.62 * k})`;
+          ctx.fillRect(x - spacing * 0.48, y1 as number, spacing * 0.96, Math.max(1, (y2 as number) - (y1 as number)));
+        }
+      }
+    });
+  }
+}
+
+class HeatView implements IPrimitivePaneView {
+  private r: HeatRenderer;
+  constructor(p: FootprintPrimitive) { this.r = new HeatRenderer(p); }
+  zOrder() { return "bottom" as const; }
+  renderer() { return this.r; }
 }
 
 class View implements IPrimitivePaneView {
@@ -151,10 +191,12 @@ export class FootprintPrimitive implements ISeriesPrimitive<Time> {
   series: ISeriesApi<SeriesType> | null = null;
   bars: FpBar[] = [];
   bias: { time: number; h: number; l: number; verdict: string; bull: number; bear: number; avail: number; strong: boolean; warn?: string }[] = [];
-  private views = [new View(this)];
+  heat: FpBar[] = [];
+  private views = [new HeatView(this), new View(this)];
   private request: (() => void) | null = null;
   attached(p: SeriesAttachedParameter<Time>) { this.chart = p.chart as IChartApi; this.series = p.series; this.request = p.requestUpdate; }
   detached() { this.chart = null; this.series = null; this.request = null; }
   paneViews() { return this.views; }
-  set(bars: FpBar[], bias: FootprintPrimitive["bias"] = []) { this.bars = bars; this.bias = bias; this.request?.(); }
+  refresh() { this.request?.(); }
+  set(bars: FpBar[], bias: FootprintPrimitive["bias"] = [], heat: FpBar[] = []) { this.bars = bars; this.bias = bias; this.heat = heat; this.request?.(); }
 }

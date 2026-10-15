@@ -128,11 +128,12 @@ export function WritersFlow({ tick }: { tick: number }) {
   const S = useRef<{ ch: IChartApi; fut: ISeriesApi<"Line">; ce: ISeriesApi<"Line">; pe: ISeriesApi<"Line">; uw: ISeriesApi<"Histogram">;
     fl: ISeriesApi<"Histogram">; bal: ISeriesApi<"Line">; mk: ReturnType<typeof createSeriesMarkers<Time>>; mk2: ReturnType<typeof createSeriesMarkers<Time>> } | null>(null);
   const first = useRef(true);
+  const flCap = useRef(0);
 
   useEffect(() => {
     if (!box.current) return;
     const ch = createChart(box.current, {
-      autoSize: true, layout: { background: { type: ColorType.Solid, color: "#0b1220" }, textColor: "#94a3b8", fontFamily: "Inter, system-ui" },
+      autoSize: true, layout: { background: { type: ColorType.Solid, color: "#0b1220" }, textColor: "#cbd5e1", fontSize: 12, fontFamily: "Inter, system-ui" },
       grid: { vertLines: { color: "#131d33" }, horzLines: { color: "#131d33" } },
       rightPriceScale: { borderColor: "#1d2a45" }, leftPriceScale: { visible: true, borderColor: "#1d2a45" },
       timeScale: { borderColor: "#1d2a45", timeVisible: true, secondsVisible: false, rightOffset: 4 },
@@ -145,11 +146,14 @@ export function WritersFlow({ tick }: { tick: number }) {
     const ce = ch.addSeries(LineSeries, { color: "#22c55e", lineWidth: 2, title: "Call", priceFormat: { type: "custom", formatter: (p: number) => inr(p) } });
     const pe = ch.addSeries(LineSeries, { color: "#ef4444", lineWidth: 2, title: "Put", priceFormat: { type: "custom", formatter: (p: number) => inr(p) } });
     const fl = ch.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, title: "flow Δput−Δcall",
-      priceFormat: { type: "custom", formatter: (p: number) => inr(p) } }, 1);
+      priceFormat: { type: "custom", formatter: (p: number) => inr(p) },
+      // clip the scale at ~the 95th-percentile bar so one huge opening print doesn't flatten every other bar
+      autoscaleInfoProvider: () => (flCap.current ? { priceRange: { minValue: -flCap.current, maxValue: flCap.current } } : null) }, 1);
     const bal = ch.addSeries(LineSeries, { color: "#e8c35a", lineWidth: 2, title: "balance 30m", priceLineVisible: false }, 2);
-    for (const y of [0.25, -0.25]) bal.createPriceLine({ price: y, color: "rgba(148,163,184,0.5)", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "" });
+    bal.createPriceLine({ price: 0.25, color: "rgba(34,197,94,0.6)", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "▲ PUT writers lead = bullish" });
+    bal.createPriceLine({ price: -0.25, color: "rgba(239,68,68,0.6)", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "▼ CALL writers lead = bearish" });
     bal.createPriceLine({ price: 0, color: "rgba(148,163,184,0.25)", lineWidth: 1, axisLabelVisible: false, title: "" });
-    try { const P = ch.panes(); P[0]?.setStretchFactor(5); P[1]?.setStretchFactor(1.6); P[2]?.setStretchFactor(1.2); } catch { /* */ }
+    try { const P = ch.panes(); P[0]?.setStretchFactor(4); P[1]?.setStretchFactor(2); P[2]?.setStretchFactor(1.6); } catch { /* */ }
     S.current = { ch, fut, ce, pe, uw, fl, bal, mk: createSeriesMarkers(fut, []), mk2: createSeriesMarkers(fl, []) };
     return () => { ch.remove(); S.current = null; };
   }, []);
@@ -162,8 +166,13 @@ export function WritersFlow({ tick }: { tick: number }) {
     s.fut.setData(P.filter((p) => p.fut != null).map((p) => ({ time: T(p), value: p.fut as number })));
     s.ce.setData(P.filter((p) => p.ce != null).map((p) => ({ time: T(p), value: p.ce as number })));
     s.pe.setData(P.filter((p) => p.pe != null).map((p) => ({ time: T(p), value: p.pe as number })));
-    s.fl.setData(P.filter((p) => p.flow != null).map((p) => ({ time: T(p), value: p.flow as number,
-      color: p.sig ? "#e8c35a" : (p.flow as number) >= 0 ? "rgba(34,197,94,.8)" : "rgba(239,68,68,.8)" })));
+    const fv = P.filter((p) => p.flow != null);
+    const abs = fv.map((p) => Math.abs(p.flow as number)).sort((a, b) => a - b);
+    flCap.current = abs.length ? Math.max(1, abs[Math.floor(abs.length * 0.95)] * 1.3) : 0;
+    const cap = flCap.current;
+    // normal candles = faint; unusual (≥ 2.5×) = bright in its own direction; bars beyond the cap are clipped (value shown by the marker)
+    s.fl.setData(fv.map((p) => { const v = p.flow as number, up = v >= 0; return { time: T(p), value: Math.max(-cap, Math.min(cap, v)),
+      color: p.sig ? (up ? "#4ade80" : "#f87171") : up ? "rgba(34,197,94,.35)" : "rgba(239,68,68,.35)" }; }));
     s.bal.setData(P.filter((p) => p.bal != null).map((p) => ({ time: T(p), value: p.bal as number })));
     const U = d.unwind;
     s.uw.setData(P.map((p) => ({ time: T(p), value: U && p.t >= U[0] && p.t <= U[1] ? 1 : 0 })));
@@ -173,7 +182,10 @@ export function WritersFlow({ tick }: { tick: number }) {
     if (U) mk.push({ time: U[0] as UTCTimestamp, position: "aboveBar", shape: "square", color: "#e8c35a", text: "EXPIRY UNWIND →" });
     mk.sort((a, b) => (a.time as number) - (b.time as number));
     s.mk.setMarkers(mk);
-    s.mk2.setMarkers(P.filter((p) => p.sig).map((p) => ({ time: T(p), position: "inBar", shape: "circle", color: "#e8c35a", size: 0.5 })));
+    // only the BIG unusual prints get a label (value in ₹), so the strip isn't a forest of dots
+    s.mk2.setMarkers(fv.filter((p) => p.sig && Math.abs(p.flow as number) >= cap * 0.6).map((p) => { const up = (p.flow as number) >= 0; return {
+      time: T(p), position: up ? "aboveBar" : "belowBar", shape: up ? "arrowUp" : "arrowDown", color: up ? "#4ade80" : "#f87171", size: 0.8,
+      text: `${up ? "PUT" : "CALL"} ${inr(Math.abs(p.flow as number))}` }; }));
     if (first.current) { s.ch.timeScale().fitContent(); first.current = false; }
   }, [d]);
 
@@ -182,13 +194,13 @@ export function WritersFlow({ tick }: { tick: number }) {
     <div className="flex h-full flex-col">
       <Controls tf={tf} setTf={setTf} mode={mode} setMode={setMode} n={n} setN={setN} tfs={["1m", "3m", "5m", "15m"]} busy={busy}
         info={d?.ok ? `${d.day} · expiry ${d.expiry ?? "?"} · ${d.label} · ${d.snapshots} snapshots` : d?.message ?? "loading…"} />
-      <div className="flex flex-wrap gap-x-4 px-3 py-1 text-[11px] text-slate-400">
+      <div className="flex flex-wrap gap-x-4 px-3 py-1 text-[12.5px] text-slate-300">
         <span><span className="text-bull-400">━ Call OI chg</span> · <span className="text-bear-400">━ Put OI chg</span> (since yesterday, right axis) · ┈ NIFTY future (left)</span>
-        <span>strip: <span className="text-bull-400">■</span>/<span className="text-bear-400">■</span> Δput − Δcall per candle, <span className="text-amber-300">●</span> unusual (≥ 2.5×), gold line = 30-min writers balance (±0.25)</span>
+        <span>middle strip = Δput − Δcall each candle: <span className="text-bull-400">green ▲ = PUT writers added more (support, bullish)</span> · <span className="text-bear-400">red ▼ = CALL writers added more (resistance, bearish)</span> · bright bar + label = unusual (≥ 2.5× normal) · bottom gold line = 30-min balance: above +0.25 bullish, below −0.25 bearish</span>
         {last && <span className="text-slate-300">now: call {inr(last.ce)} · put {inr(last.pe)} · balance {last.bal?.toFixed(2)} · regime <b>{last.conf ?? last.regime}</b></span>}
       </div>
       <div ref={box} className="min-h-0 flex-1" />
-      {(d?.read || d?.note) && <div className="border-t border-ink-700 px-3 py-1.5 text-[11.5px] text-slate-300">{clean(`${d?.read ?? ""} ${d?.note ?? ""}`)}</div>}
+      {(d?.read || d?.note) && <div className="border-t border-ink-700 px-3 py-1.5 text-[13px] text-slate-200">{clean(`${d?.read ?? ""} ${d?.note ?? ""}`)}</div>}
     </div>
   );
 }
