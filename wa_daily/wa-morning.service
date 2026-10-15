@@ -1,0 +1,7 @@
+[Unit]
+Description=View Building WhatsApp morning send
+
+[Service]
+Type=oneshot
+User=harish
+ExecStart=/bin/bash -c '"/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/wa_daily/morning.sh"'

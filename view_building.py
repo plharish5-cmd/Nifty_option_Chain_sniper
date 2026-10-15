@@ -40,29 +40,16 @@ separate daily file. Worth wiring up once located.
 """
 from __future__ import annotations
 
-import json
-import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+import logging
 import numpy as np
 import pandas as pd
 
 import config
-
-
-def _load_vb_config() -> dict[str, Any]:
-    try:
-        cfg_path = Path(__file__).parent / "analyst" / "analyst_config.json"
-        if cfg_path.exists():
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                return json.load(f).get("view_building", {})
-    except Exception as _e:
-        logging.warning("view_building: could not read analyst_config.json: %s", _e)
-    return {}
-
 
 # 5 Foundational Sectors (IT, BANK, INFRASTRUCTURE, AUTO, METALS — no Pharma)
 SECTOR_KEYS = ("NIFTY IT", "NIFTY BANK", "NIFTY INFRA", "NIFTY INFRASTRUCTURE",
@@ -258,165 +245,122 @@ def ema_position(daily: pd.DataFrame, span: int = 50) -> dict:
     return out
 
 
-def p6_daily_trend(daily: pd.DataFrame | None) -> Param:
+def _candle_pattern(o, h, l, c, po, pc) -> str:
+    """Single / two-candle pattern name for one candle (po/pc = previous open/close)."""
+    body, rng = abs(c - o), max(h - l, 1e-9)
+    up_w, lo_w = h - max(o, c), min(o, c) - l
+    if c > o and pc < po and c >= po and o <= pc:
+        return "Bullish Engulfing"
+    if c < o and pc > po and c <= po and o >= pc:
+        return "Bearish Engulfing"
+    if body <= 0.1 * rng:
+        return "Doji"
+    if lo_w >= 2 * body and up_w <= max(body, 0.15 * rng):
+        return "Hammer"
+    if up_w >= 2 * body and lo_w <= max(body, 0.15 * rng):
+        return "Shooting Star"
+    return ""
+
+
+def p6_daily_trend(daily: pd.DataFrame) -> Param:
     """
-    Nifty 50 Trend & Behaviour on Daily Time Frame.
-    Identifies 1-day candlestick pattern formation, relation to 8 EMA and 20-period Bollinger Bands,
-    Higher High / Lower Low, Higher Close / Lower Close, and 20-session swing structure.
-    Thresholds and minimum candle count sourced from analyst_config.json.
+    Daily candle read in plain trader language (no Bollinger-band words):
+    candle colour / size / pattern, what it did against the previous candle (HH/LL, higher/lower close,
+    sustain / fail the previous pattern's high or low), where it closed against the 8 EMA (and 10 EMA when it
+    matters), plus the weekly candle when it carries a pattern.
+    Score: Bullish +2 · Bearish −2 · Consolidation 0.
     """
     p = Param(6, "Nifty 50 Trend & Behaviour on Daily Time Frame", "2")
-    cfg = _load_vb_config()
-    min_candles = int(cfg.get("daily_candles_min", 20))
-
-    if daily is None or len(daily) < min_candles:
-        try:
-            import levels as _lv
-            daily = _lv.load_ohlc()
-        except Exception as _e:
-            logging.warning("p6_daily_trend: could not auto-load daily ohlc: %s", _e)
-
-    if daily is None or len(daily) < min_candles:
-        p.note = f"needs {min_candles}+ daily candles in data/ohlc"
+    if daily is None or len(daily) < 25:
+        p.note = "needs 25+ daily candles in data/ohlc"
         return p
 
-    d = daily.tail(120).copy()
+    d = daily.tail(120).copy().reset_index(drop=True)
     d["ema8"] = d["Close"].ewm(span=8, adjust=False).mean()
-    mid = d["Close"].rolling(20).mean()
-    sd = d["Close"].rolling(20).std(ddof=0)
-    d["ubb"], d["lbb"] = mid + 2 * sd, mid - 2 * sd
-
-    last = d.iloc[-1]
-    prev = d.iloc[-2]
-    recent = d.tail(20)
-
-    o, h, l, c = float(last["Open"]), float(last["High"]), float(last["Low"]), float(last["Close"])
-    po, ph, pl, pc = float(prev["Open"]), float(prev["High"]), float(prev["Low"]), float(prev["Close"])
+    d["ema10"] = d["Close"].ewm(span=10, adjust=False).mean()
+    t, y = d.iloc[-1], d.iloc[-2]
+    o, h, l, c = (float(t[k]) for k in ("Open", "High", "Low", "Close"))
+    red = c < o
     body = abs(c - o)
-    rng = h - l
-    is_red = c < o
-    avg_rng = float((recent["High"] - recent["Low"]).mean())
-    upper_wick = h - max(o, c)
-    lower_wick = min(o, c) - l
+    avg_body = float((d["Close"] - d["Open"]).abs().iloc[-11:-1].mean())
+    big = body >= 1.6 * avg_body
+    pat = _candle_pattern(o, h, l, c, float(y["Open"]), float(y["Close"]))
+    prev_pat = _candle_pattern(float(y["Open"]), float(y["High"]), float(y["Low"]), float(y["Close"]),
+                               float(d.iloc[-3]["Open"]), float(d.iloc[-3]["Close"]))
+    hh, ll = h > float(y["High"]), l < float(y["Low"])
+    hc, lc = c > float(y["Close"]), c < float(y["Close"])
+    inside = (not hh) and (not ll)
+    e8, e10 = float(t["ema8"]), float(t["ema10"])
+    near8 = abs(c - e8) <= 0.0025 * c
+    recent_lo = float(d["Low"].iloc[-6:-1].min())
+    recent_hi = float(d["High"].iloc[-6:-1].max())
 
-    # 1. Candlestick Formation
-    if body > 1.3 * avg_rng or rng > 1.4 * avg_rng:
-        candle_type = "Big Red Candle" if is_red else "Big Green Candle"
-    elif rng > 0 and lower_wick >= 2.0 * max(body, 1.0) and c >= o:
-        candle_type = "Bullish Hammer Candle"
-    elif rng > 0 and upper_wick >= 2.0 * max(body, 1.0) and c <= o:
-        candle_type = "Inverted Hammer Candle"
-    elif rng > 0 and body <= 0.15 * rng:
-        candle_type = "Doji / Indecision Candle"
+    parts = []
+    # 1. the candle
+    colour = "Red" if red else "Green"
+    if pat in ("Bullish Engulfing", "Bearish Engulfing", "Hammer", "Shooting Star", "Doji"):
+        parts.append(f"{pat} formed" + ("" if pat.startswith(("Bull", "Bear")) else f" ({colour.lower()})"))
     else:
-        candle_type = "Bearish red Candle" if is_red else ("Bullish Green Candle" if c > ph else "Green Candle")
-
-    # Round number Support / Resistance bounce (e.g. 23,000 Support Levels)
-    round_sup_note = ""
-    near_500 = round(l / 500) * 500
-    if abs(l - near_500) <= 45 and not is_red and c > near_500:
-        round_sup_note = f" formed from the {near_500:,.0f} Support Levels"
-    elif abs(h - near_500) <= 45 and is_red and c < near_500:
-        round_sup_note = f" rejected from {near_500:,.0f} Resistance"
-
-    # Closed relative to recent 5 days
-    closed_much_below = c < float(d["Close"].iloc[-6:-1].min()) - 40
-    closed_much_above = c > float(d["Close"].iloc[-6:-1].max()) + 40
-
-    # 2. Bollinger Bands (20 period, 2 std)
-    last_ubb, last_lbb = float(last["ubb"]), float(last["lbb"])
-    if c < last_lbb:
-        band_pos = "crossing DOWN LBB"
-    elif abs(c - last_lbb) / max(last_lbb, 1.0) < 0.003 or (l <= last_lbb and c >= last_lbb):
-        band_pos = "on LBB"
-    elif c > last_ubb:
-        band_pos = "crossing UP UBB"
+        parts.append(f"{'Big ' if big else ''}{colour} Candle")
+    # 2. against the previous candle
+    if prev_pat == "Bullish Engulfing" and red and c < float(y["High"]):
+        parts[-1] += " and it could not sustain previous Bullish Engulfing high"
+    elif prev_pat == "Bearish Engulfing" and not red and c > float(y["Low"]):
+        parts[-1] += " and it could not sustain below previous Bearish Engulfing low"
+    if big and red and c < recent_lo:
+        parts.append("closed much below recent days")
+    elif big and not red and c > recent_hi:
+        parts.append("closed much above recent days")
+    if inside:
+        parts.append("Inside candle (within previous high–low)")
     else:
-        band_pos = "inside the bands"
-
-    ubb_sl = float(d["ubb"].iloc[-1] - d["ubb"].iloc[-3])
-    lbb_sl = float(d["lbb"].iloc[-1] - d["lbb"].iloc[-3])
-    band_dir = ""
-    if ubb_sl < -15 and lbb_sl < -15:
-        band_dir = "LBB & UBB Downward"
-    elif ubb_sl > 15 and lbb_sl > 15:
-        band_dir = "LBB & UBB Upward"
-    elif ubb_sl > 15 and lbb_sl < -15:
-        band_dir = "Bands Expanding"
-    elif ubb_sl < -15 and lbb_sl > 15:
-        band_dir = "Bands Contracting"
-
-    # 3. Structure over last 20 sessions (HH/LL, HC/LC, Swing High/Low)
-    hh = h > ph
-    ll = l < pl
-    hc = c > pc
-    lc = c < pc
-    swing_low = float(recent["Low"].min())
-    swing_high = float(recent["High"].max())
-    at_swing_low = l <= swing_low * 1.002
-    at_swing_high = h >= swing_high * 0.998
-
-    if ll and lc:
-        struct = "Lower Low & Lower Close"
-    elif hh and hc:
-        struct = "Higher High & Higher Close"
-    elif hh:
-        struct = "Higher High"
-    elif ll:
-        struct = "Lower Low"
-    elif hc:
-        struct = "Higher Close"
-    elif lc:
-        struct = "Lower Close"
+        hl = "Higher High" if hh and not ll else "Lower Low" if ll and not hh else "Outside candle"
+        parts.append(f"{hl}, {'Higher' if hc else 'Lower' if lc else 'Flat'} Close")
+    # 3. EMA
+    if near8:
+        parts.append(f"closed near 8 EMA ({e8:,.0f})")
     else:
-        struct = "no clear HH/LL"
+        ema_txt = f"{'ABOVE' if c > e8 else 'BELOW'} 8 EMA ({e8:,.0f})"
+        if pat.startswith(("Bullish", "Bearish")) or (c > e10) != (c > e8):
+            ema_txt += f", {'above' if c > e10 else 'below'} 10 EMA ({e10:,.0f})"
+        parts.append(ema_txt)
 
-    above_ema = c > float(last["ema8"])
-    ema_val = float(last["ema8"])
-    ema_str = f"{'ABOVE' if above_ema else 'BELOW'} 8 EMA ({ema_val:,.0f})"
+    # 4. weekly candle (only when it shows a pattern)
+    wk = (daily.set_index("Date").sort_index()
+          .resample("W").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna())
+    wpat = ""
+    if len(wk) >= 3:
+        a, b = wk.iloc[-1], wk.iloc[-2]
+        wpat = _candle_pattern(*(float(a[k]) for k in ("Open", "High", "Low", "Close")), float(b["Open"]), float(b["Close"]))
 
-    # Trend & Score
-    if ll and lc and not above_ema:
-        trend = "Overall Downtrend Continues"
-        score, view = -2, "Bearish"
-    elif hh and hc and above_ema:
-        trend = "Overall Uptrend Continues"
-        score, view = 2, "Bullish"
-    elif above_ema and hh:
-        trend = "Uptrend"
-        score, view = 2, "Bullish"
-    elif not above_ema and ll:
-        trend = "Downtrend"
-        score, view = -2, "Bearish"
-    else:
-        trend = "Range"
-        score, view = 0, "Neutral"
+    # 5. score
+    bull = sum([not red, hh and not ll, hc, c > e8, pat in ("Bullish Engulfing", "Hammer"),
+                wpat in ("Bullish Engulfing", "Hammer")])
+    bear = sum([red, ll and not hh, lc, c < e8, pat in ("Bearish Engulfing", "Shooting Star"),
+                wpat in ("Bearish Engulfing", "Shooting Star")])
+    if big and red and c < recent_lo:
+        bear += 1
+    if big and not red and c > recent_hi:
+        bull += 1
+    consolidation = inside or near8 or pat == "Doji" or prev_pat.endswith("Engulfing") and parts[0].find("could not sustain") > 0
+    net = bull - bear
+    if net >= 3 and not (inside or near8):
+        p.score, p.view, verdict = 2, "Bullish", "Bullish"
+    elif net <= -3 and not (inside or near8):
+        p.score, p.view, verdict = -2, "Bearish", "Bearish"
+    elif consolidation or abs(net) < 3:
+        p.score, p.view, verdict = 0, "Consolidation", "Consolidation"
+    if verdict == "Bearish" and ll and lc and c < e8:
+        verdict = "Overall Downtrend Continues" if big else "Bearish"
+    if verdict == "Bullish" and hh and hc and c > e8:
+        verdict = "Overall Uptrend Continues" if big else "Bullish"
 
-    first_part = f"{candle_type}{round_sup_note}"
-    if closed_much_below:
-        first_part += " closed much below recent days"
-    elif closed_much_above:
-        first_part += " closed much above recent days"
-
-    mid_parts = []
-    if band_dir:
-        mid_parts.append(band_dir)
-    mid_parts.append(band_pos)
-    mid_parts.append(struct)
-    if at_swing_low:
-        mid_parts.append("testing Swing Low")
-    elif at_swing_high:
-        mid_parts.append("testing Swing High")
-
-    p.observation = f"{first_part}. {'; '.join(mid_parts)}: {trend}. {ema_str}"
-    p.score = score
-    p.view = view
+    s = ", ".join(parts) + "; "
+    if wpat:
+        s += f"{wpat} is forming in weekly time frame; "
+    p.observation = s + verdict + "."
     p.auto = True
-
-    bb = band_behaviour(d)
-    if bb:
-        p.note = (f"{bb['read']} · width {bb['width']:,.0f} pts "
-                  f"({bb['width_change_pct']:+.1f}% over 3 sessions)")
+    p.note = f"bull points {bull} · bear points {bear}" + (f" · weekly {wpat}" if wpat else "")
     return p
 
 
@@ -560,62 +504,53 @@ def _stretch_days(series: pd.Series, hot: float = 80, cold: float = 20,
     return n, state
 
 
-def p7_rsi(daily: pd.DataFrame | None) -> Param:
+def p7_rsi(daily: pd.DataFrame) -> Param:
     """Daily scores it; weekly and monthly are written for context, as MJ asks."""
     p = Param(7, "Nifty 50 RSI & Stoch on Daily Time Frame", "2")
-    cfg = _load_vb_config()
-    min_candles = int(cfg.get("daily_candles_min", 20))
-
-    if daily is None or len(daily) < min_candles:
-        try:
-            import levels as _lv
-            daily = _lv.load_ohlc()
-        except Exception as _e:
-            logging.warning("p7_rsi: could not auto-load daily ohlc: %s", _e)
-
-    if daily is None or len(daily) < min_candles:
-        p.note = f"needs {min_candles}+ daily candles"
+    if daily is None or len(daily) < 60:
+        p.note = "needs 60+ daily candles"
         return p
 
-    d = daily.copy()
-    if "Date" in d.columns:
-        d["Date"] = pd.to_datetime(d["Date"])
-        d = d.drop_duplicates(subset=["Date"]).set_index("Date").sort_index()
-    elif not isinstance(d.index, pd.DatetimeIndex):
-        try:
-            d.index = pd.to_datetime(d.index)
-        except Exception as _de:
-            logging.warning("p7_rsi: error parsing datetime index: %s", _de)
-    d = d.sort_index()
+    if "Date" in daily.columns:
+        d = daily.drop_duplicates(subset=["Date"]).set_index("Date").sort_index()
+    else:
+        d = daily.sort_index()
 
     wk = d.resample("W").agg({"Open": "first", "High": "max",
                               "Low": "min", "Close": "last"}).dropna()
-    try:
-        mo = d.resample("ME").agg({"Open": "first", "High": "max",
-                                   "Low": "min", "Close": "last"}).dropna()
-    except Exception:
-        mo = d.resample("M").agg({"Open": "first", "High": "max",
-                                  "Low": "min", "Close": "last"}).dropna()
+    mo = d.resample("ME").agg({"Open": "first", "High": "max",
+                               "Low": "min", "Close": "last"}).dropna()
 
-    rd = _rsi(d["Close"])
-    rw = _rsi(wk["Close"]) if len(wk) >= 14 else 50.0
-    rm = _rsi(mo["Close"]) if len(mo) >= 14 else 50.0
-
+    rd, rw, rm = _rsi(d["Close"]), _rsi(wk["Close"]), _rsi(mo["Close"])
     kd, _ = _stoch_rsi(d["Close"])
-    kw, _ = _stoch_rsi(wk["Close"]) if len(wk) >= 14 else (50.0, 50.0)
-    km, _ = _stoch_rsi(mo["Close"]) if len(mo) >= 14 else (50.0, 50.0)
+    kw, _ = _stoch_rsi(wk["Close"])
+    km, _ = _stoch_rsi(mo["Close"])
 
-    os_th = float(cfg.get("stoch_rsi_oversold", getattr(config, "STOCH_RSI_OVERSOLD", 20.0)))
-    ob_th = float(cfg.get("stoch_rsi_overbought", getattr(config, "STOCH_RSI_OVERBOUGHT", 80.0)))
+    os_th = getattr(config, "STOCH_RSI_OVERSOLD", 20.0)
+    ob_th = getattr(config, "STOCH_RSI_OVERBOUGHT", 80.0)
 
     def _zone(v: float) -> str:
-        return "Oversold" if v < os_th else ("Overbought" if v > ob_th else "Neutral")
+        return "OVERSOLD" if v < os_th else ("OVERBOUGHT" if v > ob_th else "Neutral")
 
     zd, zw, zm = _zone(kd), _zone(kw), _zone(km)
 
+    # Determine Expected Market Shape from Daily timeframe (primary for intraday)
+    if kd < os_th:
+        shape_str = "V Shape Market Possible"
+    elif kd > ob_th:
+        shape_str = "A Shape Market Possible"
+    else:
+        # If daily is in mid zone, check weekly or report normal trading
+        if kw < os_th:
+            shape_str = "V Shape Market Possible"
+        elif kw > ob_th:
+            shape_str = "A Shape Market Possible"
+        else:
+            shape_str = "Normal Trading"
+
     # Exact format requested:
-    # "Daily: Neutral | Weekly: Oversold | Monthly: Neutral"
-    p.observation = f"Daily: {zd} | Weekly: {zw} | Monthly: {zm}"
+    # Daily: OVERSOLD |  Weekly: Neutral | MONTHLY: OVERSOLD, V Shape Market Possible
+    p.observation = f"Daily: {zd} | Weekly: {zw} | MONTHLY: {zm}, {shape_str}"
     p.auto = True
 
     # Scoring Rule: For INTRADAY view building use DAILY timeframe RSI/Stoch only.
@@ -676,49 +611,34 @@ def find_strong_support_resistance(
     spot: float | None,
     read: Any = None,
     ohlc: pd.DataFrame | None = None,
-) -> tuple[str, str]:
+) -> tuple[float | None, float | None]:
     """
-    Finds the nearest defensible Option Chain Support and Resistance levels relative to previous close / spot.
-    - Resistance: Nearest strike above close with active Call writing defense (e.g. 22650).
-    - Support: Nearest strike(s) below close with active Put writing defense (e.g. 22500 to 22550).
-    Thresholds sourced from analyst_config.json.
+    Finds the possible strong support and strong resistance:
+    - Strong Support: Strike <= current close / spot from Change in OI or Option Chain (Max PE OI or Max PE Change in OI)
+    - Strong Resistance: Strike >= current close / spot from Change in OI or Option Chain (Max CE OI or Max CE Change in OI)
     """
     ref_price = spot
     if ohlc is not None and not ohlc.empty:
         try:
             ref_price = float(ohlc.iloc[-1]["Close"])
-        except Exception as _e:
-            logging.warning("find_strong_support_resistance: error reading close: %s", _e)
+        except Exception:
+            pass
 
-    cfg = _load_vb_config()
-    window_pts = float(cfg.get("support_resistance_window_pts", 350.0))
-    min_oi = float(cfg.get("min_oi_hurdle", 15000))
-    min_chg = float(cfg.get("min_oi_change_hurdle", 5000))
+    strong_s: float | None = None
+    strong_r: float | None = None
 
     if df is None or (isinstance(df, pd.DataFrame) and df.empty):
         try:
-            # 1. First priority: Check latest snapshot from snapshots_multi
-            snap_dir = getattr(config, "DATA_DIR", Path(__file__).parent / "data") / "snapshots_multi"
-            if snap_dir.exists():
-                days = sorted([d for d in snap_dir.iterdir() if d.is_dir() and d.name.startswith("20")])
-                if days:
-                    files = sorted(days[-1].glob("*.parquet"))
-                    if files:
-                        df = pd.read_parquet(files[-1])
-            if df is None or df.empty:
-                latest_csv = getattr(config, "DATA_DIR", Path(__file__).parent / "data") / "dhan_option_chains" / "latest_chain.csv"
-                if latest_csv.exists():
-                    df = pd.read_csv(latest_csv)
-                else:
-                    sample_csv = getattr(config, "DATA_DIR", Path(__file__).parent / "data") / "sample_chain.csv"
-                    if sample_csv.exists():
-                        import chain_parser as _cp
-                        df = _cp.parse_csv(sample_csv)
-        except Exception as _e:
-            logging.warning("find_strong_support_resistance: error loading fallback chain: %s", _e)
-
-    strong_s_str = "NA"
-    strong_r_str = "NA"
+            latest_csv = config.DATA_DIR / "dhan_option_chains" / "latest_chain.csv"
+            if latest_csv.exists():
+                df = pd.read_csv(latest_csv)
+            else:
+                sample_csv = config.DATA_DIR / "sample_chain.csv"
+                if sample_csv.exists():
+                    import chain_parser as _cp
+                    df = _cp.parse_csv(sample_csv)
+        except Exception:
+            pass
 
     if df is not None and not df.empty:
         try:
@@ -726,7 +646,7 @@ def find_strong_support_resistance(
             stk_col = "strike" if "strike" in d.columns else "Strike" if "Strike" in d.columns else None
             if stk_col:
                 d = d.dropna(subset=[stk_col])
-                cur_spot = ref_price or (float(d[stk_col].median()) if len(d) else 22600.0)
+                cur_spot = ref_price or (float(d[stk_col].median()) if len(d) else 24000.0)
 
                 # Ensure change columns exist
                 if "pe_chg_oi" not in d.columns and "pe_oi" in d.columns and "pe_prev_oi" in d.columns:
@@ -734,83 +654,48 @@ def find_strong_support_resistance(
                 if "ce_chg_oi" not in d.columns and "ce_oi" in d.columns and "ce_prev_oi" in d.columns:
                     d["ce_chg_oi"] = d["ce_oi"] - d["ce_prev_oi"]
 
-                for c in ["pe_oi", "pe_chg_oi", "ce_oi", "ce_chg_oi"]:
-                    if c in d.columns:
-                        d[c] = pd.to_numeric(d[c], errors="coerce").fillna(0)
+                # Strong Support: strikes <= cur_spot
+                pe_pool = d[d[stk_col] <= cur_spot]
+                if pe_pool.empty:
+                    pe_pool = d
 
-                # Strike pool in relevant window near cur_spot
-                pool = d[(d[stk_col] >= cur_spot - window_pts) & (d[stk_col] <= cur_spot + window_pts)].copy()
-                if pool.empty:
-                    pool = d
+                best_s = None
+                if "pe_chg_oi" in pe_pool.columns:
+                    pos_chg = pe_pool[pe_pool["pe_chg_oi"] > 0]
+                    if not pos_chg.empty:
+                        best_s = float(pos_chg.loc[pos_chg["pe_chg_oi"].idxmax()][stk_col])
+                if best_s is None and "pe_oi" in pe_pool.columns and not pe_pool["pe_oi"].empty:
+                    best_s = float(pe_pool.loc[pe_pool["pe_oi"].idxmax()][stk_col])
+                strong_s = best_s
 
-                # ─── NEAREST RESISTANCE (Strikes > cur_spot) ───
-                res_pool = pool[pool[stk_col] > cur_spot].sort_values(stk_col, ascending=True)
-                res_level = None
-                for _, r in res_pool.iterrows():
-                    stk = float(r[stk_col])
-                    ce_oi = float(r.get("ce_oi", 0))
-                    ce_chg = float(r.get("ce_chg_oi", 0))
-                    pe_oi = float(r.get("pe_oi", 0))
-                    pe_chg = float(r.get("pe_chg_oi", 0))
+                # Strong Resistance: strikes >= cur_spot
+                ce_pool = d[d[stk_col] >= cur_spot]
+                if ce_pool.empty:
+                    ce_pool = d
 
-                    if (ce_chg >= min_chg and (ce_chg >= pe_chg or ce_oi >= pe_oi)) or (ce_oi >= min_oi and ce_oi >= pe_oi):
-                        res_level = stk
-                        break
+                best_r = None
+                if "ce_chg_oi" in ce_pool.columns:
+                    pos_chg_ce = ce_pool[ce_pool["ce_chg_oi"] > 0]
+                    if not pos_chg_ce.empty:
+                        best_r = float(pos_chg_ce.loc[pos_chg_ce["ce_chg_oi"].idxmax()][stk_col])
+                if best_r is None and "ce_oi" in ce_pool.columns and not ce_pool["ce_oi"].empty:
+                    best_r = float(ce_pool.loc[ce_pool["ce_oi"].idxmax()][stk_col])
+                strong_r = best_r
+        except Exception:
+            pass
 
-                if res_level is None and not res_pool.empty:
-                    if "ce_chg_oi" in res_pool and res_pool["ce_chg_oi"].max() > 0:
-                        res_level = float(res_pool.loc[res_pool["ce_chg_oi"].idxmax()][stk_col])
-                    else:
-                        res_level = float(res_pool.loc[res_pool["ce_oi"].idxmax()][stk_col])
-
-                if res_level is not None and np.isfinite(res_level):
-                    strong_r_str = f"{int(round(res_level))}"
-
-                # ─── NEAREST SUPPORT (Strikes < cur_spot) ───
-                sup_pool = pool[pool[stk_col] < cur_spot].sort_values(stk_col, ascending=False)
-                defended_sups = []
-                for _, r in sup_pool.iterrows():
-                    stk = float(r[stk_col])
-                    pe_oi = float(r.get("pe_oi", 0))
-                    pe_chg = float(r.get("pe_chg_oi", 0))
-                    ce_oi = float(r.get("ce_oi", 0))
-                    ce_chg = float(r.get("ce_chg_oi", 0))
-
-                    # If call writing strongly exceeds put writing and strike is right at spot (<= 30 pts), skip ATM call dominance
-                    if ce_chg > pe_chg and (cur_spot - stk) <= 30 and ce_chg >= min_chg:
-                        continue
-
-                    if (pe_chg >= min_chg and (pe_chg >= ce_chg or pe_oi >= ce_oi)) or (pe_oi >= min_oi and pe_oi >= ce_oi):
-                        defended_sups.append((stk, pe_oi, pe_chg))
-
-                if defended_sups:
-                    max_pe_stk = max(defended_sups, key=lambda x: x[1])[0]
-                    nearest_def = defended_sups[0][0]
-                    if nearest_def != max_pe_stk and abs(nearest_def - max_pe_stk) <= 50:
-                        lo, hi = min(nearest_def, max_pe_stk), max(nearest_def, max_pe_stk)
-                        strong_s_str = f"{int(lo)} to {int(hi)}"
-                    else:
-                        strong_s_str = f"{int(nearest_def)}"
-                elif not sup_pool.empty:
-                    if "pe_chg_oi" in sup_pool and sup_pool["pe_chg_oi"].max() > 0:
-                        strong_s_str = f"{int(round(sup_pool.loc[sup_pool['pe_chg_oi'].idxmax()][stk_col]))}"
-                    else:
-                        strong_s_str = f"{int(round(sup_pool.loc[sup_pool['pe_oi'].idxmax()][stk_col]))}"
-        except Exception as _e:
-            logging.warning("find_strong_support_resistance: error finding levels: %s", _e)
-
-    if (strong_s_str == "NA" or strong_r_str == "NA") and read is not None:
+    if (strong_s is None or strong_r is None) and read is not None:
         try:
             lv = getattr(read, "levels", None)
             if lv:
-                if strong_s_str == "NA" and getattr(lv, "s1", None):
-                    strong_s_str = f"{int(round(float(lv.s1)))}"
-                if strong_r_str == "NA" and getattr(lv, "r1", None):
-                    strong_r_str = f"{int(round(float(lv.r1)))}"
-        except Exception as _e:
-            logging.warning("find_strong_support_resistance: error reading levels: %s", _e)
+                if strong_s is None and getattr(lv, "s1", None):
+                    strong_s = float(lv.s1)
+                if strong_r is None and getattr(lv, "r1", None):
+                    strong_r = float(lv.r1)
+        except Exception:
+            pass
 
-    return strong_s_str, strong_r_str
+    return strong_s, strong_r
 
 
 def p8_p9_levels(master=None, ohlc=None, spot: float | None = None,
@@ -819,46 +704,42 @@ def p8_p9_levels(master=None, ohlc=None, spot: float | None = None,
     """
     3 important supports and resistances for the day.
     FORMAT:
-      3 important supports for the day      NA   S1: 23431.5 | S2: 23313.9 | S3: 23072.05 LOWER GAPS: X | Y | Z
-      3 important Resistance for the day    NA   R1: 23571.55 | R2: 23758.95 | R3: 23890 UPPER GAPS: P | Q | R
+      3 important supports for the day      NA   S1: 23431.5| S2: 23313.9| S3: 23072.05 LOWER GAPS: X |Y |Z
+      3 important Resistance for the day    NA   R1: 23571.55 | R2: 23758.95 | R3: 23890 UPPER GAPS: P |Q |R
 
     View Column:
-      - Sl 8: Nearest Option Chain Support Level (e.g. 22500 to 22550)
-      - Sl 9: Nearest Option Chain Resistance Level (e.g. 22650)
+      - Sl 8: Possible Strong Support based on current close price of the day candle from Change in OI or Option Chain
+      - Sl 9: Possible Strong Resistance based on current close price of the day candle from Change in OI or Option Chain
+      - Both display JUST THE NUMBER in the View column (e.g. 23500, 23800).
     """
     sp = Param(8, "3 important supports for the day", "NA")
     rp = Param(9, "3 important Resistance for the day", "NA")
 
     if ohlc is None or (isinstance(ohlc, pd.DataFrame) and ohlc.empty):
         try:
-            import levels as _lv
-            ohlc = _lv.load_ohlc()
-        except Exception as _e:
-            logging.warning("p8_p9_levels: could not load daily ohlc from levels: %s", _e)
-            try:
-                import build_master as _bm
-                ohlc = _bm.load_all(config.OHLC_DIR, quiet=True)
-            except Exception as _e2:
-                logging.warning("p8_p9_levels: could not load daily ohlc from build_master: %s", _e2)
+            import build_master as _bm
+            ohlc = _bm.load_all(config.OHLC_DIR, quiet=True)
+        except Exception:
+            pass
 
     # Reference close price of the day candle
     cur_close = spot
     if ohlc is not None and not ohlc.empty:
         try:
             cur_close = float(ohlc.iloc[-1]["Close"])
-        except Exception as _ce:
-            logging.warning("p8_p9_levels: failed to read last close: %s", _ce)
+        except Exception:
+            pass
 
-    # Find nearest support & resistance from option chain / change in OI
+    # Find strong support & resistance from option chain / change in OI
     strong_s, strong_r = find_strong_support_resistance(df, cur_close or spot, read=read, ohlc=ohlc)
 
-    if strong_s and strong_s != "NA":
-        sp.view = str(strong_s)
+    if strong_s is not None and np.isfinite(strong_s):
+        sp.view = f"{int(round(strong_s))}"
     else:
         sp.view = "NA"
 
-    if strong_r and strong_r != "NA":
-        rp.view = str(strong_r)
+    if strong_r is not None and np.isfinite(strong_r):
+        rp.view = f"{int(round(strong_r))}"
     else:
         rp.view = "NA"
 
@@ -885,12 +766,11 @@ def p8_p9_levels(master=None, ohlc=None, spot: float | None = None,
                 r_obs += " UPPER GAPS: " + " | ".join(_fmt_price(p) for _, p in ug_list)
             rp.observation = r_obs
 
-            sp.note = f"Nearest Option Chain Support: {sp.view} from Option Chain / ΔOI"
-            rp.note = f"Nearest Option Chain Resistance: {rp.view} from Option Chain / ΔOI"
+            sp.note = f"Defended Strong Support: {sp.view} from Option Chain / ΔOI"
+            rp.note = f"Defended Strong Resistance: {rp.view} from Option Chain / ΔOI"
             sp.auto = rp.auto = True
             return sp, rp
         except Exception as exc:                            # noqa: BLE001
-            logging.warning("p8_p9_levels: dated levels unavailable: %s", exc)
             sp.note = rp.note = f"dated levels unavailable ({exc})"
 
     if master is None or master.empty:
@@ -1594,13 +1474,6 @@ def build(indices: list[dict] | None = None,
           overrides: dict[int, Any] | None = None) -> list[Param]:
     indices = indices or []
     overrides = overrides or {}
-
-    if daily is None or (isinstance(daily, pd.DataFrame) and daily.empty):
-        try:
-            import levels as _lv
-            daily = _lv.load_ohlc()
-        except Exception as _de:
-            logging.warning("view_building.build: could not auto-load daily ohlc: %s", _de)
 
     f1, f2 = p1_p2_futures(nifty_fut, bn_fut)
     s8, r9 = p8_p9_levels(master, ohlc=daily, spot=spot, df=df, read=read)

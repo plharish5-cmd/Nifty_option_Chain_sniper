@@ -1,0 +1,6 @@
+[Unit]
+Description=Sleep the laptop at night when idle (View Building automation)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash "/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/wa_daily/night_sleep.sh"

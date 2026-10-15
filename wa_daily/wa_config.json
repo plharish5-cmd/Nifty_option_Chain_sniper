@@ -1,0 +1,28 @@
+{
+  "live": true,
+  "live_targets": [
+    [
+      "EGSMA - LTA 💪📈",
+      "Manjunath Equity Guys"
+    ]
+  ],
+  "send_to": [
+    "Me"
+  ],
+  "caption": "NIFTY view building · {date}",
+  "sources": [
+    {
+      "name": "view_building",
+      "type": "excel",
+      "path": "~/Documents/Swathi K N/1 Trading/option chain/OC/data/view_building/View_Building_latest.xlsx"
+    }
+  ],
+  "weekdays_only": true,
+  "headless": false,
+  "dpi": 200,
+  "profile_dir": "~/.wa_profile",
+  "warmup_url": "http://localhost:8501",
+  "warmup_s": 90,
+  "max_age_min": 120,
+  "sleep_after": false
+}

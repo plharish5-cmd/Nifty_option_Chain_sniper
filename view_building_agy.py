@@ -40,12 +40,12 @@ separate daily file. Worth wiring up once located.
 """
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+import logging
 import numpy as np
 import pandas as pd
 
@@ -245,79 +245,122 @@ def ema_position(daily: pd.DataFrame, span: int = 50) -> dict:
     return out
 
 
+def _candle_pattern(o, h, l, c, po, pc) -> str:
+    """Single / two-candle pattern name for one candle (po/pc = previous open/close)."""
+    body, rng = abs(c - o), max(h - l, 1e-9)
+    up_w, lo_w = h - max(o, c), min(o, c) - l
+    if c > o and pc < po and c >= po and o <= pc:
+        return "Bullish Engulfing"
+    if c < o and pc > po and c <= po and o >= pc:
+        return "Bearish Engulfing"
+    if body <= 0.1 * rng:
+        return "Doji"
+    if lo_w >= 2 * body and up_w <= max(body, 0.15 * rng):
+        return "Hammer"
+    if up_w >= 2 * body and lo_w <= max(body, 0.15 * rng):
+        return "Shooting Star"
+    return ""
+
+
 def p6_daily_trend(daily: pd.DataFrame) -> Param:
-    """HH/HL above the 8 EMA with UBB rising = +2, the mirror = −2."""
+    """
+    Daily candle read in plain trader language (no Bollinger-band words):
+    candle colour / size / pattern, what it did against the previous candle (HH/LL, higher/lower close,
+    sustain / fail the previous pattern's high or low), where it closed against the 8 EMA (and 10 EMA when it
+    matters), plus the weekly candle when it carries a pattern.
+    Score: Bullish +2 · Bearish −2 · Consolidation 0.
+    """
     p = Param(6, "Nifty 50 Trend & Behaviour on Daily Time Frame", "2")
     if daily is None or len(daily) < 25:
         p.note = "needs 25+ daily candles in data/ohlc"
         return p
 
-    d = daily.tail(120).copy()
+    d = daily.tail(120).copy().reset_index(drop=True)
     d["ema8"] = d["Close"].ewm(span=8, adjust=False).mean()
-    mid = d["Close"].rolling(20).mean()
-    sd = d["Close"].rolling(20).std(ddof=0)
-    d["ubb"], d["lbb"] = mid + 2 * sd, mid - 2 * sd
+    d["ema10"] = d["Close"].ewm(span=10, adjust=False).mean()
+    t, y = d.iloc[-1], d.iloc[-2]
+    o, h, l, c = (float(t[k]) for k in ("Open", "High", "Low", "Close"))
+    red = c < o
+    body = abs(c - o)
+    avg_body = float((d["Close"] - d["Open"]).abs().iloc[-11:-1].mean())
+    big = body >= 1.6 * avg_body
+    pat = _candle_pattern(o, h, l, c, float(y["Open"]), float(y["Close"]))
+    prev_pat = _candle_pattern(float(y["Open"]), float(y["High"]), float(y["Low"]), float(y["Close"]),
+                               float(d.iloc[-3]["Open"]), float(d.iloc[-3]["Close"]))
+    hh, ll = h > float(y["High"]), l < float(y["Low"])
+    hc, lc = c > float(y["Close"]), c < float(y["Close"])
+    inside = (not hh) and (not ll)
+    e8, e10 = float(t["ema8"]), float(t["ema10"])
+    near8 = abs(c - e8) <= 0.0025 * c
+    recent_lo = float(d["Low"].iloc[-6:-1].min())
+    recent_hi = float(d["High"].iloc[-6:-1].max())
 
-    last = d.iloc[-1]
-    above = last["Close"] > last["ema8"]
-
-    bb = band_behaviour(d)
-    ubb_up = bb.get("ubb_dir") == "UP"
-    lbb_dn = bb.get("lbb_dir") == "DOWN"
-
-    # HH/HL over the last 20 sessions
-    recent = d.tail(20)
-    hh = recent["High"].iloc[-1] >= recent["High"].max() * 0.995
-    ll = recent["Low"].iloc[-1] <= recent["Low"].min() * 1.005
-
-    # Plain language, and the 50 EMA is gone.
-    #
-    # MJ's system uses the 8 EMA and the 10 EMA. Nothing in it references a
-    # 50 EMA, so three timeframes of 50-EMA position was a filter from a
-    # different system sitting in the middle of this row — extra words that
-    # feed no decision. Removed.
-    #
-    # The sentence now reads the way the sheet is meant to be read aloud:
-    # what colour the candle is, where it sits against the band, and
-    # whether structure is making higher highs or lower lows.
-    red = last["Close"] < last["Open"]
-    band_note = ("crossing DOWN LBB" if last["Close"] < last["lbb"] else
-                 "crossing UP UBB" if last["Close"] > last["ubb"] else
-                 "inside the bands")
-    if hh and above:
-        struct, trend = "making Higher Highs", "Up trend"
-    elif ll and not above:
-        struct, trend = "making Lower Lows", "Down trend"
+    parts = []
+    # 1. the candle
+    colour = "Red" if red else "Green"
+    if pat in ("Bullish Engulfing", "Bearish Engulfing", "Hammer", "Shooting Star", "Doji"):
+        parts.append(f"{pat} formed" + ("" if pat.startswith(("Bull", "Bear")) else f" ({colour.lower()})"))
     else:
-        struct, trend = "no clear HH/LL", "Range"
+        parts.append(f"{'Big ' if big else ''}{colour} Candle")
+    # 2. against the previous candle
+    if prev_pat == "Bullish Engulfing" and red and c < float(y["High"]):
+        parts[-1] += " and it could not sustain previous Bullish Engulfing high"
+    elif prev_pat == "Bearish Engulfing" and not red and c > float(y["Low"]):
+        parts[-1] += " and it could not sustain below previous Bearish Engulfing low"
+    if big and red and c < recent_lo:
+        parts.append("closed much below recent days")
+    elif big and not red and c > recent_hi:
+        parts.append("closed much above recent days")
+    if inside:
+        parts.append("Inside candle (within previous high–low)")
+    else:
+        hl = "Higher High" if hh and not ll else "Lower Low" if ll and not hh else "Outside candle"
+        parts.append(f"{hl}, {'Higher' if hc else 'Lower' if lc else 'Flat'} Close")
+    # 3. EMA
+    if near8:
+        parts.append(f"closed near 8 EMA ({e8:,.0f})")
+    else:
+        ema_txt = f"{'ABOVE' if c > e8 else 'BELOW'} 8 EMA ({e8:,.0f})"
+        if pat.startswith(("Bullish", "Bearish")) or (c > e10) != (c > e8):
+            ema_txt += f", {'above' if c > e10 else 'below'} 10 EMA ({e10:,.0f})"
+        parts.append(ema_txt)
 
-    p.observation = (
-        f"Daily candle: {'Bearish red' if red else 'Bullish green'} Candle, "
-        f"{band_note}, {struct}: {trend}. "
-        f"{'BELOW' if not above else 'ABOVE'} 8 EMA ({last['ema8']:,.0f})")
+    # 4. weekly candle (only when it shows a pattern)
+    wk = (daily.set_index("Date").sort_index()
+          .resample("W").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna())
+    wpat = ""
+    if len(wk) >= 3:
+        a, b = wk.iloc[-1], wk.iloc[-2]
+        wpat = _candle_pattern(*(float(a[k]) for k in ("Open", "High", "Low", "Close")), float(b["Open"]), float(b["Close"]))
+
+    # 5. score
+    bull = sum([not red, hh and not ll, hc, c > e8, pat in ("Bullish Engulfing", "Hammer"),
+                wpat in ("Bullish Engulfing", "Hammer")])
+    bear = sum([red, ll and not hh, lc, c < e8, pat in ("Bearish Engulfing", "Shooting Star"),
+                wpat in ("Bearish Engulfing", "Shooting Star")])
+    if big and red and c < recent_lo:
+        bear += 1
+    if big and not red and c > recent_hi:
+        bull += 1
+    consolidation = inside or near8 or pat == "Doji" or prev_pat.endswith("Engulfing") and parts[0].find("could not sustain") > 0
+    net = bull - bear
+    if net >= 3 and not (inside or near8):
+        p.score, p.view, verdict = 2, "Bullish", "Bullish"
+    elif net <= -3 and not (inside or near8):
+        p.score, p.view, verdict = -2, "Bearish", "Bearish"
+    elif consolidation or abs(net) < 3:
+        p.score, p.view, verdict = 0, "Consolidation", "Consolidation"
+    if verdict == "Bearish" and ll and lc and c < e8:
+        verdict = "Overall Downtrend Continues" if big else "Bearish"
+    if verdict == "Bullish" and hh and hc and c > e8:
+        verdict = "Overall Uptrend Continues" if big else "Bullish"
+
+    s = ", ".join(parts) + "; "
+    if wpat:
+        s += f"{wpat} is forming in weekly time frame; "
+    p.observation = s + verdict + "."
     p.auto = True
-    if bb:
-        p.note = (f"{bb['read']} · width {bb['width']:,.0f} pts "
-                  f"({bb['width_change_pct']:+.1f}% over 3 sessions)")
-
-    # LL formation scores -2 on its own; HH scores +2. Structure is the
-    # decider, the bands confirm it.
-    if ll and not above:
-        p.score, p.view = -2, "Bearish"
-        return p
-    if hh and above:
-        p.score, p.view = 2, "Bullish"
-        return p
-    if above and ubb_up and hh:
-        p.score, p.view = 2, "Bullish"
-    elif (not above) and lbb_dn and ll:
-        p.score, p.view = -2, "Bearish"
-    elif above and ubb_up:
-        p.score, p.view = 2, "Bullish"
-    elif (not above) and lbb_dn:
-        p.score, p.view = -2, "Bearish"
-    else:
-        p.score, p.view = 0, "Neutral"
+    p.note = f"bull points {bull} · bear points {bear}" + (f" · weekly {wpat}" if wpat else "")
     return p
 
 

@@ -1,0 +1,9 @@
+[Unit]
+Description=Check every 10 min between 23:00 and 04:50 whether the laptop is idle
+
+[Timer]
+OnCalendar=*-*-* 23,00,01,02,03,04:00/10
+Persistent=false
+
+[Install]
+WantedBy=timers.target

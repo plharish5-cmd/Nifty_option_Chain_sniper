@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=View Building morning send
+Exec=bash -c '"$HOME/Documents/Swathi K N/1 Trading/option chain/OC/wa_daily/morning.sh"'
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=20
+NoDisplay=true

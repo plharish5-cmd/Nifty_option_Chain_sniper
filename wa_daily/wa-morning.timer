@@ -1,0 +1,10 @@
+[Unit]
+Description=Wake the laptop and send View Building (weekdays 07:15)
+
+[Timer]
+OnCalendar=Mon..Fri 07:15
+WakeSystem=true
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -198,6 +198,13 @@ def render(
     auto, tot, man = vb.coverage(params)
     score = vb.total_score(params)
     vname, vcol = vb.verdict(score)
+
+    # Auto-save the sheet so the 7:30 WhatsApp sender (wa_daily) always has today's file. Never blocks the tab.
+    try:
+        _xl = Path(__file__).resolve().parent / "data" / "view_building" / "View_Building_latest.xlsx"
+        vb.to_excel(params, _xl, when=now.date())
+    except Exception:
+        pass
     v_badge_color = GREEN if vcol == "green" else RED if vcol == "red" else GOLD
 
     # ═══════════════════════════════════════════════════════════════════════

@@ -19402,3 +19402,1374 @@ INFO:     127.0.0.1:55452 - "GET /api/dashboard HTTP/1.1" 200 OK
 INFO:     127.0.0.1:55466 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
 INFO:     127.0.0.1:55474 - "GET /api/oclab-summary HTTP/1.1" 200 OK
 INFO:     127.0.0.1:55474 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46766 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44560 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44562 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+2026-10-15 14:47:35,654 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:44562 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44562 - "GET / HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:44562 - "GET /assets/index-eyHhVtCy.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56126 - "GET /assets/index-DlBciJIM.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56134 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56172 - "WebSocket /ws" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:56162 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56146 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56188 - "GET /api/paper HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56146 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56188 - "GET /api/chain?expiry=2026-10-19 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56162 - "GET /favicon.ico HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56162 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56162 - "GET /api/auction?tf=5m HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56188 - "GET /api/volume?tf=5m HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44562 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44562 - "GET /api/qml?tf=5m HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56188 - "GET /api/events?tf=5m&limit=300 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44562 - "GET /api/delta?tf=5m HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56126 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56134 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56134 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 14:48:05,289 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:48:05,540 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:48:05,700 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:48:05,931 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:48:06,133 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:36772 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36810 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36806 - "GET /api/events?tf=5m&limit=300 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36772 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36756 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36790 - "GET /api/delta?tf=5m HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36774 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36774 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36756 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36790 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57680 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41146 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 14:48:35,735 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-15 14:48:35,736 WARNING chain: chain poll failed: RateLimited: HTTP 429: {"data":{"805":"Too many requests. Further requests may result in the user being blocked."},"status":"failed"}
+INFO:     127.0.0.1:58948 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58918 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58934 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58934 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59760 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 14:49:05,305 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:49:05,492 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:49:05,831 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:49:06,070 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:49:06,285 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:59762 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59788 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59800 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59816 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59774 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59762 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59796 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59796 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59762 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59774 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45134 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45136 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 14:49:35,944 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:38892 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38898 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38900 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38900 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38900 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34126 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40884 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40916 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40886 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40872 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40902 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 14:50:06,013 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:50:06,194 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:50:06,392 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:50:06,634 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:40902 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 14:50:07,076 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:40932 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40932 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40902 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40956 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40946 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40946 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40872 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40914 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40914 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58394 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58400 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51984 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51988 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51988 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 14:50:38,940 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:51988 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51984 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36932 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36944 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49706 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 14:51:07,138 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:51:07,158 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:50424 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 14:51:07,340 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:51:07,493 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:51:07,701 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:50438 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50476 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50424 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50444 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50460 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50460 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 14:51:12,207 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50460 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50460 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36972 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50444 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50474 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50474 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50444 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+2026-10-15 14:51:28,985 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:59006 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59010 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59010 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 14:51:42,540 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:59010 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42510 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42510 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 14:52:05,357 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:52:05,552 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:52:05,812 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:52:06,009 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:52:06,185 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:41098 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41116 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41130 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41090 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41112 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41110 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41110 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 14:52:09,085 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:41110 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44506 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60476 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38398 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38410 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38398 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38398 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43976 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52670 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+2026-10-15 14:53:02,375 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-15 14:53:02,377 WARNING chain: chain poll failed: RateLimited: HTTP 429: {"data":{"805":"Too many requests. Further requests may result in the user being blocked."},"status":"failed"}
+2026-10-15 14:53:05,399 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:53:05,601 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:53:05,809 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:53:06,024 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:53:06,235 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:35096 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35120 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35122 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35080 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35110 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35102 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35102 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35102 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47012 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44802 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53594 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47102 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47084 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51718 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 14:54:03,591 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:51718 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 14:54:05,977 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:54:06,474 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:51718 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 14:54:06,488 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:54:06,885 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:54:07,701 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:51736 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51736 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51718 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51750 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51746 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51746 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47094 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51724 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51724 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47094 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47094 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35402 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35414 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35414 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35414 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36690 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36700 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41766 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41802 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41772 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41752 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41778 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 14:55:05,731 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:41778 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41806 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 14:55:07,275 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:55:07,968 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:55:08,236 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:55:08,442 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:55:08,654 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:41778 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41778 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41806 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45294 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45280 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45280 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55314 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33552 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 14:55:38,294 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:33552 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33552 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58146 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58154 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41752 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41786 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55314 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55320 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33548 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 14:56:05,832 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:56:06,230 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:56:06,785 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:56:06,937 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-15 14:56:07,421 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:56:08,731 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:55314 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55314 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41752 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55314 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55314 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41752 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55314 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33548 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41700 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45900 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45900 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45900 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58154 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55320 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41786 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41700 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38016 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41786 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 14:57:04,562 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-15 14:57:05,474 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:57:05,820 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:57:06,484 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:57:06,962 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:57:07,084 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:40814 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40804 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40804 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40826 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40822 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40822 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40802 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41700 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40814 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41700 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60082 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44828 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44834 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44834 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44834 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55632 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55646 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 14:58:05,574 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:58:05,631 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-15 14:58:05,632 WARNING chain: chain poll failed: RateLimited: HTTP 429: {"data":{"805":"Too many requests. Further requests may result in the user being blocked."},"status":"failed"}
+2026-10-15 14:58:05,725 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:58:06,404 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:58:06,524 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:58:06,724 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:50630 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50618 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50618 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50658 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50646 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50646 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50604 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50608 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50630 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53888 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37772 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37774 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37774 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37774 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59904 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59914 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42942 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42942 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42924 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42926 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42952 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 14:59:18,945 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/marketfeed/ltp "HTTP/1.1 200 OK"
+2026-10-15 14:59:19,067 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:59:19,136 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:59:19,367 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:59:19,601 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 14:59:19,819 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:42044 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42072 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42074 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42042 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42052 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42068 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 14:59:21,224 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/marketfeed/ltp "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:42068 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45128 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45136 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45136 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58140 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58140 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58148 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51638 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51674 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51624 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51648 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51664 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:00:06,772 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:00:06,952 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:00:07,161 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:00:07,389 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:00:07,585 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:51674 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51624 - "GET /api/candles?tf=5m&days=3&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51624 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51674 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51676 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51664 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:00:08,798 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:51664 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51648 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51668 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51668 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51668 - "GET /api/candles?tf=1D&days=60&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51668 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51648 - "GET /api/analysis?tf=1h&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51668 - "GET /api/candles?tf=1h&days=30&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47462 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47478 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47478 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47478 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34122 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41442 - "GET /_stcore/health HTTP/1.1" 200 OK
+2026-10-15 15:01:05,562 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:01:05,742 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:01:05,893 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:01:06,110 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:01:06,368 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:41466 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41480 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41466 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:01:08,882 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:41466 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41448 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41456 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41488 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41488 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46966 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46974 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46974 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46974 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37776 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58376 - "GET /_stcore/health HTTP/1.1" 200 OK
+2026-10-15 15:02:05,660 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:02:05,900 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:02:06,098 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:02:06,466 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:58414 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:02:06,746 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:58414 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58424 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58414 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:02:08,929 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-15 15:02:08,930 WARNING chain: chain poll failed: RateLimited: HTTP 429: {"data":{"805":"Too many requests. Further requests may result in the user being blocked."},"status":"failed"}
+INFO:     127.0.0.1:58414 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58390 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58400 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42028 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56502 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56506 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56506 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56506 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49194 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38726 - "GET /_stcore/health HTTP/1.1" 200 OK
+2026-10-15 15:03:05,503 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:03:05,541 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:03:05,718 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:03:05,951 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:03:06,128 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:38754 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38764 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38754 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:03:09,067 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:38754 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38738 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38746 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38768 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38778 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43666 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43674 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43674 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43674 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34616 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:04:05,618 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:04:05,711 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:04:05,853 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:04:06,055 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:04:06,241 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:56220 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56208 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56192 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56192 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56226 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56192 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:04:09,113 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:56174 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56186 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56196 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56196 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56196 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40682 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40694 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40694 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40694 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37784 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45590 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45580 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45572 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:05:07,305 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:05:07,511 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:05:07,712 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:05:07,909 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:05:08,138 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:43696 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43698 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43696 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45572 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45572 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:05:09,190 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:45572 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43722 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45580 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45602 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45602 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45580 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45602 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45602 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43706 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43706 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43706 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38004 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37502 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:06:05,604 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:06:05,949 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:06:07,116 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:06:07,208 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:06:07,420 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:58940 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58968 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58954 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58954 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:06:12,349 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58954 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58954 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56832 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58968 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58970 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58970 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58968 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58968 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42764 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42764 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42764 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48304 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:06:44,888 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:46348 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:07:06,266 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:07:06,669 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:07:06,691 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:07:06,962 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:07:07,136 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:45768 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45780 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45774 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45774 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45774 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:07:13,710 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:45252 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45264 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54722 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45794 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44882 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44882 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44882 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47536 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39358 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:08:05,374 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:08:05,554 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:08:05,755 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:08:05,969 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:08:06,211 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:38480 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38486 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38480 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38480 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:08:10,794 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:38480 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48232 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48242 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52674 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38488 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38230 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38230 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38230 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53430 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54636 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:09:05,466 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:09:05,707 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:09:05,858 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:09:06,081 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:09:06,378 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:56770 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56768 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56752 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56768 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56768 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:09:10,845 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-15 15:09:10,847 WARNING chain: chain poll failed: RateLimited: HTTP 429: {"data":{"805":"Too many requests. Further requests may result in the user being blocked."},"status":"failed"}
+INFO:     127.0.0.1:56768 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56432 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56756 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42052 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56756 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32860 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32870 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32860 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32860 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43414 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51778 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56234 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56212 - "GET /api/paper HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56224 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56204 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56204 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:10:06,392 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:10:06,579 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:10:06,784 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:10:07,006 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:10:07,225 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:56204 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56224 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56204 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56204 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:10:10,935 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:56204 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56238 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45676 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56238 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56238 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51930 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51930 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47156 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51930 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47172 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53472 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:11:05,825 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:11:05,917 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:11:06,003 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:11:06,231 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:11:06,441 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:52886 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52898 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52886 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52886 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:11:10,998 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52886 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52898 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52912 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52912 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52912 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39598 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39598 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48690 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39598 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48702 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45756 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:12:05,898 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:12:05,984 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:12:06,140 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:12:06,392 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:12:06,586 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:42078 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42086 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42078 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:12:14,699 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:42078 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42086 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42096 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59102 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59102 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41988 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41998 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39426 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:13:06,598 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:39426 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:13:08,233 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:13:09,137 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:13:09,438 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:13:10,253 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:39426 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43990 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39426 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:13:13,784 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:39426 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43990 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39440 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39440 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59642 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59650 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59638 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43170 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34368 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:14:06,599 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:14:06,600 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:14:07,189 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:14:07,191 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:14:07,363 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:14:07,531 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:34374 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34376 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34374 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:14:07,950 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:14:13,860 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:34374 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34376 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34384 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49102 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32830 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40430 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40400 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40408 - "GET /api/paper HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40408 - "GET /api/analysis?tf=1h&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40400 - "GET /api/candles?tf=1h&days=30&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40416 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40408 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40408 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:15:07,924 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:15:08,121 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:40444 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:15:09,258 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:15:09,566 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:40444 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55804 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40444 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:15:13,947 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:40444 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40430 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40434 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40434 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40430 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40434 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38568 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38568 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38584 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39016 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52420 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:16:07,045 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:16:07,046 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:16:07,422 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:16:07,702 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:52420 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52430 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52420 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34946 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:16:17,038 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:34946 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52436 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34958 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52436 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34958 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51726 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51742 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51750 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:16:49,619 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:40768 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40774 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:17:05,305 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:17:05,512 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:17:05,715 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:17:05,917 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:40774 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40790 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40774 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34100 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:17:18,251 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:40796 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34112 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34112 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46396 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46412 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35472 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35488 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:18:05,868 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:18:06,182 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:18:06,196 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:18:06,322 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:35506 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35494 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35488 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35494 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:18:16,368 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52188 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35490 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52194 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35490 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35490 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60778 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53144 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53160 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40662 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40678 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:19:06,029 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:19:06,273 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:19:07,145 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:19:07,323 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:40678 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40684 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40678 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:19:15,608 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:50148 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40694 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50150 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51568 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40640 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40652 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60906 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60868 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60892 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60880 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60880 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:20:07,663 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:20:07,757 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:20:08,022 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:20:08,250 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:60880 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60892 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60880 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:20:11,669 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:58732 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60912 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58734 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60912 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42234 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42248 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42264 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53992 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53994 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:21:06,055 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:21:06,257 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:21:06,436 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:21:06,693 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:53994 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54002 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53994 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:21:12,905 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52858 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54010 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52874 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54010 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54010 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47322 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47330 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38772 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:22:06,853 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:38784 - "GET /_stcore/health HTTP/1.1" 200 OK
+2026-10-15 15:22:07,108 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:38772 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:22:07,520 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:22:07,751 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:38772 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38796 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38772 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35176 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:22:16,600 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:35188 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38798 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38798 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38798 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48020 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43630 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:23:05,723 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:23:06,075 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:23:06,258 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:23:06,431 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:43630 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43646 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43630 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49484 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49486 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:23:15,681 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:43650 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49502 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56774 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45658 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45664 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46900 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:24:06,302 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:24:06,500 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:24:06,697 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:24:06,963 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:46900 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46910 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46900 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57814 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:24:15,845 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:57838 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46912 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57830 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43312 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35042 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35028 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35038 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35038 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:25:06,782 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:25:06,972 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:25:07,187 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:25:07,569 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:35038 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35062 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35038 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35028 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:25:15,968 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-15 15:25:15,970 WARNING chain: chain poll failed: RateLimited: HTTP 429: {"data":{"805":"Too many requests. Further requests may result in the user being blocked."},"status":"failed"}
+INFO:     127.0.0.1:35042 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35056 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35056 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49160 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45944 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42876 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:26:05,477 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:26:05,614 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:26:05,836 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:26:06,335 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:42876 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42892 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42876 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42882 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:26:17,171 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:59898 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42886 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42898 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42898 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42886 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41140 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42114 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52510 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52520 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51828 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:27:06,014 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:27:06,288 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:27:06,358 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:27:06,533 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:51828 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51842 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51828 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49228 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:27:19,379 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:51848 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49230 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44262 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44272 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51462 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51478 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35694 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:28:06,517 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:28:06,686 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:28:06,888 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:28:07,092 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:35694 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35696 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35694 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37564 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:28:18,642 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:35698 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37578 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38938 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38940 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39810 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39818 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33902 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:29:06,829 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:29:06,992 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:33902 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:29:07,512 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:29:07,765 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:33902 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33930 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33902 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33940 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:29:19,638 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:33918 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48950 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48962 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54074 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54080 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53324 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53348 - "GET /api/analysis?tf=1h&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53334 - "GET /api/candles?tf=1h&days=30&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53314 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53312 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53312 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:30:08,054 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:30:08,197 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:30:08,449 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:53312 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53324 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53348 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:30:08,766 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:53314 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53334 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53332 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53332 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:30:20,340 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:53332 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53334 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55908 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:30:20,798 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:30:20,994 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:55908 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53332 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53334 - "GET /api/analysis?tf=5m&inst=NIFTY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55908 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50828 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36402 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36416 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36430 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57686 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:31:08,861 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:31:09,528 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-15 15:31:09,819 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     127.0.0.1:50188 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:31:22,832 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50178 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50202 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50184 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50192 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50192 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50184 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50506 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47990 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47990 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47996 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40760 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48572 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:32:23,101 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:48572 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48580 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48594 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44570 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44570 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44572 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44582 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34630 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57142 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:33:23,496 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57142 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57142 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57148 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57160 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57160 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57148 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33208 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33214 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42570 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42580 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42586 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:34:23,743 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:35652 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35664 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35680 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52728 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52738 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59116 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59124 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59140 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45398 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45412 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+2026-10-15 15:35:29,026 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:45378 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45378 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45388 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45396 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45396 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45388 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45388 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57798 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57798 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37876 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37886 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37900 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40318 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46810 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46810 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:36:29,367 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:55654 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55654 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55654 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55666 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55678 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55678 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55666 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37872 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37872 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59364 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59372 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59382 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42468 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32930 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32930 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:37:29,609 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:42208 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42208 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42208 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42216 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42216 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36778 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36778 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59118 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59134 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59140 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53156 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58046 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58046 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:38:29,925 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:35650 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35650 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35650 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35654 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35656 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35656 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35654 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51930 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51930 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57356 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57366 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57378 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46830 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52176 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52176 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:39:30,711 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52636 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52636 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52636 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52638 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52652 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52652 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52638 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44508 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44508 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51006 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51006 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48786 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48794 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40482 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40482 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:40:31,198 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain/expirylist "HTTP/1.1 200 OK"
+2026-10-15 15:40:34,199 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-15 15:40:36,328 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58872 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58872 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58872 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58878 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58888 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58888 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58878 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57686 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57686 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44610 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44614 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44614 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42816 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35892 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35892 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:41:36,687 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:42882 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42896 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42910 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46628 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46634 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46634 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46628 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44886 - "GET /_stcore/health HTTP/1.1" 200 OK
+2026-10-15 15:42:36,878 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-15 15:42:38,919 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+2026-10-15 15:42:43,029 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 429 Too Many Requests"
+INFO:     127.0.0.1:42448 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+2026-10-15 15:42:51,176 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50452 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42458 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42464 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42464 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42458 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57798 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57802 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34992 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35008 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35014 - "GET /_stcore/health HTTP/1.1" 200 OK
+2026-10-15 15:43:51,830 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56106 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56110 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56122 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56122 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56110 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56110 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56122 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51016 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51028 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36556 - "GET /_stcore/health HTTP/1.1" 200 OK
+2026-10-15 15:44:52,089 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:38512 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38520 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38536 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38536 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38520 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48880 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48884 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39914 - "GET /_stcore/health HTTP/1.1" 200 OK
+2026-10-15 15:45:52,332 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57194 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57206 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57194 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57218 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57206 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57218 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52022 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52030 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54502 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54518 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59682 - "GET /_stcore/health HTTP/1.1" 200 OK
+2026-10-15 15:46:52,549 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:53414 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53424 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53426 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41000 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41006 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37022 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37026 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46330 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46344 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47162 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52220 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52220 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52230 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52220 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:47:53,180 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52220 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52230 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52240 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52240 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52248 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56010 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57698 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57698 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57714 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57714 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55300 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47298 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47298 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47304 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47312 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:48:53,539 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:47312 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47304 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47298 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47298 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56672 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58310 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36820 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36820 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36834 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36846 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58826 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52902 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52902 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52912 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52902 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:49:53,918 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52902 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52912 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52924 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52926 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43990 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39626 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57466 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57474 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57466 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57488 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54366 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60452 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60466 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60452 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60476 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60478 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:50:54,167 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60478 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60476 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60452 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57954 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39904 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44522 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44522 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44522 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44526 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39710 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34210 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34210 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34210 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34222 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34234 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:51:54,400 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:34234 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34222 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34210 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60188 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60192 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46580 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46580 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46580 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46596 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59650 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41372 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41372 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41372 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41388 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41392 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:52:54,839 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:41392 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41388 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41372 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48848 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48858 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43424 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43424 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43424 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43432 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39428 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52858 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52858 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52858 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52866 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52880 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:53:55,178 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52880 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52866 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52858 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36822 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35102 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35118 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35102 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35102 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35134 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53656 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52438 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52438 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52438 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52450 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52438 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:54:55,460 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52438 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52450 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52466 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54386 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42356 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42362 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42356 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42356 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42376 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42456 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42492 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42492 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42492 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42502 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:55:55,751 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:42502 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42492 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47710 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47260 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47260 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47262 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47260 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47270 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32778 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40260 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40260 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40260 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40266 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40272 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:56:56,070 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:40272 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40266 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40260 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58796 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42068 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42068 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42068 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42080 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42096 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45166 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55596 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55596 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55596 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55604 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55610 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:57:56,661 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:55610 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55604 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55596 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48962 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48510 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48510 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48510 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48520 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33498 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57648 - "GET /api/dashboard HTTP/1.1" 200 OK
+2026-10-15 15:58:56,930 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:40672 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40678 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40684 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34546 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34552 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52406 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52410 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41224 - "GET /_stcore/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42482 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42498 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42508 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+2026-10-15 15:59:57,670 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/optionchain "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:42508 - "GET /api/oclab/pece?tf=3m&mode=auto&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42498 - "GET /api/oclab/flow?tf=1m&mode=all&n=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42482 - "GET /api/oclab-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33422 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33436 - "GET /api/footprints?tf=5m&n=16 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     connection closed
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [38993]
