@@ -297,6 +297,28 @@ def volume(tf: str = Query("5m")):
     return {"tf": tf, **v, "futures": h.fut_status, "recorder": h.recorder.status()}
 
 
+@app.get("/api/footprints")
+def footprints(tf: str = Query("5m"), n: int = Query(16)):
+    """ESTIMATED footprint ladder per closed candle from the desk's own recorded futures ticks (observation only)."""
+    if tf not in ("5m", "15m", "30m", "1h"):
+        raise HTTPException(400, "tf must be 5m, 15m, 30m or 1h")
+    from ..engine import footprints as fp
+    h = _h()
+    days = 3 if tf in ("5m", "15m") else 5
+    zones = ((h.json.get("5m") or {}).get("zones") or []) + ((h.json.get("15m") or {}).get("zones") or [])
+    return fp.compute(h.rows_1m(days), tf, max(4, min(int(n), 30)), float(config.rule("delta", "fut_level_step", 5.0)),
+                      zones, config.rules().get("footprints", {}))
+
+
+@app.get("/api/qml")
+def qml(tf: str = Query("5m")):
+    """Line-chart QML · RBS / SBR · SNR fakeouts for one timeframe (observation only)."""
+    j = _h().json.get(tf)
+    if not j:
+        return {"tf": tf, "available": False, "message": "no closed candles analysed yet for this timeframe"}
+    return {"tf": tf, "available": True, **(j.get("qml") or {"setups": [], "markers": []})}
+
+
 @app.get("/api/oclab-summary")
 async def oclab_summary():
     """PE − CE table + writers-flow, condensed into narrative lines and story beats."""

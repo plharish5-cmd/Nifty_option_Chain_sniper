@@ -10,16 +10,18 @@ import Story from "./components/Story";
 import Guide from "./components/Guide";
 import DeltaPanel from "./components/DeltaPanel";
 import AuctionPanel from "./components/AuctionPanel";
+import QmlPanel from "./components/QmlPanel";
+import FootprintPanel from "./components/FootprintPanel";
 import { AlertControls, AlertToasts, useRvolAlerts } from "./components/rvolAlerts";
 
 const TFS: TF[] = ["1m", "5m", "15m", "1h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "1h": 30, "1D": 60 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
-  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"],
+  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"],
 ];
 
-const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false };
+const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false, qml: false };
 const PRESETS: [string, string, Partial<Layers>][] = [
   ["Clean", "structure + key levels + VWAP", { structure: true, session: true, volume: true }],
   ["SMC", "order blocks, FVG, liquidity, BOS/MSS, OTE", { ob: true, fvg: true, liq: true, structure: true, range: true, session: true }],
@@ -63,7 +65,7 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"paper" | "delta" | "auction">("paper");
+  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml">("paper");
   const [chainTick, setChainTick] = useState(0);
   const [storyTick, setStoryTick] = useState(0);
   const [strikes, setStrikes] = useState<Strikes | null>(null);
@@ -147,7 +149,7 @@ export default function App() {
                 <span className="mr-0.5 text-[10px] uppercase tracking-wider text-slate-500">View</span>
                 {PRESETS.map(([name, hint, l]) => {
                   const on = (Object.keys(OFF) as (keyof Layers)[]).every((k) => !!l[k] === layers[k]);
-                  return <button key={name} title={hint} onClick={() => setLayers({ ...OFF, ...l })}
+                  return <button key={name} title={hint} onClick={() => { setLayers({ ...OFF, ...l }); if (name === "Order flow") setBottom("footprint"); }}
                     className={`tab ${on ? "tab-on" : ""} !border-gold-500/40`}>{name}</button>;
                 })}
               </div>
@@ -190,11 +192,15 @@ export default function App() {
               <div className="flex gap-1">
                 <button className={`tab ${bottom === "paper" ? "tab-on" : ""}`} onClick={() => setBottom("paper")}>Paper trades</button>
                 <button className={`tab ${bottom === "delta" ? "tab-on" : ""}`} onClick={() => setBottom("delta")}>Delta / Footprint</button>
+                <button className={`tab ${bottom === "footprint" ? "tab-on" : ""}`} onClick={() => setBottom("footprint")}>Footprint ladder</button>
                 <button className={`tab ${bottom === "auction" ? "tab-on" : ""}`} onClick={() => setBottom("auction")}>Auction</button>
+                <button className={`tab ${bottom === "qml" ? "tab-on" : ""}`} onClick={() => setBottom("qml")}>QML · RBS / SBR</button>
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "delta" ? <DeltaPanel tick={storyTick} strikes={strikes} />
+              {bottom === "qml" ? <QmlPanel tick={storyTick} />
+                : bottom === "footprint" ? <FootprintPanel tick={storyTick} />
+                : bottom === "delta" ? <DeltaPanel tick={storyTick} strikes={strikes} />
                 : bottom === "auction" ? <AuctionPanel tick={storyTick} />
                 : paper ? <Paper trades={paper.trades} stats={paper.stats} scorecard={paper.scorecard} /> : null}
             </div>
