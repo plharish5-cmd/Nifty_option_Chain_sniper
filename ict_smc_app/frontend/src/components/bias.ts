@@ -5,16 +5,23 @@ import type { Analysis, Candle } from "../api";
 import type { FpBar } from "./footprint";
 
 export type Vote = "bull" | "bear" | null;
-export const FACTORS = ["FVG/IFVG", "Order block", "CRT/TBS", "Footprint", "RVOL", "VWAP", "Structure"] as const;
+export const FACTORS = ["FVG/IFVG", "Order block", "CRT/TBS", "Footprint", "RVOL", "VWAP", "Structure", "PE−CE action", "Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip"] as const;
+// Options Lab feeds (from 8501 via /api/oclab): PE−CE table rows (3m, ATM ±10) and the writer-flow points (1m, all strikes)
+export type OcRow = { ts: string; act: [string, string, string?, string?] | null; pe_ce_day: number | null };
+export type OcPt = { t: number; ce: number | null; pe: number | null; flow: number | null; bal: number | null; sig: boolean;
+  flip?: boolean; regime?: string; conf?: string | null };
+export type OcFeed = { pece: OcRow[]; flow: OcPt[] };
 export type Factor = typeof FACTORS[number];
 export type BiasRow = { time: number; o: number; h: number; l: number; c: number; votes: Record<Factor, Vote>; why: Record<Factor, string>;
-  bull: number; bear: number; avail: number; verdict: "BUY" | "SELL" | "MIXED"; strong: boolean };
+  bull: number; bear: number; avail: number; verdict: "BUY" | "SELL" | "MIXED"; strong: boolean; forming?: boolean };
 
 const FLOW = new Set(["STACKED_BUY", "STACKED_SELL", "ACCUMULATION", "DISTRIBUTION", "INITIATIVE", "MANIPULATION", "ABSORPTION"]);
 
-export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], barSec: number, need = 5): BiasRow[] {
+export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], barSec: number, pct = 0.7,
+                            oc: OcFeed | null = null, forming = false): BiasRow[] {
   if (!a) return [];
   const closed = candles.filter((c) => c.closed !== false);
+  const live = forming ? candles.filter((c) => c.closed === false).slice(-1) : [];
   const zones = a.zones ?? [];
   const vbar = new Map((a.volume?.bars ?? []).map((b) => [b.time, b]));
   const vwap = new Map((a.volume?.vwap ?? []).map((p) => [p.time, p.v]));
@@ -42,7 +49,16 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
   };
   const hasVol = (a.volume?.bars ?? []).length > 0, hasVwap = (a.volume?.vwap ?? []).length > 0, hasFp = fp.length > 0;
 
-  return closed.slice(-80).map((c) => {
+  // Options Lab helpers
+  const hmOf = (t: number) => { const d = new Date(t * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
+  const pece = (oc?.pece ?? []).filter((r) => r.ts).slice().sort((x, y) => (x.ts < y.ts ? -1 : 1));
+  const flow = (oc?.flow ?? []).slice().sort((x, y) => x.t - y.t);
+  const hasPece = pece.length > 0, hasFlow = flow.length > 0;
+  const flowAt = (t: number) => { let last: OcPt | undefined; for (const p of flow) { if (p.t > t) break; last = p; } return last; };
+
+  return [...closed.slice(-80), ...live].map((c) => {
+    const isLive = c.closed === false;
+    const tEnd = c.time + barSec;                                   // candle close time (chart clock)
     const votes = {} as Record<Factor, Vote>, why = {} as Record<Factor, string>;
     // 1 FVG / IFVG (zone held, or an IFVG buy/sell signal on this or the previous 2 bars)
     let [v, w] = zoneVote(["FVG", "IFVG"], c);
@@ -76,16 +92,60 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     const s = [...struct].reverse().find((m) => m.time <= c.time);
     votes.Structure = s ? s.dir : null; why.Structure = s ? `last ${s.kind} ${s.dir === "bull" ? "▲" : "▼"} ${s.at}` : "";
 
+    // 8 PE−CE table action at the candle close ("BUY CE…", "CE on dip…" → BUY · "…PE…" → SELL · WAIT / no entry → no vote)
+    const cut = hmOf(tEnd);
+    const pr = [...pece].reverse().find((r) => r.ts <= cut);
+    const act = (pr?.act?.[0] ?? "").replace(/<[^>]+>/g, "");
+    votes["PE−CE action"] = /\bCE\b/.test(act) && !/no fresh|after close/i.test(act) ? "bull" : /\bPE\b/.test(act) && !/no fresh|after close/i.test(act) ? "bear" : null;
+    why["PE−CE action"] = pr ? `${pr.ts} ${act || "—"}` : "";
+    // 9 Writers gap (put − call OI change since yesterday): which way the gap moved over the last 30 min
+    const f0 = flowAt(tEnd), f30 = flowAt(tEnd - 1800);
+    let gv: Vote = null, gw = "";
+    if (f0 && f0.pe != null && f0.ce != null) {
+      const gap = f0.pe - f0.ce, prev = f30 && f30.pe != null && f30.ce != null ? f30.pe - f30.ce : gap, ch = gap - prev;
+      const big = Math.abs(ch) >= 0.03 * Math.max(Math.abs(gap), 1e6);
+      gv = big ? (ch > 0 ? "bull" : "bear") : gap > 0 ? "bull" : gap < 0 ? "bear" : null;
+      gw = `put−call gap ${(gap / 1e7).toFixed(2)}Cr, ${big ? (ch > 0 ? "widening" : "narrowing") : "steady"} over 30 min`;
+    }
+    votes["Writers gap"] = gv; why["Writers gap"] = gw;
+    // 10 Δput−Δcall flow strip: an unusual (≥2.5×) writer candle inside this candle decides; else the 30-min balance (±0.25)
+    const inBar = flow.filter((p) => p.t >= c.time && p.t < tEnd && p.flow != null);
+    const spike = inBar.filter((p) => p.sig).sort((x, y) => Math.abs(y.flow!) - Math.abs(x.flow!))[0];
+    let fv2: Vote = null, fw2 = "";
+    if (spike) { fv2 = spike.flow! > 0 ? "bull" : "bear"; fw2 = `unusual writer candle ${(spike.flow! / 1e5).toFixed(1)}L (${spike.flow! > 0 ? "put writing" : "call writing"})`; }
+    else if (f0?.bal != null) { fv2 = f0.bal >= 0.25 ? "bull" : f0.bal <= -0.25 ? "bear" : null; fw2 = `30-min balance ${f0.bal.toFixed(2)}`; }
+    votes["Δput−Δcall"] = fv2; why["Δput−Δcall"] = fw2;
+
+    // 11 Writer dominance: put line above call line = put writers lead = BUY (and vice versa); degree = separation
+    //    separation = (put − call) / (|put| + |call|) → ≥ 0.2 votes; ≥ 0.5 moderate; ≥ 0.75 strong
+    let dv: Vote = null, dw = "";
+    if (f0 && f0.pe != null && f0.ce != null) {
+      const sep = (f0.pe - f0.ce) / Math.max(Math.abs(f0.pe) + Math.abs(f0.ce), 1);
+      const deg = Math.abs(sep) >= 0.75 ? "strong" : Math.abs(sep) >= 0.5 ? "moderate" : Math.abs(sep) >= 0.2 ? "mild" : "balanced";
+      dv = Math.abs(sep) >= 0.2 ? (sep > 0 ? "bull" : "bear") : null;
+      dw = `put ${(f0.pe / 1e7).toFixed(2)}Cr vs call ${(f0.ce / 1e7).toFixed(2)}Cr · gap ${(Math.abs(f0.pe - f0.ce) / 1e7).toFixed(2)}Cr → ${sep > 0 ? "PUT writers lead" : "CALL writers lead"}, ${deg} (${Math.round(Math.abs(sep) * 100)}%)`;
+    }
+    votes["Writer dominance"] = dv; why["Writer dominance"] = dw;
+    // 12 Writer flip: the ▲ BULL / ▼ BEAR regime-flip marker on the writers chart, if it fired in the last 6 candles
+    const flipPt = [...flow].reverse().find((p) => p.flip && p.t < tEnd && p.t >= c.time - 5 * barSec);
+    const fr = (flipPt?.conf ?? flipPt?.regime ?? "").toString();
+    votes["Writer flip"] = flipPt ? (/bull/i.test(fr) ? "bull" : /bear/i.test(fr) ? "bear" : null) : null;
+    why["Writer flip"] = flipPt ? `${/bull/i.test(fr) ? "▲ BULL" : /bear/i.test(fr) ? "▼ BEAR" : fr} flip at ${hmOf(flipPt.t)}` : "no flip in the last 6 candles";
+
     // factors with no data today don't count (e.g. futures volume missing → RVOL & VWAP can't vote)
     if (!hasVol) why.RVOL = "no futures volume today";
     if (!hasVwap) why.VWAP = "no VWAP (futures volume missing)";
     if (!hasFp) why.Footprint = "no recorded ticks for this tf";
-    const avail = 7 - (hasVol ? 0 : 1) - (hasVwap ? 0 : 1) - (hasFp ? 0 : 1);
+    if (!hasPece) why["PE−CE action"] = "Options Lab (8501) data not available";
+    if (!hasFlow) for (const k of ["Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip"] as Factor[]) why[k] = "Options Lab (8501) data not available";
+    if (isLive) why.Footprint = "footprint only for closed candles";
+    const avail = FACTORS.length - (hasVol ? 0 : 1) - (hasVwap ? 0 : 1) - (hasFp && !isLive ? 0 : 1) - (hasPece ? 0 : 1) - (hasFlow ? 0 : 4);
     const vals = Object.values(votes);
     const bull = vals.filter((x) => x === "bull").length, bear = vals.filter((x) => x === "bear").length;
-    const req = Math.min(need, avail - 1);                       // with 5 factors available, need 4; with 7, need 5
-    const verdict = bull >= req && bear <= 1 ? "BUY" : bear >= req && bull <= 1 ? "SELL" : "MIXED";
+    const req = Math.max(3, Math.round(pct * avail));             // e.g. 10 factors → 7 must agree; 7 → 5
+    const maxAgainst = avail >= 10 ? 3 : avail >= 8 ? 2 : 1;
+    const verdict = bull >= req && bear <= maxAgainst ? "BUY" : bear >= req && bull <= maxAgainst ? "SELL" : "MIXED";
     return { time: c.time, o: c.open, h: c.high, l: c.low, c: c.close, votes, why, bull, bear, avail, verdict,
-      strong: Math.max(bull, bear) >= avail - 1 && Math.max(bull, bear) >= 5 };
+      strong: Math.max(bull, bear) >= Math.round(0.85 * avail), forming: isLive };
   });
 }

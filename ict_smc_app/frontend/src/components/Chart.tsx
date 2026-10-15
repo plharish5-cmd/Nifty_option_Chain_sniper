@@ -6,7 +6,8 @@ import {
 } from "lightweight-charts";
 import type { Analysis, Candle, TF } from "../api";
 import { bucket } from "../api";
-import { computeBias } from "./bias";
+import { computeBias, FACTORS, type BiasRow } from "./bias";
+import { useOcFeed } from "./ocfeed";
 import { confluence, FootprintPrimitive, FP_MEANING, FP_WORD, kfmt, type FpBar } from "./footprint";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
@@ -30,6 +31,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const zones = useRef(new ZonesPrimitive());
   const fpPrim = useRef(new FootprintPrimitive());
+  const ocFeed = useOcFeed(!!layers.bias);
+  const biasMap = useRef<Map<number, BiasRow>>(new Map());
   const [fpBars, setFpBars] = useState<FpBar[]>([]);
   const [fpMsg, setFpMsg] = useState<string>("");
   const volS = useRef<ISeriesApi<"Histogram"> | null>(null);
@@ -454,14 +457,17 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     for (const m of a?.auction?.markers ?? []) if (m.kind === "AUCTION_ACCEPT") marks.push({ time: m.time, dir: m.dir, label: "auction ACC" });
     for (const m of a?.qml?.markers ?? []) if (m.kind.endsWith("_TRIG")) marks.push({ time: m.time, dir: m.dir, label: m.kind.replace("_TRIG", "") });
     const withConf = layers.fp ? confluence(fpBars, marks, BAR_SEC[tf] ?? 300) : [];
-    const bias = layers.bias ? computeBias(candles, a, fpBars, BAR_SEC[tf] ?? 300).filter((r) => r.verdict !== "MIXED") : [];
+    const allB = layers.bias ? computeBias(candles, a, fpBars, BAR_SEC[tf] ?? 300, 0.7, ocFeed) : [];
+    biasMap.current = new Map(allB.map((r) => [r.time, r]));
+    const bias = allB.filter((r) => r.verdict !== "MIXED");
     fpPrim.current.set(withConf, bias);
-  }, [fpBars, analysis, tf, layers.fp, layers.bias, candles]);
+  }, [fpBars, analysis, tf, layers.fp, layers.bias, candles, ocFeed]);
 
   const hm = (t: number) => { const d = new Date(t * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
   const hc = hover ? cMap.current.get(hover.t) : undefined;
   const hev = hover ? evRef.current.get(hover.t) ?? [] : [];
   const vb = hover && analysis?.volume?.bars ? analysis.volume.bars.find((b) => b.time === hover.t) : undefined;
+  const br = hover && layers.bias ? biasMap.current.get(hover.t) : undefined;
   const fb = hover && layers.fp ? fpPrim.current.bars.find((b) => b.time === hover.t) : undefined;
   const W = box.current?.clientWidth ?? 900;
   const legend = LEGEND.filter(([k]) => layers[k]);
@@ -506,8 +512,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       </div>
       {/* hover card */}
       {hover && hc && (
-        <div className="pointer-events-none absolute z-20 w-[290px] rounded-lg border border-ink-700 bg-[#060b16]/95 p-2 text-[11px] shadow-xl"
-          style={{ left: hover.x > W - 320 ? hover.x - 300 : hover.x + 16, top: Math.max(8, Math.min(hover.y - 20, (box.current?.clientHeight ?? 400) - 220)) }}>
+        <div className="pointer-events-none absolute z-20 w-[340px] rounded-lg border border-ink-700 bg-[#060b16]/95 p-2 text-[11px] shadow-xl"
+          style={{ left: hover.x > W - 370 ? hover.x - 350 : hover.x + 16, top: Math.max(8, Math.min(hover.y - 20, (box.current?.clientHeight ?? 400) - (layers.bias ? 430 : 220))) }}>
           <div className="mb-1 flex items-baseline justify-between">
             <b className="text-slate-200">{hm(hc.time)}</b>
             <span className={`num ${hc.close >= hc.open ? "text-bull-400" : "text-bear-400"}`}>
@@ -520,6 +526,19 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           </div>
           {vb && <div className="num mt-0.5 text-slate-400">FUT vol <b className="text-slate-200">{(vb.v / 1000).toFixed(0)}k</b>
             {vb.rvol != null && <> · RVOL <b className={vb.rvol >= 1.5 ? "text-bull-400" : vb.rvol <= 0.7 ? "text-slate-500" : "text-slate-200"}>{vb.rvol.toFixed(1)}×</b></>}</div>}
+          {br && <div className="mt-1.5 border-t border-ink-700 pt-1.5">
+            <div className="mb-0.5 flex items-baseline justify-between">
+              <span className="font-semibold text-gold-400">⚖ Bias</span>
+              <span className={`font-bold ${br.verdict === "BUY" ? "text-bull-400" : br.verdict === "SELL" ? "text-bear-400" : "text-slate-400"}`}>
+                {br.verdict === "MIXED" ? "mixed" : br.verdict} · <span className="text-bull-400">{br.bull}▲</span> <span className="text-bear-400">{br.bear}▼</span> of {br.avail}</span>
+            </div>
+            {FACTORS.map((f) => { const v = br.votes[f]; return (
+              <div key={f} className="flex gap-1 leading-tight">
+                <span className={`w-3 shrink-0 font-bold ${v === "bull" ? "text-bull-400" : v === "bear" ? "text-bear-400" : "text-slate-600"}`}>{v === "bull" ? "▲" : v === "bear" ? "▼" : "·"}</span>
+                <span className={`w-[100px] shrink-0 ${v ? "text-slate-200" : "text-slate-500"}`}>{f}</span>
+                <span className="text-slate-400">{br.why[f] || "no vote"}</span>
+              </div>); })}
+          </div>}
           {fb && fb.rows.length > 0 && <div className="mt-1.5 border-t border-ink-700 pt-1.5">
             <div className="num"><span className="font-semibold text-amber-300">Footprint (est.)</span>{" "}
               <b className={fb.delta >= 0 ? "text-bull-400" : "text-bear-400"}>Δ {kfmt(fb.delta)}</b>
@@ -558,7 +577,7 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["delta", "ABS ● · Δ± ■", "#e8c35a"], ["crt", "CRT box · TBS ■ · CRT▶", C.gold], ["auction", "Value · ACC / REJ", "#38bdf8"],
   ["volume", "VWAP · vPOC · vol", "#f5f5f4"], ["oi", "FUT OI build-up bars", "#22c55e"], ["rvol", "cRVOL", "#22c55e"], ["qml", "QML · RBS/SBR · cyan = close line", "#22d3ee"],
   ["fp", "Footprint (est.): Δ under candle · gold = POC · A/D/C/M/S/I", "#facc15"],
-  ["bias", "⚖ Bias: BUY/SELL n/7 = ≥5 of 7 factors agree", "#e8c35a"],
+  ["bias", "⚖ Bias 12: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {
