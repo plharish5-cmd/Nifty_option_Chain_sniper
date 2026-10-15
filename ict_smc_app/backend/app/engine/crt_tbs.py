@@ -167,6 +167,32 @@ def keylevels(an: Analysis, k: int) -> List[Dict[str, Any]]:
     return keep
 
 
+def confluence(an: Analysis, k: int) -> List[Dict[str, Any]]:
+    """Extra keylevels for the CRT card (information only): an IFVG or a Breaker block known before candle k,
+    still valid at k−1, that candle k trades into."""
+    b = an.bars
+    hi, lo = float(b.h[k]), float(b.l[k])
+    out: List[Dict[str, Any]] = []
+    for x in getattr(an, "ifvgs", []) or []:
+        if x.i >= k or x.state_at(k - 1) == "invalid":
+            continue
+        if hi >= x.bottom and lo <= x.top:
+            out.append({"kind": "IFVG", "dir": x.dir, "top": round(x.top, 2), "bottom": round(x.bottom, 2), "ts": int(x.ts),
+                        "info": True, "text": f"IFVG — {'sell' if x.dir == 'bear' else 'buy'} inversion {_fmt(x.bottom)}–{_fmt(x.top)}"})
+    for ob in an.obs:
+        if ob.kind != "BREAKER" or ob.created_i >= k or (ob.broken_i is not None and ob.broken_i < k):
+            continue
+        if hi >= ob.bottom and lo <= ob.top:
+            out.append({"kind": "BRK", "dir": ob.dir, "top": round(ob.top, 2), "bottom": round(ob.bottom, 2), "ts": int(ob.ts),
+                        "info": True, "text": f"BRK — {'supply' if ob.dir == 'bear' else 'demand'} breaker {_fmt(ob.bottom)}–{_fmt(ob.top)}"})
+    seen, keep = set(), []
+    for x in sorted(out, key=lambda z: -int(z["ts"])):
+        if (x["kind"], x["dir"]) not in seen:
+            seen.add((x["kind"], x["dir"]))
+            keep.append(x)
+    return keep
+
+
 def crt_candles(an: Analysis, pair: str, htf: str, ltf: str, lookback: int) -> List[CRTRange]:
     C = R()
     b = an.bars
@@ -183,6 +209,8 @@ def crt_candles(an: Analysis, pair: str, htf: str, ltf: str, lookback: int) -> L
         biases = sorted({x["dir"] for x in kl})
         if not biases and C.get("require_keylevel", True):
             continue
+        kl = kl + confluence(an, k)          # IFVG / BRK: shown as extra confluence only — they never create a CRT
+                                             # or change its bias, so Setup D stays exactly as before
         k_ts = int(b.ts[k])
         out.append(CRTRange(pair, htf, ltf, k_ts, _end(k_ts, htf), 0, 0, round(float(b.h[k]), 2),
                             round(float(b.l[k]), 2), round(float((b.h[k] + b.l[k]) / 2), 2), round(br, 2),

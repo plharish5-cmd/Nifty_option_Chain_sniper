@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 export type TF = "1m" | "5m" | "15m" | "1h" | "1D";
 
 export interface Candle { time: number; open: number; high: number; low: number; close: number; closed: boolean }
-export interface Zone { type: "FVG" | "IFVG" | "OB" | "BREAKER"; dir: "bull" | "bear"; from: number; to: number; top: number; bottom: number; state: string; label: string; formed: string }
+export interface Zone { type: "FVG" | "IFVG" | "RJB" | "OB" | "BREAKER"; dir: "bull" | "bear"; from: number; to: number; top: number; bottom: number; state: string; label: string; formed: string }
 export interface PoolLine { side: "BSL" | "SSL"; src: string; price: number; from: number; members: number }
 export interface Marker { time: number; kind: string; dir: "bull" | "bear"; price: number; text: string; at: string }
 export interface RangeInfo { dir: "bull" | "bear"; event: string; high: number; low: number; eq: number; ote: Record<string, number>; ote_band: [number, number]; pos_pct: number; zone: string; from: number; to: number }

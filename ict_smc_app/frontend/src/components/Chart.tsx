@@ -155,6 +155,14 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         segs.push({ from: r.from, price: r.eq, color: "rgba(232,195,90,0.8)", label: `EQ 50 % ${r.eq.toFixed(1)}`, dash: true });
       }
       for (const z of a.zones) {
+        if (z.type === "RJB") {                      // rejection block: long-wick part of a swing candle (violet)
+          if (!layers.ob) continue;
+          const sell = z.dir === "bear";
+          boxes.push({ from: z.from, to: z.to, top: z.top, bottom: z.bottom,
+            fill: sell ? "rgba(192,132,252,0.13)" : "rgba(129,140,248,0.13)", stroke: sell ? "rgba(192,132,252,0.8)" : "rgba(129,140,248,0.8)",
+            dash: true, label: z.label, labelColor: sell ? "#d8b4fe" : "#a5b4fc" });
+          continue;
+        }
         if (z.type === "IFVG") {                     // inversion FVG: failed gap that flipped role (orange = sell zone, teal = buy zone)
           if (!layers.fvg) continue;
           const sell = z.dir === "bear";
@@ -453,7 +461,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
 }
 
 const LEGEND: [keyof Layers, string, string][] = [
-  ["ob", "Order block", "rgba(16,185,129,0.6)"], ["fvg", "FVG · IFVG (orange sell / teal buy)", "rgba(251,146,60,0.85)"], ["liq", "Liquidity BSL/SSL", "#f59e0b"],
+  ["ob", "Order block · Breaker · RJB (violet)", "rgba(192,132,252,0.8)"], ["fvg", "FVG · IFVG (orange sell / teal buy)", "rgba(251,146,60,0.85)"], ["liq", "Liquidity BSL/SSL", "#f59e0b"],
   ["structure", "BOS ▲▼ · MSS (big) · bos (weak, faint)", C.bull], ["range", "OTE / EQ", C.gold], ["session", "PDH · PDL · OR", "#38bdf8"],
   ["delta", "ABS ● · Δ± ■", "#e8c35a"], ["crt", "CRT box · TBS ■ · CRT▶", C.gold], ["auction", "Value · ACC / REJ", "#38bdf8"],
   ["volume", "VWAP · vPOC · vol", "#f5f5f4"], ["oi", "FUT OI build-up bars", "#22c55e"], ["rvol", "cRVOL", "#22c55e"],
