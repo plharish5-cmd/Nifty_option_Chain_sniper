@@ -11,6 +11,7 @@ import Guide from "./components/Guide";
 import DeltaPanel from "./components/DeltaPanel";
 import AuctionPanel from "./components/AuctionPanel";
 import QmlPanel from "./components/QmlPanel";
+import CrtCockpit from "./components/CrtCockpit";
 import FootprintPanel from "./components/FootprintPanel";
 import { AlertControls, AlertToasts, useRvolAlerts } from "./components/rvolAlerts";
 
@@ -18,15 +19,15 @@ const TFS: TF[] = ["1m", "5m", "15m", "1h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "1h": 30, "1D": 60 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
-  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"],
+  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"], ["fp", "Footprint Δ (est.)"],
 ];
 
-const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false, qml: false };
+const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false, qml: false, fp: false };
 const PRESETS: [string, string, Partial<Layers>][] = [
   ["Clean", "structure + key levels + VWAP", { structure: true, session: true, volume: true }],
   ["SMC", "order blocks, FVG, liquidity, BOS/MSS, OTE", { ob: true, fvg: true, liq: true, structure: true, range: true, session: true }],
   ["CRT", "CRT ranges, TBS, structure", { crt: true, structure: true, session: true }],
-  ["Order flow", "delta, auction value, volume, RVOL", { delta: true, auction: true, volume: true, rvol: true }],
+  ["Order flow", "delta, auction value, volume, RVOL", { delta: true, auction: true, volume: true, rvol: true, fp: true }],
   ["Futures", "volume, futures OI, RVOL panes", { volume: true, oi: true, rvol: true, structure: true }],
 ];
 
@@ -65,7 +66,7 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml">("paper");
+  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt">("paper");
   const [chainTick, setChainTick] = useState(0);
   const [storyTick, setStoryTick] = useState(0);
   const [strikes, setStrikes] = useState<Strikes | null>(null);
@@ -149,7 +150,7 @@ export default function App() {
                 <span className="mr-0.5 text-[10px] uppercase tracking-wider text-slate-500">View</span>
                 {PRESETS.map(([name, hint, l]) => {
                   const on = (Object.keys(OFF) as (keyof Layers)[]).every((k) => !!l[k] === layers[k]);
-                  return <button key={name} title={hint} onClick={() => { setLayers({ ...OFF, ...l }); if (name === "Order flow") setBottom("footprint"); }}
+                  return <button key={name} title={hint} onClick={() => { setLayers({ ...OFF, ...l }); if (name === "Order flow") setBottom("footprint"); if (name === "CRT") setBottom("crt"); }}
                     className={`tab ${on ? "tab-on" : ""} !border-gold-500/40`}>{name}</button>;
                 })}
               </div>
@@ -195,10 +196,12 @@ export default function App() {
                 <button className={`tab ${bottom === "footprint" ? "tab-on" : ""}`} onClick={() => setBottom("footprint")}>Footprint ladder</button>
                 <button className={`tab ${bottom === "auction" ? "tab-on" : ""}`} onClick={() => setBottom("auction")}>Auction</button>
                 <button className={`tab ${bottom === "qml" ? "tab-on" : ""}`} onClick={() => setBottom("qml")}>QML · RBS / SBR</button>
+                <button className={`tab ${bottom === "crt" ? "tab-on" : ""}`} onClick={() => setBottom("crt")}>CRT cockpit</button>
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "qml" ? <QmlPanel tick={storyTick} />
+              {bottom === "crt" ? <CrtCockpit tick={storyTick} />
+                : bottom === "qml" ? <QmlPanel tick={storyTick} />
                 : bottom === "footprint" ? <FootprintPanel tick={storyTick} />
                 : bottom === "delta" ? <DeltaPanel tick={storyTick} strikes={strikes} />
                 : bottom === "auction" ? <AuctionPanel tick={storyTick} />

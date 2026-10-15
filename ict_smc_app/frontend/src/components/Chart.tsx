@@ -6,10 +6,11 @@ import {
 } from "lightweight-charts";
 import type { Analysis, Candle, TF } from "../api";
 import { bucket } from "../api";
+import { confluence, FootprintPrimitive, FP_MEANING, FP_WORD, kfmt, type FpBar } from "./footprint";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -24,8 +25,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const chart = useRef<IChartApi | null>(null);
   const series = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const zz = useRef<ISeriesApi<"Line"> | null>(null);
+  const spine = useRef<ISeriesApi<"Line"> | null>(null);           // QML layer: the close-price "line chart"
   const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const zones = useRef(new ZonesPrimitive());
+  const fpPrim = useRef(new FootprintPrimitive());
+  const [fpBars, setFpBars] = useState<FpBar[]>([]);
+  const [fpMsg, setFpMsg] = useState<string>("");
   const volS = useRef<ISeriesApi<"Histogram"> | null>(null);
   const vwapS = useRef<ISeriesApi<"Line">[]>([]);
   const ivS = useRef<ISeriesApi<"Line"> | null>(null);
@@ -54,6 +59,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       priceLineColor: C.gold,
     });
     s.attachPrimitive(zones.current);
+    s.attachPrimitive(fpPrim.current);
     const z = ch.addSeries(LineSeries, { color: "rgba(232,195,90,0.55)", lineWidth: 1, lineStyle: LineStyle.Solid,
       priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
     // real volume (NIFTY FUT) in its own strip at the bottom; VWAP + σ bands + anchored VWAPs on the price scale
@@ -72,6 +78,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       lastValueVisible: true, crosshairMarkerVisible: false, title: "ATM IV" });
     ch.priceScale("iv").applyOptions({ scaleMargins: { top: 0.66, bottom: 0.18 }, visible: false });
     ivS.current = iv;
+    spine.current = ch.addSeries(LineSeries, { color: "rgba(34,211,238,0.75)", lineWidth: 1, priceLineVisible: false,
+      lastValueVisible: false, crosshairMarkerVisible: false });
     chart.current = ch; series.current = s; zz.current = z;
     markers.current = createSeriesMarkers(s, []);
     const onMove = (p: MouseEventParams<Time>) => {
@@ -241,6 +249,19 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         for (const n of V.naked ?? []) segs.push({ from: t0, price: n.price, color: "rgba(251,146,60,0.9)", dash: true, label: `naked POC ${n.day.slice(5)} ${n.price.toFixed(1)}` });
       }
     }
+    if (a && layers.qml && a.qml) {
+      const live = a.qml.setups.filter((x) => x.status === "ARMED" || x.status === "TRIGGERED" || x.status === "TP1 HIT").slice(-3);
+      for (const x of live) {
+        const bear = x.dir === "bear";
+        const col = x.kind === "QML" ? (bear ? "#f472b6" : "#22d3ee") : bear ? "#fb7185" : "#34d399";
+        boxes.push({ from: x.from, to: lastTime, top: x.level + x.tol, bottom: x.level - x.tol,
+          fill: bear ? "rgba(244,114,182,0.10)" : "rgba(34,211,238,0.10)", stroke: col, dash: x.status === "ARMED",
+          label: `${x.name} ${x.level.toFixed(0)} · ${x.status.toLowerCase()} · ${x.side}`, labelColor: col });
+        segs.push({ from: x.from, price: x.sl, color: "rgba(239,68,68,0.85)", dash: true, label: `${x.kind} SL ${x.sl.toFixed(0)}` });
+        segs.push({ from: x.from, price: x.tp1, color: "rgba(34,197,94,0.75)", dash: true, label: `${x.kind} TP1 ${x.tp1.toFixed(0)}` });
+        segs.push({ from: x.from, price: x.tp2, color: "rgba(34,197,94,0.5)", dash: true, label: `${x.kind} TP2 ${x.tp2.toFixed(0)} (2.2R)` });
+      }
+    }
     const dayStarts: number[] = [];
     if (tf !== "1D") for (let i = 1; i < candles.length; i++) if (Math.floor(candles[i].time / 86400) !== Math.floor(candles[i - 1].time / 86400)) dayStarts.push(candles[i].time);
     zones.current.set(boxes, segs, lastTime, dayStarts);
@@ -284,6 +305,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           push({ ...base, layer: "Liquidity", short: shortText(m.kind, m.text), pri: m.kind === "SWEEP" ? 2 : 1, size: 0.55,
             shape: "circle", color: m.kind === "SWEEP" ? "#f59e0b" : "#a78bfa" });
         }
+      }
+    }
+    if (a && layers.qml && a.qml) {
+      for (const m of a.qml.markers) {
+        const bear = m.dir === "bear", trig = m.kind.endsWith("_TRIG"), armed = m.kind.endsWith("_ARMED");
+        const pt = m.kind === "QML_PT", snr = m.kind.startsWith("SNR_");
+        const kind = m.kind.split("_")[0];
+        push({ time: m.time, side: bear ? "above" : "below", dir: m.dir, kind: m.kind, layer: "QML", full: m.text,
+          short: trig ? `${kind}${bear ? "▼" : "▲"}` : armed ? `${kind} armed` : pt ? m.text.split(" ")[0] : snr ? (bear ? "upthrust" : "spring") : m.text.slice(0, 8),
+          pri: trig ? 3 : armed || snr ? 2 : 1, size: trig ? 1.2 : pt ? 0.4 : 0.7,
+          shape: trig ? (bear ? "arrowDown" : "arrowUp") : pt ? "circle" : "square",
+          color: snr ? "#fbbf24" : bear ? "#f472b6" : "#22d3ee" });
       }
     }
     if (a && layers.crt && a.crt) {
@@ -390,13 +423,43 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       const P = ch?.panes() ?? [];
       P.forEach((p, i) => p.setStretchFactor(i === 0 ? 7 : 1.3));
     } catch { /* older lib */ }
+    spine.current?.setData(a && layers.qml ? candles.filter((c) => c.closed !== false).map((c) => ({ time: c.time as UTCTimestamp, value: c.close })) : []);
     zz.current.setData(a && layers.swings ? dedupe(a.zigzag).map((p) => ({ time: p.time as UTCTimestamp, value: p.price })) : []);
   }, [analysis, layers, candles]);
+
+  // ESTIMATED footprint on the chart (5m / 15m / 1h; closed candles from the desk's recorded FUT ticks)
+  useEffect(() => {
+    const ok = !!layers.fp && (tf === "5m" || tf === "15m" || tf === "1h");
+    if (!ok) { fpPrim.current.set([]); setFpBars([]); setFpMsg(layers.fp ? "Footprint: 5m / 15m / 1h only" : ""); return; }
+    let dead = false;
+    const go = () => fetch(`/api/footprints?tf=${tf}&n=30`).then((r) => r.json()).then((j) => {
+      if (dead) return;
+      const raw: FpBar[] = j.available ? j.bars ?? [] : [];
+      setFpBars(raw);
+      setFpMsg(j.available ? "" : `Footprint: ${j.message ?? "no recorded ticks"}`);
+    }).catch(() => {});
+    go();
+    const id = window.setInterval(go, 30000);
+    return () => { dead = true; window.clearInterval(id); };
+  }, [tf, layers.fp]);
+
+  useEffect(() => {
+    const a = analysis;
+    const marks: { time: number; dir: string; label: string }[] = [];
+    const ok = (k: string) => ["BOS", "MSS", "IFVG_BUY", "IFVG_SELL"].includes(k);
+    for (const m of a?.markers ?? []) if (ok(m.kind)) marks.push({ time: m.time, dir: m.dir, label: m.kind.replace("_", " ") });
+    for (const m of a?.crt?.markers ?? []) if (m.kind === "CRT_ENTRY") marks.push({ time: m.time, dir: m.dir, label: "CRT entry" });
+    for (const m of a?.auction?.markers ?? []) if (m.kind === "AUCTION_ACCEPT") marks.push({ time: m.time, dir: m.dir, label: "auction ACC" });
+    for (const m of a?.qml?.markers ?? []) if (m.kind.endsWith("_TRIG")) marks.push({ time: m.time, dir: m.dir, label: m.kind.replace("_TRIG", "") });
+    const withConf = confluence(fpBars, marks, BAR_SEC[tf] ?? 300);
+    fpPrim.current.set(withConf);
+  }, [fpBars, analysis, tf]);
 
   const hm = (t: number) => { const d = new Date(t * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
   const hc = hover ? cMap.current.get(hover.t) : undefined;
   const hev = hover ? evRef.current.get(hover.t) ?? [] : [];
   const vb = hover && analysis?.volume?.bars ? analysis.volume.bars.find((b) => b.time === hover.t) : undefined;
+  const fb = hover && layers.fp ? fpPrim.current.bars.find((b) => b.time === hover.t) : undefined;
   const W = box.current?.clientWidth ?? 900;
   const legend = LEGEND.filter(([k]) => layers[k]);
   return (
@@ -411,6 +474,14 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             </span>
           ))}
         </div>
+        {layers.fp && !fpMsg && <div className="pointer-events-auto rounded bg-[#060b16]/85 px-2 py-1 text-[10px] ring-1 ring-white/5">
+          <span className="mr-1 font-semibold text-amber-300">Footprint key</span>
+          {([["A", "ABSORB", "big orders soak, price stuck"], ["D", "DISTRIB", "sellers unload at top"], ["C", "ACCUM", "buyers load at bottom"],
+            ["M", "TRAP", "wick sweep, closed back"], ["S", "STACK", "one-sided push"], ["I", "PUSH", "aggressive side drives"]] as const).map(([l, w, m]) => (
+            <span key={l} className="mr-2" title={m}><b className="rounded bg-teal-500/80 px-1 text-[#0b1220]">{l}</b> {w}</span>))}
+          <span className="text-slate-500">teal = bull · pink = bear · gold tick = POC · <b className="text-slate-300">BUY/SELL ✓3</b> = footprint + delta + structure agree</span>
+        </div>}
+        {fpMsg && <div className="rounded bg-[#060b16]/85 px-2 py-0.5 text-[10px] text-amber-300">{fpMsg}</div>}
         {latest.length > 0 && (
           <div className="rounded bg-[#060b16]/85 px-2 py-1 text-[11px] ring-1 ring-white/5">
             <span className="mr-1 font-semibold text-gold-400">Latest</span>
@@ -446,6 +517,24 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           </div>
           {vb && <div className="num mt-0.5 text-slate-400">FUT vol <b className="text-slate-200">{(vb.v / 1000).toFixed(0)}k</b>
             {vb.rvol != null && <> · RVOL <b className={vb.rvol >= 1.5 ? "text-bull-400" : vb.rvol <= 0.7 ? "text-slate-500" : "text-slate-200"}>{vb.rvol.toFixed(1)}×</b></>}</div>}
+          {fb && fb.rows.length > 0 && <div className="mt-1.5 border-t border-ink-700 pt-1.5">
+            <div className="num"><span className="font-semibold text-amber-300">Footprint (est.)</span>{" "}
+              <b className={fb.delta >= 0 ? "text-bull-400" : "text-bear-400"}>Δ {kfmt(fb.delta)}</b>
+              {fb.delta_pct != null && <span className="text-slate-500"> ({fb.delta_pct > 0 ? "+" : ""}{fb.delta_pct}%)</span>}
+              {fb.poc != null && <span className="text-gold-400"> · POC {fb.poc}</span>}</div>
+            {fb.tags.map((t, i) => <div key={i} className={t.dir === "bear" ? "text-rose-300" : "text-teal-300"}>
+              <b>{FP_WORD[t.k] ?? t.k.toLowerCase().replace("_", " ")}</b> <span className="text-slate-400">{(FP_MEANING[t.k] ?? "").split(" — ")[1] ?? ""}</span></div>)}
+            <div className="num mt-0.5 grid grid-cols-[52px_1fr] gap-x-1 text-[10px]">
+              {[...fb.rows].sort((r1, r2) => r2.p - r1.p).slice(0, 10).map((r) => [
+                <span key={r.p + "p"} className={`text-right ${r.poc ? "text-gold-400 font-bold" : "text-slate-500"}`}>{r.p}</span>,
+                <span key={r.p + "v"}><span className={r.si ? "font-bold text-bear-400" : "text-rose-200"}>{(r.sell / 1000).toFixed(1)}K</span>
+                  <span className="text-slate-600"> × </span><span className={r.bi ? "font-bold text-bull-400" : "text-emerald-200"}>{(r.buy / 1000).toFixed(1)}K</span></span>])}
+            </div>
+            <div className="text-slate-400">{fb.read}</div>
+            {fb.conf && <div className={`mt-1 rounded px-1.5 py-0.5 font-bold ${fb.conf.dir === "bull" ? "bg-bull-900/70 text-bull-400" : "bg-bear-900/70 text-bear-400"}`}>
+              {fb.conf.dir === "bull" ? "BUY ✓3 (CE bias)" : "SELL ✓3 (PE bias)"}: {fb.conf.why.join(" + ")}
+              <div className="font-normal text-slate-400">3 agree — still needs your SL. Info only, not an order.</div></div>}
+          </div>}
           {hev.length > 0 && <div className="mt-1.5 space-y-1 border-t border-ink-700 pt-1.5">
             {hev.sort((a2, b2) => b2.pri - a2.pri).slice(0, 6).map((e, i) => (
               <div key={i}>
@@ -464,7 +553,8 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["ob", "Order block · Breaker · RJB (violet)", "rgba(192,132,252,0.8)"], ["fvg", "FVG · IFVG (orange sell / teal buy)", "rgba(251,146,60,0.85)"], ["liq", "Liquidity BSL/SSL", "#f59e0b"],
   ["structure", "BOS ▲▼ · MSS (big) · bos (weak, faint)", C.bull], ["range", "OTE / EQ", C.gold], ["session", "PDH · PDL · OR", "#38bdf8"],
   ["delta", "ABS ● · Δ± ■", "#e8c35a"], ["crt", "CRT box · TBS ■ · CRT▶", C.gold], ["auction", "Value · ACC / REJ", "#38bdf8"],
-  ["volume", "VWAP · vPOC · vol", "#f5f5f4"], ["oi", "FUT OI build-up bars", "#22c55e"], ["rvol", "cRVOL", "#22c55e"],
+  ["volume", "VWAP · vPOC · vol", "#f5f5f4"], ["oi", "FUT OI build-up bars", "#22c55e"], ["rvol", "cRVOL", "#22c55e"], ["qml", "QML · RBS/SBR · cyan = close line", "#22d3ee"],
+  ["fp", "Footprint (est.): Δ under candle · gold = POC · A/D/C/M/S/I", "#facc15"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {
