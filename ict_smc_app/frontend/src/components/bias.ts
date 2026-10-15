@@ -5,7 +5,7 @@ import type { Analysis, Candle } from "../api";
 import type { FpBar } from "./footprint";
 
 export type Vote = "bull" | "bear" | null;
-export const FACTORS = ["FVG/IFVG", "Order block", "CRT/TBS", "Footprint", "RVOL", "VWAP", "Structure", "PE−CE action", "Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip", "PCR trend"] as const;
+export const FACTORS = ["FVG/IFVG", "Order block", "CRT/TBS", "Footprint", "RVOL", "VWAP", "Structure", "PE−CE action", "Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip", "PCR trend", "SMT"] as const;
 // Options Lab feeds (from 8501 via /api/oclab): PE−CE table rows (3m, ATM ±10) and the writer-flow points (1m, all strikes)
 export type OcRow = { ts: string; act: [string, string, string?, string?] | null; pe_ce_day: number | null; pcr?: number | null };
 export type OcPt = { t: number; ce: number | null; pe: number | null; flow: number | null; bal: number | null; sig: boolean;
@@ -19,7 +19,8 @@ export type BiasRow = { time: number; o: number; h: number; l: number; c: number
 const FLOW = new Set(["STACKED_BUY", "STACKED_SELL", "ACCUMULATION", "DISTRIBUTION", "INITIATIVE", "MANIPULATION", "ABSORPTION"]);
 
 export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], barSec: number, pct = 0.7,
-                            oc: OcFeed | null = null, forming = false): BiasRow[] {
+                            oc: OcFeed | null = null, forming = false,
+                            smt: { time: number; dir: "bull" | "bear"; at: string }[] | null = null): BiasRow[] {
   if (!a) return [];
   const closed = candles.filter((c) => c.closed !== false);
   const live = forming ? candles.filter((c) => c.closed === false).slice(-1) : [];
@@ -150,14 +151,19 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     }
     votes["PCR trend"] = pv; why["PCR trend"] = pw;
 
+    // 14 SMT (NIFTY vs BANKNIFTY divergence at a swing) in the last 6 candles
+    const sm = smt ? [...smt].reverse().find((m) => m.time <= c.time && m.time >= c.time - 5 * barSec) : undefined;
+    votes.SMT = sm ? sm.dir : null; why.SMT = sm ? `${sm.dir === "bull" ? "bullish" : "bearish"} SMT ${sm.at}` : "no SMT in the last 6 candles";
+
     // factors with no data today don't count (e.g. futures volume missing → RVOL & VWAP can't vote)
     if (!hasVol) why.RVOL = "no futures volume today";
     if (!hasVwap) why.VWAP = "no VWAP (futures volume missing)";
     if (!hasFp) why.Footprint = "no recorded ticks for this tf";
     if (!hasPece) { why["PE−CE action"] = "Options Lab (8501) data not available"; why["PCR trend"] = "Options Lab (8501) data not available"; }
     if (!hasFlow) for (const k of ["Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip"] as Factor[]) why[k] = "Options Lab (8501) data not available";
+    if (!smt) why.SMT = "SMT: 5m / 15m / 1h only (BANKNIFTY candles)";
     if (isLive) why.Footprint = "footprint only for closed candles";
-    const avail = FACTORS.length - (hasVol ? 0 : 1) - (hasVwap ? 0 : 1) - (hasFp && !isLive ? 0 : 1) - (hasPece ? 0 : 2) - (hasFlow ? 0 : 4);
+    const avail = FACTORS.length - (smt ? 0 : 1) - (hasVol ? 0 : 1) - (hasVwap ? 0 : 1) - (hasFp && !isLive ? 0 : 1) - (hasPece ? 0 : 2) - (hasFlow ? 0 : 4);
     const vals = Object.values(votes);
     const bull = vals.filter((x) => x === "bull").length, bear = vals.filter((x) => x === "bear").length;
     const req = Math.max(3, Math.round(pct * avail));             // e.g. 10 factors → 7 must agree; 7 → 5

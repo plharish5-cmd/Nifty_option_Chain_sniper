@@ -19,3 +19,18 @@ export function useOcFeed(on: boolean): OcFeed | null {
   }, [on]);
   return d;
 }
+
+export type SmtMark = { time: number; dir: "bull" | "bear"; text: string; at: string; pivot_at: string; price: number };
+export type BankPt = { time: number; c: number };
+export function useSmt(tf: string, on: boolean, withBank?: (b: BankPt[]) => void): SmtMark[] {
+  const [d, setD] = useState<SmtMark[]>([]);
+  useEffect(() => {
+    if (!on || !(tf === "5m" || tf === "15m" || tf === "1h")) { setD([]); withBank?.([]); return; }
+    let dead = false;
+    const go = () => fetch(`/api/smt?tf=${tf}`).then((r) => r.json()).then((j) => { if (!dead) { setD(j.available ? j.markers ?? [] : []); withBank?.(j.available ? j.bank ?? [] : []); } }).catch(() => {});
+    go();
+    const id = window.setInterval(go, 60000);
+    return () => { dead = true; window.clearInterval(id); };
+  }, [tf, on]);
+  return d;
+}

@@ -34,7 +34,19 @@ export const MEANING: Record<string, string> = {
   IFVG_FLIP: "FVG inverted — price CLOSED through the gap, so the old support is now resistance (or vice versa)",
   IFVG_SELL: "IFVG SELL — price came back into the inverted gap (now resistance) and closed back below it: sell / buy PE, SL above the zone",
   IFVG_BUY: "IFVG BUY — price came back into the inverted gap (now support) and closed back above it: buy CE, SL below the zone",
+  QML_ARMED: "Quasimodo armed — H→L→HH→close below L (or L→H→LL→close above H) on the LINE chart; wait for price to come back to the QML level",
+  QML_TRIG: "QML triggered — price tested the QML level and closed back away from it: entry, SL beyond the HH/LL wick",
+  QML_PT: "Line-chart structure point of the Quasimodo (close prices, wicks ignored)",
+  RBS_ARMED: "Resistance became support — a line-chart peak broken by a body close; buy the first retest",
+  RBS_TRIG: "RBS triggered — retest of the broken peak held with a green close: buy CE, SL below the level",
+  SBR_ARMED: "Support became resistance — a line-chart valley broken by a body close; sell the first retest",
+  SBR_TRIG: "SBR triggered — retest of the broken valley held with a red close: buy PE, SL above the level",
+  SNR_UPTHRUST: "Upthrust fakeout — wick above a line-chart peak, body closed back below: bearish trap",
+  SNR_SPRING: "Spring fakeout — wick below a line-chart valley, body closed back above: bullish trap",
   OI_SURGE: "Futures OI surge — unusual position change this bar",
+  DOL: "Draw on liquidity — after an ERL sweep price tends to rebalance into the nearest FVG (IRL); after an FVG tap it tends to run to the next old high/low (ERL)",
+  DOL_HIT: "D.O.L reached — the target was traded into",
+  SMT: "SMT divergence — NIFTY and BANKNIFTY disagree at a swing (one makes a new high/low, the other doesn't): the sweep is weak, expect a turn",
 };
 
 // shorten the backend's text for the chart: "BOS·weak lowV" → "BOS", "Sweep EQH" → "Sweep EQH"

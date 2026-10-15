@@ -7,12 +7,13 @@ import {
 import type { Analysis, Candle, TF } from "../api";
 import { bucket } from "../api";
 import { computeBias, FACTORS, type BiasRow } from "./bias";
-import { useOcFeed } from "./ocfeed";
+import { useOcFeed, useSmt } from "./ocfeed";
+import { computeDol } from "./dol";
 import { confluence, FootprintPrimitive, FP_MEANING, FP_WORD, kfmt, type FpBar } from "./footprint";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -32,7 +33,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const zones = useRef(new ZonesPrimitive());
   const fpPrim = useRef(new FootprintPrimitive());
   const ocFeed = useOcFeed(!!layers.bias);
+  const bankS = useRef<ISeriesApi<"Line"> | null>(null);
+  const [bank, setBank] = useState<{ time: number; c: number }[]>([]);
+  const smtMarks = useSmt(tf, !!layers.smt || !!layers.bias, setBank);
+  const smtArg = tf === "5m" || tf === "15m" || tf === "1h" ? smtMarks : null;
   const biasMap = useRef<Map<number, BiasRow>>(new Map());
+  const dolRef = useRef<ReturnType<typeof computeDol>>([]);
   const [fpBars, setFpBars] = useState<FpBar[]>([]);
   const [fpMsg, setFpMsg] = useState<string>("");
   const volS = useRef<ISeriesApi<"Histogram"> | null>(null);
@@ -64,6 +70,9 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     });
     s.attachPrimitive(zones.current);
     s.attachPrimitive(fpPrim.current);
+    bankS.current = ch.addSeries(LineSeries, { color: "rgba(244,114,182,0.85)", lineWidth: 2, priceScaleId: "bank", title: "BANKNIFTY",
+      priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
+    ch.priceScale("bank").applyOptions({ visible: false, scaleMargins: { top: 0.1, bottom: 0.25 } });
     const z = ch.addSeries(LineSeries, { color: "rgba(232,195,90,0.55)", lineWidth: 1, lineStyle: LineStyle.Solid,
       priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
     // real volume (NIFTY FUT) in its own strip at the bottom; VWAP + σ bands + anchored VWAPs on the price scale
@@ -268,6 +277,16 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     }
     const dayStarts: number[] = [];
     if (tf !== "1D") for (let i = 1; i < candles.length; i++) if (Math.floor(candles[i].time / 86400) !== Math.floor(candles[i - 1].time / 86400)) dayStarts.push(candles[i].time);
+    if (a && layers.dol) {
+      const dols = computeDol(candles, a);
+      const act = [...dols].reverse().find((d) => !d.hit);
+      if (act) {
+        if (act.kind === "IRL") boxes.push({ from: act.from, to: lastTime, top: act.hi, bottom: act.lo, fill: "rgba(167,139,250,0.16)",
+          stroke: "rgba(167,139,250,0.9)", label: `${act.label} · after ${act.why}`, labelColor: "#c4b5fd", dash: true });
+        else segs.push({ from: act.from, price: act.lo, color: "rgba(167,139,250,0.95)", width: 2, dash: true, label: `${act.label} · after ${act.why}` });
+      }
+      dolRef.current = dols;
+    } else dolRef.current = [];
     zones.current.set(boxes, segs, lastTime, dayStarts);
 
     // ── markers: every layer emits Ev records → merged per bar/side, labelled only where it matters ──
@@ -341,6 +360,20 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           short: acc ? "ACC" : rej ? "REJ" : "–", full: m.text, pri: acc ? 3 : rej ? 2 : 1,
           shape: acc ? (bull ? "arrowUp" : "arrowDown") : "circle", color: acc ? "#38bdf8" : rej ? "#fb923c" : "#94a3b8", size: acc ? 0.9 : 0.7 });
       }
+    }
+    if (a && layers.dol) {
+      for (const d of dolRef.current) {
+        push({ time: d.from, side: d.dir === "bull" ? "below" : "above", dir: d.dir, kind: "DOL", layer: "D.O.L",
+          short: d.kind === "IRL" ? "→FVG" : "→ERL", full: `${d.label} · after ${d.why}${d.hit ? " · ✓ reached" : " · active"}`,
+          pri: 2, shape: "circle", color: "#a78bfa", size: 0.6 });
+        if (d.hit) push({ time: d.hit, side: d.dir === "bull" ? "above" : "below", dir: d.dir, kind: "DOL_HIT", layer: "D.O.L",
+          short: "DOL✓", full: `${d.label} reached`, pri: 1, shape: "square", color: "#a78bfa", size: 0.5 });
+      }
+    }
+    if (layers.smt) {
+      for (const m of smtMarks) push({ time: m.time, side: m.dir === "bull" ? "below" : "above", dir: m.dir, kind: "SMT", layer: "SMT",
+        short: m.dir === "bull" ? "SMT▲" : "SMT▼", full: `${m.text} (pivot ${m.pivot_at}, confirmed ${m.at})`, pri: 3,
+        shape: m.dir === "bull" ? "arrowUp" : "arrowDown", color: m.dir === "bull" ? "#34d399" : "#f472b6", size: 1 });
     }
     if (a && layers.rvol) {
       const RC: Record<string, string> = { RVOL_ACTIVATED: "#22c55e", BREAKOUT_WITH_RVOL: "#22c55e", RVOL_SPIKE: "#e8c35a", RVOL_FADING: "#94a3b8", BREAKOUT_NO_RVOL: "#ef4444" };
@@ -429,7 +462,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     } catch { /* older lib */ }
     spine.current?.setData(a && layers.qml ? candles.filter((c) => c.closed !== false).map((c) => ({ time: c.time as UTCTimestamp, value: c.close })) : []);
     zz.current.setData(a && layers.swings ? dedupe(a.zigzag).map((p) => ({ time: p.time as UTCTimestamp, value: p.price })) : []);
-  }, [analysis, layers, candles]);
+  }, [analysis, layers, candles, smtMarks]);
 
   // ESTIMATED footprint on the chart (5m / 15m / 1h; closed candles from the desk's recorded FUT ticks)
   useEffect(() => {
@@ -457,11 +490,16 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     for (const m of a?.auction?.markers ?? []) if (m.kind === "AUCTION_ACCEPT") marks.push({ time: m.time, dir: m.dir, label: "auction ACC" });
     for (const m of a?.qml?.markers ?? []) if (m.kind.endsWith("_TRIG")) marks.push({ time: m.time, dir: m.dir, label: m.kind.replace("_TRIG", "") });
     const withConf = layers.fp ? confluence(fpBars, marks, BAR_SEC[tf] ?? 300) : [];
-    const allB = layers.bias ? computeBias(candles, a, fpBars, BAR_SEC[tf] ?? 300, 0.7, ocFeed) : [];
+    const allB = layers.bias ? computeBias(candles, a, fpBars, BAR_SEC[tf] ?? 300, 0.7, ocFeed, false, smtArg) : [];
     biasMap.current = new Map(allB.map((r) => [r.time, r]));
     const bias = allB.filter((r) => r.verdict !== "MIXED");
     fpPrim.current.set(withConf, bias);
-  }, [fpBars, analysis, tf, layers.fp, layers.bias, candles, ocFeed]);
+  }, [fpBars, analysis, tf, layers.fp, layers.bias, candles, ocFeed, smtArg]);
+
+  // BANKNIFTY line (own hidden scale, so its shape lines up with NIFTY) — shown with the SMT layer
+  useEffect(() => {
+    bankS.current?.setData(layers.smt ? bank.map((b) => ({ time: b.time as UTCTimestamp, value: b.c })) : []);
+  }, [bank, layers.smt]);
 
   const hm = (t: number) => { const d = new Date(t * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
   const hc = hover ? cMap.current.get(hover.t) : undefined;
@@ -585,7 +623,8 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["delta", "ABS ● · Δ± ■", "#e8c35a"], ["crt", "CRT box · TBS ■ · CRT▶", C.gold], ["auction", "Value · ACC / REJ", "#38bdf8"],
   ["volume", "VWAP · vPOC · vol", "#f5f5f4"], ["oi", "FUT OI build-up bars", "#22c55e"], ["rvol", "cRVOL", "#22c55e"], ["qml", "QML · RBS/SBR · cyan = close line", "#22d3ee"],
   ["fp", "Footprint (est.): Δ under candle · gold = POC · A/D/C/M/S/I", "#facc15"],
-  ["bias", "⚖ Bias 13: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
+  ["dol", "D.O.L: ERL taken → FVG target · FVG tapped → old high/low", "#a78bfa"], ["smt", "SMT ▲▼ · pink line = BANKNIFTY (own scale)", "#f472b6"],
+  ["bias", "⚖ Bias 14: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {

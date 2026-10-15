@@ -307,9 +307,58 @@ def crt_phase(keep: int = Query(4)):
             out += cp.phases(r, rows, rv, absorb, strikes, max(1, min(int(keep), 10)))
         except Exception as e:                               # noqa: BLE001
             errs.append(f"{r.get('pair')}: {e}")
+    # D.O.L (draw on liquidity): after the ERL sweep the next target is the nearest unfilled FVG (IRL) in the trade
+    # direction on the CRT's lower timeframe. Display only — Setup D's own TP-1 (50 % CRM) / TP-2 are unchanged.
+    for row in out:
+        try:
+            zs = [z for z in ((h.json.get(row["ltf"]) or {}).get("zones") or [])
+                  if z.get("type") in ("FVG", "IFVG") and z.get("state") not in ("filled", "invalid")]
+            sell = row["trade"]["side"].startswith("SHORT") if row.get("trade") else row.get("bias") == "bear"
+            ref = row["trade"]["entry"] if row.get("trade") else (row["sweep"]["price"] if row.get("sweep") else None)
+            if ref is None or row.get("bias") == "both" and not row.get("trade"):
+                continue
+            cand = [z for z in zs if (z["top"] < ref if sell else z["bottom"] > ref)]
+            if cand:
+                z = max(cand, key=lambda z: z["top"]) if sell else min(cand, key=lambda z: z["bottom"])
+                row["dol"] = {"kind": "IRL", "lo": round(z["bottom"], 1), "hi": round(z["top"], 1),
+                              "text": f"D.O.L → {z['type']} {z['bottom']:,.0f}–{z['top']:,.0f} ({abs(ref - (z['top'] if sell else z['bottom'])):,.0f} pts)"}
+        except Exception:                                    # noqa: BLE001
+            pass
     rank = {"TRADE LIVE": 0, "WATCH — sweep done, waiting for the LTF MSS": 1, "WAITING for the manipulation candle": 2}
     out.sort(key=lambda x: (rank.get(x["ready"], 3), -x["k_ts"]))
     return {"rows": out, "errors": errs, "order": cp.ORDER}
+
+
+_SMT_CACHE: dict = {}
+
+
+@app.get("/api/smt")
+async def smt_view(tf: str = Query("5m")):
+    """SMT divergence NIFTY vs BANKNIFTY (index, closed candles only). Information only."""
+    import time as _t
+    from datetime import timedelta
+    from ..engine import smt as smt_mod
+    from ..market.candles import resample, session_filter
+    from ..timeutil import TF_SECONDS as TS, now_ist
+    if tf not in ("5m", "15m", "1h"):
+        raise HTTPException(400, "tf must be 5m, 15m or 1h")
+    h = _h()
+    days = 3 if tf != "1h" else 6
+    c = _SMT_CACHE.get(tf)
+    if not c or _t.time() - c[0] > 60:
+        try:
+            to = now_ist()
+            raw = await h.rest.intraday("25", to - timedelta(days=days + 3), to, "1", "IDX_I", "INDEX")
+            _SMT_CACHE[tf] = c = (_t.time(), raw)
+        except Exception as e:                               # noqa: BLE001
+            return {"tf": tf, "available": False, "message": f"BANKNIFTY candles unavailable: {e}", "markers": []}
+    now = _t.time()
+    bank = [b for b in resample(session_filter(c[1]), tf) if int(b["ts"]) + TS[tf] <= now]
+    nifty = h.candles.frame(h.nifty, tf, days=days, include_forming=False)
+    r = smt_mod.detect(nifty, bank)
+    from ..timeutil import chart_time
+    line = [{"time": chart_time(int(b["ts"])), "c": round(float(b["c"]), 2), "h": float(b["h"]), "l": float(b["l"])} for b in bank]
+    return {"tf": tf, "available": True, "bank": line, **r}
 
 
 @app.get("/api/volume")
