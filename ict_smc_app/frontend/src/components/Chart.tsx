@@ -52,6 +52,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const [nodesV, setNodesV] = useState<NodesView | null>(null);
   const cvdS = useRef<ISeriesApi<"Baseline"> | null>(null);
   const [walls, setWalls] = useState<Wall[]>([]);
+  const wallPrevRef = useRef<{ status: Record<string, Wall["status"]>; topCE: number | null; topPE: number | null } | null>(null);
+  const onSignalRef = useRef(onSignal); onSignalRef.current = onSignal;
+  const marketOpenRef = useRef(marketOpen); marketOpenRef.current = marketOpen;
+  const sigOnRef = useRef(!!sig?.on); sigOnRef.current = !!sig?.on;
+  const tfRef = useRef(tf); tfRef.current = tf;
   const ocFeed = useOcFeed(!!layers.bias || !!layers.ocAct || !!sig?.on);
   const bankS = useRef<ISeriesApi<"Line"> | null>(null);
   const [bank, setBank] = useState<{ time: number; c: number }[]>([]);
@@ -530,8 +535,40 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     if (!layers.gamma) setGexMap(null);
     if (!layers.walls && !layers.gamma) return;
     let dead = false;
+    const fireWall = (kind: string, side: "BUY" | "SELL", title: string, body: string, price: number) => {
+      if (!marketOpenRef.current || !sigOnRef.current || !onSignalRef.current) return;
+      const ts = Math.floor(Date.now() / 1000);
+      onSignalRef.current({ id: ts, ts, time: "", grade: "info", kind, side, tf: tfRef.current, title, body, price });
+    };
+    const detectWallEvents = (ws: Wall[]) => {
+      const prev = wallPrevRef.current;
+      const status: Record<string, Wall["status"]> = {};
+      for (const w of ws) status[`${w.side}${w.p}`] = w.status;
+      const ce = ws.filter((w) => w.side === "CE").sort((a, b) => b.oi - a.oi)[0] ?? null;
+      const pe = ws.filter((w) => w.side === "PE").sort((a, b) => b.oi - a.oi)[0] ?? null;
+      const topCE = ce?.p ?? null, topPE = pe?.p ?? null;
+      if (prev) {
+        for (const w of ws) {                                   // BUILDING/holding → UNWINDING = writers capitulating
+          const was = prev.status[`${w.side}${w.p}`];
+          if (was && was !== "unwinding" && w.status === "unwinding")
+            fireWall("WALL_FLIP", w.side === "CE" ? "BUY" : "SELL", `⚠ ${w.side} wall ${w.p} UNWINDING`,
+              `Writers are covering the ${w.side} wall at ${w.p} — ${w.side === "CE" ? "upside breakout" : "downside break"} risk. Trade the breakout, don't fade.`, w.p);
+        }
+        if (topCE != null && prev.topCE != null && topCE !== prev.topCE) {   // writers rolled their defense
+          const up = topCE > prev.topCE;
+          fireWall("WALL_ROLL", up ? "BUY" : "SELL", `CE wall rolled ${prev.topCE} → ${topCE}`,
+            up ? `Call writers moved resistance UP to ${topCE} — room opening above, bullish tilt.` : `Call writers moved resistance DOWN to ${topCE} — capping lower, bearish tilt.`, topCE);
+        }
+        if (topPE != null && prev.topPE != null && topPE !== prev.topPE) {
+          const up = topPE > prev.topPE;
+          fireWall("WALL_ROLL", up ? "BUY" : "SELL", `PE wall rolled ${prev.topPE} → ${topPE}`,
+            up ? `Put writers moved support UP to ${topPE} — floor rising, bullish tilt.` : `Put writers moved support DOWN to ${topPE} — floor dropping, bearish tilt.`, topPE);
+        }
+      }
+      wallPrevRef.current = { status, topCE, topPE };
+    };
     const go = () => api.chain().then((ch) => { if (dead || !ch?.rows?.length) return; const sp = ch.spot || spot || ch.atm;
-      if (layers.walls) setWalls(buildWalls(ch.rows, sp));
+      if (layers.walls) { const w = buildWalls(ch.rows, sp); setWalls(w); detectWallEvents(w); }
       if (layers.gamma) setGexMap(computeGex(ch.rows, sp, 65)); }).catch(() => {});
     go(); const id = window.setInterval(go, 60000);
     return () => { dead = true; window.clearInterval(id); };
