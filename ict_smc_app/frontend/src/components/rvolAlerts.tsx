@@ -61,7 +61,7 @@ export function useRvolAlerts() {
     const sig = kind.startsWith("SIG_");
     if (prefs.sound) tones(sig ? (kind.startsWith("SIG_APLUS") ? SIG_SOUND.APLUS : SIG_SOUND[a.side] ?? SIG_SOUND.INFO) : SOUND[kind] ?? [[880, 0.2], [880, 0.2]]);
     if (prefs.voice && "speechSynthesis" in window) {
-      try { const said = sig ? `${a.title.replace(/^\S+ (\d\d):(\d\d) · /, "$1 $2. ").replace(/✓3/g, "check 3").replace(/★ ?A\+/g, "A plus").replace(/[▲▼→—★]/g, " ").replace(/PE−CE/g, "P E C E").replace(/≥/g, "at least")}` : `${SAY[kind] ?? "Alert"}. ${a.title.replace(/×/g, " times").replace(/RVOL/g, "R VOL")}`;
+      try { const said = sig ? `${a.title.replace(/^\S+ (\d\d):(\d\d) · /, "$1 $2. ").replace(/γ ✓✓✓/g, "gamma triple check").replace(/✓3/g, "check 3").replace(/★ ?A\+ ×(\d)/g, "A plus, times $1").replace(/★ ?A\+/g, "A plus").replace(/●/g, "").replace(/🧭/g, "").replace(/[▲▼→—★]/g, " ").replace(/PE−CE/g, "P E C E").replace(/≥/g, "at least")}` : `${SAY[kind] ?? "Alert"}. ${a.title.replace(/×/g, " times").replace(/RVOL/g, "R VOL")}`;
       const u = new SpeechSynthesisUtterance(said); u.rate = 1.05; speechSynthesis.speak(u); } catch { /* ignore */ }
     }
     if (prefs.desktop && "Notification" in window && Notification.permission === "granted") {

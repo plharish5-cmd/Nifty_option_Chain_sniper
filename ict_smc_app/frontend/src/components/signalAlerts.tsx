@@ -14,11 +14,11 @@ import type { FpBar } from "./footprint";
 import type { SmtMark } from "./ocfeed";
 import type { Dol } from "./dol";
 
-export type SigKind = "bias" | "conf" | "ocAct" | "smt" | "ifvg" | "crt" | "dol" | "aplus";
+export type SigKind = "bias" | "conf" | "ocAct" | "smt" | "ifvg" | "crt" | "dol" | "gamma" | "nodes" | "flow" | "aplus";
 export type SigPrefs = { on: boolean; minBias: number; kinds: Record<SigKind, boolean> };
 const KEY = "ict_signal_alert_prefs";
 const DEF: SigPrefs = { on: false, minBias: 10,
-  kinds: { bias: true, conf: true, ocAct: true, smt: true, ifvg: true, crt: true, dol: true, aplus: true } };
+  kinds: { bias: true, conf: true, ocAct: true, smt: true, ifvg: true, crt: true, dol: true, gamma: true, nodes: true, flow: true, aplus: true } };
 
 export function useSigPrefs() {
   const [p, setP] = useState<SigPrefs>(() => {
@@ -39,6 +39,8 @@ type Ev = { key: string; kind: SigKind; side: "BUY" | "SELL" | "INFO"; title: st
 export function scanSignals(o: {
   tf: string; candles: Candle[]; a: Analysis | null; prefs: SigPrefs; bias: BiasRow[]; conf: FpBar[];
   ocActs: { time: number; v: number; txt: string }[]; smt: SmtMark[] | null; dols: Dol[];
+  gamma?: { time: number; side: "BUY" | "SELL" }[]; nodes?: { time: number; side: "BUY" | "SELL"; zone: { label: string; lo: number; hi: number }; z: number }[];
+  flow?: { time: number; verdict: "BUY" | "SELL" | "WAIT"; prev: "BUY" | "SELL" | "WAIT" | null; bull: number; bear: number; head: string } | null;
 }): Ev[] {
   const { tf, candles, a, prefs, bias, conf, ocActs, smt, dols } = o;
   const closed = candles.filter((c) => c.closed !== false);
@@ -89,11 +91,25 @@ export function scanSignals(o: {
   for (const m of smt ?? []) if (m.time === t && K.smt) add("smt", side(m.dir), `SMT ${m.dir === "bull" ? "▲" : "▼"}`, m.text);
   // D.O.L reached
   for (const d of dols) if (d.hit === t && K.dol) add("dol", "INFO", `D.O.L reached ${d.lo.toFixed(0)}`, `${d.label} reached — book profit / trail SL.`);
-  // ★ A+ : bias + a trigger on the same side
-  if (K.aplus && biasSide && (confSide === biasSide || ifvgSide === biasSide || crtSide === biasSide)) {
-    const trig = [confSide === biasSide && "✓3", ifvgSide === biasSide && "IFVG", crtSide === biasSide && "CRT entry"].filter(Boolean).join(" + ");
-    add("aplus", biasSide, `★ A+ ${biasSide} — bias ≥ ${prefs.minBias} + ${trig}`,
-      `Strongest alert. Still: closed candle only, fixed SL, 1 lot, Kill Switch rules. Paper trade first.`);
+  // γ ✓✓✓ (recorded live by the gamma layer)
+  const gm = (o.gamma ?? []).find((x) => x.time === t);
+  const gSide = gm ? gm.side : null;
+  if (gm && K.gamma) add("gamma", gm.side, `γ ✓✓✓ ${gm.side}`, `EMA stack + flag at a gamma level + volume ≥ 1.5× → ${leg(gm.side)}. SL at the flag edge, target the next gamma level.`);
+  // ● ENTRY — overextension (VWAP ±2σ) into a stacked D/W/M zone
+  const ne = (o.nodes ?? []).find((x) => x.time === t);
+  const nSide = ne ? ne.side : null;
+  if (ne && K.nodes) add("nodes", ne.side, `● ENTRY ${ne.side} at ${ne.zone.label}`, `${ne.z.toFixed(1)}σ stretch into zone ${ne.zone.lo.toFixed(0)}–${ne.zone.hi.toFixed(0)} and closed back → ${leg(ne.side)} reversal. SL beyond the zone, first target VWAP.`);
+  // 🧭 order-flow verdict — only when it FLIPS to BUY / SELL
+  const f = o.flow && o.flow.time === t ? o.flow : null;
+  const fSide = f && f.verdict !== "WAIT" ? f.verdict : null;
+  if (f && fSide && f.prev !== f.verdict && K.flow) add("flow", fSide, `Order flow → ${fSide} (${Math.max(f.bull, f.bear)} vs ${Math.min(f.bull, f.bear)})`, f.head.slice(0, 160));
+  // ★ A+ : bias + triggers on the same side — weight = how many independent triggers agree
+  const trigs = biasSide ? ([[confSide, "✓3"], [ifvgSide, "IFVG"], [crtSide, "CRT entry"], [gSide, "γ ✓✓✓"], [nSide, "● ENTRY"], [fSide, "order flow"]] as const)
+    .filter(([sd]) => sd === biasSide).map(([, n]) => n) : [];
+  if (K.aplus && biasSide && trigs.length) {
+    const w = trigs.length;
+    add("aplus", biasSide, `★ A+${w > 1 ? ` ×${w}` : ""} ${biasSide} — bias ≥ ${prefs.minBias} + ${trigs.join(" + ")}`,
+      `${w >= 3 ? "Very rare — three independent reads agree. " : w === 2 ? "Two independent triggers agree. " : ""}Still: closed candle only, fixed SL, 1 lot, Kill Switch rules. Paper trade first.`);
   }
   return out;
 }
@@ -124,9 +140,12 @@ const HELP: Record<SigKind, { when: string; say: string }> = {
   ifvg: { when: "IFVG buy ▲ or sell ▼ prints.", say: "BUY CE · SL below the zone / SELL PE · SL above the zone." },
   crt: { when: "CRT entry — Setup D.", say: "Toward the other side of the CRT box; TP1 50 %, SL beyond the sweep wick." },
   dol: { when: "The D.O.L target is reached.", say: "“book profit / trail SL”" },
-  aplus: { when: "Bias ≥ {N} AND (✓3 or IFVG or CRT entry) on the SAME side, SAME candle.", say: "Different rising tone; desktop pop-up stays until you close it. Strongest alert." },
+  gamma: { when: "γ ✓✓✓ — EMA 9/21/50 stack + a flag AT a gamma level breaking + volume ≥ 1.5× (needs the γ Gamma 3✓ layer on).", say: "“gamma BUY” — SL flag edge, target next gamma level." },
+  nodes: { when: "● ENTRY — price stretched beyond VWAP ±2σ INTO a stacked D/W/M volume zone and closed back (needs the Stacked nodes layer on).", say: "“ENTRY BUY at W M A” — reversal, first target VWAP." },
+  flow: { when: "The order-flow read FLIPS to BUY or SELL (delta, CVD, stacked imbalance, big trades, room to the wall). Needs one Order-flow PRO layer on.", say: "“Order flow → BUY (4 vs 1)”" },
+  aplus: { when: "Bias ≥ {N} AND at least one of ✓3 · IFVG · CRT · γ ✓✓✓ · ● ENTRY · order flow on the SAME side, SAME candle. ×2 / ×3 = how many agree.", say: "Different rising tone; desktop pop-up stays until you close it. Strongest alert — ×2 or ×3 even more so." },
 };
-const LBL: Record<SigKind, string> = { bias: "bias", conf: "✓3", ocAct: "PE−CE", smt: "SMT", ifvg: "IFVG", crt: "CRT", dol: "D.O.L", aplus: "★A+" };
+const LBL: Record<SigKind, string> = { bias: "bias", conf: "✓3", ocAct: "PE−CE", smt: "SMT", ifvg: "IFVG", crt: "CRT", dol: "D.O.L", gamma: "γ✓✓✓", nodes: "●ENTRY", flow: "🧭flow", aplus: "★A+" };
 export function SignalControls({ p, setP }: { p: SigPrefs; setP: (f: (x: SigPrefs) => SigPrefs) => void }) {
   return (
     <span className="flex flex-wrap items-center gap-1">

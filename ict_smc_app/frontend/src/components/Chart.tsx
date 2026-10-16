@@ -42,6 +42,9 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const fpPrim = useRef(new FootprintPrimitive());
   const ofPrim = useRef(new OrderFlowPrimitive());
   const ndPrim = useRef(new NodesPrimitive());
+  const gHitsRef = useRef<{ time: number; side: "BUY" | "SELL"; px: number }[]>([]);
+  const nEntRef = useRef<ReturnType<typeof findEntries>>([]);
+  const ofArgsRef = useRef<Parameters<typeof readAt>[1]>({ fp: [], bubbles: [], walls: [], zones: [], atr: 20, candles: [] });
   const gmPrim = useRef(new GammaPrimitive());
   const emaS = useRef<ISeriesApi<"Line">[]>([]);
   const [gexMap, setGexMap] = useState<GexMap | null>(null);
@@ -547,11 +550,13 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   }, [layers.nodes]);
   const nEntries = useMemo(() => layers.nodes && nodesV?.available
     ? findEntries(candles, analysis?.volume?.vwap ?? [], nodesV) : [], [layers.nodes, nodesV, candles, analysis]);
+  nEntRef.current = nEntries;
   useEffect(() => { ndPrim.current.set(layers.nodes ? nodesV : null, nEntries); }, [layers.nodes, nodesV, nEntries]);
   // ── gamma map + 3 confirmations ──
   const rvMap = useMemo(() => new Map((analysis?.volume?.bars ?? []).map((b) => [b.time, b.rvol])), [analysis]);
   const emaArr = useMemo(() => layers.gamma && candles.length ? [emas(candles, 9), emas(candles, 21), emas(candles, 50)] : null, [layers.gamma, candles]);
   const gHits = useMemo(() => layers.gamma ? gammaHits(candles, rvMap, gexMap, analysis?.atr ?? 20, marketOpen) : [], [layers.gamma, candles, rvMap, gexMap, analysis, marketOpen]);
+  gHitsRef.current = gHits;
   useEffect(() => { gmPrim.current.set(layers.gamma ? gexMap : null, gHits); }, [layers.gamma, gexMap, gHits]);
   useEffect(() => {
     const ch = chart.current; if (!ch) return;
@@ -605,13 +610,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     const withConf = layers.fp ? confAll : [];
     const allB = layers.bias || sigOn ? computeBias(candles, a, fpBars, BAR_SEC[tf] ?? 300, 0.7, ocFeed, false, smtArg) : [];
     if (sigOn && sig && onSignal) {
-      try { dispatch(scanSignals({ tf, candles, a, prefs: sig, bias: allB, conf: confAll, ocActs, smt: smtArg, dols: computeDol(candles, a) }), onSignal, tf); }
+      try { const lc = [...candles].reverse().filter((c) => c.closed !== false);
+      const fnow = lc[0] && (layers.cvd || layers.cells || layers.walls || layers.bubbles) ? readAt(lc[0].time, ofArgsRef.current) : null;
+      const fprev = lc[1] && fnow ? readAt(lc[1].time, ofArgsRef.current) : null;
+      dispatch(scanSignals({ tf, candles, a, prefs: sig, bias: allB, conf: confAll, ocActs, smt: smtArg, dols: computeDol(candles, a),
+        gamma: gHitsRef.current, nodes: nEntRef.current,
+        flow: fnow && lc[0] ? { time: lc[0].time, verdict: fnow.verdict, prev: fprev?.verdict ?? null, bull: fnow.bull, bear: fnow.bear, head: fnow.head } : null }), onSignal, tf); }
       catch { /* alerts must never break the chart */ }
     }
     biasMap.current = new Map(allB.map((r) => [r.time, r]));
     const bias = layers.bias ? allB.filter((r) => r.verdict !== "MIXED") : [];
     fpPrim.current.set(withConf, bias, layers.heat ? fpBars.filter((b) => b.rows.length) : []);
-  }, [fpBars, analysis, tf, layers.fp, layers.bias, layers.heat, candles, ocFeed, smtArg, sig, onSignal, marketOpen, ocActs]);
+  }, [fpBars, analysis, tf, layers.fp, layers.bias, layers.heat, candles, ocFeed, smtArg, sig, onSignal, marketOpen, ocActs, layers.cvd, layers.cells, layers.walls, layers.bubbles, layers.gamma, layers.nodes]);
 
   // BANKNIFTY line (own hidden scale, so its shape lines up with NIFTY) — shown with the SMT layer
   useEffect(() => {
@@ -746,6 +756,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const vb = hover && analysis?.volume?.bars ? analysis.volume.bars.find((b) => b.time === hover.t) : undefined;
   const ofOn = !!(layers.cvd || layers.cells || layers.walls || layers.bubbles);
   const ofArgs = { fp: fpBars, bubbles, walls, zones: ofPrim.current.zones, atr: analysis?.atr ?? 20, candles };
+  ofArgsRef.current = ofArgs;
   const ofr = hover && ofOn ? readAt(hover.t, { ...ofArgs, px: series.current?.coordinateToPrice(hover.y) ?? null }) : null;
   const lastClosed = ofOn ? [...candles].reverse().find((c) => c.closed !== false) : undefined;
   const ofNow = lastClosed ? readAt(lastClosed.time, ofArgs) : null;
