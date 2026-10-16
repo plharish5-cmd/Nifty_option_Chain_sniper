@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Analysis, type Candle, type Dashboard, type LiveMsg, type PaperStats, type PaperTrade, type Quote, type Scorecard, type Strikes, type TF, useLive } from "./api";
 import InstrumentPanel from "./components/InstrumentPanel";
 import Chart, { type Layers } from "./components/Chart";
-import { DragBar, FullPanel, PeceTable, WritersFlow, useOcSummary, useStoredHeight } from "./components/OcLab";
+import { DragBar, FullPanel, PeceTable, WritersFlow, useStoredHeight } from "./components/OcLab";
 import SplitPane from "./components/SplitPane";
 import { AutoPilotPanel, useAutopilot } from "./components/AutoPilot";
 import { Alerts, BiasGrid, Builds, Header, Paper, Signals } from "./components/Panels";
@@ -120,7 +120,6 @@ export default function App() {
     else if (m.type === "strikes") setStrikes(m.strikes);
   });
 
-  const oc = useOcSummary(storyTick + chainTick);
   const q = quote ?? dash?.quote ?? null;
   // autopilot: evaluate TP/SL/EOD on each candle update (NIFTY only)
   useEffect(() => { if (chartInst === "NIFTY") ap.onCandles(candles, q?.spot ?? null); }, [candles, chartInst, q?.spot, ap]);
@@ -239,13 +238,6 @@ export default function App() {
                 : bottom === "auction" ? <AuctionPanel tick={storyTick} />
                 : paper ? <Paper trades={paper.trades} stats={paper.stats} scorecard={paper.scorecard} /> : null}
             </div>
-          </div>
-          <div className="card">
-            <div className="card-h"><span className="card-t">Read of the market</span></div>
-            <ul className="px-4 py-2 space-y-1 text-[12px] text-slate-300">
-              {(dash?.narrative ?? []).map((n, i) => <li key={i}><span className="text-gold-400 font-semibold">{n.split(":")[0]}</span>{n.slice(n.indexOf(":"))}</li>)}
-              {(oc?.lines ?? []).map((n, i) => <li key={`oc${i}`}><span className="text-gold-400 font-semibold">{n.split(":")[0]}</span>{n.slice(n.indexOf(":"))}</li>)}
-            </ul>
           </div>
         </section>
         <aside className={side ? "flex flex-col gap-3 min-w-0" : "hidden"}>
