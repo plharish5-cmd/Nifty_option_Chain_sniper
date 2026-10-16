@@ -73,6 +73,7 @@ class Book:
         self.last_vol: Optional[int] = None
         self.last_px: Optional[float] = None
         self.hit_at: Dict[tuple, tuple] = {}               # (side, price) → (t, qty before the hit) for reloads
+        self.pulls: List[tuple] = []                       # recent (t, price, side) pulls for spoof-cluster detection
         self.events: Deque[dict] = deque(maxlen=300)
         self.minutes: Dict[int, List[float]] = {}          # minute ts → [sum of balance, n]
         self.packets = 0
@@ -129,23 +130,34 @@ class Book:
             traded_here = dv if px and abs(px - k[1]) < 1e-6 else 0.0
             if drop >= pull_min and drop >= 0.5 * q0 and traded_here < 0.2 * drop:
                 self._ev(t, k, "PULLED", drop, f"{drop / lot:.0f} lots pulled from {'bid' if k[0] == 'B' else 'ask'} {k[1]:.2f} without trading — that {'support' if k[0] == 'B' else 'resistance'} was not real")
+                self.pulls.append((t, k[1], k[0]))                 # remember for spoof-cluster detection
             elif traded_here >= 0.3 * q0 and q0 >= pull_min:
                 self.hit_at[k] = (t, q0)
+        # SPOOF cluster: ≥3 pulls in a ~5-pt band within 15 s = someone repeatedly faking a level
+        self.pulls = [(pt, pp, ps) for (pt, pp, ps) in self.pulls if t - pt <= 15]
+        if len(self.pulls) >= 3:
+            lo, hi = min(p[1] for p in self.pulls), max(p[1] for p in self.pulls)
+            if hi - lo <= 5:
+                side = self.pulls[-1][2]
+                if not any(e["kind"] == "SPOOF" and t - e["ts"] < 60 for e in self.events):
+                    self._ev(t, (side, (lo + hi) / 2), "SPOOF", len(self.pulls),
+                             f"{len(self.pulls)} pulls at {'bid' if side == 'B' else 'ask'} {lo:.0f}–{hi:.0f} in 15 s — repeated FAKE {'support' if side == 'B' else 'resistance'}. Don't trust that level; {'break lower' if side == 'B' else 'break higher'} is likely.")
         for k, (th, qh) in list(self.hit_at.items()):
             if t - th > 5:
                 del self.hit_at[k]; continue
             if cur.get(k, 0) >= 0.8 * qh and t - th > 0.5:
                 self._ev(t, k, "RELOAD", cur[k], f"{'bid' if k[0] == 'B' else 'ask'} {k[1]:.2f} was hit and refilled to {cur[k] / lot:.0f} lots — someone is DEFENDING it ({'support' if k[0] == 'B' else 'resistance'})")
                 del self.hit_at[k]
-        # walls (held ≥ 20 s at ≥ wall_mult × median visible level)
+        # walls — only genuinely rare size: ≥ wall_mult × median AND ≥ wall_min_lots, held 20 s, deduped per 5-pt band / 120 s
         sizes = sorted(cur.values())
         med = sizes[len(sizes) // 2] if sizes else 0
-        mult = float(config.rule("book", "wall_mult", 3.0))
+        mult = float(config.rule("book", "wall_mult", 8.0))
+        min_lots = float(config.rule("book", "wall_min_lots", 40)) * lot
         for k, q in cur.items():
             h = self.hist.setdefault(k, deque(maxlen=120))
             h.append((t, q))
-            if med and q >= mult * med and h[0][0] <= t - 20 and all(x[1] >= 0.7 * q for x in h if x[0] >= t - 20):
-                if not any(e["kind"] == "WALL" and e["price"] == round(k[1], 2) and t - e["ts"] < 60 for e in self.events):
+            if med and q >= mult * med and q >= min_lots and h[0][0] <= t - 20 and all(x[1] >= 0.7 * q for x in h if x[0] >= t - 20):
+                if not any(e["kind"] == "WALL" and abs(e["price"] - k[1]) <= 5 and t - e["ts"] < 120 for e in self.events):
                     self._ev(t, k, "WALL", q, f"{q / lot:.0f} lots resting at {'bid' if k[0] == 'B' else 'ask'} {k[1]:.2f} for 20 s+ ({q / med:.1f}× a normal level) — real {'support' if k[0] == 'B' else 'resistance'} until it's pulled")
         self.prev = cur
         self.ladder = dep

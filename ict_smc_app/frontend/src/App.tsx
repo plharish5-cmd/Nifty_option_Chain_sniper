@@ -8,8 +8,6 @@ import { DragBar, FullPanel, PeceTable, WritersFlow, useOcSummary, useStoredHeig
 import SplitPane from "./components/SplitPane";
 import { AutoPilotPanel, useAutopilot } from "./components/AutoPilot";
 import { Alerts, BiasGrid, Builds, Header, Paper, Signals } from "./components/Panels";
-import Story from "./components/Story";
-import Guide from "./components/Guide";
 import DeltaPanel from "./components/DeltaPanel";
 import AuctionPanel from "./components/AuctionPanel";
 import QmlPanel from "./components/QmlPanel";
@@ -249,8 +247,6 @@ export default function App() {
               {(oc?.lines ?? []).map((n, i) => <li key={`oc${i}`}><span className="text-gold-400 font-semibold">{n.split(":")[0]}</span>{n.slice(n.indexOf(":"))}</li>)}
             </ul>
           </div>
-          <Story dash={dash} tick={storyTick} oc={oc} />
-          <Guide />
         </section>
         <aside className={side ? "flex flex-col gap-3 min-w-0" : "hidden"}>
           <button onClick={() => setSide(false)} title="Hide this panel — the charts and tables take the full width"
