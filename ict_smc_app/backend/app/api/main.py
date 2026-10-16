@@ -533,6 +533,8 @@ app.include_router(_nodes_router)
 from .book_api import router as _book_router
 app.include_router(_book_router)
 
+from .mtf_api import router as _mtf_router
+app.include_router(_mtf_router)
 # ── the built frontend ───────────────────────────────────────────────────────
 if (config.FRONTEND_DIST / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=str(config.FRONTEND_DIST / "assets")), name="assets")
