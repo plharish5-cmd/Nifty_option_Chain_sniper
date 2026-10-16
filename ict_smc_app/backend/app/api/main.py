@@ -380,7 +380,7 @@ def footprints(tf: str = Query("5m"), n: int = Query(16)):
     h = _h()
     days = 3 if tf in ("5m", "15m") else 5
     zones = ((h.json.get("5m") or {}).get("zones") or []) + ((h.json.get("15m") or {}).get("zones") or [])
-    return fp.compute(h.rows_1m(days), tf, max(4, min(int(n), 30)), float(config.rule("delta", "fut_level_step", 5.0)),
+    return fp.compute(h.rows_1m(days), tf, max(4, min(int(n), 80)), float(config.rule("delta", "fut_level_step", 5.0)),
                       zones, config.rules().get("footprints", {}))
 
 

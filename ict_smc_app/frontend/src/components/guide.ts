@@ -1,5 +1,9 @@
 // guide.ts — plain-language explainer for every chart layer: what it is, and what to DO with its latest signal.
 export const GUIDE: Record<string, { name: string; what: string; act: string }> = {
+  walls: { name: "🧱 OI walls", what: "bold bands at the 3 biggest CE (red, resistance) and PE (green, support) OI strikes near spot — REAL chain data, refreshed every 60 s. Thicker = more OI.", act: "don't buy into a red wall or sell into a green one. First touch usually rejects; trade the break only after a close beyond + a retest." },
+  bubbles: { name: "🫧 Big trades", what: "a bubble on every candle with ≥ 2× normal FUT volume. Green = big buyer won, red = big seller won, size = how big. Yellow ring = huge volume but no move (absorption).", act: "follow a bubble while price holds its level; a yellow-ringed bubble at a wall or a high/low = expect a turn." },
+  cells: { name: "▦ Footprint cells (est.)", what: "zoom in: bid (sellers, pink, left) × ask (buyers, green, right) per price. Bright = imbalance (one side 3× the other). Gold box = POC. Boxes extended right = STACKED imbalance zones.", act: "stacked buy zone = support, buy its retest; stacked sell zone = resistance, sell its retest. A zone is dead once a candle closes through it." },
+  cvd: { name: "〽 CVD (est.)", what: "running sum of delta in its own pane (green above 0, red below). Shows who has been the aggressor all session.", act: "trade WITH the CVD slope. Price new high + CVD lower high = bearish divergence (trap) → no CE; mirror for lows." },
   ob: { name: "Order blocks", what: "Last opposite candle before a strong move — big orders sat there. Violet = breaker / RJB.",
     act: "Price returning to a bull OB = look for CE with SL below it; bear OB = PE with SL above." },
   fvg: { name: "FVG · IFVG", what: "Gaps left by a fast move (orange sell / teal buy boxes). IFVG = a gap price closed THROUGH, now acting the other way.",

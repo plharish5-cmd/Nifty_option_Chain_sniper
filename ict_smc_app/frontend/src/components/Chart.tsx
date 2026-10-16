@@ -1,13 +1,15 @@
 // Chart.tsx — candlesticks + ICT/SMC overlays (Lightweight Charts v5).
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CandlestickSeries, ColorType, createChart, createSeriesMarkers, CrosshairMode, HistogramSeries, LineSeries, LineStyle,
+  BaselineSeries, CandlestickSeries, ColorType, createChart, createSeriesMarkers, CrosshairMode, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi, type MouseEventParams, type Time, type UTCTimestamp,
 } from "lightweight-charts";
 import type { Analysis, Candle, TF } from "../api";
 import { bucket } from "../api";
 import { computeBias, FACTORS, type BiasRow } from "./bias";
 import { useOcFeed, useSmt } from "./ocfeed";
+import { api } from "../api";
+import { buildBubbles, buildWalls, OrderFlowPrimitive, readAt, type Wall } from "./orderflow";
 import { computeDol } from "./dol";
 import { dispatch, scanSignals, type SigPrefs } from "./signalAlerts";
 import type { AlertRow } from "../api";
@@ -16,7 +18,7 @@ import { confluence, FootprintPrimitive, FP_SCALE, setFpScale, FP_MEANING, FP_WO
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -36,6 +38,9 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const zones = useRef(new ZonesPrimitive());
   const fpPrim = useRef(new FootprintPrimitive());
+  const ofPrim = useRef(new OrderFlowPrimitive());
+  const cvdS = useRef<ISeriesApi<"Baseline"> | null>(null);
+  const [walls, setWalls] = useState<Wall[]>([]);
   const ocFeed = useOcFeed(!!layers.bias || !!layers.ocAct || !!sig?.on);
   const bankS = useRef<ISeriesApi<"Line"> | null>(null);
   const [bank, setBank] = useState<{ time: number; c: number }[]>([]);
@@ -93,6 +98,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     });
     s.attachPrimitive(zones.current);
     s.attachPrimitive(fpPrim.current);
+    s.attachPrimitive(ofPrim.current);
     bankS.current = ch.addSeries(LineSeries, { color: "rgba(244,114,182,0.85)", lineWidth: 2, priceScaleId: "bank", title: "BANKNIFTY",
       priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
     ch.priceScale("bank").applyOptions({ visible: false, scaleMargins: { top: 0.1, bottom: 0.25 } });
@@ -505,13 +511,41 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     zz.current.setData(a && layers.swings ? dedupe(a.zigzag).map((p) => ({ time: p.time as UTCTimestamp, value: p.price })) : []);
   }, [analysis, layers, candles, smtMarks, ocActs]);
 
+  // ── Order-flow Pro: OI walls (real chain, every 60 s) ──
+  useEffect(() => {
+    if (!layers.walls) { setWalls([]); return; }
+    let dead = false;
+    const go = () => api.chain().then((ch) => { if (!dead && ch?.rows?.length) setWalls(buildWalls(ch.rows, ch.spot || spot || ch.atm)); }).catch(() => {});
+    go(); const id = window.setInterval(go, 60000);
+    return () => { dead = true; window.clearInterval(id); };
+  }, [layers.walls]); // eslint-disable-line react-hooks/exhaustive-deps
+  const bubbles = useMemo(() => layers.bubbles || layers.cvd || layers.cells
+    ? buildBubbles(analysis?.volume?.bars ?? [], fpBars, candles) : [], [layers.bubbles, layers.cvd, layers.cells, analysis, fpBars, candles]);
+  useEffect(() => {
+    ofPrim.current.set({ walls, bubbles: layers.bubbles ? bubbles : [], cells: layers.cells ? fpBars.filter((b) => b.rows.length) : [] });
+  }, [walls, bubbles, fpBars, layers.bubbles, layers.cells]);
+  // CVD in its own pane under the chart (created / removed with the layer)
+  useEffect(() => {
+    const ch = chart.current; if (!ch) return;
+    if (!layers.cvd) { if (cvdS.current) { ch.removeSeries(cvdS.current); cvdS.current = null; } return; }
+    if (!cvdS.current) {
+      cvdS.current = ch.addSeries(BaselineSeries, { baseValue: { type: "price", price: 0 }, lineWidth: 2,
+        topLineColor: "#4ade80", topFillColor1: "rgba(34,197,94,0.35)", topFillColor2: "rgba(34,197,94,0.02)",
+        bottomLineColor: "#f87171", bottomFillColor1: "rgba(239,68,68,0.02)", bottomFillColor2: "rgba(239,68,68,0.35)",
+        priceLineVisible: false, lastValueVisible: true, title: "CVD (est.)",
+        priceFormat: { type: "custom", formatter: (v: number) => kfmt(v), minMove: 1 } }, 1);
+      try { ch.panes()[1]?.setHeight(140); } catch { /* older engine */ }
+    }
+    cvdS.current.setData(fpBars.filter((b) => b.rows.length).map((b) => ({ time: b.time as UTCTimestamp, value: b.cvd })));
+  }, [layers.cvd, fpBars]);
+
   // ESTIMATED footprint on the chart (5m / 15m / 1h; closed candles from the desk's recorded FUT ticks)
   useEffect(() => {
-    const want = !!layers.fp || !!layers.bias || !!layers.heat;
+    const want = !!layers.fp || !!layers.bias || !!layers.heat || !!layers.cvd || !!layers.cells || !!layers.bubbles;
     const ok = want && (tf === "5m" || tf === "15m" || tf === "1h");
     if (!ok) { fpPrim.current.set([]); setFpBars([]); setFpMsg(layers.fp ? "Footprint: 5m / 15m / 1h only" : ""); if (!want) return; if (!ok) return; }
     let dead = false;
-    const go = () => fetch(`/api/footprints?tf=${tf}&n=30`).then((r) => r.json()).then((j) => {
+    const go = () => fetch(`/api/footprints?tf=${tf}&n=${layers.cvd || layers.cells || layers.bubbles ? 75 : 30}`).then((r) => r.json()).then((j) => {
       if (dead) return;
       const raw: FpBar[] = j.available ? j.bars ?? [] : [];
       setFpBars(raw);
@@ -520,7 +554,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     go();
     const id = window.setInterval(go, 30000);
     return () => { dead = true; window.clearInterval(id); };
-  }, [tf, layers.fp, layers.bias, layers.heat]);
+  }, [tf, layers.fp, layers.bias, layers.heat, layers.cvd, layers.cells, layers.bubbles]);
 
   useEffect(() => {
     const a = analysis;
@@ -674,6 +708,13 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const hc = hover ? cMap.current.get(hover.t) : undefined;
   const hev = hover ? evRef.current.get(hover.t) ?? [] : [];
   const vb = hover && analysis?.volume?.bars ? analysis.volume.bars.find((b) => b.time === hover.t) : undefined;
+  const ofOn = !!(layers.cvd || layers.cells || layers.walls || layers.bubbles);
+  const ofArgs = { fp: fpBars, bubbles, walls, zones: ofPrim.current.zones, atr: analysis?.atr ?? 20, candles };
+  const ofr = hover && ofOn ? readAt(hover.t, { ...ofArgs, px: series.current?.coordinateToPrice(hover.y) ?? null }) : null;
+  const lastClosed = ofOn ? [...candles].reverse().find((c) => c.closed !== false) : undefined;
+  const ofNow = lastClosed ? readAt(lastClosed.time, ofArgs) : null;
+  const VC: Record<string, string> = { BUY: "bg-bull-500 text-ink-900", SELL: "bg-bear-500 text-white", WAIT: "bg-slate-600 text-white" };
+  const TC: Record<string, string> = { bull: "text-bull-400", bear: "text-bear-400", warn: "text-amber-300", info: "text-slate-300" };
   const ob = hover && layers.oi ? (analysis?.volume?.oi_line ?? []).find((x) => x.time === hover.t) : undefined;
   const OI_READ: Record<string, [string, string, string]> = {
     "long build-up": ["🟢 LONG BUILD-UP", "price ▲ + OI ▲ — fresh buyers opening longs. Real buying → CE bias, trust the move.", "text-bull-400"],
@@ -765,6 +806,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           </div>
         )}
       </div>
+      {ofNow && <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2">
+        <div className={`flex max-w-[560px] items-center gap-2 rounded-lg px-3 py-1.5 shadow-xl ring-2 ${ofNow.verdict === "BUY" ? "bg-bull-900/90 ring-bull-400" : ofNow.verdict === "SELL" ? "bg-bear-900/90 ring-bear-400" : "bg-ink-850/90 ring-slate-500"}`}>
+          <span className={`rounded px-2 py-0.5 text-[16px] font-extrabold ${VC[ofNow.verdict]}`}>{ofNow.verdict}</span>
+          <span className="text-[12.5px] leading-tight text-slate-100"><b className="text-cyan-200">ORDER FLOW · last closed {hm(lastClosed!.time)}</b><br />{ofNow.head}</span>
+        </div>
+      </div>}
       {/* chart tools (top-right, left of the price axis) */}
       <div className="absolute right-[86px] top-2 z-10 flex gap-1">
         {(layers.fp || layers.heat || layers.bias) && <>
@@ -798,6 +845,16 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             <span>O <b className="text-slate-200">{hc.open.toFixed(1)}</b></span><span>H <b className="text-slate-200">{hc.high.toFixed(1)}</b></span>
             <span>L <b className="text-slate-200">{hc.low.toFixed(1)}</b></span><span>C <b className="text-slate-200">{hc.close.toFixed(1)}</b></span>
           </div>
+          {ofr && <div className="mt-1.5 rounded-md border border-cyan-500/40 bg-cyan-950/30 p-1.5">
+            {ofr.wall && <div className="mb-1 rounded bg-ink-800 px-1.5 py-1 text-[13px] text-slate-100">{ofr.wall}</div>}
+            <div className="flex items-center gap-2">
+              <span className={`rounded px-2 py-0.5 text-[14px] font-extrabold ${VC[ofr.verdict]}`}>{ofr.verdict}</span>
+              <span className="text-[12px] text-slate-300">🧭 Order flow · <b className="text-bull-400">{ofr.bull}▲</b> <b className="text-bear-400">{ofr.bear}▼</b></span>
+            </div>
+            <div className="mt-0.5 text-[13.5px] font-semibold text-slate-100">{ofr.head}</div>
+            {ofr.lines.map((l, i) => <div key={i} className={`text-[13px] ${TC[l.tone]}`}>• {l.txt}</div>)}
+            {ofr.plan && <div className="mt-0.5 text-[13px] font-semibold text-cyan-200">🎯 {ofr.plan} — paper first, 1 lot max.</div>}
+          </div>}
           {vb && <div className="num mt-0.5 text-slate-400">FUT vol <b className="text-slate-200">{(vb.v / 1000).toFixed(0)}k</b>
             {vb.rvol != null && <> · RVOL <b className={vb.rvol >= 1.5 ? "text-bull-400" : vb.rvol <= 0.7 ? "text-slate-500" : "text-slate-200"}>{vb.rvol.toFixed(1)}×</b></>}</div>}
           {ob && <div className="mt-1.5 border-t border-ink-700 pt-1.5">
@@ -870,6 +927,8 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["dol", "D.O.L: ERL taken → FVG target · FVG tapped → old high/low", "#a78bfa"], ["smt", "SMT ▲▼ · pink line = BANKNIFTY (own scale)", "#f472b6"],
   ["heat", "Heatmap: traded volume per price (blue cold → red hot)", "#f97316"], ["ocAct", "PE−CE action: ▲ OC CE / ▼ OC PE · bottom lane", "#4ade80"],
   ["bias", "⚖ Bias 14: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
+  ["walls", "🧱 OI walls: red CE resistance · green PE support", "#ef4444"], ["bubbles", "🫧 Big trades ≥2× vol · yellow ring = absorbed", "#a3e635"],
+  ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD pane (est.)", "#4ade80"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {
