@@ -6,6 +6,7 @@ import InstrumentPanel from "./components/InstrumentPanel";
 import Chart, { type Layers } from "./components/Chart";
 import { DragBar, FullPanel, PeceTable, WritersFlow, useOcSummary, useStoredHeight } from "./components/OcLab";
 import SplitPane from "./components/SplitPane";
+import { AutoPilotPanel, useAutopilot } from "./components/AutoPilot";
 import { Alerts, BiasGrid, Builds, Header, Paper, Signals } from "./components/Panels";
 import Story from "./components/Story";
 import Guide from "./components/Guide";
@@ -73,7 +74,7 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book">("paper");
+  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto">("paper");
   const [mainView, setMainView] = useState<"candles" | "writers" | "both">(() => { try { return (localStorage.getItem("ict_mainview") as "candles" | "writers" | "both") || "candles"; } catch { return "candles"; } });
   const switchMain = (v: "candles" | "writers" | "both") => { setMainView(v); try { localStorage.setItem("ict_mainview", v); } catch { /* */ } };
   const [chainTick, setChainTick] = useState(0);
@@ -87,6 +88,7 @@ export default function App() {
   tfRef.current = tf;
   const lastChain = useRef(0);
   const ra = useRvolAlerts();
+  const ap = useAutopilot();
   const [sig, setSig] = useSigPrefs();
   const fireRef = useRef(ra.fire);
   fireRef.current = ra.fire;
@@ -122,6 +124,8 @@ export default function App() {
 
   const oc = useOcSummary(storyTick + chainTick);
   const q = quote ?? dash?.quote ?? null;
+  // autopilot: evaluate TP/SL/EOD on each candle update (NIFTY only)
+  useEffect(() => { if (chartInst === "NIFTY") ap.onCandles(candles, q?.spot ?? null); }, [candles, chartInst, q?.spot, ap]);
   return (
     <div className="min-h-full flex flex-col">
       <Header q={q} live={live} status={dash?.status ?? null} />
@@ -184,9 +188,9 @@ export default function App() {
                 ? <WritersFlow tick={chainTick} />
                 : mainView === "both"
                 ? <SplitPane
-                    top={<Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} />}
+                    top={<Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} />}
                     bottom={<WritersFlow tick={chainTick} />} />
-                : <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} />}
+                : <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} />}
             </div>
             {mainView === "candles" && <div className="px-4 py-1.5 text-[11px] text-slate-400 border-t border-ink-700 flex flex-wrap gap-x-4">
               {analysis && <span>ATR {analysis.atr} pts · trend <b className={analysis.trend === "bull" ? "text-bull-400" : analysis.trend === "bear" ? "text-bear-400" : ""}>{analysis.trend}</b></span>}
@@ -223,10 +227,12 @@ export default function App() {
                 <button className={`tab ${bottom === "crt" ? "tab-on" : ""}`} onClick={() => setBottom("crt")}>CRT cockpit</button>
                 <button className={`tab ${bottom === "bias" ? "tab-on" : ""} !border-gold-500/60 !text-gold-400`} onClick={() => setBottom("bias")}>⚖ Bias meter 14</button>
                 <button className={`tab ${bottom === "book" ? "tab-on" : ""} !border-emerald-500/60 !text-emerald-300`} onClick={() => setBottom("book")}>📗 Order book</button>
+                <button className={`tab ${bottom === "auto" ? "tab-on" : ""} !border-cyan-500/60 !text-cyan-300`} onClick={() => setBottom("auto")}>🤖 Autopilot{ap.s.cfg.on ? " ●" : ""}</button>
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "book" ? <BookPanel />
+              {bottom === "auto" ? <AutoPilotPanel ap={ap} />
+                : bottom === "book" ? <BookPanel />
                 : bottom === "bias" ? <BiasPanel tf={tf} candles={candles} analysis={analysis} />
                 : bottom === "crt" ? <CrtCockpit tick={storyTick} />
                 : bottom === "qml" ? <QmlPanel tick={storyTick} />

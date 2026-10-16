@@ -28,8 +28,9 @@ const C = {
   obBull: "rgba(16,185,129,0.14)", obBear: "rgba(239,68,68,0.14)", fvgBull: "rgba(56,189,248,0.14)", fvgBear: "rgba(244,114,182,0.14)",
 };
 
-export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal }: {
+export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal }: {
   sig?: SigPrefs; onSignal?: (a: AlertRow) => void;
+  onAutoSignal?: (a: AlertRow, ctx: { last: Candle; atr: number; nearWall: number | null }) => void;
   tf: TF; candles: Candle[]; analysis: Analysis | null; layers: Layers; spot: number | null; spotTs: number; marketOpen: boolean;
   onExpand?: () => void; expanded?: boolean;
 }) {
@@ -651,9 +652,19 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       try { const lc = [...candles].reverse().filter((c) => c.closed !== false);
       const fnow = lc[0] && (layers.cvd || layers.cells || layers.walls || layers.bubbles) ? readAt(lc[0].time, ofArgsRef.current) : null;
       const fprev = lc[1] && fnow ? readAt(lc[1].time, ofArgsRef.current) : null;
+      const wrapped = (al: AlertRow) => {
+        onSignal(al);
+        if (onAutoSignal && lc[0]) {
+          const px = al.price && al.price > 0 ? al.price : lc[0].close;
+          const buy = al.side === "BUY";
+          const wll = walls.filter((w) => buy ? w.side === "CE" && w.p > px : w.side === "PE" && w.p < px)
+            .sort((x, y) => buy ? x.p - y.p : y.p - x.p)[0];
+          onAutoSignal(al, { last: lc[0], atr: a?.atr ?? 20, nearWall: wll ? wll.p : null });
+        }
+      };
       dispatch(scanSignals({ tf, candles, a, prefs: sig, bias: allB, conf: confAll, ocActs, smt: smtArg, dols: computeDol(candles, a),
         gamma: gHitsRef.current, nodes: nEntRef.current,
-        flow: fnow && lc[0] ? { time: lc[0].time, verdict: fnow.verdict, prev: fprev?.verdict ?? null, bull: fnow.bull, bear: fnow.bear, head: fnow.head } : null }), onSignal, tf); }
+        flow: fnow && lc[0] ? { time: lc[0].time, verdict: fnow.verdict, prev: fprev?.verdict ?? null, bull: fnow.bull, bear: fnow.bear, head: fnow.head } : null }), wrapped, tf); }
       catch { /* alerts must never break the chart */ }
     }
     biasMap.current = new Map(allB.map((r) => [r.time, r]));
