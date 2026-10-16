@@ -21,10 +21,10 @@ const TFS: TF[] = ["1m", "5m", "15m", "1h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "1h": 30, "1D": 60 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
-  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"], ["fp", "Footprint Δ (est.)"], ["heat", "Heatmap"], ["ocAct", "PE−CE action"], ["dol", "D.O.L (IRL⇄ERL)"], ["smt", "SMT (vs BankNifty)"], ["bias", "⚖ Bias 14"], ["walls", "🧱 OI walls"], ["bubbles", "🫧 Big trades"], ["cells", "▦ FP cells"], ["cvd", "〽 CVD"], ["nodes", "🟨 Stacked nodes"],
+  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"], ["fp", "Footprint Δ (est.)"], ["heat", "Heatmap"], ["ocAct", "PE−CE action"], ["dol", "D.O.L (IRL⇄ERL)"], ["smt", "SMT (vs BankNifty)"], ["bias", "⚖ Bias 14"], ["walls", "🧱 OI walls"], ["bubbles", "🫧 Big trades"], ["cells", "▦ FP cells"], ["cvd", "〽 CVD"], ["nodes", "🟨 Stacked nodes"], ["gamma", "γ Gamma 3✓"],
 ];
 
-const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false, qml: false, fp: false, bias: false, dol: false, smt: false, heat: false, ocAct: false, cvd: false, cells: false, walls: false, bubbles: false, nodes: false };
+const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false, qml: false, fp: false, bias: false, dol: false, smt: false, heat: false, ocAct: false, cvd: false, cells: false, walls: false, bubbles: false, nodes: false, gamma: false };
 const PRESETS: [string, string, Partial<Layers>][] = [
   ["Clean", "structure + key levels + VWAP", { structure: true, session: true, volume: true }],
   ["SMC", "order blocks, FVG, liquidity, BOS/MSS, OTE", { ob: true, fvg: true, liq: true, structure: true, range: true, session: true }],
@@ -32,6 +32,7 @@ const PRESETS: [string, string, Partial<Layers>][] = [
   ["Order flow", "delta, auction value, volume, RVOL", { delta: true, auction: true, volume: true, rvol: true, fp: true, heat: true }],
   ["Order flow PRO", "OI walls, big-trade bubbles, footprint cells, CVD + BUY/SELL/WAIT read", { walls: true, bubbles: true, cells: true, cvd: true, volume: true, structure: true }],
   ["Nodes + σ", "stacked D/W/M volume nodes + VWAP ±2σ → ENTRY", { nodes: true, volume: true, structure: true }],
+  ["Gamma 3✓", "gamma map + EMA stack + flag + volume → QUALIFIES / WALK AWAY", { gamma: true }],
   ["Futures", "volume, futures OI, RVOL panes", { volume: true, oi: true, rvol: true, structure: true }],
 ];
 

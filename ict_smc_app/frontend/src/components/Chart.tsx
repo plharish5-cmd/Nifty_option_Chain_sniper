@@ -9,6 +9,7 @@ import { bucket } from "../api";
 import { computeBias, FACTORS, type BiasRow } from "./bias";
 import { useOcFeed, useSmt } from "./ocfeed";
 import { api } from "../api";
+import { computeGex, confirm3, emas, GammaPrimitive, gammaHits, type GexMap } from "./gamma";
 import { findEntries, NodesPrimitive, nodesRead, type NodesView } from "./nodes";
 import { buildBubbles, buildWalls, OrderFlowPrimitive, readAt, type Wall } from "./orderflow";
 import { computeDol } from "./dol";
@@ -19,7 +20,7 @@ import { confluence, FootprintPrimitive, FP_SCALE, setFpScale, FP_MEANING, FP_WO
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -41,6 +42,9 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const fpPrim = useRef(new FootprintPrimitive());
   const ofPrim = useRef(new OrderFlowPrimitive());
   const ndPrim = useRef(new NodesPrimitive());
+  const gmPrim = useRef(new GammaPrimitive());
+  const emaS = useRef<ISeriesApi<"Line">[]>([]);
+  const [gexMap, setGexMap] = useState<GexMap | null>(null);
   const [nodesV, setNodesV] = useState<NodesView | null>(null);
   const cvdS = useRef<ISeriesApi<"Baseline"> | null>(null);
   const [walls, setWalls] = useState<Wall[]>([]);
@@ -103,6 +107,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     s.attachPrimitive(fpPrim.current);
     s.attachPrimitive(ofPrim.current);
     s.attachPrimitive(ndPrim.current);
+    s.attachPrimitive(gmPrim.current);
     bankS.current = ch.addSeries(LineSeries, { color: "rgba(244,114,182,0.85)", lineWidth: 2, priceScaleId: "bank", title: "BANKNIFTY",
       priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
     ch.priceScale("bank").applyOptions({ visible: false, scaleMargins: { top: 0.1, bottom: 0.25 } });
@@ -517,12 +522,16 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
 
   // ── Order-flow Pro: OI walls (real chain, every 60 s) ──
   useEffect(() => {
-    if (!layers.walls) { setWalls([]); return; }
+    if (!layers.walls) setWalls([]);
+    if (!layers.gamma) setGexMap(null);
+    if (!layers.walls && !layers.gamma) return;
     let dead = false;
-    const go = () => api.chain().then((ch) => { if (!dead && ch?.rows?.length) setWalls(buildWalls(ch.rows, ch.spot || spot || ch.atm)); }).catch(() => {});
+    const go = () => api.chain().then((ch) => { if (dead || !ch?.rows?.length) return; const sp = ch.spot || spot || ch.atm;
+      if (layers.walls) setWalls(buildWalls(ch.rows, sp));
+      if (layers.gamma) setGexMap(computeGex(ch.rows, sp, 65)); }).catch(() => {});
     go(); const id = window.setInterval(go, 60000);
     return () => { dead = true; window.clearInterval(id); };
-  }, [layers.walls]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [layers.walls, layers.gamma]); // eslint-disable-line react-hooks/exhaustive-deps
   const bubbles = useMemo(() => layers.bubbles || layers.cvd || layers.cells
     ? buildBubbles(analysis?.volume?.bars ?? [], fpBars, candles) : [], [layers.bubbles, layers.cvd, layers.cells, analysis, fpBars, candles]);
   useEffect(() => {
@@ -539,6 +548,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const nEntries = useMemo(() => layers.nodes && nodesV?.available
     ? findEntries(candles, analysis?.volume?.vwap ?? [], nodesV) : [], [layers.nodes, nodesV, candles, analysis]);
   useEffect(() => { ndPrim.current.set(layers.nodes ? nodesV : null, nEntries); }, [layers.nodes, nodesV, nEntries]);
+  // ── gamma map + 3 confirmations ──
+  const rvMap = useMemo(() => new Map((analysis?.volume?.bars ?? []).map((b) => [b.time, b.rvol])), [analysis]);
+  const emaArr = useMemo(() => layers.gamma && candles.length ? [emas(candles, 9), emas(candles, 21), emas(candles, 50)] : null, [layers.gamma, candles]);
+  const gHits = useMemo(() => layers.gamma ? gammaHits(candles, rvMap, gexMap, analysis?.atr ?? 20) : [], [layers.gamma, candles, rvMap, gexMap, analysis]);
+  useEffect(() => { gmPrim.current.set(layers.gamma ? gexMap : null, gHits); }, [layers.gamma, gexMap, gHits]);
+  useEffect(() => {
+    const ch = chart.current; if (!ch) return;
+    if (!layers.gamma || !emaArr) { emaS.current.forEach((x) => ch.removeSeries(x)); emaS.current = []; return; }
+    if (!emaS.current.length) emaS.current = [["#facc15", 9], ["#a78bfa", 21], ["#f87171", 50]].map(([c, n]) => ch.addSeries(LineSeries,
+      { color: c as string, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, title: `EMA ${n}` }));
+    emaS.current.forEach((x, k) => x.setData(candles.map((c, i) => ({ time: c.time as UTCTimestamp, value: emaArr[k][i] }))));
+  }, [layers.gamma, emaArr, candles]);
   // CVD in its own pane under the chart (created / removed with the layer)
   useEffect(() => {
     const ch = chart.current; if (!ch) return;
@@ -730,6 +751,10 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const ofNow = lastClosed ? readAt(lastClosed.time, ofArgs) : null;
   const VC: Record<string, string> = { BUY: "bg-bull-500 text-ink-900", SELL: "bg-bear-500 text-white", WAIT: "bg-slate-600 text-white" };
   const TC: Record<string, string> = { bull: "text-bull-400", bear: "text-bear-400", warn: "text-amber-300", info: "text-slate-300" };
+  const gIdx = hover && layers.gamma && emaArr ? candles.findIndex((c) => c.time === hover.t) : -1;
+  const gconf = gIdx >= 60 && emaArr ? confirm3(gIdx, candles, emaArr[0], emaArr[1], emaArr[2], rvMap, gexMap, analysis?.atr ?? 20) : null;
+  const gLast = layers.gamma && emaArr ? (() => { const i = candles.map((c) => c.closed !== false).lastIndexOf(true);
+    return i >= 60 ? confirm3(i, candles, emaArr[0], emaArr[1], emaArr[2], rvMap, gexMap, analysis?.atr ?? 20) : null; })() : null;
   const nread = hover && layers.nodes ? nodesRead(hover.t, series.current?.coordinateToPrice(hover.y) ?? null, nodesV, nEntries, candles[candles.length - 1]?.close ?? null) : [];
   const ob = hover && layers.oi ? (analysis?.volume?.oi_line ?? []).find((x) => x.time === hover.t) : undefined;
   const OI_READ: Record<string, [string, string, string]> = {
@@ -828,6 +853,13 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           <span className="text-[12.5px] leading-tight text-slate-100"><b className="text-cyan-200">ORDER FLOW · last closed {hm(lastClosed!.time)}</b><br />{ofNow.head}</span>
         </div>
       </div>}
+      {layers.gamma && <div className="pointer-events-none absolute left-1/2 top-[64px] z-10 -translate-x-1/2">
+        <div className={`max-w-[600px] rounded-lg px-3 py-1 text-[12.5px] shadow-xl ring-2 ${gLast?.ok ? "bg-violet-900/90 ring-violet-400 text-white" : "bg-ink-850/90 ring-slate-600 text-slate-200"}`}>
+          <b className="text-violet-300">γ MAP</b>{gexMap ? <> · <b className={gexMap.regime === "positive" ? "text-bull-400" : "text-amber-300"}>{gexMap.regime === "positive" ? "+γ PIN day" : "−γ TREND day"}</b>
+            {gexMap.flip ? ` · flip ${gexMap.flip}` : ""}</> : " · loading option chain…"}
+          {gLast && <> · last closed: <b>{gLast.ok ? `✓✓✓ ${gLast.side}` : `WALK AWAY (${gLast.checks.filter((x) => !x.pass).map((x) => x.name).join(", ")})`}</b></>}
+        </div>
+      </div>}
       {/* chart tools (top-right, left of the price axis) */}
       <div className="absolute right-[86px] top-2 z-10 flex gap-1">
         {(layers.fp || layers.heat || layers.bias) && <>
@@ -861,6 +893,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             <span>O <b className="text-slate-200">{hc.open.toFixed(1)}</b></span><span>H <b className="text-slate-200">{hc.high.toFixed(1)}</b></span>
             <span>L <b className="text-slate-200">{hc.low.toFixed(1)}</b></span><span>C <b className="text-slate-200">{hc.close.toFixed(1)}</b></span>
           </div>
+          {gconf && <div className={`mt-1.5 rounded-md border p-1.5 ${gconf.ok ? "border-violet-400 bg-violet-950/40" : "border-slate-600 bg-ink-850/60"}`}>
+            <div className={`text-[13.5px] font-bold ${gconf.ok ? "text-violet-200" : "text-slate-300"}`}>γ {gconf.head}</div>
+            {gconf.checks.map((x, i) => <div key={i} className={`text-[13px] ${x.pass ? "text-bull-400" : "text-bear-400"}`}>{x.pass ? "✓" : "✗"} <b>{x.name}</b> — {x.why}</div>)}
+            {gconf.plan && <div className="text-[13px] font-semibold text-cyan-200">🎯 {gconf.plan} — paper first.</div>}
+            {gexMap && <div className="text-[12px] text-slate-400">Regime: {gexMap.regime === "positive" ? "+γ (pinning — price drawn to the big levels, fades work)" : "−γ (dealers chase — moves accelerate through levels)"}{gexMap.flip ? ` · flip ${gexMap.flip}` : ""}</div>}
+          </div>}
           {nread.length > 0 && <div className="mt-1.5 rounded-md border border-yellow-400/40 bg-yellow-950/20 p-1.5">
             <div className="text-[13.5px] font-semibold text-yellow-300">🟨 Stacked volume nodes (Day · Week · Month)</div>
             {nread.map((l, i) => <div key={i} className={`text-[13px] ${l.startsWith("●") ? "font-semibold text-bull-400" : "text-slate-100"}`}>• {l}</div>)}
@@ -948,7 +986,7 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["heat", "Heatmap: traded volume per price (blue cold → red hot)", "#f97316"], ["ocAct", "PE−CE action: ▲ OC CE / ▼ OC PE · bottom lane", "#4ade80"],
   ["bias", "⚖ Bias 14: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
   ["walls", "🧱 OI walls: red CE resistance · green PE support", "#ef4444"], ["bubbles", "🫧 Big trades ≥2× vol · yellow ring = absorbed", "#a3e635"],
-  ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD pane (est.)", "#4ade80"], ["nodes", "🟨 Stacked nodes D·W·M (gold = A+) · ● ENTRY = ±2σ into zone", "#facc15"],
+  ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD pane (est.)", "#4ade80"], ["gamma", "γ map: red call res · green put sup · yellow flip · ✓✓✓ = EMA stack + flag at level + volume", "#c084fc"], ["nodes", "🟨 Stacked nodes D·W·M (gold = A+) · ● ENTRY = ±2σ into zone", "#facc15"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {
