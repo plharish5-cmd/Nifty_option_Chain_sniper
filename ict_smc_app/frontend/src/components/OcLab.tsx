@@ -3,6 +3,7 @@
 //   WritersFlow — "OI Change (Call vs Put) — since yesterday" + writer-flow strip (Δput − Δcall, 30-min balance)
 // Both refresh every 30 s; the backend recomputes only when a new snapshot has been stored (never stale).
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { FlowBand } from "./flowband";
 import {
   ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp,
@@ -126,7 +127,8 @@ export function WritersFlow({ tick }: { tick: number }) {
   const [d, busy] = useOc<Flow>("flow", `tf=${tf}&mode=${mode}&n=${n}`, tick);
   const box = useRef<HTMLDivElement>(null);
   const S = useRef<{ ch: IChartApi; fut: ISeriesApi<"Line">; ce: ISeriesApi<"Line">; pe: ISeriesApi<"Line">; uw: ISeriesApi<"Histogram">;
-    fl: ISeriesApi<"Histogram">; bal: ISeriesApi<"Line">; mk: ReturnType<typeof createSeriesMarkers<Time>>; mk2: ReturnType<typeof createSeriesMarkers<Time>> } | null>(null);
+    fl: ISeriesApi<"Histogram">; flma: ISeriesApi<"Line">; bal: ISeriesApi<"Line">; band: FlowBand;
+    mk: ReturnType<typeof createSeriesMarkers<Time>>; mk2: ReturnType<typeof createSeriesMarkers<Time>> } | null>(null);
   const first = useRef(true);
   const flCap = useRef(0);
 
@@ -149,12 +151,14 @@ export function WritersFlow({ tick }: { tick: number }) {
       priceFormat: { type: "custom", formatter: (p: number) => inr(p) },
       // clip the scale at ~the 95th-percentile bar so one huge opening print doesn't flatten every other bar
       autoscaleInfoProvider: () => (flCap.current ? { priceRange: { minValue: -flCap.current, maxValue: flCap.current } } : null) }, 1);
+    const flma = ch.addSeries(LineSeries, { color: "rgba(226,232,240,0.55)", lineWidth: 1, title: "flow avg", priceLineVisible: false, lastValueVisible: false }, 1);
+    const band = new FlowBand(); pe.attachPrimitive(band);          // shaded gap between Call & Put OI
     const bal = ch.addSeries(LineSeries, { color: "#e8c35a", lineWidth: 2, title: "balance 30m", priceLineVisible: false }, 2);
     bal.createPriceLine({ price: 0.25, color: "rgba(34,197,94,0.6)", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "▲ PUT writers lead = bullish" });
     bal.createPriceLine({ price: -0.25, color: "rgba(239,68,68,0.6)", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "▼ CALL writers lead = bearish" });
     bal.createPriceLine({ price: 0, color: "rgba(148,163,184,0.25)", lineWidth: 1, axisLabelVisible: false, title: "" });
     try { const P = ch.panes(); P[0]?.setStretchFactor(4); P[1]?.setStretchFactor(2); P[2]?.setStretchFactor(1.6); } catch { /* */ }
-    S.current = { ch, fut, ce, pe, uw, fl, bal, mk: createSeriesMarkers(fut, []), mk2: createSeriesMarkers(fl, []) };
+    S.current = { ch, fut, ce, pe, uw, fl, flma, bal, band, mk: createSeriesMarkers(fut, []), mk2: createSeriesMarkers(fl, []) };
     return () => { ch.remove(); S.current = null; };
   }, []);
 
@@ -173,6 +177,12 @@ export function WritersFlow({ tick }: { tick: number }) {
     // normal candles = faint; unusual (≥ 2.5×) = bright in its own direction; bars beyond the cap are clipped (value shown by the marker)
     s.fl.setData(fv.map((p) => { const v = p.flow as number, up = v >= 0; return { time: T(p), value: Math.max(-cap, Math.min(cap, v)),
       color: p.sig ? (up ? "#4ade80" : "#f87171") : up ? "rgba(34,197,94,.35)" : "rgba(239,68,68,.35)" }; }));
+    // #2 gap ribbon — shade between the Call and Put OI lines
+    s.band.set(P.filter((p) => p.ce != null && p.pe != null).map((p) => ({ time: p.t, ce: p.ce as number, pe: p.pe as number })));
+    // #5 flow momentum — a trailing mean of the (clipped) flow so you see the drift under the spikes
+    const win = 8; const clipped = fv.map((p) => Math.max(-cap, Math.min(cap, p.flow as number)));
+    s.flma.setData(fv.map((p, i) => { const a = Math.max(0, i - win + 1); const seg = clipped.slice(a, i + 1);
+      return { time: T(p), value: seg.reduce((x, y) => x + y, 0) / seg.length }; }));
     s.bal.setData(P.filter((p) => p.bal != null).map((p) => ({ time: T(p), value: p.bal as number })));
     const U = d.unwind;
     s.uw.setData(P.map((p) => ({ time: T(p), value: U && p.t >= U[0] && p.t <= U[1] ? 1 : 0 })));
@@ -182,8 +192,10 @@ export function WritersFlow({ tick }: { tick: number }) {
     if (U) mk.push({ time: U[0] as UTCTimestamp, position: "aboveBar", shape: "square", color: "#e8c35a", text: "EXPIRY UNWIND →" });
     mk.sort((a, b) => (a.time as number) - (b.time as number));
     s.mk.setMarkers(mk);
-    // only the BIG unusual prints get a label (value in ₹), so the strip isn't a forest of dots
-    s.mk2.setMarkers(fv.filter((p) => p.sig && Math.abs(p.flow as number) >= cap * 0.6).map((p) => { const up = (p.flow as number) >= 0; return {
+    // #5 declutter — only the TOP 6 unusual prints get a label (biggest by size), so the strip isn't a forest of text
+    const labelled = fv.filter((p) => p.sig && Math.abs(p.flow as number) >= cap * 0.6)
+      .sort((a, b) => Math.abs(b.flow as number) - Math.abs(a.flow as number)).slice(0, 6);
+    s.mk2.setMarkers([...labelled].sort((a, b) => a.t - b.t).map((p) => { const up = (p.flow as number) >= 0; return {
       time: T(p), position: up ? "aboveBar" : "belowBar", shape: up ? "arrowUp" : "arrowDown", color: up ? "#4ade80" : "#f87171", size: 0.8,
       text: `${up ? "PUT" : "CALL"} ${inr(Math.abs(p.flow as number))}` }; }));
     if (first.current) { s.ch.timeScale().fitContent(); first.current = false; }
