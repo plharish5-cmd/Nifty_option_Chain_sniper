@@ -73,6 +73,8 @@ export default function App() {
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
   const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book">("paper");
+  const [mainView, setMainView] = useState<"candles" | "writers">(() => { try { return (localStorage.getItem("ict_mainview") as "candles" | "writers") || "candles"; } catch { return "candles"; } });
+  const switchMain = (v: "candles" | "writers") => { setMainView(v); try { localStorage.setItem("ict_mainview", v); } catch { /* */ } };
   const [chainTick, setChainTick] = useState(0);
   const [storyTick, setStoryTick] = useState(0);
   const [strikes, setStrikes] = useState<Strikes | null>(null);
@@ -149,10 +151,15 @@ export default function App() {
             style={full ? undefined : { height: chartH }}>
             <div className="card-h flex-wrap">
               <div className="flex gap-1">
-                {TFS.map((t) => <button key={t} onClick={() => setTf(t)} className={`tab ${t === tf ? "tab-on" : ""}`}>{t}</button>)}
+                <button onClick={() => switchMain("candles")} className={`tab ${mainView === "candles" ? "tab-on" : ""}`}>📈 Candles</button>
+                <button onClick={() => switchMain("writers")} title="OI change · call vs put writers + hairy spikes (unusual writer flow ≥ 2.5× normal)"
+                  className={`tab ${mainView === "writers" ? "tab-on" : ""} !border-emerald-500/50 !text-emerald-300`}>🪝 OI · Writers</button>
+                <span className="mx-1 w-px self-stretch bg-ink-700" />
+                {mainView === "candles" && TFS.map((t) => <button key={t} onClick={() => setTf(t)} className={`tab ${t === tf ? "tab-on" : ""}`}>{t}</button>)}
                 <button onClick={toggleFull} title={full ? "Back to normal view (Esc)" : "Chart full screen (Esc to exit)"}
                   className="tab ml-2 !border-gold-500/70 !text-gold-400 font-semibold">{full ? "▣ Normal view" : "⛶ Full view"}</button>
               </div>
+              {mainView === "candles" && <>
               <div className="flex flex-wrap items-center gap-1">
                 <span className="mr-0.5 text-[10px] uppercase tracking-wider text-slate-500">View</span>
                 {PRESETS.map(([name, hint, l]) => {
@@ -167,11 +174,14 @@ export default function App() {
                     className={`tab ${layers[k] ? "tab-on" : ""}`}>{label}</button>
                 ))}
               </div>
+              </>}
             </div>
             <div className="flex-1 min-h-0">
-              <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} />
+              {mainView === "candles"
+                ? <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} />
+                : <WritersFlow tick={chainTick} />}
             </div>
-            <div className="px-4 py-1.5 text-[11px] text-slate-400 border-t border-ink-700 flex flex-wrap gap-x-4">
+            {mainView === "candles" && <div className="px-4 py-1.5 text-[11px] text-slate-400 border-t border-ink-700 flex flex-wrap gap-x-4">
               {analysis && <span>ATR {analysis.atr} pts · trend <b className={analysis.trend === "bull" ? "text-bull-400" : analysis.trend === "bear" ? "text-bear-400" : ""}>{analysis.trend}</b></span>}
               {analysis?.range && <span>Range {analysis.range.low.toFixed(1)}–{analysis.range.high.toFixed(1)} · EQ {analysis.range.eq.toFixed(1)} · price in <b className={analysis.range.zone === "premium" ? "text-bear-400" : "text-bull-400"}>{analysis.range.zone}</b> ({analysis.range.pos_pct} %)</span>}
               {analysis?.experimental && <span className="text-amber-300 font-semibold">{analysis.instrument?.label} · {analysis.experimental}</span>}
@@ -182,7 +192,7 @@ export default function App() {
               {analysis?.delta && <span className={analysis.delta.mock ? "text-amber-300" : analysis.delta.available ? "text-slate-300" : "text-slate-500"}>
                 Delta: {analysis.delta.available ? `${analysis.delta.adapter}${analysis.delta.mock ? " (MOCK)" : ""}` : "unavailable"}</span>}
               <span className="text-slate-500">Overlays use CLOSED candles only — the forming candle never paints a signal.</span>
-            </div>
+            </div>}
           </div>
           <DragBar h={chartH} setH={setChartH} min={320} label="main chart" />
           {/* PE − CE OI table + call vs put writers flow, right under the main chart (each has its own Full view) */}
