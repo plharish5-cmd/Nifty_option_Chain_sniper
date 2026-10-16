@@ -84,17 +84,27 @@ def _ensure_schema():
         conn.commit()
 
 
-# ── charges (configurable — tune to match your broker) ────────────────────────
-def _charges(gross_rs: float, lots: int) -> Dict[str, float]:
-    """Estimated round-trip F&O charges. Flat per-order brokerage + a turnover %.
-    Defaults ≈ a discount broker (Dhan/Zerodha). Edit the `paper` rules to match your real bill."""
-    per_order = float(config.rule("paper", "brokerage_per_order", 20))   # ₹ per executed order
-    pct = float(config.rule("paper", "charges_pct", 0.05)) / 100.0        # taxes+exch+GST as % of |gross|, rough
-    flat_min = float(config.rule("paper", "charges_min", 45))             # floor per round trip
-    brokerage = per_order * 2                                            # buy + sell
-    taxes = abs(gross_rs) * pct
-    total = max(flat_min, round(brokerage + taxes, 2))
-    return {"brokerage": round(brokerage, 2), "taxes": round(taxes, 2), "total": total}
+# ── charges — EXACT Dhan F&O options formula ──────────────────────────────────
+# Rates verified from Harish's Dhan Global Transaction report (164 rows, Jul–Oct 2026):
+#   Brokerage ₹20/order · STT 0.15% sell · NSE txn 0.03503% both · IPFT 0.0005% both
+#   SEBI 0.0001% both · Stamp 0.003% buy · GST 18% of (brokerage + txn + IPFT + SEBI).
+# All rates live in the `charges` rules so they stay tunable if Dhan changes them.
+def _charges(buy_val: float, sell_val: float) -> Dict[str, float]:
+    """buy_val / sell_val = PREMIUM turnover per leg in ₹ (option price × qty)."""
+    def r(k: str, d: float) -> float:
+        return float(config.rule("charges", k, d))
+    turnover = buy_val + sell_val
+    brokerage = r("brokerage_per_order", 20) * 2                          # ₹20 × (buy + sell)
+    stt = sell_val * r("stt_sell", 0.0015)                               # 0.15% sell side only
+    exch = turnover * r("nse_txn", 0.0003503)                           # NSE txn 0.03503%
+    ipft = turnover * r("ipft", 0.000005)                               # IPFT 0.0005%
+    sebi = turnover * r("sebi", 0.000001)                               # SEBI 0.0001%
+    stamp = buy_val * r("stamp_buy", 0.00003)                           # stamp 0.003% buy side
+    gst = r("gst", 0.18) * (brokerage + exch + ipft + sebi)             # Dhan GST base incl. IPFT
+    total = brokerage + stt + exch + ipft + sebi + stamp + gst
+    return {"brokerage": round(brokerage, 2), "stt": round(stt, 2), "exchange": round(exch, 2),
+            "ipft": round(ipft, 2), "sebi": round(sebi, 2), "stamp": round(stamp, 2),
+            "gst": round(gst, 2), "total": round(total, 2)}
 
 
 def _funds() -> Dict[str, Any]:
@@ -258,8 +268,11 @@ def close_trade(trade_id: int, b: CloseBody):
     r = round(pts / risk, 2)
     lot_size = int(config.rule("paper", "lot_size", 65))
     lots = int(t.get("lots") or 1)
-    gross_rs = round(pts * lot_size * lots, 2)
-    ch = _charges(gross_rs, lots)
+    qty = lot_size * lots
+    gross_rs = round(pts * qty, 2)
+    # charges are on PREMIUM turnover. Point-based trades use an assumed ATM premium (tune in rules).
+    prem = float(config.rule("charges", "assumed_premium", 120))
+    ch = _charges(prem * qty, prem * qty)
     net_rs = round(gross_rs - ch["total"], 2)
     ts = int(time.time())
     db.execute(
