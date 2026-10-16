@@ -79,7 +79,7 @@ class Book:
 
     def on_packet(self, p: Dict[str, Any], t: float) -> None:
         dep = p.get("depth")
-        if not dep:
+        if not dep or not any(lv[0] > 0 and lv[3] > 0 for lv in dep):   # pre-open / closed: empty book → ignore
             return
         d = ist_date(t).isoformat()
         if d != self.day:
@@ -145,7 +145,7 @@ class Book:
             h = self.hist.setdefault(k, deque(maxlen=120))
             h.append((t, q))
             if med and q >= mult * med and h[0][0] <= t - 20 and all(x[1] >= 0.7 * q for x in h if x[0] >= t - 20):
-                if not any(e["kind"] == "WALL" and e["price"] == k[1] and t - e["ts"] < 60 for e in self.events):
+                if not any(e["kind"] == "WALL" and e["price"] == round(k[1], 2) and t - e["ts"] < 60 for e in self.events):
                     self._ev(t, k, "WALL", q, f"{q / lot:.0f} lots resting at {'bid' if k[0] == 'B' else 'ask'} {k[1]:.2f} for 20 s+ ({q / med:.1f}× a normal level) — real {'support' if k[0] == 'B' else 'resistance'} until it's pulled")
         self.prev = cur
         self.ladder = dep

@@ -105,3 +105,10 @@ wa_daily/*.log
 wa_daily/sent_*
 wa_daily/wa_error.png
 *.bak
+# WhatsApp morning sender — local only
+wa_daily/.venv/
+wa_daily/shots/
+wa_daily/*.log
+wa_daily/sent_*
+wa_daily/wa_error.png
+*.bak
