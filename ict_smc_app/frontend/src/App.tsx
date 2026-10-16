@@ -5,6 +5,7 @@ import { api, type Analysis, type Candle, type Dashboard, type LiveMsg, type Pap
 import InstrumentPanel from "./components/InstrumentPanel";
 import Chart, { type Layers } from "./components/Chart";
 import { DragBar, FullPanel, PeceTable, WritersFlow, useOcSummary, useStoredHeight } from "./components/OcLab";
+import SplitPane from "./components/SplitPane";
 import { Alerts, BiasGrid, Builds, Header, Paper, Signals } from "./components/Panels";
 import Story from "./components/Story";
 import Guide from "./components/Guide";
@@ -182,14 +183,9 @@ export default function App() {
               {mainView === "writers"
                 ? <WritersFlow tick={chainTick} />
                 : mainView === "both"
-                ? <div className="flex h-full flex-col">
-                    <div className="min-h-0 flex-[3] border-b border-ink-700">
-                      <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} />
-                    </div>
-                    <div className="min-h-0 flex-[2]">
-                      <WritersFlow tick={chainTick} />
-                    </div>
-                  </div>
+                ? <SplitPane
+                    top={<Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} />}
+                    bottom={<WritersFlow tick={chainTick} />} />
                 : <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} />}
             </div>
             {mainView === "candles" && <div className="px-4 py-1.5 text-[11px] text-slate-400 border-t border-ink-700 flex flex-wrap gap-x-4">
