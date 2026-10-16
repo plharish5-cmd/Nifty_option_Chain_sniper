@@ -909,6 +909,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             <span>O <b className="text-slate-200">{hc.open.toFixed(1)}</b></span><span>H <b className="text-slate-200">{hc.high.toFixed(1)}</b></span>
             <span>L <b className="text-slate-200">{hc.low.toFixed(1)}</b></span><span>C <b className="text-slate-200">{hc.close.toFixed(1)}</b></span>
           </div>
+          {layers.dol && (() => {
+            const d = [...dolRef.current].reverse().find((x) => !x.hit) ?? [...dolRef.current].reverse()[0];
+            if (!d) return null;
+            const arrow = d.dir === "bull" ? "↑" : "↓";
+            const tgt = d.kind === "IRL" ? `FVG ${d.lo.toFixed(0)}–${d.hi.toFixed(0)}` : `${d.dir === "bull" ? "old high" : "old low"} ${d.hi.toFixed(0)}`;
+            const swept = d.trig != null ? `swept ${d.trig.toFixed(0)} (${d.trigWhat ?? "liquidity"})` : d.why;
+            return <div className="mt-1.5 rounded-md border border-violet-500/40 bg-violet-950/30 p-1.5">
+              <div className="text-[13px] font-bold text-violet-200">🪝 D.O.L story {arrow}</div>
+              <div className="text-[12.5px] text-slate-100">{swept} → drew to <b className="text-violet-200">{tgt}</b>{d.hit ? " → ✓ reached" : " · target still open"}</div>
+              <div className="text-[12px] text-amber-200/80">{d.hit ? "Draw complete — book profit / trail SL (filled gaps often react here)." : "Active draw — price is being pulled toward this zone; it's the next magnet."}</div>
+            </div>;
+          })()}
           {gconf && <div className={`mt-1.5 rounded-md border p-1.5 ${gconf.ok ? "border-violet-400 bg-violet-950/40" : "border-slate-600 bg-ink-850/60"}`}>
             <div className={`text-[13.5px] font-bold ${gconf.ok ? "text-violet-200" : "text-slate-300"}`}>γ {gconf.head}</div>
             {gconf.checks.map((x, i) => <div key={i} className={`text-[13px] ${x.pass ? "text-bull-400" : "text-bear-400"}`}>{x.pass ? "✓" : "✗"} <b>{x.name}</b> — {x.why}</div>)}

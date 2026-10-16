@@ -7,7 +7,7 @@
 import type { Analysis, Candle } from "../api";
 
 export type Dol = { from: number; dir: "bull" | "bear"; kind: "IRL" | "ERL"; lo: number; hi: number; label: string;
-  why: string; hit?: number };
+  why: string; hit?: number; trig?: number; trigWhat?: string };
 
 export function computeDol(candles: Candle[], a: Analysis | null): Dol[] {
   if (!a) return [];
@@ -15,9 +15,9 @@ export function computeDol(candles: Candle[], a: Analysis | null): Dol[] {
   const zones = (a.zones ?? []).filter((z) => z.type === "FVG" || z.type === "IFVG");
   const pools = a.pools ?? [];
   const hm = (t: number) => { const d = new Date(t * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
-  const erlEv = new Map<number, { dir: "bull" | "bear"; what: string }>();
-  for (const m of a.markers ?? []) if (m.kind === "SWEEP") erlEv.set(m.time, { dir: m.dir, what: "liquidity sweep" });
-  for (const m of a.crt?.markers ?? []) if (m.kind === "CRT_TBS" || m.kind === "CRT_ENTRY") erlEv.set(m.time, { dir: m.dir, what: m.kind === "CRT_TBS" ? "CRT TBS" : "CRT entry" });
+  const erlEv = new Map<number, { dir: "bull" | "bear"; what: string; px: number }>();
+  for (const m of a.markers ?? []) if (m.kind === "SWEEP") erlEv.set(m.time, { dir: m.dir, what: "liquidity sweep", px: m.price });
+  for (const m of a.crt?.markers ?? []) if (m.kind === "CRT_TBS" || m.kind === "CRT_ENTRY") erlEv.set(m.time, { dir: m.dir, what: m.kind === "CRT_TBS" ? "CRT TBS" : "CRT entry", px: m.price });
   const alive = (z: { from: number; to: number }, t: number) => z.from < t && z.to >= t;
   const out: Dol[] = [];
   let cur: Dol | null = null;
@@ -50,6 +50,7 @@ export function computeDol(candles: Candle[], a: Analysis | null): Dol[] {
     if (!cand.length) continue;
     const z = e.dir === "bear" ? cand.reduce((p, q) => (q.top > p.top ? q : p)) : cand.reduce((p, q) => (q.bottom < p.bottom ? q : p));
     cur = { from: c.time, dir: e.dir, kind: "IRL", lo: z.bottom, hi: z.top, why: `${e.what} ${hm(c.time)} (ERL taken)`,
+      trig: e.px, trigWhat: e.what,
       label: `D.O.L ${e.dir === "bull" ? "↑" : "↓"} FVG ${z.bottom.toFixed(0)}–${z.top.toFixed(0)}` };
     out.push(cur);
   }
