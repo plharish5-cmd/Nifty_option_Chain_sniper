@@ -530,6 +530,9 @@ def get_flow(tf: str = Query("5m")):
 from .nodes_api import router as _nodes_router
 app.include_router(_nodes_router)
 
+from .book_api import router as _book_router
+app.include_router(_book_router)
+
 # ── the built frontend ───────────────────────────────────────────────────────
 if (config.FRONTEND_DIST / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=str(config.FRONTEND_DIST / "assets")), name="assets")

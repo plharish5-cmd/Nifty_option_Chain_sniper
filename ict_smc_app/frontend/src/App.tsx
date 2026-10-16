@@ -16,6 +16,7 @@ import BiasPanel from "./components/BiasPanel";
 import FootprintPanel from "./components/FootprintPanel";
 import { AlertControls, AlertToasts, useRvolAlerts } from "./components/rvolAlerts";
 import { SignalControls, useSigPrefs } from "./components/signalAlerts";
+import BookPanel, { BookChip } from "./components/BookPanel";
 
 const TFS: TF[] = ["1m", "5m", "15m", "1h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "1h": 30, "1D": 60 };
@@ -71,7 +72,7 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias">("paper");
+  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book">("paper");
   const [chainTick, setChainTick] = useState(0);
   const [storyTick, setStoryTick] = useState(0);
   const [strikes, setStrikes] = useState<Strikes | null>(null);
@@ -132,7 +133,7 @@ export default function App() {
             {rs?.value != null && <span className="num text-base font-semibold">{rs.value.toFixed(2)}×</span>}
             {rs?.trend && <span>{rs.trend === "BUILDING" ? "▲ building" : rs.trend === "FADING" ? "▼ fading" : "■ holding"}</span>}
             <span className="text-slate-400">{rs?.text ?? "cumulative RVOL of the NIFTY future — loading"}</span>
-            <span className="ml-auto flex flex-wrap items-center gap-2"><SignalControls p={sig} setP={setSig} /><AlertControls prefs={ra.prefs} setPrefs={ra.setPrefs} enable={ra.enable} /></span>
+            <span className="ml-auto flex flex-wrap items-center gap-2"><BookChip /><SignalControls p={sig} setP={setSig} /><AlertControls prefs={ra.prefs} setPrefs={ra.setPrefs} enable={ra.enable} /></span>
           </div>
         );
       })()}
@@ -204,10 +205,12 @@ export default function App() {
                 <button className={`tab ${bottom === "qml" ? "tab-on" : ""}`} onClick={() => setBottom("qml")}>QML · RBS / SBR</button>
                 <button className={`tab ${bottom === "crt" ? "tab-on" : ""}`} onClick={() => setBottom("crt")}>CRT cockpit</button>
                 <button className={`tab ${bottom === "bias" ? "tab-on" : ""} !border-gold-500/60 !text-gold-400`} onClick={() => setBottom("bias")}>⚖ Bias meter 14</button>
+                <button className={`tab ${bottom === "book" ? "tab-on" : ""} !border-emerald-500/60 !text-emerald-300`} onClick={() => setBottom("book")}>📗 Order book</button>
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "bias" ? <BiasPanel tf={tf} candles={candles} analysis={analysis} />
+              {bottom === "book" ? <BookPanel />
+                : bottom === "bias" ? <BiasPanel tf={tf} candles={candles} analysis={analysis} />
                 : bottom === "crt" ? <CrtCockpit tick={storyTick} />
                 : bottom === "qml" ? <QmlPanel tick={storyTick} />
                 : bottom === "footprint" ? <FootprintPanel tick={storyTick} />
