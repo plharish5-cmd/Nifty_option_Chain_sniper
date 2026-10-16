@@ -54,19 +54,23 @@ function Row({ tf, b }: { tf: string; b?: TfBlock }) {
   const name = tf === "D" ? "Daily" : tf === "W" ? "Weekly" : "Monthly";
   const sub = tf === "D" ? "intraday · 5m" : tf === "W" ? "swing · 1h" : "positional · 1d";
   return (
-    <div className="border-t border-ink-700 py-1 first:border-0"
+    <div className="cursor-help border-t border-ink-700 py-1 first:border-0"
       onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      {/* line 1: name · trend badge · delta (right) */}
       <div className="flex items-center gap-2">
-        <span className="w-[54px] shrink-0 font-semibold text-slate-200">{name}</span>
+        <span className="w-[58px] shrink-0 font-semibold text-slate-100">{name}</span>
         <span className={`rounded px-1.5 py-[1px] text-[10px] font-bold ring-1 ${trendBg(b?.trend?.status)} ${trendCls(b?.trend?.status)}`}>
           {b?.trend?.status ?? "—"}</span>
-        <span className="num text-slate-300">ATR <b className="text-slate-100">{b?.atr ?? "—"}</b></span>
-        <span className={`num ${volCls(b?.volatility)}`}>{volIcon(b?.volatility)}</span>
         {b?.delta_dir && <span className={`num ml-auto ${b.delta_dir === "BUY" ? "text-bull-400" : b.delta_dir === "SELL" ? "text-bear-400" : "text-slate-500"}`}>
           Δ{(b.delta10 ?? 0) > 0 ? "+" : ""}{b.delta10}</span>}
       </div>
-      <div className="pl-[54px] text-[10px] text-slate-500">{sub}{tf === "M" && (b?.bars ?? 99) < 50 ? ` · ${b?.bars}-sess*` : ""}</div>
-      {open && <div className="mt-0.5 rounded bg-ink-850/80 px-1.5 py-1 text-[11px] leading-snug text-amber-200">▸ {guide(tf, b)}</div>}
+      {/* line 2: atr · volatility · horizon */}
+      <div className="num mt-0.5 flex items-center gap-2 pl-[58px] text-[10px] text-slate-500">
+        <span>ATR <b className="text-slate-300">{b?.atr ?? "—"}</b></span>
+        <span className={volCls(b?.volatility)}>{volIcon(b?.volatility)}</span>
+        <span className="text-slate-600">{sub}{tf === "M" && (b?.bars ?? 99) < 50 ? ` · ${b?.bars}-sess*` : ""}</span>
+      </div>
+      {open && <div className="mt-1 rounded bg-amber-950/60 px-1.5 py-1 text-[11px] leading-snug text-amber-200 ring-1 ring-amber-500/20">▸ {guide(tf, b)}</div>}
     </div>
   );
 }
@@ -78,13 +82,13 @@ export default function MtfPanel() {
 
   if (!d) return null;
   if (!d.available) return (
-    <div className="pointer-events-auto rounded bg-[#060b16]/90 px-2 py-1 text-[10.5px] text-slate-400 ring-1 ring-white/5">
+    <div className="pointer-events-auto rounded bg-[#070b12] px-2 py-1 text-[10.5px] text-slate-400 ring-1 ring-white/10 shadow-xl">
       📊 MTF — {d.message || d.error || "waiting for futures feed"}</div>
   );
 
   // collapsed = one summary pill
   if (!open) return (
-    <button onClick={toggle} className="pointer-events-auto rounded bg-[#060b16]/90 px-2 py-1 text-[10.5px] ring-1 ring-gold-500/30">
+    <button onClick={toggle} className="pointer-events-auto rounded bg-[#070b12] px-2 py-1 text-[10.5px] ring-1 ring-gold-500/40 shadow-xl">
       <span className="font-semibold text-gold-400">▸ MTF</span>
       <span className="ml-1.5"><span className={trendCls(d.D?.trend?.status)}>D·{d.D?.trend?.status?.[0] ?? "—"}</span>{" "}
         <span className={trendCls(d.W?.trend?.status)}>W·{d.W?.trend?.status?.[0] ?? "—"}</span>{" "}
@@ -94,7 +98,7 @@ export default function MtfPanel() {
 
   const conf = (d.confluence ?? []).slice(0, 3);
   return (
-    <div className="pointer-events-auto w-[320px] rounded-lg bg-[#060b16]/92 px-2.5 py-1.5 text-[11px] leading-snug ring-1 ring-gold-500/30 shadow-xl">
+    <div className="pointer-events-auto w-[320px] rounded-lg bg-[#070b12] px-2.5 py-1.5 text-[11px] leading-snug ring-1 ring-gold-500/40 shadow-2xl">
       <div className="flex items-baseline justify-between">
         <button onClick={toggle} className="font-semibold text-gold-400">▾ Multi-Timeframe</button>
         <span className="num text-slate-400">spot <b className="text-slate-100">{d.spot?.toLocaleString("en-IN")}</b></span>
