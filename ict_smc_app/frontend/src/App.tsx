@@ -228,7 +228,7 @@ export default function App() {
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "auto" ? <AutoPilotPanel ap={ap} />
+              {bottom === "auto" ? <AutoPilotPanel ap={ap} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} />
                 : bottom === "book" ? <BookPanel />
                 : bottom === "bias" ? <BiasPanel tf={tf} candles={candles} analysis={analysis} />
                 : bottom === "crt" ? <CrtCockpit tick={storyTick} />
