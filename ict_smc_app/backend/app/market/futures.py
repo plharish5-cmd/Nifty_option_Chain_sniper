@@ -34,6 +34,7 @@ from .candles import session_filter
 log = logging.getLogger("futures")
 
 SEC = "FUT"
+SEC2 = "FUT2"   # the NEXT-month NIFTY future, recorded REST-only for Oct+Nov volume aggregation (no live packet / no connection slot)
 SCRIP_MASTER = "https://images.dhan.co/api-data/api-scrip-master.csv"
 CACHE = config.DATA_DIR / "scrip_master_futidx_v2.csv"     # NIFTY- and BANKNIFTY- FUTIDX rows
 BN_SEC = "BNFUT"
@@ -146,6 +147,40 @@ async def resolve(rest, index_close: float, prefix: str = "NIFTY-") -> Tuple[Opt
         lines.append(f"rollover: {pick['symbol']} traded more today, {days_left} day(s) before the front expiry")
     pick["why"] = "; ".join(lines)
     return pick, pick["why"]
+
+
+async def resolve_second(rest, index_close: float, prefix: str = "NIFTY-") -> Tuple[Optional[Dict[str, Any]], str]:
+    """The NEXT-month contract after the front month (for Oct+Nov aggregation). REST only — no live packet.
+    Returns ({sid, symbol, expiry, basis}, why) or (None, why). Never raises."""
+    try:
+        cands = await load_master(prefix)
+    except Exception as e:                                   # noqa: BLE001
+        return None, f"scrip master: {str(e)[:120]}"
+    if len(cands) < 2:
+        return None, "no next-month contract listed yet"
+    c = cands[1]                                             # second-nearest expiry (load_master is expiry-sorted)
+    try:
+        rows = await _today_rows(rest, c["sid"])
+    except Exception as e:                                   # noqa: BLE001
+        return None, f"{c['symbol']}: fetch failed — {str(e)[:80]}"
+    if not rows:
+        return None, f"{c['symbol']}: no candles yet"
+    last = rows[-1]["c"]
+    basis = round(last - index_close, 2) if index_close else None
+    return dict(c, basis=basis), f"{c['symbol']} ({c['sid']}): {last:,.1f}, basis {basis}"
+
+
+def combined_1m(oct_mapped: List[Dict[str, float]], nov_mapped: List[Dict[str, float]]) -> List[Dict[str, float]]:
+    """Sum Oct + Nov volume per minute (both already basis-adjusted to the index). OHLC from Oct (the primary,
+    liquid leg); volume = oct.v + nov.v. Minutes present in only one leg are kept as-is."""
+    by = {int(r["ts"]): dict(r) for r in oct_mapped}
+    for r in nov_mapped:
+        t = int(r["ts"]); b = by.get(t)
+        if b is None:
+            by[t] = dict(r)
+        else:
+            b["v"] = float(b.get("v") or 0) + float(r.get("v") or 0)
+    return [by[t] for t in sorted(by)]
 
 
 # ── candles ──────────────────────────────────────────────────────────────────

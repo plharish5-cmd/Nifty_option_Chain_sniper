@@ -32,6 +32,7 @@ from ..strikes.selector import StrikeBook, select_strikes
 from ..delta import confluence
 from ..delta import engine as delta_engine
 from ..engine import auction as auction_mod
+from ..engine import qml_sbr as qml_mod
 from ..engine import volume as vol_mod
 from ..market import activity as act_mod
 from ..market import futures as fut_mod
@@ -69,6 +70,8 @@ class Hub:
         self.fut_status = "not resolved yet"
         self.bn: Optional[Dict[str, Any]] = None
         self.bn_status = "not resolved yet"
+        self.fut2: Optional[Dict[str, Any]] = None          # next-month future (REST-only, for Oct+Nov aggregation)
+        self.fut2_status = "not resolved yet"
         self.recorder = FutRecorder(lambda: self.candles.last_price.get(self.nifty))
         self.activity = act_mod.Activity()
         self.ivtrack = iv_mod.IVTrack()
@@ -193,6 +196,28 @@ class Hub:
             await self.feed.subscribe_full("NSE_FNO", pick["sid"])
             log.info("NIFTY future: %s — %s", self.fut_status, why)
         await self.setup_banknifty()
+        await self.setup_second_future()
+
+    async def setup_second_future(self) -> None:
+        """Next-month NIFTY future — REST only (no live packet → zero connection slots). ADDITIVE: any failure here
+        is swallowed and never touches the active contract or the rest of the desk. Stored under FUT2."""
+        if not config.rule("futures", "second_future", True):
+            self.fut2_status = "disabled (futures.second_future)"
+            return
+        try:
+            q = self.quote()
+            pick, why = await fut_mod.resolve_second(self.rest, float(q.get("spot") or 0))
+            if not pick:
+                self.fut2_status = f"unavailable — {why}"
+                return
+            changed = not self.fut2 or self.fut2["sid"] != pick["sid"]
+            self.fut2 = pick
+            days, _ = (fut_mod.history_days(fut_mod.SEC2, pick["sid"], int(config.rule("futures", "backfill_days", 35)))
+                       if changed else (1, ""))
+            n = await fut_mod.refresh(self.rest, pick["sid"], days, fut_mod.SEC2)
+            self.fut2_status = f"{pick['symbol']} (id {pick['sid']}) · {n} 1m candles · basis {pick.get('basis')}"
+        except Exception as e:                               # noqa: BLE001 — never break the desk over the aggregation leg
+            self.fut2_status = f"error: {str(e)[:120]}"
 
     async def setup_banknifty(self) -> None:
         """BANKNIFTY current-month future — OI build-up as confirmation (REST only, 1 call a minute)."""
@@ -523,6 +548,21 @@ class Hub:
         except Exception as e:                               # noqa: BLE001 — never lose the chart over the auction read
             log.exception("auction %s failed", tf)
             j["auction"] = None
+        # QML · RBS / SBR on the line chart — observation only (never trades, never touches A/B/C/D)
+        try:
+            Nn = len(an.bars)
+            Tq = lambda i: chart_time(int(an.bars.ts[min(max(i, 0), Nn - 1)]))   # noqa: E731
+            q = qml_mod.compute(an.bars, an.atr, int(E["pivot_n"].get(tf, 2)), Tq, hm, config.rules().get("qml", {}))
+            cur = self.book.current() or {}
+            for s in q["setups"]:
+                rec = cur.get("PE" if s["dir"] == "bear" else "CE") or {}
+                ins = rec.get("instrument") or {}
+                s["strike"] = (f"{ins.get('expiry', '')} {int(ins['strike'])} {'PE' if s['dir'] == 'bear' else 'CE'}"
+                               if ins.get("strike") is not None else None)
+            j["qml"] = q
+        except Exception as e:                               # noqa: BLE001 — never lose the chart over this layer
+            log.exception("qml %s failed", tf)
+            j["qml"] = {"setups": [], "markers": [], "summary": f"QML error: {e}"}
         self.json[tf] = j
         self.recompute_flow(tf)
 
