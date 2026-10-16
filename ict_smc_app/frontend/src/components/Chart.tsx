@@ -53,6 +53,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const [nodesV, setNodesV] = useState<NodesView | null>(null);
   const cvdS = useRef<ISeriesApi<"Baseline"> | null>(null);
   const [walls, setWalls] = useState<Wall[]>([]);
+  const [bookEv, setBookEv] = useState<{ ts: number; price: number; side: string; kind: string; qty: number; why: string }[]>([]);
   const wallPrevRef = useRef<{ status: Record<string, Wall["status"]>; topCE: number | null; topPE: number | null } | null>(null);
   const onSignalRef = useRef(onSignal); onSignalRef.current = onSignal;
   const marketOpenRef = useRef(marketOpen); marketOpenRef.current = marketOpen;
@@ -530,6 +531,15 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     zz.current.setData(a && layers.swings ? dedupe(a.zigzag).map((p) => ({ time: p.time as UTCTimestamp, value: p.price })) : []);
   }, [analysis, layers, candles, smtMarks, ocActs]);
 
+  // ── DOM book events (for the hover confirm/warn line), every 6 s ──
+  useEffect(() => {
+    if (!(layers.walls || sig?.on)) { setBookEv([]); return; }
+    let dead = false;
+    const go = () => fetch("/api/book").then((r) => r.json()).then((j) => { if (!dead && j?.available) setBookEv(j.events || []); }).catch(() => {});
+    go(); const id = window.setInterval(go, 6000);
+    return () => { dead = true; window.clearInterval(id); };
+  }, [layers.walls, sig?.on]);
+
   // ── Order-flow Pro: OI walls (real chain, every 60 s) ──
   useEffect(() => {
     if (!layers.walls) setWalls([]);
@@ -816,6 +826,23 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const gLast = layers.gamma && emaArr ? (() => { const i = candles.map((c) => c.closed !== false).lastIndexOf(true);
     return i >= 60 ? confirm3(i, candles, emaArr[0], emaArr[1], emaArr[2], rvMap, gexMap, analysis?.atr ?? 20) : null; })() : null;
   const nread = hover && layers.nodes ? nodesRead(hover.t, series.current?.coordinateToPrice(hover.y) ?? null, nodesV, nEntries, candles[candles.length - 1]?.close ?? null) : [];
+  // DOM book confirm / warn at the hovered price (last 5 min of events near this level)
+  const bookNote: { ok: boolean; txt: string } | null = (() => {
+    const hp = hover ? (series.current?.coordinateToPrice(hover.y) ?? null) : null;
+    if (hp == null || !bookEv.length) return null;
+    const now = Date.now() / 1000, tol = Math.max(5, (analysis?.atr ?? 20) * 0.25);
+    const near = bookEv.filter((e) => Math.abs(e.price - hp) <= tol && now - e.ts < 300);
+    if (!near.length) return null;
+    const spoof = near.find((e) => e.kind === "SPOOF");
+    const pulls = near.filter((e) => e.kind === "PULLED");
+    const walls = near.filter((e) => e.kind === "WALL");
+    if (spoof) return { ok: false, txt: spoof.why };
+    if (pulls.length >= 2) return { ok: false, txt: `this level was pulled ${pulls.length}× in the last few min — spoofed, don't lean on it` };
+    if (walls.length) { const w = [...walls].sort((a, b) => b.qty - a.qty)[0];
+      return { ok: true, txt: `real ${w.side} wall here — ${Math.round(w.qty / 65)} lots held 20s+, genuine size behind this level` }; }
+    if (pulls.length === 1) return { ok: false, txt: `${Math.round(pulls[0].qty / 65)} lots pulled here once — watch for a fake` };
+    return null;
+  })();
   const ob = hover && layers.oi ? (analysis?.volume?.oi_line ?? []).find((x) => x.time === hover.t) : undefined;
   const OI_READ: Record<string, [string, string, string]> = {
     "long build-up": ["🟢 LONG BUILD-UP", "price ▲ + OI ▲ — fresh buyers opening longs. Real buying → CE bias, trust the move.", "text-bull-400"],
@@ -969,6 +996,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
               <div className="text-[12px] text-amber-200/80">{d.hit ? "Draw complete — book profit / trail SL (filled gaps often react here)." : "Active draw — price is being pulled toward this zone; it's the next magnet."}</div>
             </div>;
           })()}
+          {bookNote && <div className={`mt-1.5 rounded px-1.5 py-1 text-[12.5px] ${bookNote.ok ? "bg-emerald-950/40 text-emerald-300 ring-1 ring-emerald-500/30" : "bg-amber-950/40 text-amber-300 ring-1 ring-amber-500/30"}`}>
+            <b>📖 Book {bookNote.ok ? "confirms" : "warns"}:</b> {bookNote.txt}</div>}
           {gconf && <div className={`mt-1.5 rounded-md border p-1.5 ${gconf.ok ? "border-violet-400 bg-violet-950/40" : "border-slate-600 bg-ink-850/60"}`}>
             <div className={`text-[13.5px] font-bold ${gconf.ok ? "text-violet-200" : "text-slate-300"}`}>γ {gconf.head}</div>
             {gconf.checks.map((x, i) => <div key={i} className={`text-[13px] ${x.pass ? "text-bull-400" : "text-bear-400"}`}>{x.pass ? "✓" : "✗"} <b>{x.name}</b> — {x.why}</div>)}
