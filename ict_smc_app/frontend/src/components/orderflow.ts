@@ -11,7 +11,8 @@ import type {
 import { FP_SCALE, kfmt, type FpBar } from "./footprint";
 
 type Target = Parameters<IPrimitivePaneRenderer["draw"]>[0];
-export type Wall = { p: number; side: "CE" | "PE"; oi: number; chg: number; rank: number; share: number };
+export type Wall = { p: number; side: "CE" | "PE"; oi: number; chg: number; rank: number; share: number;
+  status: "building" | "holding" | "unwinding"; fresh: number };
 export type Bubble = { time: number; price: number; rvol: number; bull: boolean; vol: number; delta: number | null; absorbed: boolean };
 export type Stack = { time: number; lo: number; hi: number; bull: boolean; until: number | null };
 export const BIG_X = 2;              // RVOL that counts as a "big trade" candle
@@ -70,17 +71,22 @@ class BandView implements IPrimitivePaneView {
         const y = series.priceToCoordinate(w.p);
         if (y === null || y < -20 || y > mediaSize.height + 20) continue;
         const ce = w.side === "CE", top = w.rank === 1;
+        const building = w.status === "building", unwinding = w.status === "unwinding";
         const h = Math.max(4, 4 + 14 * w.share);                   // thicker = more OI
         const rgb = ce ? "239,68,68" : "34,197,94";
+        const k = building ? 1.4 : unwinding ? 0.45 : 1;           // ΔOI drives brightness: building = bold, unwinding = faded
         const g = ctx.createLinearGradient(0, 0, mediaSize.width, 0);
-        g.addColorStop(0, `rgba(${rgb},0.04)`); g.addColorStop(0.75, `rgba(${rgb},${0.18 + 0.3 * w.share})`); g.addColorStop(1, `rgba(${rgb},${0.35 + 0.4 * w.share})`);
+        g.addColorStop(0, `rgba(${rgb},${0.04 * k})`); g.addColorStop(0.75, `rgba(${rgb},${(0.18 + 0.3 * w.share) * k})`); g.addColorStop(1, `rgba(${rgb},${(0.35 + 0.4 * w.share) * k})`);
         ctx.fillStyle = g; ctx.fillRect(0, y - h / 2, mediaSize.width, h);
-        ctx.strokeStyle = `rgba(${rgb},${top ? 0.95 : 0.6})`; ctx.lineWidth = top ? 2 : 1;
-        ctx.setLineDash(top ? [] : [6, 4]); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(mediaSize.width, y); ctx.stroke(); ctx.setLineDash([]);
-        const txt = `${ce ? "🧱 CE WALL" : "🧱 PE WALL"} ${w.p.toLocaleString("en-IN")} · ${crore(w.oi)}${w.chg ? ` ${w.chg > 0 ? "▲+" : "▼"}${crore(Math.abs(w.chg))}` : ""}${top ? (ce ? " · resistance" : " · support") : ""}`;
+        // unwinding walls are outlined in amber (about to break); building walls get a bold solid line
+        ctx.strokeStyle = unwinding ? "rgba(251,191,36,0.9)" : `rgba(${rgb},${top || building ? 0.95 : 0.6})`;
+        ctx.lineWidth = building ? 2.5 : top ? 2 : 1;
+        ctx.setLineDash(unwinding ? [10, 5] : (top || building) ? [] : [6, 4]); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(mediaSize.width, y); ctx.stroke(); ctx.setLineDash([]);
+        const tag = building ? " ⬆BUILDING" : unwinding ? " ⚠UNWINDING" : "";
+        const txt = `${ce ? "🧱 CE WALL" : "🧱 PE WALL"} ${w.p.toLocaleString("en-IN")} · ${crore(w.oi)}${w.chg ? ` ${w.chg > 0 ? "▲+" : "▼"}${crore(Math.abs(w.chg))}${w.fresh ? ` ${w.fresh > 0 ? "+" : ""}${Math.round(w.fresh * 100)}%` : ""}` : ""}${tag}${top ? (ce ? " · resistance" : " · support") : ""}`;
         ctx.font = F(top ? 10.5 : 9.5); ctx.textAlign = "right"; ctx.textBaseline = "middle";
         const tw = ctx.measureText(txt).width + 10, x1 = mediaSize.width - 8;
-        ctx.fillStyle = ce ? "rgba(127,29,29,0.92)" : "rgba(20,83,45,0.92)";
+        ctx.fillStyle = unwinding ? "rgba(120,53,15,0.95)" : building ? (ce ? "rgba(153,27,27,0.96)" : "rgba(22,101,52,0.96)") : ce ? "rgba(127,29,29,0.92)" : "rgba(20,83,45,0.92)";
         ctx.fillRect(x1 - tw, y - 8 * S, tw, 16 * S);
         ctx.fillStyle = "#ffffff"; ctx.fillText(txt, x1 - 5, y);
       }
@@ -166,7 +172,13 @@ export function buildWalls(rows: { strike: number; ce: { oi: number; oi_chg: num
     const list = near.map((r) => ({ p: r.strike, oi: side === "CE" ? r.ce.oi : r.pe.oi, chg: side === "CE" ? r.ce.oi_chg : r.pe.oi_chg }))
       .filter((x) => (side === "CE" ? x.p >= spot - spot * 0.003 : x.p <= spot + spot * 0.003)).sort((a, b) => b.oi - a.oi).slice(0, 3);
     const mx = list[0]?.oi || 1;
-    return list.map((x, i) => ({ ...x, side, rank: i + 1, share: x.oi / mx } as Wall));
+    return list.map((x, i) => {
+      const fresh = x.oi > 0 ? x.chg / x.oi : 0;                          // fraction of this wall that is TODAY's net OI change
+      const status: Wall["status"] = x.chg > 0 && fresh >= 0.12 ? "building"   // writers piling in → barrier hardening
+        : x.chg < 0 && fresh <= -0.10 ? "unwinding"                        // writers covering → wall crumbling
+        : "holding";
+      return { ...x, side, rank: i + 1, share: x.oi / mx, status, fresh } as Wall;
+    });
   };
   return [...pick("CE"), ...pick("PE")];
 }
@@ -241,6 +253,11 @@ export function readAt(t: number, o: { fp: FpBar[]; bubbles: Bubble[]; walls: Wa
   // wall under the mouse
   let wall: string | undefined;
   if (o.px != null) { const w = o.walls.find((x) => Math.abs(x.p - o.px!) <= Math.max(3, atr * 0.15));
-    if (w) wall = `🧱 ${w.side} WALL ${w.p.toLocaleString("en-IN")} — ${crore(w.oi)} OI${w.chg ? ` (${w.chg > 0 ? "added" : "cut"} ${crore(Math.abs(w.chg))} today)` : ""}. ${w.side === "CE" ? "Call writers sell here → first test usually REJECTS. Buy CE only after a 5m close above + retest holds." : "Put writers sell here → first test usually BOUNCES. Buy PE only after a 5m close below + retest fails."}${w.chg < 0 ? " ⚠ OI being cut = the wall is weakening." : ""}`; }
+    if (w) { const dyn = w.status === "building"
+        ? ` 🟢 BUILDING (+${Math.round(w.fresh * 100)}% today) — writers piling in, the wall is HARDENING. Trust it: ${w.side === "CE" ? "fade into it / sell CE strength" : "buy the bounce off it"}.`
+        : w.status === "unwinding"
+        ? ` ⚠ UNWINDING (${Math.round(w.fresh * 100)}% today) — writers are COVERING, the wall is weakening. A break through is far more likely now; trade the breakout, don't fade.`
+        : ` ⚪ holding — OI steady, treat as a normal ${w.side === "CE" ? "resistance" : "support"} shelf.`;
+      wall = `🧱 ${w.side} WALL ${w.p.toLocaleString("en-IN")} — ${crore(w.oi)} OI${w.chg ? ` (${w.chg > 0 ? "added" : "cut"} ${crore(Math.abs(w.chg))} today)` : ""}. ${w.side === "CE" ? "Call writers sell here → first test usually REJECTS. Buy CE only after a 5m close above + retest holds." : "Put writers sell here → first test usually BOUNCES. Buy PE only after a 5m close below + retest fails."}${dyn}`; } }
   return { verdict, bull, bear, head, lines: L, plan, wall };
 }
