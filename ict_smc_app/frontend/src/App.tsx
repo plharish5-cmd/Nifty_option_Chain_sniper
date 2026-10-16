@@ -7,6 +7,7 @@ import Chart, { type Layers } from "./components/Chart";
 import { DragBar, FullPanel, PeceTable, WritersFlow, useStoredHeight } from "./components/OcLab";
 import SplitPane from "./components/SplitPane";
 import { AutoPilotPanel, useAutopilot } from "./components/AutoPilot";
+import WriterMap from "./components/WriterMap";
 import { Alerts, BiasGrid, Builds, Header, Paper, Signals } from "./components/Panels";
 import DeltaPanel from "./components/DeltaPanel";
 import AuctionPanel from "./components/AuctionPanel";
@@ -72,7 +73,7 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto">("paper");
+  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap">("paper");
   const [mainView, setMainView] = useState<"candles" | "writers" | "both">(() => { try { return (localStorage.getItem("ict_mainview") as "candles" | "writers" | "both") || "candles"; } catch { return "candles"; } });
   const switchMain = (v: "candles" | "writers" | "both") => { setMainView(v); try { localStorage.setItem("ict_mainview", v); } catch { /* */ } };
   const [chainTick, setChainTick] = useState(0);
@@ -225,10 +226,12 @@ export default function App() {
                 <button className={`tab ${bottom === "bias" ? "tab-on" : ""} !border-gold-500/60 !text-gold-400`} onClick={() => setBottom("bias")}>⚖ Bias meter 14</button>
                 <button className={`tab ${bottom === "book" ? "tab-on" : ""} !border-emerald-500/60 !text-emerald-300`} onClick={() => setBottom("book")}>📗 Order book</button>
                 <button className={`tab ${bottom === "auto" ? "tab-on" : ""} !border-cyan-500/60 !text-cyan-300`} onClick={() => setBottom("auto")}>🤖 Autopilot{ap.s.cfg.on ? " ●" : ""}</button>
+                <button className={`tab ${bottom === "wmap" ? "tab-on" : ""} !border-gold-500/60 !text-gold-400`} onClick={() => setBottom("wmap")}>🎯 Writer map</button>
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "auto" ? <AutoPilotPanel ap={ap} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} />
+              {bottom === "wmap" ? <WriterMap />
+                : bottom === "auto" ? <AutoPilotPanel ap={ap} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} />
                 : bottom === "book" ? <BookPanel />
                 : bottom === "bias" ? <BiasPanel tf={tf} candles={candles} analysis={analysis} />
                 : bottom === "crt" ? <CrtCockpit tick={storyTick} />
