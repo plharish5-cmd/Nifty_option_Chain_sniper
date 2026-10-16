@@ -19,7 +19,8 @@ export type Conf = { ok: boolean; side: "BUY" | "SELL" | null; checks: { name: s
   plan?: string; head: string };
 
 const F = (px: number) => `bold ${Math.round(px * FP_SCALE)}px Inter, system-ui, sans-serif`;
-const cr = (v: number) => `${v >= 0 ? "+" : "−"}${(Math.abs(v) / 1e7).toFixed(0)} Cr`;
+let GMAX = 1;
+const cr = (v: number) => `${v >= 0 ? "+" : "−"}${Math.round(100 * Math.abs(v) / GMAX)} %`;
 
 export function computeGex(rows: Row[], spot: number, lot = 65): GexMap | null {
   const near = rows.filter((r) => Math.abs(r.strike - spot) <= spot * 0.04 && (r.ce.gamma || r.pe.gamma)).sort((a, b) => a.strike - b.strike);
@@ -66,7 +67,7 @@ class MapV implements IPrimitivePaneView {
     const { series, map } = this.p; if (!series || !map) return;
     t.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       const W = mediaSize.width, axis = W - 150, half = 90;    // GEX bars around a zero axis near the right edge
-      const mx = Math.max(...map.strikes.map((s) => Math.abs(s.gex)), 1), cmx = Math.max(...map.strikes.map((s) => Math.abs(s.cum)), 1);
+      const mx = Math.max(...map.strikes.map((s) => Math.abs(s.gex)), 1); GMAX = mx; const cmx = Math.max(...map.strikes.map((s) => Math.abs(s.cum)), 1);
       ctx.strokeStyle = "rgba(148,163,184,0.5)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(axis, 0); ctx.lineTo(axis, mediaSize.height); ctx.stroke();
       const pts: [number, number][] = [];
       for (const s of map.strikes) {
@@ -80,9 +81,9 @@ class MapV implements IPrimitivePaneView {
       }
       ctx.strokeStyle = "#fde047"; ctx.lineWidth = 1.5; ctx.beginPath();
       pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
-      ctx.font = F(9); ctx.fillStyle = "#fde047"; ctx.textAlign = "center"; ctx.fillText("GEX (yellow = cumulative)", axis, 26);
+      ctx.font = F(9); ctx.fillStyle = "#fde047"; ctx.textAlign = "center"; ctx.fillText("GEX (yellow = cumulative)", axis, 62);
       ctx.fillStyle = map.regime === "positive" ? "#4ade80" : "#fb923c";
-      ctx.fillText(map.regime === "positive" ? "+γ PIN regime" : "−γ TREND regime", axis, 40);
+      ctx.fillText(map.regime === "positive" ? "+γ PIN regime" : "−γ TREND regime", axis, 76);
       // key levels across the chart
       for (const l of map.levels) {
         const y = series.priceToCoordinate(l.p); if (y === null) continue;
@@ -172,18 +173,29 @@ export function confirm3(i: number, cs: C[], e9: number[], e21: number[], e50: n
   return { ok, side, checks, level: lvl, plan, head };
 }
 
-export function gammaHits(cs: C[], rv: Map<number, number | null>, map: GexMap | null, atr: number) {
-  if (!map || cs.length < 60) return [];
-  const e9 = emas(cs, 9), e21 = emas(cs, 21), e50 = emas(cs, 50);
-  const out: { time: number; side: "BUY" | "SELL"; px: number }[] = [];
-  const todayOnly = new Date(cs[cs.length - 1].time * 1000).toISOString().slice(0, 10);
-  for (let i = 60; i < cs.length; i++) {
-    if (cs[i].closed === false) continue;
-    if (new Date(cs[i].time * 1000).toISOString().slice(0, 10) !== todayOnly) continue;   // today's chain only — no look-ahead
-    const r = confirm3(i, cs, e9, e21, e50, rv, map, atr);
-    if (r.ok && r.side) out.push({ time: cs[i].time, side: r.side, px: r.side === "BUY" ? cs[i].low : cs[i].high });
+// Badges are RECORDED LIVE: only the latest closed candle is checked against the chain as it is now, and a pass is
+// saved for the day. Re-checking old candles with a later chain would be look-ahead, so it never happens.
+const HK = "ict_gamma_hits";
+type Hit = { time: number; side: "BUY" | "SELL"; px: number };
+const loadHits = (): Record<string, Hit[]> => { try { return JSON.parse(localStorage.getItem(HK) || "{}"); } catch { return {}; } };
+export function gammaHits(cs: C[], rv: Map<number, number | null>, map: GexMap | null, atr: number, live: boolean): Hit[] {
+  const all = loadHits();
+  const day = cs.length ? new Date(cs[cs.length - 1].time * 1000).toISOString().slice(0, 10) : "";
+  const today = all[day] ?? [];
+  if (live && map && cs.length >= 60) {
+    const i = cs.map((c) => c.closed !== false).lastIndexOf(true);
+    if (i >= 60 && !today.some((h) => h.time === cs[i].time)) {
+      const e9 = emas(cs, 9), e21 = emas(cs, 21), e50 = emas(cs, 50);
+      const r = confirm3(i, cs, e9, e21, e50, rv, map, atr);
+      const gap = 6 * ((cs[1]?.time ?? 300) - (cs[0]?.time ?? 0));
+      if (r.ok && r.side && !today.some((h) => h.side === r.side && cs[i].time - h.time < gap)) {
+        today.push({ time: cs[i].time, side: r.side, px: r.side === "BUY" ? cs[i].low : cs[i].high });
+        const keep = Object.fromEntries(Object.entries({ ...all, [day]: today }).sort().slice(-10));
+        try { localStorage.setItem(HK, JSON.stringify(keep)); } catch { /* ignore */ }
+      }
+    }
   }
-  return out;
+  return Object.values(all).flat().concat(all[day] ? [] : today);
 }
 
 export const GLEVEL_NAME = LCOL;

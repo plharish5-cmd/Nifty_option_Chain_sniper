@@ -551,7 +551,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   // ── gamma map + 3 confirmations ──
   const rvMap = useMemo(() => new Map((analysis?.volume?.bars ?? []).map((b) => [b.time, b.rvol])), [analysis]);
   const emaArr = useMemo(() => layers.gamma && candles.length ? [emas(candles, 9), emas(candles, 21), emas(candles, 50)] : null, [layers.gamma, candles]);
-  const gHits = useMemo(() => layers.gamma ? gammaHits(candles, rvMap, gexMap, analysis?.atr ?? 20) : [], [layers.gamma, candles, rvMap, gexMap, analysis]);
+  const gHits = useMemo(() => layers.gamma ? gammaHits(candles, rvMap, gexMap, analysis?.atr ?? 20, marketOpen) : [], [layers.gamma, candles, rvMap, gexMap, analysis, marketOpen]);
   useEffect(() => { gmPrim.current.set(layers.gamma ? gexMap : null, gHits); }, [layers.gamma, gexMap, gHits]);
   useEffect(() => {
     const ch = chart.current; if (!ch) return;
@@ -897,6 +897,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             <div className={`text-[13.5px] font-bold ${gconf.ok ? "text-violet-200" : "text-slate-300"}`}>γ {gconf.head}</div>
             {gconf.checks.map((x, i) => <div key={i} className={`text-[13px] ${x.pass ? "text-bull-400" : "text-bear-400"}`}>{x.pass ? "✓" : "✗"} <b>{x.name}</b> — {x.why}</div>)}
             {gconf.plan && <div className="text-[13px] font-semibold text-cyan-200">🎯 {gconf.plan} — paper first.</div>}
+            <div className="text-[12px] text-amber-200/80">✓✓✓ badges are recorded live only — this hover re-checks with the CURRENT chain, so on past candles treat it as study, not as a signal you had.</div>
             {gexMap && <div className="text-[12px] text-slate-400">Regime: {gexMap.regime === "positive" ? "+γ (pinning — price drawn to the big levels, fades work)" : "−γ (dealers chase — moves accelerate through levels)"}{gexMap.flip ? ` · flip ${gexMap.flip}` : ""}</div>}
           </div>}
           {nread.length > 0 && <div className="mt-1.5 rounded-md border border-yellow-400/40 bg-yellow-950/20 p-1.5">
