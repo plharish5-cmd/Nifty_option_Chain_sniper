@@ -8,7 +8,8 @@ import type { AlertRow, Candle } from "../api";
 export type AutoCfg = { on: boolean; maxOpen: 1 | 3; rCapLoss: number; rCapWin: number; eodHHMM: number; rr: number;
   triggers: Record<string, boolean>; sound: boolean; premium: number; delta: number };
 export type AutoPos = { id: number; t0: number; side: "BUY" | "SELL"; kind: string; label: string;
-  entry: number; sl: number; tp: number; risk: number; status: "OPEN" | "TP" | "SL" | "REV" | "EOD"; exit?: number; r?: number; t1?: number; desk?: number | null; entryPrem?: number };
+  entry: number; sl: number; tp: number; risk: number; status: "OPEN" | "TP" | "SL" | "REV" | "EOD"; exit?: number; r?: number; t1?: number; desk?: number | null; entryPrem?: number;
+  opt?: "CE" | "PE"; strike?: number; mfe?: number; mae?: number };   // CE/PE bucket + best(MFE)/worst(MAE) excursion in points
 export type AutoState = { day: string; cfg: AutoCfg; open: AutoPos[]; closed: AutoPos[]; stopped: string | null; seq: number };
 
 export const DEFAULT_CFG: AutoCfg = {
@@ -79,7 +80,7 @@ export function openFromSignal(s: AutoState, sig: { key: string; side: "BUY" | "
   }
   return { id: s.seq, t0: last.time, side: sig.side, kind: a.kind, label: a.title.slice(0, 48),
     entry: +entry.toFixed(1), sl: +sl.toFixed(1), tp: +tp.toFixed(1), risk: +risk.toFixed(1), status: "OPEN", desk: null,
-    entryPrem: s.cfg.premium };
+    entryPrem: s.cfg.premium, opt: buy ? "CE" : "PE", strike: Math.round(entry / 50) * 50, mfe: 0, mae: 0 };
 }
 
 // evaluate every open position against a newly CLOSED candle → close any that hit TP/SL; returns closed ids
@@ -88,6 +89,11 @@ export function stepCandle(s: AutoState, c: Candle): AutoPos[] {
   for (const p of s.open) {
     if (c.time <= p.t0) continue;                                        // only candles AFTER entry
     const buy = p.side === "BUY";
+    // best (MFE) / worst (MAE) excursion in points, from this candle's high/low
+    const fav = buy ? c.high - p.entry : p.entry - c.low;
+    const adv = buy ? p.entry - c.low : c.high - p.entry;
+    p.mfe = Math.max(p.mfe ?? 0, +fav.toFixed(1));
+    p.mae = Math.max(p.mae ?? 0, +adv.toFixed(1));
     let hit: "TP" | "SL" | null = null, px = 0;
     if (buy) { if (c.low <= p.sl) { hit = "SL"; px = p.sl; } else if (c.high >= p.tp) { hit = "TP"; px = p.tp; } }
     else { if (c.high >= p.sl) { hit = "SL"; px = p.sl; } else if (c.low <= p.tp) { hit = "TP"; px = p.tp; } }

@@ -81,7 +81,7 @@ export function useAutopilot() {
       const eod = stepEOD(next, spot ?? last.close, last.time);
       next.open = []; next.closed = [...eod, ...next.closed]; next.stopped = next.stopped ?? "EOD 15:15 — flat for the day"; eod.forEach((p) => logClosedToDesk(p, cur.cfg.delta)); if (cur.cfg.sound) beep("exit");
     }
-    if (tp.length || next.open.length !== cur.open.length) commit(next);
+    if (tp.length || next.open.length !== cur.open.length || next.open.length) commit(next);  // also persists MFE/MAE updates
   }, [commit]);
 
   return { s, setCfg, reset, onSignal, onCandles };
@@ -138,7 +138,7 @@ export function AutoPilotPanel({ ap, spot = null }: { ap: ReturnType<typeof useA
           ? <div className="py-6 text-center text-slate-500">{s.cfg.on ? "Armed — waiting for the next actionable signal…" : "Switch ON to let it paper-trade every signal. It auto-exits on TP / SL / reversal / EOD."}</div>
           : <table className="w-full num">
             <thead><tr className="text-left text-[10px] uppercase tracking-wide text-slate-500">
-              <th className="py-1">Side</th><th>Signal</th><th>Entry</th><th>SL</th><th>TP</th><th>LTP / Exit</th><th>P&L ₹</th><th>R</th><th>Status</th></tr></thead>
+              <th className="py-1">Side</th><th>Bucket</th><th>Signal</th><th>Entry</th><th>SL</th><th>TP</th><th>LTP / Exit</th><th>P&L ₹</th><th>R</th><th>Best ▲ / Worst ▼</th><th>Status</th></tr></thead>
             <tbody>
               {[...s.open, ...s.closed].map((p) => <Row key={p.id} p={p} spot={spot} />)}
             </tbody>
@@ -162,13 +162,23 @@ function Row({ p, spot }: { p: AutoPos; spot: number | null }) {
   const live = open ? liveOf(p, spot) : null;
   const showR = open ? live?.r ?? null : p.r ?? null;
   const rs = open ? live?.rs ?? null : (p.exit != null ? Math.round((p.r ?? 0) * p.risk * LOT) : null);
+  // best (MFE) / worst (MAE) in points — for an open trade, blend the stored value with the live excursion
+  const liveFav = open && spot != null ? (p.side === "BUY" ? spot - p.entry : p.entry - spot) : -Infinity;
+  const liveAdv = open && spot != null ? (p.side === "BUY" ? p.entry - spot : spot - p.entry) : -Infinity;
+  const best = Math.max(p.mfe ?? 0, liveFav);
+  const worst = Math.max(p.mae ?? 0, liveAdv);
+  const bestRs = Math.round(best * LOT), worstRs = Math.round(worst * LOT);
   return <tr className="border-t border-ink-800">
     <td className="py-1"><span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${p.side === "BUY" ? "bg-bull-900/70 text-bull-400" : "bg-bear-900/70 text-bear-400"}`}>{p.side}</span></td>
-    <td className="max-w-[200px] truncate text-slate-300" title={p.label}>{p.label}</td>
+    <td><span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${p.opt === "CE" ? "bg-bull-950/70 text-bull-300 ring-1 ring-bull-500/30" : "bg-bear-950/70 text-bear-300 ring-1 ring-bear-500/30"}`}>{p.opt ?? "—"} {p.strike ?? ""}</span></td>
+    <td className="max-w-[170px] truncate text-slate-300" title={p.label}>{p.label}</td>
     <td className="text-gold-400">{p.entry}</td><td className="text-bear-400">{p.sl}</td><td className="text-bull-400">{p.tp}</td>
     <td className="text-slate-200">{open ? (spot != null ? <span className="text-cyan-300">{spot.toFixed(0)}<span className="text-[9px] text-slate-500"> live</span></span> : "…") : (p.exit ?? "—")}</td>
     <td className={rCls(rs)}>{rs != null ? `${rs > 0 ? "+" : ""}₹${Math.abs(rs).toLocaleString("en-IN")}` : "—"}</td>
     <td className={rCls(showR)}>{showR != null ? `${showR > 0 ? "+" : ""}${showR}R` : "—"}</td>
+    <td className="whitespace-nowrap"><span className="text-bull-400">▲{best > 0 ? `+${best.toFixed(0)}` : best.toFixed(0)}</span>
+      <span className="text-slate-600"> / </span><span className="text-bear-400">▼−{worst > 0 ? worst.toFixed(0) : 0}</span>
+      <div className="text-[9px] text-slate-500">₹{bestRs.toLocaleString("en-IN")} / −₹{Math.max(0, worstRs).toLocaleString("en-IN")}</div></td>
     <td><span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${stBadge[p.status]}`}>{open && live ? (live.rs >= 0 ? "▲ " : "▼ ") : ""}{p.status}</span></td>
   </tr>;
 }
