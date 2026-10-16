@@ -19,6 +19,7 @@ import { EV_LAYER, GUIDE, KIND_ACT } from "./guide";
 import { confluence, FootprintPrimitive, FP_SCALE, setFpScale, FP_MEANING, FP_WORD, kfmt, type FpBar } from "./footprint";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
+import MtfPanel from "./MtfPanel";
 
 export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean };
 
@@ -857,6 +858,10 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             ))}
           </div>
         )}
+      </div>
+      {/* Multi-timeframe panel (bottom-left) */}
+      <div className="pointer-events-none absolute bottom-9 left-2 z-10 flex">
+        <MtfPanel />
       </div>
       {ofNow && <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2">
         <div className={`flex max-w-[560px] items-center gap-2 rounded-lg px-3 py-1.5 shadow-xl ring-2 ${ofNow.verdict === "BUY" ? "bg-bull-900/90 ring-bull-400" : ofNow.verdict === "SELL" ? "bg-bear-900/90 ring-bear-400" : "bg-ink-850/90 ring-slate-500"}`}>
