@@ -9,6 +9,7 @@ import { bucket } from "../api";
 import { computeBias, FACTORS, type BiasRow } from "./bias";
 import { useOcFeed, useSmt } from "./ocfeed";
 import { api } from "../api";
+import { findEntries, NodesPrimitive, nodesRead, type NodesView } from "./nodes";
 import { buildBubbles, buildWalls, OrderFlowPrimitive, readAt, type Wall } from "./orderflow";
 import { computeDol } from "./dol";
 import { dispatch, scanSignals, type SigPrefs } from "./signalAlerts";
@@ -18,7 +19,7 @@ import { confluence, FootprintPrimitive, FP_SCALE, setFpScale, FP_MEANING, FP_WO
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -39,6 +40,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const zones = useRef(new ZonesPrimitive());
   const fpPrim = useRef(new FootprintPrimitive());
   const ofPrim = useRef(new OrderFlowPrimitive());
+  const ndPrim = useRef(new NodesPrimitive());
+  const [nodesV, setNodesV] = useState<NodesView | null>(null);
   const cvdS = useRef<ISeriesApi<"Baseline"> | null>(null);
   const [walls, setWalls] = useState<Wall[]>([]);
   const ocFeed = useOcFeed(!!layers.bias || !!layers.ocAct || !!sig?.on);
@@ -99,6 +102,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     s.attachPrimitive(zones.current);
     s.attachPrimitive(fpPrim.current);
     s.attachPrimitive(ofPrim.current);
+    s.attachPrimitive(ndPrim.current);
     bankS.current = ch.addSeries(LineSeries, { color: "rgba(244,114,182,0.85)", lineWidth: 2, priceScaleId: "bank", title: "BANKNIFTY",
       priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
     ch.priceScale("bank").applyOptions({ visible: false, scaleMargins: { top: 0.1, bottom: 0.25 } });
@@ -524,6 +528,17 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   useEffect(() => {
     ofPrim.current.set({ walls, bubbles: layers.bubbles ? bubbles : [], cells: layers.cells ? fpBars.filter((b) => b.rows.length) : [] });
   }, [walls, bubbles, fpBars, layers.bubbles, layers.cells]);
+  // ── stacked D / W / M volume nodes (refreshed every 5 min) + overextension entries ──
+  useEffect(() => {
+    if (!layers.nodes) { setNodesV(null); return; }
+    let dead = false;
+    const go = () => fetch("/api/nodes").then((r) => r.json()).then((j) => { if (!dead) setNodesV(j); }).catch(() => {});
+    go(); const id = window.setInterval(go, 300000);
+    return () => { dead = true; window.clearInterval(id); };
+  }, [layers.nodes]);
+  const nEntries = useMemo(() => layers.nodes && nodesV?.available
+    ? findEntries(candles, analysis?.volume?.vwap ?? [], nodesV) : [], [layers.nodes, nodesV, candles, analysis]);
+  useEffect(() => { ndPrim.current.set(layers.nodes ? nodesV : null, nEntries); }, [layers.nodes, nodesV, nEntries]);
   // CVD in its own pane under the chart (created / removed with the layer)
   useEffect(() => {
     const ch = chart.current; if (!ch) return;
@@ -715,6 +730,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const ofNow = lastClosed ? readAt(lastClosed.time, ofArgs) : null;
   const VC: Record<string, string> = { BUY: "bg-bull-500 text-ink-900", SELL: "bg-bear-500 text-white", WAIT: "bg-slate-600 text-white" };
   const TC: Record<string, string> = { bull: "text-bull-400", bear: "text-bear-400", warn: "text-amber-300", info: "text-slate-300" };
+  const nread = hover && layers.nodes ? nodesRead(hover.t, series.current?.coordinateToPrice(hover.y) ?? null, nodesV, nEntries, candles[candles.length - 1]?.close ?? null) : [];
   const ob = hover && layers.oi ? (analysis?.volume?.oi_line ?? []).find((x) => x.time === hover.t) : undefined;
   const OI_READ: Record<string, [string, string, string]> = {
     "long build-up": ["🟢 LONG BUILD-UP", "price ▲ + OI ▲ — fresh buyers opening longs. Real buying → CE bias, trust the move.", "text-bull-400"],
@@ -845,6 +861,10 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             <span>O <b className="text-slate-200">{hc.open.toFixed(1)}</b></span><span>H <b className="text-slate-200">{hc.high.toFixed(1)}</b></span>
             <span>L <b className="text-slate-200">{hc.low.toFixed(1)}</b></span><span>C <b className="text-slate-200">{hc.close.toFixed(1)}</b></span>
           </div>
+          {nread.length > 0 && <div className="mt-1.5 rounded-md border border-yellow-400/40 bg-yellow-950/20 p-1.5">
+            <div className="text-[13.5px] font-semibold text-yellow-300">🟨 Stacked volume nodes (Day · Week · Month)</div>
+            {nread.map((l, i) => <div key={i} className={`text-[13px] ${l.startsWith("●") ? "font-semibold text-bull-400" : "text-slate-100"}`}>• {l}</div>)}
+          </div>}
           {ofr && <div className="mt-1.5 rounded-md border border-cyan-500/40 bg-cyan-950/30 p-1.5">
             {ofr.wall && <div className="mb-1 rounded bg-ink-800 px-1.5 py-1 text-[13px] text-slate-100">{ofr.wall}</div>}
             <div className="flex items-center gap-2">
@@ -928,7 +948,7 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["heat", "Heatmap: traded volume per price (blue cold → red hot)", "#f97316"], ["ocAct", "PE−CE action: ▲ OC CE / ▼ OC PE · bottom lane", "#4ade80"],
   ["bias", "⚖ Bias 14: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
   ["walls", "🧱 OI walls: red CE resistance · green PE support", "#ef4444"], ["bubbles", "🫧 Big trades ≥2× vol · yellow ring = absorbed", "#a3e635"],
-  ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD pane (est.)", "#4ade80"],
+  ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD pane (est.)", "#4ade80"], ["nodes", "🟨 Stacked nodes D·W·M (gold = A+) · ● ENTRY = ±2σ into zone", "#facc15"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {
