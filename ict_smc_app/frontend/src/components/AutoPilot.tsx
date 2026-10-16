@@ -6,6 +6,20 @@ import { type AutoCfg, type AutoState, type AutoPos, bookedR, canOpen, classify,
 
 export type AutoCtx = { last: Candle; atr: number; nearWall: number | null };
 
+// log a CLOSED paper trade to the 8610 desk (permanent history + funds + CSV). Best-effort.
+const DESK = "http://localhost:8610";
+async function logClosedToDesk(p: AutoPos) {
+  try {
+    const status = p.status === "REV" ? "MANUAL" : p.status;      // 8610 counts TP/SL/EOD/MANUAL
+    const r = await fetch(`${DESK}/api/trades`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tf: "auto", side: p.side, signal: "auto:" + p.kind, entry: p.entry, sl: p.sl, tp: p.tp, note: p.label, lots: 1 }) });
+    const j = await r.json();
+    if (j?.id && p.exit != null)
+      await fetch(`${DESK}/api/trades/${j.id}/close`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exit_px: p.exit, status }) });
+  } catch { /* desk offline — the browser ledger still holds it */ }
+}
+
 export function useAutopilot() {
   const [s, setS] = useState<AutoState>(() => load());
   const ref = useRef(s); ref.current = s;
@@ -27,7 +41,7 @@ export function useAutopilot() {
     let next = { ...cur, open: [...cur.open], closed: [...cur.closed] };
     const px = a.price && a.price > 0 ? a.price : ctx.last.close;
     const rev = stepReversal(next, sig.side, px, ctx.last.time);          // opposite-side signal exits open trades
-    if (rev.length) { next.open = next.open.filter((p) => !rev.includes(p)); next.closed = [...rev, ...next.closed]; }
+    if (rev.length) { next.open = next.open.filter((p) => !rev.includes(p)); next.closed = [...rev, ...next.closed]; rev.forEach(logClosedToDesk); }
     const pos = openFromSignal(next, sig, a, ctx.last, ctx.atr, ctx.nearWall);
     if (pos) { next.seq = next.seq + 1; next.open = [pos, ...next.open]; }
     // a guardrail trip stamps the reason once
@@ -43,10 +57,10 @@ export function useAutopilot() {
     const last = closed[closed.length - 1]; if (!last) return;
     let next = { ...cur, open: [...cur.open], closed: [...cur.closed] };
     const tp = stepCandle(next, last);
-    if (tp.length) { next.open = next.open.filter((p) => !tp.includes(p)); next.closed = [...tp, ...next.closed]; }
+    if (tp.length) { next.open = next.open.filter((p) => !tp.includes(p)); next.closed = [...tp, ...next.closed]; tp.forEach(logClosedToDesk); }
     if (isEod(last.time, cur.cfg.eodHHMM) && next.open.length) {
       const eod = stepEOD(next, spot ?? last.close, last.time);
-      next.open = []; next.closed = [...eod, ...next.closed]; next.stopped = next.stopped ?? "EOD 15:15 — flat for the day";
+      next.open = []; next.closed = [...eod, ...next.closed]; next.stopped = next.stopped ?? "EOD 15:15 — flat for the day"; eod.forEach(logClosedToDesk);
     }
     if (tp.length || next.open.length !== cur.open.length) commit(next);
   }, [commit]);

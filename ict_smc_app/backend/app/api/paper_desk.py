@@ -16,7 +16,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -43,13 +43,82 @@ CREATE TABLE IF NOT EXISTS manual_trades (
 );
 """
 
+FUNDS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS paper_funds (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  balance REAL NOT NULL,
+  start   REAL NOT NULL,
+  updated_ts INTEGER
+);
+CREATE TABLE IF NOT EXISTS cash_ledger (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  kind TEXT,            -- deposit | trade
+  amount REAL,          -- +deposit / ±net-pnl
+  note TEXT,
+  balance_after REAL
+);
+"""
+
+# columns added after the first release — migrate in place (SQLite has no ADD COLUMN IF NOT EXISTS)
+_EXTRA_COLS = {"lots": "INTEGER DEFAULT 1", "charges": "REAL", "net_rs": "REAL", "gross_rs": "REAL"}
+
+
 def _ensure_schema():
-    """Create manual_trades if it doesn't exist yet."""
+    """Create / migrate the paper-desk tables."""
     with db._lock:
         conn = db._conn
         if conn is None:
             return
         conn.executescript(MANUAL_SCHEMA)
+        conn.executescript(FUNDS_SCHEMA)
+        have = {r[1] for r in conn.execute("PRAGMA table_info(manual_trades)").fetchall()}
+        for col, decl in _EXTRA_COLS.items():
+            if col not in have:
+                conn.execute(f"ALTER TABLE manual_trades ADD COLUMN {col} {decl}")
+        # seed the wallet once
+        if conn.execute("SELECT COUNT(*) FROM paper_funds").fetchone()[0] == 0:
+            start = float(config.rule("paper", "start_balance", 100000))
+            conn.execute("INSERT INTO paper_funds (id, balance, start, updated_ts) VALUES (1, ?, ?, ?)",
+                         (start, start, int(time.time())))
+        conn.commit()
+
+
+# ── charges (configurable — tune to match your broker) ────────────────────────
+def _charges(gross_rs: float, lots: int) -> Dict[str, float]:
+    """Estimated round-trip F&O charges. Flat per-order brokerage + a turnover %.
+    Defaults ≈ a discount broker (Dhan/Zerodha). Edit the `paper` rules to match your real bill."""
+    per_order = float(config.rule("paper", "brokerage_per_order", 20))   # ₹ per executed order
+    pct = float(config.rule("paper", "charges_pct", 0.05)) / 100.0        # taxes+exch+GST as % of |gross|, rough
+    flat_min = float(config.rule("paper", "charges_min", 45))             # floor per round trip
+    brokerage = per_order * 2                                            # buy + sell
+    taxes = abs(gross_rs) * pct
+    total = max(flat_min, round(brokerage + taxes, 2))
+    return {"brokerage": round(brokerage, 2), "taxes": round(taxes, 2), "total": total}
+
+
+def _funds() -> Dict[str, Any]:
+    _ensure_schema()
+    r = db.query("SELECT * FROM paper_funds WHERE id=1")
+    f = dict(r[0]) if r else {"balance": 0, "start": 0}
+    deps = db.query("SELECT COALESCE(SUM(amount),0) s FROM cash_ledger WHERE kind='deposit'")
+    added = float(deps[0]["s"]) if deps else 0.0
+    st = _mt_stats()
+    return {"balance": round(float(f["balance"]), 2), "start": round(float(f["start"]), 2),
+            "added": round(added, 2), "net_pnl": st.get("net_rs", 0.0), "charges_paid": st.get("charges_rs", 0.0),
+            "gross_pnl": st.get("pnl_rs", 0.0), "open": st.get("open", 0)}
+
+
+def _apply_to_funds(net_rs: float, note: str):
+    with db._lock:
+        conn = db._conn
+        if conn is None:
+            return
+        row = conn.execute("SELECT balance FROM paper_funds WHERE id=1").fetchone()
+        bal = (float(row[0]) if row else 0.0) + net_rs
+        conn.execute("UPDATE paper_funds SET balance=?, updated_ts=? WHERE id=1", (bal, int(time.time())))
+        conn.execute("INSERT INTO cash_ledger (ts, kind, amount, note, balance_after) VALUES (?,?,?,?,?)",
+                     (int(time.time()), "trade", round(net_rs, 2), note, round(bal, 2)))
         conn.commit()
 
 
@@ -85,21 +154,27 @@ def _mt_rows(limit: int = 200) -> List[Dict[str, Any]]:
 def _mt_stats() -> Dict[str, Any]:
     rows = _mt_rows(10000)
     done = [t for t in rows if t["status"] in ("TP", "SL", "EOD", "MANUAL") and t.get("r") is not None]
+    openn = len([t for t in rows if t["status"] == "OPEN"])
     if not done:
-        return {"n": 0, "open": len([t for t in rows if t["status"] == "OPEN"])}
+        return {"n": 0, "open": openn, "charges_rs": 0.0, "net_rs": 0.0, "pnl_rs": 0.0}
     rs = [float(t["r"]) for t in done]
     wins = [r for r in rs if r > 0]
-    lot = int(config.rule("paper", "lot_size", 65)) * int(config.rule("paper", "lots", 1))
+    lot = int(config.rule("paper", "lot_size", 65))
+    gross_rs = round(sum(float(t.get("gross_rs") if t.get("gross_rs") is not None else (float(t.get("pnl_pts") or 0) * lot * int(t.get("lots") or 1))) for t in done), 0)
+    charges_rs = round(sum(float(t.get("charges") or 0) for t in done), 0)
+    net_rs = round(sum(float(t["net_rs"]) if t.get("net_rs") is not None else (float(t.get("pnl_pts") or 0) * lot * int(t.get("lots") or 1)) for t in done), 0)
     return {
         "n": len(done),
-        "open": len([t for t in rows if t["status"] == "OPEN"]),
+        "open": openn,
         "wins": len(wins),
         "losses": len([r for r in rs if r < 0]),
         "win_rate": round(100 * len(wins) / len(done), 1),
         "avg_r": round(sum(rs) / len(done), 2),
         "total_r": round(sum(rs), 2),
         "pnl_pts": round(sum(float(t.get("pnl_pts") or 0) for t in done), 1),
-        "pnl_rs": round(sum(float(t.get("pnl_pts") or 0) for t in done) * lot, 0),
+        "pnl_rs": gross_rs,
+        "charges_rs": charges_rs,
+        "net_rs": net_rs,
         "lot": lot,
         "enough": len(done) >= 30,
         "note": "Need 30+ closed trades before win rate means anything." if len(done) < 30 else "✓ Enough trades to judge.",
@@ -140,6 +215,7 @@ class LogBody(BaseModel):
     sl: float
     tp: float
     note: str = ""
+    lots: int = 1
 
 
 @app.post("/api/trades")
@@ -154,11 +230,12 @@ def log_trade(b: LogBody):
         raise HTTPException(400, "SL too close to entry (risk < 0.1 pts)")
     ts = int(time.time())
     db.execute(
-        "INSERT INTO manual_trades (logged_ts, tf, side, signal, entry, sl, tp, note, status) "
-        "VALUES (?,?,?,?,?,?,?,?,'OPEN')",
-        (ts, b.tf, b.side, b.signal, b.entry, b.sl, b.tp, b.note),
+        "INSERT INTO manual_trades (logged_ts, tf, side, signal, entry, sl, tp, note, status, lots) "
+        "VALUES (?,?,?,?,?,?,?,?,'OPEN',?)",
+        (ts, b.tf, b.side, b.signal, b.entry, b.sl, b.tp, b.note, max(1, int(b.lots))),
     )
-    return {"ok": True}
+    rid = db.query("SELECT last_insert_rowid() AS id")[0]["id"]
+    return {"ok": True, "id": rid}
 
 
 class CloseBody(BaseModel):
@@ -179,12 +256,18 @@ def close_trade(trade_id: int, b: CloseBody):
     risk = abs(float(t["entry"]) - float(t["sl"])) or 1.0
     pts = (float(t["entry"]) - b.exit_px) if short else (b.exit_px - float(t["entry"]))
     r = round(pts / risk, 2)
+    lot_size = int(config.rule("paper", "lot_size", 65))
+    lots = int(t.get("lots") or 1)
+    gross_rs = round(pts * lot_size * lots, 2)
+    ch = _charges(gross_rs, lots)
+    net_rs = round(gross_rs - ch["total"], 2)
     ts = int(time.time())
     db.execute(
-        "UPDATE manual_trades SET exit_px=?, status=?, pnl_pts=?, r=?, closed_ts=? WHERE id=?",
-        (b.exit_px, b.status, round(pts, 1), r, ts, trade_id),
+        "UPDATE manual_trades SET exit_px=?, status=?, pnl_pts=?, r=?, closed_ts=?, gross_rs=?, charges=?, net_rs=? WHERE id=?",
+        (b.exit_px, b.status, round(pts, 1), r, ts, gross_rs, ch["total"], net_rs, trade_id),
     )
-    return {"ok": True, "r": r, "pnl_pts": round(pts, 1)}
+    _apply_to_funds(net_rs, f"{t['side']} {t.get('signal') or ''} #{trade_id} · {b.status} · {r:+.2f}R")
+    return {"ok": True, "r": r, "pnl_pts": round(pts, 1), "gross_rs": gross_rs, "charges": ch, "net_rs": net_rs}
 
 
 @app.delete("/api/trades/{trade_id}")
@@ -192,6 +275,75 @@ def delete_trade(trade_id: int):
     _ensure_schema()
     db.execute("DELETE FROM manual_trades WHERE id=?", (trade_id,))
     return {"ok": True}
+
+
+# ── funds / wallet ────────────────────────────────────────────────────────────
+@app.get("/api/funds")
+def funds():
+    return _funds()
+
+
+class AddBody(BaseModel):
+    amount: float
+
+
+@app.post("/api/funds/add")
+def add_funds(b: AddBody):
+    _ensure_schema()
+    if b.amount == 0:
+        raise HTTPException(400, "amount must be non-zero")
+    with db._lock:
+        conn = db._conn
+        row = conn.execute("SELECT balance FROM paper_funds WHERE id=1").fetchone()
+        bal = (float(row[0]) if row else 0.0) + b.amount
+        conn.execute("UPDATE paper_funds SET balance=?, updated_ts=? WHERE id=1", (bal, int(time.time())))
+        conn.execute("INSERT INTO cash_ledger (ts, kind, amount, note, balance_after) VALUES (?,?,?,?,?)",
+                     (int(time.time()), "deposit", round(b.amount, 2), "added paper money" if b.amount > 0 else "withdrew", round(bal, 2)))
+        conn.commit()
+    return _funds()
+
+
+class ResetBody(BaseModel):
+    balance: float = 100000
+
+
+@app.post("/api/funds/reset")
+def reset_funds(b: ResetBody):
+    """Reset the wallet to a fresh balance (does not delete trades)."""
+    _ensure_schema()
+    with db._lock:
+        conn = db._conn
+        conn.execute("UPDATE paper_funds SET balance=?, start=?, updated_ts=? WHERE id=1", (b.balance, b.balance, int(time.time())))
+        conn.execute("DELETE FROM cash_ledger")
+        conn.commit()
+    return _funds()
+
+
+@app.get("/api/report.csv")
+def report_csv():
+    """Download the full trade book as CSV — orders, P&L, charges, net."""
+    import csv
+    import io
+    rows = db.query("SELECT * FROM manual_trades ORDER BY id ASC")
+    buf = io.StringIO()
+    cols = ["id", "logged", "closed", "tf", "side", "signal", "lots", "entry", "sl", "tp", "exit_px",
+            "status", "pnl_pts", "r", "gross_rs", "charges", "net_rs", "note"]
+    w = csv.writer(buf)
+    w.writerow(cols)
+    from ..timeutil import to_ist
+    for r in rows:
+        d = dict(r)
+        d["logged"] = to_ist(d["logged_ts"]).strftime("%Y-%m-%d %H:%M") if d.get("logged_ts") else ""
+        d["closed"] = to_ist(d["closed_ts"]).strftime("%Y-%m-%d %H:%M") if d.get("closed_ts") else ""
+        w.writerow([d.get(c, "") for c in cols])
+    st = _mt_stats()
+    w.writerow([])
+    w.writerow(["SUMMARY"])
+    for k in ["n", "wins", "losses", "win_rate", "avg_r", "total_r", "pnl_rs", "charges_rs", "net_rs"]:
+        w.writerow([k, st.get(k, "")])
+    from datetime import date
+    headers = {"Content-Disposition": f'attachment; filename="paper_trades_{date.today().isoformat()}.csv"'}
+    return Response(content=buf.getvalue(), media_type="text/csv", headers=headers)
 
 
 # ── UI ────────────────────────────────────────────────────────────────────────
@@ -217,6 +369,11 @@ h1{font-size:18px;font-weight:700;letter-spacing:.02em;color:#fff}
 .info-pill.bull .val{color:var(--bull)}
 .info-pill.bear .val{color:var(--bear)}
 .status-live{color:#10b981;font-weight:700}
+.funds-bar{background:linear-gradient(135deg,#0d1b2a,#11161e);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;align-items:center;gap:24px}
+.fund .lbl{font-size:10px;color:var(--slate);text-transform:uppercase;letter-spacing:.04em}
+.fund .val{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text)}
+.fund-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.btn-add{background:var(--bull);color:#fff}.btn-csv{background:#334155;color:#e2e8f0}.btn-reset{background:#3f1d1d;color:#fca5a5}
 .summary-box{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px}
 .stat-item{display:flex;flex-direction:column}
 .stat-item .lbl{font-size:11px;color:var(--slate);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
@@ -275,6 +432,18 @@ button:hover{opacity:.9}
     <div class="info-pill"><span class="lbl">Status</span><span class="val status-live">● Information only</span></div>
     <div class="info-pill" id="mkt-status"><span class="lbl">Market</span><span class="val">Loading…</span></div>
     <div class="info-pill bull"><span class="lbl">Booked</span><span class="val" id="h-booked">+₹0</span></div>
+  </div>
+</div>
+
+<div class="funds-bar" id="funds-bar">
+  <div class="fund"><div class="lbl">💰 Balance</div><div class="val" id="f-balance">—</div></div>
+  <div class="fund"><div class="lbl">Net P&L (after charges)</div><div class="val" id="f-net">—</div></div>
+  <div class="fund"><div class="lbl">Charges paid</div><div class="val" id="f-charges">—</div></div>
+  <div class="fund"><div class="lbl">Gross P&L</div><div class="val" id="f-gross">—</div></div>
+  <div class="fund-actions">
+    <button class="btn-add" onclick="addMoney()">+ Add paper money</button>
+    <button class="btn-csv" onclick="window.open('/api/report.csv','_blank')">⭳ Download CSV</button>
+    <button class="btn-reset" onclick="resetFunds()">Reset wallet</button>
   </div>
 </div>
 
@@ -597,16 +766,47 @@ function renderStats(s) {
   document.getElementById('enough-note').textContent = s.note;
 }
 
+function renderFunds(f) {
+  if (!f) return;
+  const rs = (v) => '₹' + Math.round(v).toLocaleString('en-IN');
+  const col = (v) => v > 0 ? 'var(--bull)' : v < 0 ? 'var(--bear)' : 'var(--text)';
+  document.getElementById('f-balance').textContent = rs(f.balance);
+  const net = document.getElementById('f-net'); net.textContent = (f.net_pnl >= 0 ? '+' : '') + rs(f.net_pnl); net.style.color = col(f.net_pnl);
+  document.getElementById('f-charges').textContent = rs(f.charges_paid);
+  const g = document.getElementById('f-gross'); g.textContent = (f.gross_pnl >= 0 ? '+' : '') + rs(f.gross_pnl); g.style.color = col(f.gross_pnl);
+}
+
+async function addMoney() {
+  const v = prompt('Add paper money (₹):', '50000');
+  if (!v) return;
+  const amount = parseFloat(v.replace(/[^0-9.-]/g, ''));
+  if (!amount) return;
+  await fetch('/api/funds/add', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ amount }) });
+  toast('✓ Added ₹' + amount.toLocaleString('en-IN'));
+  refresh();
+}
+
+async function resetFunds() {
+  const v = prompt('Reset wallet to balance (₹) — this clears the cash ledger, not trades:', '100000');
+  if (!v) return;
+  const balance = parseFloat(v.replace(/[^0-9.-]/g, '')) || 100000;
+  await fetch('/api/funds/reset', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ balance }) });
+  toast('✓ Wallet reset to ₹' + balance.toLocaleString('en-IN'));
+  refresh();
+}
+
 async function refresh() {
   try {
-    const [td, al] = await Promise.all([
+    const [td, al, fn] = await Promise.all([
       fetch('/api/trades').then(r => r.json()),
       fetch('/api/alerts').then(r => r.json()),
+      fetch('/api/funds').then(r => r.json()).catch(() => null),
     ]);
     renderStats(td.stats);
     renderOpenTrades(td.trades);
     renderTrades(td.trades);
     renderAlerts(al.alerts);
+    renderFunds(fn);
   } catch(e) {
     console.error(e);
   }
