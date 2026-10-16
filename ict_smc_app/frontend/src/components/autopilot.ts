@@ -5,14 +5,16 @@
 // level — optimistic vs real slippage — so treat the P&L as a strategy test, not a promise.
 import type { AlertRow, Candle } from "../api";
 
-export type AutoCfg = { on: boolean; maxOpen: 1 | 3; rCapLoss: number; rCapWin: number; eodHHMM: number; rr: number; triggers: Record<string, boolean> };
+export type AutoCfg = { on: boolean; maxOpen: 1 | 3; rCapLoss: number; rCapWin: number; eodHHMM: number; rr: number;
+  triggers: Record<string, boolean>; sound: boolean; premium: number; delta: number };
 export type AutoPos = { id: number; t0: number; side: "BUY" | "SELL"; kind: string; label: string;
-  entry: number; sl: number; tp: number; risk: number; status: "OPEN" | "TP" | "SL" | "REV" | "EOD"; exit?: number; r?: number; t1?: number; desk?: number | null };
+  entry: number; sl: number; tp: number; risk: number; status: "OPEN" | "TP" | "SL" | "REV" | "EOD"; exit?: number; r?: number; t1?: number; desk?: number | null; entryPrem?: number };
 export type AutoState = { day: string; cfg: AutoCfg; open: AutoPos[]; closed: AutoPos[]; stopped: string | null; seq: number };
 
 export const DEFAULT_CFG: AutoCfg = {
   on: false, maxOpen: 1, rCapLoss: -3, rCapWin: 5, eodHHMM: 1515, rr: 1.5,
   triggers: { aplus: true, nodes: true, flow: true, gamma: true, conf: true, crt: true, ifvg: true },
+  sound: true, premium: 120, delta: 0.5,      // option-mode: assumed ATM premium ₹ and option delta
 };
 
 const KEY = "ict_autopilot_v1";
@@ -76,7 +78,8 @@ export function openFromSignal(s: AutoState, sig: { key: string; side: "BUY" | "
     if (buy ? nearWall <= entry : nearWall >= entry) tp = buy ? entry + s.cfg.rr * risk : entry - s.cfg.rr * risk;
   }
   return { id: s.seq, t0: last.time, side: sig.side, kind: a.kind, label: a.title.slice(0, 48),
-    entry: +entry.toFixed(1), sl: +sl.toFixed(1), tp: +tp.toFixed(1), risk: +risk.toFixed(1), status: "OPEN", desk: null };
+    entry: +entry.toFixed(1), sl: +sl.toFixed(1), tp: +tp.toFixed(1), risk: +risk.toFixed(1), status: "OPEN", desk: null,
+    entryPrem: s.cfg.premium };
 }
 
 // evaluate every open position against a newly CLOSED candle → close any that hit TP/SL; returns closed ids

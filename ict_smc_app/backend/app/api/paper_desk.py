@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS cash_ledger (
 """
 
 # columns added after the first release — migrate in place (SQLite has no ADD COLUMN IF NOT EXISTS)
-_EXTRA_COLS = {"lots": "INTEGER DEFAULT 1", "charges": "REAL", "net_rs": "REAL", "gross_rs": "REAL"}
+_EXTRA_COLS = {"lots": "INTEGER DEFAULT 1", "charges": "REAL", "net_rs": "REAL", "gross_rs": "REAL",
+               "opt_type": "TEXT", "strike": "REAL", "entry_prem": "REAL", "exit_prem": "REAL"}
 
 
 def _ensure_schema():
@@ -226,6 +227,9 @@ class LogBody(BaseModel):
     tp: float
     note: str = ""
     lots: int = 1
+    opt_type: str = ""      # "" (index) | CE | PE   → option mode when set
+    strike: float = 0       # option strike
+    entry_prem: float = 0   # option premium paid (₹) → turns on premium P&L + exact charges
 
 
 @app.post("/api/trades")
@@ -240,9 +244,10 @@ def log_trade(b: LogBody):
         raise HTTPException(400, "SL too close to entry (risk < 0.1 pts)")
     ts = int(time.time())
     db.execute(
-        "INSERT INTO manual_trades (logged_ts, tf, side, signal, entry, sl, tp, note, status, lots) "
-        "VALUES (?,?,?,?,?,?,?,?,'OPEN',?)",
-        (ts, b.tf, b.side, b.signal, b.entry, b.sl, b.tp, b.note, max(1, int(b.lots))),
+        "INSERT INTO manual_trades (logged_ts, tf, side, signal, entry, sl, tp, note, status, lots, opt_type, strike, entry_prem) "
+        "VALUES (?,?,?,?,?,?,?,?,'OPEN',?,?,?,?)",
+        (ts, b.tf, b.side, b.signal, b.entry, b.sl, b.tp, b.note, max(1, int(b.lots)),
+         (b.opt_type or "").upper(), b.strike or None, b.entry_prem or None),
     )
     rid = db.query("SELECT last_insert_rowid() AS id")[0]["id"]
     return {"ok": True, "id": rid}
@@ -251,6 +256,7 @@ def log_trade(b: LogBody):
 class CloseBody(BaseModel):
     exit_px: float
     status: str = "MANUAL"   # TP | SL | EOD | MANUAL
+    exit_prem: float = 0     # option premium at exit → premium-based P&L + exact-to-paisa charges
 
 
 @app.post("/api/trades/{trade_id}/close")
@@ -269,18 +275,25 @@ def close_trade(trade_id: int, b: CloseBody):
     lot_size = int(config.rule("paper", "lot_size", 65))
     lots = int(t.get("lots") or 1)
     qty = lot_size * lots
-    gross_rs = round(pts * qty, 2)
-    # charges are on PREMIUM turnover. Point-based trades use an assumed ATM premium (tune in rules).
-    prem = float(config.rule("charges", "assumed_premium", 120))
-    ch = _charges(prem * qty, prem * qty)
+    entry_prem = float(t.get("entry_prem") or 0)
+    exit_prem = float(b.exit_prem or 0)
+    if entry_prem > 0 and exit_prem > 0:
+        # OPTION MODE — real premium turnover → exact Dhan charges, premium P&L (buying a CE/PE then selling)
+        gross_rs = round((exit_prem - entry_prem) * qty, 2)
+        ch = _charges(entry_prem * qty, exit_prem * qty)
+    else:
+        # INDEX MODE — points × lot, charges on an assumed ATM premium (tune charges.assumed_premium)
+        gross_rs = round(pts * qty, 2)
+        prem = float(config.rule("charges", "assumed_premium", 120))
+        ch = _charges(prem * qty, prem * qty)
     net_rs = round(gross_rs - ch["total"], 2)
     ts = int(time.time())
     db.execute(
-        "UPDATE manual_trades SET exit_px=?, status=?, pnl_pts=?, r=?, closed_ts=?, gross_rs=?, charges=?, net_rs=? WHERE id=?",
-        (b.exit_px, b.status, round(pts, 1), r, ts, gross_rs, ch["total"], net_rs, trade_id),
+        "UPDATE manual_trades SET exit_px=?, status=?, pnl_pts=?, r=?, closed_ts=?, gross_rs=?, charges=?, net_rs=?, exit_prem=? WHERE id=?",
+        (b.exit_px, b.status, round(pts, 1), r, ts, gross_rs, ch["total"], net_rs, exit_prem or None, trade_id),
     )
     _apply_to_funds(net_rs, f"{t['side']} {t.get('signal') or ''} #{trade_id} · {b.status} · {r:+.2f}R")
-    return {"ok": True, "r": r, "pnl_pts": round(pts, 1), "gross_rs": gross_rs, "charges": ch, "net_rs": net_rs}
+    return {"ok": True, "r": r, "pnl_pts": round(pts, 1), "gross_rs": gross_rs, "charges": ch, "net_rs": net_rs, "mode": "option" if (entry_prem > 0 and exit_prem > 0) else "index"}
 
 
 @app.delete("/api/trades/{trade_id}")
@@ -518,6 +531,17 @@ button:hover{opacity:.9}
             <div class="form-group"><label>Target (TP)</label><input type="number" id="f-tp" step="0.5" placeholder="24250"></div>
             <div class="form-group"><label>Note</label><input type="text" id="f-note" placeholder="Optional"></div>
           </div>
+          <div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:6px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="f-optmode" onchange="document.getElementById('opt-fields').style.display=this.checked?'grid':'none'" style="width:auto">
+              <span style="font-size:12px;font-weight:600;color:var(--gold2)">🎯 Option mode — exact Dhan charges on premium</span>
+            </label>
+            <div class="form-grid" id="opt-fields" style="display:none;margin-top:8px;grid-template-columns:1fr 1fr 1fr">
+              <div class="form-group"><label>Type</label><select id="f-opt"><option>CE</option><option>PE</option></select></div>
+              <div class="form-group"><label>Strike</label><input type="number" id="f-strike" step="50" placeholder="23100"></div>
+              <div class="form-group"><label>Entry premium ₹</label><input type="number" id="f-prem" step="0.05" placeholder="120.00"></div>
+            </div>
+          </div>
           <div class="rr-info" id="rr-preview"></div>
           <button type="button" class="btn-log" onclick="logTrade()">Log trade</button>
         </form>
@@ -607,26 +631,43 @@ function toast(msg) {
   setTimeout(() => el.style.display = 'none', 3000);
 }
 
+// ── alert sound on order place / exit ──
+let _actx = null;
+function beep(kind) {
+  try {
+    _actx = _actx || new (window.AudioContext || window.webkitAudioContext)();
+    const seq = kind === 'entry' ? [[660, 0], [990, 0.09]] : kind === 'exit' ? [[880, 0], [520, 0.11]] : [[760, 0]];
+    seq.forEach(([f, t]) => {
+      const o = _actx.createOscillator(), g = _actx.createGain();
+      o.frequency.value = f; o.type = 'sine'; o.connect(g); g.connect(_actx.destination);
+      const s = _actx.currentTime + t; g.gain.setValueAtTime(0.001, s); g.gain.exponentialRampToValueAtTime(0.25, s + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, s + 0.12); o.start(s); o.stop(s + 0.13);
+    });
+  } catch(e) {}
+}
+
 async function logTrade() {
   const entry = parseFloat(document.getElementById('f-entry').value);
   const sl = parseFloat(document.getElementById('f-sl').value);
   const tp = parseFloat(document.getElementById('f-tp').value);
   if (!_side) { toast('⚠️ Select BUY or SELL first'); return; }
   if (!entry || !sl || !tp) { toast('⚠️ Fill entry / SL / TP'); return; }
+  const opt = document.getElementById('f-optmode').checked;
   const body = {
     tf: document.getElementById('f-tf').value,
     side: _side,
     signal: document.getElementById('f-signal').value,
     entry, sl, tp,
     note: document.getElementById('f-note').value,
+    opt_type: opt ? document.getElementById('f-opt').value : '',
+    strike: opt ? parseFloat(document.getElementById('f-strike').value) || 0 : 0,
+    entry_prem: opt ? parseFloat(document.getElementById('f-prem').value) || 0 : 0,
   };
   const r = await fetch('/api/trades', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
   if (r.ok) {
-    toast('✓ Trade logged!');
-    document.getElementById('f-entry').value = '';
-    document.getElementById('f-sl').value = '';
-    document.getElementById('f-tp').value = '';
-    document.getElementById('f-note').value = '';
+    beep('entry');
+    toast('✓ Order placed!');
+    ['f-entry','f-sl','f-tp','f-note','f-strike','f-prem'].forEach(k => document.getElementById(k).value = '');
     document.getElementById('rr-preview').textContent = '';
     refresh();
   } else {
@@ -636,16 +677,23 @@ async function logTrade() {
 }
 
 async function closeTrade(id, status) {
-  const px = prompt(`Close trade #${id}\nExit price:`);
+  const px = prompt(`Close trade #${id}\nExit index price:`);
   if (!px) return;
+  const t = (_trades || []).find(x => x.id === id);
+  let exit_prem = 0;
+  if (t && t.entry_prem) {
+    const vp = prompt(`Option exit premium ₹ (entry was ${t.entry_prem}):`);
+    exit_prem = parseFloat(vp) || 0;
+  }
   const r = await fetch(`/api/trades/${id}/close`, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ exit_px: parseFloat(px), status })
+    body: JSON.stringify({ exit_px: parseFloat(px), status, exit_prem })
   });
   if (r.ok) {
     const d = await r.json();
-    toast(`✓ Closed @ ${px} · R = ${d.r}`);
+    beep('exit');
+    toast(`✓ Exited @ ${px} · R = ${d.r} · net ₹${Math.round(d.net_rs)}`);
     refresh();
   } else {
     const e = await r.json();
@@ -815,6 +863,7 @@ async function refresh() {
       fetch('/api/alerts').then(r => r.json()),
       fetch('/api/funds').then(r => r.json()).catch(() => null),
     ]);
+    _trades = td.trades;
     renderStats(td.stats);
     renderOpenTrades(td.trades);
     renderTrades(td.trades);
