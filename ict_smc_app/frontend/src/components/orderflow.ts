@@ -175,25 +175,32 @@ class TopView implements IPrimitivePaneView {
         if (r >= 11) { ctx.font = F(Math.min(10, r / 2.2)); ctx.textAlign = "center"; ctx.textBaseline = "middle";
           ctx.fillStyle = u.bull ? "#0b1220" : "#ffffff"; ctx.fillText(`${u.rvol.toFixed(1)}×`, x, y); }
       }
-      // ── OI % change bubbles for EVERY near-spot level (left gutter): size ∝ |% ΔOI|, PE green / CE red,
-      //    solid = writers adding (building), faded = covering (unwinding). Two columns so CE & PE don't overlap.
+      // ── OI % change bubbles for near-spot levels (left gutter): size ∝ |% ΔOI| (capped), PE green / CE red,
+      //    solid = writers adding (building), faded = covering (unwinding). Number sits INSIDE so it never clips.
       if (oiLevels.length) {
-        ctx.textBaseline = "middle";
+        const peX = 46, ceX = 104;                       // two separated columns, kept clear of the screen edge
         for (const L of oiLevels) {
-          const y = series.priceToCoordinate(L.p);
-          if (y === null || y < 14 || y > mediaSize.height - 2) continue;
           const pct = L.pct ?? 0;
-          const r = Math.max(2.5, Math.min(16, Math.sqrt(Math.abs(pct)) * 2.2)) * Math.min(S, 1.4);
-          const ce = L.side === "CE"; const x = ce ? 96 : 48;
+          if (Math.abs(pct) < 5) continue;               // declutter: only show meaningful ΔOI
+          const y = series.priceToCoordinate(L.p);
+          if (y === null || y < 18 || y > mediaSize.height - 4) continue;
+          const r = Math.max(4, Math.min(14, 4 + Math.sqrt(Math.abs(pct)) * 1.3)) * Math.min(S, 1.25);
+          const ce = L.side === "CE"; const x = ce ? ceX : peX;
           const rgb = ce ? "239,68,68" : "34,197,94";
           ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${rgb},${pct >= 0 ? 0.82 : 0.28})`; ctx.fill();
-          ctx.lineWidth = 1; ctx.strokeStyle = `rgba(${rgb},0.9)`; ctx.stroke();
-          if (r >= 8 && L.pct != null) { ctx.font = F(8.5); ctx.textAlign = ce ? "left" : "right"; ctx.fillStyle = "#e5e7eb";
-            ctx.fillText(`${pct >= 0 ? "+" : ""}${Math.round(pct)}%`, ce ? x + r + 2 : x - r - 2, y); }
+          ctx.fillStyle = `rgba(${rgb},${pct >= 0 ? 0.8 : 0.3})`; ctx.fill();
+          ctx.lineWidth = 1; ctx.strokeStyle = `rgba(${rgb},0.95)`; ctx.stroke();
+          const label = `${pct >= 0 ? "+" : ""}${Math.round(pct)}`;
+          if (r >= 8.5) {                                  // big enough → number inside the bubble
+            ctx.font = F(Math.min(9.5, r / 1.5)); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            ctx.fillStyle = "#ffffff"; ctx.fillText(label, x, y);
+          } else {                                         // small → number just to the outer side (never off-screen)
+            ctx.font = F(8); ctx.textBaseline = "middle"; ctx.fillStyle = "#cbd5e1";
+            ctx.textAlign = ce ? "left" : "right"; ctx.fillText(label, ce ? x + r + 2 : x - r - 2, y);
+          }
         }
-        ctx.font = F(8); ctx.textAlign = "center"; ctx.fillStyle = "rgba(148,163,184,0.85)";
-        ctx.fillText("PE Δ%", 48, 10); ctx.fillText("CE Δ%", 96, 10);
+        ctx.font = F(8.5); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "rgba(148,163,184,0.9)";
+        ctx.fillText("PE Δ%", peX, 11); ctx.fillText("CE Δ%", ceX, 11);
       }
     });
   }
