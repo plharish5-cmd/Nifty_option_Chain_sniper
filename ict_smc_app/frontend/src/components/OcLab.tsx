@@ -174,13 +174,22 @@ export function WritersFlow({ tick }: { tick: number }) {
       .then((j) => { if (!dead) setFutCandles(j.available ? j.candles ?? [] : []); }).catch(() => {});
     return () => { dead = true; };
   }, [tf, tick]);
-  // push candle data + toggle candles vs dotted line
+  // push candle data + toggle candles vs dotted line. Candles are SNAPPED to the exact writer-flow bucket times
+  // (same tf grid) so each candle sits precisely under the Call/Put OI point for that candle — no drift at 15m etc.
   useEffect(() => {
     const s = S.current; if (!s) return;
-    s.futC.setData(showFut ? futCandles.map((c) => ({ time: c.time as UTCTimestamp, open: c.o, high: c.h, low: c.l, close: c.c })) : []);
+    const tfs: Record<string, number> = { "1m": 60, "3m": 180, "5m": 300, "15m": 900 };
+    const step = tfs[tf] ?? 60;
+    const bucketToPt = new Map<number, number>();
+    for (const p of d?.points ?? []) bucketToPt.set(Math.floor(p.t / step) * step, p.t);   // writer-flow time per bucket
+    const data = showFut ? futCandles
+      .map((c) => { const pt = bucketToPt.get(Math.floor(c.time / step) * step); return pt == null ? null : { time: pt as UTCTimestamp, open: c.o, high: c.h, low: c.l, close: c.c }; })
+      .filter((x): x is NonNullable<typeof x> => x != null)
+      .sort((a, b) => (a.time as number) - (b.time as number)) : [];
+    s.futC.setData(data);
     s.futC.applyOptions({ visible: showFut });
     s.fut.applyOptions({ visible: !showFut });                 // candles replace the dotted line (one price view at a time)
-  }, [futCandles, showFut]);
+  }, [futCandles, showFut, d, tf]);
 
   useEffect(() => { first.current = true; }, [tf, mode, n]);
   useEffect(() => {
