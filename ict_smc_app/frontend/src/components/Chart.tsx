@@ -11,7 +11,7 @@ import { useOcFeed, useSmt, type SmtForming } from "./ocfeed";
 import { api } from "../api";
 import { computeGex, confirm3, emas, GammaPrimitive, gammaHits, type GexMap } from "./gamma";
 import { findEntries, NodesPrimitive, nodesRead, type NodesView } from "./nodes";
-import { buildBubbles, buildWalls, OrderFlowPrimitive, readAt, type Wall } from "./orderflow";
+import { buildBubbles, buildWalls, OrderFlowPrimitive, readAt, type Wall, type OiLevel } from "./orderflow";
 import { computeDol } from "./dol";
 import { dispatch, scanSignals, type SigPrefs } from "./signalAlerts";
 import type { AlertRow } from "../api";
@@ -88,6 +88,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const [writerBal, setWriterBal] = useState<{ pcr: number | null; ceOI: number; peOI: number; ceChg: number; peChg: number; net: number;
     maxPain: number | null; trend: "rising" | "falling" | "flat"; pcrPrev: number | null; spot: number | null } | null>(null);
   const netPrevRef = useRef<number | null>(null);
+  const [oiLevels, setOiLevels] = useState<OiLevel[]>([]);
   const smtMarks = useSmt(tf, !!layers.smt || !!layers.bias || !!sig?.on, setBank, setSmtForming);
   const smtArg = tf === "5m" || tf === "15m" || tf === "1h" ? smtMarks : null;
   const biasMap = useRef<Map<number, BiasRow>>(new Map());
@@ -568,7 +569,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
 
   // ── Order-flow Pro: OI walls (real chain, every 60 s) ──
   useEffect(() => {
-    if (!layers.walls) { setWalls([]); setWriterBal(null); }
+    if (!layers.walls) { setWalls([]); setWriterBal(null); setOiLevels([]); }
     if (!layers.gamma) setGexMap(null);
     if (!layers.walls && !layers.gamma) return;
     let dead = false;
@@ -632,6 +633,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           if (dead) return;
           if (rows.length) {
             const w = buildWalls(rows, sp, wm?.velocity); setWalls(w); detectWallEvents(w);
+            // every near-spot level's % OI change → bubbles (CE & PE). pct = ΔOI ÷ current OI (matches the wall %).
+            const lv: OiLevel[] = rows.filter((r) => sp && Math.abs(r.strike - sp) <= sp * 0.02).flatMap((r) => [
+              { p: r.strike, side: "CE" as const, oi: r.ce.oi || 0, chg: r.ce.oi_chg || 0, pct: r.ce.oi ? (r.ce.oi_chg || 0) / r.ce.oi * 100 : null },
+              { p: r.strike, side: "PE" as const, oi: r.pe.oi || 0, chg: r.pe.oi_chg || 0, pct: r.pe.oi ? (r.pe.oi_chg || 0) / r.pe.oi * 100 : null },
+            ]);
+            setOiLevels(lv);
             // writer balance: PCR (+ intraday trend), net PE−CE OI change, max-pain. Respects the expiry toggle.
             const ceOI = rows.reduce((s, r) => s + (r.ce.oi || 0), 0);
             const peOI = rows.reduce((s, r) => s + (r.pe.oi || 0), 0);
@@ -659,8 +666,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const bubbles = useMemo(() => layers.bubbles || layers.cvd || layers.cells
     ? buildBubbles(analysis?.volume?.bars ?? [], fpBars, candles) : [], [layers.bubbles, layers.cvd, layers.cells, analysis, fpBars, candles]);
   useEffect(() => {
-    ofPrim.current.set({ walls, bubbles: layers.bubbles ? bubbles : [], cells: layers.cells ? fpBars.filter((b) => b.rows.length) : [] });
-  }, [walls, bubbles, fpBars, layers.bubbles, layers.cells]);
+    ofPrim.current.set({ walls, bubbles: layers.bubbles ? bubbles : [], cells: layers.cells ? fpBars.filter((b) => b.rows.length) : [], oiLevels: layers.walls ? oiLevels : [] });
+  }, [walls, bubbles, fpBars, layers.bubbles, layers.cells, oiLevels, layers.walls]);
   // ── stacked D / W / M volume nodes (refreshed every 5 min) + overextension entries ──
   useEffect(() => {
     if (!layers.nodes) { setNodesV(null); return; }

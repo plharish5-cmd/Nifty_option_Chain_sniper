@@ -42,17 +42,20 @@ export function stacks(bars: FpBar[]): Stack[] {
   return out;
 }
 
+export type OiLevel = { p: number; side: "CE" | "PE"; oi: number; chg: number; pct: number | null };
+
 export class OrderFlowPrimitive implements ISeriesPrimitive<Time> {
   chart: IChartApi | null = null;
   series: ISeriesApi<SeriesType> | null = null;
-  walls: Wall[] = []; bubbles: Bubble[] = []; cells: FpBar[] = []; zones: Stack[] = [];
+  walls: Wall[] = []; bubbles: Bubble[] = []; cells: FpBar[] = []; zones: Stack[] = []; oiLevels: OiLevel[] = [];
   private views = [new BandView(this), new TopView(this)];
   private request: (() => void) | null = null;
   attached(p: SeriesAttachedParameter<Time>) { this.chart = p.chart as IChartApi; this.series = p.series; this.request = p.requestUpdate; }
   detached() { this.chart = null; this.series = null; this.request = null; }
   paneViews() { return this.views; }
-  set(o: { walls?: Wall[]; bubbles?: Bubble[]; cells?: FpBar[] }) {
+  set(o: { walls?: Wall[]; bubbles?: Bubble[]; cells?: FpBar[]; oiLevels?: OiLevel[] }) {
     this.walls = o.walls ?? []; this.bubbles = o.bubbles ?? []; this.cells = o.cells ?? []; this.zones = stacks(this.cells);
+    this.oiLevels = o.oiLevels ?? [];
     this.request?.();
   }
 }
@@ -78,6 +81,14 @@ class BandView implements IPrimitivePaneView {
         const g = ctx.createLinearGradient(0, 0, mediaSize.width, 0);
         g.addColorStop(0, `rgba(${rgb},${0.04 * k})`); g.addColorStop(0.75, `rgba(${rgb},${(0.18 + 0.3 * w.share) * k})`); g.addColorStop(1, `rgba(${rgb},${(0.35 + 0.4 * w.share) * k})`);
         ctx.fillStyle = g; ctx.fillRect(0, y - h / 2, mediaSize.width, h);
+        // fresh ΔOI as its OWN sub-bar INSIDE the band, from the right edge: width = |ΔOI ÷ OI| of the wall.
+        // Bright solid = writers ADDING today (building); amber = writers COVERING (unwinding). "how much is new."
+        const freshFrac = Math.min(1, Math.abs(w.fresh));
+        if (freshFrac > 0.02) {
+          const fw = mediaSize.width * freshFrac;
+          ctx.fillStyle = w.chg >= 0 ? `rgba(${rgb},0.6)` : "rgba(251,191,36,0.5)";
+          ctx.fillRect(mediaSize.width - fw, y - h / 2 + 1, fw, Math.max(2, h - 2));
+        }
         // unwinding walls are outlined in amber (about to break); building walls get a bold solid line
         ctx.strokeStyle = unwinding ? "rgba(251,191,36,0.9)" : `rgba(${rgb},${top || building ? 0.95 : 0.6})`;
         ctx.lineWidth = building ? 2.5 : top ? 2 : 1;
@@ -103,7 +114,7 @@ class TopView implements IPrimitivePaneView {
   zOrder(): PrimitivePaneViewZOrder { return "top"; }
   renderer(): IPrimitivePaneRenderer { return { draw: (t) => this.draw(t) }; }
   private draw(target: Target) {
-    const { chart, series, cells, bubbles, zones } = this.p;
+    const { chart, series, cells, bubbles, zones, oiLevels } = this.p;
     if (!chart || !series) return;
     const ts = chart.timeScale(), sp = ts.options().barSpacing;
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
@@ -163,6 +174,26 @@ class TopView implements IPrimitivePaneView {
         ctx.lineWidth = u.absorbed ? 3 : 1; ctx.strokeStyle = u.absorbed ? "#facc15" : `rgba(${rgb},1)`; ctx.stroke();
         if (r >= 11) { ctx.font = F(Math.min(10, r / 2.2)); ctx.textAlign = "center"; ctx.textBaseline = "middle";
           ctx.fillStyle = u.bull ? "#0b1220" : "#ffffff"; ctx.fillText(`${u.rvol.toFixed(1)}×`, x, y); }
+      }
+      // ── OI % change bubbles for EVERY near-spot level (left gutter): size ∝ |% ΔOI|, PE green / CE red,
+      //    solid = writers adding (building), faded = covering (unwinding). Two columns so CE & PE don't overlap.
+      if (oiLevels.length) {
+        ctx.textBaseline = "middle";
+        for (const L of oiLevels) {
+          const y = series.priceToCoordinate(L.p);
+          if (y === null || y < 14 || y > mediaSize.height - 2) continue;
+          const pct = L.pct ?? 0;
+          const r = Math.max(2.5, Math.min(16, Math.sqrt(Math.abs(pct)) * 2.2)) * Math.min(S, 1.4);
+          const ce = L.side === "CE"; const x = ce ? 96 : 48;
+          const rgb = ce ? "239,68,68" : "34,197,94";
+          ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${rgb},${pct >= 0 ? 0.82 : 0.28})`; ctx.fill();
+          ctx.lineWidth = 1; ctx.strokeStyle = `rgba(${rgb},0.9)`; ctx.stroke();
+          if (r >= 8 && L.pct != null) { ctx.font = F(8.5); ctx.textAlign = ce ? "left" : "right"; ctx.fillStyle = "#e5e7eb";
+            ctx.fillText(`${pct >= 0 ? "+" : ""}${Math.round(pct)}%`, ce ? x + r + 2 : x - r - 2, y); }
+        }
+        ctx.font = F(8); ctx.textAlign = "center"; ctx.fillStyle = "rgba(148,163,184,0.85)";
+        ctx.fillText("PE Δ%", 48, 10); ctx.fillText("CE Δ%", 96, 10);
       }
     });
   }
