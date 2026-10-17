@@ -189,26 +189,26 @@ class TopView implements IPrimitivePaneView {
       // ── OI % change bubbles for near-spot levels (left gutter): size ∝ |% ΔOI| (capped), PE green / CE red,
       //    solid = writers adding (building), faded = covering (unwinding). Number sits INSIDE so it never clips.
       if (oiLevels.length) {
-        const peX = 46, ceX = 104;                       // two separated columns, kept clear of the screen edge
+        const peX = 44, ceX = 100;                       // two separated columns, kept clear of the screen edge
         for (const L of oiLevels) {
           const pct = L.pct ?? 0;
-          if (Math.abs(pct) < 5) continue;               // declutter: only show meaningful ΔOI
+          if (Math.abs(pct) < 6) continue;               // declutter: only show meaningful ΔOI
           const y = series.priceToCoordinate(L.p);
           if (y === null || y < 18 || y > mediaSize.height - 4) continue;
-          const r = Math.max(4, Math.min(14, 4 + Math.sqrt(Math.abs(pct)) * 1.3)) * Math.min(S, 1.25);
+          const r = Math.max(5, Math.min(13, 5 + Math.sqrt(Math.abs(pct)) * 1.15)) * Math.min(S, 1.2);
           const ce = L.side === "CE"; const x = ce ? ceX : peX;
           const rgb = ce ? "239,68,68" : "34,197,94";
+          const building = pct >= 0;
+          // HOLLOW RING so the candles show through; ring thickness ∝ |%|; solid ring = building, dashed = unwinding
           ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${rgb},${pct >= 0 ? 0.8 : 0.3})`; ctx.fill();
-          ctx.lineWidth = 1; ctx.strokeStyle = `rgba(${rgb},0.95)`; ctx.stroke();
-          const label = `${pct >= 0 ? "+" : ""}${Math.round(pct)}`;
-          if (r >= 8.5) {                                  // big enough → number inside the bubble
-            ctx.font = F(Math.min(9.5, r / 1.5)); ctx.textAlign = "center"; ctx.textBaseline = "middle";
-            ctx.fillStyle = "#ffffff"; ctx.fillText(label, x, y);
-          } else {                                         // small → number just to the outer side (never off-screen)
-            ctx.font = F(8); ctx.textBaseline = "middle"; ctx.fillStyle = "#cbd5e1";
-            ctx.textAlign = ce ? "left" : "right"; ctx.fillText(label, ce ? x + r + 2 : x - r - 2, y);
-          }
+          ctx.fillStyle = "rgba(6,11,22,0.45)"; ctx.fill();                 // faint backing just for number legibility
+          ctx.lineWidth = Math.max(1.5, r * 0.26); ctx.strokeStyle = `rgba(${rgb},${building ? 0.95 : 0.55})`;
+          ctx.setLineDash(building ? [] : [3, 2]); ctx.stroke(); ctx.setLineDash([]);
+          const label = `${building ? "+" : ""}${Math.round(pct)}`;
+          if (r >= 8) { ctx.font = F(Math.min(9, r / 1.5)); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            ctx.fillStyle = building ? `rgb(${rgb})` : "#cbd5e1"; ctx.fillText(label, x, y); }
+          else { ctx.font = F(7.5); ctx.textBaseline = "middle"; ctx.fillStyle = "#94a3b8";
+            ctx.textAlign = ce ? "left" : "right"; ctx.fillText(label, ce ? x + r + 2 : x - r - 2, y); }
         }
         ctx.font = F(8.5); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "rgba(148,163,184,0.9)";
         ctx.fillText("PE Δ%", peX, 11); ctx.fillText("CE Δ%", ceX, 11);
