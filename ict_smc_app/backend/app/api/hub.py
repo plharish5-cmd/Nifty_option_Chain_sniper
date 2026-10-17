@@ -32,6 +32,8 @@ from ..strikes.selector import StrikeBook, select_strikes
 from ..delta import confluence
 from ..delta import engine as delta_engine
 from ..engine import auction as auction_mod
+from ..engine import cct as cct_mod
+from ..engine import mmxm as mmxm_mod
 from ..engine import qml_sbr as qml_mod
 from ..engine import volume as vol_mod
 from ..market import activity as act_mod
@@ -563,6 +565,24 @@ class Hub:
         except Exception as e:                               # noqa: BLE001 — never lose the chart over this layer
             log.exception("qml %s failed", tf)
             j["qml"] = {"setups": [], "markers": [], "summary": f"QML error: {e}"}
+
+        # MMXM — Market Maker Models (MMBM / MMSM) State Engine
+        try:
+            mmxm_res = mmxm_mod.compute_mmxm(an.bars, an.atr, an.swings, an.events, an.fvgs, an.obs, tf, config.rules().get("mmxm", {}), j.get("smt", {}).get("markers") if isinstance(j.get("smt"), dict) else None)
+            j["mmxm"] = mmxm_res
+        except Exception as e:                               # noqa: BLE001
+            log.exception("mmxm %s failed", tf)
+            j["mmxm"] = {"available": False, "message": f"MMXM error: {e}", "models": [], "markers": [], "lines": [], "stats": {}}
+            mmxm_res = None
+
+        # CCT — Candle Continuity Theory & 4-Candle Execution Framework (MMXM-Aware)
+        try:
+            cct_res = cct_mod.compute_cct(an.bars, an.atr, an.swings, an.fvgs, an.obs, an.sess, tf, config.rules().get("cct", {}), mmxm_data=mmxm_res)
+            j["cct"] = cct_res
+        except Exception as e:                               # noqa: BLE001
+            log.exception("cct %s failed", tf)
+            j["cct"] = {"available": False, "message": f"CCT error: {e}", "triggers": [], "markers": [], "lines": [], "stats": {}}
+
         self.json[tf] = j
         self.recompute_flow(tf)
 

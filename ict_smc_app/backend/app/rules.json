@@ -426,5 +426,45 @@
     "history_days": 40,
     "alert_max_age_s": 600,
     "telegram": true
+  },
+  "cct": {
+    "_note": "Candle Continuity Theory (CCT): HTF open-price benchmark & 4-Candle execution framework. Bullish: buy below open inside discount POI. Bearish: sell above open inside premium POI.",
+    "enabled": true,
+    "timezone": "America/New_York",
+    "day_open_benchmark": "18:00_ny",
+    "day_bias_threshold_pts": 5.0,
+    "day_bias_atr_mult": 0.1,
+    "killzones": [
+      ["09:30", "11:30"],
+      ["13:30", "16:00"]
+    ],
+    "enforce_polarity": true,
+    "require_strong_confirmation": false,
+    "skip_oversized": true,
+    "pivot_bars": 3,
+    "max_trigger_age_bars": 15,
+    "sl_buffer_pts": 2.0,
+    "min_risk_pts": 5.0,
+    "max_risk_pts": 40.0,
+    "rr_target": 2.0,
+    "suppress_counter_context": false
+  },
+  "mmxm": {
+    "_note": "Market Maker Models (MMBM / MMSM): Original Consolidation -> Liquidity Engineering Curve -> Smart Money Reversal -> Low-Risk Entry -> Reaccumulation -> Orig Cons Target.",
+    "enabled": true,
+    "orig_cons_min_bars": 4,
+    "orig_cons_max_bars": 24,
+    "orig_cons_max_atr": 3.5,
+    "min_engineering_swings": 2,
+    "min_smr_confluences": 2,
+    "allow_mss_only": false,
+    "freeze_dealing_range_at_mss": true,
+    "smr_require_mss": true,
+    "smr_require_fvg": true,
+    "lre_fib_min": 0.20,
+    "lre_fib_max": 0.38,
+    "reacc_fib_min": 0.50,
+    "reacc_fib_max": 0.75,
+    "target_buffer_pts": 4.0
   }
 }

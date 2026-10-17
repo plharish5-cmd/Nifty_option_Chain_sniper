@@ -13,6 +13,7 @@ import { computeGex, confirm3, emas, GammaPrimitive, gammaHits, type GexMap } fr
 import { findEntries, NodesPrimitive, nodesRead, type NodesView } from "./nodes";
 import { buildBubbles, buildWalls, OrderFlowPrimitive, readAt, type Wall, type OiLevel } from "./orderflow";
 import { computeDol } from "./dol";
+import { turtleSoup } from "./turtlesoup";
 import { dispatch, scanSignals, type SigPrefs } from "./signalAlerts";
 import type { AlertRow } from "../api";
 import { EV_LAYER, GUIDE, KIND_ACT } from "./guide";
@@ -21,7 +22,7 @@ import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
 import MtfPanel from "./MtfPanel";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -460,6 +461,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         short: m.dir === "bull" ? "SMT▲" : "SMT▼", full: `${m.text} (pivot ${m.pivot_at}, confirmed ${m.at})`, pri: 3,
         shape: m.dir === "bull" ? "arrowUp" : "arrowDown", color: m.dir === "bull" ? "#34d399" : "#f472b6", size: 1 });
     }
+    if (a && layers.tsoup) {
+      for (const t of turtleSoup(candles, a)) push({ time: t.time, side: t.dir === "bull" ? "below" : "above", dir: t.dir, kind: "TURTLE_SOUP", layer: "Turtle soup",
+        short: t.dir === "bull" ? "🐢TS▲" : "🐢TS▼",
+        full: `Turtle soup ${t.dir === "bull" ? "BUY" : "SELL"} — false break of ${t.name} ${t.level.toFixed(0)} (wick ${t.wick.toFixed(0)}, closed back ${t.dir === "bull" ? "above" : "below"} at ${t.close.toFixed(0)}) → ${t.dir === "bull" ? "sell-side liquidity swept, reversal up" : "buy-side liquidity swept, reversal down"}`,
+        pri: 2, shape: t.dir === "bull" ? "arrowUp" : "arrowDown", color: "#2dd4bf", size: 1.3 });
+    }
     if (a && layers.rvol) {
       const RC: Record<string, string> = { RVOL_ACTIVATED: "#22c55e", BREAKOUT_WITH_RVOL: "#22c55e", RVOL_SPIKE: "#e8c35a", RVOL_FADING: "#94a3b8", BREAKOUT_NO_RVOL: "#ef4444" };
       const RT: Record<string, string> = { RVOL_ACTIVATED: "RVOL▲", BREAKOUT_WITH_RVOL: "BO✓vol", RVOL_SPIKE: "RVOL⚡", RVOL_FADING: "RVOL▼", BREAKOUT_NO_RVOL: "BO✗vol" };
@@ -759,7 +766,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     biasMap.current = new Map(allB.map((r) => [r.time, r]));
     const bias = layers.bias ? allB.filter((r) => r.verdict !== "MIXED") : [];
     fpPrim.current.set(withConf, bias, layers.heat ? fpBars.filter((b) => b.rows.length) : []);
-  }, [fpBars, analysis, tf, layers.fp, layers.bias, layers.heat, candles, ocFeed, smtArg, sig, onSignal, marketOpen, ocActs, layers.cvd, layers.cells, layers.walls, layers.bubbles, layers.gamma, layers.nodes]);
+  }, [fpBars, analysis, tf, layers.fp, layers.bias, layers.heat, candles, ocFeed, smtArg, sig, onSignal, marketOpen, ocActs, layers.cvd, layers.cells, layers.walls, layers.bubbles, layers.gamma, layers.nodes, layers.tsoup]);
 
   // BANKNIFTY line (own hidden scale, so its shape lines up with NIFTY) — shown with the SMT layer
   useEffect(() => {
@@ -1240,6 +1247,7 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["bias", "⚖ Bias 14: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
   ["walls", "🧱 OI walls: 🟥 CE = resistance (cap) · 🟩 PE = support (floor) · bar thicker = hardening, thinner/dashed = cracking · left bubbles = each strike's % OI change (+ writers adding / − covering)", "#ef4444"], ["bubbles", "🫧 Big trades ≥2× vol · yellow ring = absorbed", "#a3e635"],
   ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD pane (est.)", "#4ade80"], ["gamma", "γ map: red call res · green put sup · yellow flip · ✓✓✓ = EMA stack + flag at level + volume", "#c084fc"], ["nodes", "🟨 Stacked nodes D·W·M (gold = A+) · ● ENTRY = ±2σ into zone", "#facc15"],
+  ["tsoup", "🐢 Turtle soup: false break of PDH/PDL/OR/pool that closes back inside → stop-run reversal (▲ buy / ▼ sell)", "#2dd4bf"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {

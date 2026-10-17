@@ -6,7 +6,23 @@ export type TF = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1D";
 export interface Candle { time: number; open: number; high: number; low: number; close: number; closed: boolean }
 export interface Zone { type: "FVG" | "IFVG" | "RJB" | "OB" | "BREAKER"; dir: "bull" | "bear"; from: number; to: number; top: number; bottom: number; state: string; label: string; formed: string }
 export interface PoolLine { side: "BSL" | "SSL"; src: string; price: number; from: number; members: number }
-export interface Marker { time: number; kind: string; dir: "bull" | "bear"; price: number; text: string; at: string }
+export interface Marker {
+  time: number;
+  kind: string;
+  dir: "bull" | "bear";
+  price: number;
+  text: string;
+  at: string;
+  grade?: string;
+  context?: string;
+  is_counter?: boolean;
+  shape?: string;
+  color?: string;
+  sl?: number;
+  tp1?: number;
+  confluences?: string[];
+  anchor_price?: number;
+}
 export interface RangeInfo { dir: "bull" | "bear"; event: string; high: number; low: number; eq: number; ote: Record<string, number>; ote_band: [number, number]; pos_pct: number; zone: string; from: number; to: number }
 export interface Session { date?: string; open?: number; high?: number; low?: number; prev?: { d: string; h: number; l: number; c: number }; or?: { h: number; l: number }; ib?: { h: number; l: number } }
 export interface CrtRange { rvol?: number | null; pair: string; pair_name: string; htf: string; ltf: string; k_ts: number; time: string; win_time: string; chart_from: number; chart_to: number; crth: number; crtl: number; mid: number; body_ratio: number; range_atr: number; aplus: boolean; keylevels: { kind: string; dir: "bull" | "bear"; text: string }[]; biases: ("bull" | "bear")[]; status: string; live: boolean }
@@ -48,7 +64,91 @@ export interface VolumeView {
 }
 export interface QmlSetup { kind: "QML" | "RBS" | "SBR"; dir: "bull" | "bear"; name: string; side: string; level: number; tol: number; status: "ARMED" | "TRIGGERED" | "TP1 HIT" | "TP2 HIT" | "STOPPED" | "INVALID" | "EXPIRED" | "NO-TRADE" | "FAR"; veto?: string; entry: number; sl: number; tp1: number; tp2: number; rr: number; tp1_r: number; from: number; to: number; bos_at: string; trig_at: string | null; rule: string; no_trade: string; strike?: string | null; structure: { label: string; time: number; price: number }[] }
 export interface QmlView { setups: QmlSetup[]; markers: Marker[]; summary: string; pivot_n?: number }
-export interface Analysis { qml?: QmlView; volume?: VolumeView; auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
+export interface CctTrigger {
+  id: string;
+  dir: "bull" | "bear";
+  grade: "A" | "B";
+  grade_desc: string;
+  context: string;
+  is_counter: boolean;
+  time: number;
+  at: string;
+  bar4_open: number;
+  sl: number;
+  tp1: number;
+  risk_pts: number;
+  rr: number;
+  poi: string;
+  outcome: "TP_HIT" | "STOPPED" | "OPEN";
+  r_achieved: number;
+  mae_pts: number;
+  mfe_pts: number;
+  instruction: string;
+}
+export interface CctStats {
+  total_setups: number;
+  grade_a_count: number;
+  grade_b_count: number;
+  wins: number;
+  losses: number;
+  win_rate: number | null;
+  avg_r: number;
+  avg_mae_pts: number;
+}
+export interface CctView {
+  tf: TF;
+  available: boolean;
+  curr_price: number;
+  day_open: number;
+  day_delta: number;
+  day_bias: "BULL" | "BEAR" | "NEUTRAL";
+  h1_open: number;
+  h1_delta: number;
+  h1_bias: "BULL" | "BEAR" | "NEUTRAL";
+  bar_open: number;
+  bar_bias: "BULL" | "BEAR" | "NEUTRAL";
+  continuity: string;
+  guidance: string;
+  in_killzone: boolean;
+  killzone_name: string;
+  triggers: CctTrigger[];
+  markers: Marker[];
+  lines: { label: string; price: number; color: string; style: string }[];
+  stats: CctStats;
+}
+export interface MmxmModel {
+  id: string;
+  model: "MMBM" | "MMSM";
+  name: string;
+  dir: "bull" | "bear";
+  phase: "ORIG_CONS" | "ENGINEERING" | "SMR_CONFIRMED" | "LOW_RISK_BUY" | "LOW_RISK_SELL" | "REACCUMULATION" | "REDISTRIBUTION" | "TARGET_REACHED";
+  orig_cons: { from_i: number; to_i: number; top: number; bottom: number; eq: number; start_time: number; end_time: number };
+  smr: { time: number; at: string; price: number; confluences: string[]; confluence_score: number };
+  mss: { time: number; level: number; displacement: boolean };
+  lre_zone: [number, number];
+  target: number;
+  target_eq: number;
+  sl: number;
+  r_potential: number;
+  summary: string;
+}
+export interface MmxmStats {
+  total_cycles: number;
+  completed: number;
+  completion_rate: number;
+  avg_r_potential: number;
+}
+export interface MmxmView {
+  tf: TF;
+  available: boolean;
+  models: MmxmModel[];
+  primary: MmxmModel | null;
+  markers: Marker[];
+  lines: { label: string; price: number; dir: "bull" | "bear"; style: string }[];
+  stats: MmxmStats;
+  message: string;
+}
+export interface Analysis { cct?: CctView; mmxm?: MmxmView; qml?: QmlView; volume?: VolumeView; auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
 export interface Quote { spot: number | null; prev_close: number | null; chg: number | null; chg_pct: number | null; vix: number | null; vix_chg: number | null; source: string; market_open: boolean; ts: number }
 export interface Signal { ctx?: { tp1?: number; rr1?: number; pair?: string; aplus_tbs?: boolean; [k: string]: unknown }; key: string; setup: "A" | "B" | "C" | "D"; name: string; tf: string; side: "long" | "short"; status: "TRADE" | "SKIP" | "INFO"; time: string; entry: number | null; sl: number | null; tp: number | null; risk: number | null; rr: number | null; target_src: string; reasons: string[]; story: string[]; confidence?: number | null; confluence?: string[]; confidence_parts?: { structure: number; options_context: number | null; flow: number; flow_source: string } | null }
 export interface AlertRow { id: number; ts: number; time: string; grade: "trade" | "skip" | "info" | "rvol"; kind: string; side: string; tf: string; title: string; body: string; price: number | null }
@@ -104,6 +204,8 @@ export interface OptAggExp { ladder: OptAggRow[]; cvd: { ts: number; ce: number;
 export const api = {
   candles: (tf: TF, days = 3, inst = "NIFTY") => get<{ tf: TF; candles: Candle[] }>(`/api/candles?tf=${tf}&days=${days}&inst=${encodeURIComponent(inst)}`),
   analysis: (tf: TF, inst = "NIFTY") => get<Analysis>(`/api/analysis?tf=${tf}&inst=${encodeURIComponent(inst)}`),
+  cct: (tf: TF = "5m") => get<CctView>(`/api/cct?tf=${tf}`),
+  mmxm: (tf: TF = "5m") => get<MmxmView>(`/api/mmxm?tf=${tf}`),
   strikes: () => get<Strikes>("/api/strikes"),
   post: async <T = unknown>(path: string, body: unknown): Promise<T> => {
     const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

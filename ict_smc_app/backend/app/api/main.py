@@ -361,6 +361,36 @@ async def smt_view(tf: str = Query("5m")):
     return {"tf": tf, "available": True, "bank": line, **r}
 
 
+@app.get("/api/cct")
+def cct_view(tf: str = Query("5m")):
+    """Candle Continuity Theory (CCT) & 4-Candle Execution Triggers. Information only."""
+    h = _h()
+    j = h.json.get(tf) or {}
+    c = j.get("cct")
+    if c:
+        return c
+    an = h.analyses.get(tf)
+    if not an:
+        return {"tf": tf, "available": False, "message": f"Analysis for {tf} not ready"}
+    from ..engine import cct as cct_mod
+    return cct_mod.compute_cct(an.bars, an.atr, an.swings, an.fvgs, an.obs, an.sess, tf, config.rules().get("cct", {}))
+
+
+@app.get("/api/mmxm")
+def mmxm_view(tf: str = Query("5m")):
+    """Market Maker Models (MMBM / MMSM) State Engine & Target Tracker. Information only."""
+    h = _h()
+    j = h.json.get(tf) or {}
+    m = j.get("mmxm")
+    if m:
+        return m
+    an = h.analyses.get(tf)
+    if not an:
+        return {"tf": tf, "available": False, "message": f"Analysis for {tf} not ready"}
+    from ..engine import mmxm as mmxm_mod
+    return mmxm_mod.compute_mmxm(an.bars, an.atr, an.swings, an.events, an.fvgs, an.obs, tf, config.rules().get("mmxm", {}), j.get("smt", {}).get("markers") if isinstance(j.get("smt"), dict) else None)
+
+
 @app.get("/api/volume")
 def volume(tf: str = Query("5m")):
     """Real volume from the current-month NIFTY future (basis-adjusted): profiles, VWAP, AVWAPs, RVOL, activity."""

@@ -5,7 +5,7 @@ import type { Analysis, Candle } from "../api";
 import type { FpBar } from "./footprint";
 
 export type Vote = "bull" | "bear" | null;
-export const FACTORS = ["FVG/IFVG", "Order block", "CRT/TBS", "Footprint", "RVOL", "VWAP", "Structure", "PE−CE action", "Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip", "PCR trend", "SMT"] as const;
+export const FACTORS = ["FVG/IFVG", "Order block", "CRT/TBS", "Footprint", "RVOL", "VWAP", "Structure", "PE−CE action", "Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip", "PCR trend", "SMT", "CCT", "MMXM"] as const;
 // Options Lab feeds (from 8501 via /api/oclab): PE−CE table rows (3m, ATM ±10) and the writer-flow points (1m, all strikes)
 export type OcRow = { ts: string; act: [string, string, string?, string?] | null; pe_ce_day: number | null; pcr?: number | null };
 export type OcPt = { t: number; ce: number | null; pe: number | null; flow: number | null; bal: number | null; sig: boolean;
@@ -155,6 +155,38 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     const sm = smt ? [...smt].reverse().find((m) => m.time <= c.time && m.time >= c.time - 5 * barSec) : undefined;
     votes.SMT = sm ? sm.dir : null; why.SMT = sm ? `${sm.dir === "bull" ? "bullish" : "bearish"} SMT ${sm.at}` : "no SMT in the last 6 candles";
 
+    // 15 CCT — Candle Continuity Theory (HTF open benchmark & 4-candle execution)
+    const cctData = a.cct;
+    let cctV: Vote = null, cctW = "no CCT data";
+    if (cctData?.available) {
+      if (cctData.continuity.includes("BULL")) {
+        cctV = "bull";
+        cctW = `CCT ${cctData.continuity} (Day Open ${cctData.day_open} · ${cctData.guidance})`;
+      } else if (cctData.continuity.includes("BEAR")) {
+        cctV = "bear";
+        cctW = `CCT ${cctData.continuity} (Day Open ${cctData.day_open} · ${cctData.guidance})`;
+      } else {
+        cctW = `CCT Neutral / Chop (${cctData.guidance})`;
+      }
+    }
+    votes.CCT = cctV; why.CCT = cctW;
+
+    // 16 MMXM — Market Maker Models (MMBM / MMSM State Machine)
+    const mmxmModel = a.mmxm?.primary;
+    let mmxmV: Vote = null, mmxmW = "no active MMXM cycle";
+    if (mmxmModel) {
+      if (mmxmModel.dir === "bull" && ["SMR_CONFIRMED", "LOW_RISK_BUY", "REACCUMULATION"].includes(mmxmModel.phase)) {
+        mmxmV = "bull";
+        mmxmW = `MMBM ${mmxmModel.phase} → Target ${mmxmModel.target} (EQ ${mmxmModel.target_eq})`;
+      } else if (mmxmModel.dir === "bear" && ["SMR_CONFIRMED", "LOW_RISK_SELL", "REDISTRIBUTION"].includes(mmxmModel.phase)) {
+        mmxmV = "bear";
+        mmxmW = `MMSM ${mmxmModel.phase} → Target ${mmxmModel.target} (EQ ${mmxmModel.target_eq})`;
+      } else {
+        mmxmW = `${mmxmModel.model} ${mmxmModel.phase}`;
+      }
+    }
+    votes.MMXM = mmxmV; why.MMXM = mmxmW;
+
     // factors with no data today don't count (e.g. futures volume missing → RVOL & VWAP can't vote)
     if (!hasVol) why.RVOL = "no futures volume today";
     if (!hasVwap) why.VWAP = "no VWAP (futures volume missing)";
@@ -162,8 +194,12 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     if (!hasPece) { why["PE−CE action"] = "Options Lab (8501) data not available"; why["PCR trend"] = "Options Lab (8501) data not available"; }
     if (!hasFlow) for (const k of ["Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip"] as Factor[]) why[k] = "Options Lab (8501) data not available";
     if (!smt) why.SMT = "SMT: 5m / 15m / 1h only (BANKNIFTY candles)";
+    if (!cctData?.available) why.CCT = "CCT not computed for this timeframe";
+    if (!a.mmxm?.available) why.MMXM = "MMXM not computed for this timeframe";
     if (isLive) why.Footprint = "footprint only for closed candles";
-    const avail = FACTORS.length - (smt ? 0 : 1) - (hasVol ? 0 : 1) - (hasVwap ? 0 : 1) - (hasFp && !isLive ? 0 : 1) - (hasPece ? 0 : 2) - (hasFlow ? 0 : 4);
+    const hasCct = Boolean(cctData?.available);
+    const hasMmxm = Boolean(a.mmxm?.available);
+    const avail = FACTORS.length - (smt ? 0 : 1) - (hasVol ? 0 : 1) - (hasVwap ? 0 : 1) - (hasFp && !isLive ? 0 : 1) - (hasPece ? 0 : 2) - (hasFlow ? 0 : 4) - (hasCct ? 0 : 1) - (hasMmxm ? 0 : 1);
     const vals = Object.values(votes);
     const bull = vals.filter((x) => x === "bull").length, bear = vals.filter((x) => x === "bear").length;
     const req = Math.max(3, Math.round(pct * avail));             // e.g. 10 factors → 7 must agree; 7 → 5
