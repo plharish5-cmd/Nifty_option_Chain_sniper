@@ -195,12 +195,33 @@ export default function App() {
                   className={`tab font-bold flex items-center gap-1.5 transition-all ${
                     isStdvPicking
                       ? "!bg-red-600 !text-white animate-pulse shadow-lg ring-2 ring-red-400"
+                      : selectedStdvLeg
+                      ? "!border-amber-500/80 !text-amber-300 hover:!bg-amber-950/40"
                       : "!border-red-500/80 !text-red-400 hover:!bg-red-950/40"
                   }`}
                 >
                   <span className="text-[13px]">{isStdvPicking ? "✕" : "📍"}</span>
-                  <span>{isStdvPicking ? "Cancel Picking (Esc)" : "2-Click STDV Tool"}</span>
+                  <span>{isStdvPicking ? "Cancel Picking (Esc)" : selectedStdvLeg ? "Re-Pick 2-Click STDV" : "2-Click STDV Tool"}</span>
                 </button>
+                {selectedStdvLeg ? (
+                  <button
+                    onClick={() => setSelectedStdvLeg(null)}
+                    title="Switch back to system auto marking: clears manual 2-click anchors and lets the system mark the ICT leg automatically"
+                    className="tab font-bold flex items-center gap-1.5 !border-cyan-400 !bg-cyan-500/20 !text-cyan-200 hover:!bg-cyan-500/30 shadow-md"
+                  >
+                    <span>🤖</span>
+                    <span>Use System Auto Marking</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setLayers((l) => ({ ...l, stdv: !l.stdv }))}
+                    title="System Auto STDV is active — click to toggle layer on/off"
+                    className={`tab font-semibold flex items-center gap-1.5 ${layers.stdv ? "!border-cyan-500/60 !text-cyan-300 !bg-cyan-950/30" : "text-slate-400"}`}
+                  >
+                    <span>🤖</span>
+                    <span>System STDV: {layers.stdv ? "Active" : "Off"}</span>
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setBottom("stdv");
@@ -234,9 +255,9 @@ export default function App() {
                 ? <WritersFlow tick={chainTick} />
                 : mainView === "both"
                 ? <SplitPane
-                    top={<Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} stdvLeg={selectedStdvLeg} isStdvPicking={isStdvPicking} onStartStdvPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onStdvPicked={(leg) => { setSelectedStdvLeg(leg); setIsStdvPicking(false); setLayers((l) => ({ ...l, stdv: true })); }} onCancelStdvPicking={() => setIsStdvPicking(false)} />}
+                    top={<Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} stdvLeg={selectedStdvLeg} isStdvPicking={isStdvPicking} onStartStdvPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onStdvPicked={(leg) => { setSelectedStdvLeg(leg); setIsStdvPicking(false); setLayers((l) => ({ ...l, stdv: true })); }} onCancelStdvPicking={() => setIsStdvPicking(false)} onResetToAutoStdv={() => setSelectedStdvLeg(null)} />}
                     bottom={<WritersFlow tick={chainTick} />} />
-                : <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} stdvLeg={selectedStdvLeg} isStdvPicking={isStdvPicking} onStartStdvPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onStdvPicked={(leg) => { setSelectedStdvLeg(leg); setIsStdvPicking(false); setLayers((l) => ({ ...l, stdv: true })); }} onCancelStdvPicking={() => setIsStdvPicking(false)} />}
+                : <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} stdvLeg={selectedStdvLeg} isStdvPicking={isStdvPicking} onStartStdvPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onStdvPicked={(leg) => { setSelectedStdvLeg(leg); setIsStdvPicking(false); setLayers((l) => ({ ...l, stdv: true })); }} onCancelStdvPicking={() => setIsStdvPicking(false)} onResetToAutoStdv={() => setSelectedStdvLeg(null)} />}
             </div>
             {mainView === "candles" && <div className="px-4 py-1.5 text-[11px] text-slate-400 border-t border-ink-700 flex flex-wrap gap-x-4">
               {analysis && <span>ATR {analysis.atr} pts · trend <b className={analysis.trend === "bull" ? "text-bull-400" : analysis.trend === "bear" ? "text-bear-400" : ""}>{analysis.trend}</b></span>}

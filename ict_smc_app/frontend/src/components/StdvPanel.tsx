@@ -280,6 +280,20 @@ export default function StdvPanel({
         </div>
 
         <div className="flex items-center gap-2">
+          {selectedLeg && (
+            <button
+              onClick={() => {
+                onSelectLeg(null);
+                setManual0(null);
+                setManual1(null);
+              }}
+              title="Clear custom 2-click marking and let the system automatically detect & mark the ICT manipulation leg"
+              className="tab font-bold flex items-center gap-1.5 !border-cyan-400 !bg-cyan-500/20 !text-cyan-200 hover:!bg-cyan-500/30 shadow-md"
+            >
+              <span>🤖</span>
+              <span>Use System Auto Marking</span>
+            </button>
+          )}
           {/* Option 3: Interactive 2-Click Chart Tool Button */}
           {onStartPicking && (
             <button

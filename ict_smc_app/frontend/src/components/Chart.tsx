@@ -29,12 +29,13 @@ const C = {
   obBull: "rgba(16,185,129,0.14)", obBear: "rgba(239,68,68,0.14)", fvgBull: "rgba(56,189,248,0.14)", fvgBear: "rgba(244,114,182,0.14)",
 };
 
-export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal, expiries, stdvLeg, isStdvPicking, onStartStdvPicking, onStdvPicked, onCancelStdvPicking }: {
+export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal, expiries, stdvLeg, isStdvPicking, onStartStdvPicking, onStdvPicked, onCancelStdvPicking, onResetToAutoStdv }: {
   sig?: SigPrefs; onSignal?: (a: AlertRow) => void;
   onAutoSignal?: (a: AlertRow, ctx: { last: Candle; atr: number; nearWall: number | null }) => void;
   tf: TF; candles: Candle[]; analysis: Analysis | null; layers: Layers; spot: number | null; spotTs: number; marketOpen: boolean;
   onExpand?: () => void; expanded?: boolean; expiries?: string[]; stdvLeg?: StdvLeg | null;
   isStdvPicking?: boolean; onStartStdvPicking?: () => void; onStdvPicked?: (leg: StdvLeg) => void; onCancelStdvPicking?: () => void;
+  onResetToAutoStdv?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -637,18 +638,20 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   gHitsRef.current = gHits;
   useEffect(() => { gmPrim.current.set(layers.gamma ? gexMap : null, gHits); }, [layers.gamma, gexMap, gHits]);
   // ── STDV manipulation leg projections ──
+  const systemLeg = useMemo(() => {
+    if (!layers.stdv || stdvLeg) return null;
+    const legs = detectManipulationLegs(candles, tf, spot ?? undefined);
+    return legs[0] || null;
+  }, [layers.stdv, stdvLeg, candles, tf, spot]);
+  const activeDisplayLeg = stdvLeg || systemLeg;
+
   useEffect(() => {
     if (!layers.stdv) {
       stdvPrim.current.setLeg(null);
       return;
     }
-    if (stdvLeg) {
-      stdvPrim.current.setLeg(stdvLeg);
-    } else {
-      const legs = detectManipulationLegs(candles, tf, spot ?? undefined);
-      stdvPrim.current.setLeg(legs[0] || null);
-    }
-  }, [layers.stdv, stdvLeg, candles, tf, spot]);
+    stdvPrim.current.setLeg(activeDisplayLeg);
+  }, [layers.stdv, activeDisplayLeg]);
 
   // ── Interactive 2-Click Chart Anchoring for STDV ──
   const [pickStep, setPickStep] = useState<1 | 2>(1);
@@ -1056,16 +1059,33 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       {layers.stdv && (
         <div className="absolute left-2 top-11 z-20 flex items-center gap-2 rounded border border-red-500/40 bg-[#060b16]/90 px-2.5 py-1 text-[11.5px] shadow-lg backdrop-blur">
           <span className="font-extrabold text-red-400">📐 STDV</span>
-          {stdvLeg ? (
+          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+            activeDisplayLeg?.anchorMode === "manual"
+              ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+              : "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+          }`}>
+            {activeDisplayLeg?.anchorMode === "manual" ? "📍 Manual Leg" : "🤖 System Auto"}
+          </span>
+          {activeDisplayLeg ? (
             <span className="text-slate-200">
-              <b className={stdvLeg.dir === "bull" ? "text-bull-400" : "text-bear-400"}>
-                {stdvLeg.dir === "bull" ? "▲ BULL" : "▼ BEAR"}
+              <b className={activeDisplayLeg.dir === "bull" ? "text-bull-400" : "text-bear-400"}>
+                {activeDisplayLeg.dir === "bull" ? "▲ BULL" : "▼ BEAR"}
               </b>{" "}
-              [{stdvLeg.tf}] · {stdvLeg.anchorMode === "orderblock" ? "Order Block Run" : stdvLeg.anchorMode === "swing" ? "Full Judas" : "Custom Manual"} ·
-              Anchor 1 <b className="text-white">{stdvLeg.anchor1.toFixed(1)}</b> → Anchor 0 <b className="text-white">{stdvLeg.anchor0.toFixed(1)}</b>
+              [{activeDisplayLeg.tf}] · {activeDisplayLeg.anchorMode === "orderblock" ? "Order Block Run" : activeDisplayLeg.anchorMode === "swing" ? "Full Judas" : "Custom Manual"} ·
+              Anchor 1 <b className="text-white">{activeDisplayLeg.anchor1.toFixed(1)}</b> → Anchor 0 <b className="text-white">{activeDisplayLeg.anchor0.toFixed(1)}</b>
             </span>
           ) : (
             <span className="text-slate-400">Auto-detecting manipulation leg…</span>
+          )}
+          {stdvLeg && onResetToAutoStdv && (
+            <button
+              onClick={onResetToAutoStdv}
+              title="Clear custom 2-click leg and let the system automatically detect & mark the ICT manipulation leg"
+              className="rounded bg-cyan-950/90 px-2 py-0.5 font-bold text-cyan-300 hover:bg-cyan-800 border border-cyan-500/50 transition-colors shadow flex items-center gap-1"
+            >
+              <span>🤖</span>
+              <span>Use System Auto</span>
+            </button>
           )}
           <button
             onClick={isStdvPicking ? onCancelStdvPicking : () => onStartStdvPicking?.()}
@@ -1106,6 +1126,16 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       </div>}
       {/* chart tools (top-right, left of the price axis) */}
       <div className="absolute right-[86px] top-2 z-10 flex gap-1">
+        {stdvLeg && onResetToAutoStdv && (
+          <button
+            className="tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 !border-cyan-500/70 !text-cyan-300 hover:!bg-cyan-950/40"
+            title="Clear manual marking and revert to system automatic STDV"
+            onClick={onResetToAutoStdv}
+          >
+            <span>🤖</span>
+            <span>Use System Auto</span>
+          </button>
+        )}
         <button
           className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all ${
             isStdvPicking
