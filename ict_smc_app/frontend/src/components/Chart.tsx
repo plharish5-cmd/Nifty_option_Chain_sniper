@@ -939,6 +939,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   return (
     <div className="relative h-full w-full">
       <div ref={box} className="h-full w-full" />
+      {/* cursor TIME badge (top-centre) — date + HH:MM of the hovered candle, all timeframes */}
+      {hover && (() => {
+        const d = new Date((hover.t as number) * 1000);   // chart times are IST-shifted → getUTC* gives IST
+        const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()];
+        const lbl = tf === "1D" ? `${d.getUTCDate()} ${mon} ${d.getUTCFullYear()}`
+          : `${d.getUTCDate()} ${mon} · ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+        return (
+          <div className="pointer-events-none absolute left-1/2 top-1.5 z-30 -translate-x-1/2 rounded bg-[#060b16]/90 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-slate-200 ring-1 ring-white/10">
+            🕒 {lbl} <span className="text-slate-500">· {tf}</span>
+          </div>
+        );
+      })()}
       {/* OI wall expiry selector (top-right) — only when walls are on */}
       {layers.walls && (expiries?.length ?? 0) > 1 && (
         <div className="pointer-events-auto absolute right-2 top-2 z-20 flex items-center gap-1 rounded bg-[#060b16]/85 px-1.5 py-1 text-[10px] ring-1 ring-white/10">
