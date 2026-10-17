@@ -85,7 +85,8 @@ def to_json(an: Analysis, max_items: int = 40, near_atr: float = 4.0, max_zones:
     fv = [g for g in an.fvgs if g.state_at(N - 1) not in ("invalid", "filled") and near(g.top, g.bottom)]
     for g in fv[-max_zones:]:
         zones.append({"type": "FVG", "dir": g.dir, "from": T(g.i - 2), "to": end_t, "top": g.top, "bottom": g.bottom,
-                      "state": g.state_at(N - 1), "label": f"{'Bull' if g.dir == 'bull' else 'Bear'} FVG {g.size:.1f}",
+                      "state": g.state_at(N - 1), "grade": g.grade, "body_ratio": g.body_ratio, "displ": g.displ,
+                      "label": f"{'Bull' if g.dir == 'bull' else 'Bear'} FVG {g.size:.1f}{(' ·' + g.grade) if g.grade else ''}",
                       "formed": hm(g.ts)})
     iv = [x for x in an.ifvgs if x.state_at(N - 1) != "invalid" and near(x.top, x.bottom)]
     for x in iv[-max_zones:]:

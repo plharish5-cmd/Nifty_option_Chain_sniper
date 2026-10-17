@@ -33,6 +33,9 @@ class FVG:
     ce_i: Optional[int] = None
     filled_i: Optional[int] = None
     invalid_i: Optional[int] = None
+    body_ratio: float = 0.0          # 3rd-candle rule: body ÷ range of the gap-creating candle (displacement strength)
+    displ: float = 0.0               # 3rd-candle body ÷ ATR (how big the move that opened the gap was)
+    grade: str = ""                  # "A" strong institutional gap · "B" ok · "C" weak (long wick / small body)
 
     @property
     def size(self) -> float:
@@ -54,15 +57,38 @@ class FVG:
         return "open"
 
 
-def find_fvgs(b: Bars, atr_arr: np.ndarray, min_pts: float, min_atr: float) -> List[FVG]:
+def find_fvgs(b: Bars, atr_arr: np.ndarray, min_pts: float, min_atr: float,
+              min_body_ratio: float = 0.0, min_displ_atr: float = 0.0, need_dir: bool = False) -> List[FVG]:
+    """The 3rd-candle rule: the gap-creating candle (bar i) must be a real DISPLACEMENT candle — a strong body
+    (not a long counter-wick), moving in the gap's direction. Each FVG is graded A/B/C on that. The three quality
+    params default OFF (0.0 / False) → output and the 104 tests are unchanged; pass them to FILTER weak gaps."""
+    def _quality(i: int, direction: str):
+        rng = float(b.h[i] - b.l[i])
+        body = abs(float(b.c[i] - b.o[i]))
+        br = body / rng if rng > 0 else 0.0
+        A = float(atr_arr[i])
+        dp = body / A if A > 0 else 0.0
+        good_dir = (b.c[i] >= b.o[i]) if direction == "bull" else (b.c[i] <= b.o[i])
+        g = "A" if (br >= 0.5 and dp >= 1.0 and good_dir) else "B" if (br >= 0.3 and good_dir) else "C"
+        return br, dp, good_dir, g
+
+    def _keep(br: float, dp: float, good_dir: bool) -> bool:
+        if need_dir and not good_dir:
+            return False
+        return br >= min_body_ratio and dp >= min_displ_atr
+
     out: List[FVG] = []
     N = len(b)
     for i in range(2, N):
         need = max(min_pts, min_atr * float(atr_arr[i]))
         if b.l[i] > b.h[i - 2] and b.l[i] - b.h[i - 2] >= need:
-            out.append(FVG("bull", i, int(b.ts[i]), float(b.h[i - 2]), float(b.l[i])))
+            br, dp, gd, gr = _quality(i, "bull")
+            if _keep(br, dp, gd):
+                out.append(FVG("bull", i, int(b.ts[i]), float(b.h[i - 2]), float(b.l[i]), body_ratio=round(br, 2), displ=round(dp, 2), grade=gr))
         elif b.h[i] < b.l[i - 2] and b.l[i - 2] - b.h[i] >= need:
-            out.append(FVG("bear", i, int(b.ts[i]), float(b.h[i]), float(b.l[i - 2])))
+            br, dp, gd, gr = _quality(i, "bear")
+            if _keep(br, dp, gd):
+                out.append(FVG("bear", i, int(b.ts[i]), float(b.h[i]), float(b.l[i - 2]), body_ratio=round(br, 2), displ=round(dp, 2), grade=gr))
     for g in out:
         for j in range(g.i + 1, N):
             if g.dir == "bull":
