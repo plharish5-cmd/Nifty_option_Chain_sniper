@@ -28,6 +28,27 @@ const C = {
   obBull: "rgba(16,185,129,0.14)", obBear: "rgba(239,68,68,0.14)", fvgBull: "rgba(56,189,248,0.14)", fvgBear: "rgba(244,114,182,0.14)",
 };
 
+// Shared writer synthesis — one source of truth for both the HUD card and the order-flow box (so they can't disagree).
+type WBal = { pcr: number | null; ceOI: number; peOI: number; ceChg: number; peChg: number; net: number;
+  maxPain: number | null; trend: "rising" | "falling" | "flat"; pcrPrev: number | null; spot: number | null };
+function writerVerdict(wb: WBal, walls: Wall[]) {
+  let score = 0; const pros: string[] = []; const cons: string[] = [];
+  const { pcr, net, trend, maxPain, spot: wsp } = wb;
+  if (pcr != null) { if (pcr >= 1.2) { score += 1; pros.push("put-heavy chain"); } else if (pcr <= 0.8) { score -= 1; cons.push("call-heavy chain"); } }
+  if (trend === "rising") { score += 1; pros.push("puts accelerating"); } else if (trend === "falling") { score -= 1; cons.push("calls accelerating"); }
+  if (net > 5e6) { score += 1; pros.push("net put writing"); } else if (net < -5e6) { score -= 1; cons.push("net call writing"); }
+  if (maxPain != null && wsp != null) { if (wsp < maxPain - 10) { score += 0.5; pros.push("max-pain pull up"); } else if (wsp > maxPain + 10) { score -= 0.5; cons.push("max-pain pull down"); } }
+  const sp = wsp ?? 0;
+  const peW = walls.filter((w) => w.side === "PE"), ceW = walls.filter((w) => w.side === "CE");
+  const support = peW.filter((w) => w.p <= sp).sort((a, b) => b.p - a.p)[0] ?? peW.sort((a, b) => b.oi - a.oi)[0];
+  const resistance = ceW.filter((w) => w.p >= sp).sort((a, b) => a.p - b.p)[0] ?? ceW.sort((a, b) => b.oi - a.oi)[0];
+  if (support?.status === "building" && resistance?.status === "unwinding") { score += 1; pros.push("support firming, resistance cracking"); }
+  if (support?.status === "unwinding" && resistance?.status === "building") { score -= 1; cons.push("support cracking, resistance firming"); }
+  const bias: "BULLISH" | "BEARISH" | "NEUTRAL" = score >= 1.5 ? "BULLISH" : score <= -1.5 ? "BEARISH" : "NEUTRAL";
+  const reason = (score >= 0 ? pros : cons).slice(0, 2).join(" · ") || "signals offsetting";
+  return { score, bias, strong: Math.abs(score) >= 2.5, support, resistance, reason };
+}
+
 export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal, expiries }: {
   sig?: SigPrefs; onSignal?: (a: AlertRow) => void;
   onAutoSignal?: (a: AlertRow, ctx: { last: Candle; atr: number; nearWall: number | null }) => void;
@@ -941,24 +962,10 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         {layers.walls && writerBal && (() => {
           const cr = (v: number) => { const a = Math.abs(v); return a >= 1e7 ? `${(a / 1e7).toFixed(2)}Cr` : a >= 1e5 ? `${(a / 1e5).toFixed(1)}L` : `${Math.round(a)}`; };
           const { pcr, net, trend, maxPain, spot: wsp } = writerBal;
-          // ── decisive synthesis: weigh every writer signal into one bias score ──
-          let score = 0; const pros: string[] = []; const cons: string[] = [];
-          if (pcr != null) { if (pcr >= 1.2) { score += 1; pros.push("put-heavy chain"); } else if (pcr <= 0.8) { score -= 1; cons.push("call-heavy chain"); } }
-          if (trend === "rising") { score += 1; pros.push("puts accelerating"); } else if (trend === "falling") { score -= 1; cons.push("calls accelerating"); }
-          if (net > 5e6) { score += 1; pros.push("net put writing"); } else if (net < -5e6) { score -= 1; cons.push("net call writing"); }
-          if (maxPain != null && wsp != null) { if (wsp < maxPain - 10) { score += 0.5; pros.push("max-pain pull up"); } else if (wsp > maxPain + 10) { score -= 0.5; cons.push("max-pain pull down"); } }
-          const peW = walls.filter((w) => w.side === "PE"), ceW = walls.filter((w) => w.side === "CE");
-          const sp = wsp ?? 0;
-          const support = peW.filter((w) => w.p <= sp).sort((a, b) => b.p - a.p)[0] ?? peW.sort((a, b) => b.oi - a.oi)[0];
-          const resistance = ceW.filter((w) => w.p >= sp).sort((a, b) => a.p - b.p)[0] ?? ceW.sort((a, b) => b.oi - a.oi)[0];
-          if (support?.status === "building" && resistance?.status === "unwinding") { score += 1; pros.push("support firming, resistance cracking"); }
-          if (support?.status === "unwinding" && resistance?.status === "building") { score -= 1; cons.push("support cracking, resistance firming"); }
-          const bias = score >= 1.5 ? "BULLISH" : score <= -1.5 ? "BEARISH" : "NEUTRAL";
-          const strong = Math.abs(score) >= 2.5;
+          const { score, bias, strong, support, resistance, reason } = writerVerdict(writerBal, walls);
           const tone = bias === "BULLISH" ? { bar: "#10b981", bg: "rgba(6,78,59,0.55)", txt: "text-emerald-300", badge: "bg-emerald-500/25 text-emerald-200" }
             : bias === "BEARISH" ? { bar: "#ef4444", bg: "rgba(76,5,25,0.55)", txt: "text-rose-300", badge: "bg-rose-500/25 text-rose-200" }
             : { bar: "#eab308", bg: "rgba(60,50,10,0.5)", txt: "text-amber-200", badge: "bg-amber-500/20 text-amber-200" };
-          const reason = (score >= 0 ? pros : cons).slice(0, 2).join(" · ") || "signals offsetting";
           const action = bias === "NEUTRAL"
             ? `Balanced — fade the range. Long only on a close > ${resistance ? resistance.p.toLocaleString("en-IN") : "resistance"}, short on a close < ${support ? support.p.toLocaleString("en-IN") : "support"}.`
             : bias === "BULLISH"
@@ -1057,7 +1064,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       {ofNow && <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2">
         <div className={`flex max-w-[560px] items-center gap-2 rounded-lg px-3 py-1.5 shadow-xl ring-2 ${ofNow.verdict === "BUY" ? "bg-bull-900/90 ring-bull-400" : ofNow.verdict === "SELL" ? "bg-bear-900/90 ring-bear-400" : "bg-ink-850/90 ring-slate-500"}`}>
           <span className={`rounded px-2 py-0.5 text-[16px] font-extrabold ${VC[ofNow.verdict]}`}>{ofNow.verdict}</span>
-          <span className="text-[12.5px] leading-tight text-slate-100"><b className="text-cyan-200">ORDER FLOW · last closed {hm(lastClosed!.time)}</b><br />{ofNow.head}</span>
+          <span className="text-[12.5px] leading-tight text-slate-100"><b className="text-cyan-200">ORDER FLOW · last closed {hm(lastClosed!.time)}</b><br />{ofNow.head}
+            {layers.walls && writerBal && (() => { const V = writerVerdict(writerBal, walls);
+              const c = V.bias === "BULLISH" ? "text-emerald-300" : V.bias === "BEARISH" ? "text-rose-300" : "text-amber-200";
+              return <><br /><span className={`text-[11px] ${c}`}>🖊 Writers: {V.strong ? "STRONG " : ""}{V.bias}{V.support && V.resistance ? ` · ${V.support.p.toLocaleString("en-IN")} ⟷ ${V.resistance.p.toLocaleString("en-IN")}` : ""} · {V.reason}</span></>;
+            })()}
+          </span>
         </div>
       </div>}
       {layers.gamma && <div className="pointer-events-none absolute left-1/2 top-[64px] z-10 -translate-x-1/2">
