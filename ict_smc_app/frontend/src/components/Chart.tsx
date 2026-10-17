@@ -940,36 +940,49 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         ))}
         {layers.walls && writerBal && (() => {
           const cr = (v: number) => { const a = Math.abs(v); return a >= 1e7 ? `${(a / 1e7).toFixed(2)}Cr` : a >= 1e5 ? `${(a / 1e5).toFixed(1)}L` : `${Math.round(a)}`; };
-          const pcr = writerBal.pcr; const net = writerBal.net;
-          const pcrCls = pcr == null ? "text-slate-300" : pcr >= 1.1 ? "text-emerald-300" : pcr <= 0.9 ? "text-rose-300" : "text-slate-200";
-          const netCls = net >= 0 ? "text-emerald-300" : "text-rose-300";
+          const { pcr, net, trend, maxPain, spot: wsp } = writerBal;
+          // ── decisive synthesis: weigh every writer signal into one bias score ──
+          let score = 0; const pros: string[] = []; const cons: string[] = [];
+          if (pcr != null) { if (pcr >= 1.2) { score += 1; pros.push("put-heavy chain"); } else if (pcr <= 0.8) { score -= 1; cons.push("call-heavy chain"); } }
+          if (trend === "rising") { score += 1; pros.push("puts accelerating"); } else if (trend === "falling") { score -= 1; cons.push("calls accelerating"); }
+          if (net > 5e6) { score += 1; pros.push("net put writing"); } else if (net < -5e6) { score -= 1; cons.push("net call writing"); }
+          if (maxPain != null && wsp != null) { if (wsp < maxPain - 10) { score += 0.5; pros.push("max-pain pull up"); } else if (wsp > maxPain + 10) { score -= 0.5; cons.push("max-pain pull down"); } }
+          const peW = walls.filter((w) => w.side === "PE"), ceW = walls.filter((w) => w.side === "CE");
+          const sp = wsp ?? 0;
+          const support = peW.filter((w) => w.p <= sp).sort((a, b) => b.p - a.p)[0] ?? peW.sort((a, b) => b.oi - a.oi)[0];
+          const resistance = ceW.filter((w) => w.p >= sp).sort((a, b) => a.p - b.p)[0] ?? ceW.sort((a, b) => b.oi - a.oi)[0];
+          if (support?.status === "building" && resistance?.status === "unwinding") { score += 1; pros.push("support firming, resistance cracking"); }
+          if (support?.status === "unwinding" && resistance?.status === "building") { score -= 1; cons.push("support cracking, resistance firming"); }
+          const bias = score >= 1.5 ? "BULLISH" : score <= -1.5 ? "BEARISH" : "NEUTRAL";
+          const strong = Math.abs(score) >= 2.5;
+          const tone = bias === "BULLISH" ? { bar: "#10b981", bg: "rgba(6,78,59,0.55)", txt: "text-emerald-300", badge: "bg-emerald-500/25 text-emerald-200" }
+            : bias === "BEARISH" ? { bar: "#ef4444", bg: "rgba(76,5,25,0.55)", txt: "text-rose-300", badge: "bg-rose-500/25 text-rose-200" }
+            : { bar: "#eab308", bg: "rgba(60,50,10,0.5)", txt: "text-amber-200", badge: "bg-amber-500/20 text-amber-200" };
+          const reason = (score >= 0 ? pros : cons).slice(0, 2).join(" · ") || "signals offsetting";
+          const action = bias === "NEUTRAL"
+            ? `Balanced — fade the range. Long only on a close > ${resistance ? resistance.p.toLocaleString("en-IN") : "resistance"}, short on a close < ${support ? support.p.toLocaleString("en-IN") : "support"}.`
+            : bias === "BULLISH"
+              ? `Writers favour upside. Buy dips toward ${support ? support.p.toLocaleString("en-IN") : "support"}; invalid on a close below it.`
+              : `Writers favour downside. Sell rallies toward ${resistance ? resistance.p.toLocaleString("en-IN") : "resistance"}; invalid on a close above it.`;
           return (
-            <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded bg-[#060b16]/85 px-2 py-0.5 text-[10px] ring-1 ring-white/10"
-              title="Aggregate option writers across the selected expiry. PCR = put OI ÷ call OI (≥1 put-heavy = support/bullish tilt). Net = PE ΔOI − CE ΔOI (who is writing more right now).">
-              <b className="text-slate-200">🖊 Writers</b>
-              <span className="text-slate-400">PCR</span>
-              <b className={pcrCls}>{pcr != null ? pcr.toFixed(2) : "—"} {pcr != null && (pcr >= 1 ? "▲ puts" : "▼ calls")}</b>
-              {writerBal.trend !== "flat" && (
-                <span title="PCR change over the last 30 min (intraday): rising = puts accelerating (bullish), falling = calls accelerating"
-                  className={writerBal.trend === "rising" ? "text-emerald-400" : "text-rose-400"}>
-                  {writerBal.trend === "rising" ? "↗ puts accel" : "↘ calls accel"}{writerBal.pcrPrev != null ? ` (30m ${writerBal.pcrPrev.toFixed(2)})` : ""}
-                </span>
-              )}
-              <span className="mx-0.5 w-px self-stretch bg-ink-700" />
-              <span className="text-emerald-300">PE Δ +{cr(writerBal.peChg)}</span>
-              <span className="text-rose-300">CE Δ +{cr(writerBal.ceChg)}</span>
-              <span className="text-slate-400">net</span>
-              <b className={netCls}>{net >= 0 ? "+" : "−"}{cr(net)} · {net >= 0 ? "puts building → support ↑ (bullish)" : "calls building → resistance ↑ (bearish)"}</b>
-              {writerBal.maxPain != null && (
-                <>
-                  <span className="mx-0.5 w-px self-stretch bg-ink-700" />
-                  <span className="text-amber-300" title="Max pain: the strike where option buyers lose the most at expiry — writers tend to 'pull' price toward it">
-                    🎯 max-pain {writerBal.maxPain.toLocaleString("en-IN")}
-                    {writerBal.spot != null ? ` · ${writerBal.spot >= writerBal.maxPain ? "spot " + cr(writerBal.spot - writerBal.maxPain) + " above (pull ↓)" : "spot " + cr(writerBal.maxPain - writerBal.spot) + " below (pull ↑)"}` : ""}
-                  </span>
-                </>
-              )}
-            </span>
+            <div className="rounded-md px-2 py-1 text-[10px] ring-1 ring-white/10" style={{ background: tone.bg, borderLeft: `3px solid ${tone.bar}` }}>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${tone.badge}`}>🖊 WRITERS: {strong ? "STRONG " : ""}{bias}</span>
+                {support && resistance && (
+                  <b className="text-slate-200">{support.p.toLocaleString("en-IN")} <span className="text-slate-500">⟷</span> {resistance.p.toLocaleString("en-IN")}</b>
+                )}
+                {maxPain != null && <span className="text-amber-300/90">🎯 {maxPain.toLocaleString("en-IN")}{wsp != null ? ` (${wsp >= maxPain ? "↓" : "↑"}${cr(Math.abs((wsp ?? 0) - maxPain))})` : ""}</span>}
+                <span className={tone.txt}>— {reason}</span>
+              </div>
+              <div className={`mt-0.5 ${tone.txt}`}>{action}</div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[9px] text-slate-400">
+                <span>PCR <b className={pcr != null && pcr >= 1 ? "text-emerald-300" : "text-rose-300"}>{pcr != null ? pcr.toFixed(2) : "—"}</b>{trend !== "flat" ? (trend === "rising" ? " ↗" : " ↘") : ""}</span>
+                <span>PE Δ <b className="text-emerald-300">+{cr(writerBal.peChg)}</b></span>
+                <span>CE Δ <b className="text-rose-300">+{cr(writerBal.ceChg)}</b></span>
+                <span>net <b className={net >= 0 ? "text-emerald-300" : "text-rose-300"}>{net >= 0 ? "+" : "−"}{cr(net)}</b></span>
+                <span className="text-slate-500">score {score > 0 ? "+" : ""}{score}</span>
+              </div>
+            </div>
           );
         })()}
         {(() => { const act = (Object.keys(GUIDE) as (keyof Layers)[]).filter((k) => layers[k]); if (!act.length) return null;
