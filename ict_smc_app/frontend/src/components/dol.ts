@@ -9,11 +9,24 @@ import type { Analysis, Candle } from "../api";
 export type Dol = { from: number; dir: "bull" | "bear"; kind: "IRL" | "ERL"; lo: number; hi: number; label: string;
   why: string; hit?: number; trig?: number; trigWhat?: string };
 
-export function computeDol(candles: Candle[], a: Analysis | null): Dol[] {
+// Higher-timeframe (daily) key liquidity — the external draws ICT targets beyond the current chart's own pools.
+// Built from session levels: PDH/PDL (prior day), the running day high/low, and the opening-range edges.
+function htfPools(sess: Analysis["session"] | undefined): { side: "BSL" | "SSL"; src: string; price: number }[] {
+  if (!sess) return [];
+  const out: { side: "BSL" | "SSL"; src: string; price: number }[] = [];
+  const add = (p: number | undefined, side: "BSL" | "SSL", src: string) => { if (p && isFinite(p)) out.push({ side, src, price: p }); };
+  add(sess.prev?.h, "BSL", "PDH"); add(sess.prev?.l, "SSL", "PDL");
+  add(sess.high, "BSL", "day high"); add(sess.low, "SSL", "day low");
+  add(sess.or?.h, "BSL", "OR high"); add(sess.or?.l, "SSL", "OR low");
+  return out;
+}
+
+export function computeDol(candles: Candle[], a: Analysis | null, useHtf = true): Dol[] {
   if (!a) return [];
   const closed = candles.filter((c) => c.closed !== false);
   const zones = (a.zones ?? []).filter((z) => z.type === "FVG" || z.type === "IFVG");
   const pools = a.pools ?? [];
+  const htf = useHtf ? htfPools(a.session) : [];
   const hm = (t: number) => { const d = new Date(t * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
   const erlEv = new Map<number, { dir: "bull" | "bear"; what: string; px: number }>();
   for (const m of a.markers ?? []) if (m.kind === "SWEEP") erlEv.set(m.time, { dir: m.dir, what: "liquidity sweep", px: m.price });
@@ -31,12 +44,17 @@ export function computeDol(candles: Candle[], a: Analysis | null): Dol[] {
         const held = was.dir === "bear" ? c.close > was.hi : c.close < was.lo;
         if (held) {
           const dir: "bull" | "bear" = was.dir === "bear" ? "bull" : "bear";
-          const tg = pools.filter((p) => p.from < c.time && (dir === "bull" ? p.side === "BSL" && p.price > c.close : p.side === "SSL" && p.price < c.close))
-            .sort((p, q) => (dir === "bull" ? p.price - q.price : q.price - p.price))[0];
+          // ERL candidates = current-tf pools + the HTF daily levels (PDH/PDL/day-extreme/OR), nearest in the draw direction
+          const cands: { side: "BSL" | "SSL"; src: string; price: number }[] = [
+            ...pools.filter((p) => p.from < c.time).map((p) => ({ side: p.side, src: p.src, price: p.price })),
+            ...htf,
+          ].filter((p) => (dir === "bull" ? p.side === "BSL" && p.price > c.close : p.side === "SSL" && p.price < c.close));
+          const tg = cands.sort((p, q) => (dir === "bull" ? p.price - q.price : q.price - p.price))[0];
           if (tg) {
+            const name = tg.src && /PDH|PDL|day|OR/i.test(tg.src) ? tg.src : (dir === "bull" ? "old high" : "old low");
             cur = { from: c.time, dir, kind: "ERL", lo: tg.price, hi: tg.price,
               why: `FVG ${was.lo.toFixed(0)}–${was.hi.toFixed(0)} reached & held ${hm(c.time)} (IRL)`,
-              label: `D.O.L ${dir === "bull" ? "↑" : "↓"} ${dir === "bull" ? "old high" : "old low"} ${tg.price.toFixed(0)}` };
+              label: `D.O.L ${dir === "bull" ? "↑" : "↓"} ${name} ${tg.price.toFixed(0)}` };
             out.push(cur);
           }
         }
