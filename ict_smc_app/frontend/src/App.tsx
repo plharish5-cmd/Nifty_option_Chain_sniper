@@ -20,10 +20,10 @@ import { SignalControls, useSigPrefs } from "./components/signalAlerts";
 import BookPanel, { BookChip } from "./components/BookPanel";
 import CombinedRvolChip from "./components/CombinedRvolChip";
 import StdvPanel from "./components/StdvPanel";
-import type { StdvLeg } from "./components/stdv";
+import { aggregateBars, type StdvLeg } from "./components/stdv";
 
-const TFS: TF[] = ["1m", "5m", "15m", "1h", "1D"];
-const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "1h": 30, "1D": 60 };
+const TFS: TF[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1D", "1W"];
+const DAYS: Record<TF, number> = { "1m": 1, "3m": 2, "5m": 3, "15m": 8, "30m": 15, "1h": 30, "4h": 45, "1D": 90, "1W": 180 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
   ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"], ["fp", "Footprint Δ (est.)"], ["heat", "Heatmap"], ["ocAct", "PE−CE action"], ["dol", "D.O.L (IRL⇄ERL)"], ["smt", "SMT (vs BankNifty)"], ["bias", "⚖ Bias 14"], ["walls", "🧱 OI walls"], ["bubbles", "🫧 Big trades"], ["cells", "▦ FP cells"], ["cvd", "〽 CVD"], ["nodes", "🟨 Stacked nodes"], ["gamma", "γ Gamma 3✓"], ["stdv", "📐 STDV"],
@@ -99,8 +99,22 @@ export default function App() {
 
   const loadChart = useCallback(async (t: TF) => {
     const inst = instRef.current;
-    const tt: TF = inst !== "NIFTY" && t === "1D" ? "5m" : t;
-    const [c, a] = await Promise.all([api.candles(tt, inst !== "NIFTY" ? 2 : DAYS[tt], inst), tt === "1D" ? Promise.resolve(null) : api.analysis(tt, inst)]);
+    if (t === "1W") {
+      try {
+        const c = await api.candles("1D", 180, inst);
+        if (tfRef.current !== t || instRef.current !== inst) return;
+        const aggregated = aggregateBars(c.candles, 604800);
+        setCandles(aggregated);
+        setAnalysis(null);
+      } catch { /* ignore */ }
+      return;
+    }
+    const tt: TF = inst !== "NIFTY" && (t === "1D" || t === "4h") ? "5m" : t;
+    const days = DAYS[tt] ?? 3;
+    const [c, a] = await Promise.all([
+      api.candles(tt, inst !== "NIFTY" ? 2 : days, inst).catch(() => ({ tf: tt, candles: [] })),
+      tt === "1D" ? Promise.resolve(null) : api.analysis(tt, inst).catch(() => null)
+    ]);
     if (tfRef.current !== t || instRef.current !== inst) return;
     setCandles(c.candles);
     setAnalysis(a);
@@ -168,6 +182,35 @@ export default function App() {
                 {mainView !== "writers" && TFS.map((t) => <button key={t} onClick={() => setTf(t)} className={`tab ${t === tf ? "tab-on" : ""}`}>{t}</button>)}
                 <button onClick={toggleFull} title={full ? "Back to normal view (Esc)" : "Chart full screen (Esc to exit)"}
                   className="tab ml-2 !border-gold-500/70 !text-gold-400 font-semibold">{full ? "▣ Normal view" : "⛶ Full view"}</button>
+                <span className="mx-1 w-px self-stretch bg-ink-700" />
+                <button
+                  onClick={() => {
+                    setIsStdvPicking((p) => {
+                      const next = !p;
+                      if (next) setLayers((l) => ({ ...l, stdv: true }));
+                      return next;
+                    });
+                  }}
+                  title="Interactive 2-Click STDV Tool: Click any 2 candle wicks on chart to anchor custom STDV manipulation leg"
+                  className={`tab font-bold flex items-center gap-1.5 transition-all ${
+                    isStdvPicking
+                      ? "!bg-red-600 !text-white animate-pulse shadow-lg ring-2 ring-red-400"
+                      : "!border-red-500/80 !text-red-400 hover:!bg-red-950/40"
+                  }`}
+                >
+                  <span className="text-[13px]">{isStdvPicking ? "✕" : "📍"}</span>
+                  <span>{isStdvPicking ? "Cancel Picking (Esc)" : "2-Click STDV Tool"}</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setBottom("stdv");
+                    setLayers((l) => ({ ...l, stdv: true }));
+                  }}
+                  title="Open the STD DEV cockpit panel below"
+                  className={`tab !border-gold-500/70 !text-gold-300 font-semibold ${bottom === "stdv" ? "tab-on !bg-gold-500/20" : ""}`}
+                >
+                  📐 STD DEV Cockpit
+                </button>
               </div>
               {mainView !== "writers" && <>
               <div className="flex flex-wrap items-center gap-1">
@@ -191,9 +234,9 @@ export default function App() {
                 ? <WritersFlow tick={chainTick} />
                 : mainView === "both"
                 ? <SplitPane
-                    top={<Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} stdvLeg={selectedStdvLeg} isStdvPicking={isStdvPicking} onStdvPicked={(leg) => { setSelectedStdvLeg(leg); setIsStdvPicking(false); setLayers((l) => ({ ...l, stdv: true })); }} onCancelStdvPicking={() => setIsStdvPicking(false)} />}
+                    top={<Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} stdvLeg={selectedStdvLeg} isStdvPicking={isStdvPicking} onStartStdvPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onStdvPicked={(leg) => { setSelectedStdvLeg(leg); setIsStdvPicking(false); setLayers((l) => ({ ...l, stdv: true })); }} onCancelStdvPicking={() => setIsStdvPicking(false)} />}
                     bottom={<WritersFlow tick={chainTick} />} />
-                : <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} stdvLeg={selectedStdvLeg} isStdvPicking={isStdvPicking} onStdvPicked={(leg) => { setSelectedStdvLeg(leg); setIsStdvPicking(false); setLayers((l) => ({ ...l, stdv: true })); }} onCancelStdvPicking={() => setIsStdvPicking(false)} />}
+                : <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} stdvLeg={selectedStdvLeg} isStdvPicking={isStdvPicking} onStartStdvPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onStdvPicked={(leg) => { setSelectedStdvLeg(leg); setIsStdvPicking(false); setLayers((l) => ({ ...l, stdv: true })); }} onCancelStdvPicking={() => setIsStdvPicking(false)} />}
             </div>
             {mainView === "candles" && <div className="px-4 py-1.5 text-[11px] text-slate-400 border-t border-ink-700 flex flex-wrap gap-x-4">
               {analysis && <span>ATR {analysis.atr} pts · trend <b className={analysis.trend === "bull" ? "text-bull-400" : analysis.trend === "bear" ? "text-bear-400" : ""}>{analysis.trend}</b></span>}
@@ -236,7 +279,7 @@ export default function App() {
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "stdv" ? <StdvPanel candles={candles} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} chartTf={tf} selectedLeg={selectedStdvLeg} onSelectLeg={setSelectedStdvLeg} isLayerActive={!!layers.stdv} onToggleLayer={() => setLayers((l) => ({ ...l, stdv: !l.stdv }))} isPicking={isStdvPicking} onStartPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onCancelPicking={() => setIsStdvPicking(false)} />
+              {bottom === "stdv" ? <StdvPanel candles={candles} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} chartTf={tf} selectedLeg={selectedStdvLeg} onSelectLeg={setSelectedStdvLeg} isLayerActive={!!layers.stdv} onToggleLayer={() => setLayers((l) => ({ ...l, stdv: !l.stdv }))} isPicking={isStdvPicking} onStartPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onCancelPicking={() => setIsStdvPicking(false)} onSetChartTf={setTf} />
                 : bottom === "wmap" ? <WriterMap />
                 : bottom === "auto" ? <AutoPilotPanel ap={ap} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} />
                 : bottom === "book" ? <BookPanel />

@@ -29,12 +29,12 @@ const C = {
   obBull: "rgba(16,185,129,0.14)", obBear: "rgba(239,68,68,0.14)", fvgBull: "rgba(56,189,248,0.14)", fvgBear: "rgba(244,114,182,0.14)",
 };
 
-export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal, expiries, stdvLeg, isStdvPicking, onStdvPicked, onCancelStdvPicking }: {
+export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal, expiries, stdvLeg, isStdvPicking, onStartStdvPicking, onStdvPicked, onCancelStdvPicking }: {
   sig?: SigPrefs; onSignal?: (a: AlertRow) => void;
   onAutoSignal?: (a: AlertRow, ctx: { last: Candle; atr: number; nearWall: number | null }) => void;
   tf: TF; candles: Candle[]; analysis: Analysis | null; layers: Layers; spot: number | null; spotTs: number; marketOpen: boolean;
   onExpand?: () => void; expanded?: boolean; expiries?: string[]; stdvLeg?: StdvLeg | null;
-  isStdvPicking?: boolean; onStdvPicked?: (leg: StdvLeg) => void; onCancelStdvPicking?: () => void;
+  isStdvPicking?: boolean; onStartStdvPicking?: () => void; onStdvPicked?: (leg: StdvLeg) => void; onCancelStdvPicking?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -664,14 +664,21 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     }
 
     const onClick = (p: MouseEventParams<Time>) => {
-      if (!p.point || p.time == null) return;
-      const t = p.time as number;
-      const c = cMap.current.get(t) || candles.find((cand) => Math.abs(cand.time - t) < 30) || last.current;
+      if (!p.point) return;
+      let t = p.time as number | undefined;
+      if (t == null) {
+        const timeScale = ch.timeScale();
+        const coordTime = timeScale.coordinateToTime ? timeScale.coordinateToTime(p.point.x) : null;
+        if (coordTime != null) t = coordTime as number;
+      }
+      const c = (t != null ? cMap.current.get(t) : null) || (t != null ? candles.find((cand) => Math.abs(cand.time - t!) < 60) : null) || last.current;
       if (!c) return;
 
-      const yMid = s.priceToCoordinate((c.high + c.low) / 2);
-      const isTop = yMid !== null && p.point.y < yMid;
-      const clickedPrice = isTop ? c.high : c.low;
+      const yHigh = s.priceToCoordinate(c.high);
+      const yLow = s.priceToCoordinate(c.low);
+      const distHigh = yHigh !== null ? Math.abs(p.point.y - yHigh) : Infinity;
+      const distLow = yLow !== null ? Math.abs(p.point.y - yLow) : Infinity;
+      const clickedPrice = distHigh <= distLow ? c.high : c.low;
 
       if (pickStep === 1) {
         setPickPoint1({ time: c.time, price: clickedPrice });
@@ -1046,6 +1053,32 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           <span className="text-[12.5px] leading-tight text-slate-100"><b className="text-cyan-200">ORDER FLOW · last closed {hm(lastClosed!.time)}</b><br />{ofNow.head}</span>
         </div>
       </div>}
+      {layers.stdv && (
+        <div className="absolute left-2 top-11 z-20 flex items-center gap-2 rounded border border-red-500/40 bg-[#060b16]/90 px-2.5 py-1 text-[11.5px] shadow-lg backdrop-blur">
+          <span className="font-extrabold text-red-400">📐 STDV</span>
+          {stdvLeg ? (
+            <span className="text-slate-200">
+              <b className={stdvLeg.dir === "bull" ? "text-bull-400" : "text-bear-400"}>
+                {stdvLeg.dir === "bull" ? "▲ BULL" : "▼ BEAR"}
+              </b>{" "}
+              [{stdvLeg.tf}] · {stdvLeg.anchorMode === "orderblock" ? "Order Block Run" : stdvLeg.anchorMode === "swing" ? "Full Judas" : "Custom Manual"} ·
+              Anchor 1 <b className="text-white">{stdvLeg.anchor1.toFixed(1)}</b> → Anchor 0 <b className="text-white">{stdvLeg.anchor0.toFixed(1)}</b>
+            </span>
+          ) : (
+            <span className="text-slate-400">Auto-detecting manipulation leg…</span>
+          )}
+          <button
+            onClick={isStdvPicking ? onCancelStdvPicking : () => onStartStdvPicking?.()}
+            className={`rounded px-2 py-0.5 font-bold transition-all ${
+              isStdvPicking
+                ? "bg-red-600 text-white animate-pulse"
+                : "bg-red-950/70 text-red-300 hover:bg-red-800 border border-red-500/40"
+            }`}
+          >
+            {isStdvPicking ? "✕ Cancel" : "📍 2-Click Chart Tool"}
+          </button>
+        </div>
+      )}
       {isStdvPicking && (
         <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2">
           <div className="flex items-center gap-3 rounded-lg border-2 border-red-500 bg-[#060b16]/95 px-4 py-2 text-[12.5px] shadow-2xl animate-pulse">
@@ -1073,6 +1106,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       </div>}
       {/* chart tools (top-right, left of the price axis) */}
       <div className="absolute right-[86px] top-2 z-10 flex gap-1">
+        <button
+          className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all ${
+            isStdvPicking
+              ? "!bg-red-600 !text-white animate-pulse shadow-md"
+              : "!border-red-500/70 !text-red-400 hover:!bg-red-950/40"
+          }`}
+          title="Interactive 2-Click STDV Tool: Click 2 candle wicks to anchor custom STDV"
+          onClick={isStdvPicking ? onCancelStdvPicking : () => onStartStdvPicking?.()}
+        >
+          <span>{isStdvPicking ? "✕" : "📍"}</span>
+          <span>{isStdvPicking ? "Cancel Pick" : "2-Click STDV"}</span>
+        </button>
         {(layers.fp || layers.heat || layers.bias) && <>
           <button className="tab !py-0.5 !text-[11px]" title="Smaller footprint / heatmap / bias labels"
             onClick={() => { setFpScale(FP_SCALE - 0.25); fpPrim.current.refresh(); setFpTick((n) => n + 1); }}>A−</button>

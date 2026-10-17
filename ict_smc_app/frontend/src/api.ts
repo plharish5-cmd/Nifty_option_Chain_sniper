@@ -1,7 +1,7 @@
 // api.ts — typed REST calls + one reconnecting WebSocket shared by the whole app.
 import { useEffect, useRef, useState } from "react";
 
-export type TF = "1m" | "5m" | "15m" | "1h" | "1D";
+export type TF = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1D" | "1W";
 
 export interface Candle { time: number; open: number; high: number; low: number; close: number; closed: boolean }
 export interface Zone { type: "FVG" | "IFVG" | "RJB" | "OB" | "BREAKER"; dir: "bull" | "bear"; from: number; to: number; top: number; bottom: number; state: string; label: string; formed: string }
@@ -192,9 +192,9 @@ export const lakh = (x: number) => {
 
 /** Same 09:15-aligned bucketing as the backend, in chart time (epoch shifted to IST). */
 export function bucket(chartTime: number, tf: TF): number {
-  const step = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1D": 86400 }[tf];
+  const step = ({ "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1D": 86400, "1W": 604800 } as Record<string, number>)[tf] ?? 300;
   const day = Math.floor(chartTime / 86400) * 86400;
-  if (tf === "1D") return day;
+  if (tf === "1D" || tf === "1W") return day;
   const open = day + 9 * 3600 + 15 * 60;
   return open + Math.floor((chartTime - open) / step) * step;
 }

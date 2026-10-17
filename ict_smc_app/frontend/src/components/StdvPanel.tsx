@@ -27,6 +27,7 @@ interface StdvPanelProps {
   isPicking?: boolean;
   onStartPicking?: () => void;
   onCancelPicking?: () => void;
+  onSetChartTf?: (tf: TF) => void;
 }
 
 const SUPPORTED_TFS = [
@@ -49,6 +50,7 @@ export default function StdvPanel({
   isPicking = false,
   onStartPicking,
   onCancelPicking,
+  onSetChartTf,
 }: StdvPanelProps) {
   const [activeTfId, setActiveTfId] = useState<string>("15m");
   const [dirFilter, setDirFilter] = useState<"all" | "bull" | "bear">("all");
@@ -206,8 +208,9 @@ export default function StdvPanel({
                   setActiveTfId(t.id);
                   setManual0(null);
                   setManual1(null);
+                  if (onSetChartTf) onSetChartTf(t.id as TF);
                 }}
-                className={`tab ${activeTfId === t.id ? "tab-on !bg-gold-500/20 !border-gold-500/60 !text-gold-300" : ""}`}
+                className={`tab ${activeTfId === t.id ? "tab-on !bg-gold-500/20 !border-gold-500/60 !text-gold-300 font-bold" : ""}`}
               >
                 {t.label}
               </button>

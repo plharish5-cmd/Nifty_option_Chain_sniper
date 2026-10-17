@@ -92,4 +92,4 @@ export function index(evs: Ev[]): Map<number, Ev[]> {
   return m;
 }
 
-export const BAR_SEC: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1D": 86400 };
+export const BAR_SEC: Record<string, number> = { "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1D": 86400, "1W": 604800 };
