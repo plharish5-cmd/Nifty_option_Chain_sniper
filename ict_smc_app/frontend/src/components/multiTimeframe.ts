@@ -160,7 +160,7 @@ class TimeframeCanvasView implements IPrimitivePaneView {
         const { series, data, confluenceZones, hoverPrice, hoverData } = this.p;
         if (!series) return;
 
-        target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+        target.useMediaCoordinateSpace(({ context: ctx, mediaSize }: { context: CanvasRenderingContext2D; mediaSize: { width: number; height: number } }) => {
           const W = mediaSize.width, H = mediaSize.height;
 
           // ─ Side panel: 3 timeframes (M/W/D) ─
