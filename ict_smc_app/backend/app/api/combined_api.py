@@ -22,6 +22,23 @@ def _crvol(series):
         return None
 
 
+@router.get("/api/fut_candles")
+def fut_candles(tf: str = Query("3m"), days: int = Query(3), src: str = Query("oct")):
+    """Raw NIFTY-FUTURE OHLC candles (the active Oct contract, or next-month Nov) resampled to `tf`, on the same
+    IST time axis as the writer-flow chart — so the real future candles can overlay the Call/Put OI lines.
+    Adapts automatically across expiry rollover (the active future is whatever the hub currently tracks)."""
+    from ..market import candles as candles_mod
+    from ..timeutil import chart_time
+    try:
+        raw = fut_mod.sym_rows_1m(fut_mod.SEC2, days) if src == "nov" else fut_mod.rows_1m(days)
+        bars = candles_mod.resample(candles_mod.session_filter(raw), tf) if raw else []
+        return {"available": True, "tf": tf, "src": src,
+                "candles": [{"time": chart_time(int(r["ts"])), "o": round(float(r["o"]), 1), "h": round(float(r["h"]), 1),
+                             "l": round(float(r["l"]), 1), "c": round(float(r["c"]), 1)} for r in bars]}
+    except Exception as e:                                   # noqa: BLE001
+        return {"available": False, "error": str(e)[:200], "candles": []}
+
+
 @router.get("/api/combined_vol")
 def combined_vol(src: str = Query("combined"), heat: int = Query(0)):
     from .main import _h

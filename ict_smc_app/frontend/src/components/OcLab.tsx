@@ -5,7 +5,7 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { FlowBand } from "./flowband";
 import {
-  ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle,
+  CandlestickSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp,
 } from "lightweight-charts";
 
@@ -126,11 +126,13 @@ export function WritersFlow({ tick }: { tick: number }) {
   const [tf, setTf] = useState("1m"); const [mode, setMode] = useState("all"); const [n, setN] = useState(10);
   const [d, busy] = useOc<Flow>("flow", `tf=${tf}&mode=${mode}&n=${n}`, tick);
   const box = useRef<HTMLDivElement>(null);
-  const S = useRef<{ ch: IChartApi; fut: ISeriesApi<"Line">; ce: ISeriesApi<"Line">; pe: ISeriesApi<"Line">; uw: ISeriesApi<"Histogram">;
+  const S = useRef<{ ch: IChartApi; fut: ISeriesApi<"Line">; futC: ISeriesApi<"Candlestick">; ce: ISeriesApi<"Line">; pe: ISeriesApi<"Line">; uw: ISeriesApi<"Histogram">;
     fl: ISeriesApi<"Histogram">; flma: ISeriesApi<"Line">; bal: ISeriesApi<"Line">; band: FlowBand;
     mk: ReturnType<typeof createSeriesMarkers<Time>>; mk2: ReturnType<typeof createSeriesMarkers<Time>> } | null>(null);
   const first = useRef(true);
   const flCap = useRef(0);
+  const [showFut, setShowFut] = useState(true);   // real NIFTY-future candles overlaid on the left price scale
+  const [futCandles, setFutCandles] = useState<{ time: number; o: number; h: number; l: number; c: number }[]>([]);
 
   useEffect(() => {
     if (!box.current) return;
@@ -143,8 +145,11 @@ export function WritersFlow({ tick }: { tick: number }) {
     });
     const uw = ch.addSeries(HistogramSeries, { priceScaleId: "uw", color: "rgba(212,175,55,0.16)", priceLineVisible: false, lastValueVisible: false });
     ch.priceScale("uw").applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
+    const futFmt = { type: "custom" as const, formatter: (p: number) => p.toLocaleString("en-IN", { maximumFractionDigits: 1 }) };
+    const futC = ch.addSeries(CandlestickSeries, { priceScaleId: "left", upColor: "#10b981", downColor: "#ef4444", borderVisible: false,
+      wickUpColor: "#10b981", wickDownColor: "#ef4444", priceFormat: futFmt, priceLineVisible: false });
     const fut = ch.addSeries(LineSeries, { priceScaleId: "left", color: "rgba(226,232,240,0.7)", lineWidth: 1, lineStyle: LineStyle.Dotted,
-      title: "NIFTY fut", priceFormat: { type: "custom", formatter: (p: number) => p.toLocaleString("en-IN", { maximumFractionDigits: 1 }) } });
+      title: "NIFTY fut", priceFormat: futFmt });
     const ce = ch.addSeries(LineSeries, { color: "#22c55e", lineWidth: 2, title: "Call", priceFormat: { type: "custom", formatter: (p: number) => inr(p) } });
     const pe = ch.addSeries(LineSeries, { color: "#ef4444", lineWidth: 2, title: "Put", priceFormat: { type: "custom", formatter: (p: number) => inr(p) } });
     const fl = ch.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, title: "flow Δput−Δcall",
@@ -158,9 +163,24 @@ export function WritersFlow({ tick }: { tick: number }) {
     bal.createPriceLine({ price: -0.25, color: "rgba(239,68,68,0.6)", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "▼ CALL writers lead = bearish" });
     bal.createPriceLine({ price: 0, color: "rgba(148,163,184,0.25)", lineWidth: 1, axisLabelVisible: false, title: "" });
     try { const P = ch.panes(); P[0]?.setStretchFactor(4); P[1]?.setStretchFactor(2); P[2]?.setStretchFactor(1.6); } catch { /* */ }
-    S.current = { ch, fut, ce, pe, uw, fl, flma, bal, band, mk: createSeriesMarkers(fut, []), mk2: createSeriesMarkers(fl, []) };
+    S.current = { ch, fut, futC, ce, pe, uw, fl, flma, bal, band, mk: createSeriesMarkers(fut, []), mk2: createSeriesMarkers(fl, []) };
     return () => { ch.remove(); S.current = null; };
   }, []);
+
+  // fetch the real future candles (adapts to the active expiry automatically) and overlay them on the left scale
+  useEffect(() => {
+    let dead = false;
+    fetch(`/api/fut_candles?tf=${tf}&days=3`).then((r) => r.json())
+      .then((j) => { if (!dead) setFutCandles(j.available ? j.candles ?? [] : []); }).catch(() => {});
+    return () => { dead = true; };
+  }, [tf, tick]);
+  // push candle data + toggle candles vs dotted line
+  useEffect(() => {
+    const s = S.current; if (!s) return;
+    s.futC.setData(showFut ? futCandles.map((c) => ({ time: c.time as UTCTimestamp, open: c.o, high: c.h, low: c.l, close: c.c })) : []);
+    s.futC.applyOptions({ visible: showFut });
+    s.fut.applyOptions({ visible: !showFut });                 // candles replace the dotted line (one price view at a time)
+  }, [futCandles, showFut]);
 
   useEffect(() => { first.current = true; }, [tf, mode, n]);
   useEffect(() => {
@@ -206,8 +226,12 @@ export function WritersFlow({ tick }: { tick: number }) {
     <div className="flex h-full flex-col">
       <Controls tf={tf} setTf={setTf} mode={mode} setMode={setMode} n={n} setN={setN} tfs={["1m", "3m", "5m", "15m"]} busy={busy}
         info={d?.ok ? `${d.day} · expiry ${d.expiry ?? "?"} · ${d.label} · ${d.snapshots} snapshots` : d?.message ?? "loading…"} />
-      <div className="flex flex-wrap gap-x-4 px-3 py-1 text-[12.5px] text-slate-300">
-        <span><span className="text-bull-400">━ Call OI chg</span> · <span className="text-bear-400">━ Put OI chg</span> (since yesterday, right axis) · ┈ NIFTY future (left)</span>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-1 text-[12.5px] text-slate-300">
+        <button onClick={() => setShowFut((v) => !v)}
+          className={`rounded border px-2 py-0.5 text-[11px] ${showFut ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-200" : "border-ink-700 text-slate-400"}`}>
+          {showFut ? "📈 Future candles" : "┈ Future line"}
+        </button>
+        <span><span className="text-bull-400">━ Call OI chg</span> · <span className="text-bear-400">━ Put OI chg</span> (since yesterday, right axis) · {showFut ? "real NIFTY-future candles" : "┈ NIFTY future line"} (left axis, adapts to active expiry)</span>
         <span>middle strip = Δput − Δcall each candle: <span className="text-bull-400">green ▲ = PUT writers added more (support, bullish)</span> · <span className="text-bear-400">red ▼ = CALL writers added more (resistance, bearish)</span> · bright bar + label = unusual (≥ 2.5× normal) · bottom gold line = 30-min balance: above +0.25 bullish, below −0.25 bearish</span>
         {last && <span className="text-slate-300">now: call {inr(last.ce)} · put {inr(last.pe)} · balance {last.bal?.toFixed(2)} · regime <b>{last.conf ?? last.regime}</b></span>}
       </div>
