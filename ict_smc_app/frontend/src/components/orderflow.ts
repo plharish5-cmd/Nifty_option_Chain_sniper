@@ -73,9 +73,24 @@ class BandView implements IPrimitivePaneView {
       for (const w of walls) {
         const y = series.priceToCoordinate(w.p);
         if (y === null || y < -20 || y > mediaSize.height + 20) continue;
-        const ce = w.side === "CE", top = w.rank === 1;
+        const ce = w.side === "CE", top = w.rank === 1, supp = !ce;
         const building = w.status === "building", unwinding = w.status === "unwinding";
-        const h = Math.max(4, 4 + 14 * w.share);                   // thicker = more OI
+        // ── one coherent read: merge day-ΔOI (building/unwinding) with the last-15-min velocity, in trader terms ──
+        const vf = w.vel && w.oi > 0 ? w.vel / w.oi : 0;
+        let phrase: string, hard: number;                          // hard: +1 hardening fast … −1 cracking (drives thickness)
+        if (building) {
+          if (vf <= -0.06) { phrase = supp ? "SUPPORT STACKED · cooling" : "CAP STACKED · cooling"; hard = 0.25; }
+          else if (vf >= 0.04) { phrase = supp ? "SUPPORT STACKING FAST ⚡" : "CAP STACKING FAST ⚡"; hard = 1; }
+          else { phrase = supp ? "SUPPORT STACKING ⬆" : "CAP STACKING ⬆"; hard = 0.65; }
+        } else if (unwinding) {
+          phrase = supp ? "SUPPORT CRACKING ⚠ (break ↓ risk)" : "CAP CRACKING ⚠ (break ↑ risk)"; hard = -1;
+        } else {
+          if (vf >= 0.04) { phrase = supp ? "support firming" : "cap firming"; hard = 0.25; }
+          else if (vf <= -0.06) { phrase = supp ? "support softening" : "cap softening"; hard = -0.35; }
+          else { phrase = supp ? "support holding" : "cap holding"; hard = 0; }
+        }
+        // thickness = OI base, GROWN when hardening, THINNED when cracking → the bar visually hardens/crumbles
+        const h = Math.max(3, (4 + 14 * w.share) * (1 + 0.45 * hard));
         const rgb = ce ? "239,68,68" : "34,197,94";
         const k = building ? 1.4 : unwinding ? 0.45 : 1;           // ΔOI drives brightness: building = bold, unwinding = faded
         const g = ctx.createLinearGradient(0, 0, mediaSize.width, 0);
@@ -93,11 +108,7 @@ class BandView implements IPrimitivePaneView {
         ctx.strokeStyle = unwinding ? "rgba(251,191,36,0.9)" : `rgba(${rgb},${top || building ? 0.95 : 0.6})`;
         ctx.lineWidth = building ? 2.5 : top ? 2 : 1;
         ctx.setLineDash(unwinding ? [10, 5] : (top || building) ? [] : [6, 4]); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(mediaSize.width, y); ctx.stroke(); ctx.setLineDash([]);
-        const tag = building ? " ⬆BUILDING" : unwinding ? " ⚠UNWINDING" : "";
-        // velocity: how fast this wall's OI is moving right now (last N min). ⚡⚡ ≥8 % of the wall, ⚡ ≥4 %.
-        const vf = w.vel && w.oi > 0 ? w.vel / w.oi : 0;
-        const vtag = vf >= 0.08 ? " ⚡⚡fast" : vf >= 0.04 ? " ⚡" : vf <= -0.06 ? " ❄shrinking" : "";
-        const txt = `${ce ? "🧱 CE WALL" : "🧱 PE WALL"} ${w.p.toLocaleString("en-IN")} · ${crore(w.oi)}${w.chg ? ` ${w.chg > 0 ? "▲+" : "▼"}${crore(Math.abs(w.chg))}${w.fresh ? ` ${w.fresh > 0 ? "+" : ""}${Math.round(w.fresh * 100)}%` : ""}` : ""}${tag}${vtag}${top ? (ce ? " · resistance" : " · support") : ""}`;
+        const txt = `${ce ? "🧱 CE" : "🧱 PE"} ${w.p.toLocaleString("en-IN")} · ${crore(w.oi)}${w.chg ? ` ${w.chg > 0 ? "▲+" : "▼"}${crore(Math.abs(w.chg))}${w.fresh ? ` ${w.fresh > 0 ? "+" : ""}${Math.round(w.fresh * 100)}%` : ""}` : ""} · ${phrase}`;
         ctx.font = F(top ? 10.5 : 9.5); ctx.textAlign = "right"; ctx.textBaseline = "middle";
         const tw = ctx.measureText(txt).width + 10, x1 = mediaSize.width - 8;
         ctx.fillStyle = unwinding ? "rgba(120,53,15,0.95)" : building ? (ce ? "rgba(153,27,27,0.96)" : "rgba(22,101,52,0.96)") : ce ? "rgba(127,29,29,0.92)" : "rgba(20,83,45,0.92)";
@@ -282,8 +293,14 @@ export function readAt(t: number, o: { fp: FpBar[]; bubbles: Bubble[]; walls: Wa
   const ce = o.walls.filter((w) => w.side === "CE" && w.p > c.close).sort((a, b2) => a.p - b2.p)[0];
   const pe = o.walls.filter((w) => w.side === "PE" && w.p < c.close).sort((a, b2) => b2.p - a.p)[0];
   const roomUp = ce ? ce.p - c.close : null, roomDn = pe ? c.close - pe.p : null;
-  if (ce) L.push({ tone: roomUp! < 0.5 * atr ? "warn" : "info", txt: `🧱 Next CE wall ${ce.p.toLocaleString("en-IN")} (${roomUp!.toFixed(0)} pts above, ${crore(ce.oi)}) — call writers defend it.` });
-  if (pe) L.push({ tone: roomDn! < 0.5 * atr ? "warn" : "info", txt: `🧱 Next PE wall ${pe.p.toLocaleString("en-IN")} (${roomDn!.toFixed(0)} pts below, ${crore(pe.oi)}) — put writers defend it.` });
+  const dynCe = ce ? (ce.status === "building" ? "call writers STACKING → cap hardening, harder to break up (fade rallies into it)"
+    : ce.status === "unwinding" ? "call writers COVERING → cap CRACKING, upside breakout more likely (don't fade; trade the break)"
+    : "cap holding") : "";
+  const dynPe = pe ? (pe.status === "building" ? "put writers STACKING → floor hardening, dips likely bought (buy toward it)"
+    : pe.status === "unwinding" ? "put writers COVERING → floor CRACKING, downside break more likely (don't buy; trade the break)"
+    : "floor holding") : "";
+  if (ce) L.push({ tone: ce.status === "unwinding" ? "warn" : roomUp! < 0.5 * atr ? "warn" : "info", txt: `🧱 Resistance ${ce.p.toLocaleString("en-IN")} (${roomUp!.toFixed(0)} pts above, ${crore(ce.oi)}) — ${dynCe}.` });
+  if (pe) L.push({ tone: pe.status === "unwinding" ? "warn" : roomDn! < 0.5 * atr ? "warn" : "info", txt: `🧱 Support ${pe.p.toLocaleString("en-IN")} (${roomDn!.toFixed(0)} pts below, ${crore(pe.oi)}) — ${dynPe}.` });
   // verdict
   let verdict: OfRead["verdict"] = "WAIT", head = "";
   const side = bull >= 3 && bull - bear >= 2 ? "BUY" : bear >= 3 && bear - bull >= 2 ? "SELL" : null;
