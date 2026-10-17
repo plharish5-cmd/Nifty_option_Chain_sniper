@@ -59,7 +59,41 @@ def detect(nifty: List[Dict[str, float]], bank: List[Dict[str, float]], n: int =
                     who = "NIFTY lower low, BANKNIFTY higher low" if n_ll else "BANKNIFTY lower low, NIFTY higher low"
                     out.append(_mk(ts, i, n, "bull", f"Bullish SMT — {who}: weak sweep of the lows", a_now))
     out.sort(key=lambda m: m["ts"])
-    return {"markers": out, "last": out[-1] if out else None, "aligned": len(rows)}
+    forming = _forming(ts, nh, nl, bh, bl, n, lookback)
+    return {"markers": out, "last": out[-1] if out else None, "aligned": len(rows), "forming": forming}
+
+
+def _forming(ts: List[int], nh: List[float], nl: List[float], bh: List[float], bl: List[float],
+             n: int, lookback: int) -> List[Dict[str, Any]]:
+    """PROVISIONAL SMT: a divergence printing at the current running extreme BEFORE the swing pivot confirms.
+    Repaints as new bars print — explicitly marked provisional. NEVER mixed into `markers` (the confirmed, closed-
+    candle signal), so the confirmed path never repaints and 'closed candles only' still holds for real signals."""
+    out: List[Dict[str, Any]] = []
+    for high in (True, False):
+        vn, vb = (nh, bh) if high else (nl, bl)
+        piv = _pivots(vn, n, high)
+        if not piv:
+            continue
+        j = piv[-1]
+        tail = list(range(j + 1, len(vn)))
+        if not tail:
+            continue
+        k = max(tail, key=lambda x: vn[x]) if high else min(tail, key=lambda x: vn[x])
+        if (len(vn) - 1 - k) > n + 2 or (k - j) > lookback:        # only a genuinely RECENT forming extreme
+            continue
+        if high:
+            n_div, b_div = vn[k] > vn[j], max(vb[t] for t in tail) > vb[j]
+        else:
+            n_div, b_div = vn[k] < vn[j], min(vb[t] for t in tail) < vb[j]
+        if n_div == b_div:                                         # both confirm or both fail → no divergence
+            continue
+        d = "bear" if high else "bull"
+        now = ts[-1]
+        out.append({"ts": now, "time": chart_time(now), "at": hm(now), "pivot_at": hm(ts[k]),
+                    "kind": "SMT_FORMING", "dir": d, "provisional": True, "price": round(vn[k], 2),
+                    "text": f"forming {'Bearish' if high else 'Bullish'} SMT — divergence printing, pivot not yet "
+                            f"confirmed; wait for the candle to close before acting"})
+    return out
 
 
 def _mk(ts: List[int], i: int, n: int, d: str, text: str, price: float) -> Dict[str, Any]:

@@ -21,16 +21,17 @@ export function useOcFeed(on: boolean): OcFeed | null {
 }
 
 export type SmtMark = { time: number; dir: "bull" | "bear"; text: string; at: string; pivot_at: string; price: number };
+export type SmtForming = { time: number; dir: "bull" | "bear"; text: string; at: string; price: number; provisional: true };
 export type BankPt = { time: number; c: number };
-export function useSmt(tf: string, on: boolean, withBank?: (b: BankPt[]) => void): SmtMark[] {
+export function useSmt(tf: string, on: boolean, withBank?: (b: BankPt[]) => void, withForming?: (f: SmtForming[]) => void): SmtMark[] {
   const [d, setD] = useState<SmtMark[]>([]);
   useEffect(() => {
-    if (!on || !(tf === "5m" || tf === "15m" || tf === "1h")) { setD([]); withBank?.([]); return; }
+    if (!on || !(tf === "5m" || tf === "15m" || tf === "1h")) { setD([]); withBank?.([]); withForming?.([]); return; }
     let dead = false;
-    const go = () => fetch(`/api/smt?tf=${tf}`).then((r) => r.json()).then((j) => { if (!dead) { setD(j.available ? j.markers ?? [] : []); withBank?.(j.available ? j.bank ?? [] : []); } }).catch(() => {});
+    const go = () => fetch(`/api/smt?tf=${tf}`).then((r) => r.json()).then((j) => { if (!dead) { setD(j.available ? j.markers ?? [] : []); withBank?.(j.available ? j.bank ?? [] : []); withForming?.(j.available ? j.forming ?? [] : []); } }).catch(() => {});
     go();
     const id = window.setInterval(go, 60000);
     return () => { dead = true; window.clearInterval(id); };
-  }, [tf, on]);
+  }, [tf, on]); // eslint-disable-line react-hooks/exhaustive-deps
   return d;
 }

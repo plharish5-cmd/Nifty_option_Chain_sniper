@@ -7,7 +7,7 @@ import {
 import type { Analysis, Candle, TF } from "../api";
 import { bucket } from "../api";
 import { computeBias, FACTORS, type BiasRow } from "./bias";
-import { useOcFeed, useSmt } from "./ocfeed";
+import { useOcFeed, useSmt, type SmtForming } from "./ocfeed";
 import { api } from "../api";
 import { computeGex, confirm3, emas, GammaPrimitive, gammaHits, type GexMap } from "./gamma";
 import { findEntries, NodesPrimitive, nodesRead, type NodesView } from "./nodes";
@@ -20,22 +20,19 @@ import { confluence, FootprintPrimitive, FP_SCALE, setFpScale, FP_MEANING, FP_WO
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
 import MtfPanel from "./MtfPanel";
-import { StdvPrimitive, detectManipulationLegs, createManualStdvLeg, type StdvLeg } from "./stdv";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; stdv?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
   obBull: "rgba(16,185,129,0.14)", obBear: "rgba(239,68,68,0.14)", fvgBull: "rgba(56,189,248,0.14)", fvgBear: "rgba(244,114,182,0.14)",
 };
 
-export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal, expiries, stdvLeg, isStdvPicking, onStartStdvPicking, onStdvPicked, onCancelStdvPicking, onResetToAutoStdv }: {
+export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal, expiries }: {
   sig?: SigPrefs; onSignal?: (a: AlertRow) => void;
   onAutoSignal?: (a: AlertRow, ctx: { last: Candle; atr: number; nearWall: number | null }) => void;
   tf: TF; candles: Candle[]; analysis: Analysis | null; layers: Layers; spot: number | null; spotTs: number; marketOpen: boolean;
-  onExpand?: () => void; expanded?: boolean; expiries?: string[]; stdvLeg?: StdvLeg | null;
-  isStdvPicking?: boolean; onStartStdvPicking?: () => void; onStdvPicked?: (leg: StdvLeg) => void; onCancelStdvPicking?: () => void;
-  onResetToAutoStdv?: () => void;
+  onExpand?: () => void; expanded?: boolean; expiries?: string[];
 }) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -51,7 +48,6 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const nEntRef = useRef<ReturnType<typeof findEntries>>([]);
   const ofArgsRef = useRef<Parameters<typeof readAt>[1]>({ fp: [], bubbles: [], walls: [], zones: [], atr: 20, candles: [] });
   const gmPrim = useRef(new GammaPrimitive());
-  const stdvPrim = useRef(new StdvPrimitive());
   const emaS = useRef<ISeriesApi<"Line">[]>([]);
   const [gexMap, setGexMap] = useState<GexMap | null>(null);
   const [nodesV, setNodesV] = useState<NodesView | null>(null);
@@ -67,7 +63,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const ocFeed = useOcFeed(!!layers.bias || !!layers.ocAct || !!sig?.on);
   const bankS = useRef<ISeriesApi<"Line"> | null>(null);
   const [bank, setBank] = useState<{ time: number; c: number }[]>([]);
-  const smtMarks = useSmt(tf, !!layers.smt || !!layers.bias || !!sig?.on, setBank);
+  const [smtForming, setSmtForming] = useState<SmtForming[]>([]);
+  const smtMarks = useSmt(tf, !!layers.smt || !!layers.bias || !!sig?.on, setBank, setSmtForming);
   const smtArg = tf === "5m" || tf === "15m" || tf === "1h" ? smtMarks : null;
   const biasMap = useRef<Map<number, BiasRow>>(new Map());
   const ocLane = useRef<ISeriesApi<"Histogram"> | null>(null);
@@ -124,7 +121,6 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     s.attachPrimitive(ofPrim.current);
     s.attachPrimitive(ndPrim.current);
     s.attachPrimitive(gmPrim.current);
-    s.attachPrimitive(stdvPrim.current);
     bankS.current = ch.addSeries(LineSeries, { color: "rgba(244,114,182,0.85)", lineWidth: 2, priceScaleId: "bank", title: "BANKNIFTY",
       priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
     ch.priceScale("bank").applyOptions({ visible: false, scaleMargins: { top: 0.1, bottom: 0.25 } });
@@ -637,76 +633,6 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const gHits = useMemo(() => layers.gamma ? gammaHits(candles, rvMap, gexMap, analysis?.atr ?? 20, marketOpen) : [], [layers.gamma, candles, rvMap, gexMap, analysis, marketOpen]);
   gHitsRef.current = gHits;
   useEffect(() => { gmPrim.current.set(layers.gamma ? gexMap : null, gHits); }, [layers.gamma, gexMap, gHits]);
-  // ── STDV manipulation leg projections ──
-  const systemLeg = useMemo(() => {
-    if (!layers.stdv || stdvLeg) return null;
-    const legs = detectManipulationLegs(candles, tf, spot ?? undefined);
-    return legs[0] || null;
-  }, [layers.stdv, stdvLeg, candles, tf, spot]);
-  const activeDisplayLeg = stdvLeg || systemLeg;
-
-  useEffect(() => {
-    if (!layers.stdv) {
-      stdvPrim.current.setLeg(null);
-      return;
-    }
-    stdvPrim.current.setLeg(activeDisplayLeg);
-  }, [layers.stdv, activeDisplayLeg]);
-
-  // ── Interactive 2-Click Chart Anchoring for STDV ──
-  const [pickStep, setPickStep] = useState<1 | 2>(1);
-  const [pickPoint1, setPickPoint1] = useState<{ time: number; price: number } | null>(null);
-
-  useEffect(() => {
-    const ch = chart.current;
-    const s = series.current;
-    if (!ch || !s || !isStdvPicking) {
-      setPickStep(1);
-      setPickPoint1(null);
-      return;
-    }
-
-    const onClick = (p: MouseEventParams<Time>) => {
-      if (!p.point) return;
-      let t = p.time as number | undefined;
-      if (t == null) {
-        const timeScale = ch.timeScale();
-        const coordTime = timeScale.coordinateToTime ? timeScale.coordinateToTime(p.point.x) : null;
-        if (coordTime != null) t = coordTime as number;
-      }
-      const c = (t != null ? cMap.current.get(t) : null) || (t != null ? candles.find((cand) => Math.abs(cand.time - t!) < 60) : null) || last.current;
-      if (!c) return;
-
-      const yHigh = s.priceToCoordinate(c.high);
-      const yLow = s.priceToCoordinate(c.low);
-      const distHigh = yHigh !== null ? Math.abs(p.point.y - yHigh) : Infinity;
-      const distLow = yLow !== null ? Math.abs(p.point.y - yLow) : Infinity;
-      const clickedPrice = distHigh <= distLow ? c.high : c.low;
-
-      if (pickStep === 1) {
-        setPickPoint1({ time: c.time, price: clickedPrice });
-        setPickStep(2);
-      } else if (pickStep === 2 && pickPoint1) {
-        const point2 = { time: c.time, price: clickedPrice };
-        const manualLeg = createManualStdvLeg(pickPoint1, point2, tf, spot ?? undefined);
-        onStdvPicked?.(manualLeg);
-        setPickStep(1);
-        setPickPoint1(null);
-      }
-    };
-
-    ch.subscribeClick(onClick);
-    return () => ch.unsubscribeClick(onClick);
-  }, [isStdvPicking, pickStep, pickPoint1, candles, tf, spot, onStdvPicked]);
-
-  useEffect(() => {
-    if (!isStdvPicking) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancelStdvPicking?.();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [isStdvPicking, onCancelStdvPicking]);
   useEffect(() => {
     const ch = chart.current; if (!ch) return;
     if (!layers.gamma || !emaArr) { emaS.current.forEach((x) => ch.removeSeries(x)); emaS.current = []; return; }
@@ -981,6 +907,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             </span>
           ))}
         </div>
+        {layers.smt && smtForming.map((f, idx) => (
+          <span key={`smtf-${idx}`} title={f.text}
+            className="rounded border border-dashed border-pink-400/70 bg-pink-500/10 px-1.5 py-0.5 text-[10px] text-pink-200">
+            ⚡ SMT forming {f.dir === "bull" ? "▲" : "▼"} {f.price.toFixed(0)} · <i>provisional, not a signal</i>
+          </span>
+        ))}
         {(() => { const act = (Object.keys(GUIDE) as (keyof Layers)[]).filter((k) => layers[k]); if (!act.length) return null;
           const hm2 = (t: number) => { const d = new Date(t * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
           const nowOf = (k: string): string => {
@@ -1056,67 +988,6 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           <span className="text-[12.5px] leading-tight text-slate-100"><b className="text-cyan-200">ORDER FLOW · last closed {hm(lastClosed!.time)}</b><br />{ofNow.head}</span>
         </div>
       </div>}
-      {layers.stdv && (
-        <div className="absolute left-2 top-11 z-20 flex items-center gap-2 rounded border border-red-500/40 bg-[#060b16]/90 px-2.5 py-1 text-[11.5px] shadow-lg backdrop-blur">
-          <span className="font-extrabold text-red-400">📐 STDV</span>
-          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-            activeDisplayLeg?.anchorMode === "manual"
-              ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-              : "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-          }`}>
-            {activeDisplayLeg?.anchorMode === "manual" ? "📍 Manual Leg" : "🤖 System Auto"}
-          </span>
-          {activeDisplayLeg ? (
-            <span className="text-slate-200">
-              <b className={activeDisplayLeg.dir === "bull" ? "text-bull-400" : "text-bear-400"}>
-                {activeDisplayLeg.dir === "bull" ? "▲ BULL" : "▼ BEAR"}
-              </b>{" "}
-              [{activeDisplayLeg.tf}] · {activeDisplayLeg.anchorMode === "orderblock" ? "Order Block Run" : activeDisplayLeg.anchorMode === "swing" ? "Full Judas" : "Custom Manual"} ·
-              Anchor 1 <b className="text-white">{activeDisplayLeg.anchor1.toFixed(1)}</b> → Anchor 0 <b className="text-white">{activeDisplayLeg.anchor0.toFixed(1)}</b>
-            </span>
-          ) : (
-            <span className="text-slate-400">Auto-detecting manipulation leg…</span>
-          )}
-          {stdvLeg && onResetToAutoStdv && (
-            <button
-              onClick={onResetToAutoStdv}
-              title="Clear custom 2-click leg and let the system automatically detect & mark the ICT manipulation leg"
-              className="rounded bg-cyan-950/90 px-2 py-0.5 font-bold text-cyan-300 hover:bg-cyan-800 border border-cyan-500/50 transition-colors shadow flex items-center gap-1"
-            >
-              <span>🤖</span>
-              <span>Use System Auto</span>
-            </button>
-          )}
-          <button
-            onClick={isStdvPicking ? onCancelStdvPicking : () => onStartStdvPicking?.()}
-            className={`rounded px-2 py-0.5 font-bold transition-all ${
-              isStdvPicking
-                ? "bg-red-600 text-white animate-pulse"
-                : "bg-red-950/70 text-red-300 hover:bg-red-800 border border-red-500/40"
-            }`}
-          >
-            {isStdvPicking ? "✕ Cancel" : "📍 2-Click Chart Tool"}
-          </button>
-        </div>
-      )}
-      {isStdvPicking && (
-        <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2">
-          <div className="flex items-center gap-3 rounded-lg border-2 border-red-500 bg-[#060b16]/95 px-4 py-2 text-[12.5px] shadow-2xl animate-pulse">
-            <span className="font-extrabold text-red-400">📍 2-CLICK STDV TOOL</span>
-            <span className="text-white">
-              {pickStep === 1
-                ? "👉 Click Point 1 on chart: The Sweep Wick (Anchor 1)"
-                : `✓ Anchor 1 saved (${pickPoint1?.price.toFixed(1)}) → Click Point 2: Shift High/Low (Anchor 0)`}
-            </span>
-            <button
-              onClick={onCancelStdvPicking}
-              className="rounded bg-red-600 px-2.5 py-0.5 font-bold text-white hover:bg-red-500 text-[11px]"
-            >
-              Cancel (Esc)
-            </button>
-          </div>
-        </div>
-      )}
       {layers.gamma && <div className="pointer-events-none absolute left-1/2 top-[64px] z-10 -translate-x-1/2">
         <div className={`max-w-[600px] rounded-lg px-3 py-1 text-[12.5px] shadow-xl ring-2 ${gLast?.ok ? "bg-violet-900/90 ring-violet-400 text-white" : "bg-ink-850/90 ring-slate-600 text-slate-200"}`}>
           <b className="text-violet-300">γ MAP</b>{gexMap ? <> · <b className={gexMap.regime === "positive" ? "text-bull-400" : "text-amber-300"}>{gexMap.regime === "positive" ? "+γ PIN day" : "−γ TREND day"}</b>
@@ -1126,28 +997,6 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       </div>}
       {/* chart tools (top-right, left of the price axis) */}
       <div className="absolute right-[86px] top-2 z-10 flex gap-1">
-        {stdvLeg && onResetToAutoStdv && (
-          <button
-            className="tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 !border-cyan-500/70 !text-cyan-300 hover:!bg-cyan-950/40"
-            title="Clear manual marking and revert to system automatic STDV"
-            onClick={onResetToAutoStdv}
-          >
-            <span>🤖</span>
-            <span>Use System Auto</span>
-          </button>
-        )}
-        <button
-          className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all ${
-            isStdvPicking
-              ? "!bg-red-600 !text-white animate-pulse shadow-md"
-              : "!border-red-500/70 !text-red-400 hover:!bg-red-950/40"
-          }`}
-          title="Interactive 2-Click STDV Tool: Click 2 candle wicks to anchor custom STDV"
-          onClick={isStdvPicking ? onCancelStdvPicking : () => onStartStdvPicking?.()}
-        >
-          <span>{isStdvPicking ? "✕" : "📍"}</span>
-          <span>{isStdvPicking ? "Cancel Pick" : "2-Click STDV"}</span>
-        </button>
         {(layers.fp || layers.heat || layers.bias) && <>
           <button className="tab !py-0.5 !text-[11px]" title="Smaller footprint / heatmap / bias labels"
             onClick={() => { setFpScale(FP_SCALE - 0.25); fpPrim.current.refresh(); setFpTick((n) => n + 1); }}>A−</button>
@@ -1288,7 +1137,6 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["bias", "⚖ Bias 14: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
   ["walls", "🧱 OI walls: red CE resistance · green PE support", "#ef4444"], ["bubbles", "🫧 Big trades ≥2× vol · yellow ring = absorbed", "#a3e635"],
   ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD pane (est.)", "#4ade80"], ["gamma", "γ map: red call res · green put sup · yellow flip · ✓✓✓ = EMA stack + flag at level + volume", "#c084fc"], ["nodes", "🟨 Stacked nodes D·W·M (gold = A+) · ● ENTRY = ±2σ into zone", "#facc15"],
-  ["stdv", "📐 STDV: 0/1 sweep anchors · -2..-2.5 Minor Reversal · -4..-4.5 Major Reversal", "#ef4444"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {
