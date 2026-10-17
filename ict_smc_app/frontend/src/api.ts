@@ -1,7 +1,7 @@
 // api.ts — typed REST calls + one reconnecting WebSocket shared by the whole app.
 import { useEffect, useRef, useState } from "react";
 
-export type TF = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1D" | "1W";
+export type TF = "1m" | "5m" | "15m" | "1h" | "1D";
 
 export interface Candle { time: number; open: number; high: number; low: number; close: number; closed: boolean }
 export interface Zone { type: "FVG" | "IFVG" | "RJB" | "OB" | "BREAKER"; dir: "bull" | "bear"; from: number; to: number; top: number; bottom: number; state: string; label: string; formed: string }
@@ -88,6 +88,9 @@ export interface OptionTape { available: boolean; which?: string; expiries?: str
   heatmap?: Record<string, Record<string, { ts: number; v: number }[]>> | null;
   aggression?: (Record<string, OptAggExp> & { _net_flow_total?: number; _note?: string }) | null;
   recording?: { minutes_today: number; first_ts: number | null; note: string }; error?: string }
+export interface WriterMetrics { available: boolean; which?: string; pcr_now?: number | null; pcr_prev?: number | null;
+  pcr_trend?: "rising" | "falling" | "flat"; vel_min?: number; look_min?: number;
+  velocity?: Record<string, { ce: number; pe: number }>; recorded?: number; error?: string }
 export interface OptBigEvent { ts: number; strike: number; side: string; vol: number; mult: number; est: string | null }
 export interface OptionBigtrades { available: boolean; expiry?: string; mult?: number; events?: OptBigEvent[]; note?: string; error?: string }
 export interface OptFpCell { strike: number; ce_vol: number; pe_vol: number; ce_delta: number; pe_delta: number }
@@ -116,6 +119,8 @@ export const api = {
     get<OptionFootprint>(`/api/option_footprint?which=${which}&band=${band}&tf=${tf}`),
   optionBigtrades: (which = "cur", band = 10, mult = 3) =>
     get<OptionBigtrades>(`/api/option_bigtrades?which=${which}&band=${band}&mult=${mult}`),
+  writerMetrics: (which = "cur", look = 30, vel = 15) =>
+    get<WriterMetrics>(`/api/writer_metrics?which=${which}&look=${look}&vel=${vel}`),
   paper: () => get<{ trades: PaperTrade[]; stats: PaperStats; open: PaperTrade | null; scorecard?: Scorecard }>("/api/paper"),
   repair: () => fetch("/api/repair", { method: "POST" }).then((r) => r.json()),
   delta: (tf: TF) => get<DeltaRes>(`/api/delta?tf=${tf}`),
@@ -192,9 +197,9 @@ export const lakh = (x: number) => {
 
 /** Same 09:15-aligned bucketing as the backend, in chart time (epoch shifted to IST). */
 export function bucket(chartTime: number, tf: TF): number {
-  const step = ({ "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1D": 86400, "1W": 604800 } as Record<string, number>)[tf] ?? 300;
+  const step = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1D": 86400 }[tf];
   const day = Math.floor(chartTime / 86400) * 86400;
-  if (tf === "1D" || tf === "1W") return day;
+  if (tf === "1D") return day;
   const open = day + 9 * 3600 + 15 * 60;
   return open + Math.floor((chartTime - open) / step) * step;
 }

@@ -221,6 +221,57 @@ def _time_footprint(exp: str, strikes: List[float], since: float, tf_secs: int, 
     return out
 
 
+@router.get("/api/writer_metrics")
+def writer_metrics(which: str = Query("cur"), look: int = Query(30), vel: int = Query(15)):
+    """Intraday writer dynamics from the recorded chain_snap (no backfill): PCR trend over `look` minutes and
+    per-strike ΔOI VELOCITY over `vel` minutes. Current PCR / max-pain come from the live chain on the frontend."""
+    from .main import _h
+    h = _h()
+    try:
+        exps = list(getattr(h.chain, "expiries", []) or [])
+        if not exps:
+            return {"available": False, "error": "no expiries"}
+        chosen = exps[:1] if which == "cur" else exps[1:2] if which == "next" else exps[:2]
+        ph = ",".join("?" * len(chosen))
+        rows = db.query(
+            f"SELECT ts, strike, ce_oi, pe_oi FROM chain_snap WHERE expiry IN ({ph}) "
+            f"AND (ce_oi IS NOT NULL OR pe_oi IS NOT NULL) ORDER BY ts", tuple(chosen))
+        if not rows:
+            return {"available": True, "pcr_now": None, "pcr_prev": None, "pcr_trend": "flat", "velocity": {}, "recorded": 0}
+        # PCR series: sum CE/PE OI across strikes (and chosen expiries) per minute
+        agg: Dict[int, List[float]] = {}
+        per_strike: Dict[float, Dict[int, List[float]]] = {}
+        for r in rows:
+            ts = int(r["ts"]); ce = float(r["ce_oi"] or 0); pe = float(r["pe_oi"] or 0)
+            a = agg.setdefault(ts, [0.0, 0.0]); a[0] += ce; a[1] += pe
+            ps = per_strike.setdefault(r["strike"], {})
+            s = ps.setdefault(ts, [0.0, 0.0]); s[0] += ce; s[1] += pe
+        times = sorted(agg)
+        pcr = {t: (agg[t][1] / agg[t][0] if agg[t][0] else None) for t in times}
+        last_t = times[-1]
+        prev_t = max((t for t in times if t <= last_t - look * 60), default=times[0])
+        pcr_now, pcr_prev = pcr[last_t], pcr[prev_t]
+        trend = "flat"
+        if pcr_now is not None and pcr_prev is not None:
+            d = pcr_now - pcr_prev
+            trend = "rising" if d >= 0.03 else "falling" if d <= -0.03 else "flat"
+        # per-strike velocity: ΔOI over the last `vel` minutes (intraday rate, per side)
+        velocity: Dict[str, Dict[str, float]] = {}
+        for strike, series in per_strike.items():
+            st = sorted(series)
+            if not st:
+                continue
+            lt = st[-1]; bt = max((t for t in st if t <= lt - vel * 60), default=st[0])
+            ce_v = series[lt][0] - series[bt][0]
+            pe_v = series[lt][1] - series[bt][1]
+            velocity[str(round(strike))] = {"ce": round(ce_v), "pe": round(pe_v)}
+        return {"available": True, "which": which, "pcr_now": round(pcr_now, 2) if pcr_now else None,
+                "pcr_prev": round(pcr_prev, 2) if pcr_prev else None, "pcr_trend": trend,
+                "vel_min": vel, "look_min": look, "velocity": velocity, "recorded": len(times)}
+    except Exception as e:                                   # noqa: BLE001
+        return {"available": False, "error": str(e)[:200], "velocity": {}}
+
+
 def _median(xs: List[float]) -> float:
     s = sorted(xs)
     n = len(s)

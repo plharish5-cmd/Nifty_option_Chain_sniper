@@ -12,7 +12,7 @@ import { FP_SCALE, kfmt, type FpBar } from "./footprint";
 
 type Target = Parameters<IPrimitivePaneRenderer["draw"]>[0];
 export type Wall = { p: number; side: "CE" | "PE"; oi: number; chg: number; rank: number; share: number;
-  status: "building" | "holding" | "unwinding"; fresh: number };
+  status: "building" | "holding" | "unwinding"; fresh: number; vel?: number };   // vel = intraday ΔOI over the last N min
 export type Bubble = { time: number; price: number; rvol: number; bull: boolean; vol: number; delta: number | null; absorbed: boolean };
 export type Stack = { time: number; lo: number; hi: number; bull: boolean; until: number | null };
 export const BIG_X = 2;              // RVOL that counts as a "big trade" candle
@@ -83,7 +83,10 @@ class BandView implements IPrimitivePaneView {
         ctx.lineWidth = building ? 2.5 : top ? 2 : 1;
         ctx.setLineDash(unwinding ? [10, 5] : (top || building) ? [] : [6, 4]); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(mediaSize.width, y); ctx.stroke(); ctx.setLineDash([]);
         const tag = building ? " ⬆BUILDING" : unwinding ? " ⚠UNWINDING" : "";
-        const txt = `${ce ? "🧱 CE WALL" : "🧱 PE WALL"} ${w.p.toLocaleString("en-IN")} · ${crore(w.oi)}${w.chg ? ` ${w.chg > 0 ? "▲+" : "▼"}${crore(Math.abs(w.chg))}${w.fresh ? ` ${w.fresh > 0 ? "+" : ""}${Math.round(w.fresh * 100)}%` : ""}` : ""}${tag}${top ? (ce ? " · resistance" : " · support") : ""}`;
+        // velocity: how fast this wall's OI is moving right now (last N min). ⚡⚡ ≥8 % of the wall, ⚡ ≥4 %.
+        const vf = w.vel && w.oi > 0 ? w.vel / w.oi : 0;
+        const vtag = vf >= 0.08 ? " ⚡⚡fast" : vf >= 0.04 ? " ⚡" : vf <= -0.06 ? " ❄shrinking" : "";
+        const txt = `${ce ? "🧱 CE WALL" : "🧱 PE WALL"} ${w.p.toLocaleString("en-IN")} · ${crore(w.oi)}${w.chg ? ` ${w.chg > 0 ? "▲+" : "▼"}${crore(Math.abs(w.chg))}${w.fresh ? ` ${w.fresh > 0 ? "+" : ""}${Math.round(w.fresh * 100)}%` : ""}` : ""}${tag}${vtag}${top ? (ce ? " · resistance" : " · support") : ""}`;
         ctx.font = F(top ? 10.5 : 9.5); ctx.textAlign = "right"; ctx.textBaseline = "middle";
         const tw = ctx.measureText(txt).width + 10, x1 = mediaSize.width - 8;
         ctx.fillStyle = unwinding ? "rgba(120,53,15,0.95)" : building ? (ce ? "rgba(153,27,27,0.96)" : "rgba(22,101,52,0.96)") : ce ? "rgba(127,29,29,0.92)" : "rgba(20,83,45,0.92)";
@@ -166,7 +169,8 @@ class TopView implements IPrimitivePaneView {
 }
 
 // ── builders ──
-export function buildWalls(rows: { strike: number; ce: { oi: number; oi_chg: number }; pe: { oi: number; oi_chg: number } }[], spot: number): Wall[] {
+export function buildWalls(rows: { strike: number; ce: { oi: number; oi_chg: number }; pe: { oi: number; oi_chg: number } }[], spot: number,
+  velMap?: Record<string, { ce: number; pe: number }>): Wall[] {
   const near = rows.filter((r) => Math.abs(r.strike - spot) <= spot * 0.025);
   const pick = (side: "CE" | "PE") => {
     const list = near.map((r) => ({ p: r.strike, oi: side === "CE" ? r.ce.oi : r.pe.oi, chg: side === "CE" ? r.ce.oi_chg : r.pe.oi_chg }))
@@ -177,7 +181,8 @@ export function buildWalls(rows: { strike: number; ce: { oi: number; oi_chg: num
       const status: Wall["status"] = x.chg > 0 && fresh >= 0.12 ? "building"   // writers piling in → barrier hardening
         : x.chg < 0 && fresh <= -0.10 ? "unwinding"                        // writers covering → wall crumbling
         : "holding";
-      return { ...x, side, rank: i + 1, share: x.oi / mx, status, fresh } as Wall;
+      const vel = velMap?.[String(Math.round(x.p))]?.[side === "CE" ? "ce" : "pe"];
+      return { ...x, side, rank: i + 1, share: x.oi / mx, status, fresh, vel } as Wall;
     });
   };
   return [...pick("CE"), ...pick("PE")];

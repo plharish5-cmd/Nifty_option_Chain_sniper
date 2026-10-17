@@ -4,7 +4,7 @@ import {
   BaselineSeries, CandlestickSeries, ColorType, createChart, createSeriesMarkers, CrosshairMode, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi, type MouseEventParams, type Time, type UTCTimestamp,
 } from "lightweight-charts";
-import type { Analysis, Candle, TF } from "../api";
+import type { Analysis, Candle, TF, WriterMetrics } from "../api";
 import { bucket } from "../api";
 import { computeBias, FACTORS, type BiasRow } from "./bias";
 import { useOcFeed, useSmt, type SmtForming } from "./ocfeed";
@@ -64,7 +64,9 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const bankS = useRef<ISeriesApi<"Line"> | null>(null);
   const [bank, setBank] = useState<{ time: number; c: number }[]>([]);
   const [smtForming, setSmtForming] = useState<SmtForming[]>([]);
-  const [writerBal, setWriterBal] = useState<{ pcr: number | null; ceOI: number; peOI: number; ceChg: number; peChg: number; net: number } | null>(null);
+  const [writerBal, setWriterBal] = useState<{ pcr: number | null; ceOI: number; peOI: number; ceChg: number; peChg: number; net: number;
+    maxPain: number | null; trend: "rising" | "falling" | "flat"; pcrPrev: number | null; spot: number | null } | null>(null);
+  const netPrevRef = useRef<number | null>(null);
   const smtMarks = useSmt(tf, !!layers.smt || !!layers.bias || !!sig?.on, setBank, setSmtForming);
   const smtArg = tf === "5m" || tf === "15m" || tf === "1h" ? smtMarks : null;
   const biasMap = useRef<Map<number, BiasRow>>(new Map());
@@ -593,7 +595,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       return [...m.values()].sort((x, y) => x.strike - y.strike);
     };
     const curExp = expiries?.[0]; const nextExp = expiries?.[1];
-    wallPrevRef.current = null;   // reset wall-roll baseline when the source expiry changes (no spurious alerts)
+    wallPrevRef.current = null; netPrevRef.current = null;   // reset wall-roll + flip baselines when the source expiry changes
     const go = async () => {
       try {
         const cur = await api.chain(curExp);
@@ -602,16 +604,30 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         if (layers.gamma && cur?.rows?.length) setGexMap(computeGex(cur.rows, sp, 65));   // GEX stays on current expiry (needs greeks)
         if (layers.walls) {
           let rows: OIRow[] = cur?.rows ?? [];
-          if (wallExp === "next" && nextExp) { const nx = await api.chain(nextExp); if (nx?.rows?.length) rows = nx.rows; }
+          let maxPain: number | null = cur?.max_pain ?? null;
+          if (wallExp === "next" && nextExp) { const nx = await api.chain(nextExp); if (nx?.rows?.length) { rows = nx.rows; maxPain = nx.max_pain ?? null; } }
           else if (wallExp === "both" && nextExp) { const nx = await api.chain(nextExp); rows = mergeRows(cur?.rows ?? [], nx?.rows ?? []); }
+          const wm: WriterMetrics | null = await api.writerMetrics(wallExp, 30, 15).catch(() => null);
+          if (dead) return;
           if (rows.length) {
-            const w = buildWalls(rows, sp); setWalls(w); detectWallEvents(w);
-            // writer balance across the (expiry-selected) chain: PCR + net PE−CE OI change (who's writing now)
+            const w = buildWalls(rows, sp, wm?.velocity); setWalls(w); detectWallEvents(w);
+            // writer balance: PCR (+ intraday trend), net PE−CE OI change, max-pain. Respects the expiry toggle.
             const ceOI = rows.reduce((s, r) => s + (r.ce.oi || 0), 0);
             const peOI = rows.reduce((s, r) => s + (r.pe.oi || 0), 0);
             const ceChg = rows.reduce((s, r) => s + (r.ce.oi_chg || 0), 0);
             const peChg = rows.reduce((s, r) => s + (r.pe.oi_chg || 0), 0);
-            setWriterBal({ pcr: ceOI ? peOI / ceOI : null, ceOI, peOI, ceChg, peChg, net: peChg - ceChg });
+            const net = peChg - ceChg;
+            setWriterBal({ pcr: ceOI ? peOI / ceOI : null, ceOI, peOI, ceChg, peChg, net,
+              maxPain, trend: wm?.pcr_trend ?? "flat", pcrPrev: wm?.pcr_prev ?? null, spot: sp });
+            // writer-flip alert: net writer flow crosses from put-building (+) to call-building (−) or vice versa
+            const pn = netPrevRef.current;
+            if (pn != null && Math.sign(pn) !== Math.sign(net) && Math.abs(net) > 100000) {
+              fireWall("WRITER_FLIP", net >= 0 ? "BUY" : "SELL",
+                net >= 0 ? "🖊 Writer flow flipped to PUT building (bullish)" : "🖊 Writer flow flipped to CALL building (bearish)",
+                net >= 0 ? `Put writers took over net OI (+${Math.round(net / 1e5)}L) — support building, bullish tilt.`
+                         : `Call writers took over net OI (${Math.round(net / 1e5)}L) — resistance building, bearish tilt.`, sp);
+            }
+            netPrevRef.current = net;
           }
         }
       } catch { /* keep last */ }
@@ -933,11 +949,26 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
               <b className="text-slate-200">🖊 Writers</b>
               <span className="text-slate-400">PCR</span>
               <b className={pcrCls}>{pcr != null ? pcr.toFixed(2) : "—"} {pcr != null && (pcr >= 1 ? "▲ puts" : "▼ calls")}</b>
+              {writerBal.trend !== "flat" && (
+                <span title="PCR change over the last 30 min (intraday): rising = puts accelerating (bullish), falling = calls accelerating"
+                  className={writerBal.trend === "rising" ? "text-emerald-400" : "text-rose-400"}>
+                  {writerBal.trend === "rising" ? "↗ puts accel" : "↘ calls accel"}{writerBal.pcrPrev != null ? ` (30m ${writerBal.pcrPrev.toFixed(2)})` : ""}
+                </span>
+              )}
               <span className="mx-0.5 w-px self-stretch bg-ink-700" />
               <span className="text-emerald-300">PE Δ +{cr(writerBal.peChg)}</span>
               <span className="text-rose-300">CE Δ +{cr(writerBal.ceChg)}</span>
               <span className="text-slate-400">net</span>
               <b className={netCls}>{net >= 0 ? "+" : "−"}{cr(net)} · {net >= 0 ? "puts building → support ↑ (bullish)" : "calls building → resistance ↑ (bearish)"}</b>
+              {writerBal.maxPain != null && (
+                <>
+                  <span className="mx-0.5 w-px self-stretch bg-ink-700" />
+                  <span className="text-amber-300" title="Max pain: the strike where option buyers lose the most at expiry — writers tend to 'pull' price toward it">
+                    🎯 max-pain {writerBal.maxPain.toLocaleString("en-IN")}
+                    {writerBal.spot != null ? ` · ${writerBal.spot >= writerBal.maxPain ? "spot " + cr(writerBal.spot - writerBal.maxPain) + " above (pull ↓)" : "spot " + cr(writerBal.maxPain - writerBal.spot) + " below (pull ↑)"}` : ""}
+                  </span>
+                </>
+              )}
             </span>
           );
         })()}
