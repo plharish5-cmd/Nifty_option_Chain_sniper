@@ -8,16 +8,17 @@ import { DragBar, FullPanel, PeceTable, WritersFlow, useStoredHeight } from "./c
 import SplitPane from "./components/SplitPane";
 import { AutoPilotPanel, useAutopilot } from "./components/AutoPilot";
 import WriterMap from "./components/WriterMap";
+import FootprintDesk from "./components/FootprintDesk";
 import { Alerts, BiasGrid, Builds, Header, Paper, Signals } from "./components/Panels";
 import DeltaPanel from "./components/DeltaPanel";
 import AuctionPanel from "./components/AuctionPanel";
 import QmlPanel from "./components/QmlPanel";
 import CrtCockpit from "./components/CrtCockpit";
 import BiasPanel from "./components/BiasPanel";
-import FootprintPanel from "./components/FootprintPanel";
 import { AlertControls, AlertToasts, useRvolAlerts } from "./components/rvolAlerts";
 import { SignalControls, useSigPrefs } from "./components/signalAlerts";
 import BookPanel, { BookChip } from "./components/BookPanel";
+import CombinedRvolChip from "./components/CombinedRvolChip";
 
 const TFS: TF[] = ["1m", "5m", "15m", "1h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "1h": 30, "1D": 60 };
@@ -138,7 +139,7 @@ export default function App() {
             {rs?.value != null && <span className="num text-base font-semibold">{rs.value.toFixed(2)}×</span>}
             {rs?.trend && <span>{rs.trend === "BUILDING" ? "▲ building" : rs.trend === "FADING" ? "▼ fading" : "■ holding"}</span>}
             <span className="text-slate-400">{rs?.text ?? "cumulative RVOL of the NIFTY future — loading"}</span>
-            <span className="ml-auto flex flex-wrap items-center gap-2"><BookChip /><SignalControls p={sig} setP={setSig} /><AlertControls prefs={ra.prefs} setPrefs={ra.setPrefs} enable={ra.enable} /></span>
+            <span className="ml-auto flex flex-wrap items-center gap-2"><CombinedRvolChip /><BookChip /><SignalControls p={sig} setP={setSig} /><AlertControls prefs={ra.prefs} setPrefs={ra.setPrefs} enable={ra.enable} /></span>
           </div>
         );
       })()}
@@ -186,9 +187,9 @@ export default function App() {
                 ? <WritersFlow tick={chainTick} />
                 : mainView === "both"
                 ? <SplitPane
-                    top={<Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} />}
+                    top={<Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} />}
                     bottom={<WritersFlow tick={chainTick} />} />
-                : <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} />}
+                : <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} />}
             </div>
             {mainView === "candles" && <div className="px-4 py-1.5 text-[11px] text-slate-400 border-t border-ink-700 flex flex-wrap gap-x-4">
               {analysis && <span>ATR {analysis.atr} pts · trend <b className={analysis.trend === "bull" ? "text-bull-400" : analysis.trend === "bear" ? "text-bear-400" : ""}>{analysis.trend}</b></span>}
@@ -219,7 +220,7 @@ export default function App() {
               <div className="flex gap-1">
                 <button className={`tab ${bottom === "paper" ? "tab-on" : ""}`} onClick={() => setBottom("paper")}>Paper trades</button>
                 <button className={`tab ${bottom === "delta" ? "tab-on" : ""}`} onClick={() => setBottom("delta")}>Delta / Footprint</button>
-                <button className={`tab ${bottom === "footprint" ? "tab-on" : ""}`} onClick={() => setBottom("footprint")}>Footprint ladder</button>
+                <button className={`tab ${bottom === "footprint" ? "tab-on" : ""} !border-cyan-500/50`} onClick={() => setBottom("footprint")}>📊 Footprint desk</button>
                 <button className={`tab ${bottom === "auction" ? "tab-on" : ""}`} onClick={() => setBottom("auction")}>Auction</button>
                 <button className={`tab ${bottom === "qml" ? "tab-on" : ""}`} onClick={() => setBottom("qml")}>QML · RBS / SBR</button>
                 <button className={`tab ${bottom === "crt" ? "tab-on" : ""}`} onClick={() => setBottom("crt")}>CRT cockpit</button>
@@ -236,7 +237,7 @@ export default function App() {
                 : bottom === "bias" ? <BiasPanel tf={tf} candles={candles} analysis={analysis} />
                 : bottom === "crt" ? <CrtCockpit tick={storyTick} />
                 : bottom === "qml" ? <QmlPanel tick={storyTick} />
-                : bottom === "footprint" ? <FootprintPanel tick={storyTick} />
+                : bottom === "footprint" ? <FootprintDesk tick={storyTick} />
                 : bottom === "delta" ? <DeltaPanel tick={storyTick} strikes={strikes} />
                 : bottom === "auction" ? <AuctionPanel tick={storyTick} />
                 : paper ? <Paper trades={paper.trades} stats={paper.stats} scorecard={paper.scorecard} /> : null}

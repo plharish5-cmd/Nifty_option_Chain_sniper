@@ -161,7 +161,9 @@ class ChainPoller:
             return
         self._last_snap[exp] = time.time()
         ts = int(ch["ts"] // 60 * 60)
-        db.save_chain_snap(exp, ts, [(r["strike"], r["ce"]["oi"], r["pe"]["oi"], r["ce"]["ltp"], r["pe"]["ltp"])
+        db.save_chain_snap(exp, ts, [(r["strike"], r["ce"]["oi"], r["pe"]["oi"], r["ce"]["ltp"], r["pe"]["ltp"],
+                                      r["ce"].get("vol"), r["pe"].get("vol"),
+                                      r["ce"].get("bid"), r["ce"].get("ask"), r["pe"].get("bid"), r["pe"].get("ask"))
                                      for r in ch["rows"]])
 
     def summary(self, exp: Optional[str] = None) -> Optional[Dict[str, Any]]:

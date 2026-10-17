@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS daily (
 CREATE TABLE IF NOT EXISTS chain_latest (expiry TEXT PRIMARY KEY, ts INTEGER, payload TEXT);
 CREATE TABLE IF NOT EXISTS chain_snap (
   expiry TEXT NOT NULL, ts INTEGER NOT NULL, strike REAL NOT NULL,
-  ce_oi REAL, pe_oi REAL, ce_ltp REAL, pe_ltp REAL, PRIMARY KEY (expiry, ts, strike)) WITHOUT ROWID;
+  ce_oi REAL, pe_oi REAL, ce_ltp REAL, pe_ltp REAL, ce_vol REAL, pe_vol REAL,
+  ce_bid REAL, ce_ask REAL, pe_bid REAL, pe_ask REAL,
+  PRIMARY KEY (expiry, ts, strike)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS alerts (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, key TEXT UNIQUE NOT NULL,
   tf TEXT, kind TEXT, side TEXT, grade TEXT, title TEXT, body TEXT, price REAL, payload TEXT);
@@ -104,6 +106,14 @@ def _migrate(c: sqlite3.Connection) -> None:
 
 def _add_columns(c: sqlite3.Connection) -> None:
     """Additive columns on paper_trades (old rows keep NULL = index-only trades)."""
+    # 16 Oct 2026: chain_snap gained per-strike option VOLUME (for the real CE/PE volume tape / option RVOL).
+    # Old snapshot rows keep NULL volume — the option tape simply starts from the first row that has it.
+    # + bid/ask (16 Oct 2026) for ESTIMATED option aggression (Lee-Ready buy/sell delta & CVD per strike).
+    snap_have = _cols(c, "chain_snap")
+    if snap_have:
+        for col in ("ce_vol", "pe_vol", "ce_bid", "ce_ask", "pe_bid", "pe_ask"):
+            if col not in snap_have:
+                c.execute(f"ALTER TABLE chain_snap ADD COLUMN {col} REAL")
     have = _cols(c, "paper_trades")
     for col, typ in (("instrument_mode", "TEXT"), ("strikes_snapshot", "TEXT"), ("opt_key", "TEXT"),
                      ("opt_sid", "TEXT"), ("opt_entry", "REAL"), ("opt_exit", "REAL"), ("opt_pnl_pts", "REAL"),
@@ -187,8 +197,11 @@ def load_chains() -> Dict[str, Dict[str, Any]]:
 
 
 def save_chain_snap(expiry: str, ts: int, rows: List[tuple]) -> None:
-    execmany("INSERT OR REPLACE INTO chain_snap (expiry, ts, strike, ce_oi, pe_oi, ce_ltp, pe_ltp) "
-             "VALUES (?,?,?,?,?,?,?)", [(expiry, ts) + tuple(r) for r in rows])
+    # rows may be 5/7/11-col: strike,ce_oi,pe_oi,ce_ltp,pe_ltp[,ce_vol,pe_vol[,ce_bid,ce_ask,pe_bid,pe_ask]]; pad with NULL.
+    execmany("INSERT OR REPLACE INTO chain_snap "
+             "(expiry, ts, strike, ce_oi, pe_oi, ce_ltp, pe_ltp, ce_vol, pe_vol, ce_bid, ce_ask, pe_bid, pe_ask) "
+             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+             [(expiry, ts) + tuple(r) + (None,) * (11 - len(tuple(r))) for r in rows])
 
 
 # ─── kv ─────────────────────────────────────────────────────────────────────
@@ -211,7 +224,11 @@ def prune() -> Dict[str, int]:
     """Run once a day: candles older than candles_keep_days, chain snapshots older than chain_keep_days."""
     now = int(time.time())
     keep_c = int(config.rule("data", "candles_keep_days", 400)) * 86400
-    keep_s = int(config.rule("data", "chain_keep_days", 5)) * 86400
+    # chain_snap now also holds the option VOLUME/bid-ask tape used for multi-day option baselines, so keep it for
+    # option_tape_keep_days (≈ enough calendar days for ~30 trading sessions) — never shorter than chain_keep_days.
+    keep_oi = int(config.rule("data", "chain_keep_days", 5))
+    keep_tape = int(config.rule("data", "option_tape_keep_days", 45))
+    keep_s = max(keep_oi, keep_tape) * 86400
     a = execute("DELETE FROM candles_1m WHERE ts < ?", (now - keep_c,)).rowcount
     b = execute("DELETE FROM chain_snap WHERE ts < ?", (now - keep_s,)).rowcount
     keep_d = int(config.rule("delta", "keep_days", 10)) * 86400

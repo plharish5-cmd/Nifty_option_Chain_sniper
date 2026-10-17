@@ -46,7 +46,9 @@ export interface VolumeView {
   last?: { last_rvol: number | null; last_v: number | null; method: string | null }; act_last?: { act: number; raw: number; z: number | null } | null;
   last_vwap?: VolPoint | null; rvol_method?: string | null;
 }
-export interface Analysis { volume?: VolumeView; auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
+export interface QmlSetup { kind: "QML" | "RBS" | "SBR"; dir: "bull" | "bear"; name: string; side: string; level: number; tol: number; status: "ARMED" | "TRIGGERED" | "TP1 HIT" | "TP2 HIT" | "STOPPED" | "INVALID" | "EXPIRED" | "NO-TRADE" | "FAR"; veto?: string; entry: number; sl: number; tp1: number; tp2: number; rr: number; tp1_r: number; from: number; to: number; bos_at: string; trig_at: string | null; rule: string; no_trade: string; strike?: string | null; structure: { label: string; time: number; price: number }[] }
+export interface QmlView { setups: QmlSetup[]; markers: Marker[]; summary: string; pivot_n?: number }
+export interface Analysis { qml?: QmlView; volume?: VolumeView; auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
 export interface Quote { spot: number | null; prev_close: number | null; chg: number | null; chg_pct: number | null; vix: number | null; vix_chg: number | null; source: string; market_open: boolean; ts: number }
 export interface Signal { ctx?: { tp1?: number; rr1?: number; pair?: string; aplus_tbs?: boolean; [k: string]: unknown }; key: string; setup: "A" | "B" | "C" | "D"; name: string; tf: string; side: "long" | "short"; status: "TRADE" | "SKIP" | "INFO"; time: string; entry: number | null; sl: number | null; tp: number | null; risk: number | null; rr: number | null; target_src: string; reasons: string[]; story: string[]; confidence?: number | null; confluence?: string[]; confidence_parts?: { structure: number; options_context: number | null; flow: number; flow_source: string } | null }
 export interface AlertRow { id: number; ts: number; time: string; grade: "trade" | "skip" | "info" | "rvol"; kind: string; side: string; tf: string; title: string; body: string; price: number | null }
@@ -77,6 +79,25 @@ async function get<T>(path: string): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+export interface OptTapeLeg { vol: number; oi: number; oi_chg: number; ltp: number; delta: number | null; class: string }
+export interface OptTapeRow { strike: number; zone: string; ce: OptTapeLeg; pe: OptTapeLeg }
+export interface OptTapeLadder { expiry: string; spot: number; atm: number; step: number; ladder: OptTapeRow[];
+  totals: { ce_vol: number; pe_vol: number; vol_pcr: number | null; ce_oi: number; pe_oi: number; oi_pcr: number | null } }
+export interface OptionTape { available: boolean; which?: string; expiries?: string[]; ladders?: OptTapeLadder[];
+  option_crvol?: { value: number | null; state: string; trend: string | null; text?: string } | null;
+  heatmap?: Record<string, Record<string, { ts: number; v: number }[]>> | null;
+  aggression?: (Record<string, OptAggExp> & { _net_flow_total?: number; _note?: string }) | null;
+  recording?: { minutes_today: number; first_ts: number | null; note: string }; error?: string }
+export interface OptBigEvent { ts: number; strike: number; side: string; vol: number; mult: number; est: string | null }
+export interface OptionBigtrades { available: boolean; expiry?: string; mult?: number; events?: OptBigEvent[]; note?: string; error?: string }
+export interface OptFpCell { strike: number; ce_vol: number; pe_vol: number; ce_delta: number; pe_delta: number }
+export interface OptFpBucket { ts: number; poc: number | null; net_delta: number; cvd: number; vol: number; rvol: number | null; cells: OptFpCell[] }
+export interface OptionFootprint { available: boolean; expiry?: string; spot?: number; atm?: number; tf?: string;
+  strikes?: number[]; buckets?: OptFpBucket[]; note?: string; error?: string }
+export interface OptAggRow { strike: number; ce_buy: number; ce_sell: number; ce_delta: number; pe_buy: number; pe_sell: number; pe_delta: number }
+export interface OptAggExp { ladder: OptAggRow[]; cvd: { ts: number; ce: number; pe: number; net: number }[];
+  net_flow: number; totals: { ce_delta: number; pe_delta: number } }
+
 export const api = {
   candles: (tf: TF, days = 3, inst = "NIFTY") => get<{ tf: TF; candles: Candle[] }>(`/api/candles?tf=${tf}&days=${days}&inst=${encodeURIComponent(inst)}`),
   analysis: (tf: TF, inst = "NIFTY") => get<Analysis>(`/api/analysis?tf=${tf}&inst=${encodeURIComponent(inst)}`),
@@ -89,6 +110,12 @@ export const api = {
   },
   dashboard: () => get<Dashboard>("/api/dashboard"),
   chain: (expiry?: string) => get<Chain>(`/api/chain${expiry ? `?expiry=${expiry}` : ""}`),
+  optionTape: (which = "both", band = 6, heat = 0, flow = 0) =>
+    get<OptionTape>(`/api/option_tape?which=${which}&band=${band}&heat=${heat}&flow=${flow}`),
+  optionFootprint: (which = "cur", band = 6, tf = "5m") =>
+    get<OptionFootprint>(`/api/option_footprint?which=${which}&band=${band}&tf=${tf}`),
+  optionBigtrades: (which = "cur", band = 10, mult = 3) =>
+    get<OptionBigtrades>(`/api/option_bigtrades?which=${which}&band=${band}&mult=${mult}`),
   paper: () => get<{ trades: PaperTrade[]; stats: PaperStats; open: PaperTrade | null; scorecard?: Scorecard }>("/api/paper"),
   repair: () => fetch("/api/repair", { method: "POST" }).then((r) => r.json()),
   delta: (tf: TF) => get<DeltaRes>(`/api/delta?tf=${tf}`),

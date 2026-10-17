@@ -28,11 +28,11 @@ const C = {
   obBull: "rgba(16,185,129,0.14)", obBear: "rgba(239,68,68,0.14)", fvgBull: "rgba(56,189,248,0.14)", fvgBear: "rgba(244,114,182,0.14)",
 };
 
-export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal }: {
+export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal, expiries }: {
   sig?: SigPrefs; onSignal?: (a: AlertRow) => void;
   onAutoSignal?: (a: AlertRow, ctx: { last: Candle; atr: number; nearWall: number | null }) => void;
   tf: TF; candles: Candle[]; analysis: Analysis | null; layers: Layers; spot: number | null; spotTs: number; marketOpen: boolean;
-  onExpand?: () => void; expanded?: boolean;
+  onExpand?: () => void; expanded?: boolean; expiries?: string[];
 }) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -53,6 +53,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const [nodesV, setNodesV] = useState<NodesView | null>(null);
   const cvdS = useRef<ISeriesApi<"Baseline"> | null>(null);
   const [walls, setWalls] = useState<Wall[]>([]);
+  const [wallExp, setWallExp] = useState<"cur" | "next" | "both">("cur");
   const [bookEv, setBookEv] = useState<{ ts: number; price: number; side: string; kind: string; qty: number; why: string }[]>([]);
   const wallPrevRef = useRef<{ status: Record<string, Wall["status"]>; topCE: number | null; topPE: number | null } | null>(null);
   const onSignalRef = useRef(onSignal); onSignalRef.current = onSignal;
@@ -578,12 +579,36 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       }
       wallPrevRef.current = { status, topCE, topPE };
     };
-    const go = () => api.chain().then((ch) => { if (dead || !ch?.rows?.length) return; const sp = ch.spot || spot || ch.atm;
-      if (layers.walls) { const w = buildWalls(ch.rows, sp); setWalls(w); detectWallEvents(w); }
-      if (layers.gamma) setGexMap(computeGex(ch.rows, sp, 65)); }).catch(() => {});
+    // merge OI across two expiries per strike (for the "Both" wall view — total positioning)
+    type OIRow = { strike: number; ce: { oi: number; oi_chg: number }; pe: { oi: number; oi_chg: number } };
+    const mergeRows = (a: OIRow[], b: OIRow[]): OIRow[] => {
+      const m = new Map<number, OIRow>();
+      for (const r of [...a, ...b]) {
+        const e = m.get(r.strike);
+        if (!e) m.set(r.strike, { strike: r.strike, ce: { oi: r.ce.oi || 0, oi_chg: r.ce.oi_chg || 0 }, pe: { oi: r.pe.oi || 0, oi_chg: r.pe.oi_chg || 0 } });
+        else { e.ce.oi += r.ce.oi || 0; e.ce.oi_chg += r.ce.oi_chg || 0; e.pe.oi += r.pe.oi || 0; e.pe.oi_chg += r.pe.oi_chg || 0; }
+      }
+      return [...m.values()].sort((x, y) => x.strike - y.strike);
+    };
+    const curExp = expiries?.[0]; const nextExp = expiries?.[1];
+    wallPrevRef.current = null;   // reset wall-roll baseline when the source expiry changes (no spurious alerts)
+    const go = async () => {
+      try {
+        const cur = await api.chain(curExp);
+        if (dead) return;
+        const sp = cur?.spot || spot || cur?.atm;
+        if (layers.gamma && cur?.rows?.length) setGexMap(computeGex(cur.rows, sp, 65));   // GEX stays on current expiry (needs greeks)
+        if (layers.walls) {
+          let rows: OIRow[] = cur?.rows ?? [];
+          if (wallExp === "next" && nextExp) { const nx = await api.chain(nextExp); if (nx?.rows?.length) rows = nx.rows; }
+          else if (wallExp === "both" && nextExp) { const nx = await api.chain(nextExp); rows = mergeRows(cur?.rows ?? [], nx?.rows ?? []); }
+          if (rows.length) { const w = buildWalls(rows, sp); setWalls(w); detectWallEvents(w); }
+        }
+      } catch { /* keep last */ }
+    };
     go(); const id = window.setInterval(go, 60000);
     return () => { dead = true; window.clearInterval(id); };
-  }, [layers.walls, layers.gamma]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [layers.walls, layers.gamma, wallExp, expiries]); // eslint-disable-line react-hooks/exhaustive-deps
   const bubbles = useMemo(() => layers.bubbles || layers.cvd || layers.cells
     ? buildBubbles(analysis?.volume?.bars ?? [], fpBars, candles) : [], [layers.bubbles, layers.cvd, layers.cells, analysis, fpBars, candles]);
   useEffect(() => {
@@ -860,6 +885,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   return (
     <div className="relative h-full w-full">
       <div ref={box} className="h-full w-full" />
+      {/* OI wall expiry selector (top-right) — only when walls are on */}
+      {layers.walls && (expiries?.length ?? 0) > 1 && (
+        <div className="pointer-events-auto absolute right-2 top-2 z-20 flex items-center gap-1 rounded bg-[#060b16]/85 px-1.5 py-1 text-[10px] ring-1 ring-white/10">
+          <span className="text-slate-500">OI walls:</span>
+          {(["cur", "next", "both"] as const).map((e) => (
+            <button key={e} onClick={() => setWallExp(e)}
+              className={`rounded px-1.5 py-0.5 ${wallExp === e ? "bg-gold-500/30 text-gold-200" : "text-slate-400 hover:text-slate-200"}`}>
+              {e === "cur" ? "This wk" : e === "next" ? "Next wk" : "Both"}
+            </button>
+          ))}
+        </div>
+      )}
       {/* legend + latest signals (top-left) */}
       <div className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[70%] flex-col gap-1">
         <div className="flex flex-wrap gap-1">
