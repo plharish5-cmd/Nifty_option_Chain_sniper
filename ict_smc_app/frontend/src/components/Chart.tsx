@@ -14,6 +14,7 @@ import { findEntries, NodesPrimitive, nodesRead, type NodesView } from "./nodes"
 import { buildBubbles, buildWalls, OrderFlowPrimitive, readAt, type Wall, type OiLevel } from "./orderflow";
 import { computeDol } from "./dol";
 import { turtleSoup } from "./turtlesoup";
+import { powerOfThree } from "./powerofthree";
 import { dispatch, scanSignals, type SigPrefs } from "./signalAlerts";
 import type { AlertRow } from "../api";
 import { EV_LAYER, GUIDE, KIND_ACT } from "./guide";
@@ -22,7 +23,7 @@ import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
 import MtfPanel from "./MtfPanel";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean; p3?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -302,6 +303,19 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         }
         if (S.or) {
           boxes.push({ from: t0, to: lastTime, top: S.or.h, bottom: S.or.l, fill: "rgba(148,163,184,0.04)", stroke: "rgba(148,163,184,0.25)", dash: true, label: "Opening range 09:15–09:30" });
+        }
+      }
+      // Power of Three (AMD): ① Accumulation (opening range) · ② Judas sweep (manipulation) · ③ Distribution bias
+      if (layers.p3) {
+        const p3 = powerOfThree(candles, a);
+        if (p3) {
+          boxes.push({ from: p3.orFrom, to: lastTime, top: p3.orHigh, bottom: p3.orLow, fill: "rgba(250,204,21,0.05)",
+            stroke: "rgba(250,204,21,0.4)", dash: true, label: "① Accumulation (opening range)", labelColor: "#fde047" });
+          segs.push({ from: p3.orFrom, price: p3.open, color: "rgba(226,232,240,0.6)", dash: true, label: `Day open ${p3.open.toFixed(1)}` });
+          if (p3.judas) {
+            segs.push({ from: p3.judas.time, price: p3.judas.price, color: "#f59e0b", width: 1.5,
+              label: `② Judas ${p3.judas.dir === "up" ? "↑ fake-up" : "↓ fake-down"} ${p3.judas.price.toFixed(0)} → ③ Distribution ${p3.distribution === "bull" ? "UP (bullish)" : "DOWN (bearish)"}${p3.reclaimed ? " ✓ reclaimed" : " (awaiting reclaim)"}` });
+          }
         }
       }
       // setup D — CRT range (CRT candle → end of the manipulation candle), its 50 % (TP-1) and the CRTH / CRTL edges
@@ -1254,6 +1268,7 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD pane (est.)", "#4ade80"], ["gamma", "γ map: red call res · green put sup · yellow flip · ✓✓✓ = EMA stack + flag at level + volume", "#c084fc"], ["nodes", "🟨 Stacked nodes D·W·M (gold = A+) · ● ENTRY = ±2σ into zone", "#facc15"],
   ["tsoup", "🐢 Turtle soup: false break of PDH/PDL/OR/pool that closes back inside → stop-run reversal (▲ buy / ▼ sell)", "#2dd4bf"],
   ["rblock", "⟂ Rejection blocks: big-wick zone (violet) · lower wick = support, upper wick = resistance · dashed line = 50% entry", "#c084fc"],
+  ["p3", "📐 Power of 3 (AMD): ① yellow box = accumulation (opening range) · ② orange line = Judas sweep (fake move) · ③ distribution = opposite the Judas", "#fde047"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {
