@@ -22,7 +22,7 @@ import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
 import MtfPanel from "./MtfPanel";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -254,11 +254,16 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       }
       for (const z of a.zones) {
         if (z.type === "RJB") {                      // rejection block: long-wick part of a swing candle (violet)
-          if (!layers.ob) continue;
+          if (!(layers.ob || layers.rblock)) continue;   // its own toggle, or shown with Order blocks
           const sell = z.dir === "bear";
           boxes.push({ from: z.from, to: z.to, top: z.top, bottom: z.bottom,
             fill: sell ? "rgba(192,132,252,0.13)" : "rgba(129,140,248,0.13)", stroke: sell ? "rgba(192,132,252,0.8)" : "rgba(129,140,248,0.8)",
             dash: true, label: z.label, labelColor: sell ? "#d8b4fe" : "#a5b4fc" });
+          if (layers.rblock) {                            // the ICT 50 % of the rejection block — the key entry level
+            const mid = (z.top + z.bottom) / 2;
+            segs.push({ from: z.from, price: mid, color: sell ? "rgba(192,132,252,0.8)" : "rgba(129,140,248,0.8)", dash: true,
+              label: `RB 50% ${mid.toFixed(1)}` });
+          }
           continue;
         }
         if (z.type === "IFVG") {                     // inversion FVG: failed gap that flipped role (orange = sell zone, teal = buy zone)
@@ -1248,6 +1253,7 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["walls", "🧱 OI walls: 🟥 CE = resistance (cap) · 🟩 PE = support (floor) · bar thicker = hardening, thinner/dashed = cracking · left bubbles = each strike's % OI change (+ writers adding / − covering)", "#ef4444"], ["bubbles", "🫧 Big trades ≥2× vol · yellow ring = absorbed", "#a3e635"],
   ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD pane (est.)", "#4ade80"], ["gamma", "γ map: red call res · green put sup · yellow flip · ✓✓✓ = EMA stack + flag at level + volume", "#c084fc"], ["nodes", "🟨 Stacked nodes D·W·M (gold = A+) · ● ENTRY = ±2σ into zone", "#facc15"],
   ["tsoup", "🐢 Turtle soup: false break of PDH/PDL/OR/pool that closes back inside → stop-run reversal (▲ buy / ▼ sell)", "#2dd4bf"],
+  ["rblock", "⟂ Rejection blocks: big-wick zone (violet) · lower wick = support, upper wick = resistance · dashed line = 50% entry", "#c084fc"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {
