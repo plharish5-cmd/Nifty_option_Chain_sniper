@@ -28,7 +28,9 @@ export type StdvStatus =
   | "AT_MINOR_ZONE"
   | "PAST_MINOR"
   | "AT_MAJOR_ZONE"
-  | "EXTREME_OVERSHOOT";
+  | "EXTREME_OVERSHOOT"
+  | "INVALIDATED"
+  | "COMPLETED";
 
 export type StdvAnchorMode = "orderblock" | "swing" | "manual";
 
@@ -49,6 +51,8 @@ export interface StdvLeg {
   candlesCount: number;
   status: StdvStatus;
   statusText: string;
+  isInvalidated?: boolean;
+  isCompleted?: boolean;
   levels: StdvLevel[];
   minorZone: [number, number];   // [minPrice, maxPrice]
   majorZone: [number, number];   // [minPrice, maxPrice]
@@ -65,7 +69,15 @@ export function computeStdvLevels(
   anchor0: number,
   anchor1: number,
   spot?: number,
-): { levels: StdvLevel[]; minorZone: [number, number]; majorZone: [number, number]; status: StdvStatus; statusText: string } {
+): {
+  levels: StdvLevel[];
+  minorZone: [number, number];
+  majorZone: [number, number];
+  status: StdvStatus;
+  statusText: string;
+  isInvalidated: boolean;
+  isCompleted: boolean;
+} {
   const range = Math.abs(anchor0 - anchor1);
   const px = (mult: number) => {
     // For Bullish: multiplier -m expands UP: anchor0 + m * range
@@ -105,10 +117,16 @@ export function computeStdvLevels(
 
   let status: StdvStatus = "PENDING";
   let statusText = "Pending expansion";
+  let isInvalidated = false;
+  let isCompleted = false;
 
   if (spot != null && range > 0) {
     if (dir === "bull") {
-      if (spot < anchor0) {
+      if (spot < anchor1) {
+        status = "INVALIDATED";
+        statusText = `❌ Invalidated: Traded below sweep wick (${round(anchor1 - spot, 1)} pts below Low)`;
+        isInvalidated = true;
+      } else if (spot < anchor0) {
         status = "PENDING";
         statusText = `Consolidating in manipulation leg (${round(anchor0 - spot, 1)} pts below 0)`;
       } else if (spot < minorZone[0]) {
@@ -124,11 +142,16 @@ export function computeStdvLevels(
         status = "AT_MAJOR_ZONE";
         statusText = "⚠️ INSIDE MAJOR REVERSAL ZONE (-4 to -4.5) — Extreme exhaustion / Macro reversal risk";
       } else {
-        status = "EXTREME_OVERSHOOT";
-        statusText = "Extended beyond -4.5 STD DEV";
+        status = "COMPLETED";
+        statusText = "Completed: Extended beyond -4.5 STD DEV";
+        isCompleted = true;
       }
     } else {
-      if (spot > anchor0) {
+      if (spot > anchor1) {
+        status = "INVALIDATED";
+        statusText = `❌ Invalidated: Traded above sweep wick (${round(spot - anchor1, 1)} pts above High)`;
+        isInvalidated = true;
+      } else if (spot > anchor0) {
         status = "PENDING";
         statusText = `Consolidating in manipulation leg (${round(spot - anchor0, 1)} pts above 0)`;
       } else if (spot > minorZone[1]) {
@@ -144,13 +167,14 @@ export function computeStdvLevels(
         status = "AT_MAJOR_ZONE";
         statusText = "⚠️ INSIDE MAJOR REVERSAL ZONE (-4 to -4.5) — Extreme exhaustion / Macro reversal risk";
       } else {
-        status = "EXTREME_OVERSHOOT";
-        statusText = "Extended beyond -4.5 STD DEV";
+        status = "COMPLETED";
+        statusText = "Completed: Extended beyond -4.5 STD DEV";
+        isCompleted = true;
       }
     }
   }
 
-  return { levels, minorZone, majorZone, status, statusText };
+  return { levels, minorZone, majorZone, status, statusText, isInvalidated, isCompleted };
 }
 
 function round(n: number, d = 1): number {
@@ -182,24 +206,30 @@ export function detectManipulationLegs(
       cur.low <= closed[i + 1].low;
 
     if (isSwingLow) {
-      // Check if it swept a previous low within prior 35 bars
+      // Find a prior swing low that was swept (liquidity pool)
       let sweptLow: Candle | null = null;
       let swingHighBeforeDrop: Candle = closed[i - 1];
-      for (let j = Math.max(0, i - 35); j < i; j++) {
+
+      for (let j = Math.max(0, i - 40); j < i; j++) {
         if (closed[j].high > swingHighBeforeDrop.high) {
           swingHighBeforeDrop = closed[j];
         }
-        if (j < i - 2 && closed[j].low > cur.low && closed[j].low <= cur.low + (cur.high - cur.low) * 2.5) {
+        // A true prior swing pivot has lower low than its immediate neighbors
+        const isPriorPivot = j >= 2 && closed[j].low <= closed[j - 1].low && closed[j].low <= closed[j - 2].low;
+        if (isPriorPivot && closed[j].low > cur.low && closed[j].low <= cur.low + (cur.high - cur.low) * 3) {
           sweptLow = closed[j];
         }
       }
 
-      // Trace consecutive downclose candles leading into cur (Order Block run)
-      let k = i;
+      // Order Block run: Trace consecutive downclose candles leading into the sweep
+      // If cur is upclose (hammer / rejection), start searching from i - 1
+      const startK = closed[i].close <= closed[i].open ? i : i - 1;
+      let k = startK;
       let downCount = 0;
       let obHigh = cur.high;
       let obHighTime = cur.time;
-      while (k >= 0 && closed[k].close <= closed[k].open && downCount < 10) {
+
+      while (k >= 0 && closed[k].close <= closed[k].open && downCount < 8) {
         downCount++;
         if (closed[k].high >= obHigh) {
           obHigh = closed[k].high;
@@ -208,57 +238,70 @@ export function detectManipulationLegs(
         k--;
       }
 
-      if (downCount >= 2 || sweptLow) {
-        // Look for subsequent delivery shift
-        const shifted = closed.slice(i + 1, Math.min(closed.length, i + 8)).some((c) => c.close > (obHigh + cur.low) / 2);
-        if (shifted || i >= closed.length - 4) {
-          const from = anchorMode === "swing" ? swingHighBeforeDrop.time : closed[Math.max(0, k + 1)].time;
-          const to = cur.time;
-          const anchor0 = round(anchorMode === "swing" ? swingHighBeforeDrop.high : obHigh, 1);
-          const anchor0Time = anchorMode === "swing" ? swingHighBeforeDrop.time : obHighTime;
-          const anchor1 = round(cur.low, 1);
-          const anchor1Time = cur.time;
-          const range = round(anchor0 - anchor1, 1);
+      // If we found consecutive downclose candles, the OB run began at k + 1
+      const obStartIdx = downCount > 0 ? k + 1 : Math.max(0, i - 1);
 
-          if (range > 5) {
-            const currentSpot = spot ?? closed[closed.length - 1].close;
-            const computed = computeStdvLevels("bull", anchor0, anchor1, currentSpot);
-            const distMinor = currentSpot < computed.minorZone[0] ? computed.minorZone[0] - currentSpot : currentSpot > computed.minorZone[1] ? currentSpot - computed.minorZone[1] : 0;
-            const distMajor = currentSpot < computed.majorZone[0] ? computed.majorZone[0] - currentSpot : currentSpot > computed.majorZone[1] ? currentSpot - computed.majorZone[1] : 0;
-            const hitMinor = currentSpot >= computed.minorZone[0];
-            const hitMajor = currentSpot >= computed.majorZone[0];
+      // Check for Market Structure Shift (MSS) displacement after the sweep
+      const shiftWindow = closed.slice(i + 1, Math.min(closed.length, i + 8));
+      const thresholdPrice = anchorMode === "swing" ? (swingHighBeforeDrop.high + cur.low) / 2 : obHigh;
+      const shifted = shiftWindow.some((c) => c.close > thresholdPrice);
 
-            legs.push({
-              id: `stdv-bull-${tfName}-${from}-${anchorMode}`,
-              dir: "bull",
-              tf: tfName,
-              anchorMode,
-              from,
-              to,
-              anchor0Time,
-              anchor1Time,
-              high: anchor0,
-              low: anchor1,
-              anchor0,
-              anchor1,
-              range,
-              candlesCount: i - k,
-              status: computed.status,
-              statusText: computed.statusText,
-              levels: computed.levels,
-              minorZone: computed.minorZone,
-              majorZone: computed.majorZone,
-              distMinorPts: round(distMinor, 1),
-              distMajorPts: round(distMajor, 1),
-              hitMinor,
-              hitMajor,
-              confluences: [
-                sweptLow ? `Swept liquidity (${round(sweptLow.low, 1)})` : "Swing low sweep",
-                anchorMode === "orderblock" ? `${downCount} downclose candles (OB)` : "Full Judas swing",
-                `Range: ${range} pts`,
-              ],
-            });
-          }
+      if ((sweptLow && shifted) || (downCount >= 2 && shifted) || (i >= closed.length - 3 && sweptLow)) {
+        const fromIdx = anchorMode === "swing" ? Math.max(0, i - 1) : obStartIdx;
+        const fromTime = anchorMode === "swing" ? swingHighBeforeDrop.time : closed[fromIdx].time;
+        const toTime = cur.time;
+
+        // Ensure from is strictly <= to
+        const from = Math.min(fromTime, toTime);
+        const to = Math.max(fromTime, toTime);
+
+        const anchor0 = round(anchorMode === "swing" ? swingHighBeforeDrop.high : obHigh, 1);
+        const anchor0Time = anchorMode === "swing" ? swingHighBeforeDrop.time : obHighTime;
+        const anchor1 = round(cur.low, 1);
+        const anchor1Time = cur.time;
+        const range = round(anchor0 - anchor1, 1);
+
+        if (range > 5) {
+          const currentSpot = spot ?? closed[closed.length - 1].close;
+          const computed = computeStdvLevels("bull", anchor0, anchor1, currentSpot);
+          const distMinor = currentSpot < computed.minorZone[0] ? computed.minorZone[0] - currentSpot : currentSpot > computed.minorZone[1] ? currentSpot - computed.minorZone[1] : 0;
+          const distMajor = currentSpot < computed.majorZone[0] ? computed.majorZone[0] - currentSpot : currentSpot > computed.majorZone[1] ? currentSpot - computed.majorZone[1] : 0;
+          const hitMinor = currentSpot >= computed.minorZone[0];
+          const hitMajor = currentSpot >= computed.majorZone[0];
+
+          legs.push({
+            id: `stdv-bull-${tfName}-${from}-${anchorMode}`,
+            dir: "bull",
+            tf: tfName,
+            anchorMode,
+            from,
+            to,
+            anchor0Time,
+            anchor1Time,
+            high: anchor0,
+            low: anchor1,
+            anchor0,
+            anchor1,
+            range,
+            candlesCount: Math.max(1, i - fromIdx),
+            status: computed.status,
+            statusText: computed.statusText,
+            isInvalidated: computed.isInvalidated,
+            isCompleted: computed.isCompleted,
+            levels: computed.levels,
+            minorZone: computed.minorZone,
+            majorZone: computed.majorZone,
+            distMinorPts: round(distMinor, 1),
+            distMajorPts: round(distMajor, 1),
+            hitMinor,
+            hitMajor,
+            confluences: [
+              sweptLow ? `Swept Pivot Low (${round(sweptLow.low, 1)})` : "Liquidity Wick Sweep",
+              anchorMode === "orderblock" ? `${downCount || 1} downclose (OB run)` : "Full Judas Swing",
+              shifted ? "✓ MSS Displacement" : "Pending MSS",
+              `Range: ${range} pts`,
+            ],
+          });
         }
       }
     }
@@ -273,20 +316,24 @@ export function detectManipulationLegs(
     if (isSwingHigh) {
       let sweptHigh: Candle | null = null;
       let swingLowBeforeRally: Candle = closed[i - 1];
-      for (let j = Math.max(0, i - 35); j < i; j++) {
+
+      for (let j = Math.max(0, i - 40); j < i; j++) {
         if (closed[j].low < swingLowBeforeRally.low) {
           swingLowBeforeRally = closed[j];
         }
-        if (j < i - 2 && closed[j].high < cur.high && closed[j].high >= cur.high - (cur.high - cur.low) * 2.5) {
+        const isPriorPivot = j >= 2 && closed[j].high >= closed[j - 1].high && closed[j].high >= closed[j - 2].high;
+        if (isPriorPivot && closed[j].high < cur.high && closed[j].high >= cur.high - (cur.high - cur.low) * 3) {
           sweptHigh = closed[j];
         }
       }
 
-      let k = i;
+      const startK = closed[i].close >= closed[i].open ? i : i - 1;
+      let k = startK;
       let upCount = 0;
       let obLow = cur.low;
       let obLowTime = cur.time;
-      while (k >= 0 && closed[k].close >= closed[k].open && upCount < 10) {
+
+      while (k >= 0 && closed[k].close >= closed[k].open && upCount < 8) {
         upCount++;
         if (closed[k].low <= obLow) {
           obLow = closed[k].low;
@@ -295,63 +342,78 @@ export function detectManipulationLegs(
         k--;
       }
 
-      if (upCount >= 2 || sweptHigh) {
-        const shifted = closed.slice(i + 1, Math.min(closed.length, i + 8)).some((c) => c.close < (cur.high + obLow) / 2);
-        if (shifted || i >= closed.length - 4) {
-          const from = anchorMode === "swing" ? swingLowBeforeRally.time : closed[Math.max(0, k + 1)].time;
-          const to = cur.time;
-          const anchor0 = round(anchorMode === "swing" ? swingLowBeforeRally.low : obLow, 1);
-          const anchor0Time = anchorMode === "swing" ? swingLowBeforeRally.time : obLowTime;
-          const anchor1 = round(cur.high, 1);
-          const anchor1Time = cur.time;
-          const range = round(anchor1 - anchor0, 1);
+      const obStartIdx = upCount > 0 ? k + 1 : Math.max(0, i - 1);
+      const shiftWindow = closed.slice(i + 1, Math.min(closed.length, i + 8));
+      const thresholdPrice = anchorMode === "swing" ? (swingLowBeforeRally.low + cur.high) / 2 : obLow;
+      const shifted = shiftWindow.some((c) => c.close < thresholdPrice);
 
-          if (range > 5) {
-            const currentSpot = spot ?? closed[closed.length - 1].close;
-            const computed = computeStdvLevels("bear", anchor0, anchor1, currentSpot);
-            const distMinor = currentSpot > computed.minorZone[1] ? currentSpot - computed.minorZone[1] : currentSpot < computed.minorZone[0] ? computed.minorZone[0] - currentSpot : 0;
-            const distMajor = currentSpot > computed.majorZone[1] ? currentSpot - computed.majorZone[1] : currentSpot < computed.majorZone[0] ? computed.majorZone[0] - currentSpot : 0;
-            const hitMinor = currentSpot <= computed.minorZone[1];
-            const hitMajor = currentSpot <= computed.majorZone[1];
+      if ((sweptHigh && shifted) || (upCount >= 2 && shifted) || (i >= closed.length - 3 && sweptHigh)) {
+        const fromIdx = anchorMode === "swing" ? Math.max(0, i - 1) : obStartIdx;
+        const fromTime = anchorMode === "swing" ? swingLowBeforeRally.time : closed[fromIdx].time;
+        const toTime = cur.time;
 
-            legs.push({
-              id: `stdv-bear-${tfName}-${from}-${anchorMode}`,
-              dir: "bear",
-              tf: tfName,
-              anchorMode,
-              from,
-              to,
-              anchor0Time,
-              anchor1Time,
-              high: anchor1,
-              low: anchor0,
-              anchor0,
-              anchor1,
-              range,
-              candlesCount: i - k,
-              status: computed.status,
-              statusText: computed.statusText,
-              levels: computed.levels,
-              minorZone: computed.minorZone,
-              majorZone: computed.majorZone,
-              distMinorPts: round(distMinor, 1),
-              distMajorPts: round(distMajor, 1),
-              hitMinor,
-              hitMajor,
-              confluences: [
-                sweptHigh ? `Swept liquidity (${round(sweptHigh.high, 1)})` : "Swing high sweep",
-                anchorMode === "orderblock" ? `${upCount} upclose candles (OB)` : "Full Judas swing",
-                `Range: ${range} pts`,
-              ],
-            });
-          }
+        const from = Math.min(fromTime, toTime);
+        const to = Math.max(fromTime, toTime);
+
+        const anchor0 = round(anchorMode === "swing" ? swingLowBeforeRally.low : obLow, 1);
+        const anchor0Time = anchorMode === "swing" ? swingLowBeforeRally.time : obLowTime;
+        const anchor1 = round(cur.high, 1);
+        const anchor1Time = cur.time;
+        const range = round(anchor1 - anchor0, 1);
+
+        if (range > 5) {
+          const currentSpot = spot ?? closed[closed.length - 1].close;
+          const computed = computeStdvLevels("bear", anchor0, anchor1, currentSpot);
+          const distMinor = currentSpot > computed.minorZone[1] ? currentSpot - computed.minorZone[1] : currentSpot < computed.minorZone[0] ? computed.minorZone[0] - currentSpot : 0;
+          const distMajor = currentSpot > computed.majorZone[1] ? currentSpot - computed.majorZone[1] : currentSpot < computed.majorZone[0] ? computed.majorZone[0] - currentSpot : 0;
+          const hitMinor = currentSpot <= computed.minorZone[1];
+          const hitMajor = currentSpot <= computed.majorZone[1];
+
+          legs.push({
+            id: `stdv-bear-${tfName}-${from}-${anchorMode}`,
+            dir: "bear",
+            tf: tfName,
+            anchorMode,
+            from,
+            to,
+            anchor0Time,
+            anchor1Time,
+            high: anchor1,
+            low: anchor0,
+            anchor0,
+            anchor1,
+            range,
+            candlesCount: Math.max(1, i - fromIdx),
+            status: computed.status,
+            statusText: computed.statusText,
+            isInvalidated: computed.isInvalidated,
+            isCompleted: computed.isCompleted,
+            levels: computed.levels,
+            minorZone: computed.minorZone,
+            majorZone: computed.majorZone,
+            distMinorPts: round(distMinor, 1),
+            distMajorPts: round(distMajor, 1),
+            hitMinor,
+            hitMajor,
+            confluences: [
+              sweptHigh ? `Swept Pivot High (${round(sweptHigh.high, 1)})` : "Liquidity Wick Sweep",
+              anchorMode === "orderblock" ? `${upCount || 1} upclose (OB run)` : "Full Judas Swing",
+              shifted ? "✓ MSS Displacement" : "Pending MSS",
+              `Range: ${range} pts`,
+            ],
+          });
         }
       }
     }
   }
 
-  // Sort by most recent leg first
-  return legs.sort((a, b) => b.to - a.to);
+  // Sort by active legs first, then most recent timestamp
+  return legs.sort((a, b) => {
+    const aActive = !a.isInvalidated && !a.isCompleted ? 1 : 0;
+    const bActive = !b.isInvalidated && !b.isCompleted ? 1 : 0;
+    if (aActive !== bActive) return bActive - aActive;
+    return b.to - a.to;
+  });
 }
 
 // ── Manual / Click-to-Anchor Leg Creator ──────────────────────────────────────
@@ -399,6 +461,8 @@ export function createManualStdvLeg(
     candlesCount: 1,
     status: computed.status,
     statusText: computed.statusText,
+    isInvalidated: computed.isInvalidated,
+    isCompleted: computed.isCompleted,
     levels: computed.levels,
     minorZone: computed.minorZone,
     majorZone: computed.majorZone,
@@ -410,13 +474,28 @@ export function createManualStdvLeg(
   };
 }
 
-// ── Multi-Timeframe Candle Aggregator ─────────────────────────────────────────
+// ── Multi-Timeframe Candle Aggregator (with Calendar Monday Alignment) ────────
+export function getMondayEpoch(tsSec: number): number {
+  const d = new Date(tsSec * 1000);
+  const day = d.getUTCDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const diffDays = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diffDays);
+  d.setUTCHours(0, 0, 0, 0);
+  return Math.floor(d.getTime() / 1000);
+}
+
 export function aggregateBars(candles: Candle[], bucketSec: number): Candle[] {
   if (!candles.length) return [];
   const map = new Map<number, Candle>();
 
   for (const c of candles) {
-    const k = Math.floor(c.time / bucketSec) * bucketSec;
+    let k: number;
+    if (bucketSec === 604800) {
+      // Group by Monday 00:00 UTC so Indian (Mon-Fri) trading weeks are preserved
+      k = getMondayEpoch(c.time);
+    } else {
+      k = Math.floor(c.time / bucketSec) * bucketSec;
+    }
     const existing = map.get(k);
     if (!existing) {
       map.set(k, { time: k, open: c.open, high: c.high, low: c.low, close: c.close, closed: c.closed });
@@ -463,11 +542,11 @@ class StdvRenderer implements IPrimitivePaneRenderer {
       ctx.save();
       ctx.font = "10px Inter, system-ui, sans-serif";
 
-      // 1. Shaded Manipulation Leg Box (Vertical Column like Screenshot 6)
+      // 1. Shaded Manipulation Leg Box (Vertical Column)
       const legY1 = y(activeLeg.high);
       const legY2 = y(activeLeg.low);
-      const legX1 = x(activeLeg.from, 0);
-      const legX2 = Math.max(legX1 + 14, x(activeLeg.to, W));
+      const legX1 = x(Math.min(activeLeg.from, activeLeg.to), 0);
+      const legX2 = Math.max(legX1 + 14, x(Math.max(activeLeg.from, activeLeg.to), W));
 
       if (legY1 !== null && legY2 !== null && legX2 > 0 && legX1 < W) {
         const boxTop = Math.min(legY1, legY2);

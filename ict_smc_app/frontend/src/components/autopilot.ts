@@ -6,7 +6,8 @@
 import type { AlertRow, Candle } from "../api";
 
 export type AutoCfg = { on: boolean; maxOpen: 1 | 3; rCapLoss: number; rCapWin: number; eodHHMM: number; rr: number;
-  triggers: Record<string, boolean>; sound: boolean; premium: number; delta: number };
+  triggers: Record<string, boolean>; sound: boolean; premium: number; delta: number;
+  slMode?: "atr" | "structural" };   // SL at the sweep-wick extreme (ICT structural invalidation) vs ~1 ATR
 export type AutoPos = { id: number; t0: number; side: "BUY" | "SELL"; kind: string; label: string;
   entry: number; sl: number; tp: number; risk: number; status: "OPEN" | "TP" | "SL" | "REV" | "EOD"; exit?: number; r?: number; t1?: number; desk?: number | null; entryPrem?: number;
   opt?: "CE" | "PE"; strike?: number; mfe?: number; mae?: number };   // CE/PE bucket + best(MFE)/worst(MAE) excursion in points
@@ -16,6 +17,7 @@ export const DEFAULT_CFG: AutoCfg = {
   on: false, maxOpen: 1, rCapLoss: -3, rCapWin: 5, eodHHMM: 1515, rr: 1.5,
   triggers: { aplus: true, nodes: true, flow: true, gamma: true, conf: true, crt: true, ifvg: true },
   sound: true, premium: 120, delta: 0.5,      // option-mode: assumed ATM premium ₹ and option delta
+  slMode: "structural",                        // default: SL beyond the sweep-wick extreme (ICT invalidation)
 };
 
 const KEY = "ict_autopilot_v1";
@@ -70,8 +72,18 @@ export function openFromSignal(s: AutoState, sig: { key: string; side: "BUY" | "
   if (s.open.some((p) => p.side === sig.side)) return null;
   const buy = sig.side === "BUY";
   const entry = a.price && a.price > 0 ? a.price : last.close;
-  const rng = Math.max(last.high - last.low, atr * 0.6);
-  const risk = Math.max(atr, rng);                                        // SL = ~1 ATR / candle range, whichever is wider
+  // SL: structural = beyond the sweep-wick extreme of the trigger candle (ICT invalidation), with a small cushion
+  // and sanity bounds (0.5–2.5 ATR) so a tiny wick doesn't oversize and a huge wick doesn't blow risk out.
+  // atr = ~1 ATR / candle range (the previous behaviour), kept as a toggle.
+  let risk: number;
+  if ((s.cfg.slMode ?? "structural") === "structural") {
+    const buffer = Math.max(atr * 0.1, entry * 0.0003);                   // a few points past the wick, don't get grazed
+    const wick = buy ? last.low - buffer : last.high + buffer;
+    risk = Math.min(Math.max(Math.abs(entry - wick), atr * 0.5), atr * 2.5);
+  } else {
+    const rng = Math.max(last.high - last.low, atr * 0.6);
+    risk = Math.max(atr, rng);                                            // SL = ~1 ATR / candle range, whichever is wider
+  }
   const sl = buy ? entry - risk : entry + risk;
   let tp = buy ? entry + s.cfg.rr * risk : entry - s.cfg.rr * risk;       // RR target…
   if (nearWall && nearWall > 0) {                                         // …but never past the opposing wall (take the nearer)

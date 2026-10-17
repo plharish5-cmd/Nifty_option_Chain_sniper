@@ -581,32 +581,76 @@ export default function StdvPanel({
           <div className="card p-3 border border-ink-700 bg-ink-900 rounded-lg">
             <div className="flex items-center justify-between border-b border-ink-800 pb-2 mb-2">
               <span className="font-bold text-gold-400 uppercase text-[11px] tracking-wider">
-                Multi-Timeframe STDV Matrix (Weekly · Daily · 1H · 15m)
+                Multi-Timeframe STDV Matrix (Click to Project)
               </span>
               <span className="text-[10px] text-slate-500">Auto-synced</span>
             </div>
 
-            <div className="grid grid-cols-4 gap-1 text-[11px] mb-2 text-center">
-              {["1W", "1D", "1h", "15m"].map((tfKey) => {
-                const leg = mtfLegs[tfKey];
+            <div className="grid grid-cols-4 gap-1.5 text-[11px] mb-2 text-center">
+              {[
+                { key: "15m", label: "15m Session", type: "Intraday" },
+                { key: "1h", label: "1H Session", type: "Intraday" },
+                { key: "1D", label: "1D Daily", type: "Macro" },
+                { key: "1W", label: "1W Weekly", type: "Macro" },
+              ].map(({ key, label, type }) => {
+                const leg = mtfLegs[key];
+                const isCur = activeLeg?.id === leg?.id;
                 return (
                   <div
-                    key={tfKey}
-                    className={`p-2 rounded border ${
-                      leg
-                        ? leg.dir === "bull"
-                          ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300"
-                          : "bg-rose-950/20 border-rose-500/30 text-rose-300"
-                        : "bg-ink-800 border-ink-700 text-slate-500"
+                    key={key}
+                    onClick={() => {
+                      if (leg) {
+                        handleSelectLeg(leg);
+                        setActiveTfId(key);
+                        if (onSetChartTf) onSetChartTf(key as TF);
+                      }
+                    }}
+                    title={leg ? `Click to inspect & project ${key} manipulation leg (${leg.range} pts)` : `No leg detected on ${key}`}
+                    className={`p-2 rounded border cursor-pointer transition-all ${
+                      isCur
+                        ? "border-cyan-400 bg-cyan-950/40 ring-1 ring-cyan-400"
+                        : leg
+                        ? leg.isInvalidated
+                          ? "bg-rose-950/20 border-rose-900/50 text-slate-400 opacity-60 hover:opacity-100"
+                          : leg.isCompleted
+                          ? "bg-purple-950/20 border-purple-900/50 text-slate-300 hover:border-purple-500/50"
+                          : leg.dir === "bull"
+                          ? "bg-emerald-950/25 border-emerald-500/40 text-emerald-300 hover:border-emerald-400"
+                          : "bg-rose-950/25 border-rose-500/40 text-rose-300 hover:border-rose-400"
+                        : "bg-ink-800/60 border-ink-700 text-slate-500"
                     }`}
                   >
-                    <div className="font-bold text-[12px]">{tfKey}</div>
-                    <div className="text-[10px] font-medium mt-0.5">
-                      {leg ? (leg.dir === "bull" ? "▲ Bull" : "▼ Bear") : "No Leg"}
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[12px]">{key}</span>
+                      <span className="text-[9px] uppercase px-1 rounded bg-ink-800 text-slate-400 border border-ink-700">{type}</span>
                     </div>
+
+                    <div className="text-[10px] font-semibold mt-1">
+                      {leg ? (
+                        <span className={leg.dir === "bull" ? "text-emerald-300" : "text-rose-300"}>
+                          {leg.dir === "bull" ? "▲ Bull" : "▼ Bear"} ({leg.range}p)
+                        </span>
+                      ) : (
+                        "No Leg"
+                      )}
+                    </div>
+
                     {leg && (
-                      <div className="text-[10px] text-slate-400 mt-1 num">
-                        Minor: {leg.minorZone[0].toFixed(0)}–{leg.minorZone[1].toFixed(0)}
+                      <div className="mt-1 flex flex-col gap-0.5">
+                        <span
+                          className={`text-[9px] font-bold px-1 py-0.2 rounded inline-block ${
+                            leg.isInvalidated
+                              ? "bg-rose-900/40 text-rose-300"
+                              : leg.isCompleted
+                              ? "bg-purple-900/40 text-purple-300"
+                              : "bg-emerald-900/40 text-emerald-300"
+                          }`}
+                        >
+                          {leg.isInvalidated ? "❌ Invalid" : leg.isCompleted ? "✓ Completed" : "⚡ Active"}
+                        </span>
+                        <span className="text-[9px] text-slate-400 num">
+                          -2σ: {leg.minorZone[0].toFixed(0)}–{leg.minorZone[1].toFixed(0)}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -615,7 +659,7 @@ export default function StdvPanel({
             </div>
 
             <p className="text-[10px] text-slate-400 leading-relaxed border-t border-ink-800 pt-1.5">
-              💡 <b>Cluster Confluence Strategy:</b> High probability turning points occur when lower timeframe Major Reversal (-4σ) overlaps with higher timeframe Minor Reversal (-2σ).
+              💡 <b>Timeframe Segregation:</b> <b>15m / 1H</b> legs measure today's session liquidity sweeps (intraday expansion). <b>1D / 1W</b> legs measure multi-week structural swings (macro expansion). Click any card to lock & project it.
             </p>
           </div>
 
@@ -625,7 +669,7 @@ export default function StdvPanel({
               <span className="font-bold text-slate-300 text-[11px] uppercase tracking-wider">
                 Detected Manipulation Legs ({activeTfId})
               </span>
-              <span className="text-[10px] text-slate-500">Click row to inspect & project</span>
+              <span className="text-[10px] text-slate-500">Active sweeps prioritized at top</span>
             </div>
 
             <div className="flex-1 overflow-y-auto">
@@ -635,6 +679,7 @@ export default function StdvPanel({
                 <table className="w-full text-[11px] num">
                   <thead>
                     <tr className="text-slate-500 border-b border-ink-800 text-left text-[10px] uppercase">
+                      <th className="pb-1.5 font-medium">Status</th>
                       <th className="pb-1.5 font-medium">Type</th>
                       <th className="pb-1.5 font-medium">Time</th>
                       <th className="pb-1.5 font-medium">Sweep Wick</th>
@@ -654,6 +699,19 @@ export default function StdvPanel({
                             isCur ? "bg-gold-500/10 text-white font-semibold" : "hover:bg-ink-800/50 text-slate-300"
                           }`}
                         >
+                          <td className="py-1.5">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                l.isInvalidated
+                                  ? "bg-rose-950/60 text-rose-400 border border-rose-800/50"
+                                  : l.isCompleted
+                                  ? "bg-purple-950/60 text-purple-300 border border-purple-800/50"
+                                  : "bg-emerald-950/60 text-emerald-300 border border-emerald-800/50"
+                              }`}
+                            >
+                              {l.isInvalidated ? "❌ Invalid" : l.isCompleted ? "✓ Done" : "⚡ Active"}
+                            </span>
+                          </td>
                           <td className="py-1.5">
                             <span
                               className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${

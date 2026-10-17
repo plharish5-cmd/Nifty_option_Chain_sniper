@@ -116,6 +116,9 @@ export function AutoPilotPanel({ ap, spot = null }: { ap: ReturnType<typeof useA
             className={`tab !py-0.5 ${s.cfg.maxOpen === m ? "tab-on" : ""}`}>{m}</button>)}
           <button onClick={() => { setCfg({ sound: !s.cfg.sound }); beep("entry"); }} title="Beep on entry / exit (click also unlocks sound)"
             className={`tab !py-0.5 ${s.cfg.sound ? "tab-on" : ""}`}>{s.cfg.sound ? "🔔 sound" : "🔕 muted"}</button>
+          <button onClick={() => setCfg({ slMode: (s.cfg.slMode ?? "structural") === "structural" ? "atr" : "structural" })}
+            title="Stop-loss placement: structural = beyond the sweep-wick extreme (ICT invalidation); ATR = ~1 ATR / candle range"
+            className={`tab !py-0.5 ${(s.cfg.slMode ?? "structural") === "structural" ? "tab-on" : ""}`}>SL: {(s.cfg.slMode ?? "structural") === "structural" ? "🎯 structural" : "ATR"}</button>
           <span className="ml-2 text-slate-500">stop</span>
           <span className="rounded bg-ink-800 px-1.5 py-0.5">{s.cfg.rCapLoss}R / +{s.cfg.rCapWin}R</span>
         </span>
