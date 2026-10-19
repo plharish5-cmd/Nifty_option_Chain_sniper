@@ -14,18 +14,46 @@ const load = (): AlertPrefs => {
 };
 
 let ctx: AudioContext | null = null;
-function tones(seq: [number, number][]) {                     // [frequency Hz, duration s]
+function getAudioCtx(): AudioContext | null {
   try {
     ctx = ctx ?? new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-    let t = ctx.currentTime + 0.02;
-    for (const [f, d] of seq) {
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      o.type = "sine"; o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + d + 0.05);
-      t += d + 0.06;
+    if (ctx && ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
     }
-  } catch { /* no audio */ }
+    return ctx;
+  } catch {
+    return null;
+  }
+}
+
+if (typeof window !== "undefined") {
+  const unlock = () => { getAudioCtx(); };
+  window.addEventListener("pointerdown", unlock);
+  window.addEventListener("keydown", unlock);
+}
+
+function tones(seq: [number, number][]) {                     // [frequency Hz, duration s]
+  try {
+    const c = getAudioCtx();
+    if (!c) return;
+    const play = () => {
+      let t = c.currentTime + 0.02;
+      for (const [f, d] of seq) {
+        const o = c.createOscillator(), g = c.createGain();
+        o.type = "sine"; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+        o.connect(g).connect(c.destination); o.start(t); o.stop(t + d + 0.05);
+        t += d + 0.06;
+      }
+    };
+    if (c.state === "suspended") {
+      c.resume().then(play).catch(() => {});
+    } else {
+      play();
+    }
+  } catch (err) {
+    console.warn("audio tone failed:", err);
+  }
 }
 const SOUND: Record<string, [number, number][]> = {
   RVOL_ACTIVATED: [[660, 0.18], [880, 0.18], [1100, 0.32]],          // rising: participation arrived
@@ -61,8 +89,12 @@ export function useRvolAlerts() {
     const sig = kind.startsWith("SIG_");
     if (prefs.sound) tones(sig ? (kind.startsWith("SIG_APLUS") ? SIG_SOUND.APLUS : SIG_SOUND[a.side] ?? SIG_SOUND.INFO) : SOUND[kind] ?? [[880, 0.2], [880, 0.2]]);
     if (prefs.voice && "speechSynthesis" in window) {
-      try { const said = sig ? `${a.title.replace(/^\S+ (\d\d):(\d\d) · /, "$1 $2. ").replace(/γ ✓✓✓/g, "gamma triple check").replace(/✓3/g, "check 3").replace(/★ ?A\+ ×(\d)/g, "A plus, times $1").replace(/★ ?A\+/g, "A plus").replace(/●/g, "").replace(/🧭/g, "").replace(/[▲▼→—★]/g, " ").replace(/PE−CE/g, "P E C E").replace(/≥/g, "at least")}` : `${SAY[kind] ?? "Alert"}. ${a.title.replace(/×/g, " times").replace(/RVOL/g, "R VOL")}`;
-      const u = new SpeechSynthesisUtterance(said); u.rate = 1.05; speechSynthesis.speak(u); } catch { /* ignore */ }
+      try {
+        if (speechSynthesis.paused) speechSynthesis.resume();
+        speechSynthesis.cancel();
+        const said = sig ? `${a.title.replace(/^\S+ (\d\d):(\d\d) · /, "$1 $2. ").replace(/γ ✓✓✓/g, "gamma triple check").replace(/✓3/g, "check 3").replace(/★ ?A\+ ×(\d)/g, "A plus, times $1").replace(/★ ?A\+/g, "A plus").replace(/●/g, "").replace(/🧭/g, "").replace(/[▲▼→—★]/g, " ").replace(/PE−CE/g, "P E C E").replace(/≥/g, "at least")}` : `${SAY[kind] ?? "Alert"}. ${a.title.replace(/×/g, " times").replace(/RVOL/g, "R VOL")}`;
+        const u = new SpeechSynthesisUtterance(said); u.rate = 1.05; speechSynthesis.speak(u);
+      } catch { /* ignore */ }
     }
     if (prefs.desktop && "Notification" in window && Notification.permission === "granted") {
       try { new Notification(a.title, { body: a.body, tag: a.title, requireInteraction: kind.startsWith("SIG_APLUS") || kind === "RVOL_ACTIVATED" || kind === "BREAKOUT_NO_RVOL" }); } catch { /* ignore */ }
@@ -110,14 +142,21 @@ export function AlertControls({ prefs, setPrefs, enable }: { prefs: AlertPrefs; 
     return <button onClick={enable} className="pill bg-gold-500 text-ink-900 font-semibold animate-pulse">🔔 Enable RVOL alerts (sound · voice · desktop)</button>;
   }
   const t = (k: keyof AlertPrefs, label: string) => (
-    <button onClick={() => setPrefs((p) => ({ ...p, [k]: !p[k] }))} className={`pill ${prefs[k] ? "bg-ink-700 text-slate-100" : "bg-ink-800 text-slate-500 line-through"}`}>{label}</button>
+    <button onClick={() => {
+      getAudioCtx()?.resume().catch(() => {});
+      if (k === "sound" && !prefs.sound) tones([[880, 0.12]]);
+      setPrefs((p) => ({ ...p, [k]: !p[k] }));
+    }} className={`pill ${prefs[k] ? "bg-ink-700 text-slate-100" : "bg-ink-800 text-slate-500 line-through"}`}>{label}</button>
   );
   const blocked = "Notification" in window && Notification.permission === "denied";
   return (
     <span className="flex items-center gap-1">
       <span className="text-[11px] text-slate-400">🔔 alerts:</span>{t("sound", "sound")}{t("voice", "voice")}{t("desktop", blocked ? "desktop (blocked)" : "desktop")}
       <button title="Sends a test alert through the server: log, sound, voice, desktop notification and Telegram (if on)"
-        onClick={() => { fetch("/api/alerts/test-rvol", { method: "POST" }).catch(() => tones(SOUND.RVOL_ACTIVATED)); }}
+        onClick={() => {
+          getAudioCtx()?.resume().catch(() => {});
+          fetch("/api/alerts/test-rvol", { method: "POST" }).catch(() => tones(SOUND.RVOL_ACTIVATED));
+        }}
         className="pill bg-ink-800 text-slate-300">test</button>
     </span>
   );

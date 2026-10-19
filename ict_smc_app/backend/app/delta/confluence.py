@@ -42,6 +42,9 @@ def _context(s, C, context: Optional[Dict[str, Any]], live_i: Optional[int]) -> 
         if context is not None:
             s.confluence.append("Options context: not recorded for this (older) candle — chain is 'now' only.")
         return None
+    if context.get("is_stale"):
+        s.confluence.append("Options context: skipped (chain data is stale).")
+        return None
     from ..strikes.context import verdict
     v = verdict(s.side, context.get("foci", []))
     w = C.get("options_context", {})

@@ -30,7 +30,7 @@ export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: 
       <div className="flex flex-wrap items-center gap-3 border-b border-ink-700 px-3 py-1.5">
         {now && <span className={`rounded px-2 py-0.5 text-[13px] font-bold ${now.verdict === "BUY" ? "bg-bull-500 text-black" : now.verdict === "SELL" ? "bg-bear-500 text-white" : "bg-ink-700 text-slate-200"}`}>
           {hm(now.time)} · {now.verdict === "MIXED" ? `MIXED ${now.bull}▲ / ${now.bear}▼` : `${now.verdict} bias ${Math.max(now.bull, now.bear)}/${now.avail}`}</span>}
-        <span className="text-slate-400">{tf} · last closed candle · {now ? `${now.avail} of 14 factors have data` : ""}</span>
+        <span className="text-slate-400">{tf} · last closed candle · {now ? `${now.avail} of 19 factors have data` : ""}</span>
         {live && <span className="rounded border border-dashed border-slate-500 px-2 py-0.5 text-slate-400" title="Forming candle — the score can change completely before the close. Never enter on this.">
           forming {hm(live.time)} · <span className="text-bull-400">{live.bull}▲</span> / <span className="text-bear-400">{live.bear}▼</span> of {live.avail} · <i>provisional</i></span>}
         <label className="ml-auto text-slate-400">badge when ≥
@@ -62,9 +62,9 @@ export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: 
         </table>
       </div>
       <div className="border-t border-ink-700 px-3 py-1 text-[10.5px] text-slate-500">
-        Green dot = votes BUY, red = SELL, grey = no vote. Hover a dot for the reason. FVG/IFVG &amp; Order block: live zone tested &amp; held, or price within 1 ATR above support / below resistance ·
+        Green dot = votes BUY, red = SELL, grey = no vote. Hover a dot for the reason. FVG/IFVG &amp; Order block &amp; Rejection block: live zone tested &amp; held, or price within 1 ATR above support / below resistance ·
         CRT/TBS: last 6 bars · Footprint: flow tag + delta (estimated) · RVOL ≥ 1.2× votes with the candle colour · VWAP: close vs futures VWAP ·
-        Structure: last BOS/MSS · PE−CE action (8501 table) · Writers gap: put−call OI gap widening/narrowing over 30 min · Δput−Δcall: unusual writer candle, else 30-min balance ±0.25 · Writer dominance: put line above call = BUY, degree by separation (mild ≥20 %, moderate ≥50 %, strong ≥75 %) · Writer flip: ▲BULL/▼BEAR marker in the last 6 candles · PCR trend: OI PCR ±0.03 over 30 min; ⚠ = PCR above 1.5 turning down or below 0.5 turning up (crowded, reversal risk) · SMT: NIFTY vs BANKNIFTY swing divergence in the last 6 candles. Badges on closed candles only; the dashed top row is the forming candle (provisional, changes every tick). Not backtested — information, not an order.
+        Structure: last BOS/MSS · PE−CE action (8501 table) · Writers gap: put−call OI gap widening/narrowing over 30 min · Δput−Δcall: unusual writer candle, else 30-min balance ±0.25 · Writer dominance: put line above call = BUY, degree by separation (mild ≥20 %, moderate ≥50 %, strong ≥75 %) · Writer flip: ▲BULL/▼BEAR marker in the last 6 candles · PCR trend: OI PCR ±0.03 over 30 min; ⚠ = PCR above 1.5 turning down or below 0.5 turning up (crowded, reversal risk) · SMT: NIFTY vs BANKNIFTY swing divergence in the last 6 candles · CCT: Candle Continuity Theory · MMXM: Market Maker Buy/Sell Model · CVD flow: 3-bar CVD slope + 6-bar divergence · Gamma flip: close above/below Dealer Gamma Flip (HVL). Badges on closed candles only; the dashed top row is the forming candle (provisional, changes every tick). Not backtested — information, not an order.
       </div>
     </div>
   );

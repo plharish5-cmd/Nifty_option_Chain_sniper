@@ -44,7 +44,9 @@
     "_chain_note": "One chain call every chain_poll_every_s (Dhan allows 1 per 3 s PER ACCOUNT — leave room for the OC scanner). Nearest expiry on 3 of 4 polls.",
     "daily_data_limit": 7000,
     "desk_data_budget": 5000,
-    "_budget_note": "Dhan Data APIs: 7,000 calls/day per ACCOUNT. After desk_data_budget calls this desk pauses optional candle refreshes (strike + futures) — the feed, recorder and repairs keep running."
+    "_budget_note": "Dhan Data APIs: 7,000 calls/day per ACCOUNT. After desk_data_budget calls this desk pauses optional candle refreshes (strike + futures) — the feed, recorder and repairs keep running.",
+    "oc_max_age_s": 20,
+    "oc_stale_spot_delta": 40.0
   },
   "engine": {
     "timeframes": [
@@ -72,6 +74,8 @@
     "displacement_body_atr": 1.0,
     "displacement_body_ratio": 0.6,
     "ob_max_age_bars": 120,
+    "near_atr": 8.0,
+    "near_min_pts": 150.0,
     "ote_levels": [
       0.618,
       0.705,
@@ -97,6 +101,8 @@
     "max_per_day": 10,
     "telegram": false,
     "send_info_alerts": false,
+    "intra_sweep_throttle_s": 1.0,
+    "intra_sweep_cooldown_s": 120.0,
     "_note": "Info alerts (BOS, OTE touch) show in the app; only trade setups go to Telegram unless send_info_alerts is true."
   },
   "paper": {
@@ -466,5 +472,24 @@
     "reacc_fib_min": 0.50,
     "reacc_fib_max": 0.75,
     "target_buffer_pts": 4.0
+  },
+  "broker": {
+    "_note": "Decoupled async pub/sub: separates raw tick ingestion from heavy ICT/SMC mathematical evaluations.",
+    "enabled": true,
+    "redis_url": "redis://localhost:6379/0",
+    "channel_ticks": "market:ticks",
+    "channel_signals": "engine:signals",
+    "worker_concurrency": 2,
+    "queue_max_size": 50000,
+    "ws_replay_buffer_size": 256
+  },
+  "buffers": {
+    "_note": "Zero-copy in-memory rolling ring buffers (deque) for historical candle and tick lookups.",
+    "max_candles_1m": 25000,
+    "max_ticks": 10000,
+    "max_depth_snapshots": 1000,
+    "write_behind_interval_s": 60,
+    "resample_cache_size": 32,
+    "max_frame_cache_entries": 64
   }
 }

@@ -87,8 +87,10 @@ def normalize(raw: Dict[str, Any], expiry: str) -> Dict[str, Any]:
     near = [r for r in rows if abs(r["strike"] - atm) <= 10 * step]
     ce_wall = max(near, key=lambda r: r["ce"]["oi"], default=None)
     pe_wall = max(near, key=lambda r: r["pe"]["oi"], default=None)
+    now_t = time.time()
     return {
-        "expiry": expiry, "ts": int(now_epoch()), "spot": spot, "atm": atm, "step": step, "rows": rows,
+        "expiry": expiry, "ts": int(now_epoch()), "fetched_at": now_t, "spot_at_fetch": spot,
+        "is_stale": False, "spot": spot, "atm": atm, "step": step, "rows": rows,
         "totals": {"ce_oi": ce_oi, "pe_oi": pe_oi, "pcr": round(pe_oi / ce_oi, 2) if ce_oi else None,
                    "ce_oi_chg": ce_chg, "pe_oi_chg": pe_chg,
                    "pcr_chg": round(pe_chg / ce_chg, 2) if ce_chg > 0 else None},
@@ -166,9 +168,33 @@ class ChainPoller:
                                       r["ce"].get("bid"), r["ce"].get("ask"), r["pe"].get("bid"), r["pe"].get("ask"))
                                      for r in ch["rows"]])
 
-    def summary(self, exp: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def is_stale(self, exp: Optional[str] = None, live_spot: Optional[float] = None) -> bool:
+        """Evaluates whether the option chain snapshot is stale based on age or spot drift from rules.json."""
+        exp = exp or (self.expiries[0] if self.expiries else (sorted(self.chains)[0] if self.chains else None))
+        ch = self.chains.get(exp) if exp else None
+        if not ch:
+            return True
+        max_age = float(config.rule("data", "oc_max_age_s", 20))
+        max_spot_delta = float(config.rule("data", "oc_stale_spot_delta", 40.0))
+        fetched_at = float(ch.get("fetched_at", ch.get("ts", 0)))
+        age = time.time() - fetched_at
+        if age > max_age:
+            return True
+        if live_spot is not None and live_spot > 0:
+            spot_at_fetch = float(ch.get("spot_at_fetch", ch.get("spot", live_spot)))
+            if spot_at_fetch > 0 and abs(live_spot - spot_at_fetch) > max_spot_delta:
+                return True
+        return False
+
+    def summary(self, exp: Optional[str] = None, live_spot: Optional[float] = None) -> Optional[Dict[str, Any]]:
         exp = exp or (self.expiries[0] if self.expiries else (sorted(self.chains)[0] if self.chains else None))
         ch = self.chains.get(exp) if exp else None
         if not ch:
             return None
-        return {k: ch[k] for k in ("expiry", "ts", "spot", "atm", "totals", "max_pain", "call_wall", "put_wall", "builds")}
+        stale = self.is_stale(exp, live_spot)
+        return {
+            **{k: ch[k] for k in ("expiry", "ts", "spot", "atm", "totals", "max_pain", "call_wall", "put_wall", "builds")},
+            "fetched_at": ch.get("fetched_at", ch.get("ts")),
+            "spot_at_fetch": ch.get("spot_at_fetch", ch.get("spot")),
+            "is_stale": stale,
+        }

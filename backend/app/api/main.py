@@ -258,18 +258,34 @@ async def delta_csv(request: Request, bar_seconds: int = Query(60), ts_is: str =
 
 
 @app.websocket("/ws")
-async def ws(websocket: WebSocket):
+async def ws(websocket: WebSocket, format: Optional[str] = Query(None)):
     h = _h()
     await websocket.accept()
+    client_fmt = (format or "").lower()
+    if client_fmt in ("msgpack", "binary"):
+        client_fmt = "msgpack"
+    else:
+        proto = websocket.headers.get("sec-websocket-protocol", "")
+        client_fmt = "msgpack" if "msgpack" in proto else "json"
     h.clients.add(websocket)
+    h.client_formats[websocket] = client_fmt
     try:
-        await websocket.send_json({"type": "quote", "quote": h.quote()})
+        init_quote = {"type": "quote", "quote": h.quote()}
+        if client_fmt == "msgpack":
+            try:
+                import msgpack
+                await websocket.send_bytes(msgpack.packb(init_quote, default=_cj, use_bin_type=True))
+            except Exception:
+                await websocket.send_json(init_quote)
+        else:
+            await websocket.send_json(init_quote)
         while True:
-            await websocket.receive_text()                   # the browser only sends keep-alive pings
+            await websocket.receive()                        # browser pings or control messages
     except WebSocketDisconnect:
         pass
     finally:
         h.clients.discard(websocket)
+        h.client_formats.pop(websocket, None)
 
 
 # ── strike mode ──────────────────────────────────────────────────────────────

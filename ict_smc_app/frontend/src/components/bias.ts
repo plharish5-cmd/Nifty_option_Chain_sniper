@@ -5,7 +5,11 @@ import type { Analysis, Candle } from "../api";
 import type { FpBar } from "./footprint";
 
 export type Vote = "bull" | "bear" | null;
-export const FACTORS = ["FVG/IFVG", "Order block", "CRT/TBS", "Footprint", "RVOL", "VWAP", "Structure", "PE−CE action", "Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip", "PCR trend", "SMT", "CCT", "MMXM"] as const;
+export const FACTORS = [
+  "FVG/IFVG", "Order block", "Rejection block", "CRT/TBS", "Footprint", "RVOL", "VWAP",
+  "Structure", "PE−CE action", "Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip",
+  "PCR trend", "SMT", "CCT", "MMXM", "CVD flow", "Gamma flip"
+] as const;
 // Options Lab feeds (from 8501 via /api/oclab): PE−CE table rows (3m, ATM ±10) and the writer-flow points (1m, all strikes)
 export type OcRow = { ts: string; act: [string, string, string?, string?] | null; pe_ce_day: number | null; pcr?: number | null };
 export type OcPt = { t: number; ce: number | null; pe: number | null; flow: number | null; bal: number | null; sig: boolean;
@@ -67,12 +71,14 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     const sig = ifvgSig.find((m) => m.time <= c.time && m.time >= c.time - 2 * barSec);
     if (sig) { v = sig.kind === "IFVG_BUY" ? "bull" : "bear"; w = sig.kind.replace("_", " "); }
     votes["FVG/IFVG"] = v; why["FVG/IFVG"] = w;
-    // 2 Order block / breaker / RJB
-    [v, w] = zoneVote(["OB", "BREAKER", "RJB"], c); votes["Order block"] = v; why["Order block"] = w;
-    // 3 CRT / TBS (last 6 bars)
+    // 2 Order block / breaker
+    [v, w] = zoneVote(["OB", "BREAKER"], c); votes["Order block"] = v; why["Order block"] = w;
+    // 3 Rejection block (RJB)
+    [v, w] = zoneVote(["RJB"], c); votes["Rejection block"] = v; why["Rejection block"] = w;
+    // 4 CRT / TBS (last 6 bars)
     const cr = [...crt].reverse().find((m) => m.time <= c.time && m.time >= c.time - 6 * barSec);
     votes["CRT/TBS"] = cr ? cr.dir : null; why["CRT/TBS"] = cr ? `${cr.kind === "CRT_ENTRY" ? "CRT entry" : "TBS"} ${cr.at}` : "";
-    // 4 Footprint (flow tag + delta agree, or a strong delta ≥ 15 %)
+    // 4 Footprint (flow tag + delta agree, or a strong delta ≥ 15 %, or delta absorption/aggression)
     const f = fpm.get(c.time);
     let fv: Vote = null, fw = "";
     if (f && f.rows.length) {
@@ -80,6 +86,18 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
       const tag = f.tags.find((t) => FLOW.has(t.k) && t.dir === dd);
       if (tag) { fv = dd; fw = `${tag.k.toLowerCase()} · Δ ${Math.round(f.delta / 1000)}K`; }
       else if (dd && Math.abs(f.delta_pct ?? 0) >= 15) { fv = dd; fw = `Δ ${f.delta_pct}%`; }
+    }
+    if (!fv) {
+      const dmk = (a.markers ?? []).filter((m) => m.time === c.time);
+      const absM = dmk.find((m) => m.kind === "DELTA_ABSORPTION");
+      const aggM = dmk.find((m) => m.kind === "DELTA_AGGRESSION");
+      if (absM) {
+        fv = absM.dir;
+        fw = `absorption ${absM.dir === "bull" ? "buyers defended ▲" : "sellers defended ▼"}`;
+      } else if (aggM) {
+        fv = aggM.dir;
+        fw = `aggression ${aggM.dir === "bull" ? "market buys Δ+" : "market sells Δ−"}`;
+      }
     }
     votes.Footprint = fv; why.Footprint = fw;
     // 5 RVOL ≥ 1.2× → votes with the candle colour
@@ -187,19 +205,73 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     }
     votes.MMXM = mmxmV; why.MMXM = mmxmW;
 
+    // 17 CVD flow — Cumulative Volume Delta 3-bar slope & 6-bar divergence (exhaustion / absorption trap)
+    let cvdV: Vote = null, cvdW = "";
+    const fi = fp.findIndex((x) => x.time === c.time);
+    if (f && fi >= 0) {
+      const p3 = fp[fi - 3];
+      const dc = p3 ? f.cvd - p3.cvd : 0;
+      const win = fp.slice(Math.max(0, fi - 6), fi);
+      let div: Vote = null, divW = "";
+      if (win.length >= 4) {
+        const hh = c.high > Math.max(...win.map((x) => x.h ?? 0));
+        const ll = c.low < Math.min(...win.map((x) => x.l ?? Infinity));
+        if (hh && f.cvd < Math.max(...win.map((x) => x.cvd))) {
+          div = "bear"; divW = "⚠ bearish CVD divergence (exhaustion high)";
+        } else if (ll && f.cvd > Math.min(...win.map((x) => x.cvd))) {
+          div = "bull"; divW = "⚠ bullish CVD divergence (absorption low)";
+        }
+      }
+      if (div) {
+        cvdV = div; cvdW = divW;
+      } else if (p3 && Math.abs(dc) > 0) {
+        cvdV = dc > 0 ? "bull" : "bear";
+        cvdW = `CVD ${dc > 0 ? "rising" : "falling"} (${(dc / 1000).toFixed(1)}k over 3 bars)`;
+      }
+    }
+    votes["CVD flow"] = cvdV; why["CVD flow"] = cvdW || (hasFp ? "CVD flat / steady" : "no footprint/CVD data");
+
+    // 18 Gamma flip — Price location vs Dealer High Volatility Level & GEX regime
+    let gexV: Vote = null, gexW = "";
+    const gex = oc?.gex;
+    if (gex && gex.ok && gex.flip != null) {
+      const flip = gex.flip;
+      const reg = gex.regime || (c.close >= flip ? "positive" : "negative");
+      if (c.close >= flip) {
+        gexV = "bull";
+        gexW = `close above Gamma Flip ${flip} (${reg} GEX cushion · buy dips)`;
+      } else {
+        gexV = "bear";
+        gexW = `close below Gamma Flip ${flip} (${reg} GEX acceleration · volatility high)`;
+      }
+    }
+    votes["Gamma flip"] = gexV; why["Gamma flip"] = gexW || "GEX / Gamma Flip not available";
+
     // factors with no data today don't count (e.g. futures volume missing → RVOL & VWAP can't vote)
     if (!hasVol) why.RVOL = "no futures volume today";
     if (!hasVwap) why.VWAP = "no VWAP (futures volume missing)";
-    if (!hasFp) why.Footprint = "no recorded ticks for this tf";
+    if (!hasFp) { why.Footprint = "no recorded ticks for this tf"; why["CVD flow"] = "no footprint/CVD data"; }
     if (!hasPece) { why["PE−CE action"] = "Options Lab (8501) data not available"; why["PCR trend"] = "Options Lab (8501) data not available"; }
     if (!hasFlow) for (const k of ["Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip"] as Factor[]) why[k] = "Options Lab (8501) data not available";
     if (!smt) why.SMT = "SMT: 5m / 15m / 1h only (BANKNIFTY candles)";
     if (!cctData?.available) why.CCT = "CCT not computed for this timeframe";
     if (!a.mmxm?.available) why.MMXM = "MMXM not computed for this timeframe";
-    if (isLive) why.Footprint = "footprint only for closed candles";
+    if (isLive) { why.Footprint = "footprint only for closed candles"; why["CVD flow"] = "CVD flow only for closed candles"; }
     const hasCct = Boolean(cctData?.available);
     const hasMmxm = Boolean(a.mmxm?.available);
-    const avail = FACTORS.length - (smt ? 0 : 1) - (hasVol ? 0 : 1) - (hasVwap ? 0 : 1) - (hasFp && !isLive ? 0 : 1) - (hasPece ? 0 : 2) - (hasFlow ? 0 : 4) - (hasCct ? 0 : 1) - (hasMmxm ? 0 : 1);
+    const hasCvd = hasFp && !isLive;
+    const hasGex = Boolean(oc?.gex?.ok && oc?.gex?.flip != null);
+    const avail = FACTORS.length
+      - (smt ? 0 : 1)
+      - (hasVol ? 0 : 1)
+      - (hasVwap ? 0 : 1)
+      - (hasFp && !isLive ? 0 : 1)
+      - (hasPece ? 0 : 2)
+      - (hasFlow ? 0 : 4)
+      - (hasCct ? 0 : 1)
+      - (hasMmxm ? 0 : 1)
+      - (hasCvd ? 0 : 1)
+      - (hasGex ? 0 : 1);
     const vals = Object.values(votes);
     const bull = vals.filter((x) => x === "bull").length, bear = vals.filter((x) => x === "bear").length;
     const req = Math.max(3, Math.round(pct * avail));             // e.g. 10 factors → 7 must agree; 7 → 5

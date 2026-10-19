@@ -69,7 +69,7 @@ def analyze(rows: List[Dict[str, float]], tf: str, rows_1m: Optional[List[Dict[s
                     find_rjbs(b, sw, float(config.rules().get("crt", {}).get("rb_min_wick_ratio", 0.5))))
 
 
-def to_json(an: Analysis, max_items: int = 40, near_atr: float = 4.0, max_zones: int = 4,
+def to_json(an: Analysis, max_items: int = 40, near_atr: Optional[float] = None, max_zones: int = 4,
             marker_bars: int = 150) -> Dict[str, Any]:
     """Only what a trader needs on screen: zones within near_atr × ATR of price (newest max_zones of each kind),
     liquidity within the same band (session pools always), markers from the last marker_bars bars."""
@@ -77,7 +77,11 @@ def to_json(an: Analysis, max_items: int = 40, near_atr: float = 4.0, max_zones:
     end_t = chart_time(int(b.ts[-1]))
     px = float(b.c[-1])
     A = float(an.atr[-1])
-    lo_band, hi_band = px - near_atr * A, px + near_atr * A
+    E = config.rules().get("engine", {})
+    eff_near_atr = float(E.get("near_atr", 8.0)) if near_atr is None else float(near_atr)
+    min_pts = float(E.get("near_min_pts", 150.0))
+    band = max(eff_near_atr * A, min_pts)
+    lo_band, hi_band = px - band, px + band
     near = lambda top, bot: bot <= hi_band and top >= lo_band          # noqa: E731
     T = lambda i: chart_time(int(b.ts[min(max(i, 0), N - 1)]))          # noqa: E731
 

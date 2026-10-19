@@ -7,6 +7,7 @@ import { TerminalSnapshot } from './types/terminal';
 
 export const mockTerminalSnapshot: TerminalSnapshot = {
   spotPrice: 24158.4,
+
   timestamp: new Date().toISOString(),
   fourPillars: {
     compositeScore: 2.8,
@@ -202,3 +203,6 @@ export const mockTerminalSnapshot: TerminalSnapshot = {
     }
   ]
 };
+
+export const mockSnapshot = mockTerminalSnapshot;
+

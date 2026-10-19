@@ -12,14 +12,21 @@ api/hub.py — the live pipeline. One object owns the feed, candles, chain, anal
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import json
 import logging
 import time
 from typing import Any, Dict, List, Optional, Set
 
+try:
+    import msgpack
+except ImportError:
+    msgpack = None
+
 from fastapi import WebSocket
 
 from .. import config, db
+from ..engine.broker import AsyncBroker
 from ..dhan.feed import Feed
 from ..dhan.rest import DhanError, DhanREST, TokenError
 from ..delta import adapters as delta_adapters
@@ -81,13 +88,17 @@ class Hub:
         self.chain = ChainPoller(self.rest, self.on_chain)
         self.alerts = alerts_mod.Alerts(self.broadcast)
         self.clients: Set[WebSocket] = set()
+        self.client_formats: Dict[WebSocket, str] = {}
+        self.broker = AsyncBroker()
         self.analyses: Dict[str, Analysis] = {}
         self.json: Dict[str, Dict[str, Any]] = {}
         self.signals: List[Signal] = []
         self.zones: Dict[str, List[registry.Zone]] = {}
         self.delta: Dict[str, Dict[str, Any]] = {}
         self.auction: Dict[str, Dict[str, Any]] = {}
-        self.delta_adapter = self._make_adapter(db.kv_get("delta_adapter") or config.rule("delta", "adapter", "none"))
+        cur_ad = db.kv_get("delta_adapter")
+        def_ad = config.rule("delta", "adapter", "fut_quote_rule")
+        self.delta_adapter = self._make_adapter(cur_ad if (cur_ad and cur_ad != "none") else def_ad)
         # strike mode
         self.book = StrikeBook()
         self.flow: Dict[str, Dict[str, Dict[str, Any]]] = {}       # tf → {"CE": delta res, "PE": delta res}
@@ -111,19 +122,29 @@ class Hub:
         self._last_tick_push = 0.0
         self._tasks: List[asyncio.Task] = []
         self._seen_connects = 0
+        self._last_intra_sweep_check = 0.0
+        self._intra_sweeps_fired: Dict[str, float] = {}
+        self._ws_seq: int = 0
+        replay_size = int(config.rule("broker", "ws_replay_buffer_size", 256))
+        self._replay_buffer: deque[Dict[str, Any]] = deque(maxlen=replay_size)
 
     # ── lifecycle ─────────────────────────────────────────────────────────
     async def start(self) -> None:
         db.conn()
+        await self.broker.start()
+        self.broker.subscribe(self.broker.channel_ticks, self._handle_broker_tick)
+        self.broker.subscribe(self.broker.channel_signals, self._handle_broker_signal)
         await self.repair(full=True)
         await self.setup_futures()
         self.recompute_all(after_repair=True)
-        for coro in (self.feed.run(), self.candles.sweep_timer(), self.chain.run(), self.watchdog(), self.housekeeping(),
-                     self.futures_loop()):
+        for coro in (self.feed.run(), self.candles.sweep_timer(), self.candles.write_behind_timer(),
+                     self.chain.run(), self.watchdog(), self.housekeeping(), self.futures_loop()):
             self._tasks.append(asyncio.create_task(coro))
 
     async def stop(self) -> None:
         self.feed.stop()
+        await self.broker.stop()
+        self.candles.flush_write_behind()
         for t in self._tasks:
             t.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
@@ -133,7 +154,7 @@ class Hub:
         """REST backfill: on start (30 days), after every feed reconnect (today only), and at 15:31."""
         D = config.rules()["data"]
         try:
-            n = await backfill(self.rest, self.nifty, int(D["backfill_days"]) if full else 1)
+            n = await backfill(self.rest, self.nifty, int(D["backfill_days"]) if full else 1, candles_builder=self.candles)
             if full:
                 await backfill_daily(self.rest, self.nifty, int(D["daily_days"]))
             self.status["backfill"] = f"ok · {n} one-minute candles · {now_ist():%H:%M:%S}"
@@ -154,12 +175,108 @@ class Hub:
 
     # ── feed callbacks ────────────────────────────────────────────────────
     async def on_tick(self, sid: str, ltp: float, t: float) -> None:
+        """Ultra-low latency raw tick ingestion: dispatches to broker asynchronously."""
+        await self.broker.publish(self.broker.channel_ticks, {"sid": sid, "ltp": ltp, "t": t})
+
+    async def _handle_broker_tick(self, data: Dict[str, Any]) -> None:
+        """Worker consumption for raw ticks: updates RAM buffers, triggers 1 Hz intra-sweep check, and throttled quote broadcast."""
+        sid, ltp, t = str(data["sid"]), float(data["ltp"]), float(data["t"])
         if sid == self.vix and not (5 <= ltp <= 90):
             self.status["vix_warning"] = f"VIX id {self.vix} returned {ltp} — check vix_security_id in rules.json"
         await self.candles.tick(sid, ltp, t)
+        if sid == self.nifty:
+            await self._check_intra_sweep(ltp, t)
         if time.time() - self._last_tick_push >= 0.25:
             self._last_tick_push = time.time()
             await self.broadcast({"type": "quote", "quote": self.quote()})
+
+    async def _check_intra_sweep(self, ltp: float, t: float) -> None:
+        """Lightweight intra-candle check (throttled to 1 Hz) for live wick penetrations of armed liquidity pools and CRT levels."""
+        now = time.time()
+        throttle = float(config.rules().get("alerts", {}).get("intra_sweep_throttle_s", 1.0))
+        if now - self._last_intra_sweep_check < throttle:
+            return
+        self._last_intra_sweep_check = now
+
+        an = self.analyses.get(self.primary)
+        if not an:
+            return
+
+        cooldown = float(config.rules().get("alerts", {}).get("intra_sweep_cooldown_s", 120.0))
+
+        # 1. Armed liquidity pools check (PDH, PDL, EQH, EQL, ORH, ORL, IBH, IBL, SWING)
+        for p in an.pools:
+            if p.taken_i is not None:
+                continue
+            breached = False
+            if p.side == "BSL" and ltp >= p.price:
+                breached = True
+            elif p.side == "SSL" and ltp <= p.price:
+                breached = True
+
+            if breached:
+                key = f"intra_pool_{p.side}_{p.src}_{int(p.price)}"
+                if now - self._intra_sweeps_fired.get(key, 0.0) >= cooldown:
+                    self._intra_sweeps_fired[key] = now
+                    title = f"⚡ LIVE SWEEP (IN-WICK): {p.src} {p.side} breached at {ltp:.1f}"
+                    body = f"Live LTP {ltp:.1f} breached {p.src} level ({p.price:.1f}). Wick active, monitoring for close back inside."
+                    alert_row = {
+                        "ts": int(t),
+                        "key": f"{key}_{int(t)}",
+                        "tf": "live",
+                        "kind": "IN_WICK_SWEEP",
+                        "side": "bear" if p.side == "BSL" else "bull",
+                        "grade": "info",
+                        "title": title,
+                        "body": body,
+                        "price": ltp,
+                        "payload": {"pool": p.src, "side": p.side, "level": p.price, "ltp": ltp},
+                    }
+                    await self.broadcast({"type": "alert", "alert": alert_row})
+
+        # 2. Active CRT ranges check
+        for pair_name, r in self.crt.items():
+            crth = r.get("crth")
+            crtl = r.get("crtl")
+            if crth and ltp >= crth:
+                key = f"intra_crt_high_{pair_name}_{int(crth)}"
+                if now - self._intra_sweeps_fired.get(key, 0.0) >= cooldown:
+                    self._intra_sweeps_fired[key] = now
+                    title = f"⚡ LIVE CRT HIGH BREACH: {pair_name} at {ltp:.1f}"
+                    body = f"Live LTP {ltp:.1f} breached CRT High ({crth:.1f}). Wick in progress."
+                    alert_row = {
+                        "ts": int(t),
+                        "key": f"{key}_{int(t)}",
+                        "tf": "live",
+                        "kind": "CRT_HIGH_BREACH",
+                        "side": "bear",
+                        "grade": "info",
+                        "title": title,
+                        "body": body,
+                        "price": ltp,
+                        "payload": {"pair": pair_name, "level": crth, "ltp": ltp},
+                    }
+                    await self.broadcast({"type": "alert", "alert": alert_row})
+
+            if crtl and ltp <= crtl:
+                key = f"intra_crt_low_{pair_name}_{int(crtl)}"
+                if now - self._intra_sweeps_fired.get(key, 0.0) >= cooldown:
+                    self._intra_sweeps_fired[key] = now
+                    title = f"⚡ LIVE CRT LOW BREACH: {pair_name} at {ltp:.1f}"
+                    body = f"Live LTP {ltp:.1f} breached CRT Low ({crtl:.1f}). Wick in progress."
+                    alert_row = {
+                        "ts": int(t),
+                        "key": f"{key}_{int(t)}",
+                        "tf": "live",
+                        "kind": "CRT_LOW_BREACH",
+                        "side": "bull",
+                        "grade": "info",
+                        "title": title,
+                        "body": body,
+                        "price": ltp,
+                        "payload": {"pair": pair_name, "level": crtl, "ltp": ltp},
+                    }
+                    await self.broadcast({"type": "alert", "alert": alert_row})
 
     async def on_full(self, p: Dict[str, Any], t: float) -> None:
         """NIFTY future Full packet → estimated delta + provisional FUT 1m volume (recorder)."""
@@ -282,8 +399,15 @@ class Hub:
         self.prev_close[sid] = pc
 
     async def on_close_1m(self, sid: str, c: Dict[str, float]) -> None:
+        """Asynchronously dispatches candle close events to the dedicated signal worker."""
         if sid != self.nifty:
             return
+        await self.broker.publish(self.broker.channel_signals, {"sid": sid, "candle": c})
+
+    async def _handle_broker_signal(self, data: Dict[str, Any]) -> None:
+        """Worker consumption for closed candles: executes heavy ICT/SMC mathematical calculations."""
+        sid = str(data["sid"])
+        c = data["candle"]
         try:
             self.recorder.close_minute(int(c["ts"]))           # estimated delta + provisional FUT volume first
         except Exception:                                    # noqa: BLE001
@@ -298,14 +422,14 @@ class Hub:
             step = TF_SECONDS[tf]
             b = bucket_start(c["ts"], tf)
             if end == b + step or end >= sess_close:          # this minute closed a tf candle
-                self.recompute(tf)
+                await asyncio.to_thread(self.recompute, tf)
                 if tf == self.primary:
                     await self.run_playbook()
                 await self.broadcast({"type": "analysis", "tf": tf, "analysis": self.json.get(tf)})
         for pair in self.crt_pairs():
             ltf = pair["ltf"]
             if end == bucket_start(c["ts"], ltf) + TF_SECONDS[ltf] or end >= sess_close:
-                fresh = self.recompute_crt(pair)
+                fresh = await asyncio.to_thread(self.recompute_crt, pair)
                 await self.act_on_crt(fresh)
         await self.broadcast({"type": "candle", "tf": "1m", "candle": _cj(c)})
         if self.option_instruments():
@@ -327,7 +451,8 @@ class Hub:
                 self.ivtrack.ingest(ch, picks)
             except Exception:                                # noqa: BLE001
                 log.exception("activity / iv")
-        await self.broadcast({"type": "chain", "expiry": expiry, "summary": self.chain.summary(expiry)})
+        live_spot = self.candles.last_price.get(self.nifty)
+        await self.broadcast({"type": "chain", "expiry": expiry, "summary": self.chain.summary(expiry, live_spot=live_spot)})
         if expiry == self.sel_expiry() and config.rule("strikes", "enabled", True):
             try:
                 await self.reselect(force=False)
@@ -836,8 +961,10 @@ class Hub:
         if not p:
             return []
         sigs = evaluate(p, self.analyses.get(self.bias_tf))
+        live_spot = float(self.candles.last_price.get(self.nifty) or (p.bars.c[-1] if p and len(p.bars) else 0))
+        is_stale = self.chain.is_stale(self.sel_expiry(), live_spot)
         return confluence.apply(sigs, self.combined_flow(self.primary), proxy_res=self.proxy.get(self.primary),
-                                context={"foci": self.foci()} if any(self.book.current().values()) else None,
+                                context={"foci": self.foci(), "is_stale": is_stale} if any(self.book.current().values()) else None,
                                 live_i=p.last_i)
 
     def recompute_all(self, after_repair: bool = False) -> None:
@@ -1006,7 +1133,7 @@ class Hub:
                                        f"{hm(an.events[-1].ts)}") if an.events else None}
         p = self.analyses.get(self.primary)
         return {"quote": self.quote(), "bias": bias, "narrative": self.narrative(),
-                "session": p.sess if p else {}, "chain": self.chain.summary(),
+                "session": p.sess if p else {}, "chain": self.chain.summary(live_spot=self.candles.last_price.get(self.nifty)),
                 "expiries": self.chain.expiries, "signals": [s.to_dict() for s in self.today_signals()][-15:],
                 "alerts": alerts_mod.recent(20), "paper_open": paper.open_trade(), "paper_open_all": paper.open_trades(), "paper_stats": paper.stats(),
                 "delta": self.delta_status(), "strikes": self.strikes_view(), "mode": self.mode,
@@ -1030,21 +1157,39 @@ class Hub:
                 "tick_age_s": round(self.feed.tick_age(self.nifty), 1) if self.feed.tick_age(self.nifty) < 1e8 else None,
                 "chain": self.chain.status, "chain_error": self.chain.last_error,
                 "rest_calls": self.rest.calls, "rest_error": self.rest.last_error,
+                "broker": self.broker.status(),
                 "market_open": market_open_now(), "now_ist": now_ist().strftime("%a %d %b %H:%M:%S")}
 
     # ── websocket clients ────────────────────────────────────────────────
     async def broadcast(self, msg: Dict[str, Any]) -> None:
+        self._ws_seq += 1
+        msg["seq"] = self._ws_seq
+        self._replay_buffer.append(dict(msg))
         if not self.clients:
             return
-        data = json.dumps(msg, default=_jdefault)
+        json_data: Optional[str] = None
+        bin_data: Optional[bytes] = None
         dead = []
         for ws in list(self.clients):
+            fmt = self.client_formats.get(ws, "json")
             try:
-                await ws.send_text(data)
+                if fmt == "msgpack" and msgpack is not None:
+                    if bin_data is None:
+                        bin_data = msgpack.packb(msg, default=_jdefault, use_bin_type=True)
+                    await ws.send_bytes(bin_data)
+                else:
+                    if json_data is None:
+                        json_data = json.dumps(msg, default=_jdefault)
+                    await ws.send_text(json_data)
             except Exception:                                # noqa: BLE001
                 dead.append(ws)
         for ws in dead:
             self.clients.discard(ws)
+            self.client_formats.pop(ws, None)
+
+    def get_replay(self, from_seq: int) -> List[Dict[str, Any]]:
+        """Returns buffered broadcast messages with seq >= from_seq for sequence gap recovery."""
+        return [dict(m) for m in self._replay_buffer if m.get("seq", 0) >= from_seq]
 
 
 def _cj(c: Dict[str, float]) -> Dict[str, Any]:

@@ -43,9 +43,10 @@ from .. import config
 from ..signals import alerts as alerts_mod
 from ..signals import paper
 from ..timeutil import TF_SECONDS
-from .hub import Hub, _cj
+from .hub import Hub, _cj, _jdefault
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("api")
 hub: Optional[Hub] = None
 
 
@@ -140,8 +141,11 @@ def chain(expiry: Optional[str] = None):
     exp = expiry or (h.chain.expiries[0] if h.chain.expiries else (sorted(h.chain.chains)[0] if h.chain.chains else None))
     ch = h.chain.chains.get(exp) if exp else None
     if not ch:
-        return JSONResponse({"expiry": exp, "rows": [], "status": h.chain.status, "error": h.chain.last_error})
-    return ch
+        return JSONResponse({"expiry": exp, "rows": [], "status": h.chain.status, "error": h.chain.last_error, "is_stale": True})
+    live_spot = h.candles.last_price.get(h.nifty)
+    is_stale = h.chain.is_stale(exp, live_spot)
+    return {**ch, "is_stale": is_stale, "spot_at_fetch": ch.get("spot_at_fetch", ch.get("spot")),
+            "fetched_at": ch.get("fetched_at", ch.get("ts"))}
 
 
 @app.get("/api/dashboard")
@@ -164,8 +168,49 @@ async def test_rvol_alert():
 
 
 @app.get("/api/alerts")
-def alerts(grade: Optional[str] = None, limit: int = 60):
+def alerts(grade: Optional[str] = None, limit: int = 150):
     return {"alerts": alerts_mod.recent(limit, grade)}
+
+
+@app.post("/api/alerts")
+async def record_client_alert(req: Request):
+    """Stores a client-side signal or alert in the persistent SQLite alerts table."""
+    import json
+    from .. import db
+    from ..timeutil import now_epoch
+    try:
+        body = await req.json()
+    except Exception as e:
+        log.warning("invalid alert json: %s", e)
+        return {"ok": False, "error": "invalid json"}
+    ts = int(body.get("ts") or now_epoch())
+    tf = str(body.get("tf") or "5m")
+    kind = str(body.get("kind") or "SIG")
+    side = str(body.get("side") or "")
+    grade = str(body.get("grade") or "info")
+    title = str(body.get("title") or "")
+    text = str(body.get("body") or "")
+    price = float(body.get("price") or 0.0)
+    key = str(body.get("key") or f"{tf}|{ts}|{kind}|{side}")
+
+    row = {
+        "ts": ts,
+        "key": key,
+        "tf": tf,
+        "kind": kind,
+        "side": side,
+        "grade": grade,
+        "title": title,
+        "body": text,
+        "price": price,
+        "payload": json.dumps(body.get("payload") or {}),
+    }
+    db.execute(
+        "INSERT OR IGNORE INTO alerts (ts,key,tf,kind,side,grade,title,body,price,payload) "
+        "VALUES (:ts,:key,:tf,:kind,:side,:grade,:title,:body,:price,:payload)",
+        row,
+    )
+    return {"ok": True, "key": key}
 
 
 @app.get("/api/paper")
@@ -257,19 +302,81 @@ async def delta_csv(request: Request, bar_seconds: int = Query(60), ts_is: str =
     return {"report": rep, "status": h.delta_status()}
 
 
-@app.websocket("/ws")
-async def ws(websocket: WebSocket):
+@app.get("/api/replay")
+def replay(from_seq: int = Query(..., ge=0)):
     h = _h()
-    await websocket.accept()
+    return {"from_seq": from_seq, "messages": h.get_replay(from_seq)}
+
+
+@app.websocket("/ws")
+async def ws(websocket: WebSocket, format: Optional[str] = Query(None)):
+    h = _h()
+    proto = websocket.headers.get("sec-websocket-protocol", "")
+    requested_protos = [p.strip() for p in proto.split(",") if p.strip()]
+    client_fmt = (format or "").lower()
+    chosen_subprotocol = None
+    if client_fmt in ("msgpack", "binary") or "msgpack" in requested_protos:
+        client_fmt = "msgpack"
+        if "msgpack" in requested_protos:
+            chosen_subprotocol = "msgpack"
+    elif "json" in requested_protos:
+        client_fmt = "json"
+        chosen_subprotocol = "json"
+    else:
+        client_fmt = "json"
+
+    await websocket.accept(subprotocol=chosen_subprotocol)
     h.clients.add(websocket)
+    h.client_formats[websocket] = client_fmt
     try:
-        await websocket.send_json({"type": "quote", "quote": h.quote()})
+        init_quote = {"type": "quote", "quote": h.quote(), "seq": h._ws_seq}
+        if client_fmt == "msgpack":
+            try:
+                import msgpack
+                await websocket.send_bytes(msgpack.packb(init_quote, default=_jdefault, use_bin_type=True))
+            except WebSocketDisconnect:
+                raise
+            except Exception:
+                await websocket.send_json(init_quote)
+        else:
+            await websocket.send_json(init_quote)
         while True:
-            await websocket.receive_text()                   # the browser only sends keep-alive pings
+            msg = await websocket.receive()
+            # browser pings or control / replay messages
+            text = msg.get("text")
+            raw_bytes = msg.get("bytes")
+            req = None
+            if text:
+                try:
+                    import json
+                    req = json.loads(text)
+                except Exception:
+                    pass
+            elif raw_bytes:
+                try:
+                    import msgpack
+                    req = msgpack.unpackb(raw_bytes)
+                except Exception:
+                    pass
+            if isinstance(req, dict) and req.get("action") == "replay":
+                from_seq = int(req.get("from_seq", 0))
+                missed = h.get_replay(from_seq)
+                for m in missed:
+                    if client_fmt == "msgpack":
+                        try:
+                            import msgpack
+                            await websocket.send_bytes(msgpack.packb(m, default=_jdefault, use_bin_type=True))
+                        except WebSocketDisconnect:
+                            raise
+                        except Exception:
+                            await websocket.send_json(m)
+                    else:
+                        await websocket.send_json(m)
     except WebSocketDisconnect:
         pass
     finally:
         h.clients.discard(websocket)
+        h.client_formats.pop(websocket, None)
 
 
 # ── strike mode ──────────────────────────────────────────────────────────────

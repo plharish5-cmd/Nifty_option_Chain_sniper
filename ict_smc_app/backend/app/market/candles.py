@@ -21,6 +21,13 @@ from typing import Awaitable, Callable, Dict, List, Optional
 from .. import config, db
 from ..timeutil import (IST, TF_SECONDS, bucket_start, in_session, is_closed, ist_date, now_epoch, now_ist,
                         session_bounds, to_ist)
+from .buffers import CandleRingBuffer, TickRingBuffer
+
+try:
+    import pandas as pd
+    pd.options.mode.copy_on_write = True
+except Exception:
+    pass
 
 log = logging.getLogger("candles")
 
@@ -71,7 +78,7 @@ def daily_from(rows: List[Dict[str, float]]) -> List[Dict[str, float]]:
 
 
 class Candles:
-    """Live candle builder for a set of instruments (NIFTY, VIX)."""
+    """Live candle builder for a set of instruments (NIFTY, VIX) with zero-copy RAM ring buffers."""
 
     def __init__(self, on_close_1m: CloseCB) -> None:
         self.forming: Dict[str, Dict[str, float]] = {}
@@ -79,9 +86,52 @@ class Candles:
         self.last_price: Dict[str, float] = {}
         self.prev_close: Dict[str, float] = {}
         self._lock = asyncio.Lock()
+        bcfg = config.rules().get("buffers", {})
+        self.max_candles = int(bcfg.get("max_candles_1m", 25000))
+        self.max_ticks = int(bcfg.get("max_ticks", 10000))
+        self.candle_buffers: Dict[str, CandleRingBuffer] = {}
+        self.tick_buffer = TickRingBuffer(maxlen=self.max_ticks)
+        self._frame_cache: Dict[tuple, List[Dict[str, float]]] = {}
+
+    def get_candle_buffer(self, sid: str) -> CandleRingBuffer:
+        buf = self.candle_buffers.get(sid)
+        if buf is None:
+            buf = CandleRingBuffer(maxlen=self.max_candles)
+            self.candle_buffers[sid] = buf
+        return buf
+
+    def hydrate_buffer(self, sid: str, rows: List[Dict[str, float]]) -> None:
+        """Hydrates the in-memory ring buffer with historical candles."""
+        if rows:
+            self.get_candle_buffer(sid).extend(rows)
+            self._frame_cache.clear()
+
+    def flush_write_behind(self) -> int:
+        """Flushes all staged newly closed candles from ring buffers to SQLite in one batch."""
+        total = 0
+        for sid, buf in list(self.candle_buffers.items()):
+            dirty = buf.get_and_clear_dirty()
+            if dirty:
+                db.upsert_candles(sid, dirty)
+                total += len(dirty)
+        return total
+
+    async def write_behind_timer(self) -> None:
+        """Non-blocking background task running every 60s to persist newly closed candles to WAL SQLite."""
+        bcfg = config.rules().get("buffers", {})
+        interval = float(bcfg.get("write_behind_interval_s", 60))
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                n = self.flush_write_behind()
+                if n > 0:
+                    log.info("Write-behind persisted %d candles to SQLite", n)
+            except Exception:
+                log.exception("write-behind timer")
 
     async def tick(self, sid: str, ltp: float, t: float) -> None:
         self.last_price[sid] = ltp
+        self.tick_buffer.append(sid, ltp, t)
         if not in_session(t):
             return
         b = bucket_start(t, "1m")
@@ -97,7 +147,9 @@ class Candles:
                 cur["h"], cur["l"], cur["c"] = max(cur["h"], ltp), min(cur["l"], ltp), ltp
 
     async def _close(self, sid: str, c: Dict[str, float]) -> None:
-        db.upsert_candles(sid, [c])
+        # Stages in RAM ring buffer with write-behind dirty flag (flushed every 60s or on shutdown)
+        self.get_candle_buffer(sid).append(c, stage_dirty=True)
+        self._frame_cache.clear()
         await self.on_close_1m(sid, dict(c, closed=True))
 
     async def sweep_timer(self) -> None:
@@ -112,8 +164,10 @@ class Candles:
                         await self._close(sid, cur)
 
     # ── reading ───────────────────────────────────────────────────────────
-    def frame(self, sid: str, tf: str, days: int = 3, include_forming: bool = True) -> List[Dict[str, float]]:
-        """Candles for the chart / engine. Engine callers pass include_forming=False."""
+    def frame(self, sid: str, tf: str, days: int = 3, include_forming: bool = True,
+              limit: Optional[int] = None) -> List[Dict[str, float]]:
+        """Candles for the chart / engine. Fulfills queries from RAM ring buffers with zero disk I/O.
+        Caches resampled frames and supports limit parameter to slice only the tail window needed."""
         if tf == "1D":
             rows = db.daily(sid, limit=max(days, 5))
             out = [{"ts": int(datetime.fromisoformat(r["d"]).replace(tzinfo=IST).timestamp()),
@@ -121,14 +175,36 @@ class Candles:
             today = self.today_ohlc(sid)
             if today and (not out or out[-1]["ts"] < today["ts"]):
                 out.append(today)
+            if limit is not None and limit > 0 and len(out) > limit:
+                return out[-limit:]
             return out
+
+        buf = self.get_candle_buffer(sid)
+        f = self.forming.get(sid)
+        cache_key = (sid, tf, days, include_forming, limit, buf.version,
+                     int(f["ts"]) if f else None, round(f["c"], 1) if f else None)
+        cached = self._frame_cache.get(cache_key)
+        if cached is not None:
+            # Refresh LRU access order
+            self._frame_cache[cache_key] = self._frame_cache.pop(cache_key)
+            return [dict(x) for x in cached]
+
         since = int((now_ist() - timedelta(days=days + 3)).timestamp())
-        rows = session_filter(db.candles_1m(sid, since))
+        # Zero-copy RAM retrieval: check if in-memory buffer has data covering `since`
+        if len(buf) > 0 and (buf.earliest_ts() is None or buf.earliest_ts() <= since):
+            raw_rows = buf.slice(since)
+        else:
+            # Cold cache fallback: seed from SQLite once and populate ring buffer
+            raw_rows = db.candles_1m(sid, since)
+            if raw_rows:
+                buf.extend(raw_rows)
+            elif len(buf) > 0:
+                raw_rows = buf.slice(since)
+        rows = session_filter(raw_rows)
         # keep only the last `days` trading days
         dates = sorted({ist_date(r["ts"]) for r in rows})[-days:]
         keep = set(dates)
         rows = [r for r in rows if ist_date(r["ts"]) in keep]
-        f = self.forming.get(sid)
         if include_forming and f and (not rows or f["ts"] > rows[-1]["ts"]):
             rows = rows + [dict(f)]
         out = resample(rows, tf)
@@ -138,11 +214,31 @@ class Candles:
                 out[-1]["closed"] = False
         if not include_forming:
             out = [c for c in out if c["closed"]]
-        return out
+        if limit is not None and limit > 0 and len(out) > limit:
+            out = out[-limit:]
+
+        bcfg = config.rules().get("buffers", {})
+        max_cache = int(bcfg.get("max_frame_cache_entries", bcfg.get("resample_cache_size", 64)))
+        # Evict stale versions from _frame_cache
+        current_versions = {s: b.version for s, b in self.candle_buffers.items()}
+        for k in list(self._frame_cache.keys()):
+            if k[0] in current_versions and k[5] < current_versions[k[0]]:
+                self._frame_cache.pop(k, None)
+        # Evict oldest entries if capacity is reached
+        while len(self._frame_cache) >= max_cache:
+            self._frame_cache.pop(next(iter(self._frame_cache)))
+        self._frame_cache[cache_key] = [dict(x) for x in out]
+        return [dict(x) for x in out]
 
     def today_ohlc(self, sid: str) -> Optional[Dict[str, float]]:
         o, _ = session_bounds(now_ist().date())
-        rows = db.candles_1m(sid, int(o))
+        buf = self.get_candle_buffer(sid)
+        if len(buf) > 0 and (buf.earliest_ts() is None or buf.earliest_ts() <= int(o)):
+            rows = buf.today(int(o))
+        else:
+            rows = db.candles_1m(sid, int(o))
+            if rows:
+                buf.extend(rows)
         f = self.forming.get(sid)
         if f:
             rows = rows + [f]
@@ -155,14 +251,17 @@ class Candles:
 
 
 # ── REST backfill ────────────────────────────────────────────────────────────
-async def backfill(rest, sid: str, days: int, segment: str = "IDX_I", instrument: str = "INDEX") -> int:
-    """Download the last `days` calendar days of 1m candles (one call, < 90 days) into SQLite."""
+async def backfill(rest, sid: str, days: int, segment: str = "IDX_I", instrument: str = "INDEX",
+                   candles_builder: Optional[Candles] = None) -> int:
+    """Download the last `days` calendar days of 1m candles (one call, < 90 days) into SQLite and memory buffer."""
     to = now_ist()
     frm = (to - timedelta(days=days)).replace(hour=9, minute=0, second=0, microsecond=0)
     rows = session_filter(await rest.intraday(sid, frm, to, "1", segment, instrument))
     now = now_epoch()
     rows = [r for r in rows if r["ts"] <= now and is_closed(r["ts"], "1m", now)]   # future-date guard + no forming
     db.upsert_candles(sid, rows)
+    if candles_builder is not None:
+        candles_builder.hydrate_buffer(sid, rows)
     return len(rows)
 
 

@@ -1,5 +1,6 @@
 // api.ts — typed REST calls + one reconnecting WebSocket shared by the whole app.
 import { useEffect, useRef, useState } from "react";
+import { decode } from "@msgpack/msgpack";
 
 export type TF = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1D";
 
@@ -155,7 +156,20 @@ export interface AlertRow { id: number; ts: number; time: string; grade: "trade"
 export interface Side { ltp: number; chg: number; oi: number; oi_chg: number; oi_chg_pct: number | null; iv: number; vol: number; delta: number; gamma: number; theta: number; vega: number; bid: number; ask: number }
 export interface ChainRow { strike: number; ce: Side; pe: Side }
 export interface Build { strike: number; side: "CE" | "PE"; oi_chg: number; chg: number; ltp: number; kind: string }
-export interface ChainSummary { expiry: string; ts: number; spot: number; atm: number; totals: { ce_oi: number; pe_oi: number; pcr: number | null; ce_oi_chg: number; pe_oi_chg: number; pcr_chg: number | null }; max_pain: number; call_wall: number | null; put_wall: number | null; builds: Build[] }
+export interface ChainSummary {
+  expiry: string;
+  ts: number;
+  spot: number;
+  atm: number;
+  totals: { ce_oi: number; pe_oi: number; pcr: number | null; ce_oi_chg: number; pe_oi_chg: number; pcr_chg: number | null };
+  max_pain: number;
+  call_wall: number | null;
+  put_wall: number | null;
+  builds: Build[];
+  fetched_at?: number;
+  spot_at_fetch?: number;
+  is_stale?: boolean;
+}
 export interface Chain extends ChainSummary { rows: ChainRow[]; step: number; status?: string; error?: string }
 export interface PaperTrade { slot?: string | null; pair?: string | null; model?: string | null; tp1?: number | null; half_done?: number | null; opt_key?: string | null; opt_entry?: number | null; opt_exit?: number | null; opt_pnl_pts?: number | null; opt_pnl_rs?: number | null; instrument_mode?: string | null; id: number; setup: string; tf: string; side: string; opened: string; closed: string; entry: number; sl: number; tp: number; risk: number; rr: number; status: string; exit: number | null; r: number | null; pnl_pts: number | null; mfe_r: number | null; notes: string[] }
 export interface ScoreRow { group: "setup" | "pair" | "model" | "total"; label: string; trades: number; wins: number; losses: number; flat: number; be_after_tp1: number; win_rate: number | null; avg_r: number | null; total_r: number; best_r: number | null; worst_r: number | null; pnl_pts: number; premium_rs: number; enough: boolean }
@@ -214,6 +228,8 @@ export const api = {
     return j as T;
   },
   dashboard: () => get<Dashboard>("/api/dashboard"),
+  alerts: (limit = 100, grade?: string) => get<{ alerts: AlertRow[] }>(`/api/alerts?limit=${limit}${grade ? `&grade=${grade}` : ""}`),
+  postAlert: (a: Partial<AlertRow> & { key?: string; payload?: unknown }) => api.post<{ ok: boolean; key: string }>(`/api/alerts`, a),
   chain: (expiry?: string) => get<Chain>(`/api/chain${expiry ? `?expiry=${expiry}` : ""}`),
   optionTape: (which = "both", band = 6, heat = 0, flow = 0) =>
     get<OptionTape>(`/api/option_tape?which=${which}&band=${band}&heat=${heat}&flow=${flow}`),
@@ -241,37 +257,94 @@ export const api = {
     if (!r.ok) throw new Error(j.detail ?? `HTTP ${r.status}`);
     return j;
   },
+  replay: (fromSeq: number) => get<{ from_seq: number; messages: LiveMsg[] }>(`/api/replay?from_seq=${fromSeq}`),
 };
 
-export type LiveMsg =
+export type LiveMsg = (
   | { type: "quote"; quote: Quote }
   | { type: "candle"; tf: TF; candle: Candle }
   | { type: "analysis"; tf: TF; analysis: Analysis }
   | { type: "chain"; expiry: string; summary: ChainSummary }
   | { type: "alert"; alert: AlertRow }
   | { type: "paper"; trade: PaperTrade }
-  | { type: "strikes"; strikes: Strikes };
+  | { type: "strikes"; strikes: Strikes }
+) & { seq?: number };
 
-/** One WebSocket with exponential-backoff reconnect. Every subscriber gets every message. */
+/** One WebSocket with exponential-backoff reconnect and monotonic sequence gap recovery. */
 export function useLive(onMsg: (m: LiveMsg) => void): "connecting" | "live" | "down" {
   const [state, setState] = useState<"connecting" | "live" | "down">("connecting");
   const cb = useRef(onMsg);
   cb.current = onMsg;
+  const lastSeq = useRef<number | null>(null);
+
   useEffect(() => {
     let ws: WebSocket | null = null;
     let wait = 1000;
     let stop = false;
     let ping: number | undefined;
+
+    const requestReplay = async (fromSeq: number) => {
+      try {
+        const res = await fetch(`/api/replay?from_seq=${fromSeq}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data.messages)) {
+          for (const msg of data.messages) {
+            const mSeq = (msg as any).seq;
+            if (typeof mSeq === "number") {
+              if (lastSeq.current === null || mSeq > lastSeq.current) {
+                lastSeq.current = mSeq;
+                cb.current(msg as LiveMsg);
+              }
+            } else {
+              cb.current(msg as LiveMsg);
+            }
+          }
+        }
+      } catch {
+        // network hiccup, next retry will attempt
+      }
+    };
+
+    const handleMessage = (msg: LiveMsg) => {
+      const seq = (msg as any).seq;
+      if (typeof seq === "number") {
+        if (lastSeq.current !== null) {
+          if (seq < lastSeq.current - 50) {
+            // Server restarted with reset sequence
+            lastSeq.current = seq;
+          } else if (seq > lastSeq.current + 1 && seq < lastSeq.current + 200) {
+            // Small gap detected: request replay for missed frames
+            requestReplay(lastSeq.current + 1);
+          }
+        }
+        lastSeq.current = seq;
+      }
+      cb.current(msg);
+    };
+
     const open = () => {
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws = new WebSocket(`${proto}://${location.host}/ws?format=msgpack`);
+      ws.binaryType = "arraybuffer";
       ws.onopen = () => {
         setState("live");
         wait = 1000;
         ping = window.setInterval(() => ws?.readyState === 1 && ws.send("ping"), 20000);
+        // If reconnecting with known sequence, recover missed frames immediately
+        if (lastSeq.current !== null) {
+          requestReplay(lastSeq.current + 1);
+        }
       };
       ws.onmessage = (e) => {
-        try { cb.current(JSON.parse(e.data)); } catch { /* ignore malformed */ }
+        try {
+          if (e.data instanceof ArrayBuffer) {
+            const parsed = decode(new Uint8Array(e.data));
+            handleMessage(parsed as LiveMsg);
+          } else if (typeof e.data === "string") {
+            handleMessage(JSON.parse(e.data));
+          }
+        } catch { /* ignore malformed */ }
       };
       ws.onclose = () => {
         window.clearInterval(ping);
@@ -283,7 +356,29 @@ export function useLive(onMsg: (m: LiveMsg) => void): "connecting" | "live" | "d
       ws.onerror = () => ws?.close();
     };
     open();
-    return () => { stop = true; window.clearInterval(ping); ws?.close(); };
+
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+          open();
+        } else if (ws.readyState === WebSocket.OPEN) {
+          ws.send("ping");
+          if (lastSeq.current !== null) {
+            requestReplay(lastSeq.current + 1);
+          }
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+
+    return () => {
+      stop = true;
+      window.clearInterval(ping);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onVis);
+      ws?.close();
+    };
   }, []);
   return state;
 }

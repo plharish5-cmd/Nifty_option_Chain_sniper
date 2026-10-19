@@ -22,8 +22,10 @@ import { confluence, FootprintPrimitive, FP_SCALE, setFpScale, FP_MEANING, FP_WO
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
 import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
 import MtfPanel from "./MtfPanel";
+import { StdvPrimitive, detectManipulationLegs, createManualStdvLeg, type StdvLeg } from "./stdv";
+import { aggregateWeeklyCandles, extractWicks, filterVirginWicks, type HtfWick } from "./htfWicks";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean; p3?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean; p3?: boolean; stdv?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -51,11 +53,13 @@ function writerVerdict(wb: WBal, walls: Wall[]) {
   return { score, bias, strong: Math.abs(score) >= 2.5, support, resistance, reason };
 }
 
-export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal, expiries }: {
+export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal, expiries, stdvLeg, isStdvPicking, onStartStdvPicking, onStdvPicked, onCancelStdvPicking, onResetToAutoStdv }: {
   sig?: SigPrefs; onSignal?: (a: AlertRow) => void;
   onAutoSignal?: (a: AlertRow, ctx: { last: Candle; atr: number; nearWall: number | null }) => void;
   tf: TF; candles: Candle[]; analysis: Analysis | null; layers: Layers; spot: number | null; spotTs: number; marketOpen: boolean;
-  onExpand?: () => void; expanded?: boolean; expiries?: string[];
+  onExpand?: () => void; expanded?: boolean; expiries?: string[]; stdvLeg?: StdvLeg | null;
+  isStdvPicking?: boolean; onStartStdvPicking?: () => void; onStdvPicked?: (leg: StdvLeg) => void; onCancelStdvPicking?: () => void;
+  onResetToAutoStdv?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -71,6 +75,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const nEntRef = useRef<ReturnType<typeof findEntries>>([]);
   const ofArgsRef = useRef<Parameters<typeof readAt>[1]>({ fp: [], bubbles: [], walls: [], zones: [], atr: 20, candles: [] });
   const gmPrim = useRef(new GammaPrimitive());
+  const stdvPrim = useRef(new StdvPrimitive());
   const emaS = useRef<ISeriesApi<"Line">[]>([]);
   const [gexMap, setGexMap] = useState<GexMap | null>(null);
   const [nodesV, setNodesV] = useState<NodesView | null>(null);
@@ -126,6 +131,33 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const [latest, setLatest] = useState<Ev[]>([]);
   const [layerNow, setLayerNow] = useState<Record<string, Ev>>({});
   const [guideOpen, setGuideOpen] = useState<boolean>(() => { try { return localStorage.getItem("ict_guide") !== "0"; } catch { return true; } });
+  const [htfWicks, setHtfWicks] = useState<HtfWick[]>([]);
+
+  // Load Higher Timeframe (HTF) wicks: 1H (Hourly 1×), 1D (Daily 2×), 1W (Weekly 3×)
+  useEffect(() => {
+    let dead = false;
+    const fetchHtf = async () => {
+      try {
+        const [c1h, c1d] = await Promise.all([
+          api.candles("1h", 10, "NIFTY"),
+          api.candles("1D", 45, "NIFTY"),
+        ]);
+        if (dead) return;
+        const w1h = extractWicks(c1h.candles || [], "1H");
+        const dailyCandles = c1d.candles || [];
+        const w1d = extractWicks(dailyCandles, "1D");
+        const weeklyCandles = aggregateWeeklyCandles(dailyCandles);
+        const w1w = extractWicks(weeklyCandles, "1W");
+        const combined = [...w1h, ...w1d, ...w1w];
+        setHtfWicks(filterVirginWicks(combined, candles));
+      } catch (err) {
+        console.error("HTF wicks load error:", err);
+      }
+    };
+    fetchHtf();
+    const timer = setInterval(fetchHtf, 60000);
+    return () => { dead = true; clearInterval(timer); };
+  }, [candles]);
 
   // create once
   useEffect(() => {
@@ -148,6 +180,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     s.attachPrimitive(ofPrim.current);
     s.attachPrimitive(ndPrim.current);
     s.attachPrimitive(gmPrim.current);
+    s.attachPrimitive(stdvPrim.current);
     bankS.current = ch.addSeries(LineSeries, { color: "rgba(244,114,182,0.85)", lineWidth: 2, priceScaleId: "bank", title: "BANKNIFTY",
       priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
     ch.priceScale("bank").applyOptions({ visible: false, scaleMargins: { top: 0.1, bottom: 0.25 } });
@@ -254,10 +287,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         segs.push({ from: r.from, price: r.eq, color: "rgba(232,195,90,0.8)", label: `EQ 50 % ${r.eq.toFixed(1)}`, dash: true });
       }
       for (const z of a.zones) {
+        const isDead = z.state === "invalid" || z.state === "mitigated" || z.state === "broken" || z.state === "expired";
+        const zoneTo = isDead ? z.to : lastTime;
         if (z.type === "RJB") {                      // rejection block: long-wick part of a swing candle (violet)
           if (!(layers.ob || layers.rblock)) continue;   // its own toggle, or shown with Order blocks
           const sell = z.dir === "bear";
-          boxes.push({ from: z.from, to: z.to, top: z.top, bottom: z.bottom,
+          boxes.push({ from: z.from, to: zoneTo, top: z.top, bottom: z.bottom,
             fill: sell ? "rgba(192,132,252,0.13)" : "rgba(129,140,248,0.13)", stroke: sell ? "rgba(192,132,252,0.8)" : "rgba(129,140,248,0.8)",
             dash: true, label: z.label, labelColor: sell ? "#d8b4fe" : "#a5b4fc" });
           if (layers.rblock) {                            // the ICT 50 % of the rejection block — the key entry level
@@ -270,7 +305,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         if (z.type === "IFVG") {                     // inversion FVG: failed gap that flipped role (orange = sell zone, teal = buy zone)
           if (!layers.fvg) continue;
           const sell = z.dir === "bear";
-          boxes.push({ from: z.from, to: z.to, top: z.top, bottom: z.bottom,
+          boxes.push({ from: z.from, to: zoneTo, top: z.top, bottom: z.bottom,
             fill: sell ? "rgba(251,146,60,0.15)" : "rgba(45,212,191,0.13)", stroke: sell ? "rgba(251,146,60,0.85)" : "rgba(45,212,191,0.85)",
             dash: true, label: z.label, labelColor: sell ? "#fdba74" : "#5eead4" });
           continue;
@@ -280,7 +315,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         if (!isOB && !layers.fvg) continue;
         const bull = z.dir === "bull";
         boxes.push({
-          from: z.from, to: z.to, top: z.top, bottom: z.bottom,
+          from: z.from, to: zoneTo, top: z.top, bottom: z.bottom,
           fill: isOB ? (bull ? C.obBull : C.obBear) : (bull ? C.fvgBull : C.fvgBear),
           stroke: isOB ? (bull ? "rgba(16,185,129,0.6)" : "rgba(239,68,68,0.6)") : undefined,
           dash: z.type === "BREAKER", label: z.label, labelColor: isOB ? (bull ? "#6ee7b7" : "#fca5a5") : (bull ? "#7dd3fc" : "#f9a8d4"),
@@ -371,6 +406,48 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         segs.push({ from: x.from, price: x.tp2, color: "rgba(34,197,94,0.5)", dash: true, label: `${x.kind} TP2 ${x.tp2.toFixed(0)} (2.2R)` });
       }
     }
+    // delta layer: Institutional Absorption defense levels (passive limit orders absorbing aggressive volume)
+    if (a && layers.delta) {
+      const t0 = candles.find((c) => Math.floor(c.time / 86400) === Math.floor(lastTime / 86400))?.time ?? (lastTime - 30 * 300);
+      for (const m of a.markers) {
+        if (m.kind === "DELTA_ABSORPTION" && m.price && m.time >= t0) {
+          const bullAbs = m.dir === "bull";
+          segs.push({
+            from: m.time,
+            price: m.price,
+            color: bullAbs ? "#10b981" : "#ef4444",
+            dash: true,
+            width: 1.5,
+            label: `ABS ${bullAbs ? "▲ buy abs" : "▼ sell abs"} ${m.price.toFixed(1)}`,
+          });
+        }
+      }
+    }
+    // HTF virgin wicks (1H Hourly ★ 1×, 1D Daily ★★ 2×, 1W Weekly ★★★ 3×)
+    if (layers.rblock && htfWicks.length) {
+      for (const w of htfWicks.filter((x) => !x.tested)) {
+        const isBuy = w.side === "BUY";
+        boxes.push({
+          from: w.candleTime,
+          to: lastTime,
+          top: w.top,
+          bottom: w.bottom,
+          fill: isBuy ? "rgba(16,185,129,0.06)" : "rgba(239,68,68,0.06)",
+          stroke: isBuy ? "rgba(16,185,129,0.55)" : "rgba(239,68,68,0.55)",
+          dash: true,
+          label: `${w.tf} ${w.tfName} Wick ${w.stars} (${w.weight}×) ${isBuy ? "Support" : "Resist"}`,
+          labelColor: isBuy ? "#6ee7b7" : "#fca5a5",
+        });
+        segs.push({
+          from: w.candleTime,
+          price: w.mid,
+          color: isBuy ? "#10b981" : "#ef4444",
+          dash: true,
+          width: w.weight >= 2 ? 1.5 : 1,
+          label: `${w.tf} Wick 50% ${w.mid.toFixed(1)}`,
+        });
+      }
+    }
     const dayStarts: number[] = [];
     if (tf !== "1D") for (let i = 1; i < candles.length; i++) if (Math.floor(candles[i].time / 86400) !== Math.floor(candles[i - 1].time / 86400)) dayStarts.push(candles[i].time);
     if (a && layers.dol) {
@@ -407,10 +484,34 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         const base = { time: m.time, side: side(bull), dir: m.dir, kind: m.kind, full: `${m.text}${m.price ? ` @ ${m.price.toFixed(1)}` : ""}` };
         if (m.kind.startsWith("PROXY_FLOW")) { push({ ...base, layer: "Delta", short: "flow", color: "#fb923c", shape: "circle", size: 0.5, pri: 1, full: base.full + " (proxy)" }); continue; }
         if (isDelta) {
-          const abs = m.kind === "DELTA_ABSORPTION", flip = m.kind === "DELTA_FLIP";
-          push({ ...base, layer: "Delta", short: shortText(m.kind, m.text), pri: abs ? 2 : 1, size: abs ? 0.8 : 0.5,
-            shape: abs ? "circle" : "square",
-            color: abs ? "#e8c35a" : flip ? "#e2e8f0" : m.kind === "FOOTPRINT_IMBALANCE" ? (bull ? "#22d3ee" : "#f472b6") : (bull ? "#34d399" : "#f87171") });
+          const abs = m.kind === "DELTA_ABSORPTION";
+          const flip = m.kind === "DELTA_FLIP";
+          const agg = m.kind === "DELTA_AGGRESSION";
+          const imb = m.kind === "FOOTPRINT_IMBALANCE";
+          const shortLab = abs
+            ? (bull ? "ABS▲" : "ABS▼")
+            : agg
+            ? (bull ? "Δ+ buy" : "Δ− sell")
+            : imb
+            ? (bull ? "IMB▲" : "IMB▼")
+            : shortText(m.kind, m.text);
+          push({
+            ...base,
+            layer: "Delta",
+            short: shortLab,
+            pri: abs ? 3 : agg ? 2 : imb ? 2 : 1,
+            size: abs ? 1.15 : agg ? 0.9 : imb ? 0.8 : 0.6,
+            shape: abs ? (bull ? "arrowUp" : "arrowDown") : agg ? "square" : "circle",
+            color: abs
+              ? (bull ? "#10b981" : "#ef4444")
+              : agg
+              ? (bull ? "#34d399" : "#f87171")
+              : flip
+              ? "#e2e8f0"
+              : imb
+              ? (bull ? "#22d3ee" : "#f472b6")
+              : (bull ? "#34d399" : "#f87171"),
+          });
           continue;
         }
         const isStruct = m.kind === "BOS" || m.kind === "MSS";
@@ -712,6 +813,69 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const gHits = useMemo(() => layers.gamma ? gammaHits(candles, rvMap, gexMap, analysis?.atr ?? 20, marketOpen) : [], [layers.gamma, candles, rvMap, gexMap, analysis, marketOpen]);
   gHitsRef.current = gHits;
   useEffect(() => { gmPrim.current.set(layers.gamma ? gexMap : null, gHits); }, [layers.gamma, gexMap, gHits]);
+  // ── STDV manipulation leg projections ──
+  const systemLeg = useMemo(() => {
+    if (!layers.stdv || stdvLeg) return null;
+    const legs = detectManipulationLegs(candles, tf, spot ?? undefined);
+    return legs[0] || null;
+  }, [layers.stdv, stdvLeg, candles, tf, spot]);
+  const activeDisplayLeg = stdvLeg || systemLeg;
+
+  useEffect(() => {
+    if (!layers.stdv) {
+      stdvPrim.current.setLeg(null);
+      return;
+    }
+    stdvPrim.current.setLeg(activeDisplayLeg);
+  }, [layers.stdv, activeDisplayLeg]);
+
+  // ── Interactive 2-Click Chart Anchoring for STDV ──
+  const [pickStep, setPickStep] = useState<1 | 2>(1);
+  const [pickPoint1, setPickPoint1] = useState<{ time: number; price: number } | null>(null);
+
+  useEffect(() => {
+    const ch = chart.current;
+    const s = series.current;
+    if (!ch || !s || !isStdvPicking) {
+      setPickStep(1);
+      setPickPoint1(null);
+      return;
+    }
+
+    const onClick = (p: MouseEventParams<Time>) => {
+      if (!p.point || p.time == null) return;
+      const t = p.time as number;
+      const c = cMap.current.get(t) || candles.find((cand) => Math.abs(cand.time - t) < 30) || last.current;
+      if (!c) return;
+
+      const yMid = s.priceToCoordinate((c.high + c.low) / 2);
+      const isTop = yMid !== null && p.point.y < yMid;
+      const clickedPrice = isTop ? c.high : c.low;
+
+      if (pickStep === 1) {
+        setPickPoint1({ time: c.time, price: clickedPrice });
+        setPickStep(2);
+      } else if (pickStep === 2 && pickPoint1) {
+        const point2 = { time: c.time, price: clickedPrice };
+        const manualLeg = createManualStdvLeg(pickPoint1, point2, tf, spot ?? undefined);
+        onStdvPicked?.(manualLeg);
+        setPickStep(1);
+        setPickPoint1(null);
+      }
+    };
+
+    ch.subscribeClick(onClick);
+    return () => ch.unsubscribeClick(onClick);
+  }, [isStdvPicking, pickStep, pickPoint1, candles, tf, spot, onStdvPicked]);
+
+  useEffect(() => {
+    if (!isStdvPicking) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancelStdvPicking?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isStdvPicking, onCancelStdvPicking]);
   useEffect(() => {
     const ch = chart.current; if (!ch) return;
     if (!layers.gamma || !emaArr) { emaS.current.forEach((x) => ch.removeSeries(x)); emaS.current = []; return; }
@@ -778,14 +942,14 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         }
       };
       dispatch(scanSignals({ tf, candles, a, prefs: sig, bias: allB, conf: confAll, ocActs, smt: smtArg, dols: computeDol(candles, a),
-        gamma: gHitsRef.current, nodes: nEntRef.current,
+        gamma: gHitsRef.current, nodes: nEntRef.current, htfWicks,
         flow: fnow && lc[0] ? { time: lc[0].time, verdict: fnow.verdict, prev: fprev?.verdict ?? null, bull: fnow.bull, bear: fnow.bear, head: fnow.head } : null }), wrapped, tf); }
       catch { /* alerts must never break the chart */ }
     }
     biasMap.current = new Map(allB.map((r) => [r.time, r]));
     const bias = layers.bias ? allB.filter((r) => r.verdict !== "MIXED") : [];
     fpPrim.current.set(withConf, bias, layers.heat ? fpBars.filter((b) => b.rows.length) : []);
-  }, [fpBars, analysis, tf, layers.fp, layers.bias, layers.heat, candles, ocFeed, smtArg, sig, onSignal, marketOpen, ocActs, layers.cvd, layers.cells, layers.walls, layers.bubbles, layers.gamma, layers.nodes, layers.tsoup]);
+  }, [fpBars, analysis, tf, layers.fp, layers.bias, layers.heat, candles, ocFeed, smtArg, sig, onSignal, marketOpen, ocActs, layers.cvd, layers.cells, layers.walls, layers.bubbles, layers.gamma, layers.nodes, layers.tsoup, htfWicks]);
 
   // BANKNIFTY line (own hidden scale, so its shape lines up with NIFTY) — shown with the SMT layer
   useEffect(() => {
@@ -1124,8 +1288,93 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           {gLast && <> · last closed: <b>{gLast.ok ? `✓✓✓ ${gLast.side}` : `WALK AWAY (${gLast.checks.filter((x) => !x.pass).map((x) => x.name).join(", ")})`}</b></>}
         </div>
       </div>}
+      {layers.stdv && (
+        <div className="absolute left-2 top-11 z-20 flex items-center gap-2 rounded border border-red-500/40 bg-[#060b16]/90 px-2.5 py-1 text-[11.5px] shadow-lg backdrop-blur">
+          <span className="font-extrabold text-red-400">📐 STDV</span>
+          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+            activeDisplayLeg?.anchorMode === "manual"
+              ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+              : "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+          }`}>
+            {activeDisplayLeg?.anchorMode === "manual" ? "📍 Manual Leg" : "🤖 System Auto"}
+          </span>
+          {activeDisplayLeg ? (
+            <span className="text-slate-200">
+              <b className={activeDisplayLeg.dir === "bull" ? "text-bull-400" : "text-bear-400"}>
+                {activeDisplayLeg.dir === "bull" ? "▲ BULL" : "▼ BEAR"}
+              </b>{" "}
+              [{activeDisplayLeg.tf}] · {activeDisplayLeg.anchorMode === "orderblock" ? "Order Block Run" : activeDisplayLeg.anchorMode === "swing" ? "Full Judas" : "Custom Manual"} ·
+              Anchor 1 <b className="text-white">{activeDisplayLeg.anchor1.toFixed(1)}</b> → Anchor 0 <b className="text-white">{activeDisplayLeg.anchor0.toFixed(1)}</b>
+            </span>
+          ) : (
+            <span className="text-slate-400">Auto-detecting manipulation leg…</span>
+          )}
+          {stdvLeg && onResetToAutoStdv && (
+            <button
+              onClick={onResetToAutoStdv}
+              title="Clear custom 2-click leg and let the system automatically detect & mark the ICT manipulation leg"
+              className="rounded bg-cyan-950/90 px-2 py-0.5 font-bold text-cyan-300 hover:bg-cyan-800 border border-cyan-500/50 transition-colors shadow flex items-center gap-1"
+            >
+              <span>🤖</span>
+              <span>Use System Auto</span>
+            </button>
+          )}
+          <button
+            onClick={isStdvPicking ? onCancelStdvPicking : () => onStartStdvPicking?.()}
+            className={`rounded px-2 py-0.5 font-bold transition-all ${
+              isStdvPicking
+                ? "bg-red-600 text-white animate-pulse"
+                : "bg-red-950/80 text-red-300 hover:bg-red-900 border border-red-500/50"
+            }`}
+          >
+            {isStdvPicking ? "✕ Cancel" : "📍 2-Click Chart Tool"}
+          </button>
+        </div>
+      )}
+      {isStdvPicking && (
+        <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2">
+          <div className="flex items-center gap-3 rounded-lg border-2 border-red-500 bg-[#060b16]/95 px-4 py-2 text-[12.5px] shadow-2xl animate-pulse">
+            <span className="font-extrabold text-red-400">📍 2-CLICK STDV TOOL</span>
+            <span className="text-white">
+              {pickStep === 1
+                ? "👉 Click Point 1 on chart: The Sweep Wick (Anchor 1)"
+                : `✓ Anchor 1 saved (${pickPoint1?.price.toFixed(1)}) → Click Point 2: Shift High/Low (Anchor 0)`}
+            </span>
+            <button
+              onClick={onCancelStdvPicking}
+              className="rounded bg-red-600 px-2.5 py-0.5 font-bold text-white hover:bg-red-500 text-[11px]"
+            >
+              Cancel (Esc)
+            </button>
+          </div>
+        </div>
+      )}
       {/* chart tools (top-right, left of the price axis) */}
       <div className="absolute right-[86px] top-2 z-10 flex gap-1">
+        {stdvLeg && onResetToAutoStdv && (
+          <button
+            className="tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 !border-cyan-500/70 !text-cyan-300 hover:!bg-cyan-950/40"
+            title="Clear manual marking and revert to system automatic STDV"
+            onClick={onResetToAutoStdv}
+          >
+            <span>🤖</span>
+            <span>Use System Auto</span>
+          </button>
+        )}
+        <button
+          className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all ${
+            isStdvPicking
+              ? "!bg-red-600 !text-white animate-pulse ring-2 ring-red-400"
+              : stdvLeg
+              ? "!border-amber-500/70 !text-amber-300"
+              : "!border-red-500/70 !text-red-400"
+          }`}
+          onClick={isStdvPicking ? onCancelStdvPicking : () => onStartStdvPicking?.()}
+          title="Interactive 2-Click STDV Tool: Click any 2 candle wicks on chart to anchor custom STDV manipulation leg"
+        >
+          <span>{isStdvPicking ? "✕" : "📍"}</span>
+          <span>{isStdvPicking ? "Cancel Pick" : "2-Click STDV"}</span>
+        </button>
         {(layers.fp || layers.heat || layers.bias) && <>
           <button className="tab !py-0.5 !text-[11px]" title="Smaller footprint / heatmap / bias labels"
             onClick={() => { setFpScale(FP_SCALE - 0.25); fpPrim.current.refresh(); setFpTick((n) => n + 1); }}>A−</button>
@@ -1263,12 +1512,13 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["fp", "Footprint (est.): Δ under candle · gold = POC · A/D/C/M/S/I", "#facc15"],
   ["dol", "D.O.L: ERL taken → FVG target · FVG tapped → old high/low", "#a78bfa"], ["smt", "SMT ▲▼ · pink line = BANKNIFTY (own scale)", "#f472b6"],
   ["heat", "Heatmap: traded volume per price (blue cold → red hot)", "#f97316"], ["ocAct", "PE−CE action: ▲ OC CE / ▼ OC PE · bottom lane", "#4ade80"],
-  ["bias", "⚖ Bias 14: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
+  ["bias", "⚖ Bias 19: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
   ["walls", "🧱 OI walls: 🟥 CE = resistance (cap) · 🟩 PE = support (floor) · bar thicker = hardening, thinner/dashed = cracking · left bubbles = each strike's % OI change (+ writers adding / − covering)", "#ef4444"], ["bubbles", "🫧 Big trades ≥2× vol · yellow ring = absorbed", "#a3e635"],
   ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD pane (est.)", "#4ade80"], ["gamma", "γ map: red call res · green put sup · yellow flip · ✓✓✓ = EMA stack + flag at level + volume", "#c084fc"], ["nodes", "🟨 Stacked nodes D·W·M (gold = A+) · ● ENTRY = ±2σ into zone", "#facc15"],
   ["tsoup", "🐢 Turtle soup: false break of PDH/PDL/OR/pool that closes back inside → stop-run reversal (▲ buy / ▼ sell)", "#2dd4bf"],
   ["rblock", "⟂ Rejection blocks: big-wick zone (violet) · lower wick = support, upper wick = resistance · dashed line = 50% entry", "#c084fc"],
   ["p3", "📐 Power of 3 (AMD): ① yellow box = accumulation (opening range) · ② orange line = Judas sweep (fake move) · ③ distribution = opposite the Judas", "#fde047"],
+  ["stdv", "📐 STDV: 0/1 sweep anchors · -2..-2.5 Minor Reversal · -4..-4.5 Major Reversal", "#ef4444"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {
