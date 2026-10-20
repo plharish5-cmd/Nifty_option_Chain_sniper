@@ -48,12 +48,26 @@ export const MEANING: Record<string, string> = {
   DOL: "Draw on liquidity — after an ERL sweep price tends to rebalance into the nearest FVG (IRL); after an FVG tap it tends to run to the next old high/low (ERL)",
   DOL_HIT: "D.O.L reached — the target was traded into",
   SMT: "SMT divergence — NIFTY and BANKNIFTY disagree at a swing (one makes a new high/low, the other doesn't): the sweep is weak, expect a turn",
+  MSB_STRONG: "Strong MSB — decisive impulse body close beyond origin swing leaving imbalance (High Quality)",
+  MSB_WEAK: "Weak MSB — wick struggle or internal sub-range break (caution for fakeouts / stop hunts)",
+  PURE_SFP: "Pure Swing Failure Pattern — wick sweeps liquidity, candle closes firmly back inside",
+  CSFP: "Considerable SFP — tiny pierce (<=0.18 ATR), immediately reversed by next bar",
+  GRAY_ACCUMULATION: "Gray Accumulation — 3+ candles hovering tightly: order absorption, breakout watch (VETO counter-trend)",
+  DRAGON_FRUIT: "Dragon Fruit — lowest risk sweet spot: displacement FVG touching origin Order Block",
+  MITIGATION_BLOCK: "Mitigation Block — failure swing supply/demand zone where trapped traders exit at breakeven",
+  ROTE: "ROTE — Reverse Optimal Trade Entry 0.70-0.80 Fibonacci retracement to target",
+  TT3: "Three Tap Setup — Tap 1 hidden zone retest inside consolidation range",
 };
 
 // shorten the backend's text for the chart: "BOS·weak lowV" → "BOS", "Sweep EQH" → "Sweep EQH"
 export function shortText(kind: string, text: string): string {
   const t = (text || "").replace(/\s+/g, " ").trim();
   if (kind === "BOS" || kind === "MSS") return kind;
+  if (kind === "MSB_STRONG") return "Strong MSB";
+  if (kind === "MSB_WEAK") return "Weak MSB";
+  if (kind === "PURE_SFP") return "Pure SFP";
+  if (kind === "CSFP") return "cSFP";
+  if (kind === "GRAY_ACCUMULATION") return "Gray Accum";
   if (kind === "SWEEP") return t.replace(/V\d+(\.\d+)?/g, "").replace(/Sweep\s*/i, "Sweep ").trim().slice(0, 12);
   if (kind === "DELTA_ABSORPTION") return "ABS";
   if (kind === "DELTA_AGGRESSION") return t.includes("−") || t.includes("-") ? "Δ−" : "Δ+";

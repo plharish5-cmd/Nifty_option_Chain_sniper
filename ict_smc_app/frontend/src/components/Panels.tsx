@@ -258,3 +258,6 @@ export function Paper({ trades, stats, scorecard }: { trades: PaperTrade[]; stat
 function Stat({ k, v }: { k: string; v: string }) {
   return <div className="rounded-lg bg-ink-850 border border-ink-700 px-3 py-1.5"><div className="text-[10px] text-slate-500 uppercase">{k}</div><div className="num text-sm text-slate-100">{v}</div></div>;
 }
+
+export { default as AdvPaPanel } from "./AdvPaPanel";
+export { default as PaCoursePanel } from "./PaCoursePanel";

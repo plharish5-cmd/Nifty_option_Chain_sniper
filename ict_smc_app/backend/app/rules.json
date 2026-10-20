@@ -491,5 +491,77 @@
     "write_behind_interval_s": 60,
     "resample_cache_size": 32,
     "max_frame_cache_entries": 64
+  },
+  "pa_advanced": {
+    "_note": "Step 2: 10 Advanced Price Action & Institutional Concepts from the Master PA course. Evaluated strictly on CLOSED candles; alert-only; never touches Setups A/B/C/D.",
+    "enabled": true,
+    "atr_len": 14,
+    "displacement": {
+      "disp_body_atr_mult": 1.05,
+      "disp_body_ratio_min": 0.60
+    },
+    "msb_break_quality": {
+      "decisive_close_atr": 0.20,
+      "consolidation_max_bars": 2,
+      "consolidation_band_atr": 0.25,
+      "pullback_slowness_ratio": 1.40,
+      "engulfing_launch_mult": 1.25,
+      "min_super_ob_score": 5
+    },
+    "sfp_classifier": {
+      "csfp_max_pierce_atr": 0.18,
+      "gray_accum_min_bars": 3,
+      "gray_accum_dev_atr": 0.20
+    },
+    "dragon_fruit": {
+      "max_touch_gap_pts": 5.0,
+      "touch_tolerance_atr": 0.15
+    },
+    "mitigation_block": {
+      "enabled": true,
+      "max_age_bars": 120
+    },
+    "supply_demand_base": {
+      "base_min_bars": 3,
+      "base_max_bars": 14,
+      "base_height_max_atr": 1.60
+    },
+    "ftr": {
+      "ftr_min_bars": 1,
+      "ftr_max_bars": 3,
+      "max_age_bars": 80
+    },
+    "rote": {
+      "rote_fib_entry_low": 0.70,
+      "rote_fib_entry_high": 0.80,
+      "rote_tp1_low": 0.20,
+      "rote_tp1_high": 0.30,
+      "sl_buffer_atr": 0.10
+    },
+    "tt3": {
+      "range_min_duration_bars": 8,
+      "deviation_sl_buffer_atr": 0.10
+    },
+    "gpx": {
+      "primary_pair": {
+        "htf": "15m",
+        "ltf": "5m"
+      },
+      "secondary_pair": {
+        "htf": "1h",
+        "ltf": "15m"
+      },
+      "scalp_pair": {
+        "htf": "15m",
+        "ltf": "1m"
+      },
+      "mean_reversion_overextended_atr": 2.20
+    },
+    "liquidity_magnets": {
+      "eq_tolerance_atr": 0.20,
+      "nifty_round_minor": 100,
+      "nifty_round_major": 500,
+      "inducement_proximity_atr": 1.50
+    }
   }
 }

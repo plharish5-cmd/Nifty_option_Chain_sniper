@@ -42,6 +42,7 @@ from ..engine import auction as auction_mod
 from ..engine import cct as cct_mod
 from ..engine import mmxm as mmxm_mod
 from ..engine import qml_sbr as qml_mod
+from ..engine import pa_advanced as pa_adv_mod
 from ..engine import volume as vol_mod
 from ..market import activity as act_mod
 from ..market import futures as fut_mod
@@ -96,6 +97,7 @@ class Hub:
         self.zones: Dict[str, List[registry.Zone]] = {}
         self.delta: Dict[str, Dict[str, Any]] = {}
         self.auction: Dict[str, Dict[str, Any]] = {}
+        self.pa_advanced: Dict[str, Dict[str, Any]] = {}
         cur_ad = db.kv_get("delta_adapter")
         def_ad = config.rule("delta", "adapter", "fut_quote_rule")
         self.delta_adapter = self._make_adapter(cur_ad if (cur_ad and cur_ad != "none") else def_ad)
@@ -707,6 +709,55 @@ class Hub:
         except Exception as e:                               # noqa: BLE001
             log.exception("cct %s failed", tf)
             j["cct"] = {"available": False, "message": f"CCT error: {e}", "triggers": [], "markers": [], "lines": [], "stats": {}}
+
+        # 10 Advanced Price Action & Institutional Concepts (Observation only — alert/inspection)
+        try:
+            htf_target = "15m" if tf in ("1m", "5m") else "1h" if tf == "15m" else "1D"
+            htf_an = self.analyses.get(htf_target)
+            last_vw = j.get("volume", {}).get("last_vwap", {}).get("v") if isinstance(j.get("volume"), dict) else None
+            chain_sum = self.chain.summary() if hasattr(self, "chain") else None
+            pa_res = pa_adv_mod.compute_pa_advanced(
+                an.bars, an.atr, an.swings, an.obs, an.fvgs, an.pools, an.rng,
+                vwap_val=last_vw, htf_an=htf_an, tf=tf, chain_summary=chain_sum,
+                rules_cfg=config.rules().get("pa_advanced", {})
+            )
+            # Option strike selection & Greeks filter (BUY CE / BUY PE Scanner)
+            try:
+                cur = self.book.current() or {}
+                foci_list = self.foci()
+                foci_map = {f.get("label", "").split()[-1]: f for f in foci_list}
+                ce_rec = cur.get("CE") or {}
+                pe_rec = cur.get("PE") or {}
+                pa_res["strikes"] = {
+                    "CE": {
+                        "strike": ce_rec.get("instrument", {}).get("strike"),
+                        "label": ce_rec.get("instrument", {}).get("label"),
+                        "ltp": ce_rec.get("ltp"),
+                        "delta": ce_rec.get("delta"),
+                        "theta": ce_rec.get("theta"),
+                        "iv": ce_rec.get("iv"),
+                        "oi": ce_rec.get("oi"),
+                        "focus": foci_map.get("CE"),
+                    } if ce_rec else None,
+                    "PE": {
+                        "strike": pe_rec.get("instrument", {}).get("strike"),
+                        "label": pe_rec.get("instrument", {}).get("label"),
+                        "ltp": pe_rec.get("ltp"),
+                        "delta": pe_rec.get("delta"),
+                        "theta": pe_rec.get("theta"),
+                        "iv": pe_rec.get("iv"),
+                        "oi": pe_rec.get("oi"),
+                        "focus": foci_map.get("PE"),
+                    } if pe_rec else None,
+                }
+            except Exception as se:
+                log.warning("enrich pa_advanced strikes failed: %s", se)
+
+            self.pa_advanced[tf] = pa_res
+            j["pa_advanced"] = pa_res
+        except Exception as e:                               # noqa: BLE001
+            log.exception("pa_advanced %s failed", tf)
+            j["pa_advanced"] = {"available": False, "message": f"PA Advanced error: {e}", "summary": "Error", "zones": [], "markers": []}
 
         self.json[tf] = j
         self.recompute_flow(tf)

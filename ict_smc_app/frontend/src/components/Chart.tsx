@@ -25,7 +25,7 @@ import MtfPanel from "./MtfPanel";
 import { StdvPrimitive, detectManipulationLegs, createManualStdvLeg, type StdvLeg } from "./stdv";
 import { aggregateWeeklyCandles, extractWicks, filterVirginWicks, type HtfWick } from "./htfWicks";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean; p3?: boolean; stdv?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean; p3?: boolean; stdv?: boolean; advPa?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -406,6 +406,68 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         segs.push({ from: x.from, price: x.tp2, color: "rgba(34,197,94,0.5)", dash: true, label: `${x.kind} TP2 ${x.tp2.toFixed(0)} (2.2R)` });
       }
     }
+    // Adv PA (10 Core Concepts): Super OB, Dragon Fruit, MiB, S/D Bases, FTR, GPX Corridor, ROTE
+    if (a && layers.advPa && a.pa_advanced) {
+      const pa = a.pa_advanced;
+      const t0 = candles[0]?.time ?? (lastTime - 3600 * 6);
+      for (const z of (pa.zones || [])) {
+        boxes.push({
+          from: Math.max(z.from, t0),
+          to: lastTime,
+          top: z.top,
+          bottom: z.bottom,
+          fill: z.fill || "rgba(236,72,153,0.18)",
+          stroke: z.stroke || "#ec4899",
+          label: z.label,
+          labelColor: z.stroke || "#ec4899",
+        });
+      }
+      if (pa.gpx) {
+        const g = pa.gpx;
+        boxes.push({
+          from: t0,
+          to: lastTime,
+          top: g.corridor_high,
+          bottom: g.corridor_low,
+          fill: "rgba(147,51,234,0.04)",
+          stroke: "rgba(147,51,234,0.45)",
+          dash: true,
+          label: `GPX ${g.htf} Corridor [${g.corridor_low.toFixed(0)}–${g.corridor_high.toFixed(0)}] · ${g.zone}`,
+          labelColor: "#c084fc",
+        });
+        segs.push({
+          from: t0,
+          price: g.corridor_high,
+          color: "rgba(244,63,94,0.7)",
+          dash: true,
+          label: `GPX Ceiling (Supply) ${g.corridor_high.toFixed(0)}`,
+        });
+        segs.push({
+          from: t0,
+          price: g.corridor_mid,
+          color: "rgba(147,51,234,0.75)",
+          dash: true,
+          label: `GPX EQ ${g.corridor_mid.toFixed(0)}`,
+        });
+        segs.push({
+          from: t0,
+          price: g.corridor_low,
+          color: "rgba(16,185,129,0.7)",
+          dash: true,
+          label: `GPX Floor (Demand) ${g.corridor_low.toFixed(0)}`,
+        });
+      }
+      // ROTE targets
+      for (const r of (pa.rote || []).slice(-2)) {
+        segs.push({
+          from: Math.max(r.ts, t0),
+          price: r.target_price,
+          color: r.dir === "bull" ? "#10b981" : "#ef4444",
+          dash: true,
+          label: `ROTE Target (${r.target_type}) ${r.target_price.toFixed(0)}`,
+        });
+      }
+    }
     // delta layer: Institutional Absorption defense levels (passive limit orders absorbing aggressive volume)
     if (a && layers.delta) {
       const t0 = candles.find((c) => Math.floor(c.time / 86400) === Math.floor(lastTime / 86400))?.time ?? (lastTime - 30 * 300);
@@ -537,6 +599,24 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           pri: trig ? 3 : armed || snr ? 2 : 1, size: trig ? 1.2 : pt ? 0.4 : 0.7,
           shape: trig ? (bear ? "arrowDown" : "arrowUp") : pt ? "circle" : "square",
           color: snr ? "#fbbf24" : bear ? "#f472b6" : "#22d3ee" });
+      }
+    }
+    if (a && layers.advPa && a.pa_advanced?.markers) {
+      for (const m of a.pa_advanced.markers) {
+        const bull = m.dir === "bull";
+        push({
+          time: m.time,
+          side: (m as any).side || side(bull),
+          dir: m.dir,
+          kind: m.kind,
+          layer: "AdvPA",
+          full: (m as any).full || m.text,
+          short: shortText(m.kind, m.text),
+          pri: 3,
+          size: m.kind.startsWith("MSB") ? 1.3 : 1.0,
+          shape: (m as any).shape || (bull ? "arrowUp" : "arrowDown"),
+          color: (m as any).color || (bull ? "#10b981" : "#f43f5e"),
+        });
       }
     }
     if (a && layers.crt && a.crt) {

@@ -558,6 +558,32 @@ def auction(tf: str = Query("5m")):
             "rules": {k: v for k, v in _cfg.rules().get("auction", {}).items() if not k.startswith("_")}}
 
 
+@app.get("/api/pa-advanced")
+def pa_advanced(tf: str = Query("5m")):
+    """10 Advanced Price Action & Institutional Concepts (observation only — alert/inspection)."""
+    h = _h()
+    res = h.pa_advanced.get(tf)
+    if not res:
+        j = h.json.get(tf)
+        if j and "pa_advanced" in j:
+            res = j["pa_advanced"]
+    if not res:
+        return {"tf": tf, "available": False, "message": "no closed candles analysed yet for this timeframe"}
+    return res
+
+
+@app.get("/api/pa-course")
+def pa_course(tf: str = Query("5m")):
+    """Institutional Price Action Course Engine (Ch. 2–20 standalone evaluator)."""
+    from ..engine import pa_course_engine
+    h = _h()
+    rows = h.candles.frame(h.nifty, tf, days=5, include_forming=False)
+    spot = h.candles.last_price.get(h.nifty)
+    exp = h.sel_expiry()
+    ch = h.chain.chains.get(exp) if exp else None
+    return pa_course_engine.analyze_pa_course(rows, tf=tf, spot=spot, chain_rows=ch)
+
+
 @app.get("/api/strikes")
 def strikes():
     return _h().strikes_view()

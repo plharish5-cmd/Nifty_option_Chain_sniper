@@ -22,17 +22,19 @@ import CombinedRvolChip from "./components/CombinedRvolChip";
 import StdvPanel from "./components/StdvPanel";
 import { type StdvLeg } from "./components/stdv";
 import AlertsTable from "./components/AlertsTable";
+import AdvPaPanel from "./components/AdvPaPanel";
 
 const TFS: TF[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "30m": 15, "1h": 30, "4h": 60, "1D": 60 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
-  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"], ["fp", "Footprint Δ (est.)"], ["heat", "Heatmap"], ["ocAct", "PE−CE action"], ["dol", "D.O.L (IRL⇄ERL)"], ["smt", "SMT (vs BankNifty)"], ["bias", "⚖ Bias 19"], ["walls", "🧱 OI walls"], ["bubbles", "🫧 Big trades"], ["cells", "▦ FP cells"], ["cvd", "〽 CVD"], ["nodes", "🟨 Stacked nodes"], ["gamma", "γ Gamma 3✓"], ["tsoup", "🐢 Turtle soup"], ["rblock", "⟂ Rejection blocks"], ["p3", "📐 Power of 3 (AMD)"], ["stdv", "📐 STDV"],
+  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"], ["fp", "Footprint Δ (est.)"], ["heat", "Heatmap"], ["ocAct", "PE−CE action"], ["dol", "D.O.L (IRL⇄ERL)"], ["smt", "SMT (vs BankNifty)"], ["bias", "⚖ Bias 19"], ["walls", "🧱 OI walls"], ["bubbles", "🫧 Big trades"], ["cells", "▦ FP cells"], ["cvd", "〽 CVD"], ["nodes", "🟨 Stacked nodes"], ["gamma", "γ Gamma 3✓"], ["tsoup", "🐢 Turtle soup"], ["rblock", "⟂ Rejection blocks"], ["p3", "📐 Power of 3 (AMD)"], ["stdv", "📐 STDV"], ["advPa", "🎓 Adv PA (10 Core)"],
 ];
 
-const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false, qml: false, fp: false, bias: false, dol: false, smt: false, heat: false, ocAct: false, cvd: false, cells: false, walls: false, bubbles: false, nodes: false, gamma: false, tsoup: false, rblock: false, p3: false, stdv: false };
+const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false, qml: false, fp: false, bias: false, dol: false, smt: false, heat: false, ocAct: false, cvd: false, cells: false, walls: false, bubbles: false, nodes: false, gamma: false, tsoup: false, rblock: false, p3: false, stdv: false, advPa: false };
 const PRESETS: [string, string, Partial<Layers>][] = [
   ["Clean", "structure + key levels + VWAP", { structure: true, session: true, volume: true }],
+  ["Adv PA", "10-concept course: Super OB, Dragon Fruit, MiB, ROTE, FTR, S/D bases, GPX", { advPa: true, structure: true, session: true, volume: true, ob: true, fvg: true }],
   ["SMC", "order blocks, FVG, liquidity, BOS/MSS, OTE, rejection blocks", { ob: true, fvg: true, liq: true, structure: true, range: true, session: true, rblock: true }],
   ["CRT", "CRT ranges, TBS, structure, D.O.L, SMT, rejection blocks", { crt: true, structure: true, session: true, dol: true, smt: true, fvg: true, rblock: true }],
   ["Order flow", "delta, auction value, volume, RVOL", { delta: true, auction: true, volume: true, rvol: true, fp: true, heat: true }],
@@ -77,7 +79,7 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap" | "stdv" | "alerts">("paper");
+  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap" | "stdv" | "alerts" | "advpa">("paper");
   const [selectedStdvLeg, setSelectedStdvLeg] = useState<StdvLeg | null>(null);
   const [isStdvPicking, setIsStdvPicking] = useState(false);
   const [mainView, setMainView] = useState<"candles" | "writers" | "both">(() => { try { return (localStorage.getItem("ict_mainview") as "candles" | "writers" | "both") || "candles"; } catch { return "candles"; } });
@@ -246,7 +248,7 @@ export default function App() {
                 <span className="mr-0.5 text-[10px] uppercase tracking-wider text-slate-500">View</span>
                 {PRESETS.map(([name, hint, l]) => {
                   const on = (Object.keys(OFF) as (keyof Layers)[]).every((k) => !!l[k] === layers[k]);
-                  return <button key={name} title={hint} onClick={() => { setLayers({ ...OFF, ...l }); if (name === "Order flow" || name === "Order flow PRO") setBottom("footprint"); if (name === "CRT") setBottom("crt"); }}
+                  return <button key={name} title={hint} onClick={() => { setLayers({ ...OFF, ...l }); if (name === "Order flow" || name === "Order flow PRO") setBottom("footprint"); if (name === "CRT") setBottom("crt"); if (name === "Adv PA") setBottom("advpa"); }}
                     className={`tab ${on ? "tab-on" : ""} !border-gold-500/40`}>{name}</button>;
                 })}
               </div>
@@ -306,10 +308,12 @@ export default function App() {
                 <button className={`tab ${bottom === "book" ? "tab-on" : ""} !border-emerald-500/60 !text-emerald-300`} onClick={() => setBottom("book")}>📗 Order book</button>
                 <button className={`tab ${bottom === "auto" ? "tab-on" : ""} !border-cyan-500/60 !text-cyan-300`} onClick={() => setBottom("auto")}>🤖 Autopilot{ap.s.cfg.on ? " ●" : ""}</button>
                 <button className={`tab ${bottom === "wmap" ? "tab-on" : ""} !border-gold-500/60 !text-gold-400`} onClick={() => setBottom("wmap")}>🎯 Writer map</button>
+                <button className={`tab ${bottom === "advpa" ? "tab-on !border-fuchsia-500/60 !text-fuchsia-300 font-semibold" : ""}`} onClick={() => setBottom("advpa")}>🎓 Adv PA</button>
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "alerts" ? <AlertsTable alerts={dash?.alerts} onRefresh={loadDash} />
+              {bottom === "advpa" ? <AdvPaPanel tick={storyTick} chartTf={tf} />
+                : bottom === "alerts" ? <AlertsTable alerts={dash?.alerts} onRefresh={loadDash} />
                 : bottom === "stdv" ? <StdvPanel candles={candles} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} chartTf={tf} selectedLeg={selectedStdvLeg} onSelectLeg={setSelectedStdvLeg} isLayerActive={!!layers.stdv} onToggleLayer={() => setLayers((l) => ({ ...l, stdv: !l.stdv }))} isPicking={isStdvPicking} onStartPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onCancelPicking={() => setIsStdvPicking(false)} onSetChartTf={setTf} />
                 : bottom === "wmap" ? <WriterMap />
                 : bottom === "auto" ? <AutoPilotPanel ap={ap} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} />

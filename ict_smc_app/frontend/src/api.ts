@@ -149,7 +149,198 @@ export interface MmxmView {
   stats: MmxmStats;
   message: string;
 }
-export interface Analysis { cct?: CctView; mmxm?: MmxmView; qml?: QmlView; volume?: VolumeView; auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
+export interface PaAdvancedView {
+  tf: string;
+  available: boolean;
+  message?: string;
+  summary: string;
+  msb_quality: {
+    i: number;
+    ts: number;
+    time_str: string;
+    dir: "bull" | "bear";
+    level: number;
+    origin_swing_price: number;
+    extreme_swing_price: number;
+    strong: boolean;
+    weak_type?: string | null;
+    score: number;
+    scorecard: Record<string, boolean>;
+    close_price: number;
+  }[];
+  dragon_fruit: {
+    ob_i: number;
+    fvg_i: number;
+    dir: "bull" | "bear";
+    top: number;
+    bottom: number;
+    risk: "LOW" | "MID" | "HIGH";
+    gap_pts: number;
+    ts: number;
+    time_str: string;
+    label: string;
+  }[];
+  mitigation_blocks: {
+    dir: "bull" | "bear";
+    i: number;
+    ts: number;
+    time_str: string;
+    top: number;
+    bottom: number;
+    broken_i: number;
+    fail_swing_price: number;
+    interim_swing_price: number;
+    mitigated: boolean;
+    mitigated_i?: number | null;
+  }[];
+  rote: {
+    dir: "bull" | "bear";
+    target_type: string;
+    target_price: number;
+    sweep_price: number;
+    eq_050: number;
+    entry_low: number;
+    entry_high: number;
+    tp1_low: number;
+    tp1_high: number;
+    tp2: number;
+    sl: number;
+    status: string;
+    i: number;
+    ts: number;
+    time_str: string;
+  }[];
+  sfp_tests: {
+    swing_i: number;
+    swing_price: number;
+    kind: "H" | "L";
+    test_i: number;
+    ts: number;
+    time_str: string;
+    state: string;
+    pierce_atr: number;
+    bars_hovered: number;
+    reversal_confirmed: boolean;
+  }[];
+  sd_bases: {
+    kind: string;
+    polarity: "demand" | "supply";
+    base_start_i: number;
+    base_end_i: number;
+    ts: number;
+    time_str: string;
+    top: number;
+    bottom: number;
+    bars_count: number;
+    height_atr: number;
+    has_internal_sfp: boolean;
+    score: number;
+  }[];
+  ftr_zones: {
+    dir: "bull" | "bear";
+    pause_start_i: number;
+    pause_end_i: number;
+    ts: number;
+    time_str: string;
+    top: number;
+    bottom: number;
+    pause_bars: number;
+    ftb_tested: boolean;
+    mitigated: boolean;
+  }[];
+  tt3: {
+    side: "bull" | "bear";
+    range_high: number;
+    range_low: number;
+    range_mid: number;
+    tap1_price: number;
+    tap2_extreme: number;
+    hidden_zone_top: number;
+    hidden_zone_bot: number;
+    status: string;
+    sl: number;
+    tp1: number;
+    tp2: number;
+    ts: number;
+    time_str: string;
+  }[];
+  gpx?: {
+    htf: string;
+    corridor_high: number;
+    corridor_low: number;
+    corridor_mid: number;
+    zone: string;
+    veto_short: boolean;
+    veto_long: boolean;
+    vwap_state: string;
+    vwap_val?: number | null;
+    wave_bias: string;
+    status_text: string;
+  } | null;
+  traps: {
+    zone_kind: string;
+    zone_top: number;
+    zone_bottom: number;
+    magnet_type: string;
+    magnet_price: number;
+    distance_atr: number;
+    veto_entry: boolean;
+    warning: string;
+  }[];
+  bpr_zones?: {
+    kind: "BPR" | "SUPER BPR" | string;
+    top: number;
+    bot: number;
+    mid: number;
+    bull_fvg_i: number;
+    bear_fvg_i: number;
+    ts: number;
+    hm: string;
+    overlaps: number;
+    label: string;
+  }[];
+  sbb_setups?: {
+    kind: string;
+    dir: "BULL" | "BEAR" | string;
+    side: "LONG" | "SHORT" | string;
+    top: number;
+    bot: number;
+    break_level: number;
+    ts: number;
+    hm: string;
+    is_super: boolean;
+    sfp_confirmed: boolean;
+    fvg_touch: boolean;
+    in_aligned_zone: boolean;
+    label: string;
+  }[];
+  trade_management?: {
+    entry?: number | null;
+    sl?: number | null;
+    r_dist?: number | null;
+    be_1r?: number | null;
+    directive: string;
+  } | null;
+  zones: {
+    type: string;
+    dir: "bull" | "bear";
+    from: number;
+    to: number;
+    top: number;
+    bottom: number;
+    label: string;
+    fill: string;
+    stroke: string;
+    risk?: string;
+  }[];
+  markers: Marker[];
+  strikes?: {
+    CE?: { strike?: number; label?: string; ltp?: number; delta?: number; theta?: number; iv?: number; oi?: number; focus?: any } | null;
+    PE?: { strike?: number; label?: string; ltp?: number; delta?: number; theta?: number; iv?: number; oi?: number; focus?: any } | null;
+  };
+}
+
+export interface Analysis { pa_advanced?: PaAdvancedView; cct?: CctView; mmxm?: MmxmView; qml?: QmlView; volume?: VolumeView; auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
 export interface Quote { spot: number | null; prev_close: number | null; chg: number | null; chg_pct: number | null; vix: number | null; vix_chg: number | null; source: string; market_open: boolean; ts: number }
 export interface Signal { ctx?: { tp1?: number; rr1?: number; pair?: string; aplus_tbs?: boolean; [k: string]: unknown }; key: string; setup: "A" | "B" | "C" | "D"; name: string; tf: string; side: "long" | "short"; status: "TRADE" | "SKIP" | "INFO"; time: string; entry: number | null; sl: number | null; tp: number | null; risk: number | null; rr: number | null; target_src: string; reasons: string[]; story: string[]; confidence?: number | null; confluence?: string[]; confidence_parts?: { structure: number; options_context: number | null; flow: number; flow_source: string } | null }
 export interface AlertRow { id: number; ts: number; time: string; grade: "trade" | "skip" | "info" | "rvol"; kind: string; side: string; tf: string; title: string; body: string; price: number | null }
