@@ -750,6 +750,13 @@ class Hub:
                         "focus": foci_map.get("PE"),
                     } if pe_rec else None,
                 }
+                if hasattr(pa_adv_mod, "_synthesize_sniper_view") and "sniper" in pa_res:
+                    closed_bars = [
+                        {"ts": int(an.bars.ts[i]), "o": float(an.bars.o[i]), "h": float(an.bars.h[i]), "l": float(an.bars.l[i]), "c": float(an.bars.c[i])}
+                        for i in range(len(an.bars))
+                    ]
+                    atr_val = float(an.atr[-1]) if len(an.atr) else 15.0
+                    pa_res["sniper"] = pa_adv_mod._synthesize_sniper_view(pa_res, closed_bars, atr_val, float(an.bars.c[-1]))
             except Exception as se:
                 log.warning("enrich pa_advanced strikes failed: %s", se)
 

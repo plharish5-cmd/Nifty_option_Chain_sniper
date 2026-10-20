@@ -118,7 +118,7 @@ def analysis(tf: str = Query("5m"), inst: str = Query("NIFTY")):
         j["instrument"] = o.to_dict()
         return j
     j = h.json.get(tf)
-    if j is None:
+    if j is None or (j.get("pa_advanced") and "sniper" not in j["pa_advanced"]):
         h.recompute(tf)
         j = h.json.get(tf)
     return j or {"tf": tf, "zones": [], "pools": [], "markers": [], "zigzag": [], "range": None}
@@ -568,20 +568,67 @@ def pa_advanced(tf: str = Query("5m")):
         if j and "pa_advanced" in j:
             res = j["pa_advanced"]
     if not res:
+        h.recompute(tf)
+        res = h.pa_advanced.get(tf)
+        if not res and h.json.get(tf):
+            res = h.json.get(tf).get("pa_advanced")
+    if not res:
         return {"tf": tf, "available": False, "message": "no closed candles analysed yet for this timeframe"}
-    return res
+    from ..engine.pa_advanced import _clean_json, _synthesize_sniper_view
+    try:
+        cur = h.book.current() or {}
+        foci_list = h.foci() if hasattr(h, "foci") else []
+        foci_map = {f.get("label", "").split()[-1]: f for f in foci_list}
+        ce_rec = cur.get("CE") or {}
+        pe_rec = cur.get("PE") or {}
+        res["strikes"] = {
+            "CE": {
+                "strike": ce_rec.get("instrument", {}).get("strike"),
+                "label": ce_rec.get("instrument", {}).get("label"),
+                "ltp": ce_rec.get("ltp"),
+                "delta": ce_rec.get("delta"),
+                "theta": ce_rec.get("theta"),
+                "iv": ce_rec.get("iv"),
+                "oi": ce_rec.get("oi"),
+                "focus": foci_map.get("CE"),
+            } if ce_rec else None,
+            "PE": {
+                "strike": pe_rec.get("instrument", {}).get("strike"),
+                "label": pe_rec.get("instrument", {}).get("label"),
+                "ltp": pe_rec.get("ltp"),
+                "delta": pe_rec.get("delta"),
+                "theta": pe_rec.get("theta"),
+                "iv": pe_rec.get("iv"),
+                "oi": pe_rec.get("oi"),
+                "focus": foci_map.get("PE"),
+            } if pe_rec else None,
+        }
+        an = h.analyses.get(tf)
+        if an and hasattr(an, "bars") and len(an.bars) > 0:
+            closed_bars = [
+                {"ts": int(an.bars.ts[i]), "o": float(an.bars.o[i]), "h": float(an.bars.h[i]), "l": float(an.bars.l[i]), "c": float(an.bars.c[i])}
+                for i in range(len(an.bars))
+            ]
+            atr_val = float(an.atr[-1]) if len(an.atr) else 15.0
+            res["sniper"] = _synthesize_sniper_view(res, closed_bars, atr_val, float(an.bars.c[-1]))
+    except Exception as se:
+        import logging
+        logging.getLogger("uvicorn.error").warning("pa_advanced strikes enrichment failed: %s", se)
+
+    return _clean_json(res)
 
 
 @app.get("/api/pa-course")
 def pa_course(tf: str = Query("5m")):
     """Institutional Price Action Course Engine (Ch. 2–20 standalone evaluator)."""
     from ..engine import pa_course_engine
+    from ..engine.pa_advanced import _clean_json
     h = _h()
     rows = h.candles.frame(h.nifty, tf, days=5, include_forming=False)
     spot = h.candles.last_price.get(h.nifty)
     exp = h.sel_expiry()
     ch = h.chain.chains.get(exp) if exp else None
-    return pa_course_engine.analyze_pa_course(rows, tf=tf, spot=spot, chain_rows=ch)
+    return _clean_json(pa_course_engine.analyze_pa_course(rows, tf=tf, spot=spot, chain_rows=ch))
 
 
 @app.get("/api/strikes")

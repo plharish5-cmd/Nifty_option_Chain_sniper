@@ -42,8 +42,8 @@
     "chain_poll_every_s": 6,
     "chain_far_every": 4,
     "_chain_note": "One chain call every chain_poll_every_s (Dhan allows 1 per 3 s PER ACCOUNT — leave room for the OC scanner). Nearest expiry on 3 of 4 polls.",
-    "daily_data_limit": 7000,
-    "desk_data_budget": 5000,
+    "daily_data_limit": 15000,
+    "desk_data_budget": 15000,
     "_budget_note": "Dhan Data APIs: 7,000 calls/day per ACCOUNT. After desk_data_budget calls this desk pauses optional candle refreshes (strike + futures) — the feed, recorder and repairs keep running.",
     "oc_max_age_s": 20,
     "oc_stale_spot_delta": 40.0

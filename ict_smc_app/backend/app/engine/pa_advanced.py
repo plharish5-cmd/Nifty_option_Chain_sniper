@@ -1374,6 +1374,23 @@ def detect_bprs(fvgs: List[FVG]) -> List[Dict[str, Any]]:
     return unique_bprs[:6]
 
 
+def _clean_json(v: Any) -> Any:
+    """Recursively converts NumPy scalars and arrays to native Python types for clean FastAPI JSON serialization."""
+    if isinstance(v, dict):
+        return {k: _clean_json(val) for k, val in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_clean_json(val) for val in v]
+    if isinstance(v, np.bool_):
+        return bool(v)
+    if isinstance(v, np.integer):
+        return int(v)
+    if isinstance(v, np.floating):
+        return float(v)
+    if isinstance(v, np.ndarray):
+        return _clean_json(v.tolist())
+    return v
+
+
 def compute_pa_advanced(
     b: Bars,
     a: np.ndarray,
@@ -1617,7 +1634,7 @@ def compute_pa_advanced(
     if active_traps:
         summary += f" · ⚠ {active_traps} TRAP VETOES"
 
-    return {
+    res = {
         "tf": tf,
         "available": True,
         "summary": summary,
@@ -1634,4 +1651,715 @@ def compute_pa_advanced(
         "bpr_zones": bpr_list,
         "zones": zones,
         "markers": markers,
+    }
+
+    res["msb_events"] = [
+        {
+            "dir": msb.dir,
+            "super_ob_score": msb.score,
+            "quality_score": msb.score,
+            "strong": msb.strong,
+            "kind": "STRONG" if msb.strong else "WEAK",
+            "ob": {
+                "top": round(msb.extreme_swing_price + (float(a[min(msb.i, len(a) - 1)]) if len(a) else 15.0) * 0.55 if msb.dir == "bull" else msb.extreme_swing_price, 1),
+                "bot": round(msb.extreme_swing_price if msb.dir == "bull" else msb.extreme_swing_price - (float(a[min(msb.i, len(a) - 1)]) if len(a) else 15.0) * 0.55, 1),
+            },
+            "dragon_fruit": bool(msb.scorecard.get("dragon_fruit")),
+            "ts": msb.ts,
+            "trap_warning": None,
+        }
+        for msb in msb_list
+    ]
+
+    closed = [
+        {"ts": int(b.ts[i]), "o": float(b.o[i]), "h": float(b.h[i]), "l": float(b.l[i]), "c": float(b.c[i])}
+        for i in range(len(b))
+    ]
+    atr_val = float(a[-1]) if len(a) else 15.0
+    res["sniper"] = _synthesize_sniper_view(res, closed, atr_val, spot)
+    res["bias_20"] = res["sniper"].get("bias_20")
+
+    return _clean_json(res)
+
+
+def _synthesize_sniper_view(
+    pa: Dict[str, Any],
+    closed: List[Dict[str, float]],
+    atr: float,
+    spot: float,
+) -> Dict[str, Any]:
+    """
+    Merges all overlapping raw PA structures into at most:
+      - #1 Nearest High-Conviction Supply POI (above spot)
+      - #1 Nearest High-Conviction Demand POI (below spot)
+      - 1 Active Sniper Execution Plan (Rejection Hold / Breakout Acceptance / Wait / Trap Veto)
+    """
+    raw_candidates: List[Dict[str, Any]] = []
+
+    # 1. Collect high-grade Order Blocks & Dragon Fruits (skip weak Q < 4)
+    msb_source = pa.get("msb_events") or pa.get("msb_setups") or pa.get("msb_quality") or []
+    for m in msb_source:
+        score7 = int(m.get("super_ob_score") or m.get("quality_score") or m.get("score") or 0)
+        if score7 < 4:
+            continue
+        ob = m.get("ob") or {}
+        top = float(ob.get("top") or m.get("ob_top") or 0)
+        bot = float(ob.get("bot") or m.get("ob_bot") or 0)
+        if (top <= bot or top == 0) and m.get("extreme_swing_price") is not None:
+            ext = float(m["extreme_swing_price"])
+            side_dir = str(m.get("dir", "")).lower()
+            if side_dir == "bull":
+                bot = ext
+                top = ext + atr * 0.55
+            else:
+                top = ext
+                bot = ext - atr * 0.55
+        if top <= bot or top == 0:
+            continue
+        side = "DEMAND" if str(m.get("dir", "")).upper().startswith("BULL") else "SUPPLY"
+        df = bool(m.get("dragon_fruit") or (isinstance(m.get("scorecard"), dict) and m["scorecard"].get("dragon_fruit")))
+        pts = 2.5 if score7 >= 5 else 1.5
+        tags = [f"Super OB {score7}/7"]
+        if df:
+            pts += 2.5
+            tags.insert(0, "Dragon Fruit A+")
+        raw_candidates.append({
+            "side": side, "bot": bot, "top": top,
+            "score": pts, "tags": tags,
+            "ts": int(m.get("ts") or (closed[-1]["ts"] if closed else 0)),
+            "trap": m.get("trap_warning") or (m.get("scorecard", {}).get("trap_warning") if isinstance(m.get("scorecard"), dict) else None),
+        })
+
+    # 2. Collect BPR & Super BPR S/R Flips
+    for b in pa.get("bpr_zones", []):
+        top, bot = float(b.get("top", 0)), float(b.get("bot", 0))
+        if top <= bot:
+            continue
+        is_super = "SUPER" in str(b.get("kind", "")).upper() or int(b.get("overlap_count", b.get("overlaps", 2))) >= 3
+        mid = (top + bot) / 2.0
+        side = "SUPPLY" if mid >= spot else "DEMAND"
+        raw_candidates.append({
+            "side": side, "bot": bot, "top": top,
+            "score": 2.5 if is_super else 1.8,
+            "tags": ["Super BPR Flip" if is_super else "BPR S/R Flip"],
+            "ts": int(b.get("ts") or (closed[-1]["ts"] if closed else 0)),
+            "trap": None,
+        })
+
+    # 3. Collect Super Breaker Blocks (SBB) & Mitigation Blocks (MiB)
+    for sbb in pa.get("sbb_events", []) or pa.get("sbb_zones", []) or pa.get("sbb_setups", []):
+        top, bot = float(sbb.get("top", 0)), float(sbb.get("bot", 0))
+        if top > bot:
+            side = "SUPPLY" if "BEAR" in str(sbb.get("kind", "")).upper() or sbb.get("side") in ("SHORT", "bear") or sbb.get("dir") == "bear" else "DEMAND"
+            raw_candidates.append({
+                "side": side, "bot": bot, "top": top,
+                "score": 2.2, "tags": ["Super Breaker (SBB)"],
+                "ts": int(sbb.get("ts") or (closed[-1]["ts"] if closed else 0)), "trap": None,
+            })
+
+    for mib in pa.get("mib_zones", []) or pa.get("mitigation_blocks", []):
+        if mib.get("mitigated"):
+            continue
+        top = float(mib.get("top", 0))
+        bot = float(mib.get("bot") or mib.get("bottom") or 0)
+        if top > bot:
+            side = "SUPPLY" if "BEAR" in str(mib.get("kind", "")).upper() or mib.get("side") in ("SHORT", "bear") or mib.get("dir") == "bear" else "DEMAND"
+            raw_candidates.append({
+                "side": side, "bot": bot, "top": top,
+                "score": 1.2, "tags": ["Mitigation Block"],
+                "ts": int(mib.get("ts") or (closed[-1]["ts"] if closed else 0)), "trap": None,
+            })
+
+    # 4. Collect ROTE 0.70-0.80 Golden Zones
+    for rt in pa.get("rote_setups", []) or pa.get("rote", []):
+        oz = rt.get("ote_zone") or []
+        if len(oz) == 2:
+            bot, top = min(float(oz[0]), float(oz[1])), max(float(oz[0]), float(oz[1]))
+            side = "SUPPLY" if rt.get("side") in ("SHORT", "bear") or rt.get("dir") == "bear" else "DEMAND"
+        elif "entry_low" in rt and "entry_high" in rt:
+            bot, top = min(float(rt["entry_low"]), float(rt["entry_high"])), max(float(rt["entry_low"]), float(rt["entry_high"]))
+            side = "DEMAND" if rt.get("dir") == "bull" or rt.get("side") in ("LONG", "bull") else "SUPPLY"
+        else:
+            continue
+        if top > bot:
+            raw_candidates.append({
+                "side": side, "bot": bot, "top": top,
+                "score": 1.8, "tags": ["ROTE 0.70–0.80"],
+                "ts": int(rt.get("ts") or (closed[-1]["ts"] if closed else 0)), "trap": None,
+            })
+
+    # 5. Collect Fresh / FTB Failed-to-Return (FTR) pauses
+    for ftr in pa.get("ftr_zones", []):
+        if ftr.get("mitigated") or "USED" in str(ftr.get("status", "")).upper():
+            continue
+        top = float(ftr.get("top", 0))
+        bot = float(ftr.get("bot") or ftr.get("bottom") or 0)
+        if top > bot:
+            side = "SUPPLY" if ftr.get("side") in ("SHORT", "bear") or ftr.get("dir") == "bear" else "DEMAND"
+            raw_candidates.append({
+                "side": side, "bot": bot, "top": top,
+                "score": 1.2, "tags": ["FTR Bagholder Zone"],
+                "ts": int(ftr.get("ts") or (closed[-1]["ts"] if closed else 0)), "trap": None,
+            })
+
+    # 6. Merge overlapping same-side candidates within 0.30 * ATR
+    merge_tol = atr * 0.30
+    merged: List[Dict[str, Any]] = []
+    for cand in sorted(raw_candidates, key=lambda x: x["bot"]):
+        placed = False
+        for m in merged:
+            if m["side"] == cand["side"] and cand["bot"] <= m["top"] + merge_tol and cand["top"] >= m["bot"] - merge_tol:
+                # Keep tightest institutional core intersection or weighted union
+                m["bot"] = round(min(m["bot"], cand["bot"]), 1)
+                m["top"] = round(max(m["top"], cand["top"]), 1)
+                # Cap excessive zone thickness at 1.4 * ATR around midpoint
+                if m["top"] - m["bot"] > atr * 1.4:
+                    mid = (m["top"] + m["bot"]) / 2.0
+                    m["bot"] = round(mid - atr * 0.7, 1)
+                    m["top"] = round(mid + atr * 0.7, 1)
+                m["score"] = round(min(10.0, m["score"] + cand["score"]), 1)
+                for t in cand["tags"]:
+                    if t not in m["tags"]:
+                        m["tags"].append(t)
+                m["ts"] = min(m["ts"], cand["ts"])
+                if cand.get("trap"):
+                    m["trap"] = cand["trap"]
+                placed = True
+                break
+        if not placed:
+            merged.append({
+                "side": cand["side"],
+                "bot": round(cand["bot"], 1),
+                "top": round(cand["top"], 1),
+                "score": round(cand["score"], 1),
+                "tags": list(cand["tags"]),
+                "ts": cand["ts"],
+                "trap": cand.get("trap"),
+            })
+
+    # 7. Add GPX Corridor Alignment Bonus (+1.0) & Filter Mitigated Zones
+    gpx = pa.get("gpx_corridor") or pa.get("gpx_box") or pa.get("gpx") or {}
+    gpx_eq = float(gpx.get("range_eq") or gpx.get("eq") or gpx.get("corridor_mid") or spot)
+    for m in merged:
+        mid = (m["top"] + m["bot"]) / 2.0
+        m["mid"] = round(mid, 1)
+        if m["side"] == "SUPPLY" and mid > gpx_eq:
+            m["score"] = round(min(10.0, m["score"] + 1.0), 1)
+            m["tags"].append("GPX Premium")
+        elif m["side"] == "DEMAND" and mid < gpx_eq:
+            m["score"] = round(min(10.0, m["score"] + 1.0), 1)
+            m["tags"].append("GPX Discount")
+        if m.get("trap"):
+            m["score"] = round(max(1.0, m["score"] - 4.0), 1)
+        m["grade"] = "A+ SNIPER" if m["score"] >= 6.0 else ("HIGH PROB" if m["score"] >= 4.0 else "MODERATE")
+        m["label"] = f"🎯 {m['grade']} {m['side']} [{m['bot']:.0f}–{m['top']:.0f}] · {m['score']:.1f}/10 ({' + '.join(m['tags'][:3])})"
+
+    # Separate active Supply (above or containing spot) & Demand (below or containing spot)
+    supplies = [m for m in merged if m["side"] == "SUPPLY" and m["top"] >= spot - atr * 0.25 and m["score"] >= 3.2]
+    demands = [m for m in merged if m["side"] == "DEMAND" and m["bot"] <= spot + atr * 0.25 and m["score"] >= 3.2]
+
+    # Sort by proximity to spot weighted by conviction score
+    supplies.sort(key=lambda m: (max(0.0, m["bot"] - spot) / max(atr, 1.0)) - m["score"] * 0.35)
+    demands.sort(key=lambda m: (max(0.0, spot - m["top"]) / max(atr, 1.0)) - m["score"] * 0.35)
+
+    best_supply = supplies[0] if supplies else None
+    best_demand = demands[0] if demands else None
+
+    # 8. Evaluate Live Market Behavior on Last 2 Closed Candles
+    if closed:
+        last = closed[-1]
+        prev = closed[-2] if len(closed) >= 2 else last
+    else:
+        last = {"c": spot, "o": spot, "h": spot, "l": spot, "ts": 0}
+        prev = last
+    c_last, o_last = float(last["c"]), float(last["o"])
+    h_last = float(last.get("h", max(c_last, o_last)))
+    l_last = float(last.get("l", min(c_last, o_last)))
+    body_last = abs(c_last - o_last)
+
+    strikes = pa.get("strikes") or pa.get("chain_metrics") or {}
+    ce_label = (strikes.get("buy_ce") or strikes.get("best_ce") or strikes.get("CE") or {}).get("label") or f"{int(round(spot / 50.0) * 50)} CE"
+    pe_label = (strikes.get("buy_pe") or strikes.get("best_pe") or strikes.get("PE") or {}).get("label") or f"{int(round(spot / 50.0) * 50)} PE"
+
+    state = "WAIT — MID-AIR"
+    behavior = "Neutral / Mid-Corridor"
+    action = "WAIT"
+    trade_plan: Optional[Dict[str, Any]] = None
+    headline = ""
+
+    # Check if price is interacting with Best Supply
+    if best_supply and h_last >= best_supply["bot"] - atr * 0.15 and l_last <= best_supply["top"] + atr * 0.25:
+        if best_supply.get("trap"):
+            state = "TRAP VETO"
+            behavior = "Inducement Magnet Above Supply"
+            action = "NO TRADE"
+            headline = f"🚫 TRAP VETO @ {best_supply['bot']:.0f}–{best_supply['top']:.0f}: {best_supply['trap']}"
+        elif c_last > best_supply["top"] + atr * 0.15 and body_last >= atr * 0.9:
+            state = "BREAKOUT ACCEPTANCE"
+            behavior = "Bullish Displacement Through Supply (Flip to Support)"
+            action = f"BUY CE ({ce_label})"
+            entry = round(best_supply["top"], 1)
+            sl = round(best_supply["bot"] - atr * 0.35, 1)
+            risk = max(entry - sl, atr * 0.5)
+            be_1r = round(entry + risk, 1)
+            tp1 = round(entry + risk * 1.8, 1)
+            tp2 = round(entry + risk * 2.8, 1)
+            trade_plan = {"side": "LONG", "strike": ce_label, "entry": entry, "sl": sl, "be_1r": be_1r, "tp1": tp1, "tp2": tp2, "rr": 2.2}
+            headline = f"⚡ BREAKOUT ACCEPTANCE above {entry:.0f} → {action} on retest | SL {sl:.0f} · 1R BE {be_1r:.0f} · TP1 {tp1:.0f}"
+        elif c_last < o_last and c_last <= best_supply["top"]:
+            state = "SNIPER REJECTION HOLD"
+            behavior = "Bearish Rejection Inside A+ Supply POI"
+            action = f"BUY PE ({pe_label})"
+            entry = round(c_last, 1)
+            sl = round(max(h_last, best_supply["top"]) + atr * 0.30, 1)
+            risk = max(sl - entry, atr * 0.5)
+            be_1r = round(entry - risk, 1)
+            tp1 = round(best_demand["top"] if best_demand and best_demand["top"] < entry - risk else entry - risk * 1.8, 1)
+            tp2 = round(entry - risk * 2.5, 1)
+            trade_plan = {"side": "SHORT", "strike": pe_label, "entry": entry, "sl": sl, "be_1r": be_1r, "tp1": tp1, "tp2": tp2, "rr": round(abs(entry - tp1) / risk, 2)}
+            headline = f"🎯 SNIPER SHORT CONFIRMED: {action} @ {entry:.0f} ({' + '.join(best_supply['tags'][:2])}) | SL {sl:.0f} · 1R BE {be_1r:.0f} · TP1 {tp1:.0f}"
+
+    # Check if price is interacting with Best Demand
+    if not trade_plan and state == "WAIT — MID-AIR" and best_demand and l_last <= best_demand["top"] + atr * 0.15 and h_last >= best_demand["bot"] - atr * 0.25:
+        if best_demand.get("trap"):
+            state = "TRAP VETO"
+            behavior = "Inducement Magnet Below Demand"
+            action = "NO TRADE"
+            headline = f"🚫 TRAP VETO @ {best_demand['bot']:.0f}–{best_demand['top']:.0f}: {best_demand['trap']}"
+        elif c_last < best_demand["bot"] - atr * 0.15 and body_last >= atr * 0.9:
+            state = "BREAKDOWN ACCEPTANCE"
+            behavior = "Bearish Displacement Through Demand (Flip to Resistance)"
+            action = f"BUY PE ({pe_label})"
+            entry = round(best_demand["bot"], 1)
+            sl = round(best_demand["top"] + atr * 0.35, 1)
+            risk = max(sl - entry, atr * 0.5)
+            be_1r = round(entry - risk, 1)
+            tp1 = round(entry - risk * 1.8, 1)
+            tp2 = round(entry - risk * 2.8, 1)
+            trade_plan = {"side": "SHORT", "strike": pe_label, "entry": entry, "sl": sl, "be_1r": be_1r, "tp1": tp1, "tp2": tp2, "rr": 2.2}
+            headline = f"⚡ BREAKDOWN ACCEPTANCE below {entry:.0f} → {action} on retest | SL {sl:.0f} · 1R BE {be_1r:.0f} · TP1 {tp1:.0f}"
+        elif c_last > o_last and c_last >= best_demand["bot"]:
+            state = "SNIPER REJECTION HOLD"
+            behavior = "Bullish Rejection Inside A+ Demand POI"
+            action = f"BUY CE ({ce_label})"
+            entry = round(c_last, 1)
+            sl = round(min(l_last, best_demand["bot"]) - atr * 0.30, 1)
+            risk = max(entry - sl, atr * 0.5)
+            be_1r = round(entry + risk, 1)
+            tp1 = round(best_supply["bot"] if best_supply and best_supply["bot"] > entry + risk else entry + risk * 1.8, 1)
+            tp2 = round(entry + risk * 2.5, 1)
+            trade_plan = {"side": "LONG", "strike": ce_label, "entry": entry, "sl": sl, "be_1r": be_1r, "tp1": tp1, "tp2": tp2, "rr": round(abs(tp1 - entry) / risk, 2)}
+            headline = f"🎯 SNIPER LONG CONFIRMED: {action} @ {entry:.0f} ({' + '.join(best_demand['tags'][:2])}) | SL {sl:.0f} · 1R BE {be_1r:.0f} · TP1 {tp1:.0f}"
+
+    # Default Pending Pullback Plan when Spot is Mid-Air between POI Zones
+    if state == "WAIT — MID-AIR":
+        in_discount = spot <= gpx_eq
+        if best_supply and (not best_demand or (best_supply["bot"] - spot) <= (spot - best_demand["top"])):
+            dist = abs(round(best_supply["bot"] - spot, 1))
+            entry = best_supply["bot"]
+            sl = round(best_supply["top"] + atr * 0.30, 1)
+            risk = max(sl - entry, atr * 0.5)
+            be_1r = round(entry - risk, 1)
+            tp1 = round(best_demand["top"] if best_demand else entry - risk * 2.0, 1)
+            trade_plan = {"side": "SHORT", "status": "PENDING LIMIT", "strike": pe_label, "entry": entry, "sl": sl, "be_1r": be_1r, "tp1": tp1, "tp2": round(entry - risk * 2.6, 1), "rr": round(abs(entry - tp1) / risk, 2)}
+            headline = f"⏳ WAIT FOR PULLBACK (+{dist:.0f} pts): Do not chase @ {spot:.0f}. Await retest of {best_supply['bot']:.0f}–{best_supply['top']:.0f} A+ Supply ({best_supply['score']:.1f}/10) to {pe_label} (SL {sl:.0f} · 1R BE {be_1r:.0f} · TP {tp1:.0f})."
+        elif best_demand:
+            dist = abs(round(spot - best_demand["top"], 1))
+            entry = best_demand["top"]
+            sl = round(best_demand["bot"] - atr * 0.30, 1)
+            risk = max(entry - sl, atr * 0.5)
+            be_1r = round(entry + risk, 1)
+            tp1 = round(best_supply["bot"] if best_supply else entry + risk * 2.0, 1)
+            trade_plan = {"side": "LONG", "status": "PENDING LIMIT", "strike": ce_label, "entry": entry, "sl": sl, "be_1r": be_1r, "tp1": tp1, "tp2": round(entry + risk * 2.6, 1), "rr": round(abs(tp1 - entry) / risk, 2)}
+            headline = f"⏳ WAIT FOR PULLBACK (-{dist:.0f} pts): Await retest of {best_demand['bot']:.0f}–{best_demand['top']:.0f} A+ Demand ({best_demand['score']:.1f}/10) to {ce_label} (SL {sl:.0f} · 1R BE {be_1r:.0f} · TP {tp1:.0f})."
+        else:
+            headline = f"⏳ NO HIGH-CONVICTION POI NEARBY (Spot {spot:.0f} in {'Discount' if in_discount else 'Premium'}): Stand aside until a Strong MSB + FVG forms."
+
+    # Keep only the single most recent Strong MSB & Pure SFP marker so the chart is never cluttered
+    strong_msbs = [
+        m for m in (pa.get("msb_events", []) or pa.get("msb_setups", []) or pa.get("msb_quality", []))
+        if "STRONG" in str(m.get("kind", "")).upper() or m.get("strong") is True
+    ]
+    pure_sfps = [
+        s for s in (pa.get("sfp_events", []) or pa.get("sfp_tests", []))
+        if "GRAY" not in str(s.get("kind", "")).upper() and str(s.get("state", "")).upper() != "GRAY_ACCUMULATION"
+    ]
+
+    strong_marker = None
+    for m in reversed(pa.get("markers", [])):
+        if m.get("kind") == "MSB_STRONG":
+            strong_marker = m
+            break
+    if not strong_marker and strong_msbs:
+        sm = strong_msbs[-1]
+        strong_marker = {
+            "time": sm.get("time") or chart_time(int(sm.get("ts", 0))),
+            "side": "above" if sm.get("dir") == "bear" else "below",
+            "kind": "MSB_STRONG",
+            "dir": sm.get("dir", "bull"),
+            "price": sm.get("close_price") or sm.get("level") or spot,
+            "text": f"Strong MSB Q:{sm.get('score', 7)}/7",
+            "score": sm.get("score", 7),
+            "full": f"Strong MSB ({str(sm.get('dir')).upper()})",
+            "color": "#10b981" if sm.get("dir") == "bull" else "#f43f5e",
+            "shape": "arrowUp" if sm.get("dir") == "bull" else "arrowDown",
+        }
+
+    sfp_marker = None
+    for m in reversed(pa.get("markers", [])):
+        if m.get("kind") in ("PURE_SFP", "CSFP"):
+            sfp_marker = m
+            break
+    if not sfp_marker and pure_sfps:
+        sp = pure_sfps[-1]
+        sfp_marker = {
+            "time": sp.get("time") or chart_time(int(sp.get("ts", 0))),
+            "side": "above" if sp.get("kind") == "H" or sp.get("dir") == "bear" else "below",
+            "kind": sp.get("state") or sp.get("kind") or "PURE_SFP",
+            "dir": "bear" if sp.get("kind") == "H" or sp.get("dir") == "bear" else "bull",
+            "price": sp.get("swing_price") or spot,
+            "text": "Pure SFP" if str(sp.get("state", "")).upper() == "PURE_SFP" else "cSFP",
+            "full": f"{sp.get('state', 'SFP')} at {float(sp.get('swing_price', spot)):.1f}",
+            "color": "#06b6d4",
+            "shape": "square",
+        }
+
+    sniper_view = {
+        "state": state,
+        "behavior": behavior,
+        "action": action,
+        "headline": headline,
+        "best_supply": best_supply,
+        "best_demand": best_demand,
+        "trade_plan": trade_plan,
+        "last_strong_msb": strong_marker or (strong_msbs[-1] if strong_msbs else None),
+        "last_sfp": sfp_marker or (pure_sfps[-1] if pure_sfps else None),
+    }
+
+    bias_20 = _compute_bias_20(pa, closed, atr, spot, sniper_view)
+    sniper_view["bias_20"] = bias_20
+    return sniper_view
+
+
+def _compute_bias_20(
+    pa: Dict[str, Any],
+    closed: List[Dict[str, float]],
+    atr: float,
+    spot: float,
+    sniper: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Computes the 20-Factor Bias Vector and Discrete Sniper Confluence Weights:
+      1. IFVG (Inverted Fair Value Gap conformance: +0.5 / -0.5)
+      2. RJB+ (Rejection Block validation: +0.5 / -0.5)
+      3. CRT (Candle Range Theory phase alignment: +1.0 / -1.0)
+      4. D.O.L (Direction of Liquidity magnet target hit: +1.0)
+      5. HTF Wick (Higher Timeframe Liquidity Wick Sweep: +0.75)
+      6. ★ A+ Confluence (Dragon Fruit / Super OB score >= 6/7: +1.5)
+    Scales the aggregate score to the Bias 20 maximum threshold (20.0).
+    """
+    latest = closed[-1] if closed else {"c": spot, "o": spot, "h": spot, "l": spot}
+    c_close = latest.get("c", spot)
+
+    traps = pa.get("traps", [])
+    has_trap_veto = len(traps) > 0
+
+    # 1. IFVG (Inverted Fair Value Gap conformance: +0.5 / -0.5)
+    bprs = pa.get("bpr_zones", [])
+    ifvgs = [z for z in pa.get("zones", []) if "IFVG" in str(z.get("type", "")).upper() or "BPR" in str(z.get("type", "")).upper()]
+    ifvg_status = "NEUTRAL"
+    ifvg_dir = None
+    ifvg_val = 0.0
+    ifvg_desc = "No active IFVG retest"
+
+    all_ifvgs = bprs + ifvgs
+    if all_ifvgs:
+        nearest_ifvg = min(all_ifvgs, key=lambda z: abs(((float(z.get("top", 0)) + float(z.get("bot", 0))) / 2.0) - spot))
+        top = float(nearest_ifvg.get("top", 0))
+        bot = float(nearest_ifvg.get("bot", 0))
+        if top > bot:
+            if spot >= bot - 0.35 * atr and spot <= top + 1.2 * atr:
+                if c_close >= bot and not has_trap_veto:
+                    ifvg_status = "ACTIVE"
+                    ifvg_dir = "bull"
+                    ifvg_val = 0.5
+                    ifvg_desc = f"Bullish IFVG conformance / support at {bot:.0f}–{top:.0f} held (+0.5)"
+                else:
+                    ifvg_status = "VETOED"
+                    ifvg_desc = f"IFVG support at {bot:.0f}–{top:.0f} breached without bounce"
+            elif spot <= top + 0.35 * atr and spot >= bot - 1.2 * atr:
+                if c_close <= top and not has_trap_veto:
+                    ifvg_status = "ACTIVE"
+                    ifvg_dir = "bear"
+                    ifvg_val = -0.5
+                    ifvg_desc = f"Bearish IFVG conformance / resistance at {bot:.0f}–{top:.0f} held (-0.5)"
+                else:
+                    ifvg_status = "VETOED"
+                    ifvg_desc = f"IFVG resistance at {bot:.0f}–{top:.0f} breached without rejection"
+
+    if ifvg_status == "NEUTRAL":
+        for m in reversed(pa.get("markers", [])):
+            if m.get("kind") == "IFVG_BUY":
+                ifvg_status = "ACTIVE"
+                ifvg_dir = "bull"
+                ifvg_val = 0.5
+                ifvg_desc = "Bullish IFVG impulse trigger (+0.5)"
+                break
+            elif m.get("kind") == "IFVG_SELL":
+                ifvg_status = "ACTIVE"
+                ifvg_dir = "bear"
+                ifvg_val = -0.5
+                ifvg_desc = "Bearish IFVG impulse trigger (-0.5)"
+                break
+
+    # 2. RJB+ (Rejection Block validation: +0.5 / -0.5)
+    rjb_status = "NEUTRAL"
+    rjb_dir = None
+    rjb_val = 0.0
+    rjb_desc = "No immediate RJB+ interaction"
+
+    bases = pa.get("sd_bases", [])
+    rjb_zones = [b for b in bases if "RJB" in str(b.get("type", "")).upper() or "BASE" in str(b.get("type", "")).upper()]
+    if rjb_zones:
+        nearest_rjb = min(rjb_zones, key=lambda z: abs(((float(z.get("top", 0)) + float(z.get("bot", 0))) / 2.0) - spot))
+        rtop = float(nearest_rjb.get("top", 0))
+        rbot = float(nearest_rjb.get("bot", 0))
+        rdir = str(nearest_rjb.get("dir", "bull")).lower()
+        if rtop > rbot:
+            if abs(spot - ((rtop + rbot) / 2.0)) <= 1.5 * atr:
+                if rdir == "bull" and c_close >= rbot and not has_trap_veto:
+                    rjb_status = "ACTIVE"
+                    rjb_dir = "bull"
+                    rjb_val = 0.5
+                    rjb_desc = f"Bullish RJB+ defended at {rbot:.0f}–{rtop:.0f} (+0.5)"
+                elif rdir == "bear" and c_close <= rtop and not has_trap_veto:
+                    rjb_status = "ACTIVE"
+                    rjb_dir = "bear"
+                    rjb_val = -0.5
+                    rjb_desc = f"Bearish RJB+ defended at {rbot:.0f}–{rtop:.0f} (-0.5)"
+                else:
+                    rjb_status = "VETOED"
+                    rjb_desc = f"RJB+ at {rbot:.0f}–{rtop:.0f} invalidated / pierced"
+
+    # 3. CRT (Candle Range Theory phase alignment: +1.0 / -1.0)
+    crt_status = "NEUTRAL"
+    crt_dir = None
+    crt_val = 0.0
+    crt_desc = "CRT equilibrium / consolidation range"
+
+    gpx = pa.get("gpx") or {}
+    gpx_zone = str(gpx.get("zone", "")).upper()
+    veto_short = bool(gpx.get("veto_short"))
+    veto_long = bool(gpx.get("veto_long"))
+
+    if gpx_zone == "DISCOUNT":
+        if veto_long:
+            crt_status = "VETOED"
+            crt_desc = "CRT Long vetoed: HTF supply boundary overhead"
+        else:
+            crt_status = "ACTIVE"
+            crt_dir = "bull"
+            crt_val = 1.0
+            crt_desc = f"CRT Expansion Phase aligned (Discount @ {spot:.0f} → Premium Target) (+1.0)"
+    elif gpx_zone == "PREMIUM":
+        if veto_short:
+            crt_status = "VETOED"
+            crt_desc = "CRT Short vetoed: HTF demand boundary below"
+        else:
+            crt_status = "ACTIVE"
+            crt_dir = "bear"
+            crt_val = -1.0
+            crt_desc = f"CRT Expansion Phase aligned (Premium @ {spot:.0f} → Discount Target) (-1.0)"
+
+    # 4. D.O.L (Direction of Liquidity magnet target hit: +1.0)
+    dol_status = "NEUTRAL"
+    dol_dir = None
+    dol_val = 0.0
+    dol_desc = "D.O.L balanced / no single dominant magnet"
+
+    gpx_high = float(gpx.get("corridor_high") or 0)
+    gpx_low = float(gpx.get("corridor_low") or 0)
+    if gpx_high > spot and gpx_low < spot:
+        dist_high = gpx_high - spot
+        dist_low = spot - gpx_low
+        if dist_high <= dist_low:
+            dol_status = "ACTIVE"
+            dol_dir = "bull"
+            dol_val = 1.0
+            dol_desc = f"D.O.L Magnet: Buy-side liquidity draw @ {gpx_high:.0f} (+1.0)"
+        else:
+            dol_status = "ACTIVE"
+            dol_dir = "bear"
+            dol_val = -1.0
+            dol_desc = f"D.O.L Magnet: Sell-side liquidity draw @ {gpx_low:.0f} (-1.0)"
+    elif gpx_high > spot:
+        dol_status = "ACTIVE"
+        dol_dir = "bull"
+        dol_val = 1.0
+        dol_desc = f"D.O.L Magnet: BSL Draw @ {gpx_high:.0f} (+1.0)"
+    elif gpx_low > 0 and gpx_low < spot:
+        dol_status = "ACTIVE"
+        dol_dir = "bear"
+        dol_val = -1.0
+        dol_desc = f"D.O.L Magnet: SSL Draw @ {gpx_low:.0f} (-1.0)"
+
+    # 5. HTF Wick (Higher Timeframe Liquidity Wick Sweep: +0.75)
+    htf_wick_status = "NEUTRAL"
+    htf_wick_dir = None
+    htf_wick_val = 0.0
+    htf_wick_desc = "No recent HTF wick sweep"
+
+    sfp_tests = pa.get("sfp_tests", [])
+    for sfp in reversed(sfp_tests):
+        state_str = str(sfp.get("state", "")).upper()
+        if state_str in ("PURE_SFP", "CSFP"):
+            kind = sfp.get("kind", "")
+            sw_price = float(sfp.get("swing_price", 0))
+            if kind == "L" or sfp.get("dir") == "bull":
+                htf_wick_status = "ACTIVE"
+                htf_wick_dir = "bull"
+                htf_wick_val = 0.75
+                htf_wick_desc = f"HTF Wick sweep of swing low ({sw_price:.0f}) · buyers defended (+0.75)"
+                break
+            elif kind == "H" or sfp.get("dir") == "bear":
+                htf_wick_status = "ACTIVE"
+                htf_wick_dir = "bear"
+                htf_wick_val = -0.75
+                htf_wick_desc = f"HTF Wick sweep of swing high ({sw_price:.0f}) · sellers defended (-0.75)"
+                break
+
+    # 6. ★ A+ Confluence (Dragon Fruit / Super OB score >= 6/7: +1.5)
+    aplus_status = "NEUTRAL"
+    aplus_dir = None
+    aplus_val = 0.0
+    aplus_desc = "No active A+ setup (score < 6/7)"
+
+    dfs = pa.get("dragon_fruit", [])
+    low_risk_dfs = [d for d in dfs if d.get("risk") == "LOW"]
+    msbs = pa.get("msb_quality", []) or pa.get("msb_events", [])
+    super_obs_6 = [m for m in msbs if int(m.get("score") or m.get("super_ob_score") or 0) >= 6]
+
+    best_sup = sniper.get("best_supply") if sniper else None
+    best_dem = sniper.get("best_demand") if sniper else None
+
+    if has_trap_veto:
+        aplus_status = "VETOED"
+        aplus_desc = "★ A+ setup vetoed: Trap / unswept EQH/EQL behind POI"
+    elif low_risk_dfs:
+        df = low_risk_dfs[-1]
+        df_dir = str(df.get("dir", "bull")).lower()
+        aplus_status = "ACTIVE"
+        aplus_dir = df_dir
+        aplus_val = 1.5 if df_dir == "bull" else -1.5
+        aplus_desc = f"★ A+ Dragon Fruit ({df_dir.upper()}) [OB+FVG Touch] ({'+1.5' if df_dir == 'bull' else '-1.5'})"
+    elif super_obs_6:
+        so = super_obs_6[-1]
+        so_dir = str(so.get("dir", "bull")).lower()
+        so_score = int(so.get("score") or so.get("super_ob_score") or 6)
+        aplus_status = "ACTIVE"
+        aplus_dir = so_dir
+        aplus_val = 1.5 if so_dir == "bull" else -1.5
+        aplus_desc = f"★ A+ Super OB Q:{so_score}/7 ({so_dir.upper()}) ({'+1.5' if so_dir == 'bull' else '-1.5'})"
+    elif best_dem and float(best_dem.get("score", 0)) >= 6.0:
+        aplus_status = "ACTIVE"
+        aplus_dir = "bull"
+        aplus_val = 1.5
+        aplus_desc = f"★ A+ Sniper Demand ({float(best_dem.get('score', 0)):.1f}/10) (+1.5)"
+    elif best_sup and float(best_sup.get("score", 0)) >= 6.0:
+        aplus_status = "ACTIVE"
+        aplus_dir = "bear"
+        aplus_val = -1.5
+        aplus_desc = f"★ A+ Sniper Supply ({float(best_sup.get('score', 0)):.1f}/10) (-1.5)"
+
+    # Aggregate Bias 20 calculation
+    triggers = {
+        "IFVG": {"name": "IFVG", "weight": 0.5, "status": ifvg_status, "dir": ifvg_dir, "val": ifvg_val, "desc": ifvg_desc},
+        "RJB+": {"name": "RJB+", "weight": 0.5, "status": rjb_status, "dir": rjb_dir, "val": rjb_val, "desc": rjb_desc},
+        "CRT": {"name": "CRT", "weight": 1.0, "status": crt_status, "dir": crt_dir, "val": crt_val, "desc": crt_desc},
+        "DOL": {"name": "D.O.L", "weight": 1.0, "status": dol_status, "dir": dol_dir, "val": dol_val, "desc": dol_desc},
+        "HTF_Wick": {"name": "HTF Wick", "weight": 0.75, "status": htf_wick_status, "dir": htf_wick_dir, "val": htf_wick_val, "desc": htf_wick_desc},
+        "APlus": {"name": "★ A+", "weight": 1.5, "status": aplus_status, "dir": aplus_dir, "val": aplus_val, "desc": aplus_desc},
+    }
+
+    # Sum sniper trigger weights
+    trigger_bull = sum(t["weight"] for t in triggers.values() if t["status"] == "ACTIVE" and t["dir"] == "bull")
+    trigger_bear = sum(t["weight"] for t in triggers.values() if t["status"] == "ACTIVE" and t["dir"] == "bear")
+
+    # Base PA factors contribution (Structure, OB, RJB, FVG, VWAP, etc.)
+    base_bull = 0.0
+    base_bear = 0.0
+
+    # 1. Structure (MSB)
+    strong_msbs = [m for m in msbs if m.get("strong") or "STRONG" in str(m.get("kind", "")).upper()]
+    if strong_msbs:
+        last_m = strong_msbs[-1]
+        if last_m.get("dir") == "bull": base_bull += 2.0
+        elif last_m.get("dir") == "bear": base_bear += 2.0
+
+    # 2. VWAP
+    vwap_val = gpx.get("vwap_val")
+    if vwap_val:
+        if spot > float(vwap_val): base_bull += 1.5
+        elif spot < float(vwap_val): base_bear += 1.5
+
+    # 3. GPX Corridor zone
+    if gpx_zone == "DISCOUNT": base_bull += 1.5
+    elif gpx_zone == "PREMIUM": base_bear += 1.5
+
+    # 4. SFP / Absorption
+    if htf_wick_dir == "bull": base_bull += 1.0
+    elif htf_wick_dir == "bear": base_bear += 1.0
+
+    # Total score calculation scaled to 20.0
+    raw_bull = base_bull + trigger_bull
+    raw_bear = base_bear + trigger_bear
+
+    bull_score = min(20.0, round(raw_bull * (20.0 / 12.0), 1))
+    bear_score = min(20.0, round(raw_bear * (20.0 / 12.0), 1))
+    net_score = round(bull_score - bear_score, 1)
+
+    if bull_score >= 12.0 and bear_score <= 5.0:
+        verdict = "BUY"
+    elif bear_score >= 12.0 and bull_score <= 5.0:
+        verdict = "SELL"
+    elif abs(net_score) <= 3.0:
+        verdict = "MIXED"
+    else:
+        verdict = "BUY" if net_score > 0 else "SELL"
+
+    confidence_pct = round(min(100.0, (max(bull_score, bear_score) / 20.0) * 100.0), 1)
+
+    factors_20 = [
+        {"id": 1, "name": "FVG/IFVG", "vote": ifvg_dir if ifvg_status == "ACTIVE" else None, "weight": 0.5, "desc": ifvg_desc},
+        {"id": 2, "name": "Order block", "vote": "bull" if any(m.get("dir") == "bull" for m in super_obs_6) else "bear" if any(m.get("dir") == "bear" for m in super_obs_6) else None, "weight": 1.0, "desc": "Order block presence & quality"},
+        {"id": 3, "name": "Rejection block", "vote": rjb_dir if rjb_status == "ACTIVE" else None, "weight": 0.5, "desc": rjb_desc},
+        {"id": 4, "name": "CRT/TBS", "vote": crt_dir if crt_status == "ACTIVE" else None, "weight": 1.0, "desc": crt_desc},
+        {"id": 5, "name": "Footprint", "vote": None, "weight": 1.0, "desc": "Footprint delta & flow tag"},
+        {"id": 6, "name": "RVOL", "vote": None, "weight": 1.0, "desc": "Relative volume expansion"},
+        {"id": 7, "name": "VWAP", "vote": "bull" if vwap_val and spot > float(vwap_val) else "bear" if vwap_val and spot < float(vwap_val) else None, "weight": 1.0, "desc": f"VWAP alignment @ {vwap_val if vwap_val else '—'}"},
+        {"id": 8, "name": "Structure", "vote": strong_msbs[-1].get("dir") if strong_msbs else None, "weight": 1.0, "desc": "Last Strong MSB / MSS"},
+        {"id": 9, "name": "PE−CE action", "vote": None, "weight": 1.0, "desc": "Options Lab PE−CE tape action"},
+        {"id": 10, "name": "Writers gap", "vote": None, "weight": 1.0, "desc": "30-min put−call OI gap drift"},
+        {"id": 11, "name": "Δput−Δcall", "vote": None, "weight": 1.0, "desc": "Writer flow balance strip"},
+        {"id": 12, "name": "Writer dominance", "vote": None, "weight": 1.0, "desc": "Put vs Call writer lead"},
+        {"id": 13, "name": "Writer flip", "vote": None, "weight": 1.0, "desc": "Intraday regime flip marker"},
+        {"id": 14, "name": "PCR trend", "vote": None, "weight": 1.0, "desc": "OI PCR 30-min delta"},
+        {"id": 15, "name": "SMT", "vote": None, "weight": 1.0, "desc": "Nifty vs BankNifty divergence"},
+        {"id": 16, "name": "CCT", "vote": "bull" if gpx_zone == "DISCOUNT" else "bear" if gpx_zone == "PREMIUM" else None, "weight": 1.0, "desc": "Candle Continuity Theory HTF open"},
+        {"id": 17, "name": "MMXM", "vote": None, "weight": 1.0, "desc": "Market Maker Model curve phase"},
+        {"id": 18, "name": "CVD flow", "vote": None, "weight": 1.0, "desc": "Cumulative volume delta slope"},
+        {"id": 19, "name": "Gamma flip", "vote": None, "weight": 1.0, "desc": "Dealer Gamma Flip HVL level"},
+        {"id": 20, "name": "★ A+ Confluence", "vote": aplus_dir if aplus_status == "ACTIVE" else None, "weight": 1.5, "desc": aplus_desc},
+    ]
+
+    return {
+        "total_factors": 20,
+        "max_score": 20.0,
+        "bull_score": bull_score,
+        "bear_score": bear_score,
+        "net_score": net_score,
+        "verdict": verdict,
+        "confidence_pct": confidence_pct,
+        "triggers": triggers,
+        "factors_20": factors_20,
     }

@@ -183020,3 +183020,11 @@ INFO:     connection closed
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
 INFO:     Finished server process [127536]
+INFO:     Started server process [46119]
+INFO:     Waiting for application startup.
+2026-10-20 21:59:47,547 INFO engine.broker: Redis not reachable (Error 111 connecting to localhost:6379. Connection refused.); activating in-memory async pub/sub broker
+2026-10-20 21:59:47,728 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-20 21:59:48,142 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-20 21:59:48,370 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-20 21:59:48,569 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-20 21:59:48,763 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "

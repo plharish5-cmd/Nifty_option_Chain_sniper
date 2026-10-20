@@ -338,6 +338,83 @@ export interface PaAdvancedView {
     CE?: { strike?: number; label?: string; ltp?: number; delta?: number; theta?: number; iv?: number; oi?: number; focus?: any } | null;
     PE?: { strike?: number; label?: string; ltp?: number; delta?: number; theta?: number; iv?: number; oi?: number; focus?: any } | null;
   };
+  sniper?: SniperView | null;
+  bias_20?: Bias20View | null;
+}
+
+export interface SniperTrigger {
+  name: string;
+  weight: number;
+  status: "ACTIVE" | "VETOED" | "NEUTRAL";
+  dir?: "bull" | "bear" | null;
+  val?: number;
+  desc: string;
+}
+
+export interface Bias20Factor {
+  id: number;
+  name: string;
+  vote?: "bull" | "bear" | null;
+  weight?: number;
+  desc: string;
+}
+
+export interface Bias20View {
+  total_factors: number;
+  max_score: number;
+  bull_score: number;
+  bear_score: number;
+  net_score: number;
+  verdict: "BUY" | "SELL" | "MIXED" | "NEUTRAL";
+  confidence_pct: number;
+  triggers: {
+    IFVG: SniperTrigger;
+    "RJB+": SniperTrigger;
+    CRT: SniperTrigger;
+    DOL: SniperTrigger;
+    HTF_Wick: SniperTrigger;
+    APlus: SniperTrigger;
+    [k: string]: SniperTrigger;
+  };
+  factors_20?: Bias20Factor[];
+}
+
+export interface SniperZone {
+  side: "SUPPLY" | "DEMAND" | string;
+  bot: number;
+  top: number;
+  score: number;
+  tags: string[];
+  ts: number;
+  trap?: string | null;
+  mid?: number;
+  grade?: string;
+  label?: string;
+}
+
+export interface SniperTradePlan {
+  side: "LONG" | "SHORT" | string;
+  status?: string;
+  strike: string;
+  entry: number;
+  sl: number;
+  be_1r: number;
+  tp1: number;
+  tp2?: number;
+  rr?: number;
+}
+
+export interface SniperView {
+  state: string;
+  behavior: string;
+  action: string;
+  headline: string;
+  best_supply?: SniperZone | null;
+  best_demand?: SniperZone | null;
+  trade_plan?: SniperTradePlan | null;
+  last_strong_msb?: any;
+  last_sfp?: any;
+  bias_20?: Bias20View | null;
 }
 
 export interface Analysis { pa_advanced?: PaAdvancedView; cct?: CctView; mmxm?: MmxmView; qml?: QmlView; volume?: VolumeView; auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }

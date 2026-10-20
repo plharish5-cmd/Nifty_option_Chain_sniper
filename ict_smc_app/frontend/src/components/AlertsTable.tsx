@@ -157,7 +157,7 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
       return <span className="pill bg-amber-500/20 text-amber-300 border border-amber-500/50 font-bold">★ A+</span>;
     }
     if (k.includes("BIAS") || t.includes("BIAS")) {
-      return <span className="pill bg-gold-500/20 text-gold-300 border border-gold-500/40">⚖ BIAS 19</span>;
+      return <span className="pill bg-gold-500/20 text-gold-300 border border-gold-500/40">⚖ BIAS 20</span>;
     }
     if (k.includes("CONF") || t.includes("CONF")) {
       return <span className="pill bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">✓3 CONF</span>;
@@ -256,7 +256,7 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
             onClick={() => setFilter("bias")}
             className={`pill text-[11px] ${filter === "bias" ? "bg-gold-500 text-ink-900 font-bold" : "bg-ink-800 text-gold-300"}`}
           >
-            ⚖ Bias 19
+            ⚖ Bias 20
           </button>
           <button
             onClick={() => setFilter("rjb")}

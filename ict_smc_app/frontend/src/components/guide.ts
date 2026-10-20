@@ -32,7 +32,7 @@ export const GUIDE: Record<string, { name: string; what: string; act: string }> 
     act: "‘armed’ = WAIT for price to return to the level · QML▲/RBS▲ arrow = CE · QML▼/SBR▼ = PE · SL beyond the wick. Details in the QML tab." },
   fp: { name: "Footprint Δ (est.)", what: "Delta under each candle, gold tick = POC, pills = ABSORB / DISTRIB / ACCUM / TRAP / STACK / PUSH.",
     act: "Act when pill + delta colour + a structure mark agree (BUY/SELL ✓3)." },
-  bias: { name: "⚖ Bias 19", what: "19 factors vote BUY / SELL per closed candle. Badge ▲n/N when ≥ 70 % agree. ⚠ = PCR crowded. Chip = GEX pin / trend.",
+  bias: { name: "⚖ Bias 20", what: "20 factors vote BUY / SELL per closed candle. Badge ▲n/N when ≥ 70 % agree. ⚠ = PCR crowded. Chip = GEX pin / trend. Includes ★ A+ Confluence & Sniper triggers.",
     act: "Use the badge as the DIRECTION filter, enter on your setup with a fixed SL. Hover a candle for every vote." },
   dol: { name: "D.O.L (IRL ⇄ ERL)", what: "ERL = old highs / lows (stops). IRL = FVGs. After an ERL sweep price draws to the nearest FVG; after the FVG holds it draws back to the old high / low.",
     act: "The violet box / line is the current TARGET — take profit there, don't enter against it." },

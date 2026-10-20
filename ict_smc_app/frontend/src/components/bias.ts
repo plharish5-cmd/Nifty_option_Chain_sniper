@@ -8,7 +8,7 @@ export type Vote = "bull" | "bear" | null;
 export const FACTORS = [
   "FVG/IFVG", "Order block", "Rejection block", "CRT/TBS", "Footprint", "RVOL", "VWAP",
   "Structure", "PE−CE action", "Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip",
-  "PCR trend", "SMT", "CCT", "MMXM", "CVD flow", "Gamma flip"
+  "PCR trend", "SMT", "CCT", "MMXM", "CVD flow", "Gamma flip", "★ A+ Confluence"
 ] as const;
 // Options Lab feeds (from 8501 via /api/oclab): PE−CE table rows (3m, ATM ±10) and the writer-flow points (1m, all strikes)
 export type OcRow = { ts: string; act: [string, string, string?, string?] | null; pe_ce_day: number | null; pcr?: number | null };
@@ -247,6 +247,41 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     }
     votes["Gamma flip"] = gexV; why["Gamma flip"] = gexW || "GEX / Gamma Flip not available";
 
+    // 20 ★ A+ Confluence — Dragon Fruit / Super OB score ≥ 6/7 or Sniper POI alignment
+    const sniper = a.pa_advanced?.sniper;
+    const b20 = a.pa_advanced?.bias_20 ?? sniper?.bias_20;
+    const aplusTrig = b20?.triggers?.APlus;
+    let aplusV: Vote = null, aplusW = "";
+
+    if (aplusTrig && aplusTrig.status === "ACTIVE") {
+      aplusV = aplusTrig.dir ?? null;
+      aplusW = aplusTrig.desc;
+    } else if (aplusTrig && aplusTrig.status === "VETOED") {
+      aplusW = `⚠ VETOED: ${aplusTrig.desc}`;
+    } else {
+      const bestSup = sniper?.best_supply;
+      const bestDem = sniper?.best_demand;
+      const inSupply = bestSup && c.high >= bestSup.bot && c.low <= bestSup.top + atr;
+      const inDemand = bestDem && c.low <= bestDem.top && c.high >= bestDem.bot - atr;
+
+      if (inDemand && (!bestDem?.score || bestDem.score >= 4.0)) {
+        aplusV = "bull";
+        aplusW = `★ A+ Demand [${bestDem.bot.toFixed(0)}–${bestDem.top.toFixed(0)}] · ${bestDem.score.toFixed(1)}/10 (${bestDem.tags?.slice(0, 2).join(" + ") || "POI"})`;
+      } else if (inSupply && (!bestSup?.score || bestSup.score >= 4.0)) {
+        aplusV = "bear";
+        aplusW = `★ A+ Supply [${bestSup.bot.toFixed(0)}–${bestSup.top.toFixed(0)}] · ${bestSup.score.toFixed(1)}/10 (${bestSup.tags?.slice(0, 2).join(" + ") || "POI"})`;
+      } else {
+        const dfs = a.pa_advanced?.dragon_fruit ?? [];
+        const activeDf = dfs.find((d) => d.risk === "LOW" && d.ts <= c.time);
+        if (activeDf) {
+          aplusV = activeDf.dir === "bull" ? "bull" : "bear";
+          aplusW = `Dragon Fruit A+ (${activeDf.dir.toUpperCase()}) [${activeDf.bottom.toFixed(0)}–${activeDf.top.toFixed(0)}]`;
+        }
+      }
+    }
+    votes["★ A+ Confluence"] = aplusV;
+    why["★ A+ Confluence"] = aplusW || "no active A+ POI / setup";
+
     // factors with no data today don't count (e.g. futures volume missing → RVOL & VWAP can't vote)
     if (!hasVol) why.RVOL = "no futures volume today";
     if (!hasVwap) why.VWAP = "no VWAP (futures volume missing)";
@@ -256,6 +291,8 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     if (!smt) why.SMT = "SMT: 5m / 15m / 1h only (BANKNIFTY candles)";
     if (!cctData?.available) why.CCT = "CCT not computed for this timeframe";
     if (!a.mmxm?.available) why.MMXM = "MMXM not computed for this timeframe";
+    const hasAdvPa = Boolean(a.pa_advanced?.available);
+    if (!hasAdvPa) why["★ A+ Confluence"] = "Adv PA not available for this timeframe";
     if (isLive) { why.Footprint = "footprint only for closed candles"; why["CVD flow"] = "CVD flow only for closed candles"; }
     const hasCct = Boolean(cctData?.available);
     const hasMmxm = Boolean(a.mmxm?.available);
@@ -271,7 +308,8 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
       - (hasCct ? 0 : 1)
       - (hasMmxm ? 0 : 1)
       - (hasCvd ? 0 : 1)
-      - (hasGex ? 0 : 1);
+      - (hasGex ? 0 : 1)
+      - (hasAdvPa ? 0 : 1);
     const vals = Object.values(votes);
     const bull = vals.filter((x) => x === "bull").length, bear = vals.filter((x) => x === "bear").length;
     const req = Math.max(3, Math.round(pct * avail));             // e.g. 10 factors → 7 must agree; 7 → 5

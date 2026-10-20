@@ -29,6 +29,7 @@ from app.engine.pa_advanced import (
     detect_traps_inducements,
     detect_tt3,
     detect_bprs,
+    _synthesize_sniper_view,
 )
 from app.engine.primitives import Bars, Swing
 from app.engine.liquidity import Pool
@@ -356,4 +357,147 @@ def test_bpr_and_super_bpr_detection():
     assert super_zone is not None
     assert super_zone["overlaps"] >= 3
     assert "SUPER BPR" in super_zone["label"]
+
+
+# ── 13. Sniper Decision & Confluence Cluster Merger Test ──────────────────────
+
+def test_sniper_view_confluence_and_capping():
+    # 1. Verify compute_pa_advanced attaches sniper view
+    from oct8_data import five_min, fifteen_min
+    from app.engine.analyze import analyze
+
+    rows_5m = five_min()
+    rows_15m = fifteen_min()
+    an_5m = analyze(rows_5m, "5m")
+    an_15m = analyze(rows_15m, "15m")
+
+    res = compute_pa_advanced(
+        an_5m.bars,
+        an_5m.atr,
+        an_5m.swings,
+        an_5m.obs,
+        an_5m.fvgs,
+        an_5m.pools,
+        an_5m.rng,
+        vwap_val=float(an_5m.bars.c[-1]),
+        htf_an=an_15m,
+        tf="5m",
+    )
+
+    assert "sniper" in res
+    sniper = res["sniper"]
+    assert "state" in sniper
+    assert "behavior" in sniper
+    assert "action" in sniper
+    assert "headline" in sniper
+    assert "best_supply" in sniper
+    assert "best_demand" in sniper
+
+    # 2. Synthetic confluence merger & scoring test
+    spot = 22900.0
+    atr_val = 20.0
+    pa_synthetic = {
+        "msb_events": [
+            {
+                "dir": "bear",
+                "super_ob_score": 6,
+                "ob": {"top": 22960.0, "bot": 22945.0},
+                "dragon_fruit": True,
+                "ts": 1700000000,
+            }
+        ],
+        "bpr_zones": [
+            {
+                "kind": "SUPER BPR",
+                "top": 22955.0,
+                "bot": 22942.0,
+                "overlap_count": 3,
+                "ts": 1700000100,
+            }
+        ],
+        "rote_setups": [
+            {
+                "side": "SHORT",
+                "ote_zone": [22948.0, 22958.0],
+                "ts": 1700000200,
+            }
+        ],
+        "gpx_corridor": {
+            "corridor_mid": 22850.0,  # Supply is at 22950 > 22850 (GPX Premium)
+            "range_eq": 22850.0,
+        },
+    }
+
+    # Candles tapping into the supply zone and rejecting (close < open, close <= top)
+    closed = [
+        {"ts": 1700000300, "o": 22910.0, "h": 22930.0, "l": 22900.0, "c": 22920.0},
+        {"ts": 1700000600, "o": 22950.0, "h": 22958.0, "l": 22938.0, "c": 22942.0},  # Bearish rejection candle inside zone
+    ]
+
+    syn_sniper = _synthesize_sniper_view(pa_synthetic, closed, atr_val, spot)
+    best_sup = syn_sniper["best_supply"]
+    assert best_sup is not None
+    assert best_sup["side"] == "SUPPLY"
+    # Confluence: Super OB (2.5) + Dragon Fruit (2.5) + Super BPR (2.5) + ROTE (1.8) + GPX Premium (1.0) = 10.0 (capped at 10)
+    assert best_sup["score"] >= 8.5
+    assert "A+ SNIPER" in best_sup["grade"]
+    assert len(best_sup["tags"]) >= 3
+
+    # Verification of state classifier: Bearish rejection inside A+ supply POI
+    assert syn_sniper["state"] == "SNIPER REJECTION HOLD"
+    assert "BUY PE" in syn_sniper["action"]
+    assert syn_sniper["trade_plan"] is not None
+    plan = syn_sniper["trade_plan"]
+    assert plan["side"] == "SHORT"
+    assert plan["entry"] == 22942.0
+    assert plan["sl"] > plan["entry"]
+    assert plan["be_1r"] < plan["entry"]
+
+    # Verification of Bias 20 expansion and Sniper Confluence triggers
+    assert "bias_20" in syn_sniper
+    b20 = syn_sniper["bias_20"]
+    assert b20["total_factors"] == 20
+    assert b20["max_score"] == 20.0
+    assert "triggers" in b20
+    triggers = b20["triggers"]
+
+    for trig_key in ("IFVG", "RJB+", "CRT", "DOL", "HTF_Wick", "APlus"):
+        assert trig_key in triggers
+        t = triggers[trig_key]
+        assert t["status"] in ("ACTIVE", "VETOED", "NEUTRAL")
+        assert "weight" in t
+        assert "desc" in t
+
+    # Check exact course weights
+    assert triggers["IFVG"]["weight"] == 0.5
+    assert triggers["RJB+"]["weight"] == 0.5
+    assert triggers["CRT"]["weight"] == 1.0
+    assert triggers["DOL"]["weight"] == 1.0
+    assert triggers["HTF_Wick"]["weight"] == 0.75
+    assert triggers["APlus"]["weight"] == 1.5
+
+    # Check factors_20 length and structure
+    assert len(b20["factors_20"]) == 20
+    assert b20["factors_20"][19]["name"] == "★ A+ Confluence"
+    assert b20["factors_20"][19]["weight"] == 1.5
+
+
+def test_compute_pa_advanced_enriches_bias_20():
+    closes = [22800 + i * 5.0 for i in range(30)]
+    b = _make_bars(closes)
+    atr = np.full(len(b), 15.0)
+    swings = []
+    obs = []
+    fvgs = []
+    pools = []
+
+    res = compute_pa_advanced(b, atr, swings, obs, fvgs, pools, tf="5m")
+    assert res["available"] is True
+    assert "bias_20" in res
+    assert "sniper" in res
+    assert "bias_20" in res["sniper"]
+    assert res["bias_20"]["total_factors"] == 20
+    assert res["bias_20"]["max_score"] == 20.0
+
+
 

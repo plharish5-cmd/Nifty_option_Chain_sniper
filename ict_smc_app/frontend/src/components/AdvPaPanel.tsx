@@ -7,6 +7,23 @@ export default function AdvPaPanel({ tick, chartTf }: { tick: number; chartTf?: 
   const [activeTab, setActiveTab] = useState<string>("all");
   const [d, setD] = useState<PaAdvancedView | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [sniperMode, setSniperMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("ict_adv_pa_mode") !== "raw";
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleSniperMode = () => {
+    setSniperMode((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("ict_adv_pa_mode", next ? "sniper" : "raw");
+      } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   useEffect(() => {
     let dead = false;
@@ -41,6 +58,7 @@ export default function AdvPaPanel({ tick, chartTf }: { tick: number; chartTf?: 
   const ftrs = d?.ftr_zones || [];
   const tt3s = d?.tt3 || [];
   const bprs = d?.bpr_zones || [];
+  const b20 = d?.bias_20 ?? d?.sniper?.bias_20;
 
   return (
     <div className="flex h-full flex-col text-[12px] bg-ink-950 text-slate-200">
@@ -57,12 +75,24 @@ export default function AdvPaPanel({ tick, chartTf }: { tick: number; chartTf?: 
               {t}
             </button>
           ))}
+          <button
+            onClick={toggleSniperMode}
+            title="Toggle Sniper Mode (Clean POIs + Synthesized Decision) vs Raw Diagnostic Mode"
+            className={`ml-2 flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+              sniperMode
+                ? "bg-gold-500/20 text-gold-300 border-gold-500/60 hover:bg-gold-500/30"
+                : "bg-purple-500/20 text-purple-300 border-purple-500/60 hover:bg-purple-500/30"
+            }`}
+          >
+            <span>{sniperMode ? "🎯 Sniper Mode" : "🔬 Raw 10-Core"}</span>
+          </button>
         </div>
 
         {/* View Filter Tabs */}
         <div className="flex items-center gap-1 ml-auto">
           {[
             ["all", "All 10 Concepts"],
+            ["bias20", "⚖ Bias 20 Matrix"],
             ["msb", `MSBs (${msbs.length})`],
             ["df", `Dragon Fruit (${dfs.length})`],
             ["mib", `MiB (${mibs.length})`],
@@ -85,6 +115,117 @@ export default function AdvPaPanel({ tick, chartTf }: { tick: number; chartTf?: 
           ))}
         </div>
       </div>
+
+      {/* 🎯 Sniper Decision & Confluence Cockpit Banner */}
+      {d?.sniper && (
+        <div className="px-3 py-2 bg-gradient-to-r from-ink-950 via-[#0a1020] to-ink-950 border-b border-gold-500/40 text-[12px]">
+          <div className="flex flex-wrap items-center gap-2 mb-1.5">
+            {(() => {
+              const s = d.sniper;
+              const isRejPe = s.action.includes("BUY PE") || s.state.includes("REJECTION") || s.state.includes("SHORT");
+              const isRejCe = s.action.includes("BUY CE");
+              const isBreak = s.state.includes("BREAKOUT") || s.state.includes("BREAKDOWN");
+              const isTrap = s.state.includes("TRAP");
+              const badgeClass = isTrap
+                ? "bg-rose-950/90 text-rose-300 border-rose-600/70"
+                : isBreak
+                ? "bg-cyan-950/90 text-cyan-300 border-cyan-500/70"
+                : isRejCe
+                ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/70"
+                : isRejPe
+                ? "bg-rose-950/90 text-rose-300 border-rose-500/70"
+                : "bg-amber-950/90 text-amber-300 border-amber-500/70";
+              const icon = isTrap ? "🚫" : isBreak ? "⚡" : isRejCe || isRejPe ? "🎯" : "⏳";
+              return (
+                <span className={`flex items-center gap-1 px-2 py-0.5 rounded font-extrabold text-[11px] border ${badgeClass}`}>
+                  <span>{icon}</span>
+                  <span>{s.state}</span>
+                </span>
+              );
+            })()}
+
+            <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700/60 text-slate-300 font-semibold text-[11px]">
+              🛡️ {d.sniper.behavior}
+            </span>
+
+            <span className="font-bold text-slate-100 text-[12px] ml-1">
+              {d.sniper.headline}
+            </span>
+          </div>
+
+          {/* Trade Plan & Top Confluence POIs */}
+          <div className="grid gap-2 md:grid-cols-3 mt-2 text-[11px]">
+            {d.sniper.trade_plan ? (
+              <div className="p-2 rounded bg-ink-900/90 border border-gold-500/30 flex flex-col justify-between">
+                <div className="flex items-center justify-between font-bold">
+                  <span className={d.sniper.trade_plan.side === "LONG" ? "text-emerald-400" : "text-rose-400"}>
+                    {d.sniper.trade_plan.side === "LONG" ? "▲ LONG SETUP" : "▼ SHORT SETUP"}
+                  </span>
+                  <span className="text-gold-300 font-mono">{d.sniper.trade_plan.strike}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-1 text-slate-300">
+                  <div>Entry: <b className="text-slate-100">{n(d.sniper.trade_plan.entry)}</b></div>
+                  <div>SL: <b className="text-rose-400">{n(d.sniper.trade_plan.sl)}</b></div>
+                  <div>1R BE: <b className="text-cyan-300">{n(d.sniper.trade_plan.be_1r)}</b></div>
+                  <div>TP1: <b className="text-emerald-400">{n(d.sniper.trade_plan.tp1)}</b> {d.sniper.trade_plan.rr ? `(${d.sniper.trade_plan.rr}R)` : ""}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-2 rounded bg-ink-900/60 border border-ink-800 text-slate-400 flex items-center justify-center">
+                <span>⏳ No Trigger Active · Awaiting POI Tap</span>
+              </div>
+            )}
+
+            {/* Nearest Supply POI */}
+            <div className="p-2 rounded bg-rose-950/20 border border-rose-900/40 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-rose-300">🎯 NEAREST SUPPLY POI</span>
+                {d.sniper.best_supply && (
+                  <span className="px-1.5 py-0.2 rounded bg-rose-900/60 text-rose-200 text-[10px] font-bold">
+                    {d.sniper.best_supply.score.toFixed(1)}/10 ★
+                  </span>
+                )}
+              </div>
+              {d.sniper.best_supply ? (
+                <div className="mt-1 text-slate-300">
+                  <div className="font-semibold text-slate-100">
+                    [{n(d.sniper.best_supply.bot)} – {n(d.sniper.best_supply.top)}] · {d.sniper.best_supply.grade}
+                  </div>
+                  <div className="text-[10px] text-rose-400/90 truncate mt-0.5">
+                    Stack: {d.sniper.best_supply.tags.join(" + ")}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-slate-500 text-[10px] mt-1">No active high-conviction supply above spot.</div>
+              )}
+            </div>
+
+            {/* Nearest Demand POI */}
+            <div className="p-2 rounded bg-emerald-950/20 border border-emerald-900/40 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-emerald-300">🎯 NEAREST DEMAND POI</span>
+                {d.sniper.best_demand && (
+                  <span className="px-1.5 py-0.2 rounded bg-emerald-900/60 text-emerald-200 text-[10px] font-bold">
+                    {d.sniper.best_demand.score.toFixed(1)}/10 ★
+                  </span>
+                )}
+              </div>
+              {d.sniper.best_demand ? (
+                <div className="mt-1 text-slate-300">
+                  <div className="font-semibold text-slate-100">
+                    [{n(d.sniper.best_demand.bot)} – {n(d.sniper.best_demand.top)}] · {d.sniper.best_demand.grade}
+                  </div>
+                  <div className="text-[10px] text-emerald-400/90 truncate mt-0.5">
+                    Stack: {d.sniper.best_demand.tags.join(" + ")}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-slate-500 text-[10px] mt-1">No active high-conviction demand below spot.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Option Strike Selection & Greeks Filter (BUY CE / BUY PE Scanner) */}
       {d?.strikes && (d.strikes.CE || d.strikes.PE) && (
@@ -187,6 +328,106 @@ export default function AdvPaPanel({ tick, chartTf }: { tick: number; chartTf?: 
 
         {!loading && d && d.available && (
           <div className="space-y-4">
+            {/* ⚖ Bias 20 Confluence Engine & Discrete Sniper Weights */}
+            {(activeTab === "all" || activeTab === "bias20") && b20 && (
+              <div className="rounded-lg border border-gold-500/40 bg-gradient-to-b from-ink-900/90 to-ink-950/90 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b border-ink-800">
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-[13px] text-gold-300">
+                      ⚖ Bias 20 Confluence Engine & Discrete Sniper Weights
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-gold-950/80 border border-gold-600/60 text-gold-300 font-mono text-[11px] font-bold">
+                      {b20.bull_score.toFixed(1)}▲ / {b20.bear_score.toFixed(1)}▼ of 20.0
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded font-extrabold text-[11px] border ${
+                      b20.verdict === "BUY"
+                        ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/70"
+                        : b20.verdict === "SELL"
+                        ? "bg-rose-950/90 text-rose-300 border-rose-500/70"
+                        : "bg-ink-800 text-slate-300 border-ink-700"
+                    }`}>
+                      {b20.verdict === "BUY" ? "🎯 BUY BIAS" : b20.verdict === "SELL" ? "🎯 SELL BIAS" : "⏳ MIXED / CHOP"} · {b20.confidence_pct}% Conf
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Net: {b20.net_score > 0 ? `+${b20.net_score}` : b20.net_score}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 6 Discrete Sniper Triggers */}
+                <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-6 mb-3">
+                  {[
+                    { key: "IFVG", label: "IFVG", weight: "±0.5" },
+                    { key: "RJB+", label: "RJB+", weight: "±0.5" },
+                    { key: "CRT", label: "CRT", weight: "±1.0" },
+                    { key: "DOL", label: "D.O.L", weight: "+1.0" },
+                    { key: "HTF_Wick", label: "HTF Wick", weight: "±0.75" },
+                    { key: "APlus", label: "★ A+", weight: "+1.5" },
+                  ].map(({ key, label, weight }) => {
+                    const trig = b20.triggers?.[key];
+                    const status = trig?.status || "NEUTRAL";
+                    const isAct = status === "ACTIVE";
+                    const isVeto = status === "VETOED";
+                    const borderCls = isVeto
+                      ? "border-rose-600/70 bg-rose-950/30 text-rose-200"
+                      : isAct
+                      ? "border-emerald-500/70 bg-emerald-950/30 text-emerald-200"
+                      : "border-ink-800 bg-ink-900/40 text-slate-400";
+                    return (
+                      <div key={key} className={`rounded border p-2 flex flex-col justify-between ${borderCls}`}>
+                        <div className="flex items-center justify-between font-bold text-[11px]">
+                          <span>{label}</span>
+                          <span className="font-mono text-[10px] opacity-80">{weight}</span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between">
+                          <span className={`text-[10px] font-extrabold uppercase px-1 rounded ${
+                            isVeto ? "bg-rose-900/80 text-rose-200" : isAct ? "bg-emerald-900/80 text-emerald-200" : "bg-ink-800 text-slate-400"
+                          }`}>
+                            {isVeto ? "VETOED" : isAct ? `${trig?.dir === "bull" ? "▲ BULL" : trig?.dir === "bear" ? "▼ BEAR" : "ACTIVE"}` : "NEUTRAL"}
+                          </span>
+                        </div>
+                        <div className="text-[9.5px] opacity-75 mt-1 truncate" title={trig?.desc || "No trigger"}>
+                          {trig?.desc || "—"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 20 Factors Explicit Table (Available in bias20 tab) */}
+                {activeTab === "bias20" && b20.factors_20 && (
+                  <div className="mt-2 border-t border-ink-800 pt-2">
+                    <div className="font-semibold text-slate-300 text-[11px] mb-1">
+                      Explicit 20-Factor Vector Breakdown (Factors 1 to 20):
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-1.5 text-[10px]">
+                      {b20.factors_20.map((f) => (
+                        <div key={f.id} className="rounded bg-ink-900/70 border border-ink-800 p-1.5 flex flex-col justify-between">
+                          <div className="flex items-center justify-between font-medium">
+                            <span className="text-slate-400">#{f.id} {f.name}</span>
+                            <span className="font-mono text-slate-500">{f.weight ? `${f.weight > 0 ? "+" : ""}${f.weight}` : "1.0"}</span>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between">
+                            <span className={`px-1 rounded font-bold uppercase text-[9px] ${
+                              f.vote === "bull" ? "bg-emerald-950 text-emerald-300 border border-emerald-800" :
+                              f.vote === "bear" ? "bg-rose-950 text-rose-300 border border-rose-800" : "bg-ink-850 text-slate-500"
+                            }`}>
+                              {f.vote === "bull" ? "▲ BULL" : f.vote === "bear" ? "▼ BEAR" : "NEUTRAL"}
+                            </span>
+                          </div>
+                          <div className="text-[9px] text-slate-500 truncate mt-0.5" title={f.desc}>
+                            {f.desc}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* 1. Strong vs. Weak MSB (7-Point Scorer) */}
             {(activeTab === "all" || activeTab === "msb") && (
               <div>

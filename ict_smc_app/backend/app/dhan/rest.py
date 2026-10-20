@@ -119,8 +119,10 @@ class DhanREST:
                 pass
 
     def usage(self) -> Dict[str, Any]:
-        lim = int(config.rule("data", "daily_data_limit", 7000))
-        bud = int(config.rule("data", "desk_data_budget", 5000))
+        env_lim = config.env("DHAN_API_LIMIT") or config.env("MAX_CALLS") or config.env("DAILY_DATA_LIMIT")
+        lim = int(env_lim) if env_lim else int(config.rule("data", "daily_data_limit", 15000))
+        env_bud = config.env("DESK_DATA_BUDGET")
+        bud = int(env_bud) if env_bud else int(config.rule("data", "desk_data_budget", lim))
         d = self.usage_d.get("data", 0)
         return {**self.usage_d, "data_limit": lim, "desk_budget": bud, "data_pct": round(100 * d / lim, 1),
                 "over_budget": d >= bud}
@@ -128,7 +130,9 @@ class DhanREST:
     def over_budget(self) -> bool:
         """True once THIS desk has used its share of the account's daily Data-API calls — optional refreshes
         (option / futures candles) then pause; the live feed, recorder and repairs keep working."""
-        return self.usage_d.get("data", 0) >= int(config.rule("data", "desk_data_budget", 5000))
+        env_bud = config.env("DESK_DATA_BUDGET") or config.env("DHAN_API_LIMIT") or config.env("MAX_CALLS")
+        bud = int(env_bud) if env_bud else int(config.rule("data", "desk_data_budget", 15000))
+        return self.usage_d.get("data", 0) >= bud
 
     # ── plumbing ──────────────────────────────────────────────────────────
     @staticmethod

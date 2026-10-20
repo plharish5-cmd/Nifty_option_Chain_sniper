@@ -132,6 +132,22 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const [layerNow, setLayerNow] = useState<Record<string, Ev>>({});
   const [guideOpen, setGuideOpen] = useState<boolean>(() => { try { return localStorage.getItem("ict_guide") !== "0"; } catch { return true; } });
   const [htfWicks, setHtfWicks] = useState<HtfWick[]>([]);
+  const [advPaSniperMode, setAdvPaSniperMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("ict_adv_pa_mode") !== "raw";
+    } catch {
+      return true;
+    }
+  });
+  const toggleAdvPaSniperMode = () => {
+    setAdvPaSniperMode((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("ict_adv_pa_mode", next ? "sniper" : "raw");
+      } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   // Load Higher Timeframe (HTF) wicks: 1H (Hourly 1×), 1D (Daily 2×), 1W (Weekly 3×)
   useEffect(() => {
@@ -410,62 +426,190 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     if (a && layers.advPa && a.pa_advanced) {
       const pa = a.pa_advanced;
       const t0 = candles[0]?.time ?? (lastTime - 3600 * 6);
-      for (const z of (pa.zones || [])) {
-        boxes.push({
-          from: Math.max(z.from, t0),
-          to: lastTime,
-          top: z.top,
-          bottom: z.bottom,
-          fill: z.fill || "rgba(236,72,153,0.18)",
-          stroke: z.stroke || "#ec4899",
-          label: z.label,
-          labelColor: z.stroke || "#ec4899",
-        });
-      }
-      if (pa.gpx) {
-        const g = pa.gpx;
-        boxes.push({
-          from: t0,
-          to: lastTime,
-          top: g.corridor_high,
-          bottom: g.corridor_low,
-          fill: "rgba(147,51,234,0.04)",
-          stroke: "rgba(147,51,234,0.45)",
-          dash: true,
-          label: `GPX ${g.htf} Corridor [${g.corridor_low.toFixed(0)}–${g.corridor_high.toFixed(0)}] · ${g.zone}`,
-          labelColor: "#c084fc",
-        });
-        segs.push({
-          from: t0,
-          price: g.corridor_high,
-          color: "rgba(244,63,94,0.7)",
-          dash: true,
-          label: `GPX Ceiling (Supply) ${g.corridor_high.toFixed(0)}`,
-        });
-        segs.push({
-          from: t0,
-          price: g.corridor_mid,
-          color: "rgba(147,51,234,0.75)",
-          dash: true,
-          label: `GPX EQ ${g.corridor_mid.toFixed(0)}`,
-        });
-        segs.push({
-          from: t0,
-          price: g.corridor_low,
-          color: "rgba(16,185,129,0.7)",
-          dash: true,
-          label: `GPX Floor (Demand) ${g.corridor_low.toFixed(0)}`,
-        });
-      }
-      // ROTE targets
-      for (const r of (pa.rote || []).slice(-2)) {
-        segs.push({
-          from: Math.max(r.ts, t0),
-          price: r.target_price,
-          color: r.dir === "bull" ? "#10b981" : "#ef4444",
-          dash: true,
-          label: `ROTE Target (${r.target_type}) ${r.target_price.toFixed(0)}`,
-        });
+
+      if (advPaSniperMode) {
+        if (pa.sniper) {
+          const sniper = pa.sniper;
+          // Zero Clutter in 🎯 Sniper Mode:
+          // 1. Render ONLY sniper.best_supply (1 clean rose/gold box above price)
+          if (sniper.best_supply) {
+            const s = sniper.best_supply;
+            boxes.push({
+              from: Math.max(s.ts || t0, t0),
+              to: lastTime,
+              top: s.top,
+              bottom: s.bot,
+              fill: "rgba(244, 63, 94, 0.22)",
+              stroke: "#f43f5e",
+              label: s.label || `🎯 ${s.grade || "A+ SNIPER"} SUPPLY [${s.bot.toFixed(0)}–${s.top.toFixed(0)}] · ${s.score.toFixed(1)}/10`,
+              labelColor: "#f43f5e",
+            });
+          }
+          // 2. Render ONLY sniper.best_demand (1 clean emerald/teal box below price)
+          if (sniper.best_demand) {
+            const d = sniper.best_demand;
+            boxes.push({
+              from: Math.max(d.ts || t0, t0),
+              to: lastTime,
+              top: d.top,
+              bottom: d.bot,
+              fill: "rgba(16, 185, 129, 0.22)",
+              stroke: "#10b981",
+              label: d.label || `🎯 ${d.grade || "A+ SNIPER"} DEMAND [${d.bot.toFixed(0)}–${d.top.toFixed(0)}] · ${d.score.toFixed(1)}/10`,
+              labelColor: "#10b981",
+            });
+          }
+          // 3. TradingView-Style Position Risk-Reward Box (sniper.trade_plan)
+          if (sniper.trade_plan) {
+            const tp = sniper.trade_plan;
+            const tBoxStart = candles[Math.max(0, candles.length - 18)]?.time ?? t0;
+
+            // Stop-loss zone over right ~25% of chart
+            const slTop = Math.max(tp.entry, tp.sl);
+            const slBot = Math.min(tp.entry, tp.sl);
+            boxes.push({
+              from: tBoxStart,
+              to: lastTime,
+              top: slTop,
+              bottom: slBot,
+              fill: "rgba(239, 68, 68, 0.14)",
+              stroke: "#ef4444",
+              dash: true,
+              label: `SL ${tp.sl.toFixed(1)} (Risk: ${Math.abs(tp.entry - tp.sl).toFixed(1)} pts)`,
+              labelColor: "#ef4444",
+            });
+
+            // Target Zone over right ~25% of chart
+            const tpTop = Math.max(tp.entry, tp.tp1);
+            const tpBot = Math.min(tp.entry, tp.tp1);
+            boxes.push({
+              from: tBoxStart,
+              to: lastTime,
+              top: tpTop,
+              bottom: tpBot,
+              fill: "rgba(16, 185, 129, 0.14)",
+              stroke: "#10b981",
+              dash: true,
+              label: `TP1 ${tp.tp1.toFixed(1)} (${tp.rr ? tp.rr.toFixed(1) + "R" : ""}) · ${tp.strike || ""}`,
+              labelColor: "#10b981",
+            });
+
+            // Crisp gold Entry Line (#e8c35a)
+            segs.push({
+              from: tBoxStart,
+              price: tp.entry,
+              color: "#e8c35a",
+              dash: false,
+              label: `ENTRY ${tp.entry.toFixed(1)} (${tp.side || ""} ${tp.strike || ""})`,
+            });
+
+            // Dashed cyan 1R Breakeven Line (be_1r, #38bdf8)
+            if (tp.be_1r != null) {
+              segs.push({
+                from: tBoxStart,
+                price: tp.be_1r,
+                color: "#38bdf8",
+                dash: true,
+                label: `1R Breakeven (Move SL to 0) ${tp.be_1r.toFixed(1)}`,
+              });
+            }
+
+            // Optional TP2 Runner line
+            if (tp.tp2 != null) {
+              segs.push({
+                from: tBoxStart,
+                price: tp.tp2,
+                color: "rgba(16, 185, 129, 0.75)",
+                dash: true,
+                label: `TP2 ${tp.tp2.toFixed(1)} Runner`,
+              });
+            }
+          }
+          // Keep subtle GPX Ceiling / EQ / Floor dashed reference lines
+          if (pa.gpx) {
+            const g = pa.gpx;
+            segs.push({
+              from: t0,
+              price: g.corridor_high,
+              color: "rgba(244,63,94,0.6)",
+              dash: true,
+              label: `GPX Ceiling (Supply) ${g.corridor_high.toFixed(0)}`,
+            });
+            segs.push({
+              from: t0,
+              price: g.corridor_mid,
+              color: "rgba(147,51,234,0.65)",
+              dash: true,
+              label: `GPX EQ ${g.corridor_mid.toFixed(0)}`,
+            });
+            segs.push({
+              from: t0,
+              price: g.corridor_low,
+              color: "rgba(16,185,129,0.6)",
+              dash: true,
+              label: `GPX Floor (Demand) ${g.corridor_low.toFixed(0)}`,
+            });
+          }
+        }
+      } else {
+        // Raw All-10 Diagnostic Mode
+        for (const z of (pa.zones || [])) {
+          boxes.push({
+            from: Math.max(z.from, t0),
+            to: lastTime,
+            top: z.top,
+            bottom: z.bottom,
+            fill: z.fill || "rgba(236,72,153,0.18)",
+            stroke: z.stroke || "#ec4899",
+            label: z.label,
+            labelColor: z.stroke || "#ec4899",
+          });
+        }
+        if (pa.gpx) {
+          const g = pa.gpx;
+          boxes.push({
+            from: t0,
+            to: lastTime,
+            top: g.corridor_high,
+            bottom: g.corridor_low,
+            fill: "rgba(147,51,234,0.04)",
+            stroke: "rgba(147,51,234,0.45)",
+            dash: true,
+            label: `GPX ${g.htf} Corridor [${g.corridor_low.toFixed(0)}–${g.corridor_high.toFixed(0)}] · ${g.zone}`,
+            labelColor: "#c084fc",
+          });
+          segs.push({
+            from: t0,
+            price: g.corridor_high,
+            color: "rgba(244,63,94,0.7)",
+            dash: true,
+            label: `GPX Ceiling (Supply) ${g.corridor_high.toFixed(0)}`,
+          });
+          segs.push({
+            from: t0,
+            price: g.corridor_mid,
+            color: "rgba(147,51,234,0.75)",
+            dash: true,
+            label: `GPX EQ ${g.corridor_mid.toFixed(0)}`,
+          });
+          segs.push({
+            from: t0,
+            price: g.corridor_low,
+            color: "rgba(16,185,129,0.7)",
+            dash: true,
+            label: `GPX Floor (Demand) ${g.corridor_low.toFixed(0)}`,
+          });
+        }
+        // ROTE targets
+        for (const r of (pa.rote || []).slice(-2)) {
+          segs.push({
+            from: Math.max(r.ts, t0),
+            price: r.target_price,
+            color: r.dir === "bull" ? "#10b981" : "#ef4444",
+            dash: true,
+            label: `ROTE Target (${r.target_type}) ${r.target_price.toFixed(0)}`,
+          });
+        }
       }
     }
     // delta layer: Institutional Absorption defense levels (passive limit orders absorbing aggressive volume)
@@ -601,22 +745,63 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           color: snr ? "#fbbf24" : bear ? "#f472b6" : "#22d3ee" });
       }
     }
-    if (a && layers.advPa && a.pa_advanced?.markers) {
-      for (const m of a.pa_advanced.markers) {
-        const bull = m.dir === "bull";
-        push({
-          time: m.time,
-          side: (m as any).side || side(bull),
-          dir: m.dir,
-          kind: m.kind,
-          layer: "AdvPA",
-          full: (m as any).full || m.text,
-          short: shortText(m.kind, m.text),
-          pri: 3,
-          size: m.kind.startsWith("MSB") ? 1.3 : 1.0,
-          shape: (m as any).shape || (bull ? "arrowUp" : "arrowDown"),
-          color: (m as any).color || (bull ? "#10b981" : "#f43f5e"),
-        });
+    if (a && layers.advPa && a.pa_advanced) {
+      const pa = a.pa_advanced;
+      if (advPaSniperMode) {
+        if (pa.sniper) {
+          // Push at most 2 markers: sniper.last_strong_msb and sniper.last_sfp. Never push Weak MSB markers!
+          if (pa.sniper.last_strong_msb) {
+            const m = pa.sniper.last_strong_msb;
+            const bull = m.dir === "bull";
+            push({
+              time: m.time,
+              side: (m as any).side || side(bull),
+              dir: m.dir,
+              kind: m.kind || "MSB_STRONG",
+              layer: "AdvPA",
+              full: (m as any).full || m.text,
+              short: shortText(m.kind || "MSB_STRONG", m.text),
+              pri: 3,
+              size: 1.3,
+              shape: (m as any).shape || (bull ? "arrowUp" : "arrowDown"),
+              color: (m as any).color || (bull ? "#10b981" : "#f43f5e"),
+            });
+          }
+          if (pa.sniper.last_sfp) {
+            const s = pa.sniper.last_sfp;
+            const bull = s.dir === "bull";
+            push({
+              time: s.time,
+              side: (s as any).side || side(bull),
+              dir: s.dir,
+              kind: s.kind || "PURE_SFP",
+              layer: "AdvPA",
+              full: (s as any).full || s.text,
+              short: shortText(s.kind || "PURE_SFP", s.text),
+              pri: 3,
+              size: 1.0,
+              shape: (s as any).shape || "square",
+              color: (s as any).color || "#06b6d4",
+            });
+          }
+        }
+      } else if (pa.markers) {
+        for (const m of pa.markers) {
+          const bull = m.dir === "bull";
+          push({
+            time: m.time,
+            side: (m as any).side || side(bull),
+            dir: m.dir,
+            kind: m.kind,
+            layer: "AdvPA",
+            full: (m as any).full || m.text,
+            short: shortText(m.kind, m.text),
+            pri: 3,
+            size: m.kind.startsWith("MSB") ? 1.3 : 1.0,
+            shape: (m as any).shape || (bull ? "arrowUp" : "arrowDown"),
+            color: (m as any).color || (bull ? "#10b981" : "#f43f5e"),
+          });
+        }
       }
     }
     if (a && layers.crt && a.crt) {
@@ -763,7 +948,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     } catch { /* older lib */ }
     spine.current?.setData(a && layers.qml ? candles.filter((c) => c.closed !== false).map((c) => ({ time: c.time as UTCTimestamp, value: c.close })) : []);
     zz.current.setData(a && layers.swings ? dedupe(a.zigzag).map((p) => ({ time: p.time as UTCTimestamp, value: p.price })) : []);
-  }, [analysis, layers, candles, smtMarks, ocActs]);
+  }, [analysis, layers, candles, smtMarks, ocActs, advPaSniperMode]);
 
   // ── DOM book events (for the hover confirm/warn line), every 6 s ──
   useEffect(() => {
@@ -1241,6 +1426,19 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
               <span className="mr-1 inline-block h-2 w-2 rounded-sm align-middle" style={{ background: color }} />{label}
             </span>
           ))}
+          {layers.advPa && (
+            <button
+              onClick={toggleAdvPaSniperMode}
+              title="Toggle Sniper Mode (Clean POIs + TV Risk-Reward box) vs All 10 Raw Diagnostic Mode"
+              className={`pointer-events-auto rounded px-2 py-0.5 text-[10px] font-bold border transition-colors ${
+                advPaSniperMode
+                  ? "bg-gold-500/20 text-gold-300 border-gold-500/60 hover:bg-gold-500/30"
+                  : "bg-purple-500/20 text-purple-300 border-purple-500/60 hover:bg-purple-500/30"
+              }`}
+            >
+              {advPaSniperMode ? "🎯 Sniper Mode (Clean)" : "🔬 Raw 10-Core"}
+            </button>
+          )}
         </div>
         {layers.smt && smtForming.map((f, idx) => (
           <span key={`smtf-${idx}`} title={f.text}
@@ -1350,7 +1548,60 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       <div className="pointer-events-none absolute bottom-9 left-2 z-10 flex">
         <MtfPanel />
       </div>
-      {ofNow && <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2">
+
+      {/* Top Sniper Decision HUD */}
+      {layers.advPa && analysis?.pa_advanced?.sniper && (() => {
+        const sniper = analysis.pa_advanced.sniper;
+        const isRejPe = sniper.action.includes("BUY PE") || sniper.state.includes("REJECTION") || sniper.state.includes("SHORT");
+        const isRejCe = sniper.action.includes("BUY CE") || (sniper.state.includes("REJECTION") && sniper.action.includes("CE"));
+        const isBreak = sniper.state.includes("BREAKOUT") || sniper.state.includes("BREAKDOWN");
+        const isTrap = sniper.state.includes("TRAP");
+
+        const badgeClass = isTrap
+          ? "bg-rose-950/90 text-rose-300 border-rose-600/70"
+          : isBreak
+          ? "bg-cyan-950/90 text-cyan-300 border-cyan-500/70"
+          : isRejCe
+          ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/70"
+          : isRejPe
+          ? "bg-rose-950/90 text-rose-300 border-rose-500/70"
+          : "bg-amber-950/90 text-amber-300 border-amber-500/70";
+
+        const badgeIcon = isTrap ? "🚫" : isBreak ? "⚡" : isRejCe || isRejPe ? "🎯" : "⏳";
+
+        return (
+          <div className="pointer-events-auto absolute left-1/2 top-2 z-30 -translate-x-1/2 max-w-[94%]">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gold-500/40 bg-[#060b16]/95 px-3 py-1.5 shadow-2xl backdrop-blur text-[12px]">
+              <span className={`flex items-center gap-1 rounded px-2 py-0.5 font-extrabold text-[11px] border ${badgeClass}`}>
+                <span>{badgeIcon}</span>
+                <span>{sniper.state}</span>
+              </span>
+
+              <span className="rounded bg-slate-900/90 px-2 py-0.5 text-[11px] text-slate-300 border border-slate-700/60 font-medium">
+                🛡️ {sniper.behavior}
+              </span>
+
+              <span className="text-slate-100 font-semibold text-[11.5px] truncate max-w-[620px]" title={sniper.headline}>
+                {sniper.headline}
+              </span>
+
+              <button
+                onClick={toggleAdvPaSniperMode}
+                title="Toggle between clean Confluence Sniper Mode and full 10-core diagnostic view"
+                className={`ml-auto flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-bold border transition-colors ${
+                  advPaSniperMode
+                    ? "bg-gold-500/20 text-gold-300 border-gold-500/60 hover:bg-gold-500/30"
+                    : "bg-purple-500/20 text-purple-300 border-purple-500/60 hover:bg-purple-500/30"
+                }`}
+              >
+                <span>{advPaSniperMode ? "🎯 Sniper View" : "🔬 Raw 10-Core"}</span>
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {ofNow && <div className={`pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 ${layers.advPa && analysis?.pa_advanced?.sniper ? "top-[48px]" : "top-2"}`}>
         <div className={`flex max-w-[560px] items-center gap-2 rounded-lg px-3 py-1.5 shadow-xl ring-2 ${ofNow.verdict === "BUY" ? "bg-bull-900/90 ring-bull-400" : ofNow.verdict === "SELL" ? "bg-bear-900/90 ring-bear-400" : "bg-ink-850/90 ring-slate-500"}`}>
           <span className={`rounded px-2 py-0.5 text-[16px] font-extrabold ${VC[ofNow.verdict]}`}>{ofNow.verdict}</span>
           <span className="text-[12.5px] leading-tight text-slate-100"><b className="text-cyan-200">ORDER FLOW · last closed {hm(lastClosed!.time)}</b><br />{ofNow.head}
@@ -1361,7 +1612,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           </span>
         </div>
       </div>}
-      {layers.gamma && <div className="pointer-events-none absolute left-1/2 top-[64px] z-10 -translate-x-1/2">
+      {layers.gamma && <div className={`pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 ${layers.advPa && analysis?.pa_advanced?.sniper ? (ofNow ? "top-[96px]" : "top-[54px]") : "top-[64px]"}`}>
         <div className={`max-w-[600px] rounded-lg px-3 py-1 text-[12.5px] shadow-xl ring-2 ${gLast?.ok ? "bg-violet-900/90 ring-violet-400 text-white" : "bg-ink-850/90 ring-slate-600 text-slate-200"}`}>
           <b className="text-violet-300">γ MAP</b>{gexMap ? <> · <b className={gexMap.regime === "positive" ? "text-bull-400" : "text-amber-300"}>{gexMap.regime === "positive" ? "+γ PIN day" : "−γ TREND day"}</b>
             {gexMap.flip ? ` · flip ${gexMap.flip}` : ""}</> : " · loading option chain…"}
@@ -1592,7 +1843,7 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["fp", "Footprint (est.): Δ under candle · gold = POC · A/D/C/M/S/I", "#facc15"],
   ["dol", "D.O.L: ERL taken → FVG target · FVG tapped → old high/low", "#a78bfa"], ["smt", "SMT ▲▼ · pink line = BANKNIFTY (own scale)", "#f472b6"],
   ["heat", "Heatmap: traded volume per price (blue cold → red hot)", "#f97316"], ["ocAct", "PE−CE action: ▲ OC CE / ▼ OC PE · bottom lane", "#4ade80"],
-  ["bias", "⚖ Bias 19: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
+  ["bias", "⚖ Bias 20: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
   ["walls", "🧱 OI walls: 🟥 CE = resistance (cap) · 🟩 PE = support (floor) · bar thicker = hardening, thinner/dashed = cracking · left bubbles = each strike's % OI change (+ writers adding / − covering)", "#ef4444"], ["bubbles", "🫧 Big trades ≥2× vol · yellow ring = absorbed", "#a3e635"],
   ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD pane (est.)", "#4ade80"], ["gamma", "γ map: red call res · green put sup · yellow flip · ✓✓✓ = EMA stack + flag at level + volume", "#c084fc"], ["nodes", "🟨 Stacked nodes D·W·M (gold = A+) · ● ENTRY = ±2σ into zone", "#facc15"],
   ["tsoup", "🐢 Turtle soup: false break of PDH/PDL/OR/pool that closes back inside → stop-run reversal (▲ buy / ▼ sell)", "#2dd4bf"],
