@@ -98,6 +98,14 @@ export interface SmartRow extends Row {
   unifiedRead: string;
   isActionable: boolean;
   isHighConviction: boolean;
+
+  // Revamped Writers Graph Synergies
+  callAngleDeg: number;
+  putAngleDeg: number;
+  scissorSpread: number;
+  isScissor: boolean;
+  angleBadge: string | null;
+  isSynergy: boolean;
 }
 
 export interface PivotChip {
@@ -118,6 +126,13 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
   const chron = [...rawRows].reverse();
   let sessionHigh = -Infinity;
   let sessionLow = Infinity;
+
+  // Compute graph coordinate scale C_cell to match visual slope angles
+  const allCr = chron.flatMap((x) => [x.ce_day != null ? x.ce_day / 1e7 : null, x.pe_day != null ? x.pe_day / 1e7 : null]).filter((x): x is number => x != null);
+  const maxCr = allCr.length ? Math.max(...allCr) : 5.0;
+  const minCr = allCr.length ? Math.min(...allCr) : -5.0;
+  const ySpan = Math.max(2.0, maxCr - minCr);
+  const cellCr = chron.length > 30 ? 1.0 : (ySpan > 15 ? 2.5 : (ySpan > 6 ? 1.0 : 0.5));
 
   const resultChron: SmartRow[] = [];
 
@@ -296,17 +311,66 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       }
     }
 
+    // Revamped Writers Graph Slope Angles, Scissor Divergence & Synergy
+    const p5 = i >= 5 ? chron[i - 5] : (i > 0 ? chron[0] : null);
+    const factor = (i >= 5 || i === 0) ? 1 : (5 / i);
+    const dCall5 = p5 ? (((r.ce_day ?? 0) - (p5.ce_day ?? 0)) / 1e7) * factor : 0;
+    const dPut5 = p5 ? (((r.pe_day ?? 0) - (p5.pe_day ?? 0)) / 1e7) * factor : 0;
+
+    const callAngleDeg = Math.atan(dCall5 / cellCr) * (180 / Math.PI);
+    const putAngleDeg = Math.atan(dPut5 / cellCr) * (180 / Math.PI);
+    const scissorSpread = Math.abs(callAngleDeg - putAngleDeg);
+    const isScissor = scissorSpread >= 45 && ((callAngleDeg > 15 && putAngleDeg < -15) || (callAngleDeg < -15 && putAngleDeg > 15));
+
+    const isCallSteep = Math.abs(callAngleDeg) >= 30;
+    const isPutSteep = Math.abs(putAngleDeg) >= 30;
+    let angleBadge: string | null = null;
+    if (isCallSteep) {
+      angleBadge = `📐 Call ${callAngleDeg >= 0 ? "+" : ""}${callAngleDeg.toFixed(0)}° ${callAngleDeg >= 0 ? "Steep" : "Drop"}`;
+    } else if (isPutSteep) {
+      angleBadge = `📐 Put ${putAngleDeg >= 0 ? "+" : ""}${putAngleDeg.toFixed(0)}° ${putAngleDeg >= 0 ? "Steep" : "Cliff"}`;
+    }
+
+    // Conviction Calculation
     let convictionBadge = "· Noise";
-    let convictionPct = 30;
+    let convictionPct = 35;
     if (r.pro?.[2] === "●●●") {
       convictionBadge = "●●● A+";
-      convictionPct = 94;
+      convictionPct = 85;
     } else if (r.pro?.[2] === "●●") {
       convictionBadge = "●● A";
-      convictionPct = 78;
+      convictionPct = 70;
     } else if (r.pro?.[2] === "●") {
       convictionBadge = "● B";
       convictionPct = 55;
+    }
+
+    // Boost conviction score by +15 pts if steep writer surge
+    if (isCallSteep || isPutSteep) {
+      convictionPct = Math.min(95, convictionPct + 15);
+    }
+
+    // Enhanced Conviction & Action Synergy
+    let isSynergy = false;
+    const isBearishRegimeOnGraph = callAngleDeg >= 25 || isScissor || putAngleDeg <= -20;
+    const isBullishRegimeOnGraph = putAngleDeg >= 25 || (isScissor && callAngleDeg < -15) || callAngleDeg <= -20;
+
+    if (actionTone === "bear" && isBearishRegimeOnGraph) {
+      isSynergy = true;
+      convictionPct = 95;
+      convictionBadge = "●●● A+ (95%)";
+    } else if (actionTone === "bull" && isBullishRegimeOnGraph) {
+      isSynergy = true;
+      convictionPct = 95;
+      convictionBadge = "●●● A+ (95%)";
+    } else if (convictionPct >= 90) {
+      convictionBadge = `●●● A+ (${convictionPct}%)`;
+    } else if (convictionPct >= 75) {
+      convictionBadge = `●● A (${convictionPct}%)`;
+    } else if (convictionPct >= 50) {
+      convictionBadge = `● B (${convictionPct}%)`;
+    } else {
+      convictionBadge = `· Noise (${convictionPct}%)`;
     }
 
     let unifiedRead = r.meaning || r.read[0];
@@ -316,8 +380,12 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       unifiedRead = `${r.lv[0]} · ${r.read[0]}`;
     }
 
-    const isActionable = stage === 1 || stage === 2 || stage === 3 || stage === 5 || isWallShiftBear || isWallShiftBull;
-    const isHighConviction = convictionPct >= 65 || Math.abs(pe_ce_delta_l) >= 15;
+    if (isScissor) {
+      unifiedRead = `✂️ Scissor Divergence (Spread ${scissorSpread.toFixed(0)}°) · ${unifiedRead}`;
+    }
+
+    const isActionable = stage === 1 || stage === 2 || stage === 3 || stage === 5 || isWallShiftBear || isWallShiftBull || isSynergy;
+    const isHighConviction = convictionPct >= 65 || Math.abs(pe_ce_delta_l) >= 15 || isSynergy;
 
     resultChron.push({
       ...r,
@@ -354,6 +422,12 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       unifiedRead,
       isActionable,
       isHighConviction,
+      callAngleDeg,
+      putAngleDeg,
+      scissorSpread,
+      isScissor,
+      angleBadge,
+      isSynergy,
     });
   }
 
@@ -398,9 +472,71 @@ export function PeceTable({ tick }: { tick: number }) {
   const [showAfterClose, setShowAfterClose] = useState<boolean>(false);
   const [highlightedTs, setHighlightedTs] = useState<string | null>(null);
 
+  // Real-Time Audio & Synergy Chime Trigger
+  const [soundOn, setSoundOn] = useState<boolean>(() => {
+    try { return localStorage.getItem("oi_beep_alerts") !== "0"; } catch { return true; }
+  });
+
+  const toggleSound = () => {
+    setSoundOn((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("oi_beep_alerts", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  };
+
+  const handleTestChime = () => {
+    playOiBeep("angleBear");
+  };
+
+  // Sync sound setting across tabs/components
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "oi_beep_alerts" && e.newValue != null) {
+        setSoundOn(e.newValue !== "0");
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
   const rawRows = d?.rows ?? [];
   const smartRows = computeSmartRows(rawRows, tf);
   const pivots = findTop5Pivots(smartRows);
+
+  // Audio acoustic alert on new candle arrival for A+ setups
+  const lastEvaluatedTableTsRef = useRef<string | null>(null);
+  const initialLoadRef = useRef(true);
+
+  useEffect(() => {
+    if (smartRows.length === 0) return;
+    const latestRow = smartRows[0]; // smartRows is newest first
+    if (!latestRow) return;
+
+    if (initialLoadRef.current) {
+      initialLoadRef.current = false;
+      lastEvaluatedTableTsRef.current = latestRow.ts;
+      return;
+    }
+
+    if (latestRow.ts !== lastEvaluatedTableTsRef.current) {
+      lastEvaluatedTableTsRef.current = latestRow.ts;
+      if (soundOn) {
+        // 💰 Short-Covering Reversal / Book Profits
+        if (latestRow.stage === 5 || latestRow.isShortCoveringReversal) {
+          playOiBeep("scissor");
+        }
+        // 🎯 Stage 2 Pullback Entry or 🔥 Floor/Ceiling Shift or ⚡ A+ Synergy
+        else if (latestRow.stage === 2 || latestRow.isWallShiftBear || latestRow.isWallShiftBull || latestRow.isSynergy) {
+          if (latestRow.actionTone === "bear" || latestRow.isWallShiftBear) {
+            playOiBeep("angleBear");
+          } else if (latestRow.actionTone === "bull" || latestRow.isWallShiftBull) {
+            playOiBeep("angleBull");
+          }
+        }
+      }
+    }
+  }, [smartRows, soundOn]);
 
   // Card 1 active trade plan row (locks onto last market-hours row if viewing after 15:30)
   const isEodSnapshot = smartRows.length > 0 && smartRows[0].ts >= "15:30";
@@ -490,6 +626,11 @@ export function PeceTable({ tick }: { tick: number }) {
                 }`}>
                   STAGE {activePlanRow.stage} · {activePlanRow.stageBadge}
                 </span>
+                {activePlanRow.isSynergy && (
+                  <span className="px-1.5 py-0.5 rounded text-[9.5px] font-extrabold bg-gold-500/20 text-gold-300 border border-gold-500/60 flex items-center gap-0.5">
+                    ⚡ A+ Synergy
+                  </span>
+                )}
                 <span className="text-gold-300 text-[13px] font-mono font-black tracking-wide">
                   {activePlanRow.actionTone === "bear"
                     ? `BUY ${activePlanRow.atmStrike} PE`
@@ -580,6 +721,10 @@ export function PeceTable({ tick }: { tick: number }) {
                   {activePlanRow.swingLow30m.toFixed(0)} – {activePlanRow.swingHigh30m.toFixed(0)}{" "}
                   <span className="text-slate-500">({(activePlanRow.swingHigh30m - activePlanRow.swingLow30m).toFixed(0)} pts)</span>
                 </span>
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mb-1">
+                <span>Call Angle: <b className={activePlanRow.callAngleDeg > 0 ? "text-rose-400" : "text-emerald-400"}>{activePlanRow.callAngleDeg >= 0 ? "+" : ""}{activePlanRow.callAngleDeg.toFixed(0)}°</b></span>
+                <span>Put Angle: <b className={activePlanRow.putAngleDeg > 0 ? "text-emerald-400" : "text-rose-400"}>{activePlanRow.putAngleDeg >= 0 ? "+" : ""}{activePlanRow.putAngleDeg.toFixed(0)}°</b></span>
               </div>
               <div className="mt-1">
                 {activePlanRow.isPullbackToSupply ? (
@@ -691,7 +836,25 @@ export function PeceTable({ tick }: { tick: number }) {
         </div>
 
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-400 select-none hover:text-slate-200">
+          <button
+            onClick={toggleSound}
+            className={`px-2 py-0.5 rounded text-[10.5px] font-bold border transition-colors ${
+              soundOn
+                ? "bg-emerald-950/70 text-emerald-300 border-emerald-600/70 hover:bg-emerald-900/80"
+                : "bg-ink-850 text-slate-400 border-ink-700 hover:text-slate-200"
+            }`}
+            title="Toggle Web Audio acoustic chimes on Stage 2 Pullbacks, Wall Shifts & Reversals"
+          >
+            {soundOn ? "🔊 Audio: ON" : "🔇 Audio: OFF"}
+          </button>
+          <button
+            onClick={handleTestChime}
+            className="px-2 py-0.5 rounded text-[10.5px] font-bold border bg-ink-850 text-gold-300 border-ink-700 hover:bg-ink-800"
+            title="Test acoustic A+ setup harmonic chime"
+          >
+            🔔 Test Chime
+          </button>
+          <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-400 select-none hover:text-slate-200 ml-1">
             <input
               type="checkbox"
               checked={showAfterClose}
@@ -741,6 +904,16 @@ export function PeceTable({ tick }: { tick: number }) {
                     <div className="flex flex-col gap-0.5">
                       <span className="font-mono text-slate-100 font-bold">{r.ts}</span>
                       <div className="flex flex-wrap gap-0.5">
+                        {r.isSynergy && (
+                          <span className="text-[9px] px-1 py-0.2 rounded font-extrabold bg-gold-950/80 text-gold-300 border border-gold-600/60">
+                            ⚡ Synergy
+                          </span>
+                        )}
+                        {r.isScissor && (
+                          <span className="text-[9px] px-1 py-0.2 rounded font-extrabold bg-rose-950/80 text-rose-300 border border-rose-600/60">
+                            ✂️ Scissor
+                          </span>
+                        )}
                         {r.isPullbackToSupply && (
                           <span className="text-[9px] px-1 py-0.2 rounded font-extrabold bg-amber-950/80 text-amber-300 border border-amber-600/60">
                             🎯 Pullback
@@ -786,27 +959,38 @@ export function PeceTable({ tick }: { tick: number }) {
                     </div>
                   </td>
 
-                  {/* Column 3: Bar Flow (Put Δ | Call Δ) with Mini Inline Bars */}
+                  {/* Column 3: Bar Flow (Put Δ | Call Δ) with Mini Inline Bars & 5-Bar Graph Slope Angles */}
                   <td className={td}>
-                    <div className="flex items-center gap-2 font-mono">
-                      <div className="flex-1 flex flex-col items-end">
-                        <span className={`font-bold text-[11px] ${c(r.pe_chg)}`}>{inr(r.pe_chg, true)}</span>
-                        <div className="h-1 bg-ink-800 w-full rounded overflow-hidden flex justify-end">
-                          <div
-                            style={{ width: `${Math.min(100, (Math.abs(r.pe_chg ?? 0) / 2e6) * 100)}%` }}
-                            className="bg-emerald-500 h-full rounded"
-                          />
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-2 font-mono">
+                        <div className="flex-1 flex flex-col items-end">
+                          <span className={`font-bold text-[11px] ${c(r.pe_chg)}`}>{inr(r.pe_chg, true)}</span>
+                          <div className="h-1 bg-ink-800 w-full rounded overflow-hidden flex justify-end">
+                            <div
+                              style={{ width: `${Math.min(100, (Math.abs(r.pe_chg ?? 0) / 2e6) * 100)}%` }}
+                              className="bg-emerald-500 h-full rounded"
+                            />
+                          </div>
+                        </div>
+                        <span className="text-slate-600 font-bold">|</span>
+                        <div className="flex-1 flex flex-col items-start">
+                          <span className={`font-bold text-[11px] ${c(r.ce_chg)}`}>{inr(r.ce_chg, true)}</span>
+                          <div className="h-1 bg-ink-800 w-full rounded overflow-hidden flex justify-start">
+                            <div
+                              style={{ width: `${Math.min(100, (Math.abs(r.ce_chg ?? 0) / 2e6) * 100)}%` }}
+                              className="bg-rose-500 h-full rounded"
+                            />
+                          </div>
                         </div>
                       </div>
-                      <span className="text-slate-600 font-bold">|</span>
-                      <div className="flex-1 flex flex-col items-start">
-                        <span className={`font-bold text-[11px] ${c(r.ce_chg)}`}>{inr(r.ce_chg, true)}</span>
-                        <div className="h-1 bg-ink-800 w-full rounded overflow-hidden flex justify-start">
-                          <div
-                            style={{ width: `${Math.min(100, (Math.abs(r.ce_chg ?? 0) / 2e6) * 100)}%` }}
-                            className="bg-rose-500 h-full rounded"
-                          />
-                        </div>
+                      <div className="flex items-center justify-between text-[9.5px] text-slate-400 font-mono">
+                        <span className={r.putAngleDeg > 0 ? "text-emerald-400 font-semibold" : r.putAngleDeg < 0 ? "text-rose-400 font-semibold" : "text-slate-500"}>
+                          Put {r.putAngleDeg >= 0 ? "+" : ""}{r.putAngleDeg.toFixed(0)}°
+                        </span>
+                        <span className="text-slate-600">·</span>
+                        <span className={r.callAngleDeg > 0 ? "text-rose-400 font-semibold" : r.callAngleDeg < 0 ? "text-emerald-400 font-semibold" : "text-slate-500"}>
+                          Call {r.callAngleDeg >= 0 ? "+" : ""}{r.callAngleDeg.toFixed(0)}°
+                        </span>
                       </div>
                     </div>
                   </td>
@@ -858,6 +1042,16 @@ export function PeceTable({ tick }: { tick: number }) {
                         }`}>
                           {r.convictionBadge}
                         </span>
+                        {r.angleBadge && (
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-extrabold bg-blue-950/80 text-blue-300 border border-blue-600/60">
+                            {r.angleBadge}
+                          </span>
+                        )}
+                        {r.isScissor && (
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-extrabold bg-rose-950/80 text-rose-300 border border-rose-600/60 animate-pulse">
+                            ✂️ Scissor ({r.scissorSpread.toFixed(0)}°)
+                          </span>
+                        )}
                         {r.wallShiftText && (
                           <span className="px-1.5 py-0.2 rounded text-[10px] font-extrabold bg-purple-950/80 text-purple-300 border border-purple-600/60">
                             {r.wallShiftText}
@@ -874,7 +1068,9 @@ export function PeceTable({ tick }: { tick: number }) {
                   <td className="px-2.5 py-1.5">
                     <div className="flex flex-col gap-0.5">
                       <div className={`px-2 py-1 rounded text-[11px] font-bold border ${
-                        r.stage === 2
+                        r.isSynergy
+                          ? "bg-gold-950/90 text-gold-200 border-gold-500 font-extrabold shadow ring-1 ring-gold-400"
+                          : r.stage === 2
                           ? "bg-rose-950/90 text-rose-200 border-rose-500 font-extrabold shadow"
                           : r.stage === 5
                           ? "bg-emerald-950/90 text-emerald-200 border-emerald-500 font-extrabold shadow"
