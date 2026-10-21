@@ -8,10 +8,11 @@ import type { Analysis, Candle, TF, WriterMetrics } from "../api";
 import { bucket } from "../api";
 import { computeBias, FACTORS, type BiasRow } from "./bias";
 import { useOcFeed, useSmt, type SmtForming } from "./ocfeed";
+import { computeSmartRows, playOiBeep, type Row, type SmartRow } from "./OcLab";
 import { api } from "../api";
 import { computeGex, confirm3, emas, GammaPrimitive, gammaHits, type GexMap } from "./gamma";
 import { findEntries, NodesPrimitive, nodesRead, type NodesView } from "./nodes";
-import { buildBubbles, buildWalls, OrderFlowPrimitive, readAt, type Wall, type OiLevel } from "./orderflow";
+import { buildBubbles, buildWalls, computeCvdDivergences, OrderFlowPrimitive, readAt, type Wall, type OiLevel, type CvdDivergence } from "./orderflow";
 import { computeDol } from "./dol";
 import { turtleSoup } from "./turtlesoup";
 import { powerOfThree } from "./powerofthree";
@@ -80,6 +81,9 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const [gexMap, setGexMap] = useState<GexMap | null>(null);
   const [nodesV, setNodesV] = useState<NodesView | null>(null);
   const cvdS = useRef<ISeriesApi<"Baseline"> | null>(null);
+  const [fpBars, setFpBars] = useState<FpBar[]>([]);
+  const [fpMsg, setFpMsg] = useState<string>("");
+  const cvdDivergences = useMemo(() => computeCvdDivergences(fpBars), [fpBars]);
   const [walls, setWalls] = useState<Wall[]>([]);
   const [wallExp, setWallExp] = useState<"cur" | "next" | "both">("cur");
   const [bookEv, setBookEv] = useState<{ ts: number; price: number; side: string; kind: string; qty: number; why: string }[]>([]);
@@ -100,23 +104,286 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const smtArg = tf === "5m" || tf === "15m" || tf === "1h" ? smtMarks : null;
   const biasMap = useRef<Map<number, BiasRow>>(new Map());
   const ocLane = useRef<ISeriesApi<"Histogram"> | null>(null);
-  // PE−CE table 🎯 Action → per candle: +1 CE, −1 PE, 0 wait (last 3-min row inside each candle)
+  const ocSlS = useRef<ISeriesApi<"Line"> | null>(null);
+
+  // Synchronized 6-Stage PE−CE Lifecycle Rows from the revamped OcLab engine
+  const smartRows = useMemo(() => {
+    if (!ocFeed?.pece?.length) return [] as SmartRow[];
+    return computeSmartRows(ocFeed.pece as Row[], "3m");
+  }, [ocFeed?.pece]);
+
+  // Synchronized PE−CE action mapped to chart candles
   const ocActs = useMemo(() => {
-    if (!ocFeed?.pece?.length || !ocFeed.day) return [] as { time: number; v: number; txt: string }[];
+    if (!smartRows.length || !ocFeed?.day) return [] as {
+      time: number;
+      v: number;
+      txt: string;
+      smartRow: SmartRow;
+      stage: number;
+      kind: "ENTRY" | "PULLBACK" | "ADD" | "HOLD" | "BOOK" | "NONE";
+    }[];
+
     const [y, m, d] = ocFeed.day.split("-").map(Number);
-    const m2 = new Map<number, { v: number; txt: string; t: number }>();
-    for (const r of ocFeed.pece) {
-      const [hh, mm] = r.ts.split(":").map(Number); const t = Date.UTC(y, m - 1, d, hh, mm) / 1000;
-      const txt = (r.act?.[0] ?? "").replace(/<[^>]+>/g, "");
-      const v = /no fresh|after close|warm/i.test(txt) ? 0 : /\bCE\b/.test(txt) ? 1 : /\bPE\b/.test(txt) ? -1 : 0;
-      const b = bucket(t, tf); const prev = m2.get(b);
-      if (!prev || prev.t < t) m2.set(b, { v, txt, t });
+    const m2 = new Map<number, {
+      v: number;
+      txt: string;
+      t: number;
+      smartRow: SmartRow;
+      stage: number;
+      kind: "ENTRY" | "PULLBACK" | "ADD" | "HOLD" | "BOOK" | "NONE";
+    }>();
+
+    for (const r of smartRows) {
+      const [hh, mm] = r.ts.split(":").map(Number);
+      const t = Date.UTC(y, m - 1, d, hh, mm) / 1000;
+      const b = bucket(t, tf);
+
+      let v = 0;
+      let kind: "ENTRY" | "PULLBACK" | "ADD" | "HOLD" | "BOOK" | "NONE" = "NONE";
+
+      if (r.stage === 2) {
+        kind = "PULLBACK";
+        v = r.actionTone === "bear" ? -1 : r.actionTone === "bull" ? 1 : 0;
+      } else if (r.stage === 1 && r.actionTone !== "warn") {
+        kind = "ENTRY";
+        v = r.actionTone === "bear" ? -1 : r.actionTone === "bull" ? 1 : 0;
+      } else if (r.stage === 3) {
+        kind = "ADD";
+        v = r.actionTone === "bear" ? -1 : r.actionTone === "bull" ? 1 : 0;
+      } else if (r.stage === 5 || r.isShortCoveringReversal) {
+        kind = "BOOK";
+        v = 1;
+      } else if (r.stage === 4) {
+        kind = "HOLD";
+        v = r.actionTone === "bear" ? -0.5 : 0.5;
+      }
+
+      const prev = m2.get(b);
+      if (!prev || prev.t < t) {
+        m2.set(b, {
+          v,
+          txt: r.actionText,
+          t,
+          smartRow: r,
+          stage: r.stage,
+          kind,
+        });
+      }
     }
-    return [...m2.entries()].sort((a2, b2) => a2[0] - b2[0]).map(([time, x]) => ({ time, v: x.v, txt: x.txt }));
-  }, [ocFeed, tf]);
+
+    return [...m2.entries()]
+      .sort((a2, b2) => a2[0] - b2[0])
+      .map(([time, x]) => ({
+        time,
+        v: x.v,
+        txt: x.txt,
+        smartRow: x.smartRow,
+        stage: x.stage,
+        kind: x.kind,
+      }));
+  }, [smartRows, ocFeed?.day, tf]);
+
+  // Real-time PE−CE A+ Alert Banner & Acoustic Synthesizer State
+  const [ocAlertBanner, setOcAlertBanner] = useState<{
+    text: string;
+    kind: "bull" | "bear";
+    ts: number;
+  } | null>(null);
+
+  const lastEvaluatedOcTsRef = useRef<string | null>(null);
+  const ocInitialLoadRef = useRef<boolean>(true);
+
+  // Live PE−CE Real-Time Audio Synthesizer & Visual Canvas Banner
+  useEffect(() => {
+    if (!smartRows.length) return;
+    const latestRow = smartRows[0]; // Newest first
+    if (!latestRow) return;
+
+    if (ocInitialLoadRef.current) {
+      ocInitialLoadRef.current = false;
+      lastEvaluatedOcTsRef.current = latestRow.ts;
+      return;
+    }
+
+    if (latestRow.ts !== lastEvaluatedOcTsRef.current) {
+      lastEvaluatedOcTsRef.current = latestRow.ts;
+
+      const isSoundOn = (() => {
+        try { return localStorage.getItem("oi_beep_alerts") !== "0"; } catch { return true; }
+      })();
+
+      // A+ Setup: Stage 2 Pullback Entry OR Floor/Ceiling Shift OR A+ Synergy
+      if (latestRow.stage === 2 || latestRow.isWallShiftBear || latestRow.isWallShiftBull || latestRow.isSynergy) {
+        const isBear = latestRow.actionTone === "bear" || latestRow.isWallShiftBear;
+        const bannerMsg = isBear
+          ? `🎯 A+ PULLBACK PE ENTRY TRIGGERED @ ${Math.round(latestRow.spot)} · SL ${latestRow.dynamicSl ?? Math.round(latestRow.swingHigh30m + 15)} (Tgt ${Math.round(latestRow.swingLow30m - 30)})`
+          : `🎯 A+ DIP CE ENTRY TRIGGERED @ ${Math.round(latestRow.spot)} · SL ${latestRow.dynamicSl ?? Math.round(latestRow.swingLow30m - 15)} (Tgt ${Math.round(latestRow.swingHigh30m + 30)})`;
+
+        setOcAlertBanner({
+          text: bannerMsg,
+          kind: isBear ? "bear" : "bull",
+          ts: Date.now(),
+        });
+
+        if (isSoundOn) {
+          playOiBeep(isBear ? "angleBear" : "angleBull");
+        }
+      } else if (latestRow.stage === 5 || latestRow.isShortCoveringReversal) {
+        setOcAlertBanner({
+          text: `💰 SHORT-COVERING REVERSAL ACTIVE @ ${Math.round(latestRow.spot)} — BOOK PE / SCALP CE`,
+          kind: "bull",
+          ts: Date.now(),
+        });
+        if (isSoundOn) {
+          playOiBeep("scissor");
+        }
+      }
+    }
+  }, [smartRows]);
+
+  // Auto-dismiss banner after 15 seconds
+  useEffect(() => {
+    if (!ocAlertBanner) return;
+    const t = setTimeout(() => setOcAlertBanner(null), 15000);
+    return () => clearTimeout(t);
+  }, [ocAlertBanner]);
+
+  // ── Sniper Trinity: Unified OI Walls + CVD Order Flow + Writer Lifecycle Confluence Engine ──
+  const confluenceTrinity = useMemo(() => {
+    const curSpot = spot ?? (candles.length ? candles[candles.length - 1].close : null);
+    if (curSpot == null || !walls.length) return null;
+
+    const latestSmart = smartRows.length > 0 ? smartRows[0] : null;
+
+    // 1. OI Wall Proximity Check (±30 pts)
+    const ceWalls = walls.filter((w) => w.side === "CE");
+    const peWalls = walls.filter((w) => w.side === "PE");
+
+    const nearestCe = ceWalls.sort((a, b) => Math.abs(a.p - curSpot) - Math.abs(b.p - curSpot))[0] ?? null;
+    const ceDist = nearestCe ? Math.abs(nearestCe.p - curSpot) : 999;
+    const isNearCe = nearestCe != null && ceDist <= 30;
+
+    const nearestPe = peWalls.sort((a, b) => Math.abs(a.p - curSpot) - Math.abs(b.p - curSpot))[0] ?? null;
+    const peDist = nearestPe ? Math.abs(nearestPe.p - curSpot) : 999;
+    const isNearPe = nearestPe != null && peDist <= 30;
+
+    // 2. CVD Order Flow & Divergence Check (10-bar swing pivots & 3-bar momentum)
+    const latestFp = fpBars.length > 0 ? fpBars[fpBars.length - 1] : null;
+    const prevFp3 = fpBars.length >= 4 ? fpBars[fpBars.length - 4] : null;
+    const dCvd3 = (latestFp && prevFp3) ? (latestFp.cvd - prevFp3.cvd) : 0;
+    const recentCvdDiv = cvdDivergences.slice(-4).reverse().find((d) => latestFp && Math.abs(d.time - latestFp.time) <= 900) ?? null;
+
+    const isCvdBear = (
+      recentCvdDiv?.type === "BEARISH_DISTRIBUTION" ||
+      (latestFp != null && latestFp.cvd >= 150000 && latestFp.delta < 0) ||
+      dCvd3 < -15000 ||
+      (latestFp != null && latestFp.delta < -10000)
+    );
+
+    const isCvdBull = (
+      recentCvdDiv?.type === "BULLISH_ABSORPTION" ||
+      (latestFp != null && latestFp.cvd <= -150000 && latestFp.delta > 0) ||
+      dCvd3 > 15000 ||
+      (latestFp != null && latestFp.delta > 10000)
+    );
+
+    const cvdSummary = (() => {
+      if (recentCvdDiv?.type === "BEARISH_DISTRIBUTION") return `🔴 CVD Distribution (${kfmt(latestFp?.cvd ?? 0)})`;
+      if (recentCvdDiv?.type === "BULLISH_ABSORPTION") return `🟢 CVD Absorption (${kfmt(latestFp?.cvd ?? 0)})`;
+      if (latestFp && Math.abs(latestFp.cvd) >= 150000) return `⚡ CVD Climax (${kfmt(latestFp.cvd)})`;
+      if (dCvd3 < -15000) return `🔻 CVD Dump (${kfmt(dCvd3)}/3b)`;
+      if (dCvd3 > 15000) return `⚡ CVD Surge (+${kfmt(dCvd3)}/3b)`;
+      return latestFp ? `〽️ CVD ${kfmt(latestFp.cvd)}` : "CVD Inactive";
+    })();
+
+    // 3. Writer Flow Velocity & Table Lifecycle State (θ >= 25°, Stage 2 Pullback, Scissor)
+    const callAngle = latestSmart?.callAngleDeg ?? 0;
+    const putAngle = latestSmart?.putAngleDeg ?? 0;
+    const isCallSurging = callAngle >= 25;
+    const isPutDefending = putAngle >= 25;
+    const isScissor = latestSmart?.isScissor ?? false;
+
+    const stage = latestSmart?.stage ?? 0;
+    const actionTone = latestSmart?.actionTone ?? "flat";
+    const isTableShort = actionTone === "bear" && (stage === 1 || stage === 2 || stage === 3 || !!latestSmart?.isWallShiftBear);
+    const isTableLong = actionTone === "bull" && (stage === 1 || stage === 2 || stage === 3 || !!latestSmart?.isWallShiftBull);
+
+    const isWriterBear = (isCallSurging || isScissor || !!latestSmart?.isWallShiftBear) && isTableShort;
+    const isWriterBull = (isPutDefending || (isScissor && callAngle < -15) || !!latestSmart?.isWallShiftBull) && isTableLong;
+
+    // 3-Pillar Confluence Matrix Evaluation
+    let ceScore = 0;
+    if (isNearCe) ceScore += 1;
+    if (isCvdBear) ceScore += 1;
+    if (isWriterBear) ceScore += 1;
+
+    let peScore = 0;
+    if (isNearPe) peScore += 1;
+    if (isCvdBull) peScore += 1;
+    if (isWriterBull) peScore += 1;
+
+    let trinityType: "SHORT_CE_WALL" | "BUY_PE_SUPPORT" | "MONITORING" = "MONITORING";
+    if (isNearCe && isCvdBear && isWriterBear) {
+      trinityType = "SHORT_CE_WALL";
+    } else if (isNearPe && isCvdBull && isWriterBull) {
+      trinityType = "BUY_PE_SUPPORT";
+    }
+
+    return {
+      curSpot,
+      nearestCe,
+      ceDist,
+      isNearCe,
+      nearestPe,
+      peDist,
+      isNearPe,
+      isCvdBear,
+      isCvdBull,
+      cvdSummary,
+      callAngle,
+      putAngle,
+      isCallSurging,
+      isPutDefending,
+      isScissor,
+      stage,
+      stageBadge: latestSmart?.stageBadge ?? "WAIT",
+      actionText: latestSmart?.actionText ?? "Wait for setup",
+      actionTone,
+      dynamicSl: latestSmart?.dynamicSl,
+      trinityType,
+      confluenceScore: Math.max(ceScore, peScore),
+    };
+  }, [spot, candles, walls, smartRows, fpBars, cvdDivergences]);
+
+  const lastTrinityTypeRef = useRef<string>("MONITORING");
+
+  useEffect(() => {
+    if (!confluenceTrinity) return;
+    if (confluenceTrinity.trinityType !== lastTrinityTypeRef.current) {
+      lastTrinityTypeRef.current = confluenceTrinity.trinityType;
+
+      const isSoundOn = (() => {
+        try { return localStorage.getItem("oi_beep_alerts") !== "0"; } catch { return true; }
+      })();
+
+      if (confluenceTrinity.trinityType === "SHORT_CE_WALL") {
+        setOcAlertBanner({
+          text: `🎯 A+ SNIPER CONFLUENCE SIGNAL: SHORT CE WALL (CVD DISTRIBUTION + WRITER ACCELERATION)`,
+          kind: "bear",
+          ts: Date.now(),
+        });
+        if (isSoundOn) playOiBeep("angleBear");
+      } else if (confluenceTrinity.trinityType === "BUY_PE_SUPPORT") {
+        setOcAlertBanner({
+          text: `🎯 A+ SNIPER CONFLUENCE SIGNAL: BUY PE SUPPORT (CVD ABSORPTION + WRITER DEFENSE)`,
+          kind: "bull",
+          ts: Date.now(),
+        });
+        if (isSoundOn) playOiBeep("angleBull");
+      }
+    }
+  }, [confluenceTrinity]);
   const dolRef = useRef<ReturnType<typeof computeDol>>([]);
-  const [fpBars, setFpBars] = useState<FpBar[]>([]);
-  const [fpMsg, setFpMsg] = useState<string>("");
   const [, setFpTick] = useState(0);
   const [heatHelp, setHeatHelp] = useState(() => { try { return localStorage.getItem("ict_heat_help") !== "0"; } catch { return true; } });
   const volS = useRef<ISeriesApi<"Histogram"> | null>(null);
@@ -222,6 +489,15 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     ivS.current = iv;
     spine.current = ch.addSeries(LineSeries, { color: "rgba(34,211,238,0.75)", lineWidth: 1, priceLineVisible: false,
       lastValueVisible: false, crosshairMarkerVisible: false });
+    ocSlS.current = ch.addSeries(LineSeries, {
+      color: "rgba(251, 113, 133, 0.8)",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: false,
+      title: "PE−CE SL",
+    });
     chart.current = ch; series.current = s; zz.current = z;
     markers.current = createSeriesMarkers(s, []);
     const onMove = (p: MouseEventParams<Time>) => {
@@ -849,12 +1125,130 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       }
     }
     if (layers.ocAct) {
-      let pv = 0;
+      let lastKind = "";
+      let lastV = 0;
       for (const x of ocActs) {
-        if (x.v !== 0 && x.v !== pv) push({ time: x.time, side: x.v > 0 ? "below" : "above", dir: x.v > 0 ? "bull" : "bear", kind: "OC_ACT", layer: "PE−CE action",
-          short: x.v > 0 ? "OC: CE" : "OC: PE", full: `PE−CE table → ${x.txt}`, pri: 3, shape: x.v > 0 ? "arrowUp" : "arrowDown",
-          color: x.v > 0 ? "#4ade80" : "#f87171", size: 1.2 });
-        pv = x.v;
+        if (!x.smartRow) continue;
+        const r = x.smartRow;
+
+        // Stage 2: Sniper Pullback Entry (Optimal Low-Risk Entry)
+        if (x.kind === "PULLBACK") {
+          const isBear = r.actionTone === "bear";
+          push({
+            time: x.time,
+            side: isBear ? "above" : "below",
+            dir: isBear ? "bear" : "bull",
+            kind: "OC_ACT",
+            layer: "PE−CE action",
+            short: isBear ? "🎯 PB PE" : "🎯 DIP CE",
+            full: r.actionText,
+            pri: 3,
+            shape: isBear ? "arrowDown" : "arrowUp",
+            color: isBear ? "#fb7185" : "#34d399",
+            size: 1.4,
+          });
+        }
+        // Stage 1: Sniper Breakout Entry
+        else if (x.kind === "ENTRY" && (x.v !== lastV || lastKind !== "ENTRY")) {
+          const isBear = r.actionTone === "bear";
+          push({
+            time: x.time,
+            side: isBear ? "above" : "below",
+            dir: isBear ? "bear" : "bull",
+            kind: "OC_ACT",
+            layer: "PE−CE action",
+            short: isBear ? "🎯 PE" : "🎯 CE",
+            full: r.actionText,
+            pri: 3,
+            shape: isBear ? "arrowDown" : "arrowUp",
+            color: isBear ? "#f43f5e" : "#10b981",
+            size: 1.3,
+          });
+        }
+        // Stage 3: Momentum Writer Shock Scale-In / Add
+        else if (x.kind === "ADD") {
+          const isBear = r.actionTone === "bear";
+          push({
+            time: x.time,
+            side: isBear ? "above" : "below",
+            dir: isBear ? "bear" : "bull",
+            kind: "OC_ACT",
+            layer: "PE−CE action",
+            short: isBear ? "🔥 ADD PE" : "🔥 ADD CE",
+            full: r.actionText,
+            pri: 3,
+            shape: isBear ? "arrowDown" : "arrowUp",
+            color: "#f97316",
+            size: 1.25,
+          });
+        }
+        // Stage 5: Short-Covering Reversal / Book Profits
+        else if (x.kind === "BOOK" && lastKind !== "BOOK") {
+          push({
+            time: x.time,
+            side: "below",
+            dir: "bull",
+            kind: "OC_ACT",
+            layer: "PE−CE action",
+            short: "💰 BOOK",
+            full: r.actionText,
+            pri: 3,
+            shape: "circle",
+            color: "#fbbf24",
+            size: 1.3,
+          });
+        }
+
+        lastKind = x.kind;
+        lastV = x.v;
+      }
+    }
+    if (layers.cvd) {
+      for (const d of cvdDivergences) {
+        if (d.type === "BULLISH_ABSORPTION") {
+          push({
+            time: d.time,
+            side: "below",
+            dir: "bull",
+            kind: "CVD_ABS",
+            layer: "CVD divergence",
+            short: "🟢 CVD ABS",
+            full: d.details,
+            pri: 3,
+            shape: "arrowUp",
+            color: "#10b981",
+            size: 1.35,
+          });
+        } else if (d.type === "BEARISH_DISTRIBUTION") {
+          push({
+            time: d.time,
+            side: "above",
+            dir: "bear",
+            kind: "CVD_DIST",
+            layer: "CVD divergence",
+            short: "🔴 CVD DIST",
+            full: d.details,
+            pri: 3,
+            shape: "arrowDown",
+            color: "#ef4444",
+            size: 1.35,
+          });
+        } else if (d.type === "EXHAUSTION_CLIMAX") {
+          const isBull = d.dir === "bull";
+          push({
+            time: d.time,
+            side: isBull ? "below" : "above",
+            dir: d.dir,
+            kind: "CVD_EXHAUST",
+            layer: "CVD divergence",
+            short: isBull ? "⚡ CVD EXH▲" : "⚡ CVD EXH▼",
+            full: d.details,
+            pri: 2,
+            shape: "circle",
+            color: isBull ? "#34d399" : "#fb7185",
+            size: 1.1,
+          });
+        }
       }
     }
     if (layers.smt) {
@@ -1170,20 +1564,60 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     if (!layers.cvd) { if (cvdS.current) { ch.removeSeries(cvdS.current); cvdS.current = null; } return; }
     if (!cvdS.current) {
       cvdS.current = ch.addSeries(BaselineSeries, { baseValue: { type: "price", price: 0 }, lineWidth: 2,
-        topLineColor: "#4ade80", topFillColor1: "rgba(34,197,94,0.35)", topFillColor2: "rgba(34,197,94,0.02)",
-        bottomLineColor: "#f87171", bottomFillColor1: "rgba(239,68,68,0.02)", bottomFillColor2: "rgba(239,68,68,0.35)",
+        topLineColor: "#10b981", topFillColor1: "rgba(16,185,129,0.40)", topFillColor2: "rgba(16,185,129,0.02)",
+        bottomLineColor: "#ef4444", bottomFillColor1: "rgba(239,68,68,0.02)", bottomFillColor2: "rgba(239,68,68,0.40)",
         priceLineVisible: false, lastValueVisible: true, title: "CVD (est.)",
         priceFormat: { type: "custom", formatter: (v: number) => kfmt(v), minMove: 1 } }, 1);
       try { ch.panes()[1]?.setHeight(140); } catch { /* older engine */ }
     }
-    cvdS.current.setData(fpBars.filter((b) => b.rows.length).map((b) => ({ time: b.time as UTCTimestamp, value: b.cvd })));
+    const validBars = fpBars.filter((b) => b.rows.length);
+    cvdS.current.setData(validBars.map((b) => ({ time: b.time as UTCTimestamp, value: b.cvd })));
+
+    // Dynamic CVD momentum slope & color tinting
+    if (validBars.length >= 3) {
+      const lastBar = validBars[validBars.length - 1];
+      const prevBar = validBars[Math.max(0, validBars.length - 4)];
+      const dCvd3 = lastBar.cvd - prevBar.cvd;
+
+      if (dCvd3 > 25000) {
+        cvdS.current.applyOptions({
+          title: `CVD · ACCEL BUY ⚡ (+${kfmt(dCvd3)}/3b)`,
+          topLineColor: "#10b981",
+          topFillColor1: "rgba(16,185,129,0.55)",
+          topFillColor2: "rgba(16,185,129,0.05)",
+          bottomLineColor: "#10b981",
+          bottomFillColor1: "rgba(16,185,129,0.05)",
+          bottomFillColor2: "rgba(16,185,129,0.25)",
+        });
+      } else if (dCvd3 < -25000) {
+        cvdS.current.applyOptions({
+          title: `CVD · AGGRESSIVE DUMP 🔻 (${kfmt(dCvd3)}/3b)`,
+          topLineColor: "#ef4444",
+          topFillColor1: "rgba(239,68,68,0.25)",
+          topFillColor2: "rgba(239,68,68,0.05)",
+          bottomLineColor: "#ef4444",
+          bottomFillColor1: "rgba(239,68,68,0.05)",
+          bottomFillColor2: "rgba(239,68,68,0.55)",
+        });
+      } else {
+        cvdS.current.applyOptions({
+          title: `CVD · ABSORPTION / CHOP ⚖️ (${kfmt(dCvd3)}/3b)`,
+          topLineColor: "#f59e0b",
+          topFillColor1: "rgba(245,158,11,0.40)",
+          topFillColor2: "rgba(245,158,11,0.05)",
+          bottomLineColor: "#f59e0b",
+          bottomFillColor1: "rgba(245,158,11,0.05)",
+          bottomFillColor2: "rgba(245,158,11,0.40)",
+        });
+      }
+    }
   }, [layers.cvd, fpBars]);
 
-  // ESTIMATED footprint on the chart (5m / 15m / 1h; closed candles from the desk's recorded FUT ticks)
+  // ESTIMATED footprint on the chart (1m / 3m / 5m / 15m / 1h; closed candles from the desk's recorded FUT ticks)
   useEffect(() => {
     const want = !!layers.fp || !!layers.bias || !!layers.heat || !!layers.cvd || !!layers.cells || !!layers.bubbles;
-    const ok = want && (tf === "5m" || tf === "15m" || tf === "1h");
-    if (!ok) { fpPrim.current.set([]); setFpBars([]); setFpMsg(layers.fp ? "Footprint: 5m / 15m / 1h only" : ""); if (!want) return; if (!ok) return; }
+    const ok = want && (tf === "1m" || tf === "5m" || tf === "15m" || tf === "30m" || tf === "1h");
+    if (!ok) { fpPrim.current.set([]); setFpBars([]); setFpMsg(layers.fp ? "Footprint: 1m / 5m / 15m / 30m / 1h only" : ""); if (!want) return; if (!ok) return; }
     let dead = false;
     const go = () => fetch(`/api/footprints?tf=${tf}&n=${layers.cvd || layers.cells || layers.bubbles ? 75 : 30}`).then((r) => r.json()).then((j) => {
       if (dead) return;
@@ -1321,7 +1755,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     return out;
   };
 
-  // PE−CE Action lane (own pane at the bottom): green = table says CE, red = PE, grey = WAIT
+  // PE−CE Action lane & Dynamic Structural SL Line
   useEffect(() => {
     const ch = chart.current; if (!ch) return;
     const on = !!layers.ocAct && ocActs.length > 0;
@@ -1330,8 +1764,47 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       ocLane.current = ch.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, title: "PE−CE action", base: 0 }, idx);
       try { ch.panes()[idx]?.setStretchFactor(0.6); } catch { /* */ }
     } else if (!on && ocLane.current) { ch.removeSeries(ocLane.current); ocLane.current = null; }
-    ocLane.current?.setData(ocActs.map((x) => ({ time: x.time as UTCTimestamp, value: x.v === 0 ? 0.25 : x.v,
-      color: x.v > 0 ? "#22c55e" : x.v < 0 ? "#ef4444" : "rgba(100,116,139,0.45)" })));
+
+    if (ocLane.current) {
+      ocLane.current.setData(ocActs.map((x) => {
+        let val = x.v === 0 ? 0.25 : x.v;
+        let col = "rgba(100,116,139,0.45)";
+        if (x.kind === "PULLBACK") {
+          val = x.v > 0 ? 1.5 : -1.5;
+          col = x.v > 0 ? "#10b981" : "#f43f5e";
+        } else if (x.kind === "ENTRY") {
+          val = x.v > 0 ? 1.2 : -1.2;
+          col = x.v > 0 ? "#34d399" : "#fb7185";
+        } else if (x.kind === "ADD") {
+          val = x.v > 0 ? 2.0 : -2.0;
+          col = "#f97316";
+        } else if (x.kind === "BOOK") {
+          val = 1.0;
+          col = "#fbbf24";
+        } else if (x.kind === "HOLD") {
+          val = x.v;
+          col = "#64748b";
+        }
+        return {
+          time: x.time as UTCTimestamp,
+          value: val,
+          color: col,
+        };
+      }));
+    }
+
+    // Dynamic Structural SL Line
+    if (ocSlS.current) {
+      const slPoints = on
+        ? ocActs
+            .filter((x) => x.smartRow?.dynamicSl != null && (x.kind === "ENTRY" || x.kind === "PULLBACK" || x.kind === "ADD" || x.kind === "HOLD"))
+            .map((x) => ({
+              time: x.time as UTCTimestamp,
+              value: x.smartRow!.dynamicSl!,
+            }))
+        : [];
+      ocSlS.current.setData(slPoints);
+    }
   }, [ocActs, layers.ocAct]);
 
   // heatmap narrative for one candle: where the volume sat, what that means, what to do
@@ -1407,6 +1880,20 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const fb = hover && layers.fp ? fpPrim.current.bars.find((b) => b.time === hover.t) : undefined;
   const W = box.current?.clientWidth ?? 900;
   const legend = LEGEND.filter(([k]) => layers[k]);
+  const hoveredOcAct = hover && layers.ocAct ? ocActs.find((x) => x.time === hover.t) : null;
+  const hasOcMarker = !!hoveredOcAct && (hoveredOcAct.kind !== "NONE" || hoveredOcAct.v !== 0);
+  const cursorPriceAtHover = hover && series.current ? series.current.coordinateToPrice(hover.y) : null;
+  const hoveredWall = layers.walls && cursorPriceAtHover != null
+    ? walls.find((w) => Math.abs(cursorPriceAtHover - w.p) <= 18)
+    : null;
+  const hoveredCvdDiv = (hover && layers.cvd)
+    ? cvdDivergences.find((d) => Math.abs(d.time - hover.t) < (BAR_SEC[tf] ?? 300))
+    : null;
+  const hoveredFpBar = (hover && (layers.cvd || layers.fp))
+    ? fpBars.find((b) => Math.abs(b.time - hover.t) < (BAR_SEC[tf] ?? 300))
+    : null;
+  const isHoveringCvdPane = !!(hover && layers.cvd && cvdS.current && hover.y > (box.current?.clientHeight ?? 500) - 140);
+  const hasCvdCard = !!(hover && layers.cvd && (hoveredCvdDiv || (isHoveringCvdPane && hoveredFpBar)));
 
   // Keep crosshair move hit-testing engine synchronized with latest data
   onCrosshairMoveRef.current = (p: MouseEventParams<Time>) => {
@@ -1468,6 +1955,26 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           </div>
         );
       })()}
+
+      {/* 🎯 Real-Time PE−CE A+ Setup Canvas Banner */}
+      {ocAlertBanner && (
+        <div
+          className={`pointer-events-auto absolute top-7 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-lg border shadow-2xl backdrop-blur-md animate-bounce duration-1000 ${
+            ocAlertBanner.kind === "bear"
+              ? "bg-rose-950/95 border-rose-500/80 text-rose-200 ring-2 ring-rose-500/40"
+              : "bg-emerald-950/95 border-emerald-500/80 text-emerald-200 ring-2 ring-emerald-500/40"
+          }`}
+        >
+          <span className="text-[12px] font-extrabold tracking-wide">{ocAlertBanner.text}</span>
+          <button
+            onClick={() => setOcAlertBanner(null)}
+            className="ml-1 text-xs font-bold text-slate-400 hover:text-white px-1"
+            title="Dismiss banner"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {/* OI wall expiry selector (top-right) — only when walls are on */}
       {layers.walls && (expiries?.length ?? 0) > 1 && (
         <div className="pointer-events-auto absolute right-2 top-2 z-20 flex items-center gap-1 rounded bg-[#060b16]/85 px-1.5 py-1 text-[10px] ring-1 ring-white/10">
@@ -1663,17 +2170,95 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         );
       })()}
 
-      {ofNow && <div className={`pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 ${layers.advPa && analysis?.pa_advanced?.sniper ? "top-[48px]" : "top-2"}`}>
-        <div className={`flex max-w-[560px] items-center gap-2 rounded-lg px-3 py-1.5 shadow-xl ring-2 ${ofNow.verdict === "BUY" ? "bg-bull-900/90 ring-bull-400" : ofNow.verdict === "SELL" ? "bg-bear-900/90 ring-bear-400" : "bg-ink-850/90 ring-slate-500"}`}>
-          <span className={`rounded px-2 py-0.5 text-[16px] font-extrabold ${VC[ofNow.verdict]}`}>{ofNow.verdict}</span>
-          <span className="text-[12.5px] leading-tight text-slate-100"><b className="text-cyan-200">ORDER FLOW · last closed {hm(lastClosed!.time)}</b><br />{ofNow.head}
-            {layers.walls && writerBal && (() => { const V = writerVerdict(writerBal, walls);
-              const c = V.bias === "BULLISH" ? "text-emerald-300" : V.bias === "BEARISH" ? "text-rose-300" : "text-amber-200";
-              return <><br /><span className={`text-[11px] ${c}`}>🖊 Writers: {V.strong ? "STRONG " : ""}{V.bias}{V.support && V.resistance ? ` · ${V.support.p.toLocaleString("en-IN")} ⟷ ${V.resistance.p.toLocaleString("en-IN")}` : ""} · {V.reason}</span></>;
-            })()}
-          </span>
+      {/* 🎯 Master Confluence HUD Card (OI Walls + CVD Order Flow + PE−CE Lifecycle Synergy) */}
+      {(layers.walls || layers.ocAct || layers.cvd) && confluenceTrinity && (
+        <div className={`pointer-events-auto absolute left-1/2 z-20 -translate-x-1/2 max-w-[calc(100%-190px)] ${layers.advPa && analysis?.pa_advanced?.sniper ? "top-[48px]" : "top-2"}`}>
+          <div className={`flex flex-wrap items-center gap-2 rounded-xl px-3 py-1.5 shadow-2xl backdrop-blur-md border transition-all ${
+            confluenceTrinity.trinityType === "SHORT_CE_WALL"
+              ? "bg-gradient-to-r from-rose-950/95 via-[#180a14]/95 to-ink-950/95 border-rose-500 ring-2 ring-rose-500/50 animate-pulse"
+              : confluenceTrinity.trinityType === "BUY_PE_SUPPORT"
+              ? "bg-gradient-to-r from-emerald-950/95 via-[#0a1814]/95 to-ink-950/95 border-emerald-500 ring-2 ring-emerald-500/50 animate-pulse"
+              : ofNow?.verdict === "BUY"
+              ? "bg-bull-900/90 border-bull-500/70 ring-1 ring-bull-400"
+              : ofNow?.verdict === "SELL"
+              ? "bg-bear-900/90 border-bear-500/70 ring-1 ring-bear-400"
+              : "bg-[#060b16]/95 border-ink-700 ring-1 ring-white/10"
+          }`}>
+            {/* Verdict Badge */}
+            {confluenceTrinity.trinityType === "SHORT_CE_WALL" ? (
+              <span className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-2 py-0.5 font-black text-white text-[11px] shadow">
+                <span>🎯</span>
+                <span>A+ SNIPER CONFLUENCE: SHORT CE WALL (CVD DISTRIBUTION + WRITER ACCELERATION)</span>
+              </span>
+            ) : confluenceTrinity.trinityType === "BUY_PE_SUPPORT" ? (
+              <span className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2 py-0.5 font-black text-white text-[11px] shadow">
+                <span>🎯</span>
+                <span>A+ SNIPER CONFLUENCE: BUY PE SUPPORT (CVD ABSORPTION + WRITER DEFENSE)</span>
+              </span>
+            ) : ofNow ? (
+              <span className={`rounded px-2 py-0.5 text-[14px] font-extrabold ${VC[ofNow.verdict]}`}>
+                {ofNow.verdict}
+              </span>
+            ) : (
+              <span className="rounded bg-ink-800 px-2 py-0.5 text-[11px] font-bold text-slate-300 border border-ink-700">
+                SNIPER CONFLUENCE ({confluenceTrinity.confluenceScore}/3)
+              </span>
+            )}
+
+            {/* 3 Pillars Telemetry */}
+            <div className="flex items-center gap-1.5 text-[10.5px] font-mono flex-wrap">
+              {/* Pillar 1: Wall Proximity */}
+              <span className={`px-1.5 py-0.2 rounded border ${
+                confluenceTrinity.isNearCe
+                  ? "bg-rose-950/80 text-rose-300 border-rose-600/70 font-bold"
+                  : confluenceTrinity.isNearPe
+                  ? "bg-emerald-950/80 text-emerald-300 border-emerald-600/70 font-bold"
+                  : "bg-ink-850 text-slate-300 border-ink-700"
+              }`}>
+                🏛️ {confluenceTrinity.nearestCe && (!confluenceTrinity.nearestPe || confluenceTrinity.ceDist <= confluenceTrinity.peDist)
+                  ? `${confluenceTrinity.nearestCe.p} CE (${confluenceTrinity.ceDist.toFixed(0)}p, ${confluenceTrinity.nearestCe.status === "building" ? "CAP STACKING" : "WALL"})`
+                  : confluenceTrinity.nearestPe
+                  ? `${confluenceTrinity.nearestPe.p} PE (${confluenceTrinity.peDist.toFixed(0)}p, ${confluenceTrinity.nearestPe.status === "building" ? "FLOOR FORTIFYING" : "SUPPORT"})`
+                  : "Walls Active"}
+              </span>
+
+              {/* Pillar 2: CVD Order Flow */}
+              <span className={`px-1.5 py-0.2 rounded border ${
+                confluenceTrinity.isCvdBear
+                  ? "bg-rose-950/80 text-rose-300 border-rose-600/70 font-bold"
+                  : confluenceTrinity.isCvdBull
+                  ? "bg-emerald-950/80 text-emerald-300 border-emerald-600/70 font-bold"
+                  : "bg-ink-850 text-slate-300 border-ink-700"
+              }`}>
+                〽️ {confluenceTrinity.cvdSummary}
+              </span>
+
+              {/* Pillar 3: Table Lifecycle State & Slope */}
+              <span className={`px-1.5 py-0.2 rounded border ${
+                confluenceTrinity.actionTone === "bear"
+                  ? "bg-rose-950/80 text-rose-300 border-rose-600/70 font-bold"
+                  : confluenceTrinity.actionTone === "bull"
+                  ? "bg-emerald-950/80 text-emerald-300 border-emerald-600/70 font-bold"
+                  : "bg-ink-850 text-slate-300 border-ink-700"
+              }`}>
+                📐 <span className={confluenceTrinity.callAngle >= 25 ? "text-rose-400 font-bold" : "text-slate-300"}>Call +{confluenceTrinity.callAngle.toFixed(0)}°</span> | <span className={confluenceTrinity.putAngle >= 25 ? "text-emerald-400 font-bold" : "text-slate-300"}>Put {confluenceTrinity.putAngle >= 0 ? "+" : ""}{confluenceTrinity.putAngle.toFixed(0)}°</span>
+                {confluenceTrinity.isScissor ? " · ✂️ Scissor" : ""} · 🎯 S{confluenceTrinity.stage} {confluenceTrinity.stageBadge}
+                {confluenceTrinity.dynamicSl ? ` · SL ${confluenceTrinity.dynamicSl}` : ""}
+              </span>
+            </div>
+          </div>
         </div>
-      </div>}
+      )}
+
+      {/* Fallback when layers.walls is off */}
+      {!layers.walls && ofNow && (
+        <div className={`pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 ${layers.advPa && analysis?.pa_advanced?.sniper ? "top-[48px]" : "top-2"}`}>
+          <div className={`flex max-w-[560px] items-center gap-2 rounded-lg px-3 py-1.5 shadow-xl ring-2 ${ofNow.verdict === "BUY" ? "bg-bull-900/90 ring-bull-400" : ofNow.verdict === "SELL" ? "bg-bear-900/90 ring-bear-400" : "bg-ink-850/90 ring-slate-500"}`}>
+            <span className={`rounded px-2 py-0.5 text-[16px] font-extrabold ${VC[ofNow.verdict]}`}>{ofNow.verdict}</span>
+            <span className="text-[12.5px] leading-tight text-slate-100"><b className="text-cyan-200">ORDER FLOW · last closed {hm(lastClosed!.time)}</b><br />{ofNow.head}</span>
+          </div>
+        </div>
+      )}
       {layers.gamma && <div className={`pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 ${layers.advPa && analysis?.pa_advanced?.sniper ? (ofNow ? "top-[96px]" : "top-[54px]") : "top-[64px]"}`}>
         <div className={`max-w-[600px] rounded-lg px-3 py-1 text-[12.5px] shadow-xl ring-2 ${gLast?.ok ? "bg-violet-900/90 ring-violet-400 text-white" : "bg-ink-850/90 ring-slate-600 text-slate-200"}`}>
           <b className="text-violet-300">γ MAP</b>{gexMap ? <> · <b className={gexMap.regime === "positive" ? "text-bull-400" : "text-amber-300"}>{gexMap.regime === "positive" ? "+γ PIN day" : "−γ TREND day"}</b>
@@ -1813,8 +2398,291 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         </div>
       )}
 
+      {/* 🎯 Sleek Glassmorphic PE−CE Institutional Telemetry Card on Marker Hover */}
+      {hover && hoveredOcAct && hasOcMarker && (
+        <div
+          className="pointer-events-none absolute z-50 w-[350px] rounded-xl border border-gold-500/60 bg-[#080d1a]/95 p-3 text-[11.5px] text-slate-200 shadow-2xl backdrop-blur-md ring-1 ring-gold-400/20 transition-all duration-75"
+          style={{
+            left: Math.min(Math.max(12, hover.x + 18), (box.current?.clientWidth ?? 900) - 370),
+            top: Math.min(Math.max(54, hover.y - 20), (box.current?.clientHeight ?? 500) - 220),
+          }}
+        >
+          {/* Header */}
+          <div className="mb-2 flex items-center justify-between border-b border-ink-700/80 pb-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold border ${
+                hoveredOcAct.smartRow?.stage === 2 || hoveredOcAct.smartRow?.stage === 5
+                  ? "bg-rose-950/90 text-rose-300 border-rose-500 animate-pulse"
+                  : hoveredOcAct.smartRow?.stage === 1
+                  ? "bg-amber-950/90 text-amber-300 border-amber-500"
+                  : hoveredOcAct.smartRow?.stage === 3
+                  ? "bg-orange-950/90 text-orange-300 border-orange-500"
+                  : "bg-ink-850 text-slate-300 border-ink-700"
+              }`}>
+                STAGE {hoveredOcAct.smartRow?.stage} · {hoveredOcAct.smartRow?.stageBadge}
+              </span>
+              {hoveredOcAct.smartRow?.isSynergy && (
+                <span className="px-1.5 py-0.5 rounded text-[9.5px] font-extrabold bg-gold-500/20 text-gold-300 border border-gold-500/60">
+                  ⚡ A+ Synergy
+                </span>
+              )}
+            </div>
+            <span className="font-mono text-[11px] font-bold text-slate-400">{hoveredOcAct.smartRow?.ts}</span>
+          </div>
+
+          {/* Institutional Telemetry Grid */}
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1 font-mono text-[11px] mb-2 bg-ink-900/60 p-2 rounded-lg border border-ink-800">
+            <div>
+              <span className="text-slate-400">PE−CE Day: </span>
+              <b className={(hoveredOcAct.smartRow?.pe_ce_day_cr ?? 0) < 0 ? "text-rose-400" : "text-emerald-400"}>
+                {hoveredOcAct.smartRow?.pe_ce_day_cr != null ? `${hoveredOcAct.smartRow.pe_ce_day_cr.toFixed(2)}Cr` : "—"}
+              </b>
+            </div>
+            <div>
+              <span className="text-slate-400">PE−CE Bar Δ: </span>
+              <b className={(hoveredOcAct.smartRow?.pe_ce_delta_l ?? 0) < 0 ? "text-rose-400" : "text-emerald-400"}>
+                {hoveredOcAct.smartRow?.pe_ce_delta_l != null ? `${hoveredOcAct.smartRow.pe_ce_delta_l > 0 ? "+" : ""}${hoveredOcAct.smartRow.pe_ce_delta_l.toFixed(1)}L` : "—"}
+              </b>
+            </div>
+            <div>
+              <span className="text-slate-400">Writer Slopes: </span>
+              <span className="text-slate-200">
+                <span className={(hoveredOcAct.smartRow?.putAngleDeg ?? 0) > 0 ? "text-emerald-400" : "text-rose-400"}>Put {hoveredOcAct.smartRow?.putAngleDeg != null ? `${hoveredOcAct.smartRow.putAngleDeg >= 0 ? "+" : ""}${hoveredOcAct.smartRow.putAngleDeg.toFixed(0)}°` : "—"}</span> · <span className={(hoveredOcAct.smartRow?.callAngleDeg ?? 0) > 0 ? "text-rose-400" : "text-emerald-400"}>Call {hoveredOcAct.smartRow?.callAngleDeg != null ? `${hoveredOcAct.smartRow.callAngleDeg >= 0 ? "+" : ""}${hoveredOcAct.smartRow.callAngleDeg.toFixed(0)}°` : "—"}</span>
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400">Conviction: </span>
+              <b className="text-gold-300">{hoveredOcAct.smartRow?.convictionBadge ?? "—"}</b>
+            </div>
+            <div>
+              <span className="text-slate-400">Dynamic SL: </span>
+              <b className="text-amber-400">
+                {hoveredOcAct.smartRow?.dynamicSl ?? (hoveredOcAct.smartRow ? Math.round(hoveredOcAct.smartRow.swingHigh30m + 15) : "—")}
+                {hoveredOcAct.smartRow?.riskPts ? ` (${hoveredOcAct.smartRow.riskPts}pt)` : ""}
+              </b>
+            </div>
+            <div>
+              <span className="text-slate-400">ATM Strike: </span>
+              <b className="text-cyan-300">
+                {hoveredOcAct.smartRow?.atmStrike} {hoveredOcAct.smartRow?.actionTone === "bear" ? "PE" : "CE"}
+              </b>
+            </div>
+          </div>
+
+          {/* Action Verdict */}
+          <div className="rounded bg-rose-950/60 border border-rose-500/40 px-2 py-1 mb-1 text-[11px] font-bold text-rose-200">
+            {hoveredOcAct.smartRow?.actionText ?? hoveredOcAct.txt}
+          </div>
+
+          {/* Tape Read */}
+          {hoveredOcAct.smartRow?.unifiedRead && (
+            <div className="text-[10.5px] text-slate-300 leading-snug">
+              {hoveredOcAct.smartRow.unifiedRead}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 🧱 Sleek Glassmorphic OI Wall & Writer Flow Cross-Reference Inspector */}
+      {hover && hoveredWall && (
+        <div
+          className="pointer-events-none absolute z-50 w-[360px] rounded-xl border border-ink-600 bg-[#070c18]/95 p-3 text-[11.5px] text-slate-200 shadow-2xl backdrop-blur-md ring-1 ring-white/10 transition-all duration-75"
+          style={{
+            left: Math.min(Math.max(12, hover.x + 18), (box.current?.clientWidth ?? 900) - 380),
+            top: Math.min(Math.max(54, hover.y - 20), (box.current?.clientHeight ?? 500) - 220),
+          }}
+        >
+          {/* Header */}
+          <div className="mb-2 flex items-center justify-between border-b border-ink-700 pb-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className={`px-2 py-0.5 rounded text-[10.5px] font-extrabold border ${
+                hoveredWall.side === "CE"
+                  ? "bg-rose-950/90 text-rose-300 border-rose-500/80"
+                  : "bg-emerald-950/90 text-emerald-300 border-emerald-500/80"
+              }`}>
+                {hoveredWall.side === "CE" ? "🧱 CE RESISTANCE WALL" : "🧱 PE SUPPORT FLOOR"}
+              </span>
+              <span className="font-mono text-white text-[13px] font-black">
+                {hoveredWall.p.toLocaleString("en-IN")}
+              </span>
+            </div>
+            <span className={`font-mono text-[10px] font-extrabold px-1.5 py-0.5 rounded border ${
+              hoveredWall.status === "building"
+                ? "bg-purple-950/90 text-purple-300 border-purple-500/70"
+                : hoveredWall.status === "unwinding"
+                ? "bg-amber-950/90 text-amber-300 border-amber-500/70"
+                : "bg-ink-850 text-slate-300 border-ink-700"
+            }`}>
+              {hoveredWall.status === "building"
+                ? "CAP STACKING (HARDENING)"
+                : hoveredWall.status === "unwinding"
+                ? "CRACKING (UNWINDING)"
+                : "HOLDING (EQUILIBRIUM)"}
+            </span>
+          </div>
+
+          {/* Wall Metrics Grid */}
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1 font-mono text-[11px] mb-2 bg-ink-900/60 p-2 rounded-lg border border-ink-800">
+            <div>
+              <span className="text-slate-400">Total OI: </span>
+              <b className="text-slate-100">{(hoveredWall.oi / 1e7).toFixed(2)} Cr</b>
+            </div>
+            <div>
+              <span className="text-slate-400">Chain Share: </span>
+              <b className="text-cyan-300">{(hoveredWall.share * 100).toFixed(1)}% (Rank #{hoveredWall.rank})</b>
+            </div>
+            <div>
+              <span className="text-slate-400">Day ΔOI: </span>
+              <b className={hoveredWall.chg >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                {hoveredWall.chg >= 0 ? "+" : ""}{(hoveredWall.chg / 1e5).toFixed(1)}L
+              </b>
+            </div>
+            <div>
+              <span className="text-slate-400">Fresh Momentum: </span>
+              <b className={hoveredWall.fresh >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                {hoveredWall.fresh >= 0 ? "+" : ""}{hoveredWall.fresh.toFixed(1)}%
+              </b>
+            </div>
+          </div>
+
+          {/* Writer Correlation Section */}
+          <div className="rounded bg-ink-850/80 border border-ink-700 p-2 text-[11px] space-y-1">
+            <div className="flex items-center justify-between font-mono">
+              <span className="text-slate-400">Writer Flow Angle:</span>
+              <b className={
+                hoveredWall.side === "CE"
+                  ? ((smartRows[0]?.callAngleDeg ?? 0) >= 25 ? "text-rose-400" : "text-slate-300")
+                  : ((smartRows[0]?.putAngleDeg ?? 0) >= 25 ? "text-emerald-400" : "text-slate-300")
+              }>
+                {hoveredWall.side === "CE"
+                  ? `Call +${(smartRows[0]?.callAngleDeg ?? 0).toFixed(0)}° (${(smartRows[0]?.callAngleDeg ?? 0) >= 25 ? "Surging" : "Normal"})`
+                  : `Put +${(smartRows[0]?.putAngleDeg ?? 0).toFixed(0)}° (${(smartRows[0]?.putAngleDeg ?? 0) >= 25 ? "Defending" : "Normal"})`}
+              </b>
+            </div>
+            <div className="flex items-center justify-between font-mono">
+              <span className="text-slate-400">15m Net Impulse:</span>
+              <b className={(smartRows[0]?.impulse15mL ?? 0) < 0 ? "text-rose-400" : "text-emerald-400"}>
+                {(smartRows[0]?.impulse15mL ?? 0) > 0 ? "+" : ""}{(smartRows[0]?.impulse15mL ?? 0).toFixed(1)}L
+              </b>
+            </div>
+            <div className="pt-1 text-[10.5px] text-slate-300 leading-snug border-t border-ink-700/60">
+              {hoveredWall.side === "CE"
+                ? (smartRows[0]?.impulse15mL ?? 0) < -15
+                  ? "🛡️ 15m Call impulse confirms heavy overhead cap. Fades and PE pullback entries favored."
+                  : "⚠️ Caution: Call writers not aggressive enough; watch for short-covering squeeze above this strike."
+                : (smartRows[0]?.impulse15mL ?? 0) > 15
+                  ? "🛡️ 15m Put impulse confirms aggressive dip defending. Support bounces and CE scalps favored."
+                  : "⚠️ Caution: Put writers not defending firmly; watch for floor breakdown below this strike."}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 〽️ Sleek Glassmorphic CVD Divergence & Order Flow Inspector Card */}
+      {hover && hasCvdCard && !hasOcMarker && !hoveredWall && !sniperHover && (
+        <div
+          className="pointer-events-none absolute z-50 w-[360px] rounded-xl border border-ink-600 bg-[#070c18]/95 p-3 text-[11.5px] text-slate-200 shadow-2xl backdrop-blur-md ring-1 ring-white/10 transition-all duration-75"
+          style={{
+            left: Math.min(Math.max(12, hover.x + 18), (box.current?.clientWidth ?? 900) - 380),
+            top: Math.min(Math.max(54, hover.y - 20), (box.current?.clientHeight ?? 500) - 240),
+          }}
+        >
+          {/* Header */}
+          <div className="mb-2 flex items-center justify-between border-b border-ink-700 pb-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className={`px-2 py-0.5 rounded text-[10.5px] font-extrabold border ${
+                hoveredCvdDiv?.type === "BEARISH_DISTRIBUTION"
+                  ? "bg-rose-950/90 text-rose-300 border-rose-500/80"
+                  : hoveredCvdDiv?.type === "BULLISH_ABSORPTION"
+                  ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/80"
+                  : "bg-cyan-950/90 text-cyan-300 border-cyan-500/80"
+              }`}>
+                {hoveredCvdDiv?.type === "BEARISH_DISTRIBUTION"
+                  ? "🔴 BEARISH CVD DISTRIBUTION"
+                  : hoveredCvdDiv?.type === "BULLISH_ABSORPTION"
+                  ? "🟢 BULLISH CVD ABSORPTION"
+                  : "〽️ CVD ORDER FLOW TELEMETRY"}
+              </span>
+              <span className="font-mono text-white text-[11.5px] font-bold">
+                {hm(hover.t)}
+              </span>
+            </div>
+            <span className="font-mono text-[10px] text-slate-400">
+              {tf.toUpperCase()}
+            </span>
+          </div>
+
+          {/* Metric Telemetry Grid */}
+          <div className="grid grid-cols-2 gap-2 mb-2 font-mono text-[11px]">
+            <div className="rounded bg-ink-850/80 border border-ink-700/80 p-1.5">
+              <div className="text-slate-400 text-[9.5px]">Cumulative Delta (CVD)</div>
+              <div className={`text-[13px] font-bold ${
+                (hoveredFpBar?.cvd ?? hoveredCvdDiv?.cvd ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"
+              }`}>
+                {kfmt(hoveredFpBar?.cvd ?? hoveredCvdDiv?.cvd ?? 0)}
+              </div>
+            </div>
+
+            <div className="rounded bg-ink-850/80 border border-ink-700/80 p-1.5">
+              <div className="text-slate-400 text-[9.5px]">Candle Delta</div>
+              <div className={`text-[13px] font-bold ${
+                (hoveredFpBar?.delta ?? hoveredCvdDiv?.delta ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"
+              }`}>
+                {(hoveredFpBar?.delta ?? hoveredCvdDiv?.delta ?? 0) >= 0 ? "+" : ""}
+                {kfmt(hoveredFpBar?.delta ?? hoveredCvdDiv?.delta ?? 0)}
+              </div>
+            </div>
+
+            <div className="rounded bg-ink-850/80 border border-ink-700/80 p-1.5">
+              <div className="text-slate-400 text-[9.5px]">Traded Volume</div>
+              <div className="text-[12px] font-bold text-slate-200">
+                {kfmt(hoveredFpBar?.vol ?? 0)} contracts
+              </div>
+            </div>
+
+            <div className="rounded bg-ink-850/80 border border-ink-700/80 p-1.5">
+              <div className="text-slate-400 text-[9.5px]">Swing Pivot Diff</div>
+              <div className="text-[12px] font-bold text-amber-300">
+                {hoveredCvdDiv ? `${hoveredCvdDiv.priceDiff >= 0 ? "+" : ""}${hoveredCvdDiv.priceDiff.toFixed(1)} pts` : "In Trend"}
+              </div>
+            </div>
+          </div>
+
+          {/* Institutional Bias Banner */}
+          <div className="rounded bg-ink-850/90 border border-ink-700 p-2 mb-2 text-[11px] leading-snug">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-slate-400 font-mono text-[10px]">Institutional Bias:</span>
+              <span className={`font-mono text-[10.5px] font-black ${
+                hoveredCvdDiv?.dir === "bear" ? "text-rose-400" : hoveredCvdDiv?.dir === "bull" ? "text-emerald-400" : "text-cyan-300"
+              }`}>
+                {hoveredCvdDiv?.bias ?? "ORDER FLOW BALANCED"}
+              </span>
+            </div>
+            <div className="text-slate-300 text-[10.5px]">
+              {hoveredCvdDiv?.details ?? (
+                (hoveredFpBar?.delta ?? 0) >= 0
+                  ? "Aggressive market buyers lifting the offer with positive candle delta."
+                  : "Aggressive market sellers hitting the bid with negative candle delta."
+              )}
+            </div>
+          </div>
+
+          {/* Triad Confluence Note */}
+          <div className="text-[10px] text-slate-400 font-mono flex items-center justify-between border-t border-ink-700/60 pt-1.5">
+            <span>Confluence Triad:</span>
+            <span className={
+              confluenceTrinity?.confluenceScore === 3
+                ? "text-emerald-400 font-bold"
+                : "text-slate-400"
+            }>
+              {confluenceTrinity?.confluenceScore === 3 ? "🎯 A+ SNIPER TRIAD LOCKED" : `${confluenceTrinity?.confluenceScore ?? 0}/3 Pillars Aligned`}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* hover card */}
-      {hover && hc && !sniperHover && (
+      {hover && hc && !sniperHover && !hasOcMarker && !hoveredWall && !hasCvdCard && (
         <div className="pointer-events-none absolute z-20 w-[420px] rounded-lg border border-ink-700 bg-[#060b16]/95 p-2.5 text-[13px] leading-snug shadow-xl"
           style={{ left: hover.x > W - 450 ? hover.x - 430 : hover.x + 16, top: Math.max(8, Math.min(hover.y - 20, (box.current?.clientHeight ?? 400) - ((layers.bias ? 300 : 0) + (layers.volume ? 160 : 0) + (layers.heat ? 140 : 0) + 160))) }}>
           {lns.length > 0 && <div className="mb-1 rounded bg-violet-900/40 px-1.5 py-1">
@@ -1915,6 +2783,17 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
               {fb.conf.dir === "bull" ? "BUY ✓3 (CE bias)" : "SELL ✓3 (PE bias)"}: {fb.conf.why.join(" + ")}
               <div className="font-normal text-slate-400">3 agree — still needs your SL. Info only, not an order.</div></div>}
           </div>}
+          {layers.ocAct && hoveredOcAct?.smartRow && (
+            <div className="mt-1.5 border-t border-ink-700 pt-1.5">
+              <div className="flex items-center justify-between text-[11px] font-mono">
+                <span className="font-semibold text-slate-300">🏛️ PE−CE: STAGE {hoveredOcAct.smartRow.stage} ({hoveredOcAct.smartRow.stageBadge})</span>
+                <span className={hoveredOcAct.smartRow.pe_ce_delta_l < 0 ? "text-rose-400" : "text-emerald-400"}>
+                  {hoveredOcAct.smartRow.pe_ce_delta_l > 0 ? "+" : ""}{hoveredOcAct.smartRow.pe_ce_delta_l.toFixed(1)}L
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">{hoveredOcAct.smartRow.actionText}</div>
+            </div>
+          )}
           {hev.length > 0 && <div className="mt-1.5 space-y-1 border-t border-ink-700 pt-1.5">
             {hev.sort((a2, b2) => b2.pri - a2.pri).slice(0, 6).map((e, i) => (
               <div key={i}>
@@ -1936,10 +2815,10 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["volume", "VWAP · vPOC · vol", "#f5f5f4"], ["oi", "FUT OI build-up bars", "#22c55e"], ["rvol", "cRVOL", "#22c55e"], ["qml", "QML · RBS/SBR · cyan = close line", "#22d3ee"],
   ["fp", "Footprint (est.): Δ under candle · gold = POC · A/D/C/M/S/I", "#facc15"],
   ["dol", "D.O.L: ERL taken → FVG target · FVG tapped → old high/low", "#a78bfa"], ["smt", "SMT ▲▼ · pink line = BANKNIFTY (own scale)", "#f472b6"],
-  ["heat", "Heatmap: traded volume per price (blue cold → red hot)", "#f97316"], ["ocAct", "PE−CE action: ▲ OC CE / ▼ OC PE · bottom lane", "#4ade80"],
+  ["heat", "Heatmap: traded volume per price (blue cold → red hot)", "#f97316"], ["ocAct", "PE−CE 6-Stage Lifecycle: 🎯 PB PE/CE · 🔥 ADD · 💰 BOOK · SL Line · bottom lane", "#fb7185"],
   ["bias", "⚖ Bias 20: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
   ["walls", "🧱 OI walls: 🟥 CE = resistance (cap) · 🟩 PE = support (floor) · bar thicker = hardening, thinner/dashed = cracking · left bubbles = each strike's % OI change (+ writers adding / − covering)", "#ef4444"], ["bubbles", "🫧 Big trades ≥2× vol · yellow ring = absorbed", "#a3e635"],
-  ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD pane (est.)", "#4ade80"], ["gamma", "γ map: red call res · green put sup · yellow flip · ✓✓✓ = EMA stack + flag at level + volume", "#c084fc"], ["nodes", "🟨 Stacked nodes D·W·M (gold = A+) · ● ENTRY = ±2σ into zone", "#facc15"],
+  ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD order flow: 🟢 absorption / 🔴 distribution divergences · ⚡ momentum tinting", "#10b981"], ["gamma", "γ map: red call res · green put sup · yellow flip · ✓✓✓ = EMA stack + flag at level + volume", "#c084fc"], ["nodes", "🟨 Stacked nodes D·W·M (gold = A+) · ● ENTRY = ±2σ into zone", "#facc15"],
   ["tsoup", "🐢 Turtle soup: false break of PDH/PDL/OR/pool that closes back inside → stop-run reversal (▲ buy / ▼ sell)", "#2dd4bf"],
   ["rblock", "⟂ Rejection blocks: big-wick zone (violet) · lower wick = support, upper wick = resistance · dashed line = 50% entry", "#c084fc"],
   ["p3", "📐 Power of 3 (AMD): ① yellow box = accumulation (opening range) · ② orange line = Judas sweep (fake move) · ③ distribution = opposite the Judas", "#fde047"],

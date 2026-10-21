@@ -17,6 +17,94 @@ export type Bubble = { time: number; price: number; rvol: number; bull: boolean;
 export type Stack = { time: number; lo: number; hi: number; bull: boolean; until: number | null };
 export const BIG_X = 2;              // RVOL that counts as a "big trade" candle
 
+export type CvdDivergence = {
+  time: number;
+  type: "BULLISH_ABSORPTION" | "BEARISH_DISTRIBUTION" | "EXHAUSTION_CLIMAX";
+  dir: "bull" | "bear";
+  cvd: number;
+  delta: number;
+  price: number;
+  priceDiff: number;
+  bias: string;
+  details: string;
+};
+
+export function computeCvdDivergences(bars: FpBar[]): CvdDivergence[] {
+  const out: CvdDivergence[] = [];
+  const lookback = 10;
+  for (let i = 4; i < bars.length; i++) {
+    const cur = bars[i];
+    if (!cur.rows.length) continue;
+    const win = bars.slice(Math.max(0, i - lookback), i).filter((b) => b.rows.length);
+    if (win.length < 3) continue;
+
+    const priorPriceHigh = Math.max(...win.map((b) => b.h));
+    const priorPriceLow = Math.min(...win.map((b) => b.l));
+    const priorCvdHigh = Math.max(...win.map((b) => b.cvd));
+    const priorCvdLow = Math.min(...win.map((b) => b.cvd));
+
+    // Bearish Distribution: Price tests or exceeds rolling 10-bar swing high, but CVD fails to make higher high
+    if (cur.h >= priorPriceHigh - 1.0 && cur.cvd < priorCvdHigh - 1000) {
+      const pDiff = cur.h - priorPriceHigh;
+      out.push({
+        time: cur.time,
+        type: "BEARISH_DISTRIBUTION",
+        dir: "bear",
+        cvd: cur.cvd,
+        delta: cur.delta,
+        price: cur.h,
+        priceDiff: pDiff,
+        bias: "DISTRIBUTION / BUYER EXHAUSTION",
+        details: `Price tested swing high (${cur.h.toFixed(1)} vs prior ${priorPriceHigh.toFixed(1)}) but CVD lagged by ${kfmt(cur.cvd - priorCvdHigh)} delta`,
+      });
+    }
+    // Bullish Absorption: Price tests or breaks below rolling 10-bar swing low, but CVD holds higher low
+    else if (cur.l <= priorPriceLow + 1.0 && cur.cvd > priorCvdLow + 1000) {
+      const pDiff = cur.l - priorPriceLow;
+      out.push({
+        time: cur.time,
+        type: "BULLISH_ABSORPTION",
+        dir: "bull",
+        cvd: cur.cvd,
+        delta: cur.delta,
+        price: cur.l,
+        priceDiff: pDiff,
+        bias: "ABSORPTION / PASSIVE ACCUMULATION",
+        details: `Price tested swing low (${cur.l.toFixed(1)} vs prior ${priorPriceLow.toFixed(1)}) but CVD held ${kfmt(cur.cvd - priorCvdLow)} higher`,
+      });
+    }
+    // Extreme Exhaustion Climax (> 1.5 Lakhs)
+    else if (Math.abs(cur.cvd) >= 150000) {
+      if (cur.cvd <= -150000 && cur.delta > 0) {
+        out.push({
+          time: cur.time,
+          type: "EXHAUSTION_CLIMAX",
+          dir: "bull",
+          cvd: cur.cvd,
+          delta: cur.delta,
+          price: cur.l,
+          priceDiff: 0,
+          bias: "SELLER EXHAUSTION / CAPITULATION",
+          details: `Extreme selling CVD dump (${kfmt(cur.cvd)}) absorbed; intra-bar delta turning green (+${kfmt(cur.delta)})`,
+        });
+      } else if (cur.cvd >= 150000 && cur.delta < 0) {
+        out.push({
+          time: cur.time,
+          type: "EXHAUSTION_CLIMAX",
+          dir: "bear",
+          cvd: cur.cvd,
+          delta: cur.delta,
+          price: cur.h,
+          priceDiff: 0,
+          bias: "BUYER EXHAUSTION / CLIMAX TOP",
+          details: `Extreme buying CVD surge (${kfmt(cur.cvd)}) hit ceiling; intra-bar delta turning red (${kfmt(cur.delta)})`,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 const F = (px: number) => `bold ${Math.round(px * FP_SCALE)}px Inter, system-ui, sans-serif`;
 const crore = (n: number) => (n >= 1e7 ? `${(n / 1e7).toFixed(2)} Cr` : `${(n / 1e5).toFixed(1)} L`);
 const nf = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
@@ -271,12 +359,18 @@ export function readAt(t: number, o: { fp: FpBar[]; bubbles: Bubble[]; walls: Wa
     const p3 = o.fp[fi - 3];
     if (p3) { const dc = b.cvd - p3.cvd;
       if (Math.abs(dc) > 0) { dc > 0 ? bull++ : bear++; L.push({ tone: dc > 0 ? "bull" : "bear", txt: `CVD ${dc > 0 ? "rising" : "falling"} over 3 candles (${kfmt(dc)}) — ${dc > 0 ? "buyers" : "sellers"} in control of the flow.` }); } }
-    // 3 CVD divergence (6 bars)
-    const win = o.fp.slice(Math.max(0, fi - 6), fi);
-    if (win.length >= 4) {
-      const hh = c.high > Math.max(...win.map((x) => x.h)), ll = c.low < Math.min(...win.map((x) => x.l));
-      if (hh && b.cvd < Math.max(...win.map((x) => x.cvd))) { bear++; L.push({ tone: "bear", txt: "⚠ BEARISH CVD divergence — price made a new high but CVD didn't. Buyers are exhausted; the high is likely a trap." }); }
-      if (ll && b.cvd > Math.min(...win.map((x) => x.cvd))) { bull++; L.push({ tone: "bull", txt: "⚠ BULLISH CVD divergence — price made a new low but CVD didn't. Sellers are exhausted; the low is likely a trap." }); }
+    // 3 CVD divergence (10-bar swing pivot comparison)
+    const win = o.fp.slice(Math.max(0, fi - 10), fi);
+    if (win.length >= 3) {
+      const hh = c.high >= Math.max(...win.map((x) => x.h)) - 0.5, ll = c.low <= Math.min(...win.map((x) => x.l)) + 0.5;
+      const cvdMax = Math.max(...win.map((x) => x.cvd)), cvdMin = Math.min(...win.map((x) => x.cvd));
+      if (hh && b.cvd < cvdMax - 1000) { bear += 2; L.push({ tone: "bear", txt: "🔴 BEARISH CVD DISTRIBUTION — price tested swing high but CVD lagged behind. Buyers are exhausted; the high is an institutional distribution trap." }); }
+      if (ll && b.cvd > cvdMin + 1000) { bull += 2; L.push({ tone: "bull", txt: "🟢 BULLISH CVD ABSORPTION — price tested swing low but CVD held higher low. Sellers were absorbed; the low is an institutional accumulation spring." }); }
+    }
+    // Extreme Exhaustion (> 1.5 Lakhs)
+    if (Math.abs(b.cvd) >= 150000) {
+      if (b.cvd <= -150000 && b.delta > 0) { bull++; L.push({ tone: "bull", txt: `⚡ CVD EXTREME SELLING EXHAUSTION (${kfmt(b.cvd)}) — selling capitulation absorbed, intra-bar buyers stepping in.` }); }
+      else if (b.cvd >= 150000 && b.delta < 0) { bear++; L.push({ tone: "bear", txt: `⚡ CVD EXTREME BUYING EXHAUSTION (${kfmt(b.cvd)}) — buying climax met resistance, intra-bar sellers hitting.` }); }
     }
     // 4 stacked imbalance on this candle
     const zs = o.zones.filter((z) => z.time === t);

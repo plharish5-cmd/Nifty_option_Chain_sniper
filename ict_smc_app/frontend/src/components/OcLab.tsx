@@ -9,13 +9,13 @@ import {
   type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp,
 } from "lightweight-charts";
 
-type Tup = [string, string, string?, string?];
-type Row = {
+export type Tup = [string, string, string?, string?];
+export type Row = {
   ts: string; pe_day: number | null; pe_chg: number | null; ce_day: number | null; ce_chg: number | null;
   pe_ce_day: number | null; pe_ce_chg: number | null; pcr: number | null; vol_pcr: number | null; close: number | null;
   sup: number | null; res: number | null; lv: Tup | null; act: Tup | null; read: Tup; meaning: string; pro: Tup | null;
 };
-type Pece = { ok: boolean; message?: string; range?: string; spot?: number; rows?: Row[]; snapshots?: number; day?: string };
+export type Pece = { ok: boolean; message?: string; range?: string; spot?: number; rows?: Row[]; snapshots?: number; day?: string };
 type Pt = { t: number; hm: string; fut: number | null; ce: number | null; pe: number | null; flow: number | null; bal: number | null;
   regime: string; sig: boolean; flip: boolean; conf: string | null };
 type Flow = { ok: boolean; message?: string; label?: string; expiry?: string; unwind?: [number, number] | null; read?: string; note?: string; points?: Pt[]; snapshots?: number; day?: string };

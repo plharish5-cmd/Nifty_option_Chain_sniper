@@ -104,6 +104,7 @@ def compute(rows_1m: List[Dict[str, Any]], tf: str, n_bars: int = 16, step: floa
         sell = sum(x[1] for x in lad.values())
         vol, delta = buy + sell, buy - sell
         cvd += delta
+        b["cvd"] = cvd
         o, h, l, c = b["o"], b["h"], b["l"], b["c"]
         rng = max(h - l, 1e-9)
         base = {"time": chart_time(b["ts"]), "at": hm(b["ts"]), "o": o, "h": h, "l": l, "c": c,
@@ -171,6 +172,41 @@ def compute(rows_1m: List[Dict[str, Any]], tf: str, n_bars: int = 16, step: floa
                 tags.append({"k": "DIVERGENCE", "dir": "bear", "t": "bearish delta divergence — new high on negative delta"})
             if l < min(x["l"] for x in prev) and delta > 0:
                 tags.append({"k": "DIVERGENCE", "dir": "bull", "t": "bullish delta divergence — new low on positive delta"})
+        # Rolling 10-bar swing pivot comparison: Price vs CVD
+        win10 = [x for x in bars[max(0, i - 10):i] if "cvd" in x]
+        if len(win10) >= 3:
+            p_hi = max(x["h"] for x in win10)
+            p_lo = min(x["l"] for x in win10)
+            c_hi = max(x["cvd"] for x in win10)
+            c_lo = min(x["cvd"] for x in win10)
+            # Bearish Distribution: Price tests or exceeds high, but CVD fails to make higher high
+            if h >= p_hi - 0.5 and cvd < c_hi - 1000:
+                tags.append({
+                    "k": "CVD_DISTRIBUTION",
+                    "dir": "bear",
+                    "t": f"BEARISH CVD DISTRIBUTION — price tested high {h:,.0f} (prev {p_hi:,.0f}) but CVD lagged ({cvd:+,.0f} vs {c_hi:+,.0f}): buyer exhaustion"
+                })
+            # Bullish Absorption: Price tests or breaks below low, but CVD holds higher low
+            if l <= p_lo + 0.5 and cvd > c_lo + 1000:
+                tags.append({
+                    "k": "CVD_ABSORPTION",
+                    "dir": "bull",
+                    "t": f"BULLISH CVD ABSORPTION — price tested low {l:,.0f} (prev {p_lo:,.0f}) but CVD held ({cvd:+,.0f} vs {c_lo:+,.0f}): passive buyers absorbing"
+                })
+        # Extreme CVD volume exhaustion (> 1.5 Lakhs)
+        if abs(cvd) >= 150_000:
+            if cvd <= -150_000 and delta > 0:
+                tags.append({
+                    "k": "CVD_EXHAUSTION_CLIMAX",
+                    "dir": "bull",
+                    "t": f"CVD EXTREME SELLING EXHAUSTION ({cvd:+,.0f}) — capitulation into support, delta turning positive"
+                })
+            elif cvd >= 150_000 and delta < 0:
+                tags.append({
+                    "k": "CVD_EXHAUSTION_CLIMAX",
+                    "dir": "bear",
+                    "t": f"CVD EXTREME BUYING EXHAUSTION ({cvd:+,.0f}) — climax into resistance, delta turning negative"
+                })
         if i > 0:
             pb = bars[i - 1]
             if h > pb["h"] and c < pb["h"]:
@@ -211,4 +247,4 @@ def compute(rows_1m: List[Dict[str, Any]], tf: str, n_bars: int = 16, step: floa
             "step": step, "bars": out, "summary": s,
             "markers": [{"time": x["time"], "kind": "FP_" + t["k"], "dir": t["dir"], "price": x["h"] if t["dir"] == "bear" else x["l"],
                          "text": t["t"], "at": x["at"]}
-                        for x in have for t in x["tags"] if t["k"] in ("ABSORPTION", "MANIPULATION", "DISTRIBUTION", "ACCUMULATION")]}
+                        for x in have for t in x["tags"] if t["k"] in ("ABSORPTION", "MANIPULATION", "DISTRIBUTION", "ACCUMULATION", "CVD_DISTRIBUTION", "CVD_ABSORPTION", "CVD_EXHAUSTION_CLIMAX")]}

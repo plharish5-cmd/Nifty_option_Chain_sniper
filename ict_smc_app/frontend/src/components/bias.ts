@@ -10,8 +10,10 @@ export const FACTORS = [
   "Structure", "PE−CE action", "Writers gap", "Δput−Δcall", "Writer dominance", "Writer flip",
   "PCR trend", "SMT", "CCT", "MMXM", "CVD flow", "Gamma flip", "★ A+ Confluence"
 ] as const;
+import type { Row } from "./OcLab";
+
 // Options Lab feeds (from 8501 via /api/oclab): PE−CE table rows (3m, ATM ±10) and the writer-flow points (1m, all strikes)
-export type OcRow = { ts: string; act: [string, string, string?, string?] | null; pe_ce_day: number | null; pcr?: number | null };
+export type OcRow = Row;
 export type OcPt = { t: number; ce: number | null; pe: number | null; flow: number | null; bal: number | null; sig: boolean;
   flip?: boolean; regime?: string; conf?: string | null };
 export type Gex = { ok: boolean; spot?: number; flip?: number | null; regime?: string; pin?: number; accel?: number | null; message?: string };
