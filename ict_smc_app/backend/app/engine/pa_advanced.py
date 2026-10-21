@@ -2038,7 +2038,212 @@ def _synthesize_sniper_view(
 
     bias_20 = _compute_bias_20(pa, closed, atr, spot, sniper_view)
     sniper_view["bias_20"] = bias_20
+    sniper_view["hover_items"] = _build_hover_items(sniper_view, pa, spot, atr)
     return sniper_view
+
+
+def _build_hover_items(
+    sniper_view: Dict[str, Any],
+    pa: Dict[str, Any],
+    spot: float,
+    atr: float,
+) -> List[Dict[str, Any]]:
+    """
+    Builds structured hover-tooltip metadata for every visible marking on the Sniper chart
+    so the frontend crosshair inspector can explain What, Why, and How to Trade on hover.
+    """
+    items: List[Dict[str, Any]] = []
+
+    # 1. Best Supply POI Box
+    sup = sniper_view.get("best_supply")
+    if sup:
+        tags_str = " + ".join(sup.get("tags", [])) or "Institutional Supply"
+        items.append({
+            "kind": "POI_SUPPLY",
+            "side": "SHORT",
+            "top": float(sup["top"]),
+            "bot": float(sup["bot"]),
+            "title": f"🎯 {sup.get('grade', 'A+ SNIPER')} SUPPLY ZONE [{sup['bot']:.0f}–{sup['top']:.0f}]",
+            "badge": f"Conviction {sup['score']:.1f}/10",
+            "what": "Institutional sell-side order block & imbalance cluster where smart money distributed positions.",
+            "why": f"Confluence stack: {tags_str}.",
+            "how_to_trade": (
+                f"WAIT for price to pull back into {sup['bot']:.0f}–{sup['top']:.0f}. "
+                f"Enter BUY PE on a bearish rejection close or LTF Pure SFP sweep. "
+                f"Invalidate if a full displacement candle closes above {sup['top'] + atr * 0.3:.0f}."
+            ),
+        })
+
+    # 2. Best Demand POI Box
+    dem = sniper_view.get("best_demand")
+    if dem:
+        tags_str = " + ".join(dem.get("tags", [])) or "Institutional Demand"
+        items.append({
+            "kind": "POI_DEMAND",
+            "side": "LONG",
+            "top": float(dem["top"]),
+            "bot": float(dem["bot"]),
+            "title": f"🎯 {dem.get('grade', 'A+ SNIPER')} DEMAND ZONE [{dem['bot']:.0f}–{dem['top']:.0f}]",
+            "badge": f"Conviction {dem['score']:.1f}/10",
+            "what": "Institutional buy-side accumulation zone where unfilled limit orders rest.",
+            "why": f"Confluence stack: {tags_str}.",
+            "how_to_trade": (
+                f"WAIT for First-Time-Back (FTB) pullback into {dem['bot']:.0f}–{dem['top']:.0f}. "
+                f"Enter BUY CE on a bullish engulfing/pin-bar rejection or LTF MSB. "
+                f"Invalidate if a full displacement candle closes below {dem['bot'] - atr * 0.3:.0f}."
+            ),
+        })
+
+    # 3. Trade Plan Lines (Entry, SL, 1R Breakeven, TP1, TP2)
+    tp = sniper_view.get("trade_plan")
+    if tp:
+        is_long = tp.get("side") == "LONG"
+        strike = tp.get("strike", "ATM Option")
+        entry = float(tp["entry"])
+        sl = float(tp["sl"])
+        be_1r = float(tp["be_1r"])
+        tp1 = float(tp["tp1"])
+        tp2 = float(tp.get("tp2") or tp1)
+        risk_pts = abs(entry - sl)
+
+        items.append({
+            "kind": "LINE_ENTRY",
+            "side": tp.get("side", "LONG"),
+            "top": entry + atr * 0.12,
+            "bot": entry - atr * 0.12,
+            "price": entry,
+            "title": f"⚡ SNIPER ENTRY LINE @ {entry:.1f} ({strike})",
+            "badge": f"{tp.get('status', 'ACTIVE')} · R:R 1:{tp.get('rr', 2.0)}",
+            "what": f"Optimal institutional execution price for {strike}.",
+            "why": f"Aligned with the proximal edge of the A+ {'Demand' if is_long else 'Supply'} POI.",
+            "how_to_trade": f"Execute {strike} when a closed candle confirms rejection at {entry:.1f}. Risk is {risk_pts:.1f} NIFTY pts to SL ({sl:.1f}).",
+        })
+        items.append({
+            "kind": "LINE_SL",
+            "side": "STOP",
+            "top": max(entry, sl),
+            "bot": min(entry, sl),
+            "price": sl,
+            "title": f"🛑 HARD STOP-LOSS ZONE @ {sl:.1f} (-1.0R / -{risk_pts:.0f} pts)",
+            "badge": "Capital Protection",
+            "what": "Structural invalidation level placed beyond the manipulation wick + ATR buffer.",
+            "why": "Course Rule #1 (Ch. 22): Protecting capital is mandatory; if price closes beyond this level, the POI has failed.",
+            "how_to_trade": f"Exit {strike} immediately if spot breaches {sl:.1f}. Never widen a stop-loss.",
+        })
+        items.append({
+            "kind": "LINE_BE1R",
+            "side": "BREAKEVEN",
+            "top": be_1r + atr * 0.12,
+            "bot": be_1r - atr * 0.12,
+            "price": be_1r,
+            "title": f"🛡️ 1R BREAKEVEN TRIGGER @ {be_1r:.1f} (+{risk_pts:.0f} pts)",
+            "badge": "Move SL to Entry (0 Risk)",
+            "what": "Dynamic Trade Management milestone where your trade reaches +1R profit.",
+            "why": "Course Rule #4 (Ch. 22): Once price moves 1R in your favor, move Stop-Loss to Entry so you have zero risk of loss.",
+            "how_to_trade": f"As soon as NIFTY touches {be_1r:.1f}, trail your stop-loss to {entry:.1f} and book 25–50% partial profit.",
+        })
+        items.append({
+            "kind": "LINE_TP1",
+            "side": "TARGET",
+            "top": max(entry, tp1),
+            "bot": min(entry, tp1),
+            "price": tp1,
+            "title": f"🎯 TARGET 1 (TP1) @ {tp1:.1f} ({tp.get('rr', 2.0)}R)",
+            "badge": "Primary Liquidity / Imbalance Magnet",
+            "what": "First high-probability opposing liquidity pool or unmitigated imbalance.",
+            "why": "Price is algorithmically drawn to balance unfilled FVGs and sweep opposing equal highs/lows.",
+            "how_to_trade": f"Book 50–70% of your {strike} position at {tp1:.1f} and leave a runner for TP2 ({tp2:.1f}).",
+        })
+        if abs(tp2 - tp1) > atr * 0.25:
+            items.append({
+                "kind": "LINE_TP2",
+                "side": "TARGET",
+                "top": tp2 + atr * 0.15,
+                "bot": tp2 - atr * 0.15,
+                "price": tp2,
+                "title": f"🚀 RUNNER TARGET (TP2) @ {tp2:.1f}",
+                "badge": "External Range Liquidity",
+                "what": "Extended swing target at the opposing GPX corridor extreme.",
+                "why": "Captures full trend expansion days when momentum continues past EQ.",
+                "how_to_trade": f"Trail stop behind each new 5m/15m BOS and close remaining {strike} lots at {tp2:.1f}.",
+            })
+
+    # 4. GPX Corridor Lines (Ceiling, EQ 50%, Floor)
+    gpx = pa.get("gpx") or pa.get("gpx_corridor") or {}
+    if gpx:
+        hi = float(gpx.get("corridor_high") or gpx.get("range_high") or 0)
+        mid = float(gpx.get("corridor_mid") or gpx.get("range_eq") or 0)
+        lo = float(gpx.get("corridor_low") or gpx.get("range_low") or 0)
+        if hi > lo > 0:
+            items.append({
+                "kind": "GPX_CEILING",
+                "side": "SHORT",
+                "top": hi + atr * 0.12, "bot": hi - atr * 0.12, "price": hi,
+                "title": f"📐 GPX MACRO CEILING (HTF Supply) @ {hi:.0f}",
+                "badge": "Extreme Premium",
+                "what": "Upper boundary of the Higher-Timeframe Gameplay Box (Ch. 8 & Ch. 17).",
+                "why": "Marks extreme Premium where early buyers take profit and institutional sellers initiate shorts.",
+                "how_to_trade": "Do NOT initiate new longs here. Look for bearish SFP or MSB to buy PE back toward GPX EQ.",
+            })
+            items.append({
+                "kind": "GPX_EQ",
+                "side": "NEUTRAL",
+                "top": mid + atr * 0.12, "bot": mid - atr * 0.12, "price": mid,
+                "title": f"⚖️ GPX EQUILIBRIUM (50% Fair Value) @ {mid:.0f}",
+                "badge": "Premium / Discount Divider",
+                "what": "Exact 50% midpoint of the active HTF dealing range.",
+                "why": "Above EQ is Premium (expensive — favor shorts); below EQ is Discount (cheap — favor longs).",
+                "how_to_trade": "Use EQ as a partial profit target (TP1) for range trades; avoid initiating fresh trades in mid-air near EQ.",
+            })
+            items.append({
+                "kind": "GPX_FLOOR",
+                "side": "LONG",
+                "top": lo + atr * 0.12, "bot": lo - atr * 0.12, "price": lo,
+                "title": f"📐 GPX MACRO FLOOR (HTF Demand) @ {lo:.0f}",
+                "badge": "Extreme Discount",
+                "what": "Lower boundary of the Higher-Timeframe Gameplay Box (Ch. 8 & Ch. 17).",
+                "why": "Marks extreme Discount — shorting here is a classic retail trap (Ch. 8 Veto Rule).",
+                "how_to_trade": "Do NOT short into GPX Floor. Wait for a bullish SFP sweep or MSB to buy CE toward GPX EQ.",
+            })
+
+    # 5. Markers (Strong MSB & Pure SFP)
+    m_msb = sniper_view.get("last_strong_msb")
+    if m_msb:
+        p = float(m_msb.get("price") or m_msb.get("close_price") or m_msb.get("level") or 0)
+        if p > 0:
+            is_bull = m_msb.get("dir") == "bull"
+            t_val = m_msb.get("time") or (chart_time(int(m_msb["ts"])) if m_msb.get("ts") else None)
+            items.append({
+                "kind": "MARKER_MSB",
+                "side": "LONG" if is_bull else "SHORT",
+                "top": p + atr * 0.25, "bot": p - atr * 0.25, "price": p,
+                "time": t_val,
+                "title": f"⚡ {'BULLISH' if is_bull else 'BEARISH'} STRONG MSB @ {p:.1f}",
+                "badge": m_msb.get("text", "Strong MSB"),
+                "what": "High-quality Market Structure Break (Ch. 2): price broke the origin swing of the deepest high/low with a full displacement body close.",
+                "why": "Unlike a Weak MSB (wick struggle), a Strong MSB proves institutional sponsorship and creates a valid Entry Zone.",
+                "how_to_trade": f"Do not chase the breakout candle. Wait for price to pull back into the origin {'Demand' if is_bull else 'Supply'} Order Block / FVG.",
+            })
+
+    m_sfp = sniper_view.get("last_sfp")
+    if m_sfp:
+        p = float(m_sfp.get("price") or m_sfp.get("swing_price") or 0)
+        if p > 0:
+            is_bull = m_sfp.get("dir") == "bull"
+            t_val = m_sfp.get("time") or (chart_time(int(m_sfp["ts"])) if m_sfp.get("ts") else None)
+            items.append({
+                "kind": "MARKER_SFP",
+                "side": "LONG" if is_bull else "SHORT",
+                "top": p + atr * 0.25, "bot": p - atr * 0.25, "price": p,
+                "time": t_val,
+                "title": f"🪤 {'BULLISH' if is_bull else 'BEARISH'} PURE SFP (Stop-Loss Hunt) @ {p:.1f}",
+                "badge": "Liquidity Sweep Confirmed",
+                "what": "Swing Failure Pattern (Ch. 11): candle wicked beyond a key swing point to hunt retail stop-losses, then closed back inside the range.",
+                "why": "Provides institutional fuel (inducement) for a high-probability reversal in the opposite direction.",
+                "how_to_trade": f"Look for {'BUY CE' if is_bull else 'BUY PE'} entries on the LTF structure shift with SL placed just beyond the sweep wick ({p:.1f}).",
+            })
+
+    return items
 
 
 def _compute_bias_20(

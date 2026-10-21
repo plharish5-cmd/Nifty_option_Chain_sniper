@@ -1,6 +1,6 @@
 // AdvPaPanel.tsx — dedicated inspector for the 10 Advanced Price Action & Institutional Concepts.
 import { useEffect, useState } from "react";
-import type { PaAdvancedView, TF } from "../api";
+import type { PaAdvancedView, TF, SniperHoverItem } from "../api";
 
 export default function AdvPaPanel({ tick, chartTf }: { tick: number; chartTf?: TF }) {
   const [tf, setTf] = useState<TF>(chartTf || "5m");
@@ -92,6 +92,7 @@ export default function AdvPaPanel({ tick, chartTf }: { tick: number; chartTf?: 
         <div className="flex items-center gap-1 ml-auto">
           {[
             ["all", "All 10 Concepts"],
+            ["sniper", `🎯 Sniper Rules (${(d?.sniper?.hover_items || []).length})`],
             ["bias20", "⚖ Bias 20 Matrix"],
             ["msb", `MSBs (${msbs.length})`],
             ["df", `Dragon Fruit (${dfs.length})`],
@@ -154,76 +155,108 @@ export default function AdvPaPanel({ tick, chartTf }: { tick: number; chartTf?: 
           </div>
 
           {/* Trade Plan & Top Confluence POIs */}
-          <div className="grid gap-2 md:grid-cols-3 mt-2 text-[11px]">
-            {d.sniper.trade_plan ? (
-              <div className="p-2 rounded bg-ink-900/90 border border-gold-500/30 flex flex-col justify-between">
-                <div className="flex items-center justify-between font-bold">
-                  <span className={d.sniper.trade_plan.side === "LONG" ? "text-emerald-400" : "text-rose-400"}>
-                    {d.sniper.trade_plan.side === "LONG" ? "▲ LONG SETUP" : "▼ SHORT SETUP"}
-                  </span>
-                  <span className="text-gold-300 font-mono">{d.sniper.trade_plan.strike}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-1 text-slate-300">
-                  <div>Entry: <b className="text-slate-100">{n(d.sniper.trade_plan.entry)}</b></div>
-                  <div>SL: <b className="text-rose-400">{n(d.sniper.trade_plan.sl)}</b></div>
-                  <div>1R BE: <b className="text-cyan-300">{n(d.sniper.trade_plan.be_1r)}</b></div>
-                  <div>TP1: <b className="text-emerald-400">{n(d.sniper.trade_plan.tp1)}</b> {d.sniper.trade_plan.rr ? `(${d.sniper.trade_plan.rr}R)` : ""}</div>
-                </div>
-              </div>
-            ) : (
-              <div className="p-2 rounded bg-ink-900/60 border border-ink-800 text-slate-400 flex items-center justify-center">
-                <span>⏳ No Trigger Active · Awaiting POI Tap</span>
-              </div>
-            )}
-
-            {/* Nearest Supply POI */}
-            <div className="p-2 rounded bg-rose-950/20 border border-rose-900/40 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-rose-300">🎯 NEAREST SUPPLY POI</span>
-                {d.sniper.best_supply && (
-                  <span className="px-1.5 py-0.2 rounded bg-rose-900/60 text-rose-200 text-[10px] font-bold">
-                    {d.sniper.best_supply.score.toFixed(1)}/10 ★
-                  </span>
+          {(() => {
+            const hItems = d.sniper.hover_items || [];
+            const supHover = hItems.find((x) => x.kind === "POI_SUPPLY");
+            const demHover = hItems.find((x) => x.kind === "POI_DEMAND");
+            const entryHover = hItems.find((x) => x.kind === "LINE_ENTRY");
+            return (
+              <div className="grid gap-2 md:grid-cols-3 mt-2 text-[11px]">
+                {d.sniper.trade_plan ? (
+                  <div className="p-2 rounded bg-ink-900/90 border border-gold-500/30 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between font-bold">
+                        <span className={d.sniper.trade_plan.side === "LONG" ? "text-emerald-400" : "text-rose-400"}>
+                          {d.sniper.trade_plan.side === "LONG" ? "▲ LONG SETUP" : "▼ SHORT SETUP"}
+                        </span>
+                        <span className="text-gold-300 font-mono">{d.sniper.trade_plan.strike}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-1 text-slate-300">
+                        <div>Entry: <b className="text-slate-100">{n(d.sniper.trade_plan.entry)}</b></div>
+                        <div>SL: <b className="text-rose-400">{n(d.sniper.trade_plan.sl)}</b></div>
+                        <div>1R BE: <b className="text-cyan-300">{n(d.sniper.trade_plan.be_1r)}</b></div>
+                        <div>TP1: <b className="text-emerald-400">{n(d.sniper.trade_plan.tp1)}</b> {d.sniper.trade_plan.rr ? `(${d.sniper.trade_plan.rr}R)` : ""}</div>
+                      </div>
+                    </div>
+                    {entryHover && (
+                      <div className="mt-1.5 rounded bg-emerald-950/40 border border-emerald-500/30 p-1 text-[10px] text-emerald-200">
+                        <span className="font-bold text-emerald-300">Rule: </span>
+                        <span>{entryHover.how_to_trade}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-2 rounded bg-ink-900/60 border border-ink-800 text-slate-400 flex items-center justify-center">
+                    <span>⏳ No Trigger Active · Awaiting POI Tap</span>
+                  </div>
                 )}
-              </div>
-              {d.sniper.best_supply ? (
-                <div className="mt-1 text-slate-300">
-                  <div className="font-semibold text-slate-100">
-                    [{n(d.sniper.best_supply.bot)} – {n(d.sniper.best_supply.top)}] · {d.sniper.best_supply.grade}
-                  </div>
-                  <div className="text-[10px] text-rose-400/90 truncate mt-0.5">
-                    Stack: {d.sniper.best_supply.tags.join(" + ")}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-slate-500 text-[10px] mt-1">No active high-conviction supply above spot.</div>
-              )}
-            </div>
 
-            {/* Nearest Demand POI */}
-            <div className="p-2 rounded bg-emerald-950/20 border border-emerald-900/40 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-emerald-300">🎯 NEAREST DEMAND POI</span>
-                {d.sniper.best_demand && (
-                  <span className="px-1.5 py-0.2 rounded bg-emerald-900/60 text-emerald-200 text-[10px] font-bold">
-                    {d.sniper.best_demand.score.toFixed(1)}/10 ★
-                  </span>
-                )}
-              </div>
-              {d.sniper.best_demand ? (
-                <div className="mt-1 text-slate-300">
-                  <div className="font-semibold text-slate-100">
-                    [{n(d.sniper.best_demand.bot)} – {n(d.sniper.best_demand.top)}] · {d.sniper.best_demand.grade}
+                {/* Nearest Supply POI */}
+                <div className="p-2 rounded bg-rose-950/20 border border-rose-900/40 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-rose-300">🎯 NEAREST SUPPLY POI</span>
+                      {d.sniper.best_supply && (
+                        <span className="px-1.5 py-0.2 rounded bg-rose-900/60 text-rose-200 text-[10px] font-bold">
+                          {d.sniper.best_supply.score.toFixed(1)}/10 ★
+                        </span>
+                      )}
+                    </div>
+                    {d.sniper.best_supply ? (
+                      <div className="mt-1 text-slate-300">
+                        <div className="font-semibold text-slate-100">
+                          [{n(d.sniper.best_supply.bot)} – {n(d.sniper.best_supply.top)}] · {d.sniper.best_supply.grade}
+                        </div>
+                        <div className="text-[10px] text-rose-400/90 truncate mt-0.5">
+                          Stack: {d.sniper.best_supply.tags.join(" + ")}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-slate-500 text-[10px] mt-1">No active high-conviction supply above spot.</div>
+                    )}
                   </div>
-                  <div className="text-[10px] text-emerald-400/90 truncate mt-0.5">
-                    Stack: {d.sniper.best_demand.tags.join(" + ")}
-                  </div>
+                  {supHover && (
+                    <div className="mt-1.5 rounded bg-rose-950/40 border border-rose-500/30 p-1 text-[10px] text-rose-200">
+                      <span className="font-bold text-rose-300">Rule: </span>
+                      <span>{supHover.how_to_trade}</span>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="text-slate-500 text-[10px] mt-1">No active high-conviction demand below spot.</div>
-              )}
-            </div>
-          </div>
+
+                {/* Nearest Demand POI */}
+                <div className="p-2 rounded bg-emerald-950/20 border border-emerald-900/40 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-emerald-300">🎯 NEAREST DEMAND POI</span>
+                      {d.sniper.best_demand && (
+                        <span className="px-1.5 py-0.2 rounded bg-emerald-900/60 text-emerald-200 text-[10px] font-bold">
+                          {d.sniper.best_demand.score.toFixed(1)}/10 ★
+                        </span>
+                      )}
+                    </div>
+                    {d.sniper.best_demand ? (
+                      <div className="mt-1 text-slate-300">
+                        <div className="font-semibold text-slate-100">
+                          [{n(d.sniper.best_demand.bot)} – {n(d.sniper.best_demand.top)}] · {d.sniper.best_demand.grade}
+                        </div>
+                        <div className="text-[10px] text-emerald-400/90 truncate mt-0.5">
+                          Stack: {d.sniper.best_demand.tags.join(" + ")}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-slate-500 text-[10px] mt-1">No active high-conviction demand below spot.</div>
+                    )}
+                  </div>
+                  {demHover && (
+                    <div className="mt-1.5 rounded bg-emerald-950/40 border border-emerald-500/30 p-1 text-[10px] text-emerald-200">
+                      <span className="font-bold text-emerald-300">Rule: </span>
+                      <span>{demHover.how_to_trade}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -328,6 +361,55 @@ export default function AdvPaPanel({ tick, chartTf }: { tick: number; chartTf?: 
 
         {!loading && d && d.available && (
           <div className="space-y-4">
+            {/* 🎯 Institutional Hover Inspector & Execution Rules */}
+            {(activeTab === "all" || activeTab === "sniper") && d?.sniper?.hover_items && d.sniper.hover_items.length > 0 && (
+              <div className="rounded-lg border border-gold-500/40 bg-gradient-to-b from-[#070b14]/90 to-ink-950/90 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b border-ink-800">
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-[13px] text-gold-300">
+                      🎯 Institutional Hover Inspector & Execution Rules ({d.sniper.hover_items.length} Markings)
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-gold-950/80 border border-gold-600/60 text-gold-300 text-[10px] font-bold">
+                      Interactive TV Tooltip Feed
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    Hover over any line, POI box, or MSB/SFP marker on the chart to inspect live
+                  </span>
+                </div>
+
+                <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                  {d.sniper.hover_items.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-xl border border-gold-500/30 bg-[#090d16]/90 p-2.5 text-[11.5px] shadow-lg backdrop-blur"
+                    >
+                      <div className="flex items-center justify-between gap-1.5 pb-1 mb-1.5 border-b border-slate-800">
+                        <span className="font-extrabold text-gold-300 truncate">{item.title}</span>
+                        <span className="shrink-0 rounded bg-gold-500/20 px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-gold-300 border border-gold-500/40">
+                          {item.badge}
+                        </span>
+                      </div>
+                      <div className="space-y-1 text-slate-300 leading-snug">
+                        <div>
+                          <span className="font-bold text-cyan-300">What: </span>
+                          <span>{item.what}</span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-amber-300">Why: </span>
+                          <span>{item.why}</span>
+                        </div>
+                        <div className="mt-1 rounded bg-emerald-950/50 border border-emerald-500/30 px-2 py-1 text-emerald-200">
+                          <span className="font-bold text-emerald-300">🎯 How to trade: </span>
+                          <span>{item.how_to_trade}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* ⚖ Bias 20 Confluence Engine & Discrete Sniper Weights */}
             {(activeTab === "all" || activeTab === "bias20") && b20 && (
               <div className="rounded-lg border border-gold-500/40 bg-gradient-to-b from-ink-900/90 to-ink-950/90 p-3">

@@ -455,6 +455,13 @@ def test_sniper_view_confluence_and_capping():
 
     # Verification of Bias 20 expansion and Sniper Confluence triggers
     assert "bias_20" in syn_sniper
+    assert "hover_items" in syn_sniper
+    assert len(syn_sniper["hover_items"]) >= 3
+    kinds = [it["kind"] for it in syn_sniper["hover_items"]]
+    assert "POI_SUPPLY" in kinds
+    assert "LINE_ENTRY" in kinds
+    assert "LINE_SL" in kinds
+    assert "LINE_BE1R" in kinds
     b20 = syn_sniper["bias_20"]
     assert b20["total_factors"] == 20
     assert b20["max_score"] == 20.0

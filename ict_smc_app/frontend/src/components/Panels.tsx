@@ -261,3 +261,4 @@ function Stat({ k, v }: { k: string; v: string }) {
 
 export { default as AdvPaPanel } from "./AdvPaPanel";
 export { default as PaCoursePanel } from "./PaCoursePanel";
+export { WritersFlow, WritersChart } from "./OcLab";

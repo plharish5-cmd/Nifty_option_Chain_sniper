@@ -16,11 +16,11 @@ import { computeDol } from "./dol";
 import { turtleSoup } from "./turtlesoup";
 import { powerOfThree } from "./powerofthree";
 import { dispatch, scanSignals, type SigPrefs } from "./signalAlerts";
-import type { AlertRow } from "../api";
+import type { AlertRow, SniperHoverItem } from "../api";
 import { EV_LAYER, GUIDE, KIND_ACT } from "./guide";
 import { confluence, FootprintPrimitive, FP_SCALE, setFpScale, FP_MEANING, FP_WORD, kfmt, type FpBar } from "./footprint";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
-import { BAR_SEC, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
+import { BAR_SEC, hitTestSniperHover, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
 import MtfPanel from "./MtfPanel";
 import { StdvPrimitive, detectManipulationLegs, createManualStdvLeg, type StdvLeg } from "./stdv";
 import { aggregateWeeklyCandles, extractWicks, filterVirginWicks, type HtfWick } from "./htfWicks";
@@ -128,6 +128,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const evRef = useRef<Map<number, Ev[]>>(new Map());
   const cMap = useRef<Map<number, Candle>>(new Map());
   const [hover, setHover] = useState<{ t: number; x: number; y: number } | null>(null);
+  const [sniperHover, setSniperHover] = useState<{ item: SniperHoverItem; x: number; y: number } | null>(null);
+  const onCrosshairMoveRef = useRef<(p: MouseEventParams<Time>) => void>(() => {});
   const [latest, setLatest] = useState<Ev[]>([]);
   const [layerNow, setLayerNow] = useState<Record<string, Ev>>({});
   const [guideOpen, setGuideOpen] = useState<boolean>(() => { try { return localStorage.getItem("ict_guide") !== "0"; } catch { return true; } });
@@ -223,8 +225,17 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     chart.current = ch; series.current = s; zz.current = z;
     markers.current = createSeriesMarkers(s, []);
     const onMove = (p: MouseEventParams<Time>) => {
-      if (!p.point || p.time == null || p.point.x < 0) { setHover(null); return; }
-      setHover({ t: p.time as number, x: p.point.x, y: p.point.y });
+      if (!p.point || p.point.x < 0) {
+        setHover(null);
+        setSniperHover(null);
+        return;
+      }
+      if (p.time != null) {
+        setHover({ t: p.time as number, x: p.point.x, y: p.point.y });
+      } else {
+        setHover(null);
+      }
+      onCrosshairMoveRef.current(p);
     };
     ch.subscribeCrosshairMove(onMove);
     ch.applyOptions({ handleScale: { axisPressedMouseMove: { time: true, price: true }, axisDoubleClickReset: { time: true, price: true },
@@ -435,11 +446,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           if (sniper.best_supply) {
             const s = sniper.best_supply;
             boxes.push({
-              from: Math.max(s.ts || t0, t0),
+              from: Math.max(s.ts || t0, candles[Math.max(0, candles.length - 45)]?.time ?? t0),
               to: lastTime,
               top: s.top,
               bottom: s.bot,
-              fill: "rgba(244, 63, 94, 0.22)",
+              fill: "rgba(244, 63, 94, 0.14)",
               stroke: "#f43f5e",
               label: s.label || `🎯 ${s.grade || "A+ SNIPER"} SUPPLY [${s.bot.toFixed(0)}–${s.top.toFixed(0)}] · ${s.score.toFixed(1)}/10`,
               labelColor: "#f43f5e",
@@ -449,11 +460,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           if (sniper.best_demand) {
             const d = sniper.best_demand;
             boxes.push({
-              from: Math.max(d.ts || t0, t0),
+              from: Math.max(d.ts || t0, candles[Math.max(0, candles.length - 45)]?.time ?? t0),
               to: lastTime,
               top: d.top,
               bottom: d.bot,
-              fill: "rgba(16, 185, 129, 0.22)",
+              fill: "rgba(16, 185, 129, 0.14)",
               stroke: "#10b981",
               label: d.label || `🎯 ${d.grade || "A+ SNIPER"} DEMAND [${d.bot.toFixed(0)}–${d.top.toFixed(0)}] · ${d.score.toFixed(1)}/10`,
               labelColor: "#10b981",
@@ -462,66 +473,71 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           // 3. TradingView-Style Position Risk-Reward Box (sniper.trade_plan)
           if (sniper.trade_plan) {
             const tp = sniper.trade_plan;
-            const tBoxStart = candles[Math.max(0, candles.length - 18)]?.time ?? t0;
+            // Anchor cleanly on right-hand execution strip (last 8 bars -> lastTime)
+            const rrFrom = candles[Math.max(0, candles.length - 8)]?.time ?? lastTime;
+            const rrTo = lastTime;
 
-            // Stop-loss zone over right ~25% of chart
+            // Stop-loss zone over right ~8 bars
             const slTop = Math.max(tp.entry, tp.sl);
             const slBot = Math.min(tp.entry, tp.sl);
             boxes.push({
-              from: tBoxStart,
-              to: lastTime,
+              from: rrFrom,
+              to: rrTo,
               top: slTop,
               bottom: slBot,
-              fill: "rgba(239, 68, 68, 0.14)",
+              fill: "rgba(239, 68, 68, 0.16)",
               stroke: "#ef4444",
-              dash: true,
-              label: `SL ${tp.sl.toFixed(1)} (Risk: ${Math.abs(tp.entry - tp.sl).toFixed(1)} pts)`,
+              dash: false,
+              label: `🛑 SL ${tp.sl.toFixed(0)} (-1R)`,
               labelColor: "#ef4444",
             });
 
-            // Target Zone over right ~25% of chart
+            // Target Zone over right ~8 bars
             const tpTop = Math.max(tp.entry, tp.tp1);
             const tpBot = Math.min(tp.entry, tp.tp1);
             boxes.push({
-              from: tBoxStart,
-              to: lastTime,
+              from: rrFrom,
+              to: rrTo,
               top: tpTop,
               bottom: tpBot,
-              fill: "rgba(16, 185, 129, 0.14)",
+              fill: "rgba(16, 185, 129, 0.15)",
               stroke: "#10b981",
-              dash: true,
-              label: `TP1 ${tp.tp1.toFixed(1)} (${tp.rr ? tp.rr.toFixed(1) + "R" : ""}) · ${tp.strike || ""}`,
+              dash: false,
+              label: `🎯 TP1 ${tp.tp1.toFixed(0)} (${tp.rr ? tp.rr.toFixed(1) + "R" : "2R"})`,
               labelColor: "#10b981",
             });
 
-            // Crisp gold Entry Line (#e8c35a)
+            // Crisp institutional gold Entry Line (#fbbf24, 2px solid)
             segs.push({
-              from: tBoxStart,
+              from: rrFrom,
               price: tp.entry,
-              color: "#e8c35a",
+              color: "#fbbf24",
               dash: false,
-              label: `ENTRY ${tp.entry.toFixed(1)} (${tp.side || ""} ${tp.strike || ""})`,
+              width: 2,
+              label: `⚡ ENTRY ${tp.entry.toFixed(0)} · ${tp.strike}`,
             });
 
-            // Dashed cyan 1R Breakeven Line (be_1r, #38bdf8)
+            // Dashed neon cyan 1R Breakeven Line (#22d3ee)
             if (tp.be_1r != null) {
               segs.push({
-                from: tBoxStart,
+                from: rrFrom,
                 price: tp.be_1r,
-                color: "#38bdf8",
+                color: "#22d3ee",
                 dash: true,
-                label: `1R Breakeven (Move SL to 0) ${tp.be_1r.toFixed(1)}`,
+                width: 1,
+                label: `🛡️ 1R BE ${tp.be_1r.toFixed(0)} (Move SL→0)`,
               });
             }
 
             // Optional TP2 Runner line
-            if (tp.tp2 != null) {
+            if (tp.tp2 != null && Math.abs(tp.tp2 - tp.tp1) > 2) {
               segs.push({
-                from: tBoxStart,
+                from: rrFrom,
                 price: tp.tp2,
-                color: "rgba(16, 185, 129, 0.75)",
+                color: "#10b981",
                 dash: true,
-                label: `TP2 ${tp.tp2.toFixed(1)} Runner`,
+                width: 1,
+                label: `🚀 TP2 ${tp.tp2.toFixed(0)} (Runner)`,
               });
             }
           }
@@ -1391,8 +1407,54 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const fb = hover && layers.fp ? fpPrim.current.bars.find((b) => b.time === hover.t) : undefined;
   const W = box.current?.clientWidth ?? 900;
   const legend = LEGEND.filter(([k]) => layers[k]);
+
+  // Keep crosshair move hit-testing engine synchronized with latest data
+  onCrosshairMoveRef.current = (p: MouseEventParams<Time>) => {
+    if (!layers.advPa || !analysis?.pa_advanced?.sniper?.hover_items?.length || !series.current) {
+      if (sniperHover) setSniperHover(null);
+      return;
+    }
+    const pt = p.point;
+    if (!pt) {
+      if (sniperHover) setSniperHover(null);
+      return;
+    }
+    const cursorPrice = series.current.coordinateToPrice(pt.y);
+    if (cursorPrice == null) {
+      if (sniperHover) setSniperHover(null);
+      return;
+    }
+
+    const hoverItems = analysis.pa_advanced.sniper.hover_items;
+    const atr = analysis.atr || 15.0;
+    const barSec = BAR_SEC[tf] ?? 300;
+    const cursorTime = p.time as number | undefined;
+
+    const matched = hitTestSniperHover(
+      hoverItems,
+      cursorTime,
+      cursorPrice,
+      atr,
+      barSec,
+      (px) => series.current?.priceToCoordinate(px) ?? null,
+      pt.y
+    );
+
+    if (matched) {
+      setSniperHover({ item: matched, x: pt.x, y: pt.y });
+    } else {
+      if (sniperHover) setSniperHover(null);
+    }
+  };
+
   return (
-    <div className="relative h-full w-full">
+    <div
+      className="relative h-full w-full"
+      onMouseLeave={() => {
+        setHover(null);
+        setSniperHover(null);
+      }}
+    >
       <div ref={box} className="h-full w-full" />
       {/* cursor TIME badge (top-centre) — date + HH:MM of the hovered candle, all timeframes */}
       {hover && (() => {
@@ -1570,8 +1632,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         const badgeIcon = isTrap ? "🚫" : isBreak ? "⚡" : isRejCe || isRejPe ? "🎯" : "⏳";
 
         return (
-          <div className="pointer-events-auto absolute left-1/2 top-2 z-30 -translate-x-1/2 max-w-[94%]">
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gold-500/40 bg-[#060b16]/95 px-3 py-1.5 shadow-2xl backdrop-blur text-[12px]">
+          <div className="pointer-events-auto absolute left-1/2 top-2 z-30 -translate-x-1/2 max-w-[calc(100%-190px)]">
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gold-500/50 bg-[#060b16]/95 px-3 py-1.5 shadow-2xl backdrop-blur-md ring-1 ring-gold-500/30 text-[12px]">
               <span className={`flex items-center gap-1 rounded px-2 py-0.5 font-extrabold text-[11px] border ${badgeClass}`}>
                 <span>{badgeIcon}</span>
                 <span>{sniper.state}</span>
@@ -1581,7 +1643,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
                 🛡️ {sniper.behavior}
               </span>
 
-              <span className="text-slate-100 font-semibold text-[11.5px] truncate max-w-[620px]" title={sniper.headline}>
+              <span className="text-slate-100 font-semibold text-[11.5px] truncate max-w-[480px] xl:max-w-[620px]" title={sniper.headline}>
                 {sniper.headline}
               </span>
 
@@ -1719,8 +1781,40 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           onClick={() => series.current?.priceScale().setAutoScale(true)}>Auto ↕</button>
         {onExpand && <button className="tab !py-0.5 !text-[11px]" title="Full screen (Esc to exit)" onClick={onExpand}>{expanded ? "▣ Normal" : "⛶ Full"}</button>}
       </div>
+      {/* 🎯 Sleek Bloomberg/TradingView Pro Glassmorphic Sniper Hover Inspector Card */}
+      {layers.advPa && sniperHover && (
+        <div
+          className="pointer-events-none absolute z-50 w-[340px] rounded-xl border border-gold-500/60 bg-[#070b14]/95 p-3 text-[11.5px] text-slate-200 shadow-2xl backdrop-blur-md ring-1 ring-gold-400/20 transition-all duration-75"
+          style={{
+            left: Math.min(Math.max(12, sniperHover.x + 18), (box.current?.clientWidth ?? 900) - 360),
+            top: Math.min(Math.max(54, sniperHover.y - 20), (box.current?.clientHeight ?? 500) - 190),
+          }}
+        >
+          <div className="mb-1.5 flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
+            <span className="font-extrabold text-gold-300">{sniperHover.item.title}</span>
+            <span className="shrink-0 rounded bg-gold-500/20 px-1.5 py-0.5 font-mono text-[10px] font-bold text-gold-300 border border-gold-500/40">
+              {sniperHover.item.badge}
+            </span>
+          </div>
+          <div className="space-y-1.5 leading-relaxed">
+            <div>
+              <span className="font-bold text-cyan-300">What it is: </span>
+              <span className="text-slate-300">{sniperHover.item.what}</span>
+            </div>
+            <div>
+              <span className="font-bold text-amber-300">Why it formed: </span>
+              <span className="text-slate-300">{sniperHover.item.why}</span>
+            </div>
+            <div className="rounded bg-emerald-950/50 border border-emerald-500/30 px-2 py-1 text-emerald-200">
+              <span className="font-bold text-emerald-300">🎯 How to trade: </span>
+              <span>{sniperHover.item.how_to_trade}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* hover card */}
-      {hover && hc && (
+      {hover && hc && !sniperHover && (
         <div className="pointer-events-none absolute z-20 w-[420px] rounded-lg border border-ink-700 bg-[#060b16]/95 p-2.5 text-[13px] leading-snug shadow-xl"
           style={{ left: hover.x > W - 450 ? hover.x - 430 : hover.x + 16, top: Math.max(8, Math.min(hover.y - 20, (box.current?.clientHeight ?? 400) - ((layers.bias ? 300 : 0) + (layers.volume ? 160 : 0) + (layers.heat ? 140 : 0) + 160))) }}>
           {lns.length > 0 && <div className="mb-1 rounded bg-violet-900/40 px-1.5 py-1">

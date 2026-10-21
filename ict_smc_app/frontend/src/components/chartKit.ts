@@ -1,6 +1,7 @@
 // chartKit.ts — makes the chart readable: one marker per bar & side (merged), short labels, text only where it
 // matters (recent / important), and a full-text event index for the hover card.
 import type { SeriesMarker, Time, UTCTimestamp } from "lightweight-charts";
+import type { SniperHoverItem } from "../api";
 
 export type Ev = {
   time: number; side: "above" | "below"; layer: string; kind: string; dir: "bull" | "bear" | "flat";
@@ -57,6 +58,16 @@ export const MEANING: Record<string, string> = {
   MITIGATION_BLOCK: "Mitigation Block — failure swing supply/demand zone where trapped traders exit at breakeven",
   ROTE: "ROTE — Reverse Optimal Trade Entry 0.70-0.80 Fibonacci retracement to target",
   TT3: "Three Tap Setup — Tap 1 hidden zone retest inside consolidation range",
+  POI_SUPPLY: "A+ Sniper Supply Zone — Institutional sell-side order block & imbalance cluster",
+  POI_DEMAND: "A+ Sniper Demand Zone — Institutional buy-side accumulation zone where unfilled limit orders rest",
+  LINE_ENTRY: "Sniper Entry Line — Optimal institutional execution price aligned with proximal POI edge",
+  LINE_SL: "Hard Stop-Loss Zone — Structural invalidation level placed beyond manipulation wick + ATR buffer",
+  LINE_BE1R: "1R Breakeven Trigger — Dynamic Trade Management: move Stop-Loss to Entry for 0 risk",
+  LINE_TP1: "Target 1 (TP1) — Primary opposing liquidity pool / unmitigated imbalance magnet",
+  LINE_TP2: "Runner Target (TP2) — Extended swing target at opposing GPX corridor extreme",
+  GPX_CEILING: "GPX Macro Ceiling — HTF Extreme Premium supply boundary",
+  GPX_EQ: "GPX Equilibrium — 50% fair value divider between Premium and Discount",
+  GPX_FLOOR: "GPX Macro Floor — HTF Extreme Discount demand boundary",
 };
 
 // shorten the backend's text for the chart: "BOS·weak lowV" → "BOS", "Sweep EQH" → "Sweep EQH"
@@ -107,3 +118,68 @@ export function index(evs: Ev[]): Map<number, Ev[]> {
 }
 
 export const BAR_SEC: Record<string, number> = { "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1D": 86400, "1W": 604800 };
+
+/**
+ * Hit-Test Engine for Interactive Sniper Hover Tooltips:
+ * When cursor is within ±8 pixels or price tolerance of any active Sniper POI Box,
+ * Trade Plan Line (Entry, SL, 1R BE, TP1/TP2, GPX), or Marker (Strong MSB, Pure SFP),
+ * returns the matching SniperHoverItem to render an institutional tooltip card.
+ */
+export function hitTestSniperHover(
+  items: SniperHoverItem[],
+  cursorTime: number | undefined,
+  cursorPrice: number,
+  atr: number,
+  barSec: number,
+  priceToCoordinate?: (price: number) => number | null,
+  cursorY?: number
+): SniperHoverItem | null {
+  if (!items || !items.length) return null;
+
+  // 1. Check Markers (Strong MSB & Pure SFP) - within ~1.8 bars of time & 0.40 * atr of price, or within 12px
+  for (const it of items) {
+    if (it.kind.startsWith("MARKER_") && it.price != null) {
+      const pDist = Math.abs(cursorPrice - it.price);
+      let yPixelDist = 999;
+      if (priceToCoordinate && cursorY != null) {
+        const yc = priceToCoordinate(it.price);
+        if (yc != null) yPixelDist = Math.abs(cursorY - yc);
+      }
+      let timeMatch = true;
+      if (it.time != null && cursorTime != null) {
+        timeMatch = Math.abs(cursorTime - Number(it.time)) <= barSec * 1.8;
+      }
+      if ((timeMatch && pDist <= 0.40 * atr) || yPixelDist <= 12) {
+        return it;
+      }
+    }
+  }
+
+  // 2. Check Key Lines (Entry, SL, 1R BE, TP1, TP2, GPX Ceiling, GPX EQ, GPX Floor) - within 0.18 * atr or ±8px
+  for (const it of items) {
+    if ((it.kind.startsWith("LINE_") || it.kind.startsWith("GPX_")) && it.price != null) {
+      const pDist = Math.abs(cursorPrice - it.price);
+      let yPixelDist = 999;
+      if (priceToCoordinate && cursorY != null) {
+        const yc = priceToCoordinate(it.price);
+        if (yc != null) yPixelDist = Math.abs(cursorY - yc);
+      }
+      if (pDist <= 0.18 * atr || yPixelDist <= 8) {
+        return it;
+      }
+    }
+  }
+
+  // 3. Check POI Boxes (Supply & Demand Zones) - cursor inside vertical bounds [bot..top]
+  for (const it of items) {
+    if (it.kind.startsWith("POI_")) {
+      const top = Math.max(it.top, it.bot);
+      const bot = Math.min(it.top, it.bot);
+      if (cursorPrice >= bot && cursorPrice <= top) {
+        return it;
+      }
+    }
+  }
+
+  return null;
+}

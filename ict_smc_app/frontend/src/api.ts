@@ -404,6 +404,20 @@ export interface SniperTradePlan {
   rr?: number;
 }
 
+export interface SniperHoverItem {
+  kind: string;
+  side: string;
+  top: number;
+  bot: number;
+  price?: number;
+  time?: number;
+  title: string;
+  badge: string;
+  what: string;
+  why: string;
+  how_to_trade: string;
+}
+
 export interface SniperView {
   state: string;
   behavior: string;
@@ -415,6 +429,7 @@ export interface SniperView {
   last_strong_msb?: any;
   last_sfp?: any;
   bias_20?: Bias20View | null;
+  hover_items?: SniperHoverItem[];
 }
 
 export interface Analysis { pa_advanced?: PaAdvancedView; cct?: CctView; mmxm?: MmxmView; qml?: QmlView; volume?: VolumeView; auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
