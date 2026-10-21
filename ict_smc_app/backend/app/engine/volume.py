@@ -141,8 +141,63 @@ def bar_volume(rows: List[Dict[str, float]], tf: str) -> Dict[int, Tuple[float, 
     return {k: (v[0], int(v[1])) for k, v in out.items()}
 
 
+def classify_rvol(r: Optional[float]) -> Dict[str, Any]:
+    """Semantic volume classification into institutional regimes."""
+    if r is None:
+        return {
+            "tier": "UNKNOWN",
+            "label": "Unknown",
+            "color": "#64748b",
+            "is_high_volume": False,
+            "is_spike": False,
+            "is_low_volume": False,
+        }
+    cfg_rule = config.rules().get("rvol", {})
+    spike_thresh = float(cfg_rule.get("tier_earthquake_spike", 2.5))
+    above_thresh = float(cfg_rule.get("tier_above_average", 1.5))
+    normal_thresh = float(cfg_rule.get("tier_normal_min", 0.8))
+
+    if r >= spike_thresh:
+        return {
+            "tier": "EARTHQUAKE_SPIKE",
+            "label": "Earthquake Spike (≥2.5x)",
+            "color": "#f59e0b",
+            "neon_color": "#10b981",
+            "is_high_volume": True,
+            "is_spike": True,
+            "is_low_volume": False,
+        }
+    elif r >= above_thresh:
+        return {
+            "tier": "ABOVE_AVERAGE",
+            "label": "Above Average (≥1.5x)",
+            "color": "#10b981",
+            "is_high_volume": True,
+            "is_spike": False,
+            "is_low_volume": False,
+        }
+    elif r >= normal_thresh:
+        return {
+            "tier": "NORMAL_PARTICIPATION",
+            "label": "Normal Flow (0.8x–1.5x)",
+            "color": "#3b82f6",
+            "is_high_volume": False,
+            "is_spike": False,
+            "is_low_volume": False,
+        }
+    else:
+        return {
+            "tier": "ASLEEP_LULL",
+            "label": "Asleep / Lull (<0.8x)",
+            "color": "#64748b",
+            "is_high_volume": False,
+            "is_spike": False,
+            "is_low_volume": True,
+        }
+
+
 def rvol(rows: List[Dict[str, float]], tf: str) -> Dict[int, Dict[str, Any]]:
-    """tf bucket start → {v, rvol, base, method}. Bars with < min_coverage of their minutes → rvol None."""
+    """tf bucket start → {v, rvol, base, method, slot_rvol, slot_base, tier, ...}. Bars with < min_coverage of their minutes → rvol None."""
     C = cfg()
     bv = bar_volume(rows, tf)
     step_min = TF_SECONDS.get(tf, 22500) / 60
@@ -159,13 +214,42 @@ def rvol(rows: List[Dict[str, float]], tf: str) -> Dict[int, Dict[str, Any]]:
         d = ist_date(k).isoformat()
         prev = [x for dd, x in by_slot[slot(k)] if dd < d][-int(C["rvol_days"]):]
         base, method = None, None
-        if len(prev) >= int(C["rvol_min_days"]):
+        min_slot_days = int(C.get("rvol_min_days", 2))
+        if len(prev) >= min_slot_days:
             base, method = sum(prev) / len(prev), "time-of-day"
+        elif len(prev) >= 1 and len(hist) >= 5:
+            slot_avg = sum(prev) / len(prev)
+            h = hist[-int(C["rvol_fallback_bars"]):]
+            rolling_avg = sum(h) / len(h)
+            weight = len(prev) / float(min_slot_days)
+            base, method = (slot_avg * weight) + (rolling_avg * (1.0 - weight)), "blended"
         elif len(hist) >= 5:
             h = hist[-int(C["rvol_fallback_bars"]):]
             base, method = sum(h) / len(h), "rolling"
+        elif len(prev) >= 1:
+            base, method = sum(prev) / len(prev), "time-of-day"
         r = round(v / base, 2) if (full and base) else None
-        out[k] = {"v": round(v), "rvol": r, "base": round(base) if base else None, "method": method, "full": full}
+        tier_info = classify_rvol(r)
+        is_bo = True if (r is not None and r >= 1.8) else (False if (r is not None and r < 0.9) else None)
+        bo_verdict = (
+            "REAL_BREAKOUT_FUEL" if (r is not None and r >= 1.8)
+            else ("FAKEOUT_WARNING" if (r is not None and r < 0.9) else "NEUTRAL_FLOW")
+        )
+        out[k] = {
+            "v": round(v),
+            "rvol": r,
+            "slot_rvol": r,
+            "base": round(base) if base else None,
+            "slot_base": round(base) if base else None,
+            "slot": slot(k),
+            "method": method,
+            "full": full,
+            "tier": tier_info["tier"],
+            "tier_label": tier_info["label"],
+            "tier_color": tier_info["color"],
+            "is_real_breakout": is_bo,
+            "breakout_verdict": bo_verdict,
+        }
         if full:
             by_slot[slot(k)].append((d, v))
             hist.append(v)

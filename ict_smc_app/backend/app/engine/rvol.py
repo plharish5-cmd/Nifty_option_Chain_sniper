@@ -84,8 +84,10 @@ def cumulative(rows: List[Dict[str, float]], day: Optional[str] = None) -> Dict[
         base5 = [P[d][m] for d in prev[-5:]]
         c20 = t / (sum(base20) / len(base20)) if len(base20) >= C["min_days_20"] and sum(base20) > 0 else None
         c5 = t / (sum(base5) / len(base5)) if len(base5) >= C["min_days_5"] and sum(base5) > 0 else None
+        cum_base20 = round(sum(base20) / len(base20)) if (len(base20) >= C["min_days_20"] and sum(base20) > 0) else None
+        cum_base5 = round(sum(base5) / len(base5)) if (len(base5) >= C["min_days_5"] and sum(base5) > 0) else None
         pts.append({"ts": int(o + 60 * m), "m": m, "c20": round(c20, 2) if c20 else None, "c5": round(c5, 2) if c5 else None,
-                    "cum": round(t)})
+                    "cum": round(t), "cum_base": cum_base20 or cum_base5})
     return {"available": bool(pts), "day": day, "days": len(prev), "points": pts,
             "baseline": {"d20": min(20, len(prev)), "d5": min(5, len(prev))}}
 
@@ -93,6 +95,91 @@ def cumulative(rows: List[Dict[str, float]], day: Optional[str] = None) -> Dict[
 def value(p: Dict[str, Any]) -> Optional[float]:
     """The headline number: 20-day when it exists, else 5-day."""
     return p.get("c20") if p.get("c20") is not None else p.get("c5")
+
+
+def classify_rvol(r: Optional[float]) -> Dict[str, Any]:
+    """Semantic volume classification into institutional regimes."""
+    if r is None:
+        return {
+            "tier": "UNKNOWN",
+            "label": "Unknown",
+            "color": "#64748b",
+            "is_high_volume": False,
+            "is_spike": False,
+            "is_low_volume": False,
+        }
+    C = cfg()
+    spike_thresh = float(C.get("tier_earthquake_spike", C.get("spike", 2.5)))
+    above_thresh = float(C.get("tier_above_average", C.get("active", 1.5)))
+    normal_thresh = float(C.get("tier_normal_min", 0.8))
+
+    if r >= spike_thresh:
+        return {
+            "tier": "EARTHQUAKE_SPIKE",
+            "label": "Earthquake Spike (≥2.5x)",
+            "color": "#f59e0b",
+            "neon_color": "#10b981",
+            "is_high_volume": True,
+            "is_spike": True,
+            "is_low_volume": False,
+        }
+    elif r >= above_thresh:
+        return {
+            "tier": "ABOVE_AVERAGE",
+            "label": "Above Average (≥1.5x)",
+            "color": "#10b981",
+            "is_high_volume": True,
+            "is_spike": False,
+            "is_low_volume": False,
+        }
+    elif r >= normal_thresh:
+        return {
+            "tier": "NORMAL_PARTICIPATION",
+            "label": "Normal Flow (0.8x–1.5x)",
+            "color": "#3b82f6",
+            "is_high_volume": False,
+            "is_spike": False,
+            "is_low_volume": False,
+        }
+    else:
+        return {
+            "tier": "ASLEEP_LULL",
+            "label": "Asleep / Lull (<0.8x)",
+            "color": "#64748b",
+            "is_high_volume": False,
+            "is_spike": False,
+            "is_low_volume": True,
+        }
+
+
+def breakout_authenticity(slot_rvol: Optional[float], cum_rvol: Optional[float]) -> Dict[str, Any]:
+    """
+    Evaluates breakout authenticity based on Hedge-Fund 3-Pillar RVOL methodology:
+    - Real breakout fuel: slot_rvol >= 1.8x OR cum_rvol >= 1.5x
+    - Fakeout warning: slot_rvol < 0.9x (nobody behind the move)
+    """
+    C = cfg()
+    real_min = float(C.get("breakout_real_min", 1.8))
+    cum_min = float(C.get("active", 1.5))
+    fakeout_max = float(C.get("breakout_fakeout_max", 0.9))
+
+    if (slot_rvol is not None and slot_rvol >= real_min) or (cum_rvol is not None and cum_rvol >= cum_min):
+        return {
+            "is_real_breakout": True,
+            "status": "REAL_BREAKOUT_FUEL",
+            "verdict_text": "✅ REAL BREAKOUT FUEL — Institutional volume validates expansion",
+        }
+    elif (slot_rvol is not None and slot_rvol < fakeout_max) or (cum_rvol is not None and cum_rvol < fakeout_max):
+        return {
+            "is_real_breakout": False,
+            "status": "FAKEOUT_WARNING",
+            "verdict_text": "⚠️ LOW RVOL — FAKEOUT TRAP RISK (Nobody behind the move)",
+        }
+    return {
+        "is_real_breakout": None,
+        "status": "NEUTRAL_FLOW",
+        "verdict_text": "Normal participation at level",
+    }
 
 
 def state(res: Dict[str, Any]) -> Dict[str, Any]:
@@ -110,8 +197,20 @@ def state(res: Dict[str, Any]) -> Dict[str, Any]:
     base = "20-day" if pts[-1].get("c20") is not None else "5-day"
     words = {"ACTIVE": "NIFTY is IN PLAY — participation well above a normal day: levels matter, moves can travel",
              "NORMAL": "normal participation", "ABSENT": "below-normal participation — breakouts now happen in an empty room"}
-    return {"state": st, "trend": trend, "value": round(v, 2), "c20": pts[-1].get("c20"), "c5": pts[-1].get("c5"),
-            "base": base, "text": f"cRVOL {v:.2f}× ({base}) · {trend.lower()} — {words[st]}", "at": hm(pts[-1]["ts"])}
+    tier_info = classify_rvol(v)
+    return {
+        "state": st,
+        "trend": trend,
+        "value": round(v, 2),
+        "c20": pts[-1].get("c20"),
+        "c5": pts[-1].get("c5"),
+        "base": base,
+        "text": f"cRVOL {v:.2f}× ({base}) · {trend.lower()} — {words[st]}",
+        "at": hm(pts[-1]["ts"]),
+        "tier": tier_info["tier"],
+        "tier_label": tier_info["label"],
+        "tier_color": tier_info["color"],
+    }
 
 
 def per_bar(res: Dict[str, Any], tf: str, bar_ts: List[int]) -> Dict[int, Dict[str, Any]]:
@@ -154,7 +253,7 @@ def events(res: Dict[str, Any], bar_rvol: Dict[int, Dict[str, Any]], breakouts: 
     for t, x in sorted(bar_rvol.items()):
         if day and ist_date(t).isoformat() != day:
             continue
-        r = x.get("rvol")
+        r = x.get("slot_rvol") or x.get("rvol")
         if r is not None and r >= C["spike"]:
             out.append({"kind": "RVOL_SPIKE", "ts": t, "value": r, "title": f"RVOL SPIKE {r:.1f}× on the {hm(t)} {tf} candle",
                         "body": f"That candle traded {r:.1f}× the normal volume for its time slot — a burst of "

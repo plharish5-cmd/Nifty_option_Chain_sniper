@@ -17,7 +17,7 @@ import { computeDol } from "./dol";
 import { turtleSoup } from "./turtlesoup";
 import { powerOfThree } from "./powerofthree";
 import { dispatch, scanSignals, type SigPrefs } from "./signalAlerts";
-import type { AlertRow, SniperHoverItem } from "../api";
+import { lakh, type AlertRow, type SniperHoverItem } from "../api";
 import { EV_LAYER, GUIDE, KIND_ACT } from "./guide";
 import { confluence, FootprintPrimitive, FP_SCALE, setFpScale, FP_MEANING, FP_WORD, kfmt, type FpBar } from "./footprint";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
@@ -25,8 +25,10 @@ import { BAR_SEC, hitTestSniperHover, index, MEANING, shortText, toMarkers, type
 import MtfPanel from "./MtfPanel";
 import { StdvPrimitive, detectManipulationLegs, createManualStdvLeg, type StdvLeg } from "./stdv";
 import { aggregateWeeklyCandles, extractWicks, filterVirginWicks, type HtfWick } from "./htfWicks";
+import { computePrahaar, type PrahaarResult, type PrahaarSignal } from "./prahaar";
+import { detectGtfZones, evaluateGtfMasterConfluence, hitTestGtfZone, getGtfExplanation, type GtfMarkingMode, type GtfResult, type GtfZone } from "./gtf";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean; p3?: boolean; stdv?: boolean; advPa?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean; p3?: boolean; stdv?: boolean; advPa?: boolean; prahaar?: boolean; gtfZones?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -84,6 +86,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const [fpBars, setFpBars] = useState<FpBar[]>([]);
   const [fpMsg, setFpMsg] = useState<string>("");
   const cvdDivergences = useMemo(() => computeCvdDivergences(fpBars), [fpBars]);
+  const bubbles = useMemo(
+    () => (layers.bubbles || layers.cvd || layers.cells
+      ? buildBubbles(analysis?.volume?.bars ?? [], fpBars, candles)
+      : []),
+    [layers.bubbles, layers.cvd, layers.cells, analysis, fpBars, candles]
+  );
   const [walls, setWalls] = useState<Wall[]>([]);
   const [wallExp, setWallExp] = useState<"cur" | "next" | "both">("cur");
   const [bookEv, setBookEv] = useState<{ ts: number; price: number; side: string; kind: string; qty: number; why: string }[]>([]);
@@ -396,6 +404,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const cMap = useRef<Map<number, Candle>>(new Map());
   const [hover, setHover] = useState<{ t: number; x: number; y: number } | null>(null);
   const [sniperHover, setSniperHover] = useState<{ item: SniperHoverItem; x: number; y: number } | null>(null);
+  const [gtfHover, setGtfHover] = useState<{ zone: GtfZone; x: number; y: number } | null>(null);
   const onCrosshairMoveRef = useRef<(p: MouseEventParams<Time>) => void>(() => {});
   const [latest, setLatest] = useState<Ev[]>([]);
   const [layerNow, setLayerNow] = useState<Record<string, Ev>>({});
@@ -417,6 +426,177 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       return next;
     });
   };
+
+  // Prahaar Indicator & ATM Option-Buying Directional Engine State
+  const [prahaarActive, setPrahaarActive] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("ict_prahaar_active") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const isPrahaarOn = layers.prahaar ?? prahaarActive;
+  const togglePrahaar = () => {
+    setPrahaarActive((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("ict_prahaar_active", next ? "1" : "0");
+      } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  // Institutional Time-of-Day RVOL & Breakout Authenticity Metrics
+  const [rvolPaneMode, setRvolPaneMode] = useState<"slot" | "cumul">(() => {
+    try {
+      return (localStorage.getItem("ict_rvol_pane_mode") as "slot" | "cumul") || "slot";
+    } catch {
+      return "slot";
+    }
+  });
+  const setAndSaveRvolPaneMode = (mode: "slot" | "cumul") => {
+    setRvolPaneMode(mode);
+    try {
+      localStorage.setItem("ict_rvol_pane_mode", mode);
+    } catch { /* ignore */ }
+  };
+
+  const unifiedSlotMap = useMemo(() => {
+    const map = new Map<number, number>();
+    const vbars = analysis?.volume?.bars ?? [];
+    const crvolBars = analysis?.volume?.crvol ?? [];
+    for (const b of vbars) {
+      const v = b.slot_rvol ?? b.rvol;
+      if (v != null) map.set(b.time, v);
+    }
+    for (const c of crvolBars) {
+      const v = c.slot_rvol;
+      if (v != null) map.set(c.time, v);
+    }
+    for (const e of (analysis?.volume?.rvol_events ?? [])) {
+      if (e.kind === "RVOL_SPIKE" && e.value != null) {
+        const rawT = (e as any).time ?? (e as any).ts;
+        if (rawT != null) {
+          const bt = bucket(rawT, tf);
+          map.set(bt, Math.max(map.get(bt) ?? 0, e.value));
+          map.set(rawT, Math.max(map.get(rawT) ?? 0, e.value));
+        }
+      }
+    }
+    return map;
+  }, [analysis?.volume, tf]);
+
+  const latestVolBar = analysis?.volume?.bars?.length
+    ? analysis.volume.bars[analysis.volume.bars.length - 1]
+    : undefined;
+  const lastBarTs = candles.length ? candles[candles.length - 1].time : 0;
+  const curSlotRvol = (lastBarTs ? (unifiedSlotMap.get(lastBarTs) ?? unifiedSlotMap.get(bucket(lastBarTs, tf))) : null) ?? latestVolBar?.slot_rvol ?? latestVolBar?.rvol ?? 1.0;
+  const isWeakRvol = curSlotRvol < 0.85;
+  const isHighRvolConfirmed = curSlotRvol >= 2.0;
+  const hasBigTradesNear = bubbles.some((b) => Math.abs(b.time - lastBarTs) <= 600);
+  const rvolConfirmedSuffix = isHighRvolConfirmed && hasBigTradesNear
+    ? ` · ⚡ ${curSlotRvol.toFixed(1)}x RVOL CONFIRMED (REAL MOVE)`
+    : "";
+
+  const prahaarResult = useMemo(() => {
+    const curVix = analysis?.prahaar?.latest_state?.vix ?? null;
+    return computePrahaar(candles, curVix, null, walls, cvdDivergences, fpBars);
+  }, [candles, walls, cvdDivergences, fpBars, analysis?.prahaar]);
+
+  // Confluence Matrix Synchronization: Syndicate Prahaar with CVD Divergence and OI Walls
+  const lastPrahaarMasterTsRef = useRef<number>(0);
+  useEffect(() => {
+    if (!isPrahaarOn || !prahaarResult.latestState) return;
+    const state = prahaarResult.latestState;
+    const isSoundOn = (() => {
+      try { return localStorage.getItem("oi_beep_alerts") !== "0"; } catch { return true; }
+    })();
+
+    const lastCandleTs = candles.length ? candles[candles.length - 1].time : 0;
+    if (state.isMasterSniperPut && lastPrahaarMasterTsRef.current !== lastCandleTs) {
+      lastPrahaarMasterTsRef.current = lastCandleTs;
+      setOcAlertBanner({
+        text: `🎯 A+ MASTER SNIPER SIGNAL: BUY ${state.atmStrike} PE — PRAHAAR + CE RESISTANCE WALL (${confluenceTrinity?.nearestCe?.p ?? "WALL"}) + BEARISH CVD DIVERGENCE${rvolConfirmedSuffix}`,
+        kind: "bear",
+        ts: Date.now(),
+      });
+      if (isSoundOn) playOiBeep("angleBear");
+    } else if (state.isMasterSniperCall && lastPrahaarMasterTsRef.current !== lastCandleTs) {
+      lastPrahaarMasterTsRef.current = lastCandleTs;
+      setOcAlertBanner({
+        text: `🎯 A+ MASTER SNIPER SIGNAL: BUY ${state.atmStrike} CE — PRAHAAR + PE SUPPORT WALL (${confluenceTrinity?.nearestPe?.p ?? "WALL"}) + BULLISH CVD ABSORPTION${rvolConfirmedSuffix}`,
+        kind: "bull",
+        ts: Date.now(),
+      });
+      if (isSoundOn) playOiBeep("angleBull");
+    }
+  }, [isPrahaarOn, prahaarResult, candles, confluenceTrinity, rvolConfirmedSuffix]);
+
+  // 🏛️ GTF Institutional Demand & Supply Engine (Version 2.0 Equivalent)
+  const [gtfActive, setGtfActive] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("ict_gtf_active") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [gtfMode, setGtfMode] = useState<GtfMarkingMode>(() => {
+    try {
+      const saved = localStorage.getItem("ict_gtf_mode");
+      if (saved === "conservative" || saved === "aggressive" || saved === "dynamic") return saved;
+    } catch { /* ignore */ }
+    return "conservative";
+  });
+  const isGtfOn = layers.gtfZones ?? gtfActive;
+  const toggleGtf = () => {
+    setGtfActive((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("ict_gtf_active", next ? "1" : "0");
+      } catch { /* ignore */ }
+      return next;
+    });
+  };
+  const setAndSaveGtfMode = (mode: GtfMarkingMode) => {
+    setGtfMode(mode);
+    try {
+      localStorage.setItem("ict_gtf_mode", mode);
+    } catch { /* ignore */ }
+  };
+
+  const gtfResult = useMemo(() => {
+    return detectGtfZones(candles, gtfMode);
+  }, [candles, gtfMode]);
+
+  // Master Confluence Synchronization: GTF Zones + OI Walls + CVD Divergence + PE-CE Table
+  const lastGtfMasterTsRef = useRef<number>(0);
+  useEffect(() => {
+    if (!isGtfOn || !candles.length) return;
+    const curPrice = spot ?? (candles.length ? candles[candles.length - 1].close : 0);
+    const conf = evaluateGtfMasterConfluence(curPrice, gtfResult, walls, cvdDivergences, fpBars, smartRows);
+    const lastCandleTs = candles.length ? candles[candles.length - 1].time : 0;
+    const isSoundOn = (() => {
+      try { return localStorage.getItem("oi_beep_alerts") !== "0"; } catch { return true; }
+    })();
+
+    if (conf.isDemandMaster && lastGtfMasterTsRef.current !== lastCandleTs) {
+      lastGtfMasterTsRef.current = lastCandleTs;
+      setOcAlertBanner({
+        text: `${conf.bannerText}${rvolConfirmedSuffix}`,
+        kind: "bull",
+        ts: Date.now(),
+      });
+      if (isSoundOn) playOiBeep("angleBull");
+    } else if (conf.isSupplyMaster && lastGtfMasterTsRef.current !== lastCandleTs) {
+      lastGtfMasterTsRef.current = lastCandleTs;
+      setOcAlertBanner({
+        text: `${conf.bannerText}${rvolConfirmedSuffix}`,
+        kind: "bear",
+        ts: Date.now(),
+      });
+      if (isSoundOn) playOiBeep("angleBear");
+    }
+  }, [isGtfOn, candles, spot, gtfResult, walls, cvdDivergences, fpBars, smartRows, rvolConfirmedSuffix]);
 
   // Load Higher Timeframe (HTF) wicks: 1H (Hourly 1×), 1D (Daily 2×), 1W (Weekly 3×)
   useEffect(() => {
@@ -504,6 +684,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       if (!p.point || p.point.x < 0) {
         setHover(null);
         setSniperHover(null);
+        setGtfHover(null);
         return;
       }
       if (p.time != null) {
@@ -958,6 +1139,60 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       }
       dolRef.current = dols;
     } else dolRef.current = [];
+
+    // 🏛️ GTF Institutional Demand & Supply Zones (v2.0)
+    if (isGtfOn && gtfResult.zones.length) {
+      for (const z of gtfResult.zones) {
+        const isBroken = z.status === "BROKEN" || z.status === "MITIGATED";
+        const zoneTo = isBroken ? z.to : lastTime;
+        const isDemand = z.type === "DEMAND";
+        const isFresh = z.status === "FRESH";
+        const isTested = z.status === "TESTED";
+
+        const fill = isBroken
+          ? "rgba(100, 116, 139, 0.08)"
+          : isDemand
+          ? (isFresh ? "rgba(16, 185, 129, 0.16)" : "rgba(16, 185, 129, 0.09)")
+          : (isFresh ? "rgba(239, 68, 68, 0.16)" : "rgba(239, 68, 68, 0.09)");
+
+        const stroke = isBroken
+          ? "rgba(148, 163, 184, 0.4)"
+          : isDemand
+          ? (isFresh ? "#10b981" : "rgba(16, 185, 129, 0.7)")
+          : (isFresh ? "#ef4444" : "rgba(239, 68, 68, 0.7)");
+
+        const labelColor = isBroken
+          ? "#94a3b8"
+          : isDemand
+          ? (isFresh ? "#34d399" : "#6ee7b7")
+          : (isFresh ? "#f87171" : "#fca5a5");
+
+        boxes.push({
+          from: z.from,
+          to: zoneTo,
+          top: z.top,
+          bottom: z.bottom,
+          fill,
+          stroke,
+          dash: isBroken || isTested,
+          label: z.label,
+          labelColor,
+        });
+
+        // Proximal entry boundary line for active zones
+        if (!isBroken) {
+          segs.push({
+            from: z.from,
+            price: z.proximal,
+            color: isDemand ? "rgba(16, 185, 129, 0.9)" : "rgba(239, 68, 68, 0.9)",
+            dash: !isFresh,
+            width: isFresh ? 1.5 : 1,
+            label: `${isDemand ? "Demand Proximal" : "Supply Proximal"} ${z.proximal.toFixed(1)}`,
+          });
+        }
+      }
+    }
+
     zones.current.set(boxes, segs, lastTime, dayStarts);
 
     // ── markers: every layer emits Ev records → merged per bar/side, labelled only where it matters ──
@@ -1283,6 +1518,42 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           full: `Futures OI surge ${x.surge_x ?? ""}× normal${x.build ? ` · ${x.build}` : ""}`, pri: 1, shape: "square", color: "#f59e0b", size: 0.6 });
       }
     }
+    if (isPrahaarOn) {
+      for (const s of prahaarResult.signals) {
+        const isBear = s.dir === "bear";
+        if (s.isMasterSniper) {
+          push({
+            time: s.time,
+            side: isBear ? "above" : "below",
+            dir: s.dir,
+            kind: isBear ? "PRAHAAR_MASTER_SNIPER_PE" : "PRAHAAR_MASTER_SNIPER_CE",
+            layer: "Prahaar Engine",
+            short: isBear ? `🎯 A+ ${s.strike} PE` : `🎯 A+ ${s.strike} CE`,
+            full: s.masterSniperReason ?? (isBear ? `🔴 BUY ATM PUT (Prahaar): ${s.strike} PE` : `🟢 BUY ATM CALL (Prahaar): ${s.strike} CE`),
+            pri: 3,
+            shape: isBear ? "arrowDown" : "arrowUp",
+            color: isBear ? "#ef4444" : "#10b981",
+            size: 1.6,
+          });
+        } else {
+          push({
+            time: s.time,
+            side: isBear ? "above" : "below",
+            dir: s.dir,
+            kind: isBear ? "PRAHAAR_BUY_PE" : "PRAHAAR_BUY_CE",
+            layer: "Prahaar Engine",
+            short: isBear ? `🔴 BUY ${s.strike} PE` : `🟢 BUY ${s.strike} CE`,
+            full: isBear
+              ? `🔴 BUY ATM PUT (Prahaar): ${s.strike} PE @ ${s.entry.toFixed(1)} · SL ${s.sl.toFixed(1)} · TP ${s.tp.toFixed(1)} (EMA Bear + MACD Cross + ADX ${s.adx.toFixed(1)})`
+              : `🟢 BUY ATM CALL (Prahaar): ${s.strike} CE @ ${s.entry.toFixed(1)} · SL ${s.sl.toFixed(1)} · TP ${s.tp.toFixed(1)} (EMA Bull + MACD Cross + ADX ${s.adx.toFixed(1)})`,
+            pri: 3,
+            shape: isBear ? "arrowDown" : "arrowUp",
+            color: isBear ? "#ef4444" : "#10b981",
+            size: 1.35,
+          });
+        }
+      }
+    }
     evRef.current = index(evs);
     const lastSig = [...evs].filter((e) => e.pri >= 2).sort((x, y) => y.time - x.time).slice(0, 4);
     setLatest(lastSig);
@@ -1332,24 +1603,64 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       oiS.current.doi.setData(ol.filter((x) => x.doi != null).map((x) => ({ time: x.time as UTCTimestamp, value: x.doi as number,
         color: x.surge ? "#f59e0b" : (BC[x.build ?? ""] ?? "rgba(148,163,184,0.5)") })));
     }
-    // cumulative RVOL pane: histogram = 20-day cRVOL (5-day if 20 sessions aren't stored yet), white line = 5-day.
-    // Lines at 1.0 (a normal day) and 1.5 (in play).
+    // cumulative RVOL / Slot RVOL pane:
     const cr = a && layers.rvol ? (a.volume?.crvol ?? []).filter((p) => (p.c20 ?? p.c5) != null) : [];
-    if (ch && cr.length && !rvS.current) {
+    const hasRvolBars = a && layers.rvol && ((a.volume?.bars?.length ?? 0) > 0 || cr.length > 0);
+    if (ch && hasRvolBars && !rvS.current) {
       const idx = oiS.current ? 2 : 1;
-      const h = ch.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: true, title: "cRVOL", base: 0 }, idx);
+      const h = ch.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: true, title: rvolPaneMode === "slot" ? "Slot RVOL" : "cRVOL", base: 0 }, idx);
       const l = ch.addSeries(LineSeries, { color: "#f1f5f9", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: "5d" }, idx);
-      h.createPriceLine({ price: 1, color: "rgba(148,163,184,0.7)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "" });
-      h.createPriceLine({ price: 1.5, color: "rgba(34,197,94,0.8)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "in play" });
+      h.createPriceLine({ price: 1.0, color: "rgba(148,163,184,0.8)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "1.0x Normal" });
+      h.createPriceLine({ price: 1.5, color: "#10b981", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "1.5x In Play" });
+      h.createPriceLine({ price: 2.5, color: "#f59e0b", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "2.5x Spike" });
       try { ch.panes()[idx]?.setStretchFactor(1.2); } catch { /* older lib */ }
       rvS.current = { h, l };
-    } else if (ch && !cr.length && rvS.current) {
+    } else if (ch && !hasRvolBars && rvS.current) {
       ch.removeSeries(rvS.current.h); ch.removeSeries(rvS.current.l); rvS.current = null;
     }
-    if (rvS.current && cr.length) {
-      rvS.current.h.setData(cr.map((p) => { const v = (p.c20 ?? p.c5) as number; return { time: p.time as UTCTimestamp, value: v,
-        color: v >= 2.5 ? "#e8c35a" : v >= 1.5 ? "#22c55e" : v >= 1 ? "rgba(45,212,191,0.6)" : "rgba(100,116,139,0.6)" }; }));
-      rvS.current.l.setData(cr.filter((p) => p.c5 != null && p.c20 != null).map((p) => ({ time: p.time as UTCTimestamp, value: p.c5 as number })));
+    if (rvS.current && hasRvolBars) {
+      if (rvolPaneMode === "slot") {
+        const vbars = a?.volume?.bars ?? [];
+        const seen = new Set<number>();
+        const slotData: { time: UTCTimestamp; value: number; color: string }[] = [];
+        for (const b of vbars) {
+          const val = unifiedSlotMap.get(b.time) ?? b.slot_rvol ?? b.rvol;
+          if (val == null || seen.has(b.time)) continue;
+          seen.add(b.time);
+          const color =
+            val >= 2.5 ? "#f59e0b" :
+            val >= 1.5 ? "#10b981" :
+            val >= 0.8 ? "#3b82f6" :
+            "#64748b";
+          slotData.push({ time: b.time as UTCTimestamp, value: val, color });
+        }
+        for (const [t, val] of unifiedSlotMap.entries()) {
+          if (seen.has(t) || val == null) continue;
+          seen.add(t);
+          const color =
+            val >= 2.5 ? "#f59e0b" :
+            val >= 1.5 ? "#10b981" :
+            val >= 0.8 ? "#3b82f6" :
+            "#64748b";
+          slotData.push({ time: t as UTCTimestamp, value: val, color });
+        }
+        slotData.sort((x, y) => (x.time as number) - (y.time as number));
+        try { rvS.current.h.applyOptions({ title: "Slot RVOL" }); } catch { /* older lib */ }
+        rvS.current.h.setData(slotData);
+        rvS.current.l.setData([]);
+      } else {
+        try { rvS.current.h.applyOptions({ title: "cRVOL" }); } catch { /* older lib */ }
+        rvS.current.h.setData(cr.map((p) => {
+          const v = (p.c20 ?? p.c5) as number;
+          const color =
+            v >= 2.5 ? "#f59e0b" :
+            v >= 1.5 ? "#10b981" :
+            v >= 0.8 ? "#3b82f6" :
+            "#64748b";
+          return { time: p.time as UTCTimestamp, value: v, color };
+        }));
+        rvS.current.l.setData(cr.filter((p) => p.c5 != null && p.c20 != null).map((p) => ({ time: p.time as UTCTimestamp, value: p.c5 as number })));
+      }
     }
     // pane heights: price always dominant, each indicator pane a thin strip
     try {
@@ -1358,7 +1669,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     } catch { /* older lib */ }
     spine.current?.setData(a && layers.qml ? candles.filter((c) => c.closed !== false).map((c) => ({ time: c.time as UTCTimestamp, value: c.close })) : []);
     zz.current.setData(a && layers.swings ? dedupe(a.zigzag).map((p) => ({ time: p.time as UTCTimestamp, value: p.price })) : []);
-  }, [analysis, layers, candles, smtMarks, ocActs, advPaSniperMode]);
+  }, [analysis, layers, candles, smtMarks, ocActs, advPaSniperMode, isPrahaarOn, prahaarResult, isGtfOn, gtfResult, rvolPaneMode, unifiedSlotMap]);
 
   // ── DOM book events (for the hover confirm/warn line), every 6 s ──
   useEffect(() => {
@@ -1465,8 +1776,6 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     go(); const id = window.setInterval(go, 60000);
     return () => { dead = true; window.clearInterval(id); };
   }, [layers.walls, layers.gamma, wallExp, expiries]); // eslint-disable-line react-hooks/exhaustive-deps
-  const bubbles = useMemo(() => layers.bubbles || layers.cvd || layers.cells
-    ? buildBubbles(analysis?.volume?.bars ?? [], fpBars, candles) : [], [layers.bubbles, layers.cvd, layers.cells, analysis, fpBars, candles]);
   useEffect(() => {
     ofPrim.current.set({ walls, bubbles: layers.bubbles ? bubbles : [], cells: layers.cells ? fpBars.filter((b) => b.rows.length) : [], oiLevels: layers.walls ? oiLevels : [] });
   }, [walls, bubbles, fpBars, layers.bubbles, layers.cells, oiLevels, layers.walls]);
@@ -1836,6 +2145,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const hc = hover ? cMap.current.get(hover.t) : undefined;
   const hev = hover ? evRef.current.get(hover.t) ?? [] : [];
   const vb = hover && analysis?.volume?.bars ? analysis.volume.bars.find((b) => b.time === hover.t) : undefined;
+  const hcCrvolBar = hover && analysis?.volume?.crvol ? analysis.volume.crvol.find((b) => b.time === hover.t) : undefined;
   const ofOn = !!(layers.cvd || layers.cells || layers.walls || layers.bubbles);
   const ofArgs = { fp: fpBars, bubbles, walls, zones: ofPrim.current.zones, atr: analysis?.atr ?? 20, candles };
   ofArgsRef.current = ofArgs;
@@ -1894,20 +2204,57 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     : null;
   const isHoveringCvdPane = !!(hover && layers.cvd && cvdS.current && hover.y > (box.current?.clientHeight ?? 500) - 140);
   const hasCvdCard = !!(hover && layers.cvd && (hoveredCvdDiv || (isHoveringCvdPane && hoveredFpBar)));
+  const isHoveringRvolPane = !!(hover && layers.rvol && rvS.current && hover.y > (box.current?.clientHeight ?? 500) - (oiS.current ? 160 : 120));
+  const hoveredCrvolBar = hover && layers.rvol ? (
+    (analysis?.volume?.crvol ?? []).find((b) => b.time === hover.t) ??
+    (analysis?.volume?.crvol ?? []).find((b) => Math.abs(b.time - hover.t) < ((BAR_SEC[tf] ?? 300) / 2))
+  ) : undefined;
+  const hoveredVolBar = hover ? (
+    (analysis?.volume?.bars ?? []).find((b) => b.time === hover.t) ??
+    (analysis?.volume?.bars ?? []).find((b) => Math.abs(b.time - hover.t) < ((BAR_SEC[tf] ?? 300) / 2))
+  ) : undefined;
 
   // Keep crosshair move hit-testing engine synchronized with latest data
   onCrosshairMoveRef.current = (p: MouseEventParams<Time>) => {
-    if (!layers.advPa || !analysis?.pa_advanced?.sniper?.hover_items?.length || !series.current) {
-      if (sniperHover) setSniperHover(null);
-      return;
-    }
     const pt = p.point;
     if (!pt) {
       if (sniperHover) setSniperHover(null);
+      if (gtfHover) setGtfHover(null);
       return;
     }
-    const cursorPrice = series.current.coordinateToPrice(pt.y);
+    const cursorPrice = series.current ? series.current.coordinateToPrice(pt.y) : null;
     if (cursorPrice == null) {
+      if (sniperHover) setSniperHover(null);
+      if (gtfHover) setGtfHover(null);
+      return;
+    }
+
+    const cursorTime = p.time as number | undefined;
+
+    // 1. Interactive GTF Institutional Zone Hit-Testing
+    if (isGtfOn && gtfResult.zones.length && series.current) {
+      const lastTime = candles.length ? candles[candles.length - 1].time : undefined;
+      const gtfMatched = hitTestGtfZone(
+        gtfResult.zones,
+        cursorTime,
+        cursorPrice,
+        (t) => chart.current?.timeScale().timeToCoordinate(t as Time) ?? null,
+        (px) => series.current?.priceToCoordinate(px) ?? null,
+        pt.x,
+        pt.y,
+        lastTime
+      );
+      if (gtfMatched) {
+        setGtfHover({ zone: gtfMatched, x: pt.x, y: pt.y });
+      } else {
+        if (gtfHover) setGtfHover(null);
+      }
+    } else {
+      if (gtfHover) setGtfHover(null);
+    }
+
+    // 2. Sniper Hover Hit-Testing (Adv PA)
+    if (!layers.advPa || !analysis?.pa_advanced?.sniper?.hover_items?.length || !series.current) {
       if (sniperHover) setSniperHover(null);
       return;
     }
@@ -1915,7 +2262,6 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     const hoverItems = analysis.pa_advanced.sniper.hover_items;
     const atr = analysis.atr || 15.0;
     const barSec = BAR_SEC[tf] ?? 300;
-    const cursorTime = p.time as number | undefined;
 
     const matched = hitTestSniperHover(
       hoverItems,
@@ -1940,6 +2286,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       onMouseLeave={() => {
         setHover(null);
         setSniperHover(null);
+        setGtfHover(null);
       }}
     >
       <div ref={box} className="h-full w-full" />
@@ -1975,13 +2322,13 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           </button>
         </div>
       )}
-      {/* OI wall expiry selector (top-right) — only when walls are on */}
-      {layers.walls && (expiries?.length ?? 0) > 1 && (
-        <div className="pointer-events-auto absolute right-2 top-2 z-20 flex items-center gap-1 rounded bg-[#060b16]/85 px-1.5 py-1 text-[10px] ring-1 ring-white/10">
-          <span className="text-slate-500">OI walls:</span>
+      {/* Multi-Expiry Option Chain & Volume Selector (top-right) — accessible when walls, volume, or rvol is on */}
+      {(layers.walls || layers.volume || layers.rvol) && (expiries?.length ?? 0) > 1 && (
+        <div className="pointer-events-auto absolute right-2 top-2 z-20 flex items-center gap-1 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] ring-1 ring-white/10 shadow-lg backdrop-blur">
+          <span className="text-slate-400 font-semibold">{layers.walls ? "Expiry / Walls:" : "Option Expiry:"}</span>
           {(["cur", "next", "both"] as const).map((e) => (
             <button key={e} onClick={() => setWallExp(e)}
-              className={`rounded px-1.5 py-0.5 ${wallExp === e ? "bg-gold-500/30 text-gold-200" : "text-slate-400 hover:text-slate-200"}`}>
+              className={`rounded px-1.5 py-0.5 font-bold transition-colors ${wallExp === e ? "bg-gold-500/30 text-gold-200 border border-gold-500/50" : "text-slate-400 hover:text-slate-200"}`}>
               {e === "cur" ? "This wk" : e === "next" ? "Next wk" : "Both"}
             </button>
           ))}
@@ -2250,6 +2597,117 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         </div>
       )}
 
+      {/* ⚔️ Prahaar Directional Option-Buying HUD Card */}
+      {isPrahaarOn && prahaarResult.latestState && (
+        <div className={`pointer-events-auto absolute left-1/2 z-20 -translate-x-1/2 max-w-[calc(100%-190px)] ${
+          layers.advPa && analysis?.pa_advanced?.sniper
+            ? ((layers.walls || layers.ocAct || layers.cvd) && confluenceTrinity ? "top-[94px]" : "top-[48px]")
+            : ((layers.walls || layers.ocAct || layers.cvd) && confluenceTrinity ? "top-[48px]" : "top-2")
+        }`}>
+          <div className={`flex flex-wrap items-center gap-2 rounded-xl px-3 py-1 shadow-2xl backdrop-blur-md border transition-all ${
+            prahaarResult.latestState.isMasterSniperPut
+              ? "bg-gradient-to-r from-rose-950/95 via-[#180a14]/95 to-ink-950/95 border-rose-500 ring-2 ring-rose-500/50 animate-pulse text-rose-200"
+              : prahaarResult.latestState.isMasterSniperCall
+              ? "bg-gradient-to-r from-emerald-950/95 via-[#0a1814]/95 to-ink-950/95 border-emerald-500 ring-2 ring-emerald-500/50 animate-pulse text-emerald-200"
+              : prahaarResult.latestState.currentVerdict === "BUY ATM PUT"
+              ? "bg-gradient-to-r from-rose-950/90 to-ink-950/90 border-rose-600/70 text-rose-300"
+              : prahaarResult.latestState.currentVerdict === "BUY ATM CALL"
+              ? "bg-gradient-to-r from-emerald-950/90 to-ink-950/90 border-emerald-600/70 text-emerald-300"
+              : "bg-[#060b16]/90 border-ink-700 text-slate-300"
+          }`}>
+            <span className="font-extrabold uppercase tracking-wider text-[11px] flex items-center gap-1">
+              <span>⚔️ PRAHAAR</span>
+            </span>
+            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black ${
+              prahaarResult.latestState.currentVerdict === "BUY ATM PUT"
+                ? "bg-rose-500 text-black"
+                : prahaarResult.latestState.currentVerdict === "BUY ATM CALL"
+                ? "bg-emerald-500 text-black"
+                : "bg-ink-800 text-slate-400"
+            }`}>
+              {prahaarResult.latestState.currentVerdict === "BUY ATM PUT"
+                ? `🔴 BUY ${prahaarResult.latestState.atmStrike} PE`
+                : prahaarResult.latestState.currentVerdict === "BUY ATM CALL"
+                ? `🟢 BUY ${prahaarResult.latestState.atmStrike} CE`
+                : "CHOP / STANDBY"}
+            </span>
+            {(prahaarResult.latestState.isMasterSniperPut || prahaarResult.latestState.isMasterSniperCall) && (
+              <span className="px-1.5 py-0.5 rounded text-[9.5px] font-black bg-gold-500/30 text-gold-300 border border-gold-400/80 animate-pulse">
+                🎯 A+ MASTER SNIPER
+              </span>
+            )}
+            {isHighRvolConfirmed && hasBigTradesNear && (
+              <span className="px-1.5 py-0.5 rounded text-[9.5px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/60 animate-pulse">
+                ⚡ {curSlotRvol.toFixed(1)}x RVOL CONFIRMED
+              </span>
+            )}
+            {isWeakRvol && (
+              <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/60">
+                ⚠️ WEAK RVOL ({curSlotRvol.toFixed(2)}x) — DO NOT CHASE
+              </span>
+            )}
+            <span className="text-[10.5px] font-mono text-slate-400 flex items-center gap-1.5">
+              <span>EMA <b className={prahaarResult.latestState.emaTrend === "bullish" ? "text-emerald-300" : prahaarResult.latestState.emaTrend === "bearish" ? "text-rose-300" : "text-slate-300"}>{prahaarResult.latestState.emaTrend.toUpperCase()}</b></span>
+              <span>·</span>
+              <span>MACD <b className={prahaarResult.latestState.macdMomentum === "bullish" ? "text-emerald-300" : prahaarResult.latestState.macdMomentum === "bearish" ? "text-rose-300" : "text-slate-300"}>{prahaarResult.latestState.macdHist >= 0 ? "+" : ""}{prahaarResult.latestState.macdHist.toFixed(2)}</b></span>
+              <span>·</span>
+              <span>ADX <b className={prahaarResult.latestState.adxTrending ? "text-cyan-300" : "text-slate-500"}>{prahaarResult.latestState.adx.toFixed(1)}</b> {prahaarResult.latestState.adxTrending ? "⚡" : "💤"}</span>
+              <span>·</span>
+              <span>VIX <b className={prahaarResult.latestState.vixOk ? "text-amber-300" : "text-rose-400"}>{prahaarResult.latestState.vix ? prahaarResult.latestState.vix.toFixed(1) : "—"}</b></span>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* 🏛️ GTF Institutional Demand & Supply HUD Card */}
+      {isGtfOn && (
+        <div className={`pointer-events-auto absolute left-1/2 z-20 -translate-x-1/2 max-w-[calc(100%-190px)] ${
+          isPrahaarOn && prahaarResult.latestState
+            ? (layers.advPa && analysis?.pa_advanced?.sniper
+                ? ((layers.walls || layers.ocAct || layers.cvd) && confluenceTrinity ? "top-[132px]" : "top-[86px]")
+                : ((layers.walls || layers.ocAct || layers.cvd) && confluenceTrinity ? "top-[86px]" : "top-[40px]"))
+            : (layers.advPa && analysis?.pa_advanced?.sniper
+                ? ((layers.walls || layers.ocAct || layers.cvd) && confluenceTrinity ? "top-[94px]" : "top-[48px]")
+                : ((layers.walls || layers.ocAct || layers.cvd) && confluenceTrinity ? "top-[48px]" : "top-2"))
+        }`}>
+          <div className="flex flex-wrap items-center gap-2 rounded-xl px-3 py-1 shadow-2xl backdrop-blur-md border bg-[#060b16]/90 border-emerald-500/40 text-slate-200">
+            <span className="font-extrabold uppercase tracking-wider text-[11px] flex items-center gap-1 text-emerald-400">
+              <span>🏛️ GTF 2.0</span>
+            </span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-ink-800 text-amber-300 border border-amber-500/30">
+              {gtfMode}
+            </span>
+            {gtfResult.nearestDemand && (
+              <span className="text-[10.5px] font-mono text-emerald-300 flex items-center gap-1">
+                <span className="text-slate-400">Demand:</span>
+                <b>[{gtfResult.nearestDemand.bottom.toFixed(0)}–{gtfResult.nearestDemand.top.toFixed(0)}]</b>
+                <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 font-semibold">{gtfResult.nearestDemand.status} ({gtfResult.nearestDemand.grade})</span>
+              </span>
+            )}
+            {gtfResult.nearestSupply && (
+              <span className="text-[10.5px] font-mono text-rose-300 flex items-center gap-1">
+                <span className="text-slate-400">Supply:</span>
+                <b>[{gtfResult.nearestSupply.bottom.toFixed(0)}–{gtfResult.nearestSupply.top.toFixed(0)}]</b>
+                <span className="text-[9px] px-1 py-0.2 rounded bg-rose-950/80 border border-rose-500/30 text-rose-300 font-semibold">{gtfResult.nearestSupply.status} ({gtfResult.nearestSupply.grade})</span>
+              </span>
+            )}
+            <span className="text-[10px] text-slate-400 font-mono">
+              Fresh: <b className="text-emerald-400">{gtfResult.freshDemands.length}D</b> · <b className="text-rose-400">{gtfResult.freshSupplies.length}S</b>
+            </span>
+            {isHighRvolConfirmed && hasBigTradesNear && (
+              <span className="px-1.5 py-0.5 rounded text-[9.5px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/60 animate-pulse">
+                ⚡ {curSlotRvol.toFixed(1)}x RVOL CONFIRMED
+              </span>
+            )}
+            {isWeakRvol && (
+              <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/60">
+                ⚠️ WEAK RVOL ({curSlotRvol.toFixed(2)}x) — CHOP RISK
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Fallback when layers.walls is off */}
       {!layers.walls && ofNow && (
         <div className={`pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 ${layers.advPa && analysis?.pa_advanced?.sniper ? "top-[48px]" : "top-2"}`}>
@@ -2329,6 +2787,74 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       )}
       {/* chart tools (top-right, left of the price axis) */}
       <div className="absolute right-[86px] top-2 z-10 flex gap-1">
+        {/* 📊 RVOL Sub-Pane Mode Toggle (Slot Spikes vs Cumul Pace) */}
+        {layers.rvol && (
+          <div className="flex items-center rounded border border-ink-700 bg-ink-900/60 overflow-hidden">
+            <button
+              className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all border-0 ${
+                rvolPaneMode === "slot"
+                  ? "!bg-amber-950/80 !text-amber-300 shadow-md ring-1 ring-amber-400/40"
+                  : "!text-slate-400 hover:!text-slate-200"
+              }`}
+              onClick={() => setAndSaveRvolPaneMode("slot")}
+              title="Slot RVOL Mode: Bar-by-bar Time-of-Day spikes (shows 3.7x, 3.4x spikes past 2.5x threshold)"
+            >
+              <span>⚡</span>
+              <span>Slot RVOL</span>
+            </button>
+            <button
+              className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all border-0 border-l border-ink-700 ${
+                rvolPaneMode === "cumul"
+                  ? "!bg-emerald-950/80 !text-emerald-300 shadow-md ring-1 ring-emerald-400/40"
+                  : "!text-slate-400 hover:!text-slate-200"
+              }`}
+              onClick={() => setAndSaveRvolPaneMode("cumul")}
+              title="Cumulative RVOL Mode: Running session pace vs historical 20d/5d baseline"
+            >
+              <span>🌊</span>
+              <span>Cumul cRVOL</span>
+            </button>
+          </div>
+        )}
+        <button
+          className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all border ${
+            isPrahaarOn
+              ? "!border-emerald-500 !bg-emerald-950/80 !text-emerald-300 shadow-md ring-1 ring-emerald-400/40"
+              : "!border-ink-700 !bg-ink-900/60 !text-slate-400 hover:!text-slate-200"
+          }`}
+          onClick={togglePrahaar}
+          title="Toggle Prahaar Directional ATM Option-Buying Engine (EMA + MACD + ADX + VIX)"
+        >
+          <span>⚔️</span>
+          <span>Prahaar Engine</span>
+        </button>
+        {/* 🏛️ GTF D&S Zones Toggle & Mode Dropdown */}
+        <div className="flex items-center rounded border border-ink-700 bg-ink-900/60 overflow-hidden">
+          <button
+            className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all border-0 ${
+              isGtfOn
+                ? "!bg-emerald-950/80 !text-emerald-300 shadow-md ring-1 ring-emerald-400/40"
+                : "!text-slate-400 hover:!text-slate-200"
+            }`}
+            onClick={toggleGtf}
+            title="Toggle GTF Demand & Supply Engine 2.0 (Boring/Explosive Institutional Zones)"
+          >
+            <span>🏛️</span>
+            <span>GTF Zones</span>
+          </button>
+          {isGtfOn && (
+            <select
+              value={gtfMode}
+              onChange={(e) => setAndSaveGtfMode(e.target.value as GtfMarkingMode)}
+              className="bg-ink-950/90 text-amber-300 text-[10px] font-semibold px-1 py-0.5 border-l border-ink-700 outline-none cursor-pointer hover:bg-ink-900"
+              title="GTF Zone Marking Mode (Conservative: Body-Wick, Aggressive: Wick-Wick, Dynamic: ATR-Adjusted)"
+            >
+              <option value="conservative">Conservative</option>
+              <option value="aggressive">Aggressive</option>
+              <option value="dynamic">Dynamic</option>
+            </select>
+          )}
+        </div>
         {stdvLeg && onResetToAutoStdv && (
           <button
             className="tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 !border-cyan-500/70 !text-cyan-300 hover:!bg-cyan-950/40"
@@ -2366,6 +2892,62 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           onClick={() => series.current?.priceScale().setAutoScale(true)}>Auto ↕</button>
         {onExpand && <button className="tab !py-0.5 !text-[11px]" title="Full screen (Esc to exit)" onClick={onExpand}>{expanded ? "▣ Normal" : "⛶ Full"}</button>}
       </div>
+
+      {/* 📊 Floating RVOL Mode Selector directly in the Sub-Pane */}
+      {layers.rvol && rvS.current && (
+        <div
+          className="pointer-events-auto absolute z-20 flex items-center gap-1 rounded-md border border-ink-700 bg-ink-900/90 px-2 py-0.5 shadow-lg backdrop-blur"
+          style={{
+            left: 12,
+            bottom: (oiS.current ? 125 : 85),
+          }}
+        >
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">RVOL:</span>
+          <button
+            onClick={() => setAndSaveRvolPaneMode("slot")}
+            className={`rounded px-1.5 py-0.2 text-[10px] font-bold transition-all ${
+              rvolPaneMode === "slot"
+                ? "bg-amber-500 text-black shadow-sm"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+            title="Slot RVOL: Bar-by-bar Time-of-Day spikes"
+          >
+            ⚡ Slot RVOL (Spikes)
+          </button>
+          <button
+            onClick={() => setAndSaveRvolPaneMode("cumul")}
+            className={`rounded px-1.5 py-0.2 text-[10px] font-bold transition-all ${
+              rvolPaneMode === "cumul"
+                ? "bg-emerald-500 text-black shadow-sm"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+            title="Cumulative RVOL: Running session pace"
+          >
+            🌊 Cumul cRVOL (Pace)
+          </button>
+          {analysis?.volume?.combined_future && (
+            <span
+              className={`ml-1 flex items-center gap-1 rounded px-1.5 py-0.2 font-mono text-[9.5px] border ${
+                analysis.volume.combined_future.is_rollover_active
+                  ? "bg-amber-950/70 text-amber-300 border-amber-500/60"
+                  : "bg-ink-800 text-slate-400 border-ink-700"
+              }`}
+              title={`Oct FUT: ${lakh(analysis.volume.combined_future.oct_vol_today)} | Nov FUT: ${lakh(analysis.volume.combined_future.nov_vol_today)} (${analysis.volume.combined_future.nov_share_pct}% Rollover) · Combined FUT: ${lakh(analysis.volume.combined_future.combined_vol_today)}`}
+            >
+              <span>🔄</span>
+              <span>{analysis.volume.combined_future.is_rollover_active ? `Roll: Nov ${analysis.volume.combined_future.nov_share_pct}%` : `${analysis.volume.combined_future.oct_contract}`}</span>
+            </span>
+          )}
+          {analysis?.volume?.oc_volume?.both_vol ? (
+            <span
+              className="ml-0.5 rounded border border-cyan-800/60 bg-cyan-950/60 px-1.5 py-0.2 font-mono text-[9.5px] text-cyan-300"
+              title={`Options Chain Volume: This Wk ${lakh(analysis.volume.oc_volume.cur_vol)} (PCR ${analysis.volume.oc_volume.cur_pcr_vol ?? "—"}) | Next Wk ${lakh(analysis.volume.oc_volume.next_vol)} (PCR ${analysis.volume.oc_volume.next_pcr_vol ?? "—"}) · Both: ${lakh(analysis.volume.oc_volume.both_vol)}`}
+            >
+              📊 OC {wallExp === "cur" ? `This Wk ${lakh(analysis.volume.oc_volume.cur_vol)}` : wallExp === "next" ? `Next Wk ${lakh(analysis.volume.oc_volume.next_vol)}` : `Both ${lakh(analysis.volume.oc_volume.both_vol)}`}
+            </span>
+          ) : null}
+        </div>
+      )}
       {/* 🎯 Sleek Bloomberg/TradingView Pro Glassmorphic Sniper Hover Inspector Card */}
       {layers.advPa && sniperHover && (
         <div
@@ -2393,6 +2975,96 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             <div className="rounded bg-emerald-950/50 border border-emerald-500/30 px-2 py-1 text-emerald-200">
               <span className="font-bold text-emerald-300">🎯 How to trade: </span>
               <span>{sniperHover.item.how_to_trade}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🏛️ Sleek Institutional GTF Zone Hover Tooltip Inspector */}
+      {isGtfOn && gtfHover && !sniperHover && !hasOcMarker && (
+        <div
+          className={`pointer-events-none absolute z-50 w-[350px] rounded-xl border p-3 text-[11.5px] text-slate-200 shadow-2xl backdrop-blur-md ring-1 transition-all duration-75 ${
+            gtfHover.zone.type === "DEMAND"
+              ? "bg-[#06140f]/95 border-emerald-500/60 ring-emerald-400/20"
+              : "bg-[#140609]/95 border-rose-500/60 ring-rose-400/20"
+          }`}
+          style={{
+            left: Math.min(Math.max(12, gtfHover.x + 18), (box.current?.clientWidth ?? 900) - 370),
+            top: Math.min(Math.max(54, gtfHover.y - 20), (box.current?.clientHeight ?? 500) - 230),
+          }}
+        >
+          {/* Header */}
+          <div className="mb-2 flex items-center justify-between border-b border-ink-700/80 pb-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className={`px-2 py-0.5 rounded text-[11px] font-extrabold border ${
+                gtfHover.zone.type === "DEMAND"
+                  ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/80"
+                  : "bg-rose-950/90 text-rose-300 border-rose-500/80"
+              }`}>
+                {gtfHover.zone.type === "DEMAND" ? "🟢 GTF DEMAND" : "🔴 GTF SUPPLY"} [{gtfHover.zone.pattern}]
+              </span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-ink-800 text-gold-300 border border-gold-500/30 font-bold">
+                {gtfHover.zone.grade} ({gtfHover.zone.score.toFixed(1)}/10)
+              </span>
+            </div>
+            <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-bold uppercase tracking-wider ${
+              gtfHover.zone.status === "FRESH"
+                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse"
+                : gtfHover.zone.status === "TESTED"
+                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                : "bg-slate-700/30 text-slate-400 border border-slate-600/40"
+            }`}>
+              {gtfHover.zone.status === "TESTED" ? `TESTED ${gtfHover.zone.testCount}x` : gtfHover.zone.status}
+            </span>
+          </div>
+
+          {/* Price Range & Metrics Grid */}
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1 rounded bg-ink-900/60 p-2 font-mono text-[10.5px] border border-ink-800/80 mb-2">
+            <div>
+              <span className="text-slate-400">Proximal (Entry): </span>
+              <b className={gtfHover.zone.type === "DEMAND" ? "text-emerald-300" : "text-rose-300"}>
+                {gtfHover.zone.proximal.toFixed(1)}
+              </b>
+            </div>
+            <div>
+              <span className="text-slate-400">Distal (SL): </span>
+              <b className="text-slate-200">{gtfHover.zone.distal.toFixed(1)}</b>
+            </div>
+            <div>
+              <span className="text-slate-400">Zone Range: </span>
+              <b className="text-white">
+                {gtfHover.zone.bottom.toFixed(0)} – {gtfHover.zone.top.toFixed(0)}
+              </b>
+            </div>
+            <div>
+              <span className="text-slate-400">Width: </span>
+              <b className="text-cyan-300">
+                {Math.abs(gtfHover.zone.top - gtfHover.zone.bottom).toFixed(1)} pts
+              </b>
+            </div>
+            <div>
+              <span className="text-slate-400">Base Formation: </span>
+              <b className="text-slate-200">{gtfHover.zone.baseBars} bar{gtfHover.zone.baseBars > 1 ? "s" : ""}</b>
+            </div>
+            <div>
+              <span className="text-slate-400">Marking Mode: </span>
+              <b className="text-amber-300 capitalize">{gtfHover.zone.mode}</b>
+            </div>
+          </div>
+
+          {/* Institutional Copywriting Explanations */}
+          <div className="space-y-1.5 leading-relaxed text-[10.5px]">
+            <div className={`p-1.5 rounded border ${
+              gtfHover.zone.type === "DEMAND"
+                ? "bg-emerald-950/40 border-emerald-700/40 text-emerald-200/90"
+                : "bg-rose-950/40 border-rose-700/40 text-rose-200/90"
+            }`}>
+              <div className="font-semibold text-white/90 mb-0.5">Price Action Structure:</div>
+              {getGtfExplanation(gtfHover.zone).patternExplanation}
+            </div>
+            <div className="p-1.5 rounded border bg-ink-900/70 border-ink-700/70 text-slate-300">
+              <div className="font-semibold text-slate-200 mb-0.5">Institutional Order Flow:</div>
+              {getGtfExplanation(gtfHover.zone).statusExplanation}
             </div>
           </div>
         </div>
@@ -2579,7 +3251,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       )}
 
       {/* 〽️ Sleek Glassmorphic CVD Divergence & Order Flow Inspector Card */}
-      {hover && hasCvdCard && !hasOcMarker && !hoveredWall && !sniperHover && (
+      {hover && hasCvdCard && !hasOcMarker && !hoveredWall && !sniperHover && !gtfHover && (
         <div
           className="pointer-events-none absolute z-50 w-[360px] rounded-xl border border-ink-600 bg-[#070c18]/95 p-3 text-[11.5px] text-slate-200 shadow-2xl backdrop-blur-md ring-1 ring-white/10 transition-all duration-75"
           style={{
@@ -2681,10 +3353,250 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         </div>
       )}
 
+      {/* 📊 Sleek Glassmorphic 3-Pillars Institutional RVOL Inspector Card */}
+      {hover && isHoveringRvolPane && (hoveredCrvolBar || hoveredVolBar) && !gtfHover && !sniperHover && !hasOcMarker && !hoveredWall && (
+        <div
+          className="pointer-events-none absolute z-50 w-[380px] rounded-xl border border-indigo-500/60 bg-[#070e1b]/95 p-3 text-[11.5px] text-slate-200 shadow-2xl backdrop-blur-md ring-1 ring-indigo-400/30 transition-all duration-75"
+          style={{
+            left: Math.min(Math.max(12, hover.x + 18), (box.current?.clientWidth ?? 900) - 400),
+            top: Math.max(10, Math.min(hover.y - 280, (box.current?.clientHeight ?? 500) - 320)),
+          }}
+        >
+          {/* Header */}
+          <div className="mb-2 flex items-center justify-between border-b border-ink-700/80 pb-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="px-2 py-0.5 rounded text-[10.5px] font-extrabold bg-indigo-950/90 text-indigo-300 border border-indigo-500/80">
+                📊 3-PILLAR RVOL ENGINE
+              </span>
+              <span className="font-mono text-white text-[12px] font-bold">
+                {hoveredCrvolBar?.slot ?? hoveredVolBar?.slot ?? hm(hover.t)}
+              </span>
+            </div>
+            <div className="flex flex-col items-end">
+              <span className="font-mono text-[10px] text-slate-300 font-bold">
+                {analysis?.volume?.combined_future?.is_rollover_active
+                  ? `${analysis.volume.combined_future.oct_contract} + ${analysis.volume.combined_future.nov_contract} (${analysis.volume.combined_future.nov_share_pct}% Roll)`
+                  : (analysis?.volume?.contract?.split(" ")[0] ?? "NIFTY FUT")} · {tf.toUpperCase()}
+              </span>
+              {analysis?.volume?.oc_volume?.both_vol ? (
+                <span className="font-mono text-[9px] text-cyan-300">
+                  OC: {lakh(wallExp === "cur" ? analysis.volume.oc_volume.cur_vol : wallExp === "next" ? analysis.volume.oc_volume.next_vol : analysis.volume.oc_volume.both_vol)} ({wallExp === "cur" ? "This Wk" : wallExp === "next" ? "Next Wk" : "Both"})
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Multi-Expiry Rollover & Options Participation Sub-strip */}
+          {(analysis?.volume?.combined_future?.is_rollover_active || analysis?.volume?.oc_volume) && (
+            <div className="mb-2 rounded bg-ink-900/90 border border-ink-800 p-1.5 text-[10px] space-y-0.5">
+              {analysis.volume.combined_future?.is_rollover_active && (
+                <div className="flex items-center justify-between text-amber-300">
+                  <span>🔄 <b>Futures Rollover:</b> {analysis.volume.combined_future.oct_contract} ({lakh(analysis.volume.combined_future.oct_vol_today)}) + {analysis.volume.combined_future.nov_contract} ({lakh(analysis.volume.combined_future.nov_vol_today)})</span>
+                  <b className="font-mono text-white">{analysis.volume.combined_future.nov_share_pct}% Rolled</b>
+                </div>
+              )}
+              {analysis.volume.oc_volume?.both_vol ? (
+                <div className="flex items-center justify-between text-cyan-300">
+                  <span>📊 <b>Option Chain Vol:</b> This Wk {lakh(analysis.volume.oc_volume.cur_vol)} · Next Wk {lakh(analysis.volume.oc_volume.next_vol)}</span>
+                  <b className="font-mono text-slate-200">PCR {analysis.volume.oc_volume.both_pcr_vol ?? "—"}</b>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {/* Pillar 1: Time-of-Day (Slot-Matched) RVOL */}
+          {(() => {
+            const rawSlotRvol = hoveredVolBar?.slot_rvol ?? hoveredCrvolBar?.slot_rvol ?? hoveredVolBar?.rvol ?? 1.0;
+            const targetTime = hoveredCrvolBar?.time ?? hoveredVolBar?.time ?? hover.t;
+            const sRvol = unifiedSlotMap.get(targetTime) ?? unifiedSlotMap.get(bucket(targetTime, tf)) ?? rawSlotRvol;
+            const sTier =
+              sRvol >= 2.5 ? { label: "EARTHQUAKE SPIKE", col: "#f59e0b" } :
+              sRvol >= 1.5 ? { label: "ABOVE AVERAGE", col: "#10b981" } :
+              sRvol >= 0.8 ? { label: "NORMAL PARTICIPATION", col: "#3b82f6" } :
+              { label: "ASLEEP / LULL", col: "#94a3b8" };
+            const sVol = hoveredVolBar?.v ?? hoveredCrvolBar?.v ?? 0;
+            const sBase = (sRvol > 0 && sVol > 0)
+              ? (Math.abs(sRvol - rawSlotRvol) > 0.01
+                  ? Math.round(sVol / sRvol)
+                  : (hoveredVolBar?.slot_base ?? hoveredCrvolBar?.slot_base ?? Math.round(sVol / sRvol)))
+              : null;
+
+            return (
+              <div className="mb-2 rounded-lg bg-ink-900/70 border border-ink-800 p-2">
+                <div className="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1">
+                  <span>Pillar 1: Time-of-Day Slot RVOL</span>
+                  <span
+                    className="px-1.5 py-0.2 rounded font-mono font-extrabold"
+                    style={{
+                      color: sTier.col,
+                      backgroundColor: `${sTier.col}20`,
+                      border: `1px solid ${sTier.col}50`,
+                    }}
+                  >
+                    [{sTier.label}]
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1 font-mono text-[11px]">
+                  <div>
+                    <span className="text-slate-400">Bar Volume: </span>
+                    <b className="text-white">{lakh(sVol)}</b>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Slot Normal (20d): </span>
+                    <b className="text-slate-300">{sBase ? lakh(sBase) : "—"}</b>
+                  </div>
+                  <div className="col-span-2 flex items-center justify-between pt-1 border-t border-ink-800/80">
+                    <span className="text-slate-400">Slot RVOL Multiple:</span>
+                    <b className="text-[13px] font-black" style={{ color: sTier.col }}>
+                      {sRvol.toFixed(2)}x
+                    </b>
+                  </div>
+                </div>
+                <div className="mt-1 text-[9.5px] text-slate-400 italic">
+                  *Normalized against historical {hoveredCrvolBar?.slot ?? hoveredVolBar?.slot ?? hm(hover.t)} slot average to eliminate intraday U-shape volume bias.
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Pillar 2: Cumulative Session Progress (cRVOL) */}
+          {(() => {
+            const c20 = hoveredCrvolBar?.c20;
+            const c5 = hoveredCrvolBar?.c5;
+            const cumVal = c20 ?? c5 ?? 1.0;
+            const hoverTime = hover.t;
+            const getDayKey = (t: number) => {
+              const d = new Date(t * 1000);
+              return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+            };
+            const targetDay = getDayKey(hoverTime);
+            const intradayCandles = candles.filter((c) => getDayKey(c.time) === targetDay && c.time <= hoverTime);
+            let todayCumVol = intradayCandles.reduce((s, c) => s + (c.volume || c.v || 0), 0);
+            if (!todayCumVol) {
+              const vbars = analysis?.volume?.bars ?? [];
+              const intradayBars = vbars.filter((b) => getDayKey(b.time) === targetDay && b.time <= hoverTime);
+              todayCumVol = intradayBars.reduce((s, b) => s + (b.v || 0), 0);
+            }
+            const cumVol = (hoveredCrvolBar?.cum && hoveredCrvolBar.cum > 0) ? hoveredCrvolBar.cum : (todayCumVol > 0 ? todayCumVol : null);
+            const cumBase = (hoveredCrvolBar?.cum_base && hoveredCrvolBar.cum_base > 0)
+              ? hoveredCrvolBar.cum_base
+              : (cumVal > 0 && cumVol ? Math.round(cumVol / cumVal) : null);
+
+            return (
+              <div className="mb-2 rounded-lg bg-ink-900/70 border border-ink-800 p-2 font-mono text-[11px]">
+                <div className="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1">
+                  <span>Pillar 2: Cumulative Progress (cRVOL)</span>
+                  <span className={`px-1.5 py-0.2 rounded font-bold ${
+                    cumVal >= 1.5
+                      ? "bg-emerald-950/80 text-emerald-300 border border-emerald-500/60"
+                      : cumVal >= 1.0
+                      ? "bg-blue-950/80 text-blue-300 border border-blue-500/60"
+                      : "bg-ink-800 text-slate-400 border border-slate-700"
+                  }`}>
+                    {cumVal >= 1.5
+                      ? "🔥 IN PLAY"
+                      : cumVal >= 1.0
+                      ? "🟢 NORMAL PACE"
+                      : "💤 SUB-PAR PACE"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                  <div>
+                    <span className="text-slate-400">Cum Vol Today: </span>
+                    <b className="text-cyan-300">{cumVol ? lakh(cumVol) : "—"}</b>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">20d Avg Pace: </span>
+                    <b className="text-slate-300">{cumBase ? lakh(cumBase) : "—"}</b>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">20d cRVOL: </span>
+                    <b className="text-white">{c20 != null ? `${c20.toFixed(2)}x` : "—"}</b>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">5d Fast cRVOL: </span>
+                    <b className="text-slate-200">{c5 != null ? `${c5.toFixed(2)}x` : "—"}</b>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Pillar 3: Breakout Authenticity Verdict */}
+          {(() => {
+            const rawSlotRvol = hoveredVolBar?.slot_rvol ?? hoveredCrvolBar?.slot_rvol ?? hoveredVolBar?.rvol ?? 1.0;
+            const targetTime = hoveredCrvolBar?.time ?? hoveredVolBar?.time ?? hover.t;
+            const sRvol = unifiedSlotMap.get(targetTime) ?? unifiedSlotMap.get(bucket(targetTime, tf)) ?? rawSlotRvol;
+            const isReal = sRvol >= 1.8;
+            const isFake = sRvol < 0.85;
+
+            return (
+              <div className={`rounded-lg border p-2 mb-2 ${
+                isReal
+                  ? "bg-emerald-950/60 border-emerald-500/50"
+                  : isFake
+                  ? "bg-rose-950/60 border-rose-500/50"
+                  : "bg-ink-900/70 border-ink-800"
+              }`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Pillar 3: Breakout Verdict</span>
+                  <span className={`px-2 py-0.5 rounded text-[10.5px] font-black ${
+                    isReal
+                      ? "bg-emerald-500 text-black animate-pulse"
+                      : isFake
+                      ? "bg-rose-500 text-white"
+                      : "bg-ink-800 text-slate-300"
+                  }`}>
+                    {isReal
+                      ? "⚡ REAL BREAKOUT FUEL"
+                      : isFake
+                      ? "⚠️ FAKEOUT TRAP RISK"
+                      : "⚖️ NEUTRAL FLOW"}
+                  </span>
+                </div>
+                <div className="text-[10.5px] text-slate-200 leading-snug">
+                  {isReal
+                    ? "⚡ REAL INSTITUTIONAL EXPANSION (Slot >= 1.8x) — Moves past levels backed by genuine conviction."
+                    : isFake
+                    ? "⚠️ FAKEOUT TRAP RISK (Slot < 0.85x — Do Not Chase) — Breakouts lack volume sponsorship; high sweep risk."
+                    : "⚖️ NEUTRAL FLOW (0.85x–1.8x) — Normal intraday churn; await volume surge before expansion trades."}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Big Trades Cluster Readout (if present) */}
+          {(() => {
+            const nearBubbles = bubbles.filter((b) => Math.abs(b.time - hover.t) <= (BAR_SEC[tf] ?? 300) * 2);
+            if (!nearBubbles.length) return null;
+            const totalContracts = nearBubbles.reduce((s, b) => s + (b.vol || 0), 0);
+            return (
+              <div className="rounded bg-amber-950/40 border border-amber-500/50 px-2 py-1 text-[10.5px] text-amber-200 flex items-center justify-between">
+                <span>🐳 <b>Big Trade Cluster:</b> {nearBubbles.length} block trade(s) nearby</span>
+                <b className="text-white font-mono">{lakh(totalContracts)} contracts</b>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* hover card */}
-      {hover && hc && !sniperHover && !hasOcMarker && !hoveredWall && !hasCvdCard && (
+      {hover && hc && !sniperHover && !hasOcMarker && !hoveredWall && !hasCvdCard && !gtfHover && !isHoveringRvolPane && (
         <div className="pointer-events-none absolute z-20 w-[420px] rounded-lg border border-ink-700 bg-[#060b16]/95 p-2.5 text-[13px] leading-snug shadow-xl"
-          style={{ left: hover.x > W - 450 ? hover.x - 430 : hover.x + 16, top: Math.max(8, Math.min(hover.y - 20, (box.current?.clientHeight ?? 400) - ((layers.bias ? 300 : 0) + (layers.volume ? 160 : 0) + (layers.heat ? 140 : 0) + 160))) }}>
+          style={{
+            left: hover.x > W - 450 ? hover.x - 430 : hover.x + 16,
+            top: (() => {
+              const H = box.current?.clientHeight ?? 500;
+              const estH = (layers.rvol || vb || hcCrvolBar) ? 460 : 320;
+              const bottomSubPaneH = (rvS.current ? 120 : 0) + (oiS.current ? 40 : 0);
+              const maxAllowedTop = Math.max(8, H - estH - bottomSubPaneH - 12);
+              if (hover.y > H * 0.45) {
+                const aboveCursor = hover.y - estH - 12;
+                return Math.max(8, Math.min(aboveCursor > 0 ? aboveCursor : maxAllowedTop, maxAllowedTop));
+              }
+              return Math.max(8, Math.min(hover.y - 10, maxAllowedTop));
+            })(),
+          }}>
           {lns.length > 0 && <div className="mb-1 rounded bg-violet-900/40 px-1.5 py-1">
             {lns.map((l, i) => <div key={i}><b className="text-violet-200">〰 {l.name}</b> <span className="num text-slate-200">{l.name === "ATM IV" ? l.value.toFixed(1) : l.value.toLocaleString("en-IN", { maximumFractionDigits: 1 })}</span>
               {l.mean && <div className="text-slate-300">{l.mean}</div>}</div>)}
@@ -2734,8 +3646,169 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             {ofr.lines.map((l, i) => <div key={i} className={`text-[13px] ${TC[l.tone]}`}>• {l.txt}</div>)}
             {ofr.plan && <div className="mt-0.5 text-[13px] font-semibold text-cyan-200">🎯 {ofr.plan} — paper first, 1 lot max.</div>}
           </div>}
-          {vb && <div className="num mt-0.5 text-slate-400">FUT vol <b className="text-slate-200">{(vb.v / 1000).toFixed(0)}k</b>
-            {vb.rvol != null && <> · RVOL <b className={vb.rvol >= 1.5 ? "text-bull-400" : vb.rvol <= 0.7 ? "text-slate-500" : "text-slate-200"}>{vb.rvol.toFixed(1)}×</b></>}</div>}
+          {(layers.rvol || vb || hcCrvolBar) && (
+            <div className="mt-2 rounded-lg border border-indigo-500/50 bg-[#070e1b]/95 p-2.5 font-mono text-[11px] leading-snug shadow-md">
+              <div className="mb-1.5 flex items-center justify-between border-b border-ink-700/80 pb-1">
+                <span className="flex items-center gap-1 font-bold text-indigo-300 text-[11px]">
+                  <span>📊 3-PILLAR INSTITUTIONAL RVOL</span>
+                </span>
+                <div className="flex flex-col items-end">
+                  <span className="font-mono text-[10px] text-slate-300 font-bold">
+                    {analysis?.volume?.combined_future?.is_rollover_active
+                      ? `${analysis.volume.combined_future.oct_contract} + ${analysis.volume.combined_future.nov_contract} (${analysis.volume.combined_future.nov_share_pct}% Roll)`
+                      : (analysis?.volume?.contract?.split(" ")[0] ?? "NIFTY FUT")} · {tf.toUpperCase()}
+                  </span>
+                  {analysis?.volume?.oc_volume?.both_vol ? (
+                    <span className="font-mono text-[9px] text-cyan-300">
+                      OC: {lakh(wallExp === "cur" ? analysis.volume.oc_volume.cur_vol : wallExp === "next" ? analysis.volume.oc_volume.next_vol : analysis.volume.oc_volume.both_vol)} ({wallExp === "cur" ? "This Wk" : wallExp === "next" ? "Next Wk" : "Both"})
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Multi-Expiry Rollover & Options Participation Sub-strip */}
+              {(analysis?.volume?.combined_future?.is_rollover_active || analysis?.volume?.oc_volume) && (
+                <div className="mb-2 rounded bg-ink-900/90 border border-ink-800 p-1.5 text-[10px] space-y-0.5">
+                  {analysis.volume.combined_future?.is_rollover_active && (
+                    <div className="flex items-center justify-between text-amber-300">
+                      <span>🔄 <b>Futures Rollover:</b> {analysis.volume.combined_future.oct_contract} ({lakh(analysis.volume.combined_future.oct_vol_today)}) + {analysis.volume.combined_future.nov_contract} ({lakh(analysis.volume.combined_future.nov_vol_today)})</span>
+                      <b className="font-mono text-white">{analysis.volume.combined_future.nov_share_pct}% Rolled</b>
+                    </div>
+                  )}
+                  {analysis.volume.oc_volume?.both_vol ? (
+                    <div className="flex items-center justify-between text-cyan-300">
+                      <span>📊 <b>Option Chain Vol:</b> This Wk {lakh(analysis.volume.oc_volume.cur_vol)} · Next Wk {lakh(analysis.volume.oc_volume.next_vol)}</span>
+                      <b className="font-mono text-slate-200">PCR {analysis.volume.oc_volume.both_pcr_vol ?? "—"}</b>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Pillar 1: Clock-Slot RVOL */}
+              {(() => {
+                const sSlot = vb?.slot ?? hcCrvolBar?.slot ?? hm(hc.time);
+                const sVol = vb?.v ?? hcCrvolBar?.v ?? 0;
+                const rawSlotRvol = vb?.slot_rvol ?? vb?.rvol ?? hcCrvolBar?.slot_rvol ?? 1.0;
+                const sRvol = unifiedSlotMap.get(hc.time) ?? unifiedSlotMap.get(bucket(hc.time, tf)) ?? rawSlotRvol;
+                const sBase = (sRvol > 0 && sVol > 0)
+                  ? (Math.abs(sRvol - rawSlotRvol) > 0.01
+                      ? Math.round(sVol / sRvol)
+                      : (vb?.slot_base ?? hcCrvolBar?.slot_base ?? Math.round(sVol / sRvol)))
+                  : null;
+                const sTier =
+                  sRvol >= 2.5 ? { label: "EARTHQUAKE SPIKE", col: "#f59e0b" } :
+                  sRvol >= 1.5 ? { label: "ABOVE AVERAGE", col: "#10b981" } :
+                  sRvol >= 0.8 ? { label: "NORMAL PARTICIPATION", col: "#3b82f6" } :
+                  { label: "ASLEEP / LULL", col: "#94a3b8" };
+
+                return (
+                  <div className="mb-1.5 rounded bg-ink-900/80 p-1.5 border border-ink-800">
+                    <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 mb-0.5">
+                      <span>PILLAR 1 · CLOCK-SLOT RVOL ({sSlot})</span>
+                      <span className="font-extrabold" style={{ color: sTier.col }}>
+                        [{sTier.label}]
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-200">
+                      Slot ({sSlot}): Today <b className="text-white">{lakh(sVol)}</b> vs 20d Slot Avg <b className="text-slate-300">{sBase ? lakh(sBase) : "—"}</b> → <b className="text-[12px]" style={{ color: sTier.col }}>{sRvol.toFixed(2)}x</b>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Pillar 2: Cumulative Session Pace */}
+              {(() => {
+                const sSlot = vb?.slot ?? hcCrvolBar?.slot ?? hm(hc.time);
+                const c20 = hcCrvolBar?.c20;
+                const c5 = hcCrvolBar?.c5;
+                const cumVal = c20 ?? c5 ?? 1.0;
+                const hoverTime = hc.time;
+                const getDayKey = (t: number) => {
+                  const d = new Date(t * 1000);
+                  return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+                };
+                const targetDay = getDayKey(hoverTime);
+                const intradayCandles = candles.filter((c) => getDayKey(c.time) === targetDay && c.time <= hoverTime);
+                let todayCumVol = intradayCandles.reduce((s, c) => s + (c.volume || c.v || 0), 0);
+                if (!todayCumVol) {
+                  const vbars = analysis?.volume?.bars ?? [];
+                  const intradayBars = vbars.filter((b) => getDayKey(b.time) === targetDay && b.time <= hoverTime);
+                  todayCumVol = intradayBars.reduce((s, b) => s + (b.v || 0), 0);
+                }
+                const cumVol = (hcCrvolBar?.cum && hcCrvolBar.cum > 0) ? hcCrvolBar.cum : (todayCumVol > 0 ? todayCumVol : null);
+                const cumBase = (hcCrvolBar?.cum_base && hcCrvolBar.cum_base > 0)
+                  ? hcCrvolBar.cum_base
+                  : (cumVal > 0 && cumVol ? Math.round(cumVol / cumVal) : null);
+                const cTier =
+                  cumVal >= 2.5 ? { label: "EARTHQUAKE SPIKE", col: "#f59e0b" } :
+                  cumVal >= 1.5 ? { label: "IN PLAY (EXPANSION)", col: "#10b981" } :
+                  cumVal >= 0.8 ? { label: "NORMAL PARTICIPATION", col: "#3b82f6" } :
+                  { label: "ASLEEP / LULL", col: "#94a3b8" };
+
+                return (
+                  <div className="mb-1.5 rounded bg-ink-900/80 p-1.5 border border-ink-800">
+                    <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 mb-0.5">
+                      <span>PILLAR 2 · CUMULATIVE PACE (09:15–{sSlot})</span>
+                      <span className="font-extrabold" style={{ color: cTier.col }}>
+                        [{cTier.label}]
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-200">
+                      Cumul Vol: Today <b className="text-cyan-300">{cumVol ? lakh(cumVol) : "—"}</b> vs 20d Avg <b className="text-slate-300">{cumBase ? lakh(cumBase) : "—"}</b> → <b className="text-[12px]" style={{ color: cTier.col }}>{cumVal.toFixed(2)}x</b>
+                      {c5 != null && <span className="text-slate-400 text-[10px]"> (5d: {c5.toFixed(2)}x)</span>}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Pillar 3: Breakout Verdict */}
+              {(() => {
+                const rawSlotRvol = vb?.slot_rvol ?? vb?.rvol ?? hcCrvolBar?.slot_rvol ?? 1.0;
+                const sRvol = unifiedSlotMap.get(hc.time) ?? unifiedSlotMap.get(bucket(hc.time, tf)) ?? rawSlotRvol;
+                const isReal = sRvol >= 1.8;
+                const isFake = sRvol < 0.85;
+
+                return (
+                  <div className={`rounded p-1.5 border ${
+                    isReal
+                      ? "bg-emerald-950/70 border-emerald-500/60 text-emerald-200"
+                      : isFake
+                      ? "bg-rose-950/70 border-rose-500/60 text-rose-200"
+                      : "bg-ink-900/80 border-ink-800 text-slate-300"
+                  }`}>
+                    <div className="flex items-center justify-between text-[10px] font-bold mb-0.5">
+                      <span className="text-slate-400">PILLAR 3 · BREAKOUT VERDICT</span>
+                      <span className={`px-1.5 py-0.2 rounded font-black text-[10.5px] ${
+                        isReal ? "bg-emerald-500 text-black animate-pulse" : isFake ? "bg-rose-500 text-white" : "bg-ink-800 text-slate-300"
+                      }`}>
+                        {isReal ? "⚡ REAL BREAKOUT FUEL" : isFake ? "⚠️ FAKEOUT TRAP RISK" : "⚖️ NEUTRAL FLOW"}
+                      </span>
+                    </div>
+                    <div className="text-[10.5px] leading-snug">
+                      {isReal
+                        ? "⚡ REAL INSTITUTIONAL EXPANSION (Slot >= 1.8x) — Moves past levels backed by genuine conviction."
+                        : isFake
+                        ? "⚠️ FAKEOUT TRAP RISK (Slot < 0.85x — Do Not Chase) — Breakouts lack volume sponsorship; high sweep risk."
+                        : "⚖️ NEUTRAL FLOW (0.85x–1.8x) — Normal intraday churn; await volume surge before expansion trades."}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Big Trades Cluster Readout */}
+              {(() => {
+                const nearBubbles = bubbles.filter((b) => Math.abs(b.time - hc.time) <= (BAR_SEC[tf] ?? 300) * 2);
+                if (!nearBubbles.length) return null;
+                const totalContracts = nearBubbles.reduce((s, b) => s + (b.vol || 0), 0);
+                return (
+                  <div className="mt-1.5 rounded bg-amber-950/40 border border-amber-500/50 px-2 py-0.5 text-[10px] text-amber-200 flex items-center justify-between">
+                    <span>🐳 <b>Big Trade Cluster:</b> {nearBubbles.length} block trade(s) nearby</span>
+                    <b className="text-white font-mono">{lakh(totalContracts)} contracts</b>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
           {ob && <div className="mt-1.5 border-t border-ink-700 pt-1.5">
             <div className="flex items-baseline justify-between"><span className="font-semibold text-slate-200">📊 FUT OI bar</span>
               <span className="num text-slate-300">ΔOI <b className={(ob.doi ?? 0) >= 0 ? "text-bull-400" : "text-bear-400"}>{(ob.doi ?? 0) >= 0 ? "+" : ""}{(ob.doi ?? 0).toLocaleString("en-IN")}</b> · OI {(ob.oi / 1e5).toFixed(1)}L</span></div>
@@ -2812,7 +3885,7 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["ob", "Order block · Breaker · RJB (violet)", "rgba(192,132,252,0.8)"], ["fvg", "FVG · IFVG (orange sell / teal buy)", "rgba(251,146,60,0.85)"], ["liq", "Liquidity BSL/SSL", "#f59e0b"],
   ["structure", "BOS ▲▼ · MSS (big) · bos (weak, faint)", C.bull], ["range", "OTE / EQ", C.gold], ["session", "PDH · PDL · OR", "#38bdf8"],
   ["delta", "ABS ● · Δ± ■", "#e8c35a"], ["crt", "CRT box · TBS ■ · CRT▶", C.gold], ["auction", "Value · ACC / REJ", "#38bdf8"],
-  ["volume", "VWAP · vPOC · vol", "#f5f5f4"], ["oi", "FUT OI build-up bars", "#22c55e"], ["rvol", "cRVOL", "#22c55e"], ["qml", "QML · RBS/SBR · cyan = close line", "#22d3ee"],
+  ["volume", "VWAP · vPOC · vol", "#f5f5f4"], ["oi", "FUT OI build-up bars", "#22c55e"], ["rvol", "cRVOL 3-Pillars: Slot (Time-of-Day) + Cumulative + Breakout Authenticity (Spike ≥2.5x, Above Avg ≥1.5x, Normal, Asleep)", "#10b981"], ["qml", "QML · RBS/SBR · cyan = close line", "#22d3ee"],
   ["fp", "Footprint (est.): Δ under candle · gold = POC · A/D/C/M/S/I", "#facc15"],
   ["dol", "D.O.L: ERL taken → FVG target · FVG tapped → old high/low", "#a78bfa"], ["smt", "SMT ▲▼ · pink line = BANKNIFTY (own scale)", "#f472b6"],
   ["heat", "Heatmap: traded volume per price (blue cold → red hot)", "#f97316"], ["ocAct", "PE−CE 6-Stage Lifecycle: 🎯 PB PE/CE · 🔥 ADD · 💰 BOOK · SL Line · bottom lane", "#fb7185"],
@@ -2823,6 +3896,8 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["rblock", "⟂ Rejection blocks: big-wick zone (violet) · lower wick = support, upper wick = resistance · dashed line = 50% entry", "#c084fc"],
   ["p3", "📐 Power of 3 (AMD): ① yellow box = accumulation (opening range) · ② orange line = Judas sweep (fake move) · ③ distribution = opposite the Judas", "#fde047"],
   ["stdv", "📐 STDV: 0/1 sweep anchors · -2..-2.5 Minor Reversal · -4..-4.5 Major Reversal", "#ef4444"],
+  ["prahaar", "⚔ Prahaar Engine: 🟢 BUY CE · 🔴 BUY PE · 🎯 A+ Master Sniper", "#10b981"],
+  ["gtfZones", "🏛️ GTF Zones 2.0: 🟩 Demand · 🟥 Supply · Conservative/Aggressive/Dynamic · 🎯 Master Confluence", "#10b981"],
 ];
 
 function dedupe(pts: { time: number; price: number }[]) {

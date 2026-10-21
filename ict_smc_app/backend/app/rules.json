@@ -431,7 +431,14 @@
     "breakout_bar_rvol": 1.5,
     "history_days": 40,
     "alert_max_age_s": 600,
-    "telegram": true
+    "telegram": true,
+    "tier_earthquake_spike": 2.5,
+    "tier_above_average": 1.5,
+    "tier_normal_min": 0.8,
+    "breakout_real_min": 1.8,
+    "breakout_fakeout_max": 0.9,
+    "slot_rvol_confirm": 2.0,
+    "slot_rvol_weak_max": 0.85
   },
   "cct": {
     "_note": "Candle Continuity Theory (CCT): HTF open-price benchmark & 4-Candle execution framework. Bullish: buy below open inside discount POI. Bearish: sell above open inside premium POI.",
@@ -563,5 +570,41 @@
       "nifty_round_major": 500,
       "inducement_proximity_atr": 1.50
     }
+  },
+  "prahaar": {
+    "_note": "Prahaar Indicator & ATM Option-Buying Engine (EMA + MACD + ADX + VIX).",
+    "enabled": true,
+    "fast_ema_len": 9,
+    "slow_ema_len": 21,
+    "macd_fast": 12,
+    "macd_slow": 26,
+    "macd_signal": 9,
+    "adx_period": 14,
+    "adx_threshold": 22.0,
+    "vix_filter_enabled": true,
+    "vix_min": 10.0,
+    "vix_max": 28.0,
+    "vix_drop_max": -1.5,
+    "strike_step": 50,
+    "sl_atr_mult": 1.5,
+    "tp_atr_mult": 3.0,
+    "signal_cooldown_bars": 3,
+    "confluence_ce_dist": 30.0,
+    "confluence_pe_dist": 30.0
+  },
+  "gtf": {
+    "_note": "GTF Demand & Supply Indicator 2.0 Equivalent (Boring vs Explosive candles with Conservative, Aggressive, Dynamic marking).",
+    "enabled": true,
+    "boring_body_ratio": 0.60,
+    "explosive_body_ratio": 1.50,
+    "abr_period": 14,
+    "vol_sma_period": 20,
+    "vol_mult": 1.0,
+    "base_min_bars": 1,
+    "base_max_bars": 3,
+    "max_active_zones": 8,
+    "marking_mode": "conservative",
+    "dynamic_atr_mult": 0.20,
+    "near_zone_tolerance_pts": 25.0
   }
 }

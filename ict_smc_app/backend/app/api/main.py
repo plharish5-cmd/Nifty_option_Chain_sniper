@@ -530,6 +530,45 @@ def qml(tf: str = Query("5m")):
     return {"tf": tf, "available": True, **(j.get("qml") or {"setups": [], "markers": []})}
 
 
+@app.get("/api/prahaar")
+def prahaar_view(tf: str = Query("5m")):
+    """Prahaar Indicator & ATM Option-Buying Directional Engine. Information and alert only."""
+    h = _h()
+    j = h.json.get(tf) or {}
+    p = j.get("prahaar")
+    if p:
+        return p
+    an = h.analyses.get(tf)
+    if not an:
+        return {"tf": tf, "available": False, "message": f"Analysis for {tf} not ready"}
+    from ..engine import prahaar as prahaar_mod
+    vix = h.candles.last_price.get(h.vix)
+    vpc = h.prev_close.get(h.vix)
+    vix_chg = round(vix - vpc, 2) if vix and vpc else None
+    return prahaar_mod.compute_prahaar(
+        an.bars, an.atr, tf=tf, rules_cfg=config.rules().get("prahaar", {}),
+        vix=vix, vix_chg=vix_chg
+    )
+
+
+@app.get("/api/gtf")
+def gtf_view(tf: str = Query("5m"), mode: str = Query("conservative")):
+    """GTF Institutional Demand & Supply Zones (v2.0 Equivalent). Information and alert only."""
+    h = _h()
+    j = h.json.get(tf) or {}
+    g = j.get("gtf")
+    if g and g.get("marking_mode") == mode.lower():
+        return g
+    an = h.analyses.get(tf)
+    if not an:
+        return {"tf": tf, "available": False, "message": f"Analysis for {tf} not ready"}
+    from ..engine import gtf as gtf_mod
+    return gtf_mod.compute_gtf(
+        an.bars, an.atr, tf=tf, rules_cfg=config.rules().get("gtf", {}),
+        marking_mode=mode
+    )
+
+
 @app.get("/api/oclab-summary")
 async def oclab_summary():
     """PE − CE table + writers-flow, condensed into narrative lines and story beats."""

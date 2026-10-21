@@ -631,6 +631,15 @@ export function PeceTable({ tick }: { tick: number }) {
                     ⚡ A+ Synergy
                   </span>
                 )}
+                <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-extrabold flex items-center gap-0.5 border ${
+                  activePlanRow.actionTone === "bear"
+                    ? "bg-rose-950/80 text-rose-300 border-rose-500/70"
+                    : activePlanRow.actionTone === "bull"
+                    ? "bg-emerald-950/80 text-emerald-300 border-emerald-500/70"
+                    : "bg-ink-850 text-slate-400 border-ink-700"
+                }`}>
+                  ⚔️ Prahaar ATM: {activePlanRow.actionTone === "bear" ? `BUY ${activePlanRow.atmStrike} PE` : activePlanRow.actionTone === "bull" ? `BUY ${activePlanRow.atmStrike} CE` : "Standby"}
+                </span>
                 <span className="text-gold-300 text-[13px] font-mono font-black tracking-wide">
                   {activePlanRow.actionTone === "bear"
                     ? `BUY ${activePlanRow.atmStrike} PE`
@@ -853,6 +862,22 @@ export function PeceTable({ tick }: { tick: number }) {
             title="Test acoustic A+ setup harmonic chime"
           >
             🔔 Test Chime
+          </button>
+          <button
+            onClick={() => playOiBeep("angleBear")}
+            className="px-2 py-0.5 rounded text-[10px] font-bold border bg-rose-950/60 text-rose-300 border-rose-800/60 hover:bg-rose-900/70 flex items-center gap-1"
+            title="Test Prahaar Bearish Sniper Acoustic Chime (angleBear)"
+          >
+            <span>🔴</span>
+            <span>Sniper PE Chime</span>
+          </button>
+          <button
+            onClick={() => playOiBeep("angleBull")}
+            className="px-2 py-0.5 rounded text-[10px] font-bold border bg-emerald-950/60 text-emerald-300 border-emerald-800/60 hover:bg-emerald-900/70 flex items-center gap-1"
+            title="Test Prahaar Bullish Sniper Acoustic Chime (angleBull)"
+          >
+            <span>🟢</span>
+            <span>Sniper CE Chime</span>
           </button>
           <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-400 select-none hover:text-slate-200 ml-1">
             <input

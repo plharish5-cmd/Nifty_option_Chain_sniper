@@ -60,5 +60,5 @@ export const KIND_ACT: Record<string, string> = {
 // chart layer key → Ev.layer names used by chartKit markers
 export const EV_LAYER: Record<string, string[]> = {
   fvg: ["IFVG"], structure: ["Structure", "Liquidity"], delta: ["Delta"], deltaDetail: ["Delta"], crt: ["CRT"], auction: ["Auction"],
-  rvol: ["RVOL"], oi: ["Futures OI"], qml: ["QML"], dol: ["D.O.L"], smt: ["SMT"], ocAct: ["PE−CE action"],
+  rvol: ["RVOL"], oi: ["Futures OI"], qml: ["QML"], dol: ["D.O.L"], smt: ["SMT"], ocAct: ["PE−CE action"], prahaar: ["Prahaar Engine"],
 };

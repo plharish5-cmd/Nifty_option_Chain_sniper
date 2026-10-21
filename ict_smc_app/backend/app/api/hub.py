@@ -43,6 +43,8 @@ from ..engine import cct as cct_mod
 from ..engine import mmxm as mmxm_mod
 from ..engine import qml_sbr as qml_mod
 from ..engine import pa_advanced as pa_adv_mod
+from ..engine import prahaar as prahaar_mod
+from ..engine import gtf as gtf_mod
 from ..engine import volume as vol_mod
 from ..market import activity as act_mod
 from ..market import futures as fut_mod
@@ -98,6 +100,8 @@ class Hub:
         self.delta: Dict[str, Dict[str, Any]] = {}
         self.auction: Dict[str, Dict[str, Any]] = {}
         self.pa_advanced: Dict[str, Dict[str, Any]] = {}
+        self.prahaar: Dict[str, Dict[str, Any]] = {}
+        self.gtf: Dict[str, Dict[str, Any]] = {}
         cur_ad = db.kv_get("delta_adapter")
         def_ad = config.rule("delta", "adapter", "fut_quote_rule")
         self.delta_adapter = self._make_adapter(cur_ad if (cur_ad and cur_ad != "none") else def_ad)
@@ -766,6 +770,33 @@ class Hub:
             log.exception("pa_advanced %s failed", tf)
             j["pa_advanced"] = {"available": False, "message": f"PA Advanced error: {e}", "summary": "Error", "zones": [], "markers": []}
 
+        # Prahaar Indicator & ATM Option-Buying Engine (EMA + MACD + ADX + VIX)
+        try:
+            vix = self.candles.last_price.get(self.vix)
+            vpc = self.prev_close.get(self.vix)
+            vix_chg = round(vix - vpc, 2) if vix and vpc else None
+            prahaar_res = prahaar_mod.compute_prahaar(
+                an.bars, an.atr, tf=tf, rules_cfg=config.rules().get("prahaar", {}),
+                vix=vix, vix_chg=vix_chg
+            )
+            self.prahaar[tf] = prahaar_res
+            j["prahaar"] = prahaar_res
+        except Exception as e:                               # noqa: BLE001
+            log.exception("prahaar %s failed", tf)
+            j["prahaar"] = {"available": False, "message": f"Prahaar error: {e}", "signals": [], "markers": [], "stats": {}}
+
+        # GTF Institutional Demand & Supply Zones (v2.0 Equivalent)
+        try:
+            gtf_res = gtf_mod.compute_gtf(
+                an.bars, an.atr, tf=tf,
+                rules_cfg=config.rules().get("gtf", {})
+            )
+            self.gtf[tf] = gtf_res
+            j["gtf"] = gtf_res
+        except Exception as e:                               # noqa: BLE001
+            log.exception("gtf %s failed", tf)
+            j["gtf"] = {"available": False, "message": f"GTF error: {e}", "zones": []}
+
         self.json[tf] = j
         self.recompute_flow(tf)
 
@@ -811,16 +842,25 @@ class Hub:
                     await self.broadcast({"type": "paper", "trade": t})
 
     # ── volume (NIFTY FUT, basis-adjusted) ────────────────────────────────
-    def mapped_1m(self) -> List[Dict[str, float]]:
-        key = (db.last_candle_ts(fut_mod.SEC), db.last_candle_ts(self.nifty))
+    def mapped_1m(self, src: str = "combined") -> List[Dict[str, float]]:
+        key = (db.last_candle_ts(fut_mod.SEC), db.last_candle_ts(self.nifty), db.last_candle_ts(fut_mod.SEC2), src)
         if getattr(self, "_mp_key", None) != key:
             self._mp_key = key
-            self._mp = fut_mod.mapped(self.rows_1m(8), fut_mod.rows_1m(8)) if key[0] else []
+            oct_m = fut_mod.mapped(self.rows_1m(8), fut_mod.rows_1m(8)) if key[0] else []
+            if src == "oct" or not key[2]:
+                self._mp = oct_m
+            else:
+                nov_raw = fut_mod.sym_rows_1m(fut_mod.SEC2, 8)
+                nov_m = fut_mod.mapped(self.rows_1m(8), nov_raw) if nov_raw else []
+                if src == "nov":
+                    self._mp = nov_m or oct_m
+                else:
+                    self._mp = fut_mod.combined_1m(oct_m, nov_m) if nov_m else oct_m
             self._rv_cache: Dict[str, Any] = {}
         return self._mp
 
-    def rvol_tf(self, tf: str) -> Dict[int, Dict[str, Any]]:
-        mp = self.mapped_1m()
+    def rvol_tf(self, tf: str, src: str = "combined") -> Dict[int, Dict[str, Any]]:
+        mp = self.mapped_1m(src)
         if tf not in self._rv_cache:
             self._rv_cache[tf] = vol_mod.rvol(mp, tf) if mp else {}
         return self._rv_cache[tf]
@@ -853,8 +893,23 @@ class Hub:
                 ts = int(b.ts[k])
                 x = rv.get(ts) or {}
                 o = oib.get(ts) or {}
-                bars.append({"time": chart_time(ts), "v": x.get("v", 0), "rvol": x.get("rvol"), "up": bool(b.c[k] >= b.o[k]),
-                             "oi": o.get("oi"), "doi": o.get("doi"), "build": o.get("build")})
+                bars.append({
+                    "time": chart_time(ts),
+                    "v": x.get("v", 0),
+                    "rvol": x.get("rvol"),
+                    "slot_rvol": x.get("slot_rvol") or x.get("rvol"),
+                    "slot_base": x.get("slot_base") or x.get("base"),
+                    "slot": x.get("slot") or hm(ts),
+                    "tier": x.get("tier"),
+                    "tier_label": x.get("tier_label"),
+                    "tier_color": x.get("tier_color"),
+                    "is_real_breakout": x.get("is_real_breakout"),
+                    "breakout_verdict": x.get("breakout_verdict"),
+                    "up": bool(b.c[k] >= b.o[k]),
+                    "oi": o.get("oi"),
+                    "doi": o.get("doi"),
+                    "build": o.get("build")
+                })
                 idx[ts] = k
 
             def sample(series: List[Dict[str, Any]], from_ts: int = 0) -> List[Dict[str, Any]]:
@@ -891,7 +946,41 @@ class Hub:
             prev_day = max([d for d in profiles if d < today], default=None)
             naked = vol_mod.naked_pocs(profiles, mp, today)
             last_vw = vw[-1] if vw else None
+
+            # Combined futures rollover metrics (Oct + Nov)
+            comb_fut = None
+            try:
+                oct_m = self.mapped_1m(src="oct")
+                nov_raw = fut_mod.sym_rows_1m(fut_mod.SEC2, 8)
+                if nov_raw:
+                    nov_m = fut_mod.mapped(self.rows_1m(8), nov_raw)
+                    today_epoch = max((int(r["ts"]) // 86400 for r in oct_m), default=0)
+                    oct_today = sum(float(r.get("v") or 0) for r in oct_m if int(r["ts"]) // 86400 == today_epoch)
+                    nov_today = sum(float(r.get("v") or 0) for r in nov_m if int(r["ts"]) // 86400 == today_epoch)
+                    tot = oct_today + nov_today
+                    comb_fut = {
+                        "available": True,
+                        "oct_contract": self.fut_status.split()[0] if self.fut_status else "Oct FUT",
+                        "nov_contract": getattr(self, "fut2_status", "").split()[0] if getattr(self, "fut2_status", None) else "Nov FUT",
+                        "oct_vol_today": round(oct_today),
+                        "nov_vol_today": round(nov_today),
+                        "combined_vol_today": round(tot),
+                        "nov_share_pct": round(100 * nov_today / tot, 1) if tot else 0.0,
+                        "is_rollover_active": (round(100 * nov_today / tot, 1) >= 15.0) if tot else False,
+                    }
+            except Exception as fe:
+                log.warning("combined_future calc failed: %s", fe)
+
+            # Option chain multi-expiry volume
+            oc_vol = None
+            try:
+                if hasattr(self, "chain") and hasattr(self.chain, "multi_expiry_volume"):
+                    oc_vol = self.chain.multi_expiry_volume()
+            except Exception as ce:
+                log.warning("oc_vol calc failed: %s", ce)
+
             j["volume"] = {"available": True, "contract": self.fut_status, "basis": mp[-1]["basis"], "bars": bars,
+                           "combined_future": comb_fut, "oc_volume": oc_vol,
                            "vwap": vw, "bands": config.rule("volume", "vwap_bands", [1, 2]), "avwaps": avwaps,
                            "today": strip(profiles.get(today)), "prev": strip(profiles.get(prev_day)) if prev_day else None,
                            "naked": naked, "last": summ, "act_last": act.get(int(b.ts[-1])),
@@ -916,9 +1005,46 @@ class Hub:
         ts = [int(t) for t in an.bars.ts[-300:]]
         pb = rvol_mod.per_bar(crv, tf, ts)
         evs = rvol_mod.events(crv, rv, self.breakouts(an), tf)
+
+        crvol_list = []
+        for t, p in sorted(pb.items()):
+            bar_rv = rv.get(t) or {}
+            c_val = p.get("c20") if p.get("c20") is not None else p.get("c5")
+            s_rv = bar_rv.get("slot_rvol") or bar_rv.get("rvol")
+            tier_info = rvol_mod.classify_rvol(s_rv if s_rv is not None else c_val)
+            bo_auth = rvol_mod.breakout_authenticity(s_rv, c_val)
+            crvol_list.append({
+                "time": chart_time(t),
+                "c20": p.get("c20"),
+                "c5": p.get("c5"),
+                "cum": p.get("cum"),
+                "cum_base": p.get("cum_base") or (round(p["cum"] / c_val) if (p.get("cum") and c_val) else None),
+                "slot_rvol": s_rv,
+                "slot_base": bar_rv.get("base"),
+                "v": bar_rv.get("v"),
+                "slot": hm(t),
+                "tier": tier_info.get("tier"),
+                "tier_label": tier_info.get("label"),
+                "tier_color": tier_info.get("color"),
+                "is_real_breakout": bo_auth.get("is_real_breakout"),
+                "breakout_status": bo_auth.get("status"),
+                "breakout_verdict": bo_auth.get("verdict_text"),
+            })
+
+        ev_list = []
+        for e in evs:
+            t_chart = chart_time(e["ts"]) if "ts" in e else e.get("time")
+            ev_list.append({
+                "kind": e.get("kind"),
+                "ts": e.get("ts"),
+                "time": t_chart,
+                "at": hm(e["ts"]) if "ts" in e else e.get("at", ""),
+                "title": e.get("title", ""),
+                "value": e.get("value"),
+            })
         return {"rvol_state": rvol_mod.state(crv), "rvol_days": crv.get("days"), "rvol_baseline": crv.get("baseline"),
-                "crvol": [{"time": chart_time(t), "c20": p.get("c20"), "c5": p.get("c5")} for t, p in sorted(pb.items())],
-                "rvol_events": [{k: e[k] for k in ("kind", "time", "at", "title", "value")} for e in evs]}
+                "crvol": crvol_list,
+                "rvol_events": ev_list}
 
     def bn_view(self, tf: str, an) -> Dict[str, Any]:
         """BANKNIFTY future on the same timeframe: build-up per candle + summary over the same window."""
@@ -1252,7 +1378,8 @@ class Hub:
 
 def _cj(c: Dict[str, float]) -> Dict[str, Any]:
     return {"time": chart_time(c["ts"]), "open": c["o"], "high": c["h"], "low": c["l"], "close": c["c"],
-            "closed": bool(c.get("closed", True))}
+            "closed": bool(c.get("closed", True)),
+            "volume": float(c["v"]) if "v" in c else None}
 
 
 def _jdefault(o):

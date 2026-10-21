@@ -18,7 +18,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from .. import config, db
-from ..timeutil import market_open_now, now_epoch
+from ..timeutil import market_open_now, now_epoch, now_ist
 
 log = logging.getLogger("chain")
 
@@ -68,6 +68,9 @@ def normalize(raw: Dict[str, Any], expiry: str) -> Dict[str, Any]:
     pe_oi = sum(r["pe"]["oi"] for r in rows)
     ce_chg = sum(r["ce"]["oi_chg"] for r in rows)
     pe_chg = sum(r["pe"]["oi_chg"] for r in rows)
+    ce_vol = sum(r["ce"]["vol"] for r in rows)
+    pe_vol = sum(r["pe"]["vol"] for r in rows)
+    total_vol = ce_vol + pe_vol
 
     # max pain: strike where option buyers' total intrinsic value is smallest
     def pain(s: float) -> float:
@@ -93,7 +96,10 @@ def normalize(raw: Dict[str, Any], expiry: str) -> Dict[str, Any]:
         "is_stale": False, "spot": spot, "atm": atm, "step": step, "rows": rows,
         "totals": {"ce_oi": ce_oi, "pe_oi": pe_oi, "pcr": round(pe_oi / ce_oi, 2) if ce_oi else None,
                    "ce_oi_chg": ce_chg, "pe_oi_chg": pe_chg,
-                   "pcr_chg": round(pe_chg / ce_chg, 2) if ce_chg > 0 else None},
+                   "pcr_chg": round(pe_chg / ce_chg, 2) if ce_chg > 0 else None,
+                   "ce_vol": round(ce_vol), "pe_vol": round(pe_vol),
+                   "total_vol": round(total_vol),
+                   "pcr_vol": round(pe_vol / ce_vol, 2) if ce_vol else None},
         "max_pain": mp, "call_wall": ce_wall["strike"] if ce_wall else None,
         "put_wall": pe_wall["strike"] if pe_wall else None,
         "builds": builds[:10],
@@ -197,4 +203,50 @@ class ChainPoller:
             "fetched_at": ch.get("fetched_at", ch.get("ts")),
             "spot_at_fetch": ch.get("spot_at_fetch", ch.get("spot")),
             "is_stale": stale,
+        }
+
+    def multi_expiry_volume(self) -> Dict[str, Any]:
+        """Returns Call, Put, and Total traded volume for current week, next week, and both combined."""
+        today_iso = now_ist().date().isoformat()
+        active_exps = [e for e in (self.expiries or sorted(self.chains)) if e >= today_iso]
+        cur_exp = active_exps[0] if len(active_exps) > 0 else (self.expiries[0] if self.expiries else None)
+        next_exp = active_exps[1] if len(active_exps) > 1 else (self.expiries[1] if len(self.expiries) > 1 else None)
+
+        cur_ch = self.chains.get(cur_exp) if cur_exp else None
+        next_ch = self.chains.get(next_exp) if next_exp else None
+
+        def get_vols(ch):
+            if not ch:
+                return 0.0, 0.0, 0.0
+            t = ch.get("totals", {})
+            if t.get("total_vol"):
+                return float(t.get("total_vol") or 0), float(t.get("ce_vol") or 0), float(t.get("pe_vol") or 0)
+            rows = ch.get("rows", [])
+            ce_v = sum(float((r.get("ce") or {}).get("vol") or 0) for r in rows)
+            pe_v = sum(float((r.get("pe") or {}).get("vol") or 0) for r in rows)
+            return ce_v + pe_v, ce_v, pe_v
+
+        cur_vol, cur_ce, cur_pe = get_vols(cur_ch)
+        next_vol, next_ce, next_pe = get_vols(next_ch)
+
+        both_vol = cur_vol + next_vol
+        both_ce = cur_ce + next_ce
+        both_pe = cur_pe + next_pe
+
+        return {
+            "cur_expiry": cur_exp,
+            "next_expiry": next_exp,
+            "cur_vol": round(cur_vol),
+            "cur_ce_vol": round(cur_ce),
+            "cur_pe_vol": round(cur_pe),
+            "cur_pcr_vol": round(cur_pe / cur_ce, 2) if cur_ce else None,
+            "next_vol": round(next_vol),
+            "next_ce_vol": round(next_ce),
+            "next_pe_vol": round(next_pe),
+            "next_pcr_vol": round(next_pe / next_ce, 2) if next_ce else None,
+            "both_vol": round(both_vol),
+            "both_ce_vol": round(both_ce),
+            "both_pe_vol": round(both_pe),
+            "both_pcr_vol": round(both_pe / both_ce, 2) if both_ce else None,
+            "next_share_pct": round(100 * next_vol / both_vol, 1) if both_vol else 0.0,
         }

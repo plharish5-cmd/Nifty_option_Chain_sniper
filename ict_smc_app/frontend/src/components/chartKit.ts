@@ -68,6 +68,10 @@ export const MEANING: Record<string, string> = {
   GPX_CEILING: "GPX Macro Ceiling — HTF Extreme Premium supply boundary",
   GPX_EQ: "GPX Equilibrium — 50% fair value divider between Premium and Discount",
   GPX_FLOOR: "GPX Macro Floor — HTF Extreme Discount demand boundary",
+  PRAHAAR_BUY_CE: "Prahaar BUY ATM CALL — Bullish EMA trend, positive MACD crossover, ADX >= 22 & supportive VIX",
+  PRAHAAR_BUY_PE: "Prahaar BUY ATM PUT — Bearish EMA trend, negative MACD crossover, ADX >= 22 & supportive VIX",
+  PRAHAAR_MASTER_SNIPER_CE: "🎯 A+ MASTER SNIPER (CALL) — Prahaar BUY ATM CALL + PE Support Wall + Bullish CVD Absorption",
+  PRAHAAR_MASTER_SNIPER_PE: "🎯 A+ MASTER SNIPER (PUT) — Prahaar BUY ATM PUT + CE Resistance Wall + Bearish CVD Distribution",
 };
 
 // shorten the backend's text for the chart: "BOS·weak lowV" → "BOS", "Sweep EQH" → "Sweep EQH"

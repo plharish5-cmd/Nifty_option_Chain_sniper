@@ -109,3 +109,28 @@ def test_rollover_keeps_old_history():
     assert futures.history_days(sec, "35001", 35)[0] == 35          # same contract after a restart: full
     days, note = futures.history_days(sec, "35002", 35)              # expiry rollover
     assert days == 1 and "rollover" in note
+
+
+def test_semantic_classification_tiers():
+    assert rvol.classify_rvol(3.2)["tier"] == "EARTHQUAKE_SPIKE"
+    assert rvol.classify_rvol(2.5)["tier"] == "EARTHQUAKE_SPIKE"
+    assert rvol.classify_rvol(1.8)["tier"] == "ABOVE_AVERAGE"
+    assert rvol.classify_rvol(1.5)["tier"] == "ABOVE_AVERAGE"
+    assert rvol.classify_rvol(1.2)["tier"] == "NORMAL_PARTICIPATION"
+    assert rvol.classify_rvol(0.8)["tier"] == "NORMAL_PARTICIPATION"
+    assert rvol.classify_rvol(0.5)["tier"] == "ASLEEP_LULL"
+    assert rvol.classify_rvol(None)["tier"] == "UNKNOWN"
+
+
+def test_breakout_authenticity_verdicts():
+    real = rvol.breakout_authenticity(2.2, 1.6)
+    assert real["is_real_breakout"] is True
+    assert real["status"] == "REAL_BREAKOUT_FUEL"
+
+    fake = rvol.breakout_authenticity(0.6, 0.7)
+    assert fake["is_real_breakout"] is False
+    assert fake["status"] == "FAKEOUT_WARNING"
+
+    neutral = rvol.breakout_authenticity(1.2, 1.1)
+    assert neutral["is_real_breakout"] is None
+    assert neutral["status"] == "NEUTRAL_FLOW"

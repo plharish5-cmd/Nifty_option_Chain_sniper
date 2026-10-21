@@ -28,12 +28,14 @@ const TFS: TF[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "30m": 15, "1h": 30, "4h": 60, "1D": 60 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
-  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"], ["fp", "Footprint Δ (est.)"], ["heat", "Heatmap"], ["ocAct", "PE−CE action"], ["dol", "D.O.L (IRL⇄ERL)"], ["smt", "SMT (vs BankNifty)"], ["bias", "⚖ Bias 20"], ["walls", "🧱 OI walls"], ["bubbles", "🫧 Big trades"], ["cells", "▦ FP cells"], ["cvd", "〽 CVD"], ["nodes", "🟨 Stacked nodes"], ["gamma", "γ Gamma 3✓"], ["tsoup", "🐢 Turtle soup"], ["rblock", "⟂ Rejection blocks"], ["p3", "📐 Power of 3 (AMD)"], ["stdv", "📐 STDV"], ["advPa", "🎓 Adv PA (10 Core)"],
+  ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"], ["fp", "Footprint Δ (est.)"], ["heat", "Heatmap"], ["ocAct", "PE−CE action"], ["dol", "D.O.L (IRL⇄ERL)"], ["smt", "SMT (vs BankNifty)"], ["bias", "⚖ Bias 20"], ["walls", "🧱 OI walls"], ["bubbles", "🫧 Big trades"], ["cells", "▦ FP cells"], ["cvd", "〽 CVD"], ["nodes", "🟨 Stacked nodes"], ["gamma", "γ Gamma 3✓"], ["tsoup", "🐢 Turtle soup"], ["rblock", "⟂ Rejection blocks"], ["p3", "📐 Power of 3 (AMD)"], ["stdv", "📐 STDV"], ["advPa", "🎓 Adv PA (10 Core)"], ["prahaar", "⚔ Prahaar Engine"], ["gtfZones", "🏛️ GTF D&S Zones"],
 ];
 
-const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false, qml: false, fp: false, bias: false, dol: false, smt: false, heat: false, ocAct: false, cvd: false, cells: false, walls: false, bubbles: false, nodes: false, gamma: false, tsoup: false, rblock: false, p3: false, stdv: false, advPa: false };
+const OFF: Layers = { ob: false, fvg: false, liq: false, structure: false, swings: false, range: false, session: false, delta: false, deltaDetail: false, crt: false, auction: false, volume: false, oi: false, rvol: false, qml: false, fp: false, bias: false, dol: false, smt: false, heat: false, ocAct: false, cvd: false, cells: false, walls: false, bubbles: false, nodes: false, gamma: false, tsoup: false, rblock: false, p3: false, stdv: false, advPa: false, prahaar: false, gtfZones: false };
 const PRESETS: [string, string, Partial<Layers>][] = [
   ["Clean", "structure + key levels + VWAP", { structure: true, session: true, volume: true }],
+  ["GTF Zones", "GTF Demand/Supply 2.0 institutional zones + OI walls + CVD", { gtfZones: true, walls: true, cvd: true, structure: true, session: true }],
+  ["Prahaar", "Prahaar ATM option engine: EMA + MACD + ADX + VIX + OI walls + CVD", { prahaar: true, walls: true, cvd: true, structure: true, session: true }],
   ["Adv PA", "10-concept course: Super OB, Dragon Fruit, MiB, ROTE, FTR, S/D bases, GPX", { advPa: true, structure: true, session: true, volume: true, ob: true, fvg: true }],
   ["SMC", "order blocks, FVG, liquidity, BOS/MSS, OTE, rejection blocks", { ob: true, fvg: true, liq: true, structure: true, range: true, session: true, rblock: true }],
   ["CRT", "CRT ranges, TBS, structure, D.O.L, SMT, rejection blocks", { crt: true, structure: true, session: true, dol: true, smt: true, fvg: true, rblock: true }],
@@ -166,6 +168,18 @@ export default function App() {
           <div className={`mx-3 mt-3 rounded-lg border px-3 py-1.5 text-[12px] flex flex-wrap items-center gap-x-3 gap-y-1 ${C[rs?.state ?? "UNKNOWN"]}`}>
             <b className="tracking-wide">{rs?.state === "ACTIVE" ? "⚡ RVOL ACTIVE" : rs?.state === "ABSENT" ? "RVOL LOW" : rs?.state === "NORMAL" ? "RVOL NORMAL" : "RVOL"}</b>
             {rs?.value != null && <span className="num text-base font-semibold">{rs.value.toFixed(2)}×</span>}
+            {rs?.tier_label && (
+              <span
+                className="px-2 py-0.5 rounded text-[10.5px] font-mono font-extrabold uppercase tracking-wide border shadow-sm"
+                style={{
+                  color: rs.tier_color ?? "#10b981",
+                  borderColor: `${rs.tier_color ?? "#10b981"}60`,
+                  backgroundColor: `${rs.tier_color ?? "#10b981"}20`,
+                }}
+              >
+                {rs.tier_label}
+              </span>
+            )}
             {rs?.trend && <span>{rs.trend === "BUILDING" ? "▲ building" : rs.trend === "FADING" ? "▼ fading" : "■ holding"}</span>}
             <span className="text-slate-400">{rs?.text ?? "cumulative RVOL of the NIFTY future — loading"}</span>
             <span className="ml-auto flex flex-wrap items-center gap-2"><CombinedRvolChip /><BookChip /><SignalControls p={sig} setP={setSig} /><AlertControls prefs={ra.prefs} setPrefs={ra.setPrefs} enable={ra.enable} /></span>

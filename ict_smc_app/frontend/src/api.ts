@@ -4,7 +4,7 @@ import { decode } from "@msgpack/msgpack";
 
 export type TF = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1D";
 
-export interface Candle { time: number; open: number; high: number; low: number; close: number; closed: boolean }
+export interface Candle { time: number; open: number; high: number; low: number; close: number; closed: boolean; volume?: number; v?: number }
 export interface Zone { type: "FVG" | "IFVG" | "RJB" | "OB" | "BREAKER"; dir: "bull" | "bear"; from: number; to: number; top: number; bottom: number; state: string; label: string; formed: string }
 export interface PoolLine { side: "BSL" | "SSL"; src: string; price: number; from: number; members: number }
 export interface Marker {
@@ -42,9 +42,44 @@ export interface AuctionView { today: TpoProfile | null; prev: TpoProfile | null
 export interface AuctionRes extends Partial<AuctionView> { tf: string; available: boolean; message?: string; profile_kind?: string; events?: AuctionEvent[]; pending?: { ref: string; level: number; since: string; side: string }[]; delta_label?: string; last_close?: number; rules?: Record<string, unknown> }
 export interface VolPoint { time: number; v: number; sd: number }
 export interface VolProfile { kind: string; poc: number; vah: number; val: number; high: number; low: number; minutes: number; volume: number; step: number; hvn: number[]; lvn: number[]; hist?: [number, number][] }
+export interface CrvolBar {
+  time: number;
+  c20: number | null;
+  c5: number | null;
+  cum?: number;
+  cum_base?: number | null;
+  slot_rvol?: number | null;
+  slot_base?: number | null;
+  v?: number;
+  slot?: string;
+  tier?: "EARTHQUAKE_SPIKE" | "ABOVE_AVERAGE" | "NORMAL_PARTICIPATION" | "ASLEEP_LULL" | "UNKNOWN";
+  tier_label?: string;
+  tier_color?: string;
+  is_real_breakout?: boolean | null;
+  breakout_status?: "REAL_BREAKOUT_FUEL" | "FAKEOUT_WARNING" | "NEUTRAL_FLOW";
+  breakout_verdict?: string;
+}
+
 export interface VolumeView {
   available: boolean; message?: string; contract?: string; basis?: number;
-  bars?: { time: number; v: number; rvol: number | null; up: boolean; oi?: number | null; doi?: number | null; build?: string | null }[];
+  bars?: {
+    time: number;
+    v: number;
+    rvol: number | null;
+    slot_rvol?: number | null;
+    slot_base?: number | null;
+    cum_rvol?: number | null;
+    slot?: string;
+    tier?: string;
+    tier_label?: string;
+    tier_color?: string;
+    is_real_breakout?: boolean | null;
+    breakout_verdict?: string;
+    up: boolean;
+    oi?: number | null;
+    doi?: number | null;
+    build?: string | null;
+  }[];
   oi_last?: { oi: number; doi?: number; doi_pct?: number; build?: string } | null;
   oi_summary?: { net_doi: number; dominant: string; bias: string | null; counts: Record<string, number>; bars: number; last_build: string; last_doi: number | null; oi: number } | null;
   iv?: { time: number; iv: number }[]; iv_trend?: { from: number; to: number; chg: number; word: string; minutes: number } | null;
@@ -53,8 +88,8 @@ export interface VolumeView {
   oi_surge_last?: { ts: number; surge_x: number | null } | null;
   banknifty?: { available: boolean; message?: string; contract?: string; summary?: { dominant: string; bias: string | null; net_doi: number; bars: number } | null; last_build?: string | null; oi?: number; recent?: { time: number; build: string | null; doi: number | null }[] };
   oi_compare?: { verdict: string; text: string; nifty: string; banknifty: string } | null;
-  rvol_state?: { state: "ACTIVE" | "NORMAL" | "ABSENT" | "UNKNOWN"; trend?: string | null; value?: number | null; c20?: number | null; c5?: number | null; base?: string; text: string; at?: string };
-  crvol?: { time: number; c20: number | null; c5: number | null }[];
+  rvol_state?: { state: "ACTIVE" | "NORMAL" | "ABSENT" | "UNKNOWN"; trend?: string | null; value?: number | null; c20?: number | null; c5?: number | null; base?: string; text: string; at?: string; tier?: string; tier_label?: string; tier_color?: string };
+  crvol?: CrvolBar[];
   rvol_events?: { kind: string; time: number; at: string; title: string; value: number }[];
   rvol_days?: number;
   strike_greeks?: { side: string; label: string; delta: number | null; iv: number | null; delta_trend: { from: number; to: number; word: string } | null }[];
@@ -62,6 +97,33 @@ export interface VolumeView {
   today?: VolProfile | null; prev?: VolProfile | null; naked?: { day: string; price: number }[];
   last?: { last_rvol: number | null; last_v: number | null; method: string | null }; act_last?: { act: number; raw: number; z: number | null } | null;
   last_vwap?: VolPoint | null; rvol_method?: string | null;
+  combined_future?: {
+    available: boolean;
+    oct_contract: string;
+    nov_contract: string;
+    oct_vol_today: number;
+    nov_vol_today: number;
+    combined_vol_today: number;
+    nov_share_pct: number;
+    is_rollover_active: boolean;
+  } | null;
+  oc_volume?: {
+    cur_expiry?: string | null;
+    next_expiry?: string | null;
+    cur_vol: number;
+    cur_ce_vol?: number;
+    cur_pe_vol?: number;
+    cur_pcr_vol?: number | null;
+    next_vol: number;
+    next_ce_vol?: number;
+    next_pe_vol?: number;
+    next_pcr_vol?: number | null;
+    both_vol: number;
+    both_ce_vol?: number;
+    both_pe_vol?: number;
+    both_pcr_vol?: number | null;
+    next_share_pct: number;
+  } | null;
 }
 export interface QmlSetup { kind: "QML" | "RBS" | "SBR"; dir: "bull" | "bear"; name: string; side: string; level: number; tol: number; status: "ARMED" | "TRIGGERED" | "TP1 HIT" | "TP2 HIT" | "STOPPED" | "INVALID" | "EXPIRED" | "NO-TRADE" | "FAR"; veto?: string; entry: number; sl: number; tp1: number; tp2: number; rr: number; tp1_r: number; from: number; to: number; bos_at: string; trig_at: string | null; rule: string; no_trade: string; strike?: string | null; structure: { label: string; time: number; price: number }[] }
 export interface QmlView { setups: QmlSetup[]; markers: Marker[]; summary: string; pivot_n?: number }
@@ -432,7 +494,107 @@ export interface SniperView {
   hover_items?: SniperHoverItem[];
 }
 
-export interface Analysis { pa_advanced?: PaAdvancedView; cct?: CctView; mmxm?: MmxmView; qml?: QmlView; volume?: VolumeView; auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
+export interface PrahaarSignalView {
+  candle_idx: number;
+  time: number;
+  time_str: string;
+  action: "BUY ATM CALL" | "BUY ATM PUT";
+  dir: "bull" | "bear";
+  strike: number;
+  option_type: "CE" | "PE";
+  option_symbol: string;
+  entry: number;
+  sl: number;
+  tp: number;
+  rr: number;
+  adx: number;
+  macd: number;
+  macd_signal: number;
+  macd_hist: number;
+  fast_ema: number;
+  slow_ema: number;
+  vix: number | null;
+  vix_ok: boolean;
+  vix_reason: string;
+  confluence_rank: string;
+  reasons: string[];
+}
+
+export interface PrahaarView {
+  available: boolean;
+  tf: string;
+  fast_ema_len: number;
+  slow_ema_len: number;
+  adx_threshold: number;
+  latest_state?: {
+    close: number;
+    atm_strike: number;
+    fast_ema: number;
+    slow_ema: number;
+    ema_trend: "bullish" | "bearish" | "neutral";
+    macd: number;
+    macd_signal: number;
+    macd_hist: number;
+    macd_slope: number;
+    macd_momentum: "bullish" | "bearish" | "neutral";
+    adx: number;
+    adx_trending: boolean;
+    plus_di: number;
+    minus_di: number;
+    vix: number | null;
+    vix_ok: boolean;
+    vix_reason: string;
+    current_verdict: string;
+  };
+  signals: PrahaarSignalView[];
+  markers: Marker[];
+  stats: { total_signals: number; bull_signals: number; bear_signals: number };
+}
+
+export interface GtfZoneView {
+  id: string;
+  type: "DEMAND" | "SUPPLY";
+  dir: "bull" | "bear";
+  from: number;
+  to: number;
+  from_raw?: number;
+  to_raw?: number;
+  top: number;
+  bottom: number;
+  proximal: number;
+  distal: number;
+  status: "FRESH" | "TESTED" | "MITIGATED" | "BROKEN";
+  test_count: number;
+  mode: string;
+  pattern: "RBR" | "DBR" | "DBD" | "RBD";
+  score: number;
+  grade: "A+" | "A" | "B";
+  base_bars: number;
+  explosive_time: number;
+  explosive_body_ratio: number;
+  label: string;
+}
+
+export interface GtfView {
+  available: boolean;
+  tf: string;
+  marking_mode: string;
+  current_price: number;
+  zones: GtfZoneView[];
+  fresh_demands: GtfZoneView[];
+  fresh_supplies: GtfZoneView[];
+  nearest_demand: GtfZoneView | null;
+  nearest_supply: GtfZoneView | null;
+  stats: {
+    total_detected: number;
+    active_count: number;
+    fresh_count: number;
+    tested_count: number;
+    broken_count: number;
+  };
+}
+
+export interface Analysis { pa_advanced?: PaAdvancedView; cct?: CctView; mmxm?: MmxmView; qml?: QmlView; prahaar?: PrahaarView; gtf?: GtfView; volume?: VolumeView; auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
 export interface Quote { spot: number | null; prev_close: number | null; chg: number | null; chg_pct: number | null; vix: number | null; vix_chg: number | null; source: string; market_open: boolean; ts: number }
 export interface Signal { ctx?: { tp1?: number; rr1?: number; pair?: string; aplus_tbs?: boolean; [k: string]: unknown }; key: string; setup: "A" | "B" | "C" | "D"; name: string; tf: string; side: "long" | "short"; status: "TRADE" | "SKIP" | "INFO"; time: string; entry: number | null; sl: number | null; tp: number | null; risk: number | null; rr: number | null; target_src: string; reasons: string[]; story: string[]; confidence?: number | null; confluence?: string[]; confidence_parts?: { structure: number; options_context: number | null; flow: number; flow_source: string } | null }
 export interface AlertRow { id: number; ts: number; time: string; grade: "trade" | "skip" | "info" | "rvol"; kind: string; side: string; tf: string; title: string; body: string; price: number | null }
@@ -503,6 +665,8 @@ export const api = {
   analysis: (tf: TF, inst = "NIFTY") => get<Analysis>(`/api/analysis?tf=${tf}&inst=${encodeURIComponent(inst)}`),
   cct: (tf: TF = "5m") => get<CctView>(`/api/cct?tf=${tf}`),
   mmxm: (tf: TF = "5m") => get<MmxmView>(`/api/mmxm?tf=${tf}`),
+  prahaar: (tf: TF = "5m") => get<PrahaarView>(`/api/prahaar?tf=${tf}`),
+  gtf: (tf: TF = "5m", mode = "conservative") => get<GtfView>(`/api/gtf?tf=${tf}&mode=${mode}`),
   strikes: () => get<Strikes>("/api/strikes"),
   post: async <T = unknown>(path: string, body: unknown): Promise<T> => {
     const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
