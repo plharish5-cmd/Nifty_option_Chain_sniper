@@ -232,3 +232,48 @@ def test_active_expiry_and_both_combination():
     assert len(res_both["rows"]) > 0
     assert "2026-10-27" in res_both["expiry"]
 
+
+def test_eod_mutual_unwinding_slope_flip():
+    # Mutual unwinding into EOD bell: step diff is negative, but both calls and puts are negative
+    recent_diffs = [-3500000, -2500000, -2800000]
+    call_steps = [-4700000, -10200000, -6300000]
+    put_steps = [-8200000, -12700000, -9200000]
+
+    flip, txt = pe_ce_matrix.detect_slope_flip(
+        recent_diffs,
+        44000000,
+        call_steps=call_steps,
+        put_steps=put_steps,
+        current_time_label="15:24",
+    )
+    assert flip == "EOD_MUTUAL_UNWINDING"
+    assert "EOD Mutual Profit-Booking" in txt
+    assert "BEARISH" not in flip
+
+
+def test_fut_buildup_quadrant_matrix():
+    # Price Up & OI Down -> Short Covering (SC)
+    assert pe_ce_matrix.determine_fut_buildup(230.0, -205000) == "SHORT_COVERING"
+    # Price Down & OI Down -> Long Unwinding (LU)
+    assert pe_ce_matrix.determine_fut_buildup(-50.0, -150000) == "LONG_UNWINDING"
+    # Price Up & OI Up -> Long Buildup (LB)
+    assert pe_ce_matrix.determine_fut_buildup(50.0, 150000) == "LONG_BUILDUP"
+    # Price Down & OI Up -> Short Buildup (SB)
+    assert pe_ce_matrix.determine_fut_buildup(-50.0, 150000) == "SHORT_BUILDUP"
+
+
+def test_extrinsic_skew_calculation():
+    # At Spot 22770, Strike 22750: CE 76.9 has 20.0 intrinsic value (extrinsic = 56.9)
+    # PE 65.0 has 0 intrinsic value (extrinsic = 65.0)
+    skew = pe_ce_matrix.calculate_premium_skew(
+        atm_pe_ltp=65.0,
+        atm_ce_ltp=76.9,
+        spot=22770.0,
+        atm_strike=22750.0,
+    )
+    assert skew["pe_extrinsic"] == 65.0
+    assert skew["ce_extrinsic"] == 56.9
+    assert skew["skew_pct"] > 0  # PE extrinsic > CE extrinsic -> positive put skew
+    assert "Put Skew" in skew["skew_label"]
+
+

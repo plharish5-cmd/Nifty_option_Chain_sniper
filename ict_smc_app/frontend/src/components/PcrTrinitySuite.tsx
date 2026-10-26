@@ -585,7 +585,7 @@ export default function PcrTrinitySuite({
             position: "aboveBar",
             shape: "arrowDown",
             color: "#ef4444",
-            text: "🩸 CE > PE FLIP (BEARISH WRITERS IN CONTROL)",
+            text: "🩸 CE > PE FLIP",
             size: 2,
             idx: i,
           });
@@ -597,7 +597,7 @@ export default function PcrTrinitySuite({
             position: "belowBar",
             shape: "arrowUp",
             color: "#10b981",
-            text: "🔥 PE > CE FLIP (BULLISH WRITERS IN CONTROL)",
+            text: "🔥 PE > CE FLIP",
             size: 2,
             idx: i,
           });
@@ -610,7 +610,7 @@ export default function PcrTrinitySuite({
             position: "belowBar",
             shape: "arrowUp",
             color: "#06b6d4",
-            text: "🚀 CE Δ < 0 (SHORT COVERING SQUEEZE)",
+            text: "🚀 CE Δ < 0 SQUEEZE",
             size: 2,
             idx: i,
           });
@@ -622,20 +622,24 @@ export default function PcrTrinitySuite({
             position: "aboveBar",
             shape: "arrowDown",
             color: "#f59e0b",
-            text: "🩸 PE Δ < 0 (PUT UNWINDING FLUSH)",
+            text: "🩸 PE Δ < 0 FLUSH",
             size: 2,
             idx: i,
           });
         }
       }
 
-      // De-bounce: If opposite flips or conflicting markers occur within 4 bars, keep the later confirmed sustained marker
+      // De-bounce: Minimum 5 bars (15 mins) between markers to prevent horizontal overlap
       const crossoverMarkers: SeriesMarker<Time>[] = [];
+      let lastPlacedIdx = -999;
       for (let m = 0; m < rawMarkers.length; m++) {
         const curr = rawMarkers[m];
+        if (curr.idx - lastPlacedIdx < 5) {
+          continue;
+        }
         const next = m + 1 < rawMarkers.length ? rawMarkers[m + 1] : null;
-        if (next && next.idx - curr.idx <= 4) {
-          // Conflicting or rapid flip within 4 bars — skip the early unconfirmed whipsaw
+        if (next && next.idx - curr.idx < 5) {
+          // Conflicting or rapid flip within 5 bars — skip early unconfirmed whipsaw
           continue;
         }
         crossoverMarkers.push({
@@ -646,6 +650,7 @@ export default function PcrTrinitySuite({
           text: curr.text,
           size: curr.size,
         });
+        lastPlacedIdx = curr.idx;
       }
       crossoverMarkers.sort((a, b) => (a.time as number) - (b.time as number));
       chart2Ref.current.mk.setMarkers(crossoverMarkers);
@@ -685,31 +690,51 @@ export default function PcrTrinitySuite({
       }
 
       // Institutional Crossover Markers on Chart 3 (Total OI Resistance vs Support Flip)
-      const totalMarkers: SeriesMarker<Time>[] = [];
+      const rawTotalMarkers: { time: UTCTimestamp; position: "aboveBar" | "belowBar"; shape: "arrowDown" | "arrowUp"; color: string; text: string; size: number; idx: number }[] = [];
       for (let i = 1; i < activeSeries.length; i++) {
         const prevGap = activeSeries[i - 1].total_oi_gap;
         const currGap = activeSeries[i].total_oi_gap;
         const nextGap = i + 1 < activeSeries.length ? activeSeries[i + 1].total_oi_gap : currGap;
 
         if (prevGap >= 0 && currGap < 0 && nextGap < 0) {
-          totalMarkers.push({
+          rawTotalMarkers.push({
             time: activeSeries[i].time as UTCTimestamp,
             position: "aboveBar",
             shape: "arrowDown",
             color: "#ef4444",
-            text: "🩸 TOTAL CE > PE (BEARISH RESISTANCE WALL)",
+            text: "🩸 TOTAL CE > PE",
             size: 2,
+            idx: i,
           });
         } else if (prevGap <= 0 && currGap > 0 && nextGap > 0) {
-          totalMarkers.push({
+          rawTotalMarkers.push({
             time: activeSeries[i].time as UTCTimestamp,
             position: "belowBar",
             shape: "arrowUp",
             color: "#10b981",
-            text: "🔥 TOTAL PE > CE (BULLISH SUPPORT FLOOR)",
+            text: "🔥 TOTAL PE > CE",
             size: 2,
+            idx: i,
           });
         }
+      }
+
+      const totalMarkers: SeriesMarker<Time>[] = [];
+      let lastTotalIdx = -999;
+      for (let m = 0; m < rawTotalMarkers.length; m++) {
+        const curr = rawTotalMarkers[m];
+        if (curr.idx - lastTotalIdx < 5) continue;
+        const next = m + 1 < rawTotalMarkers.length ? rawTotalMarkers[m + 1] : null;
+        if (next && next.idx - curr.idx < 5) continue;
+        totalMarkers.push({
+          time: curr.time,
+          position: curr.position,
+          shape: curr.shape,
+          color: curr.color,
+          text: curr.text,
+          size: curr.size,
+        });
+        lastTotalIdx = curr.idx;
       }
       totalMarkers.sort((a, b) => (a.time as number) - (b.time as number));
       mk.setMarkers(totalMarkers);

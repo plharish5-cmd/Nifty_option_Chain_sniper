@@ -69,47 +69,100 @@ def classify_magnitude_regime(pe_ce_day_diff: int, cfg: Optional[Dict[str, Any]]
     )
 
 
-def detect_slope_flip(interval_diffs: List[int], day_diff: int, cfg: Optional[Dict[str, Any]] = None) -> Tuple[str, str]:
+def detect_slope_flip(
+    interval_diffs: List[int],
+    day_diff: int,
+    call_steps: Optional[Any] = None,
+    put_steps: Optional[List[int]] = None,
+    current_time_label: str = "",
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, str]:
     """
     Detects early 15-30m slope lead-time reversals before the cumulative zero-line flips:
       - Bullish Slope Flip: Day diff is still negative (e.g. -20.8L), but the last 3 interval bars are strongly positive (+30.6L, +10.1L, +10.7L).
-      - Bearish Slope Flip: Day diff is still positive (e.g. +15.4L), but the last 3 interval bars are strongly negative.
+      - Bearish Slope Flip: Day diff is still positive (e.g. +15.4L), but the last 3 interval bars are strongly negative with genuine Call writing (call_step > 0) before 15:05 IST.
+      - EOD Mutual Unwinding: Post-15:05 or when both Puts and Calls are closing positions (put_step < 0 and call_step < 0).
     """
+    if isinstance(call_steps, dict):
+        cfg = call_steps
+        call_steps = None
+
     c = cfg or get_cfg()
     bars = int(c.get("slope_flip_bars", 3))
     min_impulse = int(c.get("slope_flip_min_impulse", 100000))
+    min_genuine_oi = int(c.get("slope_flip_min_genuine_oi", 100000))
+    eod_cutoff = str(c.get("eod_cutoff_hhmm", "15:05"))
 
     if len(interval_diffs) < bars:
         return "NONE", ""
 
-    last_n = interval_diffs[-bars:]
+    last_diffs = interval_diffs[-bars:]
+    last_calls = call_steps[-bars:] if call_steps and len(call_steps) >= bars else []
+    last_puts = put_steps[-bars:] if put_steps and len(put_steps) >= bars else []
+
+    # Check for EOD mutual unwinding / profit-booking:
+    is_eod_window = current_time_label >= eod_cutoff and current_time_label != "Prev Day"
+    mutual_unwinding = (
+        bool(last_calls and last_puts)
+        and sum(last_calls) <= 0
+        and sum(last_puts) <= 0
+    )
+
+    if (is_eod_window or mutual_unwinding) and mutual_unwinding:
+        bias_side = "Bullish" if day_diff > 0 else "Bearish" if day_diff < 0 else "Neutral"
+        return (
+            "EOD_MUTUAL_UNWINDING",
+            f"🏁 EOD Mutual Profit-Booking (Both Put & Call Writers Unwinding into Close — {bias_side} Day Structure Intact)",
+        )
 
     # Bullish flip: Cumulative is negative, but every recent bar has strong positive PE writing impulse
-    if day_diff < 0 and all(x >= min_impulse for x in last_n):
-        return (
-            "BULLISH_SLOPE_FLIP",
-            f"🚀 BULLISH SLOPE FLIP (15-30m Lead Reversal Warning — Put writers aggressively adding while Day Diff is still negative). Squeeze ahead!",
-        )
+    if day_diff < 0 and all(x >= min_impulse for x in last_diffs):
+        if not is_eod_window:
+            if not last_puts or sum(last_puts) >= -min_genuine_oi:
+                return (
+                    "BULLISH_SLOPE_FLIP",
+                    "🚀 BULLISH SLOPE FLIP (15-30m Lead Reversal Warning — Put writers aggressively adding while Day Diff is still negative). Squeeze ahead!",
+                )
 
     # Bearish flip: Cumulative is positive, but every recent bar has strong negative Call writing impulse
-    if day_diff > 0 and all(x <= -min_impulse for x in last_n):
-        return (
-            "BEARISH_SLOPE_FLIP",
-            f"🩸 BEARISH SLOPE FLIP (15-30m Lead Reversal Warning — Call writers aggressively adding while Day Diff is still positive). Breakdown risk!",
-        )
+    # AND Call writers are genuinely adding fresh OI (call_steps > 0), NOT just covering/unwinding!
+    if day_diff > 0 and all(x <= -min_impulse for x in last_diffs):
+        if not is_eod_window:
+            if last_calls and sum(last_calls) >= min_genuine_oi:
+                return (
+                    "BEARISH_SLOPE_FLIP",
+                    "🩸 BEARISH SLOPE FLIP (15-30m Lead Reversal Warning — Call writers aggressively adding while Day Diff is still positive). Breakdown risk!",
+                )
+            elif not last_calls:
+                return (
+                    "BEARISH_SLOPE_FLIP",
+                    "🩸 BEARISH SLOPE FLIP (15-30m Lead Reversal Warning — Call writers aggressively adding while Day Diff is still positive). Breakdown risk!",
+                )
 
     return "NONE", ""
 
 
-def calculate_premium_skew(atm_pe_ltp: float, atm_ce_ltp: float, cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def calculate_premium_skew(
+    atm_pe_ltp: float,
+    atm_ce_ltp: float,
+    spot: float = 0.0,
+    atm_strike: float = 0.0,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Compares equidistant ATM / 1-OTM Put vs Call premiums:
+      - Strips intrinsic value when spot and atm_strike are provided to compare pure extrinsic time-value.
       - STEEP_PUT_SKEW (PE >> CE by >20%): Fearful / downside hedging
       - NORMAL_PUT_SKEW (PE > CE by 5%-20%): Routine protective bias
       - FLAT_SKEW (PE ≈ CE within ±5%): Balanced expectations
       - CALL_SKEW_NARROWING (CE >= PE by 5%-20%): Upside momentum building / complacency
       - EXTREME_CALL_SKEW (CE >> PE by >20%): Euphoric upside chase
     """
+    if isinstance(spot, dict):
+        cfg = spot
+        spot = 0.0
+        atm_strike = 0.0
+
     c = cfg or get_cfg()
     steep_pct = float(c.get("premium_skew_steep_pct", 20.0))
     norm_pct = float(c.get("premium_skew_normal_pct", 5.0))
@@ -121,11 +174,27 @@ def calculate_premium_skew(atm_pe_ltp: float, atm_ce_ltp: float, cfg: Optional[D
             "skew_pct": 0.0,
             "pe_ltp": 0.0,
             "ce_ltp": 0.0,
+            "pe_extrinsic": 0.0,
+            "ce_extrinsic": 0.0,
             "interpretation": "Insufficient quote data for premium skew.",
         }
 
-    ref = max(min(atm_ce_ltp, atm_pe_ltp), 1.0)
-    skew_pct = round(((atm_pe_ltp - atm_ce_ltp) / ref) * 100.0, 1)
+    # If spot and strike provided, compute pure extrinsic time-value by stripping intrinsic value
+    if spot > 0 and atm_strike > 0:
+        ce_intrinsic = max(0.0, spot - atm_strike)
+        pe_intrinsic = max(0.0, atm_strike - spot)
+        ce_extrinsic = max(atm_ce_ltp - ce_intrinsic, 0.5)
+        pe_extrinsic = max(atm_pe_ltp - pe_intrinsic, 0.5)
+        eval_pe = pe_extrinsic
+        eval_ce = ce_extrinsic
+    else:
+        ce_extrinsic = atm_ce_ltp
+        pe_extrinsic = atm_pe_ltp
+        eval_pe = atm_pe_ltp
+        eval_ce = atm_ce_ltp
+
+    ref = max(min(eval_ce, eval_pe), 1.0)
+    skew_pct = round(((eval_pe - eval_ce) / ref) * 100.0, 1)
 
     if skew_pct > steep_pct:
         state = "STEEP_PUT_SKEW"
@@ -154,6 +223,8 @@ def calculate_premium_skew(atm_pe_ltp: float, atm_ce_ltp: float, cfg: Optional[D
         "skew_pct": skew_pct,
         "pe_ltp": round(atm_pe_ltp, 2),
         "ce_ltp": round(atm_ce_ltp, 2),
+        "pe_extrinsic": round(pe_extrinsic, 2),
+        "ce_extrinsic": round(ce_extrinsic, 2),
         "interpretation": interp,
     }
 
@@ -280,6 +351,7 @@ def compute_pe_ce_matrix(
     tf: str = "3m",
     scope: str = "atm_10",
     fut_candles: Optional[List[Dict[str, Any]]] = None,
+    force_expiry_mode: bool = False,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
@@ -453,6 +525,8 @@ def compute_pe_ce_matrix(
     prev_curr_pe_oi = baseline_pe_oi
 
     step_diffs: List[int] = []
+    call_step_diffs: List[int] = []
+    put_step_diffs: List[int] = []
 
     pcr_min = float(c.get("pcr_min_clamp", 0.10))
     pcr_max = float(c.get("pcr_max_clamp", 5.00))
@@ -492,6 +566,8 @@ def compute_pe_ce_matrix(
         pe_ce_day_diff = cum_pe_chg - cum_ce_chg
         pe_ce_step_diff = step_pe_chg - step_ce_chg
         step_diffs.append(pe_ce_step_diff)
+        call_step_diffs.append(step_ce_chg)
+        put_step_diffs.append(step_pe_chg)
 
         # Clamped PCR Day
         raw_pcr = curr_pe_oi / max(curr_ce_oi, 1.0)
@@ -505,7 +581,13 @@ def compute_pe_ce_matrix(
 
         fut_price_delta = fut_ltp - prev_fut_ltp
         fut_oi_delta = fut_oi_val - prev_fut_oi
-        buildup = determine_fut_buildup(fut_price_delta, fut_oi_delta)
+
+        # Ensure buildup tag uses the exact same basis as displayed fut_oi_day_chg
+        open_fut_price = float(fut_candles[0]["c"]) if fut_candles else fut_ltp
+        day_price_delta = fut_ltp - open_fut_price
+        eval_p_delta = day_price_delta if abs(day_price_delta) >= 1.0 else fut_price_delta
+        eval_oi_delta = fut_oi_day_chg if fut_oi_day_chg != 0 else fut_oi_delta
+        buildup = determine_fut_buildup(eval_p_delta, eval_oi_delta)
 
         # Time label formatted as HH:MM IST
         t_label = hm(effective_snap_t)
@@ -568,12 +650,26 @@ def compute_pe_ce_matrix(
 
     atm_pe_ltp = float(atm_pe_row[0]["pe_ltp"] or 0.0) if atm_pe_row else 100.0
     atm_ce_ltp = float(atm_ce_row[0]["ce_ltp"] or 0.0) if atm_ce_row else 100.0
-    skew_data = calculate_premium_skew(atm_pe_ltp, atm_ce_ltp, c)
+    skew_data = calculate_premium_skew(
+        atm_pe_ltp,
+        atm_ce_ltp,
+        spot=latest_fut,
+        atm_strike=atm_strike,
+        cfg=c,
+    )
 
     # Classify current magnitude regime and slope-flip
     current_day_diff = ledger_rows[-1]["pe_ce_day_diff"] if ledger_rows else 0
     tier_key, tier_text, sizing = classify_magnitude_regime(current_day_diff, c)
-    flip_state, flip_text = detect_slope_flip(step_diffs, current_day_diff, c)
+    latest_time_label = ledger_rows[-1]["time_label"] if ledger_rows else ""
+    flip_state, flip_text = detect_slope_flip(
+        step_diffs,
+        current_day_diff,
+        call_steps=call_step_diffs,
+        put_steps=put_step_diffs,
+        current_time_label=latest_time_label,
+        cfg=c,
+    )
     first_hour = compute_first_hour_anchor(ledger_rows, c)
 
     regime_payload = {
@@ -587,6 +683,19 @@ def compute_pe_ce_matrix(
 
     # Return ledger with newest row on top (matching StockMojo & Options Lab table layout)
     display_rows = ledger_rows[::-1] + [prev_day_row]
+
+    # Expiry Day Playbook Integration
+    try:
+        from . import expiry_playbook
+        expiry_telemetry = expiry_playbook.compute_expiry_cockpit_telemetry(
+            expiry=display_exp,
+            force_expiry_mode=force_expiry_mode,
+            tf=tf,
+            cfg=config.rules().get("expiry_playbook"),
+        )
+    except Exception as e_pb:
+        log.warning("expiry_playbook compute error: %s", e_pb)
+        expiry_telemetry = {"ok": False, "error": str(e_pb)}
 
     return {
         "ok": True,
@@ -602,4 +711,5 @@ def compute_pe_ce_matrix(
         "first_hour": first_hour,
         "rows": display_rows,
         "snapshots": len(all_snap_ts),
+        "expiry_playbook": expiry_telemetry,
     }

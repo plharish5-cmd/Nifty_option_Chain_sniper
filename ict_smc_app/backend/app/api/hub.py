@@ -60,7 +60,7 @@ from ..signals import alerts as alerts_mod
 from ..signals import paper
 from ..signals.playbook import Signal, evaluate, live
 from ..timeutil import (TF_SECONDS, bucket_start, chart_time, hm, ist_date, market_open_now, now_epoch, now_ist,
-                        session_bounds)
+                        session_bounds, to_ist)
 
 log = logging.getLogger("hub")
 
@@ -1311,6 +1311,30 @@ class Hub:
                     "body": f"PCR-OI Bearish + Fresh CE Writers in Control + Total CE > PE Ceiling. Institutional resistance confirmed.",
                 }
                 await alerts_mod.notify_event(self.alerts, e, max_age_s=900)
+
+        # 4. Expiry 0-DTE Hero-Zero Sniper Alert (< 15:05 IST)
+        try:
+            from ..engine import expiry_playbook
+            hz_data = expiry_playbook.compute_expiry_cockpit_telemetry(expiry=self.sel_expiry())
+            hz = hz_data.get("hero_zero", {})
+            if hz.get("state", "").startswith("ACTIVE_HERO_ZERO_BUY_") and hhmm < "15:05":
+                opt_type = hz.get("opt_type", "CE")
+                key = f"HERO_ZERO_{opt_type}_{ist_dt.strftime('%Y%m%d')}_{hhmm}"
+                if self._last_oc_alert_key != key:
+                    self._last_oc_alert_key = key
+                    e = {
+                        "kind": "HERO_ZERO_SNIPER",
+                        "ts": t,
+                        "key": key,
+                        "tf": self.primary,
+                        "dir": "long" if opt_type == "CE" else "short",
+                        "price": spot,
+                        "title": f"🚀 0-DTE HERO-ZERO ({hz.get('score')}/5 A+): {hz.get('contract')}",
+                        "body": hz.get("message", ""),
+                    }
+                    await alerts_mod.notify_event(self.alerts, e, max_age_s=900)
+        except Exception as hz_err:
+            log.warning("Hero-zero alert evaluation error: %s", hz_err)
 
     def crt_signals_today(self) -> List[Signal]:
         o, _ = session_bounds(now_ist().date())

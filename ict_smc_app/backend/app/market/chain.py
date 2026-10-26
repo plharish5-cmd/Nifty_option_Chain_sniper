@@ -15,7 +15,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from .. import config, db
 from ..timeutil import market_open_now, now_epoch, now_ist, session_bounds
@@ -446,6 +448,134 @@ class ChainPoller:
         self._pcr_cache = res
         self._last_pcr_time = now_t
         return res
+
+    def get_writer_flow(
+        self,
+        exp: Optional[str] = None,
+        fut_src: str = "combined",
+        tf: str = "1m",
+        hub: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """
+        Builds the complete Classic Option Writer Flow payload from the exact same
+        full-session (09:15–15:30 IST) trinity series for cur, next, and both expiries.
+        Eliminates duplicate timestamps, truncation after 10:05, and expiry mismatches.
+        """
+        trinity = self.get_pcr_trinity(exp=exp, fut_src=fut_src, hub=hub)
+        series = trinity.get("pcr_oi_series", [])
+        if not series:
+            series = (trinity.get("series") or {}).get("cur", [])
+
+        meta = trinity.get("expiries_meta") or {}
+        sel_exp = trinity.get("selected_expiry") or exp or "cur"
+        today_s = str(now_ist().date())
+
+        if sel_exp == "both":
+            exp_label = f"Both ({meta.get('cur_date', '27 Oct')} + {meta.get('next_date', '03 Nov')})"
+        elif sel_exp in ("next", meta.get("next_expiry")):
+            exp_label = meta.get("next_date", "03 Nov")
+        else:
+            exp_label = meta.get("cur_date", "27 Oct")
+
+        pts = []
+        prev_net = 0.0
+        prev_ce_day = 0.0
+        prev_pe_day = 0.0
+        rolling_flows: List[float] = []
+
+        for i, item in enumerate(series):
+            t = int(item.get("time", 0))
+            if t <= 0:
+                continue
+            hm_str = datetime.utcfromtimestamp(t).strftime("%H:%M")
+
+            fut = float(item.get("fut_close", 0.0))
+            ce_day = float(item.get("call_oi_chg", 0.0))
+            pe_day = float(item.get("put_oi_chg", 0.0))
+            net_oi = pe_day - ce_day
+
+            step_ce = ce_day - prev_ce_day if i > 0 else ce_day
+            step_pe = pe_day - prev_pe_day if i > 0 else pe_day
+            flow_val = step_pe - step_ce
+
+            rolling_flows.append(abs(flow_val))
+            if len(rolling_flows) > 20:
+                rolling_flows.pop(0)
+            avg_flow = sum(rolling_flows) / max(len(rolling_flows), 1)
+            sig = abs(flow_val) >= (avg_flow * 2.2) if avg_flow > 0 else False
+
+            # 30-min rolling balance
+            lookback_bars = 10 if tf in ("3m", "5m") else 30
+            start_idx = max(0, i - lookback_bars)
+            window_slice = series[start_idx:i+1]
+            if len(window_slice) >= 2:
+                w_first = window_slice[0]
+                d_pe_30 = pe_day - float(w_first.get("put_oi_chg", 0.0))
+                d_ce_30 = ce_day - float(w_first.get("call_oi_chg", 0.0))
+                denom = max(abs(d_pe_30) + abs(d_ce_30), 100000.0)
+                bal = round(max(-1.0, min(1.0, (d_pe_30 - d_ce_30) / denom)), 4)
+            else:
+                bal = 0.0
+
+            flip = (prev_net <= 0 and net_oi > 0) or (prev_net >= 0 and net_oi < 0)
+            conf = "BULL" if net_oi > 0 else "BEAR"
+            regime = "BULL" if pe_day > ce_day else "BEAR"
+
+            pts.append({
+                "t": t,
+                "hm": hm_str,
+                "fut": round(fut, 1),
+                "ce": round(ce_day, 1),
+                "pe": round(pe_day, 1),
+                "flow": round(flow_val, 1),
+                "bal": bal,
+                "regime": regime,
+                "sig": sig,
+                "flip": flip,
+                "conf": conf,
+            })
+
+            prev_net = net_oi
+            prev_ce_day = ce_day
+            prev_pe_day = pe_day
+
+        last_pt = pts[-1] if pts else {}
+        last_ce = float(last_pt.get("ce", 0.0))
+        last_pe = float(last_pt.get("pe", 0.0))
+        net_gap = abs(last_pe - last_ce)
+
+        def _fmt_inr(v: float) -> str:
+            sign = "+" if v >= 0 else "-"
+            av = abs(v)
+            if av >= 1e7:
+                return f"{sign}{av/1e7:.2f}Cr"
+            if av >= 1e5:
+                return f"{sign}{av/1e5:.2f}L"
+            return f"{sign}{av:.0f}"
+
+        read_str = (
+            f"Since yesterday: Put {_fmt_inr(last_pe)} vs Call {_fmt_inr(last_ce)} "
+            f"(gap {_fmt_inr(net_gap)}). Writers: {'Put Writers leading (Bullish Floor)' if last_pe > last_ce else 'Call Writers leading (Bearish Resistance)'}."
+        )
+        note_str = (
+            f"<b>Active Expiry:</b> {exp_label}. Last trend: <b>{last_pt.get('conf', 'BAL')}</b>. "
+            f"30-min balance: <b>{last_pt.get('bal', 0.0)}</b>."
+        )
+
+        fut_name = meta.get("near_fut", "Oct FUT") if fut_src == "near" else (meta.get("next_fut", "Nov FUT") if fut_src == "next" else "Oct+Nov Combined")
+
+        return {
+            "ok": True,
+            "day": today_s,
+            "tf": tf,
+            "label": f"NIFTY future {fut_name} (expiry {exp_label})",
+            "expiry": exp_label,
+            "unwind": None,
+            "read": read_str,
+            "note": note_str,
+            "points": pts,
+            "snapshots": len(pts),
+        }
 
     def get_pe_ce_matrix(
         self,

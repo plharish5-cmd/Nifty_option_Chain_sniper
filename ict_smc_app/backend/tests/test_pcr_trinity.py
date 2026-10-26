@@ -543,3 +543,47 @@ def test_dual_expiry_and_futures_meta_integration():
     assert "both" in res["series"]
 
 
+def test_get_writer_flow_integration():
+    from app.market.chain import ChainPoller
+    from app.dhan.rest import DhanREST
+
+    rest = DhanREST()
+    poller = ChainPoller(rest, lambda *a, **k: None)
+    poller.expiries = ["2026-10-27", "2026-11-03"]
+    poller.chains = {
+        "2026-10-27": {
+            "totals": {"ce_oi": 31620000, "pe_oi": 34090000, "ce_oi_chg": 1710000, "pe_oi_chg": 11760000},
+            "rows": [],
+        },
+        "2026-11-03": {
+            "totals": {"ce_oi": 15000000, "pe_oi": 16000000, "ce_oi_chg": 500000, "pe_oi_chg": 800000},
+            "rows": [],
+        },
+    }
+
+    class MockHub:
+        fut = {"symbol": "NIFTY-Oct2026-FUT"}
+        fut2 = {"symbol": "NIFTY-Nov2026-FUT"}
+
+    # Test Next Wk (03 Nov) writer flow
+    flow_next = poller.get_writer_flow(exp="next", fut_src="combined", tf="1m", hub=MockHub())
+    assert flow_next["ok"] is True
+    assert "03 Nov" in flow_next["expiry"]
+    assert len(flow_next["points"]) > 0
+    # Verify first point structure
+    p0 = flow_next["points"][0]
+    assert "t" in p0 and "hm" in p0 and "ce" in p0 and "pe" in p0 and "flow" in p0 and "bal" in p0
+    assert p0["t"] > 0
+    # Verify timestamps are strictly increasing
+    times = [p["t"] for p in flow_next["points"]]
+    assert times == sorted(times)
+    assert len(times) == len(set(times))  # No duplicates
+
+    # Test Both expiries writer flow
+    flow_both = poller.get_writer_flow(exp="both", fut_src="combined", tf="3m", hub=MockHub())
+    assert flow_both["ok"] is True
+    assert "Both" in flow_both["expiry"]
+    assert len(flow_both["points"]) > 0
+
+
+

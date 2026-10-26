@@ -660,7 +660,9 @@
     "stage_step_accel_threshold": 250000,
     "stage_step_digestion_threshold": -250000,
     "pcr_min_clamp": 0.10,
-    "pcr_max_clamp": 5.00
+    "pcr_max_clamp": 5.00,
+    "slope_flip_min_genuine_oi": 100000,
+    "eod_cutoff_hhmm": "15:05"
   },
   "oi_matrix": {
     "_note": "Institutional Open Interest Matrix & Strike Map 2.0 configuration",
@@ -686,5 +688,27 @@
     "default_tf": "3m",
     "default_range_mode": "atm",
     "default_range_span": 10
+  },
+  "expiry_playbook": {
+    "_note": "Institutional Zero-DTE Expiry-Day Gamma Pin & Hero-Zero Playbook configuration",
+    "enabled": true,
+    "pin_range_pts": 35.0,
+    "pin_step_diff_max": 1500000,
+    "pin_decay_min_pct": 6.0,
+    "straddle_tight_box_mult": 0.35,
+    "hero_zero_start_hhmm": "12:45",
+    "hero_zero_end_hhmm": "14:50",
+    "settlement_lock_hhmm": "15:05",
+    "min_writer_unwind_oi": 1000000,
+    "min_writer_fortify_oi": 1500000,
+    "min_pe_ce_day_diff": 15000000,
+    "min_slot_rvol": 1.4,
+    "min_c_rvol": 1.15,
+    "sweet_spot_min_premium": 10.0,
+    "sweet_spot_max_premium": 75.0,
+    "premium_sl_pct": 0.35,
+    "tp1_mult": 2.0,
+    "tp2_mult": 3.5,
+    "index_sl_pts": 22.0
   }
 }

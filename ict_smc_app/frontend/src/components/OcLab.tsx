@@ -1421,7 +1421,7 @@ export function WritersFlow({ tick }: { tick: number }) {
   }, [optExpiry, futContract, tick]);
 
   const [tf, setTf] = useState("1m"); const [mode, setMode] = useState("all"); const [n, setN] = useState(10);
-  const [d, busy] = useOc<Flow>("flow", `tf=${tf}&mode=${mode}&n=${n}`, tick);
+  const [d, busy] = useOc<Flow>("flow", `tf=${tf}&mode=${mode}&n=${n}&opt_expiry=${optExpiry}&fut_contract=${futContract}`, tick);
   const box = useRef<HTMLDivElement>(null);
   const S = useRef<{
     ch: IChartApi; fut: ISeriesApi<"Line">; futC: ISeriesApi<"Candlestick">; ce: ISeriesApi<"Line">; pe: ISeriesApi<"Line">; uw: ISeriesApi<"Histogram">;
@@ -1641,13 +1641,41 @@ export function WritersFlow({ tick }: { tick: number }) {
     const s = S.current; if (!s) return;
     const tfs: Record<string, number> = { "1m": 60, "3m": 180, "5m": 300, "15m": 900 };
     const step = tfs[tf] ?? 60;
-    const bucketToPt = new Map<number, number>();
-    for (const p of d?.points ?? []) bucketToPt.set(Math.floor(p.t / step) * step, p.t);   // writer-flow time per bucket
-    const data = showFut ? futCandles
-      .map((c) => { const pt = bucketToPt.get(Math.floor(c.time / step) * step); return pt == null ? null : { time: pt as UTCTimestamp, open: c.o, high: c.h, low: c.l, close: c.c }; })
-      .filter((x): x is NonNullable<typeof x> => x != null)
-      .sort((a, b) => (a.time as number) - (b.time as number)) : [];
-    s.futC.setData(data);
+
+    const isMarketSec = (t: number) => {
+      const sec = t % 86400;
+      return sec >= 9 * 3600 + 15 * 60 && sec <= 15 * 3600 + 35 * 60; // 09:15 to 15:35 IST
+    };
+
+    const validPts = (d?.points ?? [])
+      .filter((p) => Number.isFinite(p.t) && isMarketSec(p.t))
+      .sort((a, b) => a.t - b.t);
+
+    const candleMap = new Map<number, { time: UTCTimestamp; open: number; high: number; low: number; close: number }>();
+    if (showFut && validPts.length) {
+      for (const c of futCandles) {
+        const cTime = Number(c.time);
+        if (!Number.isFinite(cTime) || !isMarketSec(cTime)) continue;
+        let matchedT: number | null = null;
+        for (let i = validPts.length - 1; i >= 0; i--) {
+          if (validPts[i].t <= cTime + step) {
+            matchedT = validPts[i].t;
+            break;
+          }
+        }
+        if (matchedT != null) {
+          candleMap.set(matchedT, {
+            time: matchedT as UTCTimestamp,
+            open: c.o,
+            high: c.h,
+            low: c.l,
+            close: c.c,
+          });
+        }
+      }
+    }
+    const cleanCandles = Array.from(candleMap.values()).sort((a, b) => Number(a.time) - Number(b.time));
+    s.futC.setData(cleanCandles);
     s.futC.applyOptions({ visible: showFut });
     s.fut.applyOptions({ visible: !showFut });                 // candles replace the dotted line (one price view at a time)
   }, [futCandles, showFut, d, tf, suiteView]);
@@ -1657,33 +1685,65 @@ export function WritersFlow({ tick }: { tick: number }) {
     const s = S.current; const rawP = d?.points;
     if (!s || !rawP || !d?.ok) return;
     const isMarketHours = (t: number) => {
-      const dt = new Date(t * 1000);
-      const utcMins = dt.getUTCHours() * 60 + dt.getUTCMinutes();
-      const istMins = (utcMins + 330) % 1440;
-      return istMins >= 555 && istMins <= 935; // 09:15 (555m) to 15:35 (935m)
+      const sec = t % 86400;
+      return sec >= 9 * 3600 + 15 * 60 && sec <= 15 * 3600 + 35 * 60; // 09:15 to 15:35 IST
     };
-    const P = rawP.filter((p) => isMarketHours(p.t));
-    if (!P.length) return;
+    const rawFiltered = rawP.filter((p) => Number.isFinite(p.t) && isMarketHours(p.t));
+    if (!rawFiltered.length) return;
+
+    // Deduplicate snapshots by timestamp and sort strictly ascending
+    const ptMap = new Map<number, Pt>();
+    for (const p of rawFiltered) {
+      ptMap.set(p.t, p);
+    }
+    const P = Array.from(ptMap.values()).sort((a, b) => a.t - b.t);
     const T = (p: Pt) => p.t as UTCTimestamp;
-    s.fut.setData(P.filter((p) => p.fut != null).map((p) => ({ time: T(p), value: p.fut as number })));
-    s.ce.setData(P.filter((p) => p.ce != null).map((p) => ({ time: T(p), value: p.ce as number })));
-    s.pe.setData(P.filter((p) => p.pe != null).map((p) => ({ time: T(p), value: p.pe as number })));
-    const fv = P.filter((p) => p.flow != null);
+
+    function dedupeSeries<TItem extends { time: Time; value: number }>(arr: TItem[]): TItem[] {
+      const m = new Map<number, TItem>();
+      for (const item of arr) {
+        const t = Number(item.time);
+        if (Number.isFinite(t) && Number.isFinite(item.value)) {
+          m.set(t, item);
+        }
+      }
+      return Array.from(m.values()).sort((a, b) => Number(a.time) - Number(b.time));
+    }
+
+    s.fut.setData(dedupeSeries(P.filter((p) => p.fut != null).map((p) => ({ time: T(p), value: p.fut as number }))));
+    s.ce.setData(dedupeSeries(P.filter((p) => p.ce != null).map((p) => ({ time: T(p), value: p.ce as number }))));
+    s.pe.setData(dedupeSeries(P.filter((p) => p.pe != null).map((p) => ({ time: T(p), value: p.pe as number }))));
+    const fv = P.filter((p) => p.flow != null && Number.isFinite(p.flow));
     const abs = fv.map((p) => Math.abs(p.flow as number)).sort((a, b) => a - b);
     flCap.current = abs.length ? Math.max(1, abs[Math.floor(abs.length * 0.95)] * 1.3) : 0;
     const cap = flCap.current;
     // normal candles = faint; unusual (≥ 2.5×) = bright in its own direction; bars beyond the cap are clipped (value shown by the marker)
-    s.fl.setData(fv.map((p) => { const v = p.flow as number, up = v >= 0; return { time: T(p), value: Math.max(-cap, Math.min(cap, v)),
-      color: p.sig ? (up ? "#4ade80" : "#f87171") : up ? "rgba(34,197,94,.35)" : "rgba(239,68,68,.35)" }; }));
+    s.fl.setData(dedupeSeries(fv.map((p) => {
+      const v = p.flow as number, up = v >= 0;
+      return {
+        time: T(p),
+        value: Math.max(-cap, Math.min(cap, v)),
+        color: p.sig ? (up ? "#4ade80" : "#f87171") : up ? "rgba(34,197,94,.35)" : "rgba(239,68,68,.35)",
+      };
+    })));
     // #2 gap ribbon — shade between the Call and Put OI lines
-    s.band.set(P.filter((p) => p.ce != null && p.pe != null).map((p) => ({ time: p.t, ce: p.ce as number, pe: p.pe as number })));
+    const cleanBandMap = new Map<number, { time: number; ce: number; pe: number }>();
+    for (const p of P) {
+      if (p.ce != null && p.pe != null && Number.isFinite(p.ce) && Number.isFinite(p.pe)) {
+        cleanBandMap.set(p.t, { time: p.t, ce: p.ce as number, pe: p.pe as number });
+      }
+    }
+    s.band.set(Array.from(cleanBandMap.values()).sort((a, b) => a.time - b.time));
     // #5 flow momentum — a trailing mean of the (clipped) flow so you see the drift under the spikes
     const win = 8; const clipped = fv.map((p) => Math.max(-cap, Math.min(cap, p.flow as number)));
-    s.flma.setData(fv.map((p, i) => { const a = Math.max(0, i - win + 1); const seg = clipped.slice(a, i + 1);
-      return { time: T(p), value: seg.reduce((x, y) => x + y, 0) / seg.length }; }));
-    s.bal.setData(P.filter((p) => p.bal != null).map((p) => ({ time: T(p), value: p.bal as number })));
+    s.flma.setData(dedupeSeries(fv.map((p, i) => {
+      const a = Math.max(0, i - win + 1);
+      const seg = clipped.slice(a, i + 1);
+      return { time: T(p), value: seg.reduce((x, y) => x + y, 0) / seg.length };
+    })));
+    s.bal.setData(dedupeSeries(P.filter((p) => p.bal != null).map((p) => ({ time: T(p), value: p.bal as number }))));
     const U = d.unwind;
-    s.uw.setData(P.map((p) => ({ time: T(p), value: U && p.t >= U[0] && p.t <= U[1] ? 1 : 0 })));
+    s.uw.setData(dedupeSeries(P.map((p) => ({ time: T(p), value: U && p.t >= U[0] && p.t <= U[1] ? 1 : 0 }))));
     const mk: SeriesMarker<Time>[] = P.filter((p) => p.flip && p.conf).map((p) => ({ time: T(p),
       position: p.conf === "BULL" ? "belowBar" : "aboveBar", shape: p.conf === "BULL" ? "arrowUp" : "arrowDown",
       color: p.conf === "BULL" ? "#22c55e" : "#ef4444", text: p.conf === "BULL" ? "▲ BULL" : "▼ BEAR" }));
@@ -2234,21 +2294,17 @@ export function WritersFlow({ tick }: { tick: number }) {
           <span
             className={`flex items-center gap-1 rounded px-2 py-0.5 font-bold border transition-colors ${
               Math.abs(liveCallAngle) >= angleThreshold
-                ? liveCallAngle > 0
-                  ? "bg-rose-950/80 text-rose-300 border-rose-500/70 animate-pulse"
-                  : "bg-emerald-950/80 text-emerald-300 border-emerald-500/70 animate-pulse"
-                : liveCallAngle > 0
-                ? "bg-rose-950/40 text-rose-400 border-rose-800/50"
-                : "bg-emerald-950/40 text-emerald-400 border-emerald-800/50"
+                ? "bg-rose-950 text-rose-200 border-rose-500/80 ring-1 ring-rose-500/30 animate-pulse"
+                : "bg-rose-950/40 text-rose-300 border-rose-800/50"
             }`}
             title={`Call OI (Crimson line) 5m slope: ${liveCallAngle.toFixed(1)}°. ${Math.abs(liveCallAngle) >= angleThreshold ? (liveCallAngle > 0 ? "Call writing surge (Bearish resistance)!" : "Call unwinding cliff (Bullish squeeze)!") : "Normal drift."}`}
           >
-            <span>Crimson (Call Resistance):</span>
-            <span className="font-mono">
+            <span className="text-rose-400">Crimson (Call Resistance):</span>
+            <span className="font-mono text-rose-200">
               {liveCallAngle >= 0 ? "+" : ""}{liveCallAngle.toFixed(0)}° {liveCallAngle >= 0 ? "▲" : "▼"}
             </span>
             {Math.abs(liveCallAngle) >= angleThreshold && (
-              <span className="text-[10px] uppercase tracking-wide font-extrabold">
+              <span className="text-[10px] uppercase tracking-wide font-extrabold text-rose-300">
                 {liveCallAngle > 0 ? "(Steep Surge!)" : "(Steep Drop!)"}
               </span>
             )}
@@ -2258,21 +2314,17 @@ export function WritersFlow({ tick }: { tick: number }) {
           <span
             className={`flex items-center gap-1 rounded px-2 py-0.5 font-bold border transition-colors ${
               Math.abs(livePutAngle) >= angleThreshold
-                ? livePutAngle > 0
-                  ? "bg-emerald-950/80 text-emerald-300 border-emerald-500/70 animate-pulse"
-                  : "bg-rose-950/80 text-rose-300 border-rose-500/70 animate-pulse"
-                : livePutAngle > 0
-                ? "bg-emerald-950/40 text-emerald-400 border-emerald-800/50"
-                : "bg-rose-950/40 text-rose-400 border-rose-800/50"
+                ? "bg-emerald-950 text-emerald-200 border-emerald-500/80 ring-1 ring-emerald-500/30 animate-pulse"
+                : "bg-emerald-950/40 text-emerald-300 border-emerald-800/50"
             }`}
             title={`Put OI (Emerald line) 5m slope: ${livePutAngle.toFixed(1)}°. ${Math.abs(livePutAngle) >= angleThreshold ? (livePutAngle > 0 ? "Put writing surge (Bullish floor)!" : "Put unwinding cliff (Panic liquidation)!") : "Normal drift."}`}
           >
-            <span>Emerald (Put Support):</span>
-            <span className="font-mono">
+            <span className="text-emerald-400">Emerald (Put Support):</span>
+            <span className="font-mono text-emerald-200">
               {livePutAngle >= 0 ? "+" : ""}{livePutAngle.toFixed(0)}° {livePutAngle >= 0 ? "▲" : "▼"}
             </span>
             {Math.abs(livePutAngle) >= angleThreshold && (
-              <span className="text-[10px] uppercase tracking-wide font-extrabold">
+              <span className="text-[10px] uppercase tracking-wide font-extrabold text-emerald-300">
                 {livePutAngle > 0 ? "(Steep Surge!)" : "(Steep Drop!)"}
               </span>
             )}

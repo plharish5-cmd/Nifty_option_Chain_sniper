@@ -26,6 +26,74 @@ export interface MatrixRow {
   stage_label: string;
 }
 
+export interface ExpiryPlaybookPayload {
+  ok: boolean;
+  is_expiry_day: boolean;
+  force_expiry_mode?: boolean;
+  expiry: string;
+  time_label?: string;
+  spot?: number;
+  vwap?: number;
+  straddle?: {
+    atm_strike: number;
+    atm_ce_ltp: number;
+    atm_pe_ltp: number;
+    atm_straddle_ltp: number;
+    open_straddle_ltp: number;
+    straddle_decay_pct: number;
+    upper_breakeven: number;
+    lower_breakeven: number;
+    pin_zone_high: number;
+    pin_zone_low: number;
+  };
+  pin?: {
+    pin_state: string;
+    pin_label: string;
+    pin_text: string;
+    pin_strike: number;
+    pin_zone_high: number;
+    pin_zone_low: number;
+    dist_to_pin: number;
+    is_pinned: boolean;
+  };
+  trapped?: {
+    trapped_side: string;
+    trapped_strike: number;
+    unwinding_str: string;
+    fortified_str: string;
+  };
+  hero_zero?: {
+    state: string;
+    score: number;
+    checklist: {
+      window: boolean;
+      writer_squeeze: boolean;
+      breakout: boolean;
+      rvol: boolean;
+      sweet_spot: boolean;
+    };
+    contract: string;
+    opt_type: string;
+    chosen_strike: number;
+    badge: string;
+    message: string;
+    entry_ltp: number;
+    sl_ltp: number;
+    tp1_ltp: number;
+    tp2_ltp: number;
+    index_sl: number;
+  };
+  settlement?: {
+    active: boolean;
+    samples: number;
+    estimated_settlement_price: number;
+    itm_ce_strikes: number[];
+    itm_pe_strikes: number[];
+    message: string;
+  };
+  message?: string;
+}
+
 export interface PeceMatrixPayload {
   ok: boolean;
   day: string;
@@ -40,7 +108,7 @@ export interface PeceMatrixPayload {
     tier_text: string;
     sizing_mult: number;
     current_diff: number;
-    slope_flip_state: "NONE" | "BULLISH_SLOPE_FLIP" | "BEARISH_SLOPE_FLIP";
+    slope_flip_state: "NONE" | "BULLISH_SLOPE_FLIP" | "BEARISH_SLOPE_FLIP" | "EOD_MUTUAL_UNWINDING";
     slope_flip_text: string;
   };
   skew: {
@@ -49,6 +117,8 @@ export interface PeceMatrixPayload {
     skew_pct: number;
     pe_ltp: number;
     ce_ltp: number;
+    pe_extrinsic?: number;
+    ce_extrinsic?: number;
     interpretation: string;
   };
   first_hour: {
@@ -60,6 +130,7 @@ export interface PeceMatrixPayload {
   };
   rows: MatrixRow[];
   snapshots: number;
+  expiry_playbook?: ExpiryPlaybookPayload;
   message?: string;
 }
 
@@ -144,13 +215,26 @@ export default function PeceMatrix({ tick = 0 }: PeceMatrixProps) {
     });
   };
 
+  // 0-DTE Expiry Playbook Mode Toggle
+  const [forceExpiryMode, setForceExpiryMode] = useState<boolean>(() => {
+    try { return localStorage.getItem("ict_force_expiry_mode") === "1"; } catch { return false; }
+  });
+
+  const toggleForceExpiryMode = () => {
+    setForceExpiryMode((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("ict_force_expiry_mode", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
   const [data, setData] = useState<PeceMatrixPayload | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   const lastTopTsRef = useRef<string | null>(null);
 
   const fetchMatrix = useCallback(() => {
     setBusy(true);
-    fetch(`/api/chain/pece-matrix?expiry=${expiryTab}&tf=${tf}&scope=${scope}`)
+    fetch(`/api/chain/pece-matrix?expiry=${expiryTab}&tf=${tf}&scope=${scope}&force_expiry_mode=${forceExpiryMode}`)
       .then((r) => r.json())
       .then((json: PeceMatrixPayload) => {
         if (json && json.ok) {
@@ -159,7 +243,7 @@ export default function PeceMatrix({ tick = 0 }: PeceMatrixProps) {
       })
       .catch((e) => console.error("fetch pece-matrix error:", e))
       .finally(() => setBusy(false));
-  }, [expiryTab, tf, scope]);
+  }, [expiryTab, tf, scope, forceExpiryMode]);
 
   useEffect(() => {
     fetchMatrix();
@@ -302,6 +386,19 @@ export default function PeceMatrix({ tick = 0 }: PeceMatrixProps) {
             ))}
           </div>
 
+          {/* 0-DTE Expiry Playbook Toggle */}
+          <button
+            onClick={toggleForceExpiryMode}
+            className={`rounded px-2 py-0.5 text-[10.5px] font-bold border transition-all ${
+              data?.expiry_playbook?.is_expiry_day || forceExpiryMode
+                ? "bg-amber-950/70 text-amber-300 border-amber-600/70 ring-1 ring-amber-500/30"
+                : "bg-[#0c1424] text-slate-400 border-slate-800 hover:text-slate-200"
+            }`}
+            title="Toggle Expiry Day (0-DTE) Playbook: Gamma Pin, Breakeven Box & Hero-Zero Radar"
+          >
+            ⚡ 0-DTE Cockpit: {data?.expiry_playbook?.is_expiry_day || forceExpiryMode ? "ACTIVE" : "AUTO"}
+          </button>
+
           {/* Sound Toggle */}
           <button
             onClick={toggleSound}
@@ -324,6 +421,190 @@ export default function PeceMatrix({ tick = 0 }: PeceMatrixProps) {
           </button>
         </div>
       </div>
+
+      {/* ────────────────────────────────── ⚡ EXPIRY 0-DTE GAMMA & HERO-ZERO COCKPIT STRIP ────────────────────────────────── */}
+      {(data?.expiry_playbook?.is_expiry_day || forceExpiryMode) && data?.expiry_playbook?.ok && (
+        <div className="border-b border-[#2a1c0d] bg-gradient-to-r from-[#140c06] via-[#1a1008] to-[#0c0704] p-2.5 shadow-lg">
+          {/* Cockpit Header Line */}
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-1.5 border-b border-amber-900/40 text-[11px]">
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1 font-black uppercase tracking-wider text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-600/60 shadow-sm animate-pulse">
+                ⚡ 0-DTE EXPIRY COCKPIT
+              </span>
+              <span className="font-mono text-slate-300 text-[10.5px]">
+                {data.expiry_playbook.expiry} ({data.expiry_playbook.time_label || "15:27"} IST)
+              </span>
+              <span className="text-slate-500">|</span>
+              <span className="text-slate-300 text-[11px]">
+                Spot: <b className="text-white font-mono">{data.expiry_playbook.spot?.toFixed(1)}</b> · ATM Strike: <b className="text-amber-300 font-mono">{data.expiry_playbook.straddle?.atm_strike}</b> · Session VWAP: <b className="text-sky-300 font-mono">{data.expiry_playbook.vwap?.toFixed(1)}</b>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span
+                className={`px-2 py-0.5 rounded text-[10px] font-black border ${
+                  data.expiry_playbook.pin?.is_pinned
+                    ? "bg-purple-950 text-purple-200 border-purple-500/80 ring-1 ring-purple-500/30"
+                    : (data.expiry_playbook.pin?.pin_state || "").includes("UPPER")
+                    ? "bg-emerald-950 text-emerald-300 border-emerald-500"
+                    : (data.expiry_playbook.pin?.pin_state || "").includes("LOWER")
+                    ? "bg-rose-950 text-rose-300 border-rose-500"
+                    : "bg-slate-900 text-slate-300 border-slate-700"
+                }`}
+              >
+                {data.expiry_playbook.pin?.pin_label}
+              </span>
+            </div>
+          </div>
+
+          {/* 3 Cockpit Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+            {/* Card 1: ATM Straddle & Breakeven Box */}
+            <div className="rounded-lg border border-amber-900/50 bg-[#120a05] p-2.5 shadow flex flex-col justify-between">
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="font-extrabold uppercase tracking-wider text-amber-300/90">
+                  🧮 ATM Straddle & Decay
+                </span>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                    (data.expiry_playbook.straddle?.straddle_decay_pct ?? 0) >= 20
+                      ? "bg-emerald-950 text-emerald-300 border-emerald-700"
+                      : "bg-slate-900 text-slate-300 border-slate-700"
+                  }`}
+                >
+                  🔻 -{data.expiry_playbook.straddle?.straddle_decay_pct?.toFixed(1)}% Decay
+                </span>
+              </div>
+              <div>
+                <div className="text-xs font-black text-slate-100 flex items-center justify-between mb-1">
+                  <span>
+                    Premium: <b className="text-amber-400 font-mono">₹{data.expiry_playbook.straddle?.atm_straddle_ltp?.toFixed(1)}</b>
+                    <span className="text-[10px] text-slate-400 ml-1 font-normal">
+                      (CE ₹{data.expiry_playbook.straddle?.atm_ce_ltp} + PE ₹{data.expiry_playbook.straddle?.atm_pe_ltp})
+                    </span>
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    Open: ₹{data.expiry_playbook.straddle?.open_straddle_ltp?.toFixed(1)}
+                  </span>
+                </div>
+                <div className="text-[10.5px] text-slate-300 space-y-0.5 font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">MM Breakeven Box:</span>
+                    <span className="text-amber-200 font-bold">
+                      {data.expiry_playbook.straddle?.lower_breakeven} ↔ {data.expiry_playbook.straddle?.upper_breakeven}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Pin Trap Range:</span>
+                    <span className="text-purple-300 font-bold">
+                      {data.expiry_playbook.straddle?.pin_zone_low} ↔ {data.expiry_playbook.straddle?.pin_zone_high}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: Trapped Writers Radar */}
+            <div className="rounded-lg border border-amber-900/50 bg-[#120a05] p-2.5 shadow flex flex-col justify-between">
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="font-extrabold uppercase tracking-wider text-amber-300/90">
+                  🎯 Trapped Option Writers
+                </span>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-black border ${
+                    data.expiry_playbook.trapped?.trapped_side === "CALLS"
+                      ? "bg-emerald-950 text-emerald-300 border-emerald-600 animate-pulse"
+                      : data.expiry_playbook.trapped?.trapped_side === "PUTS"
+                      ? "bg-rose-950 text-rose-300 border-rose-600 animate-pulse"
+                      : "bg-slate-900 text-slate-400 border-slate-700"
+                  }`}
+                >
+                  {data.expiry_playbook.trapped?.trapped_side === "CALLS"
+                    ? "🔥 CALL WRITERS TRAPPED"
+                    : data.expiry_playbook.trapped?.trapped_side === "PUTS"
+                    ? "🩸 PUT WRITERS TRAPPED"
+                    : "BALANCED WRITERS"}
+                </span>
+              </div>
+              <div>
+                <div className="text-[11px] font-bold text-amber-200 mb-0.5">
+                  {data.expiry_playbook.trapped?.unwinding_str}
+                </div>
+                <div className="text-[10.5px] text-slate-300 font-mono">
+                  {data.expiry_playbook.trapped?.fortified_str}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1 italic leading-tight">
+                  {data.expiry_playbook.pin?.pin_text}
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Hero-Zero Sniper Ticket */}
+            <div className="rounded-lg border border-amber-900/50 bg-[#120a05] p-2.5 shadow flex flex-col justify-between">
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="font-extrabold uppercase tracking-wider text-amber-300/90">
+                  🚀 0-DTE Hero-Zero Sniper
+                </span>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-black border ${
+                    data.expiry_playbook.hero_zero?.score === 5
+                      ? "bg-emerald-950 text-emerald-300 border-emerald-500 ring-1 ring-emerald-500/40 animate-pulse"
+                      : data.expiry_playbook.hero_zero?.score === 4
+                      ? "bg-sky-950 text-sky-300 border-sky-500"
+                      : "bg-slate-900 text-slate-400 border-slate-800"
+                  }`}
+                >
+                  {data.expiry_playbook.hero_zero?.badge}
+                </span>
+              </div>
+              <div>
+                {/* 5-Factor Checklist Pills */}
+                <div className="flex flex-wrap items-center gap-1 mb-1.5">
+                  {Object.entries(data.expiry_playbook.hero_zero?.checklist || {}).map(([key, val]) => (
+                    <span
+                      key={key}
+                      className={`text-[9.5px] px-1 py-0.2 rounded border font-mono ${
+                        val
+                          ? "bg-emerald-950/80 text-emerald-300 border-emerald-600/80"
+                          : "bg-slate-900/80 text-slate-500 border-slate-800"
+                      }`}
+                    >
+                      {val ? "✓" : "✗"} {key.replace("_", " ")}
+                    </span>
+                  ))}
+                </div>
+
+                {data.expiry_playbook.hero_zero?.state?.startsWith("ACTIVE_HERO_ZERO_BUY_") ? (
+                  <div className="text-[11px] bg-[#1a0e06] p-1.5 rounded border border-amber-700/50 space-y-0.5">
+                    <div className="font-black text-amber-300 flex justify-between">
+                      <span>BUY {data.expiry_playbook.hero_zero.contract}</span>
+                      <span className="text-white font-mono">₹{data.expiry_playbook.hero_zero.entry_ltp}</span>
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-300 flex justify-between">
+                      <span className="text-rose-400">Prem SL: ₹{data.expiry_playbook.hero_zero.sl_ltp} (-35%)</span>
+                      <span className="text-emerald-400">T1: ₹{data.expiry_playbook.hero_zero.tp1_ltp} (2x) · T2: ₹{data.expiry_playbook.hero_zero.tp2_ltp} (3.5x)</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-[10.5px] text-slate-300 leading-snug">
+                    {data.expiry_playbook.hero_zero?.message}
+                  </div>
+                )}
+
+                {/* Settlement VWAP Tracker if active */}
+                {data.expiry_playbook.settlement?.active && (
+                  <div className="mt-1 pt-1 border-t border-amber-900/40 text-[10px] font-mono text-sky-300 flex justify-between">
+                    <span>NSE Settlement Est:</span>
+                    <span className="font-bold text-white">
+                      ₹{data.expiry_playbook.settlement.estimated_settlement_price?.toFixed(2)} ({data.expiry_playbook.settlement.samples}/30 samples)
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ────────────────────────────────── Executive Regime, Magnitude & Skew Banner (3 Cards) ────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 p-2.5 border-b border-[#162238] bg-[#070d1a]">
@@ -368,13 +649,19 @@ export default function PeceMatrix({ tick = 0 }: PeceMatrixProps) {
             </span>
             {data?.regime.slope_flip_state !== "NONE" && (
               <span
-                className={`px-2 py-0.5 rounded text-[9.5px] font-black border animate-pulse ${
+                className={`px-2 py-0.5 rounded text-[9.5px] font-black border ${
                   data?.regime.slope_flip_state === "BULLISH_SLOPE_FLIP"
-                    ? "bg-emerald-950 text-emerald-300 border-emerald-500 ring-1 ring-emerald-500/40"
-                    : "bg-rose-950 text-rose-300 border-rose-500 ring-1 ring-rose-500/40"
+                    ? "bg-emerald-950 text-emerald-300 border-emerald-500 ring-1 ring-emerald-500/40 animate-pulse"
+                    : data?.regime.slope_flip_state === "EOD_MUTUAL_UNWINDING"
+                    ? "bg-slate-900 text-sky-300 border-sky-600/70"
+                    : "bg-rose-950 text-rose-300 border-rose-500 ring-1 ring-rose-500/40 animate-pulse"
                 }`}
               >
-                {data?.regime.slope_flip_state === "BULLISH_SLOPE_FLIP" ? "🚀 Bullish Flip" : "🩸 Bearish Flip"}
+                {data?.regime.slope_flip_state === "BULLISH_SLOPE_FLIP"
+                  ? "🚀 Bullish Flip"
+                  : data?.regime.slope_flip_state === "EOD_MUTUAL_UNWINDING"
+                  ? "🏁 EOD Unwinding"
+                  : "🩸 Bearish Flip"}
               </span>
             )}
           </div>
@@ -395,7 +682,9 @@ export default function PeceMatrix({ tick = 0 }: PeceMatrixProps) {
               ⚖️ Equidistant Skew Meter
             </span>
             <span className="font-mono text-[10px] text-slate-400">
-              PE ₹{data?.skew.pe_ltp ?? 0} vs CE ₹{data?.skew.ce_ltp ?? 0}
+              {data?.skew.pe_extrinsic !== undefined && data?.skew.pe_extrinsic !== data?.skew.pe_ltp
+                ? `Extrinsic: PE ₹${data.skew.pe_extrinsic} vs CE ₹${data.skew.ce_extrinsic}`
+                : `PE ₹${data?.skew.pe_ltp ?? 0} vs CE ₹${data?.skew.ce_ltp ?? 0}`}
             </span>
           </div>
           <div>
@@ -533,7 +822,7 @@ export default function PeceMatrix({ tick = 0 }: PeceMatrixProps) {
                               ? "bg-rose-950 text-rose-300 border-rose-600/70"
                               : r.fut_buildup === "SHORT_COVERING"
                               ? "bg-cyan-950 text-cyan-300 border-cyan-600/70"
-                              : "bg-slate-900 text-slate-400 border-slate-700"
+                              : "bg-amber-950 text-amber-300 border-amber-600/70"
                           }`}
                         >
                           {r.fut_buildup === "LONG_BUILDUP"

@@ -216,12 +216,36 @@ def pece_matrix(
     expiry: Optional[str] = None,
     tf: str = Query("3m"),
     scope: str = Query("atm_10"),
+    force_expiry_mode: bool = Query(False),
 ):
     """Institutional PE-CE Difference & Skew Matrix 2.0 with Auto ATM ±10 / ±5 scope,
     center-zero diverging ledger series, magnitude regime sizing, slope-flip detection,
-    and equidistant premium skew."""
+    equidistant premium skew, and Expiry 0-DTE Playbook integration."""
     from ..engine import pe_ce_matrix as matrix_mod
-    return matrix_mod.compute_pe_ce_matrix(expiry=expiry, tf=tf, scope=scope)
+    return matrix_mod.compute_pe_ce_matrix(
+        expiry=expiry,
+        tf=tf,
+        scope=scope,
+        force_expiry_mode=force_expiry_mode,
+    )
+
+
+@app.get("/api/chain/expiry-playbook")
+def expiry_playbook_endpoint(
+    expiry: Optional[str] = None,
+    force_expiry_mode: bool = Query(False),
+    tf: str = Query("3m"),
+):
+    """Institutional Expiry-Day (Zero-DTE) Playbook Engine:
+    Straddle Decay & Breakeven Box, Gamma Pin vs Squeeze Detector,
+    Trapped Option Writer Radar, 5-Factor Hero-Zero Sniper Ticket,
+    and 15:00–15:30 IST NSE Settlement VWAP Tracker."""
+    from ..engine import expiry_playbook
+    return expiry_playbook.compute_expiry_cockpit_telemetry(
+        expiry=expiry,
+        force_expiry_mode=force_expiry_mode,
+        tf=tf,
+    )
 
 
 @app.get("/api/oi/matrix")
@@ -703,10 +727,24 @@ async def oclab_summary():
 
 
 @app.get("/api/oclab/{what}")
-async def oclab(what: str, tf: str = Query("3m"), mode: str = Query("auto"), n: int = Query(10), day: Optional[str] = Query(None)):
+async def oclab(
+    what: str,
+    tf: str = Query("3m"),
+    mode: str = Query("auto"),
+    n: int = Query(10),
+    day: Optional[str] = Query(None),
+    opt_expiry: Optional[str] = Query(None),
+    fut_contract: Optional[str] = Query(None),
+):
     """Options Lab views from the OC app (PE − CE OI table, OI-change writer flow). Fresh on every new snapshot."""
     if what not in ("pece", "flow", "gex") or mode not in ("auto", "all") or tf not in ("1m", "3m", "5m", "15m", "1h"):
         raise HTTPException(400, "bad parameters")
+
+    if what == "flow":
+        h = _h()
+        if hasattr(h, "chain") and hasattr(h.chain, "get_writer_flow"):
+            return h.chain.get_writer_flow(exp=opt_expiry, fut_src=fut_contract or "combined", tf=tf, hub=h)
+
     from ..oclab import run
     return await run(what, tf, mode, max(3, min(int(n), 25)), day)
 
