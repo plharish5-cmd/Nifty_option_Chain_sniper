@@ -121,6 +121,11 @@ def analysis(tf: str = Query("5m"), inst: str = Query("NIFTY")):
     if j is None or (j.get("pa_advanced") and "sniper" not in j["pa_advanced"]):
         h.recompute(tf)
         j = h.json.get(tf)
+    if j and "pcr_trinity" not in j and hasattr(h, "chain"):
+        try:
+            j["pcr_trinity"] = h.chain.get_pcr_trinity()
+        except Exception as e:
+            log.warning("enrich analysis pcr_trinity failed: %s", e)
     return j or {"tf": tf, "zones": [], "pools": [], "markers": [], "zigzag": [], "range": None}
 
 
@@ -136,16 +141,137 @@ def expiries():
 
 
 @app.get("/api/chain")
-def chain(expiry: Optional[str] = None):
+def chain(
+    expiry: Optional[str] = None,
+    exp: Optional[str] = None,
+    opt_expiry: Optional[str] = None,
+    fut_contract: Optional[str] = None,
+    fut_src: Optional[str] = None,
+):
     h = _h()
-    exp = expiry or (h.chain.expiries[0] if h.chain.expiries else (sorted(h.chain.chains)[0] if h.chain.chains else None))
-    ch = h.chain.chains.get(exp) if exp else None
+    target_exp = opt_expiry or exp or expiry
+    target_fut = fut_contract or fut_src or "combined"
+    active_exp = target_exp or (h.chain.expiries[0] if h.chain.expiries else (sorted(h.chain.chains)[0] if h.chain.chains else None))
+    ch = h.chain.chains.get(active_exp) if active_exp else None
     if not ch:
-        return JSONResponse({"expiry": exp, "rows": [], "status": h.chain.status, "error": h.chain.last_error, "is_stale": True})
+        return JSONResponse({"expiry": active_exp, "rows": [], "status": h.chain.status, "error": h.chain.last_error, "is_stale": True})
     live_spot = h.candles.last_price.get(h.nifty)
-    is_stale = h.chain.is_stale(exp, live_spot)
-    return {**ch, "is_stale": is_stale, "spot_at_fetch": ch.get("spot_at_fetch", ch.get("spot")),
-            "fetched_at": ch.get("fetched_at", ch.get("ts"))}
+    is_stale = h.chain.is_stale(active_exp, live_spot)
+    trinity = h.chain.get_pcr_trinity(active_exp, fut_src=target_fut, hub=h) if hasattr(h, "chain") else {}
+    strike_map = ch.get("strike_map")
+    if not strike_map and ch.get("rows"):
+        mp = float(ch.get("max_pain") or 0.0)
+        sp = float(ch.get("spot") or live_spot or 0.0)
+        from ..market.chain import build_class
+        strike_map = []
+        for r in ch["rows"]:
+            ce_x, pe_x = r.get("ce", {}), r.get("pe", {})
+            ce_oi_val = int(round(ce_x.get("oi") or r.get("call_oi") or 0))
+            ce_chg_val = int(round(ce_x.get("oi_chg") or r.get("call_oi_chg") or 0))
+            pe_oi_val = int(round(pe_x.get("oi") or r.get("put_oi") or 0))
+            pe_chg_val = int(round(pe_x.get("oi_chg") or r.get("put_oi_chg") or 0))
+            ce_chg_f = float(ce_x.get("chg") or 0)
+            pe_chg_f = float(pe_x.get("chg") or 0)
+            ce_b = "Long Buildup" if ce_chg_val > 0 and ce_chg_f >= 0 else ("Short Buildup" if ce_chg_val > 0 else ("Short Covering" if ce_chg_val < 0 and ce_chg_f >= 0 else ("Long Unwinding" if ce_chg_val < 0 else "Neutral")))
+            pe_b = "Long Buildup" if pe_chg_val > 0 and pe_chg_f >= 0 else ("Short Buildup" if pe_chg_val > 0 else ("Short Covering" if pe_chg_val < 0 and pe_chg_f >= 0 else ("Long Unwinding" if pe_chg_val < 0 else "Neutral")))
+            dom_b = pe_b if abs(pe_chg_val) > abs(ce_chg_val) and pe_b != "Neutral" else (ce_b if ce_b != "Neutral" else "Neutral")
+            strike_map.append({
+                "strike": r["strike"],
+                "call_oi": ce_oi_val,
+                "call_oi_chg": ce_chg_val,
+                "put_oi": pe_oi_val,
+                "put_oi_chg": pe_chg_val,
+                "buildup": dom_b,
+                "max_pain": mp,
+                "spot": sp,
+            })
+    return {
+        **ch,
+        "is_stale": is_stale,
+        "spot_at_fetch": ch.get("spot_at_fetch", ch.get("spot")),
+        "fetched_at": ch.get("fetched_at", ch.get("ts")),
+        "pcr_trinity": trinity,
+        "pcr_oi_series": trinity.get("pcr_oi_series", []),
+        "expiries_meta": trinity.get("expiries_meta"),
+        "strike_map": strike_map or [],
+    }
+
+
+@app.get("/api/chain/trinity")
+def chain_trinity(
+    expiry: Optional[str] = None,
+    exp: Optional[str] = None,
+    opt_expiry: Optional[str] = None,
+    fut_contract: Optional[str] = None,
+    fut_src: Optional[str] = None,
+):
+    h = _h()
+    target_exp = opt_expiry or exp or expiry or "both"
+    target_fut = fut_contract or fut_src or "combined"
+    return h.chain.get_pcr_trinity(exp=target_exp, fut_src=target_fut, hub=h)
+
+
+@app.get("/api/chain/pece-matrix")
+def pece_matrix(
+    expiry: Optional[str] = None,
+    tf: str = Query("3m"),
+    scope: str = Query("atm_10"),
+):
+    """Institutional PE-CE Difference & Skew Matrix 2.0 with Auto ATM ±10 / ±5 scope,
+    center-zero diverging ledger series, magnitude regime sizing, slope-flip detection,
+    and equidistant premium skew."""
+    from ..engine import pe_ce_matrix as matrix_mod
+    return matrix_mod.compute_pe_ce_matrix(expiry=expiry, tf=tf, scope=scope)
+
+
+@app.get("/api/oi/matrix")
+@app.get("/api/chain/oi-matrix")
+def oi_matrix(
+    expiry: Optional[str] = None,
+    scope: str = Query("atm_10"),
+):
+    """Institutional Open Interest Matrix & Strike Map 2.0:
+    Real-time strike-wise OI distribution, automated buildup classification
+    (Long Buildup, Short Buildup, Short Covering, Long Unwinding),
+    institutional colors (Put Support Emerald, Call Resistance Crimson),
+    Max Pain & Spot Price overlays, and Market Sentiment Gauge."""
+    h = _h()
+    return h.chain.get_oi_matrix(exp=expiry, scope=scope)
+
+
+@app.get("/api/smart_oi")
+@app.get("/api/chain/smart_oi")
+def smart_oi_endpoint(
+    expiry: Optional[str] = None,
+    exp: Optional[str] = None,
+    opt_expiry: Optional[str] = None,
+    fut_contract: Optional[str] = None,
+    fut_src: Optional[str] = None,
+    tf: str = Query("3m"),
+    range_mode: str = Query("atm"),
+    span: int = Query(10),
+):
+    """Smart OI Noise-Filtering & Candlestick Price-Action Confluence Engine:
+    Excludes deep OTM retail noise and stale positioning, highlights institutional Signal Strikes,
+    flags Bullish/Bearish Confluences and Divergence Traps/Absorptions directly on NIFTY candles,
+    and returns multi-line time-series telemetry."""
+    h = _h()
+    candles = []
+    target_exp = opt_expiry or exp or expiry or "cur"
+    target_fut = fut_contract or fut_src or "combined"
+    try:
+        candles = h.candles.frame(h.nifty, tf, days=1, include_forming=True) if hasattr(h, "candles") else []
+    except Exception as ce:
+        log.warning("smart_oi candles fetch failed: %s", ce)
+    return h.chain.get_smart_oi(
+        exp=target_exp,
+        fut_src=target_fut,
+        tf=tf,
+        range_mode=range_mode,
+        span=span,
+        candles=candles,
+        hub=h,
+    )
 
 
 @app.get("/api/dashboard")
@@ -168,7 +294,7 @@ async def test_rvol_alert():
 
 
 @app.get("/api/alerts")
-def alerts(grade: Optional[str] = None, limit: int = 150):
+def alerts(grade: Optional[str] = None, limit: int = 500):
     return {"alerts": alerts_mod.recent(limit, grade)}
 
 

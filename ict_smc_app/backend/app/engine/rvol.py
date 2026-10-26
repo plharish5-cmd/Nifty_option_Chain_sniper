@@ -27,7 +27,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 
 from .. import config
-from ..timeutil import TF_SECONDS, bucket_start, chart_time, hm, ist_date, session_bounds
+from ..timeutil import TF_SECONDS, bucket_start, chart_time, hm, ist_date, session_bounds, to_ist
 
 D = {"active": 1.5, "fade_below": 1.2, "spike": 2.5, "confirm_minutes": 3, "trend_minutes": 15, "trend_min_chg": 0.1,
      "min_days_5": 3, "min_days_20": 10, "breakout_bar_rvol": 1.5}
@@ -250,14 +250,38 @@ def events(res: Dict[str, Any], bar_rvol: Dict[int, Dict[str, Any]], breakouts: 
                             "title": f"RVOL FADING {v:.2f}×", "body": f"{hm(p['ts'])}: participation dropped back toward "
                                                                     f"normal — be careful with new breakouts."})
     day = res.get("day")
+    breakout_ts = {int(bo["ts"]) for bo in breakouts}
+    last_spike_ts: Optional[int] = None
+    last_spike_val: Optional[float] = None
+    spike_cooldown_s = int(C.get("spike_cooldown_min", 15)) * 60
+
     for t, x in sorted(bar_rvol.items()):
         if day and ist_date(t).isoformat() != day:
             continue
+        # Consolidate: if this candle already has a structural breakout, RVOL is merged into it
+        if t in breakout_ts:
+            continue
+
         r = x.get("slot_rvol") or x.get("rvol")
         if r is not None and r >= C["spike"]:
-            out.append({"kind": "RVOL_SPIKE", "ts": t, "value": r, "title": f"RVOL SPIKE {r:.1f}× on the {hm(t)} {tf} candle",
-                        "body": f"That candle traded {r:.1f}× the normal volume for its time slot — a burst of "
-                                f"participation. Check WHERE it happened (level / OB / CRT edge) and who won the next candle."})
+            # Cooldown check: prevent 9-candle continuous RVOL spike spam
+            if last_spike_ts is not None and (t - last_spike_ts) < spike_cooldown_s:
+                if last_spike_val is not None and r < 1.5 * last_spike_val and r < 4.0:
+                    continue
+
+            ist_dt = to_ist(t)
+            is_eod = (ist_dt.hour == 15 and ist_dt.minute >= 15) or ist_dt.hour > 15
+            vol_str = f" ({x.get('v', 0):,} FUT vol)" if x.get("v") else ""
+            if is_eod:
+                out.append({"kind": "RVOL_SPIKE", "ts": t, "value": r,
+                            "title": f"RVOL SPIKE {r:.1f}× on {hm(t)} {tf} [EOD SETTLEMENT AUCTION — CLOSING VOLUME BURST]",
+                            "body": f"EOD closing settlement / index adjustment volume ({r:.1f}× normal){vol_str}. Do not open fresh intraday options positions."})
+            else:
+                out.append({"kind": "RVOL_SPIKE", "ts": t, "value": r, "title": f"RVOL SPIKE {r:.1f}× on the {hm(t)} {tf} candle",
+                            "body": f"That candle traded {r:.1f}× the normal volume for its time slot{vol_str} — a burst of "
+                                    f"participation. Check WHERE it happened (level / OB / CRT edge) and who won the next candle."})
+            last_spike_ts = t
+            last_spike_val = r
     by = {p["ts"]: p for p in pts}
     step = TF_SECONDS.get(tf, 300)
     for bo in breakouts:
@@ -275,9 +299,30 @@ def events(res: Dict[str, Any], bar_rvol: Dict[int, Dict[str, Any]], breakouts: 
                         "body": f"{hm(t)} {bo['text']} — but today's volume is BELOW normal. A breakout nobody "
                                 f"joined fails more often: wait for a retest / confirmation, size down or skip."})
         elif v >= C["active"] and br is not None and br >= C["breakout_bar_rvol"]:
-            out.append({"kind": "BREAKOUT_WITH_RVOL", "ts": t, "value": v,
-                        "title": f"{bo['kind']} {bo.get('dir', '')} CONFIRMED by RVOL ({v:.2f}×, candle {br:.1f}×)",
-                        "body": f"{hm(t)} {bo['text']} with strong participation — the move has attention."})
+            ist_dt = to_ist(t)
+            is_eod = (ist_dt.hour == 15 and ist_dt.minute >= 15) or ist_dt.hour > 15
+            eod_suffix = " [EOD SETTLEMENT / NEXT-DAY BIAS ONLY — DO NOT OPEN INTRADAY OPTIONS]" if is_eod else ""
+            if bo.get("extended"):
+                rng = bo.get("range", 0)
+                c = bo.get("close", 0)
+                lvl = bo.get("level", 0)
+                if bo.get("dir") == "bear":
+                    retest_lo = min(lvl, lvl + 15)
+                    retest_hi = max(lvl, lvl + 15)
+                    sl = max(retest_hi + 15, bo.get("bar_h", lvl + 45))
+                    title = f"⚡ DISPLACEMENT BREAKDOWN ({v:.2f}× RVOL) — Extended {rng:.0f}pt bar!{eod_suffix}"
+                    body = f"{hm(t)}: DO NOT CHASE @ {c:,.1f}; Set Limit Entry on Retest of {retest_lo:,.0f}–{retest_hi:,.0f} (SL {sl:,.0f})."
+                else:
+                    retest_lo = min(lvl - 15, lvl)
+                    retest_hi = max(lvl - 15, lvl)
+                    sl = min(retest_lo - 15, bo.get("bar_l", lvl - 45))
+                    title = f"⚡ DISPLACEMENT BREAKOUT ({v:.2f}× RVOL) — Extended {rng:.0f}pt bar!{eod_suffix}"
+                    body = f"{hm(t)}: DO NOT CHASE @ {c:,.1f}; Set Limit Entry on Retest of {retest_lo:,.0f}–{retest_hi:,.0f} (SL {sl:,.0f})."
+                out.append({"kind": "BREAKOUT_WITH_RVOL", "ts": t, "value": v, "title": title, "body": body})
+            else:
+                out.append({"kind": "BREAKOUT_WITH_RVOL", "ts": t, "value": v,
+                            "title": f"{bo['kind']} {bo.get('dir', '')} CONFIRMED by RVOL ({v:.2f}×, candle {br:.1f}×){eod_suffix}",
+                            "body": f"{hm(t)} {bo['text']} with strong participation — the move has attention."})
     out.sort(key=lambda e: e["ts"])
     for e in out:
         e["time"] = chart_time(e["ts"])

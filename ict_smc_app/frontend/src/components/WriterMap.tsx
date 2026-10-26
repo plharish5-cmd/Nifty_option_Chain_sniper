@@ -1,7 +1,8 @@
-// WriterMap.tsx — Writer Positioning Map. The "where are the walls" view: PE OI (green, left) vs CE OI (red, right)
-// per strike around spot, with fresh-ΔOI glow (building vs unwinding) and the spot line. Display only.
+// WriterMap.tsx — Writer Positioning Map.
+// Integrates Institutional Strike Map 2.0 (OIMatrixSuite) alongside Classic Writer Ladder with seamless 1-click toggling.
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import OIMatrixSuite from "./OIMatrixSuite";
 
 type Leg = { oi: number; oi_chg: number };
 type Row = { strike: number; ce: Leg; pe: Leg };
@@ -28,7 +29,36 @@ function tone(leg: Leg, base: string): { bg: string; tag: string } {
   return { bg: base + "99", tag: "" };
 }
 
-export default function WriterMap() {
+function ModeSwitcher({ mode, setMode }: { mode: "matrix" | "classic"; setMode: (m: "matrix" | "classic") => void }) {
+  return (
+    <div className="flex items-center rounded bg-[#0b1324] p-0.5 border border-slate-700">
+      <button
+        onClick={() => setMode("matrix")}
+        className={`rounded px-2.5 py-0.5 text-[11px] font-extrabold transition-all ${
+          mode === "matrix"
+            ? "bg-gold-500/30 text-gold-200 border border-gold-500/60 shadow-sm"
+            : "text-slate-400 hover:text-slate-200"
+        }`}
+        title="Institutional Open Interest Matrix & Strike Map 2.0"
+      >
+        ⚡ Strike Map 2.0
+      </button>
+      <button
+        onClick={() => setMode("classic")}
+        className={`rounded px-2.5 py-0.5 text-[11px] font-bold transition-all ${
+          mode === "classic"
+            ? "bg-slate-700 text-slate-100 border border-slate-600 shadow-sm"
+            : "text-slate-400 hover:text-slate-200"
+        }`}
+        title="Classic Strike-wise Writer Ladder"
+      >
+        Classic Ladder
+      </button>
+    </div>
+  );
+}
+
+function ClassicWriterMap({ modeToggle }: { modeToggle: React.ReactNode }) {
   const ch = useChain();
   const [span, setSpan] = useState(10);
   if (!ch?.rows?.length) return <div className="flex h-full items-center justify-center text-slate-500">Loading option chain…</div>;
@@ -46,7 +76,10 @@ export default function WriterMap() {
     <div className="flex h-full flex-col text-[12px]">
       {/* header */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-ink-700 px-3 py-2">
-        <span className="font-semibold text-gold-400">🎯 Writer Positioning Map</span>
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-gold-400">🎯 Writer Positioning Map</span>
+          {modeToggle}
+        </div>
         <span className="num text-slate-300">Spot <b className="text-slate-100">{spot.toFixed(0)}</b></span>
         <span className="num">PCR <b className={pcr >= 1.2 ? "text-bull-400" : pcr <= 0.8 ? "text-bear-400" : "text-slate-200"}>{pcr.toFixed(2)}</b>
           <span className="ml-1 text-[10px] text-slate-500">{pcr >= 1.2 ? "put-heavy · bullish" : pcr <= 0.8 ? "call-heavy · bearish" : "balanced"}</span></span>
@@ -94,4 +127,29 @@ export default function WriterMap() {
       </div>
     </div>
   );
+}
+
+export default function WriterMap() {
+  const [viewMode, setViewMode] = useState<"matrix" | "classic">(() => {
+    try {
+      const v = localStorage.getItem("ict_wmap_view_mode");
+      if (v === "matrix" || v === "classic") return v;
+    } catch { /* ignore */ }
+    return "matrix";
+  });
+
+  const handleSetMode = (m: "matrix" | "classic") => {
+    setViewMode(m);
+    try {
+      localStorage.setItem("ict_wmap_view_mode", m);
+    } catch { /* ignore */ }
+  };
+
+  const switcher = <ModeSwitcher mode={viewMode} setMode={handleSetMode} />;
+
+  if (viewMode === "matrix") {
+    return <OIMatrixSuite modeToggle={switcher} />;
+  }
+
+  return <ClassicWriterMap modeToggle={switcher} />;
 }

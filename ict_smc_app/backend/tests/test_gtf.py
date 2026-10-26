@@ -196,3 +196,93 @@ def test_compute_gtf_helper():
     assert "zones" in res
     assert "stats" in res
     assert res["marking_mode"] == "dynamic"
+
+
+def test_gtf_massive_legout_relaxation_and_proximity_sorting():
+    """
+    Verify 23 Oct morning breakdown behavior:
+    1. Base candle with body ratio ~0.58 at 22,710–22,755 qualifies for base relaxation
+       when followed by a massive leg-out crash (>2.0x ATR).
+    2. Supply zone created is Fresh with grade A/A+ (RBD pattern).
+    3. Continuation pause at 22,510–22,530 is detected as DBD Supply zone.
+    4. Proximity ranking selects the nearest fresh overhead supply to Spot (22,420)
+       for the HUD pill rather than far-away historical supply at 22,955.
+    5. Broken demand zones include flipped resistance tags.
+    """
+    t0 = 1_729_656_000  # 23 Oct timestamp
+    rows = []
+
+    # 1. Historical baseline (around 22,950-23,000) creating an older Supply zone
+    # Bar 0-9: Baseline around 22,980
+    for i in range(10):
+        rows.append({"ts": t0 + i * 900, "o": 22970.0, "h": 22985.0, "l": 22965.0, "c": 22980.0})
+    # Bar 10: Boring base at 22,980 (tiny body 2 pts)
+    rows.append({"ts": t0 + 10 * 900, "o": 22980.0, "h": 22990.0, "l": 22975.0, "c": 22982.0})
+    # Bar 11: Drop to 22,850 (explosive move creating historical supply ~22,980)
+    rows.append({"ts": t0 + 11 * 900, "o": 22980.0, "h": 22982.0, "l": 22840.0, "c": 22850.0})
+
+    # Bar 12-14: Consolidation that creates an old Demand zone at 22,600-22,640
+    rows.append({"ts": t0 + 12 * 900, "o": 22620.0, "h": 22640.0, "l": 22600.0, "c": 22625.0})  # Base
+    rows.append({"ts": t0 + 13 * 900, "o": 22625.0, "h": 22730.0, "l": 22620.0, "c": 22720.0})  # Explosive rally up to 22,720
+
+    # Bar 14: Rally into morning high (22,720 to 22,740)
+    rows.append({"ts": t0 + 14 * 900, "o": 22720.0, "h": 22755.0, "l": 22715.0, "c": 22740.0})
+
+    # Bar 15: Morning pivot base candle at 22,710–22,755
+    # Open: 22,740, Close: 22,718 (body = 22 pts), High: 22,755, Low: 22,710 (range = 45 pts).
+    # Body ratio = 22 / 45 = 0.488 (exceeds old rigid 0.45 threshold, but within relaxed 0.65 threshold!)
+    rows.append({"ts": t0 + 15 * 900, "o": 22740.0, "h": 22755.0, "l": 22710.0, "c": 22718.0})
+
+    # Bar 16: Massive crash leg-out candle (drops 168 pts from 22,718 to 22,550! >> 2.0x ATR)
+    # This also smashes through the old Demand zone at 22,600-22,640, breaking it!
+    rows.append({"ts": t0 + 16 * 900, "o": 22718.0, "h": 22720.0, "l": 22540.0, "c": 22550.0})
+
+    # Bar 17: Mid-crash DBD pause at 22,520–22,550
+    # Open: 22,550, Close: 22,532 (body = 18 pts), High: 22,555, Low: 22,520 (range = 35 pts).
+    # Body ratio = 18 / 35 = 0.514 (qualifies under relaxed base relaxation)
+    rows.append({"ts": t0 + 17 * 900, "o": 22550.0, "h": 22555.0, "l": 22520.0, "c": 22532.0})
+
+    # Bar 18: Second explosive drop from 22,532 to 22,420 (Spot)
+    rows.append({"ts": t0 + 18 * 900, "o": 22532.0, "h": 22535.0, "l": 22410.0, "c": 22420.0})
+
+    bars = _make_bars(rows)
+    engine = GtfSupplyDemandEngine()
+    res = engine.detect_zones(bars, tf="15m", mode_override="conservative")
+
+    assert res["available"] is True
+    zones = res["zones"]
+    assert len(zones) > 0
+
+    # 1. Verify 22,710–22,755 RBD Supply zone was detected
+    rbd_zones = [
+        z for z in zones
+        if z["type"] == "SUPPLY" and 22700.0 <= z["proximal"] <= 22755.0
+    ]
+    assert len(rbd_zones) >= 1, f"Expected 22,710-22,755 Supply zone, got {zones}"
+    rbd = rbd_zones[0]
+    assert rbd["pattern"] in ("RBD", "DBD")
+    assert rbd["status"] == "FRESH"
+    assert rbd["grade"] in ("A", "A+")
+
+    # 2. Verify 22,520–22,555 DBD Supply zone was detected
+    dbd_zones = [
+        z for z in zones
+        if z["type"] == "SUPPLY" and 22510.0 <= z["proximal"] <= 22560.0
+    ]
+    assert len(dbd_zones) >= 1, f"Expected 22,520-22,555 Supply zone, got {zones}"
+    dbd = dbd_zones[0]
+    assert dbd["status"] == "FRESH"
+
+    # 3. Verify the old 22,600-22,640 Demand zone is marked BROKEN with Flipped to Resistance tag
+    broken_demands = [z for z in zones if z["type"] == "DEMAND" and z["status"] == "BROKEN"]
+    assert len(broken_demands) >= 1
+    assert "Flipped to Resistance" in broken_demands[0]["label"]
+
+    # 4. Verify nearest_supply for HUD pill:
+    # Current Spot is 22,420. Nearest supply must be today's zone (22,532 or 22,718),
+    # NOT the historical 22,980 supply!
+    nearest_supply = res["nearest_supply"]
+    assert nearest_supply is not None
+    assert nearest_supply["proximal"] < 22800.0, f"Expected nearest supply < 22800, got {nearest_supply['proximal']}"
+    assert nearest_supply["status"] == "FRESH"
+

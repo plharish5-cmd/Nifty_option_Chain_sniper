@@ -123,6 +123,8 @@ class Hub:
         self.crt: Dict[str, Dict[str, Any]] = {}                  # pair id "1h>1m" → evaluate_pair() result
         self._crt_an: Dict[str, Any] = {}                          # htf → (last closed htf ts, Analysis)
         self.prev_close: Dict[str, float] = {}
+        self.pending_retest_zones: List[Dict[str, Any]] = []
+        self._last_oc_alert_key: Optional[str] = None
         self.price_source = "feed"
         self.status: Dict[str, Any] = {"backfill": "pending", "token": "unknown", "errors": []}
         self._last_tick_push = 0.0
@@ -401,6 +403,51 @@ class Hub:
                 except DhanError as e:
                     self.bn_status = self.bn_status.split(" · ")[0] + f" · refresh failed: {str(e)[:80]}"
 
+    def get_futures_candles(self, tf: str = "3m", contract: str = "near") -> List[Dict[str, Any]]:
+        """
+        Returns candle list for Near (Oct), Next (Nov), or Combined (Oct+Nov).
+        """
+        from ..market import candles as candles_mod
+        from ..market import futures as fut_mod
+        from ..engine import pcr_trinity
+        from ..timeutil import session_bounds, now_ist
+
+        today_start, _ = session_bounds(now_ist().date())
+        oct_rows = fut_mod.rows_1m(days=1) or db.candles_1m(fut_mod.SEC, today_start)
+        nov_rows = fut_mod.sym_rows_1m(fut_mod.SEC2, days=1) or db.candles_1m(fut_mod.SEC2, today_start)
+
+        oct_bars = candles_mod.resample(candles_mod.session_filter(oct_rows), tf) if oct_rows else []
+        nov_bars = candles_mod.resample(candles_mod.session_filter(nov_rows), tf) if nov_rows else []
+
+        # Attach OI
+        oct_oi_rows = {int(r["ts"]): float(r["oi"]) for r in db.query("SELECT ts, oi FROM fut_oi WHERE ts >= ? ORDER BY ts", (today_start,))}
+        oct_open_oi = next(iter(oct_oi_rows.values()), 0.0) if oct_oi_rows else 0.0
+        for b in oct_bars:
+            t = int(b["ts"])
+            val = oct_oi_rows.get(t, oct_open_oi)
+            b["oi"] = int(val)
+            b["oi_chg"] = int(val - oct_open_oi)
+
+        nov_oi_rows = {int(r["ts"]): float(r["oi"]) for r in db.query("SELECT ts, oi FROM fut_oi_sym WHERE sym='FUT2' AND ts >= ? ORDER BY ts", (today_start,))}
+        nov_open_oi = next(iter(nov_oi_rows.values()), 0.0) if nov_oi_rows else 0.0
+        for b in nov_bars:
+            t = int(b["ts"])
+            val = nov_oi_rows.get(t, nov_open_oi)
+            b["oi"] = int(val)
+            b["oi_chg"] = int(val - nov_open_oi)
+
+        fut_mode = "near" if contract in ("near", "oct") else ("next" if contract in ("next", "nov") else "combined")
+        fut_map = pcr_trinity.resolve_futures_series(oct_bars, nov_bars, fut_mode=fut_mode)
+        return list(fut_map.values())
+
+    def resolve_futures_series(self, tf: str = "3m", fut_src: str = "combined") -> Dict[int, Dict[str, Any]]:
+        """
+        fut_src: 'near' (Oct FUT), 'next' (Nov FUT), or 'combined' (Oct+Nov volume-weighted/merged).
+        Returns candle map {epoch_sec: {"close": float, "vol": int, "oi": int, "oi_chg": int}}.
+        """
+        candles = self.get_futures_candles(tf=tf, contract=fut_src)
+        return {int(c["time"]): c for c in candles}
+
     async def on_prev(self, sid: str, pc: float) -> None:
         self.prev_close[sid] = pc
 
@@ -458,7 +505,17 @@ class Hub:
             except Exception:                                # noqa: BLE001
                 log.exception("activity / iv")
         live_spot = self.candles.last_price.get(self.nifty)
-        await self.broadcast({"type": "chain", "expiry": expiry, "summary": self.chain.summary(expiry, live_spot=live_spot)})
+        trinity = self.chain.get_pcr_trinity(expiry, hub=self)
+        await self.broadcast({
+            "type": "chain",
+            "expiry": expiry,
+            "summary": self.chain.summary(expiry, live_spot=live_spot),
+            "pcr_trinity": trinity,
+        })
+        try:
+            await self.check_option_chain_alerts(expiry, trinity)
+        except Exception:                                    # noqa: BLE001
+            log.exception("check_option_chain_alerts failed")
         if expiry == self.sel_expiry() and config.rule("strikes", "enabled", True):
             try:
                 await self.reselect(force=False)
@@ -797,6 +854,19 @@ class Hub:
             log.exception("gtf %s failed", tf)
             j["gtf"] = {"available": False, "message": f"GTF error: {e}", "zones": []}
 
+        # 3-Chart Institutional PCR & Open Interest Positioning Suite
+        try:
+            if hasattr(self, "chain"):
+                j["pcr_trinity"] = self.chain.get_pcr_trinity(hub=self)
+                active_ch = self.chain.chains.get(self.sel_expiry()) if hasattr(self, "sel_expiry") else None
+                if active_ch:
+                    j["strike_map"] = active_ch.get("strike_map", [])
+                if hasattr(self.chain, "get_smart_oi"):
+                    j["smart_oi"] = self.chain.get_smart_oi(exp=self.sel_expiry() if hasattr(self, "sel_expiry") else None, tf=tf, hub=self)
+        except Exception as e:                               # noqa: BLE001
+            log.exception("pcr_trinity / smart_oi %s failed", tf)
+            j["pcr_trinity"] = None
+
         self.json[tf] = j
         self.recompute_flow(tf)
 
@@ -1078,8 +1148,26 @@ class Hub:
 
     def breakouts(self, an) -> List[Dict[str, Any]]:
         """BOS / MSS of this timeframe + CRT TBS candles — the 'breakouts' RVOL is asked to confirm."""
-        out = [{"ts": int(e.ts), "kind": "MSS" if e.is_mss else "BOS", "dir": e.dir,
-                "text": f"{'MSS' if e.is_mss else 'BOS'} {e.dir} through {e.level:,.1f}"} for e in an.events]
+        out = []
+        for e in an.events:
+            bar_h = float(an.bars.h[e.i]) if hasattr(an.bars, "h") and len(an.bars.h) > e.i else 0.0
+            bar_l = float(an.bars.l[e.i]) if hasattr(an.bars, "l") and len(an.bars.l) > e.i else 0.0
+            bar_range = bar_h - bar_l
+            atr = float(an.atr[e.i]) if hasattr(an, "atr") and an.atr is not None and len(an.atr) > e.i else 20.0
+            dist_past = (e.level - e.close) if e.dir == "bear" else (e.close - e.level)
+            is_ext = (bar_range >= 1.8 * atr or bar_range >= 65.0) and dist_past >= 25.0
+            out.append({
+                "ts": int(e.ts),
+                "kind": "MSS" if e.is_mss else "BOS",
+                "dir": e.dir,
+                "text": f"{'MSS' if e.is_mss else 'BOS'} {e.dir} through {e.level:,.1f}",
+                "extended": is_ext,
+                "range": bar_range,
+                "close": e.close,
+                "level": e.level,
+                "bar_h": bar_h,
+                "bar_l": bar_l,
+            })
         step = TF_SECONDS[an.tf]
         for r in self.crt.values():
             for ev in r.get("events", []):
@@ -1136,6 +1224,94 @@ class Hub:
         out["markers"].sort(key=lambda m: m["time"])
         return out
 
+    async def check_option_chain_alerts(self, expiry: str, trinity: Dict[str, Any]) -> None:
+        if not trinity or not isinstance(trinity, dict):
+            return
+        cur_series = (trinity.get("series") or {}).get("cur", [])
+        if len(cur_series) < 2:
+            return
+        last = cur_series[-1]
+        prev = cur_series[-2]
+        t = int(last.get("time", now_epoch()))
+        ist_dt = to_ist(t)
+        hhmm = ist_dt.strftime("%H:%M")
+        if hhmm < "09:20":
+            return
+
+        last_net = float(last.get("net_oi_chg", 0.0))
+        prev_net = float(prev.get("net_oi_chg", 0.0))
+        pe_chg = float(last.get("put_oi_chg", 0.0)) / 10000000.0
+        ce_chg = float(last.get("call_oi_chg", 0.0)) / 10000000.0
+        spot = float(self.candles.last_price.get(self.nifty) or last.get("fut_close", 0.0))
+
+        # 1. Bullish Writer Flip: net_oi_chg crossed above +25L (2,500,000)
+        if prev_net <= 0 and last_net >= 2500000:
+            key = f"OC_FLIP_BULL_{ist_dt.strftime('%Y%m%d')}_{hhmm}"
+            if self._last_oc_alert_key != key:
+                self._last_oc_alert_key = key
+                e = {
+                    "kind": "OC_CROSSOVER",
+                    "ts": t,
+                    "key": key,
+                    "tf": self.primary,
+                    "dir": "long",
+                    "price": spot,
+                    "title": f"🔥 INSTITUTIONAL WRITER FLIP (PE > CE): Fresh Put Writing (+{pe_chg:.2f}Cr) overtook Call Writing @ {spot:,.1f}",
+                    "body": f"Bullish floor locked at {hhmm} IST. PE ΔOI (+{pe_chg:.2f}Cr) > CE ΔOI (+{ce_chg:.2f}Cr) — look for CE on dips.",
+                }
+                await alerts_mod.notify_event(self.alerts, e, max_age_s=900)
+
+        # 2. Bearish Writer Flip: net_oi_chg crossed below -25L
+        elif prev_net >= 0 and last_net <= -2500000:
+            key = f"OC_FLIP_BEAR_{ist_dt.strftime('%Y%m%d')}_{hhmm}"
+            if self._last_oc_alert_key != key:
+                self._last_oc_alert_key = key
+                e = {
+                    "kind": "OC_CROSSOVER",
+                    "ts": t,
+                    "key": key,
+                    "tf": self.primary,
+                    "dir": "short",
+                    "price": spot,
+                    "title": f"🔥 INSTITUTIONAL WRITER FLIP (CE > PE): Fresh Call Writing (+{ce_chg:.2f}Cr) overtook Put Writing @ {spot:,.1f}",
+                    "body": f"Bearish ceiling locked at {hhmm} IST. CE ΔOI (+{ce_chg:.2f}Cr) > PE ΔOI (+{pe_chg:.2f}Cr) — look for PE on rallies.",
+                }
+                await alerts_mod.notify_event(self.alerts, e, max_age_s=900)
+
+        # 3. 3/3 Trinity Lock
+        verdict = trinity.get("verdict", {})
+        v_title = verdict.get("title", "") if isinstance(verdict, dict) else ""
+        if "BULLISH_TRINITY_LOCK" in v_title:
+            key = f"TRINITY_LOCK_BULL_{ist_dt.strftime('%Y%m%d')}_{hhmm}"
+            if self._last_oc_alert_key != key:
+                self._last_oc_alert_key = key
+                e = {
+                    "kind": "TRINITY_LOCK",
+                    "ts": t,
+                    "key": key,
+                    "tf": self.primary,
+                    "dir": "long",
+                    "price": spot,
+                    "title": f"🔥 3/3 BULLISH TRINITY LOCK @ {spot:,.1f}",
+                    "body": f"PCR-OI Bullish + Fresh PE Writers in Control + Total PE > CE Floor. Institutional support confirmed.",
+                }
+                await alerts_mod.notify_event(self.alerts, e, max_age_s=900)
+        elif "BEARISH_TRINITY_LOCK" in v_title:
+            key = f"TRINITY_LOCK_BEAR_{ist_dt.strftime('%Y%m%d')}_{hhmm}"
+            if self._last_oc_alert_key != key:
+                self._last_oc_alert_key = key
+                e = {
+                    "kind": "TRINITY_LOCK",
+                    "ts": t,
+                    "key": key,
+                    "tf": self.primary,
+                    "dir": "short",
+                    "price": spot,
+                    "title": f"🔥 3/3 BEARISH TRINITY LOCK @ {spot:,.1f}",
+                    "body": f"PCR-OI Bearish + Fresh CE Writers in Control + Total CE > PE Ceiling. Institutional resistance confirmed.",
+                }
+                await alerts_mod.notify_event(self.alerts, e, max_age_s=900)
+
     def crt_signals_today(self) -> List[Signal]:
         o, _ = session_bounds(now_ist().date())
         return [s for r in self.crt.values() for s in r.get("signals", []) if s.ts >= o]
@@ -1144,7 +1320,34 @@ class Hub:
         p = self.analyses.get(self.primary)
         if not p:
             return []
-        sigs = evaluate(p, self.analyses.get(self.bias_tf))
+        crv = self.rvol_now()
+        crvol_val = crv.get("value") if crv.get("available") else 0.0
+        rvol_bars = self.rvol_tf(self.primary) if self.mapped_1m() else {}
+        last_bar_rvol = rvol_bars.get(int(p.bars.ts[-1]), {}) if (p and len(p.bars)) else {}
+        slot_rv = float(last_bar_rvol.get("slot_rvol") or last_bar_rvol.get("rvol") or 0.0)
+
+        trinity = self.chain.get_pcr_trinity(self.sel_expiry(), hub=self) if hasattr(self, "chain") else {}
+        verdict = trinity.get("verdict", {}) if isinstance(trinity, dict) else {}
+        v_title = verdict.get("title", "") if isinstance(verdict, dict) else ""
+        trinity_locked = ("BULLISH_TRINITY_LOCK" in v_title or "BEARISH_TRINITY_LOCK" in v_title or "3/3" in v_title)
+
+        cur_series = (trinity.get("series") or {}).get("cur", []) if isinstance(trinity, dict) else []
+        last_snap = cur_series[-1] if cur_series else {}
+        pe_chg = float(last_snap.get("put_oi_chg", 0.0))
+        ce_chg = float(last_snap.get("call_oi_chg", 0.0))
+        net_oi_chg = float(last_snap.get("net_oi_chg", 0.0))
+
+        ctx = {
+            "crvol": crvol_val,
+            "slot_rvol": slot_rv,
+            "pcr_trinity_locked": trinity_locked,
+            "writer_flow_aligned": abs(net_oi_chg) > 2500000,
+            "pe_chg": pe_chg,
+            "ce_chg": ce_chg,
+            "net_oi_chg": net_oi_chg,
+        }
+
+        sigs = evaluate(p, self.analyses.get(self.bias_tf), ctx=ctx)
         live_spot = float(self.candles.last_price.get(self.nifty) or (p.bars.c[-1] if p and len(p.bars) else 0))
         is_stale = self.chain.is_stale(self.sel_expiry(), live_spot)
         return confluence.apply(sigs, self.combined_flow(self.primary), proxy_res=self.proxy.get(self.primary),
@@ -1164,19 +1367,128 @@ class Hub:
             self.recompute_crt(pair)                          # startup / repair: no alerting from history
 
     async def run_playbook(self) -> None:
+        import re
         p = self.analyses.get(self.primary)
         if not p:
             return
         self.signals = self.evaluate_primary()
         fresh = live(self.signals, p)
+
+        # 1. Register pending retest zones from displacement setups
+        for s in fresh:
+            if s.setup == "B" and "DISPLACEMENT" in s.name:
+                m = re.search(r"Retest of ([\d,]+)–([\d,]+)\s*\(SL ([\d,]+)\)", s.name)
+                if m:
+                    z_lo = float(m.group(1).replace(",", ""))
+                    z_hi = float(m.group(2).replace(",", ""))
+                    sl_val = float(m.group(3).replace(",", ""))
+                    entry_px = float(s.entry or p.bars.c[s.i])
+                    risk = abs(entry_px - sl_val)
+                    tp_val = entry_px + 2.0 * risk if s.side == "long" else entry_px - 2.0 * risk
+                    self.pending_retest_zones.append({
+                        "id": f"RETEST_{s.tf}_{s.side}_{s.ts}",
+                        "tf": s.tf,
+                        "side": s.side,
+                        "zone_low": min(z_lo, z_hi),
+                        "zone_high": max(z_lo, z_hi),
+                        "sl": sl_val,
+                        "tp": tp_val,
+                        "created_ts": s.ts,
+                        "expiry_bars": 8,
+                        "bars_elapsed": 0,
+                        "filled": False,
+                    })
+
+        # 2. Check pending retest zones against current bar for fill
+        if len(p.bars) >= 2:
+            cur_bar = p.bars
+            last_i = len(cur_bar) - 1
+            bar_l = float(cur_bar.l[last_i])
+            bar_h = float(cur_bar.h[last_i])
+            bar_c = float(cur_bar.c[last_i])
+            bar_t = int(cur_bar.ts[last_i])
+
+            remaining_zones = []
+            for z in self.pending_retest_zones:
+                if z["created_ts"] == bar_t:
+                    remaining_zones.append(z)
+                    continue
+                z["bars_elapsed"] += 1
+                if z["bars_elapsed"] > z["expiry_bars"]:
+                    continue
+
+                if z["side"] == "long":
+                    if bar_c < z["sl"]:
+                        continue  # Invalidate: SL breached
+                    if bar_l <= z["zone_high"] and bar_c >= z["zone_low"] and not z["filled"]:
+                        z["filled"] = True
+                        strike = int(round(bar_c / 50.0) * 50)
+                        risk = round(bar_c - z["sl"], 1)
+                        retest_sig = Signal(
+                            key=f"RETEST_FILL|{z['tf']}|long|{bar_t}",
+                            setup="RETEST_FILL",
+                            name=f"🎯 LIMIT RETEST FILLED: BUY {strike} CE @ {bar_c:,.1f}",
+                            tf=z["tf"],
+                            side="long",
+                            i=last_i,
+                            ts=bar_t,
+                            status="TRADE",
+                            entry=bar_c,
+                            sl=z["sl"],
+                            tp=z["tp"],
+                            risk=risk,
+                            rr=round(abs(z["tp"] - bar_c) / max(1.0, risk), 2),
+                            target_src="Retest Expansion / 2R",
+                            reasons=[],
+                            story=[
+                                f"Price pulled back into {z['zone_low']:,.0f}–{z['zone_high']:,.0f} limit zone and rejected bullishly @ {bar_c:,.1f}",
+                                f"SL held @ {z['sl']:,.1f} · Risk {risk:.1f} pts · Target {z['tp']:,.1f}",
+                            ],
+                        )
+                        fresh.append(retest_sig)
+                        continue
+                else:  # short
+                    if bar_c > z["sl"]:
+                        continue
+                    if bar_h >= z["zone_low"] and bar_c <= z["zone_high"] and not z["filled"]:
+                        z["filled"] = True
+                        strike = int(round(bar_c / 50.0) * 50)
+                        risk = round(z["sl"] - bar_c, 1)
+                        retest_sig = Signal(
+                            key=f"RETEST_FILL|{z['tf']}|short|{bar_t}",
+                            setup="RETEST_FILL",
+                            name=f"🎯 LIMIT RETEST FILLED: BUY {strike} PE @ {bar_c:,.1f}",
+                            tf=z["tf"],
+                            side="short",
+                            i=last_i,
+                            ts=bar_t,
+                            status="TRADE",
+                            entry=bar_c,
+                            sl=z["sl"],
+                            tp=z["tp"],
+                            risk=risk,
+                            rr=round(abs(bar_c - z["tp"]) / max(1.0, risk), 2),
+                            target_src="Retest Expansion / 2R",
+                            reasons=[],
+                            story=[
+                                f"Price pulled back into {z['zone_low']:,.0f}–{z['zone_high']:,.0f} limit zone and rejected bearishly @ {bar_c:,.1f}",
+                                f"SL held @ {z['sl']:,.1f} · Risk {risk:.1f} pts · Target {z['tp']:,.1f}",
+                            ],
+                        )
+                        fresh.append(retest_sig)
+                        continue
+                remaining_zones.append(z)
+            self.pending_retest_zones = remaining_zones
+
         if not fresh:
             return
         await self.alerts.handle(fresh)
         if market_open_now():
             for s in fresh:
-                t = paper.maybe_open(s, strikes=self.book.current(), mode=self.mode)
-                if t:
-                    await self.broadcast({"type": "paper", "trade": t})
+                if s.status == "TRADE":
+                    t = paper.maybe_open(s, strikes=self.book.current(), mode=self.mode)
+                    if t:
+                        await self.broadcast({"type": "paper", "trade": t})
 
     # ── background loops ──────────────────────────────────────────────────
     async def watchdog(self) -> None:
@@ -1319,7 +1631,7 @@ class Hub:
         return {"quote": self.quote(), "bias": bias, "narrative": self.narrative(),
                 "session": p.sess if p else {}, "chain": self.chain.summary(live_spot=self.candles.last_price.get(self.nifty)),
                 "expiries": self.chain.expiries, "signals": [s.to_dict() for s in self.today_signals()][-15:],
-                "alerts": alerts_mod.recent(20), "paper_open": paper.open_trade(), "paper_open_all": paper.open_trades(), "paper_stats": paper.stats(),
+                "alerts": alerts_mod.recent(500), "paper_open": paper.open_trade(), "paper_open_all": paper.open_trades(), "paper_stats": paper.stats(),
                 "delta": self.delta_status(), "strikes": self.strikes_view(), "mode": self.mode,
                 "proxy": {"enabled": self.proxy_on, "label": proxy_mod.LABEL},
                 "status": self.status_view()}

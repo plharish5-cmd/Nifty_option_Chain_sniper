@@ -249,3 +249,61 @@ def test_compute_prahaar_helper():
     assert "latest_state" in res
     assert "markers" in res
     assert "stats" in res
+
+
+def test_adx_impulse_gate_morning_breakdown():
+    """
+    Verify that a sharp multi-candle breakdown following a flat consolidation
+    triggers a Prahaar BUY PE signal via the DX/Impulse gate without getting
+    blocked by lagging 14-period smoothed ADX < 20.0.
+    """
+    # 25 flat consolidation bars around 22,740 (ADX smoothed drops to ~10-14)
+    closes = [22740.0 + (i % 3) * 2.0 - 2.0 for i in range(25)]
+    highs = [c + 3.0 for c in closes]
+    lows = [c - 3.0 for c in closes]
+
+    # 5 sharp breakdown bars dropping ~280 points from 22,740 to 22,460
+    breakdown = [22700.0, 22650.0, 22590.0, 22520.0, 22460.0]
+    for k, c in enumerate(breakdown):
+        prev = closes[-1]
+        closes.append(c)
+        highs.append(prev + 2.0)
+        lows.append(c - 2.0)
+
+    rows = [{"ts": 1700000000 + 300 * i, "o": closes[i - 1] if i > 0 else closes[0], "h": highs[i], "l": lows[i], "c": closes[i]} for i in range(len(closes))]
+    bars = Bars.from_rows(rows)
+
+    # Standard engine using default rules (adx_threshold = 20.0, adx_impulse_threshold = 18.0)
+    engine = PrahaarEngine({
+        "adx_threshold": 20.0,
+        "adx_impulse_threshold": 18.0,
+        "adx_impulse_dx_min": 25.0,
+        "adx_impulse_di_spread_min": 12.0,
+        "adx_impulse_atr_mult": 1.3,
+        "vix_filter_enabled": True,
+        "strike_step": 50,
+        "signal_cooldown_bars": 2,
+    })
+    res = engine.process(bars, tf="5m", vix=15.0)
+
+    assert res["available"] is True
+    signals = res["signals"]
+    assert len(signals) > 0, "Expected signals to trigger via impulse gate"
+
+    # Signals are sorted strictly descending by Unix timestamp
+    for idx in range(len(signals) - 1):
+        assert signals[idx]["time"] >= signals[idx + 1]["time"], "Signals must be sorted descending by time"
+
+    bear_sigs = [s for s in signals if s["dir"] == "bear"]
+    assert len(bear_sigs) > 0
+    first_breakdown_sig = [s for s in bear_sigs if s["strike"] >= 22650][0]
+    assert first_breakdown_sig["action"] == "BUY ATM PUT"
+    assert first_breakdown_sig["option_type"] == "PE"
+    assert first_breakdown_sig["is_impulse_active"] is True
+    # The early breakdown signal triggered when ADX was below 20.0 thanks to the Impulse gate!
+    assert first_breakdown_sig["adx"] < 20.0
+
+    # Latest state diagnostics
+    assert res["latest_state"]["adx_trending"] is True
+    assert res["latest_state"]["current_verdict"] == "BUY ATM PUT"
+    assert res["latest_state"]["is_impulse_active"] is True

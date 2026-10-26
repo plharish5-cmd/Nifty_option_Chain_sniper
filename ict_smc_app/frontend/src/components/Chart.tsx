@@ -27,6 +27,8 @@ import { StdvPrimitive, detectManipulationLegs, createManualStdvLeg, type StdvLe
 import { aggregateWeeklyCandles, extractWicks, filterVirginWicks, type HtfWick } from "./htfWicks";
 import { computePrahaar, type PrahaarResult, type PrahaarSignal } from "./prahaar";
 import { detectGtfZones, evaluateGtfMasterConfluence, hitTestGtfZone, getGtfExplanation, type GtfMarkingMode, type GtfResult, type GtfZone } from "./gtf";
+import PcrTrinitySuite from "./PcrTrinitySuite";
+import OIMatrixSuite from "./OIMatrixSuite";
 
 export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean; p3?: boolean; stdv?: boolean; advPa?: boolean; prahaar?: boolean; gtfZones?: boolean };
 
@@ -156,8 +158,13 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         kind = "ENTRY";
         v = r.actionTone === "bear" ? -1 : r.actionTone === "bull" ? 1 : 0;
       } else if (r.stage === 3) {
-        kind = "ADD";
-        v = r.actionTone === "bear" ? -1 : r.actionTone === "bull" ? 1 : 0;
+        if (r.actionTone === "warn") {
+          kind = "NONE";
+          v = 0;
+        } else {
+          kind = "ADD";
+          v = r.actionTone === "bear" ? -1 : r.actionTone === "bull" ? 1 : 0;
+        }
       } else if (r.stage === 5 || r.isShortCoveringReversal) {
         kind = "BOOK";
         v = 1;
@@ -408,7 +415,22 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const onCrosshairMoveRef = useRef<(p: MouseEventParams<Time>) => void>(() => {});
   const [latest, setLatest] = useState<Ev[]>([]);
   const [layerNow, setLayerNow] = useState<Record<string, Ev>>({});
+  // ⚡ 3-Chart Institutional PCR & OI Trinity Suite Drawer State
+  const [trinityDrawerOpen, setTrinityDrawerOpen] = useState<boolean>(false);
+  const [trinityDrawerHeight, setTrinityDrawerHeight] = useState<number>(440);
+  const [oiDrawerTab, setOiDrawerTab] = useState<"trinity" | "matrix">("trinity");
+  const trinityVerdict = (analysis as any)?.pcr_trinity;
+  const trinityState = trinityVerdict?.alignment_state;
+  const trinityBadge = trinityVerdict?.verdict_badge;
   const [guideOpen, setGuideOpen] = useState<boolean>(() => { try { return localStorage.getItem("ict_guide") !== "0"; } catch { return true; } });
+  const isEodCutoff = useMemo(() => {
+    const lc = candles[candles.length - 1];
+    if (!lc) return false;
+    const dt = new Date(lc.time * 1000);
+    const utcMins = dt.getUTCHours() * 60 + dt.getUTCMinutes();
+    const istMins = (utcMins + 330) % 1440;
+    return istMins >= 910; // 15:10 IST (15*60 + 10 = 910)
+  }, [candles]);
   const [htfWicks, setHtfWicks] = useState<HtfWick[]>([]);
   const [advPaSniperMode, setAdvPaSniperMode] = useState<boolean>(() => {
     try {
@@ -1025,8 +1047,20 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           }
         }
       } else {
-        // Raw All-10 Diagnostic Mode
-        for (const z of (pa.zones || [])) {
+        // Raw All-10 Diagnostic Mode (Cleaned: top 3 Demand & top 3 Supply closest to current price)
+        const curPx = candles[candles.length - 1]?.close ?? 0;
+        const rawZones = pa.zones || [];
+        const demandZones = rawZones
+          .filter((z) => (z.top || z.bottom) <= curPx + 20)
+          .sort((a, b) => b.top - a.top)
+          .slice(0, 3);
+        const supplyZones = rawZones
+          .filter((z) => (z.bottom || z.top) >= curPx - 20)
+          .sort((a, b) => a.bottom - b.bottom)
+          .slice(0, 3);
+        const activeZones = [...demandZones, ...supplyZones];
+
+        for (const z of activeZones) {
           boxes.push({
             from: Math.max(z.from, t0),
             to: lastTime,
@@ -1144,7 +1178,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     if (isGtfOn && gtfResult.zones.length) {
       for (const z of gtfResult.zones) {
         const isBroken = z.status === "BROKEN" || z.status === "MITIGATED";
-        const zoneTo = isBroken ? z.to : lastTime;
+        // Recently broken zones extend forward to lastTime so trader sees the flipped S/R floor/ceiling
+        const zoneTo = lastTime;
         const isDemand = z.type === "DEMAND";
         const isFresh = z.status === "FRESH";
         const isTested = z.status === "TESTED";
@@ -1314,6 +1349,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         }
       } else if (pa.markers) {
         for (const m of pa.markers) {
+          if (m.kind === "MSB_WEAK" || m.text?.toLowerCase().includes("weak msb")) continue;
           const bull = m.dir === "bull";
           push({
             time: m.time,
@@ -1499,12 +1535,21 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     }
     if (a && layers.rvol) {
       const RC: Record<string, string> = { RVOL_ACTIVATED: "#22c55e", BREAKOUT_WITH_RVOL: "#22c55e", RVOL_SPIKE: "#e8c35a", RVOL_FADING: "#94a3b8", BREAKOUT_NO_RVOL: "#ef4444" };
-      const RT: Record<string, string> = { RVOL_ACTIVATED: "RVOL▲", BREAKOUT_WITH_RVOL: "BO✓vol", RVOL_SPIKE: "RVOL⚡", RVOL_FADING: "RVOL▼", BREAKOUT_NO_RVOL: "BO✗vol" };
+      const RT: Record<string, string> = { RVOL_ACTIVATED: "RVOL▲", BREAKOUT_WITH_RVOL: "BO✓", RVOL_SPIKE: "⚡", RVOL_FADING: "RVOL▼", BREAKOUT_NO_RVOL: "BO✗" };
+      let lastSpikeTime = -999;
+      const stepSec = ((tf as string) === "1m") ? 60 : ((tf as string) === "3m") ? 180 : tf === "5m" ? 300 : tf === "15m" ? 900 : 1800;
       for (const e of a.volume?.rvol_events ?? []) {
         const bt = bucket(e.time, tf), cc = cMap.current.get(bt);
+        // Throttle non-breakout spike labels to maintain 3-4 bar spacing
+        const isNonBoSpike = e.kind === "RVOL_SPIKE" || e.kind === "RVOL_ACTIVATED";
+        if (isNonBoSpike && bt - lastSpikeTime < stepSec * 3) {
+          continue;
+        }
+        if (isNonBoSpike) lastSpikeTime = bt;
+
         const vw = [...(a.volume?.vwap ?? [])].reverse().find((q) => q.time <= bt);
         const up = cc ? cc.close >= cc.open : null;
-        const who = up == null ? "" : up ? " ▲ buyers" : " ▼ sellers";
+        const who = up == null ? "" : up ? " ▲" : " ▼";
         const act = up == null ? "" : up ? (vw && cc!.close > vw.v ? " — institutions BUYING above VWAP: CE side only, never PE" : " — buying, but below VWAP: wait")
           : (vw && cc!.close < vw.v ? " — institutions SELLING below VWAP: PE side only, never CE" : " — selling, but above VWAP: likely a dip, wait");
         push({ time: bt, side: "above", dir: up == null ? "flat" : up ? "bull" : "bear", kind: e.kind, layer: "RVOL",
@@ -1520,10 +1565,19 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     }
     if (isPrahaarOn) {
       for (const s of prahaarResult.signals) {
+        let sigTime = s.time;
+        // Accurately align marker with chart candle timestamps (handling raw epoch vs chart_time shift)
+        if (!cMap.current.has(sigTime)) {
+          if (cMap.current.has(sigTime + 19800)) {
+            sigTime = sigTime + 19800;
+          } else if (cMap.current.has(sigTime - 19800)) {
+            sigTime = sigTime - 19800;
+          }
+        }
         const isBear = s.dir === "bear";
         if (s.isMasterSniper) {
           push({
-            time: s.time,
+            time: sigTime,
             side: isBear ? "above" : "below",
             dir: s.dir,
             kind: isBear ? "PRAHAAR_MASTER_SNIPER_PE" : "PRAHAAR_MASTER_SNIPER_CE",
@@ -1537,15 +1591,15 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           });
         } else {
           push({
-            time: s.time,
+            time: sigTime,
             side: isBear ? "above" : "below",
             dir: s.dir,
             kind: isBear ? "PRAHAAR_BUY_PE" : "PRAHAAR_BUY_CE",
             layer: "Prahaar Engine",
             short: isBear ? `🔴 BUY ${s.strike} PE` : `🟢 BUY ${s.strike} CE`,
             full: isBear
-              ? `🔴 BUY ATM PUT (Prahaar): ${s.strike} PE @ ${s.entry.toFixed(1)} · SL ${s.sl.toFixed(1)} · TP ${s.tp.toFixed(1)} (EMA Bear + MACD Cross + ADX ${s.adx.toFixed(1)})`
-              : `🟢 BUY ATM CALL (Prahaar): ${s.strike} CE @ ${s.entry.toFixed(1)} · SL ${s.sl.toFixed(1)} · TP ${s.tp.toFixed(1)} (EMA Bull + MACD Cross + ADX ${s.adx.toFixed(1)})`,
+              ? `🔴 BUY ATM PUT (Prahaar): ${s.strike} PE @ ${s.entry.toFixed(1)} · SL ${s.sl.toFixed(1)} · TP ${s.tp.toFixed(1)} (${s.isImpulseActive ? "Impulse Active" : "EMA Bear + MACD Cross"} · ADX ${s.adx.toFixed(1)})`
+              : `🟢 BUY ATM CALL (Prahaar): ${s.strike} CE @ ${s.entry.toFixed(1)} · SL ${s.sl.toFixed(1)} · TP ${s.tp.toFixed(1)} (${s.isImpulseActive ? "Impulse Active" : "EMA Bull + MACD Cross"} · ADX ${s.adx.toFixed(1)})`,
             pri: 3,
             shape: isBear ? "arrowDown" : "arrowUp",
             color: isBear ? "#ef4444" : "#10b981",
@@ -1555,7 +1609,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       }
     }
     evRef.current = index(evs);
-    const lastSig = [...evs].filter((e) => e.pri >= 2).sort((x, y) => y.time - x.time).slice(0, 4);
+    const lastSig = [...evs].filter((e) => e.pri >= 2).sort((x, y) => Number(y.time) - Number(x.time)).slice(0, 4);
     setLatest(lastSig);
     const ln: Record<string, Ev> = {};
     for (const e of [...evs].sort((x, y) => x.time - y.time)) ln[e.layer] = e;
@@ -2142,6 +2196,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   };
 
   const hm = (t: number) => { const d = new Date(t * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
+  const formatTickerTime = (t: number) => {
+    const d = new Date(t * 1000);
+    const lastCandle = candles.length ? candles[candles.length - 1] : null;
+    const lastD = lastCandle ? new Date(lastCandle.time * 1000) : new Date();
+    const isToday = d.getUTCFullYear() === lastD.getUTCFullYear() &&
+                    d.getUTCMonth() === lastD.getUTCMonth() &&
+                    d.getUTCDate() === lastD.getUTCDate();
+    const timeStr = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+    if (isToday) return `Today ${timeStr}`;
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${d.getUTCDate()} ${months[d.getUTCMonth()]} ${timeStr}`;
+  };
   const hc = hover ? cMap.current.get(hover.t) : undefined;
   const hev = hover ? evRef.current.get(hover.t) ?? [] : [];
   const vb = hover && analysis?.volume?.bars ? analysis.volume.bars.find((b) => b.time === hover.t) : undefined;
@@ -2322,18 +2388,91 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           </button>
         </div>
       )}
-      {/* Multi-Expiry Option Chain & Volume Selector (top-right) — accessible when walls, volume, or rvol is on */}
-      {(layers.walls || layers.volume || layers.rvol) && (expiries?.length ?? 0) > 1 && (
-        <div className="pointer-events-auto absolute right-2 top-2 z-20 flex items-center gap-1 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] ring-1 ring-white/10 shadow-lg backdrop-blur">
-          <span className="text-slate-400 font-semibold">{layers.walls ? "Expiry / Walls:" : "Option Expiry:"}</span>
-          {(["cur", "next", "both"] as const).map((e) => (
-            <button key={e} onClick={() => setWallExp(e)}
-              className={`rounded px-1.5 py-0.5 font-bold transition-colors ${wallExp === e ? "bg-gold-500/30 text-gold-200 border border-gold-500/50" : "text-slate-400 hover:text-slate-200"}`}>
-              {e === "cur" ? "This wk" : e === "next" ? "Next wk" : "Both"}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Top-Right Control Bar: ⚡ 3-Chart Trinity Suite + ⚡ Strike Map 2.0 + Expiry Selector */}
+      <div className="pointer-events-auto absolute right-2 top-2 z-20 flex items-center gap-1.5">
+        <button
+          onClick={() => {
+            if (trinityDrawerOpen && oiDrawerTab === "matrix") {
+              setTrinityDrawerOpen(false);
+            } else {
+              setOiDrawerTab("matrix");
+              setTrinityDrawerOpen(true);
+            }
+          }}
+          className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur ${
+            trinityDrawerOpen && oiDrawerTab === "matrix"
+              ? "bg-gold-500/30 border-gold-500/80 text-gold-300 ring-1 ring-gold-500/40"
+              : "border-gold-500/50 text-gold-300 hover:bg-gold-950/40"
+          }`}
+          title="Toggle Institutional Open Interest Matrix & Strike Map 2.0"
+        >
+          <span>⚡ Strike Map 2.0</span>
+          <span className="text-[9px] opacity-75">{trinityDrawerOpen && oiDrawerTab === "matrix" ? "▼" : "▲"}</span>
+        </button>
+
+        <button
+          onClick={() => {
+            if (trinityDrawerOpen && oiDrawerTab === "trinity") {
+              setTrinityDrawerOpen(false);
+            } else {
+              setOiDrawerTab("trinity");
+              setTrinityDrawerOpen(true);
+            }
+          }}
+          className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur ${
+            trinityDrawerOpen && oiDrawerTab === "trinity"
+              ? trinityState === "BULLISH_TRINITY_LOCK"
+                ? "bg-emerald-950/90 border-emerald-500/80 text-emerald-300 ring-1 ring-emerald-500/40"
+                : trinityState === "BEARISH_TRINITY_LOCK"
+                ? "bg-rose-950/90 border-rose-500/80 text-rose-300 ring-1 ring-rose-500/40"
+                : trinityState === "PRICE_PCR_DIVERGENCE"
+                ? "bg-amber-950/90 border-amber-500/80 text-amber-300 ring-1 ring-amber-500/40"
+                : "bg-sky-500/30 border-sky-500/80 text-sky-200 ring-1 ring-sky-500/40"
+              : trinityState === "BULLISH_TRINITY_LOCK"
+              ? "bg-emerald-950/90 border-emerald-500/80 text-emerald-300 ring-1 ring-emerald-500/40"
+              : trinityState === "BEARISH_TRINITY_LOCK"
+              ? "bg-rose-950/90 border-rose-500/80 text-rose-300 ring-1 ring-rose-500/40"
+              : trinityState === "PRICE_PCR_DIVERGENCE"
+              ? "bg-amber-950/90 border-amber-500/80 text-amber-300 ring-1 ring-amber-500/40"
+              : "border-sky-500/50 text-sky-300 hover:bg-sky-950/40"
+          }`}
+          title="Toggle 3-Chart Institutional PCR & Open Interest Positioning Suite"
+        >
+          <span>{trinityBadge || "⚡ 3-Chart Trinity Suite"}</span>
+          <span className="text-[9px] opacity-75">{trinityDrawerOpen && oiDrawerTab === "trinity" ? "▼" : "▲"}</span>
+        </button>
+
+        {(layers.walls || layers.volume || layers.rvol) && (expiries?.length ?? 0) > 1 && (
+          <div className="flex items-center gap-1 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] ring-1 ring-white/10 shadow-lg backdrop-blur">
+            <span className="text-slate-400 font-semibold">{layers.walls ? "Expiry / Walls:" : "Option Expiry:"}</span>
+            {(["cur", "next", "both"] as const).map((e) => (
+              <button key={e} onClick={() => setWallExp(e)}
+                className={`rounded px-1.5 py-0.5 font-bold transition-colors ${wallExp === e ? "bg-gold-500/30 text-gold-200 border border-gold-500/50" : "text-slate-400 hover:text-slate-200"}`}>
+                {e === "cur" ? "This wk" : e === "next" ? "Next wk" : "Both"}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Pinned Ceiling Pill: when major Call wall is > 150 pts above Spot (off-screen) */}
+      {layers.walls && (() => {
+        const wsp = writerBal?.spot ?? spot ?? candles[candles.length - 1]?.close;
+        if (!wsp) return null;
+        const ceWalls = walls.filter((w) => w.side === "CE").sort((a, b) => b.oi - a.oi);
+        const topCe = ceWalls[0];
+        if (!topCe || topCe.p <= wsp + 150) return null;
+        return (
+          <div
+            className="pointer-events-auto absolute right-2 top-10 z-20 flex items-center gap-1.5 rounded-lg border border-rose-500/60 bg-[#16060a]/92 px-2.5 py-1 text-[10.5px] font-bold text-rose-300 shadow-xl backdrop-blur"
+            title={`Major Overhead Call Resistance Wall: ${topCe.p} CE with ${(topCe.oi / 1e7).toFixed(2)}Cr OI (${Math.round(topCe.p - wsp)} pts above current spot)`}
+          >
+            <span>🏛️ CEILING WALL:</span>
+            <span className="font-mono text-white font-black">{topCe.p.toLocaleString("en-IN")} CE</span>
+            <span className="text-[10px] text-rose-400">({(topCe.oi / 1e7).toFixed(2)}Cr · +{Math.round(topCe.p - wsp)}p)</span>
+          </div>
+        );
+      })()}
       {/* legend + latest signals (top-left) */}
       <div className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[70%] flex-col gap-1">
         <div className="flex flex-wrap gap-1">
@@ -2372,8 +2511,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           const action = bias === "NEUTRAL"
             ? `Balanced — fade the range. Long only on a close > ${resistance ? resistance.p.toLocaleString("en-IN") : "resistance"}, short on a close < ${support ? support.p.toLocaleString("en-IN") : "support"}.`
             : bias === "BULLISH"
-              ? `Writers favour upside. Buy dips toward ${support ? support.p.toLocaleString("en-IN") : "support"}; invalid on a close below it.`
-              : `Writers favour downside. Sell rallies toward ${resistance ? resistance.p.toLocaleString("en-IN") : "resistance"}; invalid on a close above it.`;
+              ? (net >= 30000000 || (pcr != null && pcr >= 1.15)
+                  ? `🔥 WRITERS BULLISH (+${cr(net)} Net Put Support) — Staircase Floor Rising (Buy Dips to Put Wall ${support ? support.p.toLocaleString("en-IN") : ""}; Do Not Fade Rally)`
+                  : `Writers favour upside. Buy dips toward ${support ? support.p.toLocaleString("en-IN") : "support"}; invalid on a close below it.`)
+              : (net <= -30000000 || (pcr != null && pcr <= 0.85)
+                  ? `🩸 WRITERS BEARISH (−${cr(Math.abs(net))} Net Call Resistance) — Staircase Ceiling Dropping (Sell Rallies to Call Wall ${resistance ? resistance.p.toLocaleString("en-IN") : ""}; Do Not Chase Dips)`
+                  : `Writers favour downside. Sell rallies toward ${resistance ? resistance.p.toLocaleString("en-IN") : "resistance"}; invalid on a close above it.`);
           return (
             <div className="rounded-md px-2 py-1 text-[10px] ring-1 ring-white/10" style={{ background: tone.bg, borderLeft: `3px solid ${tone.bar}` }}>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -2454,7 +2597,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             <span className="mr-1 font-semibold text-gold-400">Latest</span>
             {latest.map((e, i) => (
               <span key={i} className="mr-2" style={{ color: e.color }}>
-                <span className="text-slate-500">{hm(e.time)}</span> {e.short}
+                <span className="text-slate-500">{formatTickerTime(e.time)}</span> {e.short}
               </span>
             ))}
           </div>
@@ -2468,12 +2611,20 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       {/* Top Sniper Decision HUD */}
       {layers.advPa && analysis?.pa_advanced?.sniper && (() => {
         const sniper = analysis.pa_advanced.sniper;
-        const isRejPe = sniper.action.includes("BUY PE") || sniper.state.includes("REJECTION") || sniper.state.includes("SHORT");
-        const isRejCe = sniper.action.includes("BUY CE") || (sniper.state.includes("REJECTION") && sniper.action.includes("CE"));
-        const isBreak = sniper.state.includes("BREAKOUT") || sniper.state.includes("BREAKDOWN");
-        const isTrap = sniper.state.includes("TRAP");
+        const isRejPe = !isEodCutoff && (sniper.action.includes("BUY PE") || sniper.state.includes("REJECTION") || sniper.state.includes("SHORT"));
+        const isRejCe = !isEodCutoff && (sniper.action.includes("BUY CE") || (sniper.state.includes("REJECTION") && sniper.action.includes("CE")));
+        const isBreak = !isEodCutoff && (sniper.state.includes("BREAKOUT") || sniper.state.includes("BREAKDOWN"));
+        const isTrap = !isEodCutoff && sniper.state.includes("TRAP");
 
-        const badgeClass = isTrap
+        const displayState = isEodCutoff ? "🏁 EOD CLOSING FLOW" : sniper.state;
+        const displayBehavior = isEodCutoff ? "BOOK / TRAIL ONLY" : sniper.behavior;
+        const displayHeadline = isEodCutoff
+          ? "🏁 EOD CLOSING FLOW (15:10+ IST) — Book/Trail Existing Positions Only (No Fresh Intraday Option Entries)"
+          : sniper.headline;
+
+        const badgeClass = isEodCutoff
+          ? "bg-slate-900/90 text-amber-300 border-amber-500/70"
+          : isTrap
           ? "bg-rose-950/90 text-rose-300 border-rose-600/70"
           : isBreak
           ? "bg-cyan-950/90 text-cyan-300 border-cyan-500/70"
@@ -2483,22 +2634,22 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           ? "bg-rose-950/90 text-rose-300 border-rose-500/70"
           : "bg-amber-950/90 text-amber-300 border-amber-500/70";
 
-        const badgeIcon = isTrap ? "🚫" : isBreak ? "⚡" : isRejCe || isRejPe ? "🎯" : "⏳";
+        const badgeIcon = isEodCutoff ? "🏁" : isTrap ? "🚫" : isBreak ? "⚡" : isRejCe || isRejPe ? "🎯" : "⏳";
 
         return (
           <div className="pointer-events-auto absolute left-1/2 top-2 z-30 -translate-x-1/2 max-w-[calc(100%-190px)]">
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gold-500/50 bg-[#060b16]/95 px-3 py-1.5 shadow-2xl backdrop-blur-md ring-1 ring-gold-500/30 text-[12px]">
               <span className={`flex items-center gap-1 rounded px-2 py-0.5 font-extrabold text-[11px] border ${badgeClass}`}>
                 <span>{badgeIcon}</span>
-                <span>{sniper.state}</span>
+                <span>{displayState}</span>
               </span>
 
               <span className="rounded bg-slate-900/90 px-2 py-0.5 text-[11px] text-slate-300 border border-slate-700/60 font-medium">
-                🛡️ {sniper.behavior}
+                🛡️ {displayBehavior}
               </span>
 
-              <span className="text-slate-100 font-semibold text-[11.5px] truncate max-w-[480px] xl:max-w-[620px]" title={sniper.headline}>
-                {sniper.headline}
+              <span className="text-slate-100 font-semibold text-[11.5px] truncate max-w-[480px] xl:max-w-[620px]" title={displayHeadline}>
+                {displayHeadline}
               </span>
 
               <button
@@ -2613,24 +2764,43 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
               ? "bg-gradient-to-r from-rose-950/90 to-ink-950/90 border-rose-600/70 text-rose-300"
               : prahaarResult.latestState.currentVerdict === "BUY ATM CALL"
               ? "bg-gradient-to-r from-emerald-950/90 to-ink-950/90 border-emerald-600/70 text-emerald-300"
+              : prahaarResult.latestState.isImpulseActive
+              ? (prahaarResult.latestState.emaTrend === "bearish"
+                  ? "bg-gradient-to-r from-rose-950/85 to-ink-950/90 border-rose-600/60 text-rose-200 shadow-rose-950/40"
+                  : "bg-gradient-to-r from-emerald-950/85 to-ink-950/90 border-emerald-600/60 text-emerald-200 shadow-emerald-950/40")
               : "bg-[#060b16]/90 border-ink-700 text-slate-300"
           }`}>
             <span className="font-extrabold uppercase tracking-wider text-[11px] flex items-center gap-1">
               <span>⚔️ PRAHAAR</span>
             </span>
             <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black ${
-              prahaarResult.latestState.currentVerdict === "BUY ATM PUT"
-                ? "bg-rose-500 text-black"
+              isEodCutoff
+                ? "bg-amber-500 text-black shadow"
+                : prahaarResult.latestState.currentVerdict === "BUY ATM PUT"
+                ? "bg-rose-500 text-black shadow"
                 : prahaarResult.latestState.currentVerdict === "BUY ATM CALL"
-                ? "bg-emerald-500 text-black"
+                ? "bg-emerald-500 text-black shadow"
+                : prahaarResult.latestState.isImpulseActive
+                ? (prahaarResult.latestState.emaTrend === "bearish"
+                    ? "bg-rose-600 text-white shadow ring-1 ring-rose-400"
+                    : "bg-emerald-600 text-white shadow ring-1 ring-emerald-400")
                 : "bg-ink-800 text-slate-400"
             }`}>
-              {prahaarResult.latestState.currentVerdict === "BUY ATM PUT"
+              {isEodCutoff
+                ? "🏁 EOD CLOSING (NO FRESH ENTRIES)"
+                : prahaarResult.latestState.currentVerdict === "BUY ATM PUT"
                 ? `🔴 BUY ${prahaarResult.latestState.atmStrike} PE`
                 : prahaarResult.latestState.currentVerdict === "BUY ATM CALL"
                 ? `🟢 BUY ${prahaarResult.latestState.atmStrike} CE`
+                : prahaarResult.latestState.isImpulseActive
+                ? `⚡ IMPULSE ACTIVE / ${prahaarResult.latestState.emaTrend === "bearish" ? "BEARISH TREND" : prahaarResult.latestState.emaTrend === "bullish" ? "BULLISH TREND" : "EXPANDING"}`
                 : "CHOP / STANDBY"}
             </span>
+            {prahaarResult.latestState.isImpulseActive && (
+              <span className="px-1.5 py-0.5 rounded text-[9.5px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-400/60 animate-pulse">
+                ⚡ IMPULSE ACTIVE
+              </span>
+            )}
             {(prahaarResult.latestState.isMasterSniperPut || prahaarResult.latestState.isMasterSniperCall) && (
               <span className="px-1.5 py-0.5 rounded text-[9.5px] font-black bg-gold-500/30 text-gold-300 border border-gold-400/80 animate-pulse">
                 🎯 A+ MASTER SNIPER
@@ -3875,6 +4045,68 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
               </div>
             ))}
           </div>}
+        </div>
+      )}
+
+      {/* ⚡ 3-Chart Institutional PCR & Open Interest Positioning Suite Drawer */}
+      {trinityDrawerOpen && (
+        <div
+          className="pointer-events-auto absolute bottom-0 left-0 right-0 z-40 flex flex-col bg-[#070c17]/95 border-t-2 border-sky-500/60 shadow-2xl backdrop-blur-md transition-all duration-200"
+          style={{ height: trinityDrawerHeight }}
+        >
+          <div className="flex items-center justify-between bg-[#0a1222] px-3 py-1 border-b border-slate-800 text-xs">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center rounded bg-[#0b1324] p-0.5 border border-slate-700">
+                <button
+                  onClick={() => setOiDrawerTab("trinity")}
+                  className={`rounded px-2.5 py-0.5 text-[11px] font-extrabold transition-all ${
+                    oiDrawerTab === "trinity"
+                      ? "bg-sky-500/30 text-sky-200 border border-sky-500/60 shadow-sm"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  ⚡ 3-Chart Trinity Suite
+                </button>
+                <button
+                  onClick={() => setOiDrawerTab("matrix")}
+                  className={`rounded px-2.5 py-0.5 text-[11px] font-extrabold transition-all ${
+                    oiDrawerTab === "matrix"
+                      ? "bg-gold-500/30 text-gold-200 border border-gold-500/60 shadow-sm"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  🎯 Strike Map 2.0 (OI Matrix)
+                </button>
+              </div>
+              <span className="text-[10px] text-slate-400 hidden md:inline">
+                {oiDrawerTab === "trinity"
+                  ? "Put-Call Ratio • Fresh OI Δ • Cumulative Total OI • Dual-Axis Overlays"
+                  : "Strike Buildups • Support/Resistance Walls • Max Pain • Sentiment Speedometer"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setTrinityDrawerHeight((h) => (h >= 480 ? 280 : 520))}
+                className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white font-semibold"
+              >
+                {trinityDrawerHeight >= 480 ? "Compact" : "Expand"}
+              </button>
+              <button
+                onClick={() => setTrinityDrawerOpen(false)}
+                className="text-slate-400 hover:text-rose-400 font-bold px-1.5"
+                title="Close Drawer"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 flex flex-col relative w-full h-full overflow-hidden">
+            {oiDrawerTab === "trinity" ? (
+              <PcrTrinitySuite onClose={() => setTrinityDrawerOpen(false)} />
+            ) : (
+              <OIMatrixSuite onClose={() => setTrinityDrawerOpen(false)} />
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -18,7 +18,8 @@ import time
 from typing import Any, Dict, List, Optional
 
 from .. import config, db
-from ..timeutil import market_open_now, now_epoch, now_ist
+from ..timeutil import market_open_now, now_epoch, now_ist, session_bounds
+from ..engine import pcr_trinity
 
 log = logging.getLogger("chain")
 
@@ -90,10 +91,48 @@ def normalize(raw: Dict[str, Any], expiry: str) -> Dict[str, Any]:
     near = [r for r in rows if abs(r["strike"] - atm) <= 10 * step]
     ce_wall = max(near, key=lambda r: r["ce"]["oi"], default=None)
     pe_wall = max(near, key=lambda r: r["pe"]["oi"], default=None)
+
+    strike_map: List[Dict[str, Any]] = []
+    for r in rows:
+        ce_x, pe_x = r["ce"], r["pe"]
+        ce_oi_val = int(round(ce_x.get("oi") or 0))
+        ce_chg_val = int(round(ce_x.get("oi_chg") or 0))
+        pe_oi_val = int(round(pe_x.get("oi") or 0))
+        pe_chg_val = int(round(pe_x.get("oi_chg") or 0))
+        ce_chg_f = float(ce_x.get("chg") or 0)
+        pe_chg_f = float(pe_x.get("chg") or 0)
+        ce_b = "Long Buildup" if ce_chg_val > 0 and ce_chg_f >= 0 else ("Short Buildup" if ce_chg_val > 0 else ("Short Covering" if ce_chg_val < 0 and ce_chg_f >= 0 else ("Long Unwinding" if ce_chg_val < 0 else "Neutral")))
+        pe_b = "Long Buildup" if pe_chg_val > 0 and pe_chg_f >= 0 else ("Short Buildup" if pe_chg_val > 0 else ("Short Covering" if pe_chg_val < 0 and pe_chg_f >= 0 else ("Long Unwinding" if pe_chg_val < 0 else "Neutral")))
+        dominant_b = pe_b if abs(pe_chg_val) > abs(ce_chg_val) and pe_b != "Neutral" else (ce_b if ce_b != "Neutral" else "Neutral")
+
+        r["call_oi"] = ce_oi_val
+        r["call_oi_chg"] = ce_chg_val
+        r["put_oi"] = pe_oi_val
+        r["put_oi_chg"] = pe_chg_val
+        r["call_buildup"] = ce_b
+        r["put_buildup"] = pe_b
+        r["buildup"] = dominant_b
+        r["max_pain"] = mp
+        r["spot"] = spot
+
+        strike_map.append({
+            "strike": r["strike"],
+            "call_oi": ce_oi_val,
+            "call_oi_chg": ce_chg_val,
+            "put_oi": pe_oi_val,
+            "put_oi_chg": pe_chg_val,
+            "buildup": dominant_b,
+            "call_buildup": ce_b,
+            "put_buildup": pe_b,
+            "max_pain": mp,
+            "spot": spot,
+        })
+
     now_t = time.time()
     return {
         "expiry": expiry, "ts": int(now_epoch()), "fetched_at": now_t, "spot_at_fetch": spot,
         "is_stale": False, "spot": spot, "atm": atm, "step": step, "rows": rows,
+        "strike_map": strike_map,
         "totals": {"ce_oi": ce_oi, "pe_oi": pe_oi, "pcr": round(pe_oi / ce_oi, 2) if ce_oi else None,
                    "ce_oi_chg": ce_chg, "pe_oi_chg": pe_chg,
                    "pcr_chg": round(pe_chg / ce_chg, 2) if ce_chg > 0 else None,
@@ -115,6 +154,8 @@ class ChainPoller:
         self.last_error = ""
         self._last_snap: Dict[str, float] = {}
         self._exp_at = 0.0
+        self._pcr_cache: Dict[str, Any] = {}
+        self._last_pcr_time = 0.0
 
     async def refresh_expiries(self) -> None:
         exps = await self.rest.expiry_list()
@@ -168,6 +209,7 @@ class ChainPoller:
         if time.time() - self._last_snap.get(exp, 0) < every or not market_open_now():
             return
         self._last_snap[exp] = time.time()
+        self._pcr_cache.clear()
         ts = int(ch["ts"] // 60 * 60)
         db.save_chain_snap(exp, ts, [(r["strike"], r["ce"]["oi"], r["pe"]["oi"], r["ce"]["ltp"], r["pe"]["ltp"],
                                       r["ce"].get("vol"), r["pe"].get("vol"),
@@ -200,6 +242,7 @@ class ChainPoller:
         stale = self.is_stale(exp, live_spot)
         return {
             **{k: ch[k] for k in ("expiry", "ts", "spot", "atm", "totals", "max_pain", "call_wall", "put_wall", "builds")},
+            "strike_map": ch.get("strike_map", []),
             "fetched_at": ch.get("fetched_at", ch.get("ts")),
             "spot_at_fetch": ch.get("spot_at_fetch", ch.get("spot")),
             "is_stale": stale,
@@ -250,3 +293,244 @@ class ChainPoller:
             "both_pcr_vol": round(both_pe / both_ce, 2) if both_ce else None,
             "next_share_pct": round(100 * next_vol / both_vol, 1) if both_vol else 0.0,
         }
+
+    def get_pcr_trinity(
+        self,
+        exp: Optional[str] = None,
+        fut_candles: Optional[List[Dict[str, Any]]] = None,
+        fut_src: str = "combined",
+        hub: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """
+        Computes the complete 3-Chart Institutional PCR & Open Interest Positioning Suite data.
+        Returns:
+          - alignment_state, verdict_badge, verdict_summary
+          - pcr_oi, pcr_vol, pcr_band, pcr_band_label
+          - pcr_slope_30m, pcr_delta_open, chg_oi_slope, net_oi_slope_30m
+          - total_oi_gap, total_oi_gap_delta, net_oi_chg, call_oi_chg, put_oi_chg
+          - checkpoints: [09:45, 12:30, 14:30, Current]
+          - series: { cur: [...], next: [...], both: [...] }
+          - verdicts: { cur: {...}, next: {...}, both: {...} }
+          - pcr_oi_series: the series for the selected expiry
+          - expiries_meta: metadata for current/next expiry dates, near/next futures & rollover %
+        """
+        now_t = time.time()
+        fut_mode = "near" if fut_src in ("near", "oct") else ("next" if fut_src in ("next", "nov") else "combined")
+
+        today_iso = now_ist().date().isoformat()
+        active_exps = [e for e in (self.expiries or sorted(self.chains)) if e >= today_iso]
+        cur_exp = active_exps[0] if len(active_exps) > 0 else (self.expiries[0] if self.expiries else None)
+        next_exp = active_exps[1] if len(active_exps) > 1 else (self.expiries[1] if len(self.expiries) > 1 else None)
+        sel_exp = exp or cur_exp
+        sel_key = "both" if sel_exp == "both" else ("next" if (sel_exp == next_exp or sel_exp == "next") else "cur")
+
+        # Fast in-memory cache if queried within 3s without new snapshot and same fut_mode
+        if (
+            self._pcr_cache
+            and (now_t - self._last_pcr_time < 3.0)
+            and self._pcr_cache.get("fut_src") == fut_mode
+        ):
+            out = dict(self._pcr_cache)
+            out["pcr_oi_series"] = out.get("series", {}).get(sel_key, [])
+            out["selected_expiry"] = sel_exp
+            verdict = out.get("verdicts", {}).get(sel_key, {})
+            out.update({k: v for k, v in verdict.items() if k not in ("series", "verdicts")})
+            return out
+
+        today_start, _ = session_bounds(now_ist().date())
+
+        # Load snapshots from SQLite
+        rows = db.query("""
+            SELECT expiry, ts, SUM(ce_oi), SUM(pe_oi), SUM(ce_vol), SUM(pe_vol)
+            FROM chain_snap
+            WHERE ts >= ?
+            GROUP BY expiry, ts
+            ORDER BY ts
+        """, (today_start,))
+
+        # Load today's futures candles for alignment and resolve contract mode
+        oct_candles = db.candles_1m("FUT", today_start)
+        if not oct_candles:
+            oct_candles = db.candles_1m(str(config.rules().get("instruments", {}).get("nifty_security_id", "13")), today_start)
+        nov_candles = db.candles_1m("FUT2", today_start)
+
+        # Attach OI to candles
+        oct_oi_rows = {int(r["ts"]): float(r["oi"]) for r in db.query("SELECT ts, oi FROM fut_oi WHERE ts >= ? ORDER BY ts", (today_start,))}
+        oct_open_oi = next(iter(oct_oi_rows.values()), 0.0) if oct_oi_rows else 0.0
+        for c in oct_candles:
+            t = int(c["ts"])
+            c_oi = oct_oi_rows.get(t, oct_open_oi)
+            c["oi"] = int(c_oi)
+            c["oi_chg"] = int(c_oi - oct_open_oi)
+
+        nov_oi_rows = {int(r["ts"]): float(r["oi"]) for r in db.query("SELECT ts, oi FROM fut_oi_sym WHERE sym='FUT2' AND ts >= ? ORDER BY ts", (today_start,))}
+        nov_open_oi = next(iter(nov_oi_rows.values()), 0.0) if nov_oi_rows else 0.0
+        for c in nov_candles:
+            t = int(c["ts"])
+            c_oi = nov_oi_rows.get(t, nov_open_oi)
+            c["oi"] = int(c_oi)
+            c["oi_chg"] = int(c_oi - nov_open_oi)
+
+        if fut_candles is None:
+            fut_map = pcr_trinity.resolve_futures_series(oct_candles, nov_candles, fut_mode=fut_mode)
+            fut_candles = list(fut_map.values())
+
+        # Compute rollover percentage & labels
+        tot_oct_v = sum(float(c.get("v") or 0) for c in oct_candles)
+        tot_nov_v = sum(float(c.get("v") or 0) for c in nov_candles)
+        tot_fut_v = tot_oct_v + tot_nov_v
+        rollover_pct = round((tot_nov_v / max(tot_fut_v, 1.0)) * 100, 1)
+
+        near_label = (hub.fut.get("symbol") if hub and getattr(hub, "fut", None) else None) or "NIFTY-Oct2026-FUT"
+        next_label = (hub.fut2.get("symbol") if hub and getattr(hub, "fut2", None) else None) or "NIFTY-Nov2026-FUT"
+
+        def _fmt_exp(s: Optional[str]) -> str:
+            if not s:
+                return "—"
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(s.replace("Z", ""))
+                return dt.strftime("%d %b")
+            except Exception:
+                return str(s)
+
+        expiries_meta = {
+            "cur_date": _fmt_exp(cur_exp),
+            "next_date": _fmt_exp(next_exp),
+            "cur_expiry": cur_exp,
+            "next_expiry": next_exp,
+            "near_fut": near_label,
+            "next_fut": next_label,
+            "rollover_pct": rollover_pct,
+            "fut_src": fut_mode,
+        }
+
+        snaps_by_exp: Dict[str, List[Tuple]] = {}
+        for r in rows:
+            snaps_by_exp.setdefault(r["expiry"], []).append((r["ts"], r[2], r[3], r[4], r[5]))
+
+        cur_totals = (self.chains.get(cur_exp) or {}).get("totals") if cur_exp else None
+        next_totals = (self.chains.get(next_exp) or {}).get("totals") if next_exp else None
+
+        cur_series = pcr_trinity.build_intraday_pcr_series(snaps_by_exp.get(cur_exp, []), fut_candles, cur_totals)
+        next_series = pcr_trinity.build_intraday_pcr_series(snaps_by_exp.get(next_exp, []), fut_candles, next_totals)
+        both_series = pcr_trinity.combine_multi_expiry_series(cur_series, next_series)
+
+        cfg = config.rules().get("pcr_trinity", {})
+        cur_verdict = pcr_trinity.compute_pcr_trinity_verdict(cur_series, cfg)
+        next_verdict = pcr_trinity.compute_pcr_trinity_verdict(next_series, cfg)
+        both_verdict = pcr_trinity.compute_pcr_trinity_verdict(both_series, cfg)
+
+        main_verdict = both_verdict if sel_key == "both" else (next_verdict if sel_key == "next" else cur_verdict)
+
+        res = {
+            **main_verdict,
+            "selected_expiry": sel_exp,
+            "cur_expiry": cur_exp,
+            "next_expiry": next_exp,
+            "fut_src": fut_mode,
+            "expiries_meta": expiries_meta,
+            "series": {
+                "cur": cur_series,
+                "next": next_series,
+                "both": both_series,
+            },
+            "verdicts": {
+                "cur": cur_verdict,
+                "next": next_verdict,
+                "both": both_verdict,
+            },
+            "pcr_oi_series": cur_series if sel_key == "cur" else (next_series if sel_key == "next" else both_series),
+        }
+
+        self._pcr_cache = res
+        self._last_pcr_time = now_t
+        return res
+
+    def get_pe_ce_matrix(
+        self,
+        exp: Optional[str] = None,
+        tf: str = "3m",
+        scope: str = "atm_10",
+    ) -> Dict[str, Any]:
+        """Returns the Institutional PE-CE Difference & Skew Matrix 2.0."""
+        from ..engine import pe_ce_matrix
+        return pe_ce_matrix.compute_pe_ce_matrix(expiry=exp, tf=tf, scope=scope)
+
+    def get_oi_matrix(
+        self,
+        exp: Optional[str] = None,
+        scope: str = "atm_10",
+    ) -> Dict[str, Any]:
+        """Returns the Institutional Open Interest Matrix & Strike Map 2.0."""
+        from ..engine import oi_matrix
+
+        today_iso = now_ist().date().isoformat()
+        active_exps = [e for e in (self.expiries or sorted(self.chains)) if e >= today_iso]
+        cur_exp = active_exps[0] if len(active_exps) > 0 else (self.expiries[0] if self.expiries else None)
+        next_exp = active_exps[1] if len(active_exps) > 1 else (self.expiries[1] if len(self.expiries) > 1 else None)
+
+        expiry_mode = exp or "cur"
+        if expiry_mode == "both":
+            cur_ch = self.chains.get(cur_exp) if cur_exp else None
+            next_ch = self.chains.get(next_exp) if next_exp else None
+        elif expiry_mode == "next":
+            cur_ch = self.chains.get(next_exp) if next_exp else None
+            next_ch = None
+        else:
+            cur_ch = self.chains.get(cur_exp) if cur_exp else None
+            next_ch = None
+
+        return oi_matrix.build_oi_matrix(
+            chain_dict=cur_ch,
+            next_chain_dict=self.chains.get(next_exp) if expiry_mode == "both" else None,
+            expiry_mode=expiry_mode,
+            scope=scope,
+        )
+
+    def get_smart_oi(
+        self,
+        exp: Optional[str] = None,
+        fut_src: str = "combined",
+        tf: str = "3m",
+        range_mode: str = "atm",
+        span: int = 10,
+        candles: Optional[List[Dict[str, Any]]] = None,
+        hub: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Returns the Smart OI Noise-Filtered & Price Action Confluence Suite payload."""
+        from ..engine import smart_oi
+
+        today_iso = now_ist().date().isoformat()
+        active_exps = [e for e in (self.expiries or sorted(self.chains)) if e >= today_iso]
+        cur_exp = active_exps[0] if len(active_exps) > 0 else (self.expiries[0] if self.expiries else None)
+        next_exp = active_exps[1] if len(active_exps) > 1 else (self.expiries[1] if len(self.expiries) > 1 else None)
+
+        expiry_mode = exp or "cur"
+        if expiry_mode == "both":
+            cur_ch = self.chains.get(cur_exp) if cur_exp else None
+            next_ch = self.chains.get(next_exp) if next_exp else None
+        elif expiry_mode == "next":
+            cur_ch = self.chains.get(next_exp) if next_exp else None
+            next_ch = None
+        else:
+            cur_ch = self.chains.get(cur_exp) if cur_exp else None
+            next_ch = None
+
+        trinity = self.get_pcr_trinity(exp=expiry_mode, fut_src=fut_src, hub=hub) if hasattr(self, "get_pcr_trinity") else {}
+        pcr_series = trinity.get("pcr_oi_series") if isinstance(trinity, dict) else []
+
+        payload = smart_oi.build_smart_oi_payload(
+            chain_dict=cur_ch,
+            next_chain_dict=next_ch,
+            candles=candles,
+            pcr_oi_series=pcr_series,
+            expiry_mode=expiry_mode,
+            tf=tf,
+            range_mode=range_mode,
+            span=span,
+        )
+        if isinstance(payload, dict):
+            payload["expiries_meta"] = trinity.get("expiries_meta") if isinstance(trinity, dict) else None
+        return payload
+

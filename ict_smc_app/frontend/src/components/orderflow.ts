@@ -308,12 +308,29 @@ class TopView implements IPrimitivePaneView {
 // ── builders ──
 export function buildWalls(rows: { strike: number; ce: { oi: number; oi_chg: number }; pe: { oi: number; oi_chg: number } }[], spot: number,
   velMap?: Record<string, { ce: number; pe: number }>): Wall[] {
-  const near = rows.filter((r) => Math.abs(r.strike - spot) <= spot * 0.025);
+  const near = rows.filter((r) => Math.abs(r.strike - spot) <= spot * 0.03);
   const pick = (side: "CE" | "PE") => {
     const list = near.map((r) => ({ p: r.strike, oi: side === "CE" ? r.ce.oi : r.pe.oi, chg: side === "CE" ? r.ce.oi_chg : r.pe.oi_chg }))
-      .filter((x) => (side === "CE" ? x.p >= spot - spot * 0.003 : x.p <= spot + spot * 0.003)).sort((a, b) => b.oi - a.oi).slice(0, 3);
-    const mx = list[0]?.oi || 1;
-    return list.map((x, i) => {
+      .filter((x) => (side === "CE" ? x.p >= spot - 25 : x.p <= spot + 25));
+
+    // 1. Overall dominant macro walls
+    const macroSorted = [...list].sort((a, b) => b.oi - a.oi);
+    const topMacro = macroSorted.slice(0, 2);
+
+    // 2. Near-ATM tactical walls: ensure the 2 strongest active strikes within 200 pts of Spot are always included
+    const nearAtm = list
+      .filter((x) => (side === "CE" ? x.p <= spot + 200 : x.p >= spot - 200))
+      .sort((a, b) => b.oi - a.oi)
+      .slice(0, 2);
+
+    // Combine and deduplicate by strike price
+    const strikeMap = new Map<number, typeof list[0]>();
+    for (const w of [...nearAtm, ...topMacro]) {
+      strikeMap.set(w.p, w);
+    }
+    const combined = [...strikeMap.values()].sort((a, b) => b.oi - a.oi).slice(0, 4);
+    const mx = combined[0]?.oi || 1;
+    return combined.map((x, i) => {
       const fresh = x.oi > 0 ? x.chg / x.oi : 0;                          // fraction of this wall that is TODAY's net OI change
       const status: Wall["status"] = x.chg > 0 && fresh >= 0.12 ? "building"   // writers piling in → barrier hardening
         : x.chg < 0 && fresh <= -0.10 ? "unwinding"                        // writers covering → wall crumbling

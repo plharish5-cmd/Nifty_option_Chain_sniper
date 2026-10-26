@@ -4,6 +4,9 @@
 // Both refresh every 30 s; the backend recomputes only when a new snapshot has been stored (never stale).
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { FlowBand } from "./flowband";
+import PcrTrinitySuite from "./PcrTrinitySuite";
+import PeceMatrix from "./PeceMatrix";
+import SmartOISuite from "./SmartOISuite";
 import {
   CandlestickSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp,
@@ -170,33 +173,36 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
 
     // 4. Structural Events Detection
     const prevRow = i > 0 ? chron[i - 1] : null;
-    const isZeroFlipBear = (prevRow?.pe_ce_day ?? 0) >= 0 && (r.pe_ce_day ?? 0) < 0;
-    const isZeroFlipBull = (prevRow?.pe_ce_day ?? 0) <= 0 && (r.pe_ce_day ?? 0) > 0;
+    const isZeroFlipBear = (prevRow?.pe_ce_day ?? 0) >= 0 && (r.pe_ce_day ?? 0) < 0 && pe_ce_delta_l <= 0;
+    const isZeroFlipBull = (prevRow?.pe_ce_day ?? 0) <= 0 && (r.pe_ce_day ?? 0) > 0 && pe_ce_delta_l >= 0;
 
     const wallText = r.pro?.[3] || (r.lv?.[2] === "break_dn" || r.lv?.[2] === "break_up" ? r.lv[0] : "");
     const isWallShiftBear = Boolean(
-      (wallText && (wallText.includes("Floor ↓") || wallText.includes("BROKEN") || wallText.includes("RESISTANCE being built") || wallText.includes("Ceiling ↓"))) ||
+      (wallText && (wallText.includes("SUPPORT BROKEN") || wallText.includes("Support broken") || wallText.includes("Floor broken") || wallText.includes("Floor ↓") || wallText.includes("RESISTANCE being built") || wallText.includes("Ceiling ↓"))) ||
       (prevRow && r.sup != null && prevRow.sup != null && r.sup < prevRow.sup)
     );
     const isWallShiftBull = Boolean(
-      (wallText && (wallText.includes("Floor ↑") || wallText.includes("Resistance broken") || wallText.includes("SUPPORT being built") || wallText.includes("Ceiling ↑"))) ||
+      (wallText && (wallText.includes("RESISTANCE BROKEN") || wallText.includes("Resistance broken") || wallText.includes("Ceiling broken") || wallText.includes("Floor ↑") || wallText.includes("SUPPORT being built") || wallText.includes("Ceiling ↑"))) ||
       (prevRow && r.res != null && prevRow.res != null && r.res > prevRow.res)
     );
 
-    // Pullback to Supply
-    const isBearRegime = pe_ce_day_cr < -0.3 || (r.pcr ?? 1) < 1.15 || r.lv?.[1] === "bear" ||
-      (sessionHigh - spot > 100 && (r.read[0].includes("Rally sold") || r.read[0].includes("Call writing") || (r.lv && r.lv[0].includes("RESISTANCE")) || r.pro?.[1] === "bear"));
+    // Institutional Writer Regime: Strictly defined by Today's Cumulative Net PE-CE & 15m Impulse (never by lagging Total PCR)
+    const isBullRegime = (pe_ce_day_cr >= 0.25 || impulse15mL >= 25.0) && pe_ce_day_cr >= -0.20;
+    const isBearRegime = (pe_ce_day_cr <= -0.25 || impulse15mL <= -25.0) && pe_ce_day_cr <= 0.20;
+
+    // Pullback to Supply (Bearish setup: only valid in genuine Bear regime, never when writers + impulse are strongly bullish)
     const bounceFromLow = spot - swingLow30m;
     const isPullbackToSupply = isBearRegime && bounceFromLow >= 18 && bounceFromLow <= 65 &&
+      pe_ce_delta_l < 5.0 && impulse15mL <= 10.0 &&
       (call_delta_l > 0 || r.read[0].includes("Rally sold") || r.read[0].includes("Call writing") || (r.pro && r.pro[0] && r.pro[0].includes("rally being sold")) || r.read[1] === "bear" || r.pro?.[1] === "bear");
 
-    // Pullback to Demand
-    const isBullRegime = pe_ce_day_cr > 0.3 || (r.pcr ?? 1) > 1.25 || r.lv?.[1] === "bull";
+    // Pullback to Demand (Bullish setup: only valid in genuine Bull regime, never when writers + impulse are strongly bearish)
     const dipFromHigh = swingHigh30m - spot;
     const isPullbackToDemand = isBullRegime && dipFromHigh >= 18 && dipFromHigh <= 65 &&
+      pe_ce_delta_l > -5.0 && impulse15mL >= -10.0 &&
       (put_delta_l > 0 || r.read[0].includes("Dip defended") || r.read[0].includes("Put writing") || r.read[1] === "bull");
 
-    // Short Covering Reversal
+    // Short Covering Reversal (Deep oversold bounce with Call covering)
     const isShortCoveringReversal = Boolean(
       (sessionHigh - spot >= 160) &&
       (call_delta_l <= -5 || r.read[0].includes("Short covering")) &&
@@ -215,6 +221,12 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       stageBadge = "AFTER CLOSE";
       actionText = "🕒 AFTER CLOSE — IGNORE (Market Settled)";
       actionTone = "skip";
+    } else if (r.ts >= "15:10") {
+      stage = 0;
+      stageBadge = "🏁 EOD SETTLEMENT";
+      actionTone = "skip";
+      const biasLabel = pe_ce_day_cr > 0.3 ? `BULLISH (+${pe_ce_day_cr.toFixed(2)}Cr)` : pe_ce_day_cr < -0.3 ? `BEARISH (${pe_ce_day_cr.toFixed(2)}Cr)` : "NEUTRAL";
+      actionText = `🏁 EOD CLOSING WINDOW (15:10+ IST) — Book Intraday Profits / Trail SL → ${Math.round(spot - 25)} · Next-Day Bias: ${biasLabel} (No Fresh Entries)`;
     } else if (r.ts < "09:30") {
       stage = 0;
       stageBadge = "WARM-UP";
@@ -224,79 +236,131 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       stage = 5;
       stageBadge = "💰 BOOK / REVERSAL";
       actionTone = "bull";
-      dynamicSl = Math.round(swingLow30m - 12);
+      riskPts = Math.min(Math.max(Math.round(spot - swingLow30m + 12), 15), 35);
+      dynamicSl = Math.round(spot - riskPts);
       if (r.ts < "15:00") {
         actionText = `💰 BOOK PE PROFITS · ⚡ SCALP ${atmStrike} CE ON SHORT COVERING (SL ${dynamicSl})`;
       } else {
         actionText = `💰 EXIT PE / BOOK PROFITS (Call Writers Covering · Bounce +${Math.round(spot - swingLow30m)}pts)`;
       }
-    } else if (isPullbackToSupply) {
+    } else if (isPullbackToSupply && pe_ce_day_cr < 1.0) {
       stage = 2;
       stageBadge = "🎯 PULLBACK SELL";
       actionTone = "bear";
-      dynamicSl = Math.round(swingHigh30m + 15);
-      riskPts = Math.max(15, Math.round(dynamicSl - spot));
-      const target = Math.round(swingLow30m - 30);
-      actionText = `🎯 PULLBACK SELL: BUY ${atmStrike} PE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${target})`;
-    } else if (isPullbackToDemand) {
+      const rawRisk = swingHigh30m - spot + 12;
+      riskPts = Math.min(Math.max(Math.round(rawRisk), 15), 35);
+      dynamicSl = Math.round(spot + riskPts);
+      const target = Math.round(spot - Math.max(spot - swingLow30m + 20, Math.round(riskPts * 1.8)));
+      if (swingHigh30m - spot > 75) {
+        stage = 4;
+        stageBadge = "🛡️ HOLD PE";
+        actionText = `🛡️ HOLD PE · TRAIL SL → ${dynamicSl} (Extended −${Math.round(swingHigh30m - spot)}p from 30m High — Wait Pullback to Add)`;
+      } else {
+        actionText = `🎯 PULLBACK SELL: BUY ${atmStrike} PE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${target})`;
+      }
+    } else if (isPullbackToDemand && pe_ce_day_cr > -1.0) {
       stage = 2;
       stageBadge = "🎯 DIP BUY CE";
       actionTone = "bull";
-      dynamicSl = Math.round(swingLow30m - 15);
-      riskPts = Math.max(15, Math.round(spot - dynamicSl));
-      const target = Math.round(swingHigh30m + 30);
-      actionText = `🎯 DIP BUY: BUY ${atmStrike} CE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${target})`;
-    } else if (isZeroFlipBear || isWallShiftBear || (r.lv?.[2] === "break_dn" && r.pro?.[2]?.includes("●"))) {
+      const rawRisk = spot - swingLow30m + 12;
+      riskPts = Math.min(Math.max(Math.round(rawRisk), 15), 35);
+      dynamicSl = Math.round(spot - riskPts);
+      const target = Math.round(spot + Math.max(swingHigh30m - spot + 20, Math.round(riskPts * 1.8)));
+      if (spot - swingLow30m > 75) {
+        stage = 4;
+        stageBadge = "🛡️ HOLD CE";
+        actionText = `🛡️ HOLD CE · TRAIL SL → ${dynamicSl} (Extended +${Math.round(spot - swingLow30m)}p from 30m Low — Wait Shallow Dip to Add)`;
+      } else {
+        actionText = `🎯 DIP BUY: BUY ${atmStrike} CE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${target})`;
+      }
+    } else if ((isZeroFlipBear || isWallShiftBear || (r.lv?.[2] === "break_dn" && r.pro?.[2]?.includes("●"))) && pe_ce_delta_l <= 5.0 && pe_ce_day_cr <= 0.5) {
       stage = 1;
+      const rawRisk = swingHigh30m - spot + 12;
+      riskPts = Math.min(Math.max(Math.round(rawRisk), 15), 35);
+      dynamicSl = Math.round(spot + riskPts);
       if (spotChange15m < -85) {
         stageBadge = "⏳ WAIT PULLBACK";
         actionTone = "warn";
-        const pbTgt = Math.round(spot + 45);
+        const pbTgt = Math.round(spot + 35);
         actionText = `⏳ BREAKDOWN EXTENDED (−${Math.abs(spotChange15m).toFixed(0)}pts in 15m) — WAIT PULLBACK TO ~${pbTgt}`;
       } else {
-        stageBadge = "🎯 SNIPER BREAKOUT";
+        stageBadge = "🎯 SNIPER BREAKDOWN";
         actionTone = "bear";
-        dynamicSl = Math.round(swingHigh30m + 15);
-        riskPts = Math.max(15, Math.round(dynamicSl - spot));
-        actionText = `🎯 SNIPER BREAKOUT: BUY ${atmStrike} PE · SL ${dynamicSl} (${riskPts}pt risk)`;
+        actionText = `🎯 SNIPER BREAKDOWN: BUY ${atmStrike} PE · SL ${dynamicSl} (${riskPts}pt risk)`;
       }
-    } else if (isZeroFlipBull || isWallShiftBull || (r.lv?.[2] === "break_up" && r.pro?.[2]?.includes("●"))) {
+    } else if ((isZeroFlipBull || isWallShiftBull || (r.lv?.[2] === "break_up" && r.pro?.[2]?.includes("●"))) && pe_ce_delta_l >= -5.0 && pe_ce_day_cr >= -0.5) {
       stage = 1;
+      const rawRisk = spot - swingLow30m + 12;
+      riskPts = Math.min(Math.max(Math.round(rawRisk), 15), 35);
+      dynamicSl = Math.round(spot - riskPts);
       if (spotChange15m > 85) {
         stageBadge = "⏳ WAIT DIP";
         actionTone = "warn";
-        const dipTgt = Math.round(spot - 45);
+        const dipTgt = Math.round(spot - 35);
         actionText = `⏳ RALLY EXTENDED (+${spotChange15m.toFixed(0)}pts in 15m) — WAIT DIP TO ~${dipTgt}`;
       } else {
         stageBadge = "🎯 SNIPER BREAKOUT";
         actionTone = "bull";
-        dynamicSl = Math.round(swingLow30m - 15);
-        actionText = `🎯 SNIPER BREAKOUT: BUY ${atmStrike} CE · SL ${dynamicSl}`;
+        actionText = `🎯 SNIPER BREAKOUT: BUY ${atmStrike} CE · SL ${dynamicSl} (${riskPts}pt risk)`;
       }
     } else if (Math.abs(pe_ce_delta_l) >= 20 && (r.pro?.[2] === "●●" || r.pro?.[2] === "●●●" || r.act?.[0]?.includes("BUY"))) {
       stage = 3;
-      if (pe_ce_delta_l < 0) {
-        stageBadge = "🔥 ADD PE";
-        actionTone = "bear";
-        dynamicSl = Math.round(swingHigh30m + 12);
-        actionText = `🔥 SCALE-IN / ADD PE: Shock ${pe_ce_delta_l.toFixed(1)}L · Trail SL ${dynamicSl}`;
+      if (pe_ce_delta_l > 0) {
+        // Positive shock: Put writing surge or Call short-covering squeeze
+        if (isBearRegime && pe_ce_day_cr < -0.3) {
+          // Genuinely bearish day: This is a counter-trend bounce
+          stageBadge = "⚠️ SHOCK";
+          actionTone = "warn";
+          riskPts = Math.min(Math.max(Math.round(swingHigh30m - spot + 12), 15), 35);
+          dynamicSl = Math.round(spot + riskPts);
+          actionText = `⚠️ COUNTER-TREND SHORT COVERING SHOCK (+${pe_ce_delta_l.toFixed(1)}L) — Tighten PE Trail SL to ${dynamicSl}; wait for bearish interval resumption before adding PE`;
+        } else {
+          // Bullish or neutral day: This is WITH-TREND ACCELERATION!
+          stageBadge = "🔥 ADD CE";
+          actionTone = "bull";
+          riskPts = Math.min(Math.max(Math.round(spot - swingLow30m + 12), 15), 35);
+          dynamicSl = Math.round(spot - riskPts);
+          if (spot - swingLow30m > 75) {
+            actionText = `🔥 BULLISH SQUEEZE CONTINUATION (+${pe_ce_delta_l.toFixed(1)}L) — 🛡️ HOLD CE · RAISE TRAIL SL → ${dynamicSl} (Buy Next Dip)`;
+          } else {
+            actionText = `🔥 BULLISH WRITER SURGE / SHORT-COVERING IGNITION (+${pe_ce_delta_l.toFixed(1)}L) — SCALE-IN / HOLD CE · Trail SL ${dynamicSl}`;
+          }
+        }
       } else {
-        stageBadge = "🔥 ADD CE";
-        actionTone = "bull";
-        dynamicSl = Math.round(swingLow30m - 12);
-        actionText = `🔥 SCALE-IN / ADD CE: Shock +${pe_ce_delta_l.toFixed(1)}L · Trail SL ${dynamicSl}`;
+        // Negative shock: Call writing surge or Put long-unwinding flush
+        if (isBullRegime && pe_ce_day_cr > 0.3) {
+          // Genuinely bullish day: This is a counter-trend dip
+          stageBadge = "⚠️ SHOCK";
+          actionTone = "warn";
+          riskPts = Math.min(Math.max(Math.round(spot - swingLow30m + 12), 15), 35);
+          dynamicSl = Math.round(spot - riskPts);
+          actionText = `⚠️ COUNTER-TREND LONG UNWINDING SHOCK (${pe_ce_delta_l.toFixed(1)}L) — Tighten CE Trail SL to ${dynamicSl}; wait for bullish interval resumption before adding CE`;
+        } else {
+          // Bearish or neutral day: This is WITH-TREND BREAKDOWN!
+          stageBadge = "🔥 ADD PE";
+          actionTone = "bear";
+          riskPts = Math.min(Math.max(Math.round(swingHigh30m - spot + 12), 15), 35);
+          dynamicSl = Math.round(spot + riskPts);
+          if (swingHigh30m - spot > 75) {
+            actionText = `🩸 BEARISH BREAKDOWN CONTINUATION (${pe_ce_delta_l.toFixed(1)}L) — 🛡️ HOLD PE · LOWER TRAIL SL → ${dynamicSl} (Sell Next Rally)`;
+          } else {
+            actionText = `🩸 BEARISH BREAKDOWN IMPULSE (${pe_ce_delta_l.toFixed(1)}L) — SCALE-IN / HOLD PE · Trail SL ${dynamicSl}`;
+          }
+        }
       }
     } else if (sessionHigh - spot > 100 && pe_ce_day_cr < -0.8) {
       stage = 4;
       stageBadge = "🛡️ HOLD PE";
       actionTone = "bear";
-      const trailSl = Math.round(swingHigh30m + 12);
+      const trailSl = Math.round(spot + Math.min(Math.max(swingHigh30m - spot + 12, 15), 35));
+      dynamicSl = trailSl;
       actionText = `🛡️ HOLD PE · TRAIL SL → ${trailSl} (DO NOT CHASE)`;
     } else if (spot - sessionLow > 100 && pe_ce_day_cr > 0.8) {
       stage = 4;
       stageBadge = "🛡️ HOLD CE";
       actionTone = "bull";
-      const trailSl = Math.round(swingLow30m - 12);
+      const trailSl = Math.round(spot - Math.min(Math.max(spot - swingLow30m + 12, 15), 35));
+      dynamicSl = trailSl;
       actionText = `🛡️ HOLD CE · TRAIL SL → ${trailSl} (DO NOT CHASE)`;
     } else {
       stage = 0;
@@ -463,6 +527,19 @@ export function findTop5Pivots(smartRowsNewestFirst: SmartRow[]): PivotChip[] {
 }
 
 export function PeceTable({ tick }: { tick: number }) {
+  const [tableMode, setTableMode] = useState<"matrix" | "classic">(() => {
+    try {
+      const saved = localStorage.getItem("ict_pece_view_mode");
+      if (saved === "matrix" || saved === "classic") return saved;
+    } catch { /* ignore */ }
+    return "matrix";
+  });
+
+  const switchTableMode = (m: "matrix" | "classic") => {
+    setTableMode(m);
+    try { localStorage.setItem("ict_pece_view_mode", m); } catch { /* ignore */ }
+  };
+
   const [tf, setTf] = useState("3m");
   const [mode, setMode] = useState("auto");
   const [n, setN] = useState(10);
@@ -584,8 +661,57 @@ export function PeceTable({ tick }: { tick: number }) {
   const burstCount = smartRows.filter((r) => (showAfterClose || r.ts < "15:30") && r.isHighConviction).length;
   const marketRowsCount = smartRows.filter((r) => showAfterClose || r.ts < "15:30").length;
 
+  if (tableMode === "matrix") {
+    return (
+      <div className="flex h-full flex-col bg-[#070c17]">
+        <div className="flex items-center justify-between border-b border-ink-800 bg-[#091122] px-3 py-1 text-[11px]">
+          <div className="flex items-center gap-2">
+            <span className="font-extrabold text-emerald-400">⚡ PE-CE Institutional Matrix 2.0</span>
+            <span className="text-slate-500 hidden sm:inline">• Center-Zero Diverging Bars • Auto ATM Scope • Futures Buildup</span>
+          </div>
+          <div className="flex rounded bg-[#0b1324] p-0.5 border border-slate-700">
+            <button
+              onClick={() => switchTableMode("matrix")}
+              className="rounded px-2.5 py-0.5 font-extrabold text-[11px] bg-emerald-500/30 text-emerald-200 border border-emerald-500/60 shadow-sm"
+            >
+              ⚡ Matrix 2.0 (Diverging Bars)
+            </button>
+            <button
+              onClick={() => switchTableMode("classic")}
+              className="rounded px-2.5 py-0.5 font-bold text-[11px] text-slate-400 hover:text-slate-200"
+            >
+              Classic PE-CE Table
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 min-h-0">
+          <PeceMatrix tick={tick} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col bg-[#0b1220]">
+      <div className="flex items-center justify-between border-b border-ink-800 bg-[#091122] px-3 py-1 text-[11px]">
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-slate-400">Classic PE − CE OI Table</span>
+        </div>
+        <div className="flex rounded bg-[#0b1324] p-0.5 border border-slate-700">
+          <button
+            onClick={() => switchTableMode("matrix")}
+            className="rounded px-2.5 py-0.5 font-bold text-[11px] text-slate-400 hover:text-emerald-300"
+          >
+            ⚡ Matrix 2.0 (Diverging Bars)
+          </button>
+          <button
+            onClick={() => switchTableMode("classic")}
+            className="rounded px-2.5 py-0.5 font-extrabold text-[11px] bg-slate-700 text-slate-200 border border-slate-600 shadow-sm"
+          >
+            Classic PE-CE Table
+          </button>
+        </div>
+      </div>
       <Controls
         tf={tf}
         setTf={setTf}
@@ -1235,6 +1361,65 @@ export function playOiBeep(kind: OiAlertKind) {
 }
 
 export function WritersFlow({ tick }: { tick: number }) {
+  const [suiteView, setSuiteView] = useState<"smart_oi" | "trinity" | "classic">(() => {
+    try {
+      const v = localStorage.getItem("ict_writers_view_mode") as "smart_oi" | "trinity" | "classic";
+      if (v === "smart_oi" || v === "trinity" || v === "classic") return v;
+    } catch { return "smart_oi"; }
+    return "smart_oi";
+  });
+  const setViewMode = (m: "smart_oi" | "trinity" | "classic") => {
+    setSuiteView(m);
+    try { localStorage.setItem("ict_writers_view_mode", m); } catch { /* ignore */ }
+  };
+
+  // Shared Dual Expiry & Futures Contract State across all 3 suites
+  const [optExpiry, setOptExpiry] = useState<"cur" | "next" | "both">(() => {
+    try {
+      const saved = localStorage.getItem("ict_writers_opt_expiry") as "cur" | "next" | "both";
+      if (saved === "cur" || saved === "next" || saved === "both") return saved;
+    } catch { /* ignore */ }
+    return "both";
+  });
+
+  const [futContract, setFutContract] = useState<"near" | "next" | "combined">(() => {
+    try {
+      const saved = localStorage.getItem("ict_writers_fut_contract") as "near" | "next" | "combined";
+      if (saved === "near" || saved === "next" || saved === "combined") return saved;
+    } catch { /* ignore */ }
+    return "combined";
+  });
+
+  const [expMeta, setExpMeta] = useState<{
+    cur_date: string;
+    next_date: string;
+    cur_expiry?: string;
+    next_expiry?: string;
+    near_fut: string;
+    next_fut: string;
+    rollover_pct: number;
+    fut_src?: string;
+  } | null>(null);
+
+  const handleOptExpiryChange = (exp: "cur" | "next" | "both") => {
+    setOptExpiry(exp);
+    try { localStorage.setItem("ict_writers_opt_expiry", exp); } catch { /* ignore */ }
+  };
+
+  const handleFutContractChange = (fut: "near" | "next" | "combined") => {
+    setFutContract(fut);
+    try { localStorage.setItem("ict_writers_fut_contract", fut); } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    fetch(`/api/chain/trinity?opt_expiry=${optExpiry}&fut_contract=${futContract}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.expiries_meta) setExpMeta(j.expiries_meta);
+      })
+      .catch(() => {});
+  }, [optExpiry, futContract, tick]);
+
   const [tf, setTf] = useState("1m"); const [mode, setMode] = useState("all"); const [n, setN] = useState(10);
   const [d, busy] = useOc<Flow>("flow", `tf=${tf}&mode=${mode}&n=${n}`, tick);
   const box = useRef<HTMLDivElement>(null);
@@ -1357,43 +1542,91 @@ export function WritersFlow({ tick }: { tick: number }) {
   };
 
   useEffect(() => {
-    if (!box.current) return;
-    const ch = createChart(box.current, {
-      autoSize: true, layout: { background: { type: ColorType.Solid, color: "#0b1220" }, textColor: "#cbd5e1", fontSize: 12, fontFamily: "Inter, system-ui" },
-      grid: { vertLines: { color: "#131d33" }, horzLines: { color: "#131d33" } },
-      rightPriceScale: { borderColor: "#1d2a45" }, leftPriceScale: { visible: true, borderColor: "#1d2a45" },
-      timeScale: { borderColor: "#1d2a45", timeVisible: true, secondsVisible: false, rightOffset: 4 },
-      localization: { locale: "en-IN" },
-    });
-    const uw = ch.addSeries(HistogramSeries, { priceScaleId: "uw", color: "rgba(212,175,55,0.16)", priceLineVisible: false, lastValueVisible: false });
-    ch.priceScale("uw").applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
-    const futFmt = { type: "custom" as const, formatter: (p: number) => p.toLocaleString("en-IN", { maximumFractionDigits: 1 }) };
-    const futC = ch.addSeries(CandlestickSeries, { priceScaleId: "left", upColor: "#10b981", downColor: "#ef4444", borderVisible: false,
-      wickUpColor: "#10b981", wickDownColor: "#ef4444", priceFormat: futFmt, priceLineVisible: false });
-    const fut = ch.addSeries(LineSeries, { priceScaleId: "left", color: "rgba(226,232,240,0.7)", lineWidth: 1, lineStyle: LineStyle.Dotted,
-      title: "NIFTY fut", priceFormat: futFmt });
-    const ce = ch.addSeries(LineSeries, { color: "#22c55e", lineWidth: 2, title: "Call", priceFormat: { type: "custom", formatter: (p: number) => inr(p) } });
-    const pe = ch.addSeries(LineSeries, { color: "#ef4444", lineWidth: 2, title: "Put", priceFormat: { type: "custom", formatter: (p: number) => inr(p) } });
-    const fl = ch.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, title: "flow Δput−Δcall",
-      priceFormat: { type: "custom", formatter: (p: number) => inr(p) },
-      // clip the scale at ~the 95th-percentile bar so one huge opening print doesn't flatten every other bar
-      autoscaleInfoProvider: () => (flCap.current ? { priceRange: { minValue: -flCap.current, maxValue: flCap.current } } : null) }, 1);
-    const flma = ch.addSeries(LineSeries, { color: "rgba(226,232,240,0.55)", lineWidth: 1, title: "flow avg", priceLineVisible: false, lastValueVisible: false }, 1);
-    const band = new FlowBand(); pe.attachPrimitive(band);          // shaded gap between Call & Put OI
-    const bal = ch.addSeries(LineSeries, { color: "#e8c35a", lineWidth: 2, title: "balance 30m", priceLineVisible: false }, 2);
-    bal.createPriceLine({ price: 0.25, color: "rgba(34,197,94,0.6)", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "▲ PUT writers lead = bullish" });
-    bal.createPriceLine({ price: -0.25, color: "rgba(239,68,68,0.6)", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "▼ CALL writers lead = bearish" });
-    bal.createPriceLine({ price: 0, color: "rgba(148,163,184,0.25)", lineWidth: 1, axisLabelVisible: false, title: "" });
-    try { const P = ch.panes(); P[0]?.setStretchFactor(4); P[1]?.setStretchFactor(2); P[2]?.setStretchFactor(1.6); } catch { /* */ }
-    S.current = {
-      ch, fut, futC, ce, pe, uw, fl, flma, bal, band,
-      mk: createSeriesMarkers(fut, []),
-      mk2: createSeriesMarkers(fl, []),
-      mkCe: createSeriesMarkers(ce, []),
-      mkPe: createSeriesMarkers(pe, []),
+    if (suiteView !== "classic" || !box.current) return;
+    if (!S.current) {
+      const ch = createChart(box.current, {
+        autoSize: true, layout: { background: { type: ColorType.Solid, color: "#0b1220" }, textColor: "#cbd5e1", fontSize: 12, fontFamily: "Inter, system-ui" },
+        grid: { vertLines: { color: "#131d33" }, horzLines: { color: "#131d33" } },
+        rightPriceScale: { borderColor: "#1d2a45" }, leftPriceScale: { visible: true, borderColor: "#1d2a45" },
+        timeScale: {
+          borderColor: "#1d2a45",
+          timeVisible: true,
+          secondsVisible: false,
+          fixLeftEdge: true,
+          fixRightEdge: true,
+          rightOffset: 2,
+          lockVisibleTimeRangeOnResize: true,
+        },
+        localization: { locale: "en-IN" },
+      });
+      const uw = ch.addSeries(HistogramSeries, { priceScaleId: "uw", color: "rgba(212,175,55,0.16)", priceLineVisible: false, lastValueVisible: false });
+      ch.priceScale("uw").applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
+      const futFmt = { type: "custom" as const, formatter: (p: number) => p.toLocaleString("en-IN", { maximumFractionDigits: 1 }) };
+      const futC = ch.addSeries(CandlestickSeries, { priceScaleId: "left", upColor: "#10b981", downColor: "#ef4444", borderVisible: false,
+        wickUpColor: "#10b981", wickDownColor: "#ef4444", priceFormat: futFmt, priceLineVisible: false });
+      const fut = ch.addSeries(LineSeries, { priceScaleId: "left", color: "rgba(226,232,240,0.7)", lineWidth: 1, lineStyle: LineStyle.Dotted,
+        title: "NIFTY fut", priceFormat: futFmt });
+      const ce = ch.addSeries(LineSeries, { color: "#ef4444", lineWidth: 2, title: "Call Resistance", priceFormat: { type: "custom", formatter: (p: number) => inr(p) } });
+      const pe = ch.addSeries(LineSeries, { color: "#10b981", lineWidth: 2, title: "Put Support", priceFormat: { type: "custom", formatter: (p: number) => inr(p) } });
+      const fl = ch.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, title: "flow Δput−Δcall",
+        priceFormat: { type: "custom", formatter: (p: number) => inr(p) },
+        // clip the scale at ~the 95th-percentile bar so one huge opening print doesn't flatten every other bar
+        autoscaleInfoProvider: () => (flCap.current ? { priceRange: { minValue: -flCap.current, maxValue: flCap.current } } : null) }, 1);
+      const flma = ch.addSeries(LineSeries, { color: "rgba(226,232,240,0.55)", lineWidth: 1, title: "flow avg", priceLineVisible: false, lastValueVisible: false }, 1);
+      const band = new FlowBand(); pe.attachPrimitive(band);          // shaded gap between Call & Put OI
+      const bal = ch.addSeries(LineSeries, { color: "#e8c35a", lineWidth: 2, title: "balance 30m", priceLineVisible: false }, 2);
+      bal.createPriceLine({ price: 0.25, color: "rgba(34,197,94,0.6)", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "▲ PUT writers lead = bullish" });
+      bal.createPriceLine({ price: -0.25, color: "rgba(239,68,68,0.6)", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: "▼ CALL writers lead = bearish" });
+      bal.createPriceLine({ price: 0, color: "rgba(148,163,184,0.25)", lineWidth: 1, axisLabelVisible: false, title: "" });
+      try { const P = ch.panes(); P[0]?.setStretchFactor(4); P[1]?.setStretchFactor(2); P[2]?.setStretchFactor(1.6); } catch { /* */ }
+      S.current = {
+        ch, fut, futC, ce, pe, uw, fl, flma, bal, band,
+        mk: createSeriesMarkers(fut, []),
+        mk2: createSeriesMarkers(fl, []),
+        mkCe: createSeriesMarkers(ce, []),
+        mkPe: createSeriesMarkers(pe, []),
+      };
+    }
+
+    const timer = setTimeout(() => {
+      if (box.current && S.current) {
+        const w = box.current.clientWidth;
+        const h = box.current.clientHeight;
+        if (w > 0 && h > 0) {
+          S.current.ch.applyOptions({ width: w, height: h });
+          S.current.ch.timeScale().fitContent();
+        }
+      }
+    }, 50);
+
+    return () => clearTimeout(timer);
+  }, [suiteView]);
+
+  // Clean unmount of chart
+  useEffect(() => {
+    return () => {
+      if (S.current) {
+        S.current.ch.remove();
+        S.current = null;
+      }
     };
-    return () => { ch.remove(); S.current = null; };
   }, []);
+
+  // ResizeObserver for Classic Chart container
+  useEffect(() => {
+    if (!box.current || suiteView !== "classic") return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0 && S.current) {
+          S.current.ch.applyOptions({ width, height });
+          S.current.ch.timeScale().fitContent();
+        }
+      }
+    });
+    ro.observe(box.current);
+    return () => ro.disconnect();
+  }, [suiteView]);
 
   // fetch the real future candles (adapts to the active expiry automatically) and overlay them on the left scale
   useEffect(() => {
@@ -1417,12 +1650,20 @@ export function WritersFlow({ tick }: { tick: number }) {
     s.futC.setData(data);
     s.futC.applyOptions({ visible: showFut });
     s.fut.applyOptions({ visible: !showFut });                 // candles replace the dotted line (one price view at a time)
-  }, [futCandles, showFut, d, tf]);
+  }, [futCandles, showFut, d, tf, suiteView]);
 
   useEffect(() => { first.current = true; }, [tf, mode, n]);
   useEffect(() => {
-    const s = S.current; const P = d?.points;
-    if (!s || !P || !d?.ok) return;
+    const s = S.current; const rawP = d?.points;
+    if (!s || !rawP || !d?.ok) return;
+    const isMarketHours = (t: number) => {
+      const dt = new Date(t * 1000);
+      const utcMins = dt.getUTCHours() * 60 + dt.getUTCMinutes();
+      const istMins = (utcMins + 330) % 1440;
+      return istMins >= 555 && istMins <= 935; // 09:15 (555m) to 15:35 (935m)
+    };
+    const P = rawP.filter((p) => isMarketHours(p.t));
+    if (!P.length) return;
     const T = (p: Pt) => p.t as UTCTimestamp;
     s.fut.setData(P.filter((p) => p.fut != null).map((p) => ({ time: T(p), value: p.fut as number })));
     s.ce.setData(P.filter((p) => p.ce != null).map((p) => ({ time: T(p), value: p.ce as number })));
@@ -1477,8 +1718,8 @@ export function WritersFlow({ tick }: { tick: number }) {
     const cellCr = isExpiryOrReplay ? 1.0 : (ySpan > 15 ? 2.5 : (ySpan > 6 ? 1.0 : 0.5));
     // Expiry sessions: 0.30 x C_cell (down from 0.40) to catch sudden option writing spikes
     const jumpThreshold = (isExpiryOrReplay ? 0.30 : 0.40) * cellCr;
-    // Expiry sessions / replay: minimum 3-bar cooldown (down from 15 bars)
-    const minCooldownBars = isExpiryOrReplay ? 3 : 15;
+    // Enforce minimum horizontal spacing between markers on the same line to prevent clutter (10 bars in de-cluttered all mode, 6 bars otherwise)
+    const minCooldownBars = markerMode === "all" ? 10 : 6;
     // Sensitivity: catch any slope where |θ| >= 25° during high-velocity expiry hours/replay
     const effAngleThreshold = isExpiryOrReplay ? Math.min(angleThreshold, 25) : angleThreshold;
 
@@ -1505,15 +1746,18 @@ export function WritersFlow({ tick }: { tick: number }) {
         const pPrev = P[i - 1];
         if (p.ce == null || pPrev.ce == null || p.pe == null || pPrev.pe == null) continue;
 
+        // Never fire jump or steep markers on opening reset bars (09:15-09:18) where overnight resets
+        const isSessionStart = i <= 3 || p.hm === "09:15" || p.hm === "09:16" || p.hm === "09:17" || p.hm === "09:18";
+
         const callCr = p.ce / 1e7;
         const prevCallCr = pPrev.ce / 1e7;
         const putCr = p.pe / 1e7;
         const prevPutCr = pPrev.pe / 1e7;
 
-        // --- Call (Green Line) Independent Evaluation ---
+        // --- Call (Crimson Red Line - Resistance) Independent Evaluation ---
         let isCeJump = false;
         let dCeJump = 0;
-        if (showJumpMarkers && i >= 3) {
+        if (!isSessionStart && showJumpMarkers && i >= 3) {
           const p3 = P[i - 3];
           if (p3.ce != null) {
             const dCall3 = (p.ce - p3.ce) / 1e7;
@@ -1526,7 +1770,7 @@ export function WritersFlow({ tick }: { tick: number }) {
 
         let isCeSteep = false;
         let ceAngle = 0;
-        if (showSteepMarkers && i >= 5) {
+        if (!isSessionStart && showSteepMarkers && i >= 5) {
           const p5 = P[i - 5];
           if (p5.ce != null) {
             const dCall5 = (p.ce - p5.ce) / 1e7;
@@ -1554,7 +1798,7 @@ export function WritersFlow({ tick }: { tick: number }) {
                 time: p.t as UTCTimestamp,
                 position: isUp ? "aboveBar" : "belowBar",
                 shape: isUp ? "arrowUp" : "arrowDown",
-                color: isUp ? "#4ade80" : "#f59e0b",
+                color: isUp ? "#ef4444" : "#f87171",
                 size: isCeJump && isCeSteep ? 1.2 : 1.0,
                 text: txt,
               });
@@ -1566,7 +1810,7 @@ export function WritersFlow({ tick }: { tick: number }) {
               time: p.t as UTCTimestamp,
               position: isUp ? "aboveBar" : "belowBar",
               shape: isUp ? "arrowUp" : "arrowDown",
-              color: isUp ? "#4ade80" : "#f59e0b",
+              color: isUp ? "#ef4444" : "#f87171",
               size: isCeJump && isCeSteep ? 1.2 : 1.0,
               text: txt,
             });
@@ -1587,7 +1831,7 @@ export function WritersFlow({ tick }: { tick: number }) {
                 time: p.t as UTCTimestamp,
                 position: callCr >= prevCallCr ? "aboveBar" : "belowBar",
                 shape: "square",
-                color: "#22c55e",
+                color: "#ef4444",
                 size: 0.9,
                 text: `🔔 ${callCr >= 0 ? "+" : ""}${bCall}Cr`,
               });
@@ -1595,10 +1839,10 @@ export function WritersFlow({ tick }: { tick: number }) {
           }
         }
 
-        // --- Put (Red Line) Independent Evaluation ---
+        // --- Put (Emerald Green Line - Support) Independent Evaluation ---
         let isPeJump = false;
         let dPeJump = 0;
-        if (showJumpMarkers && i >= 3) {
+        if (!isSessionStart && showJumpMarkers && i >= 3) {
           const p3 = P[i - 3];
           if (p3.pe != null) {
             const dPut3 = (p.pe - p3.pe) / 1e7;
@@ -1611,7 +1855,7 @@ export function WritersFlow({ tick }: { tick: number }) {
 
         let isPeSteep = false;
         let peAngle = 0;
-        if (showSteepMarkers && i >= 5) {
+        if (!isSessionStart && showSteepMarkers && i >= 5) {
           const p5 = P[i - 5];
           if (p5.pe != null) {
             const dPut5 = (p.pe - p5.pe) / 1e7;
@@ -1639,7 +1883,7 @@ export function WritersFlow({ tick }: { tick: number }) {
                 time: p.t as UTCTimestamp,
                 position: isUp ? "aboveBar" : "belowBar",
                 shape: isUp ? "arrowUp" : "arrowDown",
-                color: isUp ? "#f87171" : "#ef4444",
+                color: isUp ? "#10b981" : "#34d399",
                 size: isPeJump && isPeSteep ? 1.2 : 1.0,
                 text: txt,
               });
@@ -1651,7 +1895,7 @@ export function WritersFlow({ tick }: { tick: number }) {
               time: p.t as UTCTimestamp,
               position: isUp ? "aboveBar" : "belowBar",
               shape: isUp ? "arrowUp" : "arrowDown",
-              color: isUp ? "#f87171" : "#ef4444",
+              color: isUp ? "#10b981" : "#34d399",
               size: isPeJump && isPeSteep ? 1.2 : 1.0,
               text: txt,
             });
@@ -1672,7 +1916,7 @@ export function WritersFlow({ tick }: { tick: number }) {
                 time: p.t as UTCTimestamp,
                 position: putCr >= prevPutCr ? "aboveBar" : "belowBar",
                 shape: "square",
-                color: "#ef4444",
+                color: "#10b981",
                 size: 0.9,
                 text: `🔔 ${putCr >= 0 ? "+" : ""}${bPut}Cr`,
               });
@@ -1684,7 +1928,12 @@ export function WritersFlow({ tick }: { tick: number }) {
       mkCeList.sort((a, b) => (a.time as number) - (b.time as number));
       mkPeList.sort((a, b) => (a.time as number) - (b.time as number));
 
-      if (markerMode === "latest") {
+      if (markerMode === "all") {
+        const topCe = mkCeList.length > 8 ? [...mkCeList].sort((a, b) => (b.size || 1) - (a.size || 1)).slice(0, 8).sort((a, b) => (a.time as number) - (b.time as number)) : mkCeList;
+        const topPe = mkPeList.length > 8 ? [...mkPeList].sort((a, b) => (b.size || 1) - (a.size || 1)).slice(0, 8).sort((a, b) => (a.time as number) - (b.time as number)) : mkPeList;
+        s.mkCe.setMarkers(topCe);
+        s.mkPe.setMarkers(topPe);
+      } else if (markerMode === "latest") {
         s.mkCe.setMarkers(mkCeList.slice(-2));
         s.mkPe.setMarkers(mkPeList.slice(-2));
       } else {
@@ -1708,15 +1957,15 @@ export function WritersFlow({ tick }: { tick: number }) {
         if (prevCallBucketRef.current !== null && callBucket !== prevCallBucketRef.current) {
           const isUp = callBucket > prevCallBucketRef.current;
           const msg = isUp
-            ? `🔔 CALL OI +1Cr STEP: Green crossed ${lastCallCr.toFixed(2)}Cr`
-            : `🔔 CALL OI -1Cr UNWIND: Green dropped to ${lastCallCr.toFixed(2)}Cr`;
+            ? `🔔 CALL OI +1Cr STEP: Crimson crossed ${lastCallCr.toFixed(2)}Cr`
+            : `🔔 CALL OI -1Cr UNWIND: Crimson dropped to ${lastCallCr.toFixed(2)}Cr`;
           setActiveAlert({ text: msg, kind: "step1cr", ts: Date.now() });
           if (soundOn) playOiBeep("step1cr");
         } else if (prevPutBucketRef.current !== null && putBucket !== prevPutBucketRef.current) {
           const isUp = putBucket > prevPutBucketRef.current;
           const msg = isUp
-            ? `🔔 PUT OI +1Cr STEP: Red crossed ${lastPutCr.toFixed(2)}Cr`
-            : `🔔 PUT OI -1Cr UNWIND: Red dropped to ${lastPutCr.toFixed(2)}Cr`;
+            ? `🔔 PUT OI +1Cr STEP: Emerald crossed ${lastPutCr.toFixed(2)}Cr`
+            : `🔔 PUT OI -1Cr UNWIND: Emerald dropped to ${lastPutCr.toFixed(2)}Cr`;
           setActiveAlert({ text: msg, kind: "step1cr", ts: Date.now() });
           if (soundOn) playOiBeep("step1cr");
         }
@@ -1729,12 +1978,12 @@ export function WritersFlow({ tick }: { tick: number }) {
             const dPut3 = (lastPt.pe - p3.pe) / 1e7;
             if (Math.abs(dCall3) >= jumpThreshold) {
               const pct = (Math.abs(dCall3) / cellCr) * 100;
-              const msg = `⚡ 40% CELL JUMP: Green (Call OI) jumped ${dCall3 > 0 ? "+" : ""}${dCall3.toFixed(2)}Cr (${pct.toFixed(0)}% of grid cell) in 3m!`;
+              const msg = `⚡ 40% CELL JUMP: Crimson (Call OI) jumped ${dCall3 > 0 ? "+" : ""}${dCall3.toFixed(2)}Cr (${pct.toFixed(0)}% of grid cell) in 3m!`;
               setActiveAlert({ text: msg, kind: "jump40", ts: Date.now() });
               if (soundOn) playOiBeep("jump40");
             } else if (Math.abs(dPut3) >= jumpThreshold) {
               const pct = (Math.abs(dPut3) / cellCr) * 100;
-              const msg = `⚡ 40% CELL JUMP: Red (Put OI) jumped ${dPut3 > 0 ? "+" : ""}${dPut3.toFixed(2)}Cr (${pct.toFixed(0)}% of grid cell) in 3m!`;
+              const msg = `⚡ 40% CELL JUMP: Emerald (Put OI) jumped ${dPut3 > 0 ? "+" : ""}${dPut3.toFixed(2)}Cr (${pct.toFixed(0)}% of grid cell) in 3m!`;
               setActiveAlert({ text: msg, kind: "jump40", ts: Date.now() });
               if (soundOn) playOiBeep("jump40");
             }
@@ -1755,8 +2004,8 @@ export function WritersFlow({ tick }: { tick: number }) {
             if (Math.abs(callAngleDeg - putAngleDeg) >= 45 && ((callAngleDeg > 15 && putAngleDeg < -15) || (callAngleDeg < -15 && putAngleDeg > 15))) {
               const isBullScissor = callAngleDeg < 0 && putAngleDeg > 0;
               const msg = isBullScissor
-                ? `✂️ SCISSOR DIVERGENCE: 🟢 BULLISH EXPLOSION (BUY CE) | Green ${callAngleDeg.toFixed(0)}° ▼ / Red +${putAngleDeg.toFixed(0)}° ▲ | Fut ${futDiff >= 0 ? "▲ Confirmed" : "⚠️ Lagging"}`
-                : `✂️ SCISSOR DIVERGENCE: 🔴 BEARISH EXPLOSION (BUY PE) | Green +${callAngleDeg.toFixed(0)}° ▲ / Red ${putAngleDeg.toFixed(0)}° ▼ | Fut ${futDiff <= 0 ? "▼ Confirmed" : "⚠️ Lagging"}`;
+                ? `✂️ SCISSOR DIVERGENCE: 🟢 BULLISH EXPLOSION (BUY CE) | Crimson ${callAngleDeg.toFixed(0)}° ▼ / Emerald +${putAngleDeg.toFixed(0)}° ▲ | Fut ${futDiff >= 0 ? "▲ Confirmed" : "⚠️ Lagging"}`
+                : `✂️ SCISSOR DIVERGENCE: 🔴 BEARISH EXPLOSION (BUY PE) | Crimson +${callAngleDeg.toFixed(0)}° ▲ / Emerald ${putAngleDeg.toFixed(0)}° ▼ | Fut ${futDiff <= 0 ? "▼ Confirmed" : "⚠️ Lagging"}`;
               setActiveAlert({ text: msg, kind: "scissor", ts: Date.now() });
               if (soundOn) playOiBeep("scissor");
             } else if (Math.abs(callAngleDeg) >= angleThreshold || Math.abs(putAngleDeg) >= angleThreshold) {
@@ -1803,8 +2052,11 @@ export function WritersFlow({ tick }: { tick: number }) {
       prevPutBucketRef.current = Math.trunc(lastPutCr);
     }
 
-    if (first.current) { s.ch.timeScale().fitContent(); first.current = false; }
-  }, [d, angleThreshold, soundOn, markerMode, showSteepMarkers, showJumpMarkers, showStepMarkers]);
+    if (first.current || suiteView === "classic") {
+      s.ch.timeScale().fitContent();
+      first.current = false;
+    }
+  }, [d, angleThreshold, soundOn, markerMode, showSteepMarkers, showJumpMarkers, showStepMarkers, suiteView]);
 
   const P = d?.points ?? [];
   const last = P[P.length - 1];
@@ -1839,15 +2091,146 @@ export function WritersFlow({ tick }: { tick: number }) {
   const liveOiGap = Math.abs(lastCallCr - lastPutCr);
   const trendDivNow = detectTrendDivergence(P);
 
+  const switcher = (
+    <div className="flex rounded bg-[#0b1324] p-0.5 border border-slate-700">
+      <button
+        onClick={() => setViewMode("smart_oi")}
+        className={`rounded px-2.5 py-0.5 font-extrabold text-[11px] transition-all ${
+          suiteView === "smart_oi"
+            ? "bg-gold-500/30 text-gold-200 border border-gold-500/60 shadow-sm"
+            : "text-slate-400 hover:text-slate-200"
+        }`}
+        title="Smart OI noise-filtered confluence suite"
+      >
+        ⚡ Smart OI
+      </button>
+      <button
+        onClick={() => setViewMode("trinity")}
+        className={`rounded px-2.5 py-0.5 font-extrabold text-[11px] transition-all ${
+          suiteView === "trinity"
+            ? "bg-sky-500/30 text-sky-200 border border-sky-500/60 shadow-sm"
+            : "text-slate-400 hover:text-slate-200"
+        }`}
+        title="3-Chart institutional PCR & positioning suite"
+      >
+        3-Chart Trinity Suite
+      </button>
+      <button
+        onClick={() => setViewMode("classic")}
+        className={`rounded px-2.5 py-0.5 font-bold text-[11px] transition-all ${
+          suiteView === "classic"
+            ? "bg-slate-700 text-slate-100 border border-slate-600 shadow-sm"
+            : "text-slate-400 hover:text-slate-200"
+        }`}
+        title="Classic Option Writer Flow"
+      >
+        Classic Writer Flow
+      </button>
+    </div>
+  );
+
+  const dualSelectors = (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      {/* Options Expiry Selector */}
+      <div className="flex items-center rounded bg-[#0f172a] p-0.5 border border-slate-800">
+        <span className="text-[10px] uppercase font-bold text-slate-500 px-1">Options:</span>
+        {(["cur", "next", "both"] as const).map((e) => (
+          <button
+            key={e}
+            onClick={() => handleOptExpiryChange(e)}
+            className={`rounded px-2 py-0.5 text-[11px] font-bold transition-all ${
+              optExpiry === e
+                ? "bg-sky-500/30 text-sky-200 border border-sky-500/60 shadow-sm"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {e === "cur"
+              ? `This Wk (${expMeta?.cur_date || "27 Oct"})`
+              : e === "next"
+              ? `Next Wk (${expMeta?.next_date || "03 Nov"})`
+              : "Both"}
+          </button>
+        ))}
+      </div>
+
+      {/* Futures Contract Selector */}
+      <div className="flex items-center rounded bg-[#0f172a] p-0.5 border border-slate-800">
+        <span className="text-[10px] uppercase font-bold text-slate-500 px-1">Futures:</span>
+        {(["near", "next", "combined"] as const).map((f) => (
+          <button
+            key={f}
+            onClick={() => handleFutContractChange(f)}
+            className={`rounded px-2 py-0.5 text-[11px] font-bold transition-all ${
+              futContract === f
+                ? "bg-indigo-500/30 text-indigo-200 border border-indigo-500/60 shadow-sm"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {f === "near"
+              ? (expMeta?.near_fut ? expMeta.near_fut.replace("NIFTY-", "").replace("-FUT", "") + " FUT" : "Oct FUT")
+              : f === "next"
+              ? (expMeta?.next_fut ? expMeta.next_fut.replace("NIFTY-", "").replace("-FUT", "") + " FUT" : "Nov FUT")
+              : `Oct+Nov (${expMeta?.rollover_pct != null ? "Roll " + expMeta.rollover_pct + "%" : "Combined"})`}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-1 min-h-0 flex-col h-full w-full relative" style={{ paddingLeft: '16px' }}>
+      {/* ── View 0: Smart OI Intelligence Suite ── */}
+      <div className={`flex-1 min-h-0 flex-col h-full w-full bg-[#070c17] ${suiteView === "smart_oi" ? "flex" : "hidden"}`}>
+        <SmartOISuite
+          tick={tick}
+          modeToggle={switcher}
+          optExpiry={optExpiry}
+          setOptExpiry={handleOptExpiryChange}
+          futContract={futContract}
+          setFutContract={handleFutContractChange}
+          expMeta={expMeta}
+          onMetaUpdate={setExpMeta}
+        />
+      </div>
+
+      {/* ── View 1: 3-Chart Trinity Suite ── */}
+      <div className={`flex-1 min-h-0 flex-col h-full w-full bg-[#070c17] box-border overflow-x-hidden ${suiteView === "trinity" ? "flex" : "hidden"}`}>
+        <div className="flex items-center justify-between border-b border-ink-800 bg-[#091122] px-4 py-1 text-[11px] shrink-0 box-border w-full" style={{ paddingLeft: '16px' }}>
+          <div className="flex items-center gap-2 pl-2">
+            <span className="font-extrabold text-sky-400">⚡ 3-Chart Institutional PCR & OI Trinity Suite</span>
+            <span className="text-slate-500 hidden sm:inline">• Live PCR • Fresh OI Δ • Cumulative Total OI</span>
+          </div>
+          {switcher}
+        </div>
+        <div className="flex-1 min-h-0 w-full relative box-border overflow-x-hidden px-2">
+          <PcrTrinitySuite
+            tick={tick}
+            optExpiry={optExpiry}
+            setOptExpiry={handleOptExpiryChange}
+            futContract={futContract}
+            setFutContract={handleFutContractChange}
+            expMeta={expMeta}
+            onMetaUpdate={setExpMeta}
+          />
+        </div>
+      </div>
+
+      {/* ── View 2: Classic Option Writer Flow ── */}
+      <div className={`flex-1 min-h-0 flex-col h-full w-full ${suiteView === "classic" ? "flex" : "hidden"}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-800 bg-[#091122] px-3 py-1 text-[11px]">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="font-bold text-slate-400">Classic Option Writer Flow</span>
+          {dualSelectors}
+        </div>
+        {switcher}
+      </div>
       <Controls tf={tf} setTf={setTf} mode={mode} setMode={setMode} n={n} setN={setN} tfs={["1m", "3m", "5m", "15m"]} busy={busy}
-        info={d?.ok ? `${d.day} · expiry ${d.expiry ?? "?"} · ${d.label} · ${d.snapshots} snapshots` : d?.message ?? "loading…"} />
+        info={d?.ok ? `${d.day} · expiry ${optExpiry === "both" ? "Both (" + (expMeta?.cur_date || "27 Oct") + " + " + (expMeta?.next_date || "03 Nov") + ")" : (optExpiry === "next" ? (expMeta?.next_date || "03 Nov") : (expMeta?.cur_date || "27 Oct"))} · NIFTY future ${futContract === "near" ? (expMeta?.near_fut || "Oct FUT") : (futContract === "next" ? (expMeta?.next_fut || "Nov FUT") : "Oct+Nov Combined")} · ${d.snapshots} snapshots` : d?.message ?? "loading…"} />
 
       {/* 📡 Live OI Velocity, Angle & Milestone Telemetry Strip */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-800 bg-[#070c18] px-3 py-1.5 text-[11px]">
         <div className="flex flex-wrap items-center gap-2">
-          {/* Green Call Angle Badge */}
+          {/* Crimson Call Angle Badge */}
           <span
             className={`flex items-center gap-1 rounded px-2 py-0.5 font-bold border transition-colors ${
               Math.abs(liveCallAngle) >= angleThreshold
@@ -1855,12 +2238,12 @@ export function WritersFlow({ tick }: { tick: number }) {
                   ? "bg-rose-950/80 text-rose-300 border-rose-500/70 animate-pulse"
                   : "bg-emerald-950/80 text-emerald-300 border-emerald-500/70 animate-pulse"
                 : liveCallAngle > 0
-                ? "bg-emerald-950/40 text-emerald-400 border-emerald-800/50"
-                : "bg-rose-950/40 text-rose-400 border-rose-800/50"
+                ? "bg-rose-950/40 text-rose-400 border-rose-800/50"
+                : "bg-emerald-950/40 text-emerald-400 border-emerald-800/50"
             }`}
-            title={`Call OI (Green line) 5m slope: ${liveCallAngle.toFixed(1)}°. ${Math.abs(liveCallAngle) >= angleThreshold ? (liveCallAngle > 0 ? "Call writing surge (Bearish resistance)!" : "Call unwinding cliff (Bullish squeeze)!") : "Normal drift."}`}
+            title={`Call OI (Crimson line) 5m slope: ${liveCallAngle.toFixed(1)}°. ${Math.abs(liveCallAngle) >= angleThreshold ? (liveCallAngle > 0 ? "Call writing surge (Bearish resistance)!" : "Call unwinding cliff (Bullish squeeze)!") : "Normal drift."}`}
           >
-            <span>Green (Call OI):</span>
+            <span>Crimson (Call Resistance):</span>
             <span className="font-mono">
               {liveCallAngle >= 0 ? "+" : ""}{liveCallAngle.toFixed(0)}° {liveCallAngle >= 0 ? "▲" : "▼"}
             </span>
@@ -1871,7 +2254,7 @@ export function WritersFlow({ tick }: { tick: number }) {
             )}
           </span>
 
-          {/* Red Put Angle Badge */}
+          {/* Emerald Put Angle Badge */}
           <span
             className={`flex items-center gap-1 rounded px-2 py-0.5 font-bold border transition-colors ${
               Math.abs(livePutAngle) >= angleThreshold
@@ -1879,12 +2262,12 @@ export function WritersFlow({ tick }: { tick: number }) {
                   ? "bg-emerald-950/80 text-emerald-300 border-emerald-500/70 animate-pulse"
                   : "bg-rose-950/80 text-rose-300 border-rose-500/70 animate-pulse"
                 : livePutAngle > 0
-                ? "bg-rose-950/40 text-rose-400 border-rose-800/50"
-                : "bg-emerald-950/40 text-emerald-400 border-emerald-800/50"
+                ? "bg-emerald-950/40 text-emerald-400 border-emerald-800/50"
+                : "bg-rose-950/40 text-rose-400 border-rose-800/50"
             }`}
-            title={`Put OI (Red line) 5m slope: ${livePutAngle.toFixed(1)}°. ${Math.abs(livePutAngle) >= angleThreshold ? (livePutAngle > 0 ? "Put writing surge (Bullish floor)!" : "Put unwinding cliff (Panic liquidation)!") : "Normal drift."}`}
+            title={`Put OI (Emerald line) 5m slope: ${livePutAngle.toFixed(1)}°. ${Math.abs(livePutAngle) >= angleThreshold ? (livePutAngle > 0 ? "Put writing surge (Bullish floor)!" : "Put unwinding cliff (Panic liquidation)!") : "Normal drift."}`}
           >
-            <span>Red (Put OI):</span>
+            <span>Emerald (Put Support):</span>
             <span className="font-mono">
               {livePutAngle >= 0 ? "+" : ""}{livePutAngle.toFixed(0)}° {livePutAngle >= 0 ? "▲" : "▼"}
             </span>
@@ -1926,9 +2309,9 @@ export function WritersFlow({ tick }: { tick: number }) {
           {/* 1Cr Milestone Counter */}
           <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded bg-ink-900 border border-ink-800 text-slate-300">
             <span>1Cr Cross:</span>
-            <span>Call <b className="text-emerald-400">{lastCallCr >= 0 ? "+" : ""}{lastCallCr.toFixed(1)}Cr</b></span>
+            <span>Put <b className="text-emerald-400">{lastPutCr >= 0 ? "+" : ""}{lastPutCr.toFixed(1)}Cr</b></span>
             <span className="text-slate-500">|</span>
-            <span>Put <b className="text-rose-400">{lastPutCr >= 0 ? "+" : ""}{lastPutCr.toFixed(1)}Cr</b></span>
+            <span>Call <b className="text-rose-400">{lastCallCr >= 0 ? "+" : ""}{lastCallCr.toFixed(1)}Cr</b></span>
           </span>
 
           {/* Active OI Gap Counter */}
@@ -2079,17 +2462,27 @@ export function WritersFlow({ tick }: { tick: number }) {
           className={`rounded border px-2 py-0.5 text-[11px] ${showFut ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-200" : "border-ink-700 text-slate-400"}`}>
           {showFut ? "📈 Future candles" : "┈ Future line"}
         </button>
-        <span><span className="text-bull-400">━ Call OI chg</span> · <span className="text-bear-400">━ Put OI chg</span> (since yesterday, right axis) · {showFut ? "real NIFTY-future candles" : "┈ NIFTY future line"} (left axis, adapts to active expiry)</span>
+        <span><span className="text-bear-400">━ Call Resistance (Crimson)</span> · <span className="text-bull-400">━ Put Support (Emerald)</span> (since yesterday, right axis) · {showFut ? "real NIFTY-future candles" : "┈ NIFTY future line"} (left axis, adapts to active expiry)</span>
         <span>middle strip = Δput − Δcall each candle: <span className="text-bull-400">green ▲ = PUT writers added more (support, bullish)</span> · <span className="text-bear-400">red ▼ = CALL writers added more (resistance, bearish)</span> · bright bar + label = unusual (≥ 2.5× normal) · bottom gold line = 30-min balance: above +0.25 bullish, below −0.25 bearish</span>
         {last && <span className="text-slate-300">now: call {inr(last.ce)} · put {inr(last.pe)} · balance {last.bal?.toFixed(2)} · regime <b>{last.conf ?? last.regime}</b></span>}
       </div>
-      <div ref={box} className="min-h-0 flex-1" />
+      <div ref={box} className="min-h-0 flex-1 w-full" style={{ minHeight: "220px" }} />
       {(d?.read || d?.note) && <div className="border-t border-ink-700 px-3 py-1.5 text-[13px] text-slate-200">{clean(`${d?.read ?? ""} ${d?.note ?? ""}`)}</div>}
+      </div>
     </div>
   );
 }
 
 export const WritersChart = WritersFlow;
+export { default as PcrTrinitySuite } from "./PcrTrinitySuite";
+export type { PcrPoint, PcrCheckpoint, PcrTrinityData } from "./PcrTrinitySuite";
+export { default as PeceMatrix } from "./PeceMatrix";
+export type { MatrixRow, PeceMatrixPayload } from "./PeceMatrix";
+export { default as OIMatrixSuite } from "./OIMatrixSuite";
+export { default as StrikeMap2_0 } from "./StrikeMap2.0";
+export type { StrikeData, OIMatrixPayload, OIMatrixSuiteProps } from "./OIMatrixSuite";
+export { default as SmartOISuite } from "./SmartOISuite";
+export type { SmartOIStrike, SmartOICandle, SmartOITimeSeriesPoint, SmartOIPayload } from "./SmartOISuite";
 
 
 // ─────────────────────────────── a card with its own Full view / Normal view ───────────────────────────────

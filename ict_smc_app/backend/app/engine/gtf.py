@@ -118,6 +118,13 @@ class GtfSupplyDemandEngine:
         self.base_min_bars = int(cfg.get("base_min_bars", 1))
         self.base_max_bars = int(cfg.get("base_max_bars", 3))
         self.max_active_zones = int(cfg.get("max_active_zones", 8))
+        self.max_active_supplies = int(cfg.get("max_active_supplies", 6))
+        self.max_active_demands = int(cfg.get("max_active_demands", 6))
+        self.max_broken_zones = int(cfg.get("max_broken_zones", 4))
+        self.massive_leg_out_atr_mult = float(cfg.get("massive_leg_out_atr_mult", 2.0))
+        self.massive_leg_out_base_mult = float(cfg.get("massive_leg_out_base_mult", 2.5))
+        self.relaxed_base_body_ratio = float(cfg.get("relaxed_base_body_ratio", 0.65))
+        self.relaxed_base_max_bars = int(cfg.get("relaxed_base_max_bars", 4))
         self.marking_mode = str(cfg.get("marking_mode", "conservative")).lower()
         self.dynamic_atr_mult = float(cfg.get("dynamic_atr_mult", 0.20))
         self.near_zone_tolerance_pts = float(cfg.get("near_zone_tolerance_pts", 25.0))
@@ -177,17 +184,24 @@ class GtfSupplyDemandEngine:
             body = abs(close[i] - open_p[i])
             c_range = max(high[i] - low[i], 1e-4)
             cur_abr = max(abr[i], 5.0)
+            cur_atr = float(eff_atr[i])
 
             # Boring candle: narrow body relative to ABR or small body ratio
             if body <= cur_abr * self.boring_body_ratio or (body / c_range) <= 0.45:
                 is_boring[i] = True
 
-            # Explosive candle: large body relative to ABR
+            # Explosive candle: large body relative to ABR or directional ATR expansion
             has_vol = True
             if volumes is not None and len(volumes) == n and volumes[i] > 0 and vol_sma[i] > 0:
                 has_vol = volumes[i] >= vol_sma[i] * self.vol_mult
 
-            if body >= cur_abr * self.explosive_body_ratio and has_vol:
+            is_exp = (
+                body >= cur_abr * self.explosive_body_ratio
+                or body >= cur_atr * 1.3
+                or (c_range >= cur_atr * self.massive_leg_out_atr_mult and body / c_range >= 0.40)
+            )
+
+            if is_exp and has_vol:
                 if close[i] > open_p[i]:
                     is_explosive_up[i] = True
                 elif close[i] < open_p[i]:
@@ -200,34 +214,87 @@ class GtfSupplyDemandEngine:
             if not (is_explosive_up[j] or is_explosive_down[j]):
                 continue
 
-            # Look for 1 to base_max_bars boring base candles immediately preceding the explosive move
-            base_count = 0
-            for k in range(1, self.base_max_bars + 1):
+            exp_body = abs(close[j] - open_p[j])
+            exp_range = max(high[j] - low[j], 1e-4)
+            cur_atr = float(eff_atr[j])
+            cur_abr = max(abr[j], 5.0)
+
+            # Check if leg-out departure is massive (>= 2.0x ATR or >= 2.0x ABR or multi-bar departure)
+            is_massive_leg_out = (
+                exp_body >= cur_atr * self.massive_leg_out_atr_mult
+                or exp_range >= cur_atr * self.massive_leg_out_atr_mult
+                or exp_body >= cur_abr * 2.0
+            )
+            if not is_massive_leg_out and j + 1 < n:
+                if is_explosive_down[j] and close[j + 1] < close[j]:
+                    multi_drop = abs(close[j + 1] - open_p[j])
+                    if multi_drop >= cur_atr * self.massive_leg_out_atr_mult:
+                        is_massive_leg_out = True
+                elif is_explosive_up[j] and close[j + 1] > close[j]:
+                    multi_rally = abs(close[j + 1] - open_p[j])
+                    if multi_rally >= cur_atr * self.massive_leg_out_atr_mult:
+                        is_massive_leg_out = True
+
+            # Determine max lookback bars for base candles
+            max_bars_to_check = self.relaxed_base_max_bars if is_massive_leg_out else self.base_max_bars
+            base_indices = []
+
+            for k in range(1, max_bars_to_check + 1):
                 idx = j - k
                 if idx < 0:
                     break
-                if is_boring[idx]:
-                    base_count += 1
+
+                b_body = abs(close[idx] - open_p[idx])
+                b_range = max(high[idx] - low[idx], 1e-4)
+                b_ratio = b_body / b_range
+                idx_abr = max(abr[idx], 5.0)
+
+                # Standard boring check
+                is_std_boring = (b_body <= idx_abr * self.boring_body_ratio) or (b_ratio <= 0.45)
+
+                # Dynamic relaxation on massive leg-out or leg-out >= 2.5x base range
+                is_massive_vs_base = (
+                    exp_body >= b_range * self.massive_leg_out_base_mult
+                    or exp_range >= b_range * self.massive_leg_out_base_mult
+                )
+                allow_relaxation = is_massive_leg_out or is_massive_vs_base
+
+                is_relaxed_boring = (
+                    b_body <= idx_abr * self.boring_body_ratio * 1.35
+                    or b_ratio <= self.relaxed_base_body_ratio
+                )
+
+                if is_std_boring or (allow_relaxation and is_relaxed_boring):
+                    base_indices.insert(0, idx)
                 else:
                     break
 
+            base_count = len(base_indices)
             if base_count < self.base_min_bars:
                 continue
 
-            base_indices = list(range(j - base_count, j))
             base_from_ts = int(ts[base_indices[0]])
             exp_ts = int(ts[j])
-            exp_body = abs(close[j] - open_p[j])
             exp_ratio = exp_body / max(abr[j], 1.0)
-            cur_atr = float(eff_atr[j])
 
-            # Determine pattern: RBR/DBR for Demand, DBD/RBD for Supply
+            # Determine pattern: RBR/DBR for Demand, DBD/RBD for Supply with gap & prior trend handling
             prior_idx = base_indices[0] - 1
-            is_prior_green = prior_idx >= 0 and close[prior_idx] > open_p[prior_idx]
+            if prior_idx >= 0:
+                gap = open_p[base_indices[0]] - close[prior_idx]
+                prior_start = max(0, prior_idx - 2)
+                prior_net = close[prior_idx] - open_p[prior_start]
+                if abs(gap) >= 15.0:
+                    is_prior_rally = gap > 0
+                elif abs(prior_net) >= 5.0:
+                    is_prior_rally = prior_net > 0
+                else:
+                    is_prior_rally = close[prior_idx] >= open_p[prior_idx]
+            else:
+                is_prior_rally = close[0] >= open_p[0]
 
             if is_explosive_up[j]:
                 # DEMAND ZONE
-                pattern = "RBR" if is_prior_green else "DBR"
+                pattern = "RBR" if is_prior_rally else "DBR"
                 highest_body = float(max(max(open_p[idx], close[idx]) for idx in base_indices))
                 lowest_wick = float(min(low[idx] for idx in base_indices))
                 highest_wick = float(max(high[idx] for idx in base_indices))
@@ -249,7 +316,7 @@ class GtfSupplyDemandEngine:
                 z_dir = "bull"
             else:
                 # SUPPLY ZONE
-                pattern = "DBD" if not is_prior_green else "RBD"
+                pattern = "RBD" if is_prior_rally else "DBD"
                 lowest_body = float(min(min(open_p[idx], close[idx]) for idx in base_indices))
                 highest_wick = float(max(high[idx] for idx in base_indices))
                 lowest_wick = float(min(low[idx] for idx in base_indices))
@@ -310,7 +377,7 @@ class GtfSupplyDemandEngine:
             else:
                 score += 0.5
 
-            if exp_ratio >= 2.0:
+            if exp_ratio >= 2.0 or is_massive_leg_out:
                 score += 3.0
             elif exp_ratio >= 1.5:
                 score += 2.0
@@ -328,8 +395,13 @@ class GtfSupplyDemandEngine:
                 score += 0.5
 
             grade = "A+" if score >= 8.5 else "A" if score >= 6.5 else "B"
-            status_tag = f"TESTED ({test_count}x)" if status == "TESTED" else status
-            label = f"GTF {z_type} {pattern} · {status_tag} [{grade}]"
+            if status == "BROKEN":
+                flip_desc = "Flipped to Resistance" if z_type == "DEMAND" else "Flipped to Support"
+                label = f"GTF {z_type} {pattern} · BROKEN [{grade}] — {flip_desc}"
+            elif status == "TESTED":
+                label = f"GTF {z_type} {pattern} · TESTED ({test_count}x) [{grade}]"
+            else:
+                label = f"GTF {z_type} {pattern} · FRESH [{grade}]"
 
             raw_zones.append(GtfZone(
                 id=f"gtf_{z_type.lower()}_{base_from_ts}",
@@ -353,26 +425,56 @@ class GtfSupplyDemandEngine:
                 label=label,
             ))
 
-        # Filter and rank zones: keep fresh and tested zones near price
+        # Filter and rank zones: prioritize proximity to current Spot price combined with grade/freshness
         cur_price = float(close[-1])
         active_zones = [z for z in raw_zones if z.status != "BROKEN"]
         broken_zones = [z for z in raw_zones if z.status == "BROKEN"]
 
-        # Sort active zones by proximity and grade
-        active_zones.sort(key=lambda z: (0 if z.status == "FRESH" else 1, -z.score, abs(z.proximal - cur_price)))
-        selected_active = active_zones[: self.max_active_zones]
-        # Include a few recently broken zones for visual context
-        display_zones = selected_active + broken_zones[-3:]
+        # Separate into active Supply and Demand
+        active_supplies = [z for z in active_zones if z.type == "SUPPLY"]
+        active_demands = [z for z in active_zones if z.type == "DEMAND"]
+
+        # Rank active zones by proximity to current Spot price combined with grade and freshness
+        def supply_rank_key(z: GtfZone) -> float:
+            dist = abs(z.proximal - cur_price)
+            grade_bonus = 100.0 if z.grade == "A+" else 50.0 if z.grade == "A" else 0.0
+            fresh_bonus = 50.0 if z.status == "FRESH" else 0.0
+            return dist - grade_bonus - fresh_bonus
+
+        def demand_rank_key(z: GtfZone) -> float:
+            dist = abs(cur_price - z.proximal)
+            grade_bonus = 100.0 if z.grade == "A+" else 50.0 if z.grade == "A" else 0.0
+            fresh_bonus = 50.0 if z.status == "FRESH" else 0.0
+            return dist - grade_bonus - fresh_bonus
+
+        active_supplies.sort(key=supply_rank_key)
+        active_demands.sort(key=demand_rank_key)
+
+        selected_supplies = active_supplies[: self.max_active_supplies]
+        selected_demands = active_demands[: self.max_active_demands]
+        selected_active = selected_supplies + selected_demands
+
+        # Include recently broken zones for visual flip context (most recent up to max_broken_zones)
+        broken_zones.sort(key=lambda z: z.to_time)
+        selected_broken = broken_zones[-self.max_broken_zones :] if self.max_broken_zones > 0 else []
+
+        display_zones = selected_active + selected_broken
         display_zones.sort(key=lambda z: z.from_time)
 
-        fresh_demands = [z.to_dict() for z in active_zones if z.type == "DEMAND" and z.status == "FRESH"]
-        fresh_supplies = [z.to_dict() for z in active_zones if z.type == "SUPPLY" and z.status == "FRESH"]
+        fresh_demands = [z.to_dict() for z in active_demands if z.status == "FRESH"]
+        fresh_supplies = [z.to_dict() for z in active_supplies if z.status == "FRESH"]
 
-        demands_below = [z for z in active_zones if z.type == "DEMAND" and z.proximal <= cur_price + 10.0]
-        supplies_above = [z for z in active_zones if z.type == "SUPPLY" and z.proximal >= cur_price - 10.0]
+        # Nearest fresh supply and demand to spot for HUD pill
+        # Prefer fresh zones positioned correctly relative to spot (within near_zone_tolerance_pts)
+        supplies_above = [z for z in active_supplies if z.proximal >= cur_price - self.near_zone_tolerance_pts]
+        fresh_supplies_above = [z for z in supplies_above if z.status == "FRESH"]
+        candidate_supplies = fresh_supplies_above if fresh_supplies_above else (supplies_above if supplies_above else active_supplies)
+        nearest_supply = min(candidate_supplies, key=lambda z: abs(z.proximal - cur_price)).to_dict() if candidate_supplies else None
 
-        nearest_demand = min(demands_below, key=lambda z: abs(cur_price - z.proximal)).to_dict() if demands_below else None
-        nearest_supply = min(supplies_above, key=lambda z: abs(z.proximal - cur_price)).to_dict() if supplies_above else None
+        demands_below = [z for z in active_demands if z.proximal <= cur_price + self.near_zone_tolerance_pts]
+        fresh_demands_below = [z for z in demands_below if z.status == "FRESH"]
+        candidate_demands = fresh_demands_below if fresh_demands_below else (demands_below if demands_below else active_demands)
+        nearest_demand = min(candidate_demands, key=lambda z: abs(cur_price - z.proximal)).to_dict() if candidate_demands else None
 
         stats = {
             "total_detected": len(raw_zones),

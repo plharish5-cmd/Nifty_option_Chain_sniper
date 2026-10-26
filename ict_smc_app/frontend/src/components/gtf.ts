@@ -65,7 +65,15 @@ export function detectGtfZones(
   mode: GtfMarkingMode = "conservative",
   boringRatio = 0.60,
   explosiveRatio = 1.50,
-  baseMaxBars = 3
+  baseMaxBars = 3,
+  maxActiveSupplies = 6,
+  maxActiveDemands = 6,
+  maxBrokenZones = 4,
+  massiveLegOutAtrMult = 2.0,
+  massiveLegOutBaseMult = 2.5,
+  relaxedBaseBodyRatio = 0.65,
+  relaxedBaseMaxBars = 4,
+  nearZoneTolerancePts = 25.0
 ): GtfResult {
   const closed = candles.filter((c) => c.closed !== false);
   const n = closed.length;
@@ -114,13 +122,20 @@ export function detectGtfZones(
     const body = Math.abs(closes[i] - opens[i]);
     const cRange = Math.max(highs[i] - lows[i], 1e-4);
     const curAbr = Math.max(abr[i], 5.0);
+    const curAtr = atr[i];
 
     if (body <= curAbr * boringRatio || body / cRange <= 0.45) {
       isBoring[i] = true;
     }
 
     const hasVol = vols[i] === 0 || volSma[i] === 0 || vols[i] >= volSma[i];
-    if (body >= curAbr * explosiveRatio && hasVol) {
+    const isExp = (
+      body >= curAbr * explosiveRatio ||
+      body >= curAtr * 1.3 ||
+      (cRange >= curAtr * massiveLegOutAtrMult && body / cRange >= 0.40)
+    );
+
+    if (isExp && hasVol) {
       if (closes[i] > opens[i]) isExplosiveUp[i] = true;
       else if (closes[i] < opens[i]) isExplosiveDown[i] = true;
     }
@@ -131,27 +146,75 @@ export function detectGtfZones(
   for (let j = 1; j < n; j++) {
     if (!isExplosiveUp[j] && !isExplosiveDown[j]) continue;
 
-    let baseCount = 0;
-    for (let k = 1; k <= baseMaxBars; k++) {
-      const idx = j - k;
-      if (idx < 0) break;
-      if (isBoring[idx]) baseCount++;
-      else break;
+    const expBody = Math.abs(closes[j] - opens[j]);
+    const expRange = Math.max(highs[j] - lows[j], 1e-4);
+    const curAtr = atr[j];
+    const curAbr = Math.max(abr[j], 5.0);
+
+    let isMassiveLegOut = (
+      expBody >= curAtr * massiveLegOutAtrMult ||
+      expRange >= curAtr * massiveLegOutAtrMult ||
+      expBody >= curAbr * 2.0
+    );
+    if (!isMassiveLegOut && j + 1 < n) {
+      if (isExplosiveDown[j] && closes[j + 1] < closes[j]) {
+        const multiDrop = Math.abs(closes[j + 1] - opens[j]);
+        if (multiDrop >= curAtr * massiveLegOutAtrMult) isMassiveLegOut = true;
+      } else if (isExplosiveUp[j] && closes[j + 1] > closes[j]) {
+        const multiRally = Math.abs(closes[j + 1] - opens[j]);
+        if (multiRally >= curAtr * massiveLegOutAtrMult) isMassiveLegOut = true;
+      }
     }
 
-    if (baseCount < 1) continue;
-
+    const maxBarsToCheck = isMassiveLegOut ? relaxedBaseMaxBars : baseMaxBars;
     const baseIndices: number[] = [];
-    for (let k = j - baseCount; k < j; k++) baseIndices.push(k);
+
+    for (let k = 1; k <= maxBarsToCheck; k++) {
+      const idx = j - k;
+      if (idx < 0) break;
+
+      const bBody = Math.abs(closes[idx] - opens[idx]);
+      const bRange = Math.max(highs[idx] - lows[idx], 1e-4);
+      const bRatio = bBody / bRange;
+      const idxAbr = Math.max(abr[idx], 5.0);
+
+      const isStdBoring = (bBody <= idxAbr * boringRatio) || (bRatio <= 0.45);
+      const isMassiveVsBase = (
+        expBody >= bRange * massiveLegOutBaseMult ||
+        expRange >= bRange * massiveLegOutBaseMult
+      );
+      const allowRelaxation = isMassiveLegOut || isMassiveVsBase;
+      const isRelaxedBoring = (
+        bBody <= idxAbr * boringRatio * 1.35 ||
+        bRatio <= relaxedBaseBodyRatio
+      );
+
+      if (isStdBoring || (allowRelaxation && isRelaxedBoring)) {
+        baseIndices.unshift(idx);
+      } else {
+        break;
+      }
+    }
+
+    const baseCount = baseIndices.length;
+    if (baseCount < 1) continue;
 
     const baseFromTs = times[baseIndices[0]];
     const expTs = times[j];
-    const expBody = Math.abs(closes[j] - opens[j]);
     const expRatio = expBody / Math.max(abr[j], 1.0);
-    const curAtr = atr[j];
 
     const priorIdx = baseIndices[0] - 1;
-    const isPriorGreen = priorIdx >= 0 && closes[priorIdx] > opens[priorIdx];
+    let isPriorRally = false;
+    if (priorIdx >= 0) {
+      const gap = opens[baseIndices[0]] - closes[priorIdx];
+      const priorStart = Math.max(0, priorIdx - 2);
+      const priorNet = closes[priorIdx] - opens[priorStart];
+      if (Math.abs(gap) >= 15.0) isPriorRally = gap > 0;
+      else if (Math.abs(priorNet) >= 5.0) isPriorRally = priorNet > 0;
+      else isPriorRally = closes[priorIdx] >= opens[priorIdx];
+    } else {
+      isPriorRally = closes[0] >= opens[0];
+    }
 
     let zType: "DEMAND" | "SUPPLY";
     let zDir: "bull" | "bear";
@@ -162,7 +225,7 @@ export function detectGtfZones(
     if (isExplosiveUp[j]) {
       zType = "DEMAND";
       zDir = "bull";
-      pattern = isPriorGreen ? "RBR" : "DBR";
+      pattern = isPriorRally ? "RBR" : "DBR";
 
       const highestBody = Math.max(...baseIndices.map((idx) => Math.max(opens[idx], closes[idx])));
       const lowestWick = Math.min(...baseIndices.map((idx) => lows[idx]));
@@ -183,7 +246,7 @@ export function detectGtfZones(
     } else {
       zType = "SUPPLY";
       zDir = "bear";
-      pattern = !isPriorGreen ? "DBD" : "RBD";
+      pattern = isPriorRally ? "RBD" : "DBD";
 
       const lowestBody = Math.min(...baseIndices.map((idx) => Math.min(opens[idx], closes[idx])));
       const highestWick = Math.max(...baseIndices.map((idx) => highs[idx]));
@@ -243,7 +306,7 @@ export function detectGtfZones(
     else if (status === "TESTED") score += testCount === 1 ? 2.5 : 1.5;
     else score += 0.5;
 
-    if (expRatio >= 2.0) score += 3.0;
+    if (expRatio >= 2.0 || isMassiveLegOut) score += 3.0;
     else if (expRatio >= 1.5) score += 2.0;
     else score += 1.0;
 
@@ -252,8 +315,15 @@ export function detectGtfZones(
     else score += 1.0;
 
     const grade: "A+" | "A" | "B" = score >= 8.5 ? "A+" : score >= 6.5 ? "A" : "B";
-    const statusLabel = status === "TESTED" ? `TESTED (${testCount}x)` : status;
-    const label = `🏛️ GTF ${zType} ${pattern} · ${statusLabel} [${grade}]`;
+    let label = "";
+    if (status === "BROKEN") {
+      const flipDesc = zType === "DEMAND" ? "Flipped to Resistance" : "Flipped to Support";
+      label = `🏛️ GTF ${zType} ${pattern} · BROKEN [${grade}] — ${flipDesc}`;
+    } else if (status === "TESTED") {
+      label = `🏛️ GTF ${zType} ${pattern} · TESTED (${testCount}x) [${grade}]`;
+    } else {
+      label = `🏛️ GTF ${zType} ${pattern} · FRESH [${grade}]`;
+    }
 
     rawZones.push({
       id: `gtf_${zType.toLowerCase()}_${baseFromTs}`,
@@ -282,25 +352,50 @@ export function detectGtfZones(
   const activeZones = rawZones.filter((z) => z.status !== "BROKEN");
   const brokenZones = rawZones.filter((z) => z.status === "BROKEN");
 
-  activeZones.sort((a, b) => {
-    if (a.status === "FRESH" && b.status !== "FRESH") return -1;
-    if (b.status === "FRESH" && a.status !== "FRESH") return 1;
-    return Math.abs(a.proximal - curPrice) - Math.abs(b.proximal - curPrice);
-  });
+  const activeSupplies = activeZones.filter((z) => z.type === "SUPPLY");
+  const activeDemands = activeZones.filter((z) => z.type === "DEMAND");
 
-  const selected = [...activeZones.slice(0, 8), ...brokenZones.slice(-3)].sort((a, b) => a.from - b.from);
+  const supplyRankKey = (z: GtfZone) => {
+    const dist = Math.abs(z.proximal - curPrice);
+    const gradeBonus = z.grade === "A+" ? 100 : z.grade === "A" ? 50 : 0;
+    const freshBonus = z.status === "FRESH" ? 50 : 0;
+    return dist - gradeBonus - freshBonus;
+  };
 
-  const freshDemands = activeZones.filter((z) => z.type === "DEMAND" && z.status === "FRESH");
-  const freshSupplies = activeZones.filter((z) => z.type === "SUPPLY" && z.status === "FRESH");
+  const demandRankKey = (z: GtfZone) => {
+    const dist = Math.abs(curPrice - z.proximal);
+    const gradeBonus = z.grade === "A+" ? 100 : z.grade === "A" ? 50 : 0;
+    const freshBonus = z.status === "FRESH" ? 50 : 0;
+    return dist - gradeBonus - freshBonus;
+  };
 
-  const demandsBelow = activeZones.filter((z) => z.type === "DEMAND" && z.proximal <= curPrice + 15.0);
-  const suppliesAbove = activeZones.filter((z) => z.type === "SUPPLY" && z.proximal >= curPrice - 15.0);
+  activeSupplies.sort((a, b) => supplyRankKey(a) - supplyRankKey(b));
+  activeDemands.sort((a, b) => demandRankKey(a) - demandRankKey(b));
 
-  const nearestDemand = demandsBelow.length
-    ? demandsBelow.sort((a, b) => Math.abs(curPrice - a.proximal) - Math.abs(curPrice - b.proximal))[0]
+  const selectedSupplies = activeSupplies.slice(0, maxActiveSupplies);
+  const selectedDemands = activeDemands.slice(0, maxActiveDemands);
+  const selectedActive = [...selectedSupplies, ...selectedDemands];
+
+  brokenZones.sort((a, b) => a.to - b.to);
+  const selectedBroken = maxBrokenZones > 0 ? brokenZones.slice(-maxBrokenZones) : [];
+
+  const selected = [...selectedActive, ...selectedBroken].sort((a, b) => a.from - b.from);
+
+  const freshDemands = activeDemands.filter((z) => z.status === "FRESH");
+  const freshSupplies = activeSupplies.filter((z) => z.status === "FRESH");
+
+  const suppliesAbove = activeSupplies.filter((z) => z.proximal >= curPrice - nearZoneTolerancePts);
+  const freshSuppliesAbove = suppliesAbove.filter((z) => z.status === "FRESH");
+  const candidateSupplies = freshSuppliesAbove.length ? freshSuppliesAbove : (suppliesAbove.length ? suppliesAbove : activeSupplies);
+  const nearestSupply = candidateSupplies.length
+    ? [...candidateSupplies].sort((a, b) => Math.abs(a.proximal - curPrice) - Math.abs(b.proximal - curPrice))[0]
     : null;
-  const nearestSupply = suppliesAbove.length
-    ? suppliesAbove.sort((a, b) => Math.abs(a.proximal - curPrice) - Math.abs(b.proximal - curPrice))[0]
+
+  const demandsBelow = activeDemands.filter((z) => z.proximal <= curPrice + nearZoneTolerancePts);
+  const freshDemandsBelow = demandsBelow.filter((z) => z.status === "FRESH");
+  const candidateDemands = freshDemandsBelow.length ? freshDemandsBelow : (demandsBelow.length ? demandsBelow : activeDemands);
+  const nearestDemand = candidateDemands.length
+    ? [...candidateDemands].sort((a, b) => Math.abs(curPrice - a.proximal) - Math.abs(curPrice - b.proximal))[0]
     : null;
 
   return {
@@ -421,8 +516,9 @@ export function getGtfExplanation(zone: GtfZone): GtfExplanation {
     const countStr = zone.testCount > 0 ? `${zone.testCount}x` : "1x";
     statusExplanation = `Status: Tested (${countStr}) — Institutional liquidity partially consumed. Exercise caution; higher risk of breakthrough.`;
   } else {
+    const flipDesc = zone.type === "DEMAND" ? "Resistance" : "Support";
     statusExplanation =
-      "Status: Broken — Zone invalidated by a decisive candle close past distal boundary.";
+      `Status: Broken — Zone invalidated by a decisive candle close past distal boundary. Flipped to ${flipDesc}.`;
   }
 
   return { patternExplanation, statusExplanation };
@@ -475,18 +571,18 @@ export function hitTestGtfZone(
     let xHit = false;
     if (timeToCoordinate && cursorX != null) {
       const x1 = timeToCoordinate(z.from);
-      const x2 = isLive ? null : timeToCoordinate(z.to);
+      const x2 = isLive ? null : (lastCandleTime ? timeToCoordinate(lastCandleTime) : timeToCoordinate(z.to));
       if (x1 != null) {
         // From formation bar minus 15px to right edge or end of zone plus 15px
         xHit = cursorX >= x1 - 15 && (x2 == null || cursorX <= x2 + 15);
       }
     }
     if (!xHit && cursorTime != null) {
-      const zoneEnd = isLive ? (lastCandleTime ? lastCandleTime + 86400 * 30 : 9999999999) : z.to;
+      const zoneEnd = lastCandleTime ? lastCandleTime + 86400 * 30 : 9999999999;
       xHit = cursorTime >= z.from - 600 && cursorTime <= zoneEnd;
     }
-    // For live zones, if cursor is to the right of the formation bar
-    if (!xHit && isLive && cursorX != null && timeToCoordinate) {
+    // If cursor is to the right of the formation bar
+    if (!xHit && cursorX != null && timeToCoordinate) {
       const x1 = timeToCoordinate(z.from);
       if (x1 != null && cursorX >= x1 - 15) {
         xHit = true;

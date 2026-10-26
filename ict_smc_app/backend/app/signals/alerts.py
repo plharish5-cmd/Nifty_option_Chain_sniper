@@ -49,17 +49,27 @@ class Alerts:
                 elif self._today_count() >= int(A["max_per_day"]):
                     grade = "skip"
                     s.reasons.append(f"daily cap {A['max_per_day']} reached")
-            row = {"ts": int(now_epoch()), "key": s.key, "tf": s.tf, "kind": s.setup, "side": s.side, "grade": grade,
-                   "title": s.headline, "body": " → ".join(s.story), "price": s.entry, "payload": json.dumps(s.to_dict())}
+
+            kind = "LIMIT_RETEST_SETUP" if (s.setup == "B" and "DISPLACEMENT" in s.name) else s.setup
+            side = s.side
+            title = s.headline
+            if grade == "skip":
+                # Clear prefix so skipped signals do not look like executable trades in logs
+                reason_str = s.reasons[0] if s.reasons else "skipped"
+                title = f"[SKIPPED] {s.name} ({s.tf}) @ {s.entry:,.1f} · {reason_str}"
+
+            row = {"ts": int(now_epoch()), "key": s.key, "tf": s.tf, "kind": kind, "side": side, "grade": grade,
+                   "title": title, "body": " → ".join(s.story), "price": s.entry,
+                   "payload": json.dumps(dict(s.to_dict(), is_skipped=(grade == "skip")))}
             db.execute("INSERT OR IGNORE INTO alerts (ts,key,tf,kind,side,grade,title,body,price,payload) "
                        "VALUES (:ts,:key,:tf,:kind,:side,:grade,:title,:body,:price,:payload)", row)
             if grade == "trade":
                 self._last[ck] = time.time()
-            out = dict(row, payload=s.to_dict())
+            out = dict(row, payload=dict(s.to_dict(), is_skipped=(grade == "skip")), is_skipped=(grade == "skip"))
             sent.append(out)
             await self.broadcast({"type": "alert", "alert": out})
             if A.get("telegram") and (grade == "trade" or (grade == "info" and A.get("send_info_alerts"))):
-                await telegram(f"{'🟢' if s.side == 'long' else '🔴'} NIFTY {s.headline}\n" + "\n".join(s.story))
+                await telegram(f"{'🟢' if s.side == 'long' else '🔴'} NIFTY {title}\n" + "\n".join(s.story))
         return sent
 
 
@@ -96,7 +106,7 @@ async def telegram(text: str) -> bool:
     return ok
 
 
-def recent(limit: int = 60, grade: Optional[str] = None) -> List[Dict[str, Any]]:
+def recent(limit: int = 500, grade: Optional[str] = None) -> List[Dict[str, Any]]:
     if grade:
         rows = db.query("SELECT * FROM alerts WHERE grade = ? ORDER BY id DESC LIMIT ?", (grade, limit))
     else:

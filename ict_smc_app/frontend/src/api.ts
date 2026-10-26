@@ -597,7 +597,7 @@ export interface GtfView {
 export interface Analysis { pa_advanced?: PaAdvancedView; cct?: CctView; mmxm?: MmxmView; qml?: QmlView; prahaar?: PrahaarView; gtf?: GtfView; volume?: VolumeView; auction?: AuctionView | null; crt?: CrtView; tf: TF; trend: string; atr: number; last_close: number; zones: Zone[]; pools: PoolLine[]; markers: Marker[]; zigzag: { time: number; price: number; label: string }[]; range: RangeInfo | null; session: Session; experimental?: string; instrument?: Inst; proxy?: { enabled: boolean; available: boolean; label: string; message: string }; strike_flow?: Record<string, { instrument: string; available: boolean; message: string }>; delta?: { adapter: string; available: boolean; mock: boolean; message: string; has_levels: boolean } }
 export interface Quote { spot: number | null; prev_close: number | null; chg: number | null; chg_pct: number | null; vix: number | null; vix_chg: number | null; source: string; market_open: boolean; ts: number }
 export interface Signal { ctx?: { tp1?: number; rr1?: number; pair?: string; aplus_tbs?: boolean; [k: string]: unknown }; key: string; setup: "A" | "B" | "C" | "D"; name: string; tf: string; side: "long" | "short"; status: "TRADE" | "SKIP" | "INFO"; time: string; entry: number | null; sl: number | null; tp: number | null; risk: number | null; rr: number | null; target_src: string; reasons: string[]; story: string[]; confidence?: number | null; confluence?: string[]; confidence_parts?: { structure: number; options_context: number | null; flow: number; flow_source: string } | null }
-export interface AlertRow { id: number; ts: number; time: string; grade: "trade" | "skip" | "info" | "rvol"; kind: string; side: string; tf: string; title: string; body: string; price: number | null }
+export interface AlertRow { id: number; ts: number; time: string; grade: "trade" | "skip" | "info" | "rvol" | "mgmt"; kind: string; side: string; tf: string; title: string; body: string; price: number | null }
 export interface Side { ltp: number; chg: number; oi: number; oi_chg: number; oi_chg_pct: number | null; iv: number; vol: number; delta: number; gamma: number; theta: number; vega: number; bid: number; ask: number }
 export interface ChainRow { strike: number; ce: Side; pe: Side }
 export interface Build { strike: number; side: "CE" | "PE"; oi_chg: number; chg: number; ltp: number; kind: string }
@@ -675,7 +675,7 @@ export const api = {
     return j as T;
   },
   dashboard: () => get<Dashboard>("/api/dashboard"),
-  alerts: (limit = 100, grade?: string) => get<{ alerts: AlertRow[] }>(`/api/alerts?limit=${limit}${grade ? `&grade=${grade}` : ""}`),
+  alerts: (limit = 500, grade?: string) => get<{ alerts: AlertRow[] }>(`/api/alerts?limit=${limit}${grade ? `&grade=${grade}` : ""}`),
   postAlert: (a: Partial<AlertRow> & { key?: string; payload?: unknown }) => api.post<{ ok: boolean; key: string }>(`/api/alerts`, a),
   chain: (expiry?: string) => get<Chain>(`/api/chain${expiry ? `?expiry=${expiry}` : ""}`),
   optionTape: (which = "both", band = 6, heat = 0, flow = 0) =>

@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from .. import config
-from ..timeutil import chart_time, hm
+from ..timeutil import chart_time, hm, now_ist, to_ist
 from .primitives import Bars
 
 log = logging.getLogger(__name__)
@@ -123,6 +123,10 @@ class PrahaarSignal:
     macd_hist: float
     fast_ema: float
     slow_ema: float
+    date_str: str = ""
+    dx: Optional[float] = None
+    di_spread: Optional[float] = None
+    is_impulse_active: bool = False
     vix: Optional[float] = None
     vix_ok: bool = True
     vix_reason: str = ""
@@ -130,9 +134,15 @@ class PrahaarSignal:
     reasons: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
+        ist_dt = to_ist(self.time)
+        today_d = now_ist().date()
+        d_str = self.date_str or (f"Today {self.time_str}" if ist_dt.date() == today_d else ist_dt.strftime("%d %b %H:%M"))
+        c_time = self.time if ist_dt.hour >= 8 else chart_time(self.time)
         return {
             "candle_idx": self.candle_idx,
             "time": self.time,
+            "chart_time": c_time,
+            "date_str": d_str,
             "time_str": self.time_str,
             "action": self.action,
             "dir": self.dir,
@@ -144,6 +154,9 @@ class PrahaarSignal:
             "tp": round(self.tp, 2),
             "rr": round(self.rr, 2),
             "adx": round(self.adx, 2),
+            "dx": round(self.dx, 2) if self.dx is not None else None,
+            "di_spread": round(self.di_spread, 2) if self.di_spread is not None else None,
+            "is_impulse_active": self.is_impulse_active,
             "macd": round(self.macd, 2),
             "macd_signal": round(self.macd_signal, 2),
             "macd_hist": round(self.macd_hist, 2),
@@ -171,7 +184,11 @@ class PrahaarEngine:
         self.macd_slow = int(cfg.get("macd_slow", 26))
         self.macd_signal = int(cfg.get("macd_signal", 9))
         self.adx_period = int(cfg.get("adx_period", 14))
-        self.adx_threshold = float(cfg.get("adx_threshold", 22.0))
+        self.adx_threshold = float(cfg.get("adx_threshold", 20.0))
+        self.adx_impulse_threshold = float(cfg.get("adx_impulse_threshold", 18.0))
+        self.adx_impulse_dx_min = float(cfg.get("adx_impulse_dx_min", 25.0))
+        self.adx_impulse_di_spread_min = float(cfg.get("adx_impulse_di_spread_min", 12.0))
+        self.adx_impulse_atr_mult = float(cfg.get("adx_impulse_atr_mult", 1.3))
         self.vix_filter_enabled = bool(cfg.get("vix_filter_enabled", True))
         self.vix_min = float(cfg.get("vix_min", 10.0))
         self.vix_max = float(cfg.get("vix_max", 28.0))
@@ -214,7 +231,16 @@ class PrahaarEngine:
         if isinstance(bars_or_candles, Bars):
             b = bars_or_candles
         elif isinstance(bars_or_candles, list):
-            valid = [c for c in bars_or_candles if c.get("closed", True) is not False]
+            valid = []
+            for c in bars_or_candles:
+                if c.get("closed", True) is False:
+                    continue
+                t = c.get("ts") if "ts" in c else c.get("time")
+                op = c.get("o") if "o" in c else c.get("open", c.get("c", c.get("close")))
+                hi = c.get("h") if "h" in c else c.get("high", c.get("c", c.get("close")))
+                lo = c.get("l") if "l" in c else c.get("low", c.get("c", c.get("close")))
+                cl = c.get("c") if "c" in c else c.get("close")
+                valid.append({"ts": t, "o": op, "h": hi, "l": lo, "c": cl})
             if not valid:
                 return {"available": False, "message": "No valid closed candles"}
             b = Bars.from_rows(valid)
@@ -264,13 +290,36 @@ class PrahaarEngine:
             prev_sig = float(sig_line[i - 1])
             prev_hst = float(macd_hist[i - 1])
             cur_adx = float(adx[i])
+            prev_adx = float(adx[i - 1])
+            adx_slope = cur_adx - prev_adx
             p_di = float(plus_di[i])
             m_di = float(minus_di[i])
+            di_sum = p_di + m_di
+            cur_dx = (100.0 * abs(p_di - m_di) / di_sum) if di_sum > 1e-4 else 0.0
+            di_spread = abs(m_di - p_di)
             cur_atr = max(float(eff_atr[i]), 10.0)
+
+            c_range = float(high[i] - low[i])
+            open_val = float(b.o[i]) if hasattr(b, "o") and len(b.o) > i else c_val
+            c_body = abs(c_val - open_val)
+            expansion_candle = (c_range >= self.adx_impulse_atr_mult * cur_atr) or (c_body >= self.adx_impulse_atr_mult * cur_atr)
 
             # Trend & Momentum conditions
             ema_bull = f_ema > s_ema and c_val >= f_ema
             ema_bear = f_ema < s_ema and c_val <= f_ema
+
+            # Impulse Expansion Qualifying Gate:
+            # 1. adx >= 18.0 AND adx_slope > 0 (ADX actively rising bar-over-bar)
+            impulse_gate_1 = (cur_adx >= self.adx_impulse_threshold) and (adx_slope > 0)
+            # 2. Raw instantaneous Directional Index dx >= 25.0 (or -DI/+DI spread >= 12.0) accompanied by expansion candle
+            impulse_gate_2 = ((cur_dx >= self.adx_impulse_dx_min) or (di_spread >= self.adx_impulse_di_spread_min)) and expansion_candle
+
+            is_impulse_qualified = impulse_gate_1 or impulse_gate_2
+            adx_active = (cur_adx >= self.adx_threshold) or is_impulse_qualified
+
+            # ADX trend directional filter
+            adx_bull = adx_active and p_di >= m_di
+            adx_bear = adx_active and m_di >= p_di
 
             # MACD crossover in recent window (last 3-5 bars) or fresh histogram flip
             recent_cross_bull = False
@@ -285,18 +334,13 @@ class PrahaarEngine:
                 if macd_hist[look] < 0 and macd_hist[look - 1] >= 0:
                     recent_cross_bear = True
 
-            # Also allow momentum expansion when ADX enters trend strength
-            adx_just_trending = cur_adx >= self.adx_threshold and (i == 1 or float(adx[i - 1]) < self.adx_threshold)
+            # Also allow momentum expansion when ADX enters trend strength or impulse expansion qualifies
+            adx_just_trending = (cur_adx >= self.adx_threshold and (i == 1 or float(adx[i - 1]) < self.adx_threshold)) or is_impulse_qualified
             if not recent_cross_bull and m_val > m_sig and m_hst > 0 and (adx_just_trending or (i >= 2 and m_hst > prev_hst)):
                 recent_cross_bull = True
 
             if not recent_cross_bear and m_val < m_sig and m_hst < 0 and (adx_just_trending or (i >= 2 and m_hst < prev_hst)):
                 recent_cross_bear = True
-
-            # ADX trend filter
-            adx_active = cur_adx >= self.adx_threshold
-            adx_bull = adx_active and p_di >= m_di
-            adx_bear = adx_active and m_di >= p_di
 
             is_bull_trigger = ema_bull and recent_cross_bull and adx_bull and vix_ok
             is_bear_trigger = ema_bear and recent_cross_bear and adx_bear and vix_ok
@@ -309,11 +353,21 @@ class PrahaarEngine:
                 rr = (tp - c_val) / max(c_val - sl, 1.0)
                 ts_sec = int(b.ts[i])
                 t_str = hm(ts_sec)
+                ist_dt = to_ist(ts_sec)
+                today_d = now_ist().date()
+                date_str = f"Today {t_str}" if ist_dt.date() == today_d else ist_dt.strftime("%d %b %H:%M")
+                c_time = ts_sec if ist_dt.hour >= 8 else chart_time(ts_sec)
+
+                adx_reason = (
+                    f"ADX Trend Strength Active ({cur_adx:.1f} >= {self.adx_threshold:.0f}, +DI > -DI)"
+                    if cur_adx >= self.adx_threshold
+                    else f"⚡ ADX Impulse Expansion Active (ADX {cur_adx:.1f} [slope {adx_slope:+.2f}], DX {cur_dx:.1f}, Spread {di_spread:.1f} >= {self.adx_impulse_di_spread_min:.0f})"
+                )
 
                 reasons = [
                     f"EMA {self.fast_ema_len} > {self.slow_ema_len} Trend Bullish ({f_ema:.1f} > {s_ema:.1f})",
                     f"MACD Positive Momentum Crossover ({m_val:.2f} > {m_sig:.2f}, Hist {m_hst:+.2f})",
-                    f"ADX Trend Strength Active ({cur_adx:.1f} >= {self.adx_threshold:.0f}, +DI > -DI)",
+                    adx_reason,
                     vix_reason,
                 ]
 
@@ -321,6 +375,7 @@ class PrahaarEngine:
                     candle_idx=i,
                     time=ts_sec,
                     time_str=t_str,
+                    date_str=date_str,
                     action="BUY ATM CALL",
                     dir="bull",
                     strike=atm,
@@ -331,6 +386,9 @@ class PrahaarEngine:
                     tp=tp,
                     rr=rr,
                     adx=cur_adx,
+                    dx=cur_dx,
+                    di_spread=di_spread,
+                    is_impulse_active=is_impulse_qualified,
                     macd=m_val,
                     macd_signal=m_sig,
                     macd_hist=m_hst,
@@ -345,7 +403,7 @@ class PrahaarEngine:
 
                 # Chart marker
                 markers.append({
-                    "time": chart_time(ts_sec),
+                    "time": c_time,
                     "kind": "PRAHAAR_BUY_CE",
                     "dir": "bull",
                     "price": c_val,
@@ -354,9 +412,11 @@ class PrahaarEngine:
                     "text": f"🟢 BUY {atm} CE (Prahaar)",
                     "short": f"🟢 BUY {atm} CE",
                     "at": t_str,
+                    "date_str": date_str,
                     "adx": round(cur_adx, 1),
                     "macd_hist": round(m_hst, 2),
-                    "full": f"Prahaar BUY ATM CALL: {atm} CE @ {c_val:.1f} · SL {sl:.1f} · TP {tp:.1f} (ADX {cur_adx:.1f})",
+                    "is_impulse": is_impulse_qualified,
+                    "full": f"Prahaar BUY ATM CALL: {atm} CE @ {c_val:.1f} · SL {sl:.1f} · TP {tp:.1f} (ADX {cur_adx:.1f}{' ⚡IMPULSE' if is_impulse_qualified else ''})",
                 })
                 last_signal_idx = i
                 last_signal_dir = "bull"
@@ -368,11 +428,21 @@ class PrahaarEngine:
                 rr = (c_val - tp) / max(sl - c_val, 1.0)
                 ts_sec = int(b.ts[i])
                 t_str = hm(ts_sec)
+                ist_dt = to_ist(ts_sec)
+                today_d = now_ist().date()
+                date_str = f"Today {t_str}" if ist_dt.date() == today_d else ist_dt.strftime("%d %b %H:%M")
+                c_time = ts_sec if ist_dt.hour >= 8 else chart_time(ts_sec)
+
+                adx_reason = (
+                    f"ADX Trend Strength Active ({cur_adx:.1f} >= {self.adx_threshold:.0f}, -DI > +DI)"
+                    if cur_adx >= self.adx_threshold
+                    else f"⚡ ADX Impulse Expansion Active (ADX {cur_adx:.1f} [slope {adx_slope:+.2f}], DX {cur_dx:.1f}, Spread {di_spread:.1f} >= {self.adx_impulse_di_spread_min:.0f})"
+                )
 
                 reasons = [
                     f"EMA {self.fast_ema_len} < {self.slow_ema_len} Trend Bearish ({f_ema:.1f} < {s_ema:.1f})",
                     f"MACD Negative Momentum Crossover ({m_val:.2f} < {m_sig:.2f}, Hist {m_hst:+.2f})",
-                    f"ADX Trend Strength Active ({cur_adx:.1f} >= {self.adx_threshold:.0f}, -DI > +DI)",
+                    adx_reason,
                     vix_reason,
                 ]
 
@@ -380,6 +450,7 @@ class PrahaarEngine:
                     candle_idx=i,
                     time=ts_sec,
                     time_str=t_str,
+                    date_str=date_str,
                     action="BUY ATM PUT",
                     dir="bear",
                     strike=atm,
@@ -390,6 +461,9 @@ class PrahaarEngine:
                     tp=tp,
                     rr=rr,
                     adx=cur_adx,
+                    dx=cur_dx,
+                    di_spread=di_spread,
+                    is_impulse_active=is_impulse_qualified,
                     macd=m_val,
                     macd_signal=m_sig,
                     macd_hist=m_hst,
@@ -404,7 +478,7 @@ class PrahaarEngine:
 
                 # Chart marker
                 markers.append({
-                    "time": chart_time(ts_sec),
+                    "time": c_time,
                     "kind": "PRAHAAR_BUY_PE",
                     "dir": "bear",
                     "price": c_val,
@@ -413,12 +487,17 @@ class PrahaarEngine:
                     "text": f"🔴 BUY {atm} PE (Prahaar)",
                     "short": f"🔴 BUY {atm} PE",
                     "at": t_str,
+                    "date_str": date_str,
                     "adx": round(cur_adx, 1),
                     "macd_hist": round(m_hst, 2),
-                    "full": f"Prahaar BUY ATM PUT: {atm} PE @ {c_val:.1f} · SL {sl:.1f} · TP {tp:.1f} (ADX {cur_adx:.1f})",
+                    "is_impulse": is_impulse_qualified,
+                    "full": f"Prahaar BUY ATM PUT: {atm} PE @ {c_val:.1f} · SL {sl:.1f} · TP {tp:.1f} (ADX {cur_adx:.1f}{' ⚡IMPULSE' if is_impulse_qualified else ''})",
                 })
                 last_signal_idx = i
                 last_signal_dir = "bear"
+
+        # Sort signals strictly by full Unix timestamp (descending)
+        signals.sort(key=lambda s: int(s.time), reverse=True)
 
         # Latest bar diagnostic state
         last_c = float(close[-1])
@@ -430,12 +509,26 @@ class PrahaarEngine:
         last_h = float(macd_hist[-1])
         prev_h = float(macd_hist[-2]) if n >= 2 else last_h
         last_adx = float(adx[-1])
+        prev_adx = float(adx[-2]) if n >= 2 else last_adx
+        last_adx_slope = last_adx - prev_adx
         last_p_di = float(plus_di[-1])
         last_m_di = float(minus_di[-1])
+        last_di_sum = last_p_di + last_m_di
+        last_dx = (100.0 * abs(last_p_di - last_m_di) / last_di_sum) if last_di_sum > 1e-4 else 0.0
+        last_di_spread = abs(last_m_di - last_p_di)
+        last_c_range = float(high[-1] - low[-1])
+        last_open_val = float(b.o[-1]) if hasattr(b, "o") and len(b.o) > 0 else last_c
+        last_c_body = abs(last_c - last_open_val)
+        last_atr = max(float(eff_atr[-1]), 10.0)
+        last_expansion_candle = (last_c_range >= self.adx_impulse_atr_mult * last_atr) or (last_c_body >= self.adx_impulse_atr_mult * last_atr)
+
+        last_impulse_1 = (last_adx >= self.adx_impulse_threshold) and (last_adx_slope > 0)
+        last_impulse_2 = ((last_dx >= self.adx_impulse_dx_min) or (last_di_spread >= self.adx_impulse_di_spread_min)) and last_expansion_candle
+        last_is_impulse_active = last_impulse_1 or last_impulse_2
 
         trend = "bullish" if last_f_ema > last_s_ema else "bearish" if last_f_ema < last_s_ema else "neutral"
         momentum = "bullish" if last_m > last_sig else "bearish" if last_m < last_sig else "neutral"
-        adx_trending = last_adx >= self.adx_threshold
+        adx_trending = (last_adx >= self.adx_threshold) or last_is_impulse_active
 
         current_verdict = "NEUTRAL"
         if trend == "bullish" and momentum == "bullish" and adx_trending and last_p_di > last_m_di and vix_ok:
@@ -455,6 +548,7 @@ class PrahaarEngine:
             "fast_ema_len": self.fast_ema_len,
             "slow_ema_len": self.slow_ema_len,
             "adx_threshold": self.adx_threshold,
+            "adx_impulse_threshold": self.adx_impulse_threshold,
             "latest_state": {
                 "close": round(last_c, 2),
                 "atm_strike": last_atm,
@@ -467,7 +561,11 @@ class PrahaarEngine:
                 "macd_slope": round(last_h - prev_h, 3),
                 "macd_momentum": momentum,
                 "adx": round(last_adx, 2),
+                "adx_slope": round(last_adx_slope, 2),
                 "adx_trending": adx_trending,
+                "is_impulse_active": last_is_impulse_active,
+                "dx": round(last_dx, 2),
+                "di_spread": round(last_di_spread, 2),
                 "plus_di": round(last_p_di, 2),
                 "minus_di": round(last_m_di, 2),
                 "vix": round(vix, 2) if vix is not None else None,

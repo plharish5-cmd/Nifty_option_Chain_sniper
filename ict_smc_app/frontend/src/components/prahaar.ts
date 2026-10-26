@@ -14,6 +14,10 @@ export interface PrahaarConfig {
   macdSignal?: number;
   adxPeriod?: number;
   adxThreshold?: number;
+  adxImpulseThreshold?: number;
+  adxImpulseDxMin?: number;
+  adxImpulseDiSpreadMin?: number;
+  adxImpulseAtrMult?: number;
   vixFilterEnabled?: boolean;
   vixMin?: number;
   vixMax?: number;
@@ -27,6 +31,7 @@ export interface PrahaarSignal {
   time: number;
   candleIdx: number;
   timeStr: string;
+  dateStr?: string;
   action: "BUY ATM CALL" | "BUY ATM PUT";
   dir: "bull" | "bear";
   strike: number;
@@ -37,6 +42,9 @@ export interface PrahaarSignal {
   tp: number;
   rr: number;
   adx: number;
+  dx?: number;
+  diSpread?: number;
+  isImpulseActive?: boolean;
   macd: number;
   macdSignal: number;
   macdHist: number;
@@ -62,7 +70,11 @@ export interface PrahaarLatestState {
   macdSlope: number;
   macdMomentum: "bullish" | "bearish" | "neutral";
   adx: number;
+  adxSlope: number;
   adxTrending: boolean;
+  isImpulseActive: boolean;
+  dx: number;
+  diSpread: number;
   plusDi: number;
   minusDi: number;
   vix: number | null;
@@ -215,7 +227,11 @@ export function computePrahaar(
     macdSlow: customCfg?.macdSlow ?? 26,
     macdSignal: customCfg?.macdSignal ?? 9,
     adxPeriod: customCfg?.adxPeriod ?? 14,
-    adxThreshold: customCfg?.adxThreshold ?? 22.0,
+    adxThreshold: customCfg?.adxThreshold ?? 20.0,
+    adxImpulseThreshold: customCfg?.adxImpulseThreshold ?? 18.0,
+    adxImpulseDxMin: customCfg?.adxImpulseDxMin ?? 25.0,
+    adxImpulseDiSpreadMin: customCfg?.adxImpulseDiSpreadMin ?? 12.0,
+    adxImpulseAtrMult: customCfg?.adxImpulseAtrMult ?? 1.3,
     vixFilterEnabled: customCfg?.vixFilterEnabled ?? true,
     vixMin: customCfg?.vixMin ?? 10.0,
     vixMax: customCfg?.vixMax ?? 28.0,
@@ -240,6 +256,21 @@ export function computePrahaar(
   const { macd, signal, hist } = computeMacd(closes, config.macdFast, config.macdSlow, config.macdSignal);
   const { adx, plusDi, minusDi } = computeAdx(highs, lows, closes, config.adxPeriod);
 
+  // ATR 14
+  const effAtr = new Array<number>(n);
+  const tr = new Array<number>(n);
+  tr[0] = highs[0] - lows[0];
+  for (let k = 1; k < n; k++) {
+    const pc = closes[k - 1];
+    tr[k] = Math.max(highs[k] - lows[k], Math.abs(highs[k] - pc), Math.abs(lows[k] - pc));
+  }
+  for (let k = 0; k < n; k++) {
+    let sumTr = 0;
+    const start = Math.max(0, k - 13);
+    for (let j = start; j <= k; j++) sumTr += tr[j];
+    effAtr[k] = Math.max(10, sumTr / (k - start + 1));
+  }
+
   const vixVerdict = checkVixContext(vix, vixChg, {
     enabled: config.vixFilterEnabled,
     min: config.vixMin,
@@ -261,11 +292,30 @@ export function computePrahaar(
     const hVal = hist[i];
     const prevH = hist[i - 1];
     const curAdx = adx[i];
+    const prevAdx = adx[i - 1];
+    const adxSlope = curAdx - prevAdx;
     const pDi = plusDi[i];
     const mDi = minusDi[i];
+    const diSum = pDi + mDi;
+    const curDx = diSum > 1e-4 ? (100 * Math.abs(pDi - mDi)) / diSum : 0;
+    const diSpread = Math.abs(mDi - pDi);
+    const curAtr = effAtr[i];
+
+    const cRange = highs[i] - lows[i];
+    const cBody = Math.abs(c - cBar.open);
+    const expansionCandle = cRange >= config.adxImpulseAtrMult * curAtr || cBody >= config.adxImpulseAtrMult * curAtr;
 
     const emaBull = fEma > sEma && c >= fEma;
     const emaBear = fEma < sEma && c <= fEma;
+
+    // Impulse Expansion Qualifying Gate
+    const impulseGate1 = curAdx >= config.adxImpulseThreshold && adxSlope > 0;
+    const impulseGate2 = (curDx >= config.adxImpulseDxMin || diSpread >= config.adxImpulseDiSpreadMin) && expansionCandle;
+    const isImpulseQualified = impulseGate1 || impulseGate2;
+
+    const adxActive = curAdx >= config.adxThreshold || isImpulseQualified;
+    const adxBull = adxActive && pDi >= mDi;
+    const adxBear = adxActive && mDi >= pDi;
 
     // MACD crossover in last 4 bars or histogram expanding
     let macdCrossBull = false;
@@ -277,7 +327,7 @@ export function computePrahaar(
       if (hist[k] < 0 && hist[k - 1] >= 0) macdCrossBear = true;
     }
 
-    const adxJustTrending = curAdx >= config.adxThreshold && (i === 1 || adx[i - 1] < config.adxThreshold);
+    const adxJustTrending = (curAdx >= config.adxThreshold && (i === 1 || adx[i - 1] < config.adxThreshold)) || isImpulseQualified;
     if (!macdCrossBull && mVal > sVal && hVal > 0 && (adxJustTrending || hVal > prevH)) {
       macdCrossBull = true;
     }
@@ -285,20 +335,24 @@ export function computePrahaar(
       macdCrossBear = true;
     }
 
-    const adxActive = curAdx >= config.adxThreshold;
-    const adxBull = adxActive && pDi >= mDi;
-    const adxBear = adxActive && mDi >= pDi;
-
     const isBull = emaBull && macdCrossBull && adxBull && vixVerdict.ok;
     const isBear = emaBear && macdCrossBear && adxBear && vixVerdict.ok;
 
     if (isBull && (i - lastSignalIdx >= 3 || lastSignalDir !== "bull")) {
       const strike = roundAtmStrike(c, config.strikeStep);
-      const estAtr = Math.max(12, highs[i] - lows[i]);
+      const estAtr = curAtr;
       const sl = c - config.slAtrMult * estAtr;
       const tp = c + config.tpAtrMult * estAtr;
       const rr = (tp - c) / Math.max(c - sl, 1);
-      const tStr = new Date((cBar.time + 19800) * 1000).toISOString().slice(11, 16);
+      const d = new Date(cBar.time * 1000);
+      const tStr = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+      const lastBar = closed[n - 1];
+      const lastD = new Date(lastBar.time * 1000);
+      const isToday = d.getUTCFullYear() === lastD.getUTCFullYear() &&
+                      d.getUTCMonth() === lastD.getUTCMonth() &&
+                      d.getUTCDate() === lastD.getUTCDate();
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const dateStr = isToday ? `Today ${tStr}` : `${d.getUTCDate()} ${months[d.getUTCMonth()]} ${tStr}`;
 
       // Confluence Check for A+ Master Sniper Elevation
       const peWalls = walls.filter((w) => w.side === "PE");
@@ -306,7 +360,7 @@ export function computePrahaar(
       const peDist = nearestPe ? Math.abs(nearestPe.p - c) : 999;
       const isNearPe = nearestPe != null && peDist <= 30;
 
-      const recentDiv = cvdDivs.slice(-4).reverse().find((d) => Math.abs(d.time - cBar.time) <= 900) ?? null;
+      const recentDiv = cvdDivs.slice(-4).reverse().find((d2) => Math.abs(d2.time - cBar.time) <= 900) ?? null;
       const latestFp = fpBars.find((f) => Math.abs(f.time - cBar.time) <= 300);
       const isCvdBull = recentDiv?.type === "BULLISH_ABSORPTION" || (latestFp != null && latestFp.delta > 10000);
 
@@ -315,10 +369,15 @@ export function computePrahaar(
         ? `🎯 A+ MASTER SNIPER: BUY ${strike} CE (Prahaar + PE Wall ${nearestPe?.p} Support Bounce + Bullish CVD Absorption)`
         : undefined;
 
+      const adxReason = curAdx >= config.adxThreshold
+        ? `ADX Trend Strength (${curAdx.toFixed(1)} >= ${config.adxThreshold})`
+        : `⚡ ADX Impulse Active (${curAdx.toFixed(1)} [slope ${adxSlope > 0 ? "+" : ""}${adxSlope.toFixed(2)}], DX ${curDx.toFixed(1)})`;
+
       signals.push({
         time: cBar.time,
         candleIdx: i,
         timeStr: tStr,
+        dateStr,
         action: "BUY ATM CALL",
         dir: "bull",
         strike,
@@ -329,6 +388,9 @@ export function computePrahaar(
         tp,
         rr,
         adx: curAdx,
+        dx: curDx,
+        diSpread,
+        isImpulseActive: isImpulseQualified,
         macd: mVal,
         macdSignal: sVal,
         macdHist: hVal,
@@ -342,7 +404,7 @@ export function computePrahaar(
         reasons: [
           `EMA ${config.fastEmaLen} > ${config.slowEmaLen} Bullish Trend (${fEma.toFixed(1)} > ${sEma.toFixed(1)})`,
           `MACD Positive Momentum (${mVal.toFixed(2)} > ${sVal.toFixed(2)}, Hist ${hVal > 0 ? "+" : ""}${hVal.toFixed(2)})`,
-          `ADX Trend Strength (${curAdx.toFixed(1)} >= ${config.adxThreshold})`,
+          adxReason,
           vixVerdict.reason,
         ],
       });
@@ -350,11 +412,19 @@ export function computePrahaar(
       lastSignalDir = "bull";
     } else if (isBear && (i - lastSignalIdx >= 3 || lastSignalDir !== "bear")) {
       const strike = roundAtmStrike(c, config.strikeStep);
-      const estAtr = Math.max(12, highs[i] - lows[i]);
+      const estAtr = curAtr;
       const sl = c + config.slAtrMult * estAtr;
       const tp = c - config.tpAtrMult * estAtr;
       const rr = (c - tp) / Math.max(sl - c, 1);
-      const tStr = new Date((cBar.time + 19800) * 1000).toISOString().slice(11, 16);
+      const d = new Date(cBar.time * 1000);
+      const tStr = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+      const lastBar = closed[n - 1];
+      const lastD = new Date(lastBar.time * 1000);
+      const isToday = d.getUTCFullYear() === lastD.getUTCFullYear() &&
+                      d.getUTCMonth() === lastD.getUTCMonth() &&
+                      d.getUTCDate() === lastD.getUTCDate();
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const dateStr = isToday ? `Today ${tStr}` : `${d.getUTCDate()} ${months[d.getUTCMonth()]} ${tStr}`;
 
       // Confluence Check for A+ Master Sniper Elevation
       const ceWalls = walls.filter((w) => w.side === "CE");
@@ -362,7 +432,7 @@ export function computePrahaar(
       const ceDist = nearestCe ? Math.abs(nearestCe.p - c) : 999;
       const isNearCe = nearestCe != null && ceDist <= 30;
 
-      const recentDiv = cvdDivs.slice(-4).reverse().find((d) => Math.abs(d.time - cBar.time) <= 900) ?? null;
+      const recentDiv = cvdDivs.slice(-4).reverse().find((d2) => Math.abs(d2.time - cBar.time) <= 900) ?? null;
       const latestFp = fpBars.find((f) => Math.abs(f.time - cBar.time) <= 300);
       const isCvdBear = recentDiv?.type === "BEARISH_DISTRIBUTION" || (latestFp != null && latestFp.delta < -10000);
 
@@ -371,10 +441,15 @@ export function computePrahaar(
         ? `🎯 A+ MASTER SNIPER: BUY ${strike} PE (Prahaar + CE Wall ${nearestCe?.p} Rejection + Bearish CVD Distribution)`
         : undefined;
 
+      const adxReason = curAdx >= config.adxThreshold
+        ? `ADX Trend Strength (${curAdx.toFixed(1)} >= ${config.adxThreshold})`
+        : `⚡ ADX Impulse Active (${curAdx.toFixed(1)} [slope ${adxSlope > 0 ? "+" : ""}${adxSlope.toFixed(2)}], DX ${curDx.toFixed(1)})`;
+
       signals.push({
         time: cBar.time,
         candleIdx: i,
         timeStr: tStr,
+        dateStr,
         action: "BUY ATM PUT",
         dir: "bear",
         strike,
@@ -385,6 +460,9 @@ export function computePrahaar(
         tp,
         rr,
         adx: curAdx,
+        dx: curDx,
+        diSpread,
+        isImpulseActive: isImpulseQualified,
         macd: mVal,
         macdSignal: sVal,
         macdHist: hVal,
@@ -398,7 +476,7 @@ export function computePrahaar(
         reasons: [
           `EMA ${config.fastEmaLen} < ${config.slowEmaLen} Bearish Trend (${fEma.toFixed(1)} < ${sEma.toFixed(1)})`,
           `MACD Negative Momentum (${mVal.toFixed(2)} < ${sVal.toFixed(2)}, Hist ${hVal.toFixed(2)})`,
-          `ADX Trend Strength (${curAdx.toFixed(1)} >= ${config.adxThreshold})`,
+          adxReason,
           vixVerdict.reason,
         ],
       });
@@ -406,6 +484,9 @@ export function computePrahaar(
       lastSignalDir = "bear";
     }
   }
+
+  // Sort signals strictly by full Unix timestamp (descending)
+  signals.sort((a, b) => Number(b.time) - Number(a.time));
 
   // Diagnostic state for the latest closed candle
   const lastC = closes[n - 1];
@@ -417,12 +498,25 @@ export function computePrahaar(
   const lastH = hist[n - 1];
   const prevH = n >= 2 ? hist[n - 2] : lastH;
   const lastAdx = adx[n - 1];
+  const prevAdx = n >= 2 ? adx[n - 2] : lastAdx;
+  const lastAdxSlope = lastAdx - prevAdx;
   const lastPdi = plusDi[n - 1];
   const lastMdi = minusDi[n - 1];
+  const lastDiSum = lastPdi + lastMdi;
+  const lastDx = lastDiSum > 1e-4 ? (100 * Math.abs(lastPdi - lastMdi)) / lastDiSum : 0;
+  const lastDiSpread = Math.abs(lastMdi - lastPdi);
+  const lastAtr = effAtr[n - 1];
+  const lastCRange = highs[n - 1] - lows[n - 1];
+  const lastCBody = Math.abs(lastC - closed[n - 1].open);
+  const lastExpansion = lastCRange >= config.adxImpulseAtrMult * lastAtr || lastCBody >= config.adxImpulseAtrMult * lastAtr;
+
+  const lastImpulse1 = lastAdx >= config.adxImpulseThreshold && lastAdxSlope > 0;
+  const lastImpulse2 = (lastDx >= config.adxImpulseDxMin || lastDiSpread >= config.adxImpulseDiSpreadMin) && lastExpansion;
+  const lastIsImpulseActive = lastImpulse1 || lastImpulse2;
 
   const trend: "bullish" | "bearish" | "neutral" = lastF > lastS ? "bullish" : lastF < lastS ? "bearish" : "neutral";
   const momentum: "bullish" | "bearish" | "neutral" = lastM > lastSig ? "bullish" : lastM < lastSig ? "bearish" : "neutral";
-  const adxTrending = lastAdx >= config.adxThreshold;
+  const adxTrending = lastAdx >= config.adxThreshold || lastIsImpulseActive;
 
   let currentVerdict: "BUY ATM CALL" | "BUY ATM PUT" | "NEUTRAL" = "NEUTRAL";
   if (trend === "bullish" && momentum === "bullish" && adxTrending && lastPdi > lastMdi && vixVerdict.ok) {
@@ -467,7 +561,11 @@ export function computePrahaar(
     macdSlope: lastH - prevH,
     macdMomentum: momentum,
     adx: lastAdx,
+    adxSlope: lastAdxSlope,
     adxTrending,
+    isImpulseActive: lastIsImpulseActive,
+    dx: lastDx,
+    diSpread: lastDiSpread,
     plusDi: lastPdi,
     minusDi: lastMdi,
     vix: vix ?? null,

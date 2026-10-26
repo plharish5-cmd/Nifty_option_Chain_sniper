@@ -59,14 +59,15 @@ const safeStr = (v: unknown): string => (v == null ? "" : String(v));
 function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
   const [data, setData] = useState<ExtendedAlertRow[]>(Array.isArray(propAlerts) ? (propAlerts as ExtendedAlertRow[]) : []);
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState<"all" | "aplus" | "buy" | "sell" | "rvol" | "bias" | "rjb" | "abs" | "wick">("all");
+  const [filter, setFilter] = useState<"all" | "entries" | "mgmt" | "aplus" | "buy" | "sell" | "rvol" | "bias" | "rjb" | "abs" | "wick">("all");
   const [search, setSearch] = useState("");
+  const [showSkipped, setShowSkipped] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const fetchAlerts = async () => {
     setLoading(true);
     try {
-      const res = await api.alerts(150);
+      const res = await api.alerts(500);
       if (res && Array.isArray(res.alerts)) {
         setData(res.alerts as ExtendedAlertRow[]);
       }
@@ -86,18 +87,52 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
     }
   }, [propAlerts]);
 
-  const filtered = useMemo(() => {
+  // Deduplicate entries by unique id or composite signature to prevent double logs
+  const deduplicatedData = useMemo(() => {
     if (!Array.isArray(data)) return [];
-    return data.filter((a) => {
+    const seen = new Set<string>();
+    const out: ExtendedAlertRow[] = [];
+    for (const a of data) {
+      if (!a) continue;
+      const key = a.id != null ? `id_${a.id}` : `${a.ts}_${a.tf}_${a.kind}_${a.title}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(a);
+      }
+    }
+    return out;
+  }, [data]);
+
+  const skippedCount = useMemo(() => {
+    return deduplicatedData.filter((a) => {
+      const g = safeStr(a.grade).toLowerCase();
+      const t = safeStr(a.title).toLowerCase();
+      return g === "skip" || (a as any).is_skipped || t.startsWith("[skipped]");
+    }).length;
+  }, [deduplicatedData]);
+
+  const filtered = useMemo(() => {
+    if (!Array.isArray(deduplicatedData)) return [];
+    return deduplicatedData.filter((a) => {
       if (!a) return false;
       const k = safeStr(a.kind).toUpperCase();
       const t = safeStr(a.title);
       const s = safeStr(a.side).toUpperCase();
       const g = safeStr(a.grade).toLowerCase();
+      const isSkip = g === "skip" || (a as any).is_skipped || t.toLowerCase().startsWith("[skipped]");
+
+      // Hide skipped diagnostics by default unless explicitly toggled on
+      if (isSkip && !showSkipped) {
+        return false;
+      }
 
       // Quick filter
-      if (filter === "aplus") {
-        if (!k.includes("APLUS") && !t.includes("A+")) return false;
+      if (filter === "entries") {
+        if (s === "HOLD" || g === "mgmt" || k.includes("TRAIL") || k.includes("MGMT")) return false;
+      } else if (filter === "mgmt") {
+        if (s !== "HOLD" && g !== "mgmt" && !k.includes("TRAIL") && !k.includes("MGMT")) return false;
+      } else if (filter === "aplus") {
+        if (!k.includes("APLUS") && !t.includes("A+") && !k.includes("DEEP_REV") && !t.includes("DEEP REVERSAL") && !k.includes("EARLY_REV")) return false;
       } else if (filter === "buy") {
         if (s !== "BUY" && s !== "LONG" && s !== "CE") return false;
       } else if (filter === "sell") {
@@ -122,7 +157,7 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
       }
       return true;
     });
-  }, [data, filter, search]);
+  }, [deduplicatedData, filter, search, showSkipped]);
 
   const exportCsv = () => {
     if (!filtered.length) return;
@@ -152,7 +187,27 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
     const k = safeStr(a.kind).toUpperCase();
     const t = safeStr(a.title).toUpperCase();
     const g = safeStr(a.grade).toLowerCase();
+    const s = safeStr(a.side).toUpperCase();
+    const isSkip = g === "skip" || (a as any).is_skipped || t.startsWith("[SKIPPED]");
 
+    if (isSkip) {
+      return <span className="pill bg-slate-800 text-slate-400 border border-slate-700">SKIPPED</span>;
+    }
+    if (k.includes("EARLY_REV") || t.includes("EARLY REVERSAL")) {
+      return <span className="pill bg-emerald-600/20 text-emerald-300 border border-emerald-500/50 font-bold">🎯 EARLY REV</span>;
+    }
+    if (k.includes("RETEST_FILL") || t.includes("LIMIT RETEST FILLED")) {
+      return <span className="pill bg-cyan-600/20 text-cyan-300 border border-cyan-500/50 font-bold">🎯 RETEST FILL</span>;
+    }
+    if (k.includes("OC_CROSSOVER") || k.includes("TRINITY_LOCK") || t.includes("WRITER FLIP") || t.includes("TRINITY LOCK")) {
+      return <span className="pill bg-orange-600/20 text-orange-300 border border-orange-500/50 font-bold">🔥 WRITER FLIP</span>;
+    }
+    if (k.includes("DEEP_REV") || t.includes("DEEP REVERSAL")) {
+      return <span className="pill bg-rose-600/20 text-rose-300 border border-rose-500/50 font-bold">🚨 DEEP REV</span>;
+    }
+    if (k.includes("TRAIL") || k.includes("MGMT") || s === "HOLD") {
+      return <span className="pill bg-slate-700/50 text-slate-300 border border-slate-600">🛡️ TRAIL SL</span>;
+    }
     if (k.includes("APLUS") || t.includes("A+")) {
       return <span className="pill bg-amber-500/20 text-amber-300 border border-amber-500/50 font-bold">★ A+</span>;
     }
@@ -183,7 +238,7 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
     if (k.includes("GAMMA") || t.includes("GAMMA")) {
       return <span className="pill bg-violet-500/20 text-violet-300 border border-violet-500/40">γ ✓✓✓</span>;
     }
-    if (k.includes("NODES") || t.includes("ENTRY") || k.includes("ENTRY")) {
+    if (k.includes("NODES") || t.includes("ENTRY") || k.includes("ENTRY") || k.includes("LIMIT_RETEST_SETUP")) {
       return <span className="pill bg-yellow-500/20 text-yellow-300 border border-yellow-500/40">● ENTRY</span>;
     }
     if (k.includes("FLOW") || t.includes("FLOW")) {
@@ -196,7 +251,12 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
     return <span className="pill bg-ink-800 text-slate-300 border border-ink-700">{clean || "ALERT"}</span>;
   };
 
-  const getSideBadge = (side?: string | null) => {
+  const getSideBadge = (side?: string | null, a?: ExtendedAlertRow) => {
+    const g = a ? safeStr(a.grade).toLowerCase() : "";
+    const t = a ? safeStr(a.title).toLowerCase() : "";
+    if (g === "skip" || (a as any)?.is_skipped || t.startsWith("[skipped]")) {
+      return <span className="text-slate-500 font-mono text-[10px]">SKIPPED</span>;
+    }
     if (!side) return <span className="text-slate-500 font-mono">—</span>;
     const s = safeStr(side).toUpperCase();
     if (s === "BUY" || s === "LONG" || s === "CE") {
@@ -204,6 +264,9 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
     }
     if (s === "SELL" || s === "SHORT" || s === "PE") {
       return <span className="font-bold text-bear-400">SELL ▼</span>;
+    }
+    if (s === "HOLD") {
+      return <span className="font-bold text-amber-400 font-mono">HOLD 🛡️</span>;
     }
     return <span className="text-slate-400 font-mono">{s}</span>;
   };
@@ -226,7 +289,21 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
             onClick={() => setFilter("all")}
             className={`pill text-[11px] ${filter === "all" ? "bg-gold-500 text-ink-900 font-bold" : "bg-ink-800 text-slate-300"}`}
           >
-            All
+            All Alerts
+          </button>
+          <button
+            onClick={() => setFilter("entries")}
+            className={`pill text-[11px] ${filter === "entries" ? "bg-cyan-500 text-ink-900 font-bold" : "bg-ink-800 text-cyan-300"}`}
+            title="Actionable entry setups only (excludes Trail SL / Mgmt)"
+          >
+            🎯 Entries Only
+          </button>
+          <button
+            onClick={() => setFilter("mgmt")}
+            className={`pill text-[11px] ${filter === "mgmt" ? "bg-amber-500 text-ink-900 font-bold" : "bg-ink-800 text-amber-300"}`}
+            title="Active Trade Management & Trailing Stop Updates"
+          >
+            🛡️ Trail / Mgmt
           </button>
           <button
             onClick={() => setFilter("aplus")}
@@ -275,6 +352,13 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
             className={`pill text-[11px] ${filter === "wick" ? "bg-purple-400 text-ink-900 font-bold" : "bg-ink-800 text-purple-300"}`}
           >
             🕯 HTF Wicks
+          </button>
+          <button
+            onClick={() => setShowSkipped(!showSkipped)}
+            className={`pill text-[11px] border ${showSkipped ? "bg-rose-500/20 text-rose-300 border-rose-500/50 font-bold" : "bg-ink-800 text-slate-400 border-ink-700"}`}
+            title="Toggle display of skipped / rejected diagnostic setups"
+          >
+            🔍 Show Skipped ({skippedCount})
           </button>
         </div>
 
@@ -357,7 +441,7 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
                         </span>
                       </td>
                       <td className="py-2 px-3 whitespace-nowrap">{getKindBadge(a)}</td>
-                      <td className="py-2 px-2.5 whitespace-nowrap">{getSideBadge(a.side)}</td>
+                      <td className="py-2 px-2.5 whitespace-nowrap">{getSideBadge(a.side, a)}</td>
                       <td className="py-2 px-3 num font-semibold text-slate-100 whitespace-nowrap">
                         {typeof a.price === "number" && a.price > 0 ? a.price.toLocaleString("en-IN", { minimumFractionDigits: 1 }) : "—"}
                       </td>

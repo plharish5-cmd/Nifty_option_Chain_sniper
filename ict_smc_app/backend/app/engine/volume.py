@@ -22,6 +22,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
+import numpy as np
 
 from .. import config
 from ..timeutil import TF_SECONDS, bucket_start, chart_time, ist_date, session_bounds, to_ist
@@ -206,6 +207,18 @@ def rvol(rows: List[Dict[str, float]], tf: str) -> Dict[int, Dict[str, Any]]:
     keys = sorted(bv)
     out: Dict[int, Dict[str, Any]] = {}
     hist: List[float] = []
+
+    # Enforce minimum historical baseline floor to permanently prevent thin-slot denominator explosion (e.g. 35.9x)
+    all_vols = [float(val[0]) for val in bv.values() if val[0] > 0]
+    median_vol = float(np.median(all_vols)) if all_vols else 25000.0
+    min_slot_base_ratio = float(C.get("min_slot_base_ratio", 0.35))
+    min_slot_base_abs = float(C.get("min_slot_base_abs", 15000.0))
+    if median_vol >= min_slot_base_abs:
+        min_baseline = max(median_vol * min_slot_base_ratio, min_slot_base_abs)
+    else:
+        min_baseline = median_vol * min_slot_base_ratio
+    max_slot_rvol = float(C.get("max_slot_rvol", 10.0))
+
     for k in keys:
         v, n = bv[k]
         _, close = session_bounds(ist_date(k))
@@ -228,7 +241,15 @@ def rvol(rows: List[Dict[str, float]], tf: str) -> Dict[int, Dict[str, Any]]:
             base, method = sum(h) / len(h), "rolling"
         elif len(prev) >= 1:
             base, method = sum(prev) / len(prev), "time-of-day"
-        r = round(v / base, 2) if (full and base) else None
+
+        if base is not None:
+            effective_base = max(base, min_baseline)
+        elif hist:
+            effective_base = min_baseline
+        else:
+            effective_base = None
+
+        r = min(round(v / effective_base, 2), max_slot_rvol) if (full and effective_base and effective_base > 0) else None
         tier_info = classify_rvol(r)
         is_bo = True if (r is not None and r >= 1.8) else (False if (r is not None and r < 0.9) else None)
         bo_verdict = (
@@ -239,8 +260,8 @@ def rvol(rows: List[Dict[str, float]], tf: str) -> Dict[int, Dict[str, Any]]:
             "v": round(v),
             "rvol": r,
             "slot_rvol": r,
-            "base": round(base) if base else None,
-            "slot_base": round(base) if base else None,
+            "base": round(effective_base) if effective_base else None,
+            "slot_base": round(effective_base) if effective_base else None,
             "slot": slot(k),
             "method": method,
             "full": full,
