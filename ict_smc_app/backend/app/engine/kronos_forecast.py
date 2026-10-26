@@ -47,6 +47,8 @@ def get_cfg(rules: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     c.setdefault("include_stub_1515", False)
     c.setdefault("undecided_band_pct", 60.0)   # <= this share of runs on one side = undecided
     c.setdefault("show_candles", 140)          # how much history the chart draws behind "now"
+    c.setdefault("min_volume_coverage_pct", 95.0)  # below this, the volume column is dropped entirely
+    c.setdefault("volume_source", "combined")      # combined (near+next future) | near | none
     c.setdefault("sidecar_url", "http://127.0.0.1:8701")
     c.setdefault("sidecar_timeout_s", 180.0)
     return c
@@ -69,6 +71,76 @@ def filter_hourly(candles: Sequence[Dict[str, Any]], include_stub: bool = False)
     out = [dict(c) for c in candles if _ist_hm(int(c.get("ts", 0))) in allowed]
     out.sort(key=lambda c: int(c["ts"]))
     return out
+
+
+def resample_1m_to_1h(rows_1m: Sequence[Dict[str, Any]], include_stub: bool = False) -> List[Dict[str, Any]]:
+    """
+    1-minute rows → NIFTY hourly session candles (O first, H max, L min, C last, V summed).
+
+    Used for the desk's own stored 1m futures candles and for offline 1m CSVs, so a hourly series
+    can be built without another Dhan call.
+    """
+    slots = FULL_HOUR_SLOTS + ([STUB_SLOT] if include_stub else [])
+    slot_min = []
+    for s in slots:
+        hh, mm = s.split(":")
+        slot_min.append(int(hh) * 60 + int(mm))
+
+    buckets: Dict[int, Dict[str, Any]] = {}
+    for r in sorted(rows_1m, key=lambda x: int(x["ts"])):
+        ts = int(r["ts"])
+        ist = ts + IST_OFFSET_S
+        day, minute = ist // 86400, (ist % 86400) // 60
+        start = max((m for m in slot_min if m <= minute), default=None)
+        if start is None:
+            continue
+        key = day * 86400 + start * 60 - IST_OFFSET_S
+        b = buckets.get(key)
+        if b is None:
+            buckets[key] = {"ts": key, "o": float(r["o"]), "h": float(r["h"]),
+                            "l": float(r["l"]), "c": float(r["c"]), "v": float(r.get("v") or 0.0)}
+        else:
+            b["h"] = max(b["h"], float(r["h"]))
+            b["l"] = min(b["l"], float(r["l"]))
+            b["c"] = float(r["c"])
+            b["v"] += float(r.get("v") or 0.0)
+    return [buckets[k] for k in sorted(buckets)]
+
+
+def attach_volume(
+    price_rows: Sequence[Dict[str, Any]],
+    volume_rows: Sequence[Dict[str, Any]],
+    source: str = "futures",
+) -> Dict[str, Any]:
+    """
+    Puts real traded volume onto index-priced hourly bars.
+
+    This mirrors how the rest of the desk already solves "the index has no volume":
+    market.futures.mapped() basis-adjusts the FUTURE onto the index price scale and keeps the
+    future's volume, and futures.combined_1m() sums the near and next month. Kronos reads OHLCV
+    as one token per candle, so feeding it an all-zero volume column teaches it nothing; feeding
+    it the futures volume that actually traded in that hour does.
+
+    Returns the merged rows plus honest coverage: the share of bars that got a real, non-zero
+    volume. A partly-covered column is worse than none, so the caller decides on `coverage_pct`.
+    """
+    vol_by_ts = {int(r["ts"]): float(r.get("v") or 0.0) for r in volume_rows}
+    out: List[Dict[str, Any]] = []
+    covered = 0
+    for r in price_rows:
+        ts = int(r["ts"])
+        v = vol_by_ts.get(ts, 0.0)
+        if v > 0:
+            covered += 1
+        out.append({**dict(r), "v": v})
+    n = len(out)
+    return {
+        "rows": out,
+        "covered": covered,
+        "total": n,
+        "coverage_pct": round(covered / n * 100.0, 1) if n else 0.0,
+        "source": source if covered else "none",
+    }
 
 
 def next_session_ts(last_ts: int, count: int, include_stub: bool = False) -> List[int]:

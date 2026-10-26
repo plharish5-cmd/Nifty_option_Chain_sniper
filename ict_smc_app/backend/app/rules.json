@@ -722,6 +722,9 @@
     "include_stub_1515": false,
     "undecided_band_pct": 60.0,
     "show_candles": 140,
+    "volume_source": "combined",
+    "_volume_note": "NIFTY 50 has no volume of its own. Same answer the desk already uses for RVOL: attach the NIFTY FUTURES volume per hour (combined = near + next month, as in futures.combined_1m). 'near' = front contract only, 'none' = OHLC only.",
+    "min_volume_coverage_pct": 95.0,
     "sidecar_url": "http://127.0.0.1:8701",
     "sidecar_timeout_s": 180.0
   }

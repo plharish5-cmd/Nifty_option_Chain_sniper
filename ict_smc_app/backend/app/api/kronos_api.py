@@ -30,7 +30,7 @@ router = APIRouter()
 log = logging.getLogger("kronos_api")
 
 NIFTY_SEC_ID = "13"          # NIFTY 50 index, IDX_I
-_candle_cache: Dict[str, Any] = {"t": 0.0, "rows": []}
+_candle_cache: Dict[str, Any] = {"t": 0.0, "rows": [], "volume": {}}
 _forecast_cache: Dict[str, Any] = {}
 
 
@@ -79,11 +79,80 @@ async def _hourly_candles(days: int = 300, force: bool = False) -> List[Dict[str
         win_start = win_end + timedelta(days=1)
 
     rows = kf.filter_hourly(list(merged.values()), include_stub=bool(c["include_stub_1515"]))
+
+    # ── real volume for an index that has none ────────────────────────────────────────────────
+    # The desk already solves this: market.futures.mapped() basis-adjusts the future onto the
+    # index price scale and KEEPS the future's volume, and combined_1m() sums near + next month.
+    # Kronos reads OHLCV jointly, so an all-zero volume column is dead weight. Same idea here,
+    # one timeframe up: index price bars, futures volume attached hour by hour.
+    want = str(c.get("volume_source", "combined"))
+    if want != "none" and rows:
+        vol_rows = await _futures_hourly(h, start, to, want)
+        att = kf.attach_volume(rows, vol_rows, source=f"{want}-future")
+        if att["coverage_pct"] >= float(c["min_volume_coverage_pct"]):
+            rows = att["rows"]
+            _candle_cache["volume"] = {"source": att["source"], "coverage_pct": att["coverage_pct"],
+                                       "covered": att["covered"], "total": att["total"], "used": True}
+        else:
+            # A partly-covered volume column is worse than none — the model would read the gaps
+            # as genuine quiet periods. Drop it and say so rather than feeding a distorted series.
+            _candle_cache["volume"] = {"source": att["source"], "coverage_pct": att["coverage_pct"],
+                                       "covered": att["covered"], "total": att["total"], "used": False,
+                                       "why": (f"only {att['coverage_pct']}% of the {att['total']} context bars had "
+                                               f"futures volume (need {c['min_volume_coverage_pct']}%) — "
+                                               f"volume dropped rather than fed in with holes")}
+    else:
+        _candle_cache["volume"] = {"source": "none", "coverage_pct": 0.0, "used": False,
+                                   "why": "volume_source is 'none' in rules.json"}
     _candle_cache.update(t=time.time(), rows=rows)
     log.info("kronos: %d NIFTY 1h session candles (%s .. %s)", len(rows),
              datetime.fromtimestamp(rows[0]["ts"], IST).strftime("%Y-%m-%d") if rows else "-",
              datetime.fromtimestamp(rows[-1]["ts"], IST).strftime("%Y-%m-%d %H:%M") if rows else "-")
     return rows
+
+
+async def _futures_hourly(h: Any, start: datetime, to: datetime, want: str) -> List[Dict[str, Any]]:
+    """
+    Hourly NIFTY-future volume for the context window.
+
+    NIFTY futures are listed three months out, so the CURRENT contract has usually been trading
+    long enough to cover 360 hourly bars (~60 sessions) on its own. The next month is added when
+    `volume_source` is "combined", matching futures.combined_1m()'s near+next sum.
+
+    Expired contracts drop out of Dhan's scrip master, so this does not try to stitch them; it
+    reports whatever the live contracts can cover and lets the caller judge by coverage.
+    """
+    from ..market import futures as fut_mod
+
+    sids: List[str] = []
+    fut = getattr(h, "fut", None)
+    if fut and fut.get("sid"):
+        sids.append(str(fut["sid"]))
+    if want == "combined":
+        fut2 = getattr(h, "fut2", None)
+        if fut2 and fut2.get("sid"):
+            sids.append(str(fut2["sid"]))
+
+    if not sids:
+        log.info("kronos: no resolved futures contract — falling back to the desk's stored 1m rows")
+        stored = fut_mod.rows_1m(90)
+        return kf.resample_1m_to_1h(stored) if stored else []
+
+    per_ts: Dict[int, float] = {}
+    for sid in sids:
+        win_start = start
+        while win_start < to:
+            win_end = min(win_start + timedelta(days=89), to)
+            try:
+                raw = await h.rest.intraday(sid, win_start, win_end, interval="60",
+                                            segment="NSE_FNO", instrument="FUTIDX")
+                for r in raw:
+                    per_ts[int(r["ts"])] = per_ts.get(int(r["ts"]), 0.0) + float(r.get("v") or 0.0)
+            except Exception as e:
+                log.warning("kronos: futures %s chunk %s failed: %s", sid, win_start.strftime("%Y-%m-%d"), e)
+            win_start = win_end + timedelta(days=1)
+
+    return [{"ts": t, "v": v} for t, v in sorted(per_ts.items())]
 
 
 # ── routes ────────────────────────────────────────────────────────────────────────────────────
@@ -211,6 +280,7 @@ async def kronos_forecast(
                     "l": float(r["l"]), "c": float(r["c"])} for r in split["actual"]],
         "reveal": reveal,
         "settings": fc.get("settings", {}),
+        "volume": _candle_cache.get("volume", {}),
         "max_step_back": max(0, len(candles) - n_hist),
         "disclaimer": "Educational only — not investment advice. This desk never places an order.",
     }

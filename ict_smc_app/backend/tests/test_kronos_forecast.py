@@ -141,3 +141,53 @@ def test_split_refuses_when_history_is_short():
     split = kf.split_for_stepback(rows, hist=360, pred=24, step_back=0)
     assert split["ok"] is False
     assert "need 360" in split["message"]
+
+
+def test_resample_1m_to_1h_sums_volume_into_session_slots():
+    """Index price bars carry no volume; futures 1m rows must fold into the same hourly slots."""
+    day = 20700
+    rows = []
+    for m in range(0, 120):                       # 09:15 -> 11:14
+        ts = _ts(day, "09:15") + m * 60
+        rows.append({"ts": ts, "o": 100.0 + m, "h": 105.0 + m, "l": 95.0 + m, "c": 101.0 + m, "v": 10.0})
+    out = kf.resample_1m_to_1h(rows)
+    assert [kf.hm(r["ts"]) if hasattr(kf, "hm") else None for r in out] or True
+    from app.timeutil import hm
+    assert [hm(r["ts"]) for r in out] == ["09:15", "10:15"]
+    assert out[0]["v"] == 600.0 and out[1]["v"] == 600.0      # 60 minutes x 10 each
+    assert out[0]["o"] == 100.0                               # first minute's open
+    assert out[0]["c"] == 160.0                               # 60th minute's close
+    assert out[0]["h"] == 164.0 and out[0]["l"] == 95.0
+
+
+def test_attach_volume_merges_futures_volume_onto_index_bars():
+    day = 20700
+    price = [{"ts": _ts(day, s), "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0, "v": 0.0}
+             for s in kf.FULL_HOUR_SLOTS]
+    vol = [{"ts": _ts(day, s), "v": 5000.0} for s in kf.FULL_HOUR_SLOTS]
+
+    att = kf.attach_volume(price, vol, source="combined-future")
+    assert att["coverage_pct"] == 100.0
+    assert att["source"] == "combined-future"
+    assert all(r["v"] == 5000.0 for r in att["rows"])
+
+
+def test_attach_volume_reports_partial_coverage_honestly():
+    """A half-covered volume column must be visible as such — gaps would read as quiet hours."""
+    day = 20700
+    price = [{"ts": _ts(day, s), "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0} for s in kf.FULL_HOUR_SLOTS]
+    vol = [{"ts": _ts(day, s), "v": 5000.0} for s in kf.FULL_HOUR_SLOTS[:3]]
+
+    att = kf.attach_volume(price, vol)
+    assert att["covered"] == 3 and att["total"] == 6
+    assert att["coverage_pct"] == 50.0
+    # the uncovered bars are explicitly zero, never silently carried forward
+    assert [r["v"] for r in att["rows"]] == [5000.0, 5000.0, 5000.0, 0.0, 0.0, 0.0]
+
+
+def test_attach_volume_with_no_futures_data_reports_source_none():
+    day = 20700
+    price = [{"ts": _ts(day, s), "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0} for s in kf.FULL_HOUR_SLOTS]
+    att = kf.attach_volume(price, [])
+    assert att["coverage_pct"] == 0.0
+    assert att["source"] == "none"

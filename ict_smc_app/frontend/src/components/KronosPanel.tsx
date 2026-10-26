@@ -35,6 +35,7 @@ type Forecast = {
              direction_hit?: boolean; inside_band?: number; outside_band?: number;
              inside_band_pct?: number; mean_miss_pts?: number; note?: string };
   settings?: Record<string, unknown>;
+  volume?: { source?: string; coverage_pct?: number; covered?: number; total?: number; used?: boolean; why?: string };
   max_step_back?: number;
   model?: { status?: string; done?: number; total?: number; error?: string };
 };
@@ -74,9 +75,13 @@ const HOVER = {
     "LOW (few runs expanding): generally favours option SELLERS — a quiet, theta-friendly read.\n\n" +
     "DO: Use it to choose buying vs selling structure, not direction.",
   volume:
-    "EXPECTED VOLUME — only shown when a real volume series was supplied.\n\n" +
-    "NIFTY 50 is an index: Dhan returns volume 0 for it, because an index has no traded quantity. " +
-    "So on the index this panel reports no volume forecast at all rather than a fabricated one.",
+    "EXPECTED VOLUME over the next 24 candles.\n\n" +
+    "NIFTY 50 is an index — it has no traded quantity of its own, so Dhan returns volume 0. " +
+    "This panel does what the rest of the desk already does for RVOL: it attaches the NIFTY FUTURES volume " +
+    "that actually traded in each hour (near + next month summed, the same basis as futures.combined_1m).\n\n" +
+    "DO: Read a high expected volume as the model expecting participation, which usually accompanies range expansion.\n" +
+    "⚠️ If coverage of the context window is below 95%, the volume column is DROPPED rather than fed in with holes — " +
+    "gaps would be read by the model as genuinely quiet hours. The strip below the panel says which happened.",
   showRuns:
     "SHOW 30 RUNS — draws every individual Monte Carlo path instead of just the mean and the band.\n\n" +
     "DO: Look at how widely they fan out. A tight fan means the model is confident; a wide fan means " +
@@ -391,9 +396,14 @@ export default function KronosPanel() {
             </div>
             <div className="flex justify-between cursor-help" title={HOVER.volume}>
               <span className="text-slate-400">Expected volume</span>
-              <span className="text-slate-400">
-                {s?.has_real_volume ? fmt(s?.expected_volume, 0) : "n/a (index)"}
+              <span className={s?.has_real_volume ? "text-sky-300" : "text-slate-500"}>
+                {s?.has_real_volume ? fmt(s?.expected_volume, 0) : "dropped"}
               </span>
+            </div>
+            <div className="text-[9.5px] text-slate-500 leading-tight pt-0.5">
+              {fc?.volume?.used
+                ? `volume: ${fc.volume.source} · ${fc.volume.coverage_pct}% of context bars covered`
+                : (fc?.volume?.why ?? "volume: none attached")}
             </div>
           </div>
 
