@@ -687,11 +687,15 @@ def compute_pe_ce_matrix(
     # Expiry Day Playbook Integration
     try:
         from . import expiry_playbook
+        # Hand the cockpit this ledger's own PE-CE flow so the 0-DTE cards and the
+        # matrix table can never report different numbers for the same interval.
         expiry_telemetry = expiry_playbook.compute_expiry_cockpit_telemetry(
             expiry=display_exp,
             force_expiry_mode=force_expiry_mode,
             tf=tf,
             cfg=config.rules().get("expiry_playbook"),
+            pe_ce_day_diff=current_day_diff,
+            pe_ce_step_diff=(step_diffs[-1] if step_diffs else 0),
         )
     except Exception as e_pb:
         log.warning("expiry_playbook compute error: %s", e_pb)

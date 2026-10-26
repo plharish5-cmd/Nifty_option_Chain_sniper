@@ -189,63 +189,169 @@ def detect_gamma_pin_or_squeeze(
     }
 
 
+def _oi_map(rows: Optional[List[Dict[str, Any]]]) -> Dict[float, Dict[str, float]]:
+    """Builds {strike: {ce_oi, pe_oi}} for ΔOI arithmetic."""
+    out: Dict[float, Dict[str, float]] = {}
+    for r in _normalize_rows(rows):
+        try:
+            k = float(r.get("strike", 0.0))
+        except (TypeError, ValueError):
+            continue
+        out[k] = {
+            "ce_oi": float(r.get("ce_oi") or 0.0),
+            "pe_oi": float(r.get("pe_oi") or 0.0),
+        }
+    return out
+
+
 def detect_trapped_writers(
     spot: float,
     chain_rows: List[Dict[str, Any]],
     cfg: Optional[Dict[str, Any]] = None,
+    prev_chain_rows: Optional[List[Dict[str, Any]]] = None,
+    open_chain_rows: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Scans option chain strikes around spot to identify underwater option writers
     forced into short-covering or delta-hedging.
+
+    A writer is only reported as COVERING when real interval ΔOI (vs prev_chain_rows)
+    clears ``min_writer_unwind_oi``. Without ΔOI inputs the function degrades to a
+    STANDING-wall read and says so, rather than implying a squeeze that was never measured.
     """
     c = cfg or get_cfg()
     min_unwind_oi = int(c.get("min_writer_unwind_oi", 1000000))
     min_fortify_oi = int(c.get("min_writer_fortify_oi", 1500000))
 
     c_rows = _normalize_rows(chain_rows)
+    prev_map = _oi_map(prev_chain_rows)
+    open_map = _oi_map(open_chain_rows)
+    has_delta = bool(prev_map) or bool(open_map)
+
     trapped_side = "BALANCED"
     trapped_strike = round(spot / 50.0) * 50.0
     unwinding_str = "No major writer evacuation"
     fortified_str = "Walls balanced"
+    is_covering = False
+    covering_oi = 0.0
+    day_chg_oi = 0.0
+
+    def _chg(k: float, leg: str) -> Tuple[float, float]:
+        """Returns (step_chg, day_chg) for a leg at strike k; 0.0 when unavailable."""
+        cur_row = next((r for r in c_rows if float(r.get("strike", 0.0)) == k), None)
+        cur_oi = float(cur_row.get(leg) or 0.0) if cur_row else 0.0
+        step = cur_oi - prev_map[k][leg] if k in prev_map else 0.0
+        day = cur_oi - open_map[k][leg] if k in open_map else 0.0
+        return step, day
 
     # Scan nearby strikes within spot ± 150
     nearby = [r for r in c_rows if abs(float(r.get("strike", 0.0)) - spot) <= 150.0]
 
-    # Look for Call writers trapped below current spot
+    # Call writers are underwater when spot has traded ABOVE their strike
     call_trapped = [
         r for r in nearby
-        if float(r.get("strike", 0.0)) <= spot + 25.0
+        if float(r.get("strike", 0.0)) < spot
         and float(r.get("ce_oi") or 0.0) >= min_fortify_oi
     ]
-
-    # Look for Put writers trapped above current spot
+    # Put writers are underwater when spot has traded BELOW their strike
     put_trapped = [
         r for r in nearby
-        if float(r.get("strike", 0.0)) >= spot - 25.0
+        if float(r.get("strike", 0.0)) > spot
         and float(r.get("pe_oi") or 0.0) >= min_fortify_oi
     ]
 
-    if call_trapped and spot > float(call_trapped[0].get("strike", 0.0)):
-        k = float(call_trapped[0]["strike"])
-        ce_oi = float(call_trapped[0].get("ce_oi") or 0.0)
+    def _rank(rows: List[Dict[str, Any]], leg: str) -> Optional[Dict[str, Any]]:
+        """Prefer the strike covering fastest; fall back to the largest standing wall."""
+        if not rows:
+            return None
+        if has_delta:
+            by_unwind = sorted(rows, key=lambda r: _chg(float(r["strike"]), leg)[0])
+            top = by_unwind[0]
+            if _chg(float(top["strike"]), leg)[0] <= -min_unwind_oi:
+                return top
+        return max(rows, key=lambda r: float(r.get(leg) or 0.0))
+
+    best_call = _rank(call_trapped, "ce_oi")
+    best_put = _rank(put_trapped, "pe_oi")
+
+    # Whichever side is actually evacuating faster owns the verdict
+    call_step = _chg(float(best_call["strike"]), "ce_oi")[0] if best_call else 0.0
+    put_step = _chg(float(best_put["strike"]), "pe_oi")[0] if best_put else 0.0
+
+    pick_calls = best_call is not None and (best_put is None or call_step <= put_step)
+
+    if pick_calls and best_call is not None:
+        k = float(best_call["strike"])
+        ce_oi = float(best_call.get("ce_oi") or 0.0)
+        step, day = _chg(k, "ce_oi")
         trapped_side = "CALLS"
         trapped_strike = k
-        unwinding_str = f"🔥 {k:,.0f} CE Writers Trapped ({ce_oi/1e5:.1f}L OI Underwater)"
-        fortified_str = f"🛡️ Put Floor Fortified below {k - 50:,.0f}"
+        covering_oi, day_chg_oi = step, day
+        is_covering = has_delta and step <= -min_unwind_oi
+        if is_covering:
+            unwinding_str = (
+                f"🔥 {k:,.0f} CE Writers Trapped & COVERING "
+                f"({ce_oi/1e5:.1f}L standing · {step/1e5:+.1f}L this interval)"
+            )
+        elif has_delta:
+            unwinding_str = (
+                f"⚠️ {k:,.0f} CE Writers Trapped — STANDING, not covering "
+                f"({ce_oi/1e5:.1f}L standing · {step/1e5:+.1f}L this interval)"
+            )
+        else:
+            unwinding_str = f"⚠️ {k:,.0f} CE Writers Trapped ({ce_oi/1e5:.1f}L standing · ΔOI unavailable)"
 
-    elif put_trapped and spot < float(put_trapped[-1].get("strike", 0.0)):
-        k = float(put_trapped[-1]["strike"])
-        pe_oi = float(put_trapped[-1].get("pe_oi") or 0.0)
+    elif best_put is not None:
+        k = float(best_put["strike"])
+        pe_oi = float(best_put.get("pe_oi") or 0.0)
+        step, day = _chg(k, "pe_oi")
         trapped_side = "PUTS"
         trapped_strike = k
-        unwinding_str = f"🩸 {k:,.0f} PE Writers Trapped ({pe_oi/1e5:.1f}L OI Underwater)"
-        fortified_str = f"🛡️ Call Resistance Ceiling at {k + 50:,.0f}"
+        covering_oi, day_chg_oi = step, day
+        is_covering = has_delta and step <= -min_unwind_oi
+        if is_covering:
+            unwinding_str = (
+                f"🩸 {k:,.0f} PE Writers Trapped & COVERING "
+                f"({pe_oi/1e5:.1f}L standing · {step/1e5:+.1f}L this interval)"
+            )
+        elif has_delta:
+            unwinding_str = (
+                f"⚠️ {k:,.0f} PE Writers Trapped — STANDING, not covering "
+                f"({pe_oi/1e5:.1f}L standing · {step/1e5:+.1f}L this interval)"
+            )
+        else:
+            unwinding_str = f"⚠️ {k:,.0f} PE Writers Trapped ({pe_oi/1e5:.1f}L standing · ΔOI unavailable)"
+
+    # Real walls from the chain, never strike ± 50 arithmetic
+    floor_rows = [r for r in c_rows if float(r.get("strike", 0.0)) < spot and float(r.get("pe_oi") or 0.0) > 0]
+    ceil_rows = [r for r in c_rows if float(r.get("strike", 0.0)) > spot and float(r.get("ce_oi") or 0.0) > 0]
+    floor_row = max(floor_rows, key=lambda r: float(r.get("pe_oi") or 0.0)) if floor_rows else None
+    ceil_row = max(ceil_rows, key=lambda r: float(r.get("ce_oi") or 0.0)) if ceil_rows else None
+
+    put_floor_strike = float(floor_row["strike"]) if floor_row else 0.0
+    call_ceiling_strike = float(ceil_row["strike"]) if ceil_row else 0.0
+
+    if floor_row and ceil_row:
+        fortified_str = (
+            f"🛡️ Put Floor {put_floor_strike:,.0f} ({float(floor_row.get('pe_oi') or 0.0)/1e7:.2f}Cr) · "
+            f"🧱 Call Ceiling {call_ceiling_strike:,.0f} ({float(ceil_row.get('ce_oi') or 0.0)/1e7:.2f}Cr)"
+        )
+    elif floor_row:
+        fortified_str = f"🛡️ Put Floor {put_floor_strike:,.0f} ({float(floor_row.get('pe_oi') or 0.0)/1e7:.2f}Cr)"
+    elif ceil_row:
+        fortified_str = f"🧱 Call Ceiling {call_ceiling_strike:,.0f} ({float(ceil_row.get('ce_oi') or 0.0)/1e7:.2f}Cr)"
 
     return {
         "trapped_side": trapped_side,
         "trapped_strike": trapped_strike,
         "unwinding_str": unwinding_str,
         "fortified_str": fortified_str,
+        "is_covering": is_covering,
+        "delta_available": has_delta,
+        "covering_step_oi": int(round(covering_oi)),
+        "covering_day_oi": int(round(day_chg_oi)),
+        "put_floor_strike": put_floor_strike,
+        "call_ceiling_strike": call_ceiling_strike,
     }
 
 
@@ -317,8 +423,10 @@ def evaluate_hero_zero_setup(
     bear_break = spot <= (vwap + 5.0) and spot <= (swing_low_30m + 10.0)
     breakout_ok = (bull_flow and bull_break) or (bear_flow and bear_break)
 
-    # Factor 4: RVOL
-    rvol_ok = (slot_rvol >= min_slot_rvol) or (c_rvol >= min_c_rvol) or force_expiry_mode
+    # Factor 4: RVOL — never auto-passed by rehearsal mode; an unmeasured RVOL is a FAIL,
+    # otherwise force_expiry_mode silently gifts the ticket a point it never earned.
+    rvol_measured = (slot_rvol or 0.0) > 0.0 or (c_rvol or 0.0) > 0.0
+    rvol_ok = rvol_measured and ((slot_rvol >= min_slot_rvol) or (c_rvol >= min_c_rvol))
 
     # Factor 5: Strike & Premium Sweet Spot (from JSON rules)
     min_prem = float(c.get("sweet_spot_min_premium", 10.0))
@@ -443,10 +551,20 @@ def compute_expiry_cockpit_telemetry(
     force_expiry_mode: bool = False,
     tf: str = "3m",
     cfg: Optional[Dict[str, Any]] = None,
+    pe_ce_step_diff: Optional[int] = None,
+    pe_ce_day_diff: Optional[int] = None,
+    slot_rvol: Optional[float] = None,
+    c_rvol: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Master function: Computes the complete Expiry Zero-DTE Cockpit telemetry payload
     for API response and frontend cockpit strip.
+
+    PE-CE flow is taken from the caller when supplied (pe_ce_matrix passes its own
+    ledger values so the cockpit and the table can never disagree); otherwise it is
+    derived here from the session's own chain_snap rows using the identical
+    open-baseline method. RVOL has no chain-side derivation: when the caller cannot
+    supply it, the RVOL gate fails honestly instead of being stubbed to a pass.
     """
     c = cfg or get_cfg()
     today_dt = now_ist().date()
@@ -502,6 +620,40 @@ def compute_expiry_cockpit_telemetry(
     open_ts = min(r["ts"] for r in latest_snap)
     open_chain = [dict(r) for r in latest_snap if r["ts"] == open_ts]
 
+    # Previous snapshot — the interval (step) basis for ΔOI
+    prior_ts_all = sorted({int(r["ts"]) for r in latest_snap if int(r["ts"]) < int(latest_ts)})
+    prev_ts = prior_ts_all[-1] if prior_ts_all else None
+    prev_chain = [dict(r) for r in latest_snap if r["ts"] == prev_ts] if prev_ts else []
+
+    # Derive PE-CE day & step flow with the same open-baseline arithmetic as pe_ce_matrix:
+    #   day  = (ΣPE_now - ΣPE_open) - (ΣCE_now - ΣCE_open)
+    #   step = (ΣPE_now - ΣPE_prev) - (ΣCE_now - ΣCE_prev)
+    def _sum_leg(rows: List[Dict[str, Any]], leg: str) -> float:
+        return sum(float(r.get(leg) or 0.0) for r in rows)
+
+    derived_day_diff = 0
+    derived_step_diff = 0
+    flow_source = "unavailable"
+
+    if open_chain:
+        day_pe = _sum_leg(current_chain, "pe_oi") - _sum_leg(open_chain, "pe_oi")
+        day_ce = _sum_leg(current_chain, "ce_oi") - _sum_leg(open_chain, "ce_oi")
+        derived_day_diff = int(round(day_pe - day_ce))
+        flow_source = "derived_from_chain_snap"
+    if prev_chain:
+        step_pe = _sum_leg(current_chain, "pe_oi") - _sum_leg(prev_chain, "pe_oi")
+        step_ce = _sum_leg(current_chain, "ce_oi") - _sum_leg(prev_chain, "ce_oi")
+        derived_step_diff = int(round(step_pe - step_ce))
+
+    live_day_diff = int(pe_ce_day_diff) if pe_ce_day_diff is not None else derived_day_diff
+    live_step_diff = int(pe_ce_step_diff) if pe_ce_step_diff is not None else derived_step_diff
+    if pe_ce_day_diff is not None or pe_ce_step_diff is not None:
+        flow_source = "caller_ledger"
+
+    live_slot_rvol = float(slot_rvol) if slot_rvol is not None else 0.0
+    live_c_rvol = float(c_rvol) if c_rvol is not None else 0.0
+    rvol_available = live_slot_rvol > 0.0 or live_c_rvol > 0.0
+
     # 2. Futures and Spot
     fut_candles = db.candles_1m("FUT", today_start)
     if not fut_candles:
@@ -531,11 +683,18 @@ def compute_expiry_cockpit_telemetry(
         straddle_data["atm_straddle_ltp"],
         straddle_data["straddle_decay_pct"],
         current_chain,
+        pe_ce_step_diff=live_step_diff,
         cfg=c,
     )
 
-    # 5. Trapped Writers
-    trapped_data = detect_trapped_writers(spot, current_chain, c)
+    # 5. Trapped Writers — with real interval & day ΔOI, not standing OI alone
+    trapped_data = detect_trapped_writers(
+        spot,
+        current_chain,
+        c,
+        prev_chain_rows=prev_chain,
+        open_chain_rows=open_chain,
+    )
 
     # 6. Hero-Zero Setup
     time_label = hm(latest_ts)
@@ -545,11 +704,11 @@ def compute_expiry_cockpit_telemetry(
         vwap=vwap,
         swing_high_30m=swing_high_30m,
         swing_low_30m=swing_low_30m,
-        slot_rvol=1.5,
-        c_rvol=1.2,
+        slot_rvol=live_slot_rvol,
+        c_rvol=live_c_rvol,
         chain_rows=current_chain,
-        pe_ce_step_diff=250000,
-        pe_ce_day_diff=45000000,
+        pe_ce_step_diff=live_step_diff,
+        pe_ce_day_diff=live_day_diff,
         time_label=time_label,
         expiry=target_exp,
         force_expiry_mode=force_expiry_mode,
@@ -573,4 +732,13 @@ def compute_expiry_cockpit_telemetry(
         "trapped": trapped_data,
         "hero_zero": hero_zero_data,
         "settlement": settle_data,
+        "flow": {
+            "pe_ce_day_diff": live_day_diff,
+            "pe_ce_step_diff": live_step_diff,
+            "source": flow_source,
+            "slot_rvol": live_slot_rvol,
+            "c_rvol": live_c_rvol,
+            "rvol_available": rvol_available,
+            "snapshots_in_session": len({int(r["ts"]) for r in latest_snap}),
+        },
     }
