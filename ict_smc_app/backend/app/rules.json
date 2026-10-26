@@ -710,5 +710,19 @@
     "tp1_mult": 2.0,
     "tp2_mult": 3.5,
     "index_sl_pts": 22.0
+  },
+  "kronos": {
+    "_note": "NIFTY 50 Kronos forecast tab. The model runs in the sidecar (ict_smc_app/kronos, port 8701), never in the desk venv.",
+    "enabled": true,
+    "hist_candles": 360,
+    "pred_candles": 24,
+    "paths": 30,
+    "temperature": 1.0,
+    "top_p": 0.9,
+    "include_stub_1515": false,
+    "undecided_band_pct": 60.0,
+    "show_candles": 140,
+    "sidecar_url": "http://127.0.0.1:8701",
+    "sidecar_timeout_s": 180.0
   }
 }

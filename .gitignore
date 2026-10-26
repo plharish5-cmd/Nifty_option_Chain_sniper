@@ -112,3 +112,9 @@ wa_daily/*.log
 wa_daily/sent_*
 wa_daily/wa_error.png
 *.bak
+
+# Kronos sidecar: weights, venv and runtime files are local, never committed
+ict_smc_app/kronos/models/
+ict_smc_app/kronos/.venv/
+ict_smc_app/kronos/*.log
+ict_smc_app/kronos/.kronos_*.pid

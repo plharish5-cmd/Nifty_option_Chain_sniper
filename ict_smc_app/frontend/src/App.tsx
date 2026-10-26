@@ -22,6 +22,7 @@ import CombinedRvolChip from "./components/CombinedRvolChip";
 import StdvPanel from "./components/StdvPanel";
 import { type StdvLeg } from "./components/stdv";
 import AlertsTable from "./components/AlertsTable";
+import KronosPanel from "./components/KronosPanel";
 import AdvPaPanel from "./components/AdvPaPanel";
 
 const TFS: TF[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1D"];
@@ -81,7 +82,7 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap" | "stdv" | "alerts" | "advpa">("paper");
+  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap" | "stdv" | "alerts" | "advpa" | "kronos">("paper");
   const [selectedStdvLeg, setSelectedStdvLeg] = useState<StdvLeg | null>(null);
   const [isStdvPicking, setIsStdvPicking] = useState(false);
   const [mainView, setMainView] = useState<"candles" | "writers" | "both">(() => { try { return (localStorage.getItem("ict_mainview") as "candles" | "writers" | "both") || "candles"; } catch { return "candles"; } });
@@ -323,10 +324,12 @@ export default function App() {
                 <button className={`tab ${bottom === "auto" ? "tab-on" : ""} !border-cyan-500/60 !text-cyan-300`} onClick={() => setBottom("auto")}>🤖 Autopilot{ap.s.cfg.on ? " ●" : ""}</button>
                 <button className={`tab ${bottom === "wmap" ? "tab-on" : ""} !border-gold-500/60 !text-gold-400`} onClick={() => setBottom("wmap")}>🎯 Writer map</button>
                 <button className={`tab ${bottom === "advpa" ? "tab-on !border-fuchsia-500/60 !text-fuchsia-300 font-semibold" : ""}`} onClick={() => setBottom("advpa")}>🎓 Adv PA</button>
+                <button title="NIFTY 50 Kronos forecast — 360 one-hour candles in, 24 out, 30 sampled runs. Positional (~4 sessions), educational only." className={`tab ${bottom === "kronos" ? "tab-on !border-orange-500/60 !text-orange-300 font-semibold" : ""}`} onClick={() => setBottom("kronos")}>🔮 Kronos</button>
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "advpa" ? <AdvPaPanel tick={storyTick} chartTf={tf} />
+              {bottom === "kronos" ? <KronosPanel />
+                : bottom === "advpa" ? <AdvPaPanel tick={storyTick} chartTf={tf} />
                 : bottom === "alerts" ? <AlertsTable alerts={dash?.alerts} onRefresh={loadDash} />
                 : bottom === "stdv" ? <StdvPanel candles={candles} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} chartTf={tf} selectedLeg={selectedStdvLeg} onSelectLeg={setSelectedStdvLeg} isLayerActive={!!layers.stdv} onToggleLayer={() => setLayers((l) => ({ ...l, stdv: !l.stdv }))} isPicking={isStdvPicking} onStartPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onCancelPicking={() => setIsStdvPicking(false)} onSetChartTf={setTf} />
                 : bottom === "wmap" ? <WriterMap />
