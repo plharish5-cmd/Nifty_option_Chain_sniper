@@ -7,6 +7,7 @@ import { FlowBand } from "./flowband";
 import PcrTrinitySuite from "./PcrTrinitySuite";
 import PeceMatrix from "./PeceMatrix";
 import SmartOISuite from "./SmartOISuite";
+import { GapSniperTab } from "./GapSniperTab";
 import {
   CandlestickSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp,
@@ -203,6 +204,23 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       (put_delta_l > 0 || r.read[0].includes("Dip defended") || r.read[0].includes("Put writing") || r.read[1] === "bull");
 
     // Short Covering Reversal (Deep oversold bounce with Call covering)
+    const prev1CallDeltaL = i > 0 ? (chron[i - 1].ce_chg ?? 0) / 1e5 : 0;
+    const last2BarsCallUnwindL = call_delta_l + prev1CallDeltaL;
+    const isConfirmedBullAgreement = Boolean(
+      (r.pro?.[0] && r.pro[0].includes("Confirmed ▲")) ||
+      (r.read?.[0] && r.read[0].includes("Confirmed ▲"))
+    );
+    const isShortCoveringBounce = bounceFromLow >= 45 && (isConfirmedBullAgreement || last2BarsCallUnwindL <= -50 || call_delta_l <= -50);
+
+    // Symmetric Long Unwinding Dip
+    const prev1PutDeltaL = i > 0 ? (chron[i - 1].pe_chg ?? 0) / 1e5 : 0;
+    const last2BarsPutUnwindL = put_delta_l + prev1PutDeltaL;
+    const isConfirmedBearAgreement = Boolean(
+      (r.pro?.[0] && r.pro[0].includes("Confirmed ▼")) ||
+      (r.read?.[0] && r.read[0].includes("Confirmed ▼"))
+    );
+    const isLongUnwindingDip = dipFromHigh >= 45 && (isConfirmedBearAgreement || last2BarsPutUnwindL <= -50 || put_delta_l <= -50);
+
     const isShortCoveringReversal = Boolean(
       (sessionHigh - spot >= 160) &&
       (call_delta_l <= -5 || r.read[0].includes("Short covering")) &&
@@ -232,6 +250,20 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       stageBadge = "WARM-UP";
       actionText = "⏳ WARM-UP (Walls & Liquidity Forming) · WAIT";
       actionTone = "flat";
+    } else if (isShortCoveringBounce) {
+      stage = 5;
+      stageBadge = "🟡 BOOK PE";
+      actionTone = "warn";
+      riskPts = Math.min(Math.max(Math.round(spot - swingLow30m + 12), 15), 35);
+      dynamicSl = Math.round(spot - riskPts);
+      actionText = "🟡 BOOK PE PROFITS / FLIP TO CE ON RETEST (SHORT COVERING ACTIVE)";
+    } else if (isLongUnwindingDip) {
+      stage = 5;
+      stageBadge = "🟡 BOOK CE";
+      actionTone = "warn";
+      riskPts = Math.min(Math.max(Math.round(swingHigh30m - spot + 12), 15), 35);
+      dynamicSl = Math.round(spot + riskPts);
+      actionText = "🟡 BOOK CE PROFITS / FLIP TO PE ON RETEST (LONG UNWINDING ACTIVE)";
     } else if (isShortCoveringReversal) {
       stage = 5;
       stageBadge = "💰 BOOK / REVERSAL";
@@ -349,19 +381,37 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
         }
       }
     } else if (sessionHigh - spot > 100 && pe_ce_day_cr < -0.8) {
-      stage = 4;
-      stageBadge = "🛡️ HOLD PE";
-      actionTone = "bear";
-      const trailSl = Math.round(spot + Math.min(Math.max(swingHigh30m - spot + 12, 15), 35));
-      dynamicSl = trailSl;
-      actionText = `🛡️ HOLD PE · TRAIL SL → ${trailSl} (DO NOT CHASE)`;
+      if (isShortCoveringBounce) {
+        stage = 5;
+        stageBadge = "🟡 BOOK PE";
+        actionTone = "warn";
+        riskPts = Math.min(Math.max(Math.round(spot - swingLow30m + 12), 15), 35);
+        dynamicSl = Math.round(spot - riskPts);
+        actionText = "🟡 BOOK PE PROFITS / FLIP TO CE ON RETEST (SHORT COVERING ACTIVE)";
+      } else {
+        stage = 4;
+        stageBadge = "🛡️ HOLD PE";
+        actionTone = "bear";
+        const trailSl = Math.round(spot + Math.min(Math.max(swingHigh30m - spot + 12, 15), 35));
+        dynamicSl = trailSl;
+        actionText = `🛡️ HOLD PE · TRAIL SL → ${trailSl} (DO NOT CHASE)`;
+      }
     } else if (spot - sessionLow > 100 && pe_ce_day_cr > 0.8) {
-      stage = 4;
-      stageBadge = "🛡️ HOLD CE";
-      actionTone = "bull";
-      const trailSl = Math.round(spot - Math.min(Math.max(spot - swingLow30m + 12, 15), 35));
-      dynamicSl = trailSl;
-      actionText = `🛡️ HOLD CE · TRAIL SL → ${trailSl} (DO NOT CHASE)`;
+      if (isLongUnwindingDip) {
+        stage = 5;
+        stageBadge = "🟡 BOOK CE";
+        actionTone = "warn";
+        riskPts = Math.min(Math.max(Math.round(swingHigh30m - spot + 12), 15), 35);
+        dynamicSl = Math.round(spot + riskPts);
+        actionText = "🟡 BOOK CE PROFITS / FLIP TO PE ON RETEST (LONG UNWINDING ACTIVE)";
+      } else {
+        stage = 4;
+        stageBadge = "🛡️ HOLD CE";
+        actionTone = "bull";
+        const trailSl = Math.round(spot - Math.min(Math.max(spot - swingLow30m + 12, 15), 35));
+        dynamicSl = trailSl;
+        actionText = `🛡️ HOLD CE · TRAIL SL → ${trailSl} (DO NOT CHASE)`;
+      }
     } else {
       stage = 0;
       if (Math.abs(pe_ce_delta_l) < 8) {
@@ -1360,15 +1410,219 @@ export function playOiBeep(kind: OiAlertKind) {
   } catch { /* ignore audio autoplay block */ }
 }
 
-export function WritersFlow({ tick }: { tick: number }) {
-  const [suiteView, setSuiteView] = useState<"smart_oi" | "trinity" | "classic">(() => {
+// ─────────────────────────────────────────── LIVE DESK BIAS FLASH-CARD ───────────────────────────────────────────
+export interface DeskBiasPayload {
+  ok: boolean;
+  bias_title: string;
+  bias_theme: "bullish" | "bearish" | "neutral";
+  bias_color: string;
+  narrative: string;
+  target_wall: string;
+  risk_note: string;
+  supporting_spike: string;
+  spot: number;
+  vwap: number;
+  pcr: number;
+  net_oi_chg_cr: string;
+  put_oi_chg_cr: string;
+  call_oi_chg_cr: string;
+  pe_wall: number;
+  ce_wall: number;
+  updated_at: string;
+  opt_expiry?: string;
+  fut_contract?: string;
+  error?: string;
+}
+
+export function DeskBiasBanner({
+  optExpiry,
+  futContract,
+  tick,
+}: {
+  optExpiry: "cur" | "next" | "both";
+  futContract?: "near" | "next" | "combined";
+  tick: number;
+}) {
+  const [data, setData] = useState<DeskBiasPayload | null>(null);
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
-      const v = localStorage.getItem("ict_writers_view_mode") as "smart_oi" | "trinity" | "classic";
-      if (v === "smart_oi" || v === "trinity" || v === "classic") return v;
+      return localStorage.getItem("ict_desk_bias_collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem("ict_desk_bias_collapsed", String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const fetchBias = useCallback(() => {
+    fetch(`/api/desk/bias?opt_expiry=${optExpiry}&fut_contract=${futContract || "combined"}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.ok) setData(j);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch desk bias:", err);
+      });
+  }, [optExpiry, futContract]);
+
+  useEffect(() => {
+    fetchBias();
+    const interval = setInterval(fetchBias, 15000);
+    return () => clearInterval(interval);
+  }, [fetchBias, tick]);
+
+  if (!data?.ok) return null;
+
+  const color = data.bias_color || "#38bdf8";
+
+  if (collapsed) {
+    return (
+      <div
+        className="mx-2 my-1 flex items-center justify-between rounded-lg border px-3 py-1 text-xs shadow-md shrink-0 transition-all duration-300"
+        style={{
+          backgroundColor: "#0b0f19",
+          borderColor: `${color}66`,
+          boxShadow: `0 0 10px ${color}20`,
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className="px-2 py-0.5 rounded text-[11px] font-black uppercase tracking-wider border"
+            style={{
+              backgroundColor: `${color}20`,
+              borderColor: `${color}88`,
+              color: color,
+            }}
+          >
+            {data.bias_title}
+          </span>
+          <span className="text-[11px] text-slate-300 hidden md:inline truncate max-w-xl">
+            {data.narrative}
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-cyan-400 font-bold hidden sm:inline">
+            🎯 {data.target_wall}
+          </span>
+          <button
+            onClick={toggleCollapsed}
+            className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700"
+            title="Expand Desk Flash-Card"
+          >
+            Expand ▾
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mx-2 my-1 rounded-lg border px-3 py-1.5 text-xs shadow-lg shrink-0 transition-all duration-300"
+      style={{
+        backgroundColor: "#0b0f19",
+        borderColor: `${color}66`,
+        boxShadow: `0 0 16px ${color}22`,
+      }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        {/* Left Column: Bias Badge & Key Quantitative Pillars */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className="px-2.5 py-1 rounded-md text-[11px] font-black tracking-wider uppercase border shadow-sm flex items-center gap-1.5"
+            style={{
+              backgroundColor: `${color}20`,
+              borderColor: `${color}99`,
+              color: color,
+            }}
+          >
+            <span className="inline-block w-2 h-2 rounded-full animate-ping" style={{ backgroundColor: color }} />
+            {data.bias_title}
+          </span>
+
+          {/* Quantitative Pillars Pill */}
+          <div className="flex items-center gap-1.5 rounded bg-[#101827] border border-slate-800 px-2 py-0.5 text-[10px] text-slate-300">
+            <span>Spot: <b className="text-white font-mono">{data.spot?.toFixed(1) ?? "—"}</b></span>
+            <span className="text-slate-600">•</span>
+            <span>VWAP: <b className="text-slate-200 font-mono">{data.vwap?.toFixed(1) ?? "—"}</b></span>
+            <span className="text-slate-600">•</span>
+            <span>PCR: <b className="text-cyan-300 font-mono">{data.pcr?.toFixed(2) ?? "—"}</b></span>
+            <span className="text-slate-600">•</span>
+            <span>
+              Net Δ:{" "}
+              <b className={`font-mono ${data.net_oi_chg_cr?.startsWith("-") ? "text-rose-400" : "text-emerald-400"}`}>
+                {data.net_oi_chg_cr}
+              </b>
+            </span>
+          </div>
+        </div>
+
+        {/* Center: Live Desk Narrative & Flash Insight */}
+        <div className="flex-1 min-w-[260px] flex flex-col justify-center">
+          <div className="text-[11px] leading-tight text-slate-200">
+            {data.narrative}
+          </div>
+          {data.supporting_spike && (
+            <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-amber-300 font-medium">
+              <span className="px-1 py-0.2 rounded bg-amber-950/80 border border-amber-600/50 text-[9px] uppercase font-bold text-amber-300">
+                ⚡ Flash Trigger
+              </span>
+              <span className="text-slate-300 truncate">{data.supporting_spike}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Target OI Wall, Risk SL & Clock Controls */}
+        <div className="flex items-center gap-2">
+          {/* Target Wall Pill */}
+          <div className="flex items-center gap-1 bg-[#0c1a2e] border border-sky-700/60 px-2 py-0.5 rounded text-[10px]">
+            <span className="text-sky-400 font-bold">🎯 Target:</span>
+            <span className="text-sky-100 font-extrabold">{data.target_wall}</span>
+          </div>
+
+          {/* Risk Note Pill */}
+          <div className="flex items-center gap-1 bg-[#1f1614] border border-amber-700/60 px-2 py-0.5 rounded text-[10px]">
+            <span className="text-amber-300 font-medium">{data.risk_note}</span>
+          </div>
+
+          {/* Heartbeat & Expiry Tag */}
+          <div className="hidden lg:flex items-center gap-1.5 text-[10px] text-slate-400 font-mono bg-slate-900/60 px-2 py-0.5 rounded border border-slate-800">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse" />
+            <span>{data.updated_at}</span>
+            <span className="text-slate-500 uppercase font-sans text-[9px]">[{data.opt_expiry}]</span>
+          </div>
+
+          {/* Collapse Button */}
+          <button
+            onClick={toggleCollapsed}
+            className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5 rounded bg-slate-800/80 border border-slate-700 ml-1 transition-colors"
+            title="Collapse into thin strip"
+          >
+            ▴
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function WritersFlow({ tick }: { tick: number }) {
+  const [suiteView, setSuiteView] = useState<"smart_oi" | "trinity" | "classic" | "gap_sniper">(() => {
+    try {
+      const v = localStorage.getItem("ict_writers_view_mode") as "smart_oi" | "trinity" | "classic" | "gap_sniper";
+      if (v === "smart_oi" || v === "trinity" || v === "classic" || v === "gap_sniper") return v;
     } catch { return "smart_oi"; }
     return "smart_oi";
   });
-  const setViewMode = (m: "smart_oi" | "trinity" | "classic") => {
+  const setViewMode = (m: "smart_oi" | "trinity" | "classic" | "gap_sniper") => {
     setSuiteView(m);
     try { localStorage.setItem("ict_writers_view_mode", m); } catch { /* ignore */ }
   };
@@ -2186,6 +2440,17 @@ export function WritersFlow({ tick }: { tick: number }) {
       >
         Classic Writer Flow
       </button>
+      <button
+        onClick={() => setViewMode("gap_sniper")}
+        className={`rounded px-2.5 py-0.5 font-bold text-[11px] transition-all ${
+          suiteView === "gap_sniper"
+            ? "bg-emerald-600/30 text-emerald-200 border border-emerald-500/60 shadow-sm"
+            : "text-slate-400 hover:text-slate-200"
+        }`}
+        title="Opening Gap & Confluence Sniper Playbook"
+      >
+        🎯 Gap Sniper
+      </button>
     </div>
   );
 
@@ -2262,6 +2527,8 @@ export function WritersFlow({ tick }: { tick: number }) {
           </div>
           {switcher}
         </div>
+        {/* 🎯 LIVE DESK BIAS: Institutional Flash-Card Banner */}
+        <DeskBiasBanner optExpiry={optExpiry} futContract={futContract} tick={tick} />
         <div className="flex-1 min-h-0 w-full relative box-border overflow-x-hidden px-2">
           <PcrTrinitySuite
             tick={tick}
@@ -2284,6 +2551,8 @@ export function WritersFlow({ tick }: { tick: number }) {
         </div>
         {switcher}
       </div>
+      {/* 🎯 LIVE DESK BIAS: Institutional Flash-Card Banner */}
+      <DeskBiasBanner optExpiry={optExpiry} futContract={futContract} tick={tick} />
       <Controls tf={tf} setTf={setTf} mode={mode} setMode={setMode} n={n} setN={setN} tfs={["1m", "3m", "5m", "15m"]} busy={busy}
         info={d?.ok ? `${d.day} · expiry ${optExpiry === "both" ? "Both (" + (expMeta?.cur_date || "27 Oct") + " + " + (expMeta?.next_date || "03 Nov") + ")" : (optExpiry === "next" ? (expMeta?.next_date || "03 Nov") : (expMeta?.cur_date || "27 Oct"))} · NIFTY future ${futContract === "near" ? (expMeta?.near_fut || "Oct FUT") : (futContract === "next" ? (expMeta?.next_fut || "Nov FUT") : "Oct+Nov Combined")} · ${d.snapshots} snapshots` : d?.message ?? "loading…"} />
 
@@ -2521,6 +2790,16 @@ export function WritersFlow({ tick }: { tick: number }) {
       <div ref={box} className="min-h-0 flex-1 w-full" style={{ minHeight: "220px" }} />
       {(d?.read || d?.note) && <div className="border-t border-ink-700 px-3 py-1.5 text-[13px] text-slate-200">{clean(`${d?.read ?? ""} ${d?.note ?? ""}`)}</div>}
       </div>
+
+      {/* ── View 3: Gap & Confluence Sniper ── */}
+      <div className={`flex-1 min-h-0 flex-col h-full w-full bg-[#070c17] ${suiteView === "gap_sniper" ? "flex" : "hidden"}`}>
+        <GapSniperTab
+          tick={tick}
+          modeToggle={switcher}
+          optExpiry={optExpiry}
+          futContract={futContract}
+        />
+      </div>
     </div>
   );
 }
@@ -2535,6 +2814,8 @@ export { default as StrikeMap2_0 } from "./StrikeMap2.0";
 export type { StrikeData, OIMatrixPayload, OIMatrixSuiteProps } from "./OIMatrixSuite";
 export { default as SmartOISuite } from "./SmartOISuite";
 export type { SmartOIStrike, SmartOICandle, SmartOITimeSeriesPoint, SmartOIPayload } from "./SmartOISuite";
+export { GapSniperTab } from "./GapSniperTab";
+export type { GapConfluenceData, GapChecklistItem, GapTimelineItem, GapPlaybook } from "./GapSniperTab";
 
 
 // ─────────────────────────────── a card with its own Full view / Normal view ───────────────────────────────

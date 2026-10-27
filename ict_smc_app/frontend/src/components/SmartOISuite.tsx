@@ -20,6 +20,45 @@ import {
   type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp,
 } from "lightweight-charts";
 
+// Normalizes candle series to IST wall-clock chart time (UTC + 5:30) and strips pre-market (< 09:15) / post-market (> 15:35)
+export function normalizeCandlesToChart(candles: SmartOICandle[]): SmartOICandle[] {
+  if (!candles || !candles.length) return [];
+  const firstT = candles[0].time;
+  const secFirst = firstT % 86400;
+  const isRawUtc = secFirst < 25000;
+
+  return candles
+    .map((c) => {
+      const chartT = isRawUtc ? c.time + 19800 : c.time;
+      const istSec = chartT % 86400;
+      return {
+        ...c,
+        time: chartT,
+        isMarket: istSec >= 33300 && istSec <= 56100,
+      };
+    })
+    .filter((c) => c.isMarket);
+}
+
+export function normalizeTimeSeriesToChart(timeSeries: SmartOITimeSeriesPoint[]): SmartOITimeSeriesPoint[] {
+  if (!timeSeries || !timeSeries.length) return [];
+  const firstT = timeSeries[0].time;
+  const secFirst = firstT % 86400;
+  const isRawUtc = secFirst < 25000;
+
+  return timeSeries
+    .map((pt) => {
+      const chartT = isRawUtc ? pt.time + 19800 : pt.time;
+      const istSec = chartT % 86400;
+      return {
+        ...pt,
+        time: chartT,
+        isMarket: istSec >= 33300 && istSec <= 56100,
+      };
+    })
+    .filter((pt) => pt.isMarket);
+}
+
 export interface SmartOIStrike {
   strike: number;
   is_atm: boolean;
@@ -282,7 +321,16 @@ export default function SmartOISuite({
       wickDownColor: "#ef4444",
     });
 
-    const candleData = data.candles.map((c) => ({
+    const validCandles = normalizeCandlesToChart(data.candles || []);
+
+    // Deduplicate by timestamp to ensure strictly ascending order
+    const candleMap = new Map<number, (typeof validCandles)[0]>();
+    for (const c of validCandles) {
+      candleMap.set(c.time, c);
+    }
+    const cleanCandles = Array.from(candleMap.values()).sort((a, b) => a.time - b.time);
+
+    const candleData = cleanCandles.map((c) => ({
       time: c.time as UTCTimestamp,
       open: c.open,
       high: c.high,
@@ -314,19 +362,33 @@ export default function SmartOISuite({
       });
     }
 
-    // Candle Confluence / Divergence Markers
-    const markers: SeriesMarker<Time>[] = [];
-    for (const c of data.candles) {
+    // Candle Confluence / Divergence Markers with horizontal bar spacing de-cluttering
+    const rawMarkers: SeriesMarker<Time>[] = [];
+    for (const c of cleanCandles) {
       if (c.markers && c.markers.length > 0) {
         for (const m of c.markers) {
-          markers.push({
-            time: m.time as UTCTimestamp,
+          rawMarkers.push({
+            time: c.time as UTCTimestamp,
             position: m.position,
             color: m.color,
             shape: m.shape,
             text: m.text,
           });
         }
+      }
+    }
+
+    // Enforce minimum 12-bar horizontal spacing between text markers to prevent overlapping labels
+    const barSec = tf === "1m" ? 60 : tf === "3m" ? 180 : tf === "5m" ? 300 : 900;
+    const minSpacingSec = barSec * 12;
+    const markers: SeriesMarker<Time>[] = [];
+    let lastMarkerTime = -999999;
+
+    for (const m of rawMarkers) {
+      const t = Number(m.time);
+      if (!m.text || t - lastMarkerTime >= minSpacingSec) {
+        markers.push(m);
+        if (m.text) lastMarkerTime = t;
       }
     }
     if (markers.length > 0) {
@@ -375,13 +437,21 @@ export default function SmartOISuite({
     });
     chart2Api.current = chart;
 
+    // Filter to active market hours (09:15 to 15:35 IST) and map to IST chart time
+    const validTs = normalizeTimeSeriesToChart(data.time_series || []);
+    const tsMap = new Map<number, (typeof validTs)[0]>();
+    for (const pt of validTs) {
+      tsMap.set(pt.time, pt);
+    }
+    const finalTs = Array.from(tsMap.values()).sort((a, b) => a.time - b.time);
+
     // Histogram Series for Net Delta
     const histSeries = chart.addSeries(HistogramSeries, {
       color: "#10b981",
       priceFormat: { type: "volume" },
     });
 
-    const histData = data.time_series.map((pt) => ({
+    const histData = finalTs.map((pt) => ({
       time: pt.time as UTCTimestamp,
       value: pt.smart_oi_delta,
       color: pt.smart_oi_delta >= 0 ? "#10b981" : "#ef4444",
@@ -399,7 +469,7 @@ export default function SmartOISuite({
       scaleMargins: { top: 0.1, bottom: 0.1 },
     });
 
-    const cumData = data.time_series.map((pt) => ({
+    const cumData = finalTs.map((pt) => ({
       time: pt.time as UTCTimestamp,
       value: pt.cum_smart_oi,
     }));
@@ -447,6 +517,13 @@ export default function SmartOISuite({
     });
     chart3Api.current = chart;
 
+    const validTs = normalizeTimeSeriesToChart(data.time_series || []);
+    const tsMap = new Map<number, (typeof validTs)[0]>();
+    for (const pt of validTs) {
+      tsMap.set(pt.time, pt);
+    }
+    const finalTs = Array.from(tsMap.values()).sort((a, b) => a.time - b.time);
+
     if (telemetryTab === "pcr") {
       // OI PCR Line
       const oiPcrSeries = chart.addSeries(LineSeries, {
@@ -454,7 +531,7 @@ export default function SmartOISuite({
         lineWidth: 2,
         title: "OI PCR",
       });
-      oiPcrSeries.setData(data.time_series.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.pcr_oi })));
+      oiPcrSeries.setData(finalTs.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.pcr_oi })));
 
       // Vol PCR Line
       const volPcrSeries = chart.addSeries(LineSeries, {
@@ -462,7 +539,7 @@ export default function SmartOISuite({
         lineWidth: 2,
         title: "Vol PCR",
       });
-      volPcrSeries.setData(data.time_series.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.pcr_vol })));
+      volPcrSeries.setData(finalTs.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.pcr_vol })));
 
       oiPcrSeries.createPriceLine({ price: 1.2, color: "#10b981", lineWidth: 1, lineStyle: LineStyle.Dotted, title: "Bull 1.2" });
       oiPcrSeries.createPriceLine({ price: 0.8, color: "#ef4444", lineWidth: 1, lineStyle: LineStyle.Dotted, title: "Bear 0.8" });
@@ -473,7 +550,7 @@ export default function SmartOISuite({
         lineWidth: 2,
         title: "PE-CE Spread",
       });
-      spreadSeries.setData(data.time_series.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.smart_oi_delta })));
+      spreadSeries.setData(finalTs.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.smart_oi_delta })));
 
       const futSeries = chart.addSeries(LineSeries, {
         color: "#94a3b8",
@@ -485,7 +562,7 @@ export default function SmartOISuite({
         borderColor: "#94a3b8",
         scaleMargins: { top: 0.15, bottom: 0.15 },
       });
-      futSeries.setData(data.time_series.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.fut_close })));
+      futSeries.setData(finalTs.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.fut_close })));
     }
 
     chart.timeScale().fitContent();
@@ -525,36 +602,71 @@ export default function SmartOISuite({
     modalChartApi.current = chart;
 
     if (enlargedPanel === "confluence" && data.candles?.length) {
+      const validCandles = normalizeCandlesToChart(data.candles || []);
+      const candleMap = new Map<number, (typeof validCandles)[0]>();
+      for (const c of validCandles) {
+        candleMap.set(c.time, c);
+      }
+      const cleanCandles = Array.from(candleMap.values()).sort((a, b) => a.time - b.time);
+
       const candleSeries = chart.addSeries(CandlestickSeries, {
         upColor: "#10b981", downColor: "#ef4444", borderVisible: false, wickUpColor: "#10b981", wickDownColor: "#ef4444",
       });
-      candleSeries.setData(data.candles.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })));
+      candleSeries.setData(cleanCandles.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })));
       if (data.key_support_level > 0) {
         candleSeries.createPriceLine({ price: data.key_support_level, color: "#10b981", lineWidth: 2, lineStyle: LineStyle.Dashed, title: `🟢 Smart Support Floor (${data.key_support_level})` });
       }
       if (data.key_resistance_level > 0) {
         candleSeries.createPriceLine({ price: data.key_resistance_level, color: "#ef4444", lineWidth: 2, lineStyle: LineStyle.Dashed, title: `🔴 Smart Resistance Ceiling (${data.key_resistance_level})` });
       }
-      const markers: SeriesMarker<Time>[] = [];
-      for (const c of data.candles) {
-        if (c.markers) {
+
+      const rawMarkers: SeriesMarker<Time>[] = [];
+      for (const c of cleanCandles) {
+        if (c.markers && c.markers.length > 0) {
           for (const m of c.markers) {
-            markers.push({ time: m.time as UTCTimestamp, position: m.position, color: m.color, shape: m.shape, text: m.text });
+            rawMarkers.push({
+              time: c.time as UTCTimestamp,
+              position: m.position,
+              color: m.color,
+              shape: m.shape,
+              text: m.text,
+            });
           }
+        }
+      }
+      const barSec = tf === "1m" ? 60 : tf === "3m" ? 180 : tf === "5m" ? 300 : 900;
+      const minSpacingSec = barSec * 12;
+      const markers: SeriesMarker<Time>[] = [];
+      let lastMarkerTime = -999999;
+      for (const m of rawMarkers) {
+        const t = Number(m.time);
+        if (!m.text || t - lastMarkerTime >= minSpacingSec) {
+          markers.push(m);
+          if (m.text) lastMarkerTime = t;
         }
       }
       if (markers.length > 0) createSeriesMarkers(candleSeries, markers);
     } else if (enlargedPanel === "delta" && data.time_series?.length) {
+      const validTs = normalizeTimeSeriesToChart(data.time_series || []);
+      const tsMap = new Map<number, (typeof validTs)[0]>();
+      for (const pt of validTs) tsMap.set(pt.time, pt);
+      const finalTs = Array.from(tsMap.values()).sort((a, b) => a.time - b.time);
+
       const histSeries = chart.addSeries(HistogramSeries, { color: "#10b981" });
-      histSeries.setData(data.time_series.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.smart_oi_delta, color: pt.smart_oi_delta >= 0 ? "#10b981" : "#ef4444" })));
+      histSeries.setData(finalTs.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.smart_oi_delta, color: pt.smart_oi_delta >= 0 ? "#10b981" : "#ef4444" })));
       const cumSeries = chart.addSeries(LineSeries, { color: "#38bdf8", lineWidth: 2, priceScaleId: "cum" });
       chart.priceScale("cum").applyOptions({ borderColor: "#38bdf8", scaleMargins: { top: 0.1, bottom: 0.1 } });
-      cumSeries.setData(data.time_series.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.cum_smart_oi })));
+      cumSeries.setData(finalTs.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.cum_smart_oi })));
     } else if (enlargedPanel === "telemetry" && data.time_series?.length) {
+      const validTs = normalizeTimeSeriesToChart(data.time_series || []);
+      const tsMap = new Map<number, (typeof validTs)[0]>();
+      for (const pt of validTs) tsMap.set(pt.time, pt);
+      const finalTs = Array.from(tsMap.values()).sort((a, b) => a.time - b.time);
+
       const oiPcr = chart.addSeries(LineSeries, { color: "#e8c35a", lineWidth: 2, title: "OI PCR" });
-      oiPcr.setData(data.time_series.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.pcr_oi })));
+      oiPcr.setData(finalTs.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.pcr_oi })));
       const volPcr = chart.addSeries(LineSeries, { color: "#c084fc", lineWidth: 2, title: "Vol PCR" });
-      volPcr.setData(data.time_series.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.pcr_vol })));
+      volPcr.setData(finalTs.map((pt) => ({ time: pt.time as UTCTimestamp, value: pt.pcr_vol })));
       oiPcr.createPriceLine({ price: 1.2, color: "#10b981", lineWidth: 1, lineStyle: LineStyle.Dotted, title: "Bull 1.2" });
       oiPcr.createPriceLine({ price: 0.8, color: "#ef4444", lineWidth: 1, lineStyle: LineStyle.Dotted, title: "Bear 0.8" });
     }

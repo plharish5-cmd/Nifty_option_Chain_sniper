@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from .. import config, db
-from ..timeutil import market_open_now, now_epoch, now_ist, session_bounds
+from ..timeutil import market_open_now, now_epoch, now_ist, session_bounds, to_ist
 from ..engine import pcr_trinity
 
 log = logging.getLogger("chain")
@@ -349,6 +349,19 @@ class ChainPoller:
             GROUP BY expiry, ts
             ORDER BY ts
         """, (today_start,))
+
+        if not rows:
+            latest = db.query("SELECT MAX(ts) as mx FROM chain_snap")
+            if latest and latest[0]["mx"]:
+                latest_dt = to_ist(latest[0]["mx"]).date()
+                today_start, _ = session_bounds(latest_dt)
+                rows = db.query("""
+                    SELECT expiry, ts, SUM(ce_oi), SUM(pe_oi), SUM(ce_vol), SUM(pe_vol)
+                    FROM chain_snap
+                    WHERE ts >= ?
+                    GROUP BY expiry, ts
+                    ORDER BY ts
+                """, (today_start,))
 
         # Load today's futures candles for alignment and resolve contract mode
         oct_candles = db.candles_1m("FUT", today_start)

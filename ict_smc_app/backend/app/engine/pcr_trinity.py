@@ -382,6 +382,7 @@ def compute_pcr_trinity_verdict(series: List[Dict[str, Any]], cfg: Optional[Dict
     unwinding_pe_thresh = float(c.get("unwinding_pe_chg_threshold", -500000))
     unwinding_min_net = float(c.get("unwinding_min_net_oi", -1000000))
     total_oi_gap_min_bull = float(c.get("total_oi_gap_min_bull", 1000000))
+    mutual_unwind_thresh = float(c.get("mutual_unwind_thresh", -500000))
 
     gap_widening_bull = total_oi_gap_delta > 0 or total_oi_gap >= total_oi_gap_min_bull or (total_oi_gap > 0 and total_oi_gap_delta >= -1500000)
     gap_narrowing_bear = total_oi_gap_delta < 0 or total_oi_gap <= -total_oi_gap_min_bull or (total_oi_gap < 0 and total_oi_gap_delta <= 1500000)
@@ -394,6 +395,12 @@ def compute_pcr_trinity_verdict(series: List[Dict[str, Any]], cfg: Optional[Dict
     is_put_unwinding_flush = (
         (put_oi_chg < unwinding_pe_thresh and net_oi_chg < unwinding_min_net)
         or (put_oi_chg_diff_30m < -2000000 and net_oi_slope_30m < 0 and pcr_oi <= 1.05)
+    )
+
+    # Mutual unwinding into expiry / EOD: BOTH Call and Put writers unwinding significantly
+    is_mutual_unwinding = (
+        put_oi_chg_diff_30m <= mutual_unwind_thresh
+        and call_oi_chg_diff_30m <= mutual_unwind_thresh
     )
 
     # Price / PCR Divergence
@@ -410,14 +417,35 @@ def compute_pcr_trinity_verdict(series: List[Dict[str, Any]], cfg: Optional[Dict
         alignment_state = "PRICE_PCR_DIVERGENCE"
         verdict_badge = "⚠️ BULLISH ABSORPTION DIVERGENCE"
         verdict_summary = f"Futures down {fut_delta_30m:+.1f}pts but PCR rising ({pcr_slope_30m:+.3f}/30m) & Put writers absorbing. Bullish bounce floor building."
-    elif is_call_short_squeeze and pcr_oi >= 0.95 and total_oi_gap > 0:
+    elif is_mutual_unwinding:
+        alignment_state = "MUTUAL_UNWINDING"
+        verdict_badge = "🏁 EXPIRY / EOD MUTUAL UNWINDING (PROFIT BOOKING)"
+        verdict_summary = (
+            f"Both Call (Δ30m {call_oi_chg_diff_30m / 1e7:+.2f}Cr) and Put (Δ30m {put_oi_chg_diff_30m / 1e7:+.2f}Cr) writers are unwinding positions. "
+            "Expiry mutual profit booking; avoid chasing directional momentum."
+        )
+    elif is_call_short_squeeze and net_oi_chg < 0:
+        alignment_state = "COUNTER_TREND_COVERING"
+        verdict_badge = "🟡 COUNTER-TREND CALL PROFIT BOOKING (NET REGIME STILL BEARISH)"
+        verdict_summary = (
+            f"Call writers unwinding off highs (CE Δ30m {call_oi_chg_diff_30m / 1e7:+.2f}Cr), but cumulative Net ΔOI remains negative ({net_oi_chg / 1e7:+.2f}Cr). "
+            "Counter-trend Call profit booking within a bearish regime; treat bounces with caution."
+        )
+    elif is_put_unwinding_flush and net_oi_chg > 0:
+        alignment_state = "COUNTER_TREND_UNWINDING"
+        verdict_badge = "🟡 COUNTER-TREND PUT PROFIT BOOKING (NET REGIME STILL BULLISH)"
+        verdict_summary = (
+            f"Put writers unwinding (PE Δ30m {put_oi_chg_diff_30m / 1e7:+.2f}Cr), but cumulative Net ΔOI remains positive (+{net_oi_chg / 1e7:.2f}Cr). "
+            "Counter-trend Put profit booking within a bullish regime."
+        )
+    elif is_call_short_squeeze and pcr_oi >= 0.95 and total_oi_gap > 0 and net_oi_chg >= 0 and not is_mutual_unwinding:
         alignment_state = "BULLISH_TRINITY_LOCK"
         verdict_badge = "🚀 3/3 BULLISH SHORT-COVERING SQUEEZE"
         verdict_summary = (
             f"Call writers in full retreat (CE Δ {call_oi_chg / 1e7:+.2f}Cr) with net ΔOI +{net_oi_chg / 1e7:.2f}Cr & PCR {pcr_oi:.3f}. "
             "Aggressive Call Short-Covering Squeeze propelling rally."
         )
-    elif is_put_unwinding_flush and pcr_oi <= 1.05 and total_oi_gap < 0:
+    elif is_put_unwinding_flush and pcr_oi <= 1.05 and total_oi_gap < 0 and net_oi_chg <= 0 and not is_mutual_unwinding:
         alignment_state = "BEARISH_TRINITY_LOCK"
         verdict_badge = "🩸 3/3 BEARISH LONG-UNWINDING FLUSH"
         verdict_summary = (
@@ -660,6 +688,7 @@ def build_intraday_pcr_series(
 
         raw_series.append({
             "time": chart_time(ts),
+            "ts": int(ts),
             "fut_close": round(fut_c, 2),
             "fut_oi": fut_oi,
             "fut_oi_chg": fut_oi_chg,
@@ -757,6 +786,7 @@ def combine_multi_expiry_series(
 
         both.append({
             "time": t,
+            "ts": int(p.get("ts", t - 19800)),
             "fut_close": p.get("fut_close", 0.0),
             "fut_oi": p.get("fut_oi", 0),
             "fut_oi_chg": p.get("fut_oi_chg", 0),

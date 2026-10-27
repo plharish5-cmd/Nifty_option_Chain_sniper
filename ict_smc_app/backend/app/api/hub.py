@@ -1232,8 +1232,12 @@ class Hub:
             return
         last = cur_series[-1]
         prev = cur_series[-2]
-        t = int(last.get("time", now_epoch()))
-        ist_dt = to_ist(t)
+        ts_val = int(last.get("ts") or 0)
+        if ts_val <= 0:
+            raw_t = int(last.get("time", now_epoch()))
+            # Detect chart_time offset (+19800s)
+            ts_val = raw_t - 19800 if (raw_t - now_epoch() > 10000) else raw_t
+        ist_dt = to_ist(ts_val)
         hhmm = ist_dt.strftime("%H:%M")
         if hhmm < "09:20":
             return
@@ -1251,7 +1255,7 @@ class Hub:
                 self._last_oc_alert_key = key
                 e = {
                     "kind": "OC_CROSSOVER",
-                    "ts": t,
+                    "ts": ts_val,
                     "key": key,
                     "tf": self.primary,
                     "dir": "long",
@@ -1268,7 +1272,7 @@ class Hub:
                 self._last_oc_alert_key = key
                 e = {
                     "kind": "OC_CROSSOVER",
-                    "ts": t,
+                    "ts": ts_val,
                     "key": key,
                     "tf": self.primary,
                     "dir": "short",
@@ -1287,7 +1291,7 @@ class Hub:
                 self._last_oc_alert_key = key
                 e = {
                     "kind": "TRINITY_LOCK",
-                    "ts": t,
+                    "ts": ts_val,
                     "key": key,
                     "tf": self.primary,
                     "dir": "long",
@@ -1302,7 +1306,7 @@ class Hub:
                 self._last_oc_alert_key = key
                 e = {
                     "kind": "TRINITY_LOCK",
-                    "ts": t,
+                    "ts": ts_val,
                     "key": key,
                     "tf": self.primary,
                     "dir": "short",
@@ -1355,6 +1359,36 @@ class Hub:
     def crt_signals_today(self) -> List[Signal]:
         o, _ = session_bounds(now_ist().date())
         return [s for r in self.crt.values() for s in r.get("signals", []) if s.ts >= o]
+
+    def get_live_writer_flow_state(self) -> Tuple[int, int]:
+        """Returns (interval_bar_net, day_net_diff) from live PE-CE Matrix or Trinity series."""
+        try:
+            if hasattr(self, "chain") and hasattr(self.chain, "get_pe_ce_matrix"):
+                matrix = self.chain.get_pe_ce_matrix(tf="3m")
+                if matrix and matrix.get("ok") and matrix.get("rows"):
+                    r0 = matrix["rows"][0]
+                    interval_bar_net = int(r0.get("pe_ce_step_diff") or 0)
+                    day_net_diff = int(r0.get("pe_ce_day_diff") or 0)
+                    return interval_bar_net, day_net_diff
+        except Exception as e:
+            log.warning("get_live_writer_flow_state pe_ce_matrix error: %s", e)
+
+        # Fallback to trinity series
+        try:
+            if hasattr(self, "chain") and hasattr(self.chain, "get_pcr_trinity"):
+                trinity = self.chain.get_pcr_trinity(self.sel_expiry(), hub=self)
+                series = (trinity.get("series") or {}).get("cur", [])
+                if len(series) >= 2:
+                    last_net = int(series[-1].get("net_oi_chg") or 0)
+                    prev_net = int(series[-2].get("net_oi_chg") or 0)
+                    return last_net - prev_net, last_net
+                elif len(series) == 1:
+                    last_net = int(series[-1].get("net_oi_chg") or 0)
+                    return last_net, last_net
+        except Exception as e:
+            log.warning("get_live_writer_flow_state trinity error: %s", e)
+
+        return 0, 0
 
     def evaluate_primary(self) -> List[Signal]:
         p = self.analyses.get(self.primary)
@@ -1448,6 +1482,11 @@ class Hub:
             bar_c = float(cur_bar.c[last_i])
             bar_t = int(cur_bar.ts[last_i])
 
+            rv_cfg = config.rules().get("retest_veto", {})
+            interval_thresh = int(rv_cfg.get("interval_shock_thresh", 2500000))
+            day_diff_thresh = int(rv_cfg.get("day_diff_shock_thresh", 15000000))
+            interval_bar_net, day_net_diff = self.get_live_writer_flow_state()
+
             remaining_zones = []
             for z in self.pending_retest_zones:
                 if z["created_ts"] == bar_t:
@@ -1461,8 +1500,31 @@ class Hub:
                     if bar_c < z["sl"]:
                         continue  # Invalidate: SL breached
                     if bar_l <= z["zone_high"] and bar_c >= z["zone_low"] and not z["filled"]:
-                        z["filled"] = True
                         strike = int(round(bar_c / 50.0) * 50)
+                        # Live Writer-Flow Veto Check for BUY CE
+                        is_vetoed = (interval_bar_net < -interval_thresh) or (day_net_diff < -day_diff_thresh and interval_bar_net <= 0)
+                        if is_vetoed:
+                            log.info(
+                                "BUY CE Retest Fill VETOED by adverse writer flow: interval_net=%d, day_diff=%d",
+                                interval_bar_net, day_net_diff,
+                            )
+                            e = {
+                                "kind": "RETEST_CANCELLED",
+                                "ts": bar_t,
+                                "key": f"RETEST_CANCEL_{z['tf']}_long_{bar_t}",
+                                "tf": z["tf"],
+                                "dir": "long",
+                                "price": bar_c,
+                                "title": f"⚠️ RETEST CANCELLED (WRITER FLOW FLIPPED BEARISH) @ {bar_c:,.1f}",
+                                "body": (
+                                    f"BUY {strike} CE limit zone {z['zone_low']:,.0f}–{z['zone_high']:,.0f} cancelled: "
+                                    f"Adverse writer flow (interval net {interval_bar_net / 1e5:+.1f}L, day diff {day_net_diff / 1e7:+.2f}Cr)."
+                                ),
+                            }
+                            await alerts_mod.notify_event(self.alerts, e, max_age_s=600)
+                            continue
+
+                        z["filled"] = True
                         risk = round(bar_c - z["sl"], 1)
                         retest_sig = Signal(
                             key=f"RETEST_FILL|{z['tf']}|long|{bar_t}",
@@ -1491,8 +1553,31 @@ class Hub:
                     if bar_c > z["sl"]:
                         continue
                     if bar_h >= z["zone_low"] and bar_c <= z["zone_high"] and not z["filled"]:
-                        z["filled"] = True
                         strike = int(round(bar_c / 50.0) * 50)
+                        # Live Writer-Flow Veto Check for BUY PE
+                        is_vetoed = (interval_bar_net > interval_thresh) or (day_net_diff > day_diff_thresh and interval_bar_net >= 0)
+                        if is_vetoed:
+                            log.info(
+                                "BUY PE Retest Fill VETOED by adverse writer flow: interval_net=%d, day_diff=%d",
+                                interval_bar_net, day_net_diff,
+                            )
+                            e = {
+                                "kind": "RETEST_CANCELLED",
+                                "ts": bar_t,
+                                "key": f"RETEST_CANCEL_{z['tf']}_short_{bar_t}",
+                                "tf": z["tf"],
+                                "dir": "short",
+                                "price": bar_c,
+                                "title": f"⚠️ RETEST CANCELLED (WRITER FLOW FLIPPED BULLISH) @ {bar_c:,.1f}",
+                                "body": (
+                                    f"BUY {strike} PE limit zone {z['zone_low']:,.0f}–{z['zone_high']:,.0f} cancelled: "
+                                    f"Adverse writer flow (interval net {interval_bar_net / 1e5:+.1f}L, day diff {day_net_diff / 1e7:+.2f}Cr)."
+                                ),
+                            }
+                            await alerts_mod.notify_event(self.alerts, e, max_age_s=600)
+                            continue
+
+                        z["filled"] = True
                         risk = round(z["sl"] - bar_c, 1)
                         retest_sig = Signal(
                             key=f"RETEST_FILL|{z['tf']}|short|{bar_t}",

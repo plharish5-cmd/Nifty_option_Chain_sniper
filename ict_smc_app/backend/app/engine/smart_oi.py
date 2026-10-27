@@ -22,9 +22,29 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from .. import config
-from ..timeutil import now_epoch, now_ist, session_bounds
+from ..timeutil import chart_time, now_epoch, now_ist, session_bounds, IST_OFFSET_S
 
 log = logging.getLogger("smart_oi")
+
+
+def to_ist_chart_time(epoch: int) -> Tuple[bool, int]:
+    """
+    Validates if timestamp is within active Indian trading hours (09:15 to 15:35 IST)
+    and maps it to IST chart time space (UTC + 5:30) for Lightweight Charts.
+    Returns (is_active_market, chart_time).
+    """
+    # Check if epoch is already in chart_time space (e.g. from pcr_oi_series or shifted feeds)
+    sec_shifted = epoch % 86400
+    if 33300 <= sec_shifted <= 56100:  # 09:15:00 to 15:35:00 IST
+        return True, epoch
+
+    # Check if raw UTC epoch
+    sec_raw = (epoch + IST_OFFSET_S) % 86400
+    if 33300 <= sec_raw <= 56100:
+        return True, epoch + IST_OFFSET_S
+
+    # Pre-market (< 09:15 IST) or post-market (> 15:35 IST)
+    return False, epoch
 
 
 def get_cfg() -> Dict[str, Any]:
@@ -239,11 +259,12 @@ def compute_smart_oi_confluence(
 ) -> Dict[str, Any]:
     """
     Cross-references filtered Smart OI signal levels against NIFTY Futures candlestick price action and volume.
-    Generates confluence and divergence markers.
+    Generates confluence and divergence markers with horizontal spacing de-cluttering.
     """
     c = cfg or get_cfg()
     tol = float(c.get("confluence_level_tolerance_pts", 25.0))
     div_oi_thresh = int(c.get("divergence_threshold_oi", 250000))
+    min_spacing = int(c.get("min_marker_spacing_bars", 12))
 
     sup_level = float(signal_data.get("key_support_level") or 0.0)
     res_level = float(signal_data.get("key_resistance_level") or 0.0)
@@ -253,7 +274,10 @@ def compute_smart_oi_confluence(
     series_map: Dict[int, Dict[str, Any]] = {}
     if active_series:
         for pt in active_series:
-            series_map[int(pt["time"])] = pt
+            raw_t = int(pt["time"])
+            series_map[raw_t] = pt
+            series_map[raw_t + IST_OFFSET_S] = pt
+            series_map[raw_t - IST_OFFSET_S] = pt
 
     confluence_candles: List[Dict[str, Any]] = []
     confluence_markers: List[Dict[str, Any]] = []
@@ -262,10 +286,46 @@ def compute_smart_oi_confluence(
     divergence_warnings = 0
 
     running_cum_smart = 0
-    avg_vol = (sum(float(cd.get("v") or 0) for cd in candles) / max(1, len(candles))) if candles else 1000.0
 
-    for i, cd in enumerate(candles):
-        t = int(cd.get("ts") or cd.get("time") or 0)
+    # Filter candles to active trading hours (09:15 to 15:35 IST) and map to IST chart_time
+    valid_candles: List[Tuple[int, Dict[str, Any]]] = []
+    if candles:
+        first_ts = int(candles[0].get("ts") or candles[0].get("time") or 0)
+        sec_first = first_ts % 86400
+        sec_first_ist = (first_ts + IST_OFFSET_S) % 86400
+
+        # Market open in raw UTC is ~03:45 (13500 sec); in IST it is ~09:15 (33300 sec)
+        is_raw_utc = (12600 <= sec_first <= 36000) and (32400 <= sec_first_ist <= 56100)
+        is_already_chart_t = (32400 <= sec_first <= 56100) and not is_raw_utc
+
+        for cd in candles:
+            t_raw = int(cd.get("ts") or cd.get("time") or 0)
+            if is_raw_utc:
+                ist_sec = (t_raw + IST_OFFSET_S) % 86400
+                chart_t = t_raw + IST_OFFSET_S
+            elif is_already_chart_t:
+                ist_sec = t_raw % 86400
+                chart_t = t_raw
+            else:
+                # Test / mock data
+                ist_sec = (t_raw + IST_OFFSET_S) % 86400
+                chart_t = t_raw
+
+            if is_raw_utc or is_already_chart_t:
+                # Strip pre-market (< 09:15 IST) and post-market (> 15:35 IST) ticks
+                if not (33300 <= ist_sec <= 56100):
+                    continue
+
+            valid_candles.append((chart_t, cd))
+
+    avg_vol = (sum(float(cd.get("v") or 0) for _, cd in valid_candles) / max(1, len(valid_candles))) if valid_candles else 1000.0
+
+    last_sup_marker_idx = -999
+    last_res_marker_idx = -999
+    last_trap_marker_idx = -999
+    last_abs_marker_idx = -999
+
+    for i, (t, cd) in enumerate(valid_candles):
         o = float(cd.get("o") or 0.0)
         h = float(cd.get("h") or 0.0)
         l = float(cd.get("l") or 0.0)
@@ -274,10 +334,10 @@ def compute_smart_oi_confluence(
 
         # Match closest pcr point if exact minute not found
         p_match = series_map.get(t)
-        if not p_match and pcr_oi_series:
+        if not p_match and active_series:
             # find nearest point within 300 seconds
-            closest = min(pcr_oi_series, key=lambda x: abs(int(x["time"]) - t), default=None)
-            if closest and abs(int(closest["time"]) - t) <= 300:
+            closest = min(active_series, key=lambda x: min(abs(int(x["time"]) - t), abs(int(x["time"]) - (t - IST_OFFSET_S))), default=None)
+            if closest and min(abs(int(closest["time"]) - t), abs(int(closest["time"]) - (t - IST_OFFSET_S))) <= 300:
                 p_match = closest
 
         net_delta = int(p_match.get("net_oi_chg") or 0) if p_match else 0
@@ -291,61 +351,69 @@ def compute_smart_oi_confluence(
         if sup_level > 0 and abs(l - sup_level) <= tol:
             if is_green or net_delta > 0 or vol_expanding:
                 bullish_confluences += 1
-                marker = {
-                    "time": t,
-                    "position": "belowBar",
-                    "color": "#10b981",
-                    "shape": "arrowUp",
-                    "text": f"🟢 Bullish Support Bounce @ {int(sup_level):,}",
-                    "kind": "BULLISH_CONFLUENCE",
-                    "level": sup_level,
-                }
-                confluence_markers.append(marker)
-                candle_markers.append(marker)
+                if i - last_sup_marker_idx >= min_spacing:
+                    last_sup_marker_idx = i
+                    marker = {
+                        "time": t,
+                        "position": "belowBar",
+                        "color": "#10b981",
+                        "shape": "arrowUp",
+                        "text": f"🟢 Bullish Support Bounce @ {int(sup_level):,}",
+                        "kind": "BULLISH_CONFLUENCE",
+                        "level": sup_level,
+                    }
+                    confluence_markers.append(marker)
+                    candle_markers.append(marker)
 
         # 2. Bearish Confluence: Resistance Tested / Rejected with -ΔOI
         if res_level > 0 and abs(h - res_level) <= tol:
             if not is_green or net_delta < 0 or vol_expanding:
                 bearish_confluences += 1
-                marker = {
-                    "time": t,
-                    "position": "aboveBar",
-                    "color": "#ef4444",
-                    "shape": "arrowDown",
-                    "text": f"🔴 Bearish Resistance Rejection @ {int(res_level):,}",
-                    "kind": "BEARISH_CONFLUENCE",
-                    "level": res_level,
-                }
-                confluence_markers.append(marker)
-                candle_markers.append(marker)
+                if i - last_res_marker_idx >= min_spacing:
+                    last_res_marker_idx = i
+                    marker = {
+                        "time": t,
+                        "position": "aboveBar",
+                        "color": "#ef4444",
+                        "shape": "arrowDown",
+                        "text": f"🔴 Bearish Resistance Rejection @ {int(res_level):,}",
+                        "kind": "BEARISH_CONFLUENCE",
+                        "level": res_level,
+                    }
+                    confluence_markers.append(marker)
+                    candle_markers.append(marker)
 
         # 3. Divergence Warnings:
         # Bearish Trap: Price rising but Smart OI is strongly negative (heavy Call writing capping)
         if is_green and (cl - o) >= 15.0 and net_delta < -div_oi_thresh:
             divergence_warnings += 1
-            marker = {
-                "time": t,
-                "position": "aboveBar",
-                "color": "#f59e0b",
-                "shape": "circle",
-                "text": "⚠️ Bearish Trap: Rally Capped by Heavy Call Writing",
-                "kind": "BEARISH_TRAP_DIVERGENCE",
-            }
-            confluence_markers.append(marker)
-            candle_markers.append(marker)
+            if i - last_trap_marker_idx >= min_spacing:
+                last_trap_marker_idx = i
+                marker = {
+                    "time": t,
+                    "position": "aboveBar",
+                    "color": "#f59e0b",
+                    "shape": "circle",
+                    "text": "⚠️ Bearish Trap: Rally Capped by Heavy Call Writing",
+                    "kind": "BEARISH_TRAP_DIVERGENCE",
+                }
+                confluence_markers.append(marker)
+                candle_markers.append(marker)
         # Bullish Absorption: Price falling but Smart OI is strongly positive (institutions absorbing dip)
         elif not is_green and (o - cl) >= 15.0 and net_delta > div_oi_thresh:
             divergence_warnings += 1
-            marker = {
-                "time": t,
-                "position": "belowBar",
-                "color": "#10b981",
-                "shape": "circle",
-                "text": "🟢 Bullish Absorption: Dip Defended by Heavy Put Writing",
-                "kind": "BULLISH_ABSORPTION_DIVERGENCE",
-            }
-            confluence_markers.append(marker)
-            candle_markers.append(marker)
+            if i - last_abs_marker_idx >= min_spacing:
+                last_abs_marker_idx = i
+                marker = {
+                    "time": t,
+                    "position": "belowBar",
+                    "color": "#10b981",
+                    "shape": "circle",
+                    "text": "🟢 Bullish Absorption: Dip Defended by Heavy Put Writing",
+                    "kind": "BULLISH_ABSORPTION_DIVERGENCE",
+                }
+                confluence_markers.append(marker)
+                candle_markers.append(marker)
 
         confluence_candles.append({
             "time": t,

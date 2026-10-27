@@ -127,3 +127,57 @@ def test_build_smart_oi_payload():
     assert "signal_strikes" in payload
     assert payload["tf"] == "3m"
     assert payload["stats"]["signal_strikes"] >= 1
+
+
+def test_smart_oi_marker_declutter_and_ist_market_hours():
+    """Verify that:
+    1. Pre-market ticks (< 09:15 IST) are stripped.
+    2. Valid candles are mapped to IST wall-clock chart_time (UTC + 5:30).
+    3. Multiple consecutive bounces at key support (22,600) do NOT produce overlapping labels;
+       markers are spaced by >= 12 bars, suppressing repeating labels on consecutive candles.
+    """
+    signal_data = {
+        "key_support_level": 22600.0,
+        "key_resistance_level": 22800.0,
+    }
+
+    # 1792986300 = 2026-10-26 09:15:00 IST (03:45 UTC)
+    # Pre-market candle at 09:00 IST (1792985400)
+    pre_market_candle = {"ts": 1792985400, "o": 22600.0, "h": 22620.0, "l": 22590.0, "c": 22610.0, "v": 5000.0}
+
+    # 20 consecutive candles bouncing at 22,600 support starting at 09:15 IST
+    bounce_candles = [pre_market_candle]
+    for idx in range(20):
+        t_utc = 1792986300 + idx * 180  # 3-minute steps
+        bounce_candles.append({
+            "ts": t_utc,
+            "o": 22610.0,
+            "h": 22625.0,
+            "l": 22598.0,  # Touches 22600 within 25 pt tolerance
+            "c": 22615.0,  # Green bounce
+            "v": 15000.0,
+        })
+
+    pcr_oi_series = [
+        {"time": 1793006100 + idx * 180, "net_oi_chg": 500000, "pcr_oi": 1.15, "pcr_vol": 1.10}
+        for idx in range(20)
+    ]
+
+    res = smart_oi.compute_smart_oi_confluence(signal_data, bounce_candles, pcr_oi_series=pcr_oi_series)
+
+    # 1. Verify pre-market tick was stripped: 20 candles remain
+    assert len(res["candles"]) == 20
+    # First candle time must be mapped to 09:15 IST chart time (1793006100)
+    assert res["candles"][0]["time"] == 1793006100
+    assert res["candles"][0]["time"] % 86400 == 33300  # 09:15:00
+
+    # 2. Verify marker de-cluttering:
+    # 20 consecutive bounces would previously create 20 overlapping markers.
+    # With 12-bar horizontal spacing, only index 0 and index 12 (at most 2 markers) are created.
+    support_markers = [m for m in res["markers"] if m["kind"] == "BULLISH_CONFLUENCE"]
+    assert len(support_markers) == 2, f"Expected 2 spaced markers, got {len(support_markers)}"
+    assert support_markers[0]["time"] == 1793006100
+    assert support_markers[1]["time"] == 1793006100 + 12 * 180
+
+    # Stats can still track total confluence touches
+    assert res["stats"]["bullish_confluences"] == 20

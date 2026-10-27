@@ -836,6 +836,10 @@ export default function PcrTrinitySuite({
                   ? "bg-rose-950/80 border-rose-500/80 text-rose-300 ring-1 ring-rose-500/30"
                   : activeVerdict?.alignment_state === "PRICE_PCR_DIVERGENCE"
                   ? "bg-amber-950/80 border-amber-500/80 text-amber-300 ring-1 ring-amber-500/30"
+                  : activeVerdict?.alignment_state === "MUTUAL_UNWINDING"
+                  ? "bg-purple-950/80 border-purple-500/80 text-purple-300 ring-1 ring-purple-500/30"
+                  : activeVerdict?.alignment_state === "COUNTER_TREND_COVERING" || activeVerdict?.alignment_state === "COUNTER_TREND_UNWINDING"
+                  ? "bg-yellow-950/80 border-yellow-500/80 text-yellow-300 ring-1 ring-yellow-500/30"
                   : "bg-slate-900 border-slate-700 text-slate-300"
               }`}
             >
