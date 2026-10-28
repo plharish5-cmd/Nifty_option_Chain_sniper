@@ -341,7 +341,16 @@ def compute_smart_oi_confluence(
                 p_match = closest
 
         net_delta = int(p_match.get("net_oi_chg") or 0) if p_match else 0
-        running_cum_smart += net_delta
+        step_delta = int(p_match.get("step_net_diff") or (net_delta - (confluence_candles[-1]["cum_smart_oi"] if confluence_candles else 0))) if p_match else 0
+        call_oi_chg = int(p_match.get("call_oi_chg") or 0) if p_match else 0
+        put_oi_chg = int(p_match.get("put_oi_chg") or 0) if p_match else 0
+        call_oi = int(p_match.get("call_oi") or 0) if p_match else 0
+        put_oi = int(p_match.get("put_oi") or 0) if p_match else 0
+        call_vol = int(p_match.get("call_vol") or 0) if p_match else 0
+        put_vol = int(p_match.get("put_vol") or 0) if p_match else 0
+        call_vol_delta = int(p_match.get("step_call_vol") or p_match.get("call_vol_delta") or 0) if p_match else 0
+        put_vol_delta = int(p_match.get("step_put_vol") or p_match.get("put_vol_delta") or 0) if p_match else 0
+        running_cum_smart = net_delta
 
         candle_markers: List[Dict[str, Any]] = []
         is_green = cl >= o
@@ -358,7 +367,7 @@ def compute_smart_oi_confluence(
                         "position": "belowBar",
                         "color": "#10b981",
                         "shape": "arrowUp",
-                        "text": f"🟢 Bullish Support Bounce @ {int(sup_level):,}",
+                        "text": "",
                         "kind": "BULLISH_CONFLUENCE",
                         "level": sup_level,
                     }
@@ -376,7 +385,7 @@ def compute_smart_oi_confluence(
                         "position": "aboveBar",
                         "color": "#ef4444",
                         "shape": "arrowDown",
-                        "text": f"🔴 Bearish Resistance Rejection @ {int(res_level):,}",
+                        "text": "",
                         "kind": "BEARISH_CONFLUENCE",
                         "level": res_level,
                     }
@@ -394,7 +403,7 @@ def compute_smart_oi_confluence(
                     "position": "aboveBar",
                     "color": "#f59e0b",
                     "shape": "circle",
-                    "text": "⚠️ Bearish Trap: Rally Capped by Heavy Call Writing",
+                    "text": "",
                     "kind": "BEARISH_TRAP_DIVERGENCE",
                 }
                 confluence_markers.append(marker)
@@ -409,7 +418,7 @@ def compute_smart_oi_confluence(
                     "position": "belowBar",
                     "color": "#10b981",
                     "shape": "circle",
-                    "text": "🟢 Bullish Absorption: Dip Defended by Heavy Put Writing",
+                    "text": "",
                     "kind": "BULLISH_ABSORPTION_DIVERGENCE",
                 }
                 confluence_markers.append(marker)
@@ -422,10 +431,21 @@ def compute_smart_oi_confluence(
             "low": l,
             "close": cl,
             "volume": v,
-            "smart_oi_delta": net_delta,
-            "cum_smart_oi": running_cum_smart,
+            "smart_oi_delta": step_delta,
+            "cum_smart_oi": net_delta,
+            "call_oi_chg": call_oi_chg,
+            "put_oi_chg": put_oi_chg,
+            "pe_ce_diff": net_delta,
+            "call_oi": call_oi,
+            "put_oi": put_oi,
             "pcr_oi": float(p_match.get("pcr_oi") or 1.0) if p_match else 1.0,
             "pcr_vol": float(p_match.get("pcr_vol") or 1.0) if p_match else 1.0,
+            "call_vol": call_vol,
+            "put_vol": put_vol,
+            "call_vol_delta": call_vol_delta,
+            "put_vol_delta": put_vol_delta,
+            "step_call_vol": call_vol_delta,
+            "step_put_vol": put_vol_delta,
             "markers": candle_markers,
         })
 

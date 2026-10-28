@@ -545,9 +545,8 @@ def build_intraday_pcr_series(
         return {"close": first_fut, "oi": 0, "oi_chg": 0, "vol": 0}
 
     # Outlier / Partial-Snapshot Guard on raw snapshots:
-    # When iterating through sequential option chain snapshots, if call_oi or put_oi suddenly
-    # drops or spikes by > 35% in a single step (partial API fetch or zeroed strikes),
-    # carry forward the previous valid snapshot's values.
+    # Filter out dropped frames / missing strikes (OI dropping < 25% of previous valid).
+    # NEVER clamp genuine intraday growth or morning surges!
     sanitized_dict: Dict[int, Dict[str, float]] = {}
     prev_valid: Optional[Dict[str, float]] = None
 
@@ -559,9 +558,9 @@ def build_intraday_pcr_series(
         p_vol = float(r[4] or 0)
 
         if prev_valid is not None:
-            if prev_valid["ce_oi"] > 0 and abs(c_oi - prev_valid["ce_oi"]) / prev_valid["ce_oi"] > 0.35:
+            if prev_valid["ce_oi"] > 0 and c_oi < 0.25 * prev_valid["ce_oi"]:
                 c_oi = prev_valid["ce_oi"]
-            if prev_valid["pe_oi"] > 0 and abs(p_oi - prev_valid["pe_oi"]) / prev_valid["pe_oi"] > 0.35:
+            if prev_valid["pe_oi"] > 0 and p_oi < 0.25 * prev_valid["pe_oi"]:
                 p_oi = prev_valid["pe_oi"]
             if prev_valid["ce_vol"] > 0 and c_vol < prev_valid["ce_vol"] * 0.4:
                 c_vol = prev_valid["ce_vol"]
@@ -578,26 +577,30 @@ def build_intraday_pcr_series(
         sanitized_dict[ts] = curr_valid
 
     sorted_snap_ts = sorted(sanitized_dict.keys())
+    # Separate unmodified, as-of observations for alerts. Display interpolation is not evidence.
+    observed = {int(r[0]): (float(r[1] or 0), float(r[2] or 0)) for r in raw_snaps}
+    observed_ts = sorted(observed)
+    from pathlib import Path
+    import json
+    policy_path = Path(__file__).resolve().parents[4] / "analyst" / "analyst_config.json"
+    policy = json.loads(policy_path.read_text())["bias_meter"]["positioning_signals"]
 
-    # Baseline open OI
+
+    # Baseline open OI: Prefer actual first recorded session snapshot of today (09:15 baseline)
     base = baseline_totals or {}
     base_ce_oi = float(base.get("ce_oi", 0))
     base_pe_oi = float(base.get("pe_oi", 0))
     base_ce_chg = float(base.get("ce_oi_chg", 0))
     base_pe_chg = float(base.get("pe_oi_chg", 0))
 
-    if base_ce_oi > 0 and base_ce_chg != 0:
-        open_ce_oi = max(1.0, base_ce_oi - base_ce_chg)
-    elif sorted_snap_ts:
+    if sorted_snap_ts:
         open_ce_oi = max(1.0, sanitized_dict[sorted_snap_ts[0]]["ce_oi"])
+        open_pe_oi = max(1.0, sanitized_dict[sorted_snap_ts[0]]["pe_oi"])
+    elif base_ce_oi > 0 and base_ce_chg != 0:
+        open_ce_oi = max(1.0, base_ce_oi - base_ce_chg)
+        open_pe_oi = max(1.0, base_pe_oi - base_pe_chg)
     else:
         open_ce_oi = max(1.0, base_ce_oi or 10000000.0)
-
-    if base_pe_oi > 0 and base_pe_chg != 0:
-        open_pe_oi = max(1.0, base_pe_oi - base_pe_chg)
-    elif sorted_snap_ts:
-        open_pe_oi = max(1.0, sanitized_dict[sorted_snap_ts[0]]["pe_oi"])
-    else:
         open_pe_oi = max(1.0, base_pe_oi or 10000000.0)
 
     # Main snapshot alignment onto uniform grid matching FUT candles
@@ -686,7 +689,19 @@ def build_intraday_pcr_series(
         call_chg = int(round(ce_oi - open_ce_oi))
         put_chg = int(round(pe_oi - open_pe_oi))
 
+        past = [st for st in observed_ts if st <= ts]
+        st = past[-1] if past else None
+        signal_point = None
+        if st is not None and ts - st <= policy["max_gap_s"] and ts in candle_by_ts:
+            ce_raw, pe_raw = observed[st]
+            baseline = observed[observed_ts[0]]
+            previous = observed[past[-2]] if len(past) > 1 else (ce_raw, pe_raw)
+            # Exclude incomplete/dropout observations, without replacing them with invented totals.
+            if ce_raw > 0 and pe_raw > 0 and ce_raw >= previous[0] * policy["min_snapshot_retention"] and pe_raw >= previous[1] * policy["min_snapshot_retention"]:
+                signal_point = {"sample_time": chart_time(st), "ce": ce_raw, "pe": pe_raw,
+                                "ce_change": ce_raw - baseline[0], "pe_change": pe_raw - baseline[1]}
         raw_series.append({
+            "signal_point": signal_point,
             "time": chart_time(ts),
             "ts": int(ts),
             "fut_close": round(fut_c, 2),
@@ -701,20 +716,21 @@ def build_intraday_pcr_series(
             "call_oi_chg": call_chg,
             "put_oi_chg": put_chg,
             "net_oi_chg": put_chg - call_chg,
+            "call_vol": int(round(ce_vol)),
+            "put_vol": int(round(pe_vol)),
         })
 
-    # Outlier / Single-Step Jump Guard on the generated series:
-    # If any single-step jumps by > 35%, clamp to previous step
+    # Dropped-frame glitch filter on the generated series (only dropouts, NEVER clamp legitimate surges):
     if len(raw_series) >= 2:
         for i in range(1, len(raw_series)):
             p_ce = raw_series[i - 1]["call_oi"]
             c_ce = raw_series[i]["call_oi"]
-            if p_ce > 0 and abs(c_ce - p_ce) / p_ce > 0.35:
+            if p_ce > 0 and c_ce < 0.25 * p_ce:
                 raw_series[i]["call_oi"] = p_ce
 
             p_pe = raw_series[i - 1]["put_oi"]
             c_pe = raw_series[i]["put_oi"]
-            if p_pe > 0 and abs(c_pe - p_pe) / p_pe > 0.35:
+            if p_pe > 0 and c_pe < 0.25 * p_pe:
                 raw_series[i]["put_oi"] = p_pe
 
     # Apply 3-point rolling median filter to eliminate micro-blips across the whole series
@@ -729,18 +745,42 @@ def build_intraday_pcr_series(
             filt_ce[i] = int(round(sorted(sub_c)[1]))
             filt_pe[i] = int(round(sorted(sub_p)[1]))
 
+        prev_c_chg = 0
+        prev_p_chg = 0
+        prev_c_vol = 0
+        prev_p_vol = 0
         for i, p in enumerate(raw_series):
             ce = max(1, filt_ce[i])
             pe = max(1, filt_pe[i])
             c_chg = int(round(ce - open_ce_oi))
             p_chg = int(round(pe - open_pe_oi))
+            step_c = c_chg - prev_c_chg if i > 0 else 0
+            step_p = p_chg - prev_p_chg if i > 0 else 0
+            c_vol = int(p.get("call_vol") or 0)
+            p_vol = int(p.get("put_vol") or 0)
+            step_c_vol = max(0, c_vol - prev_c_vol) if i > 0 else 0
+            step_p_vol = max(0, p_vol - prev_p_vol) if i > 0 else 0
             p["call_oi"] = ce
             p["put_oi"] = pe
             p["total_oi_gap"] = pe - ce
             p["call_oi_chg"] = c_chg
             p["put_oi_chg"] = p_chg
             p["net_oi_chg"] = p_chg - c_chg
+            p["pe_ce_diff"] = p_chg - c_chg
+            p["step_call_chg"] = step_c
+            p["step_put_chg"] = step_p
+            p["step_net_diff"] = step_p - step_c
+            p["call_vol"] = c_vol
+            p["put_vol"] = p_vol
+            p["step_call_vol"] = step_c_vol
+            p["step_put_vol"] = step_p_vol
+            p["call_vol_delta"] = step_c_vol
+            p["put_vol_delta"] = step_p_vol
             p["pcr_oi"] = round(pe / ce, 3)
+            prev_c_chg = c_chg
+            prev_p_chg = p_chg
+            prev_c_vol = c_vol
+            prev_p_vol = p_vol
 
     return raw_series
 
@@ -754,16 +794,20 @@ def combine_multi_expiry_series(
     Sum Call OI, Put OI, Call ΔOI, Put ΔOI, and recalculate PCR-OI & PCR-Vol.
     """
     if not cur_series:
-        return next_series
+        return [{**p, "signal_point": None} for p in next_series]
     if not next_series:
-        return cur_series
+        return [{**p, "signal_point": None} for p in cur_series]
 
     next_map = {p["time"]: p for p in next_series}
     both: List[Dict[str, Any]] = []
 
     last_next = next_series[0]
+    prev_c_chg = 0
+    prev_p_chg = 0
+    prev_c_vol = 0
+    prev_p_vol = 0
 
-    for p in cur_series:
+    for i, p in enumerate(cur_series):
         t = p["time"]
         n = next_map.get(t)
         if n:
@@ -779,12 +823,28 @@ def combine_multi_expiry_series(
         p_chg = p["put_oi_chg"] + n["put_oi_chg"]
         gap = p_oi - c_oi
         net_chg = p_chg - c_chg
+        step_c = c_chg - prev_c_chg if i > 0 else 0
+        step_p = p_chg - prev_p_chg if i > 0 else 0
 
         pcr = round(p_oi / max(c_oi, 1), 3)
-        # PCR vol weighted or averaged
-        pcr_v = round((p["pcr_vol"] + n["pcr_vol"]) / 2.0, 3)
+        p_c_vol = p.get("call_vol", 0) + n.get("call_vol", 0)
+        p_p_vol = p.get("put_vol", 0) + n.get("put_vol", 0)
+        step_c_vol = max(0, p_c_vol - prev_c_vol) if i > 0 else 0
+        step_p_vol = max(0, p_p_vol - prev_p_vol) if i > 0 else 0
+        if p_c_vol > 0:
+            pcr_v = round(p_p_vol / p_c_vol, 3)
+        else:
+            pcr_v = round((p["pcr_vol"] + n["pcr_vol"]) / 2.0, 3)
 
+        ps, ns = p.get("signal_point"), n.get("signal_point")
+        combined_signal = None
+        if ps and ns and n["time"] == t:
+            combined_signal = {
+                "sample_time": min(ps["sample_time"], ns["sample_time"]),
+                **{key: ps[key] + ns[key] for key in ("ce", "pe", "ce_change", "pe_change")},
+            }
         both.append({
+            "signal_point": combined_signal,
             "time": t,
             "ts": int(p.get("ts", t - 19800)),
             "fut_close": p.get("fut_close", 0.0),
@@ -799,6 +859,20 @@ def combine_multi_expiry_series(
             "call_oi_chg": c_chg,
             "put_oi_chg": p_chg,
             "net_oi_chg": net_chg,
+            "pe_ce_diff": net_chg,
+            "step_call_chg": step_c,
+            "step_put_chg": step_p,
+            "step_net_diff": step_p - step_c,
+            "call_vol": p_c_vol,
+            "put_vol": p_p_vol,
+            "step_call_vol": step_c_vol,
+            "step_put_vol": step_p_vol,
+            "call_vol_delta": step_c_vol,
+            "put_vol_delta": step_p_vol,
         })
+        prev_c_chg = c_chg
+        prev_p_chg = p_chg
+        prev_c_vol = p_c_vol
+        prev_p_vol = p_p_vol
 
     return both

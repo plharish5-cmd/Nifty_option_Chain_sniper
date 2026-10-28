@@ -287,6 +287,25 @@ def gap_confluence_endpoint(
     )
 
 
+@app.get("/api/desk/cvd-quality")
+def cvd_quality_endpoint():
+    """Contract-bound shadow recorder quality; no live signal or order side effects."""
+    from ..delta.recorder import provenance_status
+    return provenance_status()
+
+
+@app.get("/api/desk/cvd-divergence")
+def cvd_divergence_endpoint(
+    tf: str = Query("3m", pattern="^(3m|5m)$", description="Timeframe: '3m' or '5m'"),
+):
+    """CVD vs. VWAP Divergence Alert Engine:
+    Tracks Cumulative Volume Delta (CVD) over 3m/5m intervals, detects
+    Bearish (Short Trap) and Bullish (Dip Accumulation) divergences, and
+    evaluates Session VWAP confluence for actionable entries, SL, and targets."""
+    from ..engine import cvd_divergence
+    return cvd_divergence.compute_cvd_divergence(tf=tf)
+
+
 @app.get("/api/oi/matrix")
 @app.get("/api/chain/oi-matrix")
 def oi_matrix(
@@ -782,7 +801,8 @@ async def oclab(
     if what == "flow":
         h = _h()
         if hasattr(h, "chain") and hasattr(h.chain, "get_writer_flow"):
-            return h.chain.get_writer_flow(exp=opt_expiry, fut_src=fut_contract or "combined", tf=tf, hub=h)
+            scope_val = "atm_10" if mode == "auto" and n == 10 else ("atm_5" if mode == "auto" and n == 5 else "all")
+            return h.chain.get_writer_flow(exp=opt_expiry, fut_src=fut_contract or "combined", tf=tf, hub=h, scope=scope_val)
 
     from ..oclab import run
     return await run(what, tf, mode, max(3, min(int(n), 25)), day)

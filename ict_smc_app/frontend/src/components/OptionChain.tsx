@@ -80,7 +80,7 @@ export default function OptionChain({ expiries, tick }: { expiries: string[]; ti
                     <div className="flex items-center justify-end gap-1.5">
                       <span className="text-slate-300">{lakh(r.ce.oi)}</span>
                       <div className="h-2.5 w-24 bg-ink-800 rounded-sm overflow-hidden flex justify-end">
-                        <div className="h-full bg-bear-500/80" style={{ width: `${(100 * r.ce.oi) / maxOI}%` }} />
+                        <div className="h-full bg-bull-500/80" style={{ width: `${(100 * r.ce.oi) / maxOI}%` }} />
                       </div>
                     </div>
                   </td>
@@ -88,7 +88,7 @@ export default function OptionChain({ expiries, tick }: { expiries: string[]; ti
                   <td className={`px-2 ${peITM ? "bg-ink-800/60" : ""}`}>
                     <div className="flex items-center gap-1.5">
                       <div className="h-2.5 w-24 bg-ink-800 rounded-sm overflow-hidden">
-                        <div className="h-full bg-bull-500/80" style={{ width: `${(100 * r.pe.oi) / maxOI}%` }} />
+                        <div className="h-full bg-bear-500/80" style={{ width: `${(100 * r.pe.oi) / maxOI}%` }} />
                       </div>
                       <span className="text-slate-300">{lakh(r.pe.oi)}</span>
                     </div>
@@ -106,7 +106,7 @@ export default function OptionChain({ expiries, tick }: { expiries: string[]; ti
       </div>
       <div className="px-4 py-1.5 text-[10px] text-slate-500 border-t border-ink-700">
         Updated {new Date(ch.ts * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} IST · OI change vs previous close ·
-        shaded = in the money · red bars = call OI (resistance), green = put OI (support)
+        shaded = in the money · green bars = call OI (resistance), red bars = put OI (support)
       </div>
     </div>
   );

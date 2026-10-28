@@ -205,6 +205,10 @@ export function GapSniperTab({
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(() => {
+      fetchData();
+    }, 3000);
+    return () => clearInterval(interval);
   }, [fetchData, tick]);
 
   // Trigger speech alert when speak_alert is true and message has not been spoken yet

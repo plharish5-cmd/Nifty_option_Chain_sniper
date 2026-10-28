@@ -1,3 +1,4 @@
+import { BIAS_NAME, FACTORS } from "./bias";
 // guide.ts — plain-language explainer for every chart layer: what it is, and what to DO with its latest signal.
 export const GUIDE: Record<string, { name: string; what: string; act: string }> = {
   walls: { name: "🧱 OI walls", what: "bold bands at the 3 biggest CE (red, resistance) and PE (green, support) OI strikes near spot — REAL chain data, refreshed every 60 s. Thicker = more OI.", act: "don't buy into a red wall or sell into a green one. First touch usually rejects; trade the break only after a close beyond + a retest." },
@@ -26,13 +27,13 @@ export const GUIDE: Record<string, { name: string; what: string; act: string }> 
   auction: { name: "Auction", what: "Value area. ACC = two closes beyond a level (value moving there) · REJ = probed and closed back.",
     act: "ACC ▲ = buyers accepted higher prices (CE bias) · REJ = fade the probe." },
   volume: { name: "Volume · VWAP", what: "Futures VWAP (white) + σ bands, vPOC, volume bars.", act: "Above VWAP = buyers in control (prefer CE); below = sellers (prefer PE). vPOC = magnet." },
-  oi: { name: "Futures OI build-up", what: "Green / red bars: long / short build-up, short covering, long unwinding.", act: "Price ▲ + OI ▲ = real buying; price ▲ + OI ▼ = short covering (weaker)." },
+  oi: { name: "Futures OI build-up", what: "OI change per candle. Amber squares = unusual expansion; violet = unusual reduction. Raw ΔOI shows magnitude; Relative × compares with earlier bars.", act: "Hover a square or histogram bar for BUY-SIDE / SELL-SIDE WATCH, WAIT, confirmation levels and risk-review context. Price/OI labels are inferences, not automatic entries." },
   rvol: { name: "Cumulative RVOL", what: "Today's volume vs normal for this time of day.", act: "Breakout WITH RVOL ≥ 1.5× = trust it · breakout without = trap risk." },
   qml: { name: "QML · RBS / SBR", what: "Cyan line = CLOSE prices only (wicks ignored). QML = quasimodo reversal; RBS = old resistance now support; SBR = old support now resistance.",
     act: "‘armed’ = WAIT for price to return to the level · QML▲/RBS▲ arrow = CE · QML▼/SBR▼ = PE · SL beyond the wick. Details in the QML tab." },
   fp: { name: "Footprint Δ (est.)", what: "Delta under each candle, gold tick = POC, pills = ABSORB / DISTRIB / ACCUM / TRAP / STACK / PUSH.",
     act: "Act when pill + delta colour + a structure mark agree (BUY/SELL ✓3)." },
-  bias: { name: "⚖ Bias 20", what: "20 factors vote BUY / SELL per closed candle. Badge ▲n/N when ≥ 70 % agree. ⚠ = PCR crowded. Chip = GEX pin / trend. Includes ★ A+ Confluence & Sniper triggers.",
+  bias: { name: `⚖ ${BIAS_NAME}`, what: `${FACTORS.length} factors: original matrix plus timestamped Prahaar, first-touch GTF rejection and contract-verified futures OI. Missing inputs abstain. Agreement and opposition gates both apply. Correlated counts are not probabilities.`,
     act: "Use the badge as the DIRECTION filter, enter on your setup with a fixed SL. Hover a candle for every vote." },
   dol: { name: "D.O.L (IRL ⇄ ERL)", what: "ERL = old highs / lows (stops). IRL = FVGs. After an ERL sweep price draws to the nearest FVG; after the FVG holds it draws back to the old high / low.",
     act: "The violet box / line is the current TARGET — take profit there, don't enter against it." },

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import FootprintPanel from "./FootprintPanel";
 import OptionTape from "./OptionTape";
 import FuturesVolHeat from "./FuturesVolHeat";
+import CvdAlertWidget from "./CvdAlertWidget";
 
 type Cr = { value: number | null; state: string; trend: string | null } | null;
 type CombResp = { available: boolean; oct_vol_today?: number; nov_vol_today?: number; combined_vol_today?: number;
@@ -47,7 +48,7 @@ function FuturesSource() {
 }
 
 export default function FootprintDesk({ tick }: { tick: number }) {
-  const [inst, setInst] = useState<"fut" | "opt">("fut");
+  const [inst, setInst] = useState<"fut" | "opt" | "cvd">("fut");
   const [futView, setFutView] = useState<"tick" | "heat">("tick");
   return (
     <div className="flex h-full flex-col">
@@ -55,6 +56,7 @@ export default function FootprintDesk({ tick }: { tick: number }) {
         <span className="text-slate-400">Instrument:</span>
         <button onClick={() => setInst("fut")} className={`tab ${inst === "fut" ? "tab-on" : ""} !border-cyan-500/60 !text-cyan-300`}>📈 Futures footprint</button>
         <button onClick={() => setInst("opt")} className={`tab ${inst === "opt" ? "tab-on" : ""} !border-indigo-500/60 !text-indigo-300`}>🪜 Options tape</button>
+        <button onClick={() => setInst("cvd")} className={`tab ${inst === "cvd" ? "tab-on !border-amber-500/80 !text-amber-300 font-bold" : "!border-amber-500/40 text-amber-400/80"}`}>📊 CVD vs. VWAP Divergence</button>
         {inst === "fut" && (
           <>
             <span className="mx-1 w-px self-stretch bg-ink-700" />
@@ -63,13 +65,24 @@ export default function FootprintDesk({ tick }: { tick: number }) {
           </>
         )}
         <span className="ml-2 text-[10px] text-slate-500">
-          {inst === "fut" ? "price × time · real aggressor (est.) tick tape" : "strike × positioning · real CE/PE volume & OI"}
+          {inst === "fut"
+            ? "price × time · real aggressor (est.) tick tape"
+            : inst === "cvd"
+            ? "aggressive buyer vs seller delta vs session VWAP divergence engine"
+            : "strike × positioning · real CE/PE volume & OI"}
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        {inst === "fut" ? (
+        {inst === "cvd" ? (
+          <div className="p-3">
+            <CvdAlertWidget />
+          </div>
+        ) : inst === "fut" ? (
           <div className="px-3">
             <FuturesSource />
+            <div className="mb-2">
+              <CvdAlertWidget compact={true} />
+            </div>
             {futView === "tick" ? <FootprintPanel tick={tick} /> : <FuturesVolHeat />}
           </div>
         ) : (

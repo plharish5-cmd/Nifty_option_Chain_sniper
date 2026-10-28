@@ -379,14 +379,14 @@ export function InteractiveStrikeBarChart({
             <line x1="0" y1="0" x2="0" y2="6" stroke="#a7f3d0" strokeWidth="2" strokeOpacity="0.9" />
           </pattern>
 
-          {/* Gradients */}
+          {/* Gradients — StockMojo Default: CE = Green (#22c55e), PE = Red (#ef4444) */}
           <linearGradient id="ce-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ef4444" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#991b1b" stopOpacity="0.85" />
+            <stop offset="0%" stopColor="#22c55e" stopOpacity="0.95" />
+            <stop offset="100%" stopColor="#15803d" stopOpacity="0.85" />
           </linearGradient>
           <linearGradient id="pe-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#10b981" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#065f46" stopOpacity="0.85" />
+            <stop offset="0%" stopColor="#ef4444" stopOpacity="0.95" />
+            <stop offset="100%" stopColor="#991b1b" stopOpacity="0.85" />
           </linearGradient>
         </defs>
 
@@ -479,15 +479,15 @@ export function InteractiveStrikeBarChart({
                 />
               )}
 
-              {/* Call (CE) Bar */}
+              {/* Call (CE) Bar — Green */}
               <rect
                 x={ceLeft}
                 y={ceY}
                 width={barW}
                 height={Math.max(ceH, 1)}
                 rx="2"
-                fill={chartMode === "oi_chg" && s.ce_oi_chg < 0 ? "#ef444455" : "url(#ce-grad)"}
-                stroke={chartMode === "oi_chg" && s.ce_oi_chg < 0 ? "#ef4444" : "#f87171"}
+                fill={chartMode === "oi_chg" && s.ce_oi_chg < 0 ? "#22c55e55" : "url(#ce-grad)"}
+                stroke={chartMode === "oi_chg" && s.ce_oi_chg < 0 ? "#22c55e" : "#4ade80"}
                 strokeWidth="0.75"
                 strokeDasharray={chartMode === "oi_chg" && s.ce_oi_chg < 0 ? "2 2" : "none"}
               />
@@ -501,20 +501,20 @@ export function InteractiveStrikeBarChart({
                   height={ceOverlayH}
                   rx="2"
                   fill="url(#hash-ce)"
-                  stroke="#fecaca"
+                  stroke="#86efac"
                   strokeWidth="0.75"
                 />
               )}
 
-              {/* Put (PE) Bar */}
+              {/* Put (PE) Bar — Red */}
               <rect
                 x={peLeft}
                 y={peY}
                 width={barW}
                 height={Math.max(peH, 1)}
                 rx="2"
-                fill={chartMode === "oi_chg" && s.pe_oi_chg < 0 ? "#10b98155" : "url(#pe-grad)"}
-                stroke={chartMode === "oi_chg" && s.pe_oi_chg < 0 ? "#10b981" : "#34d399"}
+                fill={chartMode === "oi_chg" && s.pe_oi_chg < 0 ? "#ef444455" : "url(#pe-grad)"}
+                stroke={chartMode === "oi_chg" && s.pe_oi_chg < 0 ? "#ef4444" : "#f87171"}
                 strokeWidth="0.75"
                 strokeDasharray={chartMode === "oi_chg" && s.pe_oi_chg < 0 ? "2 2" : "none"}
               />
@@ -528,7 +528,7 @@ export function InteractiveStrikeBarChart({
                   height={peOverlayH}
                   rx="2"
                   fill="url(#hash-pe)"
-                  stroke="#a7f3d0"
+                  stroke="#fca5a5"
                   strokeWidth="0.75"
                 />
               )}
@@ -651,15 +651,15 @@ export function InteractiveStrikeBarChart({
               </span>
             </div>
 
-            {/* Call Line */}
+            {/* Call Line — Green (#22c55e) */}
             <div className="flex items-center justify-between py-0.5">
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-rose-500" />
-                <span className="font-bold text-rose-300">Call OI:</span>
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="font-bold text-emerald-300">Call OI:</span>
               </div>
               <div className="font-mono text-right">
                 <b className="text-white">{inr(hoveredStrike.ce_oi)}</b>
-                <span className={`ml-1 text-[10px] ${hoveredStrike.ce_oi_chg > 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                <span className={`ml-1 text-[10px] ${hoveredStrike.ce_oi_chg > 0 ? "text-emerald-400" : "text-rose-400"}`}>
                   ({inr(hoveredStrike.ce_oi_chg, true)})
                 </span>
               </div>
@@ -668,15 +668,15 @@ export function InteractiveStrikeBarChart({
               {hoveredStrike.ce_buildup_label} • {hoveredStrike.ce_meaning}
             </div>
 
-            {/* Put Line */}
+            {/* Put Line — Red (#ef4444) */}
             <div className="flex items-center justify-between py-0.5">
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                <span className="font-bold text-emerald-300">Put OI:</span>
+                <span className="h-2 w-2 rounded-full bg-rose-500" />
+                <span className="font-bold text-rose-300">Put OI:</span>
               </div>
               <div className="font-mono text-right">
                 <b className="text-white">{inr(hoveredStrike.pe_oi)}</b>
-                <span className={`ml-1 text-[10px] ${hoveredStrike.pe_oi_chg > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                <span className={`ml-1 text-[10px] ${hoveredStrike.pe_oi_chg > 0 ? "text-rose-400" : "text-emerald-400"}`}>
                   ({inr(hoveredStrike.pe_oi_chg, true)})
                 </span>
               </div>
@@ -1199,9 +1199,9 @@ function BuildupTable({
               <td
                 className={`px-2 py-1 font-bold ${
                   s.ce_oi_chg > 0
-                    ? "text-rose-400"
-                    : s.ce_oi_chg < 0
                     ? "text-emerald-400"
+                    : s.ce_oi_chg < 0
+                    ? "text-rose-400"
                     : "text-slate-500"
                 }`}
               >
@@ -1228,9 +1228,9 @@ function BuildupTable({
               <td
                 className={`px-2 py-1 font-bold ${
                   s.pe_oi_chg > 0
-                    ? "text-emerald-400"
-                    : s.pe_oi_chg < 0
                     ? "text-rose-400"
+                    : s.pe_oi_chg < 0
+                    ? "text-emerald-400"
                     : "text-slate-500"
                 }`}
               >

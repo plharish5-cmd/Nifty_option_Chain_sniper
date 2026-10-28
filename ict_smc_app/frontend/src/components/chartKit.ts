@@ -187,3 +187,28 @@ export function hitTestSniperHover(
 
   return null;
 }
+
+// OI guidance explains positioning context. It never creates a trade signal.
+export function oiDecisionGuide(bar: { build?: string | null; quality?: string; doi?: number | null; surge?: boolean; reduction?: boolean } | undefined,
+  context: { historical?: boolean; unavailable?: boolean; high?: number; low?: number } = {}) {
+  const prefix = context.historical ? "HISTORICAL · " : "";
+  if (!bar || context.unavailable || (bar.quality && bar.quality !== "ok") || bar.doi == null) {
+    return { label: `${prefix}WAIT — data not comparable`, tone: "warn", meaning: "OI is missing, stale, unverified, or at a session/contract baseline.",
+      next: "Wait for fresh, comparable closed candles from the same contract. Do not interpret a blank as zero positioning.", manage: "OI cannot support a hold or exit decision here. Use your existing price-based risk plan." };
+  }
+  const high = context.high == null ? "the relevant resistance/swing high" : `the signal candle high ${context.high.toFixed(2)}`;
+  const low = context.low == null ? "the relevant support/swing low" : `the signal candle low ${context.low.toFixed(2)}`;
+  const readings: Record<string, { label: string; tone: string; meaning: string; next: string; manage: string }> = {
+    "long build-up": { label: "BUY-SIDE WATCH · wait for price", tone: "bull", meaning: "Price rose while OI increased: conventionally labelled long build-up. OI does not reveal who initiated.",
+      next: `For a breakout candidate, look for a later closed candle above ${high} and a retest that holds. This card has not verified that confirmation.`, manage: `If already long, this supports reviewing a hold only while price support holds. If short, review risk when price breaks resistance; this is not an exit order.` },
+    "short build-up": { label: "SELL-SIDE WATCH · wait for price", tone: "bear", meaning: "Price fell while OI increased: conventionally labelled short build-up. Position addition alone does not prove further downside.",
+      next: `For a breakdown candidate, look for a later closed candle below ${low} and a retest that fails. This card has not verified that confirmation.`, manage: "If already short, review a hold only while resistance holds. If long, review risk on a support break rather than exiting solely on OI." },
+    "short covering": { label: "RALLY WATCH · avoid chasing", tone: "bull", meaning: "Price rose while OI decreased: conventional short-covering context. Fewer open positions does not tell us how long the rally will last.",
+      next: `Wait for price acceptance above ${high}; an OI reduction alone is not a fresh-long entry.`, manage: "If short, review risk if resistance breaks. If long, protect gains using your price stop; this label alone is not a take-profit instruction." },
+    "long unwinding": { label: "DOWNSIDE WATCH · avoid chasing", tone: "bear", meaning: "Price fell while OI decreased: conventional long-unwinding context. A bounce or continued decline is not established.",
+      next: `Wait for acceptance below ${low} before treating the move as a breakdown.`, manage: "If long, review risk if support breaks. If short, manage gains with your price stop; do not assume an OI reduction guarantees more downside." },
+  };
+  const guide = readings[bar.build || ""] || { label: "WAIT · no directional OI read", tone: "info", meaning: "The price/OI classification threshold was not met. That does not mean no trading or positioning occurred.", next: "Watch a closed-candle break and retest of the relevant range. Do not force a buy or sell from the histogram colour.", manage: "No new hold, exit or take-profit instruction follows from a flat OI classification." };
+  const change = bar.reduction ? "Unusual reduction: outstanding positions decreased quickly. " : bar.surge ? "Unusual expansion: outstanding positions increased quickly. " : "";
+  return { ...guide, label: prefix + guide.label, meaning: change + guide.meaning };
+}

@@ -1,10 +1,10 @@
 // BiasPanel.tsx — the 20-factor confluence grid & Sniper Confluence Matrix for closed candles (information only).
 import { useEffect, useMemo, useState } from "react";
 import type { Analysis, Candle, TF } from "../api";
-import { computeBias, FACTORS } from "./bias";
+import { computeBias, FACTORS, BIAS_POLICY, BIAS_NAME } from "./bias";
 import type { FpBar } from "./footprint";
 import { BAR_SEC } from "./chartKit";
-import { useOcFeed, useSmt } from "./ocfeed";
+import { useOcFeed, useSmt, useBiasAgreement } from "./ocfeed";
 
 const SNIPER_ATTRS = [
   { key: "IFVG", label: "IFVG", weight: "±0.5", factorName: "FVG/IFVG" },
@@ -17,16 +17,16 @@ const SNIPER_ATTRS = [
 
 export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: Candle[]; analysis: Analysis | null }) {
   const [fp, setFp] = useState<FpBar[]>([]);
-  const [pct, setPct] = useState(0.7);
+  const [pct, setPct] = useBiasAgreement();
   const [filterAttr, setFilterAttr] = useState<string | null>(null);
   const oc = useOcFeed(true);
   const smt = useSmt(tf, true);
   const smtArg = tf === "5m" || tf === "15m" || tf === "1h" ? smt : null;
 
   useEffect(() => {
-    if (!(tf === "5m" || tf === "15m" || tf === "1h")) { setFp([]); return; }
+    if (!["1m","3m","5m","15m","30m","1h"].includes(tf)) { setFp([]); return; }
     let dead = false;
-    const go = () => fetch(`/api/footprints?tf=${tf}&n=30`).then((r) => r.json()).then((j) => { if (!dead) setFp(j.available ? j.bars ?? [] : []); }).catch(() => {});
+    const go = () => fetch(`/api/footprints?tf=${tf}&n=75`).then((r) => r.json()).then((j) => { if (!dead) setFp(j.available ? j.bars ?? [] : []); }).catch(() => {});
     go(); const id = window.setInterval(go, 30000);
     return () => { dead = true; window.clearInterval(id); };
   }, [tf]);
@@ -55,12 +55,12 @@ export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: 
         )}
 
         <span className="text-slate-400 font-medium">
-          {tf} · last closed candle · {now ? `${now.avail} of 20 factors have data` : "20-Factor Matrix"}
+          {tf} · last closed candle · {now ? `${now.avail} of ${FACTORS.length} factors have aligned data` : `${FACTORS.length}-Factor Matrix`}
         </span>
 
         {b20Score && (
           <span className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-gold-950/40 border border-gold-500/40 text-gold-300 font-mono text-[11px]">
-            <span>⚖ BIAS 20:</span>
+            <span title="Separate advanced-PA score, not the 20-factor vote tally">Adv PA score:</span>
             <span className="text-bull-400 font-bold">{b20Score.bull_score.toFixed(1)}▲</span> /
             <span className="text-bear-400 font-bold">{b20Score.bear_score.toFixed(1)}▼</span>
             <span className="text-slate-400">({b20Score.net_score > 0 ? `+${b20Score.net_score}` : b20Score.net_score} net)</span>
@@ -76,7 +76,7 @@ export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: 
         <label className="ml-auto text-slate-400 text-[11px]">
           badge when ≥
           <select className="ml-1 rounded bg-ink-850 px-1 border border-ink-700" value={pct} onChange={(e) => setPct(+e.target.value)}>
-            {[[0.6, "60 %"], [0.7, "70 %"], [0.8, "80 %"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            {BIAS_POLICY.agreement_choices.map((v) => <option key={v} value={v}>{Math.round(v*100)} %</option>)}
           </select> of available factors agree
         </label>
       </div>
@@ -126,11 +126,17 @@ export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: 
             onClick={() => setFilterAttr(null)}
             className="ml-auto text-[10px] text-gold-400 hover:text-gold-300 underline"
           >
-            Clear Filter (Show All 20)
+            Clear Filter (Show All {FACTORS.length})
           </button>
         )}
       </div>
 
+      {now && <div className="border-b border-slate-700 px-3 py-2 text-[11px]">
+        <b>{now.lean} lean · {now.bull} buy / {now.bear} sell / {now.neutral} neutral / {now.missing.length} unavailable.</b>
+        <div className="text-amber-200">{now.blockers.length ? `WAIT: ${now.blockers.join(" · ")}` : "Bias qualifies. Alerts still require their separate bias ≥ N setting and an open market."}</div>
+        <div className="text-slate-400">Shared chart/table agreement: {Math.round(pct*100)}% · need {now.required}/{now.avail}, at most {now.maxAgainst} opposing. These factors overlap; the score is not a probability.</div>
+        <div className="mt-1 flex flex-wrap gap-2">{now.context.map((item)=><span key={item.name} className="rounded border border-slate-700 px-2 py-1" title="Current engine snapshot for explanation only. New votes use aligned historical confirmations/reactions, not this snapshot."><b>{item.name}:</b> {item.text}</span>)}</div>
+      </div>}
       {/* 20-Factor Matrix Table */}
       <div className="min-h-0 flex-1 overflow-auto px-2 pb-2">
         <table className="w-full num">
@@ -197,15 +203,15 @@ export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: 
                   {hm(r.time)} <span className={r.c >= r.o ? "text-bull-400" : "text-bear-400"}>{r.c >= r.o ? "▲" : "▼"}</span>
                 </td>
                 {FACTORS.map((f) => (
-                  <td key={f} className="px-1 text-center" title={r.why[f] || "no vote"}>
-                    <span className={`inline-block h-3 w-3 rounded-full ${dot(r.votes[f])}`} />
+                  <td key={f} className="px-1 text-center" title={`${r.missing.includes(f) ? "UNAVAILABLE" : r.votes[f] ? "DIRECTIONAL VOTE" : "NEUTRAL"}: ${r.why[f] || "No qualifying condition"}`}>
+                    <span className={`inline-block h-3 w-3 rounded-full ${r.missing.includes(f) ? "border border-slate-500 bg-transparent" : dot(r.votes[f])}`} />
                   </td>
                 ))}
                 <td className="px-2 text-center font-mono">
                   <span className="text-bull-400">{r.bull}▲</span> <span className="text-bear-400">{r.bear}▼</span>
                 </td>
-                <td className={`px-2 font-bold ${r.verdict === "BUY" ? "text-bull-400" : r.verdict === "SELL" ? "text-bear-400" : "text-slate-500"}`}>
-                  {r.warn ? "⚠ " : ""}{r.verdict === "MIXED" ? "mixed" : `${r.verdict} ${Math.max(r.bull, r.bear)}/${r.avail}${r.strong ? " ★" : ""}`}
+                <td title={`Need ${r.required}/${r.avail}; max ${r.maxAgainst} opposing. ${r.blockers.join(" · ")}`} className={`px-2 font-bold ${r.verdict === "BUY" ? "text-bull-400" : r.verdict === "SELL" ? "text-bear-400" : "text-slate-500"}`}>
+                  {r.warn ? "⚠ " : ""}{r.verdict === "MIXED" ? `${r.lean.toLowerCase()} · wait` : `${r.verdict} ${Math.max(r.bull, r.bear)}/${r.avail}${r.strong ? " ★" : ""}`}
                 </td>
               </tr>
             ))}
@@ -215,9 +221,9 @@ export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: 
 
       {/* Detailed Footer & Legend */}
       <div className="border-t border-ink-700 px-3 py-1 text-[10.5px] text-slate-400">
-        <b>Bias 20 Confluence System:</b> Green dot = votes BUY, red = SELL, grey = no vote. Hover a dot for reason.
+        <b>{BIAS_NAME} Confluence System:</b> Green = buy-side vote; red = sell-side vote; grey = neutral; hollow = unavailable. Hover dots or verdicts for reasons. Writer flip includes classic and Trinity crossover events as one shared vote; disagreements abstain. Amber divergence warnings do not add votes. Composite factors share inputs; counts are not probabilities.
         <span className="ml-1 text-slate-500">
-          Factors 1–20: 1. FVG/IFVG · 2. Order block · 3. Rejection block · 4. CRT/TBS · 5. Footprint · 6. RVOL · 7. VWAP · 8. Structure · 9. PE−CE action · 10. Writers gap · 11. Δput−Δcall · 12. Writer dominance · 13. Writer flip · 14. PCR trend · 15. SMT · 16. CCT · 17. MMXM · 18. CVD flow · 19. Gamma flip · 20. ★ A+ Confluence.
+          {FACTORS.map((factor,index)=>`${index+1}. ${factor}`).join(" · ")}
         </span>
         <div className="mt-0.5 text-gold-400/90">
           🎯 Sniper Confluence Attributes: IFVG (±0.5) · RJB+ (±0.5) · CRT (±1.0) · D.O.L (±1.0) · HTF Wick (±0.75) · ★ A+ Confluence (Dragon Fruit / Super OB ≥ 6/7: +1.5). Green = Active, Red = Vetoed, Gray = Neutral. Information only — not an order.

@@ -60,9 +60,20 @@ CREATE INDEX IF NOT EXISTS ix_events_ts ON events(tf, ts);
 CREATE TABLE IF NOT EXISTS delta_bars (
   inst TEXT NOT NULL DEFAULT 'NIFTY', ts INTEGER NOT NULL, secs INTEGER NOT NULL DEFAULT 60, buy REAL, sell REAL,
   delta REAL NOT NULL, src TEXT, PRIMARY KEY (inst, ts)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS cvd_observations (
+  session TEXT NOT NULL, contract TEXT NOT NULL, ts INTEGER NOT NULL, source TEXT NOT NULL,
+  payload TEXT NOT NULL, digest TEXT NOT NULL, conflict INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (session, contract, ts, source)) WITHOUT ROWID;
+CREATE TRIGGER IF NOT EXISTS cvd_payload_immutable
+BEFORE UPDATE OF session,contract,ts,source,payload,digest ON cvd_observations
+BEGIN SELECT RAISE(ABORT, 'CVD observation payloads are immutable'); END;
 CREATE TABLE IF NOT EXISTS footprint_levels (
   inst TEXT NOT NULL DEFAULT 'NIFTY', ts INTEGER NOT NULL, price REAL NOT NULL, buy REAL NOT NULL, sell REAL NOT NULL,
   PRIMARY KEY (inst, ts, price)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS fut_oi_samples (
+  sec TEXT NOT NULL, contract TEXT NOT NULL, ts INTEGER NOT NULL, source TEXT NOT NULL,
+  oi REAL NOT NULL, observed_at INTEGER NOT NULL,
+  PRIMARY KEY (sec,contract,ts,source)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS fut_oi (ts INTEGER PRIMARY KEY, oi REAL NOT NULL, src TEXT) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS fut_oi_sym (sym TEXT NOT NULL, ts INTEGER NOT NULL, oi REAL NOT NULL, PRIMARY KEY (sym, ts)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS iv_series (

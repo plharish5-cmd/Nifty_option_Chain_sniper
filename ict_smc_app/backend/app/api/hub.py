@@ -76,7 +76,7 @@ class Hub:
         self.bias_tf = config.rule("playbook", "bias_tf", "15m")
         self.rest = DhanREST()
         self.candles = Candles(self.on_close_1m)
-        self.feed = Feed([self.nifty, self.vix], self.on_tick, self.on_prev, on_full=self.on_full)
+        self.feed = Feed([self.nifty, self.vix, "5024"], self.on_tick, self.on_prev, on_full=self.on_full)
         # real volume: current-month NIFTY future (REST candles + live Full packets) and options activity
         self.fut: Optional[Dict[str, Any]] = None
         self.fut_status = "not resolved yet"
@@ -191,7 +191,8 @@ class Hub:
         sid, ltp, t = str(data["sid"]), float(data["ltp"]), float(data["t"])
         if sid == self.vix and not (5 <= ltp <= 90):
             self.status["vix_warning"] = f"VIX id {self.vix} returned {ltp} — check vix_security_id in rules.json"
-        await self.candles.tick(sid, ltp, t)
+        if sid in (self.nifty, self.vix):
+            await self.candles.tick(sid, ltp, t)
         if sid == self.nifty:
             await self._check_intra_sweep(ltp, t)
         if time.time() - self._last_tick_push >= 0.25:
@@ -289,7 +290,7 @@ class Hub:
     async def on_full(self, p: Dict[str, Any], t: float) -> None:
         """NIFTY future Full packet → estimated delta + provisional FUT 1m volume (recorder)."""
         try:
-            self.recorder.on_packet(p, t)
+            self.recorder.on_packet(dict(p, _received_at=time.time()), t)
         except Exception:                                    # noqa: BLE001 — never lose the feed over the recorder
             log.exception("recorder")
 
@@ -514,6 +515,7 @@ class Hub:
         })
         try:
             await self.check_option_chain_alerts(expiry, trinity)
+            await self.check_cvd_divergence_alerts()
         except Exception:                                    # noqa: BLE001
             log.exception("check_option_chain_alerts failed")
         if expiry == self.sel_expiry() and config.rule("strikes", "enabled", True):
@@ -948,7 +950,7 @@ class Hub:
                 j["volume"] = {"available": False, "message": f"NIFTY future: {self.fut_status}",
                                "act_last": act.get(int(b.ts[-1])), **iv}
                 return {"act": act, "iv_trend": iv.get("iv_trend")}
-            oib = oi_mod.per_bar(an, fut_mod.oi_rows(8))
+            oib = oi_mod.per_bar(an, fut_mod.oi_samples(8))
             ois = oi_mod.summary(an, oib, int(config.rule("oi", "summary_bars", 12)))
             oil = oi_mod.oi_line(an, oib)
             bnv = self.bn_view(tf, an)
@@ -1056,6 +1058,7 @@ class Hub:
                            "naked": naked, "last": summ, "act_last": act.get(int(b.ts[-1])),
                            "last_vwap": last_vw, "rvol_method": summ.get("method"),
                            "oi_last": oib.get(int(b.ts[-1])), "oi_summary": ois,
+                           "oi_health": oi_mod.health(an, oib),
                            "oi_line": [dict(x, time=chart_time(x["ts"])) for x in oil[-300:]],
                            "oi_surge_last": next((x for x in reversed(oil) if x["surge"]), None),
                            "banknifty": bnv, "oi_compare": cmp, **iv, **self.rvol_view(tf, an, rv)}
@@ -1356,6 +1359,32 @@ class Hub:
         except Exception as hz_err:
             log.warning("Hero-zero alert evaluation error: %s", hz_err)
 
+    async def check_cvd_divergence_alerts(self) -> None:
+        try:
+            from ..engine import cvd_divergence
+            res = cvd_divergence.compute_cvd_divergence(tf="3m")
+            if not res or not res.get("ok"):
+                return
+            cfg = cvd_divergence.get_cfg()
+            for transition in res.get("transitions", []):
+                state = transition["state"]
+                if state == "WATCH" and not cfg["notify_watch"]:
+                    continue
+                # The existing alerts table persists each transition key across restarts.
+                event = {
+                    "kind": "CVD_DIVERGENCE", "ts": transition["ts"],
+                    "key": transition["key"], "tf": transition["timeframe"],
+                    "dir": transition["dir"], "price": transition.get("entry"),
+                    "title": transition["name"],
+                    "body": f"{transition['action']} · {transition['vwap_status']} · "
+                            f"Invalidation {transition['invalidation']:.1f} · Estimated futures flow",
+                    "setup_id": transition["setup_id"], "state": state,
+                }
+                await alerts_mod.notify_event(self.alerts, event, max_age_s=cfg["alert_max_age_s"])
+            await self.broadcast({"type": "cvd_divergence", "data": res})
+        except Exception as e_cvd:
+            log.warning("check_cvd_divergence_alerts error: %s", e_cvd)
+
     def crt_signals_today(self) -> List[Signal]:
         o, _ = session_bounds(now_ist().date())
         return [s for r in self.crt.values() for s in r.get("signals", []) if s.ts >= o]
@@ -1604,6 +1633,11 @@ class Hub:
                         continue
                 remaining_zones.append(z)
             self.pending_retest_zones = remaining_zones
+
+        try:
+            await self.check_cvd_divergence_alerts()
+        except Exception:
+            log.exception("cvd divergence check failed in run_playbook")
 
         if not fresh:
             return

@@ -587,3 +587,25 @@ def test_get_writer_flow_integration():
 
 
 
+
+def test_positioning_signal_points_are_causal_and_exclude_synthetic_history():
+    start = 1793167200
+    candles = [{"ts": start + i * 180, "c": 100 + i, "oi": 100, "v": 10} for i in range(6)]
+    snaps = [(start + i * 180, 1000 + i * 100, 1100 + i * 120, 10, 20) for i in range(4)]
+    first = pcr_trinity.build_intraday_pcr_series(snaps, candles)
+    later = pcr_trinity.build_intraday_pcr_series(snaps + [(start + 900, 1800, 1300, 10, 20)], candles)
+    assert [p["signal_point"] for p in first[:4]] == [p["signal_point"] for p in later[:4]]
+    assert all(p["signal_point"] is None for p in pcr_trinity.build_intraday_pcr_series([], candles))
+    assert first[-1]["signal_point"] is None
+    bad = pcr_trinity.build_intraday_pcr_series(snaps + [(start + 720, 1, 1, 10, 20)], candles)
+    assert bad[4]["signal_point"] is None
+
+
+def test_combined_positioning_requires_both_expiry_observations():
+    start = 1793167200
+    candles = [{"ts": start + i * 180, "c": 100 + i} for i in range(3)]
+    series = pcr_trinity.build_intraday_pcr_series(
+        [(start + i * 180, 1000 + i * 100, 1100 + i * 120, 10, 20) for i in range(3)], candles)
+    combined = pcr_trinity.combine_multi_expiry_series(series, series)
+    assert combined[0]["signal_point"]["ce"] == 2000
+    assert all(p["signal_point"] is None for p in pcr_trinity.combine_multi_expiry_series(series, []))

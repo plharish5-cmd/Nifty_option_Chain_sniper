@@ -14,6 +14,11 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from .. import config
+from pathlib import Path
+from functools import lru_cache
+import json
+import math
+from ..timeutil import now_epoch, now_ist, session_bounds
 from ..timeutil import TF_SECONDS, bucket_start, ist_date
 
 NAMES = {("up", "up"): "long build-up", ("down", "up"): "short build-up",
@@ -21,39 +26,48 @@ NAMES = {("up", "up"): "long build-up", ("down", "up"): "short build-up",
 BIAS = {"long build-up": "bull", "short covering": "bull", "short build-up": "bear", "long unwinding": "bear"}
 
 
-def per_bar(an, oi_by_min: Dict[int, float]) -> Dict[int, Dict[str, Any]]:
+@lru_cache(maxsize=1)
+def display_config():
+    return json.loads((Path(__file__).resolve().parents[4]/"analyst"/"analyst_config.json").read_text())["futures_oi_display"]
+
+
+def per_bar(an, oi_by_min: Dict[int, Any]) -> Dict[int, Dict[str, Any]]:
     if not oi_by_min or an is None:
         return {}
     min_pct = float(config.rule("oi", "oi_min_pct", 0.05)) / 100
     pmin = float(config.rule("oi", "price_min_atr", 0.1))
     b, A = an.bars, an.atr
     step = TF_SECONDS.get(an.tf, 300)
-    mins = sorted(oi_by_min)
-    out: Dict[int, Dict[str, Any]] = {}
-    prev: Optional[tuple] = None                       # (day, oi, close)
+    out = {}
+    prev = None
     for i in range(len(b)):
-        ts = int(b.ts[i])
-        last = None
-        for m in range(ts + step - 60, ts - 60, -60):   # OI at the candle's last minute that has one
-            if m in oi_by_min:
-                last = oi_by_min[m]
-                break
-        day = ist_date(ts)
-        c = float(b.c[i])
-        if last is None:
-            prev = None if prev and prev[0] != day else prev
+        ts = int(b.ts[i]); day = ist_date(ts); close = float(b.c[i])
+        sample_ts = next((m for m in range(ts+step-60,ts-60,-60) if m in oi_by_min),None)
+        if sample_ts is None:
+            out[ts] = {"quality":"missing", "sample_ts":None}
+            prev = None
             continue
-        rec: Dict[str, Any] = {"oi": round(last)}
-        if prev and prev[0] == day:
-            doi, dp = last - prev[1], c - prev[2]
-            rec["doi"] = round(doi)
-            rec["doi_pct"] = round(100 * doi / prev[1], 3) if prev[1] else None
-            if abs(doi) >= min_pct * prev[1] and abs(dp) >= pmin * float(A[i]):
-                rec["build"] = NAMES[("up" if dp > 0 else "down", "up" if doi > 0 else "down")]
-            else:
-                rec["build"] = "flat"
-        out[ts] = rec
-        prev = (day, last, c)
+        sample = oi_by_min[sample_ts]
+        meta = sample if isinstance(sample,dict) else {"oi":sample, "source":"legacy", "contract":None}
+        value = float(meta["oi"])
+        quality = "ok" if not isinstance(sample,dict) or meta.get("verified") else "unverified_contract"
+        if not math.isfinite(value) or value<=0:
+            quality = "invalid"
+        elif ts+step-60-sample_ts > display_config()["sample_max_lag_s"]:
+            quality = "stale_sample"
+        rec = dict(oi=round(value) if math.isfinite(value) else None,quality=quality,
+                   contract=meta.get("contract"),source=meta.get("source"),sample_ts=sample_ts,doi=None,doi_pct=None,dp=None)
+        if quality != "ok":
+            out[ts]=rec;prev=None;continue
+        continuous = prev and prev["day"]==day and prev["ts"]+step==ts
+        if continuous and prev["contract"] != rec["contract"]:
+            rec["quality"]="contract_change";continuous=False
+        if continuous:
+            doi=value-prev["oi"];dp=close-prev["close"]
+            rec.update(doi=round(doi),doi_pct=round(100*doi/prev["oi"],3),dp=round(dp,2))
+            rec["build"] = NAMES[("up" if dp>0 else "down", "up" if doi>0 else "down")] if abs(doi)>=min_pct*prev["oi"] and abs(dp)>=pmin*float(A[i]) else "flat"
+        out[ts]=rec
+        prev=dict(day=day,ts=ts,oi=value,close=close,contract=rec["contract"])
     return out
 
 
@@ -87,32 +101,49 @@ def ema(vals: List[float], n: int) -> List[float]:
 
 
 def oi_line(an, bars: Dict[int, Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Per candle that has OI: {ts, oi, ema, doi, build, surge}. EMA length = oi.ema_len (8).
-    SURGE = ΔOI ≥ oi.surge_k × the average |ΔOI| of the previous oi.surge_window candles (same session, earlier
-    candles only) AND OI above its EMA → positions are being added unusually fast: a big move is building.
-    Direction is NOT implied — the build-up type (price + OI) and structure decide that."""
-    n = int(config.rule("oi", "ema_len", 8))
-    k = float(config.rule("oi", "surge_k", 2.0))
-    W = int(config.rule("oi", "surge_window", 20))
-    pts = [(int(t), bars[int(t)]) for t in an.bars.ts if int(t) in bars]
-    if not pts:
-        return []
-    e = ema([float(r["oi"]) for _, r in pts], n)
-    out: List[Dict[str, Any]] = []
-    hist: List[float] = []
-    day = None
-    for (ts, r), ev in zip(pts, e):
-        d = ist_date(ts)
-        if d != day:
-            day, hist = d, []
-        doi = r.get("doi")
-        base = sum(hist[-W:]) / len(hist[-W:]) if len(hist) >= 5 else None
-        surge = bool(doi is not None and doi > 0 and base and doi >= k * base and r["oi"] > ev)
-        out.append({"ts": ts, "oi": r["oi"], "ema": round(ev), "doi": doi, "build": r.get("build"), "surge": surge,
-                    "surge_x": round(doi / base, 1) if (doi and base) else None})
+    """Signed relative ΔOI uses only earlier same-session continuous samples."""
+    n=int(config.rule("oi","ema_len",8)); k=float(config.rule("oi","surge_k",2.0))
+    W=int(config.rule("oi","surge_window",20)); settings=display_config()
+    out=[];hist=[];relative_hist=[];ev=None;previous=None
+    for timestamp in an.bars.ts:
+        ts=int(timestamp);r=bars.get(ts,{})
+        if r.get("oi") is None:
+            hist=[];relative_hist=[];ev=None;previous=None
+            continue
+        identity=(ist_date(ts),r.get("contract"))
+        valid=r.get("quality","ok")=="ok"
+        if previous is None or previous[0]!=identity or previous[1]+TF_SECONDS[an.tf]!=ts or r.get("doi") is None or not valid:
+            hist=[];relative_hist=[];ev=None
+        ev=float(r["oi"]) if ev is None else ev+2/(n+1)*(r["oi"]-ev)
+        doi=r.get("doi") if valid else None
+        base=sum(hist[-W:])/len(hist[-W:]) if len(hist)>=settings["relative_min_bars"] else None
+        rb=relative_hist[-settings["relative_window"]:]
+        relative_base=sum(rb)/len(rb) if len(rb)>=settings["relative_min_bars"] else None
+        relative=doi/relative_base if doi is not None and relative_base else None
+        expansion=bool(doi is not None and doi>0 and base and doi>=k*base and r["oi"]>ev)
+        reduction=bool(doi is not None and doi<0 and base and -doi>=k*base)
+        out.append(dict(r,ts=ts,ema=round(ev),doi=doi,build=r.get("build"),surge=expansion,
+                        reduction=reduction,surge_x=round(abs(doi)/base,1) if doi is not None and base else None,
+                        relative=round(relative,3) if relative is not None else None,
+                        relative_base=round(relative_base,2) if relative_base else None))
         if doi is not None:
-            hist.append(abs(doi))
+            hist.append(abs(doi));relative_hist.append(abs(doi))
+        previous=(identity,ts) if valid else None
     return out
+
+
+def health(an,bars):
+    cfg=display_config();last=bars.get(int(an.bars.ts[-1]),{}) if len(an.bars.ts) else {}
+    sampled=last.get("sample_ts");now=int(now_epoch());_,end=session_bounds(now_ist().date())
+    age=max(0,now-(sampled+60)) if sampled is not None else None
+    state=last.get("quality","missing")
+    if now>=end:
+        state="market_closed" if sampled is not None else "missing"
+    elif age is not None and age>cfg["freshness_max_age_s"]:
+        state="stale"
+    return dict(state=state,sample_ts=sampled,age_s=age,contract=last.get("contract"),source=last.get("source"),
+                sample_quality=last.get("quality","missing"),pane_height=cfg["pane_height"],
+                relative_window=cfg["relative_window"],freshness_max_age_s=cfg["freshness_max_age_s"],inference_only=True)
 
 
 def compare(n_sum: Optional[Dict[str, Any]], b_sum: Optional[Dict[str, Any]],

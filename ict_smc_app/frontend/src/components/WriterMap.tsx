@@ -83,8 +83,8 @@ function ClassicWriterMap({ modeToggle }: { modeToggle: React.ReactNode }) {
         <span className="num text-slate-300">Spot <b className="text-slate-100">{spot.toFixed(0)}</b></span>
         <span className="num">PCR <b className={pcr >= 1.2 ? "text-bull-400" : pcr <= 0.8 ? "text-bear-400" : "text-slate-200"}>{pcr.toFixed(2)}</b>
           <span className="ml-1 text-[10px] text-slate-500">{pcr >= 1.2 ? "put-heavy · bullish" : pcr <= 0.8 ? "call-heavy · bearish" : "balanced"}</span></span>
-        <span className="num text-bull-400">🟢 Support <b>{topPe.strike}</b> ({cr(topPe.pe.oi)})</span>
-        <span className="num text-bear-400">🔴 Resistance <b>{topCe.strike}</b> ({cr(topCe.ce.oi)})</span>
+        <span className="num text-rose-400">🔴 Support (PE) <b>{topPe.strike}</b> ({cr(topPe.pe.oi)})</span>
+        <span className="num text-emerald-400">🟢 Resistance (CE) <b>{topCe.strike}</b> ({cr(topCe.ce.oi)})</span>
         <span className="ml-auto flex items-center gap-1 text-[10px] text-slate-500">range
           {[6, 10, 15].map((n) => <button key={n} onClick={() => setSpan(n)} className={`tab !py-0.5 ${span === n ? "tab-on" : ""}`}>±{n}</button>)}</span>
       </div>
@@ -98,24 +98,24 @@ function ClassicWriterMap({ modeToggle }: { modeToggle: React.ReactNode }) {
       <div className="min-h-0 flex-1 overflow-auto px-3 py-1">
         {rows.map((r) => {
           const isAtm = Math.abs(r.strike - atm) < 25;
-          const pe = tone(r.pe, "#22c55e"), ce = tone(r.ce, "#ef4444");
+          const pe = tone(r.pe, "#ef4444"), ce = tone(r.ce, "#22c55e");
           const pePct = (r.pe.oi / maxOi) * 100, cePct = (r.ce.oi / maxOi) * 100;
           const bigPe = r.strike === topPe.strike, bigCe = r.strike === topCe.strike;
           return (
             <div key={r.strike} className={`grid grid-cols-[1fr_84px_1fr] items-center gap-1 ${isAtm ? "bg-gold-500/5" : ""}`} style={{ minHeight: 22 }}>
               {/* PE bar — grows leftward */}
               <div className="flex items-center justify-end gap-1">
-                {r.pe.oi_chg ? <span className={`num text-[9px] ${r.pe.oi_chg > 0 ? "text-bull-400" : "text-slate-500"}`}>{r.pe.oi_chg > 0 ? "+" : ""}{cr(r.pe.oi_chg)}</span> : null}
-                <span className="num text-[10px] text-bull-300">{cr(r.pe.oi)}</span>
-                <div className="h-3.5 rounded-l" style={{ width: `${pePct}%`, minWidth: r.pe.oi ? 2 : 0, background: pe.bg, boxShadow: bigPe ? "0 0 6px #22c55e" : "none", outline: bigPe ? "1px solid #86efac" : "none" }} title={`PE ${r.strike}: ${cr(r.pe.oi)} OI (${r.pe.oi_chg >= 0 ? "+" : ""}${cr(r.pe.oi_chg)} today)`} />
+                {r.pe.oi_chg ? <span className={`num text-[9px] ${r.pe.oi_chg > 0 ? "text-rose-400" : "text-slate-500"}`}>{r.pe.oi_chg > 0 ? "+" : ""}{cr(r.pe.oi_chg)}</span> : null}
+                <span className="num text-[10px] text-rose-300">{cr(r.pe.oi)}</span>
+                <div className="h-3.5 rounded-l" style={{ width: `${pePct}%`, minWidth: r.pe.oi ? 2 : 0, background: pe.bg, boxShadow: bigPe ? "0 0 6px #ef4444" : "none", outline: bigPe ? "1px solid #fca5a5" : "none" }} title={`PE ${r.strike}: ${cr(r.pe.oi)} OI (${r.pe.oi_chg >= 0 ? "+" : ""}${cr(r.pe.oi_chg)} today)`} />
               </div>
               {/* strike */}
               <div className={`text-center num font-semibold ${isAtm ? "text-gold-300" : "text-slate-300"}`}>{r.strike}{isAtm ? " ◀" : ""}</div>
               {/* CE bar — grows rightward */}
               <div className="flex items-center gap-1">
-                <div className="h-3.5 rounded-r" style={{ width: `${cePct}%`, minWidth: r.ce.oi ? 2 : 0, background: ce.bg, boxShadow: bigCe ? "0 0 6px #ef4444" : "none", outline: bigCe ? "1px solid #fca5a5" : "none" }} title={`CE ${r.strike}: ${cr(r.ce.oi)} OI (${r.ce.oi_chg >= 0 ? "+" : ""}${cr(r.ce.oi_chg)} today)`} />
-                <span className="num text-[10px] text-bear-300">{cr(r.ce.oi)}</span>
-                {r.ce.oi_chg ? <span className={`num text-[9px] ${r.ce.oi_chg > 0 ? "text-bear-400" : "text-slate-500"}`}>{r.ce.oi_chg > 0 ? "+" : ""}{cr(r.ce.oi_chg)}</span> : null}
+                <div className="h-3.5 rounded-r" style={{ width: `${cePct}%`, minWidth: r.ce.oi ? 2 : 0, background: ce.bg, boxShadow: bigCe ? "0 0 6px #22c55e" : "none", outline: bigCe ? "1px solid #86efac" : "none" }} title={`CE ${r.strike}: ${cr(r.ce.oi)} OI (${r.ce.oi_chg >= 0 ? "+" : ""}${cr(r.ce.oi_chg)} today)`} />
+                <span className="num text-[10px] text-emerald-300">{cr(r.ce.oi)}</span>
+                {r.ce.oi_chg ? <span className={`num text-[9px] ${r.ce.oi_chg > 0 ? "text-emerald-400" : "text-slate-500"}`}>{r.ce.oi_chg > 0 ? "+" : ""}{cr(r.ce.oi_chg)}</span> : null}
               </div>
             </div>
           );
@@ -123,7 +123,7 @@ function ClassicWriterMap({ modeToggle }: { modeToggle: React.ReactNode }) {
       </div>
       <div className="border-t border-ink-700 px-3 py-1.5 text-[10px] text-slate-500">
         Bar = total OI · bright = writers ADDING today (wall hardening) · faded = UNWINDING (weakening) · glow = biggest wall.
-        Price tends to pin between the biggest 🟢 support and 🔴 resistance; a wall that unwinds is the side likely to break.
+        Price tends to pin between the biggest 🔴 support and 🟢 resistance; a wall that unwinds is the side likely to break.
       </div>
     </div>
   );

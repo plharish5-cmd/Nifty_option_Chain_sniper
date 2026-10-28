@@ -3,6 +3,7 @@
 //   WritersFlow — "OI Change (Call vs Put) — since yesterday" + writer-flow strip (Δput − Δcall, 30-min balance)
 // Both refresh every 30 s; the backend recomputes only when a new snapshot has been stored (never stale).
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { positioningEvents } from "./bias";
 import { FlowBand } from "./flowband";
 import PcrTrinitySuite from "./PcrTrinitySuite";
 import PeceMatrix from "./PeceMatrix";
@@ -1614,6 +1615,11 @@ export function DeskBiasBanner({
   );
 }
 
+function formatIST(epoch: number): string {
+  const d = new Date(epoch * 1000);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} IST`;
+}
+
 export function WritersFlow({ tick }: { tick: number }) {
   const [suiteView, setSuiteView] = useState<"smart_oi" | "trinity" | "classic" | "gap_sniper">(() => {
     try {
@@ -1687,6 +1693,9 @@ export function WritersFlow({ tick }: { tick: number }) {
   const flCap = useRef(0);
   const [showFut, setShowFut] = useState(true);   // real NIFTY-future candles overlaid on the left price scale
   const [futCandles, setFutCandles] = useState<{ time: number; o: number; h: number; l: number; c: number }[]>([]);
+  const [hoverPt, setHoverPt] = useState<Pt | null>(null);
+  const ptMapRef = useRef<Map<number, Pt>>(new Map());
+  const validPtsRef = useRef<Pt[]>([]);
 
   // Real-Time Audio & Angle Alert State
   const [soundOn, setSoundOn] = useState<boolean>(() => {
@@ -1811,17 +1820,42 @@ export function WritersFlow({ tick }: { tick: number }) {
           rightOffset: 2,
           lockVisibleTimeRangeOnResize: true,
         },
-        localization: { locale: "en-IN" },
+        localization: {
+          locale: "en-IN",
+          priceFormatter: (p: number) => inr(p, true),
+        },
+      });
+
+      ch.subscribeCrosshairMove((param) => {
+        if (!param.time) {
+          setHoverPt(null);
+          return;
+        }
+        const t = param.time as number;
+        const pt = ptMapRef.current.get(t);
+        if (pt) {
+          setHoverPt(pt);
+        } else {
+          const pts = validPtsRef.current;
+          if (pts.length) {
+            const nearest = pts.reduce((prev, curr) => Math.abs(curr.t - t) < Math.abs(prev.t - t) ? curr : prev);
+            if (Math.abs(nearest.t - t) <= 900) {
+              setHoverPt(nearest);
+            } else {
+              setHoverPt(null);
+            }
+          }
+        }
       });
       const uw = ch.addSeries(HistogramSeries, { priceScaleId: "uw", color: "rgba(212,175,55,0.16)", priceLineVisible: false, lastValueVisible: false });
       ch.priceScale("uw").applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
       const futFmt = { type: "custom" as const, formatter: (p: number) => p.toLocaleString("en-IN", { maximumFractionDigits: 1 }) };
       const futC = ch.addSeries(CandlestickSeries, { priceScaleId: "left", upColor: "#10b981", downColor: "#ef4444", borderVisible: false,
         wickUpColor: "#10b981", wickDownColor: "#ef4444", priceFormat: futFmt, priceLineVisible: false });
-      const fut = ch.addSeries(LineSeries, { priceScaleId: "left", color: "rgba(226,232,240,0.7)", lineWidth: 1, lineStyle: LineStyle.Dotted,
-        title: "NIFTY fut", priceFormat: futFmt });
-      const ce = ch.addSeries(LineSeries, { color: "#ef4444", lineWidth: 2, title: "Call Resistance", priceFormat: { type: "custom", formatter: (p: number) => inr(p) } });
-      const pe = ch.addSeries(LineSeries, { color: "#10b981", lineWidth: 2, title: "Put Support", priceFormat: { type: "custom", formatter: (p: number) => inr(p) } });
+      const fut = ch.addSeries(LineSeries, { priceScaleId: "left", color: "#94a3b8", lineWidth: 2, lineStyle: LineStyle.Dotted,
+        title: "Future", priceFormat: futFmt });
+      const ce = ch.addSeries(LineSeries, { color: "#22c55e", lineWidth: 2, title: "Call OI Change (Call Writers)", priceFormat: { type: "custom", formatter: (p: number) => inr(p) } });
+      const pe = ch.addSeries(LineSeries, { color: "#ef4444", lineWidth: 2, title: "Put OI Change (Put Writers)", priceFormat: { type: "custom", formatter: (p: number) => inr(p) } });
       const fl = ch.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, title: "flow Δput−Δcall",
         priceFormat: { type: "custom", formatter: (p: number) => inr(p) },
         // clip the scale at ~the 95th-percentile bar so one huge opening print doesn't flatten every other bar
@@ -1951,6 +1985,8 @@ export function WritersFlow({ tick }: { tick: number }) {
       ptMap.set(p.t, p);
     }
     const P = Array.from(ptMap.values()).sort((a, b) => a.t - b.t);
+    ptMapRef.current = ptMap;
+    validPtsRef.current = P;
     const T = (p: Pt) => p.t as UTCTimestamp;
 
     function dedupeSeries<TItem extends { time: Time; value: number }>(arr: TItem[]): TItem[] {
@@ -2001,6 +2037,10 @@ export function WritersFlow({ tick }: { tick: number }) {
     const mk: SeriesMarker<Time>[] = P.filter((p) => p.flip && p.conf).map((p) => ({ time: T(p),
       position: p.conf === "BULL" ? "belowBar" : "aboveBar", shape: p.conf === "BULL" ? "arrowUp" : "arrowDown",
       color: p.conf === "BULL" ? "#22c55e" : "#ef4444", text: p.conf === "BULL" ? "▲ BULL" : "▼ BEAR" }));
+    const positionEvents=positioningEvents(P.filter((p)=>p.ce!=null && p.pe!=null).map((p)=>({time:p.t,ce:p.ce!,pe:p.pe!,price:p.fut ?? NaN})),Date.now()/1000+19800);
+    for(const e of positionEvents) mk.push({time:e.time as UTCTimestamp,position:e.dir==="bull"?"belowBar":"aboveBar",
+      shape:e.kind==="divergence"?"circle":e.dir==="bull"?"arrowUp":"arrowDown",
+      color:e.kind==="divergence"?"#f59e0b":e.dir==="bull"?"#22c55e":"#ef4444",text:e.text});
     if (U) mk.push({ time: U[0] as UTCTimestamp, position: "aboveBar", shape: "square", color: "#e8c35a", text: "EXPIRY UNWIND →" });
     mk.sort((a, b) => (a.time as number) - (b.time as number));
     s.mk.setMarkers(mk);
@@ -2405,6 +2445,22 @@ export function WritersFlow({ tick }: { tick: number }) {
   const liveOiGap = Math.abs(lastCallCr - lastPutCr);
   const trendDivNow = detectTrendDivergence(P);
 
+  const activePt = hoverPt ?? last;
+  const flowVal = activePt?.flow ?? 0;
+  const balVal = activePt?.bal ?? 0;
+  let coachVerdict = "";
+  if (flowVal > 0 && balVal > 0.25) {
+    coachVerdict = `🟢 BULLISH DOMINANCE: 3m Flow (+${inr(flowVal)}) + 30m Balance (+${balVal.toFixed(2)}) aligned Bullish — Put writers actively building support floor (Buy Dips / Hold CE).`;
+  } else if (flowVal < 0 && balVal < -0.25) {
+    coachVerdict = `🔴 BEARISH DOMINANCE: 3m Flow (${inr(flowVal)}) + 30m Balance (${balVal.toFixed(2)}) aligned Bearish — Call writers actively hammering overhead resistance (Sell Rallies / Hold PE).`;
+  } else if (flowVal > 0 && balVal < -0.25) {
+    coachVerdict = `🟡 COUNTER-FLOW / COVERING: 3m Flow positive (+${inr(flowVal)}) against bearish 30m balance (${balVal.toFixed(2)}) — Watch for trapped Call writer short-covering bounce!`;
+  } else if (flowVal < 0 && balVal > 0.25) {
+    coachVerdict = `🟡 PROFIT-BOOKING / DIP: 3m Flow negative (${inr(flowVal)}) into bullish 30m balance (+${balVal.toFixed(2)}) — Normal pullback or dip test in uptrend.`;
+  } else {
+    coachVerdict = `⚪ NEUTRAL ROTATION: Two-way writer rotation (${inr(flowVal)}) with balance at ${balVal.toFixed(2)} — No aggressive institutional dominance in this candle.`;
+  }
+
   const switcher = (
     <div className="flex rounded bg-[#0b1324] p-0.5 border border-slate-700">
       <button
@@ -2559,41 +2615,41 @@ export function WritersFlow({ tick }: { tick: number }) {
       {/* 📡 Live OI Velocity, Angle & Milestone Telemetry Strip */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-800 bg-[#070c18] px-3 py-1.5 text-[11px]">
         <div className="flex flex-wrap items-center gap-2">
-          {/* Crimson Call Angle Badge */}
+          {/* Green Call Writers Angle Badge */}
           <span
             className={`flex items-center gap-1 rounded px-2 py-0.5 font-bold border transition-colors ${
               Math.abs(liveCallAngle) >= angleThreshold
-                ? "bg-rose-950 text-rose-200 border-rose-500/80 ring-1 ring-rose-500/30 animate-pulse"
-                : "bg-rose-950/40 text-rose-300 border-rose-800/50"
+                ? "bg-emerald-950 text-emerald-200 border-emerald-500/80 ring-1 ring-emerald-500/30 animate-pulse"
+                : "bg-emerald-950/40 text-emerald-300 border-emerald-800/50"
             }`}
-            title={`Call OI (Crimson line) 5m slope: ${liveCallAngle.toFixed(1)}°. ${Math.abs(liveCallAngle) >= angleThreshold ? (liveCallAngle > 0 ? "Call writing surge (Bearish resistance)!" : "Call unwinding cliff (Bullish squeeze)!") : "Normal drift."}`}
+            title={`Call OI (Green line) 5m slope: ${liveCallAngle.toFixed(1)}°. ${Math.abs(liveCallAngle) >= angleThreshold ? (liveCallAngle > 0 ? "Call writing surge (Bearish resistance)!" : "Call unwinding cliff (Bullish squeeze)!") : "Normal drift."}`}
           >
-            <span className="text-rose-400">Crimson (Call Resistance):</span>
-            <span className="font-mono text-rose-200">
+            <span className="text-emerald-400">🟢 Green (Call Writers):</span>
+            <span className="font-mono text-emerald-200">
               {liveCallAngle >= 0 ? "+" : ""}{liveCallAngle.toFixed(0)}° {liveCallAngle >= 0 ? "▲" : "▼"}
             </span>
             {Math.abs(liveCallAngle) >= angleThreshold && (
-              <span className="text-[10px] uppercase tracking-wide font-extrabold text-rose-300">
+              <span className="text-[10px] uppercase tracking-wide font-extrabold text-emerald-300">
                 {liveCallAngle > 0 ? "(Steep Surge!)" : "(Steep Drop!)"}
               </span>
             )}
           </span>
 
-          {/* Emerald Put Angle Badge */}
+          {/* Red Put Writers Angle Badge */}
           <span
             className={`flex items-center gap-1 rounded px-2 py-0.5 font-bold border transition-colors ${
               Math.abs(livePutAngle) >= angleThreshold
-                ? "bg-emerald-950 text-emerald-200 border-emerald-500/80 ring-1 ring-emerald-500/30 animate-pulse"
-                : "bg-emerald-950/40 text-emerald-300 border-emerald-800/50"
+                ? "bg-rose-950 text-rose-200 border-rose-500/80 ring-1 ring-rose-500/30 animate-pulse"
+                : "bg-rose-950/40 text-rose-300 border-rose-800/50"
             }`}
-            title={`Put OI (Emerald line) 5m slope: ${livePutAngle.toFixed(1)}°. ${Math.abs(livePutAngle) >= angleThreshold ? (livePutAngle > 0 ? "Put writing surge (Bullish floor)!" : "Put unwinding cliff (Panic liquidation)!") : "Normal drift."}`}
+            title={`Put OI (Red line) 5m slope: ${livePutAngle.toFixed(1)}°. ${Math.abs(livePutAngle) >= angleThreshold ? (livePutAngle > 0 ? "Put writing surge (Bullish floor)!" : "Put unwinding cliff (Panic liquidation)!") : "Normal drift."}`}
           >
-            <span className="text-emerald-400">Emerald (Put Support):</span>
-            <span className="font-mono text-emerald-200">
+            <span className="text-rose-400">🔴 Red (Put Writers):</span>
+            <span className="font-mono text-rose-200">
               {livePutAngle >= 0 ? "+" : ""}{livePutAngle.toFixed(0)}° {livePutAngle >= 0 ? "▲" : "▼"}
             </span>
             {Math.abs(livePutAngle) >= angleThreshold && (
-              <span className="text-[10px] uppercase tracking-wide font-extrabold text-emerald-300">
+              <span className="text-[10px] uppercase tracking-wide font-extrabold text-rose-300">
                 {livePutAngle > 0 ? "(Steep Surge!)" : "(Steep Drop!)"}
               </span>
             )}
@@ -2630,9 +2686,9 @@ export function WritersFlow({ tick }: { tick: number }) {
           {/* 1Cr Milestone Counter */}
           <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded bg-ink-900 border border-ink-800 text-slate-300">
             <span>1Cr Cross:</span>
-            <span>Put <b className="text-emerald-400">{lastPutCr >= 0 ? "+" : ""}{lastPutCr.toFixed(1)}Cr</b></span>
+            <span>Call <b className="text-emerald-400">{lastCallCr >= 0 ? "+" : ""}{lastCallCr.toFixed(1)}Cr</b></span>
             <span className="text-slate-500">|</span>
-            <span>Call <b className="text-rose-400">{lastCallCr >= 0 ? "+" : ""}{lastCallCr.toFixed(1)}Cr</b></span>
+            <span>Put <b className="text-rose-400">{lastPutCr >= 0 ? "+" : ""}{lastPutCr.toFixed(1)}Cr</b></span>
           </span>
 
           {/* Active OI Gap Counter */}
@@ -2783,10 +2839,44 @@ export function WritersFlow({ tick }: { tick: number }) {
           className={`rounded border px-2 py-0.5 text-[11px] ${showFut ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-200" : "border-ink-700 text-slate-400"}`}>
           {showFut ? "📈 Future candles" : "┈ Future line"}
         </button>
-        <span><span className="text-bear-400">━ Call Resistance (Crimson)</span> · <span className="text-bull-400">━ Put Support (Emerald)</span> (since yesterday, right axis) · {showFut ? "real NIFTY-future candles" : "┈ NIFTY future line"} (left axis, adapts to active expiry)</span>
-        <span>middle strip = Δput − Δcall each candle: <span className="text-bull-400">green ▲ = PUT writers added more (support, bullish)</span> · <span className="text-bear-400">red ▼ = CALL writers added more (resistance, bearish)</span> · bright bar + label = unusual (≥ 2.5× normal) · bottom gold line = 30-min balance: above +0.25 bullish, below −0.25 bearish</span>
+        <span><span className="text-emerald-400 font-semibold">━ Call OI Change (Call Writers, Green)</span> · <span className="text-rose-400 font-semibold">━ Put OI Change (Put Writers, Red)</span> (since yesterday, right axis) · {showFut ? "real NIFTY-future candles" : "┈ NIFTY future line (Dotted Gray)"} (left axis, adapts to active expiry)</span>
+        <span>middle strip = <b className="text-slate-200">flow Δput − Δcall</b>: <span className="text-emerald-400 font-medium">green ▲ = PUT writers added more (support, bullish)</span> · <span className="text-rose-400 font-medium">red ▼ = CALL writers added more (resistance, bearish)</span> · bright bar + label = unusual (≥ 2.5× normal) · bottom gold line = 30-min balance: above +0.25 bullish, below −0.25 bearish</span>
         {last && <span className="text-slate-300">now: call {inr(last.ce)} · put {inr(last.pe)} · balance {last.bal?.toFixed(2)} · regime <b>{last.conf ?? last.regime}</b></span>}
       </div>
+      {/* 🧭 Interactive Plain-English Hover Coach Banner Across All 3 Synced Strips */}
+      {activePt && (
+        <div className="mx-3 my-1 rounded bg-[#091122]/95 border border-cyan-500/50 p-2 shadow-xl backdrop-blur text-[11px] shrink-0">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-slate-300">
+            <span className="font-bold text-white pr-2 border-r border-slate-700">
+              {hoverPt ? `🕒 ${activePt.hm || formatIST(activePt.t)}` : `⚡ LIVE ${activePt.hm || formatIST(activePt.t)}`}
+            </span>
+            {activePt.fut != null && (
+              <span>⚪ Future: <b className="text-white">{activePt.fut.toFixed(1)}</b></span>
+            )}
+            <span className="text-[#22c55e]">
+              🟢 Call OI Chg: <b>{inr(activePt.ce, true)}</b>
+            </span>
+            <span className="text-[#ef4444]">
+              🔴 Put OI Chg: <b>{inr(activePt.pe, true)}</b>
+            </span>
+            <span className="text-purple-300">
+              Net (PE−CE): <b>{inr((activePt.pe ?? 0) - (activePt.ce ?? 0), true)}</b>
+            </span>
+            <span className="text-slate-600">|</span>
+            <span className={flowVal >= 0 ? "text-[#22c55e]" : "text-[#ef4444]"}>
+              ⚡ 3m Flow (ΔPut−ΔCall): <b>{inr(flowVal, true)}</b> ({flowVal >= 0 ? "🟢 Put led bar" : "🔴 Call led bar"})
+            </span>
+            <span className="text-slate-600">|</span>
+            <span className={balVal > 0.25 ? "text-emerald-400" : balVal < -0.25 ? "text-rose-400" : "text-amber-300"}>
+              ⚖️ 30m Balance: <b>{balVal >= 0 ? "+" : ""}{balVal.toFixed(2)}</b> ({balVal > 0.25 ? "🟢 Bullish (> +0.25)" : balVal < -0.25 ? "🔴 Bearish (< -0.25)" : "⚪ Neutral band"})
+            </span>
+          </div>
+          <div className="mt-1 font-medium text-[11px] text-cyan-300">
+            {coachVerdict}
+          </div>
+        </div>
+      )}
+
       <div ref={box} className="min-h-0 flex-1 w-full" style={{ minHeight: "220px" }} />
       {(d?.read || d?.note) && <div className="border-t border-ink-700 px-3 py-1.5 text-[13px] text-slate-200">{clean(`${d?.read ?? ""} ${d?.note ?? ""}`)}</div>}
       </div>

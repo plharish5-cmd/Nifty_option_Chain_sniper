@@ -101,7 +101,54 @@ def fetch_dhan_live_quotes(hub: Optional[Any] = None, oct_sid: int = 48704, nov_
     if now - _last_dhan_quote_fetch < 2.0 and len(_cached_dhan_quotes) >= 4:
         return _cached_dhan_quotes
 
-    # 1. From active Hub DhanREST instance
+    # 1. From live WebSocket ticks if available on Hub
+    if hub and getattr(hub, "feed", None) and hasattr(hub.feed, "last_tick"):
+        lt = hub.feed.last_tick
+        if "5024" in lt and float(lt["5024"]) > 10000:
+            _cached_dhan_quotes["5024"] = float(lt["5024"])
+        if "13" in lt and float(lt["13"]) > 10000:
+            _cached_dhan_quotes["13"] = float(lt["13"])
+
+    # 2. Direct Dhan REST LTP call (reliable across sync and async contexts)
+    token = config.env("DHAN_ACCESS_TOKEN")
+    cid = config.env("DHAN_CLIENT_ID")
+    if token and cid:
+        try:
+            url = "https://api.dhan.co/v2/marketfeed/ltp"
+            payload = json.dumps({
+                "IDX_I": [5024, 13],
+                "NSE_FNO": [oct_sid, nov_sid],
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={
+                    "access-token": token,
+                    "client-id": cid,
+                    "Content-Type": "application/json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=2.5) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                d = res.get("data", {})
+                idx_map = d.get("IDX_I", {})
+                fno_map = d.get("NSE_FNO", {})
+                if "13" in idx_map and isinstance(idx_map["13"], dict) and idx_map["13"].get("last_price"):
+                    _cached_dhan_quotes["13"] = float(idx_map["13"]["last_price"])
+                if "5024" in idx_map and isinstance(idx_map["5024"], dict) and idx_map["5024"].get("last_price"):
+                    px = float(idx_map["5024"]["last_price"])
+                    if px > 10000:
+                        _cached_dhan_quotes["5024"] = px
+                if str(oct_sid) in fno_map and isinstance(fno_map[str(oct_sid)], dict) and fno_map[str(oct_sid)].get("last_price"):
+                    _cached_dhan_quotes[str(oct_sid)] = float(fno_map[str(oct_sid)]["last_price"])
+                if str(nov_sid) in fno_map and isinstance(fno_map[str(nov_sid)], dict) and fno_map[str(nov_sid)].get("last_price"):
+                    _cached_dhan_quotes[str(nov_sid)] = float(fno_map[str(nov_sid)]["last_price"])
+                _last_dhan_quote_fetch = now
+                return _cached_dhan_quotes
+        except Exception as e:
+            log.warning("Direct Dhan HTTP LTP error: %s", e)
+
+    # 3. From active Hub DhanREST instance
     if hub and hasattr(hub, "rest"):
         try:
             import asyncio
@@ -356,10 +403,10 @@ def compute_gap_confluence(
     nov_fut_gap_pct = round((nov_fut_gap_pts / max(nov_fut_pdc, 1.0)) * 100.0, 2)
     roll_spread = round(nov_fut_ltp - oct_fut_ltp, 1)
 
-    # GIFT Nifty reference
-    tv_px = fetch_live_gift_nifty(default_val=0.0)
-    dhan_px = dhan_quotes.get("5024", 0.0)
-    gift_nifty_ltp = tv_px if tv_px > 10000.0 else (dhan_px if dhan_px > 10000.0 else float(c.get("default_gift_nifty_ref", 22642.0)))
+    # GIFT Nifty reference — Prioritize direct live Dhan quote (5024), falling back to TradingView / config
+    dhan_px = float(dhan_quotes.get("5024", 0.0))
+    tv_px = fetch_live_gift_nifty(default_val=0.0) if dhan_px <= 10000.0 else 0.0
+    gift_nifty_ltp = dhan_px if dhan_px > 10000.0 else (tv_px if tv_px > 10000.0 else float(c.get("default_gift_nifty_ref", 22642.0)))
     gift_diff_oct = round(gift_nifty_ltp - oct_fut_ltp, 1)
 
     # 2. Determine Primary Anchor & Precise Gap Delta
