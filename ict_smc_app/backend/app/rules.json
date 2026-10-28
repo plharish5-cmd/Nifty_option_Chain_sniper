@@ -33,6 +33,7 @@
     "daily_days": 40,
     "chain_expiries": 2,
     "chain_min_gap_s": 3.1,
+    "ratelimit_retry_ceiling_s": 8.0,
     "chain_snapshot_every_s": 60,
     "chain_keep_days": 5,
     "candles_keep_days": 400,

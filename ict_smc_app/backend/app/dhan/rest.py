@@ -192,8 +192,15 @@ class DhanREST:
             if isinstance(err, RateLimited):
                 self.usage_d["rate_limited"] = self.usage_d.get("rate_limited", 0) + 1
                 b.punish()
-                if attempt < retries:
-                    continue
+                # Retry in place ONLY while the bucket is still lightly backed off. b.wait() sleeps
+                # gap + penalty BEFORE each attempt, so once punish() has saturated the penalty at 60 s a
+                # 4-attempt retry blocks the caller inside ONE call for ~4 minutes and writes no snapshot —
+                # that is what tore 24-30 min holes in the chain-snapshot series. Past the ceiling, raise and
+                # let the caller's own poll loop set the cadence; the bucket still spaces the next call.
+                ceiling = float(config.rule("data", "ratelimit_retry_ceiling_s", 8.0))
+                if attempt >= retries or b.penalty >= ceiling:
+                    raise err
+                continue
             if isinstance(err, TokenError):
                 self.token_ok = False
             if isinstance(err, (TokenError, NotEntitled, BadRequest)) or attempt == retries:
