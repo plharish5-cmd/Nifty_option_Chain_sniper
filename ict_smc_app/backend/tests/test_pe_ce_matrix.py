@@ -277,3 +277,44 @@ def test_extrinsic_skew_calculation():
     assert "Put Skew" in skew["skew_label"]
 
 
+
+
+def test_snapshot_gap_is_flagged_not_silently_closed():
+    """A poller outage leaves no bucket, so the table closes the hole up and the next row's step delta
+    silently covers the whole outage. The row must declare its real span instead of passing for a normal
+    interval — on 28 Oct 2026 rate-limit stalls produced 24-30 min holes that read as ordinary 3m bars.
+    """
+    from app import db
+    from app.timeutil import now_ist, session_bounds
+
+    t0, _ = session_bounds(now_ist().date())
+    exp = "2026-11-24"          # distinct expiry: must not disturb the other tests' seeded chain
+
+    strikes = [
+        (22500.0, 500000, 600000, 150.0, 140.0, 1000, 1000),
+        (22550.0, 400000, 700000, 120.0, 160.0, 1000, 1000),
+    ]
+    # two contiguous 3m snapshots, then a 30-minute hole before the third
+    for offset in (0, 180, 1800):
+        db.save_chain_snap(exp, t0 + offset, [
+            (k, ce + offset, pe + offset, cl, pl, v1, v2) for (k, ce, pe, cl, pl, v1, v2) in strikes
+        ])
+    db.upsert_candles("FUT", [
+        {"ts": t0 + o, "o": 22550, "h": 22580, "l": 22540, "c": 22570, "v": 1000} for o in (0, 180, 1800)
+    ])
+
+    rows = pe_ce_matrix.compute_pe_ce_matrix(expiry=exp, scope="full", tf="3m")["rows"]
+    live = [r for r in rows if r.get("time_label") != "Prev Day"]
+
+    assert live, "expected live ledger rows"
+    for r in live:
+        assert "step_span_s" in r and "step_is_gap" in r
+
+    gapped = [r for r in live if r["step_is_gap"]]
+    assert len(gapped) == 1, f"expected exactly one gapped row, got {len(gapped)}"
+    assert gapped[0]["step_span_s"] == 1620, gapped[0]["step_span_s"]
+
+    # every other row is a genuine one-interval bar, and the first row is never a gap
+    for r in live:
+        if not r["step_is_gap"]:
+            assert r["step_span_s"] == 180, r["step_span_s"]

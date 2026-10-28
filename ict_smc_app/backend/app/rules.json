@@ -649,6 +649,7 @@
   "pe_ce_matrix": {
     "_note": "Institutional PE-CE Difference & Skew Matrix 2.0 thresholds",
     "enabled": true,
+    "gap_flag_steps": 1.0,
     "balanced_range_threshold": 500000,
     "moderate_conviction_threshold": 2000000,
     "large_conviction_threshold": 3000000,

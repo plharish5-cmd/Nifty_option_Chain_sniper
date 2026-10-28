@@ -20,6 +20,8 @@ export interface MatrixRow {
   pe_ce_day_diff: number;
   pe_ce_step_diff: number;
   pcr_day: number;
+  step_span_s?: number;
+  step_is_gap?: boolean;
   fut_ltp: number;
   fut_oi_day_chg: number;
   fut_buildup: "LONG_BUILDUP" | "SHORT_BUILDUP" | "SHORT_COVERING" | "LONG_UNWINDING" | "NEUTRAL";
@@ -733,7 +735,25 @@ export default function PeceMatrix({ tick = 0 }: PeceMatrixProps) {
                 >
                   {/* 1. Time */}
                   <td className={`${td} font-bold text-slate-300 sticky left-0 z-10 bg-inherit border-r border-[#152033]`}>
-                    {r.time_label}
+                    <div className="flex items-center gap-1">
+                      <span>{r.time_label}</span>
+                      {r.step_is_gap && (
+                        <span
+                          title={
+                            "SNAPSHOT GAP — no option-chain snapshot was recorded for part of this interval, " +
+                            "usually a rate-limited poller.\n\n" +
+                            "The Δ figures on this row cover the WHOLE span shown, not one interval, so their " +
+                            "size is not comparable with a normal row and a 'Shock' tag here may be arithmetic " +
+                            "rather than market behaviour.\n\n" +
+                            "DO: read this row's direction, not its magnitude.\n" +
+                            "WAIT: do not size a trade off a conviction score that leans on this bar."
+                          }
+                          className="px-1 rounded text-[9px] font-black bg-amber-950 text-amber-300 border border-amber-600/70 cursor-help"
+                        >
+                          ⚠ {Math.round((r.step_span_s ?? 0) / 60)}m
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   {/* 2. Put OI (Day + Step) */}

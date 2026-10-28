@@ -517,6 +517,13 @@ def compute_pe_ce_matrix(
     bucket_keys = sorted(bucket_ts_set)
 
     ledger_rows: List[Dict[str, Any]] = []
+    # Buckets exist only where a snapshot exists, so a poller outage leaves NO row and the table closes the
+    # hole up silently. The step deltas below are computed against the previous ROW, not the previous clock
+    # interval, so the row after an outage reports (say) a 30-minute change in the same column, units and
+    # thresholds as a genuine 3-minute one — and that value feeds the slope-flip detector and conviction.
+    # Carry each bucket's real span so the row can say so instead of pretending to be a normal interval.
+    prev_b_ts: Optional[int] = None
+    gap_factor = float(c.get("gap_flag_steps", 1.0))
     prev_cum_ce_chg = 0
     prev_cum_pe_chg = 0
     prev_fut_ltp = float(fut_candles[0]["c"]) if fut_candles else latest_fut
@@ -595,6 +602,11 @@ def compute_pe_ce_matrix(
         # 6-Stage Action Classification
         stage_label = classify_action_stage(pe_ce_day_diff, pe_ce_step_diff, t_label, c)
 
+        # How much wall-clock this row's step deltas actually cover. The first row has no predecessor, so it
+        # spans one nominal interval by definition and is never a gap.
+        step_span_s = int(step_s if prev_b_ts is None else b_ts - prev_b_ts)
+        step_is_gap = prev_b_ts is not None and step_span_s > step_s * gap_factor
+
         ledger_rows.append({
             "time": chart_time(effective_snap_t),
             "time_label": t_label,
@@ -605,12 +617,15 @@ def compute_pe_ce_matrix(
             "pe_ce_day_diff": pe_ce_day_diff,
             "pe_ce_step_diff": pe_ce_step_diff,
             "pcr_day": pcr_day,
+            "step_span_s": step_span_s,
+            "step_is_gap": step_is_gap,
             "fut_ltp": round(fut_ltp, 1),
             "fut_oi_day_chg": fut_oi_day_chg,
             "fut_buildup": buildup,
             "stage_label": stage_label,
         })
 
+        prev_b_ts = b_ts
         prev_cum_ce_chg = cum_ce_chg
         prev_cum_pe_chg = cum_pe_chg
         prev_fut_ltp = fut_ltp
