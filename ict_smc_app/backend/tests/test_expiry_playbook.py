@@ -116,6 +116,83 @@ def test_detect_trapped_writers():
     assert "CE Writers Trapped" in trapped["unwinding_str"]
 
 
+def test_detect_trapped_writers_requires_real_unwinding():
+    """A standing wall is NOT a squeeze: covering is only claimed when interval ΔOI clears the threshold."""
+    spot = 22740.0
+    cfg = {"min_writer_unwind_oi": 1000000, "min_writer_fortify_oi": 1500000}
+    cur = [
+        {"strike": 22600, "ce_oi": 400000, "pe_oi": 14700000},
+        {"strike": 22700, "ce_oi": 3000000, "pe_oi": 2000000},
+        {"strike": 22800, "ce_oi": 6000000, "pe_oi": 1000000},
+    ]
+    # Prev snapshot: 22700 CE was 5.5M -> now 3.0M = -2.5L*10 unwind (clears -10L threshold)
+    prev_covering = [
+        {"strike": 22600, "ce_oi": 400000, "pe_oi": 14700000},
+        {"strike": 22700, "ce_oi": 5500000, "pe_oi": 2000000},
+        {"strike": 22800, "ce_oi": 6000000, "pe_oi": 1000000},
+    ]
+    res = expiry_playbook.detect_trapped_writers(
+        spot, cur, cfg=cfg, prev_chain_rows=prev_covering, open_chain_rows=prev_covering
+    )
+    assert res["trapped_side"] == "CALLS"
+    assert res["trapped_strike"] == 22700.0
+    assert res["is_covering"] is True
+    assert res["delta_available"] is True
+    assert res["covering_step_oi"] == -2500000
+    assert "COVERING" in res["unwinding_str"]
+
+    # Same OI, but flat ΔOI -> standing wall, never reported as covering
+    prev_flat = [dict(r) for r in cur]
+    res_flat = expiry_playbook.detect_trapped_writers(
+        spot, cur, cfg=cfg, prev_chain_rows=prev_flat, open_chain_rows=prev_flat
+    )
+    assert res_flat["is_covering"] is False
+    assert "not covering" in res_flat["unwinding_str"]
+
+    # Put floor must come from the real chain (22,600 @ 1.47Cr), not strike-minus-50 arithmetic
+    assert res["put_floor_strike"] == 22600.0
+    assert "22,600" in res["fortified_str"]
+
+
+def test_hero_zero_rvol_gate_is_not_gifted_by_sim_mode():
+    """force_expiry_mode rehearses the window; it must never fake the RVOL participation gate."""
+    chain_rows = [{"strike": 22750, "ce_ltp": 38.0, "pe_ltp": 35.0}]
+    cfg = {
+        "hero_zero_start_hhmm": "12:45",
+        "hero_zero_end_hhmm": "14:50",
+        "settlement_lock_hhmm": "15:05",
+        "min_slot_rvol": 1.4,
+        "min_c_rvol": 1.15,
+        "sweet_spot_min_premium": 10.0,
+        "sweet_spot_max_premium": 75.0,
+        "premium_sl_pct": 0.35,
+        "tp1_mult": 2.0,
+        "tp2_mult": 3.5,
+        "index_sl_pts": 22.0,
+    }
+    hz = expiry_playbook.evaluate_hero_zero_setup(
+        spot=22755.0, fut_ltp=22765.0, vwap=22740.0,
+        swing_high_30m=22750.0, swing_low_30m=22710.0,
+        slot_rvol=0.0, c_rvol=0.0,  # unmeasured
+        chain_rows=chain_rows,
+        pe_ce_step_diff=350000, pe_ce_day_diff=25000000,
+        time_label="19:30", force_expiry_mode=True, cfg=cfg,
+    )
+    assert hz["checklist"]["rvol"] is False
+    assert hz["score"] <= 4
+
+    # Real RVOL above threshold still passes normally
+    hz_live = expiry_playbook.evaluate_hero_zero_setup(
+        spot=22755.0, fut_ltp=22765.0, vwap=22740.0,
+        swing_high_30m=22750.0, swing_low_30m=22710.0,
+        slot_rvol=1.65, c_rvol=1.30,
+        chain_rows=chain_rows,
+        pe_ce_step_diff=350000, pe_ce_day_diff=25000000,
+        time_label="13:15", cfg=cfg,
+    )
+    assert hz_live["checklist"]["rvol"] is True
+
+
 def test_evaluate_hero_zero_setup():
     chain_rows = [
         {"strike": 22700, "ce_ltp": 72.0, "pe_ltp": 12.0},

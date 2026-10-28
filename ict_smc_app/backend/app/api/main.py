@@ -970,6 +970,11 @@ app.include_router(_opt_tape_router)
 # index.html instead of JSON.
 from .setup_log_api import router as _setup_log_router
 app.include_router(_setup_log_router)
+
+# Kronos NIFTY forecast tab. Registered BEFORE the SPA catch-all below, or /api/kronos/* would be
+# swallowed by it and served index.html.
+from .kronos_api import router as _kronos_router
+app.include_router(_kronos_router)
 # ── the built frontend ───────────────────────────────────────────────────────
 if (config.FRONTEND_DIST / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=str(config.FRONTEND_DIST / "assets")), name="assets")

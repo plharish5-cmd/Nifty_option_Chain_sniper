@@ -1,0 +1,11 @@
+# Kronos sidecar only — deliberately NOT installed into the desk's backend venv.
+# CPU wheels are enough; no GPU needed.
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2.0
+numpy
+pandas
+torch>=2.0
+einops
+safetensors
+huggingface_hub

@@ -1315,7 +1315,23 @@ class Hub:
         # 4. Expiry 0-DTE Hero-Zero Sniper Alert (< 15:05 IST)
         try:
             from ..engine import expiry_playbook
-            hz_data = expiry_playbook.compute_expiry_cockpit_telemetry(expiry=self.sel_expiry())
+
+            # Feed the sniper live RVOL — without this the RVOL gate is unmeasured
+            # and the ticket can never legitimately reach 5/5.
+            hz_crv = self.rvol_now()
+            hz_crvol_val = float(hz_crv.get("value") or 0.0) if hz_crv.get("available") else 0.0
+            hz_an = self.analyses.get(self.primary)
+            hz_slot_rv = 0.0
+            if hz_an is not None and len(hz_an.bars):
+                hz_bars_rvol = self.rvol_tf(self.primary) if self.mapped_1m() else {}
+                hz_last_bar = hz_bars_rvol.get(int(hz_an.bars.ts[-1]), {})
+                hz_slot_rv = float(hz_last_bar.get("slot_rvol") or hz_last_bar.get("rvol") or 0.0)
+
+            hz_data = expiry_playbook.compute_expiry_cockpit_telemetry(
+                expiry=self.sel_expiry(),
+                slot_rvol=hz_slot_rv,
+                c_rvol=hz_crvol_val,
+            )
             hz = hz_data.get("hero_zero", {})
             if hz.get("state", "").startswith("ACTIVE_HERO_ZERO_BUY_") and hhmm < "15:05":
                 opt_type = hz.get("opt_type", "CE")
