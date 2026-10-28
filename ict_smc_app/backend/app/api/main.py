@@ -952,6 +952,10 @@ from .combined_api import router as _combined_router
 app.include_router(_combined_router)
 from .option_tape_api import router as _opt_tape_router
 app.include_router(_opt_tape_router)
+# Registered BEFORE the SPA catch-all below, or /api/setups/* would be swallowed by it and served
+# index.html instead of JSON.
+from .setup_log_api import router as _setup_log_router
+app.include_router(_setup_log_router)
 # ── the built frontend ───────────────────────────────────────────────────────
 if (config.FRONTEND_DIST / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=str(config.FRONTEND_DIST / "assets")), name="assets")

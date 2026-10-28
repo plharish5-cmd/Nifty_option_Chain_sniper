@@ -49,6 +49,15 @@ CREATE TABLE IF NOT EXISTS paper_trades (
   status TEXT, closed_ts INTEGER, exit REAL, r REAL, pnl_pts REAL, mfe_r REAL, notes TEXT);
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 CREATE INDEX IF NOT EXISTS ix_alerts_ts ON alerts(ts);
+-- OcLab setups (SNIPER BREAKDOWN / PULLBACK SELL / DIP BUY and their conviction) are computed in the
+-- browser and were never persisted, so there was no stored record of what fired or at what price — and
+-- therefore no way to measure whether the conviction score means anything. This is that record. `key` is
+-- UNIQUE so the component can re-post the same setup on every render without duplicating it.
+CREATE TABLE IF NOT EXISTS setup_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, key TEXT UNIQUE NOT NULL, d TEXT NOT NULL,
+  setup TEXT, side TEXT, entry REAL, sl REAL, tp REAL, conviction_pct INTEGER, conviction_band TEXT,
+  synergy INTEGER, scissor INTEGER, spot REAL, payload TEXT);
+CREATE INDEX IF NOT EXISTS ix_setup_log_ts ON setup_log(ts);
 CREATE TABLE IF NOT EXISTS zones (
   id TEXT PRIMARY KEY, tf TEXT NOT NULL, type TEXT NOT NULL, side TEXT, low REAL, high REAL,
   created_at INTEGER NOT NULL, mitigated_at INTEGER, invalidated_at INTEGER, state TEXT,

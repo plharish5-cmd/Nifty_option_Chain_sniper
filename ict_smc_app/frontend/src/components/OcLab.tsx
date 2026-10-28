@@ -581,6 +581,66 @@ export function PeceTable({ tick }: { tick: number }) {
   const smartRows = computeSmartRows(rawRows, tf);
   const pivots = findTop5Pivots(smartRows);
 
+  // ── Persist fired setups ──────────────────────────────────────────────────────────────────────────
+  // These setups and their conviction % are computed here in the browser and have never been stored, so
+  // there is no record of what fired at what price — and therefore no way to ask whether a 95% badge
+  // actually wins more often than a 35% one. This posts what was already decided above; it deliberately
+  // recomputes NOTHING, so it cannot change a single number you trade off. The server also dedupes on
+  // `key`, so a re-render can only ever be a no-op.
+  const postedSetupsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (smartRows.length === 0) return;
+    const fresh: Record<string, unknown>[] = [];
+
+    for (const r of smartRows) {
+      if (!r.actionText || !r.actionText.includes("🎯")) continue;   // only real tickets, not HOLD/WAIT
+      if (r.dynamicSl == null || r.spot == null) continue;
+
+      const key = `${r.ts}|${r.stageBadge}|${r.actionTone}|${r.spot}`;
+      if (postedSetupsRef.current.has(key)) continue;
+      postedSetupsRef.current.add(key);
+
+      // Target is only ever rendered into actionText ("→ Tgt 22799"), never kept as a field. Read it
+      // back rather than recomputing it, so this records exactly what the trader was shown.
+      const tgt = /Tgt\s+(\d+(?:\.\d+)?)/.exec(r.actionText);
+
+      fresh.push({
+        hhmm: r.ts,          // the row holds only "HH:MM"; the server resolves it against today (IST)
+        key,
+        setup: String(r.stageBadge || "").replace(/^[^\w]+/, "").trim(),
+        side: r.actionTone === "bear" ? "bear" : r.actionTone === "bull" ? "bull" : String(r.actionTone),
+        entry: r.spot,
+        sl: r.dynamicSl,
+        tp: tgt ? Number(tgt[1]) : null,
+        conviction_pct: r.convictionPct ?? null,
+        conviction_band: String(r.convictionBadge || ""),
+        synergy: Boolean(r.isSynergy),
+        scissor: Boolean(r.isScissor),
+        spot: r.spot,
+        payload: {
+          action: r.actionText,
+          risk_pts: r.riskPts ?? null,
+          call_angle: r.callAngleDeg ?? null,
+          put_angle: r.putAngleDeg ?? null,
+          session_high: r.sessionHigh ?? null,
+          session_low: r.sessionLow ?? null,
+        },
+      });
+    }
+
+    if (fresh.length === 0) return;
+    fetch("/api/setups/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ setups: fresh.slice(0, 50) }),
+    }).catch((e) => {
+      // Logging is observational. If it fails the desk must carry on exactly as before — but say so,
+      // rather than swallowing it, or a silently empty table looks like "no setups fired".
+      console.warn("[setup-log] post failed, setups not recorded:", e);
+    });
+  }, [smartRows]);
+
   // Audio acoustic alert on new candle arrival for A+ setups
   const lastEvaluatedTableTsRef = useRef<string | null>(null);
   const initialLoadRef = useRef(true);
