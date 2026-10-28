@@ -7,6 +7,7 @@ re-post is a no-op: the UNIQUE key must absorb duplicates server-side rather tha
 to remember what it already sent.
 """
 import os
+import uuid
 import sys
 import time
 from pathlib import Path
@@ -115,8 +116,11 @@ def test_hhmm_is_resolved_server_side():
 
 
 def test_unparseable_hhmm_does_not_store_a_nonsense_timestamp():
+    # Unique key per run: a fixed one made this test depend on starting from an empty table, which is
+    # precisely the fragility conftest.py exists to remove — no test should need it to pass.
+    key = f"hhmm-garbage-{uuid.uuid4().hex[:8]}"
     r = client.post("/api/setups/log", json={"setups": [{
-        "key": "hhmm-garbage", "hhmm": "xx:yy", "setup": "DIP BUY", "side": "bull", "entry": 1.0,
+        "key": key, "hhmm": "xx:yy", "setup": "DIP BUY", "side": "bull", "entry": 1.0,
     }]})
     assert r.status_code == 200
     assert r.json()["stored"] == 1          # stored, stamped now, and warned — never silently dropped
