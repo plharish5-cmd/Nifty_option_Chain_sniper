@@ -1,7 +1,7 @@
 // signalAlerts.tsx — chart SIGNAL alerts (information only — never places orders).
 // Uses the same sound · voice · desktop · toast pipeline as the RVOL alerts (useRvolAlerts().fire).
 // Fires ONCE per signal, only on the latest CLOSED candle, only while the market is open.
-//   ⚖ BIAS ≥ N of 19     — N agreeing factors (choose 10 / 11 / 12 / 13 / 14 / 15 / 16)
+//   ⚖ BIAS ≥ N of 20     — N agreeing factors (choose 10 / 11 / 12 / 13 / 14 / 15 / 16)
 //   ✓3 CONFLUENCE        — footprint pill + delta colour + structure mark agree
 //   🎯 PE−CE action       — 8501 Action switches to CE or PE
 //   SMT                   — NIFTY vs BANKNIFTY divergence
@@ -11,7 +11,7 @@
 //   🛡️ TRAIL SL          — Trade management trailing stop shift >= 15 pts
 import { useEffect, useState } from "react";
 import { api, type AlertRow, type Analysis, type Candle } from "../api";
-import type { BiasRow } from "./bias";
+import { BIAS_POLICY, FACTORS, type BiasRow } from "./bias";
 import type { FpBar } from "./footprint";
 import type { SmtMark } from "./ocfeed";
 import type { Dol } from "./dol";
@@ -450,7 +450,7 @@ export const SIG_SOUND: Record<string, [number, number][]> = {
 };
 
 const HELP: Record<SigKind, { when: string; say: string }> = {
-  bias: { when: "{N} or more of the 19 factors agree on the closed candle (N = the bias ≥ selector).", say: "“BUY bias 12 of 19” — direction filter only." },
+  bias: { when: "The chart/table shared agreement and opposition gates must qualify first; then {N} or more factors must agree. Closed candles and market hours only.", say: `“BUY bias 12 of ${FACTORS.length}” — direction filter only.` },
   conf: { when: "Footprint pill, delta colour and a structure mark agree on one candle.", say: "“SELL check 3 confluence”" },
   ocAct: { when: "The 8501 PE−CE 🎯 Action switches to CE or PE.", say: "“PE−CE action → CE”" },
   smt: { when: "NIFTY and BANKNIFTY diverge at a high or low (one sweeps, the other doesn't).", say: "“SMT ▼” — weak sweep, expect a turn." },
@@ -495,8 +495,8 @@ export function SignalControls({ p, setP }: { p: SigPrefs; setP: (f: (x: SigPref
         title="Signal alerts on the latest closed candle — information only, never places orders">📣 signals {p.on ? "ON" : "off"}</button>
       {p.on && <>
         <select value={p.minBias} onChange={(e) => setP((x) => ({ ...x, minBias: Number(e.target.value) }))}
-          className="pill bg-ink-800 text-slate-200" title="Bias alert when at least this many of the 19 factors agree">
-          {[9, 10, 11, 12, 13, 14, 15, 16].map((n) => <option key={n} value={n}>bias ≥ {n}</option>)}
+          className="pill bg-ink-800 text-slate-200" title={`Bias alert floor across ${FACTORS.length} factors; agreement and opposition gates still apply`}>
+          {Array.from({length:FACTORS.length-BIAS_POLICY.alert_choices_min+1},(_,i)=>i+BIAS_POLICY.alert_choices_min).map((n) => <option key={n} value={n}>bias ≥ {n}</option>)}
         </select>
         {(Object.keys(LBL) as SigKind[]).map((k) => (
           <span key={k} className="group relative">

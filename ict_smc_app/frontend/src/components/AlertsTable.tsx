@@ -5,6 +5,7 @@
 
 import React, { Component, type ErrorInfo, useEffect, useMemo, useState } from "react";
 import { api, type AlertRow } from "../api";
+import { BIAS_NAME } from "./bias";
 
 interface AlertsTableProps {
   alerts?: AlertRow[];
@@ -333,7 +334,7 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
             onClick={() => setFilter("bias")}
             className={`pill text-[11px] ${filter === "bias" ? "bg-gold-500 text-ink-900 font-bold" : "bg-ink-800 text-gold-300"}`}
           >
-            ⚖ Bias 20
+            ⚖ {BIAS_NAME}
           </button>
           <button
             onClick={() => setFilter("rjb")}

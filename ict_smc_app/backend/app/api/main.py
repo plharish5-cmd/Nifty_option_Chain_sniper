@@ -248,6 +248,64 @@ def expiry_playbook_endpoint(
     )
 
 
+@app.get("/api/desk/bias")
+def desk_bias_endpoint(
+    opt_expiry: Optional[str] = Query(None),
+    fut_contract: Optional[str] = Query(None),
+):
+    """LIVE DESK BIAS: Unified Institutional Flash-Card Synthesis.
+    Integrates Trinity PCR, Writer Flow, Structural Walls, Matrix 2.0 Spikes, and Gamma Pin."""
+    from ..engine import desk_bias
+    h = _h()
+    return desk_bias.compute_live_desk_bias(
+        opt_expiry=opt_expiry,
+        fut_contract=fut_contract,
+        hub=h,
+    )
+
+
+@app.get("/api/desk/gap-confluence")
+def gap_confluence_endpoint(
+    gift_nifty: Optional[float] = Query(None, description="Optional custom GIFT Nifty LTP for pre-market simulation"),
+    sim_gap_pts: Optional[float] = Query(None, description="Optional simulated gap in points (e.g. -100.0, +80.0)"),
+    opt_expiry: Optional[str] = Query(None, description="Options expiry: 'cur', 'next', or 'both'"),
+    fut_contract: Optional[str] = Query(None, description="Futures contract mode: 'near', 'next', or 'combined'"),
+):
+    """GIFT NIFTY GAP & CONFLUENCE SNIPER:
+    Provides live & simulated pre-market comparison across GIFT Nifty, NIFTY 50 Spot,
+    Near-Month Future, and Next-Month Future.
+    Evaluates opening confluence, structural wall interaction (22,600 Put Wall vs 23,000 Call Wall),
+    1m/3m rejection wicks, fresh writer positioning, and 09:15–09:45 AM execution plan."""
+    from ..engine import gap_sniper
+    h = _h()
+    return gap_sniper.compute_gap_confluence(
+        gift_nifty=gift_nifty,
+        sim_gap_pts=sim_gap_pts,
+        opt_expiry=opt_expiry or "cur",
+        fut_contract=fut_contract or "combined",
+        hub=h,
+    )
+
+
+@app.get("/api/desk/cvd-quality")
+def cvd_quality_endpoint():
+    """Contract-bound shadow recorder quality; no live signal or order side effects."""
+    from ..delta.recorder import provenance_status
+    return provenance_status()
+
+
+@app.get("/api/desk/cvd-divergence")
+def cvd_divergence_endpoint(
+    tf: str = Query("3m", pattern="^(3m|5m)$", description="Timeframe: '3m' or '5m'"),
+):
+    """CVD vs. VWAP Divergence Alert Engine:
+    Tracks Cumulative Volume Delta (CVD) over 3m/5m intervals, detects
+    Bearish (Short Trap) and Bullish (Dip Accumulation) divergences, and
+    evaluates Session VWAP confluence for actionable entries, SL, and targets."""
+    from ..engine import cvd_divergence
+    return cvd_divergence.compute_cvd_divergence(tf=tf)
+
+
 @app.get("/api/oi/matrix")
 @app.get("/api/chain/oi-matrix")
 def oi_matrix(
@@ -757,7 +815,8 @@ async def oclab(
     if what == "flow":
         h = _h()
         if hasattr(h, "chain") and hasattr(h.chain, "get_writer_flow"):
-            return h.chain.get_writer_flow(exp=opt_expiry, fut_src=fut_contract or "combined", tf=tf, hub=h)
+            scope_val = "atm_10" if mode == "auto" and n == 10 else ("atm_5" if mode == "auto" and n == 5 else "all")
+            return h.chain.get_writer_flow(exp=opt_expiry, fut_src=fut_contract or "combined", tf=tf, hub=h, scope=scope_val)
 
     from ..oclab import run
     return await run(what, tf, mode, max(3, min(int(n), 25)), day)

@@ -6,8 +6,8 @@ import {
 } from "lightweight-charts";
 import type { Analysis, Candle, TF, WriterMetrics } from "../api";
 import { bucket } from "../api";
-import { computeBias, FACTORS, type BiasRow } from "./bias";
-import { useOcFeed, useSmt, type SmtForming } from "./ocfeed";
+import { computeBias, FACTORS, BIAS_POLICY, BIAS_NAME, type BiasRow } from "./bias";
+import { useOcFeed, useSmt, useBiasAgreement, type SmtForming } from "./ocfeed";
 import { computeSmartRows, playOiBeep, type Row, type SmartRow } from "./OcLab";
 import { api } from "../api";
 import { computeGex, confirm3, emas, GammaPrimitive, gammaHits, type GexMap } from "./gamma";
@@ -21,7 +21,7 @@ import { lakh, type AlertRow, type SniperHoverItem } from "../api";
 import { EV_LAYER, GUIDE, KIND_ACT } from "./guide";
 import { confluence, FootprintPrimitive, FP_SCALE, setFpScale, FP_MEANING, FP_WORD, kfmt, type FpBar } from "./footprint";
 import { ZonesPrimitive, type Box, type Seg } from "./zones";
-import { BAR_SEC, hitTestSniperHover, index, MEANING, shortText, toMarkers, type Ev } from "./chartKit";
+import { BAR_SEC, hitTestSniperHover, index, MEANING, shortText, toMarkers, oiDecisionGuide, type Ev } from "./chartKit";
 import MtfPanel from "./MtfPanel";
 import { StdvPrimitive, detectManipulationLegs, createManualStdvLeg, type StdvLeg } from "./stdv";
 import { aggregateWeeklyCandles, extractWicks, filterVirginWicks, type HtfWick } from "./htfWicks";
@@ -113,6 +113,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const smtMarks = useSmt(tf, !!layers.smt || !!layers.bias || !!sig?.on, setBank, setSmtForming);
   const smtArg = tf === "5m" || tf === "15m" || tf === "1h" ? smtMarks : null;
   const biasMap = useRef<Map<number, BiasRow>>(new Map());
+  const [biasPct,setBiasPct] = useBiasAgreement();
+  const [biasStatus,setBiasStatus] = useState<BiasRow | null>(null);
   const ocLane = useRef<ISeriesApi<"Histogram"> | null>(null);
   const ocSlS = useRef<ISeriesApi<"Line"> | null>(null);
 
@@ -405,11 +407,24 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const vwapS = useRef<ISeriesApi<"Line">[]>([]);
   const ivS = useRef<ISeriesApi<"Line"> | null>(null);
   const rvS = useRef<{ h: ISeriesApi<"Histogram">; l: ISeriesApi<"Line"> } | null>(null);
+  const [oiMode, setOiMode] = useState<"raw" | "relative">(() => {
+    try { return localStorage.getItem("ict_oi_mode") === "relative" ? "relative" : "raw"; } catch { return "raw"; }
+  });
+  const [oiClock, setOiClock] = useState(Date.now());
+  useEffect(() => {
+    if (!layers.oi) return;
+    const timer = window.setInterval(() => setOiClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [layers.oi]);
+  const chooseOiMode = (mode: "raw" | "relative") => {
+    setOiMode(mode);
+    try { localStorage.setItem("ict_oi_mode", mode); } catch { /* storage optional */ }
+  };
   const oiS = useRef<{ doi: ISeriesApi<"Histogram"> } | null>(null);          // [vwap, +1σ, −1σ, +2σ, −2σ, avwap1, avwap2]
   const last = useRef<Candle | null>(null);
   const evRef = useRef<Map<number, Ev[]>>(new Map());
   const cMap = useRef<Map<number, Candle>>(new Map());
-  const [hover, setHover] = useState<{ t: number; x: number; y: number } | null>(null);
+  const [hover, setHover] = useState<{ t: number; x: number; y: number; pane?: number } | null>(null);
   const [sniperHover, setSniperHover] = useState<{ item: SniperHoverItem; x: number; y: number } | null>(null);
   const [gtfHover, setGtfHover] = useState<{ zone: GtfZone; x: number; y: number } | null>(null);
   const onCrosshairMoveRef = useRef<(p: MouseEventParams<Time>) => void>(() => {});
@@ -710,7 +725,9 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         return;
       }
       if (p.time != null) {
-        setHover({ t: p.time as number, x: p.point.x, y: p.point.y });
+        const pane = p.paneIndex ?? 0;
+        const offset = ch.panes().slice(0, pane).reduce((height, item) => height + item.getHeight(), 0);
+        setHover({ t: p.time as number, x: p.point.x, y: p.point.y + offset, pane });
       } else {
         setHover(null);
       }
@@ -1559,8 +1576,8 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     }
     if (a && layers.oi) {
       for (const x of a.volume?.oi_line ?? []) {
-        if (x.surge) push({ time: x.time, side: "above", dir: "flat", kind: "OI_SURGE", layer: "Futures OI", short: `OI⚡${x.surge_x ?? ""}×`,
-          full: `Futures OI surge ${x.surge_x ?? ""}× normal${x.build ? ` · ${x.build}` : ""}`, pri: 1, shape: "square", color: "#f59e0b", size: 0.6 });
+        if (x.surge || x.reduction) push({ time: x.time, side: "above", dir: "flat", kind: "OI_SURGE", layer: "Futures OI", short: `${x.reduction ? "OI REDUCTION" : "OI EXPANSION"} ${x.surge_x ?? ""}×`,
+          full: `Unusual OI ${x.reduction ? "reduction" : "expansion"} ${x.surge_x ?? ""}× recent average · context, no trade direction${x.build ? ` · ${x.build}` : ""}`, pri: 1, shape: "square", color: x.reduction ? "#a78bfa" : "#f59e0b", size: 0.8 });
       }
     }
     if (isPrahaarOn) {
@@ -1646,7 +1663,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     // ΔOI build-up bars are drawn — green long build-up, light green short covering, red short build-up,
     // pink long unwinding, amber = surge.
     if (ch && ol.length && !oiS.current) {
-      const d = ch.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, title: "FUT OI build-up", priceFormat: { type: "volume" } }, 1);
+      const d = ch.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, title: "FUT OI build-up", priceScaleId: "oi-build-up", priceFormat: { type: "volume" } }, 1);
       oiS.current = { doi: d };
     } else if (ch && !ol.length && oiS.current) {
       ch.removeSeries(oiS.current.doi);
@@ -1654,8 +1671,16 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     }
     if (oiS.current && ol.length) {
       const BC: Record<string, string> = { "long build-up": "#22c55e", "short covering": "#86efac", "short build-up": "#ef4444", "long unwinding": "#fca5a5" };
-      oiS.current.doi.setData(ol.filter((x) => x.doi != null).map((x) => ({ time: x.time as UTCTimestamp, value: x.doi as number,
-        color: x.surge ? "#f59e0b" : (BC[x.build ?? ""] ?? "rgba(148,163,184,0.5)") })));
+      oiS.current.doi.applyOptions({
+        title: oiMode === "raw" ? "FUT ΔOI (raw)" : "FUT ΔOI / recent avg |ΔOI|",
+        priceFormat: oiMode === "raw" ? { type: "volume" } : { type: "custom", formatter: (v: number) => `${v.toFixed(2)}×`, minMove: 0.01 },
+      });
+      oiS.current.doi.setData(ol.map((x) => {
+        const value = oiMode === "raw" ? x.doi : x.relative;
+        return value == null ? { time: x.time as UTCTimestamp } : { time: x.time as UTCTimestamp, value,
+          color: x.reduction ? "#a78bfa" : x.surge ? "#f59e0b" : (BC[x.build ?? ""] ?? "rgba(148,163,184,0.5)") };
+      }));
+      oiS.current.doi.priceScale().setAutoScale(true);
     }
     // cumulative RVOL / Slot RVOL pane:
     const cr = a && layers.rvol ? (a.volume?.crvol ?? []).filter((p) => (p.c20 ?? p.c5) != null) : [];
@@ -1720,10 +1745,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     try {
       const P = ch?.panes() ?? [];
       P.forEach((p, i) => p.setStretchFactor(i === 0 ? 7 : 1.3));
+      if (oiS.current && a?.volume?.oi_health?.pane_height) P[1]?.setHeight(a.volume.oi_health.pane_height);
     } catch { /* older lib */ }
     spine.current?.setData(a && layers.qml ? candles.filter((c) => c.closed !== false).map((c) => ({ time: c.time as UTCTimestamp, value: c.close })) : []);
     zz.current.setData(a && layers.swings ? dedupe(a.zigzag).map((p) => ({ time: p.time as UTCTimestamp, value: p.price })) : []);
-  }, [analysis, layers, candles, smtMarks, ocActs, advPaSniperMode, isPrahaarOn, prahaarResult, isGtfOn, gtfResult, rvolPaneMode, unifiedSlotMap]);
+  }, [analysis, layers, candles, smtMarks, ocActs, advPaSniperMode, isPrahaarOn, prahaarResult, isGtfOn, gtfResult, rvolPaneMode, oiMode, unifiedSlotMap]);
 
   // ── DOM book events (for the hover confirm/warn line), every 6 s ──
   useEffect(() => {
@@ -2009,7 +2035,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     const sigOn = !!sig?.on && !!onSignal && marketOpen;
     const confAll = layers.fp || sigOn ? confluence(fpBars, marks, BAR_SEC[tf] ?? 300) : [];
     const withConf = layers.fp ? confAll : [];
-    const allB = layers.bias || sigOn ? computeBias(candles, a, fpBars, BAR_SEC[tf] ?? 300, 0.7, ocFeed, false, smtArg) : [];
+    const allB = layers.bias || sigOn ? computeBias(candles, a, fpBars, BAR_SEC[tf] ?? 300, biasPct, ocFeed, false, smtArg) : [];
     if (sigOn && sig && onSignal) {
       try { const lc = [...candles].reverse().filter((c) => c.closed !== false);
       const fnow = lc[0] && (layers.cvd || layers.cells || layers.walls || layers.bubbles) ? readAt(lc[0].time, ofArgsRef.current) : null;
@@ -2030,9 +2056,10 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       catch { /* alerts must never break the chart */ }
     }
     biasMap.current = new Map(allB.map((r) => [r.time, r]));
+    setBiasStatus(allB.at(-1) ?? null);
     const bias = layers.bias ? allB.filter((r) => r.verdict !== "MIXED") : [];
     fpPrim.current.set(withConf, bias, layers.heat ? fpBars.filter((b) => b.rows.length) : []);
-  }, [fpBars, analysis, tf, layers.fp, layers.bias, layers.heat, candles, ocFeed, smtArg, sig, onSignal, marketOpen, ocActs, layers.cvd, layers.cells, layers.walls, layers.bubbles, layers.gamma, layers.nodes, layers.tsoup, htfWicks]);
+  }, [fpBars, analysis, tf, layers.fp, layers.bias, layers.heat, candles, ocFeed, smtArg, sig, onSignal, marketOpen, ocActs, layers.cvd, layers.cells, layers.walls, layers.bubbles, layers.gamma, layers.nodes, layers.tsoup, htfWicks, biasPct]);
 
   // BANKNIFTY line (own hidden scale, so its shape lines up with NIFTY) — shown with the SMT layer
   useEffect(() => {
@@ -2279,11 +2306,17 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     return null;
   })();
   const ob = hover && layers.oi ? (analysis?.volume?.oi_line ?? []).find((x) => x.time === hover.t) : undefined;
+  const oiHealth = analysis?.volume?.oi_health;
+  const oiLatest = oiHealth?.sample_quality === "ok" ? analysis?.volume?.oi_line?.at(-1) : undefined;
+  const oiAge = oiHealth?.sample_ts != null ? Math.max(0, Math.floor(oiClock / 1000 - oiHealth.sample_ts - 60)) : null;
+  const oiState = oiHealth?.state !== "market_closed" && oiAge != null && oiHealth?.freshness_max_age_s != null && oiAge > oiHealth.freshness_max_age_s ? "stale" : oiHealth?.state;
+  const oiAt = oiHealth?.sample_ts ? new Date(oiHealth.sample_ts * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }) : "—";
+  const oiNumber = (value: number | null | undefined, suffix = "") => value == null ? "—" : `${value >= 0 ? "+" : ""}${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}${suffix}`;
   const OI_READ: Record<string, [string, string, string]> = {
-    "long build-up": ["🟢 LONG BUILD-UP", "price ▲ + OI ▲ — fresh buyers opening longs. Real buying → CE bias, trust the move.", "text-bull-400"],
-    "short covering": ["🟢 SHORT COVERING", "price ▲ + OI ▼ — old sellers exiting. Rally is weaker (fuel runs out) → CE only short-term, book fast.", "text-green-300"],
-    "short build-up": ["🔴 SHORT BUILD-UP", "price ▼ + OI ▲ — fresh sellers opening shorts. Real selling → PE bias.", "text-bear-400"],
-    "long unwinding": ["🔴 LONG UNWINDING", "price ▼ + OI ▼ — old buyers exiting. Fall is weaker → PE only short-term, expect a bounce.", "text-red-300"],
+    "long build-up": ["🟢 LONG BUILD-UP", "chart price ▲ + OI ▲ — conventional long build-up; positioning context, not proof of who initiated.", "text-bull-400"],
+    "short covering": ["🟢 SHORT COVERING", "chart price ▲ + OI ▼ — conventional short covering; not an automatic entry or exit.", "text-green-300"],
+    "short build-up": ["🔴 SHORT BUILD-UP", "chart price ▼ + OI ▲ — conventional short build-up; positioning context only.", "text-bear-400"],
+    "long unwinding": ["🔴 LONG UNWINDING", "chart price ▼ + OI ▼ — conventional long unwinding; a rebound is not guaranteed.", "text-red-300"],
   };
   const lns = hover ? linesAt(hover.t, hover.y) : [];
   const lread = hover ? linesRead(hover.t) : [];
@@ -2298,6 +2331,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const hoveredWall = layers.walls && cursorPriceAtHover != null
     ? walls.find((w) => Math.abs(cursorPriceAtHover - w.p) <= 18)
     : null;
+  const oiPane = oiS.current?.doi.getPane().paneIndex();
+  const hasOiMarker = !!(hover && (hover.pane ?? 0) === 0 && hev.some((event) => event.kind === "OI_SURGE") && hc && cursorPriceAtHover != null && cursorPriceAtHover >= hc.high);
+  const hasOiCard = !!(layers.oi && hover && ((hover.pane != null && hover.pane === oiPane) || hasOiMarker));
+  const oiHistorical = !!(ob && (ob.time !== candles.filter((c) => c.closed !== false).at(-1)?.time || oiState === "market_closed"));
+  const oiGuide = oiDecisionGuide(ob, { historical: oiHistorical, unavailable: !oiHistorical && (oiState === "stale" || oiState === "missing"), high: hc?.high, low: hc?.low });
   const hoveredCvdDiv = (hover && layers.cvd)
     ? cvdDivergences.find((d) => Math.abs(d.time - hover.t) < (BAR_SEC[tf] ?? 300))
     : null;
@@ -2318,6 +2356,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
 
   // Keep crosshair move hit-testing engine synchronized with latest data
   onCrosshairMoveRef.current = (p: MouseEventParams<Time>) => {
+    if ((p.paneIndex ?? 0) !== 0) {
+      if (sniperHover) setSniperHover(null);
+      if (gtfHover) setGtfHover(null);
+      return;
+    }
     const pt = p.point;
     if (!pt) {
       if (sniperHover) setSniperHover(null);
@@ -2992,7 +3035,25 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         </div>
       )}
       {/* chart tools (top-right, left of the price axis) */}
-      <div className="absolute right-[86px] top-2 z-10 flex gap-1">
+      <div className="absolute right-[86px] top-2 z-[60] flex flex-wrap justify-end gap-1">
+        {layers.oi && <div className="flex items-center rounded border border-slate-600 bg-ink-900/95">
+          <span className="px-2 text-[10px] text-slate-400" title="OI is outstanding futures positions, not executed buy/sell volume. Hover a square above a candle or a histogram bar for its meaning and next confirmation.">FUT OI</span>
+          <button className={`tab !py-0.5 !text-[11px] ${oiMode === "raw" ? "!text-amber-300" : ""}`} title="Raw change in outstanding positions per closed candle. Opening spikes can compress later bars. Green/red describe price/OI classification, not an entry instruction." onClick={() => chooseOiMode("raw")}>Raw ΔOI</button>
+          <button className={`tab !py-0.5 !text-[11px] ${oiMode === "relative" ? "!text-cyan-300" : ""}`} title="Relative × = this bar’s ΔOI / the earlier average absolute ΔOI. +2× means additions twice the recent baseline; −2× means reductions twice it. Blank means warm-up or incomparable data. No signal thresholds change." onClick={() => chooseOiMode("relative")}>Relative ×</button>
+          <details className="relative">
+            <summary className="cursor-pointer px-2 text-[11px] text-cyan-300" aria-label="OI guide">? OI guide</summary>
+            <div className="absolute right-0 top-7 z-50 w-[340px] max-h-[60vh] overflow-auto rounded-lg border border-slate-600 bg-[#080f1e] p-3 text-[12px] leading-relaxed shadow-2xl">
+              <b>How to read these shapes</b>
+              <p className="mt-2 text-amber-300">🟧 Amber square: unusually fast OI expansion. Positions are being added; price supplies the conventional direction.</p>
+              <p className="mt-2 text-violet-300">🟪 Violet square: unusually fast OI reduction. Positions are being closed; it is not automatically a reversal.</p>
+              <p className="mt-2">Green: price up + OI up (long build-up). Light green: price up + OI down (short covering).</p>
+              <p className="mt-2">Red: price down + OI up (short build-up). Pink: price down + OI down (long unwinding). Grey: threshold not met or no directional classification.</p>
+              <p className="mt-2">Above/below the histogram zero line means OI addition/reduction. It does not directly mean buy/sell. Relative mode changes scale, not the underlying classifications.</p>
+              <p className="mt-2 text-cyan-200">Decision support: BUY-SIDE / SELL-SIDE WATCH identifies context. Wait for a later closed-candle structure break and retest. Any hold, profit-taking or exit must use your actual position and price-risk plan.</p>
+              <p className="mt-2 text-slate-400">Historical cards describe what was knowable then, not an instruction now. Missing/stale/unverified data means WAIT. Hover the square’s candle column or an OI histogram bar for details.</p>
+            </div>
+          </details>
+        </div>}
         {/* 📊 RVOL Sub-Pane Mode Toggle (Slot Spikes vs Cumul Pace) */}
         {layers.rvol && (
           <div className="flex items-center rounded border border-ink-700 bg-ink-900/60 overflow-hidden">
@@ -3099,6 +3160,19 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         {onExpand && <button className="tab !py-0.5 !text-[11px]" title="Full screen (Esc to exit)" onClick={onExpand}>{expanded ? "▣ Normal" : "⛶ Full"}</button>}
       </div>
 
+      {layers.oi && <div className="pointer-events-none absolute left-3 z-20 max-w-[88%] rounded border border-slate-600 bg-ink-950/95 px-2 py-1 text-[10px] text-slate-300" style={{ bottom: layers.rvol ? 175 : 28 }}>
+        <div>FUT OI · ΔOI <b>{oiNumber(oiLatest?.doi)}</b> · {oiNumber(oiLatest?.doi_pct, "%")} · chart ΔP {oiNumber(oiLatest?.dp)} · <b>{oiLatest?.build || "No comparable bar"}</b></div>
+        <div>Contract {oiHealth?.contract || "unverified"} · {oiHealth?.source || "—"} · sampled {oiAt} IST · {oiState || "quality unavailable"}{oiHealth?.sample_quality && oiHealth.sample_quality !== "ok" ? ` / ${oiHealth.sample_quality}` : ""} · {oiAge != null ? `age ${oiAge}s` : ""}</div>
+        <div className="text-slate-400">Amber: expansion · violet: reduction · relative uses earlier {oiHealth?.relative_window ?? "—"} bars; warm-up stays blank. Context only.</div>
+      </div>}
+      {layers.bias && <div className="absolute left-3 z-30 max-w-[90%] rounded border border-gold-500/50 bg-[#080f1e]/95 px-2 py-1 text-[11px]" style={{bottom:layers.oi ? 180 : 28}}>
+        <div className="flex flex-wrap items-center gap-2"><b>{BIAS_NAME}: {biasStatus?.verdict === "MIXED" ? `${biasStatus.lean} · WAIT` : biasStatus?.verdict || "waiting for data"}</b>
+          <label>Agreement <select aria-label="Bias agreement" className="rounded bg-slate-800 px-1" value={biasPct} onChange={(e)=>setBiasPct(Number(e.target.value))}>{BIAS_POLICY.agreement_choices.map((v)=><option key={v} value={v}>{Math.round(v*100)}%</option>)}</select></label>
+          <span>{biasStatus ? `${biasStatus.bull} buy · ${biasStatus.bear} sell · ${biasStatus.neutral} neutral · ${biasStatus.missing.length} unavailable` : ""}</span>
+        </div>
+        {biasStatus && <div className="text-amber-200" title="Counts are correlated evidence, not a probability. No markers are drawn for an unqualified lean.">{biasStatus.blockers.length ? biasStatus.blockers.join(" · ") : `Qualified: need ${biasStatus.required}/${biasStatus.avail}; max ${biasStatus.maxAgainst} opposing`} · Alert floor {sig?.minBias ?? "—"}{sig?.minBias != null && sig.minBias > biasStatus.avail ? ` exceeds ${biasStatus.avail} available` : ""}{!marketOpen ? " · alerts paused: market closed" : !sig?.on ? " · alerts off" : ""}</div>}
+        {biasStatus?.context.length ? <div className="text-slate-400" title={biasStatus.context.map((item)=>`${item.name}: ${item.text}`).join("; ")}>Prahaar / GTF / futures OI criteria are in the expanded matrix. Correlated inputs are not independent confidence.</div> : null}
+      </div>}
       {/* 📊 Floating RVOL Mode Selector directly in the Sub-Pane */}
       {layers.rvol && rvS.current && (
         <div
@@ -3277,7 +3351,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       )}
 
       {/* 🎯 Sleek Glassmorphic PE−CE Institutional Telemetry Card on Marker Hover */}
-      {hover && hoveredOcAct && hasOcMarker && (
+      {hover && !hasOiCard && hoveredOcAct && hasOcMarker && (
         <div
           className="pointer-events-none absolute z-50 w-[350px] rounded-xl border border-gold-500/60 bg-[#080d1a]/95 p-3 text-[11.5px] text-slate-200 shadow-2xl backdrop-blur-md ring-1 ring-gold-400/20 transition-all duration-75"
           style={{
@@ -3362,7 +3436,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       )}
 
       {/* 🧱 Sleek Glassmorphic OI Wall & Writer Flow Cross-Reference Inspector */}
-      {hover && hoveredWall && (
+      {hover && !hasOiCard && hoveredWall && (
         <div
           className="pointer-events-none absolute z-50 w-[360px] rounded-xl border border-ink-600 bg-[#070c18]/95 p-3 text-[11.5px] text-slate-200 shadow-2xl backdrop-blur-md ring-1 ring-white/10 transition-all duration-75"
           style={{
@@ -3457,7 +3531,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       )}
 
       {/* 〽️ Sleek Glassmorphic CVD Divergence & Order Flow Inspector Card */}
-      {hover && hasCvdCard && !hasOcMarker && !hoveredWall && !sniperHover && !gtfHover && (
+      {hover && !hasOiCard && hasCvdCard && !hasOcMarker && !hoveredWall && !sniperHover && !gtfHover && (
         <div
           className="pointer-events-none absolute z-50 w-[360px] rounded-xl border border-ink-600 bg-[#070c18]/95 p-3 text-[11.5px] text-slate-200 shadow-2xl backdrop-blur-md ring-1 ring-white/10 transition-all duration-75"
           style={{
@@ -3560,7 +3634,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       )}
 
       {/* 📊 Sleek Glassmorphic 3-Pillars Institutional RVOL Inspector Card */}
-      {hover && isHoveringRvolPane && (hoveredCrvolBar || hoveredVolBar) && !gtfHover && !sniperHover && !hasOcMarker && !hoveredWall && (
+      {hover && !hasOiCard && isHoveringRvolPane && (hoveredCrvolBar || hoveredVolBar) && !gtfHover && !sniperHover && !hasOcMarker && !hoveredWall && (
         <div
           className="pointer-events-none absolute z-50 w-[380px] rounded-xl border border-indigo-500/60 bg-[#070e1b]/95 p-3 text-[11.5px] text-slate-200 shadow-2xl backdrop-blur-md ring-1 ring-indigo-400/30 transition-all duration-75"
           style={{
@@ -3786,8 +3860,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         </div>
       )}
 
+      {hover && hasOiCard && <div role="tooltip" aria-label="Futures OI explanation" className="pointer-events-none absolute z-50 w-[390px] max-w-[92%] rounded-lg border border-violet-500/70 bg-[#070d19]/95 p-3 text-[12px] leading-snug shadow-2xl"
+        style={{ left: Math.max(8, Math.min(hover.x + 18, W - 406)), top: Math.max(42, Math.min(hover.y - 260, (box.current?.clientHeight ?? 500) - 340)) }}>
+        <div className="flex justify-between border-b border-slate-700 pb-2 font-bold"><span>{ob?.reduction ? "🟪 OI REDUCTION" : ob?.surge ? "🟧 OI EXPANSION" : "FUTURES OI BAR"}</span><span>{hm(hover.t)}</span></div>
+        <div className={`my-2 font-bold ${oiGuide.tone === "bull" ? "text-emerald-300" : oiGuide.tone === "bear" ? "text-rose-300" : "text-amber-300"}`}>{oiGuide.label}</div>
+        <div className="text-slate-200">{oiGuide.meaning}</div>
+        <div className="my-2 rounded bg-slate-800/70 p-2 font-mono">ΔOI {oiNumber(ob?.doi)} · {oiNumber(ob?.doi_pct, "%")}<br />Chart ΔP {oiNumber(ob?.dp)} · relative {oiNumber(ob?.relative, "×")}<br />Contract {ob?.contract || "unverified"} · sample {ob?.quality || "missing"}</div>
+        <div className="text-cyan-200"><b>Next confirmation:</b> {oiGuide.next}</div>
+        <div className="mt-2 text-slate-300"><b>Holding / exit review:</b> {oiGuide.manage}</div>
+        <div className="mt-2 border-t border-slate-700 pt-1 text-[10px] text-slate-400">Closed-bar positioning context. No breakout, trade, position or profitability is confirmed by this card.</div>
+      </div>}
       {/* hover card */}
-      {hover && hc && !sniperHover && !hasOcMarker && !hoveredWall && !hasCvdCard && !gtfHover && !isHoveringRvolPane && (
+      {hover && hc && !hasOiCard && !sniperHover && !hasOcMarker && !hoveredWall && !hasCvdCard && !gtfHover && !isHoveringRvolPane && (
         <div className="pointer-events-none absolute z-20 w-[420px] rounded-lg border border-ink-700 bg-[#060b16]/95 p-2.5 text-[13px] leading-snug shadow-xl"
           style={{
             left: hover.x > W - 450 ? hover.x - 430 : hover.x + 16,
@@ -4017,10 +4101,10 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           )}
           {ob && <div className="mt-1.5 border-t border-ink-700 pt-1.5">
             <div className="flex items-baseline justify-between"><span className="font-semibold text-slate-200">📊 FUT OI bar</span>
-              <span className="num text-slate-300">ΔOI <b className={(ob.doi ?? 0) >= 0 ? "text-bull-400" : "text-bear-400"}>{(ob.doi ?? 0) >= 0 ? "+" : ""}{(ob.doi ?? 0).toLocaleString("en-IN")}</b> · OI {(ob.oi / 1e5).toFixed(1)}L</span></div>
+              <span className="num text-slate-300">ΔOI <b className={(ob.doi ?? 0) >= 0 ? "text-bull-400" : "text-bear-400"}>{oiNumber(ob.doi)}</b> · OI {(ob.oi / 1e5).toFixed(1)}L</span></div>
             {ob.build && OI_READ[ob.build] ? <div className={OI_READ[ob.build][2]}><b>{OI_READ[ob.build][0]}</b> — {OI_READ[ob.build][1]}</div>
-              : <div className="text-slate-400">⚪ grey — OI barely changed; no new positions, ignore.</div>}
-            {ob.surge && <div className="font-semibold text-amber-300">🟧 OI SURGE {ob.surge_x ?? ""}× normal — a big player just {(ob.doi ?? 0) >= 0 ? "OPENED" : "CLOSED"} positions. Watch the next 1–2 candles: the direction they break is the side that player took.</div>}
+              : <div className="text-slate-400">⚪ Threshold not met, or OI is not comparable. Check sample quality; this does not establish an absence of positioning.</div>}
+            {(ob.surge || ob.reduction) && <div className="font-semibold text-amber-300">OI {ob.reduction ? "REDUCTION" : "EXPANSION"} {ob.surge_x ?? ""}× recent average. Unusual positioning change; this marker does not establish direction.</div>}
           </div>}
           {hread.length > 0 && <div className="mt-1.5 border-t border-ink-700 pt-1.5">
             <div className="text-[14px] font-semibold text-orange-300">🔥 Heatmap read ({tf})</div>
@@ -4157,7 +4241,7 @@ const LEGEND: [keyof Layers, string, string][] = [
   ["fp", "Footprint (est.): Δ under candle · gold = POC · A/D/C/M/S/I", "#facc15"],
   ["dol", "D.O.L: ERL taken → FVG target · FVG tapped → old high/low", "#a78bfa"], ["smt", "SMT ▲▼ · pink line = BANKNIFTY (own scale)", "#f472b6"],
   ["heat", "Heatmap: traded volume per price (blue cold → red hot)", "#f97316"], ["ocAct", "PE−CE 6-Stage Lifecycle: 🎯 PB PE/CE · 🔥 ADD · 💰 BOOK · SL Line · bottom lane", "#fb7185"],
-  ["bias", "⚖ Bias 20: BUY/SELL n/N = ≥70 % of available factors agree", "#e8c35a"],
+  ["bias", `⚖ ${BIAS_NAME}: BUY/SELL requires shared agreement + opposition limit; see the status for blockers`, "#e8c35a"],
   ["walls", "🧱 OI walls: 🟥 CE = resistance (cap) · 🟩 PE = support (floor) · bar thicker = hardening, thinner/dashed = cracking · left bubbles = each strike's % OI change (+ writers adding / − covering)", "#ef4444"], ["bubbles", "🫧 Big trades ≥2× vol · yellow ring = absorbed", "#a3e635"],
   ["cells", "▦ FP cells: bid | ask · bright = imbalance", "#f472b6"], ["cvd", "〽 CVD order flow: 🟢 absorption / 🔴 distribution divergences · ⚡ momentum tinting", "#10b981"], ["gamma", "γ map: red call res · green put sup · yellow flip · ✓✓✓ = EMA stack + flag at level + volume", "#c084fc"], ["nodes", "🟨 Stacked nodes D·W·M (gold = A+) · ● ENTRY = ±2σ into zone", "#facc15"],
   ["tsoup", "🐢 Turtle soup: false break of PDH/PDL/OR/pool that closes back inside → stop-run reversal (▲ buy / ▼ sell)", "#2dd4bf"],

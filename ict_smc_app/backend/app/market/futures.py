@@ -192,6 +192,9 @@ async def refresh(rest, sid: str, days: int = 1, sec: str = SEC) -> int:
     rows = [r for r in rows if r["ts"] <= now and is_closed(r["ts"], "1m", now)]
     db.upsert_candles(sec, rows)
     oi = [(int(r["ts"]), r["oi"], "rest") for r in rows if r.get("oi")]
+    if oi:
+        db.execmany("INSERT OR REPLACE INTO fut_oi_samples (sec,contract,ts,source,oi,observed_at) VALUES (?,?,?,?,?,?)",
+                    [(sec,str(sid),t,source,value,int(now)) for t,value,source in oi])
     if oi and sec == SEC:
         db.execmany("INSERT OR REPLACE INTO fut_oi (ts, oi, src) VALUES (?,?,?)", oi)
     elif oi:
@@ -254,3 +257,17 @@ def mapped(spot_1m: List[Dict[str, float]], fut_1m: List[Dict[str, float]]) -> L
         out.append({"ts": int(s["ts"]), "o": f["o"] - b, "h": f["h"] - b, "l": f["l"] - b, "c": f["c"] - b,
                     "v": float(f.get("v") or 0.0), "basis": round(b, 2), "fut_c": f["c"]})
     return out
+
+
+def oi_samples(days: int = 5) -> Dict[int, Dict[str, Any]]:
+    """Contract-bound OI for the display; old unlabeled rows remain explicitly unverified."""
+    since = int((now_ist() - timedelta(days=days + 3)).timestamp())
+    sid = db.kv_get(f"fut_sid_{SEC}")
+    result = {int(r["ts"]): dict(oi=float(r["oi"]),contract=None,source=r["src"],verified=False)
+              for r in db.query("SELECT ts,oi,src FROM fut_oi WHERE ts>=? ORDER BY ts",(since,))}
+    if sid:
+        rows = db.query("SELECT ts,oi,contract,source,observed_at FROM fut_oi_samples WHERE sec=? AND contract=? AND ts>=? ORDER BY ts, CASE source WHEN 'rest' THEN 1 ELSE 0 END",
+                        (SEC,str(sid),since))
+        for r in rows:
+            result[int(r["ts"])] = dict(oi=float(r["oi"]),contract=r["contract"],source=r["source"],observed_at=r["observed_at"],verified=True)
+    return result

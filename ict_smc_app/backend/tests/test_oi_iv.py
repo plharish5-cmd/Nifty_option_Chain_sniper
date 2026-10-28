@@ -88,3 +88,74 @@ def test_nifty_banknifty_compare():
     d = oi_mod.compare(bear, bull, None, None)
     assert d["verdict"] == "diverging" and "more likely to fail" in d["text"]
     assert oi_mod.compare(bear, None, None, None) is None
+
+
+def test_relative_uses_only_earlier_bars_and_flags_reduction():
+    an=an_of([22000+k*2 for k in range(15)])
+    value=1e7; samples={}
+    for k in range(15):
+        value+=-40000 if k==10 else 3000
+        samples[D8+k*300+240]=value
+    line=oi_mod.oi_line(an,oi_mod.per_bar(an,samples))
+    assert line[10]['reduction'] and not line[10]['surge']
+    assert line[10]['relative']==round(-40000/3000,3)
+    prefix=SimpleNamespace(tf='5m',bars=Bars.from_rows([{'ts':int(an.bars.ts[i]),'o':float(an.bars.o[i]),'h':float(an.bars.h[i]),'l':float(an.bars.l[i]),'c':float(an.bars.c[i])} for i in range(11)]),atr=an.atr[:11])
+    assert oi_mod.oi_line(prefix,oi_mod.per_bar(prefix,samples))==line[:11]
+
+
+def test_contract_change_missing_and_stale_do_not_create_doi():
+    an=an_of([22000+k*10 for k in range(5)])
+    def sample(value,contract='A'):
+        return dict(oi=value,contract=contract,verified=True,source='rest')
+    rows={D8+240:sample(1e7),D8+540:sample(2e7,'B'),D8+840:sample(2.001e7,'B'),D8+1200:sample(2.002e7,'B')}
+    r=oi_mod.per_bar(an,rows)
+    assert r[D8+300]['quality']=='contract_change' and r[D8+300]['doi'] is None
+    assert r[D8+600]['doi']==10000
+    assert r[D8+900]['quality']=='missing'
+    assert r[D8+1200]['quality']=='stale_sample' and r[D8+1200]['doi'] is None
+    unknown=oi_mod.per_bar(an,{D8+240:dict(oi=1e7,contract=None,source='rest',verified=False)})
+    assert unknown[D8]['quality']=='unverified_contract'
+
+
+def test_oi_session_reset_does_not_use_previous_day_ema():
+    an=SimpleNamespace(tf='5m',bars=Bars.from_rows([
+        dict(ts=D8-86400,o=1,h=2,l=.5,c=1),dict(ts=D8,o=1,h=2,l=.5,c=1)]),atr=[1,1])
+    bars=oi_mod.per_bar(an,{D8-86400+240:1e7,D8+240:2e7})
+    line=oi_mod.oi_line(an,bars)
+    assert line[-1]['ema']==2e7 and line[-1]['relative'] is None
+
+
+def test_contract_bound_reader_prefers_rest_and_does_not_relabel_legacy(monkeypatch):
+    import sqlite3
+    from app.market import futures
+    from app.timeutil import now_epoch
+    connection=sqlite3.connect(':memory:',isolation_level=None)
+    connection.row_factory=sqlite3.Row;connection.executescript(db.SCHEMA)
+    monkeypatch.setattr(db,'_conn',connection)
+    ts=int(now_epoch())//60*60-60
+    db.kv_set('fut_sid_FUT','A')
+    db.execute('INSERT INTO fut_oi VALUES (?,?,?)',(ts,900,'rest'))
+    assert futures.oi_samples()[ts]['verified'] is False
+    for contract,source,value in [('A','feed',1000),('A','rest',1100),('B','rest',999999)]:
+        db.execute('INSERT INTO fut_oi_samples VALUES (?,?,?,?,?,?)',('FUT',contract,ts,source,value,int(now_epoch())))
+    result=futures.oi_samples()[ts]
+    assert result['oi']==1100 and result['contract']=='A' and result['source']=='rest'
+    connection.close()
+
+
+def test_rest_refresh_records_actual_requested_contract(monkeypatch):
+    import sqlite3,asyncio
+    from app.market import futures
+    from app.timeutil import session_bounds,now_ist
+    connection=sqlite3.connect(':memory:',isolation_level=None)
+    connection.row_factory=sqlite3.Row;connection.executescript(db.SCHEMA)
+    monkeypatch.setattr(db,'_conn',connection)
+    ts=int(session_bounds(now_ist().date())[0])
+    class Rest:
+        async def intraday(self,sid,*args,**kwargs):
+            assert sid=='ACTUAL-ID'
+            return [dict(ts=ts,o=100,h=101,l=99,c=100,v=1000,oi=123456)]
+    assert asyncio.run(futures.refresh(Rest(),'ACTUAL-ID',1))==1
+    row=db.query('SELECT * FROM fut_oi_samples')[0]
+    assert row['contract']=='ACTUAL-ID' and row['source']=='rest' and row['oi']==123456
+    connection.close()

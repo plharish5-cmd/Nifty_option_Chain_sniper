@@ -10,7 +10,10 @@ import {
   type IChartApi, type ISeriesApi, type LogicalRange, type SeriesMarker, type Time, type UTCTimestamp,
 } from "lightweight-charts";
 
+import { positioningEvents, trinitySignalPoints, BIAS_POLICY } from "./bias";
+
 export interface PcrPoint {
+  signal_point?: {sample_time:number;ce:number;pe:number;ce_change:number;pe_change:number}|null;
   time: number;
   fut_close: number;
   fut_oi?: number;
@@ -24,6 +27,7 @@ export interface PcrPoint {
   call_oi_chg: number;
   put_oi_chg: number;
   net_oi_chg: number;
+  pe_ce_diff?: number;
 }
 
 export interface PcrCheckpoint {
@@ -189,14 +193,49 @@ export default function PcrTrinitySuite({
     ch: IChartApi;
     fut: ISeriesApi<"Line">;
     pcrOiArea: ISeriesApi<"Area">;
+    mk: ReturnType<typeof createSeriesMarkers<Time>>;
     pcrVol: ISeriesApi<"Line">;
   } | null>(null);
+
+  // Color Theme toggle: "stockmojo" (Call=Green #22c55e, Put=Red #ef4444) vs "institutional" (Put=Green, Call=Red)
+  // DEFAULT = "stockmojo" for 100% StockMojo 1:1 Parity everywhere (forces override of any stale 'institutional')
+  const [colorTheme, setColorTheme] = useState<"institutional" | "stockmojo">(() => {
+    try {
+      const s = localStorage.getItem("ict_oi_color_theme");
+      if (s === "stockmojo") return "stockmojo";
+      localStorage.setItem("ict_oi_color_theme", "stockmojo");
+    } catch { /* ignore */ }
+    return "stockmojo";
+  });
+
+  const handleSetColorTheme = (t: "institutional" | "stockmojo") => {
+    setColorTheme(t);
+    try { localStorage.setItem("ict_oi_color_theme", t); } catch { /* ignore */ }
+  };
+
+  // Toggle for Net Δ histogram on Chart 2 (Off by default for StockMojo 1:1 parity)
+  const [showNetHist, setShowNetHist] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("ict_pcr_show_net_hist") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  const [showPeCeDiff, setShowPeCeDiff] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("ict_pcr_show_pece_diff") === "1";
+    } catch {
+      return false;
+    }
+  });
 
   const chart2Ref = useRef<{
     ch: IChartApi;
     fut: ISeriesApi<"Line">;
     putChg: ISeriesApi<"Line">;
     callChg: ISeriesApi<"Line">;
+    peCeDiffLine: ISeriesApi<"Line">;
     spreadHist: ISeriesApi<"Histogram">;
     mk: ReturnType<typeof createSeriesMarkers<Time>>;
   } | null>(null);
@@ -243,6 +282,11 @@ export default function PcrTrinitySuite({
     return data.series.cur || [];
   }, [data, currentOptExpiry]);
 
+  const positioningReadout=useMemo(()=>{
+    const cutoff=Date.now()/1000+19800;
+    return [...positioningEvents(trinitySignalPoints(activeSeries),cutoff).map((e)=>({...e,text:"Fresh ΔOI: "+e.text})),
+      ...positioningEvents(trinitySignalPoints(activeSeries,false),cutoff).map((e)=>({...e,text:"Total OI: "+e.text}))];
+  },[activeSeries]);
   // Active verdict
   const activeVerdict = useMemo(() => {
     if (!data) return null;
@@ -359,20 +403,20 @@ export default function PcrTrinitySuite({
     const fut = ch.addSeries(LineSeries, {
       priceScaleId: "left",
       color: "#94a3b8",
-      lineWidth: 1,
+      lineWidth: 2,
       lineStyle: LineStyle.Dotted,
-      title: "FUT",
+      title: "Future",
       priceFormat: futFmt,
       priceLineVisible: false,
     });
 
     const pcrOiArea = ch.addSeries(AreaSeries, {
       priceScaleId: "right",
-      topColor: "rgba(14, 165, 233, 0.4)",
-      bottomColor: "rgba(14, 165, 233, 0.02)",
-      lineColor: "#0ea5e9",
+      topColor: "rgba(59, 130, 246, 0.25)",
+      bottomColor: "rgba(59, 130, 246, 0.02)",
+      lineColor: "#3b82f6",
       lineWidth: 2,
-      title: "PCR-OI",
+      title: "OI PCR",
       priceFormat: { type: "custom", minMove: 0.001, formatter: (p: number) => p.toFixed(3) },
     });
 
@@ -381,7 +425,7 @@ export default function PcrTrinitySuite({
       color: "#f59e0b",
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
-      title: "PCR-Vol",
+      title: "Vol PCR (Total)",
       priceFormat: { type: "custom", minMove: 0.001, formatter: (p: number) => p.toFixed(2) },
       priceLineVisible: false,
     });
@@ -397,7 +441,7 @@ export default function PcrTrinitySuite({
       crosshairHandlerRef.current(param.time as number | undefined);
     });
 
-    chart1Ref.current = { ch, fut, pcrOiArea, pcrVol };
+    chart1Ref.current = { ch, fut, pcrOiArea, pcrVol, mk:createSeriesMarkers(pcrOiArea,[]) };
 
     return () => {
       ch.remove();
@@ -405,18 +449,25 @@ export default function PcrTrinitySuite({
     };
   }, []);
 
-  // Initialize Chart 2 (Fresh Change in OI)
+  // Initialize Chart 2 (Fresh Change in OI — StockMojo 1:1 Parity)
   useEffect(() => {
     if (!box2.current) return;
-    const ch = createChart(box2.current, { ...chartTheme, autoSize: true });
+    const ch = createChart(box2.current, {
+      ...chartTheme,
+      localization: {
+        locale: "en-IN",
+        priceFormatter: (p: number) => inr(p, true),
+      },
+      autoSize: true,
+    });
 
     const futFmt = { type: "custom" as const, formatter: (p: number) => p.toFixed(1) };
     const fut = ch.addSeries(LineSeries, {
       priceScaleId: "left",
       color: "#94a3b8",
-      lineWidth: 1,
+      lineWidth: 2,
       lineStyle: LineStyle.Dotted,
-      title: "FUT",
+      title: "Future",
       priceFormat: futFmt,
       priceLineVisible: false,
     });
@@ -429,31 +480,48 @@ export default function PcrTrinitySuite({
       priceFormat: { type: "custom", formatter: (p: number) => inr(p, true) },
     });
 
-    const putChg = ch.addSeries(LineSeries, {
+    // StockMojo Standard: Call OI = Green (#22c55e), Put OI = Red (#ef4444)
+    const callChg = ch.addSeries(LineSeries, {
       priceScaleId: "right",
-      color: "#10b981", // Emerald Green Support
+      color: "#22c55e", // 🟢 Green Smooth Line
       lineWidth: 2,
-      title: "Put ΔOI (Floor)",
+      title: "Call OI",
       priceFormat: { type: "custom", formatter: (p: number) => inr(p, true) },
     });
 
-    const callChg = ch.addSeries(LineSeries, {
+    const putChg = ch.addSeries(LineSeries, {
       priceScaleId: "right",
-      color: "#ef4444", // Crimson Red Resistance
+      color: "#ef4444", // 🔴 Red Smooth Line
       lineWidth: 2,
-      title: "Call ΔOI (Cap)",
+      title: "Put OI",
       priceFormat: { type: "custom", formatter: (p: number) => inr(p, true) },
+    });
+
+    const peCeDiffLine = ch.addSeries(LineSeries, {
+      priceScaleId: "right",
+      color: "#a855f7", // Purple #a855f7 Net PE - CE
+      lineWidth: 2,
+      title: "PE - CE",
+      priceFormat: { type: "custom", formatter: (p: number) => inr(p, true) },
+      priceLineVisible: false,
     });
 
     // Zero reference line
     putChg.createPriceLine({ price: 0, color: "#475569", lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "0 Flat" });
+
+    ch.priceScale("right").applyOptions({
+      visible: true,
+      autoScale: true,
+      scaleMargins: { top: 0.1, bottom: 0.05 },
+      borderVisible: true,
+    });
 
     ch.subscribeCrosshairMove((param) => {
       crosshairHandlerRef.current(param.time as number | undefined);
     });
 
     const mk = createSeriesMarkers(putChg, []);
-    chart2Ref.current = { ch, fut, putChg, callChg, spreadHist, mk };
+    chart2Ref.current = { ch, fut, putChg, callChg, peCeDiffLine, spreadHist, mk };
 
     return () => {
       ch.remove();
@@ -461,35 +529,43 @@ export default function PcrTrinitySuite({
     };
   }, []);
 
-  // Initialize Chart 3 (Cumulative Total OI)
+  // Initialize Chart 3 (Cumulative Total OI — StockMojo 1:1 Parity)
   useEffect(() => {
     if (!box3.current) return;
-    const ch = createChart(box3.current, { ...chartTheme, autoSize: true });
+    const ch = createChart(box3.current, {
+      ...chartTheme,
+      localization: {
+        locale: "en-IN",
+        priceFormatter: (p: number) => inr(p, false),
+      },
+      autoSize: true,
+    });
 
     const futFmt = { type: "custom" as const, formatter: (p: number) => p.toFixed(1) };
     const fut = ch.addSeries(LineSeries, {
       priceScaleId: "left",
       color: "#94a3b8",
-      lineWidth: 1,
+      lineWidth: 2,
       lineStyle: LineStyle.Dotted,
-      title: "FUT",
+      title: "Future",
       priceFormat: futFmt,
       priceLineVisible: false,
     });
 
-    const putTotal = ch.addSeries(LineSeries, {
+    // StockMojo Standard: Call OI = Green (#22c55e), Put OI = Red (#ef4444)
+    const callTotal = ch.addSeries(LineSeries, {
       priceScaleId: "right",
-      color: "#10b981", // Emerald Support
+      color: "#22c55e", // 🟢 Green Line
       lineWidth: 2,
-      title: "Total Put OI",
+      title: "Call OI",
       priceFormat: { type: "custom", minMove: 1, base: 100, formatter: (p: number) => inr(p, false) },
     });
 
-    const callTotal = ch.addSeries(LineSeries, {
+    const putTotal = ch.addSeries(LineSeries, {
       priceScaleId: "right",
-      color: "#ef4444", // Crimson Resistance
+      color: "#ef4444", // 🔴 Red Line
       lineWidth: 2,
-      title: "Total Call OI",
+      title: "Put OI",
       priceFormat: { type: "custom", minMove: 1, base: 100, formatter: (p: number) => inr(p, false) },
     });
 
@@ -512,6 +588,35 @@ export default function PcrTrinitySuite({
       chart3Ref.current = null;
     };
   }, []);
+
+  // Update line colors & titles whenever colorTheme changes
+  useEffect(() => {
+    const isSm = colorTheme === "stockmojo";
+    const putColor = isSm ? "#ef4444" : "#10b981";
+    const callColor = isSm ? "#22c55e" : "#ef4444";
+
+    if (chart2Ref.current) {
+      chart2Ref.current.putChg.applyOptions({
+        color: putColor,
+        title: isSm ? "Put OI" : "Put ΔOI (Floor)",
+      });
+      chart2Ref.current.callChg.applyOptions({
+        color: callColor,
+        title: isSm ? "Call OI" : "Call ΔOI (Cap)",
+      });
+    }
+
+    if (chart3Ref.current) {
+      chart3Ref.current.putTotal.applyOptions({
+        color: putColor,
+        title: isSm ? "Put OI" : "Total Put OI",
+      });
+      chart3Ref.current.callTotal.applyOptions({
+        color: callColor,
+        title: isSm ? "Call OI" : "Total Call OI",
+      });
+    }
+  }, [colorTheme]);
 
   // ────────────────────────────────────────── TimeScale Sync ──────────────────────────────────────────
   useEffect(() => {
@@ -546,114 +651,69 @@ export default function PcrTrinitySuite({
       fut.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.fut_close })));
       pcrOiArea.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.pcr_oi })));
       pcrVol.setData(showVolPcr ? activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.pcr_vol })) : []);
+      const ratioPoints=trinitySignalPoints(activeSeries,false).filter((p)=>p.ce>0).map((p)=>({...p,pe:p.pe/p.ce,ce:1}));
+      chart1Ref.current.mk.setMarkers(positioningEvents(ratioPoints,Date.now()/1000+19800).filter((e)=>e.kind==="divergence").map((e)=>({
+        time:e.time as UTCTimestamp,position:e.dir==="bull"?"belowBar" as const:"aboveBar" as const,shape:"circle" as const,color:"#f59e0b",text:e.text.replace("PE−CE gap","PCR"),size:1,
+      })));
+
     }
 
-    // Series 2
+    // Series 2 (Fresh OI Change — StockMojo 1:1 Parity)
     if (chart2Ref.current) {
-      const { fut, putChg, callChg, spreadHist } = chart2Ref.current;
+      const { fut, putChg, callChg, peCeDiffLine, spreadHist } = chart2Ref.current;
       fut.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.fut_close })));
       putChg.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.put_oi_chg })));
       callChg.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.call_oi_chg })));
-      spreadHist.setData(
-        activeSeries.map((p) => ({
-          time: p.time as UTCTimestamp,
-          value: p.net_oi_chg,
-          color: p.net_oi_chg >= 0 ? "rgba(16, 185, 129, 0.35)" : "rgba(239, 68, 68, 0.35)",
-        }))
-      );
 
-      // Decisive PE / CE Net OI crossover & Zero-line crossing markers
-      const rawMarkers: { time: UTCTimestamp; position: "aboveBar" | "belowBar"; shape: "arrowDown" | "arrowUp"; color: string; text: string; size: number; idx: number }[] = [];
-      for (let i = 1; i < activeSeries.length; i++) {
-        const prevNet = activeSeries[i - 1].net_oi_chg;
-        const currNet = activeSeries[i].net_oi_chg;
-        const nextNet = i + 1 < activeSeries.length ? activeSeries[i + 1].net_oi_chg : currNet;
-        const next2Net = i + 2 < activeSeries.length ? activeSeries[i + 2].net_oi_chg : nextNet;
-
-        const prevCall = activeSeries[i - 1].call_oi_chg;
-        const currCall = activeSeries[i].call_oi_chg;
-        const nextCall = i + 1 < activeSeries.length ? activeSeries[i + 1].call_oi_chg : currCall;
-
-        const prevPut = activeSeries[i - 1].put_oi_chg;
-        const currPut = activeSeries[i].put_oi_chg;
-        const nextPut = i + 1 < activeSeries.length ? activeSeries[i + 1].put_oi_chg : currPut;
-
-        // Bearish crossover: Call ΔOI crosses above Put ΔOI (net_oi_chg flips negative and persists >= 2 bars)
-        if (prevNet >= 0 && currNet < 0 && nextNet < 0 && next2Net <= 0) {
-          rawMarkers.push({
-            time: activeSeries[i].time as UTCTimestamp,
-            position: "aboveBar",
-            shape: "arrowDown",
-            color: "#ef4444",
-            text: "🩸 CE > PE FLIP",
-            size: 2,
-            idx: i,
-          });
-        }
-        // Bullish crossover: Put ΔOI crosses above Call ΔOI (net_oi_chg flips positive and persists >= 2 bars)
-        else if (prevNet <= 0 && currNet > 0 && nextNet > 0 && next2Net >= 0) {
-          rawMarkers.push({
-            time: activeSeries[i].time as UTCTimestamp,
-            position: "belowBar",
-            shape: "arrowUp",
-            color: "#10b981",
-            text: "🔥 PE > CE FLIP",
-            size: 2,
-            idx: i,
-          });
-        }
-
-        // Zero-line cross: Call Short Covering Squeeze (CE ΔOI drops below zero and stays negative)
-        if (prevCall >= 0 && currCall < 0 && nextCall < 0 && currNet > 0) {
-          rawMarkers.push({
-            time: activeSeries[i].time as UTCTimestamp,
-            position: "belowBar",
-            shape: "arrowUp",
-            color: "#06b6d4",
-            text: "🚀 CE Δ < 0 SQUEEZE",
-            size: 2,
-            idx: i,
-          });
-        }
-        // Zero-line cross: Put Unwinding Flush (PE ΔOI drops below zero and stays negative)
-        else if (prevPut >= 0 && currPut < 0 && nextPut < 0 && currNet < 0) {
-          rawMarkers.push({
-            time: activeSeries[i].time as UTCTimestamp,
-            position: "aboveBar",
-            shape: "arrowDown",
-            color: "#f59e0b",
-            text: "🩸 PE Δ < 0 FLUSH",
-            size: 2,
-            idx: i,
-          });
-        }
+      // Clean Y-axis: Only render histogram or diff line if explicitly toggled on
+      if (showPeCeDiff) {
+        peCeDiffLine.applyOptions({ visible: true });
+        peCeDiffLine.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.pe_ce_diff ?? p.net_oi_chg })));
+      } else {
+        peCeDiffLine.applyOptions({ visible: false });
+        peCeDiffLine.setData([]);
       }
 
-      // De-bounce: Minimum 5 bars (15 mins) between markers to prevent horizontal overlap
-      const crossoverMarkers: SeriesMarker<Time>[] = [];
-      let lastPlacedIdx = -999;
-      for (let m = 0; m < rawMarkers.length; m++) {
-        const curr = rawMarkers[m];
-        if (curr.idx - lastPlacedIdx < 5) {
-          continue;
-        }
-        const next = m + 1 < rawMarkers.length ? rawMarkers[m + 1] : null;
-        if (next && next.idx - curr.idx < 5) {
-          // Conflicting or rapid flip within 5 bars — skip early unconfirmed whipsaw
-          continue;
-        }
-        crossoverMarkers.push({
-          time: curr.time,
-          position: curr.position,
-          shape: curr.shape,
-          color: curr.color,
-          text: curr.text,
-          size: curr.size,
+      if (showNetHist) {
+        spreadHist.applyOptions({ visible: true });
+        spreadHist.setData(
+          activeSeries.map((p) => ({
+            time: p.time as UTCTimestamp,
+            value: p.net_oi_chg,
+            color: p.net_oi_chg >= 0 ? "rgba(34, 197, 94, 0.35)" : "rgba(239, 68, 68, 0.35)",
+          }))
+        );
+      } else {
+        spreadHist.applyOptions({ visible: false });
+        spreadHist.setData([]);
+      }
+
+      // StockMojo Clean Scaling: 0 to 8Cr (starts cleanly at 0 with no histogram clutter)
+      const allChgs = activeSeries.flatMap((p) => [p.call_oi_chg, p.put_oi_chg]).filter((x) => x != null && Number.isFinite(x));
+      if (allChgs.length && !showNetHist && !showPeCeDiff) {
+        const maxVal = Math.max(...allChgs, 10000000);
+        const minVal = Math.min(...allChgs);
+        const lower = minVal >= 0 ? 0 : minVal;
+        const upper = maxVal * 1.08;
+        const provider = () => ({
+          priceRange: { minValue: lower, maxValue: upper },
         });
-        lastPlacedIdx = curr.idx;
+        callChg.applyOptions({ autoscaleInfoProvider: provider });
+        putChg.applyOptions({ autoscaleInfoProvider: provider });
+      } else {
+        callChg.applyOptions({ autoscaleInfoProvider: undefined });
+        putChg.applyOptions({ autoscaleInfoProvider: undefined });
       }
-      crossoverMarkers.sort((a, b) => (a.time as number) - (b.time as number));
-      chart2Ref.current.mk.setMarkers(crossoverMarkers);
+
+      // Only observed as-of samples feed alerts; no future-based persistence or de-bounce.
+      const events=positioningEvents(trinitySignalPoints(activeSeries),Date.now()/1000+19800);
+      chart2Ref.current.mk.setMarkers(events.map((e)=>({
+        time:e.time as UTCTimestamp,position:e.dir==="bull"?"belowBar" as const:"aboveBar" as const,
+        shape:e.kind==="divergence"?"circle" as const:e.dir==="bull"?"arrowUp" as const:"arrowDown" as const,
+        color:e.kind==="divergence"?"#f59e0b":e.dir==="bull"?"#22c55e":"#ef4444",
+        text:e.text,size:1,
+      })));
+
     }
 
     // Series 3
@@ -689,55 +749,14 @@ export default function PcrTrinitySuite({
         });
       }
 
-      // Institutional Crossover Markers on Chart 3 (Total OI Resistance vs Support Flip)
-      const rawTotalMarkers: { time: UTCTimestamp; position: "aboveBar" | "belowBar"; shape: "arrowDown" | "arrowUp"; color: string; text: string; size: number; idx: number }[] = [];
-      for (let i = 1; i < activeSeries.length; i++) {
-        const prevGap = activeSeries[i - 1].total_oi_gap;
-        const currGap = activeSeries[i].total_oi_gap;
-        const nextGap = i + 1 < activeSeries.length ? activeSeries[i + 1].total_oi_gap : currGap;
+      const events=positioningEvents(trinitySignalPoints(activeSeries,false),Date.now()/1000+19800);
+      mk.setMarkers(events.map((e)=>({
+        time:e.time as UTCTimestamp,position:e.dir==="bull"?"belowBar" as const:"aboveBar" as const,
+        shape:e.kind==="divergence"?"circle" as const:e.dir==="bull"?"arrowUp" as const:"arrowDown" as const,
+        color:e.kind==="divergence"?"#f59e0b":e.dir==="bull"?"#22c55e":"#ef4444",
+        text:e.text,size:1,
+      })));
 
-        if (prevGap >= 0 && currGap < 0 && nextGap < 0) {
-          rawTotalMarkers.push({
-            time: activeSeries[i].time as UTCTimestamp,
-            position: "aboveBar",
-            shape: "arrowDown",
-            color: "#ef4444",
-            text: "🩸 TOTAL CE > PE",
-            size: 2,
-            idx: i,
-          });
-        } else if (prevGap <= 0 && currGap > 0 && nextGap > 0) {
-          rawTotalMarkers.push({
-            time: activeSeries[i].time as UTCTimestamp,
-            position: "belowBar",
-            shape: "arrowUp",
-            color: "#10b981",
-            text: "🔥 TOTAL PE > CE",
-            size: 2,
-            idx: i,
-          });
-        }
-      }
-
-      const totalMarkers: SeriesMarker<Time>[] = [];
-      let lastTotalIdx = -999;
-      for (let m = 0; m < rawTotalMarkers.length; m++) {
-        const curr = rawTotalMarkers[m];
-        if (curr.idx - lastTotalIdx < 5) continue;
-        const next = m + 1 < rawTotalMarkers.length ? rawTotalMarkers[m + 1] : null;
-        if (next && next.idx - curr.idx < 5) continue;
-        totalMarkers.push({
-          time: curr.time,
-          position: curr.position,
-          shape: curr.shape,
-          color: curr.color,
-          text: curr.text,
-          size: curr.size,
-        });
-        lastTotalIdx = curr.idx;
-      }
-      totalMarkers.sort((a, b) => (a.time as number) - (b.time as number));
-      mk.setMarkers(totalMarkers);
     }
 
     // Immediately stretch all 3 charts across 100% of container width on data arrival
@@ -748,7 +767,7 @@ export default function PcrTrinitySuite({
     }, 40);
 
     return () => clearTimeout(timer);
-  }, [activeSeries, showVolPcr]);
+  }, [activeSeries, showVolPcr, showNetHist, showPeCeDiff]);
 
   // Handle container resizing (ResizeObserver + window resize + layout/tab switches)
   useEffect(() => {
@@ -801,6 +820,8 @@ export default function PcrTrinitySuite({
 
   // Current display point (either hovered point or latest point in series)
   const currentPt = hoverPoint || (activeSeries.length ? activeSeries[activeSeries.length - 1] : null);
+  const hoveredSignals=hoverPoint ? positioningReadout.filter((e)=>e.time===hoverPoint.time) : positioningReadout.slice(-1);
+
 
   // Structural gap calculations
   const structuralGap = useMemo(() => {
@@ -821,6 +842,73 @@ export default function PcrTrinitySuite({
     };
   }, [currentPt, activeVerdict]);
 
+  const ptIndex = useMemo(() => {
+    if (!currentPt || !activeSeries.length) return -1;
+    return activeSeries.findIndex((p) => p.time === currentPt.time);
+  }, [currentPt, activeSeries]);
+
+  const { callSlopeStr, putSlopeStr, callSlopeVal, putSlopeVal } = useMemo(() => {
+    if (ptIndex < 0 || !activeSeries.length || !currentPt) {
+      return { callSlopeStr: "Flat", putSlopeStr: "Flat", callSlopeVal: 0, putSlopeVal: 0 };
+    }
+    const prevIdx = ptIndex >= 3 ? ptIndex - 3 : 0;
+    const prevPt = activeSeries[prevIdx];
+    if (!prevPt || prevIdx === ptIndex) {
+      return { callSlopeStr: "Flat", putSlopeStr: "Flat", callSlopeVal: 0, putSlopeVal: 0 };
+    }
+    const dCall = (currentPt.call_oi_chg ?? 0) - (prevPt.call_oi_chg ?? 0);
+    const dPut = (currentPt.put_oi_chg ?? 0) - (prevPt.put_oi_chg ?? 0);
+    const fmt = (d: number) => {
+      if (Math.abs(d) < 30000) return "Flat";
+      return `${d > 0 ? "↑ +" : "↓ "}${inr(Math.abs(d))}`;
+    };
+    return {
+      callSlopeStr: fmt(dCall),
+      putSlopeStr: fmt(dPut),
+      callSlopeVal: dCall,
+      putSlopeVal: dPut,
+    };
+  }, [currentPt, ptIndex, activeSeries]);
+
+  const tab1Verdict = useMemo(() => {
+    if (!currentPt) return "";
+    const pcr = currentPt.pcr_oi;
+    if (pcr >= 1.20) {
+      return `🟢 BULLISH MULTI-DAY REGIME (PCR ${pcr.toFixed(3)} ≥ 1.20): Strong Put writing dominance forming solid support floor.`;
+    }
+    if (pcr <= 0.80) {
+      return `🔴 BEARISH MULTI-DAY REGIME (PCR ${pcr.toFixed(3)} ≤ 0.80): Heavy Call writing dominance creating thick resistance ceiling.`;
+    }
+    return `⚪ NEUTRAL EQUILIBRIUM REGIME (PCR ${pcr.toFixed(3)} between 0.80 - 1.20): Balanced two-way participation; watch Intraday Fresh OI Δ (Tab 2) for direction.`;
+  }, [currentPt]);
+
+  const tab2Verdict = useMemo(() => {
+    if (!currentPt) return "";
+    const callChg = currentPt.call_oi_chg ?? 0;
+    const putChg = currentPt.put_oi_chg ?? 0;
+    const gap = Math.abs(putChg - callChg);
+    const gapStr = inr(gap);
+    if (putChg > callChg) {
+      return `🟢 BULLISH REGIME (🔴 Put Line > 🟢 Call Line by +${gapStr}): Today's Put writers have overtaken Call writers — Support Floor is dominant (Buy Dips / CE).`;
+    }
+    if (callChg > putChg && callSlopeVal < 0 && putSlopeVal > 0) {
+      return `🟡 BULLISH RECOVERY / SHORT COVERING (🟢 Call Line still on top, but sloping DOWN while 🔴 Put Line rises): Call writers are covering & Put writers are catching up — Watch for Bullish Crossover!`;
+    }
+    return `🔴 BEARISH REGIME (🟢 Call Line > 🔴 Put Line by ${gapStr}): Call writers are dominating today's overhead resistance ceiling (Sell Rallies / PE).`;
+  }, [currentPt, callSlopeVal, putSlopeVal]);
+
+  const tab3Verdict = useMemo(() => {
+    if (!currentPt) return "";
+    const callTotal = currentPt.call_oi ?? 0;
+    const putTotal = currentPt.put_oi ?? 0;
+    const gap = Math.abs(putTotal - callTotal);
+    const gapStr = inr(gap);
+    if (putTotal > callTotal) {
+      return `🔴 Put > 🟢 Call (Floor > Ceiling by +${gapStr}): Positional Bullish Floor — Total multi-day standing Put contracts exceed Total Call contracts. Positional writers support market floor.`;
+    }
+    return `🟢 Call > 🔴 Put (Ceiling > Floor by +${gapStr}): Positional Overhead Call Ceiling — Total multi-day standing Call contracts exceed Total Put contracts. Heavy positional resistance overhead.`;
+  }, [currentPt]);
+
   return (
     <div className="flex flex-col h-full w-full box-border px-3 bg-[#070c17] text-slate-200 select-none overflow-x-hidden">
       {/* ────────────────────────────────── Top Executive Alignment & Checkpoint Header ────────────────────────────────── */}
@@ -836,6 +924,10 @@ export default function PcrTrinitySuite({
                   ? "bg-rose-950/80 border-rose-500/80 text-rose-300 ring-1 ring-rose-500/30"
                   : activeVerdict?.alignment_state === "PRICE_PCR_DIVERGENCE"
                   ? "bg-amber-950/80 border-amber-500/80 text-amber-300 ring-1 ring-amber-500/30"
+                  : activeVerdict?.alignment_state === "MUTUAL_UNWINDING"
+                  ? "bg-purple-950/80 border-purple-500/80 text-purple-300 ring-1 ring-purple-500/30"
+                  : activeVerdict?.alignment_state === "COUNTER_TREND_COVERING" || activeVerdict?.alignment_state === "COUNTER_TREND_UNWINDING"
+                  ? "bg-yellow-950/80 border-yellow-500/80 text-yellow-300 ring-1 ring-yellow-500/30"
                   : "bg-slate-900 border-slate-700 text-slate-300"
               }`}
             >
@@ -913,6 +1005,33 @@ export default function PcrTrinitySuite({
             >
               Vol PCR
             </button>
+
+            {/* Color Theme Toggle */}
+            <div className="flex items-center rounded bg-[#0f172a] p-0.5 border border-slate-800">
+              <span className="text-[10px] uppercase font-bold text-slate-500 px-1">Theme:</span>
+              <button
+                onClick={() => handleSetColorTheme("stockmojo")}
+                className={`rounded px-2 py-0.5 text-[11px] font-bold transition-all ${
+                  colorTheme === "stockmojo"
+                    ? "bg-purple-500/30 text-purple-200 border border-purple-500/60 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+                title="StockMojo (Default): Call = Green (#22c55e), Put = Red (#ef4444)"
+              >
+                StockMojo
+              </button>
+              <button
+                onClick={() => handleSetColorTheme("institutional")}
+                className={`rounded px-2 py-0.5 text-[11px] font-bold transition-all ${
+                  colorTheme === "institutional"
+                    ? "bg-emerald-500/30 text-emerald-200 border border-emerald-500/60 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+                title="Institutional: Put Support = Green, Call Resistance = Red"
+              >
+                Institutional
+              </button>
+            </div>
 
             {/* Layout Toggle */}
             <div className="flex rounded bg-[#0f172a] p-0.5 border border-slate-800">
@@ -1030,7 +1149,7 @@ export default function PcrTrinitySuite({
             }`}
           >
             <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            2. Fresh Change in OI (PE Δ vs CE Δ)
+            2. Fresh Change in OI (Today's Intraday Battle Since 09:15)
           </button>
           <button
             onClick={() => setActiveTab(3)}
@@ -1041,7 +1160,7 @@ export default function PcrTrinitySuite({
             }`}
           >
             <span className="h-2 w-2 rounded-full bg-purple-400" />
-            3. Cumulative Total OI (PE Total vs CE Total)
+            3. Cumulative Total OI (Positional + Intraday Standing Walls)
           </button>
         </div>
       )}
@@ -1070,6 +1189,16 @@ export default function PcrTrinitySuite({
 
           <span className="text-slate-700">|</span>
 
+          <div className="text-xs text-amber-200 px-2" title="Only recorded, fresh snapshot increments qualify. Reconstructed lines are display context. Divergence is a warning, not an entry.">
+            Signals: red Put above green Call = bullish positioning; green Call above red Put = bearish.
+            Arrows require {BIAS_POLICY.positioning_signals.confirmation_points} observed points.
+            Amber dots = price/OI divergence: wait for price confirmation. OI does not identify seller intent.
+            {" "}Recorded points: {activeSeries.filter((p)=>p.signal_point).length}/{activeSeries.length}; no recorded points means no new signals.
+          </div>
+          <div className="text-xs text-amber-200 px-2" title="Hover a marked candle to inspect its recorded-snapshot event. Divergence means WAIT for structure confirmation; arrows show positioning confirmation, not an order.">
+            {hoveredSignals.length ? hoveredSignals.map((e)=>e.text).join(" · ") : "No positioning event at this candle."}
+            {" · Recorded snapshot signals; displayed curves may include reconstruction/smoothing."}
+          </div>
           {/* Chart 1: PCR Readout */}
           <span className="text-[11px] font-medium text-slate-300">
             <span className="text-sky-400 font-bold">1. PCR:</span>{" "}
@@ -1085,11 +1214,16 @@ export default function PcrTrinitySuite({
           <span className="text-[11px] font-medium text-slate-300">
             <span className="text-emerald-400 font-bold">2. Fresh Δ:</span>{" "}
             <span className="font-mono">
-              <span className="text-emerald-400">Put {inr(currentPt?.put_oi_chg, true)}</span> vs{" "}
-              <span className="text-rose-400">Call {inr(currentPt?.call_oi_chg, true)}</span>
+              <span className={colorTheme === "stockmojo" ? "text-emerald-400" : "text-rose-400"}>
+                Call {inr(currentPt?.call_oi_chg, true)}
+              </span>{" "}
+              vs{" "}
+              <span className={colorTheme === "stockmojo" ? "text-rose-400" : "text-emerald-400"}>
+                Put {inr(currentPt?.put_oi_chg, true)}
+              </span>
             </span>{" "}
             <span className="text-slate-400 text-[10px]">
-              (Net <b className={currentPt && currentPt.net_oi_chg >= 0 ? "text-emerald-400" : "text-rose-400"}>{inr(currentPt?.net_oi_chg, true)}</b>)
+              (PE-CE <b className={currentPt && currentPt.net_oi_chg >= 0 ? "text-emerald-400" : "text-rose-400"}>{inr(currentPt?.net_oi_chg, true)}</b>)
             </span>
           </span>
 
@@ -1099,8 +1233,13 @@ export default function PcrTrinitySuite({
           <span className="text-[11px] font-medium text-slate-300">
             <span className="text-purple-400 font-bold">3. Total:</span>{" "}
             <span className="font-mono">
-              <span className="text-emerald-400">PE {inr(currentPt?.put_oi)}</span> vs{" "}
-              <span className="text-rose-400">CE {inr(currentPt?.call_oi)}</span>
+              <span className={colorTheme === "stockmojo" ? "text-emerald-400" : "text-rose-400"}>
+                CE {inr(currentPt?.call_oi)}
+              </span>{" "}
+              vs{" "}
+              <span className={colorTheme === "stockmojo" ? "text-rose-400" : "text-emerald-400"}>
+                PE {inr(currentPt?.put_oi)}
+              </span>
             </span>{" "}
             <span className="text-slate-400 text-[10px]">
               (Gap <b className={structuralGap.tone === "bull" ? "text-emerald-400" : "text-rose-400"}>{structuralGap.gapStr}</b>)
@@ -1136,12 +1275,31 @@ export default function PcrTrinitySuite({
             layoutView === "stacked" ? "flex-1 min-h-[140px]" : activeTab === 1 ? "flex-1 h-full" : "hidden"
           }`}
         >
-          <div className="absolute top-1 left-2 z-10 flex items-center gap-1.5 pointer-events-none text-[10px] bg-[#070c17]/80 px-2 py-0.5 rounded border border-slate-800">
-            <span className="h-2 w-2 rounded-full bg-sky-400" />
-            <span className="font-bold text-sky-300">Chart 1: Live Put-Call Ratio</span>
-            <span className="text-slate-400 font-mono">
-              [Left: FUT Dotted | Right: PCR-OI {currentPt ? currentPt.pcr_oi.toFixed(3) : ""}]
-            </span>
+          {/* Top-Left Floating Tooltip & Guidance Box */}
+          <div className="absolute top-2 left-2 right-2 sm:right-auto z-10 pointer-events-none rounded bg-[#070c17]/95 border border-sky-500/50 p-1.5 shadow-2xl backdrop-blur text-[10.5px]">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 font-mono text-slate-300">
+              <span className="font-bold text-sky-400 pr-1.5 border-r border-slate-700">1. Put-Call Ratio:</span>
+              <span className="font-bold text-white">
+                {hoverPoint ? `🕒 ${formatIST(currentPt?.time ?? 0)}` : `⚡ LIVE ${currentPt ? formatIST(currentPt.time) : "—"}`}
+              </span>
+              <span className="text-slate-600">|</span>
+              <span>Future: <b className="text-white">{currentPt ? currentPt.fut_close.toFixed(1) : "—"}</b></span>
+              <span className="text-slate-600">|</span>
+              <span className="text-sky-400">
+                OI PCR: <b className="text-sky-300">{currentPt ? currentPt.pcr_oi.toFixed(3) : "—"}</b>
+              </span>
+              {showVolPcr && (
+                <>
+                  <span className="text-slate-600">|</span>
+                  <span className="text-amber-400">
+                    Vol PCR: <b className="text-amber-300">{currentPt ? currentPt.pcr_vol.toFixed(2) : "—"}</b>
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="mt-0.5 font-medium text-gold-300 text-[10.5px]">
+              {tab1Verdict}
+            </div>
           </div>
           <div ref={box1} className="h-full w-full" />
         </div>
@@ -1152,12 +1310,46 @@ export default function PcrTrinitySuite({
             layoutView === "stacked" ? "flex-1 min-h-[140px]" : activeTab === 2 ? "flex-1 h-full" : "hidden"
           }`}
         >
-          <div className="absolute top-1 left-2 z-10 flex items-center gap-1.5 pointer-events-none text-[10px] bg-[#070c17]/80 px-2 py-0.5 rounded border border-slate-800">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            <span className="font-bold text-emerald-300">Chart 2: Fresh ΔOI (Call vs Put)</span>
-            <span className="text-slate-400 font-mono">
-              [Emerald: Put Δ | Crimson: Call Δ | Histogram: Net Spread]
-            </span>
+          {/* Top-Left Floating Tooltip & Guidance Box */}
+          <div className="absolute top-2 left-2 right-2 sm:right-auto z-10 pointer-events-none rounded bg-[#070c17]/95 border border-emerald-500/50 p-1.5 shadow-2xl backdrop-blur text-[10.5px]">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 font-mono text-slate-300">
+              <span className="font-bold text-emerald-400 pr-1.5 border-r border-slate-700">2. Fresh Change in OI:</span>
+              <span className="font-bold text-white">
+                {hoverPoint ? `🕒 ${formatIST(currentPt?.time ?? 0)}` : `⚡ LIVE ${currentPt ? formatIST(currentPt.time) : "—"}`}
+              </span>
+              <span className="text-slate-600">|</span>
+              <span>⚪ Future: <b className="text-white">{currentPt ? currentPt.fut_close.toFixed(1) : "—"}</b></span>
+              <span className="text-slate-600">|</span>
+              <span className="text-[#22c55e]">
+                🟢 Call Chg (Resistance): <b>{inr(currentPt?.call_oi_chg, true)}</b>
+                <span className="text-slate-400 text-[10px] ml-1">({callSlopeStr})</span>
+              </span>
+              <span className="text-slate-600">|</span>
+              <span className="text-[#ef4444]">
+                🔴 Put Chg (Support): <b>{inr(currentPt?.put_oi_chg, true)}</b>
+                <span className="text-slate-400 text-[10px] ml-1">({putSlopeStr})</span>
+              </span>
+              <span className="text-slate-600">|</span>
+              <span className="text-purple-300">
+                Net (PE−CE): <b>{inr((currentPt?.put_oi_chg ?? 0) - (currentPt?.call_oi_chg ?? 0), true)}</b>
+              </span>
+            </div>
+            <div className="mt-0.5 font-medium text-gold-300 text-[10.5px]">
+              {tab2Verdict}
+            </div>
+          </div>
+
+          {/* Right Top Controls: Histogram Checkbox Toggle */}
+          <div className="absolute top-2 right-2 z-10 flex items-center gap-2 text-[10px] bg-[#070c17]/90 px-2 py-0.5 rounded border border-slate-800">
+            <label className="flex items-center gap-1 cursor-pointer text-slate-400 hover:text-slate-200">
+              <input
+                type="checkbox"
+                checked={showNetHist}
+                onChange={(e) => setShowNetHist(e.target.checked)}
+                className="rounded border-slate-700 bg-slate-900 text-purple-500 focus:ring-0 cursor-pointer h-3 w-3"
+              />
+              <span>Show Net Histogram</span>
+            </label>
           </div>
           <div ref={box2} className="h-full w-full" />
         </div>
@@ -1168,12 +1360,35 @@ export default function PcrTrinitySuite({
             layoutView === "stacked" ? "flex-1 min-h-[140px]" : activeTab === 3 ? "flex-1 h-full" : "hidden"
           }`}
         >
-          <div className="absolute top-1 left-2 z-10 flex items-center gap-1.5 pointer-events-none text-[10px] bg-[#070c17]/80 px-2 py-0.5 rounded border border-slate-800">
-            <span className="h-2 w-2 rounded-full bg-purple-400" />
-            <span className="font-bold text-purple-300">Chart 3: Cumulative Total OI</span>
-            <span className="text-slate-400 font-mono">
-              [PE Total vs CE Total | Auto-scaled Slope & Gap Focus]
-            </span>
+          {/* Top-Left Floating Tooltip & Guidance Box */}
+          <div className="absolute top-2 left-2 right-2 sm:right-auto z-10 pointer-events-none rounded bg-[#070c17]/95 border border-purple-500/50 p-1.5 shadow-2xl backdrop-blur text-[10.5px]">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 font-mono text-slate-300">
+              <span className="font-bold text-purple-400 pr-1.5 border-r border-slate-700">3. Cumulative Total OI:</span>
+              <span className="font-bold text-white">
+                {hoverPoint ? `🕒 ${formatIST(currentPt?.time ?? 0)}` : `⚡ LIVE ${currentPt ? formatIST(currentPt.time) : "—"}`}
+              </span>
+              <span className="text-slate-600">|</span>
+              <span>⚪ Future: <b className="text-white">{currentPt ? currentPt.fut_close.toFixed(1) : "—"}</b></span>
+              <span className="text-slate-600">|</span>
+              <span className="text-[#22c55e]">
+                🟢 Total Call OI (Cap): <b>{inr(currentPt?.call_oi, false)}</b>
+              </span>
+              <span className="text-slate-600">|</span>
+              <span className="text-[#ef4444]">
+                🔴 Total Put OI (Floor): <b>{inr(currentPt?.put_oi, false)}</b>
+              </span>
+              <span className="text-slate-600">|</span>
+              <span className="text-sky-300">
+                Positional Gap (PE−CE): <b>{inr((currentPt?.put_oi ?? 0) - (currentPt?.call_oi ?? 0), true)}</b>
+              </span>
+              <span className="text-slate-600">|</span>
+              <span className="text-amber-300">
+                OI PCR: <b>{currentPt ? currentPt.pcr_oi.toFixed(3) : "—"}</b>
+              </span>
+            </div>
+            <div className="mt-0.5 font-medium text-gold-300 text-[10.5px]">
+              {tab3Verdict}
+            </div>
           </div>
           <div ref={box3} className="h-full w-full" />
         </div>
@@ -1182,22 +1397,45 @@ export default function PcrTrinitySuite({
       {/* ────────────────────────────────── Bottom Status / Legend Bar ────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between border-t border-[#172338] bg-[#081020] px-3 py-1.5 text-[11px] text-slate-400">
         <div className="flex items-center gap-3">
+          {colorTheme === "stockmojo" ? (
+            <>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-[#22c55e]" />
+                <span className="text-emerald-300 font-semibold">Call OI = Green</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-[#ef4444]" />
+                <span className="text-rose-300 font-semibold">Put OI = Red</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-[#a855f7]" />
+                <span className="text-purple-300 font-semibold">PE - CE = Purple</span>
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-[#10b981]" />
+                <span className="text-emerald-300 font-semibold">Put OI = Emerald Support</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-[#ef4444]" />
+                <span className="text-rose-300 font-semibold">Call OI = Crimson Resistance</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-[#a855f7]" />
+                <span className="text-purple-300 font-semibold">PE - CE = Purple Net</span>
+              </span>
+            </>
+          )}
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-[#10b981]" />
-            <span className="text-emerald-300 font-semibold">Put OI = Emerald Support</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-[#ef4444]" />
-            <span className="text-rose-300 font-semibold">Call OI = Crimson Resistance</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-[#0ea5e9]" />
-            <span className="text-sky-300 font-semibold">PCR-OI (Neon Cyan)</span>
+            <span className="h-2 w-2 rounded-full bg-[#3b82f6]" />
+            <span className="text-sky-300 font-semibold">OI PCR (Blue)</span>
           </span>
           {showVolPcr && (
             <span className="flex items-center gap-1">
               <span className="h-2 w-2 rounded-full bg-[#f59e0b]" />
-              <span className="text-amber-300 font-semibold">PCR-Vol (Amber Dashed)</span>
+              <span className="text-amber-300 font-semibold">Vol PCR (Amber)</span>
             </span>
           )}
         </div>

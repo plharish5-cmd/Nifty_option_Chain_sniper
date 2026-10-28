@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from .. import config, db
-from ..timeutil import market_open_now, now_epoch, now_ist, session_bounds
+from ..timeutil import market_open_now, now_epoch, now_ist, session_bounds, to_ist
 from ..engine import pcr_trinity
 
 log = logging.getLogger("chain")
@@ -302,6 +302,7 @@ class ChainPoller:
         fut_candles: Optional[List[Dict[str, Any]]] = None,
         fut_src: str = "combined",
         hub: Optional[Any] = None,
+        scope: str = "all",
     ) -> Dict[str, Any]:
         """
         Computes the complete 3-Chart Institutional PCR & Open Interest Positioning Suite data.
@@ -321,16 +322,19 @@ class ChainPoller:
 
         today_iso = now_ist().date().isoformat()
         active_exps = [e for e in (self.expiries or sorted(self.chains)) if e >= today_iso]
+        if not active_exps or (len(active_exps) < 2 and self.expiries and self.expiries[0] < today_iso):
+            active_exps = list(self.expiries or sorted(self.chains))
         cur_exp = active_exps[0] if len(active_exps) > 0 else (self.expiries[0] if self.expiries else None)
         next_exp = active_exps[1] if len(active_exps) > 1 else (self.expiries[1] if len(self.expiries) > 1 else None)
         sel_exp = exp or cur_exp
         sel_key = "both" if sel_exp == "both" else ("next" if (sel_exp == next_exp or sel_exp == "next") else "cur")
 
-        # Fast in-memory cache if queried within 3s without new snapshot and same fut_mode
+        # Fast in-memory cache if queried within 3s without new snapshot and same fut_mode and scope
         if (
             self._pcr_cache
             and (now_t - self._last_pcr_time < 3.0)
             and self._pcr_cache.get("fut_src") == fut_mode
+            and self._pcr_cache.get("scope") == scope
         ):
             out = dict(self._pcr_cache)
             out["pcr_oi_series"] = out.get("series", {}).get(sel_key, [])
@@ -339,16 +343,27 @@ class ChainPoller:
             out.update({k: v for k, v in verdict.items() if k not in ("series", "verdicts")})
             return out
 
-        today_start, _ = session_bounds(now_ist().date())
+        today_start, today_end = session_bounds(now_ist().date())
 
-        # Load snapshots from SQLite
-        rows = db.query("""
-            SELECT expiry, ts, SUM(ce_oi), SUM(pe_oi), SUM(ce_vol), SUM(pe_vol)
+        # Load snapshots from SQLite (strike level)
+        snap_rows = db.query("""
+            SELECT expiry, ts, strike, ce_oi, pe_oi, ce_vol, pe_vol
             FROM chain_snap
-            WHERE ts >= ?
-            GROUP BY expiry, ts
-            ORDER BY ts
-        """, (today_start,))
+            WHERE ts >= ? AND ts <= ?
+            ORDER BY ts ASC, strike ASC
+        """, (today_start, today_end))
+
+        if not snap_rows:
+            latest = db.query("SELECT MAX(ts) as mx FROM chain_snap")
+            if latest and latest[0]["mx"]:
+                latest_dt = to_ist(latest[0]["mx"]).date()
+                today_start, today_end = session_bounds(latest_dt)
+                snap_rows = db.query("""
+                    SELECT expiry, ts, strike, ce_oi, pe_oi, ce_vol, pe_vol
+                    FROM chain_snap
+                    WHERE ts >= ? AND ts <= ?
+                    ORDER BY ts ASC, strike ASC
+                """, (today_start, today_end))
 
         # Load today's futures candles for alignment and resolve contract mode
         oct_candles = db.candles_1m("FUT", today_start)
@@ -376,6 +391,39 @@ class ChainPoller:
         if fut_candles is None:
             fut_map = pcr_trinity.resolve_futures_series(oct_candles, nov_candles, fut_mode=fut_mode)
             fut_candles = list(fut_map.values())
+
+        # Determine ATM strike and scope bounds
+        atm_strike = 22700.0
+        if fut_candles:
+            atm_strike = round(float(fut_candles[-1].get("close") or fut_candles[-1].get("c", 22700.0)) / 50.0) * 50.0
+        elif hub and getattr(hub, "candles", None) and hasattr(hub.candles, "last_price"):
+            lp = hub.candles.last_price.get(getattr(hub, "nifty", "13"), 22700.0)
+            if lp:
+                atm_strike = round(float(lp) / 50.0) * 50.0
+
+        if scope == "atm_10":
+            min_strike = atm_strike - 500.0
+            max_strike = atm_strike + 500.0
+        elif scope == "atm_5":
+            min_strike = atm_strike - 250.0
+            max_strike = atm_strike + 250.0
+        else:
+            min_strike = 0.0
+            max_strike = 1000000.0
+
+        snaps_by_exp: Dict[str, List[Tuple]] = {}
+        grouped_snaps: Dict[str, Dict[int, List[Dict[str, Any]]]] = {}
+        for r in snap_rows:
+            grouped_snaps.setdefault(r["expiry"], {}).setdefault(int(r["ts"]), []).append(r)
+
+        for e, t_dict in grouped_snaps.items():
+            for t, s_rows in sorted(t_dict.items(), key=lambda x: x[0]):
+                in_scope = [r for r in s_rows if min_strike <= float(r["strike"]) <= max_strike]
+                ce_oi = sum(float(r["ce_oi"] or 0) for r in in_scope)
+                pe_oi = sum(float(r["pe_oi"] or 0) for r in in_scope)
+                ce_vol = sum(float(r["ce_vol"] or 0) for r in in_scope)
+                pe_vol = sum(float(r["pe_vol"] or 0) for r in in_scope)
+                snaps_by_exp.setdefault(e, []).append((t, ce_oi, pe_oi, ce_vol, pe_vol))
 
         # Compute rollover percentage & labels
         tot_oct_v = sum(float(c.get("v") or 0) for c in oct_candles)
@@ -407,10 +455,6 @@ class ChainPoller:
             "fut_src": fut_mode,
         }
 
-        snaps_by_exp: Dict[str, List[Tuple]] = {}
-        for r in rows:
-            snaps_by_exp.setdefault(r["expiry"], []).append((r["ts"], r[2], r[3], r[4], r[5]))
-
         cur_totals = (self.chains.get(cur_exp) or {}).get("totals") if cur_exp else None
         next_totals = (self.chains.get(next_exp) or {}).get("totals") if next_exp else None
 
@@ -431,6 +475,7 @@ class ChainPoller:
             "cur_expiry": cur_exp,
             "next_expiry": next_exp,
             "fut_src": fut_mode,
+            "scope": scope,
             "expiries_meta": expiries_meta,
             "series": {
                 "cur": cur_series,
@@ -455,13 +500,14 @@ class ChainPoller:
         fut_src: str = "combined",
         tf: str = "1m",
         hub: Optional[Any] = None,
+        scope: str = "all",
     ) -> Dict[str, Any]:
         """
         Builds the complete Classic Option Writer Flow payload from the exact same
         full-session (09:15–15:30 IST) trinity series for cur, next, and both expiries.
         Eliminates duplicate timestamps, truncation after 10:05, and expiry mismatches.
         """
-        trinity = self.get_pcr_trinity(exp=exp, fut_src=fut_src, hub=hub)
+        trinity = self.get_pcr_trinity(exp=exp, fut_src=fut_src, hub=hub, scope=scope)
         series = trinity.get("pcr_oi_series", [])
         if not series:
             series = (trinity.get("series") or {}).get("cur", [])
@@ -647,7 +693,8 @@ class ChainPoller:
             cur_ch = self.chains.get(cur_exp) if cur_exp else None
             next_ch = None
 
-        trinity = self.get_pcr_trinity(exp=expiry_mode, fut_src=fut_src, hub=hub) if hasattr(self, "get_pcr_trinity") else {}
+        trinity_scope = "atm_10" if range_mode == "atm" and span == 10 else ("atm_5" if range_mode == "atm" and span == 5 else "all")
+        trinity = self.get_pcr_trinity(exp=expiry_mode, fut_src=fut_src, hub=hub, scope=trinity_scope) if hasattr(self, "get_pcr_trinity") else {}
         pcr_series = trinity.get("pcr_oi_series") if isinstance(trinity, dict) else []
 
         payload = smart_oi.build_smart_oi_payload(
@@ -662,5 +709,7 @@ class ChainPoller:
         )
         if isinstance(payload, dict):
             payload["expiries_meta"] = trinity.get("expiries_meta") if isinstance(trinity, dict) else None
+            payload["trinity_series"] = trinity.get("series") if isinstance(trinity, dict) else None
+            payload["pcr_oi_series"] = trinity.get("pcr_oi_series") if isinstance(trinity, dict) else None
         return payload
 
