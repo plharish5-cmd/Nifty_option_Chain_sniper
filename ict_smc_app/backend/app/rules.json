@@ -712,5 +712,11 @@
     "tp1_mult": 2.0,
     "tp2_mult": 3.5,
     "index_sl_pts": 22.0
+  },
+  "footprints": {
+    "_note": "Heatmap / footprint window. heat_sessions = how many sessions the chart should cover when it asks for cover=session; 2 = today plus the previous session, so an early-morning chart is not nearly empty. max_bars caps the payload. history_days is CALENDAR days of 1m candles to read back, kept well above heat_sessions so a weekend or holiday does not cost a session.",
+    "heat_sessions": 2,
+    "max_bars": 220,
+    "history_days": 8
   }
 }

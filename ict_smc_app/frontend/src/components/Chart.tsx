@@ -1979,10 +1979,15 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   // ESTIMATED footprint on the chart (1m / 3m / 5m / 15m / 1h; closed candles from the desk's recorded FUT ticks)
   useEffect(() => {
     const want = !!layers.fp || !!layers.bias || !!layers.heat || !!layers.cvd || !!layers.cells || !!layers.bubbles;
+    // No 3m here: TF (api.ts) has no "3m" — that is a PE-CE table timeframe, not a chart one, even though
+    // /api/footprints accepts 3m for other callers.
     const ok = want && (tf === "1m" || tf === "5m" || tf === "15m" || tf === "30m" || tf === "1h");
     if (!ok) { fpPrim.current.set([]); setFpBars([]); setFpMsg(layers.fp ? "Footprint: 1m / 5m / 15m / 30m / 1h only" : ""); if (!want) return; if (!ok) return; }
     let dead = false;
-    const go = () => fetch(`/api/footprints?tf=${tf}&n=${layers.cvd || layers.cells || layers.bubbles ? 75 : 30}`).then((r) => r.json()).then((j) => {
+    // cover=session, not a flat bar count. A fixed n truncates by timeframe: 30 bars is 7h30 on 15m but
+    // only 2h30 on 5m, which is why the 5m heatmap used to start at 13:00 while 15m showed the whole day
+    // from the same recorded ticks. The server sizes the window from rules.json (footprints.heat_sessions).
+    const go = () => fetch(`/api/footprints?tf=${tf}&cover=session`).then((r) => r.json()).then((j) => {
       if (dead) return;
       const raw: FpBar[] = j.available ? j.bars ?? [] : [];
       setFpBars(raw);
@@ -2174,7 +2179,16 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const heatRead = (t: number): string[] => {
     if (!layers.heat) return [];
     const b = fpBars.find((x) => x.time === t), c = cMap.current.get(t);
-    if (!b || !b.rows.length || !c) return [];
+    // Say WHY there is nothing rather than returning silence. Hovering a candle outside the recorded
+    // window used to show a blank box, which reads as "the heatmap is broken" when the real answer is
+    // "no ticks were recorded for this candle".
+    if (!c) return [];
+    if (!b || !b.rows.length) {
+      return [`No footprint for this candle — the desk has no recorded futures ticks for ${hm(t)}.`,
+              "⚪ The ladder is built from ticks this desk recorded itself, so a candle from before the desk "
+              + "was running (or from a session it missed) has nothing to show. Nothing is wrong with the "
+              + "heatmap; there is simply no tape for this bar. Read price structure here instead."];
+    }
     const rng = Math.max(c.high - c.low, 0.01), tot = b.rows.reduce((x, r) => x + r.v, 0) || 1;
     const third = (p: number) => ((p - c.low) / rng < 0.34 ? "low" : (p - c.low) / rng > 0.66 ? "high" : "mid");
     const share = { low: 0, mid: 0, high: 0 } as Record<string, number>;
@@ -2192,6 +2206,28 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     const bodyHot = b.rows.filter((r) => r.p <= Math.max(c.open, c.close) && r.p >= Math.min(c.open, c.close)).reduce((x, r) => x + r.v, 0) / tot;
     if (Math.abs(c.close - c.open) / rng > 0.6 && bodyHot < 0.35) out.push("Big body but little volume inside it → easy move with no fight, often retested.");
     if (b.delta !== 0) out.push(`Delta ${kfmt(b.delta)} → ${b.delta > 0 ? "aggressive buyers" : "aggressive sellers"} ${(b.delta > 0) === green ? "agree with the candle colour (genuine)" : "DISAGREE with the candle colour (absorption — be careful)"}.`);
+
+    // The read above describes the candle; these two lines give you something to actually place an order
+    // against. The value band is where ~70 % of the candle's volume traded — the part price has to leave
+    // for the bar to mean anything, and the natural place to put a stop beyond.
+    const sorted = [...b.rows].sort((x, y) => y.v - x.v);
+    let acc = 0;
+    const va: number[] = [];
+    for (const r of sorted) { if (acc / tot >= 0.7) break; acc += r.v; va.push(r.p); }
+    const vaLo = Math.min(...va), vaHi = Math.max(...va);
+    const inr0 = (x: number) => x.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+    out.push(`LEVELS — POC ${inr0(hot.p)} · value band ${inr0(vaLo)}–${inr0(vaHi)} (70 % of volume). `
+      + `A stop belongs beyond the band, not inside it: ${inr0(vaLo)} for longs, ${inr0(vaHi)} for shorts.`);
+
+    const last = candles.length ? candles[candles.length - 1].close : null;
+    if (last != null) {
+      const d = last - hot.p;
+      out.push(Math.abs(d) <= Math.max(rng * 0.25, 2)
+        ? `NOW — price ${inr0(last)} is sitting ON this POC (${d >= 0 ? "+" : ""}${d.toFixed(1)}). This is the fairest price in the band: the worst place to initiate and the best place to be filled. Let it leave the band first.`
+        : d > 0
+          ? `NOW — price ${inr0(last)} is ${d.toFixed(1)} ABOVE this POC, so this band is below the market and acts as support while it holds. Losing it turns it into resistance.`
+          : `NOW — price ${inr0(last)} is ${Math.abs(d).toFixed(1)} BELOW this POC, so this band is overhead supply. Rallies into it are where sellers were last active; it must be reclaimed on volume before a long is worth taking.`);
+    }
     return out;
   };
 

@@ -659,16 +659,30 @@ def volume(tf: str = Query("5m")):
 
 
 @app.get("/api/footprints")
-def footprints(tf: str = Query("5m"), n: int = Query(16)):
-    """ESTIMATED footprint ladder per closed candle from the desk's own recorded futures ticks (observation only)."""
+def footprints(tf: str = Query("5m"), n: int = Query(16), cover: str = Query("")):
+    """ESTIMATED footprint ladder per closed candle from the desk's own recorded futures ticks (observation only).
+
+    cover="session" asks for enough bars to cover whole sessions rather than a flat count. A fixed count
+    truncates by timeframe — 30 bars is 7h30 on 15m but only 2h30 on 5m, which is why the 5m heatmap used
+    to begin at 13:00 while 15m showed the whole day from the very same recorded ticks. footprint_levels is
+    never pruned, so earlier sessions are genuinely there to be read."""
     if tf not in ("1m", "3m", "5m", "15m", "30m", "1h"):
         raise HTTPException(400, "tf must be 1m, 3m, 5m, 15m, 30m or 1h")
     from ..engine import footprints as fp
+    from ..timeutil import TF_SECONDS, now_ist, session_bounds
+    fcfg = config.rules().get("footprints", {})
     h = _h()
     days = 3 if tf in ("1m", "3m", "5m", "15m") else 5
+    if cover == "session":
+        t0, t1 = session_bounds(now_ist().date())
+        sess_bars = max(1, -(-(int(t1) - int(t0)) // TF_SECONDS.get(tf, 300)))      # ceil
+        n = sess_bars * max(1, int(fcfg.get("heat_sessions", 2)))
+        # Calendar days, not sessions: a weekend or a holiday must not silently cost us a session.
+        days = max(days, int(fcfg.get("history_days", 8)))
+    n_bars = max(4, min(int(n), int(fcfg.get("max_bars", 220))))
     zones = ((h.json.get("5m") or {}).get("zones") or []) + ((h.json.get("15m") or {}).get("zones") or [])
-    return fp.compute(h.rows_1m(days), tf, max(4, min(int(n), 80)), float(config.rule("delta", "fut_level_step", 5.0)),
-                      zones, config.rules().get("footprints", {}))
+    return fp.compute(h.rows_1m(days), tf, n_bars, float(config.rule("delta", "fut_level_step", 5.0)),
+                      zones, fcfg)
 
 
 @app.get("/api/qml")
