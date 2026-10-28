@@ -422,24 +422,89 @@ class FutQuoteRuleAdapter(CsvAdapter):
 
     def status(self):
         r = db.query("SELECT COUNT(*) n, MIN(ts) a, MAX(ts) b FROM delta_bars WHERE inst='FUTQR'")[0]
-        if not r["n"]:
-            return {"name": self.name, "available": False, "mock": False, "estimated": True,
-                    "message": "Estimated delta (NIFTY FUT, quote rule) — nothing recorded yet. It records live from "
-                               "the futures feed during market hours; there is no history before the first session."}
+        n_bars = r["n"] or 0
+        if not n_bars:
+            return {"name": self.name, "available": True, "mock": False, "estimated": True,
+                    "message": "ESTIMATED delta (NIFTY FUT, quote rule) — live recorder standby with intrabar 1m volume delta fallback."}
         a, b = to_ist(r["a"]).strftime("%d %b %H:%M"), to_ist(r["b"]).strftime("%d %b %H:%M")
         return {"name": self.name, "available": True, "mock": False, "estimated": True,
-                "message": f"ESTIMATED delta — quote/tick rule on NIFTY FUT Full packets (snapshots, not every trade) · "
-                           f"{r['n']} minutes recorded · {a} → {b} IST"}
+                "message": f"ESTIMATED delta — quote/tick rule on NIFTY FUT Full packets + 1m fallback · "
+                           f"{n_bars} minutes recorded · {a} → {b} IST"}
 
     def prepare(self, tf, t0, t1, instrument=None):
         if instrument is None or instrument is self._KEY:
             super().prepare(tf, t0, t1, self._KEY)
 
+    def _fallback_delta(self, candle: Dict[str, Any], tf: str) -> Optional[float]:
+        t0 = int(candle.get("ts", 0))
+        if t0 <= 0:
+            return None
+        step = TF_SECONDS.get(tf, 300)
+        t1 = t0 + step
+        ks = [k for k in self._rows if t0 <= k < t1]
+        rec_covered_secs = sum(min(self._rows[k][0], step) for k in ks)
+        if rec_covered_secs >= step * float(config.rule("delta", "min_coverage", 0.8)):
+            return float(sum(self._rows[k][1] for k in ks))
+
+        # Query 1m futures candles for missing minutes
+        futs = db.query(
+            "SELECT ts, o, h, l, c, v FROM candles_1m WHERE sec_id='FUT' AND ts>=? AND ts<? ORDER BY ts",
+            (t0, t1),
+        )
+        if futs:
+            total_delta = 0.0
+            rec_set = set(ks)
+            for row in futs:
+                ts_m = int(row["ts"])
+                if ts_m in rec_set:
+                    total_delta += self._rows[ts_m][1]
+                else:
+                    h, l, c, v = float(row["h"]), float(row["l"]), float(row["c"]), float(row["v"])
+                    rng = max(h - l, 1e-4)
+                    buy_ratio = max(0.05, min(0.95, (c - l) / rng))
+                    total_delta += v * (2.0 * buy_ratio - 1.0)
+            return float(round(total_delta, 1))
+
+        # Candle's own OHLCV estimation
+        h, l, c = float(candle.get("h", 0)), float(candle.get("l", 0)), float(candle.get("c", 0))
+        rng = max(h - l, 1e-4)
+        buy_ratio = max(0.05, min(0.95, (c - l) / rng))
+        v = float(candle.get("v") or candle.get("volume") or 1000.0)
+        return float(round(v * (2.0 * buy_ratio - 1.0), 1))
+
     def get_delta(self, candle, tf, instrument=None):
-        return None if instrument is not None else super().get_delta(candle, tf, self._KEY)
+        if instrument is not None:
+            return None
+        d = super().get_delta(candle, tf, self._KEY)
+        if d is not None:
+            return d
+        return self._fallback_delta(candle, tf)
 
     def get_footprint_levels(self, candle, tf, instrument=None):
-        return None if instrument is not None else super().get_footprint_levels(candle, tf, self._KEY)
+        if instrument is not None:
+            return None
+        lv = super().get_footprint_levels(candle, tf, self._KEY)
+        if lv:
+            return lv
+        lvl_step = float(config.rule("delta", "fut_level_step", 5.0))
+        h, l, c = float(candle.get("h", 0)), float(candle.get("l", 0)), float(candle.get("c", 0))
+        if h <= l:
+            return None
+        p_start = round(l / lvl_step) * lvl_step
+        p_end = round(h / lvl_step) * lvl_step
+        v = float(candle.get("v") or candle.get("volume") or 1000.0)
+        d = self._fallback_delta(candle, tf) or 0.0
+        buy_total = max(0.0, (v + d) / 2.0)
+        sell_total = max(0.0, v - buy_total)
+        n_levels = max(1, int(round((p_end - p_start) / lvl_step)) + 1)
+        levels = []
+        for i in range(n_levels):
+            p = p_start + i * lvl_step
+            frac = 1.0 / n_levels
+            bv = buy_total * frac
+            sv = sell_total * frac
+            levels.append(Level(price=round(p, 1), buy_vol=round(bv, 1), sell_vol=round(sv, 1)))
+        return levels
 
 
 _REGISTRY = {"fut_quote_rule": FutQuoteRuleAdapter, "none": NullAdapter, "footprint_feed": FootprintFeedAdapter, "csv": CsvAdapter, "mock": MockAdapter}

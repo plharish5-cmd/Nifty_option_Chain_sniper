@@ -87,12 +87,19 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const cvdS = useRef<ISeriesApi<"Baseline"> | null>(null);
   const [fpBars, setFpBars] = useState<FpBar[]>([]);
   const [fpMsg, setFpMsg] = useState<string>("");
+  const isDeltaDetailOn = !!layers.deltaDetail;
+  const isDeltaOn = !!(layers.delta || isDeltaDetailOn);
+  const isBubblesOn = !!(layers.bubbles || isDeltaDetailOn);
+  const isCellsOn = !!(layers.cells || isDeltaDetailOn);
+  const isCvdOn = !!(layers.cvd || isDeltaDetailOn);
+  const isNodesOn = !!(layers.nodes || isDeltaDetailOn);
+
   const cvdDivergences = useMemo(() => computeCvdDivergences(fpBars), [fpBars]);
   const bubbles = useMemo(
-    () => (layers.bubbles || layers.cvd || layers.cells
+    () => (isBubblesOn || isCvdOn || isCellsOn
       ? buildBubbles(analysis?.volume?.bars ?? [], fpBars, candles)
       : []),
-    [layers.bubbles, layers.cvd, layers.cells, analysis, fpBars, candles]
+    [isBubblesOn, isCvdOn, isCellsOn, analysis, fpBars, candles]
   );
   const [walls, setWalls] = useState<Wall[]>([]);
   const [wallExp, setWallExp] = useState<"cur" | "next" | "both">("cur");
@@ -1137,7 +1144,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       }
     }
     // delta layer: Institutional Absorption defense levels (passive limit orders absorbing aggressive volume)
-    if (a && layers.delta) {
+    if (a && isDeltaOn) {
       const t0 = candles.find((c) => Math.floor(c.time / 86400) === Math.floor(lastTime / 86400))?.time ?? (lastTime - 30 * 300);
       for (const m of a.markers) {
         if (m.kind === "DELTA_ABSORPTION" && m.price && m.time >= t0) {
@@ -1245,13 +1252,29 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       }
     }
 
+    // Delta Imbalance / POC Zones (drawn as subtle support/resistance rays)
+    if (isDeltaDetailOn || isCellsOn || isNodesOn) {
+      for (const z of ofPrim.current.zones.slice(-6)) {
+        if (z.until == null) {
+          segs.push({
+            from: z.time,
+            price: z.bull ? z.lo : z.hi,
+            color: z.bull ? "rgba(74,222,128,0.75)" : "rgba(248,113,113,0.75)",
+            dash: true,
+            width: 1.5,
+            label: z.bull ? `Stacked Buy POC ${z.lo.toFixed(1)}` : `Stacked Sell POC ${z.hi.toFixed(1)}`,
+          });
+        }
+      }
+    }
+
     zones.current.set(boxes, segs, lastTime, dayStarts);
 
     // ── markers: every layer emits Ev records → merged per bar/side, labelled only where it matters ──
     const evs: Ev[] = [];
     const push = (e: Ev) => evs.push(e);
     const side = (bull: boolean): "above" | "below" => (bull ? "below" : "above");
-    if (a && (layers.structure || layers.delta || layers.fvg)) {
+    if (a && (layers.structure || isDeltaOn || layers.fvg)) {
       for (const m of a.markers) {
         const bull = m.dir === "bull";
         if (m.kind.startsWith("IFVG")) {
@@ -1262,10 +1285,10 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             shape: sig ? (sell ? "arrowDown" : "arrowUp") : "circle", color: sell ? "#fb923c" : "#2dd4bf" });
           continue;
         }
-        if (!(layers.structure || layers.delta)) continue;
+        if (!(layers.structure || isDeltaOn)) continue;
         const isDelta = m.kind.startsWith("DELTA_") || m.kind === "FOOTPRINT_IMBALANCE" || m.kind.startsWith("PROXY_FLOW");
-        if (isDelta ? !layers.delta : !layers.structure) continue;
-        if (isDelta && !layers.deltaDetail && (m.kind === "DELTA_FLIP" || m.kind === "FOOTPRINT_IMBALANCE" || m.kind === "PROXY_FLOW_SURGE")) continue;
+        if (isDelta ? !isDeltaOn : !layers.structure) continue;
+        if (isDelta && !isDeltaDetailOn && (m.kind === "DELTA_FLIP" || m.kind === "FOOTPRINT_IMBALANCE" || m.kind === "PROXY_FLOW_SURGE")) continue;
         const base = { time: m.time, side: side(bull), dir: m.dir, kind: m.kind, full: `${m.text}${m.price ? ` @ ${m.price.toFixed(1)}` : ""}` };
         if (m.kind.startsWith("PROXY_FLOW")) { push({ ...base, layer: "Delta", short: "flow", color: "#fb923c", shape: "circle", size: 0.5, pri: 1, full: base.full + " (proxy)" }); continue; }
         if (isDelta) {
@@ -1274,9 +1297,9 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           const agg = m.kind === "DELTA_AGGRESSION";
           const imb = m.kind === "FOOTPRINT_IMBALANCE";
           const shortLab = abs
-            ? (bull ? "ABS▲" : "ABS▼")
+            ? (bull ? "▲ ABS BUY" : "▼ ABS SELL")
             : agg
-            ? (bull ? "Δ+ buy" : "Δ− sell")
+            ? (bull ? "⚡ +Δ SURGE" : "⚡ -Δ SURGE")
             : imb
             ? (bull ? "IMB▲" : "IMB▼")
             : shortText(m.kind, m.text);
@@ -1285,7 +1308,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             layer: "Delta",
             short: shortLab,
             pri: abs ? 3 : agg ? 2 : imb ? 2 : 1,
-            size: abs ? 1.15 : agg ? 0.9 : imb ? 0.8 : 0.6,
+            size: abs ? 1.25 : agg ? 1.0 : imb ? 0.8 : 0.6,
             shape: abs ? (bull ? "arrowUp" : "arrowDown") : agg ? "square" : "circle",
             color: abs
               ? (bull ? "#10b981" : "#ef4444")
@@ -1309,6 +1332,102 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         } else {
           push({ ...base, layer: "Liquidity", short: shortText(m.kind, m.text), pri: m.kind === "SWEEP" ? 2 : 1, size: 0.55,
             shape: "circle", color: m.kind === "SWEEP" ? "#f59e0b" : "#a78bfa" });
+        }
+      }
+    }
+
+    // ── All Delta Detail: candle-level Absorption & Aggressive Delta Surge signals ──
+    if (isDeltaDetailOn && candles.length > 5) {
+      const deltas = candles.map((c) => {
+        const fb = fpBars.find((b) => Math.abs(b.time - c.time) < (BAR_SEC[tf] ?? 300));
+        return fb ? fb.delta : (c.close >= c.open ? (c.volume || 1000) * 0.4 : -(c.volume || 1000) * 0.4);
+      });
+      for (let i = 2; i < candles.length; i++) {
+        const c = candles[i];
+        const barDelta = deltas[i];
+        const rng = Math.max(c.high - c.low, 1e-4);
+        const lowerWick = Math.min(c.open, c.close) - c.low;
+        const upperWick = c.high - Math.max(c.open, c.close);
+        const bodyRatio = Math.abs(c.close - c.open) / rng;
+
+        // 1. Bullish Absorption: lower wick >= 35% with negative net delta, closed in upper 50%
+        if (lowerWick / rng >= 0.35 && barDelta < 0 && (c.close - c.low) / rng >= 0.5) {
+          const hasExisting = evs.some((e) => e.time === c.time && e.kind.includes("ABS"));
+          if (!hasExisting) {
+            push({
+              time: c.time,
+              side: "below",
+              dir: "bull",
+              kind: "DELTA_ABSORPTION_BUY",
+              layer: "Delta",
+              short: "▲ ABS BUY",
+              full: `🛡 Bullish Absorption: Lower wick ${(lowerWick / rng * 100).toFixed(0)}% with sellers slamming bid (${kfmt(barDelta)} delta) absorbed by passive buyers; closed @ ${c.close.toFixed(1)}`,
+              pri: 3,
+              size: 1.25,
+              shape: "arrowUp",
+              color: "#10b981",
+            });
+          }
+        }
+        // Bearish Absorption: upper wick >= 35% with positive net delta, closed in lower 50%
+        else if (upperWick / rng >= 0.35 && barDelta > 0 && (c.close - c.low) / rng <= 0.5) {
+          const hasExisting = evs.some((e) => e.time === c.time && e.kind.includes("ABS"));
+          if (!hasExisting) {
+            push({
+              time: c.time,
+              side: "above",
+              dir: "bear",
+              kind: "DELTA_ABSORPTION_SELL",
+              layer: "Delta",
+              short: "▼ ABS SELL",
+              full: `🛡 Bearish Absorption: Upper wick ${(upperWick / rng * 100).toFixed(0)}% with buyers chasing ask (+${kfmt(barDelta)} delta) absorbed by passive sellers; closed @ ${c.close.toFixed(1)}`,
+              pri: 3,
+              size: 1.25,
+              shape: "arrowDown",
+              color: "#ef4444",
+            });
+          }
+        }
+
+        // 2. Aggressive Delta Surge Signals (|bar_delta| >= 1.8x 20-bar avg abs delta)
+        const win20 = deltas.slice(Math.max(0, i - 20), i).map((v) => Math.abs(v));
+        const avg20 = win20.length >= 5 ? win20.reduce((s, v) => s + v, 0) / win20.length : 0;
+        if (avg20 > 0 && Math.abs(barDelta) >= 1.8 * avg20 && bodyRatio >= 0.45) {
+          if (barDelta > 0 && c.close > c.open) {
+            const hasExisting = evs.some((e) => e.time === c.time && (e.kind.includes("SURGE") || e.kind.includes("AGGRESSION")));
+            if (!hasExisting) {
+              push({
+                time: c.time,
+                side: "below",
+                dir: "bull",
+                kind: "DELTA_SURGE_BUY",
+                layer: "Delta",
+                short: "⚡ +Δ SURGE",
+                full: `⚡ Aggressive Buyer Surge: Delta +${kfmt(barDelta)} (1.8× 20-bar avg) with strong upward close`,
+                pri: 3,
+                size: 1.1,
+                shape: "square",
+                color: "#10b981",
+              });
+            }
+          } else if (barDelta < 0 && c.close < c.open) {
+            const hasExisting = evs.some((e) => e.time === c.time && (e.kind.includes("SURGE") || e.kind.includes("AGGRESSION")));
+            if (!hasExisting) {
+              push({
+                time: c.time,
+                side: "above",
+                dir: "bear",
+                kind: "DELTA_SURGE_SELL",
+                layer: "Delta",
+                short: "⚡ -Δ SURGE",
+                full: `⚡ Aggressive Seller Surge: Delta −${kfmt(Math.abs(barDelta))} (1.8× 20-bar avg) with strong downward close`,
+                pri: 3,
+                size: 1.1,
+                shape: "square",
+                color: "#ef4444",
+              });
+            }
+          }
         }
       }
     }
@@ -1491,7 +1610,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         lastV = x.v;
       }
     }
-    if (layers.cvd) {
+    if (isCvdOn) {
       for (const d of cvdDivergences) {
         if (d.type === "BULLISH_ABSORPTION") {
           push({
@@ -1500,11 +1619,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             dir: "bull",
             kind: "CVD_ABS",
             layer: "CVD divergence",
-            short: "🟢 CVD ABS",
-            full: d.details,
+            short: "🟣 CVD BULL DIV",
+            full: d.details.replace("BULLISH ABSORPTION", "🟣 CVD BULL DIV"),
             pri: 3,
             shape: "arrowUp",
-            color: "#10b981",
+            color: "#c084fc",
             size: 1.35,
           });
         } else if (d.type === "BEARISH_DISTRIBUTION") {
@@ -1514,11 +1633,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             dir: "bear",
             kind: "CVD_DIST",
             layer: "CVD divergence",
-            short: "🔴 CVD DIST",
-            full: d.details,
+            short: "🟠 CVD BEAR DIV",
+            full: d.details.replace("BEARISH DISTRIBUTION", "🟠 CVD BEAR DIV"),
             pri: 3,
             shape: "arrowDown",
-            color: "#ef4444",
+            color: "#fb923c",
             size: 1.35,
           });
         } else if (d.type === "EXHAUSTION_CLIMAX") {
@@ -1857,20 +1976,25 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     return () => { dead = true; window.clearInterval(id); };
   }, [layers.walls, layers.gamma, wallExp, expiries]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    ofPrim.current.set({ walls, bubbles: layers.bubbles ? bubbles : [], cells: layers.cells ? fpBars.filter((b) => b.rows.length) : [], oiLevels: layers.walls ? oiLevels : [] });
-  }, [walls, bubbles, fpBars, layers.bubbles, layers.cells, oiLevels, layers.walls]);
+    ofPrim.current.set({
+      walls,
+      bubbles: isBubblesOn ? bubbles : [],
+      cells: isCellsOn ? fpBars.filter((b) => b.rows.length) : [],
+      oiLevels: layers.walls ? oiLevels : []
+    });
+  }, [walls, bubbles, fpBars, isBubblesOn, isCellsOn, oiLevels, layers.walls]);
   // ── stacked D / W / M volume nodes (refreshed every 5 min) + overextension entries ──
   useEffect(() => {
-    if (!layers.nodes) { setNodesV(null); return; }
+    if (!isNodesOn) { setNodesV(null); return; }
     let dead = false;
     const go = () => fetch("/api/nodes").then((r) => r.json()).then((j) => { if (!dead) setNodesV(j); }).catch(() => {});
     go(); const id = window.setInterval(go, 300000);
     return () => { dead = true; window.clearInterval(id); };
-  }, [layers.nodes]);
-  const nEntries = useMemo(() => layers.nodes && nodesV?.available
-    ? findEntries(candles, analysis?.volume?.vwap ?? [], nodesV) : [], [layers.nodes, nodesV, candles, analysis]);
+  }, [isNodesOn]);
+  const nEntries = useMemo(() => isNodesOn && nodesV?.available
+    ? findEntries(candles, analysis?.volume?.vwap ?? [], nodesV) : [], [isNodesOn, nodesV, candles, analysis]);
   nEntRef.current = nEntries;
-  useEffect(() => { ndPrim.current.set(layers.nodes ? nodesV : null, nEntries); }, [layers.nodes, nodesV, nEntries]);
+  useEffect(() => { ndPrim.current.set(isNodesOn ? nodesV : null, nEntries); }, [isNodesOn, nodesV, nEntries]);
   // ── gamma map + 3 confirmations ──
   const rvMap = useMemo(() => new Map((analysis?.volume?.bars ?? []).map((b) => [b.time, b.rvol])), [analysis]);
   const emaArr = useMemo(() => layers.gamma && candles.length ? [emas(candles, 9), emas(candles, 21), emas(candles, 50)] : null, [layers.gamma, candles]);
@@ -1950,7 +2074,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   // CVD in its own pane under the chart (created / removed with the layer)
   useEffect(() => {
     const ch = chart.current; if (!ch) return;
-    if (!layers.cvd) { if (cvdS.current) { ch.removeSeries(cvdS.current); cvdS.current = null; } return; }
+    if (!isCvdOn) { if (cvdS.current) { ch.removeSeries(cvdS.current); cvdS.current = null; } return; }
     if (!cvdS.current) {
       cvdS.current = ch.addSeries(BaselineSeries, { baseValue: { type: "price", price: 0 }, lineWidth: 2,
         topLineColor: "#10b981", topFillColor1: "rgba(16,185,129,0.40)", topFillColor2: "rgba(16,185,129,0.02)",
@@ -2000,11 +2124,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         });
       }
     }
-  }, [layers.cvd, fpBars]);
+  }, [isCvdOn, fpBars]);
 
   // ESTIMATED footprint on the chart (1m / 3m / 5m / 15m / 1h; closed candles from the desk's recorded FUT ticks)
   useEffect(() => {
-    const want = !!layers.fp || !!layers.bias || !!layers.heat || !!layers.cvd || !!layers.cells || !!layers.bubbles;
+    const want = !!layers.fp || !!layers.bias || !!layers.heat || !!isCvdOn || !!isCellsOn || !!isBubblesOn || !!isDeltaOn;
     // No 3m here: TF (api.ts) has no "3m" — that is a PE-CE table timeframe, not a chart one, even though
     // /api/footprints accepts 3m for other callers.
     const ok = want && (tf === "1m" || tf === "5m" || tf === "15m" || tf === "30m" || tf === "1h");
@@ -2022,7 +2146,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     go();
     const id = window.setInterval(go, 30000);
     return () => { dead = true; window.clearInterval(id); };
-  }, [tf, layers.fp, layers.bias, layers.heat, layers.cvd, layers.cells, layers.bubbles]);
+  }, [tf, layers.fp, layers.bias, layers.heat, isCvdOn, isCellsOn, isBubblesOn, isDeltaOn]);
 
   useEffect(() => {
     const a = analysis;
@@ -2275,7 +2399,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const hev = hover ? evRef.current.get(hover.t) ?? [] : [];
   const vb = hover && analysis?.volume?.bars ? analysis.volume.bars.find((b) => b.time === hover.t) : undefined;
   const hcCrvolBar = hover && analysis?.volume?.crvol ? analysis.volume.crvol.find((b) => b.time === hover.t) : undefined;
-  const ofOn = !!(layers.cvd || layers.cells || layers.walls || layers.bubbles);
+  const ofOn = !!(isCvdOn || isCellsOn || layers.walls || isBubblesOn);
   const ofArgs = { fp: fpBars, bubbles, walls, zones: ofPrim.current.zones, atr: analysis?.atr ?? 20, candles };
   ofArgsRef.current = ofArgs;
   const ofr = hover && ofOn ? readAt(hover.t, { ...ofArgs, px: series.current?.coordinateToPrice(hover.y) ?? null }) : null;
@@ -2287,7 +2411,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const gconf = gIdx >= 60 && emaArr ? confirm3(gIdx, candles, emaArr[0], emaArr[1], emaArr[2], rvMap, gexMap, analysis?.atr ?? 20) : null;
   const gLast = layers.gamma && emaArr ? (() => { const i = candles.map((c) => c.closed !== false).lastIndexOf(true);
     return i >= 60 ? confirm3(i, candles, emaArr[0], emaArr[1], emaArr[2], rvMap, gexMap, analysis?.atr ?? 20) : null; })() : null;
-  const nread = hover && layers.nodes ? nodesRead(hover.t, series.current?.coordinateToPrice(hover.y) ?? null, nodesV, nEntries, candles[candles.length - 1]?.close ?? null) : [];
+  const nread = hover && isNodesOn ? nodesRead(hover.t, series.current?.coordinateToPrice(hover.y) ?? null, nodesV, nEntries, candles[candles.length - 1]?.close ?? null) : [];
   // DOM book confirm / warn at the hovered price (last 5 min of events near this level)
   const bookNote: { ok: boolean; txt: string } | null = (() => {
     const hp = hover ? (series.current?.coordinateToPrice(hover.y) ?? null) : null;
@@ -2336,14 +2460,14 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const hasOiCard = !!(layers.oi && hover && ((hover.pane != null && hover.pane === oiPane) || hasOiMarker));
   const oiHistorical = !!(ob && (ob.time !== candles.filter((c) => c.closed !== false).at(-1)?.time || oiState === "market_closed"));
   const oiGuide = oiDecisionGuide(ob, { historical: oiHistorical, unavailable: !oiHistorical && (oiState === "stale" || oiState === "missing"), high: hc?.high, low: hc?.low });
-  const hoveredCvdDiv = (hover && layers.cvd)
+  const hoveredCvdDiv = (hover && isCvdOn)
     ? cvdDivergences.find((d) => Math.abs(d.time - hover.t) < (BAR_SEC[tf] ?? 300))
     : null;
-  const hoveredFpBar = (hover && (layers.cvd || layers.fp))
+  const hoveredFpBar = (hover && (isCvdOn || layers.fp || isCellsOn || isDeltaOn))
     ? fpBars.find((b) => Math.abs(b.time - hover.t) < (BAR_SEC[tf] ?? 300))
     : null;
-  const isHoveringCvdPane = !!(hover && layers.cvd && cvdS.current && hover.y > (box.current?.clientHeight ?? 500) - 140);
-  const hasCvdCard = !!(hover && layers.cvd && (hoveredCvdDiv || (isHoveringCvdPane && hoveredFpBar)));
+  const isHoveringCvdPane = !!(hover && isCvdOn && cvdS.current && hover.y > (box.current?.clientHeight ?? 500) - 140);
+  const hasCvdCard = !!(hover && isCvdOn && (hoveredCvdDiv || (isHoveringCvdPane && hoveredFpBar)));
   const isHoveringRvolPane = !!(hover && layers.rvol && rvS.current && hover.y > (box.current?.clientHeight ?? 500) - (oiS.current ? 160 : 120));
   const hoveredCrvolBar = hover && layers.rvol ? (
     (analysis?.volume?.crvol ?? []).find((b) => b.time === hover.t) ??
@@ -2468,7 +2592,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         </div>
       )}
       {/* Top-Right Control Bar: ⚡ 3-Chart Trinity Suite + ⚡ Strike Map 2.0 + Expiry Selector */}
-      <div className="pointer-events-auto absolute right-2 top-2 z-20 flex items-center gap-1.5">
+      <div className="pointer-events-auto absolute right-2 top-2 z-20 flex flex-wrap items-center justify-end gap-2 max-w-[55%]">
         <button
           onClick={() => {
             if (trinityDrawerOpen && oiDrawerTab === "matrix") {
@@ -2543,7 +2667,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         if (!topCe || topCe.p <= wsp + 150) return null;
         return (
           <div
-            className="pointer-events-auto absolute right-2 top-10 z-20 flex items-center gap-1.5 rounded-lg border border-rose-500/60 bg-[#16060a]/92 px-2.5 py-1 text-[10.5px] font-bold text-rose-300 shadow-xl backdrop-blur"
+            className="pointer-events-auto absolute right-2 top-12 z-20 flex items-center gap-1.5 rounded-lg border border-rose-500/60 bg-[#16060a]/92 px-2.5 py-1 text-[10.5px] font-bold text-rose-300 shadow-xl backdrop-blur"
             title={`Major Overhead Call Resistance Wall: ${topCe.p} CE with ${(topCe.oi / 1e7).toFixed(2)}Cr OI (${Math.round(topCe.p - wsp)} pts above current spot)`}
           >
             <span>🏛️ CEILING WALL:</span>
@@ -4099,6 +4223,136 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
               })()}
             </div>
           )}
+          {(isDeltaDetailOn || isDeltaOn || isCellsOn || isCvdOn) && (() => {
+            const fpb = fpBars.find((b) => Math.abs(b.time - hc.time) < (BAR_SEC[tf] ?? 300));
+            const cIdx = candles.findIndex((c) => c.time === hc.time);
+            const prevC = cIdx > 0 ? candles[cIdx - 1] : null;
+            const priceUp = prevC ? hc.close >= prevC.close : hc.close >= hc.open;
+            const priceDown = !priceUp;
+            const barDelta = fpb?.delta ?? (hc.close >= hc.open ? Math.round((hc.volume || 1000) * 0.4) : -Math.round((hc.volume || 1000) * 0.4));
+            const barVol = fpb?.vol ?? hc.volume ?? Math.max(Math.abs(barDelta) * 2, 1000);
+            const buyVol = fpb?.buy ?? Math.round(Math.max(0, (barVol + barDelta) / 2));
+            const sellVol = fpb?.sell ?? Math.max(0, barVol - buyVol);
+            const deltaPct = barVol > 0 ? ((barDelta / barVol) * 100).toFixed(1) : "0.0";
+            const sessionCvd = fpb?.cvd ?? 0;
+            const prevFpb = cIdx > 0 ? fpBars.find((b) => Math.abs(b.time - prevC!.time) < (BAR_SEC[tf] ?? 300)) : null;
+            const cvdRising = prevFpb ? sessionCvd >= prevFpb.cvd : barDelta >= 0;
+            const cvdSlopeArrow = cvdRising ? "↗ Rising" : "↘ Falling";
+
+            const rng = Math.max(hc.high - hc.low, 1e-4);
+            const lowerWick = Math.min(hc.open, hc.close) - hc.low;
+            const upperWick = hc.high - Math.max(hc.open, hc.close);
+            const lowerWickPct = (lowerWick / rng) * 100;
+            const upperWickPct = (upperWick / rng) * 100;
+            const isLowerWickAbs = lowerWickPct >= 35 && barDelta < 0;
+            const isUpperWickAbs = upperWickPct >= 35 && barDelta > 0;
+            const deltaTail = isLowerWickAbs
+              ? "🛡 Lower Wick Absorption (Passive Institutional Buyers Soaked Bid)"
+              : isUpperWickAbs
+              ? "⚠️ Upper Wick Absorption (Passive Institutional Sellers Capped Ask)"
+              : lowerWickPct >= 35
+              ? `Lower Wick Rejection (${lowerWickPct.toFixed(0)}%)`
+              : upperWickPct >= 35
+              ? `Upper Wick Rejection (${upperWickPct.toFixed(0)}%)`
+              : "Neutral / Balanced Wicks";
+
+            // 4 Action Guidance cases
+            let caseTitle = "⚖️ ORDER FLOW BALANCED";
+            let caseBadge = "CHURN / DIGESTION";
+            let caseTone = "border-slate-700 bg-ink-900/80 text-slate-300";
+            let caseBadgeTone = "bg-ink-800 text-slate-300";
+            let caseAction = barDelta >= 0
+              ? "Slight buyer delta edge. Wait for aggressive delta surge or key level sweep before executing."
+              : "Slight seller delta edge. Consolidation within range; wait for directional breakout.";
+
+            if (priceUp && barDelta > 0 && cvdRising) {
+              caseTitle = "🟢 BULLISH CONVICTION CONFIRMED";
+              caseBadge = "BUY DIPS / HOLD CE";
+              caseTone = "border-emerald-500/60 bg-emerald-950/70 text-emerald-200";
+              caseBadgeTone = "bg-emerald-500 text-black";
+              caseAction = "Price rising + positive bar delta (+Δ) + session CVD expanding higher. Aggressive buyers in control with institutional backing. Favor Longs/CE; dips into VWAP/support are buyable.";
+            } else if ((lowerWickPct >= 35 || !priceUp) && barDelta < 0 && (hc.close - hc.low) / rng >= 0.45) {
+              caseTitle = "🛡 BULLISH ABSORPTION TRAP";
+              caseBadge = "ABS BUY FLOOR";
+              caseTone = "border-teal-500/60 bg-teal-950/70 text-teal-200";
+              caseBadgeTone = "bg-teal-500 text-black";
+              caseAction = "Sellers slammed the bid (negative delta), yet price defended support with a lower wick and closed in upper 50%. Passive institutional buyers absorbed all selling. High-probability reversal floor!";
+            } else if ((upperWickPct >= 35 && barDelta > 0 && (hc.close - hc.low) / rng <= 0.55) || (priceUp && !cvdRising && Math.abs(barDelta) < 0.2 * barVol)) {
+              caseTitle = "⚠️ BEARISH ABSORPTION / FALSE UPSIDE";
+              caseBadge = "ABS SELL CAP";
+              caseTone = "border-amber-500/60 bg-amber-950/70 text-amber-200";
+              caseBadgeTone = "bg-amber-500 text-black";
+              caseAction = "Buyers chased the ask (positive delta) into resistance, but price rejected with an upper wick and closed weak, or price pushed up while CVD declined. Trapped buyers / distribution. Do not chase breakouts; tighten CE stops.";
+            } else if (priceDown && barDelta < 0 && !cvdRising) {
+              caseTitle = "🔴 GENUINE SELLING PRESSURE";
+              caseBadge = "SELL RALLIES / BOOK CE";
+              caseTone = "border-rose-500/60 bg-rose-950/70 text-rose-200";
+              caseBadgeTone = "bg-rose-500 text-white";
+              caseAction = "Price falling + negative bar delta (−Δ) + session CVD plunging lower. Aggressive sellers initiating displacement. Fade rallies into resistance / favor PE; avoid catching falling knives.";
+            }
+
+            return (
+              <div className="mt-2 rounded-lg border border-teal-500/50 bg-[#06111e]/95 p-2.5 font-mono text-[11px] leading-snug shadow-xl">
+                <div className="mb-1.5 flex items-center justify-between border-b border-teal-500/30 pb-1">
+                  <span className="flex items-center gap-1 font-bold text-teal-300 text-[11px]">
+                    <span>⚡ ALL DELTA DETAIL & ORDER FLOW GUIDANCE</span>
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-400">
+                    {tf.toUpperCase()} · {hm(hc.time)}
+                  </span>
+                </div>
+
+                {/* Telemetry Strip 1: Bar Delta & Volume Split */}
+                <div className="mb-1.5 rounded bg-ink-900/90 p-1.5 border border-ink-800">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 mb-0.5">
+                    <span>BAR DELTA & AGGRESSION TELEMETRY</span>
+                    <span className={barDelta >= 0 ? "text-emerald-300 font-extrabold" : "text-rose-300 font-extrabold"}>
+                      {barDelta >= 0 ? "+" : ""}{kfmt(barDelta)} ({deltaPct}%)
+                    </span>
+                  </div>
+                  <div className="text-[10.5px] text-slate-200 flex flex-wrap gap-x-2">
+                    <span>Bar Delta: <b className={barDelta >= 0 ? "text-emerald-400" : "text-rose-400"}>{barDelta >= 0 ? "+" : ""}{kfmt(barDelta)}</b></span>
+                    <span>·</span>
+                    <span>Buy Vol: <b className="text-emerald-300">{kfmt(buyVol)}</b></span>
+                    <span>vs</span>
+                    <span>Sell Vol: <b className="text-rose-300">{kfmt(sellVol)}</b></span>
+                    <span>·</span>
+                    <span>Total: <b className="text-white">{kfmt(barVol)}</b></span>
+                  </div>
+                </div>
+
+                {/* Telemetry Strip 2: Session CVD & Delta Tail */}
+                <div className="mb-1.5 rounded bg-ink-900/90 p-1.5 border border-ink-800">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 mb-0.5">
+                    <span>SESSION CVD & WICK TAIL ABSORPTION</span>
+                    <span className={cvdRising ? "text-emerald-300 font-bold" : "text-rose-300 font-bold"}>
+                      {cvdSlopeArrow}
+                    </span>
+                  </div>
+                  <div className="text-[10.5px] text-slate-200 flex flex-wrap gap-x-2">
+                    <span>Session CVD: <b className={sessionCvd >= 0 ? "text-emerald-400" : "text-rose-400"}>{sessionCvd >= 0 ? "+" : ""}{kfmt(sessionCvd)}</b> ({cvdSlopeArrow})</span>
+                    <span>·</span>
+                    <span className={isLowerWickAbs ? "text-teal-300 font-bold" : isUpperWickAbs ? "text-amber-300 font-bold" : "text-slate-400"}>
+                      {deltaTail}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Action Guidance Card */}
+                <div className={`rounded p-1.5 border ${caseTone}`}>
+                  <div className="flex items-center justify-between text-[10px] font-bold mb-0.5">
+                    <span>{caseTitle}</span>
+                    <span className={`px-1.5 py-0.2 rounded font-black text-[10px] ${caseBadgeTone}`}>
+                      {caseBadge}
+                    </span>
+                  </div>
+                  <div className="text-[10.5px] leading-snug">
+                    {caseAction}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {ob && <div className="mt-1.5 border-t border-ink-700 pt-1.5">
             <div className="flex items-baseline justify-between"><span className="font-semibold text-slate-200">📊 FUT OI bar</span>
               <span className="num text-slate-300">ΔOI <b className={(ob.doi ?? 0) >= 0 ? "text-bull-400" : "text-bear-400"}>{oiNumber(ob.doi)}</b> · OI {(ob.oi / 1e5).toFixed(1)}L</span></div>
