@@ -1860,15 +1860,20 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     ofPrim.current.set({ walls, bubbles: layers.bubbles ? bubbles : [], cells: layers.cells ? fpBars.filter((b) => b.rows.length) : [], oiLevels: layers.walls ? oiLevels : [] });
   }, [walls, bubbles, fpBars, layers.bubbles, layers.cells, oiLevels, layers.walls]);
   // ── stacked D / W / M volume nodes (refreshed every 5 min) + overextension entries ──
+  // Fetched when the LAYER is on OR the ● ENTRY alert is armed. Previously both were tied to the layer, so
+  // arming the alert chip and leaving the layer off produced silence — the entries were never computed, and
+  // nothing said why. Drawing is still gated on the layer below, so alerts work without the chart clutter.
+  // /api/nodes is cached 5 minutes server-side, so the extra arming costs ~1 request per 5 min.
+  const wantNodes = layers.nodes || (!!sig?.on && !!sig.kinds?.nodes);
   useEffect(() => {
-    if (!layers.nodes) { setNodesV(null); return; }
+    if (!wantNodes) { setNodesV(null); return; }
     let dead = false;
     const go = () => fetch("/api/nodes").then((r) => r.json()).then((j) => { if (!dead) setNodesV(j); }).catch(() => {});
     go(); const id = window.setInterval(go, 300000);
     return () => { dead = true; window.clearInterval(id); };
-  }, [layers.nodes]);
-  const nEntries = useMemo(() => layers.nodes && nodesV?.available
-    ? findEntries(candles, analysis?.volume?.vwap ?? [], nodesV) : [], [layers.nodes, nodesV, candles, analysis]);
+  }, [wantNodes]);
+  const nEntries = useMemo(() => wantNodes && nodesV?.available
+    ? findEntries(candles, analysis?.volume?.vwap ?? [], nodesV) : [], [wantNodes, nodesV, candles, analysis]);
   nEntRef.current = nEntries;
   useEffect(() => { ndPrim.current.set(layers.nodes ? nodesV : null, nEntries); }, [layers.nodes, nodesV, nEntries]);
   // ── gamma map + 3 confirmations ──

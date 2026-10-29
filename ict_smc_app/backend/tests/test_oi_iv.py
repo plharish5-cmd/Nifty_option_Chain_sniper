@@ -150,7 +150,13 @@ def test_rest_refresh_records_actual_requested_contract(monkeypatch):
     connection=sqlite3.connect(':memory:',isolation_level=None)
     connection.row_factory=sqlite3.Row;connection.executescript(db.SCHEMA)
     monkeypatch.setattr(db,'_conn',connection)
-    ts=int(session_bounds(now_ist().date())[0])
+    # Most recent session start that is NOT in the future. Pinning this to today's 09:15 made the test fail
+    # every morning before the open — refresh() correctly drops a future-dated candle, so it returned 0 and
+    # the assert below blamed the contract id. Behaviour is unchanged once the market is open.
+    from datetime import timedelta
+    _d=now_ist().date()
+    while int(session_bounds(_d)[0])>now_ist().timestamp(): _d-=timedelta(days=1)
+    ts=int(session_bounds(_d)[0])
     class Rest:
         async def intraday(self,sid,*args,**kwargs):
             assert sid=='ACTUAL-ID'

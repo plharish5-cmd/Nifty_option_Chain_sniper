@@ -79,7 +79,8 @@ export function scanSignals(o: {
   smt: SmtMark[] | null;
   dols: Dol[];
   gamma?: { time: number; side: "BUY" | "SELL" }[];
-  nodes?: { time: number; side: "BUY" | "SELL"; zone: { label: string; lo: number; hi: number }; z: number }[];
+  nodes?: { time: number; side: "BUY" | "SELL"; zone: { label: string; lo: number; hi: number }; z: number;
+    entry?: number; sl?: number; t1?: number; t2?: number; rr1?: number }[];
   flow?: { time: number; verdict: "BUY" | "SELL" | "WAIT"; prev: "BUY" | "SELL" | "WAIT" | null; bull: number; bear: number; head: string } | null;
   htfWicks?: HtfWick[];
 }): Ev[] {
@@ -290,7 +291,15 @@ export function scanSignals(o: {
   // ● ENTRY — overextension (VWAP ±2σ) into a stacked D/W/M zone
   const ne = (o.nodes ?? []).find((x) => x.time === t);
   const nSide = ne ? ne.side : null;
-  if (ne && K.nodes) add("nodes", ne.side, `● ENTRY ${ne.side} at ${ne.zone.label}`, `${ne.z.toFixed(1)}σ stretch into zone ${ne.zone.lo.toFixed(0)}–${ne.zone.hi.toFixed(0)} and closed back → ${leg(ne.side)} reversal. SL beyond the zone, first target VWAP.`);
+  // Carry the actual numbers, not "SL beyond the zone, first target VWAP" — an alert you have to go and
+  // look up a level for is an alert you act on late.
+  if (ne && K.nodes) {
+    const plan = ne.sl != null && ne.t1 != null && ne.t2 != null
+      ? ` SL ${ne.sl.toFixed(0)} · T1 ${ne.t1.toFixed(0)} (VWAP) · T2 ${ne.t2.toFixed(0)} · ${(ne.rr1 ?? 0).toFixed(1)}R. Book half at T1, stop to entry, rest to T2.`
+      : " SL beyond the zone, first target VWAP.";
+    add("nodes", ne.side, `● ENTRY ${ne.side} at ${ne.zone.label}${ne.t1 != null ? ` → ${ne.t1.toFixed(0)}` : ""}`,
+      `${ne.z.toFixed(1)}σ stretch into zone ${ne.zone.lo.toFixed(0)}–${ne.zone.hi.toFixed(0)} and closed back → ${leg(ne.side)} reversal.${plan}`);
+  }
 
   // 🧭 order-flow verdict — only when it FLIPS to BUY / SELL
   const f = o.flow && o.flow.time === t ? o.flow : null;
@@ -459,7 +468,7 @@ const HELP: Record<SigKind, { when: string; say: string }> = {
   crt: { when: "CRT entry — Setup D.", say: "Toward the other side of the CRT box; TP1 50 %, SL beyond the sweep wick." },
   dol: { when: "The D.O.L target is reached.", say: "“book profit / trail SL”" },
   gamma: { when: "γ ✓✓✓ — EMA 9/21/50 stack + a flag AT a gamma level breaking + volume ≥ 1.5× (needs the γ Gamma 3✓ layer on).", say: "“gamma BUY” — SL flag edge, target next gamma level." },
-  nodes: { when: "● ENTRY — price stretched beyond VWAP ±2σ INTO a stacked D/W/M volume zone and closed back (needs the Stacked nodes layer on).", say: "“ENTRY BUY at W M A” — reversal, first target VWAP." },
+  nodes: { when: "● ENTRY — price stretched beyond VWAP ±2σ INTO a stacked D/W/M volume zone and closed back (needs the Stacked nodes layer ON — the chip alone is not enough).", say: "“ENTRY BUY at W M A plus, target …” — reversal. Carries SL beyond the zone, T1 = VWAP, T2 = the next stacked zone past VWAP, and the R multiple." },
   flow: { when: "The order-flow read FLIPS to BUY or SELL (delta, CVD, stacked imbalance, big trades, room to the wall). Needs one Order-flow PRO layer on.", say: "“Order flow → BUY (4 vs 1)”" },
   abs: { when: "Institutional Absorption (aggressive volume absorbed at support/resistance) or Aggression spike prints on the closed candle.", say: "“ABSORPTION BUY — aggressive sellers absorbed at support” / “AGGRESSION SELL”" },
   wick: { when: "Price touches a virgin Higher Time Frame (HTF) wick for the FIRST TIME: 1H Hourly ★ (1×), 1D Daily ★★ (2×), or 1W Weekly ★★★ (3×). Alerts once only.", say: "“Hourly Wick first test support” / “Daily Wick first test” / “Weekly Wick first test”" },
