@@ -102,6 +102,7 @@ export interface SmartRow extends Row {
   convictionPct: number;
   unifiedRead: string;
   isActionable: boolean;
+  suppressed: boolean;        // demoted by arbitration / re-fire dedup, kept for audit
   isHighConviction: boolean;
 
   // Revamped Writers Graph Synergies
@@ -120,7 +121,7 @@ export interface PivotChip {
   spot?: number;
 }
 
-export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
+export function computeSmartRows(rawRows: Row[], tf: string, rvolByHhmm?: Map<string, number>): SmartRow[] {
   if (!rawRows || rawRows.length === 0) return [];
 
   const barMins = tf === "1m" ? 1 : tf === "3m" ? 3 : tf === "5m" ? 5 : tf === "15m" ? 15 : 60;
@@ -140,12 +141,28 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
   // a genuine range expansion is still readable rather than hidden.
   const SNIPER_R = 2.0;        // SNIPER tickets shipped an SL and no target at all
   const ARB_BARS = 3;          // 09:57 BREAKOUT CE and 10:00 BREAKDOWN PE, same strike, 3 min apart
+  const REFIRE_BARS = 5;       // same ticket re-signalled while the first one is still live
+  // Participation that earns a target beyond the day's range. 1.8x is NOT a new number: it is the
+  // threshold the backend already calls REAL_BREAKOUT_FUEL (engine/volume.py, `r >= 1.8`), so the
+  // clamp and the volume engine agree on what a real break looks like. If that constant ever moves
+  // into rules.json, this must follow it rather than drift into a second standard.
+  const RVOL_EXPANSION = 1.8;
 
-  function clampTgt(raw: number, tone: string, hi: number, lo: number) {
-    const capped = tone === "bull" ? Number.isFinite(hi) && raw > hi
-                 : tone === "bear" ? Number.isFinite(lo) && raw < lo : false;
-    const tgt = !capped ? raw : Math.round(tone === "bull" ? hi : lo);
-    return { tgt, txt: capped ? `${tgt} (capped at session ${tone === "bull" ? "high" : "low"}; raw ${raw})` : `${raw}` };
+  // The clamp exists because a target outside the session range needs a range BREAK to pay, and the
+  // setup never tested for one. RVOL is that test: when participation on the bar is genuinely elevated
+  // the expansion is real and the raw target stands, which is the escape hatch the clamp needs so it
+  // cannot cap a legitimate trend day down to a scalp.
+  function clampTgt(raw: number, tone: string, hi: number, lo: number, rvol?: number | null) {
+    const edge = tone === "bull" ? hi : lo;
+    const outside = tone === "bull" ? Number.isFinite(hi) && raw > hi
+                  : tone === "bear" ? Number.isFinite(lo) && raw < lo : false;
+    if (!outside) return { tgt: raw, txt: `${raw}`, capped: false };
+    if (rvol != null && rvol >= RVOL_EXPANSION) {
+      return { tgt: raw, txt: `${raw} (beyond session ${tone === "bull" ? "high" : "low"} — RVOL ${rvol.toFixed(1)}x confirms expansion)`, capped: false };
+    }
+    const tgt = Math.round(edge);
+    const why = rvol == null ? "no RVOL" : `RVOL ${rvol.toFixed(1)}x < ${RVOL_EXPANSION}x`;
+    return { tgt, txt: `${tgt} (capped at session ${tone === "bull" ? "high" : "low"}; raw ${raw}, ${why})`, capped: true };
   }
 
   // Last ticket fired, so an opposite-direction ticket minutes later can be flagged instead of
@@ -153,6 +170,10 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
   let lastTone: string | null = null;
   let lastToneIdx = -99;
   let lastToneBadge = "";
+
+  // Last ticket actually issued, so the SAME ticket re-signalled while the first is still live is
+  // reported as position management rather than as a second trade to take.
+  let lastFire: { sig: string; idx: number; ts: string; entry: number } | null = null;
 
   // Compute graph coordinate scale C_cell to match visual slope angles
   const allCr = chron.flatMap((x) => [x.ce_day != null ? x.ce_day / 1e7 : null, x.pe_day != null ? x.pe_day / 1e7 : null]).filter((x): x is number => x != null);
@@ -170,6 +191,10 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       sessionHigh = Math.max(sessionHigh, spot);
       sessionLow = Math.min(sessionLow, spot);
     }
+
+    // Participation on this bar, matched by "HH:MM". Absent (pre-map, or a bar the volume feed has no
+    // row for) stays null, and a null RVOL never relaxes the clamp — it only ever tightens it.
+    const barRvol = rvolByHhmm?.get(r.ts) ?? null;
 
     const pe_ce_delta_l = (r.pe_ce_chg ?? 0) / 1e5;
     const call_delta_l = (r.ce_chg ?? 0) / 1e5;
@@ -305,7 +330,7 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       const rawRisk = swingHigh30m - spot + 12;
       riskPts = Math.min(Math.max(Math.round(rawRisk), 15), 35);
       dynamicSl = Math.round(spot + riskPts);
-      const target = clampTgt(Math.round(spot - Math.max(spot - swingLow30m + 20, Math.round(riskPts * 1.8))), "bear", sessionHigh, sessionLow);
+      const target = clampTgt(Math.round(spot - Math.max(spot - swingLow30m + 20, Math.round(riskPts * 1.8))), "bear", sessionHigh, sessionLow, barRvol);
       if (swingHigh30m - spot > 75) {
         stage = 4;
         stageBadge = "🛡️ HOLD PE";
@@ -320,7 +345,7 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       const rawRisk = spot - swingLow30m + 12;
       riskPts = Math.min(Math.max(Math.round(rawRisk), 15), 35);
       dynamicSl = Math.round(spot - riskPts);
-      const target = clampTgt(Math.round(spot + Math.max(swingHigh30m - spot + 20, Math.round(riskPts * 1.8))), "bull", sessionHigh, sessionLow);
+      const target = clampTgt(Math.round(spot + Math.max(swingHigh30m - spot + 20, Math.round(riskPts * 1.8))), "bull", sessionHigh, sessionLow, barRvol);
       if (spot - swingLow30m > 75) {
         stage = 4;
         stageBadge = "🛡️ HOLD CE";
@@ -345,7 +370,10 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
         // by design. Printed as a break target so it is not mistaken for a mean-reversion objective.
         const sniperTgt = Math.round(spot - riskPts * SNIPER_R);
         const needsBreak = Number.isFinite(sessionLow) && sniperTgt < sessionLow;
-        actionText = `🎯 SNIPER BREAKDOWN: BUY ${atmStrike} PE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${sniperTgt} · ${SNIPER_R}R)${needsBreak ? ` — needs a break of the session low ${Math.round(sessionLow)} to pay` : ""}`;
+        const backed = barRvol != null && barRvol >= RVOL_EXPANSION;
+        actionText = `🎯 SNIPER BREAKDOWN: BUY ${atmStrike} PE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${sniperTgt} · ${SNIPER_R}R)`
+          + (needsBreak ? (backed ? ` — RVOL ${barRvol.toFixed(1)}x backs the break of ${Math.round(sessionLow)}`
+                                  : ` — needs a break of the session low ${Math.round(sessionLow)} to pay${barRvol != null ? `, and RVOL is only ${barRvol.toFixed(1)}x` : ""}`) : "");
       }
     } else if ((isZeroFlipBull || isWallShiftBull || (r.lv?.[2] === "break_up" && r.pro?.[2]?.includes("●"))) && pe_ce_delta_l >= -5.0 && pe_ce_day_cr >= -0.5) {
       stage = 1;
@@ -363,7 +391,10 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
         // NOT clamped — see SNIPER BREAKDOWN above; a breakout's target lies beyond the high by design.
         const sniperTgt = Math.round(spot + riskPts * SNIPER_R);
         const needsBreak = Number.isFinite(sessionHigh) && sniperTgt > sessionHigh;
-        actionText = `🎯 SNIPER BREAKOUT: BUY ${atmStrike} CE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${sniperTgt} · ${SNIPER_R}R)${needsBreak ? ` — needs a break of the session high ${Math.round(sessionHigh)} to pay` : ""}`;
+        const backed = barRvol != null && barRvol >= RVOL_EXPANSION;
+        actionText = `🎯 SNIPER BREAKOUT: BUY ${atmStrike} CE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${sniperTgt} · ${SNIPER_R}R)`
+          + (needsBreak ? (backed ? ` — RVOL ${barRvol.toFixed(1)}x backs the break of ${Math.round(sessionHigh)}`
+                                  : ` — needs a break of the session high ${Math.round(sessionHigh)} to pay${barRvol != null ? `, and RVOL is only ${barRvol.toFixed(1)}x` : ""}`) : "");
       }
     } else if (Math.abs(pe_ce_delta_l) >= 20 && (r.pro?.[2] === "●●" || r.pro?.[2] === "●●●" || r.act?.[0]?.includes("BUY"))) {
       stage = 3;
@@ -497,6 +528,27 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       }
     }
 
+    // Re-fire dedup. The same setup re-signalled a few bars later at effectively the same price is the
+    // first trade still being true, not a second trade to size into — and counting it twice is what
+    // makes a bad morning look like six losses instead of two. A repeat is only a re-fire while price
+    // has not moved more than half the risk; past that it is a genuinely different entry and stands.
+    if (!suppressed && isTicket && (actionTone === "bull" || actionTone === "bear")) {
+      const sig = `${stageBadge}|${actionTone}`;
+      const gap = lastFire ? i - lastFire.idx : 999;
+      const moved = lastFire ? Math.abs(spot - lastFire.entry) : Infinity;
+      const tol = Math.max(5, Math.round((riskPts ?? 20) / 2));
+      if (lastFire && lastFire.sig === sig && gap <= REFIRE_BARS && moved < tol) {
+        const wanted = stageBadge.replace(/^[^\w]+/, "").trim();
+        suppressed = true;
+        stage = 0;
+        stageBadge = "🔁 RE-FIRE";
+        actionTone = "warn";
+        actionText = `🔁 ${wanted} RE-FIRE — already fired at ${lastFire.ts} (${gap * barMins}m ago, entry moved only ${moved.toFixed(0)}pt of ${tol}pt). Manage that position; this is not a second trade.`;
+      } else {
+        lastFire = { sig, idx: i, ts: r.ts, entry: spot };
+      }
+    }
+
     // Conviction Calculation
     let convictionBadge = "· Noise";
     let convictionPct = 35;
@@ -587,6 +639,7 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       convictionPct,
       unifiedRead,
       isActionable,
+      suppressed,
       isHighConviction,
       callAngleDeg,
       putAngleDeg,
@@ -626,6 +679,38 @@ export function findTop5Pivots(smartRowsNewestFirst: SmartRow[]): PivotChip[] {
   if (p5) pivots.push({ ts: p5.ts, label: `${p5.ts} Short Cover (${Math.round(p5.spot)})`, tone: "bull", spot: p5.spot });
 
   return pivots;
+}
+
+/**
+ * RVOL per bar, keyed by the same "HH:MM" the PE−CE rows carry, so computeSmartRows can ask whether a
+ * target beyond the session range is backed by real participation.
+ *
+ * hub.volume_for() emits `"time": chart_time(ts)`, i.e. epoch ALREADY shifted by +19800 so a UTC-
+ * formatted axis reads IST. Formatting it as UTC is therefore correct and api.ts's istHM() — which adds
+ * the offset itself, for RAW epoch — must NOT be used here or every key lands 5h30m out.
+ *
+ * Read-only and failure-tolerant: an empty map means the clamp simply stays strict, which is the old
+ * behaviour, so a missing or broken volume feed can never loosen a target.
+ */
+function useRvolByHhmm(tf: string, tick: number): Map<string, number> {
+  const [m, setM] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    let dead = false;
+    fetch(`/api/analysis?tf=${tf}&inst=NIFTY`)
+      .then((r) => r.json())
+      .then((j: { volume?: { bars?: { time: number; rvol: number | null }[] } }) => {
+        if (dead) return;
+        const next = new Map<string, number>();
+        for (const b of j?.volume?.bars ?? []) {
+          if (b?.rvol == null || !Number.isFinite(b.rvol) || !Number.isFinite(b.time)) continue;
+          next.set(new Date(b.time * 1000).toISOString().slice(11, 16), b.rvol);
+        }
+        setM(next);
+      })
+      .catch((e) => { console.warn("[rvol] analysis fetch failed; targets stay clamped:", e); });
+    return () => { dead = true; };
+  }, [tf, tick]);
+  return m;
 }
 
 export function PeceTable({ tick }: { tick: number }) {
@@ -680,7 +765,8 @@ export function PeceTable({ tick }: { tick: number }) {
   }, []);
 
   const rawRows = d?.rows ?? [];
-  const smartRows = computeSmartRows(rawRows, tf);
+  const rvolByHhmm = useRvolByHhmm(tf, tick);
+  const smartRows = computeSmartRows(rawRows, tf, rvolByHhmm);
   const pivots = findTop5Pivots(smartRows);
 
   // ── Persist fired setups ──────────────────────────────────────────────────────────────────────────
@@ -696,7 +782,11 @@ export function PeceTable({ tick }: { tick: number }) {
     const fresh: Record<string, unknown>[] = [];
 
     for (const r of smartRows) {
-      if (!r.actionText || !r.actionText.includes("🎯")) continue;   // only real tickets, not HOLD/WAIT
+      // Real tickets, plus the ones arbitration or dedup demoted. A suppressed ticket has to be
+      // recorded too, or the suppression is unfalsifiable: without these rows there is no way to ask
+      // later whether standing aside saved money or cost it.
+      const isLive = r.actionText?.includes("🎯");
+      if (!r.actionText || !(isLive || r.suppressed)) continue;      // not HOLD/WAIT/noise
       if (r.dynamicSl == null || r.spot == null) continue;
 
       const key = `${r.ts}|${r.stageBadge}|${r.actionTone}|${r.spot}`;
@@ -727,6 +817,7 @@ export function PeceTable({ tick }: { tick: number }) {
           put_angle: r.putAngleDeg ?? null,
           session_high: r.sessionHigh ?? null,
           session_low: r.sessionLow ?? null,
+          suppressed: Boolean(r.suppressed),
         },
       });
     }
