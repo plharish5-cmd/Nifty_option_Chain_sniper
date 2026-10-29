@@ -20,6 +20,7 @@ import { BAR_SEC } from "./chartKit";
 import type { FpBar } from "./footprint";
 import type { SmtMark } from "./ocfeed";
 import type { Dol } from "./dol";
+import { dayRegime, isExpansionBreak } from "./regime";
 import { type HtfWick, isWickUntested, markWickTested } from "./htfWicks";
 
 export type SigKind = "cvd_buyers" | "cvd_sellers" | "cvd_nodes" | "bias" | "conf" | "ocAct" | "smt" | "ifvg" | "rjb" | "crt" | "dol" | "gamma" | "nodes" | "flow" | "abs" | "wick" | "aplus" | "deep_rev" | "trade_mgmt_trail";
@@ -314,8 +315,25 @@ export function scanSignals(o: {
   // SMT
   for (const m of smt ?? []) if (m.time === t && K.smt) add("smt", side(m.dir), `SMT ${m.dir === "bull" ? "▲" : "▼"}`, m.text);
 
-  // D.O.L reached
-  for (const d of dols) if (d.hit === t && K.dol) add("dol", "INFO", `D.O.L reached ${d.lo.toFixed(0)}`, `${d.label} reached — book profit / trail SL.`);
+  // D.O.L reached.
+  //
+  // This said "book profit / trail SL" for EVERY hit, unconditionally. On 29 Oct that meant each new
+  // session high fired an exit instruction -- "day high 22952 reached — book profit / trail SL" at
+  // 14:25, on a day that closed +3.77Cr bullish and +217 points. Telling a trader the move is over
+  // every time it extends is how a desk teaches its owner to fade trends.
+  //
+  // A new session extreme in the direction the day has already chosen is expansion, not exhaustion.
+  // An FVG fill is still a target hit, so it keeps the original wording.
+  for (const d of dols) if (d.hit === t && K.dol) {
+    const isSessionExtreme = /day (high|low)/i.test(d.label ?? "");
+    const dayCr = ocActs.find((x) => x.time === t)?.smartRow?.pe_ce_day_cr ?? null;
+    const reg = dayRegime(dayCr);
+    const expansion = isExpansionBreak(d.dir, isSessionExtreme, reg);
+    add("dol", "INFO", `D.O.L reached ${d.lo.toFixed(0)}`,
+      expansion
+        ? `${d.label} reached — EXPANSION, not exhaustion: the day is running ${dayCr! >= 0 ? "+" : ""}${dayCr!.toFixed(2)}Cr in this direction. Trail the stop; do not fade a fresh ${d.dir === "bull" ? "high" : "low"}.`
+        : `${d.label} reached — book profit / trail SL.`);
+  }
 
   // γ ✓✓✓ (recorded live by the gamma layer)
   const gm = (o.gamma ?? []).find((x) => x.time === t);

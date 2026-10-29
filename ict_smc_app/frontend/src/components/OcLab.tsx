@@ -9,6 +9,7 @@ import PcrTrinitySuite from "./PcrTrinitySuite";
 import PeceMatrix from "./PeceMatrix";
 import SmartOISuite from "./SmartOISuite";
 import { GapSniperTab } from "./GapSniperTab";
+import { COUNTER_TREND_CAP, counterTrendNote, dayRegime, fightsTheDay } from "./regime";
 import {
   CandlestickSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp,
@@ -593,11 +594,18 @@ export function computeSmartRows(rawRows: Row[], tf: string, rvolByHhmm?: Map<st
     const isBearishRegimeOnGraph = callAngleDeg >= 25 || isScissor || putAngleDeg <= -20;
     const isBullishRegimeOnGraph = putAngleDeg >= 25 || (isScissor && callAngleDeg < -15) || callAngleDeg <= -20;
 
-    if (actionTone === "bear" && isBearishRegimeOnGraph) {
+    // Does the DAY already have a side, and is this ticket fighting it? Both angle reads above are
+    // instantaneous -- one candle -- so a bear bar inside a bull trend scored A+ 95% all day long,
+    // which is exactly what a trend looks like from a single bar. pe_ce_day_cr (the day's cumulative
+    // Net PE−CE) has been in scope the whole time; it just was not consulted.
+    const regime = dayRegime(pe_ce_day_cr);
+    const againstDay = fightsTheDay(actionTone, regime);
+
+    if (actionTone === "bear" && isBearishRegimeOnGraph && !againstDay) {
       isSynergy = true;
       convictionPct = 95;
       convictionBadge = "●●● A+ (95%)";
-    } else if (actionTone === "bull" && isBullishRegimeOnGraph) {
+    } else if (actionTone === "bull" && isBullishRegimeOnGraph && !againstDay) {
       isSynergy = true;
       convictionPct = 95;
       convictionBadge = "●●● A+ (95%)";
@@ -609,6 +617,16 @@ export function computeSmartRows(rawRows: Row[], tf: string, rvolByHhmm?: Map<st
       convictionBadge = `● B (${convictionPct}%)`;
     } else {
       convictionBadge = `· Noise (${convictionPct}%)`;
+    }
+
+    // Counter-trend tickets are capped, not removed: a trend does end, and the trader may still want
+    // the trade. What it must never do again is present as A+ conviction while fighting a day running
+    // the other way. The reason is printed, so overruling it is a decision rather than an oversight.
+    if (againstDay) {
+      isSynergy = false;
+      convictionPct = Math.min(convictionPct, COUNTER_TREND_CAP);
+      convictionBadge = `⚠ ${convictionPct}% COUNTER-TREND`;
+      if (actionText.includes("🎯")) actionText += ` · ${counterTrendNote(pe_ce_day_cr, regime)}`;
     }
 
     let unifiedRead = r.meaning || r.read[0];
