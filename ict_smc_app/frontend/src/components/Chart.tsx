@@ -2009,6 +2009,10 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const nEntries = useMemo(() => wantNodes && nodesV?.available
     ? findEntries(candles, analysis?.volume?.vwap ?? [], nodesV) : [], [wantNodes, nodesV, candles, analysis]);
   nEntRef.current = nEntries;
+  // Entries must be gated on the LAYER exactly like the zones are. This line passed nEntries through
+  // unconditionally, which was harmless only because nEntries used to be [] whenever the layer was off.
+  // Widening the fetch to arm the ● ENTRY alert made it populate with the layer off, so the markers drew
+  // on a chart with nothing selected. The alert still computes from nEntries; only drawing is gated.
   useEffect(() => { ndPrim.current.set(isNodesOn ? nodesV : null, isNodesOn ? nEntries : []); }, [isNodesOn, nodesV, nEntries]);
   // ── gamma map + 3 confirmations ──
   const rvMap = useMemo(() => new Map((analysis?.volume?.bars ?? []).map((b) => [b.time, b.rvol])), [analysis]);
