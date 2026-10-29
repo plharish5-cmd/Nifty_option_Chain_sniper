@@ -10,6 +10,7 @@ import PeceMatrix from "./PeceMatrix";
 import SmartOISuite from "./SmartOISuite";
 import { GapSniperTab } from "./GapSniperTab";
 import { COUNTER_TREND_CAP, counterTrendNote, dayRegime, fightsTheDay } from "./regime";
+import { deskState, isSideAllowed, spokenFor, stateChangeIndices, type DeskState } from "./deskState";
 import {
   CandlestickSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp,
@@ -757,6 +758,43 @@ function useRvolByHhmm(tf: string, tick: number): { rvol: Map<string, number>; r
   return { rvol: m, ready };
 }
 
+/**
+ * The one line you read while a trade is on: PERMISSION · REGIME · ACTION.
+ *
+ * Deliberately large, deliberately three fields, deliberately colour-first -- it has to be legible in
+ * about a second, from across the room, without actually reading it. Everything else on this screen
+ * is for understanding the day afterwards; this is the only part for deciding during it.
+ */
+function DeskStateBar({ s, refuseMode, onToggleRefuse }:
+    { s: DeskState | null; refuseMode: boolean; onToggleRefuse: () => void }) {
+  if (!s) return null;
+  const skin =
+    s.tone === "bull" ? "bg-emerald-950/80 border-emerald-500 text-emerald-200"
+    : s.tone === "bear" ? "bg-rose-950/80 border-rose-500 text-rose-200"
+    : s.tone === "warn" ? "bg-amber-950/70 border-amber-600/80 text-amber-200"
+    : "bg-slate-900/80 border-slate-600 text-slate-300";
+  const dot = s.tone === "bull" ? "🟢" : s.tone === "bear" ? "🔴" : s.tone === "warn" ? "🏁" : "⚪";
+  const ringing = s.action === "ENTER";
+  return (
+    <div className={`flex items-center justify-between gap-3 border-b-2 px-3 py-2 ${skin} ${ringing ? "ring-1 ring-inset ring-white/25" : ""}`}>
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="text-[17px] leading-none">{dot}</span>
+        <span className="truncate text-[15px] font-extrabold tracking-tight">{s.line}</span>
+      </div>
+      <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200"
+             title={"Hide tickets the day forbids, instead of showing them greyed out.\n\n"
+               + "On a LONG ONLY day the short ticket is not rendered at all. A trade you cannot see "
+               + "is one you cannot talk yourself into -- which is the actual failure mode, since the "
+               + "losses came from discretionary shorts rather than from the desk's own tickets.\n\n"
+               + "Switch off to see every ticket again; the table itself is unchanged either way."}>
+        <input type="checkbox" checked={refuseMode} onChange={onToggleRefuse}
+               className="h-3 w-3 cursor-pointer rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0" />
+        <span>🚫 Hide blocked</span>
+      </label>
+    </div>
+  );
+}
+
 export function PeceTable({ tick }: { tick: number }) {
   const [tableMode, setTableMode] = useState<"matrix" | "classic">(() => {
     try {
@@ -776,7 +814,16 @@ export function PeceTable({ tick }: { tick: number }) {
   const [n, setN] = useState(10);
   const [d, busy] = useOc<Pece>("pece", `tf=${tf}&mode=${mode}&n=${n}`, tick);
 
-  const [filterMode, setFilterMode] = useState<"actionable" | "bursts" | "all_market">("actionable");
+  const [filterMode, setFilterMode] = useState<"state" | "actionable" | "bursts" | "all_market">("state");
+  // Hide tickets the day forbids rather than greying them: an instruction you cannot see is one
+  // you cannot talk yourself into. Toggleable, because this is the most opinionated piece here.
+  const [refuseMode, setRefuseMode] = useState<boolean>(() => {
+    try { return localStorage.getItem("ict_refuse_mode") !== "0"; } catch { return true; }
+  });
+  const toggleRefuse = () => setRefuseMode((v) => {
+    try { localStorage.setItem("ict_refuse_mode", v ? "0" : "1"); } catch { /* ignore */ }
+    return !v;
+  });
   const [showAfterClose, setShowAfterClose] = useState<boolean>(false);
   const [highlightedTs, setHighlightedTs] = useState<string | null>(null);
 
@@ -939,6 +986,35 @@ export function PeceTable({ tick }: { tick: number }) {
     }
   }, [smartRows, soundOn]);
 
+  // ── desk state ────────────────────────────────────────────────────────────────────────────────
+  // Three fields reduced from what is already on the row (see deskState.ts). No new signal.
+  const liveStateRow = smartRows.find((r) => showAfterClose || r.ts < "15:30") ?? smartRows[0] ?? null;
+  const live: DeskState | null = liveStateRow ? deskState(liveStateRow) : null;
+  const stateIdx = new Set(stateChangeIndices(smartRows));
+
+  // ── the desk speaks only when the STATE changes ───────────────────────────────────────────────
+  // Everything used to talk, so nothing registered. This keys off speechKey, which ignores the
+  // WAIT<->HOLD churn inside a trend: on 29 Oct that is 8 utterances across the whole session
+  // instead of one per bar. Each one therefore means something.
+  const lastSpokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!live) return;
+    if (lastSpokenRef.current === null) { lastSpokenRef.current = live.speechKey; return; }  // no greeting on load
+    if (lastSpokenRef.current === live.speechKey) return;
+    lastSpokenRef.current = live.speechKey;
+    if (!soundOn) return;
+    try {
+      if ("speechSynthesis" in window) {
+        if (speechSynthesis.paused) speechSynthesis.resume();
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(spokenFor(live));
+        u.rate = 1.05;
+        speechSynthesis.speak(u);
+      }
+    } catch { /* speech is an enhancement; the banner is the real signal */ }
+    playOiBeep(live.tone === "bear" ? "angleBear" : "angleBull");
+  }, [live, soundOn]);
+
   // Card 1 active trade plan row (locks onto last market-hours row if viewing after 15:30)
   const isEodSnapshot = smartRows.length > 0 && smartRows[0].ts >= "15:30";
   const activePlanRow = (() => {
@@ -972,6 +1048,11 @@ export function PeceTable({ tick }: { tick: number }) {
     if (!showAfterClose && r.ts >= "15:30") {
       return false;
     }
+    if (filterMode === "state") {
+      // 126 rows -> the handful where the desk's state actually changed. The narrative is not
+      // deleted; it is one click away, to be read after the trade rather than during it.
+      return stateIdx.has(idx) || idx === 0;
+    }
     if (filterMode === "actionable") {
       return r.isActionable || idx < 3;
     }
@@ -981,6 +1062,7 @@ export function PeceTable({ tick }: { tick: number }) {
     return true; // all_market
   });
 
+  const stateCount = smartRows.filter((r, i) => (showAfterClose || r.ts < "15:30") && stateIdx.has(i)).length;
   const actionableCount = smartRows.filter((r) => (showAfterClose || r.ts < "15:30") && r.isActionable).length;
   const burstCount = smartRows.filter((r) => (showAfterClose || r.ts < "15:30") && r.isHighConviction).length;
   const marketRowsCount = smartRows.filter((r) => showAfterClose || r.ts < "15:30").length;
@@ -988,6 +1070,7 @@ export function PeceTable({ tick }: { tick: number }) {
   if (tableMode === "matrix") {
     return (
       <div className="flex h-full flex-col bg-[#070c17]">
+        <DeskStateBar s={live} refuseMode={refuseMode} onToggleRefuse={toggleRefuse} />
         <div className="flex items-center justify-between border-b border-ink-800 bg-[#091122] px-3 py-1 text-[11px]">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-emerald-400">⚡ PE-CE Institutional Matrix 2.0</span>
@@ -1017,6 +1100,7 @@ export function PeceTable({ tick }: { tick: number }) {
 
   return (
     <div className="flex h-full flex-col bg-[#0b1220]">
+      <DeskStateBar s={live} refuseMode={refuseMode} onToggleRefuse={toggleRefuse} />
       <div className="flex items-center justify-between border-b border-ink-800 bg-[#091122] px-3 py-1 text-[11px]">
         <div className="flex items-center gap-2">
           <span className="font-bold text-slate-400">Classic PE − CE OI Table</span>
@@ -1259,6 +1343,20 @@ export function PeceTable({ tick }: { tick: number }) {
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-800 bg-[#070c18] px-3 py-1.5 text-[11px]">
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Views:</span>
+          <button
+            onClick={() => setFilterMode("state")}
+            className={`px-2.5 py-0.5 rounded font-bold transition-colors ${
+              filterMode === "state"
+                ? "bg-emerald-500/25 text-emerald-300 border border-emerald-500/70"
+                : "bg-ink-850 text-slate-400 border border-ink-700 hover:text-slate-200"
+            }`}
+            title={"Only the rows where the desk's STATE changed -- permission, regime or action.\n\n"
+              + "A whole session collapses from ~126 rows to a handful, and on a trend day to almost "
+              + "none: that stillness IS the signal. The narrative is not deleted, it is one click "
+              + "away in the other views -- read it after the trade, not during it."}
+          >
+            🚦 State Changes ({stateCount})
+          </button>
           <button
             onClick={() => setFilterMode("actionable")}
             className={`px-2.5 py-0.5 rounded font-bold transition-colors ${
@@ -1559,7 +1657,21 @@ export function PeceTable({ tick }: { tick: number }) {
                           ? "bg-ink-850 text-slate-300 border-ink-700 font-mono"
                           : "bg-ink-900/60 text-slate-500 border-ink-800"
                       }`}>
-                        {r.actionText}
+                        {(() => {
+                          // THE REFUSAL. On a LONG ONLY day a short ticket is not greyed out, it is
+                          // not rendered -- you cannot take a trade you cannot see. Only live 🎯
+                          // tickets are hidden; HOLD / TRAIL / management lines always survive,
+                          // because an open position still has to be managed whatever the day does.
+                          if (!refuseMode || !r.actionText.includes("🎯") || !live) return r.actionText;
+                          const side = r.actionTone === "bull" ? "bull" : r.actionTone === "bear" ? "bear" : null;
+                          if (isSideAllowed(side, live.permission)) return r.actionText;
+                          return (
+                            <span className="italic text-slate-600"
+                                  title={`A ${side === "bear" ? "short" : "long"} ticket fired here, but the day is ${live.permission.replace("_", " ")}. Untick "Hide blocked" above to see it.`}>
+                              🚫 blocked by the day — {live.permission.replace("_", " ")}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   </td>
