@@ -345,6 +345,43 @@ def institutional_levels_endpoint(
     )
 
 
+@app.get("/api/desk/divergence")
+def divergence_endpoint(
+    tf: str = Query("3m", description="1m | 3m | 5m | 15m | 1h"),
+    day_regime: str = Query("none", description='"bull" | "bear" | "none" — the desk\'s cumulative Net PE−CE regime'),
+):
+    """RSI/price divergence (watch -> trigger -> expire) plus the price/VIX context read.
+
+    The RSI engine deliberately mirrors cvd_divergence.py: a divergence ARMS a watch with a trigger
+    level and only becomes anything when price CLOSES through it. On 29 Oct the OI divergence fired
+    five bearish warnings with no such gate on a session that ran +217 points; the CVD engine, which
+    has the gate, armed twice and ended INVALIDATED and EXPIRED with no bad trade. Pass day_regime so
+    a reversal watch pointing against a decided day is vetoed rather than surfaced.
+
+    VIX is context only and never an entry; when the VIX series is missing it reports UNAVAILABLE
+    rather than assuming a relationship.
+    """
+    from .. import db
+    from ..engine import rsi_divergence, vix_divergence
+    from ..timeutil import now_epoch, now_ist, session_bounds
+    if tf not in rsi_divergence.BAR_SECONDS:
+        raise HTTPException(400, f"bad tf: {tf}")
+
+    h = _h()
+    step = rsi_divergence.BAR_SECONDS[tf]
+    t0, _t1 = session_bounds(now_ist().date())
+    one_min = db.candles_1m(h.nifty, int(t0)) or []
+
+    bars = rsi_divergence.aggregate_1m(one_min, step, int(now_epoch()))
+
+    vix_bars = db.candles_1m(h.vix, int(t0)) or []
+    return {
+        "ok": True, "tf": tf, "day_regime": day_regime,
+        "rsi": rsi_divergence.compute_rsi_divergence(bars, tf=tf, day_regime=day_regime),
+        "vix": vix_divergence.compute_vix_divergence(bars, vix_bars),
+    }
+
+
 @app.get("/api/oi/matrix")
 @app.get("/api/chain/oi-matrix")
 def oi_matrix(

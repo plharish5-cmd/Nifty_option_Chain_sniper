@@ -813,6 +813,28 @@
     "backfill_minutes": 60,
     "max_events": 60
   },
+  "rsi_divergence": {
+    "_note": "RSI/price divergence. A divergence is a WATCH: nothing fires until price closes through structure_trigger. Regular = reversal, hidden = continuation. See engine/rsi_divergence.py.",
+    "enabled": true,
+    "timeframe": "3m",
+    "rsi_period": 14,
+    "pivot_window": 3,
+    "min_pivot_gap_bars": 3,
+    "max_pivot_gap_bars": 30,
+    "min_price_diff_pts": 8.0,
+    "min_rsi_diff": 3.0,
+    "expiry_bars": 10,
+    "structure_buffer_pts": 1.0,
+    "sl_buffer_pts": 12.0
+  },
+  "vix_divergence": {
+    "_note": "Price vs INDIA VIX. CONTEXT ONLY - never an entry. Rising VIX into a rally = protection bought into strength.",
+    "enabled": true,
+    "lookback_bars": 20,
+    "min_price_move_pts": 25.0,
+    "min_vix_move_pct": 1.5,
+    "match_tolerance_s": 300
+  },
   "institutional_levels": {
     "_note": "Institutional ICT Reference Levels (PDH, PDL, Session Open, Midnight Open) & True Breakout Engine thresholds",
     "rvol_breakout_threshold": 1.5,
