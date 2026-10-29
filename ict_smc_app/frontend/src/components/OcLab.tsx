@@ -765,8 +765,8 @@ function useRvolByHhmm(tf: string, tick: number): { rvol: Map<string, number>; r
  * about a second, from across the room, without actually reading it. Everything else on this screen
  * is for understanding the day afterwards; this is the only part for deciding during it.
  */
-function DeskStateBar({ s, refuseMode, onToggleRefuse }:
-    { s: DeskState | null; refuseMode: boolean; onToggleRefuse: () => void }) {
+function DeskStateBar({ s, refuseMode, onToggleRefuse, showRefuse }:
+    { s: DeskState | null; refuseMode: boolean; onToggleRefuse: () => void; showRefuse: boolean }) {
   if (!s) return null;
   const skin =
     s.tone === "bull" ? "bg-emerald-950/80 border-emerald-500 text-emerald-200"
@@ -781,7 +781,7 @@ function DeskStateBar({ s, refuseMode, onToggleRefuse }:
         <span className="text-[17px] leading-none">{dot}</span>
         <span className="truncate text-[15px] font-extrabold tracking-tight">{s.line}</span>
       </div>
-      <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200"
+      {showRefuse && <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200"
              title={"Hide tickets the day forbids, instead of showing them greyed out.\n\n"
                + "On a LONG ONLY day the short ticket is not rendered at all. A trade you cannot see "
                + "is one you cannot talk yourself into -- which is the actual failure mode, since the "
@@ -790,7 +790,7 @@ function DeskStateBar({ s, refuseMode, onToggleRefuse }:
         <input type="checkbox" checked={refuseMode} onChange={onToggleRefuse}
                className="h-3 w-3 cursor-pointer rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0" />
         <span>🚫 Hide blocked</span>
-      </label>
+      </label>}
     </div>
   );
 }
@@ -1070,7 +1070,7 @@ export function PeceTable({ tick }: { tick: number }) {
   if (tableMode === "matrix") {
     return (
       <div className="flex h-full flex-col bg-[#070c17]">
-        <DeskStateBar s={live} refuseMode={refuseMode} onToggleRefuse={toggleRefuse} />
+        <DeskStateBar s={live} refuseMode={refuseMode} onToggleRefuse={toggleRefuse} showRefuse={filterMode === "state"} />
         <div className="flex items-center justify-between border-b border-ink-800 bg-[#091122] px-3 py-1 text-[11px]">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-emerald-400">⚡ PE-CE Institutional Matrix 2.0</span>
@@ -1100,7 +1100,7 @@ export function PeceTable({ tick }: { tick: number }) {
 
   return (
     <div className="flex h-full flex-col bg-[#0b1220]">
-      <DeskStateBar s={live} refuseMode={refuseMode} onToggleRefuse={toggleRefuse} />
+      <DeskStateBar s={live} refuseMode={refuseMode} onToggleRefuse={toggleRefuse} showRefuse={filterMode === "state"} />
       <div className="flex items-center justify-between border-b border-ink-800 bg-[#091122] px-3 py-1 text-[11px]">
         <div className="flex items-center gap-2">
           <span className="font-bold text-slate-400">Classic PE − CE OI Table</span>
@@ -1662,13 +1662,23 @@ export function PeceTable({ tick }: { tick: number }) {
                           // not rendered -- you cannot take a trade you cannot see. Only live 🎯
                           // tickets are hidden; HOLD / TRAIL / management lines always survive,
                           // because an open position still has to be managed whatever the day does.
-                          if (!refuseMode || !r.actionText.includes("🎯") || !live) return r.actionText;
+                          //
+                          // Scoped to the 🚦 State Changes view ONLY. The other three views are
+                          // research surfaces -- you go to them to see what actually fired and when,
+                          // and a history with trades silently removed from it is not a record.
+                          // Hiding belongs where the decision is made, not where it is reviewed.
+                          if (filterMode !== "state" || !refuseMode || !r.actionText.includes("🎯")) return r.actionText;
+                          // Judged by the state at THIS ROW'S time, never the live one. Using the live
+                          // state meant that after the close -- when live is EOD, permission NONE --
+                          // every ticket in the day's history read "blocked", including the 12:18 and
+                          // 13:18 dip buys that were entirely with the trend when they fired.
+                          const rowState = deskState(r);
                           const side = r.actionTone === "bull" ? "bull" : r.actionTone === "bear" ? "bear" : null;
-                          if (isSideAllowed(side, live.permission)) return r.actionText;
+                          if (isSideAllowed(side, rowState.permission)) return r.actionText;
                           return (
                             <span className="italic text-slate-600"
-                                  title={`A ${side === "bear" ? "short" : "long"} ticket fired here, but the day is ${live.permission.replace("_", " ")}. Untick "Hide blocked" above to see it.`}>
-                              🚫 blocked by the day — {live.permission.replace("_", " ")}
+                                  title={`A ${side === "bear" ? "short" : "long"} ticket fired here, but at ${r.ts} the desk was ${rowState.permission.replace("_", " ")}. Untick "Hide blocked" above, or switch to another view, to see it.`}>
+                              🚫 blocked at {r.ts} — {rowState.permission.replace("_", " ")}
                             </span>
                           );
                         })()}
