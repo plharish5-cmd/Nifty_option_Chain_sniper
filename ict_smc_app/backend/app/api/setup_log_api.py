@@ -73,20 +73,20 @@ def _sanitize_sl(entry: Optional[float], sl: Optional[float], side: str, payload
 
 
 def _ensure_tp(entry: Optional[float], sl: Optional[float], tp: Optional[float], side: str, setup: str) -> Optional[float]:
-    if tp is not None:
-        return round(tp, 1)
-    if entry is None or sl is None:
-        return None
-    risk = abs(entry - sl)
-    if risk < 1.0:
-        return None
-    is_bull = side in ("bull", "buy") or "BREAKOUT" in setup or "DIP BUY" in setup
-    is_bear = side in ("bear", "sell") or "BREAKDOWN" in setup or "PULLBACK" in setup
-    if is_bull:
-        return round(entry + 2.0 * risk, 1)
-    elif is_bear:
-        return round(entry - 2.0 * risk, 1)
-    return None
+    """Record the target the trader was SHOWN, or nothing.
+
+    This used to compute `entry +/- 2R` whenever tp arrived empty. That writes a number nobody ever
+    saw into the one table whose purpose is to answer "what did the desk actually say, and was it
+    right?" -- 29 Oct 09:57 SNIPER BREAKOUT displayed "(35pt risk)" with no target at all, and was
+    stored as tp 22815.2. It also silently overrode the clamp: a ticket shown "Tgt 22867 (capped at
+    session high)" would be recorded with a raw 2R extension instead of the capped figure the trader
+    traded off, making every R-multiple computed from this table fiction.
+
+    Empty is now kept empty. A ticket with no target is a real finding about the signal, not a gap to
+    fill -- and since every sniper now ships a 2R target client-side, a NULL here flags an old row or
+    a genuine bug rather than something to paper over.
+    """
+    return None if tp is None else round(tp, 1)
 
 
 def _resolve_ts(s: "SetupIn") -> int:
@@ -111,49 +111,37 @@ def log_setups(batch: SetupBatch) -> Dict[str, Any]:
     if not rows:
         return {"ok": True, "stored": 0, "received": 0}
 
-    # 1. Identify any conflicted buckets in this batch or in DB
-    conflicted_buckets: set[int] = set()
-    for s in rows:
-        ts_val = _resolve_ts(s)
-        b_bucket = (ts_val // 180) * 180
-        is_conflict = (
-            s.setup == "CONFLICT"
-            or s.side == "warn"
-            or (s.payload and isinstance(s.payload, dict) and s.payload.get("suppressed"))
-        )
-        if is_conflict:
-            conflicted_buckets.add(b_bucket)
-
-    # Clean up any existing conflicting entries in DB for these conflicted buckets
-    for b_bucket in conflicted_buckets:
-        db.execute(
-            "DELETE FROM setup_log WHERE ts >= ? AND ts < ? AND setup IN ('SNIPER BREAKDOWN', 'SNIPER BREAKOUT')",
-            (b_bucket, b_bucket + 180),
-        )
-
+    # A CONFLICT or RE-FIRE row used to DELETE the SNIPER ticket in its bucket. That erased the very
+    # thing suppression has to be judged by: with the original gone, "did standing aside cost a good
+    # trade?" has no answer, and the arbitration becomes an unmeasurable veto. It was also deleting by
+    # bucket+setup regardless of side, so an unrelated ticket in the same bucket went with it.
+    #
+    # The premature rows it was cleaning up (e.g. 29 Oct 10:00, where both a SNIPER BREAKDOWN and the
+    # CONFLICT that demoted it were stored) can no longer be written at all: the client posts closed
+    # bars only, so a bar is logged once, in its final state. Nothing is deleted here any more.
     stored = 0
     seen_buckets: set[Tuple[int, str, str]] = set()
 
     for s in rows:
         try:
             s.ts = _resolve_ts(s)
-            b_bucket = (int(s.ts) // 180) * 180
+            # One bar is one signal, so the bar's own ts IS the bucket. The previous (ts // 180)
+            # hardcoded a 3-minute bar: on the 1m timeframe three consecutive bars fall in one bucket,
+            # so two real signals out of every three were silently dropped. Bucketing on the exact ts
+            # is timeframe-agnostic and matches the client key (ts|setup|side) exactly.
+            b_bucket = int(s.ts)
             clean_setup = s.setup.strip()
             clean_side = s.side.strip()
 
-            # Suppress conflicting directional entries (SNIPER BREAKOUT / BREAKDOWN)
-            if clean_setup in ("SNIPER BREAKDOWN", "SNIPER BREAKOUT") and b_bucket in conflicted_buckets:
-                continue
-
-            # Deduplicate per 3-minute bar bucket for a given (setup, side)
+            # Deduplicate per bar for a given (setup, side)
             bucket_key = (b_bucket, clean_setup, clean_side)
             if bucket_key in seen_buckets:
                 continue
 
             # Check if canonical row already exists in database for this 3m bucket
             existing = db.query(
-                "SELECT 1 FROM setup_log WHERE ts >= ? AND ts < ? AND setup = ? AND side = ? LIMIT 1",
-                (b_bucket, b_bucket + 180, clean_setup, clean_side),
+                "SELECT 1 FROM setup_log WHERE ts = ? AND setup = ? AND side = ? LIMIT 1",
+                (b_bucket, clean_setup, clean_side),
             )
             if existing:
                 seen_buckets.add(bucket_key)

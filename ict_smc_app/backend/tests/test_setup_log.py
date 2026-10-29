@@ -150,50 +150,79 @@ def test_truncated_sl_reconstructed_to_5_digits():
     assert match[0]["sl"] == 22796.0, f"Expected 22796.0 but got {match[0]['sl']}"
 
 
-def test_three_minute_bucket_deduplication():
-    """Validates that at most 1 canonical row is logged per 3-minute candle for a given (setup, side)."""
+def test_one_row_per_bar_even_when_the_browser_reposts():
+    """The client re-posts the same closed bar on every poll; the bar is one signal, so one row.
+
+    The ts is derived from the bar's "HH:MM", so every re-post of a bar carries the SAME ts. Dedup is
+    therefore on the bar itself -- (ts, setup, side) -- which is exactly the client's own key.
+    """
     base_ts = 1793248020  # 09:57 IST
-    # Simulate 3 ticks arriving inside the same 3m bar
-    ticks = [
-        {"ts": base_ts + 0, "key": f"{base_ts}|tick1", "setup": "SNIPER BREAKOUT", "side": "bull", "entry": 22745.05, "sl": 22710.0},
-        {"ts": base_ts + 30, "key": f"{base_ts}|tick2", "setup": "SNIPER BREAKOUT", "side": "bull", "entry": 22741.15, "sl": 22706.0},
-        {"ts": base_ts + 60, "key": f"{base_ts}|tick3", "setup": "SNIPER BREAKOUT", "side": "bull", "entry": 22743.35, "sl": 22708.0},
-    ]
-    r = client.post("/api/setups/log", json={"setups": ticks})
+    reposts = [
+        {"ts": base_ts, "key": f"{base_ts}|SNIPER BREAKOUT|bull", "setup": "SNIPER BREAKOUT",
+         "side": "bull", "entry": 22745.05, "sl": 22710.0, "tp": 22815.1},
+    ] * 3
+    r = client.post("/api/setups/log", json={"setups": reposts})
     assert r.status_code == 200
-    assert r.json()["stored"] == 1  # exactly 1 stored, others deduplicated
+    assert r.json()["stored"] == 1, "a re-post of the same bar must be a no-op"
 
     from app.timeutil import ist_date
     day = ist_date(base_ts).isoformat()
     rows = client.get("/api/setups", params={"d": day}).json()["setups"]
-    breakout_rows = [s for s in rows if (s["ts"] // 180) * 180 == (base_ts // 180) * 180 and s["setup"] == "SNIPER BREAKOUT"]
-    assert len(breakout_rows) == 1, f"Expected 1 deduplicated row, found {len(breakout_rows)}"
+    assert len([s for s in rows if s["ts"] == base_ts and s["setup"] == "SNIPER BREAKOUT"]) == 1
 
 
-def test_tp_always_populated_on_sniper_breakout():
-    """Validates that directional setups with missing tp automatically compute 2.0R target."""
+def test_consecutive_one_minute_bars_are_not_merged():
+    """Regression: bucketing on (ts // 180) collapsed three 1m bars into one 3m bucket, so two real
+    signals out of every three were silently dropped on the 1m timeframe."""
+    base_ts = 1793250000 - (1793250000 % 60)
+    bars = [{"ts": base_ts + i * 60, "key": f"m1-{i}-{base_ts}", "setup": "DIP BUY CE", "side": "bull",
+             "entry": 22800.0 + i, "sl": 22780.0 + i, "tp": 22840.0 + i} for i in range(3)]
+    r = client.post("/api/setups/log", json={"setups": bars})
+    assert r.json()["stored"] == 3, "three distinct 1-minute bars are three distinct signals"
+
+
+def test_a_conflict_does_not_delete_the_ticket_it_suppressed():
+    """Arbitration has to stay falsifiable: if the suppressed ticket is deleted, 'did standing aside
+    cost a good trade?' can never be answered, and the veto becomes unmeasurable."""
+    base_ts = 1793251200 - (1793251200 % 180)
+    client.post("/api/setups/log", json={"setups": [{
+        "ts": base_ts, "key": f"keep-brk-{base_ts}", "setup": "SNIPER BREAKOUT", "side": "bull",
+        "entry": 22760.0, "sl": 22730.0, "tp": 22820.0}]})
+    client.post("/api/setups/log", json={"setups": [{
+        "ts": base_ts, "key": f"keep-cfl-{base_ts}", "setup": "CONFLICT", "side": "warn",
+        "entry": 22760.0, "sl": 22730.0, "payload": {"suppressed": True}}]})
+
+    from app.timeutil import ist_date
+    rows = client.get("/api/setups", params={"d": ist_date(base_ts).isoformat()}).json()["setups"]
+    kinds = {s["setup"] for s in rows if s["ts"] == base_ts}
+    assert "SNIPER BREAKOUT" in kinds, "the suppressed ticket must survive, or suppression is unmeasurable"
+    assert "CONFLICT" in kinds, "the demotion itself must be recorded too"
+
+
+def test_tp_is_recorded_as_shown_never_invented():
+    """The table records what the desk displayed. A ticket shown with no target keeps none, and a
+    clamped target is stored as the clamped figure -- not re-derived as a raw 2R extension."""
     ts_val = 1793248560
-    key = f"tp-auto-{ts_val}"
     r = client.post("/api/setups/log", json={"setups": [{
-        "ts": ts_val,
-        "key": key,
-        "setup": "SNIPER BREAKOUT",
-        "side": "bull",
-        "entry": 22750.0,
-        "sl": 22720.0,  # 30pt risk
-        "tp": None,      # missing tp!
+        "ts": ts_val, "key": f"tp-none-{ts_val}", "setup": "SNIPER BREAKOUT", "side": "bull",
+        "entry": 22750.0, "sl": 22720.0, "tp": None,
     }]})
     assert r.status_code == 200
 
     from app.timeutil import ist_date
-    day = ist_date(ts_val).isoformat()
-    rows = client.get("/api/setups", params={"d": day}).json()["setups"]
-    match = [s for s in rows if s["key"] == key]
-    assert len(match) == 1
-    # 2.0R target: 22750 + 2 * 30 = 22810.0
-    assert match[0]["tp"] == 22810.0, f"Expected 22810.0 but got {match[0]['tp']}"
+    rows = client.get("/api/setups", params={"d": ist_date(ts_val).isoformat()}).json()["setups"]
+    got = [s for s in rows if s["key"] == f"tp-none-{ts_val}"][0]
+    assert got["tp"] is None, f"no target was shown, so none may be stored (got {got['tp']})"
 
-
+    # A capped target is kept verbatim: 22867 was displayed, 22888 was the raw extension.
+    ts2 = ts_val + 180
+    client.post("/api/setups/log", json={"setups": [{
+        "ts": ts2, "key": f"tp-capped-{ts2}", "setup": "DIP BUY CE", "side": "bull",
+        "entry": 22828.5, "sl": 22796.0, "tp": 22867.0,
+    }]})
+    rows = client.get("/api/setups", params={"d": ist_date(ts2).isoformat()}).json()["setups"]
+    got = [s for s in rows if s["key"] == f"tp-capped-{ts2}"][0]
+    assert got["tp"] == 22867.0, "the clamped target the trader saw, not a recomputed 2R"
 def test_alert_ist_timestamp_alignment():
     """Validates that alert timestamps with double +5h30m shift are normalized to true UTC epoch."""
     from app.signals.alerts import normalize_alert_ts
