@@ -106,6 +106,9 @@ def main() -> int:
     ap.add_argument("--sec", default=NIFTY_SEC)
     ap.add_argument("--regime-gate", action="store_true",
                     help="apply the day-regime veto using each session's opening-window direction")
+    ap.add_argument("--cutoff", default="",
+                    help="IST HH:MM after which a confirmation is ignored, e.g. 14:45. A signal "
+                         "confirming near the close has no room to reach its target.")
     ap.add_argument("--regime-bars", type=int, default=20,
                     help="bars of the open used to fix the regime under --regime-gate (default 20). "
                          "Events armed inside this window are dropped, not judged.")
@@ -125,6 +128,7 @@ def main() -> int:
     scored = []
     day_rows = []
     dropped_early = 0
+    late_dropped = 0
 
     for d in sorted(by_day):
         m1 = by_day[d]
@@ -154,6 +158,11 @@ def main() -> int:
         for e in evs:
             per_type[e["type"]][e["state"]] += 1
             if e["state"] == "STRUCTURE_CONFIRMED":
+                # A confirmation at 15:09 has twenty minutes to pay 2R on a 55-point risk. It cannot,
+                # so counting it measures the clock, not the signal. --cutoff drops those.
+                if a.cutoff and str(e.get("resolved_time", "")) >= a.cutoff:
+                    late_dropped += 1
+                    continue
                 sc = score(bars, e)
                 if sc:
                     scored.append({**sc, "day": d, "type": e["type"], "side": e["side"],
@@ -199,6 +208,32 @@ def main() -> int:
     print(f"expectancy (fixed): {exp:+.2f}R per signal")
     if dropped_early:
         print(f"dropped pre-gate  : {dropped_early} (armed inside the regime window)")
+    if late_dropped:
+        print(f"dropped late      : {late_dropped} (confirmed at or after {a.cutoff})")
+
+    # Is the edge the method, or is it two good afternoons?
+    #
+    # An expectancy carried by a handful of trades is not an edge, it is a sample that happened to
+    # contain a trend. The test: drop the best signals, and drop the single best SESSION, and see
+    # whether anything is left. If expectancy goes negative without its top three, the honest
+    # statement is "this did not lose money over 35 sessions", not "this makes money".
+    print("\nedge concentration (does this survive losing its best trades?)")
+    ranked = sorted(scored, key=lambda s: s["realized"], reverse=True)
+    for drop in (1, 3, 5):
+        if n > drop:
+            rest = ranked[drop:]
+            print(f"  excluding best {drop:>2}      : {sum(s['realized'] for s in rest) / len(rest):+.2f}R "
+                  f"over {len(rest)} signals")
+    by_session = defaultdict(float)
+    for s in scored:
+        by_session[s["day"]] += s["realized"]
+    if by_session:
+        best_day = max(by_session, key=lambda k: by_session[k])
+        rest = [s for s in scored if s["day"] != best_day]
+        print(f"  best session       : {best_day} contributed {by_session[best_day]:+.2f}R total")
+        if rest:
+            print(f"  excluding it       : {sum(s['realized'] for s in rest) / len(rest):+.2f}R "
+                  f"over {len(rest)} signals")
     rev = [s for s in scored if s["type"].startswith("REGULAR")]
     hid = [s for s in scored if s["type"].startswith("HIDDEN")]
     for name, grp in (("reversal (regular)", rev), ("continuation (hidden)", hid)):
