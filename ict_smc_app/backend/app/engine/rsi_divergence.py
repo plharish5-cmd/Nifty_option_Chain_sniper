@@ -156,7 +156,7 @@ def compute_rsi_divergence(
     marked vetoed, and can never confirm. That is the 29 Oct lesson expressed as code.
     """
     c = {**{
-        "rsi_period": 14, "pivot_window": 3, "min_pivot_gap_bars": 3, "max_pivot_gap_bars": 30,
+        "rsi_period": 14, "pivot_window": 3, "min_pivot_gap_bars": 3, "max_pivot_gap_bars": 60,
         "min_price_diff_pts": 8.0, "min_rsi_diff": 3.0, "expiry_bars": 10,
         "structure_buffer_pts": 1.0, "sl_buffer_pts": 12.0, "enabled": True,
     }, **(cfg if cfg is not None else get_cfg())}
@@ -181,19 +181,29 @@ def compute_rsi_divergence(
     w = int(c["pivot_window"])
     hi_idx, lo_idx = find_pivots(bars, w)
     events: List[Dict[str, Any]] = []
+    # Why a pair produced nothing. Without this, "0 events" is indistinguishable from a broken
+    # detector -- which is exactly the ambiguity hit on the first live run, where the real cause was
+    # that the 10:30 and 14:54 pivots sit ~88 bars apart on 3m and the gap filter dropped them.
+    rejected = {"gap_too_short": 0, "gap_too_long": 0, "rsi_unavailable": 0, "no_divergence": 0}
 
     def scan(idxs: List[int], kind: str) -> None:
         for a, b in zip(idxs, idxs[1:]):
             gap = b - a
-            if not (int(c["min_pivot_gap_bars"]) <= gap <= int(c["max_pivot_gap_bars"])):
+            if gap < int(c["min_pivot_gap_bars"]):
+                rejected["gap_too_short"] += 1
+                continue
+            if gap > int(c["max_pivot_gap_bars"]):
+                rejected["gap_too_long"] += 1
                 continue
             if rsi[a] is None or rsi[b] is None:
+                rejected["rsi_unavailable"] += 1
                 continue
             field = "h" if kind == "high" else "l"
             typ = classify(kind, float(bars[b][field]), float(bars[a][field]),
                            float(rsi[b]), float(rsi[a]),
                            float(c["min_price_diff_pts"]), float(c["min_rsi_diff"]))
             if not typ:
+                rejected["no_divergence"] += 1
                 continue
             # A pivot is only confirmed `w` bars later, so that is the earliest this could be known.
             armed_i = min(b + w, len(bars) - 1)
@@ -261,6 +271,12 @@ def compute_rsi_divergence(
                           if e["state"] not in TERMINAL and e["state"] != "VETOED"), None)
     out["continuation"] = next((e for e in reversed(events) if not e["is_reversal"]), None)
     confirmed = [e for e in events if e["state"] == "STRUCTURE_CONFIRMED"]
+    out["pivots"] = {
+        "highs": len(hi_idx), "lows": len(lo_idx),
+        "high_times": [hm(int(bars[i]["ts"])) for i in hi_idx],
+        "low_times": [hm(int(bars[i]["ts"])) for i in lo_idx],
+    }
+    out["rejected"] = rejected
     out["counts"] = {
         "total": len(events),
         "armed": sum(1 for e in events if e["state"] == "ARMED"),
