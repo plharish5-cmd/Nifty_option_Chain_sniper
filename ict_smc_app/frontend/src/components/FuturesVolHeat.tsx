@@ -6,7 +6,12 @@ type Bar = { ts: number; c: number; v: number };
 type Resp = { available: boolean; src?: string; series_today?: Bar[] | null; nov_share_pct?: number; fut2_status?: string; error?: string };
 
 const cr = (v: number) => (v >= 1e7 ? `${(v / 1e7).toFixed(2)}Cr` : v >= 1e5 ? `${(v / 1e5).toFixed(1)}L` : `${Math.round(v)}`);
-const istHM = (ts: number) => { const d = new Date(ts * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
+// +5:30 here, NOT in the caller: these panels read /api/option_tape and /api/combined_vol?heat=1,
+// which send RAW epoch seconds (unlike most endpoints, which pre-shift with chart_time). Formatting a
+// raw epoch with getUTC* printed UTC, so a 09:25 IST candle column was labelled 03:55 and the whole
+// tape looked like it covered the evening.
+const IST_OFFSET_S = 19800;
+const istHM = (ts: number) => { const d = new Date((ts + IST_OFFSET_S) * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
 const TF = { "5m": 300, "15m": 900, "30m": 1800 } as const;
 
 export default function FuturesVolHeat() {
