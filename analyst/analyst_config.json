@@ -172,7 +172,8 @@
         "Female",
         "Karen",
         "Moira"
-      ]
+      ],
+      "repeat_minutes": 15
     }
   },
   "oi_studio": {
@@ -192,5 +193,16 @@
       120,
       180
     ]
+  },
+  "orderbook": {
+    "lot_size": 65,
+    "wall_min_lots": 15,
+    "wall_mult": 2.5,
+    "pull_min_lots": 10,
+    "reload_min_lots": 8,
+    "wall_hold_sec": 15,
+    "cache_filename": "orderbook_state.json",
+    "backfill_minutes": 60,
+    "max_events": 60
   }
 }

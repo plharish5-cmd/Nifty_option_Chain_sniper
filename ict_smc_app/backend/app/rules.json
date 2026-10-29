@@ -800,5 +800,17 @@
     "show_candles": 140,
     "sidecar_url": "http://127.0.0.1:8701",
     "sidecar_timeout_s": 180.0
+  },
+  "book": {
+    "_note": "NIFTY FUT L2 Order Book depth, wall detection, and persistent state thresholds",
+    "lot_size": 65,
+    "wall_min_lots": 15,
+    "wall_mult": 2.5,
+    "pull_min_lots": 10,
+    "reload_min_lots": 8,
+    "wall_hold_sec": 15,
+    "cache_filename": "orderbook_state.json",
+    "backfill_minutes": 60,
+    "max_events": 60
   }
 }

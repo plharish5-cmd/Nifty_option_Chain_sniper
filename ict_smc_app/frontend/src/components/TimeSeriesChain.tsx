@@ -20,7 +20,7 @@ export default function TimeSeriesChain({active=true}:{active?:boolean}){
   const [voices,setVoices]=useState<SpeechSynthesisVoice[]>([]),[lastSpoken,setLastSpoken]=useState<SeriesAlert|null>(null),[voiceStatus,setVoiceStatus]=useState("");
   const cursor=useRef<SeriesCursor|null>(null);
   const alerted=useRef<Set<string>>((()=>{try{return new Set<string>(JSON.parse(sessionStorage.getItem("ict_ts_voice_seen")||"[]"));}catch{return new Set<string>();}})());
-  const speechSupported=typeof window!=="undefined"&&"speechSynthesis" in window;
+  const speechSupported=typeof window!=="undefined"&&"speechSynthesis" in window&&typeof SpeechSynthesisUtterance!=="undefined";
   const frame=useRef<HTMLIFrameElement>(null);
   const patch=(v:Partial<Controls>)=>setControls(c=>({...c,...v}));
   useEffect(()=>{try{localStorage.setItem(KEY,JSON.stringify(controls));}catch{/* storage optional */}},[controls]);
@@ -50,11 +50,13 @@ export default function TimeSeriesChain({active=true}:{active?:boolean}){
   },[speechSupported]);
   const speak=(text:string)=>{
     if(!speechSupported){setVoiceStatus("Speech is unavailable in this browser.");return;}
+    try {
     const utterance=new SpeechSynthesisUtterance(text),voice=chooseVoice(voices,voicePrefs.voiceURI);
     if(voice)utterance.voice=voice;
     utterance.lang=voice?.lang??"en-IN";utterance.rate=VOICE_POLICY.speech_rate;
-    utterance.onerror=()=>setVoiceStatus("Browser blocked speech. Click Test voice to enable audio.");
+    utterance.onerror=(event)=>setVoiceStatus(event.error==="not-allowed"?"Browser blocked speech. Click Test voice to enable audio.":"Speech unavailable ("+event.error+"). Choose an installed voice or use a browser with working speech support.");
     window.speechSynthesis.resume();window.speechSynthesis.speak(utterance);
+    }catch(error){setVoiceStatus("Speech could not start: "+String(error));}
   };
   useEffect(()=>{cursor.current=null;},[voicePrefs.enabled]);
   useEffect(()=>{
@@ -67,7 +69,7 @@ export default function TimeSeriesChain({active=true}:{active?:boolean}){
       try{sessionStorage.setItem("ict_ts_voice_seen",JSON.stringify([...alerted.current].slice(-VOICE_POLICY.remembered_alerts)));}catch{/* optional storage */}
       setLastSpoken(event);speak(event.speech);
       api.postAlert({key:event.key,ts:localEpoch(event.time),tf:data.tf,kind:"SIG_TS_"+event.tag.toUpperCase(),grade:"info",side:event.side,title:event.title,body:event.body,price:event.price})
-        .catch(()=>setVoiceStatus("Voice delivered; alert-log save failed."));
+        .catch(()=>setVoiceStatus("Alert detected; saving to the alerts log failed."));
     }
   },[data,voicePrefs.enabled,voicePrefs.groups,controls.replay]);
   useEffect(()=>{
@@ -121,7 +123,7 @@ export default function TimeSeriesChain({active=true}:{active?:boolean}){
       <label><input type="checkbox" checked={controls.auto} onChange={e=>patch({auto:e.target.checked})}/> Auto-refresh{voicePrefs.enabled&&!controls.auto?" (voice monitor still refreshes)":controls.replay?" (paused in replay)":data?.live?"":" (historical session)"}</label>
       <details className="rounded border border-slate-600 px-3 py-2"><summary className="cursor-pointer">⚙ Settings</summary><div className="flex flex-wrap gap-3 pt-3">{(["full","day","pct","lot","hl"] as const).map(k=><label key={k}><input type="checkbox" checked={controls.settings[k]} onChange={e=>patch({settings:{...controls.settings,[k]:e.target.checked}})}/> {{full:"Full numbers",day:"Day Change",pct:"Day Change %",lot:"Lots",hl:"Highlight High/Low"}[k]}</label>)}<label>Font <select className={select} value={controls.settings.font} onChange={e=>patch({settings:{...controls.settings,font:e.target.value}})}>{["Small","Medium","Large"].map(v=><option key={v}>{v}</option>)}</select></label></div></details>
     </div>
-    <div className="mb-3 rounded-lg border border-cyan-800 bg-[#0b192b] p-3" aria-label="Full-session timeline">
+    <div className="sticky top-0 z-20 mb-3 rounded-lg border border-cyan-800 bg-[#0b192b] p-3 shadow-lg" aria-label="Full-session timeline">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm text-cyan-200">
         <b>Full-session timeline · {times[0]?.slice(11,16)??"09:15"} → {times.at(-1)?.slice(11,16)??"latest recorded"}</b>
         <span>{controls.replay?"Historical / replay":"Latest available"} · {endpoint.replace("T"," ").slice(0,19)}</span>
@@ -145,7 +147,7 @@ export default function TimeSeriesChain({active=true}:{active?:boolean}){
         <button className="pill" disabled={!controls.replay||!speechSupported||busy} onClick={readReplay}>Read replay signal</button>
       </div>
       <div className="mt-2 flex flex-wrap gap-3">{(["breaks","reversals","traps","builds"] as const).map(group=><label key={group}><input type="checkbox" checked={voicePrefs.groups[group]} onChange={e=>setVoicePrefs(p=>({...p,groups:{...p.groups,[group]:e.target.checked}}))}/> {{breaks:"Breakout / breakdown",reversals:"Support / resistance reversal",traps:"False / failed break",builds:"Support / resistance built (optional)"}[group]}</label>)}</div>
-      <p className="mt-2 text-xs text-slate-400">{voicePrefs.enabled?(controls.replay?"Live speech paused during replay.":data?.live?"Watching fresh closed buckets; continues on other dashboard tabs.":controls.day?"Historical session selected — choose Latest session to resume live alerts.":"Waiting for today's recorded session; historical data is not announced live."):"Live speech off."} Minor cell changes are silent. Voice availability depends on the browser; Test voice unlocks audio. Alerts require this dashboard to remain open.</p>
+      <p className="mt-2 text-xs text-slate-400">{voicePrefs.enabled?(controls.replay?"Live speech paused during replay.":data?.live?"Watching fresh closed buckets; continues on other dashboard tabs.":controls.day?"Historical session selected — choose Latest session to resume live alerts.":"Waiting for today's recorded session; historical data is not announced live."):"Live speech off."} Minor cell changes and unchanged repeated level warnings are silent. {speechSupported&&voices.length===0?"No installed browser voices detected. ":""}Voice availability depends on the browser; Test voice unlocks audio. Alerts require this dashboard to remain open.</p>
       {lastSpoken&&<p className="mt-2 text-amber-200" role="status">{lastSpoken.title} · {lastSpoken.body}</p>}
       {voiceStatus&&<p className="mt-2 text-amber-300">{voiceStatus}</p>}
     </div>
