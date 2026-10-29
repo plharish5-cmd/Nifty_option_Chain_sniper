@@ -26,10 +26,17 @@ export const BUBBLE_CFG = {
   targetBubbles: 22,       // roughly how many sampled points to draw across the visible range
   fillAlpha: 0.22,         // translucent, so the curve underneath stays readable
   strokeAlpha: 0.95,
-  tiers: [                 // ratio thresholds, biggest first; crore-vs-crore gaps qualify too
-    { min: 5.0, label: "EXTREME", color: "#fbbf24" },
-    { min: 2.5, label: "WIDE", color: "#f59e0b" },
-    { min: 1.5, label: "NOTABLE", color: "#94a3b8" },
+  // A tier fires on RATIO or on ABSOLUTE gap, whichever qualifies first.
+  //
+  // Ratio alone was wrong for chart 3. Cumulative totals are both large, so their ratio is naturally
+  // compressed: 29 Oct closed Put 18.42Cr against Call 12.96Cr -- a +5.46Cr positional gap, and one of
+  // the clearest reads on the screen -- at a ratio of only 1.42, which a ratio-only rule silently
+  // ignored. On chart 2 the opposite holds: +4.93Cr is a smaller absolute gap but an 8.5x ratio.
+  // Both are worth saying, so either route can trigger.
+  tiers: [
+    { min: 5.0, minDiff: 10e7, label: "EXTREME", color: "#fbbf24" },
+    { min: 2.5, minDiff: 5e7, label: "WIDE", color: "#f59e0b" },
+    { min: 1.5, minDiff: 2e7, label: "NOTABLE", color: "#94a3b8" },
   ],
 };
 
@@ -78,13 +85,16 @@ export function gapRead(put: number, call: number, fmt: (v: number) => string): 
   const hi = Math.max(ap, ac), lo = Math.min(ap, ac);
   if (hi <= 0) return null;
   const ratio = lo <= 0 ? Infinity : hi / lo;
-  const tier = BUBBLE_CFG.tiers.find((t) => ratio >= t.min);
+  const diff = Math.abs(put - call);
+  const tier = BUBBLE_CFG.tiers.find((t) => ratio >= t.min || diff >= t.minDiff);
   if (!tier) return null;
   const side: "put" | "call" = ap >= ac ? "put" : "call";
   const r = Number.isFinite(ratio) ? `${ratio.toFixed(1)}×` : "∞";
   return {
     ratio, label: tier.label, color: tier.color, side,
-    text: `Put ${fmt(put)} vs Call ${fmt(call)} · ${side === "put" ? "PUT" : "CALL"} ${r} wider · ${tier.label}`,
+    // Both figures, always: the absolute gap matches the "Net (PE−CE)" already in this chart's header,
+    // and the ratio is the thing two lines on an axis cannot show you.
+    text: `Put ${fmt(put)} vs Call ${fmt(call)} · ${side === "put" ? "PUT" : "CALL"} ${fmt(diff)} wider (${r}) · ${tier.label}`,
   };
 }
 
@@ -144,13 +154,6 @@ class BubblesV implements IPrimitivePaneView {
           const yPut = series.priceToCoordinate(pt.put);
           const yCall = callS.priceToCoordinate(pt.call);
           if (yPut === null || yCall === null) continue;
-
-          // Connector first, so the discs sit on top of it.
-          const g = gapRead(pt.put, pt.call, fmt);
-          if (g) {
-            ctx.beginPath(); ctx.moveTo(x, yPut); ctx.lineTo(x, yCall);
-            ctx.strokeStyle = `${g.color}55`; ctx.lineWidth = g.ratio >= 5 ? 2.5 : 1.5; ctx.stroke();
-          }
           disc(x, yPut, bubbleRadius(pt.put, maxAbs), PUT_RGB);
           disc(x, yCall, bubbleRadius(pt.call, maxAbs), CALL_RGB);
         }
@@ -162,6 +165,19 @@ class BubblesV implements IPrimitivePaneView {
         const xl = ts.timeToCoordinate(last.time);
         const yp = series.priceToCoordinate(last.put), yc = callS.priceToCoordinate(last.call);
         if (xl === null || yp === null || yc === null) return;
+
+        // ONE connector, at the latest point, tying the badge to the pair it describes.
+        //
+        // This used to be drawn at every sampled point. On chart 2 the Put rides near the top of the
+        // axis and the Call near the bottom, so each line spanned almost the whole pane and 22 of them
+        // read as a picket fence across the chart -- clutter, which is the opposite of the point. The
+        // bubbles already carry the magnitude at every point; the connector only needs to say which
+        // two the label is about.
+        ctx.save();
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(xl, yp); ctx.lineTo(xl, yc);
+        ctx.strokeStyle = `${g.color}66`; ctx.lineWidth = 1.25; ctx.stroke();
+        ctx.restore();
 
         ctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
         const padX = 7, h = 19, w = ctx.measureText(g.text).width + padX * 2;

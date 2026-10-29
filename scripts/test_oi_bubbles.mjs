@@ -7,7 +7,8 @@
 // Keep in step with oiBubbles.ts: if the scaling there changes, change it here and see these fail.
 
 const CFG = { minRadiusPx: 3, maxRadiusPx: 15, targetBubbles: 22,
-  tiers: [{ min: 5.0, label: "EXTREME" }, { min: 2.5, label: "WIDE" }, { min: 1.5, label: "NOTABLE" }] };
+  tiers: [{ min: 5.0, minDiff: 10e7, label: "EXTREME" }, { min: 2.5, minDiff: 5e7, label: "WIDE" },
+           { min: 1.5, minDiff: 2e7, label: "NOTABLE" }] };
 
 function bubbleRadius(value, maxAbs, minR = CFG.minRadiusPx, maxR = CFG.maxRadiusPx) {
   if (!Number.isFinite(value) || !Number.isFinite(maxAbs) || maxAbs <= 0) return minR;
@@ -27,12 +28,13 @@ function gapRead(put, call, fmt) {
   const hi = Math.max(ap, ac), lo = Math.min(ap, ac);
   if (hi <= 0) return null;
   const ratio = lo <= 0 ? Infinity : hi / lo;
-  const tier = CFG.tiers.find((t) => ratio >= t.min);
+  const diff = Math.abs(put - call);
+  const tier = CFG.tiers.find((t) => ratio >= t.min || diff >= t.minDiff);
   if (!tier) return null;
   const side = ap >= ac ? "put" : "call";
   const r = Number.isFinite(ratio) ? `${ratio.toFixed(1)}×` : "∞";
-  return { ratio, label: tier.label, side,
-    text: `Put ${fmt(put)} vs Call ${fmt(call)} · ${side === "put" ? "PUT" : "CALL"} ${r} wider · ${tier.label}` };
+  return { ratio, diff, label: tier.label, side,
+    text: `Put ${fmt(put)} vs Call ${fmt(call)} · ${side === "put" ? "PUT" : "CALL"} ${fmt(diff)} wider (${r}) · ${tier.label}` };
 }
 const inr = (v) => { const a = Math.abs(v), s = v < 0 ? "-" : "+";
   if (a >= 1e7) return `${s}${(a/1e7).toFixed(2)}Cr`;
@@ -74,7 +76,8 @@ console.log("\ndivergence readout");
   const g = gapRead(5.58e7, 65.4e5, inr);
   ok("lakh-vs-crore reads EXTREME", g && g.label === "EXTREME", g && g.label);
   ok("names the dominant side", g && g.side === "put");
-  ok("states the ratio in words", g && g.text.includes("8.5×"), g && g.text);
+  ok("states the ratio in words", g && g.text.includes("(8.5×)"), g && g.text);
+  ok("states the absolute gap too", g && g.text.includes("+4.93Cr"), g && g.text);
   console.log(`       ${g.text}`);
 }
 {
@@ -85,8 +88,18 @@ console.log("\ndivergence readout");
   console.log(`       ${g.text}`);
 }
 {
+  // 0.43Cr apart at 1.14x: below both routes, so it must stay silent.
   const g = gapRead(3.43e7, 3.00e7, inr);
   ok("near-equal crores stay quiet", g === null, g && g.text);
+}
+{
+  // The chart-3 case a ratio-only rule missed: 29 Oct cumulative Put 18.42Cr vs Call 12.96Cr is only
+  // 1.42x -- below every ratio tier -- but a +5.46Cr positional gap, which is the read.
+  const g = gapRead(18.42e7, 12.96e7, inr);
+  ok("cumulative +5.46Cr fires on absolute gap", g !== null, "silent");
+  ok("...as WIDE", g && g.label === "WIDE", g && g.label);
+  ok("...and reports the gap, not just the ratio", g && g.text.includes("+5.46Cr"), g && g.text);
+  console.log(`       ${g && g.text}`);
 }
 ok("1.5x is the floor for NOTABLE", gapRead(1.5e7, 1.0e7, inr)?.label === "NOTABLE");
 ok("1.4x says nothing", gapRead(1.4e7, 1.0e7, inr) === null);
