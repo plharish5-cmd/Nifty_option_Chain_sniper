@@ -108,13 +108,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   // forecast, and the point of this engine is that a divergence is a watch, not a prediction.
   const divLinesRef = useRef<IPriceLine[]>([]);
   const [divergence, setDivergence] = useState<DivergencePayload | null>(null);
-  const [showDiv, setShowDiv] = useState<boolean>(() => {
-    try { return localStorage.getItem("ict_div_lines") !== "0"; } catch { return true; }
-  });
-  const toggleDiv = () => setShowDiv((v) => {
-    try { localStorage.setItem("ict_div_lines", v ? "0" : "1"); } catch { /* ignore */ }
-    return !v;
-  });
+  // Driven by the layer chip ("📉 RSI Divergence" in the VIEW row), which is where every other
+  // overlay is controlled from. The floating button that used to live in the top-right corner was
+  // the wrong home: that corner is already shared by Prahaar, GTF Zones and the EXPIRY banner, so a
+  // seventh chip there collided with the rest and was effectively invisible.
+  const showDiv = !!layers.rsiDiv;
 
   useEffect(() => {
     let alive = true;
@@ -2764,27 +2762,6 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       )}
       {/* Top-Right Control Bar: ⚡ 3-Chart Trinity Suite + ⚡ Strike Map 2.0 + Expiry Selector */}
       <div className="pointer-events-auto absolute right-2 top-2 z-20 flex flex-wrap items-center justify-end gap-2 max-w-[55%]">
-        <button
-          onClick={toggleDiv}
-          className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur ${
-            showDiv ? "bg-sky-500/20 border-sky-500/80 text-sky-300 ring-1 ring-sky-500/40"
-                    : "border-slate-700/60 text-slate-400 hover:text-slate-200"
-          }`}
-          title={"RSI divergence WATCH levels: the trigger price that must be CLOSED through before the "
-            + "divergence means anything, and the invalidation beyond which the premise is gone.\n\n"
-            + "Only the active watch is drawn, and never a pivot-to-pivot line: a diagonal drawn to a past "
-            + "high reads like a forecast, and a divergence is a watch, not a prediction."}
-        >
-          <span>{showDiv ? "☑" : "☐"} RSI Div</span>
-          {divergence?.rsi?.active && (
-            <span className={`text-[9px] px-1 rounded font-bold ${
-              divergence.rsi.active.state === "STRUCTURE_CONFIRMED"
-                ? (divergence.rsi.active.side === "short" ? "bg-rose-500/30 text-rose-300" : "bg-emerald-500/30 text-emerald-300")
-                : "bg-amber-500/30 text-amber-300"}`}>
-              {divergence.rsi.active.state === "STRUCTURE_CONFIRMED" ? "CONFIRMED" : "WATCH"}
-            </span>
-          )}
-        </button>
         <button
           onClick={toggleIctLevels}
           className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur ${
