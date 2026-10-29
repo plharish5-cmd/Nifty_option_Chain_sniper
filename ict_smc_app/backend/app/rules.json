@@ -812,5 +812,15 @@
     "cache_filename": "orderbook_state.json",
     "backfill_minutes": 60,
     "max_events": 60
+  },
+  "institutional_levels": {
+    "_note": "Institutional ICT Reference Levels (PDH, PDL, Session Open, Midnight Open) & True Breakout Engine thresholds",
+    "rvol_breakout_threshold": 1.5,
+    "rvol_sweep_threshold": 1.0,
+    "pe_ce_writer_support_thresh_l": 50.0,
+    "default_pdc": 22698.85,
+    "default_pdh": 22778.05,
+    "default_pdl": 22497.70,
+    "default_pdo": 22678.00
   }
 }

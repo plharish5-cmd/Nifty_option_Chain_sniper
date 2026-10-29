@@ -2,9 +2,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BaselineSeries, CandlestickSeries, ColorType, createChart, createSeriesMarkers, CrosshairMode, HistogramSeries, LineSeries, LineStyle,
-  type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi, type MouseEventParams, type Time, type UTCTimestamp,
+  type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi, type MouseEventParams, type Time, type UTCTimestamp, type IPriceLine,
 } from "lightweight-charts";
-import type { Analysis, Candle, TF, WriterMetrics } from "../api";
+import type { Analysis, Candle, TF, WriterMetrics, InstitutionalLevelsRes } from "../api";
 import { bucket } from "../api";
 import { computeBias, cvdExhaustionSignals, FACTORS, BIAS_POLICY, BIAS_NAME, type BiasRow } from "./bias";
 import { useOcFeed, useSmt, useBiasAgreement, type SmtForming } from "./ocfeed";
@@ -30,7 +30,7 @@ import { detectGtfZones, evaluateGtfMasterConfluence, hitTestGtfZone, getGtfExpl
 import PcrTrinitySuite from "./PcrTrinitySuite";
 import OIMatrixSuite from "./OIMatrixSuite";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean; p3?: boolean; stdv?: boolean; advPa?: boolean; prahaar?: boolean; gtfZones?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean; p3?: boolean; stdv?: boolean; advPa?: boolean; prahaar?: boolean; gtfZones?: boolean; ictLevels?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -87,6 +87,107 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const cvdS = useRef<ISeriesApi<"Baseline"> | null>(null);
   const [fpBars, setFpBars] = useState<FpBar[]>([]);
   const [fpMsg, setFpMsg] = useState<string>("");
+
+  // Institutional ICT Reference Levels (PDH, PDL, 09:15 Open) & Breakout Engine
+  const [instLevels, setInstLevels] = useState<InstitutionalLevelsRes | null>(null);
+  const [localIctLevels, setLocalIctLevels] = useState<boolean>(() => {
+    try {
+      const s = localStorage.getItem("ict_levels_active");
+      return s !== null ? s === "1" : (layers.ictLevels ?? true);
+    } catch {
+      return layers.ictLevels ?? true;
+    }
+  });
+  const ictLinesRef = useRef<IPriceLine[]>([]);
+
+  useEffect(() => {
+    if (layers.ictLevels !== undefined) {
+      setLocalIctLevels(layers.ictLevels);
+    }
+  }, [layers.ictLevels]);
+
+  const toggleIctLevels = () => {
+    setLocalIctLevels((v) => {
+      const next = !v;
+      try { localStorage.setItem("ict_levels_active", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    let alive = true;
+    const fetchLevels = () => {
+      api.institutionalLevels("13").then((res) => {
+        if (alive && res?.ok) setInstLevels(res);
+      }).catch(() => {});
+    };
+    fetchLevels();
+    const timer = setInterval(fetchLevels, 8000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // Draw / update Institutional ICT Reference Levels (PDH, PDL, 09:15 Open)
+  useEffect(() => {
+    ictLinesRef.current.forEach((line) => {
+      try {
+        series.current?.removePriceLine(line);
+      } catch {}
+    });
+    ictLinesRef.current = [];
+
+    if (!localIctLevels || !series.current || !instLevels?.levels) return;
+
+    const { pdh, pdl, session_open } = instLevels.levels;
+    try {
+      if (pdh > 0) {
+        const line = series.current.createPriceLine({
+          price: pdh,
+          color: "#f59e0b",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: "PDH",
+        });
+        ictLinesRef.current.push(line);
+      }
+      if (pdl > 0) {
+        const line = series.current.createPriceLine({
+          price: pdl,
+          color: "#f59e0b",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: "PDL",
+        });
+        ictLinesRef.current.push(line);
+      }
+      if (session_open > 0) {
+        const line = series.current.createPriceLine({
+          price: session_open,
+          color: "#06b6d4",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: "09:15 Open",
+        });
+        ictLinesRef.current.push(line);
+      }
+    } catch (e) {
+      console.warn("Failed creating ICT price lines", e);
+    }
+
+    return () => {
+      ictLinesRef.current.forEach((line) => {
+        try {
+          series.current?.removePriceLine(line);
+        } catch {}
+      });
+      ictLinesRef.current = [];
+    };
+  }, [localIctLevels, instLevels, series.current]);
   const isDeltaDetailOn = !!layers.deltaDetail;
   const isDeltaOn = !!(layers.delta || isDeltaDetailOn);
   const isBubblesOn = !!(layers.bubbles || isDeltaDetailOn);
@@ -2194,7 +2295,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         }
       };
       dispatch(scanSignals({ tf, candles, a, prefs: sig, bias: allB, conf: confAll, ocActs, smt: smtArg, dols: computeDol(candles, a),
-        gamma: gHitsRef.current, nodes: nEntRef.current, htfWicks, cvdSignals,
+        gamma: gHitsRef.current, nodes: nEntRef.current, htfWicks, cvdSignals, ictLevels: instLevels,
         flow: fnow && lc[0] ? { time: lc[0].time, verdict: fnow.verdict, prev: fprev?.verdict ?? null, bull: fnow.bull, bear: fnow.bear, head: fnow.head } : null }), wrapped, tf); }
       catch { /* alerts must never break the chart */ }
     }
@@ -2612,6 +2713,30 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       )}
       {/* Top-Right Control Bar: ⚡ 3-Chart Trinity Suite + ⚡ Strike Map 2.0 + Expiry Selector */}
       <div className="pointer-events-auto absolute right-2 top-2 z-20 flex flex-wrap items-center justify-end gap-2 max-w-[55%]">
+        <button
+          onClick={toggleIctLevels}
+          className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur ${
+            localIctLevels
+              ? "bg-amber-500/20 border-amber-500/80 text-amber-300 ring-1 ring-amber-500/40"
+              : "border-slate-700/60 text-slate-400 hover:text-slate-200"
+          }`}
+          title="Toggle Institutional ICT Reference Levels: PDH / PDL (Dashed Gold) and 09:15 Open (Dotted Cyan)"
+        >
+          <span>{localIctLevels ? "☑" : "☐"} ICT Levels: PDH/PDL/Open</span>
+          {instLevels && (
+            <span className={`text-[9px] px-1 rounded font-bold ${
+              instLevels.is_breakout ? "bg-emerald-500/30 text-emerald-300" :
+              instLevels.is_sweep ? "bg-amber-500/30 text-amber-300" :
+              "bg-slate-800 text-slate-300"
+            }`}>
+              {instLevels.status === "PDH_TRUE_BREAKOUT" ? "PDH BREAKOUT" :
+               instLevels.status === "PDL_TRUE_BREAKDOWN" ? "PDL BREAKDOWN" :
+               instLevels.status === "PDH_SWEEP_REJECTION" ? "PDH SWEEP" :
+               instLevels.status === "PDL_SWEEP_REJECTION" ? "PDL SWEEP" : "RANGE"}
+            </span>
+          )}
+        </button>
+
         <button
           onClick={() => {
             if (trinityDrawerOpen && oiDrawerTab === "matrix") {

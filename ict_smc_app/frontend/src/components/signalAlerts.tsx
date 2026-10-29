@@ -22,8 +22,9 @@ import type { SmtMark } from "./ocfeed";
 import type { Dol } from "./dol";
 import { dayRegime, isExpansionBreak } from "./regime";
 import { type HtfWick, isWickUntested, markWickTested } from "./htfWicks";
+import type { InstitutionalLevelsRes } from "../api";
 
-export type SigKind = "cvd_buyers" | "cvd_sellers" | "cvd_nodes" | "bias" | "conf" | "ocAct" | "smt" | "ifvg" | "rjb" | "crt" | "dol" | "gamma" | "nodes" | "flow" | "abs" | "wick" | "aplus" | "deep_rev" | "trade_mgmt_trail";
+export type SigKind = "cvd_buyers" | "cvd_sellers" | "cvd_nodes" | "bias" | "conf" | "ocAct" | "smt" | "ifvg" | "rjb" | "crt" | "dol" | "gamma" | "nodes" | "flow" | "abs" | "wick" | "aplus" | "deep_rev" | "trade_mgmt_trail" | "ict_levels";
 export type SigPrefs = { on: boolean; minBias: number; kinds: Record<SigKind, boolean> };
 const KEY = "ict_signal_alert_prefs";
 const DEF: SigPrefs = {
@@ -49,6 +50,7 @@ const DEF: SigPrefs = {
     aplus: true,
     deep_rev: true,
     trade_mgmt_trail: true,
+    ict_levels: true,
   },
 };
 
@@ -93,6 +95,7 @@ export function scanSignals(o: {
   flow?: { time: number; verdict: "BUY" | "SELL" | "WAIT"; prev: "BUY" | "SELL" | "WAIT" | null; bull: number; bear: number; head: string } | null;
   htfWicks?: HtfWick[];
   cvdSignals?: CvdAlertSignal[];
+  ictLevels?: InstitutionalLevelsRes | null;
 }): Ev[] {
   const { tf, candles, a, prefs, bias, conf, ocActs, smt, dols } = o;
   const closed = candles.filter((c) => c.closed !== false);
@@ -433,8 +436,44 @@ export function scanSignals(o: {
     }
   }
 
+  // ── INSTITUTIONAL ICT REFERENCE LEVELS & TRUE BREAKOUT ENGINE ──
+  let ictSide: "BUY" | "SELL" | null = null;
+  if (K.ict_levels) {
+    const pdh = o.ictLevels?.levels?.pdh ?? a?.session?.prev?.h ?? null;
+    const pdl = o.ictLevels?.levels?.pdl ?? a?.session?.prev?.l ?? null;
+    const curRvol = o.ictLevels?.rvol ?? 1.0;
+    const currOc = ocActs.find((x) => x.time === t);
+    const peCeDeltaL = o.ictLevels?.pe_ce_delta_l ?? (currOc?.smartRow?.pe_ce_day_cr != null ? currOc.smartRow.pe_ce_day_cr * 100 : 0);
+
+    if (pdh != null) {
+      // Case A: PDH Sweep Rejection (Judas Swing)
+      if (last.high > pdh && last.close < pdh && curRvol < 1.0) {
+        ictSide = "SELL";
+        add("ict_levels", "SELL", "⚠️ PDH LIQUIDITY SWEEP (FALSE BREAKOUT)", "⚠️ PDH LIQUIDITY SWEEP (FALSE BREAKOUT) — Watch for reversion inside value area.", "trade");
+      }
+      // Case B: True PDH Breakout Expansion
+      else if (last.close > pdh && curRvol >= 1.5 && peCeDeltaL >= 50.0) {
+        ictSide = "BUY";
+        add("ict_levels", "BUY", "🚀 PDH TRUE BREAKOUT EXPANSION", "🚀 PDH TRUE BREAKOUT EXPANSION — External liquidity cleared; momentum continuation active. DO NOT FADE.", "trade");
+      }
+    }
+
+    if (pdl != null) {
+      // Case C: PDL Sweep Rejection (Judas Swing)
+      if (last.low < pdl && last.close > pdl && curRvol < 1.0) {
+        ictSide = "BUY";
+        add("ict_levels", "BUY", "⚠️ PDL LIQUIDITY SWEEP (FALSE BREAKDOWN)", "⚠️ PDL LIQUIDITY SWEEP (FALSE BREAKDOWN) — Watch for reversion inside value area.", "trade");
+      }
+      // Case D: True PDL Breakdown Expansion
+      else if (last.close < pdl && curRvol >= 1.5 && peCeDeltaL <= -50.0) {
+        ictSide = "SELL";
+        add("ict_levels", "SELL", "🩸 PDL TRUE BREAKDOWN EXPANSION", "🩸 PDL TRUE BREAKDOWN EXPANSION — Sell-side liquidity cleared; downward momentum active. DO NOT FADE.", "trade");
+      }
+    }
+  }
+
   // ★ A+ : bias + triggers on the same side — weight = how many independent triggers agree
-  const trigs = biasSide ? ([[confSide, "✓3"], [ifvgSide, "IFVG"], [rjbSide, "RJB+"], [crtSide, "CRT entry"], [absSide, "ABS"], [gSide, "γ ✓✓✓"], [nSide, "● ENTRY"], [fSide, "order flow"], [deepRevSide, "DEEP REV"]] as const)
+  const trigs = biasSide ? ([[confSide, "✓3"], [ifvgSide, "IFVG"], [rjbSide, "RJB+"], [crtSide, "CRT entry"], [absSide, "ABS"], [gSide, "γ ✓✓✓"], [nSide, "● ENTRY"], [fSide, "order flow"], [deepRevSide, "DEEP REV"], [ictSide, "ICT Breakout/Sweep"]] as const)
     .filter(([sd]) => sd === biasSide).map(([, n]) => n) : [];
   if (K.aplus && biasSide && trigs.length) {
     const w = trigs.length;
@@ -539,6 +578,7 @@ const HELP: Record<SigKind, { when: string; say: string }> = {
   aplus: { when: "Bias ≥ {N} AND at least one of ✓3 · IFVG · RJB+ · CRT · γ ✓✓✓ · ● ENTRY · order flow · ABS on the SAME side, SAME candle. ×2 / ×3 = how many agree.", say: "Different rising tone; desktop pop-up stays until you close it. Strongest alert — ×2 or ×3 even more so." },
   deep_rev: { when: "Deep session low/high swept (>= 100 pts) + writers impulse flip / absorption + micro-structure break (MSS/CHOCH).", say: "“DEEP REVERSAL SNIPER” — High probability reversal at session extremes." },
   trade_mgmt_trail: { when: "Trailing Stop moves by >= 15 pts in favorable direction.", say: "“HOLD · Trail SL updated”" },
+  ict_levels: { when: "Price interacts with Previous Day High (PDH) or Low (PDL): sweeps past on low RVOL (Judas Swing) or cleanly closes beyond with >= 1.5x RVOL and supportive option writers (True Breakout Expansion).", say: "“⚠️ PDH/PDL LIQUIDITY SWEEP” / “🚀 PDH/PDL TRUE BREAKOUT EXPANSION”" },
 };
 
 const LBL: Record<SigKind, string> = {
@@ -561,6 +601,7 @@ const LBL: Record<SigKind, string> = {
   aplus: "★A+",
   deep_rev: "🚨Deep Rev",
   trade_mgmt_trail: "🛡️Trail SL",
+  ict_levels: "🏛️ICT Levels",
 };
 
 export function SignalControls({ p, setP }: { p: SigPrefs; setP: (f: (x: SigPrefs) => SigPrefs) => void }) {

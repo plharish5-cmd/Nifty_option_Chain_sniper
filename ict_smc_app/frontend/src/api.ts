@@ -662,7 +662,39 @@ export interface OptAggRow { strike: number; ce_buy: number; ce_sell: number; ce
 export interface OptAggExp { ladder: OptAggRow[]; cvd: { ts: number; ce: number; pe: number; net: number }[];
   net_flow: number; totals: { ce_delta: number; pe_delta: number } }
 
+export interface InstitutionalLevelsData {
+  pdh: number;
+  pdl: number;
+  pdc: number;
+  pdo: number;
+  session_open: number;
+  midnight_open: number;
+}
+
+export interface InstitutionalLevelsRes {
+  ok: boolean;
+  date: string;
+  levels: InstitutionalLevelsData;
+  current_price: number;
+  high_today: number;
+  low_today: number;
+  status: string;
+  status_label: string;
+  alert_text: string;
+  alert_kind: string;
+  action_tone: "bull" | "bear" | "warn" | "flat";
+  is_sweep: boolean;
+  is_breakout: boolean;
+  rvol: number;
+  pe_ce_delta_l: number;
+  details: string;
+}
+
 export const api = {
+  institutionalLevels: (secId = "13", rvol?: number, peCeDeltaL?: number) =>
+    get<InstitutionalLevelsRes>(
+      `/api/desk/institutional-levels?sec_id=${secId}${rvol != null ? `&rvol=${rvol}` : ""}${peCeDeltaL != null ? `&pe_ce_delta_l=${peCeDeltaL}` : ""}`
+    ),
   candles: (tf: TF, days = 3, inst = "NIFTY") => get<{ tf: TF; candles: Candle[] }>(`/api/candles?tf=${tf}&days=${days}&inst=${encodeURIComponent(inst)}`),
   analysis: (tf: TF, inst = "NIFTY") => get<Analysis>(`/api/analysis?tf=${tf}&inst=${encodeURIComponent(inst)}`),
   cct: (tf: TF = "5m") => get<CctView>(`/api/cct?tf=${tf}`),

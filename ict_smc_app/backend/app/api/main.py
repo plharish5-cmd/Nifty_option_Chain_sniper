@@ -328,6 +328,23 @@ def cvd_divergence_endpoint(
     return cvd_divergence.compute_cvd_divergence(tf=tf)
 
 
+@app.get("/api/desk/institutional-levels")
+def institutional_levels_endpoint(
+    sec_id: str = Query("13", description="Security ID: 13 for NIFTY"),
+    rvol: Optional[float] = Query(None, description="Optional override RVOL"),
+    pe_ce_delta_l: Optional[float] = Query(None, description="Optional override Net PE-CE delta in Lakhs"),
+):
+    """Institutional ICT Reference Levels & True Breakout Engine:
+    Computes Previous Day High (PDH), Previous Day Low (PDL), Session Open (09:15 AM IST),
+    Midnight Open, and classifies Judas Swing Liquidity Sweeps vs True Breakout Expansions."""
+    from ..engine import institutional_levels
+    return institutional_levels.compute_institutional_levels(
+        sec_id=sec_id,
+        override_rvol=rvol,
+        override_pe_ce_delta_l=pe_ce_delta_l,
+    )
+
+
 @app.get("/api/oi/matrix")
 @app.get("/api/chain/oi-matrix")
 def oi_matrix(
