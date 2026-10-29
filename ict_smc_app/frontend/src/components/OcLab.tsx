@@ -692,8 +692,13 @@ export function findTop5Pivots(smartRowsNewestFirst: SmartRow[]): PivotChip[] {
  * Read-only and failure-tolerant: an empty map means the clamp simply stays strict, which is the old
  * behaviour, so a missing or broken volume feed can never loosen a target.
  */
-function useRvolByHhmm(tf: string, tick: number): Map<string, number> {
+function useRvolByHhmm(tf: string, tick: number): { rvol: Map<string, number>; ready: boolean } {
   const [m, setM] = useState<Map<string, number>>(new Map());
+  // `ready` turns true once the FIRST fetch has settled, success or failure. The setup log waits for
+  // it: a row computed before the map lands reads "no RVOL" and would be frozen that way by the
+  // UNIQUE key. Settling on failure too means a dead volume feed delays logging by one poll rather
+  // than silently disabling the audit trail for the whole session.
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     let dead = false;
     fetch(`/api/analysis?tf=${tf}&inst=NIFTY`)
@@ -707,10 +712,11 @@ function useRvolByHhmm(tf: string, tick: number): Map<string, number> {
         }
         setM(next);
       })
-      .catch((e) => { console.warn("[rvol] analysis fetch failed; targets stay clamped:", e); });
+      .catch((e) => { console.warn("[rvol] analysis fetch failed; targets stay clamped:", e); })
+      .finally(() => { if (!dead) setReady(true); });
     return () => { dead = true; };
   }, [tf, tick]);
-  return m;
+  return { rvol: m, ready };
 }
 
 export function PeceTable({ tick }: { tick: number }) {
@@ -765,7 +771,7 @@ export function PeceTable({ tick }: { tick: number }) {
   }, []);
 
   const rawRows = d?.rows ?? [];
-  const rvolByHhmm = useRvolByHhmm(tf, tick);
+  const { rvol: rvolByHhmm, ready: rvolReady } = useRvolByHhmm(tf, tick);
   const smartRows = computeSmartRows(rawRows, tf, rvolByHhmm);
   const pivots = findTop5Pivots(smartRows);
 
@@ -779,9 +785,18 @@ export function PeceTable({ tick }: { tick: number }) {
 
   useEffect(() => {
     if (smartRows.length === 0) return;
+    // Wait for the RVOL map's first fetch to settle. Without this the newest closed bar can be posted
+    // while the map is still empty, recorded as "capped, no RVOL", and frozen there by the UNIQUE key.
+    if (!rvolReady) return;
     const fresh: Record<string, unknown>[] = [];
 
-    for (const r of smartRows) {
+    // smartRows is newest first, and smartRows[0] is the bar still FORMING. Its spot moves on every
+    // 30 s poll, so posting it recorded one row per tick: 29 Oct stored seven DIP BUY rows for the
+    // 10:51-11:00 window and two PULLBACK SELLs for 09:33 alone, none of them separate signals. Worse,
+    // an intermediate state could be frozen by the UNIQUE key before the bar settled -- 13:18 logged
+    // tp 22888 while the screen showed 22867, and 10:00 stored both a SNIPER BREAKDOWN and the CONFLICT
+    // that demoted it. Only closed bars are final, so only closed bars are recorded.
+    for (const r of smartRows.slice(1)) {
       // Real tickets, plus the ones arbitration or dedup demoted. A suppressed ticket has to be
       // recorded too, or the suppression is unfalsifiable: without these rows there is no way to ask
       // later whether standing aside saved money or cost it.
@@ -789,7 +804,10 @@ export function PeceTable({ tick }: { tick: number }) {
       if (!r.actionText || !(isLive || r.suppressed)) continue;      // not HOLD/WAIT/noise
       if (r.dynamicSl == null || r.spot == null) continue;
 
-      const key = `${r.ts}|${r.stageBadge}|${r.actionTone}|${r.spot}`;
+      // Deliberately WITHOUT spot: one bar + setup + side is one signal. Including spot minted a new
+      // key on every tick of the live bar, so the server's UNIQUE guard could never absorb the repost
+      // it exists to absorb. With spot gone a re-post is a true no-op, as the dedup test asserts.
+      const key = `${r.ts}|${r.stageBadge}|${r.actionTone}`;
       if (postedSetupsRef.current.has(key)) continue;
       postedSetupsRef.current.add(key);
 
@@ -832,7 +850,7 @@ export function PeceTable({ tick }: { tick: number }) {
       // rather than swallowing it, or a silently empty table looks like "no setups fired".
       console.warn("[setup-log] post failed, setups not recorded:", e);
     });
-  }, [smartRows]);
+  }, [smartRows, rvolReady]);
 
   // Audio acoustic alert on new candle arrival for A+ setups
   const lastEvaluatedTableTsRef = useRef<string | null>(null);
