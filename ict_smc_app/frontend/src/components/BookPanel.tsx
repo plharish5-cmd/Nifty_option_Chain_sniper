@@ -64,7 +64,23 @@ export default function BookPanel() {
         <div className="mb-2 rounded-lg border border-ink-700 p-2">
           <div className="flex items-baseline justify-between">
             <b className="text-emerald-300">📗 Book balance · NIFTY FUT</b>
-            <span className="text-[11px] text-slate-500">updated {b.ts ? hm(b.ts) : "—"} · spread {b.spread ?? "—"}</span>
+            {/* A frozen timestamp and a broken feed look identical, so say which one this is. The book only
+                moves while NSE is sending full packets; outside market hours the last book stays on screen
+                and the age below is the honest reading of it. */}
+            {(() => {
+              const age = b.ts ? Math.floor(Date.now() / 1000) - b.ts : null;
+              const stale = age != null && age > 90;
+              return <span className="text-[11px] text-slate-500">
+                updated {b.ts ? hm(b.ts) : "—"} · spread {b.spread ?? "—"}
+                {stale && <span className="ml-1.5 rounded border border-amber-500/60 px-1 font-semibold text-amber-300"
+                  title={"The order book updates only while NSE is sending full packets — during market hours.\n\n"
+                    + "Outside 09:15–15:30 the last book received stays on screen and nothing moves. That is "
+                    + "normal: the prices and sizes below are the real closing book, not a fault.\n\n"
+                    + "If this badge is still showing DURING market hours, the futures feed is genuinely down."}>
+                  {age >= 3600 ? `${Math.floor(age / 3600)}h` : `${Math.floor(age / 60)}m`} old · feed quiet
+                </span>}
+              </span>;
+            })()}
           </div>
           <div className="mt-1 flex h-5 overflow-hidden rounded">
             <div className="bg-bull-500 text-center text-[12px] font-bold text-ink-900" style={{ width: `${bal.buy_pct ?? 50}%` }}>B {bal.buy_pct?.toFixed(0)}%</div>

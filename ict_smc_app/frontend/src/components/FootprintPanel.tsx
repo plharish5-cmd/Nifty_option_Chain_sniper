@@ -18,19 +18,29 @@ export default function FootprintPanel({ tick }: { tick: number }) {
   const [tf, setTf] = useState("5m");
   const [mode, setMode] = useState<"ladder" | "delta" | "summary">("ladder");
   const [cols, setCols] = useState(8);
+  // How many bars back from the newest the window starts. 0 = pinned to the latest candle.
+  const [back, setBack] = useState(0);
   const [d, setD] = useState<FP | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let dead = false;
-    const go = () => { setBusy(true); fetch(`/api/footprints?tf=${tf}&n=16`).then((r) => r.json()).then((j) => { if (!dead) setD(j); })
+    // cover=session, not n=16. The old request asked for 16 bars no matter what the dropdown said, so the
+    // panel could never hold a session: 16 x 15m is 4h against a 6h15 day, and 16 x 5m is 80 minutes. The
+    // dropdown only trimmed what was already fetched, which is why selecting "16 candles" still started at
+    // 14:50. The server now sizes the window from rules.json (footprints.heat_sessions).
+    const go = () => { setBusy(true); fetch(`/api/footprints?tf=${tf}&cover=session`).then((r) => r.json()).then((j) => { if (!dead) setD(j); })
       .catch(() => {}).finally(() => { if (!dead) setBusy(false); }); };
     go();
     const id = window.setInterval(go, 30000);
     return () => { dead = true; window.clearInterval(id); };
   }, [tf, tick]);
 
-  const bars = (d?.bars ?? []).slice(-cols);
-  const prices = useMemo(() => [...new Set(bars.flatMap((b) => b.rows.map((r) => r.p)))].sort((a, b) => b - a), [d, cols]);
+  const all = useMemo(() => d?.bars ?? [], [d]);
+  const maxBack = Math.max(0, all.length - cols);
+  const back0 = Math.min(back, maxBack);                      // clamp: new data or a wider column count
+  const end = all.length - back0;
+  const bars = all.slice(Math.max(0, end - cols), end);
+  const prices = useMemo(() => [...new Set(bars.flatMap((b) => b.rows.map((r) => r.p)))].sort((a, b) => b - a), [all, cols, back0]);
   const maxV = Math.max(1, ...bars.flatMap((b) => b.rows.map((r) => r.v)));
   const maxD = Math.max(1, ...bars.flatMap((b) => b.rows.map((r) => Math.abs(r.d))));
 
@@ -42,7 +52,18 @@ export default function FootprintPanel({ tick }: { tick: number }) {
         {([["ladder", "Bid × Ask ladder"], ["delta", "Delta profile"], ["summary", "Summary strip"]] as const).map(([m, l]) =>
           <button key={m} className={`tab ${m === mode ? "tab-on" : ""}`} onClick={() => setMode(m)}>{l}</button>)}
         {mode !== "summary" && <select className="rounded bg-ink-850 px-1 py-0.5 text-slate-300" value={cols} onChange={(e) => setCols(+e.target.value)}>
-          {[4, 6, 8, 12, 16].map((x) => <option key={x} value={x}>{x} candles</option>)}</select>}
+          {[4, 6, 8, 12, 16, 25, 40, 75].map((x) => <option key={x} value={x}>{x} candles</option>)}</select>}
+        {/* Scroll back through the session. The window used to be slice(-cols) — always the newest N, with
+            no way to look at the morning. Right edge = latest. */}
+        {mode !== "summary" && maxBack > 0 && <>
+          <input type="range" min={0} max={maxBack} value={maxBack - back0} title="Scroll back through the session"
+            onChange={(e) => setBack(maxBack - +e.target.value)} className="h-1 w-40 cursor-pointer accent-amber-400" />
+          <span className="num text-[10px] text-slate-400">
+            {bars.length ? `${bars[0].at} → ${bars[bars.length - 1].at}` : ""}
+            <span className="text-slate-600"> · {all.length} bars</span>
+          </span>
+          {back0 > 0 && <button className="tab !py-0.5 !text-[10px]" onClick={() => setBack(0)} title="Jump to the latest candle">⇥ latest</button>}
+        </>}
         <span className="rounded border border-amber-400/60 px-1.5 text-[10px] font-bold text-amber-300">ESTIMATED</span>
         <span className="text-slate-500">{busy ? "⟳" : d?.source ?? ""}</span>
       </div>
