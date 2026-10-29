@@ -211,6 +211,28 @@ def chain_trinity(
     return h.chain.get_pcr_trinity(exp=target_exp, fut_src=target_fut, hub=h)
 
 
+@app.get("/api/chain/oi-studio")
+@app.get("/api/chain/stockmojo-oi-studio")
+def oi_studio_endpoint(
+    expiry_mode: str = Query("this_wk"),
+    start_ts: Optional[int] = Query(None),
+    end_ts: Optional[int] = Query(None),
+    strike_range: str = Query("10"),
+    min_strike: Optional[float] = Query(None),
+    max_strike: Optional[float] = Query(None),
+):
+    """StockMojo 1:1 Open Interest & Writer Map Studio telemetry."""
+    from ..engine import oi_studio
+    return oi_studio.get_oi_studio_data(
+        expiry_mode=expiry_mode,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        strike_range=strike_range,
+        min_strike=min_strike,
+        max_strike=max_strike,
+    )
+
+
 @app.get("/api/chain/pece-matrix")
 def pece_matrix(
     expiry: Optional[str] = None,
@@ -816,6 +838,9 @@ async def time_series_chain(
         if any(not isinstance(value, bool) for key, value in opts.items() if key != "font"):
             raise ValueError("Invalid settings value")
         strikes = [int(k) for k in custom.split(",") if k.strip()]
+        if day:
+            from datetime import date
+            date.fromisoformat(day)
     except (ValueError, TypeError) as exc:
         raise HTTPException(400, str(exc))
     params = {k: v for k, v in dict(day=day, expiry=expiry, tf=tf, mode=mode, columns=columns,

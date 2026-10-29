@@ -544,8 +544,27 @@ def test_dual_expiry_and_futures_meta_integration():
 
 
 def test_get_writer_flow_integration():
+    from app import db
     from app.market.chain import ChainPoller
     from app.dhan.rest import DhanREST
+
+    if not db.query("SELECT ts FROM chain_snap WHERE expiry='2026-11-03' LIMIT 1"):
+        t0 = 1793160000
+        for exp in ("2026-10-27", "2026-11-03"):
+            db.save_chain_snap(exp, t0, [
+                (22600.0, 500000, 3000000, 150.0, 40.0, 1000, 1000),
+                (22650.0, 1200000, 2500000, 110.0, 60.0, 1000, 1000),
+                (22700.0, 2000000, 2000000, 80.0, 80.0, 1000, 1000),
+            ])
+            db.save_chain_snap(exp, t0 + 180, [
+                (22600.0, 520000, 3200000, 140.0, 45.0, 2000, 2000),
+                (22650.0, 1250000, 2600000, 105.0, 65.0, 2000, 2000),
+                (22700.0, 2100000, 2100000, 75.0, 85.0, 2000, 2000),
+            ])
+        db.upsert_candles("FUT", [
+            {"ts": t0, "o": 22690, "h": 22710, "l": 22680, "c": 22700, "v": 5000},
+            {"ts": t0 + 180, "o": 22700, "h": 22720, "l": 22695, "c": 22710, "v": 6000},
+        ])
 
     rest = DhanREST()
     poller = ChainPoller(rest, lambda *a, **k: None)

@@ -427618,3 +427618,87 @@ INFO:     Application startup complete.
 ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8600): address already in use
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
+INFO:     Started server process [24371]
+INFO:     Waiting for application startup.
+2026-10-29 07:23:37,994 INFO engine.broker: Redis not reachable (Error 111 connecting to localhost:6379. Connection refused.); activating in-memory async pub/sub broker
+2026-10-29 07:23:38,169 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:23:38,769 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:23:38,989 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:23:39,200 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:23:39,401 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:23:39,678 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:23:40,569 INFO hub: NIFTY future: NIFTY-Nov2026-FUT (id 61471, expiry 2026-11-23) · 8250 one-minute candles — NIFTY-Nov2026-FUT (61471): ok — 22,775.0, basis +76.2, volume today 4,787,900; NIFTY-Dec2026-FUT (58875): ok — 22,921.7, basis +222.9, volume today 383,695; NIFTY-Jan2027-FUT (54749): ok — 23,025.0, basis +326.2, volume today 67,860
+2026-10-29 07:23:40,626 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:23:40,850 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:23:41,051 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:23:41,256 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:23:41,556 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:23:43,169 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:23:43,446 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     Application startup complete.
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8600): address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Started server process [24540]
+INFO:     Waiting for application startup.
+2026-10-29 07:24:05,648 INFO engine.broker: Redis not reachable (Error 111 connecting to localhost:6379. Connection refused.); activating in-memory async pub/sub broker
+2026-10-29 07:24:05,846 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:24:06,817 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:24:07,254 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:24:07,396 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:24:07,598 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:24:07,886 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:24:08,356 INFO hub: NIFTY future: NIFTY-Nov2026-FUT (id 61471, expiry 2026-11-23) · 8250 one-minute candles — NIFTY-Nov2026-FUT (61471): ok — 22,775.0, basis +76.2, volume today 4,787,900; NIFTY-Dec2026-FUT (58875): ok — 22,921.7, basis +222.9, volume today 383,695; NIFTY-Jan2027-FUT (54749): ok — 23,025.0, basis +326.2, volume today 67,860
+2026-10-29 07:24:08,406 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:24:08,629 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:24:08,843 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:24:09,090 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:24:09,321 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:24:09,779 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:24:10,033 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     Application startup complete.
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8600): address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Started server process [27188]
+INFO:     Waiting for application startup.
+2026-10-29 07:31:54,177 INFO engine.broker: Redis not reachable (Error 111 connecting to localhost:6379. Connection refused.); activating in-memory async pub/sub broker
+2026-10-29 07:31:54,336 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:31:54,611 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:31:54,835 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:31:55,048 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:31:55,242 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:31:55,529 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:31:55,845 INFO hub: NIFTY future: NIFTY-Nov2026-FUT (id 61471, expiry 2026-11-23) · 8250 one-minute candles — NIFTY-Nov2026-FUT (61471): ok — 22,775.0, basis +76.2, volume today 4,787,900; NIFTY-Dec2026-FUT (58875): ok — 22,921.7, basis +222.9, volume today 383,695; NIFTY-Jan2027-FUT (54749): ok — 23,025.0, basis +326.2, volume today 67,860
+2026-10-29 07:31:55,899 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:31:56,118 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:31:56,323 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:31:56,527 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:31:56,809 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:31:57,227 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:31:57,484 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     Application startup complete.
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8600): address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Started server process [27430]
+INFO:     Waiting for application startup.
+2026-10-29 07:32:43,836 INFO engine.broker: Redis not reachable (Error 111 connecting to localhost:6379. Connection refused.); activating in-memory async pub/sub broker
+2026-10-29 07:32:44,012 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:32:44,440 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:32:44,658 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:32:44,859 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:32:45,064 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:32:45,349 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:32:45,761 INFO hub: NIFTY future: NIFTY-Nov2026-FUT (id 61471, expiry 2026-11-23) · 8250 one-minute candles — NIFTY-Nov2026-FUT (61471): ok — 22,775.0, basis +76.2, volume today 4,787,900; NIFTY-Dec2026-FUT (58875): ok — 22,921.7, basis +222.9, volume today 383,695; NIFTY-Jan2027-FUT (54749): ok — 23,025.0, basis +326.2, volume today 67,860
+2026-10-29 07:32:45,814 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:32:46,035 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:32:46,244 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:32:46,445 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:32:46,739 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:32:47,172 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+2026-10-29 07:32:47,430 INFO httpx: HTTP Request: POST https://api.dhan.co/v2/charts/intraday "HTTP/1.1 200 "
+INFO:     Application startup complete.
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8600): address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.

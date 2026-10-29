@@ -35,12 +35,13 @@ def build(params, snaps=None, days=None):
         return {"ok": False, "message": "No option-chain snapshots stored yet.", "sessions": [], "policy": cfg}
     day = params.get("day") or sessions[0]
     if day not in sessions:
-        raise ValueError("Session is not available")
+        return {"ok": False, "message": "Session is not available. Choose a stored session.", "sessions": sessions, "day": day, "policy": cfg}
     snaps = snaps if snaps is not None else store.load_day(date.fromisoformat(day))
     exps = tc.expiries(snaps)
-    current = [e for e in exps if pd.to_datetime(e, errors="coerce", dayfirst=not e[:4].isdigit()).date() >= date.fromisoformat(day)]
+    current = [e for e in exps if pd.notna(pd.to_datetime(e, errors="coerce", dayfirst=not e[:4].isdigit())) and pd.to_datetime(e, errors="coerce", dayfirst=not e[:4].isdigit()).date() >= date.fromisoformat(day)]
     exp = params.get("expiry") or (current[0] if current else exps[0] if exps else None)
-    meta = dict(sessions=sessions, day=day, expiries=exps, expiry=exp, policy=cfg)
+    meta = dict(sessions=sessions, day=day, expiries=exps, expiry=exp, policy=cfg, live=day==max(sessions) and day==date.today().isoformat())
+    meta["expiry_labels"] = {e: e + " (" + str((pd.to_datetime(e, errors="coerce", dayfirst=not e[:4].isdigit()).date()-date.fromisoformat(day)).days) + "d)" for e in exps if pd.notna(pd.to_datetime(e, errors="coerce", dayfirst=not e[:4].isdigit()))}
     if exp not in exps:
         return dict(meta, ok=False, message="No snapshots for this expiry.")
     x = tc.long_frame(snaps, exp)
@@ -102,7 +103,8 @@ def build(params, snaps=None, days=None):
     future = None
     try:
         import pcr_oi_pro as po
-        f, _ = po.future_1m(date.fromisoformat(day))
+        cache = po._fut_dir() / (day + ".csv")
+        f = pd.read_csv(cache, parse_dates=["ts"]) if cache.exists() else None
         if f is not None and len(f):
             eligible = f[pd.to_datetime(f.ts).dt.tz_localize(None) <= end]
             if len(eligible):
@@ -112,7 +114,7 @@ def build(params, snaps=None, days=None):
     matrix = lambda key: [[number(v) for v in row] for row in g[key].values]
     signals = [] if sg is None else [dict(time=pd.Timestamp(r.ts).isoformat(), close=number(r.close), support=number(r.sup), resistance=number(r.res), event=list(r.lv) if isinstance(r.lv, tuple) else None, action=list(r.act) if isinstance(r.act, tuple) else None, badge=list(r.badge)) for r in sg.itertuples()]
     return dict(meta, ok=True, html=html, mode=mode, tf=tf, spot=spot, future=future, mult=mult, unit=unit, lot=lot,
-                live=day==max(sessions) and day==date.today().isoformat(), now=str(g["now_ts"]), partial=g["partial"],
+                now=str(g["now_ts"]), partial=g["partial"],
                 elapsed=g["elapsed"], step_min=g["step_min"], selected_strikes=strikes,
                 grid=dict(cols=[pd.Timestamp(c).isoformat() for c in g["cols"]], labels=[g["labels"][c] for c in g["cols"]], ce=matrix("ce"), pe=matrix("pe")),
                 signals=signals, narrative=narrative, pro=rd)

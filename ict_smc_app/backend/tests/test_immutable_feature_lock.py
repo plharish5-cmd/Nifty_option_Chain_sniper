@@ -127,8 +127,34 @@ def test_smart_oi_contract_and_noise_filtering():
     assert len(res["signal_strikes"]) >= 2
 
 
+def _ensure_matrix_test_snapshots():
+    from app import db
+    if not db.query("SELECT ts FROM chain_snap LIMIT 1"):
+        t0 = 1793160000
+        for exp in ("2026-10-27", "2026-11-03"):
+            db.save_chain_snap(exp, t0, [
+                (22500.0, 500000, 600000, 150.0, 140.0, 1000, 1000),
+                (22550.0, 400000, 700000, 120.0, 160.0, 1000, 1000),
+                (22600.0, 300000, 800000, 90.0, 190.0, 1000, 1000),
+                (22650.0, 600000, 500000, 70.0, 210.0, 1000, 1000),
+                (22700.0, 800000, 400000, 50.0, 240.0, 1000, 1000),
+            ])
+            db.save_chain_snap(exp, t0 + 180, [
+                (22500.0, 520000, 650000, 155.0, 135.0, 2000, 2000),
+                (22550.0, 410000, 780000, 125.0, 155.0, 2000, 2000),
+                (22600.0, 310000, 900000, 95.0, 185.0, 2000, 2000),
+                (22650.0, 620000, 520000, 72.0, 205.0, 2000, 2000),
+                (22700.0, 850000, 410000, 48.0, 235.0, 2000, 2000),
+            ])
+        db.upsert_candles("FUT", [
+            {"ts": t0, "o": 22550, "h": 22580, "l": 22540, "c": 22570, "v": 1000},
+            {"ts": t0 + 180, "o": 22570, "h": 22600, "l": 22560, "c": 22590, "v": 1200},
+        ])
+
+
 def test_pe_ce_matrix_contract_and_action_verdicts():
     """Validates PE-CE Matrix 2.0 contract keys, difference calculations, and 6-stage labels."""
+    _ensure_matrix_test_snapshots()
     res = pe_ce_matrix.compute_pe_ce_matrix(tf="3m")
     assert res["ok"] is True
     for key in ("rows", "regime", "skew", "first_hour", "expiry_playbook", "strike_range_label"):
