@@ -10,6 +10,10 @@
 //   🚨 DEEP REVERSAL      — 3-factor extreme reversal: Deep Sweep/HL + Writer Impulse Flip + MSS Break
 //   🛡️ TRAIL SL          — Trade management trailing stop shift >= 15 pts
 import { useEffect, useState } from "react";
+
+// Seconds between IST and UTC. Candle times carry this offset already (chart_time), so a UTC-formatted
+// read of one yields IST -- and anything that applies the offset a second time is a bug.
+const IST_OFFSET_S = 19800;
 import { api, type AlertRow, type Analysis, type Candle } from "../api";
 import { BIAS_POLICY, FACTORS, type CvdAlertSignal, type BiasRow } from "./bias";
 import { BAR_SEC } from "./chartKit";
@@ -448,8 +452,17 @@ export function dispatch(evs: Ev[], fire: (a: AlertRow) => void, tf: string) {
     const gradeStr = e.grade ?? (e.kind === "aplus" || e.kind === "deep_rev" ? "trade" : e.kind === "trade_mgmt_trail" ? "mgmt" : "info");
     const al: AlertRow = {
       id: Date.now() + Math.floor(Math.random() * 1000),
-      ts: e.kind.startsWith("cvd_") ? e.t-19800 : e.t,
-      time: e.kind.startsWith("cvd_") ? new Date(e.t*1000).toISOString().slice(11,16) : "",
+      // e.t is chart_time (epoch + IST_OFFSET_S), because it comes from a candle's `time` -- proven by
+      // `hm` above formatting it with getUTCHours() to get a correct IST label. AlertsTable renders a
+      // bare `ts` with toLocaleTimeString("en-IN"), which applies the IST offset ITSELF, so passing
+      // chart_time straight through shifted every header a second +5:30: the 29 Oct 14:30 CRT SELL
+      // displayed as "20:00", above genuinely later alerts, making the log's order unreadable. The
+      // same wrong ts went to postAlert, so the alerts table stored it too.
+      //
+      // Only cvd_ was corrected before, which fixed one kind's symptom and left the rest shifted.
+      // Convert once here, for every kind: cvd_ behaviour is unchanged, the others are repaired.
+      ts: e.t - IST_OFFSET_S,
+      time: new Date(e.t * 1000).toISOString().slice(11, 16),
       grade: gradeStr,
       kind: kindStr,
       side: e.side,
