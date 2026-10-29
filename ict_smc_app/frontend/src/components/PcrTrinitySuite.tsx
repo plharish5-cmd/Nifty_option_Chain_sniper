@@ -9,6 +9,7 @@ import {
   AreaSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type LogicalRange, type SeriesMarker, type Time, type UTCTimestamp,
 } from "lightweight-charts";
+import { OiBubblesPrimitive } from "./oiBubbles";
 
 import { positioningEvents, trinitySignalPoints, BIAS_POLICY } from "./bias";
 
@@ -180,6 +181,15 @@ export default function PcrTrinitySuite({
   });
 
   const [data, setData] = useState<PcrTrinityData | null>(null);
+  // OI magnitude bubbles. Default ON (this is why it was built), but a toggle so the original view is
+  // one click away mid-session if it ever reads as clutter -- no rebuild, no revert.
+  const [showBubbles, setShowBubbles] = useState<boolean>(() => {
+    try { return localStorage.getItem("ict_trinity_bubbles") !== "0"; } catch { return true; }
+  });
+  const toggleBubbles = () => setShowBubbles((v) => {
+    try { localStorage.setItem("ict_trinity_bubbles", v ? "0" : "1"); } catch { /* ignore */ }
+    return !v;
+  });
   const [busy, setBusy] = useState(false);
   const [hoverPoint, setHoverPoint] = useState<PcrPoint | null>(null);
 
@@ -238,6 +248,7 @@ export default function PcrTrinitySuite({
     peCeDiffLine: ISeriesApi<"Line">;
     spreadHist: ISeriesApi<"Histogram">;
     mk: ReturnType<typeof createSeriesMarkers<Time>>;
+    bubbles: OiBubblesPrimitive;
   } | null>(null);
 
   const chart3Ref = useRef<{
@@ -246,6 +257,7 @@ export default function PcrTrinitySuite({
     putTotal: ISeriesApi<"Line">;
     callTotal: ISeriesApi<"Line">;
     mk: ReturnType<typeof createSeriesMarkers<Time>>;
+    bubbles: OiBubblesPrimitive;
   } | null>(null);
 
   // Guard against sync loops
@@ -521,7 +533,12 @@ export default function PcrTrinitySuite({
     });
 
     const mk = createSeriesMarkers(putChg, []);
-    chart2Ref.current = { ch, fut, putChg, callChg, peCeDiffLine, spreadHist, mk };
+    // Magnitude bubbles (additive overlay; see oiBubbles.ts). Attached to the Put curve, given the
+    // Call curve for its own y-mapping, and handed inr() so its Cr/L wording cannot drift from the
+    // labels already on this chart. Draws nothing until set(..., true).
+    const bubbles = new OiBubblesPrimitive(() => callChg, inr);
+    putChg.attachPrimitive(bubbles);
+    chart2Ref.current = { ch, fut, putChg, callChg, peCeDiffLine, spreadHist, mk, bubbles };
 
     return () => {
       ch.remove();
@@ -581,7 +598,9 @@ export default function PcrTrinitySuite({
     });
 
     const mk = createSeriesMarkers(putTotal, []);
-    chart3Ref.current = { ch, fut, putTotal, callTotal, mk };
+    const bubbles = new OiBubblesPrimitive(() => callTotal, inr);
+    putTotal.attachPrimitive(bubbles);
+    chart3Ref.current = { ch, fut, putTotal, callTotal, mk, bubbles };
 
     return () => {
       ch.remove();
@@ -664,6 +683,11 @@ export default function PcrTrinitySuite({
       fut.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.fut_close })));
       putChg.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.put_oi_chg })));
       callChg.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.call_oi_chg })));
+      // Same points the two curves were just given — read, never recomputed, so a bubble can never
+      // disagree with the line it sits on.
+      chart2Ref.current.bubbles.set(
+        activeSeries.map((p) => ({ time: p.time as UTCTimestamp, put: p.put_oi_chg, call: p.call_oi_chg })),
+        showBubbles);
 
       // Clean Y-axis: Only render histogram or diff line if explicitly toggled on
       if (showPeCeDiff) {
@@ -722,6 +746,9 @@ export default function PcrTrinitySuite({
       fut.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.fut_close })));
       putTotal.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.put_oi })));
       callTotal.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.call_oi })));
+      chart3Ref.current.bubbles.set(
+        activeSeries.map((p) => ({ time: p.time as UTCTimestamp, put: p.put_oi, call: p.call_oi })),
+        showBubbles);
 
       // Auto-fit tightly around min/max to reveal slope and ensure both curves & labels are fully visible
       const allOis = activeSeries.flatMap((p) => [p.put_oi, p.call_oi]).filter((x) => x > 0);
@@ -767,7 +794,7 @@ export default function PcrTrinitySuite({
     }, 40);
 
     return () => clearTimeout(timer);
-  }, [activeSeries, showVolPcr, showNetHist, showPeCeDiff]);
+  }, [activeSeries, showVolPcr, showNetHist, showPeCeDiff, showBubbles]);
 
   // Handle container resizing (ResizeObserver + window resize + layout/tab switches)
   useEffect(() => {
@@ -1350,6 +1377,16 @@ export default function PcrTrinitySuite({
               />
               <span>Show Net Histogram</span>
             </label>
+            <label className="flex items-center gap-1 cursor-pointer text-slate-400 hover:text-slate-200"
+                   title="Draw a translucent bubble on each curve whose AREA is proportional to the OI, so a 65L Call against a 5.58Cr Put looks 8.5x apart instead of merely apart. Labels the gap when the two diverge.">
+              <input
+                type="checkbox"
+                checked={showBubbles}
+                onChange={toggleBubbles}
+                className="rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0 cursor-pointer h-3 w-3"
+              />
+              <span>◎ OI Magnitude</span>
+            </label>
           </div>
           <div ref={box2} className="h-full w-full" />
         </div>
@@ -1389,6 +1426,19 @@ export default function PcrTrinitySuite({
             <div className="mt-0.5 font-medium text-gold-300 text-[10.5px]">
               {tab3Verdict}
             </div>
+          </div>
+          {/* Right Top Controls: OI magnitude bubbles (same toggle as chart 2) */}
+          <div className="absolute top-2 right-2 z-10 flex items-center gap-2 text-[10px] bg-[#070c17]/90 px-2 py-0.5 rounded border border-slate-800">
+            <label className="flex items-center gap-1 cursor-pointer text-slate-400 hover:text-slate-200"
+                   title="Bubble AREA is proportional to total OI, so the Put floor vs Call ceiling gap is read as a size difference rather than a line distance. Labels the gap when the two diverge.">
+              <input
+                type="checkbox"
+                checked={showBubbles}
+                onChange={toggleBubbles}
+                className="rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0 cursor-pointer h-3 w-3"
+              />
+              <span>◎ OI Magnitude</span>
+            </label>
           </div>
           <div ref={box3} className="h-full w-full" />
         </div>
