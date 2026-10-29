@@ -26,3 +26,6 @@
 7. **After every file you create, print its full path** so placement can be verified.
 
 8. **Alert-only.** Nothing in this build places, modifies or cancels orders.
+
+9. **IMMUTABLE FEATURE LOCK**: Core features verified working with StockMojo parity are documented and protected in `PROTECTED_MODULES.md` with baseline manifest `ict_smc_app/LOCKED_MANIFEST.json`. NEVER modify any file or function listed in `PROTECTED_MODULES.md` (Trinity 3-tabs, Classic Writer Flow, Smart OI, PE-CE Matrix 2.0, CVD Divergence, Stacked Nodes, OI Walls, Big Trades) unless the user prompt explicitly contains `UNLOCK [Module Name]`.
+

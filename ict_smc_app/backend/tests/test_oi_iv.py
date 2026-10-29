@@ -151,6 +151,7 @@ def test_rest_refresh_records_actual_requested_contract(monkeypatch):
     connection.row_factory=sqlite3.Row;connection.executescript(db.SCHEMA)
     monkeypatch.setattr(db,'_conn',connection)
     ts=int(session_bounds(now_ist().date())[0])
+    monkeypatch.setattr(futures, 'now_epoch', lambda: ts + 120)
     class Rest:
         async def intraday(self,sid,*args,**kwargs):
             assert sid=='ACTUAL-ID'

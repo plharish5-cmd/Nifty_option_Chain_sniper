@@ -11,7 +11,7 @@ os.environ.setdefault("ICT_DATA_DIR", str(Path(__file__).resolve().parent / ".da
 from app.engine import gap_sniper
 
 
-def test_gap_sniper_absorption_scenario():
+def test_gap_sniper_absorption_scenario(monkeypatch):
     """-100 pt Gap Down landing on Put Wall S1 (22,600) with Put writer defense -> Absorption & Dip Buy."""
     cfg = {
         "significant_gap_pts": 80.0,
@@ -24,6 +24,7 @@ def test_gap_sniper_absorption_scenario():
         "default_sim_gap_pts": -100.0,
     }
 
+    monkeypatch.setattr(gap_sniper.desk_bias, "get_structural_walls", lambda *a, **k: (22600.0, 22800.0))
     # Simulate GIFT Nifty opening near 22,650 (approx -100 pts against 22,750 spot)
     res = gap_sniper.compute_gap_confluence(sim_gap_pts=-100.0, cfg=cfg)
     assert res["ok"] is True

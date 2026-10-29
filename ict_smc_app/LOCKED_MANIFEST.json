@@ -1,0 +1,38 @@
+{
+  "version": "1.0",
+  "description": "Baseline SHA-256 manifest of immutable features (Trinity Suite, Smart OI, PE-CE Matrix, CVD Engine)",
+  "locked_files": {
+    "ict_smc_app/backend/app/engine/pcr_trinity.py": {
+      "sha256": "3ba0936ad7262da1d8160a89ab2a194dba076af0e2ea22a797af28d9f82b3edb",
+      "size_bytes": 39047
+    },
+    "ict_smc_app/backend/app/engine/smart_oi.py": {
+      "sha256": "ff741ca4dadd5b981f3b81c829b4b079b2ca7d1e0ae4bcac00af67fd6e4287d9",
+      "size_bytes": 23717
+    },
+    "ict_smc_app/backend/app/engine/pe_ce_matrix.py": {
+      "sha256": "9b8acdae1fd3f23ee4fd48d07b7d8ed9890e5a7aceb9faca427ac8b52ab5c267",
+      "size_bytes": 30330
+    },
+    "ict_smc_app/backend/app/engine/cvd_divergence.py": {
+      "sha256": "981cbb2379b09e53a2f8c38a696b1b0f1d850024fd721c2871bac8c0a5236356",
+      "size_bytes": 15371
+    },
+    "ict_smc_app/frontend/src/components/PcrTrinitySuite.tsx": {
+      "sha256": "6c1a2f8756a49e91b43d1e00b59ba68e83b1eaafa603148cabb4cea256368f3e",
+      "size_bytes": 62989
+    },
+    "ict_smc_app/frontend/src/components/SmartOISuite.tsx": {
+      "sha256": "3a375aeb456d70701100f6db8c9760c3706fc0868ad61ec5ff9ce8da6a3333ff",
+      "size_bytes": 80595
+    },
+    "ict_smc_app/frontend/src/components/PeceMatrix.tsx": {
+      "sha256": "a02275fac16d730261f34d8d750c3c485ad9c197a32e35e318628043a6d255cb",
+      "size_bytes": 56690
+    },
+    "ict_smc_app/frontend/src/components/CvdAlertWidget.tsx": {
+      "sha256": "85abee0def886189d584eff92684a2b83dfad53bf61e6e4261151da9c79fcbf0",
+      "size_bytes": 21450
+    }
+  }
+}

@@ -348,6 +348,7 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     const result = biasQualification(bull,bear,avail,pct);
     const context: BiasRow["context"] = [];
     if (currentSnapshot) {
+      if (confirmed || exhaustion) context.push({name:"CVD exhaustion / nodes",text:confirmed?.details ?? exhaustion!.details+" · warning only; no directional vote"});
       const state=a.prahaar?.latest_state;
       context.push({name:"Prahaar",text:state ? `${state.current_verdict} · EMA ${state.ema_trend}, momentum ${state.macd_momentum}` : "No current engine state"});
       const demand=a.gtf?.nearest_demand, supply=a.gtf?.nearest_supply;
@@ -505,7 +506,7 @@ export function cvdExhaustionSignals(candles:Candle[],fp:FpBar[],events:CvdDiver
       if(path.some((c)=>event.dir==="bull"?c.low<source.low:c.high>source.high))continue;
       const breaks=event.dir==="bull"?candle.close>source.high:candle.close<source.low;
       if(!breaks)continue;
-      const node=nodes.find((n)=>day(n.time)===day(event.time) && n.time<=candle.time && n.time>=event.time-(cfg.node_window_bars-1)*barSec && n.side===(event.dir==="bull"?"BUY":"SELL"));
+      const node=nodes.find((n)=>day(n.time)===day(event.time) && n.time<=candle.time && n.time>=event.time-(cfg.node_window_bars-1)*barSec && n.side===(event.dir==="bull"?"BUY":"SELL") && source.low<=n.zone.hi && source.high>=n.zone.lo);
       if(!node)continue;
       if(lastConfirmation?.dir===event.dir && candle.time-lastConfirmation.time<cfg.confirmation_cooldown_bars*barSec)continue;
       const signal:CvdAlertSignal={time:candle.time,sourceTime:event.time,kind:"confirmed",dir:event.dir,zone:node.zone.label,

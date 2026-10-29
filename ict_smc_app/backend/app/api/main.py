@@ -798,6 +798,32 @@ async def oclab_summary():
     return await summary()
 
 
+@app.get("/api/time-series-chain")
+async def time_series_chain(
+    day: Optional[str] = Query(None), expiry: Optional[str] = Query(None),
+    tf: Optional[str] = Query(None), mode: Optional[str] = Query(None),
+    columns: Optional[int] = Query(None), range_n: Optional[int] = Query(None),
+    selection: Optional[str] = Query(None), custom: str = Query(""),
+    end: Optional[str] = Query(None), signals: bool = Query(True), settings: str = Query("{}"),
+):
+    """8501 Time-series Chain, using its unchanged engines in a separate read-only adapter."""
+    import json
+    from ..oclab import time_series_chain as export
+    try:
+        opts = json.loads(settings)
+        if not isinstance(opts, dict) or set(opts) - {"full", "day", "pct", "lot", "hl", "font"}:
+            raise ValueError("Invalid settings")
+        if any(not isinstance(value, bool) for key, value in opts.items() if key != "font"):
+            raise ValueError("Invalid settings value")
+        strikes = [int(k) for k in custom.split(",") if k.strip()]
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, str(exc))
+    params = {k: v for k, v in dict(day=day, expiry=expiry, tf=tf, mode=mode, columns=columns,
+              range_n=range_n, selection=selection, end=end).items() if v is not None}
+    params.update(custom=strikes, signals=signals, settings=opts)
+    return await export(params)
+
+
 @app.get("/api/oclab/{what}")
 async def oclab(
     what: str,

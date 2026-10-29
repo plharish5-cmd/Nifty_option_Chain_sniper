@@ -1,0 +1,16 @@
+# AI Assistant Instructions & Architecture Rules
+
+## IMMUTABLE FEATURE LOCK (STRICT RULE)
+NEVER modify any file or function listed in `PROTECTED_MODULES.md` when building new features unless the user prompt explicitly contains "UNLOCK [Module Name]".
+
+Protected modules:
+- Trinity Suite: `pcr_trinity.py`, `PcrTrinitySuite.tsx`
+- Classic Writer Flow: `OcLab.tsx` -> `WritersFlow`, `chain.py`
+- Smart OI Suite: `smart_oi.py`, `SmartOISuite.tsx`
+- PE-CE Matrix 2.0: `pe_ce_matrix.py`, `PeceMatrix.tsx`, `OcLab.tsx`
+- Order Flow & CVD: `cvd_divergence.py`, `CvdAlertWidget.tsx`, `Chart.tsx` (CVD, Stacked nodes, OI walls, Big trades, Delta detail)
+
+Validation:
+- Baseline Manifest: `ict_smc_app/LOCKED_MANIFEST.json`
+- Verification script: `python scripts/verify_locks.py`
+- Test suite: `pytest ict_smc_app/backend/tests/test_immutable_feature_lock.py`

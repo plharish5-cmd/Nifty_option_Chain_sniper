@@ -7,6 +7,7 @@ import Chart, { type Layers } from "./components/Chart";
 import { DragBar, FullPanel, PeceTable, WritersFlow, useStoredHeight } from "./components/OcLab";
 import SplitPane from "./components/SplitPane";
 import { AutoPilotPanel, useAutopilot } from "./components/AutoPilot";
+import TimeSeriesChain from "./components/TimeSeriesChain";
 import WriterMap from "./components/WriterMap";
 import FootprintDesk from "./components/FootprintDesk";
 import { Alerts, BiasGrid, Builds, Header, Paper, Signals } from "./components/Panels";
@@ -82,7 +83,7 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap" | "stdv" | "alerts" | "advpa">("paper");
+  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap" | "stdv" | "alerts" | "advpa" | "time_series">("paper");
   const [selectedStdvLeg, setSelectedStdvLeg] = useState<StdvLeg | null>(null);
   const [isStdvPicking, setIsStdvPicking] = useState(false);
   const [mainView, setMainView] = useState<"candles" | "writers" | "both">(() => { try { return (localStorage.getItem("ict_mainview") as "candles" | "writers" | "both") || "candles"; } catch { return "candles"; } });
@@ -333,6 +334,7 @@ export default function App() {
             <div className="card-h">
               <div className="flex gap-1">
                 <button className={`tab ${bottom === "paper" ? "tab-on" : ""}`} onClick={() => setBottom("paper")}>Paper trades</button>
+                <button className={"tab "+(bottom==="time_series"?"tab-on":"")+" !border-cyan-600 !text-cyan-300"} onClick={()=>setBottom("time_series")}>⏱ Time-series Chain</button>
                 <button className={`tab ${bottom === "alerts" ? "tab-on" : ""} !border-gold-500/60 !text-gold-300 font-semibold`} onClick={() => setBottom("alerts")}>🔔 Alerts log</button>
                 <button className={`tab ${bottom === "delta" ? "tab-on" : ""}`} onClick={() => setBottom("delta")}>Delta / Footprint</button>
                 <button className={`tab ${bottom === "footprint" ? "tab-on" : ""} !border-cyan-500/50`} onClick={() => setBottom("footprint")}>📊 Footprint desk</button>
@@ -348,7 +350,8 @@ export default function App() {
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "advpa" ? <AdvPaPanel tick={storyTick} chartTf={tf} />
+              {bottom === "time_series" ? <TimeSeriesChain />
+                : bottom === "advpa" ? <AdvPaPanel tick={storyTick} chartTf={tf} />
                 : bottom === "alerts" ? <AlertsTable alerts={dash?.alerts} onRefresh={loadDash} />
                 : bottom === "stdv" ? <StdvPanel candles={candles} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} chartTf={tf} selectedLeg={selectedStdvLeg} onSelectLeg={setSelectedStdvLeg} isLayerActive={!!layers.stdv} onToggleLayer={() => setLayers((l) => ({ ...l, stdv: !l.stdv }))} isPicking={isStdvPicking} onStartPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onCancelPicking={() => setIsStdvPicking(false)} onSetChartTf={setTf} />
                 : bottom === "wmap" ? <WriterMap />

@@ -230,7 +230,7 @@ def test_active_expiry_and_both_combination():
     res_both = pe_ce_matrix.compute_pe_ce_matrix(expiry="both", tf="3m")
     assert res_both["ok"] is True
     assert len(res_both["rows"]) > 0
-    assert "2026-10-27" in res_both["expiry"]
+    assert res_cur["expiry"] in res_both["expiry"]
 
 
 def test_eod_mutual_unwinding_slope_flip():

@@ -101,22 +101,24 @@ def test_hhmm_is_resolved_server_side():
     the client doing timezone arithmetic that breaks around midnight."""
     from app.timeutil import ist_date, now_ist
 
+    key = f"hhmm-resolve-{int(time.time() * 1000)}"
     r = client.post("/api/setups/log", json={"setups": [{
-        "key": "hhmm-resolve", "hhmm": "13:09", "setup": "DIP BUY", "side": "bull",
+        "key": key, "hhmm": "13:09", "setup": "DIP BUY", "side": "bull",
         "entry": 22726.4, "sl": 22691.0, "conviction_pct": 95,
     }]})
     assert r.status_code == 200, r.text
 
     today = ist_date(int(now_ist().timestamp())).isoformat()
     rows = client.get("/api/setups", params={"d": today}).json()["setups"]
-    got = [s for s in rows if s["key"] == "hhmm-resolve"]
+    got = [s for s in rows if s["key"] == key]
     assert len(got) == 1, "setup should be filed under today's IST session"
     assert got[0]["d"] == today
 
 
 def test_unparseable_hhmm_does_not_store_a_nonsense_timestamp():
+    key = f"hhmm-garbage-{int(time.time() * 1000)}"
     r = client.post("/api/setups/log", json={"setups": [{
-        "key": "hhmm-garbage", "hhmm": "xx:yy", "setup": "DIP BUY", "side": "bull", "entry": 1.0,
+        "key": key, "hhmm": "xx:yy", "setup": "DIP BUY", "side": "bull", "entry": 1.0,
     }]})
     assert r.status_code == 200
     assert r.json()["stored"] == 1          # stored, stamped now, and warned — never silently dropped
