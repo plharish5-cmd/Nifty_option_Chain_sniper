@@ -11,6 +11,7 @@ import SmartOISuite from "./SmartOISuite";
 import { GapSniperTab } from "./GapSniperTab";
 import { COUNTER_TREND_CAP, counterTrendNote, dayRegime, fightsTheDay } from "./regime";
 import { deskState, isSideAllowed, spokenFor, stateChangeIndices, type DeskState } from "./deskState";
+import { chipFor, useConfirmAlert, useDivergence, vixChipFor, type DivEvent } from "./divergence";
 import {
   CandlestickSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp,
@@ -765,9 +766,15 @@ function useRvolByHhmm(tf: string, tick: number): { rvol: Map<string, number>; r
  * about a second, from across the room, without actually reading it. Everything else on this screen
  * is for understanding the day afterwards; this is the only part for deciding during it.
  */
-function DeskStateBar({ s, refuseMode, onToggleRefuse, showRefuse }:
-    { s: DeskState | null; refuseMode: boolean; onToggleRefuse: () => void; showRefuse: boolean }) {
+function DeskStateBar({ s, refuseMode, onToggleRefuse, showRefuse, chips }:
+    { s: DeskState | null; refuseMode: boolean; onToggleRefuse: () => void; showRefuse: boolean;
+      chips?: ({ text: string; tone: string; title: string } | null)[] }) {
   if (!s) return null;
+  const chipSkin = (t: string) =>
+    t === "bear" ? "border-rose-500/70 bg-rose-950/60 text-rose-200"
+    : t === "bull" ? "border-emerald-500/70 bg-emerald-950/60 text-emerald-200"
+    : t === "warn" ? "border-amber-500/70 bg-amber-950/60 text-amber-200"
+    : "border-slate-600/70 bg-slate-900/60 text-slate-300";
   const skin =
     s.tone === "bull" ? "bg-emerald-950/80 border-emerald-500 text-emerald-200"
     : s.tone === "bear" ? "bg-rose-950/80 border-rose-500 text-rose-200"
@@ -780,6 +787,14 @@ function DeskStateBar({ s, refuseMode, onToggleRefuse, showRefuse }:
       <div className="flex min-w-0 items-center gap-2.5">
         <span className="text-[17px] leading-none">{dot}</span>
         <span className="truncate text-[15px] font-extrabold tracking-tight">{s.line}</span>
+        {/* Context chips. Deliberately small and after the state line: an ARMED watch is information,
+            not an instruction, and must never compete visually with the permission. */}
+        {(chips ?? []).filter(Boolean).map((ch, i) => (
+          <span key={i} title={ch!.title}
+                className={`shrink-0 cursor-help rounded border px-1.5 py-0.5 text-[10px] font-semibold ${chipSkin(ch!.tone)}`}>
+            {ch!.text}
+          </span>
+        ))}
       </div>
       {showRefuse && <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200"
              title={"Hide tickets the day forbids, instead of showing them greyed out.\n\n"
@@ -992,6 +1007,25 @@ export function PeceTable({ tick }: { tick: number }) {
   const live: DeskState | null = liveStateRow ? deskState(liveStateRow) : null;
   const stateIdx = new Set(stateChangeIndices(smartRows));
 
+  // RSI / VIX divergence context. Read-only: if the endpoint is absent the desk behaves identically.
+  const divergence = useDivergence(tick, tf, live?.permission === "LONG_ONLY" ? "bull"
+                                          : live?.permission === "SHORT_ONLY" ? "bear" : "none");
+  const onDivConfirm = useCallback((e: DivEvent) => {
+    // Only a CONFIRMED watch is worth interrupting for -- an armed one stays silent by design.
+    if (!soundOn) return;
+    try {
+      if ("speechSynthesis" in window) {
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(
+          `R S I divergence confirmed. ${e.side === "short" ? "Short" : "Long"}.`);
+        u.rate = 1.05;
+        speechSynthesis.speak(u);
+      }
+    } catch { /* speech is an enhancement */ }
+    playOiBeep(e.side === "short" ? "angleBear" : "angleBull");
+  }, [soundOn]);
+  useConfirmAlert(divergence, onDivConfirm);
+
   // ── the desk speaks only when the STATE changes ───────────────────────────────────────────────
   // Everything used to talk, so nothing registered. This keys off speechKey, which ignores the
   // WAIT<->HOLD churn inside a trend: on 29 Oct that is 8 utterances across the whole session
@@ -1070,7 +1104,7 @@ export function PeceTable({ tick }: { tick: number }) {
   if (tableMode === "matrix") {
     return (
       <div className="flex h-full flex-col bg-[#070c17]">
-        <DeskStateBar s={live} refuseMode={refuseMode} onToggleRefuse={toggleRefuse} showRefuse={filterMode === "state"} />
+        <DeskStateBar s={live} refuseMode={refuseMode} onToggleRefuse={toggleRefuse} showRefuse={filterMode === "state"} chips={[chipFor(divergence), vixChipFor(divergence)]} />
         <div className="flex items-center justify-between border-b border-ink-800 bg-[#091122] px-3 py-1 text-[11px]">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-emerald-400">⚡ PE-CE Institutional Matrix 2.0</span>
@@ -1100,7 +1134,7 @@ export function PeceTable({ tick }: { tick: number }) {
 
   return (
     <div className="flex h-full flex-col bg-[#0b1220]">
-      <DeskStateBar s={live} refuseMode={refuseMode} onToggleRefuse={toggleRefuse} showRefuse={filterMode === "state"} />
+      <DeskStateBar s={live} refuseMode={refuseMode} onToggleRefuse={toggleRefuse} showRefuse={filterMode === "state"} chips={[chipFor(divergence), vixChipFor(divergence)]} />
       <div className="flex items-center justify-between border-b border-ink-800 bg-[#091122] px-3 py-1 text-[11px]">
         <div className="flex items-center gap-2">
           <span className="font-bold text-slate-400">Classic PE − CE OI Table</span>

@@ -6,6 +6,7 @@ import {
 } from "lightweight-charts";
 import type { Analysis, Candle, TF, WriterMetrics, InstitutionalLevelsRes } from "../api";
 import { bucket } from "../api";
+import type { DivergencePayload } from "./divergence";
 import { computeBias, cvdExhaustionSignals, FACTORS, BIAS_POLICY, BIAS_NAME, type BiasRow } from "./bias";
 import { useOcFeed, useSmt, useBiasAgreement, type SmtForming } from "./ocfeed";
 import { computeSmartRows, playOiBeep, type Row, type SmartRow } from "./OcLab";
@@ -30,7 +31,7 @@ import { detectGtfZones, evaluateGtfMasterConfluence, hitTestGtfZone, getGtfExpl
 import PcrTrinitySuite from "./PcrTrinitySuite";
 import OIMatrixSuite from "./OIMatrixSuite";
 
-export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean; p3?: boolean; stdv?: boolean; advPa?: boolean; prahaar?: boolean; gtfZones?: boolean; ictLevels?: boolean };
+export type Layers = { ob: boolean; fvg: boolean; liq: boolean; structure: boolean; swings: boolean; range: boolean; session: boolean; delta: boolean; deltaDetail: boolean; crt: boolean; auction: boolean; volume: boolean; oi: boolean; rvol: boolean; qml?: boolean; fp?: boolean; bias?: boolean; dol?: boolean; smt?: boolean; heat?: boolean; ocAct?: boolean; cvd?: boolean; cells?: boolean; walls?: boolean; bubbles?: boolean; nodes?: boolean; gamma?: boolean; tsoup?: boolean; rblock?: boolean; p3?: boolean; stdv?: boolean; advPa?: boolean; prahaar?: boolean; gtfZones?: boolean; ictLevels?: boolean; rsiDiv?: boolean };
 
 const C = {
   bull: "#10b981", bear: "#ef4444", gold: "#e8c35a", grid: "#131d33", text: "#94a3b8",
@@ -99,6 +100,56 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     }
   });
   const ictLinesRef = useRef<IPriceLine[]>([]);
+
+  // ── RSI divergence watch levels ───────────────────────────────────────────────────────────────
+  // Only the ACTIVE watch is drawn, and only two lines: the trigger price must be closed through
+  // before the divergence means anything, and the invalidation beyond which the premise is gone.
+  // Deliberately NOT a pivot-to-pivot connector: a diagonal line drawn to a past high reads like a
+  // forecast, and the point of this engine is that a divergence is a watch, not a prediction.
+  const divLinesRef = useRef<IPriceLine[]>([]);
+  const [divergence, setDivergence] = useState<DivergencePayload | null>(null);
+  const [showDiv, setShowDiv] = useState<boolean>(() => {
+    try { return localStorage.getItem("ict_div_lines") !== "0"; } catch { return true; }
+  });
+  const toggleDiv = () => setShowDiv((v) => {
+    try { localStorage.setItem("ict_div_lines", v ? "0" : "1"); } catch { /* ignore */ }
+    return !v;
+  });
+
+  useEffect(() => {
+    let alive = true;
+    const go = () => fetch(`/api/desk/divergence?tf=${tf}&day_regime=none`)
+      .then((r) => r.json())
+      .then((j) => { if (alive) setDivergence(j); })
+      .catch(() => { /* read-only: the chart is unchanged without it */ });
+    go();
+    const t = setInterval(go, 15000);
+    return () => { alive = false; clearInterval(t); };
+  }, [tf]);
+
+  useEffect(() => {
+    divLinesRef.current.forEach((l) => { try { series.current?.removePriceLine(l); } catch { /* gone */ } });
+    divLinesRef.current = [];
+    const a = divergence?.rsi?.active;
+    if (!showDiv || !series.current || !a) return;
+    const short = a.side === "short";
+    try {
+      divLinesRef.current.push(series.current.createPriceLine({
+        price: a.structure_trigger,
+        color: short ? "#fb7185" : "#34d399",
+        lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true,
+        title: `RSI ${short ? "▼" : "▲"} trigger`,
+      }));
+      divLinesRef.current.push(series.current.createPriceLine({
+        price: a.invalidation,
+        color: "#94a3b8",
+        lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true,
+        title: "RSI invalid",
+      }));
+    } catch (e) {
+      console.warn("Failed creating RSI divergence price lines", e);
+    }
+  }, [divergence, showDiv]);
 
   useEffect(() => {
     if (layers.ictLevels !== undefined) {
@@ -2713,6 +2764,27 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       )}
       {/* Top-Right Control Bar: ⚡ 3-Chart Trinity Suite + ⚡ Strike Map 2.0 + Expiry Selector */}
       <div className="pointer-events-auto absolute right-2 top-2 z-20 flex flex-wrap items-center justify-end gap-2 max-w-[55%]">
+        <button
+          onClick={toggleDiv}
+          className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur ${
+            showDiv ? "bg-sky-500/20 border-sky-500/80 text-sky-300 ring-1 ring-sky-500/40"
+                    : "border-slate-700/60 text-slate-400 hover:text-slate-200"
+          }`}
+          title={"RSI divergence WATCH levels: the trigger price that must be CLOSED through before the "
+            + "divergence means anything, and the invalidation beyond which the premise is gone.\n\n"
+            + "Only the active watch is drawn, and never a pivot-to-pivot line: a diagonal drawn to a past "
+            + "high reads like a forecast, and a divergence is a watch, not a prediction."}
+        >
+          <span>{showDiv ? "☑" : "☐"} RSI Div</span>
+          {divergence?.rsi?.active && (
+            <span className={`text-[9px] px-1 rounded font-bold ${
+              divergence.rsi.active.state === "STRUCTURE_CONFIRMED"
+                ? (divergence.rsi.active.side === "short" ? "bg-rose-500/30 text-rose-300" : "bg-emerald-500/30 text-emerald-300")
+                : "bg-amber-500/30 text-amber-300"}`}>
+              {divergence.rsi.active.state === "STRUCTURE_CONFIRMED" ? "CONFIRMED" : "WATCH"}
+            </span>
+          )}
+        </button>
         <button
           onClick={toggleIctLevels}
           className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur ${
