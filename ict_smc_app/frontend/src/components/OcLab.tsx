@@ -132,6 +132,28 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
   let sessionHigh = -Infinity;
   let sessionLow = Infinity;
 
+  // ---- ticket exits & arbitration --------------------------------------------------------------
+  // Targets were entry ± max(30m swing distance, risk × 1.8) with no reference to where price had
+  // actually traded today. On 29 Oct that put Tgt 22,884 on two live DIP BUYs when the session high
+  // was 22,874.15 — price has to BREAK the day's range to pay that, and nothing in the setup tested
+  // for a break. Clamping to the range makes the printed R honest; the raw figure is kept visible so
+  // a genuine range expansion is still readable rather than hidden.
+  const SNIPER_R = 2.0;        // SNIPER tickets shipped an SL and no target at all
+  const ARB_BARS = 3;          // 09:57 BREAKOUT CE and 10:00 BREAKDOWN PE, same strike, 3 min apart
+
+  function clampTgt(raw: number, tone: string, hi: number, lo: number) {
+    const capped = tone === "bull" ? Number.isFinite(hi) && raw > hi
+                 : tone === "bear" ? Number.isFinite(lo) && raw < lo : false;
+    const tgt = !capped ? raw : Math.round(tone === "bull" ? hi : lo);
+    return { tgt, txt: capped ? `${tgt} (capped at session ${tone === "bull" ? "high" : "low"}; raw ${raw})` : `${raw}` };
+  }
+
+  // Last ticket fired, so an opposite-direction ticket minutes later can be flagged instead of
+  // standing beside it as an equally confident instruction.
+  let lastTone: string | null = null;
+  let lastToneIdx = -99;
+  let lastToneBadge = "";
+
   // Compute graph coordinate scale C_cell to match visual slope angles
   const allCr = chron.flatMap((x) => [x.ce_day != null ? x.ce_day / 1e7 : null, x.pe_day != null ? x.pe_day / 1e7 : null]).filter((x): x is number => x != null);
   const maxCr = allCr.length ? Math.max(...allCr) : 5.0;
@@ -283,13 +305,13 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       const rawRisk = swingHigh30m - spot + 12;
       riskPts = Math.min(Math.max(Math.round(rawRisk), 15), 35);
       dynamicSl = Math.round(spot + riskPts);
-      const target = Math.round(spot - Math.max(spot - swingLow30m + 20, Math.round(riskPts * 1.8)));
+      const target = clampTgt(Math.round(spot - Math.max(spot - swingLow30m + 20, Math.round(riskPts * 1.8))), "bear", sessionHigh, sessionLow);
       if (swingHigh30m - spot > 75) {
         stage = 4;
         stageBadge = "🛡️ HOLD PE";
         actionText = `🛡️ HOLD PE · TRAIL SL → ${dynamicSl} (Extended −${Math.round(swingHigh30m - spot)}p from 30m High — Wait Pullback to Add)`;
       } else {
-        actionText = `🎯 PULLBACK SELL: BUY ${atmStrike} PE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${target})`;
+        actionText = `🎯 PULLBACK SELL: BUY ${atmStrike} PE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${target.txt})`;
       }
     } else if (isPullbackToDemand && pe_ce_day_cr > -1.0) {
       stage = 2;
@@ -298,13 +320,13 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       const rawRisk = spot - swingLow30m + 12;
       riskPts = Math.min(Math.max(Math.round(rawRisk), 15), 35);
       dynamicSl = Math.round(spot - riskPts);
-      const target = Math.round(spot + Math.max(swingHigh30m - spot + 20, Math.round(riskPts * 1.8)));
+      const target = clampTgt(Math.round(spot + Math.max(swingHigh30m - spot + 20, Math.round(riskPts * 1.8))), "bull", sessionHigh, sessionLow);
       if (spot - swingLow30m > 75) {
         stage = 4;
         stageBadge = "🛡️ HOLD CE";
         actionText = `🛡️ HOLD CE · TRAIL SL → ${dynamicSl} (Extended +${Math.round(spot - swingLow30m)}p from 30m Low — Wait Shallow Dip to Add)`;
       } else {
-        actionText = `🎯 DIP BUY: BUY ${atmStrike} CE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${target})`;
+        actionText = `🎯 DIP BUY: BUY ${atmStrike} CE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${target.txt})`;
       }
     } else if ((isZeroFlipBear || isWallShiftBear || (r.lv?.[2] === "break_dn" && r.pro?.[2]?.includes("●"))) && pe_ce_delta_l <= 5.0 && pe_ce_day_cr <= 0.5) {
       stage = 1;
@@ -319,7 +341,11 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       } else {
         stageBadge = "🎯 SNIPER BREAKDOWN";
         actionTone = "bear";
-        actionText = `🎯 SNIPER BREAKDOWN: BUY ${atmStrike} PE · SL ${dynamicSl} (${riskPts}pt risk)`;
+        // NOT clamped: a breakdown is a bet that the range gives way, so its target is beyond the low
+        // by design. Printed as a break target so it is not mistaken for a mean-reversion objective.
+        const sniperTgt = Math.round(spot - riskPts * SNIPER_R);
+        const needsBreak = Number.isFinite(sessionLow) && sniperTgt < sessionLow;
+        actionText = `🎯 SNIPER BREAKDOWN: BUY ${atmStrike} PE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${sniperTgt} · ${SNIPER_R}R)${needsBreak ? ` — needs a break of the session low ${Math.round(sessionLow)} to pay` : ""}`;
       }
     } else if ((isZeroFlipBull || isWallShiftBull || (r.lv?.[2] === "break_up" && r.pro?.[2]?.includes("●"))) && pe_ce_delta_l >= -5.0 && pe_ce_day_cr >= -0.5) {
       stage = 1;
@@ -334,7 +360,10 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       } else {
         stageBadge = "🎯 SNIPER BREAKOUT";
         actionTone = "bull";
-        actionText = `🎯 SNIPER BREAKOUT: BUY ${atmStrike} CE · SL ${dynamicSl} (${riskPts}pt risk)`;
+        // NOT clamped — see SNIPER BREAKDOWN above; a breakout's target lies beyond the high by design.
+        const sniperTgt = Math.round(spot + riskPts * SNIPER_R);
+        const needsBreak = Number.isFinite(sessionHigh) && sniperTgt > sessionHigh;
+        actionText = `🎯 SNIPER BREAKOUT: BUY ${atmStrike} CE · SL ${dynamicSl} (${riskPts}pt risk → Tgt ${sniperTgt} · ${SNIPER_R}R)${needsBreak ? ` — needs a break of the session high ${Math.round(sessionHigh)} to pay` : ""}`;
       }
     } else if (Math.abs(pe_ce_delta_l) >= 20 && (r.pro?.[2] === "●●" || r.pro?.[2] === "●●●" || r.act?.[0]?.includes("BUY"))) {
       stage = 3;
@@ -446,6 +475,28 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       angleBadge = `📐 Put ${putAngleDeg >= 0 ? "+" : ""}${putAngleDeg.toFixed(0)}° ${putAngleDeg >= 0 ? "Steep" : "Cliff"}`;
     }
 
+    // Signal arbitration. A 🎯 ticket is an instruction to put money on one side; two of them pointing
+    // opposite ways within a few bars cannot both be right, and on 29 Oct a SNIPER BREAKOUT (CE) and a
+    // SNIPER BREAKDOWN (PE) fired on the same strike 3 minutes apart. The later one is demoted to a
+    // conflict warning rather than dropped, so the disagreement itself is visible — that is the signal.
+    let suppressed = false;
+    const isTicket = actionText.includes("🎯");
+    if (isTicket && (actionTone === "bull" || actionTone === "bear")) {
+      const gap = i - lastToneIdx;
+      if (lastTone && lastTone !== actionTone && gap <= ARB_BARS) {
+        const wanted = actionText.split(":")[0].replace("🎯 ", "").trim();
+        suppressed = true;
+        stage = 0;
+        stageBadge = "⚠️ CONFLICT";
+        actionTone = "warn";
+        actionText = `⚠️ ${wanted} SUPPRESSED — opposite ticket (${lastToneBadge}) fired ${gap * barMins}m ago. Flow is fighting itself: stand aside until one side holds ${ARB_BARS} bars.`;
+      } else {
+        lastTone = actionTone;
+        lastToneIdx = i;
+        lastToneBadge = stageBadge;
+      }
+    }
+
     // Conviction Calculation
     let convictionBadge = "· Noise";
     let convictionPct = 35;
@@ -499,7 +550,7 @@ export function computeSmartRows(rawRows: Row[], tf: string): SmartRow[] {
       unifiedRead = `✂️ Scissor Divergence (Spread ${scissorSpread.toFixed(0)}°) · ${unifiedRead}`;
     }
 
-    const isActionable = stage === 1 || stage === 2 || stage === 3 || stage === 5 || isWallShiftBear || isWallShiftBull || isSynergy;
+    const isActionable = !suppressed && (stage === 1 || stage === 2 || stage === 3 || stage === 5 || isWallShiftBear || isWallShiftBull || isSynergy);
     const isHighConviction = convictionPct >= 65 || Math.abs(pe_ce_delta_l) >= 15 || isSynergy;
 
     resultChron.push({
