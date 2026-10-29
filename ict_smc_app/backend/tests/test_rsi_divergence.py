@@ -220,3 +220,27 @@ def test_aggregation_is_order_independent():
 
 def test_empty_input_aggregates_to_nothing():
     assert rd.aggregate_1m([], 180, T0 + 10_000) == []
+
+
+def test_divergence_is_found_across_NON_adjacent_pivots():
+    """Regression for the first live run.
+
+    On 29 Oct the engine found 12 pivot highs, tested 18 adjacent pairs and reported 0 divergences --
+    because the two pivots that mattered (10:30 and 14:54) had eight others between them and were
+    never compared. Each pivot must look back over several prior pivots, not just the one before it.
+    """
+    # Peak, then a run of intervening minor pivots, then a marginally higher high on weaker momentum.
+    closes = [22700 + i * 16 for i in range(15)]      # fast leg -> RSI ~100
+    closes += [22940, 22950, 22944]                   # pivot high A
+    for lvl in (22890, 22916, 22884, 22912, 22880, 22908):   # minor zig-zag, more pivots
+        closes += [lvl - 10, lvl, lvl - 8]
+    closes += [22930, 22958, 22948]                   # pivot high B: higher high, lower RSI
+    closes += [22944, 22950, 22942, 22946, 22940, 22944]
+    cfg = {**CFG, "pivot_window": 3, "max_pivot_gap_bars": 90, "max_lookback_pivots": 6}
+    res = rd.compute_rsi_divergence(bars_from([float(x) for x in closes]), tf="3m",
+                                    day_regime="none", cfg=cfg)
+    assert res["pivots"]["highs"] >= 3, "setup check: there ARE intervening pivots"
+    spans = [e for e in res["events"]
+             if e["type"] == "REGULAR_BEARISH" and e["pivot_to_ts"] - e["pivot_from_ts"] > 3 * 180]
+    assert spans, (f"a non-adjacent bearish divergence must be found; "
+                   f"pivots={res['pivots']['highs']} rejected={res['rejected']}")

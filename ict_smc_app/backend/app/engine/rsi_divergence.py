@@ -156,8 +156,9 @@ def compute_rsi_divergence(
     marked vetoed, and can never confirm. That is the 29 Oct lesson expressed as code.
     """
     c = {**{
-        "rsi_period": 14, "pivot_window": 3, "min_pivot_gap_bars": 3, "max_pivot_gap_bars": 60,
+        "rsi_period": 14, "pivot_window": 5, "min_pivot_gap_bars": 3, "max_pivot_gap_bars": 90,
         "min_price_diff_pts": 8.0, "min_rsi_diff": 3.0, "expiry_bars": 10,
+        "max_lookback_pivots": 6,
         "structure_buffer_pts": 1.0, "sl_buffer_pts": 12.0, "enabled": True,
     }, **(cfg if cfg is not None else get_cfg())}
 
@@ -187,55 +188,66 @@ def compute_rsi_divergence(
     rejected = {"gap_too_short": 0, "gap_too_long": 0, "rsi_unavailable": 0, "no_divergence": 0}
 
     def scan(idxs: List[int], kind: str) -> None:
-        for a, b in zip(idxs, idxs[1:]):
-            gap = b - a
-            if gap < int(c["min_pivot_gap_bars"]):
-                rejected["gap_too_short"] += 1
-                continue
-            if gap > int(c["max_pivot_gap_bars"]):
-                rejected["gap_too_long"] += 1
-                continue
-            if rsi[a] is None or rsi[b] is None:
-                rejected["rsi_unavailable"] += 1
-                continue
-            field = "h" if kind == "high" else "l"
-            typ = classify(kind, float(bars[b][field]), float(bars[a][field]),
-                           float(rsi[b]), float(rsi[a]),
-                           float(c["min_price_diff_pts"]), float(c["min_rsi_diff"]))
-            if not typ:
-                rejected["no_divergence"] += 1
-                continue
-            # A pivot is only confirmed `w` bars later, so that is the earliest this could be known.
-            armed_i = min(b + w, len(bars) - 1)
-            short = typ in IS_SHORT
-            between = bars[a:b + 1]
-            # The trigger is the structure between the two pivots: for a bearish watch, the lowest low
-            # between the highs. Closing through it is the price-action confirmation, and it is the
-            # whole difference between this engine and the one that lost money on 29 Oct.
-            trigger = min(x["l"] for x in between) if short else max(x["h"] for x in between)
-            invalidation = (float(bars[b][field]) + float(c["sl_buffer_pts"])) if short else \
-                           (float(bars[b][field]) - float(c["sl_buffer_pts"]))
-            vetoed = typ in IS_REVERSAL and (
-                (short and day_regime == "bull") or (not short and day_regime == "bear"))
-            events.append({
-                "type": typ, "kind": kind, "side": "short" if short else "long",
-                "is_reversal": typ in IS_REVERSAL,
-                "pivot_from_ts": int(bars[a]["ts"]), "pivot_to_ts": int(bars[b]["ts"]),
-                "pivot_from_time": hm(int(bars[a]["ts"])), "pivot_to_time": hm(int(bars[b]["ts"])),
-                "price_from": round(float(bars[a][field]), 2), "price_to": round(float(bars[b][field]), 2),
-                "rsi_from": round(float(rsi[a]), 1), "rsi_to": round(float(rsi[b]), 1),
-                "armed_ts": int(bars[armed_i]["ts"]), "armed_time": hm(int(bars[armed_i]["ts"])),
-                "armed_i": armed_i,
-                "structure_trigger": round(trigger, 2),
-                "invalidation": round(invalidation, 2),
-                "expires_ts": int(bars[armed_i]["ts"]) + int(c["expiry_bars"]) * step,
-                "state": "VETOED" if vetoed else "ARMED",
-                "vetoed": vetoed,
-                "action": (
-                    f"Counter-trend vs a {day_regime.upper()} day — watch only, will not confirm"
-                    if vetoed else
-                    f"Wait for close {'below' if short else 'above'} {trigger:.1f}"),
-            })
+        field = "h" if kind == "high" else "l"
+        max_look = int(c["max_lookback_pivots"])
+        # Each pivot is compared against SEVERAL prior pivots, not only the one immediately before it.
+        # Adjacent-only was wrong on real data: the 29 Oct session put eight pivot highs between the
+        # 10:30 peak and the 14:54 high, so the session's one obvious divergence was never examined
+        # (12 pivots found, 18 adjacent pairs tested, 0 divergences). Scanning backwards and taking
+        # the FIRST qualifying pair gives the most recent meaningful comparison rather than every
+        # combination, which would spam one event per pair.
+        for bi in range(1, len(idxs)):
+            b = idxs[bi]
+            for ai in range(bi - 1, max(-1, bi - 1 - max_look), -1):
+                a = idxs[ai]
+                gap = b - a
+                if gap < int(c["min_pivot_gap_bars"]):
+                    rejected["gap_too_short"] += 1
+                    continue
+                if gap > int(c["max_pivot_gap_bars"]):
+                    rejected["gap_too_long"] += 1
+                    break          # anything further back is only further away
+                if rsi[a] is None or rsi[b] is None:
+                    rejected["rsi_unavailable"] += 1
+                    continue
+                typ = classify(kind, float(bars[b][field]), float(bars[a][field]),
+                               float(rsi[b]), float(rsi[a]),
+                               float(c["min_price_diff_pts"]), float(c["min_rsi_diff"]))
+                if not typ:
+                    rejected["no_divergence"] += 1
+                    continue
+                # A pivot is only confirmed `w` bars later -- the earliest this could be known.
+                armed_i = min(b + w, len(bars) - 1)
+                short = typ in IS_SHORT
+                between = bars[a:b + 1]
+                # The trigger is the structure between the two pivots: for a bearish watch, the lowest low
+                # between the highs. Closing through it is the price-action confirmation, and it is the
+                # whole difference between this engine and the one that lost money on 29 Oct.
+                trigger = min(x["l"] for x in between) if short else max(x["h"] for x in between)
+                invalidation = (float(bars[b][field]) + float(c["sl_buffer_pts"])) if short else \
+                               (float(bars[b][field]) - float(c["sl_buffer_pts"]))
+                vetoed = typ in IS_REVERSAL and (
+                    (short and day_regime == "bull") or (not short and day_regime == "bear"))
+                events.append({
+                    "type": typ, "kind": kind, "side": "short" if short else "long",
+                    "is_reversal": typ in IS_REVERSAL,
+                    "pivot_from_ts": int(bars[a]["ts"]), "pivot_to_ts": int(bars[b]["ts"]),
+                    "pivot_from_time": hm(int(bars[a]["ts"])), "pivot_to_time": hm(int(bars[b]["ts"])),
+                    "price_from": round(float(bars[a][field]), 2), "price_to": round(float(bars[b][field]), 2),
+                    "rsi_from": round(float(rsi[a]), 1), "rsi_to": round(float(rsi[b]), 1),
+                    "armed_ts": int(bars[armed_i]["ts"]), "armed_time": hm(int(bars[armed_i]["ts"])),
+                    "armed_i": armed_i,
+                    "structure_trigger": round(trigger, 2),
+                    "invalidation": round(invalidation, 2),
+                    "expires_ts": int(bars[armed_i]["ts"]) + int(c["expiry_bars"]) * step,
+                    "state": "VETOED" if vetoed else "ARMED",
+                    "vetoed": vetoed,
+                    "action": (
+                        f"Counter-trend vs a {day_regime.upper()} day — watch only, will not confirm"
+                        if vetoed else
+                        f"Wait for close {'below' if short else 'above'} {trigger:.1f}"),
+                })
+                break   # most recent qualifying pair only
 
     scan(hi_idx, "high")
     scan(lo_idx, "low")
