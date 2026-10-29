@@ -246,7 +246,23 @@ export function scanSignals(o: {
 
   for (const m of a?.crt?.markers ?? []) if (m.time === t && m.kind === "CRT_ENTRY") {
     crtSide = side(m.dir);
-    if (K.crt) add("crt", crtSide, `CRT entry ${crtSide}`, "Setup D — toward the other side of the CRT box; TP1 50 %, SL beyond the sweep wick.");
+    // Non-A+ detection: 7+ candles inside or explicitly not A+
+    const isNonAplus = (m as any).aplus_tbs === false || ((m as any).inside != null && (m as any).inside >= 7) || (m.text && m.text.includes("not A+"));
+
+    // Check active 5m BOS / RVOL / PE-CE writer regime:
+    const currOc = ocActs.find((x) => x.time === t);
+    const dayPeCeCr = currOc?.smartRow?.pe_ce_day_cr ?? 0;
+    const peCeDeltaL = currOc?.smartRow?.pe_ce_delta_l ?? 0;
+    const isBullRegime = dayPeCeCr >= 0.25 || peCeDeltaL >= 25.0 || currOc?.smartRow?.actionTone === "bull" || (b && b.bull >= 11);
+    const isBearRegime = dayPeCeCr <= -0.25 || peCeDeltaL <= -25.0 || currOc?.smartRow?.actionTone === "bear" || (b && b.bear >= 11);
+
+    const isCounterTrend = (crtSide === "SELL" && isBullRegime) || (crtSide === "BUY" && isBearRegime);
+
+    if (isNonAplus && isCounterTrend) {
+      if (K.crt) add("crt", "INFO", `⚠️ CRT Counter-Trend Watch — Non-A+`, `Setup D (${(m as any).inside != null ? (m as any).inside + ' candles' : '7+ candles'} inside — not A+) fighting active ${isBullRegime ? "Bullish" : "Bearish"} breakout & writer regime. Watch only — do not take counter-trend entries.`, "info");
+    } else {
+      if (K.crt) add("crt", crtSide, `CRT entry ${crtSide}`, "Setup D — toward the other side of the CRT box; TP1 50 %, SL beyond the sweep wick.");
+    }
   }
 
   // 🎯 PE−CE Action Switch & 🛡️ Active Trade Management (Trailing SL >= 15 pts)

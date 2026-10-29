@@ -346,6 +346,89 @@ def classify_action_stage(
         return "⚖️ S0 WAIT"
 
 
+def classify_action_verdict(
+    cum_net_pe_ce: int,
+    pcr: float,
+    put_delta: int,
+    call_delta: int,
+    trail_sl: Optional[Any] = None,
+    spot: float = 0.0,
+    active_trend: str = "",
+    cfg: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Regime-aware action verdict generator for PE-CE Matrix:
+      1. Bullish Short-Covering Continuation vs. Reversal:
+         When call_delta < 0 and bar_net > 0:
+           - If established Bullish regime (cum_net_pe_ce >= 5_000_000 and pcr >= 0.88, or active_trend is Bullish/HOLD CE):
+             🟢 SHORT-COVERING FUEL (+{bar_net_fmt}) — HOLD CE · TRAIL SL → {trail_sl} (CALL WRITERS SQUEEZED)
+           - Otherwise (counter-trend / early recovery from bearish):
+             🟡 BOOK PE PROFITS / FLIP TO CE ON RETEST (SHORT COVERING ACTIVE)
+      2. Symmetric Bearish Long-Unwinding Continuation vs. Reversal:
+         When put_delta < 0 and bar_net < 0:
+           - If established Bearish regime (cum_net_pe_ce <= -5_000_000 and pcr <= 1.12, or active_trend is Bearish/HOLD PE):
+             🔴 LONG-UNWINDING FUEL ({bar_net_fmt}) — HOLD PE · TRAIL SL → {trail_sl} (PUT FLOOR COLLAPSING)
+           - Otherwise:
+             🟡 BOOK CE PROFITS / FLIP TO PE ON RETEST (LONG UNWINDING ACTIVE)
+    """
+    c = cfg or get_cfg()
+    bull_regime_thresh = int(c.get("bull_regime_threshold", 5000000))
+    bear_regime_thresh = int(c.get("bear_regime_threshold", -5000000))
+    bull_pcr_thresh = float(c.get("bull_pcr_threshold", 0.88))
+    bear_pcr_thresh = float(c.get("bear_pcr_threshold", 1.12))
+
+    bar_net = put_delta - call_delta
+    abs_bar_net = abs(bar_net)
+    if abs_bar_net >= 10000000:
+        bar_net_str = f"{abs_bar_net / 1e7:.2f}Cr"
+    else:
+        bar_net_str = f"{abs_bar_net / 1e5:.2f}L"
+
+    bar_net_fmt = f"+{bar_net_str}" if bar_net > 0 else f"-{bar_net_str}"
+
+    if trail_sl is not None and str(trail_sl).strip():
+        try:
+            sl_val = float(trail_sl)
+            trail_sl_fmt = f"{int(round(sl_val))}"
+        except (ValueError, TypeError):
+            trail_sl_fmt = str(trail_sl).strip()
+    elif spot > 0:
+        trail_sl_fmt = f"{int(round(spot - 25))}"
+    else:
+        trail_sl_fmt = "22909"
+
+    is_bull_regime = (cum_net_pe_ce >= bull_regime_thresh and pcr >= bull_pcr_thresh) or active_trend in ("HOLD CE", "bull", "BULLISH")
+    is_bear_regime = (cum_net_pe_ce <= bear_regime_thresh and pcr <= bear_pcr_thresh) or active_trend in ("HOLD PE", "bear", "BEARISH")
+
+    # 1. Bullish Short-Covering (Call writers covering while net flow is positive)
+    if call_delta < 0 and bar_net > 0:
+        if is_bull_regime:
+            return f"🟢 SHORT-COVERING FUEL (+{bar_net_str}) — HOLD CE · TRAIL SL → {trail_sl_fmt} (CALL WRITERS SQUEEZED)"
+        return "🟡 BOOK PE PROFITS / FLIP TO CE ON RETEST (SHORT COVERING ACTIVE)"
+
+    # 2. Symmetric Bearish Long-Unwinding (Put writers unwinding while net flow is negative)
+    if put_delta < 0 and bar_net < 0:
+        if is_bear_regime:
+            return f"🔴 LONG-UNWINDING FUEL ({bar_net_fmt}) — HOLD PE · TRAIL SL → {trail_sl_fmt} (PUT FLOOR COLLAPSING)"
+        return "🟡 BOOK CE PROFITS / FLIP TO PE ON RETEST (LONG UNWINDING ACTIVE)"
+
+    # Fallback to standard directional actions
+    if bar_net > 0:
+        if is_bull_regime:
+            return f"🛡️ HOLD CE · TRAIL SL → {trail_sl_fmt}"
+        return "🟢 Stage 2 Dip Buy (CE)"
+    elif bar_net < 0:
+        if is_bear_regime:
+            return f"🛡️ HOLD PE · TRAIL SL → {trail_sl_fmt}"
+        return "🔴 Stage 2 Pullback Sell (PE)"
+
+    return "⚖️ S0 WAIT"
+
+
+determine_action_verdict = classify_action_verdict
+
+
+
 def compute_pe_ce_matrix(
     expiry: Optional[str] = None,
     tf: str = "3m",

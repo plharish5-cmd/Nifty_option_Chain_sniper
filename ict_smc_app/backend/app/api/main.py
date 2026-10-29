@@ -419,6 +419,19 @@ async def record_client_alert(req: Request):
     side = str(body.get("side") or "")
     grade = str(body.get("grade") or "info")
     title = str(body.get("title") or "")
+
+    # Normalize bar timestamp to true UTC epoch seconds (detecting double +5h30m / +19800s shift)
+    now_e = int(now_epoch())
+    if ts - now_e > 10000:
+        ts -= 19800
+    elif title:
+        import re
+        from ..timeutil import to_ist
+        m = re.search(r'\b(\d{2}:\d{2})\b', title)
+        if m:
+            target_hm = m.group(1)
+            if to_ist(ts - 19800).strftime("%H:%M") == target_hm and to_ist(ts).strftime("%H:%M") != target_hm:
+                ts -= 19800
     text = str(body.get("body") or "")
     price = float(body.get("price") or 0.0)
     key = str(body.get("key") or f"{tf}|{ts}|{kind}|{side}")

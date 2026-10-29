@@ -124,3 +124,85 @@ def test_unparseable_hhmm_does_not_store_a_nonsense_timestamp():
     }]})
     assert r.status_code == 200
     assert r.json()["stored"] == 1          # stored, stamped now, and warned — never silently dropped
+
+
+def test_truncated_sl_reconstructed_to_5_digits():
+    """Validates that a 4-digit truncated SL (e.g. 2796.0) is reconstructed to 5-digit price (22796.0)."""
+    ts_val = 1793260080  # 13:18 IST
+    key = f"sl-fix-{ts_val}"
+    r = client.post("/api/setups/log", json={"setups": [{
+        "ts": ts_val,
+        "key": key,
+        "setup": "DIP BUY CE",
+        "side": "bull",
+        "entry": 22828.5,
+        "sl": 2796.0,  # truncated: missing leading 2!
+        "tp": 22888.0,
+        "payload": {"risk_pts": 33},
+    }]})
+    assert r.status_code == 200
+
+    from app.timeutil import ist_date
+    day = ist_date(ts_val).isoformat()
+    rows = client.get("/api/setups", params={"d": day}).json()["setups"]
+    match = [s for s in rows if s["key"] == key]
+    assert len(match) == 1
+    assert match[0]["sl"] == 22796.0, f"Expected 22796.0 but got {match[0]['sl']}"
+
+
+def test_three_minute_bucket_deduplication():
+    """Validates that at most 1 canonical row is logged per 3-minute candle for a given (setup, side)."""
+    base_ts = 1793248020  # 09:57 IST
+    # Simulate 3 ticks arriving inside the same 3m bar
+    ticks = [
+        {"ts": base_ts + 0, "key": f"{base_ts}|tick1", "setup": "SNIPER BREAKOUT", "side": "bull", "entry": 22745.05, "sl": 22710.0},
+        {"ts": base_ts + 30, "key": f"{base_ts}|tick2", "setup": "SNIPER BREAKOUT", "side": "bull", "entry": 22741.15, "sl": 22706.0},
+        {"ts": base_ts + 60, "key": f"{base_ts}|tick3", "setup": "SNIPER BREAKOUT", "side": "bull", "entry": 22743.35, "sl": 22708.0},
+    ]
+    r = client.post("/api/setups/log", json={"setups": ticks})
+    assert r.status_code == 200
+    assert r.json()["stored"] == 1  # exactly 1 stored, others deduplicated
+
+    from app.timeutil import ist_date
+    day = ist_date(base_ts).isoformat()
+    rows = client.get("/api/setups", params={"d": day}).json()["setups"]
+    breakout_rows = [s for s in rows if (s["ts"] // 180) * 180 == (base_ts // 180) * 180 and s["setup"] == "SNIPER BREAKOUT"]
+    assert len(breakout_rows) == 1, f"Expected 1 deduplicated row, found {len(breakout_rows)}"
+
+
+def test_tp_always_populated_on_sniper_breakout():
+    """Validates that directional setups with missing tp automatically compute 2.0R target."""
+    ts_val = 1793248560
+    key = f"tp-auto-{ts_val}"
+    r = client.post("/api/setups/log", json={"setups": [{
+        "ts": ts_val,
+        "key": key,
+        "setup": "SNIPER BREAKOUT",
+        "side": "bull",
+        "entry": 22750.0,
+        "sl": 22720.0,  # 30pt risk
+        "tp": None,      # missing tp!
+    }]})
+    assert r.status_code == 200
+
+    from app.timeutil import ist_date
+    day = ist_date(ts_val).isoformat()
+    rows = client.get("/api/setups", params={"d": day}).json()["setups"]
+    match = [s for s in rows if s["key"] == key]
+    assert len(match) == 1
+    # 2.0R target: 22750 + 2 * 30 = 22810.0
+    assert match[0]["tp"] == 22810.0, f"Expected 22810.0 but got {match[0]['tp']}"
+
+
+def test_alert_ist_timestamp_alignment():
+    """Validates that alert timestamps with double +5h30m shift are normalized to true UTC epoch."""
+    from app.signals.alerts import normalize_alert_ts
+    from app.timeutil import to_ist
+
+    # Candle 14:30 IST: True UTC epoch is 1793264400. Shifted was 1793284200 (+19800s).
+    shifted_ts = 1793284200
+    title = "5m 14:30 · CRT entry SELL"
+    normalized = normalize_alert_ts(shifted_ts, title)
+    assert normalized == 1793264400
+    assert to_ist(normalized).strftime("%H:%M") == "14:30"
+

@@ -318,3 +318,56 @@ def test_snapshot_gap_is_flagged_not_silently_closed():
     for r in live:
         if not r["step_is_gap"]:
             assert r["step_span_s"] == 180, r["step_span_s"]
+
+
+def test_regime_aware_action_verdict():
+    """Validates regime-aware action verdict refinement: short-covering continuation vs reversal."""
+    # 1. 14:33 Live Row: Established Bullish Regime (+3.80Cr, PCR 1.06, Put Delta +8.31L, Call Delta -1.50L)
+    # Must output SHORT-COVERING FUEL with HOLD CE and NEVER mention BOOK PE PROFITS
+    verdict_bull = pe_ce_matrix.classify_action_verdict(
+        cum_net_pe_ce=38_000_000,
+        pcr=1.06,
+        put_delta=831_000,
+        call_delta=-150_000,
+        trail_sl=22909,
+    )
+    assert "🟢 SHORT-COVERING FUEL" in verdict_bull
+    assert "HOLD CE · TRAIL SL → 22909" in verdict_bull
+    assert "CALL WRITERS SQUEEZED" in verdict_bull
+    assert "BOOK PE PROFITS" not in verdict_bull
+
+    # 2. 10:09 Live Row: Early Reversal from Bearish/Negative Regime (+49.57L, PCR 0.62, Put Delta +16.83L, Call Delta -42.24L)
+    # Must output BOOK PE PROFITS / FLIP TO CE warning
+    verdict_rev = pe_ce_matrix.classify_action_verdict(
+        cum_net_pe_ce=4_957_000,
+        pcr=0.62,
+        put_delta=1_683_000,
+        call_delta=-4_224_000,
+        trail_sl=22750,
+    )
+    assert verdict_rev == "🟡 BOOK PE PROFITS / FLIP TO CE ON RETEST (SHORT COVERING ACTIVE)"
+    assert "SHORT-COVERING FUEL" not in verdict_rev
+
+    # 3. Symmetric Bearish Long-Unwinding Continuation (Established Bearish: -3.50Cr, PCR 0.85, Put Delta -8.50L, Call Delta +1.20L)
+    verdict_bear_fuel = pe_ce_matrix.classify_action_verdict(
+        cum_net_pe_ce=-35_000_000,
+        pcr=0.85,
+        put_delta=-850_000,
+        call_delta=120_000,
+        trail_sl=22650,
+    )
+    assert "🔴 LONG-UNWINDING FUEL" in verdict_bear_fuel
+    assert "HOLD PE · TRAIL SL → 22650" in verdict_bear_fuel
+    assert "PUT FLOOR COLLAPSING" in verdict_bear_fuel
+    assert "BOOK CE PROFITS" not in verdict_bear_fuel
+
+    # 4. Pullback inside Bullish Regime (Counter-trend Long-Unwinding: +2.13Cr, PCR 1.02, Put Delta -5.00L, Call Delta +2.00L)
+    verdict_bull_pullback = pe_ce_matrix.classify_action_verdict(
+        cum_net_pe_ce=21_300_000,
+        pcr=1.02,
+        put_delta=-500_000,
+        call_delta=200_000,
+        trail_sl=22800,
+    )
+    assert verdict_bull_pullback == "🟡 BOOK CE PROFITS / FLIP TO PE ON RETEST (LONG UNWINDING ACTIVE)"
+

@@ -373,7 +373,8 @@ def _ev(kind: str, cr: CRTRange, r: Dict[str, Any], lb: Bars, t: int, ltf: str) 
     return {"id": f"CRT|{kind}|{cr.pair}|{cr.k_ts}|{r['bias']}", "kind": f"CRT_{kind}", "ts": ts, "time": hm(ts),
             "model": r.get("model") or "M1",
             "chart_time": chart_time(ts), "dir": "bear" if sell else "bull", "price": round(px, 2), "text": text,
-            "pair": cr.pair, "ltf": ltf, "crt_ts": cr.k_ts}
+            "pair": cr.pair, "ltf": ltf, "crt_ts": cr.k_ts,
+            "aplus_tbs": bool(r.get("aplus_tbs")), "inside": r.get("inside", 0)}
 
 
 def _model_line(r: Dict[str, Any], lb: Bars, m: int, sell: bool) -> str:
@@ -460,5 +461,6 @@ def markers(res: Dict[str, Any], chart_tf: str, since_ts: int) -> List[Dict[str,
         t = chart_time(int(bucket_start(e["ts"], chart_tf))) if chart_tf != "1D" else e["chart_time"]
         txt = e.get("model", "M1") if e["kind"] == "CRT_M1" else lab[e["kind"]]
         out.append({"time": t, "kind": e["kind"], "dir": e["dir"], "price": e["price"],
-                    "text": txt, "at": e["time"], "id": e["id"], "pair": e["pair"]})
+                    "text": txt, "at": e["time"], "id": e["id"], "pair": e["pair"],
+                    "aplus_tbs": e.get("aplus_tbs", False), "inside": e.get("inside", 0)})
     return out

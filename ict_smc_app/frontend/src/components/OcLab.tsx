@@ -299,19 +299,39 @@ export function computeSmartRows(rawRows: Row[], tf: string, rvolByHhmm?: Map<st
       actionText = "⏳ WARM-UP (Walls & Liquidity Forming) · WAIT";
       actionTone = "flat";
     } else if (isShortCoveringBounce) {
-      stage = 5;
-      stageBadge = "🟡 BOOK PE";
-      actionTone = "warn";
       riskPts = Math.min(Math.max(Math.round(spot - swingLow30m + 12), 15), 35);
       dynamicSl = Math.round(spot - riskPts);
-      actionText = "🟡 BOOK PE PROFITS / FLIP TO CE ON RETEST (SHORT COVERING ACTIVE)";
+      const isEstablishedBull = (r.pe_ce_day ?? 0) >= 5000000 && (r.pcr ?? 1.0) >= 0.88;
+      if (isEstablishedBull) {
+        stage = 4;
+        stageBadge = "🛡️ HOLD CE";
+        actionTone = "bull";
+        const barNetAbs = Math.abs(pe_ce_delta_l);
+        const barNetFmt = barNetAbs >= 100 ? `+${(barNetAbs / 100).toFixed(2)}Cr` : `+${barNetAbs.toFixed(2)}L`;
+        actionText = `🟢 SHORT-COVERING FUEL (${barNetFmt}) — HOLD CE · TRAIL SL → ${dynamicSl} (CALL WRITERS SQUEEZED)`;
+      } else {
+        stage = 5;
+        stageBadge = "🟡 BOOK PE";
+        actionTone = "warn";
+        actionText = "🟡 BOOK PE PROFITS / FLIP TO CE ON RETEST (SHORT COVERING ACTIVE)";
+      }
     } else if (isLongUnwindingDip) {
-      stage = 5;
-      stageBadge = "🟡 BOOK CE";
-      actionTone = "warn";
       riskPts = Math.min(Math.max(Math.round(swingHigh30m - spot + 12), 15), 35);
       dynamicSl = Math.round(spot + riskPts);
-      actionText = "🟡 BOOK CE PROFITS / FLIP TO PE ON RETEST (LONG UNWINDING ACTIVE)";
+      const isEstablishedBear = (r.pe_ce_day ?? 0) <= -5000000 && (r.pcr ?? 1.0) <= 1.12;
+      if (isEstablishedBear) {
+        stage = 4;
+        stageBadge = "🛡️ HOLD PE";
+        actionTone = "bear";
+        const barNetAbs = Math.abs(pe_ce_delta_l);
+        const barNetFmt = barNetAbs >= 100 ? `-${(barNetAbs / 100).toFixed(2)}Cr` : `-${barNetAbs.toFixed(2)}L`;
+        actionText = `🔴 LONG-UNWINDING FUEL (${barNetFmt}) — HOLD PE · TRAIL SL → ${dynamicSl} (PUT FLOOR COLLAPSING)`;
+      } else {
+        stage = 5;
+        stageBadge = "🟡 BOOK CE";
+        actionTone = "warn";
+        actionText = "🟡 BOOK CE PROFITS / FLIP TO PE ON RETEST (LONG UNWINDING ACTIVE)";
+      }
     } else if (isShortCoveringReversal) {
       stage = 5;
       stageBadge = "💰 BOOK / REVERSAL";
@@ -814,6 +834,21 @@ export function PeceTable({ tick }: { tick: number }) {
       // Target is only ever rendered into actionText ("→ Tgt 22799"), never kept as a field. Read it
       // back rather than recomputing it, so this records exactly what the trader was shown.
       const tgt = /Tgt\s+(\d+(?:\.\d+)?)/.exec(r.actionText);
+      const risk = Math.abs(r.spot - r.dynamicSl);
+      const fallbackTp = r.actionTone === "bull"
+        ? Math.round((r.spot + 2.0 * risk) * 10) / 10
+        : r.actionTone === "bear"
+        ? Math.round((r.spot - 2.0 * risk) * 10) / 10
+        : null;
+      const targetPrice = tgt ? Number(tgt[1]) : fallbackTp;
+
+      let cleanSl = r.dynamicSl;
+      if (r.spot > 15000 && cleanSl != null && cleanSl > 0 && cleanSl < 10000) {
+        const prefix = Math.floor(r.spot / 10000) * 10000;
+        if (Math.abs(r.spot - (prefix + cleanSl)) <= 500) {
+          cleanSl = prefix + cleanSl;
+        }
+      }
 
       fresh.push({
         hhmm: r.ts,          // the row holds only "HH:MM"; the server resolves it against today (IST)
@@ -821,8 +856,8 @@ export function PeceTable({ tick }: { tick: number }) {
         setup: String(r.stageBadge || "").replace(/^[^\w]+/, "").trim(),
         side: r.actionTone === "bear" ? "bear" : r.actionTone === "bull" ? "bull" : String(r.actionTone),
         entry: r.spot,
-        sl: r.dynamicSl,
-        tp: tgt ? Number(tgt[1]) : null,
+        sl: cleanSl,
+        tp: targetPrice,
         conviction_pct: r.convictionPct ?? null,
         conviction_band: String(r.convictionBadge || ""),
         synergy: Boolean(r.isSynergy),

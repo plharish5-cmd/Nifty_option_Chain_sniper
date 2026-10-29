@@ -11,8 +11,8 @@
       "size_bytes": 23717
     },
     "ict_smc_app/backend/app/engine/pe_ce_matrix.py": {
-      "sha256": "9b8acdae1fd3f23ee4fd48d07b7d8ed9890e5a7aceb9faca427ac8b52ab5c267",
-      "size_bytes": 30330
+      "sha256": "b3138aa6cd2c143a0808544db3a33a29736461ecabe3ab65100e6c4f777785b8",
+      "size_bytes": 34021
     },
     "ict_smc_app/backend/app/engine/cvd_divergence.py": {
       "sha256": "981cbb2379b09e53a2f8c38a696b1b0f1d850024fd721c2871bac8c0a5236356",
@@ -27,8 +27,8 @@
       "size_bytes": 80595
     },
     "ict_smc_app/frontend/src/components/PeceMatrix.tsx": {
-      "sha256": "a02275fac16d730261f34d8d750c3c485ad9c197a32e35e318628043a6d255cb",
-      "size_bytes": 56690
+      "sha256": "ee28294d9ddd3922df65b13a2327d585ad85b1f856095a46d2ffff4f40332628",
+      "size_bytes": 57048
     },
     "ict_smc_app/frontend/src/components/CvdAlertWidget.tsx": {
       "sha256": "85abee0def886189d584eff92684a2b83dfad53bf61e6e4261151da9c79fcbf0",

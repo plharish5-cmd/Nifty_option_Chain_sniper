@@ -106,6 +106,21 @@ async def telegram(text: str) -> bool:
     return ok
 
 
+def normalize_alert_ts(ts: int, title: str = "") -> int:
+    """Normalizes any IST-shifted epoch (+19800s) to true UTC epoch."""
+    now_e = int(now_epoch())
+    if ts - now_e > 10000:
+        return ts - 19800
+    if title:
+        import re
+        m = re.search(r'\b(\d{2}:\d{2})\b', title)
+        if m:
+            target_hm = m.group(1)
+            if to_ist(ts - 19800).strftime("%H:%M") == target_hm and to_ist(ts).strftime("%H:%M") != target_hm:
+                return ts - 19800
+    return ts
+
+
 def recent(limit: int = 500, grade: Optional[str] = None) -> List[Dict[str, Any]]:
     if grade:
         rows = db.query("SELECT * FROM alerts WHERE grade = ? ORDER BY id DESC LIMIT ?", (grade, limit))
@@ -114,6 +129,7 @@ def recent(limit: int = 500, grade: Optional[str] = None) -> List[Dict[str, Any]
     out = []
     for r in rows:
         d = dict(r)
+        d["ts"] = normalize_alert_ts(int(d["ts"]), str(d.get("title") or ""))
         try:
             d["payload"] = json.loads(d["payload"] or "{}")
         except ValueError:

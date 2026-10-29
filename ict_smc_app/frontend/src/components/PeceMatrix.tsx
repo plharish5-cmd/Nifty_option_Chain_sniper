@@ -974,6 +974,10 @@ export default function PeceMatrix({ tick = 0 }: PeceMatrixProps) {
                           ? "bg-emerald-950 text-emerald-300 border-emerald-400/80"
                           : r.stage_label.includes("Bearish Breakdown")
                           ? "bg-rose-950 text-rose-300 border-rose-400/80"
+                          : r.stage_label.includes("SHORT-COVERING FUEL")
+                          ? "bg-emerald-950 text-emerald-300 border-emerald-500/80 ring-1 ring-emerald-500/30"
+                          : r.stage_label.includes("LONG-UNWINDING FUEL")
+                          ? "bg-rose-950 text-rose-300 border-rose-500/80 ring-1 ring-rose-500/30"
                           : r.stage_label.includes("Book") || r.stage_label.includes("Digestion")
                           ? "bg-amber-950 text-amber-300 border-amber-500/70"
                           : r.stage_label.includes("EOD")

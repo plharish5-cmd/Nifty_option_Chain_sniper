@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -53,6 +53,42 @@ class SetupBatch(BaseModel):
     setups: List[SetupIn] = Field(default_factory=list)
 
 
+def _sanitize_sl(entry: Optional[float], sl: Optional[float], side: str, payload: Optional[Dict[str, Any]]) -> Optional[float]:
+    if entry is None or sl is None:
+        return sl
+    # Fix truncated leading digit: e.g. entry = 22828.5, sl = 2796.0 -> 22796.0
+    if entry > 15000 and 0 < sl < 10000:
+        prefix = int(entry // 10000) * 10000
+        candidate_sl = prefix + sl
+        if 5 <= abs(entry - candidate_sl) <= 500:
+            return round(candidate_sl, 1)
+        if payload and isinstance(payload, dict) and payload.get("risk_pts"):
+            try:
+                risk_pts = float(payload["risk_pts"])
+                reconstructed = entry - risk_pts if side in ("bull", "buy") else entry + risk_pts
+                return round(reconstructed, 1)
+            except (ValueError, TypeError):
+                pass
+    return round(sl, 1)
+
+
+def _ensure_tp(entry: Optional[float], sl: Optional[float], tp: Optional[float], side: str, setup: str) -> Optional[float]:
+    if tp is not None:
+        return round(tp, 1)
+    if entry is None or sl is None:
+        return None
+    risk = abs(entry - sl)
+    if risk < 1.0:
+        return None
+    is_bull = side in ("bull", "buy") or "BREAKOUT" in setup or "DIP BUY" in setup
+    is_bear = side in ("bear", "sell") or "BREAKDOWN" in setup or "PULLBACK" in setup
+    if is_bull:
+        return round(entry + 2.0 * risk, 1)
+    elif is_bear:
+        return round(entry - 2.0 * risk, 1)
+    return None
+
+
 def _resolve_ts(s: "SetupIn") -> int:
     """The browser's rows carry only "HH:MM" — no epoch — so reconstructing the date there means doing
     timezone arithmetic in the client, which silently breaks around midnight and on a replayed session.
@@ -75,10 +111,60 @@ def log_setups(batch: SetupBatch) -> Dict[str, Any]:
     if not rows:
         return {"ok": True, "stored": 0, "received": 0}
 
+    # 1. Identify any conflicted buckets in this batch or in DB
+    conflicted_buckets: set[int] = set()
+    for s in rows:
+        ts_val = _resolve_ts(s)
+        b_bucket = (ts_val // 180) * 180
+        is_conflict = (
+            s.setup == "CONFLICT"
+            or s.side == "warn"
+            or (s.payload and isinstance(s.payload, dict) and s.payload.get("suppressed"))
+        )
+        if is_conflict:
+            conflicted_buckets.add(b_bucket)
+
+    # Clean up any existing conflicting entries in DB for these conflicted buckets
+    for b_bucket in conflicted_buckets:
+        db.execute(
+            "DELETE FROM setup_log WHERE ts >= ? AND ts < ? AND setup IN ('SNIPER BREAKDOWN', 'SNIPER BREAKOUT')",
+            (b_bucket, b_bucket + 180),
+        )
+
     stored = 0
+    seen_buckets: set[Tuple[int, str, str]] = set()
+
     for s in rows:
         try:
             s.ts = _resolve_ts(s)
+            b_bucket = (int(s.ts) // 180) * 180
+            clean_setup = s.setup.strip()
+            clean_side = s.side.strip()
+
+            # Suppress conflicting directional entries (SNIPER BREAKOUT / BREAKDOWN)
+            if clean_setup in ("SNIPER BREAKDOWN", "SNIPER BREAKOUT") and b_bucket in conflicted_buckets:
+                continue
+
+            # Deduplicate per 3-minute bar bucket for a given (setup, side)
+            bucket_key = (b_bucket, clean_setup, clean_side)
+            if bucket_key in seen_buckets:
+                continue
+
+            # Check if canonical row already exists in database for this 3m bucket
+            existing = db.query(
+                "SELECT 1 FROM setup_log WHERE ts >= ? AND ts < ? AND setup = ? AND side = ? LIMIT 1",
+                (b_bucket, b_bucket + 180, clean_setup, clean_side),
+            )
+            if existing:
+                seen_buckets.add(bucket_key)
+                continue
+
+            seen_buckets.add(bucket_key)
+
+            # Sanitize SL and ensure TP
+            s.sl = _sanitize_sl(s.entry, s.sl, clean_side, s.payload)
+            s.tp = _ensure_tp(s.entry, s.sl, s.tp, clean_side, clean_setup)
+
             cur = db.execute(
                 "INSERT OR IGNORE INTO setup_log "
                 "(ts,key,d,setup,side,entry,sl,tp,conviction_pct,conviction_band,synergy,scissor,spot,payload) "
