@@ -65,7 +65,7 @@ def build(params, snaps=None, days=None):
     atm = min(have, key=lambda k: abs(k - spot))
     step = float(tc.ol._rules().get("strike_step", 50) or 50)
     candidates = sorted(sorted(have, key=lambda k: abs(k - atm))[:cfg["custom_candidates"]])
-    meta.update(times=[pd.Timestamp(t).isoformat() for t in times], strikes=have, candidates=candidates, atm=atm, end=end.isoformat())
+    meta.update(times=[pd.Timestamp(t).isoformat() for t in times], strikes=have, candidates=candidates, default_custom=[k for k in candidates if abs(k-atm)<=cfg["default_custom_steps"]*step], atm=atm, end=end.isoformat())
     custom = params.get("custom") or []
     strikes = [k for k in have if k in custom] if selection == "Custom" else [k for k in have if atm-rng*step <= k <= atm+rng*step]
     if not strikes:

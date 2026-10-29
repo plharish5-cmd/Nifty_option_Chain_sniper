@@ -150,6 +150,25 @@
     "default_tf": "3m",
     "default_columns": 6,
     "default_range": 8,
-    "custom_candidates": 41
+    "custom_candidates": 41,
+    "default_custom_steps": 4
+  },
+  "oi_studio": {
+    "lot_size": 65,
+    "default_strike_range": "10",
+    "sentiment_bullish_threshold": 58,
+    "sentiment_bearish_threshold": 42,
+    "sentiment_chg_weight": 0.6,
+    "sentiment_total_weight": 0.4,
+    "quick_windows_minutes": [
+      3,
+      5,
+      10,
+      15,
+      30,
+      60,
+      120,
+      180
+    ]
   }
 }

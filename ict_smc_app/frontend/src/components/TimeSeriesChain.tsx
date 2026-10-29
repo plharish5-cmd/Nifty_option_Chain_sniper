@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 type Settings={full:boolean;day:boolean;pct:boolean;lot:boolean;hl:boolean;font:string};
 type Controls={day:string;expiry:string;tf:string;mode:string;columns:number;range_n:number;selection:string;custom:number[];replay:boolean;end:string;signals:boolean;auto:boolean;settings:Settings};
 type Policy={refresh_seconds:number;timeframes:string[];columns:number[];ranges:number[];default_tf:string;default_columns:number;default_range:number};
-type Result={ok:boolean;message?:string;sessions?:string[];expiries?:string[];expiry?:string;day?:string;times?:string[];candidates?:number[];atm?:number;html?:string;live?:boolean;spot?:number;future?:number;partial?:boolean;elapsed?:number;step_min?:number;now?:string;unit?:string;policy?:Policy};
+type Result={ok:boolean;message?:string;sessions?:string[];expiries?:string[];expiry?:string;day?:string;times?:string[];candidates?:number[];default_custom?:number[];atm?:number;html?:string;live?:boolean;spot?:number;future?:number;partial?:boolean;elapsed?:number;step_min?:number;now?:string;unit?:string;policy?:Policy};
 const KEY="ict_time_series_chain_v1";
 const initial:Controls={day:"",expiry:"",tf:"3m",mode:"OI Change",columns:6,range_n:8,selection:"Range",custom:[],replay:false,end:"",signals:true,auto:true,settings:{full:false,day:false,pct:false,lot:false,hl:true,font:"Small"}};
 const label="flex flex-col gap-1 text-[11px] text-slate-400";
@@ -53,7 +53,7 @@ export default function TimeSeriesChain(){
       <label className={label}>Timeframe<select className={select} value={controls.tf} onChange={e=>patch({tf:e.target.value})}>{(policy?.timeframes??[controls.tf]).map(v=><option key={v}>{v}</option>)}</select></label>
       <label className={label}>Timestamp columns<select className={select} value={controls.columns} onChange={e=>patch({columns:Number(e.target.value)})}>{(policy?.columns??[controls.columns]).map(v=><option key={v}>{v}</option>)}</select></label>
       <label className={label}>Show<select className={select} value={controls.mode} onChange={e=>patch({mode:e.target.value})}>{["OI Change","OI","Price","Volume"].map(v=><option key={v}>{v}</option>)}</select></label>
-      <label className={label}>Selection<select className={select} value={controls.selection} onChange={e=>patch({selection:e.target.value,custom:e.target.value==="Custom"?(data?.candidates??[]).filter(k=>Math.abs(k-(data?.atm??k))<=200):controls.custom})}><option>Range</option><option>Custom</option></select></label>
+      <label className={label}>Selection<select className={select} value={controls.selection} onChange={e=>patch({selection:e.target.value,custom:e.target.value==="Custom"?(data?.default_custom??[]):controls.custom})}><option>Range</option><option>Custom</option></select></label>
       <label className={label}>± ATM<select disabled={controls.selection==="Custom"} className={select} value={controls.range_n} onChange={e=>patch({range_n:Number(e.target.value)})}>{(policy?.ranges??[controls.range_n]).map(v=><option key={v}>{v}</option>)}</select></label>
     </div>
     {controls.selection==="Custom"&&<div className="mb-3 flex flex-wrap gap-1 rounded border border-slate-700 p-3" aria-label="Custom strikes">{(data?.candidates??controls.custom).map(k=><button key={k} onClick={()=>patch({custom:controls.custom.includes(k)?controls.custom.filter(v=>v!==k):[...controls.custom,k].sort((a,b)=>a-b)})} className={controls.custom.includes(k)?"pill bg-cyan-800 text-cyan-100":"pill text-slate-400"}>{k}</button>)}</div>}
