@@ -679,6 +679,11 @@ export interface InstitutionalLevelsRes {
   high_today: number;
   low_today: number;
   status: string;
+  /** "daily" when PDH/PDL came from a real previous session; "fallback" when they are the
+   *  placeholder values in rules.json and must not be presented as yesterday's levels. */
+  levels_source?: "daily" | "fallback";
+  levels_available?: boolean;
+  prev_day_date?: string | null;
   status_label: string;
   alert_text: string;
   alert_kind: string;

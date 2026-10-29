@@ -62,6 +62,8 @@ export default function InstitutionalLevelsWidget({
   if (!data) return null;
 
   const { levels, current_price, high_today, low_today, status, status_label, alert_text, action_tone, is_sweep, is_breakout, details } = data;
+  // Placeholder levels are worse than none: the whole panel reads as fact. Say it before anything else.
+  const stale = data.levels_available === false;
   const pdhDiff = current_price - levels.pdh;
   const pdlDiff = current_price - levels.pdl;
 
@@ -105,6 +107,15 @@ export default function InstitutionalLevelsWidget({
       >
         <div className="flex items-center gap-2">
           <span className="text-sm">{status_label}</span>
+          {stale && (
+            <span className="ml-2 rounded border border-amber-500/70 bg-amber-950/70 px-1.5 py-0.5 text-[10px] font-bold text-amber-300"
+                  title={"PDH/PDL/PDC could not be read from a real previous session, so they fell back to the "
+                    + "placeholder values in rules.json. They are NOT yesterday's levels, the lines on the chart "
+                    + "are not where they should be, and no breakout or sweep is being classified until real "
+                    + "daily data returns."}>
+              ⚠ PLACEHOLDER LEVELS — NOT YESTERDAY&apos;S
+            </span>
+          )}
           {is_breakout && (
             <span className="rounded bg-emerald-500/30 px-1.5 py-0.5 text-[10px] font-black uppercase text-emerald-300">
               True Breakout

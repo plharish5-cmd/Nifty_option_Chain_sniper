@@ -71,6 +71,17 @@ def compute_institutional_levels(
         elif not prev_day and len(sorted_daily) == 1:
             prev_day = sorted_daily[0]
 
+    # Where each level came from. The defaults in rules.json are one specific past session's OHLC, so
+    # a silent fallback does not degrade gracefully -- it asserts a STALE level as fact. With 29 Oct
+    # closing at 22,936.8, already above the default PDH of 22,778.05, a fallback on any later morning
+    # would have the desk open declaring price above yesterday's high and able to fire
+    # "PDH TRUE BREAKOUT EXPANSION — DO NOT FADE" against a level from days earlier. A confident wrong
+    # signal in the feature built to stop the trader fading breakouts is worse than no signal, so the
+    # provenance is tracked and the classifier refuses to run on it.
+    have_prev = bool(prev_day and prev_day.get("h") and prev_day.get("l") and prev_day.get("c"))
+    levels_source = "daily" if have_prev else "fallback"
+    prev_day_date = str(prev_day.get("d", "")) if have_prev else None
+
     pdh = float(prev_day["h"]) if prev_day and prev_day.get("h") else def_pdh
     pdl = float(prev_day["l"]) if prev_day and prev_day.get("l") else def_pdl
     pdc = float(prev_day["c"]) if prev_day and prev_day.get("c") else def_pdc
@@ -143,9 +154,23 @@ def compute_institutional_levels(
     is_breakout = False
     details = f"Spot {last_close:,.1f} trading between PDL ({pdl:,.1f}) and PDH ({pdh:,.1f})."
 
+    # No real previous session => no classification. Not INSIDE_RANGE either, because that is itself a
+    # claim about where price sits relative to a level we do not actually have.
+    if not have_prev:
+        status = "LEVELS_UNAVAILABLE"
+        status_label = "⚠️ PDH/PDL unavailable — no previous session data"
+        alert_text = ""
+        alert_kind = ""
+        action_tone = "warn"
+        details = (
+            f"Previous-session daily candle missing, so PDH/PDL/PDC fell back to the placeholder values "
+            f"in rules.json ({def_pdh:,.1f} / {def_pdl:,.1f}). These are NOT yesterday's levels. No "
+            f"breakout, breakdown or sweep is being classified until real daily data is available."
+        )
+
     # CASE A: PDH Sweep Rejection (Judas Swing / False Breakout)
     # Price wicked past PDH, but current close is back inside PDH on low/exhausting volume
-    if (high_today > pdh or last_high > pdh) and last_close < pdh:
+    elif (high_today > pdh or last_high > pdh) and last_close < pdh:
         is_sweep = True
         status = "PDH_SWEEP_REJECTION"
         status_label = "⚠️ PDH Liquidity Sweep (Judas Swing)"
@@ -235,6 +260,10 @@ def compute_institutional_levels(
         "current_price": round(last_close, 2),
         "high_today": round(high_today, 2),
         "low_today": round(low_today, 2),
+        # Provenance: the frontend must be able to tell a real level from a placeholder.
+        "levels_source": levels_source,          # "daily" | "fallback"
+        "levels_available": have_prev,
+        "prev_day_date": prev_day_date,
         "status": status,
         "status_label": status_label,
         "alert_text": alert_text,
