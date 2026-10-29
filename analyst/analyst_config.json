@@ -115,5 +115,60 @@
       "confirmation_cooldown_bars": 3,
       "max_alert_age_s": 1200
     }
+  },
+  "time_series_chain": {
+    "refresh_seconds": 30,
+    "cache_seconds": 20,
+    "timeout_seconds": 120,
+    "cache_entries": 16,
+    "timeframes": [
+      "1m",
+      "3m",
+      "5m",
+      "15m",
+      "1h"
+    ],
+    "columns": [
+      3,
+      4,
+      5,
+      6,
+      8,
+      10,
+      12
+    ],
+    "ranges": [
+      3,
+      4,
+      5,
+      6,
+      8,
+      10,
+      12,
+      15
+    ],
+    "default_tf": "3m",
+    "default_columns": 6,
+    "default_range": 8,
+    "custom_candidates": 41,
+    "default_custom_steps": 4
+  },
+  "oi_studio": {
+    "lot_size": 65,
+    "default_strike_range": "10",
+    "sentiment_bullish_threshold": 58,
+    "sentiment_bearish_threshold": 42,
+    "sentiment_chg_weight": 0.6,
+    "sentiment_total_weight": 0.4,
+    "quick_windows_minutes": [
+      3,
+      5,
+      10,
+      15,
+      30,
+      60,
+      120,
+      180
+    ]
   }
 }

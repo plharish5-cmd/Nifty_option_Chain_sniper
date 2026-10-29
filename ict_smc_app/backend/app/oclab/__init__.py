@@ -155,3 +155,46 @@ async def summary() -> Dict[str, Any]:
                                      if bull else "Favour shorts (PE) on rallies while it holds; don't buy into fresh call writing.")})
     return {"ok": bool(lines), "lines": [x for x in lines if x], "beats": beats,
             "message": pe.get("message") or fl.get("message")}
+
+
+# Separate read-only adapter; existing PE/CE and writer-flow paths remain untouched.
+_ts_cache: Dict[str, tuple] = {}
+_ts_lock = asyncio.Lock()
+
+
+async def time_series_chain(params: dict) -> Dict[str, Any]:
+    import logging
+    import time
+    log = logging.getLogger("time_series_chain")
+    try:
+        cfg = json.loads((OC_DIR / "analyst/analyst_config.json").read_text())["time_series_chain"]
+        day, count = _snap_count(params.get("day"))
+        files = list((OC_DIR / "data/snapshots" / day).glob("*.meta.json")) if day else []
+        stamp = max((p.stat().st_mtime_ns for p in files), default=0)
+        key = json.dumps(params, sort_keys=True) + str((day, count, stamp))
+        async with _ts_lock:
+            hit = _ts_cache.get(key)
+            if hit and time.monotonic() - hit[0] < cfg["cache_seconds"]:
+                return hit[1]
+            proc = await asyncio.create_subprocess_exec(
+                oc_python(), str(OC_DIR / "analyst/time_series_chain_export.py"), cwd=str(OC_DIR),
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            try:
+                out, err = await asyncio.wait_for(proc.communicate(json.dumps(params).encode()), timeout=cfg["timeout_seconds"])
+            except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+                proc.kill()
+                await proc.communicate()
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                return {"ok": False, "message": "Time-series export timed out. Try a smaller window."}
+            result = json.loads(out.decode() or "{}")
+            if proc.returncode:
+                log.warning("Time-series subprocess failed: %s", err.decode()[-400:])
+            if result.get("ok"):
+                _ts_cache[key] = (time.monotonic(), result)
+                while len(_ts_cache) > cfg["cache_entries"]:
+                    del _ts_cache[next(iter(_ts_cache))]
+            return result
+    except Exception as exc:
+        log.exception("Time-series adapter failed")
+        return {"ok": False, "message": f"Time-series data unavailable: {type(exc).__name__}"}

@@ -7,7 +7,6 @@ re-post is a no-op: the UNIQUE key must absorb duplicates server-side rather tha
 to remember what it already sent.
 """
 import os
-import uuid
 import sys
 import time
 from pathlib import Path
@@ -102,15 +101,16 @@ def test_hhmm_is_resolved_server_side():
     the client doing timezone arithmetic that breaks around midnight."""
     from app.timeutil import ist_date, now_ist
 
+    key = f"hhmm-resolve-{int(time.time() * 1000)}"
     r = client.post("/api/setups/log", json={"setups": [{
-        "key": "hhmm-resolve", "hhmm": "13:09", "setup": "DIP BUY", "side": "bull",
+        "key": key, "hhmm": "13:09", "setup": "DIP BUY", "side": "bull",
         "entry": 22726.4, "sl": 22691.0, "conviction_pct": 95,
     }]})
     assert r.status_code == 200, r.text
 
     today = ist_date(int(now_ist().timestamp())).isoformat()
     rows = client.get("/api/setups", params={"d": today}).json()["setups"]
-    got = [s for s in rows if s["key"] == "hhmm-resolve"]
+    got = [s for s in rows if s["key"] == key]
     assert len(got) == 1, "setup should be filed under today's IST session"
     assert got[0]["d"] == today
 
@@ -118,7 +118,7 @@ def test_hhmm_is_resolved_server_side():
 def test_unparseable_hhmm_does_not_store_a_nonsense_timestamp():
     # Unique key per run: a fixed one made this test depend on starting from an empty table, which is
     # precisely the fragility conftest.py exists to remove — no test should need it to pass.
-    key = f"hhmm-garbage-{uuid.uuid4().hex[:8]}"
+    key = f"hhmm-garbage-{int(time.time() * 1000)}"
     r = client.post("/api/setups/log", json={"setups": [{
         "key": key, "hhmm": "xx:yy", "setup": "DIP BUY", "side": "bull", "entry": 1.0,
     }]})
