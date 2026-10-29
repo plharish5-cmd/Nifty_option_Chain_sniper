@@ -11,19 +11,23 @@
 //   🛡️ TRAIL SL          — Trade management trailing stop shift >= 15 pts
 import { useEffect, useState } from "react";
 import { api, type AlertRow, type Analysis, type Candle } from "../api";
-import { BIAS_POLICY, FACTORS, type BiasRow } from "./bias";
+import { BIAS_POLICY, FACTORS, type CvdAlertSignal, type BiasRow } from "./bias";
+import { BAR_SEC } from "./chartKit";
 import type { FpBar } from "./footprint";
 import type { SmtMark } from "./ocfeed";
 import type { Dol } from "./dol";
 import { type HtfWick, isWickUntested, markWickTested } from "./htfWicks";
 
-export type SigKind = "bias" | "conf" | "ocAct" | "smt" | "ifvg" | "rjb" | "crt" | "dol" | "gamma" | "nodes" | "flow" | "abs" | "wick" | "aplus" | "deep_rev" | "trade_mgmt_trail";
+export type SigKind = "cvd_buyers" | "cvd_sellers" | "cvd_nodes" | "bias" | "conf" | "ocAct" | "smt" | "ifvg" | "rjb" | "crt" | "dol" | "gamma" | "nodes" | "flow" | "abs" | "wick" | "aplus" | "deep_rev" | "trade_mgmt_trail";
 export type SigPrefs = { on: boolean; minBias: number; kinds: Record<SigKind, boolean> };
 const KEY = "ict_signal_alert_prefs";
 const DEF: SigPrefs = {
   on: false,
   minBias: 12,
   kinds: {
+    cvd_buyers: true,
+    cvd_sellers: true,
+    cvd_nodes: true,
     bias: true,
     conf: true,
     ocAct: true,
@@ -82,23 +86,26 @@ export function scanSignals(o: {
   nodes?: { time: number; side: "BUY" | "SELL"; zone: { label: string; lo: number; hi: number }; z: number }[];
   flow?: { time: number; verdict: "BUY" | "SELL" | "WAIT"; prev: "BUY" | "SELL" | "WAIT" | null; bull: number; bear: number; head: string } | null;
   htfWicks?: HtfWick[];
+  cvdSignals?: CvdAlertSignal[];
 }): Ev[] {
   const { tf, candles, a, prefs, bias, conf, ocActs, smt, dols } = o;
   const closed = candles.filter((c) => c.closed !== false);
   const last = closed[closed.length - 1];
-  if (!last) return [];
+  if (!last || !prefs.on) return [];
   const t = last.time, px = last.close, K = prefs.kinds;
 
   // Freshness Guard: Do not re-fire historical candles older than 20 mins on browser wakeup/reload
-  const nowSec = Date.now() / 1000;
-  if (Math.abs(nowSec - t) > 1200) return [];
+  // Candle times use IST-shifted chart clock; compare closed-candle age on the same clock.
+  const nowSec = Date.now() / 1000 + 19800;
+  const age=nowSec-(t+(BAR_SEC[tf] ?? 300));
+  if (age<0 || age>BIAS_POLICY.cvd_alerts.max_alert_age_s) return [];
 
   const hm = (() => { const d = new Date(t * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; })();
   const side = (dir: string) => (dir === "bull" ? "BUY" : "SELL") as "BUY" | "SELL";
   const leg = (s: string) => (s === "BUY" ? "CE side" : "PE side");
 
   // Check 15:15–15:30 EOD settlement window
-  const istDate = new Date((t + 19800) * 1000);
+  const istDate = new Date(t * 1000);
   const istH = istDate.getUTCHours();
   const istM = istDate.getUTCMinutes();
   const isEodSettlement = (istH === 15 && istM >= 15) || istH > 15;
@@ -124,6 +131,13 @@ export function scanSignals(o: {
     });
   };
 
+  // Keep warning events informational. Confirmed composites remain alert-only.
+  for(const event of o.cvdSignals ?? []) if(event.time===t){
+    const kind:SigKind=event.kind==="confirmed"?"cvd_nodes":event.dir==="bull"?"cvd_sellers":"cvd_buyers";
+    if(!K[kind])continue;
+    const title=event.kind==="confirmed"?(event.dir==="bull"?"Bullish":"Bearish")+" CVD + nodes confirmed":event.dir==="bull"?"CVD seller exhaustion — bullish warning":"CVD buyer exhaustion — bearish warning";
+    add(kind,event.kind==="confirmed"?side(event.dir):"INFO",title,event.details,"info");
+  }
   // ⚖ bias
   const b = bias.find((r) => r.time === t && !r.forming);
   let biasSide: "BUY" | "SELL" | null = null;
@@ -384,8 +398,8 @@ export function scanSignals(o: {
   }
 
   // ── PER-CANDLE CONFLUENCE ARBITER (ELIMINATE SAME-CANDLE CONTRADICTORY ALERTS) ──
-  const buys = out.filter((e) => e.side === "BUY");
-  const sells = out.filter((e) => e.side === "SELL");
+  const buys = out.filter((e) => e.side === "BUY" && e.kind!=="cvd_nodes");
+  const sells = out.filter((e) => e.side === "SELL" && e.kind!=="cvd_nodes");
 
   if (buys.length > 0 && sells.length > 0) {
     const currOc = ocActs.find((x) => x.time === t);
@@ -395,18 +409,18 @@ export function scanSignals(o: {
 
     if (isOcBear) {
       // Bearish writer flow: suppress conflicting BUY entries
-      return out.filter((e) => e.side !== "BUY");
+      return out.filter((e) => e.side !== "BUY" || e.kind==="cvd_nodes");
     } else if (isOcBull) {
       // Bullish writer flow: suppress conflicting SELL entries
-      return out.filter((e) => e.side !== "SELL");
+      return out.filter((e) => e.side !== "SELL" || e.kind==="cvd_nodes");
     } else {
       // Neutral writer flow: favor higher conviction side
       const hasAplusBuy = buys.some((e) => e.kind === "aplus" || e.kind === "deep_rev");
       const hasAplusSell = sells.some((e) => e.kind === "aplus" || e.kind === "deep_rev");
-      if (hasAplusBuy && !hasAplusSell) return out.filter((e) => e.side !== "SELL");
-      if (hasAplusSell && !hasAplusBuy) return out.filter((e) => e.side !== "BUY");
-      if (b && b.bull > b.bear) return out.filter((e) => e.side !== "SELL");
-      if (b && b.bear > b.bull) return out.filter((e) => e.side !== "BUY");
+      if (hasAplusBuy && !hasAplusSell) return out.filter((e) => e.side !== "SELL" || e.kind==="cvd_nodes");
+      if (hasAplusSell && !hasAplusBuy) return out.filter((e) => e.side !== "BUY" || e.kind==="cvd_nodes");
+      if (b && b.bull > b.bear) return out.filter((e) => e.side !== "SELL" || e.kind==="cvd_nodes");
+      if (b && b.bear > b.bull) return out.filter((e) => e.side !== "BUY" || e.kind==="cvd_nodes");
     }
   }
 
@@ -425,8 +439,8 @@ export function dispatch(evs: Ev[], fire: (a: AlertRow) => void, tf: string) {
     const gradeStr = e.grade ?? (e.kind === "aplus" || e.kind === "deep_rev" ? "trade" : e.kind === "trade_mgmt_trail" ? "mgmt" : "info");
     const al: AlertRow = {
       id: Date.now() + Math.floor(Math.random() * 1000),
-      ts: e.t,
-      time: "",
+      ts: e.kind.startsWith("cvd_") ? e.t-19800 : e.t,
+      time: e.kind.startsWith("cvd_") ? new Date(e.t*1000).toISOString().slice(11,16) : "",
       grade: gradeStr,
       kind: kindStr,
       side: e.side,
@@ -450,6 +464,9 @@ export const SIG_SOUND: Record<string, [number, number][]> = {
 };
 
 const HELP: Record<SigKind, { when: string; say: string }> = {
+  cvd_buyers: {when:"Existing closed-candle CVD buyer exhaustion marker. Estimated delta; warning only, not a short entry.",say:"Buyer exhaustion — bearish warning. Wait for price confirmation."},
+  cvd_sellers: {when:"Existing closed-candle CVD seller exhaustion marker. Estimated delta; warning only, not a long entry.",say:"Seller exhaustion — bullish warning. Wait for price confirmation."},
+  cvd_nodes: {when:"CVD exhaustion + aligned existing stacked-node rejection + a later close beyond the exhaustion candle high/low. One shared CVD bias vote, alert-only.",say:"Bullish / bearish CVD + nodes confirmed. No automatic paper or real orders."},
   bias: { when: "The chart/table shared agreement and opposition gates must qualify first; then {N} or more factors must agree. Closed candles and market hours only.", say: `“BUY bias 12 of ${FACTORS.length}” — direction filter only.` },
   conf: { when: "Footprint pill, delta colour and a structure mark agree on one candle.", say: "“SELL check 3 confluence”" },
   ocAct: { when: "The 8501 PE−CE 🎯 Action switches to CE or PE.", say: "“PE−CE action → CE”" },
@@ -469,6 +486,9 @@ const HELP: Record<SigKind, { when: string; say: string }> = {
 };
 
 const LBL: Record<SigKind, string> = {
+  cvd_buyers:"CVD Buyer EXH",
+  cvd_sellers:"CVD Seller EXH",
+  cvd_nodes:"CVD + Nodes",
   bias: "bias",
   conf: "✓3",
   ocAct: "PE−CE",

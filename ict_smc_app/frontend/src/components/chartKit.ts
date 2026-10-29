@@ -13,6 +13,9 @@ export type Ev = {
 
 // Plain-English meaning for the hover card, by kind
 export const MEANING: Record<string, string> = {
+  CVD_EXHAUST: "Estimated CVD exhaustion warning. Seller exhaustion suggests selling pressure may be tiring; buyer exhaustion suggests buying pressure may be tiring. Wait for price confirmation.",
+  CVD_NODE_CONFIRMED: "Existing CVD exhaustion plus an aligned stacked-node rejection and a later close beyond the exhaustion candle high/low. One shared CVD bias vote; alert only.",
+
   BOS: "Break of structure — price closed past the last swing: trend continues",
   MSS: "Market structure shift — first break AGAINST the trend: possible reversal",
   SWEEP: "Liquidity sweep — wick took out stops beyond a high/low, then closed back",

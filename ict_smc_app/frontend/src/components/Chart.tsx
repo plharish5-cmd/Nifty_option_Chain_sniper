@@ -6,7 +6,7 @@ import {
 } from "lightweight-charts";
 import type { Analysis, Candle, TF, WriterMetrics } from "../api";
 import { bucket } from "../api";
-import { computeBias, FACTORS, BIAS_POLICY, BIAS_NAME, type BiasRow } from "./bias";
+import { computeBias, cvdExhaustionSignals, FACTORS, BIAS_POLICY, BIAS_NAME, type BiasRow } from "./bias";
 import { useOcFeed, useSmt, useBiasAgreement, type SmtForming } from "./ocfeed";
 import { computeSmartRows, playOiBeep, type Row, type SmartRow } from "./OcLab";
 import { api } from "../api";
@@ -109,7 +109,10 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const marketOpenRef = useRef(marketOpen); marketOpenRef.current = marketOpen;
   const sigOnRef = useRef(!!sig?.on); sigOnRef.current = !!sig?.on;
   const tfRef = useRef(tf); tfRef.current = tf;
-  const ocFeed = useOcFeed(!!layers.bias || !!layers.ocAct || !!sig?.on);
+  const ocFeed = useOcFeed(!!layers.bias || !!layers.ocAct || !!sig?.on || isCvdOn || isNodesOn);
+  const cvdSignals=useMemo(()=>cvdExhaustionSignals(candles,fpBars,cvdDivergences,
+    ocFeed?.nodes?.available?findEntries(candles,analysis?.volume?.vwap ?? [],ocFeed.nodes):[],BAR_SEC[tf] ?? 300),
+    [candles,fpBars,cvdDivergences,ocFeed,analysis,tf]);
   const bankS = useRef<ISeriesApi<"Line"> | null>(null);
   const [bank, setBank] = useState<{ time: number; c: number }[]>([]);
   const [smtForming, setSmtForming] = useState<SmtForming[]>([]);
@@ -1658,6 +1661,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         }
       }
     }
+    if (isCvdOn || isNodesOn) for (const event of cvdSignals.filter((e)=>e.kind==="confirmed")) {
+      push({time:event.time,side:event.dir==="bull"?"below":"above",dir:event.dir,kind:"CVD_NODE_CONFIRMED",
+        layer:"CVD + stacked nodes",short:event.dir==="bull"?"CVD + NODE ✓▲":"CVD + NODE ✓▼",
+        full:event.details,pri:3,shape:event.dir==="bull"?"arrowUp":"arrowDown",color:"#fbbf24",size:1.2});
+    }
     if (layers.smt) {
       for (const m of smtMarks) push({ time: m.time, side: m.dir === "bull" ? "below" : "above", dir: m.dir, kind: "SMT", layer: "SMT",
         short: m.dir === "bull" ? "SMT▲" : "SMT▼", full: `${m.text} (pivot ${m.pivot_at}, confirmed ${m.at})`, pri: 3,
@@ -1868,7 +1876,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     } catch { /* older lib */ }
     spine.current?.setData(a && layers.qml ? candles.filter((c) => c.closed !== false).map((c) => ({ time: c.time as UTCTimestamp, value: c.close })) : []);
     zz.current.setData(a && layers.swings ? dedupe(a.zigzag).map((p) => ({ time: p.time as UTCTimestamp, value: p.price })) : []);
-  }, [analysis, layers, candles, smtMarks, ocActs, advPaSniperMode, isPrahaarOn, prahaarResult, isGtfOn, gtfResult, rvolPaneMode, oiMode, unifiedSlotMap]);
+  }, [analysis, layers, candles, smtMarks, ocActs, advPaSniperMode, isPrahaarOn, prahaarResult, isGtfOn, gtfResult, rvolPaneMode, oiMode, unifiedSlotMap, cvdSignals]);
 
   // ── DOM book events (for the hover confirm/warn line), every 6 s ──
   useEffect(() => {
@@ -2128,7 +2136,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
 
   // ESTIMATED footprint on the chart (1m / 3m / 5m / 15m / 1h; closed candles from the desk's recorded FUT ticks)
   useEffect(() => {
-    const want = !!layers.fp || !!layers.bias || !!layers.heat || !!isCvdOn || !!isCellsOn || !!isBubblesOn || !!isDeltaOn;
+    const want = !!layers.fp || !!layers.bias || !!layers.heat || !!isCvdOn || !!isCellsOn || !!isBubblesOn || !!isDeltaOn || !!sig?.on;
     // No 3m here: TF (api.ts) has no "3m" — that is a PE-CE table timeframe, not a chart one, even though
     // /api/footprints accepts 3m for other callers.
     const ok = want && (tf === "1m" || tf === "5m" || tf === "15m" || tf === "30m" || tf === "1h");
@@ -2146,7 +2154,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     go();
     const id = window.setInterval(go, 30000);
     return () => { dead = true; window.clearInterval(id); };
-  }, [tf, layers.fp, layers.bias, layers.heat, isCvdOn, isCellsOn, isBubblesOn, isDeltaOn]);
+  }, [tf, layers.fp, layers.bias, layers.heat, isCvdOn, isCellsOn, isBubblesOn, isDeltaOn, sig?.on]);
 
   useEffect(() => {
     const a = analysis;
@@ -2159,14 +2167,14 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     const sigOn = !!sig?.on && !!onSignal && marketOpen;
     const confAll = layers.fp || sigOn ? confluence(fpBars, marks, BAR_SEC[tf] ?? 300) : [];
     const withConf = layers.fp ? confAll : [];
-    const allB = layers.bias || sigOn ? computeBias(candles, a, fpBars, BAR_SEC[tf] ?? 300, biasPct, ocFeed, false, smtArg) : [];
+    const allB = layers.bias || sigOn ? computeBias(candles, a, fpBars, BAR_SEC[tf] ?? 300, biasPct, ocFeed, false, smtArg, cvdSignals) : [];
     if (sigOn && sig && onSignal) {
       try { const lc = [...candles].reverse().filter((c) => c.closed !== false);
       const fnow = lc[0] && (layers.cvd || layers.cells || layers.walls || layers.bubbles) ? readAt(lc[0].time, ofArgsRef.current) : null;
       const fprev = lc[1] && fnow ? readAt(lc[1].time, ofArgsRef.current) : null;
       const wrapped = (al: AlertRow) => {
         onSignal(al);
-        if (onAutoSignal && lc[0]) {
+        if (onAutoSignal && lc[0] && !al.kind.startsWith("SIG_CVD_")) {
           const px = al.price && al.price > 0 ? al.price : lc[0].close;
           const buy = al.side === "BUY";
           const wll = walls.filter((w) => buy ? w.side === "CE" && w.p > px : w.side === "PE" && w.p < px)
@@ -2175,7 +2183,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         }
       };
       dispatch(scanSignals({ tf, candles, a, prefs: sig, bias: allB, conf: confAll, ocActs, smt: smtArg, dols: computeDol(candles, a),
-        gamma: gHitsRef.current, nodes: nEntRef.current, htfWicks,
+        gamma: gHitsRef.current, nodes: nEntRef.current, htfWicks, cvdSignals,
         flow: fnow && lc[0] ? { time: lc[0].time, verdict: fnow.verdict, prev: fprev?.verdict ?? null, bull: fnow.bull, bear: fnow.bear, head: fnow.head } : null }), wrapped, tf); }
       catch { /* alerts must never break the chart */ }
     }
@@ -2183,7 +2191,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     setBiasStatus(allB.at(-1) ?? null);
     const bias = layers.bias ? allB.filter((r) => r.verdict !== "MIXED") : [];
     fpPrim.current.set(withConf, bias, layers.heat ? fpBars.filter((b) => b.rows.length) : []);
-  }, [fpBars, analysis, tf, layers.fp, layers.bias, layers.heat, candles, ocFeed, smtArg, sig, onSignal, marketOpen, ocActs, layers.cvd, layers.cells, layers.walls, layers.bubbles, layers.gamma, layers.nodes, layers.tsoup, htfWicks, biasPct]);
+  }, [fpBars, analysis, tf, layers.fp, layers.bias, layers.heat, candles, ocFeed, smtArg, sig, onSignal, marketOpen, ocActs, layers.cvd, layers.cells, layers.walls, layers.bubbles, layers.gamma, layers.nodes, layers.tsoup, htfWicks, biasPct, cvdSignals]);
 
   // BANKNIFTY line (own hidden scale, so its shape lines up with NIFTY) — shown with the SMT layer
   useEffect(() => {

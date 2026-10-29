@@ -13,7 +13,8 @@ export function useOcFeed(on: boolean): OcFeed | null {
       fetch("/api/oclab/flow?tf=1m&mode=all&n=10").then((r) => r.json()).catch(() => null),
       fetch("/api/oclab/gex?tf=3m&mode=auto&n=10").then((r) => r.json()).catch(() => null),
       fetch("/api/chain/trinity?opt_expiry=both&fut_contract=combined").then((r)=>r.ok?r.json():null).catch(()=>null),
-    ]).then(([p, f, g, tr]) => { if (!dead) setD({ pece: p?.ok ? p.rows ?? [] : [], flow: f?.ok ? f.points ?? [] : [], gex: g, trinity: trinitySignalPoints(tr?.series?.both ?? []), day: p?.day ?? f?.day }); });
+      fetch("/api/nodes").then((r)=>r.ok?r.json():null).catch(()=>null),
+    ]).then(([p, f, g, tr, nodes]) => { if (!dead) setD({ pece: p?.ok ? p.rows ?? [] : [], flow: f?.ok ? f.points ?? [] : [], gex: g, nodes, trinity: trinitySignalPoints(tr?.series?.both ?? []), day: p?.day ?? f?.day }); });
     go();
     const id = window.setInterval(go, 30000);
     return () => { dead = true; window.clearInterval(id); };

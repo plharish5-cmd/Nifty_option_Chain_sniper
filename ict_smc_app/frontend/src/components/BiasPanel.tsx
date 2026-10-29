@@ -1,7 +1,9 @@
 // BiasPanel.tsx — the 20-factor confluence grid & Sniper Confluence Matrix for closed candles (information only).
 import { useEffect, useMemo, useState } from "react";
 import type { Analysis, Candle, TF } from "../api";
-import { computeBias, FACTORS, BIAS_POLICY, BIAS_NAME } from "./bias";
+import { computeBias, cvdExhaustionSignals, FACTORS, BIAS_POLICY, BIAS_NAME } from "./bias";
+import { computeCvdDivergences } from "./orderflow";
+import { findEntries } from "./nodes";
 import type { FpBar } from "./footprint";
 import { BAR_SEC } from "./chartKit";
 import { useOcFeed, useSmt, useBiasAgreement } from "./ocfeed";
@@ -26,12 +28,13 @@ export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: 
   useEffect(() => {
     if (!["1m","3m","5m","15m","30m","1h"].includes(tf)) { setFp([]); return; }
     let dead = false;
-    const go = () => fetch(`/api/footprints?tf=${tf}&n=75`).then((r) => r.json()).then((j) => { if (!dead) setFp(j.available ? j.bars ?? [] : []); }).catch(() => {});
+    const go = () => fetch(`/api/footprints?tf=${tf}&cover=session`).then((r) => r.json()).then((j) => { if (!dead) setFp(j.available ? j.bars ?? [] : []); }).catch(() => {});
     go(); const id = window.setInterval(go, 30000);
     return () => { dead = true; window.clearInterval(id); };
   }, [tf]);
 
-  const all = useMemo(() => computeBias(candles, analysis, fp, BAR_SEC[tf] ?? 300, pct, oc, true, smtArg), [candles, analysis, fp, tf, pct, oc, smtArg]);
+  const cvdSignals=useMemo(()=>cvdExhaustionSignals(candles,fp,computeCvdDivergences(fp),oc?.nodes?.available?findEntries(candles,analysis?.volume?.vwap ?? [],oc.nodes):[],BAR_SEC[tf] ?? 300),[candles,fp,analysis,oc,tf]);
+  const all = useMemo(() => computeBias(candles, analysis, fp, BAR_SEC[tf] ?? 300, pct, oc, true, smtArg, cvdSignals), [candles, analysis, fp, tf, pct, oc, smtArg, cvdSignals]);
   const live = all.length && all[all.length - 1].forming ? all[all.length - 1] : null;
   const rows = all.filter((r) => !r.forming).slice(-24).reverse();
   const now = rows[0];
@@ -221,7 +224,7 @@ export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: 
 
       {/* Detailed Footer & Legend */}
       <div className="border-t border-ink-700 px-3 py-1 text-[10.5px] text-slate-400">
-        <b>{BIAS_NAME} Confluence System:</b> Green = buy-side vote; red = sell-side vote; grey = neutral; hollow = unavailable. Hover dots or verdicts for reasons. Writer flip includes classic and Trinity crossover events as one shared vote; disagreements abstain. Amber divergence warnings do not add votes. Composite factors share inputs; counts are not probabilities.
+        <b>{BIAS_NAME} Confluence System:</b> Green = buy-side vote; red = sell-side vote; grey = neutral; hollow = unavailable. Hover dots or verdicts for reasons. Writer flip includes classic and Trinity crossover events as one shared vote; disagreements abstain. Amber divergence warnings do not add votes. CVD exhaustion is a neutral warning; CVD + nodes + price confirmation supplies one CVD vote. Composite factors share inputs; counts are not probabilities.
         <span className="ml-1 text-slate-500">
           {FACTORS.map((factor,index)=>`${index+1}. ${factor}`).join(" · ")}
         </span>

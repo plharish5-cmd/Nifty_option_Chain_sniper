@@ -107,6 +107,13 @@
       "event_window_bars": 3,
       "trinity_bar_seconds": 180,
       "min_snapshot_retention": 0.25
+    },
+    "cvd_alerts": {
+      "complete_bars": 4,
+      "confirmation_window_bars": 3,
+      "node_window_bars": 3,
+      "confirmation_cooldown_bars": 3,
+      "max_alert_age_s": 1200
     }
   }
 }
