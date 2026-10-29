@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, date
 
 from .. import config, db
-from ..timeutil import now_ist, session_bounds
+from ..timeutil import IST, now_ist, session_bounds
 
 log = logging.getLogger("institutional_levels")
 
@@ -40,7 +40,19 @@ def compute_institutional_levels(
     rvol_sweep_thresh = float(c.get("rvol_sweep_threshold", 1.0))
     pe_ce_writer_support_thresh = float(c.get("pe_ce_writer_support_thresh_l", 50.0))  # 50 Lakhs
 
+    # The session under analysis is the one the intraday candles belong to, NOT the wall clock.
+    # Reading the clock instead meant that replaying a past session -- a backtest, or simply working
+    # after midnight -- resolved "previous day" to that session's OWN daily candle, so PDH/PDL became
+    # today's high and low. Price is then always inside its own range and a breakout can never be
+    # classified, which is a silent wrong answer in the engine built to stop breakout-fading.
     today_dt = now_ist().date()
+    if intraday_candles:
+        try:
+            ts0 = int(intraday_candles[0]["ts"])
+            if ts0 > 0:
+                today_dt = datetime.fromtimestamp(ts0, IST).date()
+        except (KeyError, TypeError, ValueError):
+            pass  # malformed first bar: fall back to the clock, as before
     today_start, today_end = session_bounds(today_dt)
     today_iso = today_dt.isoformat()
 

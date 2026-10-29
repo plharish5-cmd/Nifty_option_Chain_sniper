@@ -105,3 +105,32 @@ def test_forming_bars_are_excluded():
     p[-1]["closed"] = False
     res = vx.compute_vix_divergence(p, series([16.5 - i * 0.07 for i in range(20)]), cfg=CFG)
     assert res["price_to"] == p[-2]["c"]
+
+
+# ── review findings (AGY, 30 Oct) ──────────────────────────────────────────────────────────────────
+
+def _pb(n=25, base=22500.0, step=10.0):
+    return [{"ts": 1761800000 + i * 180, "c": base + i * step, "closed": True} for i in range(n)]
+
+
+def test_forming_vix_bar_is_ignored():
+    """A forming VIX candle must not reach vix_to.
+
+    price_bars were filtered on `closed is not False` but vix_bars were not, so a mid-bar tick moved
+    the reported VIX change -- and could flip DISTRIBUTION_WARNING on and off inside one bar.
+    """
+    pb = _pb()
+    t0, t1 = pb[0]["ts"], pb[-1]["ts"]
+    closed_only = [{"ts": t0, "c": 12.0, "closed": True}, {"ts": t1, "c": 13.0, "closed": True}]
+    with_forming = closed_only + [{"ts": t1, "c": 19.0, "closed": False}]
+    a = vx.compute_vix_divergence(pb, closed_only, cfg=CFG)
+    b = vx.compute_vix_divergence(pb, with_forming, cfg=CFG)
+    assert a["vix_to"] == b["vix_to"], "a forming VIX bar changed the read"
+    assert a["state"] == b["state"]
+
+
+def test_all_vix_bars_forming_is_unavailable():
+    """If every VIX bar is still forming there is no closed series, so report unavailable."""
+    r = vx.compute_vix_divergence(_pb(), [{"ts": 1761800000, "c": 12.0, "closed": False}], cfg=CFG)
+    assert r["state"] == vx.UNAVAILABLE
+    assert r["available"] is False

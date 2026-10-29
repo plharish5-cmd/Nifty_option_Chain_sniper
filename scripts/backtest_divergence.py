@@ -65,18 +65,37 @@ def score(bars, ev):
         return None
     short = ev["side"] == "short"
     # Walk forward in order so "stopped before target" is answered causally, not by comparing extremes.
+    #
+    # The walk STOPS at the stop-loss. It used to keep accumulating MFE after the stop was hit, which
+    # credited the signal with moves it could never have been in for -- a trade stopped out at 10:15
+    # was still collecting favourable excursion from the 14:00 rally. That inflated median R while
+    # leaving the 2R hit rate correct (hit2r was always gated on `not stopped`), so the headline
+    # percentages were sound and the R figure was not.
     mfe = mae = 0.0
     hit2r = stopped = False
     for b in after:
         fav = (entry - float(b["l"])) if short else (float(b["h"]) - entry)
         adv = (float(b["h"]) - entry) if short else (entry - float(b["l"]))
-        mfe, mae = max(mfe, fav), max(mae, adv)
-        if not stopped and adv >= risk:
+        if adv >= risk:
+            # Stop first within this bar, conservatively: a bar that spans both levels is a loss.
+            mae = max(mae, risk)
             stopped = True
-        if not stopped and fav >= 2 * risk:
+            break
+        mfe, mae = max(mfe, fav), max(mae, adv)
+        if fav >= 2 * risk:
             hit2r = True
             break
-    return {"mfe": mfe, "mae": mae, "r": mfe / risk, "risk": risk,
+    # Realized R under a fixed rule, which is what an account actually books: +2R on a target hit,
+    # -1R on a stop, and mark-to-last otherwise. MFE is the best the trade ever LOOKED and is kept
+    # only as an upper bound.
+    if hit2r:
+        realized = 2.0
+    elif stopped:
+        realized = -1.0
+    else:
+        last = float(after[-1]["c"])
+        realized = ((entry - last) if short else (last - entry)) / risk
+    return {"mfe": mfe, "mae": mae, "r": mfe / risk, "realized": realized, "risk": risk,
             "hit2r": hit2r, "stopped_first": stopped and not hit2r}
 
 
@@ -86,7 +105,10 @@ def main() -> int:
     ap.add_argument("--db", default=str(DB))
     ap.add_argument("--sec", default=NIFTY_SEC)
     ap.add_argument("--regime-gate", action="store_true",
-                    help="apply the day-regime veto using each session's own net direction")
+                    help="apply the day-regime veto using each session's opening-window direction")
+    ap.add_argument("--regime-bars", type=int, default=20,
+                    help="bars of the open used to fix the regime under --regime-gate (default 20). "
+                         "Events armed inside this window are dropped, not judged.")
     a = ap.parse_args()
 
     if not Path(a.db).exists():
@@ -102,23 +124,33 @@ def main() -> int:
     per_type = defaultdict(lambda: defaultdict(int))
     scored = []
     day_rows = []
+    dropped_early = 0
 
     for d in sorted(by_day):
         m1 = by_day[d]
         bars = rd.aggregate_1m(m1, step, m1[-1]["ts"] + step)
         if len(bars) < 30:
             continue
-        # A crude but causal stand-in for the desk's cumulative Net PE-CE regime: the direction the
-        # session had actually taken by its midpoint. Only used when --regime-gate is passed.
-        regime = "none"
+        # A crude stand-in for the desk's cumulative Net PE-CE regime. It reads the direction the
+        # session had taken by the END OF ITS OPENING WINDOW -- not by its midpoint, which was the
+        # original and which leaked: a regime fixed at ~12:20 was being applied to events armed at
+        # 10:00, telling the morning what the afternoon would do. Events inside the window are
+        # dropped rather than judged by a regime that did not exist yet.
+        regime, gate_from = "none", 0
         if a.regime_gate:
-            mid = bars[len(bars) // 2]["c"]
-            move = mid - bars[0]["c"]
+            gate_from = min(a.regime_bars, len(bars) - 1)
+            move = bars[gate_from]["c"] - bars[0]["c"]
             regime = "bull" if move > 60 else "bear" if move < -60 else "none"
         res = rd.compute_rsi_divergence(bars, tf=a.tf, day_regime=regime)
         if not res.get("ok"):
             continue
         evs = res["events"]
+        if a.regime_gate and gate_from:
+            # Causality: an event armed at or before the gate window cannot be judged by a regime
+            # derived from that same window.
+            cutoff = int(bars[gate_from]["ts"])
+            dropped_early += sum(1 for e in evs if int(e["armed_ts"]) <= cutoff)
+            evs = [e for e in evs if int(e["armed_ts"]) > cutoff]
         for e in evs:
             per_type[e["type"]][e["state"]] += 1
             if e["state"] == "STRUCTURE_CONFIRMED":
@@ -158,10 +190,15 @@ def main() -> int:
     n = len(scored)
     hit = sum(1 for s in scored if s["hit2r"])
     stop = sum(1 for s in scored if s["stopped_first"])
+    exp = sum(s["realized"] for s in scored) / n
     print(f"\nconfirmed signals : {n}")
     print(f"reached 2R        : {hit}  ({hit / n * 100:.0f}%)")
     print(f"stopped first     : {stop}  ({stop / n * 100:.0f}%)")
-    print(f"median R (MFE)    : {sorted(s['r'] for s in scored)[n // 2]:.2f}")
+    print(f"median R (MFE)    : {sorted(s['r'] for s in scored)[n // 2]:.2f}   <- upper bound only")
+    print(f"median R (fixed)  : {sorted(s['realized'] for s in scored)[n // 2]:.2f}   <- 2R target / 1R stop")
+    print(f"expectancy (fixed): {exp:+.2f}R per signal")
+    if dropped_early:
+        print(f"dropped pre-gate  : {dropped_early} (armed inside the regime window)")
     rev = [s for s in scored if s["type"].startswith("REGULAR")]
     hid = [s for s in scored if s["type"].startswith("HIDDEN")]
     for name, grp in (("reversal (regular)", rev), ("continuation (hidden)", hid)):
@@ -169,8 +206,11 @@ def main() -> int:
             g = len(grp)
             gh = sum(1 for s in grp if s["hit2r"])
             print(f"{name:<22}: {g:>3} signals, {gh} reached 2R ({gh / g * 100:.0f}%), "
-                  f"median R {sorted(s['r'] for s in grp)[g // 2]:.2f}")
-    print("\nA small sample is still a small sample. Read the per-type split before the headline.")
+                  f"median MFE R {sorted(s['r'] for s in grp)[g // 2]:.2f}, "
+                  f"expectancy {sum(s['realized'] for s in grp) / g:+.2f}R")
+    print("\nMFE is the best each trade ever LOOKED, not an exit you could take. Judge this engine on "
+          "the fixed-rule expectancy line; MFE is here only to bound the best case.")
+    print("A small sample is still a small sample. Read the per-type split before the headline.")
     return 0
 
 

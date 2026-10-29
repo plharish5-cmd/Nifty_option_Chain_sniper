@@ -69,6 +69,12 @@ def compute_vix_divergence(
 
     pb = [b for b in sorted(price_bars or [], key=lambda x: int(x["ts"]))
           if b.get("closed") is not False]
+    # The VIX series needs the SAME closed-bar filter as price. Without it a forming candle's ticks
+    # reach vix_to, so the reported VIX move -- and therefore DISTRIBUTION_WARNING -- can flip back
+    # and forth within a single bar and then settle somewhere else at the close. Context that
+    # changes under the trader mid-bar is worse than no context.
+    vb = [b for b in sorted(vix_bars or [], key=lambda x: int(x["ts"]))
+          if b.get("closed") is not False]
     out: Dict[str, Any] = {
         "ok": False, "state": UNAVAILABLE, "label": "⚠️ VIX unavailable",
         "available": False, "price_move_pts": None, "vix_move_pct": None,
@@ -78,7 +84,7 @@ def compute_vix_divergence(
     if len(pb) < 2:
         out["detail"] = "not enough closed price bars"
         return out
-    if not vix_bars:
+    if not vb:
         out["detail"] = ("No INDIA VIX series available, so no price/VIX relationship can be read. "
                          "Reporting unavailable rather than assuming one.")
         return out
@@ -86,7 +92,7 @@ def compute_vix_divergence(
     window = pb[-lookback:] if len(pb) > lookback else pb
     t0, t1 = int(window[0]["ts"]), int(window[-1]["ts"])
     tol = int(c["match_tolerance_s"])
-    v0, v1 = _series_at(vix_bars, t0, tol), _series_at(vix_bars, t1, tol)
+    v0, v1 = _series_at(vb, t0, tol), _series_at(vb, t1, tol)
     if v0 is None or v1 is None or v0 <= 0:
         out["detail"] = (f"VIX has no observation within {tol}s of the window edges "
                          f"({'start' if v0 is None else 'end'} missing). Reporting unavailable.")

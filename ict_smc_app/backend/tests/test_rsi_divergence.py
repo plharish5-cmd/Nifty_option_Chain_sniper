@@ -244,3 +244,48 @@ def test_divergence_is_found_across_NON_adjacent_pivots():
              if e["type"] == "REGULAR_BEARISH" and e["pivot_to_ts"] - e["pivot_from_ts"] > 3 * 180]
     assert spans, (f"a non-adjacent bearish divergence must be found; "
                    f"pivots={res['pivots']['highs']} rejected={res['rejected']}")
+
+
+# ── review findings (AGY, 30 Oct) ──────────────────────────────────────────────────────────────────
+
+def test_flat_series_is_neutral_not_overbought():
+    """A series that never moves has no losses AND no gains: that is RSI 50, not RSI 100.
+
+    The original returned 100.0 on `avg_loss == 0` alone, so an expiry-afternoon flatline reported
+    maximum overbought about a market standing still.
+    """
+    out = rd.wilder_rsi([22500.0] * 40, period=14)
+    assert out[14] == 50.0
+    assert out[-1] == 50.0
+
+
+def test_monotonic_rise_is_still_100():
+    """The fix must not soften genuine one-sided strength."""
+    out = rd.wilder_rsi([22500.0 + i for i in range(40)], period=14)
+    assert out[-1] == 100.0
+
+
+def test_monotonic_fall_is_zero():
+    out = rd.wilder_rsi([22900.0 - i for i in range(40)], period=14)
+    assert out[-1] == 0.0
+
+
+def test_wilder_matches_hand_computed_reference():
+    """Independent check: Wilder smoothing with alpha = 1/period, computed separately here."""
+    closes = [22500.0 + (7 if i % 3 else -5) * (1 + i % 4) for i in range(40)]
+    want = []
+    g = l = 0.0
+    for i in range(1, 15):
+        d = closes[i] - closes[i - 1]
+        g += max(d, 0.0); l += max(-d, 0.0)
+    ag, al = g / 14, l / 14
+    want.append(100.0 - 100.0 / (1 + ag / al))
+    for i in range(15, len(closes)):
+        d = closes[i] - closes[i - 1]
+        ag = (ag * 13 + max(d, 0.0)) / 14
+        al = (al * 13 + max(-d, 0.0)) / 14
+        want.append(100.0 - 100.0 / (1 + ag / al))
+    got = [v for v in rd.wilder_rsi(closes, period=14) if v is not None]
+    assert len(got) == len(want)
+    for a, b in zip(got, want):
+        assert abs(a - b) < 1e-9

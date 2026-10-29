@@ -7,6 +7,7 @@ import {
 import type { Analysis, Candle, TF, WriterMetrics, InstitutionalLevelsRes } from "../api";
 import { bucket } from "../api";
 import type { DivergencePayload } from "./divergence";
+import { dayRegime } from "./regime";
 import { computeBias, cvdExhaustionSignals, FACTORS, BIAS_POLICY, BIAS_NAME, type BiasRow } from "./bias";
 import { useOcFeed, useSmt, useBiasAgreement, type SmtForming } from "./ocfeed";
 import { computeSmartRows, playOiBeep, type Row, type SmartRow } from "./OcLab";
@@ -114,40 +115,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   // seventh chip there collided with the rest and was effectively invisible.
   const showDiv = !!layers.rsiDiv;
 
-  useEffect(() => {
-    let alive = true;
-    const go = () => fetch(`/api/desk/divergence?tf=${tf}&day_regime=none`)
-      .then((r) => r.json())
-      .then((j) => { if (alive) setDivergence(j); })
-      .catch(() => { /* read-only: the chart is unchanged without it */ });
-    go();
-    const t = setInterval(go, 15000);
-    return () => { alive = false; clearInterval(t); };
-  }, [tf]);
-
-  useEffect(() => {
-    divLinesRef.current.forEach((l) => { try { series.current?.removePriceLine(l); } catch { /* gone */ } });
-    divLinesRef.current = [];
-    const a = divergence?.rsi?.active;
-    if (!showDiv || !series.current || !a) return;
-    const short = a.side === "short";
-    try {
-      divLinesRef.current.push(series.current.createPriceLine({
-        price: a.structure_trigger,
-        color: short ? "#fb7185" : "#34d399",
-        lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true,
-        title: `RSI ${short ? "▼" : "▲"} trigger`,
-      }));
-      divLinesRef.current.push(series.current.createPriceLine({
-        price: a.invalidation,
-        color: "#94a3b8",
-        lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true,
-        title: "RSI invalid",
-      }));
-    } catch (e) {
-      console.warn("Failed creating RSI divergence price lines", e);
-    }
-  }, [divergence, showDiv]);
+  // NOTE: the fetch itself lives further down, after `smartRows`, because it needs the day regime.
+  // Asking the endpoint for `day_regime=none` -- which this did until the review -- disables the
+  // counter-trend veto server-side, so the chart drew trigger and invalidation lines for the very
+  // reversal watches the desk bar was reporting as VETOED. On a trend day that is the exact failure
+  // this engine exists to prevent: a line on the chart saying "short here" on a session running
+  // +217 points. The drawing effect lives there too, since it reads the same regime.
 
   useEffect(() => {
     if (layers.ictLevels !== undefined) {
@@ -283,6 +256,53 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     if (!ocFeed?.pece?.length) return [] as SmartRow[];
     return computeSmartRows(ocFeed.pece as Row[], "3m");
   }, [ocFeed?.pece]);
+
+  // The day's decided direction, from the same cumulative Net PE−CE the desk bar reads (smartRows is
+  // newest-first). Sent to the divergence endpoint so a counter-trend reversal watch is VETOED
+  // server-side and never reaches the chart as a line.
+  const divRegime = useMemo(
+    () => dayRegime(smartRows[0]?.pe_ce_day_cr ?? null), [smartRows]);
+
+  useEffect(() => {
+    let alive = true;
+    const go = () => fetch(`/api/desk/divergence?tf=${tf}&day_regime=${encodeURIComponent(divRegime)}`)
+      .then((r) => r.json())
+      .then((j) => { if (alive) setDivergence(j); })
+      .catch(() => { /* read-only: the chart is unchanged without it */ });
+    go();
+    const t = setInterval(go, 15000);
+    return () => { alive = false; clearInterval(t); };
+  }, [tf, divRegime]);
+
+  useEffect(() => {
+    divLinesRef.current.forEach((l) => { try { series.current?.removePriceLine(l); } catch { /* gone */ } });
+    divLinesRef.current = [];
+    const a = divergence?.rsi?.active;
+    if (!showDiv || !series.current || !a) return;
+    // Second guard, independent of the regime sent above: a vetoed or counter-trend-reversal watch
+    // never gets a line, whatever the endpoint returned. One of the two guards failing should not be
+    // enough to put a short level on the chart in a bull day.
+    if (a.vetoed || a.state === "VETOED") return;
+    if (a.is_reversal && divRegime !== "none"
+        && ((a.side === "short" && divRegime === "bull") || (a.side === "long" && divRegime === "bear"))) return;
+    const short = a.side === "short";
+    try {
+      divLinesRef.current.push(series.current.createPriceLine({
+        price: a.structure_trigger,
+        color: short ? "#fb7185" : "#34d399",
+        lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true,
+        title: `RSI ${short ? "▼" : "▲"} trigger`,
+      }));
+      divLinesRef.current.push(series.current.createPriceLine({
+        price: a.invalidation,
+        color: "#94a3b8",
+        lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true,
+        title: "RSI invalid",
+      }));
+    } catch (e) {
+      console.warn("Failed creating RSI divergence price lines", e);
+    }
+  }, [divergence, showDiv, divRegime]);
 
   // Synchronized PE−CE action mapped to chart candles
   const ocActs = useMemo(() => {

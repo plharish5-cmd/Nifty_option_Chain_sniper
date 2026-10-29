@@ -62,14 +62,27 @@ def wilder_rsi(closes: List[float], period: int = 14) -> List[Optional[float]]:
         gains += max(d, 0.0)
         losses += max(-d, 0.0)
     avg_gain, avg_loss = gains / period, losses / period
-    out[period] = 100.0 if avg_loss == 0 else 100.0 - 100.0 / (1.0 + avg_gain / avg_loss)
+    out[period] = _rsi_from(avg_gain, avg_loss)
 
     for i in range(period + 1, n):
         d = closes[i] - closes[i - 1]
         avg_gain = (avg_gain * (period - 1) + max(d, 0.0)) / period
         avg_loss = (avg_loss * (period - 1) + max(-d, 0.0)) / period
-        out[i] = 100.0 if avg_loss == 0 else 100.0 - 100.0 / (1.0 + avg_gain / avg_loss)
+        out[i] = _rsi_from(avg_gain, avg_loss)
     return out
+
+
+def _rsi_from(avg_gain: float, avg_loss: float) -> float:
+    """RSI from Wilder averages, with the degenerate cases separated.
+
+    `avg_loss == 0` alone is NOT enough to return 100: a perfectly flat series has no losses AND no
+    gains, and reporting RSI 100 there says "maximum overbought" about a market that has not moved.
+    An expiry-afternoon flatline or a thin pre-open stretch produces exactly that, so the flat case
+    returns the neutral 50.0 and only genuine one-sided strength returns 100.0.
+    """
+    if avg_loss == 0:
+        return 50.0 if avg_gain == 0 else 100.0
+    return 100.0 - 100.0 / (1.0 + avg_gain / avg_loss)
 
 
 # ── pivots ────────────────────────────────────────────────────────────────────────────────────────
