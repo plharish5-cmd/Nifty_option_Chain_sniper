@@ -135,7 +135,8 @@
       6,
       8,
       10,
-      12
+      12,
+      0
     ],
     "ranges": [
       3,
@@ -152,7 +153,27 @@
     "default_range": 8,
     "custom_candidates": 41,
     "default_custom_steps": 4,
-    "control_debounce_ms": 250
+    "control_debounce_ms": 250,
+    "voice_alerts": {
+      "max_feed_age_seconds": 120,
+      "max_event_age_seconds": 120,
+      "clock_skew_seconds": 5,
+      "live_start": "09:15",
+      "live_end": "15:30",
+      "speech_rate": 1.0,
+      "recent_alerts": 8,
+      "remembered_alerts": 500,
+      "preferred_voices": [
+        "Neerja",
+        "Heera",
+        "Veena",
+        "Samantha",
+        "Zira",
+        "Female",
+        "Karen",
+        "Moira"
+      ]
+    }
   },
   "oi_studio": {
     "lot_size": 65,

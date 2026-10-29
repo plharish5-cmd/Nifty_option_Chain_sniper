@@ -60,7 +60,7 @@ const safeStr = (v: unknown): string => (v == null ? "" : String(v));
 function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
   const [data, setData] = useState<ExtendedAlertRow[]>(Array.isArray(propAlerts) ? (propAlerts as ExtendedAlertRow[]) : []);
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState<"all" | "entries" | "mgmt" | "aplus" | "buy" | "sell" | "rvol" | "bias" | "rjb" | "abs" | "wick" | "cvd">("all");
+  const [filter, setFilter] = useState<"all" | "entries" | "mgmt" | "aplus" | "buy" | "sell" | "rvol" | "bias" | "rjb" | "abs" | "wick" | "cvd" | "time_series">("all");
   const [search, setSearch] = useState("");
   const [showSkipped, setShowSkipped] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -128,7 +128,9 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
       }
 
       // Quick filter
-      if (filter === "cvd") {
+      if (filter === "time_series") {
+        if (!k.startsWith("SIG_TS_")) return false;
+      } else if (filter === "cvd") {
         if (!k.includes("CVD")) return false;
       } else if (filter === "entries") {
         if (s === "HOLD" || g === "mgmt" || k.includes("TRAIL") || k.includes("MGMT")) return false;
@@ -196,6 +198,7 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
     if (isSkip) {
       return <span className="pill bg-slate-800 text-slate-400 border border-slate-700">SKIPPED</span>;
     }
+    if (k.startsWith("SIG_TS_")) return <span className="pill bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">TIME-SERIES</span>;
     if (k.includes("CVD")) {
       return <span className="pill bg-amber-500/20 text-amber-300 border border-amber-500/40">{k.includes("NODES") ? "CVD + NODES" : "CVD EXHAUSTION"}</span>;
     }
@@ -335,6 +338,7 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
           >
             ⚡ RVOL
           </button>
+          <button onClick={()=>setFilter("time_series")} className={"pill text-[11px] "+(filter==="time_series"?"bg-cyan-400 text-ink-900 font-bold":"bg-ink-800 text-cyan-300")}>Time-series alerts</button>
           <button onClick={() => setFilter("cvd")} className={`pill text-[11px] ${filter==="cvd"?"bg-amber-400 text-ink-900 font-bold":"bg-ink-800 text-amber-300"}`}>CVD alerts</button>
           <button
             onClick={() => setFilter("bias")}

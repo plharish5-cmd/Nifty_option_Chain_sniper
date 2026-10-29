@@ -350,7 +350,8 @@ export default function App() {
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              {bottom === "time_series" ? <TimeSeriesChain />
+              <div className={bottom==="time_series"?"h-full":"hidden"}><TimeSeriesChain active={bottom==="time_series"} /></div>
+              {bottom === "time_series" ? null
                 : bottom === "advpa" ? <AdvPaPanel tick={storyTick} chartTf={tf} />
                 : bottom === "alerts" ? <AlertsTable alerts={dash?.alerts} onRefresh={loadDash} />
                 : bottom === "stdv" ? <StdvPanel candles={candles} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} chartTf={tf} selectedLeg={selectedStdvLeg} onSelectLeg={setSelectedStdvLeg} isLayerActive={!!layers.stdv} onToggleLayer={() => setLayers((l) => ({ ...l, stdv: !l.stdv }))} isPicking={isStdvPicking} onStartPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onCancelPicking={() => setIsStdvPicking(false)} onSetChartTf={setTf} />

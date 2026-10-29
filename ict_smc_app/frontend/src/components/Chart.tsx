@@ -2009,7 +2009,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const nEntries = useMemo(() => wantNodes && nodesV?.available
     ? findEntries(candles, analysis?.volume?.vwap ?? [], nodesV) : [], [wantNodes, nodesV, candles, analysis]);
   nEntRef.current = nEntries;
-  useEffect(() => { ndPrim.current.set(isNodesOn ? nodesV : null, nEntries); }, [isNodesOn, nodesV, nEntries]);
+  useEffect(() => { ndPrim.current.set(isNodesOn ? nodesV : null, isNodesOn ? nEntries : []); }, [isNodesOn, nodesV, nEntries]);
   // ── gamma map + 3 confirmations ──
   const rvMap = useMemo(() => new Map((analysis?.volume?.bars ?? []).map((b) => [b.time, b.rvol])), [analysis]);
   const emaArr = useMemo(() => layers.gamma && candles.length ? [emas(candles, 9), emas(candles, 21), emas(candles, 50)] : null, [layers.gamma, candles]);

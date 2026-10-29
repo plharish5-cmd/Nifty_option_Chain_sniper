@@ -66,7 +66,7 @@ def build(params, snaps=None, days=None):
     atm = min(have, key=lambda k: abs(k - spot))
     step = float(tc.ol._rules().get("strike_step", 50) or 50)
     candidates = sorted(sorted(have, key=lambda k: abs(k - atm))[:cfg["custom_candidates"]])
-    meta.update(times=[pd.Timestamp(t).isoformat() for t in times], strikes=have, candidates=candidates, default_custom=[k for k in candidates if abs(k-atm)<=cfg["default_custom_steps"]*step], atm=atm, end=end.isoformat())
+    meta.update(times=[pd.Timestamp(t).isoformat() for t in times if pd.Timestamp(t)>=pd.Timestamp(day)+pd.Timedelta(hours=9,minutes=15)], strikes=have, candidates=candidates, default_custom=[k for k in candidates if abs(k-atm)<=cfg["default_custom_steps"]*step], atm=atm, end=end.isoformat())
     custom = params.get("custom") or []
     strikes = [k for k in have if k in custom] if selection == "Custom" else [k for k in have if atm-rng*step <= k <= atm+rng*step]
     if not strikes:
@@ -80,7 +80,8 @@ def build(params, snaps=None, days=None):
     if opts.get("font", "Small") not in ("Small", "Medium", "Large"):
         raise ValueError("Invalid font size")
     show_sig = params.get("signals", True)
-    sg = sig.compute(x, tc.TF[tf], end) if show_sig else None
+    alert_sg = sig.compute(x, tc.TF[tf], end)
+    sg = alert_sg if show_sig else None
     sig_map = {pd.Timestamp(r.ts): r.badge for r in sg.itertuples()} if sg is not None and len(sg) else {}
     html = tc.grid_html(g, mode, atm, tf, dict(opts, lot_div=lot if opts.get("lot") else 1, sig=sig_map))
     if sg is not None and len(sg):
@@ -112,12 +113,13 @@ def build(params, snaps=None, days=None):
     except Exception as exc:
         log.warning("Time-series future caption unavailable: %s", exc)
     matrix = lambda key: [[number(v) for v in row] for row in g[key].values]
-    signals = [] if sg is None else [dict(time=pd.Timestamp(r.ts).isoformat(), close=number(r.close), support=number(r.sup), resistance=number(r.res), event=list(r.lv) if isinstance(r.lv, tuple) else None, action=list(r.act) if isinstance(r.act, tuple) else None, badge=list(r.badge)) for r in sg.itertuples()]
+    alert_signals = [dict(time=pd.Timestamp(r.ts).isoformat(), close=number(r.close), support=number(r.sup), resistance=number(r.res), event=list(r.lv) if isinstance(r.lv, tuple) else None, action=list(r.act) if isinstance(r.act, tuple) else None, badge=list(r.badge)) for r in alert_sg.itertuples()]
+    signals = alert_signals if show_sig else []
     return dict(meta, ok=True, html=html, mode=mode, tf=tf, spot=spot, future=future, mult=mult, unit=unit, lot=lot,
                 now=str(g["now_ts"]), partial=g["partial"],
                 elapsed=g["elapsed"], step_min=g["step_min"], selected_strikes=strikes,
                 grid=dict(cols=[pd.Timestamp(c).isoformat() for c in g["cols"]], labels=[g["labels"][c] for c in g["cols"]], ce=matrix("ce"), pe=matrix("pe")),
-                signals=signals, narrative=narrative, pro=rd)
+                signals=signals, alert_signals=alert_signals, narrative=narrative, pro=rd)
 
 def main():
     try:

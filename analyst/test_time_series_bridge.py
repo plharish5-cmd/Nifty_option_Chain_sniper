@@ -101,3 +101,31 @@ def test_call_put_mirror_and_source_sections(session):
         assert name in out["html"]
     assert out["grid"]["labels"] == [n["label"].replace(" ⏳","") for n in out["narrative"]]
     assert "⏳" in out["html"]
+
+def test_full_session_window_includes_morning_and_close(session):
+    day, snaps, _ = session
+    p = dict(day=str(day), expiry="03-Nov-2026")
+    all_day = build(dict(p, columns=0), snaps=snaps, days=[day])
+    recent = build(p, snaps=snaps, days=[day])
+    assert all_day["ok"] and len(all_day["grid"]["cols"]) > 12
+    assert all_day["grid"]["labels"][0] < "10:00"
+    assert all_day["grid"]["labels"][-1] >= "15:30"
+    for side in ("ce","pe"):
+        assert [row[-6:] for row in all_day["grid"][side]] == recent["grid"][side]
+    assert all_day["times"][0][11:16] == "09:15"
+
+def test_voice_event_feed_is_independent_of_grid_signal_switch(session):
+    day, snaps, _ = session
+    p = dict(day=str(day), expiry="03-Nov-2026")
+    on = build(p, snaps=snaps, days=[day])
+    off = build(dict(p, signals=False), snaps=snaps, days=[day])
+    assert off["signals"] == []
+    assert off["alert_signals"] == on["alert_signals"] == on["signals"]
+    assert "LEVEL SIGNALS" not in off["html"]
+
+def test_opening_baseline_replay_and_late_recordings(session):
+    day, snaps, x = session
+    first = pd.Timestamp(sorted(x[x.ts>=pd.Timestamp(str(day)+" 09:15:00")].ts.unique())[0])
+    out = build(dict(day=str(day), expiry="03-Nov-2026", end=first.isoformat(), columns=0), snaps=snaps, days=[day])
+    assert out["ok"] and pd.Timestamp(out["now"]) == first
+    assert all(pd.Timestamp(r["time"]) <= first.ceil("min") for r in out["alert_signals"])
