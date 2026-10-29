@@ -60,7 +60,7 @@ const safeStr = (v: unknown): string => (v == null ? "" : String(v));
 function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
   const [data, setData] = useState<ExtendedAlertRow[]>(Array.isArray(propAlerts) ? (propAlerts as ExtendedAlertRow[]) : []);
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState<"all" | "entries" | "mgmt" | "aplus" | "buy" | "sell" | "rvol" | "bias" | "rjb" | "abs" | "wick">("all");
+  const [filter, setFilter] = useState<"all" | "entries" | "mgmt" | "aplus" | "buy" | "sell" | "rvol" | "bias" | "rjb" | "abs" | "wick" | "cvd">("all");
   const [search, setSearch] = useState("");
   const [showSkipped, setShowSkipped] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -128,7 +128,9 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
       }
 
       // Quick filter
-      if (filter === "entries") {
+      if (filter === "cvd") {
+        if (!k.includes("CVD")) return false;
+      } else if (filter === "entries") {
         if (s === "HOLD" || g === "mgmt" || k.includes("TRAIL") || k.includes("MGMT")) return false;
       } else if (filter === "mgmt") {
         if (s !== "HOLD" && g !== "mgmt" && !k.includes("TRAIL") && !k.includes("MGMT")) return false;
@@ -194,6 +196,9 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
     if (isSkip) {
       return <span className="pill bg-slate-800 text-slate-400 border border-slate-700">SKIPPED</span>;
     }
+    if (k.includes("CVD")) {
+      return <span className="pill bg-amber-500/20 text-amber-300 border border-amber-500/40">{k.includes("NODES") ? "CVD + NODES" : "CVD EXHAUSTION"}</span>;
+    }
     if (k.includes("EARLY_REV") || t.includes("EARLY REVERSAL")) {
       return <span className="pill bg-emerald-600/20 text-emerald-300 border border-emerald-500/50 font-bold">🎯 EARLY REV</span>;
     }
@@ -213,7 +218,7 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
       return <span className="pill bg-amber-500/20 text-amber-300 border border-amber-500/50 font-bold">★ A+</span>;
     }
     if (k.includes("BIAS") || t.includes("BIAS")) {
-      return <span className="pill bg-gold-500/20 text-gold-300 border border-gold-500/40">⚖ BIAS 20</span>;
+      return <span className="pill bg-gold-500/20 text-gold-300 border border-gold-500/40">⚖ {BIAS_NAME}</span>;
     }
     if (k.includes("CONF") || t.includes("CONF")) {
       return <span className="pill bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">✓3 CONF</span>;
@@ -330,6 +335,7 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
           >
             ⚡ RVOL
           </button>
+          <button onClick={() => setFilter("cvd")} className={`pill text-[11px] ${filter==="cvd"?"bg-amber-400 text-ink-900 font-bold":"bg-ink-800 text-amber-300"}`}>CVD alerts</button>
           <button
             onClick={() => setFilter("bias")}
             className={`pill text-[11px] ${filter === "bias" ? "bg-gold-500 text-ink-900 font-bold" : "bg-ink-800 text-gold-300"}`}

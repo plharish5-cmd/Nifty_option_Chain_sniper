@@ -11,7 +11,7 @@ export type FpRow = { p: number; buy: number; sell: number; d: number; v: number
 export type FpTag = { k: string; dir: "bull" | "bear"; t: string };
 export type FpBar = { time: number; at: string; o: number; h: number; l: number; c: number; delta: number; vol: number; cvd: number;
   poc?: number; delta_pct?: number; coverage: number; rows: FpRow[]; tags: FpTag[]; read: string;
-  conf?: { dir: "bull" | "bear"; why: string[] } };
+  conf?: { dir: "bull" | "bear"; why: string[] }; buy?: number; sell?: number; };
 
 // U (unfinished) and V (divergence) fire on most candles → hidden from the chart, still in the hover card / ladder panel
 export const FP_LETTER: Record<string, string> = { ABSORPTION: "A", DISTRIBUTION: "D", ACCUMULATION: "C", MANIPULATION: "M",

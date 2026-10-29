@@ -269,8 +269,29 @@ export default function App() {
               </div>
               <div className="flex flex-wrap gap-1">
                 {LAYER_NAMES.map(([k, label]) => (
-                  <button key={k} onClick={() => setLayers((l) => ({ ...l, [k]: !l[k] }))}
-                    className={`tab ${layers[k] ? "tab-on" : ""}`}>{label}</button>
+                  <button
+                    key={k}
+                    onClick={() =>
+                      setLayers((l) => {
+                        const next = !l[k];
+                        if (k === "deltaDetail") {
+                          return {
+                            ...l,
+                            deltaDetail: next,
+                            delta: next,
+                            bubbles: next,
+                            cells: next,
+                            cvd: next,
+                            nodes: next,
+                          };
+                        }
+                        return { ...l, [k]: next };
+                      })
+                    }
+                    className={`tab ${layers[k] ? "tab-on" : ""}`}
+                  >
+                    {label}
+                  </button>
                 ))}
               </div>
               </>}

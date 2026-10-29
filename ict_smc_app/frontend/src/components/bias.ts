@@ -5,6 +5,8 @@ import type { Analysis, Candle } from "../api";
 import analystConfig from "../../../../analyst/analyst_config.json";
 export const BIAS_POLICY = analystConfig.bias_meter;
 import type { FpBar } from "./footprint";
+import type { CvdDivergence } from "./orderflow";
+import type { NodesView, NEntry } from "./nodes";
 
 export type Vote = "bull" | "bear" | null;
 export const FACTORS = [
@@ -21,7 +23,7 @@ export type OcRow = Row;
 export type OcPt = { t: number; ce: number | null; pe: number | null; flow: number | null; bal: number | null; sig: boolean;
   fut?: number | null; flip?: boolean; regime?: string; conf?: string | null };
 export type Gex = { ok: boolean; spot?: number; flip?: number | null; regime?: string; pin?: number; accel?: number | null; message?: string; ts?: string };
-export type OcFeed = { pece: OcRow[]; flow: OcPt[]; gex?: Gex | null; day?: string; trinity?: PositionPoint[] };
+export type OcFeed = { pece: OcRow[]; flow: OcPt[]; gex?: Gex | null; day?: string; trinity?: PositionPoint[]; nodes?: NodesView|null };
 export type Factor = typeof FACTORS[number];
 export type BiasRow = { time: number; o: number; h: number; l: number; c: number; votes: Record<Factor, Vote>; why: Record<Factor, string>;
   bull: number; bear: number; avail: number; verdict: "BUY" | "SELL" | "MIXED"; strong: boolean; forming?: boolean; warn?: string;
@@ -33,7 +35,7 @@ const FLOW = new Set(["STACKED_BUY", "STACKED_SELL", "ACCUMULATION", "DISTRIBUTI
 
 export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], barSec: number, pct = BIAS_POLICY.agreement,
                             oc: OcFeed | null = null, forming = false,
-                            smt: { time: number; dir: "bull" | "bear"; at: string }[] | null = null): BiasRow[] {
+                            smt: { time: number; dir: "bull" | "bear"; at: string }[] | null = null, cvdSignals: CvdAlertSignal[] = []): BiasRow[] {
   if (!a) return [];
   const closed = candles.filter((c) => c.closed !== false);
   const latestClosed = closed.at(-1)?.time;
@@ -253,6 +255,10 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
         cvdW = `CVD ${dc > 0 ? "rising" : "falling"} (${(dc / 1000).toFixed(1)}k over 3 bars)`;
       }
     }
+    const exhaustion=cvdSignals.find((event)=>event.time===c.time && event.kind==="exhaustion");
+    const confirmed=cvdSignals.find((event)=>event.time===c.time && event.kind==="confirmed");
+    if (confirmed) {cvdV=confirmed.dir;cvdW=confirmed.details+" · one shared CVD vote";}
+    else if (exhaustion) {cvdV=null;cvdW=exhaustion.details+" · warning only; awaiting node/price confirmation";}
     votes["CVD flow"] = cvdV; why["CVD flow"] = cvdW || (hasFp ? "CVD flat / steady" : "no footprint/CVD data");
 
     // 18 Gamma flip — Price location vs Dealer High Volatility Level & GEX regime
@@ -470,4 +476,42 @@ export type TrinitySignalRow={time:number;fut_close:number;signal_point?:{sample
 export function trinitySignalPoints(rows:TrinitySignalRow[],fresh=true,cutoff=Infinity):PositionPoint[]{
   return rows.filter((p)=>p.signal_point && p.time<cutoff).map((p)=>({time:p.time,duration:BIAS_POLICY.positioning_signals.trinity_bar_seconds,price:p.fut_close,sample:p.signal_point!.sample_time,
     ce:fresh?p.signal_point!.ce_change:p.signal_point!.ce,pe:fresh?p.signal_point!.pe_change:p.signal_point!.pe}));
+}
+
+export type CvdAlertSignal={time:number;sourceTime:number;kind:"exhaustion"|"confirmed";dir:"bull"|"bear";details:string;zone?:string};
+// Adapter only: consumes the existing CVD detector and existing node entries unchanged.
+export function cvdExhaustionSignals(candles:Candle[],fp:FpBar[],events:CvdDivergence[],nodes:NEntry[],barSec:number):CvdAlertSignal[]{
+  const cfg=BIAS_POLICY.cvd_alerts;
+  const closed=candles.filter((c)=>c.closed!==false).slice().sort((a,b)=>a.time-b.time);
+  const bars=new Map(fp.map((p)=>[p.time,p]));
+  const byTime=new Map(closed.map((c)=>[c.time,c]));
+  const day=(t:number)=>new Date(t*1000).toISOString().slice(0,10);
+  const complete=(t:number)=>Array.from({length:cfg.complete_bars},(_,i)=>t-i*barSec).every((at)=>{
+    const b=bars.get(at);
+    return byTime.has(at) && day(at)===day(t) && !!b?.rows.length && Number.isFinite(b.cvd) && Number.isFinite(b.delta);
+  });
+  const raw=events.filter((e)=>e.type==="EXHAUSTION_CLIMAX" && byTime.has(e.time) && complete(e.time)).map((e):CvdAlertSignal=>({
+    time:e.time,sourceTime:e.time,kind:"exhaustion",dir:e.dir,
+    details:(e.dir==="bull"?"Seller exhaustion — bullish warning":"Buyer exhaustion — bearish warning")+" · estimated CVD · "+e.details,
+  }));
+  const out:CvdAlertSignal[]=[...raw],used=new Set<number>();
+  let lastConfirmation:CvdAlertSignal|undefined;
+  for(const candle of closed){
+    if(!complete(candle.time))continue;
+    const candidates=raw.filter((e)=>e.time<candle.time && day(e.time)===day(candle.time) && candle.time-e.time<=cfg.confirmation_window_bars*barSec && !used.has(e.time)).reverse();
+    for(const event of candidates){
+      const source=byTime.get(event.time)!;
+      const path=closed.filter((c)=>c.time>source.time && c.time<=candle.time);
+      if(path.some((c)=>event.dir==="bull"?c.low<source.low:c.high>source.high))continue;
+      const breaks=event.dir==="bull"?candle.close>source.high:candle.close<source.low;
+      if(!breaks)continue;
+      const node=nodes.find((n)=>day(n.time)===day(event.time) && n.time<=candle.time && n.time>=event.time-(cfg.node_window_bars-1)*barSec && n.side===(event.dir==="bull"?"BUY":"SELL"));
+      if(!node)continue;
+      if(lastConfirmation?.dir===event.dir && candle.time-lastConfirmation.time<cfg.confirmation_cooldown_bars*barSec)continue;
+      const signal:CvdAlertSignal={time:candle.time,sourceTime:event.time,kind:"confirmed",dir:event.dir,zone:node.zone.label,
+        details:(event.dir==="bull"?"Bullish":"Bearish")+" CVD + stacked-node confirmation · "+node.zone.label+" rejection + close beyond exhaustion candle "+(event.dir==="bull"?"high":"low")+"; correlated evidence, not a guaranteed entry"};
+      out.push(signal);used.add(event.time);lastConfirmation=signal;break;
+    }
+  }
+  return out.sort((a,b)=>a.time-b.time);
 }
