@@ -848,5 +848,14 @@
     "default_pdh": 22778.05,
     "default_pdl": 22497.70,
     "default_pdo": 22678.00
+  },
+  "gann_pivots_gaps": {
+    "_note": "Historical Monotonic Pivots (R1-R4, S1-S4), Unfilled Opening Gaps, and Gann Sq9 (45-180 deg) + Time Cycles",
+    "gap_threshold_pts": 5.0,
+    "gann_degrees": [45, 90, 135, 180],
+    "time_cycles": [30, 45, 60, 90, 120, 135, 144, 180, 225, 270, 315, 360],
+    "tolerance_days": 1,
+    "max_gaps": 3,
+    "max_pivots": 4
   }
 }

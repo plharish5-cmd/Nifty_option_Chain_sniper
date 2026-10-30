@@ -4,7 +4,7 @@ import {
   BaselineSeries, CandlestickSeries, ColorType, createChart, createSeriesMarkers, CrosshairMode, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi, type MouseEventParams, type Time, type UTCTimestamp, type IPriceLine,
 } from "lightweight-charts";
-import type { Analysis, Candle, TF, WriterMetrics, InstitutionalLevelsRes } from "../api";
+import type { Analysis, Candle, TF, WriterMetrics, InstitutionalLevelsRes, GannPivotsGapsRes } from "../api";
 import { bucket } from "../api";
 import type { DivergencePayload } from "./divergence";
 import { dayRegime } from "./regime";
@@ -101,6 +101,68 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     }
   });
   const ictLinesRef = useRef<IPriceLine[]>([]);
+
+  // Rejection Blocks (RB): Monotonic R1-R4 / S1-S4 Swing Levels, Unfilled Gaps & Gann Sq9 + Time Cycles
+  const [gannData, setGannData] = useState<GannPivotsGapsRes | null>(null);
+  const [showRbPivotsGaps, setShowRbPivotsGaps] = useState<boolean>(() => {
+    try {
+      const s = localStorage.getItem("rb_pivots_gaps_active");
+      return s !== null ? s === "1" : (layers.rblock ?? true);
+    } catch {
+      return layers.rblock ?? true;
+    }
+  });
+  const [showRbGann, setShowRbGann] = useState<boolean>(() => {
+    try {
+      const s = localStorage.getItem("rb_gann_active");
+      return s !== null ? s === "1" : false;
+    } catch {
+      return false;
+    }
+  });
+  const [showRbGuidance, setShowRbGuidance] = useState<boolean>(false);
+  const rbPriceLinesRef = useRef<IPriceLine[]>([]);
+
+  useEffect(() => {
+    if (layers.rblock !== undefined) {
+      try {
+        if (localStorage.getItem("rb_pivots_gaps_active") === null) {
+          setShowRbPivotsGaps(layers.rblock);
+        }
+      } catch {}
+    }
+  }, [layers.rblock]);
+
+  const toggleRbPivotsGaps = () => {
+    setShowRbPivotsGaps((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("rb_pivots_gaps_active", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  };
+
+  const toggleRbGann = () => {
+    setShowRbGann((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("rb_gann_active", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    let alive = true;
+    const fetchGannPivots = () => {
+      api.gannPivotsGaps().then((res) => {
+        if (alive && res?.ok) setGannData(res);
+      }).catch(() => {});
+    };
+    fetchGannPivots();
+    const timer = setInterval(fetchGannPivots, 10000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   // ── RSI divergence watch levels ───────────────────────────────────────────────────────────────
   // Only the ACTIVE watch is drawn, and only two lines: the trigger price must be closed through
@@ -210,6 +272,150 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       ictLinesRef.current = [];
     };
   }, [localIctLevels, instLevels, series.current]);
+
+  // Draw / update Rejection Blocks Historical Pivots (R1-R4, S1-S4), Gaps, and Gann Sq9 Price Lines
+  useEffect(() => {
+    rbPriceLinesRef.current.forEach((line) => {
+      try {
+        series.current?.removePriceLine(line);
+      } catch {}
+    });
+    rbPriceLinesRef.current = [];
+
+    if (!series.current || !gannData?.ok) return;
+
+    const formatDateShort = (dStr?: string) => {
+      if (!dStr) return "";
+      try {
+        const parts = dStr.split("-");
+        if (parts.length === 3) {
+          const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+          const mIdx = parseInt(parts[1], 10) - 1;
+          return `${parseInt(parts[2], 10)}-${months[mIdx] || parts[1]}`;
+        }
+      } catch {}
+      return dStr;
+    };
+
+    try {
+      // 1. Checkbox 1: R1-R4, S1-S4 & Unfilled Gaps
+      if (showRbPivotsGaps) {
+        // Resistances (R1..R4) - Red #ef4444
+        (gannData.resistances || []).forEach((r, idx) => {
+          if (r.price > 0) {
+            const dateLabel = r.date ? ` (${formatDateShort(r.date)})` : "";
+            const hitLabel = r.hit ? " ✓ HIT" : "";
+            const line = series.current!.createPriceLine({
+              price: r.price,
+              color: "#ef4444",
+              lineWidth: 1,
+              lineStyle: LineStyle.Solid,
+              axisLabelVisible: true,
+              title: `${r.level || `R${idx + 1}`} ${r.price.toLocaleString("en-IN")}${dateLabel}${hitLabel}`,
+            });
+            rbPriceLinesRef.current.push(line);
+          }
+        });
+
+        // Supports (S1..S4) - Green #22c55e
+        (gannData.supports || []).forEach((s, idx) => {
+          if (s.price > 0) {
+            const dateLabel = s.date ? ` (${formatDateShort(s.date)})` : "";
+            const hitLabel = s.hit ? " ✓ HIT" : "";
+            const line = series.current!.createPriceLine({
+              price: s.price,
+              color: "#22c55e",
+              lineWidth: 1,
+              lineStyle: LineStyle.Solid,
+              axisLabelVisible: true,
+              title: `${s.level || `S${idx + 1}`} ${s.price.toLocaleString("en-IN")}${dateLabel}${hitLabel}`,
+            });
+            rbPriceLinesRef.current.push(line);
+          }
+        });
+
+        // Upper Gaps - Gold / Amber dashed #f59e0b
+        (gannData.upper_gaps || []).forEach((ug) => {
+          if (ug.price > 0) {
+            const dateLabel = ug.date ? ` (Unfilled from ${formatDateShort(ug.date)})` : "";
+            const hitLabel = ug.hit ? " ✓ HIT" : "";
+            const line = series.current!.createPriceLine({
+              price: ug.price,
+              color: "#f59e0b",
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: `GAP UP ${ug.price.toLocaleString("en-IN")}${dateLabel}${hitLabel}`,
+            });
+            rbPriceLinesRef.current.push(line);
+          }
+        });
+
+        // Lower Gaps - Cyan/Purple dashed #a855f7
+        (gannData.lower_gaps || []).forEach((lg) => {
+          if (lg.price > 0) {
+            const dateLabel = lg.date ? ` (Unfilled from ${formatDateShort(lg.date)})` : "";
+            const hitLabel = lg.hit ? " ✓ HIT" : "";
+            const line = series.current!.createPriceLine({
+              price: lg.price,
+              color: "#a855f7",
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: `GAP DN ${lg.price.toLocaleString("en-IN")}${dateLabel}${hitLabel}`,
+            });
+            rbPriceLinesRef.current.push(line);
+          }
+        });
+      }
+
+      // 2. Checkbox 2: Gann Sq9 R1..R4 & S1..S4
+      if (showRbGann) {
+        // Gann Resistances - dotted Rose/Crimson #fb7185
+        (gannData.gann_resistances || []).forEach((gr, idx) => {
+          if (gr.price && gr.price > 0) {
+            const hitLabel = gr.hit ? " ✓ HIT" : "";
+            const line = series.current!.createPriceLine({
+              price: gr.price,
+              color: "#fb7185",
+              lineWidth: 1,
+              lineStyle: LineStyle.Dotted,
+              axisLabelVisible: true,
+              title: `Gann R${idx + 1} (${gr.degrees}°) ${gr.price.toLocaleString("en-IN")}${hitLabel}`,
+            });
+            rbPriceLinesRef.current.push(line);
+          }
+        });
+
+        // Gann Supports - dotted Teal/Emerald #34d399
+        (gannData.gann_supports || []).forEach((gs, idx) => {
+          if (gs.price && gs.price > 0) {
+            const hitLabel = gs.hit ? " ✓ HIT" : "";
+            const line = series.current!.createPriceLine({
+              price: gs.price,
+              color: "#34d399",
+              lineWidth: 1,
+              lineStyle: LineStyle.Dotted,
+              axisLabelVisible: true,
+              title: `Gann S${idx + 1} (${gs.degrees}°) ${gs.price.toLocaleString("en-IN")}${hitLabel}`,
+            });
+            rbPriceLinesRef.current.push(line);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn("Failed creating Gann/Pivot price lines", err);
+    }
+
+    return () => {
+      rbPriceLinesRef.current.forEach((line) => {
+        try {
+          series.current?.removePriceLine(line);
+        } catch {}
+      });
+      rbPriceLinesRef.current = [];
+    };
+  }, [showRbPivotsGaps, showRbGann, gannData, series.current]);
   const isDeltaDetailOn = !!layers.deltaDetail;
   const isDeltaOn = !!(layers.delta || isDeltaDetailOn);
   const isBubblesOn = !!(layers.bubbles || isDeltaDetailOn);
@@ -2806,6 +3012,61 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           )}
         </button>
 
+        {/* Rejection Blocks (RB) Section: Checkbox 1, Checkbox 2 & Gann Time Cycle HUD */}
+        <button
+          onClick={toggleRbPivotsGaps}
+          onMouseEnter={() => setShowRbGuidance(true)}
+          onMouseLeave={() => setShowRbGuidance(false)}
+          className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur ${
+            showRbPivotsGaps
+              ? "bg-rose-500/20 border-rose-500/80 text-rose-300 ring-1 ring-rose-500/40"
+              : "border-slate-700/60 text-slate-400 hover:text-slate-200"
+          }`}
+          title="Toggle Rejection Blocks: Historical Swing R1-R4 (Red), S1-S4 (Green) & Unfilled Gaps (Gold/Purple)"
+        >
+          <span>{showRbPivotsGaps ? "☑" : "☐"} R1–R4 / S1–S4 & Gaps</span>
+          {gannData?.resistances?.[0]?.hit && (
+            <span className="text-[9px] px-1 rounded font-bold bg-rose-500/30 text-rose-300">
+              R1 HIT
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={toggleRbGann}
+          onMouseEnter={() => setShowRbGuidance(true)}
+          onMouseLeave={() => setShowRbGuidance(false)}
+          className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur ${
+            showRbGann
+              ? "bg-teal-500/20 border-teal-500/80 text-teal-300 ring-1 ring-teal-500/40"
+              : "border-slate-700/60 text-slate-400 hover:text-slate-200"
+          }`}
+          title="Toggle Gann Square of 9 Levels (±45°, ±90°, ±135°, ±180°)"
+        >
+          <span>{showRbGann ? "☑" : "☐"} Gann Sq9 & Time Cycles</span>
+        </button>
+
+        {gannData?.time_cycles && (
+          <div
+            onMouseEnter={() => setShowRbGuidance(true)}
+            onMouseLeave={() => setShowRbGuidance(false)}
+            className={`flex items-center gap-1.5 rounded bg-[#060b16]/95 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur cursor-pointer ${
+              gannData.time_cycles.alert_text !== "None"
+                ? "bg-amber-500/20 border-amber-500/80 text-amber-300 ring-1 ring-amber-500/50 animate-pulse shadow-amber-500/20"
+                : "border-slate-700/60 text-slate-400 hover:text-slate-300"
+            }`}
+            title="Gann Time Cycles from Historical Major High & Major Low. Hover for full trader action guide."
+          >
+            <span>⏳ Time Cycle:</span>
+            <span className={gannData.time_cycles.alert_text !== "None" ? "text-amber-300 font-extrabold" : "text-slate-300"}>
+              {gannData.time_cycles.alert_text}
+            </span>
+            <span className="opacity-75 font-mono text-[9px] text-slate-400">
+              | High+{gannData.time_cycles.days_from_major_high}d · Low+{gannData.time_cycles.days_from_major_low}d
+            </span>
+          </div>
+        )}
+
         <button
           onClick={() => {
             if (trinityDrawerOpen && oiDrawerTab === "matrix") {
@@ -2870,6 +3131,168 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           </div>
         )}
       </div>
+
+      {/* Mouse-Over Trader Guidance for Rejection Blocks (RB) Pivots, Gaps & Gann Sq9 */}
+      {showRbGuidance && gannData && (
+        <div
+          onMouseEnter={() => setShowRbGuidance(true)}
+          onMouseLeave={() => setShowRbGuidance(false)}
+          className="pointer-events-auto absolute right-2 top-10 z-50 w-[560px] max-w-[95vw] max-h-[85vh] overflow-y-auto rounded-xl border border-gold-500/50 bg-[#060c18]/98 p-3 shadow-2xl backdrop-blur-xl ring-1 ring-gold-500/30 font-sans text-xs"
+        >
+          <div className="mb-2 flex items-center justify-between border-b border-gold-500/30 pb-1.5">
+            <span className="flex items-center gap-1.5 font-bold text-gold-300 text-[12px]">
+              <span>⟂</span>
+              <span>REJECTION BLOCKS · HISTORICAL PIVOTS, GAPS & GANN SQ9 MATRIX</span>
+            </span>
+            <span className="font-mono text-[10px] text-slate-400">
+              Ref: {gannData.ref_date} (Close {gannData.ref_close.toLocaleString("en-IN")})
+            </span>
+          </div>
+
+          {/* Time Cycle Alert Badge */}
+          <div className={`mb-2.5 rounded-lg p-2 border ${
+            gannData.time_cycles.alert_text !== "None"
+              ? "bg-amber-950/70 border-amber-500/80 text-amber-200"
+              : "bg-slate-900/80 border-slate-700/60 text-slate-300"
+          }`}>
+            <div className="flex items-center justify-between font-bold text-[11px] mb-1">
+              <span className="flex items-center gap-1">
+                <span>⏳</span>
+                <span>GANN TIME CYCLE VIBRATION:</span>
+              </span>
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${
+                gannData.time_cycles.alert_text !== "None" ? "bg-amber-500 text-black animate-pulse" : "bg-slate-800 text-slate-400"
+              }`}>
+                {gannData.time_cycles.alert_text !== "None" ? `ALERT: ${gannData.time_cycles.alert_text}` : "NEUTRAL CYCLE"}
+              </span>
+            </div>
+            <div className="text-[10.5px] leading-relaxed text-slate-300">
+              Major High ({gannData.time_cycles.major_high_date} @ {gannData.time_cycles.major_high_price.toLocaleString("en-IN")}): <b>+{gannData.time_cycles.days_from_major_high}d</b> ·
+              Major Low ({gannData.time_cycles.major_low_date} @ {gannData.time_cycles.major_low_price.toLocaleString("en-IN")}): <b>+{gannData.time_cycles.days_from_major_low}d</b>.
+              <div className="mt-0.5 text-amber-300/90 italic">
+                Note: Gann calendar day vibrations (30, 45, 60, 90, 120, 135, 144, 180, 225, 270, 315, 360) mark high-probability inflection windows.
+              </div>
+            </div>
+          </div>
+
+          {/* Resistances & Supports Grid */}
+          <div className="grid grid-cols-2 gap-2 mb-2.5">
+            {/* Monotonic Resistances (Red) */}
+            <div className="rounded-lg bg-rose-950/30 border border-rose-500/40 p-2">
+              <div className="font-bold text-rose-300 text-[11px] mb-1.5 flex items-center justify-between border-b border-rose-500/20 pb-1">
+                <span>🔴 HISTORICAL RESISTANCES (R1–R4)</span>
+                <span className="text-[9px] text-rose-400">Strictly Higher Highs</span>
+              </div>
+              <div className="space-y-1.5">
+                {gannData.resistances.map((r, idx) => (
+                  <div key={idx} className="flex flex-col text-[10.5px]">
+                    <div className="flex items-center justify-between font-mono">
+                      <span className="font-bold text-rose-200">{r.level}: {r.price.toLocaleString("en-IN")}</span>
+                      <div className="flex items-center gap-1">
+                        {r.date && <span className="text-[9px] text-slate-400">{r.date}</span>}
+                        {r.hit && <span className="bg-rose-500 text-white text-[8px] font-black px-1 rounded">✓ HIT</span>}
+                      </div>
+                    </div>
+                    <span className="text-[9.5px] text-rose-300/80 leading-tight">
+                      {idx === 0 ? "Yesterday High — test of recent liquidity & immediate cap." :
+                       idx === 1 ? "2nd Historical Swing High — High-probability institutional exhaustion zone if paired with Call writing or Put unwinding." :
+                       idx === 2 ? "3rd Historical Swing High — Multi-session expansion ceiling." :
+                       "4th Historical Swing High — Institutional macro extreme."}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Monotonic Supports (Green) */}
+            <div className="rounded-lg bg-emerald-950/30 border border-emerald-500/40 p-2">
+              <div className="font-bold text-emerald-300 text-[11px] mb-1.5 flex items-center justify-between border-b border-emerald-500/20 pb-1">
+                <span>🟢 HISTORICAL SUPPORTS (S1–S4)</span>
+                <span className="text-[9px] text-emerald-400">Strictly Lower Lows</span>
+              </div>
+              <div className="space-y-1.5">
+                {gannData.supports.map((s, idx) => (
+                  <div key={idx} className="flex flex-col text-[10.5px]">
+                    <div className="flex items-center justify-between font-mono">
+                      <span className="font-bold text-emerald-200">{s.level}: {s.price.toLocaleString("en-IN")}</span>
+                      <div className="flex items-center gap-1">
+                        {s.date && <span className="text-[9px] text-slate-400">{s.date}</span>}
+                        {s.hit && <span className="bg-emerald-500 text-black text-[8px] font-black px-1 rounded">✓ HIT</span>}
+                      </div>
+                    </div>
+                    <span className="text-[9.5px] text-emerald-300/80 leading-tight">
+                      {idx === 0 ? "Yesterday Low — test of recent liquidity & immediate floor." :
+                       idx === 1 ? "2nd Historical Swing Low — High-probability institutional absorption zone if supported by Put writers." :
+                       idx === 2 ? "3rd Historical Swing Low — Multi-session dip accumulation floor." :
+                       "4th Historical Swing Low — Institutional macro floor."}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Unfilled Gaps Section */}
+          <div className="rounded-lg bg-amber-950/20 border border-amber-500/30 p-2 mb-2.5">
+            <div className="font-bold text-amber-300 text-[11px] mb-1 flex items-center justify-between border-b border-amber-500/20 pb-1">
+              <span>⚡ UNFILLED DAILY OPENING GAPS (&gt; 5 pts)</span>
+              <span className="text-[9px] text-amber-400">Institutional Vacuums & Magnets</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[10.5px]">
+              <div>
+                <b className="text-amber-400 text-[10px]">Upper Gaps (Overhead Targets):</b>
+                {gannData.upper_gaps.length === 0 ? <div className="text-slate-500 text-[10px]">None nearby</div> : (
+                  gannData.upper_gaps.map((g, i) => (
+                    <div key={i} className="flex items-center justify-between font-mono py-0.5">
+                      <span className="text-amber-200">{g.level}: {g.price.toLocaleString("en-IN")}</span>
+                      <span className="text-[9px] text-slate-400">{g.date} {g.hit ? "✓ HIT" : ""}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div>
+                <b className="text-purple-400 text-[10px]">Lower Gaps (Downside Targets):</b>
+                {gannData.lower_gaps.length === 0 ? <div className="text-slate-500 text-[10px]">None nearby</div> : (
+                  gannData.lower_gaps.map((g, i) => (
+                    <div key={i} className="flex items-center justify-between font-mono py-0.5">
+                      <span className="text-purple-200">{g.level}: {g.price.toLocaleString("en-IN")}</span>
+                      <span className="text-[9px] text-slate-400">{g.date} {g.hit ? "✓ HIT" : ""}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Gann Sq9 Vibrations */}
+          <div className="rounded-lg bg-teal-950/20 border border-teal-500/30 p-2">
+            <div className="font-bold text-teal-300 text-[11px] mb-1 flex items-center justify-between border-b border-teal-500/20 pb-1">
+              <span>📐 GANN SQUARE OF 9 (±45°, ±90°, ±135°, ±180°)</span>
+              <span className="text-[9px] text-teal-400">Formula: (√Close + deg/180)²</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+              <div>
+                <span className="text-rose-300 font-bold block mb-0.5">Resistances (+degrees):</span>
+                {gannData.gann_resistances.map((gr, i) => (
+                  <div key={i} className="flex items-center justify-between py-0.2">
+                    <span className="text-rose-200">+{gr.degrees}° ({gr.level.split("(")[0]}):</span>
+                    <span className="text-slate-200">{gr.price != null ? gr.price.toLocaleString("en-IN") : "—"} {gr.hit ? "✓" : ""}</span>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <span className="text-teal-300 font-bold block mb-0.5">Supports (-degrees):</span>
+                {gannData.gann_supports.map((gs, i) => (
+                  <div key={i} className="flex items-center justify-between py-0.2">
+                    <span className="text-teal-200">{gs.degrees}° ({gs.level.split("(")[0]}):</span>
+                    <span className="text-slate-200">{gs.price != null ? gs.price.toLocaleString("en-IN") : "—"} {gs.hit ? "✓" : ""}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Pinned Ceiling Pill: when major Call wall is > 150 pts above Spot (off-screen) */}
       {layers.walls && (() => {

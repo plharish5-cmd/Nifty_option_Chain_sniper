@@ -104,9 +104,9 @@ def fetch_dhan_live_quotes(hub: Optional[Any] = None, oct_sid: int = 48704, nov_
     # 1. From live WebSocket ticks if available on Hub
     if hub and getattr(hub, "feed", None) and hasattr(hub.feed, "last_tick"):
         lt = hub.feed.last_tick
-        if "5024" in lt and float(lt["5024"]) > 10000:
+        if "5024" in lt and 10000.0 < float(lt["5024"]) < 50000.0:
             _cached_dhan_quotes["5024"] = float(lt["5024"])
-        if "13" in lt and float(lt["13"]) > 10000:
+        if "13" in lt and 10000.0 < float(lt["13"]) < 50000.0:
             _cached_dhan_quotes["13"] = float(lt["13"])
 
     # 2. Direct Dhan REST LTP call (reliable across sync and async contexts)

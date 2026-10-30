@@ -320,6 +320,13 @@ def gap_confluence_endpoint(
     )
 
 
+@app.get("/api/desk/gift-nifty-live")
+def gift_nifty_live_endpoint():
+    """Direct live quote feed for GIFT Nifty from Dhan WebSocket bridge or cache."""
+    from ..engine.gift_nifty_feed import get_gift_nifty_bridge
+    return get_gift_nifty_bridge().get_quote()
+
+
 @app.get("/api/desk/cvd-quality")
 def cvd_quality_endpoint():
     """Contract-bound shadow recorder quality; no live signal or order side effects."""
@@ -353,6 +360,29 @@ def institutional_levels_endpoint(
         sec_id=sec_id,
         override_rvol=rvol,
         override_pe_ce_delta_l=pe_ce_delta_l,
+    )
+
+
+@app.get("/api/desk/gann-pivots-gaps")
+def gann_pivots_gaps_endpoint(
+    sec_id: str = Query("13", description="Security ID: 13 for NIFTY"),
+    spot: Optional[float] = Query(None, description="Optional override current spot price"),
+    target_date: Optional[str] = Query(None, description="Optional target date YYYY-MM-DD"),
+):
+    """Historical Monotonic R1-R4 / S1-S4, Unfilled Gaps, and Gann Sq9 + Time Cycles."""
+    from ..engine import gann_pivots_gaps
+    current_spot = spot
+    if current_spot is None and hub is not None:
+        try:
+            q = hub.quote()
+            if q and q.get("spot"):
+                current_spot = float(q["spot"])
+        except Exception:
+            pass
+    return gann_pivots_gaps.get_gann_pivots_gaps(
+        sec_id=sec_id,
+        current_spot=current_spot,
+        target_date_str=target_date,
     )
 
 

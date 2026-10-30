@@ -28,6 +28,19 @@ export interface MultiContractRow {
   is_anchor?: boolean;
 }
 
+export interface LiveGiftNiftyData {
+  ok: boolean;
+  symbol: string;
+  ltp: number;
+  change: number;
+  change_pct: number;
+  timestamp: string;
+  prev_close?: number;
+  source?: string;
+  status?: string;
+  security_id?: string;
+}
+
 export interface GapChecklistItem {
   id: string;
   title: string;
@@ -141,6 +154,37 @@ export function GapSniperTab({
   const [data, setData] = useState<GapConfluenceData | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Live Dhan / Offshore GIFT Nifty 3-second real-time polling state
+  const [liveGiftNifty, setLiveGiftNifty] = useState<LiveGiftNiftyData | null>(null);
+  const [giftLtpFlash, setGiftLtpFlash] = useState<"up" | "down" | null>(null);
+
+  const fetchLiveGiftNifty = useCallback(async () => {
+    try {
+      const res = await fetch("/api/desk/gift-nifty-live");
+      if (!res.ok) return;
+      const json: LiveGiftNiftyData = await res.json();
+      if (json && json.ok && typeof json.ltp === "number" && json.ltp > 10000) {
+        setLiveGiftNifty((prev) => {
+          if (prev && prev.ltp !== json.ltp) {
+            setGiftLtpFlash(json.ltp > prev.ltp ? "up" : "down");
+            setTimeout(() => setGiftLtpFlash(null), 1200);
+          }
+          return json;
+        });
+      }
+    } catch (e) {
+      console.warn("Live GIFT Nifty fetch error:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLiveGiftNifty();
+    const interval = setInterval(() => {
+      fetchLiveGiftNifty();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [fetchLiveGiftNifty, tick]);
 
   // Audio / Voice Alert state
   const [voiceEnabled, setVoiceEnabled] = useState<boolean>(() => {
@@ -402,7 +446,7 @@ export function GapSniperTab({
                 <span>•</span>
                 <span>Next Nov FUT: <strong className="font-mono text-indigo-300">{(data?.nov_fut_ltp ?? 22889.8).toFixed(1)}</strong> (Carry: {(data?.roll_spread ?? 115.0) > 0 ? `+${(data?.roll_spread ?? 115.0).toFixed(1)}` : (data?.roll_spread ?? 115.0).toFixed(1)} pts vs Oct)</span>
                 <span>•</span>
-                <span>GIFT Nifty Ref: <strong className="font-mono text-slate-300">{(data?.gift_nifty_ltp ?? 22642.0).toFixed(1)}</strong></span>
+                <span>GIFT Nifty Ref: <strong className="font-mono" style={{ color: liveGiftNifty ? (liveGiftNifty.change >= 0 ? "#22c55e" : "#ef4444") : "#cbd5e1" }}>{(liveGiftNifty?.ltp ?? data?.gift_nifty_ltp ?? 22642.0).toFixed(1)}</strong></span>
               </div>
             </div>
 
@@ -478,8 +522,22 @@ export function GapSniperTab({
                   const isOct = !isSpot && (row.symbol.includes("Oct") || row.instrument.includes("October") || idx === 1);
                   const isNov = !isSpot && !isOct && (row.symbol.includes("Nov") || row.instrument.includes("November") || idx === 2);
                   const isGift = row.symbol === "GIFT NIFTY" || (!isSpot && !isOct && !isNov);
+
+                  const effectiveLtp = (isGift && liveGiftNifty?.ltp && liveGiftNifty.ltp > 10000) ? liveGiftNifty.ltp : row.ltp;
                   const gapVal = row.gap_pts ?? row.diff_vs_oct ?? 0.0;
                   const pdcVal = row.pdc ?? (isSpot ? (data.pdc_spot ?? data.levels?.pdc) : (isOct ? (data.oct_fut_pdc ?? 22771.2) : (isNov ? (data.nov_fut_pdc ?? 22900.2) : (data.near_fut_close ?? 22771.2))));
+
+                  const effectiveGapVal = (isGift && liveGiftNifty?.ltp && liveGiftNifty.ltp > 10000 && pdcVal > 0)
+                    ? (effectiveLtp - pdcVal)
+                    : gapVal;
+                  const effectiveGapPct = (isGift && liveGiftNifty?.ltp && pdcVal > 0)
+                    ? ((effectiveGapVal / pdcVal) * 100)
+                    : row.gap_pct;
+
+                  const isPositive = (isGift && liveGiftNifty)
+                    ? liveGiftNifty.change >= 0
+                    : effectiveGapVal >= 0;
+                  const changeColor = isPositive ? "#22c55e" : "#ef4444";
 
                   return (
                     <tr
@@ -530,8 +588,32 @@ export function GapSniperTab({
                       </td>
 
                       {/* Live LTP */}
-                      <td className="py-2.5 px-3 font-bold text-white text-[13px]">
-                        {row.ltp.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                      <td className="py-2.5 px-3 font-bold text-[13px]">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            style={{ color: isGift ? changeColor : "#ffffff" }}
+                            className={`transition-all duration-300 ${
+                              isGift && giftLtpFlash === "up" ? "text-emerald-300 scale-105" : isGift && giftLtpFlash === "down" ? "text-rose-300 scale-105" : ""
+                            }`}
+                          >
+                            {effectiveLtp.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                          </span>
+                          {isGift && liveGiftNifty && (
+                            <span
+                              className="text-[9px] px-1 py-0.2 rounded font-mono font-bold tracking-tight inline-flex items-center gap-0.5"
+                              style={{
+                                backgroundColor: isPositive ? "rgba(34, 197, 94, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                                color: changeColor,
+                                border: `1px solid ${isPositive ? "rgba(34, 197, 94, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+                              }}
+                              title={`Dhan Live Source: ${liveGiftNifty.source || "live"} • Synced: ${liveGiftNifty.timestamp || "now"}`}
+                            >
+                              <span>{isPositive ? "▲" : "▼"}</span>
+                              <span>{isPositive ? `+${liveGiftNifty.change.toFixed(1)}` : liveGiftNifty.change.toFixed(1)}</span>
+                              <span>({isPositive ? `+${liveGiftNifty.change_pct.toFixed(2)}` : liveGiftNifty.change_pct.toFixed(2)}%)</span>
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Yesterday Close (PDC) */}
@@ -542,14 +624,17 @@ export function GapSniperTab({
                       {/* Gap vs PDC / Diff */}
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-1.5">
-                          <span className={`font-bold ${
-                            gapVal > 0 ? "text-emerald-400" : gapVal < 0 ? "text-rose-400" : "text-slate-400"
-                          }`}>
-                            {gapVal > 0 ? `+${gapVal.toFixed(1)}` : gapVal.toFixed(1)} pts
+                          <span
+                            className="font-bold"
+                            style={{
+                              color: effectiveGapVal > 0 ? "#22c55e" : effectiveGapVal < 0 ? "#ef4444" : "#94a3b8"
+                            }}
+                          >
+                            {effectiveGapVal > 0 ? `+${effectiveGapVal.toFixed(1)}` : effectiveGapVal.toFixed(1)} pts
                           </span>
-                          {row.gap_pct !== undefined && (
+                          {effectiveGapPct !== undefined && (
                             <span className="text-[10px] text-slate-400 font-sans">
-                              ({row.gap_pct > 0 ? `+${row.gap_pct.toFixed(2)}` : row.gap_pct.toFixed(2)}%)
+                              ({effectiveGapPct > 0 ? `+${effectiveGapPct.toFixed(2)}` : effectiveGapPct.toFixed(2)}%)
                             </span>
                           )}
                         </div>
@@ -570,8 +655,10 @@ export function GapSniperTab({
                             Carry Spread: {(row.roll_spread ?? (row.ltp - (data?.oct_fut_ltp ?? 22774.8))) > 0 ? `+${(row.roll_spread ?? (row.ltp - (data?.oct_fut_ltp ?? 22774.8))).toFixed(1)}` : (row.roll_spread ?? (row.ltp - (data?.oct_fut_ltp ?? 22774.8))).toFixed(1)} pts vs Oct
                           </span>
                         ) : (
-                          <span className="text-[11px] text-slate-400">
-                            {row.diff_vs_oct !== undefined ? `${row.diff_vs_oct > 0 ? `+${row.diff_vs_oct.toFixed(1)}` : row.diff_vs_oct.toFixed(1)} pts vs Oct Fut` : "—"}
+                          <span className="text-[11px] text-slate-300 font-mono">
+                            {data?.oct_fut_ltp
+                              ? `${(effectiveLtp - data.oct_fut_ltp) > 0 ? `+${(effectiveLtp - data.oct_fut_ltp).toFixed(1)}` : (effectiveLtp - data.oct_fut_ltp).toFixed(1)} pts vs Oct Fut`
+                              : (row.diff_vs_oct !== undefined ? `${row.diff_vs_oct > 0 ? `+${row.diff_vs_oct.toFixed(1)}` : row.diff_vs_oct.toFixed(1)} pts vs Oct Fut` : "—")}
                           </span>
                         )}
                       </td>

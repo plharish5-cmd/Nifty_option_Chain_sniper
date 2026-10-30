@@ -695,7 +695,63 @@ export interface InstitutionalLevelsRes {
   details: string;
 }
 
+export interface PivotLevel {
+  level: string; // "R1", "R2", "S1", "S2"
+  price: number;
+  date?: string;
+  hit?: boolean;
+}
+
+export interface GapLevel {
+  level: string; // "Upper_Gap_1", "Lower_Gap_1"
+  price: number;
+  date?: string;
+  type?: "GAP_UP" | "GAP_DOWN";
+  hit?: boolean;
+}
+
+export interface GannLevel {
+  level: string; // "Gann_R1(45°)"
+  degrees: number;
+  price: number | null;
+  hit?: boolean;
+}
+
+export interface GannTimeCycles {
+  major_high_date: string;
+  major_high_price: number;
+  days_from_major_high: number;
+  major_low_date: string;
+  major_low_price: number;
+  days_from_major_low: number;
+  active_alerts: string[];
+  alert_text: string;
+}
+
+export interface GannPivotsGapsRes {
+  ok: boolean;
+  error?: string;
+  ref_date: string;
+  ref_close: number;
+  today_date: string;
+  gap_points: number;
+  today_high?: number;
+  today_low?: number;
+  current_spot?: number | null;
+  resistances: PivotLevel[];
+  supports: PivotLevel[];
+  upper_gaps: GapLevel[];
+  lower_gaps: GapLevel[];
+  gann_resistances: GannLevel[];
+  gann_supports: GannLevel[];
+  time_cycles: GannTimeCycles;
+}
+
 export const api = {
+  gannPivotsGaps: (spot?: number, targetDate?: string, secId = "13") =>
+    get<GannPivotsGapsRes>(
+      `/api/desk/gann-pivots-gaps?sec_id=${secId}${spot != null ? `&spot=${spot}` : ""}${targetDate ? `&target_date=${encodeURIComponent(targetDate)}` : ""}`
+    ),
   institutionalLevels: (secId = "13", rvol?: number, peCeDeltaL?: number) =>
     get<InstitutionalLevelsRes>(
       `/api/desk/institutional-levels?sec_id=${secId}${rvol != null ? `&rvol=${rvol}` : ""}${peCeDeltaL != null ? `&pe_ce_delta_l=${peCeDeltaL}` : ""}`
