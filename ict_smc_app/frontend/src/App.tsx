@@ -26,6 +26,7 @@ import { type StdvLeg } from "./components/stdv";
 import AlertsTable from "./components/AlertsTable";
 import AdvPaPanel from "./components/AdvPaPanel";
 import InstitutionalLevelsWidget from "./components/InstitutionalLevelsWidget";
+import KronosPanel from "./components/KronosPanel";
 
 const TFS: TF[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "30m": 15, "1h": 30, "4h": 60, "1D": 60 };
@@ -84,7 +85,7 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap" | "stdv" | "alerts" | "advpa" | "time_series" | "ict_levels">("paper");
+  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap" | "stdv" | "alerts" | "advpa" | "time_series" | "ict_levels" | "kronos">("paper");
   const [selectedStdvLeg, setSelectedStdvLeg] = useState<StdvLeg | null>(null);
   const [isStdvPicking, setIsStdvPicking] = useState(false);
   const [mainView, setMainView] = useState<"candles" | "writers" | "both">(() => { try { return (localStorage.getItem("ict_mainview") as "candles" | "writers" | "both") || "candles"; } catch { return "candles"; } });
@@ -349,12 +350,14 @@ export default function App() {
                 <button className={`tab ${bottom === "wmap" ? "tab-on" : ""} !border-gold-500/60 !text-gold-400`} onClick={() => setBottom("wmap")}>🎯 Writer map</button>
                 <button className={`tab ${bottom === "advpa" ? "tab-on !border-fuchsia-500/60 !text-fuchsia-300 font-semibold" : ""}`} onClick={() => setBottom("advpa")}>🎓 Adv PA</button>
                 <button className={`tab ${bottom === "ict_levels" ? "tab-on !bg-gold-500/20" : ""} !border-gold-500/60 !text-gold-300 font-semibold`} onClick={() => setBottom("ict_levels")}>🏛️ ICT Levels</button>
+                <button title="NIFTY 50 Kronos forecast — 360 one-hour candles in, 24 out, 30 sampled runs. Positional (~4 sessions), educational only. Not a signal: the 200-origin walk-forward put direction at 47.5% against 49.7% for random paths, and the 90% band held only 59.5% of the time." className={`tab ${bottom === "kronos" ? "tab-on !border-orange-500/60 !text-orange-300 font-semibold" : ""}`} onClick={() => setBottom("kronos")}>🔮 Kronos</button>
               </div>
             </div>
             <div className="flex-1 min-h-0">
               <div className={bottom==="time_series"?"h-full":"hidden"}><TimeSeriesChain active={bottom==="time_series"} /></div>
               {bottom === "time_series" ? null
                 : bottom === "ict_levels" ? <div className="p-3 overflow-y-auto h-full"><InstitutionalLevelsWidget isLayerActive={!!layers.ictLevels} onToggleLayer={() => setLayers((l) => ({ ...l, ictLevels: !l.ictLevels }))} /></div>
+                : bottom === "kronos" ? <KronosPanel />
                 : bottom === "advpa" ? <AdvPaPanel tick={storyTick} chartTf={tf} />
                 : bottom === "alerts" ? <AlertsTable alerts={dash?.alerts} onRefresh={loadDash} />
                 : bottom === "stdv" ? <StdvPanel candles={candles} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} chartTf={tf} selectedLeg={selectedStdvLeg} onSelectLeg={setSelectedStdvLeg} isLayerActive={!!layers.stdv} onToggleLayer={() => setLayers((l) => ({ ...l, stdv: !l.stdv }))} isPicking={isStdvPicking} onStartPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onCancelPicking={() => setIsStdvPicking(false)} onSetChartTf={setTf} />
