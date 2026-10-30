@@ -2986,8 +2986,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           </button>
         </div>
       )}
+      {/* ONE top-right stack. These were three separately-positioned clusters, two of them anchored
+          at the SAME spot -- this control bar at top-2 z-20, the pane/engine toggles at top-2
+          z-[60], and the ceiling pill at top-12 -- so they drew on top of each other and the
+          labels became unreadable. Adding R1-R4/S1-S4, Gaps and Gann Sq9 to this bar made it
+          worse, because 55% of the width could not hold them.
+          They are now children of a single wrapping flex row: items sit side by side and wrap onto
+          a new line when the width runs out, so the corner grows downward instead of piling up.
+          A flex child must not position itself, so the two inner blocks keep their markup and lose
+          only their absolute anchors. Nested popovers are untouched -- they position against their
+          own relative parents. */}
       {/* Top-Right Control Bar: ⚡ 3-Chart Trinity Suite + ⚡ Strike Map 2.0 + Expiry Selector */}
-      <div className="pointer-events-auto absolute right-2 top-2 z-20 flex flex-wrap items-center justify-end gap-2 max-w-[55%]">
+      <div className="pointer-events-auto absolute right-2 top-2 z-[60] flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5 max-w-[80%]">
         <button
           onClick={toggleIctLevels}
           className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur ${
@@ -3130,6 +3140,148 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             ))}
           </div>
         )}
+      {/* Pinned Ceiling Pill: when major Call wall is > 150 pts above Spot (off-screen) */}
+      {layers.walls && (() => {
+        const wsp = writerBal?.spot ?? spot ?? candles[candles.length - 1]?.close;
+        if (!wsp) return null;
+        const ceWalls = walls.filter((w) => w.side === "CE").sort((a, b) => b.oi - a.oi);
+        const topCe = ceWalls[0];
+        if (!topCe || topCe.p <= wsp + 150) return null;
+        return (
+          <div
+            className="pointer-events-auto flex items-center gap-1.5 rounded-lg border border-rose-500/60 bg-[#16060a]/92 px-2.5 py-1 text-[10.5px] font-bold text-rose-300 shadow-xl backdrop-blur"
+            title={`Major Overhead Call Resistance Wall: ${topCe.p} CE with ${(topCe.oi / 1e7).toFixed(2)}Cr OI (${Math.round(topCe.p - wsp)} pts above current spot)`}
+          >
+            <span>🏛️ CEILING WALL:</span>
+            <span className="font-mono text-white font-black">{topCe.p.toLocaleString("en-IN")} CE</span>
+            <span className="text-[10px] text-rose-400">({(topCe.oi / 1e7).toFixed(2)}Cr · +{Math.round(topCe.p - wsp)}p)</span>
+          </div>
+        );
+      })()}
+      <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-1">
+        {layers.oi && <div className="flex items-center rounded border border-slate-600 bg-ink-900/95">
+          <span className="px-2 text-[10px] text-slate-400" title="OI is outstanding futures positions, not executed buy/sell volume. Hover a square above a candle or a histogram bar for its meaning and next confirmation.">FUT OI</span>
+          <button className={`tab !py-0.5 !text-[11px] ${oiMode === "raw" ? "!text-amber-300" : ""}`} title="Raw change in outstanding positions per closed candle. Opening spikes can compress later bars. Green/red describe price/OI classification, not an entry instruction." onClick={() => chooseOiMode("raw")}>Raw ΔOI</button>
+          <button className={`tab !py-0.5 !text-[11px] ${oiMode === "relative" ? "!text-cyan-300" : ""}`} title="Relative × = this bar’s ΔOI / the earlier average absolute ΔOI. +2× means additions twice the recent baseline; −2× means reductions twice it. Blank means warm-up or incomparable data. No signal thresholds change." onClick={() => chooseOiMode("relative")}>Relative ×</button>
+          <details className="relative">
+            <summary className="cursor-pointer px-2 text-[11px] text-cyan-300" aria-label="OI guide">? OI guide</summary>
+            <div className="absolute right-0 top-7 z-50 w-[340px] max-h-[60vh] overflow-auto rounded-lg border border-slate-600 bg-[#080f1e] p-3 text-[12px] leading-relaxed shadow-2xl">
+              <b>How to read these shapes</b>
+              <p className="mt-2 text-amber-300">🟧 Amber square: unusually fast OI expansion. Positions are being added; price supplies the conventional direction.</p>
+              <p className="mt-2 text-violet-300">🟪 Violet square: unusually fast OI reduction. Positions are being closed; it is not automatically a reversal.</p>
+              <p className="mt-2">Green: price up + OI up (long build-up). Light green: price up + OI down (short covering).</p>
+              <p className="mt-2">Red: price down + OI up (short build-up). Pink: price down + OI down (long unwinding). Grey: threshold not met or no directional classification.</p>
+              <p className="mt-2">Above/below the histogram zero line means OI addition/reduction. It does not directly mean buy/sell. Relative mode changes scale, not the underlying classifications.</p>
+              <p className="mt-2 text-cyan-200">Decision support: BUY-SIDE / SELL-SIDE WATCH identifies context. Wait for a later closed-candle structure break and retest. Any hold, profit-taking or exit must use your actual position and price-risk plan.</p>
+              <p className="mt-2 text-slate-400">Historical cards describe what was knowable then, not an instruction now. Missing/stale/unverified data means WAIT. Hover the square’s candle column or an OI histogram bar for details.</p>
+            </div>
+          </details>
+        </div>}
+        {/* 📊 RVOL Sub-Pane Mode Toggle (Slot Spikes vs Cumul Pace) */}
+        {layers.rvol && (
+          <div className="flex items-center rounded border border-ink-700 bg-ink-900/60 overflow-hidden">
+            <button
+              className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all border-0 ${
+                rvolPaneMode === "slot"
+                  ? "!bg-amber-950/80 !text-amber-300 shadow-md ring-1 ring-amber-400/40"
+                  : "!text-slate-400 hover:!text-slate-200"
+              }`}
+              onClick={() => setAndSaveRvolPaneMode("slot")}
+              title="Slot RVOL Mode: Bar-by-bar Time-of-Day spikes (shows 3.7x, 3.4x spikes past 2.5x threshold)"
+            >
+              <span>⚡</span>
+              <span>Slot RVOL</span>
+            </button>
+            <button
+              className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all border-0 border-l border-ink-700 ${
+                rvolPaneMode === "cumul"
+                  ? "!bg-emerald-950/80 !text-emerald-300 shadow-md ring-1 ring-emerald-400/40"
+                  : "!text-slate-400 hover:!text-slate-200"
+              }`}
+              onClick={() => setAndSaveRvolPaneMode("cumul")}
+              title="Cumulative RVOL Mode: Running session pace vs historical 20d/5d baseline"
+            >
+              <span>🌊</span>
+              <span>Cumul cRVOL</span>
+            </button>
+          </div>
+        )}
+        <button
+          className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all border ${
+            isPrahaarOn
+              ? "!border-emerald-500 !bg-emerald-950/80 !text-emerald-300 shadow-md ring-1 ring-emerald-400/40"
+              : "!border-ink-700 !bg-ink-900/60 !text-slate-400 hover:!text-slate-200"
+          }`}
+          onClick={togglePrahaar}
+          title="Toggle Prahaar Directional ATM Option-Buying Engine (EMA + MACD + ADX + VIX)"
+        >
+          <span>⚔️</span>
+          <span>Prahaar Engine</span>
+        </button>
+        {/* 🏛️ GTF D&S Zones Toggle & Mode Dropdown */}
+        <div className="flex items-center rounded border border-ink-700 bg-ink-900/60 overflow-hidden">
+          <button
+            className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all border-0 ${
+              isGtfOn
+                ? "!bg-emerald-950/80 !text-emerald-300 shadow-md ring-1 ring-emerald-400/40"
+                : "!text-slate-400 hover:!text-slate-200"
+            }`}
+            onClick={toggleGtf}
+            title="Toggle GTF Demand & Supply Engine 2.0 (Boring/Explosive Institutional Zones)"
+          >
+            <span>🏛️</span>
+            <span>GTF Zones</span>
+          </button>
+          {isGtfOn && (
+            <select
+              value={gtfMode}
+              onChange={(e) => setAndSaveGtfMode(e.target.value as GtfMarkingMode)}
+              className="bg-ink-950/90 text-amber-300 text-[10px] font-semibold px-1 py-0.5 border-l border-ink-700 outline-none cursor-pointer hover:bg-ink-900"
+              title="GTF Zone Marking Mode (Conservative: Body-Wick, Aggressive: Wick-Wick, Dynamic: ATR-Adjusted)"
+            >
+              <option value="conservative">Conservative</option>
+              <option value="aggressive">Aggressive</option>
+              <option value="dynamic">Dynamic</option>
+            </select>
+          )}
+        </div>
+        {stdvLeg && onResetToAutoStdv && (
+          <button
+            className="tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 !border-cyan-500/70 !text-cyan-300 hover:!bg-cyan-950/40"
+            title="Clear manual marking and revert to system automatic STDV"
+            onClick={onResetToAutoStdv}
+          >
+            <span>🤖</span>
+            <span>Use System Auto</span>
+          </button>
+        )}
+        <button
+          className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all ${
+            isStdvPicking
+              ? "!bg-red-600 !text-white animate-pulse ring-2 ring-red-400"
+              : stdvLeg
+              ? "!border-amber-500/70 !text-amber-300"
+              : "!border-red-500/70 !text-red-400"
+          }`}
+          onClick={isStdvPicking ? onCancelStdvPicking : () => onStartStdvPicking?.()}
+          title="Interactive 2-Click STDV Tool: Click any 2 candle wicks on chart to anchor custom STDV manipulation leg"
+        >
+          <span>{isStdvPicking ? "✕" : "📍"}</span>
+          <span>{isStdvPicking ? "Cancel Pick" : "2-Click STDV"}</span>
+        </button>
+        {(layers.fp || layers.heat || layers.bias) && <>
+          <button className="tab !py-0.5 !text-[11px]" title="Smaller footprint / heatmap / bias labels"
+            onClick={() => { setFpScale(FP_SCALE - 0.25); fpPrim.current.refresh(); setFpTick((n) => n + 1); }}>A−</button>
+          <span className="tab !py-0.5 !text-[11px] text-slate-400">{Math.round(FP_SCALE * 100)}%</span>
+          <button className="tab !py-0.5 !text-[11px]" title="Bigger footprint / heatmap / bias labels"
+            onClick={() => { setFpScale(FP_SCALE + 0.25); fpPrim.current.refresh(); setFpTick((n) => n + 1); }}>A+</button>
+        </>}
+        <button className="tab !py-0.5 !text-[11px]" title="Fit all candles + auto price scale"
+          onClick={() => { chart.current?.timeScale().fitContent(); series.current?.priceScale().setAutoScale(true); }}>Fit</button>
+        <button className="tab !py-0.5 !text-[11px]" title="Back to automatic price scale (or double-click the price axis)"
+          onClick={() => series.current?.priceScale().setAutoScale(true)}>Auto ↕</button>
+        {onExpand && <button className="tab !py-0.5 !text-[11px]" title="Full screen (Esc to exit)" onClick={onExpand}>{expanded ? "▣ Normal" : "⛶ Full"}</button>}
+      </div>
       </div>
 
       {/* Mouse-Over Trader Guidance for Rejection Blocks (RB) Pivots, Gaps & Gann Sq9 */}
@@ -3294,24 +3446,6 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         </div>
       )}
 
-      {/* Pinned Ceiling Pill: when major Call wall is > 150 pts above Spot (off-screen) */}
-      {layers.walls && (() => {
-        const wsp = writerBal?.spot ?? spot ?? candles[candles.length - 1]?.close;
-        if (!wsp) return null;
-        const ceWalls = walls.filter((w) => w.side === "CE").sort((a, b) => b.oi - a.oi);
-        const topCe = ceWalls[0];
-        if (!topCe || topCe.p <= wsp + 150) return null;
-        return (
-          <div
-            className="pointer-events-auto absolute right-2 top-12 z-20 flex items-center gap-1.5 rounded-lg border border-rose-500/60 bg-[#16060a]/92 px-2.5 py-1 text-[10.5px] font-bold text-rose-300 shadow-xl backdrop-blur"
-            title={`Major Overhead Call Resistance Wall: ${topCe.p} CE with ${(topCe.oi / 1e7).toFixed(2)}Cr OI (${Math.round(topCe.p - wsp)} pts above current spot)`}
-          >
-            <span>🏛️ CEILING WALL:</span>
-            <span className="font-mono text-white font-black">{topCe.p.toLocaleString("en-IN")} CE</span>
-            <span className="text-[10px] text-rose-400">({(topCe.oi / 1e7).toFixed(2)}Cr · +{Math.round(topCe.p - wsp)}p)</span>
-          </div>
-        );
-      })()}
       {/* legend + latest signals (top-left) */}
       <div className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[70%] flex-col gap-1">
         <div className="flex flex-wrap gap-1">
@@ -3795,130 +3929,6 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         </div>
       )}
       {/* chart tools (top-right, left of the price axis) */}
-      <div className="absolute right-[86px] top-2 z-[60] flex flex-wrap justify-end gap-1">
-        {layers.oi && <div className="flex items-center rounded border border-slate-600 bg-ink-900/95">
-          <span className="px-2 text-[10px] text-slate-400" title="OI is outstanding futures positions, not executed buy/sell volume. Hover a square above a candle or a histogram bar for its meaning and next confirmation.">FUT OI</span>
-          <button className={`tab !py-0.5 !text-[11px] ${oiMode === "raw" ? "!text-amber-300" : ""}`} title="Raw change in outstanding positions per closed candle. Opening spikes can compress later bars. Green/red describe price/OI classification, not an entry instruction." onClick={() => chooseOiMode("raw")}>Raw ΔOI</button>
-          <button className={`tab !py-0.5 !text-[11px] ${oiMode === "relative" ? "!text-cyan-300" : ""}`} title="Relative × = this bar’s ΔOI / the earlier average absolute ΔOI. +2× means additions twice the recent baseline; −2× means reductions twice it. Blank means warm-up or incomparable data. No signal thresholds change." onClick={() => chooseOiMode("relative")}>Relative ×</button>
-          <details className="relative">
-            <summary className="cursor-pointer px-2 text-[11px] text-cyan-300" aria-label="OI guide">? OI guide</summary>
-            <div className="absolute right-0 top-7 z-50 w-[340px] max-h-[60vh] overflow-auto rounded-lg border border-slate-600 bg-[#080f1e] p-3 text-[12px] leading-relaxed shadow-2xl">
-              <b>How to read these shapes</b>
-              <p className="mt-2 text-amber-300">🟧 Amber square: unusually fast OI expansion. Positions are being added; price supplies the conventional direction.</p>
-              <p className="mt-2 text-violet-300">🟪 Violet square: unusually fast OI reduction. Positions are being closed; it is not automatically a reversal.</p>
-              <p className="mt-2">Green: price up + OI up (long build-up). Light green: price up + OI down (short covering).</p>
-              <p className="mt-2">Red: price down + OI up (short build-up). Pink: price down + OI down (long unwinding). Grey: threshold not met or no directional classification.</p>
-              <p className="mt-2">Above/below the histogram zero line means OI addition/reduction. It does not directly mean buy/sell. Relative mode changes scale, not the underlying classifications.</p>
-              <p className="mt-2 text-cyan-200">Decision support: BUY-SIDE / SELL-SIDE WATCH identifies context. Wait for a later closed-candle structure break and retest. Any hold, profit-taking or exit must use your actual position and price-risk plan.</p>
-              <p className="mt-2 text-slate-400">Historical cards describe what was knowable then, not an instruction now. Missing/stale/unverified data means WAIT. Hover the square’s candle column or an OI histogram bar for details.</p>
-            </div>
-          </details>
-        </div>}
-        {/* 📊 RVOL Sub-Pane Mode Toggle (Slot Spikes vs Cumul Pace) */}
-        {layers.rvol && (
-          <div className="flex items-center rounded border border-ink-700 bg-ink-900/60 overflow-hidden">
-            <button
-              className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all border-0 ${
-                rvolPaneMode === "slot"
-                  ? "!bg-amber-950/80 !text-amber-300 shadow-md ring-1 ring-amber-400/40"
-                  : "!text-slate-400 hover:!text-slate-200"
-              }`}
-              onClick={() => setAndSaveRvolPaneMode("slot")}
-              title="Slot RVOL Mode: Bar-by-bar Time-of-Day spikes (shows 3.7x, 3.4x spikes past 2.5x threshold)"
-            >
-              <span>⚡</span>
-              <span>Slot RVOL</span>
-            </button>
-            <button
-              className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all border-0 border-l border-ink-700 ${
-                rvolPaneMode === "cumul"
-                  ? "!bg-emerald-950/80 !text-emerald-300 shadow-md ring-1 ring-emerald-400/40"
-                  : "!text-slate-400 hover:!text-slate-200"
-              }`}
-              onClick={() => setAndSaveRvolPaneMode("cumul")}
-              title="Cumulative RVOL Mode: Running session pace vs historical 20d/5d baseline"
-            >
-              <span>🌊</span>
-              <span>Cumul cRVOL</span>
-            </button>
-          </div>
-        )}
-        <button
-          className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all border ${
-            isPrahaarOn
-              ? "!border-emerald-500 !bg-emerald-950/80 !text-emerald-300 shadow-md ring-1 ring-emerald-400/40"
-              : "!border-ink-700 !bg-ink-900/60 !text-slate-400 hover:!text-slate-200"
-          }`}
-          onClick={togglePrahaar}
-          title="Toggle Prahaar Directional ATM Option-Buying Engine (EMA + MACD + ADX + VIX)"
-        >
-          <span>⚔️</span>
-          <span>Prahaar Engine</span>
-        </button>
-        {/* 🏛️ GTF D&S Zones Toggle & Mode Dropdown */}
-        <div className="flex items-center rounded border border-ink-700 bg-ink-900/60 overflow-hidden">
-          <button
-            className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all border-0 ${
-              isGtfOn
-                ? "!bg-emerald-950/80 !text-emerald-300 shadow-md ring-1 ring-emerald-400/40"
-                : "!text-slate-400 hover:!text-slate-200"
-            }`}
-            onClick={toggleGtf}
-            title="Toggle GTF Demand & Supply Engine 2.0 (Boring/Explosive Institutional Zones)"
-          >
-            <span>🏛️</span>
-            <span>GTF Zones</span>
-          </button>
-          {isGtfOn && (
-            <select
-              value={gtfMode}
-              onChange={(e) => setAndSaveGtfMode(e.target.value as GtfMarkingMode)}
-              className="bg-ink-950/90 text-amber-300 text-[10px] font-semibold px-1 py-0.5 border-l border-ink-700 outline-none cursor-pointer hover:bg-ink-900"
-              title="GTF Zone Marking Mode (Conservative: Body-Wick, Aggressive: Wick-Wick, Dynamic: ATR-Adjusted)"
-            >
-              <option value="conservative">Conservative</option>
-              <option value="aggressive">Aggressive</option>
-              <option value="dynamic">Dynamic</option>
-            </select>
-          )}
-        </div>
-        {stdvLeg && onResetToAutoStdv && (
-          <button
-            className="tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 !border-cyan-500/70 !text-cyan-300 hover:!bg-cyan-950/40"
-            title="Clear manual marking and revert to system automatic STDV"
-            onClick={onResetToAutoStdv}
-          >
-            <span>🤖</span>
-            <span>Use System Auto</span>
-          </button>
-        )}
-        <button
-          className={`tab !py-0.5 !text-[11px] font-bold flex items-center gap-1 transition-all ${
-            isStdvPicking
-              ? "!bg-red-600 !text-white animate-pulse ring-2 ring-red-400"
-              : stdvLeg
-              ? "!border-amber-500/70 !text-amber-300"
-              : "!border-red-500/70 !text-red-400"
-          }`}
-          onClick={isStdvPicking ? onCancelStdvPicking : () => onStartStdvPicking?.()}
-          title="Interactive 2-Click STDV Tool: Click any 2 candle wicks on chart to anchor custom STDV manipulation leg"
-        >
-          <span>{isStdvPicking ? "✕" : "📍"}</span>
-          <span>{isStdvPicking ? "Cancel Pick" : "2-Click STDV"}</span>
-        </button>
-        {(layers.fp || layers.heat || layers.bias) && <>
-          <button className="tab !py-0.5 !text-[11px]" title="Smaller footprint / heatmap / bias labels"
-            onClick={() => { setFpScale(FP_SCALE - 0.25); fpPrim.current.refresh(); setFpTick((n) => n + 1); }}>A−</button>
-          <span className="tab !py-0.5 !text-[11px] text-slate-400">{Math.round(FP_SCALE * 100)}%</span>
-          <button className="tab !py-0.5 !text-[11px]" title="Bigger footprint / heatmap / bias labels"
-            onClick={() => { setFpScale(FP_SCALE + 0.25); fpPrim.current.refresh(); setFpTick((n) => n + 1); }}>A+</button>
-        </>}
-        <button className="tab !py-0.5 !text-[11px]" title="Fit all candles + auto price scale"
-          onClick={() => { chart.current?.timeScale().fitContent(); series.current?.priceScale().setAutoScale(true); }}>Fit</button>
-        <button className="tab !py-0.5 !text-[11px]" title="Back to automatic price scale (or double-click the price axis)"
-          onClick={() => series.current?.priceScale().setAutoScale(true)}>Auto ↕</button>
-        {onExpand && <button className="tab !py-0.5 !text-[11px]" title="Full screen (Esc to exit)" onClick={onExpand}>{expanded ? "▣ Normal" : "⛶ Full"}</button>}
-      </div>
 
       {layers.oi && <div className="pointer-events-none absolute left-3 z-20 max-w-[88%] rounded border border-slate-600 bg-ink-950/95 px-2 py-1 text-[10px] text-slate-300" style={{ bottom: layers.rvol ? 175 : 28 }}>
         <div>FUT OI · ΔOI <b>{oiNumber(oiLatest?.doi)}</b> · {oiNumber(oiLatest?.doi_pct, "%")} · chart ΔP {oiNumber(oiLatest?.dp)} · <b>{oiLatest?.build || "No comparable bar"}</b></div>
