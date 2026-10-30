@@ -141,3 +141,37 @@ def test_split_refuses_when_history_is_short():
     split = kf.split_for_stepback(rows, hist=360, pred=24, step_back=0)
     assert split["ok"] is False
     assert "need 360" in split["message"]
+
+
+# ── the off switch must actually switch off (30 Oct) ──────────────────────────────────────────────
+
+def test_disabled_flag_blocks_every_route(monkeypatch):
+    """rules.json carried kronos.enabled from the start but no route read it.
+
+    The documented off switch did nothing: status, download and forecast all still reached for the
+    sidecar. A flag that lies is worse than no flag, so this pins the behaviour.
+    """
+    import asyncio
+    from app.api import kronos_api as ka
+
+    cfg = dict(ka._cfg())
+    cfg["enabled"] = False
+    monkeypatch.setattr(ka, "_cfg", lambda: cfg)
+
+    def boom(*a, **k):  # any network attempt is a failure of the flag
+        raise AssertionError("a disabled Kronos route contacted the sidecar")
+    monkeypatch.setattr(ka.httpx, "AsyncClient", boom)
+
+    for coro in (ka.kronos_status(), ka.kronos_download(), ka.kronos_forecast()):
+        r = asyncio.get_event_loop().run_until_complete(coro) \
+            if not asyncio.iscoroutine(coro) else asyncio.run(coro)
+        assert r["ok"] is False
+        assert r["enabled"] is False
+        assert r["sidecar"] == "disabled"
+
+
+def test_enabled_by_default_when_key_absent(monkeypatch):
+    """A config missing the key must behave as enabled, not silently switch the tab off."""
+    from app.api import kronos_api as ka
+    cfg = {k: v for k, v in ka._cfg().items() if k != "enabled"}
+    assert cfg.get("enabled", True) is True

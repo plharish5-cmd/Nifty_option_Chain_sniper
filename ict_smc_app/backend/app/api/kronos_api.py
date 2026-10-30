@@ -87,9 +87,28 @@ async def _hourly_candles(days: int = 300, force: bool = False) -> List[Dict[str
 
 
 # ── routes ────────────────────────────────────────────────────────────────────────────────────
+
+def _disabled(c: Dict[str, Any]) -> Dict[str, Any]:
+    """The payload every Kronos route returns while rules.json has kronos.enabled false.
+
+    `enabled` existed in rules.json from the start but nothing ever read it, so the documented off
+    switch did nothing -- the routes still reached for the sidecar. It is honoured here, and no
+    route touches the network or the Dhan budget while it is false.
+    """
+    return {
+        "ok": False, "enabled": False, "sidecar": "disabled",
+        "message": ("Kronos is switched off in rules.json (kronos.enabled false). No forecast is "
+                    "fetched and the sidecar is never contacted. Set it true to bring the tab back."),
+        "settings": {"hist": c["hist_candles"], "pred": c["pred_candles"], "paths": c["paths"],
+                     "T": c["temperature"], "top_p": c["top_p"]},
+    }
+
+
 @router.get("/api/kronos/status")
 async def kronos_status() -> Dict[str, Any]:
     c = _cfg()
+    if not c.get("enabled", True):
+        return _disabled(c)
     try:
         async with httpx.AsyncClient(timeout=5.0) as cl:
             r = await cl.get(_sidecar("/health"))
@@ -110,6 +129,9 @@ async def kronos_status() -> Dict[str, Any]:
 
 @router.post("/api/kronos/download-model")
 async def kronos_download() -> Dict[str, Any]:
+    c = _cfg()
+    if not c.get("enabled", True):
+        return _disabled(c)
     try:
         async with httpx.AsyncClient(timeout=30.0) as cl:
             r = await cl.post(_sidecar("/model/download"))
@@ -132,6 +154,8 @@ async def kronos_forecast(
     what actually happened.
     """
     c = _cfg()
+    if not c.get("enabled", True):
+        return _disabled(c)
     n_paths = int(paths or c["paths"])
     n_pred = int(pred or c["pred_candles"])
     n_hist = int(c["hist_candles"])
