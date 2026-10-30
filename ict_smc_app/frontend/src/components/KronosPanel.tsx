@@ -89,6 +89,22 @@ const HOVER = {
     "REVEAL — draws what actually happened after a stepped-back forecast, one candle at a time.\n\n" +
     "The scorecard then marks the forecast: direction right or wrong, and how many real closes stayed inside the band.\n\n" +
     "⚠️ A unanimous 30-of-30 forecast can still be completely wrong. Reveal is there so you see that for yourself.",
+  notAForecast:
+    "THE DASHED VERTICAL LINE IS 'NOW'.\n\n" +
+    "Left of it: real candles that actually traded.\n" +
+    "Right of it: 30 runs the model invented. No candle there has happened, and none of them is a " +
+    "prediction of a specific future candle -- they are 30 different stories the model finds plausible.\n\n" +
+    "⚠️ Walk-forward on 1,597 NIFTY 1h candles: direction 47.5% (random paths 49.7%), and the real close " +
+    "finished inside the 90% band only 59.5% of the time. Read the WIDTH, never the line.",
+  lastClose:
+    "LAST CLOSE — the final real candle before the forecast begins, i.e. the price the 30 runs start from.\n\n" +
+    "Every forecast number on this panel is relative to this one. When stepped back, this is the close " +
+    "at THAT origin, not today's.",
+  forward:
+    "FORWARD — moves 'now' later again, back toward the live forecast. The opposite of Step back.\n\n" +
+    "⚠️ It does NOT forecast further ahead, and nothing here can show you how a future candle will " +
+    "actually form. The horizon is fixed at 24 one-hour candles; Forward only changes WHERE that " +
+    "horizon starts. To see the future of a past forecast, step back and press Reveal.",
   settlementNote:
     "SETTINGS — 360 candles of context, 24 forecast candles, 30 runs, temperature 1.0, top-p 0.9.\n\n" +
     "24 one-hour candles ≈ 4 trading sessions, so this is a POSITIONAL read. " +
@@ -289,8 +305,8 @@ export default function KronosPanel() {
           </button>
           <button
             onClick={() => setStepBack((x) => Math.max(0, x - 6))}
-            title="Move 'now' forward again, back toward the live forecast."
-            className="tab !border-sky-500/30 !text-sky-400/80"
+            title={HOVER.forward}
+            className="tab cursor-help !border-sky-500/30 !text-sky-400/80"
           >
             Forward →
           </button>
@@ -337,7 +353,29 @@ export default function KronosPanel() {
 
       {/* body: chart + read-out */}
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_300px]">
-        <div ref={box} className="min-h-[260px]" />
+        <div className="flex flex-col min-h-0">
+          {/* Chart legend. The three labels ON the chart -- "run high", "run low", "mean of 30" --
+              are lightweight-charts price-axis titles, which cannot carry a tooltip. Without this
+              row the most important lines on the panel are the only ones with no explanation. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2.5 py-1 border-b border-[#162238] text-[10px] font-mono">
+            <span className="cursor-help flex items-center gap-1 text-slate-300" title={HOVER.meanPath}>
+              <span className="inline-block w-4 h-0.5 bg-[#fb923c]" />mean of 30
+            </span>
+            <span className="cursor-help flex items-center gap-1 text-slate-300" title={HOVER.band}>
+              <span className="inline-block w-4 border-t border-dashed border-slate-400" />run high / run low
+            </span>
+            <span className="cursor-help flex items-center gap-1 text-slate-300" title={HOVER.showRuns}>
+              <span className="inline-block w-4 border-t border-dotted border-slate-500" />the 30 runs
+            </span>
+            <span className="cursor-help flex items-center gap-1 text-cyan-300" title={HOVER.reveal}>
+              <span className="inline-block w-2 h-2 bg-cyan-400/70" />actual (revealed)
+            </span>
+            <span className="ml-auto text-amber-400/70 italic cursor-help" title={HOVER.notAForecast}>
+              everything right of the dashed line is sampled, not observed
+            </span>
+          </div>
+          <div ref={box} className="flex-1 min-h-[260px]" />
+        </div>
 
         <div className="border-l border-[#162238] p-2.5 space-y-2 overflow-auto text-[11px]">
           {/* verdict */}
@@ -345,8 +383,18 @@ export default function KronosPanel() {
             v?.tone === "up" ? "border-emerald-700/60 bg-emerald-950/30"
               : v?.tone === "down" ? "border-rose-700/60 bg-rose-950/30"
                 : "border-slate-700 bg-slate-900/40"}`}>
-            <div className="font-black">{v?.label ?? "…"}</div>
-            <div className="text-slate-300 mt-0.5 leading-snug">{v?.text ?? "Waiting for a forecast."}</div>
+            {/* A bare "…" / "Waiting for a forecast" left the panel looking broken when the real
+                cause was simply that nothing is serving 8701. Name the reason instead. */}
+            <div className="font-black">
+              {v?.label ?? (sidecarDown ? "Forecast service offline" : busy ? "Running the model…" : "No forecast yet")}
+            </div>
+            <div className="text-slate-300 mt-0.5 leading-snug">
+              {v?.text ?? (sidecarDown
+                ? "Every field on this panel stays blank until the sidecar answers on 127.0.0.1:8701. "
+                  + "Nothing here is broken — there is simply no forecast to show."
+                : busy ? "Sampling 30 runs of 24 one-hour candles."
+                  : "Press ↻ to run the model.")}
+            </div>
           </div>
 
           {/* run counts */}
@@ -375,7 +423,7 @@ export default function KronosPanel() {
               <span className="text-slate-400">Full range</span>
               <span className="text-amber-200">{fmt(s?.range_low)} – {fmt(s?.range_high)}</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex justify-between cursor-help" title={HOVER.lastClose}>
               <span className="text-slate-400">Last close</span>
               <span className="text-white">{fmt(s?.last_close)}</span>
             </div>
