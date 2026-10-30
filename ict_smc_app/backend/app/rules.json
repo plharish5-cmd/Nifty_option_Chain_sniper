@@ -732,7 +732,7 @@
   },
   "gap_sniper": {
     "_note": "GIFT Nifty Opening Gap & 09:15-09:45 AM Confluence Sniper Playbook",
-    "enabled": true,
+    "enabled": false,
     "significant_gap_pts": 80.0,
     "major_gap_pts": 100.0,
     "wall_proximity_pts": 40.0,

@@ -8,7 +8,6 @@ import { FlowBand } from "./flowband";
 import PcrTrinitySuite from "./PcrTrinitySuite";
 import PeceMatrix from "./PeceMatrix";
 import SmartOISuite from "./SmartOISuite";
-import { GapSniperTab } from "./GapSniperTab";
 import { COUNTER_TREND_CAP, counterTrendNote, dayRegime, fightsTheDay } from "./regime";
 import { deskState, isSideAllowed, spokenFor, stateChangeIndices, type DeskState } from "./deskState";
 import { chipFor, useConfirmAlert, useDivergence, vixChipFor, type DivEvent } from "./divergence";
@@ -2050,14 +2049,16 @@ function formatIST(epoch: number): string {
 }
 
 export function WritersFlow({ tick }: { tick: number }) {
-  const [suiteView, setSuiteView] = useState<"smart_oi" | "trinity" | "classic" | "gap_sniper">(() => {
+  // Gap Sniper removed 30 Oct 2026. A saved "gap_sniper" from before then is deliberately NOT
+  // accepted here -- anyone whose last view was that tab would otherwise open onto a blank pane.
+  const [suiteView, setSuiteView] = useState<"smart_oi" | "trinity" | "classic">(() => {
     try {
-      const v = localStorage.getItem("ict_writers_view_mode") as "smart_oi" | "trinity" | "classic" | "gap_sniper";
-      if (v === "smart_oi" || v === "trinity" || v === "classic" || v === "gap_sniper") return v;
+      const v = localStorage.getItem("ict_writers_view_mode") as "smart_oi" | "trinity" | "classic";
+      if (v === "smart_oi" || v === "trinity" || v === "classic") return v;
     } catch { return "smart_oi"; }
     return "smart_oi";
   });
-  const setViewMode = (m: "smart_oi" | "trinity" | "classic" | "gap_sniper") => {
+  const setViewMode = (m: "smart_oi" | "trinity" | "classic") => {
     setSuiteView(m);
     try { localStorage.setItem("ict_writers_view_mode", m); } catch { /* ignore */ }
   };
@@ -2925,17 +2926,6 @@ export function WritersFlow({ tick }: { tick: number }) {
       >
         Classic Writer Flow
       </button>
-      <button
-        onClick={() => setViewMode("gap_sniper")}
-        className={`rounded px-2.5 py-0.5 font-bold text-[11px] transition-all ${
-          suiteView === "gap_sniper"
-            ? "bg-emerald-600/30 text-emerald-200 border border-emerald-500/60 shadow-sm"
-            : "text-slate-400 hover:text-slate-200"
-        }`}
-        title="Opening Gap & Confluence Sniper Playbook"
-      >
-        🎯 Gap Sniper
-      </button>
     </div>
   );
 
@@ -3310,15 +3300,6 @@ export function WritersFlow({ tick }: { tick: number }) {
       {(d?.read || d?.note) && <div className="border-t border-ink-700 px-3 py-1.5 text-[13px] text-slate-200">{clean(`${d?.read ?? ""} ${d?.note ?? ""}`)}</div>}
       </div>
 
-      {/* ── View 3: Gap & Confluence Sniper ── */}
-      <div className={`flex-1 min-h-0 flex-col h-full w-full bg-[#070c17] ${suiteView === "gap_sniper" ? "flex" : "hidden"}`}>
-        <GapSniperTab
-          tick={tick}
-          modeToggle={switcher}
-          optExpiry={optExpiry}
-          futContract={futContract}
-        />
-      </div>
     </div>
   );
 }
@@ -3333,8 +3314,6 @@ export { default as StrikeMap2_0 } from "./StrikeMap2.0";
 export type { StrikeData, OIMatrixPayload, OIMatrixSuiteProps } from "./OIMatrixSuite";
 export { default as SmartOISuite } from "./SmartOISuite";
 export type { SmartOIStrike, SmartOICandle, SmartOITimeSeriesPoint, SmartOIPayload } from "./SmartOISuite";
-export { GapSniperTab } from "./GapSniperTab";
-export type { GapConfluenceData, GapChecklistItem, GapTimelineItem, GapPlaybook } from "./GapSniperTab";
 
 
 // ─────────────────────────────── a card with its own Full view / Normal view ───────────────────────────────

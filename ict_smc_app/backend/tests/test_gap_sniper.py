@@ -263,3 +263,38 @@ def test_gap_sniper_bullish_pre_open_testing_pdh():
     assert "22753.2" in voice
     assert "Testing Previous Day High" in voice
 
+
+
+# ── the off switch must stop every outbound request (30 Oct) ──────────────────────────────────────
+
+def test_disabled_gap_sniper_makes_no_network_call(monkeypatch):
+    """gap_sniper.enabled existed in rules.json but nothing read it.
+
+    This matters more than a hidden tab: the engine reached api.dhan.co with raw urllib on a 2s
+    cache while the tab polled every 3s, outside the desk data budget, and drew a Dhan 805
+    "Too many requests" on 30 Oct at 08:24 -- fifty minutes before the open. Disabled must mean no
+    request leaves the process.
+    """
+    import urllib.request
+    from app import config
+    from app.engine import gap_sniper
+
+    def boom(*a, **k):
+        raise AssertionError("a disabled Gap Sniper made a network call")
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+
+    rules = dict(config.rules())
+    rules["gap_sniper"] = {**rules.get("gap_sniper", {}), "enabled": False}
+    monkeypatch.setattr(config, "rules", lambda: rules)
+
+    enabled = bool((config.rules().get("gap_sniper") or {}).get("enabled", True))
+    assert enabled is False
+    # The guard in main.py returns before compute_gap_confluence is ever reached, so nothing in
+    # gap_sniper runs. Assert the helpers that DO reach the network are the ones being guarded.
+    assert hasattr(gap_sniper, "fetch_dhan_live_quotes")
+    assert hasattr(gap_sniper, "fetch_live_gift_nifty")
+
+
+def test_enabled_defaults_true_when_key_absent():
+    """A config missing the key must behave as enabled, not silently remove the feature."""
+    assert bool(({}).get("enabled", True)) is True

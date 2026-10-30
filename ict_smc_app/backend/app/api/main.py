@@ -299,6 +299,17 @@ def gap_confluence_endpoint(
     Evaluates opening confluence, structural wall interaction (22,600 Put Wall vs 23,000 Call Wall),
     1m/3m rejection wicks, fresh writer positioning, and 09:15–09:45 AM execution plan."""
     from ..engine import gap_sniper
+    # rules.json has carried gap_sniper.enabled since this was built and nothing read it, exactly as
+    # with kronos.enabled. It is honoured here. This matters more than a hidden tab: the engine
+    # reaches api.dhan.co with raw urllib on a 2s cache while the tab polls every 3s, OUTSIDE the
+    # desk data budget. On 30 Oct that drew a Dhan 805 "Too many requests ... may result in the user
+    # being blocked" at 08:24, fifty minutes before the open. Disabled means no request is made.
+    if not bool((config.rules().get("gap_sniper") or {}).get("enabled", True)):
+        return {
+            "ok": False, "enabled": False,
+            "message": ("Gap Sniper is switched off in rules.json (gap_sniper.enabled false). "
+                        "No GIFT Nifty, Dhan or TradingView request is made while it is false."),
+        }
     h = _h()
     return gap_sniper.compute_gap_confluence(
         gift_nifty=gift_nifty,
