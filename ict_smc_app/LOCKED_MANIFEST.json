@@ -19,8 +19,8 @@
       "size_bytes": 15371
     },
     "ict_smc_app/frontend/src/components/PcrTrinitySuite.tsx": {
-      "sha256": "3e3427f1f4d526fc9b1e3430059901d227c8d197aa7f8309bade6cc76dc902be",
-      "size_bytes": 66163
+      "sha256": "2d720b6c891abc59d80f54fd42dd7f4d57073731b61a0acdf47313333fe5ae52",
+      "size_bytes": 68963
     },
     "ict_smc_app/frontend/src/components/SmartOISuite.tsx": {
       "sha256": "3a375aeb456d70701100f6db8c9760c3706fc0868ad61ec5ff9ce8da6a3333ff",
@@ -40,6 +40,14 @@
       "at": "2026-10-29T19:50:44+05:30",
       "module": "3-Chart Institutional PCR & OI Trinity Suite",
       "reason": "OI magnitude bubble overlay (user-authorised): additive primitive + toggle on charts 2 and 3; no OI maths, payload, curve or existing label changed",
+      "files": [
+        "ict_smc_app/frontend/src/components/PcrTrinitySuite.tsx"
+      ]
+    },
+    {
+      "at": "2026-10-30T23:46:40+05:30",
+      "module": "3-Chart Institutional PCR & OI Trinity Suite",
+      "reason": "Presentation-only: thin overlapping divergence marker labels and shorten the on-chart tag so they are readable. Authorised by the user in-session on 30 Oct night; no event generation, thresholds or business logic changed; bias.ts untouched.",
       "files": [
         "ict_smc_app/frontend/src/components/PcrTrinitySuite.tsx"
       ]

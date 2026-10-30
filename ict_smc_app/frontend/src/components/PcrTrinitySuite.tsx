@@ -11,7 +11,50 @@ import {
 } from "lightweight-charts";
 import { OiBubblesPrimitive } from "./oiBubbles";
 
-import { positioningEvents, trinitySignalPoints, BIAS_POLICY } from "./bias";
+import { positioningEvents, trinitySignalPoints, BIAS_POLICY, type PositionEvent } from "./bias";
+
+// ── marker label legibility (presentation only) ───────────────────────────────────────────────────
+// A lightweight-charts marker draws its text at its own bar. The library gives no leader line and no
+// text offset, so when divergences fire on consecutive samples their sentences print on top of one
+// another -- on 30 Oct six copies of "Bearish divergence warning: price up, PE−CE gap weakening"
+// landed in the same ~40px and none of them was readable.
+//
+// Every dot still renders at its own time, unchanged. Only the TEXT is thinned: the first dot of a
+// run carries the sentence and the rest stay as bare dots. Nothing here touches event generation,
+// timing, direction, colour or any threshold -- `positioningEvents` in bias.ts is untouched, so the
+// alert list and the Chart overlays that share it are unaffected.
+// Spacing is set by how wide the TEXT is, not by taste. A full session is ~375 minutes across
+// roughly 1700px, so a minute is about 4.5px. A short tag like "⚠ Bear div" is ~70px, which needs
+// ~16 minutes of clearance; the original sentence is ~200px and would need ~45, which would hide
+// most of the day. So the tag is short and the spacing is 20 minutes, with a margin for narrower
+// windows. The full wording still appears in the signal list and the header strip.
+const DIV_LABEL_MIN_GAP_S = 20 * 60;
+const DIV_FLIP_MIN_GAP_S = 6 * 60;    // a direction flip is worth saying sooner
+
+/** Short on-chart tag. The long sentence is what forces the overlap in the first place. */
+function shortMarkerText(text: string): string {
+  if (text === "") return "";                       // thinned: a bare dot, no label
+  if (text.includes("Bullish divergence")) return "⚠ Bull div";
+  if (text.includes("Bearish divergence")) return "⚠ Bear div";
+  if (text.includes("Bullish crossover")) return "▲ Bull cross";
+  if (text.includes("Bearish crossover")) return "▼ Bear cross";
+  return text.length > 28 ? `${text.slice(0, 27)}…` : text;
+}
+
+/** Keep every marker; blank the text on divergences that would collide with the previous label. */
+function thinDivergenceLabels(evs: PositionEvent[]): PositionEvent[] {
+  let lastT = -Infinity;
+  let lastDir = "";
+  return evs.map((e) => {
+    if (e.kind !== "divergence") return e;  // crossovers are rare and always keep their label
+    const gap = e.time - lastT;
+    const keep = gap >= DIV_LABEL_MIN_GAP_S || (e.dir !== lastDir && gap >= DIV_FLIP_MIN_GAP_S);
+    if (!keep) return { ...e, text: "" };
+    lastT = e.time;
+    lastDir = e.dir;
+    return e;
+  });
+}
 
 export interface PcrPoint {
   signal_point?: {sample_time:number;ce:number;pe:number;ce_change:number;pe_change:number}|null;
@@ -671,8 +714,8 @@ export default function PcrTrinitySuite({
       pcrOiArea.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.pcr_oi })));
       pcrVol.setData(showVolPcr ? activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.pcr_vol })) : []);
       const ratioPoints=trinitySignalPoints(activeSeries,false).filter((p)=>p.ce>0).map((p)=>({...p,pe:p.pe/p.ce,ce:1}));
-      chart1Ref.current.mk.setMarkers(positioningEvents(ratioPoints,Date.now()/1000+19800).filter((e)=>e.kind==="divergence").map((e)=>({
-        time:e.time as UTCTimestamp,position:e.dir==="bull"?"belowBar" as const:"aboveBar" as const,shape:"circle" as const,color:"#f59e0b",text:e.text.replace("PE−CE gap","PCR"),size:1,
+      chart1Ref.current.mk.setMarkers(thinDivergenceLabels(positioningEvents(ratioPoints,Date.now()/1000+19800).filter((e)=>e.kind==="divergence")).map((e)=>({
+        time:e.time as UTCTimestamp,position:e.dir==="bull"?"belowBar" as const:"aboveBar" as const,shape:"circle" as const,color:"#f59e0b",text:shortMarkerText(e.text).replace("PE−CE gap","PCR"),size:1,
       })));
 
     }
@@ -731,11 +774,11 @@ export default function PcrTrinitySuite({
 
       // Only observed as-of samples feed alerts; no future-based persistence or de-bounce.
       const events=positioningEvents(trinitySignalPoints(activeSeries),Date.now()/1000+19800);
-      chart2Ref.current.mk.setMarkers(events.map((e)=>({
+      chart2Ref.current.mk.setMarkers(thinDivergenceLabels(events).map((e)=>({
         time:e.time as UTCTimestamp,position:e.dir==="bull"?"belowBar" as const:"aboveBar" as const,
         shape:e.kind==="divergence"?"circle" as const:e.dir==="bull"?"arrowUp" as const:"arrowDown" as const,
         color:e.kind==="divergence"?"#f59e0b":e.dir==="bull"?"#22c55e":"#ef4444",
-        text:e.text,size:1,
+        text:shortMarkerText(e.text),size:1,
       })));
 
     }
@@ -777,11 +820,11 @@ export default function PcrTrinitySuite({
       }
 
       const events=positioningEvents(trinitySignalPoints(activeSeries,false),Date.now()/1000+19800);
-      mk.setMarkers(events.map((e)=>({
+      mk.setMarkers(thinDivergenceLabels(events).map((e)=>({
         time:e.time as UTCTimestamp,position:e.dir==="bull"?"belowBar" as const:"aboveBar" as const,
         shape:e.kind==="divergence"?"circle" as const:e.dir==="bull"?"arrowUp" as const:"arrowDown" as const,
         color:e.kind==="divergence"?"#f59e0b":e.dir==="bull"?"#22c55e":"#ef4444",
-        text:e.text,size:1,
+        text:shortMarkerText(e.text),size:1,
       })));
 
     }
