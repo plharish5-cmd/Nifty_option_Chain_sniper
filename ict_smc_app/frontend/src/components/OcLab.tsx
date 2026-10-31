@@ -3340,7 +3340,13 @@ export function FullPanel({ title, hint, h, children }: { title: string; hint?: 
         {hint && <span className="text-[10px] text-slate-500">{hint}</span>}
         <button onClick={toggle} className="tab ml-auto !border-gold-500/70 !text-gold-400 font-semibold">{full ? "▣ Normal view" : "⛶ Full view"}</button>
       </div>
-      <div className="min-h-0 flex-1">{children}</div>
+      {/* overflow-auto is the hard stop. Without it this body has no overflow rule, so a panel whose
+          content is taller than its height -- the Trinity suite at the default 460px, for one --
+          spilled straight out of the card and down the page, covering the tab row beneath it. The
+          tabs after "Bias meter" became unreachable. Clipping here keeps the spill inside the panel
+          and leaves the content scrollable, so nothing is lost; dragging the panel taller still
+          works exactly as before. Layout only: no child markup, sizing or calculation is touched. */}
+      <div className="min-h-0 flex-1 overflow-auto">{children}</div>
     </div>
   );
 }
