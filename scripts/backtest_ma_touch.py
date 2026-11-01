@@ -70,12 +70,13 @@ def session_bars(m1: list[dict], minutes: int) -> list[dict]:
         k = mins // minutes
         b = buckets.get(k)
         if b is None:
-            buckets[k] = {"ts": r["ts"], "o": r["o"], "h": r["h"], "l": r["l"], "c": r["c"],
-                          "slot": k}
+            buckets[k] = {"ts": r["ts"], "ts_end": r["ts"], "o": r["o"], "h": r["h"],
+                          "l": r["l"], "c": r["c"], "slot": k}
         else:
             b["h"] = max(b["h"], r["h"])
             b["l"] = min(b["l"], r["l"])
             b["c"] = r["c"]
+            b["ts_end"] = r["ts"]      # last minute IN the bar; the forward walk starts after it
     return [buckets[k] for k in sorted(buckets)]
 
 
@@ -372,8 +373,11 @@ def run(conn, a) -> int:
             if m is None or prev_m is None:
                 return None
             b = hourly[i]
-            end_ts = b["ts"] + a.horizon * 3600
-            after = [r for r in by_day[b["day"]] if b["ts"] < r["ts"] <= end_ts]
+            # Walk from AFTER the touching bar closes. Using the bar's opening timestamp here
+            # would re-traverse its own 59 minutes while pricing entry at its close, which is
+            # look-ahead: the move would be measured over minutes that preceded the entry.
+            end_ts = b["ts_end"] + a.horizon * 3600
+            after = [r for r in by_day[b["day"]] if b["ts_end"] < r["ts"] <= end_ts]
             if len(after) < 10:
                 return None
             long = hourly[i - 1]["c"] > prev_m
