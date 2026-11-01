@@ -36,6 +36,7 @@ USAGE
     python3 scripts/backtest_gann.py                      # intraday levels, 3m pivots, ±10 pts
     python3 scripts/backtest_gann.py --tol 15 --runs 20
     python3 scripts/backtest_gann.py --mode sweep         # tolerance x pivot grid
+    python3 scripts/backtest_gann.py --mode validate --pivot pdh   # split + concentration
     python3 scripts/backtest_gann.py --mode cycles --day-tol 3
     python3 scripts/backtest_gann.py --pivot pdh          # score levels off previous-day HIGH
 """
@@ -422,9 +423,89 @@ def run_cycles(conn, a) -> int:
     return 0
 
 
+
+def run_validate(conn, a) -> int:
+    """The two tests that separate a real effect from a lucky sample.
+
+    1. OUT OF SAMPLE. Split the sessions chronologically and score each half on its own, each with
+       its own random baseline. An effect present in the first half and absent in the second is a
+       property of those particular days, not of the method.
+    2. CONCENTRATION. Drop the sessions that contributed most and see what is left. An edge carried
+       by three good days is a sample that happened to contain three good days -- the same test
+       that dismantled the divergence engine's headline on 30 Oct.
+    """
+    by_day = load_sessions(conn, a.sec)
+    if not by_day:
+        print(f"no candles for sec_id {a.sec} in {a.db}", file=sys.stderr)
+        return 2
+    days = sorted(by_day)
+    mid = len(days) // 2
+    halves = [("first half", days[:mid]), ("second half", days[mid:])]
+
+    print(f"\nValidation · pivot {a.pivot.upper()} · tolerance ±{a.tol} pts · {a.tf}m bars")
+    print(f"database: {a.db}")
+    print(f"sessions: {len(days)}  ({days[0]} → {days[-1]})\n")
+
+    full = score_levels(by_day, a, a.tol, a.pivot)
+    if full is None:
+        print("nothing scorable", file=sys.stderr)
+        return 2
+
+    print("OUT OF SAMPLE")
+    print(f"{'window':<14}{'sessions':>9}{'pivots':>8}{'Gann':>8}{'random':>9}{'edge':>8}{'sd':>7}")
+    print(f"{'all':<14}{full['tested']:>9}{full['pivots']:>8}{full['g_rate']:>7.1f}%"
+          f"{full['r_mean']:>8.1f}%{full['edge']:>+7.1f}{full['z']:>7.1f}")
+    halves_ok = 0
+    for name, ds in halves:
+        sub = {d: by_day[d] for d in ds}
+        h = score_levels(sub, a, a.tol, a.pivot)
+        if h is None:
+            print(f"{name:<14}{'—':>9}")
+            continue
+        if h["edge"] > 0:
+            halves_ok += 1
+        print(f"{name:<14}{h['tested']:>9}{h['pivots']:>8}{h['g_rate']:>7.1f}%"
+              f"{h['r_mean']:>8.1f}%{h['edge']:>+7.1f}{h['z']:>7.1f}")
+
+    # concentration: per-session surplus over that session's expected random hits
+    per = full["per_day"]
+    exp_rate = full["r_mean"] / 100.0
+    contrib = sorted(((d, g - np_ * exp_rate, np_, g) for d, np_, g, _nir, _sp in per),
+                     key=lambda x: x[1], reverse=True)
+    tot_surplus = sum(c[1] for c in contrib)
+
+    print(f"\nCONCENTRATION  (surplus = hits above what the random rate predicts for that session)")
+    print(f"{'total surplus':<26}{tot_surplus:>+8.1f} hits across {len(per)} sessions")
+    print(f"{'best session':<26}{contrib[0][0]} {contrib[0][1]:>+7.1f}")
+    for drop in (1, 3, 5):
+        if len(contrib) > drop:
+            rest = contrib[drop:]
+            rp = sum(c[2] for c in rest)
+            rh = sum(c[3] for c in rest)
+            rr = rh / rp * 100 if rp else 0.0
+            print(f"{'excluding best ' + str(drop):<26}{rr - full['r_mean']:>+8.1f} pp"
+                  f"   ({rh}/{rp} = {rr:.1f}% vs random {full['r_mean']:.1f}%)")
+
+    pos_days = sum(1 for c in contrib if c[1] > 0)
+    print(f"{'sessions with surplus > 0':<26}{pos_days} of {len(per)}")
+
+    print()
+    if halves_ok == 2 and pos_days >= len(per) * 0.55:
+        print("READ: the edge appears in both halves and is spread across sessions rather than")
+        print("      carried by a few. That is what a real effect looks like. The next test the")
+        print("      books demand is a SECOND INSTRUMENT — rerun with --sec for BANKNIFTY.")
+    elif halves_ok == 2:
+        print("READ: present in both halves but concentrated in a minority of sessions. Worth")
+        print("      continuing to record; not yet worth sizing against.")
+    else:
+        print("READ: the edge does not survive the split. It is a property of some of these days,")
+        print("      not of the method. This is the most common honest outcome.")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", default="levels", choices=["levels", "cycles", "sweep"])
+    ap.add_argument("--mode", default="levels", choices=["levels", "cycles", "sweep", "validate"])
     ap.add_argument("--db", default=str(DB))
     ap.add_argument("--sec", default=NIFTY_SEC)
     ap.add_argument("--tf", type=int, default=3, help="intraday bar size in minutes (levels mode)")
@@ -445,6 +526,8 @@ def main() -> int:
     conn = sqlite3.connect(a.db)
     if a.mode == "sweep":
         return run_sweep(conn, a)
+    if a.mode == "validate":
+        return run_validate(conn, a)
     return run_levels(conn, a) if a.mode == "levels" else run_cycles(conn, a)
 
 
