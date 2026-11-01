@@ -35,6 +35,7 @@ READ-ONLY. Opens the database, computes, prints. Writes nothing.
 USAGE
     python3 scripts/backtest_gann.py                      # intraday levels, 3m pivots, ±10 pts
     python3 scripts/backtest_gann.py --tol 15 --runs 20
+    python3 scripts/backtest_gann.py --mode sweep         # tolerance x pivot grid
     python3 scripts/backtest_gann.py --mode cycles --day-tol 3
     python3 scripts/backtest_gann.py --pivot pdh          # score levels off previous-day HIGH
 """
@@ -118,40 +119,35 @@ def near_any(price: float, levels: list[float], tol: float) -> bool:
 
 # ── mode: intraday levels ─────────────────────────────────────────────────────────────────────────
 
-def run_levels(conn, a) -> int:
+def load_sessions(conn, sec):
     rows = conn.execute(
-        "SELECT ts,o,h,l,c FROM candles_1m WHERE sec_id=? ORDER BY ts", (a.sec,)).fetchall()
-    if not rows:
-        print(f"no candles for sec_id {a.sec} in {a.db}", file=sys.stderr)
-        return 2
-
-    by_day: dict[str, list[dict]] = defaultdict(list)
+        "SELECT ts,o,h,l,c FROM candles_1m WHERE sec_id=? ORDER BY ts", (sec,)).fetchall()
+    by_day = defaultdict(list)
     for ts, o, h, l, c in rows:
         d = datetime.fromtimestamp(ts, IST).date().isoformat()
         by_day[d].append({"ts": int(ts), "o": float(o), "h": float(h), "l": float(l), "c": float(c)})
+    return by_day
 
+
+def score_levels(by_day, a, tol, pivot_kind):
+    """One configuration, scored. Returns the numbers; printing is the caller's job."""
     days = sorted(by_day)
     step = a.tf * 60
     rng = random.Random(a.seed)
-
-    tested = 0
-    tot_pivots = 0
-    gann_hits = 0
-    in_range_total = 0
+    tested = tot_pivots = gann_hits = in_range_total = 0
     random_hits = [0] * a.runs
-    per_day = []
     span_sum = 0.0
+    per_day = []
 
-    for i in range(1, len(days)):          # from the 2nd day on: day 1 has no previous session
+    for i in range(1, len(days)):
         d, prev = days[i], days[i - 1]
         bars = aggregate(by_day[d], step)
         if len(bars) < 2 * a.window + 6:
             continue
         pv = by_day[prev]
-        prev_close = pv[-1]["c"]
-        prev_high = max(b["h"] for b in pv)
-        prev_low = min(b["l"] for b in pv)
-        pivot = {"pdc": prev_close, "pdh": prev_high, "pdl": prev_low}[a.pivot]
+        pivot = {"pdc": pv[-1]["c"],
+                 "pdh": max(b["h"] for b in pv),
+                 "pdl": min(b["l"] for b in pv)}[pivot_kind]
 
         levels = sq9_ladder(pivot)
         pivots = swing_pivots(bars, a.window)
@@ -160,32 +156,53 @@ def run_levels(conn, a) -> int:
 
         lo = min(b["l"] for b in bars)
         hi = max(b["h"] for b in bars)
-        span = max(1.0, hi - lo)
 
-        # DENSITY MUST MATCH, or the comparison is worthless. The Sq9 ladder spans roughly ±300
+        # DENSITY MUST MATCH, or the comparison is worthless. The Sq9 ladder spans roughly +/-300
         # points around the pivot, so on a 200-point day most of it sits where price never traded.
-        # Scoring all eight against eight random levels drawn INSIDE the day's range gives random
-        # far more usable levels and guarantees it wins — a fairness bug, not a finding. So only
-        # the levels price could actually have reached are scored, and the baseline draws exactly
-        # that many. How often the ladder lands in range is itself reported below.
-        in_range = [lv for lv in levels if lo - a.tol <= lv <= hi + a.tol]
+        # Scoring all eight against eight random levels drawn INSIDE the day's range hands random
+        # far more usable levels and guarantees it wins -- a fairness bug, not a finding. So only
+        # levels price could have reached are scored, and the baseline draws exactly that many.
+        in_range = [lv for lv in levels if lo - tol <= lv <= hi + tol]
         if not in_range:
             continue
 
-        span_sum += span
-        g = sum(1 for _, px, _ in pivots if near_any(px, in_range, a.tol))
-
+        span_sum += max(1.0, hi - lo)
+        g = sum(1 for _, px, _ in pivots if near_any(px, in_range, tol))
         for r in range(a.runs):
             rl = [rng.uniform(lo, hi) for _ in range(len(in_range))]
-            random_hits[r] += sum(1 for _, px, _ in pivots if near_any(px, rl, a.tol))
+            random_hits[r] += sum(1 for _, px, _ in pivots if near_any(px, rl, tol))
 
         tested += 1
         tot_pivots += len(pivots)
         gann_hits += g
         in_range_total += len(in_range)
-        per_day.append((d, len(pivots), g, len(in_range), round(span)))
+        per_day.append((d, len(pivots), g, len(in_range), round(hi - lo)))
 
-    if not tested:
+    if not tested or not tot_pivots:
+        return None
+
+    g_rate = gann_hits / tot_pivots * 100
+    r_rates = [h / tot_pivots * 100 for h in random_hits]
+    r_mean = statistics.mean(r_rates)
+    r_sd = statistics.pstdev(r_rates) if len(r_rates) > 1 else 0.0
+    return {
+        "tested": tested, "pivots": tot_pivots, "hits": gann_hits,
+        "g_rate": g_rate, "r_mean": r_mean, "r_sd": r_sd,
+        "r_best": max(r_rates), "r_worst": min(r_rates),
+        "beat": sum(1 for r in r_rates if r >= g_rate),
+        "edge": g_rate - r_mean, "z": (g_rate - r_mean) / r_sd if r_sd > 0 else float("nan"),
+        "in_range": in_range_total / tested, "mean_span": span_sum / tested,
+        "per_day": per_day,
+    }
+
+
+def run_levels(conn, a) -> int:
+    by_day = load_sessions(conn, a.sec)
+    if not by_day:
+        print(f"no candles for sec_id {a.sec} in {a.db}", file=sys.stderr)
+        return 2
+    s = score_levels(by_day, a, a.tol, a.pivot)
+    if s is None:
         print("not enough sessions with pivots to score", file=sys.stderr)
         return 2
 
@@ -194,42 +211,90 @@ def run_levels(conn, a) -> int:
     print(f"pivot     : previous session's {a.pivot.upper()}  ·  angles ±{', ±'.join(map(str, DEGREES))}")
     print(f"bars      : {a.tf}m   pivot window: ±{a.window} bars")
     print(f"tolerance : ±{a.tol} points   (fixed before the run)")
-    print(f"sessions  : {tested}   turning points: {tot_pivots}   mean session range: {span_sum/tested:.0f} pts")
-    print(f"levels in range: {in_range_total/tested:.1f} of 8 per session "
+    print(f"sessions  : {s['tested']}   turning points: {s['pivots']}   mean session range: {s['mean_span']:.0f} pts")
+    print(f"levels in range: {s['in_range']:.1f} of 8 per session "
           f"(only these are scored; the baseline draws the same number)\n")
 
     print(f"{'day':<12}{'pivots':>8}{'on a level':>13}{'levels in range':>17}{'range':>8}")
-    for d, np_, g, nir, sp in per_day:
+    for d, np_, g, nir, sp in s["per_day"]:
         print(f"{d:<12}{np_:>8}{g:>13}{nir:>17}{sp:>8}")
 
-    g_rate = gann_hits / tot_pivots * 100
-    r_rates = [h / tot_pivots * 100 for h in random_hits]
-    r_mean = statistics.mean(r_rates)
-    r_sd = statistics.pstdev(r_rates) if len(r_rates) > 1 else 0.0
-
     print(f"\n{'':<24}{'hits':>8}{'rate':>9}")
-    print(f"{'Gann Sq9 ladder':<24}{gann_hits:>8}{g_rate:>8.1f}%")
-    print(f"{'random, same count':<24}{statistics.mean(random_hits):>8.1f}{r_mean:>8.1f}%"
-          f"   (sd {r_sd:.1f}, {a.runs} runs, best {max(r_rates):.1f}%, worst {min(r_rates):.1f}%)")
-
-    edge = g_rate - r_mean
-    z = (edge / r_sd) if r_sd > 0 else float("nan")
-    print(f"\nedge over random : {edge:+.1f} percentage points"
-          + (f"   ({z:+.1f} sd)" if r_sd > 0 else ""))
-    beat = sum(1 for r in r_rates if r >= g_rate)
-    print(f"random runs matching or beating Gann: {beat} of {a.runs}")
+    print(f"{'Gann Sq9 ladder':<24}{s['hits']:>8}{s['g_rate']:>8.1f}%")
+    print(f"{'random, same count':<24}{s['r_mean']*s['pivots']/100:>8.1f}{s['r_mean']:>8.1f}%"
+          f"   (sd {s['r_sd']:.1f}, {a.runs} runs, best {s['r_best']:.1f}%, worst {s['r_worst']:.1f}%)")
+    print(f"\nedge over random : {s['edge']:+.1f} percentage points"
+          + (f"   ({s['z']:+.1f} sd)" if s["r_sd"] > 0 else ""))
+    print(f"random runs matching or beating Gann: {s['beat']} of {a.runs}")
 
     print()
-    if beat >= max(1, a.runs // 5) or edge <= 0:
+    if s["beat"] >= max(1, a.runs // 5) or s["edge"] <= 0:
         print("READ: the Gann ladder sits inside the random spread. On this data it is not")
         print("      locating turning points better than arbitrary levels at the same density.")
-    elif r_sd > 0 and z < 2:
+    elif s["r_sd"] > 0 and s["z"] < 2:
         print("READ: Gann is ahead of random but by less than 2 sd. Suggestive, not established —")
         print("      the books' bar is a CLEAR and REPEATED difference, on more than one instrument.")
     else:
         print("READ: Gann clearly beats the random baseline here. Before trusting it, repeat on")
         print("      BANKNIFTY and on a different tolerance; one instrument is not a result.")
-    print("\nA level says LOOK; price says ACT. Nothing here produces a direction.")
+    print("\nRun --sweep to see whether that edge survives a change of tolerance or pivot.")
+    print("A level says LOOK; price says ACT. Nothing here produces a direction.")
+    return 0
+
+
+def run_sweep(conn, a) -> int:
+    """The decisive test. An edge that exists at one tolerance and one pivot is noise.
+
+    The books list "widening the tolerance until it works" and "testing one instrument" as the two
+    commonest ways people fool themselves. A real effect does not care that you moved the band from
+    10 points to 12, or anchored on the previous high instead of the close. This prints the whole
+    grid at once so no single flattering cell can be reported on its own.
+    """
+    by_day = load_sessions(conn, a.sec)
+    if not by_day:
+        print(f"no candles for sec_id {a.sec} in {a.db}", file=sys.stderr)
+        return 2
+
+    tols = [6.0, 8.0, 10.0, 12.0, 15.0, 20.0]
+    pivots = ["pdc", "pdh", "pdl"]
+    print(f"\nSensitivity sweep · {a.tf}m bars · ±{a.window}-bar pivots · {a.runs} random runs each")
+    print(f"database: {a.db}\n")
+    print(f"{'pivot':<7}{'tol':>6}{'Gann':>8}{'random':>9}{'edge':>8}{'sd':>7}{'beat':>7}{'in-range':>10}")
+
+    cells = []
+    for pk in pivots:
+        for t in tols:
+            s = score_levels(by_day, a, t, pk)
+            if s is None:
+                continue
+            cells.append((pk, t, s))
+            print(f"{pk:<7}{t:>6.0f}{s['g_rate']:>7.1f}%{s['r_mean']:>8.1f}%"
+                  f"{s['edge']:>+7.1f}{s['z']:>7.1f}{s['beat']:>4}/{a.runs}{s['in_range']:>10.1f}")
+
+    if not cells:
+        print("nothing scorable", file=sys.stderr)
+        return 2
+
+    pos = [c for c in cells if c[2]["edge"] > 0]
+    strong = [c for c in cells if c[2]["r_sd"] > 0 and c[2]["z"] >= 2]
+    print(f"\ncells tested            : {len(cells)}")
+    print(f"edge above zero         : {len(pos)}")
+    print(f"edge at 2 sd or better  : {len(strong)}")
+    edges = [c[2]["edge"] for c in cells]
+    print(f"median edge             : {statistics.median(edges):+.1f} pp"
+          f"   (range {min(edges):+.1f} to {max(edges):+.1f})")
+
+    print()
+    if len(strong) >= max(2, len(cells) // 3):
+        print("READ: the edge holds across tolerances and pivots. That is the shape of a real")
+        print("      effect. Next step is BANKNIFTY — one instrument is still one instrument.")
+    elif len(pos) >= len(cells) * 0.7:
+        print("READ: mostly positive but mostly weak. Consistent sign across settings is worth")
+        print("      something; the size is not yet separable from noise.")
+    else:
+        print("READ: the sign flips with the settings. An effect that appears at one tolerance and")
+        print("      vanishes at the next is the definition of curve-fitting, and the books name")
+        print("      'widening the tolerance until it works' as the first way people fool themselves.")
     return 0
 
 
@@ -240,11 +305,29 @@ def run_cycles(conn, a) -> int:
         "SELECT d,o,h,l,c FROM daily WHERE sec_id=? ORDER BY d", (a.sec,)).fetchall()
     bars = [{"d": r[0], "o": float(r[1]), "h": float(r[2]), "l": float(r[3]), "c": float(r[4])}
             for r in rows]
+    src_name = "the `daily` table"
+
+    # The desk keeps a canonical daily CSV for exactly this kind of history, so fall back to it
+    # rather than refusing. sync=False: no Dhan call is made from a backtest.
+    if len(bars) < 120:
+        try:
+            from app.engine.gann_pivots_gaps import load_historical_daily_bars
+            csv_bars = load_historical_daily_bars(sec_id=a.sec, sync=False) or []
+            if len(csv_bars) > len(bars):
+                bars = [{"d": b["date"], "o": float(b["open"]), "h": float(b["high"]),
+                         "l": float(b["low"]), "c": float(b["close"])} for b in csv_bars]
+                src_name = "the desk's canonical daily CSV"
+        except Exception as e:
+            print(f"(daily CSV loader unavailable: {type(e).__name__}: {e})", file=sys.stderr)
+
     if len(bars) < 120:
         print(f"only {len(bars)} daily bars for sec_id {a.sec}; need 120+ for a cycle test.",
               file=sys.stderr)
-        print("The desk stores daily bars in the `daily` table — backfill it before running this.",
+        print("Neither the `daily` table nor the canonical CSV has enough history. Time cycles are",
               file=sys.stderr)
+        print("a positional tool — 30 to 360 CALENDAR days — so a year or more is the minimum that",
+              file=sys.stderr)
+        print("can say anything. Backfill daily bars, then re-run.", file=sys.stderr)
         return 2
 
     rng = random.Random(a.seed)
@@ -306,7 +389,7 @@ def run_cycles(conn, a) -> int:
 
     print(f"\nGann time cycles vs daily turning points")
     print(f"database   : {a.db}")
-    print(f"daily bars : {len(bars)}   lead-in {lead}   test window {first} → {last}")
+    print(f"daily bars : {len(bars)} from {src_name}   lead-in {lead}   test window {first} → {last}")
     print(f"anchors    : major high {hi_d}, major low {lo_d}  (both inside the lead-in only)")
     print(f"day counts : {', '.join(map(str, CYCLE_DAYS))}")
     print(f"tolerance  : ±{a.day_tol} days   (fixed before the run)")
@@ -341,7 +424,7 @@ def run_cycles(conn, a) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", default="levels", choices=["levels", "cycles"])
+    ap.add_argument("--mode", default="levels", choices=["levels", "cycles", "sweep"])
     ap.add_argument("--db", default=str(DB))
     ap.add_argument("--sec", default=NIFTY_SEC)
     ap.add_argument("--tf", type=int, default=3, help="intraday bar size in minutes (levels mode)")
@@ -360,6 +443,8 @@ def main() -> int:
         print(f"database not found: {a.db}", file=sys.stderr)
         return 2
     conn = sqlite3.connect(a.db)
+    if a.mode == "sweep":
+        return run_sweep(conn, a)
     return run_levels(conn, a) if a.mode == "levels" else run_cycles(conn, a)
 
 
