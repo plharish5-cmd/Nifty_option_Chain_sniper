@@ -410,6 +410,28 @@ async def gann_pivots_gaps_recalculate(
     return await asyncio.to_thread(gann_pivots_gaps.force_recalculate, sec_id=sec_id)
 
 
+@app.get("/api/desk/htf-wick-ema-rb")
+def htf_wick_ema_rb_endpoint(
+    sec_id: str = Query("13", description="Security ID: 13 for NIFTY"),
+    spot: Optional[float] = Query(None, description="Optional override current spot price"),
+):
+    """Institutional 1H / 4H Wick & Shaved Extremes + 1H 8-EMA first-touch bounce/rejection rules & backtest."""
+    from ..engine import htf_wick_ema_rb
+    current_spot = spot
+    if current_spot is None and hub is not None:
+        try:
+            q = hub.quote()
+            if q and q.get("spot"):
+                current_spot = float(q["spot"])
+        except Exception as e:
+            log.warning("Could not get spot from hub for htf_wick_ema_rb: %s", e)
+    return htf_wick_ema_rb.get_htf_wick_ema_rb(
+        sec_id=sec_id,
+        spot=current_spot,
+    )
+
+
+
 @app.get("/api/desk/divergence")
 def divergence_endpoint(
     tf: str = Query("3m", description="1m | 3m | 5m | 15m | 1h"),

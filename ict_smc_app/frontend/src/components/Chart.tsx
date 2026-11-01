@@ -183,6 +183,98 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     });
   };
 
+  interface HtfWickEmaRes {
+    ok: boolean;
+    as_of_ist: string;
+    spot: number;
+    ema8_1h: {
+      value: number | null;
+      slope: string;
+      position: string;
+      distance_pts: number;
+      approach_state: string;
+      history: { ts: number; time: string; val: number }[];
+    };
+    active_levels: {
+      id: string;
+      tf: string;
+      kind: string;
+      side: string;
+      top: number;
+      bottom: number;
+      ref_price: number;
+      wick_pts: number;
+      is_shaved: boolean;
+      created_ts: number;
+      created_ist: string;
+      touch_count: number;
+      is_virgin: boolean;
+      direction_of_approach?: string;
+      mfe_bounce_pts?: number;
+      hit_20: boolean;
+      hit_40: boolean;
+      label: string;
+      distance_pts?: number;
+    }[];
+    live_alerts: {
+      id: string;
+      level_id: string;
+      kind: string;
+      side: string;
+      tf: string;
+      price: number;
+      distance_pts: number;
+      title: string;
+      body: string;
+      voice_text: string;
+    }[];
+    backtest_summary: {
+      dataset_range: string;
+      total_intraday_candles: number;
+      total_1h_candles: number;
+      total_4h_candles: number;
+      wick_1h: { first_touches: number; target_20_wins: number; win_rate_20_pct: number; target_40_wins: number; win_rate_40_pct: number; avg_mfe_pts: number; stopped_out: number };
+      wick_4h: { first_touches: number; target_20_wins: number; win_rate_20_pct: number; target_40_wins: number; win_rate_40_pct: number; avg_mfe_pts: number; stopped_out: number };
+      ema8_1h: { first_touches: number; target_20_wins: number; win_rate_20_pct: number; target_40_wins: number; win_rate_40_pct: number; avg_mfe_pts: number; stopped_out: number };
+    };
+  }
+
+  const [htfWickEmaData, setHtfWickEmaData] = useState<HtfWickEmaRes | null>(null);
+  const [showRbWickEma, setShowRbWickEma] = useState<boolean>(() => {
+    try {
+      const s = localStorage.getItem("rb_wick_ema_active");
+      return s !== null ? s === "1" : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleRbWickEma = () => {
+    setShowRbWickEma((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("rb_wick_ema_active", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    let alive = true;
+    const fetchHtfWickEma = () => {
+      fetch("/api/desk/htf-wick-ema-rb")
+        .then((res) => res.json())
+        .then((data: HtfWickEmaRes) => {
+          if (alive && data?.ok) setHtfWickEmaData(data);
+        })
+        .catch(() => {});
+    };
+    fetchHtfWickEma();
+    const timer = setInterval(fetchHtfWickEma, 12000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
   useEffect(() => {
     let alive = true;
     const fetchGannPivots = () => {
@@ -437,6 +529,53 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           }
         });
       }
+
+      // 3. Checkbox 3: 1H/4H Wicks & Shaved Extremes + 1H 8-EMA
+      if (showRbWickEma && htfWickEmaData?.ok) {
+        // 1H 8-EMA Dynamic Line - Electric Cyan #06b6d4, 2px solid
+        if (htfWickEmaData.ema8_1h?.value && htfWickEmaData.ema8_1h.value > 0) {
+          const emaVal = htfWickEmaData.ema8_1h.value;
+          const slope = htfWickEmaData.ema8_1h.slope || "FLAT";
+          const line = series.current!.createPriceLine({
+            price: emaVal,
+            color: "#06b6d4",
+            lineWidth: 2,
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: true,
+            title: `1H 8-EMA ${emaVal.toLocaleString("en-IN")} (${slope})`,
+          });
+          rbPriceLinesRef.current.push(line);
+        }
+
+        // Active 1H / 4H Extremes
+        (htfWickEmaData.active_levels || []).forEach((lvl) => {
+          if (lvl.ref_price > 0) {
+            if (lvl.side === "RESISTANCE") {
+              // Coral Red #f43f5e, dashed
+              const line = series.current!.createPriceLine({
+                price: lvl.ref_price,
+                color: "#f43f5e",
+                lineWidth: lvl.is_virgin ? 2 : 1,
+                lineStyle: LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: lvl.label,
+              });
+              rbPriceLinesRef.current.push(line);
+            } else if (lvl.side === "SUPPORT") {
+              // Mint Green #10b981, dashed
+              const line = series.current!.createPriceLine({
+                price: lvl.ref_price,
+                color: "#10b981",
+                lineWidth: lvl.is_virgin ? 2 : 1,
+                lineStyle: LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: lvl.label,
+              });
+              rbPriceLinesRef.current.push(line);
+            }
+          }
+        });
+      }
     } catch (err) {
       console.warn("Failed creating Gann/Pivot price lines", err);
     }
@@ -449,7 +588,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       });
       rbPriceLinesRef.current = [];
     };
-  }, [showRbPivotsGaps, showRbGann, gannData, series.current]);
+  }, [showRbPivotsGaps, showRbGann, showRbWickEma, gannData, htfWickEmaData, series.current]);
   const isDeltaDetailOn = !!layers.deltaDetail;
   const isDeltaOn = !!(layers.delta || isDeltaDetailOn);
   const isBubblesOn = !!(layers.bubbles || isDeltaDetailOn);
@@ -2605,6 +2744,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       };
       dispatch(scanSignals({ tf, candles, a, prefs: sig, bias: allB, conf: confAll, ocActs, smt: smtArg, dols: computeDol(candles, a),
         gamma: gHitsRef.current, nodes: nEntRef.current, htfWicks, cvdSignals, ictLevels: instLevels,
+        rbWickEmaAlerts: (showRbWickEma && htfWickEmaData?.live_alerts) ? htfWickEmaData.live_alerts : undefined,
         flow: fnow && lc[0] ? { time: lc[0].time, verdict: fnow.verdict, prev: fprev?.verdict ?? null, bull: fnow.bull, bear: fnow.bear, head: fnow.head } : null }), wrapped, tf); }
       catch { /* alerts must never break the chart */ }
     }
@@ -2612,7 +2752,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     setBiasStatus(allB.at(-1) ?? null);
     const bias = layers.bias ? allB.filter((r) => r.verdict !== "MIXED") : [];
     fpPrim.current.set(withConf, bias, layers.heat ? fpBars.filter((b) => b.rows.length) : []);
-  }, [fpBars, analysis, tf, layers.fp, layers.bias, layers.heat, candles, ocFeed, smtArg, sig, onSignal, marketOpen, ocActs, layers.cvd, layers.cells, layers.walls, layers.bubbles, layers.gamma, layers.nodes, layers.tsoup, htfWicks, biasPct, cvdSignals]);
+  }, [fpBars, analysis, tf, layers.fp, layers.bias, layers.heat, candles, ocFeed, smtArg, sig, onSignal, marketOpen, ocActs, layers.cvd, layers.cells, layers.walls, layers.bubbles, layers.gamma, layers.nodes, layers.tsoup, htfWicks, biasPct, cvdSignals, showRbWickEma, htfWickEmaData]);
 
   // BANKNIFTY line (own hidden scale, so its shape lines up with NIFTY) — shown with the SMT layer
   useEffect(() => {
@@ -3090,6 +3230,25 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           <span>{showRbGann ? "☑" : "☐"} Gann Sq9 & Time Cycles</span>
         </button>
 
+        <button
+          onClick={toggleRbWickEma}
+          onMouseEnter={() => setShowRbGuidance(true)}
+          onMouseLeave={() => setShowRbGuidance(false)}
+          className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur ${
+            showRbWickEma
+              ? "bg-cyan-500/20 border-cyan-500/80 text-cyan-300 ring-1 ring-cyan-500/40"
+              : "border-slate-700/60 text-slate-400 hover:text-slate-200"
+          }`}
+          title="Toggle Institutional 1H/4H Wicks & Shaved Extremes + 1H 8-EMA Rejection Blocks"
+        >
+          <span>{showRbWickEma ? "☑" : "☐"} 1H/4H Wicks + 1H 8EMA</span>
+          {htfWickEmaData?.ema8_1h?.value && (
+            <span className="text-[9px] px-1 rounded font-mono font-bold bg-cyan-500/30 text-cyan-200">
+              EMA8: {htfWickEmaData.ema8_1h.value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+            </span>
+          )}
+        </button>
+
         {gannData?.time_cycles && (
           <div
             onMouseEnter={() => setShowRbGuidance(true)}
@@ -3360,6 +3519,60 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
               </div>
             </div>
           </div>
+
+          {/* Quantitative Backtest Summary for 1H/4H Wicks & 1H 8-EMA */}
+          {htfWickEmaData?.backtest_summary && (
+            <div className="rounded-lg bg-cyan-950/40 border border-cyan-500/50 p-2.5 mb-2.5 shadow-lg">
+              <div className="font-bold text-cyan-300 text-[11px] mb-1.5 flex items-center justify-between border-b border-cyan-500/20 pb-1">
+                <span className="flex items-center gap-1.5">
+                  <span>📊</span>
+                  <span>QUANTITATIVE FIRST-TOUCH BACKTEST (1H / 4H WICKS & 1H 8-EMA)</span>
+                </span>
+                <span className="text-[9px] text-cyan-400 font-mono">
+                  {htfWickEmaData.backtest_summary.dataset_range} ({htfWickEmaData.backtest_summary.total_intraday_candles.toLocaleString()} bars)
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[10px] text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-700/60 text-slate-400 font-mono">
+                      <th className="py-1">Setup / Level</th>
+                      <th className="py-1 text-center">Touches</th>
+                      <th className="py-1 text-center">Win ≥20pt</th>
+                      <th className="py-1 text-center">Win ≥40pt</th>
+                      <th className="py-1 text-right">Avg MFE</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    <tr className="hover:bg-cyan-950/20">
+                      <td className="py-1 text-rose-300 font-semibold">1H Wick & Shaved Extr</td>
+                      <td className="py-1 text-center text-slate-300">{htfWickEmaData.backtest_summary.wick_1h.first_touches}</td>
+                      <td className="py-1 text-center text-emerald-400 font-bold">{htfWickEmaData.backtest_summary.wick_1h.win_rate_20_pct}%</td>
+                      <td className="py-1 text-center text-emerald-400 font-bold">{htfWickEmaData.backtest_summary.wick_1h.win_rate_40_pct}%</td>
+                      <td className="py-1 text-right text-cyan-300 font-bold">+{htfWickEmaData.backtest_summary.wick_1h.avg_mfe_pts} pts</td>
+                    </tr>
+                    <tr className="hover:bg-cyan-950/20">
+                      <td className="py-1 text-rose-300 font-semibold">4H Wick & Shaved Extr</td>
+                      <td className="py-1 text-center text-slate-300">{htfWickEmaData.backtest_summary.wick_4h.first_touches}</td>
+                      <td className="py-1 text-center text-emerald-400 font-bold">{htfWickEmaData.backtest_summary.wick_4h.win_rate_20_pct}%</td>
+                      <td className="py-1 text-center text-emerald-400 font-bold">{htfWickEmaData.backtest_summary.wick_4h.win_rate_40_pct}%</td>
+                      <td className="py-1 text-right text-cyan-300 font-bold">+{htfWickEmaData.backtest_summary.wick_4h.avg_mfe_pts} pts</td>
+                    </tr>
+                    <tr className="hover:bg-cyan-950/20">
+                      <td className="py-1 text-cyan-300 font-semibold">1H 8-EMA Dynamic Line</td>
+                      <td className="py-1 text-center text-slate-300">{htfWickEmaData.backtest_summary.ema8_1h.first_touches}</td>
+                      <td className="py-1 text-center text-emerald-400 font-bold">{htfWickEmaData.backtest_summary.ema8_1h.win_rate_20_pct}%</td>
+                      <td className="py-1 text-center text-emerald-400 font-bold">{htfWickEmaData.backtest_summary.ema8_1h.win_rate_40_pct}%</td>
+                      <td className="py-1 text-right text-cyan-300 font-bold">+{htfWickEmaData.backtest_summary.ema8_1h.avg_mfe_pts} pts</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-1 text-[9.5px] text-cyan-400/80 italic">
+                Quantitative backtest evaluated across entire historical dataset for first-touch MFE reactions before 15pt adverse stop.
+              </div>
+            </div>
+          )}
 
           {/* Resistances & Supports Grid */}
           <div className="grid grid-cols-2 gap-2 mb-2.5">

@@ -192,7 +192,22 @@
       60,
       120,
       180
-    ]
+    ],
+    "positioning": {
+      "bucket_minutes": 60,
+      "bucket_options": [
+        3,
+        5,
+        15,
+        30,
+        60
+      ],
+      "max_snapshot_age_seconds": 300,
+      "max_spot_age_seconds": 120,
+      "stale_after_seconds": 120,
+      "poll_seconds": 25,
+      "near_strikes": 7
+    }
   },
   "orderbook": {
     "lot_size": 65,
@@ -204,5 +219,16 @@
     "cache_filename": "orderbook_state.json",
     "backfill_minutes": 60,
     "max_events": 60
+  },
+  "htf_wick_ema_rb": {
+    "wick_min_pts": 3.0,
+    "shaved_band_pts": 4.0,
+    "ema_period": 8,
+    "proximity_pts": 5.0,
+    "target_20_pts": 20.0,
+    "target_40_pts": 40.0,
+    "adverse_stop_pts": 15.0,
+    "mfe_window_minutes": 60,
+    "max_active_levels": 16
   }
 }

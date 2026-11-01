@@ -96,6 +96,7 @@ export function scanSignals(o: {
   htfWicks?: HtfWick[];
   cvdSignals?: CvdAlertSignal[];
   ictLevels?: InstitutionalLevelsRes | null;
+  rbWickEmaAlerts?: any[];
 }): Ev[] {
   const { tf, candles, a, prefs, bias, conf, ocActs, smt, dols } = o;
   const closed = candles.filter((c) => c.closed !== false);
@@ -245,6 +246,13 @@ export function scanSignals(o: {
             `Price touched virgin ${w.tfName} (${w.tf}) ${w.side === "BUY" ? "lower" : "upper"} wick (50% eq ${w.mid.toFixed(1)}, size ${w.wickPts.toFixed(0)} pts) for the FIRST time. Institutional rejection level. Alerts once only.`);
         }
       }
+    }
+  }
+
+  // ⟂ Rejection Blocks (RB): 1H/4H Wicks & 1H 8-EMA First-Touch Proximity Alerts
+  if (K.wick && o.rbWickEmaAlerts && o.rbWickEmaAlerts.length) {
+    for (const al of o.rbWickEmaAlerts) {
+      add("wick", al.side === "BUY" ? "BUY" : "SELL", al.title, al.voice_text || al.body);
     }
   }
 
@@ -545,6 +553,17 @@ export function dispatch(evs: Ev[], fire: (a: AlertRow) => void, tf: string) {
       price: e.price,
     };
     fire(al);
+    if (e.body && e.body.startsWith("Alert: NIFTY") && typeof window !== "undefined" && "speechSynthesis" in window) {
+      setTimeout(() => {
+        try {
+          if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+          window.speechSynthesis.cancel();
+          const u = new SpeechSynthesisUtterance(e.body);
+          u.rate = 1.0;
+          window.speechSynthesis.speak(u);
+        } catch { /* ignore */ }
+      }, 60);
+    }
     api.postAlert({ ...al, key: e.key }).catch(() => {});
   }
 }

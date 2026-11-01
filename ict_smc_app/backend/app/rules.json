@@ -857,5 +857,17 @@
     "tolerance_days": 1,
     "max_gaps": 3,
     "max_pivots": 4
+  },
+  "htf_wick_ema_rb": {
+    "_note": "Institutional 1H/4H Wick & Shaved Extremes + 1H 8-EMA first-touch bounce/rejection rules",
+    "wick_min_pts": 3.0,
+    "shaved_band_pts": 4.0,
+    "ema_period": 8,
+    "proximity_pts": 5.0,
+    "target_20_pts": 20.0,
+    "target_40_pts": 40.0,
+    "adverse_stop_pts": 15.0,
+    "mfe_window_minutes": 60,
+    "max_active_levels": 16
   }
 }
