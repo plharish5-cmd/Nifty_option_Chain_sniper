@@ -366,6 +366,34 @@ def compute_master_levels_from_daily(
         for idx, deg in enumerate(degrees_list)
     ]
 
+    # ── PDH-anchored ladder (the one that was actually measured) ──────────────────────────────────
+    # The ladder above anchors on the previous CLOSE. scripts/backtest_gann.py scored all three
+    # anchors over 33 NIFTY sessions and 471 turning points, each against a random baseline of equal
+    # density, and they are not equivalent:
+    #
+    #   anchor   edge over random (±10 pts)   survives excluding best 3 sessions
+    #   PDC      +2.6 pp  (1.4 sd)            not tested at that strength
+    #   PDH      +5.5 pp  (2.6 sd)            yes, +3.3 pp
+    #   PDL      +1.9 pp  (1.0 sd)            no
+    #
+    # PDH also held in both chronological halves (+4.3 then +5.4). There is a plain mechanical
+    # reading for that: the previous day's HIGH is a level many traders mark by hand, so levels
+    # derived from it may inherit that attention. Which would make it real without the spiral
+    # having anything to do with it.
+    #
+    # It is published alongside the close-anchored set rather than replacing it: the existing
+    # overlay keeps working untouched, and the frontend draws this one behind its own toggle.
+    # BANKNIFTY passed the split but FAILED the concentration test, so this is CONTEXT, not a
+    # signal, and it is off by default.
+    gann_pdh_r = [
+        {"level": f"PDH_R{idx+1}({deg}°)", "degrees": deg, "price": gann_sq9(ref_H, deg)}
+        for idx, deg in enumerate(degrees_list)
+    ]
+    gann_pdh_s = [
+        {"level": f"PDH_S{idx+1}({deg}°)", "degrees": -deg, "price": gann_sq9(ref_H, -deg)}
+        for idx, deg in enumerate(degrees_list)
+    ]
+
     # --- UPGRADED MULTI-HORIZON GANN TIME CYCLES ---
     curr_dt = datetime.strptime(today_bar["date"], "%Y-%m-%d").date()
 
@@ -509,8 +537,12 @@ def compute_master_levels_from_daily(
         "supports": s_lvls,          # S1, S2, S3, S4 (Green)
         "upper_gaps": upper_gaps,    # Upper_Gap_1..3 (Amber/Purple)
         "lower_gaps": lower_gaps,    # Lower_Gap_1..3 (Amber/Purple)
-        "gann_resistances": gann_r,  # Gann_R1..R4 (45°, 90°, 135°, 180°)
+        "gann_resistances": gann_r,  # Gann_R1..R4 (45°, 90°, 135°, 180°) — anchored on prev CLOSE
         "gann_supports": gann_s,     # Gann_S1..S4 (-45°, -90°, -135°, -180°)
+        # PDH-anchored ladder, plus the anchor itself so the UI can state what it was built from.
+        "gann_pdh_resistances": gann_pdh_r,
+        "gann_pdh_supports": gann_pdh_s,
+        "gann_pdh_anchor": round(float(ref_H), 2) if ref_H else None,
         "time_cycles": {
             "major_high_date": primary_high_bar["date"],
             "major_high_price": round(primary_high_bar["high"], 2),

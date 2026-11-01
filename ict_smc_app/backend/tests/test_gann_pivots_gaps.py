@@ -420,3 +420,47 @@ def test_fastapi_recalculate_post_endpoint():
     assert len(audit["latest_settled_date"]) >= 10
     assert "last_full_recalc_ist" in audit
 
+
+
+# ── PDH-anchored ladder (1 Nov) ───────────────────────────────────────────────────────────────────
+
+def test_pdh_ladder_uses_the_high_not_the_close():
+    """The measured anchor is the previous HIGH; the pre-existing ladder uses the close.
+
+    backtest_gann.py scored all three anchors over 33 NIFTY sessions against a random baseline of
+    equal density: PDH +5.5pp (2.6 sd), close +2.6pp (1.4 sd), low +1.9pp. Only PDH survived both
+    the chronological split and the exclusion of its best three sessions, so the ladder that is
+    drawn must be built from the high. A silent switch back to the close would void the evidence.
+    """
+    from app.engine import gann_pivots_gaps as g
+    high, close = 23118.0, 23110.1
+    assert high != close
+    for deg in (45, 90, 135, 180):
+        assert g.gann_sq9(high, deg) != g.gann_sq9(close, deg)
+        assert g.gann_sq9(high, -deg) != g.gann_sq9(close, -deg)
+
+
+def test_gann_sq9_matches_the_published_worked_example():
+    """Pivot 144 (root 12 exactly) — the example printed in the source material."""
+    from app.engine import gann_pivots_gaps as g
+    assert g.gann_sq9(144, 90) == 156.25
+    assert g.gann_sq9(144, 180) == 169.0
+    assert g.gann_sq9(144, 270) == 182.25
+    assert g.gann_sq9(144, 360) == 196.0
+    assert g.gann_sq9(144, -180) == 121.0
+    assert g.gann_sq9(144, -90) == 132.25
+
+
+def test_sq9_is_symmetric_in_root_space():
+    """+180 adds exactly 1 to the root and -180 subtracts 1 — the property the whole tool rests on.
+
+    gann_sq9 rounds its result to 2 decimals, so the root carries ~0.005/(2*sqrt(P)) of rounding
+    error: about 1e-5 at BANKNIFTY prices. 1e-4 is comfortably inside that and still far tighter
+    than any error that would matter on a chart.
+    """
+    import math
+    from app.engine import gann_pivots_gaps as g
+    for p in (144.0, 23110.1, 51000.0):
+        assert abs(math.sqrt(g.gann_sq9(p, 180)) - (math.sqrt(p) + 1)) < 1e-4
+        assert abs(math.sqrt(g.gann_sq9(p, -180)) - (math.sqrt(p) - 1)) < 1e-4
+        assert abs(math.sqrt(g.gann_sq9(p, 90)) - (math.sqrt(p) + 0.5)) < 1e-4

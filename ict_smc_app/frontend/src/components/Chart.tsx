@@ -110,8 +110,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     post_1540_settled: boolean;
     last_full_recalc_ist: string;
   }
+  interface GannLevel { level: string; degrees: number; price: number | null }
   interface ExtendedGannPivotsGapsRes extends GannPivotsGapsRes {
     recalc_audit?: RecalcAudit;
+    gann_pdh_resistances?: GannLevel[];
+    gann_pdh_supports?: GannLevel[];
+    gann_pdh_anchor?: number | null;
   }
   const [gannData, setGannData] = useState<ExtendedGannPivotsGapsRes | null>(null);
   const [recalcLoading, setRecalcLoading] = useState<boolean>(false);
@@ -154,7 +158,27 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       return false;
     }
   });
+  // PDH-anchored Gann ladder. Separate from the close-anchored one above because the two were
+  // measured separately and did not perform the same (scripts/backtest_gann.py, 33 NIFTY sessions):
+  // PDH +5.5pp over a random baseline at 2.6 sd and still +3.3pp with the best three sessions
+  // removed; PDC +2.6pp at 1.4 sd. Off by default, like every unproven layer on this desk.
+  const [showRbGannPdh, setShowRbGannPdh] = useState<boolean>(() => {
+    try {
+      const s = localStorage.getItem("rb_gann_pdh_active");
+      return s !== null ? s === "1" : false;
+    } catch {
+      return false;
+    }
+  });
+  const toggleRbGannPdh = () => {
+    setShowRbGannPdh((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("rb_gann_pdh_active", next ? "1" : "0"); } catch { /* private mode */ }
+      return next;
+    });
+  };
   const [showRbGuidance, setShowRbGuidance] = useState<boolean>(false);
+  const [showPdhGuidance, setShowPdhGuidance] = useState<boolean>(false);
   const rbPriceLinesRef = useRef<IPriceLine[]>([]);
 
   useEffect(() => {
@@ -589,6 +613,45 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       rbPriceLinesRef.current = [];
     };
   }, [showRbPivotsGaps, showRbGann, showRbWickEma, gannData, htfWickEmaData, series.current]);
+
+  // ── PDH-anchored Gann ladder ────────────────────────────────────────────────────────────────
+  // Drawn in its own effect so it never disturbs the close-anchored overlay above.
+  //
+  // Only the levels price could plausibly reach today are drawn. The ladder spans roughly ±300
+  // points, and the backtest found just 2.8 of its 8 levels fall inside a typical session's range;
+  // drawing all eight puts five lines where price never goes and turns the chart into the "a level
+  // every few points" trap the method's own literature warns about. The window is 1.5x the recent
+  // session range around spot, which is generous without being everything.
+  const pdhLinesRef = useRef<IPriceLine[]>([]);
+  useEffect(() => {
+    pdhLinesRef.current.forEach((l) => { try { series.current?.removePriceLine(l); } catch { /* gone */ } });
+    pdhLinesRef.current = [];
+    if (!showRbGannPdh || !series.current || !gannData?.ok) return;
+
+    const ref = spot ?? candles[candles.length - 1]?.close;
+    if (!ref) return;
+    const recent = candles.slice(-125);
+    const dayRange = recent.length
+      ? Math.max(...recent.map((c) => c.high)) - Math.min(...recent.map((c) => c.low))
+      : 300;
+    const reach = Math.max(120, dayRange * 1.5);
+
+    const draw = (lv: { level: string; degrees: number; price: number | null }, up: boolean) => {
+      if (!lv.price || lv.price <= 0) return;
+      if (Math.abs(lv.price - ref) > reach) return;      // out of plausible reach today
+      const line = series.current!.createPriceLine({
+        price: lv.price,
+        color: up ? "#e879f9" : "#a78bfa",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `PDH ${up ? "R" : "S"} ${lv.degrees > 0 ? "+" : ""}${lv.degrees}° · context`,
+      });
+      pdhLinesRef.current.push(line);
+    };
+    (gannData.gann_pdh_resistances || []).forEach((l) => draw(l, true));
+    (gannData.gann_pdh_supports || []).forEach((l) => draw(l, false));
+  }, [showRbGannPdh, gannData, spot, candles, series.current]);
   const isDeltaDetailOn = !!layers.deltaDetail;
   const isDeltaOn = !!(layers.delta || isDeltaDetailOn);
   const isBubblesOn = !!(layers.bubbles || isDeltaDetailOn);
@@ -3231,6 +3294,41 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         </button>
 
         <button
+          onClick={toggleRbGannPdh}
+          onMouseEnter={() => setShowPdhGuidance(true)}
+          onMouseLeave={() => setShowPdhGuidance(false)}
+          className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur cursor-help ${
+            showRbGannPdh
+              ? "bg-fuchsia-500/20 border-fuchsia-500/80 text-fuchsia-300 ring-1 ring-fuchsia-500/40"
+              : "border-slate-700/60 text-slate-400 hover:text-slate-200"
+          }`}
+          title={
+            "GANN Sq9 ANCHORED ON YESTERDAY'S HIGH — context, not a signal.\n\n"
+            + "WHAT IT IS\n"
+            + "Levels from (√PDH + angle/180)², at ±45°, ±90°, ±135°, ±180°. Only the ones price "
+            + "could plausibly reach today are drawn; the rest of the ladder is off-screen by design.\n\n"
+            + "HOW TO USE IT\n"
+            + "As a place to WATCH, never a place to enter. Price arriving at a level is not a "
+            + "trade. Wait for the 15m to give you a doji, hammer or engulfing candle AT the level "
+            + "first — the same confirmation your zones already require. Then the level is your "
+            + "invalidation reference, not your entry reason.\n\n"
+            + "It earns its place when it COINCIDES with a zone you already marked from price. "
+            + "It should never create a zone on its own.\n\n"
+            + "WHY PDH AND NOT THE CLOSE\n"
+            + "Measured over 33 NIFTY sessions and 471 turning points against a random baseline of "
+            + "equal density: PDH +5.5pp (2.6 sd), close +2.6pp (1.4 sd), low +1.9pp. PDH held in "
+            + "both halves of the period and kept +3.3pp with its best three sessions removed.\n\n"
+            + "WHAT IT IS NOT\n"
+            + "It gives no direction — a level says look, price says act. BANKNIFTY passed the "
+            + "split but FAILED the concentration test, so this is not confirmed across markets. "
+            + "33 sessions is two months of one regime. Do not size against it."
+          }
+        >
+          <span>{showRbGannPdh ? "☑" : "☐"} 📐 Gann PDH</span>
+          <span className="text-[8px] font-bold opacity-70">CONTEXT</span>
+        </button>
+
+        <button
           onClick={toggleRbWickEma}
           onMouseEnter={() => setShowRbGuidance(true)}
           onMouseLeave={() => setShowRbGuidance(false)}
@@ -3478,6 +3576,57 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       </div>
 
       {/* Mouse-Over Trader Guidance for Rejection Blocks (RB) Pivots, Gaps & Gann Sq9 */}
+      {/* Hover card for the PDH ladder: how to use it, and what it is not. */}
+      {showPdhGuidance && (
+        <div
+          onMouseEnter={() => setShowPdhGuidance(true)}
+          onMouseLeave={() => setShowPdhGuidance(false)}
+          className="pointer-events-auto absolute right-2 top-[52px] z-[70] w-[420px] max-w-[92%] rounded-xl border border-fuchsia-500/50 bg-[#0a0e1c]/97 p-3.5 text-[11.5px] leading-relaxed text-slate-200 shadow-2xl backdrop-blur-md"
+        >
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="font-black text-fuchsia-300 text-[12px]">📐 Gann Sq9 · anchored on yesterday's high</span>
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-300">CONTEXT · NOT A SIGNAL</span>
+          </div>
+          {gannData?.gann_pdh_anchor ? (
+            <div className="font-mono text-[11px] text-slate-400 mb-2">
+              anchor PDH <span className="text-white font-bold">{gannData.gann_pdh_anchor.toLocaleString("en-IN")}</span>
+              {"  ·  "}levels = (√PDH + angle/180)²
+            </div>
+          ) : null}
+
+          <div className="mb-2">
+            <div className="text-fuchsia-300/90 font-bold text-[10px] uppercase tracking-wide mb-0.5">Is it support / resistance?</div>
+            It behaves like one <em>only after price reacts there</em>. Treat a level as a place to
+            <strong className="text-white"> watch</strong>, never a place to enter. Price touching it is not a trade.
+          </div>
+
+          <div className="mb-2">
+            <div className="text-fuchsia-300/90 font-bold text-[10px] uppercase tracking-wide mb-0.5">How to use it</div>
+            Wait for the 15m to print a <strong className="text-white">doji, hammer or engulfing candle at the level</strong> —
+            the same confirmation your zones already need. Then the level is your invalidation
+            reference, not your reason for entering. It earns its keep when it <strong className="text-white">lands inside a
+            zone you already marked from price</strong>; it should never create a zone by itself.
+          </div>
+
+          <div className="mb-2">
+            <div className="text-fuchsia-300/90 font-bold text-[10px] uppercase tracking-wide mb-0.5">Why the high, not the close</div>
+            <div className="font-mono text-[10.5px] text-slate-300">
+              PDH <span className="text-emerald-300">+5.5pp</span> (2.6 sd) · close <span className="text-slate-400">+2.6pp</span> (1.4 sd) · low <span className="text-slate-400">+1.9pp</span>
+            </div>
+            <div className="text-slate-400 text-[10.5px] mt-0.5">
+              33 NIFTY sessions, 471 turning points, against a random baseline of equal density.
+              PDH held in both halves and kept +3.3pp with its best three sessions removed.
+            </div>
+          </div>
+
+          <div className="rounded border border-slate-700/70 bg-slate-900/50 px-2 py-1.5 text-[10.5px] text-slate-300">
+            <strong className="text-amber-300">Not confirmed.</strong> No direction — a level says look, price says act.
+            BANKNIFTY passed the split but <strong className="text-white">failed the concentration test</strong>. Two months,
+            one regime, one market. Only 2–3 of the 8 levels are drawn: the rest sit where price does not go.
+          </div>
+        </div>
+      )}
+
       {showRbGuidance && gannData && (
         <div
           onMouseEnter={() => setShowRbGuidance(true)}
