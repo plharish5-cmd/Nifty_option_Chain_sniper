@@ -201,3 +201,222 @@ def test_fastapi_gann_pivots_gaps_endpoint():
     assert len(data["gann_supports"]) == 4
     assert data["gann_resistances"][0]["degrees"] == 45
     assert data["gann_resistances"][1]["degrees"] == 90
+
+    # Verify time_cycles alert_text is never "None"
+    tc = data["time_cycles"]
+    assert tc["alert_text"] != "None"
+    assert len(tc["alert_text"]) > 0
+    assert "horizons" in tc
+    assert "intermediate_90d" in tc["horizons"]
+    assert "major_1yr" in tc["horizons"]
+    assert "global_5yr" in tc["horizons"]
+
+
+def test_gann_time_cycles_countdown_never_none():
+    """
+    Verifies that when today is between cycles (e.g. 35 days from high, 142 days from low),
+    alert_text NEVER shows 'None' and formats the live position and next-cycle countdown:
+    Top+35D (Next: 45D in 10d) · Btm+142D (🔥 144D Cycle in 2d!)
+    """
+    today_dt = date(2026, 10, 30)
+    high_dt = today_dt - timedelta(days=35)   # 35 days ago (between 30D and 45D)
+    low_dt = today_dt - timedelta(days=142)   # 142 days ago (2 days before 144D cycle!)
+
+    bars = [
+        {"date": low_dt.isoformat(), "open": 21000.0, "high": 21100.0, "low": 20800.0, "close": 20900.0},  # Low
+        {"date": high_dt.isoformat(), "open": 24000.0, "high": 24500.0, "low": 23900.0, "close": 24400.0},  # High
+        {"date": (today_dt - timedelta(days=1)).isoformat(), "open": 22900.0, "high": 22950.0, "low": 22800.0, "close": 22920.0},
+        {"date": today_dt.isoformat(), "open": 22950.0, "high": 23120.0, "low": 22900.0, "close": 23050.0},
+    ]
+
+    res = compute_master_levels_from_daily(bars, target_date_str=today_dt.isoformat())
+    assert res["ok"] is True
+    tc = res["time_cycles"]
+    assert tc["alert_text"] != "None"
+    assert "Top+35D" in tc["alert_text"]
+    assert "Next: 45D" in tc["alert_text"]
+    # 142 is 2 days before 144 -> approaching active cycle!
+    assert "144D Cycle" in tc["alert_text"]
+
+
+def test_sync_and_append_master_csv_and_excel():
+    """
+    Verifies sync_and_append_daily_master_csv creates the master CSV and Excel view.
+    """
+    from app.engine.gann_pivots_gaps import (
+        sync_and_append_daily_master_csv,
+        CANONICAL_MASTER_CSV,
+        EXCEL_MASTER_VIEW,
+    )
+    res = sync_and_append_daily_master_csv()
+    assert res["ok"] is True
+    assert res["total_bars"] >= 1900
+    assert CANONICAL_MASTER_CSV.exists()
+    assert EXCEL_MASTER_VIEW.exists()
+
+
+def test_full_history_gap_fill_and_walkback_upon_appending_new_day():
+    """
+    Test 1 (Full-History Gap Fill & Walkback Upon Appending New Day):
+    When a new daily OHLC bar is appended at 15:40 IST whose High/Low fills an old gap from 200 days ago
+    and sets a new R1 / S1, the engine re-scans the entire dataset from index 0, removes the 200-day-old
+    filled gap, walks backward across all historical bars to recompute R1-R4 and S1-S4, and updates
+    Gann Sq9 and Time Cycles.
+    """
+    base_date = date(2025, 1, 10)
+    bars: List[Dict[str, Any]] = []
+
+    # Historical anchor bars with macro swing highs and lower lows
+    bars.append({"date": "2025-01-01", "open": 24000.0, "high": 24800.0, "low": 19600.0, "close": 24000.0})
+    bars.append({"date": "2025-01-02", "open": 24000.0, "high": 24700.0, "low": 19700.0, "close": 24000.0})
+    bars.append({"date": "2025-01-03", "open": 24000.0, "high": 24600.0, "low": 19800.0, "close": 24000.0})
+
+    # Bar 3: Day 0 base
+    bars.append({
+        "date": base_date.isoformat(),
+        "open": 20000.0,
+        "high": 20100.0,
+        "low": 19900.0,
+        "close": 20050.0,
+    })
+
+    # Bar 4: Day 1 creates a Gap Up at 20050.0 (+50 pts)
+    bars.append({
+        "date": (base_date + timedelta(days=1)).isoformat(),
+        "open": 20100.0,
+        "high": 20250.0,
+        "low": 20080.0,
+        "close": 20200.0,
+    })
+
+    # Bars 5..223: Prices trade between 21000 and 23000 (gap at 20050 remains unfilled for >200 days)
+    for day_i in range(2, 221):
+        cur_d = base_date + timedelta(days=day_i)
+        bars.append({
+            "date": cur_d.isoformat(),
+            "open": 21500.0 + (day_i * 2),
+            "high": 21600.0 + (day_i * 2),
+            "low": 21400.0 + (day_i * 2),
+            "close": 21550.0 + (day_i * 2),
+        })
+
+    # Verify that before day 221 is appended, the 200-day-old gap at 20050 is UNFILLED in lower_gaps
+    res_before = compute_master_levels_from_daily(bars, mode="next_day")
+    assert res_before["ok"] is True
+    assert any(g["price"] == 20050.0 for g in res_before["lower_gaps"])
+
+    # Bar 221 (appended today at 15:40 IST):
+    # Its Low drops to 20020.0 (<= 20050.0, FILLING the 200-day-old gap!)
+    # Its High sets a new peak at 24500.0 (setting a new R1!)
+    # Its Low sets a new trough at 20020.0 (setting a new S1!)
+    day_221_date = (base_date + timedelta(days=221)).isoformat()
+    new_bar = {
+        "date": day_221_date,
+        "open": 22000.0,
+        "high": 24500.0,
+        "low": 20020.0,
+        "close": 24025.0,
+    }
+    bars.append(new_bar)
+
+    # Full recalculation across the entire dataset (0 .. N-1) with mode="next_day" (post-15:40 settled)
+    res_after = compute_master_levels_from_daily(bars, target_date_str=day_221_date, mode="next_day")
+    assert res_after["ok"] is True
+    assert res_after["ref_date"] == day_221_date
+    assert res_after["ref_close"] == 24025.0
+
+    # 1. Old gap from 200 days ago was filled and removed by the full re-scan
+    assert not any(g["price"] == 20050.0 for g in res_after["lower_gaps"])
+
+    # 2. R1 is Day 221's High (24500.0), S1 is Day 221's Low (20020.0)
+    assert res_after["resistances"][0]["level"] == "R1"
+    assert res_after["resistances"][0]["price"] == 24500.0
+    assert res_after["supports"][0]["level"] == "S1"
+    assert res_after["supports"][0]["price"] == 20020.0
+
+    # 3. Monotonic walkback recomputed across all preceding bars
+    assert len(res_after["supports"]) == 4
+    for k in range(1, len(res_after["supports"])):
+        assert res_after["supports"][k]["price"] < res_after["supports"][k - 1]["price"]
+
+    # 4. Gann Sq9 recalculated from latest settled Close (24025.0)
+    expected_sq9_r1 = round((math.sqrt(24025.0) + 45.0 / 180.0) ** 2, 2)
+    assert res_after["gann_resistances"][0]["price"] == expected_sq9_r1
+
+    # 5. Recalc audit confirms all historical rows were scanned
+    audit = res_after["recalc_audit"]
+    assert audit["total_historical_days_scanned"] == len(bars)
+    assert audit["first_historical_date"] == "2025-01-01"
+    assert audit["latest_settled_date"] == day_221_date
+    assert audit["post_1540_settled"] is True
+
+
+def test_1540_ist_cutoff_behavior():
+    """
+    Test 2 (15:40 IST Cutoff Behavior):
+    Before 15:40 IST on trading day T, ref_date is T-1 (intraday levels active);
+    at/after 15:40 IST on trading day T, ref_date advances to T and recalculates all levels
+    across the full dataset including day T.
+    """
+    bars = [
+        {"date": "2026-10-21", "open": 22400.0, "high": 23500.0, "low": 22100.0, "close": 22500.0},
+        {"date": "2026-10-22", "open": 22500.0, "high": 23300.0, "low": 22250.0, "close": 22600.0},
+        {"date": "2026-10-23", "open": 22600.0, "high": 23150.0, "low": 22400.0, "close": 22700.0},
+        {"date": "2026-10-24", "open": 22700.0, "high": 23000.0, "low": 22500.0, "close": 22800.0},
+        {"date": "2026-10-25", "open": 22900.0, "high": 22950.0, "low": 22600.0, "close": 22920.0},  # Day T-1
+        {"date": "2026-10-26", "open": 22930.0, "high": 23200.0, "low": 22550.0, "close": 23100.0},  # Day T
+    ]
+
+    # A) Before 15:40 IST (e.g. 14:30 IST): ref_date is T-1 (2026-10-25)
+    dt_before_1540 = datetime(2026, 10, 26, 14, 30)
+    res_before = compute_master_levels_from_daily(
+        bars,
+        target_date_str="2026-10-26",
+        current_ist=dt_before_1540,
+    )
+    assert res_before["ok"] is True
+    assert res_before["ref_date"] == "2026-10-25"
+    assert res_before["ref_close"] == 22920.0
+    assert res_before["recalc_audit"]["post_1540_settled"] is False
+    assert res_before["recalc_audit"]["total_historical_days_scanned"] == 6
+
+    # B) At/After 15:40 IST (e.g. 15:40 IST): ref_date advances to T (2026-10-26)
+    dt_after_1540 = datetime(2026, 10, 26, 15, 40)
+    res_after = compute_master_levels_from_daily(
+        bars,
+        target_date_str="2026-10-26",
+        current_ist=dt_after_1540,
+    )
+    assert res_after["ok"] is True
+    assert res_after["ref_date"] == "2026-10-26"
+    assert res_after["ref_close"] == 23100.0
+    assert res_after["recalc_audit"]["post_1540_settled"] is True
+    assert res_after["recalc_audit"]["total_historical_days_scanned"] == 6
+
+    # C) Mode query param override test: mode='intraday' vs mode='next_day'
+    res_intraday = compute_master_levels_from_daily(bars, target_date_str="2026-10-26", mode="intraday")
+    assert res_intraday["ref_date"] == "2026-10-25"
+    assert res_intraday["recalc_audit"]["post_1540_settled"] is False
+
+    res_next_day = compute_master_levels_from_daily(bars, target_date_str="2026-10-26", mode="next_day")
+    assert res_next_day["ref_date"] == "2026-10-26"
+    assert res_next_day["recalc_audit"]["post_1540_settled"] is True
+
+
+def test_fastapi_recalculate_post_endpoint():
+    """
+    Verifies POST /api/desk/gann-pivots-gaps/recalculate endpoint triggers full recalculation
+    and returns 200 with recalc_audit metadata.
+    """
+    client = TestClient(app)
+    resp = client.post("/api/desk/gann-pivots-gaps/recalculate?sec_id=13")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+    assert "recalc_audit" in data
+    audit = data["recalc_audit"]
+    assert audit["total_historical_days_scanned"] >= 1900
+    assert len(audit["first_historical_date"]) >= 10
+    assert len(audit["latest_settled_date"]) >= 10
+    assert "last_full_recalc_ist" in audit
+

@@ -30,6 +30,7 @@ The built React app (frontend/dist) is served at /.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -56,8 +57,13 @@ async def lifespan(app: FastAPI):
     config.load_env(force=True)
     hub = Hub()
     await hub.start()
-    yield
-    await hub.stop()
+    from ..engine import gann_pivots_gaps
+    gann_eod_task = asyncio.create_task(gann_pivots_gaps.run_eod_recalc_scheduler())
+    try:
+        yield
+    finally:
+        gann_eod_task.cancel()
+        await hub.stop()
 
 
 app = FastAPI(title="NIFTY ICT/SMC", lifespan=lifespan)
@@ -220,9 +226,13 @@ def oi_studio_endpoint(
     strike_range: str = Query("10"),
     min_strike: Optional[float] = Query(None),
     max_strike: Optional[float] = Query(None),
+    include_positioning: bool = Query(False),
+    bucket_minutes: Optional[int] = Query(None),
 ):
     """StockMojo 1:1 Open Interest & Writer Map Studio telemetry."""
     from ..engine import oi_studio
+    if include_positioning and bucket_minutes is not None and bucket_minutes not in oi_studio.get_cfg()["positioning"]["bucket_options"]:
+        raise HTTPException(status_code=422, detail="Unsupported positioning bucket")
     return oi_studio.get_oi_studio_data(
         expiry_mode=expiry_mode,
         start_ts=start_ts,
@@ -230,6 +240,8 @@ def oi_studio_endpoint(
         strike_range=strike_range,
         min_strike=min_strike,
         max_strike=max_strike,
+        include_positioning=include_positioning,
+        bucket_minutes=bucket_minutes,
     )
 
 
@@ -368,6 +380,7 @@ def gann_pivots_gaps_endpoint(
     sec_id: str = Query("13", description="Security ID: 13 for NIFTY"),
     spot: Optional[float] = Query(None, description="Optional override current spot price"),
     target_date: Optional[str] = Query(None, description="Optional target date YYYY-MM-DD"),
+    mode: str = Query("auto", description="intraday | next_day | auto (default auto switches at 15:40 IST)"),
 ):
     """Historical Monotonic R1-R4 / S1-S4, Unfilled Gaps, and Gann Sq9 + Time Cycles."""
     from ..engine import gann_pivots_gaps
@@ -383,7 +396,18 @@ def gann_pivots_gaps_endpoint(
         sec_id=sec_id,
         current_spot=current_spot,
         target_date_str=target_date,
+        mode=mode,
     )
+
+
+@app.post("/api/desk/gann-pivots-gaps/recalculate")
+async def gann_pivots_gaps_recalculate(
+    sec_id: str = Query("13", description="Security ID: 13 for NIFTY"),
+):
+    """Triggers a full 5-year CSV sync, settles today's EOD OHLC bar, re-scans the full history from index 0,
+    and regenerates NIFTY50_All_In_One_Master_View.xlsx."""
+    from ..engine import gann_pivots_gaps
+    return await asyncio.to_thread(gann_pivots_gaps.force_recalculate, sec_id=sec_id)
 
 
 @app.get("/api/desk/divergence")

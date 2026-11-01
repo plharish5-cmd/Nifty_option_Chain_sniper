@@ -103,7 +103,41 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   const ictLinesRef = useRef<IPriceLine[]>([]);
 
   // Rejection Blocks (RB): Monotonic R1-R4 / S1-S4 Swing Levels, Unfilled Gaps & Gann Sq9 + Time Cycles
-  const [gannData, setGannData] = useState<GannPivotsGapsRes | null>(null);
+  interface RecalcAudit {
+    total_historical_days_scanned: number;
+    first_historical_date: string;
+    latest_settled_date: string;
+    post_1540_settled: boolean;
+    last_full_recalc_ist: string;
+  }
+  interface ExtendedGannPivotsGapsRes extends GannPivotsGapsRes {
+    recalc_audit?: RecalcAudit;
+  }
+  const [gannData, setGannData] = useState<ExtendedGannPivotsGapsRes | null>(null);
+  const [recalcLoading, setRecalcLoading] = useState<boolean>(false);
+
+  const handleForceRecalc = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      setRecalcLoading(true);
+      const res = await fetch("/api/desk/gann-pivots-gaps/recalculate", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.levels) {
+          setGannData(data.levels);
+        } else {
+          const fresh = await fetch("/api/desk/gann-pivots-gaps");
+          if (fresh.ok) {
+            setGannData(await fresh.json());
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to recalculate gann pivots gaps:", err);
+    } finally {
+      setRecalcLoading(false);
+    }
+  };
   const [showRbPivotsGaps, setShowRbPivotsGaps] = useState<boolean>(() => {
     try {
       const s = localStorage.getItem("rb_pivots_gaps_active");
@@ -3443,6 +3477,29 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
               </div>
             </div>
           </div>
+
+          {/* Full-History Recalc Audit Footer */}
+          {gannData.recalc_audit && (
+            <div className="mt-2.5 pt-2 border-t border-gold-500/30 flex items-center justify-between text-[10px] text-slate-400">
+              <span className="flex items-center gap-1.5 truncate">
+                <span className="text-emerald-400">✅</span>
+                <span>
+                  Full History Scanned: <b className="text-slate-200">{gannData.recalc_audit.total_historical_days_scanned}</b> days (
+                  <span className="font-mono text-slate-300">{gannData.recalc_audit.first_historical_date}</span> →{" "}
+                  <span className="font-mono text-slate-300">{gannData.recalc_audit.latest_settled_date}</span>) · Auto-updates daily at 15:40 IST
+                </span>
+              </span>
+              <button
+                onClick={handleForceRecalc}
+                disabled={recalcLoading}
+                className="ml-2 shrink-0 rounded px-1.5 py-0.5 text-[9.5px] font-bold bg-slate-800 hover:bg-slate-700 border border-slate-600/60 text-slate-200 hover:text-white transition-colors flex items-center gap-1 disabled:opacity-50"
+                title="Trigger full 5-year dataset recalculation & sync now"
+              >
+                <span>{recalcLoading ? "⏳" : "🔄"}</span>
+                <span>Recalc</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 
