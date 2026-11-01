@@ -1,28 +1,44 @@
 """
 tests/test_htf_wick_ema_rb.py — Unit and integration tests for
-Institutional 1H / 4H Wick & Shaved Extremes + 1H 8-EMA First-Touch Engine.
+Institutional 1H / 4H Wick & Shaved Extremes + 1H 8-EMA First-Touch Engine
+Scored Against Null Baselines (PHASE 1B).
 """
 from __future__ import annotations
 
+import sqlite3
+from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
 
 from app.api.main import app
 from app.engine.htf_wick_ema_rb import (
+    HtfLevel,
     compute_1h_8ema,
-    evaluate_1h_8ema_first_touches,
-    evaluate_level_touches_and_backtest,
     extract_htf_levels,
     generate_live_alerts_and_voice,
     get_htf_wick_ema_rb,
     get_thresholds,
-    HtfLevel,
+    run_null_scored_backtest,
 )
 
 
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def seed_candles_if_empty():
+    from app import db
+    candles = db.candles_1m("13", since=0)
+    if not candles:
+        prod_db = Path(__file__).resolve().parent.parent / "data" / "ict_smc.sqlite3"
+        if prod_db.exists():
+            conn = sqlite3.connect(str(prod_db))
+            rows = conn.execute("SELECT ts,o,h,l,c FROM candles_1m WHERE sec_id='13' ORDER BY ts").fetchall()
+            if rows:
+                seed = [{"ts": int(r[0]), "o": float(r[1]), "h": float(r[2]), "l": float(r[3]), "c": float(r[4]), "v": 100.0} for r in rows]
+                db.upsert_candles("13", seed)
 
 
 def test_shaved_high_and_shaved_low_detection():
@@ -113,53 +129,66 @@ def test_1h_8ema_calculation_and_slope():
     assert slope_down == "FALLING"
 
 
-def test_first_touch_bounce_and_mfe_evaluation():
-    """Verify first-touch reaction: marks touch_count=1, measures MFE, and records >=20 and >=40 pt targets."""
+def test_null_baseline_backtest_scoring_and_voice_gating():
+    """Verify that null-scored backtest runs, matches on time of day, computes z-scores, and gates voice alerts."""
+    from app import db
     thresh = get_thresholds()
+    raw_1m = db.candles_1m("13", since=0)
+    assert len(raw_1m) > 1000
 
-    # Create a 1H support level at 22,500
-    lvl = HtfLevel(
-        id="1H-1000-lower",
-        tf="1H",
-        kind="1H_LOWER_WICK",
-        side="SUPPORT",
-        top=22510.0,
-        bottom=22490.0,
-        ref_price=22490.0,
-        wick_pts=20.0,
-        is_shaved=False,
-        created_ts=1000,
-        created_ist="2026-10-30 09:15",
-        label="1H Wick Supp [22490.0 - 22510.0]",
-    )
+    null_summary = run_null_scored_backtest(raw_1m, thresh)
+    assert null_summary["ok"] is True
 
-    # Intraday bars after candle close (1000 + 3600 = 4600)
-    intraday = [
-        {"ts": 4600, "o": 22550, "h": 22560, "l": 22540, "c": 22545},  # above
-        {"ts": 4900, "o": 22545, "h": 22545, "l": 22505, "c": 22508},  # FIRST TOUCH into [22490-22510]
-        {"ts": 5200, "o": 22520, "h": 22535, "l": 22520, "c": 22530},  # bounce +25 pts (low > top + prox)
-        {"ts": 5500, "o": 22530, "h": 22555, "l": 22525, "c": 22550},  # bounce +45 pts (low > top + prox)
-    ]
+    meta = null_summary["metadata"]
+    assert meta["categories_tested"] == 10
+    assert meta["cells_tested"] == 20
+    assert "Multiple-comparison discount applies" in meta["statement"]
 
-    stats = evaluate_level_touches_and_backtest([lvl], intraday, thresh, candle_duration_s=3600)
+    cats = null_summary["categories"]
+    assert len(cats) == 10
+    assert "1H_UPPER_WICK" in cats
+    assert "1H_8EMA_SUPPORT" in cats
 
-    assert stats["first_touches"] == 1
-    assert stats["target_20_wins"] == 1
-    assert stats["target_40_wins"] == 1
-    assert lvl.touch_count == 1
-    assert lvl.is_virgin is False
-    assert lvl.hit_20 is True
-    assert lvl.hit_40 is True
-    assert lvl.mfe_bounce_pts >= 40.0
-    assert lvl.direction_of_approach == "FROM_ABOVE_SUPPORT"
+    # Check that each evaluated category carries edge_z, dir_z, drop5, oos split
+    cat_1h_w = cats["1H_UPPER_WICK"]
+    assert cat_1h_w["sample_n"] > 50
+    assert "s15_t20" in cat_1h_w
+    assert "edge_z" in cat_1h_w["s15_t20"]
+    assert "dir_z" in cat_1h_w["s15_t20"]
+    assert "drop5" in cat_1h_w["s15_t20"]
+    assert "oos_h1_exp" in cat_1h_w["s15_t20"]
+
+    # All unproven categories must have voice_armed == False
+    for cat_name, cat in cats.items():
+        if cat.get("voice_armed") is False:
+            assert cat["edge_status"] == "UNPROVEN_EDGE (SILENT CONTEXT ONLY)"
 
 
-def test_exact_voice_alert_texts():
-    """Verify that generated voice alerts match the exact spoken English required strings."""
+def test_zero_lookahead_forward_walk():
+    """Verify that forward walk starts strictly AFTER the signal candle closes (time to target >= 1 min)."""
+    from app import db
     thresh = get_thresholds()
+    raw_1m = db.candles_1m("13", since=0)
+    null_summary = run_null_scored_backtest(raw_1m, thresh)
 
-    # 1. Upper Wick (approaching from below)
-    lvl_upper_wick = HtfLevel(
+    tables = null_summary.get("per_event_tables", {})
+    assert len(tables) > 0
+
+    for cat_name, rows in tables.items():
+        for r in rows:
+            # If target was hit, time to target must be >= 1 minute
+            if r.get("time_to_target_20") is not None:
+                assert r["time_to_target_20"] >= 1, f"Lookahead in {cat_name}: {r}"
+            if r.get("time_to_target_40") is not None:
+                assert r["time_to_target_40"] >= 1, f"Lookahead in {cat_name}: {r}"
+            if r.get("time_to_stop_15") is not None:
+                assert r["time_to_stop_15"] >= 1, f"Lookahead in {cat_name}: {r}"
+
+
+def test_live_alert_gating():
+    """Verify that unproven levels produce silent alerts without voice text."""
+    thresh = get_thresholds()
+    lvl_silent = HtfLevel(
         id="1H-1-upper",
         tf="1H",
         kind="1H_UPPER_WICK",
@@ -174,116 +203,31 @@ def test_exact_voice_alert_texts():
         touch_count=0,
     )
 
-    # 2. Shaved High (approaching from below)
-    lvl_shaved_high = HtfLevel(
-        id="1H-2-upper",
-        tf="1H",
-        kind="1H_SHAVED_HIGH",
-        side="RESISTANCE",
-        top=22804.0,
-        bottom=22796.0,
-        ref_price=22800.0,
-        wick_pts=0.0,
-        is_shaved=True,
-        created_ts=1000,
-        created_ist="2026-10-30 09:15",
-        touch_count=0,
-    )
+    fake_null = {
+        "categories": {
+            "1H_UPPER_WICK": {
+                "voice_armed": False,
+                "best_edge_z": -0.3,
+            }
+        }
+    }
 
-    # 3. Lower Wick (approaching from above)
-    lvl_lower_wick = HtfLevel(
-        id="1H-3-lower",
-        tf="1H",
-        kind="1H_LOWER_WICK",
-        side="SUPPORT",
-        top=22650.0,
-        bottom=22640.0,
-        ref_price=22640.0,
-        wick_pts=10.0,
-        is_shaved=False,
-        created_ts=1000,
-        created_ist="2026-10-30 09:15",
-        touch_count=0,
-    )
-
-    # 4. Shaved Low (approaching from above)
-    lvl_shaved_low = HtfLevel(
-        id="1H-4-lower",
-        tf="1H",
-        kind="1H_SHAVED_LOW",
-        side="SUPPORT",
-        top=22634.0,
-        bottom=22626.0,
-        ref_price=22630.0,
-        wick_pts=0.0,
-        is_shaved=True,
-        created_ts=1000,
-        created_ist="2026-10-30 09:15",
-        touch_count=0,
-    )
-
-    # Test Upper Wick voice
-    al_uw = generate_live_alerts_and_voice([lvl_upper_wick], ema8_val=None, current_spot=22793.0, thresholds=thresh)
-    assert len(al_uw) == 1
-    assert "approaching the one hour upper wick resistance at 22,795.0 from below for the first time" in al_uw[0]["voice_text"]
-    assert "Watch for a 20 to 40 point rejection downward." in al_uw[0]["voice_text"]
-
-    # Test Shaved High voice
-    al_sh = generate_live_alerts_and_voice([lvl_shaved_high], ema8_val=None, current_spot=22798.0, thresholds=thresh)
-    assert len(al_sh) == 1
-    assert "approaching the one hour highest open-close level at 22,800.0 from below for the first time" in al_sh[0]["voice_text"]
-    assert "Watch for resistance rejection." in al_sh[0]["voice_text"]
-
-    # Test Lower Wick voice
-    al_lw = generate_live_alerts_and_voice([lvl_lower_wick], ema8_val=None, current_spot=22643.0, thresholds=thresh)
-    assert len(al_lw) == 1
-    assert "coming near the one hour lower wick support at 22,640.0 from above for the first time" in al_lw[0]["voice_text"]
-    assert "Watch for a 20 to 40 point bounce upward." in al_lw[0]["voice_text"]
-
-    # Test Shaved Low voice
-    al_sl = generate_live_alerts_and_voice([lvl_shaved_low], ema8_val=None, current_spot=22633.0, thresholds=thresh)
-    assert len(al_sl) == 1
-    assert "coming near the one hour lowest open-close price at 22,630.0 from above for the first time" in al_sl[0]["voice_text"]
-    assert "Watch for support bounce." in al_sl[0]["voice_text"]
-
-    # Test 1H 8-EMA Support voice
-    al_ema_supp = generate_live_alerts_and_voice([], ema8_val=22700.0, current_spot=22703.0, thresholds=thresh)
-    assert len(al_ema_supp) == 1
-    assert "above the one hour 8 EMA and pulling back to test 8 EMA support at 22,700.0" in al_ema_supp[0]["voice_text"]
-    assert "Watch for bullish bounce continuation." in al_ema_supp[0]["voice_text"]
-
-    # Test 1H 8-EMA Resistance voice
-    al_ema_res = generate_live_alerts_and_voice([], ema8_val=22700.0, current_spot=22697.0, thresholds=thresh)
-    assert len(al_ema_res) == 1
-    assert "coming from below the one hour 8 EMA and touching 8 EMA resistance at 22,700.0" in al_ema_res[0]["voice_text"]
-    assert "Watch for bearish rejection." in al_ema_res[0]["voice_text"]
+    alerts = generate_live_alerts_and_voice([lvl_silent], ema8_val=None, current_spot=22793.0, thresholds=thresh, null_summary=fake_null)
+    assert len(alerts) == 1
+    assert alerts[0]["voice_armed"] is False
+    assert alerts[0]["silent"] is True
+    assert alerts[0]["voice_text"] == ""
+    assert "Silent" in alerts[0]["title"]
+    assert "No chime or voice" in alerts[0]["body"]
 
 
 def test_api_endpoint_htf_wick_ema_rb(client):
-    """Integration test verifying GET /api/desk/htf-wick-ema-rb returns ok=True, ema8, levels, and backtest."""
-    from app import db
-    from app.engine.htf_wick_ema_rb import _cached_payload
+    """Integration test verifying GET /api/desk/htf-wick-ema-rb returns ok=True, null_baseline_summary, and per_event_tables."""
     import app.engine.htf_wick_ema_rb as engine_mod
 
-    # Invalidate any in-memory cache for clean test
+    # Invalidate cache
     engine_mod._cached_payload = None
     engine_mod._cached_last_ts = 0
-
-    # Seed 1m candles for sec_id "13" spanning 10 hours so 1H & 4H candles form
-    start_ts = 1792401300  # Monday 09:15
-    seed = []
-    for i in range(600):  # 10 hours of 1m candles
-        t = start_ts + i * 60
-        base = 22700.0 + (i // 60) * 10.0
-        seed.append({
-            "ts": t,
-            "o": base,
-            "h": base + 15.0,
-            "l": base - 10.0,
-            "c": base + 5.0,
-            "v": 1000.0,
-        })
-    db.upsert_candles("13", seed)
 
     res = client.get("/api/desk/htf-wick-ema-rb?sec_id=13")
     assert res.status_code == 200
@@ -293,12 +237,9 @@ def test_api_endpoint_htf_wick_ema_rb(client):
     assert "active_levels" in data
     assert "live_alerts" in data
     assert "backtest_summary" in data
+    assert "null_baseline_summary" in data
+    assert "per_event_tables" in data
 
-    # Verify backtest summary structure
-    bt = data["backtest_summary"]
-    assert "wick_1h" in bt
-    assert "wick_4h" in bt
-    assert "ema8_1h" in bt
-    assert bt["total_1h_candles"] >= 8
-    assert "win_rate_20_pct" in bt["wick_1h"]
-
+    null_s = data["null_baseline_summary"]
+    assert null_s["metadata"]["categories_tested"] == 10
+    assert null_s["metadata"]["cells_tested"] == 20

@@ -250,9 +250,12 @@ export function scanSignals(o: {
   }
 
   // ⟂ Rejection Blocks (RB): 1H/4H Wicks & 1H 8-EMA First-Touch Proximity Alerts
+  // GATED: Voice/chime alerts are armed ONLY if level category edge meets +2.0 sd, dir +2.0 sd, drop5 > 0, and OOS positive.
   if (K.wick && o.rbWickEmaAlerts && o.rbWickEmaAlerts.length) {
     for (const al of o.rbWickEmaAlerts) {
-      add("wick", al.side === "BUY" ? "BUY" : "SELL", al.title, al.voice_text || al.body);
+      if (al.voice_armed === true) {
+        add("wick", al.side === "BUY" ? "BUY" : "SELL", al.title, al.voice_text || al.body);
+      }
     }
   }
 

@@ -9,6 +9,9 @@
 //   6. 1-Click ⛶ Enlarge Fullscreen mode with ESC key support
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import StrikePositioning, { type PositionHistory } from "./StrikePositioning";
+import analystConfig from "../../../../analyst/analyst_config.json";
+
 export type TabMode = "change_total" | "change" | "total";
 export type ExpiryMode = "this_wk" | "next_wk" | "both";
 export type RangeMode = "all" | "atm" | "5" | "10" | "20" | "custom";
@@ -66,6 +69,7 @@ export interface ExpiriesMeta {
 
 export interface OiStudioPayload {
   ok: boolean;
+  positioning?: PositionHistory;
   message?: string;
   spot: number;
   atm_strike: number;
@@ -126,6 +130,11 @@ const QUICK_LOOKBACKS = [
 
 export default function WriterMap() {
   // Navigation & Control States
+  const [positionView, setPositionView] = useState(false);
+  const [positionBucket, setPositionBucket] = useState(analystConfig.oi_studio.positioning.bucket_minutes);
+  const [fetchError, setFetchError] = useState("");
+  const requestSeq = useRef(0);
+  const [dataQuery, setDataQuery] = useState("");
   const [tab, setTab] = useState<TabMode>("change_total");
   const [expiryMode, setExpiryMode] = useState<ExpiryMode>("this_wk");
   const [rangeMode, setRangeMode] = useState<RangeMode>("10");
@@ -164,21 +173,31 @@ export default function WriterMap() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [isFullscreen]);
 
+  const requestQuery = useMemo(() => {
+    const q = new URLSearchParams();
+    q.set("expiry_mode", expiryMode);
+    q.set("strike_range", rangeMode);
+    if (selectedStartTs !== null) q.set("start_ts", String(selectedStartTs));
+    if (selectedEndTs !== null) q.set("end_ts", String(selectedEndTs));
+    if (minStrikeInput !== null) q.set("min_strike", String(minStrikeInput));
+    if (maxStrikeInput !== null) q.set("max_strike", String(maxStrikeInput));
+    if (positionView) { q.set("include_positioning", "true"); q.set("bucket_minutes", String(positionBucket)); }
+    return q.toString();
+  }, [expiryMode, rangeMode, selectedStartTs, selectedEndTs, minStrikeInput, maxStrikeInput, positionView, positionBucket]);
+
   // Fetch telemetry from GET /api/chain/oi-studio
   const fetchData = useCallback(async () => {
+    const seq = ++requestSeq.current;
     try {
-      const q = new URLSearchParams();
-      q.set("expiry_mode", expiryMode);
-      q.set("strike_range", rangeMode);
-      if (selectedStartTs !== null) q.set("start_ts", String(selectedStartTs));
-      if (selectedEndTs !== null) q.set("end_ts", String(selectedEndTs));
-      if (minStrikeInput !== null) q.set("min_strike", String(minStrikeInput));
-      if (maxStrikeInput !== null) q.set("max_strike", String(maxStrikeInput));
-
-      const res = await fetch(`/api/chain/oi-studio?${q.toString()}`);
+      const res = await fetch(`/api/chain/oi-studio?${requestQuery}`);
+      if (seq !== requestSeq.current) return;
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: OiStudioPayload = await res.json();
+      if (seq !== requestSeq.current) return;
+      if (!json.ok) throw new Error(json.message || "No recorded chain data");
       if (json.ok) {
+        setFetchError("");
+        setDataQuery(requestQuery);
         setData(json);
         if (minStrikeInput === null) setMinStrikeInput(json.min_strike);
         if (maxStrikeInput === null) setMaxStrikeInput(json.max_strike);
@@ -187,11 +206,13 @@ export default function WriterMap() {
         }
       }
     } catch (err) {
+      if (seq !== requestSeq.current) return;
       console.error("fetch oi studio failed:", err);
+      setFetchError(err instanceof Error ? err.message : "Unable to load history");
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
-  }, [expiryMode, rangeMode, selectedStartTs, selectedEndTs, minStrikeInput, maxStrikeInput, replayIdx]);
+  }, [requestQuery, replayIdx]);
 
   // Initial and periodic fetch
   useEffect(() => {
@@ -368,7 +389,7 @@ export default function WriterMap() {
             <span>StockMojo OI & Writer Map Studio</span>
           </span>
           <span className="text-[11px] px-2 py-0.5 rounded bg-blue-950/80 border border-blue-800/60 text-blue-300 font-mono">
-            Spot: <b>{spot.toFixed(2)}</b>
+            {positionView ? "NIFTY closed:" : "Spot:"} <b>{positionView ? (data?.positioning?.spot?.value?.toFixed(2) ?? "—") : spot.toFixed(2)}</b>
           </span>
           <span className="text-[11px] px-2 py-0.5 rounded bg-amber-950/80 border border-amber-800/60 text-amber-300 font-mono">
             Max Pain: <b>{maxPain}</b>
@@ -573,9 +594,9 @@ export default function WriterMap() {
           <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-2 mb-2">
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => setTab("change_total")}
+                onClick={() => { setTab("change_total"); setPositionView(false); }}
                 className={`px-3 py-1 rounded text-xs font-bold transition-all border ${
-                  tab === "change_total"
+                  !positionView && tab === "change_total"
                     ? "bg-blue-600 text-white border-blue-400 shadow"
                     : "bg-[#070c17] text-slate-400 border-slate-800 hover:text-slate-200"
                 }`}
@@ -583,9 +604,9 @@ export default function WriterMap() {
                 📊 OI Change+Total
               </button>
               <button
-                onClick={() => setTab("change")}
+                onClick={() => { setTab("change"); setPositionView(false); }}
                 className={`px-3 py-1 rounded text-xs font-bold transition-all border ${
-                  tab === "change"
+                  !positionView && tab === "change"
                     ? "bg-blue-600 text-white border-blue-400 shadow"
                     : "bg-[#070c17] text-slate-400 border-slate-800 hover:text-slate-200"
                 }`}
@@ -593,20 +614,21 @@ export default function WriterMap() {
                 OI Change
               </button>
               <button
-                onClick={() => setTab("total")}
+                onClick={() => { setTab("total"); setPositionView(false); }}
                 className={`px-3 py-1 rounded text-xs font-bold transition-all border ${
-                  tab === "total"
+                  !positionView && tab === "total"
                     ? "bg-blue-600 text-white border-blue-400 shadow"
                     : "bg-[#070c17] text-slate-400 border-slate-800 hover:text-slate-200"
                 }`}
               >
                 Total OI
               </button>
+              <button onClick={() => setPositionView(true)} aria-pressed={positionView} className={`px-3 py-1 rounded text-xs font-bold border ${positionView ? "bg-cyan-950 text-cyan-200 border-cyan-400" : "bg-[#070c17] text-cyan-400 border-slate-800"}`}>Strike Positioning</button>
             </div>
 
             {/* 6 Visual Legend Items (Matching StockMojo pixel-for-pixel) */}
             <div className="flex flex-wrap items-center gap-2 text-[10.5px]">
-              {tab === "change_total" ? (
+              {positionView ? <span className="text-cyan-300">Recorded size → change → time</span> : tab === "change_total" ? (
                 <>
                   <span className="flex items-center gap-1 text-slate-300">
                     <span className="w-3 h-3 rounded-sm bg-[#22c55e]" /> Base Call
@@ -649,6 +671,8 @@ export default function WriterMap() {
             </div>
           </div>
 
+          {positionView && <StrikePositioning data={dataQuery === requestQuery ? data : null} lots={showLot} bucket={positionBucket} options={analystConfig.oi_studio.positioning.bucket_options} onBucket={setPositionBucket} busy={dataQuery !== requestQuery} error={fetchError} onReplay={ts => { setSelectedEndTs(ts); setIsReplayOn(true); setIsPlaying(false); const idx = data?.timeline.findIndex(t => t.ts === ts) ?? -1; if (idx >= 0) setReplayIdx(idx); }} />}
+          <div style={{ display: positionView ? "none" : undefined }} className="flex flex-1 flex-col min-h-0">
           {/* ──────────────── High-Precision SVG Grouped Bar Canvas ──────────────── */}
           <div className="relative flex-1 min-h-[460px] w-full select-none" onMouseLeave={() => setHoverStrike(null)}>
             {loading ? (
@@ -941,6 +965,7 @@ export default function WriterMap() {
             )}
           </div>
 
+          </div>
           {/* ──────────────── Dual-Thumb Range Slider & 9 Quick Buttons ──────────────── */}
           <div className="mt-3 pt-2.5 border-t border-slate-800 flex flex-col gap-2">
             <div className="flex items-center gap-3">

@@ -229,6 +229,10 @@
     "target_40_pts": 40.0,
     "adverse_stop_pts": 15.0,
     "mfe_window_minutes": 60,
-    "max_active_levels": 16
+    "max_active_levels": 16,
+    "min_edge_sd": 2.0,
+    "min_dir_sd": 2.0,
+    "baseline_runs": 400,
+    "horizon_hours": 6
   }
 }

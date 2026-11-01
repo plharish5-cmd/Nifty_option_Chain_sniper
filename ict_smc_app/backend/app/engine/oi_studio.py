@@ -11,6 +11,7 @@ Provides time-windowed strike-wise Open Interest analysis matching StockMojo:
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -280,6 +281,8 @@ def get_oi_studio_data(
     min_strike: Optional[float] = None,
     max_strike: Optional[float] = None,
     cfg: Optional[Dict[str, Any]] = None,
+    include_positioning: bool = False,
+    bucket_minutes: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Main database query and orchestration for GET /api/chain/oi-studio.
@@ -463,6 +466,12 @@ def get_oi_studio_data(
         cfg=c,
     )
 
+    if include_positioning:
+        # Optional projection only: legacy payload and its calculations stay untouched.
+        helper = _positioning_builder()
+        nif = db.candles_1m("13", today_start)
+        payload["positioning"] = helper(snap_rows, nif or [], payload, target_exps, c, bucket_minutes)
+
     # Attach Expiries Metadata for frontend tab buttons
     payload["expiries_meta"] = {
         "cur_expiry": cur_exp,
@@ -475,3 +484,13 @@ def get_oi_studio_data(
     }
 
     return payload
+
+
+@lru_cache(maxsize=1)
+def _positioning_builder():
+    import importlib.util
+    path = CONFIG_FILE.parent / "strike_positioning.py"
+    spec = importlib.util.spec_from_file_location("desk_strike_positioning", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.build_positioning

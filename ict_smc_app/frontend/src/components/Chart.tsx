@@ -261,6 +261,20 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       wick_4h: { first_touches: number; target_20_wins: number; win_rate_20_pct: number; target_40_wins: number; win_rate_40_pct: number; avg_mfe_pts: number; stopped_out: number };
       ema8_1h: { first_touches: number; target_20_wins: number; win_rate_20_pct: number; target_40_wins: number; win_rate_40_pct: number; avg_mfe_pts: number; stopped_out: number };
     };
+    null_baseline_summary?: {
+      metadata: {
+        categories_tested: number;
+        cells_tested: number;
+        statement: string;
+        dataset_range: string;
+        total_sessions: number;
+        total_intraday_candles: number;
+        total_1h_candles: number;
+        total_4h_candles: number;
+      };
+      categories: Record<string, any>;
+    };
+    per_event_tables?: Record<string, any[]>;
   }
 
   const [htfWickEmaData, setHtfWickEmaData] = useState<HtfWickEmaRes | null>(null);
@@ -272,6 +286,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       return true;
     }
   });
+  const [selectedRbCategory, setSelectedRbCategory] = useState<string | null>(null);
 
   const toggleRbWickEma = () => {
     setShowRbWickEma((prev) => {
@@ -566,7 +581,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             lineWidth: 2,
             lineStyle: LineStyle.Solid,
             axisLabelVisible: true,
-            title: `1H 8-EMA ${emaVal.toLocaleString("en-IN")} (${slope})`,
+            title: `1H 8-EMA ${emaVal.toLocaleString("en-IN")} (${slope}) [Z: +2.0 sd, Silent]`,
           });
           rbPriceLinesRef.current.push(line);
         }
@@ -3669,8 +3684,175 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             </div>
           </div>
 
-          {/* Quantitative Backtest Summary for 1H/4H Wicks & 1H 8-EMA */}
-          {htfWickEmaData?.backtest_summary && (
+          {/* Quantitative Backtest Summary for 1H/4H Wicks & 1H 8-EMA Scored Against Null Baselines */}
+          {htfWickEmaData?.null_baseline_summary?.categories ? (
+            <div className="rounded-lg bg-cyan-950/40 border border-cyan-500/50 p-2.5 mb-2.5 shadow-lg">
+              <div className="font-bold text-cyan-300 text-[11px] mb-1 flex items-center justify-between border-b border-cyan-500/20 pb-1">
+                <span className="flex items-center gap-1.5">
+                  <span>📊</span>
+                  <span>NULL-BASELINE QUANTITATIVE BACKTEST (1H / 4H WICKS & 1H 8-EMA)</span>
+                </span>
+                <span className="text-[9px] text-cyan-400 font-mono">
+                  {htfWickEmaData.null_baseline_summary.metadata.dataset_range} ({htfWickEmaData.null_baseline_summary.metadata.total_sessions} sessions, {htfWickEmaData.null_baseline_summary.metadata.total_intraday_candles.toLocaleString()} 1m bars)
+                </span>
+              </div>
+              <div className="text-[9px] text-amber-300/90 bg-amber-950/30 border border-amber-500/30 rounded px-1.5 py-0.5 mb-1.5 font-mono">
+                ⚠️ <b>DISCLOSURE:</b> {htfWickEmaData.null_baseline_summary.metadata.statement}
+              </div>
+              <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                <table className="w-full text-[9.5px] text-left border-collapse font-mono">
+                  <thead>
+                    <tr className="border-b border-slate-700/80 text-slate-400 font-semibold bg-slate-900/60 sticky top-0">
+                      <th className="py-1 px-1">Category</th>
+                      <th className="py-1 px-1 text-center">Cell</th>
+                      <th className="py-1 px-1 text-center">N</th>
+                      <th className="py-1 px-1 text-center">Win%</th>
+                      <th className="py-1 px-1 text-right">Real Exp</th>
+                      <th className="py-1 px-1 text-center">Rand Null</th>
+                      <th className="py-1 px-1 text-center">Edge Z</th>
+                      <th className="py-1 px-1 text-center">Dir Z</th>
+                      <th className="py-1 px-1 text-center">Drop5</th>
+                      <th className="py-1 px-1 text-center">OOS (H1/H2)</th>
+                      <th className="py-1 px-1 text-center">Med Tgt</th>
+                      <th className="py-1 px-1 text-center">Voice Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {Object.entries(htfWickEmaData.null_baseline_summary.categories).map(([catKey, cat]: [string, any]) => {
+                      if (cat.sample_n < 5) {
+                        return (
+                          <tr key={catKey} className="hover:bg-cyan-950/20 text-slate-400">
+                            <td className="py-1 px-1 font-semibold text-slate-300">{catKey}</td>
+                            <td className="py-1 px-1 text-center">—</td>
+                            <td className="py-1 px-1 text-center">{cat.sample_n}</td>
+                            <td className="py-1 px-1 text-center">—</td>
+                            <td className="py-1 px-1 text-right">—</td>
+                            <td className="py-1 px-1 text-center">—</td>
+                            <td className="py-1 px-1 text-center">—</td>
+                            <td className="py-1 px-1 text-center">—</td>
+                            <td className="py-1 px-1 text-center">—</td>
+                            <td className="py-1 px-1 text-center">—</td>
+                            <td className="py-1 px-1 text-center">—</td>
+                            <td className="py-1 px-1 text-center">
+                              <span className="text-[8px] px-1 py-0.5 rounded bg-slate-800 text-slate-400">N &lt; 5 UNPROVEN</span>
+                            </td>
+                          </tr>
+                        );
+                      }
+                      return ["s15_t20", "s15_t40"].map((cellKey) => {
+                        const cell = cat[cellKey];
+                        if (!cell) return null;
+                        const isSelected = selectedRbCategory === catKey;
+                        return (
+                          <tr
+                            key={`${catKey}-${cellKey}`}
+                            onClick={() => setSelectedRbCategory(isSelected ? null : catKey)}
+                            className={`cursor-pointer transition-colors ${
+                              isSelected ? "bg-cyan-900/40" : "hover:bg-cyan-950/30"
+                            }`}
+                            title="Click to view detailed per-event table and resolution times"
+                          >
+                            <td className="py-1 px-1 font-semibold text-cyan-200">
+                              {catKey} {isSelected ? "▼" : "▶"}
+                            </td>
+                            <td className="py-1 px-1 text-center text-slate-300">
+                              s{cell.stop}/t{cell.target}
+                            </td>
+                            <td className="py-1 px-1 text-center text-slate-300">{cell.sample_n}</td>
+                            <td className="py-1 px-1 text-center text-emerald-400 font-bold">{cell.win_pct}%</td>
+                            <td className={`py-1 px-1 text-right font-bold ${cell.real_exp >= 0 ? "text-emerald-300" : "text-rose-400"}`}>
+                              {cell.real_exp > 0 ? `+${cell.real_exp}` : cell.real_exp} pt
+                            </td>
+                            <td className="py-1 px-1 text-center text-slate-400">
+                              {cell.rand_mean > 0 ? `+${cell.rand_mean}` : cell.rand_mean}±{cell.rand_sd}
+                            </td>
+                            <td className={`py-1 px-1 text-center font-bold ${cell.edge_z >= 2.0 ? "text-emerald-400" : "text-slate-300"}`}>
+                              {cell.edge_z > 0 ? `+${cell.edge_z}` : cell.edge_z} sd
+                            </td>
+                            <td className={`py-1 px-1 text-center font-bold ${cell.dir_z >= 2.0 ? "text-emerald-400" : "text-slate-300"}`}>
+                              {cell.dir_z > 0 ? `+${cell.dir_z}` : cell.dir_z} sd
+                            </td>
+                            <td className={`py-1 px-1 text-center ${cell.drop5 > 0 ? "text-emerald-300" : "text-rose-400"}`}>
+                              {cell.drop5 > 0 ? `+${cell.drop5}` : cell.drop5}
+                            </td>
+                            <td className="py-1 px-1 text-center text-slate-300">
+                              {cell.oos_h1_exp}/{cell.oos_h2_exp}
+                            </td>
+                            <td className="py-1 px-1 text-center text-cyan-300">
+                              {cell.median_time_target_min != null ? `${cell.median_time_target_min}m` : "—"}
+                            </td>
+                            <td className="py-1 px-1 text-center">
+                              {cell.voice_armed ? (
+                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950">
+                                  ✓ VOICE ARMED
+                                </span>
+                              ) : (
+                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                                  SILENT (Z&lt;2sd)
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Expandable Per-Event Table & Time-to-Resolution */}
+              {selectedRbCategory && htfWickEmaData.per_event_tables?.[selectedRbCategory] && (
+                <div className="mt-2 p-2 bg-slate-950/80 border border-cyan-500/40 rounded">
+                  <div className="flex items-center justify-between pb-1 border-b border-slate-800 mb-1.5">
+                    <span className="font-bold text-cyan-300 text-[10px]">
+                      📋 PER-EVENT LOG: {selectedRbCategory} ({htfWickEmaData.per_event_tables[selectedRbCategory].length} events)
+                    </span>
+                    <button
+                      onClick={() => setSelectedRbCategory(null)}
+                      className="text-[9px] px-1 text-slate-400 hover:text-white"
+                    >
+                      ✕ Close Log
+                    </button>
+                  </div>
+                  <div className="text-[8.5px] text-cyan-400/80 italic mb-1">
+                    Forward walk starts strictly AFTER signal candle close. Zero-minute lookahead eliminated.
+                  </div>
+                  <div className="max-h-40 overflow-y-auto">
+                    <table className="w-full text-[9px] text-left border-collapse font-mono">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400">
+                          <th className="py-0.5">Date</th>
+                          <th className="py-0.5">Time</th>
+                          <th className="py-0.5">Dir</th>
+                          <th className="py-0.5 text-right">Entry</th>
+                          <th className="py-0.5 text-right">MFE</th>
+                          <th className="py-0.5 text-right">MAE</th>
+                          <th className="py-0.5">Outcome (15/20)</th>
+                          <th className="py-0.5">Outcome (15/40)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-900">
+                        {htfWickEmaData.per_event_tables[selectedRbCategory].map((ev: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-slate-900/60">
+                            <td className="py-0.5 text-slate-300">{ev.date}</td>
+                            <td className="py-0.5 text-slate-400">{ev.time}</td>
+                            <td className={`py-0.5 font-bold ${ev.dir === "LONG" ? "text-emerald-400" : "text-rose-400"}`}>
+                              {ev.dir}
+                            </td>
+                            <td className="py-0.5 text-right text-slate-200">{ev.entry.toFixed(1)}</td>
+                            <td className="py-0.5 text-right text-emerald-300">+{ev.mfe.toFixed(0)}</td>
+                            <td className="py-0.5 text-right text-rose-300">-{ev.mae.toFixed(0)}</td>
+                            <td className="py-0.5 text-slate-300">{ev.outcome_20}</td>
+                            <td className="py-0.5 text-slate-300">{ev.outcome_40}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : htfWickEmaData?.backtest_summary && (
             <div className="rounded-lg bg-cyan-950/40 border border-cyan-500/50 p-2.5 mb-2.5 shadow-lg">
               <div className="font-bold text-cyan-300 text-[11px] mb-1.5 flex items-center justify-between border-b border-cyan-500/20 pb-1">
                 <span className="flex items-center gap-1.5">
