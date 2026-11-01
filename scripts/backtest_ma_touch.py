@@ -70,7 +70,8 @@ def session_bars(m1: list[dict], minutes: int) -> list[dict]:
         k = mins // minutes
         b = buckets.get(k)
         if b is None:
-            buckets[k] = {"ts": r["ts"], "o": r["o"], "h": r["h"], "l": r["l"], "c": r["c"]}
+            buckets[k] = {"ts": r["ts"], "o": r["o"], "h": r["h"], "l": r["l"], "c": r["c"],
+                          "slot": k}
         else:
             b["h"] = max(b["h"], r["h"])
             b["l"] = min(b["l"], r["l"])
@@ -151,6 +152,16 @@ def zscore(real: float, sample: list[float]) -> tuple[float, float, float]:
     return mean, sd, ((real - mean) / sd if sd > 1e-9 else 0.0)
 
 
+def contribution(e: dict, s: float, t: float) -> float:
+    """Points this single event contributed under the stop/target rule."""
+    si, ti = e["stop_at"][s], e["tgt_at"][t]
+    if ti is not None and (si is None or ti < si):
+        return t
+    if si is not None:
+        return -s
+    return (e["last"] - e["entry"]) if e["long"] else (e["entry"] - e["last"])
+
+
 def analyse(evs: list[dict], base_pool: list[dict], runs: int, rng: random.Random,
             name: str, dirn: str) -> None:
     n = len(evs)
@@ -165,17 +176,39 @@ def analyse(evs: list[dict], base_pool: list[dict], runs: int, rng: random.Rando
     print(f"  {'move against (MAE)':<22}{describe([e['mae'] for e in evs])}")
     print(f"  {'MFE if filled at MA':<22}{describe([e['ideal_mfe'] for e in evs])}")
 
-    # Random-entry baseline: same direction rule, same machinery, bars chosen at random.
+    # Random-entry baseline. CRITICAL: matched on hour-of-day slot.
+    #
+    # An unmatched baseline is biased in favour of the real result. A random bar in the last hour
+    # of the session has only minutes of runway before the horizon truncates at the close, so it
+    # cannot reach a 60-point target and gets marked out near zero. If first touches cluster
+    # earlier in the day, an unmatched comparison pits well-positioned real entries against
+    # cramped random ones and the baseline goes flat for a reason that has nothing to do with the
+    # moving average. So each real event is compared against random bars from THE SAME SLOT,
+    # which gives both the same runway. The unmatched figure is kept only to size the bias.
+    by_slot: dict[int, list[dict]] = defaultdict(list)
+    for e in base_pool:
+        by_slot[e["slot"]].append(e)
+    thin = [e["slot"] for e in evs if len(by_slot[e["slot"]]) < 3]
+
     samples: list[list[dict]] = []
+    loose: list[list[dict]] = []
+    if not thin:
+        samples = [[rng.choice(by_slot[e["slot"]]) for e in evs] for _ in range(runs)]
     if len(base_pool) > n:
-        samples = [rng.sample(base_pool, n) for _ in range(runs)]
+        loose = [rng.sample(base_pool, n) for _ in range(runs)]
+
+    if thin:
+        print(f"\n  CANNOT MATCH ON TIME OF DAY — slots {sorted(set(thin))} have too few bars.")
+        print("  Falling back to an unmatched baseline, which flatters the result. Treat the")
+        print("  edge column as an upper bound, not a measurement.")
+        samples = loose
     if samples:
         m, sd, z = zscore(statistics.median(mfe),
                           [statistics.median([e["mfe"] for e in s]) for s in samples])
-        print(f"\n  median MFE vs random entries: {statistics.median(mfe):.0f} pts "
+        print(f"\n  median MFE vs random entries at the same hour: {statistics.median(mfe):.0f} pts "
               f"vs {m:.0f} ± {sd:.1f}   ({z:+.1f} sd)")
     else:
-        print("\n  not enough non-touch bars for a baseline")
+        print("\n  not enough bars for any baseline")
 
     print(f"\n  {'stop':<8}{'hit':>7}{'hit %':>8}    {'target':<9}{'reached':>9}{'reached %':>11}")
     for s, t in zip(STOPS, TARGETS):
@@ -202,11 +235,86 @@ def analyse(evs: list[dict], base_pool: list[dict], runs: int, rng: random.Rando
                 best = (score, s, t, exp, win / n * 100)
 
     if best and samples:
-        print(f"\n  STRONGEST PAIR: stop {best[1]:.0f} / target {best[2]:.0f} → "
+        s, t = best[1], best[2]
+        print(f"\n  STRONGEST PAIR: stop {s:.0f} / target {t:.0f} → "
               f"{best[3]:+.1f} pts/trade, {best[4]:.0f}% wins, {best[0]:+.1f} sd above random")
+
+        # How much of that edge was the time-of-day bias?
+        if loose and not thin:
+            _, _, zl = zscore(best[3], [expectancy(sm, s, t)[3] for sm in loose])
+            print(f"  same-hour baseline says {best[0]:+.1f} sd; an unmatched baseline would have"
+                  f" said {zl:+.1f} sd")
+
+        # The direction control: identical bars, opposite side.
+        #
+        # The raw gap between the two is NOT usable on its own. On a driftless random walk this
+        # gap comes out around +7 points in favour of the stated direction, because the stop and
+        # target are different distances and the entry sits at a bar that just returned to the MA.
+        # So the gap is scored against the gap that random entries produce — it needs its own null
+        # exactly as the expectancy did.
+        fl = expectancy([e["flip"] for e in evs], s, t)[3]
+        gap = best[3] - fl
+        print(f"  same bars traded the OPPOSITE way: {fl:+.1f} pts/trade "
+              f"(stated direction {gap:+.1f} better)")
+        dir_z = None
+        if samples:
+            gm, gsd, dir_z = zscore(gap, [expectancy(sm, s, t)[3]
+                                          - expectancy([e["flip"] for e in sm], s, t)[3]
+                                          for sm in samples])
+            print(f"  random entries show a {gm:+.1f} ± {gsd:.1f} gap for free, so the direction"
+                  f" is worth {dir_z:+.1f} sd")
+        if dir_z is not None and dir_z < 2.0:
+            print("  DIRECTION IS NOT INFORMATIVE — once the free gap is subtracted, trading these")
+            print("  touches backwards does about as well. The MA marks volatility, not support.")
+
+        # Does it survive losing its best days? The divergence engine did not.
+        contribs = sorted((contribution(e, s, t) for e in evs), reverse=True)
+        tot = sum(contribs)
+        drops = [f"best {k}: {(tot - sum(contribs[:k])) / (n - k):+.1f}"
+                 for k in (1, 3, 5) if n - k >= 3]
+        print(f"  excluding   {'   '.join(drops)}   pts/trade")
+
+        # Out of sample: does the first half agree with the second?
+        udays = sorted({e["day"] for e in evs})
+        if len(udays) >= 6:
+            cut = udays[len(udays) // 2]
+            h1 = [e for e in evs if e["day"] < cut]
+            h2 = [e for e in evs if e["day"] >= cut]
+            if len(h1) >= 3 and len(h2) >= 3:
+                print(f"  first half ({len(h1)}): {expectancy(h1, s, t)[3]:+.1f}   "
+                      f"second half ({len(h2)}): {expectancy(h2, s, t)[3]:+.1f}   pts/trade")
+
+        # How fast does this resolve? If it is minutes, the 6-hour horizon is irrelevant and the
+        # trade is a scalp, not a position.
+        tt = [e["tgt_at"][t] for e in evs if e["tgt_at"][t] is not None]
+        ts = [e["stop_at"][s] for e in evs if e["stop_at"][s] is not None]
+        if tt:
+            print(f"  median time to the {t:.0f}-point target: {statistics.median(tt):.0f} min"
+                  + (f"   ·   to the {s:.0f}-point stop: {statistics.median(ts):.0f} min" if ts else ""))
+
+        verdict = []
         if best[0] < 2.0:
-            print("  NOT SIGNIFICANT — random entries do about as well. The first touch is adding")
-            print("  nothing here; any apparent profit is the stop/target geometry, not the MA.")
+            verdict.append("random entries at the same hour do about as well")
+        if drops and float(drops[-1].split(":")[1]) <= 0:
+            verdict.append("the edge dies when its best days are removed")
+        if verdict:
+            print(f"  NOT SIGNIFICANT — {'; '.join(verdict)}. Any apparent profit here is the")
+            print("  stop/target geometry and a few lucky sessions, not the moving average.")
+
+        if n <= 40:
+            print(f"\n  {'date':<12}{'time':<7}{'dir':<6}{'entry':>9}{'MFE':>7}{'MAE':>7}"
+                  f"   outcome at {s:.0f}/{t:.0f}")
+            for e in sorted(evs, key=lambda x: (x["day"], x["time"])):
+                c = contribution(e, s, t)
+                si, ti = e["stop_at"][s], e["tgt_at"][t]
+                if ti is not None and (si is None or ti < si):
+                    out = f"WIN  +{t:.0f} in {ti} min"
+                elif si is not None:
+                    out = f"LOSS -{s:.0f} in {si} min"
+                else:
+                    out = f"open, marked out {c:+.0f}"
+                print(f"  {e['day']:<12}{e['time']:<7}{'LONG' if e['long'] else 'SHORT':<6}"
+                      f"{e['entry']:>9.1f}{e['mfe']:>7.0f}{e['mae']:>7.0f}   {out}")
 
     wick = [e for e in evs if not e["closed_through"]]
     thru = [e for e in evs if e["closed_through"]]
@@ -270,7 +378,13 @@ def run(conn, a) -> int:
                 return None
             long = hourly[i - 1]["c"] > prev_m
             w = walk_forward(after, b["c"], long)
+            # The same bar traded the WRONG way. If the MA really tells you which side to take,
+            # the stated direction has to beat its own inverse on the identical bars. This control
+            # needs no baseline population and no assumption about what a fair comparison is.
+            flip = walk_forward(after, b["c"], not long)
             cache[i] = {**w, "long": long, "entry": b["c"], "ma": m, "day": b["day"],
+                        "slot": b["slot"],
+                        "flip": {**flip, "long": not long, "entry": b["c"]},
                         "ideal_mfe": walk_forward(after, m, long)["mfe"],
                         "closed_through": (b["c"] < m) if long else (b["c"] > m),
                         "time": datetime.fromtimestamp(b["ts"], IST).strftime("%H:%M")}
