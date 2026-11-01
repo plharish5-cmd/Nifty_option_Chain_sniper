@@ -144,6 +144,17 @@ def analyse(evs: list[dict], samples: list[list[dict]], loose: list[list[dict]],
     else:
         print("\n  no baseline available for these slots")
 
+    # Net directional pull. MFE - MAE uses the WHOLE excursion instead of discretising at one
+    # stop and one target, so it resolves direction where the fixed-rule flip test cannot: that
+    # test is a difference of two noisy quantities and is badly underpowered at n < 50.
+    net_z = None
+    if samples:
+        net = statistics.median([e["mfe"] - e["mae"] for e in evs])
+        m, sd, net_z = zscore(net, [statistics.median([x["mfe"] - x["mae"] for x in s])
+                                    for s in samples])
+        print(f"  median (MFE - MAE), the net pull in the expected direction: {net:+.0f} "
+              f"vs {m:+.0f} ± {sd:.1f}   ({net_z:+.1f} sd)")
+
     print(f"\n  {'stop':<8}{'hit':>7}{'hit %':>8}    {'target':<9}{'reached':>9}{'reached %':>11}")
     for s, t in zip(STOPS, TARGETS):
         sh = sum(1 for e in evs if e["stop_at"][s] is not None)
@@ -208,14 +219,21 @@ def analyse(evs: list[dict], samples: list[list[dict]], loose: list[list[dict]],
               + (f"   ·   to the {s:.0f}-pt stop: {statistics.median(ts):.0f} min" if ts else ""))
 
     bad = []
-    if dir_z is not None and dir_z < 2.0:
-        bad.append("the opposite side does as well")
     if score < 2.0:
         bad.append("random entries at the same hour do as well")
     if drops and drops[-1][1] <= 0:
         bad.append("the edge dies without its best few events")
     if bad:
         print(f"  NOT A LEVEL — {'; '.join(bad)}.")
+    elif net_z is not None and net_z >= 2.0:
+        print("  DIRECTIONAL AND SIGNIFICANT. The net excursion asymmetry carries the direction")
+        print("  even where the fixed-rule flip test cannot resolve it. Candidate only: check how")
+        print("  many groups were tested, and whether the other instrument agrees.")
+    elif dir_z is not None and dir_z < 2.0:
+        print("  SIGNIFICANT BUT DIRECTION UNRESOLVED — bigger moves follow these touches than")
+        print("  follow random bars at the same hour, but neither directional test clears its")
+        print("  noise at this sample size. This marks where volatility expands; it does not yet")
+        print("  tell you which way. Treat it as a heads-up, not a trade direction.")
     else:
         print("  SURVIVES all three controls. Candidate only: see how many groups were tested.")
 
