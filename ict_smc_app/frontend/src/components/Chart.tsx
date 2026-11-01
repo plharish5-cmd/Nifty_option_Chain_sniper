@@ -179,6 +179,29 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   };
   const [showRbGuidance, setShowRbGuidance] = useState<boolean>(false);
   const [showPdhGuidance, setShowPdhGuidance] = useState<boolean>(false);
+  // Measured 1H upper-wick zones. A strict SUBSET of the levels the htf-wick-ema engine already
+  // publishes — nothing new is fetched and that engine is untouched. Only the zones that actually
+  // passed scripts/backtest_wick_zones.py are drawn (38 first touches over 36 NIFTY sessions,
+  // 2026-09-08 to 2026-10-30): 1H, upper, a real wick not a shaved body, depth inside the band,
+  // and still virgin. Lower wicks are deliberately absent — they measured -0.4 sd and died to
+  // -11.2 pts/trade once their best five events were removed. Off by default, like every
+  // unproven layer on this desk.
+  const [showRbWickTested, setShowRbWickTested] = useState<boolean>(() => {
+    try {
+      const s = localStorage.getItem("rb_wick_tested_active");
+      return s !== null ? s === "1" : false;
+    } catch {
+      return false;
+    }
+  });
+  const toggleRbWickTested = () => {
+    setShowRbWickTested((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("rb_wick_tested_active", next ? "1" : "0"); } catch { /* private mode */ }
+      return next;
+    });
+  };
+  const [showWickTestedGuidance, setShowWickTestedGuidance] = useState<boolean>(false);
   const rbPriceLinesRef = useRef<IPriceLine[]>([]);
 
   useEffect(() => {
@@ -652,6 +675,50 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     (gannData.gann_pdh_resistances || []).forEach((l) => draw(l, true));
     (gannData.gann_pdh_supports || []).forEach((l) => draw(l, false));
   }, [showRbGannPdh, gannData, spot, candles, series.current]);
+
+  // The depth band. Zones shallower than this are not levels — the median 1H upper wick is only
+  // 13 pts and a 3-pt wick is noise. Zones deeper than the cap are not levels either: they are
+  // neighbourhoods that almost anything touches, and the uncapped test read +1.9 sd against +2.2
+  // sd once capped. 40 pts is roughly NIFTY's 90th percentile of upper-wick depth.
+  const WICK_MIN_PTS = 3;
+  const WICK_MAX_PTS = 40;
+  const wickTestedLinesRef = useRef<IPriceLine[]>([]);
+  useEffect(() => {
+    wickTestedLinesRef.current.forEach((l) => { try { series.current?.removePriceLine(l); } catch { /* gone */ } });
+    wickTestedLinesRef.current = [];
+    if (!showRbWickTested || !series.current) return;
+
+    const zones = (htfWickEmaData?.active_levels || []).filter(
+      (lv) =>
+        lv.tf === "1H" &&
+        lv.side === "RESISTANCE" &&
+        !lv.is_shaved &&
+        lv.wick_pts >= WICK_MIN_PTS &&
+        lv.wick_pts <= WICK_MAX_PTS &&
+        lv.touch_count === 0 &&
+        lv.top > 0 &&
+        lv.bottom > 0,
+    );
+
+    zones.forEach((lv) => {
+      // Both edges, so the zone reads as a band rather than a single price. Solid on the high
+      // (the rejection extreme), dotted on the body edge where price first enters it.
+      [
+        { price: lv.top, style: LineStyle.Solid, title: `1H wick ${lv.wick_pts.toFixed(0)}p · tested` },
+        { price: lv.bottom, style: LineStyle.Dotted, title: "" },
+      ].forEach(({ price, style, title }) => {
+        const line = series.current!.createPriceLine({
+          price,
+          color: "#fb923c",
+          lineWidth: 1,
+          lineStyle: style,
+          axisLabelVisible: title !== "",
+          title,
+        });
+        wickTestedLinesRef.current.push(line);
+      });
+    });
+  }, [showRbWickTested, htfWickEmaData, series.current]);
   const isDeltaDetailOn = !!layers.deltaDetail;
   const isDeltaOn = !!(layers.delta || isDeltaDetailOn);
   const isBubblesOn = !!(layers.bubbles || isDeltaDetailOn);
@@ -3329,6 +3396,51 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         </button>
 
         <button
+          onClick={toggleRbWickTested}
+          onMouseEnter={() => setShowWickTestedGuidance(true)}
+          onMouseLeave={() => setShowWickTestedGuidance(false)}
+          className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur cursor-help ${
+            showRbWickTested
+              ? "bg-orange-500/20 border-orange-500/80 text-orange-300 ring-1 ring-orange-500/40"
+              : "border-slate-700/60 text-slate-400 hover:text-slate-200"
+          }`}
+          title={
+            "1H UPPER WICK ZONES, THE MEASURED SUBSET — context, not a signal.\n\n"
+            + "WHAT IS DRAWN\n"
+            + `Only 1H UPPER wick zones [max(Open,Close) → High] between ${WICK_MIN_PTS} and `
+            + `${WICK_MAX_PTS} points deep that are still untouched. Solid line on the high, `
+            + "dotted on the body edge. Nothing else — these are the only zones that survived "
+            + "testing. The full wick/EMA engine is the separate checkbox beside this one.\n\n"
+            + "WHY NO LOWER WICKS\n"
+            + "They were measured and they do not work. NIFTY lower wicks came in at -0.4 sd "
+            + "against a matched random baseline and fell to -11.2 points per trade once their "
+            + "best five events were removed. Drawing them would be drawing noise.\n\n"
+            + "THE EVIDENCE\n"
+            + "38 first touches over 36 NIFTY sessions (8 Sep - 30 Oct 2026). Median move after "
+            + "the touch 55 pts against 36 ± 7.9 for a random entry at the same hour (+2.4 sd). "
+            + "Net pull, median MFE minus MAE, +32 vs +3 ± 14.3 (+2.0 sd). Shorting with a 15-pt "
+            + "stop and 60-pt target: +12.9 pts/trade at 34% wins, +2.2 sd above random, still "
+            + "+5.8 with its best five events removed, and positive in BOTH halves of the period "
+            + "(+11.7 then +14.2). Baseline resamples whole sessions, so same-day clustering is "
+            + "already accounted for.\n\n"
+            + "HOW IT BEHAVES\n"
+            + "The 15-pt stop is hit in 63% of cases, median 14 minutes. The 60-pt target takes a "
+            + "median of 64 minutes. Two in three attempts stop out fast; the winners need an "
+            + "hour. 34% at 4:1 is hard to sit through — know that before you use it.\n\n"
+            + "WHAT IT IS NOT\n"
+            + "BANKNIFTY does NOT confirm it: +1.5 sd, and its halves ran +40.0 then -4.3. The "
+            + "whole sample is a downtrend in both instruments (NIFTY 23644 → 23000), so no "
+            + "control here can separate 'upper wicks are resistance' from 'upper wicks are "
+            + "resistance while the market falls'. 18 hypotheses were tested against these same "
+            + "36 sessions; this is the one that survived, which is also how a false positive "
+            + "would look. Re-tested in January on fresh sessions. Do not size against it."
+          }
+        >
+          <span>{showRbWickTested ? "☑" : "☐"} 🔶 1H Wick ≤{WICK_MAX_PTS}p</span>
+          <span className="text-[8px] font-bold opacity-70">TESTED</span>
+        </button>
+
+        <button
           onClick={toggleRbWickEma}
           onMouseEnter={() => setShowRbGuidance(true)}
           onMouseLeave={() => setShowRbGuidance(false)}
@@ -3577,6 +3689,63 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
 
       {/* Mouse-Over Trader Guidance for Rejection Blocks (RB) Pivots, Gaps & Gann Sq9 */}
       {/* Hover card for the PDH ladder: how to use it, and what it is not. */}
+      {showWickTestedGuidance && (
+        <div
+          onMouseEnter={() => setShowWickTestedGuidance(true)}
+          onMouseLeave={() => setShowWickTestedGuidance(false)}
+          className="pointer-events-auto absolute right-2 top-[52px] z-[70] w-[440px] max-w-[92%] rounded-xl border border-orange-500/50 bg-[#0a0e1c]/97 p-3.5 text-[11.5px] leading-relaxed text-slate-200 shadow-2xl backdrop-blur-md"
+        >
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="font-black text-orange-300 text-[12px]">🔶 1H upper wick zones · the measured subset</span>
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-300">TESTED · NOT A SIGNAL</span>
+          </div>
+
+          <div className="font-mono text-[11px] text-slate-400 mb-2">
+            zone = [max(Open,Close) → High] · depth {WICK_MIN_PTS}–{WICK_MAX_PTS} pts · untouched only
+            {(() => {
+              const n = (htfWickEmaData?.active_levels || []).filter(
+                (lv) => lv.tf === "1H" && lv.side === "RESISTANCE" && !lv.is_shaved
+                  && lv.wick_pts >= WICK_MIN_PTS && lv.wick_pts <= WICK_MAX_PTS && lv.touch_count === 0,
+              ).length;
+              return <>{"  ·  "}<span className="text-white font-bold">{n}</span> live now</>;
+            })()}
+          </div>
+
+          <div className="mb-2">
+            <div className="text-orange-300/90 font-bold text-[10px] uppercase tracking-wide mb-0.5">Upper only — lower wicks were tested and failed</div>
+            NIFTY lower wicks read <span className="font-mono text-rose-300">−0.4 sd</span> against a matched
+            random baseline and fell to <span className="font-mono text-rose-300">−11.2 pts/trade</span> with their
+            best five events removed. They are <strong className="text-white">not drawn</strong>, because drawing them
+            would be drawing noise.
+          </div>
+
+          <div className="mb-2">
+            <div className="text-orange-300/90 font-bold text-[10px] uppercase tracking-wide mb-0.5">The evidence</div>
+            <div className="font-mono text-[10.5px] text-slate-300">
+              38 touches · 36 sessions · median move <span className="text-emerald-300">55</span> vs <span className="text-slate-400">36 ± 7.9</span> random (<span className="text-emerald-300">+2.4 sd</span>)
+              <br />net pull <span className="text-emerald-300">+32</span> vs <span className="text-slate-400">+3 ± 14.3</span> (<span className="text-emerald-300">+2.0 sd</span>) · 15/60 short <span className="text-emerald-300">+12.9</span> pts (<span className="text-emerald-300">+2.2 sd</span>)
+              <br />best-5 removed <span className="text-emerald-300">+5.8</span> · halves <span className="text-emerald-300">+11.7 / +14.2</span>
+            </div>
+          </div>
+
+          <div className="mb-2">
+            <div className="text-orange-300/90 font-bold text-[10px] uppercase tracking-wide mb-0.5">How it behaves — know this first</div>
+            The 15-pt stop is hit <strong className="text-white">63%</strong> of the time, median 14 min. The 60-pt
+            target takes a median of <strong className="text-white">64 min</strong>. Two in three attempts stop out
+            fast and the winners need an hour. <strong className="text-white">34% at 4:1</strong> is hard to sit through.
+          </div>
+
+          <div>
+            <div className="text-orange-300/90 font-bold text-[10px] uppercase tracking-wide mb-0.5">What it is not</div>
+            BANKNIFTY does <strong className="text-white">not</strong> confirm it (+1.5 sd; halves +40.0 then −4.3).
+            The whole sample is a downtrend in both instruments, so nothing here separates
+            &ldquo;upper wicks are resistance&rdquo; from &ldquo;…while the market falls&rdquo;. 18 hypotheses were
+            tested against these same 36 sessions and this is the one that survived — which is also
+            what a false positive looks like. Re-test in January. <strong className="text-white">Do not size against it.</strong>
+          </div>
+        </div>
+      )}
+
       {showPdhGuidance && (
         <div
           onMouseEnter={() => setShowPdhGuidance(true)}
