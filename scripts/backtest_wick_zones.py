@@ -117,10 +117,15 @@ def wick_table(h1_by_day: dict[str, list[dict]], min_wick: float, csv_path: str 
         print(f"\n  full per-candle table written to {p}")
 
 
-def analyse(evs: list[dict], samples: list[list[dict]], name: str, dirn: str) -> None:
+def analyse(evs: list[dict], samples: list[list[dict]], loose: list[list[dict]],
+            name: str, dirn: str) -> None:
     n = len(evs)
+    nd = len({e["day"] for e in evs})
     print(f"\n{name}")
-    print(f"  {n} first touches   ·   expected: {dirn}")
+    print(f"  {n} first touches across {nd} sessions   ·   expected: {dirn}")
+    if n and nd < n * 0.6:
+        print(f"  note: {n} events on only {nd} sessions — same-day events share one market path,")
+        print("  which is why the baseline resamples whole sessions rather than single bars.")
     if n < 5:
         print("  too few events to say anything")
         return
@@ -168,6 +173,10 @@ def analyse(evs: list[dict], samples: list[list[dict]], name: str, dirn: str) ->
     score, s, t, exp, winpct = best
     print(f"\n  STRONGEST PAIR: stop {s:.0f} / target {t:.0f} → {exp:+.1f} pts/trade, "
           f"{winpct:.0f}% wins, {score:+.1f} sd above random")
+
+    if loose and samples and loose is not samples:
+        _, _, zl = zscore(exp, [expectancy(sm, s, t)[3] for sm in loose])
+        print(f"  session-resampled baseline says {score:+.1f} sd; treating events as independent\n          would have said {zl:+.1f} sd")
 
     fl = expectancy([e["flip"] for e in evs], s, t)[3]
     dir_z = None
@@ -285,11 +294,13 @@ def run(conn, a) -> int:
                 "time": w["time"], "flip": {**other, "long": not long, "entry": w["entry"]}}
 
     pool_by_slot: dict[int, list[dict]] = defaultdict(list)
+    pool_by_day_slot: dict[tuple[str, int], dict] = {}
     for d in days:
         for i in range(len(m15_by_day[d])):
             w = walked(d, i)
             if w is not None:
                 pool_by_slot[w["slot"]].append(w)
+                pool_by_day_slot[(d, w["slot"])] = w
 
     # ---- build zones and find each one's first touch ----
     events: dict[tuple[str, bool], list[dict]] = defaultdict(list)
@@ -300,7 +311,7 @@ def run(conn, a) -> int:
             body_hi, body_lo = max(hb["o"], hb["c"]), min(hb["o"], hb["c"])
             for kind, zlo, zhi in (("UPPER", body_hi, hb["h"]), ("LOWER", hb["l"], body_lo)):
                 depth = zhi - zlo
-                if depth < a.min_wick:
+                if depth < a.min_wick or (a.max_wick and depth > a.max_wick):
                     continue
                 made += 1
                 hit = None
@@ -330,11 +341,28 @@ def run(conn, a) -> int:
                 # Either zone approached from below is a resistance test -> short.
                 long = from_above
                 ev = side(w, long)
-                ev.update({"zone_lo": zlo, "zone_hi": zhi, "depth": depth, "kind": kind})
+                ev.update({"zone_lo": zlo, "zone_hi": zhi, "depth": depth, "kind": kind,
+                           "bar": i})
                 events[(kind, long)].append(ev)
                 touched += 1
 
-    print(f"\n  {made} zones created, {touched} received a first touch within the window")
+    # DEDUPE. Two zones from different hourly candles can be first-touched by the SAME 15-minute
+    # bar — adjacent wicks, or one nested in another. Their forward path is literally the same
+    # bar sequence, so the outcome is identical and counting it twice both inflates n and shrinks
+    # the apparent standard error. One event per (session, bar, side); the deeper zone wins.
+    dropped = 0
+    for key, evs in events.items():
+        seen: dict[tuple[str, int], dict] = {}
+        for e in evs:
+            k = (e["day"], e["bar"])
+            if k not in seen or e["depth"] > seen[k]["depth"]:
+                seen[k] = e
+        dropped += len(evs) - len(seen)
+        events[key] = list(seen.values())
+
+    print(f"\n  {made} zones created, {touched} received a first touch within the window"
+          + (f"\n  {dropped} dropped as duplicates — a different zone resolved by the same "
+             f"15m bar, so the same outcome" if dropped else ""))
 
     for gi, (kind, long, name, dirn) in enumerate(GROUPS):
         evs = events[(kind, long)]
@@ -346,12 +374,41 @@ def run(conn, a) -> int:
             print("  spends the zone. The direction control inside each live group does this job.")
             print("  Raise --carry-days to let a zone survive into a session that gaps past it.")
             continue
+        # ---- baselines ----
+        # LOOSE: each event independently matched to a random bar at the same hour. This is what
+        # the script reported before, and it OVERSTATES significance, because events in one
+        # session share a single market path and are not independent draws.
+        # BLOCK: whole sessions are resampled. For every real session, a donor session is drawn
+        # and its bars at the same slots are taken together, so the null carries the same
+        # within-day dependence as the real sample. This is the figure to trust.
         samples: list[list[dict]] = []
+        loose: list[list[dict]] = []
         if evs and all(len(pool_by_slot[e["slot"]]) >= 3 for e in evs):
-            samples = [[side(rng.choice(pool_by_slot[e["slot"]]), long) for e in evs]
-                       for _ in range(a.runs)]
+            loose = [[side(rng.choice(pool_by_slot[e["slot"]]), long) for e in evs]
+                     for _ in range(a.runs)]
+
+            per_day: dict[str, list[int]] = defaultdict(list)
+            for e in evs:
+                per_day[e["day"]].append(e["slot"])
+            donors: dict[tuple[int, ...], list[str]] = {}
+            ok = True
+            for slots in per_day.values():
+                key = tuple(sorted(slots))
+                if key not in donors:
+                    donors[key] = [d for d in days
+                                   if all((d, s) in pool_by_day_slot for s in key)]
+                if not donors[key]:
+                    ok = False
+                    break
+            if ok:
+                blocks = list(per_day.values())
+                samples = [[side(pool_by_day_slot[(rng.choice(donors[tuple(sorted(sl))]), s)], long)
+                            for sl in blocks for s in sl]
+                           for _ in range(a.runs)]
+            else:
+                samples = loose
         print("\n" + "=" * 100)
-        analyse(evs, samples, name, dirn)
+        analyse(evs, samples, loose, name, dirn)
 
     print("\n" + "=" * 100)
     print("TWO live groups x 9 stop/target cells = 18 cells were tested. With that many, one cell")
@@ -369,6 +426,10 @@ def main() -> int:
     ap.add_argument("--sec", default="13")
     ap.add_argument("--tf", type=int, default=15, help="bar size the touch is detected on")
     ap.add_argument("--min-wick", type=float, default=3.0, help="minimum zone depth in points")
+    ap.add_argument("--max-wick", type=float, default=0.0,
+                    help="skip zones DEEPER than this (0 = no cap). A 150-point wick zone is a "
+                         "neighbourhood, not a level — almost anything touches it. Try 40 on "
+                         "NIFTY, 120 on BANKNIFTY, roughly the 90th percentile of wick depth.")
     ap.add_argument("--carry-days", type=int, default=0, help="extra sessions a zone stays live")
     ap.add_argument("--horizon", type=int, default=2, help="hours to follow the trade")
     ap.add_argument("--runs", type=int, default=400)
