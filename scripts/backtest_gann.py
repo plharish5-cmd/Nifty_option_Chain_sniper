@@ -256,11 +256,21 @@ def run_sweep(conn, a) -> int:
         print(f"no candles for sec_id {a.sec} in {a.db}", file=sys.stderr)
         return 2
 
-    tols = [6.0, 8.0, 10.0, 12.0, 15.0, 20.0]
+    tols = [float(t) for t in a.tols.split(",")] if a.tols else None
+    if tols is None:
+        # Scale the band to the instrument. A fixed +/-10 is ~4% of a 264-point NIFTY session but
+        # only ~1.5% of a 700-point BANKNIFTY one, which would hand NIFTY an unearned advantage and
+        # make any cross-instrument comparison meaningless. So the default grid is a set of
+        # PERCENTAGES of this instrument's own median session range.
+        probe = score_levels(by_day, a, 10.0, "pdc")
+        med = probe["mean_span"] if probe else 250.0
+        tols = [round(med * f, 1) for f in (0.02, 0.03, 0.04, 0.05, 0.06, 0.08)]
+        print(f"(tolerances auto-scaled to this instrument: median session range "
+              f"{med:.0f} pts -> 2%..8% = {', '.join(f'{t:g}' for t in tols)} pts)")
     pivots = ["pdc", "pdh", "pdl"]
     print(f"\nSensitivity sweep · {a.tf}m bars · ±{a.window}-bar pivots · {a.runs} random runs each")
     print(f"database: {a.db}\n")
-    print(f"{'pivot':<7}{'tol':>6}{'Gann':>8}{'random':>9}{'edge':>8}{'sd':>7}{'beat':>7}{'in-range':>10}")
+    print(f"{'pivot':<7}{'tol':>6}{'of rng':>7}{'Gann':>7}{'random':>9}{'edge':>8}{'sd':>7}{'beat':>7}{'in-range':>10}")
 
     cells = []
     for pk in pivots:
@@ -269,7 +279,8 @@ def run_sweep(conn, a) -> int:
             if s is None:
                 continue
             cells.append((pk, t, s))
-            print(f"{pk:<7}{t:>6.0f}{s['g_rate']:>7.1f}%{s['r_mean']:>8.1f}%"
+            pct = t / s["mean_span"] * 100 if s["mean_span"] else 0.0
+            print(f"{pk:<7}{t:>6.0f}{pct:>6.1f}%{s['g_rate']:>7.1f}%{s['r_mean']:>8.1f}%"
                   f"{s['edge']:>+7.1f}{s['z']:>7.1f}{s['beat']:>4}/{a.runs}{s['in_range']:>10.1f}")
 
     if not cells:
@@ -516,6 +527,9 @@ def main() -> int:
                     help="which previous-session price anchors the Sq9 ladder")
     ap.add_argument("--lead", type=int, default=120,
                     help="daily bars reserved for finding the anchors (cycles)")
+    ap.add_argument("--tols", default="",
+                    help="sweep: explicit comma-separated tolerances in points, e.g. 15,20,25,30. "
+                         "Omit to auto-scale to 2%%-8%% of this instrument's median session range.")
     ap.add_argument("--runs", type=int, default=10, help="random baseline runs")
     ap.add_argument("--seed", type=int, default=7)
     a = ap.parse_args()
