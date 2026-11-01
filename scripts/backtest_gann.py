@@ -488,26 +488,37 @@ def run_validate(conn, a) -> int:
     print(f"\nCONCENTRATION  (surplus = hits above what the random rate predicts for that session)")
     print(f"{'total surplus':<26}{tot_surplus:>+8.1f} hits across {len(per)} sessions")
     print(f"{'best session':<26}{contrib[0][0]} {contrib[0][1]:>+7.1f}")
+    ex = {}
     for drop in (1, 3, 5):
         if len(contrib) > drop:
             rest = contrib[drop:]
             rp = sum(c[2] for c in rest)
             rh = sum(c[3] for c in rest)
             rr = rh / rp * 100 if rp else 0.0
-            print(f"{'excluding best ' + str(drop):<26}{rr - full['r_mean']:>+8.1f} pp"
+            ex[drop] = rr - full["r_mean"]
+            print(f"{'excluding best ' + str(drop):<26}{ex[drop]:>+8.1f} pp"
                   f"   ({rh}/{rp} = {rr:.1f}% vs random {full['r_mean']:.1f}%)")
 
     pos_days = sum(1 for c in contrib if c[1] > 0)
     print(f"{'sessions with surplus > 0':<26}{pos_days} of {len(per)}")
 
+    # The verdict must read the EXCLUSION lines, not just how many sessions had any surplus at all.
+    # An earlier version checked only pos_days and told the user an edge was "spread across
+    # sessions" while the line directly above it showed the edge gone once three days were removed.
+    # Counting sessions with a positive surplus says nothing about how big those surpluses were.
+    ex3 = ex.get(3)
+    survives = ex3 is not None and ex3 > 0
+
     print()
-    if halves_ok == 2 and pos_days >= len(per) * 0.55:
-        print("READ: the edge appears in both halves and is spread across sessions rather than")
-        print("      carried by a few. That is what a real effect looks like. The next test the")
-        print("      books demand is a SECOND INSTRUMENT — rerun with --sec for BANKNIFTY.")
+    if halves_ok == 2 and survives and pos_days >= len(per) * 0.55:
+        print("READ: present in both halves AND still positive with the best three sessions")
+        print("      removed. That is what a real effect looks like. Next: a second instrument.")
+    elif halves_ok == 2 and not survives:
+        print("READ: present in both halves, but it disappears once the best three sessions are")
+        print("      removed — a handful of days are carrying it. Keep recording; do not size")
+        print("      against this, and do not call it confirmed.")
     elif halves_ok == 2:
-        print("READ: present in both halves but concentrated in a minority of sessions. Worth")
-        print("      continuing to record; not yet worth sizing against.")
+        print("READ: present in both halves but thinly spread. Worth recording, not worth sizing.")
     else:
         print("READ: the edge does not survive the split. It is a property of some of these days,")
         print("      not of the method. This is the most common honest outcome.")
