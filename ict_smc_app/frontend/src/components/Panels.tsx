@@ -5,7 +5,7 @@ import AlgoCockpit from "./AlgoCockpit";
 
 const up = (x: number | null | undefined) => (x ?? 0) >= 0;
 
-export function Header({ q, live, status }: { q: Quote | null; live: string; status: Dashboard["status"] | null }) {
+export function Header({ q, live, status, onOpenAlgoDesk }: { q: Quote | null; live: string; status: Dashboard["status"] | null; onOpenAlgoDesk?: () => void }) {
   const tokenBad = String(status?.token ?? "").startsWith("expired");
   return (
     <header className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 border-b border-ink-700 bg-ink-900">
@@ -27,7 +27,7 @@ export function Header({ q, live, status }: { q: Quote | null; live: string; sta
         {q?.vix_chg != null && <span className={`num ml-1 ${q.vix_chg >= 0 ? "text-bear-400" : "text-bull-400"}`}>{q.vix_chg >= 0 ? "+" : ""}{fmt(q.vix_chg, 2)}</span>}
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
-        <AlgoCockpit />
+        <AlgoCockpit onOpenAlgoDesk={onOpenAlgoDesk} />
         <span className={`pill ${q?.market_open ? "bg-bull-900 text-bull-400" : "bg-ink-800 text-slate-400"}`}>{q?.market_open ? "● Market open" : "Market closed"}</span>
         <span className={`pill ${live === "live" ? "bg-ink-800 text-slate-300" : "bg-bear-900 text-bear-400"}`}>App link: {live}</span>
         <span className="pill bg-ink-800 text-slate-300">Price: {q?.source ?? "—"}</span>

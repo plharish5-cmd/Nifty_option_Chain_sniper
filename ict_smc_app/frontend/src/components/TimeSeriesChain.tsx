@@ -13,8 +13,9 @@ const KEY="ict_time_series_chain_v1";
 const initial:Controls={day:"",expiry:"",tf:UI_POLICY.default_tf,mode:"OI Change",columns:UI_POLICY.default_columns,range_n:UI_POLICY.default_range,selection:"Range",custom:[],replay:false,end:"",signals:true,auto:true,settings:{full:false,day:false,pct:false,lot:false,hl:true,font:"Small"}};
 const label="flex flex-col gap-1 text-[11px] text-slate-400";
 const select="rounded-md border border-slate-600 bg-[#142034] px-3 py-2 text-sm text-slate-100";
-export default function TimeSeriesChain({active=true}:{active?:boolean}){
-  const [controls,setControls]=useState<Controls>(()=>{try{const v=JSON.parse(localStorage.getItem(KEY)||"{}");return {...initial,...v,settings:{...initial.settings,...v.settings}};}catch{return initial;}});
+export default function TimeSeriesChain({active=true,replayAt}:{active?:boolean;replayAt?:{day:string;end:string}}){
+  const forced:Partial<Controls>=replayAt?{day:replayAt.day,end:replayAt.end,expiry:"",replay:true,auto:false}:{};
+  const [controls,setControls]=useState<Controls>(()=>{try{const v=JSON.parse(localStorage.getItem(KEY)||"{}");return {...initial,...v,settings:{...initial.settings,...v.settings},...forced};}catch{return {...initial,...forced};}});
   const [data,setData]=useState<Result|null>(null),[busy,setBusy]=useState(true),[error,setError]=useState(""),[refresh,setRefresh]=useState(0),[height,setHeight]=useState(1000),[expanded,setExpanded]=useState(false);
   const [voicePrefs,setVoicePrefs]=useState<{enabled:boolean;voiceURI:string;groups:AlertGroups}>(()=>{try{const p=JSON.parse(localStorage.getItem("ict_ts_voice_v1")||"{}");return {enabled:!!p.enabled,voiceURI:p.voiceURI||"",groups:{...DEFAULT_GROUPS,...p.groups}};}catch{return {enabled:false,voiceURI:"",groups:DEFAULT_GROUPS};}});
   const [voices,setVoices]=useState<SpeechSynthesisVoice[]>([]),[lastSpoken,setLastSpoken]=useState<SeriesAlert|null>(null),[voiceStatus,setVoiceStatus]=useState("");
@@ -22,20 +23,21 @@ export default function TimeSeriesChain({active=true}:{active?:boolean}){
   const alerted=useRef<Set<string>>((()=>{try{return new Set<string>(JSON.parse(sessionStorage.getItem("ict_ts_voice_seen")||"[]"));}catch{return new Set<string>();}})());
   const speechSupported=typeof window!=="undefined"&&"speechSynthesis" in window&&typeof SpeechSynthesisUtterance!=="undefined";
   const frame=useRef<HTMLIFrameElement>(null);
-  const patch=(v:Partial<Controls>)=>setControls(c=>({...c,...v}));
-  useEffect(()=>{try{localStorage.setItem(KEY,JSON.stringify(controls));}catch{/* storage optional */}},[controls]);
+  const patch=(v:Partial<Controls>)=>setControls(c=>({...c,...v,...(replayAt?{day:replayAt.day,end:replayAt.end,replay:true,auto:false}:{})}));
+  useEffect(()=>{if(replayAt)return;try{localStorage.setItem(KEY,JSON.stringify(controls));}catch{/* storage optional */}},[controls]);
   useEffect(()=>{
     if(!active&&!voicePrefs.enabled)return;
     const abort=new AbortController();setBusy(true);setError("");
+    const effective=replayAt?{...controls,day:replayAt.day,end:replayAt.end,expiry:"",replay:true}:controls;
     const q=new URLSearchParams();
-    for(const k of ["day","expiry","tf","mode","columns","range_n","selection","signals"] as const)if(controls[k]!=="")q.set(k,String(controls[k]));
+    for(const k of ["day","expiry","tf","mode","columns","range_n","selection","signals"] as const)if(effective[k]!=="")q.set(k,String(effective[k]));
     q.set("custom",controls.custom.join(","));q.set("settings",JSON.stringify(controls.settings));
-    if(controls.replay&&controls.end)q.set("end",controls.end);
+    if(effective.replay&&effective.end)q.set("end",effective.end);
     const timer=window.setTimeout(()=>{fetch("/api/time-series-chain?"+q,{signal:abort.signal}).then(async r=>{if(!r.ok)throw Error("Time-series API HTTP "+r.status);if(!r.headers.get("content-type")?.includes("application/json"))throw Error("The running 8600 backend has not loaded this endpoint. Restart the ICT / SMC backend, then refresh.");return r.json() as Promise<Result>;}).then(j=>{
       if(abort.signal.aborted)return;setData(j);
     }).catch(e=>{if(!abort.signal.aborted)setError(String(e.message||e));}).finally(()=>{if(!abort.signal.aborted)setBusy(false);});},UI_POLICY.control_debounce_ms);
     return()=>{window.clearTimeout(timer);abort.abort();};
-  },[controls,refresh,active,voicePrefs.enabled]);
+  },[controls,refresh,active,voicePrefs.enabled,replayAt?.day,replayAt?.end]);
   useEffect(()=>{
     if((!controls.auto&&!voicePrefs.enabled)||controls.replay||(!active&&!voicePrefs.enabled)||(!data?.live&&!(voicePrefs.enabled&&!controls.day))||!data?.policy)return;
     const id=window.setInterval(()=>setRefresh(v=>v+1),data.policy.refresh_seconds*1000);
@@ -49,6 +51,7 @@ export default function TimeSeriesChain({active=true}:{active?:boolean}){
     return()=>window.speechSynthesis.removeEventListener("voiceschanged",update);
   },[speechSupported]);
   const speak=(text:string)=>{
+    if(replayAt)return;
     if(!speechSupported){setVoiceStatus("Speech is unavailable in this browser.");return;}
     try {
     const utterance=new SpeechSynthesisUtterance(text),voice=chooseVoice(voices,voicePrefs.voiceURI);
@@ -60,7 +63,7 @@ export default function TimeSeriesChain({active=true}:{active?:boolean}){
   };
   useEffect(()=>{cursor.current=null;},[voicePrefs.enabled]);
   useEffect(()=>{
-    if(!voicePrefs.enabled||controls.replay||!data){cursor.current=null;return;}
+    if(replayAt||!voicePrefs.enabled||controls.replay||!data){cursor.current=null;return;}
     const planned=planSeriesAlerts(data,voicePrefs.groups,cursor.current);
     cursor.current=planned.cursor;
     for(const event of planned.alerts){
@@ -108,7 +111,7 @@ export default function TimeSeriesChain({active=true}:{active?:boolean}){
       <div className="flex gap-2"><button className="pill" onClick={()=>setRefresh(v=>v+1)}>↻ Refresh</button><button className="pill" onClick={()=>setExpanded(v=>!v)}>{expanded?"Close full view":"Full view"}</button></div>
     </header>
     <div className="mb-3 flex flex-wrap gap-3 rounded-lg border border-slate-700 bg-[#0b192b] p-3">
-      <label className={label}>Session<select className={select} value={controls.day||data?.day||""} onChange={e=>patch({day:e.target.value,expiry:"",end:"",custom:[]})}>{(data?.sessions??[]).map(d=><option key={d} value={d}>{dateName(d)}</option>)}</select></label>
+      <label className={label}>Session<select disabled={!!replayAt} className={select} value={controls.day||data?.day||""} onChange={e=>patch({day:e.target.value,expiry:"",end:"",custom:[]})}>{(data?.sessions??[]).map(d=><option key={d} value={d}>{dateName(d)}</option>)}</select></label>
       <label className={label}>Expiry<select className={select} value={controls.expiry||data?.expiry||""} onChange={e=>patch({expiry:e.target.value,end:"",custom:[]})}>{(data?.expiries??[]).map(e=><option key={e} value={e}>{data?.expiry_labels?.[e]??e}</option>)}</select></label>
       <label className={label}>Timeframe<select className={select} value={controls.tf} onChange={e=>patch({tf:e.target.value})}>{(policy?.timeframes??[controls.tf]).map(v=><option key={v}>{v}</option>)}</select></label>
       <label className={label}>Timestamp columns<select className={select} value={controls.columns} onChange={e=>patch({columns:Number(e.target.value)})}>{(policy?.columns??[controls.columns]).map(v=><option key={v} value={v}>{v===0?"All day":v}</option>)}</select></label>
@@ -128,7 +131,7 @@ export default function TimeSeriesChain({active=true}:{active?:boolean}){
         <b>Full-session timeline · {times[0]?.slice(11,16)??"09:15"} → {times.at(-1)?.slice(11,16)??"latest recorded"}</b>
         <span>{controls.replay?"Historical / replay":"Latest available"} · {endpoint.replace("T"," ").slice(0,19)}</span>
       </div>
-      <input className="w-full" aria-label="Session timeline" type="range" min={0} max={Math.max(0,times.length-1)} disabled={!times.length} value={replayIndex} onChange={e=>patch({replay:true,end:times[Number(e.target.value)]})}/>
+      <input className="w-full" aria-label="Session timeline" type="range" min={0} max={Math.max(0,times.length-1)} disabled={!times.length||!!replayAt} value={replayIndex} onChange={e=>patch({replay:true,end:times[Number(e.target.value)]})}/>
       <div className="mt-2 flex flex-wrap gap-2">
         <button className="pill" disabled={!times.length} onClick={()=>patch({replay:true,end:times[0]})}>⏮ Session start</button>
         <button className="pill" disabled={!times.length} onClick={()=>moveTimeline(-1)}>← Previous bucket</button>
@@ -141,7 +144,7 @@ export default function TimeSeriesChain({active=true}:{active?:boolean}){
     </div>
     <div className="mb-3 rounded-lg border border-amber-800 bg-[#0b192b] p-3 text-sm" aria-label="Time-series voice alerts">
       <div className="flex flex-wrap items-center gap-3">
-        <label><input type="checkbox" aria-label="Live time-series voice alerts" checked={voicePrefs.enabled} disabled={!speechSupported} onChange={e=>{setVoicePrefs(p=>({...p,enabled:e.target.checked}));if(e.target.checked){patch({day:"",expiry:"",replay:false,end:""});speak("Time-series live alerts enabled. Waiting for a new significant closed bucket.");}}}/> Live voice alerts</label>
+        <label><input type="checkbox" aria-label="Live time-series voice alerts" checked={voicePrefs.enabled} disabled={!speechSupported||!!replayAt} onChange={e=>{setVoicePrefs(p=>({...p,enabled:e.target.checked}));if(e.target.checked){patch({day:"",expiry:"",replay:false,end:""});speak("Time-series live alerts enabled. Waiting for a new significant closed bucket.");}}}/> Live voice alerts</label>
         <label>Voice <select aria-label="Time-series voice" className={select} value={voicePrefs.voiceURI} onChange={e=>setVoicePrefs(p=>({...p,voiceURI:e.target.value}))}><option value="">Prefer available female English voice</option>{voices.map(v=><option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>)}</select></label>
         <button className="pill" disabled={!speechSupported} onClick={()=>speak("Voice test. Important time-series breakouts, reversals and false breakout warnings will be announced.")}>Test voice</button>
         <button className="pill" disabled={!controls.replay||!speechSupported||busy} onClick={readReplay}>Read replay signal</button>

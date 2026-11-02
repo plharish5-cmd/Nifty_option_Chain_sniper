@@ -128,7 +128,7 @@ const QUICK_LOOKBACKS = [
   { label: "All", mins: null },
 ];
 
-export default function WriterMap() {
+export default function WriterMap({ replayAt }: { replayAt?: { day: string; ts: number } } = {}) {
   // Navigation & Control States
   const [positionView, setPositionView] = useState(false);
   const [positionBucket, setPositionBucket] = useState(analystConfig.oi_studio.positioning.bucket_minutes);
@@ -175,15 +175,17 @@ export default function WriterMap() {
 
   const requestQuery = useMemo(() => {
     const q = new URLSearchParams();
+    if (replayAt) q.set("day", replayAt.day);
     q.set("expiry_mode", expiryMode);
     q.set("strike_range", rangeMode);
-    if (selectedStartTs !== null) q.set("start_ts", String(selectedStartTs));
-    if (selectedEndTs !== null) q.set("end_ts", String(selectedEndTs));
+    if (!replayAt && selectedStartTs !== null) q.set("start_ts", String(selectedStartTs));
+    if (replayAt) q.set("end_ts", String(replayAt.ts));
+    else if (selectedEndTs !== null) q.set("end_ts", String(selectedEndTs));
     if (minStrikeInput !== null) q.set("min_strike", String(minStrikeInput));
     if (maxStrikeInput !== null) q.set("max_strike", String(maxStrikeInput));
     if (positionView) { q.set("include_positioning", "true"); q.set("bucket_minutes", String(positionBucket)); }
     return q.toString();
-  }, [expiryMode, rangeMode, selectedStartTs, selectedEndTs, minStrikeInput, maxStrikeInput, positionView, positionBucket]);
+  }, [expiryMode, rangeMode, selectedStartTs, selectedEndTs, minStrikeInput, maxStrikeInput, positionView, positionBucket, replayAt?.day, replayAt?.ts]);
 
   // Fetch telemetry from GET /api/chain/oi-studio
   const fetchData = useCallback(async () => {
@@ -217,11 +219,11 @@ export default function WriterMap() {
   // Initial and periodic fetch
   useEffect(() => {
     fetchData();
-    if (!isReplayOn) {
+    if (!isReplayOn && !replayAt) {
       const id = window.setInterval(fetchData, 25000);
       return () => window.clearInterval(id);
     }
-  }, [fetchData, isReplayOn]);
+  }, [fetchData, isReplayOn, replayAt]);
 
   // Replay playback timer (advances 1 bar every 600ms)
   useEffect(() => {
@@ -372,6 +374,8 @@ export default function WriterMap() {
     const frac = (spot - firstS) / (lastS - firstS);
     return padLeft + frac * plotWidth;
   }, [strikes, spot, padLeft, plotWidth]);
+
+  if (replayAt && (fetchError || !data)) return <div className="p-10 text-center text-slate-300" role={fetchError ? "alert" : undefined}>{fetchError || "Loading recorded OI at the shared time…"}<p className="mt-3 text-xs">No live price, zero OI or later snapshot is being substituted.</p></div>;
 
   return (
     <div

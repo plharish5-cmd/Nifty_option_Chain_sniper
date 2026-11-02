@@ -247,10 +247,24 @@ async def gamma_exposure_review_endpoint(
     return await gamma_exposure_review(day, expiry, tf, end_ts, sign, study)
 
 
+@app.get("/api/desk/time-machine")
+def desk_time_machine(day: Optional[str] = None, at: Optional[int] = None):
+    import importlib.util
+    path = config.BACKEND_DIR.parent.parent / "analyst/desk_time_machine.py"
+    spec = importlib.util.spec_from_file_location("desk_time_machine", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    try:
+        return mod.metadata(day, at)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @app.get("/api/chain/oi-studio")
 @app.get("/api/chain/stockmojo-oi-studio")
 def oi_studio_endpoint(
     expiry_mode: str = Query("this_wk"),
+    day: Optional[str] = Query(None),
     start_ts: Optional[int] = Query(None),
     end_ts: Optional[int] = Query(None),
     strike_range: str = Query("10"),
@@ -263,8 +277,15 @@ def oi_studio_endpoint(
     from ..engine import oi_studio
     if include_positioning and bucket_minutes is not None and bucket_minutes not in oi_studio.get_cfg()["positioning"]["bucket_options"]:
         raise HTTPException(status_code=422, detail="Unsupported positioning bucket")
+    if day is not None:
+        from datetime import date
+        try:
+            date.fromisoformat(day)
+        except ValueError:
+            raise HTTPException(422, "Invalid session date")
     return oi_studio.get_oi_studio_data(
         expiry_mode=expiry_mode,
+        session_day=day,
         start_ts=start_ts,
         end_ts=end_ts,
         strike_range=strike_range,
@@ -1257,6 +1278,24 @@ class AlgoConfigIn(BaseModel):
     max_daily_loss_inr: Optional[float] = None
 
 
+class ArmSlIn(BaseModel):
+    spot_sl_pts: Optional[float] = None
+    broker_sl_mode: Optional[str] = None
+    broker_sl_pts: Optional[float] = None
+    broker_sl_type: Optional[str] = None
+    broker_sl_limit_buffer_pts: Optional[float] = None
+    exchange_sl_armed: Optional[bool] = None
+
+
+class TargetModeIn(BaseModel):
+    mode: str
+
+
+class SlotToggleIn(BaseModel):
+    slot_id: str
+    enabled: bool
+
+
 @app.get("/api/algo/status")
 def algo_status_endpoint():
     """Custom Dhan API Algo Execution Engine status, active position, and kill-switch state."""
@@ -1331,6 +1370,72 @@ def algo_today_audit_endpoint(date: str = "2026-11-02"):
     """Returns today's 1H 8-EMA support bounce zero-lookahead audit."""
     from ..engine import htf_wick_ema_rb
     return htf_wick_ema_rb.audit_today_ema_bounce(date_str=date)
+
+
+@app.get("/api/algo/premarket-check")
+async def algo_premarket_check_endpoint():
+    """Interactive 6-point pre-market diagnostic checklist & broker protection verification."""
+    from ..engine import dhan_algo_executor
+    import app.api.main as _m
+    h = getattr(_m, "hub", None)
+    return await dhan_algo_executor.executor.run_premarket_check(hub=h)
+
+
+@app.post("/api/algo/arm-sl")
+def algo_arm_sl_endpoint(payload: ArmSlIn):
+    """Configures dual-layer stop loss: local spot tracker and exchange-side SL-M / SL-L."""
+    from ..engine import dhan_algo_executor
+    return dhan_algo_executor.executor.arm_stop_loss(
+        spot_sl_pts=payload.spot_sl_pts,
+        broker_sl_mode=payload.broker_sl_mode,
+        broker_sl_pts=payload.broker_sl_pts,
+        broker_sl_type=payload.broker_sl_type,
+        broker_sl_limit_buffer_pts=payload.broker_sl_limit_buffer_pts,
+        exchange_sl_armed=payload.exchange_sl_armed,
+    )
+
+
+@app.post("/api/algo/target-mode")
+def algo_target_mode_endpoint(payload: TargetModeIn):
+    """Sets dynamic target engine mode (DYNAMIC, FIXED, TRAIL_RUNNER)."""
+    from ..engine import dhan_algo_executor
+    return dhan_algo_executor.executor.set_target_mode(payload.mode)
+
+
+@app.get("/api/algo/smart-target-preview")
+def algo_smart_target_preview_endpoint(option_type: str = "CE", mode: Optional[str] = None):
+    """Live confluence target preview: checks Net PE-CE, Call/Put Writer walls, and S/R levels."""
+    from ..engine import dhan_algo_executor
+    import app.api.main as _m
+    h = getattr(_m, "hub", None)
+    spot = dhan_algo_executor.executor._last_evaluated_spot or 23440.8
+    net_pe_ce = 0.0
+    if h and hasattr(h, "get_live_writer_flow_state"):
+        try:
+            _, net_pe_ce = h.get_live_writer_flow_state()
+        except Exception:
+            pass
+    return dhan_algo_executor.executor.compute_smart_target(
+        spot=spot,
+        option_type=option_type,
+        net_pe_ce=net_pe_ce,
+        hub=h,
+        mode=mode,
+    )
+
+
+@app.get("/api/algo/strategy-slots")
+def algo_strategy_slots_endpoint():
+    """Lists modular strategy expansion slots."""
+    from ..engine import dhan_algo_executor
+    return dhan_algo_executor.executor.get_strategy_slots()
+
+
+@app.post("/api/algo/strategy-slot/toggle")
+def algo_strategy_slot_toggle_endpoint(payload: SlotToggleIn):
+    """Toggles or configures a strategy expansion slot."""
+    from ..engine import dhan_algo_executor
+    return dhan_algo_executor.executor.toggle_strategy_slot(payload.slot_id, payload.enabled)
 
 
 from .nodes_api import router as _nodes_router

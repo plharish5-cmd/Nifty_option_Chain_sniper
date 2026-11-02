@@ -330,5 +330,13 @@
     "research_only": true,
     "big_activity_rvol": 2,
     "replay_debounce_ms": 300
+  },
+  "time_machine": {
+    "open": "09:15",
+    "end": "15:40",
+    "step_minutes": 1,
+    "jump_minutes": 15,
+    "debounce_ms": 400,
+    "refresh_seconds": 60
   }
 }

@@ -283,21 +283,33 @@ def get_oi_studio_data(
     cfg: Optional[Dict[str, Any]] = None,
     include_positioning: bool = False,
     bucket_minutes: Optional[int] = None,
+    session_day: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Main database query and orchestration for GET /api/chain/oi-studio.
     Resolves session snapshots, expiries, spot prices, and baseline state.
     """
     c = cfg or get_cfg()
-    today_dt = now_ist().date()
+    today_dt = datetime.fromisoformat(session_day).date() if session_day else now_ist().date()
     today_start, today_end = session_bounds(today_dt)
+    if session_day:
+        clock = datetime.strptime(json.loads(CONFIG_FILE.read_text())["time_machine"]["end"], "%H:%M").time()
+        today_end = int(datetime.combine(today_dt, clock, IST).timestamp())
     today_iso = today_dt.isoformat()
+
+    if session_day:
+        # Explicit replay never resolves an expiry or snapshot from a later session.
+        replay_rows = db.query("SELECT DISTINCT expiry FROM chain_snap WHERE ts >= ? AND ts <= ? ORDER BY expiry", (today_start, min(today_end, end_ts) if end_ts is not None else today_end))
+        if not replay_rows:
+            return {"ok": False, "message": "No OI snapshot existed at this time", "strikes": [], "timeline": [], "summary": {}}
 
     # 1. Resolve active expiries in DB
     active_rows = db.query(
         "SELECT DISTINCT expiry FROM chain_snap WHERE expiry >= ? AND ts >= ? ORDER BY expiry ASC",
         (today_iso, today_start),
     )
+    if session_day:
+        active_rows = replay_rows
     if not active_rows:
         active_rows = db.query(
             "SELECT DISTINCT expiry FROM chain_latest WHERE expiry >= ? ORDER BY expiry ASC",
@@ -342,8 +354,10 @@ def get_oi_studio_data(
         ORDER BY ts ASC, strike ASC
     """, (*target_exps, today_start, today_end))
 
-    # Fallback to latest session in DB if market not open today
-    if not snap_rows:
+    if session_day:
+        snap_rows = [r for r in snap_rows if end_ts is None or int(r["ts"]) <= end_ts]
+    # Fallback only for legacy live mode, never across a requested replay session.
+    if not snap_rows and not session_day:
         latest_ts_row = db.query(f"""
             SELECT ts FROM chain_snap
             WHERE expiry IN ({placeholders})
@@ -362,8 +376,13 @@ def get_oi_studio_data(
 
     # 3. Fetch spot price candles for mapping spot to snapshots
     spot_candles = db.candles_1m("13", today_start)
-    if not spot_candles:
+    if not spot_candles and not session_day:
         spot_candles = db.candles_1m("FUT", today_start)
+    if session_day:
+        limit = int(snap_rows[-1]["ts"]) if snap_rows else today_start
+        spot_candles = [r for r in spot_candles if int(r["ts"]) + 60 <= limit]
+        if not spot_candles:
+            return {"ok": False, "message": "No closed NIFTY candle existed at this replay time", "strikes": [], "timeline": [], "summary": {}}
 
     spot_by_ts: Dict[int, float] = {}
     last_spot = 22700.0
@@ -432,7 +451,7 @@ def get_oi_studio_data(
         })
 
     # Fallback to chain_latest if no snapshots are available
-    if not processed_snapshots:
+    if not processed_snapshots and not session_day:
         latest_recs = db.query(f"SELECT expiry, ts, payload FROM chain_latest WHERE expiry IN ({placeholders})", (*target_exps,))
         if latest_recs:
             combined_strikes: Dict[float, Dict[str, float]] = {}

@@ -810,7 +810,77 @@ export const api = {
   algoUnlock: () => api.post<{ ok: boolean; is_locked: boolean }>("/api/algo/unlock", {}),
   algoTestConnection: () => get<{ ok: boolean; connected: boolean; active_expiry: string; expiry: string; atm_strike: number; strike: number; option_type: string; security_id: string; sec_id: string; lot_size: number; available_balance: number; message: string }>("/api/algo/test-connection"),
   algoBackfill: () => api.post<any>("/api/algo/backfill", {}),
+  algoPremarketCheck: () => get<PremarketCheckRes>("/api/algo/premarket-check"),
+  algoArmSl: (cfg: Partial<{ spot_sl_pts: number; broker_sl_mode: string; broker_sl_pts: number; broker_sl_type: string; broker_sl_limit_buffer_pts: number; exchange_sl_armed: boolean }>) =>
+    api.post<any>("/api/algo/arm-sl", cfg),
+  algoTargetMode: (mode: string) => api.post<any>("/api/algo/target-mode", { mode }),
+  algoSmartTargetPreview: (optionType = "CE", mode?: string) =>
+    get<SmartTargetRes>(`/api/algo/smart-target-preview?option_type=${optionType}${mode ? `&mode=${mode}` : ""}`),
+  algoStrategySlots: () => get<StrategySlot[]>("/api/algo/strategy-slots"),
+  algoToggleStrategySlot: (slot_id: string, enabled: boolean) =>
+    api.post<any>("/api/algo/strategy-slot/toggle", { slot_id, enabled }),
 };
+
+export interface StrategySlot {
+  id: string;
+  slot_num: number;
+  name: string;
+  status: "ACTIVE" | "READY_TO_CONFIGURE" | "CUSTOM_BUILDER";
+  enabled: boolean;
+  description: string;
+  type: "FLAGSHIP" | "CORE" | "EXPANSION_SLOT" | "CUSTOM_SLOT";
+  win_rate: string;
+  avg_rr: string;
+}
+
+export interface PremarketCheckItem {
+  id: string;
+  title: string;
+  passed: boolean;
+  status: "PASS" | "WARN" | "FAIL";
+  detail: string;
+  data?: any;
+}
+
+export interface PremarketCheckRes {
+  ok: boolean;
+  timestamp: string;
+  all_passed: boolean;
+  execution_mode: "PAPER" | "SEMI_AUTO" | "FULL_AUTO";
+  summary: string;
+  items: PremarketCheckItem[];
+  dual_sl_settings: {
+    spot_sl_pts: number;
+    broker_sl_mode: "SL-M" | "SL-L";
+    broker_sl_pts: number;
+    broker_sl_type: "POINTS" | "PERCENT";
+    broker_sl_limit_buffer_pts: number;
+    exchange_sl_armed: boolean;
+  };
+  target_engine: {
+    target_mode: "DYNAMIC" | "FIXED" | "TRAIL_RUNNER";
+  };
+}
+
+export interface SmartTargetRes {
+  target_mode: string;
+  spot: number;
+  option_type: "CE" | "PE";
+  target_1_pts: number;
+  target_2_pts: number;
+  target_1_price: number;
+  target_2_price: number;
+  spot_sl_pts: number;
+  spot_sl_price: number;
+  reason: string;
+  regime: string;
+  regime_tag: string;
+  net_pe_ce: number;
+  call_wall: { strike: number; oi: number; chg_oi: number };
+  put_wall: { strike: number; oi: number; chg_oi: number };
+  nearest_r: number;
+  nearest_s: number;
+}
 
 export interface AlgoPosition {
   trade_id: string;
@@ -839,6 +909,12 @@ export interface AlgoPosition {
   realized_pnl_inr: number;
   exit_reason?: string;
   dhan_order_id?: string;
+  broker_sl_order_id?: string;
+  broker_sl_trigger_price?: number;
+  broker_sl_limit_price?: number;
+  broker_sl_mode?: string;
+  target_mode?: string;
+  target_reason?: string;
 }
 
 export interface AlgoPendingSignal {
@@ -858,6 +934,9 @@ export interface AlgoPendingSignal {
   created_time: string;
   reason: string;
   net_pe_ce: number;
+  target_mode?: string;
+  target_reason?: string;
+  broker_sl_trigger_price?: number;
 }
 
 export interface AlgoStatusRes {
@@ -889,6 +968,19 @@ export interface AlgoStatusRes {
   };
   today_audit?: any;
   trade_replay?: any[];
+  dual_sl_settings?: {
+    spot_sl_pts: number;
+    broker_sl_mode: "SL-M" | "SL-L";
+    broker_sl_pts: number;
+    broker_sl_type: "POINTS" | "PERCENT";
+    broker_sl_limit_buffer_pts: number;
+    exchange_sl_armed: boolean;
+  };
+  target_engine?: {
+    target_mode: string;
+    smart_target_preview?: SmartTargetRes;
+  };
+  strategy_slots?: StrategySlot[];
 }
 
 export type LiveMsg = (

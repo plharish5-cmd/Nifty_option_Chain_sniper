@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { api, type AlgoStatusRes, type AlgoPosition } from "../api";
 
-export function AlgoCockpit() {
+export function AlgoCockpit({ onOpenAlgoDesk }: { onOpenAlgoDesk?: () => void } = {}) {
   const [status, setStatus] = useState<AlgoStatusRes | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -230,6 +230,16 @@ export function AlgoCockpit() {
           <span className="text-[8px] opacity-70">{open ? "▲" : "▼"}</span>
         </button>
 
+        {onOpenAlgoDesk && (
+          <button
+            onClick={onOpenAlgoDesk}
+            className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 hover:bg-emerald-900 transition-colors hidden sm:inline-flex items-center gap-1"
+            title="Switch to full-screen Algo Desk tab"
+          >
+            <span>Desk ↗</span>
+          </button>
+        )}
+
         {/* Real-Time Radar HUD in Top Bar */}
         <div className="hidden md:flex items-center gap-2 border-l border-slate-700/80 pl-2 text-[10.5px] font-mono">
           <span className="text-slate-300">
@@ -327,12 +337,26 @@ export function AlgoCockpit() {
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => setOpen(false)}
-              className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-            >
-              ✕
-            </button>
+            <div className="flex items-center gap-1.5">
+              {onOpenAlgoDesk && (
+                <button
+                  onClick={() => {
+                    setOpen(false);
+                    onOpenAlgoDesk();
+                  }}
+                  className="px-2 py-1 bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white rounded text-[10.5px] font-bold shadow-md transition-all flex items-center gap-1"
+                  title="Switch to full-screen Algo Desk tab"
+                >
+                  <span>Open Full Desk ↗</span>
+                </button>
+              )}
+              <button
+                onClick={() => setOpen(false)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           {actionMsg && (

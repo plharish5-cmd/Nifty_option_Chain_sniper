@@ -11,6 +11,11 @@ Verifies:
    trigger properly under verified conditions.
 5. Emergency Panic button 'flatten_all_and_lock' squares off positions and locks executor.
 """
+import os
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch
@@ -127,45 +132,7 @@ def test_paper_mode_tp1_trail_sl_and_tp2_exit(clean_executor):
     asyncio.run(_run())
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. FASTAPI ENDPOINTS VERIFICATION
-# ─────────────────────────────────────────────────────────────────────────────
 
-def test_algo_api_endpoints():
-    """Verifies all /api/algo/* endpoints respond with proper schema."""
-    from starlette.testclient import TestClient
-    from app.api.main import app
-
-    client = TestClient(app)
-
-    # 1. GET /api/algo/status
-    res = client.get("/api/algo/status")
-    assert res.status_code == 200
-    data = res.json()
-    assert data["ok"] is True
-    assert data["execution_mode"] in ("PAPER", "SEMI_AUTO", "FULL_AUTO")
-    assert "strategies_enabled" in data
-    assert "daily_trades_count" in data
-
-    # 2. POST /api/algo/config
-    res_cfg = client.post("/api/algo/config", json={
-        "execution_mode": "PAPER",
-        "strategies": {"1H_8EMA_SUPPORT_BOUNCE": True, "4H_1H_VIRGIN_WICK_REJECTION": True, "SNIPER_DIP_BUY_SYNERGY": True},
-        "lots_per_trade": 1,
-        "max_trades_per_day": 3,
-        "max_daily_loss_inr": -3000.0,
-    })
-    assert res_cfg.status_code == 200
-    assert res_cfg.json()["execution_mode"] == "PAPER"
-
-    # 3. POST /api/algo/unlock
-    res_unlock = client.post("/api/algo/unlock")
-    assert res_unlock.status_code == 200
-    assert res_unlock.json()["is_locked"] is False
-
-    # 4. POST /api/algo/dismiss-pending when none
-    res_dismiss = client.post("/api/algo/dismiss-pending")
-    assert res_dismiss.status_code == 200
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -428,3 +395,159 @@ def test_algo_api_endpoints():
     # 4. POST /api/algo/dismiss-pending when none
     res_dismiss = client.post("/api/algo/dismiss-pending")
     assert res_dismiss.status_code == 200
+
+    # 5. GET /api/algo/premarket-check
+    res_chk = client.get("/api/algo/premarket-check")
+    assert res_chk.status_code == 200
+    chk_data = res_chk.json()
+    assert chk_data["ok"] is True
+    assert "items" in chk_data
+    assert len(chk_data["items"]) == 6
+    item_ids = [it["id"] for it in chk_data["items"]]
+    assert "token_margin" in item_ids
+    assert "expiry_contracts" in item_ids
+    assert "candle_sync" in item_ids
+    assert "gann_matrix" in item_ids
+    assert "broker_sl" in item_ids
+    assert "risk_guardrails" in item_ids
+    assert "dual_sl_settings" in chk_data
+
+    # 6. POST /api/algo/arm-sl
+    res_arm = client.post("/api/algo/arm-sl", json={
+        "spot_sl_pts": 15.0,
+        "broker_sl_mode": "SL-M",
+        "broker_sl_pts": 10.0,
+        "broker_sl_type": "POINTS",
+        "broker_sl_limit_buffer_pts": 1.5,
+        "exchange_sl_armed": True,
+    })
+    assert res_arm.status_code == 200
+    arm_data = res_arm.json()
+    assert arm_data["ok"] is True
+    assert arm_data["broker_sl_mode"] == "SL-M"
+    assert arm_data["broker_sl_pts"] == 10.0
+
+    # 7. POST /api/algo/target-mode
+    res_tm = client.post("/api/algo/target-mode", json={"mode": "DYNAMIC"})
+    assert res_tm.status_code == 200
+    assert res_tm.json()["target_mode"] == "DYNAMIC"
+
+    # 8. GET /api/algo/smart-target-preview
+    res_st = client.get("/api/algo/smart-target-preview?option_type=CE")
+    assert res_st.status_code == 200
+    st_data = res_st.json()
+    assert "target_1_pts" in st_data
+    assert "target_2_pts" in st_data
+    assert "reason" in st_data
+
+    # 9. GET /api/algo/strategy-slots
+    res_slots = client.get("/api/algo/strategy-slots")
+    assert res_slots.status_code == 200
+    slots = res_slots.json()
+    assert len(slots) == 6
+    slot_ids = [s["id"] for s in slots]
+    assert "1H_8EMA_SUPPORT_BOUNCE" in slot_ids
+    assert "WRITER_TRAP_BREAKOUT" in slot_ids
+    assert "CUSTOM_RULE_BUILDER" in slot_ids
+
+    # 10. POST /api/algo/strategy-slot/toggle
+    res_tog = client.post("/api/algo/strategy-slot/toggle", json={"slot_id": "WRITER_TRAP_BREAKOUT", "enabled": True})
+    assert res_tog.status_code == 200
+    assert res_tog.json()["slot"]["enabled"] is True
+
+
+def test_companion_exchange_sl_order_placement_and_cancellation(clean_executor):
+    """Verifies companion Exchange-Side SL is dispatched on entry and cancelled on TP/SL exit."""
+    async def _run():
+        eng = clean_executor
+        eng.execution_mode = "FULL_AUTO"
+        eng.exchange_sl_armed = True
+        eng.broker_sl_mode = "SL-M"
+        eng.broker_sl_pts = 10.0
+
+        trade_params = {
+            "strategy": "1H_8EMA_SUPPORT_BOUNCE",
+            "option_type": "CE",
+            "strike": 23450.0,
+            "security_id": "54050",
+            "symbol": "NIFTY 23450 CE",
+            "spot": 23440.0,
+            "entry_option_price": 120.0,
+            "spot_sl": 23425.0,
+            "spot_tp1": 23460.0,
+            "spot_tp2": 23480.0,
+            "reason": "Exchange SL Test",
+        }
+
+        # Mock order placement methods
+        with patch.object(eng, "place_dhan_order", new_callable=AsyncMock) as mock_place, \
+             patch.object(eng, "place_dhan_sl_order", new_callable=AsyncMock) as mock_sl, \
+             patch.object(eng, "cancel_dhan_order", new_callable=AsyncMock) as mock_cancel:
+
+            mock_place.return_value = {"ok": True, "order_id": "DHAN_BUY_123"}
+            mock_sl.return_value = {"ok": True, "order_id": "DHAN_SL_456"}
+            mock_cancel.return_value = {"ok": True, "order_id": "DHAN_SL_456"}
+
+            # 1. Trigger Entry -> places BUY order + companion SL order
+            res = await eng.trigger_order_entry(trade_params)
+            assert res["ok"] is True
+            assert eng.active_position is not None
+            assert eng.active_position.dhan_order_id == "DHAN_BUY_123"
+            assert eng.active_position.broker_sl_order_id == "DHAN_SL_456"
+            assert eng.active_position.broker_sl_trigger_price == 110.0  # 120 - 10.0 pts
+
+            mock_place.assert_called_once()
+            mock_sl.assert_called_once_with(
+                security_id="54050",
+                quantity=75,
+                trigger_price=110.0,
+                order_type="STOP_LOSS_MARKET",
+                limit_price=0.0,
+            )
+
+            # 2. Price hits Target 2 -> Exits trade and cancels companion SL order
+            exit_res = await eng.update_spot_and_check_exit(23485.0)
+            assert exit_res is not None
+            assert exit_res["ok"] is True
+            assert eng.active_position is None
+
+            mock_cancel.assert_called_once_with("DHAN_SL_456")
+
+    asyncio.run(_run())
+
+
+def test_compute_smart_target_front_running_and_modes(clean_executor):
+    """Verifies compute_smart_target front-runs Call Writer Walls and respects regimes."""
+    eng = clean_executor
+
+    # 1. Strong Bullish Regime: Net PE-CE >= 1.5Cr -> Target 2 runner extended
+    res_bull = eng.compute_smart_target(spot=23200.0, option_type="CE", net_pe_ce=18_000_000.0)
+    assert res_bull["regime"] == "STRONG_BULLISH"
+    assert res_bull["target_2_pts"] >= 50.0
+
+    # 2. Call Writer Wall at 23,300 with Spot at 23,265 (Wall distance: 35 pts)
+    # Target 2 (normally +40) should clamp to 23,300 - 5 = 23,295 (+30 pts from 23,265)
+    res_wall = eng.compute_smart_target(
+        spot=23265.0,
+        option_type="CE",
+        net_pe_ce=5_000_000.0,
+        custom_call_wall=23300.0,
+    )
+    assert res_wall["target_2_price"] <= 23295.0
+    assert "Call Wall" in res_wall["reason"]
+
+    # 3. Fixed Mode: always +20 / +40 pts regardless of walls
+    res_fixed = eng.compute_smart_target(
+        spot=23265.0,
+        option_type="CE",
+        mode="FIXED",
+        custom_call_wall=23300.0,
+    )
+    assert res_fixed["target_mode"] == "FIXED"
+    assert res_fixed["target_1_pts"] == 20.0
+    assert res_fixed["target_2_pts"] == 40.0
+    assert res_fixed["target_1_price"] == 23285.0
+    assert res_fixed["target_2_price"] == 23305.0
+
+
+

@@ -1,3 +1,4 @@
+import TimeMachine from "./components/TimeMachine";
 // App.tsx — layout + data flow. REST for the initial state (so a refresh restores everything from SQLite),
 // WebSocket for changes. Candles/analysis are re-fetched whenever the backend says a candle CLOSED.
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -28,6 +29,7 @@ import AlertsTable from "./components/AlertsTable";
 import AdvPaPanel from "./components/AdvPaPanel";
 import InstitutionalLevelsWidget from "./components/InstitutionalLevelsWidget";
 import AlgoCockpit from "./components/AlgoCockpit";
+import AlgoTradingTab from "./components/AlgoTradingTab";
 
 const TFS: TF[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "30m": 15, "1h": 30, "4h": 60, "1D": 60 };
@@ -51,7 +53,7 @@ const PRESETS: [string, string, Partial<Layers>][] = [
   ["Futures", "volume, futures OI, RVOL panes", { volume: true, oi: true, rvol: true, structure: true }],
 ];
 
-export default function App() {
+function LiveDesk() {
   const [tf, setTf] = useState<TF>("5m");
   const [candles, setCandles] = useState<Candle[]>([]);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
@@ -86,7 +88,14 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap" | "stdv" | "alerts" | "advpa" | "time_series" | "ict_levels" | "gamma_review">("paper");
+  const [mainTab, setMainTab] = useState<"live_desk" | "algo_desk">(() => {
+    try { return (localStorage.getItem("ict_maintab") as "live_desk" | "algo_desk") || "live_desk"; } catch { return "live_desk"; }
+  });
+  const switchMainTab = (t: "live_desk" | "algo_desk") => {
+    setMainTab(t);
+    try { localStorage.setItem("ict_maintab", t); } catch { /* ignore */ }
+  };
+  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap" | "stdv" | "alerts" | "advpa" | "time_series" | "ict_levels" | "gamma_review" | "algo_desk">("paper");
   const [selectedStdvLeg, setSelectedStdvLeg] = useState<StdvLeg | null>(null);
   const [isStdvPicking, setIsStdvPicking] = useState(false);
   const [mainView, setMainView] = useState<"candles" | "writers" | "both">(() => { try { return (localStorage.getItem("ict_mainview") as "candles" | "writers" | "both") || "candles"; } catch { return "candles"; } });
@@ -163,8 +172,55 @@ export default function App() {
   useEffect(() => { if (chartInst === "NIFTY") ap.onCandles(candles, q?.spot ?? null); }, [candles, chartInst, q?.spot, ap]);
   return (
     <div className="min-h-full flex flex-col">
-      <Header q={q} live={live} status={dash?.status ?? null} />
-      <AlertToasts toasts={ra.toasts} dismiss={ra.dismiss} />
+      <Header q={q} live={live} status={dash?.status ?? null} onOpenAlgoDesk={() => switchMainTab("algo_desk")} />
+
+      {/* ── TOP PRIMARY NAVIGATION BAR ────────────────────────────────────── */}
+      <div className="bg-[#080e1a] border-b border-ink-700/80 px-4 py-2 flex flex-wrap items-center justify-between gap-3 text-xs shadow-md">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => switchMainTab("live_desk")}
+            className={`px-3.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-2 ${
+              mainTab === "live_desk"
+                ? "bg-cyan-950/90 border border-cyan-400 text-cyan-200 shadow-md shadow-cyan-950/50"
+                : "border border-ink-700 bg-ink-900/60 text-slate-400 hover:text-slate-200 hover:bg-ink-800"
+            }`}
+          >
+            <span>📈 Live Chart & Desk</span>
+          </button>
+
+          <button
+            onClick={() => switchMainTab("algo_desk")}
+            className={`px-3.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-2.5 ${
+              mainTab === "algo_desk"
+                ? "bg-gradient-to-r from-emerald-950 via-teal-950 to-emerald-950 border border-emerald-400 text-emerald-200 shadow-lg shadow-emerald-950/60 ring-1 ring-emerald-500/50"
+                : "border border-emerald-600/60 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-950/60 hover:border-emerald-400"
+            }`}
+          >
+            <span className="text-base">🤖</span>
+            <span className="tracking-wide">Algo Desk</span>
+            <span className="px-1.5 py-0.5 bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 rounded text-[9.5px] font-mono tracking-wider uppercase font-black">
+              FLAGSHIP 1H 8-EMA
+            </span>
+          </button>
+        </div>
+
+        <div className="hidden lg:flex items-center gap-4 text-[11px] font-mono text-slate-400">
+          <span className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Dual-Layer Risk: <b className="text-slate-200">Local Spot SL + Dhan SL-M Server</b></span>
+          </span>
+          <span className="text-slate-600">|</span>
+          <span>Target Engine: <b className="text-cyan-300">Net PE−CE &bull; Writer Front-Running</b></span>
+        </div>
+      </div>
+
+      {mainTab === "algo_desk" ? (
+        <div className="flex-1 overflow-auto bg-[#070d19]">
+          <AlgoTradingTab />
+        </div>
+      ) : (
+        <>
+          <AlertToasts toasts={ra.toasts} dismiss={ra.dismiss} />
       {(() => {
         const rs = analysis?.volume?.rvol_state;
         const C: Record<string, string> = { ACTIVE: "bg-bull-900/70 border-bull-400 text-bull-400", ABSENT: "bg-ink-850 border-slate-600 text-slate-400",
@@ -203,7 +259,7 @@ export default function App() {
             style={full ? undefined : { height: chartH }}>
             <div className="card-h flex-wrap">
               <div className="flex items-center gap-1">
-                <AlgoCockpit />
+                <AlgoCockpit onOpenAlgoDesk={() => switchMainTab("algo_desk")} />
                 <span className="mx-1 w-px self-stretch bg-ink-700" />
                 <button onClick={() => switchMain("candles")} className={`tab ${mainView === "candles" ? "tab-on" : ""}`}>📈 Candles</button>
                 <button onClick={() => switchMain("writers")} title="OI change · call vs put writers + hairy spikes (unusual writer flow ≥ 2.5× normal)"
@@ -354,11 +410,13 @@ export default function App() {
                 <button className={`tab ${bottom === "gamma_review" ? "tab-on" : ""} !border-violet-500/60 !text-violet-300`} onClick={() => setBottom("gamma_review")}>◈ Gamma Exposure</button>
                 <button className={`tab ${bottom === "advpa" ? "tab-on !border-fuchsia-500/60 !text-fuchsia-300 font-semibold" : ""}`} onClick={() => setBottom("advpa")}>🎓 Adv PA</button>
                 <button className={`tab ${bottom === "ict_levels" ? "tab-on !bg-gold-500/20" : ""} !border-gold-500/60 !text-gold-300 font-semibold`} onClick={() => setBottom("ict_levels")}>🏛️ ICT Levels</button>
+                <button className={`tab ${bottom === "algo_desk" ? "tab-on !bg-emerald-950/60 !border-emerald-400 !text-emerald-200 font-bold" : "!border-emerald-500/60 !text-emerald-300 font-semibold"}`} onClick={() => setBottom("algo_desk")}>🤖 Algo Desk</button>
               </div>
             </div>
             <div className="flex-1 min-h-0">
               <div className={bottom==="time_series"?"h-full":"hidden"}><TimeSeriesChain active={bottom==="time_series"} /></div>
               {bottom === "time_series" ? null
+                : bottom === "algo_desk" ? <div className="p-3 overflow-y-auto h-full"><AlgoTradingTab /></div>
                 : bottom === "ict_levels" ? <div className="p-3 overflow-y-auto h-full"><InstitutionalLevelsWidget isLayerActive={!!layers.ictLevels} onToggleLayer={() => setLayers((l) => ({ ...l, ictLevels: !l.ictLevels }))} /></div>
                 : bottom === "advpa" ? <AdvPaPanel tick={storyTick} chartTf={tf} />
                 : bottom === "alerts" ? <AlertsTable alerts={dash?.alerts} onRefresh={loadDash} />
@@ -420,6 +478,10 @@ export default function App() {
           )}
         </aside>
       </main>
+      </>
+      )}
     </div>
   );
 }
+
+export default function App() { return <TimeMachine><LiveDesk /></TimeMachine>; }
