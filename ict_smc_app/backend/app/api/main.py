@@ -33,9 +33,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -57,11 +58,14 @@ async def lifespan(app: FastAPI):
     config.load_env(force=True)
     hub = Hub()
     await hub.start()
-    from ..engine import gann_pivots_gaps
+    from ..engine import gann_pivots_gaps, dhan_algo_executor
     gann_eod_task = asyncio.create_task(gann_pivots_gaps.run_eod_recalc_scheduler())
+    algo_task = asyncio.create_task(dhan_algo_executor.executor.start_loop(hub))
     try:
         yield
     finally:
+        algo_task.cancel()
+        dhan_algo_executor.executor.stop_loop()
         gann_eod_task.cancel()
         await hub.stop()
 
@@ -215,6 +219,32 @@ def chain_trinity(
     target_exp = opt_expiry or exp or expiry or "both"
     target_fut = fut_contract or fut_src or "combined"
     return h.chain.get_pcr_trinity(exp=target_exp, fut_src=target_fut, hub=h)
+
+
+@app.get("/api/gamma-exposure-review")
+async def gamma_exposure_review_endpoint(
+    day: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    expiry: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    tf: str = Query("5m"),
+    end_ts: Optional[float] = Query(None, ge=0),
+    sign: int = Query(1),
+    study: bool = Query(False),
+):
+    """Independent, read-only gamma view and timestamp-aligned BOS context."""
+    from ..oclab import gamma_exposure_review
+    import json
+    settings = json.loads((config.BACKEND_DIR.parent.parent / "analyst/analyst_config.json").read_text())["gamma_exposure"]
+    if tf not in settings["timeframes"] or sign not in (-1, 1):
+        raise HTTPException(status_code=422, detail="Unsupported gamma timeframe or sign convention")
+    from datetime import date
+    try:
+        if day:
+            date.fromisoformat(day)
+        if expiry:
+            date.fromisoformat(expiry)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid session or expiry date")
+    return await gamma_exposure_review(day, expiry, tf, end_ts, sign, study)
 
 
 @app.get("/api/chain/oi-studio")
@@ -1216,6 +1246,91 @@ def get_proxy(tf: str = Query("5m")):
 def get_flow(tf: str = Query("5m")):
     """Strike delta per selected CE/PE (Delta unavailable unless a real source / CSV / mock is selected)."""
     return {"tf": tf, "flow": _h().flow.get(tf) or {}}
+
+
+# ── Custom Dhan Algo Execution Engine Endpoints ──────────────────────────────
+class AlgoConfigIn(BaseModel):
+    execution_mode: Optional[str] = None
+    strategies: Optional[Dict[str, bool]] = None
+    max_trades_per_day: Optional[int] = None
+    lots_per_trade: Optional[int] = None
+    max_daily_loss_inr: Optional[float] = None
+
+
+@app.get("/api/algo/status")
+def algo_status_endpoint():
+    """Custom Dhan API Algo Execution Engine status, active position, and kill-switch state."""
+    from ..engine import dhan_algo_executor
+    return dhan_algo_executor.executor.get_status_view()
+
+
+@app.post("/api/algo/config")
+def algo_config_endpoint(cfg: AlgoConfigIn):
+    """Updates mode (PAPER | SEMI_AUTO | FULL_AUTO), strategy toggles, lots, and risk limits."""
+    from ..engine import dhan_algo_executor
+    return dhan_algo_executor.executor.update_config(
+        execution_mode=cfg.execution_mode,
+        strategies=cfg.strategies,
+        max_trades_per_day=cfg.max_trades_per_day,
+        lots_per_trade=cfg.lots_per_trade,
+        max_daily_loss_inr=cfg.max_daily_loss_inr,
+    )
+
+
+@app.post("/api/algo/exit")
+async def algo_manual_exit_endpoint():
+    """Manual emergency exit for active position."""
+    from ..engine import dhan_algo_executor
+    return await dhan_algo_executor.executor.manual_exit_now()
+
+
+@app.post("/api/algo/flatten-and-lock")
+async def algo_flatten_and_lock_endpoint():
+    """Emergency Panic Button: Flatten all open positions and lock executor for session."""
+    from ..engine import dhan_algo_executor
+    return await dhan_algo_executor.executor.flatten_all_and_lock()
+
+
+@app.post("/api/algo/execute-pending")
+async def algo_execute_pending_endpoint():
+    """1-Click Execute pending signal in SEMI_AUTO mode."""
+    from ..engine import dhan_algo_executor
+    return await dhan_algo_executor.executor.execute_pending_signal()
+
+
+@app.post("/api/algo/dismiss-pending")
+def algo_dismiss_pending_endpoint():
+    """Dismiss pending signal in SEMI_AUTO mode."""
+    from ..engine import dhan_algo_executor
+    return dhan_algo_executor.executor.dismiss_pending_signal()
+
+
+@app.post("/api/algo/unlock")
+def algo_unlock_endpoint():
+    """Reset daily lock for algo executor."""
+    from ..engine import dhan_algo_executor
+    return dhan_algo_executor.executor.unlock_engine()
+
+
+@app.get("/api/algo/test-connection")
+async def algo_test_connection_endpoint():
+    """Live Dhan API connectivity test & ATM Strike SecurityID resolution."""
+    from ..engine import dhan_algo_executor
+    return await dhan_algo_executor.executor.test_dhan_connection()
+
+
+@app.post("/api/algo/backfill")
+async def algo_backfill_endpoint(fromDate: str = "2026-10-25", toDate: str = "2026-11-02"):
+    """Pings Dhan Historical Intraday API to backfill 1m candles into SQLite."""
+    from ..engine import htf_wick_ema_rb
+    return await asyncio.to_thread(htf_wick_ema_rb.backfill_dhan_intraday, "13", "IDX_I", "INDEX", "1", fromDate, toDate)
+
+
+@app.get("/api/algo/today-audit")
+def algo_today_audit_endpoint(date: str = "2026-11-02"):
+    """Returns today's 1H 8-EMA support bounce zero-lookahead audit."""
+    from ..engine import htf_wick_ema_rb
+    return htf_wick_ema_rb.audit_today_ema_bounce(date_str=date)
 
 
 from .nodes_api import router as _nodes_router

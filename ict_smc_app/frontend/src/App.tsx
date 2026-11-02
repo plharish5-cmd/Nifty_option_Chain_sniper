@@ -9,6 +9,7 @@ import SplitPane from "./components/SplitPane";
 import { AutoPilotPanel, useAutopilot } from "./components/AutoPilot";
 import TimeSeriesChain from "./components/TimeSeriesChain";
 import WriterMap from "./components/WriterMap";
+import GammaExposureReview from "./components/GammaExposureReview";
 import FootprintDesk from "./components/FootprintDesk";
 import { Alerts, BiasGrid, Builds, Header, Paper, Signals } from "./components/Panels";
 import DeltaPanel from "./components/DeltaPanel";
@@ -26,6 +27,7 @@ import { type StdvLeg } from "./components/stdv";
 import AlertsTable from "./components/AlertsTable";
 import AdvPaPanel from "./components/AdvPaPanel";
 import InstitutionalLevelsWidget from "./components/InstitutionalLevelsWidget";
+import AlgoCockpit from "./components/AlgoCockpit";
 
 const TFS: TF[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1D"];
 const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "30m": 15, "1h": 30, "4h": 60, "1D": 60 };
@@ -84,7 +86,7 @@ export default function App() {
     window.addEventListener("keydown", k); document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", k); document.removeEventListener("fullscreenchange", fs); };
   }, []);
-  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap" | "stdv" | "alerts" | "advpa" | "time_series" | "ict_levels">("paper");
+  const [bottom, setBottom] = useState<"paper" | "delta" | "footprint" | "auction" | "qml" | "crt" | "bias" | "book" | "auto" | "wmap" | "stdv" | "alerts" | "advpa" | "time_series" | "ict_levels" | "gamma_review">("paper");
   const [selectedStdvLeg, setSelectedStdvLeg] = useState<StdvLeg | null>(null);
   const [isStdvPicking, setIsStdvPicking] = useState(false);
   const [mainView, setMainView] = useState<"candles" | "writers" | "both">(() => { try { return (localStorage.getItem("ict_mainview") as "candles" | "writers" | "both") || "candles"; } catch { return "candles"; } });
@@ -200,7 +202,9 @@ export default function App() {
           <div ref={chartCard} className={full ? "card fixed inset-0 z-50 flex flex-col rounded-none !bg-[#0b1220]" : "card flex flex-col"}
             style={full ? undefined : { height: chartH }}>
             <div className="card-h flex-wrap">
-              <div className="flex gap-1">
+              <div className="flex items-center gap-1">
+                <AlgoCockpit />
+                <span className="mx-1 w-px self-stretch bg-ink-700" />
                 <button onClick={() => switchMain("candles")} className={`tab ${mainView === "candles" ? "tab-on" : ""}`}>📈 Candles</button>
                 <button onClick={() => switchMain("writers")} title="OI change · call vs put writers + hairy spikes (unusual writer flow ≥ 2.5× normal)"
                   className={`tab ${mainView === "writers" ? "tab-on" : ""} !border-emerald-500/50 !text-emerald-300`}>🪝 OI · Writers</button>
@@ -347,6 +351,7 @@ export default function App() {
                 <button className={`tab ${bottom === "book" ? "tab-on" : ""} !border-emerald-500/60 !text-emerald-300`} onClick={() => setBottom("book")}>📗 Order book</button>
                 <button className={`tab ${bottom === "auto" ? "tab-on" : ""} !border-cyan-500/60 !text-cyan-300`} onClick={() => setBottom("auto")}>🤖 Autopilot{ap.s.cfg.on ? " ●" : ""}</button>
                 <button className={`tab ${bottom === "wmap" ? "tab-on" : ""} !border-gold-500/60 !text-gold-400`} onClick={() => setBottom("wmap")}>🎯 Writer map</button>
+                <button className={`tab ${bottom === "gamma_review" ? "tab-on" : ""} !border-violet-500/60 !text-violet-300`} onClick={() => setBottom("gamma_review")}>◈ Gamma Exposure</button>
                 <button className={`tab ${bottom === "advpa" ? "tab-on !border-fuchsia-500/60 !text-fuchsia-300 font-semibold" : ""}`} onClick={() => setBottom("advpa")}>🎓 Adv PA</button>
                 <button className={`tab ${bottom === "ict_levels" ? "tab-on !bg-gold-500/20" : ""} !border-gold-500/60 !text-gold-300 font-semibold`} onClick={() => setBottom("ict_levels")}>🏛️ ICT Levels</button>
               </div>
@@ -358,6 +363,7 @@ export default function App() {
                 : bottom === "advpa" ? <AdvPaPanel tick={storyTick} chartTf={tf} />
                 : bottom === "alerts" ? <AlertsTable alerts={dash?.alerts} onRefresh={loadDash} />
                 : bottom === "stdv" ? <StdvPanel candles={candles} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} chartTf={tf} selectedLeg={selectedStdvLeg} onSelectLeg={setSelectedStdvLeg} isLayerActive={!!layers.stdv} onToggleLayer={() => setLayers((l) => ({ ...l, stdv: !l.stdv }))} isPicking={isStdvPicking} onStartPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onCancelPicking={() => setIsStdvPicking(false)} onSetChartTf={setTf} />
+                : bottom === "gamma_review" ? <GammaExposureReview />
                 : bottom === "wmap" ? <WriterMap />
                 : bottom === "auto" ? <AutoPilotPanel ap={ap} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} />
                 : bottom === "book" ? <BookPanel />

@@ -6,6 +6,7 @@
 import React, { Component, type ErrorInfo, useEffect, useMemo, useState } from "react";
 import { api, type AlertRow } from "../api";
 import { BIAS_NAME } from "./bias";
+import { GammaAlertContext } from "./GammaExposureReview";
 
 interface AlertsTableProps {
   alerts?: AlertRow[];
@@ -480,6 +481,7 @@ function AlertsTableInner({ alerts: propAlerts, onRefresh }: AlertsTableProps) {
                               {safeStr(a.body) || "No extra summary available."}
                             </div>
 
+                            {/\bBOS\b/i.test(`${safeStr(a.title)} ${safeStr(a.body)}`) && a.ts && <GammaAlertContext ts={a.ts} tf={safeStr(a.tf)} />}
                             {/* Story / ICT Rules */}
                             {story.length > 0 && (
                               <div>

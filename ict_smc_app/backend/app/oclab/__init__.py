@@ -198,3 +198,69 @@ async def time_series_chain(params: dict) -> Dict[str, Any]:
     except Exception as exc:
         log.exception("Time-series adapter failed")
         return {"ok": False, "message": f"Time-series data unavailable: {type(exc).__name__}"}
+
+
+# Gamma research uses a separate exporter so existing Options Lab / GEX panels are unchanged.
+_gamma_cache: Dict[tuple, Tuple[object, Dict[str, Any]]] = {}
+_gamma_locks: Dict[tuple, asyncio.Lock] = {}
+
+
+async def gamma_exposure_review(day=None, expiry=None, tf="5m", end_ts=None, sign=1, study=False):
+    settings_path = OC_DIR / "analyst/analyst_config.json"
+    settings = json.loads(settings_path.read_text())["gamma_exposure"]
+    key = (day, expiry, tf, end_ts, sign, study)
+    async with _gamma_locks.setdefault(key, asyncio.Lock()):
+        # Captured-time calculations stay valid until their actual inputs change.
+        # Avoid re-reading all parquet files every minute on historical sessions.
+        signature = []
+        roots = [OC_DIR / "data/snapshots", OC_DIR / "data/snapshots_multi"]
+        for root in roots:
+            folders = [root / day] if day else sorted(p for p in root.glob("????-??-??") if p.is_dir())
+            if not study and folders:
+                folders = folders[-1:]
+            files = [p for folder in folders for p in folder.glob("*") if p.suffix in (".json", ".parquet")]
+            signature.append((len(files), max((p.stat().st_mtime_ns for p in files), default=0)))
+        tracked = [settings_path, OC_DIR / "analyst/gamma_exposure_review.py", config.DB_PATH,
+                   Path(str(config.DB_PATH) + "-wal"), config.RULES_PATH,
+                   OC_DIR / "greeks.py", OC_DIR / "config.py", OC_DIR / "strategy1_rules.json"]
+        signature.extend(p.stat().st_mtime_ns if p.exists() else 0 for p in tracked)
+        version = tuple(signature)
+        hit = _gamma_cache.get(key)
+        if hit and hit[0] == version:
+            return hit[1]
+        script = OC_DIR / "analyst/gamma_exposure_review.py"
+        args = [oc_python(), str(script), "--tf", tf, "--sign", str(sign)]
+        if day:
+            args += ["--day", day]
+        if expiry:
+            args += ["--expiry", expiry]
+        if end_ts is not None:
+            args += ["--end-ts", str(end_ts)]
+        if study:
+            args += ["--study"]
+        proc = await asyncio.create_subprocess_exec(*args, cwd=str(OC_DIR), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=settings["process_timeout_seconds"])
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.communicate()
+            return {"ok":False, "message":"Gamma review timed out; existing panels are unaffected"}
+        except asyncio.CancelledError:
+            if proc.returncode is None:
+                proc.kill()
+            await proc.communicate()
+            raise
+        if proc.returncode:
+            import logging
+            logging.getLogger("gamma_review").error("Gamma exporter failed: %s", err.decode()[-1500:])
+            return {"ok":False, "message":"Gamma review failed; inspect backend diagnostics"}
+        try:
+            result = json.loads(out)
+        except (ValueError, TypeError) as e:
+            import logging
+            logging.getLogger("gamma_review").error("Invalid gamma response: %s", e)
+            return {"ok":False, "message":"Invalid gamma review response"}
+        if len(_gamma_cache) > 128:
+            _gamma_cache.clear()
+        _gamma_cache[key] = (version, result)
+        return result

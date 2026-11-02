@@ -108,7 +108,7 @@ def save_state(st: dict) -> None:
     st["date"] = date.today().isoformat()
     try:
         config.SCHEDULER_STATE.parent.mkdir(parents=True, exist_ok=True)
-        config.SCHEDULER_STATE.write_text(json.dumps(st, indent=2))
+        config.SCHEDULER_STATE.write_text(json.dumps(st, indent=2, default=str))
     except Exception as exc:                                # noqa: BLE001
         log(f"could not save state: {exc}")
 
@@ -1350,7 +1350,7 @@ def check_wall_test_counter(
                 if dist <= prox:
                     if not wall_rec["in_zone"]:
                         wall_rec["in_zone"] = True
-                        wall_rec["tests"].append({"time": now, "spot": spot, "oi_l": oi_l})
+                        wall_rec["tests"].append({"time": now.strftime("%H:%M:%S"), "spot": spot, "oi_l": oi_l})
                         test_num = len(wall_rec["tests"])
                         stk_int = int(round(stk))
                         wall_name = "FLOOR" if side == "floor" else "CEILING"
@@ -1817,6 +1817,8 @@ def check_prior_day_level_alert(spot: float, now: datetime, st: dict) -> None:
 
         qualifying = []
         for lvl_name, lvl_val in pd_levels.items():
+            if lvl_name in ("date", "P2_date") or not isinstance(lvl_val, (int, float)):
+                continue
             if lvl_val <= 0:
                 continue
             dist = abs(spot - lvl_val)

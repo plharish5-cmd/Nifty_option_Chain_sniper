@@ -19,6 +19,7 @@ from app.engine.htf_wick_ema_rb import (
     get_htf_wick_ema_rb,
     get_thresholds,
     run_null_scored_backtest,
+    run_strict_trade_simulation,
 )
 
 
@@ -31,7 +32,7 @@ def client():
 def seed_candles_if_empty():
     from app import db
     candles = db.candles_1m("13", since=0)
-    if not candles:
+    if len(candles) < 100:
         prod_db = Path(__file__).resolve().parent.parent / "data" / "ict_smc.sqlite3"
         if prod_db.exists():
             conn = sqlite3.connect(str(prod_db))
@@ -221,8 +222,52 @@ def test_live_alert_gating():
     assert "No chime or voice" in alerts[0]["body"]
 
 
+def test_strict_trade_simulation():
+    """Verify strict stop-first trade simulation eliminates post-stop bounces and outputs audit ledger."""
+    from app import db
+    thresh = get_thresholds()
+    raw_1m = db.candles_1m("13", since=0)
+    sim = run_strict_trade_simulation(raw_1m, thresh)
+
+    assert sim["ok"] is True
+    assert "audit_report" in sim
+    audit = sim["audit_report"]
+    assert audit["bug_a_mfe_after_stop"]["status"] == "PRESENT_IN_OLD_CALCULATION"
+    assert audit["bug_b_same_bar_ambiguity"]["status"] == "PRESENT_IN_OLD_CALCULATION"
+    assert audit["bug_c_1h_ema_lookahead"]["status"] == "PRESENT_IN_OLD_CALCULATION"
+    assert audit["bug_d_reference_price_offset"]["status"] == "PRESENT_IN_OLD_CALCULATION"
+
+    ema_sim = sim["ema8_1h"]
+    overall = ema_sim["overall"]
+    assert overall["n"] > 50
+    # Stop-first must eliminate post-stop bounces: strict win rate must be strictly less than raw MFE
+    assert overall["strict_20_pct"] < overall["raw_20_pct"]
+    assert overall["strict_40_pct"] < overall["raw_40_pct"]
+    assert overall["stopped_pct"] > 30.0  # Conservative stop-out rate confirmed
+    assert overall["exp_pts"] > 0.0      # Net positive edge (+5.7 pts)
+
+    # Directional sub-groups
+    assert ema_sim["support_bounce"]["n"] > 0
+    assert ema_sim["resistance_rejection"]["n"] > 0
+    assert ema_sim["support_bounce"]["strict_20_pct"] > 50.0
+
+    # Last 15 audit ledger verification
+    ledger = ema_sim["audit_ledger_last_15"]
+    assert len(ledger) == 15
+    for tr in ledger:
+        assert "date" in tr
+        assert "time" in tr
+        assert "dir" in tr
+        assert "entry_price" in tr
+        assert "ema_val" in tr
+        assert "mfe_before_sl" in tr
+        assert "hit_20_first" in tr
+        assert "hit_sl_first" in tr
+        assert "final_outcome" in tr
+
+
 def test_api_endpoint_htf_wick_ema_rb(client):
-    """Integration test verifying GET /api/desk/htf-wick-ema-rb returns ok=True, null_baseline_summary, and per_event_tables."""
+    """Integration test verifying GET /api/desk/htf-wick-ema-rb returns ok=True, null_baseline_summary, per_event_tables, and strict_trade_simulation."""
     import app.engine.htf_wick_ema_rb as engine_mod
 
     # Invalidate cache
@@ -239,7 +284,14 @@ def test_api_endpoint_htf_wick_ema_rb(client):
     assert "backtest_summary" in data
     assert "null_baseline_summary" in data
     assert "per_event_tables" in data
+    assert "strict_trade_simulation" in data
 
     null_s = data["null_baseline_summary"]
     assert null_s["metadata"]["categories_tested"] == 10
     assert null_s["metadata"]["cells_tested"] == 20
+
+    strict_s = data["strict_trade_simulation"]
+    assert strict_s["ok"] is True
+    assert "audit_report" in strict_s
+    assert "ema8_1h" in strict_s
+    assert "audit_ledger_last_15" in strict_s["ema8_1h"]

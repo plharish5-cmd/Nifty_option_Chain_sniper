@@ -11,6 +11,7 @@ import SmartOISuite from "./SmartOISuite";
 import { COUNTER_TREND_CAP, counterTrendNote, dayRegime, fightsTheDay } from "./regime";
 import { deskState, isSideAllowed, spokenFor, stateChangeIndices, type DeskState } from "./deskState";
 import { chipFor, useConfirmAlert, useDivergence, vixChipFor, type DivEvent } from "./divergence";
+import AlgoCockpit from "./AlgoCockpit";
 import {
   CandlestickSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp,
@@ -3338,7 +3339,10 @@ export function FullPanel({ title, hint, h, children }: { title: string; hint?: 
       <div className="card-h">
         <span className="card-t">{title}</span>
         {hint && <span className="text-[10px] text-slate-500">{hint}</span>}
-        <button onClick={toggle} className="tab ml-auto !border-gold-500/70 !text-gold-400 font-semibold">{full ? "▣ Normal view" : "⛶ Full view"}</button>
+        <div className="ml-auto flex items-center gap-2">
+          {title.includes("PE − CE") && <AlgoCockpit />}
+          <button onClick={toggle} className="tab !border-gold-500/70 !text-gold-400 font-semibold">{full ? "▣ Normal view" : "⛶ Full view"}</button>
+        </div>
       </div>
       {/* overflow-auto is the hard stop. Without it this body has no overflow rule, so a panel whose
           content is taller than its height -- the Trinity suite at the default 460px, for one --

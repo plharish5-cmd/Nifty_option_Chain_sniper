@@ -1,6 +1,7 @@
 // Panels.tsx — header, playbook signals, alerts, bias grid, narrative, OI builds, paper trades.
 import type { AlertRow, Bias, Build, Dashboard, PaperStats, PaperTrade, Quote, Scorecard, Signal } from "../api";
 import { fmt, lakh } from "../api";
+import AlgoCockpit from "./AlgoCockpit";
 
 const up = (x: number | null | undefined) => (x ?? 0) >= 0;
 
@@ -26,6 +27,7 @@ export function Header({ q, live, status }: { q: Quote | null; live: string; sta
         {q?.vix_chg != null && <span className={`num ml-1 ${q.vix_chg >= 0 ? "text-bear-400" : "text-bull-400"}`}>{q.vix_chg >= 0 ? "+" : ""}{fmt(q.vix_chg, 2)}</span>}
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
+        <AlgoCockpit />
         <span className={`pill ${q?.market_open ? "bg-bull-900 text-bull-400" : "bg-ink-800 text-slate-400"}`}>{q?.market_open ? "● Market open" : "Market closed"}</span>
         <span className={`pill ${live === "live" ? "bg-ink-800 text-slate-300" : "bg-bear-900 text-bear-400"}`}>App link: {live}</span>
         <span className="pill bg-ink-800 text-slate-300">Price: {q?.source ?? "—"}</span>

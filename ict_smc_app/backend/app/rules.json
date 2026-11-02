@@ -873,5 +873,22 @@
     "min_dir_sd": 2.0,
     "baseline_runs": 400,
     "horizon_hours": 6
+  },
+  "dhan_algo_executor": {
+    "_note": "Proprietary Desk Strategies Execution Engine & Kill-Switch Guards",
+    "default_mode": "PAPER",
+    "max_trades_per_day": 3,
+    "lots_per_trade": 1,
+    "lot_size": 75,
+    "max_daily_loss_inr": -3000.0,
+    "spot_sl_pts": 15.0,
+    "spot_tp1_pts": 20.0,
+    "spot_tp2_pts": 40.0,
+    "strategy_a_proximity_pts": 2.0,
+    "strategy_a_min_net_pe_ce": 5000000.0,
+    "macro_trend_bull_threshold": 20000000.0,
+    "macro_trend_bear_threshold": -20000000.0,
+    "level_alignment_pts": 5.0,
+    "wick_touch_proximity_pts": 2.5
   }
 }

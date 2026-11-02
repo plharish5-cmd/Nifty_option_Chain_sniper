@@ -800,7 +800,96 @@ export const api = {
     return j;
   },
   replay: (fromSeq: number) => get<{ from_seq: number; messages: LiveMsg[] }>(`/api/replay?from_seq=${fromSeq}`),
+  algoStatus: () => get<AlgoStatusRes>("/api/algo/status"),
+  algoConfig: (cfg: Partial<{ execution_mode: string; strategies: Record<string, boolean>; max_trades_per_day: number; lots_per_trade: number; max_daily_loss_inr: number }>) =>
+    api.post<AlgoStatusRes>("/api/algo/config", cfg),
+  algoExit: () => api.post<{ ok: boolean; error?: string }>("/api/algo/exit", {}),
+  algoFlattenAndLock: () => api.post<{ ok: boolean; locked: boolean; lock_reason: string }>("/api/algo/flatten-and-lock", {}),
+  algoExecutePending: () => api.post<{ ok: boolean; position?: unknown; error?: string }>("/api/algo/execute-pending", {}),
+  algoDismissPending: () => api.post<{ ok: boolean }>("/api/algo/dismiss-pending", {}),
+  algoUnlock: () => api.post<{ ok: boolean; is_locked: boolean }>("/api/algo/unlock", {}),
+  algoTestConnection: () => get<{ ok: boolean; connected: boolean; active_expiry: string; expiry: string; atm_strike: number; strike: number; option_type: string; security_id: string; sec_id: string; lot_size: number; available_balance: number; message: string }>("/api/algo/test-connection"),
+  algoBackfill: () => api.post<any>("/api/algo/backfill", {}),
 };
+
+export interface AlgoPosition {
+  trade_id: string;
+  strategy: string;
+  execution_mode: "PAPER" | "SEMI_AUTO" | "FULL_AUTO";
+  symbol: string;
+  security_id: string;
+  option_type: "CE" | "PE";
+  strike: number;
+  side: string;
+  quantity: number;
+  entry_spot: number;
+  entry_option_price: number;
+  entry_time: string;
+  current_spot: number;
+  current_option_price: number;
+  spot_sl: number;
+  spot_tp1: number;
+  spot_tp2: number;
+  tp1_hit: boolean;
+  unrealized_pnl_inr: number;
+  status: string;
+  exit_spot?: number;
+  exit_option_price?: number;
+  exit_time?: string;
+  realized_pnl_inr: number;
+  exit_reason?: string;
+  dhan_order_id?: string;
+}
+
+export interface AlgoPendingSignal {
+  signal_id: string;
+  strategy: string;
+  option_type: "CE" | "PE";
+  strike: number;
+  security_id: string;
+  symbol: string;
+  spot: number;
+  spot_sl: number;
+  spot_tp1: number;
+  spot_tp2: number;
+  estimated_option_price: number;
+  quantity: number;
+  created_at: number;
+  created_time: string;
+  reason: string;
+  net_pe_ce: number;
+}
+
+export interface AlgoStatusRes {
+  ok: boolean;
+  execution_mode: "PAPER" | "SEMI_AUTO" | "FULL_AUTO";
+  strategies_enabled: Record<string, boolean>;
+  max_trades_per_day: number;
+  lots_per_trade: number;
+  lot_size: number;
+  max_daily_loss_inr: number;
+  is_locked: boolean;
+  lock_reason: string;
+  daily_trades_count: number;
+  daily_realized_pnl_inr: number;
+  active_position: AlgoPosition | null;
+  pending_signal: AlgoPendingSignal | null;
+  closed_positions_count: number;
+  closed_positions: AlgoPosition[];
+  logs: { time: string; level: string; message: string; data?: any }[];
+  radar?: {
+    spot: number;
+    ema8: number;
+    dist: number;
+    atm_strike: number;
+    atm_sec_id: string;
+    status: string;
+    active_expiry: string;
+    hud_text: string;
+  };
+  today_audit?: any;
+  trade_replay?: any[];
+}
 
 export type LiveMsg = (
   | { type: "quote"; quote: Quote }

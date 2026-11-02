@@ -57,7 +57,7 @@ async def test_frame_cache_version_eviction_and_max_bounds():
         pass
 
     c = Candles(dummy_close)
-    sid = "13"
+    sid = "TEST_CACHE_SID"
     from datetime import timedelta
     yesterday = now_ist().date() - timedelta(days=1)
     if yesterday.weekday() >= 5:
