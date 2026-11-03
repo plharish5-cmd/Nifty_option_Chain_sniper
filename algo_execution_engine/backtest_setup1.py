@@ -126,13 +126,13 @@ def load_historical_1m_data(sqlite_path: str) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MULTI-TIMEFRAME RESAMPLING & INDICATOR PREPARATION
+# 15-MINUTE RESAMPLING & INDICATOR PREPARATION
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_multitimeframe_data(df_1m: pd.DataFrame, cfg: Dict[str, Any]) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def build_15m_data(df_1m: pd.DataFrame, cfg: Dict[str, Any]) -> pd.DataFrame:
     """
-    Constructs continuous 5m and 15m OHLCV dataframes with EMAs, Bollinger Bands, and UBB slopes.
-    Aligned strictly to session boundaries with zero lookahead bias.
+    Constructs continuous 15m OHLCV dataframe with 4 EMA, 8 EMA, Bollinger Bands (20, 2),
+    BB Width, and rolling 15m UBB slopes. Aligned strictly to session boundaries with zero lookahead bias.
     """
     strat = cfg.get("strategy", {})
     bb_len = int(strat.get("bb_length", 20))
@@ -145,28 +145,6 @@ def build_multitimeframe_data(df_1m: pd.DataFrame, cfg: Dict[str, Any]) -> Tuple
     df = df_1m.copy()
     df["datetime"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
     df = df.set_index("datetime")
-
-    # Resample 5m
-    df_5m = df.resample("5min", closed="left", label="left").agg({
-        "ts": "first",
-        "open": "first",
-        "high": "max",
-        "low": "min",
-        "close": "last",
-        "volume": "sum",
-        "session_date": "first",
-        "session_time": "first",
-    }).dropna().reset_index()
-
-    df_5m = add_bollinger(df_5m, bb_len, bb_mult)
-    df_5m = add_course_emas(df_5m, fast, slow)
-
-    # Compute rolling UBB slope on 5m
-    slopes = ["UNKNOWN"] * len(df_5m)
-    for i in range(slope_candles, len(df_5m)):
-        sub = df_5m["ubb"].iloc[i - slope_candles:i + 1]
-        slopes[i] = band_slope(sub, candles=slope_candles, tol=slope_tol)
-    df_5m["ubb_slope"] = slopes
 
     # Resample 15m
     df_15m = df.resample("15min", closed="left", label="left").agg({
@@ -183,15 +161,28 @@ def build_multitimeframe_data(df_1m: pd.DataFrame, cfg: Dict[str, Any]) -> Tuple
     df_15m = add_bollinger(df_15m, bb_len, bb_mult)
     df_15m = add_course_emas(df_15m, fast, slow)
 
-    return df_5m, df_15m
+    # Compute rolling UBB slope on 15m
+    slopes_15m = ["UNKNOWN"] * len(df_15m)
+    for i in range(slope_candles, len(df_15m)):
+        sub = df_15m["ubb"].iloc[i - slope_candles:i + 1]
+        slopes_15m[i] = band_slope(sub, candles=slope_candles, tol=slope_tol)
+    df_15m["ubb_slope"] = slopes_15m
+
+    return df_15m
+
+
+def build_multitimeframe_data(df_1m: pd.DataFrame, cfg: Dict[str, Any]) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Backwards-compatible wrapper returning 15m data for pure 15-minute engine."""
+    df_15m = build_15m_data(df_1m, cfg)
+    return df_15m, df_15m
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# EVENT-DRIVEN SIMULATION CORE
+# EVENT-DRIVEN SIMULATION CORE (PURE 15-MINUTE SETUP #1)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class Setup1BacktestSimulator:
-    """Simulates Setup #1 execution minute-by-minute with exact state machine."""
+    """Simulates Setup #1 execution strictly on 15-minute timeframe with fixed 40/40 risk bracket."""
 
     def __init__(self, cfg: Optional[Dict[str, Any]] = None) -> None:
         self.cfg = cfg or load_config()
@@ -215,36 +206,34 @@ class Setup1BacktestSimulator:
         self.square_off_time = str(self.backtest_cfg.get("square_off_time", "15:20"))
 
     def run_all(self, df_1m: pd.DataFrame) -> Dict[str, Any]:
-        """Runs the backtest across all historical sessions for all 4 ablation variants + null baseline."""
-        df_5m, df_15m = build_multitimeframe_data(df_1m, self.cfg)
+        """Runs the backtest across all 248 historical sessions on pure 15-minute candles."""
+        df_15m = build_15m_data(df_1m, self.cfg)
 
-        # Precompute maps for O(1) lookups: ts -> row
-        map_5m = {r["ts"]: r for r in df_5m.to_dict(orient="records")}
+        # Precompute map of 15m for O(1) lookups: ts -> row
         map_15m = {r["ts"]: r for r in df_15m.to_dict(orient="records")}
-        list_5m_ts = sorted(map_5m.keys())
         list_15m_ts = sorted(map_15m.keys())
 
         # Group 1m by session date
         sessions = [group for _, group in df_1m.groupby("session_date", sort=True)]
-        log.info("Prepared %d daily sessions for simulation", len(sessions))
+        log.info("Prepared %d daily sessions for pure 15m simulation", len(sessions))
 
-        # Run 5 variants
+        # Run 5 pure 15-minute variants
         variants = [
-            ("Variant A (Raw 8 EMA Touch)", {"trend_filter": False, "ubb_filter": False, "first_opp": False, "daily_stop": False, "ctc": False, "trail": False, "premature_trail": False, "fii_window": False, "gap_filter": False, "ema_sep": False, "vwap_filter": False}),
-            ("Variant B (Trend Filter Only)", {"trend_filter": True, "ubb_filter": False, "first_opp": False, "daily_stop": False, "ctc": False, "trail": False, "premature_trail": False, "fii_window": False, "gap_filter": False, "ema_sep": False, "vwap_filter": False}),
-            ("Variant C (Trend + Preconditions)", {"trend_filter": True, "ubb_filter": True, "first_opp": False, "daily_stop": False, "ctc": False, "trail": False, "premature_trail": False, "fii_window": False, "gap_filter": False, "ema_sep": False, "vwap_filter": False}),
-            ("Variant D (Full Setup #1 Trading Bible)", {"trend_filter": True, "ubb_filter": True, "first_opp": True, "daily_stop": True, "ctc": True, "trail": True, "premature_trail": True, "fii_window": False, "gap_filter": False, "ema_sep": False, "vwap_filter": False}),
-            ("Variant E (Fixed +40 pt Target/Trail + Gap & VWAP/EMA Confluence)", {"trend_filter": True, "ubb_filter": True, "first_opp": True, "daily_stop": True, "ctc": True, "trail": True, "premature_trail": False, "ctc_brokerage_buffer": True, "fii_window": True, "gap_filter": True, "ema_sep": True, "vwap_filter": True}),
+            ("Variant A (Raw 15m 8 EMA Touch)", {"trend_filter": False, "ubb_filter": False, "first_opp": False, "daily_stop": False, "ctc": False, "fii_window": False, "gap_filter": False, "ema_sep": False, "vwap_filter": False}),
+            ("Variant B (15m 4>8 Trend Filter)", {"trend_filter": True, "ubb_filter": False, "first_opp": False, "daily_stop": False, "ctc": False, "fii_window": False, "gap_filter": False, "ema_sep": False, "vwap_filter": False}),
+            ("Variant C (15m Trend + UBB Slope UP)", {"trend_filter": True, "ubb_filter": True, "first_opp": False, "daily_stop": False, "ctc": False, "fii_window": False, "gap_filter": False, "ema_sep": False, "vwap_filter": False}),
+            ("Variant D (15m Bible: Trend + UBB + 1st Opp + Stop)", {"trend_filter": True, "ubb_filter": True, "first_opp": True, "daily_stop": True, "ctc": True, "fii_window": False, "gap_filter": False, "ema_sep": False, "vwap_filter": False}),
+            ("Variant E (Institutional 15m: Bible + Gap + VWAP + EMA Sep)", {"trend_filter": True, "ubb_filter": True, "first_opp": True, "daily_stop": True, "ctc": True, "ctc_brokerage_buffer": True, "fii_window": True, "gap_filter": True, "ema_sep": True, "vwap_filter": True}),
         ]
 
         variant_results = {}
         for var_name, var_rules in variants:
-            log.info("Running simulation for %s...", var_name)
-            trades = self._simulate_dataset(sessions, map_5m, list_5m_ts, map_15m, list_15m_ts, var_name, var_rules)
+            log.info("Running pure 15m simulation for %s...", var_name)
+            trades = self._simulate_dataset(sessions, map_15m, list_15m_ts, var_name, var_rules)
             variant_results[var_name] = trades
 
-        # Run Null / Random Baseline
-        log.info("Running Null Baseline simulation...")
+        # Run Null / Random Baseline on 15m
+        log.info("Running Null Baseline simulation on 15m...")
         null_trades = self._simulate_null_baseline(sessions, map_15m, list_15m_ts)
         variant_results["Null Baseline (Random Longs)"] = null_trades
 
@@ -255,8 +244,6 @@ class Setup1BacktestSimulator:
     def _simulate_dataset(
         self,
         sessions: List[pd.DataFrame],
-        map_5m: Dict[int, Any],
-        list_5m_ts: List[int],
         map_15m: Dict[int, Any],
         list_15m_ts: List[int],
         variant_name: str,
@@ -277,8 +264,6 @@ class Setup1BacktestSimulator:
 
             session_trades = self._simulate_single_session(
                 session_df=session_df,
-                map_5m=map_5m,
-                list_5m_ts=list_5m_ts,
                 map_15m=map_15m,
                 list_15m_ts=list_15m_ts,
                 is_gap_day=is_gap_day,
@@ -293,8 +278,6 @@ class Setup1BacktestSimulator:
     def _simulate_single_session(
         self,
         session_df: pd.DataFrame,
-        map_5m: Dict[int, Any],
-        list_5m_ts: List[int],
         map_15m: Dict[int, Any],
         list_15m_ts: List[int],
         is_gap_day: bool,
@@ -317,9 +300,9 @@ class Setup1BacktestSimulator:
         in_bullish_party = False
         touch_count = 0
         stage2_stopped_today = False
-        last_closed_5m_ts = 0
+        last_closed_15m_ts = 0
 
-        # Iterate 1m candles chronologically
+        # Iterate candles chronologically
         rows_1m = s_df.to_dict(orient="records")
         for bar in rows_1m:
             t = bar["ts"]
@@ -330,22 +313,16 @@ class Setup1BacktestSimulator:
             b_close = bar["close"]
             b_vwap = bar["vwap"]
 
-            # Find latest CLOSED 5m and 15m bars strictly before or at t
-            # A 5m bar starting at ts=X closes at X+300. So if t >= X+300 (X <= t-300), it is closed!
-            closed_5m = None
-            idx_5m = bisect.bisect_right(list_5m_ts, t - 300) - 1
-            if idx_5m >= 0:
-                closed_5m = map_5m.get(list_5m_ts[idx_5m])
-
+            # Find latest CLOSED 15m bar strictly before or at t (15m bar closing at ts closes at ts+900)
             closed_15m = None
             idx_15m = bisect.bisect_right(list_15m_ts, t - 900) - 1
             if idx_15m >= 0:
                 closed_15m = map_15m.get(list_15m_ts[idx_15m])
 
-            # Update rally state based on closed 5m 4/8 EMA regime
-            if closed_5m is not None:
-                e4 = closed_5m.get("ema4", 0.0)
-                e8 = closed_5m.get("ema8", 0.0)
+            # Update rally state based on closed 15m 4/8 EMA regime
+            if closed_15m is not None:
+                e4 = closed_15m.get("ema4", 0.0)
+                e8 = closed_15m.get("ema8", 0.0)
                 is_party_bullish = (e4 > e8)
 
                 if is_party_bullish and not in_bullish_party:
@@ -356,7 +333,7 @@ class Setup1BacktestSimulator:
                     in_bullish_party = False
 
             # ─────────────────────────────────────────────────────────────
-            # A. If in an Active Trade -> Manage Exits & Trailing Stop
+            # A. If in an Active Trade -> Fixed 40/40 Risk Bracket
             # ─────────────────────────────────────────────────────────────
             if active_trade is not None:
                 entry_spot = active_trade["entry_spot"]
@@ -365,8 +342,7 @@ class Setup1BacktestSimulator:
                 highest = max(active_trade["highest_spot"], b_high)
                 active_trade["highest_spot"] = highest
 
-                # Check Cost-to-Cost (+40 pts move in favor)
-                # In Variant E: locks entry + 9 pts to guarantee brokerage coverage
+                # Cost-to-Cost Trigger (+40 pts move in favor)
                 brokerage_buffer = 9.0 if rules.get("ctc_brokerage_buffer", False) else 0.0
                 if rules.get("ctc", True) and not active_trade["cost_to_cost_active"]:
                     if b_high - entry_spot >= self.ctc_trigger_pts:
@@ -374,35 +350,28 @@ class Setup1BacktestSimulator:
                         cur_sl = max(cur_sl, entry_spot + brokerage_buffer)
                         active_trade["trailed_sl"] = cur_sl
 
-                # Check Candle Trail on newly closed 5m bar
-                # Trading Bible Part C & D: ONLY trail candle lows once in Phase 2 (+40 pts / CTC activated!)
-                allow_trail = (active_trade["cost_to_cost_active"] or rules.get("premature_trail", False))
-                if rules.get("trail", True) and allow_trail and closed_5m is not None and closed_5m["ts"] > last_closed_5m_ts:
-                    last_closed_5m_ts = closed_5m["ts"]
-                    c5_close = closed_5m["close"]
-                    c5_low = closed_5m["low"]
-                    c5_high = closed_5m["high"]
+                # Volatility check on closed 15m bar
+                if closed_15m is not None and closed_15m["ts"] > last_closed_15m_ts:
+                    last_closed_15m_ts = closed_15m["ts"]
+                    c15_close = closed_15m["close"]
+                    c15_low = closed_15m["low"]
+                    c15_high = closed_15m["high"]
 
-                    # Volatility Exit 1: Single 5m candle >= 100 pts
-                    if (c5_high - c5_low) >= self.vol_candle_pts:
-                        trade = self._close_trade(active_trade, t, bar_time, b_close, "Volatility Exit: 5m range >= 100 pts", is_gap_day, gap_pts, variant_name)
+                    # Volatility Exit 1: Single 15m candle >= 100 pts
+                    if (c15_high - c15_low) >= self.vol_candle_pts:
+                        trade = self._close_trade(active_trade, t, bar_time, b_close, "Volatility Exit: 15m range >= 100 pts", is_gap_day, gap_pts, variant_name)
                         trades.append(trade)
                         active_trade = None
                         continue
 
-                    # Volatility Exit 2: UBB curls FLAT
-                    if closed_5m.get("ubb_slope") in ("FLAT", "DOWN"):
-                        trade = self._close_trade(active_trade, t, bar_time, b_close, "Volatility Exit: UBB curled FLAT", is_gap_day, gap_pts, variant_name)
+                    # Volatility Exit 2: 15m UBB curls FLAT
+                    if closed_15m.get("ubb_slope") in ("FLAT", "DOWN"):
+                        trade = self._close_trade(active_trade, t, bar_time, b_close, "Volatility Exit: 15m UBB curled FLAT", is_gap_day, gap_pts, variant_name)
                         trades.append(trade)
                         active_trade = None
                         continue
 
-                    # Candle Low Trail: if candle close > entry, trail SL to candle low
-                    if c5_close > entry_spot and c5_low > cur_sl:
-                        cur_sl = max(cur_sl, c5_low)
-                        active_trade["trailed_sl"] = cur_sl
-
-                # Check Intrabar SL or Target breach
+                # Check Intrabar SL or Target breach (Fixed 40/40 Bracket)
                 hit_sl = (b_low <= cur_sl)
                 hit_tp = (b_high >= target)
 
@@ -442,7 +411,7 @@ class Setup1BacktestSimulator:
                 continue
 
             # ─────────────────────────────────────────────────────────────
-            # B. If NO Active Trade -> Check Setup #1 Entry Signal
+            # B. If NO Active Trade -> Check 15-Minute Setup #1 Entry Signal
             # ─────────────────────────────────────────────────────────────
             # FII Commit Window Check: wait for 09:30 IST to let trend settle
             if rules.get("fii_window", False) and bar_time < "09:30:00":
@@ -458,50 +427,44 @@ class Setup1BacktestSimulator:
             if rules.get("daily_stop", True) and stage2_stopped_today:
                 continue  # Stage 2 stop taken today
 
-            if closed_5m is None:
+            if closed_15m is None:
                 continue
 
-            ema8_val = closed_5m.get("ema8", 0.0)
-            ema4_val = closed_5m.get("ema4", 0.0)
+            e4 = closed_15m.get("ema4", 0.0)
+            e8 = closed_15m.get("ema8", 0.0)
+            bb_width_val = closed_15m.get("bb_width", 0.0)
+            ubb_slope_val = closed_15m.get("ubb_slope", "UNKNOWN")
 
             # Gate 1: 15-Minute Trend Filter (4>8 and BB width > 60)
             if rules.get("trend_filter", True):
-                if closed_15m is None:
-                    continue
-                t15_e4 = closed_15m.get("ema4", 0.0)
-                t15_e8 = closed_15m.get("ema8", 0.0)
-                t15_width = closed_15m.get("bb_width", 0.0)
-                if t15_e4 <= t15_e8 or t15_width <= self.bb_width_min_15m:
+                if e4 <= e8 or bb_width_val <= self.bb_width_min_15m:
                     continue
 
-            # Gate 2: 5-Minute Preconditions (4>8 and UBB slope UP)
+            # Gate 2: 15-Minute UBB Slope (Must be UP)
             if rules.get("ubb_filter", True):
-                if ema4_val <= ema8_val:
-                    continue
-                if closed_5m.get("ubb_slope") != "UP":
+                if ubb_slope_val != "UP":
                     continue
 
-            # Gate 2B: 5m EMA Separation Confluence (ema4 - ema8 >= 3.0 pts)
-            if rules.get("ema_sep", False) and (ema4_val - ema8_val) < 3.0:
+            # Gate 2B: 15m EMA Separation Confluence (ema4 - ema8 >= 3.0 pts)
+            if rules.get("ema_sep", False) and (e4 - e8) < 3.0:
                 continue
 
             # Gate 2C: Volume Anchor Confluence (Price >= VWAP)
             if rules.get("vwap_filter", False) and b_close < b_vwap:
                 continue
 
-            # Gate 3: 8 EMA Touch Trigger in current 1m bar
-            # bar touches 8 EMA if low <= ema8 <= high or within proximity
-            touch = (b_low <= ema8_val <= b_high) or (abs(b_low - ema8_val) <= self.touch_prox) or (abs(b_close - ema8_val) <= self.touch_prox)
+            # Gate 3: 15-Minute 8 EMA Touch Trigger in current bar
+            touch = (b_low <= e8 <= b_high) or (abs(b_low - e8) <= self.touch_prox) or (abs(b_close - e8) <= self.touch_prox)
             if not touch:
                 continue
 
-            # Gate 4: First Opportunity Rule in current rally
+            # Gate 4: First Opportunity Rule in current 15m rally
             if rules.get("first_opp", True):
                 if not in_bullish_party or touch_count >= 1:
                     continue
 
             # All gates passed -> ENTER LONG
-            entry_price = min(b_high, max(b_low, ema8_val))
+            entry_price = min(b_high, max(b_low, e8))
             touch_count += 1
 
             active_trade = {
@@ -677,7 +640,7 @@ class Setup1BacktestSimulator:
             report["variants"][var_name] = metrics
 
         # Statistical t-test: Variant D vs Null Baseline
-        full_setup_trades = variant_results.get("Variant D (Full Setup #1 Trading Bible)", [])
+        full_setup_trades = variant_results.get("Variant D (15m Bible: Trend + UBB + 1st Opp + Stop)") or variant_results.get("Variant D (Full Setup #1 Trading Bible)", [])
         null_trades = variant_results.get("Null Baseline (Random Longs)", [])
         if full_setup_trades and null_trades:
             setup_pnls = [t.linear_net_inr for t in full_setup_trades]
@@ -692,7 +655,7 @@ class Setup1BacktestSimulator:
             }
 
         # Go / No-Go Verdict on Full Setup #1 (Variant D)
-        var_d_metrics = report["variants"].get("Variant D (Full Setup #1 Trading Bible)", {})
+        var_d_metrics = report["variants"].get("Variant D (15m Bible: Trend + UBB + 1st Opp + Stop)") or report["variants"].get("Variant D (Full Setup #1 Trading Bible)", {})
         net_exp_inr = var_d_metrics.get("linear_net_expectancy_inr", 0.0)
         profit_factor = var_d_metrics.get("linear_net_profit_factor", 0.0)
         win_rate = var_d_metrics.get("win_rate_pct", 0.0)
@@ -867,8 +830,8 @@ def print_terminal_report(report: Dict[str, Any]) -> None:
     print("-" * 96)
 
     # Detailed Metrics for Full Setup #1 (Variant D)
-    d_metrics = variants.get("Variant D (Full Setup #1 Trading Bible)", {})
-    print("\n🏆 DETAILED METRICS FOR VARIANT D (FULL SETUP #1 TRADING BIBLE):")
+    d_metrics = variants.get("Variant D (15m Bible: Trend + UBB + 1st Opp + Stop)") or variants.get("Variant D (Full Setup #1 Trading Bible)", {})
+    print("\n🏆 DETAILED METRICS FOR VARIANT D (FULL SETUP #1 15-MINUTE TRADING BIBLE):")
     print(f"  • Total Sessions Tested:        {meta.get('total_sessions_analyzed')}")
     print(f"  • Total Trades Fired:           {d_metrics.get('total_trades')} ({d_metrics.get('trades_per_session', 0):.2f} trades/session)")
     print(f"  • Win / Scratch / Loss:         {d_metrics.get('wins_count')} wins ({d_metrics.get('win_rate_pct')}%) | {d_metrics.get('scratches_count')} scratches ({d_metrics.get('scratch_rate_pct')}%) | {d_metrics.get('losses_count')} losses ({d_metrics.get('loss_rate_pct')}%)")

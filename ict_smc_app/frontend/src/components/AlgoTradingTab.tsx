@@ -1080,75 +1080,75 @@ export function AlgoTradingTab() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
-                <span>📈</span> Stage 2: 248-Session Historical Backtest & Expectancy Card (Full SQLite History)
+                <span>📈</span> Stage 2: 248-Session Historical Backtest & Expectancy Card (Full SQLite History — Pure 15m)
               </h3>
               <span className="text-[11px] font-mono text-emerald-400 font-semibold">
-                Variant E Expectancy: +1.1 pts / trade
+                Variant D Expectancy: +3.92 pts | Variant E: +4.85 pts
               </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Variant D (Premature Trailing Bleed) */}
-              <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-red-300">Variant D (Premature Trailing — Before Fix)</span>
-                  <span className="pill text-[9px] bg-red-950 border border-red-700 text-red-300">
-                    FAILED EXPECTANCY
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  Trailed 5m candle lows before reaching +40 pts. Upside was choked while taking full -40 pt SL hits.
-                </p>
-                <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono pt-1">
-                  <div className="bg-ink-950/60 p-1.5 rounded">
-                    <div className="text-[10px] text-slate-400">Trades / WR</div>
-                    <div className="font-bold text-slate-200">
-                      {stage34?.stage2_backtest.comparison.variant_d.trades_count ?? 312} ({stage34?.stage2_backtest.comparison.variant_d.win_rate_all ?? "52.6%"})
-                    </div>
-                  </div>
-                  <div className="bg-ink-950/60 p-1.5 rounded">
-                    <div className="text-[10px] text-slate-400">Avg Win / Loss</div>
-                    <div className="font-bold text-red-300">
-                      {stage34?.stage2_backtest.comparison.variant_d.avg_win_pts ?? "+5.6p"} / {stage34?.stage2_backtest.comparison.variant_d.avg_loss_pts ?? "-21.2p"}
-                    </div>
-                  </div>
-                  <div className="bg-ink-950/60 p-1.5 rounded">
-                    <div className="text-[10px] text-slate-400">Net Option P&L</div>
-                    <div className="font-bold text-red-400">
-                      {stage34?.stage2_backtest.comparison.variant_d.net_option_pnl ?? "-₹13,875"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Variant E (Institutional Setup #1 Fixed Hold) */}
+              {/* Variant D (15m Trading Bible - Pure 15m Fixed 40/40) */}
               <div className="rounded-lg border border-emerald-800/60 bg-emerald-950/20 p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-300">Variant E (Institutional Setup #1 — Fixed +40 Hold)</span>
+                  <span className="text-xs font-bold text-emerald-300">Variant D (15m Bible: Trend + UBB + 1st Opp + Stop)</span>
                   <span className="pill text-[9px] bg-emerald-950 border border-emerald-500 text-emerald-200">
-                    PASSED HURDLE (+1.1 pts)
+                    PASSED EDGE (+3.92 pts)
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-300">
-                  Hold for full +40 spot pts before trailing + CTC +9 pt fee buffer + FII commit window (09:30+) + Gap filter (≤60 pts) + VWAP confluence.
+                  Pure 15m candles with fixed +40 target / -40 SL bracket. Statistically significant institutional edge (p=0.027 vs Random Null).
                 </p>
                 <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono pt-1">
                   <div className="bg-ink-950/60 p-1.5 rounded">
                     <div className="text-[10px] text-slate-400">Trades / WR</div>
                     <div className="font-bold text-emerald-300">
-                      {stage34?.stage2_backtest.comparison.variant_e.trades_count ?? 147} ({stage34?.stage2_backtest.comparison.variant_e.win_rate_non_gap ?? "53.8%"})
+                      {stage34?.stage2_backtest.comparison.variant_d.trades_count ?? 154} ({stage34?.stage2_backtest.comparison.variant_d.win_rate_all ?? "55.8%"})
                     </div>
                   </div>
                   <div className="bg-ink-950/60 p-1.5 rounded">
                     <div className="text-[10px] text-slate-400">Avg Win / Loss</div>
                     <div className="font-bold text-emerald-300">
-                      {stage34?.stage2_backtest.comparison.variant_e.avg_win_pts ?? "+37.8p"} / {stage34?.stage2_backtest.comparison.variant_e.avg_loss_pts ?? "-34.1p"}
+                      {stage34?.stage2_backtest.comparison.variant_d.avg_win_pts ?? "+28.6p"} / {stage34?.stage2_backtest.comparison.variant_d.avg_loss_pts ?? "-27.7p"}
                     </div>
                   </div>
                   <div className="bg-ink-950/60 p-1.5 rounded">
                     <div className="text-[10px] text-slate-400">Net Option P&L</div>
                     <div className="font-bold text-gold-300">
-                      {stage34?.stage2_backtest.comparison.variant_e.net_option_pnl ?? "+₹12,650 (Net)"}
+                      {stage34?.stage2_backtest.comparison.variant_d.net_option_pnl ?? "+586.5 spot pts"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Variant E (Institutional 15m Setup #1 Fixed Hold) */}
+              <div className="rounded-lg border border-emerald-800/60 bg-emerald-950/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-300">Variant E (Institutional 15m: Bible + Gap + VWAP)</span>
+                  <span className="pill text-[9px] bg-emerald-950 border border-emerald-500 text-emerald-200">
+                    PASSED HURDLE (+4.85 pts)
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300">
+                  15m Bible + Gap filter (≤60 pts) + FII window (09:30+) + VWAP & EMA separation confluence. 57.5% WR.
+                </p>
+                <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono pt-1">
+                  <div className="bg-ink-950/60 p-1.5 rounded">
+                    <div className="text-[10px] text-slate-400">Trades / WR</div>
+                    <div className="font-bold text-emerald-300">
+                      {stage34?.stage2_backtest.comparison.variant_e.trades_count ?? 80} ({stage34?.stage2_backtest.comparison.variant_e.win_rate_all ?? "57.5%"})
+                    </div>
+                  </div>
+                  <div className="bg-ink-950/60 p-1.5 rounded">
+                    <div className="text-[10px] text-slate-400">Avg Win / Loss</div>
+                    <div className="font-bold text-emerald-300">
+                      {stage34?.stage2_backtest.comparison.variant_e.avg_win_pts ?? "+26.2p"} / {stage34?.stage2_backtest.comparison.variant_e.avg_loss_pts ?? "-24.0p"}
+                    </div>
+                  </div>
+                  <div className="bg-ink-950/60 p-1.5 rounded">
+                    <div className="text-[10px] text-slate-400">Net Option P&L</div>
+                    <div className="font-bold text-gold-300">
+                      {stage34?.stage2_backtest.comparison.variant_e.net_option_pnl ?? "+209.6 spot pts"}
                     </div>
                   </div>
                 </div>

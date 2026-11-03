@@ -243,10 +243,14 @@ def test_stage3_4_dashboard_telemetry_endpoint():
     assert "stage3_sandbox" in data
     assert "stage4_gatekeeper" in data
 
-    # Verify Stage 2 Backtest Expectations
+    # Verify Stage 2 Backtest Expectations (Pure 15m Results)
     var_e = data["stage2_backtest"]["comparison"]["variant_e"]
-    assert "+1.1 pts" in var_e["spot_expectancy"]
-    assert "+37.8 pts" in var_e["avg_win_pts"]
+    assert "+4.85 pts" in var_e["spot_expectancy"]
+    assert "+26.2 pts" in var_e["avg_win_pts"]
+
+    var_d = data["stage2_backtest"]["comparison"]["variant_d"]
+    assert "+3.92 pts" in var_d["spot_expectancy"]
+    assert "+28.6 pts" in var_d["avg_win_pts"]
 
     # Verify Stage 4 Live Gatekeeper Safeguards
     gate = data["stage4_gatekeeper"]

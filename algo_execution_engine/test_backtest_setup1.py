@@ -12,6 +12,7 @@ import pytest
 from algo_execution_engine.backtest_setup1 import (
     BacktestTrade,
     Setup1BacktestSimulator,
+    build_15m_data,
     build_multitimeframe_data,
     load_config,
     load_historical_1m_data,
@@ -47,13 +48,14 @@ def create_mock_1m_data(n_bars: int = 375, start_price: float = 23500.0) -> pd.D
 def test_build_multitimeframe_data():
     df_1m = create_mock_1m_data(375)
     cfg = load_config()
-    df_5m, df_15m = build_multitimeframe_data(df_1m, cfg)
+    df_15m = build_15m_data(df_1m, cfg)
+    df_compat, _ = build_multitimeframe_data(df_1m, cfg)
 
-    assert len(df_5m) in (75, 76)
     assert len(df_15m) in (25, 26)
-    assert "ema4" in df_5m.columns
-    assert "ema8" in df_5m.columns
-    assert "ubb_slope" in df_5m.columns
+    assert len(df_compat) in (25, 26)
+    assert "ema4" in df_15m.columns
+    assert "ema8" in df_15m.columns
+    assert "ubb_slope" in df_15m.columns
     assert "bb_width" in df_15m.columns
 
 

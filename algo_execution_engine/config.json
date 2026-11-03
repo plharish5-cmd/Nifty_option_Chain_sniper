@@ -14,7 +14,8 @@
     "eod_square_off_time": "15:25"
   },
   "strategy": {
-    "name": "Setup #1 - Stage 2 8 EMA Long",
+    "name": "Setup #1 - Stage 2 8 EMA Long (Pure 15m)",
+    "timeframe": "15m",
     "fixed_sl_pts": 40.0,
     "target_pts": 40.0,
     "cost_to_cost_trigger_pts": 40.0,
