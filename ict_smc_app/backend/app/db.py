@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS paper_trades (
   opened_ts INTEGER, entry REAL, sl REAL, tp REAL, risk REAL, rr REAL,
   status TEXT, closed_ts INTEGER, exit REAL, r REAL, pnl_pts REAL, mfe_r REAL, notes TEXT);
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
+-- chain_snap's primary key is (expiry, ts, strike), so a backtest scanning a TIME RANGE across
+-- every expiry cannot use it and degrades to a full scan. Harmless at the old 5-day retention;
+-- at 400 days that is tens of millions of rows. This index is what makes the history queryable.
+CREATE INDEX IF NOT EXISTS ix_chain_snap_ts ON chain_snap(ts);
 CREATE INDEX IF NOT EXISTS ix_alerts_ts ON alerts(ts);
 -- OcLab setups (SNIPER BREAKDOWN / PULLBACK SELL / DIP BUY and their conviction) are computed in the
 -- browser and were never persisted, so there was no stored record of what fired or at what price — and
