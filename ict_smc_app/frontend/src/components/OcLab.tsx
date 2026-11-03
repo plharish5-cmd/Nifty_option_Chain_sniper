@@ -8,6 +8,7 @@ import { FlowBand } from "./flowband";
 import PcrTrinitySuite from "./PcrTrinitySuite";
 import PeceMatrix from "./PeceMatrix";
 import SmartOISuite from "./SmartOISuite";
+import StockMojoOiChange from "./StockMojoOiChange";
 import { COUNTER_TREND_CAP, counterTrendNote, dayRegime, fightsTheDay } from "./regime";
 import { deskState, isSideAllowed, spokenFor, stateChangeIndices, type DeskState } from "./deskState";
 import { chipFor, useConfirmAlert, useDivergence, vixChipFor, type DivEvent } from "./divergence";
@@ -2052,14 +2053,14 @@ function formatIST(epoch: number): string {
 export function WritersFlow({ tick }: { tick: number }) {
   // Gap Sniper removed 30 Oct 2026. A saved "gap_sniper" from before then is deliberately NOT
   // accepted here -- anyone whose last view was that tab would otherwise open onto a blank pane.
-  const [suiteView, setSuiteView] = useState<"smart_oi" | "trinity" | "classic">(() => {
+  const [suiteView, setSuiteView] = useState<"smart_oi" | "trinity" | "classic" | "stockmojo">(() => {
     try {
-      const v = localStorage.getItem("ict_writers_view_mode") as "smart_oi" | "trinity" | "classic";
-      if (v === "smart_oi" || v === "trinity" || v === "classic") return v;
+      const v = localStorage.getItem("ict_writers_view_mode") as "smart_oi" | "trinity" | "classic" | "stockmojo";
+      if (v === "smart_oi" || v === "trinity" || v === "classic" || v === "stockmojo") return v;
     } catch { return "smart_oi"; }
     return "smart_oi";
   });
-  const setViewMode = (m: "smart_oi" | "trinity" | "classic") => {
+  const setViewMode = (m: "smart_oi" | "trinity" | "classic" | "stockmojo") => {
     setSuiteView(m);
     try { localStorage.setItem("ict_writers_view_mode", m); } catch { /* ignore */ }
   };
@@ -2895,6 +2896,17 @@ export function WritersFlow({ tick }: { tick: number }) {
   const switcher = (
     <div className="flex rounded bg-[#0b1324] p-0.5 border border-slate-700">
       <button
+        onClick={() => setViewMode("stockmojo")}
+        className={`rounded px-2.5 py-0.5 font-extrabold text-[11px] transition-all ${
+          suiteView === "stockmojo"
+            ? "bg-emerald-500/30 text-emerald-200 border border-emerald-500/60 shadow-sm"
+            : "text-slate-400 hover:text-slate-200"
+        }`}
+        title="StockMojo Exact Parity OI Change (Call vs Put) with full contract/expiry selectors"
+      >
+        📈 StockMojo OI Change
+      </button>
+      <button
         onClick={() => setViewMode("smart_oi")}
         className={`rounded px-2.5 py-0.5 font-extrabold text-[11px] transition-all ${
           suiteView === "smart_oi"
@@ -2980,7 +2992,21 @@ export function WritersFlow({ tick }: { tick: number }) {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col h-full w-full relative" style={{ paddingLeft: '16px' }}>
-      {/* ── View 0: Smart OI Intelligence Suite ── */}
+      {/* ── View 0: StockMojo Parity OI Change (Call vs Put) ── */}
+      <div className={`flex-1 min-h-0 flex-col h-full w-full bg-[#070c17] ${suiteView === "stockmojo" ? "flex" : "hidden"}`}>
+        <div className="flex items-center justify-between border-b border-ink-800 bg-[#091122] px-4 py-1 text-[11px] shrink-0 box-border w-full" style={{ paddingLeft: '16px' }}>
+          <div className="flex items-center gap-2 pl-2">
+            <span className="font-extrabold text-emerald-400">📈 StockMojo OI Change (Call vs Put) — 1:1 Exchange Parity</span>
+            <span className="text-slate-500 hidden sm:inline">• True Exchange ΔOI (oi - prev_eod_oi) • NIFTY FUT Overlay • Multi-Expiry</span>
+          </div>
+          {switcher}
+        </div>
+        <div className="flex-1 min-h-0 w-full relative box-border overflow-x-hidden p-2">
+          <StockMojoOiChange tick={tick} />
+        </div>
+      </div>
+
+      {/* ── View 1: Smart OI Intelligence Suite ── */}
       <div className={`flex-1 min-h-0 flex-col h-full w-full bg-[#070c17] ${suiteView === "smart_oi" ? "flex" : "hidden"}`}>
         <SmartOISuite
           tick={tick}
@@ -2994,12 +3020,19 @@ export function WritersFlow({ tick }: { tick: number }) {
         />
       </div>
 
-      {/* ── View 1: 3-Chart Trinity Suite ── */}
+      {/* ── View 2: 3-Chart Trinity Suite ── */}
       <div className={`flex-1 min-h-0 flex-col h-full w-full bg-[#070c17] box-border overflow-x-hidden ${suiteView === "trinity" ? "flex" : "hidden"}`}>
         <div className="flex items-center justify-between border-b border-ink-800 bg-[#091122] px-4 py-1 text-[11px] shrink-0 box-border w-full" style={{ paddingLeft: '16px' }}>
           <div className="flex items-center gap-2 pl-2">
             <span className="font-extrabold text-sky-400">⚡ 3-Chart Institutional PCR & OI Trinity Suite</span>
             <span className="text-slate-500 hidden sm:inline">• Live PCR • Fresh OI Δ • Cumulative Total OI</span>
+            <button
+              onClick={() => setViewMode("stockmojo")}
+              className="ml-2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-extrabold hover:bg-emerald-500/30 transition-all cursor-pointer"
+              title="Open full StockMojo Call vs Put OI Change View"
+            >
+              📈 StockMojo View (10.34 Cr / 17.47 Cr)
+            </button>
           </div>
           {switcher}
         </div>
@@ -3315,6 +3348,8 @@ export { default as StrikeMap2_0 } from "./StrikeMap2.0";
 export type { StrikeData, OIMatrixPayload, OIMatrixSuiteProps } from "./OIMatrixSuite";
 export { default as SmartOISuite } from "./SmartOISuite";
 export type { SmartOIStrike, SmartOICandle, SmartOITimeSeriesPoint, SmartOIPayload } from "./SmartOISuite";
+export { default as StockMojoOiChange } from "./StockMojoOiChange";
+export type { StockMojoPoint, StockMojoPayload, StockMojoOiChangeProps } from "./StockMojoOiChange";
 
 
 // ─────────────────────────────── a card with its own Full view / Normal view ───────────────────────────────

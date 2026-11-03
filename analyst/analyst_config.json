@@ -346,5 +346,23 @@
     "panic_unwinding_buffer_pts": 20.0,
     "pcr_overbought_threshold": 1.60,
     "rsi_period": 14
+  },
+  "stockmojo_oi_change": {
+    "enabled": true,
+    "scale_crore_divisor": 10000000.0,
+    "default_opt_expiry": "cur",
+    "default_fut_contract": "combined",
+    "default_baseline_mode": "exchange",
+    "resample_step_mins": 3,
+    "stockmojo_theme": {
+      "call_color": "#22c55e",
+      "put_color": "#ef4444",
+      "fut_color": "#94a3b8"
+    },
+    "institutional_theme": {
+      "call_color": "#ef4444",
+      "put_color": "#22c55e",
+      "fut_color": "#94a3b8"
+    }
   }
 }

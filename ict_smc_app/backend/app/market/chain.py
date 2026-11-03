@@ -213,6 +213,31 @@ class ChainPoller:
         self._last_snap[exp] = time.time()
         self._pcr_cache.clear()
         ts = int(ch["ts"] // 60 * 60)
+
+        # Permanent Startup Protection: Anchor 09:15 baseline if missing (late boot at 09:30–10:00 AM)
+        today_start, _ = session_bounds(now_ist().date())
+        if ts > today_start:
+            has_anchor = db.query("SELECT 1 FROM chain_snap WHERE expiry = ? AND ts = ? LIMIT 1", (exp, today_start))
+            if not has_anchor:
+                prev_eod_rows = []
+                for r in ch.get("rows", []):
+                    c_oi = float(r["ce"].get("oi") or 0)
+                    c_chg = float(r["ce"].get("oi_chg") or 0)
+                    p_oi = float(r["pe"].get("oi") or 0)
+                    p_chg = float(r["pe"].get("oi_chg") or 0)
+                    prev_c_oi = max(0.0, c_oi - c_chg)
+                    prev_p_oi = max(0.0, p_oi - p_chg)
+                    prev_eod_rows.append((
+                        r["strike"], prev_c_oi, prev_p_oi,
+                        r["ce"].get("ltp"), r["pe"].get("ltp"),
+                        0.0, 0.0,
+                        r["ce"].get("bid"), r["ce"].get("ask"),
+                        r["pe"].get("bid"), r["pe"].get("ask")
+                    ))
+                if prev_eod_rows:
+                    db.save_chain_snap(exp, today_start, prev_eod_rows)
+                    log.info("Anchored 09:15:00 settled EOD baseline in chain_snap for %s", exp)
+
         db.save_chain_snap(exp, ts, [(r["strike"], r["ce"]["oi"], r["pe"]["oi"], r["ce"]["ltp"], r["pe"]["ltp"],
                                       r["ce"].get("vol"), r["pe"].get("vol"),
                                       r["ce"].get("bid"), r["ce"].get("ask"), r["pe"].get("bid"), r["pe"].get("ask"))
@@ -425,6 +450,30 @@ class ChainPoller:
                 pe_vol = sum(float(r["pe_vol"] or 0) for r in in_scope)
                 snaps_by_exp.setdefault(e, []).append((t, ce_oi, pe_oi, ce_vol, pe_vol))
 
+        # Startup Protection for Late Boot: Ensure 09:15 baseline anchor exists for all active expiries
+        for e in active_exps:
+            e_snaps = snaps_by_exp.get(e, [])
+            if e_snaps and e_snaps[0][0] > today_start:
+                ch_e = self.chains.get(e)
+                prev_ce = 0.0
+                prev_pe = 0.0
+                if ch_e and ch_e.get("rows"):
+                    in_scope = [r for r in ch_e["rows"] if min_strike <= float(r["strike"]) <= max_strike]
+                    prev_ce = sum(max(0.0, float(r["ce"].get("oi") or 0) - float(r["ce"].get("oi_chg") or 0)) for r in in_scope)
+                    prev_pe = sum(max(0.0, float(r["pe"].get("oi") or 0) - float(r["pe"].get("oi_chg") or 0)) for r in in_scope)
+                if prev_ce <= 0.0 or prev_pe <= 0.0:
+                    prev_s_rows = db.query("""
+                        SELECT strike, ce_oi, pe_oi FROM chain_snap
+                        WHERE expiry = ? AND ts < ?
+                        AND ts = (SELECT MAX(ts) FROM chain_snap WHERE expiry = ? AND ts < ?)
+                    """, (e, today_start, e, today_start))
+                    if prev_s_rows:
+                        in_scope = [r for r in prev_s_rows if min_strike <= float(r["strike"]) <= max_strike]
+                        prev_ce = sum(float(r["ce_oi"] or 0) for r in in_scope)
+                        prev_pe = sum(float(r["pe_oi"] or 0) for r in in_scope)
+                if prev_ce > 0.0 or prev_pe > 0.0:
+                    snaps_by_exp[e].insert(0, (today_start, prev_ce, prev_pe, 0.0, 0.0))
+
         # Compute rollover percentage & labels
         tot_oct_v = sum(float(c.get("v") or 0) for c in oct_candles)
         tot_nov_v = sum(float(c.get("v") or 0) for c in nov_candles)
@@ -493,6 +542,109 @@ class ChainPoller:
         self._pcr_cache = res
         self._last_pcr_time = now_t
         return res
+
+    def get_stockmojo_oi_change(
+        self,
+        exp: Optional[str] = "cur",
+        fut_src: str = "combined",
+        baseline_mode: str = "exchange",
+        hub: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """
+        StockMojo Parity OI Change (Call vs Put) time series feeder.
+        Calculates:
+          Exchange ΔOI = Σ(current_strike_oi - yesterday_eod_close_oi)
+        Returns:
+          series with ts, time, time_label, fut_close, call_oi_chg, put_oi_chg,
+          call_oi_chg_cr, put_oi_chg_cr, net_diff_cr, call_oi, put_oi, pcr_oi.
+        """
+        today_iso = now_ist().date().isoformat()
+        active_exps = [e for e in (self.expiries or sorted(self.chains)) if e >= today_iso]
+        if not active_exps:
+            active_exps = list(self.expiries or sorted(self.chains))
+        cur_exp = active_exps[0] if active_exps else None
+        next_exp = active_exps[1] if len(active_exps) > 1 else None
+        monthly_exp = active_exps[-1] if active_exps else cur_exp
+
+        sel_exp = cur_exp if exp in ("cur", None) else (next_exp if exp == "next" else (monthly_exp if exp == "monthly" else exp))
+
+        trinity = self.get_pcr_trinity(exp=sel_exp, fut_src=fut_src, hub=hub, scope="all")
+        raw_series = trinity.get("pcr_oi_series", [])
+        if not raw_series:
+            raw_series = (trinity.get("series") or {}).get("cur", [])
+
+        # Intraday baseline offset if user explicitly selected intraday mode
+        first_intraday_ce = 0.0
+        first_intraday_pe = 0.0
+        if baseline_mode == "intraday" and raw_series:
+            first_intraday_ce = float(raw_series[0].get("call_oi", 0))
+            first_intraday_pe = float(raw_series[0].get("put_oi", 0))
+
+        series_out = []
+        for pt in raw_series:
+            t = int(pt.get("ts", 0))
+            dt = to_ist(t)
+            fut_c = round(float(pt.get("fut_close", 0.0)), 2)
+            c_oi = int(pt.get("call_oi", 0))
+            p_oi = int(pt.get("put_oi", 0))
+
+            if baseline_mode == "intraday" and first_intraday_ce > 0:
+                c_chg = int(c_oi - first_intraday_ce)
+                p_chg = int(p_oi - first_intraday_pe)
+            else:
+                c_chg = int(pt.get("call_oi_chg", 0))
+                p_chg = int(pt.get("put_oi_chg", 0))
+
+            c_chg_cr = round(c_chg / 10000000.0, 2)
+            p_chg_cr = round(p_chg / 10000000.0, 2)
+            net_cr = round((p_chg - c_chg) / 10000000.0, 2)
+
+            series_out.append({
+                "ts": t,
+                "time": dt.strftime("%H:%M"),
+                "time_label": dt.strftime("%-d %b, %-I:%M %p"),
+                "fut_close": fut_c,
+                "call_oi_chg": c_chg,
+                "put_oi_chg": p_chg,
+                "call_oi_chg_cr": c_chg_cr,
+                "put_oi_chg_cr": p_chg_cr,
+                "net_diff_cr": net_cr,
+                "call_oi": c_oi,
+                "put_oi": p_oi,
+                "pcr_oi": round(float(pt.get("pcr_oi", 1.0)), 2),
+            })
+
+        def _fmt(s: Optional[str]) -> str:
+            if not s:
+                return "—"
+            try:
+                from datetime import datetime
+                d = datetime.fromisoformat(s.replace("Z", ""))
+                return d.strftime("%d %b")
+            except Exception:
+                return str(s)
+
+        exp_meta = dict(trinity.get("expiries_meta", {}))
+        exp_meta["monthly_date"] = _fmt(monthly_exp)
+        exp_meta["monthly_expiry"] = monthly_exp
+
+        pts_map = {p["time"]: p for p in series_out}
+        checkpoints = []
+        for ck in ("09:15", "09:58", "10:00", "12:15", "15:27", "15:30"):
+            if ck in pts_map:
+                checkpoints.append(pts_map[ck])
+
+        return {
+            "status": "ok",
+            "opt_expiry": sel_exp,
+            "fut_contract": fut_src,
+            "baseline_mode": baseline_mode,
+            "expiries_meta": exp_meta,
+            "series": series_out,
+            "latest": series_out[-1] if series_out else None,
+            "checkpoints": checkpoints,
+            "scale": "crores",
+        }
 
     def get_writer_flow(
         self,

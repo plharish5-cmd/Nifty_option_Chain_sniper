@@ -1999,13 +1999,26 @@ class DhanAlgoExecutor:
         self._running = True
         self.log_event("INFO", f"Dhan Algo Execution Engine started. Default Mode: {self.execution_mode}")
 
-        # Automatic backfill of today's candles on backend startup/reconnect
-        try:
-            from .htf_wick_ema_rb import backfill_dhan_intraday
-            bf = await asyncio.to_thread(backfill_dhan_intraday, "13", "IDX_I", "INDEX", "1", "2026-10-25", "2026-11-02")
-            self.log_event("INFO", f"Automatic startup candle backfill completed: {bf.get('today_candles_count', 0)} candles for today", bf)
-        except Exception as exc:
-            self.log_event("WARN", f"Startup candle backfill warning: {exc}")
+        # Automatic backfill of today's candles on backend startup/reconnect (async background task with 4.0s timeout)
+        async def _run_startup_backfill():
+            try:
+                from .htf_wick_ema_rb import backfill_dhan_intraday
+                from ..timeutil import now_ist
+                from datetime import timedelta
+                n_ist = now_ist()
+                today_str = n_ist.date().isoformat()
+                start_str = (n_ist.date() - timedelta(days=7)).isoformat()
+                bf = await asyncio.wait_for(
+                    asyncio.to_thread(backfill_dhan_intraday, "13", "IDX_I", "INDEX", "1", start_str, today_str),
+                    timeout=4.0
+                )
+                self.log_event("INFO", f"Automatic startup candle backfill completed: {bf.get('today_candles_count', 0)} candles for today", bf)
+            except asyncio.TimeoutError:
+                self.log_event("WARN", "Startup candle backfill timed out (4.0s limit reached); proceeding with live feed")
+            except Exception as exc:
+                self.log_event("WARN", f"Startup candle backfill warning: {exc}")
+
+        asyncio.create_task(_run_startup_backfill())
 
         while self._running:
             try:

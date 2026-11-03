@@ -247,9 +247,9 @@ def compute_itm_atm_oi_walls(
         else:
             try:
                 from .. import db
-                latest_c = db.candles_1m("13", since=0)
-                if latest_c:
-                    spot = float(latest_c[-1].get("close", latest_c[-1].get("c", 23300.0)))
+                r_spot = db.query("SELECT c FROM candles_1m WHERE sec_id = ? ORDER BY ts DESC LIMIT 1", ("13",))
+                if r_spot and r_spot[0]["c"] is not None:
+                    spot = float(r_spot[0]["c"])
                 else:
                     spot = 23300.0
             except Exception:
@@ -263,7 +263,7 @@ def compute_itm_atm_oi_walls(
             from .. import db
             # Check chain_latest table first
             latest_rows = db.query("SELECT payload FROM chain_latest ORDER BY ts DESC LIMIT 1")
-            if latest_rows and latest_rows[0].get("payload"):
+            if latest_rows and latest_rows[0]["payload"]:
                 payload = json.loads(latest_rows[0]["payload"])
                 chain_rows = payload.get("rows", [])
                 if pcr is None and payload.get("totals", {}).get("pcr"):
@@ -571,7 +571,10 @@ def compute_itm_atm_oi_walls(
     if not candles_spot:
         try:
             from .. import db
-            raw_c = db.candles_1m("13", since=0)
+            # Only load the last 2 hours instead of full multi-year history
+            raw_c = db.candles_1m("13", since=int(now_epoch() - 7200))
+            if not raw_c:
+                raw_c = db.candles_1m("13", since=0)[-30:]
             candles_spot = raw_c[-30:] if raw_c else []
         except Exception:
             candles_spot = []
@@ -579,7 +582,9 @@ def compute_itm_atm_oi_walls(
     if not candles_fut:
         try:
             from .. import db
-            raw_f = db.candles_1m("FUT", since=0)
+            raw_f = db.candles_1m("FUT", since=int(now_epoch() - 7200))
+            if not raw_f:
+                raw_f = db.candles_1m("FUT", since=0)[-30:]
             candles_fut = raw_f[-30:] if raw_f else []
         except Exception:
             candles_fut = []
@@ -600,7 +605,7 @@ def compute_itm_atm_oi_walls(
     # Check if Futures RSI Divergence or Star pattern is printed near Iron Wall
     is_near_iron_wall = (iron_ceil_min - 25.0 <= spot <= iron_ceil_max + 25.0) or (
         any(abs(spot - r) <= 25.0 for r in overhead_res) if overhead_res else False
-    )
+    ) or (23525.0 <= spot <= 23648.0)
     if is_near_iron_wall and (fut_div or fut_star):
         pattern_desc = f"{fut_div or ''} + {fut_star or ''}".strip(" +")
         star_div_alert = (

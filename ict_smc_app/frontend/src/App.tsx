@@ -36,7 +36,7 @@ const TFS: TF[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1D"];
 // overlays — footprints, CVD, zones, nodes — can recompute without the chart dragging. The hard
 // ceiling is the stored data itself: 247 sessions of 1-minute candles as of 2026-11-03.
 // Raising these costs render time, not correctness; lower them if the chart feels heavy.
-const DAYS: Record<TF, number> = { "1m": 2, "5m": 10, "15m": 30, "30m": 60, "1h": 120, "4h": 180, "1D": 250 };
+const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "30m": 15, "1h": 30, "4h": 60, "1D": 60 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
   ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["ictLevels", "🏛️ ICT Levels (PDH/PDL/Open)"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"], ["fp", "Footprint Δ (est.)"], ["heat", "Heatmap"], ["ocAct", "PE−CE action"], ["dol", "D.O.L (IRL⇄ERL)"], ["smt", "SMT (vs BankNifty)"], ["bias", `⚖ ${BIAS_NAME}`], ["walls", "🧱 OI walls"], ["bubbles", "🫧 Big trades"], ["cells", "▦ FP cells"], ["cvd", "〽 CVD"], ["nodes", "🟨 Stacked nodes"], ["gamma", "γ Gamma 3✓"], ["tsoup", "🐢 Turtle soup"], ["rblock", "⟂ Rejection blocks"], ["p3", "📐 Power of 3 (AMD)"], ["stdv", "📐 STDV"], ["advPa", "🎓 Adv PA (10 Core)"], ["prahaar", "⚔ Prahaar Engine"], ["gtfZones", "🏛️ GTF D&S Zones"], ["rsiDiv", "📉 RSI Divergence"],
@@ -131,10 +131,22 @@ function LiveDesk() {
     const inst = instRef.current;
     const ao = asofRef.current;
     const tt: TF = inst !== "NIFTY" && t === "1D" ? "5m" : t;
-    const [c, a] = await Promise.all([api.candles(tt, inst !== "NIFTY" ? 2 : DAYS[tt], inst, ao), (tt === "1D" || ao) ? Promise.resolve(null) : api.analysis(tt, inst)]);
-    if (tfRef.current !== t || instRef.current !== inst || asofRef.current !== ao) return;
-    setCandles(c.candles);
-    setAnalysis(a);
+
+    // Decouple: Fetch and set OHLC candles FIRST so chart renders immediately without waiting for analysis
+    api.candles(tt, inst !== "NIFTY" ? 2 : DAYS[tt], inst, ao).then((c) => {
+      if (tfRef.current !== t || instRef.current !== inst || asofRef.current !== ao) return;
+      if (c?.candles) setCandles(c.candles);
+    }).catch((err) => console.warn("Candle load warning:", err));
+
+    // Secondary overlay: analysis
+    if (tt === "1D" || ao) {
+      setAnalysis(null);
+    } else {
+      api.analysis(tt, inst).then((a) => {
+        if (tfRef.current !== t || instRef.current !== inst || asofRef.current !== ao) return;
+        setAnalysis(a);
+      }).catch((err) => console.warn("Analysis load warning:", err));
+    }
   }, []);
   const loadDash = useCallback(() => api.dashboard().then((d) => {
     setDash(d);

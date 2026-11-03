@@ -31,6 +31,7 @@ import { aggregateWeeklyCandles, extractWicks, filterVirginWicks, type HtfWick }
 import { computePrahaar, type PrahaarResult, type PrahaarSignal } from "./prahaar";
 import { detectGtfZones, evaluateGtfMasterConfluence, hitTestGtfZone, getGtfExplanation, type GtfMarkingMode, type GtfResult, type GtfZone } from "./gtf";
 import PcrTrinitySuite from "./PcrTrinitySuite";
+import StockMojoOiChange from "./StockMojoOiChange";
 import OIMatrixSuite from "./OIMatrixSuite";
 import AlgoCockpit from "./AlgoCockpit";
 
@@ -423,9 +424,15 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
   useEffect(() => {
     let alive = true;
     const fetchItmAtm = () => {
-      api.itmAtmOiWalls().then((res) => {
-        if (alive && res?.ok) setItmAtmIntel(res);
-      }).catch(() => {});
+      try {
+        api.itmAtmOiWalls().then((res) => {
+          if (alive && res?.ok) setItmAtmIntel(res);
+        }).catch((err) => {
+          console.warn("itmAtmOiWalls fetch warning:", err);
+        });
+      } catch (err) {
+        console.warn("fetchItmAtm caught error:", err);
+      }
     };
     fetchItmAtm();
     const timer = setInterval(fetchItmAtm, 10000);
@@ -568,12 +575,20 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
       return dStr;
     };
 
+    const curSpot = (spot != null && Number.isFinite(spot) && spot > 0)
+      ? spot
+      : (candles.length && Number.isFinite(candles[candles.length - 1]?.close) && candles[candles.length - 1].close > 0)
+        ? candles[candles.length - 1].close
+        : 0;
+    const isValidLvl = (p: any): p is number =>
+      typeof p === "number" && Number.isFinite(p) && p > 0 && (curSpot <= 0 || Math.abs(p - curSpot) <= 1500);
+
     try {
       // 1. Checkbox 1: R1-R4, S1-S4 & Unfilled Gaps
       if (showRbPivotsGaps) {
         // Resistances (R1..R4) - Red #ef4444
         (gannData.resistances || []).forEach((r, idx) => {
-          if (r.price > 0) {
+          if (isValidLvl(r?.price)) {
             const dateLabel = r.date ? ` (${formatDateShort(r.date)})` : "";
             const hitLabel = r.hit ? " ✓ HIT" : "";
             const line = series.current!.createPriceLine({
@@ -590,7 +605,7 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
 
         // Supports (S1..S4) - Green #22c55e
         (gannData.supports || []).forEach((s, idx) => {
-          if (s.price > 0) {
+          if (isValidLvl(s?.price)) {
             const dateLabel = s.date ? ` (${formatDateShort(s.date)})` : "";
             const hitLabel = s.hit ? " ✓ HIT" : "";
             const line = series.current!.createPriceLine({
@@ -607,7 +622,7 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
 
         // Upper Gaps - Gold / Amber dashed #f59e0b
         (gannData.upper_gaps || []).forEach((ug) => {
-          if (ug.price > 0) {
+          if (isValidLvl(ug?.price)) {
             const dateLabel = ug.date ? ` (Unfilled from ${formatDateShort(ug.date)})` : "";
             const hitLabel = ug.hit ? " ✓ HIT" : "";
             const line = series.current!.createPriceLine({
@@ -624,7 +639,7 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
 
         // Lower Gaps - Cyan/Purple dashed #a855f7
         (gannData.lower_gaps || []).forEach((lg) => {
-          if (lg.price > 0) {
+          if (isValidLvl(lg?.price)) {
             const dateLabel = lg.date ? ` (Unfilled from ${formatDateShort(lg.date)})` : "";
             const hitLabel = lg.hit ? " ✓ HIT" : "";
             const line = series.current!.createPriceLine({
@@ -644,7 +659,7 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
       if (showRbGann) {
         // Gann Resistances - dotted Rose/Crimson #fb7185
         (gannData.gann_resistances || []).forEach((gr, idx) => {
-          if (gr.price && gr.price > 0) {
+          if (isValidLvl(gr?.price)) {
             const hitLabel = gr.hit ? " ✓ HIT" : "";
             const line = series.current!.createPriceLine({
               price: gr.price,
@@ -660,7 +675,7 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
 
         // Gann Supports - dotted Teal/Emerald #34d399
         (gannData.gann_supports || []).forEach((gs, idx) => {
-          if (gs.price && gs.price > 0) {
+          if (isValidLvl(gs?.price)) {
             const hitLabel = gs.hit ? " ✓ HIT" : "";
             const line = series.current!.createPriceLine({
               price: gs.price,
@@ -678,7 +693,7 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
       // 3. Checkbox 3: 1H/4H Wicks & Shaved Extremes + 1H 8-EMA
       if (!reviewing && showRbWickEma && htfWickEmaData?.ok) {
         // 1H 8-EMA Dynamic Line - Electric Cyan #06b6d4, 2px solid
-        if (htfWickEmaData.ema8_1h?.value && htfWickEmaData.ema8_1h.value > 0) {
+        if (isValidLvl(htfWickEmaData.ema8_1h?.value)) {
           const emaVal = htfWickEmaData.ema8_1h.value;
           const slope = htfWickEmaData.ema8_1h.slope || "FLAT";
           const line = series.current!.createPriceLine({
@@ -694,7 +709,7 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
 
         // Active 1H / 4H Extremes
         (htfWickEmaData.active_levels || []).forEach((lvl) => {
-          if (lvl.ref_price > 0) {
+          if (isValidLvl(lvl?.ref_price)) {
             if (lvl.side === "RESISTANCE") {
               // Coral Red #f43f5e, dashed
               const line = series.current!.createPriceLine({
@@ -1226,7 +1241,7 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
   // ⚡ 3-Chart Institutional PCR & OI Trinity Suite Drawer State
   const [trinityDrawerOpen, setTrinityDrawerOpen] = useState<boolean>(false);
   const [trinityDrawerHeight, setTrinityDrawerHeight] = useState<number>(440);
-  const [oiDrawerTab, setOiDrawerTab] = useState<"trinity" | "matrix">("trinity");
+  const [oiDrawerTab, setOiDrawerTab] = useState<"trinity" | "matrix" | "stockmojo">("stockmojo");
   const trinityVerdict = (analysis as any)?.pcr_trinity;
   const trinityState = trinityVerdict?.alignment_state;
   const trinityBadge = trinityVerdict?.verdict_badge;
@@ -2796,9 +2811,25 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
   useEffect(() => {
     const s = series.current;
     if (!s) return;
-    const wallSpot = spot ?? candles[candles.length - 1]?.close ?? 0;
-    s.applyOptions({ autoscaleInfoProvider: (original: () => AutoscaleInfo | null) =>
-      layers.walls && fitOiWalls ? oiWallRange(original(), walls, wallSpot) : original() });
+    const wallSpot = (spot != null && Number.isFinite(spot) && spot > 0)
+      ? spot
+      : (candles.length && Number.isFinite(candles[candles.length - 1]?.close) && (candles[candles.length - 1]?.close ?? 0) > 0)
+        ? (candles[candles.length - 1]?.close ?? 0)
+        : 0;
+    try {
+      s.applyOptions({
+        autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
+          try {
+            return (layers.walls && fitOiWalls && wallSpot > 0) ? oiWallRange(original(), walls, wallSpot) : original();
+          } catch (e) {
+            console.warn("autoscaleInfoProvider error:", e);
+            return original();
+          }
+        },
+      });
+    } catch (e) {
+      console.warn("applyOptions autoscale error:", e);
+    }
   }, [layers.walls, fitOiWalls, walls, spot, candles]);
   useEffect(() => {
     if (layers.walls && fitOiWalls) series.current?.priceScale().setAutoScale(true);
@@ -3663,6 +3694,26 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
             </span>
           </div>
         )}
+
+        <button
+          onClick={() => {
+            if (trinityDrawerOpen && oiDrawerTab === "stockmojo") {
+              setTrinityDrawerOpen(false);
+            } else {
+              setOiDrawerTab("stockmojo");
+              setTrinityDrawerOpen(true);
+            }
+          }}
+          className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border transition-all shadow-lg backdrop-blur ${
+            trinityDrawerOpen && oiDrawerTab === "stockmojo"
+              ? "bg-emerald-500/30 border-emerald-500/80 text-emerald-300 ring-1 ring-emerald-500/40"
+              : "border-emerald-500/50 text-emerald-300 hover:bg-emerald-950/40"
+          }`}
+          title="Toggle StockMojo Parity OI Change (Call vs Put)"
+        >
+          <span>📈 StockMojo OI Change</span>
+          <span className="text-[9px] opacity-75">{trinityDrawerOpen && oiDrawerTab === "stockmojo" ? "▼" : "▲"}</span>
+        </button>
 
         <button
           onClick={() => {
@@ -4865,24 +4916,24 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
               {/* Pillar 4: ATM/ITM Writer Conviction & Vacuum */}
               {itmAtmIntel && (
                 <span className={`px-1.5 py-0.2 rounded border font-bold flex items-center gap-1 ${
-                  itmAtmIntel.vacuum_active
+                  itmAtmIntel?.vacuum_active
                     ? "bg-purple-950/90 text-purple-300 border-purple-500 animate-pulse"
-                    : itmAtmIntel.is_panic_unwinding
+                    : itmAtmIntel?.is_panic_unwinding
                     ? "bg-red-950/90 text-red-300 border-red-500 animate-pulse"
-                    : itmAtmIntel.is_hollow_rally
+                    : itmAtmIntel?.is_hollow_rally
                     ? "bg-rose-950/90 text-rose-300 border-rose-500 animate-pulse"
-                    : itmAtmIntel.is_pcr_overbought
+                    : itmAtmIntel?.is_pcr_overbought
                     ? "bg-amber-950/90 text-amber-300 border-amber-500"
                     : "bg-ink-850 text-slate-300 border-ink-700"
-                }`} title={itmAtmIntel.hollow_rally_warning || itmAtmIntel.vacuum_signal || itmAtmIntel.panic_unwinding_banner || itmAtmIntel.pcr_shield_banner || itmAtmIntel.iron_wall_star_divergence_alert || "ATM/ITM Writer Conviction Active"}>
-                  {itmAtmIntel.vacuum_active
+                }`} title={itmAtmIntel?.hollow_rally_warning || itmAtmIntel?.vacuum_signal || itmAtmIntel?.panic_unwinding_banner || itmAtmIntel?.pcr_shield_banner || itmAtmIntel?.iron_wall_star_divergence_alert || "ATM/ITM Writer Conviction Active"}>
+                  {itmAtmIntel?.vacuum_active
                     ? "🚀 OTM VACUUM ACTIVE"
-                    : itmAtmIntel.is_panic_unwinding
-                    ? "🩸 LONG UNWINDING (< 23,220)"
-                    : itmAtmIntel.is_hollow_rally
+                    : itmAtmIntel?.is_panic_unwinding
+                    ? `🩸 LONG UNWINDING (< ${itmAtmIntel?.panic_unwinding_trigger ? Math.round(itmAtmIntel.panic_unwinding_trigger) : 23220})`
+                    : itmAtmIntel?.is_hollow_rally
                     ? "⚠️ HOLLOW RALLY (PE Parked)"
-                    : itmAtmIntel.is_pcr_overbought
-                    ? `🛑 OVERBOUGHT PCR (${itmAtmIntel.pcr})`
+                    : itmAtmIntel?.is_pcr_overbought
+                    ? `🛑 OVERBOUGHT PCR (${itmAtmIntel?.pcr ?? 1.0})`
                     : "🏛️ WRITER CONVICTION SOLID"}
                 </span>
               )}
@@ -6248,6 +6299,16 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
             <div className="flex items-center gap-2">
               <div className="flex items-center rounded bg-[#0b1324] p-0.5 border border-slate-700">
                 <button
+                  onClick={() => setOiDrawerTab("stockmojo")}
+                  className={`rounded px-2.5 py-0.5 text-[11px] font-extrabold transition-all ${
+                    oiDrawerTab === "stockmojo"
+                      ? "bg-emerald-500/30 text-emerald-200 border border-emerald-500/60 shadow-sm"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  📈 StockMojo OI Change
+                </button>
+                <button
                   onClick={() => setOiDrawerTab("trinity")}
                   className={`rounded px-2.5 py-0.5 text-[11px] font-extrabold transition-all ${
                     oiDrawerTab === "trinity"
@@ -6269,7 +6330,9 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
                 </button>
               </div>
               <span className="text-[10px] text-slate-400 hidden md:inline">
-                {oiDrawerTab === "trinity"
+                {oiDrawerTab === "stockmojo"
+                  ? "StockMojo Parity • True Exchange ΔOI (oi - prev_eod_oi) • NIFTY FUT Overlay • Multi-Expiry"
+                  : oiDrawerTab === "trinity"
                   ? "Put-Call Ratio • Fresh OI Δ • Cumulative Total OI • Dual-Axis Overlays"
                   : "Strike Buildups • Support/Resistance Walls • Max Pain • Sentiment Speedometer"}
               </span>
@@ -6291,7 +6354,9 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
             </div>
           </div>
           <div className="flex-1 min-h-0 flex flex-col relative w-full h-full overflow-hidden">
-            {oiDrawerTab === "trinity" ? (
+            {oiDrawerTab === "stockmojo" ? (
+              <StockMojoOiChange onClose={() => setTrinityDrawerOpen(false)} />
+            ) : oiDrawerTab === "trinity" ? (
               <PcrTrinitySuite onClose={() => setTrinityDrawerOpen(false)} />
             ) : (
               <OIMatrixSuite onClose={() => setTrinityDrawerOpen(false)} />

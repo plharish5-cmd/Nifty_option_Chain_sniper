@@ -214,6 +214,7 @@ def chain(
     }
 
 
+@app.get("/api/oc/trinity")
 @app.get("/api/chain/trinity")
 def chain_trinity(
     expiry: Optional[str] = None,
@@ -226,6 +227,29 @@ def chain_trinity(
     target_exp = opt_expiry or exp or expiry or "both"
     target_fut = fut_contract or fut_src or "combined"
     return h.chain.get_pcr_trinity(exp=target_exp, fut_src=target_fut, hub=h)
+
+
+@app.get("/api/desk/stockmojo-oi-change")
+def desk_stockmojo_oi_change(
+    expiry: Optional[str] = None,
+    exp: Optional[str] = None,
+    opt_expiry: Optional[str] = None,
+    fut_contract: Optional[str] = None,
+    fut_src: Optional[str] = None,
+    baseline_mode: Optional[str] = None,
+):
+    """
+    Dedicated StockMojo-matching OI Change (Call vs Put) endpoint.
+    Computes true Exchange ΔOI (oi - previous_eod_oi) with contract/expiry selectors
+    and full checkpoint telemetry.
+    """
+    h = _h()
+    target_exp = opt_expiry or exp or expiry or "cur"
+    target_fut = fut_contract or fut_src or "combined"
+    mode = baseline_mode or "exchange"
+    if hasattr(h, "chain") and hasattr(h.chain, "get_stockmojo_oi_change"):
+        return h.chain.get_stockmojo_oi_change(exp=target_exp, fut_src=target_fut, baseline_mode=mode, hub=h)
+    return {"status": "error", "detail": "Chain engine unavailable", "series": []}
 
 
 @app.get("/api/gamma-exposure-review")

@@ -647,6 +647,25 @@
     "total_oi_gap_min_bull": 1000000,
     "mutual_unwind_thresh": -1500000
   },
+  "stockmojo_oi_change": {
+    "_note": "StockMojo Exact Parity OI Change (Call vs Put) configuration",
+    "enabled": true,
+    "scale_crore_divisor": 10000000.0,
+    "default_opt_expiry": "cur",
+    "default_fut_contract": "combined",
+    "default_baseline_mode": "exchange",
+    "resample_step_mins": 3,
+    "stockmojo_theme": {
+      "call_color": "#22c55e",
+      "put_color": "#ef4444",
+      "fut_color": "#94a3b8"
+    },
+    "institutional_theme": {
+      "call_color": "#ef4444",
+      "put_color": "#22c55e",
+      "fut_color": "#94a3b8"
+    }
+  },
   "pe_ce_matrix": {
     "_note": "Institutional PE-CE Difference & Skew Matrix 2.0 thresholds",
     "enabled": true,

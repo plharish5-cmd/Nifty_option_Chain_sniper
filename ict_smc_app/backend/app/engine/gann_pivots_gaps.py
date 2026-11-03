@@ -20,6 +20,7 @@ import csv
 import logging
 import math
 import os
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -788,6 +789,7 @@ def sync_and_append_daily_master_csv(
     sec_id: str = "13",
     today_bar: Optional[Dict[str, Any]] = None,
     force_rewrite: bool = False,
+    generate_excel: bool = False,
 ) -> Dict[str, Any]:
     """
     Checks the canonical 5-year master CSV on disk:
@@ -891,9 +893,18 @@ def sync_and_append_daily_master_csv(
 
     # 2. Check SQLite candles_1m for completed/active daily sessions
     try:
+        # Only query recent candles (from max_date minus 1 day onwards) instead of full 92,000+ candle history
+        since_ts = 0
+        if max_date:
+            try:
+                dt_max = datetime.strptime(max_date, "%Y-%m-%d")
+                since_ts = int(dt_max.timestamp()) - 19800 - 86400
+            except Exception:
+                since_ts = 0
+
         candles_rows = db.query(
-            "SELECT ts, o, h, l, c FROM candles_1m WHERE sec_id = ? ORDER BY ts ASC",
-            (sec_id,)
+            "SELECT ts, o, h, l, c FROM candles_1m WHERE sec_id = ? AND ts >= ? ORDER BY ts ASC",
+            (sec_id, since_ts)
         )
         candles_by_date: Dict[str, Dict[str, float]] = {}
         for c_row in candles_rows:
@@ -956,7 +967,8 @@ def sync_and_append_daily_master_csv(
             for d_k in sorted_dates:
                 writer.writerow(existing_rows[d_k])
         log.info("Saved %d total daily bars to %s (+%d new/updated)", len(sorted_dates), csv_path, new_rows_added)
-        generate_excel_master_view(csv_path, EXCEL_MASTER_VIEW)
+        if generate_excel or not EXCEL_MASTER_VIEW.exists():
+            generate_excel_master_view(csv_path, EXCEL_MASTER_VIEW)
     elif not EXCEL_MASTER_VIEW.exists():
         generate_excel_master_view(csv_path, EXCEL_MASTER_VIEW)
 
@@ -1021,6 +1033,8 @@ def load_historical_daily_bars(sec_id: str = "13", sync: bool = True) -> List[Di
     return bars
 
 
+_GANN_CACHE: Dict[Tuple[str, float, Optional[str], str], Tuple[float, Dict[str, Any]]] = {}
+
 def get_gann_pivots_gaps(
     sec_id: str = "13",
     current_spot: Optional[float] = None,
@@ -1032,9 +1046,16 @@ def get_gann_pivots_gaps(
     """
     Main entry point for GET /api/desk/gann-pivots-gaps.
     Loads deep 5-year daily history, auto-syncs new daily bars, and computes master levels.
+    Cached for 10 seconds to protect against tight polling loops.
     """
+    cache_key = (sec_id, round(current_spot or 0.0, 0), target_date_str, mode)
+    now_t = time.time()
+    cached = _GANN_CACHE.get(cache_key)
+    if cached and (now_t - cached[0] < 10.0):
+        return cached[1]
+
     daily_bars = load_historical_daily_bars(sec_id=sec_id)
-    return compute_master_levels_from_daily(
+    res = compute_master_levels_from_daily(
         daily_bars=daily_bars,
         current_spot=current_spot,
         target_date_str=target_date_str,
@@ -1042,6 +1063,8 @@ def get_gann_pivots_gaps(
         current_ist=current_ist,
         target_time_str=target_time_str,
     )
+    _GANN_CACHE[cache_key] = (now_t, res)
+    return res
 
 
 def force_recalculate(
@@ -1056,7 +1079,8 @@ def force_recalculate(
     3. Regenerates NIFTY50_All_In_One_Master_View.xlsx.
     4. Recalculates all levels across all rows from index 0 to len(df)-1.
     """
-    sync_res = sync_and_append_daily_master_csv(sec_id=sec_id, today_bar=today_bar, force_rewrite=True)
+    sync_res = sync_and_append_daily_master_csv(sec_id=sec_id, today_bar=today_bar, force_rewrite=True, generate_excel=True)
+    _GANN_CACHE.clear()
     daily_bars = load_historical_daily_bars(sec_id=sec_id, sync=False)
     levels = compute_master_levels_from_daily(
         daily_bars=daily_bars,

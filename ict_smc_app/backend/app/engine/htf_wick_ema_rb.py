@@ -1428,21 +1428,11 @@ def get_htf_wick_ema_rb(sec_id: str = "13", spot: Optional[float] = None) -> Dic
     """
     global _cached_payload, _cached_time, _cached_last_ts
     thresh = get_thresholds()
-
-    # Load 1m candles
-    raw_1m = db.candles_1m(sec_id, since=0)
-    if not raw_1m:
-        return {
-            "ok": False,
-            "error": "No candle data found for sec_id " + sec_id,
-        }
-
-    latest_bar_ts = int(raw_1m[-1]["ts"])
     now_t = now_epoch()
 
-    # Fast cache check (30 second TTL if no new candle arrived)
-    if _cached_payload is not None and latest_bar_ts == _cached_last_ts and (now_t - _cached_time < 30.0):
-        effective_spot = spot if spot is not None and spot > 0 else float(raw_1m[-1]["c"])
+    # Fast cache check (15 second TTL to protect continuous monitoring loops)
+    if _cached_payload is not None and (now_t - _cached_time < 15.0):
+        effective_spot = spot if spot is not None and spot > 0 else _cached_payload.get("spot", 23300.0)
         out = dict(_cached_payload)
         out["spot"] = effective_spot
         if out.get("ema8_1h") and out["ema8_1h"].get("value") is not None:
@@ -1455,6 +1445,19 @@ def get_htf_wick_ema_rb(sec_id: str = "13", spot: Optional[float] = None) -> Dic
             else:
                 out["ema8_1h"]["approach_state"] = "NONE"
         return out
+
+    # Load 1m candles for the last 60 days (plenty for 1H/4H wicks and 8-EMA)
+    since_60d = int(now_t - 60 * 86400)
+    raw_1m = db.candles_1m(sec_id, since=since_60d)
+    if not raw_1m:
+        raw_1m = db.candles_1m(sec_id, since=0)
+    if not raw_1m:
+        return {
+            "ok": False,
+            "error": "No candle data found for sec_id " + sec_id,
+        }
+
+    latest_bar_ts = int(raw_1m[-1]["ts"])
 
     # Resample
     h1 = resample(raw_1m, "1h")

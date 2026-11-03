@@ -635,9 +635,15 @@ export interface DeltaRes { tf: string; available: boolean; mock: boolean; messa
 export interface Dashboard { strikes?: Strikes; mode?: "INDEX" | "OPTION_CHART"; proxy?: { enabled: boolean; label: string }; delta?: DeltaStatus; quote: Quote; bias: Record<string, Bias>; narrative: string[]; session: Session; chain: ChainSummary | null; expiries: string[]; signals: Signal[]; alerts: AlertRow[]; paper_open: PaperTrade | null; paper_open_all?: PaperTrade[]; paper_stats: PaperStats; status: Record<string, unknown> }
 
 async function get<T>(path: string): Promise<T> {
-  const r = await fetch(path);
-  if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
-  return r.json() as Promise<T>;
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), 7000);
+  try {
+    const r = await fetch(path, { signal: controller.signal });
+    if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+    return (await r.json()) as T;
+  } finally {
+    clearTimeout(id);
+  }
 }
 
 export interface OptTapeLeg { vol: number; oi: number; oi_chg: number; ltp: number; delta: number | null; class: string }
