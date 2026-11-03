@@ -37,5 +37,15 @@
     "exchange_segment": "NSE_FNO",
     "dhan_base_url": "https://api.dhan.co/v2",
     "sqlite_db_path": "ict_smc_app/backend/data/ict_smc.sqlite3"
+  },
+  "backtest": {
+    "brokerage_inr_per_trade": 400.0,
+    "itm_delta_win": 0.60,
+    "itm_delta_loss": 0.50,
+    "linear_delta": 0.60,
+    "lot_size": 75,
+    "gap_threshold_pts": 60.0,
+    "square_off_time": "15:20",
+    "profit_factor_min_verdict": 1.30
   }
 }
