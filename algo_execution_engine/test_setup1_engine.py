@@ -232,7 +232,8 @@ def test_cost_to_cost_trigger_and_candle_trail():
     )
     assert should_exit is False
     assert pos.cost_to_cost_active is True
-    assert new_sl == 23500.0  # SL moved to entry!
+    # SL moved to entry + 9 pts to cover ₹400 round-trip brokerage!
+    assert new_sl == 23509.0
 
     pos.spot_sl = new_sl
 
@@ -322,12 +323,12 @@ def test_order_gateway_paper_execution_and_companion_sl():
 
         pos = await gateway.execute_setup1_entry(signal, daily_trades=0, daily_pnl_inr=0.0)
         assert pos is not None
-        assert pos.symbol == "NIFTY 23600 CE"
+        assert pos.symbol == "NIFTY 23500 CE"
         assert pos.entry_spot == 23600.0
         assert pos.spot_sl == 23560.0
         assert pos.spot_target == 23640.0
-        # Companion SL-M price = entry_opt - (40 * 0.55) = est_ltp - 22.0
-        assert pos.option_sl == round(pos.entry_option_price - 22.0, 1)
+        # Companion SL-M price = entry_opt - (40 * delta)
+        assert pos.option_sl == round(pos.entry_option_price - (40.0 * pos.delta), 1)
 
         # Exit at target
         closed = await gateway.execute_position_exit(pos, exit_spot=23640.0, reason="Target Hit (+40 pts)")

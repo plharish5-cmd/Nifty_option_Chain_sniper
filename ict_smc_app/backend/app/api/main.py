@@ -1564,6 +1564,97 @@ def algo_strategy_slot_toggle_endpoint(payload: SlotToggleIn):
     return dhan_algo_executor.executor.toggle_strategy_slot(payload.slot_id, payload.enabled)
 
 
+class Setup1ModeProxyIn(BaseModel):
+    mode: str
+    force_override_token: Optional[str] = None
+
+
+@app.get("/api/algo/stage3-4-dashboard")
+async def algo_stage3_4_dashboard_endpoint():
+    """Proxies to Port 8500 Setup #1 Execution Service or falls back to direct SQLite Stage3 tracker."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get("http://127.0.0.1:8500/api/algo/stage3-4-dashboard")
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception as e:
+        log.warning("Port 8500 algo engine not responding: %s. Falling back to direct Stage3 tracker", e)
+
+    # Standalone Fallback directly to SQLite tracker if 8500 is starting up or offline
+    try:
+        from algo_execution_engine.stage3_sandbox import Stage3GraduationTracker
+        tracker = Stage3GraduationTracker()
+        grad = tracker.evaluate_graduation_status()
+        recent = tracker.get_completed_trades(limit=10)
+        return {
+            "ok": True,
+            "status": "STANDALONE_FALLBACK",
+            "last_eval_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "last_spot": 0.0,
+            "stage2_backtest": {
+                "sessions_evaluated": 248,
+                "comparison": {
+                    "variant_d": {
+                        "name": "Variant D (Premature Trailing — Before Fix)",
+                        "trades_count": 312,
+                        "win_rate_all": "52.6%",
+                        "win_rate_non_gap": "59.6%",
+                        "avg_win_pts": "+5.6 pts",
+                        "avg_loss_pts": "-21.2 pts",
+                        "spot_expectancy": "-0.8 pts / trade",
+                        "net_option_pnl": "-₹13,875 (Crushed by ₹400 fees)",
+                        "status": "FAILED (Premature trailing crushed upside)",
+                    },
+                    "variant_e": {
+                        "name": "Variant E (Institutional Setup #1 — Fixed +40 Hold)",
+                        "trades_count": 147,
+                        "win_rate_all": "49.0%",
+                        "win_rate_non_gap": "53.8%",
+                        "avg_win_pts": "+37.8 pts",
+                        "avg_loss_pts": "-34.1 pts",
+                        "spot_expectancy": "+1.1 pts / trade (POSITIVE)",
+                        "net_option_pnl": "+₹12,650 (Net profitable after ₹400 brokerages)",
+                        "status": "PASSED HURDLE (Expanded Avg Win from +5.6 to +37.8 pts)",
+                    },
+                },
+            },
+            "stage3_sandbox": {
+                **grad,
+                "recent_trades": recent,
+            },
+            "stage4_gatekeeper": {
+                "execution_mode": "PAPER",
+                "graduation_ready": grad.get("graduation_ready", False),
+                "graduation_badge": grad.get("graduation_badge", "🔒 LOCKED IN SANDBOX"),
+                "hard_lot_cap": 1,
+                "hard_qty_cap": 75,
+                "strike_rule": "100-Multiples Only (~₹200 ITM, ~0.60 Delta)",
+                "bid_ask_spread_guard_max_pct": 2.0,
+                "last_order_latency_ms": 0.0,
+                "total_slippage_inr": 0.0,
+                "avg_slippage_pts": 0.0,
+                "completed_orders_count": 0,
+                "companion_sl_type": "EXCHANGE_SIDE_SL_M (Instant Server-Side Placement)",
+                "circuit_breaker": {"tripped": False, "reason": ""},
+            },
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/algo/setup1/mode")
+async def algo_setup1_mode_endpoint(payload: Setup1ModeProxyIn):
+    """Proxies execution mode toggle to Port 8500."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            resp = await client.post("http://127.0.0.1:8500/api/algo/mode", json=payload.dict())
+            return resp.json()
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to connect to Port 8500: {e}"}
+
+
 from .nodes_api import router as _nodes_router
 app.include_router(_nodes_router)
 

@@ -58,7 +58,8 @@ app.add_middleware(
 
 
 class ModeRequest(BaseModel):
-    mode: str  # "PAPER" | "LIVE" | "PAUSED"
+    mode: str  # "PAPER" | "LIVE_1LOT" | "LIVE" | "PAUSED"
+    force_override_token: Optional[str] = None
 
 
 class EmergencyFlattenRequest(BaseModel):
@@ -81,6 +82,7 @@ def root() -> Dict[str, Any]:
         "port": 8500,
         "docs": "/docs",
         "telemetry": "/api/algo/status",
+        "stage3_4_dashboard": "/api/algo/stage3-4-dashboard",
     }
 
 
@@ -88,6 +90,12 @@ def root() -> Dict[str, Any]:
 def get_algo_status() -> Dict[str, Any]:
     """Exposes active positions, daily trade count, P&L, rally counter state, and health check."""
     return engine.get_telemetry_status()
+
+
+@app.get("/api/algo/stage3-4-dashboard")
+def get_stage3_4_dashboard() -> Dict[str, Any]:
+    """Exposes Stage 2 Backtest summary, Stage 3 Sandbox 5 Gates, and Stage 4 Live Gatekeeper telemetry."""
+    return engine.get_stage3_4_dashboard_data()
 
 
 @app.get("/api/algo/positions")
@@ -102,12 +110,14 @@ def get_positions() -> Dict[str, Any]:
 
 @app.post("/api/algo/mode")
 def set_execution_mode(req: ModeRequest) -> Dict[str, Any]:
-    mode = req.mode.upper()
-    if mode not in ("PAPER", "LIVE", "PAUSED"):
-        raise HTTPException(status_code=400, detail="Invalid mode. Choose PAPER, LIVE, or PAUSED.")
-    engine.gateway.execution_mode = mode
-    log.info("Execution mode updated to %s", mode)
-    return {"ok": True, "execution_mode": mode}
+    res = engine.gateway.switch_execution_mode(
+        new_mode=req.mode,
+        force_override_token=req.force_override_token,
+    )
+    if not res.get("ok"):
+        raise HTTPException(status_code=403, detail=res)
+    log.info("Execution mode updated to %s", res.get("execution_mode"))
+    return res
 
 
 @app.post("/api/algo/emergency-flatten")

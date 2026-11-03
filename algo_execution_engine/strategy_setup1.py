@@ -389,6 +389,8 @@ class Setup1StrategyEvaluator:
         current_time: dtime,
         current_candle_low: Optional[float] = None,
         current_candle_high: Optional[float] = None,
+        current_vwap: Optional[float] = None,
+        gap_pts: Optional[float] = None,
     ) -> Setup1Signal:
         """
         Evaluates all Trading Bible rules for Setup #1:
@@ -397,7 +399,8 @@ class Setup1StrategyEvaluator:
           3. Exact touch of 8 EMA.
           4. Rally counter / first opportunity rule.
           5. Daily stop limit (if stage 2 stop hit today -> disabled).
-          6. Time of day check (no entry after 15:00).
+          6. Time of day check (09:30 to 15:00 IST).
+          7. Confluence checks: EMA separation >= 3.0 pts, Spot >= VWAP, Gap <= 60 pts.
         """
         strat = self.cfg.get("strategy", {})
         risk = self.cfg.get("risk", {})
@@ -406,6 +409,13 @@ class Setup1StrategyEvaluator:
         no_entry_after_str = risk.get("no_entry_after", "15:00")
         h, m = map(int, no_entry_after_str.split(":"))
         no_entry_time = dtime(h, m)
+
+        fii_start_str = strat.get("fii_commit_start_time", "09:30")
+        fii_h, fii_m = map(int, fii_start_str.split(":"))
+        fii_start_time = dtime(fii_h, fii_m)
+
+        ema_sep_min = float(strat.get("ema_separation_min_pts", 3.0))
+        gap_max = float(strat.get("gap_up_max_pts", 60.0))
 
         # Update rally state
         self.update_rally_state(df_5m, current_ts)
@@ -430,9 +440,16 @@ class Setup1StrategyEvaluator:
                 rejection_reason=reason,
             )
 
-        # Gate 0: Time of Day
+        # Gate 0: Time of Day & FII Commit Window (09:30 to 15:00 IST)
+        if current_time < fii_start_time:
+            return reject(f"Before {fii_start_str} IST — waiting for initial market structure to settle")
+
         if current_time >= no_entry_time:
             return reject(f"After {no_entry_after_str} IST — no new entries permitted")
+
+        # Gate 0B: Gap-Up Trap Filter (Part E)
+        if gap_pts is not None and gap_pts > gap_max:
+            return reject(f"Gap-Up Trap (+{gap_pts:.1f} pts > {gap_max:.1f} pts) — common gap rule blocks Longs")
 
         # Gate 1: Daily Stop Limit
         if self.stage2_stopped_today:
@@ -445,10 +462,19 @@ class Setup1StrategyEvaluator:
 
         bb_width_15m = trend_info.get("bb_width", 0.0)
 
-        # Gate 3: 5-Minute Preconditions
+        # Gate 3: 5-Minute Preconditions (4>8 and UBB sloping UP)
         pre_ok, pre_info = self.evaluate_5m_preconditions(df_5m)
         if not pre_ok:
             return reject(f"5m Preconditions rejected: {pre_info.get('reason')}")
+
+        # Gate 3B: Momentum Confluence (EMA separation >= 3.0 pts)
+        sep = ema4_val - ema8_val
+        if sep < ema_sep_min:
+            return reject(f"5m 4/8 EMA separation ({sep:.1f} pts) < minimum {ema_sep_min:.1f} pts threshold")
+
+        # Gate 3C: Volume Anchor Confluence (Spot >= VWAP)
+        if current_vwap is not None and current_spot < current_vwap:
+            return reject(f"Spot ({current_spot:.1f}) is below intraday VWAP ({current_vwap:.1f})")
 
         # Gate 4: Touch Trigger Evaluation
         is_touch, touch_ema8, dist = self.evaluate_8ema_touch(df_5m, current_spot, current_candle_low, current_candle_high)
@@ -514,14 +540,17 @@ class Setup1StrategyEvaluator:
         new_sl = pos.spot_sl
 
         # A. Cost-to-Cost Trigger (+40 pts move in favor)
-        if not pos.cost_to_cost_active and (current_spot - pos.entry_spot >= ctc_trigger):
+        # Trading Bible Part K: Move SL to Cost-to-Cost (entry_spot + 9.0 pts) to lock in round-trip brokerage (₹400)
+        brokerage_buffer_pts = float(strat.get("cost_to_cost_brokerage_buffer_pts", 9.0))
+        if not pos.cost_to_cost_active and (pos.highest_spot - pos.entry_spot >= ctc_trigger):
             pos.cost_to_cost_active = True
-            new_sl = max(new_sl, pos.entry_spot)
-            log.info("🎯 Trade %s moved +%.1f pts! Cost-to-Cost Trigger activated (SL moved to %.1f)",
-                     pos.trade_id, current_spot - pos.entry_spot, new_sl)
+            new_sl = max(new_sl, pos.entry_spot + brokerage_buffer_pts)
+            log.info("🎯 Trade %s reached +40 pts! Cost-to-Cost Trigger activated (SL locked at %.1f to cover brokerage)",
+                     pos.trade_id, new_sl)
 
-        # B. Candle Trail (On each confirming candle close > entry)
-        if last_closed_candle_5m is not None:
+        # B. Candle Trail (Trading Bible Part C & D: ONLY once in Phase 2, after +40 pts / CTC activated!)
+        # Do NOT trail candle lows before reaching +40 pts!
+        if pos.cost_to_cost_active and last_closed_candle_5m is not None:
             c_close = last_closed_candle_5m.get("c", 0.0)
             c_low = last_closed_candle_5m.get("l", 0.0)
             c_high = last_closed_candle_5m.get("h", 0.0)

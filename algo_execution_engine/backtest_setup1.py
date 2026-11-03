@@ -228,12 +228,13 @@ class Setup1BacktestSimulator:
         sessions = [group for _, group in df_1m.groupby("session_date", sort=True)]
         log.info("Prepared %d daily sessions for simulation", len(sessions))
 
-        # Run 4 variants
+        # Run 5 variants
         variants = [
-            ("Variant A (Raw 8 EMA Touch)", {"trend_filter": False, "ubb_filter": False, "first_opp": False, "daily_stop": False, "ctc": False, "trail": False}),
-            ("Variant B (Trend Filter Only)", {"trend_filter": True, "ubb_filter": False, "first_opp": False, "daily_stop": False, "ctc": False, "trail": False}),
-            ("Variant C (Trend + Preconditions)", {"trend_filter": True, "ubb_filter": True, "first_opp": False, "daily_stop": False, "ctc": False, "trail": False}),
-            ("Variant D (Full Setup #1 Trading Bible)", {"trend_filter": True, "ubb_filter": True, "first_opp": True, "daily_stop": True, "ctc": True, "trail": True}),
+            ("Variant A (Raw 8 EMA Touch)", {"trend_filter": False, "ubb_filter": False, "first_opp": False, "daily_stop": False, "ctc": False, "trail": False, "premature_trail": False, "fii_window": False, "gap_filter": False, "ema_sep": False, "vwap_filter": False}),
+            ("Variant B (Trend Filter Only)", {"trend_filter": True, "ubb_filter": False, "first_opp": False, "daily_stop": False, "ctc": False, "trail": False, "premature_trail": False, "fii_window": False, "gap_filter": False, "ema_sep": False, "vwap_filter": False}),
+            ("Variant C (Trend + Preconditions)", {"trend_filter": True, "ubb_filter": True, "first_opp": False, "daily_stop": False, "ctc": False, "trail": False, "premature_trail": False, "fii_window": False, "gap_filter": False, "ema_sep": False, "vwap_filter": False}),
+            ("Variant D (Full Setup #1 Trading Bible)", {"trend_filter": True, "ubb_filter": True, "first_opp": True, "daily_stop": True, "ctc": True, "trail": True, "premature_trail": True, "fii_window": False, "gap_filter": False, "ema_sep": False, "vwap_filter": False}),
+            ("Variant E (Fixed +40 pt Target/Trail + Gap & VWAP/EMA Confluence)", {"trend_filter": True, "ubb_filter": True, "first_opp": True, "daily_stop": True, "ctc": True, "trail": True, "premature_trail": False, "ctc_brokerage_buffer": True, "fii_window": True, "gap_filter": True, "ema_sep": True, "vwap_filter": True}),
         ]
 
         variant_results = {}
@@ -304,6 +305,12 @@ class Setup1BacktestSimulator:
         trades: List[BacktestTrade] = []
         session_date = session_df.iloc[0]["session_date"]
 
+        # Compute intraday VWAP for session
+        s_df = session_df.copy()
+        cum_vol = s_df["volume"].cumsum()
+        cum_vp = (s_df["close"] * s_df["volume"]).cumsum()
+        s_df["vwap"] = np.where(cum_vol > 0, cum_vp / cum_vol, s_df["close"])
+
         # Intraday State
         active_trade: Optional[Dict[str, Any]] = None
         rally_id = 0
@@ -313,7 +320,7 @@ class Setup1BacktestSimulator:
         last_closed_5m_ts = 0
 
         # Iterate 1m candles chronologically
-        rows_1m = session_df.to_dict(orient="records")
+        rows_1m = s_df.to_dict(orient="records")
         for bar in rows_1m:
             t = bar["ts"]
             bar_time = bar["session_time"]
@@ -321,6 +328,7 @@ class Setup1BacktestSimulator:
             b_high = bar["high"]
             b_low = bar["low"]
             b_close = bar["close"]
+            b_vwap = bar["vwap"]
 
             # Find latest CLOSED 5m and 15m bars strictly before or at t
             # A 5m bar starting at ts=X closes at X+300. So if t >= X+300 (X <= t-300), it is closed!
@@ -358,14 +366,18 @@ class Setup1BacktestSimulator:
                 active_trade["highest_spot"] = highest
 
                 # Check Cost-to-Cost (+40 pts move in favor)
+                # In Variant E: locks entry + 9 pts to guarantee brokerage coverage
+                brokerage_buffer = 9.0 if rules.get("ctc_brokerage_buffer", False) else 0.0
                 if rules.get("ctc", True) and not active_trade["cost_to_cost_active"]:
                     if b_high - entry_spot >= self.ctc_trigger_pts:
                         active_trade["cost_to_cost_active"] = True
-                        cur_sl = max(cur_sl, entry_spot)
+                        cur_sl = max(cur_sl, entry_spot + brokerage_buffer)
                         active_trade["trailed_sl"] = cur_sl
 
                 # Check Candle Trail on newly closed 5m bar
-                if rules.get("trail", True) and closed_5m is not None and closed_5m["ts"] > last_closed_5m_ts:
+                # Trading Bible Part C & D: ONLY trail candle lows once in Phase 2 (+40 pts / CTC activated!)
+                allow_trail = (active_trade["cost_to_cost_active"] or rules.get("premature_trail", False))
+                if rules.get("trail", True) and allow_trail and closed_5m is not None and closed_5m["ts"] > last_closed_5m_ts:
                     last_closed_5m_ts = closed_5m["ts"]
                     c5_close = closed_5m["close"]
                     c5_low = closed_5m["low"]
@@ -432,8 +444,16 @@ class Setup1BacktestSimulator:
             # ─────────────────────────────────────────────────────────────
             # B. If NO Active Trade -> Check Setup #1 Entry Signal
             # ─────────────────────────────────────────────────────────────
+            # FII Commit Window Check: wait for 09:30 IST to let trend settle
+            if rules.get("fii_window", False) and bar_time < "09:30:00":
+                continue
+
             if bar_time >= "15:00:00":
                 continue  # No entries permitted after 15:00 IST
+
+            # Gap-Up Trap Check (skip longs on gap-up days > 60 pts)
+            if rules.get("gap_filter", False) and is_gap_day and gap_pts > self.gap_threshold:
+                continue
 
             if rules.get("daily_stop", True) and stage2_stopped_today:
                 continue  # Stage 2 stop taken today
@@ -460,6 +480,14 @@ class Setup1BacktestSimulator:
                     continue
                 if closed_5m.get("ubb_slope") != "UP":
                     continue
+
+            # Gate 2B: 5m EMA Separation Confluence (ema4 - ema8 >= 3.0 pts)
+            if rules.get("ema_sep", False) and (ema4_val - ema8_val) < 3.0:
+                continue
+
+            # Gate 2C: Volume Anchor Confluence (Price >= VWAP)
+            if rules.get("vwap_filter", False) and b_close < b_vwap:
+                continue
 
             # Gate 3: 8 EMA Touch Trigger in current 1m bar
             # bar touches 8 EMA if low <= ema8 <= high or within proximity

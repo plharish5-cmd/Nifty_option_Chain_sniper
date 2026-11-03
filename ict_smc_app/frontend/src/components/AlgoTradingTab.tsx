@@ -14,6 +14,7 @@ import {
   type SmartTargetRes,
   type StrategySlot,
   type ItmAtmOiWallsRes,
+  type Stage34DashboardRes,
 } from "../api";
 
 export function AlgoTradingTab() {
@@ -21,6 +22,9 @@ export function AlgoTradingTab() {
   const [premarket, setPremarket] = useState<PremarketCheckRes | null>(null);
   const [smartTarget, setSmartTarget] = useState<SmartTargetRes | null>(null);
   const [slots, setSlots] = useState<StrategySlot[]>([]);
+  const [stage34, setStage34] = useState<Stage34DashboardRes | null>(null);
+  const [overrideTokenInput, setOverrideTokenInput] = useState<string>("");
+  const [showOverrideInput, setShowOverrideInput] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [itmAtm, setItmAtm] = useState<ItmAtmOiWallsRes | null>(null);
@@ -98,6 +102,39 @@ export function AlgoTradingTab() {
     const interval = setInterval(fetchItmAtm, 3000);
     return () => clearInterval(interval);
   }, [fetchItmAtm]);
+
+  // Fetch Setup #1 Stage 3 & 4 Dashboard
+  const fetchStage34 = useCallback(() => {
+    api.algoStage34Dashboard()
+      .then((res) => {
+        if (res && res.ok) setStage34(res);
+      })
+      .catch((err) => console.error("Error fetching Stage 3/4 dashboard:", err));
+  }, []);
+
+  useEffect(() => {
+    fetchStage34();
+    const interval = setInterval(fetchStage34, 3000);
+    return () => clearInterval(interval);
+  }, [fetchStage34]);
+
+  const handleSetup1ModeSwitch = (mode: string, overrideToken?: string) => {
+    setLoading(true);
+    api.algoSetup1Mode(mode, overrideToken)
+      .then((res) => {
+        if (res.ok) {
+          setActionMsg(`🚀 Setup #1 Mode switched to: ${res.execution_mode}`);
+          setShowOverrideInput(false);
+          setOverrideTokenInput("");
+        } else {
+          const errDetail = res.error || (res.rejection_reasons ? res.rejection_reasons.join(", ") : "Blocked by gatekeeper");
+          setActionMsg(`❌ Mode switch blocked: ${errDetail}`);
+        }
+        fetchStage34();
+      })
+      .catch((err) => setActionMsg(`Mode switch error: ${err}`))
+      .finally(() => setLoading(false));
+  };
 
   // Save Dual-Layer Stop Loss
   const saveDualSl = () => {
@@ -1005,6 +1042,432 @@ export function AlgoTradingTab() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* ================================================================= */}
+        {/* PANEL E: SETUP #1 (STAGE 2 8-EMA) — 4-STAGE LIFECYCLE & GATEKEEPER */}
+        {/* ================================================================= */}
+        <div className="rounded-xl border border-ink-700 bg-ink-900/60 p-4 space-y-6 shadow-lg lg:col-span-2">
+          {/* Header */}
+          <div className="flex flex-wrap items-center justify-between border-b border-ink-700/80 pb-3 gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🎯</span>
+              <div>
+                <h2 className="font-extrabold text-sm uppercase tracking-wide text-slate-100">
+                  Panel E: Setup #1 (Stage 2 8-EMA Long) — 4-Stage Algorithmic Lifecycle & Real Capital Gatekeeper
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Trading Bible Stages: 1 Architecture → 2 Historical Backtest (+1.1 pts) → 3 30-Trade Paper Sandbox → 4 Live 1-Lot Gatekeeper
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`pill text-[10px] font-bold ${
+                stage34?.status === "RUNNING"
+                  ? "bg-emerald-950 border border-emerald-500 text-emerald-300"
+                  : "bg-amber-950 border border-amber-500 text-amber-300"
+              }`}>
+                Port 8500: {stage34?.status ?? "STANDALONE_FALLBACK"}
+              </span>
+              <span className="pill text-[10px] font-mono bg-ink-800 text-cyan-300">
+                Spot: ₹{stage34?.last_spot ? stage34.last_spot.toFixed(1) : "—"}
+              </span>
+            </div>
+          </div>
+
+          {/* Sub-Section 1: Stage 2 Backtest Expectancy Card */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                <span>📈</span> Stage 2: 248-Session Historical Backtest & Expectancy Card (Full SQLite History)
+              </h3>
+              <span className="text-[11px] font-mono text-emerald-400 font-semibold">
+                Variant E Expectancy: +1.1 pts / trade
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Variant D (Premature Trailing Bleed) */}
+              <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-red-300">Variant D (Premature Trailing — Before Fix)</span>
+                  <span className="pill text-[9px] bg-red-950 border border-red-700 text-red-300">
+                    FAILED EXPECTANCY
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Trailed 5m candle lows before reaching +40 pts. Upside was choked while taking full -40 pt SL hits.
+                </p>
+                <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono pt-1">
+                  <div className="bg-ink-950/60 p-1.5 rounded">
+                    <div className="text-[10px] text-slate-400">Trades / WR</div>
+                    <div className="font-bold text-slate-200">
+                      {stage34?.stage2_backtest.comparison.variant_d.trades_count ?? 312} ({stage34?.stage2_backtest.comparison.variant_d.win_rate_all ?? "52.6%"})
+                    </div>
+                  </div>
+                  <div className="bg-ink-950/60 p-1.5 rounded">
+                    <div className="text-[10px] text-slate-400">Avg Win / Loss</div>
+                    <div className="font-bold text-red-300">
+                      {stage34?.stage2_backtest.comparison.variant_d.avg_win_pts ?? "+5.6p"} / {stage34?.stage2_backtest.comparison.variant_d.avg_loss_pts ?? "-21.2p"}
+                    </div>
+                  </div>
+                  <div className="bg-ink-950/60 p-1.5 rounded">
+                    <div className="text-[10px] text-slate-400">Net Option P&L</div>
+                    <div className="font-bold text-red-400">
+                      {stage34?.stage2_backtest.comparison.variant_d.net_option_pnl ?? "-₹13,875"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Variant E (Institutional Setup #1 Fixed Hold) */}
+              <div className="rounded-lg border border-emerald-800/60 bg-emerald-950/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-300">Variant E (Institutional Setup #1 — Fixed +40 Hold)</span>
+                  <span className="pill text-[9px] bg-emerald-950 border border-emerald-500 text-emerald-200">
+                    PASSED HURDLE (+1.1 pts)
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300">
+                  Hold for full +40 spot pts before trailing + CTC +9 pt fee buffer + FII commit window (09:30+) + Gap filter (≤60 pts) + VWAP confluence.
+                </p>
+                <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono pt-1">
+                  <div className="bg-ink-950/60 p-1.5 rounded">
+                    <div className="text-[10px] text-slate-400">Trades / WR</div>
+                    <div className="font-bold text-emerald-300">
+                      {stage34?.stage2_backtest.comparison.variant_e.trades_count ?? 147} ({stage34?.stage2_backtest.comparison.variant_e.win_rate_non_gap ?? "53.8%"})
+                    </div>
+                  </div>
+                  <div className="bg-ink-950/60 p-1.5 rounded">
+                    <div className="text-[10px] text-slate-400">Avg Win / Loss</div>
+                    <div className="font-bold text-emerald-300">
+                      {stage34?.stage2_backtest.comparison.variant_e.avg_win_pts ?? "+37.8p"} / {stage34?.stage2_backtest.comparison.variant_e.avg_loss_pts ?? "-34.1p"}
+                    </div>
+                  </div>
+                  <div className="bg-ink-950/60 p-1.5 rounded">
+                    <div className="text-[10px] text-slate-400">Net Option P&L</div>
+                    <div className="font-bold text-gold-300">
+                      {stage34?.stage2_backtest.comparison.variant_e.net_option_pnl ?? "+₹12,650 (Net)"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sub-Section 2: Stage 3 — 30-Trade Paper Trading Sandbox & Graduation Tracker */}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                  🧪 Stage 3: 30-Trade Forward Paper Sandbox & Audit Tracker
+                </span>
+                <span className={`pill text-[10px] font-extrabold ${
+                  stage34?.stage3_sandbox.graduation_ready
+                    ? "bg-emerald-950 border border-emerald-500 text-emerald-300"
+                    : "bg-amber-950 border border-amber-600 text-amber-300"
+                }`}>
+                  {stage34?.stage3_sandbox.graduation_badge ?? "🔒 LOCKED IN SANDBOX (0/30 TRADES)"}
+                </span>
+              </div>
+              <span className="text-xs text-slate-400 font-mono">
+                {stage34?.stage3_sandbox.completed_trades ?? 0} / 30 Sequential Completed Trades
+              </span>
+            </div>
+
+            {/* Sandbox Progress Bar */}
+            <div className="w-full bg-ink-950 h-3 rounded-full overflow-hidden border border-ink-800">
+              <div
+                className={`h-full transition-all duration-500 ${
+                  stage34?.stage3_sandbox.graduation_ready ? "bg-emerald-500" : "bg-cyan-500"
+                }`}
+                style={{
+                  width: `${Math.min(100, (((stage34?.stage3_sandbox.completed_trades ?? 0) / 30) * 100))}%`,
+                }}
+              />
+            </div>
+
+            {/* Sandbox Metrics Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 font-mono text-center">
+              <div className="bg-ink-950/80 p-2 rounded border border-ink-800">
+                <div className="text-[10px] text-slate-400">Rolling Win Rate</div>
+                <div className={`font-bold text-xs ${
+                  (stage34?.stage3_sandbox.rolling_win_rate_pct ?? 0) >= 65.0 ? "text-emerald-400" : "text-amber-400"
+                }`}>
+                  {stage34?.stage3_sandbox.rolling_win_rate_pct ?? 0}%
+                </div>
+                <div className="text-[9px] text-slate-500">Target ≥ 65.0%</div>
+              </div>
+
+              <div className="bg-ink-950/80 p-2 rounded border border-ink-800">
+                <div className="text-[10px] text-slate-400">Net Expectancy</div>
+                <div className={`font-bold text-xs ${
+                  (stage34?.stage3_sandbox.net_expectancy_inr ?? 0) >= 300 ? "text-emerald-400" : "text-slate-300"
+                }`}>
+                  ₹{stage34?.stage3_sandbox.net_expectancy_inr ? stage34.stage3_sandbox.net_expectancy_inr.toFixed(1) : "0.0"} / trade
+                </div>
+                <div className="text-[9px] text-slate-500">Target ≥ +₹300</div>
+              </div>
+
+              <div className="bg-ink-950/80 p-2 rounded border border-ink-800">
+                <div className="text-[10px] text-slate-400">Cumulative Net P&L</div>
+                <div className={`font-bold text-xs ${
+                  (stage34?.stage3_sandbox.cumulative_net_pnl_inr ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"
+                }`}>
+                  ₹{stage34?.stage3_sandbox.cumulative_net_pnl_inr ? stage34.stage3_sandbox.cumulative_net_pnl_inr.toLocaleString("en-IN") : "0"}
+                </div>
+                <div className="text-[9px] text-slate-500">All ₹400 fees deducted</div>
+              </div>
+
+              <div className="bg-ink-950/80 p-2 rounded border border-ink-800">
+                <div className="text-[10px] text-slate-400">Rule Violations</div>
+                <div className={`font-bold text-xs ${
+                  (stage34?.stage3_sandbox.violations_count ?? 0) === 0 ? "text-emerald-400" : "text-red-400"
+                }`}>
+                  {stage34?.stage3_sandbox.violations_count ?? 0}
+                </div>
+                <div className="text-[9px] text-slate-500">Zero Tolerance (0)</div>
+              </div>
+
+              <div className="bg-ink-950/80 p-2 rounded border border-ink-800 col-span-2 md:col-span-1">
+                <div className="text-[10px] text-slate-400">Max Single Loss</div>
+                <div className={`font-bold text-xs ${
+                  (stage34?.stage3_sandbox.max_single_loss_inr ?? 0) >= -2900 ? "text-slate-300" : "text-red-400"
+                }`}>
+                  ₹{Math.abs(stage34?.stage3_sandbox.max_single_loss_inr ?? 0).toLocaleString("en-IN")}
+                </div>
+                <div className="text-[9px] text-slate-500">Limit ≤ ₹2,900</div>
+              </div>
+            </div>
+
+            {/* 5 Mandatory Graduation Gates */}
+            <div className="rounded-lg border border-ink-800 bg-ink-950/60 p-3 space-y-2">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                5 Mandatory Trading Bible Graduation Gates (Part L)
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-xs">
+                {stage34?.stage3_sandbox.gates ? (
+                  <>
+                    <div className="flex items-center gap-1.5 p-1.5 rounded bg-ink-900/50">
+                      <span>{stage34.stage3_sandbox.gates.gate_1_min_trades.pass ? "✅" : "⏳"}</span>
+                      <div>
+                        <div className="font-bold text-[10px] text-slate-300">Gate 1: Min Trades</div>
+                        <div className="text-[10px] text-slate-500">{stage34.stage3_sandbox.gates.gate_1_min_trades.detail}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 p-1.5 rounded bg-ink-900/50">
+                      <span>{stage34.stage3_sandbox.gates.gate_2_win_rate.pass ? "✅" : "⏳"}</span>
+                      <div>
+                        <div className="font-bold text-[10px] text-slate-300">Gate 2: Win Rate</div>
+                        <div className="text-[10px] text-slate-500">{stage34.stage3_sandbox.gates.gate_2_win_rate.detail}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 p-1.5 rounded bg-ink-900/50">
+                      <span>{stage34.stage3_sandbox.gates.gate_3_net_expectancy.pass ? "✅" : "⏳"}</span>
+                      <div>
+                        <div className="font-bold text-[10px] text-slate-300">Gate 3: Expectancy</div>
+                        <div className="text-[10px] text-slate-500">{stage34.stage3_sandbox.gates.gate_3_net_expectancy.detail}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 p-1.5 rounded bg-ink-900/50">
+                      <span>{stage34.stage3_sandbox.gates.gate_4_zero_rule_violations.pass ? "✅" : "⏳"}</span>
+                      <div>
+                        <div className="font-bold text-[10px] text-slate-300">Gate 4: Violations</div>
+                        <div className="text-[10px] text-slate-500">{stage34.stage3_sandbox.gates.gate_4_zero_rule_violations.detail}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 p-1.5 rounded bg-ink-900/50">
+                      <span>{stage34.stage3_sandbox.gates.gate_5_max_drawdown_ok.pass ? "✅" : "⏳"}</span>
+                      <div>
+                        <div className="font-bold text-[10px] text-slate-300">Gate 5: Drawdown</div>
+                        <div className="text-[10px] text-slate-500">{stage34.stage3_sandbox.gates.gate_5_max_drawdown_ok.detail}</div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="col-span-5 text-slate-500 text-xs italic">Loading graduation checklist...</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Sub-Section 3: Stage 4 Live Execution Gatekeeper Cockpit */}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                <span>🛡️</span> Stage 4: Small-Size Live Execution Gatekeeper (Port 8500 Dhan Gateway)
+              </h3>
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-slate-400">Current Mode:</span>
+                <span className="pill text-xs font-mono font-bold bg-ink-800 text-gold-300">
+                  {stage34?.stage4_gatekeeper.execution_mode ?? "PAPER"}
+                </span>
+              </div>
+            </div>
+
+            {/* Arming Controls & Safety Mode Switcher */}
+            <div className="flex flex-wrap items-center gap-3 p-3 rounded-lg border border-ink-800 bg-ink-950/80">
+              <span className="text-xs font-bold text-slate-300">Switch Execution Mode:</span>
+              <button
+                onClick={() => handleSetup1ModeSwitch("PAPER")}
+                className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${
+                  (stage34?.stage4_gatekeeper.execution_mode ?? "PAPER") === "PAPER"
+                    ? "bg-cyan-600 text-white shadow-md"
+                    : "bg-ink-800 text-slate-400 hover:text-white"
+                }`}
+              >
+                📝 PAPER (Stage 3 Sandbox)
+              </button>
+
+              <button
+                onClick={() => {
+                  if (stage34?.stage3_sandbox.graduation_ready) {
+                    handleSetup1ModeSwitch("LIVE_1LOT");
+                  } else {
+                    setShowOverrideInput(true);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  stage34?.stage4_gatekeeper.execution_mode === "LIVE_1LOT"
+                    ? "bg-emerald-600 text-white shadow-md"
+                    : "bg-ink-800 text-slate-400 hover:text-white"
+                }`}
+              >
+                <span>{stage34?.stage3_sandbox.graduation_ready ? "🟢" : "🔒"}</span>
+                <span>LIVE 1-LOT (Stage 4 Real Capital)</span>
+              </button>
+
+              <button
+                onClick={() => handleSetup1ModeSwitch("PAUSED")}
+                className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${
+                  stage34?.stage4_gatekeeper.execution_mode === "PAUSED"
+                    ? "bg-amber-600 text-white shadow-md"
+                    : "bg-ink-800 text-slate-400 hover:text-white"
+                }`}
+              >
+                ⏸️ PAUSED
+              </button>
+
+              {showOverrideInput && (
+                <div className="flex items-center gap-2 mt-2 w-full pt-2 border-t border-ink-800">
+                  <span className="text-[11px] text-amber-300 font-mono">
+                    🔒 Stage 3 Sandbox not yet graduated. Enter Diagnostic Override Token for hardware test:
+                  </span>
+                  <input
+                    type="password"
+                    placeholder="Token..."
+                    value={overrideTokenInput}
+                    onChange={(e) => setOverrideTokenInput(e.target.value)}
+                    className="px-2 py-1 rounded bg-ink-900 border border-ink-700 text-xs font-mono text-slate-100"
+                  />
+                  <button
+                    onClick={() => handleSetup1ModeSwitch("LIVE_1LOT", overrideTokenInput)}
+                    className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold"
+                  >
+                    Arm 1-Lot Live
+                  </button>
+                  <button
+                    onClick={() => setShowOverrideInput(false)}
+                    className="px-2 py-1 rounded bg-ink-800 text-slate-400 text-xs"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Stage 4 Live Safeguards Telemetry Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 font-mono text-xs">
+              <div className="bg-ink-950/60 p-2.5 rounded border border-ink-800">
+                <div className="text-[10px] text-slate-400">Hard Size Cap</div>
+                <div className="font-bold text-slate-200">1 Lot (75 Qty Max)</div>
+                <div className="text-[9px] text-emerald-400">Immutable Cap</div>
+              </div>
+
+              <div className="bg-ink-950/60 p-2.5 rounded border border-ink-800">
+                <div className="text-[10px] text-slate-400">Strike Selection</div>
+                <div className="font-bold text-cyan-300">100-Multiples Only</div>
+                <div className="text-[9px] text-slate-400">~₹200 ITM (~0.60 Delta)</div>
+              </div>
+
+              <div className="bg-ink-950/60 p-2.5 rounded border border-ink-800">
+                <div className="text-[10px] text-slate-400">Spread Guard & Latency</div>
+                <div className="font-bold text-slate-200">
+                  Spread &lt; 2.0% | {stage34?.stage4_gatekeeper.last_order_latency_ms ?? 0} ms
+                </div>
+                <div className="text-[9px] text-slate-400">Round-trip watchdog</div>
+              </div>
+
+              <div className="bg-ink-950/60 p-2.5 rounded border border-ink-800">
+                <div className="text-[10px] text-slate-400">Exchange Companion SL</div>
+                <div className="font-bold text-gold-300">SL-M Auto Sync</div>
+                <div className="text-[9px] text-slate-400">Server-Side Dhan v2</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sub-Section 4: Stage 3 Audit Journal Table */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+              Stage 3 Sandbox Audit Journal (Recent Completed Paper Trades)
+            </h3>
+            <div className="overflow-x-auto rounded-lg border border-ink-800 bg-ink-950/80">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-ink-900 border-b border-ink-800 text-slate-400 text-[11px]">
+                  <tr>
+                    <th className="p-2.5">Trade ID / Time</th>
+                    <th className="p-2.5">Strike (CE)</th>
+                    <th className="p-2.5">Spot Entry / Exit</th>
+                    <th className="p-2.5">Spot PnL</th>
+                    <th className="p-2.5">Gross PnL ₹</th>
+                    <th className="p-2.5">Fee (₹400)</th>
+                    <th className="p-2.5">Net PnL ₹</th>
+                    <th className="p-2.5">Exit Reason</th>
+                    <th className="p-2.5">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ink-800">
+                  {stage34?.stage3_sandbox.recent_trades && stage34.stage3_sandbox.recent_trades.length > 0 ? (
+                    stage34.stage3_sandbox.recent_trades.map((rt, idx) => (
+                      <tr key={idx} className="hover:bg-ink-900/50">
+                        <td className="p-2.5 text-slate-300">{rt.trade_id}<br /><span className="text-[10px] text-slate-500">{rt.session_date} {rt.entry_time}</span></td>
+                        <td className="p-2.5 text-cyan-300 font-bold">{rt.option_strike} CE</td>
+                        <td className="p-2.5">{rt.spot_entry.toFixed(1)} → {rt.exit_spot ? rt.exit_spot.toFixed(1) : "—"}</td>
+                        <td className={`p-2.5 font-bold ${rt.spot_pnl_pts >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {rt.spot_pnl_pts >= 0 ? `+${rt.spot_pnl_pts.toFixed(1)}` : rt.spot_pnl_pts.toFixed(1)}p
+                        </td>
+                        <td className="p-2.5 text-slate-300 font-mono">₹{rt.gross_option_pnl_inr.toFixed(0)}</td>
+                        <td className="p-2.5 text-amber-400 font-mono">-₹{rt.brokerage_inr.toFixed(0)}</td>
+                        <td className={`p-2.5 font-bold font-mono ${rt.net_pnl_inr >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {rt.net_pnl_inr >= 0 ? `+₹${rt.net_pnl_inr.toFixed(0)}` : `-₹${Math.abs(rt.net_pnl_inr).toFixed(0)}`}
+                        </td>
+                        <td className="p-2.5 text-slate-300 text-[11px]">{rt.exit_reason}</td>
+                        <td className="p-2.5">
+                          <span className={`pill text-[9px] ${
+                            rt.status.includes("TARGET")
+                              ? "bg-emerald-950 text-emerald-300 border border-emerald-600"
+                              : "bg-red-950 text-red-300 border border-red-800"
+                          }`}>
+                            {rt.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={9} className="p-4 text-center text-slate-500 text-xs italic">
+                        No completed paper sandbox trades recorded yet in ict_smc.sqlite3. Paper trades logged during live session will appear here with full ₹400 brokerage deductions.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>

@@ -827,6 +827,9 @@ export const api = {
   algoStrategySlots: () => get<StrategySlot[]>("/api/algo/strategy-slots"),
   algoToggleStrategySlot: (slot_id: string, enabled: boolean) =>
     api.post<any>("/api/algo/strategy-slot/toggle", { slot_id, enabled }),
+  algoStage34Dashboard: () => get<Stage34DashboardRes>("/api/algo/stage3-4-dashboard"),
+  algoSetup1Mode: (mode: string, force_override_token?: string) =>
+    api.post<any>("/api/algo/setup1/mode", { mode, force_override_token }),
   itmAtmOiWalls: (spot?: number, giftNifty?: number) =>
     get<ItmAtmOiWallsRes>(
       `/api/desk/itm-atm-oi-walls${spot != null ? `?spot=${spot}` : ""}${giftNifty != null ? `${spot != null ? "&" : "?"}gift_nifty=${giftNifty}` : ""}`
@@ -1054,6 +1057,92 @@ export interface AlgoStatusRes {
     smart_target_preview?: SmartTargetRes;
   };
   strategy_slots?: StrategySlot[];
+}
+
+export interface Stage34DashboardRes {
+  ok: boolean;
+  status: string;
+  last_eval_time: string;
+  last_spot: number;
+  stage2_backtest: {
+    sessions_evaluated: number;
+    span?: string;
+    comparison: {
+      variant_d: {
+        name: string;
+        rules?: string;
+        trades_count: number;
+        win_rate_all: string;
+        win_rate_non_gap: string;
+        avg_win_pts: string;
+        avg_loss_pts: string;
+        spot_expectancy: string;
+        net_option_pnl: string;
+        status: string;
+      };
+      variant_e: {
+        name: string;
+        rules?: string;
+        trades_count: number;
+        win_rate_all: string;
+        win_rate_non_gap: string;
+        avg_win_pts: string;
+        avg_loss_pts: string;
+        spot_expectancy: string;
+        net_option_pnl: string;
+        status: string;
+      };
+    };
+  };
+  stage3_sandbox: {
+    graduation_ready: boolean;
+    graduation_badge: string;
+    completed_trades: number;
+    target_trades: number;
+    rolling_win_rate_pct: number;
+    cumulative_net_pnl_inr: number;
+    net_expectancy_inr: number;
+    violations_count: number;
+    max_single_loss_inr: number;
+    gates: {
+      gate_1_min_trades: { pass: boolean; detail: string };
+      gate_2_win_rate: { pass: boolean; detail: string };
+      gate_3_net_expectancy: { pass: boolean; detail: string };
+      gate_4_zero_rule_violations: { pass: boolean; detail: string };
+      gate_5_max_drawdown_ok: { pass: boolean; detail: string };
+    };
+    rejection_reasons?: string[];
+    recent_trades?: Array<{
+      trade_id: string;
+      session_date: string;
+      entry_time: string;
+      spot_entry: number;
+      option_strike: number;
+      exit_spot?: number;
+      exit_time?: string;
+      spot_pnl_pts: number;
+      gross_option_pnl_inr: number;
+      brokerage_inr: number;
+      net_pnl_inr: number;
+      exit_reason: string;
+      status: string;
+    }>;
+  };
+  stage4_gatekeeper: {
+    execution_mode: string;
+    graduation_ready: boolean;
+    graduation_badge: string;
+    hard_lot_cap: number;
+    hard_qty_cap: number;
+    strike_rule: string;
+    bid_ask_spread_guard_max_pct: number;
+    last_order_latency_ms: number;
+    total_slippage_inr: number;
+    avg_slippage_pts: number;
+    completed_orders_count: number;
+    companion_sl_type: string;
+    circuit_breaker: { tripped: boolean; reason: string };
+  };
 }
 
 export type LiveMsg = (

@@ -18,6 +18,7 @@
     "fixed_sl_pts": 40.0,
     "target_pts": 40.0,
     "cost_to_cost_trigger_pts": 40.0,
+    "cost_to_cost_brokerage_buffer_pts": 9.0,
     "volatility_candle_pts": 100.0,
     "bb_length": 20,
     "bb_mult": 2.0,
@@ -27,7 +28,10 @@
     "ubb_slope_min_candles": 2,
     "ubb_slope_tol": 1.5,
     "touch_proximity_pts": 2.5,
-    "option_delta_default": 0.55
+    "ema_separation_min_pts": 3.0,
+    "fii_commit_start_time": "09:30",
+    "gap_up_max_pts": 60.0,
+    "option_delta_default": 0.60
   },
   "execution": {
     "execution_mode": "PAPER",

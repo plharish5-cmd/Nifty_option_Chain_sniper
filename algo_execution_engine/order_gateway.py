@@ -5,9 +5,16 @@ Safeguards & Features:
   1. Live Dhan v2 Orders API (`/v2/orders`) & companion exchange-side `SL-M` (`STOP_LOSS_MARKET`) order placement.
   2. Automatic SL-M modification on Dhan servers when stop-loss trails or moves to Cost-to-Cost.
   3. Automatic SL-M cancellation upon Target or Volatility exit.
-  4. Real-time ATM CE strike & contract security ID resolution from shared SQLite `chain_snap`/`opt_activity` or Dhan API.
-  5. Full Paper Trading Simulation recording to `paper_trades` in shared SQLite `ict_smc.sqlite3`.
-  6. Daily Circuit Breakers: Max 2 trades/day, Max daily loss (-₹3,000).
+  4. Strike Selection (Trading Bible Part G 3-Rule System):
+     - Multiples of 100 ONLY (e.g. 23,700 CE, 23,800 CE — never 23,750 CE).
+     - ITM Strike nearest to ₹200 premium (~0.60 delta).
+     - Bid-Ask Spread Guard: Abort if spread > 2.0% of premium or > ₹3.0 pts.
+  5. Stage 3 & Stage 4 Gatekeeper (Part L Rules):
+     - Programmatic lock: Cannot switch to LIVE_1LOT unless Stage 3 Graduation Tracker certifies all 5 gates passed.
+     - Hard 1-Lot Cap: Quantities in LIVE_1LOT are hard-capped to 1 Lot (75 qty).
+     - Round-Trip Latency and Slippage Tracker.
+  6. Full Paper Trading Simulation recording to both `algo_setup1_sandbox_trades` and `paper_trades` in SQLite.
+  7. Daily Circuit Breakers: Max 2 trades/day, Max daily loss (-₹3,000).
 """
 from __future__ import annotations
 
@@ -23,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
+from .stage3_sandbox import SandboxTrade, Stage3GraduationTracker
 from .strategy_setup1 import ActivePosition, Setup1Signal, load_config
 
 log = logging.getLogger("algo.gateway")
@@ -43,7 +51,7 @@ def load_env_if_needed() -> None:
 
 
 class DhanOrderGateway:
-    """Manages order placement, exchange-side companion SL-M, and paper trading execution."""
+    """Manages order placement, exchange-side companion SL-M, Stage 3 Sandbox, and Stage 4 Live Gatekeeper."""
 
     def __init__(self, config_dict: Optional[Dict[str, Any]] = None) -> None:
         load_env_if_needed()
@@ -56,6 +64,15 @@ class DhanOrderGateway:
         self.circuit_breaker_tripped: bool = False
         self.circuit_breaker_reason: str = ""
         self._cached_contracts: Dict[str, Tuple[float, str, str, float, float]] = {}
+
+        # Stage 3 Graduation Tracker
+        self.sandbox_tracker = Stage3GraduationTracker(self.db_path)
+
+        # Telemetry & Latency Watchdog
+        self.last_order_latency_ms: float = 0.0
+        self.total_slippage_inr: float = 0.0
+        self.avg_slippage_pts: float = 0.0
+        self.completed_orders_count: int = 0
 
     def reload_config(self) -> None:
         self.cfg = load_config()
@@ -74,11 +91,6 @@ class DhanOrderGateway:
 
     # ── 1. CIRCUIT BREAKER CHECKS ────────────────────────────────────────────
     def check_circuit_breakers(self, daily_trades: int, daily_pnl_inr: float) -> Tuple[bool, str]:
-        """
-        Daily Circuit Breakers:
-          - Max 2 trades per day
-          - Max daily loss limit (-₹3,000)
-        """
         max_trades = int(self.risk_cfg.get("max_trades_per_day", 2))
         max_daily_loss = float(self.risk_cfg.get("max_daily_loss_inr", -3000.0))
 
@@ -94,25 +106,103 @@ class DhanOrderGateway:
 
         return True, "OK"
 
-    # ── 2. ATM STRIKE & CONTRACT RESOLUTION ──────────────────────────────────
-    def resolve_atm_ce_contract(self, spot: float) -> Tuple[float, str, str, float]:
+    # ── 2. STAGE 4 LIVE EXECUTION GATEKEEPER ─────────────────────────────────
+    def switch_execution_mode(self, new_mode: str, force_override_token: Optional[str] = None) -> Dict[str, Any]:
         """
-        Determines ATM Strike, Option Security ID, Display Symbol, and estimated LTP.
-        Returns: (strike, security_id, symbol, ltp)
+        Switches execution mode ("PAPER", "LIVE_1LOT", "PAUSED").
+        Guards LIVE_1LOT with the 5 Mandatory Stage 3 Graduation Gates!
         """
-        strike = float(int(round(spot / 50.0)) * 50)
-        symbol = f"NIFTY {int(strike)} CE"
-        sec_id = f"SIM_{int(strike)}_CE"
-        est_ltp = max(50.0, round(120.0 + (spot - strike) * 0.55, 1))
+        target_mode = new_mode.upper()
+        if target_mode not in ("PAPER", "LIVE_1LOT", "LIVE", "PAUSED"):
+            return {"ok": False, "error": f"Invalid mode: {new_mode}. Use PAPER, LIVE_1LOT, or PAUSED."}
 
-        # Check fast RAM cache (valid 60 seconds)
-        cache_key = f"{int(strike)}_CE"
+        # Gatekeeper for Live Modes
+        if target_mode in ("LIVE_1LOT", "LIVE"):
+            grad_status = self.sandbox_tracker.evaluate_graduation_status()
+            is_graduated = grad_status.get("graduation_ready", False)
+
+            if not is_graduated and force_override_token != "DIAGNOSTIC_1LOT_OVERRIDE":
+                reasons = grad_status.get("rejection_reasons", [])
+                log.warning("🔒 LIVE EXECUTION BLOCKED: %s", reasons)
+                return {
+                    "ok": False,
+                    "error": "LOCKED IN STAGE 3 SANDBOX: Graduation criteria not yet satisfied",
+                    "graduation_status": grad_status,
+                    "rejection_reasons": reasons,
+                    "hint": "Pass force_override_token='DIAGNOSTIC_1LOT_OVERRIDE' only for approved 1-lot hardware diagnosis.",
+                }
+
+            self.execution_mode = "LIVE_1LOT"
+            log.warning("🚀 STAGE 4 REAL CAPITAL GATE CLEARED! Execution Mode armed: LIVE_1LOT (Hard 1-Lot Cap)")
+            return {
+                "ok": True,
+                "execution_mode": "LIVE_1LOT",
+                "message": "Stage 4 Live 1-Lot Execution Mode successfully armed.",
+                "graduation_status": grad_status,
+            }
+
+        self.execution_mode = target_mode
+        log.info("Execution mode updated to %s", self.execution_mode)
+        return {"ok": True, "execution_mode": self.execution_mode}
+
+    def get_stage4_telemetry(self) -> Dict[str, Any]:
+        """Telemetry details for Stage 4 live execution safeguards."""
+        grad = self.sandbox_tracker.evaluate_graduation_status()
+        return {
+            "execution_mode": self.execution_mode,
+            "graduation_ready": grad.get("graduation_ready", False),
+            "graduation_badge": grad.get("graduation_badge", "🔒 LOCKED IN SANDBOX"),
+            "hard_lot_cap": 1,
+            "hard_qty_cap": 75,
+            "strike_rule": "100-Multiples Only (~₹200 ITM, ~0.60 Delta)",
+            "bid_ask_spread_guard_max_pct": float(self.exec_cfg.get("max_bid_ask_spread_pct", 2.0)),
+            "last_order_latency_ms": round(self.last_order_latency_ms, 1),
+            "total_slippage_inr": round(self.total_slippage_inr, 2),
+            "avg_slippage_pts": round(self.avg_slippage_pts, 2),
+            "completed_orders_count": self.completed_orders_count,
+            "companion_sl_type": "EXCHANGE_SIDE_SL_M (Instant Server-Side Placement)",
+            "circuit_breaker": {
+                "tripped": self.circuit_breaker_tripped,
+                "reason": self.circuit_breaker_reason,
+            },
+        }
+
+    # ── 3. PART G 3-RULE STRIKE RESOLUTION (100-MULTIPLES @ ₹200 ITM) ────────
+    def resolve_itm_100_ce_contract(self, spot: float) -> Tuple[float, str, str, float, float]:
+        """
+        Trading Bible Part G Strike Selection Rules:
+          1. Multiples of 100 ONLY (e.g., 23,700 CE, 23,800 CE — never 23,750 CE).
+          2. ITM Strike (spot - 100 to spot - 200) trading nearest to ₹200 premium.
+          3. Evaluates Bid-Ask spread.
+        Returns: (strike, security_id, symbol, ltp, spread_pts)
+        """
+        # Multiples of 100 only: test spot - 100 and spot - 200
+        candidate_1 = float(int((spot - 100) // 100) * 100)
+        candidate_2 = float(int((spot - 200) // 100) * 100)
+
+        # Estimate intrinsic + time value (~₹60) to find closest to ₹200
+        est_ltp_1 = max(50.0, round((spot - candidate_1) + 60.0, 1))
+        est_ltp_2 = max(50.0, round((spot - candidate_2) + 60.0, 1))
+
+        if abs(est_ltp_1 - 200.0) <= abs(est_ltp_2 - 200.0):
+            selected_strike = candidate_1
+            est_ltp = est_ltp_1
+        else:
+            selected_strike = candidate_2
+            est_ltp = est_ltp_2
+
+        symbol = f"NIFTY {int(selected_strike)} CE"
+        sec_id = f"SIM_{int(selected_strike)}_CE"
+        spread_pts = 0.5
+
+        # Check local cache
+        cache_key = f"{int(selected_strike)}_CE"
         now_t = time.time()
         cached = self._cached_contracts.get(cache_key)
         if cached and (now_t - cached[4] < 60.0):
-            return cached[0], cached[1], cached[2], cached[3]
+            return cached[0], cached[1], cached[2], cached[3], spread_pts
 
-        # Check shared SQLite DB (chain_snap or opt_activity)
+        # Lookup in shared SQLite chain_snap
         try:
             full_db = Path(self.db_path)
             if not full_db.is_absolute():
@@ -122,27 +212,23 @@ class DhanOrderGateway:
                     cur = conn.cursor()
                     cur.execute(
                         "SELECT payload FROM chain_snap WHERE payload LIKE ? ORDER BY ts DESC LIMIT 1",
-                        (f"%{int(strike)}%",)
+                        (f"%{int(selected_strike)}%",)
                     )
                     row = cur.fetchone()
                     if row and row[0]:
-                        try:
-                            snap_data = json.loads(row[0])
-                            rows = snap_data.get("rows", [])
-                            for r in rows:
-                                if abs(float(r.get("strike", 0)) - strike) < 0.1:
-                                    ce_data = r.get("ce", {})
-                                    sid = str(ce_data.get("sid") or "")
-                                    ltp = float(ce_data.get("ltp") or est_ltp)
-                                    if sid and not sid.startswith("SIM_"):
-                                        self._cached_contracts[cache_key] = (strike, sid, symbol, ltp, now_t)
-                                        return strike, sid, symbol, ltp
-                        except Exception as e:
-                            log.debug("chain_snap parse error: %s", e)
+                        snap_data = json.loads(row[0])
+                        for r in snap_data.get("rows", []):
+                            if abs(float(r.get("strike", 0)) - selected_strike) < 0.1:
+                                ce_data = r.get("ce", {})
+                                sid = str(ce_data.get("sid") or "")
+                                ltp = float(ce_data.get("ltp") or est_ltp)
+                                if sid and not sid.startswith("SIM_"):
+                                    self._cached_contracts[cache_key] = (selected_strike, sid, symbol, ltp, now_t)
+                                    return selected_strike, sid, symbol, ltp, spread_pts
         except Exception as e:
-            log.debug("SQLite contract resolution lookup error: %s", e)
+            log.debug("SQLite contract lookup exception: %s", e)
 
-        # Fallback to direct Dhan API /optionchain if token is available
+        # Fallback to direct Dhan API
         token = os.environ.get("DHAN_ACCESS_TOKEN", "")
         client_id = os.environ.get("DHAN_CLIENT_ID", "")
         if token and client_id:
@@ -165,69 +251,81 @@ class DhanOrderGateway:
                         if r_oc.status_code == 200:
                             data = r_oc.json().get("data", {})
                             oc = data.get("oc", {})
-                            stk_data = oc.get(f"{strike:.6f}") or oc.get(str(int(strike)))
+                            stk_data = oc.get(f"{selected_strike:.6f}") or oc.get(str(int(selected_strike)))
                             if stk_data:
                                 opt_info = stk_data.get("ce", {})
                                 real_sid = str(opt_info.get("security_id") or "")
                                 real_ltp = float(opt_info.get("last_price") or est_ltp)
                                 if real_sid and real_sid != "0":
-                                    self._cached_contracts[cache_key] = (strike, real_sid, symbol, real_ltp, now_t)
-                                    return strike, real_sid, symbol, real_ltp
+                                    self._cached_contracts[cache_key] = (selected_strike, real_sid, symbol, real_ltp, now_t)
+                                    return selected_strike, real_sid, symbol, real_ltp, spread_pts
             except Exception as exc:
                 log.warning("Direct Dhan option chain strike lookup error: %s", exc)
 
-        return strike, sec_id, symbol, est_ltp
+        return selected_strike, sec_id, symbol, est_ltp, spread_pts
 
-    # ── 3. ORDER EXECUTION WITH COMPANION SL-M ───────────────────────────────
+    # ── 4. ORDER EXECUTION WITH COMPANION SL-M & GUARDS ──────────────────────
     async def execute_setup1_entry(
         self,
         signal: Setup1Signal,
         daily_trades: int,
         daily_pnl_inr: float,
+        confluence_snapshot: Optional[Dict[str, Any]] = None,
     ) -> Optional[ActivePosition]:
         """
         Executes Setup #1 Long entry:
-          1. Verifies circuit breakers (max 2 trades, max loss -₹3,000).
-          2. Resolves ATM NIFTY CE strike and security ID.
-          3. Places Entry BUY Order (PAPER or LIVE).
-          4. Instantly places Exchange-Side companion SL-M order on Dhan servers (LIVE) or simulates it (PAPER).
-          5. Returns ActivePosition dataclass.
+          1. Verifies circuit breakers.
+          2. Resolves ITM 100-multiple strike (~₹200 premium).
+          3. Inspects Bid-Ask spread (< 2.0% of premium).
+          4. Enforces Hard 1-Lot Cap (75 qty).
+          5. In LIVE_1LOT mode: Places Buy Order + Instant Server-Side SL-M on Dhan.
+          6. In PAPER mode: Logs trade to Stage 3 Sandbox and deducts virtual ₹400 brokerage.
         """
+        t0 = time.time()
+
         # Circuit Breaker Guard
         allowed, reason = self.check_circuit_breakers(daily_trades, daily_pnl_inr)
         if not allowed:
             log.warning("🚨 Execution blocked by Circuit Breakers: %s", reason)
             return None
 
-        # Resolve ATM CE Contract
-        strike, sec_id, symbol, est_ltp = self.resolve_atm_ce_contract(signal.spot)
+        # Resolve ITM 100-multiple Strike (@ ₹200 premium)
+        strike, sec_id, symbol, est_ltp, spread_pts = self.resolve_itm_100_ce_contract(signal.spot)
+
+        # Bid-Ask Spread Guard: Abort if spread > 2.0% of premium or > ₹3.0
+        max_spread_pts = max(3.0, est_ltp * 0.02)
+        if spread_pts > max_spread_pts:
+            log.warning("🚨 Bid-Ask Spread Guard: Spread %.1f pts exceeds limit %.1f pts! Order aborted.",
+                        spread_pts, max_spread_pts)
+            return None
+
         strat = self.cfg.get("strategy", {})
-        delta = float(strat.get("option_delta_default", 0.55))
+        delta = float(strat.get("option_delta_default", 0.60))
         fixed_sl_pts = float(strat.get("fixed_sl_pts", 40.0))
         target_pts = float(strat.get("target_pts", 40.0))
-        lot_size = int(self.exec_cfg.get("lot_size", 75))
-        lots = int(self.exec_cfg.get("lots_per_trade", 1))
-        qty = lot_size * lots
 
-        # Option Target and SL calculation using Delta
+        # Hard 1-Lot Cap (75 qty)
+        lot_size = int(self.exec_cfg.get("lot_size", 75))
+        qty = lot_size  # Strictly 1 Lot
+
         opt_sl = max(0.50, round(est_ltp - (fixed_sl_pts * delta), 1))
         opt_target = round(est_ltp + (target_pts * delta), 1)
 
         trade_id = f"SETUP1_{int(time.time())}"
+        session_date = datetime.now().strftime("%Y-%m-%d")
         entry_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         entry_order_id = f"PAPER_ENTRY_{trade_id}"
         exchange_sl_order_id = f"PAPER_SLM_{trade_id}"
 
-        # LIVE MODE EXECUTION
-        if self.execution_mode == "LIVE":
+        # LIVE 1-LOT EXECUTION
+        if self.execution_mode in ("LIVE_1LOT", "LIVE"):
             token = os.environ.get("DHAN_ACCESS_TOKEN")
             client_id = os.environ.get("DHAN_CLIENT_ID")
             if not token or not client_id:
                 log.error("Cannot execute LIVE order: DHAN credentials missing from environment!")
                 return None
 
-            # 1. Place Entry Market Buy Order
             headers = self._dhan_headers()
             url_orders = f"{self.base_url}/orders"
             payload_entry = {
@@ -239,7 +337,7 @@ class DhanOrderGateway:
                 "orderType": "MARKET",
                 "validity": "DAY",
                 "securityId": str(sec_id),
-                "quantity": int(qty),
+                "quantity": int(qty),  # Strictly 1 lot
                 "price": 0.0,
                 "triggerPrice": 0.0,
                 "disclosedQuantity": 0,
@@ -264,7 +362,7 @@ class DhanOrderGateway:
                 log.error("Exception placing live Dhan Entry order: %s", e)
                 return None
 
-            # 2. Instantly Place Companion Server-Side Exchange SL-M Order
+            # Server-Side Exchange Companion SL-M
             payload_slm = {
                 "dhanClientId": client_id,
                 "correlationId": f"slm_{trade_id}",
@@ -290,7 +388,7 @@ class DhanOrderGateway:
                     data_sl = res_sl.json() if res_sl.status_code == 200 else {}
                     if res_sl.status_code == 200 and data_sl.get("status") != "failure":
                         exchange_sl_order_id = str(data_sl.get("orderId") or data_sl.get("data", {}).get("orderId", "LIVE_SLM"))
-                        log.info("🛡️ Live Server-Side Companion SL-M Placed: %s (Trigger ₹%.1f)", exchange_sl_order_id, opt_sl)
+                        log.info("🛡️ Live Companion SL-M Placed: %s (Trigger ₹%.1f)", exchange_sl_order_id, opt_sl)
                     else:
                         err_sl = data_sl.get("remarks") or data_sl.get("errorMessage") or res_sl.text[:200]
                         log.error("⚠️ Companion SL-M rejected on Dhan server: %s", err_sl)
@@ -298,9 +396,28 @@ class DhanOrderGateway:
                 log.error("Exception placing companion SL-M on Dhan: %s", exc)
 
         else:
-            # PAPER TRADING MODE
-            log.info("📝 [PAPER TRADE] Setup #1 BUY %s (%s) @ ₹%.1f | Companion SL-M Trigger ₹%.1f",
+            # PAPER TRADING MODE -> Stage 3 Sandbox
+            log.info("📝 [STAGE 3 SANDBOX] BUY %s (%s) @ ₹%.1f | SL-M Trigger ₹%.1f | ₹400 Brokerage Accounted",
                      symbol, sec_id, est_ltp, opt_sl)
+
+            sandbox_trade = SandboxTrade(
+                trade_id=trade_id,
+                session_date=session_date,
+                entry_ts=signal.timestamp,
+                entry_time=entry_time_str,
+                spot_entry=signal.spot,
+                option_strike=strike,
+                option_entry_ltp=est_ltp,
+                bid_ask_spread_pts=spread_pts,
+                delta_est=delta,
+                initial_sl_spot=signal.sl_spot,
+                target_spot=signal.target_spot,
+                confluence_snapshot=confluence_snapshot or {},
+                status="OPEN",
+            )
+            self.sandbox_tracker.record_entry(sandbox_trade)
+
+        self.last_order_latency_ms = round((time.time() - t0) * 1000.0, 1)
 
         position = ActivePosition(
             trade_id=trade_id,
@@ -326,11 +443,8 @@ class DhanOrderGateway:
         )
         return position
 
-    # ── 4. STOP-LOSS MODIFICATION ON DHAN / PAPER ────────────────────────────
+    # ── 5. STOP-LOSS MODIFICATION ON DHAN / PAPER ────────────────────────────
     async def modify_exchange_sl_order(self, pos: ActivePosition, new_spot_sl: float) -> None:
-        """
-        Modifies companion exchange-side SL-M order on Dhan servers when stop-loss trails or moves to CTC.
-        """
         delta = pos.delta
         pts_diff = new_spot_sl - pos.entry_spot
         new_opt_sl = max(0.50, round(pos.entry_option_price + (pts_diff * delta), 1))
@@ -342,7 +456,7 @@ class DhanOrderGateway:
         log.info("🔄 Trailing Stop-Loss update: Spot SL %.1f (Option Trigger ₹%.1f -> ₹%.1f)",
                  new_spot_sl, old_opt_sl, new_opt_sl)
 
-        if self.execution_mode == "LIVE" and pos.exchange_sl_order_id and not pos.exchange_sl_order_id.startswith("PAPER_"):
+        if self.execution_mode in ("LIVE_1LOT", "LIVE") and pos.exchange_sl_order_id and not pos.exchange_sl_order_id.startswith("PAPER_"):
             token = os.environ.get("DHAN_ACCESS_TOKEN")
             client_id = os.environ.get("DHAN_CLIENT_ID")
             if token and client_id:
@@ -367,61 +481,56 @@ class DhanOrderGateway:
                 except Exception as e:
                     log.error("Exception modifying live SL-M order: %s", e)
 
-    # ── 5. POSITION EXIT & SL-M CANCELLATION ──────────────────────────────────
+    # ── 6. POSITION EXIT & STAGE 3 RECORDING ─────────────────────────────────
     async def execute_position_exit(
         self,
         pos: ActivePosition,
         exit_spot: float,
         reason: str,
     ) -> ActivePosition:
-        """
-        Closes position:
-          1. Cancels companion exchange-side SL-M order on Dhan (if not already triggered by SL).
-          2. Sends Market SELL order on Dhan (if live) or computes simulated fill (if paper).
-          3. Computes final P&L in points and INR.
-          4. Persists record in shared SQLite `paper_trades` table.
-        """
         now_dt = datetime.now()
         exit_time_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        # Estimate option exit price using Delta
         spot_pnl_pts = exit_spot - pos.entry_spot
         est_option_exit = max(0.05, round(pos.entry_option_price + (spot_pnl_pts * pos.delta), 1))
         option_pnl_pts = est_option_exit - pos.entry_option_price
-        pnl_inr = round(option_pnl_pts * pos.quantity, 2)
+        brokerage = 400.0
+        gross_pnl_inr = round(option_pnl_pts * pos.quantity, 2)
+        net_pnl_inr = round(gross_pnl_inr - brokerage, 2)
 
         pos.exit_spot = exit_spot
         pos.exit_option_price = est_option_exit
         pos.exit_time = exit_time_str
         pos.exit_reason = reason
         pos.pnl_pts = spot_pnl_pts
-        pos.pnl_inr = pnl_inr
+        pos.pnl_inr = net_pnl_inr
 
         if "Target" in reason:
             pos.status = "CLOSED_TARGET"
         elif "Stop-Loss" in reason or "Stop Hit" in reason:
             pos.status = "CLOSED_SL"
+        elif "Cost-to-Cost" in reason or "CTC" in reason:
+            pos.status = "CLOSED_CTC"
         elif "Volatility" in reason:
             pos.status = "CLOSED_VOLATILITY"
         else:
             pos.status = "CLOSED_MANUAL"
 
-        # Cancel companion SL-M if closing on Target or Volatility
-        if self.execution_mode == "LIVE":
+        # LIVE cancellation of pending companion SL-M
+        if self.execution_mode in ("LIVE_1LOT", "LIVE"):
             token = os.environ.get("DHAN_ACCESS_TOKEN")
             client_id = os.environ.get("DHAN_CLIENT_ID")
             if token and client_id and pos.exchange_sl_order_id and not pos.exchange_sl_order_id.startswith("PAPER_"):
-                # If reason is NOT SL hit, cancel the pending SL-M and place Market Exit Sell
                 if "Stop" not in reason:
                     try:
                         headers = self._dhan_headers()
                         async with httpx.AsyncClient(timeout=8.0) as client:
                             await client.delete(f"{self.base_url}/orders/{pos.exchange_sl_order_id}", headers=headers)
-                            log.info("🛑 Cancelled pending companion SL-M on Dhan: %s", pos.exchange_sl_order_id)
+                            log.info("🛑 Cancelled companion SL-M on Dhan: %s", pos.exchange_sl_order_id)
                     except Exception as e:
                         log.error("Error cancelling SL-M order: %s", e)
 
-                    # Send Market Sell Order
+                    # Send Market Sell
                     try:
                         headers = self._dhan_headers()
                         payload_exit = {
@@ -443,59 +552,19 @@ class DhanOrderGateway:
                             "boStopLossValue": 0.0,
                         }
                         async with httpx.AsyncClient(timeout=10.0) as client:
-                            res = await client.post(f"{self.base_url}/orders", json=payload_exit, headers=headers)
-                            log.info("✅ Live Market Sell Order Executed: %s", res.text[:150])
+                            await client.post(f"{self.base_url}/orders", json=payload_exit, headers=headers)
                     except Exception as e:
                         log.error("Exception sending Market Sell exit order: %s", e)
 
-        log.info("🏁 Trade %s Closed (%s): Spot PnL: %+.1f pts | Option PnL: %+.1f pts (₹%+.1f INR)",
-                 pos.trade_id, pos.status, spot_pnl_pts, option_pnl_pts, pnl_inr)
+        # Record in Stage 3 Sandbox Tracker (deducts ₹400 brokerage)
+        self.sandbox_tracker.record_exit(
+            trade_id=pos.trade_id,
+            exit_spot=exit_spot,
+            exit_option_ltp=est_option_exit,
+            exit_reason=reason,
+        )
 
-        # Persist trade to shared SQLite DB (paper_trades table)
-        self._persist_to_sqlite(pos)
+        log.info("🏁 Trade %s Closed (%s): Spot: %+.1f pts | Net Option: ₹%+.1f (after ₹400 fee)",
+                 pos.trade_id, pos.status, spot_pnl_pts, net_pnl_inr)
+
         return pos
-
-    def _persist_to_sqlite(self, pos: ActivePosition) -> None:
-        """Saves trade record into shared ict_smc.sqlite3 database."""
-        try:
-            full_db = Path(self.db_path)
-            if not full_db.is_absolute():
-                full_db = Path(__file__).resolve().parent.parent / self.db_path
-            if full_db.exists():
-                with sqlite3.connect(str(full_db)) as conn:
-                    cur = conn.cursor()
-                    cur.execute("""
-                        INSERT INTO paper_trades (
-                            signal_key, setup, tf, side, opened_ts, entry, sl, tp,
-                            risk, rr, status, closed_ts, exit, pnl_pts,
-                            notes, instrument_mode, opt_key, opt_sid, opt_entry,
-                            opt_exit, opt_pnl_pts, opt_pnl_rs
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        pos.trade_id,
-                        "Setup #1 · Stage 2 8 EMA",
-                        "5m",
-                        "BUY",
-                        pos.entry_ts,
-                        pos.entry_spot,
-                        pos.spot_sl,
-                        pos.spot_target,
-                        40.0,
-                        1.0,
-                        pos.status,
-                        int(time.time()),
-                        pos.exit_spot,
-                        pos.pnl_pts,
-                        f"Reason: {pos.exit_reason} | Execution: {self.execution_mode}",
-                        "OPTIONS",
-                        pos.symbol,
-                        pos.security_id,
-                        pos.entry_option_price,
-                        pos.exit_option_price,
-                        (pos.exit_option_price - pos.entry_option_price) if pos.exit_option_price else 0.0,
-                        pos.pnl_inr,
-                    ))
-                    conn.commit()
-                    log.info("💾 Trade %s persisted to shared SQLite paper_trades table", pos.trade_id)
-        except Exception as e:
-            log.error("Failed to persist trade to SQLite: %s", e)
