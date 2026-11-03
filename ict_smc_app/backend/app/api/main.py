@@ -101,8 +101,13 @@ def _opt(h: Hub, key: str):
 
 @app.get("/api/candles")
 def candles(tf: str = Query("5m"), days: int = Query(3, ge=1, le=400), inst: str = Query("NIFTY"),
-            asof: str | None = Query(None, description="ISO date; returns the window ENDING that "
-                                                       "day, read from SQLite. Review mode.")):
+            # Optional[str], NOT `str | None`: the runtime venv is Python 3.9 and FastAPI
+            # EVALUATES annotations when it registers the route, so PEP 604 unions raise
+            # TypeError at import and the service crash-loops. `from __future__ import
+            # annotations` does not save you here — it defers the evaluation, it does not
+            # make 3.9 able to perform it.
+            asof: Optional[str] = Query(None, description="ISO date; returns the window ENDING "
+                                                          "that day, from SQLite. Review mode.")):
     if tf not in TF_SECONDS:
         raise HTTPException(400, f"tf must be one of {list(TF_SECONDS)}")
     h = _h()
