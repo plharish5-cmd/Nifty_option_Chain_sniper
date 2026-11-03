@@ -66,6 +66,13 @@ class EmergencyFlattenRequest(BaseModel):
     reason: Optional[str] = "Manual operator flatten"
 
 
+class AuditScreenshotsRequest(BaseModel):
+    directory_path: Optional[str] = None
+    output_csv: Optional[str] = None
+    lookback_days: Optional[int] = 90
+    gemini_api_key: Optional[str] = None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ENDPOINTS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -135,3 +142,21 @@ def reset_circuit_breaker() -> Dict[str, Any]:
     engine.gateway.circuit_breaker_reason = ""
     log.warning("Circuit breaker manually reset by operator")
     return {"ok": True, "circuit_breaker": "RESET"}
+
+
+@app.post("/api/algo/audit-screenshots")
+def audit_screenshots_endpoint(req: Optional[AuditScreenshotsRequest] = None) -> Dict[str, Any]:
+    """
+    Scans directory for daily 15-minute trading homework screenshots,
+    classifies setups, checks gap rules, cross-matches with SQLite trade logs,
+    and returns the comparison table and CSV export path.
+    """
+    from .vision_audit import VisionAuditAgent
+    payload = req or AuditScreenshotsRequest()
+    agent = VisionAuditAgent(gemini_api_key=payload.gemini_api_key)
+    res = agent.audit_directory(
+        directory_path=payload.directory_path,
+        output_csv_path=payload.output_csv,
+        lookback_days=payload.lookback_days or 90,
+    )
+    return res

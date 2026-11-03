@@ -52,5 +52,20 @@
     "gap_threshold_pts": 60.0,
     "square_off_time": "15:20",
     "profit_factor_min_verdict": 1.30
+  },
+  "vision_audit": {
+    "screenshots_dir": "homework_screenshots",
+    "output_csv": "15m_homework_audit_summary.csv",
+    "gap_threshold_pts": 50.0,
+    "gemini_model": "gemini-3.8-flash",
+    "allowed_extensions": [".png", ".jpg", ".jpeg", ".webp", ".bmp"],
+    "lookback_months": 3,
+    "setups_supported": [
+      "Stage 2 8-EMA",
+      "Stage 3 8-EMA",
+      "8-EMA Reversal Up",
+      "8-EMA Reversal Down"
+    ],
+    "sqlite_db_path": "ict_smc_app/backend/data/ict_smc.sqlite3"
   }
 }

@@ -1657,6 +1657,31 @@ async def algo_setup1_mode_endpoint(payload: Setup1ModeProxyIn):
         return {"ok": False, "error": f"Failed to connect to Port 8500: {e}"}
 
 
+@app.post("/api/algo/audit-screenshots")
+async def algo_audit_screenshots_endpoint(payload: Optional[Dict[str, Any]] = None):
+    """Proxies vision audit request to Port 8500 or runs locally."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post("http://127.0.0.1:8500/api/algo/audit-screenshots", json=payload or {})
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception as e:
+        log.warning("Port 8500 not reachable for vision audit: %s. Running fallback directly.", e)
+
+    try:
+        from algo_execution_engine.vision_audit import VisionAuditAgent
+        agent = VisionAuditAgent()
+        p = payload or {}
+        return agent.audit_directory(
+            directory_path=p.get("directory_path"),
+            output_csv_path=p.get("output_csv"),
+            lookback_days=p.get("lookback_days", 90),
+        )
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 from .nodes_api import router as _nodes_router
 app.include_router(_nodes_router)
 

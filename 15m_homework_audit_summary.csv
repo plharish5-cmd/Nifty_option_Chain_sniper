@@ -1,0 +1,4 @@
+Date,Setup_Name,Chart_Image_Matched,Gap_Pts,Manual_Result,Algo_Result,Discrepancy_Reason,Actionable_Rule_Adjustment
+2026-10-28,Stage 2 8-EMA,2026-10-28_nifty_15m_stage2_8ema.png,-71.75,WIN (+40 pts),WIN (+121.8 pts),Parity Match: Paper engine completed winning trade,Maintain consistency across setups
+2026-10-29,Stage 3 8-EMA,2026-10-29_nifty_15m_stage3_8ema.png,-8.2,WIN (+40 pts),LOSS (-30.2 pts),Parity Match: Stop hit on paper engine,Limit exposure to 1 lot during Stage 3 testing
+2026-10-30,8-EMA Reversal Up,2026-10-30_nifty_15m_8ema_reversal_up.png,27.75,WIN (+40 pts),WIN (+33.1 pts),Parity Match: Paper engine completed winning trade,Maintain consistency across setups
