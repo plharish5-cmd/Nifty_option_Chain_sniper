@@ -1,8 +1,9 @@
+import { nearestOiWalls, oiWallRange } from "./oiWallViewport";
 // Chart.tsx — candlesticks + ICT/SMC overlays (Lightweight Charts v5).
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BaselineSeries, CandlestickSeries, ColorType, createChart, createSeriesMarkers, CrosshairMode, HistogramSeries, LineSeries, LineStyle,
-  type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi, type MouseEventParams, type Time, type UTCTimestamp, type IPriceLine,
+  type AutoscaleInfo, type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi, type MouseEventParams, type Time, type UTCTimestamp, type IPriceLine,
 } from "lightweight-charts";
 import type { Analysis, Candle, TF, WriterMetrics, InstitutionalLevelsRes, GannPivotsGapsRes } from "../api";
 import { bucket } from "../api";
@@ -808,6 +809,12 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     [isBubblesOn, isCvdOn, isCellsOn, analysis, fpBars, candles]
   );
   const [walls, setWalls] = useState<Wall[]>([]);
+  const [wallLoadError, setWallLoadError] = useState("");
+  const [wallLoading, setWallLoading] = useState(false);
+  const [fitOiWalls, setFitOiWalls] = useState(true);
+  // Compare expiry values, not the fresh array returned by dashboard polling.
+  const wallCurExpiry = expiries?.[0];
+  const wallNextExpiry = expiries?.[1];
   const [wallExp, setWallExp] = useState<"cur" | "next" | "both">("cur");
   const [bookEv, setBookEv] = useState<{ ts: number; price: number; side: string; kind: string; qty: number; why: string }[]>([]);
   const wallPrevRef = useRef<{ status: Record<string, Wall["status"]>; topCE: number | null; topPE: number | null } | null>(null);
@@ -2689,9 +2696,13 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       }
       return [...m.values()].sort((x, y) => x.strike - y.strike);
     };
-    const curExp = expiries?.[0]; const nextExp = expiries?.[1];
+    const curExp = wallCurExpiry; const nextExp = wallNextExpiry;
     wallPrevRef.current = null; netPrevRef.current = null;   // reset wall-roll + flip baselines when the source expiry changes
+    let inFlight = false;
     const go = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      if (!dead) { setWallLoading(true); setWallLoadError(""); }
       try {
         const cur = await api.chain(curExp);
         if (dead) return;
@@ -2702,16 +2713,23 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           let maxPain: number | null = cur?.max_pain ?? null;
           if (wallExp === "next" && nextExp) { const nx = await api.chain(nextExp); if (nx?.rows?.length) { rows = nx.rows; maxPain = nx.max_pain ?? null; } }
           else if (wallExp === "both" && nextExp) { const nx = await api.chain(nextExp); rows = mergeRows(cur?.rows ?? [], nx?.rows ?? []); }
-          const wm: WriterMetrics | null = await api.writerMetrics(wallExp, 30, 15).catch(() => null);
           if (dead) return;
+          if (!rows.length) throw new Error("Selected expiry returned no OI rows; retaining previous walls");
           if (rows.length) {
-            const w = buildWalls(rows, sp, wm?.velocity); setWalls(w); detectWallEvents(w);
+            // Draw the recorded chain immediately; optional velocity must not block walls.
+            const w = buildWalls(rows, sp); setWalls(w); detectWallEvents(w);
             // every near-spot level's % OI change → bubbles (CE & PE). pct = ΔOI ÷ current OI (matches the wall %).
             const lv: OiLevel[] = rows.filter((r) => sp && Math.abs(r.strike - sp) <= sp * 0.02).flatMap((r) => [
               { p: r.strike, side: "CE" as const, oi: r.ce.oi || 0, chg: r.ce.oi_chg || 0, pct: r.ce.oi ? (r.ce.oi_chg || 0) / r.ce.oi * 100 : null },
               { p: r.strike, side: "PE" as const, oi: r.pe.oi || 0, chg: r.pe.oi_chg || 0, pct: r.pe.oi ? (r.pe.oi_chg || 0) / r.pe.oi * 100 : null },
             ]);
             setOiLevels(lv);
+            const wm: WriterMetrics | null = await api.writerMetrics(wallExp, 30, 15).catch((error) => {
+              console.warn("OI wall velocity unavailable", error);
+              return null;
+            });
+            if (dead) return;
+            if (wm?.velocity) setWalls(buildWalls(rows, sp, wm.velocity));
             // writer balance: PCR (+ intraday trend), net PE−CE OI change, max-pain. Respects the expiry toggle.
             const ceOI = rows.reduce((s, r) => s + (r.ce.oi || 0), 0);
             const peOI = rows.reduce((s, r) => s + (r.pe.oi || 0), 0);
@@ -2731,11 +2749,17 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             netPrevRef.current = net;
           }
         }
-      } catch { /* keep last */ }
+      } catch (error) {
+        if (!dead) setWallLoadError(error instanceof Error ? error.message : String(error));
+        console.error("OI walls refresh failed", error);
+      } finally {
+        inFlight = false;
+        if (!dead) setWallLoading(false);
+      }
     };
     go(); const id = window.setInterval(go, 60000);
     return () => { dead = true; window.clearInterval(id); };
-  }, [layers.walls, layers.gamma, wallExp, expiries]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [layers.walls, layers.gamma, wallExp, wallCurExpiry, wallNextExpiry]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     ofPrim.current.set({
       walls,
@@ -2744,6 +2768,18 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       oiLevels: layers.walls ? oiLevels : []
     });
   }, [walls, bubbles, fpBars, isBubblesOn, isCellsOn, oiLevels, layers.walls]);
+  // Primitives do not participate in candle autoscaling. Include the nearest walls
+  // in automatic scale so valid bands/bubbles cannot silently sit off-screen.
+  useEffect(() => {
+    const s = series.current;
+    if (!s) return;
+    const wallSpot = spot ?? candles[candles.length - 1]?.close ?? 0;
+    s.applyOptions({ autoscaleInfoProvider: (original: () => AutoscaleInfo | null) =>
+      layers.walls && fitOiWalls ? oiWallRange(original(), walls, wallSpot) : original() });
+  }, [layers.walls, fitOiWalls, walls, spot, candles]);
+  useEffect(() => {
+    if (layers.walls && fitOiWalls) series.current?.priceScale().setAutoScale(true);
+  }, [layers.walls, fitOiWalls]);
   // ── stacked D / W / M volume nodes (refreshed every 5 min) + overextension entries ──
   // Fetched when the LAYER is on OR the ● ENTRY alert is armed. Previously both were tied to the layer, so
   // arming the alert chip and leaving the layer off produced silence — the entries were never computed, and
@@ -3623,6 +3659,17 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
             ))}
           </div>
         )}
+      {layers.walls && <button className="tab !py-0.5 !text-[11px] pointer-events-auto" aria-pressed={fitOiWalls}
+        title="Fit the nearest loaded CE and PE walls into the candle price scale. This changes display only; turn off for candle-only scaling."
+        onClick={() => setFitOiWalls(v => !v)}>{fitOiWalls ? "☑" : "☐"} Fit OI walls</button>}
+      {layers.walls && walls.length > 0 && (() => {
+        const near = nearestOiWalls(walls, spot ?? candles[candles.length - 1]?.close ?? 0);
+        return <span className="pointer-events-auto rounded border border-slate-600 bg-ink-900/95 px-2 py-1 text-xs text-slate-200"
+          title={walls.map(w => `${w.side} ${w.p}: OI ${(w.oi / 1e5).toFixed(2)}L, daily Δ ${(w.chg / 1e5).toFixed(2)}L, ${w.status}`).join("\n")}>
+          OI: {walls.length} walls · CE {near.ceiling?.p.toLocaleString("en-IN") ?? "—"} · PE {near.floor?.p.toLocaleString("en-IN") ?? "—"}
+        </span>;
+      })()}
+      {layers.walls && (wallLoadError || (!walls.length && wallLoading)) && <div role={wallLoadError ? "alert" : "status"} className="pointer-events-auto rounded border border-amber-500/60 bg-ink-900/95 px-2 py-1 text-xs text-amber-300">{wallLoadError ? `OI walls refresh failed: ${wallLoadError}${walls.length ? " · keeping previous walls" : ""}` : "Loading OI walls…"}</div>}
       {/* Pinned Ceiling Pill: when major Call wall is > 150 pts above Spot (off-screen) */}
       {layers.walls && (() => {
         const wsp = writerBal?.spot ?? spot ?? candles[candles.length - 1]?.close;

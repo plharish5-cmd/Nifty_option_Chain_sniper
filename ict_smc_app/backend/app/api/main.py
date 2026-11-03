@@ -247,13 +247,40 @@ async def gamma_exposure_review_endpoint(
     return await gamma_exposure_review(day, expiry, tf, end_ts, sign, study)
 
 
+@app.get("/api/desk/oi-walls-replay")
+def oi_walls_replay(day: str, at: int, expiry: Optional[str] = None):
+    """Read archived original daily OI inputs; never consult the current chain."""
+    import subprocess
+    import json
+    from datetime import date
+    try:
+        date.fromisoformat(day)
+        if expiry:
+            date.fromisoformat(expiry)
+    except ValueError:
+        raise HTTPException(422, "Invalid session or expiry date")
+    root = config.BACKEND_DIR.parent.parent
+    args = [str(root / ".venv/bin/python"), str(root / "analyst/oi_walls_replay.py"), day, str(at)]
+    if expiry:
+        args.append(expiry)
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=30, check=True)
+        return json.loads(result.stdout)
+    except (subprocess.SubprocessError, ValueError) as exc:
+        raise HTTPException(503, "Recorded OI replay unavailable") from exc
+
+
 @app.get("/api/desk/time-machine")
 def desk_time_machine(day: Optional[str] = None, at: Optional[int] = None):
     import importlib.util
-    path = config.BACKEND_DIR.parent.parent / "analyst/desk_time_machine.py"
-    spec = importlib.util.spec_from_file_location("desk_time_machine", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    import sys
+    mod = sys.modules.get("desk_time_machine_cached")
+    if mod is None:
+        path = config.BACKEND_DIR.parent.parent / "analyst/desk_time_machine.py"
+        spec = importlib.util.spec_from_file_location("desk_time_machine_cached", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        sys.modules["desk_time_machine_cached"] = mod
     try:
         return mod.metadata(day, at)
     except ValueError as exc:

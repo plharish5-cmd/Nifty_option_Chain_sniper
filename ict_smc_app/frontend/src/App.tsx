@@ -1,4 +1,3 @@
-import TimeMachine from "./components/TimeMachine";
 // App.tsx — layout + data flow. REST for the initial state (so a refresh restores everything from SQLite),
 // WebSocket for changes. Candles/analysis are re-fetched whenever the backend says a candle CLOSED.
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -484,4 +483,4 @@ function LiveDesk() {
   );
 }
 
-export default function App() { return <TimeMachine><LiveDesk /></TimeMachine>; }
+export default function App() { return <LiveDesk />; }

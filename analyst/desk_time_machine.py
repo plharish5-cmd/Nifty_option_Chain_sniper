@@ -5,6 +5,8 @@ import json
 import logging
 from pathlib import Path
 import sqlite3
+import time as clock
+from functools import lru_cache
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,12 +26,14 @@ def select_at(points, at):
             "count": len(points), "actual_local": datetime.fromtimestamp(points[i], IST).replace(tzinfo=None).isoformat() if i >= 0 else None}
 
 
-def metadata(day=None, at=None):
-    policy = json.loads((ROOT / "analyst/analyst_config.json").read_text())["time_machine"]
+@lru_cache(maxsize=4)
+def _recorded_sources(root_text, refresh_bucket):
+    root = Path(root_text)
+    policy = json.loads((root / "analyst/analyst_config.json").read_text())["time_machine"]
     broken = 0
     sources = {"time_series": {}, "gamma_review": {}, "wmap": {}}
     for name in ("snapshots", "snapshots_multi"):
-        for p in (ROOT / "data" / name).glob("????-??-??/*.meta.json"):
+        for p in (root / "data" / name).glob("????-??-??/*.meta.json"):
             try:
                 d = json.loads(p.read_text())
                 stamp = epoch(d["timestamp"])
@@ -45,13 +49,19 @@ def metadata(day=None, at=None):
                 broken += 1
     if broken:
         logging.getLogger("time_machine").warning("Excluded %s malformed snapshot metadata files", broken)
-    db = ROOT / "ict_smc_app/backend/data/ict_smc.sqlite3"
+    db = root / "ict_smc_app/backend/data/ict_smc.sqlite3"
     if db.exists():
         with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
             for (stamp,) in conn.execute("SELECT DISTINCT ts FROM chain_snap ORDER BY ts"):
                 dt = datetime.fromtimestamp(stamp, IST)
                 if policy["open"] <= dt.strftime("%H:%M") <= policy["end"]:
                     sources["wmap"].setdefault(dt.date().isoformat(), []).append(stamp)
+    return sources
+
+
+def metadata(day=None, at=None):
+    policy = json.loads((ROOT / "analyst/analyst_config.json").read_text())["time_machine"]
+    sources = _recorded_sources(str(ROOT), int(clock.time() // policy.get("refresh_seconds", 60)))
     days = sorted({d for s in sources.values() for d in s})
     day = day or (days[-1] if days else None)
     if not day or day not in days:
