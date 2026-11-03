@@ -46,12 +46,18 @@ SETUP_STAGE2_8EMA = "Stage 2 8-EMA"
 SETUP_STAGE3_8EMA = "Stage 3 8-EMA"
 SETUP_REV_UP = "8-EMA Reversal Up"
 SETUP_REV_DOWN = "8-EMA Reversal Down"
+SETUP_1H_80EMA = "1H 80-EMA Touch"
+SETUP_1H_SUPPORT = "1H 80-EMA Support Bounce"
+SETUP_1H_RESISTANCE = "1H 80-EMA Resistance Rejection"
 
 VALID_SETUPS = {
     SETUP_STAGE2_8EMA,
     SETUP_STAGE3_8EMA,
     SETUP_REV_UP,
     SETUP_REV_DOWN,
+    SETUP_1H_80EMA,
+    SETUP_1H_SUPPORT,
+    SETUP_1H_RESISTANCE,
 }
 
 
@@ -107,6 +113,12 @@ class VisionAuditResult:
 def normalize_setup_name(raw_text: str) -> str:
     """Normalizes arbitrary setup strings into canonical setup names."""
     t = raw_text.lower().replace("-", " ").replace("_", " ")
+    if "80" in t or "1h" in t or "hourly" in t:
+        if "short" in t or "resistance" in t or "rejection" in t:
+            return SETUP_1H_RESISTANCE
+        if "long" in t or "support" in t or "bounce" in t:
+            return SETUP_1H_SUPPORT
+        return SETUP_1H_80EMA
     if "reversal up" in t or "rev up" in t or "lbb bounce" in t:
         return SETUP_REV_UP
     if "reversal down" in t or "rev down" in t or "ubb rejection" in t:
@@ -159,23 +171,23 @@ def verify_gap_rule(
     Gap Rule Verification from Trading Bible:
       - Automatically flag any trade taken on a > +50 pt gap-up (for longs)
         or < -50 pt gap-down (for shorts) unless a pullback/bounce/rejection
-        at the 8-EMA is clearly visible!
+        at the 8-EMA (or 1H 80-EMA) is clearly visible!
 
     Returns: (is_violation, note)
     """
-    is_long = setup_name in (SETUP_STAGE2_8EMA, SETUP_REV_UP)
-    is_short = setup_name in (SETUP_STAGE3_8EMA, SETUP_REV_DOWN)
+    is_long = setup_name in (SETUP_STAGE2_8EMA, SETUP_REV_UP, SETUP_1H_SUPPORT, SETUP_1H_80EMA)
+    is_short = setup_name in (SETUP_STAGE3_8EMA, SETUP_REV_DOWN, SETUP_1H_RESISTANCE)
 
     # 1. Long on Gap-Up > +50 pts
     if is_long and gap_pts > gap_threshold:
         if not has_pullback_at_ema8:
             return (
                 True,
-                f"⚠️ GAP RULE VIOLATION: Long entered on +{gap_pts:.1f} pt gap-up without 8-EMA pullback confirmation",
+                f"⚠️ GAP RULE VIOLATION: {setup_name} entered on +{gap_pts:.1f} pt gap-up without clean EMA pullback confirmation",
             )
         return (
             False,
-            f"PASSED GAP RULE: +{gap_pts:.1f} pt gap-up with confirmed 8-EMA pullback/rejection",
+            f"PASSED GAP RULE: +{gap_pts:.1f} pt gap-up with confirmed EMA pullback/rejection",
         )
 
     # 2. Short on Gap-Down < -50 pts
@@ -183,11 +195,11 @@ def verify_gap_rule(
         if not has_pullback_at_ema8:
             return (
                 True,
-                f"⚠️ GAP RULE VIOLATION: Short entered on {gap_pts:.1f} pt gap-down without 8-EMA pullback confirmation",
+                f"⚠️ GAP RULE VIOLATION: {setup_name} entered on {gap_pts:.1f} pt gap-down without clean EMA pullback confirmation",
             )
         return (
             False,
-            f"PASSED GAP RULE: {gap_pts:.1f} pt gap-down with confirmed 8-EMA pullback/rejection",
+            f"PASSED GAP RULE: {gap_pts:.1f} pt gap-down with confirmed EMA pullback/rejection",
         )
 
     return False, f"PASSED GAP RULE ({gap_pts:+.1f} pts within ±{gap_threshold:.0f} pt limit)"
@@ -315,10 +327,25 @@ class SqliteTradeMatcher:
             except Exception as e:
                 log.debug("No paper_trades table query for %s: %s", session_date, e)
 
-            # 3. Simulate pure 15m historical rules if no live trade row exists
+            # Calculate session gap from candles
             gap = self.calculate_ground_truth_gap(session_date)
             conn.close()
 
+            # 3. Check for 1H 80-EMA setups
+            if setup_name in (SETUP_1H_80EMA, SETUP_1H_SUPPORT, SETUP_1H_RESISTANCE):
+                if gap is not None and abs(gap) > 50.0:
+                    return (
+                        "SKIPPED (Gap > 50 pts)",
+                        f"Manual took 1H trade on {gap:+.1f} pt gap; Algo skipped due to 1H 80-EMA Gap Rule",
+                        "Wait for 1-hour candle to touch and bounce/reject 80-EMA before entry on gap days > 50 pts",
+                    )
+                return (
+                    "EVALUATED_1H_80EMA",
+                    f"Algo monitored 1H 80-EMA level for {setup_name} (Session gap: {gap or 0.0:+.1f} pts)",
+                    "Verify 1-hour candle low/high touches 80-EMA within proximity tolerance",
+                )
+
+            # 4. Simulate pure 15m historical rules if no live trade row exists
             if gap is not None and abs(gap) > 50.0:
                 return (
                     "SKIPPED (Gap > 50 pts)",
@@ -342,7 +369,7 @@ class SqliteTradeMatcher:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class GeminiVisionParser:
-    """Uses Google Gemini 3.8 Flash Vision to transcribe and audit 15m chart screenshots."""
+    """Uses Google Gemini 3.8 Flash Vision to transcribe and audit 15m & 1h chart screenshots."""
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
@@ -365,14 +392,14 @@ class GeminiVisionParser:
             return None
 
         prompt = (
-            "You are an expert quantitative technical analyst auditing 15-minute NIFTY trading chart homework.\n"
-            "Analyze this 15-minute candlestick chart screenshot and extract the following details strictly in JSON format:\n"
+            "You are an expert quantitative technical analyst auditing 15-minute and 1-hour NIFTY trading chart homework.\n"
+            "Analyze this candlestick chart screenshot and extract the following details strictly in JSON format:\n"
             "1. `date`: The trading session date shown on the chart (format YYYY-MM-DD).\n"
             "2. `candle_time`: The time of the key candle or trade entry (format HH:MM).\n"
             "3. `gap_pts`: The open gap size in points (Open minus Prev Close, signed float like +45.0 or -62.0). If not explicit, estimate from price.\n"
-            "4. `setup_name`: Exact setup from: 'Stage 2 8-EMA', 'Stage 3 8-EMA', '8-EMA Reversal Up', or '8-EMA Reversal Down'.\n"
-            "5. `ema8_touch`: Was the 15m 8-EMA touch 'RESPECTED' (price touched and bounced in trend direction) or 'VIOLATED' (broken through)?\n"
-            "6. `has_pullback_at_ema8`: Boolean true/false indicating whether a pullback/rejection at the 8-EMA occurred.\n"
+            "4. `setup_name`: Exact setup from: 'Stage 2 8-EMA', 'Stage 3 8-EMA', '8-EMA Reversal Up', '8-EMA Reversal Down', '1H 80-EMA Touch', '1H 80-EMA Support Bounce', or '1H 80-EMA Resistance Rejection'.\n"
+            "5. `ema8_touch`: Was the 8-EMA / 80-EMA touch 'RESPECTED' (price bounced in trend direction) or 'VIOLATED' (broken through)?\n"
+            "6. `has_pullback_at_ema8`: Boolean true/false indicating whether a pullback/rejection at the EMA occurred.\n"
             "7. `manual_result`: Manual trade outcome from annotations: 'WIN (+40 pts)', 'LOSS (-40 pts)', 'SCRATCH', or 'NO_TRADE'.\n"
             "8. `notes`: Short 1-sentence note explaining what is visible.\n\n"
             "Return ONLY a valid JSON object with keys: date, candle_time, gap_pts, setup_name, ema8_touch, has_pullback_at_ema8, manual_result, notes."

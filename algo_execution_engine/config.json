@@ -53,6 +53,21 @@
     "square_off_time": "15:20",
     "profit_factor_min_verdict": 1.30
   },
+  "strategy_1h_80ema": {
+    "name": "Flagship 1-Hour 80-EMA Touch Strategy",
+    "timeframe": "1h",
+    "ema_period": 80,
+    "touch_proximity_pts": 3.0,
+    "fixed_sl_pts": 40.0,
+    "target_pts": 40.0,
+    "cost_to_cost_trigger_pts": 40.0,
+    "cost_to_cost_brokerage_buffer_pts": 9.0,
+    "lot_size": 65,
+    "gap_up_max_pts": 50.0,
+    "gap_down_max_pts": -50.0,
+    "option_delta_default": 0.60,
+    "no_entry_after": "15:00"
+  },
   "vision_audit": {
     "screenshots_dir": "homework_screenshots",
     "output_csv": "15m_homework_audit_summary.csv",
@@ -64,7 +79,10 @@
       "Stage 2 8-EMA",
       "Stage 3 8-EMA",
       "8-EMA Reversal Up",
-      "8-EMA Reversal Down"
+      "8-EMA Reversal Down",
+      "1H 80-EMA Touch",
+      "1H 80-EMA Support Bounce",
+      "1H 80-EMA Resistance Rejection"
     ],
     "sqlite_db_path": "ict_smc_app/backend/data/ict_smc.sqlite3"
   }

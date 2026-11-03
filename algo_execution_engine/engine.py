@@ -24,6 +24,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 from .order_gateway import DhanOrderGateway
+from .strategy_1h_80ema import (
+    Strategy1h80EmaEvaluator,
+    Strategy1hSignal,
+    build_1h_data,
+)
 from .strategy_setup1 import (
     ActivePosition,
     RallyState,
@@ -41,6 +46,7 @@ class Setup1ExecutionEngine:
     def __init__(self, config_dict: Optional[Dict[str, Any]] = None) -> None:
         self.cfg = config_dict or load_config()
         self.evaluator = Setup1StrategyEvaluator(self.cfg)
+        self.evaluator_1h = Strategy1h80EmaEvaluator(self.cfg)
         self.gateway = DhanOrderGateway(self.cfg)
         self.active_position: Optional[ActivePosition] = None
         self.closed_positions: List[Dict[str, Any]] = []
@@ -53,12 +59,15 @@ class Setup1ExecutionEngine:
         self.last_candle_5m_ts: int = 0
         self.last_eval_time: str = ""
         self.last_signal: Optional[Setup1Signal] = None
+        self.last_signal_1h: Optional[Strategy1hSignal] = None
+        self.last_df_1h: pd.DataFrame = pd.DataFrame()
         self.circuit_breaker_tripped: bool = False
         self.circuit_breaker_reason: str = ""
 
     def reload_config(self) -> None:
         self.cfg = load_config()
         self.evaluator.reload_config()
+        self.evaluator_1h.reload_config()
         self.gateway.reload_config()
 
     # ── 1. CANDLE DATA INGESTION & RESAMPLING ────────────────────────────────
@@ -154,16 +163,28 @@ class Setup1ExecutionEngine:
             self.circuit_breaker_tripped = False
             self.circuit_breaker_reason = ""
 
+        # Build 1-Hour candles for Flagship 80-EMA Strategy
+        df_1h = build_1h_data(df_1m, self.cfg)
+        self.last_df_1h = df_1h
+
         # Case A: Active Position is Open -> Monitor Fixed 40/40 Risk Bracket / Exits
         if self.active_position is not None:
             pos = self.active_position
-            should_exit, exit_reason, updated_sl = self.evaluator.evaluate_active_position(
-                pos=pos,
-                current_spot=self.last_spot,
-                current_option_ltp=pos.entry_option_price,
-                df_15m=df_15m,
-                last_closed_candle_15m=last_closed_candle,
-            )
+            if pos.trade_id.startswith("1H80EMA"):
+                should_exit, exit_reason, updated_sl = self.evaluator_1h.evaluate_active_position(
+                    pos=pos,
+                    current_spot=self.last_spot,
+                    current_option_ltp=pos.entry_option_price,
+                    df_1h=df_1h,
+                )
+            else:
+                should_exit, exit_reason, updated_sl = self.evaluator.evaluate_active_position(
+                    pos=pos,
+                    current_spot=self.last_spot,
+                    current_option_ltp=pos.entry_option_price,
+                    df_15m=df_15m,
+                    last_closed_candle_15m=last_closed_candle,
+                )
 
             # Trailing stop or CTC update
             if not should_exit and updated_sl is not None:
@@ -178,12 +199,9 @@ class Setup1ExecutionEngine:
                 log.info("📊 Daily PnL updated: ₹%+.1f INR across %d trades", self.daily_pnl_inr, self.daily_trades_count)
             return
 
-        # Case B: No Active Position -> Check Pure 15-Minute Setup #1 Entry Signal
+        # Case B: No Active Position -> Check Entry Signals
         if self.circuit_breaker_tripped:
             return
-
-        cur_candle_low = float(df_15m.iloc[-1]["low"]) if not df_15m.empty else None
-        cur_candle_high = float(df_15m.iloc[-1]["high"]) if not df_15m.empty else None
 
         # Compute Intraday VWAP and Session Gap
         current_vwap: Optional[float] = None
@@ -209,6 +227,36 @@ class Setup1ExecutionEngine:
                     gap_pts = today_open - prev_close
         except Exception as e:
             log.warning("Could not calculate intraday VWAP / gap: %s", e)
+
+        # 1. Check Flagship 1-Hour 80-EMA Entry Signal
+        signal_1h = self.evaluator_1h.check_1h_entry_signal(
+            df_1h=df_1h,
+            current_spot=self.last_spot,
+            current_ts=current_ts,
+            current_time=current_time,
+            gap_pts=gap_pts,
+        )
+        self.last_signal_1h = signal_1h
+
+        if signal_1h.is_valid:
+            log.info("🔥 VALID 1-HOUR 80-EMA TRIGGER DETECTED! %s | Spot: %.1f | 80 EMA: %.1f",
+                     signal_1h.setup_name, signal_1h.spot, signal_1h.ema80)
+            new_pos = await self.gateway.execute_1h_80ema_entry(
+                signal=signal_1h,
+                daily_trades=self.daily_trades_count,
+                daily_pnl_inr=self.daily_pnl_inr,
+            )
+            if new_pos is not None:
+                self.active_position = new_pos
+                self.daily_trades_count += 1
+                self.evaluator_1h.daily_trades_count += 1
+                log.info("🚀 1H 80-EMA Trade #%d Entered: %s (TradeID %s)",
+                         self.daily_trades_count, new_pos.symbol, new_pos.trade_id)
+            return
+
+        # 2. Check Pure 15-Minute Setup #1 Entry Signal
+        cur_candle_low = float(df_15m.iloc[-1]["low"]) if not df_15m.empty else None
+        cur_candle_high = float(df_15m.iloc[-1]["high"]) if not df_15m.empty else None
 
         signal = self.evaluator.check_setup1_entry_signal(
             df_15m=df_15m,
@@ -294,9 +342,11 @@ class Setup1ExecutionEngine:
         pre_ok, pre_info = self.evaluator.evaluate_15m_preconditions(df_15m)
         dist_to_ema8 = round(self.last_spot - pre_info.get("ema8", self.last_spot), 1)
 
+        state_1h = self.evaluator_1h.get_state(self.last_df_1h, self.last_spot)
+
         return {
             "status": "RUNNING" if self.is_running else "STOPPED",
-            "timeframe": "15m",
+            "timeframe": "15m_and_1h",
             "execution_mode": self.gateway.execution_mode,
             "last_spot": round(self.last_spot, 2),
             "last_eval_time": self.last_eval_time,
@@ -319,6 +369,10 @@ class Setup1ExecutionEngine:
                 **pre_info,
                 "dist_to_ema8": dist_to_ema8,
                 "touch_proximity_pts": float(strat_cfg.get("touch_proximity_pts", 2.5)),
+            },
+            "strategy_1h_80ema_state": {
+                **state_1h,
+                "last_signal": self.last_signal_1h.to_dict() if self.last_signal_1h else None,
             },
             "stage2_stopped_today": self.evaluator.stage2_stopped_today,
             "active_position": self.active_position.to_dict() if self.active_position else None,

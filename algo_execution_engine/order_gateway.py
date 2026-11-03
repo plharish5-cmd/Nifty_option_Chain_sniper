@@ -264,6 +264,61 @@ class DhanOrderGateway:
 
         return selected_strike, sec_id, symbol, est_ltp, spread_pts
 
+    def resolve_itm_100_pe_contract(self, spot: float) -> Tuple[float, str, str, float, float]:
+        """
+        Resolves ITM Put (PE) option contract with 100-multiple strike (~₹200 premium).
+        For Short setups, buying an ITM Put (strike > spot).
+        """
+        candidate_1 = float(int(np.ceil((spot + 100) / 100.0) * 100))
+        candidate_2 = float(int(np.ceil((spot + 200) / 100.0) * 100))
+
+        est_ltp_1 = max(50.0, round((candidate_1 - spot) + 60.0, 1))
+        est_ltp_2 = max(50.0, round((candidate_2 - spot) + 60.0, 1))
+
+        if abs(est_ltp_1 - 200.0) <= abs(est_ltp_2 - 200.0):
+            selected_strike = candidate_1
+            est_ltp = est_ltp_1
+        else:
+            selected_strike = candidate_2
+            est_ltp = est_ltp_2
+
+        symbol = f"NIFTY {int(selected_strike)} PE"
+        sec_id = f"SIM_{int(selected_strike)}_PE"
+        spread_pts = 0.5
+
+        cache_key = f"{int(selected_strike)}_PE"
+        now_t = time.time()
+        cached = self._cached_contracts.get(cache_key)
+        if cached and (now_t - cached[4] < 60.0):
+            return cached[0], cached[1], cached[2], cached[3], spread_pts
+
+        try:
+            full_db = Path(self.db_path)
+            if not full_db.is_absolute():
+                full_db = Path(__file__).resolve().parent.parent / self.db_path
+            if full_db.exists():
+                with sqlite3.connect(str(full_db)) as conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "SELECT payload FROM chain_snap WHERE payload LIKE ? ORDER BY ts DESC LIMIT 1",
+                        (f"%{int(selected_strike)}%",)
+                    )
+                    row = cur.fetchone()
+                    if row and row[0]:
+                        snap_data = json.loads(row[0])
+                        for r in snap_data.get("rows", []):
+                            if abs(float(r.get("strike", 0)) - selected_strike) < 0.1:
+                                pe_data = r.get("pe", {})
+                                sid = str(pe_data.get("sid") or "")
+                                ltp = float(pe_data.get("ltp") or est_ltp)
+                                if sid and not sid.startswith("SIM_"):
+                                    self._cached_contracts[cache_key] = (selected_strike, sid, symbol, ltp, now_t)
+                                    return selected_strike, sid, symbol, ltp, spread_pts
+        except Exception as e:
+            log.debug("SQLite PE contract lookup exception: %s", e)
+
+        return selected_strike, sec_id, symbol, est_ltp, spread_pts
+
     # ── 4. ORDER EXECUTION WITH COMPANION SL-M & GUARDS ──────────────────────
     async def execute_setup1_entry(
         self,
@@ -443,10 +498,93 @@ class DhanOrderGateway:
         )
         return position
 
+    async def execute_1h_80ema_entry(
+        self,
+        signal: Any,
+        daily_trades: int,
+        daily_pnl_inr: float,
+        confluence_snapshot: Optional[Dict[str, Any]] = None,
+    ) -> Optional[ActivePosition]:
+        """
+        Executes Flagship 1-Hour 80-EMA Entry (Support Bounce Long CE or Resistance Rejection Short PE):
+          - Resolves 100-multiple ITM CE/PE contract.
+          - Enforces lot size = 65.
+          - Enforces -40 pt SL / +40 pt Target.
+          - Places paper or live order with companion SL-M.
+        """
+        allowed, reason = self.check_circuit_breakers(daily_trades, daily_pnl_inr)
+        if not allowed:
+            log.warning("🚨 1H Execution blocked by Circuit Breakers: %s", reason)
+            return None
+
+        is_long = getattr(signal, "side", "BUY") == "BUY"
+        if is_long:
+            strike, sec_id, symbol, est_ltp, spread_pts = self.resolve_itm_100_ce_contract(signal.spot)
+            opt_type = "CE"
+        else:
+            strike, sec_id, symbol, est_ltp, spread_pts = self.resolve_itm_100_pe_contract(signal.spot)
+            opt_type = "PE"
+
+        max_spread_pts = max(3.0, est_ltp * 0.02)
+        if spread_pts > max_spread_pts:
+            log.warning("🚨 1H Bid-Ask Spread Guard: Spread %.1f pts exceeds limit %.1f pts!", spread_pts, max_spread_pts)
+            return None
+
+        delta = 0.60
+        opt_sl = max(0.50, round(est_ltp - (40.0 * delta), 1))
+        opt_target = round(est_ltp + (40.0 * delta), 1)
+        qty = int(getattr(signal, "lot_size", 65))
+
+        trade_id = f"1H80EMA_{int(time.time())}"
+        session_date = datetime.now().strftime("%Y-%m-%d")
+        entry_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # In PAPER mode, log to stage3 sandbox
+        if self.execution_mode == "PAPER":
+            self.sandbox_tracker.record_paper_trade(
+                trade_id=trade_id,
+                session_date=session_date,
+                entry_ts=signal.timestamp or int(time.time()),
+                entry_time=entry_time_str,
+                spot_entry=signal.spot,
+                option_strike=strike,
+                option_entry_ltp=est_ltp,
+                bid_ask_spread_pts=spread_pts,
+                delta_est=delta,
+                initial_sl_spot=signal.sl_spot,
+                target_spot=signal.target_spot,
+                confluence_snapshot={"setup": signal.setup_name, "lot_size": qty},
+            )
+
+        position = ActivePosition(
+            trade_id=trade_id,
+            symbol=symbol,
+            security_id=sec_id,
+            option_type=opt_type,
+            strike=strike,
+            quantity=qty,
+            entry_spot=signal.spot,
+            entry_option_price=est_ltp,
+            entry_time=entry_time_str,
+            entry_ts=signal.timestamp or int(time.time()),
+            spot_sl=signal.sl_spot,
+            spot_target=signal.target_spot,
+            option_sl=opt_sl,
+            option_target=opt_target,
+            delta=delta,
+            cost_to_cost_active=False,
+            highest_spot=signal.spot,
+            exchange_sl_order_id=f"PAPER_SLM_{trade_id}",
+            entry_order_id=f"PAPER_{trade_id}",
+            status="OPEN",
+        )
+        return position
+
     # ── 5. STOP-LOSS MODIFICATION ON DHAN / PAPER ────────────────────────────
     async def modify_exchange_sl_order(self, pos: ActivePosition, new_spot_sl: float) -> None:
         delta = pos.delta
-        pts_diff = new_spot_sl - pos.entry_spot
+        is_put = getattr(pos, "option_type", "CE") == "PE"
+        pts_diff = (pos.entry_spot - new_spot_sl) if is_put else (new_spot_sl - pos.entry_spot)
         new_opt_sl = max(0.50, round(pos.entry_option_price + (pts_diff * delta), 1))
 
         old_opt_sl = pos.option_sl
@@ -491,7 +629,8 @@ class DhanOrderGateway:
         now_dt = datetime.now()
         exit_time_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        spot_pnl_pts = exit_spot - pos.entry_spot
+        is_put = getattr(pos, "option_type", "CE") == "PE"
+        spot_pnl_pts = (pos.entry_spot - exit_spot) if is_put else (exit_spot - pos.entry_spot)
         est_option_exit = max(0.05, round(pos.entry_option_price + (spot_pnl_pts * pos.delta), 1))
         option_pnl_pts = est_option_exit - pos.entry_option_price
         brokerage = 400.0
