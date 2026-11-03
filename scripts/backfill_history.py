@@ -55,6 +55,26 @@ def market_hours_now() -> bool:
     return (9 * 60 + 10) <= mins <= (15 * 60 + 40)
 
 
+def stored_range(sec: str) -> str:
+    """What is ACTUALLY on disk. The ground truth, independent of what the API replied."""
+    import sqlite3
+    dbp = ROOT / "ict_smc_app" / "backend" / "data" / "ict_smc.sqlite3"
+    if not dbp.exists():
+        return f"database not found at {dbp}"
+    con = sqlite3.connect(str(dbp))
+    row = con.execute("SELECT COUNT(*), MIN(ts), MAX(ts) FROM candles_1m WHERE sec_id=?",
+                      (sec,)).fetchone()
+    if not row or not row[0]:
+        return f"sec {sec}: nothing stored"
+    n, lo, hi = row
+    sessions = con.execute(
+        "SELECT COUNT(DISTINCT date(ts,'unixepoch','+330 minutes')) FROM candles_1m "
+        "WHERE sec_id=?", (sec,)).fetchone()[0]
+    d = lambda t: datetime.fromtimestamp(t, IST).date().isoformat()   # noqa: E731
+    return (f"sec {sec}: {n:,} rows · {sessions} sessions · {d(lo)} → {d(hi)} "
+            f"· ~{n * 71 / 1_048_576:.1f} MB")
+
+
 def check_credentials() -> int:
     """Probe two endpoints to separate two very different failures.
 
@@ -116,6 +136,8 @@ def check_credentials() -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--verify", action="store_true",
+                    help="report what is actually stored for --sec, then stop")
     ap.add_argument("--check", action="store_true",
                     help="probe credentials against both a live quote and a historical chart, "
                          "then stop")
@@ -131,6 +153,10 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--force", action="store_true", help="run even during market hours")
     a = ap.parse_args()
+
+    if a.verify:
+        print(stored_range(a.sec))
+        return 0
 
     if a.check:
         return check_credentials()
@@ -177,7 +203,10 @@ def main() -> int:
             time.sleep(a.sleep)
             continue
 
-        n = int(r.get("inserted") or r.get("count") or len(r.get("rows") or []) or 0)
+        # The writer's own key. Guessing at `inserted`/`count`/`rows` made every successful
+        # chunk read as zero, which then tripped the empty-streak bail-out and blamed Dhan's
+        # history for data that had in fact just been written.
+        n = int(r.get("total_candles_fetched") or r.get("inserted") or r.get("count") or 0)
         if r.get("ok") is False:
             err = str(r.get("error") or "")
             print(f"  {i:>2}. {s} → {e}   FAILED  {r.get('status_code', '')} {err[:90]}")
@@ -202,12 +231,15 @@ def main() -> int:
             empty_streak = 0
 
         if empty_streak >= a.stop_after_empty:
-            print(f"\nStopping — {empty_streak} chunks in a row came back empty. That is almost\n"
-                  f"certainly the edge of Dhan's intraday history, not a bug.")
+            print(f"\nStopping — {empty_streak} chunks in a row returned no candles. That USUALLY\n"
+                  f"means the edge of Dhan's intraday history, but verify before believing it:\n"
+                  f"  python3 scripts/backfill_history.py --verify --sec {a.sec}\n"
+                  f"If the stored range grew, the fetch worked and only the count was wrong.")
             break
         time.sleep(a.sleep)
 
-    print(f"\n{total:,} candles written.")
+    print(f"\n{total:,} candles reported by the API.")
+    print("on disk now: " + stored_range(a.sec))
     if total:
         print("Verify with:  python3 scripts/backtest_wick_zones.py --sec", a.sec,
               "   (its header prints the session count and date range)")
