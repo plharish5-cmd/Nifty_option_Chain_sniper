@@ -1503,8 +1503,6 @@ def algo_strategy_slot_toggle_endpoint(payload: SlotToggleIn):
 
 from .nodes_api import router as _nodes_router
 app.include_router(_nodes_router)
-from .oi_walls_replay_api import router as _oi_walls_replay_router   # noqa: E402
-app.include_router(_oi_walls_replay_router)
 
 from .book_api import router as _book_router
 app.include_router(_book_router)
