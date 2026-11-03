@@ -31,7 +31,12 @@ import AlgoCockpit from "./components/AlgoCockpit";
 import AlgoTradingTab from "./components/AlgoTradingTab";
 
 const TFS: TF[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1D"];
-const DAYS: Record<TF, number> = { "1m": 1, "5m": 3, "15m": 8, "30m": 15, "1h": 30, "4h": 60, "1D": 60 };
+// How much history the LIVE chart loads per timeframe. Chosen to land near ~750 bars each, which
+// is roughly 3-4x the old window (it sat near 200) while staying well inside what the per-bar
+// overlays — footprints, CVD, zones, nodes — can recompute without the chart dragging. The hard
+// ceiling is the stored data itself: 247 sessions of 1-minute candles as of 2026-11-03.
+// Raising these costs render time, not correctness; lower them if the chart feels heavy.
+const DAYS: Record<TF, number> = { "1m": 2, "5m": 10, "15m": 30, "30m": 60, "1h": 120, "4h": 180, "1D": 250 };
 const LAYER_NAMES: [keyof Layers, string][] = [
   ["ob", "Order blocks"], ["fvg", "FVG"], ["liq", "Liquidity"], ["structure", "BOS / MSS"],
   ["swings", "Swings"], ["range", "Premium / OTE"], ["session", "PDH · PDL · OR"], ["ictLevels", "🏛️ ICT Levels (PDH/PDL/Open)"], ["delta", "Aggression / Absorption"], ["deltaDetail", "All delta detail"], ["crt", "CRT + TBS"], ["auction", "Auction (value · accept / reject)"], ["volume", "Volume · VWAP"], ["oi", "Futures OI build-up"], ["rvol", "Cumulative RVOL"], ["qml", "QML · RBS / SBR"], ["fp", "Footprint Δ (est.)"], ["heat", "Heatmap"], ["ocAct", "PE−CE action"], ["dol", "D.O.L (IRL⇄ERL)"], ["smt", "SMT (vs BankNifty)"], ["bias", `⚖ ${BIAS_NAME}`], ["walls", "🧱 OI walls"], ["bubbles", "🫧 Big trades"], ["cells", "▦ FP cells"], ["cvd", "〽 CVD"], ["nodes", "🟨 Stacked nodes"], ["gamma", "γ Gamma 3✓"], ["tsoup", "🐢 Turtle soup"], ["rblock", "⟂ Rejection blocks"], ["p3", "📐 Power of 3 (AMD)"], ["stdv", "📐 STDV"], ["advPa", "🎓 Adv PA (10 Core)"], ["prahaar", "⚔ Prahaar Engine"], ["gtfZones", "🏛️ GTF D&S Zones"], ["rsiDiv", "📉 RSI Divergence"],
