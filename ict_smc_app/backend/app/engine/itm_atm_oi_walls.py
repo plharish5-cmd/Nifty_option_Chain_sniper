@@ -44,13 +44,8 @@ def get_config() -> Dict[str, Any]:
         "itm_ce_scan_below_spot": 150.0,
         "otm_ce_scan_above_spot": 300.0,
         "panic_unwinding_buffer_pts": 20.0,
-        "structural_downside_support": 23119.0,
         "pcr_overbought_threshold": 1.60,
         "rsi_period": 14,
-        "iron_ceiling_min": 23550.0,
-        "iron_ceiling_max": 23623.0,
-        "put_support_top": 23250.0,
-        "put_support_bottom": 23200.0,
     }
 
 
@@ -193,10 +188,12 @@ class ItmAtmOiWallsResult:
     vacuum_signal: Optional[str] = None
 
     # Mechanic 3: Put Writer Panic Unwinding Trigger
-    support_bottom: float = 23200.0
-    support_top: float = 23250.0
-    panic_unwinding_trigger: float = 23220.0
-    structural_downside_target: float = 23119.0
+    support_bottom: float = 0.0
+    support_top: float = 0.0
+    panic_unwinding_trigger: float = 0.0
+    structural_downside_target: float = 0.0
+    iron_ceiling_min: float = 0.0
+    iron_ceiling_max: float = 0.0
     is_panic_unwinding: bool = False
     panic_unwinding_banner: Optional[str] = None
 
@@ -229,6 +226,8 @@ def compute_itm_atm_oi_walls(
     pcr: Optional[float] = None,
     gift_nifty: Optional[float] = None,
     market_minutes_elapsed: Optional[int] = None,
+    target_date: Optional[str] = None,
+    target_time: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Computes ATM/ITM Writer Conviction, OTM Vacuum, Panic Unwinding,
@@ -239,12 +238,7 @@ def compute_itm_atm_oi_walls(
     itm_ce_scan = float(cfg.get("itm_ce_scan_below_spot", 150.0))
     otm_ce_scan = float(cfg.get("otm_ce_scan_above_spot", 300.0))
     panic_buffer = float(cfg.get("panic_unwinding_buffer_pts", 20.0))
-    struct_downside = float(cfg.get("structural_downside_support", 23119.0))
     pcr_overbought_thresh = float(cfg.get("pcr_overbought_threshold", 1.60))
-    supp_top = float(cfg.get("put_support_top", 23250.0))
-    supp_bottom = float(cfg.get("put_support_bottom", 23200.0))
-    iron_ceil_min = float(cfg.get("iron_ceiling_min", 23550.0))
-    iron_ceil_max = float(cfg.get("iron_ceiling_max", 23623.0))
 
     # Resolve spot price
     if spot is None or spot <= 0.0:
@@ -339,6 +333,126 @@ def compute_itm_atm_oi_walls(
         pcr = round(tot_pe_oi / tot_ce_oi, 2) if tot_ce_oi > 0 else 1.0
 
     # ─────────────────────────────────────────────────────────────────────────
+    # DYNAMIC OI WALLS & STRUCTURAL PIVOTS DERIVATION
+    # ─────────────────────────────────────────────────────────────────────────
+    # 1. Dynamic Put Support Zone (supp_bottom, supp_top):
+    # Scan chain_rows at or below spot (strike <= spot + 50) to find max Put OI strike
+    pe_below_or_near_spot = [s for s in parsed_strikes if s.strike <= spot + 50.0]
+    if not pe_below_or_near_spot:
+        pe_below_or_near_spot = parsed_strikes
+
+    max_pe_candidate = max(pe_below_or_near_spot, key=lambda s: s.pe_oi, default=None)
+    if max_pe_candidate and max_pe_candidate.pe_oi > 0:
+        max_pe_strike = max_pe_candidate.strike
+        max_pe_oi = max_pe_candidate.pe_oi
+        max_pe_chg = max_pe_candidate.pe_oi_chg
+    else:
+        max_pe_strike = atm_strike - 50.0
+        max_pe_oi = 0.0
+        max_pe_chg = 0.0
+
+    strike_map = {s.strike: s for s in parsed_strikes}
+    adj_minus_50 = strike_map.get(max_pe_strike - 50.0)
+    adj_plus_50 = strike_map.get(max_pe_strike + 50.0)
+    oi_minus_50 = adj_minus_50.pe_oi if adj_minus_50 else 0.0
+    oi_plus_50 = adj_plus_50.pe_oi if adj_plus_50 else 0.0
+
+    secondary_pe_strike: Optional[float] = None
+    if max_pe_oi > 0.0:
+        if oi_plus_50 >= oi_minus_50 and oi_plus_50 >= 0.5 * max_pe_oi:
+            secondary_pe_strike = max_pe_strike + 50.0
+        elif oi_minus_50 >= 0.5 * max_pe_oi:
+            secondary_pe_strike = max_pe_strike - 50.0
+
+    if secondary_pe_strike is not None:
+        supp_bottom = min(max_pe_strike, secondary_pe_strike)
+        supp_top = max(max_pe_strike, secondary_pe_strike)
+    else:
+        supp_bottom = max_pe_strike
+        supp_top = max_pe_strike + 50.0
+
+    # 2. Dynamic Panic Unwinding Trigger:
+    panic_trigger = supp_bottom + panic_buffer
+
+    # 3. Dynamic Structural Downside Target (structural_downside_support):
+    # a) Next lower Put OI shelf below supp_bottom - 50
+    lower_pe_shelves = [s for s in parsed_strikes if s.strike <= supp_bottom - 50.0 and s.pe_oi > 0]
+    if lower_pe_shelves:
+        shelf_strike = max(lower_pe_shelves, key=lambda s: s.pe_oi).strike
+    else:
+        shelf_strike = supp_bottom - 100.0
+
+    # b) Nearest historical Daily Swing Low (S1–S4) or Unfilled Lower Gap from gann_pivots_gaps.py
+    hist_supports: List[float] = []
+    overhead_res: List[float] = []
+    pivots_data: Optional[Dict[str, Any]] = None
+    try:
+        from . import gann_pivots_gaps
+        pivots_data = gann_pivots_gaps.get_gann_pivots_gaps(
+            sec_id="13",
+            current_spot=spot,
+            target_date_str=target_date,
+            target_time_str=target_time,
+        )
+        if pivots_data and pivots_data.get("ok"):
+            for s_item in pivots_data.get("supports", []):
+                p = float(s_item.get("price") or 0.0)
+                if 0.0 < p < supp_bottom:
+                    hist_supports.append(p)
+            for g_item in pivots_data.get("lower_gaps", []):
+                p = float(g_item.get("price") or 0.0)
+                if 0.0 < p < supp_bottom:
+                    hist_supports.append(p)
+            for gs_item in pivots_data.get("gann_supports", []):
+                p = float(gs_item.get("price") or 0.0)
+                if 0.0 < p < supp_bottom:
+                    hist_supports.append(p)
+
+            for r_item in pivots_data.get("resistances", []):
+                p = float(r_item.get("price") or 0.0)
+                if p >= spot:
+                    overhead_res.append(p)
+            for g_item in pivots_data.get("upper_gaps", []):
+                p = float(g_item.get("price") or 0.0)
+                if p >= spot:
+                    overhead_res.append(p)
+            for gr_item in pivots_data.get("gann_resistances", []):
+                p = float(gr_item.get("price") or 0.0)
+                if p >= spot:
+                    overhead_res.append(p)
+    except Exception as exc:
+        log.warning("Could not query gann_pivots_gaps for structural levels: %s", exc)
+
+    nearest_hist_support = max(hist_supports) if hist_supports else None
+    if nearest_hist_support is not None:
+        struct_downside = round(max(shelf_strike, nearest_hist_support), 1)
+    else:
+        struct_downside = round(shelf_strike, 1)
+
+    # 4. Dynamic Main OTM Iron Ceiling (iron_ceiling_min, iron_ceiling_max):
+    # Scan OTM Call strikes (strike >= spot) for max Call OI + positive ΔCE_OI
+    otm_calls = [s for s in parsed_strikes if s.strike >= spot]
+    if not otm_calls:
+        otm_calls = [s for s in parsed_strikes if s.strike >= atm_strike] or parsed_strikes
+
+    pos_ce_calls = [s for s in otm_calls if s.ce_oi_chg > 0]
+    if pos_ce_calls:
+        best_ce_s = max(pos_ce_calls, key=lambda s: s.ce_oi + s.ce_oi_chg)
+    else:
+        best_ce_s = max(otm_calls, key=lambda s: s.ce_oi, default=None)
+
+    max_ce_strike = best_ce_s.strike if best_ce_s else (atm_strike + 200.0)
+    cluster_min = max_ce_strike - 50.0
+    cluster_max = max_ce_strike
+
+    near_res = [p for p in overhead_res if p >= cluster_min and abs(p - max_ce_strike) <= 125.0]
+    iron_ceil_min = round(cluster_min, 1)
+    if near_res:
+        iron_ceil_max = round(max(cluster_max, max(near_res)), 1)
+    else:
+        iron_ceil_max = round(cluster_max, 1)
+
+    # ─────────────────────────────────────────────────────────────────────────
     # MECHANIC 1: "Hollow Rally" vs "Solid Floor Migration" (Put Conviction)
     # ─────────────────────────────────────────────────────────────────────────
     pe_below_spot = [s for s in parsed_strikes if s.strike <= spot]
@@ -392,18 +506,18 @@ def compute_itm_atm_oi_walls(
         else:
             itm_ce_status = "HOLDING_IN_ITM"
 
-    # OTM Unwinding Vacuum Zone: Intermediate strikes between spot and iron ceiling (spot < strike < 23550) with ΔCE_OI < 0
+    # OTM Unwinding Vacuum Zone: Intermediate strikes between spot and iron ceiling with ΔCE_OI < 0
     otm_vacuum = [
         s.strike for s in ce_scanned
         if s.strike > spot and s.strike < iron_ceil_min and s.ce_oi_chg < 0.0
     ]
 
-    # Main Far OTM Iron Ceiling: Heavy Call addition or maximum OI around 23550–23623
-    otm_cands = [s for s in parsed_strikes if iron_ceil_min <= s.strike <= iron_ceil_max + 100.0]
-    major_ce_wall = max(otm_cands, key=lambda s: s.ce_oi, default=None)
-    major_ce_strike = major_ce_wall.strike if major_ce_wall else 23600.0
-    major_ce_oi = major_ce_wall.ce_oi if major_ce_wall else 0.0
-    major_ce_chg = major_ce_wall.ce_oi_chg if major_ce_wall else 0.0
+    # Main Far OTM Iron Ceiling: Heavy Call addition or maximum OI around dynamic iron ceiling
+    otm_cands = [s for s in parsed_strikes if iron_ceil_min - 50.0 <= s.strike <= iron_ceil_max + 100.0]
+    major_ce_wall = max(otm_cands, key=lambda s: s.ce_oi, default=best_ce_s)
+    major_ce_strike = major_ce_wall.strike if major_ce_wall else max_ce_strike
+    major_ce_oi = major_ce_wall.ce_oi if major_ce_wall else (best_ce_s.ce_oi if best_ce_s else 0.0)
+    major_ce_chg = major_ce_wall.ce_oi_chg if major_ce_wall else (best_ce_s.ce_oi_chg if best_ce_s else 0.0)
 
     # Short covering vacuum active signal
     vacuum_active = False
@@ -419,11 +533,11 @@ def compute_itm_atm_oi_walls(
     # ─────────────────────────────────────────────────────────────────────────
     # MECHANIC 3: Put Writer "Panic Unwinding Trigger" (Support Bottom + 20 pts)
     # ─────────────────────────────────────────────────────────────────────────
-    panic_trigger = supp_bottom + panic_buffer  # 23,200 + 20 = 23,220
+    # panic_trigger computed dynamically above
     is_panic = False
     panic_banner = None
 
-    # Check if spot is below panic unwinding trigger (e.g. < 23,220)
+    # Check if spot is below panic unwinding trigger (e.g. < panic_trigger)
     if spot < panic_trigger:
         # Check if Put Writers are panicking / unwinding (ΔPE_OI < 0 on ATM/support strikes)
         supp_pe_unwinding = sum(s.pe_oi_chg for s in parsed_strikes if supp_bottom - 50.0 <= s.strike <= supp_top + 50.0)
@@ -483,8 +597,10 @@ def compute_itm_atm_oi_walls(
     fut_star = detect_candlestick_star_pattern(candles_fut)
 
     star_div_alert = None
-    # Check if Futures RSI Divergence or Star pattern is printed near Iron Wall (23,576–23,623 or 23,360)
-    is_near_iron_wall = (iron_ceil_min - 20.0 <= spot <= iron_ceil_max + 20.0) or abs(spot - 23360.0) <= 25.0
+    # Check if Futures RSI Divergence or Star pattern is printed near Iron Wall
+    is_near_iron_wall = (iron_ceil_min - 25.0 <= spot <= iron_ceil_max + 25.0) or (
+        any(abs(spot - r) <= 25.0 for r in overhead_res) if overhead_res else False
+    )
     if is_near_iron_wall and (fut_div or fut_star):
         pattern_desc = f"{fut_div or ''} + {fut_star or ''}".strip(" +")
         star_div_alert = (
@@ -528,6 +644,8 @@ def compute_itm_atm_oi_walls(
             "oi": round(major_ce_oi, 0),
             "oi_chg": round(major_ce_chg, 0),
             "range_label": f"{int(iron_ceil_min)}–{int(iron_ceil_max)} CE Iron Ceiling",
+            "ceiling_min": iron_ceil_min,
+            "ceiling_max": iron_ceil_max,
         },
         vacuum_active=vacuum_active,
         vacuum_signal=vacuum_signal,
@@ -535,6 +653,8 @@ def compute_itm_atm_oi_walls(
         support_top=supp_top,
         panic_unwinding_trigger=panic_trigger,
         structural_downside_target=struct_downside,
+        iron_ceiling_min=iron_ceil_min,
+        iron_ceiling_max=iron_ceil_max,
         is_panic_unwinding=is_panic,
         panic_unwinding_banner=panic_banner,
         pcr=round(pcr, 2),

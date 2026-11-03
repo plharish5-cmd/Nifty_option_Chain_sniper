@@ -84,7 +84,7 @@ def test_otm_vacuum_and_stubborn_itm_call_writer():
 
 
 def test_panic_unwinding_trigger_calculation():
-    """Verify Put Panic Unwinding Trigger (23,220 -> 23,119 structural support)."""
+    """Verify Put Panic Unwinding Trigger dynamically derives from chain."""
     # Support bottom is 23,200. Panic trigger is 23,200 + 20 = 23,220.
     # When spot drops to 23,210 (< 23,220) with Put unwinding, cascade triggers.
     chain_rows = [
@@ -97,11 +97,65 @@ def test_panic_unwinding_trigger_calculation():
     res = compute_itm_atm_oi_walls(spot=23210.0, chain_rows=chain_rows)
     assert res["ok"] is True
     assert res["panic_unwinding_trigger"] == 23220.0
-    assert res["structural_downside_target"] == 23119.0
+    assert res["structural_downside_target"] == 23150.0
     assert res["is_panic_unwinding"] is True
     assert res["panic_unwinding_banner"] is not None
     assert "LONG UNWINDING CASCADE" in res["panic_unwinding_banner"]
-    assert "23,119" in res["panic_unwinding_banner"]
+    assert "23,150" in res["panic_unwinding_banner"]
+
+
+def test_dynamic_adaptation_two_chains_no_hardcoded_nov3():
+    """Verify that on two different synthetic chains (one centered at 22,500 and one at 24,000),
+    supp_bottom, panic_trigger, structural_downside_support, and iron_ceiling
+    automatically adapt to the chain's strikes (22,520 vs 24,020) and NEVER return 23,220 or 23,119."""
+
+    # Chain 1: Centered at 22,500
+    chain_22500 = [
+        {"strike": 22350.0, "ce": {"oi": 5000, "oi_chg": 0}, "pe": {"oi": 40000, "oi_chg": 5000}},
+        {"strike": 22400.0, "ce": {"oi": 10000, "oi_chg": 0}, "pe": {"oi": 120000, "oi_chg": 8000}},
+        {"strike": 22450.0, "ce": {"oi": 15000, "oi_chg": 0}, "pe": {"oi": 80000, "oi_chg": 5000}},
+        {"strike": 22500.0, "ce": {"oi": 25000, "oi_chg": 0}, "pe": {"oi": 300000, "oi_chg": -20000}},
+        {"strike": 22550.0, "ce": {"oi": 40000, "oi_chg": 0}, "pe": {"oi": 180000, "oi_chg": -15000}},
+        {"strike": 22600.0, "ce": {"oi": 80000, "oi_chg": -5000}, "pe": {"oi": 60000, "oi_chg": 0}},
+        {"strike": 22650.0, "ce": {"oi": 110000, "oi_chg": 12000}, "pe": {"oi": 30000, "oi_chg": 0}},
+        {"strike": 22700.0, "ce": {"oi": 400000, "oi_chg": 50000}, "pe": {"oi": 10000, "oi_chg": 0}},
+    ]
+
+    res_22500 = compute_itm_atm_oi_walls(spot=22510.0, chain_rows=chain_22500)
+    assert res_22500["ok"] is True
+    assert res_22500["support_bottom"] == 22500.0
+    assert res_22500["support_top"] == 22550.0
+    assert res_22500["panic_unwinding_trigger"] == 22520.0
+    assert res_22500["panic_unwinding_trigger"] != 23220.0
+    assert res_22500["structural_downside_target"] < 22500.0
+    assert res_22500["structural_downside_target"] != 23119.0
+    assert res_22500["otm_major_ce_wall"]["strike"] == 22700.0
+    assert res_22500["otm_major_ce_wall"]["strike"] != 23600.0
+    assert res_22500["iron_ceiling_min"] == 22650.0
+
+    # Chain 2: Centered at 24,000
+    chain_24000 = [
+        {"strike": 23850.0, "ce": {"oi": 5000, "oi_chg": 0}, "pe": {"oi": 50000, "oi_chg": 5000}},
+        {"strike": 23900.0, "ce": {"oi": 10000, "oi_chg": 0}, "pe": {"oi": 140000, "oi_chg": 9000}},
+        {"strike": 23950.0, "ce": {"oi": 20000, "oi_chg": 0}, "pe": {"oi": 90000, "oi_chg": 5000}},
+        {"strike": 24000.0, "ce": {"oi": 30000, "oi_chg": 0}, "pe": {"oi": 350000, "oi_chg": -30000}},
+        {"strike": 24050.0, "ce": {"oi": 50000, "oi_chg": 0}, "pe": {"oi": 200000, "oi_chg": -20000}},
+        {"strike": 24100.0, "ce": {"oi": 90000, "oi_chg": -8000}, "pe": {"oi": 70000, "oi_chg": 0}},
+        {"strike": 24150.0, "ce": {"oi": 130000, "oi_chg": 15000}, "pe": {"oi": 40000, "oi_chg": 0}},
+        {"strike": 24200.0, "ce": {"oi": 450000, "oi_chg": 60000}, "pe": {"oi": 15000, "oi_chg": 0}},
+    ]
+
+    res_24000 = compute_itm_atm_oi_walls(spot=24010.0, chain_rows=chain_24000)
+    assert res_24000["ok"] is True
+    assert res_24000["support_bottom"] == 24000.0
+    assert res_24000["support_top"] == 24050.0
+    assert res_24000["panic_unwinding_trigger"] == 24020.0
+    assert res_24000["panic_unwinding_trigger"] != 23220.0
+    assert res_24000["structural_downside_target"] < 24000.0
+    assert res_24000["structural_downside_target"] != 23119.0
+    assert res_24000["otm_major_ce_wall"]["strike"] == 24200.0
+    assert res_24000["otm_major_ce_wall"]["strike"] != 23600.0
+    assert res_24000["iron_ceiling_min"] == 24150.0
 
 
 def test_overbought_pcr_shield_and_anti_fomo():

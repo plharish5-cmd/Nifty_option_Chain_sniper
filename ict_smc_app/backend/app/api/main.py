@@ -254,11 +254,22 @@ async def gamma_exposure_review_endpoint(
     return await gamma_exposure_review(day, expiry, tf, end_ts, sign, study)
 
 
+def _get_oi_walls_replay_mod():
+    import importlib.util
+    import sys
+    mod = sys.modules.get("oi_walls_replay_cached")
+    if mod is None:
+        path = config.BACKEND_DIR.parent.parent / "analyst/oi_walls_replay.py"
+        spec = importlib.util.spec_from_file_location("oi_walls_replay_cached", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        sys.modules["oi_walls_replay_cached"] = mod
+    return mod
+
+
 @app.get("/api/desk/oi-walls-replay")
-def oi_walls_replay(day: str, at: int, expiry: Optional[str] = None):
+def oi_walls_replay(day: str, at: Optional[int] = None, expiry: Optional[str] = None, mode: Optional[str] = None):
     """Read archived original daily OI inputs; never consult the current chain."""
-    import subprocess
-    import json
     from datetime import date
     try:
         date.fromisoformat(day)
@@ -266,15 +277,43 @@ def oi_walls_replay(day: str, at: int, expiry: Optional[str] = None):
             date.fromisoformat(expiry)
     except ValueError:
         raise HTTPException(422, "Invalid session or expiry date")
-    root = config.BACKEND_DIR.parent.parent
-    args = [str(root / ".venv/bin/python"), str(root / "analyst/oi_walls_replay.py"), day, str(at)]
-    if expiry:
-        args.append(expiry)
+
+    mod = _get_oi_walls_replay_mod()
+
+    if mode == "batch" or at is None:
+        try:
+            return mod.replay_batch(day, expiry)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        except Exception as exc:
+            raise HTTPException(503, "Recorded OI batch replay unavailable") from exc
+
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=30, check=True)
-        return json.loads(result.stdout)
-    except (subprocess.SubprocessError, ValueError) as exc:
+        return mod.replay(day, at, expiry)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except Exception as exc:
         raise HTTPException(503, "Recorded OI replay unavailable") from exc
+
+
+@app.get("/api/desk/oi-walls-replay-batch")
+def oi_walls_replay_batch(day: str, expiry: Optional[str] = None):
+    """Batch-cached retrieval of all recorded 1-minute OI frames and candles for instant slider scrubbing."""
+    from datetime import date
+    try:
+        date.fromisoformat(day)
+        if expiry:
+            date.fromisoformat(expiry)
+    except ValueError:
+        raise HTTPException(422, "Invalid session or expiry date")
+
+    mod = _get_oi_walls_replay_mod()
+    try:
+        return mod.replay_batch(day, expiry)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except Exception as exc:
+        raise HTTPException(503, "Recorded OI batch replay unavailable") from exc
 
 
 @app.get("/api/desk/time-machine")

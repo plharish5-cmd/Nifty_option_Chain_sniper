@@ -5,10 +5,20 @@ import math
 from pathlib import Path
 import sqlite3
 import sys
-import pandas as pd
-from desk_time_machine import epoch, IST
 from datetime import datetime, date
+import pandas as pd
+
+try:
+    from desk_time_machine import epoch, IST
+except ImportError:
+    try:
+        from analyst.desk_time_machine import epoch, IST
+    except ImportError:
+        from .desk_time_machine import epoch, IST
+
 ROOT = Path(__file__).resolve().parents[1]
+
+_BATCH_CACHE = {}
 
 def expiry_iso(value):
     text=str(value)
@@ -54,8 +64,112 @@ def replay(day, at, expiry=None):
     rows=[dict(strike=float(r.strike),ce=dict(oi=float(r.ce_oi),oi_chg=float(r.ce_chg_oi)),pe=dict(oi=float(r.pe_oi),oi_chg=float(r.pe_chg_oi))) for r in frame.itertuples()]
     return dict(ok=True,ts=rec['ts'],target=at,expiry=expiry,expiries=expiries,spot=rec['spot'],rows=rows,candles=candles,source=rec['file'].relative_to(ROOT).as_posix())
 
-if __name__=='__main__':
+def replay_batch(day, expiry=None):
+    date.fromisoformat(day)
+    cache_key = (day, expiry)
+    if cache_key in _BATCH_CACHE:
+        return _BATCH_CACHE[cache_key]
+
+    policy = json.loads((ROOT/'analyst/analyst_config.json').read_text())['time_machine']
+    start, end = epoch(day+'T'+policy['open']), epoch(day+'T'+policy['end'])
+
+    db = ROOT/'ict_smc_app/backend/data/ict_smc.sqlite3'
+    candles = []
+    if db.exists():
+        with sqlite3.connect(f'file:{db}?mode=ro', uri=True) as conn:
+            conn.row_factory = sqlite3.Row
+            candles = [dict(r) for r in conn.execute('SELECT ts,o,h,l,c FROM candles_1m WHERE sec_id=? AND ts>=? AND ts+60<=? ORDER BY ts', ('13', start, end))]
+
+    records = {}
+    for source in ('snapshots', 'snapshots_multi'):
+        dir_p = ROOT/'data'/source/day
+        if not dir_p.exists():
+            continue
+        for path in sorted(dir_p.glob('*.meta.json')):
+            try:
+                m = json.loads(path.read_text())
+                ts = epoch(m['timestamp'])
+                exp = expiry_iso(m['expiry'])
+                file = path.with_suffix('').with_suffix('.parquet')
+                if start <= ts <= end and exp >= day and file.exists():
+                    records.setdefault((ts, exp), dict(ts=ts, expiry=exp, file=file, spot=float(m['spot'])))
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                logging.warning('Excluded OI metadata %s: %s', path, exc)
+
+    expiries = sorted({r['expiry'] for r in records.values()})
+    if not expiries:
+        return dict(ok=False, message='No recorded OI chain for this session', expiries=[])
+    if expiry and expiry not in expiries:
+        return dict(ok=False, message='Requested expiry not recorded for this session', expiries=expiries)
+
+    chosen_expiry = expiry or expiries[0]
+    matched_recs = sorted([r for r in records.values() if r['expiry'] == chosen_expiry], key=lambda r: r['ts'])
+
+    cols = ['strike', 'ce_oi', 'pe_oi', 'ce_chg_oi', 'pe_chg_oi']
+    frames = []
+
     try:
-        print(json.dumps(replay(sys.argv[1],int(sys.argv[2]),sys.argv[3] if len(sys.argv)>3 else None),allow_nan=False))
-    except (ValueError,OSError,KeyError,sqlite3.Error) as exc:
-        print(json.dumps(dict(ok=False,message=str(exc))))
+        import pyarrow.parquet as pq
+    except ImportError:
+        pq = None
+
+    for r in matched_recs:
+        try:
+            if pq is not None:
+                tbl = pq.read_table(r['file'], columns=cols)
+                d = tbl.to_pydict()
+                strikes = d['strike']
+                ce_oi = d['ce_oi']
+                pe_oi = d['pe_oi']
+                ce_chg = d['ce_chg_oi']
+                pe_chg = d['pe_chg_oi']
+                rows = [
+                    {
+                        "strike": float(strikes[i]),
+                        "ce": {"oi": float(ce_oi[i]), "oi_chg": float(ce_chg[i])},
+                        "pe": {"oi": float(pe_oi[i]), "oi_chg": float(pe_chg[i])},
+                    }
+                    for i in range(len(strikes))
+                    if strikes[i] is not None
+                ]
+            else:
+                frame = pd.read_parquet(r['file'])
+                if 'expiry' in frame:
+                    frame = frame[frame.expiry.map(expiry_iso) == chosen_expiry]
+                rows = [
+                    {
+                        "strike": float(row.strike),
+                        "ce": {"oi": float(row.ce_oi), "oi_chg": float(row.ce_chg_oi)},
+                        "pe": {"oi": float(row.pe_oi), "oi_chg": float(row.pe_chg_oi)},
+                    }
+                    for row in frame.itertuples()
+                ]
+            frames.append({
+                "ts": r['ts'],
+                "spot": r['spot'],
+                "expiry": chosen_expiry,
+                "source": r['file'].relative_to(ROOT).as_posix(),
+                "rows": rows,
+            })
+        except Exception as exc:
+            logging.warning('Skipped frame %s: %s', r['file'], exc)
+
+    res = {
+        "ok": True,
+        "day": day,
+        "expiry": chosen_expiry,
+        "expiries": expiries,
+        "candles": candles,
+        "frames": frames,
+    }
+    _BATCH_CACHE[cache_key] = res
+    return res
+
+if __name__ == '__main__':
+    try:
+        if len(sys.argv) > 2 and sys.argv[2] == 'batch':
+            print(json.dumps(replay_batch(sys.argv[1], sys.argv[3] if len(sys.argv) > 3 else None), allow_nan=False))
+        else:
+            print(json.dumps(replay(sys.argv[1], int(sys.argv[2]), sys.argv[3] if len(sys.argv) > 3 else None), allow_nan=False))
+    except (ValueError, OSError, KeyError, sqlite3.Error) as exc:
+        print(json.dumps(dict(ok=False, message=str(exc))))
