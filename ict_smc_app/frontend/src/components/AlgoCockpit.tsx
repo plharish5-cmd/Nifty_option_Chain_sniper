@@ -267,6 +267,31 @@ export function AlgoCockpit({ onOpenAlgoDesk }: { onOpenAlgoDesk?: () => void } 
           }`}>
             {radar.status}
           </span>
+          {(status as any)?.itm_atm_oi_walls?.is_hollow_rally && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-rose-950 text-rose-300 border border-rose-500 animate-pulse" title="Hollow Rally: Put Writers parked below">
+              ⚠️ HOLLOW
+            </span>
+          )}
+          {(status as any)?.itm_atm_oi_walls?.vacuum_active && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-purple-950 text-purple-300 border border-purple-500 animate-pulse" title="Short-Covering Vacuum Active">
+              🚀 VACUUM
+            </span>
+          )}
+          {(status as any)?.itm_atm_oi_walls?.is_panic_unwinding && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-950 text-red-300 border border-red-500 animate-pulse" title="Long Unwinding Cascade < 23,220">
+              🩸 CASCADE
+            </span>
+          )}
+          {(status as any)?.itm_atm_oi_walls?.is_pcr_overbought && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-950 text-amber-300 border border-amber-500" title={`Overbought PCR: ${(status as any).itm_atm_oi_walls.pcr}`}>
+              🛑 PCR {(status as any).itm_atm_oi_walls.pcr}
+            </span>
+          )}
+          {(status as any)?.itm_atm_oi_walls?.iron_wall_star_divergence_alert && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-orange-950 text-gold-300 border border-orange-500 animate-pulse" title={(status as any).itm_atm_oi_walls.iron_wall_star_divergence_alert}>
+              🔥 RSI DIV
+            </span>
+          )}
         </div>
 
         {/* Live Active Position Badge in Top Bar */}

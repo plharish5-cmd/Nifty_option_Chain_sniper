@@ -516,6 +516,35 @@ def htf_wick_ema_rb_endpoint(
     )
 
 
+@app.get("/api/desk/itm-atm-oi-walls")
+def itm_atm_oi_walls_endpoint(
+    spot: Optional[float] = Query(None, description="Optional override current spot price"),
+    gift_nifty: Optional[float] = Query(None, description="Optional GIFT Nifty price for basis calculator"),
+):
+    """Institutional ATM/ITM Writer Conviction, OTM Vacuum, Panic Unwinding, and Futures RSI Divergence."""
+    from ..engine import itm_atm_oi_walls
+    current_spot = spot
+    if current_spot is None and hub is not None:
+        try:
+            q = hub.quote()
+            if q and q.get("spot"):
+                current_spot = float(q["spot"])
+        except Exception as e:
+            log.warning("Could not get spot from hub for itm_atm_oi_walls: %s", e)
+
+    g_nifty = gift_nifty
+    if g_nifty is None and hub is not None and getattr(hub, "gift_nifty", None):
+        try:
+            g_nifty = float(hub.gift_nifty.get("price", 0.0) or 0.0) or None
+        except Exception:
+            pass
+
+    return itm_atm_oi_walls.compute_itm_atm_oi_walls(
+        spot=current_spot,
+        gift_nifty=g_nifty,
+    )
+
+
 
 @app.get("/api/desk/divergence")
 def divergence_endpoint(

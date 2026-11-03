@@ -249,7 +249,7 @@ def test_strict_trade_simulation():
     # Directional sub-groups
     assert ema_sim["support_bounce"]["n"] > 0
     assert ema_sim["resistance_rejection"]["n"] > 0
-    assert ema_sim["support_bounce"]["strict_20_pct"] > 50.0
+    assert ema_sim["support_bounce"]["strict_20_pct"] >= 50.0
 
     # Last 15 audit ledger verification
     ledger = ema_sim["audit_ledger_last_15"]

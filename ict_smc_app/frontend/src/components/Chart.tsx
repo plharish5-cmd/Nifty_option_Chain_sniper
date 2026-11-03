@@ -5,7 +5,7 @@ import {
   BaselineSeries, CandlestickSeries, ColorType, createChart, createSeriesMarkers, CrosshairMode, HistogramSeries, LineSeries, LineStyle,
   type AutoscaleInfo, type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi, type MouseEventParams, type Time, type UTCTimestamp, type IPriceLine,
 } from "lightweight-charts";
-import type { Analysis, Candle, TF, WriterMetrics, InstitutionalLevelsRes, GannPivotsGapsRes } from "../api";
+import type { Analysis, Candle, TF, WriterMetrics, InstitutionalLevelsRes, GannPivotsGapsRes, ItmAtmOiWallsRes } from "../api";
 import { bucket } from "../api";
 import type { DivergencePayload } from "./divergence";
 import { dayRegime } from "./regime";
@@ -412,6 +412,23 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
     };
     fetchGannPivots();
     const timer = setInterval(fetchGannPivots, 10000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const [itmAtmIntel, setItmAtmIntel] = useState<ItmAtmOiWallsRes | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const fetchItmAtm = () => {
+      api.itmAtmOiWalls().then((res) => {
+        if (alive && res?.ok) setItmAtmIntel(res);
+      }).catch(() => {});
+    };
+    fetchItmAtm();
+    const timer = setInterval(fetchItmAtm, 10000);
     return () => {
       alive = false;
       clearInterval(timer);
@@ -2975,7 +2992,7 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
     const sigOn = !!sig?.on && !!onSignal && marketOpen;
     const confAll = layers.fp || sigOn ? confluence(fpBars, marks, BAR_SEC[tf] ?? 300) : [];
     const withConf = layers.fp ? confAll : [];
-    const allB = layers.bias || sigOn ? computeBias(candles, a, fpBars, BAR_SEC[tf] ?? 300, biasPct, ocFeed, false, smtArg, cvdSignals) : [];
+    const allB = layers.bias || sigOn ? computeBias(candles, a, fpBars, BAR_SEC[tf] ?? 300, biasPct, ocFeed, false, smtArg, cvdSignals, htfWickEmaData) : [];
     if (sigOn && sig && onSignal) {
       try { const lc = [...candles].reverse().filter((c) => c.closed !== false);
       const fnow = lc[0] && (layers.cvd || layers.cells || layers.walls || layers.bubbles) ? readAt(lc[0].time, ofArgsRef.current) : null;
@@ -4844,6 +4861,31 @@ export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spo
                 {confluenceTrinity.isScissor ? " · ✂️ Scissor" : ""} · 🎯 S{confluenceTrinity.stage} {confluenceTrinity.stageBadge}
                 {confluenceTrinity.dynamicSl ? ` · SL ${confluenceTrinity.dynamicSl}` : ""}
               </span>
+
+              {/* Pillar 4: ATM/ITM Writer Conviction & Vacuum */}
+              {itmAtmIntel && (
+                <span className={`px-1.5 py-0.2 rounded border font-bold flex items-center gap-1 ${
+                  itmAtmIntel.vacuum_active
+                    ? "bg-purple-950/90 text-purple-300 border-purple-500 animate-pulse"
+                    : itmAtmIntel.is_panic_unwinding
+                    ? "bg-red-950/90 text-red-300 border-red-500 animate-pulse"
+                    : itmAtmIntel.is_hollow_rally
+                    ? "bg-rose-950/90 text-rose-300 border-rose-500 animate-pulse"
+                    : itmAtmIntel.is_pcr_overbought
+                    ? "bg-amber-950/90 text-amber-300 border-amber-500"
+                    : "bg-ink-850 text-slate-300 border-ink-700"
+                }`} title={itmAtmIntel.hollow_rally_warning || itmAtmIntel.vacuum_signal || itmAtmIntel.panic_unwinding_banner || itmAtmIntel.pcr_shield_banner || itmAtmIntel.iron_wall_star_divergence_alert || "ATM/ITM Writer Conviction Active"}>
+                  {itmAtmIntel.vacuum_active
+                    ? "🚀 OTM VACUUM ACTIVE"
+                    : itmAtmIntel.is_panic_unwinding
+                    ? "🩸 LONG UNWINDING (< 23,220)"
+                    : itmAtmIntel.is_hollow_rally
+                    ? "⚠️ HOLLOW RALLY (PE Parked)"
+                    : itmAtmIntel.is_pcr_overbought
+                    ? `🛑 OVERBOUGHT PCR (${itmAtmIntel.pcr})`
+                    : "🏛️ WRITER CONVICTION SOLID"}
+                </span>
+              )}
             </div>
           </div>
         </div>

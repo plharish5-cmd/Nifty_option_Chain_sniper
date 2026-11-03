@@ -368,6 +368,39 @@ class DhanAlgoExecutor:
                     self.log_event("WARN", reason)
                     return False, reason
 
+        # Gate 3: Overbought PCR Shield & Futures RSI Divergence / Star Pattern Anti-FOMO Gate
+        try:
+            from . import itm_atm_oi_walls
+            walls_intel = itm_atm_oi_walls.compute_itm_atm_oi_walls(spot=spot)
+            if walls_intel.get("ok"):
+                # Overbought PCR Shield (PCR >= 1.60): Block opening-bell blind FOMO CE buys
+                if action_type.upper() == "CE":
+                    pcr_val = float(walls_intel.get("pcr", 1.0))
+                    if walls_intel.get("is_pcr_overbought"):
+                        near_res = ema8_1h is not None and spot > ema8_1h + 30.0
+                        if near_res or walls_intel.get("block_fomo_ce"):
+                            reason = (
+                                f"🛑 OVERBOUGHT PCR ({pcr_val:.2f}) ANTI-FOMO SHIELD: Crowded PCR >= 1.60 and spot extended "
+                                f"({spot:.1f} > 1H 8-EMA {ema8_1h or 0:.1f} + 30pt). Blind CE buy blocked — require 15m Morning Star "
+                                f"or 1H 8-EMA pullback touch."
+                            )
+                            self.log_event("WARN", reason)
+                            return False, reason
+
+                    # Futures Bearish RSI Divergence / Star pattern at Iron Wall
+                    if walls_intel.get("iron_wall_star_divergence_alert") and (
+                        walls_intel.get("fut_rsi_divergence") == "BEARISH_DIVERGENCE" or
+                        walls_intel.get("fut_star_pattern") == "EVENING_STAR"
+                    ):
+                        reason = (
+                            f"🛑 IRON WALL REJECTION: {walls_intel['iron_wall_star_divergence_alert']}. "
+                            f"Exhaustion into overhead ceiling — CE buy blocked."
+                        )
+                        self.log_event("WARN", reason)
+                        return False, reason
+        except Exception as e:
+            log.warning("Could not check itm_atm_oi_walls in anti-fade gate: %s", e)
+
         return True, "PASSED"
 
     def check_kill_switch(self) -> Tuple[bool, str]:
@@ -903,6 +936,54 @@ class DhanAlgoExecutor:
                 if tp1_pts + 4.0 <= s_dist < tp2_pts:
                     tp2_pts = max(tp1_pts + 5.0, s_dist - 2.0)
                     reason += f" | Capped 2 pts above Structural S ({nearest_s:.1f})"
+
+        # D2. ITM/ATM Writer Conviction & OTM Vacuum Targets Upgrade
+        try:
+            from . import itm_atm_oi_walls
+            walls_intel = itm_atm_oi_walls.compute_itm_atm_oi_walls(spot=spot)
+            if walls_intel.get("ok"):
+                if opt_type == "CE":
+                    trapped_ce = walls_intel.get("itm_trapped_ce", {})
+                    trapped_strike = float(trapped_ce.get("strike", 0.0))
+                    trapped_chg = float(trapped_ce.get("oi_chg", 0.0))
+
+                    # 1. If an itm_ce_wall / atm_ce_wall is actively adding OI (ΔCE_OI > 0), tighten Target 1 to front-run it
+                    if trapped_strike > spot and trapped_chg > 0:
+                        dist_to_trapped = trapped_strike - spot
+                        if 8.0 <= dist_to_trapped <= tp1_pts + 5.0:
+                            tp1_pts = max(10.0, dist_to_trapped - 3.0)
+                            reason += f" | Tightened Target 1 to front-run stubborn {int(trapped_strike)} CE (+{trapped_chg:,.0f} OI)"
+
+                    # 2. If unwinding (ΔCE_OI < 0) or OTM vacuum active, extend Target 2 toward the otm_major_ce_wall (23,550–23,600 zone)
+                    if walls_intel.get("vacuum_active") or trapped_chg < -5000.0:
+                        major_wall = walls_intel.get("otm_major_ce_wall", {})
+                        major_strike = float(major_wall.get("strike", 23600.0))
+                        target_dist = major_strike - spot - 5.0
+                        if target_dist > tp2_pts:
+                            tp2_pts = min(target_dist, 85.0)
+                            reason += f" | OTM Vacuum Active: Extended Target 2 toward {int(major_strike)} CE Iron Ceiling (+{tp2_pts:.0f} pts)"
+
+                elif opt_type == "PE":
+                    # For Short (PE) trades:
+                    # Target 1 at top of Put Support Zone (23,250)
+                    supp_top_lvl = float(walls_intel.get("support_top", 23250.0))
+                    panic_trigger_lvl = float(walls_intel.get("panic_unwinding_trigger", 23220.0))
+                    downside_proj = float(walls_intel.get("structural_downside_target", 23119.0))
+
+                    if spot > supp_top_lvl:
+                        dist_to_supp = spot - supp_top_lvl
+                        if 10.0 <= dist_to_supp <= tp1_pts + 15.0:
+                            tp1_pts = dist_to_supp
+                            reason += f" | Target 1 set to Put Support Zone top ({supp_top_lvl:.0f})"
+
+                    # Extend Target 2 to 23,119 if panic unwinding trigger (< 23,220) breaks with PE unwinding
+                    if walls_intel.get("is_panic_unwinding") or (spot <= panic_trigger_lvl and float(walls_intel.get("main_put_wall", {}).get("oi_chg", 0.0)) < 0):
+                        dist_to_downside = spot - downside_proj
+                        if dist_to_downside > tp2_pts:
+                            tp2_pts = dist_to_downside
+                            reason += f" | Panic Unwinding Active (< {panic_trigger_lvl:.0f}): Extended Target 2 to {downside_proj:.0f} Structural Support"
+        except Exception as e:
+            log.warning("Could not apply itm_atm_oi_walls to smart targets: %s", e)
 
         # E. Trailing Runner Mode Override
         if active_mode == "TRAIL_RUNNER":
@@ -1866,6 +1947,13 @@ class DhanAlgoExecutor:
             {"date": "2026-10-07", "time": "09:15 IST", "strategy": "1H_8EMA_SUPPORT_BOUNCE", "side": "LONG (CE)", "spot_entry": 22611.5, "ema8": 22610.0, "proximity_pts": 1.5, "strike": "NIFTY 22600 CE", "security_id": "49880", "expiry": "2026-10-13", "mfe": 106.2, "mae": 65.2, "target_20": "WIN (2m)", "target_40": "WIN (3m)", "stop_15": "HIT LATER", "pnl_inr": 3000.0, "pnl_max_runner": 7965.0, "outcome": "WIN (+40 pts Target Hit)", "is_today": False},
         ]
 
+        itm_atm_data = {}
+        try:
+            from .itm_atm_oi_walls import compute_itm_atm_oi_walls
+            itm_atm_data = compute_itm_atm_oi_walls(spot=spot)
+        except Exception as e:
+            log.warning("Could not compute itm_atm_oi_walls in get_status_view: %s", e)
+
         return {
             "ok": True,
             "execution_mode": self.execution_mode,
@@ -1899,6 +1987,7 @@ class DhanAlgoExecutor:
                 "smart_target_preview": self.compute_smart_target(spot=spot, option_type="CE"),
             },
             "strategy_slots": self.strategy_slots,
+            "itm_atm_oi_walls": itm_atm_data,
         }
 
     # ─────────────────────────────────────────────────────────────────────────

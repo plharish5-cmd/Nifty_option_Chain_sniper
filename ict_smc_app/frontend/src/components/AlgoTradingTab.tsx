@@ -13,6 +13,7 @@ import {
   type PremarketCheckRes,
   type SmartTargetRes,
   type StrategySlot,
+  type ItmAtmOiWallsRes,
 } from "../api";
 
 export function AlgoTradingTab() {
@@ -22,6 +23,8 @@ export function AlgoTradingTab() {
   const [slots, setSlots] = useState<StrategySlot[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [itmAtm, setItmAtm] = useState<ItmAtmOiWallsRes | null>(null);
+  const [customGiftNifty, setCustomGiftNifty] = useState<number>(23450.0);
 
   // Dual-Layer SL Form State
   const [spotSlPts, setSpotSlPts] = useState(15.0);
@@ -80,6 +83,21 @@ export function AlgoTradingTab() {
       .then(setSmartTarget)
       .catch(console.error);
   }, [targetMode]);
+
+  // Fetch ITM/ATM OI Walls Intelligence
+  const fetchItmAtm = useCallback(() => {
+    api.itmAtmOiWalls(undefined, customGiftNifty)
+      .then((res) => {
+        if (res && res.ok) setItmAtm(res);
+      })
+      .catch((e) => console.error("Error fetching itm_atm_oi_walls:", e));
+  }, [customGiftNifty]);
+
+  useEffect(() => {
+    fetchItmAtm();
+    const interval = setInterval(fetchItmAtm, 3000);
+    return () => clearInterval(interval);
+  }, [fetchItmAtm]);
 
   // Save Dual-Layer Stop Loss
   const saveDualSl = () => {
@@ -529,6 +547,226 @@ export function AlgoTradingTab() {
 
             <div className="text-[11px] font-mono text-slate-300 bg-ink-950/60 p-2 rounded border border-ink-800">
               <b className="text-gold-400">Target Rationale:</b> {smartTarget?.reason || "Target 2 front-runs nearest Call Writer Wall ceiling to lock profits before resistance."}
+            </div>
+          </div>
+        </div>
+
+        {/* ================================================================= */}
+        {/* INSTITUTIONAL ATM / ITM / OTM WRITER CONVICTION & UNWINDING MATRIX */}
+        {/* ================================================================= */}
+        <div className="rounded-xl border border-gold-500/50 bg-gradient-to-b from-ink-900/90 to-ink-950/95 p-4 space-y-4 shadow-xl lg:col-span-2">
+          {/* Card Header & Global Alert Banners */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-700/80 pb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl">🏛️</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-black text-sm uppercase tracking-wider text-gold-300">
+                    ATM / ITM / OTM Writer Conviction &amp; Unwinding Matrix
+                  </h2>
+                  <span className="pill text-[10px] font-bold bg-gold-500/20 text-gold-300 border border-gold-500/40">
+                    SPOT: {itmAtm?.spot ? itmAtm.spot.toFixed(1) : "23440.8"} · ATM: {itmAtm?.atm_strike ? itmAtm.atm_strike : "23450"}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                  Institutional strike positioning, stubborn ITM call traps, short-covering vacuums, and panic unwinding thresholds.
+                </p>
+              </div>
+            </div>
+
+            {/* Live Status Pills */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {itmAtm?.is_hollow_rally ? (
+                <span className="px-2.5 py-1 rounded-lg font-bold bg-rose-950/90 border border-rose-500 text-rose-300 animate-pulse flex items-center gap-1 shadow">
+                  <span>⚠️</span>
+                  <span>HOLLOW RALLY: Put Writers Parked Below</span>
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-lg font-bold bg-emerald-950/80 border border-emerald-500/70 text-emerald-300 flex items-center gap-1">
+                  <span>🟢</span>
+                  <span>SOLID FLOOR MIGRATION</span>
+                </span>
+              )}
+
+              {itmAtm?.vacuum_active && (
+                <span className="px-2.5 py-1 rounded-lg font-bold bg-purple-950/90 border border-purple-500 text-purple-300 animate-pulse flex items-center gap-1 shadow">
+                  <span>🚀</span>
+                  <span>SHORT-COVERING VACUUM ACTIVE</span>
+                </span>
+              )}
+
+              {itmAtm?.is_panic_unwinding && (
+                <span className="px-2.5 py-1 rounded-lg font-bold bg-red-950/90 border border-red-500 text-red-300 animate-pulse flex items-center gap-1 shadow">
+                  <span>🩸</span>
+                  <span>LONG UNWINDING CASCADE (&lt; 23,220)</span>
+                </span>
+              )}
+
+              {itmAtm?.is_pcr_overbought && (
+                <span className="px-2.5 py-1 rounded-lg font-bold bg-amber-950/90 border border-amber-500 text-amber-300 flex items-center gap-1">
+                  <span>🛑</span>
+                  <span>OVERBOUGHT PCR ({itmAtm.pcr})</span>
+                </span>
+              )}
+
+              {itmAtm?.iron_wall_star_divergence_alert && (
+                <span className="px-2.5 py-1 rounded-lg font-bold bg-orange-950/90 border border-orange-500 text-gold-300 flex items-center gap-1 animate-pulse">
+                  <span>🔥</span>
+                  <span>FUTURES RSI DIV AT WALL</span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Warning / Active Alert Strip */}
+          {(itmAtm?.hollow_rally_warning || itmAtm?.vacuum_signal || itmAtm?.panic_unwinding_banner || itmAtm?.pcr_shield_banner || itmAtm?.iron_wall_star_divergence_alert) && (
+            <div className="space-y-1.5">
+              {itmAtm?.hollow_rally_warning && (
+                <div className="px-3 py-1.5 rounded-lg bg-rose-950/70 border border-rose-500/80 text-rose-200 text-xs font-mono font-semibold flex items-center gap-2">
+                  <span>⚠️</span>
+                  <span>{itmAtm.hollow_rally_warning}</span>
+                </div>
+              )}
+              {itmAtm?.vacuum_signal && (
+                <div className="px-3 py-1.5 rounded-lg bg-purple-950/70 border border-purple-500/80 text-purple-200 text-xs font-mono font-semibold flex items-center gap-2">
+                  <span>🚀</span>
+                  <span>{itmAtm.vacuum_signal}</span>
+                </div>
+              )}
+              {itmAtm?.panic_unwinding_banner && (
+                <div className="px-3 py-1.5 rounded-lg bg-red-950/70 border border-red-500/80 text-red-200 text-xs font-mono font-semibold flex items-center gap-2">
+                  <span>🩸</span>
+                  <span>{itmAtm.panic_unwinding_banner}</span>
+                </div>
+              )}
+              {itmAtm?.pcr_shield_banner && (
+                <div className="px-3 py-1.5 rounded-lg bg-amber-950/70 border border-amber-500/80 text-amber-200 text-xs font-mono font-semibold flex items-center gap-2">
+                  <span>🛑</span>
+                  <span>{itmAtm.pcr_shield_banner} — Anti-FOMO Guard active on opening gap-ups</span>
+                </div>
+              )}
+              {itmAtm?.iron_wall_star_divergence_alert && (
+                <div className="px-3 py-1.5 rounded-lg bg-orange-950/70 border border-orange-500/80 text-gold-200 text-xs font-mono font-semibold flex items-center gap-2">
+                  <span>🔥</span>
+                  <span>{itmAtm.iron_wall_star_divergence_alert}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 4 Core Intelligence Modules Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Col 1: Stubborn ITM Call Writers */}
+            <div className="p-3 rounded-lg border border-ink-700/80 bg-ink-950/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                  1. Stubborn ITM Call Writers
+                </span>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                  itmAtm?.itm_ce_status === "SL_HUNT_UNWINDING"
+                    ? "bg-purple-900 text-purple-200 border border-purple-500"
+                    : "bg-amber-900/80 text-amber-300 border border-amber-500/60"
+                }`}>
+                  {itmAtm?.itm_ce_status === "SL_HUNT_UNWINDING" ? "SL-HUNT UNWINDING" : "HOLDING IN ITM"}
+                </span>
+              </div>
+              <div className="text-sm font-black text-slate-100 font-mono">
+                {itmAtm?.itm_trapped_ce?.label || "23,350 CE (ITM)"}
+              </div>
+              <div className="text-[11px] font-mono text-slate-400 space-y-0.5">
+                <div>OI: <b className="text-slate-200">{((itmAtm?.itm_trapped_ce?.oi ?? 0) / 100000).toFixed(2)}L</b></div>
+                <div>ΔOI: <b className={(itmAtm?.itm_trapped_ce?.oi_chg ?? 0) < 0 ? "text-emerald-400" : "text-amber-400"}>
+                  {(itmAtm?.itm_trapped_ce?.oi_chg ?? 0) > 0 ? "+" : ""}{((itmAtm?.itm_trapped_ce?.oi_chg ?? 0) / 100000).toFixed(2)}L
+                </b></div>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-tight">
+                {itmAtm?.itm_ce_status === "SL_HUNT_UNWINDING"
+                  ? "ITM writers capitulating; stop-run adds fuel for rapid expansion."
+                  : "Call writers stubborn below spot; watch for sudden short squeeze."}
+              </p>
+            </div>
+
+            {/* Col 2: OTM Unwinding Vacuum Zone */}
+            <div className="p-3 rounded-lg border border-ink-700/80 bg-ink-950/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                  2. OTM Vacuum &amp; Iron Ceiling
+                </span>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                  itmAtm?.vacuum_active
+                    ? "bg-purple-900 text-purple-200 border border-purple-500 animate-pulse"
+                    : "bg-ink-800 text-slate-400"
+                }`}>
+                  {itmAtm?.vacuum_active ? "VACUUM OPEN" : "CEILING BUFFERED"}
+                </span>
+              </div>
+              <div className="text-sm font-black text-purple-300 font-mono">
+                {itmAtm?.otm_major_ce_wall?.range_label || "23,550 – 23,600 CE"}
+              </div>
+              <div className="text-[11px] font-mono text-slate-400 space-y-0.5">
+                <div>Vacuum Strikes: <b className="text-purple-300">{itmAtm?.otm_vacuum_strikes?.length ? itmAtm.otm_vacuum_strikes.join(", ") : "23400, 23450"}</b></div>
+                <div>Ceiling OI: <b className="text-slate-200">{((itmAtm?.otm_major_ce_wall?.oi ?? 0) / 100000).toFixed(2)}L</b></div>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-tight">
+                Intermediate Call writers closed positions leaving clean air straight to the 23,550–23,600 Iron Ceiling.
+              </p>
+            </div>
+
+            {/* Col 3: Put Writer Conviction & Support Floor */}
+            <div className="p-3 rounded-lg border border-ink-700/80 bg-ink-950/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                  3. Put Floor &amp; Panic Trigger
+                </span>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                  itmAtm?.is_panic_unwinding
+                    ? "bg-red-900 text-red-200 border border-red-500 animate-pulse"
+                    : itmAtm?.is_hollow_rally
+                    ? "bg-rose-900 text-rose-200 border border-rose-500"
+                    : "bg-emerald-900 text-emerald-200 border border-emerald-500"
+                }`}>
+                  {itmAtm?.is_panic_unwinding ? "CASCADE ACTIVE" : itmAtm?.is_hollow_rally ? "HOLLOW RALLY" : "SOLID FLOOR"}
+                </span>
+              </div>
+              <div className="text-sm font-black text-emerald-400 font-mono">
+                {itmAtm?.main_put_wall?.label || "23,200 PE Put Wall"}
+              </div>
+              <div className="text-[11px] font-mono text-slate-400 space-y-0.5">
+                <div>Panic Unwind: <b className="text-red-400">&lt; {itmAtm?.panic_unwinding_trigger || 23220}</b></div>
+                <div>Structural Target: <b className="text-cyan-300">{itmAtm?.structural_downside_target || 23119}</b></div>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-tight">
+                Put Support: 23,200–23,250. Breaking below 23,220 with Put unwinding triggers cascading long liquidation.
+              </p>
+            </div>
+
+            {/* Col 4: Futures Basis & Implied Spot Calculator */}
+            <div className="p-3 rounded-lg border border-ink-700/80 bg-ink-950/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                  4. Basis &amp; Implied Open
+                </span>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-700">
+                  BASIS: {itmAtm?.basis_spread && itmAtm.basis_spread > 0 ? `+${itmAtm.basis_spread}` : (itmAtm?.basis_spread || "+14.2")}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="text-slate-400">GIFT NIFTY:</span>
+                <input
+                  type="number"
+                  step="0.5"
+                  value={customGiftNifty}
+                  onChange={(e) => setCustomGiftNifty(parseFloat(e.target.value) || 23450.0)}
+                  className="w-20 px-1.5 py-0.5 rounded bg-ink-900 border border-ink-600 font-mono text-right font-bold text-gold-300"
+                />
+              </div>
+              <div className="text-[11px] font-mono text-slate-400 space-y-0.5">
+                <div>Implied Spot Open: <b className="text-emerald-400">{itmAtm?.implied_spot_open ? itmAtm.implied_spot_open.toFixed(1) : "23435.8"}</b></div>
+                <div>Futures RSI(14): <b className="text-slate-200">{itmAtm?.fut_rsi || 52.4}</b> (Spot: {itmAtm?.spot_rsi || 50.1})</div>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-tight">
+                {itmAtm?.fut_rsi_divergence ? `⚠️ ${itmAtm.fut_rsi_divergence} on NIFTY Futures.` : "Futures Basis aligned; no RSI divergence."}
+              </p>
             </div>
           </div>
         </div>

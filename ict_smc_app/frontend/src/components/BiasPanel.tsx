@@ -21,9 +21,25 @@ export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: 
   const [fp, setFp] = useState<FpBar[]>([]);
   const [pct, setPct] = useBiasAgreement();
   const [filterAttr, setFilterAttr] = useState<string | null>(null);
+  const [htfWickEmaData, setHtfWickEmaData] = useState<any>(null);
   const oc = useOcFeed(true);
   const smt = useSmt(tf, true);
   const smtArg = tf === "5m" || tf === "15m" || tf === "1h" ? smt : null;
+
+  useEffect(() => {
+    let alive = true;
+    const fetchHtfWickEma = () => {
+      fetch("/api/desk/htf-wick-ema-rb")
+        .then((res) => res.json())
+        .then((data) => {
+          if (alive && data?.ok) setHtfWickEmaData(data);
+        })
+        .catch(() => {});
+    };
+    fetchHtfWickEma();
+    const timer = setInterval(fetchHtfWickEma, 15000);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
 
   useEffect(() => {
     if (!["1m","3m","5m","15m","30m","1h"].includes(tf)) { setFp([]); return; }
@@ -34,7 +50,7 @@ export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: 
   }, [tf]);
 
   const cvdSignals=useMemo(()=>cvdExhaustionSignals(candles,fp,computeCvdDivergences(fp),oc?.nodes?.available?findEntries(candles,analysis?.volume?.vwap ?? [],oc.nodes):[],BAR_SEC[tf] ?? 300),[candles,fp,analysis,oc,tf]);
-  const all = useMemo(() => computeBias(candles, analysis, fp, BAR_SEC[tf] ?? 300, pct, oc, true, smtArg, cvdSignals), [candles, analysis, fp, tf, pct, oc, smtArg, cvdSignals]);
+  const all = useMemo(() => computeBias(candles, analysis, fp, BAR_SEC[tf] ?? 300, pct, oc, true, smtArg, cvdSignals, htfWickEmaData), [candles, analysis, fp, tf, pct, oc, smtArg, cvdSignals, htfWickEmaData]);
   const live = all.length && all[all.length - 1].forming ? all[all.length - 1] : null;
   const rows = all.filter((r) => !r.forming).slice(-24).reverse();
   const now = rows[0];
@@ -163,7 +179,7 @@ export default function BiasPanel({ tf, candles, analysis }: { tf: TF; candles: 
                   >
                     <div className="flex flex-col items-center">
                       <span className="text-[9px] text-slate-500">#{idx + 1}</span>
-                      <span className="truncate max-w-[55px] font-semibold">{f}</span>
+                      <span className="truncate max-w-[55px] font-semibold">{f === "SMT" ? "SMT/WICK" : f}</span>
                       {sa && (
                         <span
                           className={`text-[8px] px-1 rounded font-bold mt-0.5 ${

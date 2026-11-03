@@ -821,7 +821,72 @@ export const api = {
   algoStrategySlots: () => get<StrategySlot[]>("/api/algo/strategy-slots"),
   algoToggleStrategySlot: (slot_id: string, enabled: boolean) =>
     api.post<any>("/api/algo/strategy-slot/toggle", { slot_id, enabled }),
+  itmAtmOiWalls: (spot?: number, giftNifty?: number) =>
+    get<ItmAtmOiWallsRes>(
+      `/api/desk/itm-atm-oi-walls${spot != null ? `?spot=${spot}` : ""}${giftNifty != null ? `${spot != null ? "&" : "?"}gift_nifty=${giftNifty}` : ""}`
+    ),
 };
+
+export interface ItmAtmOiWallsRes {
+  ok: boolean;
+  spot: number;
+  atm_strike: number;
+  is_hollow_rally: boolean;
+  put_writer_conviction: "HOLLOW_RALLY" | "SOLID_FLOOR_MIGRATION" | "NORMAL";
+  hollow_rally_warning?: string | null;
+  main_put_wall: {
+    strike: number;
+    oi: number;
+    oi_chg: number;
+    label?: string;
+  };
+  put_wall_distance_pts: number;
+  itm_trapped_ce: {
+    strike: number;
+    oi: number;
+    oi_chg: number;
+    status: "HOLDING_IN_ITM" | "SL_HUNT_UNWINDING" | "BALANCED";
+    label?: string;
+  };
+  itm_ce_status: "HOLDING_IN_ITM" | "SL_HUNT_UNWINDING" | "BALANCED";
+  otm_vacuum_strikes: number[];
+  otm_major_ce_wall: {
+    strike: number;
+    oi: number;
+    oi_chg: number;
+    range_label?: string;
+  };
+  vacuum_active: boolean;
+  vacuum_signal?: string | null;
+  support_bottom: number;
+  support_top: number;
+  panic_unwinding_trigger: number;
+  structural_downside_target: number;
+  is_panic_unwinding: boolean;
+  panic_unwinding_banner?: string | null;
+  pcr: number;
+  is_pcr_overbought: boolean;
+  pcr_shield_banner?: string | null;
+  block_fomo_ce: boolean;
+  fomo_guard_reason?: string | null;
+  spot_rsi: number;
+  fut_rsi: number;
+  fut_rsi_divergence?: "BEARISH_DIVERGENCE" | "BULLISH_DIVERGENCE" | null;
+  fut_star_pattern?: "EVENING_STAR" | "MORNING_STAR" | "BULLISH_ENGULFING" | null;
+  iron_wall_star_divergence_alert?: string | null;
+  fut_close: number;
+  basis_spread: number;
+  gift_nifty_price?: number | null;
+  implied_spot_open?: number | null;
+  strikes_detail: {
+    strike: number;
+    ce_oi: number;
+    ce_oi_chg: number;
+    pe_oi: number;
+    pe_oi_chg: number;
+    category: string;
+  }[];
+}
 
 export interface StrategySlot {
   id: string;

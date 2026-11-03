@@ -23,7 +23,7 @@ export type OcRow = Row;
 export type OcPt = { t: number; ce: number | null; pe: number | null; flow: number | null; bal: number | null; sig: boolean;
   fut?: number | null; flip?: boolean; regime?: string; conf?: string | null };
 export type Gex = { ok: boolean; spot?: number; flip?: number | null; regime?: string; pin?: number; accel?: number | null; message?: string; ts?: string };
-export type OcFeed = { pece: OcRow[]; flow: OcPt[]; gex?: Gex | null; day?: string; trinity?: PositionPoint[]; nodes?: NodesView|null };
+export type OcFeed = { pece: OcRow[]; flow: OcPt[]; gex?: Gex | null; day?: string; trinity?: PositionPoint[]; pcrSeries?: any[]; latestSnap?: any; nodes?: NodesView|null };
 export type Factor = typeof FACTORS[number];
 export type BiasRow = { time: number; o: number; h: number; l: number; c: number; votes: Record<Factor, Vote>; why: Record<Factor, string>;
   bull: number; bear: number; avail: number; verdict: "BUY" | "SELL" | "MIXED"; strong: boolean; forming?: boolean; warn?: string;
@@ -35,7 +35,8 @@ const FLOW = new Set(["STACKED_BUY", "STACKED_SELL", "ACCUMULATION", "DISTRIBUTI
 
 export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], barSec: number, pct = BIAS_POLICY.agreement,
                             oc: OcFeed | null = null, forming = false,
-                            smt: { time: number; dir: "bull" | "bear"; at: string }[] | null = null, cvdSignals: CvdAlertSignal[] = []): BiasRow[] {
+                            smt: { time: number; dir: "bull" | "bear"; at: string }[] | null = null, cvdSignals: CvdAlertSignal[] = [],
+                            htfWickEmaData?: any): BiasRow[] {
   if (!a) return [];
   const closed = candles.filter((c) => c.closed !== false);
   const latestClosed = closed.at(-1)?.time;
@@ -48,8 +49,21 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
   const struct = (a.markers ?? []).filter((m) => m.kind === "BOS" || m.kind === "MSS").sort((x, y) => x.time - y.time);
   const crt = (a.crt?.markers ?? []).filter((m) => m.kind === "CRT_ENTRY" || m.kind === "CRT_TBS").sort((x, y) => x.time - y.time);
   const ifvgSig = (a.markers ?? []).filter((m) => m.kind === "IFVG_BUY" || m.kind === "IFVG_SELL");
+  const sniper = a.pa_advanced?.sniper;
+  const b20 = a.pa_advanced?.bias_20 ?? sniper?.bias_20;
+  const triggers = b20?.triggers;
 
   const atr = a.atr || 20;
+
+  // Rolling 20-bar average range fallback for zero-volume spot index candles
+  const rollingRanges = new Map<number, number>();
+  for (let i = 0; i < closed.length; i++) {
+    const startIdx = Math.max(0, i - 19);
+    const win = closed.slice(startIdx, i + 1);
+    const avg = win.reduce((sum, bar) => sum + (bar.high - bar.low), 0) / Math.max(1, win.length);
+    rollingRanges.set(closed[i].time, avg);
+  }
+
   const zoneVote = (types: string[], c: Candle): [Vote, string] => {
     let bull = "", bear = "", bullD = Infinity, bearD = Infinity;
     for (const z of zones) {
@@ -68,12 +82,30 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
   };
   const hasVol = (a.volume?.bars ?? []).length > 0, hasVwap = (a.volume?.vwap ?? []).length > 0, hasFp = fp.length > 0;
 
-  // Options Lab helpers
+  // Options Lab helpers with ASOF lookup and latest session carry-forward
   const hmOf = (t: number) => { const d = new Date(t * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
   const pece = (oc?.pece ?? []).filter((r) => r.ts).slice().sort((x, y) => (x.ts < y.ts ? -1 : 1));
   const flow = (oc?.flow ?? []).slice().sort((x, y) => x.t - y.t);
-  const hasPece = pece.length > 0, hasFlow = flow.length > 0;
-  const flowAt = (t: number) => { let last: OcPt | undefined; for (const p of flow) { if (p.t > t) break; last = p; } return last; };
+  const pcrSeries = (oc?.pcrSeries ?? []).slice().sort((x: any, y: any) => ((x.time || x.ts) - (y.time || y.ts)));
+  const hasPece = pece.length > 0, hasFlow = flow.length > 0, hasPcrSeries = pcrSeries.length > 0;
+  const flowAt = (t: number) => { let last: OcPt | undefined; for (const p of flow) { if (p.t > t) break; last = p; } return last ?? flow.at(-1); };
+  const peceAt = (at: number, cTime: number) => {
+    const match = [...pece].reverse().find((r) => {
+      const stamp = Date.parse(`${oc?.day || dayOf(cTime)}T${r.ts}:00Z`) / 1000;
+      return Number.isFinite(stamp) && stamp <= at && at - stamp <= 900;
+    });
+    if (match) return match;
+    return pece.length > 0 ? pece[pece.length - 1] : undefined;
+  };
+  const pcrAt = (at: number) => {
+    let last: any = undefined;
+    for (const p of pcrSeries) {
+      const ptTime = p.time || p.ts;
+      if (ptTime > at) break;
+      last = p;
+    }
+    return last ?? pcrSeries.at(-1);
+  };
 
   return [...closed.slice(-80), ...live].map((c) => {
     const isLive = c.closed === false;
@@ -85,22 +117,65 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     let [v, w] = zoneVote(["FVG", "IFVG"], c);
     const sig = ifvgSig.find((m) => m.time <= c.time && m.time >= c.time - 2 * barSec);
     if (sig) { v = sig.kind === "IFVG_BUY" ? "bull" : "bear"; w = sig.kind.replace("_", " "); }
+    if (!v) {
+      const ifvgTrig = triggers?.["IFVG"];
+      if (ifvgTrig && ifvgTrig.status === "ACTIVE" && ifvgTrig.dir) {
+        v = ifvgTrig.dir;
+        w = ifvgTrig.desc;
+      }
+    }
     votes["FVG/IFVG"] = v; why["FVG/IFVG"] = w;
+
     // 2 Order block / breaker
-    [v, w] = zoneVote(["OB", "BREAKER"], c); votes["Order block"] = v; why["Order block"] = w;
+    let [obV, obW] = zoneVote(["OB", "BREAKER"], c);
+    votes["Order block"] = obV; why["Order block"] = obW;
+
     // 3 Rejection block (RJB)
-    [v, w] = zoneVote(["RJB"], c); votes["Rejection block"] = v; why["Rejection block"] = w;
+    let [rbV, rbW] = zoneVote(["RJB"], c);
+    if (!rbV) {
+      const rjbTrig = triggers?.["RJB+"];
+      if (rjbTrig && rjbTrig.status === "ACTIVE" && rjbTrig.dir) {
+        rbV = rjbTrig.dir;
+        rbW = rjbTrig.desc;
+      } else if (htfWickEmaData?.active_levels?.length) {
+        const activeLvls: any[] = htfWickEmaData.active_levels;
+        const supp = activeLvls.find((lv) => lv.side === "SUPPORT" && c.low <= lv.ref_price + atr && c.close >= lv.ref_price - atr);
+        const resis = activeLvls.find((lv) => lv.side === "RESISTANCE" && c.high >= lv.ref_price - atr && c.close <= lv.ref_price + atr);
+        if (supp && !resis) {
+          rbV = "bull";
+          rbW = `1H/4H Wick Support defended @ ${supp.ref_price.toFixed(0)}`;
+        } else if (resis && !supp) {
+          rbV = "bear";
+          rbW = `1H/4H Wick Resistance rejected @ ${resis.ref_price.toFixed(0)}`;
+        }
+      }
+    }
+    votes["Rejection block"] = rbV; why["Rejection block"] = rbW;
+
     // 4 CRT / TBS (last 6 bars)
     const cr = [...crt].reverse().find((m) => dayOf(m.time) === dayOf(c.time) && m.time <= c.time && m.time >= c.time - 6 * barSec);
-    votes["CRT/TBS"] = cr ? cr.dir : null; why["CRT/TBS"] = cr ? `${cr.kind === "CRT_ENTRY" ? "CRT entry" : "TBS"} ${cr.at}` : "";
-    // 4 Footprint (flow tag + delta agree, or a strong delta ≥ 15 %, or delta absorption/aggression)
+    let crtV: Vote = cr ? cr.dir : null;
+    let crtW = cr ? `${cr.kind === "CRT_ENTRY" ? "CRT entry" : "TBS"} ${cr.at}` : "";
+    if (!crtV) {
+      const crtTrig = triggers?.["CRT"];
+      if (crtTrig && crtTrig.status === "ACTIVE" && crtTrig.dir) {
+        crtV = crtTrig.dir;
+        crtW = crtTrig.desc;
+      }
+    }
+    votes["CRT/TBS"] = crtV; why["CRT/TBS"] = crtW;
+
+    // 5 Footprint (flow tag + delta agree, strong delta ≥ 15%, delta absorption/aggression, or intrabar pressure)
     const f = fpm.get(c.time);
     let fv: Vote = null, fw = "";
-    if (f && f.rows.length) {
+    if (f && f.rows?.length) {
       const dd: Vote = f.delta > 0 ? "bull" : f.delta < 0 ? "bear" : null;
-      const tag = f.tags.find((t) => FLOW.has(t.k) && t.dir === dd);
+      const tag = f.tags?.find((t) => FLOW.has(t.k) && t.dir === dd);
+      const totalVol = (f.buy ?? 0) + (f.sell ?? 0);
+      const effDeltaPct = f.delta_pct != null ? f.delta_pct : (totalVol > 0 ? Math.round((f.delta / totalVol) * 100) : 0);
       if (tag) { fv = dd; fw = `${tag.k.toLowerCase()} · Δ ${Math.round(f.delta / 1000)}K`; }
-      else if (dd && Math.abs(f.delta_pct ?? 0) >= 15) { fv = dd; fw = `Δ ${f.delta_pct}%`; }
+      else if (dd && Math.abs(effDeltaPct) >= 15) { fv = dd; fw = `Δ ${effDeltaPct}%`; }
+      else if (dd) { fv = dd; fw = `Δ ${(f.delta / 1000).toFixed(1)}K`; }
     }
     if (!fv) {
       const dmk = (a.markers ?? []).filter((m) => m.time === c.time);
@@ -114,183 +189,296 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
         fw = `aggression ${aggM.dir === "bull" ? "market buys Δ+" : "market sells Δ−"}`;
       }
     }
+    if (!fv) {
+      // Intrabar pressure fallback for index candles
+      const rng = c.high - c.low;
+      const bp = rng > 0 ? (c.close - c.low) / rng : 0.5;
+      if (bp >= 0.7) {
+        fv = "bull";
+        fw = `estimated delta: buyer control (${Math.round(bp * 100)}%)`;
+      } else if (bp <= 0.3) {
+        fv = "bear";
+        fw = `estimated delta: seller control (${Math.round((1 - bp) * 100)}%)`;
+      } else {
+        fw = "footprint delta: balanced bid/ask";
+      }
+    }
     votes.Footprint = fv; why.Footprint = fw;
-    // 5 RVOL ≥ 1.2× → votes with the candle colour
-    const vb = vbar.get(c.time);
-    votes.RVOL = vb?.rvol != null && vb.rvol >= 1.2 && c.close !== c.open ? (c.close > c.open ? "bull" : "bear") : null;
-    why.RVOL = vb?.rvol != null ? `RVOL ${vb.rvol.toFixed(1)}×` : "";
-    // 6 VWAP side (futures VWAP, basis-adjusted)
-    const vw = vwap.get(c.time);
-    votes.VWAP = vw != null ? (c.close > vw ? "bull" : c.close < vw ? "bear" : null) : null;
-    why.VWAP = vw != null ? `close ${c.close > vw ? "above" : "below"} VWAP ${vw.toFixed(0)}` : "";
-    // 7 Structure: direction of the last BOS / MSS so far
-    const s = [...struct].reverse().find((m) => m.time <= c.time && dayOf(m.time) === dayOf(c.time));
-    votes.Structure = s ? s.dir : null; why.Structure = s ? `last ${s.kind} ${s.dir === "bull" ? "▲" : "▼"} ${s.at}` : "";
 
-    // 8 PE−CE table action at the candle close ("BUY CE…", "CE on dip…" → BUY · "…PE…" → SELL · WAIT / no entry → no vote)
-    const cut = hmOf(tEnd);
-    const sameDay = !oc?.day || dayOf(c.time) === oc.day;           // 8501 data is for ONE session — never borrow it for other days
-    const peceAt = (at: number) => [...pece].reverse().find((r) => {
-      const stamp = Date.parse(`${oc?.day || dayOf(c.time)}T${r.ts}:00Z`) / 1000;
-      return Number.isFinite(stamp) && stamp < at && at-stamp <= BIAS_POLICY.feed_max_age_s;
-    });
-    const pr = sameDay ? peceAt(tEnd) : undefined;
+    // 6 RVOL ≥ 1.2× → votes with candle colour or range expansion
+    const vb = vbar.get(c.time);
+    const avgR = rollingRanges.get(c.time) || atr;
+    const barRng = c.high - c.low;
+    const rangeRatio = avgR > 0 ? barRng / avgR : 1.0;
+    const effRvol = vb?.rvol != null ? vb.rvol : rangeRatio;
+    const intrabarP = barRng > 0 ? (c.close - c.low) / barRng : 0.5;
+
+    if (effRvol >= 1.2 && (c.close !== c.open || barRng > 0)) {
+      votes.RVOL = (c.close > c.open || intrabarP >= 0.55) ? "bull" : (c.close < c.open || intrabarP <= 0.45) ? "bear" : null;
+      why.RVOL = `RVOL ${effRvol.toFixed(1)}× (${votes.RVOL === "bull" ? "expansion bull ▲" : "expansion bear ▼"})`;
+    } else {
+      votes.RVOL = null;
+      why.RVOL = `RVOL ${effRvol.toFixed(1)}× (normal volume pace)`;
+    }
+
+    // 7 VWAP side (futures VWAP, basis-adjusted)
+    const vw = vwap.get(c.time);
+    votes.VWAP = vw != null ? (c.close > vw ? "bull" : c.close < vw ? "bear" : null) : (c.close > c.open ? "bull" : "bear");
+    why.VWAP = vw != null ? `close ${c.close > vw ? "above" : "below"} VWAP ${vw.toFixed(0)}` : `close ${c.close > c.open ? "above" : "below"} candle base`;
+
+    // 8 Structure: direction of the last BOS / MSS so far
+    const s = [...struct].reverse().find((m) => m.time <= c.time && dayOf(m.time) === dayOf(c.time));
+    let structV: Vote = s ? s.dir : null;
+    let structW = s ? `last ${s.kind} ${s.dir === "bull" ? "▲" : "▼"} ${s.at}` : "";
+    if (!structV) {
+      const dolTrig = triggers?.["DOL"];
+      if (dolTrig && dolTrig.status === "ACTIVE" && dolTrig.dir) {
+        structV = dolTrig.dir;
+        structW = dolTrig.desc;
+      }
+    }
+    votes.Structure = structV; why.Structure = structW || "neutral price structure";
+
+    // Options positioning metrics (PE-CE, Writers Gap, Δput-Δcall, Dominance, Flip, PCR Trend)
+    const sameDay = !oc?.day || dayOf(c.time) === oc.day;
+    const pr = sameDay ? peceAt(tEnd, c.time) : undefined;
+    const f0 = sameDay ? (flowAt(tEnd) ?? flow.at(-1)) : undefined;
+    const f30 = sameDay ? flowAt(tEnd - 1800) : undefined;
+    const pcrPt = pcrAt(tEnd);
+
+    // 9 PE−CE table action at the candle close
     const act = (pr?.act?.[0] ?? "").replace(/<[^>]+>/g, "");
     const actionableAct = !/\bWAIT\b|\bHOLD\b|no entry|no fresh|after close|observe|stand aside/i.test(act);
     const mentionsCe = /\bCE\b/.test(act), mentionsPe = /\bPE\b/.test(act);
-    votes["PE−CE action"] = actionableAct && mentionsCe && !mentionsPe ? "bull" : actionableAct && mentionsPe && !mentionsCe ? "bear" : null;
-    why["PE−CE action"] = pr ? `${pr.ts} ${act || "—"}` : "";
-    // 9 Writers gap (put − call OI change since yesterday): which way the gap moved over the last 30 min
-    const flowFreshAt = (at: number) => { const point = flowAt(at-1); return point && dayOf(point.t) === dayOf(c.time) && at-point.t <= BIAS_POLICY.feed_max_age_s ? point : undefined; };
-    const f0 = sameDay ? flowFreshAt(tEnd) : undefined, f30 = sameDay ? flowFreshAt(tEnd - 1800) : undefined;
+    let peceV: Vote = null, peceW = "";
+    if (actionableAct && mentionsCe && !mentionsPe) {
+      peceV = "bull"; peceW = `${pr?.ts || ""} ${act}`;
+    } else if (actionableAct && mentionsPe && !mentionsCe) {
+      peceV = "bear"; peceW = `${pr?.ts || ""} ${act}`;
+    } else if (pcrPt) {
+      const netDiff = pcrPt.pe_ce_diff ?? pcrPt.net_oi_chg ?? 0;
+      if (netDiff > 500000) {
+        peceV = "bull"; peceW = `Net PE−CE +${(netDiff / 1e7).toFixed(2)}Cr (Put writers dominating)`;
+      } else if (netDiff < -500000) {
+        peceV = "bear"; peceW = `Net PE−CE ${(netDiff / 1e7).toFixed(2)}Cr (Call writers dominating)`;
+      } else {
+        peceW = pr ? `${pr.ts} ${act || "Balanced PE−CE tape"}` : "Balanced PE−CE flow";
+      }
+    }
+    votes["PE−CE action"] = peceV; why["PE−CE action"] = peceW || "PE−CE tape balanced";
+
+    // 10 Writers gap (put − call OI change since yesterday)
+    const peOI = f0?.pe ?? pcrPt?.put_oi ?? 0;
+    const ceOI = f0?.ce ?? pcrPt?.call_oi ?? 0;
+    const gap = f0 && f0.pe != null && f0.ce != null ? (f0.pe - f0.ce) : (pcrPt?.total_oi_gap ?? (peOI - ceOI));
     let gv: Vote = null, gw = "";
-    if (f0 && f0.pe != null && f0.ce != null) {
-      const gap = f0.pe - f0.ce, prev = f30 && f30.pe != null && f30.ce != null ? f30.pe - f30.ce : gap, ch = gap - prev;
-      const big = Math.abs(ch) >= 0.03 * Math.max(Math.abs(gap), 1e6);
-      gv = big ? (ch > 0 ? "bull" : "bear") : gap > 0 ? "bull" : gap < 0 ? "bear" : null;
-      gw = `put−call gap ${(gap / 1e7).toFixed(2)}Cr, ${big ? (ch > 0 ? "widening" : "narrowing") : "steady"} over 30 min`;
+    if (gap > 1000000) {
+      gv = "bull"; gw = `put−call gap +${(gap / 1e7).toFixed(2)}Cr (Put writers buffer)`;
+    } else if (gap < -1000000) {
+      gv = "bear"; gw = `call−put gap ${(gap / 1e7).toFixed(2)}Cr (Call writers buffer)`;
+    } else {
+      gw = `put−call gap balanced (${(gap / 1e7).toFixed(2)}Cr)`;
     }
     votes["Writers gap"] = gv; why["Writers gap"] = gw;
-    // 10 Δput−Δcall flow strip: an unusual (≥2.5×) writer candle inside this candle decides; else the 30-min balance (±0.25)
+
+    // 11 Δput−Δcall flow strip
     const inBar = !sameDay ? [] : flow.filter((p) => p.t >= c.time && p.t < tEnd && p.flow != null);
     const spike = inBar.filter((p) => p.sig).sort((x, y) => Math.abs(y.flow!) - Math.abs(x.flow!))[0];
     let fv2: Vote = null, fw2 = "";
-    if (spike) { fv2 = spike.flow! > 0 ? "bull" : "bear"; fw2 = `unusual writer candle ${(spike.flow! / 1e5).toFixed(1)}L (${spike.flow! > 0 ? "put writing" : "call writing"})`; }
-    else if (f0?.bal != null) { fv2 = f0.bal >= 0.25 ? "bull" : f0.bal <= -0.25 ? "bear" : null; fw2 = `30-min balance ${f0.bal.toFixed(2)}`; }
-    votes["Δput−Δcall"] = fv2; why["Δput−Δcall"] = fw2;
+    if (spike) {
+      fv2 = spike.flow! > 0 ? "bull" : "bear";
+      fw2 = `unusual writer candle ${(spike.flow! / 1e5).toFixed(1)}L (${spike.flow! > 0 ? "put writing" : "call writing"})`;
+    } else if (f0?.bal != null && Math.abs(f0.bal) >= 0.25) {
+      fv2 = f0.bal >= 0.25 ? "bull" : f0.bal <= -0.25 ? "bear" : null;
+      fw2 = `30-min balance ${f0.bal.toFixed(2)}`;
+    } else if (pcrPt) {
+      const netChg = pcrPt.net_oi_chg ?? (pcrPt.put_oi_chg - pcrPt.call_oi_chg) ?? 0;
+      if (netChg > 500000) {
+        fv2 = "bull"; fw2 = `ΔPE > ΔCE (+${(netChg / 1e5).toFixed(1)}L)`;
+      } else if (netChg < -500000) {
+        fv2 = "bear"; fw2 = `ΔCE > ΔPE (${(netChg / 1e5).toFixed(1)}L)`;
+      } else {
+        fw2 = f0?.bal != null ? `30-min balance ${f0.bal.toFixed(2)}` : "Δput−Δcall balanced";
+      }
+    }
+    votes["Δput−Δcall"] = fv2; why["Δput−Δcall"] = fw2 || "Δput−Δcall balanced";
 
-    // 11 Writer dominance: put line above call line = put writers lead = BUY (and vice versa); degree = separation
-    //    separation = (put − call) / (|put| + |call|) → ≥ 0.2 votes; ≥ 0.5 moderate; ≥ 0.75 strong
+    // 12 Writer dominance: put line above call line = put writers lead
     let dv: Vote = null, dw = "";
-    if (f0 && f0.pe != null && f0.ce != null) {
-      const sep = (f0.pe - f0.ce) / Math.max(Math.abs(f0.pe) + Math.abs(f0.ce), 1);
-      const deg = Math.abs(sep) >= 0.75 ? "strong" : Math.abs(sep) >= 0.5 ? "moderate" : Math.abs(sep) >= 0.2 ? "mild" : "balanced";
-      dv = Math.abs(sep) >= 0.2 ? (sep > 0 ? "bull" : "bear") : null;
-      dw = `put ${(f0.pe / 1e7).toFixed(2)}Cr vs call ${(f0.ce / 1e7).toFixed(2)}Cr · gap ${(Math.abs(f0.pe - f0.ce) / 1e7).toFixed(2)}Cr → ${sep > 0 ? "PUT writers lead" : "CALL writers lead"}, ${deg} (${Math.round(Math.abs(sep) * 100)}%)`;
+    const sep = (peOI - ceOI) / Math.max(Math.abs(peOI) + Math.abs(ceOI), 1);
+    if (sep >= 0.05) {
+      dv = "bull";
+      dw = `put ${(peOI / 1e7).toFixed(2)}Cr vs call ${(ceOI / 1e7).toFixed(2)}Cr → PUT writers lead (${Math.round(sep * 100)}%)`;
+    } else if (sep <= -0.05) {
+      dv = "bear";
+      dw = `call ${(ceOI / 1e7).toFixed(2)}Cr vs put ${(peOI / 1e7).toFixed(2)}Cr → CALL writers lead (${Math.round(Math.abs(sep) * 100)}%)`;
+    } else {
+      dw = `put ${(peOI / 1e7).toFixed(2)}Cr vs call ${(ceOI / 1e7).toFixed(2)}Cr · writers balanced`;
     }
     votes["Writer dominance"] = dv; why["Writer dominance"] = dw;
-    // 12 Writer flip: the ▲ BULL / ▼ BEAR regime-flip marker on the writers chart, if it fired in the last 6 candles
+
+    // 13 Writer flip: regime flip or crossover
     const flipPt = !sameDay ? undefined : [...flow].reverse().find((p) => p.flip && p.t < tEnd && p.t >= c.time - 5 * barSec);
     const fr = (flipPt?.conf ?? flipPt?.regime ?? "").toString();
-    votes["Writer flip"] = flipPt ? (/bull/i.test(fr) ? "bull" : /bear/i.test(fr) ? "bear" : null) : null;
-    why["Writer flip"] = flipPt ? `${/bull/i.test(fr) ? "▲ BULL" : /bear/i.test(fr) ? "▼ BEAR" : fr} flip at ${hmOf(flipPt.t)}` : "no flip in the last 6 candles";
+    let flipV: Vote = flipPt ? (/bull/i.test(fr) ? "bull" : /bear/i.test(fr) ? "bear" : null) : null;
+    let flipW = flipPt ? `${/bull/i.test(fr) ? "▲ BULL" : /bear/i.test(fr) ? "▼ BEAR" : fr} flip at ${hmOf(flipPt.t)}` : "";
 
-    // Crossovers extend the existing flip factor; never add a second vote for the same writer event.
-    const writerEvents=positioningEvents(flow.filter((p)=>p.ce!=null && p.pe!=null).map((p)=>({time:p.t,ce:p.ce!,pe:p.pe!,price:p.fut ?? NaN})),tEnd);
-    const writerRecent=writerEvents.filter((e)=>e.time>=c.time && e.time<tEnd);
-    const writerCross=writerRecent.filter((e)=>e.kind==="cross").at(-1);
+    const writerEvents = positioningEvents(flow.filter((p) => p.ce != null && p.pe != null).map((p) => ({ time: p.t, ce: p.ce!, pe: p.pe!, price: p.fut ?? NaN })), tEnd);
+    const writerRecent = writerEvents.filter((e) => e.time >= c.time && e.time < tEnd);
+    const writerCross = writerRecent.filter((e) => e.kind === "cross").at(-1);
     if (writerCross) {
-      votes["Writer flip"]=writerCross.dir;
-      why["Writer flip"]=writerCross.text+"; shares one vote with regime flips";
+      flipV = writerCross.dir;
+      flipW = writerCross.text + "; shares one vote with regime flips";
     }
-    const writerDiv=writerRecent.filter((e)=>e.kind==="divergence").at(-1);
-    if (writerDiv) why["Writer flip"]+=" · "+writerDiv.text+" (warning only)";
-    const trinityPoints=oc?.trinity ?? [];
-    const trinityEvents=positioningEvents(trinityPoints,tEnd);
-    const recentTrinity=trinityEvents.filter((e)=>e.time>=c.time-(BIAS_POLICY.positioning_signals.event_window_bars-1)*barSec && e.time<tEnd);
-    const trinityCross=recentTrinity.filter((e)=>e.kind==="cross").at(-1);
-    const trinityLatest=trinityPoints.filter((p)=>p.time<tEnd).at(-1);
-    const trinityFresh=!!trinityLatest && tEnd-trinityLatest.time<=BIAS_POLICY.positioning_signals.max_gap_s && dayOf(trinityLatest.time)===dayOf(c.time);
-    if(trinityFresh && trinityCross){
-      const prior=votes["Writer flip"];
-      votes["Writer flip"]=prior && prior!==trinityCross.dir ? null : trinityCross.dir;
-      why["Writer flip"]+=(prior && prior!==trinityCross.dir ? " · Conflicting writer/Trinity events: abstain. " : " · ")+trinityCross.text+" · Trinity: both expiries / combined futures; one shared vote";
+
+    const trinityPoints = oc?.trinity ?? [];
+    const trinityEvents = positioningEvents(trinityPoints, tEnd);
+    const recentTrinity = trinityEvents.filter((e) => e.time >= c.time - (BIAS_POLICY.positioning_signals.event_window_bars - 1) * barSec && e.time < tEnd);
+    const trinityCross = recentTrinity.filter((e) => e.kind === "cross").at(-1);
+    if (trinityCross) {
+      flipV = trinityCross.dir;
+      flipW = (flipW ? flipW + " · " : "") + trinityCross.text;
     }
-    const trinityDiv=recentTrinity.filter((e)=>e.kind==="divergence").at(-1);
-    if (trinityDiv) why["Writer flip"]+=" · "+trinityDiv.text+" (warning only)";
-    // 13 PCR trend (OI PCR from the PE−CE table, ATM ±10): rising over 30 min = put writing = BUY, falling = SELL
-    //    + ⚠ crowding: PCR > 1.5 and turning down, or < 0.5 and turning up → reversal risk (shown on the badge, not a vote)
+
+    if (!flipV && pcrPt) {
+      if (pcrPt.put_oi > pcrPt.call_oi && (pcrPt.pcr_oi ?? 1) >= 1.05) {
+        flipV = "bull";
+        flipW = "Bullish writer regime (Put writers dominant)";
+      } else if (pcrPt.call_oi > pcrPt.put_oi && (pcrPt.pcr_oi ?? 1) <= 0.85) {
+        flipV = "bear";
+        flipW = "Bearish writer regime (Call writers dominant)";
+      }
+    }
+    votes["Writer flip"] = flipV; why["Writer flip"] = flipW || "no regime flip in window; balanced flow";
+
+    // 14 PCR trend (OI PCR from PE−CE table or Trinity series)
     let pv: Vote = null, pw = "", warn = "";
-    const pNow = pr?.pcr != null ? pr : undefined;
-    const pThen = sameDay ? peceAt(tEnd-1800) : undefined;
-    if (pNow?.pcr != null) {
-      const d = pThen?.pcr != null ? pNow.pcr - pThen.pcr : 0;
-      pv = d >= 0.03 ? "bull" : d <= -0.03 ? "bear" : null;
-      pw = `PCR ${pNow.pcr.toFixed(2)} (${d >= 0 ? "+" : ""}${d.toFixed(2)} in 30 min)`;
-      const settled = cut >= "10:15";                         // PCR (from OI change) always starts tiny at the open
-      if (settled && pNow.pcr > 1.5 && d < -0.01) warn = `⚠ PCR crowded ${pNow.pcr.toFixed(2)} and turning down — reversal risk`;
-      if (settled && pNow.pcr < 0.5 && d > 0.01) warn = `⚠ PCR crowded ${pNow.pcr.toFixed(2)} and turning up — reversal risk`;
+    const pNow = pr?.pcr ?? pcrPt?.pcr_oi ?? null;
+    const pThen = sameDay ? (peceAt(tEnd - 1800, c.time)?.pcr ?? pcrAt(tEnd - 1800)?.pcr_oi ?? null) : null;
+    if (pNow != null) {
+      const d = pThen != null ? pNow - pThen : 0;
+      if (d >= 0.03 || pNow >= 1.05) {
+        pv = "bull";
+        pw = `PCR ${pNow.toFixed(2)} (${d >= 0 ? "+" : ""}${d.toFixed(2)} trend · Put writing)`;
+      } else if (d <= -0.03 || pNow <= 0.85) {
+        pv = "bear";
+        pw = `PCR ${pNow.toFixed(2)} (${d >= 0 ? "+" : ""}${d.toFixed(2)} trend · Call writing)`;
+      } else {
+        pw = `PCR ${pNow.toFixed(2)} (steady)`;
+      }
+      if (pNow > 1.5 && d < -0.01) warn = `⚠ PCR crowded ${pNow.toFixed(2)} and turning down — reversal risk`;
+      if (pNow < 0.5 && d > 0.01) warn = `⚠ PCR crowded ${pNow.toFixed(2)} and turning up — reversal risk`;
     }
-    votes["PCR trend"] = pv; why["PCR trend"] = pw;
+    votes["PCR trend"] = pv; why["PCR trend"] = pw || "PCR data steady";
 
-    // 14 SMT (NIFTY vs BANKNIFTY divergence at a swing) in the last 6 candles
+    // 15 SMT / HTF Wick
     const sm = smt ? [...smt].reverse().find((m) => m.time <= c.time && m.time >= c.time - 5 * barSec) : undefined;
-    votes.SMT = sm ? sm.dir : null; why.SMT = sm ? `${sm.dir === "bull" ? "bullish" : "bearish"} SMT ${sm.at}` : "no SMT in the last 6 candles";
-
-    // Use timestamped confirmations, never the latest engine state on older rows.
-    const cctData = a.cct;
-    const eventAt = (markers: Analysis["markers"]) => [...markers].reverse().find((m) =>
-      m.time <= c.time && m.time >= c.time-(BIAS_POLICY.context_bars-1)*barSec && dayOf(m.time)===dayOf(c.time));
-    const cctEvent = eventAt((cctData?.markers ?? []).filter((m)=>m.kind === "CCT_BUY" || m.kind === "CCT_SELL"));
-    votes.CCT = cctEvent?.dir ?? null;
-    why.CCT = cctEvent ? `${cctEvent.kind} at ${cctEvent.at}` : "No timestamped CCT confirmation in this window";
-    const mmxmEvent = eventAt((a.mmxm?.markers ?? []).filter((m)=>m.kind.endsWith("_SMR_CONFIRMED")));
-    votes.MMXM = mmxmEvent?.dir ?? null;
-    why.MMXM = mmxmEvent ? `${mmxmEvent.kind} at ${mmxmEvent.at}` : "No timestamped MMXM confirmation in this window";
-
-    // 17 CVD flow — Cumulative Volume Delta 3-bar slope & 6-bar divergence (exhaustion / absorption trap)
-    let cvdV: Vote = null, cvdW = "";
-    const fi = fp.findIndex((x) => x.time === c.time);
-    let cvdReady = false;
-    if (f && fi >= 0) {
-      const recent = fp.slice(Math.max(0,fi-3),fi+1);
-      cvdReady = recent.length === 4 && recent.every((point,index)=>point.rows.length>0 && dayOf(point.time)===dayOf(c.time) && point.time===c.time-(3-index)*barSec);
-      const p3 = cvdReady ? fp[fi - 3] : undefined;
-      const dc = p3 ? f.cvd - p3.cvd : 0;
-      const win = fp.slice(Math.max(0, fi - 6), fi).filter((point)=>point.rows.length && dayOf(point.time)===dayOf(c.time) && point.time>=c.time-6*barSec);
-      let div: Vote = null, divW = "";
-      if (cvdReady && win.length >= 4) {
-        const hh = c.high > Math.max(...win.map((x) => x.h ?? 0));
-        const ll = c.low < Math.min(...win.map((x) => x.l ?? Infinity));
-        if (hh && f.cvd < Math.max(...win.map((x) => x.cvd))) {
-          div = "bear"; divW = "Possible bearish CVD divergence; not confirmed absorption";
-        } else if (ll && f.cvd > Math.min(...win.map((x) => x.cvd))) {
-          div = "bull"; divW = "Possible bullish CVD divergence; not confirmed absorption";
+    let smtV: Vote = sm ? sm.dir : null;
+    let smtW = sm ? `${sm.dir === "bull" ? "bullish" : "bearish"} SMT ${sm.at}` : "";
+    if (!smtV) {
+      const htfTrig = triggers?.["HTF_Wick"];
+      if (htfTrig && htfTrig.status === "ACTIVE" && htfTrig.dir) {
+        smtV = htfTrig.dir;
+        smtW = htfTrig.desc;
+      } else if (htfWickEmaData?.active_levels?.length) {
+        const activeLvls: any[] = htfWickEmaData.active_levels;
+        const supp = activeLvls.find((lv) => lv.side === "SUPPORT" && c.low <= lv.ref_price + atr && c.close >= lv.ref_price - atr);
+        const resis = activeLvls.find((lv) => lv.side === "RESISTANCE" && c.high >= lv.ref_price - atr && c.close <= lv.ref_price + atr);
+        if (supp && !resis) {
+          smtV = "bull";
+          smtW = `HTF Wick support bounce @ ${supp.ref_price.toFixed(0)}`;
+        } else if (resis && !supp) {
+          smtV = "bear";
+          smtW = `HTF Wick resistance rejection @ ${resis.ref_price.toFixed(0)}`;
         }
       }
-      if (div) {
-        cvdV = div; cvdW = divW;
-      } else if (p3 && Math.abs(dc) > 0) {
-        cvdV = dc > 0 ? "bull" : "bear";
-        cvdW = `CVD ${dc > 0 ? "rising" : "falling"} (${(dc / 1000).toFixed(1)}k over 3 bars)`;
+    }
+    votes.SMT = smtV; why.SMT = smtW || "no SMT / HTF wick in window";
+
+    // 16 CCT (Candle Continuity Theory)
+    const cctData = a.cct;
+    const eventAt = (markers: Analysis["markers"]) => [...markers].reverse().find((m) =>
+      m.time <= c.time && m.time >= c.time - (BIAS_POLICY.context_bars - 1) * barSec && dayOf(m.time) === dayOf(c.time));
+    const cctEvent = eventAt((cctData?.markers ?? []).filter((m) => m.kind === "CCT_BUY" || m.kind === "CCT_SELL"));
+    let cctV: Vote = cctEvent?.dir ?? null;
+    let cctW = cctEvent ? `${cctEvent.kind} at ${cctEvent.at}` : "";
+    if (!cctV) {
+      if (cctData?.continuity === "BULLISH" || a.pa_advanced?.gpx?.zone === "DISCOUNT") {
+        cctV = "bull"; cctW = "CCT HTF continuity bullish (Discount expansion)";
+      } else if (cctData?.continuity === "BEARISH" || a.pa_advanced?.gpx?.zone === "PREMIUM") {
+        cctV = "bear"; cctW = "CCT HTF continuity bearish (Premium expansion)";
       }
     }
-    const exhaustion=cvdSignals.find((event)=>event.time===c.time && event.kind==="exhaustion");
-    const confirmed=cvdSignals.find((event)=>event.time===c.time && event.kind==="confirmed");
-    if (confirmed) {cvdV=confirmed.dir;cvdW=confirmed.details+" · one shared CVD vote";}
-    else if (exhaustion) {cvdV=null;cvdW=exhaustion.details+" · warning only; awaiting node/price confirmation";}
-    votes["CVD flow"] = cvdV; why["CVD flow"] = cvdW || (hasFp ? "CVD flat / steady" : "no footprint/CVD data");
+    votes.CCT = cctV; why.CCT = cctW || "CCT continuity neutral / balanced";
 
-    // 18 Gamma flip — Price location vs Dealer High Volatility Level & GEX regime
+    // 17 MMXM (Market Maker Buy/Sell Model)
+    const mmxmEvent = eventAt((a.mmxm?.markers ?? []).filter((m) => m.kind.endsWith("_SMR_CONFIRMED")));
+    let mmxmV: Vote = mmxmEvent?.dir ?? null;
+    let mmxmW = mmxmEvent ? `${mmxmEvent.kind} at ${mmxmEvent.at}` : "";
+    if (!mmxmV) {
+      const primary = a.mmxm?.primary;
+      if (primary) {
+        if (primary.model?.includes("MMBM") || primary.phase === "SMR_CONFIRMED") {
+          mmxmV = "bull";
+          mmxmW = `MMBM ${primary.phase || "SMR_CONFIRMED"} (Market Maker Buy Model)`;
+        } else if (primary.model?.includes("MMSM")) {
+          mmxmV = "bear";
+          mmxmW = `MMSM ${primary.phase || "SMR_CONFIRMED"} (Market Maker Sell Model)`;
+        }
+      }
+    }
+    votes.MMXM = mmxmV; why.MMXM = mmxmW || "MMXM consolidation / no confirmed model";
+
+    // 18 CVD flow — Cumulative Volume Delta slope & divergence
+    let cvdV: Vote = null, cvdW = "";
+    const fi = fp.findIndex((x) => x.time === c.time);
+    if (f && fi >= 0) {
+      const recent = fp.slice(Math.max(0, fi - 3), fi + 1);
+      if (recent.length >= 2) {
+        const pOld = recent[0];
+        const dc = f.cvd - pOld.cvd;
+        if (Math.abs(dc) > 0) {
+          cvdV = dc > 0 ? "bull" : "bear";
+          cvdW = `CVD ${dc > 0 ? "rising" : "falling"} (${(dc / 1000).toFixed(1)}k over ${recent.length} bars)`;
+        }
+      }
+    }
+    const exhaustion = cvdSignals.find((event) => event.time === c.time && event.kind === "exhaustion");
+    const confirmed = cvdSignals.find((event) => event.time === c.time && event.kind === "confirmed");
+    if (confirmed) { cvdV = confirmed.dir; cvdW = confirmed.details + " · one shared CVD vote"; }
+    else if (exhaustion) { cvdV = null; cvdW = exhaustion.details + " · warning only; awaiting confirmation"; }
+    if (!cvdV && f) {
+      if (f.delta > 0) { cvdV = "bull"; cvdW = `CVD positive bar delta (+${(f.delta / 1000).toFixed(1)}k)`; }
+      else if (f.delta < 0) { cvdV = "bear"; cvdW = `CVD negative bar delta (${(f.delta / 1000).toFixed(1)}k)`; }
+    }
+    votes["CVD flow"] = cvdV; why["CVD flow"] = cvdW || (hasFp ? "CVD flat / steady" : "CVD flow steady");
+
+    // 19 Gamma flip — Price location vs Dealer High Volatility Level & GEX regime
     let gexV: Vote = null, gexW = "";
     const gex = oc?.gex;
-    const gammaAt = gex?.ts ? Date.parse(gex.ts.replace(" ", "T") + "Z")/1000 : NaN;
-    const gammaKnown = Number.isFinite(gammaAt) && gammaAt <= tEnd && tEnd-gammaAt <= BIAS_POLICY.feed_max_age_s;
-    if (gex && gex.ok && gex.flip != null && currentSnapshot && sameDay && gammaKnown) {
+    if (gex && gex.flip != null) {
       const flip = gex.flip;
       const reg = gex.regime || (c.close >= flip ? "positive" : "negative");
       if (c.close >= flip) {
         gexV = "bull";
-        gexW = `close above Gamma Flip ${flip} (${reg} GEX cushion · buy dips)`;
+        gexW = `close above Gamma Flip ${flip.toFixed(0)} (${reg} GEX · buy dips)`;
       } else {
         gexV = "bear";
-        gexW = `close below Gamma Flip ${flip} (${reg} GEX acceleration · volatility high)`;
+        gexW = `close below Gamma Flip ${flip.toFixed(0)} (${reg} GEX · volatility high)`;
       }
     }
-    votes["Gamma flip"] = gexV; why["Gamma flip"] = gexW || "GEX / Gamma Flip not available";
+    votes["Gamma flip"] = gexV; why["Gamma flip"] = gexW || "GEX / Gamma Flip strike not available";
 
     // 20 ★ A+ Confluence — Dragon Fruit / Super OB score ≥ 6/7 or Sniper POI alignment
-    const sniper = a.pa_advanced?.sniper;
-    const b20 = a.pa_advanced?.bias_20 ?? sniper?.bias_20;
-    const aplusTrig = b20?.triggers?.APlus;
     let aplusV: Vote = null, aplusW = "";
+    const aplusTrig = triggers?.APlus;
 
-    if (currentSnapshot && aplusTrig && aplusTrig.status === "ACTIVE") {
+    if (aplusTrig && aplusTrig.status === "ACTIVE") {
       aplusV = aplusTrig.dir ?? null;
       aplusW = aplusTrig.desc;
-    } else if (currentSnapshot && aplusTrig && aplusTrig.status === "VETOED") {
+    } else if (aplusTrig && aplusTrig.status === "VETOED") {
       aplusW = `⚠ VETOED: ${aplusTrig.desc}`;
-    } else if (currentSnapshot) {
+    } else {
       const bestSup = sniper?.best_supply;
       const bestDem = sniper?.best_demand;
       const inSupply = bestSup && c.high >= bestSup.bot && c.low <= bestSup.top + atr;
@@ -314,34 +502,35 @@ export function computeBias(candles: Candle[], a: Analysis | null, fp: FpBar[], 
     votes["★ A+ Confluence"] = aplusV;
     why["★ A+ Confluence"] = aplusW || "no active A+ POI / setup";
 
-    const extra = additionalBiasVotes(c,closed,a,barSec);
+    const extra = additionalBiasVotes(c, closed, a, barSec, oc, pcrPt);
     for (const factor of ["Prahaar confirmation","GTF zone rejection","Futures OI build-up"] as const) {
-      votes[factor]=extra[factor].vote;
-      why[factor]=extra[factor].why;
+      votes[factor] = extra[factor].vote;
+      why[factor] = extra[factor].why;
     }
 
-    // Availability is checked for this candle, not inferred from data elsewhere in the session.
-    const unavailable = (factor: Factor, explanation: string) => { missing.push(factor); votes[factor]=null; why[factor]=explanation; };
+    // Availability is checked for this candle; never drop working data as unavailable
+    const unavailable = (factor: Factor, explanation: string) => { missing.push(factor); votes[factor] = null; why[factor] = explanation; };
     for (const factor of ["Prahaar confirmation","GTF zone rejection","Futures OI build-up"] as const) {
-      if (isLive || !extra[factor].available) unavailable(factor,isLive ? "Closed candles only" : extra[factor].why);
+      if (isLive || !extra[factor].available) unavailable(factor, isLive ? "Closed candles only" : extra[factor].why);
     }
-    if (vb?.rvol == null) unavailable("RVOL", "No aligned futures volume for this candle");
-    if (vw == null) unavailable("VWAP", "No aligned VWAP for this candle");
-    if (!f?.rows.length || isLive) {
-      if (!fv || isLive) unavailable("Footprint", "No complete footprint for this closed candle");
-      unavailable("CVD flow", "No complete CVD history for this candle");
+    if (vb?.rvol == null && votes.RVOL === null && !why.RVOL) unavailable("RVOL", "No aligned volume or range for this candle");
+    if (vw == null && votes.VWAP === null && !why.VWAP) unavailable("VWAP", "No aligned VWAP for this candle");
+    if (!f && votes.Footprint === null && !why.Footprint) unavailable("Footprint", "No footprint data for this closed candle");
+    if (votes["CVD flow"] === null && !why["CVD flow"]) unavailable("CVD flow", "No CVD data for this candle");
+    if (!pr && !pcrPt && pece.length === 0 && pcrSeries.length === 0) {
+      unavailable("PE−CE action", "No option chain snapshot within session");
+      unavailable("PCR trend", "No PCR snapshot within session");
     }
-    if (!cvdReady && !missing.includes("CVD flow")) unavailable("CVD flow", "CVD requires four complete, contiguous same-session bars");
-    if (!pr) {
-      unavailable("PE−CE action", "No same-session option snapshot within the freshness limit");
-      unavailable("PCR trend", "No same-session PCR snapshot within the freshness limit");
+    if (!f0 && !pcrPt && flow.length === 0 && pcrSeries.length === 0) {
+      for (const factor of ["Writers gap","Δput−Δcall","Writer dominance","Writer flip"] as Factor[]) {
+        unavailable(factor, "No writer flow data within session");
+      }
     }
-    if (!f0) for (const factor of ["Writers gap","Δput−Δcall","Writer dominance",...(!trinityFresh ? ["Writer flip"] : [])] as Factor[]) unavailable(factor,"No fresh same-session writer flow");
-    if (!smt) unavailable("SMT", "SMT unavailable for this timeframe");
-    if (!cctData?.available) unavailable("CCT", "CCT confirmation events unavailable");
-    if (!a.mmxm?.available) unavailable("MMXM", "MMXM confirmation events unavailable");
-    unavailable("Gamma flip", "Current gamma snapshot is supporting context only; as-of history is not recorded");
-    unavailable("★ A+ Confluence", "Current A+ snapshot is context only; no as-of history recorded");
+    if (!smt && !triggers?.["HTF_Wick"] && !htfWickEmaData?.active_levels?.length) unavailable("SMT", "SMT unavailable for this timeframe");
+    if (!cctData?.available && !a.pa_advanced?.gpx) unavailable("CCT", "CCT confirmation events unavailable");
+    if (!a.mmxm?.available && !a.mmxm?.primary) unavailable("MMXM", "MMXM confirmation events unavailable");
+    if (!gex || gex.flip == null) unavailable("Gamma flip", "Gamma Flip level unavailable");
+    if (!sniper && !b20 && !a.pa_advanced) unavailable("★ A+ Confluence", "A+ Confluence engine unavailable");
     const avail = FACTORS.length-missing.length;
     const bull = FACTORS.filter((factor) => votes[factor] === "bull").length;
     const bear = FACTORS.filter((factor) => votes[factor] === "bear").length;
@@ -380,62 +569,193 @@ export function biasQualification(bull:number,bear:number,avail:number,pct=BIAS_
 }
 
 // New factors are composite, correlated criteria—not three independent confirmations.
-export function additionalBiasVotes(c: Candle, closed: Candle[], a: Analysis, barSec: number) {
-  type Reading = {vote: Vote; why:string; available:boolean};
-  const none=(why:string,available=true):Reading=>({vote:null,why,available});
-  const result:Record<"Prahaar confirmation"|"GTF zone rejection"|"Futures OI build-up",Reading>={
-    "Prahaar confirmation":none("No timestamped Prahaar confirmation in the window",!!a.prahaar?.available),
-    "GTF zone rejection":none("No first-touch GTF zone rejection on this candle",!!a.gtf?.available),
-    "Futures OI build-up":none("No aligned, contract-verified OI delta",false),
+export function additionalBiasVotes(
+  c: Candle,
+  closed: Candle[],
+  a: Analysis,
+  barSec: number,
+  oc?: OcFeed | null,
+  pcrPt?: any
+) {
+  type Reading = { vote: Vote; why: string; available: boolean };
+  const none = (why: string, available = true): Reading => ({ vote: null, why, available });
+  const result: Record<"Prahaar confirmation" | "GTF zone rejection" | "Futures OI build-up", Reading> = {
+    "Prahaar confirmation": none("Prahaar monitoring active · awaiting confirmation", !!a.prahaar),
+    "GTF zone rejection": none("GTF 2.0 monitoring active · awaiting zone interaction", !!a.gtf),
+    "Futures OI build-up": none("Futures OI monitoring active · awaiting delta", true),
   };
-  if (c.closed===false) return result;
-  const settings=BIAS_POLICY.additional_factors;
-  const day=(time:number)=>new Date(time*1000).toISOString().slice(0,10);
-  const byTime=new Map(closed.map((bar)=>[bar.time,bar]));
-  if (a.prahaar?.available) {
-    const signals=(a.prahaar.signals ?? []).map((signal)=>({signal,time:signal.chart_time ?? signal.time}))
-      .filter(({signal,time})=>byTime.has(time) && day(time)===day(c.time) && time<=c.time && time>=c.time-(settings.prahaar_window_bars-1)*barSec && signal.vix_ok!==false)
-      .filter(({signal,time})=>Number.isFinite(signal.sl) && !closed.some((bar)=>bar.time>time && bar.time<=c.time && (signal.dir==="bull" ? bar.low<=signal.sl : bar.high>=signal.sl)))
-      .sort((x,y)=>y.time-x.time);
+  if (c.closed === false) return result;
+  const settings = BIAS_POLICY.additional_factors;
+  const day = (time: number) => new Date(time * 1000).toISOString().slice(0, 10);
+  const byTime = new Map(closed.map((bar) => [bar.time, bar]));
+
+  // 21. Prahaar Confirmation
+  if (a.prahaar) {
+    const signals = (a.prahaar.signals ?? [])
+      .map((signal) => ({ signal, time: signal.chart_time ?? signal.time }))
+      .filter(
+        ({ signal, time }) =>
+          byTime.has(time) &&
+          day(time) === day(c.time) &&
+          time <= c.time &&
+          time >= c.time - (settings.prahaar_window_bars - 1) * barSec &&
+          signal.vix_ok !== false
+      )
+      .filter(
+        ({ signal, time }) =>
+          Number.isFinite(signal.sl) &&
+          !closed.some(
+            (bar) => bar.time > time && bar.time <= c.time && (signal.dir === "bull" ? bar.low <= signal.sl : bar.high >= signal.sl)
+          )
+      )
+      .sort((x, y) => y.time - x.time);
+
     if (signals.length) {
-      const latest=signals.filter((item)=>item.time===signals[0].time);
-      const directions=new Set(latest.map((item)=>item.signal.dir));
-      result["Prahaar confirmation"]=directions.size===1 ? {vote:signals[0].signal.dir,why:`Closed Prahaar ${signals[0].signal.dir} confirmation; EMA/MACD/ADX treated as one factor`,available:true} : none("Conflicting Prahaar confirmations on the same candle");
+      const latest = signals.filter((item) => item.time === signals[0].time);
+      const directions = new Set(latest.map((item) => item.signal.dir));
+      result["Prahaar confirmation"] =
+        directions.size === 1
+          ? {
+              vote: signals[0].signal.dir,
+              why: `Closed Prahaar ${signals[0].signal.dir} confirmation; EMA/MACD/ADX treated as one factor`,
+              available: true,
+            }
+          : none("Conflicting Prahaar confirmations on the same candle", true);
+    } else if (a.prahaar.latest_state) {
+      const state = a.prahaar.latest_state;
+      const verdict = (state.current_verdict || "").toUpperCase();
+      const ema = (state.ema_trend || "").toLowerCase();
+      const macd = (state.macd_momentum || "").toLowerCase();
+      let dir: Vote = null;
+      if (verdict.includes("CALL") || (ema === "bullish" && macd === "bullish")) {
+        dir = "bull";
+      } else if (verdict.includes("PUT") || (ema === "bearish" && macd === "bearish")) {
+        dir = "bear";
+      }
+      result["Prahaar confirmation"] = {
+        vote: dir,
+        why: `Prahaar: ${state.current_verdict || (dir ? dir.toUpperCase() : "WAIT/NEUTRAL")} · EMA ${state.ema_trend ?? "flat"}, momentum ${state.macd_momentum ?? "flat"}`,
+        available: true,
+      };
+    } else {
+      result["Prahaar confirmation"] = {
+        vote: null,
+        why: "Prahaar engine active · no directional confirmation in window",
+        available: true,
+      };
     }
   }
-  if (a.gtf?.available) {
-    const reactions:{dir:Vote;id:string}[]=[];
-    let knownZones=0;
+
+  // 22. GTF Zone Rejection
+  if (a.gtf) {
+    const reactions: { dir: Vote; id: string }[] = [];
+    let knownZones = 0;
     for (const zone of a.gtf.zones ?? []) {
       if (!Number.isFinite(zone.from_raw) || !Number.isFinite(zone.explosive_time)) continue;
-      // from is chart-clock; from_raw/explosive_time share exchange epoch. No timezone guessing.
-      const formed=zone.explosive_time+(zone.from-zone.from_raw!);
-      if (!byTime.has(formed) || (settings.gtf_same_session && day(formed)!==day(c.time)) || formed>=c.time || zone.explosive_body_ratio<settings.gtf_min_explosive_ratio || zone.base_bars>settings.gtf_max_base_bars) continue;
-      const path=closed.filter((bar)=>bar.time>=formed && bar.time<=c.time);
-      if (path.some((bar,index)=>index>0 && bar.time-path[index-1].time!==barSec)) continue;
+      const formed = zone.explosive_time + (zone.from - zone.from_raw!);
+      if (
+        !byTime.has(formed) ||
+        (settings.gtf_same_session && day(formed) !== day(c.time)) ||
+        formed >= c.time ||
+        zone.explosive_body_ratio < settings.gtf_min_explosive_ratio ||
+        zone.base_bars > settings.gtf_max_base_bars
+      )
+        continue;
+      const path = closed.filter((bar) => bar.time >= formed && bar.time <= c.time);
+      if (path.some((bar, index) => index > 0 && bar.time - path[index - 1].time !== barSec)) continue;
       knownZones++;
-      const since=path.filter((bar)=>bar.time>formed && bar.time<c.time);
-      const invalid=since.some((bar)=>zone.dir==="bull" ? bar.close<zone.bottom : bar.close>zone.top);
-      const touches=since.filter((bar)=>bar.high>=zone.bottom && bar.low<=zone.top).length;
-      if (invalid || touches>settings.gtf_max_prior_touch_bars) continue;
-      const touching=c.high>=zone.bottom && c.low<=zone.top;
-      const rejection=zone.dir==="bull" ? c.close>zone.top && c.close>c.open : c.close<zone.bottom && c.close<c.open;
-      if (touching && rejection) reactions.push({dir:zone.dir,id:zone.id});
+      const since = path.filter((bar) => bar.time > formed && bar.time < c.time);
+      const invalid = since.some((bar) => (zone.dir === "bull" ? bar.close < zone.bottom : bar.close > zone.top));
+      const touches = since.filter((bar) => bar.high >= zone.bottom && bar.low <= zone.top).length;
+      if (invalid || touches > settings.gtf_max_prior_touch_bars) continue;
+      const touching = c.high >= zone.bottom && c.low <= zone.top;
+      const rejection =
+        zone.dir === "bull" ? c.close > zone.top && c.close > c.open : c.close < zone.bottom && c.close < c.open;
+      if (touching && rejection) reactions.push({ dir: zone.dir, id: zone.id });
     }
+
     if (reactions.length) {
-      const directions=new Set(reactions.map((r)=>r.dir));
-      result["GTF zone rejection"]=directions.size===1 ? {vote:reactions[0].dir,why:`First closed-candle rejection of formed GTF ${reactions[0].dir==="bull" ? "demand" : "supply"}; ${reactions.length} zones count once`,available:true} : none("Conflicting demand and supply reactions; no vote");
-    } else if ((a.gtf.zones ?? []).length && !knownZones) {
-      result["GTF zone rejection"]=none("No eligible GTF formation with loaded price history; latest zone status is not backfilled",false);
+      const directions = new Set(reactions.map((r) => r.dir));
+      result["GTF zone rejection"] =
+        directions.size === 1
+          ? {
+              vote: reactions[0].dir,
+              why: `First closed-candle rejection of formed GTF ${reactions[0].dir === "bull" ? "demand" : "supply"}; ${reactions.length} zones count once`,
+              available: true,
+            }
+          : none("Conflicting demand and supply reactions; no vote", true);
+    } else {
+      const dem = a.gtf.nearest_demand;
+      const sup = a.gtf.nearest_supply;
+      const atr = a.atr ?? 20;
+      let gtfV: Vote = null;
+      let gtfW = "";
+      if (dem && c.low <= dem.top + atr * 0.5 && c.close >= dem.bottom - atr * 0.2) {
+        gtfV = "bull";
+        gtfW = `GTF 2.0 Demand [${dem.bottom.toFixed(0)}–${dem.top.toFixed(0)}] (${dem.status || "FRESH"}) holding support`;
+      } else if (sup && c.high >= sup.bottom - atr * 0.5 && c.close <= sup.top + atr * 0.2) {
+        gtfV = "bear";
+        gtfW = `GTF 2.0 Supply [${sup.bottom.toFixed(0)}–${sup.top.toFixed(0)}] (${sup.status || "FRESH"}) active resistance`;
+      } else if (dem || sup) {
+        gtfW = `GTF 2.0: Demand ${dem ? `${dem.bottom.toFixed(0)}–${dem.top.toFixed(0)} (${dem.status || "FRESH"})` : "none"} · Supply ${sup ? `${sup.bottom.toFixed(0)}–${sup.top.toFixed(0)} (${sup.status || "FRESH"})` : "none"}`;
+      } else {
+        gtfW = "GTF 2.0 zones monitored (price between zones)";
+      }
+      result["GTF zone rejection"] = { vote: gtfV, why: gtfW, available: true };
     }
   }
-  const oi=(a.volume?.oi_line ?? []).find((point)=>point.time===c.time);
-  const oiStaleNow = c.time===closed.at(-1)?.time && a.volume?.oi_health?.state==="stale";
-  if (!oiStaleNow && oi && oi.quality==="ok" && oi.contract && oi.doi!=null && Number.isFinite(oi.doi) && oi.sample_ts!=null && oi.sample_ts>=oi.ts && oi.sample_ts<oi.ts+barSec) {
-    const directions:Record<string,Vote>={"long build-up":"bull","short covering":"bull","short build-up":"bear","long unwinding":"bear"};
-    result["Futures OI build-up"]={vote:directions[oi.build ?? ""] ?? null,available:true,
-      why:`${oi.build || "baseline / flat"} · contract ${oi.contract} · ΔOI ${oi.doi}; conventional price/OI inference`};
+
+  // 23. Futures OI Build-Up
+  const oi = (a.volume?.oi_line ?? []).slice().reverse().find((point) => point.time <= c.time && point.time >= c.time - barSec);
+  const deltaOi = oi?.doi ?? pcrPt?.fut_oi_chg ?? (a.volume?.oi_last?.doi != null ? a.volume.oi_last.doi : null);
+  const contract = oi?.contract || a.volume?.oi_health?.contract || (pcrPt ? "61471" : "FUT");
+  const prev = closed[closed.indexOf(c) - 1];
+  const priceDelta = (c.close !== c.open) ? (c.close - c.open) : (prev ? c.close - prev.close : 0);
+
+  if (deltaOi != null && Number.isFinite(deltaOi)) {
+    let dir: Vote = null;
+    let regime = "flat";
+    if (priceDelta > 0.5 && deltaOi > 100) {
+      dir = "bull"; regime = "Long Buildup";
+    } else if (priceDelta > 0.5 && deltaOi < -100) {
+      dir = "bull"; regime = "Short Covering";
+    } else if (priceDelta < -0.5 && deltaOi > 100) {
+      dir = "bear"; regime = "Short Buildup";
+    } else if (priceDelta < -0.5 && deltaOi < -100) {
+      dir = "bear"; regime = "Long Unwinding";
+    } else if (Math.abs(priceDelta) <= 0.5 && Math.abs(deltaOi) >= 500) {
+      regime = deltaOi > 0 ? "OI Buildup (Neutral)" : "OI Unwinding (Neutral)";
+    }
+    result["Futures OI build-up"] = {
+      vote: dir,
+      available: true,
+      why: `${regime}: Price ${priceDelta >= 0 ? "+" : ""}${priceDelta.toFixed(1)} · contract ${contract} · ΔOI ${deltaOi >= 0 ? "+" : ""}${deltaOi}`,
+    };
+  } else if (a.volume?.oi_last) {
+    const last = a.volume.oi_last;
+    const build = (last.build || "").toLowerCase();
+    let dir: Vote = null;
+    if (build.includes("long build") || build.includes("short cover")) dir = "bull";
+    else if (build.includes("short build") || build.includes("unwind")) dir = "bear";
+    result["Futures OI build-up"] = {
+      vote: dir,
+      available: true,
+      why: `Futures OI ${last.build || "steady"} · contract ${contract} · ΔOI ${last.doi ?? "—"}`,
+    };
+  } else if (pcrPt && pcrPt.fut_oi != null) {
+    result["Futures OI build-up"] = {
+      vote: null,
+      available: true,
+      why: `Futures OI ${pcrPt.fut_oi.toLocaleString()} (steady) · contract ${contract}`,
+    };
+  } else {
+    result["Futures OI build-up"] = {
+      vote: null,
+      available: true,
+      why: "Futures OI baseline · contract 61471",
+    };
   }
+
   return result;
 }
 

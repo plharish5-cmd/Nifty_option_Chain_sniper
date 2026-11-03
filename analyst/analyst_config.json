@@ -338,5 +338,18 @@
     "jump_minutes": 15,
     "debounce_ms": 400,
     "refresh_seconds": 60
+  },
+  "itm_atm_oi_walls": {
+    "hollow_rally_min_pts_above_wall": 100.0,
+    "itm_ce_scan_below_spot": 150.0,
+    "otm_ce_scan_above_spot": 300.0,
+    "panic_unwinding_buffer_pts": 20.0,
+    "structural_downside_support": 23119.0,
+    "pcr_overbought_threshold": 1.60,
+    "rsi_period": 14,
+    "iron_ceiling_min": 23550.0,
+    "iron_ceiling_max": 23623.0,
+    "put_support_top": 23250.0,
+    "put_support_bottom": 23200.0
   }
 }

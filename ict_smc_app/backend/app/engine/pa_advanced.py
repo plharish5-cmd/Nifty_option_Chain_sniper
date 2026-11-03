@@ -2346,6 +2346,44 @@ def _compute_bias_20(
                     rjb_status = "VETOED"
                     rjb_desc = f"RJB+ at {rbot:.0f}–{rtop:.0f} invalidated / pierced"
 
+    if rjb_status == "NEUTRAL":
+        rjb_extra = [z for z in pa.get("zones", []) if "RJB" in str(z.get("type", "")).upper() or "REJECTION" in str(z.get("type", "")).upper()]
+        if rjb_extra:
+            nearest_rjb2 = min(rjb_extra, key=lambda z: abs(((float(z.get("top", 0)) + float(z.get("bottom", 0))) / 2.0) - spot))
+            rtop = float(nearest_rjb2.get("top", 0))
+            rbot = float(nearest_rjb2.get("bottom", 0))
+            rdir = str(nearest_rjb2.get("dir", "bull")).lower()
+            if rtop > rbot and abs(spot - ((rtop + rbot) / 2.0)) <= 1.5 * atr:
+                if rdir == "bull" and c_close >= rbot and not has_trap_veto:
+                    rjb_status = "ACTIVE"
+                    rjb_dir = "bull"
+                    rjb_val = 0.5
+                    rjb_desc = f"Bullish RJB+ defended at {rbot:.0f}–{rtop:.0f} (+0.5)"
+                elif rdir == "bear" and c_close <= rtop and not has_trap_veto:
+                    rjb_status = "ACTIVE"
+                    rjb_dir = "bear"
+                    rjb_val = -0.5
+                    rjb_desc = f"Bearish RJB+ defended at {rbot:.0f}–{rtop:.0f} (-0.5)"
+                else:
+                    rjb_status = "VETOED"
+                    rjb_desc = f"RJB+ at {rbot:.0f}–{rtop:.0f} invalidated / pierced"
+
+    if rjb_status == "NEUTRAL":
+        for m in reversed(pa.get("markers", [])):
+            kind = str(m.get("kind", ""))
+            if kind in ("RJB_BOUNCE", "REJECTION_BOUNCE", "RJB_BUY"):
+                rjb_status = "ACTIVE"
+                rjb_dir = "bull"
+                rjb_val = 0.5
+                rjb_desc = "Bullish RJB+ rejection bounce (+0.5)"
+                break
+            elif kind in ("RJB_REJECT", "REJECTION_REJECT", "RJB_SELL"):
+                rjb_status = "ACTIVE"
+                rjb_dir = "bear"
+                rjb_val = -0.5
+                rjb_desc = "Bearish RJB+ rejection level (-0.5)"
+                break
+
     # 3. CRT (Candle Range Theory phase alignment: +1.0 / -1.0)
     crt_status = "NEUTRAL"
     crt_dir = None
@@ -2549,11 +2587,11 @@ def _compute_bias_20(
         {"id": 12, "name": "Writer dominance", "vote": None, "weight": 1.0, "desc": "Put vs Call writer lead"},
         {"id": 13, "name": "Writer flip", "vote": None, "weight": 1.0, "desc": "Intraday regime flip marker"},
         {"id": 14, "name": "PCR trend", "vote": None, "weight": 1.0, "desc": "OI PCR 30-min delta"},
-        {"id": 15, "name": "SMT", "vote": None, "weight": 1.0, "desc": "Nifty vs BankNifty divergence"},
+        {"id": 15, "name": "SMT", "vote": htf_wick_dir if htf_wick_status == "ACTIVE" else None, "weight": 1.0, "desc": htf_wick_desc},
         {"id": 16, "name": "CCT", "vote": "bull" if gpx_zone == "DISCOUNT" else "bear" if gpx_zone == "PREMIUM" else None, "weight": 1.0, "desc": "Candle Continuity Theory HTF open"},
-        {"id": 17, "name": "MMXM", "vote": None, "weight": 1.0, "desc": "Market Maker Model curve phase"},
+        {"id": 17, "name": "MMXM", "vote": "bull" if "MMBM" in str(pa.get("mmxm", {}).get("primary", {}).get("model", "")) else "bear" if "MMSM" in str(pa.get("mmxm", {}).get("primary", {}).get("model", "")) else None, "weight": 1.0, "desc": "Market Maker Model curve phase"},
         {"id": 18, "name": "CVD flow", "vote": None, "weight": 1.0, "desc": "Cumulative volume delta slope"},
-        {"id": 19, "name": "Gamma flip", "vote": None, "weight": 1.0, "desc": "Dealer Gamma Flip HVL level"},
+        {"id": 19, "name": "Gamma flip", "vote": ("bull" if spot >= float(pa.get("gex", {}).get("flip", 0)) else "bear") if float(pa.get("gex", {}).get("flip") or 0) > 0 else None, "weight": 1.0, "desc": f"Dealer Gamma Flip level {float(pa.get('gex', {}).get('flip', 0)):.0f}" if float(pa.get("gex", {}).get("flip") or 0) > 0 else "Dealer Gamma Flip HVL level"},
         {"id": 20, "name": "★ A+ Confluence", "vote": aplus_dir if aplus_status == "ACTIVE" else None, "weight": 1.5, "desc": aplus_desc},
     ]
 
