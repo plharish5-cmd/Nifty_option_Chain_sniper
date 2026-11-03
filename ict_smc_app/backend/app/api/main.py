@@ -100,7 +100,9 @@ def _opt(h: Hub, key: str):
 
 
 @app.get("/api/candles")
-def candles(tf: str = Query("5m"), days: int = Query(3, ge=1, le=60), inst: str = Query("NIFTY")):
+def candles(tf: str = Query("5m"), days: int = Query(3, ge=1, le=400), inst: str = Query("NIFTY"),
+            asof: str | None = Query(None, description="ISO date; returns the window ENDING that "
+                                                       "day, read from SQLite. Review mode.")):
     if tf not in TF_SECONDS:
         raise HTTPException(400, f"tf must be one of {list(TF_SECONDS)}")
     h = _h()
@@ -110,8 +112,8 @@ def candles(tf: str = Query("5m"), days: int = Query(3, ge=1, le=60), inst: str 
             raise HTTPException(400, "option charts are intraday only")
         o = _opt(h, inst)
         return {"tf": tf, "instrument": o.to_dict(), "candles": [_cj(r) for r in optc.frame(o, tf, days)]}
-    rows = h.candles.frame(h.nifty, tf, days=days, include_forming=True)
-    return {"tf": tf, "candles": [_cj(r) for r in rows]}
+    rows = h.candles.frame(h.nifty, tf, days=days, include_forming=not asof, asof=asof)
+    return {"tf": tf, "candles": [_cj(r) for r in rows], "asof": asof}
 
 
 @app.get("/api/analysis")

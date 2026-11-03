@@ -61,7 +61,8 @@ function writerVerdict(wb: WBal, walls: Wall[]) {
   return { score, bias, strong: Math.abs(score) >= 2.5, support, resistance, reason };
 }
 
-export default function Chart({ tf, candles, analysis, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal, expiries, stdvLeg, isStdvPicking, onStartStdvPicking, onStdvPicked, onCancelStdvPicking, onResetToAutoStdv }: {
+export default function Chart({ tf, candles, analysis, asof, onAsof, layers, spot, spotTs, marketOpen, onExpand, expanded, sig, onSignal, onAutoSignal, expiries, stdvLeg, isStdvPicking, onStartStdvPicking, onStdvPicked, onCancelStdvPicking, onResetToAutoStdv }: {
+  asof?: string | null; onAsof?: (d: string | null) => void;
   sig?: SigPrefs; onSignal?: (a: AlertRow) => void;
   onAutoSignal?: (a: AlertRow, ctx: { last: Candle; atr: number; nearWall: number | null }) => void;
   tf: TF; candles: Candle[]; analysis: Analysis | null; layers: Layers; spot: number | null; spotTs: number; marketOpen: boolean;
@@ -180,6 +181,11 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   };
   const [showRbGuidance, setShowRbGuidance] = useState<boolean>(false);
   const [showPdhGuidance, setShowPdhGuidance] = useState<boolean>(false);
+  // REVIEW MODE. The candles are from a past session, but every server-derived overlay — Gann,
+  // wick zones, the 8-EMA engine, stacked nodes — is computed against TODAY and cannot be
+  // rewound. Painting today's levels onto October's chart would invent confluences that never
+  // existed, so those layers are suppressed here rather than shown misleadingly.
+  const reviewing = !!asof;
   // Measured 1H upper-wick zones. A strict SUBSET of the levels the htf-wick-ema engine already
   // publishes — nothing new is fetched and that engine is untouched. Only the zones that actually
   // passed scripts/backtest_wick_zones.py are drawn (38 first touches over 36 NIFTY sessions,
@@ -652,7 +658,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       }
 
       // 3. Checkbox 3: 1H/4H Wicks & Shaved Extremes + 1H 8-EMA
-      if (showRbWickEma && htfWickEmaData?.ok) {
+      if (!reviewing && showRbWickEma && htfWickEmaData?.ok) {
         // 1H 8-EMA Dynamic Line - Electric Cyan #06b6d4, 2px solid
         if (htfWickEmaData.ema8_1h?.value && htfWickEmaData.ema8_1h.value > 0) {
           const emaVal = htfWickEmaData.ema8_1h.value;
@@ -709,7 +715,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
       });
       rbPriceLinesRef.current = [];
     };
-  }, [showRbPivotsGaps, showRbGann, showRbWickEma, gannData, htfWickEmaData, series.current]);
+  }, [reviewing, showRbPivotsGaps, showRbGann, showRbWickEma, gannData, htfWickEmaData, series.current]);
 
   // ── PDH-anchored Gann ladder ────────────────────────────────────────────────────────────────
   // Drawn in its own effect so it never disturbs the close-anchored overlay above.
@@ -723,7 +729,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   useEffect(() => {
     pdhLinesRef.current.forEach((l) => { try { series.current?.removePriceLine(l); } catch { /* gone */ } });
     pdhLinesRef.current = [];
-    if (!showRbGannPdh || !series.current || !gannData?.ok) return;
+    if (reviewing || !showRbGannPdh || !series.current || !gannData?.ok) return;
 
     const ref = spot ?? candles[candles.length - 1]?.close;
     if (!ref) return;
@@ -748,7 +754,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
     };
     (gannData.gann_pdh_resistances || []).forEach((l) => draw(l, true));
     (gannData.gann_pdh_supports || []).forEach((l) => draw(l, false));
-  }, [showRbGannPdh, gannData, spot, candles, series.current]);
+  }, [reviewing, showRbGannPdh, gannData, spot, candles, series.current]);
 
   // The depth band. Zones shallower than this are not levels — the median 1H upper wick is only
   // 13 pts and a 3-pt wick is noise. Zones deeper than the cap are not levels either: they are
@@ -760,7 +766,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   useEffect(() => {
     wickTestedLinesRef.current.forEach((l) => { try { series.current?.removePriceLine(l); } catch { /* gone */ } });
     wickTestedLinesRef.current = [];
-    if (!showRbWickTested || !series.current) return;
+    if (reviewing || !showRbWickTested || !series.current) return;
 
     const zones = (htfWickEmaData?.active_levels || []).filter(
       (lv) =>
@@ -792,7 +798,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
         wickTestedLinesRef.current.push(line);
       });
     });
-  }, [showRbWickTested, htfWickEmaData, series.current]);
+  }, [reviewing, showRbWickTested, htfWickEmaData, series.current]);
   const isDeltaDetailOn = !!layers.deltaDetail;
   const isDeltaOn = !!(layers.delta || isDeltaDetailOn);
   const isBubblesOn = !!(layers.bubbles || isDeltaDetailOn);
@@ -2751,7 +2757,7 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   // /api/nodes is cached 5 minutes server-side, so the extra arming costs ~1 request per 5 min.
   // Built ON TOP of isNodesOn (layer or delta-detail) rather than replacing it — that flag is also read by
   // the delta-detail and CVD paths, which should keep their own trigger. This only widens the FETCH.
-  const wantNodes = isNodesOn || (!!sig?.on && !!sig.kinds?.nodes);
+  const wantNodes = !reviewing && (isNodesOn || (!!sig?.on && !!sig.kinds?.nodes));
   useEffect(() => {
     if (!wantNodes) { setNodesV(null); return; }
     let dead = false;
@@ -2766,7 +2772,9 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
   // unconditionally, which was harmless only because nEntries used to be [] whenever the layer was off.
   // Widening the fetch to arm the ● ENTRY alert made it populate with the layer off, so the markers drew
   // on a chart with nothing selected. The alert still computes from nEntries; only drawing is gated.
-  useEffect(() => { ndPrim.current.set(isNodesOn ? nodesV : null, isNodesOn ? nEntries : []); }, [isNodesOn, nodesV, nEntries]);
+  // nodesV may already hold today's zones from before review mode was entered — gate the draw
+  // too, not just the fetch, or stale live zones would sit on a historical chart.
+  useEffect(() => { const on = isNodesOn && !reviewing; ndPrim.current.set(on ? nodesV : null, on ? nEntries : []); }, [isNodesOn, reviewing, nodesV, nEntries]);
   // ── gamma map + 3 confirmations ──
   const rvMap = useMemo(() => new Map((analysis?.volume?.bars ?? []).map((b) => [b.time, b.rvol])), [analysis]);
   const emaArr = useMemo(() => layers.gamma && candles.length ? [emas(candles, 9), emas(candles, 21), emas(candles, 50)] : null, [layers.gamma, candles]);
@@ -3515,6 +3523,49 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
           <span className="text-[8px] font-bold opacity-70">TESTED</span>
         </button>
 
+        {onAsof && (
+          <div
+            className={`flex items-center gap-1.5 rounded bg-[#060b16]/90 px-2 py-1 text-[10px] font-black border shadow-lg backdrop-blur ${
+              reviewing
+                ? "bg-amber-500/25 border-amber-400 text-amber-200 ring-1 ring-amber-400/50"
+                : "border-slate-700/60 text-slate-400"
+            }`}
+            title={
+              "REVIEW A PAST SESSION\n\n"
+              + "Pick a date and the chart loads the window ENDING that day, straight from the "
+              + "stored 1-minute candles. Clear it to return to live.\n\n"
+              + "WHAT YOU GET: price action exactly as it printed, with every overlay that is "
+              + "computed from the candles themselves.\n\n"
+              + "WHAT YOU DO NOT GET: the server-side layers — Gann, the wick zones, the 8-EMA "
+              + "engine, stacked nodes — and the analysis strip. Those are all computed against "
+              + "TODAY and cannot be rewound. Drawing them over an old session would invent "
+              + "confluences that never existed at the time, so they switch off here. That is a "
+              + "real limitation, not an oversight: replaying every signal as it actually fired "
+              + "needs each engine to accept an as-of date, which is a much larger job.\n\n"
+              + "History goes back as far as your stored candles. Run "
+              + "scripts/backfill_history.py to extend it."
+            }
+          >
+            <span>🕰</span>
+            <input
+              type="date"
+              value={asof ?? ""}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => onAsof(e.target.value || null)}
+              className="bg-transparent text-[10px] font-bold outline-none cursor-pointer [color-scheme:dark]"
+            />
+            {reviewing && (
+              <button
+                onClick={() => onAsof(null)}
+                className="rounded bg-amber-400/30 px-1 text-[9px] font-black hover:bg-amber-400/50"
+                title="Back to live"
+              >
+                LIVE ✕
+              </button>
+            )}
+          </div>
+        )}
+
         <button
           onClick={toggleRbWickEma}
           onMouseEnter={() => setShowRbGuidance(true)}
@@ -3769,6 +3820,17 @@ export default function Chart({ tf, candles, analysis, layers, spot, spotTs, mar
 
       {/* Mouse-Over Trader Guidance for Rejection Blocks (RB) Pivots, Gaps & Gann Sq9 */}
       {/* Hover card for the PDH ladder: how to use it, and what it is not. */}
+      {reviewing && (
+        <div className="pointer-events-none absolute left-1/2 top-2 z-[80] -translate-x-1/2 rounded-lg border-2 border-amber-400 bg-amber-950/95 px-4 py-1.5 text-center shadow-2xl backdrop-blur">
+          <div className="text-[13px] font-black tracking-wide text-amber-200">
+            🕰 REVIEWING {asof} — NOT LIVE
+          </div>
+          <div className="text-[9.5px] font-semibold text-amber-300/80">
+            server layers off (Gann · wick zones · 8-EMA · nodes · analysis) — they cannot be rewound
+          </div>
+        </div>
+      )}
+
       {showWickTestedGuidance && (
         <div
           onMouseEnter={() => setShowWickTestedGuidance(true)}

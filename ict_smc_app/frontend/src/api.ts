@@ -756,7 +756,9 @@ export const api = {
     get<InstitutionalLevelsRes>(
       `/api/desk/institutional-levels?sec_id=${secId}${rvol != null ? `&rvol=${rvol}` : ""}${peCeDeltaL != null ? `&pe_ce_delta_l=${peCeDeltaL}` : ""}`
     ),
-  candles: (tf: TF, days = 3, inst = "NIFTY") => get<{ tf: TF; candles: Candle[] }>(`/api/candles?tf=${tf}&days=${days}&inst=${encodeURIComponent(inst)}`),
+  // `asof` (ISO date) asks for the window ENDING that day instead of the live one. Review mode.
+  candles: (tf: TF, days = 3, inst = "NIFTY", asof?: string | null) => get<{ tf: TF; candles: Candle[]; asof?: string | null }>(
+    `/api/candles?tf=${tf}&days=${days}&inst=${encodeURIComponent(inst)}${asof ? `&asof=${asof}` : ""}`),
   analysis: (tf: TF, inst = "NIFTY") => get<Analysis>(`/api/analysis?tf=${tf}&inst=${encodeURIComponent(inst)}`),
   cct: (tf: TF = "5m") => get<CctView>(`/api/cct?tf=${tf}`),
   mmxm: (tf: TF = "5m") => get<MmxmView>(`/api/mmxm?tf=${tf}`),
