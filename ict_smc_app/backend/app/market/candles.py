@@ -164,10 +164,43 @@ class Candles:
                         await self._close(sid, cur)
 
     # ── reading ───────────────────────────────────────────────────────────
+    def historical_frame(self, sid: str, tf: str, days: int, asof: str) -> List[Dict[str, float]]:
+        """Candles for a PAST window ending on `asof`, read straight from SQLite.
+
+        Deliberately separate from the live path below: no ring buffer (it only holds recent
+        bars), no forming candle, no frame cache (one-off review queries would evict the live
+        entries the desk depends on). Everything returned is closed, because it already happened.
+        """
+        try:
+            end_day = datetime.fromisoformat(asof).replace(tzinfo=IST)
+        except ValueError:
+            return []
+        if tf == "1D":
+            rows = [r for r in db.daily(sid, limit=days + 400) if r["d"] <= asof][-days:]
+            return [{"ts": int(datetime.fromisoformat(r["d"]).replace(tzinfo=IST).timestamp()),
+                     "o": r["o"], "h": r["h"], "l": r["l"], "c": r["c"], "v": 0.0, "closed": True}
+                    for r in rows]
+        # Pull a generous CALENDAR window, then keep the last `days` SESSIONS inside it, so
+        # weekends and holidays never silently shorten the window.
+        start = end_day - timedelta(days=days * 2 + 10)
+        raw = db.candles_1m(sid, int(start.timestamp()),
+                            int((end_day + timedelta(days=1)).timestamp()))
+        rows = session_filter(raw)
+        keep = set(sorted({ist_date(r["ts"]) for r in rows})[-days:])
+        out = resample([r for r in rows if ist_date(r["ts"]) in keep], tf)
+        for c in out:
+            c["closed"] = True
+        return out
+
     def frame(self, sid: str, tf: str, days: int = 3, include_forming: bool = True,
-              limit: Optional[int] = None) -> List[Dict[str, float]]:
+              limit: Optional[int] = None, asof: Optional[str] = None) -> List[Dict[str, float]]:
         """Candles for the chart / engine. Fulfills queries from RAM ring buffers with zero disk I/O.
-        Caches resampled frames and supports limit parameter to slice only the tail window needed."""
+        Caches resampled frames and supports limit parameter to slice only the tail window needed.
+
+        `asof` (ISO date) switches to the historical reader above and leaves this path untouched.
+        """
+        if asof:
+            return self.historical_frame(sid, tf, days, asof)
         if tf == "1D":
             rows = db.daily(sid, limit=max(days, 5))
             out = [{"ts": int(datetime.fromisoformat(r["d"]).replace(tzinfo=IST).timestamp()),

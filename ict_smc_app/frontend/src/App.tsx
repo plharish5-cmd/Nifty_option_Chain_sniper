@@ -115,11 +115,19 @@ function LiveDesk() {
   const fireRef = useRef(ra.fire);
   fireRef.current = ra.fire;
 
+  // REVIEW MODE. When asof is set the chart shows the window ending on that past date instead of
+  // the live one. /api/analysis cannot be rewound — it serves the hub's current computation — so
+  // analysis is dropped rather than painting today's levels onto an old session.
+  const [asof, setAsof] = useState<string | null>(null);
+  const asofRef = useRef(asof);
+  asofRef.current = asof;
+
   const loadChart = useCallback(async (t: TF) => {
     const inst = instRef.current;
+    const ao = asofRef.current;
     const tt: TF = inst !== "NIFTY" && t === "1D" ? "5m" : t;
-    const [c, a] = await Promise.all([api.candles(tt, inst !== "NIFTY" ? 2 : DAYS[tt], inst), tt === "1D" ? Promise.resolve(null) : api.analysis(tt, inst)]);
-    if (tfRef.current !== t || instRef.current !== inst) return;
+    const [c, a] = await Promise.all([api.candles(tt, inst !== "NIFTY" ? 2 : DAYS[tt], inst, ao), (tt === "1D" || ao) ? Promise.resolve(null) : api.analysis(tt, inst)]);
+    if (tfRef.current !== t || instRef.current !== inst || asofRef.current !== ao) return;
     setCandles(c.candles);
     setAnalysis(a);
   }, []);
@@ -131,7 +139,7 @@ function LiveDesk() {
   }).catch(() => {}), []);
   const loadPaper = useCallback(() => api.paper().then(setPaper).catch(() => {}), []);
 
-  useEffect(() => { loadChart(tf).catch(() => {}); }, [tf, chartInst, loadChart]);
+  useEffect(() => { loadChart(tf).catch(() => {}); }, [tf, chartInst, asof, loadChart]);
   useEffect(() => { if (dash?.strikes) setStrikes(dash.strikes); }, [dash]);
   useEffect(() => { loadDash(); loadPaper(); const id = window.setInterval(loadDash, 15000); return () => window.clearInterval(id); }, [loadDash, loadPaper]);
 
@@ -362,9 +370,9 @@ function LiveDesk() {
                 ? <WritersFlow tick={chainTick} />
                 : mainView === "both"
                 ? <SplitPane
-                    top={<Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} stdvLeg={selectedStdvLeg} isStdvPicking={isStdvPicking} onStartStdvPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onStdvPicked={(leg) => { setSelectedStdvLeg(leg); setIsStdvPicking(false); setLayers((l) => ({ ...l, stdv: true })); }} onCancelStdvPicking={() => setIsStdvPicking(false)} onResetToAutoStdv={() => setSelectedStdvLeg(null)} />}
+                    top={<Chart tf={tf} candles={candles} analysis={analysis} asof={asof} onAsof={setAsof} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} stdvLeg={selectedStdvLeg} isStdvPicking={isStdvPicking} onStartStdvPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onStdvPicked={(leg) => { setSelectedStdvLeg(leg); setIsStdvPicking(false); setLayers((l) => ({ ...l, stdv: true })); }} onCancelStdvPicking={() => setIsStdvPicking(false)} onResetToAutoStdv={() => setSelectedStdvLeg(null)} />}
                     bottom={<WritersFlow tick={chainTick} />} />
-                : <Chart tf={tf} candles={candles} analysis={analysis} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} stdvLeg={selectedStdvLeg} isStdvPicking={isStdvPicking} onStartStdvPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onStdvPicked={(leg) => { setSelectedStdvLeg(leg); setIsStdvPicking(false); setLayers((l) => ({ ...l, stdv: true })); }} onCancelStdvPicking={() => setIsStdvPicking(false)} onResetToAutoStdv={() => setSelectedStdvLeg(null)} />}
+                : <Chart tf={tf} candles={candles} analysis={analysis} asof={asof} onAsof={setAsof} layers={layers} spot={chartInst === "NIFTY" ? (q?.spot ?? null) : null} spotTs={q?.ts ?? 0} marketOpen={chartInst === "NIFTY" && !!q?.market_open} onExpand={toggleFull} expanded={full} sig={chartInst === "NIFTY" ? sig : undefined} onSignal={ra.fire} onAutoSignal={chartInst === "NIFTY" ? ap.onSignal : undefined} expiries={dash?.expiries} stdvLeg={selectedStdvLeg} isStdvPicking={isStdvPicking} onStartStdvPicking={() => { setIsStdvPicking(true); setLayers((l) => ({ ...l, stdv: true })); }} onStdvPicked={(leg) => { setSelectedStdvLeg(leg); setIsStdvPicking(false); setLayers((l) => ({ ...l, stdv: true })); }} onCancelStdvPicking={() => setIsStdvPicking(false)} onResetToAutoStdv={() => setSelectedStdvLeg(null)} />}
             </div>
             {mainView === "candles" && <div className="px-4 py-1.5 text-[11px] text-slate-400 border-t border-ink-700 flex flex-wrap gap-x-4">
               {analysis && <span>ATR {analysis.atr} pts · trend <b className={analysis.trend === "bull" ? "text-bull-400" : analysis.trend === "bear" ? "text-bear-400" : ""}>{analysis.trend}</b></span>}
