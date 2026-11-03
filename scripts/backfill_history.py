@@ -55,8 +55,70 @@ def market_hours_now() -> bool:
     return (9 * 60 + 10) <= mins <= (15 * 60 + 40)
 
 
+def check_credentials() -> int:
+    """Probe two endpoints to separate two very different failures.
+
+    A live quote and a historical chart authenticate the same way but are entitled separately on
+    Dhan. If the quote works and the chart does not, the token is fine and the DATA API is not
+    enabled — no amount of re-pasting the token fixes that. If both fail, it is the token.
+    """
+    import httpx
+    from app import config                                    # noqa: E402
+
+    token = config.env("DHAN_ACCESS_TOKEN") or ""
+    client = config.env("DHAN_CLIENT_ID") or ""
+    print(f"DHAN_ACCESS_TOKEN: {len(token)} chars   DHAN_CLIENT_ID: {len(client)} chars")
+    if not token or not client:
+        print("  -> missing from .env entirely.")
+        return 2
+    # A JWT has two dots. Dhan access tokens are JWTs, and the commonest paste error is grabbing
+    # only part of one, which looks plausible by length but fails every call.
+    print(f"  -> looks like a JWT: {token.count('.') == 2}"
+          f"   (expected True; a truncated paste is the usual cause of DH-906)")
+
+    base = config.base_url()
+    hdr = {"access-token": token, "client-id": client,
+           "Content-Type": "application/json", "Accept": "application/json"}
+    with httpx.Client(timeout=15.0) as c:
+        try:
+            r = c.post(f"{base}/marketfeed/ltp", json={"IDX_I": [13]}, headers=hdr)
+            print(f"\nlive quote  /marketfeed/ltp      -> HTTP {r.status_code}  {r.text[:140]}")
+            quote_ok = r.status_code == 200
+        except Exception as e:
+            print(f"\nlive quote  /marketfeed/ltp      -> {type(e).__name__}: {e}")
+            quote_ok = False
+        try:
+            body = {"securityId": "13", "exchangeSegment": "IDX_I", "instrument": "INDEX",
+                    "interval": "1", "oi": False,
+                    "fromDate": f"{date.today() - timedelta(days=5)} 09:15:00",
+                    "toDate": f"{date.today()} 15:30:00"}
+            r = c.post(f"{base}/charts/intraday", json=body, headers=hdr)
+            print(f"history     /charts/intraday     -> HTTP {r.status_code}  {r.text[:140]}")
+            hist_ok = r.status_code == 200
+        except Exception as e:
+            print(f"history     /charts/intraday     -> {type(e).__name__}: {e}")
+            hist_ok = False
+
+    print()
+    if quote_ok and hist_ok:
+        print("Both work. Re-run the backfill.")
+        return 0
+    if quote_ok and not hist_ok:
+        print("VERDICT: the token is VALID — the live quote went through. Only the historical\n"
+              "chart endpoint refuses it, which means the Data API is not enabled on this Dhan\n"
+              "account. Re-pasting the token will not change that; it has to be enabled on\n"
+              "Dhan's side. Your live desk is unaffected.")
+        return 4
+    print("VERDICT: the token itself is being rejected — even a live quote fails. Generate a\n"
+          "fresh access token on Dhan and write it to .env, then run --check again.")
+    return 3
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--check", action="store_true",
+                    help="probe credentials against both a live quote and a historical chart, "
+                         "then stop")
     ap.add_argument("--days", type=int, default=365, help="how far back to walk, in calendar days")
     ap.add_argument("--chunk", type=int, default=60, help="calendar days per request (Dhan caps near 90)")
     ap.add_argument("--sec", default="13", help="security id (13 = NIFTY 50, 21 = INDIA VIX)")
@@ -69,6 +131,9 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--force", action="store_true", help="run even during market hours")
     a = ap.parse_args()
+
+    if a.check:
+        return check_credentials()
 
     if market_hours_now() and not a.force:
         print("Market is open. This writes to the database the live desk is using, and a long\n"
@@ -114,8 +179,19 @@ def main() -> int:
 
         n = int(r.get("inserted") or r.get("count") or len(r.get("rows") or []) or 0)
         if r.get("ok") is False:
-            print(f"  {i:>2}. {s} → {e}   FAILED  {r.get('status_code', '')} "
-                  f"{str(r.get('error'))[:90]}")
+            err = str(r.get("error") or "")
+            print(f"  {i:>2}. {s} → {e}   FAILED  {r.get('status_code', '')} {err[:90]}")
+            # An auth or entitlement refusal is NOT "the data runs out here". Saying so would
+            # send you hunting for missing history when the real problem is the token, so these
+            # abort immediately with the actual cause.
+            low = err.lower()
+            if any(k in low for k in ("dh-906", "invalid token", "invalid_auth", "unauthor",
+                                      "dh-901", "forbidden", "access")) or \
+                    r.get("status_code") in (401, 403):
+                print("\nSTOPPING — Dhan rejected the credentials, so no date range would have\n"
+                      "worked. This says nothing about how far back its history goes.\n"
+                      "Fix the token first, then re-run. Nothing was written.")
+                return 3
             empty_streak += 1
         elif n == 0:
             print(f"  {i:>2}. {s} → {e}   no candles returned")
