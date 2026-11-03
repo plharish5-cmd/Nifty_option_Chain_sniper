@@ -229,6 +229,13 @@ def compute_itm_atm_oi_walls(
     pcr: Optional[float] = None,
     gift_nifty: Optional[float] = None,
     market_minutes_elapsed: Optional[int] = None,
+    # Level overrides. Default None keeps the configured values, so every existing caller behaves
+    # exactly as before. Replay passes levels DERIVED from the snapshot it is replaying, because
+    # the configured ones are a single day's numbers (put_support_bottom 23200 etc.) and would
+    # otherwise put a 23,220 panic trigger on every chart in history.
+    support_top_override: Optional[float] = None,
+    support_bottom_override: Optional[float] = None,
+    structural_downside_override: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Computes ATM/ITM Writer Conviction, OTM Vacuum, Panic Unwinding,
@@ -243,6 +250,12 @@ def compute_itm_atm_oi_walls(
     pcr_overbought_thresh = float(cfg.get("pcr_overbought_threshold", 1.60))
     supp_top = float(cfg.get("put_support_top", 23250.0))
     supp_bottom = float(cfg.get("put_support_bottom", 23200.0))
+    if support_top_override is not None:
+        supp_top = float(support_top_override)
+    if support_bottom_override is not None:
+        supp_bottom = float(support_bottom_override)
+    if structural_downside_override is not None:
+        struct_downside = float(structural_downside_override)
     iron_ceil_min = float(cfg.get("iron_ceiling_min", 23550.0))
     iron_ceil_max = float(cfg.get("iron_ceiling_max", 23623.0))
 
