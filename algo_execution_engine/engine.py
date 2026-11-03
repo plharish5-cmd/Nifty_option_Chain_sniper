@@ -1,0 +1,305 @@
+"""
+algo_execution_engine/engine.py — Core Background Execution Orchestrator for Setup #1.
+
+Orchestration Workflow:
+  1. Polls latest 1m candles for NIFTY 50 (`sec_id = '13'`) from shared SQLite `ict_smc.sqlite3`.
+  2. Resamples 1m data into 5m and 15m candles aligned to 09:15 IST.
+  3. Evaluates 15m Trend Filter, 5m Preconditions, and Live 8 EMA Touch Trigger.
+  4. Enforces First Opportunity Rule (Rally Counter) & Daily Stop Limit (-40 pts = done for day).
+  5. Places Buy Orders with Instant Companion Exchange-Side SL-M on Dhan / Paper Gateway.
+  6. Manages active position lifecycle: Cost-to-Cost (+40 pts), Candle Trail (low of confirming candle), Volatility Exits (flat UBB, 100 pt candle).
+  7. Enforces Daily Circuit Breakers (max 2 trades, max daily loss -₹3,000).
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import sqlite3
+import time
+from datetime import datetime, time as dtime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import pandas as pd
+
+from .order_gateway import DhanOrderGateway
+from .strategy_setup1 import (
+    ActivePosition,
+    RallyState,
+    Setup1Signal,
+    Setup1StrategyEvaluator,
+    load_config,
+)
+
+log = logging.getLogger("algo.engine")
+
+
+class Setup1ExecutionEngine:
+    """Headless Execution Engine running the 1-second evaluation loop."""
+
+    def __init__(self, config_dict: Optional[Dict[str, Any]] = None) -> None:
+        self.cfg = config_dict or load_config()
+        self.evaluator = Setup1StrategyEvaluator(self.cfg)
+        self.gateway = DhanOrderGateway(self.cfg)
+        self.active_position: Optional[ActivePosition] = None
+        self.closed_positions: List[Dict[str, Any]] = []
+        self.daily_trades_count: int = 0
+        self.daily_pnl_inr: float = 0.0
+        self.is_running: bool = False
+        self._loop_task: Optional[asyncio.Task] = None
+        self.last_spot: float = 0.0
+        self.last_candle_5m_ts: int = 0
+        self.last_eval_time: str = ""
+        self.last_signal: Optional[Setup1Signal] = None
+        self.circuit_breaker_tripped: bool = False
+        self.circuit_breaker_reason: str = ""
+
+    def reload_config(self) -> None:
+        self.cfg = load_config()
+        self.evaluator.reload_config()
+        self.gateway.reload_config()
+
+    # ── 1. CANDLE DATA INGESTION & RESAMPLING ────────────────────────────────
+    def fetch_1m_candles(self, limit: int = 600) -> pd.DataFrame:
+        """Fetches latest 1m candles for NIFTY 50 (sec_id='13') from shared SQLite."""
+        db_path = str(self.cfg.get("execution", {}).get("sqlite_db_path", "ict_smc_app/backend/data/ict_smc.sqlite3"))
+        full_db = Path(db_path)
+        if not full_db.is_absolute():
+            full_db = Path(__file__).resolve().parent.parent / db_path
+
+        if not full_db.exists():
+            log.warning("Database not found at %s", full_db)
+            return pd.DataFrame(columns=["ts", "open", "high", "low", "close", "volume"])
+
+        try:
+            with sqlite3.connect(str(full_db)) as conn:
+                query = """
+                    SELECT ts, o, h, l, c, v
+                    FROM candles_1m
+                    WHERE sec_id = '13'
+                    ORDER BY ts DESC
+                    LIMIT ?
+                """
+                df = pd.read_sql_query(query, conn, params=(limit,))
+                if df.empty:
+                    return pd.DataFrame(columns=["ts", "open", "high", "low", "close", "volume"])
+                df = df.rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
+                df = df.sort_values("ts").reset_index(drop=True)
+                return df
+        except Exception as e:
+            log.error("Failed to fetch 1m candles: %s", e)
+            return pd.DataFrame(columns=["ts", "open", "high", "low", "close", "volume"])
+
+    @staticmethod
+    def resample_candles(df_1m: pd.DataFrame, interval_minutes: int) -> pd.DataFrame:
+        """Resamples 1m OHLCV DataFrame into 5m or 15m intervals aligned to epoch."""
+        if df_1m.empty:
+            return pd.DataFrame(columns=["ts", "open", "high", "low", "close", "volume"])
+
+        df = df_1m.copy()
+        df["datetime"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
+        df = df.set_index("datetime")
+
+        rule = f"{interval_minutes}min"
+        resampled = df.resample(rule, closed="left", label="left").agg({
+            "ts": "first",
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum",
+        }).dropna().reset_index()
+
+        return resampled
+
+    # ── 2. SINGLE TICK / TIMESTEP EVALUATION ─────────────────────────────────
+    async def evaluate_cycle(self) -> None:
+        """Single tick / 1s evaluation step."""
+        now_dt = datetime.now()
+        current_time = now_dt.time()
+        current_ts = int(time.time())
+        self.last_eval_time = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Ingest candles
+        df_1m = self.fetch_1m_candles(limit=600)
+        if df_1m.empty:
+            return
+
+        self.last_spot = float(df_1m.iloc[-1]["close"])
+        df_5m = self.resample_candles(df_1m, 5)
+        df_15m = self.resample_candles(df_1m, 15)
+
+        # Detect new 5m closed candle
+        last_closed_candle: Optional[Dict[str, float]] = None
+        if not df_5m.empty and len(df_5m) >= 2:
+            prev_candle = df_5m.iloc[-2]
+            prev_ts = int(prev_candle["ts"])
+            if prev_ts > self.last_candle_5m_ts:
+                self.last_candle_5m_ts = prev_ts
+                last_closed_candle = {
+                    "ts": prev_ts,
+                    "o": float(prev_candle["open"]),
+                    "h": float(prev_candle["high"]),
+                    "l": float(prev_candle["low"]),
+                    "c": float(prev_candle["close"]),
+                }
+
+        # Check Daily Circuit Breakers
+        allowed, reason = self.gateway.check_circuit_breakers(self.daily_trades_count, self.daily_pnl_inr)
+        if not allowed:
+            self.circuit_breaker_tripped = True
+            self.circuit_breaker_reason = reason
+        else:
+            self.circuit_breaker_tripped = False
+            self.circuit_breaker_reason = ""
+
+        # Case A: Active Position is Open -> Monitor Trailing SL / Target / Volatility Exits
+        if self.active_position is not None:
+            pos = self.active_position
+            should_exit, exit_reason, updated_sl = self.evaluator.evaluate_active_position(
+                pos=pos,
+                current_spot=self.last_spot,
+                current_option_ltp=pos.entry_option_price,
+                df_5m=df_5m,
+                last_closed_candle_5m=last_closed_candle,
+            )
+
+            # Trailing stop or CTC update
+            if not should_exit and updated_sl is not None:
+                await self.gateway.modify_exchange_sl_order(pos, updated_sl)
+
+            # Position Exit Triggered!
+            if should_exit and exit_reason:
+                closed_pos = await self.gateway.execute_position_exit(pos, self.last_spot, exit_reason)
+                self.daily_pnl_inr += closed_pos.pnl_inr
+                self.closed_positions.append(closed_pos.to_dict())
+                self.active_position = None
+                log.info("📊 Daily PnL updated: ₹%+.1f INR across %d trades", self.daily_pnl_inr, self.daily_trades_count)
+            return
+
+        # Case B: No Active Position -> Check Setup #1 Entry Signal
+        if self.circuit_breaker_tripped:
+            return
+
+        cur_candle_low = float(df_5m.iloc[-1]["low"]) if not df_5m.empty else None
+        cur_candle_high = float(df_5m.iloc[-1]["high"]) if not df_5m.empty else None
+
+        signal = self.evaluator.check_setup1_entry_signal(
+            df_15m=df_15m,
+            df_5m=df_5m,
+            current_spot=self.last_spot,
+            current_ts=current_ts,
+            current_time=current_time,
+            current_candle_low=cur_candle_low,
+            current_candle_high=cur_candle_high,
+        )
+        self.last_signal = signal
+
+        if signal.is_valid:
+            log.info("🔥 VALID SETUP #1 TRIGGER DETECTED! Spot: %.1f | 8 EMA: %.1f | Rally #%d Touch #1",
+                     signal.spot, signal.ema8, signal.rally_id)
+
+            new_pos = await self.gateway.execute_setup1_entry(
+                signal=signal,
+                daily_trades=self.daily_trades_count,
+                daily_pnl_inr=self.daily_pnl_inr,
+            )
+
+            if new_pos is not None:
+                self.active_position = new_pos
+                self.daily_trades_count += 1
+                self.evaluator.rally.touch_count += 1
+                log.info("🚀 Setup #1 Trade #%d Entered: %s (TradeID %s)",
+                         self.daily_trades_count, new_pos.symbol, new_pos.trade_id)
+
+    # ── 3. BACKGROUND TASK LIFECYCLE ─────────────────────────────────────────
+    async def start(self) -> None:
+        """Starts the asynchronous execution engine loop."""
+        if self.is_running:
+            return
+        self.is_running = True
+        poll_interval = float(self.cfg.get("service", {}).get("poll_interval_sec", 1.0))
+        log.info("🚀 Setup #1 Execution Engine started (Polling every %.1fs)", poll_interval)
+
+        async def _loop():
+            while self.is_running:
+                try:
+                    await self.evaluate_cycle()
+                except Exception as e:
+                    log.error("Error in Setup #1 engine loop: %s", e)
+                await asyncio.sleep(poll_interval)
+
+        self._loop_task = asyncio.create_task(_loop())
+
+    async def stop(self) -> None:
+        """Stops the execution engine loop."""
+        self.is_running = False
+        if self._loop_task:
+            self._loop_task.cancel()
+            try:
+                await self._loop_task
+            except asyncio.CancelledError:
+                pass
+        log.info("🛑 Setup #1 Execution Engine stopped")
+
+    # ── 4. EMERGENCY FLATTEN & CONTROLS ──────────────────────────────────────
+    async def emergency_flatten_all(self, reason: str = "Manual Emergency Flatten") -> Dict[str, Any]:
+        """Emergency square-off of open position and cancellation of pending orders."""
+        if self.active_position is not None:
+            pos = self.active_position
+            closed = await self.gateway.execute_position_exit(pos, self.last_spot, reason)
+            self.daily_pnl_inr += closed.pnl_inr
+            self.closed_positions.append(closed.to_dict())
+            self.active_position = None
+            return {"ok": True, "message": f"Position {closed.trade_id} flattened", "position": closed.to_dict()}
+        return {"ok": True, "message": "No active position to flatten"}
+
+    # ── 5. STATUS TELEMETRY ──────────────────────────────────────────────────
+    def get_telemetry_status(self) -> Dict[str, Any]:
+        """Provides full real-time telemetry payload for GET /api/algo/status."""
+        strat_cfg = self.cfg.get("strategy", {})
+        risk_cfg = self.cfg.get("risk", {})
+
+        # 15m trend & 5m preconditions info
+        df_1m = self.fetch_1m_candles(limit=200)
+        df_5m = self.resample_candles(df_1m, 5) if not df_1m.empty else pd.DataFrame()
+        df_15m = self.resample_candles(df_1m, 15) if not df_1m.empty else pd.DataFrame()
+
+        trend_ok, trend_info = self.evaluator.evaluate_15m_trend(df_15m)
+        pre_ok, pre_info = self.evaluator.evaluate_5m_preconditions(df_5m)
+
+        dist_to_ema8 = round(self.last_spot - pre_info.get("ema8", self.last_spot), 1)
+
+        return {
+            "status": "RUNNING" if self.is_running else "STOPPED",
+            "execution_mode": self.gateway.execution_mode,
+            "last_spot": round(self.last_spot, 2),
+            "last_eval_time": self.last_eval_time,
+            "circuit_breaker": {
+                "tripped": self.circuit_breaker_tripped,
+                "reason": self.circuit_breaker_reason,
+                "daily_trades": self.daily_trades_count,
+                "max_trades": int(risk_cfg.get("max_trades_per_day", 2)),
+                "daily_pnl_inr": round(self.daily_pnl_inr, 2),
+                "max_daily_loss_inr": float(risk_cfg.get("max_daily_loss_inr", -3000.0)),
+            },
+            "rally_state": self.evaluator.rally.to_dict(),
+            "trend_filter_15m": trend_info,
+            "setup1_5m_state": {
+                **pre_info,
+                "dist_to_ema8": dist_to_ema8,
+                "touch_proximity_pts": float(strat_cfg.get("touch_proximity_pts", 2.5)),
+            },
+            "stage2_stopped_today": self.evaluator.stage2_stopped_today,
+            "active_position": self.active_position.to_dict() if self.active_position else None,
+            "recent_trades_today": self.closed_positions[-5:],
+            "last_signal": {
+                "valid": self.last_signal.is_valid if self.last_signal else False,
+                "reason": self.last_signal.rejection_reason if self.last_signal else None,
+                "spot": self.last_signal.spot if self.last_signal else 0.0,
+                "ema8": self.last_signal.ema8 if self.last_signal else 0.0,
+            } if self.last_signal else None,
+            "health": "OK",
+            "port": int(self.cfg.get("service", {}).get("port", 8500)),
+        }

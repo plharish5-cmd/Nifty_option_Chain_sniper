@@ -1,0 +1,41 @@
+{
+  "_comment": "Configuration and thresholds for Setup #1 (Stage 2 8 EMA Long) Algorithmic Execution Service. Edit here, not in Python.",
+  "service": {
+    "host": "0.0.0.0",
+    "port": 8500,
+    "poll_interval_sec": 1.0,
+    "log_level": "INFO"
+  },
+  "risk": {
+    "max_trades_per_day": 2,
+    "max_daily_loss_inr": -3000.0,
+    "stage2_daily_stop_limit": 1,
+    "no_entry_after": "15:00",
+    "eod_square_off_time": "15:25"
+  },
+  "strategy": {
+    "name": "Setup #1 - Stage 2 8 EMA Long",
+    "fixed_sl_pts": 40.0,
+    "target_pts": 40.0,
+    "cost_to_cost_trigger_pts": 40.0,
+    "volatility_candle_pts": 100.0,
+    "bb_length": 20,
+    "bb_mult": 2.0,
+    "bb_width_min_15m": 60.0,
+    "ema_fast": 4,
+    "ema_slow": 8,
+    "ubb_slope_min_candles": 2,
+    "ubb_slope_tol": 1.5,
+    "touch_proximity_pts": 2.5,
+    "option_delta_default": 0.55
+  },
+  "execution": {
+    "execution_mode": "PAPER",
+    "lot_size": 75,
+    "lots_per_trade": 1,
+    "product_type": "INTRADAY",
+    "exchange_segment": "NSE_FNO",
+    "dhan_base_url": "https://api.dhan.co/v2",
+    "sqlite_db_path": "ict_smc_app/backend/data/ict_smc.sqlite3"
+  }
+}

@@ -1,0 +1,568 @@
+"""
+algo_execution_engine/strategy_setup1.py — Strategy Logic & State Machine for Setup #1 (Stage 2 8 EMA Long).
+
+Exact Trading Bible Rules:
+  1. Trend Filter: 15-Minute major trend must be bullish (4 EMA > 8 EMA on 15m) and Bollinger Bands width > 60.
+  2. Entry Conditions (5-Minute Chart / Live Tick Evaluation):
+     - Upper Bollinger Band (UBB) must be sloping upward for 2+ consecutive candles.
+     - Party-Switch Rule: 4 EMA > 8 EMA.
+     - Trigger: Exact touch of the 8 EMA on the 5-minute bar (instant entry on touch, no waiting for candle close).
+     - Rally Counter / First Opportunity Rule: Must be the first touch/entry in the current rally.
+       If a second touch occurs in the same rally without an interim 4/8 EMA crossover reset, skip the trade.
+     - Daily Stop Limit: If Setup #1 hits a stop-loss (-40 pts) once today, disable Setup #1 for the rest of the session.
+  3. Risk Management & Trailing Stop Automation:
+     - Initial stop-loss: Fixed -40 points.
+     - Target: +40 points (with option delta conversion for ATM/ITM options).
+     - Cost-to-Cost Trigger: Once price moves +40 points in favor, automatically move stop-loss to entry price.
+     - Candle Trail: On each subsequent confirming candle close, trail the stop-loss to that candle's low.
+     - Volatility Exit: Exit immediately if the Bollinger Band curls flat or if a single candle expands by 100+ points.
+"""
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, time as dtime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+
+log = logging.getLogger("algo.setup1")
+
+CONFIG_FILE = Path(__file__).parent / "config.json"
+
+
+def load_config() -> Dict[str, Any]:
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        log.error("Failed to read %s: %s, using defaults", CONFIG_FILE, e)
+        return {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INDICATOR FUNCTIONS (CLOSE-ALIGNED & RESAMPLED)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def add_bollinger(df: pd.DataFrame, length: int = 20, mult: float = 2.0) -> pd.DataFrame:
+    """Computes Bollinger Bands on 'close'."""
+    d = df.copy()
+    if len(d) == 0:
+        d["bb_mid"] = []
+        d["ubb"] = []
+        d["lbb"] = []
+        d["bb_width"] = []
+        return d
+    mid = d["close"].rolling(length).mean()
+    sd = d["close"].rolling(length).std(ddof=0)
+    d["bb_mid"] = mid
+    d["ubb"] = mid + mult * sd
+    d["lbb"] = mid - mult * sd
+    d["bb_width"] = d["ubb"] - d["lbb"]
+    return d
+
+
+def add_course_emas(df: pd.DataFrame, fast: int = 4, slow: int = 8) -> pd.DataFrame:
+    """Computes 4 and 8 EMAs on 'close'."""
+    d = df.copy()
+    if len(d) == 0:
+        d[f"ema{fast}"] = []
+        d[f"ema{slow}"] = []
+        return d
+    d[f"ema{fast}"] = d["close"].ewm(span=fast, adjust=False).mean()
+    d[f"ema{slow}"] = d["close"].ewm(span=slow, adjust=False).mean()
+    return d
+
+
+def band_slope(series: pd.Series, candles: int = 2, tol: float = 1.5) -> str:
+    """
+    Evaluates UP / DOWN / FLAT over the last N candles.
+    FLAT is defined as absolute change <= tolerance per candle.
+    """
+    s = series.dropna()
+    if len(s) < candles + 1:
+        return "UNKNOWN"
+    steps = s.diff().tail(candles)
+    if (steps > tol).all():
+        return "UP"
+    if (steps < -tol).all():
+        return "DOWN"
+    return "FLAT"
+
+
+def prepare_frame(df: pd.DataFrame, cfg: Dict[str, Any]) -> pd.DataFrame:
+    strat = cfg.get("strategy", {})
+    bb_len = int(strat.get("bb_length", 20))
+    bb_mult = float(strat.get("bb_mult", 2.0))
+    ema_fast = int(strat.get("ema_fast", 4))
+    ema_slow = int(strat.get("ema_slow", 8))
+    return add_course_emas(add_bollinger(df, bb_len, bb_mult), ema_fast, ema_slow)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DATA STRUCTURES
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class RallyState:
+    rally_id: int = 0
+    in_bullish_party: bool = False
+    touch_count: int = 0
+    last_touch_ts: int = 0
+    crossover_ts: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "rally_id": self.rally_id,
+            "in_bullish_party": self.in_bullish_party,
+            "touch_count": self.touch_count,
+            "first_opportunity_available": (self.in_bullish_party and self.touch_count == 0),
+            "last_touch_ts": self.last_touch_ts,
+            "crossover_ts": self.crossover_ts,
+        }
+
+
+@dataclass
+class Setup1Signal:
+    timestamp: int
+    spot: float
+    ema8: float
+    ema4: float
+    ubb: float
+    bb_width_15m: float
+    rally_id: int
+    touch_number: int
+    is_valid: bool
+    rejection_reason: Optional[str] = None
+    target_spot: float = 0.0
+    sl_spot: float = 0.0
+
+
+@dataclass
+class ActivePosition:
+    trade_id: str
+    symbol: str
+    security_id: str
+    option_type: str  # "CE"
+    strike: float
+    quantity: int
+    entry_spot: float
+    entry_option_price: float
+    entry_time: str
+    entry_ts: int
+    spot_sl: float
+    spot_target: float
+    option_sl: float
+    option_target: float
+    delta: float
+    cost_to_cost_active: bool = False
+    highest_spot: float = 0.0
+    exchange_sl_order_id: Optional[str] = None
+    entry_order_id: Optional[str] = None
+    status: str = "OPEN"  # "OPEN" | "CLOSED_TARGET" | "CLOSED_SL" | "CLOSED_VOLATILITY" | "CLOSED_MANUAL"
+    exit_spot: Optional[float] = None
+    exit_option_price: Optional[float] = None
+    exit_time: Optional[str] = None
+    exit_reason: Optional[str] = None
+    pnl_pts: float = 0.0
+    pnl_inr: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "trade_id": self.trade_id,
+            "symbol": self.symbol,
+            "security_id": self.security_id,
+            "option_type": self.option_type,
+            "strike": self.strike,
+            "quantity": self.quantity,
+            "entry_spot": round(self.entry_spot, 2),
+            "entry_option_price": round(self.entry_option_price, 2),
+            "entry_time": self.entry_time,
+            "entry_ts": self.entry_ts,
+            "spot_sl": round(self.spot_sl, 2),
+            "spot_target": round(self.spot_target, 2),
+            "option_sl": round(self.option_sl, 2),
+            "option_target": round(self.option_target, 2),
+            "delta": round(self.delta, 2),
+            "cost_to_cost_active": self.cost_to_cost_active,
+            "highest_spot": round(self.highest_spot, 2),
+            "exchange_sl_order_id": self.exchange_sl_order_id,
+            "status": self.status,
+            "exit_spot": round(self.exit_spot, 2) if self.exit_spot is not None else None,
+            "exit_option_price": round(self.exit_option_price, 2) if self.exit_option_price is not None else None,
+            "exit_time": self.exit_time,
+            "exit_reason": self.exit_reason,
+            "pnl_pts": round(self.pnl_pts, 2),
+            "pnl_inr": round(self.pnl_inr, 2),
+        }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STRATEGY EVALUATOR CLASS
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Setup1StrategyEvaluator:
+    """Encapsulates Setup #1 rules, state management, rally counting, and risk exits."""
+
+    def __init__(self, config_dict: Optional[Dict[str, Any]] = None) -> None:
+        self.cfg = config_dict or load_config()
+        self.rally = RallyState()
+        self.stage2_stopped_today: bool = False
+        self.daily_trade_count: int = 0
+        self.daily_pnl_inr: float = 0.0
+        self.closed_trades: List[Dict[str, Any]] = []
+
+    def reload_config(self) -> None:
+        self.cfg = load_config()
+
+    def reset_day(self) -> None:
+        """Resets intraday counters at session open."""
+        self.rally = RallyState()
+        self.stage2_stopped_today = False
+        self.daily_trade_count = 0
+        self.daily_pnl_inr = 0.0
+        self.closed_trades = []
+        log.info("Setup #1 Strategy Evaluator session state reset")
+
+    # ── 1. TREND FILTER (15-Minute) ───────────────────────────────────────────
+    def evaluate_15m_trend(self, df_15m: pd.DataFrame) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Rule: 15-Minute major trend must be bullish (4 EMA > 8 EMA on 15m) and BB width > 60.
+        """
+        strat = self.cfg.get("strategy", {})
+        bb_width_min = float(strat.get("bb_width_min_15m", 60.0))
+        fast = int(strat.get("ema_fast", 4))
+        slow = int(strat.get("ema_slow", 8))
+
+        if df_15m.empty or len(df_15m) < 20:
+            return False, {"bullish": False, "reason": "Insufficient 15m candles (< 20)"}
+
+        f15 = prepare_frame(df_15m, self.cfg)
+        last = f15.iloc[-1]
+        e4 = float(last[f"ema{fast}"])
+        e8 = float(last[f"ema{slow}"])
+        bb_width = float(last["bb_width"])
+
+        party_bullish = (e4 > e8)
+        width_ok = (bb_width > bb_width_min)
+        trend_ok = (party_bullish and width_ok)
+
+        info = {
+            "bullish": trend_ok,
+            "ema4": round(e4, 2),
+            "ema8": round(e8, 2),
+            "party_bullish": party_bullish,
+            "bb_width": round(bb_width, 2),
+            "bb_width_ok": width_ok,
+            "bb_width_min": bb_width_min,
+            "reason": "OK" if trend_ok else (
+                f"15m 4/8 EMA not bullish ({e4:.1f} <= {e8:.1f})" if not party_bullish
+                else f"15m BB width {bb_width:.1f} <= {bb_width_min} (no fuel)"
+            )
+        }
+        return trend_ok, info
+
+    # ── 2. PRECONDITIONS (5-Minute) ──────────────────────────────────────────
+    def evaluate_5m_preconditions(self, df_5m: pd.DataFrame) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Rule:
+          - Upper Bollinger Band (UBB) sloping upward for 2+ consecutive candles.
+          - Party-Switch Rule: 4 EMA > 8 EMA on 5m.
+        """
+        strat = self.cfg.get("strategy", {})
+        fast = int(strat.get("ema_fast", 4))
+        slow = int(strat.get("ema_slow", 8))
+        slope_candles = int(strat.get("ubb_slope_min_candles", 2))
+        slope_tol = float(strat.get("ubb_slope_tol", 1.5))
+
+        if df_5m.empty or len(df_5m) < 20:
+            return False, {"ready": False, "reason": "Insufficient 5m candles (< 20)"}
+
+        f5 = prepare_frame(df_5m, self.cfg)
+        last = f5.iloc[-1]
+        e4 = float(last[f"ema{fast}"])
+        e8 = float(last[f"ema{slow}"])
+        ubb_slope = band_slope(f5["ubb"], candles=slope_candles, tol=slope_tol)
+
+        party_switch_ok = (e4 > e8)
+        ubb_slope_ok = (ubb_slope == "UP")
+        ready = (party_switch_ok and ubb_slope_ok)
+
+        info = {
+            "ready": ready,
+            "ema4": round(e4, 2),
+            "ema8": round(e8, 2),
+            "party_switch_ok": party_switch_ok,
+            "ubb_slope": ubb_slope,
+            "ubb_slope_ok": ubb_slope_ok,
+            "ubb": round(float(last["ubb"]), 2),
+            "lbb": round(float(last["lbb"]), 2),
+            "bb_width": round(float(last["bb_width"]), 2),
+            "reason": "OK" if ready else (
+                f"5m party not bullish ({e4:.1f} <= {e8:.1f})" if not party_switch_ok
+                else f"UBB slope is {ubb_slope} (needs UP for >= {slope_candles} candles)"
+            )
+        }
+        return ready, info
+
+    # ── 3. RALLY STATE & FIRST OPPORTUNITY TRACKING ──────────────────────────
+    def update_rally_state(self, df_5m: pd.DataFrame, current_ts: int) -> RallyState:
+        """
+        Tracks the current rally.
+        When 4 EMA crosses above 8 EMA on 5m, a new rally begins (touch_count=0).
+        When 4 EMA crosses below 8 EMA, rally ends.
+        """
+        strat = self.cfg.get("strategy", {})
+        fast = int(strat.get("ema_fast", 4))
+        slow = int(strat.get("ema_slow", 8))
+
+        if df_5m.empty or len(df_5m) < 3:
+            return self.rally
+
+        f5 = prepare_frame(df_5m, self.cfg)
+        diff = f5[f"ema{fast}"] - f5[f"ema{slow}"]
+        last_diff = diff.iloc[-1]
+        prev_diff = diff.iloc[-2] if len(diff) >= 2 else last_diff
+
+        # Bullish party detection
+        is_bullish = bool(last_diff > 0)
+
+        # Fresh crossover detection
+        if is_bullish and prev_diff <= 0:
+            self.rally.rally_id += 1
+            self.rally.in_bullish_party = True
+            self.rally.touch_count = 0
+            self.rally.crossover_ts = current_ts
+            log.info("Fresh 4/8 EMA Bullish Crossover detected! Rally #%d initialized", self.rally.rally_id)
+        elif not is_bullish and self.rally.in_bullish_party:
+            self.rally.in_bullish_party = False
+            log.info("4/8 EMA Bearish flip — Rally #%d terminated", self.rally.rally_id)
+        else:
+            self.rally.in_bullish_party = is_bullish
+
+        return self.rally
+
+    # ── 4. TOUCH TRIGGER EVALUATION ──────────────────────────────────────────
+    def evaluate_8ema_touch(
+        self,
+        df_5m: pd.DataFrame,
+        current_spot: float,
+        current_candle_low: Optional[float] = None,
+        current_candle_high: Optional[float] = None,
+    ) -> Tuple[bool, float, float]:
+        """
+        Evaluates exact touch of the 8 EMA on the 5-minute bar.
+        Returns: (is_touch, ema8_value, distance_pts)
+        """
+        strat = self.cfg.get("strategy", {})
+        slow = int(strat.get("ema_slow", 8))
+        touch_proximity = float(strat.get("touch_proximity_pts", 2.5))
+
+        if df_5m.empty or len(df_5m) < 20:
+            return False, 0.0, 999.0
+
+        f5 = prepare_frame(df_5m, self.cfg)
+        ema8_val = float(f5.iloc[-1][f"ema{slow}"])
+        dist = abs(current_spot - ema8_val)
+
+        # 1. Direct spot touch within proximity
+        spot_touches = (dist <= touch_proximity) or (current_spot <= ema8_val and current_spot >= ema8_val - 10.0)
+
+        # 2. Candle range touches 8 EMA
+        candle_touches = False
+        if current_candle_low is not None and current_candle_high is not None:
+            candle_touches = (current_candle_low <= ema8_val <= current_candle_high)
+
+        is_touch = spot_touches or candle_touches
+        return is_touch, ema8_val, dist
+
+    # ── 5. FULL SETUP #1 SIGNAL CHECK ────────────────────────────────────────
+    def check_setup1_entry_signal(
+        self,
+        df_15m: pd.DataFrame,
+        df_5m: pd.DataFrame,
+        current_spot: float,
+        current_ts: int,
+        current_time: dtime,
+        current_candle_low: Optional[float] = None,
+        current_candle_high: Optional[float] = None,
+    ) -> Setup1Signal:
+        """
+        Evaluates all Trading Bible rules for Setup #1:
+          1. Trend filter on 15m.
+          2. 5m preconditions (UBB sloping up >= 2 candles, 4 EMA > 8 EMA).
+          3. Exact touch of 8 EMA.
+          4. Rally counter / first opportunity rule.
+          5. Daily stop limit (if stage 2 stop hit today -> disabled).
+          6. Time of day check (no entry after 15:00).
+        """
+        strat = self.cfg.get("strategy", {})
+        risk = self.cfg.get("risk", {})
+        fixed_sl = float(strat.get("fixed_sl_pts", 40.0))
+        target_pts = float(strat.get("target_pts", 40.0))
+        no_entry_after_str = risk.get("no_entry_after", "15:00")
+        h, m = map(int, no_entry_after_str.split(":"))
+        no_entry_time = dtime(h, m)
+
+        # Update rally state
+        self.update_rally_state(df_5m, current_ts)
+
+        f5 = prepare_frame(df_5m, self.cfg) if not df_5m.empty else df_5m
+        ema8_val = float(f5.iloc[-1][f"ema{strat.get('ema_slow', 8)}"]) if not df_5m.empty else 0.0
+        ema4_val = float(f5.iloc[-1][f"ema{strat.get('ema_fast', 4)}"]) if not df_5m.empty else 0.0
+        ubb_val = float(f5.iloc[-1]["ubb"]) if not df_5m.empty else 0.0
+
+        # Base reject signal constructor
+        def reject(reason: str) -> Setup1Signal:
+            return Setup1Signal(
+                timestamp=current_ts,
+                spot=current_spot,
+                ema8=ema8_val,
+                ema4=ema4_val,
+                ubb=ubb_val,
+                bb_width_15m=0.0,
+                rally_id=self.rally.rally_id,
+                touch_number=self.rally.touch_count,
+                is_valid=False,
+                rejection_reason=reason,
+            )
+
+        # Gate 0: Time of Day
+        if current_time >= no_entry_time:
+            return reject(f"After {no_entry_after_str} IST — no new entries permitted")
+
+        # Gate 1: Daily Stop Limit
+        if self.stage2_stopped_today:
+            return reject("Stage 2 stop already taken today (-40 pts) — Setup #1 disabled for rest of session")
+
+        # Gate 2: 15-Minute Trend Filter
+        trend_ok, trend_info = self.evaluate_15m_trend(df_15m)
+        if not trend_ok:
+            return reject(f"15m Trend Filter rejected: {trend_info.get('reason')}")
+
+        bb_width_15m = trend_info.get("bb_width", 0.0)
+
+        # Gate 3: 5-Minute Preconditions
+        pre_ok, pre_info = self.evaluate_5m_preconditions(df_5m)
+        if not pre_ok:
+            return reject(f"5m Preconditions rejected: {pre_info.get('reason')}")
+
+        # Gate 4: Touch Trigger Evaluation
+        is_touch, touch_ema8, dist = self.evaluate_8ema_touch(df_5m, current_spot, current_candle_low, current_candle_high)
+        if not is_touch:
+            return reject(f"8 EMA not touched (Spot {current_spot:.1f} vs 8 EMA {touch_ema8:.1f}, dist {dist:.1f} pts)")
+
+        # Gate 5: Rally Counter / First Opportunity Rule
+        if not self.rally.in_bullish_party:
+            return reject("Not in a bullish 4/8 EMA rally")
+
+        if self.rally.touch_count >= 1:
+            return reject(f"Already {self.rally.touch_count} touch(es) in Rally #{self.rally.rally_id} — second opportunity rule skipped")
+
+        # All Gates Passed! Valid Entry Trigger!
+        target_spot = current_spot + target_pts
+        sl_spot = current_spot - fixed_sl
+
+        signal = Setup1Signal(
+            timestamp=current_ts,
+            spot=current_spot,
+            ema8=touch_ema8,
+            ema4=ema4_val,
+            ubb=ubb_val,
+            bb_width_15m=bb_width_15m,
+            rally_id=self.rally.rally_id,
+            touch_number=1,
+            is_valid=True,
+            rejection_reason=None,
+            target_spot=target_spot,
+            sl_spot=sl_spot,
+        )
+        return signal
+
+    # ── 6. POSITION LIFECYCLE & RISK EXITS ───────────────────────────────────
+    def evaluate_active_position(
+        self,
+        pos: ActivePosition,
+        current_spot: float,
+        current_option_ltp: float,
+        df_5m: pd.DataFrame,
+        last_closed_candle_5m: Optional[Dict[str, float]] = None,
+    ) -> Tuple[bool, Optional[str], Optional[float]]:
+        """
+        Monitors active position and applies:
+          1. Fixed target (+40 pts)
+          2. Cost-to-Cost trigger: once spot moves +40 pts in favor, move SL to entry price
+          3. Candle Trail: On each subsequent confirming candle close (higher close), trail SL to that candle's low
+          4. Volatility Exit: If Bollinger Band curls FLAT or if single candle expands >= 100 pts -> exit immediately
+          5. Fixed stop-loss (-40 pts): If hit, marks stage2_stopped_today = True.
+
+        Returns: (should_exit, exit_reason, updated_sl_spot)
+        """
+        strat = self.cfg.get("strategy", {})
+        ctc_trigger = float(strat.get("cost_to_cost_trigger_pts", 40.0))
+        vol_candle_pts = float(strat.get("volatility_candle_pts", 100.0))
+        slope_candles = int(strat.get("ubb_slope_min_candles", 2))
+        slope_tol = float(strat.get("ubb_slope_tol", 1.5))
+
+        # Update highest spot reached
+        if current_spot > pos.highest_spot:
+            pos.highest_spot = current_spot
+
+        new_sl = pos.spot_sl
+
+        # A. Cost-to-Cost Trigger (+40 pts move in favor)
+        if not pos.cost_to_cost_active and (current_spot - pos.entry_spot >= ctc_trigger):
+            pos.cost_to_cost_active = True
+            new_sl = max(new_sl, pos.entry_spot)
+            log.info("🎯 Trade %s moved +%.1f pts! Cost-to-Cost Trigger activated (SL moved to %.1f)",
+                     pos.trade_id, current_spot - pos.entry_spot, new_sl)
+
+        # B. Candle Trail (On each confirming candle close > entry)
+        if last_closed_candle_5m is not None:
+            c_close = last_closed_candle_5m.get("c", 0.0)
+            c_low = last_closed_candle_5m.get("l", 0.0)
+            c_high = last_closed_candle_5m.get("h", 0.0)
+
+            # Volatility check 1: Candle range >= 100 points
+            if (c_high - c_low) >= vol_candle_pts:
+                log.warning("🚨 Trade %s Volatility Exit: Candle range %.1f >= %.1f pts!",
+                            pos.trade_id, c_high - c_low, vol_candle_pts)
+                return True, f"Volatility Exit: 5m Candle range {c_high - c_low:.1f} >= {vol_candle_pts} pts", None
+
+            # Candle trail: if candle confirmed higher close, trail stop to candle low
+            if c_close > pos.entry_spot and c_low > new_sl:
+                new_sl = max(new_sl, c_low)
+                log.info("📈 Trade %s Candle Trail: Trailed SL to confirming candle low %.1f", pos.trade_id, new_sl)
+
+        # C. Volatility check 2: UBB curls FLAT
+        if not df_5m.empty and len(df_5m) >= 20:
+            f5 = prepare_frame(df_5m, self.cfg)
+            current_ubb_slope = band_slope(f5["ubb"], candles=slope_candles, tol=slope_tol)
+            if current_ubb_slope == "FLAT":
+                log.warning("🚨 Trade %s Volatility Exit: Upper Bollinger Band curled FLAT!", pos.trade_id)
+                return True, "Volatility Exit: Upper Bollinger Band curled FLAT", None
+
+        # D. Target Hit (+40 pts)
+        if current_spot >= pos.spot_target:
+            log.info("🎉 Trade %s Target +40 pts Hit! Spot %.1f >= Target %.1f", pos.trade_id, current_spot, pos.spot_target)
+            return True, "Target Hit (+40 pts)", None
+
+        # E. Stop-Loss Hit
+        if current_spot <= new_sl:
+            is_initial_sl = (new_sl == pos.entry_spot - float(strat.get("fixed_sl_pts", 40.0)))
+            if is_initial_sl:
+                self.stage2_stopped_today = True
+                log.warning("🛑 Trade %s Initial Stop-Loss (-40 pts) Hit! Setup #1 disabled for rest of day.", pos.trade_id)
+                return True, "Initial Stop-Loss Hit (-40 pts)", None
+            else:
+                log.info("🛡️ Trade %s Trailing/CTC Stop Hit at %.1f", pos.trade_id, new_sl)
+                return True, f"Trailing/CTC Stop Hit (SL {new_sl:.1f})", None
+
+        # If SL was adjusted by CTC or Candle Trail, return updated SL
+        if new_sl != pos.spot_sl:
+            return False, None, new_sl
+
+        return False, None, None
