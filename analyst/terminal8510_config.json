@@ -16,12 +16,35 @@
     "max_chase_retries": 3,
     "sl_limit_buffer_pts": 4.0
   },
+  "super_trail": {
+    "enabled": true,
+    "trailing_sl_enabled": true,
+    "trail_activation_profit_pts": 15.0,
+    "trailing_jump_pts": 5.0,
+    "initial_sl_pts": 20.0,
+    "trailing_target_enabled": true,
+    "initial_target_pts": 25.0,
+    "trail_target_step_pts": 10.0,
+    "trail_target_pullback_pts": 5.0,
+    "partial_exit_enabled": false,
+    "partial_target_1_pct": 50,
+    "partial_target_1_pts": 25.0,
+    "partial_target_2_pct": 30,
+    "partial_target_2_pts": 40.0,
+    "runner_pct": 20
+  },
+  "algo_strike_selection": {
+    "LONG_CE_ITM": true,
+    "LONG_CE_ATM": true,
+    "LONG_PE_ITM": true,
+    "LONG_PE_ATM": true
+  },
   "risk": {
     "max_daily_trades": 2,
     "max_daily_loss_inr": -3300.0,
     "fixed_sl_pts": 40.0,
     "target_pts": 40.0,
-    "option_delta_default": 0.60
+    "option_delta_default": 0.6
   },
   "trend_filters": {
     "ema_slope": true,
@@ -38,8 +61,8 @@
     "brokerage_per_order": 20.0,
     "stt_sell_rate": 0.0015,
     "txn_rate": 0.0003553,
-    "sebi_rate": 0.000001,
-    "stamp_buy_rate": 0.00003,
+    "sebi_rate": 1e-06,
+    "stamp_buy_rate": 3e-05,
     "gst_rate": 0.18
   },
   "voice": {

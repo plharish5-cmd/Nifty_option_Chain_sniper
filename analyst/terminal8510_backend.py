@@ -14,6 +14,7 @@ import json
 import logging
 import math
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime, date, timedelta
@@ -52,6 +53,122 @@ def load_env_safe() -> None:
 def round_to_tick(val: float, tick: float = 0.05) -> float:
     """Rounds price to nearest exchange tick (default 0.05)."""
     return round(round(float(val) / tick) * tick, 2)
+
+
+def compute_trailing_sl(
+    entry_price: float,
+    current_ltp: float,
+    highest_ltp: float,
+    current_trailing_sl: float,
+    initial_sl_pts: float = 20.0,
+    activation_pts: float = 15.0,
+    jump_pts: float = 5.0,
+) -> Tuple[float, float]:
+    """
+    Dhan Super Trail Step-Function Trailing Stop Loss (BUY Option Position):
+      - highest_ltp = max(highest_ltp, current_ltp)
+      - max_profit_pts = highest_ltp - entry_price
+      - If max_profit_pts < activation_pts: current_trailing_sl remains at initial_sl
+      - If max_profit_pts >= activation_pts:
+          steps = math.floor((max_profit_pts - activation_pts) / jump_pts) + 1
+          candidate_sl = initial_sl + (steps * jump_pts)
+          current_trailing_sl = max(current_trailing_sl, candidate_sl)
+      - Strict Monotonicity: current_trailing_sl never moves down.
+    """
+    new_highest = max(highest_ltp, current_ltp)
+    initial_sl = round_to_tick(entry_price - initial_sl_pts, 0.05)
+    if current_trailing_sl <= 0.0:
+        current_trailing_sl = initial_sl
+
+    max_profit = new_highest - entry_price
+    if max_profit >= activation_pts:
+        steps = math.floor((max_profit - activation_pts) / jump_pts) + 1
+        candidate_sl = round_to_tick(initial_sl + (steps * jump_pts), 0.05)
+        new_sl = max(current_trailing_sl, candidate_sl)
+    else:
+        new_sl = max(current_trailing_sl, initial_sl)
+
+    return round(new_highest, 2), round(new_sl, 2)
+
+
+def compute_trailing_target(
+    entry_price: float,
+    current_ltp: float,
+    target_status: str,
+    trailing_target_level: float,
+    highest_after_target: float,
+    initial_target_pts: float = 25.0,
+    step_pts: float = 10.0,
+    pullback_pts: float = 5.0,
+    trailing_target_enabled: bool = True,
+) -> Dict[str, Any]:
+    """
+    Dhan Super Trail Spike-High Pullback Logic:
+      Case 1 (trailing_target_enabled == False): Exit immediately when LTP >= Initial_Target.
+      Case 2 (trailing_target_enabled == True):
+        - Before LTP reaches Initial_Target: target_status = 'FIXED', level = Initial_Target.
+        - Moment LTP >= Initial_Target: DO NOT EXIT. Switch target_status = 'TRAILING',
+          set highest_after_target = LTP, trailing_target_level = Initial_Target + step_pts.
+        - On subsequent ticks in 'TRAILING':
+          highest_after_target = max(highest_after_target, current_ltp)
+          when current_ltp >= trailing_target_level: trailing_target_level = current_ltp + step_pts
+          pullback_exit_level = highest_after_target - pullback_pts
+          If current_ltp <= pullback_exit_level: Fire protected limit exit immediately.
+    """
+    initial_target = round_to_tick(entry_price + initial_target_pts, 0.05)
+
+    if not trailing_target_enabled:
+        should_exit = current_ltp >= initial_target
+        return {
+            "target_status": "FIXED",
+            "trailing_target_level": initial_target,
+            "highest_after_target": max(highest_after_target, current_ltp),
+            "pullback_exit_level": 0.0,
+            "should_exit": should_exit,
+            "exit_reason": "FIXED_TARGET_HIT" if should_exit else "",
+        }
+
+    # Trailing target enabled
+    if target_status == "FIXED":
+        if current_ltp >= initial_target:
+            new_status = "TRAILING"
+            new_highest = current_ltp
+            new_target_level = round_to_tick(initial_target + step_pts, 0.05)
+            pullback_exit = round_to_tick(new_highest - pullback_pts, 0.05)
+            return {
+                "target_status": new_status,
+                "trailing_target_level": new_target_level,
+                "highest_after_target": new_highest,
+                "pullback_exit_level": pullback_exit,
+                "should_exit": False,
+                "exit_reason": "",
+            }
+        else:
+            return {
+                "target_status": "FIXED",
+                "trailing_target_level": initial_target,
+                "highest_after_target": max(highest_after_target, current_ltp),
+                "pullback_exit_level": 0.0,
+                "should_exit": False,
+                "exit_reason": "",
+            }
+
+    # In 'TRAILING' mode
+    new_highest = max(highest_after_target, current_ltp)
+    new_target_level = trailing_target_level
+    if current_ltp >= new_target_level:
+        new_target_level = round_to_tick(current_ltp + step_pts, 0.05)
+
+    pullback_exit = round_to_tick(new_highest - pullback_pts, 0.05)
+    should_exit = current_ltp <= pullback_exit
+    return {
+        "target_status": "TRAILING",
+        "trailing_target_level": new_target_level,
+        "highest_after_target": new_highest,
+        "pullback_exit_level": pullback_exit,
+        "should_exit": should_exit,
+        "exit_reason": "TRAIL_TARGET_PULLBACK_HIT" if should_exit else "",
+    }
 
 
 class InstrumentManager:
@@ -173,6 +290,8 @@ class DhanBroker:
         load_env_safe()
         self._last_ltp_call = 0.0
         self._cached_ltp: Dict[str, float] = {}
+        self._last_funds_call = 0.0
+        self._cached_funds: Dict[str, Any] = {}
 
     def _headers(self) -> Dict[str, str]:
         token = os.environ.get("DHAN_ACCESS_TOKEN", "")
@@ -191,7 +310,11 @@ class DhanBroker:
         return bool(token and client and len(token) > 20)
 
     async def get_fundlimit(self) -> Dict[str, Any]:
-        """Queries /v2/fundlimit."""
+        """Queries /v2/fundlimit (cached for 10s to prevent API rate limits)."""
+        now = time.time()
+        if self._cached_funds and (now - self._last_funds_call < 10.0):
+            return self._cached_funds
+
         if not self.is_configured():
             return {
                 "ok": False,
@@ -201,6 +324,7 @@ class DhanBroker:
                 "margin_avail": 0.0,
             }
         try:
+            self._last_funds_call = now
             async with httpx.AsyncClient(timeout=6.0) as client:
                 res = await client.get(f"{self.base_url}/fundlimit", headers=self._headers())
                 if res.status_code == 200:
@@ -209,7 +333,7 @@ class DhanBroker:
                     used = float(d.get("utilizedAmount") or 0.0)
                     sod = float(d.get("sodLimit") or 0.0)
                     total = avail + used
-                    return {
+                    self._cached_funds = {
                         "ok": True,
                         "total_avail": round(total, 2),
                         "margin_used": round(used, 2),
@@ -217,6 +341,9 @@ class DhanBroker:
                         "sod_limit": round(sod, 2),
                         "raw": d,
                     }
+                    return self._cached_funds
+                elif res.status_code == 429:
+                    self._last_funds_call = now + 5.0  # Back off
                 return {"ok": False, "status_code": res.status_code, "error": res.text[:200]}
         except Exception as e:
             log.error("Fundlimit query error: %s", e)
@@ -260,8 +387,8 @@ class DhanBroker:
         Returns flat map: {"13": 23960.6, "21": 15.19, "61471": 23960.1, ...}
         """
         now = time.time()
-        # Rate limit safety: at most 1 request every 0.6 seconds
-        if now - self._last_ltp_call < 0.6:
+        # Rate limit safety: at most 1 request every 0.8 seconds
+        if now - self._last_ltp_call < 0.8:
             return self._cached_ltp
 
         if not self.is_configured():
@@ -282,7 +409,8 @@ class DhanBroker:
                     self._cached_ltp.update(out)
                     return self._cached_ltp
                 elif res.status_code == 429:
-                    log.warning("Marketfeed LTP 429 rate limit hit — using cached prices")
+                    self._last_ltp_call = now + 3.0  # Back off 3s on rate limit
+                    log.warning("Marketfeed LTP 429 rate limit hit — using cached prices and backing off 3s")
                 else:
                     log.debug("Marketfeed LTP returned %s", res.status_code)
         except Exception as e:
@@ -367,12 +495,45 @@ class QuantTerminalBackend:
             "sl_limit_buffer_pts": 4.0,
         })
 
+        # Super Trail Dual Trailing & Partial Scaling
+        self.super_trail_cfg = self.cfg.get("super_trail", {
+            "enabled": True,
+            "trailing_sl_enabled": True,
+            "trail_activation_profit_pts": 15.0,
+            "trailing_jump_pts": 5.0,
+            "initial_sl_pts": 20.0,
+            "trailing_target_enabled": True,
+            "initial_target_pts": 25.0,
+            "trail_target_step_pts": 10.0,
+            "trail_target_pullback_pts": 5.0,
+            "partial_exit_enabled": False,
+            "partial_target_1_pct": 50,
+            "partial_target_1_pts": 25.0,
+            "partial_target_2_pct": 30,
+            "partial_target_2_pts": 40.0,
+            "runner_pct": 20,
+        })
+
+        # Strike Matrix Algo Trade Checkboxes
+        self.algo_strike_selection = self.cfg.get("algo_strike_selection", {
+            "LONG_CE_ITM": True,
+            "LONG_CE_ATM": True,
+            "LONG_PE_ITM": True,
+            "LONG_PE_ATM": True,
+        })
+
         # Priority Contracts Tracking
         self.priority_contracts: List[Dict[str, Any]] = []
         self.cached_telemetry: Dict[str, Any] = {}
         self.cached_trend_confluence: Dict[str, Any] = {}
         self.active_replay_task: Optional[asyncio.Task] = None
-        self.lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
+
+    @property
+    def lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     def _init_sqlite(self) -> None:
         try:
@@ -433,6 +594,35 @@ class QuantTerminalBackend:
                     updated_at TEXT
                 );
                 """)
+
+                # Super Trail Column Migrations
+                pos_cols = [
+                    ("highest_ltp", "REAL DEFAULT 0.0"),
+                    ("initial_sl", "REAL DEFAULT 0.0"),
+                    ("current_trailing_sl", "REAL DEFAULT 0.0"),
+                    ("target_status", "TEXT DEFAULT 'FIXED'"),
+                    ("initial_target", "REAL DEFAULT 0.0"),
+                    ("trailing_target_level", "REAL DEFAULT 0.0"),
+                    ("highest_after_target", "REAL DEFAULT 0.0"),
+                    ("pullback_exit_level", "REAL DEFAULT 0.0"),
+                    ("trail_sl_enabled", "INTEGER DEFAULT 1"),
+                    ("trail_target_enabled", "INTEGER DEFAULT 1"),
+                    ("trail_activation_pts", "REAL DEFAULT 15.0"),
+                    ("trail_jump_pts", "REAL DEFAULT 5.0"),
+                    ("trail_target_step", "REAL DEFAULT 10.0"),
+                    ("trail_target_pullback", "REAL DEFAULT 5.0"),
+                    ("target_order_id", "TEXT DEFAULT ''"),
+                    ("sl_order_id", "TEXT DEFAULT ''"),
+                    ("exit_reason", "TEXT DEFAULT ''"),
+                    ("partial_step", "INTEGER DEFAULT 0"),
+                    ("remaining_qty", "INTEGER DEFAULT 0"),
+                ]
+                for col_name, col_type in pos_cols:
+                    try:
+                        cur.execute(f"ALTER TABLE positions ADD COLUMN {col_name} {col_type};")
+                    except sqlite3.OperationalError:
+                        pass
+
                 # Initialize paper wallet if empty
                 cur.execute("SELECT balance FROM paper_wallet WHERE id=1")
                 if not cur.fetchone():
@@ -444,6 +634,40 @@ class QuantTerminalBackend:
                 conn.commit()
         except Exception as e:
             log.error("Error initializing SQLite ledger: %s", e)
+
+    def update_super_trail_config(self, new_cfg: Dict[str, Any]) -> Dict[str, Any]:
+        """Live updates Super Trail parameters without restarting server."""
+        for k, v in new_cfg.items():
+            if k in self.super_trail_cfg:
+                if isinstance(self.super_trail_cfg[k], bool):
+                    self.super_trail_cfg[k] = bool(v)
+                elif isinstance(self.super_trail_cfg[k], (int, float)):
+                    self.super_trail_cfg[k] = float(v) if "." in str(v) else int(v)
+                else:
+                    self.super_trail_cfg[k] = v
+
+        self.cfg["super_trail"] = self.super_trail_cfg
+        try:
+            self.config_path.write_text(json.dumps(self.cfg, indent=2))
+            log.info("Super Trail config updated: %s", self.super_trail_cfg)
+        except Exception as e:
+            log.error("Failed saving Super Trail config: %s", e)
+
+        return {"ok": True, "super_trail": self.super_trail_cfg}
+
+    def update_strike_selection(self, new_selection: Dict[str, bool]) -> Dict[str, Any]:
+        """Updates and persists Algo Trade strike checkboxes."""
+        for k, v in new_selection.items():
+            self.algo_strike_selection[k] = bool(v)
+
+        self.cfg["algo_strike_selection"] = self.algo_strike_selection
+        try:
+            self.config_path.write_text(json.dumps(self.cfg, indent=2))
+            log.info("Algo strike selection updated: %s", self.algo_strike_selection)
+        except Exception as e:
+            log.error("Failed saving strike selection: %s", e)
+
+        return {"ok": True, "algo_strike_selection": self.algo_strike_selection}
 
     def calculate_dhan_charges(self, buy_price: float, sell_price: float, qty: int) -> float:
         """
@@ -592,6 +816,7 @@ class QuantTerminalBackend:
                 "spread_pts": 0.45,
                 "oi_lakhs": 28.5,
                 "volume_lakhs": 142.1,
+                "algo_enabled": self.algo_strike_selection.get("LONG_CE_ITM", True),
             },
             {
                 "id": "LONG_CE_ATM",
@@ -606,6 +831,7 @@ class QuantTerminalBackend:
                 "spread_pts": 0.35,
                 "oi_lakhs": 42.8,
                 "volume_lakhs": 268.4,
+                "algo_enabled": self.algo_strike_selection.get("LONG_CE_ATM", True),
             },
             {
                 "id": "LONG_PE_ITM",
@@ -620,6 +846,7 @@ class QuantTerminalBackend:
                 "spread_pts": 0.45,
                 "oi_lakhs": 31.2,
                 "volume_lakhs": 156.8,
+                "algo_enabled": self.algo_strike_selection.get("LONG_PE_ITM", True),
             },
             {
                 "id": "LONG_PE_ATM",
@@ -634,6 +861,7 @@ class QuantTerminalBackend:
                 "spread_pts": 0.35,
                 "oi_lakhs": 39.4,
                 "volume_lakhs": 215.7,
+                "algo_enabled": self.algo_strike_selection.get("LONG_PE_ATM", True),
             },
         ]
         self.priority_contracts = priority_matrix
@@ -707,6 +935,8 @@ class QuantTerminalBackend:
                 "paper_enabled": self.paper_execution_enabled,
                 "kill_switch_active": self.kill_switch_active,
                 "chasing": self.chasing_cfg,
+                "super_trail": self.super_trail_cfg,
+                "algo_strike_selection": self.algo_strike_selection,
             },
             "priority_matrix": priority_matrix,
             "trend_watchlist": trend_watchlist,
@@ -877,16 +1107,65 @@ class QuantTerminalBackend:
                 ltp = live_quotes.get(sid, float(p.get("current_ltp") or entry))
                 p["current_ltp"] = ltp
 
-                # Duration timer
-                try:
-                    entry_dt = datetime.fromisoformat(p["entry_time"].replace(" IST", ""))
-                    dur_sec = max(0, int((now_dt - entry_dt).total_seconds()))
-                    hrs = dur_sec // 3600
-                    mins = (dur_sec % 3600) // 60
-                    secs = dur_sec % 60
-                    p["duration"] = f"{hrs:02d}h {mins:02d}m {secs:02d}s"
-                except Exception as e:
-                    p["duration"] = "00h 00m 00s"
+                # Super Trail state fields
+                highest_ltp = float(p.get("highest_ltp") or entry)
+                initial_sl = float(p.get("initial_sl") or sl)
+                current_trailing_sl = float(p.get("current_trailing_sl") or initial_sl)
+                target_status = str(p.get("target_status") or "FIXED")
+                initial_target = float(p.get("initial_target") or target)
+                trailing_target_level = float(p.get("trailing_target_level") or initial_target)
+                highest_after_target = float(p.get("highest_after_target") or entry)
+                pullback_exit_level = float(p.get("pullback_exit_level") or 0.0)
+
+                trail_sl_enabled = bool(p.get("trail_sl_enabled", 1))
+                trail_target_enabled = bool(p.get("trail_target_enabled", 1))
+                trail_act = float(p.get("trail_activation_pts") or self.super_trail_cfg.get("trail_activation_profit_pts", 15.0))
+                trail_jump = float(p.get("trail_jump_pts") or self.super_trail_cfg.get("trailing_jump_pts", 5.0))
+                init_sl_pts = float(self.super_trail_cfg.get("initial_sl_pts", 20.0))
+                init_target_pts = float(self.super_trail_cfg.get("initial_target_pts", 25.0))
+                target_step = float(p.get("trail_target_step") or self.super_trail_cfg.get("trail_target_step_pts", 10.0))
+                target_pullback = float(p.get("trail_target_pullback") or self.super_trail_cfg.get("trail_target_pullback_pts", 5.0))
+
+                # 1. Update Trailing SL
+                if trail_sl_enabled:
+                    highest_ltp, current_trailing_sl = compute_trailing_sl(
+                        entry_price=entry,
+                        current_ltp=ltp,
+                        highest_ltp=highest_ltp,
+                        current_trailing_sl=current_trailing_sl,
+                        initial_sl_pts=init_sl_pts,
+                        activation_pts=trail_act,
+                        jump_pts=trail_jump,
+                    )
+                else:
+                    highest_ltp = max(highest_ltp, ltp)
+
+                # 2. Update Trailing Target
+                target_res = compute_trailing_target(
+                    entry_price=entry,
+                    current_ltp=ltp,
+                    target_status=target_status,
+                    trailing_target_level=trailing_target_level,
+                    highest_after_target=highest_after_target,
+                    initial_target_pts=init_target_pts,
+                    step_pts=target_step,
+                    pullback_pts=target_pullback,
+                    trailing_target_enabled=trail_target_enabled,
+                )
+                target_status = target_res["target_status"]
+                trailing_target_level = target_res["trailing_target_level"]
+                highest_after_target = target_res["highest_after_target"]
+                pullback_exit_level = target_res["pullback_exit_level"]
+
+                # 3. Check Real-Time Exit Conditions
+                should_close = False
+                exit_reason = ""
+                if trail_sl_enabled and ltp <= current_trailing_sl:
+                    should_close = True
+                    exit_reason = "TRAIL_SL_HIT" if current_trailing_sl > initial_sl else "INITIAL_SL_HIT"
+                elif target_res["should_exit"]:
+                    should_close = True
+                    exit_reason = target_res["exit_reason"]
 
                 # P&L Calculation
                 gross_pnl = round((ltp - entry) * qty, 2)
@@ -896,6 +1175,17 @@ class QuantTerminalBackend:
                 p["net_pnl"] = net_pnl
                 p["dhan_charges"] = charges
 
+                # Duration timer
+                try:
+                    entry_dt = datetime.fromisoformat(p["entry_time"].replace(" IST", ""))
+                    dur_sec = max(0, int((now_dt - entry_dt).total_seconds()))
+                    hrs = dur_sec // 3600
+                    mins = (dur_sec % 3600) // 60
+                    secs = dur_sec % 60
+                    p["duration"] = f"{hrs:02d}h {mins:02d}m {secs:02d}s"
+                except Exception:
+                    p["duration"] = "00h 00m 00s"
+
                 # Progress to Target indicator
                 dist_target = max(0.1, target - entry)
                 curr_dist = ltp - entry
@@ -903,7 +1193,70 @@ class QuantTerminalBackend:
                 p["target_progress_pct"] = pct_target
                 p["target_status_text"] = f"{curr_dist:+.1f} / +{dist_target:.1f} pts ({pct_target}% to Target)"
 
-                positions.append(p)
+                # Format Trailing SL Display
+                diff_sl = current_trailing_sl - entry
+                if current_trailing_sl >= entry:
+                    p["trail_sl_text"] = f"₹{current_trailing_sl:.2f} (+{diff_sl:.1f} pts Locked)"
+                    p["trail_sl_badge"] = "bull"
+                else:
+                    p["trail_sl_text"] = f"₹{current_trailing_sl:.2f} ({diff_sl:.1f} pts)"
+                    p["trail_sl_badge"] = "amber"
+
+                # Format Trailing Target Display
+                if target_status == "TRAILING":
+                    p["trail_target_text"] = f"₹{trailing_target_level:.2f} | Peak: ₹{highest_after_target:.2f} (Exit: ₹{pullback_exit_level:.2f})"
+                    p["trail_target_badge"] = "bull"
+                else:
+                    p["trail_target_text"] = f"Fixed: ₹{initial_target:.2f} (+{initial_target - entry:.1f} pts)"
+                    p["trail_target_badge"] = "side"
+
+                p["highest_ltp"] = highest_ltp
+                p["highest_after_target"] = highest_after_target
+                p["pullback_exit_level"] = pullback_exit_level
+                p["current_trailing_sl"] = current_trailing_sl
+                p["trailing_target_level"] = trailing_target_level
+                p["target_status"] = target_status
+
+                if should_close:
+                    exit_price = ltp
+                    exit_time = now_dt.strftime("%Y-%m-%d %H:%M:%S IST")
+                    gross = round((exit_price - entry) * qty, 2)
+                    chg = self.calculate_dhan_charges(entry, exit_price, qty)
+                    net = round(gross - chg, 2)
+
+                    cur.execute("""
+                    UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?,
+                                         exit_reason=?, current_ltp=?, highest_ltp=?, current_trailing_sl=?,
+                                         target_status=?, trailing_target_level=?, highest_after_target=?,
+                                         pullback_exit_level=?
+                    WHERE position_id=?
+                    """, (exit_price, exit_time, gross, net, exit_reason, ltp, highest_ltp, current_trailing_sl,
+                          target_status, trailing_target_level, highest_after_target, pullback_exit_level, p["position_id"]))
+
+                    # Release paper margin
+                    req_margin = entry * qty
+                    cur.execute("UPDATE paper_wallet SET margin_used = max(0.0, margin_used - ?), realized_pnl = realized_pnl + ? WHERE id=1",
+                                (req_margin, net))
+                    log.info("Position %s exited via %s @ ₹%.2f (Net PnL: ₹%.2f)", p["position_id"], exit_reason, exit_price, net)
+
+                    # OCO cancellation of companion leg if live order
+                    target_oid = p.get("target_order_id")
+                    sl_oid = p.get("sl_order_id")
+                    if self.broker.is_configured():
+                        if "SL" in exit_reason and target_oid:
+                            asyncio.create_task(self.broker.cancel_order(str(target_oid)))
+                        elif "TARGET" in exit_reason and sl_oid:
+                            asyncio.create_task(self.broker.cancel_order(str(sl_oid)))
+                else:
+                    cur.execute("""
+                    UPDATE positions SET current_ltp=?, highest_ltp=?, current_trailing_sl=?, target_status=?,
+                                         trailing_target_level=?, highest_after_target=?, pullback_exit_level=?,
+                                         gross_pnl=?, net_pnl=?
+                    WHERE position_id=?
+                    """, (ltp, highest_ltp, current_trailing_sl, target_status, trailing_target_level,
+                          highest_after_target, pullback_exit_level, gross_pnl, net_pnl, p["position_id"]))
+                    positions.append(p)
+            conn.commit()
         return positions
 
     def get_order_book(self) -> List[Dict[str, Any]]:
@@ -921,6 +1274,7 @@ class QuantTerminalBackend:
         strategy_name: str = "Manual Matrix",
         target_pts: float = 40.0,
         sl_pts: float = 40.0,
+        is_algo_trade: bool = False,
     ) -> Dict[str, Any]:
         """
         SEBI Post-March 2026 Aggressive Limit Chaser Implementation:
@@ -936,6 +1290,18 @@ class QuantTerminalBackend:
             mode = self.execution_mode
             if self.kill_switch_active:
                 return {"ok": False, "error": "KILL SWITCH ACTIVE: All execution locked in STANDBY"}
+
+            # Check Strike Matrix Checkbox filter if triggered automatically by Algo
+            contract_id = contract.get("id", "")
+            if is_algo_trade and contract_id:
+                if not self.algo_strike_selection.get(contract_id, True):
+                    sym = contract.get("symbol", contract_id)
+                    log.info("[SKIPPED] Strike %s excluded by Trader Strike Matrix Filter", sym)
+                    return {
+                        "ok": False,
+                        "skipped": True,
+                        "error": f"[SKIPPED] Strike {sym} excluded by Trader Strike Matrix Filter"
+                    }
 
             buf = float(self.chasing_cfg.get("aggressive_limit_buffer_pts", 4.0))
             interval_s = float(self.chasing_cfg.get("auto_modify_interval_ms", 800)) / 1000.0
@@ -1065,14 +1431,13 @@ class QuantTerminalBackend:
             # ── 2. PAPER TRADE EXECUTION (if PAPER_ONLY or BOTH) ────────────
             if mode in ("PAPER_ONLY", "BOTH") and self.paper_execution_enabled:
                 paper_order_id = f"P_{order_id}"
-                # Simulated fill at LTP with minor random slippage (0.1 to 0.3 pts)
                 sim_slippage = round(np.random.choice([0.05, 0.10, 0.15, 0.20]), 2)
                 paper_fill_price = round(signal_ltp + sim_slippage, 2)
                 paper_charges = self.calculate_dhan_charges(paper_fill_price, paper_fill_price + opt_target_pts, qty)
 
-                # Record paper position
-                target_price = round(paper_fill_price + opt_target_pts, 2)
-                sl_price = round(paper_fill_price - opt_sl_pts, 2)
+                # Initialize super trail levels
+                init_sl = round_to_tick(paper_fill_price - float(self.super_trail_cfg.get("initial_sl_pts", 20.0)), 0.05)
+                init_target = round_to_tick(paper_fill_price + float(self.super_trail_cfg.get("initial_target_pts", 25.0)), 0.05)
 
                 pos_id = f"POS_{int(time.time()*1000)}"
                 with sqlite3.connect(self.ledger_db) as conn:
@@ -1081,11 +1446,37 @@ class QuantTerminalBackend:
                     INSERT INTO positions (
                         position_id, symbol, security_id, side, lots, qty, entry_price, entry_time,
                         current_ltp, target_price, sl_price, exit_price, exit_time, duration,
-                        gross_pnl, net_pnl, status, mode
-                    ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, NULL, NULL, '00h 00m 00s', 0.0, 0.0, 'OPEN', ?)
-                    """, (pos_id, symbol, sec_id, side, qty, paper_fill_price,
-                          datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
-                          paper_fill_price, target_price, sl_price, mode))
+                        gross_pnl, net_pnl, status, mode,
+                        highest_ltp, initial_sl, current_trailing_sl, target_status, initial_target,
+                        trailing_target_level, highest_after_target, pullback_exit_level,
+                        trail_sl_enabled, trail_target_enabled, trail_activation_pts, trail_jump_pts,
+                        trail_target_step, trail_target_pullback, target_order_id, sl_order_id,
+                        exit_reason, partial_step, remaining_qty
+                    ) VALUES (
+                        ?, ?, ?, ?, 1, ?, ?, ?,
+                        ?, ?, ?, NULL, NULL, '00h 00m 00s',
+                        0.0, 0.0, 'OPEN', ?,
+                        ?, ?, ?, 'FIXED', ?,
+                        ?, ?, 0.0,
+                        ?, ?, ?, ?,
+                        ?, ?, '', ?,
+                        '', 0, ?
+                    )
+                    """, (
+                        pos_id, symbol, sec_id, side, qty, paper_fill_price,
+                        datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
+                        paper_fill_price, init_target, init_sl, mode,
+                        paper_fill_price, init_sl, init_sl, init_target,
+                        init_target, paper_fill_price,
+                        1 if self.super_trail_cfg.get("trailing_sl_enabled", True) else 0,
+                        1 if self.super_trail_cfg.get("trailing_target_enabled", True) else 0,
+                        float(self.super_trail_cfg.get("trail_activation_profit_pts", 15.0)),
+                        float(self.super_trail_cfg.get("trailing_jump_pts", 5.0)),
+                        float(self.super_trail_cfg.get("trail_target_step_pts", 10.0)),
+                        float(self.super_trail_cfg.get("trail_target_pullback_pts", 5.0)),
+                        str(companion_sl_order_id or ""),
+                        qty
+                    ))
 
                     # Deduct paper margin
                     req_margin = paper_fill_price * qty
@@ -1138,14 +1529,38 @@ class QuantTerminalBackend:
 
             if action == "TRAIL_COST":
                 # Trail Stop-loss to Cost / Breakeven
-                cur.execute("UPDATE positions SET sl_price=? WHERE position_id=?", (entry, position_id))
+                cur.execute("UPDATE positions SET sl_price=?, current_trailing_sl=? WHERE position_id=?", (entry, entry, position_id))
                 msg = f"Stop-Loss trailed to Cost (₹{entry:.2f})"
+
+            elif action == "DISABLE_TRAILING":
+                # Freezes trailing at current levels
+                cur.execute("UPDATE positions SET trail_sl_enabled=0, trail_target_enabled=0 WHERE position_id=?", (position_id,))
+                msg = "Super Trail disabled. Position locked at current levels."
+
+            elif action == "EXIT_TRAILING_TARGET":
+                # Immediately fire protected limit exit at current LTP
+                exit_price = ltp
+                exit_time = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+                gross = round((exit_price - entry) * qty, 2)
+                charges = self.calculate_dhan_charges(entry, exit_price, qty)
+                net = round(gross - charges, 2)
+
+                cur.execute("""
+                UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?,
+                                     exit_reason='MANUAL_TRAILING_EXIT'
+                WHERE position_id=?
+                """, (exit_price, exit_time, gross, net, position_id))
+
+                req_margin = entry * qty
+                cur.execute("UPDATE paper_wallet SET margin_used = max(0.0, margin_used - ?), realized_pnl = realized_pnl + ? WHERE id=1",
+                            (req_margin, net))
+                msg = f"Position exited at Trailing Target ₹{exit_price:.2f} (Net P&L: ₹{net:+.2f})"
 
             elif action == "WIDEN_TARGET":
                 # Widen target by +40 pts
                 cur_target = float(pos["target_price"] or (entry + 24.0))
                 new_target = round(cur_target + 24.0, 2)
-                cur.execute("UPDATE positions SET target_price=? WHERE position_id=?", (new_target, position_id))
+                cur.execute("UPDATE positions SET target_price=?, trailing_target_level=? WHERE position_id=?", (new_target, new_target, position_id))
                 msg = f"Target widened to ₹{new_target:.2f} (+40 Spot pts)"
 
             elif action == "CLOSE":
@@ -1157,7 +1572,8 @@ class QuantTerminalBackend:
                 net = round(gross - charges, 2)
 
                 cur.execute("""
-                UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?
+                UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?,
+                                     exit_reason='MANUAL_CLOSE'
                 WHERE position_id=?
                 """, (exit_price, exit_time, gross, net, position_id))
 
@@ -1351,4 +1767,202 @@ class QuantTerminalBackend:
             "win_rate": wr,
             "total_net_pnl": round(total_net, 2),
             "trades": trades,
+        }
+
+    # ── DATE-RANGE SUPER TRAIL BACKTESTER ────────────────────────────────────
+    def _load_historical_trades(self) -> List[Dict[str, Any]]:
+        """Extracts legacy trades dataset from Algorithmic_Trading_Workspace.html."""
+        src = ROOT / "Algorithmic_Trading_Workspace.html"
+        if not src.exists():
+            return []
+        try:
+            txt = src.read_text(encoding="utf-8")
+            m = re.search(r"const allTrades = (\[.*?\]);\n", txt)
+            if m:
+                return json.loads(m.group(1))
+        except Exception as e:
+            log.error("Failed loading historical trades: %s", e)
+        return []
+
+    def run_date_range_backtest(
+        self,
+        from_date: str = "2026-06-01",
+        to_date: str = "2026-11-04",
+        custom_cfg: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Runs comprehensive date-range backtest evaluating historical trades
+        with Super Trail (Trailing SL + Trailing Target pullback + Partial Exits)
+        vs Fixed 40/40 Baseline.
+        """
+        trades_data = self._load_historical_trades()
+        if not trades_data:
+            return {"ok": False, "error": "No historical trades found in workspace data"}
+
+        cfg = dict(self.super_trail_cfg)
+        if custom_cfg:
+            cfg.update(custom_cfg)
+
+        trail_enabled = bool(cfg.get("enabled", True))
+        trail_act = float(cfg.get("trail_activation_profit_pts", 15.0))
+        trail_jump = float(cfg.get("trailing_jump_pts", 5.0))
+        init_sl = float(cfg.get("initial_sl_pts", 20.0))
+        trail_target_enabled = bool(cfg.get("trailing_target_enabled", True))
+        init_target = float(cfg.get("initial_target_pts", 25.0))
+        target_step = float(cfg.get("trail_target_step_pts", 10.0))
+        pullback_pts = float(cfg.get("trail_target_pullback_pts", 5.0))
+        partial_enabled = bool(cfg.get("partial_exit_enabled", False))
+
+        # Filter by date range
+        filtered = []
+        for tr in trades_data:
+            d_str = tr.get("Date", "")
+            if from_date <= d_str <= to_date:
+                filtered.append(tr)
+
+        if not filtered:
+            return {"ok": False, "error": f"No trades found between {from_date} and {to_date}"}
+
+        evaluated = []
+        fixed_pnl_total = 0.0
+        trailing_pnl_total = 0.0
+        fixed_wins = 0
+        trailing_wins = 0
+
+        # Drawdown tracking
+        cum_fixed = 0.0
+        peak_fixed = 0.0
+        max_dd_fixed = 0.0
+
+        cum_trail = 0.0
+        peak_trail = 0.0
+        max_dd_trail = 0.0
+
+        # Profit factor tracking
+        fixed_gross_wins = 0.0
+        fixed_gross_losses = 0.0
+        trail_gross_wins = 0.0
+        trail_gross_losses = 0.0
+
+        for tr in filtered:
+            trade_id = tr.get("Trade_ID", len(evaluated) + 1)
+            t_date = tr.get("Date", "")
+            setup = tr.get("Setup_Name", "8-EMA")
+            direction = tr.get("Direction", "LONG")
+            qty = int(tr.get("Lot_Qty", 65))
+            open_p = float(tr.get("Open", 0.0))
+            high_p = float(tr.get("High", 0.0))
+            low_p = float(tr.get("Low", 0.0))
+            close_p = float(tr.get("Close", 0.0))
+            opt_entry = 200.0
+
+            # Delta model (0.60 standard)
+            delta = 0.60
+            if direction == "LONG":
+                opt_mfe = max(0.0, (high_p - open_p) * delta)
+                opt_mae = max(0.0, (open_p - low_p) * delta)
+            else:
+                opt_mfe = max(0.0, (open_p - low_p) * delta)
+                opt_mae = max(0.0, (high_p - open_p) * delta)
+
+            # Fixed trade outcome
+            fixed_net = float(tr.get("Net_Pnl_INR", 0.0))
+            fixed_pnl_total += fixed_net
+            if fixed_net > 0:
+                fixed_wins += 1
+                fixed_gross_wins += fixed_net
+            else:
+                fixed_gross_losses += abs(fixed_net)
+
+            cum_fixed += fixed_net
+            peak_fixed = max(peak_fixed, cum_fixed)
+            max_dd_fixed = max(max_dd_fixed, peak_fixed - cum_fixed)
+
+            # Super Trail Simulation
+            if not trail_enabled:
+                opt_exit = opt_entry + float(tr.get("Option_Points", 0.0))
+                exit_reason = tr.get("Result", "FIXED_BASELINE")
+            elif opt_mfe < trail_act:
+                # Trailing never activated
+                if "STOP LOSS" in tr.get("Result", "") or opt_mae >= init_sl:
+                    opt_exit = opt_entry - init_sl
+                    exit_reason = "INITIAL_SL"
+                else:
+                    opt_exit = opt_entry + float(tr.get("Option_Points", 0.0))
+                    exit_reason = "FIXED_TARGET"
+            else:
+                # Trailing SL activated (15/5 step progression)
+                steps = math.floor((opt_mfe - trail_act) / trail_jump) + 1
+                trailed_sl = (opt_entry - init_sl) + (steps * trail_jump)
+                trailed_sl_profit = trailed_sl - opt_entry
+
+                if trail_target_enabled and opt_mfe >= init_target:
+                    # Trailing target active with spike pullback
+                    pullback_exit = opt_mfe - pullback_pts
+                    opt_exit_profit = max(pullback_exit, trailed_sl_profit, init_target)
+                    opt_exit = opt_entry + opt_exit_profit
+                    exit_reason = "TRAIL_PULLBACK"
+                else:
+                    opt_exit = opt_entry + trailed_sl_profit
+                    exit_reason = "TRAIL_SL"
+
+            opt_pts = round(opt_exit - opt_entry, 2)
+            trail_gross = round(opt_pts * qty, 2)
+            trail_charges = self.calculate_dhan_charges(opt_entry, opt_exit, qty)
+            trail_net = round(trail_gross - trail_charges, 2)
+
+            trailing_pnl_total += trail_net
+            if trail_net > 0:
+                trailing_wins += 1
+                trail_gross_wins += trail_net
+            else:
+                trail_gross_losses += abs(trail_net)
+
+            cum_trail += trail_net
+            peak_trail = max(peak_trail, cum_trail)
+            max_dd_trail = max(max_dd_trail, peak_trail - cum_trail)
+
+            alpha = round(trail_net - fixed_net, 2)
+
+            evaluated.append({
+                "trade_id": trade_id,
+                "date": t_date,
+                "setup": setup,
+                "direction": direction,
+                "qty": qty,
+                "index_entry": open_p,
+                "index_high": high_p,
+                "index_low": low_p,
+                "option_entry": opt_entry,
+                "option_exit": round(opt_exit, 2),
+                "option_pts": opt_pts,
+                "exit_reason": exit_reason,
+                "fixed_net_pnl": fixed_net,
+                "trailing_net_pnl": trail_net,
+                "alpha_locked": alpha,
+                "charges": trail_charges,
+            })
+
+        n_trades = len(evaluated)
+        win_rate_fixed = round((fixed_wins / n_trades * 100), 1) if n_trades else 0.0
+        win_rate_trail = round((trailing_wins / n_trades * 100), 1) if n_trades else 0.0
+        pf_fixed = round(fixed_gross_wins / fixed_gross_losses, 2) if fixed_gross_losses > 0 else 99.0
+        pf_trail = round(trail_gross_wins / trail_gross_losses, 2) if trail_gross_losses > 0 else 99.0
+        total_alpha = round(trailing_pnl_total - fixed_pnl_total, 2)
+
+        return {
+            "ok": True,
+            "from_date": from_date,
+            "to_date": to_date,
+            "total_trades": n_trades,
+            "win_rate_fixed": win_rate_fixed,
+            "win_rate_trailing": win_rate_trail,
+            "fixed_net_pnl": round(fixed_pnl_total, 2),
+            "trailing_net_pnl": round(trailing_pnl_total, 2),
+            "alpha_locked": total_alpha,
+            "max_drawdown_fixed": round(max_dd_fixed, 2),
+            "max_drawdown_trailing": round(max_dd_trail, 2),
+            "profit_factor_fixed": pf_fixed,
+            "profit_factor_trailing": pf_trail,
+            "trades": evaluated,
         }

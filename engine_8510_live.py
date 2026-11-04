@@ -188,6 +188,7 @@ async def api_order_submit(req: Request):
     strategy_name = body.get("strategy_name", "Manual Matrix")
     target_pts = float(body.get("target_pts", 40.0))
     sl_pts = float(body.get("sl_pts", 40.0))
+    is_algo_trade = bool(body.get("is_algo_trade", False))
 
     selected_contract = None
     if contract_id:
@@ -208,7 +209,35 @@ async def api_order_submit(req: Request):
         strategy_name=strategy_name,
         target_pts=target_pts,
         sl_pts=sl_pts,
+        is_algo_trade=is_algo_trade,
     )
+    return JSONResponse(content=res)
+
+
+@app.post("/api/super_trail/config")
+async def api_super_trail_config(req: Request):
+    """Updates Super Trail parameters mid-trade without restart."""
+    body = await req.json()
+    res = backend.update_super_trail_config(body)
+    return JSONResponse(content=res)
+
+
+@app.post("/api/strike_matrix/selection")
+async def api_strike_matrix_selection(req: Request):
+    """Updates and persists Algo Trade strike matrix checkboxes."""
+    body = await req.json()
+    res = backend.update_strike_selection(body)
+    return JSONResponse(content=res)
+
+
+@app.post("/api/backtest/date_range")
+async def api_backtest_date_range(req: Request):
+    """Runs Super Trail vs Fixed 40/40 backtest over historical date range."""
+    body = await req.json()
+    from_date = str(body.get("from_date", "2026-06-01"))
+    to_date = str(body.get("to_date", "2026-11-04"))
+    custom_cfg = body.get("super_trail_cfg")
+    res = backend.run_date_range_backtest(from_date=from_date, to_date=to_date, custom_cfg=custom_cfg)
     return JSONResponse(content=res)
 
 
