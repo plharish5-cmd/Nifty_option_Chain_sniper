@@ -412,6 +412,70 @@ def pece_matrix(
     )
 
 
+@app.get("/api/pe_ce_matrix")
+def pe_ce_matrix_stockmojo(
+    expiry: Optional[str] = None,
+    tf: str = Query("3m"),
+    scope: str = Query("all"),
+    force_expiry_mode: bool = Query(False),
+):
+    """StockMojo 12-Column Mathematical Parity Endpoint (Port 8600).
+    Computes exact 12 StockMojo columns ordered newest-first:
+    1. Time (HH:MM)
+    2. Put OI Change (Day)
+    3. Put OI Change (3m)
+    4. Call OI Change (Day)
+    5. Call OI Change (3m)
+    6. PE-CE OI Change (Day)
+    7. PE-CE OI Change (3m)
+    8. PE-CE Bar Change (Day)
+    9. PE-CE Bar Change (3m)
+    10. PCR Total
+    11. Future LTP
+    12. Future OI Change (Day)
+    """
+    from ..engine import pe_ce_matrix as matrix_mod
+    raw = matrix_mod.compute_pe_ce_matrix(
+        expiry=expiry,
+        tf=tf,
+        scope=scope,
+        force_expiry_mode=force_expiry_mode,
+    )
+    raw_rows = raw.get("rows", [])
+    stockmojo_rows = []
+    for r in raw_rows:
+        t_label = str(r.get("time_label", "--:--"))
+        put_day = int(r.get("put_oi_day_chg", 0))
+        put_step = int(r.get("put_oi_step_chg", 0))
+        call_day = int(r.get("call_oi_day_chg", 0))
+        call_step = int(r.get("call_oi_step_chg", 0))
+        pe_ce_day = int(r.get("pe_ce_day_diff", put_day - call_day))
+        pe_ce_step = int(r.get("pe_ce_step_diff", put_step - call_step))
+        pcr = round(float(r.get("pcr_day", 1.0)), 2)
+        fut_ltp = round(float(r.get("fut_ltp", 0.0)), 2)
+        fut_oi_day = int(r.get("fut_oi_day_chg", 0))
+
+        stockmojo_rows.append({
+            "Time": t_label,
+            "Put OI Change (Day)": put_day,
+            "Put OI Change": put_step,
+            "Call OI Change (Day)": call_day,
+            "Call OI Change": call_step,
+            "PE-CE OI Change (Day)": pe_ce_day,
+            "PE-CE OI Change": pe_ce_step,
+            "PE-CE Bar Change (Day)": pe_ce_day,
+            "PE-CE Bar Change": pe_ce_step,
+            "PCR Total": pcr,
+            "Future LTP": fut_ltp,
+            "Future OI Change (Day)": fut_oi_day,
+        })
+    return {
+        "ok": True,
+        "day": raw.get("day"),
+        "rows": stockmojo_rows,
+    }
+
+
 @app.get("/api/chain/expiry-playbook")
 def expiry_playbook_endpoint(
     expiry: Optional[str] = None,
