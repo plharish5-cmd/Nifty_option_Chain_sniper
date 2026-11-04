@@ -1,0 +1,49 @@
+{
+  "port": 8510,
+  "host": "0.0.0.0",
+  "dhan_base_url": "https://api.dhan.co/v2",
+  "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
+  "instrument_master_path": "data/terminal8500/instrument_master.csv",
+  "market_db_path": "ict_smc_app/backend/data/ict_smc.sqlite3",
+  "ledger_db_path": "data/terminal8510/ledger.sqlite3",
+  "default_lot_size": 65,
+  "execution_mode": "PAPER_ONLY",
+  "paper_execution_enabled": true,
+  "starting_paper_capital": 100000.0,
+  "chasing": {
+    "aggressive_limit_buffer_pts": 4.0,
+    "auto_modify_interval_ms": 800,
+    "max_chase_retries": 3,
+    "sl_limit_buffer_pts": 4.0
+  },
+  "risk": {
+    "max_daily_trades": 2,
+    "max_daily_loss_inr": -3300.0,
+    "fixed_sl_pts": 40.0,
+    "target_pts": 40.0,
+    "option_delta_default": 0.60
+  },
+  "trend_filters": {
+    "ema_slope": true,
+    "adx_min": 20.0,
+    "r2_min": 0.35,
+    "mtf_aligned": true,
+    "vol_mult": 1.0,
+    "gap_protection": true,
+    "gap_pts": 50.0,
+    "pcr_min_long": 0.85,
+    "pcr_max_short": 1.15
+  },
+  "charges": {
+    "brokerage_per_order": 20.0,
+    "stt_sell_rate": 0.0015,
+    "txn_rate": 0.0003553,
+    "sebi_rate": 0.000001,
+    "stamp_buy_rate": 0.00003,
+    "gst_rate": 0.18
+  },
+  "voice": {
+    "enabled": true,
+    "lang": "en-IN"
+  }
+}
