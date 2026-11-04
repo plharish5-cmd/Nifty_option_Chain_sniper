@@ -69,6 +69,9 @@ async def startup_event():
     except Exception as e:
         log.error("Telemetry startup error: %s", e)
 
+    backend.scanner_task = asyncio.create_task(backend.start_strategy_scanner_loop())
+    log.info("✔ 4-Strategy Live Scanner daemon launched.")
+
 
 @app.get("/")
 @app.head("/")
@@ -239,6 +242,25 @@ async def api_backtest_date_range(req: Request):
     custom_cfg = body.get("super_trail_cfg")
     res = backend.run_date_range_backtest(from_date=from_date, to_date=to_date, custom_cfg=custom_cfg)
     return JSONResponse(content=res)
+
+
+@app.get("/api/scanner/status")
+async def api_scanner_status():
+    """Returns active 4-strategy scanner telemetry and Party-Switch state."""
+    return JSONResponse(content=backend.get_scanner_status())
+
+
+@app.post("/api/scanner/toggle")
+async def api_scanner_toggle(req: Request):
+    """Enables or pauses the live 4-strategy scanner."""
+    try:
+        body = await req.json()
+        enabled = bool(body.get("enabled", not backend.scanner_enabled))
+    except Exception:
+        enabled = not backend.scanner_enabled
+    backend.scanner_enabled = enabled
+    log.info("Scanner enabled toggled to: %s", enabled)
+    return JSONResponse(content={"ok": True, "enabled": backend.scanner_enabled})
 
 
 @app.post("/api/position/modify")

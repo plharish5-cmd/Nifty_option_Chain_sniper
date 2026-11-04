@@ -618,6 +618,37 @@ class QuantTerminalBackend:
             "LONG_PE_ATM": True,
         })
 
+        # 4 Core Strategies Live Scanner State
+        self.scanner_cfg = self.cfg.get("scanner", {
+            "enabled": True,
+            "scan_interval_seconds": 3,
+            "tolerance_pts": 20.0,
+            "bb_width_min": 60.0,
+            "stage2_target_pts": 40.0,
+            "stage2_sl_pts": 40.0,
+            "stage3_target_pts": 40.0,
+            "stage3_sl_pts": 40.0,
+            "crossover_target_pts": 20.0,
+            "crossover_sl_pts": 20.0,
+            "crossover_max_touch_candles": 3,
+            "h1_confluence_target_pts": 100.0,
+            "h1_confluence_sl_pts": 40.0,
+            "party_switch_enabled": True,
+        })
+        self.scanner_enabled: bool = bool(self.scanner_cfg.get("enabled", True))
+        self.scanner_running: bool = False
+        self.active_party: str = "NEUTRAL"  # "BULLISH", "BEARISH", "NEUTRAL"
+        self.last_crossover_event: Optional[Dict[str, Any]] = None
+        self.recent_signals: List[Dict[str, Any]] = []
+        self.strategy_status: Dict[str, Any] = {
+            "stage2_long": {"name": "Stage 2 8-EMA (Long)", "state": "SCANNING", "desc": "UBB Up + 8 EMA Touch (±20pt)", "armed": False},
+            "stage3_short": {"name": "Stage 3 8-EMA (Short)", "state": "SCANNING", "desc": "LBB Down + 8 EMA Rejection (±20pt)", "armed": False},
+            "crossover_reversal": {"name": "4/8 MA Crossover Reversal", "state": "SCANNING", "desc": "4/8 Cross + Flat Band + 3-bar Touch", "armed": False},
+            "h1_confluence": {"name": "1H 8-EMA Confluence", "state": "SCANNING", "desc": "1H 8-EMA Bounce/Rejection Confluence", "armed": False},
+        }
+        self.strategy_cooldowns: Dict[str, float] = {}
+        self.scanner_task: Optional[asyncio.Task] = None
+
         # Priority Contracts Tracking
         self.priority_contracts: List[Dict[str, Any]] = []
         self.cached_telemetry: Dict[str, Any] = {}
@@ -1036,6 +1067,7 @@ class QuantTerminalBackend:
             },
             "priority_matrix": priority_matrix,
             "trend_watchlist": trend_watchlist,
+            "scanner": self.get_scanner_status(),
             "funds": {
                 "paper": paper_wallet,
                 "live": live_funds,
@@ -1147,6 +1179,323 @@ class QuantTerminalBackend:
             "bearish_count": bears,
             "regime_banner": regime,
             "regime_badge": badge,
+        }
+
+    # ── 4-CORE STRATEGIES LIVE SCANNER & PARTY-SWITCH ENGINE ───────────────────
+    def evaluate_candle_dataframe(
+        self,
+        df: pd.DataFrame,
+        spot_price: Optional[float] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Evaluates 4 core institutional strategies over candle dataframe:
+          1. Stage 2 (8 EMA Support Touch - Long)
+          2. Stage 3 (8 EMA Resistance Rejection - Short)
+          3. 4 MA vs 8 EMA Crossover Reversal (Upside & Downside with Party-Switch)
+          4. 1H 8 EMA Support & Resistance Confluence
+        """
+        if df.empty or len(df) < 30:
+            return []
+
+        df_work = df.copy()
+        if "dt" not in df_work.columns and not isinstance(df_work.index, pd.DatetimeIndex):
+            if "ts" in df_work.columns:
+                df_work["dt"] = pd.to_datetime(df_work["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
+                df_work.set_index("dt", inplace=True)
+
+        # 15m Resampling
+        b15 = df_work.resample("15min").agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna()
+        if len(b15) < 10:
+            return []
+
+        # 1H Resampling
+        b60 = df_work.resample("60min").agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna()
+
+        # 15m Technicals
+        e4 = b15["close"].ewm(span=4, adjust=False).mean()
+        e8 = b15["close"].ewm(span=8, adjust=False).mean()
+        e21 = b15["close"].ewm(span=21, adjust=False).mean()
+
+        sma20 = b15["close"].rolling(20, min_periods=5).mean()
+        std20 = b15["close"].rolling(20, min_periods=5).std().fillna(15.0)
+        ubb = sma20 + 2 * std20
+        lbb = sma20 - 2 * std20
+        bb_width = ubb - lbb
+
+        # Band Slopes
+        d_ubb = float(ubb.iloc[-1] - ubb.iloc[-2]) if len(ubb) >= 2 else 0.0
+        d_lbb = float(lbb.iloc[-1] - lbb.iloc[-2]) if len(lbb) >= 2 else 0.0
+        slope_tol = 1.8
+        ubb_slope = "UP" if d_ubb > slope_tol else ("DOWN" if d_ubb < -slope_tol else "FLAT")
+        lbb_slope = "UP" if d_lbb > slope_tol else ("DOWN" if d_lbb < -slope_tol else "FLAT")
+
+        # 1H Technicals
+        h1_e8 = b60["close"].ewm(span=8, adjust=False).mean() if len(b60) >= 3 else None
+        h1_e8_last = float(h1_e8.iloc[-1]) if h1_e8 is not None and len(h1_e8) else None
+
+        current_p = float(spot_price) if spot_price else float(b15["close"].iloc[-1])
+        e8_val = float(e8.iloc[-1])
+        e4_val = float(e4.iloc[-1])
+        close_15 = float(b15["close"].iloc[-1])
+        low_15 = float(b15["low"].iloc[-1])
+        high_15 = float(b15["high"].iloc[-1])
+        width_val = float(bb_width.iloc[-1]) if pd.notnull(bb_width.iloc[-1]) else 70.0
+
+        tol = float(self.scanner_cfg.get("tolerance_pts", 20.0))
+        bb_min = float(self.scanner_cfg.get("bb_width_min", 60.0))
+
+        # Check Crossover within last 3 bars for Party-Switch
+        crossover_event = None
+        for lag in range(1, min(4, len(b15))):
+            idx = -lag
+            prev_idx = idx - 1
+            if len(b15) > abs(prev_idx):
+                if e4.iloc[prev_idx] >= e8.iloc[prev_idx] and e4.iloc[idx] < e8.iloc[idx]:
+                    crossover_event = {"type": "BEARISH_CROSS", "age": lag, "time": str(b15.index[idx])}
+                    break
+                elif e4.iloc[prev_idx] <= e8.iloc[prev_idx] and e4.iloc[idx] > e8.iloc[idx]:
+                    crossover_event = {"type": "BULLISH_CROSS", "age": lag, "time": str(b15.index[idx])}
+                    break
+
+        if crossover_event and bool(self.scanner_cfg.get("party_switch_enabled", True)):
+            if crossover_event["type"] == "BEARISH_CROSS":
+                if self.active_party != "BEARISH":
+                    log.info("🎯 Party-Switch activated: BEARISH (4 EMA crossed below 8 EMA). CE Longs BLOCKED.")
+                self.active_party = "BEARISH"
+                self.last_crossover_event = crossover_event
+            elif crossover_event["type"] == "BULLISH_CROSS":
+                if self.active_party != "BULLISH":
+                    log.info("🎯 Party-Switch activated: BULLISH (4 EMA crossed above 8 EMA). PE Shorts BLOCKED.")
+                self.active_party = "BULLISH"
+                self.last_crossover_event = crossover_event
+
+        signals: List[Dict[str, Any]] = []
+
+        # ── 1. STRATEGY 1: Stage 2 (8 EMA Support Touch - Long) ─────────────
+        stage2_cond = (ubb_slope == "UP" and close_15 >= (e8_val - tol) and width_val >= bb_min)
+        stage2_touch = (abs(current_p - e8_val) <= tol or abs(low_15 - e8_val) <= tol)
+        self.strategy_status["stage2_long"]["armed"] = stage2_cond
+        self.strategy_status["stage2_long"]["state"] = "TRIGGERED" if (stage2_cond and stage2_touch) else ("ARMED" if stage2_cond else "SCANNING")
+
+        if stage2_cond and stage2_touch:
+            if self.active_party == "BEARISH":
+                log.info("[BLOCKED] Stage 2 Long blocked by Party-Switch (Active Party is BEARISH)")
+            else:
+                signals.append({
+                    "strategy_id": "STAGE_2_LONG",
+                    "setup_name": "Stage 2 8-EMA (Long) [Pullback Touch]",
+                    "direction": "LONG",
+                    "opt_side": "CE",
+                    "target_pts": float(self.scanner_cfg.get("stage2_target_pts", 40.0)),
+                    "sl_pts": float(self.scanner_cfg.get("stage2_sl_pts", 40.0)),
+                    "index_price": current_p,
+                    "conviction": "STANDARD",
+                    "details": f"UBB Slope {ubb_slope}, 8-EMA {e8_val:.1f}, dist {abs(current_p - e8_val):.1f}pts",
+                })
+
+        # ── 2. STRATEGY 2: Stage 3 (8 EMA Resistance Rejection - Short) ──────
+        stage3_cond = (lbb_slope == "DOWN" and close_15 <= (e8_val + tol) and width_val >= bb_min)
+        stage3_touch = (abs(current_p - e8_val) <= tol or abs(high_15 - e8_val) <= tol)
+        self.strategy_status["stage3_short"]["armed"] = stage3_cond
+        self.strategy_status["stage3_short"]["state"] = "TRIGGERED" if (stage3_cond and stage3_touch) else ("ARMED" if stage3_cond else "SCANNING")
+
+        if stage3_cond and stage3_touch:
+            if self.active_party == "BULLISH":
+                log.info("[BLOCKED] Stage 3 Short blocked by Party-Switch (Active Party is BULLISH)")
+            else:
+                signals.append({
+                    "strategy_id": "STAGE_3_SHORT",
+                    "setup_name": "Stage 3 8-EMA (Short) [Resistance Rejection]",
+                    "direction": "SHORT",
+                    "opt_side": "PE",
+                    "target_pts": float(self.scanner_cfg.get("stage3_target_pts", 40.0)),
+                    "sl_pts": float(self.scanner_cfg.get("stage3_sl_pts", 40.0)),
+                    "index_price": current_p,
+                    "conviction": "STANDARD",
+                    "details": f"LBB Slope {lbb_slope}, 8-EMA {e8_val:.1f}, dist {abs(current_p - e8_val):.1f}pts",
+                })
+
+        # ── 3. STRATEGY 3: 4 MA vs 8 EMA Crossover Reversal ──────────────────
+        cross_touch = (abs(current_p - e8_val) <= tol or abs(low_15 - e8_val) <= tol or abs(high_15 - e8_val) <= tol)
+        if crossover_event and crossover_event.get("age", 99) <= int(self.scanner_cfg.get("crossover_max_touch_candles", 3)):
+            if crossover_event["type"] == "BULLISH_CROSS" and ubb_slope == "FLAT" and cross_touch:
+                self.strategy_status["crossover_reversal"]["state"] = "TRIGGERED"
+                signals.append({
+                    "strategy_id": "CROSSOVER_BULLISH",
+                    "setup_name": "4 MA / 8 EMA Upside Reversal",
+                    "direction": "LONG",
+                    "opt_side": "CE",
+                    "target_pts": float(self.scanner_cfg.get("crossover_target_pts", 20.0)),
+                    "sl_pts": float(self.scanner_cfg.get("crossover_sl_pts", 20.0)),
+                    "index_price": current_p,
+                    "conviction": "HIGH",
+                    "details": f"4 EMA Crossed Above 8 EMA (Age {crossover_event['age']} bars), UBB Flat, 8-EMA touch",
+                })
+            elif crossover_event["type"] == "BEARISH_CROSS" and lbb_slope == "FLAT" and cross_touch:
+                self.strategy_status["crossover_reversal"]["state"] = "TRIGGERED"
+                signals.append({
+                    "strategy_id": "CROSSOVER_BEARISH",
+                    "setup_name": "4 MA / 8 EMA Downside Reversal",
+                    "direction": "SHORT",
+                    "opt_side": "PE",
+                    "target_pts": float(self.scanner_cfg.get("crossover_target_pts", 20.0)),
+                    "sl_pts": float(self.scanner_cfg.get("crossover_sl_pts", 20.0)),
+                    "index_price": current_p,
+                    "conviction": "HIGH",
+                    "details": f"4 EMA Crossed Below 8 EMA (Age {crossover_event['age']} bars), LBB Flat, 8-EMA touch",
+                })
+
+        # ── 4. STRATEGY 4: 1H 8 EMA Support & Resistance Confluence ──────────
+        if h1_e8_last is not None and len(b60) >= 1:
+            h1_close = float(b60["close"].iloc[-1])
+            h1_low = float(b60["low"].iloc[-1])
+            h1_high = float(b60["high"].iloc[-1])
+
+            h1_support_touch = (abs(current_p - h1_e8_last) <= tol or (h1_low <= (h1_e8_last + tol) and h1_close >= (h1_e8_last - 5.0)))
+            h1_resist_touch = (abs(current_p - h1_e8_last) <= tol or (h1_high >= (h1_e8_last - tol) and h1_close <= (h1_e8_last + 5.0)))
+
+            if h1_support_touch and (stage2_cond or (crossover_event and crossover_event["type"] == "BULLISH_CROSS")):
+                if self.active_party != "BEARISH":
+                    self.strategy_status["h1_confluence"]["state"] = "DOUBLE_CONFIRMATION"
+                    signals.append({
+                        "strategy_id": "H1_CONFLUENCE_SUPPORT",
+                        "setup_name": "1H 8-EMA Support Bounce Confluence",
+                        "direction": "LONG",
+                        "opt_side": "CE",
+                        "target_pts": float(self.scanner_cfg.get("h1_confluence_target_pts", 100.0)),
+                        "sl_pts": float(self.scanner_cfg.get("h1_confluence_sl_pts", 40.0)),
+                        "index_price": current_p,
+                        "conviction": "DOUBLE_CONFIRMATION_HIGH_CONVICTION",
+                        "details": f"1H 8-EMA ({h1_e8_last:.0f}) Support Bounce + 15m Alignment",
+                    })
+
+            if h1_resist_touch and (stage3_cond or (crossover_event and crossover_event["type"] == "BEARISH_CROSS")):
+                if self.active_party != "BULLISH":
+                    self.strategy_status["h1_confluence"]["state"] = "DOUBLE_CONFIRMATION"
+                    signals.append({
+                        "strategy_id": "H1_CONFLUENCE_RESIST",
+                        "setup_name": "1H 8-EMA Resistance Rejection Confluence",
+                        "direction": "SHORT",
+                        "opt_side": "PE",
+                        "target_pts": float(self.scanner_cfg.get("h1_confluence_target_pts", 100.0)),
+                        "sl_pts": float(self.scanner_cfg.get("h1_confluence_sl_pts", 40.0)),
+                        "index_price": current_p,
+                        "conviction": "DOUBLE_CONFIRMATION_HIGH_CONVICTION",
+                        "details": f"1H 8-EMA ({h1_e8_last:.0f}) Resistance Rejection + 15m Alignment",
+                    })
+
+        return signals
+
+    def evaluate_all_strategies(self, spot_price: Optional[float] = None) -> List[Dict[str, Any]]:
+        """Reads recent candles from market_db and evaluates all 4 strategies."""
+        if not self.market_db.exists():
+            return []
+        try:
+            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
+                df = pd.read_sql_query(
+                    "SELECT ts, o as open, h as high, l as low, c as close, v as volume FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 600",
+                    conn
+                )
+            if df.empty:
+                return []
+            df = df.iloc[::-1].reset_index(drop=True)
+            return self.evaluate_candle_dataframe(df, spot_price=spot_price)
+        except Exception as e:
+            log.debug("Strategy scanner query error: %s", e)
+            return []
+
+    async def _process_strategy_signals(self, signals: List[Dict[str, Any]]) -> None:
+        """Processes actionable strategy signals with cooldown deduplication and triggers orders."""
+        now_ts = time.time()
+        for sig in signals:
+            strat_id = sig["strategy_id"]
+            last_ts = self.strategy_cooldowns.get(strat_id, 0.0)
+            if (now_ts - last_ts) < 300.0:  # 5-minute cooldown
+                continue
+
+            self.strategy_cooldowns[strat_id] = now_ts
+            sig["timestamp"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+            self.recent_signals.insert(0, sig)
+            if len(self.recent_signals) > 30:
+                self.recent_signals.pop()
+
+            log.info("🔥 STRATEGY SIGNAL TRIGGERED: %s | %s | %s | Conviction: %s",
+                     sig["setup_name"], sig["direction"], sig["details"], sig["conviction"])
+
+            # Resolve Contract based on direction and algo_strike_selection
+            opt_side = sig["opt_side"]
+            target_contract = None
+            candidate_ids = [f"LONG_{opt_side}_ATM", f"LONG_{opt_side}_ITM"]
+            for cid in candidate_ids:
+                if self.algo_strike_selection.get(cid, True):
+                    for c in self.priority_contracts:
+                        if c.get("id") == cid:
+                            target_contract = c
+                            break
+                    if target_contract:
+                        break
+
+            if not target_contract:
+                log.info("No enabled priority contract found for %s (%s)", sig["setup_name"], opt_side)
+                continue
+
+            # Check if an identical position is already OPEN in ledger
+            try:
+                with sqlite3.connect(self.ledger_db) as conn:
+                    cur = conn.cursor()
+                    r = cur.execute(
+                        "SELECT count(*) FROM positions WHERE status='OPEN' AND symbol=?",
+                        (target_contract["symbol"],)
+                    ).fetchone()
+                    if r and r[0] > 0:
+                        log.info("Position already OPEN for %s — skipping duplicate execution", target_contract["symbol"])
+                        continue
+            except Exception as e:
+                log.error("Ledger check error in signal execution: %s", e)
+
+            # Trigger execution with chaser
+            res = await self.execute_order_with_chaser(
+                contract=target_contract,
+                side="BUY",
+                strategy_name=sig["setup_name"],
+                target_pts=sig["target_pts"],
+                sl_pts=sig["sl_pts"],
+                is_algo_trade=True,
+            )
+            log.info("Strategy %s execution result: %s", sig["setup_name"], res.get("status", "SUBMITTED"))
+
+    async def start_strategy_scanner_loop(self) -> None:
+        """Continuous background daemon scanning all 4 core strategies."""
+        self.scanner_running = True
+        interval = float(self.scanner_cfg.get("scan_interval_seconds", 3))
+        log.info("🚀 4-Strategy Live Scanner Daemon started (Interval: %.1fs, Party-Switch: %s)",
+                 interval, self.scanner_cfg.get("party_switch_enabled", True))
+
+        while self.scanner_running:
+            try:
+                if self.scanner_enabled and not self.kill_switch_active:
+                    spot = self.cached_telemetry.get("spot", {}).get("price")
+                    signals = self.evaluate_all_strategies(spot_price=spot)
+                    if signals:
+                        await self._process_strategy_signals(signals)
+            except Exception as e:
+                log.error("Strategy scanner iteration error: %s", e)
+
+            await asyncio.sleep(interval)
+
+    def get_scanner_status(self) -> Dict[str, Any]:
+        """Returns real-time status of the 4-Strategy Scanner daemon and Party-Switch gate."""
+        return {
+            "ok": True,
+            "enabled": self.scanner_enabled,
+            "running": self.scanner_running,
+            "active_party": self.active_party,
+            "last_crossover": self.last_crossover_event,
+            "kill_switch_active": self.kill_switch_active,
+            "strategies": self.strategy_status,
+            "recent_signals": self.recent_signals[:10],
+            "algo_strike_selection": self.algo_strike_selection,
+            "tolerance_pts": float(self.scanner_cfg.get("tolerance_pts", 20.0)),
         }
 
     # ── FUNDS & PAPER WALLET MANAGEMENT ──────────────────────────────────────
@@ -1695,6 +2044,8 @@ class QuantTerminalBackend:
           4. Locks the router into standby.
         """
         self.kill_switch_active = True
+        self.scanner_enabled = False
+        log.warning("🛑 EMERGENCY KILL SWITCH ACTIVATED — Halting scanners, cancelling orders, squaring off positions.")
         cancelled_orders = 0
         squared_positions = 0
 
@@ -1745,7 +2096,8 @@ class QuantTerminalBackend:
 
     def reset_kill_switch(self) -> Dict[str, Any]:
         self.kill_switch_active = False
-        log.info("Kill switch disarmed. Standby cleared.")
+        self.scanner_enabled = bool(self.scanner_cfg.get("enabled", True))
+        log.info("Kill switch disarmed. Standby cleared. Scanner enabled: %s", self.scanner_enabled)
         return {"ok": True, "message": "Kill switch disarmed. Ready for execution."}
 
     # ── PREVIOUS-DAY REPLAY (BACKTEST SIMULATION) ─────────────────────────────

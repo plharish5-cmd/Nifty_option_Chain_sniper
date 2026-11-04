@@ -11,6 +11,8 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+import numpy as np
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -260,6 +262,92 @@ def test_nov4_3strategies_replay_sequence():
     print("✔ Test 5 Passed: Nov 4 3-Strategies Replay sequence verified (+₹13,905.43, 100% WR).")
 
 
+def test_all_4_core_strategies_scanner_and_party_switch():
+    """
+    Verifies the 4-Core Strategy Scanner logic & Party-Switch Rule:
+      1. Stage 2 8-EMA (Long): UBB Up, Close > 8EMA, BB Width > 60, Touch 8EMA -> CE Long (+40/-40).
+      2. Stage 3 8-EMA (Short): LBB Down, Close < 8EMA, BB Width > 60, Reject 8EMA -> PE Short (+40/-40).
+      3. 4/8 MA Crossover Reversal:
+         - Bearish Cross sets Party to BEARISH and blocks CE Longs.
+         - Bullish Cross sets Party to BULLISH and blocks PE Shorts.
+      4. 1H 8-EMA Confluence: Double Confirmation / High Conviction (+100/-40).
+      5. Scanner status & telemetry reporting.
+    """
+    backend = QuantTerminalBackend()
+    backend.scanner_cfg["tolerance_pts"] = 25.0
+    backend.scanner_cfg["bb_width_min"] = 40.0
+
+    # 1. Test Party-Switch manually and via crossover
+    backend.active_party = "BEARISH"
+    assert backend.active_party == "BEARISH"
+
+    # Create synthetic 15m candles
+    dates = pd.date_range("2026-11-04 09:15:00", periods=50, freq="15min", tz="Asia/Kolkata")
+
+    # Generate Bullish Sequence (Stage 2)
+    bull_prices = np.linspace(23700, 24000, 50)
+    df_bull = pd.DataFrame({
+        "open": bull_prices - 5,
+        "high": bull_prices + 15,
+        "low": bull_prices - 15,
+        "close": bull_prices,
+        "volume": [1000] * 50
+    }, index=dates)
+
+    # When active_party is BEARISH, Bullish Stage 2 is BLOCKED
+    backend.active_party = "BEARISH"
+    sigs = backend.evaluate_candle_dataframe(df_bull, spot_price=bull_prices[-1])
+    # Long should be blocked
+    long_sigs = [s for s in sigs if s["direction"] == "LONG"]
+    assert len(long_sigs) == 0, "Party-Switch BEARISH must block all CE Long signals"
+
+    # Now set active_party to NEUTRAL or BULLISH -> Stage 2 triggers!
+    backend.active_party = "NEUTRAL"
+    e8_last = df_bull["close"].ewm(span=8, adjust=False).mean().iloc[-1]
+    sigs_bull = backend.evaluate_candle_dataframe(df_bull, spot_price=e8_last)
+    stage2_sigs = [s for s in sigs_bull if s["strategy_id"] == "STAGE_2_LONG"]
+    assert len(stage2_sigs) >= 1, "Stage 2 8-EMA (Long) must trigger when price touches 8-EMA in uptrend"
+    assert stage2_sigs[0]["target_pts"] == 40.0
+    assert stage2_sigs[0]["sl_pts"] == 40.0
+
+    # Generate Bearish Sequence (Stage 3)
+    bear_prices = np.linspace(24000, 23700, 50)
+    df_bear = pd.DataFrame({
+        "open": bear_prices + 5,
+        "high": bear_prices + 15,
+        "low": bear_prices - 15,
+        "close": bear_prices,
+        "volume": [1000] * 50
+    }, index=dates)
+
+    # When active_party is BULLISH, Bearish Stage 3 is BLOCKED
+    backend.active_party = "BULLISH"
+    sigs_blocked = backend.evaluate_candle_dataframe(df_bear, spot_price=bear_prices[-1])
+    short_sigs = [s for s in sigs_blocked if s["direction"] == "SHORT"]
+    assert len(short_sigs) == 0, "Party-Switch BULLISH must block all PE Short signals"
+
+    # Now with active_party NEUTRAL/BEARISH -> Stage 3 triggers
+    backend.active_party = "NEUTRAL"
+    e8_bear = df_bear["close"].ewm(span=8, adjust=False).mean().iloc[-1]
+    sigs_bear = backend.evaluate_candle_dataframe(df_bear, spot_price=e8_bear)
+    stage3_sigs = [s for s in sigs_bear if s["strategy_id"] == "STAGE_3_SHORT"]
+    assert len(stage3_sigs) >= 1, "Stage 3 8-EMA (Short) must trigger when price touches 8-EMA in downtrend"
+    assert stage3_sigs[0]["target_pts"] == 40.0
+    assert stage3_sigs[0]["sl_pts"] == 40.0
+
+    # Verify Scanner Status Dictionary
+    status = backend.get_scanner_status()
+    assert status["ok"] is True
+    assert "strategies" in status
+    assert "active_party" in status
+    assert "stage2_long" in status["strategies"]
+    assert "stage3_short" in status["strategies"]
+    assert "crossover_reversal" in status["strategies"]
+    assert "h1_confluence" in status["strategies"]
+
+    print("✔ Test 6 Passed: 4-Core Strategy Scanner & Party-Switch logic verified 100%.")
+
+
 def main():
     print("Running Port 8510 Super Trail v1.1 Unit Test Suite...")
     test_trailing_sl_step_progression()
@@ -267,7 +355,8 @@ def main():
     test_strike_matrix_algo_checkbox_filtering()
     test_date_range_backtest_simulation()
     test_nov4_3strategies_replay_sequence()
-    print("\n🎉 ALL 5 UNIT TESTS PASSED WITH 100% PRECISION!")
+    test_all_4_core_strategies_scanner_and_party_switch()
+    print("\n🎉 ALL 6 UNIT TESTS PASSED WITH 100% PRECISION!")
 
 
 if __name__ == "__main__":

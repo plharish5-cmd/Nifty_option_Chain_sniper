@@ -683,6 +683,79 @@
                 </div>
             </div>
 
+            <!-- 4-Core Strategy Scanner & Party-Switch Cockpit -->
+            <div class="card" style="border: 1px solid rgba(56, 189, 248, 0.35); background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(8, 14, 26, 0.98));">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:16px; font-weight:800; color:#f8fafc;">🤖 4-Core Strategy Scanner &amp; Party-Switch Cockpit</span>
+                        <span id="scannerActiveBadge" class="status-badge badge-bull">🟢 SCANNER ACTIVE</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button type="button" id="btnToggleScanner" class="cyan-btn" onclick="toggleScannerEngine()" style="padding:6px 14px; font-size:12px;">⏸ Pause Scanner</button>
+                    </div>
+                </div>
+
+                <!-- Party-Switch Master Status Banner -->
+                <div id="partySwitchBanner" style="padding:10px 16px; border-radius:8px; margin-bottom:16px; font-weight:700; font-size:13px; display:flex; justify-content:space-between; align-items:center; background:rgba(34, 197, 94, 0.12); border:1px solid rgba(34, 197, 94, 0.4); color:#4ade80;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span id="partySwitchIcon">🟢</span>
+                        <span id="partySwitchText">PARTY-SWITCH: BULLISH (4/8 Up Cross Active)</span>
+                    </div>
+                    <span id="partySwitchBlockNotice" style="font-size:11.5px; padding:3px 8px; border-radius:4px; background:rgba(239, 68, 68, 0.2); color:#f87171; border:1px solid rgba(239, 68, 68, 0.4);">⛔ PE Shorts BLOCKED</span>
+                </div>
+
+                <!-- 4 Strategies Grid -->
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px;">
+                    <!-- Strategy 1: Stage 2 8-EMA (Long) -->
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700; color:#38bdf8; font-size:13px;">1. Stage 2 8-EMA (Long)</span>
+                            <span id="stratStatus_stage2" class="status-badge badge-bull">SCANNING</span>
+                        </div>
+                        <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
+                            UBB Up + Close &gt; 8 EMA + BB Width &gt; 60.<br>
+                            Trigger: <b>Touch 8-EMA (±20pt)</b> · Tgt +40 / SL -40
+                        </div>
+                    </div>
+
+                    <!-- Strategy 2: Stage 3 8-EMA (Short) -->
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700; color:#f87171; font-size:13px;">2. Stage 3 8-EMA (Short)</span>
+                            <span id="stratStatus_stage3" class="status-badge badge-bear">SCANNING</span>
+                        </div>
+                        <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
+                            LBB Down + Close &lt; 8 EMA + BB Width &gt; 60.<br>
+                            Trigger: <b>Reject 8-EMA (±20pt)</b> · Tgt +40 / SL -40
+                        </div>
+                    </div>
+
+                    <!-- Strategy 3: 4 MA vs 8 EMA Crossover Reversal -->
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700; color:#fbbf24; font-size:13px;">3. 4/8 MA Crossover Reversal</span>
+                            <span id="stratStatus_crossover" class="status-badge badge-gold">SCANNING</span>
+                        </div>
+                        <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
+                            4 EMA crosses 8 EMA + Flat Band.<br>
+                            Trigger: <b>Touch 8-EMA within 3 bars</b> · Tgt +20 / SL -20
+                        </div>
+                    </div>
+
+                    <!-- Strategy 4: 1H 8-EMA Confluence -->
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700; color:#c084fc; font-size:13px;">4. 1H 8-EMA Confluence</span>
+                            <span id="stratStatus_h1" class="status-badge badge-bull">SCANNING</span>
+                        </div>
+                        <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
+                            1H 8-EMA Support/Resistance Touch.<br>
+                            Trigger: <b>Double Confirmation</b> · Tgt +100 / SL -40
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Live Execution Strike Matrix: 4 Priority Contracts (2 CE + 2 PE) -->
             <div class="card">
                 <h2>
@@ -1480,6 +1553,82 @@
                     }
                 }
 
+                // 3B. 4-Core Strategy Scanner & Party-Switch Cockpit
+                if (data.scanner) {
+                    const sc = data.scanner;
+                    const badge = document.getElementById("scannerActiveBadge");
+                    const btn = document.getElementById("btnToggleScanner");
+                    if (badge && btn) {
+                        if (sc.enabled) {
+                            badge.className = "status-badge badge-bull";
+                            badge.textContent = "🟢 SCANNER ACTIVE";
+                            btn.textContent = "⏸ Pause Scanner";
+                            btn.className = "crimson-btn";
+                        } else {
+                            badge.className = "status-badge badge-neutral";
+                            badge.textContent = "🟡 SCANNER PAUSED";
+                            btn.textContent = "▶️ Resume Scanner";
+                            btn.className = "emerald-btn";
+                        }
+                    }
+
+                    // Party-Switch Banner
+                    const pBanner = document.getElementById("partySwitchBanner");
+                    const pText = document.getElementById("partySwitchText");
+                    const pNotice = document.getElementById("partySwitchBlockNotice");
+                    const pIcon = document.getElementById("partySwitchIcon");
+                    if (pBanner && pText && pNotice && pIcon) {
+                        if (sc.active_party === "BULLISH") {
+                            pBanner.style.background = "rgba(34, 197, 94, 0.12)";
+                            pBanner.style.borderColor = "rgba(34, 197, 94, 0.4)";
+                            pBanner.style.color = "#4ade80";
+                            pIcon.textContent = "🟢";
+                            pText.textContent = "PARTY-SWITCH: BULLISH (4/8 Up Cross Active)";
+                            pNotice.textContent = "⛔ PE Shorts BLOCKED";
+                            pNotice.style.display = "inline-block";
+                        } else if (sc.active_party === "BEARISH") {
+                            pBanner.style.background = "rgba(239, 68, 68, 0.12)";
+                            pBanner.style.borderColor = "rgba(239, 68, 68, 0.4)";
+                            pBanner.style.color = "#f87171";
+                            pIcon.textContent = "🔴";
+                            pText.textContent = "PARTY-SWITCH: BEARISH (4/8 Down Cross Active)";
+                            pNotice.textContent = "⛔ CE Longs BLOCKED";
+                            pNotice.style.display = "inline-block";
+                        } else {
+                            pBanner.style.background = "rgba(148, 163, 184, 0.12)";
+                            pBanner.style.borderColor = "rgba(148, 163, 184, 0.3)";
+                            pBanner.style.color = "#94a3b8";
+                            pIcon.textContent = "⚪";
+                            pText.textContent = "PARTY-SWITCH: NEUTRAL (Monitoring Both Sides)";
+                            pNotice.style.display = "none";
+                        }
+                    }
+
+                    // Strategy Badges
+                    if (sc.strategies) {
+                        const s2 = document.getElementById("stratStatus_stage2");
+                        const s3 = document.getElementById("stratStatus_stage3");
+                        const sCross = document.getElementById("stratStatus_crossover");
+                        const sH1 = document.getElementById("stratStatus_h1");
+                        if (s2 && sc.strategies.stage2_long) {
+                            s2.textContent = sc.strategies.stage2_long.state;
+                            s2.className = `status-badge ${sc.strategies.stage2_long.state === 'TRIGGERED' ? 'badge-bull' : (sc.strategies.stage2_long.state === 'ARMED' ? 'badge-gold' : 'badge-neutral')}`;
+                        }
+                        if (s3 && sc.strategies.stage3_short) {
+                            s3.textContent = sc.strategies.stage3_short.state;
+                            s3.className = `status-badge ${sc.strategies.stage3_short.state === 'TRIGGERED' ? 'badge-bear' : (sc.strategies.stage3_short.state === 'ARMED' ? 'badge-gold' : 'badge-neutral')}`;
+                        }
+                        if (sCross && sc.strategies.crossover_reversal) {
+                            sCross.textContent = sc.strategies.crossover_reversal.state;
+                            sCross.className = `status-badge ${sc.strategies.crossover_reversal.state === 'TRIGGERED' ? 'badge-gold' : 'badge-neutral'}`;
+                        }
+                        if (sH1 && sc.strategies.h1_confluence) {
+                            sH1.textContent = sc.strategies.h1_confluence.state;
+                            sH1.className = `status-badge ${sc.strategies.h1_confluence.state.includes('CONFIRMATION') ? 'badge-bull' : 'badge-neutral'}`;
+                        }
+                    }
+                }
+
                 // 4. Priority Matrix (4 contracts)
                 if (data.priority_matrix) {
                     renderStrikeMatrix(data.priority_matrix);
@@ -1879,6 +2028,20 @@
                 if (d.ok) alert("✔ Chasing parameters updated and pushed to Port 8510 Engine.");
             } catch (e) {
                 alert("Save error: " + e.message);
+            }
+        }
+
+        async function toggleScannerEngine() {
+            try {
+                const res = await fetch("/api/scanner/toggle", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({})
+                });
+                const d = await res.json();
+                speakVoiceAlert(d.enabled ? "4-Strategy Live Scanner Enabled" : "4-Strategy Live Scanner Paused");
+            } catch (e) {
+                console.error("Scanner toggle error:", e);
             }
         }
 
