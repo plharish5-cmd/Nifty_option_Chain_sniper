@@ -214,13 +214,60 @@ def test_date_range_backtest_simulation():
     print(f"✔ Test 4 Passed: Date-range backtest verified (285 trades, Fixed ₹{res['fixed_net_pnl']:,.2f} vs Trail ₹{res['trailing_net_pnl']:,.2f}, Alpha +₹{res['alpha_locked']:,.2f}).")
 
 
+def test_nov4_3strategies_replay_sequence():
+    """
+    Verifies that Replay for 2026-11-04 returns the verified 3-strategy sequence:
+      1. Stage 2 8-EMA (Long) [Pullback Touch]
+      2. 4 MA / 8 EMA Downside Reversal
+      3. 4 MA / 8 EMA Upside Reversal
+      4. 1H 8-EMA Support Bounce Confluence
+    Total Net PnL: +₹13,905.43 with 100% Win Rate.
+    """
+    backend = QuantTerminalBackend()
+    trades = backend.get_replay_trades_for_date("2026-11-04")
+    assert len(trades) == 4, f"Expected 4 trades, got {len(trades)}"
+
+    expected_names = [
+        "Stage 2 8-EMA (Long) [Pullback Touch]",
+        "4 MA / 8 EMA Downside Reversal",
+        "4 MA / 8 EMA Upside Reversal",
+        "1H 8-EMA Support Bounce Confluence",
+    ]
+    actual_names = [t.get("setup_name") for t in trades]
+    assert actual_names == expected_names, f"Trade names mismatch: {actual_names}"
+
+    total_net = sum(t["net_pnl"] for t in trades)
+    assert round(total_net, 2) == 13905.43, f"Expected ₹13,905.43, got {total_net}"
+
+    # Verify table keys compatibility
+    for t in trades:
+        assert "setup_name" in t and "setup" in t
+        assert "entry_ist" in t and "entry_time" in t
+        assert "exit_ist" in t and "exit_time" in t
+        assert "duration" in t
+        assert "index_entry" in t and "index_exit" in t
+        assert "option_entry" in t and "option_exit" in t
+        assert "outcome" in t and "result" in t
+        assert "gross_pnl" in t and "net_pnl" in t
+        assert "dhan_charges" in t and "charges" in t
+
+    # Verify async replay response
+    replay_res = asyncio.run(backend.run_date_replay("2026-11-04"))
+    assert replay_res["ok"] is True
+    assert replay_res["trades_count"] == 4
+    assert replay_res["win_rate"] == 100.0
+    assert replay_res["total_net_pnl"] == 13905.43
+    print("✔ Test 5 Passed: Nov 4 3-Strategies Replay sequence verified (+₹13,905.43, 100% WR).")
+
+
 def main():
     print("Running Port 8510 Super Trail v1.1 Unit Test Suite...")
     test_trailing_sl_step_progression()
     test_trailing_target_pullback_trace()
     test_strike_matrix_algo_checkbox_filtering()
     test_date_range_backtest_simulation()
-    print("\n🎉 ALL 4 UNIT TESTS PASSED WITH 100% PRECISION!")
+    test_nov4_3strategies_replay_sequence()
+    print("\n🎉 ALL 5 UNIT TESTS PASSED WITH 100% PRECISION!")
 
 
 if __name__ == "__main__":

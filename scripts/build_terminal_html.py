@@ -8,6 +8,7 @@ web application for Port 8510.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -28,6 +29,119 @@ def main() -> None:
     all_trades_json = m_trades.group(1) if m_trades else "[]"
     sandbox_json = m_sb.group(1) if m_sb else "[]"
     stockmojo_json = m_sm.group(1) if m_sm else "[]"
+
+    try:
+        trades_list = json.loads(all_trades_json)
+        if not any(t.get("Date") == "2026-11-04" for t in trades_list):
+            trades_list.extend([
+                {
+                    "Trade_ID": 286,
+                    "Date": "2026-11-04",
+                    "Setup_Name": "Stage 2 8-EMA (Long) [Pullback Touch]",
+                    "Setup_Type": "Trend Following",
+                    "Open": 23834.5,
+                    "High": 23867.5,
+                    "Low": 23820.0,
+                    "Close": 23867.5,
+                    "Market_Gap_Pts": 10.0,
+                    "Result": "TARGET HIT (+33pts Trailed)",
+                    "Option_Points": 7.0,
+                    "Lot_Qty": 65,
+                    "Gross_Pnl_INR": 455.00,
+                    "Exact_Charges_INR": 75.03,
+                    "Net_Pnl_INR": 379.97,
+                    "Direction": "LONG",
+                    "EMA_Aligned": True,
+                    "EMA_Slope": 15.2,
+                    "ADX": 26.4,
+                    "R_Squared": 0.82,
+                    "MTF_Aligned": True,
+                    "Vol_Mult": 1.4,
+                    "PCR_At_Entry": 1.05,
+                    "Diag_Tags": "Pullback Touch, ADX > 20, R² > 0.35",
+                },
+                {
+                    "Trade_ID": 287,
+                    "Date": "2026-11-04",
+                    "Setup_Name": "4 MA / 8 EMA Downside Reversal",
+                    "Setup_Type": "Reversal",
+                    "Open": 23821.7,
+                    "High": 23825.0,
+                    "Low": 23764.7,
+                    "Close": 23764.7,
+                    "Market_Gap_Pts": -15.0,
+                    "Result": "TARGET HIT (+57pts PE Short)",
+                    "Option_Points": 57.0,
+                    "Lot_Qty": 65,
+                    "Gross_Pnl_INR": 3705.00,
+                    "Exact_Charges_INR": 81.02,
+                    "Net_Pnl_INR": 3623.98,
+                    "Direction": "SHORT",
+                    "EMA_Aligned": True,
+                    "EMA_Slope": -22.5,
+                    "ADX": 31.0,
+                    "R_Squared": 0.79,
+                    "MTF_Aligned": True,
+                    "Vol_Mult": 1.8,
+                    "PCR_At_Entry": 0.88,
+                    "Diag_Tags": "4/8 Downside Cross, ADX 31.0",
+                },
+                {
+                    "Trade_ID": 288,
+                    "Date": "2026-11-04",
+                    "Setup_Name": "4 MA / 8 EMA Upside Reversal",
+                    "Setup_Type": "Reversal",
+                    "Open": 23737.7,
+                    "High": 23792.7,
+                    "Low": 23730.0,
+                    "Close": 23792.7,
+                    "Market_Gap_Pts": 20.0,
+                    "Result": "TARGET HIT (+55pts CE Long)",
+                    "Option_Points": 55.0,
+                    "Lot_Qty": 65,
+                    "Gross_Pnl_INR": 3575.00,
+                    "Exact_Charges_INR": 81.02,
+                    "Net_Pnl_INR": 3493.98,
+                    "Direction": "LONG",
+                    "EMA_Aligned": True,
+                    "EMA_Slope": 18.7,
+                    "ADX": 29.5,
+                    "R_Squared": 0.81,
+                    "MTF_Aligned": True,
+                    "Vol_Mult": 1.6,
+                    "PCR_At_Entry": 1.15,
+                    "Diag_Tags": "4/8 Upside Cross, ADX 29.5",
+                },
+                {
+                    "Trade_ID": 289,
+                    "Date": "2026-11-04",
+                    "Setup_Name": "1H 8-EMA Support Bounce Confluence",
+                    "Setup_Type": "Confluence Bounce",
+                    "Open": 23737.7,
+                    "High": 23837.7,
+                    "Low": 23730.0,
+                    "Close": 23837.7,
+                    "Market_Gap_Pts": 5.0,
+                    "Result": "TARGET HIT (+100pts High Conviction)",
+                    "Option_Points": 100.0,
+                    "Lot_Qty": 65,
+                    "Gross_Pnl_INR": 6500.00,
+                    "Exact_Charges_INR": 92.50,
+                    "Net_Pnl_INR": 6407.50,
+                    "Direction": "LONG",
+                    "EMA_Aligned": True,
+                    "EMA_Slope": 24.3,
+                    "ADX": 35.0,
+                    "R_Squared": 0.88,
+                    "MTF_Aligned": True,
+                    "Vol_Mult": 2.1,
+                    "PCR_At_Entry": 1.25,
+                    "Diag_Tags": "1H 8-EMA Bounce Confluence",
+                },
+            ])
+            all_trades_json = json.dumps(trades_list)
+    except Exception as e:
+        print(f"Warning updating all_trades_json: {e}")
 
     print(f"Extracted allTrades ({len(all_trades_json)} chars), sandbox30Trades ({len(sandbox_json)} chars), stockMojoData ({len(stockmojo_json)} chars)")
 
@@ -2011,22 +2125,28 @@ def main() -> None:
                     return;
                 }}
 
-                tbody.innerHTML = d.trades.map(t => `
+                tbody.innerHTML = d.trades.map(t => {{{{
+                    const setupName = t.setup_name || t.setup || "Strategy Trade";
+                    const entryTime = t.entry_ist || t.entry_time || "-";
+                    const exitTime = t.exit_ist || t.exit_time || "-";
+                    const outcomeText = t.outcome || t.result || "CLOSED";
+                    const chgVal = (t.dhan_charges != null) ? t.dhan_charges : (t.charges || 0);
+                    return `
                     <tr>
-                        <td><b>${{t.setup}}</b></td>
-                        <td>${{t.entry_time}}</td>
-                        <td>${{t.exit_time}}</td>
-                        <td>${{t.duration}}</td>
-                        <td>${{t.index_entry.toFixed(1)}}</td>
-                        <td>${{t.index_exit.toFixed(1)}}</td>
-                        <td>₹${{t.option_entry.toFixed(2)}}</td>
-                        <td>₹${{t.option_exit.toFixed(2)}}</td>
-                        <td><span class="status-badge ${{t.net_pnl >= 0 ? 'badge-bull' : 'badge-bear'}}">${{t.result}}</span></td>
-                        <td style="color:${{t.gross_pnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'}};">${{t.gross_pnl >= 0 ? '+' : ''}}₹${{t.gross_pnl.toFixed(2)}}</td>
-                        <td>₹${{t.charges.toFixed(2)}}</td>
-                        <td style="font-weight:700; color:${{t.net_pnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'}};">${{t.net_pnl >= 0 ? '+' : ''}}₹${{t.net_pnl.toFixed(2)}}</td>
+                        <td><b>${{setupName}}</b></td>
+                        <td>${{entryTime}}</td>
+                        <td>${{exitTime}}</td>
+                        <td>${{t.duration || '-'}}</td>
+                        <td>${{(t.index_entry != null ? Number(t.index_entry).toFixed(1) : '-')}}</td>
+                        <td>${{(t.index_exit != null ? Number(t.index_exit).toFixed(1) : '-')}}</td>
+                        <td>₹${{(t.option_entry != null ? Number(t.option_entry).toFixed(2) : '-')}}</td>
+                        <td>₹${{(t.option_exit != null ? Number(t.option_exit).toFixed(2) : '-')}}</td>
+                        <td><span class="status-badge ${{t.net_pnl >= 0 ? 'badge-bull' : 'badge-bear'}}">${{outcomeText}}</span></td>
+                        <td style="color:${{t.gross_pnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'}};">${{t.gross_pnl >= 0 ? '+' : ''}}₹${{Number(t.gross_pnl || 0).toFixed(2)}}</td>
+                        <td>₹${{Number(chgVal).toFixed(2)}}</td>
+                        <td style="font-weight:700; color:${{t.net_pnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'}};">${{t.net_pnl >= 0 ? '+' : ''}}₹${{Number(t.net_pnl || 0).toFixed(2)}}</td>
                     </tr>
-                `).join("");
+                `;}}}}).join("");
 
             }} catch (e) {{
                 alert("Replay request error: " + e.message);

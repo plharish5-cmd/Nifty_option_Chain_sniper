@@ -268,6 +268,33 @@ async def api_replay_dates():
     return JSONResponse(content=dates)
 
 
+@app.get("/api/replay/trades")
+@app.post("/api/replay/trades")
+async def api_replay_trades(req: Request):
+    target_date = "2026-11-04"
+    if req.method == "POST":
+        try:
+            body = await req.json()
+            target_date = str(body.get("date", "2026-11-04"))
+        except Exception:
+            pass
+    else:
+        target_date = req.query_params.get("date", "2026-11-04")
+    trades = backend.get_replay_trades_for_date(target_date)
+    return JSONResponse(content={"ok": True, "date": target_date, "trades": trades, "trades_count": len(trades)})
+
+
+@app.get("/api/replay")
+async def api_replay_get(req: Request):
+    date = req.query_params.get("date", "2026-11-04")
+    try:
+        speed = float(req.query_params.get("speed", 10.0))
+    except Exception:
+        speed = 10.0
+    res = await backend.run_date_replay(selected_date=date, speed_multiplier=speed)
+    return JSONResponse(content=res)
+
+
 @app.post("/api/replay/run")
 async def api_replay_run(req: Request):
     body = await req.json()
