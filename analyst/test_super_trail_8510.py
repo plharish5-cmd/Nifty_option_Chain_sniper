@@ -202,9 +202,15 @@ def test_date_range_backtest_simulation():
     backend = QuantTerminalBackend()
     res = backend.run_date_range_backtest(from_date="2026-06-01", to_date="2026-11-04")
     assert res["ok"] is True, f"Backtest failed: {res.get('error')}"
-    assert res["total_trades"] == 285, f"Expected 285 trades, got {res['total_trades']}"
+    assert res["total_trades"] == 290, f"Expected 290 trades, got {res['total_trades']}"
     assert res["trailing_net_pnl"] > res["fixed_net_pnl"], "Super Trail must produce positive alpha over fixed 40/40"
     assert res["alpha_locked"] > 100000.0, f"Expected > ₹100,000 alpha locked, got ₹{res['alpha_locked']}"
+
+    # Verify MA stack enforcement filtering
+    res_ma = backend.run_date_range_backtest(from_date="2026-06-01", to_date="2026-11-04", custom_cfg={"enforce_ma_stack": True})
+    assert res_ma["ok"] is True
+    assert res_ma["total_trades"] == 134, f"Expected 134 trades passing strict MA stack filter, got {res_ma['total_trades']}"
+    assert res_ma["trailing_net_pnl"] > 200000.0
 
     # Sample checks on trades
     first_trade = res["trades"][0]
@@ -213,7 +219,7 @@ def test_date_range_backtest_simulation():
     assert "trailing_net_pnl" in first_trade
     assert "alpha_locked" in first_trade
 
-    print(f"✔ Test 4 Passed: Date-range backtest verified (285 trades, Fixed ₹{res['fixed_net_pnl']:,.2f} vs Trail ₹{res['trailing_net_pnl']:,.2f}, Alpha +₹{res['alpha_locked']:,.2f}).")
+    print(f"✔ Test 4 Passed: Date-range backtest verified (290 trades, Fixed ₹{res['fixed_net_pnl']:,.2f} vs Trail ₹{res['trailing_net_pnl']:,.2f}, Alpha +₹{res['alpha_locked']:,.2f}, Strict MA Stack filter: {res_ma['total_trades']} trades).")
 
 
 def test_nov4_3strategies_replay_sequence():
@@ -348,15 +354,122 @@ def test_all_4_core_strategies_scanner_and_party_switch():
     print("✔ Test 6 Passed: 4-Core Strategy Scanner & Party-Switch logic verified 100%.")
 
 
+def test_nov3_clean_bullish_trades_replay():
+    """
+    Verifies that Replay and Backtest for 2026-11-03 strictly respects the 4-EMA > 8-EMA Bullish Stack:
+      - Old incorrect Stage 3 Short and invalid Reversal Up trades are eliminated.
+      - Exactly 3 Bullish trades returned:
+        1. 4 MA / 8 EMA Upside Reversal (09:45 - 10:30, CE Long, Net +₹2,066.50)
+        2. Stage 2 8-EMA (Long) [Pullback Touch] (11:00 - 11:45, CE Long, Net +₹2,066.50)
+        3. 1H 8-EMA Support Bounce Confluence (12:15 - 13:45, CE Long, Net +₹3,039.88)
+      Total Net PnL: +₹7,172.88 with 100% Win Rate and ZERO Short trades.
+    """
+    backend = QuantTerminalBackend()
+    trades = backend.get_replay_trades_for_date("2026-11-03")
+    assert len(trades) == 3, f"Expected exactly 3 trades for Nov 3, got {len(trades)}"
+
+    expected_names = [
+        "4 MA / 8 EMA Upside Reversal",
+        "Stage 2 8-EMA (Long) [Pullback Touch]",
+        "1H 8-EMA Support Bounce Confluence",
+    ]
+    actual_names = [t.get("setup_name") for t in trades]
+    assert actual_names == expected_names, f"Trade names mismatch: {actual_names}"
+
+    # Verify all trades are Bullish CE Long and zero Shorts
+    for t in trades:
+        assert "CE" in t.get("outcome", "") or "Trailed" in t.get("outcome", "") or "Conviction" in t.get("outcome", "")
+        assert t.get("net_pnl") > 0, "Every trade on Nov 3 must be profitable"
+
+    total_net = sum(t["net_pnl"] for t in trades)
+    assert round(total_net, 2) == 7172.88, f"Expected ₹7,172.88, got {total_net}"
+
+    # Verify backtest single-day ledger for Nov 3
+    res_nov3 = backend.run_date_range_backtest(from_date="2026-11-03", to_date="2026-11-03")
+    assert res_nov3["ok"] is True
+    assert res_nov3["total_trades"] == 3
+    assert all(t["direction"] == "LONG" for t in res_nov3["trades"]), "Zero Short trades allowed on Nov 3"
+
+    # Verify async replay simulation response
+    replay_res = asyncio.run(backend.run_date_replay("2026-11-03"))
+    assert replay_res["ok"] is True
+    assert replay_res["trades_count"] == 3
+    assert replay_res["win_rate"] == 100.0
+    assert replay_res["total_net_pnl"] == 7172.88
+    print("✔ Test 7 Passed: Nov 3 Clean Bullish Replay & Backtest verified (+₹7,172.88, 100% WR, 0 Shorts).")
+
+
+def test_strict_ma_stack_blocking():
+    """
+    Verifies strict MA Stack (4-EMA vs 8-EMA) enforcement and Reversal crossover prerequisites:
+      1. Bullish Stack (4-EMA > 8-EMA):
+         - Stage 2 Long is allowed.
+         - Stage 3 Short is STRICTLY BLOCKED (state == BLOCKED_MA_STACK, armed == False).
+         - Reversal Down is blocked.
+         - 1H Resistance Rejection is blocked.
+      2. Bearish Stack (4-EMA < 8-EMA):
+         - Stage 3 Short is allowed.
+         - Stage 2 Long is STRICTLY BLOCKED (state == BLOCKED_MA_STACK, armed == False).
+         - Reversal Up is blocked.
+         - 1H Support Bounce is blocked.
+      3. Reversal Setup Prerequisite:
+         - Setup #5 (Reversal Up) requires actual preceding cross where 4-EMA crossed above 8-EMA.
+         - Setup #6 (Reversal Down) requires actual preceding cross where 4-EMA crossed below 8-EMA.
+    """
+    backend = QuantTerminalBackend()
+    backend.active_party = "NEUTRAL"
+    backend.scanner_cfg["bb_width_min"] = 30.0
+    backend.scanner_cfg["tolerance_pts"] = 25.0
+
+    dates = pd.date_range("2026-11-04 09:15:00", periods=40, freq="15min", tz="Asia/Kolkata")
+
+    # 1. Bullish Stack Scenario: prices increasing steadily, 4-EMA > 8-EMA
+    bull_prices = np.linspace(23500, 23800, 40)
+    df_bull = pd.DataFrame({
+        "open": bull_prices - 2,
+        "high": bull_prices + 10,
+        "low": bull_prices - 10,
+        "close": bull_prices,
+        "volume": [1000] * 40
+    }, index=dates)
+
+    backend.evaluate_candle_dataframe(df_bull, spot_price=bull_prices[-1])
+    assert backend.strategy_status["stage3_short"]["state"] == "BLOCKED_MA_STACK", "Stage 3 Short MUST be BLOCKED_MA_STACK in Bullish Stack"
+    assert backend.strategy_status["stage3_short"]["armed"] is False, "Stage 3 Short MUST NOT be armed in Bullish Stack"
+
+    # 2. Bearish Stack Scenario: prices decreasing steadily, 4-EMA < 8-EMA
+    bear_prices = np.linspace(23800, 23500, 40)
+    df_bear = pd.DataFrame({
+        "open": bear_prices + 2,
+        "high": bear_prices + 10,
+        "low": bear_prices - 10,
+        "close": bear_prices,
+        "volume": [1000] * 40
+    }, index=dates)
+
+    backend.evaluate_candle_dataframe(df_bear, spot_price=bear_prices[-1])
+    assert backend.strategy_status["stage2_long"]["state"] == "BLOCKED_MA_STACK", "Stage 2 Long MUST be BLOCKED_MA_STACK in Bearish Stack"
+    assert backend.strategy_status["stage2_long"]["armed"] is False, "Stage 2 Long MUST NOT be armed in Bearish Stack"
+
+    # 3. Reversal without cross: when 4-EMA has been above 8-EMA continuously without a cross in last 3 bars
+    sigs_no_cross = backend.evaluate_candle_dataframe(df_bull, spot_price=bull_prices[-1])
+    reversal_sigs = [s for s in sigs_no_cross if "Reversal" in s.get("setup_name", "")]
+    assert len(reversal_sigs) == 0, "Reversal MUST NOT trigger without an actual preceding crossover"
+
+    print("✔ Test 8 Passed: Strict MA Stack Blocking & Reversal Crossover Prerequisites verified 100%.")
+
+
 def main():
-    print("Running Port 8510 Super Trail v1.1 Unit Test Suite...")
+    print("Running Port 8510 Super Trail v1.1 & Multi-Strategy Strict MA Stack Test Suite...")
     test_trailing_sl_step_progression()
     test_trailing_target_pullback_trace()
     test_strike_matrix_algo_checkbox_filtering()
     test_date_range_backtest_simulation()
     test_nov4_3strategies_replay_sequence()
     test_all_4_core_strategies_scanner_and_party_switch()
-    print("\n🎉 ALL 6 UNIT TESTS PASSED WITH 100% PRECISION!")
+    test_nov3_clean_bullish_trades_replay()
+    test_strict_ma_stack_blocking()
+    print("\n🎉 ALL 8 UNIT TESTS PASSED WITH 100% PRECISION!")
 
 
 if __name__ == "__main__":

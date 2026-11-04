@@ -239,7 +239,11 @@ async def api_backtest_date_range(req: Request):
     body = await req.json()
     from_date = str(body.get("from_date", "2026-06-01"))
     to_date = str(body.get("to_date", "2026-11-04"))
-    custom_cfg = body.get("super_trail_cfg")
+    custom_cfg = body.get("super_trail_cfg") or body.get("custom_cfg")
+    enforce_ma = bool(body.get("enforce_ma_stack", False))
+    if enforce_ma:
+        custom_cfg = custom_cfg or {}
+        custom_cfg["enforce_ma_stack"] = True
     res = backend.run_date_range_backtest(from_date=from_date, to_date=to_date, custom_cfg=custom_cfg)
     return JSONResponse(content=res)
 
