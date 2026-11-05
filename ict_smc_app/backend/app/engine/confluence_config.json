@@ -20,7 +20,8 @@
     {"key": "itm_atm_oi_walls",   "label": "ITM/ATM OI Walls",     "category": "LEVELS",     "endpoint": "/api/desk/itm-atm-oi-walls",    "evidence": "UNTESTED", "in_consensus": true},
     {"key": "oi_matrix",          "label": "OI Matrix",            "category": "FLOW",       "endpoint": "/api/oi/matrix",                "evidence": "UNTESTED", "in_consensus": false},
     {"key": "auction",            "label": "Auction / RVOL",       "category": "VOLUME",     "endpoint": "/api/auction",                  "evidence": "UNTESTED", "in_consensus": true},
-    {"key": "gamma_exposure",     "label": "Gamma Exposure",       "category": "VOLATILITY", "endpoint": "/api/gamma-exposure-review",    "evidence": "UNTESTED", "in_consensus": true},
+    {"key": "gamma_exposure",     "label": "Gamma Exposure",       "category": "VOLATILITY", "endpoint": "/api/gamma-exposure-review",    "evidence": "UNTESTED", "in_consensus": false,
+     "evidence_note": "Dealer gamma is a REGIME filter (positive gamma = mean reversion, negative = trending), not a direction call. It says WHEN a continuation setup should work, not which way. Displayed, deliberately not voting on direction."},
     {"key": "expiry_playbook",    "label": "Expiry Playbook",      "category": "STRUCTURE",  "endpoint": "/api/chain/expiry-playbook",    "evidence": "UNTESTED", "in_consensus": false},
     {"key": "institutional_levels","label": "Institutional Levels","category": "LEVELS",     "endpoint": "/api/desk/institutional-levels","evidence": "UNTESTED", "in_consensus": false},
     {"key": "gap_confluence",     "label": "Gap Confluence",       "category": "STRUCTURE",  "endpoint": "/api/desk/gap-confluence",      "evidence": "UNTESTED", "in_consensus": false},
@@ -50,7 +51,9 @@
     "REVERSAL_DOWN":  ["reversal down", "bearish reversal", "reversal downside", "long unwinding", "long-unwinding", "blow-off top"],
     "BREAKOUT_UP":    ["breakout up", "bullish breakout", "breakout above", "range expansion up", "bos up"],
     "BREAKOUT_DOWN":  ["breakout down", "bearish breakout", "breakdown", "break down", "range expansion down", "bos down"],
-    "CONSOLIDATION":  ["consolidation", "mid-range", "midrange", "range bound", "rangebound", "balanced", "chop", "no trade", "hold / trail", "digestion"],
+    "CONSOLIDATION":  ["positive gamma", "long gamma", "inside_range", "inside range", "inside bar", "consolidation",
+                       "mid-range", "midrange", "range bound", "rangebound", "balanced", "chop", "no trade",
+                       "hold / trail", "digestion", "pinned", "pin active"],
     "RETRACEMENT":    ["retracement", "pullback", "dip buy", "dip-buy", "throwback"],
     "SUPPORT":        ["support", "floor", "put wall", "demand zone", "put writing"],
     "RESISTANCE":     ["resistance", "cap", "call wall", "supply zone", "call writing"],
@@ -60,7 +63,8 @@
     "BEARISH":        ["bearish trinity lock", "bearish_trinity_lock", "bearish confluence", "bearish call control",
                        "bearish_call_control", "aggressive sell rallies", "sell rallies", "strong bearish", "bearish",
                        "short only", "buy pe", "pe only", "call dominated", "call control", "downside"],
-    "NEUTRAL":        ["neutral", "mixed", "forming", "pending", "awaiting", "unavailable", "flat"]
+    "NEUTRAL":        ["negative gamma", "short gamma", "neutral", "mixed", "forming", "pending", "awaiting",
+                       "unavailable", "flat", "idle", "inactive", "no signal", "none", "off", "auto"]
   },
 
   "verdict_bias": {
