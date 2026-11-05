@@ -53,10 +53,24 @@ TS_KEYS = ("ts", "asof", "as_of", "timestamp", "updated_ts", "fetched_at", "upda
 # counted in board["health"]["fetch_aged"] so the weakness stays visible.
 FETCH_TS_KEY = "_confluence_fetched_ts"
 
-# Keys that commonly hold an engine's verdict text, most specific first.
-TEXT_KEYS = ("verdict", "bias_title", "bias", "stage", "signal", "state", "action",
-             "headline", "label", "status", "direction", "side", "narrative", "text",
-             "summary", "note")
+# AUTHORITATIVE verdict fields, most trustworthy first. Classification uses the
+# FIRST of these that is present — never a concatenation. That matters: desk_bias
+# returns bias_theme="bullish" alongside a narrative mentioning "Stage 3 Bearish
+# Acceleration", and blending the two would let prose outvote the engine's own
+# stated verdict.
+VERDICT_KEYS = ("bias_theme", "alignment_state", "verdict", "verdict_badge",
+                "confluence_summary", "bias_title", "bias", "pcr_band",
+                "regime_state", "stage", "signal", "state", "action", "headline",
+                "direction", "side", "label", "status")
+
+# Sub-dicts worth looking one level into when no top-level verdict field exists.
+SUB_DICT_KEYS = ("regime", "skew", "first_hour", "verdict", "summary", "state",
+                 "bias", "today", "stats")
+
+# Shown to the operator, never used for classification — prose may contain words
+# that contradict the engine's own verdict.
+DETAIL_KEYS = ("verdict_summary", "pcr_band_label", "narrative", "confluence_summary",
+               "text", "summary", "risk_note", "target_wall", "note")
 
 _CFG_CACHE: Dict[str, Any] = {}
 _CFG_MTIME: float = 0.0
@@ -161,21 +175,43 @@ def extract_ts(payload: Any, now_ts: float) -> Tuple[Optional[float], str]:
     return None, ""
 
 
-def extract_text(payload: Any) -> str:
-    """Concatenates the verdict-bearing fields of a payload, most specific first."""
+def extract_verdict_text(payload: Any) -> Tuple[str, str]:
+    """The single most authoritative verdict string, as (text, source_key).
+
+    Returns the FIRST VERDICT_KEYS hit rather than a concatenation, so an engine's
+    own stated verdict cannot be outvoted by contradictory words in its prose.
+    Falls back to one level inside known sub-dicts (pe_ce_matrix nests its verdict
+    under `regime` / `first_hour`).
+    """
+    if not isinstance(payload, dict):
+        return "", ""
+    for key in VERDICT_KEYS:
+        val = payload.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip(), key
+    for sub_key in SUB_DICT_KEYS:
+        sub = payload.get(sub_key)
+        if not isinstance(sub, dict):
+            continue
+        for key in VERDICT_KEYS:
+            val = sub.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip(), "{}.{}".format(sub_key, key)
+    return "", ""
+
+
+def extract_detail(payload: Any) -> str:
+    """Human-readable context for the operator. Never used for classification."""
     if not isinstance(payload, dict):
         return ""
     parts: List[str] = []
-    for key in TEXT_KEYS:
+    for key in DETAIL_KEYS:
         val = payload.get(key)
         if isinstance(val, str) and val.strip():
             parts.append(val.strip())
-        elif isinstance(val, dict):
-            for sub in ("text", "label", "title", "verdict", "bias"):
-                sv = val.get(sub)
-                if isinstance(sv, str) and sv.strip():
-                    parts.append(sv.strip())
-    return " · ".join(parts[:4])
+        if len(parts) >= 2:
+            break
+    return " · ".join(parts)
 
 
 def extract_levels(payload: Any) -> Dict[str, Optional[float]]:
@@ -183,8 +219,10 @@ def extract_levels(payload: Any) -> Dict[str, Optional[float]]:
     out: Dict[str, Optional[float]] = {"support": None, "resistance": None}
     if not isinstance(payload, dict):
         return out
-    sup_keys = ("pe_wall", "support", "sup", "put_wall", "struct_support", "demand")
-    res_keys = ("ce_wall", "resistance", "res", "call_wall", "struct_resistance", "supply")
+    sup_keys = ("key_support_level", "pe_wall", "support", "sup", "put_wall",
+                "struct_support", "demand")
+    res_keys = ("key_resistance_level", "ce_wall", "resistance", "res", "call_wall",
+                "struct_resistance", "supply")
     for k in sup_keys:
         v = payload.get(k)
         if isinstance(v, (int, float)) and v > 0:
@@ -239,9 +277,11 @@ def build_row(engine_cfg: Dict[str, Any], payload: Any, now_ts: float,
         return row
 
     try:
-        text = extract_text(payload)
-        row["detail"] = text[:220]
-        row["verdict"] = classify_text(text, cfg)
+        verdict_text, verdict_key = extract_verdict_text(payload)
+        row["verdict_text"] = verdict_text[:160]
+        row["verdict_source"] = verdict_key
+        row["detail"] = (extract_detail(payload) or verdict_text)[:220]
+        row["verdict"] = classify_text(verdict_text, cfg)
         row["bias"] = verdict_bias(row["verdict"], cfg)
         row["levels"] = extract_levels(payload)
 

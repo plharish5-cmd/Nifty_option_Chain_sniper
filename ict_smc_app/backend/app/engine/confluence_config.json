@@ -54,8 +54,12 @@
     "RETRACEMENT":    ["retracement", "pullback", "dip buy", "dip-buy", "throwback"],
     "SUPPORT":        ["support", "floor", "put wall", "demand zone", "put writing"],
     "RESISTANCE":     ["resistance", "cap", "call wall", "supply zone", "call writing"],
-    "BULLISH":        ["strong bullish", "bullish", "long only", "buy ce", "ce only", "put dominated", "upside"],
-    "BEARISH":        ["strong bearish", "bearish", "short only", "buy pe", "pe only", "call dominated", "downside"],
+    "BULLISH":        ["bullish trinity lock", "bullish_trinity_lock", "bullish confluence", "bullish put control",
+                       "bullish_put_control", "aggressive buy dips", "buy dips", "strong bullish", "bullish",
+                       "long only", "buy ce", "ce only", "put dominated", "put control", "upside"],
+    "BEARISH":        ["bearish trinity lock", "bearish_trinity_lock", "bearish confluence", "bearish call control",
+                       "bearish_call_control", "aggressive sell rallies", "sell rallies", "strong bearish", "bearish",
+                       "short only", "buy pe", "pe only", "call dominated", "call control", "downside"],
     "NEUTRAL":        ["neutral", "mixed", "forming", "pending", "awaiting", "unavailable", "flat"]
   },
 

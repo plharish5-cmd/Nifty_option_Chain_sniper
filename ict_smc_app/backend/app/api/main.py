@@ -560,7 +560,17 @@ def _confluence_gather() -> Dict[str, Any]:
             continue
         t0 = time.time()
         try:
-            res = fn()
+            # A route function's defaults are FastAPI Query(...) objects, not the
+            # plain values. Calling fn() directly therefore passes Query instances
+            # into the engine, which is why most engines read UNAVAILABLE on the
+            # first cut. Unwrap each default to its .default before calling.
+            kwargs = {}
+            for pname, p in inspect.signature(fn).parameters.items():
+                dflt = p.default
+                if dflt is inspect.Parameter.empty:
+                    continue
+                kwargs[pname] = getattr(dflt, "default", dflt)
+            res = fn(**kwargs)
             if inspect.iscoroutine(res):
                 # We are on a threadpool worker, so there is no running loop here.
                 res = asyncio.run(res)

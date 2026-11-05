@@ -93,6 +93,43 @@ def test_payload_without_timestamp_is_unknown_age():
     assert row["counted"] is False
 
 
+def test_prose_cannot_outvote_the_engines_own_verdict():
+    """Real desk_bias payload: bias_theme says bullish while supporting_spike
+    mentions 'Stage 3 Bearish Acceleration'. Blending the two would flip the
+    verdict. Classification must use the authoritative field only."""
+    now = time.time()
+    row = cf.build_row(_eng(), {
+        "bias_theme": "bullish",
+        "bias_title": "AGGRESSIVE BUY DIPS / CE",
+        "supporting_spike": "Matrix Stage 3 Bearish Acceleration at 13:58",
+        "narrative": "Call writers are capitulating while Put writers hold a floor",
+        "ts": now,
+    }, now)
+    assert row["verdict"] == "BULLISH"
+    assert row["verdict_source"] == "bias_theme"
+
+
+def test_real_trinity_and_smart_oi_payloads_classify():
+    now = time.time()
+    trinity = cf.build_row(_eng(), {"alignment_state": "BULLISH_TRINITY_LOCK",
+                                    "pcr_band": "BULLISH_PUT_CONTROL", "ts": now}, now)
+    assert trinity["verdict"] == "BULLISH"
+    smart = cf.build_row(_eng(), {
+        "confluence_summary": "Bullish Confluence Dominant: Put writers defending 24,400 floor.",
+        "key_support_level": 24400.0, "key_resistance_level": 24800.0, "ts": now}, now)
+    assert smart["verdict"] == "BULLISH"
+    assert smart["levels"]["support"] == 24400.0
+    assert smart["levels"]["resistance"] == 24800.0
+
+
+def test_nested_verdict_is_found_one_level_down():
+    """pe_ce_matrix nests its verdict under `regime` / `first_hour`."""
+    now = time.time()
+    row = cf.build_row(_eng(), {"regime": {"state": "STRONG BEARISH"}, "ts": now}, now)
+    assert row["verdict"] == "BEARISH"
+    assert row["verdict_source"] == "regime.state"
+
+
 def test_fetch_timestamp_is_a_second_class_fallback():
     """An engine with no timestamp of its own falls back to when WE called it,
     but the row must say so — age_basis 'fetch', not 'data'."""
