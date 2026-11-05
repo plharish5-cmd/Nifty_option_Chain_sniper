@@ -1,0 +1,196 @@
+{
+  "engine": "scripts/backtest_option_prices.py",
+  "timestamp": "2026-11-06 00:26:09 IST",
+  "step1_recorded_window": {
+    "min_date": "2026-10-12",
+    "max_date": "2026-11-05",
+    "distinct_sessions": 18,
+    "total_rows": 302506
+  },
+  "step2_realised_delta": {
+    "by_dte": [
+      {
+        "dte_bucket": "0",
+        "n": 13,
+        "median_delta": 0.697,
+        "mean_delta": 0.391,
+        "q25_delta": 0.231,
+        "q75_delta": 1.115
+      },
+      {
+        "dte_bucket": "1",
+        "n": 8,
+        "median_delta": 0.571,
+        "mean_delta": 0.54,
+        "q25_delta": -0.043,
+        "q75_delta": 0.905
+      },
+      {
+        "dte_bucket": "2-3",
+        "n": 7,
+        "median_delta": 0.396,
+        "mean_delta": 0.382,
+        "q25_delta": -0.303,
+        "q75_delta": 0.944
+      },
+      {
+        "dte_bucket": "4+",
+        "n": 41,
+        "median_delta": 0.613,
+        "mean_delta": 0.729,
+        "q25_delta": 0.362,
+        "q75_delta": 0.988
+      }
+    ],
+    "by_moneyness": [
+      {
+        "moneyness": "ATM",
+        "n": 16,
+        "median_delta": 0.524,
+        "mean_delta": 0.586
+      },
+      {
+        "moneyness": "ITM 100",
+        "n": 34,
+        "median_delta": 0.683,
+        "mean_delta": 0.624
+      },
+      {
+        "moneyness": "ITM 200",
+        "n": 19,
+        "median_delta": 0.724,
+        "mean_delta": 0.599
+      }
+    ],
+    "gamma_asymmetry": {
+      "winners": {
+        "n": 37,
+        "median_delta": 0.594,
+        "mean_delta": 0.575,
+        "assumed_delta": 0.6,
+        "gap": -0.006
+      },
+      "losers": {
+        "n": 32,
+        "median_delta": 0.707,
+        "mean_delta": 0.647,
+        "assumed_delta": 0.5,
+        "gap": 0.207
+      }
+    }
+  },
+  "step3_real_spreads": [
+    {
+      "dte_bucket": "0",
+      "n_observations": 2073,
+      "median_half_spread_pts": 0.3,
+      "p90_half_spread_pts": 0.8,
+      "median_half_spread_inr": 19.5,
+      "p90_half_spread_inr": 52.0
+    },
+    {
+      "dte_bucket": "1",
+      "n_observations": 927,
+      "median_half_spread_pts": 0.25,
+      "p90_half_spread_pts": 0.68,
+      "median_half_spread_inr": 16.2,
+      "p90_half_spread_inr": 43.9
+    },
+    {
+      "dte_bucket": "4+",
+      "n_observations": 32263,
+      "median_half_spread_pts": 0.27,
+      "p90_half_spread_pts": 0.72,
+      "median_half_spread_inr": 17.9,
+      "p90_half_spread_inr": 47.1
+    }
+  ],
+  "step4_strike_selection_comparison": [
+    {
+      "rule": "200_PREM",
+      "n_trades": 76,
+      "win_rate": 52.6,
+      "avg_entry_premium": 200.7,
+      "gross_inr_per_trade": -18.6,
+      "statutory_charges_inr": 78.1,
+      "spread_cost_inr": 30.4,
+      "total_friction_inr": 108.5,
+      "net_all_in_per_trade": -127.2,
+      "profit_factor": 0.79
+    },
+    {
+      "rule": "275_PREM",
+      "n_trades": 76,
+      "win_rate": 52.6,
+      "avg_entry_premium": 276.4,
+      "gross_inr_per_trade": -10.8,
+      "statutory_charges_inr": 89.8,
+      "spread_cost_inr": 39.5,
+      "total_friction_inr": 129.3,
+      "net_all_in_per_trade": -140.0,
+      "profit_factor": 0.8
+    },
+    {
+      "rule": "ATM",
+      "n_trades": 76,
+      "win_rate": 52.6,
+      "avg_entry_premium": 127.5,
+      "gross_inr_per_trade": -52.3,
+      "statutory_charges_inr": 66.7,
+      "spread_cost_inr": 24.7,
+      "total_friction_inr": 91.4,
+      "net_all_in_per_trade": -143.7,
+      "profit_factor": 0.7
+    },
+    {
+      "rule": "300_ITM",
+      "n_trades": 76,
+      "win_rate": 52.6,
+      "avg_entry_premium": 348.5,
+      "gross_inr_per_trade": -14.9,
+      "statutory_charges_inr": 100.9,
+      "spread_cost_inr": 49.8,
+      "total_friction_inr": 150.7,
+      "net_all_in_per_trade": -165.5,
+      "profit_factor": 0.78
+    }
+  ],
+  "step6_model_250_sessions": {
+    "variant_e_institutional": {
+      "assumed_model_060_050": {
+        "n": 80,
+        "win_rate": 57.5,
+        "net_per_trade": 141.99,
+        "total_net": 11359.56,
+        "profit_factor": 1.37,
+        "avg_charges": 78.51
+      },
+      "measured_real_delta_model": {
+        "n": 80,
+        "win_rate": 57.5,
+        "net_per_trade": -3.89,
+        "total_net": -310.92,
+        "profit_factor": 0.99,
+        "avg_charges": 78.23
+      }
+    },
+    "variant_a_raw": {
+      "assumed_model_060_050": {
+        "n": 2378,
+        "win_rate": 51.9,
+        "net_per_trade": -43.98,
+        "total_net": -104590.43,
+        "profit_factor": 0.85,
+        "avg_charges": 78.16
+      },
+      "measured_real_delta_model": {
+        "n": 2378,
+        "win_rate": 51.9,
+        "net_per_trade": -119.83,
+        "total_net": -284947.33,
+        "profit_factor": 0.66,
+        "avg_charges": 78.01
+      }
+    }
+  }
+}
