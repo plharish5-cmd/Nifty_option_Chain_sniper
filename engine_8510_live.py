@@ -552,6 +552,28 @@ async def api_oi_audit_04nov():
     return JSONResponse(content=res)
 
 
+@app.get("/api/dhan/config")
+async def api_dhan_get_config():
+    """Returns Dhan credentials metadata (masked) and IP match status."""
+    return JSONResponse(content=backend.get_dhan_config())
+
+
+@app.post("/api/dhan/config")
+async def api_dhan_post_config(req: Request):
+    """Safely updates Dhan credentials into .env and config without leaking secrets."""
+    body = await req.json()
+    res = backend.update_dhan_config(body)
+    return JSONResponse(content=res)
+
+
+@app.post("/api/dhan/connect")
+@app.post("/api/dhan/test")
+async def api_dhan_connect_test():
+    """Runs a live connection test against Dhan HQ v2 API, querying /fundlimit and /marketfeed/ltp."""
+    res = await backend.test_dhan_connection()
+    return JSONResponse(content=res)
+
+
 def main():
     port = int(backend.cfg.get("port", 8510))
     host = str(backend.cfg.get("host", "0.0.0.0"))

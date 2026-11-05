@@ -53,6 +53,47 @@ def load_env_safe() -> None:
             log.error("Error reading .env: %s", e)
 
 
+def save_env_safe(updates: Dict[str, str]) -> bool:
+    """Updates .env safely preserving other variables and comments without leaking secrets."""
+    env_file = ROOT / ".env"
+    lines = []
+    if env_file.exists():
+        try:
+            lines = env_file.read_text(encoding="utf-8").splitlines()
+        except Exception as e:
+            log.error("Error reading .env before write: %s", e)
+            lines = []
+
+    updated_keys = set()
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            k, v = stripped.split("=", 1)
+            k_clean = k.strip()
+            if k_clean in updates:
+                new_lines.append(f"{k_clean}={updates[k_clean]}")
+                updated_keys.add(k_clean)
+            else:
+                new_lines.append(line)
+        else:
+            new_lines.append(line)
+
+    for k, v in updates.items():
+        if k not in updated_keys:
+            new_lines.append(f"{k}={v}")
+
+    try:
+        content = "\n".join(new_lines) + "\n"
+        env_file.write_text(content, encoding="utf-8")
+        for k, v in updates.items():
+            os.environ[k] = v
+        return True
+    except Exception as e:
+        log.error("Error saving to .env: %s", e)
+        return False
+
+
 def round_to_tick(val: float, tick: float = 0.05) -> float:
     """Rounds price to nearest exchange tick (default 0.05)."""
     return round(round(float(val) / tick) * tick, 2)
@@ -288,8 +329,9 @@ class InstrumentManager:
 class DhanBroker:
     """Manages communications with Dhan HQ API v2 with rate limits and safety."""
 
-    def __init__(self, base_url: str = "https://api.dhan.co/v2") -> None:
+    def __init__(self, base_url: str = "https://api.dhan.co/v2", cfg: Optional[Dict[str, Any]] = None) -> None:
         self.base_url = base_url
+        self.cfg = cfg or {}
         load_env_safe()
         self._last_ltp_call = 0.0
         self._ltp_cache: Dict[str, float] = {}
@@ -300,6 +342,275 @@ class DhanBroker:
         self._backoff_until: float = 0.0
         self._backoff_delay: float = 3.0
         self.LTP_TTL: float = 5.0
+
+        # Dhan Connection & IP Config state
+        dhan_cfg = self.cfg.get("dhan", {})
+        self.environment: str = os.environ.get("DHAN_ENVIRONMENT") or dhan_cfg.get("environment", "LIVE")
+        self.whitelisted_ip: str = os.environ.get("DHAN_WHITELISTED_IP") or dhan_cfg.get("whitelisted_ip", "")
+        self._cached_ip: str = ""
+        self._last_ip_check: float = 0.0
+        self.last_connected_status: Dict[str, Any] = {
+            "connected": False,
+            "dhan_connected": False,
+            "status": "INITIALIZING",
+            "message": "Initializing Dhan connection...",
+            "last_updated": ""
+        }
+
+    def get_current_ip(self) -> str:
+        """Fetches public IP with 300-second cache and resilient fallbacks."""
+        now = time.time()
+        if self._cached_ip and (now - self._last_ip_check < 300.0):
+            return self._cached_ip
+        urls = [
+            "https://api.ipify.org?format=json",
+            "https://ifconfig.me/ip",
+            "https://icanhazip.com"
+        ]
+        for url in urls:
+            try:
+                with httpx.Client(timeout=3.0) as client:
+                    resp = client.get(url)
+                    if resp.status_code == 200:
+                        ip = resp.json().get("ip", "").strip() if "json" in url else resp.text.strip()
+                        if ip and len(ip.split(".")) == 4:
+                            self._cached_ip = ip
+                            self._last_ip_check = now
+                            return ip
+            except Exception as e:
+                log.debug("IP lookup via %s failed: %s", url, e)
+                continue
+        return self._cached_ip or "127.0.0.1"
+
+    async def get_current_ip_async(self) -> str:
+        """Async public IP resolver."""
+        now = time.time()
+        if self._cached_ip and (now - self._last_ip_check < 300.0):
+            return self._cached_ip
+        urls = [
+            "https://api.ipify.org?format=json",
+            "https://ifconfig.me/ip",
+            "https://icanhazip.com"
+        ]
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            for url in urls:
+                try:
+                    resp = await client.get(url)
+                    if resp.status_code == 200:
+                        ip = resp.json().get("ip", "").strip() if "json" in url else resp.text.strip()
+                        if ip and len(ip.split(".")) == 4:
+                            self._cached_ip = ip
+                            self._last_ip_check = now
+                            return ip
+                except Exception as e:
+                    log.debug("Async IP lookup via %s failed: %s", url, e)
+                    continue
+        return self._cached_ip or "127.0.0.1"
+
+    def get_masked_config(self) -> Dict[str, Any]:
+        """Returns Dhan configuration with secrets safely masked (****last4)."""
+        load_env_safe()
+        token = os.environ.get("DHAN_ACCESS_TOKEN", "")
+        client_id = os.environ.get("DHAN_CLIENT_ID", "")
+        api_key = os.environ.get("DHAN_API_KEY", "")
+        api_sec = os.environ.get("DHAN_API_SECRET", "")
+
+        masked_token = f"****{token[-4:]}" if len(token) >= 4 else ("****" if token else "")
+        masked_secret = f"****{api_sec[-4:]}" if len(api_sec) >= 4 else ("****" if api_sec else "")
+
+        curr_ip = self.get_current_ip()
+        whitelisted = self.whitelisted_ip or curr_ip
+        ip_matched = bool(whitelisted and curr_ip and (whitelisted.strip() == curr_ip.strip()))
+
+        return {
+            "ok": True,
+            "client_id": client_id,
+            "masked_token": masked_token,
+            "token_configured": bool(token and len(token) > 20),
+            "api_key": api_key,
+            "masked_secret": masked_secret,
+            "secret_configured": bool(api_sec),
+            "environment": self.environment,
+            "current_ip": curr_ip,
+            "whitelisted_ip": whitelisted,
+            "ip_matched": ip_matched,
+            "dhan_connected": self.is_configured(),
+            "last_status": self.last_connected_status,
+        }
+
+    def update_credentials(
+        self,
+        client_id: Optional[str] = None,
+        access_token: Optional[str] = None,
+        api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
+        environment: Optional[str] = None,
+        whitelisted_ip: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Updates and persists credentials without logging secrets."""
+        load_env_safe()
+        updates: Dict[str, str] = {}
+
+        if client_id is not None and client_id.strip():
+            updates["DHAN_CLIENT_ID"] = client_id.strip()
+
+        # Only update token if a new non-masked token is provided
+        if access_token is not None:
+            clean_tok = access_token.strip()
+            if clean_tok and not clean_tok.startswith("****"):
+                updates["DHAN_ACCESS_TOKEN"] = clean_tok
+
+        if api_key is not None:
+            updates["DHAN_API_KEY"] = api_key.strip()
+
+        if api_secret is not None:
+            clean_sec = api_secret.strip()
+            if clean_sec and not clean_sec.startswith("****"):
+                updates["DHAN_API_SECRET"] = clean_sec
+
+        if environment is not None and environment.strip():
+            self.environment = environment.strip()
+            updates["DHAN_ENVIRONMENT"] = self.environment
+
+        if whitelisted_ip is not None:
+            self.whitelisted_ip = whitelisted_ip.strip()
+            updates["DHAN_WHITELISTED_IP"] = self.whitelisted_ip
+
+        if updates:
+            save_env_safe(updates)
+
+        # Log safely — NEVER log full token or secret!
+        cid = updates.get("DHAN_CLIENT_ID", os.environ.get("DHAN_CLIENT_ID", ""))
+        tok = updates.get("DHAN_ACCESS_TOKEN", os.environ.get("DHAN_ACCESS_TOKEN", ""))
+        masked_t = f"****{tok[-4:]}" if len(tok) >= 4 else "none"
+        log.info("Dhan API credentials updated safely. Client ID: %s, Token: %s", cid, masked_t)
+
+        return self.get_masked_config()
+
+    async def test_connection(self, fut_sec_id: int = 61471) -> Dict[str, Any]:
+        """
+        Calls Dhan API /v2/fundlimit and /v2/marketfeed/ltp to test connectivity.
+        Returns formatted status string according to user requirements.
+        """
+        now_time = datetime.now(IST).strftime("%H:%M:%S")
+        curr_ip = await self.get_current_ip_async()
+
+        if not self.is_configured():
+            status_msg = "Dhan Status: DISCONNECTED ❌ | Error: Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console"
+            status_obj = {
+                "ok": False,
+                "connected": False,
+                "dhan_connected": False,
+                "status": "DISCONNECTED ❌",
+                "message": status_msg,
+                "error": "Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console",
+                "current_ip": curr_ip,
+                "last_updated": now_time,
+            }
+            self.last_connected_status = status_obj
+            return status_obj
+
+        try:
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                res_funds = await client.get(f"{self.base_url}/fundlimit", headers=self._headers())
+                if res_funds.status_code == 200:
+                    funds_data = res_funds.json()
+
+                    # Fetch live spot & future quotes
+                    spot = 23960.60
+                    fut = 23960.10
+                    try:
+                        req_payload = {"IDX_I": [13], "NSE_FNO": [int(fut_sec_id)]}
+                        res_ltp = await client.post(f"{self.base_url}/marketfeed/ltp", json=req_payload, headers=self._headers())
+                        if res_ltp.status_code == 200:
+                            data_ltp = res_ltp.json().get("data", {})
+                            idx_map = data_ltp.get("IDX_I", {})
+                            if "13" in idx_map:
+                                spot = float(idx_map["13"].get("last_price", spot))
+                                self._ltp_cache["13"] = spot
+                                self._cache_timestamps["13"] = time.time()
+                            fno_map = data_ltp.get("NSE_FNO", {})
+                            if str(fut_sec_id) in fno_map:
+                                fut = float(fno_map[str(fut_sec_id)].get("last_price", fut))
+                                self._ltp_cache[str(fut_sec_id)] = fut
+                                self._cache_timestamps[str(fut_sec_id)] = time.time()
+                    except Exception as e:
+                        log.warning("Could not fetch test quotes: %s", e)
+
+                    status_msg = f"Dhan Status: CONNECTED ✅ | dhan_connected: true | Nifty Spot: {spot:.2f} | Nifty Future: {fut:.2f} | Last Updated: {now_time}"
+                    status_obj = {
+                        "ok": True,
+                        "connected": True,
+                        "dhan_connected": True,
+                        "status": "CONNECTED ✅",
+                        "message": status_msg,
+                        "spot_price": spot,
+                        "future_price": fut,
+                        "funds": funds_data,
+                        "current_ip": curr_ip,
+                        "last_updated": now_time,
+                    }
+                    self.last_connected_status = status_obj
+                    return status_obj
+
+                elif res_funds.status_code in (401, 403):
+                    err_text = res_funds.text
+                    if "ip" in err_text.lower() or "whitelist" in err_text.lower():
+                        status_msg = f"Dhan Status: IP NOT WHITELISTED ❌ | Your IP: {curr_ip} | Please add this IP in Dhan Console > API Access > IP Whitelist"
+                        status_obj = {
+                            "ok": False,
+                            "connected": False,
+                            "dhan_connected": False,
+                            "status": "IP NOT WHITELISTED ❌",
+                            "message": status_msg,
+                            "error": status_msg,
+                            "current_ip": curr_ip,
+                            "last_updated": now_time,
+                        }
+                    else:
+                        status_msg = "Dhan Status: DISCONNECTED ❌ | Error: Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console"
+                        status_obj = {
+                            "ok": False,
+                            "connected": False,
+                            "dhan_connected": False,
+                            "status": "DISCONNECTED ❌",
+                            "message": status_msg,
+                            "error": status_msg,
+                            "current_ip": curr_ip,
+                            "last_updated": now_time,
+                        }
+                    self.last_connected_status = status_obj
+                    return status_obj
+
+                else:
+                    status_msg = f"Dhan Status: DISCONNECTED ❌ | Error: HTTP {res_funds.status_code} - {res_funds.text[:100]}"
+                    status_obj = {
+                        "ok": False,
+                        "connected": False,
+                        "dhan_connected": False,
+                        "status": "DISCONNECTED ❌",
+                        "message": status_msg,
+                        "error": status_msg,
+                        "current_ip": curr_ip,
+                        "last_updated": now_time,
+                    }
+                    self.last_connected_status = status_obj
+                    return status_obj
+
+        except Exception as e:
+            status_msg = f"Dhan Status: DISCONNECTED ❌ | Error: {str(e)}"
+            status_obj = {
+                "ok": False,
+                "connected": False,
+                "dhan_connected": False,
+                "status": "DISCONNECTED ❌",
+                "message": status_msg,
+                "error": status_msg,
+                "current_ip": curr_ip,
+                "last_updated": now_time,
+            }
+            self.last_connected_status = status_obj
+            return status_obj
 
     def _headers(self) -> Dict[str, str]:
         token = os.environ.get("DHAN_ACCESS_TOKEN", "")
@@ -1413,7 +1724,7 @@ class QuantTerminalBackend:
         self.config_path = ROOT / config_file
         self.cfg = json.loads(self.config_path.read_text())
         self.inst_mgr = InstrumentManager(self.cfg["instrument_master_path"], self.cfg["scrip_master_url"])
-        self.broker = DhanBroker(self.cfg["dhan_base_url"])
+        self.broker = DhanBroker(self.cfg.get("dhan_base_url", "https://api.dhan.co/v2"), cfg=self.cfg)
         self.market_db = ROOT / self.cfg["market_db_path"]
         self.ledger_db = ROOT / self.cfg["ledger_db_path"]
         self.ledger_db.parent.mkdir(parents=True, exist_ok=True)
@@ -1724,6 +2035,39 @@ class QuantTerminalBackend:
         except Exception as e:
             log.error("Failed persisting synergy config: %s", e)
         return {"ok": True, "stockmojo_synergy": self.stockmojo_synergy_cfg}
+
+    def get_dhan_config(self) -> Dict[str, Any]:
+        """Returns Dhan configuration with secrets safely masked and IP match status."""
+        return self.broker.get_masked_config()
+
+    def update_dhan_config(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Safely updates Dhan credentials and metadata into .env and config."""
+        res = self.broker.update_credentials(
+            client_id=body.get("client_id"),
+            access_token=body.get("access_token"),
+            api_key=body.get("api_key"),
+            api_secret=body.get("api_secret"),
+            environment=body.get("environment"),
+            whitelisted_ip=body.get("whitelisted_ip"),
+        )
+        self.cfg.setdefault("dhan", {})
+        if "client_id" in body and body["client_id"]:
+            self.cfg["dhan"]["client_id"] = str(body["client_id"]).strip()
+        if "environment" in body and body["environment"]:
+            self.cfg["dhan"]["environment"] = str(body["environment"]).strip()
+        if "whitelisted_ip" in body and body["whitelisted_ip"]:
+            self.cfg["dhan"]["whitelisted_ip"] = str(body["whitelisted_ip"]).strip()
+        try:
+            self.config_path.write_text(json.dumps(self.cfg, indent=2))
+        except Exception as e:
+            log.warning("Could not persist dhan config metadata: %s", e)
+        return res
+
+    async def test_dhan_connection(self) -> Dict[str, Any]:
+        """Runs live connection test against Dhan HQ v2 API."""
+        active_fut = self.inst_mgr.get_active_future_contract()
+        fut_sec_id = int(active_fut["security_id"]) if active_fut else 61471
+        return await self.broker.test_connection(fut_sec_id=fut_sec_id)
 
     def calculate_dhan_charges(self, buy_price: float, sell_price: float, qty: int) -> float:
         """

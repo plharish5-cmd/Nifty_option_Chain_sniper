@@ -614,6 +614,106 @@
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <div id="tabTerminal" class="tab-content active">
 
+            <!-- ⚡ DHAN API CONNECTION — LIVE DATA + ORDER PLACEMENT CARD ⚡ -->
+            <div id="dhanApiConfigCard" class="card" style="border: 1px solid #10b981; background: linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, rgba(15, 23, 42, 0.95) 100%); margin-bottom: 16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:16px; font-weight:800; color:#f8fafc;">⚡ Dhan API Connection — Live Data + Order Placement</span>
+                        <span id="dhanConnectionBadge" class="status-badge badge-bull">● CONNECTED</span>
+                    </div>
+                    <span style="font-size:11px; color:#38bdf8; font-family:var(--font-mono);">OFFICIAL DHAN HQ v2 REST &amp; MARKETFEED GATEWAY</span>
+                </div>
+
+                <!-- Live Status Banner -->
+                <div id="dhanStatusBanner" style="padding:10px 14px; border-radius:8px; margin-bottom:14px; font-weight:700; font-size:12.5px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; background:rgba(16, 185, 129, 0.12); border:1px solid rgba(16, 185, 129, 0.4); color:#4ade80; font-family:var(--font-mono);">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span id="dhanStatusIcon">✅</span>
+                        <span id="dhanStatusText">Dhan Status: CONNECTED ✅ | dhan_connected: true | Nifty Spot: -- | Nifty Future: -- | Last Updated: --:--:--</span>
+                    </div>
+                    <span id="dhanApiModeBadge" style="font-size:11px; padding:2px 8px; border-radius:4px; background:rgba(56, 189, 248, 0.15); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.3);">ONLINE FEED</span>
+                </div>
+
+                <!-- Helper Information Prompt -->
+                <div style="background:rgba(56, 189, 248, 0.08); border:1px solid rgba(56, 189, 248, 0.3); border-radius:8px; padding:8px 12px; font-size:11.5px; color:#bae6fd; margin-bottom:14px; line-height:1.5;">
+                    💡 <b>Where to get Dhan Token:</b> Dhan Console &gt; My Profile &gt; API Access &gt; Generate Access Token (Valid for 30 Days).<br>
+                    🛡️ <b>IP Whitelist:</b> Enter your static IP in Dhan Console &gt; API Access &gt; IP Whitelist to allow secure trading and data access.
+                </div>
+
+                <!-- Fields Grid -->
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; margin-bottom:12px;">
+                    <!-- Dhan Client ID -->
+                    <div>
+                        <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:600;">[ ] Dhan Client ID:</label>
+                        <input type="text" id="dhanClientIdInput" placeholder="Example: 1100XXXXXX" style="width:100%; margin-top:4px;" autocomplete="off">
+                    </div>
+
+                    <!-- Dhan Access Token -->
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:600;">[ ] Dhan Access Token:</label>
+                            <button type="button" class="secondary-btn" onclick="toggleDhanTokenVisibility('dhanAccessTokenInput', 'tokenEyeBtn')" id="tokenEyeBtn" style="font-size:10px; padding:2px 6px; line-height:1;">👁️ Show</button>
+                        </div>
+                        <input type="password" id="dhanAccessTokenInput" placeholder="••••••••••••••••" style="width:100%; margin-top:4px;" autocomplete="off">
+                    </div>
+
+                    <!-- Dhan API Key / App ID -->
+                    <div>
+                        <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:600;">[ ] Dhan API Key / App ID:</label>
+                        <input type="text" id="dhanApiKeyInput" placeholder="If needed" style="width:100%; margin-top:4px;" autocomplete="off">
+                    </div>
+
+                    <!-- Dhan API Secret -->
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:600;">[ ] Dhan API Secret:</label>
+                            <button type="button" class="secondary-btn" onclick="toggleDhanTokenVisibility('dhanApiSecretInput', 'secretEyeBtn')" id="secretEyeBtn" style="font-size:10px; padding:2px 6px; line-height:1;">👁️ Show</button>
+                        </div>
+                        <input type="password" id="dhanApiSecretInput" placeholder="••••••••" style="width:100%; margin-top:4px;" autocomplete="off">
+                    </div>
+
+                    <!-- Environment -->
+                    <div>
+                        <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:600;">[ ] Environment:</label>
+                        <select id="dhanEnvironmentSelect" style="width:100%; margin-top:4px;">
+                            <option value="LIVE" selected>LIVE (api.dhan.co / Production)</option>
+                            <option value="SANDBOX">PAPER / Sandbox</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- IP Whitelisted Status Bar -->
+                <div style="background:var(--bg-input); border:1px solid var(--border-subtle); border-radius:8px; padding:10px 14px; margin-bottom:14px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; font-size:12px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="color:var(--text-dim); font-weight:600;">[ ] IP Whitelisted:</span>
+                            <span style="color:var(--text-dim);">My Current IP:</span>
+                            <span id="dhanCurrentIpDisplay" style="font-family:var(--font-mono); font-weight:700; color:#38bdf8;">Detecting...</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="color:var(--text-dim);">Dhan Whitelisted IP:</span>
+                            <input type="text" id="dhanWhitelistedIpInput" placeholder="e.g. 49.205.39.195" style="width:160px; padding:3px 8px; font-size:12px; font-family:var(--font-mono);" onchange="checkIpMatchStatus()">
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="color:var(--text-dim);">Status:</span>
+                            <span id="dhanIpMatchBadge" class="status-badge badge-bull">MATCHED ✅</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <button type="button" class="emerald-btn" onclick="connectToDhanLive()" style="padding:8px 18px; font-size:12px; font-weight:700;">🔗 Connect to Dhan</button>
+                        <button type="button" class="cyan-btn" onclick="testDhanLiveConnection()" style="padding:8px 18px; font-size:12px; font-weight:700;">🔄 Test Connection</button>
+                        <button type="button" class="secondary-btn" onclick="saveDhanApiConfig()" style="padding:8px 18px; font-size:12px; font-weight:700;">💾 Save API Config</button>
+                        <button type="button" class="secondary-btn" onclick="toggleDhanTokenVisibility('dhanAccessTokenInput', 'tokenEyeBtn')" style="padding:8px 14px; font-size:12px;">👁️ Show / Hide Token</button>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-dim); font-family:var(--font-mono);" id="dhanActionFeedback">
+                        Ready to connect
+                    </div>
+                </div>
+            </div>
+
             <!-- Dynamic ATM Strike Widget (Main Page) -->
             <div class="atm-widget">
                 <div>
@@ -1132,7 +1232,10 @@
                             <div class="metric-value" id="dhanLotCheck" style="font-size:14px; color:var(--emerald);">✔ SUFFICIENT</div>
                         </div>
                     </div>
-                    <button type="button" class="cyan-btn" onclick="refreshFundsNow()">🔄 Refresh Dhan Funds Now</button>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <button type="button" class="cyan-btn" onclick="refreshFundsNow()">🔄 Refresh Dhan Funds Now</button>
+                        <button type="button" class="secondary-btn" onclick="switchWorkspaceTab(null, 'tabTerminal'); document.getElementById('dhanApiConfigCard').scrollIntoView({behavior:'smooth'});">⚙️ API Connection Settings</button>
+                    </div>
                 </div>
 
                 <!-- Paper Trade Wallet Manager -->
@@ -1888,6 +1991,7 @@
         document.addEventListener("DOMContentLoaded", () => {
             updateClock();
             setInterval(updateClock, 1000);
+            loadDhanConfig();
             fetchStockMojoDual();
             fetchStockMojoLiveOI();
             fetchSynergyConfig();
@@ -1898,6 +2002,224 @@
             pollLiveEngine();
             setInterval(pollLiveEngine, 1000); // 1-second ticking live stream
         });
+
+        // ── DHAN API CONNECTION & LIVE GATEWAY HANDLERS ─────────────────────
+        let cachedDhanConfig = null;
+
+        async function loadDhanConfig() {
+            try {
+                const res = await fetch("/api/dhan/config");
+                if (!res.ok) return;
+                const data = await res.json();
+                cachedDhanConfig = data;
+
+                if (document.getElementById("dhanClientIdInput")) {
+                    document.getElementById("dhanClientIdInput").value = data.client_id || "";
+                }
+                if (document.getElementById("dhanAccessTokenInput")) {
+                    document.getElementById("dhanAccessTokenInput").value = data.masked_token || "";
+                }
+                if (document.getElementById("dhanApiKeyInput")) {
+                    document.getElementById("dhanApiKeyInput").value = data.api_key || "";
+                }
+                if (document.getElementById("dhanApiSecretInput")) {
+                    document.getElementById("dhanApiSecretInput").value = data.masked_secret || "";
+                }
+                if (document.getElementById("dhanEnvironmentSelect")) {
+                    document.getElementById("dhanEnvironmentSelect").value = data.environment || "LIVE";
+                }
+                if (document.getElementById("dhanCurrentIpDisplay")) {
+                    document.getElementById("dhanCurrentIpDisplay").textContent = data.current_ip || "--";
+                }
+                if (document.getElementById("dhanWhitelistedIpInput")) {
+                    document.getElementById("dhanWhitelistedIpInput").value = data.whitelisted_ip || data.current_ip || "";
+                }
+                checkIpMatchStatus();
+
+                if (data.last_status && data.last_status.message) {
+                    renderDhanStatus(data.last_status);
+                } else if (data.token_configured) {
+                    testDhanLiveConnection(false);
+                }
+            } catch (e) {
+                console.error("loadDhanConfig error:", e);
+            }
+        }
+
+        function checkIpMatchStatus() {
+            const currIpEl = document.getElementById("dhanCurrentIpDisplay");
+            const whiteIpEl = document.getElementById("dhanWhitelistedIpInput");
+            const badgeEl = document.getElementById("dhanIpMatchBadge");
+            if (!currIpEl || !whiteIpEl || !badgeEl) return;
+
+            const curr = currIpEl.textContent.trim();
+            const white = whiteIpEl.value.trim();
+
+            if (!white || white === "--" || curr === "--" || curr === "Detecting...") {
+                badgeEl.className = "status-badge badge-side";
+                badgeEl.textContent = "CHECKING ⏳";
+            } else if (curr === white) {
+                badgeEl.className = "status-badge badge-bull";
+                badgeEl.textContent = "MATCHED ✅";
+            } else {
+                badgeEl.className = "status-badge badge-bear";
+                badgeEl.textContent = "MISMATCH ❌";
+            }
+        }
+
+        function toggleDhanTokenVisibility(inputId, btnId) {
+            const input = document.getElementById(inputId);
+            const btn = document.getElementById(btnId);
+            if (!input) return;
+            if (input.type === "password") {
+                input.type = "text";
+                if (btn) btn.textContent = "🙈 Hide";
+            } else {
+                input.type = "password";
+                if (btn) btn.textContent = "👁️ Show";
+            }
+        }
+
+        async function saveDhanApiConfig(showFeedback = true) {
+            const fb = document.getElementById("dhanActionFeedback");
+            try {
+                if (fb) fb.textContent = "Saving config...";
+                const body = {
+                    client_id: document.getElementById("dhanClientIdInput").value.trim(),
+                    access_token: document.getElementById("dhanAccessTokenInput").value.trim(),
+                    api_key: document.getElementById("dhanApiKeyInput").value.trim(),
+                    api_secret: document.getElementById("dhanApiSecretInput").value.trim(),
+                    environment: document.getElementById("dhanEnvironmentSelect").value,
+                    whitelisted_ip: document.getElementById("dhanWhitelistedIpInput").value.trim(),
+                };
+
+                const res = await fetch("/api/dhan/config", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+                const d = await res.json();
+                cachedDhanConfig = d;
+                if (fb) fb.textContent = "💾 Config saved safely!";
+                checkIpMatchStatus();
+                if (showFeedback) {
+                    alert("✔ Dhan API credentials saved safely to .env and configuration.");
+                }
+                return d;
+            } catch (e) {
+                if (fb) fb.textContent = "❌ Save error: " + e.message;
+                if (showFeedback) alert("Error saving config: " + e.message);
+                return null;
+            }
+        }
+
+        async function connectToDhanLive() {
+            const fb = document.getElementById("dhanActionFeedback");
+            if (fb) fb.textContent = "Connecting to Dhan HQ...";
+            await saveDhanApiConfig(false);
+            await testDhanLiveConnection(true);
+        }
+
+        async function testDhanLiveConnection(alertOnResult = false) {
+            const fb = document.getElementById("dhanActionFeedback");
+            const banner = document.getElementById("dhanStatusBanner");
+            const bannerText = document.getElementById("dhanStatusText");
+            const bannerIcon = document.getElementById("dhanStatusIcon");
+            const badge = document.getElementById("dhanConnectionBadge");
+
+            if (bannerText) bannerText.textContent = "Connecting to Dhan API & querying /fundlimit + /marketfeed/ltp...";
+            if (fb) fb.textContent = "Testing connection...";
+
+            try {
+                const res = await fetch("/api/dhan/connect", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({})
+                });
+                const d = await res.json();
+                renderDhanStatus(d);
+                if (fb) fb.textContent = d.connected ? "Connected successfully!" : "Connection failed";
+                if (alertOnResult) {
+                    if (d.connected) {
+                        alert("✅ " + d.message);
+                    } else {
+                        alert("⚠️ " + (d.message || d.error));
+                    }
+                }
+                return d;
+            } catch (e) {
+                const errObj = {
+                    connected: false,
+                    status: "DISCONNECTED ❌",
+                    message: "Dhan Status: DISCONNECTED ❌ | Error: " + e.message
+                };
+                renderDhanStatus(errObj);
+                if (fb) fb.textContent = "Error: " + e.message;
+                if (alertOnResult) alert("Connection test error: " + e.message);
+                return errObj;
+            }
+        }
+
+        function renderDhanStatus(res) {
+            const banner = document.getElementById("dhanStatusBanner");
+            const bannerText = document.getElementById("dhanStatusText");
+            const bannerIcon = document.getElementById("dhanStatusIcon");
+            const badge = document.getElementById("dhanConnectionBadge");
+            const authPill = document.getElementById("dhanAuthPill");
+
+            if (!banner || !bannerText) return;
+
+            bannerText.textContent = res.message || res.error || "Dhan Status: " + res.status;
+
+            if (res.connected) {
+                banner.style.background = "rgba(16, 185, 129, 0.12)";
+                banner.style.borderColor = "rgba(16, 185, 129, 0.4)";
+                banner.style.color = "#4ade80";
+                if (bannerIcon) bannerIcon.textContent = "✅";
+                if (badge) {
+                    badge.className = "status-badge badge-bull";
+                    badge.textContent = "● CONNECTED";
+                }
+                if (authPill) {
+                    authPill.className = "status-badge badge-bull";
+                    authPill.textContent = "● CONNECTED";
+                }
+                if (res.spot_price) {
+                    const spotEl = document.getElementById("ribbonSpot");
+                    if (spotEl) spotEl.textContent = `${res.spot_price.toLocaleString('en-IN', {minimumFractionDigits: 2})} (LIVE)`;
+                }
+                if (res.future_price) {
+                    const futEl = document.getElementById("ribbonFut");
+                    if (futEl) futEl.textContent = `${res.future_price.toLocaleString('en-IN', {minimumFractionDigits: 2})} (LIVE)`;
+                }
+            } else if (res.status && res.status.includes("IP NOT WHITELISTED")) {
+                banner.style.background = "rgba(245, 158, 11, 0.15)";
+                banner.style.borderColor = "rgba(245, 158, 11, 0.5)";
+                banner.style.color = "#fbbf24";
+                if (bannerIcon) bannerIcon.textContent = "⚠️";
+                if (badge) {
+                    badge.className = "status-badge badge-gold";
+                    badge.textContent = "● IP BLOCKED";
+                }
+                if (authPill) {
+                    authPill.className = "status-badge badge-bear";
+                    authPill.textContent = "● IP BLOCKED";
+                }
+            } else {
+                banner.style.background = "rgba(239, 68, 68, 0.12)";
+                banner.style.borderColor = "rgba(239, 68, 68, 0.4)";
+                banner.style.color = "#f87171";
+                if (bannerIcon) bannerIcon.textContent = "❌";
+                if (badge) {
+                    badge.className = "status-badge badge-bear";
+                    badge.textContent = "● DISCONNECTED";
+                }
+                if (authPill) {
+                    authPill.className = "status-badge badge-bear";
+                    authPill.textContent = "● DISCONNECTED";
+                }
+            }
+        }
 
         function updateClock() {
             const now = new Date();

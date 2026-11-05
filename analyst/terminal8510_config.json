@@ -2,6 +2,11 @@
   "port": 8510,
   "host": "0.0.0.0",
   "dhan_base_url": "https://api.dhan.co/v2",
+  "dhan": {
+    "client_id": "1112377935",
+    "environment": "LIVE",
+    "whitelisted_ip": "49.205.39.195"
+  },
   "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
   "instrument_master_path": "data/terminal8500/instrument_master.csv",
   "market_db_path": "ict_smc_app/backend/data/ict_smc.sqlite3",
