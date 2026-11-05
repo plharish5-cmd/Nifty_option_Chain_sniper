@@ -2667,13 +2667,13 @@ class QuantTerminalBackend:
         now_dt = datetime.now(IST)
 
         # 1. Fetch latest spot and VIX from database or memory
-        spot = 23960.6
-        spot_net_chg = 100.2
-        spot_pct_chg = 0.42
-        vix = 15.19
-        vix_pct_chg = -2.1
-        fut_price = 23960.1
-        fut_spread = -0.50
+        spot = 0.0
+        spot_net_chg = 0.0
+        spot_pct_chg = 0.0
+        vix = 0.0
+        vix_pct_chg = 0.0
+        fut_price = 0.0
+        fut_spread = 0.0
 
         # Query recent 1m candles
         if self.market_db.exists():
@@ -2692,149 +2692,166 @@ class QuantTerminalBackend:
             except Exception as e:
                 log.debug("DB read error in telemetry: %s", e)
 
-        # 2. Dynamic ATM Strike calculation (nearest 50)
-        atm_strike = float(round(spot / 50.0) * 50)
+        # 2. Market status and spot availability
+        is_open, mkt_dict = self.is_nse_market_open()
+        matrix_reason = None
+        if not is_open:
+            matrix_reason = "Spot unavailable — market closed (Mon-Fri 09:15 AM - 03:30 PM IST)"
+        elif spot <= 0.0:
+            matrix_reason = "Spot unavailable — waiting for live Dhan feed"
 
-        # 3. Resolve Priority 4 Contracts around Spot
         active_fut = self.inst_mgr.get_active_future_contract()
         fut_sec_id = int(active_fut["security_id"]) if active_fut else 61471
         nearest_expiry = self.inst_mgr.get_nearest_expiry()
 
-        # CE Contracts:
-        # Long CE #1: ITM 100-multiple nearest ~₹200 premium (spot - 150 rounded to 100-mult)
-        itm_ce_strike = float(int(math.floor((spot - 150) / 100.0) * 100))
-        # Long CE #2: ATM CE
-        atm_ce_strike = atm_strike
-
-        # PE Contracts:
-        # Long PE #1: ITM 100-multiple nearest ~₹200 premium (spot + 150 rounded to 100-mult)
-        itm_pe_strike = float(int(math.ceil((spot + 150) / 100.0) * 100))
-        # Long PE #2: ATM PE
-        atm_pe_strike = atm_strike
-
-        resolved_itm_ce = self.inst_mgr.resolve_option(nearest_expiry, itm_ce_strike, "CE")
-        resolved_atm_ce = self.inst_mgr.resolve_option(nearest_expiry, atm_ce_strike, "CE")
-        resolved_itm_pe = self.inst_mgr.resolve_option(nearest_expiry, itm_pe_strike, "PE")
-        resolved_atm_pe = self.inst_mgr.resolve_option(nearest_expiry, atm_pe_strike, "PE")
-
-        option_ids = []
-        for r in [resolved_itm_ce, resolved_atm_ce, resolved_itm_pe, resolved_atm_pe]:
-            if r and r.get("security_id"):
-                try:
-                    option_ids.append(int(r["security_id"]))
-                except Exception as e:
-                    log.debug("Sec id parse error: %s", e)
-
-        # 4. Live Quote Fetch via Dhan /marketfeed/ltp
-        live_quotes = {}
-        if self.broker.is_configured():
-            req_seg = {"IDX_I": [13, 21], "NSE_FNO": [fut_sec_id] + option_ids}
-            live_quotes = await self.broker.get_marketfeed_ltp(req_seg)
-
-        if "13" in live_quotes:
-            spot = live_quotes["13"]
+        if spot <= 0.0:
+            atm_strike = 0.0
+            atm_ce_ltp = 0.0
+            atm_pe_ltp = 0.0
+            combined_straddle = 0.0
+            priority_matrix = []
+            live_quotes = {}
+        else:
+            # Dynamic ATM Strike calculation (nearest 50)
             atm_strike = float(round(spot / 50.0) * 50)
-        if "21" in live_quotes:
-            vix = live_quotes["21"]
-        if str(fut_sec_id) in live_quotes:
-            fut_price = live_quotes[str(fut_sec_id)]
-        fut_spread = round(fut_price - spot, 2)
 
-        # Approximate option LTPs if closed/unquoted
-        def get_opt_ltp(resolved, strike, opt_type):
-            if not resolved:
-                return round(max(30.0, 200.0 if "ITM" in opt_type else 150.0), 2)
-            sid = str(resolved.get("security_id"))
-            if sid in live_quotes:
-                return live_quotes[sid]
-            # Intrinsic + time value model
-            if opt_type == "CE":
-                intrinsic = max(0.0, spot - strike)
-                return round(intrinsic + max(25.0, 60.0 - abs(spot - strike) * 0.15), 2)
-            else:
-                intrinsic = max(0.0, strike - spot)
-                return round(intrinsic + max(25.0, 60.0 - abs(strike - spot) * 0.15), 2)
+            # 3. Resolve Priority 4 Contracts around Spot
+            # CE Contracts:
+            # Long CE #1: ITM 100-multiple nearest ~₹200 premium (spot - 150 rounded to 100-mult)
+            itm_ce_strike = float(int(math.floor((spot - 150) / 100.0) * 100))
+            # Long CE #2: ATM CE
+            atm_ce_strike = atm_strike
 
-        itm_ce_ltp = get_opt_ltp(resolved_itm_ce, itm_ce_strike, "CE")
-        atm_ce_ltp = get_opt_ltp(resolved_atm_ce, atm_ce_strike, "CE")
-        itm_pe_ltp = get_opt_ltp(resolved_itm_pe, itm_pe_strike, "PE")
-        atm_pe_ltp = get_opt_ltp(resolved_atm_pe, atm_pe_strike, "PE")
-        combined_straddle = round(atm_ce_ltp + atm_pe_ltp, 2)
+            # PE Contracts:
+            # Long PE #1: ITM 100-multiple nearest ~₹200 premium (spot + 150 rounded to 100-mult)
+            itm_pe_strike = float(int(math.ceil((spot + 150) / 100.0) * 100))
+            # Long PE #2: ATM PE
+            atm_pe_strike = atm_strike
 
-        # Priority 4 Contracts list
-        priority_matrix = [
-            {
-                "id": "LONG_CE_ITM",
-                "label": "1. Long ITM CE (~₹200)",
-                "strike": itm_ce_strike,
-                "opt_type": "CE",
-                "symbol": format_contract_symbol(expiry=nearest_expiry, strike=itm_ce_strike, opt_type="CE", raw_symbol=resolved_itm_ce["symbol"] if resolved_itm_ce else None),
-                "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=itm_ce_strike, opt_type="CE"), expiry=nearest_expiry),
-                "security_id": resolved_itm_ce["security_id"] if resolved_itm_ce else "39951",
-                "lot_size": resolved_itm_ce["lot_size"] if resolved_itm_ce else 65,
-                "ltp": itm_ce_ltp,
-                "delta": 0.65,
-                "spread_pts": 0.45,
-                "oi_lakhs": 28.5,
-                "volume_lakhs": 142.1,
-                "algo_enabled": self.algo_strike_selection.get("LONG_CE_ITM", True),
-            },
-            {
-                "id": "LONG_CE_ATM",
-                "label": "2. Long ATM CE",
-                "strike": atm_ce_strike,
-                "opt_type": "CE",
-                "symbol": format_contract_symbol(expiry=nearest_expiry, strike=atm_ce_strike, opt_type="CE", raw_symbol=resolved_atm_ce["symbol"] if resolved_atm_ce else None),
-                "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=atm_ce_strike, opt_type="CE"), expiry=nearest_expiry),
-                "security_id": resolved_atm_ce["security_id"] if resolved_atm_ce else "39961",
-                "lot_size": resolved_atm_ce["lot_size"] if resolved_atm_ce else 65,
-                "ltp": atm_ce_ltp,
-                "delta": 0.50,
-                "spread_pts": 0.35,
-                "oi_lakhs": 42.8,
-                "volume_lakhs": 268.4,
-                "algo_enabled": self.algo_strike_selection.get("LONG_CE_ATM", True),
-            },
-            {
-                "id": "LONG_PE_ITM",
-                "label": "3. Long ITM PE (~₹200)",
-                "strike": itm_pe_strike,
-                "opt_type": "PE",
-                "symbol": format_contract_symbol(expiry=nearest_expiry, strike=itm_pe_strike, opt_type="PE", raw_symbol=resolved_itm_pe["symbol"] if resolved_itm_pe else None),
-                "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=itm_pe_strike, opt_type="PE"), expiry=nearest_expiry),
-                "security_id": resolved_itm_pe["security_id"] if resolved_itm_pe else "39968",
-                "lot_size": resolved_itm_pe["lot_size"] if resolved_itm_pe else 65,
-                "ltp": itm_pe_ltp,
-                "delta": -0.65,
-                "spread_pts": 0.45,
-                "oi_lakhs": 31.2,
-                "volume_lakhs": 156.8,
-                "algo_enabled": self.algo_strike_selection.get("LONG_PE_ITM", True),
-            },
-            {
-                "id": "LONG_PE_ATM",
-                "label": "4. Long ATM PE",
-                "strike": atm_pe_strike,
-                "opt_type": "PE",
-                "symbol": format_contract_symbol(expiry=nearest_expiry, strike=atm_pe_strike, opt_type="PE", raw_symbol=resolved_atm_pe["symbol"] if resolved_atm_pe else None),
-                "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=atm_pe_strike, opt_type="PE"), expiry=nearest_expiry),
-                "security_id": resolved_atm_pe["security_id"] if resolved_atm_pe else "39962",
-                "lot_size": resolved_atm_pe["lot_size"] if resolved_atm_pe else 65,
-                "ltp": atm_pe_ltp,
-                "delta": -0.50,
-                "spread_pts": 0.35,
-                "oi_lakhs": 39.4,
-                "volume_lakhs": 215.7,
-                "algo_enabled": self.algo_strike_selection.get("LONG_PE_ATM", True),
-            },
-        ]
-        # Mark contracts blocked by directional bias
-        for c in priority_matrix:
-            c["blocked_by_bias"] = (
-                (self.directional_bias == "LONG_ONLY" and c["opt_type"] == "PE") or
-                (self.directional_bias == "SHORT_ONLY" and c["opt_type"] == "CE")
-            )
-            c["bias_mode"] = self.directional_bias
+            resolved_itm_ce = self.inst_mgr.resolve_option(nearest_expiry, itm_ce_strike, "CE")
+            resolved_atm_ce = self.inst_mgr.resolve_option(nearest_expiry, atm_ce_strike, "CE")
+            resolved_itm_pe = self.inst_mgr.resolve_option(nearest_expiry, itm_pe_strike, "PE")
+            resolved_atm_pe = self.inst_mgr.resolve_option(nearest_expiry, atm_pe_strike, "PE")
+
+            option_ids = []
+            for r in [resolved_itm_ce, resolved_atm_ce, resolved_itm_pe, resolved_atm_pe]:
+                if r and r.get("security_id"):
+                    try:
+                        option_ids.append(int(r["security_id"]))
+                    except Exception as e:
+                        log.debug("Sec id parse error: %s", e)
+
+            # 4. Live Quote Fetch via Dhan /marketfeed/ltp
+            live_quotes = {}
+            if self.broker.is_configured():
+                req_seg = {"IDX_I": [13, 21], "NSE_FNO": [fut_sec_id] + option_ids}
+                live_quotes = await self.broker.get_marketfeed_ltp(req_seg)
+
+            if "13" in live_quotes and live_quotes["13"] > 0:
+                spot = live_quotes["13"]
+                atm_strike = float(round(spot / 50.0) * 50)
+            if "21" in live_quotes and live_quotes["21"] > 0:
+                vix = live_quotes["21"]
+            if str(fut_sec_id) in live_quotes and live_quotes[str(fut_sec_id)] > 0:
+                fut_price = live_quotes[str(fut_sec_id)]
+            if fut_price > 0 and spot > 0:
+                fut_spread = round(fut_price - spot, 2)
+
+            # Approximate option LTPs if closed/unquoted
+            def get_opt_ltp(resolved, strike, opt_type):
+                if not resolved:
+                    return round(max(30.0, 200.0 if "ITM" in opt_type else 150.0), 2)
+                sid = str(resolved.get("security_id"))
+                if sid in live_quotes:
+                    return live_quotes[sid]
+                # Intrinsic + time value model
+                if opt_type == "CE":
+                    intrinsic = max(0.0, spot - strike)
+                    return round(intrinsic + max(25.0, 60.0 - abs(spot - strike) * 0.15), 2)
+                else:
+                    intrinsic = max(0.0, strike - spot)
+                    return round(intrinsic + max(25.0, 60.0 - abs(strike - spot) * 0.15), 2)
+
+            itm_ce_ltp = get_opt_ltp(resolved_itm_ce, itm_ce_strike, "CE")
+            atm_ce_ltp = get_opt_ltp(resolved_atm_ce, atm_ce_strike, "CE")
+            itm_pe_ltp = get_opt_ltp(resolved_itm_pe, itm_pe_strike, "PE")
+            atm_pe_ltp = get_opt_ltp(resolved_atm_pe, atm_pe_strike, "PE")
+            combined_straddle = round(atm_ce_ltp + atm_pe_ltp, 2)
+
+            # Priority 4 Contracts list
+            priority_matrix = [
+                {
+                    "id": "LONG_CE_ITM",
+                    "label": "1. Long ITM CE (~₹200)",
+                    "strike": itm_ce_strike,
+                    "opt_type": "CE",
+                    "symbol": format_contract_symbol(expiry=nearest_expiry, strike=itm_ce_strike, opt_type="CE", raw_symbol=resolved_itm_ce["symbol"] if resolved_itm_ce else None),
+                    "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=itm_ce_strike, opt_type="CE"), expiry=nearest_expiry),
+                    "security_id": resolved_itm_ce["security_id"] if resolved_itm_ce else None,
+                    "lot_size": resolved_itm_ce["lot_size"] if resolved_itm_ce else 65,
+                    "ltp": itm_ce_ltp,
+                    "delta": 0.65,
+                    "spread_pts": 0.45,
+                    "oi_lakhs": 28.5,
+                    "volume_lakhs": 142.1,
+                    "algo_enabled": self.algo_strike_selection.get("LONG_CE_ITM", True),
+                },
+                {
+                    "id": "LONG_CE_ATM",
+                    "label": "2. Long ATM CE",
+                    "strike": atm_ce_strike,
+                    "opt_type": "CE",
+                    "symbol": format_contract_symbol(expiry=nearest_expiry, strike=atm_ce_strike, opt_type="CE", raw_symbol=resolved_atm_ce["symbol"] if resolved_atm_ce else None),
+                    "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=atm_ce_strike, opt_type="CE"), expiry=nearest_expiry),
+                    "security_id": resolved_atm_ce["security_id"] if resolved_atm_ce else None,
+                    "lot_size": resolved_atm_ce["lot_size"] if resolved_atm_ce else 65,
+                    "ltp": atm_ce_ltp,
+                    "delta": 0.50,
+                    "spread_pts": 0.35,
+                    "oi_lakhs": 42.8,
+                    "volume_lakhs": 268.4,
+                    "algo_enabled": self.algo_strike_selection.get("LONG_CE_ATM", True),
+                },
+                {
+                    "id": "LONG_PE_ITM",
+                    "label": "3. Long ITM PE (~₹200)",
+                    "strike": itm_pe_strike,
+                    "opt_type": "PE",
+                    "symbol": format_contract_symbol(expiry=nearest_expiry, strike=itm_pe_strike, opt_type="PE", raw_symbol=resolved_itm_pe["symbol"] if resolved_itm_pe else None),
+                    "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=itm_pe_strike, opt_type="PE"), expiry=nearest_expiry),
+                    "security_id": resolved_itm_pe["security_id"] if resolved_itm_pe else None,
+                    "lot_size": resolved_itm_pe["lot_size"] if resolved_itm_pe else 65,
+                    "ltp": itm_pe_ltp,
+                    "delta": -0.65,
+                    "spread_pts": 0.45,
+                    "oi_lakhs": 31.2,
+                    "volume_lakhs": 156.8,
+                    "algo_enabled": self.algo_strike_selection.get("LONG_PE_ITM", True),
+                },
+                {
+                    "id": "LONG_PE_ATM",
+                    "label": "4. Long ATM PE",
+                    "strike": atm_pe_strike,
+                    "opt_type": "PE",
+                    "symbol": format_contract_symbol(expiry=nearest_expiry, strike=atm_pe_strike, opt_type="PE", raw_symbol=resolved_atm_pe["symbol"] if resolved_atm_pe else None),
+                    "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=atm_pe_strike, opt_type="PE"), expiry=nearest_expiry),
+                    "security_id": resolved_atm_pe["security_id"] if resolved_atm_pe else None,
+                    "lot_size": resolved_atm_pe["lot_size"] if resolved_atm_pe else 65,
+                    "ltp": atm_pe_ltp,
+                    "delta": -0.50,
+                    "spread_pts": 0.35,
+                    "oi_lakhs": 39.4,
+                    "volume_lakhs": 215.7,
+                    "algo_enabled": self.algo_strike_selection.get("LONG_PE_ATM", True),
+                },
+            ]
+            # Mark contracts blocked by directional bias
+            for c in priority_matrix:
+                c["blocked_by_bias"] = (
+                    (self.directional_bias == "LONG_ONLY" and c["opt_type"] == "PE") or
+                    (self.directional_bias == "SHORT_ONLY" and c["opt_type"] == "CE")
+                )
+                c["bias_mode"] = self.directional_bias
 
         self.priority_contracts = priority_matrix
 
@@ -2900,6 +2917,9 @@ class QuantTerminalBackend:
         payload = {
             "timestamp_ist": now_dt.strftime("%Y-%m-%d %H:%M:%S IST"),
             "clock": now_dt.strftime("%H:%M:%S IST"),
+            "market_status": dict(self.is_nse_market_open()),
+            "allow_off_hours_paper_testing": self.allow_off_hours_paper_testing,
+            "matrix_reason": matrix_reason,
             "spot": {
                 "price": spot,
                 "net_change": spot_net_chg,

@@ -1082,21 +1082,10 @@
                             </tr>
                         </thead>
                         <tbody id="strikeMatrixTableBody">
-                            <!-- Populated dynamically -->
+                            <!-- Populated dynamically: fail-closed loud empty state -->
                             <tr>
-                                <td><input type="checkbox" checked disabled></td>
-                                <td><b>1. Long ITM CE (~₹200)</b></td>
-                                <td>23,800</td>
-                                <td style="color:var(--emerald);">CE</td>
-                                <td>NIFTY-Nov2026-23800-CE</td>
-                                <td>39951</td>
-                                <td style="font-weight:700; color:var(--emerald);" id="m_ltp_0">₹222.15</td>
-                                <td>0.65</td>
-                                <td>0.45</td>
-                                <td>28.5 L</td>
-                                <td>142.1 L</td>
-                                <td>
-                                    <button class="emerald-btn" onclick="submitMatrixOrder('LONG_CE_ITM', 'BUY')">🚀 BUY AGGR-LIMIT</button>
+                                <td colspan="12" style="text-align:center; padding:24px; color:var(--text-muted); font-family:var(--font-mono);">
+                                    ⚡ Initializing Strike Matrix from Live Market Feed...
                                 </td>
                             </tr>
                         </tbody>
@@ -2521,11 +2510,13 @@
         }
 
         function checkTokenExpiryWarning(res) {
+            if (!res || typeof res !== 'object') return;
             let banner = document.getElementById("tokenExpiryStickyWarning");
-            const timeLeft = res.time_left || res.days_left || "";
-            const isLow = timeLeft.includes("0 Hour") || timeLeft.includes("1 Hour") || timeLeft.includes("2 Hour") || timeLeft.includes("3 Hour") || timeLeft.includes("Minute") || res.is_expired;
+            const timeLeft = String(res.time_left || res.days_left || "");
+            const isLow = timeLeft.includes("0 Hour") || timeLeft.includes("1 Hour") || timeLeft.includes("2 Hour") || timeLeft.includes("3 Hour") || timeLeft.includes("Minute") || Boolean(res.is_expired);
             if (isLow) {
                 if (!banner) {
+                    if (!document.body) return;
                     banner = document.createElement("div");
                     banner.id = "tokenExpiryStickyWarning";
                     banner.style.cssText = "position:fixed; bottom:0; left:0; right:0; z-index:999998; background:#ea580c; color:#ffffff; padding:12px 18px; font-weight:800; font-size:13.5px; text-align:center; box-shadow:0 -4px 15px rgba(0,0,0,0.5); display:flex; justify-content:center; align-items:center; gap:14px; font-family:var(--font-sans);";
@@ -2562,6 +2553,7 @@
         function showStaleDeskBanner(sec, reason) {
             let el = document.getElementById("deskStaleHeartbeatBanner");
             if (!el) {
+                if (!document.body) return;
                 el = document.createElement("div");
                 el.id = "deskStaleHeartbeatBanner";
                 el.style.cssText = "position:fixed; top:0; left:0; right:0; z-index:999999; background:#dc2626; color:#ffffff; padding:14px 20px; font-weight:800; font-size:14.5px; text-align:center; box-shadow:0 6px 20px rgba(0,0,0,0.6); display:flex; justify-content:center; align-items:center; gap:16px; font-family:var(--font-sans);";
@@ -2782,9 +2774,7 @@
                 }
 
                 // 4. Priority Matrix (4 contracts)
-                if (data.priority_matrix) {
-                    renderStrikeMatrix(data.priority_matrix);
-                }
+                renderStrikeMatrix(data.priority_matrix || [], data.matrix_reason || null);
 
                 // 5. Positions table with live fluctuating MTM
                 if (data.positions) {
@@ -2857,9 +2847,36 @@
         }
 
         // ── 4. STRIKE MATRIX & ORDER ROUTER RENDERING (Problems 2 & 3) ────────
-        function renderStrikeMatrix(matrix) {
+        function renderStrikeMatrix(matrix, emptyReason = null) {
             const tbody = document.getElementById("strikeMatrixTableBody");
             const routerSel = document.getElementById("routerContractDropdown");
+
+            if (!tbody) return;
+
+            if (!matrix || matrix.length === 0) {
+                let reasonText = emptyReason;
+                if (!reasonText) {
+                    if (cachedMarketStatus && !cachedMarketStatus.is_open && !cachedAllowOffHours) {
+                        reasonText = "Spot unavailable — market closed (Mon-Fri 09:15 AM - 03:30 PM IST)";
+                    } else if (cachedSpotPrice !== undefined && cachedSpotPrice <= 0) {
+                        reasonText = "Spot unavailable — waiting for live Dhan feed";
+                    } else {
+                        reasonText = "Spot unavailable — market closed / Instrument master not loaded";
+                    }
+                }
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="12" style="text-align:center; padding:28px 16px; background:rgba(239, 68, 68, 0.08); border:1px dashed rgba(239, 68, 68, 0.3); border-radius:8px;">
+                            <div style="font-weight:800; font-size:14px; color:#f87171; margin-bottom:6px;">⚠️ ${reasonText}</div>
+                            <div style="font-size:12px; color:var(--text-muted);">Strike matrix disabled. Turn on 'Allow Off-Hours Paper Testing' or wait for live session.</div>
+                        </td>
+                    </tr>
+                `;
+                if (routerSel) {
+                    routerSel.innerHTML = `<option value="">-- Matrix Unavailable (${reasonText}) --</option>`;
+                }
+                return;
+            }
 
             // Update router dropdown options with full expiry date format
             if (routerSel && matrix && matrix.length > 0) {
@@ -2872,7 +2889,6 @@
                 updateRouterSelectedDisplay();
             }
 
-            if (!tbody) return;
             const isMarketBlocked = cachedMarketStatus && !cachedMarketStatus.is_open && !cachedAllowOffHours;
             const btnDisabledAttr = isMarketBlocked ? 'disabled title="Market Closed (Mon-Fri 09:15 AM - 03:30 PM IST)" style="opacity:0.5; cursor:not-allowed;"' : '';
 
@@ -5102,7 +5118,9 @@
                 exportTableToExcelXML('StockMojo_PE_CE_Combined_Matrix.xls', 'Combined_Matrix', headers, data);
             }
         }
-        <!-- Module 4: Order Placement Confirmation Toast -->
+    </script>
+
+    <!-- Module 4: Order Placement Confirmation Toast -->
     <div id="orderConfirmationToast" style="display:none; position:fixed; bottom:24px; right:24px; z-index:99999; background:rgba(15, 23, 42, 0.95); border:1px solid #10b981; border-radius:10px; padding:16px 20px; box-shadow:0 10px 25px rgba(0,0,0,0.6); min-width:320px; color:#f8fafc; font-family:var(--font-mono);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <span style="font-weight:800; color:#4ade80; font-size:13px;">✔ ORDER CONFIRMED</span>
@@ -5111,7 +5129,5 @@
         <div id="toastContractSymbol" style="font-weight:700; font-size:14px; margin-bottom:4px; color:#38bdf8;">09 Nov 2026 — NIFTY 24300 CE</div>
         <div id="toastOrderDetails" style="font-size:12px; color:var(--text-dim);">Filled @ ₹0.00 | AUTO ALGO 🤖 | Stage 2 8 EMA Touch</div>
     </div>
-
-</script>
 </body>
 </html>

@@ -776,6 +776,27 @@ class DhanAlgoExecutor:
         base_tp2 = 40.0
         opt_type = option_type.upper()
 
+        if spot is None or spot <= 0:
+            log.critical("CRITICAL: compute_smart_target called with invalid spot: %s", spot)
+            return {
+                "target_mode": "UNAVAILABLE",
+                "spot": 0.0,
+                "option_type": opt_type,
+                "target_1_pts": 0.0,
+                "target_2_pts": 0.0,
+                "target_1_price": 0.0,
+                "target_2_price": 0.0,
+                "spot_sl_pts": 0.0,
+                "spot_sl_price": 0.0,
+                "reason": "Spot unavailable — market closed",
+                "regime": "CLOSED",
+                "net_pe_ce": net_pe_ce,
+                "call_wall": {"strike": 0, "oi": 0, "chg_oi": 0},
+                "put_wall": {"strike": 0, "oi": 0, "chg_oi": 0},
+                "nearest_r": 0.0,
+                "nearest_s": 0.0,
+            }
+
         # 1. FIXED SCALP MODE
         if active_mode == "FIXED":
             tp1_pts = base_tp1
@@ -1043,7 +1064,9 @@ class DhanAlgoExecutor:
           6. Daily Risk Guardrails Armed
         """
         items: List[Dict[str, Any]] = []
-        spot = self._last_evaluated_spot or 23440.8
+        spot = self._last_evaluated_spot
+        if not spot or spot <= 0:
+            log.critical("CRITICAL: run_premarket_check: spot is missing or <= 0 (%s). Order routing blocked.", spot)
 
         # 1. Dhan Live Token & Margin Check
         conn_res = await self.test_dhan_connection()
@@ -1060,20 +1083,28 @@ class DhanAlgoExecutor:
 
         # 2. Active Weekly Expiry & ATM SecurityID Resolution
         active_exp = conn_res.get("active_expiry", "2026-11-03")
-        ce_strike, ce_sec_id, ce_sym, ce_ltp = self.resolve_atm_strike_and_contract(spot, "CE", hub=hub)
-        pe_strike, pe_sec_id, pe_sym, pe_ltp = self.resolve_atm_strike_and_contract(spot, "PE", hub=hub)
-        exp_passed = bool(active_exp and not ce_sec_id.startswith("SIM_") if self.execution_mode != "PAPER" else True)
+        if spot and spot > 0:
+            ce_strike, ce_sec_id, ce_sym, ce_ltp = self.resolve_atm_strike_and_contract(spot, "CE", hub=hub)
+            pe_strike, pe_sec_id, pe_sym, pe_ltp = self.resolve_atm_strike_and_contract(spot, "PE", hub=hub)
+            exp_passed = bool(active_exp and not ce_sec_id.startswith("SIM_") if self.execution_mode != "PAPER" else True)
+            exp_detail = f"Expiry: {active_exp} | ATM CE: {int(ce_strike)} (SecID {ce_sec_id}) | ATM PE: {int(pe_strike)} (SecID {pe_sec_id})"
+            exp_data = {
+                "active_expiry": active_exp,
+                "atm_ce": {"strike": ce_strike, "security_id": ce_sec_id, "symbol": ce_sym, "ltp": ce_ltp},
+                "atm_pe": {"strike": pe_strike, "security_id": pe_sec_id, "symbol": pe_sym, "ltp": pe_ltp},
+            }
+        else:
+            exp_passed = False
+            exp_detail = "Spot price unavailable (market closed). Cannot resolve ATM strikes without live price."
+            exp_data = {"active_expiry": active_exp, "atm_ce": None, "atm_pe": None}
+
         items.append({
             "id": "expiry_contracts",
             "title": "2. Active Weekly Expiry & ATM Contract Resolution",
             "passed": exp_passed,
             "status": "PASS" if exp_passed else "WARN",
-            "detail": f"Expiry: {active_exp} | ATM CE: {int(ce_strike)} (SecID {ce_sec_id}) | ATM PE: {int(pe_strike)} (SecID {pe_sec_id})",
-            "data": {
-                "active_expiry": active_exp,
-                "atm_ce": {"strike": ce_strike, "security_id": ce_sec_id, "symbol": ce_sym, "ltp": ce_ltp},
-                "atm_pe": {"strike": pe_strike, "security_id": pe_sec_id, "symbol": pe_sym, "ltp": pe_ltp},
-            },
+            "detail": exp_detail,
+            "data": exp_data,
         })
 
         # 3. Intraday 1m Candle & 1H 8-EMA Sync
@@ -1219,6 +1250,11 @@ class DhanAlgoExecutor:
         # Check Kill Switch
         can_trade, kill_reason = self.check_kill_switch()
         if not can_trade:
+            return None
+
+        # Hard Guard: Fail closed if spot price is missing or invalid
+        if spot is None or spot <= 0:
+            log.critical("CRITICAL: evaluate_strategies called with invalid spot: %s. REJECTING signal evaluation.", spot)
             return None
 
         # ---------------------------------------------------------------------
@@ -1405,6 +1441,12 @@ class DhanAlgoExecutor:
         can_trade, kill_reason = self.check_kill_switch()
         if not can_trade:
             return {"ok": False, "error": kill_reason}
+
+        # Hard Guard: Fail closed if spot price is missing or invalid
+        order_spot = trade_params.get("spot")
+        if order_spot is None or float(order_spot) <= 0:
+            log.critical("CRITICAL: trigger_order_entry rejected order entry: spot price missing or invalid (%s)!", order_spot)
+            return {"ok": False, "error": f"CRITICAL: Order rejected. Invalid spot price: {order_spot}"}
 
         qty = self.lots_per_trade * self.lot_size
         trade_id = f"TRD_{int(time.time())}_{trade_params['option_type']}"
@@ -1856,42 +1898,54 @@ class DhanAlgoExecutor:
 
     def get_status_view(self) -> Dict[str, Any]:
         """Comprehensive payload for frontend Cockpit, HUD Radar, and tests."""
-        spot = self._last_evaluated_spot or 23440.8
-        ema8_val = 23204.91
-        ema8_slope = "FLAT"
-        try:
-            from .htf_wick_ema_rb import get_htf_wick_ema_rb
-            htf_data = get_htf_wick_ema_rb(sec_id="13", spot=spot)
-            if htf_data.get("ok"):
-                ema_info = htf_data.get("ema8_1h") or {}
-                if ema_info.get("value") is not None:
-                    ema8_val = float(ema_info["value"])
-                ema8_slope = str(ema_info.get("slope", "FLAT"))
-        except Exception:
-            pass
-
-        dist = abs(spot - ema8_val)
-        atm_strike, atm_sec_id, atm_sym, atm_ltp = self.resolve_atm_strike_and_contract(spot, "CE")
-
-        if self.active_position:
-            radar_status = "IN-TRADE"
-        elif dist <= 2.5:
-            radar_status = "TOUCHING"
-        elif dist <= 15.0 and ema8_slope.upper() == "RISING":
-            radar_status = "ARMED"
+        spot = self._last_evaluated_spot
+        if not spot or spot <= 0:
+            radar = {
+                "spot": None,
+                "ema8": None,
+                "dist": None,
+                "atm_strike": None,
+                "atm_sec_id": None,
+                "status": "UNAVAILABLE",
+                "active_expiry": None,
+                "hud_text": "🎯 1H 8-EMA Support Radar: Spot unavailable — market closed",
+            }
         else:
-            radar_status = "WATCHING"
+            ema8_val = 23204.91
+            ema8_slope = "FLAT"
+            try:
+                from .htf_wick_ema_rb import get_htf_wick_ema_rb
+                htf_data = get_htf_wick_ema_rb(sec_id="13", spot=spot)
+                if htf_data.get("ok"):
+                    ema_info = htf_data.get("ema8_1h") or {}
+                    if ema_info.get("value") is not None:
+                        ema8_val = float(ema_info["value"])
+                    ema8_slope = str(ema_info.get("slope", "FLAT"))
+            except Exception:
+                pass
 
-        radar = {
-            "spot": round(spot, 1),
-            "ema8": round(ema8_val, 1),
-            "dist": round(dist, 1),
-            "atm_strike": int(atm_strike),
-            "atm_sec_id": str(atm_sec_id),
-            "status": radar_status,
-            "active_expiry": "2026-11-03",
-            "hud_text": f"🎯 1H 8-EMA Support Radar: Spot {spot:.1f} | 1H 8-EMA {ema8_val:.1f} (Dist: {dist:.1f} pts) | Next ATM Strike: NIFTY {int(atm_strike)} CE (secId: {atm_sec_id}) | Status: {radar_status}",
-        }
+            dist = abs(spot - ema8_val)
+            atm_strike, atm_sec_id, atm_sym, atm_ltp = self.resolve_atm_strike_and_contract(spot, "CE")
+
+            if self.active_position:
+                radar_status = "IN-TRADE"
+            elif dist <= 2.5:
+                radar_status = "TOUCHING"
+            elif dist <= 15.0 and ema8_slope.upper() == "RISING":
+                radar_status = "ARMED"
+            else:
+                radar_status = "WATCHING"
+
+            radar = {
+                "spot": round(spot, 1),
+                "ema8": round(ema8_val, 1),
+                "dist": round(dist, 1),
+                "atm_strike": int(atm_strike),
+                "atm_sec_id": str(atm_sec_id),
+                "status": radar_status,
+                "active_expiry": "2026-11-03",
+                "hud_text": f"🎯 1H 8-EMA Support Radar: Spot {spot:.1f} | 1H 8-EMA {ema8_val:.1f} (Dist: {dist:.1f} pts) | Next ATM Strike: NIFTY {int(atm_strike)} CE (secId: {atm_sec_id}) | Status: {radar_status}",
+            }
 
         today_audit = {
             "date": "2026-11-02",
