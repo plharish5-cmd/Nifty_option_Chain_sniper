@@ -62,7 +62,7 @@ VERDICT_KEYS = ("bias_theme", "alignment_state", "current_verdict", "verdict",
                 "verdict_badge", "confluence_summary", "dominant_bias", "dominant_tag",
                 "gamma_regime", "pin_state", "bias_title", "bias", "bias_trend",
                 "day_bias", "h1_bias", "pcr_band", "regime_state", "latest_state",
-                "stage", "phase", "signal", "state", "action", "headline",
+                "stage", "model", "phase", "signal", "state", "action", "headline",
                 "direction", "side", "gauge_label", "pin_label", "label", "mode",
                 "status")
 

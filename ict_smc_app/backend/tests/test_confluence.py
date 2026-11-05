@@ -138,6 +138,31 @@ def test_snake_case_enums_classify(text, expected):
     assert cf.classify_text(text) == expected
 
 
+def test_mmxm_model_outranks_phase():
+    """MMBM/MMSM is the direction; SMR_CONFIRMED is a sequence phase. The model
+    must win, and a phase on its own must never imply a direction."""
+    now = time.time()
+    buy = cf.build_row(_eng(), {"model": "MMBM", "phase": "SMR_CONFIRMED", "ts": now}, now)
+    assert buy["verdict"] == "BULLISH" and buy["verdict_source"] == "model"
+    sell = cf.build_row(_eng(), {"model": "MMSM", "phase": "SMR_CONFIRMED", "ts": now}, now)
+    assert sell["verdict"] == "BEARISH"
+    phase_only = cf.build_row(_eng(), {"phase": "SMR_CONFIRMED", "ts": now}, now)
+    assert phase_only["verdict"] == "NEUTRAL"
+    assert phase_only["counted"] is False
+
+
+def test_gtf_demand_zone_reads_as_support():
+    now = time.time()
+    row = cf.build_row(_eng(), {"label": "GTF DEMAND DBR · FRESH [A+]", "ts": now}, now)
+    assert row["verdict"] == "SUPPORT"
+
+
+def test_bare_bull_bear_classify():
+    assert cf.classify_text("BULL") == "BULLISH"
+    assert cf.classify_text("BEAR") == "BEARISH"
+    assert cf.classify_text("bullish") == "BULLISH"
+
+
 def test_gamma_regime_does_not_vote_on_direction():
     """Dealer gamma says WHEN a setup should work, not which way. It must not
     contribute a directional vote."""
