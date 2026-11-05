@@ -488,6 +488,46 @@ async def api_oi_configure_curl(req: Request):
     return JSONResponse(content=res)
 
 
+@app.get("/api/oi/pe_ce_dual")
+@app.get("/api/stockmojo/pe_ce_dual")
+async def api_oi_pe_ce_dual(limit: int = 60):
+    """Returns dual-entity tables (Entity 1 Total OI & Entity 2 OI Change Day) + aligned Combined view."""
+    res = backend.stockmojo_scraper.get_dual_tables(limit=limit)
+    return JSONResponse(content=res)
+
+
+@app.get("/api/oi/synergy_status")
+@app.get("/api/stockmojo/synergy_status")
+async def api_oi_synergy_status():
+    """Returns real-time quantitative synergy gate evaluation across Total OI & Day OI."""
+    res = backend.stockmojo_scraper.evaluate_synergy_status()
+    return JSONResponse(content=res)
+
+
+@app.get("/api/oi/synergy_config")
+@app.get("/api/stockmojo/synergy_config")
+async def api_get_synergy_config():
+    """Returns active Stock Mojo synergy gate filter switches."""
+    return JSONResponse(content=backend.get_synergy_config())
+
+
+@app.post("/api/oi/synergy_config")
+@app.post("/api/stockmojo/synergy_config")
+async def api_post_synergy_config(req: Request):
+    """Updates Stock Mojo synergy gate filter switches and persists them."""
+    body = await req.json()
+    res = backend.update_synergy_config(body)
+    return JSONResponse(content=res)
+
+
+@app.get("/api/oi/audit_04nov")
+@app.get("/api/stockmojo/audit_04nov")
+async def api_oi_audit_04nov():
+    """Returns built-in 04 Nov trading session verification checkpoints and audit actions."""
+    res = backend.stockmojo_scraper.get_04nov_audit_data()
+    return JSONResponse(content=res)
+
+
 def main():
     port = int(backend.cfg.get("port", 8510))
     host = str(backend.cfg.get("host", "0.0.0.0"))

@@ -1509,6 +1509,18 @@ class QuantTerminalBackend:
         if self.directional_bias not in ("LONG_ONLY", "SHORT_ONLY", "BOTH"):
             self.directional_bias = "BOTH"
 
+        # Stock Mojo Synergy Gating & Master Control Card Configuration
+        self.stockmojo_synergy_cfg = self.cfg.get("stockmojo_synergy", {
+            "filter_stage2_8ema_synergy": True,
+            "filter_strategy2_reversal_synergy": True,
+            "filter_strategy3_1h_synergy": True,
+            "use_as_direct_15m_trigger": False,
+            "block_pe_when_bullish": True,
+            "block_ce_when_bearish": True,
+            "show_pe_ce_table_in_tab1": True,
+        })
+        self._last_synergy_status: str = "INITIALIZED"
+
     @property
     def lock(self) -> asyncio.Lock:
         if self._lock is None:
@@ -1697,6 +1709,21 @@ class QuantTerminalBackend:
                     out.append(t)
             return out
         return trades
+
+    def get_synergy_config(self) -> Dict[str, Any]:
+        """Returns the active Stock Mojo PE-CE Synergy filter configuration."""
+        return dict(self.stockmojo_synergy_cfg)
+
+    def update_synergy_config(self, new_cfg: Dict[str, Any]) -> Dict[str, Any]:
+        """Updates and persists Stock Mojo PE-CE Synergy filter configuration."""
+        self.stockmojo_synergy_cfg.update(new_cfg)
+        self.cfg["stockmojo_synergy"] = self.stockmojo_synergy_cfg
+        try:
+            self.config_path.write_text(json.dumps(self.cfg, indent=2))
+            log.info("⚡ Stock Mojo Synergy Configuration updated & persisted: %s", self.stockmojo_synergy_cfg)
+        except Exception as e:
+            log.error("Failed persisting synergy config: %s", e)
+        return {"ok": True, "stockmojo_synergy": self.stockmojo_synergy_cfg}
 
     def calculate_dhan_charges(self, buy_price: float, sell_price: float, qty: int) -> float:
         """
@@ -2006,6 +2033,8 @@ class QuantTerminalBackend:
             "trend_lab_variables": trend_lab_variables,
             "institutional_pe_ce": oi_snap,
             "stockmojo_pe_ce": oi_snap,
+            "stockmojo_synergy": self.stockmojo_scraper.evaluate_synergy_status(),
+            "stockmojo_synergy_config": self.stockmojo_synergy_cfg,
             "funds": {
                 "paper": paper_wallet,
                 "live": live_funds,
@@ -2021,7 +2050,7 @@ class QuantTerminalBackend:
         """Calculates 7 trend confluence parameters from candles + PCR."""
         # Defaults
         ema_stack = {"status": "BULLISH", "reading": "8-EMA (23,909) > 21-EMA (23,865) | Slope +18.4"}
-        h1_ema = {"status": "BULLISH", "reading": "1H 80-EMA at 23,230 (+730 pts Above Support)"}
+        h1_ema = {"status": "BULLISH", "reading": "1H 8-EMA at 23,230 (+730 pts Above Support)"}
         adx_val = {"status": "BULLISH", "reading": "ADX(14) = 32.5 | Strong Trend (+DI > -DI)"}
         r2_val = {"status": "BULLISH", "reading": "LinReg R² = 0.74 (Strong Directional Quality)"}
         mtf_val = {"status": "BULLISH", "reading": "15m, 30m, 1H Triple Aligned Bullish"}
@@ -2090,7 +2119,7 @@ class QuantTerminalBackend:
 
         items = [
             {"name": "1. 8-EMA vs 21-EMA Stack & Slope", **ema_stack},
-            {"name": "2. 1H 80-EMA Distance & Status", **h1_ema},
+            {"name": "2. 1H 8-EMA Distance & Status", **h1_ema},
             {"name": "3. ADX (14) Strength Reading", **adx_val},
             {"name": "4. Linear Regression R² Trend Quality", **r2_val},
             {"name": "5. Multi-Timeframe Alignment (15m/30m/1H)", **mtf_val},
@@ -2365,6 +2394,54 @@ class QuantTerminalBackend:
                     filtered_signals.append(sig)
             signals = filtered_signals
 
+        # Stock Mojo PE-CE Synergy Gate Filtering on Signals
+        syn = self.stockmojo_scraper.evaluate_synergy_status()
+        synergy_status = syn.get("synergy_status", "MIXED")
+
+        if signals:
+            synergy_filtered = []
+            for sig in signals:
+                sid = sig.get("strategy_id", "")
+                opt = str(sig.get("opt_side", "")).upper()
+
+                # Check 1: Stage 2 / Stage 3 8-EMA Synergy Filter
+                if sid in ("STAGE2_TOUCH_LONG", "STAGE3_TOUCH_SHORT") and self.stockmojo_synergy_cfg.get("filter_stage2_8ema_synergy", True):
+                    if opt == "CE" and synergy_status == "BEARISH_SYNERGY":
+                        log.warning("[BLOCKED BY STOCK MOJO] CE Long rejected due to Bearish PE-CE (Total OI + OI Change) state.")
+                        continue
+                    if opt == "PE" and synergy_status == "BULLISH_SYNERGY":
+                        log.warning("[BLOCKED BY STOCK MOJO] PE Short rejected due to Bullish PE-CE (Total OI + OI Change) state.")
+                        continue
+
+                # Check 2: Strategy 2 Reversal Synergy Filter
+                if sid in ("CROSSOVER_REVERSAL_LONG", "CROSSOVER_REVERSAL_SHORT") and self.stockmojo_synergy_cfg.get("filter_strategy2_reversal_synergy", True):
+                    if opt == "CE" and synergy_status == "BEARISH_SYNERGY":
+                        log.warning("[BLOCKED BY STOCK MOJO] CE Long rejected due to Bearish PE-CE (Total OI + OI Change) state.")
+                        continue
+                    if opt == "PE" and synergy_status == "BULLISH_SYNERGY":
+                        log.warning("[BLOCKED BY STOCK MOJO] PE Short rejected due to Bullish PE-CE (Total OI + OI Change) state.")
+                        continue
+
+                # Check 3: Strategy 3 1H 8-EMA Confluence Synergy Filter
+                if sid in ("H1_CONFLUENCE_SUPPORT", "H1_CONFLUENCE_RESIST") and self.stockmojo_synergy_cfg.get("filter_strategy3_1h_synergy", True):
+                    if opt == "CE" and synergy_status == "BEARISH_SYNERGY":
+                        log.warning("[BLOCKED BY STOCK MOJO] CE Long rejected due to Bearish PE-CE (Total OI + OI Change) state.")
+                        continue
+                    if opt == "PE" and synergy_status == "BULLISH_SYNERGY":
+                        log.warning("[BLOCKED BY STOCK MOJO] PE Short rejected due to Bullish PE-CE (Total OI + OI Change) state.")
+                        continue
+
+                # Check 5 & 6: Master Block PE when Bullish / Block CE when Bearish
+                if opt == "PE" and self.stockmojo_synergy_cfg.get("block_pe_when_bullish", True) and synergy_status == "BULLISH_SYNERGY":
+                    log.warning("[BLOCKED BY STOCK MOJO] PE Short rejected due to Bullish PE-CE (Total OI + OI Change) state.")
+                    continue
+                if opt == "CE" and self.stockmojo_synergy_cfg.get("block_ce_when_bearish", True) and synergy_status == "BEARISH_SYNERGY":
+                    log.warning("[BLOCKED BY STOCK MOJO] CE Long rejected due to Bearish PE-CE (Total OI + OI Change) state.")
+                    continue
+
+                synergy_filtered.append(sig)
+            signals = synergy_filtered
+
         return signals
 
     def evaluate_all_strategies(self, spot_price: Optional[float] = None) -> List[Dict[str, Any]]:
@@ -2470,6 +2547,29 @@ class QuantTerminalBackend:
                 if self.scanner_enabled and not self.kill_switch_active:
                     spot = self.cached_telemetry.get("spot", {}).get("price")
                     signals = self.evaluate_all_strategies(spot_price=spot)
+
+                    # Check Direct 15m Entry Trigger on PE-CE Synergy Flip if enabled
+                    if self.stockmojo_synergy_cfg.get("use_as_direct_15m_trigger", False):
+                        syn = self.stockmojo_scraper.evaluate_synergy_status()
+                        cur_syn = syn.get("synergy_status", "MIXED")
+                        if cur_syn in ("BULLISH_SYNERGY", "BEARISH_SYNERGY") and cur_syn != self._last_synergy_status:
+                            self._last_synergy_status = cur_syn
+                            direct_sig = {
+                                "strategy_id": "STAGE2_DIRECT_TRIGGER" if cur_syn == "BULLISH_SYNERGY" else "STAGE3_DIRECT_TRIGGER",
+                                "setup_name": "Stage 2 PE-CE Direct 15m Trigger" if cur_syn == "BULLISH_SYNERGY" else "Stage 3 PE-CE Direct 15m Trigger",
+                                "direction": "LONG" if cur_syn == "BULLISH_SYNERGY" else "SHORT",
+                                "opt_side": "CE" if cur_syn == "BULLISH_SYNERGY" else "PE",
+                                "target_pts": 40.0,
+                                "sl_pts": 40.0,
+                                "index_price": spot or 23800.0,
+                                "conviction": "DIRECT_PE_CE_FLIP",
+                                "details": f"Direct entry triggered by Stock Mojo PE-CE Synergy Flip to {cur_syn}",
+                            }
+                            if not signals:
+                                signals = [direct_sig]
+                            else:
+                                signals.append(direct_sig)
+
                     if signals:
                         await self._process_strategy_signals(signals)
             except Exception as e:
@@ -2756,6 +2856,30 @@ class QuantTerminalBackend:
                     "status": "REJECTED",
                     "error": err_msg,
                     "rejection_reason": "Directional Bias: SHORT_ONLY active (all CE / Long orders blocked)"
+                }
+
+            # Stock Mojo PE-CE Synergy Gating Check on Executed Orders (Live & Paper)
+            syn = self.stockmojo_scraper.evaluate_synergy_status()
+            synergy_status = syn.get("synergy_status", "MIXED")
+
+            if self.stockmojo_synergy_cfg.get("block_pe_when_bullish", True) and is_pe and synergy_status == "BULLISH_SYNERGY":
+                err_msg = "[BLOCKED BY STOCK MOJO] PE Short rejected due to Bullish PE-CE (Total OI + OI Change) state."
+                log.warning(err_msg)
+                return {
+                    "ok": False,
+                    "status": "REJECTED",
+                    "error": err_msg,
+                    "rejection_reason": err_msg,
+                }
+
+            if self.stockmojo_synergy_cfg.get("block_ce_when_bearish", True) and is_ce and synergy_status == "BEARISH_SYNERGY":
+                err_msg = "[BLOCKED BY STOCK MOJO] CE Long rejected due to Bearish PE-CE (Total OI + OI Change) state."
+                log.warning(err_msg)
+                return {
+                    "ok": False,
+                    "status": "REJECTED",
+                    "error": err_msg,
+                    "rejection_reason": err_msg,
                 }
 
             # Check Strike Matrix Checkbox filter if triggered automatically by Algo

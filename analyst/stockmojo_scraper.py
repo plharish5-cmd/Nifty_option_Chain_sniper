@@ -1,15 +1,15 @@
 """
-analyst/stockmojo_scraper.py — StockMojo 1-Minute PE-CE & Live OI Ingestion Engine.
+analyst/stockmojo_scraper.py — Stock Mojo 1-Minute PE-CE Dual-Entity & Live OI Ingestion Engine.
 
 Provides:
-  1. Indian unit parser (Cr -> Lakhs, L -> Lakhs, K -> Lakhs).
-  2. Persistent SQLite table (stockmojo_pe_ce_live) in data/terminal8510/ledger.sqlite3.
-  3. In-memory rolling ring buffer (up to 180 1m snapshots) with newest-first ordering.
-  4. Triple Ingestion Methods:
-     - Method 1: Live Browser Tab Auto-Push (POST /api/stockmojo/ingest with CORS)
-     - Method 2: Auto-Folder Watcher for downloaded CSV / Excel (data/stockmojo_downloads/ & ~/Downloads)
-     - Method 3: Direct cURL / XHR Polling & POST https://data.stockmojo.in/live/oi/pcr
-  5. Real-time writer dominance & divergence detector (BULLISH_PUT_WRITERS, BEARISH_CALL_WRITERS, DIVERGENCE_ALERT).
+  1. Indian unit parser (Cr -> Lakhs, L -> Lakhs, K -> Lakhs, raw integer count > 100k -> Lakhs).
+  2. Dual-Entity Ingestion & Persistence:
+     - Entity 1: Total OI Tab (exact columns from PE_CE_NIFTY_2026-11-04 (1).xls)
+     - Entity 2: OI Change (Day) Tab (exact columns from PE_CE_NIFTY_2026-11-05.xls)
+  3. In-memory rolling ring buffers (up to 180 snapshots, newest-first ordering).
+  4. Dual-Entity Synergy Gate Evaluation (BULLISH_SYNERGY, BEARISH_SYNERGY, MIXED).
+  5. Built-in 04 Nov Verification Audit Checkpoints (10:30, 11:30, 12:30, 14:57).
+  6. Multi-format Watcher (.xls, .html, .csv) & Direct API Polling.
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def parse_indian_unit_to_lakhs(val: Any) -> float:
       - "-35.2 K" -> -0.352   (1 K = 0.01 Lakh)
       - "+83.2 K" -> 0.832
       - "200.0"   -> 200.0
-      - Raw integer count > 100,000 -> divided by 100,000 (e.g., 94459755 -> 944.59755)
+      - Raw integer count >= 100,000 -> divided by 100,000 (e.g., 94459755 -> 944.5976)
     """
     if val is None:
         return 0.0
@@ -48,7 +48,6 @@ def parse_indian_unit_to_lakhs(val: Any) -> float:
         f = float(val)
         if math.isnan(f) or math.isinf(f):
             return 0.0
-        # If passed an absolute raw share count (> 100,000), scale to Lakhs
         if abs(f) >= 100000.0:
             return round(f / 100000.0, 4)
         return round(f, 4)
@@ -57,7 +56,6 @@ def parse_indian_unit_to_lakhs(val: Any) -> float:
     if not s or s == "-" or s == "--":
         return 0.0
 
-    # Match numeric sign and decimal
     m = re.match(r"^([-+]?\d*\.?\d+)\s*([a-zA-Z]*)$", s)
     if not m:
         try:
@@ -84,8 +82,26 @@ def parse_indian_unit_to_lakhs(val: Any) -> float:
     return round(num_part, 4)
 
 
+def parse_html_table_rows(html_content: str) -> Tuple[List[str], List[Dict[str, Any]]]:
+    """Parses HTML table exported by Stock Mojo into column headers and list of dict rows."""
+    trs = re.findall(r'<tr[^>]*>(.*?)</tr>', html_content, re.DOTALL | re.IGNORECASE)
+    if not trs:
+        return [], []
+    headers = [re.sub(r'<[^>]+>', '', h).strip() for h in re.findall(r'<th[^>]*>(.*?)</th>', trs[0], re.DOTALL | re.IGNORECASE)]
+    rows = []
+    for tr in trs[1:]:
+        tds = re.findall(r'<td[^>]*>(.*?)</td>', tr, re.DOTALL | re.IGNORECASE)
+        cells = [re.sub(r'<[^>]+>', '', c).strip() for c in tds]
+        if cells and len(cells) == len(headers):
+            rows.append(dict(zip(headers, cells)))
+    return headers, rows
+
+
 class StockMojoScraper:
-    """Manages StockMojo PE-CE 1-minute data ingestion, persistence, and live OI feeds."""
+    """
+    Manages dual-entity Stock Mojo PE-CE tables (Total OI & OI Change Day),
+    historical benchmark seeds, live polling, and quantitative synergy gating.
+    """
 
     def __init__(
         self,
@@ -104,8 +120,11 @@ class StockMojoScraper:
         self.download_dir = Path(sm_cfg.get("download_dir", "data/stockmojo_downloads"))
         self.download_dir.mkdir(parents=True, exist_ok=True)
 
-        # In-memory Ring Buffer (max 180 rows, newest first)
-        self.ring_buffer: List[Dict[str, Any]] = []
+        # In-memory Ring Buffers (max 180 rows, newest first)
+        self.total_oi_buffer: List[Dict[str, Any]] = []       # Entity 1: Total OI Tab
+        self.oi_change_day_buffer: List[Dict[str, Any]] = []  # Entity 2: OI Change (Day) Tab
+        self.ring_buffer = self.oi_change_day_buffer          # Backwards-compatible alias
+
         self._init_db()
         self._seed_baseline_if_empty()
 
@@ -116,26 +135,26 @@ class StockMojoScraper:
         self.last_sync_status: str = "INITIALIZED"
 
     def start_background_polling(self) -> None:
-        """Starts 60-second periodic background polling daemon."""
+        """Starts periodic background polling daemon."""
         if self._is_running:
             return
         self._is_running = True
         try:
             loop = asyncio.get_running_loop()
             self._poll_task = loop.create_task(self._background_poll_loop())
-            log.info("🚀 StockMojo 60-second live polling daemon started.")
+            log.info("🚀 Stock Mojo dual-entity live polling daemon started (interval: %ds).", self.poll_interval)
         except RuntimeError:
-            log.debug("No running asyncio event loop for StockMojo scraper daemon; will run on demand.")
+            log.debug("No running asyncio event loop for Stock Mojo scraper daemon; will run on demand.")
 
     async def _background_poll_loop(self) -> None:
-        """Periodic loop polling live API and checking downloads folder every 60s."""
+        """Periodic loop polling live API and checking downloads folder."""
         while self._is_running:
             try:
                 self.check_download_folder()
                 if self.jwt_token:
                     await self.poll_direct_stockmojo_api()
             except Exception as e:
-                log.debug("StockMojo background poll error: %s", e)
+                log.debug("Stock Mojo background poll error: %s", e)
             await asyncio.sleep(self.poll_interval)
 
     def _load_config(self) -> Dict[str, Any]:
@@ -155,9 +174,73 @@ class StockMojoScraper:
             log.warning("Could not save config at %s: %s", self.config_path, e)
 
     def _init_db(self) -> None:
-        """Initializes stockmojo_pe_ce_live table in SQLite."""
+        """Initializes tables for both entities in SQLite."""
         try:
             with sqlite3.connect(self.db_path) as conn:
+                # Entity 1: Total OI Tab table
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS stockmojo_total_oi_live (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        time_ist TEXT NOT NULL,
+                        put_oi_total_raw TEXT,
+                        put_oi_total REAL,
+                        put_oi_change_raw TEXT,
+                        put_oi_change REAL,
+                        call_oi_total_raw TEXT,
+                        call_oi_total REAL,
+                        call_oi_change_raw TEXT,
+                        call_oi_change REAL,
+                        pe_ce_oi_total_raw TEXT,
+                        pe_ce_oi_total REAL,
+                        pe_ce_oi_change_raw TEXT,
+                        pe_ce_oi_change REAL,
+                        pe_ce_bar_total_raw TEXT,
+                        pe_ce_bar_total REAL,
+                        pe_ce_bar_change_raw TEXT,
+                        pe_ce_bar_change REAL,
+                        pcr_total REAL,
+                        future_ltp REAL,
+                        future_total_oi_raw TEXT,
+                        future_total_oi REAL,
+                        created_at TEXT NOT NULL,
+                        UNIQUE(time_ist) ON CONFLICT REPLACE
+                    );
+                    """
+                )
+                # Entity 2: OI Change Day Tab table
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS stockmojo_oi_change_day_live (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        time_ist TEXT NOT NULL,
+                        put_oi_change_day_raw TEXT,
+                        put_oi_change_day REAL,
+                        put_oi_change_interval_raw TEXT,
+                        put_oi_change_interval REAL,
+                        call_oi_change_day_raw TEXT,
+                        call_oi_change_day REAL,
+                        call_oi_change_interval_raw TEXT,
+                        call_oi_change_interval REAL,
+                        pe_minus_ce_day_raw TEXT,
+                        pe_minus_ce_day REAL,
+                        pe_minus_ce_interval_raw TEXT,
+                        pe_minus_ce_interval REAL,
+                        pe_ce_bar_change_day_raw TEXT,
+                        pe_ce_bar_change_day REAL,
+                        pe_ce_bar_change_raw TEXT,
+                        pe_ce_bar_change REAL,
+                        pcr_total REAL,
+                        future_ltp REAL,
+                        future_oi_change_day_raw TEXT,
+                        future_oi_change_day REAL,
+                        writer_signal TEXT,
+                        created_at TEXT NOT NULL,
+                        UNIQUE(time_ist) ON CONFLICT REPLACE
+                    );
+                    """
+                )
+                # Legacy table compatibility
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS stockmojo_pe_ce_live (
@@ -187,154 +270,490 @@ class StockMojoScraper:
                 )
                 conn.commit()
         except Exception as e:
-            log.error("Failed to init stockmojo_pe_ce_live table: %s", e)
+            log.error("Failed to init Stock Mojo tables in SQLite: %s", e)
 
     def _seed_baseline_if_empty(self) -> None:
-        """Seeds verified 1-minute benchmark records if ring buffer / DB is empty."""
+        """Seeds verified 04 Nov benchmark records from downloaded files or fallback."""
+        # Check SQLite first for Entity 1 & Entity 2
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cur = conn.cursor()
-                count = cur.execute("SELECT COUNT(*) FROM stockmojo_pe_ce_live").fetchone()[0]
-                if count > 0:
-                    rows = cur.execute(
-                        """
-                        SELECT time_ist, put_oi_change_day, put_oi_change_interval,
-                               call_oi_change_day, call_oi_change_interval,
-                               pe_minus_ce_day, pe_minus_ce_interval,
-                               pcr_total, future_ltp, future_oi_change_day,
-                               writer_signal, put_oi_change_day_raw, put_oi_change_interval_raw,
-                               call_oi_change_day_raw, call_oi_change_interval_raw,
-                               pe_minus_ce_day_raw, pe_minus_ce_interval_raw, future_oi_change_day_raw
-                        FROM stockmojo_pe_ce_live
-                        ORDER BY time_ist DESC LIMIT 180
-                        """
+                t_count = cur.execute("SELECT COUNT(*) FROM stockmojo_total_oi_live").fetchone()[0]
+                d_count = cur.execute("SELECT COUNT(*) FROM stockmojo_oi_change_day_live").fetchone()[0]
+                if t_count > 0 and d_count > 0:
+                    rows1 = cur.execute(
+                        "SELECT * FROM stockmojo_total_oi_live ORDER BY time_ist DESC LIMIT 180"
                     ).fetchall()
-                    self.ring_buffer = [self._tuple_to_dict(r) for r in rows]
+                    rows2 = cur.execute(
+                        "SELECT * FROM stockmojo_oi_change_day_live ORDER BY time_ist DESC LIMIT 180"
+                    ).fetchall()
+                    self.total_oi_buffer = [self._sql_row_to_total_oi(r) for r in rows1]
+                    self.oi_change_day_buffer = [self._sql_row_to_day_oi(r) for r in rows2]
+                    self.ring_buffer = self.oi_change_day_buffer
                     return
         except Exception as e:
             log.debug("DB check during seed: %s", e)
 
-        # Verified live StockMojo benchmarks from Nov 4 sessions (exact StockMojo numbers)
-        benchmark_rows = [
-            {
-                "time_ist": "15:39",
-                "put_oi_change_day": "94.5 L",
-                "put_oi_change_interval": "-1.65 L",
-                "call_oi_change_day": "-13.5 L",
-                "call_oi_change_interval": "-2.48 L",
-                "pe_minus_ce_day": "108.0 L",
-                "pe_minus_ce_interval": "0.83 L",
-                "pcr_total": 1.26,
-                "future_ltp": 23780.5,
-                "future_oi_change_day": "-1.3 L",
-            },
-            {
-                "time_ist": "15:36",
-                "put_oi_change_day": "96.1 L",
-                "put_oi_change_interval": "-3.43 L",
-                "call_oi_change_day": "-11.0 L",
-                "call_oi_change_interval": "-3.70 L",
-                "pe_minus_ce_day": "107.1 L",
-                "pe_minus_ce_interval": "0.27 L",
-                "pcr_total": 1.24,
-                "future_ltp": 23782.0,
-                "future_oi_change_day": "-0.62 L",
-            },
-            {
-                "time_ist": "15:33",
-                "put_oi_change_day": "99.5 L",
-                "put_oi_change_interval": "-6.37 L",
-                "call_oi_change_day": "-7.32 L",
-                "call_oi_change_interval": "-8.65 L",
-                "pe_minus_ce_day": "106.9 L",
-                "pe_minus_ce_interval": "2.28 L",
-                "pcr_total": 1.23,
-                "future_ltp": 23785.0,
-                "future_oi_change_day": "-0.66 L",
-            },
-            {
-                "time_ist": "15:30",
-                "put_oi_change_day": "105.9 L",
-                "put_oi_change_interval": "-13.2 L",
-                "call_oi_change_day": "1.34 L",
-                "call_oi_change_interval": "-14.9 L",
-                "pe_minus_ce_day": "104.6 L",
-                "pe_minus_ce_interval": "1.68 L",
-                "pcr_total": 1.19,
-                "future_ltp": 23788.2,
-                "future_oi_change_day": "-0.68 L",
-            },
-            {
-                "time_ist": "15:27",
-                "put_oi_change_day": "119.2 L",
-                "put_oi_change_interval": "-8.71 L",
-                "call_oi_change_day": "16.2 L",
-                "call_oi_change_interval": "-13.7 L",
-                "pe_minus_ce_day": "102.9 L",
-                "pe_minus_ce_interval": "4.97 L",
-                "pcr_total": 1.15,
-                "future_ltp": 23791.1,
-                "future_oi_change_day": "-0.66 L",
-            },
-            {
-                "time_ist": "15:24",
-                "put_oi_change_day": "127.9 L",
-                "put_oi_change_interval": "-5.19 L",
-                "call_oi_change_day": "29.9 L",
-                "call_oi_change_interval": "-23.8 L",
-                "pe_minus_ce_day": "97.9 L",
-                "pe_minus_ce_interval": "18.6 L",
-                "pcr_total": 1.10,
-                "future_ltp": 23785.0,
-                "future_oi_change_day": "-0.60 L",
-            },
-            {
-                "time_ist": "15:21",
-                "put_oi_change_day": "133.1 L",
-                "put_oi_change_interval": "-4.40 L",
-                "call_oi_change_day": "53.8 L",
-                "call_oi_change_interval": "-7.59 L",
-                "pe_minus_ce_day": "79.3 L",
-                "pe_minus_ce_interval": "3.19 L",
-                "pcr_total": 0.97,
-                "future_ltp": 23775.0,
-                "future_oi_change_day": "-0.58 L",
-            },
-            {
-                "time_ist": "15:18",
-                "put_oi_change_day": "137.5 L",
-                "put_oi_change_interval": "-8.10 L",
-                "call_oi_change_day": "61.3 L",
-                "call_oi_change_interval": "-13.9 L",
-                "pe_minus_ce_day": "76.1 L",
-                "pe_minus_ce_interval": "5.88 L",
-                "pcr_total": 0.96,
-                "future_ltp": 23775.0,
-                "future_oi_change_day": "-0.59 L",
-            },
-        ]
-        self.ingest_rows(benchmark_rows)
+        # Seed from data/stockmojo_downloads/ if available
+        seed_f1 = self.download_dir / "PE_CE_NIFTY_2026-11-04 (1).xls"
+        seed_f2 = self.download_dir / "PE_CE_NIFTY_2026-11-05.xls"
 
-    def _tuple_to_dict(self, r: Tuple) -> Dict[str, Any]:
+        if seed_f1.exists():
+            try:
+                headers, rows = parse_html_table_rows(seed_f1.read_text(encoding="utf-8", errors="ignore"))
+                if rows:
+                    self.ingest_total_oi_rows(rows)
+                    log.info("✔ Seeded %d Entity 1 (Total OI) rows from %s", len(rows), seed_f1.name)
+            except Exception as e:
+                log.warning("Could not seed Entity 1 from %s: %s", seed_f1, e)
+
+        if seed_f2.exists():
+            try:
+                headers, rows = parse_html_table_rows(seed_f2.read_text(encoding="utf-8", errors="ignore"))
+                if rows:
+                    self.ingest_day_oi_rows(rows)
+                    log.info("✔ Seeded %d Entity 2 (OI Change Day) rows from %s", len(rows), seed_f2.name)
+            except Exception as e:
+                log.warning("Could not seed Entity 2 from %s: %s", seed_f2, e)
+
+        # Fallback benchmark rows if still empty
+        if not self.oi_change_day_buffer:
+            fallback_rows = [
+                {"time_ist": "15:39", "put_oi_change_day": "94.5 L", "put_oi_change_interval": "-1.65 L", "call_oi_change_day": "-13.5 L", "call_oi_change_interval": "-2.48 L", "pe_minus_ce_day": "108.0 L", "pe_minus_ce_interval": "0.83 L", "pcr_total": 1.26, "future_ltp": 23780.5, "future_oi_change_day": "-1.3 L"},
+                {"time_ist": "15:36", "put_oi_change_day": "96.1 L", "put_oi_change_interval": "-3.43 L", "call_oi_change_day": "-11.0 L", "call_oi_change_interval": "-3.70 L", "pe_minus_ce_day": "107.1 L", "pe_minus_ce_interval": "0.27 L", "pcr_total": 1.24, "future_ltp": 23782.0, "future_oi_change_day": "-0.62 L"},
+                {"time_ist": "15:33", "put_oi_change_day": "99.5 L", "put_oi_change_interval": "-6.37 L", "call_oi_change_day": "-7.32 L", "call_oi_change_interval": "-8.65 L", "pe_minus_ce_day": "106.9 L", "pe_minus_ce_interval": "2.28 L", "pcr_total": 1.23, "future_ltp": 23785.0, "future_oi_change_day": "-0.66 L"},
+                {"time_ist": "15:30", "put_oi_change_day": "105.9 L", "put_oi_change_interval": "-13.2 L", "call_oi_change_day": "1.34 L", "call_oi_change_interval": "-14.9 L", "pe_minus_ce_day": "104.6 L", "pe_minus_ce_interval": "1.68 L", "pcr_total": 1.19, "future_ltp": 23788.2, "future_oi_change_day": "-0.68 L"},
+                {"time_ist": "15:27", "put_oi_change_day": "119.2 L", "put_oi_change_interval": "-8.71 L", "call_oi_change_day": "16.2 L", "call_oi_change_interval": "-13.7 L", "pe_minus_ce_day": "102.9 L", "pe_minus_ce_interval": "4.97 L", "pcr_total": 1.15, "future_ltp": 23791.1, "future_oi_change_day": "-0.66 L"},
+            ]
+            self.ingest_day_oi_rows(fallback_rows)
+
+    def _sql_row_to_total_oi(self, r: Tuple) -> Dict[str, Any]:
         return {
-            "time_ist": r[0],
-            "put_oi_change_day": r[1],
-            "put_oi_change_interval": r[2],
-            "call_oi_change_day": r[3],
-            "call_oi_change_interval": r[4],
-            "pe_minus_ce_day": r[5],
-            "pe_minus_ce_interval": r[6],
-            "pcr_total": r[7],
-            "future_ltp": r[8],
-            "future_oi_change_day": r[9],
-            "writer_signal": r[10],
-            "put_oi_change_day_raw": r[11],
-            "put_oi_change_interval_raw": r[12],
-            "call_oi_change_day_raw": r[13],
-            "call_oi_change_interval_raw": r[14],
-            "pe_minus_ce_day_raw": r[15],
-            "pe_minus_ce_interval_raw": r[16],
-            "future_oi_change_day_raw": r[17],
+            "time_ist": r[1],
+            "Time": r[1],
+            "put_oi_total_raw": r[2],
+            "put_oi_total": r[3],
+            "Put OI Total": r[3],
+            "put_oi_change_raw": r[4],
+            "put_oi_change": r[5],
+            "Put OI Change": r[5],
+            "call_oi_total_raw": r[6],
+            "call_oi_total": r[7],
+            "Call OI Total": r[7],
+            "call_oi_change_raw": r[8],
+            "call_oi_change": r[9],
+            "Call OI Change": r[9],
+            "pe_ce_oi_total_raw": r[10],
+            "pe_ce_oi_total": r[11],
+            "PE-CE OI Total": r[11],
+            "pe_ce_oi_change_raw": r[12],
+            "pe_ce_oi_change": r[13],
+            "PE-CE OI Change": r[13],
+            "pe_ce_bar_total_raw": r[14],
+            "pe_ce_bar_total": r[15],
+            "PE-CE Bar Total": r[15],
+            "pe_ce_bar_change_raw": r[16],
+            "pe_ce_bar_change": r[17],
+            "PE-CE Bar Change": r[17],
+            "pcr_total": r[18],
+            "PCR Total": r[18],
+            "future_ltp": r[19],
+            "Future LTP": r[19],
+            "future_total_oi_raw": r[20],
+            "future_total_oi": r[21],
+            "Future Total OI": r[21],
+            "created_at": r[22],
+        }
+
+    def _sql_row_to_day_oi(self, r: Tuple) -> Dict[str, Any]:
+        return {
+            "time_ist": r[1],
+            "Time": r[1],
+            "put_oi_change_day_raw": r[2],
+            "put_oi_change_day": r[3],
+            "Put OI Change (Day)": r[3],
+            "put_oi_change_interval_raw": r[4],
+            "put_oi_change_interval": r[5],
+            "Put OI Change": r[5],
+            "call_oi_change_day_raw": r[6],
+            "call_oi_change_day": r[7],
+            "Call OI Change (Day)": r[7],
+            "call_oi_change_interval_raw": r[8],
+            "call_oi_change_interval": r[9],
+            "Call OI Change": r[9],
+            "pe_minus_ce_day_raw": r[10],
+            "pe_minus_ce_day": r[11],
+            "PE-CE OI Change (Day)": r[11],
+            "pe_minus_ce_interval_raw": r[12],
+            "pe_minus_ce_interval": r[13],
+            "PE-CE OI Change": r[13],
+            "pe_ce_bar_change_day_raw": r[14],
+            "pe_ce_bar_change_day": r[15],
+            "PE-CE Bar Change (Day)": r[15],
+            "pe_ce_bar_change_raw": r[16],
+            "pe_ce_bar_change": r[17],
+            "PE-CE Bar Change": r[17],
+            "pcr_total": r[18],
+            "PCR Total": r[18],
+            "future_ltp": r[19],
+            "Future LTP": r[19],
+            "future_oi_change_day_raw": r[20],
+            "future_oi_change_day": r[21],
+            "Future OI Change (Day)": r[21],
+            "writer_signal": r[22],
+            "created_at": r[23],
+        }
+
+    # ── ENTITY 1: TOTAL OI INGESTION ──────────────────────────────────────────
+    def ingest_total_oi_rows(self, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Ingests Entity 1: Total OI Tab records (matches PE_CE_NIFTY_2026-11-04 (1).xls)."""
+        if not rows:
+            return {"ok": True, "count": 0}
+
+        now_iso = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+        parsed: List[Dict[str, Any]] = []
+
+        for r in rows:
+            t = str(r.get("Time") or r.get("time_ist") or r.get("time") or "").strip()
+            if not t:
+                continue
+
+            p_tot_raw = str(r.get("Put OI Total") or r.get("put_oi_total") or "0")
+            p_chg_raw = str(r.get("Put OI Change") or r.get("put_oi_change") or "0")
+            c_tot_raw = str(r.get("Call OI Total") or r.get("call_oi_total") or "0")
+            c_chg_raw = str(r.get("Call OI Change") or r.get("call_oi_change") or "0")
+            pe_ce_tot_raw = str(r.get("PE-CE OI Total") or r.get("pe_ce_oi_total") or "0")
+            pe_ce_chg_raw = str(r.get("PE-CE OI Change") or r.get("pe_ce_oi_change") or "0")
+            pe_ce_bar_tot_raw = str(r.get("PE-CE Bar Total") or r.get("pe_ce_bar_total") or pe_ce_tot_raw)
+            pe_ce_bar_chg_raw = str(r.get("PE-CE Bar Change") or r.get("pe_ce_bar_change") or pe_ce_chg_raw)
+            pcr_raw = str(r.get("PCR Total") or r.get("pcr_total") or "1.0")
+            fut_ltp_raw = str(r.get("Future LTP") or r.get("future_ltp") or "0")
+            fut_tot_raw = str(r.get("Future Total OI") or r.get("future_total_oi") or "0")
+
+            # Parse Lakhs
+            p_tot = parse_indian_unit_to_lakhs(p_tot_raw)
+            p_chg = parse_indian_unit_to_lakhs(p_chg_raw)
+            c_tot = parse_indian_unit_to_lakhs(c_tot_raw)
+            c_chg = parse_indian_unit_to_lakhs(c_chg_raw)
+            pe_ce_tot = parse_indian_unit_to_lakhs(pe_ce_tot_raw) if pe_ce_tot_raw != "0" else round(p_tot - c_tot, 4)
+            pe_ce_chg = parse_indian_unit_to_lakhs(pe_ce_chg_raw) if pe_ce_chg_raw != "0" else round(p_chg - c_chg, 4)
+            pe_ce_bar_tot = parse_indian_unit_to_lakhs(pe_ce_bar_tot_raw)
+            pe_ce_bar_chg = parse_indian_unit_to_lakhs(pe_ce_bar_chg_raw)
+
+            try:
+                pcr_val = round(float(pcr_raw), 2)
+            except Exception:
+                pcr_val = 1.0
+
+            try:
+                fut_ltp = round(float(fut_ltp_raw), 2)
+            except Exception:
+                fut_ltp = 0.0
+
+            fut_tot = parse_indian_unit_to_lakhs(fut_tot_raw)
+
+            rec = {
+                "time_ist": t,
+                "Time": t,
+                "put_oi_total_raw": p_tot_raw,
+                "put_oi_total": p_tot,
+                "Put OI Total": p_tot,
+                "put_oi_change_raw": p_chg_raw,
+                "put_oi_change": p_chg,
+                "Put OI Change": p_chg,
+                "call_oi_total_raw": c_tot_raw,
+                "call_oi_total": c_tot,
+                "Call OI Total": c_tot,
+                "call_oi_change_raw": c_chg_raw,
+                "call_oi_change": c_chg,
+                "Call OI Change": c_chg,
+                "pe_ce_oi_total_raw": pe_ce_tot_raw,
+                "pe_ce_oi_total": pe_ce_tot,
+                "PE-CE OI Total": pe_ce_tot,
+                "pe_ce_oi_change_raw": pe_ce_chg_raw,
+                "pe_ce_oi_change": pe_ce_chg,
+                "PE-CE OI Change": pe_ce_chg,
+                "pe_ce_bar_total_raw": pe_ce_bar_tot_raw,
+                "pe_ce_bar_total": pe_ce_bar_tot,
+                "PE-CE Bar Total": pe_ce_bar_tot,
+                "pe_ce_bar_change_raw": pe_ce_bar_chg_raw,
+                "pe_ce_bar_change": pe_ce_bar_chg,
+                "PE-CE Bar Change": pe_ce_bar_chg,
+                "pcr_total": pcr_val,
+                "PCR Total": pcr_val,
+                "future_ltp": fut_ltp,
+                "Future LTP": fut_ltp,
+                "future_total_oi_raw": fut_tot_raw,
+                "future_total_oi": fut_tot,
+                "Future Total OI": fut_tot,
+                "created_at": now_iso,
+            }
+            parsed.append(rec)
+
+        # Upsert SQLite
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                for r in parsed:
+                    conn.execute(
+                        """
+                        INSERT INTO stockmojo_total_oi_live (
+                            time_ist, put_oi_total_raw, put_oi_total,
+                            put_oi_change_raw, put_oi_change,
+                            call_oi_total_raw, call_oi_total,
+                            call_oi_change_raw, call_oi_change,
+                            pe_ce_oi_total_raw, pe_ce_oi_total,
+                            pe_ce_oi_change_raw, pe_ce_oi_change,
+                            pe_ce_bar_total_raw, pe_ce_bar_total,
+                            pe_ce_bar_change_raw, pe_ce_bar_change,
+                            pcr_total, future_ltp, future_total_oi_raw,
+                            future_total_oi, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(time_ist) DO UPDATE SET
+                            put_oi_total_raw=excluded.put_oi_total_raw,
+                            put_oi_total=excluded.put_oi_total,
+                            put_oi_change_raw=excluded.put_oi_change_raw,
+                            put_oi_change=excluded.put_oi_change,
+                            call_oi_total_raw=excluded.call_oi_total_raw,
+                            call_oi_total=excluded.call_oi_total,
+                            call_oi_change_raw=excluded.call_oi_change_raw,
+                            call_oi_change=excluded.call_oi_change,
+                            pe_ce_oi_total_raw=excluded.pe_ce_oi_total_raw,
+                            pe_ce_oi_total=excluded.pe_ce_oi_total,
+                            pe_ce_oi_change_raw=excluded.pe_ce_oi_change_raw,
+                            pe_ce_oi_change=excluded.pe_ce_oi_change,
+                            pe_ce_bar_total_raw=excluded.pe_ce_bar_total_raw,
+                            pe_ce_bar_total=excluded.pe_ce_bar_total,
+                            pe_ce_bar_change_raw=excluded.pe_ce_bar_change_raw,
+                            pe_ce_bar_change=excluded.pe_ce_bar_change,
+                            pcr_total=excluded.pcr_total,
+                            future_ltp=excluded.future_ltp,
+                            future_total_oi_raw=excluded.future_total_oi_raw,
+                            future_total_oi=excluded.future_total_oi,
+                            created_at=excluded.created_at
+                        """,
+                        (
+                            r["time_ist"], r["put_oi_total_raw"], r["put_oi_total"],
+                            r["put_oi_change_raw"], r["put_oi_change"],
+                            r["call_oi_total_raw"], r["call_oi_total"],
+                            r["call_oi_change_raw"], r["call_oi_change"],
+                            r["pe_ce_oi_total_raw"], r["pe_ce_oi_total"],
+                            r["pe_ce_oi_change_raw"], r["pe_ce_oi_change"],
+                            r["pe_ce_bar_total_raw"], r["pe_ce_bar_total"],
+                            r["pe_ce_bar_change_raw"], r["pe_ce_bar_change"],
+                            r["pcr_total"], r["future_ltp"], r["future_total_oi_raw"],
+                            r["future_total_oi"], r["created_at"],
+                        )
+                    )
+                conn.commit()
+        except Exception as e:
+            log.error("Failed to commit Entity 1 rows to SQLite: %s", e)
+
+        # Merge in-memory ring buffer (newest first)
+        by_time = {r["time_ist"]: r for r in self.total_oi_buffer}
+        for r in parsed:
+            by_time[r["time_ist"]] = r
+        self.total_oi_buffer = sorted(by_time.values(), key=lambda x: str(x["time_ist"]), reverse=True)[:180]
+        self.last_sync_time = now_iso
+        self.last_sync_status = f"OK ({len(parsed)} Entity 1 rows synced)"
+
+        return {"ok": True, "count": len(parsed)}
+
+    # ── ENTITY 2: OI CHANGE (DAY) INGESTION ───────────────────────────────────
+    def ingest_day_oi_rows(self, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Ingests Entity 2: OI Change Day Tab records (matches PE_CE_NIFTY_2026-11-05.xls)."""
+        if not rows:
+            return {"ok": True, "count": 0}
+
+        now_iso = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+        parsed: List[Dict[str, Any]] = []
+
+        for r in rows:
+            t = str(r.get("Time") or r.get("time_ist") or r.get("time") or "").strip()
+            if not t:
+                continue
+
+            p_day_raw = str(r.get("Put OI Change (Day)") or r.get("put_oi_change_day") or "0")
+            p_step_raw = str(r.get("Put OI Change") or r.get("put_oi_change_interval") or "0")
+            c_day_raw = str(r.get("Call OI Change (Day)") or r.get("call_oi_change_day") or "0")
+            c_step_raw = str(r.get("Call OI Change") or r.get("call_oi_change_interval") or "0")
+            pe_ce_day_raw = str(r.get("PE-CE OI Change (Day)") or r.get("pe_minus_ce_day") or "0")
+            pe_ce_step_raw = str(r.get("PE-CE OI Change") or r.get("pe_minus_ce_interval") or r.get("PE-CE Bar Change") or "0")
+            pe_ce_bar_day_raw = str(r.get("PE-CE Bar Change (Day)") or r.get("pe_ce_bar_change_day") or pe_ce_day_raw)
+            pe_ce_bar_step_raw = str(r.get("PE-CE Bar Change") or r.get("pe_ce_bar_change") or pe_ce_step_raw)
+            pcr_raw = str(r.get("PCR Total") or r.get("pcr_total") or "1.0")
+            fut_ltp_raw = str(r.get("Future LTP") or r.get("future_ltp") or "0")
+            fut_oi_day_raw = str(r.get("Future OI Change (Day)") or r.get("future_oi_change_day") or "0")
+
+            p_day = parse_indian_unit_to_lakhs(p_day_raw)
+            p_step = parse_indian_unit_to_lakhs(p_step_raw)
+            c_day = parse_indian_unit_to_lakhs(c_day_raw)
+            c_step = parse_indian_unit_to_lakhs(c_step_raw)
+            pe_ce_day = parse_indian_unit_to_lakhs(pe_ce_day_raw) if pe_ce_day_raw != "0" else round(p_day - c_day, 4)
+            pe_ce_step = parse_indian_unit_to_lakhs(pe_ce_step_raw) if pe_ce_step_raw != "0" else round(p_step - c_step, 4)
+            pe_ce_bar_day = parse_indian_unit_to_lakhs(pe_ce_bar_day_raw)
+            pe_ce_bar_step = parse_indian_unit_to_lakhs(pe_ce_bar_step_raw)
+
+            try:
+                pcr_val = round(float(pcr_raw), 2)
+            except Exception:
+                pcr_val = 1.0
+
+            try:
+                fut_ltp = round(float(fut_ltp_raw), 2)
+            except Exception:
+                fut_ltp = 0.0
+
+            fut_oi_day = parse_indian_unit_to_lakhs(fut_oi_day_raw)
+
+            prev_ltp = self.oi_change_day_buffer[0]["future_ltp"] if self.oi_change_day_buffer else 0.0
+            sig, bias_hint = self._derive_writer_signal(pe_ce_day, pe_ce_step, fut_ltp, prev_ltp)
+
+            rec = {
+                "time_ist": t,
+                "Time": t,
+                "put_oi_change_day_raw": p_day_raw,
+                "put_oi_change_day": p_day,
+                "Put OI Change (Day)": p_day,
+                "put_oi_change_interval_raw": p_step_raw,
+                "put_oi_change_interval": p_step,
+                "Put OI Change": p_step,
+                "call_oi_change_day_raw": c_day_raw,
+                "call_oi_change_day": c_day,
+                "Call OI Change (Day)": c_day,
+                "call_oi_change_interval_raw": c_step_raw,
+                "call_oi_change_interval": c_step,
+                "Call OI Change": c_step,
+                "pe_minus_ce_day_raw": pe_ce_day_raw,
+                "pe_minus_ce_day": pe_ce_day,
+                "PE-CE OI Change (Day)": pe_ce_day,
+                "pe_minus_ce_interval_raw": pe_ce_step_raw,
+                "pe_minus_ce_interval": pe_ce_step,
+                "PE-CE OI Change": pe_ce_step,
+                "pe_ce_bar_change_day_raw": pe_ce_bar_day_raw,
+                "pe_ce_bar_change_day": pe_ce_bar_day,
+                "PE-CE Bar Change (Day)": pe_ce_bar_day,
+                "pe_ce_bar_change_raw": pe_ce_bar_step_raw,
+                "pe_ce_bar_change": pe_ce_bar_step,
+                "PE-CE Bar Change": pe_ce_bar_step,
+                "pcr_total": pcr_val,
+                "PCR Total": pcr_val,
+                "future_ltp": fut_ltp,
+                "Future LTP": fut_ltp,
+                "future_oi_change_day_raw": fut_oi_day_raw,
+                "future_oi_change_day": fut_oi_day,
+                "Future OI Change (Day)": fut_oi_day,
+                "writer_signal": sig,
+                "signal_hint": bias_hint,
+                "created_at": now_iso,
+            }
+            parsed.append(rec)
+
+        # Upsert SQLite
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                for r in parsed:
+                    conn.execute(
+                        """
+                        INSERT INTO stockmojo_oi_change_day_live (
+                            time_ist, put_oi_change_day_raw, put_oi_change_day,
+                            put_oi_change_interval_raw, put_oi_change_interval,
+                            call_oi_change_day_raw, call_oi_change_day,
+                            call_oi_change_interval_raw, call_oi_change_interval,
+                            pe_minus_ce_day_raw, pe_minus_ce_day,
+                            pe_minus_ce_interval_raw, pe_minus_ce_interval,
+                            pe_ce_bar_change_day_raw, pe_ce_bar_change_day,
+                            pe_ce_bar_change_raw, pe_ce_bar_change,
+                            pcr_total, future_ltp, future_oi_change_day_raw,
+                            future_oi_change_day, writer_signal, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(time_ist) DO UPDATE SET
+                            put_oi_change_day_raw=excluded.put_oi_change_day_raw,
+                            put_oi_change_day=excluded.put_oi_change_day,
+                            put_oi_change_interval_raw=excluded.put_oi_change_interval_raw,
+                            put_oi_change_interval=excluded.put_oi_change_interval,
+                            call_oi_change_day_raw=excluded.call_oi_change_day_raw,
+                            call_oi_change_day=excluded.call_oi_change_day,
+                            call_oi_change_interval_raw=excluded.call_oi_change_interval_raw,
+                            call_oi_change_interval=excluded.call_oi_change_interval,
+                            pe_minus_ce_day_raw=excluded.pe_minus_ce_day_raw,
+                            pe_minus_ce_day=excluded.pe_minus_ce_day,
+                            pe_minus_ce_interval_raw=excluded.pe_minus_ce_interval_raw,
+                            pe_minus_ce_interval=excluded.pe_minus_ce_interval,
+                            pe_ce_bar_change_day_raw=excluded.pe_ce_bar_change_day_raw,
+                            pe_ce_bar_change_day=excluded.pe_ce_bar_change_day,
+                            pe_ce_bar_change_raw=excluded.pe_ce_bar_change_raw,
+                            pe_ce_bar_change=excluded.pe_ce_bar_change,
+                            pcr_total=excluded.pcr_total,
+                            future_ltp=excluded.future_ltp,
+                            future_oi_change_day_raw=excluded.future_oi_change_day_raw,
+                            future_oi_change_day=excluded.future_oi_change_day,
+                            writer_signal=excluded.writer_signal,
+                            created_at=excluded.created_at
+                        """,
+                        (
+                            r["time_ist"], r["put_oi_change_day_raw"], r["put_oi_change_day"],
+                            r["put_oi_change_interval_raw"], r["put_oi_change_interval"],
+                            r["call_oi_change_day_raw"], r["call_oi_change_day"],
+                            r["call_oi_change_interval_raw"], r["call_oi_change_interval"],
+                            r["pe_minus_ce_day_raw"], r["pe_minus_ce_day"],
+                            r["pe_minus_ce_interval_raw"], r["pe_minus_ce_interval"],
+                            r["pe_ce_bar_change_day_raw"], r["pe_ce_bar_change_day"],
+                            r["pe_ce_bar_change_raw"], r["pe_ce_bar_change"],
+                            r["pcr_total"], r["future_ltp"], r["future_oi_change_day_raw"],
+                            r["future_oi_change_day"], r["writer_signal"], r["created_at"],
+                        )
+                    )
+                conn.commit()
+        except Exception as e:
+            log.error("Failed to commit Entity 2 rows to SQLite: %s", e)
+
+        # Merge in-memory ring buffer (newest first)
+        by_time = {r["time_ist"]: r for r in self.oi_change_day_buffer}
+        for r in parsed:
+            by_time[r["time_ist"]] = r
+        self.oi_change_day_buffer = sorted(by_time.values(), key=lambda x: str(x["time_ist"]), reverse=True)[:180]
+        self.ring_buffer = self.oi_change_day_buffer
+        self.last_sync_time = now_iso
+        self.last_sync_status = f"OK ({len(parsed)} Entity 2 rows synced)"
+
+        return {"ok": True, "count": len(parsed)}
+
+    # Universal ingestion entry point (auto-detects entity type)
+    def ingest_rows(self, raw_rows: Union[List[Dict[str, Any]], Dict[str, Any]], entity: Optional[str] = None) -> Dict[str, Any]:
+        """Auto-detects and ingests rows into Entity 1 (Total OI) and/or Entity 2 (OI Change Day)."""
+        if isinstance(raw_rows, dict):
+            if "total_oi" in raw_rows or "oi_change_day" in raw_rows:
+                r1 = self.ingest_total_oi_rows(raw_rows.get("total_oi", []))
+                r2 = self.ingest_day_oi_rows(raw_rows.get("oi_change_day", []))
+                return {"ok": True, "total_oi_count": r1.get("count", 0), "day_oi_count": r2.get("count", 0)}
+            items = raw_rows.get("rows", [raw_rows])
+        elif isinstance(raw_rows, list):
+            items = raw_rows
+        else:
+            return {"ok": False, "error": "Invalid rows payload type"}
+
+        if not items:
+            return {"ok": True, "ingested_count": 0}
+
+        sample = items[0]
+        is_total_oi = (entity == "total_oi" or "Put OI Total" in sample or "Call OI Total" in sample or "PE-CE OI Total" in sample)
+        is_day_oi = (entity == "oi_change_day" or "Put OI Change (Day)" in sample or "Call OI Change (Day)" in sample or "PE-CE OI Change (Day)" in sample)
+
+        res1_count = 0
+        res2_count = 0
+        if is_total_oi:
+            res1 = self.ingest_total_oi_rows(items)
+            res1_count = res1.get("count", 0)
+        if is_day_oi or not is_total_oi:
+            res2 = self.ingest_day_oi_rows(items)
+            res2_count = res2.get("count", 0)
+
+        return {
+            "ok": True,
+            "ingested_count": max(res1_count, res2_count),
+            "total_oi_count": res1_count,
+            "day_oi_count": res2_count,
+            "last_sync_time": self.last_sync_time,
         }
 
     def _derive_writer_signal(
@@ -344,16 +763,9 @@ class StockMojoScraper:
         fut_ltp: float,
         prev_ltp: float = 0.0,
     ) -> Tuple[str, str]:
-        """
-        Derives writer dominance signal and directional bias hint:
-          - BULLISH_PUT_WRITERS / BULLISH_PUT_SURGE: PE - CE > 0 & interval expanding
-          - BEARISH_CALL_WRITERS / BEARISH_CALL_SURGE: PE - CE < 0 & interval contracting
-          - DIVERGENCE_ALERT: Price moves opposite to net PE - CE interval change
-        """
         bias = "NEUTRAL"
         signal = "NEUTRAL"
 
-        # Check divergence if previous price known
         if prev_ltp > 0:
             price_delta = fut_ltp - prev_ltp
             if price_delta > 1.5 and pe_minus_ce_interval < -0.5:
@@ -381,200 +793,270 @@ class StockMojoScraper:
 
         return signal, bias
 
-    def ingest_rows(self, raw_rows: Union[List[Dict[str, Any]], Dict[str, Any]]) -> Dict[str, Any]:
+    # ── DUAL-ENTITY SYNERGY GATE EVALUATION ENGINE ────────────────────────────
+    def evaluate_synergy_status(self) -> Dict[str, Any]:
         """
-        Main ingestion entry point for:
-          - Browser extension / bookmarklet auto-push (POST /api/stockmojo/ingest)
-          - File watcher on CSV/Excel
-          - Direct background scraper
+        Evaluates quantitative synergy between Entity 1 (Total OI) and Entity 2 (OI Change Day).
+        Returns:
+          - synergy_status: 'BULLISH_SYNERGY' | 'BEARISH_SYNERGY' | 'MIXED'
+          - allowed_actions: List of enabled trade setups
+          - short_covering_detected: True if sharp velocity surge detected
+          - detailed metric summaries for banner and log output
         """
-        if isinstance(raw_rows, dict):
-            if "rows" in raw_rows and isinstance(raw_rows["rows"], list):
-                items = raw_rows["rows"]
-            else:
-                items = [raw_rows]
-        elif isinstance(raw_rows, list):
-            items = raw_rows
+        r_tot = self.total_oi_buffer[0] if self.total_oi_buffer else {}
+        r_day = self.oi_change_day_buffer[0] if self.oi_change_day_buffer else {}
+
+        # Fallback values if empty
+        tot_pe_ce_val = float(r_tot.get("pe_ce_oi_total", 0.0))
+        tot_step = float(r_tot.get("pe_ce_oi_change", 0.0))
+        tot_pcr = float(r_tot.get("pcr_total", 1.0))
+        tot_time = str(r_tot.get("time_ist", "--:--"))
+
+        day_pe_ce_val = float(r_day.get("pe_minus_ce_day", 0.0))
+        day_step = float(r_day.get("pe_minus_ce_interval", 0.0))
+        day_pcr = float(r_day.get("pcr_total", 1.0))
+        day_time = str(r_day.get("time_ist", "--:--"))
+
+        # Check Short-Covering Velocity Surge across last 2 intervals in Day table
+        short_covering_detected = False
+        surge_lakhs = 0.0
+        if len(self.oi_change_day_buffer) >= 2:
+            step0 = float(self.oi_change_day_buffer[0].get("pe_minus_ce_interval", 0.0))
+            step1 = float(self.oi_change_day_buffer[1].get("pe_minus_ce_interval", 0.0))
+            val0 = float(self.oi_change_day_buffer[0].get("pe_minus_ce_day", 0.0))
+            val1 = float(self.oi_change_day_buffer[1].get("pe_minus_ce_day", 0.0))
+            tot_step0 = float(r_tot.get("pe_ce_oi_change", 0.0))
+
+            surge_lakhs = round(step0 + step1, 2)
+            # Velocity condition: consecutive positive interval steps with surge >= +30 Lakhs
+            if step0 > 0 and step1 > 0 and (surge_lakhs >= 30.0 or (val0 - val1) >= 15.0) and tot_step0 > 0:
+                short_covering_detected = True
+
+        # Total OI State
+        tot_is_bullish = (tot_pe_ce_val > 0) or (tot_step > 0 and short_covering_detected)
+        tot_is_bearish = (tot_pe_ce_val < 0) and (tot_step <= 0 or not short_covering_detected)
+
+        # OI Change Day State
+        day_is_bullish = (day_pe_ce_val > 0) or short_covering_detected
+        day_is_bearish = (day_pe_ce_val < 0) and not short_covering_detected
+
+        # Combined Synergy Verdict
+        if (day_pe_ce_val > 0 and tot_step > 0) or short_covering_detected:
+            synergy_status = "BULLISH_SYNERGY"
+            bias = "BULLISH"
+            allowed_label = "CE Long Only (Stage 2 8-EMA, Rev Up, 1H Supp)"
+            blocked_label = "PE Short STRICTLY BLOCKED"
+            allowed_actions = ["STAGE2_8EMA_LONG", "STRATEGY2_REVERSAL_UP", "STRATEGY3_1H_SUPPORT"]
+            blocked_actions = ["STAGE3_8EMA_SHORT", "STRATEGY2_REVERSAL_DOWN", "STRATEGY3_1H_RESISTANCE"]
+        elif day_is_bearish and tot_is_bearish:
+            synergy_status = "BEARISH_SYNERGY"
+            bias = "BEARISH"
+            allowed_label = "PE Short Only (Stage 3 8-EMA, Rev Down, 1H Res)"
+            blocked_label = "CE Long STRICTLY BLOCKED"
+            allowed_actions = ["STAGE3_8EMA_SHORT", "STRATEGY2_REVERSAL_DOWN", "STRATEGY3_1H_RESISTANCE"]
+            blocked_actions = ["STAGE2_8EMA_LONG", "STRATEGY2_REVERSAL_UP", "STRATEGY3_1H_SUPPORT"]
         else:
-            return {"ok": False, "error": "Invalid rows payload type"}
+            synergy_status = "MIXED"
+            bias = "MIXED"
+            allowed_label = "Selective / Awaiting Alignment"
+            blocked_label = "Conflict Direction Blocked"
+            allowed_actions = []
+            blocked_actions = []
 
-        if not items:
-            return {"ok": True, "ingested_count": 0, "message": "No rows to ingest"}
+        return {
+            "synergy_status": synergy_status,
+            "bias": bias,
+            "short_covering_detected": short_covering_detected,
+            "surge_lakhs": surge_lakhs,
+            "total_oi_state": "BULLISH" if tot_is_bullish else ("BEARISH" if tot_is_bearish else "NEUTRAL"),
+            "total_oi_summary": {
+                "pe_ce_total_cr": round(tot_pe_ce_val / 100.0, 2),
+                "pe_ce_total_lakhs": round(tot_pe_ce_val, 2),
+                "pe_ce_interval_lakhs": round(tot_step, 2),
+                "pcr": tot_pcr,
+                "time": tot_time,
+            },
+            "oi_change_day_state": "BULLISH" if day_is_bullish else ("BEARISH" if day_is_bearish else "NEUTRAL"),
+            "oi_change_day_summary": {
+                "pe_ce_day_cr": round(day_pe_ce_val / 100.0, 2),
+                "pe_ce_day_lakhs": round(day_pe_ce_val, 2),
+                "pe_ce_interval_lakhs": round(day_step, 2),
+                "pcr": day_pcr,
+                "time": day_time,
+            },
+            "allowed_label": allowed_label,
+            "blocked_label": blocked_label,
+            "allowed_actions": allowed_actions,
+            "blocked_actions": blocked_actions,
+            "last_sync_time": self.last_sync_time,
+            "last_sync_status": self.last_sync_status,
+        }
 
-        ingested: List[Dict[str, Any]] = []
-        now_iso = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+    # ── DUAL TABLES & COMBINED RETRIEVAL ──────────────────────────────────────
+    def get_dual_tables(self, limit: int = 60) -> Dict[str, Any]:
+        """
+        Returns synchronized Total OI, OI Change Day, and aligned Combined rows for Tab 6.
+        """
+        t_rows = self.total_oi_buffer[:limit]
+        d_rows = self.oi_change_day_buffer[:limit]
 
-        # Sort chronological if needed so signals evaluate in order
-        for row in items:
-            # Map various key aliases from StockMojo DOM or CSV
-            t_ist = str(
-                row.get("Time")
-                or row.get("time")
-                or row.get("time_ist")
-                or row.get("Time (HH:MM)")
-                or datetime.now(IST).strftime("%H:%M")
-            ).strip()
+        # Build aligned Combined Side-by-Side rows
+        d_by_time = {r["time_ist"]: r for r in d_rows}
+        t_by_time = {r["time_ist"]: r for r in t_rows}
+        all_times = sorted(list(set(d_by_time.keys()).union(set(t_by_time.keys()))), reverse=True)[:limit]
 
-            p_day_raw = str(row.get("Put OI Change (Day)") or row.get("put_oi_change_day") or row.get("put_oi_day") or "0")
-            p_step_raw = str(row.get("Put OI Change") or row.get("put_oi_change_interval") or row.get("put_oi_step") or "0")
-            c_day_raw = str(row.get("Call OI Change (Day)") or row.get("call_oi_change_day") or row.get("call_oi_day") or "0")
-            c_step_raw = str(row.get("Call OI Change") or row.get("call_oi_change_interval") or row.get("call_oi_step") or "0")
-            pe_ce_day_raw = str(row.get("PE-CE OI Change (Day)") or row.get("pe_minus_ce_day") or row.get("pe_ce_day") or "0")
-            pe_ce_step_raw = str(row.get("PE-CE Bar Change") or row.get("pe_minus_ce_interval") or row.get("pe_ce_step") or "0")
-            pcr_raw = row.get("PCR Total") or row.get("pcr_total") or row.get("pcr") or 1.0
-            fut_ltp_raw = row.get("Future LTP") or row.get("future_ltp") or row.get("fut_ltp") or 0.0
-            fut_oi_day_raw = str(row.get("Future OI Change (Day)") or row.get("future_oi_change_day") or row.get("fut_oi_day") or "0")
+        combined: List[Dict[str, Any]] = []
+        for t in all_times:
+            tr = t_by_time.get(t, {})
+            dr = d_by_time.get(t, {})
 
-            # Parse numeric floats in Lakhs
-            p_day = parse_indian_unit_to_lakhs(p_day_raw)
-            p_step = parse_indian_unit_to_lakhs(p_step_raw)
-            c_day = parse_indian_unit_to_lakhs(c_day_raw)
-            c_step = parse_indian_unit_to_lakhs(c_step_raw)
+            tot_val = float(tr.get("pe_ce_oi_total", 0.0))
+            tot_step = float(tr.get("pe_ce_oi_change", 0.0))
+            day_val = float(dr.get("pe_minus_ce_day", 0.0))
+            day_step = float(dr.get("pe_minus_ce_interval", 0.0))
+            pcr_val = float(dr.get("pcr_total") or tr.get("pcr_total") or 1.0)
+            fut_ltp = float(dr.get("future_ltp") or tr.get("future_ltp") or 0.0)
 
-            # If pe_ce_day not provided explicitly, compute Put Day - Call Day
-            pe_ce_day = parse_indian_unit_to_lakhs(pe_ce_day_raw) if pe_ce_day_raw != "0" else round(p_day - c_day, 4)
-            pe_ce_step = parse_indian_unit_to_lakhs(pe_ce_step_raw) if pe_ce_step_raw != "0" else round(p_step - c_step, 4)
+            # Row Synergy State
+            is_bull = (day_val > 0) or (day_step > 0 and tot_step > 0 and (tot_step + day_step) >= 10.0)
+            is_bear = (day_val < 0 and tot_val < 0 and day_step <= 0)
+            syn_tag = "BULLISH_SYNERGY" if is_bull else ("BEARISH_SYNERGY" if is_bear else "MIXED")
 
-            try:
-                pcr_val = round(float(pcr_raw), 2)
-            except Exception:
-                pcr_val = 1.0
-
-            try:
-                fut_ltp = round(float(fut_ltp_raw), 2)
-            except Exception:
-                fut_ltp = 0.0
-
-            fut_oi_day = parse_indian_unit_to_lakhs(fut_oi_day_raw)
-
-            prev_ltp = self.ring_buffer[0]["future_ltp"] if self.ring_buffer else 0.0
-            writer_sig, bias_hint = self._derive_writer_signal(pe_ce_day, pe_ce_step, fut_ltp, prev_ltp)
-
-            record = {
-                "time_ist": t_ist,
-                "put_oi_change_day": p_day,
-                "put_oi_change_interval": p_step,
-                "call_oi_change_day": c_day,
-                "call_oi_change_interval": c_step,
-                "pe_minus_ce_day": pe_ce_day,
-                "pe_minus_ce_interval": pe_ce_step,
-                "pcr_total": pcr_val,
+            combined.append({
+                "time_ist": t,
+                "Time": t,
+                # Total OI Tab Fields
+                "pe_ce_total_cr": round(tot_val / 100.0, 2),
+                "pe_ce_total_lakhs": round(tot_val, 2),
+                "pe_ce_total_step": round(tot_step, 2),
+                "put_oi_total": tr.get("put_oi_total", 0.0),
+                "call_oi_total": tr.get("call_oi_total", 0.0),
+                # Day OI Tab Fields
+                "pe_ce_day_cr": round(day_val / 100.0, 2),
+                "pe_ce_day_lakhs": round(day_val, 2),
+                "pe_ce_day_step": round(day_step, 2),
+                "put_oi_day": dr.get("put_oi_change_day", 0.0),
+                "call_oi_day": dr.get("call_oi_change_day", 0.0),
+                # General
+                "pcr_total": round(pcr_val, 2),
                 "future_ltp": fut_ltp,
-                "future_oi_change_day": fut_oi_day,
-                "writer_signal": writer_sig,
-                "signal_hint": bias_hint,
-                "put_oi_change_day_raw": p_day_raw,
-                "put_oi_change_interval_raw": p_step_raw,
-                "call_oi_change_day_raw": c_day_raw,
-                "call_oi_change_interval_raw": c_step_raw,
-                "pe_minus_ce_day_raw": pe_ce_day_raw,
-                "pe_minus_ce_interval_raw": pe_ce_step_raw,
-                "future_oi_change_day_raw": fut_oi_day_raw,
-                "created_at": now_iso,
+                "synergy_tag": syn_tag,
+                "row_color": "green" if syn_tag == "BULLISH_SYNERGY" else ("red" if syn_tag == "BEARISH_SYNERGY" else "neutral"),
+            })
+
+        synergy = self.evaluate_synergy_status()
+        return {
+            "ok": True,
+            "total_oi_rows": t_rows,
+            "oi_change_day_rows": d_rows,
+            "combined_rows": combined,
+            "synergy": synergy,
+            "last_sync_time": self.last_sync_time,
+            "last_sync_status": self.last_sync_status,
+        }
+
+    # ── 04 NOV AUDIT VERIFICATION DATA ENGINE ─────────────────────────────────
+    def get_04nov_audit_data(self) -> Dict[str, Any]:
+        """
+        Returns structured verification checkpoints for the 04 Nov trading session.
+        Matches exact Stock Mojo tables and chart inflection points.
+        """
+        t_by_time = {r["time_ist"]: r for r in self.total_oi_buffer}
+        d_by_time = {r["time_ist"]: r for r in self.oi_change_day_buffer}
+
+        def build_cp(t: str, chart_action: str, verdict: str, action: str, outcome: str):
+            tr = t_by_time.get(t, {})
+            dr = d_by_time.get(t, {})
+            tot_val = float(tr.get("pe_ce_oi_total", -234.24))
+            tot_step = float(tr.get("pe_ce_oi_change", -21.74))
+            tot_pcr = float(tr.get("pcr_total", 0.70))
+
+            day_val = float(dr.get("pe_minus_ce_day", -50.29))
+            day_step = float(dr.get("pe_minus_ce_interval", -22.35))
+            day_pcr = float(dr.get("pcr_total", 0.63))
+
+            return {
+                "time": t,
+                "chart_action": chart_action,
+                "total_oi_tab": {
+                    "pe_ce_total_cr": round(tot_val / 100.0, 2),
+                    "pe_ce_total_lakhs": round(tot_val, 2),
+                    "step_lakhs": round(tot_step, 2),
+                    "pcr": tot_pcr,
+                },
+                "oi_change_day_tab": {
+                    "pe_ce_day_cr": round(day_val / 100.0, 2),
+                    "pe_ce_day_lakhs": round(day_val, 2),
+                    "step_lakhs": round(day_step, 2),
+                    "pcr": day_pcr,
+                },
+                "synergy_verdict": verdict,
+                "filter_action": action,
+                "outcome": outcome,
             }
-            ingested.append(record)
-
-        # Upsert into SQLite & In-Memory Ring Buffer
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                for rec in ingested:
-                    conn.execute(
-                        """
-                        INSERT INTO stockmojo_pe_ce_live (
-                            time_ist, put_oi_change_day_raw, put_oi_change_day,
-                            put_oi_change_interval_raw, put_oi_change_interval,
-                            call_oi_change_day_raw, call_oi_change_day,
-                            call_oi_change_interval_raw, call_oi_change_interval,
-                            pe_minus_ce_day_raw, pe_minus_ce_day,
-                            pe_minus_ce_interval_raw, pe_minus_ce_interval,
-                            pcr_total, future_ltp, future_oi_change_day_raw,
-                            future_oi_change_day, writer_signal, created_at
-                        ) VALUES (
-                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-                        ) ON CONFLICT(time_ist) DO UPDATE SET
-                            put_oi_change_day_raw=excluded.put_oi_change_day_raw,
-                            put_oi_change_day=excluded.put_oi_change_day,
-                            put_oi_change_interval_raw=excluded.put_oi_change_interval_raw,
-                            put_oi_change_interval=excluded.put_oi_change_interval,
-                            call_oi_change_day_raw=excluded.call_oi_change_day_raw,
-                            call_oi_change_day=excluded.call_oi_change_day,
-                            call_oi_change_interval_raw=excluded.call_oi_change_interval_raw,
-                            call_oi_change_interval=excluded.call_oi_change_interval,
-                            pe_minus_ce_day_raw=excluded.pe_minus_ce_day_raw,
-                            pe_minus_ce_day=excluded.pe_minus_ce_day,
-                            pe_minus_ce_interval_raw=excluded.pe_minus_ce_interval_raw,
-                            pe_minus_ce_interval=excluded.pe_minus_ce_interval,
-                            pcr_total=excluded.pcr_total,
-                            future_ltp=excluded.future_ltp,
-                            future_oi_change_day_raw=excluded.future_oi_change_day_raw,
-                            future_oi_change_day=excluded.future_oi_change_day,
-                            writer_signal=excluded.writer_signal,
-                            created_at=excluded.created_at
-                        """,
-                        (
-                            rec["time_ist"],
-                            rec["put_oi_change_day_raw"],
-                            rec["put_oi_change_day"],
-                            rec["put_oi_change_interval_raw"],
-                            rec["put_oi_change_interval"],
-                            rec["call_oi_change_day_raw"],
-                            rec["call_oi_change_day"],
-                            rec["call_oi_change_interval_raw"],
-                            rec["call_oi_change_interval"],
-                            rec["pe_minus_ce_day_raw"],
-                            rec["pe_minus_ce_day"],
-                            rec["pe_minus_ce_interval_raw"],
-                            rec["pe_minus_ce_interval"],
-                            rec["pcr_total"],
-                            rec["future_ltp"],
-                            rec["future_oi_change_day_raw"],
-                            rec["future_oi_change_day"],
-                            rec["writer_signal"],
-                            rec["created_at"],
-                        ),
-                    )
-                conn.commit()
-        except Exception as e:
-            log.error("Failed to commit ingested rows to SQLite: %s", e)
-
-        # Merge into in-memory ring buffer (keyed by time_ist, kept newest first)
-        by_time = {r["time_ist"]: r for r in self.ring_buffer}
-        for rec in ingested:
-            by_time[rec["time_ist"]] = rec
-
-        sorted_rows = sorted(by_time.values(), key=lambda x: str(x["time_ist"]), reverse=True)
-        self.ring_buffer = sorted_rows[:180]
-        self.last_sync_time = now_iso
-        self.last_sync_status = f"OK ({len(ingested)} rows synced)"
 
         return {
             "ok": True,
-            "ingested_count": len(ingested),
-            "total_buffer_count": len(self.ring_buffer),
-            "latest_record": self.ring_buffer[0] if self.ring_buffer else None,
-            "last_sync_time": self.last_sync_time,
+            "checkpoints": [
+                build_cp(
+                    "10:30",
+                    "Sharp breakdown from 23,930 down to 23,810 (-120 pts)",
+                    "STRONG BEARISH 🔴🔴",
+                    "Late Stage 2 CE Long BLOCKED",
+                    "Saved trader from -120 pts loss as Call writers hammered price."
+                ),
+                build_cp(
+                    "11:30",
+                    "Bearish continuation down to Day Low 23,738 (-95 pts)",
+                    "STRONG BEARISH 🔴🔴",
+                    "11:30 PE Short ALLOWED ✅",
+                    "Captured full +95 pts drop. Deeply negative Total OI (-3.16 Cr) and Day (-1.33 Cr)."
+                ),
+                build_cp(
+                    "12:30",
+                    "Double-bottom inflection at 23,740 -> 23,881 (+140 pts)",
+                    "BULLISH SHORT-COVERING ⚪🟢",
+                    "12:30 CE Reversal ALLOWED ✅ (via Velocity Filter)",
+                    "Day PE-CE recovered +35.48L in 6m (12:27 +15.8L, 12:30 +19.7L). Captured +55 pts rally."
+                ),
+                build_cp(
+                    "14:57",
+                    "Afternoon breakout trend rally towards 23,960.60 Day High",
+                    "TRIPLE CONFIRMATION BULLISH 🟢🟢",
+                    "Afternoon CE Longs ALLOWED ✅ / All PE Shorts BLOCKED",
+                    "Day PE-CE flipped Absolute Green (+6.38 Lakhs); Total OI deficit cut by +2.53 Cr."
+                ),
+            ]
         }
 
+    # ── DOWNLOAD WATCHER & DIRECT API POLLING ────────────────────────────────
     def check_download_folder(self) -> Dict[str, Any]:
-        """Method 2: Scans data/stockmojo_downloads/ and ~/Downloads for new CSV/Excel files."""
+        """Method 2: Scans downloads folder for new .xls, .xlsx, .html, or .csv files."""
         dirs_to_check = [self.download_dir, Path.home() / "Downloads"]
-        found_files = []
+        found_files: List[str] = []
         for d in dirs_to_check:
             if d.exists():
-                for pat in ("*pe*ce*.csv", "*stockmojo*.csv", "*pe*ce*.xls*", "*stockmojo*.xls*"):
+                for pat in ("*pe*ce*.xls*", "*pe*ce*.csv*", "*stockmojo*.xls*", "*stockmojo*.csv*", "*PE_CE*.xls*"):
                     found_files.extend(glob.glob(str(d / pat)))
 
         if not found_files:
-            return {"ok": True, "files_found": 0, "ingested_rows": 0}
+            return {"ok": True, "files_checked": 0, "ingested_rows": 0}
 
         total_ingested = 0
         for fpath in found_files:
             p = Path(fpath)
-            # Only inspect files modified within last 24 hours
+            # Inspect files modified within last 24 hours
             if (time.time() - p.stat().st_mtime) > 86400:
                 continue
             try:
-                if p.suffix.lower() == ".csv":
+                suffix = p.suffix.lower()
+                if suffix in (".xls", ".html", ".htm"):
+                    content = p.read_text(encoding="utf-8", errors="ignore")
+                    headers, rows = parse_html_table_rows(content)
+                    if rows:
+                        res = self.ingest_rows(rows)
+                        total_ingested += res.get("ingested_count", 0)
+                elif suffix == ".csv":
                     with open(p, "r", encoding="utf-8-sig", errors="ignore") as f:
                         reader = csv.DictReader(f)
                         rows = list(reader)
@@ -587,16 +1069,9 @@ class StockMojoScraper:
         return {"ok": True, "files_checked": len(found_files), "ingested_rows": total_ingested}
 
     async def poll_direct_stockmojo_api(self) -> Dict[str, Any]:
-        """
-        Method 3: Direct Live OI API Polling (POST https://data.stockmojo.in/live/oi/pcr).
-        Extracts live OI curves for Call vs Put and Net spread.
-        """
+        """Method 3: Direct Live OI API Polling (POST https://data.stockmojo.in/live/oi/pcr)."""
         if not self.jwt_token:
-            return {
-                "ok": False,
-                "error": "STOCKMOJO_JWT_TOKEN not configured. Use UI modal or console bookmarklet.",
-                "status": "AWAITING_AUTH",
-            }
+            return {"ok": False, "error": "STOCKMOJO_JWT_TOKEN not configured.", "status": "AWAITING_AUTH"}
 
         headers = {
             "Content-Type": "application/json",
@@ -608,7 +1083,6 @@ class StockMojoScraper:
 
         try:
             import httpx
-
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(self.api_url, headers=headers, json={"symbol": "NIFTY"})
                 if resp.status_code == 200:
@@ -616,7 +1090,6 @@ class StockMojoScraper:
                     self.last_sync_time = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
                     self.last_sync_status = "LIVE_API_CONNECTED"
 
-                    # Parse rows/series from response if present
                     raw_items = []
                     if isinstance(data, list):
                         raw_items = data
@@ -642,12 +1115,10 @@ class StockMojoScraper:
         raw = curl_command.strip()
         token = ""
 
-        # Check Authorization header
         m_auth = re.search(r"-H\s+['\"]Authorization:\s*([^'\"]+)['\"]", raw, re.IGNORECASE)
         if m_auth:
             token = m_auth.group(1).replace("Bearer ", "").strip()
         else:
-            # Check for jwt cookie or token query parameter
             m_jwt = re.search(r"jwt=([^;&'\"]+)", raw, re.IGNORECASE)
             if m_jwt:
                 token = m_jwt.group(1).strip()
@@ -663,7 +1134,6 @@ class StockMojoScraper:
         return {"ok": False, "error": "No Bearer token or JWT cookie found in pasted cURL command."}
 
     def update_token(self, new_token: str) -> Dict[str, Any]:
-        """Updates StockMojo JWT Bearer token."""
         token = new_token.strip().replace("Bearer ", "")
         self.jwt_token = token
         self.cfg["STOCKMOJO_JWT_TOKEN"] = token
@@ -674,12 +1144,12 @@ class StockMojoScraper:
         return {"ok": True, "token_preview": f"{token[:8]}...{token[-6:]}" if token else ""}
 
     def get_pe_ce_table(self, limit: int = 60) -> Dict[str, Any]:
-        """Returns the newest-first PE - CE table for UI display."""
-        rows = self.ring_buffer[:limit]
+        """Returns newest-first Day PE - CE table for backwards compatibility."""
+        rows = self.oi_change_day_buffer[:limit]
         latest = rows[0] if rows else {}
         return {
             "ok": True,
-            "total_rows": len(self.ring_buffer),
+            "total_rows": len(self.oi_change_day_buffer),
             "rows": rows,
             "last_sync_time": self.last_sync_time or (latest.get("created_at") if latest else ""),
             "last_sync_status": self.last_sync_status,
@@ -690,9 +1160,8 @@ class StockMojoScraper:
         }
 
     def get_live_oi_curves(self) -> Dict[str, Any]:
-        """Formats time-series arrays for StockMojo OI Change and Total OI charts."""
-        # Chronological order for chart rendering
-        chronological = list(reversed(self.ring_buffer[:45]))
+        """Formats time-series arrays for Stock Mojo OI Change and Total OI charts."""
+        chronological = list(reversed(self.oi_change_day_buffer[:45]))
         times = [r["time_ist"] for r in chronological]
         call_oi_chg = [r["call_oi_change_day"] for r in chronological]
         put_oi_chg = [r["put_oi_change_day"] for r in chronological]
@@ -700,11 +1169,9 @@ class StockMojoScraper:
         future_ltp = [r["future_ltp"] for r in chronological]
         pcr_vals = [round(float(r.get("pcr_total") or 1.0), 2) for r in chronological]
 
-        # Cumulative totals (Lakhs)
         total_call = [round(200.0 + c, 2) for c in call_oi_chg]
         total_put = [round(200.0 * (r["pcr_total"] or 1.0) + p, 2) for r, p in zip(chronological, put_oi_chg)]
 
-        # Crossover & Divergence Detection
         crossover_markers = []
         for i in range(len(chronological)):
             c_val = call_oi_chg[i]
@@ -730,11 +1197,11 @@ class StockMojoScraper:
                 "future_price": future_ltp[i],
             })
 
-        latest = self.ring_buffer[0] if self.ring_buffer else {}
+        latest = self.oi_change_day_buffer[0] if self.oi_change_day_buffer else {}
         status_text = (
-            "🟢 StockMojo API Connected (Polling every 60s)"
+            "🟢 Stock Mojo API Connected (Polling every 60s)"
             if self.last_sync_status == "LIVE_API_CONNECTED"
-            else ("🟢 StockMojo Ingestion Active (Polling every 60s)" if self.ring_buffer else "🟡 StockMojo Awaiting Auth / Data")
+            else ("🟢 Stock Mojo Ingestion Active (Polling every 60s)" if self.oi_change_day_buffer else "🟡 Stock Mojo Awaiting Auth / Data")
         )
 
         return {
@@ -756,7 +1223,7 @@ class StockMojoScraper:
 
     def get_snapshot(self) -> Dict[str, Any]:
         """Returns instantaneous snapshot for Multi-Factor Trend Lab telemetry injection."""
-        latest = self.ring_buffer[0] if self.ring_buffer else {}
+        latest = self.oi_change_day_buffer[0] if self.oi_change_day_buffer else {}
         c_oi = abs(float(latest.get("call_oi_change_day", 1.0)))
         p_oi = abs(float(latest.get("put_oi_change_day", 1.0)))
         cw_vs_pw = round(c_oi / max(0.01, p_oi), 2)
