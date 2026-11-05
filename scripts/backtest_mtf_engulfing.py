@@ -70,6 +70,7 @@ from algo_execution_engine.backtest_setup1 import (  # noqa: E402
     load_historical_1m_data,
 )
 from algo_execution_engine.strategy_setup1 import add_course_emas, load_config  # noqa: E402
+import paper_trading  # noqa: E402
 
 DB_PATH = ROOT / "ict_smc_app/backend/data/ict_smc.sqlite3"
 OUT_DIR = Path(__file__).resolve().parent / "out" / "mtf_engulfing"
@@ -250,10 +251,9 @@ def simulate_fixed_bracket(
     fixed_sl = float(strat.get("fixed_sl_pts", 40.0))
     target_pts = float(strat.get("target_pts", 40.0))
     ctc_trigger = float(strat.get("cost_to_cost_trigger_pts", 40.0))
-    ctc_buffer = float(strat.get("cost_to_cost_brokerage_buffer_pts", 9.0))
+    ctc_buffer = float(strat.get("cost_to_cost_brokerage_buffer_pts", 2.0))
     square_off = str(bt.get("square_off_time", "15:20"))
     lot_size = int(bt.get("lot_size", 65))
-    brokerage = float(bt.get("brokerage_inr_per_trade", 400.0))
     delta_win = float(bt.get("itm_delta_win", 0.6))
     delta_loss = float(bt.get("itm_delta_loss", 0.5))
 
@@ -302,11 +302,21 @@ def simulate_fixed_bracket(
 
         spot_pnl = (exit_spot - entry_spot) if direction == 1 else (entry_spot - exit_spot)
         opt_pts = spot_pnl * delta_win if spot_pnl > 0 else spot_pnl * delta_loss
-        net_inr = opt_pts * lot_size - brokerage
+        gross_inr = opt_pts * lot_size
+        opt_entry = 200.0
+        opt_exit = max(0.05, round(opt_entry + opt_pts, 2))
+        chg_dict = paper_trading.calculate_trade_charges(opt_entry, opt_exit, lot_size, side="BUY" if direction == 1 else "SELL")
+        stat_charges = float(chg_dict["total_charges"])
+        slippage_pts_leg = float(bt.get("slippage_premium_pts_per_leg", 0.25))
+        slippage_inr = round(2.0 * slippage_pts_leg * lot_size, 2)
+        net_inr = round(gross_inr - stat_charges, 2)
+        net_with_slip = round(gross_inr - stat_charges - slippage_inr, 2)
         out.append(SimpleNamespace(
             session_date=e["session_date"], entry_ts=entry_ts, exit_ts=exit_ts,
             entry_spot=entry_spot, exit_spot=exit_spot, spot_pnl_pts=spot_pnl,
-            asym_net_inr=net_inr, exit_reason=exit_reason, variant="synthetic",
+            asym_net_inr=net_inr, asym_net_with_slippage_inr=net_with_slip,
+            statutory_charges_inr=stat_charges, slippage_inr=slippage_inr,
+            exit_reason=exit_reason, variant="synthetic",
         ))
     return out
 
@@ -612,9 +622,10 @@ def main() -> None:
             "index_date_range": [df_1m["session_date"].min(), df_1m["session_date"].max()],
             "fut_volume_window": list(vol_window) if vol_window else None,
             "lot_size": cfg.get("backtest", {}).get("lot_size"),
-            "brokerage_inr": cfg.get("backtest", {}).get("brokerage_inr_per_trade"),
-            "break_even_win_rate_pct_note": "Mentor math: lot 65, delta 0.6 win/0.5 loss, Rs400 brokerage, "
-                                             "fixed 40/40 bracket -> break-even win rate ~59.4%.",
+            "charges_model": "Exact Dhan Tariff (paper_trading.calculate_trade_charges)",
+            "slippage_premium_pts_per_leg": cfg.get("backtest", {}).get("slippage_premium_pts_per_leg", 0.25),
+            "break_even_win_rate_pct_note": "Real Dhan tariff (~Rs78/trade at lot 65), delta 0.6 win/0.5 loss, "
+                                             "fixed 40/40 bracket -> break-even win rate ~46.4% (statutory alone).",
         },
         "trend_state_correlation": correlation,
         "layers": layers_report,

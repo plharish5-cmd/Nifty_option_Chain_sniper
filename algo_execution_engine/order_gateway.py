@@ -23,12 +23,19 @@ import json
 import logging
 import os
 import sqlite3
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import paper_trading
 
 from .stage3_sandbox import SandboxTrade, Stage3GraduationTracker
 from .strategy_setup1 import ActivePosition, Setup1Signal, load_config
@@ -688,7 +695,8 @@ class DhanOrderGateway:
         spot_pnl_pts = (pos.entry_spot - exit_spot) if is_put else (exit_spot - pos.entry_spot)
         est_option_exit = max(0.05, round(pos.entry_option_price + (spot_pnl_pts * pos.delta), 1))
         option_pnl_pts = est_option_exit - pos.entry_option_price
-        brokerage = 400.0
+        chg_dict = paper_trading.calculate_trade_charges(pos.entry_option_price, est_option_exit, pos.quantity, side="BUY")
+        brokerage = float(chg_dict["total_charges"])
         gross_pnl_inr = round(option_pnl_pts * pos.quantity, 2)
         net_pnl_inr = round(gross_pnl_inr - brokerage, 2)
 

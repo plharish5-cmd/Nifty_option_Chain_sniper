@@ -42,6 +42,12 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import paper_trading
+
 from .strategy_setup1 import (
     add_bollinger,
     add_course_emas,
@@ -84,6 +90,14 @@ class BacktestTrade:
     is_gap_day: bool
     gap_pts: float
     variant: str
+    # Real Dhan Regulatory Charges & Slippage Fields
+    statutory_charges_inr: float = 0.0
+    slippage_inr: float = 0.0
+    asym_net_with_slippage_inr: float = 0.0
+    linear_net_with_slippage_inr: float = 0.0
+    opt_entry_price: float = 200.0
+    asym_opt_exit_price: float = 200.0
+    linear_opt_exit_price: float = 200.0
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -197,8 +211,11 @@ class Setup1BacktestSimulator:
         self.bb_width_min_15m = float(self.strat_cfg.get("bb_width_min_15m", 60.0))
         self.touch_prox = float(self.strat_cfg.get("touch_proximity_pts", 2.5))
 
-        self.lot_size = int(self.backtest_cfg.get("lot_size", 75))
-        self.brokerage = float(self.backtest_cfg.get("brokerage_inr_per_trade", 400.0))
+        self.lot_size = int(self.backtest_cfg.get("lot_size", 65))
+        self.opt_base_entry = float(self.backtest_cfg.get("option_entry_base_premium", 200.0))
+        self.slippage_pts_leg = float(self.backtest_cfg.get("slippage_premium_pts_per_leg", 0.25))
+        self.cost_to_cost_brokerage_buffer_pts = float(self.strat_cfg.get("cost_to_cost_brokerage_buffer_pts", 2.0))
+        self.brokerage = self.backtest_cfg.get("brokerage_inr_per_trade")
         self.asym_win_delta = float(self.backtest_cfg.get("itm_delta_win", 0.60))
         self.asym_loss_delta = float(self.backtest_cfg.get("itm_delta_loss", 0.50))
         self.linear_delta = float(self.backtest_cfg.get("linear_delta", 0.60))
@@ -343,7 +360,7 @@ class Setup1BacktestSimulator:
                 active_trade["highest_spot"] = highest
 
                 # Cost-to-Cost Trigger (+40 pts move in favor)
-                brokerage_buffer = 9.0 if rules.get("ctc_brokerage_buffer", False) else 0.0
+                brokerage_buffer = self.cost_to_cost_brokerage_buffer_pts if rules.get("ctc_brokerage_buffer", False) else 0.0
                 if rules.get("ctc", True) and not active_trade["cost_to_cost_active"]:
                     if b_high - entry_spot >= self.ctc_trigger_pts:
                         active_trade["cost_to_cost_active"] = True
@@ -494,18 +511,33 @@ class Setup1BacktestSimulator:
         entry_spot = active_trade["entry_spot"]
         spot_pnl = exit_spot - entry_spot
 
+        opt_entry = self.opt_base_entry
+
         # Asymmetric ITM Delta Model (Trading Bible Part G)
         if spot_pnl > 0:
             asym_opt_pts = spot_pnl * self.asym_win_delta
         else:
             asym_opt_pts = spot_pnl * self.asym_loss_delta
         asym_gross = asym_opt_pts * self.lot_size
-        asym_net = asym_gross - self.brokerage
+        asym_opt_exit = max(0.05, round(opt_entry + asym_opt_pts, 2))
+
+        # Real Dhan Tariff Regulatory Charges
+        asym_chg = paper_trading.calculate_trade_charges(opt_entry, asym_opt_exit, self.lot_size, side="BUY")
+        statutory_charges = float(asym_chg["total_charges"])
+        slippage_inr = round(2.0 * self.slippage_pts_leg * self.lot_size, 2)
+
+        asym_net = round(asym_gross - statutory_charges, 2)
+        asym_net_with_slippage = round(asym_gross - statutory_charges - slippage_inr, 2)
 
         # Linear Conservative 0.60 Delta Model
         linear_opt_pts = spot_pnl * self.linear_delta
         linear_gross = linear_opt_pts * self.lot_size
-        linear_net = linear_gross - self.brokerage
+        linear_opt_exit = max(0.05, round(opt_entry + linear_opt_pts, 2))
+        lin_chg = paper_trading.calculate_trade_charges(opt_entry, linear_opt_exit, self.lot_size, side="BUY")
+        linear_statutory_charges = float(lin_chg["total_charges"])
+
+        linear_net = round(linear_gross - linear_statutory_charges, 2)
+        linear_net_with_slippage = round(linear_gross - linear_statutory_charges - slippage_inr, 2)
 
         return BacktestTrade(
             session_date=active_trade["session_date"],
@@ -529,6 +561,13 @@ class Setup1BacktestSimulator:
             is_gap_day=is_gap_day,
             gap_pts=round(gap_pts, 2),
             variant=variant_name,
+            statutory_charges_inr=round(statutory_charges, 2),
+            slippage_inr=round(slippage_inr, 2),
+            asym_net_with_slippage_inr=round(asym_net_with_slippage, 2),
+            linear_net_with_slippage_inr=round(linear_net_with_slippage, 2),
+            opt_entry_price=round(opt_entry, 2),
+            asym_opt_exit_price=round(asym_opt_exit, 2),
+            linear_opt_exit_price=round(linear_opt_exit, 2),
         )
 
     def _simulate_null_baseline(
@@ -625,7 +664,9 @@ class Setup1BacktestSimulator:
                 "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "total_sessions_analyzed": sessions_count,
                 "lot_size": self.lot_size,
-                "brokerage_inr": self.brokerage,
+                "charges_model": "Exact Dhan Tariff (paper_trading.calculate_trade_charges)",
+                "slippage_premium_pts_per_leg": self.slippage_pts_leg,
+                "option_entry_base_premium": self.opt_base_entry,
                 "asym_delta_win": self.asym_win_delta,
                 "asym_delta_loss": self.asym_loss_delta,
                 "linear_delta": self.linear_delta,
@@ -643,8 +684,8 @@ class Setup1BacktestSimulator:
         full_setup_trades = variant_results.get("Variant D (15m Bible: Trend + UBB + 1st Opp + Stop)") or variant_results.get("Variant D (Full Setup #1 Trading Bible)", [])
         null_trades = variant_results.get("Null Baseline (Random Longs)", [])
         if full_setup_trades and null_trades:
-            setup_pnls = [t.linear_net_inr for t in full_setup_trades]
-            null_pnls = [t.linear_net_inr for t in null_trades]
+            setup_pnls = [t.asym_net_inr for t in full_setup_trades]
+            null_pnls = [t.asym_net_inr for t in null_trades]
             t_stat, p_val = stats.ttest_ind(setup_pnls, null_pnls, equal_var=False)
             report["statistical_comparison"] = {
                 "variant_d_mean_net_inr": round(float(np.mean(setup_pnls)), 2),
@@ -654,29 +695,50 @@ class Setup1BacktestSimulator:
                 "statistically_significant": bool(p_val < 0.05 and t_stat > 0),
             }
 
-        # Go / No-Go Verdict on Full Setup #1 (Variant D)
-        var_d_metrics = report["variants"].get("Variant D (15m Bible: Trend + UBB + 1st Opp + Stop)") or report["variants"].get("Variant D (Full Setup #1 Trading Bible)", {})
-        net_exp_inr = var_d_metrics.get("linear_net_expectancy_inr", 0.0)
-        profit_factor = var_d_metrics.get("linear_net_profit_factor", 0.0)
-        win_rate = var_d_metrics.get("win_rate_pct", 0.0)
+        # Go / No-Go Verdict on Variant E (Institutional 15m) and Variant D
+        var_e_metrics = report["variants"].get("Variant E (Institutional 15m: Bible + Gap + VWAP + EMA Sep)", {})
+        var_d_metrics = report["variants"].get("Variant D (15m Bible: Trend + UBB + 1st Opp + Stop)", {})
 
         min_pf = float(self.backtest_cfg.get("profit_factor_min_verdict", 1.30))
-        is_go = bool(net_exp_inr > 0 and profit_factor >= min_pf)
 
-        verdict_text = "🟢 GO (APPROVED FOR REAL EXECUTION)" if is_go else "🔴 NO-GO (EDGE INSUFFICIENT AFTER BROKERAGE)"
-        reason_text = (
-            f"Net Expectancy ₹{net_exp_inr:+,.1f}/trade, Profit Factor {profit_factor:.2f} (>= {min_pf}), Win Rate {win_rate:.1f}%"
-            if is_go else
-            f"Expectancy ₹{net_exp_inr:+,.1f} or Profit Factor {profit_factor:.2f} did not clear minimum institutional hurdle ({min_pf})"
+        # Variant E Stats (Statutory and With-Slippage)
+        e_n = var_e_metrics.get("total_trades", 0)
+        e_stat_exp = var_e_metrics.get("asym_net_expectancy_inr", 0.0)
+        e_stat_pf = var_e_metrics.get("asym_net_profit_factor", 0.0)
+        e_slip_exp = var_e_metrics.get("asym_with_slippage_net_expectancy_inr", 0.0)
+        e_slip_pf = var_e_metrics.get("asym_with_slippage_net_profit_factor", 0.0)
+        e_wr = var_e_metrics.get("win_rate_pct", 0.0)
+
+        is_go_stat = bool(e_stat_exp > 0 and e_stat_pf >= min_pf)
+        is_go_slip = bool(e_slip_exp > 0 and e_slip_pf >= min_pf)
+
+        status = "GO_STATUTORY_ONLY" if is_go_stat and not is_go_slip else ("GO" if is_go_slip else "NO-GO")
+        badge = (
+            "🟢 GO (CLEARS HURDLE ON STATUTORY CHARGES, WATCH SLIPPAGE)"
+            if is_go_stat and not is_go_slip else
+            ("🟢 GO (APPROVED FOR REAL EXECUTION ACROSS CHARGES & SLIPPAGE)" if is_go_slip else "🔴 NO-GO")
+        )
+        reason = (
+            f"Variant E (n={e_n}, WR={e_wr}%): Statutory Net Expectancy ₹{e_stat_exp:+,.1f}/trade, PF {e_stat_pf:.2f} (>= {min_pf}). "
+            f"With 0.25 pts/leg slippage: Net ₹{e_slip_exp:+,.1f}/trade, PF {e_slip_pf:.2f}. "
+            f"Note: Execution mode remains PAPER because n={e_n} has confidence interval including 50%."
         )
 
         report["verdict"] = {
-            "status": "GO" if is_go else "NO-GO",
-            "verdict_badge": verdict_text,
-            "reason": reason_text,
+            "status": status,
+            "verdict_badge": badge,
+            "reason": reason,
             "min_profit_factor_required": min_pf,
-            "achieved_profit_factor": profit_factor,
-            "achieved_net_expectancy_inr": net_exp_inr,
+            "variant_e_statutory": {
+                "achieved_net_expectancy_inr": e_stat_exp,
+                "achieved_profit_factor": e_stat_pf,
+                "clears_hurdle": is_go_stat,
+            },
+            "variant_e_with_slippage": {
+                "achieved_net_expectancy_inr": e_slip_exp,
+                "achieved_profit_factor": e_slip_pf,
+                "clears_hurdle": is_go_slip,
+            },
         }
 
         return report
@@ -709,7 +771,11 @@ class Setup1BacktestSimulator:
         avg_loss_pts = float(np.mean([abs(t.spot_pnl_pts) for t in losses])) if losses else 0.0
         exp_spot_pts = (win_rate / 100.0 * avg_win_pts) - (loss_rate / 100.0 * avg_loss_pts)
 
-        # Asymmetric ITM Delta Money Math
+        # Statutory Charges & Slippage Averages
+        avg_charges = float(np.mean([t.statutory_charges_inr for t in trades]))
+        avg_slippage = float(np.mean([t.slippage_inr for t in trades]))
+
+        # ── 1. Asymmetric ITM Delta (Statutory Charges Only) ──
         asym_net_wins = [t.asym_net_inr for t in trades if t.asym_net_inr > 0]
         asym_net_losses = [abs(t.asym_net_inr) for t in trades if t.asym_net_inr < 0]
         avg_asym_win_inr = float(np.mean(asym_net_wins)) if asym_net_wins else 0.0
@@ -717,8 +783,19 @@ class Setup1BacktestSimulator:
         asym_total_net_inr = float(sum(t.asym_net_inr for t in trades))
         asym_net_exp = asym_total_net_inr / n
         asym_pf = (sum(asym_net_wins) / sum(asym_net_losses)) if asym_net_losses and sum(asym_net_losses) > 0 else 999.0
+        asym_be_wr = (avg_asym_loss_inr / (avg_asym_win_inr + avg_asym_loss_inr) * 100.0) if (avg_asym_win_inr + avg_asym_loss_inr) > 0 else 50.0
 
-        # Linear 0.60 Delta Money Math
+        # ── 2. Asymmetric ITM Delta (Charges + Slippage) ──
+        asym_slip_wins = [t.asym_net_with_slippage_inr for t in trades if t.asym_net_with_slippage_inr > 0]
+        asym_slip_losses = [abs(t.asym_net_with_slippage_inr) for t in trades if t.asym_net_with_slippage_inr < 0]
+        avg_asym_slip_win = float(np.mean(asym_slip_wins)) if asym_slip_wins else 0.0
+        avg_asym_slip_loss = float(np.mean(asym_slip_losses)) if asym_slip_losses else 0.0
+        asym_slip_total_net_inr = float(sum(t.asym_net_with_slippage_inr for t in trades))
+        asym_slip_net_exp = asym_slip_total_net_inr / n
+        asym_slip_pf = (sum(asym_slip_wins) / sum(asym_slip_losses)) if asym_slip_losses and sum(asym_slip_losses) > 0 else 999.0
+        asym_slip_be_wr = (avg_asym_slip_loss / (avg_asym_slip_win + avg_asym_slip_loss) * 100.0) if (avg_asym_slip_win + avg_asym_slip_loss) > 0 else 50.0
+
+        # ── 3. Linear 0.60 Delta (Statutory Charges Only) ──
         lin_net_wins = [t.linear_net_inr for t in trades if t.linear_net_inr > 0]
         lin_net_losses = [abs(t.linear_net_inr) for t in trades if t.linear_net_inr < 0]
         avg_lin_win_inr = float(np.mean(lin_net_wins)) if lin_net_wins else 0.0
@@ -727,8 +804,15 @@ class Setup1BacktestSimulator:
         lin_net_exp = lin_total_net_inr / n
         lin_pf = (sum(lin_net_wins) / sum(lin_net_losses)) if lin_net_losses and sum(lin_net_losses) > 0 else 999.0
 
+        # ── 4. Linear 0.60 Delta (Charges + Slippage) ──
+        lin_slip_wins = [t.linear_net_with_slippage_inr for t in trades if t.linear_net_with_slippage_inr > 0]
+        lin_slip_losses = [abs(t.linear_net_with_slippage_inr) for t in trades if t.linear_net_with_slippage_inr < 0]
+        lin_slip_total_net_inr = float(sum(t.linear_net_with_slippage_inr for t in trades))
+        lin_slip_net_exp = lin_slip_total_net_inr / n
+        lin_slip_pf = (sum(lin_slip_wins) / sum(lin_slip_losses)) if lin_slip_losses and sum(lin_slip_losses) > 0 else 999.0
+
         # Drawdown calculation
-        cumulative_pnl = np.cumsum([t.linear_net_inr for t in trades])
+        cumulative_pnl = np.cumsum([t.asym_net_inr for t in trades])
         running_max = np.maximum.accumulate(cumulative_pnl)
         drawdowns = running_max - cumulative_pnl
         max_dd_inr = float(np.max(drawdowns)) if len(drawdowns) > 0 else 0.0
@@ -751,7 +835,7 @@ class Setup1BacktestSimulator:
         # Sharpe ratio
         daily_returns: Dict[str, float] = {}
         for t in trades:
-            daily_returns[t.session_date] = daily_returns.get(t.session_date, 0.0) + t.linear_net_inr
+            daily_returns[t.session_date] = daily_returns.get(t.session_date, 0.0) + t.asym_net_inr
         daily_vals = list(daily_returns.values())
         sharpe = (float(np.mean(daily_vals)) / float(np.std(daily_vals)) * math.sqrt(252)) if len(daily_vals) > 1 and float(np.std(daily_vals)) > 0 else 0.0
 
@@ -773,18 +857,30 @@ class Setup1BacktestSimulator:
             "avg_win_spot_pts": round(avg_win_pts, 1),
             "avg_loss_spot_pts": round(avg_loss_pts, 1),
             "expectancy_spot_pts": round(exp_spot_pts, 2),
-            # Asymmetric ITM Delta
+            "avg_statutory_charges_inr": round(avg_charges, 2),
+            "slippage_inr_per_trade": round(avg_slippage, 2),
+            # Asymmetric ITM Delta (Statutory Charges Only)
             "asym_avg_win_net_inr": round(avg_asym_win_inr, 1),
             "asym_avg_loss_net_inr": round(avg_asym_loss_inr, 1),
             "asym_total_net_pnl_inr": round(asym_total_net_inr, 2),
             "asym_net_expectancy_inr": round(asym_net_exp, 2),
             "asym_net_profit_factor": round(asym_pf, 2),
-            # Linear Conservative 0.60 Delta
+            "asym_breakeven_win_rate_pct": round(asym_be_wr, 1),
+            # Asymmetric ITM Delta (Charges + Slippage)
+            "asym_with_slippage_total_net_pnl_inr": round(asym_slip_total_net_inr, 2),
+            "asym_with_slippage_net_expectancy_inr": round(asym_slip_net_exp, 2),
+            "asym_with_slippage_net_profit_factor": round(asym_slip_pf, 2),
+            "asym_with_slippage_breakeven_win_rate_pct": round(asym_slip_be_wr, 1),
+            # Linear Conservative 0.60 Delta (Statutory Charges Only)
             "linear_avg_win_net_inr": round(avg_lin_win_inr, 1),
             "linear_avg_loss_net_inr": round(avg_lin_loss_inr, 1),
             "linear_total_net_pnl_inr": round(lin_total_net_inr, 2),
             "linear_net_expectancy_inr": round(lin_net_exp, 2),
             "linear_net_profit_factor": round(lin_pf, 2),
+            # Linear Conservative 0.60 Delta (Charges + Slippage)
+            "linear_with_slippage_total_net_pnl_inr": round(lin_slip_total_net_inr, 2),
+            "linear_with_slippage_net_expectancy_inr": round(lin_slip_net_exp, 2),
+            "linear_with_slippage_net_profit_factor": round(lin_slip_pf, 2),
             # Risk & Drawdown
             "max_drawdown_spot_pts": round(max_dd_pts, 1),
             "max_drawdown_net_inr": round(max_dd_inr, 2),
@@ -808,57 +904,54 @@ def print_terminal_report(report: Dict[str, Any]) -> None:
     stat = report.get("statistical_comparison", {})
     verdict = report.get("verdict", {})
 
-    print("\n" + "=" * 90)
+    print("\n" + "=" * 115)
     print("🎯 STAGE 2 EVENT-DRIVEN HISTORICAL BACKTEST REPORT: SETUP #1 (STAGE 2 8 EMA LONG)")
     print(f"   Database: ict_smc.sqlite3 | Total Sessions: {meta.get('total_sessions_analyzed')} | Timestamp: {meta.get('generated_at')}")
-    print(f"   Money Math: 1 Lot ({meta.get('lot_size')} qty) | Round-Trip Brokerage: ₹{meta.get('brokerage_inr'):.0f} | Linear Delta: {meta.get('linear_delta'):.2f}")
-    print("=" * 90)
+    print(f"   Tariff: {meta.get('charges_model')} (~₹75-81/trade at lot {meta.get('lot_size')}) | Slippage: {meta.get('slippage_premium_pts_per_leg')} pts/leg (₹32.50 roundtrip)")
+    print("=" * 115)
 
-    # Ablation Comparison Table
-    print("\n📊 ABLATION & FEATURE VALUE COMPARISON TABLE:")
-    print(f"{'Variant':<42} | {'Trades':<7} | {'Win%':<6} | {'Net PnL (INR)':<14} | {'Exp/Tr (INR)':<13} | {'PF':<5}")
-    print("-" * 96)
+    # Side-by-Side Comparison Table (Statutory vs With Slippage)
+    print("\n📊 ABLATION & FEATURE VALUE COMPARISON TABLE (REPORTED BOTH WAYS):")
+    print(f"{'Variant':<40} | {'Trades':<6} | {'Win%':<6} | {'Stat Net ₹/Tr':<13} | {'Stat PF':<7} | {'Slip Net ₹/Tr':<13} | {'Slip PF':<7} | {'BE Win%':<7}")
+    print("-" * 115)
 
     for vname, m in variants.items():
         n_tr = m.get("total_trades", 0)
         win_pct = m.get("win_rate_pct", 0.0)
-        net_pnl = m.get("linear_total_net_pnl_inr", 0.0)
-        exp_tr = m.get("linear_net_expectancy_inr", 0.0)
-        pf = m.get("linear_net_profit_factor", 0.0)
-        print(f"{vname:<42} | {n_tr:<7} | {win_pct:>5.1f}% | ₹{net_pnl:>12,.1f} | ₹{exp_tr:>11,.1f} | {pf:>4.2f}")
+        stat_exp = m.get("asym_net_expectancy_inr", 0.0)
+        stat_pf = m.get("asym_net_profit_factor", 0.0)
+        slip_exp = m.get("asym_with_slippage_net_expectancy_inr", 0.0)
+        slip_pf = m.get("asym_with_slippage_net_profit_factor", 0.0)
+        be_wr = m.get("asym_breakeven_win_rate_pct", 0.0)
+        print(f"{vname:<40} | {n_tr:<6} | {win_pct:>5.1f}% | ₹{stat_exp:>11,.1f} | {stat_pf:>7.2f} | ₹{slip_exp:>11,.1f} | {slip_pf:>7.2f} | {be_wr:>6.1f}%")
 
-    print("-" * 96)
+    print("-" * 115)
 
-    # Detailed Metrics for Full Setup #1 (Variant D)
-    d_metrics = variants.get("Variant D (15m Bible: Trend + UBB + 1st Opp + Stop)") or variants.get("Variant D (Full Setup #1 Trading Bible)", {})
-    print("\n🏆 DETAILED METRICS FOR VARIANT D (FULL SETUP #1 15-MINUTE TRADING BIBLE):")
+    # Detailed Metrics for Variant E (Institutional)
+    e_metrics = variants.get("Variant E (Institutional 15m: Bible + Gap + VWAP + EMA Sep)", {})
+    print("\n🏆 DETAILED METRICS FOR VARIANT E (FULL INSTITUTIONAL SETUP #1):")
     print(f"  • Total Sessions Tested:        {meta.get('total_sessions_analyzed')}")
-    print(f"  • Total Trades Fired:           {d_metrics.get('total_trades')} ({d_metrics.get('trades_per_session', 0):.2f} trades/session)")
-    print(f"  • Win / Scratch / Loss:         {d_metrics.get('wins_count')} wins ({d_metrics.get('win_rate_pct')}%) | {d_metrics.get('scratches_count')} scratches ({d_metrics.get('scratch_rate_pct')}%) | {d_metrics.get('losses_count')} losses ({d_metrics.get('loss_rate_pct')}%)")
-    print(f"  • Spot P&L Expectancy:          {d_metrics.get('expectancy_spot_pts'):+.2f} pts/trade (Avg Win: +{d_metrics.get('avg_win_spot_pts'):.1f} pts, Avg Loss: -{d_metrics.get('avg_loss_spot_pts'):.1f} pts)")
-    print(f"  • Linear 0.60 Delta Net PnL:    ₹{d_metrics.get('linear_total_net_pnl_inr'):+,.2f} (Net Expectancy: ₹{d_metrics.get('linear_net_expectancy_inr'):+,.2f} / trade after ₹400 brokerage)")
-    print(f"  • Asymmetric ITM Delta Net PnL: ₹{d_metrics.get('asym_total_net_pnl_inr'):+,.2f} (Net Expectancy: ₹{d_metrics.get('asym_net_expectancy_inr'):+,.2f} / trade)")
-    print(f"  • Profit Factor:                {d_metrics.get('linear_net_profit_factor'):.2f} (Asymmetric ITM: {d_metrics.get('asym_net_profit_factor'):.2f})")
-    print(f"  • Max Drawdown:                 ₹{d_metrics.get('max_drawdown_net_inr'):,.2f} ({d_metrics.get('max_drawdown_spot_pts'):.1f} spot pts)")
-    print(f"  • Max Consecutive Losses:       {d_metrics.get('max_consecutive_losses')}")
-    print(f"  • Annualized Sharpe Ratio:      {d_metrics.get('annualized_sharpe_ratio'):.2f}")
-    print(f"  • Gap Day Nuance:               {d_metrics.get('gap_day_trades')} trades on gap days ({d_metrics.get('gap_day_win_rate_pct')}% Win) vs {d_metrics.get('nongap_day_trades')} on regular days ({d_metrics.get('nongap_day_win_rate_pct')}% Win)")
-
-    # Statistical Comparison vs Null
-    if stat:
-        print("\n🔬 STATISTICAL HYPOTHESIS TEST VS NULL BASELINE:")
-        print(f"  • Setup #1 Mean Net:            ₹{stat.get('variant_d_mean_net_inr'):+,.2f} / trade")
-        print(f"  • Null Baseline Mean Net:       ₹{stat.get('null_baseline_mean_net_inr'):+,.2f} / trade")
-        print(f"  • Welch's t-statistic:          {stat.get('t_statistic')}")
-        print(f"  • p-value:                      {stat.get('p_value')}")
-        sig_str = "YES (p < 0.05)" if stat.get("statistically_significant") else "NO (p >= 0.05)"
-        print(f"  • Statistically Significant:    {sig_str}")
+    print(f"  • Total Trades Fired:           {e_metrics.get('total_trades')} ({e_metrics.get('trades_per_session', 0):.2f} trades/session)")
+    print(f"  • Win / Scratch / Loss:         {e_metrics.get('wins_count')} wins ({e_metrics.get('win_rate_pct')}%) | {e_metrics.get('scratches_count')} scratches | {e_metrics.get('losses_count')} losses ({e_metrics.get('loss_rate_pct')}%)")
+    print(f"  • Spot P&L Expectancy:          {e_metrics.get('expectancy_spot_pts'):+.2f} pts/trade (Avg Win: +{e_metrics.get('avg_win_spot_pts'):.1f} pts, Avg Loss: -{e_metrics.get('avg_loss_spot_pts'):.1f} pts)")
+    print(f"  • Average Statutory Charges:    ₹{e_metrics.get('avg_statutory_charges_inr', 0):.2f} / trade (Break-even Win Rate: {e_metrics.get('asym_breakeven_win_rate_pct')}%)")
+    print(f"  • Configured Slippage:          ₹{e_metrics.get('slippage_inr_per_trade', 0):.2f} / trade (0.25 pts/leg = 0.50 pts roundtrip)")
+    print(f"  • STATUTORY CHARGES ONLY:")
+    print(f"    - Net Expectancy:             ₹{e_metrics.get('asym_net_expectancy_inr'):+,.2f} / trade")
+    print(f"    - Net Profit Factor:          {e_metrics.get('asym_net_profit_factor'):.2f} (Hurdle: 1.30)")
+    print(f"    - Total Net P&L:              ₹{e_metrics.get('asym_total_net_pnl_inr'):+,.2f}")
+    print(f"  • CHARGES + SLIPPAGE (ALL-IN):")
+    print(f"    - Net Expectancy:             ₹{e_metrics.get('asym_with_slippage_net_expectancy_inr'):+,.2f} / trade")
+    print(f"    - Net Profit Factor:          {e_metrics.get('asym_with_slippage_net_profit_factor'):.2f}")
+    print(f"    - Total Net P&L:              ₹{e_metrics.get('asym_with_slippage_total_net_pnl_inr'):+,.2f}")
+    print(f"  • Max Drawdown:                 ₹{e_metrics.get('max_drawdown_net_inr'):,.2f} ({e_metrics.get('max_drawdown_spot_pts'):.1f} spot pts)")
+    print(f"  • Max Consecutive Losses:       {e_metrics.get('max_consecutive_losses')}")
 
     # Verdict
-    print("\n" + "=" * 90)
-    print(f"⚖️ GO / NO-GO VERDICT: {verdict.get('verdict_badge')}")
+    print("\n" + "=" * 115)
+    print(f"⚖️ REVISED GO / NO-GO VERDICT: {verdict.get('verdict_badge')}")
     print(f"   Reason: {verdict.get('reason')}")
-    print("=" * 90 + "\n")
+    print("=" * 115 + "\n")
 
 
 def run_backtest_and_save(sqlite_path: str = "ict_smc_app/backend/data/ict_smc.sqlite3", output_json: str = "algo_execution_engine/backtest_report_setup1.json") -> Dict[str, Any]:

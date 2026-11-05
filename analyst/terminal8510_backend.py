@@ -1369,13 +1369,13 @@ CALIBRATED_BENCHMARK_REPLAY: Dict[str, List[Dict[str, Any]]] = {
             "option_exit": 225.00,
             "outcome": "TARGET HIT (+25pts Trailed)",
             "gross_pnl": 1625.00,
-            "dhan_charges": 0.00,
-            "net_pnl": 1625.00,
+            "dhan_charges": 81.15,
+            "net_pnl": 1543.85,
             "setup": "Stage 2 8-EMA (Long) [Pullback Touch]",
             "entry_time": "2026-11-05 10:15:00",
             "exit_time": "2026-11-05 11:00:00",
             "result": "TARGET HIT (+25pts Trailed)",
-            "charges": 0.00,
+            "charges": 81.15,
             "ema_bb_state_at_entry": "4EMA: 24380.0 > 8EMA: 24365.0 | UBB: UP | Width: 75.0",
             "exit_reason": "TRAIL_TARGET_HIT",
             "source": "AUTO ALGO 🤖",
@@ -4716,10 +4716,10 @@ class QuantTerminalBackend:
                     "exit_reason": "TRAIL_TARGET_HIT",
                     "gross_pnl": 1625.0,
                     "Gross_Pnl_INR": 1625.0,
-                    "dhan_charges": 0.0,
-                    "Exact_Charges_INR": 0.0,
-                    "net_pnl": 1625.0,
-                    "Net_Pnl_INR": 1625.0,
+                    "dhan_charges": 81.15,
+                    "Exact_Charges_INR": 81.15,
+                    "net_pnl": 1543.85,
+                    "Net_Pnl_INR": 1543.85,
                     "Lot_Qty": 65,
                     "qty": 65,
                     "Option_Points": 25.0,
@@ -4866,7 +4866,7 @@ class QuantTerminalBackend:
             "date_formatted": dt_f,
             "ingest_status": "COMPLETE ✅ (375/375 1m Candles)",
             "paper_trades_count": 1,
-            "net_pnl_inr": "+₹1,625.00",
+            "net_pnl_inr": "+₹1,543.85",
             "trades_breakdown": [
                 {
                     "trade_id": "TRADE_05NOV_01",
@@ -4875,7 +4875,7 @@ class QuantTerminalBackend:
                     "source": "AUTO ALGO 🤖",
                     "entry_ist": "10:15 IST",
                     "exit_ist": "11:00 IST",
-                    "pnl": "+₹1,625.00"
+                    "pnl": "+₹1,543.85"
                 }
             ],
             "signals_summary": "Stage 2: BULLISH | 4/8 Crossover: BULLISH | 1H 8 EMA: SUPPORT",
@@ -4886,7 +4886,7 @@ class QuantTerminalBackend:
                 f"📊 *PORT 8510 EOD SUMMARY — {dt_f}*\n"
                 f"✅ *Ingest:* 375/375 1m Candles Synced (Replay + Backtest + Trend Lab Ready)\n"
                 f"🤖 *Paper Trades Taken:* 1 (AUTO ALGO — Stage 2 8 EMA Touch)\n"
-                f"💰 *Net P&L:* +₹1,625.00\n"
+                f"💰 *Net P&L:* +₹1,543.85\n"
                 f"📈 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n"
                 f"🟢 *Stock Mojo Total OI:* BULLISH (Put 18.28 Cr vs Call 16.41 Cr)\n"
                 f"🟢 *Stock Mojo OI Change:* BULLISH (PE-CE +3.40 Cr)\n"
@@ -5357,8 +5357,8 @@ class QuantTerminalBackend:
                         "Option_Points": 25.0,
                         "Lot_Qty": 65,
                         "Gross_Pnl_INR": 1625.00,
-                        "Exact_Charges_INR": 0.0,
-                        "Net_Pnl_INR": 1625.00,
+                        "Exact_Charges_INR": 81.15,
+                        "Net_Pnl_INR": 1543.85,
                         "Direction": "LONG",
                         "EMA_Aligned": True,
                         "EMA_Slope": 15.0,
@@ -5605,8 +5605,8 @@ class QuantTerminalBackend:
                     "Option_Points": 25.0,
                     "Lot_Qty": 65,
                     "Gross_Pnl_INR": 1625.00,
-                    "Exact_Charges_INR": 0.0,
-                    "Net_Pnl_INR": 1625.00,
+                    "Exact_Charges_INR": 81.15,
+                    "Net_Pnl_INR": 1543.85,
                     "Direction": "LONG",
                     "source": "AUTO ALGO 🤖",
                     "Source": "AUTO ALGO 🤖",

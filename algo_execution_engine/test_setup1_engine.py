@@ -233,8 +233,9 @@ def test_cost_to_cost_trigger_and_candle_trail():
     )
     assert should_exit is False
     assert pos.cost_to_cost_active is True
-    # SL moved to entry + 9 pts to cover ₹400 round-trip brokerage!
-    assert new_sl == 23509.0
+    # SL moved to entry + cost_to_cost_brokerage_buffer_pts (2.0 pts to cover real Dhan charges ~₹78)
+    buffer = evaluator.cfg.get("cost_to_cost_brokerage_buffer_pts", 2.0)
+    assert new_sl == 23500.0 + buffer
 
     pos.spot_sl = new_sl
 

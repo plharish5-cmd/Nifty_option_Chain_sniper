@@ -9,7 +9,7 @@ gap in Setup #1 (Stage 2 8-EMA Long).
 
 PRIMARY ANALYSIS (LOCKED):
   - Population: Variant A (n ~ 2,370)
-  - Exit Model: Fixed 40/40 bracket after ₹400 round-trip brokerage at lot size 65
+  - Exit Model: Fixed 40/40 bracket under real Dhan tariff (~₹78/trade) at lot size 65
   - MA Type: EMA(4) vs EMA(8)
   - 16 Active Measures, Decile Buckets (D1..D10)
   - Best-of-16 Noise Benchmark (~ +2.0 SD)
@@ -54,6 +54,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import paper_trading
+
 from algo_execution_engine.backtest_setup1 import (
     BacktestTrade,
     Setup1BacktestSimulator,
@@ -70,7 +72,9 @@ OUT_DIR = ROOT / "scripts" / "out" / "ma_geometry"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 LOT_SIZE = 65
-BROKERAGE = 400.0
+OPT_BASE_ENTRY = 200.0
+SLIPPAGE_PTS_PER_LEG = 0.25
+SLIPPAGE_INR_PER_TRADE = round(2.0 * SLIPPAGE_PTS_PER_LEG * LOT_SIZE, 2)  # ₹32.50
 ASYM_WIN_DELTA = 0.60
 ASYM_LOSS_DELTA = 0.50
 FIXED_SL_PTS = 40.0
@@ -259,10 +263,11 @@ def simulate_direction_control_short(
     entry_ts: int,
     entry_spot: float,
     session_1m: List[Dict[str, Any]],
-) -> Tuple[float, float, str, float]:
+) -> Tuple[float, float, float, float, str, float]:
     """
     Mandatory Control 1: Mirror short trade entered at exact same bar.
     Evaluates short fixed 40/40 bracket to test whether the edge is directional.
+    Returns: (spot_pnl, net_statutory_inr, net_with_slip_inr, stat_charges, reason, duration_min)
     """
     short_target = entry_spot - FIXED_TARGET_PTS
     short_sl = entry_spot + FIXED_SL_PTS
@@ -281,36 +286,52 @@ def simulate_direction_control_short(
             spot_pnl = entry_spot - short_sl
             dur_min = (b_ts - entry_ts) / 60.0
             opt_pts = spot_pnl * ASYM_LOSS_DELTA
-            net_inr = opt_pts * LOT_SIZE - BROKERAGE
-            return spot_pnl, net_inr, "SL_HIT", max(0.0, dur_min)
+            gross_inr = opt_pts * LOT_SIZE
+            opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
+            chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
+            stat_charges = float(chg["total_charges"])
+            net_inr = round(gross_inr - stat_charges, 2)
+            net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
+            return spot_pnl, net_inr, net_with_slip, stat_charges, "SL_HIT", max(0.0, dur_min)
 
         # Check Target (Low <= entry - 40)
         if b_low <= short_target:
             spot_pnl = entry_spot - short_target
             dur_min = (b_ts - entry_ts) / 60.0
             opt_pts = spot_pnl * ASYM_WIN_DELTA
-            net_inr = opt_pts * LOT_SIZE - BROKERAGE
-            return spot_pnl, net_inr, "TARGET_HIT", max(0.0, dur_min)
+            gross_inr = opt_pts * LOT_SIZE
+            opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
+            chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
+            stat_charges = float(chg["total_charges"])
+            net_inr = round(gross_inr - stat_charges, 2)
+            net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
+            return spot_pnl, net_inr, net_with_slip, stat_charges, "TARGET_HIT", max(0.0, dur_min)
 
         # EOD Square-off
         if b_time >= SQUARE_OFF_TIME or i == len(session_1m) - 1:
             spot_pnl = entry_spot - b_close
             dur_min = (b_ts - entry_ts) / 60.0
             opt_pts = spot_pnl * (ASYM_WIN_DELTA if spot_pnl > 0 else ASYM_LOSS_DELTA)
-            net_inr = opt_pts * LOT_SIZE - BROKERAGE
-            return spot_pnl, net_inr, "EOD_SQUARE_OFF", max(0.0, dur_min)
+            gross_inr = opt_pts * LOT_SIZE
+            opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
+            chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
+            stat_charges = float(chg["total_charges"])
+            net_inr = round(gross_inr - stat_charges, 2)
+            net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
+            return spot_pnl, net_inr, net_with_slip, stat_charges, "EOD_SQUARE_OFF", max(0.0, dur_min)
 
-    return 0.0, -BROKERAGE, "NO_DATA", 0.0
+    return 0.0, -78.0, -110.5, 78.0, "NO_DATA", 0.0
 
 
 def simulate_super_trail_long(
     entry_ts: int,
     entry_spot: float,
     session_1m: List[Dict[str, Any]],
-) -> Tuple[float, float, str, float]:
+) -> Tuple[float, float, float, float, str, float]:
     """
     Secondary Model: Super Trail v1.1 + Follow-Through CTC rule.
     Activation=15, Jump=5, Initial SL=20; Target Initial=25, Step=10, Pullback=5.
+    Returns: (spot_pnl, net_statutory_inr, net_with_slip_inr, stat_charges, reason, duration_min)
     """
     idx_start = bisect.bisect_right([b["ts"] for b in session_1m], entry_ts)
     mfe = 0.0
@@ -346,8 +367,13 @@ def simulate_super_trail_long(
                 spot_pnl = exit_price - entry_spot
                 dur_min = (b_ts - entry_ts) / 60.0
                 opt_pts = spot_pnl * (ASYM_WIN_DELTA if spot_pnl > 0 else ASYM_LOSS_DELTA)
-                net_inr = opt_pts * LOT_SIZE - BROKERAGE
-                return spot_pnl, net_inr, "TRAIL_TARGET_PULLBACK", max(0.0, dur_min)
+                gross_inr = opt_pts * LOT_SIZE
+                opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
+                chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
+                stat_charges = float(chg["total_charges"])
+                net_inr = round(gross_inr - stat_charges, 2)
+                net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
+                return spot_pnl, net_inr, net_with_slip, stat_charges, "TRAIL_TARGET_PULLBACK", max(0.0, dur_min)
 
         # SL Hit
         if b_low <= trailed_sl:
@@ -355,8 +381,13 @@ def simulate_super_trail_long(
             spot_pnl = exit_price - entry_spot
             dur_min = (b_ts - entry_ts) / 60.0
             opt_pts = spot_pnl * (ASYM_WIN_DELTA if spot_pnl > 0 else ASYM_LOSS_DELTA)
-            net_inr = opt_pts * LOT_SIZE - BROKERAGE
-            return spot_pnl, net_inr, "TRAIL_SL_HIT", max(0.0, dur_min)
+            gross_inr = opt_pts * LOT_SIZE
+            opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
+            chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
+            stat_charges = float(chg["total_charges"])
+            net_inr = round(gross_inr - stat_charges, 2)
+            net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
+            return spot_pnl, net_inr, net_with_slip, stat_charges, "TRAIL_SL_HIT", max(0.0, dur_min)
 
         # EOD Square-off
         if b_time >= SQUARE_OFF_TIME or i == len(session_1m) - 1:
@@ -364,10 +395,15 @@ def simulate_super_trail_long(
             spot_pnl = exit_price - entry_spot
             dur_min = (b_ts - entry_ts) / 60.0
             opt_pts = spot_pnl * (ASYM_WIN_DELTA if spot_pnl > 0 else ASYM_LOSS_DELTA)
-            net_inr = opt_pts * LOT_SIZE - BROKERAGE
-            return spot_pnl, net_inr, "EOD_SQUARE_OFF", max(0.0, dur_min)
+            gross_inr = opt_pts * LOT_SIZE
+            opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
+            chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
+            stat_charges = float(chg["total_charges"])
+            net_inr = round(gross_inr - stat_charges, 2)
+            net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
+            return spot_pnl, net_inr, net_with_slip, stat_charges, "EOD_SQUARE_OFF", max(0.0, dur_min)
 
-    return 0.0, -BROKERAGE, "NO_DATA", 0.0
+    return 0.0, -78.0, -110.5, 78.0, "NO_DATA", 0.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -396,14 +432,14 @@ def enrich_trades(
         session_1m = session_1m_map.get(tr.session_date, [])
 
         # Direction control (Short mirror trade)
-        dir_pnl, dir_net_inr, dir_reason, dir_dur = simulate_direction_control_short(
+        dir_pnl, dir_net_inr, dir_net_slip, dir_chg, dir_reason, dir_dur = simulate_direction_control_short(
             entry_ts=t_entry,
             entry_spot=tr.entry_spot,
             session_1m=session_1m,
         )
 
         # Super Trail exit model (Secondary)
-        st_pnl, st_net_inr, st_reason, st_dur = simulate_super_trail_long(
+        st_pnl, st_net_inr, st_net_slip, st_chg, st_reason, st_dur = simulate_super_trail_long(
             entry_ts=t_entry,
             entry_spot=tr.entry_spot,
             session_1m=session_1m,
@@ -432,16 +468,23 @@ def enrich_trades(
             "exit_reason": tr.exit_reason,
             "time_to_resolution_min": round(dur_min, 2),
             "asym_net_inr": round(tr.asym_net_inr, 2),
+            "asym_net_with_slippage_inr": round(getattr(tr, "asym_net_with_slippage_inr", tr.asym_net_inr - SLIPPAGE_INR_PER_TRADE), 2),
+            "statutory_charges_inr": round(getattr(tr, "statutory_charges_inr", 78.5), 2),
+            "slippage_inr": round(getattr(tr, "slippage_inr", SLIPPAGE_INR_PER_TRADE), 2),
             "asym_gross_inr": round(tr.asym_gross_inr, 2),
             "is_win": 1 if tr.spot_pnl_pts > 0 else 0,
             # Direction Control
             "dir_ctrl_spot_pnl_pts": round(dir_pnl, 2),
             "dir_ctrl_asym_net_inr": round(dir_net_inr, 2),
+            "dir_ctrl_asym_net_with_slippage_inr": round(dir_net_slip, 2),
+            "dir_ctrl_statutory_charges_inr": round(dir_chg, 2),
             "dir_ctrl_exit_reason": dir_reason,
             "dir_ctrl_time_to_resolution_min": round(dir_dur, 2),
             # Super Trail Model
             "super_trail_spot_pnl_pts": round(st_pnl, 2),
             "super_trail_net_inr": round(st_net_inr, 2),
+            "super_trail_net_with_slippage_inr": round(st_net_slip, 2),
+            "super_trail_statutory_charges_inr": round(st_chg, 2),
             "super_trail_exit_reason": st_reason,
             "super_trail_time_to_resolution_min": round(st_dur, 2),
             # Group B Measures (Priority Contact & Boss Priorities)
@@ -959,20 +1002,29 @@ def main() -> None:
         "variant_a_all": {
             "n": len(df_a),
             "win_rate": round(float(df_a["is_win"].mean() * 100), 1),
-            "net_inr_per_trade": round(float(df_a["asym_net_inr"].mean()), 2),
-            "profit_factor": round(float(df_a[df_a["asym_net_inr"] > 0]["asym_net_inr"].sum() / (abs(df_a[df_a["asym_net_inr"] < 0]["asym_net_inr"].sum()) + 1e-9)), 2),
+            "statutory_charges_avg": round(float(df_a["statutory_charges_inr"].mean()), 2),
+            "net_inr_per_trade_statutory": round(float(df_a["asym_net_inr"].mean()), 2),
+            "profit_factor_statutory": round(float(df_a[df_a["asym_net_inr"] > 0]["asym_net_inr"].sum() / (abs(df_a[df_a["asym_net_inr"] < 0]["asym_net_inr"].sum()) + 1e-9)), 2),
+            "net_inr_per_trade_with_slippage": round(float(df_a["asym_net_with_slippage_inr"].mean()), 2),
+            "profit_factor_with_slippage": round(float(df_a[df_a["asym_net_with_slippage_inr"] > 0]["asym_net_with_slippage_inr"].sum() / (abs(df_a[df_a["asym_net_with_slippage_inr"] < 0]["asym_net_with_slippage_inr"].sum()) + 1e-9)), 2),
         },
         "variant_b_all": {
             "n": len(df_b),
             "win_rate": round(float(df_b["is_win"].mean() * 100), 1),
-            "net_inr_per_trade": round(float(df_b["asym_net_inr"].mean()), 2),
-            "profit_factor": round(float(df_b[df_b["asym_net_inr"] > 0]["asym_net_inr"].sum() / (abs(df_b[df_b["asym_net_inr"] < 0]["asym_net_inr"].sum()) + 1e-9)), 2),
+            "statutory_charges_avg": round(float(df_b["statutory_charges_inr"].mean()), 2),
+            "net_inr_per_trade_statutory": round(float(df_b["asym_net_inr"].mean()), 2),
+            "profit_factor_statutory": round(float(df_b[df_b["asym_net_inr"] > 0]["asym_net_inr"].sum() / (abs(df_b[df_b["asym_net_inr"] < 0]["asym_net_inr"].sum()) + 1e-9)), 2),
+            "net_inr_per_trade_with_slippage": round(float(df_b["asym_net_with_slippage_inr"].mean()), 2),
+            "profit_factor_with_slippage": round(float(df_b[df_b["asym_net_with_slippage_inr"] > 0]["asym_net_with_slippage_inr"].sum() / (abs(df_b[df_b["asym_net_with_slippage_inr"] < 0]["asym_net_with_slippage_inr"].sum()) + 1e-9)), 2),
         },
         "variant_e_all": {
             "n": len(df_e),
             "win_rate": round(float(df_e["is_win"].mean() * 100), 1),
-            "net_inr_per_trade": round(float(df_e["asym_net_inr"].mean()), 2),
-            "profit_factor": round(float(df_e[df_e["asym_net_inr"] > 0]["asym_net_inr"].sum() / (abs(df_e[df_e["asym_net_inr"] < 0]["asym_net_inr"].sum()) + 1e-9)), 2),
+            "statutory_charges_avg": round(float(df_e["statutory_charges_inr"].mean()), 2),
+            "net_inr_per_trade_statutory": round(float(df_e["asym_net_inr"].mean()), 2),
+            "profit_factor_statutory": round(float(df_e[df_e["asym_net_inr"] > 0]["asym_net_inr"].sum() / (abs(df_e[df_e["asym_net_inr"] < 0]["asym_net_inr"].sum()) + 1e-9)), 2),
+            "net_inr_per_trade_with_slippage": round(float(df_e["asym_net_with_slippage_inr"].mean()), 2),
+            "profit_factor_with_slippage": round(float(df_e[df_e["asym_net_with_slippage_inr"] > 0]["asym_net_with_slippage_inr"].sum() / (abs(df_e[df_e["asym_net_with_slippage_inr"] < 0]["asym_net_with_slippage_inr"].sum()) + 1e-9)), 2),
         },
     }
 
@@ -983,12 +1035,14 @@ def main() -> None:
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S IST"),
         "execution_mode": "PAPER",
         "lot_size": LOT_SIZE,
-        "round_trip_brokerage_inr": BROKERAGE,
+        "charges_model": "Exact Dhan Tariff (paper_trading.calculate_trade_charges)",
+        "slippage_premium_pts_per_leg": SLIPPAGE_PTS_PER_LEG,
+        "slippage_inr_per_trade": SLIPPAGE_INR_PER_TRADE,
         "multiple_comparison_noise_hurdle_sd": 2.0,
         "total_measures_in_primary": 16,
         "baseline_statistics": baseline_stats,
         "primary_analysis_locked": {
-            "description": "Variant A (Raw 15m 8 EMA Touch), Fixed 40/40, EMA(4) vs EMA(8), lot 65, Rs400 brokerage",
+            "description": "Variant A (Raw 15m 8 EMA Touch), Fixed 40/40, EMA(4) vs EMA(8), lot 65, Exact Dhan Tariff (~Rs78/trade)",
             "results": primary_results,
         },
         "secondary_analysis_exploratory": {
@@ -1013,7 +1067,7 @@ def main() -> None:
     # 8. Print Clean Markdown Verdict Table to Terminal
     print("\n" + "=" * 115)
     print("PORT 8510 — MA GEOMETRY & CONTACT BACKTEST: PRIMARY ANALYSIS VERDICT TABLE")
-    print("Configuration: Variant A (n ≈ 2,370) | Fixed 40/40 | EMA(4) vs EMA(8) | Lot 65 | Brokerage ₹400")
+    print("Configuration: Variant A (n ≈ 2,370) | Fixed 40/40 | EMA(4) vs EMA(8) | Lot 65 | Exact Dhan Tariff (~₹78/tr)")
     print("Hurdle for BUILD: OOS Net ₹/trade > 0, PF ≥ 1.30, OOS n ≥ 60, Ex-top5 > 0, Z-score ≥ +2.0 SD, Dir Adv > 0")
     print("=" * 115)
 
@@ -1068,9 +1122,9 @@ def main() -> None:
 
     print("=" * 115)
     print("\nBASELINE UNFILTERED CONTEXT:")
-    print(f"  - Variant A Raw Baseline: n={baseline_stats['variant_a_all']['n']}, Win Rate={baseline_stats['variant_a_all']['win_rate']}%, Expectancy=₹{baseline_stats['variant_a_all']['net_inr_per_trade']}/trade, PF={baseline_stats['variant_a_all']['profit_factor']}")
-    print(f"  - Variant B (4>8 Trend): n={baseline_stats['variant_b_all']['n']}, Win Rate={baseline_stats['variant_b_all']['win_rate']}%, Expectancy=₹{baseline_stats['variant_b_all']['net_inr_per_trade']}/trade, PF={baseline_stats['variant_b_all']['profit_factor']}")
-    print(f"  - Variant E (Institutional): n={baseline_stats['variant_e_all']['n']}, Win Rate={baseline_stats['variant_e_all']['win_rate']}%, Expectancy=₹{baseline_stats['variant_e_all']['net_inr_per_trade']}/trade, PF={baseline_stats['variant_e_all']['profit_factor']}")
+    print(f"  - Variant A Raw Baseline: n={baseline_stats['variant_a_all']['n']}, Win Rate={baseline_stats['variant_a_all']['win_rate']}%, Statutory Net=₹{baseline_stats['variant_a_all']['net_inr_per_trade_statutory']}/trade (PF {baseline_stats['variant_a_all']['profit_factor_statutory']}) | With Slippage=₹{baseline_stats['variant_a_all']['net_inr_per_trade_with_slippage']}/trade (PF {baseline_stats['variant_a_all']['profit_factor_with_slippage']})")
+    print(f"  - Variant B (4>8 Trend): n={baseline_stats['variant_b_all']['n']}, Win Rate={baseline_stats['variant_b_all']['win_rate']}%, Statutory Net=₹{baseline_stats['variant_b_all']['net_inr_per_trade_statutory']}/trade (PF {baseline_stats['variant_b_all']['profit_factor_statutory']}) | With Slippage=₹{baseline_stats['variant_b_all']['net_inr_per_trade_with_slippage']}/trade (PF {baseline_stats['variant_b_all']['profit_factor_with_slippage']})")
+    print(f"  - Variant E (Institutional): n={baseline_stats['variant_e_all']['n']}, Win Rate={baseline_stats['variant_e_all']['win_rate']}%, Statutory Net=₹{baseline_stats['variant_e_all']['net_inr_per_trade_statutory']}/trade (PF {baseline_stats['variant_e_all']['profit_factor_statutory']}) | With Slippage=₹{baseline_stats['variant_e_all']['net_inr_per_trade_with_slippage']}/trade (PF {baseline_stats['variant_e_all']['profit_factor_with_slippage']})")
     print(f"\nExecution completed in {time.time() - t_start:.2f}s.")
 
 

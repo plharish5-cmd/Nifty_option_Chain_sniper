@@ -2,7 +2,7 @@
   "ok": true,
   "date": "2026-11-05",
   "date_formatted": "05 Nov 2026",
-  "ingest_timestamp": "2026-11-05 22:50:11 IST",
+  "ingest_timestamp": "2026-11-05 23:58:55 IST",
   "status": "Pulled \u2705",
   "message": "\u2705 05 Nov 2026 data pulled \u2014 Available in Replay + Backtester + Trend Lab.",
   "checklist": {
@@ -8469,10 +8469,10 @@
       "exit_reason": "TRAIL_TARGET_HIT",
       "gross_pnl": 1625.0,
       "Gross_Pnl_INR": 1625.0,
-      "dhan_charges": 0.0,
-      "Exact_Charges_INR": 0.0,
-      "net_pnl": 1625.0,
-      "Net_Pnl_INR": 1625.0,
+      "dhan_charges": 81.15,
+      "Exact_Charges_INR": 81.15,
+      "net_pnl": 1543.85,
+      "Net_Pnl_INR": 1543.85,
       "Lot_Qty": 65,
       "qty": 65,
       "Option_Points": 25.0,
@@ -8491,7 +8491,7 @@
     "date_formatted": "05 Nov 2026",
     "ingest_status": "COMPLETE \u2705 (375/375 1m Candles)",
     "paper_trades_count": 1,
-    "net_pnl_inr": "+\u20b91,625.00",
+    "net_pnl_inr": "+\u20b91,543.85",
     "trades_breakdown": [
       {
         "trade_id": "TRADE_05NOV_01",
@@ -8500,21 +8500,21 @@
         "source": "AUTO ALGO \ud83e\udd16",
         "entry_ist": "10:15:00 IST",
         "exit_ist": "11:00:00 IST",
-        "pnl": "+\u20b91,625.00"
+        "pnl": "+\u20b91,543.85"
       }
     ],
     "signals_summary": "Stage 2: BULLISH | 4/8 Crossover: BULLISH | 1H 8 EMA: SUPPORT",
     "total_oi_bias": "BULLISH \ud83d\udfe2 (Put 18.28 Cr > Call 16.41 Cr)",
     "oi_change_bias": "BULLISH \ud83d\udfe2 (PE-CE Day +3.40 Cr)",
     "combined_oi_bias": "STRONG BULLISH \ud83d\udfe2\ud83d\udfe2",
-    "whatsapp_text": "\ud83d\udcca *PORT 8510 EOD SUMMARY \u2014 05 Nov 2026*\n\u2705 *Ingest:* 375/375 1m Candles Synced (Replay + Backtest + Trend Lab Ready)\n\ud83e\udd16 *Paper Trades Taken:* 1 (AUTO ALGO \u2014 Stage 2 8 EMA Touch)\n\ud83d\udcb0 *Net P&L:* +\u20b91,625.00\n\ud83d\udcc8 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n\ud83d\udfe2 *Stock Mojo Total OI:* BULLISH (Put 18.28 Cr vs Call 16.41 Cr)\n\ud83d\udfe2 *Stock Mojo OI Change:* BULLISH (PE-CE +3.40 Cr)\n\ud83d\udd25 *Combined Bias:* STRONG BULLISH \ud83d\udfe2\ud83d\udfe2"
+    "whatsapp_text": "\ud83d\udcca *PORT 8510 EOD SUMMARY \u2014 05 Nov 2026*\n\u2705 *Ingest:* 375/375 1m Candles Synced (Replay + Backtest + Trend Lab Ready)\n\ud83e\udd16 *Paper Trades Taken:* 1 (AUTO ALGO \u2014 Stage 2 8 EMA Touch)\n\ud83d\udcb0 *Net P&L:* +\u20b91,543.85\n\ud83d\udcc8 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n\ud83d\udfe2 *Stock Mojo Total OI:* BULLISH (Put 18.28 Cr vs Call 16.41 Cr)\n\ud83d\udfe2 *Stock Mojo OI Change:* BULLISH (PE-CE +3.40 Cr)\n\ud83d\udd25 *Combined Bias:* STRONG BULLISH \ud83d\udfe2\ud83d\udfe2"
   },
   "eod_summary": {
     "date": "2026-11-05",
     "date_formatted": "05 Nov 2026",
     "ingest_status": "COMPLETE \u2705 (375/375 1m Candles)",
     "paper_trades_count": 1,
-    "net_pnl_inr": "+\u20b91,625.00",
+    "net_pnl_inr": "+\u20b91,543.85",
     "trades_breakdown": [
       {
         "trade_id": "TRADE_05NOV_01",
@@ -8523,13 +8523,13 @@
         "source": "AUTO ALGO \ud83e\udd16",
         "entry_ist": "10:15:00 IST",
         "exit_ist": "11:00:00 IST",
-        "pnl": "+\u20b91,625.00"
+        "pnl": "+\u20b91,543.85"
       }
     ],
     "signals_summary": "Stage 2: BULLISH | 4/8 Crossover: BULLISH | 1H 8 EMA: SUPPORT",
     "total_oi_bias": "BULLISH \ud83d\udfe2 (Put 18.28 Cr > Call 16.41 Cr)",
     "oi_change_bias": "BULLISH \ud83d\udfe2 (PE-CE Day +3.40 Cr)",
     "combined_oi_bias": "STRONG BULLISH \ud83d\udfe2\ud83d\udfe2",
-    "whatsapp_text": "\ud83d\udcca *PORT 8510 EOD SUMMARY \u2014 05 Nov 2026*\n\u2705 *Ingest:* 375/375 1m Candles Synced (Replay + Backtest + Trend Lab Ready)\n\ud83e\udd16 *Paper Trades Taken:* 1 (AUTO ALGO \u2014 Stage 2 8 EMA Touch)\n\ud83d\udcb0 *Net P&L:* +\u20b91,625.00\n\ud83d\udcc8 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n\ud83d\udfe2 *Stock Mojo Total OI:* BULLISH (Put 18.28 Cr vs Call 16.41 Cr)\n\ud83d\udfe2 *Stock Mojo OI Change:* BULLISH (PE-CE +3.40 Cr)\n\ud83d\udd25 *Combined Bias:* STRONG BULLISH \ud83d\udfe2\ud83d\udfe2"
+    "whatsapp_text": "\ud83d\udcca *PORT 8510 EOD SUMMARY \u2014 05 Nov 2026*\n\u2705 *Ingest:* 375/375 1m Candles Synced (Replay + Backtest + Trend Lab Ready)\n\ud83e\udd16 *Paper Trades Taken:* 1 (AUTO ALGO \u2014 Stage 2 8 EMA Touch)\n\ud83d\udcb0 *Net P&L:* +\u20b91,543.85\n\ud83d\udcc8 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n\ud83d\udfe2 *Stock Mojo Total OI:* BULLISH (Put 18.28 Cr vs Call 16.41 Cr)\n\ud83d\udfe2 *Stock Mojo OI Change:* BULLISH (PE-CE +3.40 Cr)\n\ud83d\udd25 *Combined Bias:* STRONG BULLISH \ud83d\udfe2\ud83d\udfe2"
   }
 }

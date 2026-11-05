@@ -14,11 +14,18 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import sys
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import paper_trading
 
 log = logging.getLogger("algo.sandbox")
 
@@ -183,12 +190,13 @@ class Stage3GraduationTracker:
 
                 spot_entry = float(r_dict["spot_entry"])
                 opt_entry = float(r_dict["option_entry_ltp"])
-                qty = 75  # 1 lot
+                qty = int(r_dict.get("quantity") or 65)
 
                 spot_pnl = round(exit_spot - spot_entry, 2)
                 opt_pnl_pts = round(exit_option_ltp - opt_entry - slippage_pts, 2)
                 gross_inr = round(opt_pnl_pts * qty, 2)
-                brokerage = 400.0
+                chg_dict = paper_trading.calculate_trade_charges(opt_entry, exit_option_ltp, qty, side="BUY")
+                brokerage = float(chg_dict["total_charges"])
                 slippage_inr = round(slippage_pts * qty, 2)
                 net_inr = round(gross_inr - brokerage, 2)
 
@@ -221,8 +229,8 @@ class Stage3GraduationTracker:
                     net_inr, exit_reason, status, trade_id
                 ))
                 conn.commit()
-                log.info("🏁 Closed Sandbox Trade %s (%s): Net ₹%+.1f (after ₹400 brokerage)",
-                         trade_id, status, net_inr)
+                log.info("🏁 Closed Sandbox Trade %s (%s): Net ₹%+.1f (after ₹%.2f charges)",
+                         trade_id, status, net_inr, brokerage)
 
                 return SandboxTrade(
                     trade_id=trade_id,

@@ -24,8 +24,9 @@
       "2026-11-05"
     ],
     "lot_size": 65,
-    "brokerage_inr": 400.0,
-    "break_even_win_rate_pct_note": "Mentor math: lot 65, delta 0.6 win/0.5 loss, Rs400 brokerage, fixed 40/40 bracket -> break-even win rate ~59.4%."
+    "charges_model": "Exact Dhan Tariff (paper_trading.calculate_trade_charges)",
+    "slippage_premium_pts_per_leg": 0.25,
+    "break_even_win_rate_pct_note": "Real Dhan tariff (~Rs78/trade at lot 65), delta 0.6 win/0.5 loss, fixed 40/40 bracket -> break-even win rate ~46.4% (statutory alone)."
   },
   "trend_state_correlation": {
     "1h_vs_30m": 0.675,
@@ -41,9 +42,9 @@
         "win_rate_pct": 57.5,
         "avg_win_pts": 26.18,
         "avg_loss_pts": -24.0,
-        "net_inr_per_trade": -144.38,
-        "total_net_inr": -11550.1,
-        "profit_factor": 0.712
+        "net_inr_per_trade": 177.11,
+        "total_net_inr": 14168.85,
+        "profit_factor": 1.487
       },
       "excluding_best_1": {
         "n": 79,
@@ -51,9 +52,9 @@
         "win_rate_pct": 56.96,
         "avg_win_pts": 25.42,
         "avg_loss_pts": -24.0,
-        "net_inr_per_trade": -170.94,
-        "total_net_inr": -13504.3,
-        "profit_factor": 0.663
+        "net_inr_per_trade": 150.6,
+        "total_net_inr": 11897.19,
+        "profit_factor": 1.409
       },
       "excluding_best_3": {
         "n": 77,
@@ -61,9 +62,9 @@
         "win_rate_pct": 55.84,
         "avg_win_pts": 24.74,
         "avg_loss_pts": -24.0,
-        "net_inr_per_trade": -205.51,
-        "total_net_inr": -15824.3,
-        "profit_factor": 0.606
+        "net_inr_per_trade": 116.09,
+        "total_net_inr": 8939.23,
+        "profit_factor": 1.307
       },
       "excluding_best_5": {
         "n": 75,
@@ -71,9 +72,9 @@
         "win_rate_pct": 54.67,
         "avg_win_pts": 24.0,
         "avg_loss_pts": -24.0,
-        "net_inr_per_trade": -241.92,
-        "total_net_inr": -18144.3,
-        "profit_factor": 0.548
+        "net_inr_per_trade": 79.75,
+        "total_net_inr": 5981.27,
+        "profit_factor": 1.205
       },
       "chronological_half_1": {
         "n": 40,
@@ -81,9 +82,9 @@
         "win_rate_pct": 62.5,
         "avg_win_pts": 26.49,
         "avg_loss_pts": -25.12,
-        "net_inr_per_trade": -60.5,
-        "total_net_inr": -2420.05,
-        "profit_factor": 0.867
+        "net_inr_per_trade": 260.83,
+        "total_net_inr": 10433.02,
+        "profit_factor": 1.779
       },
       "chronological_half_2": {
         "n": 40,
@@ -91,32 +92,32 @@
         "win_rate_pct": 52.5,
         "avg_win_pts": 25.81,
         "avg_loss_pts": -23.11,
-        "net_inr_per_trade": -228.25,
-        "total_net_inr": -9130.05,
-        "profit_factor": 0.583
+        "net_inr_per_trade": 93.4,
+        "total_net_inr": 3735.83,
+        "profit_factor": 1.238
       },
       "time_matched_random_baseline": {
         "n": 80,
         "judgeable": true,
         "win_rate_pct": 51.25,
-        "avg_win_pts": 34.22,
+        "avg_win_pts": 33.88,
         "avg_loss_pts": -37.74,
-        "net_inr_per_trade": -314.01,
-        "total_net_inr": -25121.05,
-        "profit_factor": 0.604
+        "net_inr_per_trade": 0.99,
+        "total_net_inr": 79.44,
+        "profit_factor": 1.002
       },
       "direction_control": {
-        "edge_long_over_baseline_inr": 169.63,
-        "edge_short_flip_over_short_baseline_inr": -63.31,
+        "edge_long_over_baseline_inr": 176.12,
+        "edge_short_flip_over_short_baseline_inr": -66.69,
         "short_flip_stats": {
           "n": 80,
           "judgeable": true,
           "win_rate_pct": 48.75,
-          "avg_win_pts": 34.63,
+          "avg_win_pts": 34.45,
           "avg_loss_pts": -35.98,
-          "net_inr_per_trade": -340.89,
-          "total_net_inr": -27271.12,
-          "profit_factor": 0.576
+          "net_inr_per_trade": -22.34,
+          "total_net_inr": -1787.49,
+          "profit_factor": 0.965
         },
         "short_baseline_stats": {
           "n": 80,
@@ -124,9 +125,9 @@
           "win_rate_pct": 48.75,
           "avg_win_pts": 37.74,
           "avg_loss_pts": -35.73,
-          "net_inr_per_trade": -277.58,
-          "total_net_inr": -22206.12,
-          "profit_factor": 0.653
+          "net_inr_per_trade": 44.35,
+          "total_net_inr": 3548.05,
+          "profit_factor": 1.07
         },
         "interpretation": "direction_ok=False means shorting the identical bars ALSO beats its own baseline -- the apparent long edge is likely generic drift, not this setup's gates."
       },
@@ -134,22 +135,22 @@
         "n_sessions": 77,
         "n_boot": 2000,
         "net_inr_per_trade_90pct_ci": [
-          -342.01,
-          53.42
+          -20.14,
+          374.53
         ],
         "excludes_zero": false
       },
       "event_table_csv": "scripts/out/mtf_engulfing/events_L0.csv",
       "part3_bar": {
         "checks": {
-          "net_inr_per_trade_positive": false,
-          "profit_factor_ge_1.30": false,
+          "net_inr_per_trade_positive": true,
+          "profit_factor_ge_1.30": true,
           "n_ge_60": true,
-          "positive_excluding_best_5": false,
-          "positive_both_halves": false,
+          "positive_excluding_best_5": true,
+          "positive_both_halves": true,
           "direction_control_clean": true
         },
-        "earns_implementation": false
+        "earns_implementation": true
       }
     },
     "L1 (1H trend alone)": {
@@ -159,9 +160,9 @@
         "win_rate_pct": 59.02,
         "avg_win_pts": 24.94,
         "avg_loss_pts": -23.88,
-        "net_inr_per_trade": -144.01,
-        "total_net_inr": -8784.61,
-        "profit_factor": 0.701
+        "net_inr_per_trade": 177.48,
+        "total_net_inr": 10826.04,
+        "profit_factor": 1.508
       },
       "excluding_best_1": {
         "n": 60,
@@ -169,9 +170,9 @@
         "win_rate_pct": 58.33,
         "avg_win_pts": 24.51,
         "avg_loss_pts": -23.88,
-        "net_inr_per_trade": -165.74,
-        "total_net_inr": -9944.61,
-        "profit_factor": 0.662
+        "net_inr_per_trade": 155.78,
+        "total_net_inr": 9347.06,
+        "profit_factor": 1.439
       },
       "excluding_best_3": {
         "n": 58,
@@ -179,9 +180,9 @@
         "win_rate_pct": 56.9,
         "avg_win_pts": 23.57,
         "avg_loss_pts": -23.88,
-        "net_inr_per_trade": -211.46,
-        "total_net_inr": -12264.61,
-        "profit_factor": 0.583
+        "net_inr_per_trade": 110.16,
+        "total_net_inr": 6389.1,
+        "profit_factor": 1.3
       },
       "excluding_best_5": {
         "n": 56,
@@ -189,9 +190,9 @@
         "win_rate_pct": 55.36,
         "avg_win_pts": 22.51,
         "avg_loss_pts": -23.88,
-        "net_inr_per_trade": -260.44,
-        "total_net_inr": -14584.61,
-        "profit_factor": 0.504
+        "net_inr_per_trade": 61.27,
+        "total_net_inr": 3431.14,
+        "profit_factor": 1.161
       },
       "chronological_half_1": {
         "n": 30,
@@ -199,9 +200,9 @@
         "win_rate_pct": 63.33,
         "avg_win_pts": 22.48,
         "avg_loss_pts": -23.93,
-        "net_inr_per_trade": -129.89,
-        "total_net_inr": -3896.67,
-        "profit_factor": 0.699
+        "net_inr_per_trade": 191.57,
+        "total_net_inr": 5747.13,
+        "profit_factor": 1.612
       },
       "chronological_half_2": {
         "n": 31,
@@ -209,32 +210,32 @@
         "win_rate_pct": 54.84,
         "avg_win_pts": 27.69,
         "avg_loss_pts": -23.83,
-        "net_inr_per_trade": -157.68,
-        "total_net_inr": -4887.94,
-        "profit_factor": 0.703
+        "net_inr_per_trade": 163.84,
+        "total_net_inr": 5078.91,
+        "profit_factor": 1.426
       },
       "time_matched_random_baseline": {
         "n": 61,
         "judgeable": true,
         "win_rate_pct": 54.1,
-        "avg_win_pts": 33.88,
+        "avg_win_pts": 33.46,
         "avg_loss_pts": -40.0,
-        "net_inr_per_trade": -281.9,
-        "total_net_inr": -17196.05,
-        "profit_factor": 0.639
+        "net_inr_per_trade": 30.92,
+        "total_net_inr": 1886.18,
+        "profit_factor": 1.049
       },
       "direction_control": {
-        "edge_long_over_baseline_inr": 137.89,
-        "edge_short_flip_over_short_baseline_inr": -7.56,
+        "edge_long_over_baseline_inr": 146.56,
+        "edge_short_flip_over_short_baseline_inr": -12.03,
         "short_flip_stats": {
           "n": 61,
           "judgeable": true,
           "win_rate_pct": 52.46,
-          "avg_win_pts": 34.11,
+          "avg_win_pts": 33.89,
           "avg_loss_pts": -40.0,
-          "net_inr_per_trade": -320.21,
-          "total_net_inr": -19533.06,
-          "profit_factor": 0.604
+          "net_inr_per_trade": -2.74,
+          "total_net_inr": -167.14,
+          "profit_factor": 0.996
         },
         "short_baseline_stats": {
           "n": 61,
@@ -242,9 +243,9 @@
           "win_rate_pct": 45.9,
           "avg_win_pts": 40.0,
           "avg_loss_pts": -35.76,
-          "net_inr_per_trade": -312.65,
-          "total_net_inr": -19071.62,
-          "profit_factor": 0.63
+          "net_inr_per_trade": 9.29,
+          "total_net_inr": 566.92,
+          "profit_factor": 1.014
         },
         "interpretation": "direction_ok=False means shorting the identical bars ALSO beats its own baseline -- the apparent long edge is likely generic drift, not this setup's gates."
       },
@@ -252,22 +253,22 @@
         "n_sessions": 60,
         "n_boot": 2000,
         "net_inr_per_trade_90pct_ci": [
-          -360.16,
-          67.99
+          -38.26,
+          389.07
         ],
         "excludes_zero": false
       },
       "event_table_csv": "scripts/out/mtf_engulfing/events_L1.csv",
       "part3_bar": {
         "checks": {
-          "net_inr_per_trade_positive": false,
-          "profit_factor_ge_1.30": false,
+          "net_inr_per_trade_positive": true,
+          "profit_factor_ge_1.30": true,
           "n_ge_60": true,
-          "positive_excluding_best_5": false,
-          "positive_both_halves": false,
+          "positive_excluding_best_5": true,
+          "positive_both_halves": true,
           "direction_control_clean": true
         },
-        "earns_implementation": false
+        "earns_implementation": true
       }
     },
     "L2 (1H+30m+15m alignment)": {
@@ -277,9 +278,9 @@
         "win_rate_pct": 59.02,
         "avg_win_pts": 24.94,
         "avg_loss_pts": -23.88,
-        "net_inr_per_trade": -144.01,
-        "total_net_inr": -8784.61,
-        "profit_factor": 0.701
+        "net_inr_per_trade": 177.48,
+        "total_net_inr": 10826.04,
+        "profit_factor": 1.508
       },
       "excluding_best_1": {
         "n": 60,
@@ -287,9 +288,9 @@
         "win_rate_pct": 58.33,
         "avg_win_pts": 24.51,
         "avg_loss_pts": -23.88,
-        "net_inr_per_trade": -165.74,
-        "total_net_inr": -9944.61,
-        "profit_factor": 0.662
+        "net_inr_per_trade": 155.78,
+        "total_net_inr": 9347.06,
+        "profit_factor": 1.439
       },
       "excluding_best_3": {
         "n": 58,
@@ -297,9 +298,9 @@
         "win_rate_pct": 56.9,
         "avg_win_pts": 23.57,
         "avg_loss_pts": -23.88,
-        "net_inr_per_trade": -211.46,
-        "total_net_inr": -12264.61,
-        "profit_factor": 0.583
+        "net_inr_per_trade": 110.16,
+        "total_net_inr": 6389.1,
+        "profit_factor": 1.3
       },
       "excluding_best_5": {
         "n": 56,
@@ -307,9 +308,9 @@
         "win_rate_pct": 55.36,
         "avg_win_pts": 22.51,
         "avg_loss_pts": -23.88,
-        "net_inr_per_trade": -260.44,
-        "total_net_inr": -14584.61,
-        "profit_factor": 0.504
+        "net_inr_per_trade": 61.27,
+        "total_net_inr": 3431.14,
+        "profit_factor": 1.161
       },
       "chronological_half_1": {
         "n": 30,
@@ -317,9 +318,9 @@
         "win_rate_pct": 63.33,
         "avg_win_pts": 22.48,
         "avg_loss_pts": -23.93,
-        "net_inr_per_trade": -129.89,
-        "total_net_inr": -3896.67,
-        "profit_factor": 0.699
+        "net_inr_per_trade": 191.57,
+        "total_net_inr": 5747.13,
+        "profit_factor": 1.612
       },
       "chronological_half_2": {
         "n": 31,
@@ -327,32 +328,32 @@
         "win_rate_pct": 54.84,
         "avg_win_pts": 27.69,
         "avg_loss_pts": -23.83,
-        "net_inr_per_trade": -157.68,
-        "total_net_inr": -4887.94,
-        "profit_factor": 0.703
+        "net_inr_per_trade": 163.84,
+        "total_net_inr": 5078.91,
+        "profit_factor": 1.426
       },
       "time_matched_random_baseline": {
         "n": 61,
         "judgeable": true,
         "win_rate_pct": 54.1,
-        "avg_win_pts": 33.88,
+        "avg_win_pts": 33.46,
         "avg_loss_pts": -40.0,
-        "net_inr_per_trade": -281.9,
-        "total_net_inr": -17196.05,
-        "profit_factor": 0.639
+        "net_inr_per_trade": 30.92,
+        "total_net_inr": 1886.18,
+        "profit_factor": 1.049
       },
       "direction_control": {
-        "edge_long_over_baseline_inr": 137.89,
-        "edge_short_flip_over_short_baseline_inr": -7.56,
+        "edge_long_over_baseline_inr": 146.56,
+        "edge_short_flip_over_short_baseline_inr": -12.03,
         "short_flip_stats": {
           "n": 61,
           "judgeable": true,
           "win_rate_pct": 52.46,
-          "avg_win_pts": 34.11,
+          "avg_win_pts": 33.89,
           "avg_loss_pts": -40.0,
-          "net_inr_per_trade": -320.21,
-          "total_net_inr": -19533.06,
-          "profit_factor": 0.604
+          "net_inr_per_trade": -2.74,
+          "total_net_inr": -167.14,
+          "profit_factor": 0.996
         },
         "short_baseline_stats": {
           "n": 61,
@@ -360,9 +361,9 @@
           "win_rate_pct": 45.9,
           "avg_win_pts": 40.0,
           "avg_loss_pts": -35.76,
-          "net_inr_per_trade": -312.65,
-          "total_net_inr": -19071.62,
-          "profit_factor": 0.63
+          "net_inr_per_trade": 9.29,
+          "total_net_inr": 566.92,
+          "profit_factor": 1.014
         },
         "interpretation": "direction_ok=False means shorting the identical bars ALSO beats its own baseline -- the apparent long edge is likely generic drift, not this setup's gates."
       },
@@ -370,22 +371,22 @@
         "n_sessions": 60,
         "n_boot": 2000,
         "net_inr_per_trade_90pct_ci": [
-          -360.16,
-          67.99
+          -38.26,
+          389.07
         ],
         "excludes_zero": false
       },
       "event_table_csv": "scripts/out/mtf_engulfing/events_L2.csv",
       "part3_bar": {
         "checks": {
-          "net_inr_per_trade_positive": false,
-          "profit_factor_ge_1.30": false,
+          "net_inr_per_trade_positive": true,
+          "profit_factor_ge_1.30": true,
           "n_ge_60": true,
-          "positive_excluding_best_5": false,
-          "positive_both_halves": false,
+          "positive_excluding_best_5": true,
+          "positive_both_halves": true,
           "direction_control_clean": true
         },
-        "earns_implementation": false
+        "earns_implementation": true
       }
     },
     "L3 (L2 + 5m engulfing)": {
@@ -473,8 +474,8 @@
         "win_rate_pct": 100.0,
         "avg_win_pts": 40.0,
         "avg_loss_pts": 0.0,
-        "net_inr_per_trade": 1160.0,
-        "total_net_inr": 2320.0,
+        "net_inr_per_trade": 1478.98,
+        "total_net_inr": 2957.96,
         "profit_factor": "inf"
       },
       "excluding_best_1": {
@@ -483,8 +484,8 @@
         "win_rate_pct": 100.0,
         "avg_win_pts": 40.0,
         "avg_loss_pts": 0.0,
-        "net_inr_per_trade": 1160.0,
-        "total_net_inr": 1160.0,
+        "net_inr_per_trade": 1478.98,
+        "total_net_inr": 1478.98,
         "profit_factor": "inf"
       },
       "excluding_best_3": null,
@@ -495,8 +496,8 @@
         "win_rate_pct": 100.0,
         "avg_win_pts": 40.0,
         "avg_loss_pts": 0.0,
-        "net_inr_per_trade": 1160.0,
-        "total_net_inr": 1160.0,
+        "net_inr_per_trade": 1478.98,
+        "total_net_inr": 1478.98,
         "profit_factor": "inf"
       },
       "chronological_half_2": {
@@ -505,8 +506,8 @@
         "win_rate_pct": 100.0,
         "avg_win_pts": 40.0,
         "avg_loss_pts": 0.0,
-        "net_inr_per_trade": 1160.0,
-        "total_net_inr": 1160.0,
+        "net_inr_per_trade": 1478.98,
+        "total_net_inr": 1478.98,
         "profit_factor": "inf"
       },
       "time_matched_random_baseline": {
@@ -515,21 +516,21 @@
         "win_rate_pct": 50.0,
         "avg_win_pts": 23.1,
         "avg_loss_pts": -40.0,
-        "net_inr_per_trade": -599.55,
-        "total_net_inr": -1199.1,
-        "profit_factor": 0.295
+        "net_inr_per_trade": -277.18,
+        "total_net_inr": -554.35,
+        "profit_factor": 0.597
       },
       "direction_control": {
-        "edge_long_over_baseline_inr": 1759.55,
-        "edge_short_flip_over_short_baseline_inr": -1704.63,
+        "edge_long_over_baseline_inr": 1756.16,
+        "edge_short_flip_over_short_baseline_inr": -1703.83,
         "short_flip_stats": {
           "n": 2,
           "judgeable": false,
           "win_rate_pct": 0.0,
           "avg_win_pts": 0.0,
           "avg_loss_pts": -40.0,
-          "net_inr_per_trade": -1700.0,
-          "total_net_inr": -3400.0,
+          "net_inr_per_trade": -1377.42,
+          "total_net_inr": -2754.84,
           "profit_factor": 0.0
         },
         "short_baseline_stats": {
@@ -538,9 +539,9 @@
           "win_rate_pct": 50.0,
           "avg_win_pts": 40.0,
           "avg_loss_pts": -23.1,
-          "net_inr_per_trade": 4.63,
-          "total_net_inr": 9.25,
-          "profit_factor": 1.008
+          "net_inr_per_trade": 326.41,
+          "total_net_inr": 652.83,
+          "profit_factor": 1.788
         },
         "interpretation": "direction_ok=False means shorting the identical bars ALSO beats its own baseline -- the apparent long edge is likely generic drift, not this setup's gates."
       },
@@ -548,8 +549,8 @@
         "n_sessions": 2,
         "n_boot": 2000,
         "net_inr_per_trade_90pct_ci": [
-          1160.0,
-          1160.0
+          1478.98,
+          1478.98
         ],
         "excludes_zero": true
       },
@@ -573,8 +574,8 @@
         "win_rate_pct": 100.0,
         "avg_win_pts": 40.0,
         "avg_loss_pts": 0.0,
-        "net_inr_per_trade": 1160.0,
-        "total_net_inr": 2320.0,
+        "net_inr_per_trade": 1478.98,
+        "total_net_inr": 2957.96,
         "profit_factor": "inf"
       },
       "excluding_best_1": {
@@ -583,8 +584,8 @@
         "win_rate_pct": 100.0,
         "avg_win_pts": 40.0,
         "avg_loss_pts": 0.0,
-        "net_inr_per_trade": 1160.0,
-        "total_net_inr": 1160.0,
+        "net_inr_per_trade": 1478.98,
+        "total_net_inr": 1478.98,
         "profit_factor": "inf"
       },
       "excluding_best_3": null,
@@ -595,8 +596,8 @@
         "win_rate_pct": 100.0,
         "avg_win_pts": 40.0,
         "avg_loss_pts": 0.0,
-        "net_inr_per_trade": 1160.0,
-        "total_net_inr": 1160.0,
+        "net_inr_per_trade": 1478.98,
+        "total_net_inr": 1478.98,
         "profit_factor": "inf"
       },
       "chronological_half_2": {
@@ -605,8 +606,8 @@
         "win_rate_pct": 100.0,
         "avg_win_pts": 40.0,
         "avg_loss_pts": 0.0,
-        "net_inr_per_trade": 1160.0,
-        "total_net_inr": 1160.0,
+        "net_inr_per_trade": 1478.98,
+        "total_net_inr": 1478.98,
         "profit_factor": "inf"
       },
       "time_matched_random_baseline": {
@@ -615,21 +616,21 @@
         "win_rate_pct": 50.0,
         "avg_win_pts": 23.1,
         "avg_loss_pts": -40.0,
-        "net_inr_per_trade": -599.55,
-        "total_net_inr": -1199.1,
-        "profit_factor": 0.295
+        "net_inr_per_trade": -277.18,
+        "total_net_inr": -554.35,
+        "profit_factor": 0.597
       },
       "direction_control": {
-        "edge_long_over_baseline_inr": 1759.55,
-        "edge_short_flip_over_short_baseline_inr": -1704.63,
+        "edge_long_over_baseline_inr": 1756.16,
+        "edge_short_flip_over_short_baseline_inr": -1703.83,
         "short_flip_stats": {
           "n": 2,
           "judgeable": false,
           "win_rate_pct": 0.0,
           "avg_win_pts": 0.0,
           "avg_loss_pts": -40.0,
-          "net_inr_per_trade": -1700.0,
-          "total_net_inr": -3400.0,
+          "net_inr_per_trade": -1377.42,
+          "total_net_inr": -2754.84,
           "profit_factor": 0.0
         },
         "short_baseline_stats": {
@@ -638,9 +639,9 @@
           "win_rate_pct": 50.0,
           "avg_win_pts": 40.0,
           "avg_loss_pts": -23.1,
-          "net_inr_per_trade": 4.63,
-          "total_net_inr": 9.25,
-          "profit_factor": 1.008
+          "net_inr_per_trade": 326.41,
+          "total_net_inr": 652.83,
+          "profit_factor": 1.788
         },
         "interpretation": "direction_ok=False means shorting the identical bars ALSO beats its own baseline -- the apparent long edge is likely generic drift, not this setup's gates."
       },
@@ -648,8 +649,8 @@
         "n_sessions": 2,
         "n_boot": 2000,
         "net_inr_per_trade_90pct_ci": [
-          1160.0,
-          1160.0
+          1478.98,
+          1478.98
         ],
         "excludes_zero": true
       },
