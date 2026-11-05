@@ -96,6 +96,17 @@ CREATE TABLE IF NOT EXISTS opt_activity (
   samples INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS strike_picks (
   ts INTEGER NOT NULL, expiry TEXT, ce_key TEXT, pe_key TEXT, payload TEXT, PRIMARY KEY (ts)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS itm_atm_signals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  d TEXT NOT NULL,
+  spot REAL NOT NULL,
+  signal_type TEXT NOT NULL,
+  levels TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  payload TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_itm_atm_signals_ts ON itm_atm_signals(ts);
 """
 
 

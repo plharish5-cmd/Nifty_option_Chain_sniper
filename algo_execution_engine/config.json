@@ -53,10 +53,25 @@
     "square_off_time": "15:20",
     "profit_factor_min_verdict": 1.30
   },
-  "strategy_1h_80ema": {
-    "name": "Flagship 1-Hour 80-EMA Touch Strategy",
+  "strategy_1h_8ema": {
+    "name": "Flagship 1-Hour 8-EMA Touch Strategy (Alert-Only)",
     "timeframe": "1h",
-    "ema_period": 80,
+    "ema_period": 8,
+    "touch_proximity_pts": 3.0,
+    "fixed_sl_pts": 40.0,
+    "target_pts": 40.0,
+    "cost_to_cost_trigger_pts": 40.0,
+    "cost_to_cost_brokerage_buffer_pts": 9.0,
+    "lot_size": 65,
+    "gap_up_max_pts": 50.0,
+    "gap_down_max_pts": -50.0,
+    "option_delta_default": 0.60,
+    "no_entry_after": "15:00"
+  },
+  "strategy_1h_80ema": {
+    "name": "Flagship 1-Hour 8-EMA Touch Strategy (Alert-Only)",
+    "timeframe": "1h",
+    "ema_period": 8,
     "touch_proximity_pts": 3.0,
     "fixed_sl_pts": 40.0,
     "target_pts": 40.0,

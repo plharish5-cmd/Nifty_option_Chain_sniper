@@ -207,3 +207,33 @@ def test_rsi_calculation_and_divergence():
     assert res["fut_star_pattern"] == "EVENING_STAR"
     assert res["iron_wall_star_divergence_alert"] is not None
     assert "IRON WALL" in res["iron_wall_star_divergence_alert"]
+
+
+def test_fail_closed_when_spot_missing():
+    """Verify engine fails closed when spot price cannot be resolved (no 23300.0 fallback)."""
+    from unittest.mock import patch
+    with patch("app.db.query", return_value=[]):
+        res = compute_itm_atm_oi_walls(spot=None, candles_spot=[])
+        assert res["ok"] is False
+        assert "Spot price unavailable" in (res.get("error") or "")
+        assert res["spot"] == 0.0
+
+
+def test_itm_atm_signals_logging():
+    """Verify active signals are persisted to itm_atm_signals table (Item 6i)."""
+    from app import db
+    chain_rows = [
+        {"strike": 23150.0, "ce": {"oi": 10000, "oi_chg": 0}, "pe": {"oi": 50000, "oi_chg": 10000}},
+        {"strike": 23200.0, "ce": {"oi": 15000, "oi_chg": 0}, "pe": {"oi": 250000, "oi_chg": 50000}},
+        {"strike": 23340.0, "ce": {"oi": 120000, "oi_chg": 0}, "pe": {"oi": 20000, "oi_chg": -5000}},
+    ]
+    res = compute_itm_atm_oi_walls(spot=23340.0, chain_rows=chain_rows)
+    assert res["ok"] is True
+    assert res["is_hollow_rally"] is True
+
+    # Check signal exists in itm_atm_signals table
+    with db.conn() as c:
+        row = c.execute("SELECT signal_type, spot, reason FROM itm_atm_signals WHERE signal_type = 'HOLLOW_RALLY' ORDER BY id DESC LIMIT 1").fetchone()
+        assert row is not None
+        assert row[0] == "HOLLOW_RALLY"
+        assert row[1] == 23340.0

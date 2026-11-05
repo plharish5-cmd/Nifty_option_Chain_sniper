@@ -174,9 +174,10 @@ class Feed:
                 raise
             except Exception as e:                           # noqa: BLE001 — every failure means reconnect
                 self.last_error = f"{type(e).__name__}: {str(e)[:160]}"
-                if "401" in self.last_error or "403" in self.last_error:
+                if "401" in self.last_error or "403" in self.last_error or "DH-906" in self.last_error or "dh-906" in self.last_error:
                     self.token_blocked = True
-                    self.status = "token rejected — update DHAN_ACCESS_TOKEN in .env"
+                    self.status = "🚨 token rejected (401/DH-906) — backing off 300s. Update DHAN_ACCESS_TOKEN in .env"
+                    log.error("🚨 Feed token rejected (401/DH-906). Backing off 300s to avoid hammering broker.")
             self._ws = None
             if self._stop.is_set():
                 break
@@ -184,7 +185,10 @@ class Feed:
             wait = 2.0 if lived > 120 else min(wait * 2, float(config.rule("data", "reconnect_max_wait_s", 60)))
             if not market_open_now():
                 wait = max(wait, 30.0)                       # after hours: reconnect lazily
-            if not self.token_blocked:
+            if self.token_blocked:
+                wait = 300.0
+                self.status = f"🚨 token rejected (401/DH-906) — backing off {wait:.0f}s. Update DHAN_ACCESS_TOKEN in .env"
+            else:
                 self.status = f"reconnecting in {wait:.0f}s"
             log.warning("feed closed (%s); reconnecting in %.0fs", self.last_error, wait)
             try:

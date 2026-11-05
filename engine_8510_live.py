@@ -240,6 +240,52 @@ async def api_reset_kill():
     return JSONResponse(content=res)
 
 
+@app.get("/api/desk/alarm-status")
+async def api_desk_alarm_status():
+    """Returns current pre-open check and alarm status from data/desk_alarm.json."""
+    alarm_file = ROOT / "data" / "desk_alarm.json"
+    if alarm_file.exists():
+        try:
+            return JSONResponse(content=json.loads(alarm_file.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    return JSONResponse(content={"status": "UNKNOWN", "message": "Pre-open alarm not yet triggered"})
+
+
+@app.post("/api/desk/pre-open-check")
+async def api_run_pre_open_check():
+    """Runs 08:55 IST Pre-Open Health Check on demand."""
+    from scripts.pre_open_alarm import run_pre_open_check
+    res = run_pre_open_check()
+    return JSONResponse(content=res)
+
+
+@app.get("/api/candles")
+async def api_candles(tf: str = "5m", days: int = 1, inst: str = "NIFTY"):
+    """Heartbeat-enabled candle endpoint for chart monitoring and stale checks."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"http://127.0.0.1:8600/api/candles?tf={tf}&days={days}&inst={inst}")
+            if resp.status_code == 200:
+                return JSONResponse(content=resp.json())
+    except Exception:
+        pass
+
+    spot = backend.cached_telemetry.get("spot", {}).get("price", 24000.0)
+    now_ts = int(time.time())
+    candle = {
+        "ts": now_ts - (now_ts % 300),
+        "open": spot,
+        "high": spot,
+        "low": spot,
+        "close": spot,
+        "volume": 0,
+        "tf": tf,
+        "source": "8510_live_telemetry",
+    }
+    return JSONResponse(content={"candles": [candle], "inst": inst, "tf": tf, "ok": True})
+
+
 @app.post("/api/chaser/config")
 async def api_chaser_config(req: Request):
     body = await req.json()

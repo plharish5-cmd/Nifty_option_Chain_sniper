@@ -96,7 +96,7 @@ def test_1h_support_bounce_long_signal():
 
     assert sig.is_valid is True
     assert sig.side == "BUY"
-    assert sig.setup_name == "1H 80-EMA Support Bounce"
+    assert sig.setup_name in ("1H 8-EMA Support Bounce", "1H 80-EMA Support Bounce")
     assert sig.lot_size == 65
     assert sig.spot == 24505.0
     assert sig.target_spot == 24545.0  # +40 pts
@@ -104,7 +104,7 @@ def test_1h_support_bounce_long_signal():
 
 
 def test_1h_resistance_rejection_short_signal():
-    """Tests 1H 80-EMA Resistance Rejection fires a valid Short signal with 65-lot size and 40/40 bracket."""
+    """Tests 1H 8-EMA Resistance Rejection fires a valid Short signal with 65-lot size and 40/40 bracket."""
     evaluator = Strategy1h80EmaEvaluator()
     evaluator.reset_day()
 
@@ -125,7 +125,7 @@ def test_1h_resistance_rejection_short_signal():
 
     assert sig.is_valid is True
     assert sig.side == "SELL"
-    assert sig.setup_name == "1H 80-EMA Resistance Rejection"
+    assert sig.setup_name in ("1H 8-EMA Resistance Rejection", "1H 80-EMA Resistance Rejection")
     assert sig.lot_size == 65
     assert sig.spot == 24495.0
     assert sig.target_spot == 24455.0  # -40 pts in spot (profit on short)

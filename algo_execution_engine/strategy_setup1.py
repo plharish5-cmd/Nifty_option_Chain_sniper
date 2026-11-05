@@ -210,6 +210,7 @@ class Setup1StrategyEvaluator:
     def __init__(self, config_dict: Optional[Dict[str, Any]] = None) -> None:
         self.cfg = config_dict or load_config()
         self.rally = RallyState()
+        self.stage2_stops_count: int = 0
         self.stage2_stopped_today: bool = False
         self.daily_trade_count: int = 0
         self.daily_pnl_inr: float = 0.0
@@ -221,6 +222,7 @@ class Setup1StrategyEvaluator:
     def reset_day(self) -> None:
         """Resets intraday counters at session open."""
         self.rally = RallyState()
+        self.stage2_stops_count = 0
         self.stage2_stopped_today = False
         self.daily_trade_count = 0
         self.daily_pnl_inr = 0.0
@@ -430,8 +432,9 @@ class Setup1StrategyEvaluator:
             return reject(f"Gap-Up Trap (+{gap_pts:.1f} pts > {gap_max:.1f} pts) — common gap rule blocks Longs")
 
         # Gate 1: Daily Stop Limit
-        if self.stage2_stopped_today:
-            return reject("Stage 2 stop already taken today (-40 pts) — Setup #1 disabled for rest of session")
+        stop_limit = int(self.cfg.get("risk", {}).get("stage2_daily_stop_limit", 1))
+        if self.stage2_stops_count >= stop_limit or self.stage2_stopped_today:
+            return reject(f"Stage 2 stop already taken today ({self.stage2_stops_count}/{stop_limit}) — Setup #1 disabled for rest of session")
 
         # Gate 2: 15-Minute Preconditions (4>8, BB width > 60, UBB sloping UP)
         pre_ok, pre_info = self.evaluate_15m_preconditions(df_15m)
@@ -561,8 +564,12 @@ class Setup1StrategyEvaluator:
         if current_spot <= new_sl:
             is_initial_sl = (new_sl == pos.entry_spot - float(strat.get("fixed_sl_pts", 40.0)))
             if is_initial_sl:
-                self.stage2_stopped_today = True
-                log.warning("🛑 Trade %s Initial Stop-Loss (-40 pts) Hit! Setup #1 disabled for rest of day.", pos.trade_id)
+                self.stage2_stops_count += 1
+                stop_limit = int(self.cfg.get("risk", {}).get("stage2_daily_stop_limit", 1))
+                if self.stage2_stops_count >= stop_limit:
+                    self.stage2_stopped_today = True
+                log.warning("🛑 Trade %s Initial Stop-Loss (-40 pts) Hit (%d/%d stops today)! Setup #1 disabled for rest of day.",
+                            pos.trade_id, self.stage2_stops_count, stop_limit)
                 return True, "Initial Stop-Loss Hit (-40 pts)", None
             else:
                 log.info("🛡️ Trade %s Trailing/CTC Stop Hit at %.1f", pos.trade_id, new_sl)

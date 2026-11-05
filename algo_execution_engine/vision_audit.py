@@ -372,6 +372,8 @@ class GeminiVisionParser:
     """Uses Google Gemini 3.8 Flash Vision to transcribe and audit 15m & 1h chart screenshots."""
 
     def __init__(self, api_key: Optional[str] = None):
+        cfg = load_config()
+        self.model_name = cfg.get("vision_audit", {}).get("gemini_model", "gemini-3.8-flash")
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         self.client = None
         if self.api_key:
@@ -411,7 +413,7 @@ class GeminiVisionParser:
 
             from google.genai import types
             response = self.client.models.generate_content(
-                model="gemini-3.8-flash",
+                model=self.model_name,
                 contents=[
                     types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
                     prompt,
@@ -507,6 +509,11 @@ class VisionAuditAgent:
         self.audit_cfg = self.cfg.get("vision_audit", {})
         self.gap_threshold = float(self.audit_cfg.get("gap_threshold_pts", 50.0))
         self.allowed_extensions = set(self.audit_cfg.get("allowed_extensions", [".png", ".jpg", ".jpeg", ".webp", ".bmp"]))
+        self.lookback_months = int(self.audit_cfg.get("lookback_months", 3))
+        self.setups_supported = list(self.audit_cfg.get("setups_supported", [
+            SETUP_STAGE2_8EMA, SETUP_STAGE3_8EMA, SETUP_REV_UP, SETUP_REV_DOWN,
+            "1H 80-EMA Touch", "1H 80-EMA Support Bounce", "1H 80-EMA Resistance Rejection",
+        ]))
 
         self.matcher = SqliteTradeMatcher(db_path=db_path)
         self.gemini_parser = GeminiVisionParser(api_key=gemini_api_key)
@@ -604,7 +611,8 @@ class VisionAuditAgent:
         ]
         all_files.sort(key=lambda x: x.name)
 
-        cutoff_date = datetime.now() - timedelta(days=lookback_days)
+        days_to_look = lookback_days if (lookback_days is not None) else (self.lookback_months * 30)
+        cutoff_date = datetime.now() - timedelta(days=days_to_look)
         filtered_files = []
         for f in all_files:
             # Check modification time or date in filename

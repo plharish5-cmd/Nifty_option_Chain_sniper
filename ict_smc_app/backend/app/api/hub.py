@@ -170,8 +170,15 @@ class Hub:
                 await fut_mod.refresh(self.rest, self.fut["sid"], 1)
             self.status["token"] = "valid"
         except TokenError as e:
-            self.status["token"] = "expired / invalid — paste a fresh DHAN_ACCESS_TOKEN in .env"
+            self.status["token"] = "🚨 EXPIRED/REJECTED (DH-906/401): paste a fresh DHAN_ACCESS_TOKEN in .env"
             self.status["backfill"] = f"failed: {str(e)[:120]}"
+            log.error("🚨 Dhan TokenError in repair (401/DH-906): %s", e)
+            await self.broadcast({
+                "type": "alarm",
+                "level": "CRITICAL",
+                "code": "DH_906_TOKEN_EXPIRED",
+                "message": "Dhan Access Token expired or rejected (DH-906). Update .env and renew token."
+            })
         except DhanError as e:
             self.status["backfill"] = f"failed: {str(e)[:160]}"
         if not self.prev_close.get(self.nifty):
@@ -1674,6 +1681,16 @@ class Hub:
                     self.price_source = "feed"
             except asyncio.CancelledError:
                 raise
+            except TokenError as e:
+                self.status["token"] = f"🚨 EXPIRED/REJECTED (DH-906/401): {str(e)[:120]}"
+                log.error("🚨 Dhan auth error in watchdog (401/DH-906). Halting REST hammering, backing off for 300s: %s", e)
+                await self.broadcast({
+                    "type": "alarm",
+                    "level": "CRITICAL",
+                    "code": "DH_906_TOKEN_EXPIRED",
+                    "message": "Dhan Access Token expired or rejected (DH-906). Update .env and renew token."
+                })
+                await asyncio.sleep(300.0)
             except Exception as e:                           # noqa: BLE001
                 self.status["errors"] = (self.status["errors"] + [f"watchdog: {str(e)[:120]}"])[-5:]
 

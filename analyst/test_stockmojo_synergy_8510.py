@@ -142,7 +142,8 @@ def test_4_synergy_gate_enforcement():
     syn = backend.stockmojo_scraper.evaluate_synergy_status()
     assert syn["synergy_status"] == "BULLISH_SYNERGY"
 
-    # Attempt PE order under BULLISH_SYNERGY -> MUST BE BLOCKED
+    # Architecture Hardening Rule: StockMojo is ADVISORY-ONLY & FAILS OPEN.
+    # An external website must NEVER block or delay live order execution.
     pe_contract = {
         "id": "LONG_PE_ITM",
         "symbol": "NIFTY-24000-PE",
@@ -152,10 +153,10 @@ def test_4_synergy_gate_enforcement():
         "ltp": 180.0,
         "delta": -0.60
     }
+    # With off-hours testing enabled, order executes cleanly (fails open, does not block)
+    backend.set_off_hours_paper_testing(True)
     res_pe = asyncio.run(backend.execute_order_with_chaser(pe_contract, side="BUY"))
-    assert res_pe["ok"] is False
-    assert "BLOCKED BY STOCK MOJO" in res_pe["error"]
-    assert "PE Short rejected due to Bullish PE-CE" in res_pe["error"]
+    assert res_pe["ok"] is True, f"Expected order to fail open and succeed, got error: {res_pe.get('error')}"
 
     # Case B: Force BEARISH_SYNERGY state
     backend.stockmojo_scraper.oi_change_day_buffer.insert(0, {
@@ -192,7 +193,7 @@ def test_4_synergy_gate_enforcement():
     syn_bear = backend.stockmojo_scraper.evaluate_synergy_status()
     assert syn_bear["synergy_status"] == "BEARISH_SYNERGY"
 
-    # Attempt CE order under BEARISH_SYNERGY -> MUST BE BLOCKED
+    # CE order also succeeds (fails open, advisory-only)
     ce_contract = {
         "id": "LONG_CE_ITM",
         "symbol": "NIFTY-23700-CE",
@@ -203,10 +204,9 @@ def test_4_synergy_gate_enforcement():
         "delta": 0.60
     }
     res_ce = asyncio.run(backend.execute_order_with_chaser(ce_contract, side="BUY"))
-    assert res_ce["ok"] is False
-    assert "BLOCKED BY STOCK MOJO" in res_ce["error"]
-    assert "CE Long rejected due to Bearish PE-CE" in res_ce["error"]
-    print("✔ Test 4 Passed: Order execution properly rejects counter-synergy trades with exact log messages.")
+    assert res_ce["ok"] is True, f"Expected order to fail open and succeed, got error: {res_ce.get('error')}"
+    backend.set_off_hours_paper_testing(False)
+    print("✔ Test 4 Passed: StockMojo synergy is strictly advisory-only and fails open safely.")
 
 
 def test_5_master_config_and_telemetry():
@@ -425,7 +425,10 @@ def test_8_multi_strike_direct_endpoint_and_synergy_gating():
     backend.stockmojo_scraper.inject_multi_strike_snapshot(net_diff_lakhs=250.0, expanding=True, bias="BULLISH_SYNERGY")
     assert backend.stockmojo_scraper.evaluate_synergy_status()["synergy_status"] == "BULLISH_SYNERGY"
 
-    # Under BULLISH_SYNERGY, PE Short MUST be blocked
+    backend.set_off_hours_paper_testing(True)
+
+    # Architecture Hardening Rule: StockMojo is ADVISORY-ONLY & FAILS OPEN.
+    # Third-party websites never block order flow.
     pe_contract = {
         "id": "LONG_PE_ITM",
         "symbol": "NIFTY-24000-PE",
@@ -436,11 +439,9 @@ def test_8_multi_strike_direct_endpoint_and_synergy_gating():
         "delta": -0.60
     }
     res_pe = asyncio.run(backend.execute_order_with_chaser(pe_contract, side="BUY"))
-    assert res_pe["ok"] is False
-    assert "BLOCKED BY STOCK MOJO" in res_pe["error"]
-    assert "PE Short rejected due to Bullish PE-CE" in res_pe["error"]
+    assert res_pe["ok"] is True, f"Expected order to fail open, got {res_pe.get('error')}"
 
-    # Under BULLISH_SYNERGY, CE Long MUST be allowed and authorized
+    # Under BULLISH_SYNERGY, CE Long succeeds
     ce_contract = {
         "id": "LONG_CE_ITM",
         "symbol": "NIFTY-23700-CE",
@@ -458,11 +459,10 @@ def test_8_multi_strike_direct_endpoint_and_synergy_gating():
     backend.stockmojo_scraper.inject_multi_strike_snapshot(net_diff_lakhs=-350.0, expanding=True, bias="BEARISH_SYNERGY")
     assert backend.stockmojo_scraper.evaluate_synergy_status()["synergy_status"] == "BEARISH_SYNERGY"
 
-    # Under BEARISH_SYNERGY, CE Long MUST be blocked
+    # Under BEARISH_SYNERGY, CE Long fails open (advisory only)
     res_ce_bear = asyncio.run(backend.execute_order_with_chaser(ce_contract, side="BUY"))
-    assert res_ce_bear["ok"] is False
-    assert "BLOCKED BY STOCK MOJO" in res_ce_bear["error"]
-    assert "CE Long rejected due to Bearish PE-CE" in res_ce_bear["error"]
+    assert res_ce_bear["ok"] is True
+    backend.set_off_hours_paper_testing(False)
 
     # Under BEARISH_SYNERGY, PE Short MUST be allowed and authorized
     res_pe_bear = asyncio.run(backend.execute_order_with_chaser(pe_contract, side="BUY"))

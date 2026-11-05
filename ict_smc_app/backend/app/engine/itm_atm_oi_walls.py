@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -156,6 +157,38 @@ def detect_candlestick_star_pattern(candles: List[Dict[str, Any]]) -> Optional[s
 # CORE ENGINE: itm_atm_oi_walls
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _log_itm_atm_signal(
+    spot: float,
+    signal_type: str,
+    levels: Dict[str, Any],
+    reason: str,
+    payload: Dict[str, Any],
+    target_ts: Optional[int] = None,
+) -> None:
+    """Logs fired ITM/ATM signal to database table for forward performance tracking (Item 6i)."""
+    try:
+        from .. import db
+        import time as _time, datetime as _dt
+        ts = target_ts or int(_time.time())
+        d = _dt.datetime.fromtimestamp(ts, tz=_dt.timezone(_dt.timedelta(hours=5, minutes=30))).strftime("%Y-%m-%d")
+        levels_str = json.dumps(levels)
+        payload_str = json.dumps(payload)
+        with db.conn() as c:
+            # Throttle duplicate identical signals within 60s
+            row = c.execute(
+                "SELECT id FROM itm_atm_signals WHERE signal_type = ? AND d = ? AND ts >= ? LIMIT 1",
+                (signal_type, d, ts - 60),
+            ).fetchone()
+            if not row:
+                c.execute(
+                    """INSERT INTO itm_atm_signals (ts, d, spot, signal_type, levels, reason, payload)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (ts, d, spot, signal_type, levels_str, reason, payload_str),
+                )
+    except Exception as exc:
+        log.warning("Could not log itm_atm signal: %s", exc)
+
+
 @dataclass
 class StrikeOIInfo:
     strike: float
@@ -169,8 +202,9 @@ class StrikeOIInfo:
 @dataclass
 class ItmAtmOiWallsResult:
     ok: bool = True
-    spot: float = 23300.0
-    atm_strike: float = 23300.0
+    error: Optional[str] = None
+    spot: float = 0.0
+    atm_strike: float = 0.0
     
     # Mechanic 1: Hollow Rally vs Solid Floor
     is_hollow_rally: bool = False
@@ -210,7 +244,7 @@ class ItmAtmOiWallsResult:
     iron_wall_star_divergence_alert: Optional[str] = None
 
     # Basis & Implied Spot Open Calculator
-    fut_close: float = 23300.0
+    fut_close: float = 0.0
     basis_spread: float = 0.0
     gift_nifty_price: Optional[float] = None
     implied_spot_open: Optional[float] = None
@@ -243,17 +277,21 @@ def compute_itm_atm_oi_walls(
     # Resolve spot price
     if spot is None or spot <= 0.0:
         if candles_spot:
-            spot = float(candles_spot[-1].get("close", candles_spot[-1].get("c", 23300.0)))
+            c = candles_spot[-1].get("close", candles_spot[-1].get("c"))
+            if c is not None and float(c) > 0.0:
+                spot = float(c)
         else:
             try:
                 from .. import db
                 r_spot = db.query("SELECT c FROM candles_1m WHERE sec_id = ? ORDER BY ts DESC LIMIT 1", ("13",))
-                if r_spot and r_spot[0]["c"] is not None:
+                if r_spot and r_spot[0]["c"] is not None and float(r_spot[0]["c"]) > 0.0:
                     spot = float(r_spot[0]["c"])
-                else:
-                    spot = 23300.0
-            except Exception:
-                spot = 23300.0
+            except Exception as exc:
+                log.warning("Could not query candles_1m for spot: %s", exc)
+
+    if spot is None or spot <= 0.0:
+        log.warning("Spot price could not be resolved in itm_atm_oi_walls; failing closed.")
+        return asdict(ItmAtmOiWallsResult(ok=False, error="Spot price unavailable; failing closed.", spot=0.0, atm_strike=0.0))
 
     atm_strike = round(spot / 50.0) * 50.0
 
@@ -423,11 +461,8 @@ def compute_itm_atm_oi_walls(
     except Exception as exc:
         log.warning("Could not query gann_pivots_gaps for structural levels: %s", exc)
 
-    nearest_hist_support = max(hist_supports) if hist_supports else None
-    if nearest_hist_support is not None:
-        struct_downside = round(max(shelf_strike, nearest_hist_support), 1)
-    else:
-        struct_downside = round(shelf_strike, 1)
+    # Structural downside target: Use PE shelf alone (avoids dense Gann levels overriding options structure)
+    struct_downside = round(shelf_strike, 1)
 
     # 4. Dynamic Main OTM Iron Ceiling (iron_ceiling_min, iron_ceiling_max):
     # Scan OTM Call strikes (strike >= spot) for max Call OI + positive ΔCE_OI
@@ -690,4 +725,29 @@ def compute_itm_atm_oi_walls(
         ],
     )
 
-    return asdict(result)
+    # Log fired signals to itm_atm_signals table (Item 6i)
+    cur_ts = int(candles_spot[-1]["ts"]) if candles_spot and "ts" in candles_spot[-1] else int(time.time())
+    sig_levels = {
+        "spot": round(spot, 1),
+        "atm_strike": round(atm_strike, 1),
+        "support_bottom": round(supp_bottom, 1),
+        "support_top": round(supp_top, 1),
+        "panic_trigger": round(panic_trigger, 1),
+        "structural_downside": round(struct_downside, 1),
+        "iron_ceiling_min": round(iron_ceil_min, 1),
+        "iron_ceiling_max": round(iron_ceil_max, 1),
+        "main_put_wall": round(main_pe_strike, 1),
+    }
+    res_dict = asdict(result)
+    if is_panic:
+        _log_itm_atm_signal(spot, "PANIC_UNWINDING_CASCADE", sig_levels, panic_banner or "Panic Unwinding", res_dict, cur_ts)
+    if vacuum_active:
+        _log_itm_atm_signal(spot, "SHORT_COVERING_VACUUM", sig_levels, vacuum_signal or "Vacuum Active", res_dict, cur_ts)
+    if is_hollow:
+        _log_itm_atm_signal(spot, "HOLLOW_RALLY", sig_levels, hollow_warning or "Hollow Rally Warning", res_dict, cur_ts)
+    elif put_conviction == "SOLID_FLOOR_MIGRATION":
+        _log_itm_atm_signal(spot, "SOLID_FLOOR_MIGRATION", sig_levels, "Solid Floor Migration", res_dict, cur_ts)
+    if star_div_alert:
+        _log_itm_atm_signal(spot, "STAR_DIVERGENCE_ALERT", sig_levels, star_div_alert, res_dict, cur_ts)
+
+    return res_dict

@@ -26,14 +26,40 @@ interface BatchPayload {
 const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
 const units = (n: number) => (n / 1e5).toFixed(2) + ' L';
 
-// In-memory module cache: survives component remounts across slider drags
-const BATCH_CACHE = new Map<string, BatchPayload>();
+interface CacheEntry {
+  data: BatchPayload;
+  expiresAt: number;
+}
+
+// In-memory module cache with TTL (10 minutes). Survives component remounts across slider drags.
+// Never caches today's incomplete date.
+const BATCH_CACHE = new Map<string, CacheEntry>();
+const BATCH_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function getCachedBatch(key: string): BatchPayload | null {
+  const entry = BATCH_CACHE.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    BATCH_CACHE.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function isTodayDate(dayStr: string): boolean {
+  try {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    return dayStr === today;
+  } catch {
+    return false;
+  }
+}
 
 export default function OiWallsReplay({ day, ts }: { day: string; ts: number }) {
   const [expiry, setExpiry] = useState('');
   const [batchData, setBatchData] = useState<BatchPayload | null>(() => {
     const key = `${day}:${expiry || 'default'}`;
-    return BATCH_CACHE.get(key) || null;
+    return getCachedBatch(key);
   });
   const [error, setError] = useState('');
   const [hover, setHover] = useState<Wall | null>(null);
@@ -47,7 +73,7 @@ export default function OiWallsReplay({ day, ts }: { day: string; ts: number }) 
   // Fetch full day's batch frames once when day or expiry changes
   useEffect(() => {
     const key = `${day}:${expiry || 'default'}`;
-    const cached = BATCH_CACHE.get(key);
+    const cached = getCachedBatch(key);
     if (cached) {
       setBatchData(cached);
       setError('');
@@ -69,7 +95,10 @@ export default function OiWallsReplay({ day, ts }: { day: string; ts: number }) 
       .then((d: BatchPayload) => {
         if (!abort.signal.aborted) {
           if (d.ok) {
-            BATCH_CACHE.set(key, d);
+            // Never cache today's incomplete day in browser cache
+            if (!isTodayDate(day)) {
+              BATCH_CACHE.set(key, { data: d, expiresAt: Date.now() + BATCH_CACHE_TTL_MS });
+            }
             setBatchData(d);
           } else {
             setError(d.message || 'No recorded OI replay batch available');

@@ -19,7 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from algo_execution_engine.stage3_sandbox import SandboxTrade, Stage3GraduationTracker
-from algo_execution_engine.order_gateway import DhanOrderGateway
+from algo_execution_engine.order_gateway import DhanOrderGateway, validate_1lot_cap
 from algo_execution_engine.strategy_setup1 import Setup1Signal, load_config
 from algo_execution_engine.server import app
 
@@ -197,6 +197,7 @@ def test_stage4_gatekeeper_graduates_after_25_winning_trades(tmp_path: Path):
 
 def test_strike_selection_multiples_of_100_only():
     gateway = DhanOrderGateway()
+    gateway.execution_mode = "PAPER"
 
     # Test spot = 23742.5 -> must pick 23600 or 23500, NEVER 23750 or 23700 if far from 200 LTP
     strike, sec_id, sym, ltp, spread = gateway.resolve_itm_100_ce_contract(23742.5)
@@ -234,16 +235,47 @@ def test_hard_1lot_cap_enforced_in_live_mode():
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"orderId": "DHAN_ORDER_9999", "status": "success"}
 
-    async def _run():
-        with patch.object(gateway, "resolve_itm_100_ce_contract", return_value=(23400.0, "SIM_23400_CE", "NIFTY 23400 CE", 210.0, 0.5)), \
+    async def _run(gw):
+        with patch.object(gw, "resolve_itm_100_ce_contract", return_value=(23400.0, "SIM_23400_CE", "NIFTY 23400 CE", 210.0, 0.5)), \
              patch.dict(os.environ, {"DHAN_ACCESS_TOKEN": "mock_token", "DHAN_CLIENT_ID": "mock_client"}), \
              patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
-            return await gateway.execute_setup1_entry(signal, daily_trades=0, daily_pnl_inr=0.0)
+            return await gw.execute_setup1_entry(signal, daily_trades=0, daily_pnl_inr=0.0)
 
-    pos = asyncio.run(_run())
+    # 1. Setup 1 standard 1-lot path
+    pos = asyncio.run(_run(gateway))
     assert pos is not None
     # Hard lot cap: 1 Lot (dynamic from master: 65 shares)
     assert pos.quantity == 65, f"Expected 65 quantity (1 Lot), got {pos.quantity}"
+
+    # 2. Setup 1 path when caller / lots_per_trade attempts to exceed 1 lot
+    gateway.lots_per_trade = 3
+    pos_oversized = asyncio.run(_run(gateway))
+    assert pos_oversized is not None
+    assert pos_oversized.quantity == 65, f"Expected 1-lot clamp to 65, got {pos_oversized.quantity}"
+    gateway.lots_per_trade = 1
+
+    # 3. Direct validate_1lot_cap unit check
+    assert validate_1lot_cap(130, 65) == 65
+    assert validate_1lot_cap(65, 65) == 65
+
+    # 4. Verify 1H 8-EMA path also enforces 1-lot cap guard
+    from algo_execution_engine.strategy_1h_8ema import Strategy1hSignal
+    signal_1h = Strategy1hSignal(
+        side="BUY",
+        setup_name="1H 8-EMA Support Bounce",
+        timestamp=1730628000,
+        spot=23500.0,
+        ema8=23498.0,
+        sl_spot=23460.0,
+        target_spot=23540.0,
+        lot_size=130,  # Deliberately attempt 2 lots
+        is_valid=True,
+    )
+    with patch.object(gateway, "resolve_itm_100_ce_contract", return_value=(23400.0, "SIM_23400_CE", "NIFTY 23400 CE", 210.0, 0.5)):
+        # 1H path is alert-only; executes through lot validator
+        asyncio.run(gateway.execute_1h_80ema_entry(signal_1h, daily_trades=0, daily_pnl_inr=0.0))
+        # Ensure validate_1lot_cap clamped 130 -> 65
+        assert validate_1lot_cap(signal_1h.lot_size, gateway.dynamic_lot_size) == 65
 
 
 # ─────────────────────────────────────────────────────────────────────────────

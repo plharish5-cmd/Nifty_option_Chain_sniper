@@ -17,6 +17,8 @@ if [ "$dow" -le 5 ] && [ "$hm" -ge 855 ] && [ "$hm" -lt 1600 ]; then
     kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
   done
   for s in paperdesk-awake paperdesk-main paperdesk-second paperdesk-strategies paperdesk-ict; do systemctl is-active --quiet $s || systemctl start $s; done
+  # 08:55 Pre-Open Check: Verify token, daemons, and candles (raises loud alarm on any failure)
+  [ "$hm" -eq 855 ] && .venv/bin/python scripts/pre_open_alarm.py 2>&1 | tee -a data/logs/pre_open.log &
 else
   for s in paperdesk-main paperdesk-second paperdesk-strategies paperdesk-ict paperdesk-awake; do systemctl is-active --quiet $s && systemctl stop $s; done
 fi

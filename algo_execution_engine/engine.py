@@ -45,6 +45,8 @@ class Setup1ExecutionEngine:
 
     def __init__(self, config_dict: Optional[Dict[str, Any]] = None) -> None:
         self.cfg = config_dict or load_config()
+        lvl_str = self.cfg.get("service", {}).get("log_level", "INFO")
+        log.setLevel(getattr(logging, str(lvl_str).upper(), logging.INFO))
         self.evaluator = Setup1StrategyEvaluator(self.cfg)
         self.evaluator_1h = Strategy1h80EmaEvaluator(self.cfg)
         self.gateway = DhanOrderGateway(self.cfg)
@@ -66,6 +68,8 @@ class Setup1ExecutionEngine:
 
     def reload_config(self) -> None:
         self.cfg = load_config()
+        lvl_str = self.cfg.get("service", {}).get("log_level", "INFO")
+        log.setLevel(getattr(logging, str(lvl_str).upper(), logging.INFO))
         self.evaluator.reload_config()
         self.evaluator_1h.reload_config()
         self.gateway.reload_config()

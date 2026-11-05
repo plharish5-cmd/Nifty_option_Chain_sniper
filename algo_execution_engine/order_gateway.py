@@ -107,6 +107,8 @@ class DhanOrderGateway:
             self.dynamic_lot_size = get_dynamic_nifty_lot_size(self.exec_cfg.get("instrument_master_path"))
         except Exception:
             self.dynamic_lot_size = int(self.exec_cfg.get("lot_size", 65))
+        self.lots_per_trade = int(self.exec_cfg.get("lots_per_trade", 1))
+        self.lots_per_trade = int(self.exec_cfg.get("lots_per_trade", 1))
         self.circuit_breaker_tripped: bool = False
         self.circuit_breaker_reason: str = ""
         self._cached_contracts: Dict[str, Tuple[float, str, str, float, float]] = {}
@@ -128,6 +130,7 @@ class DhanOrderGateway:
             self.dynamic_lot_size = get_dynamic_nifty_lot_size(self.exec_cfg.get("instrument_master_path"))
         except Exception:
             self.dynamic_lot_size = int(self.exec_cfg.get("lot_size", 65))
+        self.lots_per_trade = int(self.exec_cfg.get("lots_per_trade", 1))
 
     def _dhan_headers(self) -> Dict[str, str]:
         token = os.environ.get("DHAN_ACCESS_TOKEN", "")
@@ -457,7 +460,7 @@ class DhanOrderGateway:
         target_pts = float(strat.get("target_pts", 40.0))
 
         # Hard 1-Lot Cap (dynamic from Dhan master, e.g. 65 qty)
-        qty = validate_1lot_cap(self.dynamic_lot_size, self.dynamic_lot_size)
+        qty = validate_1lot_cap(int(self.lots_per_trade * self.dynamic_lot_size), self.dynamic_lot_size)
 
         opt_sl = max(0.50, round(real_ltp - (fixed_sl_pts * delta), 1))
         opt_target = round(real_ltp + (target_pts * delta), 1)
@@ -624,8 +627,8 @@ class DhanOrderGateway:
             log.warning("🚨 1H Real Dhan quote missing or <= 0 for %s. Order aborted.", symbol)
             return None
 
-        # Shared 1-lot validator on 1H path
-        qty = validate_1lot_cap(int(getattr(signal, "lot_size", self.dynamic_lot_size)), self.dynamic_lot_size)
+        # Shared 1-lot validator on 1H path (dynamic lot size and lots_per_trade cap)
+        qty = validate_1lot_cap(int(self.lots_per_trade * getattr(signal, "lot_size", self.dynamic_lot_size)), self.dynamic_lot_size)
 
         # Question A: Alert-only rule until live backtested
         log.info("📢 [1H 80-EMA ALERT ONLY] %s signal at spot %.1f | Strike: %s | Qty: %d (1 lot) | SL: %.1f | Target: %.1f (Alert-only mode — not wired to real order placement)",

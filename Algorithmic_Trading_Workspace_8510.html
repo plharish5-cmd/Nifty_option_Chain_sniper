@@ -2423,6 +2423,7 @@
                     authPill.textContent = "● DISCONNECTED";
                 }
             }
+            checkTokenExpiryWarning(res);
         }
 
         // Problem 3: Persistent Market Header & Off-Hours Override
@@ -2493,6 +2494,94 @@
                 console.error("toggleOffHoursPaperTesting error:", e);
             }
         }
+
+        // ── ITEM 4b & 4c: TOKEN EXPIRY & DESK STALENESS ALARM SYSTEM ─────────────
+        let lastCandleSuccessTs = Date.now();
+        let deskStaleAlertShown = false;
+        let deskAudioCtx = null;
+
+        function playDeskAlarmBeep() {
+            try {
+                if (!deskAudioCtx) deskAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (deskAudioCtx.state === 'suspended') deskAudioCtx.resume();
+                const osc = deskAudioCtx.createOscillator();
+                const gain = deskAudioCtx.createGain();
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(880, deskAudioCtx.currentTime);
+                osc.frequency.setValueAtTime(440, deskAudioCtx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.3, deskAudioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, deskAudioCtx.currentTime + 0.35);
+                osc.connect(gain);
+                gain.connect(deskAudioCtx.destination);
+                osc.start();
+                osc.stop(deskAudioCtx.currentTime + 0.35);
+            } catch (e) {
+                console.debug("WebAudio alarm sound blocked/unavailable:", e);
+            }
+        }
+
+        function checkTokenExpiryWarning(res) {
+            let banner = document.getElementById("tokenExpiryStickyWarning");
+            const timeLeft = res.time_left || res.days_left || "";
+            const isLow = timeLeft.includes("0 Hour") || timeLeft.includes("1 Hour") || timeLeft.includes("2 Hour") || timeLeft.includes("3 Hour") || timeLeft.includes("Minute") || res.is_expired;
+            if (isLow) {
+                if (!banner) {
+                    banner = document.createElement("div");
+                    banner.id = "tokenExpiryStickyWarning";
+                    banner.style.cssText = "position:fixed; bottom:0; left:0; right:0; z-index:999998; background:#ea580c; color:#ffffff; padding:12px 18px; font-weight:800; font-size:13.5px; text-align:center; box-shadow:0 -4px 15px rgba(0,0,0,0.5); display:flex; justify-content:center; align-items:center; gap:14px; font-family:var(--font-sans);";
+                    document.body.appendChild(banner);
+                }
+                banner.innerHTML = `<span>⚠️ CRITICAL TOKEN WARNING: Dhan API Access Token expires in <b>${timeLeft}</b> (${res.token_valid_till || 'Soon'})! Renew token now to avoid chart freeze!</span> <button type="button" onclick="showDhanModal();" style="background:#fff; color:#c2410c; font-weight:bold; border:none; padding:5px 12px; border-radius:6px; cursor:pointer;">⚙️ Open Config & Renew</button>`;
+                banner.style.display = "flex";
+            } else if (banner) {
+                banner.style.display = "none";
+            }
+        }
+
+        async function checkCandlesHeartbeat() {
+            try {
+                const r = await fetch("/api/candles?tf=5m&days=1&inst=NIFTY", { cache: "no-store" });
+                if (r.status === 200) {
+                    lastCandleSuccessTs = Date.now();
+                    hideStaleDeskBanner();
+                } else {
+                    evalStaleDesk(`HTTP ${r.status}`);
+                }
+            } catch (err) {
+                evalStaleDesk(err.message);
+            }
+        }
+
+        function evalStaleDesk(reason) {
+            const elapsedSec = (Date.now() - lastCandleSuccessTs) / 1000;
+            if (elapsedSec > 90) {
+                showStaleDeskBanner(Math.round(elapsedSec), reason);
+            }
+        }
+
+        function showStaleDeskBanner(sec, reason) {
+            let el = document.getElementById("deskStaleHeartbeatBanner");
+            if (!el) {
+                el = document.createElement("div");
+                el.id = "deskStaleHeartbeatBanner";
+                el.style.cssText = "position:fixed; top:0; left:0; right:0; z-index:999999; background:#dc2626; color:#ffffff; padding:14px 20px; font-weight:800; font-size:14.5px; text-align:center; box-shadow:0 6px 20px rgba(0,0,0,0.6); display:flex; justify-content:center; align-items:center; gap:16px; font-family:var(--font-sans);";
+                document.body.prepend(el);
+            }
+            el.innerHTML = `<span>🚨 DESK STALE / FROZEN: No live candle updates for <b>${sec}s</b>! Reason: Backend unresponsive or feed stopped (${reason}). Check services immediately!</span> <button type="button" onclick="checkCandlesHeartbeat(); location.reload();" style="background:#fff; color:#b91c1c; font-weight:bold; border:none; padding:6px 14px; border-radius:6px; cursor:pointer;">🔄 Restart / Refresh Desk</button>`;
+            el.style.display = "flex";
+            if (!deskStaleAlertShown) {
+                playDeskAlarmBeep();
+                deskStaleAlertShown = true;
+            }
+        }
+
+        function hideStaleDeskBanner() {
+            const el = document.getElementById("deskStaleHeartbeatBanner");
+            if (el) el.style.display = "none";
+            deskStaleAlertShown = false;
+        }
+
+        setInterval(checkCandlesHeartbeat, 15000);
 
         // Problem 4: Quick Filters for Positions & Orders
         function setSourceFilter(src) {

@@ -141,13 +141,36 @@ def test_gap_rule_verification_longs_and_shorts():
     assert "PASSED GAP RULE" in note
 
 
-def test_sqlite_ground_truth_gap_calculation():
-    """Tests SQLite cross-matcher calculates actual open gap for historical sessions."""
-    matcher = SqliteTradeMatcher()
+@pytest.fixture
+def mock_ground_truth_db(tmp_path):
+    """Fixture providing a mock SQLite DB with ground-truth session open and previous close candles."""
+    import sqlite3
+    db_file = tmp_path / "mock_ground_truth.sqlite3"
+    conn = sqlite3.connect(str(db_file))
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE candles_1m (
+            sec_id TEXT NOT NULL, ts INTEGER NOT NULL,
+            o REAL NOT NULL, h REAL NOT NULL, l REAL NOT NULL, c REAL NOT NULL, v REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY (sec_id, ts)
+        ) WITHOUT ROWID;
+    """)
+    # Prev day (2026-11-02 15:29 IST) close: 23900.0
+    cur.execute("INSERT INTO candles_1m VALUES ('13', 1793613540, 23895.0, 23905.0, 23890.0, 23900.0, 500)")
+    # Target day (2026-11-03 09:15 IST) open: 23945.0
+    cur.execute("INSERT INTO candles_1m VALUES ('13', 1793677500, 23945.0, 23960.0, 23940.0, 23955.0, 600)")
+    conn.commit()
+    conn.close()
+    return str(db_file)
+
+
+def test_sqlite_ground_truth_gap_calculation(mock_ground_truth_db):
+    """Tests SQLite cross-matcher calculates actual open gap for historical sessions via fixture."""
+    matcher = SqliteTradeMatcher(db_path=mock_ground_truth_db)
     gap = matcher.calculate_ground_truth_gap("2026-11-03")
-    # Ground truth gap exists in ict_smc.sqlite3
     assert gap is not None
     assert isinstance(gap, float)
+    assert round(gap, 1) == 45.0
 
 
 def test_single_image_audit_pipeline(temp_homework_dir):

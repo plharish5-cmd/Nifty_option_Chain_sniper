@@ -4,6 +4,7 @@ algo_execution_engine/test_backtest_setup1.py — Unit Tests for Setup #1 Histor
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -144,9 +145,41 @@ def test_metrics_calculation():
     assert metrics["linear_net_expectancy_inr"] == -400.0
 
 
-def test_read_real_sqlite_data():
-    db_path = "ict_smc_app/backend/data/ict_smc.sqlite3"
-    df = load_historical_1m_data(db_path)
+@pytest.fixture
+def sample_sqlite_candles_db(tmp_path):
+    """Fixture providing a mock SQLite candles database for clean CI checkouts."""
+    import sqlite3
+    db_file = tmp_path / "mock_candles.sqlite3"
+    conn = sqlite3.connect(str(db_file))
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE candles_1m (
+            sec_id TEXT NOT NULL, ts INTEGER NOT NULL,
+            o REAL NOT NULL, h REAL NOT NULL, l REAL NOT NULL, c REAL NOT NULL, v REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY (sec_id, ts)
+        ) WITHOUT ROWID;
+    """)
+    # Insert sample 1m candles for 2 distinct sessions
+    base_ts1 = 1727754300  # 2024-10-01 09:15 IST
+    rows = []
+    for i in range(10):
+        rows.append(("13", base_ts1 + i * 60, 23500.0, 23510.0, 23490.0, 23505.0, 100))
+    base_ts2 = 1727840700  # 2024-10-02 09:15 IST
+    for i in range(10):
+        rows.append(("13", base_ts2 + i * 60, 23520.0, 23530.0, 23515.0, 23525.0, 150))
+    cur.executemany("INSERT INTO candles_1m VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+    conn.commit()
+    conn.close()
+    return str(db_file)
+
+
+def test_read_real_sqlite_data(sample_sqlite_candles_db):
+    """Proves load_historical_1m_data correctly queries and structures SQLite 1m candles in clean checkout."""
+    real_db_path = "ict_smc_app/backend/data/ict_smc.sqlite3"
+    target_db = real_db_path if os.path.exists(real_db_path) else sample_sqlite_candles_db
+    df = load_historical_1m_data(target_db)
     assert not df.empty
     assert "session_date" in df.columns
-    assert df["session_date"].nunique() >= 200
+    assert "open" in df.columns and "close" in df.columns
+    min_sessions = 200 if os.path.exists(real_db_path) else 2
+    assert df["session_date"].nunique() >= min_sessions

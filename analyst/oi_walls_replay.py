@@ -67,7 +67,14 @@ def replay(day, at, expiry=None):
 def replay_batch(day, expiry=None):
     date.fromisoformat(day)
     cache_key = (day, expiry)
-    if cache_key in _BATCH_CACHE:
+    # Today's session is still growing (candles_1m gains rows minute by minute
+    # until close), so it must never be served from this process-lifetime
+    # cache -- otherwise a replay opened mid-session gets stuck on that
+    # partial snapshot for the rest of the day, even after the full session
+    # has backfilled into candles_1m. A closed historical day never changes,
+    # so it is still safe and worth caching.
+    is_today = day == datetime.now(IST).date().isoformat()
+    if not is_today and cache_key in _BATCH_CACHE:
         return _BATCH_CACHE[cache_key]
 
     policy = json.loads((ROOT/'analyst/analyst_config.json').read_text())['time_machine']
@@ -162,7 +169,8 @@ def replay_batch(day, expiry=None):
         "candles": candles,
         "frames": frames,
     }
-    _BATCH_CACHE[cache_key] = res
+    if not is_today:
+        _BATCH_CACHE[cache_key] = res
     return res
 
 if __name__ == '__main__':

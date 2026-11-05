@@ -2300,12 +2300,14 @@ class QuantTerminalBackend:
 
         # Stock Mojo Synergy Gating & Master Control Card Configuration
         self.stockmojo_synergy_cfg = self.cfg.get("stockmojo_synergy", {
-            "filter_stage2_8ema_synergy": True,
-            "filter_strategy2_reversal_synergy": True,
-            "filter_strategy3_1h_synergy": True,
+            "filter_stage2_8ema_synergy": False,
+            "filter_strategy2_reversal_synergy": False,
+            "filter_strategy3_1h_synergy": False,
             "use_as_direct_15m_trigger": False,
-            "block_pe_when_bullish": True,
-            "block_ce_when_bearish": True,
+            "block_pe_when_bullish": False,
+            "block_ce_when_bearish": False,
+            "advisory_only": True,
+            "fail_open": True,
             "show_pe_ce_table_in_tab1": True,
         })
         self._last_synergy_status: str = "INITIALIZED"
@@ -3301,58 +3303,26 @@ class QuantTerminalBackend:
                     filtered_signals.append(sig)
             signals = filtered_signals
 
-        # Stock Mojo PE-CE Synergy Gate Filtering on Signals
-        syn = self.stockmojo_scraper.evaluate_synergy_status()
-        synergy_status = syn.get("synergy_status", "MIXED")
+        # Stock Mojo PE-CE Synergy Advisory Tagging on Signals (Advisory-Only & Fail-Open)
+        try:
+            syn = self.stockmojo_scraper.evaluate_synergy_status()
+            synergy_status = syn.get("synergy_status", "MIXED")
+        except Exception as e:
+            log.debug("StockMojo signal synergy exception (failing open): %s", e)
+            synergy_status = "MIXED"
 
         if signals:
-            synergy_filtered = []
             for sig in signals:
-                sid = sig.get("strategy_id", "")
+                sig["stockmojo_synergy"] = synergy_status
                 opt = str(sig.get("opt_side", "")).upper()
-
-                # Check 1: Stage 2 / Stage 3 8-EMA Synergy Filter
-                if sid in ("STAGE2_TOUCH_LONG", "STAGE3_TOUCH_SHORT") and self.stockmojo_synergy_cfg.get("filter_stage2_8ema_synergy", True):
-                    if opt == "CE" and synergy_status == "BEARISH_SYNERGY":
-                        log.warning("[BLOCKED BY STOCK MOJO] CE Long rejected due to Bearish PE-CE (Total OI + OI Change) state.")
-                        continue
-                    if opt == "PE" and synergy_status == "BULLISH_SYNERGY":
-                        log.warning("[BLOCKED BY STOCK MOJO] PE Short rejected due to Bullish PE-CE (Total OI + OI Change) state.")
-                        continue
-
-                # Check 2: Strategy 2 Reversal Synergy Filter
-                if sid in ("CROSSOVER_REVERSAL_LONG", "CROSSOVER_REVERSAL_SHORT") and self.stockmojo_synergy_cfg.get("filter_strategy2_reversal_synergy", True):
-                    if opt == "CE" and synergy_status == "BEARISH_SYNERGY":
-                        log.warning("[BLOCKED BY STOCK MOJO] CE Long rejected due to Bearish PE-CE (Total OI + OI Change) state.")
-                        continue
-                    if opt == "PE" and synergy_status == "BULLISH_SYNERGY":
-                        log.warning("[BLOCKED BY STOCK MOJO] PE Short rejected due to Bullish PE-CE (Total OI + OI Change) state.")
-                        continue
-
-                # Check 3: Strategy 3 1H 8-EMA Confluence Synergy Filter
-                if sid in ("H1_CONFLUENCE_SUPPORT", "H1_CONFLUENCE_RESIST") and self.stockmojo_synergy_cfg.get("filter_strategy3_1h_synergy", True):
-                    if opt == "CE" and synergy_status == "BEARISH_SYNERGY":
-                        log.warning("[BLOCKED BY STOCK MOJO] CE Long rejected due to Bearish PE-CE (Total OI + OI Change) state.")
-                        continue
-                    if opt == "PE" and synergy_status == "BULLISH_SYNERGY":
-                        log.warning("[BLOCKED BY STOCK MOJO] PE Short rejected due to Bullish PE-CE (Total OI + OI Change) state.")
-                        continue
-
-                # Check 5 & 6: Master Block PE when Bullish / Block CE when Bearish
-                if opt == "PE" and self.stockmojo_synergy_cfg.get("block_pe_when_bullish", True) and synergy_status == "BULLISH_SYNERGY":
-                    log.warning("[BLOCKED BY STOCK MOJO] PE Short rejected due to Bullish PE-CE (Total OI + OI Change) state.")
-                    continue
-                if opt == "CE" and self.stockmojo_synergy_cfg.get("block_ce_when_bearish", True) and synergy_status == "BEARISH_SYNERGY":
-                    log.warning("[BLOCKED BY STOCK MOJO] CE Long rejected due to Bearish PE-CE (Total OI + OI Change) state.")
-                    continue
-
-                if opt == "CE" and synergy_status == "BULLISH_SYNERGY":
-                    log.info("[STOCK MOJO MULTI-STRIKE GATE] Bullish multi-strike synergy confirmed. CE Long order authorized for execution.")
+                if opt == "CE" and synergy_status == "BEARISH_SYNERGY":
+                    sig["advisory_note"] = "⚠️ StockMojo Bearish Synergy (Advisory Warning)"
+                elif opt == "PE" and synergy_status == "BULLISH_SYNERGY":
+                    sig["advisory_note"] = "⚠️ StockMojo Bullish Synergy (Advisory Warning)"
+                elif opt == "CE" and synergy_status == "BULLISH_SYNERGY":
+                    sig["advisory_note"] = "✅ StockMojo Bullish Synergy Confirmed"
                 elif opt == "PE" and synergy_status == "BEARISH_SYNERGY":
-                    log.info("[STOCK MOJO MULTI-STRIKE GATE] Bearish multi-strike synergy confirmed. PE Short order authorized for execution.")
-
-                synergy_filtered.append(sig)
-            signals = synergy_filtered
+                    sig["advisory_note"] = "✅ StockMojo Bearish Synergy Confirmed"
 
         return signals
 
@@ -3788,34 +3758,23 @@ class QuantTerminalBackend:
                     "rejection_reason": "Directional Bias: SHORT_ONLY active (all CE / Long orders blocked)"
                 }
 
-            # Stock Mojo PE-CE Synergy Gating Check on Executed Orders (Live & Paper)
-            syn = self.stockmojo_scraper.evaluate_synergy_status()
-            synergy_status = syn.get("synergy_status", "MIXED")
+            # Stock Mojo PE-CE Synergy Advisory Check (Advisory-Only & Fail-Open)
+            # A third-party website must NEVER block or delay live order flow.
+            try:
+                syn = self.stockmojo_scraper.evaluate_synergy_status()
+                synergy_status = syn.get("synergy_status", "MIXED")
+            except Exception as e:
+                log.debug("StockMojo synergy evaluation exception (failing open): %s", e)
+                synergy_status = "MIXED"
 
-            if self.stockmojo_synergy_cfg.get("block_pe_when_bullish", True) and is_pe and synergy_status == "BULLISH_SYNERGY":
-                err_msg = "[BLOCKED BY STOCK MOJO] PE Short rejected due to Bullish PE-CE (Total OI + OI Change) state."
-                log.warning(err_msg)
-                return {
-                    "ok": False,
-                    "status": "REJECTED",
-                    "error": err_msg,
-                    "rejection_reason": err_msg,
-                }
-
-            if self.stockmojo_synergy_cfg.get("block_ce_when_bearish", True) and is_ce and synergy_status == "BEARISH_SYNERGY":
-                err_msg = "[BLOCKED BY STOCK MOJO] CE Long rejected due to Bearish PE-CE (Total OI + OI Change) state."
-                log.warning(err_msg)
-                return {
-                    "ok": False,
-                    "status": "REJECTED",
-                    "error": err_msg,
-                    "rejection_reason": err_msg,
-                }
-
-            if is_ce and synergy_status == "BULLISH_SYNERGY":
-                log.info("[STOCK MOJO MULTI-STRIKE GATE] Bullish multi-strike synergy confirmed. CE Long order authorized for execution.")
+            if is_pe and synergy_status == "BULLISH_SYNERGY":
+                log.info("[STOCK MOJO ADVISORY] PE order placed while StockMojo indicates Bullish synergy (Advisory only — failing open).")
+            elif is_ce and synergy_status == "BEARISH_SYNERGY":
+                log.info("[STOCK MOJO ADVISORY] CE order placed while StockMojo indicates Bearish synergy (Advisory only — failing open).")
+            elif is_ce and synergy_status == "BULLISH_SYNERGY":
+                log.info("[STOCK MOJO ADVISORY] Bullish multi-strike synergy confirmed for CE Long order.")
             elif is_pe and synergy_status == "BEARISH_SYNERGY":
-                log.info("[STOCK MOJO MULTI-STRIKE GATE] Bearish multi-strike synergy confirmed. PE Short order authorized for execution.")
+                log.info("[STOCK MOJO ADVISORY] Bearish multi-strike synergy confirmed for PE Short order.")
 
             # Check Strike Matrix Checkbox filter if triggered automatically by Algo
             contract_id = contract.get("id", "")
