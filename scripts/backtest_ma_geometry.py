@@ -526,7 +526,7 @@ MEASURE_METADATA = [
     ("m02_wick_rejection_pinbar", "Contact Wick Rejection (Pin-Bar)", "Group B (Contact)"),
     ("m03_whipsaw_cross_count_12", "12-Bar Whip-Saw Count (Chop)", "Group B (Contact)"),
     ("m04_slope_1h_8ema", "1H 8-EMA Continuous Slope", "Group B (1H Trend)"),
-    ("m05_fut_volume_surge", "NIFTY Futures Volume Surge Ratio", "Group B (Volume — BLOCKED)"),
+    ("m05_fut_volume_surge", "NIFTY Futures Volume Surge Ratio", "Group B (Volume)"),
     # Group A: 4/8 MA Line Geometry
     ("m06_separation_signed", "Separation (Signed)", "Group A (Line Geometry)"),
     ("m07_separation_abs", "Separation (Absolute)", "Group A (Line Geometry)"),
@@ -859,25 +859,25 @@ def main() -> None:
     lookup_15m = ClosedBarLookup(df_15m, bar_seconds=900)
     lookup_1h = ClosedBarLookup(df_1h, bar_seconds=3600)
 
-    # Load Futures data for Measure 17 (Volume)
+    # Load Futures data for Measure 17 (Volume) using institutional RVOL engine
     lookup_fut: Optional[ClosedBarLookup] = None
+    is_fut_sessions: List[str] = []
+    oos_fut_sessions: List[str] = []
     try:
-        conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
-        fut_1m = pd.read_sql_query("""
-            SELECT ts, o as open, h as high, l as low, c as close, v as volume,
-                   date(ts, 'unixepoch', '+5 hours', '+30 minutes') as session_date,
-                   time(ts, 'unixepoch', '+5 hours', '+30 minutes') as session_time
-            FROM candles_1m WHERE sec_id = 'FUT' ORDER BY ts ASC
-        """, conn)
-        conn.close()
-        if not fut_1m.empty:
-            df_fut_15m = resample_bars(fut_1m, "15min")
-            vol_roll = df_fut_15m["volume"].rolling(10).mean().replace(0, np.nan)
-            df_fut_15m["fut_vol_surge"] = df_fut_15m["volume"] / vol_roll
-            df_fut_15m["fut_vol_delta_ratio"] = (df_fut_15m["volume"] - df_fut_15m["volume"].shift(1)) / vol_roll
-            lookup_fut = ClosedBarLookup(df_fut_15m, bar_seconds=900)
-            log.info("Futures 15m loaded (%d bars from %s to %s) for Measure 17 audit.",
-                     len(df_fut_15m), df_fut_15m.iloc[0]["session_date"], df_fut_15m.iloc[-1]["session_date"])
+        from scripts.backtest_futures_volume import load_and_resample_futures, compute_all_rvol_measures
+        df_fut_15m = load_and_resample_futures(DB_PATH)
+        df_fut_rvol = compute_all_rvol_measures(df_fut_15m, filter_expiries=True)
+        # Set column names expected by ClosedBarLookup and enrich_trades
+        df_fut_rvol["fut_vol_surge"] = df_fut_rvol["comb_bar_rvol"]
+        df_fut_rvol["fut_vol_delta_ratio"] = df_fut_rvol["comb_cum_rvol"]
+        lookup_fut = ClosedBarLookup(df_fut_rvol, bar_seconds=900)
+
+        valid_fut_sessions = sorted(df_fut_rvol.dropna(subset=["comb_bar_rvol"])["session_date"].unique().tolist())
+        n_fut_split = len(valid_fut_sessions) // 2
+        is_fut_sessions = valid_fut_sessions[:n_fut_split]
+        oos_fut_sessions = valid_fut_sessions[n_fut_split:]
+        log.info("Futures 15m loaded (%d bars across %d sessions) with Time-of-Day RVOL engine.",
+                 len(df_fut_rvol), len(valid_fut_sessions))
     except Exception as e:
         log.warning("Could not load FUT volume data: %s", e)
 
@@ -933,22 +933,19 @@ def main() -> None:
     primary_results = []
 
     for key, name, group in MEASURE_METADATA:
-        # Measure 17 (Volume Surge) Handling per Addendum C
-        if key == "m05_fut_volume_surge":
-            fut_valid_count = df_a["m05_fut_volume_surge"].notna().sum()
-            primary_results.append({
-                "key": key,
-                "name": name,
-                "group": group,
-                "status": "BLOCKED",
-                "reason": (
-                    f"Blocked per Addendum C: NIFTY Futures volume covers only 09-09 to 11-05 "
-                    f"(valid n={fut_valid_count}/{len(df_a)}, covering ~16% of sample). "
-                    f"NIFTY spot has no meaningful volume; result cannot reach BUILD hurdle."
-                ),
-                "verdict": "NOT BUILT",
-                "failure_reasons": ["Measure 17 blocked due to truncated futures volume coverage."],
-            })
+        # Measure 17 (Volume Surge): scoped to valid futures window
+        if key == "m05_fut_volume_surge" and is_fut_sessions and oos_fut_sessions:
+            res = evaluate_single_measure(
+                measure_key=key,
+                measure_name=name,
+                group_name=group,
+                df_trades=df_a,
+                is_sessions=is_fut_sessions,
+                oos_sessions=oos_fut_sessions,
+                pnl_col="asym_net_inr",
+            )
+            res["scope_note"] = f"Scoped to futures volume window ({is_fut_sessions[0]} to {oos_fut_sessions[-1]})"
+            primary_results.append(res)
             continue
 
         res = evaluate_single_measure(
@@ -1054,7 +1051,7 @@ def main() -> None:
             "time_to_resolution": "Exported in minutes in events_variantA.csv, events_variantB.csv, events_variantE.csv",
             "session_block_bootstrap": "1,000 whole-session bootstrap iterations for 95% CI on surviving OOS trades",
             "outlier_robustness": "Net Rs/trade evaluated excluding top 1, 3, and 5 winning trades",
-            "measure_17_volume_blocked": "Reported BLOCKED due to limited futures history (09-09 to 11-05, ~16% sample)",
+            "measure_17_volume_status": "Unblocked and evaluated using institutional Time-of-Day RVOL engine (FUT + FUT2) scoped to 39 sessions",
             "measure_16_1h_slope_status": "Documented as continuous refinement of prior failed binary 1H gate",
         },
     }

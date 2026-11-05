@@ -1,0 +1,521 @@
+{
+  "engine": "scripts/backtest_futures_volume.py",
+  "timestamp": "2026-11-06 00:11:05 IST",
+  "volume_window": {
+    "start_date": "2026-09-09",
+    "end_date": "2026-11-05",
+    "total_futures_sessions": 39,
+    "scoped_variant_a_trades_n": 358,
+    "trades_with_valid_rvol_n": 295,
+    "is_sessions_count": 16,
+    "oos_sessions_count": 16
+  },
+  "charges_model": "Exact Dhan Tariff (paper_trading.calculate_trade_charges)",
+  "statutory_avg_inr": 78.2,
+  "slippage_inr_per_trade": 32.5,
+  "measures_evaluated": [
+    {
+      "key": "comb_bar_rvol",
+      "name": "Combined Bar Slot RVOL (FUT + FUT2)",
+      "shape": "NO_SHAPE",
+      "spearman_rho": 0.333,
+      "spearman_p": 0.3466,
+      "cutoff_rule": ">= 0.688",
+      "in_sample": {
+        "n_total": 165,
+        "deciles": [
+          {
+            "decile": 1,
+            "n": 17,
+            "min_val": 0.113,
+            "max_val": 0.251,
+            "win_rate": 47.1,
+            "expectancy_inr": -104.27,
+            "profit_factor": 0.66
+          },
+          {
+            "decile": 2,
+            "n": 16,
+            "min_val": 0.254,
+            "max_val": 0.325,
+            "win_rate": 68.8,
+            "expectancy_inr": 81.12,
+            "profit_factor": 1.41
+          },
+          {
+            "decile": 3,
+            "n": 17,
+            "min_val": 0.328,
+            "max_val": 0.474,
+            "win_rate": 35.3,
+            "expectancy_inr": -177.94,
+            "profit_factor": 0.42
+          },
+          {
+            "decile": 4,
+            "n": 17,
+            "min_val": 0.48,
+            "max_val": 0.546,
+            "win_rate": 64.7,
+            "expectancy_inr": 61.46,
+            "profit_factor": 1.42
+          },
+          {
+            "decile": 5,
+            "n": 16,
+            "min_val": 0.553,
+            "max_val": 0.688,
+            "win_rate": 43.8,
+            "expectancy_inr": 125.38,
+            "profit_factor": 1.37
+          },
+          {
+            "decile": 6,
+            "n": 16,
+            "min_val": 0.7,
+            "max_val": 0.832,
+            "win_rate": 37.5,
+            "expectancy_inr": -228.33,
+            "profit_factor": 0.49
+          },
+          {
+            "decile": 7,
+            "n": 16,
+            "min_val": 0.839,
+            "max_val": 0.997,
+            "win_rate": 68.8,
+            "expectancy_inr": 140.35,
+            "profit_factor": 1.83
+          },
+          {
+            "decile": 8,
+            "n": 17,
+            "min_val": 0.998,
+            "max_val": 1.254,
+            "win_rate": 41.2,
+            "expectancy_inr": -180.21,
+            "profit_factor": 0.38
+          },
+          {
+            "decile": 9,
+            "n": 16,
+            "min_val": 1.277,
+            "max_val": 1.728,
+            "win_rate": 50.0,
+            "expectancy_inr": 141.35,
+            "profit_factor": 2.02
+          },
+          {
+            "decile": 10,
+            "n": 17,
+            "min_val": 1.793,
+            "max_val": 5.035,
+            "win_rate": 64.7,
+            "expectancy_inr": 85.74,
+            "profit_factor": 1.59
+          }
+        ]
+      },
+      "out_of_sample": {
+        "n_surviving": 109,
+        "win_rate": 59.6,
+        "net_inr_per_trade": 122.68,
+        "profit_factor": 1.41,
+        "net_inr_ex_top1": 103.16,
+        "net_inr_ex_top3": 75.77,
+        "net_inr_ex_top5": 48.78,
+        "bootstrap_ci_95": [
+          -4.23,
+          255.41
+        ],
+        "z_score_sd": 1.31,
+        "direction_control_short_net": -170.9,
+        "directional_advantage": 293.58
+      },
+      "verdict": "NOT BUILT",
+      "failure_reasons": [
+        "No monotonic decile shape",
+        "Z-Score < +2.0 SD (1.31 SD)"
+      ],
+      "description": "Time-of-day Slot RVOL (Rollover Handled)"
+    },
+    {
+      "key": "comb_cum_rvol",
+      "name": "Combined Cumulative RVOL (FUT + FUT2)",
+      "shape": "NO_SHAPE",
+      "spearman_rho": -0.042,
+      "spearman_p": 0.9074,
+      "cutoff_rule": ">= 0.869",
+      "in_sample": {
+        "n_total": 165,
+        "deciles": [
+          {
+            "decile": 1,
+            "n": 17,
+            "min_val": 0.379,
+            "max_val": 0.519,
+            "win_rate": 64.7,
+            "expectancy_inr": 59.31,
+            "profit_factor": 1.52
+          },
+          {
+            "decile": 2,
+            "n": 16,
+            "min_val": 0.523,
+            "max_val": 0.571,
+            "win_rate": 68.8,
+            "expectancy_inr": 86.43,
+            "profit_factor": 1.62
+          },
+          {
+            "decile": 3,
+            "n": 17,
+            "min_val": 0.577,
+            "max_val": 0.735,
+            "win_rate": 47.1,
+            "expectancy_inr": -82.87,
+            "profit_factor": 0.77
+          },
+          {
+            "decile": 4,
+            "n": 17,
+            "min_val": 0.741,
+            "max_val": 0.777,
+            "win_rate": 29.4,
+            "expectancy_inr": -430.07,
+            "profit_factor": 0.18
+          },
+          {
+            "decile": 5,
+            "n": 16,
+            "min_val": 0.793,
+            "max_val": 0.869,
+            "win_rate": 56.2,
+            "expectancy_inr": 57.21,
+            "profit_factor": 1.19
+          },
+          {
+            "decile": 6,
+            "n": 16,
+            "min_val": 0.877,
+            "max_val": 0.933,
+            "win_rate": 43.8,
+            "expectancy_inr": -24.57,
+            "profit_factor": 0.9
+          },
+          {
+            "decile": 7,
+            "n": 16,
+            "min_val": 0.943,
+            "max_val": 1.075,
+            "win_rate": 43.8,
+            "expectancy_inr": 14.2,
+            "profit_factor": 1.05
+          },
+          {
+            "decile": 8,
+            "n": 17,
+            "min_val": 1.085,
+            "max_val": 1.455,
+            "win_rate": 58.8,
+            "expectancy_inr": 295.37,
+            "profit_factor": 3.34
+          },
+          {
+            "decile": 9,
+            "n": 16,
+            "min_val": 1.505,
+            "max_val": 2.205,
+            "win_rate": 68.8,
+            "expectancy_inr": 85.05,
+            "profit_factor": 1.59
+          },
+          {
+            "decile": 10,
+            "n": 17,
+            "min_val": 2.241,
+            "max_val": 2.643,
+            "win_rate": 41.2,
+            "expectancy_inr": -117.85,
+            "profit_factor": 0.51
+          }
+        ]
+      },
+      "out_of_sample": {
+        "n_surviving": 119,
+        "win_rate": 58.0,
+        "net_inr_per_trade": 85.85,
+        "profit_factor": 1.28,
+        "net_inr_ex_top1": 67.67,
+        "net_inr_ex_top3": 43.34,
+        "net_inr_ex_top5": 18.15,
+        "bootstrap_ci_95": [
+          -61.18,
+          227.52
+        ],
+        "z_score_sd": 0.93,
+        "direction_control_short_net": -209.11,
+        "directional_advantage": 294.96
+      },
+      "verdict": "NOT BUILT",
+      "failure_reasons": [
+        "No monotonic decile shape",
+        "OOS PF < 1.30 (1.28)",
+        "Z-Score < +2.0 SD (0.93 SD)"
+      ],
+      "description": "Day Cumulative Volume vs Time-Matched Baseline"
+    },
+    {
+      "key": "fut_bar_rvol",
+      "name": "Front-Only Bar Slot RVOL (FUT Alone)",
+      "shape": "NO_SHAPE",
+      "spearman_rho": 0.564,
+      "spearman_p": 0.0897,
+      "cutoff_rule": ">= 0.557",
+      "in_sample": {
+        "n_total": 165,
+        "deciles": [
+          {
+            "decile": 1,
+            "n": 18,
+            "min_val": 0.059,
+            "max_val": 0.19,
+            "win_rate": 50.0,
+            "expectancy_inr": -36.93,
+            "profit_factor": 0.85
+          },
+          {
+            "decile": 2,
+            "n": 15,
+            "min_val": 0.191,
+            "max_val": 0.27,
+            "win_rate": 60.0,
+            "expectancy_inr": -53.01,
+            "profit_factor": 0.75
+          },
+          {
+            "decile": 3,
+            "n": 17,
+            "min_val": 0.283,
+            "max_val": 0.372,
+            "win_rate": 41.2,
+            "expectancy_inr": -58.46,
+            "profit_factor": 0.81
+          },
+          {
+            "decile": 4,
+            "n": 17,
+            "min_val": 0.389,
+            "max_val": 0.456,
+            "win_rate": 41.2,
+            "expectancy_inr": -162.2,
+            "profit_factor": 0.47
+          },
+          {
+            "decile": 5,
+            "n": 16,
+            "min_val": 0.463,
+            "max_val": 0.557,
+            "win_rate": 56.2,
+            "expectancy_inr": 64.98,
+            "profit_factor": 1.27
+          },
+          {
+            "decile": 6,
+            "n": 16,
+            "min_val": 0.568,
+            "max_val": 0.719,
+            "win_rate": 56.2,
+            "expectancy_inr": -11.44,
+            "profit_factor": 0.97
+          },
+          {
+            "decile": 7,
+            "n": 16,
+            "min_val": 0.733,
+            "max_val": 0.937,
+            "win_rate": 50.0,
+            "expectancy_inr": -49.64,
+            "profit_factor": 0.84
+          },
+          {
+            "decile": 8,
+            "n": 17,
+            "min_val": 0.952,
+            "max_val": 1.068,
+            "win_rate": 58.8,
+            "expectancy_inr": 76.58,
+            "profit_factor": 1.54
+          },
+          {
+            "decile": 9,
+            "n": 17,
+            "min_val": 1.074,
+            "max_val": 1.546,
+            "win_rate": 41.2,
+            "expectancy_inr": -46.8,
+            "profit_factor": 0.82
+          },
+          {
+            "decile": 10,
+            "n": 16,
+            "min_val": 1.598,
+            "max_val": 4.982,
+            "win_rate": 68.8,
+            "expectancy_inr": 215.11,
+            "profit_factor": 2.8
+          }
+        ]
+      },
+      "out_of_sample": {
+        "n_surviving": 117,
+        "win_rate": 59.0,
+        "net_inr_per_trade": 106.06,
+        "profit_factor": 1.35,
+        "net_inr_ex_top1": 87.75,
+        "net_inr_ex_top3": 62.0,
+        "net_inr_ex_top5": 36.7,
+        "bootstrap_ci_95": [
+          -49.7,
+          255.69
+        ],
+        "z_score_sd": 1.16,
+        "direction_control_short_net": -106.88,
+        "directional_advantage": 212.95
+      },
+      "verdict": "NOT BUILT",
+      "failure_reasons": [
+        "No monotonic decile shape",
+        "Z-Score < +2.0 SD (1.16 SD)"
+      ],
+      "description": "Unadjusted Front Contract (Tests Rollover Distortion)"
+    },
+    {
+      "key": "flat_sma10_ratio",
+      "name": "Naive Flat 10-Bar SMA Surge Ratio",
+      "shape": "NO_SHAPE",
+      "spearman_rho": 0.479,
+      "spearman_p": 0.1615,
+      "cutoff_rule": ">= 0.6918238993710691",
+      "in_sample": {
+        "n_total": 167,
+        "deciles": [
+          {
+            "decile": 1,
+            "n": 18,
+            "min_val": 0.161,
+            "max_val": 0.3,
+            "win_rate": 44.4,
+            "expectancy_inr": -79.02,
+            "profit_factor": 0.69
+          },
+          {
+            "decile": 2,
+            "n": 16,
+            "min_val": 0.311,
+            "max_val": 0.396,
+            "win_rate": 43.8,
+            "expectancy_inr": -129.81,
+            "profit_factor": 0.63
+          },
+          {
+            "decile": 3,
+            "n": 17,
+            "min_val": 0.41,
+            "max_val": 0.456,
+            "win_rate": 58.8,
+            "expectancy_inr": -69.55,
+            "profit_factor": 0.63
+          },
+          {
+            "decile": 4,
+            "n": 16,
+            "min_val": 0.46,
+            "max_val": 0.563,
+            "win_rate": 43.8,
+            "expectancy_inr": -183.27,
+            "profit_factor": 0.51
+          },
+          {
+            "decile": 5,
+            "n": 17,
+            "min_val": 0.568,
+            "max_val": 0.692,
+            "win_rate": 58.8,
+            "expectancy_inr": 290.36,
+            "profit_factor": 2.75
+          },
+          {
+            "decile": 6,
+            "n": 17,
+            "min_val": 0.696,
+            "max_val": 0.819,
+            "win_rate": 23.5,
+            "expectancy_inr": -353.46,
+            "profit_factor": 0.22
+          },
+          {
+            "decile": 7,
+            "n": 16,
+            "min_val": 0.839,
+            "max_val": 0.929,
+            "win_rate": 56.2,
+            "expectancy_inr": 170.23,
+            "profit_factor": 2.11
+          },
+          {
+            "decile": 8,
+            "n": 16,
+            "min_val": 0.942,
+            "max_val": 1.142,
+            "win_rate": 56.2,
+            "expectancy_inr": 65.98,
+            "profit_factor": 1.3
+          },
+          {
+            "decile": 9,
+            "n": 17,
+            "min_val": 1.154,
+            "max_val": 1.301,
+            "win_rate": 76.5,
+            "expectancy_inr": 263.45,
+            "profit_factor": 3.64
+          },
+          {
+            "decile": 10,
+            "n": 17,
+            "min_val": 1.329,
+            "max_val": 3.159,
+            "win_rate": 58.8,
+            "expectancy_inr": 6.78,
+            "profit_factor": 1.03
+          }
+        ]
+      },
+      "out_of_sample": {
+        "n_surviving": 74,
+        "win_rate": 58.1,
+        "net_inr_per_trade": 70.82,
+        "profit_factor": 1.2,
+        "net_inr_ex_top1": 41.24,
+        "net_inr_ex_top3": -1.41,
+        "net_inr_ex_top5": -44.32,
+        "bootstrap_ci_95": [
+          -96.83,
+          262.68
+        ],
+        "z_score_sd": 0.55,
+        "direction_control_short_net": 17.37,
+        "directional_advantage": 53.46
+      },
+      "verdict": "NOT BUILT",
+      "failure_reasons": [
+        "No monotonic decile shape",
+        "OOS PF < 1.30 (1.20)",
+        "Ex-top5 Net <= 0 (\u20b9-44.3)",
+        "Z-Score < +2.0 SD (0.55 SD)"
+      ],
+      "description": "Non-Time-Normalized Flat Rolling SMA"
+    }
+  ]
+}

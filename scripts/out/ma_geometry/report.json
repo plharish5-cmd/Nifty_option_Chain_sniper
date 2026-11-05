@@ -1,7 +1,7 @@
 {
   "title": "Port 8510 Advanced Chart Geometry & Contact Backtest Report",
   "script": "scripts/backtest_ma_geometry.py",
-  "timestamp": "2026-11-05 23:54:36 IST",
+  "timestamp": "2026-11-06 00:14:25 IST",
   "execution_mode": "PAPER",
   "lot_size": 65,
   "charges_model": "Exact Dhan Tariff (paper_trading.calculate_trade_charges)",
@@ -506,13 +506,129 @@
       {
         "key": "m05_fut_volume_surge",
         "name": "NIFTY Futures Volume Surge Ratio",
-        "group": "Group B (Volume \u2014 BLOCKED)",
-        "status": "BLOCKED",
-        "reason": "Blocked per Addendum C: NIFTY Futures volume covers only 09-09 to 11-05 (valid n=356/2378, covering ~16% of sample). NIFTY spot has no meaningful volume; result cannot reach BUILD hurdle.",
+        "group": "Group B (Volume)",
+        "status": "EVALUATED",
+        "shape": "CHOP_FLOOR",
+        "spearman_rho": 0.068,
+        "spearman_p": 0.3878,
+        "cutoff_rule": "GTE 0.2924",
+        "in_sample": {
+          "n_total": 165,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": 0.113,
+              "max_val": 0.251,
+              "n": 17,
+              "win_rate": 47.1,
+              "net_inr_per_trade": -104.27,
+              "profit_factor": 0.66
+            },
+            {
+              "decile": 2,
+              "min_val": 0.254,
+              "max_val": 0.325,
+              "n": 16,
+              "win_rate": 68.8,
+              "net_inr_per_trade": 81.12,
+              "profit_factor": 1.41
+            },
+            {
+              "decile": 3,
+              "min_val": 0.328,
+              "max_val": 0.474,
+              "n": 17,
+              "win_rate": 35.3,
+              "net_inr_per_trade": -177.94,
+              "profit_factor": 0.42
+            },
+            {
+              "decile": 4,
+              "min_val": 0.48,
+              "max_val": 0.546,
+              "n": 17,
+              "win_rate": 64.7,
+              "net_inr_per_trade": 61.46,
+              "profit_factor": 1.42
+            },
+            {
+              "decile": 5,
+              "min_val": 0.553,
+              "max_val": 0.688,
+              "n": 16,
+              "win_rate": 43.8,
+              "net_inr_per_trade": 125.38,
+              "profit_factor": 1.37
+            },
+            {
+              "decile": 6,
+              "min_val": 0.7,
+              "max_val": 0.832,
+              "n": 16,
+              "win_rate": 37.5,
+              "net_inr_per_trade": -228.33,
+              "profit_factor": 0.49
+            },
+            {
+              "decile": 7,
+              "min_val": 0.839,
+              "max_val": 0.997,
+              "n": 16,
+              "win_rate": 68.8,
+              "net_inr_per_trade": 140.35,
+              "profit_factor": 1.83
+            },
+            {
+              "decile": 8,
+              "min_val": 0.998,
+              "max_val": 1.254,
+              "n": 17,
+              "win_rate": 41.2,
+              "net_inr_per_trade": -180.21,
+              "profit_factor": 0.38
+            },
+            {
+              "decile": 9,
+              "min_val": 1.277,
+              "max_val": 1.728,
+              "n": 16,
+              "win_rate": 50.0,
+              "net_inr_per_trade": 141.35,
+              "profit_factor": 2.02
+            },
+            {
+              "decile": 10,
+              "min_val": 1.793,
+              "max_val": 5.035,
+              "n": 17,
+              "win_rate": 64.7,
+              "net_inr_per_trade": 85.74,
+              "profit_factor": 1.59
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 128,
+          "win_rate": 57.0,
+          "net_inr_per_trade": 73.08,
+          "profit_factor": 1.23,
+          "net_inr_ex_top1": 56.09,
+          "net_inr_ex_top3": 32.1,
+          "net_inr_ex_top5": 8.58,
+          "bootstrap_ci_95": [
+            -69.58,
+            245.59
+          ],
+          "z_score_sd": 0.93,
+          "direction_control_short_net": -122.24,
+          "directional_advantage": 195.31
+        },
         "verdict": "NOT BUILT",
         "failure_reasons": [
-          "Measure 17 blocked due to truncated futures volume coverage."
-        ]
+          "PF < 1.30 (1.23)",
+          "Z-score 0.93 SD < +2.0 SD noise hurdle"
+        ],
+        "scope_note": "Scoped to futures volume window (2026-09-17 to 2026-11-05)"
       },
       {
         "key": "m06_separation_signed",
@@ -2989,7 +3105,7 @@
     "time_to_resolution": "Exported in minutes in events_variantA.csv, events_variantB.csv, events_variantE.csv",
     "session_block_bootstrap": "1,000 whole-session bootstrap iterations for 95% CI on surviving OOS trades",
     "outlier_robustness": "Net Rs/trade evaluated excluding top 1, 3, and 5 winning trades",
-    "measure_17_volume_blocked": "Reported BLOCKED due to limited futures history (09-09 to 11-05, ~16% sample)",
+    "measure_17_volume_status": "Unblocked and evaluated using institutional Time-of-Day RVOL engine (FUT + FUT2) scoped to 39 sessions",
     "measure_16_1h_slope_status": "Documented as continuous refinement of prior failed binary 1H gate"
   }
 }
