@@ -130,12 +130,12 @@
     "download_dir": "data/stockmojo_downloads"
   },
   "stockmojo_synergy": {
-    "filter_stage2_8ema_synergy": true,
-    "filter_strategy2_reversal_synergy": true,
-    "filter_strategy3_1h_synergy": true,
-    "use_as_direct_15m_trigger": false,
-    "block_pe_when_bullish": true,
-    "block_ce_when_bearish": true,
+    "filter_stage2_8ema_synergy": false,
+    "filter_strategy2_reversal_synergy": false,
+    "filter_strategy3_1h_synergy": false,
+    "use_as_direct_15m_trigger": true,
+    "block_pe_when_bullish": false,
+    "block_ce_when_bearish": false,
     "show_pe_ce_table_in_tab1": true
   }
 }
