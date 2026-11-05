@@ -494,6 +494,121 @@ def test_8_multi_strike_direct_endpoint_and_synergy_gating():
     print("✔ Test 8 Passed: /live/multi-strike/ce-pe-oi-diff parsing, expanding bias, and order gating verified 100%.")
 
 
+def test_9_live_graph_extraction_and_mapping():
+    print("Testing 9: Live graph extraction ([-1]), line mapping toggle, and waiting for sync state...")
+    scraper = StockMojoScraper()
+
+    # 1. Check WAITING FOR LIVE SYNC when only seed rows are present
+    scraper.has_live_sync = False
+    scraper.live_graph_data = {}
+    metrics_wait = scraper.get_crore_spread_metrics()
+    assert metrics_wait["is_live_synced"] is False
+    assert metrics_wait["who_is_more_chg"] == "WAITING FOR LIVE SYNC"
+    assert metrics_wait["who_is_more_total"] == "WAITING FOR LIVE SYNC"
+    assert metrics_wait["call_oi_chg_cr"] is None
+    assert metrics_wait["put_oi_chg_cr"] is None
+    assert metrics_wait["call_total_oi_cr"] is None
+    assert metrics_wait["put_total_oi_cr"] is None
+
+    # 2. Ingest multi-candle time-series array: historical points + latest candle at 10:48 AM
+    mock_graph_series = [
+        # Historical candle 9:31 AM
+        {
+            "time_ist": "09:31",
+            "oi_change_red_cr": "1.55 Cr",
+            "oi_change_green_cr": "1.29 Cr",
+            "total_oi_red_cr": "15.00 Cr",
+            "total_oi_green_cr": "14.20 Cr"
+        },
+        # Historical candle 10:15 AM
+        {
+            "time_ist": "10:15",
+            "oi_change_red_cr": "2.20 Cr",
+            "oi_change_green_cr": "1.75 Cr",
+            "total_oi_red_cr": "16.80 Cr",
+            "total_oi_green_cr": "15.10 Cr"
+        },
+        # LATEST candle 10:48 AM (data[-1]) — EXACT VALUES FROM LIVE CHART
+        {
+            "time_ist": "10:48",
+            "oi_change_red_cr": "3.02 Cr",
+            "oi_change_green_cr": "2.13 Cr",
+            "total_oi_red_cr": "18.33 Cr",
+            "total_oi_green_cr": "16.26 Cr"
+        }
+    ]
+
+    # Ingest under STANDARD mapping (Red=Put, Green=Call)
+    scraper.set_line_mapping("STANDARD")
+    res_ingest = scraper.ingest_live_graph_data(mock_graph_series, source="TEST_GRAPH")
+    assert res_ingest["ok"] is True
+    assert scraper.has_live_sync is True
+
+    crore = scraper.get_crore_spread_metrics()
+    assert crore["is_live_synced"] is True
+    assert crore["time_ist"] == "10:48"
+    assert crore["put_oi_chg_cr"] == 3.02
+    assert crore["call_oi_chg_cr"] == 2.13
+    assert crore["put_total_oi_cr"] == 18.33
+    assert crore["call_total_oi_cr"] == 16.26
+    assert crore["oi_chg_diff_cr"] == 0.89  # 3.02 - 2.13
+    assert crore["total_oi_diff_cr"] == 2.07  # 18.33 - 16.26
+    assert crore["who_is_more_chg_side"] == "PUT"
+    assert "Put +0.89 Cr" in crore["who_is_more_chg"]
+    assert crore["who_is_more_total_side"] == "PUT"
+    assert "Put +2.07 Cr" in crore["who_is_more_total"]
+    assert crore["writer_dominance"] == "PUT_WRITERS_DOMINANT"
+
+    # 3. Test INVERTED mapping (Red=Call, Green=Put)
+    scraper.set_line_mapping("INVERTED")
+    crore_inv = scraper.get_crore_spread_metrics()
+    assert crore_inv["line_mapping"] == "INVERTED"
+    assert crore_inv["call_oi_chg_cr"] == 3.02
+    assert crore_inv["put_oi_chg_cr"] == 2.13
+    assert crore_inv["call_total_oi_cr"] == 18.33
+    assert crore_inv["put_total_oi_cr"] == 16.26
+    assert crore_inv["oi_chg_diff_cr"] == -0.89  # 2.13 - 3.02
+    assert crore_inv["total_oi_diff_cr"] == -2.07  # 16.26 - 18.33
+    assert crore_inv["who_is_more_chg_side"] == "CALL"
+    assert "Call +0.89 Cr" in crore_inv["who_is_more_chg"]
+    assert crore_inv["who_is_more_total_side"] == "CALL"
+    assert "Call +2.07 Cr" in crore_inv["who_is_more_total"]
+    assert crore_inv["writer_dominance"] == "CALL_WRITERS_DOMINANT"
+
+    # Restore standard mapping
+    scraper.set_line_mapping("STANDARD")
+
+    # 4. Test REST Endpoints
+    client = TestClient(app)
+
+    # Ingest via REST
+    r_ingest = client.post("/api/stockmojo/live_graph_ingest", json={
+        "request_headers": {"j": "new_jwt_captured", "t": "new_t_captured"},
+        "request_payload": {"symbol": "NIFTY", "timeframe": "1m"},
+        "response_data": mock_graph_series
+    })
+    assert r_ingest.status_code == 200
+    d_ingest = r_ingest.json()
+    assert d_ingest["ok"] is True
+    assert d_ingest["crore_spread"]["put_oi_chg_cr"] == 3.02
+
+    # Line mapping GET/POST
+    r_map = client.get("/api/stockmojo/line_mapping")
+    assert r_map.status_code == 200
+
+    r_set_map = client.post("/api/stockmojo/line_mapping", json={"mapping": "STANDARD"})
+    assert r_set_map.status_code == 200
+    assert r_set_map.json()["line_mapping"] == "STANDARD"
+
+    # Relay script endpoint
+    r_relay = client.get("/api/stockmojo/relay_script")
+    assert r_relay.status_code == 200
+    assert "Stock Mojo Live Graph & Auth Relay" in r_relay.text
+    assert "127.0.0.1:8510" in r_relay.text
+
+    print("✔ Test 9 Passed: Latest graph point extraction ([-1]), mapping inversion, WAITING state, and REST relay verified.")
+
+
 if __name__ == "__main__":
     print("======================================================================")
     print("Running Stock Mojo Dual-Entity PE-CE & Synergy Gate Test Suite (v1.3)...")
@@ -506,6 +621,7 @@ if __name__ == "__main__":
     test_6_api_endpoints()
     test_7_crore_spread_and_auth_poller()
     test_8_multi_strike_direct_endpoint_and_synergy_gating()
+    test_9_live_graph_extraction_and_mapping()
     print("======================================================================")
-    print("🎉 ALL 8 STOCK MOJO PE-CE SYNERGY TESTS PASSED WITH 100% PRECISION!")
+    print("🎉 ALL 9 STOCK MOJO PE-CE SYNERGY TESTS PASSED WITH 100% PRECISION!")
     print("======================================================================")

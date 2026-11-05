@@ -30,7 +30,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 # Path resolution
 ROOT_DIR = Path(__file__).resolve().parent
@@ -561,6 +561,75 @@ async def api_oi_audit_04nov():
     """Returns built-in 04 Nov trading session verification checkpoints and audit actions."""
     res = backend.stockmojo_scraper.get_04nov_audit_data()
     return JSONResponse(content=res)
+
+
+@app.post("/api/stockmojo/live_graph_ingest")
+async def api_stockmojo_live_graph_ingest(req: Request):
+    """
+    Ingests live graph response data, request payload, and auth headers from browser relay script or manual input.
+    Auto-saves captured payload and headers into terminal8510_config.json so background httpx polling uses exact payload without 403.
+    """
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+
+    req_headers = body.get("request_headers") or body.get("headers") or {}
+    req_payload = body.get("request_payload") or body.get("payload") or None
+    resp_data = body.get("response_data") or body.get("data") or body
+    ms_data = body.get("multi_strike_data")
+
+    # Auto-save credentials if captured from browser
+    header_j = req_headers.get("j") or req_headers.get("authorization") or req_headers.get("Authorization") or ""
+    header_t = req_headers.get("t") or ""
+    if header_j or header_t or req_payload is not None:
+        await backend.stockmojo_scraper.update_auth(
+            j=header_j if header_j else None,
+            t=header_t if header_t else None,
+            payload=req_payload,
+        )
+        log.info("✔ Stock Mojo headers & payload auto-captured and saved to config.")
+
+    # Parse multi-strike if present
+    if ms_data:
+        backend.stockmojo_scraper.parse_multi_strike_data(ms_data)
+
+    # Ingest live graph data
+    res = backend.stockmojo_scraper.ingest_live_graph_data(resp_data, source="BROWSER_RELAY")
+    return JSONResponse(content={
+        "ok": True,
+        "message": "Stock Mojo live graph ingested successfully",
+        "ingest_result": res,
+        "crore_spread": backend.stockmojo_scraper.get_crore_spread_metrics(),
+        "synergy": backend.stockmojo_scraper.evaluate_synergy_status(),
+        "multi_strike": backend.stockmojo_scraper.get_multi_strike_status(),
+    })
+
+
+@app.post("/api/stockmojo/line_mapping")
+async def api_stockmojo_set_line_mapping(req: Request):
+    """Sets line mapping: 'STANDARD' (Red=Put, Green=Call) or 'INVERTED' (Red=Call, Green=Put)."""
+    body = await req.json()
+    mapping = body.get("mapping") or body.get("line_mapping") or "STANDARD"
+    res = backend.stockmojo_scraper.set_line_mapping(mapping)
+    return JSONResponse(content=res)
+
+
+@app.get("/api/stockmojo/line_mapping")
+async def api_stockmojo_get_line_mapping():
+    """Gets current line mapping setting."""
+    return JSONResponse(content={
+        "ok": True,
+        "line_mapping": backend.stockmojo_scraper.line_mapping,
+        "crore_spread": backend.stockmojo_scraper.get_crore_spread_metrics()
+    })
+
+
+@app.get("/api/stockmojo/relay_script")
+async def api_stockmojo_relay_script():
+    """Returns the browser auto-relay JavaScript snippet for 1-click clipboard copy."""
+    script = backend.stockmojo_scraper.get_browser_relay_script()
+    return PlainTextResponse(content=script, media_type="text/javascript")
 
 
 @app.get("/api/dhan/config")

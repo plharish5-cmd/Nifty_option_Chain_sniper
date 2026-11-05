@@ -82,6 +82,49 @@ def parse_indian_unit_to_lakhs(val: Any) -> float:
     return round(num_part, 4)
 
 
+def parse_val_to_crores(val: Any) -> float:
+    """
+    Normalizes Indian market values to Crores (Cr):
+      - Strings like '3.02 Cr' -> 3.02
+      - Strings like '302.0 L' -> 3.02 (100 Lakhs = 1 Crore)
+      - Raw contract counts like 30200000 -> 3.02 (10,000,000 = 1 Crore)
+      - Lakhs count like 302.0 -> 3.02
+      - Already in Crores like 3.02 -> 3.02
+    """
+    if val is None:
+        return 0.0
+    if isinstance(val, (int, float)):
+        f = float(val)
+        if math.isnan(f) or math.isinf(f):
+            return 0.0
+        if abs(f) >= 500_000.0:
+            return round(f / 10_000_000.0, 2)
+        elif abs(f) > 50.0:
+            return round(f / 100.0, 2)
+        else:
+            return round(f, 2)
+    s = str(val).strip().replace(",", "")
+    if not s or s.lower() in ("--", "-", "null", "none"):
+        return 0.0
+    s_upper = s.upper()
+    if "CR" in s_upper:
+        m = re.search(r"[-+]?\d*\.?\d+", s_upper)
+        return round(float(m.group(0)), 2) if m else 0.0
+    if "L" in s_upper:
+        m = re.search(r"[-+]?\d*\.?\d+", s_upper)
+        return round(float(m.group(0)) / 100.0, 2) if m else 0.0
+    try:
+        f = float(s)
+        if abs(f) >= 500_000.0:
+            return round(f / 10_000_000.0, 2)
+        elif abs(f) > 50.0:
+            return round(f / 100.0, 2)
+        else:
+            return round(f, 2)
+    except Exception:
+        return 0.0
+
+
 def parse_html_table_rows(html_content: str) -> Tuple[List[str], List[Dict[str, Any]]]:
     """Parses HTML table exported by Stock Mojo into column headers and list of dict rows."""
     trs = re.findall(r'<tr[^>]*>(.*?)</tr>', html_content, re.DOTALL | re.IGNORECASE)
@@ -147,6 +190,16 @@ class StockMojoScraper:
         self.multi_strike_last_sync: str = ""
         self.multi_strike_status: str = "INITIALIZED"
         self.multi_strike_connected: bool = False
+
+        # Live Graph Point & Configurable Line Mapping (STANDARD: Red=Put / Green=Call; INVERTED: Red=Call / Green=Put)
+        self.line_mapping: str = str(self.cfg.get("STOCKMOJO_LINE_MAPPING", "STANDARD")).upper()
+        if self.line_mapping not in ("STANDARD", "INVERTED"):
+            self.line_mapping = "STANDARD"
+        self.cfg["STOCKMOJO_LINE_MAPPING"] = self.line_mapping
+
+        self.has_live_sync: bool = False
+        self.live_graph_data: Dict[str, Any] = {}
+        self.live_graph_history: List[Dict[str, Any]] = []
 
         self._init_db()
         self._seed_baseline_if_empty()
@@ -313,6 +366,10 @@ class StockMojoScraper:
                     ).fetchall()
                     self.total_oi_buffer = [self._sql_row_to_total_oi(r) for r in rows1]
                     self.oi_change_day_buffer = [self._sql_row_to_day_oi(r) for r in rows2]
+                    for r in self.total_oi_buffer:
+                        r["is_seed"] = True
+                    for r in self.oi_change_day_buffer:
+                        r["is_seed"] = True
                     self.ring_buffer = self.oi_change_day_buffer
                     return
         except Exception as e:
@@ -326,7 +383,11 @@ class StockMojoScraper:
             try:
                 headers, rows = parse_html_table_rows(seed_f1.read_text(encoding="utf-8", errors="ignore"))
                 if rows:
+                    for r in rows:
+                        r["is_seed"] = True
                     self.ingest_total_oi_rows(rows)
+                    for r in self.total_oi_buffer:
+                        r["is_seed"] = True
                     log.info("✔ Seeded %d Entity 1 (Total OI) rows from %s", len(rows), seed_f1.name)
             except Exception as e:
                 log.warning("Could not seed Entity 1 from %s: %s", seed_f1, e)
@@ -335,7 +396,11 @@ class StockMojoScraper:
             try:
                 headers, rows = parse_html_table_rows(seed_f2.read_text(encoding="utf-8", errors="ignore"))
                 if rows:
+                    for r in rows:
+                        r["is_seed"] = True
                     self.ingest_day_oi_rows(rows)
+                    for r in self.oi_change_day_buffer:
+                        r["is_seed"] = True
                     log.info("✔ Seeded %d Entity 2 (OI Change Day) rows from %s", len(rows), seed_f2.name)
             except Exception as e:
                 log.warning("Could not seed Entity 2 from %s: %s", seed_f2, e)
@@ -343,13 +408,15 @@ class StockMojoScraper:
         # Fallback benchmark rows if still empty
         if not self.oi_change_day_buffer:
             fallback_rows = [
-                {"time_ist": "15:39", "put_oi_change_day": "94.5 L", "put_oi_change_interval": "-1.65 L", "call_oi_change_day": "-13.5 L", "call_oi_change_interval": "-2.48 L", "pe_minus_ce_day": "108.0 L", "pe_minus_ce_interval": "0.83 L", "pcr_total": 1.26, "future_ltp": 23780.5, "future_oi_change_day": "-1.3 L"},
-                {"time_ist": "15:36", "put_oi_change_day": "96.1 L", "put_oi_change_interval": "-3.43 L", "call_oi_change_day": "-11.0 L", "call_oi_change_interval": "-3.70 L", "pe_minus_ce_day": "107.1 L", "pe_minus_ce_interval": "0.27 L", "pcr_total": 1.24, "future_ltp": 23782.0, "future_oi_change_day": "-0.62 L"},
-                {"time_ist": "15:33", "put_oi_change_day": "99.5 L", "put_oi_change_interval": "-6.37 L", "call_oi_change_day": "-7.32 L", "call_oi_change_interval": "-8.65 L", "pe_minus_ce_day": "106.9 L", "pe_minus_ce_interval": "2.28 L", "pcr_total": 1.23, "future_ltp": 23785.0, "future_oi_change_day": "-0.66 L"},
-                {"time_ist": "15:30", "put_oi_change_day": "105.9 L", "put_oi_change_interval": "-13.2 L", "call_oi_change_day": "1.34 L", "call_oi_change_interval": "-14.9 L", "pe_minus_ce_day": "104.6 L", "pe_minus_ce_interval": "1.68 L", "pcr_total": 1.19, "future_ltp": 23788.2, "future_oi_change_day": "-0.68 L"},
-                {"time_ist": "15:27", "put_oi_change_day": "119.2 L", "put_oi_change_interval": "-8.71 L", "call_oi_change_day": "16.2 L", "call_oi_change_interval": "-13.7 L", "pe_minus_ce_day": "102.9 L", "pe_minus_ce_interval": "4.97 L", "pcr_total": 1.15, "future_ltp": 23791.1, "future_oi_change_day": "-0.66 L"},
+                {"time_ist": "15:39", "put_oi_change_day": "94.5 L", "put_oi_change_interval": "-1.65 L", "call_oi_change_day": "-13.5 L", "call_oi_change_interval": "-2.48 L", "pe_minus_ce_day": "108.0 L", "pe_minus_ce_interval": "0.83 L", "pcr_total": 1.26, "future_ltp": 23780.5, "future_oi_change_day": "-1.3 L", "is_seed": True},
+                {"time_ist": "15:36", "put_oi_change_day": "96.1 L", "put_oi_change_interval": "-3.43 L", "call_oi_change_day": "-11.0 L", "call_oi_change_interval": "-3.70 L", "pe_minus_ce_day": "107.1 L", "pe_minus_ce_interval": "0.27 L", "pcr_total": 1.24, "future_ltp": 23782.0, "future_oi_change_day": "-0.62 L", "is_seed": True},
+                {"time_ist": "15:33", "put_oi_change_day": "99.5 L", "put_oi_change_interval": "-6.37 L", "call_oi_change_day": "-7.32 L", "call_oi_change_interval": "-8.65 L", "pe_minus_ce_day": "106.9 L", "pe_minus_ce_interval": "2.28 L", "pcr_total": 1.23, "future_ltp": 23785.0, "future_oi_change_day": "-0.66 L", "is_seed": True},
+                {"time_ist": "15:30", "put_oi_change_day": "105.9 L", "put_oi_change_interval": "-13.2 L", "call_oi_change_day": "1.34 L", "call_oi_change_interval": "-14.9 L", "pe_minus_ce_day": "104.6 L", "pe_minus_ce_interval": "1.68 L", "pcr_total": 1.19, "future_ltp": 23788.2, "future_oi_change_day": "-0.68 L", "is_seed": True},
+                {"time_ist": "15:27", "put_oi_change_day": "119.2 L", "put_oi_change_interval": "-8.71 L", "call_oi_change_day": "16.2 L", "call_oi_change_interval": "-13.7 L", "pe_minus_ce_day": "102.9 L", "pe_minus_ce_interval": "4.97 L", "pcr_total": 1.15, "future_ltp": 23791.1, "future_oi_change_day": "-0.66 L", "is_seed": True},
             ]
             self.ingest_day_oi_rows(fallback_rows)
+            for r in self.oi_change_day_buffer:
+                r["is_seed"] = True
 
     def _sql_row_to_total_oi(self, r: Tuple) -> Dict[str, Any]:
         return {
@@ -828,8 +895,114 @@ class StockMojoScraper:
              call_total_oi_cr, put_total_oi_cr, total_oi_diff_cr
           3. Writer Dominance Gate:
              CALL_WRITERS_DOMINANT (BEARISH 🔴) vs PUT_WRITERS_DOMINANT (BULLISH 🟢)
+        If live data has not synced yet, clearly reports WAITING FOR LIVE SYNC without serving stale yesterday's .xls files.
         """
         vast_thresh = float(self.cfg.get("VAST_DIFF_THRESHOLD_CR", 0.50))
+
+        # 1. Prioritize live graph data if ingested from browser relay or direct live endpoint
+        if self.live_graph_data:
+            time_ist = self.live_graph_data.get("time_ist", "--:--")
+            call_oi_chg_cr = float(self.live_graph_data.get("call_oi_chg_cr", 0.0) or 0.0)
+            put_oi_chg_cr = float(self.live_graph_data.get("put_oi_chg_cr", 0.0) or 0.0)
+            call_total_oi_cr = float(self.live_graph_data.get("call_total_oi_cr", 0.0) or 0.0)
+            put_total_oi_cr = float(self.live_graph_data.get("put_total_oi_cr", 0.0) or 0.0)
+            oi_chg_diff_cr = round(put_oi_chg_cr - call_oi_chg_cr, 2)
+            total_oi_diff_cr = round(put_total_oi_cr - call_total_oi_cr, 2)
+
+            # Slope from history
+            if len(self.live_graph_history) >= 2:
+                idx_prev = max(0, len(self.live_graph_history) - 5)
+                old_pt = self.live_graph_history[idx_prev]
+                prev_diff = round(float(old_pt.get("put_oi_chg_cr", 0.0) or 0.0) - float(old_pt.get("call_oi_chg_cr", 0.0) or 0.0), 2)
+                oi_chg_15m_slope = round(oi_chg_diff_cr - prev_diff, 2)
+            else:
+                oi_chg_15m_slope = 0.0
+
+            # Who is More calculation
+            if call_oi_chg_cr > put_oi_chg_cr:
+                lead = round(call_oi_chg_cr - put_oi_chg_cr, 2)
+                who_is_more_chg = f"Call +{lead:.2f} Cr (Call Writers Surge 🔴)"
+                who_is_more_chg_side = "CALL"
+            elif put_oi_chg_cr > call_oi_chg_cr:
+                lead = round(put_oi_chg_cr - call_oi_chg_cr, 2)
+                who_is_more_chg = f"Put +{lead:.2f} Cr (Put Writers Surge 🟢)"
+                who_is_more_chg_side = "PUT"
+            else:
+                who_is_more_chg = "Balanced (0.00 Cr)"
+                who_is_more_chg_side = "BALANCED"
+
+            if put_total_oi_cr > call_total_oi_cr:
+                lead = round(put_total_oi_cr - call_total_oi_cr, 2)
+                crossover_note = " (BULLISH CROSSOVER 🟢)" if lead >= vast_thresh else " (Put Total Dominant 🟢)"
+                who_is_more_total = f"Put +{lead:.2f} Cr{crossover_note}"
+                who_is_more_total_side = "PUT"
+            elif call_total_oi_cr > put_total_oi_cr:
+                lead = round(call_total_oi_cr - put_total_oi_cr, 2)
+                base_note = f" (BEARISH BASE -{lead:.2f} Cr 🔴)" if lead >= vast_thresh else " (Call Total Dominant 🔴)"
+                who_is_more_total = f"Call +{lead:.2f} Cr{base_note}"
+                who_is_more_total_side = "CALL"
+            else:
+                who_is_more_total = "Balanced (0.00 Cr)"
+                who_is_more_total_side = "BALANCED"
+
+            # Dominance Evaluation Logic
+            if who_is_more_chg_side == "CALL" and (who_is_more_total_side == "CALL" or oi_chg_15m_slope <= 0.20):
+                writer_dominance = "CALL_WRITERS_DOMINANT"
+                writer_dominance_label = "CALL WRITERS DOMINANT 🔴 (PE Only)"
+                allowed_strategies = ["STAGE3_8EMA_SHORT", "STRATEGY2_REVERSAL_DOWN", "STRATEGY3_1H_RESISTANCE"]
+                blocked_strategies = ["STAGE2_8EMA_LONG", "STRATEGY2_REVERSAL_UP", "STRATEGY3_1H_SUPPORT"]
+            elif who_is_more_chg_side == "PUT" and (who_is_more_total_side == "PUT" or oi_chg_15m_slope >= 0.40):
+                writer_dominance = "PUT_WRITERS_DOMINANT"
+                writer_dominance_label = "PUT WRITERS DOMINANT / SHORT COVERING 🟢 (CE Only)"
+                allowed_strategies = ["STAGE2_8EMA_LONG", "STRATEGY2_REVERSAL_UP", "STRATEGY3_1H_SUPPORT"]
+                blocked_strategies = ["STAGE3_8EMA_SHORT", "STRATEGY2_REVERSAL_DOWN", "STRATEGY3_1H_RESISTANCE"]
+            elif who_is_more_chg_side == "CALL":
+                writer_dominance = "CALL_WRITERS_DOMINANT"
+                writer_dominance_label = "CALL WRITERS MORE 🔴 (PE Bias)"
+                allowed_strategies = ["STAGE3_8EMA_SHORT", "STRATEGY2_REVERSAL_DOWN", "STRATEGY3_1H_RESISTANCE"]
+                blocked_strategies = ["STAGE2_8EMA_LONG", "STRATEGY2_REVERSAL_UP", "STRATEGY3_1H_SUPPORT"]
+            elif who_is_more_chg_side == "PUT":
+                writer_dominance = "PUT_WRITERS_DOMINANT"
+                writer_dominance_label = "PUT WRITERS MORE 🟢 (CE Bias)"
+                allowed_strategies = ["STAGE2_8EMA_LONG", "STRATEGY2_REVERSAL_UP", "STRATEGY3_1H_SUPPORT"]
+                blocked_strategies = ["STAGE3_8EMA_SHORT", "STRATEGY2_REVERSAL_DOWN", "STRATEGY3_1H_RESISTANCE"]
+            else:
+                writer_dominance = "NEUTRAL"
+                writer_dominance_label = "NEUTRAL / BALANCED ⚪"
+                allowed_strategies = []
+                blocked_strategies = []
+
+            return {
+                "is_live_synced": True,
+                "time_ist": time_ist,
+                "call_oi_chg_cr": call_oi_chg_cr,
+                "put_oi_chg_cr": put_oi_chg_cr,
+                "oi_chg_diff_cr": oi_chg_diff_cr,
+                "oi_chg_15m_slope": oi_chg_15m_slope,
+                "call_peak_recent_cr": call_oi_chg_cr,
+                "call_unwinding": False,
+                "call_total_oi_cr": call_total_oi_cr,
+                "put_total_oi_cr": put_total_oi_cr,
+                "total_oi_diff_cr": total_oi_diff_cr,
+                "who_is_more_chg": who_is_more_chg,
+                "who_is_more_chg_side": who_is_more_chg_side,
+                "who_is_more_total": who_is_more_total,
+                "who_is_more_total_side": who_is_more_total_side,
+                "writer_dominance": writer_dominance,
+                "writer_dominance_label": writer_dominance_label,
+                "allowed_strategies": allowed_strategies,
+                "blocked_strategies": blocked_strategies,
+                "vast_diff_threshold_cr": vast_thresh,
+                "line_mapping": self.line_mapping,
+                "auth_status": {
+                    "jwt_active": bool(self.header_j),
+                    "valid_until": "Nov 2027",
+                    "last_ping": self.last_sync_time or "Live Graph Active",
+                    "sync_status": self.last_sync_status,
+                    "pcr_url": self.pcr_url,
+                    "is_live_synced": True,
+                }
+            }
 
         # Filter out 'Prev Day' to get pure intraday timestamp rows
         day_rows = [r for r in self.oi_change_day_buffer if str(r.get("time_ist", "")).strip() not in ("Prev Day", "--", "")]
@@ -838,7 +1011,47 @@ class StockMojoScraper:
         latest_day = day_rows[0] if day_rows else {}
         latest_total = total_rows[0] if total_rows else {}
 
-        # 1. Entity 1: OI Change (Call vs Put)
+        # If we ONLY have baseline seed rows (e.g. from yesterday's 04/05 Nov xls files) and live sync hasn't happened:
+        # DO NOT display stale yesterday's 5.10 Cr / 6.49 Cr or 2.05 Cr / 2.59 Cr as live badge values!
+        is_seed_only = (
+            not self.has_live_sync and
+            (latest_day.get("is_seed", False) or latest_total.get("is_seed", False) or not day_rows)
+        )
+
+        if is_seed_only:
+            return {
+                "is_live_synced": False,
+                "time_ist": "WAITING FOR LIVE SYNC",
+                "call_oi_chg_cr": None,
+                "put_oi_chg_cr": None,
+                "oi_chg_diff_cr": None,
+                "oi_chg_15m_slope": 0.0,
+                "call_peak_recent_cr": None,
+                "call_unwinding": False,
+                "call_total_oi_cr": None,
+                "put_total_oi_cr": None,
+                "total_oi_diff_cr": None,
+                "who_is_more_chg": "WAITING FOR LIVE SYNC",
+                "who_is_more_chg_side": "WAITING",
+                "who_is_more_total": "WAITING FOR LIVE SYNC",
+                "who_is_more_total_side": "WAITING",
+                "writer_dominance": "WAITING FOR LIVE SYNC",
+                "writer_dominance_label": "WAITING FOR LIVE SYNC ⏳",
+                "allowed_strategies": [],
+                "blocked_strategies": [],
+                "vast_diff_threshold_cr": vast_thresh,
+                "line_mapping": self.line_mapping,
+                "auth_status": {
+                    "jwt_active": bool(self.header_j),
+                    "valid_until": "Nov 2027",
+                    "last_ping": self.last_sync_time or "Awaiting Live Sync",
+                    "sync_status": self.last_sync_status,
+                    "pcr_url": self.pcr_url,
+                    "is_live_synced": False,
+                }
+            }
+
+        # 1. Entity 1: OI Change (Call vs Put) from live buffer rows
         call_oi_chg_lakhs = float(latest_day.get("call_oi_change_day", 0.0) or 0.0)
         put_oi_chg_lakhs = float(latest_day.get("put_oi_change_day", 0.0) or 0.0)
         call_oi_chg_cr = round(call_oi_chg_lakhs / 100.0, 2)
@@ -904,8 +1117,6 @@ class StockMojoScraper:
 
         # Part 3: Dominance Evaluation Logic
         # CALL_WRITERS_DOMINANT (BEARISH 🔴):
-        # Triggered when call_oi_chg_cr > put_oi_chg_cr AND call_total_oi_cr > put_total_oi_cr
-        # (especially when gap >= vast_thresh and Call OI is rising or flat)
         is_call_dominant = (
             call_oi_chg_cr > put_oi_chg_cr and
             call_total_oi_cr > put_total_oi_cr and
@@ -913,9 +1124,6 @@ class StockMojoScraper:
         )
 
         # PUT_WRITERS_DOMINANT / SHORT_COVERING (BULLISH 🟢):
-        # (A) put_total_oi_cr > call_total_oi_cr AND put_oi_chg_cr > call_oi_chg_cr
-        # (B) put_total_oi_cr > call_total_oi_cr by vast difference (>= 0.50 Cr) while call_oi_chg_cr actively unwinding (slope > +0.40 Cr)
-        # (C) Both Call OI Change and Call Total OI falling steeply (slope > +0.50 Cr) while Put Writers rising (catches 12:30 inflection)
         is_put_dominant = (
             (put_total_oi_cr > call_total_oi_cr and put_oi_chg_cr > call_oi_chg_cr) or
             (put_total_oi_cr - call_total_oi_cr >= vast_thresh and oi_chg_15m_slope >= 0.40) or
@@ -939,6 +1147,7 @@ class StockMojoScraper:
             blocked_strategies = []
 
         return {
+            "is_live_synced": True,
             "time_ist": latest_day.get("time_ist") or latest_total.get("time_ist") or "15:39",
             "call_oi_chg_cr": call_oi_chg_cr,
             "put_oi_chg_cr": put_oi_chg_cr,
@@ -958,12 +1167,14 @@ class StockMojoScraper:
             "allowed_strategies": allowed_strategies,
             "blocked_strategies": blocked_strategies,
             "vast_diff_threshold_cr": vast_thresh,
+            "line_mapping": self.line_mapping,
             "auth_status": {
                 "jwt_active": True,
                 "valid_until": "Nov 2027",
                 "last_ping": self.last_sync_time or "Live",
                 "sync_status": self.last_sync_status,
                 "pcr_url": self.pcr_url,
+                "is_live_synced": True,
             }
         }
 
@@ -1020,7 +1231,14 @@ class StockMojoScraper:
         writer_dom = crore_spread.get("writer_dominance", "NEUTRAL")
 
         # Combined Synergy Verdict: Dual-Entity Logic + Writer Dominance Gate
-        if writer_dom == "PUT_WRITERS_DOMINANT" or (day_pe_ce_val > 0 and tot_step > 0) or short_covering_detected:
+        if crore_spread.get("is_live_synced") is False and self.multi_strike_bias not in ("BULLISH_SYNERGY", "BEARISH_SYNERGY"):
+            synergy_status = "WAITING_FOR_LIVE_SYNC"
+            bias = "WAITING"
+            allowed_label = "Waiting for Stock Mojo Live Sync ⏳"
+            blocked_label = "Awaiting Live Sync"
+            allowed_actions = []
+            blocked_actions = []
+        elif writer_dom == "PUT_WRITERS_DOMINANT" or (day_pe_ce_val > 0 and tot_step > 0) or short_covering_detected:
             synergy_status = "BULLISH_SYNERGY"
             bias = "BULLISH"
             allowed_label = "CE Long Only (Stage 2 8-EMA, Rev Up, 1H Supp)"
@@ -1261,6 +1479,9 @@ class StockMojoScraper:
         total_ingested = 0
         for fpath in found_files:
             p = Path(fpath)
+            # NEVER treat static baseline seed files as live incoming downloads!
+            if p.name in ("PE_CE_NIFTY_2026-11-04 (1).xls", "PE_CE_NIFTY_2026-11-05.xls"):
+                continue
             # Inspect files modified within last 24 hours
             if (time.time() - p.stat().st_mtime) > 86400:
                 continue
@@ -1318,6 +1539,8 @@ class StockMojoScraper:
                 if resp.status_code == 200:
                     data = resp.json()
                     self.last_sync_status = "LIVE_API_CONNECTED (200 OK)"
+                    self.has_live_sync = True
+                    self.ingest_live_graph_data(data, source="DIRECT_API")
 
                     raw_items = []
                     if isinstance(data, list):
@@ -1379,6 +1602,7 @@ class StockMojoScraper:
                 if resp.status_code == 200:
                     data = resp.json()
                     self.multi_strike_connected = True
+                    self.has_live_sync = True
                     self.multi_strike_status = "LIVE_MULTI_STRIKE_CONNECTED (200 OK)"
                     parsed_res = self.parse_multi_strike_data(data)
                     return {
@@ -1559,6 +1783,326 @@ class StockMojoScraper:
             "status_card_text": f"🟢 Stock Mojo Multi-Strike API Connected | Last Sync: {last_sync_hhmmss} | Bias: {bias}",
             "buffer": self.multi_strike_buffer[:30],
         }
+
+    def set_line_mapping(self, mapping: str) -> Dict[str, Any]:
+        """Sets line mapping: 'STANDARD' (Red=Put, Green=Call) or 'INVERTED' (Red=Call, Green=Put)."""
+        norm = str(mapping).strip().upper()
+        if norm not in ("STANDARD", "INVERTED"):
+            norm = "STANDARD"
+        self.line_mapping = norm
+        self.cfg["STOCKMOJO_LINE_MAPPING"] = norm
+        self._save_config()
+
+        # If live graph data is present, re-map it immediately
+        if self.live_graph_data:
+            r_chg = self.live_graph_data.get("raw_red_oi_chg_cr", 0.0)
+            g_chg = self.live_graph_data.get("raw_green_oi_chg_cr", 0.0)
+            r_tot = self.live_graph_data.get("raw_red_total_oi_cr", 0.0)
+            g_tot = self.live_graph_data.get("raw_green_total_oi_cr", 0.0)
+
+            if norm == "STANDARD":
+                self.live_graph_data["put_oi_chg_cr"] = r_chg
+                self.live_graph_data["call_oi_chg_cr"] = g_chg
+                self.live_graph_data["put_total_oi_cr"] = r_tot
+                self.live_graph_data["call_total_oi_cr"] = g_tot
+            else:
+                self.live_graph_data["call_oi_chg_cr"] = r_chg
+                self.live_graph_data["put_oi_chg_cr"] = g_chg
+                self.live_graph_data["call_total_oi_cr"] = r_tot
+                self.live_graph_data["put_total_oi_cr"] = g_tot
+
+            self.live_graph_data["oi_chg_diff_cr"] = round(self.live_graph_data["put_oi_chg_cr"] - self.live_graph_data["call_oi_chg_cr"], 2)
+            self.live_graph_data["total_oi_diff_cr"] = round(self.live_graph_data["put_total_oi_cr"] - self.live_graph_data["call_total_oi_cr"], 2)
+            self.live_graph_data["line_mapping"] = norm
+
+        return {
+            "ok": True,
+            "line_mapping": self.line_mapping,
+            "crore_spread": self.get_crore_spread_metrics(),
+            "synergy": self.evaluate_synergy_status()
+        }
+
+    def ingest_live_graph_data(self, data: Any, source: str = "BROWSER_RELAY") -> Dict[str, Any]:
+        """
+        Extracts the exact latest right-most data point ([-1]) from live Stock Mojo time-series graph array.
+        Handles direct array of points, highcharts/tradingview series objects, or summary points.
+        Extracts:
+          - oi_change_red_cr & oi_change_green_cr (e.g. 3.02 Cr vs 2.13 Cr)
+          - total_oi_red_cr & total_oi_green_cr (e.g. 18.33 Cr vs 16.26 Cr)
+        Applies configurable line_mapping (STANDARD: Red=Put / Green=Call; INVERTED: Red=Call / Green=Put).
+        Sets has_live_sync = True and updates live_graph_data.
+        """
+        if not data:
+            return {"ok": False, "error": "Empty data passed to ingest_live_graph_data"}
+
+        if isinstance(data, dict) and "response_data" in data and data["response_data"]:
+            data = data["response_data"]
+
+        latest_point: Dict[str, Any] = {}
+        red_chg_raw: Any = None
+        green_chg_raw: Any = None
+        red_tot_raw: Any = None
+        green_tot_raw: Any = None
+        time_raw: Any = None
+
+        # Format A: List of point objects -> take latest_point = data[-1]
+        if isinstance(data, list) and len(data) > 0:
+            latest_point = data[-1] if isinstance(data[-1], dict) else {}
+        elif isinstance(data, dict):
+            # Check nested lists
+            series_list = None
+            for key in ("series", "data", "rows", "items", "points", "oi_change", "pcr_data"):
+                if key in data and isinstance(data[key], list) and len(data[key]) > 0:
+                    series_list = data[key]
+                    break
+
+            if series_list:
+                if isinstance(series_list[-1], dict):
+                    # Check if it's Highcharts style [ {"name": "Put...", "data": [...]}, ... ]
+                    if "data" in series_list[-1] and isinstance(series_list[-1]["data"], list):
+                        for s in series_list:
+                            s_name = str(s.get("name", "")).upper()
+                            s_pts = s.get("data", [])
+                            if not s_pts:
+                                continue
+                            last_val = s_pts[-1]
+                            if isinstance(last_val, (list, tuple)) and len(last_val) >= 2:
+                                last_val = last_val[1]
+                            if "PUT" in s_name and ("CHANGE" in s_name or "CHG" in s_name):
+                                red_chg_raw = last_val
+                            elif "CALL" in s_name and ("CHANGE" in s_name or "CHG" in s_name):
+                                green_chg_raw = last_val
+                            elif "PUT" in s_name and "TOTAL" in s_name:
+                                red_tot_raw = last_val
+                            elif "CALL" in s_name and "TOTAL" in s_name:
+                                green_tot_raw = last_val
+                    else:
+                        latest_point = series_list[-1]
+                else:
+                    latest_point = {"val": series_list[-1]}
+            else:
+                latest_point = data
+
+        def find_field(d: Dict[str, Any], candidates: List[str]) -> Any:
+            for c in candidates:
+                if c in d and d[c] is not None:
+                    return d[c]
+                for k, v in d.items():
+                    if k.lower() == c.lower() and v is not None:
+                        return v
+            return None
+
+        if red_chg_raw is None:
+            red_chg_raw = find_field(latest_point, [
+                "oi_change_red_cr", "oi_change_red", "red_oi_chg", "put_oi_change", "pe_oi_change",
+                "pe_change", "put_oi_change_day", "put_oi_chg", "red_chg", "red_line", "red"
+            ])
+        if green_chg_raw is None:
+            green_chg_raw = find_field(latest_point, [
+                "oi_change_green_cr", "oi_change_green", "green_oi_chg", "call_oi_change", "ce_oi_change",
+                "ce_change", "call_oi_change_day", "call_oi_chg", "green_chg", "green_line", "green"
+            ])
+        if red_tot_raw is None:
+            red_tot_raw = find_field(latest_point, [
+                "total_oi_red_cr", "total_oi_red", "red_total_oi", "put_oi_total", "pe_oi_total",
+                "pe_total", "put_total_oi", "put_total", "red_tot"
+            ])
+        if green_tot_raw is None:
+            green_tot_raw = find_field(latest_point, [
+                "total_oi_green_cr", "total_oi_green", "green_total_oi", "call_oi_total", "ce_oi_total",
+                "ce_total", "call_total_oi", "call_total", "green_tot"
+            ])
+
+        time_raw = find_field(latest_point, ["time_ist", "time", "timestamp", "t", "datetime", "created_at"])
+        if not time_raw or str(time_raw).isdigit():
+            time_ist = datetime.now(IST).strftime("%H:%M")
+        else:
+            time_ist = str(time_raw).strip()
+
+        # Parse each value into clean Crores
+        raw_red_chg_cr = parse_val_to_crores(red_chg_raw)
+        raw_green_chg_cr = parse_val_to_crores(green_chg_raw)
+        raw_red_tot_cr = parse_val_to_crores(red_tot_raw)
+        raw_green_tot_cr = parse_val_to_crores(green_tot_raw)
+
+        # Apply configurable Line Mapping
+        if self.line_mapping == "STANDARD":
+            # Standard: Red = Put (PE), Green = Call (CE)
+            put_oi_chg_cr = raw_red_chg_cr
+            call_oi_chg_cr = raw_green_chg_cr
+            put_total_oi_cr = raw_red_tot_cr
+            call_total_oi_cr = raw_green_tot_cr
+        else:
+            # Inverted: Red = Call (CE), Green = Put (PE)
+            call_oi_chg_cr = raw_red_chg_cr
+            put_oi_chg_cr = raw_green_chg_cr
+            call_total_oi_cr = raw_red_tot_cr
+            put_total_oi_cr = raw_green_tot_cr
+
+        self.live_graph_data = {
+            "time_ist": time_ist,
+            "raw_red_oi_chg_cr": raw_red_chg_cr,
+            "raw_green_oi_chg_cr": raw_green_chg_cr,
+            "raw_red_total_oi_cr": raw_red_tot_cr,
+            "raw_green_total_oi_cr": raw_green_tot_cr,
+            "call_oi_chg_cr": call_oi_chg_cr,
+            "put_oi_chg_cr": put_oi_chg_cr,
+            "call_total_oi_cr": call_total_oi_cr,
+            "put_total_oi_cr": put_total_oi_cr,
+            "oi_chg_diff_cr": round(put_oi_chg_cr - call_oi_chg_cr, 2),
+            "total_oi_diff_cr": round(put_total_oi_cr - call_total_oi_cr, 2),
+            "line_mapping": self.line_mapping,
+            "source": source,
+            "timestamp": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+        }
+
+        self.live_graph_history.append(dict(self.live_graph_data))
+        self.live_graph_history = self.live_graph_history[-180:]
+
+        self.has_live_sync = True
+        self.last_sync_time = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+        self.last_sync_status = f"LIVE_GRAPH_INGESTED ({source})"
+
+        log.info(
+            "✔ Ingested live graph point [%s]: Red Chg=%s, Green Chg=%s, Red Tot=%s, Green Tot=%s (Mapping=%s -> Call Chg=%s Cr, Put Chg=%s Cr)",
+            time_ist, raw_red_chg_cr, raw_green_chg_cr, raw_red_tot_cr, raw_green_tot_cr, self.line_mapping, call_oi_chg_cr, put_oi_chg_cr
+        )
+
+        return {
+            "ok": True,
+            "live_graph_data": self.live_graph_data,
+            "crore_spread": self.get_crore_spread_metrics(),
+            "synergy": self.evaluate_synergy_status()
+        }
+
+    def get_browser_relay_script(self) -> str:
+        """Generates 1-click Chrome DevTools Console auto-relay snippet for Stock Mojo."""
+        return """// ==UserScript==
+// @name         Stock Mojo Live Graph & Auth Relay
+// @namespace    http://127.0.0.1:8510/
+// @version      1.0
+// @description  Intercepts Stock Mojo live /live/oi/pcr and relays to local Port 8510
+// @match        https://stockmojo.in/*
+// @grant        none
+// ==/UserScript==
+(function() {
+    console.log("%c[StockMojo Relay] 🚀 Ingestion daemon active. Monitoring live graph...", "color:#10b981;font-weight:bold;");
+    const DEST_URL = "http://127.0.0.1:8510/api/stockmojo/live_graph_ingest";
+    let cached = { headers: {}, payload: null, pcr_data: null, ms_data: null };
+
+    async function sendToTerminal(pkg) {
+        try {
+            await fetch(DEST_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(pkg),
+                mode: "cors"
+            });
+            console.log("%c[StockMojo Relay] ✔ Relayed live graph to Port 8510 at " + new Date().toLocaleTimeString(), "color:#38bdf8;");
+        } catch (err) {
+            console.warn("[StockMojo Relay] Port 8510 relay attempt failed (is server running?):", err.message);
+        }
+    }
+
+    // Intercept window.fetch
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+        const [resource, config] = args;
+        const url = (typeof resource === 'string') ? resource : (resource && resource.url) || '';
+        const response = await originalFetch.apply(this, args);
+
+        if (url.includes("/live/oi/pcr") || url.includes("/live/multi-strike/ce-pe-oi-diff")) {
+            try {
+                const clone = response.clone();
+                const json = await clone.json();
+                const reqHeaders = {};
+                if (config && config.headers) {
+                    if (config.headers instanceof Headers) {
+                        for (let [k, v] of config.headers.entries()) reqHeaders[k] = v;
+                    } else if (typeof config.headers === 'object') {
+                        Object.assign(reqHeaders, config.headers);
+                    }
+                }
+                const reqBody = (config && config.body) ? config.body : null;
+
+                const packet = {
+                    url: url,
+                    status: response.status,
+                    request_headers: reqHeaders,
+                    request_payload: reqBody,
+                    response_data: json,
+                    timestamp: new Date().toLocaleTimeString('en-GB')
+                };
+
+                if (url.includes("/live/oi/pcr")) {
+                    cached.pcr_data = json;
+                    cached.payload = reqBody;
+                    cached.headers = reqHeaders;
+                }
+                if (url.includes("/live/multi-strike/ce-pe-oi-diff")) {
+                    cached.ms_data = json;
+                }
+                sendToTerminal(packet);
+            } catch (e) {
+                console.debug("[StockMojo Relay] Parse error:", e);
+            }
+        }
+        return response;
+    };
+
+    // Intercept XMLHttpRequest
+    const origOpen = XMLHttpRequest.prototype.open;
+    const origSend = XMLHttpRequest.prototype.send;
+    const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+
+    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+        this._sm_url = url;
+        this._sm_headers = {};
+        return origOpen.apply(this, [method, url, ...rest]);
+    };
+
+    XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
+        if (!this._sm_headers) this._sm_headers = {};
+        this._sm_headers[header] = value;
+        return origSetHeader.apply(this, [header, value]);
+    };
+
+    XMLHttpRequest.prototype.send = function(body) {
+        this._sm_body = body;
+        this.addEventListener('load', function() {
+            if (this._sm_url && (this._sm_url.includes('/live/oi/pcr') || this._sm_url.includes('/live/multi-strike/ce-pe-oi-diff'))) {
+                try {
+                    const json = JSON.parse(this.responseText);
+                    sendToTerminal({
+                        url: this._sm_url,
+                        status: this.status,
+                        request_headers: this._sm_headers,
+                        request_payload: this._sm_body,
+                        response_data: json,
+                        timestamp: new Date().toLocaleTimeString('en-GB')
+                    });
+                } catch (e) {}
+            }
+        });
+        return origSend.apply(this, [body]);
+    };
+
+    // Periodic heartbeat relay every 30 seconds
+    setInterval(() => {
+        if (cached.pcr_data || cached.ms_data) {
+            sendToTerminal({
+                url: "HEARTBEAT_PERIODIC",
+                request_headers: cached.headers,
+                request_payload: cached.payload,
+                response_data: cached.pcr_data,
+                multi_strike_data: cached.ms_data,
+                timestamp: new Date().toLocaleTimeString('en-GB')
+            });
+        }
+    }, 30000);
+
+    console.log("%c[StockMojo Relay] 🟢 Relay ready! Intercepting live /live/oi/pcr data automatically.", "color:#10b981;font-weight:bold;");
+})();"""
 
     async def update_auth(
         self,

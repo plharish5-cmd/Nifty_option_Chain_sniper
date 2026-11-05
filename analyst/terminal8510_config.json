@@ -16,7 +16,7 @@
   "paper_execution_enabled": true,
   "directional_bias": "BOTH",
   "starting_paper_capital": 100000.0,
-  "STOCKMOJO_JWT_TOKEN": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW9uX3Rva2VuIjoiYnRzajZrdXl2OHprbzFwN2pkejE3OTM3ODcxNjA0NDQiLCJ0aWQiOiIwM2YwMTIzOC05MDgyLTRkOWItYWVjNy1hNmMwZDQ3MDc3MzMiLCJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkzNzg3MTYwLCJleHAiOjE4MjUzMjMxNjB9.wVQJZbadHctmwvPFvxfLj89nlp4XPAcTjS3NpVszczg",
+  "STOCKMOJO_JWT_TOKEN": "new_jwt_captured",
   "chasing": {
     "aggressive_limit_buffer_pts": 4.0,
     "auto_modify_interval_ms": 800,
@@ -94,10 +94,12 @@
   },
   "STOCKMOJO_PCR_URL": "https://data.stockmojo.in/live/oi/pcr",
   "STOCKMOJO_MULTI_STRIKE_URL": "https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff",
-  "STOCKMOJO_HEADER_J": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW9uX3Rva2VuIjoiYnRzajZrdXl2OHprbzFwN2pkejE3OTM3ODcxNjA0NDQiLCJ0aWQiOiIwM2YwMTIzOC05MDgyLTRkOWItYWVjNy1hNmMwZDQ3MDc3MzMiLCJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkzNzg3MTYwLCJleHAiOjE4MjUzMjMxNjB9.wVQJZbadHctmwvPFvxfLj89nlp4XPAcTjS3NpVszczg",
-  "STOCKMOJO_HEADER_T": "btsj6kuyv8zko1p7jdz1793787160444",
+  "STOCKMOJO_LINE_MAPPING": "STANDARD",
+  "STOCKMOJO_HEADER_J": "new_jwt_captured",
+  "STOCKMOJO_HEADER_T": "new_t_captured",
   "STOCKMOJO_PAYLOAD": {
-    "symbol": "NIFTY"
+    "symbol": "NIFTY",
+    "timeframe": "1m"
   },
   "POLL_INTERVAL_SECONDS": 60,
   "STOCKMOJO_POLL_SECONDS": 60,
@@ -107,7 +109,7 @@
     "poll_interval_seconds": 60,
     "api_url": "https://data.stockmojo.in/live/oi/pcr",
     "multi_strike_url": "https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff",
-    "jwt_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW9uX3Rva2VuIjoiYnRzajZrdXl2OHprbzFwN2pkejE3OTM3ODcxNjA0NDQiLCJ0aWQiOiIwM2YwMTIzOC05MDgyLTRkOWItYWVjNy1hNmMwZDQ3MDc3MzMiLCJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkzNzg3MTYwLCJleHAiOjE4MjUzMjMxNjB9.wVQJZbadHctmwvPFvxfLj89nlp4XPAcTjS3NpVszczg",
+    "jwt_token": "new_jwt_captured",
     "watch_downloads": true,
     "download_dir": "data/stockmojo_downloads"
   },

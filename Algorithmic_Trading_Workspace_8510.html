@@ -983,9 +983,12 @@
                             <span style="color:var(--text-dim); font-size:11px;">vs</span>
                             <span id="tab1PillPutOiChg" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#ef4444; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🔴 Put Chg: -- Cr</span>
                         </div>
-                        <div style="font-size:12px;">
-                            <span style="color:var(--text-dim);">Who is More: </span>
-                            <b id="tab1WhoMoreChg" style="color:#38bdf8;">--</b>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <button id="tab1MappingToggleBtn" onclick="toggleStockMojoLineMapping()" title="Click to toggle Red/Green line mapping" style="background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid #38bdf8; padding:2px 8px; border-radius:12px; font-size:11px; cursor:pointer; font-weight:600;">🔄 Mapping: Standard (Red=Put / Green=Call)</button>
+                            <div style="font-size:12px;">
+                                <span style="color:var(--text-dim);">Who is More: </span>
+                                <b id="tab1WhoMoreChg" style="color:#38bdf8;">--</b>
+                            </div>
                         </div>
                     </div>
                     <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
@@ -1729,9 +1732,12 @@
                             <span style="color:var(--text-dim); font-size:11px;">vs</span>
                             <span id="tab6PillPutOiChg" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#ef4444; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🔴 Put Chg: -- Cr</span>
                         </div>
-                        <div style="font-size:12px;">
-                            <span style="color:var(--text-dim);">Who is More: </span>
-                            <b id="tab6WhoMoreChg" style="color:#38bdf8;">--</b>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <button id="tab6MappingToggleBtn" onclick="toggleStockMojoLineMapping()" title="Click to toggle Red/Green line mapping" style="background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid #38bdf8; padding:2px 8px; border-radius:12px; font-size:11px; cursor:pointer; font-weight:600;">🔄 Mapping: Standard (Red=Put / Green=Call)</button>
+                            <div style="font-size:12px;">
+                                <span style="color:var(--text-dim);">Who is More: </span>
+                                <b id="tab6WhoMoreChg" style="color:#38bdf8;">--</b>
+                            </div>
                         </div>
                     </div>
                     <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
@@ -1747,13 +1753,17 @@
                         </div>
                     </div>
                     <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border-top:1px dashed rgba(255,255,255,0.08); padding-top:6px; margin-top:2px;">
-                        <div style="font-size:11px; display:flex; align-items:center; gap:6px;">
+                        <div style="font-size:11px; display:flex; flex-wrap:wrap; align-items:center; gap:6px;">
                             <span style="background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:2px 8px; border-radius:10px;">🔑 Stock Mojo JWT Active (Valid till Nov 2027)</span>
                             <span id="tab6JwtLastPing" style="color:var(--text-dim); font-family:var(--font-mono);">Last Ping: --:--:--</span>
                         </div>
-                        <div style="font-size:12px;">
-                            <span style="color:var(--text-dim);">Writer Dominance: </span>
-                            <b id="tab6WriterDomBadge" style="color:var(--text-main);">CALCULATING...</b>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <button id="btnCopyRelayScript" onclick="copyStockMojoRelayScript()" style="background:rgba(16,185,129,0.18); color:#10b981; border:1px solid #10b981; padding:3px 10px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px;">📋 Copy Live Graph Relay Script</button>
+                            <button id="btnQuickLiveGraph" onclick="openLiveGraphModal()" style="background:rgba(168,85,247,0.18); color:#a855f7; border:1px solid #a855f7; padding:3px 10px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">⚡ Quick Ingest Live Graph</button>
+                            <div style="font-size:12px;">
+                                <span style="color:var(--text-dim);">Writer Dominance: </span>
+                                <b id="tab6WriterDomBadge" style="color:var(--text-main);">CALCULATING...</b>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1993,6 +2003,47 @@
                         <button type="button" class="secondary-btn" onclick="toggleAuthModal()">Cancel</button>
                         <button type="button" class="emerald-btn" onclick="saveAuthConfig()">💾 Save &amp; Ping Now</button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stock Mojo Quick Live Graph Ingest Modal -->
+        <div id="liveGraphModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; align-items:center; justify-content:center;">
+            <div style="background:var(--bg-panel); border:1px solid #a855f7; border-radius:12px; width:90%; max-width:540px; padding:22px; box-shadow:0 20px 50px rgba(0,0,0,0.7); max-height:90vh; overflow-y:auto;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px;">
+                    <h3 style="margin:0; font-size:16px; color:#a855f7; display:flex; align-items:center; gap:8px;">
+                        <span>⚡ Quick Ingest Stock Mojo Live Graph Values</span>
+                    </h3>
+                    <button type="button" onclick="closeLiveGraphModal()" style="background:none; border:none; color:var(--text-dim); font-size:20px; cursor:pointer;">&times;</button>
+                </div>
+                <div style="font-size:11.5px; color:var(--text-dim); line-height:1.5; margin-bottom:12px;">
+                    Enter the latest right-most values from the live Stock Mojo chart (e.g. <b>10:48 AM</b>: Put Chg <b>3.02 Cr</b>, Call Chg <b>2.13 Cr</b>, Put Total <b>18.33 Cr</b>, Call Total <b>16.26 Cr</b>) or paste response JSON:
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+                    <div>
+                        <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:4px;">Put OI Change (Red line, Cr):</label>
+                        <input id="quickPutOiChg" type="number" step="0.01" placeholder="e.g. 3.02" style="width:100%; background:var(--bg-input); border:1px solid var(--border-subtle); color:var(--text-main); padding:6px 10px; border-radius:6px; font-family:var(--font-mono); font-size:12px;">
+                    </div>
+                    <div>
+                        <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:4px;">Call OI Change (Green line, Cr):</label>
+                        <input id="quickCallOiChg" type="number" step="0.01" placeholder="e.g. 2.13" style="width:100%; background:var(--bg-input); border:1px solid var(--border-subtle); color:var(--text-main); padding:6px 10px; border-radius:6px; font-family:var(--font-mono); font-size:12px;">
+                    </div>
+                    <div>
+                        <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:4px;">Put Total OI (Red line, Cr):</label>
+                        <input id="quickPutOiTot" type="number" step="0.01" placeholder="e.g. 18.33" style="width:100%; background:var(--bg-input); border:1px solid var(--border-subtle); color:var(--text-main); padding:6px 10px; border-radius:6px; font-family:var(--font-mono); font-size:12px;">
+                    </div>
+                    <div>
+                        <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:4px;">Call Total OI (Green line, Cr):</label>
+                        <input id="quickCallOiTot" type="number" step="0.01" placeholder="e.g. 16.26" style="width:100%; background:var(--bg-input); border:1px solid var(--border-subtle); color:var(--text-main); padding:6px 10px; border-radius:6px; font-family:var(--font-mono); font-size:12px;">
+                    </div>
+                </div>
+                <div style="margin-bottom:14px;">
+                    <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:4px;">Or Paste JSON / cURL Payload:</label>
+                    <textarea id="quickJsonPaste" placeholder='{"oi_change_red_cr": 3.02, "oi_change_green_cr": 2.13, ...}' style="width:100%; height:60px; background:var(--bg-input); border:1px solid var(--border-subtle); color:var(--text-main); padding:6px 10px; border-radius:6px; font-family:var(--font-mono); font-size:11px;"></textarea>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px;">
+                    <button type="button" class="secondary-btn" onclick="closeLiveGraphModal()">Cancel</button>
+                    <button type="button" class="emerald-btn" onclick="submitQuickLiveGraph()">⚡ Ingest Live Point</button>
                 </div>
             </div>
         </div>
@@ -3352,6 +3403,114 @@
             renderDualPeCeTable();
         }
 
+        function updateMappingButtons(mapping) {
+            const isStd = (mapping === "STANDARD");
+            const txt = isStd ? "🔄 Mapping: Standard (Red=Put / Green=Call)" : "🔄 Mapping: Inverted (Red=Call / Green=Put)";
+            ['tab1MappingToggleBtn', 'tab6MappingToggleBtn'].forEach(id => {
+                const b = document.getElementById(id);
+                if (b) {
+                    b.textContent = txt;
+                    b.style.borderColor = isStd ? "#38bdf8" : "#f59e0b";
+                    b.style.color = isStd ? "#38bdf8" : "#f59e0b";
+                }
+            });
+        }
+
+        async function toggleStockMojoLineMapping() {
+            try {
+                const curBtn = document.getElementById("tab1MappingToggleBtn") || document.getElementById("tab6MappingToggleBtn");
+                const isStd = curBtn ? curBtn.textContent.includes("Standard") : true;
+                const newMapping = isStd ? "INVERTED" : "STANDARD";
+                const res = await fetch("/api/stockmojo/line_mapping", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ mapping: newMapping })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    updateMappingButtons(data.line_mapping);
+                    if (data.crore_spread) {
+                        renderCrorePillBadges(data.crore_spread, 'tab1');
+                        renderCrorePillBadges(data.crore_spread, 'tab6');
+                    }
+                }
+            } catch (e) {
+                console.error("Line mapping toggle error:", e);
+            }
+        }
+
+        async function copyStockMojoRelayScript() {
+            try {
+                const res = await fetch("/api/stockmojo/relay_script");
+                const script = await res.text();
+                navigator.clipboard.writeText(script).then(() => {
+                    alert("📋 Stock Mojo Live Graph Relay Script copied to clipboard!\n\nOpen https://stockmojo.in/put-call-ratio/nifty in Chrome, open Developer Tools (F12 -> Console), paste and press Enter. It will intercept live graph data and relay it to Port 8510 automatically!");
+                }).catch(() => {
+                    prompt("Copy this script and paste in Chrome Console on https://stockmojo.in/put-call-ratio/nifty:", script);
+                });
+            } catch (e) {
+                alert("Error fetching relay script: " + e.message);
+            }
+        }
+
+        function openLiveGraphModal() {
+            const m = document.getElementById("liveGraphModal");
+            if (m) m.style.display = "flex";
+        }
+
+        function closeLiveGraphModal() {
+            const m = document.getElementById("liveGraphModal");
+            if (m) m.style.display = "none";
+        }
+
+        async function submitQuickLiveGraph() {
+            const rawJson = (document.getElementById("quickJsonPaste")?.value || "").trim();
+            let payload = {};
+            if (rawJson) {
+                try {
+                    payload = JSON.parse(rawJson);
+                } catch (e) {
+                    payload = { raw_input: rawJson };
+                }
+            } else {
+                const pChg = parseFloat(document.getElementById("quickPutOiChg")?.value);
+                const cChg = parseFloat(document.getElementById("quickCallOiChg")?.value);
+                const pTot = parseFloat(document.getElementById("quickPutOiTot")?.value);
+                const cTot = parseFloat(document.getElementById("quickCallOiTot")?.value);
+                payload = {
+                    oi_change_red_cr: !isNaN(pChg) ? pChg : 3.02,
+                    oi_change_green_cr: !isNaN(cChg) ? cChg : 2.13,
+                    total_oi_red_cr: !isNaN(pTot) ? pTot : 18.33,
+                    total_oi_green_cr: !isNaN(cTot) ? cTot : 16.26,
+                    time_ist: new Date().toLocaleTimeString('en-GB')
+                };
+            }
+
+            try {
+                const res = await fetch("/api/stockmojo/live_graph_ingest", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ response_data: payload })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    alert("✔ Live graph values ingested! Exact points active.");
+                    closeLiveGraphModal();
+                    if (data.crore_spread) {
+                        renderCrorePillBadges(data.crore_spread, 'tab1');
+                        renderCrorePillBadges(data.crore_spread, 'tab6');
+                    }
+                    if (data.synergy) {
+                        updateLiveSummaryBanner(data.synergy);
+                    }
+                } else {
+                    alert("Ingest error: " + (data.error || "Unknown"));
+                }
+            } catch (e) {
+                alert("Network error: " + e.message);
+            }
+        }
+
         function renderCrorePillBadges(crore, prefix) {
             if (!crore) return;
             const cChgEl = document.getElementById(`${prefix}PillCallOiChg`);
@@ -3363,29 +3522,61 @@
             const domEl = document.getElementById(`${prefix}WriterDomBadge`);
             const lastPingEl = document.getElementById(`${prefix}JwtLastPing`);
 
-            if (cChgEl && crore.call_oi_chg_cr !== undefined) {
+            if (crore.line_mapping) {
+                updateMappingButtons(crore.line_mapping);
+            }
+
+            // Stop displaying stale yesterday's .xls values if live data has not synced yet
+            if (crore.is_live_synced === false || crore.call_oi_chg_cr === null || crore.call_oi_chg_cr === undefined) {
+                if (cChgEl) cChgEl.textContent = "🟢 Call Chg: ⏳ WAITING FOR LIVE SYNC";
+                if (pChgEl) pChgEl.textContent = "🔴 Put Chg: ⏳ WAITING FOR LIVE SYNC";
+                if (whoChgEl) {
+                    whoChgEl.textContent = "WAITING FOR LIVE SYNC ⏳";
+                    whoChgEl.style.color = "#f59e0b";
+                }
+                if (pTotEl) pTotEl.textContent = "🔴 Put Total: ⏳ WAITING FOR LIVE SYNC";
+                if (cTotEl) cTotEl.textContent = "🟢 Call Total: ⏳ WAITING FOR LIVE SYNC";
+                if (whoTotEl) {
+                    whoTotEl.textContent = "WAITING FOR LIVE SYNC ⏳";
+                    whoTotEl.style.color = "#f59e0b";
+                }
+                if (domEl) {
+                    domEl.textContent = "WAITING FOR LIVE SYNC ⏳";
+                    domEl.style.color = "#f59e0b";
+                }
+                if (lastPingEl && crore.auth_status && crore.auth_status.last_ping) {
+                    lastPingEl.textContent = `Last Ping: ${crore.auth_status.last_ping}`;
+                }
+                return;
+            }
+
+            // Exact Live Values ([-1])
+            const diffChg = Math.abs(crore.call_oi_chg_cr - crore.put_oi_chg_cr).toFixed(2);
+            const diffTot = Math.abs(crore.call_total_oi_cr - crore.put_total_oi_cr).toFixed(2);
+
+            if (cChgEl) {
                 cChgEl.textContent = `🟢 Call Chg: ${crore.call_oi_chg_cr.toFixed(2)} Cr`;
             }
-            if (pChgEl && crore.put_oi_chg_cr !== undefined) {
+            if (pChgEl) {
                 pChgEl.textContent = `🔴 Put Chg: ${crore.put_oi_chg_cr.toFixed(2)} Cr`;
             }
             if (whoChgEl && crore.who_is_more_chg) {
-                whoChgEl.textContent = crore.who_is_more_chg;
-                whoChgEl.style.color = crore.who_is_more_chg_side === "PUT" ? "var(--emerald)" : (crore.who_is_more_chg_side === "CALL" ? "#38bdf8" : "var(--text-main)");
+                whoChgEl.textContent = `${crore.who_is_more_chg} (diff ${diffChg} Cr)`;
+                whoChgEl.style.color = crore.who_is_more_chg_side === "PUT" ? "var(--emerald)" : (crore.who_is_more_chg_side === "CALL" ? "#ef4444" : "var(--text-main)");
             }
-            if (pTotEl && crore.put_total_oi_cr !== undefined) {
+            if (pTotEl) {
                 pTotEl.textContent = `🔴 Put Total: ${crore.put_total_oi_cr.toFixed(2)} Cr`;
             }
-            if (cTotEl && crore.call_total_oi_cr !== undefined) {
+            if (cTotEl) {
                 cTotEl.textContent = `🟢 Call Total: ${crore.call_total_oi_cr.toFixed(2)} Cr`;
             }
             if (whoTotEl && crore.who_is_more_total) {
-                whoTotEl.textContent = crore.who_is_more_total;
-                whoTotEl.style.color = crore.who_is_more_total_side === "PUT" ? "var(--emerald)" : (crore.who_is_more_total_side === "CALL" ? "#38bdf8" : "var(--text-main)");
+                whoTotEl.textContent = `${crore.who_is_more_total} (diff ${diffTot} Cr)`;
+                whoTotEl.style.color = crore.who_is_more_total_side === "PUT" ? "var(--emerald)" : (crore.who_is_more_total_side === "CALL" ? "#ef4444" : "var(--text-main)");
             }
             if (domEl && crore.writer_dominance_label) {
                 domEl.textContent = crore.writer_dominance_label;
-                domEl.style.color = crore.writer_dominance === "PUT_WRITERS_DOMINANT" ? "var(--emerald)" : (crore.writer_dominance === "CALL_WRITERS_DOMINANT" ? "var(--crimson)" : "var(--text-dim)");
+                domEl.style.color = crore.writer_dominance.includes("PUT") ? "var(--emerald)" : (crore.writer_dominance.includes("CALL") ? "var(--crimson)" : "var(--text-dim)");
             }
             if (lastPingEl && crore.auth_status && crore.auth_status.last_ping) {
                 lastPingEl.textContent = `Last Ping: ${crore.auth_status.last_ping}`;
