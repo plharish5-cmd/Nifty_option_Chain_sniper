@@ -1,0 +1,2995 @@
+{
+  "title": "Port 8510 Advanced Chart Geometry & Contact Backtest Report",
+  "script": "scripts/backtest_ma_geometry.py",
+  "timestamp": "2026-11-05 23:14:46 IST",
+  "execution_mode": "PAPER",
+  "lot_size": 65,
+  "round_trip_brokerage_inr": 400.0,
+  "multiple_comparison_noise_hurdle_sd": 2.0,
+  "total_measures_in_primary": 16,
+  "baseline_statistics": {
+    "variant_a_all": {
+      "n": 2378,
+      "win_rate": 51.9,
+      "net_inr_per_trade": -330.72,
+      "profit_factor": 0.31
+    },
+    "variant_b_all": {
+      "n": 1120,
+      "win_rate": 55.6,
+      "net_inr_per_trade": -281.82,
+      "profit_factor": 0.4
+    },
+    "variant_e_all": {
+      "n": 80,
+      "win_rate": 57.5,
+      "net_inr_per_trade": -144.38,
+      "profit_factor": 0.72
+    }
+  },
+  "primary_analysis_locked": {
+    "description": "Variant A (Raw 15m 8 EMA Touch), Fixed 40/40, EMA(4) vs EMA(8), lot 65, Rs400 brokerage",
+    "results": [
+      {
+        "key": "m01_penetration_depth",
+        "name": "8-EMA Contact Penetration Depth",
+        "group": "Group B (Contact)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": -0.014,
+        "spearman_p": 0.642,
+        "cutoff_rule": "GTE -0.007208030683269586",
+        "in_sample": {
+          "n_total": 1171,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": -0.9798,
+              "max_val": -0.1671,
+              "n": 118,
+              "win_rate": 62.7,
+              "net_inr_per_trade": -163.76,
+              "profit_factor": 0.66
+            },
+            {
+              "decile": 2,
+              "min_val": -0.1664,
+              "max_val": -0.0072,
+              "n": 117,
+              "win_rate": 48.7,
+              "net_inr_per_trade": -408.24,
+              "profit_factor": 0.24
+            },
+            {
+              "decile": 3,
+              "min_val": -0.0061,
+              "max_val": 0.178,
+              "n": 117,
+              "win_rate": 49.6,
+              "net_inr_per_trade": -326.15,
+              "profit_factor": 0.34
+            },
+            {
+              "decile": 4,
+              "min_val": 0.1805,
+              "max_val": 0.3516,
+              "n": 117,
+              "win_rate": 55.6,
+              "net_inr_per_trade": -403.1,
+              "profit_factor": 0.26
+            },
+            {
+              "decile": 5,
+              "min_val": 0.354,
+              "max_val": 0.4901,
+              "n": 117,
+              "win_rate": 53.8,
+              "net_inr_per_trade": -267.68,
+              "profit_factor": 0.39
+            },
+            {
+              "decile": 6,
+              "min_val": 0.4915,
+              "max_val": 0.6118,
+              "n": 118,
+              "win_rate": 51.7,
+              "net_inr_per_trade": -250.99,
+              "profit_factor": 0.47
+            },
+            {
+              "decile": 7,
+              "min_val": 0.6135,
+              "max_val": 0.7543,
+              "n": 116,
+              "win_rate": 44.8,
+              "net_inr_per_trade": -464.55,
+              "profit_factor": 0.15
+            },
+            {
+              "decile": 8,
+              "min_val": 0.7544,
+              "max_val": 0.9061,
+              "n": 117,
+              "win_rate": 46.2,
+              "net_inr_per_trade": -404.81,
+              "profit_factor": 0.23
+            },
+            {
+              "decile": 9,
+              "min_val": 0.9144,
+              "max_val": 1.141,
+              "n": 117,
+              "win_rate": 54.7,
+              "net_inr_per_trade": -278.91,
+              "profit_factor": 0.34
+            },
+            {
+              "decile": 10,
+              "min_val": 1.1566,
+              "max_val": 2.9059,
+              "n": 117,
+              "win_rate": 58.1,
+              "net_inr_per_trade": -255.72,
+              "profit_factor": 0.43
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 961,
+          "win_rate": 50.6,
+          "net_inr_per_trade": -350.14,
+          "profit_factor": 0.25,
+          "net_inr_ex_top1": -353.0,
+          "net_inr_ex_top3": -357.44,
+          "net_inr_ex_top5": -360.92,
+          "bootstrap_ci_95": [
+            -389.7,
+            -307.58
+          ],
+          "z_score_sd": -16.74,
+          "direction_control_short_net": -169.11,
+          "directional_advantage": -181.02
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-350.14)",
+          "PF < 1.30 (0.25)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-360.92)",
+          "Z-score -16.74 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-181.02)"
+        ]
+      },
+      {
+        "key": "m02_wick_rejection_pinbar",
+        "name": "Contact Wick Rejection (Pin-Bar)",
+        "group": "Group B (Contact)",
+        "status": "EVALUATED",
+        "shape": "MONOTONE_NEGATIVE",
+        "spearman_rho": -0.051,
+        "spearman_p": 0.0789,
+        "cutoff_rule": "LTE 0.7538304392236419",
+        "in_sample": {
+          "n_total": 1171,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": 0.0,
+              "max_val": 0.0831,
+              "n": 119,
+              "win_rate": 56.3,
+              "net_inr_per_trade": -244.99,
+              "profit_factor": 0.49
+            },
+            {
+              "decile": 2,
+              "min_val": 0.0838,
+              "max_val": 0.1991,
+              "n": 116,
+              "win_rate": 59.5,
+              "net_inr_per_trade": -255.9,
+              "profit_factor": 0.44
+            },
+            {
+              "decile": 3,
+              "min_val": 0.2016,
+              "max_val": 0.3127,
+              "n": 117,
+              "win_rate": 48.7,
+              "net_inr_per_trade": -397.2,
+              "profit_factor": 0.27
+            },
+            {
+              "decile": 4,
+              "min_val": 0.3165,
+              "max_val": 0.4291,
+              "n": 117,
+              "win_rate": 52.1,
+              "net_inr_per_trade": -297.55,
+              "profit_factor": 0.37
+            },
+            {
+              "decile": 5,
+              "min_val": 0.4303,
+              "max_val": 0.5483,
+              "n": 117,
+              "win_rate": 57.3,
+              "net_inr_per_trade": -265.79,
+              "profit_factor": 0.41
+            },
+            {
+              "decile": 6,
+              "min_val": 0.5484,
+              "max_val": 0.6427,
+              "n": 117,
+              "win_rate": 52.1,
+              "net_inr_per_trade": -388.72,
+              "profit_factor": 0.24
+            },
+            {
+              "decile": 7,
+              "min_val": 0.6435,
+              "max_val": 0.7538,
+              "n": 118,
+              "win_rate": 53.4,
+              "net_inr_per_trade": -311.27,
+              "profit_factor": 0.33
+            },
+            {
+              "decile": 8,
+              "min_val": 0.7547,
+              "max_val": 0.8569,
+              "n": 116,
+              "win_rate": 50.9,
+              "net_inr_per_trade": -305.66,
+              "profit_factor": 0.36
+            },
+            {
+              "decile": 9,
+              "min_val": 0.8574,
+              "max_val": 0.9361,
+              "n": 118,
+              "win_rate": 47.5,
+              "net_inr_per_trade": -403.55,
+              "profit_factor": 0.28
+            },
+            {
+              "decile": 10,
+              "min_val": 0.9368,
+              "max_val": 1.0,
+              "n": 116,
+              "win_rate": 48.3,
+              "net_inr_per_trade": -350.35,
+              "profit_factor": 0.29
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 863,
+          "win_rate": 52.3,
+          "net_inr_per_trade": -335.58,
+          "profit_factor": 0.28,
+          "net_inr_ex_top1": -338.76,
+          "net_inr_ex_top3": -343.3,
+          "net_inr_ex_top5": -346.9,
+          "bootstrap_ci_95": [
+            -382.27,
+            -284.39
+          ],
+          "z_score_sd": -14.49,
+          "direction_control_short_net": -236.06,
+          "directional_advantage": -99.53
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-335.58)",
+          "PF < 1.30 (0.28)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-346.90)",
+          "Z-score -14.49 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-99.53)"
+        ]
+      },
+      {
+        "key": "m03_whipsaw_cross_count_12",
+        "name": "12-Bar Whip-Saw Count (Chop)",
+        "group": "Group B (Contact)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": 0.006,
+        "spearman_p": 0.8264,
+        "cutoff_rule": "GTE 0.0",
+        "in_sample": {
+          "n_total": 1171,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": 0.0,
+              "max_val": 1.0,
+              "n": 797,
+              "win_rate": 52.2,
+              "net_inr_per_trade": -320.31,
+              "profit_factor": 0.36
+            },
+            {
+              "decile": 2,
+              "min_val": 2.0,
+              "max_val": 2.0,
+              "n": 232,
+              "win_rate": 51.3,
+              "net_inr_per_trade": -344.49,
+              "profit_factor": 0.31
+            },
+            {
+              "decile": 3,
+              "min_val": 3.0,
+              "max_val": 3.0,
+              "n": 105,
+              "win_rate": 55.2,
+              "net_inr_per_trade": -317.77,
+              "profit_factor": 0.31
+            },
+            {
+              "decile": 4,
+              "min_val": 4.0,
+              "max_val": 6.0,
+              "n": 37,
+              "win_rate": 62.2,
+              "net_inr_per_trade": -231.6,
+              "profit_factor": 0.39
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 1207,
+          "win_rate": 51.3,
+          "net_inr_per_trade": -339.12,
+          "profit_factor": 0.28,
+          "net_inr_ex_top1": -341.39,
+          "net_inr_ex_top3": -345.14,
+          "net_inr_ex_top5": -348.15,
+          "bootstrap_ci_95": [
+            -375.14,
+            -298.21
+          ],
+          "z_score_sd": -17.11,
+          "direction_control_short_net": -217.84,
+          "directional_advantage": -121.27
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-339.12)",
+          "PF < 1.30 (0.28)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-348.15)",
+          "Z-score -17.11 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-121.27)"
+        ]
+      },
+      {
+        "key": "m04_slope_1h_8ema",
+        "name": "1H 8-EMA Continuous Slope",
+        "group": "Group B (1H Trend)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": 0.085,
+        "spearman_p": 0.0038,
+        "cutoff_rule": "GTE -0.2509958842229464",
+        "in_sample": {
+          "n_total": 1168,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": -0.8438,
+              "max_val": -0.3625,
+              "n": 118,
+              "win_rate": 50.0,
+              "net_inr_per_trade": -341.31,
+              "profit_factor": 0.29
+            },
+            {
+              "decile": 2,
+              "min_val": -0.3624,
+              "max_val": -0.251,
+              "n": 117,
+              "win_rate": 48.7,
+              "net_inr_per_trade": -440.08,
+              "profit_factor": 0.21
+            },
+            {
+              "decile": 3,
+              "min_val": -0.2497,
+              "max_val": -0.1658,
+              "n": 116,
+              "win_rate": 47.4,
+              "net_inr_per_trade": -418.65,
+              "profit_factor": 0.23
+            },
+            {
+              "decile": 4,
+              "min_val": -0.165,
+              "max_val": -0.1016,
+              "n": 117,
+              "win_rate": 46.2,
+              "net_inr_per_trade": -363.17,
+              "profit_factor": 0.25
+            },
+            {
+              "decile": 5,
+              "min_val": -0.1013,
+              "max_val": -0.0294,
+              "n": 116,
+              "win_rate": 46.6,
+              "net_inr_per_trade": -374.77,
+              "profit_factor": 0.28
+            },
+            {
+              "decile": 6,
+              "min_val": -0.021,
+              "max_val": 0.0329,
+              "n": 119,
+              "win_rate": 56.3,
+              "net_inr_per_trade": -257.86,
+              "profit_factor": 0.45
+            },
+            {
+              "decile": 7,
+              "min_val": 0.0332,
+              "max_val": 0.1031,
+              "n": 117,
+              "win_rate": 62.4,
+              "net_inr_per_trade": -195.33,
+              "profit_factor": 0.52
+            },
+            {
+              "decile": 8,
+              "min_val": 0.1041,
+              "max_val": 0.1893,
+              "n": 117,
+              "win_rate": 52.1,
+              "net_inr_per_trade": -366.06,
+              "profit_factor": 0.29
+            },
+            {
+              "decile": 9,
+              "min_val": 0.192,
+              "max_val": 0.2747,
+              "n": 114,
+              "win_rate": 53.5,
+              "net_inr_per_trade": -280.61,
+              "profit_factor": 0.43
+            },
+            {
+              "decile": 10,
+              "min_val": 0.2747,
+              "max_val": 0.8311,
+              "n": 117,
+              "win_rate": 62.4,
+              "net_inr_per_trade": -197.58,
+              "profit_factor": 0.55
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 957,
+          "win_rate": 51.8,
+          "net_inr_per_trade": -333.09,
+          "profit_factor": 0.3,
+          "net_inr_ex_top1": -335.45,
+          "net_inr_ex_top3": -339.85,
+          "net_inr_ex_top5": -343.31,
+          "bootstrap_ci_95": [
+            -376.89,
+            -289.87
+          ],
+          "z_score_sd": -14.8,
+          "direction_control_short_net": -249.9,
+          "directional_advantage": -83.19
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-333.09)",
+          "PF < 1.30 (0.30)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-343.31)",
+          "Z-score -14.8 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-83.19)"
+        ]
+      },
+      {
+        "key": "m05_fut_volume_surge",
+        "name": "NIFTY Futures Volume Surge Ratio",
+        "group": "Group B (Volume \u2014 BLOCKED)",
+        "status": "BLOCKED",
+        "reason": "Blocked per Addendum C: NIFTY Futures volume covers only 09-09 to 11-05 (valid n=356/2378, covering ~16% of sample). NIFTY spot has no meaningful volume; result cannot reach BUILD hurdle.",
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Measure 17 blocked due to truncated futures volume coverage."
+        ]
+      },
+      {
+        "key": "m06_separation_signed",
+        "name": "Separation (Signed)",
+        "group": "Group A (Line Geometry)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": 0.062,
+        "spearman_p": 0.0342,
+        "cutoff_rule": "GTE -0.26317684807059244",
+        "in_sample": {
+          "n_total": 1171,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": -0.9728,
+              "max_val": -0.3928,
+              "n": 118,
+              "win_rate": 51.7,
+              "net_inr_per_trade": -335.29,
+              "profit_factor": 0.3
+            },
+            {
+              "decile": 2,
+              "min_val": -0.3914,
+              "max_val": -0.2632,
+              "n": 118,
+              "win_rate": 43.2,
+              "net_inr_per_trade": -460.72,
+              "profit_factor": 0.13
+            },
+            {
+              "decile": 3,
+              "min_val": -0.261,
+              "max_val": -0.1837,
+              "n": 117,
+              "win_rate": 47.0,
+              "net_inr_per_trade": -370.12,
+              "profit_factor": 0.23
+            },
+            {
+              "decile": 4,
+              "min_val": -0.1836,
+              "max_val": -0.1103,
+              "n": 117,
+              "win_rate": 53.0,
+              "net_inr_per_trade": -227.53,
+              "profit_factor": 0.46
+            },
+            {
+              "decile": 5,
+              "min_val": -0.1094,
+              "max_val": -0.0306,
+              "n": 116,
+              "win_rate": 54.3,
+              "net_inr_per_trade": -439.85,
+              "profit_factor": 0.24
+            },
+            {
+              "decile": 6,
+              "min_val": -0.0298,
+              "max_val": 0.042,
+              "n": 117,
+              "win_rate": 49.6,
+              "net_inr_per_trade": -334.03,
+              "profit_factor": 0.34
+            },
+            {
+              "decile": 7,
+              "min_val": 0.0422,
+              "max_val": 0.1203,
+              "n": 117,
+              "win_rate": 57.3,
+              "net_inr_per_trade": -307.4,
+              "profit_factor": 0.32
+            },
+            {
+              "decile": 8,
+              "min_val": 0.1206,
+              "max_val": 0.2001,
+              "n": 117,
+              "win_rate": 62.4,
+              "net_inr_per_trade": -138.44,
+              "profit_factor": 0.62
+            },
+            {
+              "decile": 9,
+              "min_val": 0.2039,
+              "max_val": 0.316,
+              "n": 118,
+              "win_rate": 44.9,
+              "net_inr_per_trade": -364.89,
+              "profit_factor": 0.31
+            },
+            {
+              "decile": 10,
+              "min_val": 0.316,
+              "max_val": 0.8249,
+              "n": 116,
+              "win_rate": 62.9,
+              "net_inr_per_trade": -241.09,
+              "profit_factor": 0.57
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 964,
+          "win_rate": 52.4,
+          "net_inr_per_trade": -325.86,
+          "profit_factor": 0.31,
+          "net_inr_ex_top1": -328.2,
+          "net_inr_ex_top3": -332.56,
+          "net_inr_ex_top5": -335.98,
+          "bootstrap_ci_95": [
+            -369.08,
+            -281.4
+          ],
+          "z_score_sd": -14.35,
+          "direction_control_short_net": -253.57,
+          "directional_advantage": -72.29
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-325.86)",
+          "PF < 1.30 (0.31)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-335.98)",
+          "Z-score -14.35 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-72.29)"
+        ]
+      },
+      {
+        "key": "m07_separation_abs",
+        "name": "Separation (Absolute)",
+        "group": "Group A (Line Geometry)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": -0.007,
+        "spearman_p": 0.8009,
+        "cutoff_rule": "GTE 0.07674001986617496",
+        "in_sample": {
+          "n_total": 1171,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": 0.0,
+              "max_val": 0.04,
+              "n": 118,
+              "win_rate": 51.7,
+              "net_inr_per_trade": -310.39,
+              "profit_factor": 0.36
+            },
+            {
+              "decile": 2,
+              "min_val": 0.0402,
+              "max_val": 0.0767,
+              "n": 118,
+              "win_rate": 50.8,
+              "net_inr_per_trade": -481.82,
+              "profit_factor": 0.18
+            },
+            {
+              "decile": 3,
+              "min_val": 0.0775,
+              "max_val": 0.1161,
+              "n": 116,
+              "win_rate": 57.8,
+              "net_inr_per_trade": -297.2,
+              "profit_factor": 0.37
+            },
+            {
+              "decile": 4,
+              "min_val": 0.1168,
+              "max_val": 0.1521,
+              "n": 117,
+              "win_rate": 56.4,
+              "net_inr_per_trade": -196.89,
+              "profit_factor": 0.5
+            },
+            {
+              "decile": 5,
+              "min_val": 0.1545,
+              "max_val": 0.1916,
+              "n": 117,
+              "win_rate": 58.1,
+              "net_inr_per_trade": -211.41,
+              "profit_factor": 0.5
+            },
+            {
+              "decile": 6,
+              "min_val": 0.1922,
+              "max_val": 0.2325,
+              "n": 117,
+              "win_rate": 48.7,
+              "net_inr_per_trade": -303.82,
+              "profit_factor": 0.33
+            },
+            {
+              "decile": 7,
+              "min_val": 0.2328,
+              "max_val": 0.28,
+              "n": 117,
+              "win_rate": 47.9,
+              "net_inr_per_trade": -391.48,
+              "profit_factor": 0.23
+            },
+            {
+              "decile": 8,
+              "min_val": 0.2807,
+              "max_val": 0.3514,
+              "n": 117,
+              "win_rate": 44.4,
+              "net_inr_per_trade": -442.3,
+              "profit_factor": 0.23
+            },
+            {
+              "decile": 9,
+              "min_val": 0.3517,
+              "max_val": 0.4494,
+              "n": 117,
+              "win_rate": 51.3,
+              "net_inr_per_trade": -414.26,
+              "profit_factor": 0.27
+            },
+            {
+              "decile": 10,
+              "min_val": 0.4512,
+              "max_val": 0.9728,
+              "n": 117,
+              "win_rate": 59.0,
+              "net_inr_per_trade": -169.68,
+              "profit_factor": 0.62
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 971,
+          "win_rate": 50.8,
+          "net_inr_per_trade": -337.02,
+          "profit_factor": 0.29,
+          "net_inr_ex_top1": -339.84,
+          "net_inr_ex_top3": -344.51,
+          "net_inr_ex_top5": -348.26,
+          "bootstrap_ci_95": [
+            -379.03,
+            -290.62
+          ],
+          "z_score_sd": -15.34,
+          "direction_control_short_net": -230.08,
+          "directional_advantage": -106.94
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-337.02)",
+          "PF < 1.30 (0.29)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-348.26)",
+          "Z-score -15.34 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-106.94)"
+        ]
+      },
+      {
+        "key": "m08_separation_percentile",
+        "name": "Separation Percentile",
+        "group": "Group A (Line Geometry)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": -0.008,
+        "spearman_p": 0.7741,
+        "cutoff_rule": "GTE 11.471321695760599",
+        "in_sample": {
+          "n_total": 1161,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": 0.3204,
+              "max_val": 5.6384,
+              "n": 117,
+              "win_rate": 48.7,
+              "net_inr_per_trade": -380.17,
+              "profit_factor": 0.29
+            },
+            {
+              "decile": 2,
+              "min_val": 5.6673,
+              "max_val": 11.4713,
+              "n": 116,
+              "win_rate": 52.6,
+              "net_inr_per_trade": -427.58,
+              "profit_factor": 0.21
+            },
+            {
+              "decile": 3,
+              "min_val": 11.4796,
+              "max_val": 18.0835,
+              "n": 116,
+              "win_rate": 60.3,
+              "net_inr_per_trade": -245.58,
+              "profit_factor": 0.43
+            },
+            {
+              "decile": 4,
+              "min_val": 18.2063,
+              "max_val": 24.5714,
+              "n": 116,
+              "win_rate": 53.4,
+              "net_inr_per_trade": -276.67,
+              "profit_factor": 0.37
+            },
+            {
+              "decile": 5,
+              "min_val": 24.5855,
+              "max_val": 31.8008,
+              "n": 116,
+              "win_rate": 60.3,
+              "net_inr_per_trade": -138.33,
+              "profit_factor": 0.63
+            },
+            {
+              "decile": 6,
+              "min_val": 31.8637,
+              "max_val": 39.8225,
+              "n": 116,
+              "win_rate": 51.7,
+              "net_inr_per_trade": -351.13,
+              "profit_factor": 0.27
+            },
+            {
+              "decile": 7,
+              "min_val": 39.9257,
+              "max_val": 47.487,
+              "n": 117,
+              "win_rate": 44.4,
+              "net_inr_per_trade": -423.2,
+              "profit_factor": 0.2
+            },
+            {
+              "decile": 8,
+              "min_val": 47.6283,
+              "max_val": 58.1214,
+              "n": 115,
+              "win_rate": 44.3,
+              "net_inr_per_trade": -424.3,
+              "profit_factor": 0.24
+            },
+            {
+              "decile": 9,
+              "min_val": 58.1484,
+              "max_val": 69.5953,
+              "n": 117,
+              "win_rate": 56.4,
+              "net_inr_per_trade": -353.47,
+              "profit_factor": 0.33
+            },
+            {
+              "decile": 10,
+              "min_val": 69.9137,
+              "max_val": 100.0,
+              "n": 115,
+              "win_rate": 53.0,
+              "net_inr_per_trade": -235.47,
+              "profit_factor": 0.52
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 986,
+          "win_rate": 50.9,
+          "net_inr_per_trade": -337.27,
+          "profit_factor": 0.28,
+          "net_inr_ex_top1": -340.05,
+          "net_inr_ex_top3": -344.65,
+          "net_inr_ex_top5": -348.34,
+          "bootstrap_ci_95": [
+            -378.37,
+            -290.63
+          ],
+          "z_score_sd": -15.5,
+          "direction_control_short_net": -229.04,
+          "directional_advantage": -108.23
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-337.27)",
+          "PF < 1.30 (0.28)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-348.34)",
+          "Z-score -15.5 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-108.23)"
+        ]
+      },
+      {
+        "key": "m09_ma4_slope",
+        "name": "MA4 Slope (Normalized Angle)",
+        "group": "Group A (Line Geometry)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": 0.045,
+        "spearman_p": 0.1237,
+        "cutoff_rule": "GTE -0.14766966720174174",
+        "in_sample": {
+          "n_total": 1169,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": -0.7035,
+              "max_val": -0.2327,
+              "n": 117,
+              "win_rate": 47.9,
+              "net_inr_per_trade": -396.08,
+              "profit_factor": 0.22
+            },
+            {
+              "decile": 2,
+              "min_val": -0.2327,
+              "max_val": -0.1477,
+              "n": 118,
+              "win_rate": 55.1,
+              "net_inr_per_trade": -324.69,
+              "profit_factor": 0.29
+            },
+            {
+              "decile": 3,
+              "min_val": -0.1465,
+              "max_val": -0.1033,
+              "n": 116,
+              "win_rate": 50.9,
+              "net_inr_per_trade": -271.26,
+              "profit_factor": 0.4
+            },
+            {
+              "decile": 4,
+              "min_val": -0.1033,
+              "max_val": -0.054,
+              "n": 117,
+              "win_rate": 47.9,
+              "net_inr_per_trade": -363.59,
+              "profit_factor": 0.26
+            },
+            {
+              "decile": 5,
+              "min_val": -0.0533,
+              "max_val": -0.0109,
+              "n": 117,
+              "win_rate": 50.4,
+              "net_inr_per_trade": -390.05,
+              "profit_factor": 0.28
+            },
+            {
+              "decile": 6,
+              "min_val": -0.0108,
+              "max_val": 0.0299,
+              "n": 116,
+              "win_rate": 56.9,
+              "net_inr_per_trade": -272.74,
+              "profit_factor": 0.41
+            },
+            {
+              "decile": 7,
+              "min_val": 0.0306,
+              "max_val": 0.0695,
+              "n": 118,
+              "win_rate": 50.8,
+              "net_inr_per_trade": -384.49,
+              "profit_factor": 0.27
+            },
+            {
+              "decile": 8,
+              "min_val": 0.07,
+              "max_val": 0.1256,
+              "n": 117,
+              "win_rate": 49.6,
+              "net_inr_per_trade": -352.8,
+              "profit_factor": 0.31
+            },
+            {
+              "decile": 9,
+              "min_val": 0.1258,
+              "max_val": 0.1968,
+              "n": 116,
+              "win_rate": 57.8,
+              "net_inr_per_trade": -249.66,
+              "profit_factor": 0.42
+            },
+            {
+              "decile": 10,
+              "min_val": 0.1974,
+              "max_val": 0.6425,
+              "n": 117,
+              "win_rate": 58.1,
+              "net_inr_per_trade": -238.67,
+              "profit_factor": 0.56
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 942,
+          "win_rate": 53.3,
+          "net_inr_per_trade": -314.43,
+          "profit_factor": 0.32,
+          "net_inr_ex_top1": -316.81,
+          "net_inr_ex_top3": -321.25,
+          "net_inr_ex_top5": -324.72,
+          "bootstrap_ci_95": [
+            -358.16,
+            -269.64
+          ],
+          "z_score_sd": -13.63,
+          "direction_control_short_net": -268.02,
+          "directional_advantage": -46.41
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-314.43)",
+          "PF < 1.30 (0.32)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-324.72)",
+          "Z-score -13.63 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-46.41)"
+        ]
+      },
+      {
+        "key": "m10_ema8_slope",
+        "name": "EMA8 Slope (Underlying Trend)",
+        "group": "Group A (Line Geometry)",
+        "status": "EVALUATED",
+        "shape": "MONOTONE_POSITIVE",
+        "spearman_rho": 0.075,
+        "spearman_p": 0.01,
+        "cutoff_rule": "GTE -0.10685324207747796",
+        "in_sample": {
+          "n_total": 1169,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": -0.5314,
+              "max_val": -0.2166,
+              "n": 117,
+              "win_rate": 49.6,
+              "net_inr_per_trade": -362.2,
+              "profit_factor": 0.26
+            },
+            {
+              "decile": 2,
+              "min_val": -0.2156,
+              "max_val": -0.1521,
+              "n": 117,
+              "win_rate": 43.6,
+              "net_inr_per_trade": -436.54,
+              "profit_factor": 0.16
+            },
+            {
+              "decile": 3,
+              "min_val": -0.1516,
+              "max_val": -0.107,
+              "n": 117,
+              "win_rate": 45.3,
+              "net_inr_per_trade": -342.55,
+              "profit_factor": 0.31
+            },
+            {
+              "decile": 4,
+              "min_val": -0.1067,
+              "max_val": -0.0585,
+              "n": 117,
+              "win_rate": 52.1,
+              "net_inr_per_trade": -348.99,
+              "profit_factor": 0.28
+            },
+            {
+              "decile": 5,
+              "min_val": -0.0583,
+              "max_val": -0.0147,
+              "n": 118,
+              "win_rate": 50.0,
+              "net_inr_per_trade": -399.83,
+              "profit_factor": 0.28
+            },
+            {
+              "decile": 6,
+              "min_val": -0.0145,
+              "max_val": 0.0274,
+              "n": 115,
+              "win_rate": 60.9,
+              "net_inr_per_trade": -239.96,
+              "profit_factor": 0.44
+            },
+            {
+              "decile": 7,
+              "min_val": 0.0277,
+              "max_val": 0.0632,
+              "n": 117,
+              "win_rate": 55.6,
+              "net_inr_per_trade": -321.87,
+              "profit_factor": 0.3
+            },
+            {
+              "decile": 8,
+              "min_val": 0.0636,
+              "max_val": 0.1127,
+              "n": 118,
+              "win_rate": 57.6,
+              "net_inr_per_trade": -232.24,
+              "profit_factor": 0.44
+            },
+            {
+              "decile": 9,
+              "min_val": 0.1129,
+              "max_val": 0.1667,
+              "n": 116,
+              "win_rate": 51.7,
+              "net_inr_per_trade": -331.96,
+              "profit_factor": 0.32
+            },
+            {
+              "decile": 10,
+              "min_val": 0.17,
+              "max_val": 0.468,
+              "n": 117,
+              "win_rate": 59.0,
+              "net_inr_per_trade": -228.69,
+              "profit_factor": 0.61
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 848,
+          "win_rate": 53.9,
+          "net_inr_per_trade": -309.58,
+          "profit_factor": 0.33,
+          "net_inr_ex_top1": -312.22,
+          "net_inr_ex_top3": -317.13,
+          "net_inr_ex_top5": -320.9,
+          "bootstrap_ci_95": [
+            -350.96,
+            -264.65
+          ],
+          "z_score_sd": -12.71,
+          "direction_control_short_net": -258.99,
+          "directional_advantage": -50.59
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-309.58)",
+          "PF < 1.30 (0.33)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-320.90)",
+          "Z-score -12.71 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-50.59)"
+        ]
+      },
+      {
+        "key": "m11_spread_velocity",
+        "name": "Spread Velocity",
+        "group": "Group A (Line Geometry)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": -0.061,
+        "spearman_p": 0.0373,
+        "cutoff_rule": "GTE -0.06103921459329742",
+        "in_sample": {
+          "n_total": 1170,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": -0.2452,
+              "max_val": -0.1028,
+              "n": 117,
+              "win_rate": 61.5,
+              "net_inr_per_trade": -207.29,
+              "profit_factor": 0.55
+            },
+            {
+              "decile": 2,
+              "min_val": -0.1023,
+              "max_val": -0.0617,
+              "n": 117,
+              "win_rate": 52.1,
+              "net_inr_per_trade": -386.14,
+              "profit_factor": 0.31
+            },
+            {
+              "decile": 3,
+              "min_val": -0.0609,
+              "max_val": -0.0375,
+              "n": 118,
+              "win_rate": 47.5,
+              "net_inr_per_trade": -407.28,
+              "profit_factor": 0.22
+            },
+            {
+              "decile": 4,
+              "min_val": -0.0374,
+              "max_val": -0.0126,
+              "n": 117,
+              "win_rate": 60.7,
+              "net_inr_per_trade": -151.07,
+              "profit_factor": 0.65
+            },
+            {
+              "decile": 5,
+              "min_val": -0.0121,
+              "max_val": 0.0097,
+              "n": 117,
+              "win_rate": 57.3,
+              "net_inr_per_trade": -255.92,
+              "profit_factor": 0.4
+            },
+            {
+              "decile": 6,
+              "min_val": 0.0102,
+              "max_val": 0.0302,
+              "n": 116,
+              "win_rate": 56.9,
+              "net_inr_per_trade": -272.6,
+              "profit_factor": 0.36
+            },
+            {
+              "decile": 7,
+              "min_val": 0.0302,
+              "max_val": 0.0537,
+              "n": 117,
+              "win_rate": 44.4,
+              "net_inr_per_trade": -441.36,
+              "profit_factor": 0.24
+            },
+            {
+              "decile": 8,
+              "min_val": 0.0538,
+              "max_val": 0.0763,
+              "n": 117,
+              "win_rate": 46.2,
+              "net_inr_per_trade": -397.03,
+              "profit_factor": 0.25
+            },
+            {
+              "decile": 9,
+              "min_val": 0.0769,
+              "max_val": 0.1158,
+              "n": 117,
+              "win_rate": 52.1,
+              "net_inr_per_trade": -289.79,
+              "profit_factor": 0.31
+            },
+            {
+              "decile": 10,
+              "min_val": 0.116,
+              "max_val": 0.2772,
+              "n": 117,
+              "win_rate": 47.0,
+              "net_inr_per_trade": -423.75,
+              "profit_factor": 0.25
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 949,
+          "win_rate": 50.3,
+          "net_inr_per_trade": -347.86,
+          "profit_factor": 0.27,
+          "net_inr_ex_top1": -350.25,
+          "net_inr_ex_top3": -354.08,
+          "net_inr_ex_top5": -357.52,
+          "bootstrap_ci_95": [
+            -389.67,
+            -303.59
+          ],
+          "z_score_sd": -15.83,
+          "direction_control_short_net": -227.78,
+          "directional_advantage": -120.08
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-347.86)",
+          "PF < 1.30 (0.27)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-357.52)",
+          "Z-score -15.83 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-120.08)"
+        ]
+      },
+      {
+        "key": "m12_spread_phase",
+        "name": "Spread Phase (+1 Exp, -1 Cont)",
+        "group": "Group A (Line Geometry)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": 0.007,
+        "spearman_p": 0.8169,
+        "cutoff_rule": "GTE -1.0",
+        "in_sample": {
+          "n_total": 1170,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": -1.0,
+              "max_val": 1.0,
+              "n": 1170,
+              "win_rate": 52.6,
+              "net_inr_per_trade": -323.34,
+              "profit_factor": 0.34
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 1207,
+          "win_rate": 51.3,
+          "net_inr_per_trade": -339.12,
+          "profit_factor": 0.28,
+          "net_inr_ex_top1": -341.39,
+          "net_inr_ex_top3": -345.14,
+          "net_inr_ex_top5": -348.15,
+          "bootstrap_ci_95": [
+            -375.14,
+            -298.21
+          ],
+          "z_score_sd": -17.11,
+          "direction_control_short_net": -217.84,
+          "directional_advantage": -121.27
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-339.12)",
+          "PF < 1.30 (0.28)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-348.15)",
+          "Z-score -17.11 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-121.27)"
+        ]
+      },
+      {
+        "key": "m13_ema8_curvature",
+        "name": "EMA8 Curvature (2nd Derivative)",
+        "group": "Group A (Line Geometry)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": -0.043,
+        "spearman_p": 0.1395,
+        "cutoff_rule": "GTE -0.363022573103832",
+        "in_sample": {
+          "n_total": 1169,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": -1.6077,
+              "max_val": -0.6036,
+              "n": 117,
+              "win_rate": 59.0,
+              "net_inr_per_trade": -229.95,
+              "profit_factor": 0.51
+            },
+            {
+              "decile": 2,
+              "min_val": -0.6029,
+              "max_val": -0.3637,
+              "n": 117,
+              "win_rate": 50.4,
+              "net_inr_per_trade": -360.53,
+              "profit_factor": 0.34
+            },
+            {
+              "decile": 3,
+              "min_val": -0.3626,
+              "max_val": -0.21,
+              "n": 117,
+              "win_rate": 53.8,
+              "net_inr_per_trade": -347.91,
+              "profit_factor": 0.32
+            },
+            {
+              "decile": 4,
+              "min_val": -0.2085,
+              "max_val": -0.0893,
+              "n": 117,
+              "win_rate": 56.4,
+              "net_inr_per_trade": -308.24,
+              "profit_factor": 0.29
+            },
+            {
+              "decile": 5,
+              "min_val": -0.0876,
+              "max_val": 0.0361,
+              "n": 117,
+              "win_rate": 57.3,
+              "net_inr_per_trade": -229.47,
+              "profit_factor": 0.5
+            },
+            {
+              "decile": 6,
+              "min_val": 0.0367,
+              "max_val": 0.1496,
+              "n": 116,
+              "win_rate": 49.1,
+              "net_inr_per_trade": -368.58,
+              "profit_factor": 0.29
+            },
+            {
+              "decile": 7,
+              "min_val": 0.1506,
+              "max_val": 0.3101,
+              "n": 118,
+              "win_rate": 51.7,
+              "net_inr_per_trade": -338.88,
+              "profit_factor": 0.28
+            },
+            {
+              "decile": 8,
+              "min_val": 0.3108,
+              "max_val": 0.467,
+              "n": 117,
+              "win_rate": 46.2,
+              "net_inr_per_trade": -368.39,
+              "profit_factor": 0.28
+            },
+            {
+              "decile": 9,
+              "min_val": 0.4751,
+              "max_val": 0.6501,
+              "n": 116,
+              "win_rate": 55.2,
+              "net_inr_per_trade": -288.73,
+              "profit_factor": 0.33
+            },
+            {
+              "decile": 10,
+              "min_val": 0.6501,
+              "max_val": 1.7007,
+              "n": 117,
+              "win_rate": 46.2,
+              "net_inr_per_trade": -405.35,
+              "profit_factor": 0.28
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 961,
+          "win_rate": 50.3,
+          "net_inr_per_trade": -347.51,
+          "profit_factor": 0.27,
+          "net_inr_ex_top1": -350.37,
+          "net_inr_ex_top3": -355.11,
+          "net_inr_ex_top5": -358.92,
+          "bootstrap_ci_95": [
+            -393.25,
+            -301.55
+          ],
+          "z_score_sd": -15.7,
+          "direction_control_short_net": -247.1,
+          "directional_advantage": -100.41
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-347.51)",
+          "PF < 1.30 (0.27)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-358.92)",
+          "Z-score -15.7 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-100.41)"
+        ]
+      },
+      {
+        "key": "m14_adx14",
+        "name": "ADX(14) Trend Strength",
+        "group": "Group A (Regime)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": -0.039,
+        "spearman_p": 0.1823,
+        "cutoff_rule": "GTE 19.09107198176707",
+        "in_sample": {
+          "n_total": 1171,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": 0.0,
+              "max_val": 16.0881,
+              "n": 118,
+              "win_rate": 51.7,
+              "net_inr_per_trade": -284.94,
+              "profit_factor": 0.41
+            },
+            {
+              "decile": 2,
+              "min_val": 16.1124,
+              "max_val": 19.0911,
+              "n": 117,
+              "win_rate": 61.5,
+              "net_inr_per_trade": -213.82,
+              "profit_factor": 0.5
+            },
+            {
+              "decile": 3,
+              "min_val": 19.1559,
+              "max_val": 21.7137,
+              "n": 117,
+              "win_rate": 59.8,
+              "net_inr_per_trade": -221.61,
+              "profit_factor": 0.49
+            },
+            {
+              "decile": 4,
+              "min_val": 21.7481,
+              "max_val": 24.4654,
+              "n": 118,
+              "win_rate": 46.6,
+              "net_inr_per_trade": -388.89,
+              "profit_factor": 0.28
+            },
+            {
+              "decile": 5,
+              "min_val": 24.5473,
+              "max_val": 27.3595,
+              "n": 116,
+              "win_rate": 53.4,
+              "net_inr_per_trade": -329.32,
+              "profit_factor": 0.3
+            },
+            {
+              "decile": 6,
+              "min_val": 27.3683,
+              "max_val": 30.4269,
+              "n": 117,
+              "win_rate": 42.7,
+              "net_inr_per_trade": -430.65,
+              "profit_factor": 0.24
+            },
+            {
+              "decile": 7,
+              "min_val": 30.4387,
+              "max_val": 34.5689,
+              "n": 117,
+              "win_rate": 50.4,
+              "net_inr_per_trade": -330.43,
+              "profit_factor": 0.37
+            },
+            {
+              "decile": 8,
+              "min_val": 34.5787,
+              "max_val": 38.8766,
+              "n": 117,
+              "win_rate": 52.1,
+              "net_inr_per_trade": -347.77,
+              "profit_factor": 0.31
+            },
+            {
+              "decile": 9,
+              "min_val": 38.9166,
+              "max_val": 44.56,
+              "n": 117,
+              "win_rate": 60.7,
+              "net_inr_per_trade": -265.7,
+              "profit_factor": 0.33
+            },
+            {
+              "decile": 10,
+              "min_val": 44.5801,
+              "max_val": 65.4933,
+              "n": 117,
+              "win_rate": 47.0,
+              "net_inr_per_trade": -407.41,
+              "profit_factor": 0.28
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 943,
+          "win_rate": 50.8,
+          "net_inr_per_trade": -359.59,
+          "profit_factor": 0.26,
+          "net_inr_ex_top1": -362.52,
+          "net_inr_ex_top3": -367.37,
+          "net_inr_ex_top5": -370.69,
+          "bootstrap_ci_95": [
+            -398.5,
+            -314.79
+          ],
+          "z_score_sd": -15.92,
+          "direction_control_short_net": -141.38,
+          "directional_advantage": -218.21
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-359.59)",
+          "PF < 1.30 (0.26)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-370.69)",
+          "Z-score -15.92 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-218.21)"
+        ]
+      },
+      {
+        "key": "m15_bb_width_percentile",
+        "name": "BB Width Percentile",
+        "group": "Group A (Regime)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": 0.009,
+        "spearman_p": 0.7483,
+        "cutoff_rule": "GTE 22.699004975124378",
+        "in_sample": {
+          "n_total": 1151,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": 0.1164,
+              "max_val": 10.0534,
+              "n": 116,
+              "win_rate": 52.6,
+              "net_inr_per_trade": -328.58,
+              "profit_factor": 0.24
+            },
+            {
+              "decile": 2,
+              "min_val": 10.0623,
+              "max_val": 22.699,
+              "n": 116,
+              "win_rate": 46.6,
+              "net_inr_per_trade": -398.61,
+              "profit_factor": 0.23
+            },
+            {
+              "decile": 3,
+              "min_val": 22.7405,
+              "max_val": 35.9424,
+              "n": 115,
+              "win_rate": 52.2,
+              "net_inr_per_trade": -345.94,
+              "profit_factor": 0.31
+            },
+            {
+              "decile": 4,
+              "min_val": 35.9712,
+              "max_val": 48.1099,
+              "n": 114,
+              "win_rate": 56.1,
+              "net_inr_per_trade": -287.16,
+              "profit_factor": 0.37
+            },
+            {
+              "decile": 5,
+              "min_val": 48.5976,
+              "max_val": 60.8605,
+              "n": 115,
+              "win_rate": 53.9,
+              "net_inr_per_trade": -347.79,
+              "profit_factor": 0.34
+            },
+            {
+              "decile": 6,
+              "min_val": 60.9162,
+              "max_val": 70.4545,
+              "n": 115,
+              "win_rate": 56.5,
+              "net_inr_per_trade": -286.96,
+              "profit_factor": 0.39
+            },
+            {
+              "decile": 7,
+              "min_val": 70.7692,
+              "max_val": 79.6618,
+              "n": 115,
+              "win_rate": 53.9,
+              "net_inr_per_trade": -240.6,
+              "profit_factor": 0.44
+            },
+            {
+              "decile": 8,
+              "min_val": 79.6825,
+              "max_val": 88.5036,
+              "n": 116,
+              "win_rate": 59.5,
+              "net_inr_per_trade": -283.47,
+              "profit_factor": 0.4
+            },
+            {
+              "decile": 9,
+              "min_val": 88.6969,
+              "max_val": 95.4585,
+              "n": 114,
+              "win_rate": 45.6,
+              "net_inr_per_trade": -450.36,
+              "profit_factor": 0.23
+            },
+            {
+              "decile": 10,
+              "min_val": 95.6202,
+              "max_val": 100.0,
+              "n": 115,
+              "win_rate": 52.2,
+              "net_inr_per_trade": -254.74,
+              "profit_factor": 0.49
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 823,
+          "win_rate": 51.2,
+          "net_inr_per_trade": -334.81,
+          "profit_factor": 0.31,
+          "net_inr_ex_top1": -338.13,
+          "net_inr_ex_top3": -343.64,
+          "net_inr_ex_top5": -348.06,
+          "bootstrap_ci_95": [
+            -386.16,
+            -285.14
+          ],
+          "z_score_sd": -13.21,
+          "direction_control_short_net": -200.0,
+          "directional_advantage": -134.81
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-334.81)",
+          "PF < 1.30 (0.31)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-348.06)",
+          "Z-score -13.21 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-134.81)"
+        ]
+      },
+      {
+        "key": "m16_ma4_angle_deg",
+        "name": "MA4 Angle in Degrees",
+        "group": "Group A (Sanity Check)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "spearman_rho": 0.045,
+        "spearman_p": 0.1208,
+        "cutoff_rule": "GTE -8.400141000953687",
+        "in_sample": {
+          "n_total": 1171,
+          "deciles": [
+            {
+              "decile": 1,
+              "min_val": -35.1247,
+              "max_val": -13.0981,
+              "n": 119,
+              "win_rate": 47.9,
+              "net_inr_per_trade": -394.79,
+              "profit_factor": 0.21
+            },
+            {
+              "decile": 2,
+              "min_val": -13.0379,
+              "max_val": -8.4001,
+              "n": 116,
+              "win_rate": 55.2,
+              "net_inr_per_trade": -324.79,
+              "profit_factor": 0.29
+            },
+            {
+              "decile": 3,
+              "min_val": -8.3331,
+              "max_val": -5.8954,
+              "n": 117,
+              "win_rate": 50.4,
+              "net_inr_per_trade": -273.96,
+              "profit_factor": 0.4
+            },
+            {
+              "decile": 4,
+              "min_val": -5.8213,
+              "max_val": -3.0524,
+              "n": 118,
+              "win_rate": 48.3,
+              "net_inr_per_trade": -360.45,
+              "profit_factor": 0.26
+            },
+            {
+              "decile": 5,
+              "min_val": -3.0389,
+              "max_val": -0.6172,
+              "n": 116,
+              "win_rate": 50.0,
+              "net_inr_per_trade": -402.8,
+              "profit_factor": 0.27
+            },
+            {
+              "decile": 6,
+              "min_val": -0.6071,
+              "max_val": 1.7145,
+              "n": 117,
+              "win_rate": 58.1,
+              "net_inr_per_trade": -236.32,
+              "profit_factor": 0.47
+            },
+            {
+              "decile": 7,
+              "min_val": 1.7549,
+              "max_val": 3.9755,
+              "n": 118,
+              "win_rate": 50.8,
+              "net_inr_per_trade": -384.49,
+              "profit_factor": 0.27
+            },
+            {
+              "decile": 8,
+              "min_val": 4.0055,
+              "max_val": 7.1595,
+              "n": 117,
+              "win_rate": 49.6,
+              "net_inr_per_trade": -352.8,
+              "profit_factor": 0.31
+            },
+            {
+              "decile": 9,
+              "min_val": 7.1686,
+              "max_val": 11.1317,
+              "n": 116,
+              "win_rate": 57.8,
+              "net_inr_per_trade": -249.66,
+              "profit_factor": 0.42
+            },
+            {
+              "decile": 10,
+              "min_val": 11.1691,
+              "max_val": 32.7209,
+              "n": 117,
+              "win_rate": 58.1,
+              "net_inr_per_trade": -238.67,
+              "profit_factor": 0.56
+            }
+          ]
+        },
+        "out_of_sample": {
+          "n_surviving": 942,
+          "win_rate": 53.3,
+          "net_inr_per_trade": -314.43,
+          "profit_factor": 0.32,
+          "net_inr_ex_top1": -316.81,
+          "net_inr_ex_top3": -321.25,
+          "net_inr_ex_top5": -324.72,
+          "bootstrap_ci_95": [
+            -358.16,
+            -269.64
+          ],
+          "z_score_sd": -13.63,
+          "direction_control_short_net": -268.02,
+          "directional_advantage": -46.41
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade $\\le$ 0 (\u20b9-314.43)",
+          "PF < 1.30 (0.32)",
+          "Ex-top5 wins Net $\\le$ 0 (\u20b9-324.72)",
+          "Z-score -13.63 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Diff \u20b9-46.41)"
+        ]
+      }
+    ]
+  },
+  "secondary_analysis_exploratory": {
+    "description": "Exploratory only \u2014 not scored against BUILD hurdle",
+    "results": {
+      "variant_b_40_40": [
+        {
+          "key": "m01_penetration_depth",
+          "name": "8-EMA Contact Penetration Depth",
+          "group": "Variant B Secondary",
+          "status": "EVALUATED",
+          "shape": "NO_SHAPE",
+          "spearman_rho": 0.022,
+          "spearman_p": 0.6115,
+          "cutoff_rule": "GTE -0.17188663538383442",
+          "in_sample": {
+            "n_total": 560,
+            "deciles": [
+              {
+                "decile": 1,
+                "min_val": -0.9798,
+                "max_val": -0.3295,
+                "n": 56,
+                "win_rate": 67.9,
+                "net_inr_per_trade": -88.43,
+                "profit_factor": 0.82
+              },
+              {
+                "decile": 2,
+                "min_val": -0.3259,
+                "max_val": -0.1727,
+                "n": 56,
+                "win_rate": 55.4,
+                "net_inr_per_trade": -277.94,
+                "profit_factor": 0.48
+              },
+              {
+                "decile": 3,
+                "min_val": -0.1717,
+                "max_val": -0.1014,
+                "n": 56,
+                "win_rate": 41.1,
+                "net_inr_per_trade": -485.9,
+                "profit_factor": 0.17
+              },
+              {
+                "decile": 4,
+                "min_val": -0.0981,
+                "max_val": -0.0106,
+                "n": 56,
+                "win_rate": 66.1,
+                "net_inr_per_trade": -214.82,
+                "profit_factor": 0.48
+              },
+              {
+                "decile": 5,
+                "min_val": -0.0105,
+                "max_val": 0.0746,
+                "n": 56,
+                "win_rate": 42.9,
+                "net_inr_per_trade": -407.51,
+                "profit_factor": 0.21
+              },
+              {
+                "decile": 6,
+                "min_val": 0.0776,
+                "max_val": 0.188,
+                "n": 56,
+                "win_rate": 58.9,
+                "net_inr_per_trade": -192.49,
+                "profit_factor": 0.52
+              },
+              {
+                "decile": 7,
+                "min_val": 0.1885,
+                "max_val": 0.2833,
+                "n": 56,
+                "win_rate": 51.8,
+                "net_inr_per_trade": -433.69,
+                "profit_factor": 0.21
+              },
+              {
+                "decile": 8,
+                "min_val": 0.2856,
+                "max_val": 0.4363,
+                "n": 56,
+                "win_rate": 60.7,
+                "net_inr_per_trade": -312.02,
+                "profit_factor": 0.34
+              },
+              {
+                "decile": 9,
+                "min_val": 0.4419,
+                "max_val": 0.6113,
+                "n": 56,
+                "win_rate": 62.5,
+                "net_inr_per_trade": 37.44,
+                "profit_factor": 1.13
+              },
+              {
+                "decile": 10,
+                "min_val": 0.6247,
+                "max_val": 2.4416,
+                "n": 56,
+                "win_rate": 53.6,
+                "net_inr_per_trade": -305.58,
+                "profit_factor": 0.42
+              }
+            ]
+          },
+          "out_of_sample": {
+            "n_surviving": 432,
+            "win_rate": 56.0,
+            "net_inr_per_trade": -308.61,
+            "profit_factor": 0.31,
+            "net_inr_ex_top1": -313.79,
+            "net_inr_ex_top3": -323.48,
+            "net_inr_ex_top5": -330.94,
+            "bootstrap_ci_95": [
+              -374.33,
+              -244.52
+            ],
+            "z_score_sd": -9.32,
+            "direction_control_short_net": -263.4,
+            "directional_advantage": -45.2
+          },
+          "verdict": "NOT BUILT",
+          "failure_reasons": [
+            "Net \u20b9/trade $\\le$ 0 (\u20b9-308.61)",
+            "PF < 1.30 (0.31)",
+            "Ex-top5 wins Net $\\le$ 0 (\u20b9-330.94)",
+            "Z-score -9.32 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Diff \u20b9-45.20)"
+          ]
+        },
+        {
+          "key": "m02_wick_rejection_pinbar",
+          "name": "Contact Wick Rejection (Pin-Bar)",
+          "group": "Variant B Secondary",
+          "status": "EVALUATED",
+          "shape": "NO_SHAPE",
+          "spearman_rho": -0.02,
+          "spearman_p": 0.6427,
+          "cutoff_rule": "GTE 0.16243943191307475",
+          "in_sample": {
+            "n_total": 560,
+            "deciles": [
+              {
+                "decile": 1,
+                "min_val": 0.0,
+                "max_val": 0.0551,
+                "n": 56,
+                "win_rate": 60.7,
+                "net_inr_per_trade": -186.38,
+                "profit_factor": 0.64
+              },
+              {
+                "decile": 2,
+                "min_val": 0.0558,
+                "max_val": 0.1614,
+                "n": 56,
+                "win_rate": 51.8,
+                "net_inr_per_trade": -230.55,
+                "profit_factor": 0.46
+              },
+              {
+                "decile": 3,
+                "min_val": 0.1627,
+                "max_val": 0.2538,
+                "n": 56,
+                "win_rate": 53.6,
+                "net_inr_per_trade": -296.67,
+                "profit_factor": 0.42
+              },
+              {
+                "decile": 4,
+                "min_val": 0.255,
+                "max_val": 0.3585,
+                "n": 57,
+                "win_rate": 54.4,
+                "net_inr_per_trade": -368.59,
+                "profit_factor": 0.32
+              },
+              {
+                "decile": 5,
+                "min_val": 0.3604,
+                "max_val": 0.4456,
+                "n": 55,
+                "win_rate": 61.8,
+                "net_inr_per_trade": -162.42,
+                "profit_factor": 0.58
+              },
+              {
+                "decile": 6,
+                "min_val": 0.4463,
+                "max_val": 0.5524,
+                "n": 56,
+                "win_rate": 57.1,
+                "net_inr_per_trade": -244.94,
+                "profit_factor": 0.43
+              },
+              {
+                "decile": 7,
+                "min_val": 0.5539,
+                "max_val": 0.6629,
+                "n": 57,
+                "win_rate": 57.9,
+                "net_inr_per_trade": -396.07,
+                "profit_factor": 0.27
+              },
+              {
+                "decile": 8,
+                "min_val": 0.6683,
+                "max_val": 0.7883,
+                "n": 55,
+                "win_rate": 58.2,
+                "net_inr_per_trade": -212.74,
+                "profit_factor": 0.41
+              },
+              {
+                "decile": 9,
+                "min_val": 0.7899,
+                "max_val": 0.9181,
+                "n": 56,
+                "win_rate": 44.6,
+                "net_inr_per_trade": -353.23,
+                "profit_factor": 0.41
+              },
+              {
+                "decile": 10,
+                "min_val": 0.9204,
+                "max_val": 1.0,
+                "n": 56,
+                "win_rate": 60.7,
+                "net_inr_per_trade": -222.38,
+                "profit_factor": 0.48
+              }
+            ]
+          },
+          "out_of_sample": {
+            "n_surviving": 469,
+            "win_rate": 56.1,
+            "net_inr_per_trade": -290.31,
+            "profit_factor": 0.35,
+            "net_inr_ex_top1": -295.05,
+            "net_inr_ex_top3": -303.89,
+            "net_inr_ex_top5": -310.67,
+            "bootstrap_ci_95": [
+              -352.74,
+              -229.46
+            ],
+            "z_score_sd": -8.75,
+            "direction_control_short_net": -304.88,
+            "directional_advantage": 14.57
+          },
+          "verdict": "NOT BUILT",
+          "failure_reasons": [
+            "Net \u20b9/trade $\\le$ 0 (\u20b9-290.31)",
+            "PF < 1.30 (0.35)",
+            "Ex-top5 wins Net $\\le$ 0 (\u20b9-310.67)",
+            "Z-score -8.75 SD < +2.0 SD noise hurdle"
+          ]
+        },
+        {
+          "key": "m03_whipsaw_cross_count_12",
+          "name": "12-Bar Whip-Saw Count (Chop)",
+          "group": "Variant B Secondary",
+          "status": "EVALUATED",
+          "shape": "NO_SHAPE",
+          "spearman_rho": -0.047,
+          "spearman_p": 0.2709,
+          "cutoff_rule": "GTE 0.0",
+          "in_sample": {
+            "n_total": 560,
+            "deciles": [
+              {
+                "decile": 1,
+                "min_val": 0.0,
+                "max_val": 1.0,
+                "n": 358,
+                "win_rate": 56.7,
+                "net_inr_per_trade": -229.34,
+                "profit_factor": 0.52
+              },
+              {
+                "decile": 2,
+                "min_val": 2.0,
+                "max_val": 2.0,
+                "n": 115,
+                "win_rate": 51.3,
+                "net_inr_per_trade": -369.07,
+                "profit_factor": 0.28
+              },
+              {
+                "decile": 3,
+                "min_val": 3.0,
+                "max_val": 3.0,
+                "n": 62,
+                "win_rate": 53.2,
+                "net_inr_per_trade": -385.23,
+                "profit_factor": 0.2
+              },
+              {
+                "decile": 4,
+                "min_val": 4.0,
+                "max_val": 6.0,
+                "n": 25,
+                "win_rate": 76.0,
+                "net_inr_per_trade": -68.09,
+                "profit_factor": 0.75
+              }
+            ]
+          },
+          "out_of_sample": {
+            "n_surviving": 560,
+            "win_rate": 55.2,
+            "net_inr_per_trade": -295.54,
+            "profit_factor": 0.36,
+            "net_inr_ex_top1": -299.52,
+            "net_inr_ex_top3": -306.93,
+            "net_inr_ex_top5": -312.61,
+            "bootstrap_ci_95": [
+              -356.28,
+              -239.6
+            ],
+            "z_score_sd": -9.43,
+            "direction_control_short_net": -306.64,
+            "directional_advantage": 11.1
+          },
+          "verdict": "NOT BUILT",
+          "failure_reasons": [
+            "Net \u20b9/trade $\\le$ 0 (\u20b9-295.54)",
+            "PF < 1.30 (0.36)",
+            "Ex-top5 wins Net $\\le$ 0 (\u20b9-312.61)",
+            "Z-score -9.43 SD < +2.0 SD noise hurdle"
+          ]
+        },
+        {
+          "key": "m06_separation_signed",
+          "name": "Separation (Signed)",
+          "group": "Variant B Secondary",
+          "status": "EVALUATED",
+          "shape": "NO_SHAPE",
+          "spearman_rho": 0.019,
+          "spearman_p": 0.6503,
+          "cutoff_rule": "GTE 0.051383835193853006",
+          "in_sample": {
+            "n_total": 560,
+            "deciles": [
+              {
+                "decile": 1,
+                "min_val": 0.0008,
+                "max_val": 0.0192,
+                "n": 56,
+                "win_rate": 50.0,
+                "net_inr_per_trade": -337.01,
+                "profit_factor": 0.26
+              },
+              {
+                "decile": 2,
+                "min_val": 0.0193,
+                "max_val": 0.0504,
+                "n": 56,
+                "win_rate": 55.4,
+                "net_inr_per_trade": -258.0,
+                "profit_factor": 0.42
+              },
+              {
+                "decile": 3,
+                "min_val": 0.0516,
+                "max_val": 0.09,
+                "n": 56,
+                "win_rate": 57.1,
+                "net_inr_per_trade": -312.97,
+                "profit_factor": 0.29
+              },
+              {
+                "decile": 4,
+                "min_val": 0.0901,
+                "max_val": 0.1274,
+                "n": 56,
+                "win_rate": 62.5,
+                "net_inr_per_trade": -218.5,
+                "profit_factor": 0.5
+              },
+              {
+                "decile": 5,
+                "min_val": 0.1285,
+                "max_val": 0.1681,
+                "n": 56,
+                "win_rate": 66.1,
+                "net_inr_per_trade": -188.58,
+                "profit_factor": 0.52
+              },
+              {
+                "decile": 6,
+                "min_val": 0.1685,
+                "max_val": 0.2091,
+                "n": 56,
+                "win_rate": 48.2,
+                "net_inr_per_trade": -220.92,
+                "profit_factor": 0.51
+              },
+              {
+                "decile": 7,
+                "min_val": 0.2107,
+                "max_val": 0.2477,
+                "n": 56,
+                "win_rate": 57.1,
+                "net_inr_per_trade": -230.08,
+                "profit_factor": 0.42
+              },
+              {
+                "decile": 8,
+                "min_val": 0.248,
+                "max_val": 0.3187,
+                "n": 56,
+                "win_rate": 35.7,
+                "net_inr_per_trade": -495.27,
+                "profit_factor": 0.24
+              },
+              {
+                "decile": 9,
+                "min_val": 0.326,
+                "max_val": 0.4106,
+                "n": 57,
+                "win_rate": 63.2,
+                "net_inr_per_trade": -331.46,
+                "profit_factor": 0.4
+              },
+              {
+                "decile": 10,
+                "min_val": 0.4227,
+                "max_val": 0.8249,
+                "n": 55,
+                "win_rate": 65.5,
+                "net_inr_per_trade": -83.7,
+                "profit_factor": 0.84
+              }
+            ]
+          },
+          "out_of_sample": {
+            "n_surviving": 478,
+            "win_rate": 55.0,
+            "net_inr_per_trade": -283.05,
+            "profit_factor": 0.39,
+            "net_inr_ex_top1": -287.68,
+            "net_inr_ex_top3": -296.32,
+            "net_inr_ex_top5": -302.79,
+            "bootstrap_ci_95": [
+              -345.02,
+              -219.22
+            ],
+            "z_score_sd": -8.22,
+            "direction_control_short_net": -318.81,
+            "directional_advantage": 35.76
+          },
+          "verdict": "NOT BUILT",
+          "failure_reasons": [
+            "Net \u20b9/trade $\\le$ 0 (\u20b9-283.05)",
+            "PF < 1.30 (0.39)",
+            "Ex-top5 wins Net $\\le$ 0 (\u20b9-302.79)",
+            "Z-score -8.22 SD < +2.0 SD noise hurdle"
+          ]
+        }
+      ],
+      "variant_e_institutional": [
+        {
+          "key": "m01_penetration_depth",
+          "name": "8-EMA Contact Penetration Depth",
+          "group": "Variant E Footnote",
+          "status": "BLOCKED",
+          "reason": "Insufficient sample size (n=80).",
+          "verdict": "NOT BUILT"
+        },
+        {
+          "key": "m04_slope_1h_8ema",
+          "name": "1H 8-EMA Continuous Slope",
+          "group": "Variant E Footnote",
+          "status": "BLOCKED",
+          "reason": "Insufficient sample size (n=80).",
+          "verdict": "NOT BUILT"
+        },
+        {
+          "key": "m06_separation_signed",
+          "name": "Separation (Signed)",
+          "group": "Variant E Footnote",
+          "status": "BLOCKED",
+          "reason": "Insufficient sample size (n=80).",
+          "verdict": "NOT BUILT"
+        }
+      ],
+      "variant_a_sma4_vs_ema8": [
+        {
+          "key": "sma4_vs_ema8_separation_signed",
+          "name": "sma4_vs_ema8_separation_signed",
+          "group": "SMA(4) TradingView",
+          "status": "EVALUATED",
+          "shape": "NO_SHAPE",
+          "spearman_rho": 0.075,
+          "spearman_p": 0.0102,
+          "cutoff_rule": "GTE -0.347251566270691",
+          "in_sample": {
+            "n_total": 1171,
+            "deciles": [
+              {
+                "decile": 1,
+                "min_val": -1.4375,
+                "max_val": -0.4879,
+                "n": 118,
+                "win_rate": 52.5,
+                "net_inr_per_trade": -358.9,
+                "profit_factor": 0.24
+              },
+              {
+                "decile": 2,
+                "min_val": -0.4878,
+                "max_val": -0.3473,
+                "n": 117,
+                "win_rate": 41.9,
+                "net_inr_per_trade": -462.37,
+                "profit_factor": 0.13
+              },
+              {
+                "decile": 3,
+                "min_val": -0.3447,
+                "max_val": -0.2317,
+                "n": 117,
+                "win_rate": 46.2,
+                "net_inr_per_trade": -303.11,
+                "profit_factor": 0.38
+              },
+              {
+                "decile": 4,
+                "min_val": -0.2309,
+                "max_val": -0.1334,
+                "n": 117,
+                "win_rate": 52.1,
+                "net_inr_per_trade": -361.31,
+                "profit_factor": 0.32
+              },
+              {
+                "decile": 5,
+                "min_val": -0.1333,
+                "max_val": -0.0346,
+                "n": 117,
+                "win_rate": 48.7,
+                "net_inr_per_trade": -367.29,
+                "profit_factor": 0.29
+              },
+              {
+                "decile": 6,
+                "min_val": -0.0332,
+                "max_val": 0.0599,
+                "n": 117,
+                "win_rate": 61.5,
+                "net_inr_per_trade": -206.98,
+                "profit_factor": 0.46
+              },
+              {
+                "decile": 7,
+                "min_val": 0.0603,
+                "max_val": 0.1395,
+                "n": 117,
+                "win_rate": 57.3,
+                "net_inr_per_trade": -283.47,
+                "profit_factor": 0.37
+              },
+              {
+                "decile": 8,
+                "min_val": 0.1396,
+                "max_val": 0.2483,
+                "n": 117,
+                "win_rate": 53.8,
+                "net_inr_per_trade": -282.09,
+                "profit_factor": 0.39
+              },
+              {
+                "decile": 9,
+                "min_val": 0.2485,
+                "max_val": 0.3835,
+                "n": 118,
+                "win_rate": 52.5,
+                "net_inr_per_trade": -413.92,
+                "profit_factor": 0.22
+              },
+              {
+                "decile": 10,
+                "min_val": 0.3838,
+                "max_val": 1.3303,
+                "n": 116,
+                "win_rate": 59.5,
+                "net_inr_per_trade": -178.95,
+                "profit_factor": 0.67
+              }
+            ]
+          },
+          "out_of_sample": {
+            "n_surviving": 967,
+            "win_rate": 52.6,
+            "net_inr_per_trade": -324.74,
+            "profit_factor": 0.3,
+            "net_inr_ex_top1": -327.07,
+            "net_inr_ex_top3": -331.41,
+            "net_inr_ex_top5": -334.74,
+            "bootstrap_ci_95": [
+              -365.85,
+              -283.32
+            ],
+            "z_score_sd": -14.58,
+            "direction_control_short_net": -244.89,
+            "directional_advantage": -79.85
+          },
+          "verdict": "NOT BUILT",
+          "failure_reasons": [
+            "Net \u20b9/trade $\\le$ 0 (\u20b9-324.74)",
+            "PF < 1.30 (0.30)",
+            "Ex-top5 wins Net $\\le$ 0 (\u20b9-334.74)",
+            "Z-score -14.58 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Diff \u20b9-79.85)"
+          ]
+        },
+        {
+          "key": "sma4_vs_ema8_spread_velocity",
+          "name": "sma4_vs_ema8_spread_velocity",
+          "group": "SMA(4) TradingView",
+          "status": "EVALUATED",
+          "shape": "NO_SHAPE",
+          "spearman_rho": -0.033,
+          "spearman_p": 0.2547,
+          "cutoff_rule": "GTE -0.08495045389583904",
+          "in_sample": {
+            "n_total": 1170,
+            "deciles": [
+              {
+                "decile": 1,
+                "min_val": -0.4461,
+                "max_val": -0.1449,
+                "n": 117,
+                "win_rate": 55.6,
+                "net_inr_per_trade": -209.54,
+                "profit_factor": 0.54
+              },
+              {
+                "decile": 2,
+                "min_val": -0.1444,
+                "max_val": -0.0853,
+                "n": 117,
+                "win_rate": 59.0,
+                "net_inr_per_trade": -255.32,
+                "profit_factor": 0.4
+              },
+              {
+                "decile": 3,
+                "min_val": -0.0849,
+                "max_val": -0.0507,
+                "n": 117,
+                "win_rate": 53.8,
+                "net_inr_per_trade": -341.67,
+                "profit_factor": 0.35
+              },
+              {
+                "decile": 4,
+                "min_val": -0.0507,
+                "max_val": -0.0234,
+                "n": 117,
+                "win_rate": 53.0,
+                "net_inr_per_trade": -352.33,
+                "profit_factor": 0.32
+              },
+              {
+                "decile": 5,
+                "min_val": -0.0231,
+                "max_val": 0.001,
+                "n": 117,
+                "win_rate": 51.3,
+                "net_inr_per_trade": -337.68,
+                "profit_factor": 0.31
+              },
+              {
+                "decile": 6,
+                "min_val": 0.0012,
+                "max_val": 0.024,
+                "n": 117,
+                "win_rate": 43.6,
+                "net_inr_per_trade": -360.22,
+                "profit_factor": 0.28
+              },
+              {
+                "decile": 7,
+                "min_val": 0.0243,
+                "max_val": 0.0617,
+                "n": 117,
+                "win_rate": 54.7,
+                "net_inr_per_trade": -304.71,
+                "profit_factor": 0.34
+              },
+              {
+                "decile": 8,
+                "min_val": 0.0624,
+                "max_val": 0.1021,
+                "n": 117,
+                "win_rate": 49.6,
+                "net_inr_per_trade": -451.51,
+                "profit_factor": 0.18
+              },
+              {
+                "decile": 9,
+                "min_val": 0.1037,
+                "max_val": 0.1473,
+                "n": 117,
+                "win_rate": 47.9,
+                "net_inr_per_trade": -362.88,
+                "profit_factor": 0.3
+              },
+              {
+                "decile": 10,
+                "min_val": 0.1487,
+                "max_val": 0.418,
+                "n": 117,
+                "win_rate": 57.3,
+                "net_inr_per_trade": -257.53,
+                "profit_factor": 0.45
+              }
+            ]
+          },
+          "out_of_sample": {
+            "n_surviving": 953,
+            "win_rate": 51.7,
+            "net_inr_per_trade": -333.45,
+            "profit_factor": 0.29,
+            "net_inr_ex_top1": -336.32,
+            "net_inr_ex_top3": -340.75,
+            "net_inr_ex_top5": -344.23,
+            "bootstrap_ci_95": [
+              -373.15,
+              -293.64
+            ],
+            "z_score_sd": -14.91,
+            "direction_control_short_net": -249.07,
+            "directional_advantage": -84.39
+          },
+          "verdict": "NOT BUILT",
+          "failure_reasons": [
+            "Net \u20b9/trade $\\le$ 0 (\u20b9-333.45)",
+            "PF < 1.30 (0.29)",
+            "Ex-top5 wins Net $\\le$ 0 (\u20b9-344.23)",
+            "Z-score -14.91 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Diff \u20b9-84.39)"
+          ]
+        }
+      ],
+      "variant_a_super_trail": [
+        {
+          "key": "m01_penetration_depth",
+          "name": "8-EMA Contact Penetration Depth",
+          "group": "Super Trail Model",
+          "status": "EVALUATED",
+          "shape": "NO_SHAPE",
+          "spearman_rho": -0.002,
+          "spearman_p": 0.9321,
+          "cutoff_rule": "GTE -0.007208030683269586",
+          "in_sample": {
+            "n_total": 1171,
+            "deciles": [
+              {
+                "decile": 1,
+                "min_val": -0.9798,
+                "max_val": -0.1671,
+                "n": 118,
+                "win_rate": 62.7,
+                "net_inr_per_trade": -173.67,
+                "profit_factor": 0.64
+              },
+              {
+                "decile": 2,
+                "min_val": -0.1664,
+                "max_val": -0.0072,
+                "n": 117,
+                "win_rate": 48.7,
+                "net_inr_per_trade": -268.93,
+                "profit_factor": 0.49
+              },
+              {
+                "decile": 3,
+                "min_val": -0.0061,
+                "max_val": 0.178,
+                "n": 117,
+                "win_rate": 49.6,
+                "net_inr_per_trade": -340.27,
+                "profit_factor": 0.4
+              },
+              {
+                "decile": 4,
+                "min_val": 0.1805,
+                "max_val": 0.3516,
+                "n": 117,
+                "win_rate": 55.6,
+                "net_inr_per_trade": -367.53,
+                "profit_factor": 0.39
+              },
+              {
+                "decile": 5,
+                "min_val": 0.354,
+                "max_val": 0.4901,
+                "n": 117,
+                "win_rate": 53.8,
+                "net_inr_per_trade": -265.02,
+                "profit_factor": 0.49
+              },
+              {
+                "decile": 6,
+                "min_val": 0.4915,
+                "max_val": 0.6118,
+                "n": 118,
+                "win_rate": 51.7,
+                "net_inr_per_trade": -366.49,
+                "profit_factor": 0.38
+              },
+              {
+                "decile": 7,
+                "min_val": 0.6135,
+                "max_val": 0.7543,
+                "n": 116,
+                "win_rate": 44.8,
+                "net_inr_per_trade": -365.97,
+                "profit_factor": 0.4
+              },
+              {
+                "decile": 8,
+                "min_val": 0.7544,
+                "max_val": 0.9061,
+                "n": 117,
+                "win_rate": 46.2,
+                "net_inr_per_trade": -426.84,
+                "profit_factor": 0.33
+              },
+              {
+                "decile": 9,
+                "min_val": 0.9144,
+                "max_val": 1.141,
+                "n": 117,
+                "win_rate": 54.7,
+                "net_inr_per_trade": -349.6,
+                "profit_factor": 0.42
+              },
+              {
+                "decile": 10,
+                "min_val": 1.1566,
+                "max_val": 2.9059,
+                "n": 117,
+                "win_rate": 58.1,
+                "net_inr_per_trade": -197.86,
+                "profit_factor": 0.61
+              }
+            ]
+          },
+          "out_of_sample": {
+            "n_surviving": 961,
+            "win_rate": 50.6,
+            "net_inr_per_trade": -361.89,
+            "profit_factor": 0.39,
+            "net_inr_ex_top1": -365.39,
+            "net_inr_ex_top3": -371.27,
+            "net_inr_ex_top5": -376.04,
+            "bootstrap_ci_95": [
+              -389.7,
+              -307.58
+            ],
+            "z_score_sd": -14.14,
+            "direction_control_short_net": -169.11,
+            "directional_advantage": -192.77
+          },
+          "verdict": "NOT BUILT",
+          "failure_reasons": [
+            "Net \u20b9/trade $\\le$ 0 (\u20b9-361.89)",
+            "PF < 1.30 (0.39)",
+            "Ex-top5 wins Net $\\le$ 0 (\u20b9-376.04)",
+            "Z-score -14.14 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Diff \u20b9-192.77)"
+          ]
+        },
+        {
+          "key": "m02_wick_rejection_pinbar",
+          "name": "Contact Wick Rejection (Pin-Bar)",
+          "group": "Super Trail Model",
+          "status": "EVALUATED",
+          "shape": "MONOTONE_NEGATIVE",
+          "spearman_rho": -0.062,
+          "spearman_p": 0.0326,
+          "cutoff_rule": "LTE 0.7538304392236419",
+          "in_sample": {
+            "n_total": 1171,
+            "deciles": [
+              {
+                "decile": 1,
+                "min_val": 0.0,
+                "max_val": 0.0831,
+                "n": 119,
+                "win_rate": 56.3,
+                "net_inr_per_trade": -261.19,
+                "profit_factor": 0.51
+              },
+              {
+                "decile": 2,
+                "min_val": 0.0838,
+                "max_val": 0.1991,
+                "n": 116,
+                "win_rate": 59.5,
+                "net_inr_per_trade": -151.57,
+                "profit_factor": 0.69
+              },
+              {
+                "decile": 3,
+                "min_val": 0.2016,
+                "max_val": 0.3127,
+                "n": 117,
+                "win_rate": 48.7,
+                "net_inr_per_trade": -261.96,
+                "profit_factor": 0.51
+              },
+              {
+                "decile": 4,
+                "min_val": 0.3165,
+                "max_val": 0.4291,
+                "n": 117,
+                "win_rate": 52.1,
+                "net_inr_per_trade": -326.31,
+                "profit_factor": 0.41
+              },
+              {
+                "decile": 5,
+                "min_val": 0.4303,
+                "max_val": 0.5483,
+                "n": 117,
+                "win_rate": 57.3,
+                "net_inr_per_trade": -411.5,
+                "profit_factor": 0.34
+              },
+              {
+                "decile": 6,
+                "min_val": 0.5484,
+                "max_val": 0.6427,
+                "n": 117,
+                "win_rate": 52.1,
+                "net_inr_per_trade": -322.88,
+                "profit_factor": 0.44
+              },
+              {
+                "decile": 7,
+                "min_val": 0.6435,
+                "max_val": 0.7538,
+                "n": 118,
+                "win_rate": 53.4,
+                "net_inr_per_trade": -305.19,
+                "profit_factor": 0.46
+              },
+              {
+                "decile": 8,
+                "min_val": 0.7547,
+                "max_val": 0.8569,
+                "n": 116,
+                "win_rate": 50.9,
+                "net_inr_per_trade": -367.61,
+                "profit_factor": 0.39
+              },
+              {
+                "decile": 9,
+                "min_val": 0.8574,
+                "max_val": 0.9361,
+                "n": 118,
+                "win_rate": 47.5,
+                "net_inr_per_trade": -356.88,
+                "profit_factor": 0.4
+              },
+              {
+                "decile": 10,
+                "min_val": 0.9368,
+                "max_val": 1.0,
+                "n": 116,
+                "win_rate": 48.3,
+                "net_inr_per_trade": -355.93,
+                "profit_factor": 0.4
+              }
+            ]
+          },
+          "out_of_sample": {
+            "n_surviving": 863,
+            "win_rate": 52.3,
+            "net_inr_per_trade": -355.14,
+            "profit_factor": 0.39,
+            "net_inr_ex_top1": -358.17,
+            "net_inr_ex_top3": -363.4,
+            "net_inr_ex_top5": -367.69,
+            "bootstrap_ci_95": [
+              -382.27,
+              -284.39
+            ],
+            "z_score_sd": -13.4,
+            "direction_control_short_net": -236.06,
+            "directional_advantage": -119.09
+          },
+          "verdict": "NOT BUILT",
+          "failure_reasons": [
+            "Net \u20b9/trade $\\le$ 0 (\u20b9-355.14)",
+            "PF < 1.30 (0.39)",
+            "Ex-top5 wins Net $\\le$ 0 (\u20b9-367.69)",
+            "Z-score -13.4 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Diff \u20b9-119.09)"
+          ]
+        },
+        {
+          "key": "m06_separation_signed",
+          "name": "Separation (Signed)",
+          "group": "Super Trail Model",
+          "status": "EVALUATED",
+          "shape": "NO_SHAPE",
+          "spearman_rho": 0.053,
+          "spearman_p": 0.0698,
+          "cutoff_rule": "GTE -0.26317684807059244",
+          "in_sample": {
+            "n_total": 1171,
+            "deciles": [
+              {
+                "decile": 1,
+                "min_val": -0.9728,
+                "max_val": -0.3928,
+                "n": 118,
+                "win_rate": 51.7,
+                "net_inr_per_trade": -320.47,
+                "profit_factor": 0.46
+              },
+              {
+                "decile": 2,
+                "min_val": -0.3914,
+                "max_val": -0.2632,
+                "n": 118,
+                "win_rate": 43.2,
+                "net_inr_per_trade": -455.01,
+                "profit_factor": 0.32
+              },
+              {
+                "decile": 3,
+                "min_val": -0.261,
+                "max_val": -0.1837,
+                "n": 117,
+                "win_rate": 47.0,
+                "net_inr_per_trade": -389.21,
+                "profit_factor": 0.36
+              },
+              {
+                "decile": 4,
+                "min_val": -0.1836,
+                "max_val": -0.1103,
+                "n": 117,
+                "win_rate": 53.0,
+                "net_inr_per_trade": -395.64,
+                "profit_factor": 0.36
+              },
+              {
+                "decile": 5,
+                "min_val": -0.1094,
+                "max_val": -0.0306,
+                "n": 116,
+                "win_rate": 54.3,
+                "net_inr_per_trade": -394.91,
+                "profit_factor": 0.35
+              },
+              {
+                "decile": 6,
+                "min_val": -0.0298,
+                "max_val": 0.042,
+                "n": 117,
+                "win_rate": 49.6,
+                "net_inr_per_trade": -376.5,
+                "profit_factor": 0.38
+              },
+              {
+                "decile": 7,
+                "min_val": 0.0422,
+                "max_val": 0.1203,
+                "n": 117,
+                "win_rate": 57.3,
+                "net_inr_per_trade": -119.54,
+                "profit_factor": 0.73
+              },
+              {
+                "decile": 8,
+                "min_val": 0.1206,
+                "max_val": 0.2001,
+                "n": 117,
+                "win_rate": 62.4,
+                "net_inr_per_trade": -69.96,
+                "profit_factor": 0.83
+              },
+              {
+                "decile": 9,
+                "min_val": 0.2039,
+                "max_val": 0.316,
+                "n": 118,
+                "win_rate": 44.9,
+                "net_inr_per_trade": -367.65,
+                "profit_factor": 0.37
+              },
+              {
+                "decile": 10,
+                "min_val": 0.316,
+                "max_val": 0.8249,
+                "n": 116,
+                "win_rate": 62.9,
+                "net_inr_per_trade": -230.36,
+                "profit_factor": 0.55
+              }
+            ]
+          },
+          "out_of_sample": {
+            "n_surviving": 964,
+            "win_rate": 52.4,
+            "net_inr_per_trade": -339.58,
+            "profit_factor": 0.41,
+            "net_inr_ex_top1": -343.78,
+            "net_inr_ex_top3": -350.37,
+            "net_inr_ex_top5": -354.72,
+            "bootstrap_ci_95": [
+              -369.08,
+              -281.4
+            ],
+            "z_score_sd": -13.29,
+            "direction_control_short_net": -253.57,
+            "directional_advantage": -86.01
+          },
+          "verdict": "NOT BUILT",
+          "failure_reasons": [
+            "Net \u20b9/trade $\\le$ 0 (\u20b9-339.58)",
+            "PF < 1.30 (0.41)",
+            "Ex-top5 wins Net $\\le$ 0 (\u20b9-354.72)",
+            "Z-score -13.29 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Diff \u20b9-86.01)"
+          ]
+        }
+      ]
+    }
+  },
+  "mandatory_controls_summary": {
+    "direction_control": "Opposite (Short) trade simulated at exact same entry bar; directional advantage reported",
+    "time_to_resolution": "Exported in minutes in events_variantA.csv, events_variantB.csv, events_variantE.csv",
+    "session_block_bootstrap": "1,000 whole-session bootstrap iterations for 95% CI on surviving OOS trades",
+    "outlier_robustness": "Net Rs/trade evaluated excluding top 1, 3, and 5 winning trades",
+    "measure_17_volume_blocked": "Reported BLOCKED due to limited futures history (09-09 to 11-05, ~16% sample)",
+    "measure_16_1h_slope_status": "Documented as continuous refinement of prior failed binary 1H gate"
+  }
+}
