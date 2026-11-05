@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import config
@@ -614,10 +614,118 @@ def desk_confluence_endpoint(
 
 
 @app.get("/api/desk/confluence/table", response_class=PlainTextResponse)
-def desk_confluence_table_endpoint():
+def desk_confluence_table_endpoint(watchlist: bool = Query(False)):
     """The same board as plain text, for the console and for pasting into chat."""
     from ..engine import confluence
-    return confluence.render_table(confluence.build_board(_confluence_gather()))
+    board = confluence.build_board(_confluence_gather())
+    if watchlist:
+        board = dict(board, rows=board["watchlist"])
+    return confluence.render_table(board)
+
+
+@app.get("/desk/confluence", response_class=HTMLResponse)
+def desk_confluence_page(watchlist: bool = Query(True)):
+    """Self-contained auto-refreshing board. Deliberately a standalone page and
+    not a React component: it touches none of the locked frontend modules and
+    needs no rebuild. Open it directly or iframe it into any tab."""
+    from ..engine import confluence
+    board = confluence.build_board(_confluence_gather())
+    rows = board["watchlist"] if watchlist else board["rows"]
+    c = board["consensus"]
+    h = board.get("headline") or {}
+
+    gate_colour = {"CE_ONLY": "#10b981", "PE_ONLY": "#ef4444"}.get(c["gate"], "#f59e0b")
+    vcol = {"BULLISH": "#10b981", "SUPPORT": "#10b981", "REVERSAL_UP": "#10b981",
+            "BREAKOUT_UP": "#10b981", "BEARISH": "#ef4444", "RESISTANCE": "#ef4444",
+            "REVERSAL_DOWN": "#ef4444", "BREAKOUT_DOWN": "#ef4444",
+            "CONSOLIDATION": "#f59e0b", "RETRACEMENT": "#f59e0b"}
+
+    def esc(s: str) -> str:
+        return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+    tr = []
+    for r in rows:
+        col = vcol.get(r["verdict"], "#64748b")
+        age = "--" if r["age_s"] is None else "{}{:.0f}s".format(
+            "~" if r.get("age_basis") == "fetch" else "", r["age_s"])
+        stale = r["status"] not in ("FRESH",)
+        ev = ('<span style="color:#ef4444;font-weight:700">REFUTED</span>'
+              if r["evidence"] == "REFUTED" else
+              '<span style="color:#64748b">{}</span>'.format(r["evidence"]))
+        vote = ('<span style="color:#fbbf24">&#9679;</span>' if r["counted"]
+                else '<span style="color:#334155">&#9675;</span>')
+        lv = r.get("levels") or {}
+        lvtxt = ""
+        if lv.get("support") or lv.get("resistance"):
+            lvtxt = "S {} / R {}".format(
+                int(lv["support"]) if lv.get("support") else "--",
+                int(lv["resistance"]) if lv.get("resistance") else "--")
+        tr.append(
+            '<tr style="opacity:{}"><td>{}</td><td>{}</td><td style="color:{};font-weight:700">{}</td>'
+            '<td class="n">{}</td><td class="n" style="color:{}">{}</td><td>{}</td>'
+            '<td class="d">{}</td></tr>'.format(
+                "0.5" if stale else "1", vote, esc(r["label"]), col, esc(r["verdict"]),
+                esc(lvtxt), "#f59e0b" if stale else "#94a3b8", esc(age), ev,
+                esc((r.get("detail") or "")[:90])))
+
+    head_html = ""
+    if h:
+        head_html = (
+            '<div class="headline"><div class="hl-label">DESK BIAS &middot; synthesis, not a vote</div>'
+            '<div class="hl-main" style="color:{}">{}</div><div class="hl-sub">{}</div></div>'
+        ).format(vcol.get(h.get("verdict"), "#e2e8f0"),
+                 esc(h.get("verdict_text") or h.get("verdict") or "--"),
+                 esc((h.get("detail") or "")[:170]))
+
+    return """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Confluence Board</title><meta http-equiv="refresh" content="20">
+<style>
+ :root{{--navy:#0b1220;--card:#111c31;--gold:#fbbf24;--line:#1e293b;}}
+ *{{box-sizing:border-box}}
+ body{{margin:0;background:var(--navy);color:#e2e8f0;
+      font:14px/1.45 "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace}}
+ .wrap{{max-width:1100px;margin:0 auto;padding:16px}}
+ h1{{font-size:15px;letter-spacing:.14em;margin:0;padding:12px 16px;
+     background:var(--card);border-left:3px solid var(--gold);text-transform:uppercase}}
+ .gate{{margin:12px 0;padding:14px 16px;background:var(--card);
+        border-left:3px solid {gate};border-radius:3px}}
+ .gate b{{font-size:22px;color:{gate};letter-spacing:.06em}}
+ .gate .why{{color:#94a3b8;font-size:12px;margin-top:4px}}
+ .headline{{margin:12px 0;padding:12px 16px;background:var(--card);
+            border-left:3px solid var(--gold);border-radius:3px}}
+ .hl-label{{font-size:10px;letter-spacing:.16em;color:var(--gold)}}
+ .hl-main{{font-size:17px;font-weight:700;margin:4px 0}}
+ .hl-sub{{font-size:12px;color:#94a3b8}}
+ table{{width:100%;border-collapse:collapse;margin-top:12px;background:var(--card);
+        border-radius:3px;overflow:hidden}}
+ th{{text-align:left;font-size:10px;letter-spacing:.14em;color:var(--gold);
+     padding:9px 10px;border-bottom:1px solid var(--line);text-transform:uppercase}}
+ td{{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}}
+ tr:last-child td{{border-bottom:none}}
+ .n{{white-space:nowrap}} .d{{color:#64748b;font-size:11px}}
+ .foot{{color:#64748b;font-size:11px;margin-top:12px;line-height:1.7}}
+ @media(max-width:760px){{.d{{display:none}}}}
+</style></head><body><div class="wrap">
+<h1>&#9889; Confluence Board &middot; {n} engines</h1>
+<div class="gate"><b>{state} &rarr; {gate_name}</b><div class="why">{why}</div></div>
+{head}
+<table><tr><th></th><th>Engine</th><th>Verdict</th><th>Levels</th><th>Age</th>
+<th>Evidence</th><th>Detail</th></tr>{rows}</table>
+<div class="foot">
+ <span style="color:#fbbf24">&#9679;</span> counted in consensus &nbsp;&middot;&nbsp;
+ <span style="color:#334155">&#9675;</span> shown for context &nbsp;&middot;&nbsp;
+ <b>~age</b> = engine publishes no timestamp; shows when we called it<br>
+ Dimmed rows are stale and are never counted. REFUTED engines were measured and
+ failed &mdash; they display but can never vote.<br>
+ Health: {fresh} fresh &middot; {stale} stale &middot; {unavail} unavailable
+ &middot; {refuted} refuted. Auto-refreshes every 20s. Display only &mdash; this
+ gate is not armed.
+</div></div></body></html>""".format(
+        gate=gate_colour, n=len(rows), state=c["state"], gate_name=c["gate"],
+        why=esc(c["reason"]), head=head_html, rows="".join(tr),
+        fresh=board["health"]["fresh"], stale=board["health"]["stale"],
+        unavail=board["health"]["unavailable"], refuted=board["health"]["refuted_shown"])
 
 
 @app.get("/api/desk/gap-confluence")

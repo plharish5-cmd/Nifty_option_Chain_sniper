@@ -212,7 +212,7 @@ def test_engine_timestamp_beats_fetch_timestamp():
 
 def test_board_reports_fetch_aged_count():
     now = time.time()
-    board = _board({"desk_bias": {"bias": "BULLISH", cf.FETCH_TS_KEY: now}}, now)
+    board = _board({"pcr_trinity": {"bias": "BULLISH", cf.FETCH_TS_KEY: now}}, now)
     assert board["health"]["fetch_aged"] == 1
 
 
@@ -248,7 +248,7 @@ def test_board_lists_every_registered_engine():
 def test_consensus_requires_minimum_engines():
     """Two bullish engines is not a consensus if the config demands three."""
     now = time.time()
-    board = _board({"desk_bias": {"bias": "BULLISH", "ts": now},
+    board = _board({"pcr_trinity": {"bias": "BULLISH", "ts": now},
                     "pe_ce_matrix": {"bias": "BULLISH", "ts": now}}, now)
     assert board["consensus"]["counted"] == 2
     assert board["consensus"]["state"] == "NO_CONSENSUS"
@@ -258,7 +258,7 @@ def test_consensus_requires_minimum_engines():
 def test_bullish_consensus_gates_to_ce_only():
     now = time.time()
     board = _board({k: {"bias": "BULLISH", "ts": now} for k in
-                    ("desk_bias", "pe_ce_matrix", "pcr_trinity", "smart_oi")}, now)
+                    ("pe_ce_matrix", "pcr_trinity", "smart_oi", "itm_atm_oi_walls")}, now)
     assert board["consensus"]["state"] == "BULLISH"
     assert board["consensus"]["gate"] == "CE_ONLY"
     assert board["consensus"]["net_bias"] == 4
@@ -267,14 +267,14 @@ def test_bullish_consensus_gates_to_ce_only():
 def test_bearish_consensus_gates_to_pe_only():
     now = time.time()
     board = _board({k: {"bias": "BEARISH", "ts": now} for k in
-                    ("desk_bias", "pe_ce_matrix", "pcr_trinity", "smart_oi")}, now)
+                    ("pe_ce_matrix", "pcr_trinity", "smart_oi", "itm_atm_oi_walls")}, now)
     assert board["consensus"]["gate"] == "PE_ONLY"
 
 
 def test_disagreement_opens_the_gate():
     """Two up, two down nets to zero: no consensus, nothing blocked."""
     now = time.time()
-    board = _board({"desk_bias": {"bias": "BULLISH", "ts": now},
+    board = _board({"itm_atm_oi_walls": {"bias": "BULLISH", "ts": now},
                     "pe_ce_matrix": {"bias": "BULLISH", "ts": now},
                     "pcr_trinity": {"bias": "BEARISH", "ts": now},
                     "smart_oi": {"bias": "BEARISH", "ts": now}}, now)
@@ -299,7 +299,7 @@ def test_refuted_engines_cannot_create_consensus():
 def test_gate_blocks_only_the_opposing_side():
     now = time.time()
     board = _board({k: {"bias": "BULLISH", "ts": now} for k in
-                    ("desk_bias", "pe_ce_matrix", "pcr_trinity", "smart_oi")}, now)
+                    ("pe_ce_matrix", "pcr_trinity", "smart_oi", "itm_atm_oi_walls")}, now)
     assert cf.gate_allows(board, "CE")[0] is True
     assert cf.gate_allows(board, "PE")[0] is False
 
@@ -364,3 +364,28 @@ def test_no_pep604_unions_in_confluence():
                 if isinstance(sub, ast.BinOp) and isinstance(sub.op, ast.BitOr):
                     hits.append(getattr(node, "lineno", "?"))
     assert not hits, "PEP 604 unions at lines {}".format(hits)
+
+
+def test_desk_bias_is_a_headline_not_a_vote():
+    """desk_bias synthesises Trinity, PE-CE Matrix and the walls. Letting it vote
+    alongside its own inputs would count one signal up to three times and inflate
+    apparent agreement."""
+    cfg = cf.load_config()
+    db = [e for e in cfg["engines"] if e["key"] == "desk_bias"][0]
+    assert db["in_consensus"] is False
+    assert db.get("synthesis") is True
+    now = time.time()
+    board = _board({"desk_bias": {"bias_theme": "bullish", "ts": now}}, now)
+    assert board["consensus"]["counted"] == 0
+    assert board["headline"] is not None
+    assert board["headline"]["key"] == "desk_bias"
+
+
+def test_watchlist_is_a_subset_of_rows():
+    board = _board({})
+    keys = {r["key"] for r in board["rows"]}
+    wl = {r["key"] for r in board["watchlist"]}
+    assert wl and wl.issubset(keys)
+    assert "htf_wick_ema_rb" in wl, "refuted engine is watchlisted for display"
+    assert all(not r["counted"] for r in board["watchlist"]
+               if r["evidence"] == "REFUTED")

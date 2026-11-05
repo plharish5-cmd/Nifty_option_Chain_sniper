@@ -345,6 +345,13 @@ def build_board(payloads: Dict[str, Any], now_ts: Optional[float] = None,
 
     rows = [build_row(e, payloads.get(e.get("key")), now_ts, cfg)
             for e in cfg.get("engines", [])]
+    for r, e in zip(rows, cfg.get("engines", [])):
+        r["watchlist"] = bool(e.get("watchlist", False))
+        r["synthesis"] = bool(e.get("synthesis", False))
+
+    # The headline: a synthesis engine (desk_bias) summarises the others, so it
+    # reads as the top line rather than as another vote.
+    headline = next((r for r in rows if r["synthesis"] and r["status"] == "FRESH"), None)
 
     counted = [r for r in rows if r["counted"]]
     net = sum(r["bias"] for r in counted)
@@ -376,6 +383,8 @@ def build_board(payloads: Dict[str, Any], now_ts: Optional[float] = None,
         "ok": True,
         "generated_ts": int(now_ts),
         "rows": rows,
+        "watchlist": [r for r in rows if r["watchlist"]],
+        "headline": headline,
         "by_category": by_cat,
         "consensus": {
             "state": consensus,
