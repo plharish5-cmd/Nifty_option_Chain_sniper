@@ -471,6 +471,22 @@ async def api_scanner_toggle(req: Request):
     return JSONResponse(content={"ok": True, "enabled": backend.scanner_enabled})
 
 
+@app.get("/api/proven_edges/config")
+async def api_get_proven_edges_config():
+    """Returns the status and configuration for Goldilocks and Futures Volume Surge."""
+    return JSONResponse(content=backend.get_proven_edges_config())
+
+
+@app.post("/api/proven_edges/config")
+async def api_post_proven_edges_config(req: Request):
+    """Updates toggleable configuration for Goldilocks and Futures Volume Surge."""
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    return JSONResponse(content=backend.update_proven_edges_config(data))
+
+
 @app.post("/api/position/modify")
 @app.post("/api/positions/squareoff")
 @app.post("/api/paper/squareoff")

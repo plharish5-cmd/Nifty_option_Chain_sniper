@@ -2916,6 +2916,12 @@ class StockMojoScraper:
         c_oi = abs(float(latest.get("call_oi_change_day", 1.0)))
         p_oi = abs(float(latest.get("put_oi_change_day", 1.0)))
         cw_vs_pw = round(c_oi / max(0.01, p_oi), 2)
+        try:
+            from analyst.futures_volume_engine import get_futures_volume_engine
+            fut_vsr = get_futures_volume_engine().get_latest_vsr()
+        except Exception:
+            fut_vsr = {"vsr_10": 1.0, "is_surge": False, "badge": "NORMAL VOLUME", "tag": "NORMAL_VOLUME"}
+
         return {
             "pe_minus_ce_day": latest.get("pe_minus_ce_day", 0.0),
             "pe_minus_ce_interval": latest.get("pe_minus_ce_interval", 0.0),
@@ -2933,4 +2939,5 @@ class StockMojoScraper:
             "writer_signal": latest.get("writer_signal", "NEUTRAL"),
             "signal_hint": latest.get("signal_hint", "WAIT"),
             "last_sync_time": self.last_sync_time or latest.get("created_at", ""),
+            "futures_volume_surge": fut_vsr,
         }
