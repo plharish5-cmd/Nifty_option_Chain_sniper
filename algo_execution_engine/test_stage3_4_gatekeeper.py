@@ -117,15 +117,21 @@ def test_stage4_gatekeeper_blocks_unqualified_live_mode(tmp_path: Path):
 
 
 def test_stage4_gatekeeper_diagnostic_override(tmp_path: Path):
+    """
+    Security Audit Fix: DIAGNOSTIC_1LOT_OVERRIDE backdoor deleted.
+    Verifies that no token can bypass the Stage 4 Graduation Gate when graduation_ready is False.
+    """
     db_file = str(tmp_path / "test_sandbox_override.sqlite3")
     cfg = load_config()
     cfg["execution"]["sqlite_db_path"] = db_file
     gateway = DhanOrderGateway(cfg)
 
-    # Operator passes diagnostic override token for verified hardware test
-    res = gateway.switch_execution_mode("LIVE_1LOT", force_override_token="DIAGNOSTIC_1LOT_OVERRIDE")
-    assert res["ok"] is True
-    assert gateway.execution_mode == "LIVE_1LOT"
+    # Attempting to switch to LIVE_1LOT must be strictly BLOCKED
+    res = gateway.switch_execution_mode("LIVE_1LOT")
+    assert res["ok"] is False
+    assert "LOCKED IN STAGE 3 SANDBOX" in res["error"]
+    assert gateway.execution_mode == "PAPER"
+    assert "hint" not in res  # No leak of backdoor token hint
 
 
 def test_stage4_gatekeeper_graduates_after_25_winning_trades(tmp_path: Path):
@@ -196,10 +202,11 @@ def test_strike_selection_multiples_of_100_only():
 
 
 def test_hard_1lot_cap_enforced_in_live_mode():
-    from unittest.mock import MagicMock
+    from unittest.mock import MagicMock, patch, AsyncMock
+    import os
     cfg = load_config()
     gateway = DhanOrderGateway(cfg)
-    gateway.switch_execution_mode("LIVE_1LOT", force_override_token="DIAGNOSTIC_1LOT_OVERRIDE")
+    gateway.execution_mode = "LIVE_1LOT"
 
     signal = Setup1Signal(
         timestamp=1730628000,
@@ -219,13 +226,15 @@ def test_hard_1lot_cap_enforced_in_live_mode():
     mock_resp.json.return_value = {"orderId": "DHAN_ORDER_9999", "status": "success"}
 
     async def _run():
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
+        with patch.object(gateway, "resolve_itm_100_ce_contract", return_value=(23400.0, "SIM_23400_CE", "NIFTY 23400 CE", 210.0, 0.5)), \
+             patch.dict(os.environ, {"DHAN_ACCESS_TOKEN": "mock_token", "DHAN_CLIENT_ID": "mock_client"}), \
+             patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
             return await gateway.execute_setup1_entry(signal, daily_trades=0, daily_pnl_inr=0.0)
 
     pos = asyncio.run(_run())
     assert pos is not None
-    # Hard lot cap: 1 Lot (75 shares)
-    assert pos.quantity == 75, f"Expected 75 quantity (1 Lot), got {pos.quantity}"
+    # Hard lot cap: 1 Lot (dynamic from master: 65 shares)
+    assert pos.quantity == 65, f"Expected 65 quantity (1 Lot), got {pos.quantity}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -255,5 +264,5 @@ def test_stage3_4_dashboard_telemetry_endpoint():
     # Verify Stage 4 Live Gatekeeper Safeguards
     gate = data["stage4_gatekeeper"]
     assert gate["hard_lot_cap"] == 1
-    assert gate["hard_qty_cap"] == 75
+    assert gate["hard_qty_cap"] == 65
     assert "100-Multiples Only" in gate["strike_rule"]

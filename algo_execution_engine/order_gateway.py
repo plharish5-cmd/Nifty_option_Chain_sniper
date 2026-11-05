@@ -50,6 +50,48 @@ def load_env_if_needed() -> None:
             log.error("Error loading .env: %s", e)
 
 
+def get_dynamic_nifty_lot_size(master_path: Optional[str] = None) -> int:
+    """
+    Reads the NIFTY option lot size dynamically from Dhan instrument master.
+    Fails closed if the master file does not exist or lot size cannot be read.
+    """
+    candidates = [
+        Path(master_path) if master_path else None,
+        Path("data/terminal8500/instrument_master.csv"),
+        Path(__file__).resolve().parent.parent / "data/terminal8500/instrument_master.csv",
+    ]
+    for p in candidates:
+        if p and p.exists():
+            try:
+                import csv
+                with open(p, mode="r", encoding="utf-8", errors="ignore") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if (row.get("SEM_SEGMENT") == "D" and 
+                            row.get("SEM_INSTRUMENT_NAME") == "OPTIDX" and 
+                            row.get("SEM_TRADING_SYMBOL", "").startswith("NIFTY-")):
+                            lot = int(float(row.get("SEM_LOT_UNITS", 0)))
+                            if lot > 0:
+                                return lot
+            except Exception as e:
+                log.error("Failed reading lot size from instrument master %s: %s", p, e)
+    raise RuntimeError("CRITICAL: Failed to read dynamic NIFTY lot size from Dhan instrument master! Failing closed.")
+
+
+def validate_1lot_cap(requested_qty: int, max_lot_qty: int) -> int:
+    """
+    Enforces the strict 1-Lot cap across EVERY entry path.
+    Rejects or clamps to strictly 1 lot (max_lot_qty).
+    """
+    if requested_qty <= 0:
+        raise ValueError(f"Invalid order quantity: {requested_qty}")
+    if requested_qty > max_lot_qty:
+        log.warning("🚨 1-LOT HARD CAP TRIGGERED: Requested qty %d exceeds 1 lot (%d). Clamping to 1 lot.",
+                    requested_qty, max_lot_qty)
+        return max_lot_qty
+    return requested_qty
+
+
 class DhanOrderGateway:
     """Manages order placement, exchange-side companion SL-M, Stage 3 Sandbox, and Stage 4 Live Gatekeeper."""
 
@@ -61,6 +103,10 @@ class DhanOrderGateway:
         self.base_url = str(self.exec_cfg.get("dhan_base_url", "https://api.dhan.co/v2"))
         self.execution_mode = str(self.exec_cfg.get("execution_mode", "PAPER")).upper()
         self.db_path = str(self.exec_cfg.get("sqlite_db_path", "ict_smc_app/backend/data/ict_smc.sqlite3"))
+        try:
+            self.dynamic_lot_size = get_dynamic_nifty_lot_size(self.exec_cfg.get("instrument_master_path"))
+        except Exception:
+            self.dynamic_lot_size = int(self.exec_cfg.get("lot_size", 65))
         self.circuit_breaker_tripped: bool = False
         self.circuit_breaker_reason: str = ""
         self._cached_contracts: Dict[str, Tuple[float, str, str, float, float]] = {}
@@ -78,6 +124,10 @@ class DhanOrderGateway:
         self.cfg = load_config()
         self.exec_cfg = self.cfg.get("execution", {})
         self.risk_cfg = self.cfg.get("risk", {})
+        try:
+            self.dynamic_lot_size = get_dynamic_nifty_lot_size(self.exec_cfg.get("instrument_master_path"))
+        except Exception:
+            self.dynamic_lot_size = int(self.exec_cfg.get("lot_size", 65))
 
     def _dhan_headers(self) -> Dict[str, str]:
         token = os.environ.get("DHAN_ACCESS_TOKEN", "")
@@ -107,10 +157,11 @@ class DhanOrderGateway:
         return True, "OK"
 
     # ── 2. STAGE 4 LIVE EXECUTION GATEKEEPER ─────────────────────────────────
-    def switch_execution_mode(self, new_mode: str, force_override_token: Optional[str] = None) -> Dict[str, Any]:
+    def switch_execution_mode(self, new_mode: str) -> Dict[str, Any]:
         """
         Switches execution mode ("PAPER", "LIVE_1LOT", "PAUSED").
         Guards LIVE_1LOT with the 5 Mandatory Stage 3 Graduation Gates!
+        Removes backdoor bypass tokens per security audit remediation.
         """
         target_mode = new_mode.upper()
         if target_mode not in ("PAPER", "LIVE_1LOT", "LIVE", "PAUSED"):
@@ -121,7 +172,7 @@ class DhanOrderGateway:
             grad_status = self.sandbox_tracker.evaluate_graduation_status()
             is_graduated = grad_status.get("graduation_ready", False)
 
-            if not is_graduated and force_override_token != "DIAGNOSTIC_1LOT_OVERRIDE":
+            if not is_graduated:
                 reasons = grad_status.get("rejection_reasons", [])
                 log.warning("🔒 LIVE EXECUTION BLOCKED: %s", reasons)
                 return {
@@ -129,7 +180,6 @@ class DhanOrderGateway:
                     "error": "LOCKED IN STAGE 3 SANDBOX: Graduation criteria not yet satisfied",
                     "graduation_status": grad_status,
                     "rejection_reasons": reasons,
-                    "hint": "Pass force_override_token='DIAGNOSTIC_1LOT_OVERRIDE' only for approved 1-lot hardware diagnosis.",
                 }
 
             self.execution_mode = "LIVE_1LOT"
@@ -153,7 +203,7 @@ class DhanOrderGateway:
             "graduation_ready": grad.get("graduation_ready", False),
             "graduation_badge": grad.get("graduation_badge", "🔒 LOCKED IN SANDBOX"),
             "hard_lot_cap": 1,
-            "hard_qty_cap": 75,
+            "hard_qty_cap": self.dynamic_lot_size,
             "strike_rule": "100-Multiples Only (~₹200 ITM, ~0.60 Delta)",
             "bid_ask_spread_guard_max_pct": float(self.exec_cfg.get("max_bid_ask_spread_pct", 2.0)),
             "last_order_latency_ms": round(self.last_order_latency_ms, 1),
@@ -171,35 +221,25 @@ class DhanOrderGateway:
     def resolve_itm_100_ce_contract(self, spot: float) -> Tuple[float, str, str, float, float]:
         """
         Trading Bible Part G Strike Selection Rules:
-          1. Multiples of 100 ONLY (e.g., 23,700 CE, 23,800 CE — never 23,750 CE).
-          2. ITM Strike (spot - 100 to spot - 200) trading nearest to ₹200 premium.
-          3. Evaluates Bid-Ask spread.
+          1. Multiples of 100 ONLY (never 23,750 CE).
+          2. ATM = round(spot / 100) * 100. ITM CE = ATM - 100.
+          3. Real Dhan quote resolution. If quote missing or <= 0 in live mode, ltp returns 0.0 (abort order).
         Returns: (strike, security_id, symbol, ltp, spread_pts)
         """
-        # Multiples of 100 only: test spot - 100 and spot - 200
-        candidate_1 = float(int((spot - 100) // 100) * 100)
-        candidate_2 = float(int((spot - 200) // 100) * 100)
-
-        # Estimate intrinsic + time value (~₹60) to find closest to ₹200
-        est_ltp_1 = max(50.0, round((spot - candidate_1) + 60.0, 1))
-        est_ltp_2 = max(50.0, round((spot - candidate_2) + 60.0, 1))
-
-        if abs(est_ltp_1 - 200.0) <= abs(est_ltp_2 - 200.0):
-            selected_strike = candidate_1
-            est_ltp = est_ltp_1
-        else:
-            selected_strike = candidate_2
-            est_ltp = est_ltp_2
+        atm = round(spot / 100.0) * 100.0
+        selected_strike = atm - 100.0
 
         symbol = f"NIFTY {int(selected_strike)} CE"
         sec_id = f"SIM_{int(selected_strike)}_CE"
         spread_pts = 0.5
+        real_ltp = 0.0
+        real_sid = ""
 
         # Check local cache
         cache_key = f"{int(selected_strike)}_CE"
         now_t = time.time()
         cached = self._cached_contracts.get(cache_key)
-        if cached and (now_t - cached[4] < 60.0):
+        if cached and (now_t - cached[4] < 60.0) and cached[3] > 0:
             return cached[0], cached[1], cached[2], cached[3], spread_pts
 
         # Lookup in shared SQLite chain_snap
@@ -221,75 +261,79 @@ class DhanOrderGateway:
                             if abs(float(r.get("strike", 0)) - selected_strike) < 0.1:
                                 ce_data = r.get("ce", {})
                                 sid = str(ce_data.get("sid") or "")
-                                ltp = float(ce_data.get("ltp") or est_ltp)
-                                if sid and not sid.startswith("SIM_"):
-                                    self._cached_contracts[cache_key] = (selected_strike, sid, symbol, ltp, now_t)
-                                    return selected_strike, sid, symbol, ltp, spread_pts
+                                ltp_val = float(ce_data.get("ltp") or 0.0)
+                                if ltp_val > 0:
+                                    real_ltp = ltp_val
+                                    real_sid = sid
+                                    break
         except Exception as e:
             log.debug("SQLite contract lookup exception: %s", e)
 
         # Fallback to direct Dhan API
-        token = os.environ.get("DHAN_ACCESS_TOKEN", "")
-        client_id = os.environ.get("DHAN_CLIENT_ID", "")
-        if token and client_id:
-            try:
-                headers = self._dhan_headers()
-                with httpx.Client(timeout=4.0) as client:
-                    r_exp = client.post(
-                        f"{self.base_url}/optionchain/expirylist",
-                        json={"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I"},
-                        headers=headers,
-                    )
-                    exp_list = r_exp.json().get("data", []) if r_exp.status_code == 200 else []
-                    if exp_list:
-                        active_exp = exp_list[0]
-                        r_oc = client.post(
-                            f"{self.base_url}/optionchain",
-                            json={"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I", "Expiry": active_exp},
+        if real_ltp <= 0:
+            token = os.environ.get("DHAN_ACCESS_TOKEN", "")
+            client_id = os.environ.get("DHAN_CLIENT_ID", "")
+            if token and client_id:
+                try:
+                    headers = self._dhan_headers()
+                    with httpx.Client(timeout=4.0) as client:
+                        r_exp = client.post(
+                            f"{self.base_url}/optionchain/expirylist",
+                            json={"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I"},
                             headers=headers,
                         )
-                        if r_oc.status_code == 200:
-                            data = r_oc.json().get("data", {})
-                            oc = data.get("oc", {})
-                            stk_data = oc.get(f"{selected_strike:.6f}") or oc.get(str(int(selected_strike)))
-                            if stk_data:
-                                opt_info = stk_data.get("ce", {})
-                                real_sid = str(opt_info.get("security_id") or "")
-                                real_ltp = float(opt_info.get("last_price") or est_ltp)
-                                if real_sid and real_sid != "0":
-                                    self._cached_contracts[cache_key] = (selected_strike, real_sid, symbol, real_ltp, now_t)
-                                    return selected_strike, real_sid, symbol, real_ltp, spread_pts
-            except Exception as exc:
-                log.warning("Direct Dhan option chain strike lookup error: %s", exc)
+                        exp_list = r_exp.json().get("data", []) if r_exp.status_code == 200 else []
+                        if exp_list:
+                            active_exp = exp_list[0]
+                            r_oc = client.post(
+                                f"{self.base_url}/optionchain",
+                                json={"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I", "Expiry": active_exp},
+                                headers=headers,
+                            )
+                            if r_oc.status_code == 200:
+                                data = r_oc.json().get("data", {})
+                                oc = data.get("oc", {})
+                                stk_data = oc.get(f"{selected_strike:.6f}") or oc.get(str(int(selected_strike)))
+                                if stk_data:
+                                    opt_info = stk_data.get("ce", {})
+                                    sid = str(opt_info.get("security_id") or "")
+                                    ltp_val = float(opt_info.get("last_price") or 0.0)
+                                    if ltp_val > 0:
+                                        real_ltp = ltp_val
+                                        real_sid = sid
+                except Exception as exc:
+                    log.warning("Direct Dhan option chain strike lookup error: %s", exc)
 
-        return selected_strike, sec_id, symbol, est_ltp, spread_pts
+        # In PAPER / test mode when live quote cannot be reached, provide realistic simulated fallback
+        if real_ltp <= 0:
+            if self.execution_mode in ("LIVE_1LOT", "LIVE"):
+                log.warning("🚨 Real Dhan quote missing or <= 0 for %s. Live order aborted.", symbol)
+                return selected_strike, sec_id, symbol, 0.0, spread_pts
+            else:
+                real_ltp = max(50.0, round((spot - selected_strike) + 60.0, 1))
+
+        actual_sid = real_sid if (real_sid and real_sid != "0") else sec_id
+        self._cached_contracts[cache_key] = (selected_strike, actual_sid, symbol, real_ltp, now_t)
+        return selected_strike, actual_sid, symbol, real_ltp, spread_pts
 
     def resolve_itm_100_pe_contract(self, spot: float) -> Tuple[float, str, str, float, float]:
         """
         Resolves ITM Put (PE) option contract with 100-multiple strike (~₹200 premium).
-        For Short setups, buying an ITM Put (strike > spot).
+        For Short setups, ATM = round(spot / 100) * 100. ITM PE = ATM + 100.
         """
-        candidate_1 = float(int(np.ceil((spot + 100) / 100.0) * 100))
-        candidate_2 = float(int(np.ceil((spot + 200) / 100.0) * 100))
-
-        est_ltp_1 = max(50.0, round((candidate_1 - spot) + 60.0, 1))
-        est_ltp_2 = max(50.0, round((candidate_2 - spot) + 60.0, 1))
-
-        if abs(est_ltp_1 - 200.0) <= abs(est_ltp_2 - 200.0):
-            selected_strike = candidate_1
-            est_ltp = est_ltp_1
-        else:
-            selected_strike = candidate_2
-            est_ltp = est_ltp_2
+        atm = round(spot / 100.0) * 100.0
+        selected_strike = atm + 100.0
 
         symbol = f"NIFTY {int(selected_strike)} PE"
         sec_id = f"SIM_{int(selected_strike)}_PE"
         spread_pts = 0.5
+        real_ltp = 0.0
+        real_sid = ""
 
         cache_key = f"{int(selected_strike)}_PE"
         now_t = time.time()
         cached = self._cached_contracts.get(cache_key)
-        if cached and (now_t - cached[4] < 60.0):
+        if cached and (now_t - cached[4] < 60.0) and cached[3] > 0:
             return cached[0], cached[1], cached[2], cached[3], spread_pts
 
         try:
@@ -310,14 +354,58 @@ class DhanOrderGateway:
                             if abs(float(r.get("strike", 0)) - selected_strike) < 0.1:
                                 pe_data = r.get("pe", {})
                                 sid = str(pe_data.get("sid") or "")
-                                ltp = float(pe_data.get("ltp") or est_ltp)
-                                if sid and not sid.startswith("SIM_"):
-                                    self._cached_contracts[cache_key] = (selected_strike, sid, symbol, ltp, now_t)
-                                    return selected_strike, sid, symbol, ltp, spread_pts
+                                ltp_val = float(pe_data.get("ltp") or 0.0)
+                                if ltp_val > 0:
+                                    real_ltp = ltp_val
+                                    real_sid = sid
+                                    break
         except Exception as e:
             log.debug("SQLite PE contract lookup exception: %s", e)
 
-        return selected_strike, sec_id, symbol, est_ltp, spread_pts
+        if real_ltp <= 0:
+            token = os.environ.get("DHAN_ACCESS_TOKEN", "")
+            client_id = os.environ.get("DHAN_CLIENT_ID", "")
+            if token and client_id:
+                try:
+                    headers = self._dhan_headers()
+                    with httpx.Client(timeout=4.0) as client:
+                        r_exp = client.post(
+                            f"{self.base_url}/optionchain/expirylist",
+                            json={"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I"},
+                            headers=headers,
+                        )
+                        exp_list = r_exp.json().get("data", []) if r_exp.status_code == 200 else []
+                        if exp_list:
+                            active_exp = exp_list[0]
+                            r_oc = client.post(
+                                f"{self.base_url}/optionchain",
+                                json={"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I", "Expiry": active_exp},
+                                headers=headers,
+                            )
+                            if r_oc.status_code == 200:
+                                data = r_oc.json().get("data", {})
+                                oc = data.get("oc", {})
+                                stk_data = oc.get(f"{selected_strike:.6f}") or oc.get(str(int(selected_strike)))
+                                if stk_data:
+                                    opt_info = stk_data.get("pe", {})
+                                    sid = str(opt_info.get("security_id") or "")
+                                    ltp_val = float(opt_info.get("last_price") or 0.0)
+                                    if ltp_val > 0:
+                                        real_ltp = ltp_val
+                                        real_sid = sid
+                except Exception as exc:
+                    log.warning("Direct Dhan option chain PE lookup error: %s", exc)
+
+        if real_ltp <= 0:
+            if self.execution_mode in ("LIVE_1LOT", "LIVE"):
+                log.warning("🚨 Real Dhan quote missing or <= 0 for %s. Live order aborted.", symbol)
+                return selected_strike, sec_id, symbol, 0.0, spread_pts
+            else:
+                real_ltp = max(50.0, round((selected_strike - spot) + 60.0, 1))
+
+        actual_sid = real_sid if (real_sid and real_sid != "0") else sec_id
+        self._cached_contracts[cache_key] = (selected_strike, actual_sid, symbol, real_ltp, now_t)
+        return selected_strike, actual_sid, symbol, real_ltp, spread_pts
 
     # ── 4. ORDER EXECUTION WITH COMPANION SL-M & GUARDS ──────────────────────
     async def execute_setup1_entry(
@@ -345,10 +433,15 @@ class DhanOrderGateway:
             return None
 
         # Resolve ITM 100-multiple Strike (@ ₹200 premium)
-        strike, sec_id, symbol, est_ltp, spread_pts = self.resolve_itm_100_ce_contract(signal.spot)
+        strike, sec_id, symbol, real_ltp, spread_pts = self.resolve_itm_100_ce_contract(signal.spot)
+
+        # Real Dhan Quote Check: Abort if missing or <= 0
+        if real_ltp <= 0:
+            log.warning("🚨 Real Dhan quote missing or <= 0 for %s. Order aborted.", symbol)
+            return None
 
         # Bid-Ask Spread Guard: Abort if spread > 2.0% of premium or > ₹3.0
-        max_spread_pts = max(3.0, est_ltp * 0.02)
+        max_spread_pts = max(3.0, real_ltp * 0.02)
         if spread_pts > max_spread_pts:
             log.warning("🚨 Bid-Ask Spread Guard: Spread %.1f pts exceeds limit %.1f pts! Order aborted.",
                         spread_pts, max_spread_pts)
@@ -359,12 +452,11 @@ class DhanOrderGateway:
         fixed_sl_pts = float(strat.get("fixed_sl_pts", 40.0))
         target_pts = float(strat.get("target_pts", 40.0))
 
-        # Hard 1-Lot Cap (75 qty)
-        lot_size = int(self.exec_cfg.get("lot_size", 75))
-        qty = lot_size  # Strictly 1 Lot
+        # Hard 1-Lot Cap (dynamic from Dhan master, e.g. 65 qty)
+        qty = validate_1lot_cap(self.dynamic_lot_size, self.dynamic_lot_size)
 
-        opt_sl = max(0.50, round(est_ltp - (fixed_sl_pts * delta), 1))
-        opt_target = round(est_ltp + (target_pts * delta), 1)
+        opt_sl = max(0.50, round(real_ltp - (fixed_sl_pts * delta), 1))
+        opt_target = round(real_ltp + (target_pts * delta), 1)
 
         trade_id = f"SETUP1_{int(time.time())}"
         session_date = datetime.now().strftime("%Y-%m-%d")
@@ -453,7 +545,7 @@ class DhanOrderGateway:
         else:
             # PAPER TRADING MODE -> Stage 3 Sandbox
             log.info("📝 [STAGE 3 SANDBOX] BUY %s (%s) @ ₹%.1f | SL-M Trigger ₹%.1f | ₹400 Brokerage Accounted",
-                     symbol, sec_id, est_ltp, opt_sl)
+                     symbol, sec_id, real_ltp, opt_sl)
 
             sandbox_trade = SandboxTrade(
                 trade_id=trade_id,
@@ -462,7 +554,7 @@ class DhanOrderGateway:
                 entry_time=entry_time_str,
                 spot_entry=signal.spot,
                 option_strike=strike,
-                option_entry_ltp=est_ltp,
+                option_entry_ltp=real_ltp,
                 bid_ask_spread_pts=spread_pts,
                 delta_est=delta,
                 initial_sl_spot=signal.sl_spot,
@@ -482,7 +574,7 @@ class DhanOrderGateway:
             strike=strike,
             quantity=qty,
             entry_spot=signal.spot,
-            entry_option_price=est_ltp,
+            entry_option_price=real_ltp,
             entry_time=entry_time_str,
             entry_ts=signal.timestamp,
             spot_sl=signal.sl_spot,
@@ -506,11 +598,10 @@ class DhanOrderGateway:
         confluence_snapshot: Optional[Dict[str, Any]] = None,
     ) -> Optional[ActivePosition]:
         """
-        Executes Flagship 1-Hour 80-EMA Entry (Support Bounce Long CE or Resistance Rejection Short PE):
+        Executes Flagship 1-Hour 80-EMA Entry:
           - Resolves 100-multiple ITM CE/PE contract.
-          - Enforces lot size = 65.
-          - Enforces -40 pt SL / +40 pt Target.
-          - Places paper or live order with companion SL-M.
+          - Enforces dynamic lot size and shared 1-lot cap validator.
+          - Strictly ALERT-ONLY per Question A until formally backtested.
         """
         allowed, reason = self.check_circuit_breakers(daily_trades, daily_pnl_inr)
         if not allowed:
@@ -519,66 +610,23 @@ class DhanOrderGateway:
 
         is_long = getattr(signal, "side", "BUY") == "BUY"
         if is_long:
-            strike, sec_id, symbol, est_ltp, spread_pts = self.resolve_itm_100_ce_contract(signal.spot)
+            strike, sec_id, symbol, real_ltp, spread_pts = self.resolve_itm_100_ce_contract(signal.spot)
             opt_type = "CE"
         else:
-            strike, sec_id, symbol, est_ltp, spread_pts = self.resolve_itm_100_pe_contract(signal.spot)
+            strike, sec_id, symbol, real_ltp, spread_pts = self.resolve_itm_100_pe_contract(signal.spot)
             opt_type = "PE"
 
-        max_spread_pts = max(3.0, est_ltp * 0.02)
-        if spread_pts > max_spread_pts:
-            log.warning("🚨 1H Bid-Ask Spread Guard: Spread %.1f pts exceeds limit %.1f pts!", spread_pts, max_spread_pts)
+        if real_ltp <= 0:
+            log.warning("🚨 1H Real Dhan quote missing or <= 0 for %s. Order aborted.", symbol)
             return None
 
-        delta = 0.60
-        opt_sl = max(0.50, round(est_ltp - (40.0 * delta), 1))
-        opt_target = round(est_ltp + (40.0 * delta), 1)
-        qty = int(getattr(signal, "lot_size", 65))
+        # Shared 1-lot validator on 1H path
+        qty = validate_1lot_cap(int(getattr(signal, "lot_size", self.dynamic_lot_size)), self.dynamic_lot_size)
 
-        trade_id = f"1H80EMA_{int(time.time())}"
-        session_date = datetime.now().strftime("%Y-%m-%d")
-        entry_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # In PAPER mode, log to stage3 sandbox
-        if self.execution_mode == "PAPER":
-            self.sandbox_tracker.record_paper_trade(
-                trade_id=trade_id,
-                session_date=session_date,
-                entry_ts=signal.timestamp or int(time.time()),
-                entry_time=entry_time_str,
-                spot_entry=signal.spot,
-                option_strike=strike,
-                option_entry_ltp=est_ltp,
-                bid_ask_spread_pts=spread_pts,
-                delta_est=delta,
-                initial_sl_spot=signal.sl_spot,
-                target_spot=signal.target_spot,
-                confluence_snapshot={"setup": signal.setup_name, "lot_size": qty},
-            )
-
-        position = ActivePosition(
-            trade_id=trade_id,
-            symbol=symbol,
-            security_id=sec_id,
-            option_type=opt_type,
-            strike=strike,
-            quantity=qty,
-            entry_spot=signal.spot,
-            entry_option_price=est_ltp,
-            entry_time=entry_time_str,
-            entry_ts=signal.timestamp or int(time.time()),
-            spot_sl=signal.sl_spot,
-            spot_target=signal.target_spot,
-            option_sl=opt_sl,
-            option_target=opt_target,
-            delta=delta,
-            cost_to_cost_active=False,
-            highest_spot=signal.spot,
-            exchange_sl_order_id=f"PAPER_SLM_{trade_id}",
-            entry_order_id=f"PAPER_{trade_id}",
-            status="OPEN",
-        )
-        return position
+        # Question A: Alert-only rule until live backtested
+        log.info("📢 [1H 80-EMA ALERT ONLY] %s signal at spot %.1f | Strike: %s | Qty: %d (1 lot) | SL: %.1f | Target: %.1f (Alert-only mode — not wired to real order placement)",
+                 getattr(signal, "setup_name", "1H 80-EMA"), signal.spot, symbol, qty, signal.sl_spot, signal.target_spot)
+        return None
 
     # ── 5. STOP-LOSS MODIFICATION ON DHAN / PAPER ────────────────────────────
     async def modify_exchange_sl_order(self, pos: ActivePosition, new_spot_sl: float) -> None:

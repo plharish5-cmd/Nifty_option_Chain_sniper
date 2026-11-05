@@ -15,7 +15,7 @@ from .strategy_setup1 import load_config
 
 def run() -> None:
     cfg = load_config()
-    host = str(cfg.get("service", {}).get("host", "0.0.0.0"))
+    host = str(cfg.get("service", {}).get("host", "127.0.0.1"))
     port = int(cfg.get("service", {}).get("port", 8500))
 
     print(f"🚀 Launching Setup #1 Algorithmic Execution Service on http://{host}:{port} ...")

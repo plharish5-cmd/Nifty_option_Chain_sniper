@@ -555,6 +555,16 @@ class InstrumentManager:
         except Exception as e:
             log.error("Failed parsing instrument master: %s", e)
 
+    def get_nifty_lot_size(self) -> int:
+        """Reads NIFTY option lot size dynamically from parsed master (65)."""
+        self.ensure_loaded()
+        if self.nifty_options:
+            for opt in self.nifty_options.values():
+                lot = opt.get("lot_size")
+                if lot and lot > 0:
+                    return int(lot)
+        return 65
+
     def get_nearest_expiry(self, target_date: Optional[str] = None) -> str:
         self.ensure_loaded()
         today = target_date or datetime.now(IST).strftime("%Y-%m-%d")
@@ -2541,6 +2551,36 @@ class QuantTerminalBackend:
         """Validates if NSE market is open (09:15 to 15:30 IST Mon-Fri)."""
         return is_nse_market_open(dt=dt, holidays=self.nse_holidays)
 
+    def check_eod_square_off(self, dt: Optional[datetime] = None) -> List[Dict[str, Any]]:
+        """
+        Square off all open intraday positions at 15:20:00 IST (Correction 2).
+        Reason: broker's auto-square-off carries extra charges, matches backtester.
+        Reads eod_square_off_time dynamically from config.
+        """
+        if dt is None:
+            dt = datetime.now(IST)
+        elif dt.tzinfo is None:
+            dt = dt.replace(tzinfo=IST)
+
+        eod_cfg = str(self.cfg.get("eod_square_off_time", "15:20")).strip()
+        eod_parts = [int(x) for x in eod_cfg.split(":")[:2]]
+        eod_target_time = dtime(eod_parts[0], eod_parts[1], 0)
+
+        closed_positions = []
+        if dt.time() >= eod_target_time:
+            open_positions = self.get_active_positions()
+            for p in open_positions:
+                pos_id = p.get("position_id")
+                if pos_id:
+                    res = self.modify_open_position(pos_id, action="CLOSE", enforce_market_hours=False)
+                    if res.get("ok"):
+                        closed_positions.append(res)
+        return closed_positions
+
+    def get_nifty_lot_size(self) -> int:
+        """Returns dynamic NIFTY lot size (65) from instrument master."""
+        return self.inst_mgr.get_nifty_lot_size()
+
     def set_off_hours_paper_testing(self, enabled: bool) -> Dict[str, Any]:
         """Toggles paper trading outside market hours for testing."""
         self.allow_off_hours_paper_testing = bool(enabled)
@@ -4063,7 +4103,7 @@ class QuantTerminalBackend:
             return res_dict
 
     # ── IN-FLIGHT POSITION MODIFICATION ──────────────────────────────────────
-    def modify_open_position(self, position_id: str, action: str, new_val: Optional[float] = None) -> Dict[str, Any]:
+    def modify_open_position(self, position_id: str, action: str, new_val: Optional[float] = None, enforce_market_hours: bool = True) -> Dict[str, Any]:
         with sqlite3.connect(self.ledger_db) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
@@ -4071,10 +4111,10 @@ class QuantTerminalBackend:
             if not pos:
                 return {"ok": False, "error": "Open position not found"}
 
-            # Block Square-Off outside NSE market hours (both Live and Paper unless override)
+            # Block Square-Off outside NSE market hours (both Live and Paper unless override or bypass)
             is_square_off = action in ("CLOSE", "SQUARE_OFF", "EXIT_TRAILING_TARGET")
-            if is_square_off:
-                is_open, mkt_status = self.is_nse_market_open()
+            is_open, mkt_status = self.is_nse_market_open()
+            if is_square_off and enforce_market_hours:
                 if not is_open:
                     pos_mode = str(pos["mode"]) if pos else ""
                     is_paper_pos = ("PAPER" in pos_mode)

@@ -50,7 +50,16 @@ app = FastAPI(title="NIFTY Quant Terminal — Port 8510", version="8.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:8510",
+        "http://127.0.0.1:8510",
+        "http://localhost:8500",
+        "http://127.0.0.1:8500",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -726,7 +735,7 @@ async def api_dhan_connect_test():
 
 def main():
     port = int(backend.cfg.get("port", 8510))
-    host = str(backend.cfg.get("host", "0.0.0.0"))
+    host = str(backend.cfg.get("host", "127.0.0.1"))
     log.info("Starting Port %d server on %s...", port, host)
     uvicorn.run("engine_8510_live:app", host=host, port=port, reload=False, log_level="info")
 

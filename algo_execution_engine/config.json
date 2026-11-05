@@ -1,7 +1,7 @@
 {
   "_comment": "Configuration and thresholds for Setup #1 (Stage 2 8 EMA Long) Algorithmic Execution Service. Edit here, not in Python.",
   "service": {
-    "host": "0.0.0.0",
+    "host": "127.0.0.1",
     "port": 8500,
     "poll_interval_sec": 1.0,
     "log_level": "INFO"
@@ -11,7 +11,7 @@
     "max_daily_loss_inr": -3000.0,
     "stage2_daily_stop_limit": 1,
     "no_entry_after": "15:00",
-    "eod_square_off_time": "15:25"
+    "eod_square_off_time": "15:20"
   },
   "strategy": {
     "name": "Setup #1 - Stage 2 8 EMA Long (Pure 15m)",
@@ -36,7 +36,7 @@
   },
   "execution": {
     "execution_mode": "PAPER",
-    "lot_size": 75,
+    "lot_size": 65,
     "lots_per_trade": 1,
     "product_type": "INTRADAY",
     "exchange_segment": "NSE_FNO",
@@ -48,7 +48,7 @@
     "itm_delta_win": 0.60,
     "itm_delta_loss": 0.50,
     "linear_delta": 0.60,
-    "lot_size": 75,
+    "lot_size": 65,
     "gap_threshold_pts": 60.0,
     "square_off_time": "15:20",
     "profit_factor_min_verdict": 1.30

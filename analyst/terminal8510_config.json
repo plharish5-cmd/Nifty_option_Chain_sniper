@@ -1,6 +1,7 @@
 {
   "port": 8510,
-  "host": "0.0.0.0",
+  "host": "127.0.0.1",
+  "eod_square_off_time": "15:20",
   "dhan_base_url": "https://api.dhan.co/v2",
   "dhan": {
     "client_id": "1112377935",

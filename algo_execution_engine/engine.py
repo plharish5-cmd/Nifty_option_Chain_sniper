@@ -167,9 +167,23 @@ class Setup1ExecutionEngine:
         df_1h = build_1h_data(df_1m, self.cfg)
         self.last_df_1h = df_1h
 
-        # Case A: Active Position is Open -> Monitor Fixed 40/40 Risk Bracket / Exits
+        # EOD Square-Off at 15:20:00 IST (Correction 2: Read dynamically from config)
+        eod_str = str(self.cfg.get("risk", {}).get("eod_square_off_time", "15:20")).strip()
+        eod_parts = [int(x) for x in eod_str.split(":")[:2]]
+        eod_time = dtime(eod_parts[0], eod_parts[1], 0)
+
+        # Case A: Active Position is Open -> Monitor EOD 15:20 / Fixed 40/40 Risk Bracket / Exits
         if self.active_position is not None:
             pos = self.active_position
+            if current_time >= eod_time:
+                log.warning("⏰ EOD SQUARE-OFF TRIGGERED at %s (Config Cutoff: %s IST)", current_time, eod_str)
+                closed_pos = await self.gateway.execute_position_exit(pos, self.last_spot, f"EOD_SQUARE_OFF_{eod_parts[0]}_{eod_parts[1]}")
+                self.daily_pnl_inr += closed_pos.pnl_inr
+                self.closed_positions.append(closed_pos.to_dict())
+                self.active_position = None
+                log.info("📊 Daily PnL updated post EOD square-off: ₹%+.1f INR across %d trades", self.daily_pnl_inr, self.daily_trades_count)
+                return
+
             if pos.trade_id.startswith("1H80EMA"):
                 should_exit, exit_reason, updated_sl = self.evaluator_1h.evaluate_active_position(
                     pos=pos,

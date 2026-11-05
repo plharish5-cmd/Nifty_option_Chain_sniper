@@ -334,6 +334,80 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(r_ov2.status_code, 200)
             self.assertFalse(r_ov2.json().get("allow_off_hours_paper_testing"))
 
+    # ── TEST 6: DYNAMIC LOT SIZE & 1-LOT HARD CAP ─────────────────────────────
+    def test_06_dynamic_lot_size_and_1lot_cap(self):
+        """
+        Verify Claude Correction 1:
+        - NIFTY lot size is dynamically parsed from Dhan master CSV (65, not 75)
+        - validate_1lot_cap permits exactly 1 lot and rejects > 1 lot
+        """
+        from algo_execution_engine.order_gateway import validate_1lot_cap, get_dynamic_nifty_lot_size
+
+        backend = QuantTerminalBackend()
+        lot_size = backend.get_nifty_lot_size()
+        self.assertEqual(lot_size, 65, f"Expected dynamic lot size 65, got {lot_size}")
+
+        dynamic_lot_engine = get_dynamic_nifty_lot_size()
+        self.assertEqual(dynamic_lot_engine, 65)
+
+        # 1 Lot passes
+        self.assertEqual(validate_1lot_cap(65, 65), 65)
+
+        # > 1 Lot strictly clamped to 1 Lot (65)
+        self.assertEqual(validate_1lot_cap(130, 65), 65)
+
+        # <= 0 qty strictly raises ValueError
+        with self.assertRaises(ValueError):
+            validate_1lot_cap(0, 65)
+
+    # ── TEST 7: EOD 15:20:00 IST SQUARE-OFF ──────────────────────────────────
+    async def test_07_eod_square_off_1520(self):
+        """
+        Verify Claude Correction 2:
+        - eod_square_off_time reads dynamically from config (15:20)
+        - Square-off is NOT triggered before 15:20 (e.g. 14:30)
+        - All open intraday positions are squared off at or after 15:20:00 IST
+        """
+        backend = QuantTerminalBackend()
+        self.assertEqual(backend.cfg.get("eod_square_off_time"), "15:20")
+
+        # Create an open paper position with testing override
+        backend.paper_execution_enabled = True
+        backend.set_off_hours_paper_testing(True)
+
+        contract = {
+            "id": "LONG_CE_EOD",
+            "symbol": "09 Nov 2026 — NIFTY 24300 CE",
+            "opt_type": "CE",
+            "strike": 24300,
+            "ltp": 110.0,
+            "security_id": 39951
+        }
+        res = await backend.execute_order_with_chaser(
+            contract=contract,
+            side="BUY",
+            strategy_name="EOD Test",
+            source="AUTO ALGO 🤖",
+            strategy_setup="Stage 2 8 EMA Touch"
+        )
+        self.assertTrue(res["ok"])
+        self.assertGreater(len(backend.get_active_positions()), 0)
+
+        # 1. Simulate check at 14:30:00 IST -> should NOT square off
+        dt_1430 = datetime(2026, 11, 5, 14, 30, 0)
+        closed_early = backend.check_eod_square_off(dt=dt_1430)
+        self.assertEqual(len(closed_early), 0)
+        self.assertGreater(len(backend.get_active_positions()), 0)
+
+        # 2. Simulate check at 15:20:01 IST -> MUST square off open positions
+        dt_1520 = datetime(2026, 11, 5, 15, 20, 1)
+        closed_eod = backend.check_eod_square_off(dt=dt_1520)
+        self.assertGreater(len(closed_eod), 0)
+        self.assertEqual(len(backend.get_active_positions()), 0)
+
+        # Reset override
+        backend.set_off_hours_paper_testing(False)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -33,6 +33,18 @@
     "ict_smc_app/frontend/src/components/CvdAlertWidget.tsx": {
       "sha256": "85abee0def886189d584eff92684a2b83dfad53bf61e6e4261151da9c79fcbf0",
       "size_bytes": 21450
+    },
+    "ict_smc_app/backend/app/market/chain.py": {
+      "sha256": "765c5ab8b977ca0cb05da7e4d1fbd94232f2caa0198fa8be1e9e0d2694faaae9",
+      "size_bytes": 39720
+    },
+    "ict_smc_app/frontend/src/components/OcLab.tsx": {
+      "sha256": "d52691642c1e271bd60201e6bc8789b9b7d5ee0656212444053202be4eefda22",
+      "size_bytes": 176305
+    },
+    "ict_smc_app/frontend/src/components/Chart.tsx": {
+      "sha256": "80d1f0592a1f0ad5e7bd1e8c1a030103095f16c9f4d3347f224e9c7d401f06d5",
+      "size_bytes": 371033
     }
   },
   "relock_history": [

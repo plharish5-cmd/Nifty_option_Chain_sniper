@@ -17,6 +17,7 @@ Validates:
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import datetime, time as dtime
 import numpy as np
 import pandas as pd
@@ -352,3 +353,23 @@ def test_api_telemetry_status_endpoint():
     assert "port" in data
     assert data["port"] == 8500
     assert data["health"] == "OK"
+
+
+def test_admin_endpoints_require_secret():
+    client = TestClient(app)
+    # 1. Without X-Algo-Secret header -> 401 Unauthorized
+    res1 = client.post("/api/algo/mode", json={"mode": "PAPER"})
+    assert res1.status_code == 401
+
+    res2 = client.post("/api/algo/emergency-flatten")
+    assert res2.status_code == 401
+
+    res3 = client.post("/api/algo/reset-circuit-breaker")
+    assert res3.status_code == 401
+
+    # 2. With valid X-Algo-Secret header
+    secret = os.environ.get("ALGO_SHARED_SECRET", "")
+    headers = {"X-Algo-Secret": secret}
+    res_ok = client.post("/api/algo/mode", json={"mode": "PAPER"}, headers=headers)
+    assert res_ok.status_code == 200
+    assert res_ok.json().get("ok") is True

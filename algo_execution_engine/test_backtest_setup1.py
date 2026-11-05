@@ -86,11 +86,11 @@ def test_part_k_money_math_and_brokerage():
     )
 
     assert win_trade.spot_pnl_pts == 40.0
-    # Linear: 40 * 0.60 * 75 = 1800 gross - 400 = 1400 net
-    assert win_trade.linear_gross_inr == 1800.0
-    assert win_trade.linear_net_inr == 1400.0
-    # Asymmetric: 40 * 0.60 * 75 = 1800 gross - 400 = 1400 net
-    assert win_trade.asym_net_inr == 1400.0
+    # Dynamic lot size (65 qty): 40 * 0.60 * 65 = 1560 gross - 400 = 1160 net
+    assert win_trade.linear_gross_inr == 1560.0
+    assert win_trade.linear_net_inr == 1160.0
+    # Asymmetric: 40 * 0.60 * 65 = 1560 gross - 400 = 1160 net
+    assert win_trade.asym_net_inr == 1160.0
 
     # Losing trade (-40 pts)
     loss_trade = simulator._close_trade(
@@ -105,11 +105,11 @@ def test_part_k_money_math_and_brokerage():
     )
 
     assert loss_trade.spot_pnl_pts == -40.0
-    # Linear: -40 * 0.60 * 75 = -1800 gross - 400 = -2200 net
-    assert loss_trade.linear_gross_inr == -1800.0
-    assert loss_trade.linear_net_inr == -2200.0
-    # Asymmetric cushioned: -40 * 0.50 * 75 = -1500 gross - 400 = -1900 net
-    assert loss_trade.asym_net_inr == -1900.0
+    # Linear: -40 * 0.60 * 65 = -1560 gross - 400 = -1960 net
+    assert loss_trade.linear_gross_inr == -1560.0
+    assert loss_trade.linear_net_inr == -1960.0
+    # Asymmetric cushioned: -40 * 0.50 * 65 = -1300 gross - 400 = -1700 net
+    assert loss_trade.asym_net_inr == -1700.0
 
 
 def test_metrics_calculation():
