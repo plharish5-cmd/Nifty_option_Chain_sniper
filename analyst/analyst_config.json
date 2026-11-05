@@ -39,12 +39,6 @@
     "follow_through_ctc_max_loss_pts": 8.0,
     "tsl_activation_profit_pts": 20.0
   },
-  "port8600_bridge": {
-    "port8600_url": "http://127.0.0.1:8600",
-    "poll_interval_s": 15,
-    "atm_strike_range_pts": 500.0,
-    "crossover_threshold_ratio": 1.05
-  },
   "stockmojo_ingestion": {
     "poll_interval_s": 60,
     "api_url": "https://data.stockmojo.in/live/oi/pcr",

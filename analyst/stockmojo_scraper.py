@@ -757,11 +757,15 @@ class StockMojoScraper:
     def get_snapshot(self) -> Dict[str, Any]:
         """Returns instantaneous snapshot for Multi-Factor Trend Lab telemetry injection."""
         latest = self.ring_buffer[0] if self.ring_buffer else {}
+        c_oi = abs(float(latest.get("call_oi_change_day", 1.0)))
+        p_oi = abs(float(latest.get("put_oi_change_day", 1.0)))
+        cw_vs_pw = round(c_oi / max(0.01, p_oi), 2)
         return {
             "pe_minus_ce_day": latest.get("pe_minus_ce_day", 0.0),
             "pe_minus_ce_interval": latest.get("pe_minus_ce_interval", 0.0),
             "call_oi_change_day": latest.get("call_oi_change_day", 0.0),
             "put_oi_change_day": latest.get("put_oi_change_day", 0.0),
+            "cw_vs_pw_ratio": cw_vs_pw,
             "total_call_oi": round(latest.get("call_oi_change_day", 0.0) + 200.0, 2),
             "total_put_oi": round(latest.get("put_oi_change_day", 0.0) + (200.0 * latest.get("pcr_total", 1.0)), 2),
             "pcr": latest.get("pcr_total", 1.0),

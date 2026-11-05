@@ -72,9 +72,9 @@ async def startup_event():
     backend.scanner_task = asyncio.create_task(backend.start_strategy_scanner_loop())
     log.info("✔ 4-Strategy Live Scanner daemon launched.")
 
-    # Start 60s background polling daemon for StockMojo live direct OI and folder watcher
+    # Start 60s background polling daemon for Institutional live direct OI and folder watcher
     backend.stockmojo_scraper.start_background_polling()
-    log.info("✔ StockMojo 60s Live OI Polling daemon launched.")
+    log.info("✔ Institutional 60s Live OI Polling daemon launched.")
 
 
 @app.get("/")
@@ -414,8 +414,9 @@ async def api_reconcile_homework(req: Request):
     return JSONResponse(content=res)
 
 
+@app.get("/api/oi/matrix")
 @app.get("/api/stockmojo/matrix")
-async def api_stockmojo_matrix():
+async def api_oi_matrix():
     return JSONResponse(content={
         "pcr": backend.cached_telemetry.get("pcr", {}).get("ratio", 1.08),
         "tag": backend.cached_telemetry.get("pcr", {}).get("tag", "BULLISH"),
@@ -423,69 +424,67 @@ async def api_stockmojo_matrix():
     })
 
 
-@app.get("/api/confluence/port8600")
-async def api_confluence_port8600():
-    """Returns Port 8600 OI Writers snapshot, curves, and crossover/divergence signals."""
-    snap = await backend.port8600_bridge.poll_once()
-    return JSONResponse(content=snap)
-
-
+@app.post("/api/oi/ingest")
 @app.post("/api/stockmojo/ingest")
-async def api_stockmojo_ingest(req: Request):
-    """Ingests 1-minute StockMojo table rows from browser bookmarklet, scraper, or devtools."""
+async def api_oi_ingest(req: Request):
+    """Ingests 1-minute Institutional table rows from browser bookmarklet, scraper, or devtools."""
     try:
         body = await req.json()
-        res = backend.stockmojo_scraper.ingest_rows(body)
+        res = backend.oi_scraper.ingest_rows(body)
         return JSONResponse(content=res)
     except Exception as e:
-        log.error("StockMojo ingest error: %s", e)
+        log.error("Live OI ingest error: %s", e)
         return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
 
 
+@app.get("/api/oi/pe_ce_table")
 @app.get("/api/stockmojo/pe_ce_table")
-async def api_stockmojo_pe_ce_table(limit: int = 60):
-    """Returns newest-first StockMojo PE - CE table (last 60 minutes) + strike breakdown."""
-    res = backend.stockmojo_scraper.get_pe_ce_table(limit=limit)
+async def api_oi_pe_ce_table(limit: int = 60):
+    """Returns newest-first Institutional PE - CE table (last 60 minutes) + strike breakdown."""
+    res = backend.oi_scraper.get_pe_ce_table(limit=limit)
     return JSONResponse(content=res)
 
 
+@app.post("/api/oi/sync_now")
 @app.post("/api/stockmojo/sync_now")
-async def api_stockmojo_sync_now():
-    """1-click manual trigger to scan downloads folder and poll live StockMojo API."""
-    dl_res = backend.stockmojo_scraper.check_download_folder()
-    api_res = await backend.stockmojo_scraper.poll_direct_stockmojo_api()
-    p8600_res = await backend.port8600_bridge.poll_once()
+async def api_oi_sync_now():
+    """1-click manual trigger to scan downloads folder and poll live Institutional OI API."""
+    dl_res = backend.oi_scraper.check_download_folder()
+    api_res = await backend.oi_scraper.poll_direct_stockmojo_api()
     return JSONResponse(content={
         "ok": True,
         "downloads_scanned": dl_res,
         "live_api": api_res,
-        "port8600_bridge": p8600_res.get("ok", True),
-        "table_summary": backend.stockmojo_scraper.get_pe_ce_table(limit=1),
+        "table_summary": backend.oi_scraper.get_pe_ce_table(limit=1),
     })
 
 
+@app.get("/api/oi/live_curves")
+@app.get("/api/oi/live_oi")
 @app.get("/api/stockmojo/live_oi")
-async def api_stockmojo_live_oi():
-    """Returns live time-series arrays for StockMojo OI curves."""
-    res = backend.stockmojo_scraper.get_live_oi_curves()
+async def api_oi_live_curves():
+    """Returns live time-series arrays for Institutional OI curves."""
+    res = backend.oi_scraper.get_live_oi_curves()
     return JSONResponse(content=res)
 
 
+@app.post("/api/oi/update_token")
 @app.post("/api/stockmojo/update_token")
-async def api_stockmojo_update_token(req: Request):
-    """Updates StockMojo JWT Bearer token."""
+async def api_oi_update_token(req: Request):
+    """Updates Live Ingestion JWT Bearer token."""
     body = await req.json()
     token = body.get("jwt_token") or body.get("token") or ""
-    res = backend.stockmojo_scraper.update_token(token)
+    res = backend.oi_scraper.update_token(token)
     return JSONResponse(content=res)
 
 
+@app.post("/api/oi/configure_curl")
 @app.post("/api/stockmojo/configure_curl")
-async def api_stockmojo_configure_curl(req: Request):
-    """Configures StockMojo auth from pasted Chrome DevTools cURL command."""
+async def api_oi_configure_curl(req: Request):
+    """Configures Live Ingestion auth from pasted Chrome DevTools cURL command."""
     body = await req.json()
     curl_str = body.get("curl") or body.get("command") or ""
-    res = backend.stockmojo_scraper.configure_curl(curl_str)
+    res = backend.oi_scraper.configure_curl(curl_str)
     return JSONResponse(content=res)
 
 

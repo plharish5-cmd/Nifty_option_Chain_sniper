@@ -87,13 +87,6 @@
     "enabled": true,
     "lang": "en-IN"
   },
-  "port8600_bridge": {
-    "enabled": true,
-    "url": "http://127.0.0.1:8600",
-    "poll_interval_seconds": 15,
-    "atm_strike_range_pts": 500.0,
-    "crossover_threshold_ratio": 1.05
-  },
   "stockmojo": {
     "enabled": true,
     "poll_interval_seconds": 60,

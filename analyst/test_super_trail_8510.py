@@ -539,13 +539,13 @@ def test_backtest_timestamp_logging_and_homework_reconciliation():
 
 def test_stockmojo_and_port8600_confluence_integration():
     """
-    Test 10: Verifies Port 8600 Bridge, StockMojo 1m Ingestion, Staged Trend Lab Variables, and Tab 6 Removal:
+    Test 10: Verifies Port 8600 Removal, Institutional OI 1m Ingestion, Staged Trend Lab Variables, and Tab 6:
       1. parse_indian_unit_to_lakhs handles Cr, L, K, and +/- correctly.
-      2. POST /api/stockmojo/ingest ingests live 1m rows from Nov 4 (15:33, 15:36, 15:39).
-      3. GET /api/stockmojo/pe_ce_table returns parsed newest-first table.
-      4. GET /api/confluence/port8600 returns structured curves, fresh/cum OI, and writer signals.
-      5. /api/telemetry populates all 10 trend_lab_variables.
-      6. Tab 6 (tabSandboxGatekeeper) is removed while Multi-Factor Trend Lab (tabTrendLab) remains intact.
+      2. POST /api/oi/ingest & /api/stockmojo/ingest ingests live 1m rows from Nov 4 (15:33, 15:36, 15:39).
+      3. GET /api/oi/pe_ce_table & /api/stockmojo/pe_ce_table returns parsed newest-first table.
+      4. GET /api/confluence/port8600 is removed (returns 404).
+      5. /api/telemetry populates generic trend_lab_variables and does NOT contain port8600_confluence or var_8600_*.
+      6. HTML DOM contains no references to Port 8600 or var_8600_*.
     """
     from analyst.stockmojo_scraper import parse_indian_unit_to_lakhs
     from fastapi.testclient import TestClient
@@ -560,7 +560,7 @@ def test_stockmojo_and_port8600_confluence_integration():
     assert parse_indian_unit_to_lakhs("200.0") == 200.0, f"Expected 200.0, got {parse_indian_unit_to_lakhs('200.0')}"
 
     with TestClient(app) as client:
-        # 2. Test POST /api/stockmojo/ingest with exact benchmark rows
+        # 2. Test POST /api/oi/ingest and legacy /api/stockmojo/ingest with exact benchmark rows
         sample_rows = [
             {
                 "Time": "15:33",
@@ -599,14 +599,14 @@ def test_stockmojo_and_port8600_confluence_integration():
                 "Future OI Change (Day)": "-1.3 L",
             },
         ]
-        resp_ingest = client.post("/api/stockmojo/ingest", json=sample_rows)
+        resp_ingest = client.post("/api/oi/ingest", json=sample_rows)
         assert resp_ingest.status_code == 200, f"Ingest failed: {resp_ingest.text}"
         data_ingest = resp_ingest.json()
         assert data_ingest["ok"] is True
         assert data_ingest["ingested_count"] == 3
 
-        # 3. Test GET /api/stockmojo/pe_ce_table
-        resp_tbl = client.get("/api/stockmojo/pe_ce_table?limit=10")
+        # 3. Test GET /api/oi/pe_ce_table
+        resp_tbl = client.get("/api/oi/pe_ce_table?limit=10")
         assert resp_tbl.status_code == 200
         data_tbl = resp_tbl.json()
         assert data_tbl["ok"] is True
@@ -616,52 +616,43 @@ def test_stockmojo_and_port8600_confluence_integration():
         assert times == sorted(times, reverse=True), f"Expected newest-first ordering, got {times}"
         assert "15:39" in times and "15:36" in times
 
-        # 4. Test GET /api/confluence/port8600
+        # 4. Verify Port 8600 endpoint is completely removed (returns 404)
         resp_8600 = client.get("/api/confluence/port8600")
-        assert resp_8600.status_code == 200
-        data_8600 = resp_8600.json()
-        assert data_8600["ok"] is True
-        assert "cw_vs_pw_ratio" in data_8600
-        assert "cum_oi_ce" in data_8600
-        assert "cum_oi_pe" in data_8600
-        assert "fresh_oi_ce" in data_8600
-        assert "fresh_oi_pe" in data_8600
-        assert "writer_crossover_state" in data_8600
-        assert "crossover_flag" in data_8600
-        assert "series" in data_8600
-        assert len(data_8600["series"]) >= 2
+        assert resp_8600.status_code == 404, f"Expected 404 for removed Port 8600 route, got {resp_8600.status_code}"
 
-        # 5. Test GET /api/telemetry contains staged trend_lab_variables
+        # 5. Test GET /api/telemetry contains generic trend_lab_variables and NO Port 8600 artifacts
         resp_telem = client.get("/api/telemetry")
         assert resp_telem.status_code == 200
         telem = resp_telem.json()
         assert "trend_lab_variables" in telem, "Telemetry missing trend_lab_variables"
         vars_dict = telem["trend_lab_variables"]
         expected_vars = [
-            "var_8600_cw_pw_ratio",
-            "var_8600_fresh_oi_diff",
-            "var_8600_cum_oi_diff",
-            "var_8600_crossover_flag",
-            "var_stockmojo_pe_minus_ce",
-            "var_sm_call_oi_change",
-            "var_sm_put_oi_change",
-            "var_sm_total_call_oi",
-            "var_sm_total_put_oi",
-            "var_sm_oi_writer_bias",
+            "var_pe_minus_ce",
+            "var_call_oi_change",
+            "var_put_oi_change",
+            "var_total_call_oi",
+            "var_total_put_oi",
+            "var_oi_writer_bias",
         ]
         for v in expected_vars:
-            assert v in vars_dict, f"Missing staged variable {v} in trend_lab_variables"
+            assert v in vars_dict, f"Missing generic variable {v} in trend_lab_variables"
 
-        # 6. Verify HTML Tab Cleanup & Retention
+        # Assert all 8600 variables removed
+        for k in vars_dict.keys():
+            assert not k.startswith("var_8600_"), f"Unexpected Port 8600 variable in trend_lab_variables: {k}"
+        assert "port8600_confluence" not in telem, "port8600_confluence MUST be removed from telemetry"
+        assert "institutional_pe_ce" in telem, "institutional_pe_ce MUST be present in telemetry"
+
+        # 6. Verify HTML Tab Cleanup & Port 8600 Removal
         html_path = ROOT / "Algorithmic_Trading_Workspace_8510.html"
         html_content = html_path.read_text(encoding="utf-8")
-        assert "tabSandboxGatekeeper" not in html_content, "tabSandboxGatekeeper MUST be completely removed from HTML"
-        assert "sandbox30Body" not in html_content, "sandbox30Body MUST be completely removed from HTML"
+        assert "8600" not in html_content, "Port 8600 MUST be completely removed from HTML"
+        assert "var_8600" not in html_content, "var_8600_* MUST be completely removed from HTML"
         assert "tabTrendLab" in html_content, "tabTrendLab (Multi-Factor Trend Lab) MUST remain intact"
         assert "tabStockMojoSuite" in html_content, "tabStockMojoSuite MUST remain intact"
-        assert "var_8600_cw_pw_ratio" in html_content, "var_8600_cw_pw_ratio MUST be present in HTML DOM"
+        assert "Institutional OI Writers" in html_content, "Institutional OI Writers nomenclature MUST be present in HTML DOM"
 
-    print("✔ Test 10 Passed: StockMojo 1m Ingestion, Port 8600 Bridge & Staged Trend Lab Variables verified 100%.")
+    print("✔ Test 10 Passed: Port 8600 Removal, Institutional OI Ingestion & Generic Nomenclature verified 100%.")
 
 
 def main():

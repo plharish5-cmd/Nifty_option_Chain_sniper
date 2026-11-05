@@ -1406,240 +1406,6 @@ def get_replay_trades_for_date(target_date: str) -> List[Dict[str, Any]]:
     return []
 
 
-class Port8600Bridge:
-    """
-    Bridge to locally running Port 8600 Option Chain & OI Writers App (http://127.0.0.1:8600).
-    Polls /api/desk/stockmojo-oi-change, /api/pe_ce_matrix, or local ict_smc.sqlite3 DB.
-    Computes:
-      - cw_vs_pw_ratio: Call Writers vs. Put Writers ratio and live time-series array
-      - cum_oi_ce & cum_oi_pe: Cumulative Total Call OI vs. Put OI (±500 pts from ATM)
-      - fresh_oi_ce & fresh_oi_pe: Fresh Call Writing vs. Fresh Put Writing (intraday ΔOI)
-      - fresh_oi_diff: fresh_oi_pe - fresh_oi_ce
-      - cum_oi_diff: cum_oi_pe - cum_oi_ce
-      - writer_crossover_state: BULLISH_CROSSOVER / BEARISH_CROSSOVER / BULLISH_DIVERGENCE / BEARISH_DIVERGENCE / NEUTRAL
-      - crossover_flag: BULLISH_CROSS / BEARISH_CROSS / DIVERGENCE / NONE
-    """
-
-    def __init__(
-        self,
-        market_db_path: Path,
-        port8600_url: str = "http://127.0.0.1:8600",
-        poll_interval: int = 15,
-        atm_strike_range_pts: float = 500.0,
-    ) -> None:
-        self.market_db = market_db_path
-        self.port8600_url = port8600_url.rstrip("/")
-        self.poll_interval = poll_interval
-        self.atm_range = atm_strike_range_pts
-        self.last_poll_ts: float = 0.0
-        self.cached_snapshot: Dict[str, Any] = self._create_initial_snapshot()
-
-    def _create_initial_snapshot(self) -> Dict[str, Any]:
-        """Provides verified fallback benchmark snapshot matching StockMojo / Port 8600."""
-        now_str = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
-        base_series = []
-        for i in range(25):
-            t_min = 14 * 60 + 5 + i * 3
-            hh = t_min // 60
-            mm = t_min % 60
-            time_str = f"{hh:02d}:{mm:02d}"
-            spot_val = round(23750.0 + (i * 2.1) + ((i % 3) * 1.5), 1)
-            cw_val = int(1850000 + i * 45000)
-            pw_val = int(1720000 + i * 62000)
-            ratio = round(cw_val / max(1, pw_val), 2)
-            sig = "BULLISH_CROSS" if pw_val > cw_val else ("BEARISH_CROSS" if cw_val > pw_val * 1.05 else "NEUTRAL")
-            base_series.append({
-                "time": time_str,
-                "spot": spot_val,
-                "cw_oi": cw_val,
-                "pw_oi": pw_val,
-                "cw_vs_pw_ratio": ratio,
-                "signal": sig,
-            })
-
-        return {
-            "ok": True,
-            "port8600_online": False,
-            "source": "initial_cache",
-            "timestamp": now_str,
-            "spot_price": 23960.6,
-            "atm_strike": 23950.0,
-            "cw_vs_pw_ratio": 0.82,
-            "cum_oi_ce": 24500000,
-            "cum_oi_pe": 29800000,
-            "fresh_oi_ce": 3200000,
-            "fresh_oi_pe": 5400000,
-            "fresh_oi_diff": 2200000,
-            "cum_oi_diff": 5300000,
-            "writer_crossover_state": "BULLISH_CROSSOVER",
-            "crossover_flag": "BULLISH_CROSS",
-            "divergence": "NONE",
-            "series": base_series,
-            "strikes_breakdown": [
-                {"strike": 23800.0, "ce_oi": 1200000, "pe_oi": 3500000, "ce_chg": 150000, "pe_chg": 620000, "bias": "BULLISH"},
-                {"strike": 23850.0, "ce_oi": 950000, "pe_oi": 2800000, "ce_chg": 110000, "pe_chg": 480000, "bias": "BULLISH"},
-                {"strike": 23900.0, "ce_oi": 2100000, "pe_oi": 4100000, "ce_chg": 280000, "pe_chg": 750000, "bias": "BULLISH"},
-                {"strike": 23950.0, "ce_oi": 3800000, "pe_oi": 3600000, "ce_chg": 520000, "pe_chg": 590000, "bias": "NEUTRAL"},
-                {"strike": 24000.0, "ce_oi": 5200000, "pe_oi": 1900000, "ce_chg": 890000, "pe_chg": 240000, "bias": "BEARISH"},
-                {"strike": 24050.0, "ce_oi": 2600000, "pe_oi": 850000, "ce_chg": 410000, "pe_chg": 90000, "bias": "BEARISH"},
-                {"strike": 24100.0, "ce_oi": 4100000, "pe_oi": 620000, "ce_chg": 630000, "pe_chg": 45000, "bias": "BEARISH"},
-            ],
-        }
-
-    async def poll_once(self) -> Dict[str, Any]:
-        """Polls Port 8600 endpoint or falls back gracefully to local database."""
-        now_ts = time.time()
-        if now_ts - self.last_poll_ts < self.poll_interval and self.cached_snapshot.get("timestamp"):
-            return self.cached_snapshot
-
-        self.last_poll_ts = now_ts
-        now_str = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
-
-        # 1. Attempt HTTP poll to local Port 8600 app
-        try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                resp = await client.get(f"{self.port8600_url}/api/desk/stockmojo-oi-change")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    series = data.get("series", [])
-                    if series:
-                        last_pt = series[-1]
-                        cw_chg = float(last_pt.get("call_oi_chg", last_pt.get("ce_oi_chg", 1.0)))
-                        pw_chg = float(last_pt.get("put_oi_chg", last_pt.get("pe_oi_chg", 1.0)))
-                        ratio = round(cw_chg / max(1.0, pw_chg), 2)
-                        diff = int(pw_chg - cw_chg)
-                        spot_val = float(last_pt.get("spot", 23960.0))
-
-                        cross_state = "BULLISH_CROSSOVER" if pw_chg > cw_chg * 1.05 else ("BEARISH_CROSSOVER" if cw_chg > pw_chg * 1.05 else "NEUTRAL")
-                        flag = "BULLISH_CROSS" if cross_state == "BULLISH_CROSSOVER" else ("BEARISH_CROSS" if cross_state == "BEARISH_CROSSOVER" else "NONE")
-
-                        chart_series = []
-                        for pt in series[-30:]:
-                            chart_series.append({
-                                "time": str(pt.get("time", pt.get("time_label", "--:--"))),
-                                "spot": float(pt.get("spot", spot_val)),
-                                "cw_oi": int(pt.get("call_oi_chg", pt.get("ce_oi_chg", 0))),
-                                "pw_oi": int(pt.get("put_oi_chg", pt.get("pe_oi_chg", 0))),
-                                "cw_vs_pw_ratio": round(float(pt.get("call_oi_chg", 1.0)) / max(1.0, float(pt.get("put_oi_chg", 1.0))), 2),
-                                "signal": "BULLISH_CROSS" if float(pt.get("put_oi_chg", 0)) > float(pt.get("call_oi_chg", 0)) else "BEARISH_CROSS",
-                            })
-
-                        snap = {
-                            "ok": True,
-                            "port8600_online": True,
-                            "source": "http_port8600",
-                            "timestamp": now_str,
-                            "spot_price": spot_val,
-                            "atm_strike": float(round(spot_val / 50.0) * 50),
-                            "cw_vs_pw_ratio": ratio,
-                            "cum_oi_ce": int(last_pt.get("cum_ce_oi", cw_chg * 4)),
-                            "cum_oi_pe": int(last_pt.get("cum_pe_oi", pw_chg * 4)),
-                            "fresh_oi_ce": int(cw_chg),
-                            "fresh_oi_pe": int(pw_chg),
-                            "fresh_oi_diff": diff,
-                            "cum_oi_diff": int(last_pt.get("cum_pe_oi", pw_chg * 4)) - int(last_pt.get("cum_ce_oi", cw_chg * 4)),
-                            "writer_crossover_state": cross_state,
-                            "crossover_flag": flag,
-                            "divergence": "NONE",
-                            "series": chart_series,
-                            "strikes_breakdown": self.cached_snapshot.get("strikes_breakdown", []),
-                        }
-                        self.cached_snapshot = snap
-                        return snap
-        except Exception as e:
-            log.debug("Port 8600 HTTP poll offline (%s); falling back to local SQLite", e)
-
-        # 2. Fallback to local SQLite DB (ict_smc.sqlite3 -> chain_latest)
-        if self.market_db.exists():
-            try:
-                with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
-                    cur = conn.cursor()
-                    r = cur.execute("SELECT payload FROM chain_latest ORDER BY ts DESC LIMIT 1").fetchone()
-                    if r and r[0]:
-                        chain_data = json.loads(r[0])
-                        spot_val = float(chain_data.get("spot", 23960.6))
-                        atm_val = float(chain_data.get("atm", round(spot_val / 50.0) * 50))
-                        rows = chain_data.get("rows", [])
-                        near = [row for row in rows if abs(row.get("strike", 0) - atm_val) <= self.atm_range]
-
-                        ce_oi = int(sum(row.get("ce", {}).get("oi", 0) for row in near))
-                        pe_oi = int(sum(row.get("pe", {}).get("oi", 0) for row in near))
-                        ce_chg = int(sum(row.get("ce", {}).get("oi_chg", 0) for row in near))
-                        pe_chg = int(sum(row.get("pe", {}).get("oi_chg", 0) for row in near))
-
-                        ratio = round(ce_chg / max(1.0, pe_chg), 2)
-                        diff = pe_chg - ce_chg
-                        cum_diff = pe_oi - ce_oi
-
-                        cross_state = "BULLISH_CROSSOVER" if pe_chg > ce_chg * 1.05 else ("BEARISH_CROSSOVER" if ce_chg > pe_chg * 1.05 else "NEUTRAL")
-                        flag = "BULLISH_CROSS" if cross_state == "BULLISH_CROSSOVER" else ("BEARISH_CROSS" if cross_state == "BEARISH_CROSSOVER" else "NONE")
-
-                        strikes_list = []
-                        for row in sorted(near, key=lambda x: x.get("strike", 0)):
-                            stk = float(row.get("strike", 0))
-                            c_oi = int(row.get("ce", {}).get("oi", 0))
-                            p_oi = int(row.get("pe", {}).get("oi", 0))
-                            c_chg = int(row.get("ce", {}).get("oi_chg", 0))
-                            p_chg = int(row.get("pe", {}).get("oi_chg", 0))
-                            b_tag = "BULLISH" if p_chg > c_chg else ("BEARISH" if c_chg > p_chg else "NEUTRAL")
-                            strikes_list.append({
-                                "strike": stk,
-                                "ce_oi": c_oi,
-                                "pe_oi": p_oi,
-                                "ce_chg": c_chg,
-                                "pe_chg": p_chg,
-                                "bias": b_tag,
-                            })
-
-                        series = list(self.cached_snapshot.get("series", []))
-                        now_hm = datetime.now(IST).strftime("%H:%M")
-                        new_pt = {
-                            "time": now_hm,
-                            "spot": spot_val,
-                            "cw_oi": ce_chg,
-                            "pw_oi": pe_chg,
-                            "cw_vs_pw_ratio": ratio,
-                            "signal": flag,
-                        }
-                        if not series or series[-1].get("time") != now_hm:
-                            series.append(new_pt)
-                            if len(series) > 30:
-                                series = series[-30:]
-
-                        snap = {
-                            "ok": True,
-                            "port8600_online": False,
-                            "source": "local_sqlite_chain_latest",
-                            "timestamp": now_str,
-                            "spot_price": spot_val,
-                            "atm_strike": atm_val,
-                            "cw_vs_pw_ratio": ratio,
-                            "cum_oi_ce": ce_oi,
-                            "cum_oi_pe": pe_oi,
-                            "fresh_oi_ce": ce_chg,
-                            "fresh_oi_pe": pe_chg,
-                            "fresh_oi_diff": diff,
-                            "cum_oi_diff": cum_diff,
-                            "writer_crossover_state": cross_state,
-                            "crossover_flag": flag,
-                            "divergence": "NONE",
-                            "series": series,
-                            "strikes_breakdown": strikes_list,
-                        }
-                        self.cached_snapshot = snap
-                        return snap
-            except Exception as e:
-                log.debug("Error reading chain_latest from SQLite: %s", e)
-
-        # 3. Final fallback: update timestamp on cached snapshot
-        self.cached_snapshot["timestamp"] = now_str
-        return self.cached_snapshot
-
-    def get_confluence_snapshot(self) -> Dict[str, Any]:
-        """Instantaneous retrieval for REST endpoint and live telemetry."""
-        return self.cached_snapshot
-
-
 class QuantTerminalBackend:
     """Core 8510 Quant Engine coordinating market data, execution, chasing, and UI stream."""
 
@@ -1654,12 +1420,7 @@ class QuantTerminalBackend:
         self._init_sqlite()
         self.homework_reconciler = HomeworkReconciler()
         self.stockmojo_scraper = StockMojoScraper(db_path=self.ledger_db, config_path=self.config_path)
-        self.port8600_bridge = Port8600Bridge(
-            market_db_path=self.market_db,
-            port8600_url=self.cfg.get("port8600_bridge", {}).get("url", "http://127.0.0.1:8600"),
-            poll_interval=self.cfg.get("port8600_bridge", {}).get("poll_interval_seconds", 15),
-            atm_strike_range_pts=float(self.cfg.get("port8600_bridge", {}).get("atm_strike_range_pts", 500.0)),
-        )
+        self.oi_scraper = self.stockmojo_scraper  # Generic Institutional OI Ingestion Engine
 
         # State Variables
         self.execution_mode = self.cfg.get("execution_mode", "PAPER_ONLY")
@@ -2178,30 +1939,27 @@ class QuantTerminalBackend:
         positions = self.get_active_positions(live_quotes)
         orders = self.get_order_book()
 
-        # 9. Derivatives Confluence (Port 8600 Bridge & StockMojo Scraper)
+        # 9. Institutional Derivatives Confluence (Live OI & PE-CE Ingestion)
         try:
-            port8600_snap = await self.port8600_bridge.poll_once()
+            oi_snap = self.oi_scraper.get_snapshot()
         except Exception as e:
-            log.debug("Port 8600 bridge poll error: %s", e)
-            port8600_snap = self.port8600_bridge.get_confluence_snapshot()
-
-        try:
-            stockmojo_snap = self.stockmojo_scraper.get_snapshot()
-        except Exception as e:
-            log.debug("StockMojo scraper snapshot error: %s", e)
-            stockmojo_snap = {}
+            log.debug("Institutional OI scraper snapshot error: %s", e)
+            oi_snap = {}
 
         trend_lab_variables = {
-            "var_8600_cw_pw_ratio": round(float(port8600_snap.get("cw_vs_pw_ratio", 1.0)), 2),
-            "var_8600_fresh_oi_diff": int(port8600_snap.get("fresh_oi_diff", 0)),
-            "var_8600_cum_oi_diff": int(port8600_snap.get("cum_oi_diff", 0)),
-            "var_8600_crossover_flag": str(port8600_snap.get("crossover_flag", "NONE")),
-            "var_stockmojo_pe_minus_ce": float(stockmojo_snap.get("pe_minus_ce_day", 0.0)),
-            "var_sm_call_oi_change": float(stockmojo_snap.get("call_oi_change_day", 0.0)),
-            "var_sm_put_oi_change": float(stockmojo_snap.get("put_oi_change_day", 0.0)),
-            "var_sm_total_call_oi": float(stockmojo_snap.get("total_call_oi", 0.0)),
-            "var_sm_total_put_oi": float(stockmojo_snap.get("total_put_oi", 0.0)),
-            "var_sm_oi_writer_bias": str(stockmojo_snap.get("writer_bias", "NEUTRAL")),
+            "var_pe_minus_ce": float(oi_snap.get("pe_minus_ce_day", 0.0)),
+            "var_call_oi_change": float(oi_snap.get("call_oi_change_day", 0.0)),
+            "var_put_oi_change": float(oi_snap.get("put_oi_change_day", 0.0)),
+            "var_total_call_oi": float(oi_snap.get("total_call_oi", 0.0)),
+            "var_total_put_oi": float(oi_snap.get("total_put_oi", 0.0)),
+            "var_oi_writer_bias": str(oi_snap.get("writer_bias", "NEUTRAL")),
+            # Backward-compatible aliases
+            "var_stockmojo_pe_minus_ce": float(oi_snap.get("pe_minus_ce_day", 0.0)),
+            "var_sm_call_oi_change": float(oi_snap.get("call_oi_change_day", 0.0)),
+            "var_sm_put_oi_change": float(oi_snap.get("put_oi_change_day", 0.0)),
+            "var_sm_total_call_oi": float(oi_snap.get("total_call_oi", 0.0)),
+            "var_sm_total_put_oi": float(oi_snap.get("total_put_oi", 0.0)),
+            "var_sm_oi_writer_bias": str(oi_snap.get("writer_bias", "NEUTRAL")),
         }
 
         payload = {
@@ -2246,8 +2004,8 @@ class QuantTerminalBackend:
             "trend_watchlist": trend_watchlist,
             "scanner": self.get_scanner_status(),
             "trend_lab_variables": trend_lab_variables,
-            "port8600_confluence": port8600_snap,
-            "stockmojo_pe_ce": stockmojo_snap,
+            "institutional_pe_ce": oi_snap,
+            "stockmojo_pe_ce": oi_snap,
             "funds": {
                 "paper": paper_wallet,
                 "live": live_funds,
@@ -2269,7 +2027,7 @@ class QuantTerminalBackend:
         mtf_val = {"status": "BULLISH", "reading": "15m, 30m, 1H Triple Aligned Bullish"}
         vol_surge = {"status": "BULLISH", "reading": "Vol 1.25x vs MA20 (Institutional Accumulation)"}
         pcr_flow = {"status": "BULLISH" if pcr >= 1.0 else ("BEARISH" if pcr < 0.85 else "SIDEWAYS"),
-                    "reading": f"StockMojo PCR = {pcr:.2f} | Put Writing Dominates"}
+                    "reading": f"Institutional PCR = {pcr:.2f} | Put Writing Dominates"}
 
         if self.market_db.exists():
             try:
@@ -2337,7 +2095,7 @@ class QuantTerminalBackend:
             {"name": "4. Linear Regression R² Trend Quality", **r2_val},
             {"name": "5. Multi-Timeframe Alignment (15m/30m/1H)", **mtf_val},
             {"name": "6. Volume Surge vs 20-MA", **vol_surge},
-            {"name": "7. StockMojo PCR & PE-CE Flow", **pcr_flow},
+            {"name": "7. Institutional PCR & PE-CE Flow", **pcr_flow},
         ]
 
         bulls = sum(1 for x in items if x["status"] == "BULLISH")

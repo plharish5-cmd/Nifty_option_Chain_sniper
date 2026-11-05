@@ -567,7 +567,7 @@
             <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabFundsWallet')">💰 3. Funds &amp; Paper Wallet</button>
             <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabReplayExplorer')">📅 4. Historical Date Replay</button>
             <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabTrendLab')">🔬 5. Multi-Factor Trend Lab &amp; 128 Combos</button>
-            <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabStockMojoSuite')">📊 6. Port 8600 OI Writers &amp; StockMojo PE-CE Matrix</button>
+            <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabStockMojoSuite')">📊 6. Institutional OI Writers &amp; PE-CE Matrix</button>
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -1308,23 +1308,19 @@
                 </div>
             </div>
 
-            <!-- 🧬 STAGED DERIVATIVES CONFLUENCE VARIABLES (MULTI-FACTOR TREND LAB) -->
+            <!-- 🧬 STAGED INSTITUTIONAL DERIVATIVES CONFLUENCE VARIABLES (MULTI-FACTOR TREND LAB) -->
             <div class="card" style="border:1px solid #38bdf8; background:rgba(56, 189, 248, 0.03); margin-top:16px;">
                 <h2>
-                    <span>🧬 Staged Derivatives Confluence Variables (Port 8600 + StockMojo)</span>
+                    <span>🧬 Staged Institutional Derivatives Confluence Variables</span>
                     <span style="font-size:11px; color:#38bdf8; font-family:var(--font-mono);">STAGED FOR FUTURE AUTO-EXECUTION</span>
                 </h2>
                 <div class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:10px;">
-                    <div class="metric-box"><label>var_8600_cw_pw_ratio</label><div class="metric-value" id="var_8600_cw_pw_ratio" style="font-size:16px; color:#38bdf8;">--</div></div>
-                    <div class="metric-box"><label>var_8600_fresh_oi_diff</label><div class="metric-value" id="var_8600_fresh_oi_diff" style="font-size:16px; color:var(--emerald);">--</div></div>
-                    <div class="metric-box"><label>var_8600_cum_oi_diff</label><div class="metric-value" id="var_8600_cum_oi_diff" style="font-size:16px; color:var(--emerald);">--</div></div>
-                    <div class="metric-box"><label>var_8600_crossover_flag</label><div class="metric-value" id="var_8600_crossover_flag" style="font-size:16px; color:#f59e0b;">--</div></div>
-                    <div class="metric-box"><label>var_stockmojo_pe_minus_ce</label><div class="metric-value" id="var_stockmojo_pe_minus_ce" style="font-size:16px; color:var(--emerald);">--</div></div>
-                    <div class="metric-box"><label>var_sm_call_oi_change</label><div class="metric-value" id="var_sm_call_oi_change" style="font-size:16px; color:var(--crimson);">--</div></div>
-                    <div class="metric-box"><label>var_sm_put_oi_change</label><div class="metric-value" id="var_sm_put_oi_change" style="font-size:16px; color:var(--emerald);">--</div></div>
-                    <div class="metric-box"><label>var_sm_total_call_oi</label><div class="metric-value" id="var_sm_total_call_oi" style="font-size:16px; color:var(--text-main);">--</div></div>
-                    <div class="metric-box"><label>var_sm_total_put_oi</label><div class="metric-value" id="var_sm_total_put_oi" style="font-size:16px; color:var(--text-main);">--</div></div>
-                    <div class="metric-box"><label>var_sm_oi_writer_bias</label><div class="metric-value" id="var_sm_oi_writer_bias" style="font-size:16px; color:var(--emerald);">--</div></div>
+                    <div class="metric-box"><label>var_pe_minus_ce</label><div class="metric-value" id="var_stockmojo_pe_minus_ce" style="font-size:16px; color:var(--emerald);">--</div></div>
+                    <div class="metric-box"><label>var_call_oi_change</label><div class="metric-value" id="var_sm_call_oi_change" style="font-size:16px; color:var(--crimson);">--</div></div>
+                    <div class="metric-box"><label>var_put_oi_change</label><div class="metric-value" id="var_sm_put_oi_change" style="font-size:16px; color:var(--emerald);">--</div></div>
+                    <div class="metric-box"><label>var_total_call_oi</label><div class="metric-value" id="var_sm_total_call_oi" style="font-size:16px; color:var(--text-main);">--</div></div>
+                    <div class="metric-box"><label>var_total_put_oi</label><div class="metric-value" id="var_sm_total_put_oi" style="font-size:16px; color:var(--text-main);">--</div></div>
+                    <div class="metric-box"><label>var_oi_writer_bias</label><div class="metric-value" id="var_sm_oi_writer_bias" style="font-size:16px; color:var(--emerald);">--</div></div>
                 </div>
             </div>
 
@@ -1386,7 +1382,7 @@
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <!-- TAB 6: PORT 8600 OI WRITERS & STOCKMOJO PE-CE MATRIX                 -->
+        <!-- TAB 6: INSTITUTIONAL OI WRITERS & PE-CE MATRIX                      -->
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <div id="tabStockMojoSuite" class="tab-content">
             <!-- Action & Status Toolbar -->
@@ -1394,29 +1390,23 @@
                 <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px;">
                     <div>
                         <h2 style="margin:0; border:none; padding:0;">
-                            <span>📊 Port 8600 OI Writers &amp; StockMojo PE-CE Matrix</span>
+                            <span>📊 Institutional OI Writers &amp; PE-CE Matrix</span>
                         </h2>
                         <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">
-                            Live Institutional Derivatives Flow: Local Port 8600 Bridge + 1-Minute StockMojo Auto-Ingestion
+                            Live Institutional Derivatives Flow: 1-Minute Live OI Ingestion &amp; Writer Crossover Telemetry
                         </div>
                     </div>
                     <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                        <button type="button" class="cyan-btn" onclick="pingPort8600()">🔌 Ping Port 8600</button>
-                        <button type="button" class="emerald-btn" onclick="syncStockMojoNow()">🔄 Scrape StockMojo (1m Auto: ON)</button>
+                        <button type="button" class="emerald-btn" onclick="syncStockMojoNow()">🔄 Sync OI Flow (1m Auto: ON)</button>
                         <button type="button" class="secondary-btn" onclick="copyStockMojoBookmarklet()">📋 Copy 1m Browser Script</button>
-                        <button type="button" class="secondary-btn" onclick="toggleAuthModal()">⚙️ Token / cURL</button>
+                        <button type="button" class="secondary-btn" onclick="toggleAuthModal()">⚙️ Ingestion Auth / cURL</button>
                         <button type="button" class="emerald-btn" onclick="exportStockMojoToExcel()">📥 Export Matrix (.xls)</button>
                     </div>
                 </div>
 
                 <div class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top:14px; gap:10px;">
                     <div class="metric-box">
-                        <label>Port 8600 App Bridge</label>
-                        <div class="metric-value" id="badgeP8600Status" style="font-size:14px; color:var(--emerald);">🟢 ONLINE / LOCAL DB</div>
-                        <div id="p8600SourceTag" style="font-size:10px; color:var(--text-dim); margin-top:2px;">Source: Local SQLite</div>
-                    </div>
-                    <div class="metric-box">
-                        <label>StockMojo Ingestion</label>
+                        <label>Live OI Ingestion</label>
                         <div class="metric-value" id="badgeStockMojoStatus" style="font-size:14px; color:var(--emerald);">🟢 SYNCED (1m)</div>
                         <div id="smLastSyncText" style="font-size:10px; color:var(--text-dim); margin-top:2px;">Last: --:-- IST</div>
                     </div>
@@ -1438,15 +1428,15 @@
                 </div>
             </div>
 
-            <!-- Dedicated StockMojo Live OI Curves & Writer Crossover Card -->
+            <!-- Dedicated Live OI Curves & Writer Crossover Card -->
             <div class="card" style="border:1px solid #10b981; background:rgba(16, 185, 129, 0.03);">
                 <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px;">
                     <div>
                         <h2 style="margin:0; border:none; padding:0;">
-                            <span>📊 StockMojo Live OI Curves &amp; Writer Crossover Matrix</span>
+                            <span>📊 Live Institutional OI Curves &amp; Writer Crossover Matrix</span>
                         </h2>
                         <div id="stockMojoLiveStatusBadge" style="font-size:12px; font-weight:600; color:var(--emerald); margin-top:3px;">
-                            🟢 StockMojo API Connected (Polling every 60s)
+                            🟢 Live Ingestion Active (Polling every 60s)
                         </div>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
@@ -1459,7 +1449,7 @@
                     <!-- Chart 1: OI Change (Call vs Put) + Future Price Overlay & Crossover Markers -->
                     <div style="background:#070d19; border:1px solid var(--border-subtle); border-radius:8px; padding:12px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <span style="font-size:13px; font-weight:700; color:var(--text-main);">1. OI Change (Call vs Put) &amp; Crossover Markers</span>
+                            <span style="font-size:13px; font-weight:700; color:var(--text-main);">1. Intraday Change in OI (Call vs Put) &amp; Crossover Markers</span>
                             <span style="font-size:10px; color:#38bdf8; font-family:var(--font-mono);">INTRADAY ΔOI (LAKHS)</span>
                         </div>
                         <div style="display:flex; gap:12px; font-size:11px; margin-bottom:8px; align-items:center; flex-wrap:wrap;">
@@ -1473,7 +1463,7 @@
                     <!-- Chart 2: Total OI (Call vs Put) + Future Price Overlay & PCR -->
                     <div style="background:#070d19; border:1px solid var(--border-subtle); border-radius:8px; padding:12px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <span style="font-size:13px; font-weight:700; color:var(--text-main);">2. Total OI (Call vs Put) &amp; PCR Overlay</span>
+                            <span style="font-size:13px; font-weight:700; color:var(--text-main);">2. Cumulative Total OI (Call vs Put) &amp; PCR Overlay</span>
                             <span style="font-size:10px; color:#10b981; font-family:var(--font-mono);">CUMULATIVE OI (LAKHS)</span>
                         </div>
                         <div style="display:flex; gap:12px; font-size:11px; margin-bottom:8px; align-items:center; flex-wrap:wrap;">
@@ -1487,27 +1477,10 @@
                 </div>
             </div>
 
-            <!-- Dual-Line Call Writers vs Put Writers Crossover & Divergence SVG Chart -->
+            <!-- 1-Minute Auto-Updating Institutional PE-CE Table -->
             <div class="card">
                 <h2>
-                    <span>📈 Dual-Line Call Writers vs. Put Writers Crossover &amp; Divergence Chart</span>
-                    <span id="chartRangeBadge" style="font-size:11px; color:#38bdf8; font-family:var(--font-mono);">LAST 30 INTERVALS (PORT 8600)</span>
-                </h2>
-                <div style="display:flex; gap:16px; font-size:12px; margin-bottom:10px; align-items:center;">
-                    <span style="display:flex; align-items:center; gap:6px;"><span style="width:12px; height:3px; background:#f43f5e; display:inline-block;"></span> <b>Call Writers (CE ΔOI)</b></span>
-                    <span style="display:flex; align-items:center; gap:6px;"><span style="width:12px; height:3px; background:#10b981; display:inline-block;"></span> <b>Put Writers (PE ΔOI)</b></span>
-                    <span style="display:flex; align-items:center; gap:6px;"><span style="width:12px; height:2px; background:#38bdf8; display:inline-block; border-top:1px dashed #38bdf8;"></span> <b>Future LTP Overlay</b></span>
-                    <span style="color:var(--text-muted); margin-left:auto;">Crossovers: 🟢 Bullish (PW &gt; CW) | 🔴 Bearish (CW &gt; PW)</span>
-                </div>
-                <div id="writerChartContainer" style="width:100%; height:230px; background:#070d19; border:1px solid var(--border-subtle); border-radius:8px; position:relative; overflow:hidden;">
-                    <!-- Rendered via renderWriterCrossoverChart() -->
-                </div>
-            </div>
-
-            <!-- 1-Minute Auto-Updating StockMojo PE-CE Table -->
-            <div class="card">
-                <h2>
-                    <span>📋 StockMojo 1-Minute PE − CE Intraday Ingestion Ledger (https://stockmojo.in/pe-ce-difference/nifty)</span>
+                    <span>📋 1-Minute Institutional PE − CE Intraday Ingestion Ledger</span>
                     <span id="smTableCountBadge" style="font-size:11px; color:var(--emerald); font-family:var(--font-mono);">60 INTERVALS</span>
                 </h2>
                 <div style="overflow-x:auto; max-height:440px;">
@@ -1531,37 +1504,13 @@
                     </table>
                 </div>
             </div>
-
-            <!-- Local Port 8600 ±500 pts Strike Matrix Breakdown -->
-            <div class="card">
-                <h2>
-                    <span>🏛️ Strike-Wise Fresh OI vs. Cumulative OI Matrix (±500 pts ATM Range)</span>
-                    <button type="button" class="secondary-btn" onclick="pingPort8600()">🔄 Refresh Strikes</button>
-                </h2>
-                <div style="overflow-x:auto; max-height:300px;">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Strike</th>
-                                <th>CE Cumulative OI</th>
-                                <th>PE Cumulative OI</th>
-                                <th>Fresh CE Writing (ΔOI)</th>
-                                <th>Fresh PE Writing (ΔOI)</th>
-                                <th>Fresh Difference (PE - CE)</th>
-                                <th>Institutional Bias</th>
-                            </tr>
-                        </thead>
-                        <tbody id="strikesMatrixBody"></tbody>
-                    </table>
-                </div>
-            </div>
         </div>
 
         <!-- Token / cURL Modal -->
         <div id="authConfigModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:9999; align-items:center; justify-content:center;">
             <div style="background:var(--bg-panel); border:1px solid var(--border-glow); border-radius:12px; width:90%; max-width:540px; padding:20px; box-shadow:0 20px 40px rgba(0,0,0,0.6);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <h3 style="margin:0; font-size:16px; color:#38bdf8;">⚙️ Configure StockMojo Authentication</h3>
+                    <h3 style="margin:0; font-size:16px; color:#38bdf8;">⚙️ Configure Live Ingestion Authentication</h3>
                     <button type="button" onclick="toggleAuthModal()" style="background:none; border:none; color:var(--text-dim); font-size:18px; cursor:pointer;">&times;</button>
                 </div>
                 <p style="font-size:12px; color:var(--text-dim); line-height:1.5;">
@@ -1599,12 +1548,10 @@
         document.addEventListener("DOMContentLoaded", () => {
             updateClock();
             setInterval(updateClock, 1000);
-            pingPort8600();
             fetchStockMojoTable();
             fetchStockMojoLiveOI();
             setInterval(fetchStockMojoTable, 30000);
             setInterval(fetchStockMojoLiveOI, 15000);
-            setInterval(pingPort8600, 15000);
             runDateExplorer();
             runCombinatorialMonteCarlo();
             pollLiveEngine();
@@ -1627,7 +1574,6 @@
             if (tabId === 'tabStockMojoSuite') {
                 fetchStockMojoLiveOI();
                 fetchStockMojoTable();
-                pingPort8600();
             }
         }
 
@@ -1819,11 +1765,8 @@
                 }
 
                 // 10. Live Confluence Sync for Tab 6
-                if (data.port8600_confluence) {
-                    updatePort8600UI(data.port8600_confluence);
-                }
-                if (data.stockmojo_pe_ce) {
-                    updateStockMojoMetricsUI(data.stockmojo_pe_ce);
+                if (data.institutional_pe_ce || data.stockmojo_pe_ce) {
+                    updateStockMojoMetricsUI(data.institutional_pe_ce || data.stockmojo_pe_ce);
                 }
 
             } catch (err) {
@@ -2674,45 +2617,6 @@
         }
 
         let liveStockMojoRows = [];
-        let livePort8600Snapshot = null;
-
-        function updatePort8600UI(snap) {
-            if (!snap) return;
-            livePort8600Snapshot = snap;
-
-            const badge = document.getElementById("badgeP8600Status");
-            const srcTag = document.getElementById("p8600SourceTag");
-            const ratioEl = document.getElementById("valCwPwRatio");
-            const domTag = document.getElementById("cwPwDominanceTag");
-            const sigEl = document.getElementById("valWriterSignal");
-
-            if (badge) {
-                if (snap.port8600_online) {
-                    badge.textContent = "🟢 PORT 8600 ONLINE (HTTP)";
-                    badge.style.color = "var(--emerald)";
-                } else {
-                    badge.textContent = "🟡 LOCAL SQLITE ACTIVE";
-                    badge.style.color = "#f59e0b";
-                }
-            }
-            if (srcTag && snap.source) srcTag.textContent = `Source: ${snap.source}`;
-
-            if (ratioEl && snap.cw_vs_pw_ratio !== undefined) {
-                ratioEl.textContent = snap.cw_vs_pw_ratio.toFixed(2);
-                if (domTag) {
-                    domTag.textContent = snap.cw_vs_pw_ratio < 0.95 ? "Put Writers Dominant (Bullish)" : (snap.cw_vs_pw_ratio > 1.05 ? "Call Writers Dominant (Bearish)" : "Balanced Writers");
-                    domTag.style.color = snap.cw_vs_pw_ratio < 0.95 ? "var(--emerald)" : (snap.cw_vs_pw_ratio > 1.05 ? "var(--crimson)" : "var(--text-dim)");
-                }
-            }
-
-            if (sigEl && snap.writer_crossover_state) {
-                sigEl.textContent = snap.writer_crossover_state;
-                sigEl.style.color = snap.writer_crossover_state.includes("BULLISH") ? "var(--emerald)" : (snap.writer_crossover_state.includes("BEARISH") ? "var(--crimson)" : "#f59e0b");
-            }
-
-            if (snap.series) renderWriterCrossoverChart(snap.series);
-            if (snap.strikes_breakdown) renderStrikesMatrix(snap.strikes_breakdown);
-        }
 
         function updateStockMojoMetricsUI(snap) {
             if (!snap) return;
@@ -2721,6 +2625,9 @@
             const hintEl = document.getElementById("valSignalHint");
             const smStatus = document.getElementById("badgeStockMojoStatus");
             const smTime = document.getElementById("smLastSyncText");
+            const ratioEl = document.getElementById("valCwPwRatio");
+            const domTag = document.getElementById("cwPwDominanceTag");
+            const sigEl = document.getElementById("valWriterSignal");
 
             if (spreadEl && snap.pe_minus_ce_day !== undefined) {
                 const spread = Number(snap.pe_minus_ce_day);
@@ -2737,17 +2644,25 @@
             }
             if (smStatus) smStatus.textContent = "🟢 SYNCED (1m AUTO)";
             if (smTime && snap.last_sync_time) smTime.textContent = `Last: ${snap.last_sync_time}`;
-        }
 
-        async function pingPort8600() {
-            try {
-                const res = await fetch("/api/confluence/port8600");
-                const snap = await res.json();
-                updatePort8600UI(snap);
-            } catch (e) {
-                console.warn("Ping Port 8600 failed:", e);
+            if (ratioEl) {
+                const c_oi = Math.abs(Number(snap.call_oi_change_day) || 1.0);
+                const p_oi = Math.abs(Number(snap.put_oi_change_day) || 1.0);
+                const ratio = snap.cw_vs_pw_ratio !== undefined ? Number(snap.cw_vs_pw_ratio) : (c_oi / Math.max(0.01, p_oi));
+                ratioEl.textContent = ratio.toFixed(2);
+                if (domTag) {
+                    domTag.textContent = ratio < 0.95 ? "Put Writers Dominant (Bullish)" : (ratio > 1.05 ? "Call Writers Dominant (Bearish)" : "Balanced Writers");
+                    domTag.style.color = ratio < 0.95 ? "var(--emerald)" : (ratio > 1.05 ? "var(--crimson)" : "var(--text-dim)");
+                }
+            }
+
+            if (sigEl) {
+                const sig = snap.writer_signal || snap.writer_bias || "NEUTRAL";
+                sigEl.textContent = sig;
+                sigEl.style.color = sig.includes("BULLISH") || sig.includes("PUT") ? "var(--emerald)" : ((sig.includes("BEARISH") || sig.includes("CALL")) ? "var(--crimson)" : "#f59e0b");
             }
         }
+        const updateOIMetricsUI = updateStockMojoMetricsUI;
 
         async function syncStockMojoNow() {
             try {
@@ -2755,11 +2670,11 @@
                 const data = await res.json();
                 await fetchStockMojoTable();
                 await fetchStockMojoLiveOI();
-                await pingPort8600();
             } catch (e) {
-                console.warn("Sync StockMojo error:", e);
+                console.warn("Sync OI Flow error:", e);
             }
         }
+        const syncOIFlowNow = syncStockMojoNow;
 
         async function fetchStockMojoLiveOI() {
             try {
@@ -3038,89 +2953,6 @@
             syncStockMojoNow();
         }
 
-        function renderWriterCrossoverChart(series) {
-            const container = document.getElementById("writerChartContainer");
-            if (!container) return;
-            if (!series || series.length < 2) {
-                container.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-dim); font-size:12px;">Waiting for Port 8600 time-series stream...</div>`;
-                return;
-            }
-            const w = container.clientWidth || 920;
-            const h = 230;
-            const padL = 65, padR = 65, padT = 25, padB = 30;
-            const plotW = w - padL - padR;
-            const plotH = h - padT - padB;
-
-            const cwVals = series.map(s => Number(s.cw_oi) || 0);
-            const pwVals = series.map(s => Number(s.pw_oi) || 0);
-            const ltpVals = series.map(s => Number(s.spot) || 0);
-
-            const minOI = Math.min(...cwVals, ...pwVals) * 0.95;
-            const maxOI = Math.max(...cwVals, ...pwVals) * 1.05 || 1;
-            const minLtp = Math.min(...ltpVals) - 10;
-            const maxLtp = Math.max(...ltpVals) + 10 || 1;
-
-            const getX = i => padL + (i / (series.length - 1)) * plotW;
-            const getY_OI = v => padT + plotH - ((v - minOI) / (maxOI - minOI || 1)) * plotH;
-            const getY_Ltp = v => padT + plotH - ((v - minLtp) / (maxLtp - minLtp || 1)) * plotH;
-
-            let dCW = "", dPW = "", dLtp = "";
-            series.forEach((pt, i) => {
-                const x = getX(i);
-                const yCW = getY_OI(Number(pt.cw_oi) || 0);
-                const yPW = getY_OI(Number(pt.pw_oi) || 0);
-                const yL = getY_Ltp(Number(pt.spot) || 0);
-                if (i === 0) {
-                    dCW += `M ${x} ${yCW}`;
-                    dPW += `M ${x} ${yPW}`;
-                    dLtp += `M ${x} ${yL}`;
-                } else {
-                    dCW += ` L ${x} ${yCW}`;
-                    dPW += ` L ${x} ${yPW}`;
-                    dLtp += ` L ${x} ${yL}`;
-                }
-            });
-
-            let markers = "";
-            series.forEach((pt, i) => {
-                if (pt.signal === 'BULLISH_CROSS' || pt.signal === 'BEARISH_CROSS') {
-                    const x = getX(i);
-                    const y = getY_OI(Number(pt.pw_oi) || 0);
-                    const isBull = pt.signal === 'BULLISH_CROSS';
-                    const color = isBull ? '#10b981' : '#f43f5e';
-                    markers += `<circle cx="${x}" cy="${y}" r="4.5" fill="${color}" stroke="#fff" stroke-width="1.5"/>
-                                <text x="${x}" y="${y - 8}" fill="${color}" font-size="9" font-weight="bold" font-family="monospace" text-anchor="middle">${isBull ? '▲ BULL' : '▼ BEAR'}</text>`;
-                }
-            });
-
-            let timeTicks = "";
-            const step = Math.max(1, Math.floor(series.length / 6));
-            for (let i = 0; i < series.length; i += step) {
-                const x = getX(i);
-                timeTicks += `<text x="${x}" y="${h - 8}" fill="#64748b" font-size="10" font-family="monospace" text-anchor="middle">${series[i].time || '--:--'}</text>`;
-            }
-
-            container.innerHTML = `
-                <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;">
-                    <!-- Gridlines -->
-                    <line x1="${padL}" y1="${padT}" x2="${w - padR}" y2="${padT}" stroke="#1e293b" stroke-dasharray="3,3"/>
-                    <line x1="${padL}" y1="${padT + plotH/2}" x2="${w - padR}" y2="${padT + plotH/2}" stroke="#1e293b" stroke-dasharray="3,3"/>
-                    <line x1="${padL}" y1="${padT + plotH}" x2="${w - padR}" y2="${padT + plotH}" stroke="#1e293b"/>
-                    <!-- Paths -->
-                    <path d="${dLtp}" fill="none" stroke="#38bdf8" stroke-width="1.6" stroke-dasharray="4,4" opacity="0.85"/>
-                    <path d="${dCW}" fill="none" stroke="#f43f5e" stroke-width="2.4"/>
-                    <path d="${dPW}" fill="none" stroke="#10b981" stroke-width="2.4"/>
-                    ${markers}
-                    ${timeTicks}
-                    <!-- Y-Axis Labels -->
-                    <text x="${padL - 8}" y="${padT + 10}" fill="#f43f5e" font-size="10" font-family="monospace" text-anchor="end">${(maxOI / 100000).toFixed(1)}L</text>
-                    <text x="${padL - 8}" y="${padT + plotH}" fill="#10b981" font-size="10" font-family="monospace" text-anchor="end">${(minOI / 100000).toFixed(1)}L</text>
-                    <text x="${w - padR + 8}" y="${padT + 10}" fill="#38bdf8" font-size="10" font-family="monospace" text-anchor="start">${maxLtp.toFixed(0)}</text>
-                    <text x="${w - padR + 8}" y="${padT + plotH}" fill="#38bdf8" font-size="10" font-family="monospace" text-anchor="start">${minLtp.toFixed(0)}</text>
-                </svg>
-            `;
-        }
-
         function renderStockMojoTable(rows) {
             const tbody = document.getElementById("stockMojoBody");
             if (!tbody || !rows) return;
@@ -3158,28 +2990,6 @@
                         <td style="color:#38bdf8;">${futLtp}</td>
                         <td>${futOi} L</td>
                         <td><span class="status-badge ${sigClass}">${sig}</span></td>
-                    </tr>
-                `;
-            }).join("");
-        }
-
-        function renderStrikesMatrix(strikes) {
-            const tbody = document.getElementById("strikesMatrixBody");
-            if (!tbody || !strikes) return;
-            tbody.innerHTML = strikes.map(s => {
-                const diff = (s.pe_chg || 0) - (s.ce_chg || 0);
-                const bClass = s.bias === 'BULLISH' ? 'badge-bull' : (s.bias === 'BEARISH' ? 'badge-bear' : 'badge-side');
-                return `
-                    <tr>
-                        <td><b>${s.strike.toLocaleString('en-IN')}</b></td>
-                        <td>${((s.ce_oi || 0) / 100000).toFixed(1)} L</td>
-                        <td>${((s.pe_oi || 0) / 100000).toFixed(1)} L</td>
-                        <td style="color:var(--crimson); font-weight:600;">${((s.ce_chg || 0) / 100000).toFixed(2)} L</td>
-                        <td style="color:var(--emerald); font-weight:600;">${((s.pe_chg || 0) / 100000).toFixed(2)} L</td>
-                        <td style="font-weight:700; color:${diff >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">
-                            ${diff >= 0 ? '+' : ''}${(diff / 100000).toFixed(2)} L
-                        </td>
-                        <td><span class="status-badge ${bClass}">${s.bias || 'NEUTRAL'}</span></td>
                     </tr>
                 `;
             }).join("");
