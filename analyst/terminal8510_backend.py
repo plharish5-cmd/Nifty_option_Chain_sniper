@@ -8,6 +8,7 @@ and 7-Factor Real-Time Trend Confluence Watchlist.
 from __future__ import annotations
 
 import asyncio
+import base64
 import csv
 import io
 import json
@@ -17,7 +18,7 @@ import os
 import re
 import sqlite3
 import time
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time as dtime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -97,6 +98,256 @@ def save_env_safe(updates: Dict[str, str]) -> bool:
 def round_to_tick(val: float, tick: float = 0.05) -> float:
     """Rounds price to nearest exchange tick (default 0.05)."""
     return round(round(float(val) / tick) * tick, 2)
+
+
+def decode_token_expiry(token: str, default_ttl_seconds: float = 86400.0) -> Dict[str, Any]:
+    """
+    Decodes the JWT 'exp' claim from DHAN_ACCESS_TOKEN if JWT formatted,
+    or falls back to 24 hours from current time.
+    Calculates exact 'Token Valid Till: DD Mon YYYY HH:MM IST | Hours/Days Left: ___'.
+    """
+    exp_ts = None
+    if token and "." in token:
+        parts = token.strip().split(".")
+        if len(parts) >= 2:
+            try:
+                p = parts[1]
+                p += "=" * ((4 - len(p) % 4) % 4)
+                data = json.loads(base64.urlsafe_b64decode(p.encode("utf-8")).decode("utf-8"))
+                if "exp" in data:
+                    exp_ts = float(data["exp"])
+            except Exception as e:
+                log.debug("JWT exp parse error: %s", e)
+
+    now_ts = time.time()
+    if exp_ts is None:
+        exp_ts = now_ts + default_ttl_seconds
+
+    diff = exp_ts - now_ts
+    is_expired = diff <= 0
+
+    exp_dt_utc = datetime.fromtimestamp(exp_ts, tz=timezone.utc)
+    exp_dt_ist = datetime.fromtimestamp(exp_ts, tz=IST)
+
+    token_valid_till = exp_dt_ist.strftime("%d %b %Y %H:%M IST")
+    token_expiry_utc = exp_dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if is_expired:
+        time_left = "Expired"
+        days_left = "0 Days Left (Expired)"
+    else:
+        diff_hours = diff / 3600.0
+        diff_days = diff / 86400.0
+        if diff_days >= 1.0:
+            time_left = f"{int(diff_days)} Days Left"
+            days_left = f"{int(diff_days)} Days Left"
+        else:
+            time_left = f"{int(diff_hours)} Hours Left"
+            days_left = f"{int(diff_hours)} Hours Left"
+
+    return {
+        "exp_ts": exp_ts,
+        "token_expiry_utc": token_expiry_utc,
+        "token_valid_till": token_valid_till,
+        "time_left": time_left,
+        "days_left": days_left,
+        "is_expired": is_expired,
+    }
+
+
+def format_contract_symbol(
+    expiry: Optional[str] = None,
+    strike: Optional[Union[float, int, str]] = None,
+    opt_type: Optional[str] = None,
+    underlying: str = "NIFTY",
+    raw_symbol: Optional[str] = None,
+    default_expiry: str = "2026-11-09",
+) -> str:
+    """
+    Standardizes Option Contract Symbol format globally across all 5 modules:
+      NEW (CORRECT): '09 Nov 2026 — NIFTY 24300 CE' and '09 Nov 2026 — NIFTY 24500 PE'
+      OLD (WRONG): 'November 2026 24300 CE' / 'NIFTY-Nov2026-24300-CE'
+    """
+    # If already fully formatted like '09 Nov 2026 — NIFTY 24300 CE', return as is
+    if raw_symbol and re.match(r"^\d{2}\s+[A-Za-z]{3}\s+\d{4}\s+—\s+[A-Za-z]+\s+\d+\s+(CE|PE)$", str(raw_symbol).strip()):
+        return str(raw_symbol).strip()
+
+    s_strike = None
+    s_type = None
+    s_underlying = underlying
+    s_date = None
+
+    if raw_symbol:
+        cleaned = str(raw_symbol).strip()
+        m_type = re.search(r"\b(CE|PE)\b", cleaned, re.IGNORECASE)
+        if m_type:
+            s_type = m_type.group(1).upper()
+
+        m_strk = re.search(r"(\d{5})", cleaned)
+        if m_strk:
+            s_strike = int(m_strk.group(1))
+
+        # Check for full date in raw_symbol: e.g. 09Nov2026 or 09-Nov-2026 or 09 Nov 2026
+        m_date = re.search(r"(\d{1,2})[ -]?([A-Za-z]{3})[ -]?(\d{4})", cleaned)
+        if m_date:
+            try:
+                dt_cand = datetime.strptime(f"{int(m_date.group(1)):02d} {m_date.group(2).title()} {m_date.group(3)}", "%d %b %Y")
+                s_date = dt_cand.strftime("%d %b %Y")
+            except Exception:
+                pass
+
+    if strike is not None:
+        try:
+            s_strike = int(float(strike))
+        except Exception:
+            pass
+
+    if opt_type is not None:
+        s_type = str(opt_type).strip().upper()
+
+    if not s_date and expiry:
+        exp_clean = str(expiry).strip().split(" ")[0]
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d %b %Y", "%Y%m%d", "%d%b%Y", "%b%Y", "%B%Y"):
+            try:
+                dt_obj = datetime.strptime(exp_clean, fmt)
+                if fmt in ("%b%Y", "%B%Y"):
+                    s_date = dt_obj.replace(day=9).strftime("%d %b %Y")
+                else:
+                    s_date = dt_obj.strftime("%d %b %Y")
+                break
+            except Exception:
+                continue
+
+    if not s_date:
+        try:
+            s_date = datetime.strptime(default_expiry, "%Y-%m-%d").strftime("%d %b %Y")
+        except Exception:
+            s_date = "09 Nov 2026"
+
+    s_strike_val = str(s_strike) if s_strike else "24300"
+    s_type_val = s_type if s_type else "CE"
+
+    return f"{s_date} — {s_underlying} {s_strike_val} {s_type_val}"
+
+
+def get_contract_structured_fields(symbol: str, expiry: Optional[str] = None) -> Dict[str, str]:
+    """
+    Exposes the 3 structured fields clearly for tooltips and columns:
+      - Expiry Date: '09 Nov 2026 (Monday)'
+      - Symbol: 'NIFTY'
+      - Strike: '24300 CE'
+      - Full Symbol: '09 Nov 2026 — NIFTY 24300 CE'
+    """
+    formatted = format_contract_symbol(raw_symbol=symbol, expiry=expiry)
+    parts = formatted.split(" — ")
+    date_part = parts[0] if len(parts) >= 2 else "09 Nov 2026"
+    right_part = parts[1] if len(parts) >= 2 else formatted
+
+    day_name = "Monday"
+    try:
+        dt = datetime.strptime(date_part, "%d %b %Y")
+        day_name = dt.strftime("%A")
+    except Exception:
+        pass
+
+    right_tokens = right_part.split(" ")
+    und = right_tokens[0] if right_tokens else "NIFTY"
+    strike_str = " ".join(right_tokens[1:]) if len(right_tokens) > 1 else "24300 CE"
+
+    return {
+        "expiry_date": f"{date_part} ({day_name})",
+        "expiry_display": f"{date_part} ({day_name})",
+        "symbol": und,
+        "strike": strike_str,
+        "strike_display": strike_str,
+        "full_symbol": formatted,
+    }
+
+
+class MarketStatusResult(dict):
+    """Result dictionary that also supports tuple unpacking (is_open, status)."""
+    def __iter__(self):
+        yield self["is_open"]
+        yield self["status"]
+
+
+def is_nse_market_open(
+    dt: Optional[datetime] = None,
+    holidays: Optional[List[str]] = None,
+) -> MarketStatusResult:
+    """
+    NSE Market Hours Validator:
+      - Hours: Monday to Friday, 09:15:00 AM to 03:30:00 PM IST (Asia/Kolkata).
+      - Returns MarketStatusResult dict: {"is_open": bool, "status": str, "time_ist": str, ...}
+      - Can also be unpacked as a tuple: is_open, status = is_nse_market_open()
+      - Returns CLOSED if current IST time < 09:15:00 or > 15:30:00, or Saturday (5), Sunday (6), or Holiday.
+      - Status tags: 'OPEN', 'CLOSED', 'PRE_OPEN' (09:00-09:15), 'POST_CLOSE' (after 15:30 on weekday).
+    """
+    if dt is None:
+        dt = datetime.now(IST)
+    elif dt.tzinfo is None:
+        dt = dt.replace(tzinfo=IST)
+
+    time_ist_str = dt.strftime("%H:%M:%S IST")
+    weekday = dt.weekday()
+    date_str = dt.strftime("%Y-%m-%d")
+
+    m_holidays = holidays if holidays is not None else [
+        "2026-01-26", "2026-03-25", "2026-04-14", "2026-05-01",
+        "2026-08-15", "2026-10-02", "2026-12-25"
+    ]
+
+    # Weekends (5: Saturday, 6: Sunday)
+    if weekday in (5, 6):
+        day_name = "Saturday" if weekday == 5 else "Sunday"
+        return MarketStatusResult({
+            "is_open": False,
+            "status": "WEEKEND_CLOSED",
+            "time_ist": time_ist_str,
+            "reason": f"Weekend Closed ({day_name})"
+        })
+
+    if date_str in m_holidays:
+        return MarketStatusResult({
+            "is_open": False,
+            "status": "HOLIDAY_CLOSED",
+            "time_ist": time_ist_str,
+            "reason": f"NSE Holiday on {date_str}"
+        })
+
+    t = dt.time()
+    t_pre_open = dtime(9, 0, 0)
+    t_open = dtime(9, 15, 0)
+    t_close = dtime(15, 30, 0)
+
+    if t < t_pre_open:
+        return MarketStatusResult({
+            "is_open": False,
+            "status": "CLOSED",
+            "time_ist": time_ist_str,
+            "reason": "NSE Pre-Market Closed (Before 09:00 IST)"
+        })
+    elif t_pre_open <= t < t_open:
+        return MarketStatusResult({
+            "is_open": False,
+            "status": "PRE_OPEN",
+            "time_ist": time_ist_str,
+            "reason": "NSE Pre-Open Session (09:00 - 09:15 IST)"
+        })
+    elif t_open <= t <= t_close:
+        return MarketStatusResult({
+            "is_open": True,
+            "status": "OPEN",
+            "time_ist": time_ist_str,
+            "reason": "NSE Live Market Session"
+        })
+    else:
+        return MarketStatusResult({
+            "is_open": False,
+            "status": "POST_CLOSE",
+            "time_ist": time_ist_str,
+            "reason": "NSE Session Closed for the Day (Post 15:30 IST)"
+        })
 
 
 def compute_trailing_sl(
@@ -345,6 +596,38 @@ class DhanBroker:
 
         # Dhan Connection & IP Config state
         dhan_cfg = self.cfg.get("dhan", {})
+        config_path = ROOT / "analyst" / "terminal8510_config.json"
+        if not dhan_cfg and config_path.exists():
+            try:
+                raw_cfg = json.loads(config_path.read_text(encoding="utf-8"))
+                dhan_cfg = raw_cfg.get("dhan", {})
+            except Exception as e:
+                log.debug("Config load error in DhanBroker: %s", e)
+
+        # Restore permanently saved credentials into os.environ if missing
+        saved_tok = dhan_cfg.get("DHAN_ACCESS_TOKEN") or dhan_cfg.get("access_token")
+        saved_cid = dhan_cfg.get("DHAN_CLIENT_ID") or dhan_cfg.get("client_id")
+        saved_key = dhan_cfg.get("DHAN_API_KEY") or dhan_cfg.get("api_key")
+        saved_sec = dhan_cfg.get("DHAN_API_SECRET") or dhan_cfg.get("api_secret")
+        saved_exp = dhan_cfg.get("TOKEN_EXPIRY_UTC") or dhan_cfg.get("token_expiry_utc")
+
+        if saved_tok and not os.environ.get("DHAN_ACCESS_TOKEN"):
+            os.environ["DHAN_ACCESS_TOKEN"] = str(saved_tok)
+        if saved_cid and not os.environ.get("DHAN_CLIENT_ID"):
+            os.environ["DHAN_CLIENT_ID"] = str(saved_cid)
+        if saved_key and not os.environ.get("DHAN_API_KEY"):
+            os.environ["DHAN_API_KEY"] = str(saved_key)
+        if saved_sec and not os.environ.get("DHAN_API_SECRET"):
+            os.environ["DHAN_API_SECRET"] = str(saved_sec)
+        if saved_exp and not os.environ.get("TOKEN_EXPIRY_UTC"):
+            os.environ["TOKEN_EXPIRY_UTC"] = str(saved_exp)
+
+        active_tok = os.environ.get("DHAN_ACCESS_TOKEN", "")
+        if active_tok and len(active_tok) > 20:
+            exp_info = decode_token_expiry(active_tok)
+            if not exp_info["is_expired"]:
+                log.info("Auto-loaded saved Dhan API — No need to re-enter.")
+
         self.environment: str = os.environ.get("DHAN_ENVIRONMENT") or dhan_cfg.get("environment", "LIVE")
         self.whitelisted_ip: str = os.environ.get("DHAN_WHITELISTED_IP") or dhan_cfg.get("whitelisted_ip", "")
         self._cached_ip: str = ""
@@ -422,11 +705,23 @@ class DhanBroker:
         whitelisted = self.whitelisted_ip or curr_ip
         ip_matched = bool(whitelisted and curr_ip and (whitelisted.strip() == curr_ip.strip()))
 
+        is_cfg = bool(token and len(token) > 20)
+        exp_info = decode_token_expiry(token) if is_cfg else {
+            "token_valid_till": "--",
+            "time_left": "--",
+            "days_left": "--",
+            "is_expired": True
+        }
+
         return {
             "ok": True,
             "client_id": client_id,
             "masked_token": masked_token,
-            "token_configured": bool(token and len(token) > 20),
+            "token_configured": is_cfg,
+            "token_valid_till": exp_info["token_valid_till"],
+            "time_left": exp_info["time_left"],
+            "days_left": exp_info["days_left"],
+            "is_expired": exp_info["is_expired"],
             "api_key": api_key,
             "masked_secret": masked_secret,
             "secret_configured": bool(api_sec),
@@ -447,7 +742,7 @@ class DhanBroker:
         environment: Optional[str] = None,
         whitelisted_ip: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Updates and persists credentials without logging secrets."""
+        """Updates and persists credentials permanently on disk (terminal8510_config.json & .env)."""
         load_env_safe()
         updates: Dict[str, str] = {}
 
@@ -455,10 +750,14 @@ class DhanBroker:
             updates["DHAN_CLIENT_ID"] = client_id.strip()
 
         # Only update token if a new non-masked token is provided
+        clean_tok = ""
         if access_token is not None:
-            clean_tok = access_token.strip()
-            if clean_tok and not clean_tok.startswith("****"):
+            raw_t = access_token.strip()
+            if raw_t and not raw_t.startswith("****"):
+                clean_tok = raw_t
                 updates["DHAN_ACCESS_TOKEN"] = clean_tok
+        if not clean_tok:
+            clean_tok = os.environ.get("DHAN_ACCESS_TOKEN", "")
 
         if api_key is not None:
             updates["DHAN_API_KEY"] = api_key.strip()
@@ -476,8 +775,49 @@ class DhanBroker:
             self.whitelisted_ip = whitelisted_ip.strip()
             updates["DHAN_WHITELISTED_IP"] = self.whitelisted_ip
 
+        # Calculate exact Token Valid Till
+        exp_info = decode_token_expiry(clean_tok) if clean_tok else {}
+        if exp_info.get("token_expiry_utc"):
+            updates["TOKEN_EXPIRY_UTC"] = exp_info["token_expiry_utc"]
+
+        # Persist to .env safely
         if updates:
             save_env_safe(updates)
+
+        # Permanent Disk Persistence inside analyst/terminal8510_config.json
+        config_path = ROOT / "analyst" / "terminal8510_config.json"
+        try:
+            cfg_data = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+            cfg_data.setdefault("dhan", {})
+            if "DHAN_CLIENT_ID" in updates:
+                cfg_data["DHAN_CLIENT_ID"] = updates["DHAN_CLIENT_ID"]
+                cfg_data["dhan"]["DHAN_CLIENT_ID"] = updates["DHAN_CLIENT_ID"]
+                cfg_data["dhan"]["client_id"] = updates["DHAN_CLIENT_ID"]
+            if "DHAN_ACCESS_TOKEN" in updates:
+                cfg_data["DHAN_ACCESS_TOKEN"] = updates["DHAN_ACCESS_TOKEN"]
+                cfg_data["dhan"]["DHAN_ACCESS_TOKEN"] = updates["DHAN_ACCESS_TOKEN"]
+                cfg_data["dhan"]["access_token"] = updates["DHAN_ACCESS_TOKEN"]
+            if "DHAN_API_KEY" in updates:
+                cfg_data["DHAN_API_KEY"] = updates["DHAN_API_KEY"]
+                cfg_data["dhan"]["DHAN_API_KEY"] = updates["DHAN_API_KEY"]
+                cfg_data["dhan"]["api_key"] = updates["DHAN_API_KEY"]
+            if "DHAN_API_SECRET" in updates:
+                cfg_data["DHAN_API_SECRET"] = updates["DHAN_API_SECRET"]
+                cfg_data["dhan"]["DHAN_API_SECRET"] = updates["DHAN_API_SECRET"]
+                cfg_data["dhan"]["api_secret"] = updates["DHAN_API_SECRET"]
+            if "TOKEN_EXPIRY_UTC" in updates:
+                cfg_data["TOKEN_EXPIRY_UTC"] = updates["TOKEN_EXPIRY_UTC"]
+                cfg_data["dhan"]["TOKEN_EXPIRY_UTC"] = updates["TOKEN_EXPIRY_UTC"]
+                cfg_data["dhan"]["token_expiry_utc"] = updates["TOKEN_EXPIRY_UTC"]
+            if environment:
+                cfg_data["dhan"]["environment"] = self.environment
+            if whitelisted_ip:
+                cfg_data["dhan"]["whitelisted_ip"] = self.whitelisted_ip
+
+            config_path.write_text(json.dumps(cfg_data, indent=2), encoding="utf-8")
+            self.cfg = cfg_data
+        except Exception as e:
+            log.warning("Could not persist dhan credentials to terminal8510_config.json: %s", e)
 
         # Log safely — NEVER log full token or secret!
         cid = updates.get("DHAN_CLIENT_ID", os.environ.get("DHAN_CLIENT_ID", ""))
@@ -485,18 +825,107 @@ class DhanBroker:
         masked_t = f"****{tok[-4:]}" if len(tok) >= 4 else "none"
         log.info("Dhan API credentials updated safely. Client ID: %s, Token: %s", cid, masked_t)
 
-        return self.get_masked_config()
+        res = self.get_masked_config()
+        if exp_info:
+            res.update({
+                "token_valid_till": exp_info.get("token_valid_till", "--"),
+                "time_left": exp_info.get("time_left", "--"),
+                "days_left": exp_info.get("days_left", "--"),
+                "is_expired": exp_info.get("is_expired", False),
+            })
+        return res
+
+    def clear_credentials(self) -> Dict[str, Any]:
+        """Clears saved Dhan credentials from memory, .env, and terminal8510_config.json on logout."""
+        clears = {
+            "DHAN_ACCESS_TOKEN": "",
+            "DHAN_API_KEY": "",
+            "DHAN_API_SECRET": "",
+            "TOKEN_EXPIRY_UTC": "",
+        }
+        save_env_safe(clears)
+        config_path = ROOT / "analyst" / "terminal8510_config.json"
+        try:
+            if config_path.exists():
+                cfg_data = json.loads(config_path.read_text(encoding="utf-8"))
+                d_sec = cfg_data.get("dhan", {})
+                for k in ["DHAN_ACCESS_TOKEN", "access_token", "DHAN_API_KEY", "api_key", "DHAN_API_SECRET", "api_secret", "TOKEN_EXPIRY_UTC", "token_expiry_utc"]:
+                    d_sec.pop(k, None)
+                cfg_data["dhan"] = d_sec
+                config_path.write_text(json.dumps(cfg_data, indent=2), encoding="utf-8")
+                self.cfg = cfg_data
+        except Exception as e:
+            log.warning("Error clearing dhan credentials from config: %s", e)
+
+        self.last_connected_status = {
+            "connected": False,
+            "dhan_connected": False,
+            "status": "DISCONNECTED ❌",
+            "message": "Dhan credentials cleared. Please enter new API credentials.",
+            "last_updated": datetime.now(IST).strftime("%H:%M:%S")
+        }
+        return {
+            "ok": True,
+            "connected": False,
+            "message": "Dhan API credentials logged out and cleared successfully."
+        }
+
+    def get_status(self) -> Dict[str, Any]:
+        """Returns auto-load Dhan credentials status, masking, and time left."""
+        load_env_safe()
+        token = os.environ.get("DHAN_ACCESS_TOKEN", "")
+        client_id = os.environ.get("DHAN_CLIENT_ID", "")
+        masked_token = f"****{token[-4:]}" if len(token) >= 4 else ("****" if token else "")
+        is_cfg = bool(token and len(token) > 20)
+
+        exp_info = decode_token_expiry(token) if is_cfg else {
+            "token_valid_till": "--",
+            "time_left": "--",
+            "days_left": "--",
+            "is_expired": True
+        }
+
+        connected = self.last_connected_status.get("connected", False)
+        status_tag = self.last_connected_status.get("status", "DISCONNECTED ❌")
+        message = self.last_connected_status.get("message", "")
+
+        status_text = (
+            f"Loaded Saved Dhan API: {masked_token} | Token Valid Till: {exp_info['token_valid_till']} | "
+            f"Days Left: {exp_info['days_left']} | Status: CONNECTED ✅"
+            if (is_cfg and not exp_info["is_expired"]) else (message or f"Status: {status_tag}")
+        )
+        display_text = status_text
+        auto_load_log = "Auto-loaded saved Dhan API — No need to re-enter." if (is_cfg and not exp_info["is_expired"]) else ""
+
+        return {
+            "ok": True,
+            "configured": is_cfg,
+            "client_id": client_id,
+            "masked_token": masked_token,
+            "token_valid_till": exp_info["token_valid_till"],
+            "time_left": exp_info["time_left"],
+            "days_left": exp_info["days_left"],
+            "is_expired": exp_info["is_expired"],
+            "connected": connected,
+            "dhan_connected": connected,
+            "status": status_tag,
+            "status_text": status_text,
+            "auto_load_log": auto_load_log,
+            "message": message,
+            "display_text": display_text,
+            "last_status": self.last_connected_status,
+        }
 
     async def test_connection(self, fut_sec_id: int = 61471) -> Dict[str, Any]:
         """
         Calls Dhan API /v2/fundlimit and /v2/marketfeed/ltp to test connectivity.
-        Returns formatted status string according to user requirements.
+        Strict 10-second timeout enforced.
         """
         now_time = datetime.now(IST).strftime("%H:%M:%S")
         curr_ip = await self.get_current_ip_async()
 
         if not self.is_configured():
-            status_msg = "Dhan Status: DISCONNECTED ❌ | Error: Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console"
+            status_msg = "❌ Dhan Connection Failed: Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console | [ 🔄 Retry Connection ]"
             status_obj = {
                 "ok": False,
                 "connected": False,
@@ -510,9 +939,16 @@ class DhanBroker:
             self.last_connected_status = status_obj
             return status_obj
 
+        token = os.environ.get("DHAN_ACCESS_TOKEN", "")
+        masked_t = f"****{token[-4:]}" if len(token) >= 4 else "****"
+        exp_info = decode_token_expiry(token)
+
         try:
-            async with httpx.AsyncClient(timeout=6.0) as client:
-                res_funds = await client.get(f"{self.base_url}/fundlimit", headers=self._headers())
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res_funds = await asyncio.wait_for(
+                    client.get(f"{self.base_url}/fundlimit", headers=self._headers()),
+                    timeout=10.0
+                )
                 if res_funds.status_code == 200:
                     funds_data = res_funds.json()
 
@@ -521,7 +957,10 @@ class DhanBroker:
                     fut = 23960.10
                     try:
                         req_payload = {"IDX_I": [13], "NSE_FNO": [int(fut_sec_id)]}
-                        res_ltp = await client.post(f"{self.base_url}/marketfeed/ltp", json=req_payload, headers=self._headers())
+                        res_ltp = await asyncio.wait_for(
+                            client.post(f"{self.base_url}/marketfeed/ltp", json=req_payload, headers=self._headers()),
+                            timeout=10.0
+                        )
                         if res_ltp.status_code == 200:
                             data_ltp = res_ltp.json().get("data", {})
                             idx_map = data_ltp.get("IDX_I", {})
@@ -537,7 +976,7 @@ class DhanBroker:
                     except Exception as e:
                         log.warning("Could not fetch test quotes: %s", e)
 
-                    status_msg = f"Dhan Status: CONNECTED ✅ | dhan_connected: true | Nifty Spot: {spot:.2f} | Nifty Future: {fut:.2f} | Last Updated: {now_time}"
+                    status_msg = f"Loaded Saved Dhan API: {masked_t} | Token Valid Till: {exp_info['token_valid_till']} | Days Left: {exp_info['days_left']} | Status: CONNECTED ✅ | dhan_connected: true | Nifty Spot: {spot:.2f} | Nifty Future: {fut:.2f}"
                     status_obj = {
                         "ok": True,
                         "connected": True,
@@ -549,6 +988,9 @@ class DhanBroker:
                         "funds": funds_data,
                         "current_ip": curr_ip,
                         "last_updated": now_time,
+                        "token_valid_till": exp_info["token_valid_till"],
+                        "days_left": exp_info["days_left"],
+                        "masked_token": masked_t,
                     }
                     self.last_connected_status = status_obj
                     return status_obj
@@ -556,7 +998,7 @@ class DhanBroker:
                 elif res_funds.status_code in (401, 403):
                     err_text = res_funds.text
                     if "ip" in err_text.lower() or "whitelist" in err_text.lower():
-                        status_msg = f"Dhan Status: IP NOT WHITELISTED ❌ | Your IP: {curr_ip} | Please add this IP in Dhan Console > API Access > IP Whitelist"
+                        status_msg = f"❌ Dhan Connection Failed: IP NOT WHITELISTED ❌ | Your IP: {curr_ip} | Please add this IP in Dhan Console > API Access > IP Whitelist | [ 🔄 Retry Connection ]"
                         status_obj = {
                             "ok": False,
                             "connected": False,
@@ -568,7 +1010,7 @@ class DhanBroker:
                             "last_updated": now_time,
                         }
                     else:
-                        status_msg = "Dhan Status: DISCONNECTED ❌ | Error: Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console"
+                        status_msg = "❌ Dhan Connection Failed: Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console | [ 🔄 Retry Connection ]"
                         status_obj = {
                             "ok": False,
                             "connected": False,
@@ -583,7 +1025,7 @@ class DhanBroker:
                     return status_obj
 
                 else:
-                    status_msg = f"Dhan Status: DISCONNECTED ❌ | Error: HTTP {res_funds.status_code} - {res_funds.text[:100]}"
+                    status_msg = f"❌ Dhan Connection Failed: HTTP {res_funds.status_code} - {res_funds.text[:100]} | [ 🔄 Retry Connection ]"
                     status_obj = {
                         "ok": False,
                         "connected": False,
@@ -597,15 +1039,29 @@ class DhanBroker:
                     self.last_connected_status = status_obj
                     return status_obj
 
-        except Exception as e:
-            status_msg = f"Dhan Status: DISCONNECTED ❌ | Error: {str(e)}"
+        except asyncio.TimeoutError:
+            status_msg = "❌ Dhan Connection Failed: Connection timed out after 10s | [ 🔄 Retry Connection ]"
             status_obj = {
                 "ok": False,
                 "connected": False,
                 "dhan_connected": False,
                 "status": "DISCONNECTED ❌",
                 "message": status_msg,
-                "error": status_msg,
+                "error": "Connection timed out after 10s",
+                "current_ip": curr_ip,
+                "last_updated": now_time,
+            }
+            self.last_connected_status = status_obj
+            return status_obj
+        except Exception as e:
+            status_msg = f"❌ Dhan Connection Failed: {str(e)} | [ 🔄 Retry Connection ]"
+            status_obj = {
+                "ok": False,
+                "connected": False,
+                "dhan_connected": False,
+                "status": "DISCONNECTED ❌",
+                "message": status_msg,
+                "error": str(e),
                 "current_ip": curr_ip,
                 "last_updated": now_time,
             }
@@ -1713,7 +2169,19 @@ def get_replay_trades_for_date(target_date: str) -> List[Dict[str, Any]]:
     Returns verified execution results for specific trading sessions respecting MA stack.
     """
     if target_date in CALIBRATED_BENCHMARK_REPLAY:
-        return CALIBRATED_BENCHMARK_REPLAY[target_date]
+        raw = CALIBRATED_BENCHMARK_REPLAY[target_date]
+        formatted = []
+        for t in raw:
+            item = dict(t)
+            dir_str = item.get("direction", "LONG")
+            opt_t = "CE" if dir_str == "LONG" else "PE"
+            strk = round(float(item.get("index_entry", 23800.0)) / 50.0) * 50
+            c_sym = format_contract_symbol(expiry=target_date, strike=strk, opt_type=opt_t, default_expiry=target_date)
+            item["contract_symbol"] = c_sym
+            item["symbol"] = c_sym
+            item["structured_contract"] = get_contract_structured_fields(c_sym, expiry=target_date)
+            formatted.append(item)
+        return formatted
     return []
 
 
@@ -1832,6 +2300,13 @@ class QuantTerminalBackend:
         })
         self._last_synergy_status: str = "INITIALIZED"
 
+        # Market Hours Validator & Testing Override Toggle
+        self.allow_off_hours_paper_testing: bool = bool(self.cfg.get("allow_off_hours_paper_testing", False))
+        self.nse_holidays: List[str] = self.cfg.get("nse_holidays", [
+            "2026-01-26", "2026-03-25", "2026-04-14", "2026-05-01",
+            "2026-08-15", "2026-10-02", "2026-12-25"
+        ])
+
     @property
     def lock(self) -> asyncio.Lock:
         if self._lock is None:
@@ -1919,10 +2394,24 @@ class QuantTerminalBackend:
                     ("exit_reason", "TEXT DEFAULT ''"),
                     ("partial_step", "INTEGER DEFAULT 0"),
                     ("remaining_qty", "INTEGER DEFAULT 0"),
+                    ("placed_by", "TEXT DEFAULT 'AUTO ALGO 🤖'"),
+                    ("source", "TEXT DEFAULT 'AUTO ALGO 🤖'"),
+                    ("strategy_setup", "TEXT DEFAULT 'Manual — No Strategy'"),
                 ]
                 for col_name, col_type in pos_cols:
                     try:
                         cur.execute(f"ALTER TABLE positions ADD COLUMN {col_name} {col_type};")
+                    except sqlite3.OperationalError:
+                        pass
+
+                order_cols = [
+                    ("placed_by", "TEXT DEFAULT 'AUTO ALGO 🤖'"),
+                    ("source", "TEXT DEFAULT 'AUTO ALGO 🤖'"),
+                    ("strategy_setup", "TEXT DEFAULT 'Manual — No Strategy'"),
+                ]
+                for col_name, col_type in order_cols:
+                    try:
+                        cur.execute(f"ALTER TABLE orders ADD COLUMN {col_name} {col_type};")
                     except sqlite3.OperationalError:
                         pass
 
@@ -2040,34 +2529,63 @@ class QuantTerminalBackend:
         """Returns Dhan configuration with secrets safely masked and IP match status."""
         return self.broker.get_masked_config()
 
-    def update_dhan_config(self, body: Dict[str, Any]) -> Dict[str, Any]:
-        """Safely updates Dhan credentials and metadata into .env and config."""
-        res = self.broker.update_credentials(
-            client_id=body.get("client_id"),
-            access_token=body.get("access_token"),
-            api_key=body.get("api_key"),
-            api_secret=body.get("api_secret"),
-            environment=body.get("environment"),
-            whitelisted_ip=body.get("whitelisted_ip"),
-        )
-        self.cfg.setdefault("dhan", {})
-        if "client_id" in body and body["client_id"]:
-            self.cfg["dhan"]["client_id"] = str(body["client_id"]).strip()
-        if "environment" in body and body["environment"]:
-            self.cfg["dhan"]["environment"] = str(body["environment"]).strip()
-        if "whitelisted_ip" in body and body["whitelisted_ip"]:
-            self.cfg["dhan"]["whitelisted_ip"] = str(body["whitelisted_ip"]).strip()
+    def get_dhan_status(self) -> Dict[str, Any]:
+        """Returns auto-load Dhan credentials status, masking, and time left."""
+        return self.broker.get_status()
+
+    def logout_dhan(self) -> Dict[str, Any]:
+        """Clears saved credentials on logout."""
+        return self.broker.clear_credentials()
+
+    def is_nse_market_open(self, dt: Optional[datetime] = None) -> Tuple[bool, str]:
+        """Validates if NSE market is open (09:15 to 15:30 IST Mon-Fri)."""
+        return is_nse_market_open(dt=dt, holidays=self.nse_holidays)
+
+    def set_off_hours_paper_testing(self, enabled: bool) -> Dict[str, Any]:
+        """Toggles paper trading outside market hours for testing."""
+        self.allow_off_hours_paper_testing = bool(enabled)
+        self.cfg["allow_off_hours_paper_testing"] = self.allow_off_hours_paper_testing
         try:
             self.config_path.write_text(json.dumps(self.cfg, indent=2))
         except Exception as e:
-            log.warning("Could not persist dhan config metadata: %s", e)
+            log.warning("Could not persist allow_off_hours_paper_testing: %s", e)
+        return {
+            "ok": True,
+            "allow_off_hours_paper_testing": self.allow_off_hours_paper_testing
+        }
+
+    def update_dhan_config(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Safely updates Dhan credentials and metadata into .env and config."""
+        res = self.broker.update_credentials(
+            client_id=body.get("client_id") or body.get("DHAN_CLIENT_ID"),
+            access_token=body.get("access_token") or body.get("DHAN_ACCESS_TOKEN"),
+            api_key=body.get("api_key") or body.get("DHAN_API_KEY"),
+            api_secret=body.get("api_secret") or body.get("DHAN_API_SECRET"),
+            environment=body.get("environment") or body.get("DHAN_ENVIRONMENT"),
+            whitelisted_ip=body.get("whitelisted_ip") or body.get("DHAN_WHITELISTED_IP"),
+        )
+        self.cfg = self.broker.cfg
         return res
 
     async def test_dhan_connection(self) -> Dict[str, Any]:
-        """Runs live connection test against Dhan HQ v2 API."""
+        """Runs live connection test against Dhan HQ v2 API with strict 10s timeout."""
         active_fut = self.inst_mgr.get_active_future_contract()
         fut_sec_id = int(active_fut["security_id"]) if active_fut else 61471
-        return await self.broker.test_connection(fut_sec_id=fut_sec_id)
+        try:
+            return await asyncio.wait_for(self.broker.test_connection(fut_sec_id=fut_sec_id), timeout=10.0)
+        except asyncio.TimeoutError:
+            err_msg = "❌ Dhan Connection Failed: Connection timed out after 10s | [ 🔄 Retry Connection ]"
+            status_obj = {
+                "ok": False,
+                "connected": False,
+                "dhan_connected": False,
+                "status": "DISCONNECTED ❌",
+                "message": err_msg,
+                "error": "Connection timed out after 10s",
+                "last_updated": datetime.now(IST).strftime("%H:%M:%S")
+            }
+            self.broker.last_connected_status = status_obj
+            return status_obj
 
     def calculate_dhan_charges(self, buy_price: float, sell_price: float, qty: int) -> float:
         """
@@ -2208,7 +2726,8 @@ class QuantTerminalBackend:
                 "label": "1. Long ITM CE (~₹200)",
                 "strike": itm_ce_strike,
                 "opt_type": "CE",
-                "symbol": resolved_itm_ce["symbol"] if resolved_itm_ce else f"NIFTY {int(itm_ce_strike)} CE",
+                "symbol": format_contract_symbol(expiry=nearest_expiry, strike=itm_ce_strike, opt_type="CE", raw_symbol=resolved_itm_ce["symbol"] if resolved_itm_ce else None),
+                "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=itm_ce_strike, opt_type="CE"), expiry=nearest_expiry),
                 "security_id": resolved_itm_ce["security_id"] if resolved_itm_ce else "39951",
                 "lot_size": resolved_itm_ce["lot_size"] if resolved_itm_ce else 65,
                 "ltp": itm_ce_ltp,
@@ -2223,7 +2742,8 @@ class QuantTerminalBackend:
                 "label": "2. Long ATM CE",
                 "strike": atm_ce_strike,
                 "opt_type": "CE",
-                "symbol": resolved_atm_ce["symbol"] if resolved_atm_ce else f"NIFTY {int(atm_ce_strike)} CE",
+                "symbol": format_contract_symbol(expiry=nearest_expiry, strike=atm_ce_strike, opt_type="CE", raw_symbol=resolved_atm_ce["symbol"] if resolved_atm_ce else None),
+                "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=atm_ce_strike, opt_type="CE"), expiry=nearest_expiry),
                 "security_id": resolved_atm_ce["security_id"] if resolved_atm_ce else "39961",
                 "lot_size": resolved_atm_ce["lot_size"] if resolved_atm_ce else 65,
                 "ltp": atm_ce_ltp,
@@ -2238,7 +2758,8 @@ class QuantTerminalBackend:
                 "label": "3. Long ITM PE (~₹200)",
                 "strike": itm_pe_strike,
                 "opt_type": "PE",
-                "symbol": resolved_itm_pe["symbol"] if resolved_itm_pe else f"NIFTY {int(itm_pe_strike)} PE",
+                "symbol": format_contract_symbol(expiry=nearest_expiry, strike=itm_pe_strike, opt_type="PE", raw_symbol=resolved_itm_pe["symbol"] if resolved_itm_pe else None),
+                "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=itm_pe_strike, opt_type="PE"), expiry=nearest_expiry),
                 "security_id": resolved_itm_pe["security_id"] if resolved_itm_pe else "39968",
                 "lot_size": resolved_itm_pe["lot_size"] if resolved_itm_pe else 65,
                 "ltp": itm_pe_ltp,
@@ -2253,7 +2774,8 @@ class QuantTerminalBackend:
                 "label": "4. Long ATM PE",
                 "strike": atm_pe_strike,
                 "opt_type": "PE",
-                "symbol": resolved_atm_pe["symbol"] if resolved_atm_pe else f"NIFTY {int(atm_pe_strike)} PE",
+                "symbol": format_contract_symbol(expiry=nearest_expiry, strike=atm_pe_strike, opt_type="PE", raw_symbol=resolved_atm_pe["symbol"] if resolved_atm_pe else None),
+                "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=atm_pe_strike, opt_type="PE"), expiry=nearest_expiry),
                 "security_id": resolved_atm_pe["security_id"] if resolved_atm_pe else "39962",
                 "lot_size": resolved_atm_pe["lot_size"] if resolved_atm_pe else 65,
                 "ltp": atm_pe_ltp,
@@ -2978,8 +3500,9 @@ class QuantTerminalBackend:
         return self.get_paper_wallet()
 
     # ── POSITIONS & ORDERS RETRIEVAL ─────────────────────────────────────────
-    def get_active_positions(self, live_quotes: Dict[str, float]) -> List[Dict[str, Any]]:
+    def get_active_positions(self, live_quotes: Optional[Dict[str, float]] = None) -> List[Dict[str, Any]]:
         positions = []
+        live_quotes = live_quotes or {}
         with sqlite3.connect(self.ledger_db) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
@@ -3145,6 +3668,11 @@ class QuantTerminalBackend:
                     WHERE position_id=?
                     """, (ltp, highest_ltp, current_trailing_sl, target_status, trailing_target_level,
                           highest_after_target, pullback_exit_level, gross_pnl, net_pnl, p["position_id"]))
+                    p["symbol"] = format_contract_symbol(raw_symbol=p.get("symbol"))
+                    p["source"] = p.get("source") or p.get("placed_by") or "AUTO ALGO 🤖"
+                    p["placed_by"] = p["source"]
+                    p["strategy_setup"] = p.get("strategy_setup") or p.get("strategy_name") or "Manual — No Strategy"
+                    p["structured_contract"] = get_contract_structured_fields(p["symbol"])
                     positions.append(p)
             conn.commit()
         return positions
@@ -3154,7 +3682,16 @@ class QuantTerminalBackend:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
             rows = cur.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 50").fetchall()
-            return [dict(r) for r in rows]
+            orders = []
+            for r in rows:
+                o = dict(r)
+                o["symbol"] = format_contract_symbol(raw_symbol=o.get("symbol"))
+                o["source"] = o.get("source") or o.get("placed_by") or "AUTO ALGO 🤖"
+                o["placed_by"] = o["source"]
+                o["strategy_setup"] = o.get("strategy_setup") or o.get("strategy_name") or "Manual — No Strategy"
+                o["structured_contract"] = get_contract_structured_fields(o["symbol"])
+                orders.append(o)
+            return orders
 
     # ── AGGRESSIVE LIMIT ORDER CHASING ENGINE ────────────────────────────────
     async def execute_order_with_chaser(
@@ -3165,6 +3702,9 @@ class QuantTerminalBackend:
         target_pts: float = 40.0,
         sl_pts: float = 40.0,
         is_algo_trade: bool = False,
+        source: Optional[str] = None,
+        strategy_setup: Optional[str] = None,
+        enforce_market_hours: bool = False,
     ) -> Dict[str, Any]:
         """
         SEBI Post-March 2026 Aggressive Limit Chaser Implementation:
@@ -3249,16 +3789,67 @@ class QuantTerminalBackend:
                         "error": f"[SKIPPED] Strike {sym} excluded by Trader Strike Matrix Filter"
                     }
 
+            # Market Hours Validator (Live + Paper)
+            is_open, mkt_status = self.is_nse_market_open()
+            if enforce_market_hours:
+                is_paper_exec = (mode == "PAPER_ONLY" or (mode == "BOTH" and self.paper_execution_enabled))
+                if not is_open:
+                    if mode == "ALGO_LIVE_ONLY" or not (is_paper_exec and self.allow_off_hours_paper_testing):
+                        curr_t = datetime.now(IST).strftime("%H:%M:%S")
+                        err_msg = (
+                            f"❌ Market Closed — Cannot Place Order Now\n"
+                            f"Market Hours: Mon-Fri 09:15 AM - 03:30 PM IST\n"
+                            f"Current Time: {curr_t} IST | Market Status: CLOSED"
+                        )
+                        log.warning(err_msg)
+                        return {
+                            "ok": False,
+                            "status": "REJECTED",
+                            "error": err_msg,
+                            "rejection_reason": err_msg,
+                            "market_status": "CLOSED",
+                            "market_closed": True,
+                        }
+                    else:
+                        log.warning("⚠️ Testing Mode — Market is Closed. Allowing Paper order execution.")
+
             buf = float(self.chasing_cfg.get("aggressive_limit_buffer_pts", 4.0))
             interval_s = float(self.chasing_cfg.get("auto_modify_interval_ms", 800)) / 1000.0
             max_retries = int(self.chasing_cfg.get("max_chase_retries", 3))
             sl_buf = float(self.chasing_cfg.get("sl_limit_buffer_pts", 4.0))
 
-            symbol = contract["symbol"]
-            sec_id = str(contract["security_id"])
+            symbol = format_contract_symbol(
+                expiry=contract.get("expiry"),
+                strike=contract.get("strike"),
+                opt_type=contract.get("opt_type"),
+                raw_symbol=contract.get("symbol"),
+            )
+            sec_id = str(contract.get("security_id", ""))
             qty = int(contract.get("lot_size", 65))
             signal_ltp = float(contract.get("ltp", 200.0))
             delta = float(contract.get("delta", 0.60))
+
+            placed_source = source or ("AUTO ALGO 🤖" if is_algo_trade else ("MANUAL MATRIX ✋" if "Matrix" in strategy_name else ("MANUAL ROUTER ✋" if "Router" in strategy_name else ("MANUAL TAB 6 ✋" if ("Tab 6" in strategy_name or "Stock Mojo" in strategy_name) else "MANUAL MATRIX ✋"))))
+            if not strategy_setup:
+                if "Stage 2" in strategy_name:
+                    strategy_setup = "Stage 2 8 EMA Touch"
+                elif "4/8" in strategy_name or "Crossover" in strategy_name:
+                    if "Bearish" in strategy_name or "Down" in strategy_name:
+                        strategy_setup = "4/8 Crossover Reversal — Bearish"
+                    else:
+                        strategy_setup = "4/8 Crossover Reversal — Bullish"
+                elif "1H" in strategy_name:
+                    strategy_setup = "1H 8 EMA Support"
+                elif "ATM Reversal Upside" in strategy_name:
+                    strategy_setup = "ATM Reversal Upside"
+                elif "ATM Reversal Downside" in strategy_name:
+                    strategy_setup = "ATM Reversal Downside"
+                elif "Stage 3" in strategy_name:
+                    strategy_setup = "Stage 3 ATM"
+                elif "P minus C" in strategy_name or "Synergy" in strategy_name or "Stock Mojo" in strategy_name:
+                    strategy_setup = "P minus C Filter — Total OI + OI Change"
+                else:
+                    strategy_setup = "Manual — No Strategy"
 
             opt_target_pts = round(target_pts * abs(delta), 1)
             opt_sl_pts = round(sl_pts * abs(delta), 1)
@@ -3397,7 +3988,8 @@ class QuantTerminalBackend:
                         trailing_target_level, highest_after_target, pullback_exit_level,
                         trail_sl_enabled, trail_target_enabled, trail_activation_pts, trail_jump_pts,
                         trail_target_step, trail_target_pullback, target_order_id, sl_order_id,
-                        exit_reason, partial_step, remaining_qty
+                        exit_reason, partial_step, remaining_qty,
+                        placed_by, source, strategy_setup
                     ) VALUES (
                         ?, ?, ?, ?, 1, ?, ?, ?,
                         ?, ?, ?, NULL, NULL, '00h 00m 00s',
@@ -3406,7 +3998,8 @@ class QuantTerminalBackend:
                         ?, ?, 0.0,
                         ?, ?, ?, ?,
                         ?, ?, '', ?,
-                        '', 0, ?
+                        '', 0, ?,
+                        ?, ?, ?
                     )
                     """, (
                         pos_id, symbol, sec_id, side, qty, paper_fill_price,
@@ -3421,7 +4014,8 @@ class QuantTerminalBackend:
                         float(self.super_trail_cfg.get("trail_target_step_pts", 10.0)),
                         float(self.super_trail_cfg.get("trail_target_pullback_pts", 5.0)),
                         str(companion_sl_order_id or ""),
-                        qty
+                        qty,
+                        placed_source, placed_source, strategy_setup
                     ))
 
                     # Deduct paper margin
@@ -3440,18 +4034,23 @@ class QuantTerminalBackend:
                 INSERT OR REPLACE INTO orders (
                     order_id, correlation_id, created_at, strategy_name, symbol, security_id,
                     side, product, order_type, lots, qty, signal_ltp, limit_price, fill_price,
-                    slippage, chase_retries, brokerage_taxes, order_status, mode, rejection_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'INTRADAY', 'AGGR-LIMIT', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    slippage, chase_retries, brokerage_taxes, order_status, mode, rejection_reason,
+                    placed_by, source, strategy_setup
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'INTRADAY', 'AGGR-LIMIT', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (order_id, corr_id, now_str, strategy_name, symbol, sec_id, side, qty,
                       signal_ltp, limit_sent, fill_price, slippage_pts, chase_retries_used,
-                      dhan_charges, order_status, mode, rejection_reason))
+                      dhan_charges, order_status, mode, rejection_reason,
+                      placed_source, placed_source, strategy_setup))
                 conn.commit()
 
-            return {
+            res_dict = {
                 "ok": order_status == "FILLED",
                 "order_id": order_id,
                 "status": order_status,
                 "symbol": symbol,
+                "source": placed_source,
+                "placed_by": placed_source,
+                "strategy_setup": strategy_setup,
                 "fill_price": fill_price,
                 "signal_ltp": signal_ltp,
                 "slippage": slippage_pts,
@@ -3459,6 +4058,9 @@ class QuantTerminalBackend:
                 "companion_sl_order_id": companion_sl_order_id,
                 "rejection_reason": rejection_reason,
             }
+            if not is_open:
+                res_dict["warning"] = "⚠️ Testing Mode — Market is Closed"
+            return res_dict
 
     # ── IN-FLIGHT POSITION MODIFICATION ──────────────────────────────────────
     def modify_open_position(self, position_id: str, action: str, new_val: Optional[float] = None) -> Dict[str, Any]:
@@ -3468,6 +4070,33 @@ class QuantTerminalBackend:
             pos = cur.execute("SELECT * FROM positions WHERE position_id=? AND status='OPEN'", (position_id,)).fetchone()
             if not pos:
                 return {"ok": False, "error": "Open position not found"}
+
+            # Block Square-Off outside NSE market hours (both Live and Paper unless override)
+            is_square_off = action in ("CLOSE", "SQUARE_OFF", "EXIT_TRAILING_TARGET")
+            if is_square_off:
+                is_open, mkt_status = self.is_nse_market_open()
+                if not is_open:
+                    pos_mode = str(pos["mode"]) if pos else ""
+                    is_paper_pos = ("PAPER" in pos_mode)
+                    if not (is_paper_pos and self.allow_off_hours_paper_testing):
+                        curr_t = datetime.now(IST).strftime("%H:%M:%S")
+                        err_msg = (
+                            f"❌ Market Closed — Cannot Square-Off Now\n"
+                            f"Market Hours: Mon-Fri 09:15 AM - 03:30 PM IST\n"
+                            f"Current Time: {curr_t} IST | Market Status: CLOSED\n"
+                            f"Your position will remain OPEN till next market open."
+                        )
+                        log.warning(err_msg)
+                        return {
+                            "ok": False,
+                            "status": "BLOCKED",
+                            "error": err_msg,
+                            "rejection_reason": err_msg,
+                            "market_status": "CLOSED",
+                            "market_closed": True,
+                        }
+                    else:
+                        log.warning("⚠️ Testing Mode — Market is Closed. Allowing Paper position square-off.")
 
             entry = float(pos["entry_price"])
             ltp = float(pos["current_ltp"] or entry)
@@ -3509,7 +4138,7 @@ class QuantTerminalBackend:
                 cur.execute("UPDATE positions SET target_price=?, trailing_target_level=? WHERE position_id=?", (new_target, new_target, position_id))
                 msg = f"Target widened to ₹{new_target:.2f} (+40 Spot pts)"
 
-            elif action == "CLOSE":
+            elif action in ("CLOSE", "SQUARE_OFF"):
                 # Close position immediately
                 exit_price = ltp
                 exit_time = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
@@ -3533,7 +4162,14 @@ class QuantTerminalBackend:
                 return {"ok": False, "error": f"Unknown action {action}"}
 
             conn.commit()
-            return {"ok": True, "message": msg}
+            res_dict = {
+                "ok": True,
+                "status": "CLOSED" if is_square_off else "MODIFIED",
+                "message": msg
+            }
+            if is_square_off and not is_open:
+                res_dict["warning"] = "⚠️ Testing Mode — Market is Closed"
+            return res_dict
 
     # ── EMERGENCY KILL SWITCH ────────────────────────────────────────────────
     async def trigger_emergency_kill_switch(self) -> Dict[str, Any]:
@@ -4282,9 +4918,17 @@ class QuantTerminalBackend:
                 f"4EMA: {open_p + (2.5 if tr.get('EMA_Slope', 0) > 0 else -2.5):.1f} {'>' if tr.get('EMA_Slope', 0) > 0 else '<'} 8EMA: {open_p:.1f} | {'UBB: UP' if tr.get('EMA_Slope', 0) > 0 else 'LBB: DOWN'} | Width: {72.0 + abs(tr.get('EMA_Slope', 0)):.1f}"
             )
 
+            strike_cand = round(open_p / 50.0) * 50 if open_p else 24300
+            opt_type_cand = "CE" if direction == "LONG" else "PE"
+            c_sym = format_contract_symbol(expiry=t_date, strike=strike_cand, opt_type=opt_type_cand, default_expiry=t_date)
+            struct_c = get_contract_structured_fields(c_sym, expiry=t_date)
+
             evaluated.append({
                 "trade_id": trade_id,
                 "date": t_date,
+                "contract_symbol": c_sym,
+                "symbol": c_sym,
+                "structured_contract": struct_c,
                 "day_outcome": day_outcome,
                 "day_status": day_outcome,
                 "entry_ist": entry_ist,

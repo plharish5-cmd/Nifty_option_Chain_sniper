@@ -69,6 +69,20 @@ async def startup_event():
     except Exception as e:
         log.error("Telemetry startup error: %s", e)
 
+    # Dhan connection auto-load & 10-second timeout check
+    if backend.broker.is_configured():
+        log.info("Auto-loaded saved Dhan API — No need to re-enter.")
+        try:
+            conn_res = await asyncio.wait_for(backend.test_dhan_connection(), timeout=10.0)
+            if conn_res.get("ok"):
+                log.info("✔ Dhan connection verified on startup: %s", conn_res.get("message"))
+            else:
+                log.warning("⚠ Dhan connection test on startup returned: %s", conn_res.get("message"))
+        except asyncio.TimeoutError:
+            log.warning("❌ Dhan connection check timed out after 10s on startup")
+        except Exception as e:
+            log.warning("⚠ Dhan connection check exception on startup: %s", e)
+
     backend.scanner_task = asyncio.create_task(backend.start_strategy_scanner_loop())
     log.info("✔ 4-Strategy Live Scanner daemon launched.")
 
@@ -104,6 +118,7 @@ async def serve_workspace_html():
 
 @app.get("/api/health")
 async def api_health():
+    m_status = backend.is_nse_market_open()
     return JSONResponse(content={
         "status": "ONLINE",
         "port": 8510,
@@ -112,7 +127,22 @@ async def api_health():
         "paper_enabled": backend.paper_execution_enabled,
         "directional_bias": backend.directional_bias,
         "kill_switch_active": backend.kill_switch_active,
+        "market": m_status,
+        "allow_off_hours_paper_testing": backend.allow_off_hours_paper_testing,
     })
+
+
+@app.get("/api/market/status")
+async def api_market_status():
+    return JSONResponse(content=backend.is_nse_market_open())
+
+
+@app.post("/api/settings/testing_override")
+async def api_settings_testing_override(req: Request):
+    body = await req.json()
+    enabled = bool(body.get("allow_off_hours_paper_testing", False))
+    res = backend.set_off_hours_paper_testing(enabled)
+    return JSONResponse(content=res)
 
 
 @app.get("/api/bias")
@@ -216,6 +246,8 @@ async def api_chaser_config(req: Request):
 
 
 @app.post("/api/order/submit")
+@app.post("/api/orders/place")
+@app.post("/api/paper/order")
 async def api_order_submit(req: Request):
     """Places Aggressive Limit order with Chasing Engine."""
     body = await req.json()
@@ -225,6 +257,8 @@ async def api_order_submit(req: Request):
     target_pts = float(body.get("target_pts", 40.0))
     sl_pts = float(body.get("sl_pts", 40.0))
     is_algo_trade = bool(body.get("is_algo_trade", False))
+    source = body.get("source") or body.get("placed_by")
+    strategy_setup = body.get("strategy_setup")
 
     selected_contract = None
     if contract_id:
@@ -269,8 +303,12 @@ async def api_order_submit(req: Request):
         target_pts=target_pts,
         sl_pts=sl_pts,
         is_algo_trade=is_algo_trade,
+        source=source,
+        strategy_setup=strategy_setup,
+        enforce_market_hours=True,
     )
-    return JSONResponse(content=res)
+    status_code = 200 if res.get("ok") else 400
+    return JSONResponse(content=res, status_code=status_code)
 
 
 @app.post("/api/super_trail/config")
@@ -325,12 +363,15 @@ async def api_scanner_toggle(req: Request):
 
 
 @app.post("/api/position/modify")
+@app.post("/api/positions/squareoff")
+@app.post("/api/paper/squareoff")
 async def api_position_modify(req: Request):
     body = await req.json()
-    position_id = str(body.get("position_id", ""))
-    action = str(body.get("action", ""))
+    position_id = str(body.get("position_id") or body.get("id") or "")
+    action = str(body.get("action") or "SQUARE_OFF")
     res = backend.modify_open_position(position_id=position_id, action=action)
-    return JSONResponse(content=res)
+    status_code = 200 if res.get("ok") else 400
+    return JSONResponse(content=res, status_code=status_code)
 
 
 @app.get("/api/orders")
@@ -652,7 +693,14 @@ async def api_dhan_get_config():
     return JSONResponse(content=backend.get_dhan_config())
 
 
+@app.get("/api/dhan/status")
+async def api_dhan_status():
+    """Returns Dhan status, masked credentials, token validity and auto-load details."""
+    return JSONResponse(content=backend.get_dhan_status())
+
+
 @app.post("/api/dhan/config")
+@app.post("/api/config/dhan")
 async def api_dhan_post_config(req: Request):
     """Safely updates Dhan credentials into .env and config without leaking secrets."""
     body = await req.json()
@@ -660,12 +708,20 @@ async def api_dhan_post_config(req: Request):
     return JSONResponse(content=res)
 
 
+@app.post("/api/dhan/logout")
+async def api_dhan_logout():
+    """Explicitly clears Dhan config from disk and env upon user request."""
+    res = backend.logout_dhan()
+    return JSONResponse(content=res)
+
+
 @app.post("/api/dhan/connect")
 @app.post("/api/dhan/test")
 async def api_dhan_connect_test():
-    """Runs a live connection test against Dhan HQ v2 API, querying /fundlimit and /marketfeed/ltp."""
+    """Runs a live connection test against Dhan HQ v2 API, querying /fundlimit and /marketfeed/ltp with 10s timeout."""
     res = await backend.test_dhan_connection()
-    return JSONResponse(content=res)
+    status_code = 200 if res.get("ok") else 400
+    return JSONResponse(content=res, status_code=status_code)
 
 
 def main():

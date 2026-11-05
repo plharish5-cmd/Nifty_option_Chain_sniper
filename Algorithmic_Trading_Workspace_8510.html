@@ -554,6 +554,12 @@
                 <span class="ribbon-label">PORT 8510 STATUS:</span>
                 <span class="ribbon-val" id="ribbonStatus" style="color:var(--emerald);">● ONLINE</span>
             </div>
+            <div class="ribbon-item">
+                <span class="ribbon-label">MARKET INDICATOR:</span>
+                <span class="ribbon-val" id="persistentMarketHeader" style="font-family:var(--font-mono); font-weight:700; color:#f87171;">
+                    Market: OPEN 🟢 | CLOSED 🔴 | Pre-Open 🟡 (09:00-09:15) | Post-Close 🔴 | Time: --:--:-- IST
+                </span>
+            </div>
         </div>
         <div class="ribbon-items">
             <div class="ribbon-item">
@@ -561,6 +567,11 @@
                 <span class="ribbon-val" id="istClock" style="color:#e2e8f0;">--:--:-- IST</span>
             </div>
         </div>
+    </div>
+
+    <!-- ⚠️ Testing Mode Banner (When Market Closed & Override Active) -->
+    <div id="testingModeBanner" style="display:none; padding:7px 16px; background:rgba(245, 158, 11, 0.18); border-bottom:1px solid rgba(245, 158, 11, 0.5); color:#fbbf24; font-weight:700; font-size:12.5px; text-align:center; font-family:var(--font-mono); letter-spacing:0.3px;">
+        ⚠️ Testing Mode — Market is Closed.
     </div>
 
     <div class="workspace-wrapper">
@@ -575,7 +586,7 @@
                 </div>
             </div>
 
-            <!-- Master Execution Mode Selector, Paper Switch & Kill Switch -->
+            <!-- Master Execution Mode Selector, Paper Switch, Settings & Kill Switch -->
             <div class="header-toolbar">
                 <div class="mode-toggle-group">
                     <button type="button" class="mode-btn" id="btnModeLive" onclick="setMasterMode('ALGO_LIVE_ONLY')">🚀 ALGO LIVE ONLY</button>
@@ -586,6 +597,12 @@
                 <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);">
                     <input type="checkbox" id="chkPaperExecutionSwitch" checked onchange="togglePaperExecutionSwitch(this.checked)" style="cursor:pointer;">
                     <span>Paper Live Exec: <b id="paperExecBadge" style="color:var(--emerald);">ON</b></span>
+                </label>
+
+                <!-- Problem 3 Testing Override Toggle in Settings -->
+                <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);" title="Allow Paper Trading Outside Market Hours (For Testing Only) — Default = OFF">
+                    <input type="checkbox" id="chkOffHoursPaperTesting" onchange="toggleOffHoursPaperTesting(this.checked)" style="cursor:pointer;">
+                    <span>Allow Off-Hours Paper Testing: <b id="offHoursBadge" style="color:var(--crimson);">OFF</b></span>
                 </label>
 
                 <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);">
@@ -704,11 +721,13 @@
                 <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between;">
                     <div style="display:flex; gap:10px; flex-wrap:wrap;">
                         <button type="button" class="emerald-btn" onclick="connectToDhanLive()" style="padding:8px 18px; font-size:12px; font-weight:700;">🔗 Connect to Dhan</button>
-                        <button type="button" class="cyan-btn" onclick="testDhanLiveConnection()" style="padding:8px 18px; font-size:12px; font-weight:700;">🔄 Test Connection</button>
+                        <button type="button" class="cyan-btn" onclick="testDhanLiveConnection(true)" style="padding:8px 18px; font-size:12px; font-weight:700;">🔄 Test Connection</button>
                         <button type="button" class="secondary-btn" onclick="saveDhanApiConfig()" style="padding:8px 18px; font-size:12px; font-weight:700;">💾 Save API Config</button>
+                        <button type="button" class="cyan-btn" onclick="retryDhanConnection()" style="padding:8px 14px; font-size:12px; font-weight:700;">🔄 Retry Connection</button>
+                        <button type="button" class="crimson-btn" onclick="logoutDhanApiConfig()" style="padding:8px 14px; font-size:12px; font-weight:700;">🚪 Logout / Clear API Config</button>
                         <button type="button" class="secondary-btn" onclick="toggleDhanTokenVisibility('dhanAccessTokenInput', 'tokenEyeBtn')" style="padding:8px 14px; font-size:12px;">👁️ Show / Hide Token</button>
                     </div>
-                    <div style="font-size:11px; color:var(--text-dim); font-family:var(--font-mono);" id="dhanActionFeedback">
+                    <div style="font-size:12px; color:#38bdf8; font-family:var(--font-mono); font-weight:700;" id="dhanActionFeedback">
                         Ready to connect
                     </div>
                 </div>
@@ -1023,6 +1042,27 @@
                     <span>🎯 Live Strike Matrix &amp; Aggressive Limit Order Router</span>
                     <span style="font-size:11px; color:#38bdf8; font-family:var(--font-mono);">4 PRIORITY CONTRACTS (2 LONG CE + 2 LONG PE)</span>
                 </h2>
+
+                <!-- Module 2: Aggressive Limit Order Router Instrument Dropdown & Selection Display -->
+                <div style="background:var(--bg-input); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 16px; margin-bottom:14px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                            <span style="font-size:12px; font-weight:800; color:#38bdf8; font-family:var(--font-mono);">⚡ ORDER ROUTER INSTRUMENT:</span>
+                            <select id="routerContractDropdown" style="min-width:300px; padding:6px 10px; font-size:12px; font-family:var(--font-mono);" onchange="updateRouterSelectedDisplay()">
+                                <!-- Options formatted as '09 Nov 2026 — NIFTY 24300 CE' -->
+                            </select>
+                        </div>
+                        <div id="routerSelectedInfo" style="font-size:11.5px; color:var(--text-dim); font-family:var(--font-mono);">
+                            Expiry Date: <b id="routerSelectedExpiry" style="color:#f8fafc;">--</b> | Symbol: <b id="routerSelectedSymbol" style="color:#f8fafc;">NIFTY</b> | Strike: <b id="routerSelectedStrike" style="color:var(--emerald);">--</b>
+                        </div>
+                        <div>
+                            <button type="button" class="emerald-btn" id="btnRouterPlaceOrder" onclick="submitRouterOrder('BUY')" style="padding:6px 16px; font-size:12px; font-weight:700;">
+                                🚀 Place Protected Limit Order
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div style="overflow-x:auto;">
                     <table>
                         <thead>
@@ -1154,7 +1194,28 @@
                 </div>
             </div>
 
-            <!-- Active Positions Section -->
+            <!-- Quick Filters Toolbar for Source and Strategy (Problem 4) -->
+            <div class="card" style="padding:12px 16px; margin-bottom:14px; background:var(--bg-input); border:1px solid var(--border-subtle);">
+                <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <span style="font-size:11px; font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">SOURCE FILTER:</span>
+                        <button type="button" class="secondary-btn active-filter-btn" id="btnFilterSource_ALL" onclick="setSourceFilter('ALL')" style="padding:4px 10px; font-size:11.5px; font-weight:700;">[ All ]</button>
+                        <button type="button" class="secondary-btn" id="btnFilterSource_AUTO" onclick="setSourceFilter('AUTO')" style="padding:4px 10px; font-size:11.5px;">[ Auto Algo 🤖 ]</button>
+                        <button type="button" class="secondary-btn" id="btnFilterSource_MANUAL" onclick="setSourceFilter('MANUAL')" style="padding:4px 10px; font-size:11.5px;">[ Manual ✋ ]</button>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <span style="font-size:11px; font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">STRATEGY FILTER:</span>
+                        <button type="button" class="secondary-btn active-filter-btn" id="btnFilterStrat_ALL" onclick="setStrategyFilter('ALL')" style="padding:4px 10px; font-size:11.5px; font-weight:700;">[ All Strategies ]</button>
+                        <button type="button" class="secondary-btn" id="btnFilterStrat_Stage2" onclick="setStrategyFilter('Stage 2')" style="padding:4px 10px; font-size:11.5px;">[ Stage 2 ]</button>
+                        <button type="button" class="secondary-btn" id="btnFilterStrat_Cross" onclick="setStrategyFilter('4/8 Crossover')" style="padding:4px 10px; font-size:11.5px;">[ 4/8 Crossover ]</button>
+                        <button type="button" class="secondary-btn" id="btnFilterStrat_1H" onclick="setStrategyFilter('1H 8 EMA')" style="padding:4px 10px; font-size:11.5px;">[ 1H 8 EMA ]</button>
+                        <button type="button" class="secondary-btn" id="btnFilterStrat_Stage3" onclick="setStrategyFilter('Stage 3')" style="padding:4px 10px; font-size:11.5px;">[ Stage 3 ]</button>
+                        <button type="button" class="secondary-btn" id="btnFilterStrat_OI" onclick="setStrategyFilter('P minus C Filter')" style="padding:4px 10px; font-size:11.5px;">[ P minus C Filter ]</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Positions Section (Problem 4 Layout) -->
             <div class="card">
                 <h2>
                     <span>📈 Active Positions (Live Fluctuating MTM Like Dhan App)</span>
@@ -1165,28 +1226,23 @@
                         <thead>
                             <tr>
                                 <th>Contract Symbol</th>
-                                <th>Mode</th>
                                 <th>Qty</th>
                                 <th>Entry Price</th>
-                                <th>Entry Time</th>
-                                <th>Current LTP</th>
-                                <th>Target / SL Distance Indicator</th>
-                                <th>Trail SL (Live)</th>
-                                <th>Trail Target (Live) / Highest High</th>
-                                <th>Trade Duration</th>
-                                <th>Gross P&amp;L (INR)</th>
-                                <th>Net P&amp;L (After Dhan Fees)</th>
-                                <th>In-Flight Algo Controls</th>
+                                <th>LTP</th>
+                                <th>Live MTM / P&amp;L</th>
+                                <th>Source</th>
+                                <th>Strategy / Setup</th>
+                                <th>Square-Off</th>
                             </tr>
                         </thead>
                         <tbody id="positionsTableBody">
-                            <tr><td colspan="13" style="text-align:center; color:var(--text-muted); padding:16px;">No active open positions. Submit an order from Tab 1 to track live fluctuating MTM.</td></tr>
+                            <tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:16px;">No active open positions. Submit an order from Tab 1 to track live fluctuating MTM.</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            <!-- Orders Book Section -->
+            <!-- Orders Book Section (Problem 4 Source & Strategy Columns) -->
             <div class="card">
                 <h2>
                     <span>📑 Institutional Orders Book</span>
@@ -1197,24 +1253,21 @@
                         <thead>
                             <tr>
                                 <th>Order ID</th>
-                                <th>Timestamp (ms)</th>
-                                <th>Strategy / Setup Name</th>
+                                <th>Timestamp</th>
                                 <th>Contract Symbol</th>
-                                <th>Sec ID</th>
+                                <th>Source</th>
+                                <th>Strategy / Setup</th>
                                 <th>Side</th>
                                 <th>Type</th>
-                                <th>Lots &amp; Qty</th>
+                                <th>Qty</th>
                                 <th>Signal LTP</th>
-                                <th>Limit Sent</th>
                                 <th>Avg Fill Price</th>
                                 <th>Slippage (Pts)</th>
-                                <th>Chase Retries</th>
-                                <th>Dhan Charges</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
                         <tbody id="ordersTableBody">
-                            <tr><td colspan="15" style="text-align:center; color:var(--text-muted); padding:16px;">Loading order book...</td></tr>
+                            <tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:16px;">Loading order book...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1348,6 +1401,7 @@
                     <table>
                         <thead>
                             <tr>
+                                <th>Contract Symbol</th>
                                 <th>Setup Name</th>
                                 <th>Entry IST</th>
                                 <th>Exit IST</th>
@@ -1363,7 +1417,7 @@
                             </tr>
                         </thead>
                         <tbody id="replayTableBody">
-                            <tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:16px;">Select a date and click 'Run Recorded Replay'.</td></tr>
+                            <tr><td colspan="13" style="text-align:center; color:var(--text-muted); padding:16px;">Select a date and click 'Run Recorded Replay'.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1432,6 +1486,7 @@
                                 <th>#</th>
                                 <th>Date</th>
                                 <th>Setup Name</th>
+                                <th>Contract Symbol</th>
                                 <th>Dir</th>
                                 <th>Index High / Low</th>
                                 <th>Opt Entry</th>
@@ -1443,7 +1498,7 @@
                             </tr>
                         </thead>
                         <tbody id="drBacktestTableBody">
-                            <tr><td colspan="11" style="text-align:center; color:var(--text-muted); padding:16px;">Select date range and click 'Run Date-Range Backtest'.</td></tr>
+                            <tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:16px;">Select date range and click 'Run Date-Range Backtest'.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -2082,6 +2137,12 @@
         let lastAnnouncedExitId = "";
         let audioCtx = null;
 
+        // Problem 3 & 4 State Variables
+        let cachedMarketStatus = null;
+        let cachedAllowOffHours = false;
+        let currentPosSourceFilter = "ALL";
+        let currentPosStrategyFilter = "ALL";
+
         // ── 2. INITIALIZATION & CLOCK ─────────────────────────────────────────
         document.addEventListener("DOMContentLoaded", () => {
             updateClock();
@@ -2098,12 +2159,12 @@
             setInterval(pollLiveEngine, 1000); // 1-second ticking live stream
         });
 
-        // ── DHAN API CONNECTION & LIVE GATEWAY HANDLERS ─────────────────────
+        // ── DHAN API CONNECTION & LIVE GATEWAY HANDLERS (Problem 1) ───────────
         let cachedDhanConfig = null;
 
         async function loadDhanConfig() {
             try {
-                const res = await fetch("/api/dhan/config");
+                const res = await fetch("/api/dhan/status");
                 if (!res.ok) return;
                 const data = await res.json();
                 cachedDhanConfig = data;
@@ -2129,12 +2190,35 @@
                 if (document.getElementById("dhanWhitelistedIpInput")) {
                     document.getElementById("dhanWhitelistedIpInput").value = data.whitelisted_ip || data.current_ip || "";
                 }
+                if (data.allow_off_hours_paper_testing !== undefined) {
+                    cachedAllowOffHours = Boolean(data.allow_off_hours_paper_testing);
+                    const chk = document.getElementById("chkOffHoursPaperTesting");
+                    if (chk) chk.checked = cachedAllowOffHours;
+                    const bd = document.getElementById("offHoursBadge");
+                    if (bd) {
+                        bd.textContent = cachedAllowOffHours ? "ON" : "OFF";
+                        bd.style.color = cachedAllowOffHours ? "var(--emerald)" : "var(--crimson)";
+                    }
+                }
                 checkIpMatchStatus();
 
-                if (data.last_status && data.last_status.message) {
-                    renderDhanStatus(data.last_status);
-                } else if (data.token_configured) {
+                if (data.configured && !data.is_expired) {
+                    console.log("Auto-loaded saved Dhan API — No need to re-enter.");
+                    const fb = document.getElementById("dhanActionFeedback");
+                    if (fb) fb.textContent = data.status_text || "Auto-loaded saved Dhan API";
+                    renderDhanStatus({
+                        connected: true,
+                        status: "CONNECTED ✅",
+                        message: data.status_text || `Loaded Saved Dhan API: ${data.masked_token} | Token Valid Till: ${data.token_valid_till} | Days Left: ${data.days_left} | Status: CONNECTED ✅`
+                    });
+                    // Background ping with 10s timeout
                     testDhanLiveConnection(false);
+                } else if (data.is_expired) {
+                    renderDhanStatus({
+                        connected: false,
+                        status: "EXPIRED ❌",
+                        message: "❌ Dhan Token Expired. Please enter new Dhan Access Token and click [ 💾 Save API Config ]."
+                    });
                 }
             } catch (e) {
                 console.error("loadDhanConfig error:", e);
@@ -2198,8 +2282,9 @@
                 if (fb) fb.textContent = "💾 Config saved safely!";
                 checkIpMatchStatus();
                 if (showFeedback) {
-                    alert("✔ Dhan API credentials saved safely to .env and configuration.");
+                    alert("✔ Dhan API credentials saved safely to disk and configuration.");
                 }
+                await loadDhanConfig();
                 return d;
             } catch (e) {
                 if (fb) fb.textContent = "❌ Save error: " + e.message;
@@ -2215,6 +2300,31 @@
             await testDhanLiveConnection(true);
         }
 
+        async function retryDhanConnection() {
+            await loadDhanConfig();
+            return await testDhanLiveConnection(false);
+        }
+
+        async function logoutDhanApiConfig() {
+            if (!confirm("Are you sure you want to clear saved Dhan credentials and logout?")) return;
+            try {
+                const res = await fetch("/api/dhan/logout", { method: "POST" });
+                const d = await res.json();
+                alert(d.message || "Logged out of Dhan API successfully.");
+                if (document.getElementById("dhanClientIdInput")) document.getElementById("dhanClientIdInput").value = "";
+                if (document.getElementById("dhanAccessTokenInput")) document.getElementById("dhanAccessTokenInput").value = "";
+                if (document.getElementById("dhanApiKeyInput")) document.getElementById("dhanApiKeyInput").value = "";
+                if (document.getElementById("dhanApiSecretInput")) document.getElementById("dhanApiSecretInput").value = "";
+                renderDhanStatus({
+                    connected: false,
+                    status: "DISCONNECTED ❌",
+                    message: "Dhan Status: DISCONNECTED ❌ | No credentials saved."
+                });
+            } catch (e) {
+                alert("Logout error: " + e.message);
+            }
+        }
+
         async function testDhanLiveConnection(alertOnResult = false) {
             const fb = document.getElementById("dhanActionFeedback");
             const banner = document.getElementById("dhanStatusBanner");
@@ -2223,17 +2333,23 @@
             const badge = document.getElementById("dhanConnectionBadge");
 
             if (bannerText) bannerText.textContent = "Connecting to Dhan API & querying /fundlimit + /marketfeed/ltp...";
-            if (fb) fb.textContent = "Testing connection...";
+            if (fb) fb.textContent = "Testing connection (10s timeout)...";
+
+            // Strict 10-second timeout using AbortController (Problem 1)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
 
             try {
                 const res = await fetch("/api/dhan/connect", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({})
+                    body: JSON.stringify({}),
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutId);
                 const d = await res.json();
                 renderDhanStatus(d);
-                if (fb) fb.textContent = d.connected ? "Connected successfully!" : "Connection failed";
+                if (fb) fb.textContent = d.connected ? (d.message || "Connected successfully!") : (d.message || "Connection failed");
                 if (alertOnResult) {
                     if (d.connected) {
                         alert("✅ " + d.message);
@@ -2243,14 +2359,19 @@
                 }
                 return d;
             } catch (e) {
+                clearTimeout(timeoutId);
+                const isTimeout = e.name === "AbortError" || String(e.message).includes("abort");
+                const errMsg = isTimeout ? "Request timed out after 10s" : e.message;
                 const errObj = {
                     connected: false,
                     status: "DISCONNECTED ❌",
-                    message: "Dhan Status: DISCONNECTED ❌ | Error: " + e.message
+                    message: `❌ Dhan Connection Failed: ${errMsg}`
                 };
                 renderDhanStatus(errObj);
-                if (fb) fb.textContent = "Error: " + e.message;
-                if (alertOnResult) alert("Connection test error: " + e.message);
+                if (fb) {
+                    fb.innerHTML = `❌ Dhan Connection Failed: ${errMsg} | <button type="button" class="cyan-btn" style="padding:2px 8px; font-size:11px;" onclick="retryDhanConnection()">🔄 Retry Connection</button>`;
+                }
+                if (alertOnResult) alert("❌ Dhan Connection Failed: " + errMsg);
                 return errObj;
             }
         }
@@ -2264,9 +2385,8 @@
 
             if (!banner || !bannerText) return;
 
-            bannerText.textContent = res.message || res.error || "Dhan Status: " + res.status;
-
             if (res.connected) {
+                bannerText.textContent = res.message || "Dhan Status: CONNECTED ✅";
                 banner.style.background = "rgba(16, 185, 129, 0.12)";
                 banner.style.borderColor = "rgba(16, 185, 129, 0.4)";
                 banner.style.color = "#4ade80";
@@ -2287,20 +2407,9 @@
                     const futEl = document.getElementById("ribbonFut");
                     if (futEl) futEl.textContent = `${res.future_price.toLocaleString('en-IN', {minimumFractionDigits: 2})} (LIVE)`;
                 }
-            } else if (res.status && res.status.includes("IP NOT WHITELISTED")) {
-                banner.style.background = "rgba(245, 158, 11, 0.15)";
-                banner.style.borderColor = "rgba(245, 158, 11, 0.5)";
-                banner.style.color = "#fbbf24";
-                if (bannerIcon) bannerIcon.textContent = "⚠️";
-                if (badge) {
-                    badge.className = "status-badge badge-gold";
-                    badge.textContent = "● IP BLOCKED";
-                }
-                if (authPill) {
-                    authPill.className = "status-badge badge-bear";
-                    authPill.textContent = "● IP BLOCKED";
-                }
             } else {
+                const msg = res.message || res.error || "Dhan Status: DISCONNECTED ❌";
+                bannerText.innerHTML = `${msg} &nbsp; <button type="button" class="cyan-btn" style="padding:2px 8px; font-size:11px; margin-left:6px;" onclick="retryDhanConnection()">🔄 Retry Connection</button>`;
                 banner.style.background = "rgba(239, 68, 68, 0.12)";
                 banner.style.borderColor = "rgba(239, 68, 68, 0.4)";
                 banner.style.color = "#f87171";
@@ -2316,11 +2425,114 @@
             }
         }
 
+        // Problem 3: Persistent Market Header & Off-Hours Override
+        function updatePersistentMarketHeader(mStatus) {
+            if (!mStatus) return;
+            cachedMarketStatus = mStatus;
+            const hdr = document.getElementById("persistentMarketHeader");
+            const banner = document.getElementById("testingModeBanner");
+            const offHoursChk = document.getElementById("chkOffHoursPaperTesting");
+            const offHoursBadge = document.getElementById("offHoursBadge");
+
+            if (offHoursChk) offHoursChk.checked = Boolean(cachedAllowOffHours);
+            if (offHoursBadge) {
+                offHoursBadge.textContent = cachedAllowOffHours ? "ON" : "OFF";
+                offHoursBadge.style.color = cachedAllowOffHours ? "var(--emerald)" : "var(--crimson)";
+            }
+
+            const timeStr = mStatus.time_ist || new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + " IST";
+            if (hdr) {
+                hdr.textContent = `Market: OPEN 🟢 | CLOSED 🔴 | Pre-Open 🟡 (09:00-09:15) | Post-Close 🔴 | Time: ${timeStr}`;
+                if (mStatus.status === "OPEN") {
+                    hdr.style.color = "#4ade80";
+                } else if (mStatus.status === "PRE_OPEN") {
+                    hdr.style.color = "#fbbf24";
+                } else {
+                    hdr.style.color = "#f87171";
+                }
+            }
+
+            // Amber banner when market is closed and override active
+            if (banner) {
+                if (!mStatus.is_open && cachedAllowOffHours) {
+                    banner.style.display = "block";
+                } else {
+                    banner.style.display = "none";
+                }
+            }
+
+            // Grey out or enable router place order button
+            const routerBtn = document.getElementById("btnRouterPlaceOrder");
+            if (routerBtn) {
+                if (!mStatus.is_open && !cachedAllowOffHours) {
+                    routerBtn.disabled = true;
+                    routerBtn.style.opacity = "0.5";
+                    routerBtn.style.cursor = "not-allowed";
+                    routerBtn.title = "Market Closed (Mon-Fri 09:15 AM - 03:30 PM IST)";
+                } else {
+                    routerBtn.disabled = false;
+                    routerBtn.style.opacity = "1";
+                    routerBtn.style.cursor = "pointer";
+                    routerBtn.title = "";
+                }
+            }
+        }
+
+        async function toggleOffHoursPaperTesting(isChecked) {
+            try {
+                const res = await fetch("/api/settings/testing_override", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ allow_off_hours_paper_testing: isChecked })
+                });
+                const d = await res.json();
+                cachedAllowOffHours = Boolean(d.allow_off_hours_paper_testing);
+                updatePersistentMarketHeader(cachedMarketStatus);
+                pollLiveEngine();
+            } catch (e) {
+                console.error("toggleOffHoursPaperTesting error:", e);
+            }
+        }
+
+        // Problem 4: Quick Filters for Positions & Orders
+        function setSourceFilter(src) {
+            currentPosSourceFilter = src;
+            ["btnFilterSource_ALL", "btnFilterSource_AUTO", "btnFilterSource_MANUAL"].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove("active-filter-btn");
+            });
+            if (src === "ALL") document.getElementById("btnFilterSource_ALL")?.classList.add("active-filter-btn");
+            if (src === "AUTO") document.getElementById("btnFilterSource_AUTO")?.classList.add("active-filter-btn");
+            if (src === "MANUAL") document.getElementById("btnFilterSource_MANUAL")?.classList.add("active-filter-btn");
+            pollLiveEngine();
+        }
+
+        function setStrategyFilter(strat) {
+            currentPosStrategyFilter = strat;
+            ["btnFilterStrat_ALL", "btnFilterStrat_Stage2", "btnFilterStrat_Cross", "btnFilterStrat_1H", "btnFilterStrat_Stage3", "btnFilterStrat_OI"].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove("active-filter-btn");
+            });
+            const mapId = {
+                "ALL": "btnFilterStrat_ALL",
+                "Stage 2": "btnFilterStrat_Stage2",
+                "4/8 Crossover": "btnFilterStrat_Cross",
+                "1H 8 EMA": "btnFilterStrat_1H",
+                "Stage 3": "btnFilterStrat_Stage3",
+                "P minus C Filter": "btnFilterStrat_OI",
+            };
+            if (mapId[strat]) document.getElementById(mapId[strat])?.classList.add("active-filter-btn");
+            pollLiveEngine();
+        }
+
         function updateClock() {
             const now = new Date();
             const timeStr = now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + " IST";
             const el = document.getElementById("istClock");
             if (el) el.textContent = timeStr;
+            if (cachedMarketStatus) {
+                updatePersistentMarketHeader(cachedMarketStatus);
+            }
         }
 
         function switchWorkspaceTab(evt, tabId) {
@@ -2513,6 +2725,14 @@
                     document.getElementById("btnResetKill").style.display = isKillSwitchActive ? "inline-block" : "none";
                 }
 
+                // Problem 3: Market Status & Testing Override Sync
+                if (data.market_status) {
+                    updatePersistentMarketHeader(data.market_status);
+                }
+                if (data.allow_off_hours_paper_testing !== undefined) {
+                    cachedAllowOffHours = Boolean(data.allow_off_hours_paper_testing);
+                }
+
                 // 9. Staged Derivatives Confluence Variables (Multi-Factor Trend Lab)
                 if (data.trend_lab_variables) {
                     const tv = data.trend_lab_variables;
@@ -2547,11 +2767,32 @@
             }
         }
 
-        // ── 4. STRIKE MATRIX RENDERING ────────────────────────────────────────
+        // ── 4. STRIKE MATRIX & ORDER ROUTER RENDERING (Problems 2 & 3) ────────
         function renderStrikeMatrix(matrix) {
             const tbody = document.getElementById("strikeMatrixTableBody");
+            const routerSel = document.getElementById("routerContractDropdown");
+
+            // Update router dropdown options with full expiry date format
+            if (routerSel && matrix && matrix.length > 0) {
+                const currVal = routerSel.value;
+                routerSel.innerHTML = matrix.map(c => `
+                    <option value="${c.id}" data-expiry="${c.structured_contract ? c.structured_contract.expiry_display : ''}" data-symbol="${c.structured_contract ? c.structured_contract.symbol : 'NIFTY'}" data-strike="${c.structured_contract ? c.structured_contract.strike_display : (c.strike + ' ' + c.opt_type)}" ${c.id === currVal ? 'selected' : ''}>
+                        ${c.symbol}
+                    </option>
+                `).join("");
+                updateRouterSelectedDisplay();
+            }
+
             if (!tbody) return;
-            tbody.innerHTML = matrix.map(c => `
+            const isMarketBlocked = cachedMarketStatus && !cachedMarketStatus.is_open && !cachedAllowOffHours;
+            const btnDisabledAttr = isMarketBlocked ? 'disabled title="Market Closed (Mon-Fri 09:15 AM - 03:30 PM IST)" style="opacity:0.5; cursor:not-allowed;"' : '';
+
+            tbody.innerHTML = matrix.map(c => {
+                const structTip = c.structured_contract ?
+                    `Expiry Date: ${c.structured_contract.expiry_display}&#10;Symbol: ${c.structured_contract.symbol}&#10;Strike: ${c.structured_contract.strike_display}` :
+                    `Symbol: ${c.symbol}`;
+
+                return `
                 <tr>
                     <td>
                         <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
@@ -2562,7 +2803,7 @@
                     <td><b>${c.label}</b></td>
                     <td style="font-weight:700;">${c.strike.toLocaleString('en-IN')}</td>
                     <td style="color:${c.opt_type === 'CE' ? 'var(--emerald)' : 'var(--crimson)'}; font-weight:700;">${c.opt_type}</td>
-                    <td><code>${c.symbol}</code></td>
+                    <td title="${structTip}"><code style="font-weight:700;">${c.symbol}</code></td>
                     <td><span style="color:#38bdf8;">${c.security_id}</span></td>
                     <td style="font-weight:800; font-size:13.5px; color:${c.opt_type === 'CE' ? 'var(--emerald)' : 'var(--crimson)'};">₹${c.ltp.toFixed(2)}</td>
                     <td>${c.delta > 0 ? '+' : ''}${c.delta.toFixed(2)}</td>
@@ -2570,12 +2811,71 @@
                     <td>${c.oi_lakhs.toFixed(1)} L</td>
                     <td>${c.volume_lakhs.toFixed(1)} L</td>
                     <td>
-                        <button type="button" class="${c.opt_type === 'CE' ? 'emerald-btn' : 'crimson-btn'}" onclick="submitMatrixOrder('${c.id}', 'BUY')">
+                        <button type="button" class="${c.opt_type === 'CE' ? 'emerald-btn' : 'crimson-btn'}" onclick="submitMatrixOrder('${c.id}', 'BUY')" ${btnDisabledAttr}>
                             🚀 BUY AGGR-LIMIT (65 Qty)
                         </button>
                     </td>
                 </tr>
-            `).join("");
+            `;
+            }).join("");
+        }
+
+        function updateRouterSelectedDisplay() {
+            const sel = document.getElementById("routerContractDropdown");
+            if (!sel || !sel.selectedOptions || sel.selectedOptions.length === 0) return;
+            const opt = sel.selectedOptions[0];
+            const expEl = document.getElementById("routerSelectedExpiry");
+            const symEl = document.getElementById("routerSelectedSymbol");
+            const stkEl = document.getElementById("routerSelectedStrike");
+            if (expEl) expEl.textContent = opt.dataset.expiry || "--";
+            if (symEl) symEl.textContent = opt.dataset.symbol || "NIFTY";
+            if (stkEl) stkEl.textContent = opt.dataset.strike || "--";
+        }
+
+        async function submitRouterOrder(side = "BUY") {
+            if (cachedMarketStatus && !cachedMarketStatus.is_open && !cachedAllowOffHours) {
+                const timeIst = (cachedMarketStatus && cachedMarketStatus.time_ist) ? cachedMarketStatus.time_ist : (new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + " IST");
+                alert(`❌ Market Closed — Cannot Place Order Now\nMarket Hours: Mon-Fri 09:15 AM - 03:30 PM IST\nCurrent Time: ${timeIst} | Market Status: CLOSED`);
+                return;
+            }
+            const sel = document.getElementById("routerContractDropdown");
+            const contractId = sel ? sel.value : null;
+            if (!contractId) {
+                alert("Please select a contract from the Order Router dropdown.");
+                return;
+            }
+            const btn = document.getElementById("btnRouterPlaceOrder");
+            if (btn) btn.disabled = true;
+            try {
+                const targetPts = parseFloat(document.getElementById("cfgTargetPts") ? document.getElementById("cfgTargetPts").value : 40) || 40;
+                const slPts = parseFloat(document.getElementById("cfgSlPts") ? document.getElementById("cfgSlPts").value : 40) || 40;
+                const res = await fetch("/api/order/submit", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contract_id: contractId,
+                        side: side,
+                        strategy_name: "Aggressive Limit Router",
+                        source: "MANUAL ROUTER ✋",
+                        strategy_setup: "Manual — No Strategy",
+                        target_pts: targetPts,
+                        sl_pts: slPts
+                    })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    playAcousticChime("success");
+                    showOrderConfirmationToast(data.symbol || sel.options[sel.selectedIndex].text, data.fill_price, side, "MANUAL ROUTER ✋", "Manual — No Strategy");
+                    speakOrderEntryAlert(data.symbol, data.fill_price);
+                    pollLiveEngine();
+                } else {
+                    alert("Order failed / rejected: " + (data.error || data.rejection_reason));
+                }
+            } catch (e) {
+                alert("Router order submission error: " + e.message);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
         }
 
         async function toggleAlgoStrike(contractId, isChecked) {
@@ -2597,11 +2897,16 @@
         }
 
         async function submitMatrixOrder(contractId, side) {
+            if (cachedMarketStatus && !cachedMarketStatus.is_open && !cachedAllowOffHours) {
+                const timeIst = (cachedMarketStatus && cachedMarketStatus.time_ist) ? cachedMarketStatus.time_ist : (new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + " IST");
+                alert(`❌ Market Closed — Cannot Place Order Now\nMarket Hours: Mon-Fri 09:15 AM - 03:30 PM IST\nCurrent Time: ${timeIst} | Market Status: CLOSED`);
+                return;
+            }
             const btn = event ? event.currentTarget : null;
             if (btn) btn.disabled = true;
             try {
-                const targetPts = parseFloat(document.getElementById("cfgTargetPts").value || 40);
-                const slPts = parseFloat(document.getElementById("cfgSlPts").value || 40);
+                const targetPts = parseFloat(document.getElementById("cfgTargetPts") ? document.getElementById("cfgTargetPts").value : 40) || 40;
+                const slPts = parseFloat(document.getElementById("cfgSlPts") ? document.getElementById("cfgSlPts").value : 40) || 40;
                 const res = await fetch("/api/order/submit", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -2609,6 +2914,8 @@
                         contract_id: contractId,
                         side: side,
                         strategy_name: "Manual Matrix 8510",
+                        source: "MANUAL MATRIX ✋",
+                        strategy_setup: "Manual — No Strategy",
                         target_pts: targetPts,
                         sl_pts: slPts
                     })
@@ -2616,6 +2923,7 @@
                 const data = await res.json();
                 if (data.ok) {
                     playAcousticChime("success");
+                    showOrderConfirmationToast(data.symbol || "09 Nov 2026 — NIFTY 24300 CE", data.fill_price, side, "MANUAL MATRIX ✋", "Manual — No Strategy");
                     speakOrderEntryAlert(data.symbol, data.fill_price);
                     pollLiveEngine();
                 } else {
@@ -2628,56 +2936,90 @@
             }
         }
 
-        // ── 5. POSITIONS & ORDERS RENDERING ───────────────────────────────────
+        function showOrderConfirmationToast(symbol, price, side, source = "AUTO ALGO 🤖", strategy = "Stage 2 8 EMA Touch") {
+            const toast = document.getElementById("orderConfirmationToast");
+            const symEl = document.getElementById("toastContractSymbol");
+            const detEl = document.getElementById("toastOrderDetails");
+            if (!toast || !symEl || !detEl) return;
+
+            symEl.textContent = symbol || "09 Nov 2026 — NIFTY 24300 CE";
+            detEl.textContent = `${side || 'BUY'} Filled @ ₹${Number(price || 0).toFixed(2)} | ${source} | ${strategy}`;
+            toast.style.display = "block";
+            setTimeout(() => {
+                toast.style.display = "none";
+            }, 6000);
+        }
+
+        // ── 5. POSITIONS & ORDERS RENDERING (Problems 3 & 4) ─────────────────
         function renderPositionsTable(positions) {
             const tbody = document.getElementById("positionsTableBody");
             if (!tbody) return;
-            if (positions.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="13" style="text-align:center; color:var(--text-muted); padding:16px;">No active open positions. Submit an order from Tab 1 to track live fluctuating MTM.</td></tr>`;
+
+            let filtered = positions || [];
+            if (currentPosSourceFilter === "AUTO") {
+                filtered = filtered.filter(p => (p.source && p.source.includes("AUTO")) || (p.placed_by && p.placed_by.includes("AUTO")));
+            } else if (currentPosSourceFilter === "MANUAL") {
+                filtered = filtered.filter(p => (p.source && p.source.includes("MANUAL")) || (p.placed_by && p.placed_by.includes("MANUAL")));
+            }
+            if (currentPosStrategyFilter !== "ALL") {
+                filtered = filtered.filter(p => {
+                    const s = (p.strategy_setup || p.strategy_name || "");
+                    if (currentPosStrategyFilter === "Stage 2") return s.includes("Stage 2");
+                    if (currentPosStrategyFilter === "4/8 Crossover") return s.includes("Crossover");
+                    if (currentPosStrategyFilter === "1H 8 EMA") return s.includes("1H");
+                    if (currentPosStrategyFilter === "Stage 3") return s.includes("Stage 3");
+                    if (currentPosStrategyFilter === "P minus C Filter") return s.includes("P minus C") || s.includes("OI");
+                    return true;
+                });
+            }
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:16px;">No active positions matching current filter.</td></tr>`;
                 return;
             }
 
-            tbody.innerHTML = positions.map(p => {
-                const pnlClass = p.net_pnl >= 0 ? "var(--emerald)" : "var(--crimson)";
-                const sign = p.net_pnl >= 0 ? "+" : "";
-                const trailSlBadgeClass = p.trail_sl_badge === 'bull' ? 'badge-bull' : 'badge-side';
-                const trailTargetBadgeClass = p.trail_target_badge === 'bull' ? 'badge-bull' : 'badge-side';
+            const isMarketBlocked = cachedMarketStatus && !cachedMarketStatus.is_open && !cachedAllowOffHours;
+            const sqBtnDisabledAttr = isMarketBlocked ? 'disabled title="Market Closed (Mon-Fri 09:15 AM - 03:30 PM IST)" style="opacity:0.5; cursor:not-allowed;"' : '';
+
+            tbody.innerHTML = filtered.map(p => {
+                const pnlVal = p.net_pnl !== undefined ? p.net_pnl : (p.gross_pnl !== undefined ? p.gross_pnl : 0);
+                const pnlColor = pnlVal >= 0 ? "var(--emerald)" : "var(--crimson)";
+                const pnlIcon = pnlVal >= 0 ? "🟢" : "🔴";
+                const pnlSign = pnlVal >= 0 ? "+" : "";
+                const sourceDisplay = p.source || (p.placed_by || "MANUAL MATRIX ✋");
+                const stratDisplay = p.strategy_setup || (p.strategy_name || "Manual — No Strategy");
+                const structTip = p.structured_contract ?
+                    `Expiry Date: ${p.structured_contract.expiry_display || ''}&#10;Symbol: ${p.structured_contract.symbol || 'NIFTY'}&#10;Strike: ${p.structured_contract.strike_display || ''}` :
+                    `Symbol: ${p.symbol}`;
 
                 return `<tr>
-                    <td><b>${p.symbol}</b></td>
-                    <td><span class="status-badge ${p.mode === 'ALGO_LIVE_ONLY' ? 'badge-bear' : 'badge-bull'}">${p.mode}</span></td>
+                    <td title="${structTip}"><b style="font-family:var(--font-mono);">${p.symbol}</b></td>
                     <td><b>${p.qty}</b></td>
-                    <td>₹${p.entry_price.toFixed(2)}</td>
-                    <td>${p.entry_time}</td>
-                    <td style="font-weight:800; font-size:13px; color:${pnlClass};">₹${p.current_ltp.toFixed(2)}</td>
-                    <td style="min-width:160px;">
-                        <div style="font-size:11px;">${p.target_status_text}</div>
-                        <div class="progress-bar-wrap">
-                            <div class="progress-bar-fill" style="width: ${p.target_progress_pct}%;"></div>
-                        </div>
-                    </td>
+                    <td>₹${Number(p.entry_price || 0).toFixed(2)}</td>
+                    <td style="font-weight:700;">₹${Number(p.current_ltp || 0).toFixed(2)}</td>
+                    <td style="font-weight:800; color:${pnlColor}; font-size:13px;">${pnlSign}${Math.round(pnlVal)} ${pnlIcon}</td>
+                    <td><span class="status-badge ${sourceDisplay.includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${sourceDisplay}</span></td>
+                    <td><span style="font-family:var(--font-mono); font-weight:600; font-size:11.5px;">${stratDisplay}</span></td>
                     <td>
-                        <span class="status-badge ${trailSlBadgeClass}" style="font-size:11px; white-space:nowrap;">
-                            ${p.trail_sl_text || ('₹' + (p.sl_price ? p.sl_price.toFixed(2) : '0.00'))}
-                        </span>
-                    </td>
-                    <td>
-                        <span class="status-badge ${trailTargetBadgeClass}" style="font-size:11px; white-space:nowrap;">
-                            ${p.trail_target_text || ('Fixed: ₹' + (p.target_price ? p.target_price.toFixed(2) : '0.00'))}
-                        </span>
-                    </td>
-                    <td><span style="font-family:var(--font-mono); font-weight:700;">⏱️ ${p.duration}</span></td>
-                    <td style="font-weight:700; color:${p.gross_pnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">${p.gross_pnl >= 0 ? '+' : ''}₹${p.gross_pnl.toFixed(2)}</td>
-                    <td style="font-weight:800; font-size:13.5px; color:${pnlClass};">${sign}₹${p.net_pnl.toFixed(2)}</td>
-                    <td>
-                        <div style="display:flex; gap:6px;">
-                            <button type="button" class="secondary-btn" style="padding:4px 8px; font-size:11px;" onclick="modifyPosition('${p.position_id}', 'TRAIL_COST')">🛡️ Cost SL</button>
-                            <button type="button" class="secondary-btn" style="padding:4px 8px; font-size:11px;" onclick="modifyPosition('${p.position_id}', 'WIDEN_TARGET')">+40 Target</button>
-                            <button type="button" class="crimson-btn" style="padding:4px 8px; font-size:11px;" onclick="modifyPosition('${p.position_id}', 'CLOSE')">❌ Square Off</button>
-                        </div>
+                        <button type="button" class="crimson-btn" style="padding:4px 10px; font-size:11px; font-weight:700;" onclick="handleSquareOffClick('${p.position_id}')" ${sqBtnDisabledAttr}>
+                            Square-Off
+                        </button>
                     </td>
                 </tr>`;
             }).join("");
+        }
+
+        async function handleSquareOffClick(posId) {
+            if (cachedMarketStatus && !cachedMarketStatus.is_open && !cachedAllowOffHours) {
+                const timeIst = (cachedMarketStatus && cachedMarketStatus.time_ist) ? cachedMarketStatus.time_ist : (new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + " IST");
+                const msg = "❌ Market Closed — Cannot Square-Off Now\n" +
+                            "Market Hours: Mon-Fri 09:15 AM - 03:30 PM IST\n" +
+                            `Current Time: ${timeIst} | Market Status: CLOSED\n` +
+                            "Your position will remain OPEN till next market open.";
+                alert(msg);
+                return;
+            }
+            await modifyPosition(posId, "SQUARE_OFF");
         }
 
         async function saveSuperTrailConfig() {
@@ -2734,12 +3076,12 @@
                 });
                 const d = await res.json();
                 if (d.ok) {
-                    if (action === "CLOSE") {
+                    if (action === "CLOSE" || action === "SQUARE_OFF") {
                         playAcousticChime("exit");
                     }
                     pollLiveEngine();
                 } else {
-                    alert("Position modification failed: " + d.error);
+                    alert(d.error || ("Position modification failed: " + (d.message || "Unknown error")));
                 }
             } catch (e) {
                 alert("Error: " + e.message);
@@ -2749,26 +3091,43 @@
         function renderOrdersTable(orders) {
             const tbody = document.getElementById("ordersTableBody");
             if (!tbody) return;
-            if (orders.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; color:var(--text-muted); padding:16px;">No orders found in ledger.</td></tr>`;
+
+            let filtered = orders || [];
+            if (currentPosSourceFilter === "AUTO") {
+                filtered = filtered.filter(o => (o.source && o.source.includes("AUTO")) || (o.placed_by && o.placed_by.includes("AUTO")));
+            } else if (currentPosSourceFilter === "MANUAL") {
+                filtered = filtered.filter(o => (o.source && o.source.includes("MANUAL")) || (o.placed_by && o.placed_by.includes("MANUAL")));
+            }
+            if (currentPosStrategyFilter !== "ALL") {
+                filtered = filtered.filter(o => {
+                    const s = (o.strategy_setup || o.strategy_name || "");
+                    if (currentPosStrategyFilter === "Stage 2") return s.includes("Stage 2");
+                    if (currentPosStrategyFilter === "4/8 Crossover") return s.includes("Crossover");
+                    if (currentPosStrategyFilter === "1H 8 EMA") return s.includes("1H");
+                    if (currentPosStrategyFilter === "Stage 3") return s.includes("Stage 3");
+                    if (currentPosStrategyFilter === "P minus C Filter") return s.includes("P minus C") || s.includes("OI");
+                    return true;
+                });
+            }
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:16px;">No orders found matching filters.</td></tr>`;
                 return;
             }
-            tbody.innerHTML = orders.map(o => `
+
+            tbody.innerHTML = filtered.map(o => `
                 <tr>
                     <td><code>${o.order_id}</code></td>
                     <td style="color:var(--text-dim);">${o.created_at}</td>
-                    <td><b>${o.strategy_name}</b></td>
-                    <td>${o.symbol}</td>
-                    <td><span style="color:#38bdf8;">${o.security_id}</span></td>
+                    <td><b style="font-family:var(--font-mono);">${o.symbol}</b></td>
+                    <td><span class="status-badge ${(o.source || o.placed_by || '').includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${o.source || o.placed_by || 'MANUAL MATRIX ✋'}</span></td>
+                    <td><span style="font-family:var(--font-mono); font-size:11.5px;">${o.strategy_setup || o.strategy_name || 'Manual — No Strategy'}</span></td>
                     <td style="color:${o.side === 'BUY' ? 'var(--emerald)' : 'var(--crimson)'}; font-weight:700;">${o.side}</td>
                     <td><span class="status-badge badge-side">${o.order_type}</span></td>
-                    <td>${o.lots}L (${o.qty})</td>
-                    <td>₹${o.signal_ltp.toFixed(2)}</td>
-                    <td>₹${o.limit_price.toFixed(2)}</td>
-                    <td style="font-weight:700; color:var(--emerald);">₹${o.fill_price.toFixed(2)}</td>
-                    <td style="color:${o.slippage > 0 ? 'var(--crimson)' : 'var(--emerald)'};">${o.slippage >= 0 ? '+' : ''}${o.slippage.toFixed(2)}</td>
-                    <td>${o.chase_retries} / 3</td>
-                    <td>₹${o.brokerage_taxes.toFixed(2)}</td>
+                    <td><b>${o.qty}</b></td>
+                    <td>₹${Number(o.signal_ltp || 0).toFixed(2)}</td>
+                    <td style="font-weight:700; color:var(--emerald);">₹${Number(o.fill_price || 0).toFixed(2)}</td>
+                    <td style="color:${Number(o.slippage || 0) > 0 ? 'var(--crimson)' : 'var(--emerald)'};">${Number(o.slippage || 0) >= 0 ? '+' : ''}${Number(o.slippage || 0).toFixed(2)}</td>
                     <td><span class="status-badge ${o.order_status === 'FILLED' ? 'badge-bull' : (o.order_status === 'CANCELLED' ? 'badge-side' : 'badge-bear')}">${o.order_status}</span></td>
                 </tr>
             `).join("");
@@ -3009,14 +3368,16 @@
                     return;
                 }
 
-                tbody.innerHTML = d.trades.map(t => {{
+                tbody.innerHTML = d.trades.map(t => {
                     const setupName = t.setup_name || t.setup || "Strategy Trade";
                     const entryTime = t.entry_ist || t.entry_time || "-";
                     const exitTime = t.exit_ist || t.exit_time || "-";
                     const outcomeText = t.outcome || t.result || "CLOSED";
                     const chgVal = (t.dhan_charges != null) ? t.dhan_charges : (t.charges || 0);
+                    const sym = t.symbol || "09 Nov 2026 — NIFTY 24300 CE";
                     return `
                     <tr>
+                        <td><code style="font-family:var(--font-mono);">${sym}</code></td>
                         <td><b>${setupName}</b></td>
                         <td>${entryTime}</td>
                         <td>${exitTime}</td>
@@ -3030,7 +3391,7 @@
                         <td>₹${Number(chgVal).toFixed(2)}</td>
                         <td style="font-weight:700; color:${t.net_pnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">${t.net_pnl >= 0 ? '+' : ''}₹${Number(t.net_pnl || 0).toFixed(2)}</td>
                     </tr>
-                `;}}).join("");
+                `;}).join("");
 
             } catch (e) {
                 alert("Replay request error: " + e.message);
@@ -3071,14 +3432,16 @@
                 document.getElementById("drMaxDdTrail").textContent = `₹${data.max_drawdown_trailing.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
                 document.getElementById("drPfTrail").textContent = data.profit_factor_trailing.toFixed(2);
 
-                // Populate Trade rows
+                // Populate Trade rows (Module 5 Full Expiry Date Format)
                 tbody.innerHTML = data.trades.map((t, idx) => {
                     const alphaColor = t.alpha_locked >= 0 ? "var(--emerald)" : "var(--crimson)";
                     const trailPnlColor = t.trailing_net_pnl >= 0 ? "var(--emerald)" : "var(--crimson)";
+                    const sym = t.symbol || "09 Nov 2026 — NIFTY 24300 CE";
                     return `<tr>
                         <td><b>${idx + 1}</b></td>
                         <td style="color:var(--text-dim);">${t.date}</td>
                         <td><b>${t.setup}</b></td>
+                        <td><code style="font-family:var(--font-mono);">${sym}</code></td>
                         <td style="color:${t.direction === 'LONG' ? 'var(--emerald)' : 'var(--crimson)'}; font-weight:700;">${t.direction}</td>
                         <td>${t.index_high.toFixed(0)} / ${t.index_low.toFixed(0)}</td>
                         <td>₹${t.option_entry.toFixed(2)}</td>
@@ -4650,6 +5013,16 @@
                 exportTableToExcelXML('StockMojo_PE_CE_Combined_Matrix.xls', 'Combined_Matrix', headers, data);
             }
         }
-    </script>
+        <!-- Module 4: Order Placement Confirmation Toast -->
+    <div id="orderConfirmationToast" style="display:none; position:fixed; bottom:24px; right:24px; z-index:99999; background:rgba(15, 23, 42, 0.95); border:1px solid #10b981; border-radius:10px; padding:16px 20px; box-shadow:0 10px 25px rgba(0,0,0,0.6); min-width:320px; color:#f8fafc; font-family:var(--font-mono);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-weight:800; color:#4ade80; font-size:13px;">✔ ORDER CONFIRMED</span>
+            <button type="button" onclick="document.getElementById('orderConfirmationToast').style.display='none'" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:16px;">×</button>
+        </div>
+        <div id="toastContractSymbol" style="font-weight:700; font-size:14px; margin-bottom:4px; color:#38bdf8;">09 Nov 2026 — NIFTY 24300 CE</div>
+        <div id="toastOrderDetails" style="font-size:12px; color:var(--text-dim);">Filled @ ₹0.00 | AUTO ALGO 🤖 | Stage 2 8 EMA Touch</div>
+    </div>
+
+</script>
 </body>
 </html>

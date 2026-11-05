@@ -5,7 +5,10 @@
   "dhan": {
     "client_id": "1112377935",
     "environment": "LIVE",
-    "whitelisted_ip": "49.205.39.195"
+    "whitelisted_ip": "49.205.39.195",
+    "DHAN_CLIENT_ID": "1112377935",
+    "TOKEN_EXPIRY_UTC": "2026-11-06T02:24:30Z",
+    "token_expiry_utc": "2026-11-06T02:24:30Z"
   },
   "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
   "instrument_master_path": "data/terminal8500/instrument_master.csv",
@@ -134,8 +137,11 @@
     "filter_strategy2_reversal_synergy": false,
     "filter_strategy3_1h_synergy": false,
     "use_as_direct_15m_trigger": true,
-    "block_pe_when_bullish": false,
+    "block_pe_when_bullish": true,
     "block_ce_when_bearish": false,
     "show_pe_ce_table_in_tab1": true
-  }
+  },
+  "allow_off_hours_paper_testing": false,
+  "DHAN_CLIENT_ID": "1112377935",
+  "TOKEN_EXPIRY_UTC": "2026-11-06T02:24:30Z"
 }
