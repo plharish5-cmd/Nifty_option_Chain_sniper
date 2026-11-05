@@ -9,7 +9,9 @@
   "default_lot_size": 65,
   "execution_mode": "PAPER_ONLY",
   "paper_execution_enabled": true,
+  "directional_bias": "BOTH",
   "starting_paper_capital": 100000.0,
+  "STOCKMOJO_JWT_TOKEN": "",
   "chasing": {
     "aggressive_limit_buffer_pts": 4.0,
     "auto_modify_interval_ms": 800,
@@ -84,5 +86,20 @@
   "voice": {
     "enabled": true,
     "lang": "en-IN"
+  },
+  "port8600_bridge": {
+    "enabled": true,
+    "url": "http://127.0.0.1:8600",
+    "poll_interval_seconds": 15,
+    "atm_strike_range_pts": 500.0,
+    "crossover_threshold_ratio": 1.05
+  },
+  "stockmojo": {
+    "enabled": true,
+    "poll_interval_seconds": 60,
+    "api_url": "https://data.stockmojo.in/live/oi/pcr",
+    "jwt_token": "",
+    "watch_downloads": true,
+    "download_dir": "data/stockmojo_downloads"
   }
 }

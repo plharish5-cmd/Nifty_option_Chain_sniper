@@ -459,6 +459,211 @@ def test_strict_ma_stack_blocking():
     print("✔ Test 8 Passed: Strict MA Stack Blocking & Reversal Crossover Prerequisites verified 100%.")
 
 
+def test_backtest_timestamp_logging_and_homework_reconciliation():
+    """
+    Test 9: Verifies Backtest Entry/Exit IST Timestamps & Mentor Homework Reconciliation:
+      1. Every backtest row contains non-empty entry_ist, exit_ist, day_outcome, and ema_bb_state_at_entry.
+      2. Calibrated benchmark sessions return verified trade setups and outcomes.
+      3. HomeworkReconciler and POST /api/reconcile/homework endpoint cleanly scan data/UI_screenshot/,
+         match dates against the backtest ledger, and output structured delta table without errors.
+    """
+    backend = QuantTerminalBackend()
+
+    # 1. Date-range backtest verification of timestamps & indicators
+    res = backend.run_date_range_backtest(from_date="2026-06-01", to_date="2026-11-04")
+    assert res["ok"] is True, f"Backtest failed: {res.get('error')}"
+    trades = res.get("trades", [])
+    assert len(trades) > 0, "Backtest must return non-empty trade rows"
+
+    for t in trades:
+        t_id = t.get("trade_id")
+        t_date = t.get("date")
+        assert bool(t.get("entry_ist")), f"Trade #{t_id} ({t_date}) missing entry_ist"
+        assert bool(t.get("exit_ist")), f"Trade #{t_id} ({t_date}) missing exit_ist"
+        assert bool(t.get("day_outcome")), f"Trade #{t_id} ({t_date}) missing day_outcome"
+        assert bool(t.get("ema_bb_state_at_entry")), f"Trade #{t_id} ({t_date}) missing ema_bb_state_at_entry"
+        assert t.get("index_entry") is not None, f"Trade #{t_id} missing index_entry"
+        assert t.get("index_exit") is not None, f"Trade #{t_id} missing index_exit"
+        assert t.get("duration") is not None, f"Trade #{t_id} missing duration"
+
+    # 2. Benchmark dates calibration check
+    benchmarks = ["2026-11-04", "2026-11-03", "2026-11-02", "2026-10-30", "2026-10-29",
+                  "2026-10-28", "2026-10-27", "2026-10-19", "2026-10-14", "2026-10-13",
+                  "2026-10-08", "2026-10-07", "2026-10-06"]
+    for bd in benchmarks:
+        b_trades = backend.get_replay_trades_for_date(bd)
+        assert len(b_trades) >= 1, f"Benchmark date {bd} must return at least 1 verified trade"
+        for bt in b_trades:
+            assert bool(bt.get("entry_ist")), f"{bd} trade missing entry_ist"
+            assert bool(bt.get("exit_ist")), f"{bd} trade missing exit_ist"
+            assert bool(bt.get("outcome")), f"{bd} trade missing outcome"
+
+    # 3. Homework Reconciler direct scanning & delta table
+    reconciler = backend.homework_reconciler
+    rec_res = reconciler.scan_and_reconcile(folder_path="data/UI_screenshot", backend=backend)
+    assert rec_res["ok"] is True, f"Reconciler scan failed: {rec_res.get('error')}"
+    assert rec_res["images_found"] >= 1, f"Expected >= 1 image in data/UI_screenshot, got {rec_res['images_found']}"
+    assert len(rec_res["reconciliation_table"]) >= 1, "Reconciliation table must contain comparison rows"
+
+    # Verify column presence on reconciliation rows
+    for r in rec_res["reconciliation_table"]:
+        assert "date" in r
+        assert "image_file" in r
+        assert "homework_trade" in r
+        assert "homework_entry_result" in r
+        assert "algo_trade" in r
+        assert "algo_entry_result" in r
+        assert "discrepancy_type" in r
+        assert "recommended_correction" in r
+
+    # 4. FastAPI POST /api/reconcile/homework API endpoint check via TestClient
+    from fastapi.testclient import TestClient
+    from engine_8510_live import app
+
+    with TestClient(app) as client:
+        # POST with default folder
+        resp_post = client.post("/api/reconcile/homework", json={"folder": "data/UI_screenshot"})
+        assert resp_post.status_code == 200, f"Expected 200, got {resp_post.status_code}: {resp_post.text}"
+        data_post = resp_post.json()
+        assert data_post["ok"] is True
+        assert data_post["images_found"] >= 1
+        assert "reconciliation_table" in data_post
+
+        # GET endpoint
+        resp_get = client.get("/api/reconcile/homework?folder=data/UI_screenshot")
+        assert resp_get.status_code == 200
+        assert resp_get.json()["ok"] is True
+
+    print("✔ Test 9 Passed: Backtest Entry/Exit IST Timestamps & Homework Reconciliation Engine verified 100%.")
+
+
+def test_stockmojo_and_port8600_confluence_integration():
+    """
+    Test 10: Verifies Port 8600 Bridge, StockMojo 1m Ingestion, Staged Trend Lab Variables, and Tab 6 Removal:
+      1. parse_indian_unit_to_lakhs handles Cr, L, K, and +/- correctly.
+      2. POST /api/stockmojo/ingest ingests live 1m rows from Nov 4 (15:33, 15:36, 15:39).
+      3. GET /api/stockmojo/pe_ce_table returns parsed newest-first table.
+      4. GET /api/confluence/port8600 returns structured curves, fresh/cum OI, and writer signals.
+      5. /api/telemetry populates all 10 trend_lab_variables.
+      6. Tab 6 (tabSandboxGatekeeper) is removed while Multi-Factor Trend Lab (tabTrendLab) remains intact.
+    """
+    from analyst.stockmojo_scraper import parse_indian_unit_to_lakhs
+    from fastapi.testclient import TestClient
+    from engine_8510_live import app
+
+    # 1. Indian unit parser tests
+    assert parse_indian_unit_to_lakhs("2.6 Cr") == 260.0, f"Expected 260.0, got {parse_indian_unit_to_lakhs('2.6 Cr')}"
+    assert parse_indian_unit_to_lakhs("-10.3 L") == -10.3, f"Expected -10.3, got {parse_indian_unit_to_lakhs('-10.3 L')}"
+    assert parse_indian_unit_to_lakhs("-35.2 K") == -0.352, f"Expected -0.352, got {parse_indian_unit_to_lakhs('-35.2 K')}"
+    assert parse_indian_unit_to_lakhs("+83.2 K") == 0.832, f"Expected 0.832, got {parse_indian_unit_to_lakhs('+83.2 K')}"
+    assert parse_indian_unit_to_lakhs("54.4 L") == 54.4, f"Expected 54.4, got {parse_indian_unit_to_lakhs('54.4 L')}"
+    assert parse_indian_unit_to_lakhs("200.0") == 200.0, f"Expected 200.0, got {parse_indian_unit_to_lakhs('200.0')}"
+
+    with TestClient(app) as client:
+        # 2. Test POST /api/stockmojo/ingest with exact benchmark rows
+        sample_rows = [
+            {
+                "Time": "15:33",
+                "Put OI Change (Day)": "99.5 L",
+                "Put OI Change": "-6.37 L",
+                "Call OI Change (Day)": "-7.32 L",
+                "Call OI Change": "-8.65 L",
+                "PE-CE OI Change (Day)": "106.9 L",
+                "PE-CE Bar Change": "2.28 L",
+                "PCR Total": 1.23,
+                "Future LTP": 23785.0,
+                "Future OI Change (Day)": "-0.66 L",
+            },
+            {
+                "Time": "15:36",
+                "Put OI Change (Day)": "96.1 L",
+                "Put OI Change": "-3.43 L",
+                "Call OI Change (Day)": "-11.0 L",
+                "Call OI Change": "-3.70 L",
+                "PE-CE OI Change (Day)": "107.1 L",
+                "PE-CE Bar Change": "0.27 L",
+                "PCR Total": 1.24,
+                "Future LTP": 23782.0,
+                "Future OI Change (Day)": "-0.62 L",
+            },
+            {
+                "Time": "15:39",
+                "Put OI Change (Day)": "94.5 L",
+                "Put OI Change": "-1.65 L",
+                "Call OI Change (Day)": "-13.5 L",
+                "Call OI Change": "-2.48 L",
+                "PE-CE OI Change (Day)": "108.0 L",
+                "PE-CE Bar Change": "0.83 L",
+                "PCR Total": 1.26,
+                "Future LTP": 23780.5,
+                "Future OI Change (Day)": "-1.3 L",
+            },
+        ]
+        resp_ingest = client.post("/api/stockmojo/ingest", json=sample_rows)
+        assert resp_ingest.status_code == 200, f"Ingest failed: {resp_ingest.text}"
+        data_ingest = resp_ingest.json()
+        assert data_ingest["ok"] is True
+        assert data_ingest["ingested_count"] == 3
+
+        # 3. Test GET /api/stockmojo/pe_ce_table
+        resp_tbl = client.get("/api/stockmojo/pe_ce_table?limit=10")
+        assert resp_tbl.status_code == 200
+        data_tbl = resp_tbl.json()
+        assert data_tbl["ok"] is True
+        assert len(data_tbl["rows"]) >= 3
+        # Check newest-first order
+        times = [r["time_ist"] for r in data_tbl["rows"][:5]]
+        assert times == sorted(times, reverse=True), f"Expected newest-first ordering, got {times}"
+        assert "15:39" in times and "15:36" in times
+
+        # 4. Test GET /api/confluence/port8600
+        resp_8600 = client.get("/api/confluence/port8600")
+        assert resp_8600.status_code == 200
+        data_8600 = resp_8600.json()
+        assert data_8600["ok"] is True
+        assert "cw_vs_pw_ratio" in data_8600
+        assert "cum_oi_ce" in data_8600
+        assert "cum_oi_pe" in data_8600
+        assert "fresh_oi_ce" in data_8600
+        assert "fresh_oi_pe" in data_8600
+        assert "writer_crossover_state" in data_8600
+        assert "crossover_flag" in data_8600
+        assert "series" in data_8600
+        assert len(data_8600["series"]) >= 2
+
+        # 5. Test GET /api/telemetry contains staged trend_lab_variables
+        resp_telem = client.get("/api/telemetry")
+        assert resp_telem.status_code == 200
+        telem = resp_telem.json()
+        assert "trend_lab_variables" in telem, "Telemetry missing trend_lab_variables"
+        vars_dict = telem["trend_lab_variables"]
+        expected_vars = [
+            "var_8600_cw_pw_ratio",
+            "var_8600_fresh_oi_diff",
+            "var_8600_cum_oi_diff",
+            "var_8600_crossover_flag",
+            "var_stockmojo_pe_minus_ce",
+            "var_sm_call_oi_change",
+            "var_sm_put_oi_change",
+            "var_sm_total_call_oi",
+            "var_sm_total_put_oi",
+            "var_sm_oi_writer_bias",
+        ]
+        for v in expected_vars:
+            assert v in vars_dict, f"Missing staged variable {v} in trend_lab_variables"
+
+        # 6. Verify HTML Tab Cleanup & Retention
+        html_path = ROOT / "Algorithmic_Trading_Workspace_8510.html"
+        html_content = html_path.read_text(encoding="utf-8")
+        assert "tabSandboxGatekeeper" not in html_content, "tabSandboxGatekeeper MUST be completely removed from HTML"
+        assert "sandbox30Body" not in html_content, "sandbox30Body MUST be completely removed from HTML"
+        assert "tabTrendLab" in html_content, "tabTrendLab (Multi-Factor Trend Lab) MUST remain intact"
+        assert "tabStockMojoSuite" in html_content, "tabStockMojoSuite MUST remain intact"
+        assert "var_8600_cw_pw_ratio" in html_content, "var_8600_cw_pw_ratio MUST be present in HTML DOM"
+
+    print("✔ Test 10 Passed: StockMojo 1m Ingestion, Port 8600 Bridge & Staged Trend Lab Variables verified 100%.")
+
+
 def main():
     print("Running Port 8510 Super Trail v1.1 & Multi-Strategy Strict MA Stack Test Suite...")
     test_trailing_sl_step_progression()
@@ -469,7 +674,9 @@ def main():
     test_all_4_core_strategies_scanner_and_party_switch()
     test_nov3_clean_bullish_trades_replay()
     test_strict_ma_stack_blocking()
-    print("\n🎉 ALL 8 UNIT TESTS PASSED WITH 100% PRECISION!")
+    test_backtest_timestamp_logging_and_homework_reconciliation()
+    test_stockmojo_and_port8600_confluence_integration()
+    print("\n🎉 ALL 10 UNIT TESTS PASSED WITH 100% PRECISION!")
 
 
 if __name__ == "__main__":

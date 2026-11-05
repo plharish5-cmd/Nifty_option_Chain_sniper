@@ -72,6 +72,10 @@ async def startup_event():
     backend.scanner_task = asyncio.create_task(backend.start_strategy_scanner_loop())
     log.info("✔ 4-Strategy Live Scanner daemon launched.")
 
+    # Start 60s background polling daemon for StockMojo live direct OI and folder watcher
+    backend.stockmojo_scraper.start_background_polling()
+    log.info("✔ StockMojo 60s Live OI Polling daemon launched.")
+
 
 @app.get("/")
 @app.head("/")
@@ -106,8 +110,32 @@ async def api_health():
         "dhan_connected": backend.broker.is_configured(),
         "execution_mode": backend.execution_mode,
         "paper_enabled": backend.paper_execution_enabled,
+        "directional_bias": backend.directional_bias,
         "kill_switch_active": backend.kill_switch_active,
     })
+
+
+@app.get("/api/bias")
+@app.get("/api/directional_bias")
+async def api_get_bias():
+    return JSONResponse(content={
+        "ok": True,
+        "directional_bias": backend.directional_bias,
+    })
+
+
+@app.post("/api/bias")
+@app.post("/api/directional_bias")
+async def api_set_bias(req: Request):
+    body = await req.json()
+    bias = str(body.get("directional_bias") or body.get("bias", "")).upper()
+    if bias in ("LONG_ONLY", "SHORT_ONLY", "BOTH"):
+        res = backend.set_directional_bias(bias)
+        return JSONResponse(content=res)
+    return JSONResponse(
+        content={"ok": False, "error": f"Invalid bias: {bias}. Must be LONG_ONLY, SHORT_ONLY, or BOTH."},
+        status_code=400
+    )
 
 
 @app.get("/api/telemetry")
@@ -147,10 +175,15 @@ async def api_set_mode(req: Request):
     if "paper_enabled" in body:
         backend.paper_execution_enabled = bool(body["paper_enabled"])
         log.info("Paper execution enabled updated to %s", backend.paper_execution_enabled)
+    if "directional_bias" in body or "bias" in body:
+        bias_val = str(body.get("directional_bias") or body.get("bias", "")).upper()
+        if bias_val in ("LONG_ONLY", "SHORT_ONLY", "BOTH"):
+            backend.set_directional_bias(bias_val)
     return JSONResponse(content={
         "ok": True,
         "execution_mode": backend.execution_mode,
         "paper_execution_enabled": backend.paper_execution_enabled,
+        "directional_bias": backend.directional_bias,
     })
 
 
@@ -206,6 +239,29 @@ async def api_order_submit(req: Request):
     if not selected_contract:
         return JSONResponse(content={"ok": False, "error": f"Contract not resolved for id {contract_id}"}, status_code=400)
 
+    # Directional Bias Enforcement Gate (Live Execution / Strike Matrix)
+    opt_type = str(selected_contract.get("opt_type", "")).upper()
+    cid = str(selected_contract.get("id", "")).upper()
+    sym = str(selected_contract.get("symbol", "")).upper()
+    is_pe = (opt_type == "PE" or "PE" in cid or "PE" in sym)
+    is_ce = (opt_type == "CE" or "CE" in cid or "CE" in sym)
+
+    if backend.directional_bias == "LONG_ONLY" and is_pe:
+        err_msg = f"[DIRECTIONAL BIAS REJECTED] PE / Short trade for {selected_contract.get('symbol', cid)} blocked by LONG_ONLY bias filter."
+        log.warning(err_msg)
+        return JSONResponse(
+            content={"ok": False, "status": "REJECTED", "error": err_msg, "rejection_reason": "Directional Bias: LONG_ONLY blocks all PE / Short trades"},
+            status_code=400
+        )
+
+    if backend.directional_bias == "SHORT_ONLY" and is_ce:
+        err_msg = f"[DIRECTIONAL BIAS REJECTED] CE / Long trade for {selected_contract.get('symbol', cid)} blocked by SHORT_ONLY bias filter."
+        log.warning(err_msg)
+        return JSONResponse(
+            content={"ok": False, "status": "REJECTED", "error": err_msg, "rejection_reason": "Directional Bias: SHORT_ONLY blocks all CE / Long trades"},
+            status_code=400
+        )
+
     res = await backend.execute_order_with_chaser(
         contract=selected_contract,
         side=side,
@@ -241,10 +297,11 @@ async def api_backtest_date_range(req: Request):
     to_date = str(body.get("to_date", "2026-11-04"))
     custom_cfg = body.get("super_trail_cfg") or body.get("custom_cfg")
     enforce_ma = bool(body.get("enforce_ma_stack", False))
+    bias = body.get("directional_bias") or body.get("bias")
     if enforce_ma:
         custom_cfg = custom_cfg or {}
         custom_cfg["enforce_ma_stack"] = True
-    res = backend.run_date_range_backtest(from_date=from_date, to_date=to_date, custom_cfg=custom_cfg)
+    res = backend.run_date_range_backtest(from_date=from_date, to_date=to_date, custom_cfg=custom_cfg, bias=bias)
     return JSONResponse(content=res)
 
 
@@ -298,26 +355,30 @@ async def api_replay_dates():
 @app.post("/api/replay/trades")
 async def api_replay_trades(req: Request):
     target_date = "2026-11-04"
+    bias = None
     if req.method == "POST":
         try:
             body = await req.json()
             target_date = str(body.get("date", "2026-11-04"))
+            bias = body.get("directional_bias") or body.get("bias")
         except Exception:
             pass
     else:
         target_date = req.query_params.get("date", "2026-11-04")
-    trades = backend.get_replay_trades_for_date(target_date)
-    return JSONResponse(content={"ok": True, "date": target_date, "trades": trades, "trades_count": len(trades)})
+        bias = req.query_params.get("bias") or req.query_params.get("directional_bias")
+    trades = backend.get_replay_trades_for_date(target_date, bias=bias)
+    return JSONResponse(content={"ok": True, "date": target_date, "directional_bias": bias or backend.directional_bias, "trades": trades, "trades_count": len(trades)})
 
 
 @app.get("/api/replay")
 async def api_replay_get(req: Request):
     date = req.query_params.get("date", "2026-11-04")
+    bias = req.query_params.get("bias") or req.query_params.get("directional_bias")
     try:
         speed = float(req.query_params.get("speed", 10.0))
     except Exception:
         speed = 10.0
-    res = await backend.run_date_replay(selected_date=date, speed_multiplier=speed)
+    res = await backend.run_date_replay(selected_date=date, speed_multiplier=speed, bias=bias)
     return JSONResponse(content=res)
 
 
@@ -326,7 +387,30 @@ async def api_replay_run(req: Request):
     body = await req.json()
     target_date = str(body.get("date", ""))
     speed = float(body.get("speed", 10.0))
-    res = await backend.run_date_replay(selected_date=target_date, speed_multiplier=speed)
+    bias = body.get("directional_bias") or body.get("bias")
+    res = await backend.run_date_replay(selected_date=target_date, speed_multiplier=speed, bias=bias)
+    return JSONResponse(content=res)
+
+
+@app.post("/api/reconcile/homework")
+@app.get("/api/reconcile/homework")
+async def api_reconcile_homework(req: Request):
+    """
+    Scans mentor homework chart screenshots from folder (default: data/UI_screenshot)
+    and reconciles them side-by-side with Algo Backtest/Replay ledger.
+    """
+    folder = "data/UI_screenshot"
+    if req.method == "POST":
+        try:
+            body = await req.json()
+            folder = str(body.get("folder") or body.get("path") or body.get("folder_path") or folder)
+        except Exception:
+            pass
+    elif req.method == "GET":
+        q_folder = req.query_params.get("folder") or req.query_params.get("path")
+        if q_folder:
+            folder = q_folder
+    res = backend.homework_reconciler.scan_and_reconcile(folder_path=folder, backend=backend)
     return JSONResponse(content=res)
 
 
@@ -337,6 +421,72 @@ async def api_stockmojo_matrix():
         "tag": backend.cached_telemetry.get("pcr", {}).get("tag", "BULLISH"),
         "gap_cr": backend.cached_telemetry.get("pcr", {}).get("gap_cr", 1.14),
     })
+
+
+@app.get("/api/confluence/port8600")
+async def api_confluence_port8600():
+    """Returns Port 8600 OI Writers snapshot, curves, and crossover/divergence signals."""
+    snap = await backend.port8600_bridge.poll_once()
+    return JSONResponse(content=snap)
+
+
+@app.post("/api/stockmojo/ingest")
+async def api_stockmojo_ingest(req: Request):
+    """Ingests 1-minute StockMojo table rows from browser bookmarklet, scraper, or devtools."""
+    try:
+        body = await req.json()
+        res = backend.stockmojo_scraper.ingest_rows(body)
+        return JSONResponse(content=res)
+    except Exception as e:
+        log.error("StockMojo ingest error: %s", e)
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
+
+
+@app.get("/api/stockmojo/pe_ce_table")
+async def api_stockmojo_pe_ce_table(limit: int = 60):
+    """Returns newest-first StockMojo PE - CE table (last 60 minutes) + strike breakdown."""
+    res = backend.stockmojo_scraper.get_pe_ce_table(limit=limit)
+    return JSONResponse(content=res)
+
+
+@app.post("/api/stockmojo/sync_now")
+async def api_stockmojo_sync_now():
+    """1-click manual trigger to scan downloads folder and poll live StockMojo API."""
+    dl_res = backend.stockmojo_scraper.check_download_folder()
+    api_res = await backend.stockmojo_scraper.poll_direct_stockmojo_api()
+    p8600_res = await backend.port8600_bridge.poll_once()
+    return JSONResponse(content={
+        "ok": True,
+        "downloads_scanned": dl_res,
+        "live_api": api_res,
+        "port8600_bridge": p8600_res.get("ok", True),
+        "table_summary": backend.stockmojo_scraper.get_pe_ce_table(limit=1),
+    })
+
+
+@app.get("/api/stockmojo/live_oi")
+async def api_stockmojo_live_oi():
+    """Returns live time-series arrays for StockMojo OI curves."""
+    res = backend.stockmojo_scraper.get_live_oi_curves()
+    return JSONResponse(content=res)
+
+
+@app.post("/api/stockmojo/update_token")
+async def api_stockmojo_update_token(req: Request):
+    """Updates StockMojo JWT Bearer token."""
+    body = await req.json()
+    token = body.get("jwt_token") or body.get("token") or ""
+    res = backend.stockmojo_scraper.update_token(token)
+    return JSONResponse(content=res)
+
+
+@app.post("/api/stockmojo/configure_curl")
+async def api_stockmojo_configure_curl(req: Request):
+    """Configures StockMojo auth from pasted Chrome DevTools cURL command."""
+    body = await req.json()
+    curl_str = body.get("curl") or body.get("command") or ""
+    res = backend.stockmojo_scraper.configure_curl(curl_str)
+    return JSONResponse(content=res)
 
 
 def main():

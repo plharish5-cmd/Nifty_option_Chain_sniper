@@ -31,6 +31,26 @@
     "stoch_rsi_overbought": 80.0,
     "daily_candles_min": 20
   },
+  "homework_reconciler": {
+    "default_screenshot_dir": "data/UI_screenshot",
+    "supported_extensions": [".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG"],
+    "match_time_tolerance_mins": 30,
+    "min_profit_target_pts": 20.0,
+    "follow_through_ctc_max_loss_pts": 8.0,
+    "tsl_activation_profit_pts": 20.0
+  },
+  "port8600_bridge": {
+    "port8600_url": "http://127.0.0.1:8600",
+    "poll_interval_s": 15,
+    "atm_strike_range_pts": 500.0,
+    "crossover_threshold_ratio": 1.05
+  },
+  "stockmojo_ingestion": {
+    "poll_interval_s": 60,
+    "api_url": "https://data.stockmojo.in/live/oi/pcr",
+    "download_dir": "data/stockmojo_downloads",
+    "max_ring_buffer_rows": 180
+  },
   "sushen_homework_strategy": {
     "bb_length": 20,
     "bb_mult": 2.0,
