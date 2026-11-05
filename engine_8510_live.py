@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 import uvicorn
@@ -34,6 +35,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 # Path resolution
 ROOT_DIR = Path(__file__).resolve().parent
+ROOT = ROOT_DIR
 sys.path.insert(0, str(ROOT_DIR))
 
 from analyst.terminal8510_backend import QuantTerminalBackend, load_env_safe
