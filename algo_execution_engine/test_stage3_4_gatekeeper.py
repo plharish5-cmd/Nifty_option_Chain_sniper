@@ -4,10 +4,10 @@ algo_execution_engine/test_stage3_4_gatekeeper.py — Test Suite for Stage 3 Pap
 Validates:
   1. Stage 3 Paper Trade Logging & ₹400 Round-Trip Brokerage Deduction.
   2. Stage 4 Programmatic Lock (Blocks LIVE_1LOT until 5 Graduation Gates Pass).
-  3. Diagnostic Override Token Bypass (DIAGNOSTIC_1LOT_OVERRIDE).
+  3. Rejection of All Override Attempts (Backdoors Permanently Removed).
   4. Automatic Live Arming upon full 25-Trade Sandbox Graduation.
   5. Part G Strike Selection (100-Multiples ONLY, ~₹200 ITM).
-  6. Hard 1-Lot Cap (75 qty max).
+  6. Hard 1-Lot Cap (65 qty max).
   7. API Telemetry GET /api/algo/stage3-4-dashboard.
 """
 from __future__ import annotations
@@ -116,22 +116,31 @@ def test_stage4_gatekeeper_blocks_unqualified_live_mode(tmp_path: Path):
     assert any("Gate 1" in r for r in res["rejection_reasons"])
 
 
-def test_stage4_gatekeeper_diagnostic_override(tmp_path: Path):
+def test_stage4_gatekeeper_rejects_all_override_attempts(tmp_path: Path):
     """
-    Security Audit Fix: DIAGNOSTIC_1LOT_OVERRIDE backdoor deleted.
-    Verifies that no token can bypass the Stage 4 Graduation Gate when graduation_ready is False.
+    Security Audit Fix: All backdoor override tokens deleted.
+    Verifies that no token or parameter can bypass the Stage 4 Graduation Gate when graduation_ready is False.
+    Must return 403 / ok=False, no hint field, and leave execution_mode as PAPER.
     """
     db_file = str(tmp_path / "test_sandbox_override.sqlite3")
     cfg = load_config()
     cfg["execution"]["sqlite_db_path"] = db_file
     gateway = DhanOrderGateway(cfg)
 
-    # Attempting to switch to LIVE_1LOT must be strictly BLOCKED
-    res = gateway.switch_execution_mode("LIVE_1LOT")
+    # Attempting switch with any override keyword or token must return 403 / ok=False
+    res = gateway.switch_execution_mode("LIVE_1LOT", force_override_token="FORCE_ENTRY_NOW")
     assert res["ok"] is False
+    assert res.get("status_code") == 403
     assert "LOCKED IN STAGE 3 SANDBOX" in res["error"]
     assert gateway.execution_mode == "PAPER"
     assert "hint" not in res  # No leak of backdoor token hint
+
+    # Also test standard switch attempt without kwargs
+    res2 = gateway.switch_execution_mode("LIVE_1LOT")
+    assert res2["ok"] is False
+    assert res2.get("status_code") == 403
+    assert gateway.execution_mode == "PAPER"
+    assert "hint" not in res2
 
 
 def test_stage4_gatekeeper_graduates_after_25_winning_trades(tmp_path: Path):

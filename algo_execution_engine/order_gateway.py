@@ -157,15 +157,18 @@ class DhanOrderGateway:
         return True, "OK"
 
     # ── 2. STAGE 4 LIVE EXECUTION GATEKEEPER ─────────────────────────────────
-    def switch_execution_mode(self, new_mode: str) -> Dict[str, Any]:
+    def switch_execution_mode(self, new_mode: str, **kwargs) -> Dict[str, Any]:
         """
         Switches execution mode ("PAPER", "LIVE_1LOT", "PAUSED").
         Guards LIVE_1LOT with the 5 Mandatory Stage 3 Graduation Gates!
-        Removes backdoor bypass tokens per security audit remediation.
+        All backdoor bypass tokens are strictly removed and rejected.
         """
+        if kwargs:
+            log.warning("🔒 Unauthorized override attempts/parameters strictly rejected: %s", list(kwargs.keys()))
+
         target_mode = new_mode.upper()
         if target_mode not in ("PAPER", "LIVE_1LOT", "LIVE", "PAUSED"):
-            return {"ok": False, "error": f"Invalid mode: {new_mode}. Use PAPER, LIVE_1LOT, or PAUSED."}
+            return {"ok": False, "status_code": 400, "error": f"Invalid mode: {new_mode}. Use PAPER, LIVE_1LOT, or PAUSED."}
 
         # Gatekeeper for Live Modes
         if target_mode in ("LIVE_1LOT", "LIVE"):
@@ -177,6 +180,7 @@ class DhanOrderGateway:
                 log.warning("🔒 LIVE EXECUTION BLOCKED: %s", reasons)
                 return {
                     "ok": False,
+                    "status_code": 403,
                     "error": "LOCKED IN STAGE 3 SANDBOX: Graduation criteria not yet satisfied",
                     "graduation_status": grad_status,
                     "rejection_reasons": reasons,
