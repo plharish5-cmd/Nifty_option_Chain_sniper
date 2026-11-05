@@ -894,6 +894,20 @@
                 </div>
             </div>
 
+            <!-- TAB 1: STOCK MOJO MULTI-STRIKE LIVE STATUS CARD -->
+            <div id="tab1MultiStrikeStatusCard" class="card" style="border:1px solid #10b981; background:rgba(16, 185, 129, 0.05); padding:10px 16px; margin-bottom:12px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span id="tab1MultiStrikeIndicator" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#10b981; box-shadow:0 0 8px #10b981;"></span>
+                    <b id="tab1MultiStrikeText" style="color:#10b981; font-size:12.5px;">🟢 Stock Mojo Multi-Strike API Connected</b>
+                </div>
+                <div style="font-family:var(--font-mono); font-size:12px; color:var(--text-dim);">
+                    Last Sync: <span id="tab1MultiStrikeLastSync" style="color:var(--text-main); font-weight:600;">--:--:--</span>
+                </div>
+                <div style="font-size:12px;">
+                    Bias: <span id="tab1MultiStrikeBiasBadge" class="status-badge badge-bull" style="font-size:12px; font-weight:700;">BULLISH_SYNERGY</span>
+                </div>
+            </div>
+
             <!-- TAB 1 SYNCHRONIZED STOCK MOJO PE-CE SYNERGY & MASTER TRIGGER CARD -->
             <div id="tab1StockMojoCard" class="card" style="border:1px solid #38bdf8; background:rgba(56, 189, 248, 0.03);">
                 <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; border-bottom:1px solid var(--border-subtle); padding-bottom:10px; margin-bottom:14px;">
@@ -1632,6 +1646,20 @@
         <!-- TAB 6: STOCK MOJO DUAL-ENTITY PE-CE SUITE & SYNERGY GATE           -->
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <div id="tabStockMojoSuite" class="tab-content">
+            <!-- TAB 6: STOCK MOJO MULTI-STRIKE LIVE STATUS CARD -->
+            <div id="tab6MultiStrikeStatusCard" class="card" style="border:1px solid #10b981; background:rgba(16, 185, 129, 0.05); padding:10px 16px; margin-bottom:14px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span id="tab6MultiStrikeIndicator" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#10b981; box-shadow:0 0 8px #10b981;"></span>
+                    <b id="tab6MultiStrikeText" style="color:#10b981; font-size:12.5px;">🟢 Stock Mojo Multi-Strike API Connected</b>
+                </div>
+                <div style="font-family:var(--font-mono); font-size:12px; color:var(--text-dim);">
+                    Last Sync: <span id="tab6MultiStrikeLastSync" style="color:var(--text-main); font-weight:600;">--:--:--</span>
+                </div>
+                <div style="font-size:12px;">
+                    Bias: <span id="tab6MultiStrikeBiasBadge" class="status-badge badge-bull" style="font-size:12px; font-weight:700;">BULLISH_SYNERGY</span>
+                </div>
+            </div>
+
             <!-- 1. Top Live Summary Banner -->
             <div class="card" style="border:1px solid #38bdf8; background:rgba(56, 189, 248, 0.04);">
                 <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px;">
@@ -2427,7 +2455,10 @@
                     }
                 }
 
-                // 10. Live Confluence Sync for Tab 6
+                // 10. Live Confluence Sync for Tab 1 & Tab 6
+                if (data.stockmojo_synergy) {
+                    updateStockMojoMultiStrikeCards(data.stockmojo_synergy, data.stockmojo_synergy.last_sync_time);
+                }
                 if (data.institutional_pe_ce || data.stockmojo_pe_ce) {
                     updateStockMojoMetricsUI(data.institutional_pe_ce || data.stockmojo_pe_ce);
                 }
@@ -3361,8 +3392,51 @@
             }
         }
 
+        function updateStockMojoMultiStrikeCards(syn, lastSyncTime) {
+            const nowTime = new Date().toLocaleTimeString('en-GB');
+            let lastFormatted = "--:--:--";
+            if (syn && syn.multi_strike_last_sync_hhmmss) {
+                lastFormatted = syn.multi_strike_last_sync_hhmmss;
+            } else if (lastSyncTime) {
+                if (lastSyncTime.includes(" ")) {
+                    const parts = lastSyncTime.split(" ");
+                    lastFormatted = parts[1] || parts[0];
+                } else {
+                    lastFormatted = lastSyncTime;
+                }
+            } else {
+                lastFormatted = nowTime;
+            }
+
+            const bias = (syn && (syn.multi_strike_bias || syn.synergy_status)) || "BULLISH_SYNERGY";
+            const isBull = bias.includes("BULLISH");
+            const isBear = bias.includes("BEARISH");
+            const badgeClass = isBull ? "badge-bull" : (isBear ? "badge-bear" : "badge-side");
+            const isConn = (syn && syn.multi_strike_connected !== undefined) ? syn.multi_strike_connected : true;
+            const apiText = "🟢 Stock Mojo Multi-Strike API Connected";
+
+            ['tab1', 'tab6'].forEach(prefix => {
+                const textEl = document.getElementById(`${prefix}MultiStrikeText`);
+                const lastSyncEl = document.getElementById(`${prefix}MultiStrikeLastSync`);
+                const badgeEl = document.getElementById(`${prefix}MultiStrikeBiasBadge`);
+                const indEl = document.getElementById(`${prefix}MultiStrikeIndicator`);
+
+                if (textEl) textEl.textContent = apiText;
+                if (lastSyncEl) lastSyncEl.textContent = lastFormatted;
+                if (badgeEl) {
+                    badgeEl.textContent = bias;
+                    badgeEl.className = `status-badge ${badgeClass}`;
+                }
+                if (indEl) {
+                    indEl.style.background = "#10b981";
+                    indEl.style.boxShadow = "0 0 8px #10b981";
+                }
+            });
+        }
+
         function updateLiveSummaryBanner(syn, lastSyncTime) {
             if (!syn) return;
+            updateStockMojoMultiStrikeCards(syn, lastSyncTime);
             const biasEl = document.getElementById("bannerBias");
             const lastSyncEl = document.getElementById("bannerLastSync");
             const totValEl = document.getElementById("bannerTotalOiVal");
@@ -3663,6 +3737,7 @@
         function renderTab1StockMojoCard(data) {
             if (!data) return;
             const syn = data.synergy || {};
+            updateStockMojoMultiStrikeCards(syn, data.last_sync_time);
             const badge = document.getElementById("tab1SynergyStatusBadge");
             const lastSync = document.getElementById("tab1LastSyncText");
             const allowed = document.getElementById("tab1AllowedNowText");

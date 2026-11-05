@@ -72,9 +72,9 @@ async def startup_event():
     backend.scanner_task = asyncio.create_task(backend.start_strategy_scanner_loop())
     log.info("✔ 4-Strategy Live Scanner daemon launched.")
 
-    # Start 60s background polling daemon for Institutional live direct OI and folder watcher
+    # Start 60s background polling daemon for Stock Mojo live direct OI and folder watcher
     backend.stockmojo_scraper.start_background_polling()
-    log.info("✔ Institutional 60s Live OI Polling daemon launched.")
+    log.info("✔ Stock Mojo 60s Live OI & Multi-Strike Polling daemon launched.")
 
 
 @app.get("/")
@@ -448,15 +448,26 @@ async def api_oi_pe_ce_table(limit: int = 60):
 @app.post("/api/oi/sync_now")
 @app.post("/api/stockmojo/sync_now")
 async def api_oi_sync_now():
-    """1-click manual trigger to scan downloads folder and poll live Institutional OI API."""
+    """1-click manual trigger to scan downloads folder and poll live Stock Mojo OI & Multi-Strike APIs."""
     dl_res = backend.oi_scraper.check_download_folder()
     api_res = await backend.oi_scraper.poll_direct_stockmojo_api()
+    ms_res = await backend.stockmojo_scraper.poll_multi_strike_api()
     return JSONResponse(content={
         "ok": True,
         "downloads_scanned": dl_res,
         "live_api": api_res,
+        "multi_strike_api": ms_res,
+        "multi_strike_bias": backend.stockmojo_scraper.multi_strike_bias,
         "table_summary": backend.oi_scraper.get_pe_ce_table(limit=1),
+        "synergy": backend.stockmojo_scraper.evaluate_synergy_status(),
     })
+
+
+@app.get("/api/oi/multi_strike")
+@app.get("/api/stockmojo/multi_strike")
+async def api_stockmojo_multi_strike():
+    """Returns real-time multi-strike PE-CE difference metrics and status."""
+    return JSONResponse(content=backend.stockmojo_scraper.get_multi_strike_status())
 
 
 @app.get("/api/oi/live_curves")

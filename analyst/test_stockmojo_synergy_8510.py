@@ -363,12 +363,135 @@ def test_7_crore_spread_and_auth_poller():
     client.post("/api/stockmojo/update_auth", json={
         "j": real_j,
         "t": real_t,
-        "payload": {"symbol": "NIFTY", "index": "NIFTY"},
+        "payload": {"symbol": "NIFTY"},
         "poll_seconds": 60,
         "vast_diff_threshold_cr": 0.50
     })
 
     print("✔ Test 7 Passed: Crore spread metrics, Who Is More writer dominance, and update_auth API verified.")
+
+
+def test_8_multi_strike_direct_endpoint_and_synergy_gating():
+    print("Testing 8: Stock Mojo /live/multi-strike/ce-pe-oi-diff direct endpoint & synergy gating...")
+    scraper = StockMojoScraper()
+
+    # 1. Config and endpoint integrity verification
+    assert "https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff" in scraper.multi_strike_url
+    assert scraper.header_t == "btsj6kuyv8zko1p7jdz1793787160444"
+    assert scraper.poll_interval == 60
+    assert scraper.payload == {"symbol": "NIFTY"}
+
+    # 2. Parsing multi-strike payload: Positive & expanding difference -> BULLISH_SYNERGY
+    mock_bull_payload = [
+        {"strike": 24000, "pe_oi": "150.0 L", "ce_oi": "50.0 L"},   # +100 L
+        {"strike": 24100, "pe_oi": "120.0 L", "ce_oi": "60.0 L"},   # +60 L
+        {"strike": 23900, "pe_oi": "180.0 L", "ce_oi": "40.0 L"},   # +140 L
+    ]
+    snap_bull = scraper.parse_multi_strike_data(mock_bull_payload)
+    assert snap_bull["net_diff_lakhs"] == 300.0
+    assert snap_bull["net_diff_cr"] == 3.0
+    assert snap_bull["bias"] == "BULLISH_SYNERGY"
+    assert scraper.multi_strike_bias == "BULLISH_SYNERGY"
+
+    syn_bull = scraper.evaluate_synergy_status()
+    assert syn_bull["synergy_status"] == "BULLISH_SYNERGY"
+    assert "🟢 Stock Mojo Multi-Strike API Connected" in syn_bull["multi_strike_card_text"]
+    assert "BULLISH_SYNERGY" in syn_bull["multi_strike_card_text"]
+
+    # 3. Parsing multi-strike payload: Negative & expanding difference -> BEARISH_SYNERGY
+    # Pre-seed buffer with 0 to test expanding negative slope
+    scraper.multi_strike_buffer = [{"net_diff_lakhs": 0.0}]
+    mock_bear_payload = [
+        {"strike": 24000, "pe_oi": "40.0 L", "ce_oi": "180.0 L"},   # -140 L
+        {"strike": 24100, "pe_oi": "30.0 L", "ce_oi": "150.0 L"},   # -120 L
+        {"strike": 23900, "pe_oi": "50.0 L", "ce_oi": "190.0 L"},   # -140 L
+    ]
+    snap_bear = scraper.parse_multi_strike_data(mock_bear_payload)
+    assert snap_bear["net_diff_lakhs"] == -400.0
+    assert snap_bear["net_diff_cr"] == -4.0
+    assert snap_bear["bias"] == "BEARISH_SYNERGY"
+    assert scraper.multi_strike_bias == "BEARISH_SYNERGY"
+
+    syn_bear = scraper.evaluate_synergy_status()
+    assert syn_bear["synergy_status"] == "BEARISH_SYNERGY"
+    assert "BEARISH_SYNERGY" in syn_bear["multi_strike_card_text"]
+
+    # 4. Strategy Execution Gating (terminal8510_backend.py)
+    backend = QuantTerminalBackend()
+    backend.stockmojo_synergy_cfg["block_pe_when_bullish"] = True
+    backend.stockmojo_synergy_cfg["block_ce_when_bearish"] = True
+
+    # Case A: Live Multi-Strike BULLISH_SYNERGY
+    backend.stockmojo_scraper.inject_multi_strike_snapshot(net_diff_lakhs=250.0, expanding=True, bias="BULLISH_SYNERGY")
+    assert backend.stockmojo_scraper.evaluate_synergy_status()["synergy_status"] == "BULLISH_SYNERGY"
+
+    # Under BULLISH_SYNERGY, PE Short MUST be blocked
+    pe_contract = {
+        "id": "LONG_PE_ITM",
+        "symbol": "NIFTY-24000-PE",
+        "opt_type": "PE",
+        "security_id": "40001",
+        "lot_size": 65,
+        "ltp": 180.0,
+        "delta": -0.60
+    }
+    res_pe = asyncio.run(backend.execute_order_with_chaser(pe_contract, side="BUY"))
+    assert res_pe["ok"] is False
+    assert "BLOCKED BY STOCK MOJO" in res_pe["error"]
+    assert "PE Short rejected due to Bullish PE-CE" in res_pe["error"]
+
+    # Under BULLISH_SYNERGY, CE Long MUST be allowed and authorized
+    ce_contract = {
+        "id": "LONG_CE_ITM",
+        "symbol": "NIFTY-23700-CE",
+        "opt_type": "CE",
+        "security_id": "39999",
+        "lot_size": 65,
+        "ltp": 195.0,
+        "delta": 0.60
+    }
+    res_ce = asyncio.run(backend.execute_order_with_chaser(ce_contract, side="BUY"))
+    assert res_ce["ok"] is True
+    assert res_ce["status"] in ("FILLED", "PENDING_CHASE")
+
+    # Case B: Live Multi-Strike BEARISH_SYNERGY
+    backend.stockmojo_scraper.inject_multi_strike_snapshot(net_diff_lakhs=-350.0, expanding=True, bias="BEARISH_SYNERGY")
+    assert backend.stockmojo_scraper.evaluate_synergy_status()["synergy_status"] == "BEARISH_SYNERGY"
+
+    # Under BEARISH_SYNERGY, CE Long MUST be blocked
+    res_ce_bear = asyncio.run(backend.execute_order_with_chaser(ce_contract, side="BUY"))
+    assert res_ce_bear["ok"] is False
+    assert "BLOCKED BY STOCK MOJO" in res_ce_bear["error"]
+    assert "CE Long rejected due to Bearish PE-CE" in res_ce_bear["error"]
+
+    # Under BEARISH_SYNERGY, PE Short MUST be allowed and authorized
+    res_pe_bear = asyncio.run(backend.execute_order_with_chaser(pe_contract, side="BUY"))
+    assert res_pe_bear["ok"] is True
+    assert res_pe_bear["status"] in ("FILLED", "PENDING_CHASE")
+
+    # 5. REST Endpoint /api/stockmojo/multi_strike
+    client = TestClient(app)
+    r_ms = client.get("/api/stockmojo/multi_strike")
+    assert r_ms.status_code == 200
+    d_ms = r_ms.json()
+    assert d_ms["ok"] is True
+    assert "🟢 Stock Mojo Multi-Strike API Connected" in d_ms["status_card_text"]
+    assert "Last Sync:" in d_ms["status_card_text"]
+
+    # Clean up scraper state and restore default synergy config
+    backend.stockmojo_scraper.multi_strike_bias = "NEUTRAL"
+    backend.stockmojo_scraper.multi_strike_connected = False
+    backend.update_synergy_config({
+        "filter_stage2_8ema_synergy": True,
+        "filter_strategy2_reversal_synergy": True,
+        "filter_strategy3_1h_synergy": True,
+        "use_as_direct_15m_trigger": False,
+        "block_pe_when_bullish": True,
+        "block_ce_when_bearish": True,
+        "show_pe_ce_table_in_tab1": True
+    })
+
+    print("✔ Test 8 Passed: /live/multi-strike/ce-pe-oi-diff parsing, expanding bias, and order gating verified 100%.")
 
 
 if __name__ == "__main__":
@@ -382,6 +505,7 @@ if __name__ == "__main__":
     test_5_master_config_and_telemetry()
     test_6_api_endpoints()
     test_7_crore_spread_and_auth_poller()
+    test_8_multi_strike_direct_endpoint_and_synergy_gating()
     print("======================================================================")
-    print("🎉 ALL 7 STOCK MOJO PE-CE SYNERGY TESTS PASSED WITH 100% PRECISION!")
+    print("🎉 ALL 8 STOCK MOJO PE-CE SYNERGY TESTS PASSED WITH 100% PRECISION!")
     print("======================================================================")

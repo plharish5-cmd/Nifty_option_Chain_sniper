@@ -2784,6 +2784,11 @@ class QuantTerminalBackend:
                     log.warning("[BLOCKED BY STOCK MOJO] CE Long rejected due to Bearish PE-CE (Total OI + OI Change) state.")
                     continue
 
+                if opt == "CE" and synergy_status == "BULLISH_SYNERGY":
+                    log.info("[STOCK MOJO MULTI-STRIKE GATE] Bullish multi-strike synergy confirmed. CE Long order authorized for execution.")
+                elif opt == "PE" and synergy_status == "BEARISH_SYNERGY":
+                    log.info("[STOCK MOJO MULTI-STRIKE GATE] Bearish multi-strike synergy confirmed. PE Short order authorized for execution.")
+
                 synergy_filtered.append(sig)
             signals = synergy_filtered
 
@@ -3226,6 +3231,11 @@ class QuantTerminalBackend:
                     "error": err_msg,
                     "rejection_reason": err_msg,
                 }
+
+            if is_ce and synergy_status == "BULLISH_SYNERGY":
+                log.info("[STOCK MOJO MULTI-STRIKE GATE] Bullish multi-strike synergy confirmed. CE Long order authorized for execution.")
+            elif is_pe and synergy_status == "BEARISH_SYNERGY":
+                log.info("[STOCK MOJO MULTI-STRIKE GATE] Bearish multi-strike synergy confirmed. PE Short order authorized for execution.")
 
             # Check Strike Matrix Checkbox filter if triggered automatically by Algo
             contract_id = contract.get("id", "")
