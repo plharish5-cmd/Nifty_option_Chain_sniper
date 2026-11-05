@@ -80,6 +80,13 @@ def test_required_top_level_functions_defined():
         "checkTokenExpiryWarning",
         "checkCandlesHeartbeat",
         "toggleOffHoursPaperTesting",
+        "pullDailyData",
+        "checkIngestStatus",
+        "populateReplayDates",
+        "runTrendLabAPI",
+        "renderEodSummaryCards",
+        "copyWhatsAppSummary",
+        "speakEodSummary",
     ]
 
     for fn in required_functions:

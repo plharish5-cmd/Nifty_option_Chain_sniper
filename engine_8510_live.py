@@ -21,6 +21,8 @@ Endpoints:
   - GET  /api/stockmojo/matrix : StockMojo PE-CE confluence snapshot
 """
 import asyncio
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import json
 import logging
 import os
@@ -100,6 +102,28 @@ async def startup_event():
     # Start 60s background polling daemon for Stock Mojo live direct OI and folder watcher
     backend.stockmojo_scraper.start_background_polling()
     log.info("✔ Stock Mojo 60s Live OI & Multi-Strike Polling daemon launched.")
+
+    # Auto-ingest check on startup (Problem 1A & Problem 5)
+    try:
+        backend.check_and_run_auto_ingest("2026-11-05")
+        backend.check_and_run_auto_ingest("2026-11-04")
+    except Exception as e:
+        log.error("Startup auto-ingest error: %s", e)
+
+    async def auto_ingest_background_scheduler():
+        while True:
+            try:
+                await asyncio.sleep(60)
+                now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
+                today_s = now_ist.strftime("%Y-%m-%d")
+                backend.check_and_run_auto_ingest(today_s)
+            except asyncio.CancelledError:
+                break
+            except Exception as ex:
+                log.error("Auto ingest scheduler error: %s", ex)
+
+    asyncio.create_task(auto_ingest_background_scheduler())
+    log.info("✔ Auto-Ingest post-market scheduler daemon launched.")
 
 
 @app.get("/")
@@ -384,19 +408,47 @@ async def api_strike_matrix_selection(req: Request):
     return JSONResponse(content=res)
 
 
+@app.get("/api/backtest/date_range")
 @app.post("/api/backtest/date_range")
 async def api_backtest_date_range(req: Request):
     """Runs Super Trail vs Fixed 40/40 backtest over historical date range."""
-    body = await req.json()
-    from_date = str(body.get("from_date", "2026-06-01"))
-    to_date = str(body.get("to_date", "2026-11-04"))
-    custom_cfg = body.get("super_trail_cfg") or body.get("custom_cfg")
-    enforce_ma = bool(body.get("enforce_ma_stack", False))
-    bias = body.get("directional_bias") or body.get("bias")
+    from_date = "2026-06-01"
+    to_date = "2026-11-05"
+    custom_cfg = None
+    enforce_ma = False
+    bias = None
+    include_today_paper = True
+
+    if req.method == "POST":
+        try:
+            body = await req.json()
+            from_date = str(body.get("from_date", from_date))
+            to_date = str(body.get("to_date", to_date))
+            custom_cfg = body.get("super_trail_cfg") or body.get("custom_cfg")
+            enforce_ma = bool(body.get("enforce_ma_stack", False))
+            bias = body.get("directional_bias") or body.get("bias")
+            if "include_today_paper" in body:
+                include_today_paper = bool(body.get("include_today_paper"))
+        except Exception:
+            pass
+    else:
+        from_date = str(req.query_params.get("from_date", from_date))
+        to_date = str(req.query_params.get("to_date", to_date))
+        enforce_ma = req.query_params.get("enforce_ma_stack") == "true"
+        bias = req.query_params.get("directional_bias") or req.query_params.get("bias")
+        if "include_today_paper" in req.query_params:
+            include_today_paper = req.query_params.get("include_today_paper") == "true"
+
     if enforce_ma:
         custom_cfg = custom_cfg or {}
         custom_cfg["enforce_ma_stack"] = True
-    res = backend.run_date_range_backtest(from_date=from_date, to_date=to_date, custom_cfg=custom_cfg, bias=bias)
+    res = backend.run_date_range_backtest(
+        from_date=from_date, 
+        to_date=to_date, 
+        custom_cfg=custom_cfg, 
+        bias=bias, 
+        include_today_paper=include_today_paper
+    )
     return JSONResponse(content=res)
 
 
@@ -444,9 +496,61 @@ async def api_positions():
 
 
 @app.get("/api/replay/dates")
-async def api_replay_dates():
-    dates = backend.get_available_replay_dates()
-    return JSONResponse(content=dates)
+async def api_replay_dates(req: Request):
+    dates = backend.get_available_dates()
+    if req.query_params.get("raw") == "true":
+        return JSONResponse(content=dates)
+    return JSONResponse(content={"ok": True, "dates": dates, "latest": dates[0] if dates else None})
+
+
+@app.post("/api/ingest/pull_date")
+async def api_ingest_pull_date(req: Request):
+    """Pulls and persists 8 daily entities for date into unified store."""
+    body = {}
+    try:
+        body = await req.json()
+    except Exception:
+        pass
+    target_date = str(body.get("date", "2026-11-05")).strip()
+    overwrite = bool(body.get("overwrite", False))
+    res = backend.daily_ingest(target_date, overwrite=overwrite)
+    return JSONResponse(content=res)
+
+
+@app.get("/api/ingest/status")
+async def api_ingest_status(req: Request):
+    """Returns ingestion status and checklist for target date."""
+    target_date = req.query_params.get("date", "2026-11-05").strip()
+    res = backend.daily_ingest(target_date, overwrite=False)
+    return JSONResponse(content=res)
+
+
+@app.get("/api/ingest/eod_summary")
+async def api_ingest_eod_summary(req: Request):
+    """Returns structured End-of-Day digest and WhatsApp plain-text."""
+    target_date = req.query_params.get("date", "2026-11-05").strip()
+    summary = backend.get_eod_summary(target_date)
+    return JSONResponse(content=summary)
+
+
+@app.get("/api/trend_lab/run")
+@app.post("/api/trend_lab/run")
+async def api_trend_lab_run(req: Request):
+    """Dynamically evaluates multi-factor trend and Stock Mojo biases."""
+    from_date = "2026-11-04"
+    to_date = "2026-11-05"
+    if req.method == "POST":
+        try:
+            body = await req.json()
+            from_date = str(body.get("from_date") or body.get("start_date") or from_date).strip()
+            to_date = str(body.get("to_date") or body.get("end_date") or to_date).strip()
+        except Exception:
+            pass
+    else:
+        from_date = req.query_params.get("from_date") or req.query_params.get("start_date") or from_date
+        to_date = req.query_params.get("to_date") or req.query_params.get("end_date") or to_date
+    res = backend.run_trend_lab(from_date=from_date, to_date=to_date)
+    return JSONResponse(content=res)
 
 
 @app.get("/api/replay/trades")
