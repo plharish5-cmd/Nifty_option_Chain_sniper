@@ -93,6 +93,33 @@ def test_payload_without_timestamp_is_unknown_age():
     assert row["counted"] is False
 
 
+def test_fetch_timestamp_is_a_second_class_fallback():
+    """An engine with no timestamp of its own falls back to when WE called it,
+    but the row must say so — age_basis 'fetch', not 'data'."""
+    now = time.time()
+    row = cf.build_row(_eng(), {"bias": "BULLISH", cf.FETCH_TS_KEY: now - 3}, now)
+    assert row["status"] == "FRESH"
+    assert row["age_basis"] == "fetch"
+    assert row["counted"] is True
+
+
+def test_engine_timestamp_beats_fetch_timestamp():
+    """When the engine publishes its own ts, that wins — a 10-minute-old payload
+    fetched one second ago is STALE, not fresh."""
+    now = time.time()
+    row = cf.build_row(_eng(), {"bias": "BULLISH", "ts": now - 600,
+                                cf.FETCH_TS_KEY: now - 1}, now)
+    assert row["age_basis"] == "data"
+    assert row["status"] == "STALE"
+    assert row["counted"] is False
+
+
+def test_board_reports_fetch_aged_count():
+    now = time.time()
+    board = _board({"desk_bias": {"bias": "BULLISH", cf.FETCH_TS_KEY: now}}, now)
+    assert board["health"]["fetch_aged"] == 1
+
+
 def test_levels_are_extracted():
     now = time.time()
     row = cf.build_row(_eng(), {"bias": "BULLISH", "ts": now,

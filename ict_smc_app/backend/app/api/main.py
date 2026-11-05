@@ -521,38 +521,57 @@ def _confluence_gather() -> Dict[str, Any]:
     """
     import asyncio
     import inspect
+    import time
 
-    callables = {
-        "desk_bias": desk_bias_endpoint,
-        "pe_ce_matrix": pece_matrix,
-        "pcr_trinity": globals().get("trinity") or globals().get("oc_trinity"),
-        "smart_oi": globals().get("smart_oi_endpoint") or globals().get("smart_oi"),
-        "itm_atm_oi_walls": globals().get("itm_atm_oi_walls_endpoint"),
-        "oi_matrix": globals().get("oi_matrix_endpoint") or globals().get("oi_matrix"),
-        "auction": globals().get("auction"),
-        "gamma_exposure": globals().get("gamma_exposure_review_endpoint"),
-        "expiry_playbook": globals().get("expiry_playbook_endpoint"),
-        "institutional_levels": globals().get("institutional_levels_endpoint"),
-        "gap_confluence": globals().get("gap_confluence_endpoint"),
-        "gift_nifty": globals().get("gift_nifty_live_endpoint"),
-        "oi_studio": globals().get("oi_studio_endpoint"),
-        "prahaar": globals().get("prahaar_endpoint") or globals().get("prahaar"),
-        "cvd_divergence": globals().get("cvd_divergence_endpoint"),
+    # Route function names verified against main.py — not guessed. If a name is
+    # ever renamed the lookup yields None and that engine reads UNAVAILABLE,
+    # which is the correct degradation.
+    names = {
+        "desk_bias": "desk_bias_endpoint",
+        "pe_ce_matrix": "pece_matrix",
+        "pcr_trinity": "chain_trinity",
+        "smart_oi": "smart_oi_endpoint",
+        "itm_atm_oi_walls": "itm_atm_oi_walls_endpoint",
+        "oi_matrix": "oi_matrix",
+        "auction": "auction",
+        "gamma_exposure": "gamma_exposure_review_endpoint",
+        "expiry_playbook": "expiry_playbook_endpoint",
+        "institutional_levels": "institutional_levels_endpoint",
+        "gap_confluence": "gap_confluence_endpoint",
+        "gift_nifty": "gift_nifty_live_endpoint",
+        "oi_studio": "oi_studio_endpoint",
+        "prahaar": "prahaar_view",
+        "cvd_divergence": "cvd_divergence_endpoint",
+        "mmxm": "mmxm_view",
+        "crt": "crt",
+        "qml": "qml",
+        "smt": "smt_view",
+        "gtf": "gtf_view",
+        "cct": "cct_view",
+        "vix_divergence": "divergence_endpoint",
     }
 
+    g = globals()
     out: Dict[str, Any] = {}
-    for key, fn in callables.items():
+    for key, fname in names.items():
+        fn = g.get(fname)
         if fn is None:
             out[key] = None
             continue
+        t0 = time.time()
         try:
             res = fn()
             if inspect.iscoroutine(res):
                 # We are on a threadpool worker, so there is no running loop here.
                 res = asyncio.run(res)
+            # Stamp when WE called it, as a fallback for engines that publish no
+            # timestamp of their own. confluence.py tags these age_basis="fetch".
+            if isinstance(res, dict):
+                res = dict(res)
+                res.setdefault("_confluence_fetched_ts", t0)
             out[key] = res
         except Exception as exc:
-            log.debug("confluence: %s unavailable: %s", key, exc)
+            log.debug("confluence: %s (%s) unavailable: %s", key, fname, exc)
             out[key] = None
     return out
 

@@ -46,6 +46,13 @@ DIRECTIONAL = ("BULLISH", "BEARISH", "REVERSAL_UP", "REVERSAL_DOWN",
 # Keys an engine might use for its own data timestamp, most explicit first.
 TS_KEYS = ("ts", "asof", "as_of", "timestamp", "updated_ts", "fetched_at", "updated_at")
 
+# Reserved key the gatherer stamps on each payload recording when WE called the
+# engine. Used only as a fallback when the engine publishes no timestamp of its
+# own. It is a weaker guarantee — it says "we asked 2s ago", not "the underlying
+# data is 2s old" — so rows resolved this way are tagged age_basis="fetch" and
+# counted in board["health"]["fetch_aged"] so the weakness stays visible.
+FETCH_TS_KEY = "_confluence_fetched_ts"
+
 # Keys that commonly hold an engine's verdict text, most specific first.
 TEXT_KEYS = ("verdict", "bias_title", "bias", "stage", "signal", "state", "action",
              "headline", "label", "status", "direction", "side", "narrative", "text",
@@ -121,8 +128,11 @@ def extract_ts(payload: Any, now_ts: float) -> Tuple[Optional[float], str]:
     """Finds the payload's own data timestamp. Returns (epoch_seconds, source_key).
 
     Accepts epoch ints/floats and ISO-ish strings. A value that is clearly not a
-    timestamp (e.g. "15:28:03 IST") yields None rather than a fabricated 'now' -
-    the caller then marks the row UNKNOWN_AGE instead of pretending it is fresh.
+    timestamp (e.g. "15:28:03 IST") is rejected rather than fabricated into 'now'.
+
+    If the engine publishes no timestamp at all, falls back to FETCH_TS_KEY - when
+    we called it - and returns that key so the caller can tag the row age_basis
+    "fetch". That is deliberately a second-class answer, not a substitute.
     """
     if not isinstance(payload, dict):
         return None, ""
@@ -145,6 +155,9 @@ def extract_ts(payload: Any, now_ts: float) -> Tuple[Optional[float], str]:
                     val /= 1000.0
                 if abs(now_ts - val) < 10 * 365 * 24 * 3600:
                     return val, key
+    fetched = payload.get(FETCH_TS_KEY)
+    if isinstance(fetched, (int, float)) and fetched > 0:
+        return float(fetched), FETCH_TS_KEY
     return None, ""
 
 
@@ -212,6 +225,7 @@ def build_row(engine_cfg: Dict[str, Any], payload: Any, now_ts: float,
         "levels": {"support": None, "resistance": None},
         "age_s": None,
         "ts": None,
+        "age_basis": None,
         "status": "UNAVAILABLE",
         "counted": False,
         "reason": "",
@@ -240,6 +254,7 @@ def build_row(engine_cfg: Dict[str, Any], payload: Any, now_ts: float,
             row["ts"] = int(ts)
             row["age_s"] = round(age, 1)
             row["ts_source"] = ts_key
+            row["age_basis"] = "fetch" if ts_key == FETCH_TS_KEY else "data"
             if age <= fresh_max:
                 row["status"] = "FRESH"
             elif age <= stale_max:
@@ -331,6 +346,9 @@ def build_board(payloads: Dict[str, Any], now_ts: Optional[float] = None,
             "stale": sum(1 for r in rows if r["status"] in ("STALE", "EXPIRED")),
             "unavailable": sum(1 for r in rows if r["status"] in ("UNAVAILABLE", "UNKNOWN_AGE")),
             "refuted_shown": sum(1 for r in rows if r["evidence"] == "REFUTED"),
+            "fetch_aged": sum(1 for r in rows if r.get("age_basis") == "fetch"),
+            "_fetch_aged_note": "engines that publish no timestamp of their own; "
+                                "age shown is when we called them, not how old their data is",
         },
     }
 
@@ -429,7 +447,11 @@ def render_table(board: Dict[str, Any]) -> str:
         "ENGINE", "CATEGORY", "VERDICT", "AGE", "STATUS", "EVIDENCE")]
     out.append("-" * 96)
     for r in sorted(rows, key=lambda x: (x["category"], x["label"])):
-        age = "--" if r["age_s"] is None else "{:.0f}s".format(r["age_s"])
+        if r["age_s"] is None:
+            age = "--"
+        else:
+            # "~" marks fetch-basis age: when we asked, not how old the data is.
+            age = "{}{:.0f}s".format("~" if r.get("age_basis") == "fetch" else "", r["age_s"])
         mark = "*" if r["counted"] else " "
         out.append("{}{:<25} {:<12} {:<16} {:>8}  {:<11} {}".format(
             mark, str(r["label"])[:25], r["category"][:12], r["verdict"][:16],
@@ -439,5 +461,10 @@ def render_table(board: Dict[str, Any]) -> str:
     out.append("CONSENSUS: {}  ->  GATE: {}   (net {:+d}, {} of {} counted)  {}".format(
         c.get("state"), c.get("gate"), c.get("net_bias", 0),
         c.get("counted", 0), c.get("total", 0), c.get("reason", "")))
-    out.append("* = counted in consensus (eligible, fresh, directional)")
+    h = (board or {}).get("health") or {}
+    out.append("* = counted in consensus (eligible, fresh, directional)   "
+               "~age = engine publishes no timestamp; shows when we called it")
+    out.append("health: {} fresh · {} stale · {} unavailable · {} fetch-aged · {} refuted".format(
+        h.get("fresh", 0), h.get("stale", 0), h.get("unavailable", 0),
+        h.get("fetch_aged", 0), h.get("refuted_shown", 0)))
     return "\n".join(out)
