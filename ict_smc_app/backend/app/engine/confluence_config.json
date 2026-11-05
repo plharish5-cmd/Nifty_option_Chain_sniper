@@ -1,0 +1,68 @@
+{
+  "_comment": "Engine registry for the Confluence Board. Thresholds live here, never in Python (AGENTS.md). 'evidence' is the audit status of each engine: REFUTED engines are displayed but NEVER counted in consensus.",
+
+  "freshness": {
+    "fresh_max_age_s": 300,
+    "stale_max_age_s": 900
+  },
+
+  "consensus": {
+    "min_fresh_engines": 3,
+    "min_net_bias": 2,
+    "_note": "net_bias = sum of +1/-1 over fresh, non-refuted, in_consensus engines. |net| must reach min_net_bias AND at least min_fresh_engines must be fresh, otherwise NO_CONSENSUS."
+  },
+
+  "engines": [
+    {"key": "desk_bias",          "label": "Desk Bias",            "category": "DIRECTION",  "endpoint": "/api/desk/bias",                "evidence": "UNTESTED", "in_consensus": true},
+    {"key": "pe_ce_matrix",       "label": "PE-CE Matrix 2.0",     "category": "DIRECTION",  "endpoint": "/api/chain/pece-matrix",        "evidence": "UNTESTED", "in_consensus": true},
+    {"key": "pcr_trinity",        "label": "PCR & OI Trinity",     "category": "DIRECTION",  "endpoint": "/api/oc/trinity",               "evidence": "UNTESTED", "in_consensus": true},
+    {"key": "smart_oi",           "label": "Smart OI Intelligence","category": "FLOW",       "endpoint": "/api/smart_oi",                 "evidence": "UNTESTED", "in_consensus": true},
+    {"key": "itm_atm_oi_walls",   "label": "ITM/ATM OI Walls",     "category": "LEVELS",     "endpoint": "/api/desk/itm-atm-oi-walls",    "evidence": "UNTESTED", "in_consensus": true},
+    {"key": "oi_matrix",          "label": "OI Matrix",            "category": "FLOW",       "endpoint": "/api/oi/matrix",                "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "auction",            "label": "Auction / RVOL",       "category": "VOLUME",     "endpoint": "/api/auction",                  "evidence": "UNTESTED", "in_consensus": true},
+    {"key": "gamma_exposure",     "label": "Gamma Exposure",       "category": "VOLATILITY", "endpoint": "/api/gamma-exposure-review",    "evidence": "UNTESTED", "in_consensus": true},
+    {"key": "expiry_playbook",    "label": "Expiry Playbook",      "category": "STRUCTURE",  "endpoint": "/api/chain/expiry-playbook",    "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "institutional_levels","label": "Institutional Levels","category": "LEVELS",     "endpoint": "/api/desk/institutional-levels","evidence": "UNTESTED", "in_consensus": false},
+    {"key": "gap_confluence",     "label": "Gap Confluence",       "category": "STRUCTURE",  "endpoint": "/api/desk/gap-confluence",      "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "gift_nifty",         "label": "GIFT Nifty",           "category": "DIRECTION",  "endpoint": "/api/desk/gift-nifty-live",     "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "oi_studio",          "label": "OI Studio",            "category": "FLOW",       "endpoint": "/api/chain/oi-studio",          "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "prahaar",            "label": "Prahaar Command",      "category": "DIRECTION",  "endpoint": "/api/prahaar",                  "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "cvd_divergence",     "label": "CVD Divergence",       "category": "FLOW",       "endpoint": "/api/desk/cvd-divergence",      "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "mmxm",               "label": "MMXM Model",           "category": "STRUCTURE",  "endpoint": "/api/mmxm",                     "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "crt",                "label": "Candle Range Theory",  "category": "STRUCTURE",  "endpoint": "/api/crt",                      "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "qml",                "label": "QML / SBR",            "category": "STRUCTURE",  "endpoint": "/api/qml",                      "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "smt",                "label": "SMT Divergence",       "category": "STRUCTURE",  "endpoint": "/api/smt",                      "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "gtf",                "label": "GTF",                  "category": "STRUCTURE",  "endpoint": "/api/gtf",                      "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "cct",                "label": "CCT",                  "category": "STRUCTURE",  "endpoint": "/api/cct",                      "evidence": "UNTESTED", "in_consensus": false},
+    {"key": "vix_divergence",     "label": "VIX Divergence",       "category": "VOLATILITY", "endpoint": "/api/desk/divergence",          "evidence": "UNTESTED", "in_consensus": false},
+
+    {"key": "htf_wick_ema_rb",    "label": "1H Wick / EMA RB",     "category": "LEVELS",     "endpoint": "/api/desk/htf-wick-ema-rb",     "evidence": "REFUTED",  "in_consensus": false,
+     "evidence_note": "Wick zones measured at -0.7 sd over 247 sessions. See claude/Wick_Zone_Verdict.md."},
+    {"key": "gann_pivots_gaps",   "label": "Gann Pivots & Gaps",   "category": "LEVELS",     "endpoint": "/api/desk/gann-pivots-gaps",    "evidence": "REFUTED",  "in_consensus": false,
+     "evidence_note": "PDH ladder +0.7pp at 1.3 sd; +0.0pp excluding best 5 events."},
+    {"key": "rsi_divergence",     "label": "RSI Divergence",       "category": "DIRECTION",  "endpoint": "/api/desk/divergence",          "evidence": "REFUTED",  "in_consensus": false,
+     "evidence_note": "See claude/Divergence_Engine_Verdict.md."}
+  ],
+
+  "keywords": {
+    "_note": "Text is matched case-insensitively, longest phrase first. Each engine emits human-readable verdict strings; this maps them to a normalised verdict. Anything unmatched returns UNKNOWN and is excluded from consensus - it is never guessed.",
+    "REVERSAL_UP":    ["reversal up", "bullish reversal", "reversal upside", "short covering", "short-covering", "capitulation low"],
+    "REVERSAL_DOWN":  ["reversal down", "bearish reversal", "reversal downside", "long unwinding", "long-unwinding", "blow-off top"],
+    "BREAKOUT_UP":    ["breakout up", "bullish breakout", "breakout above", "range expansion up", "bos up"],
+    "BREAKOUT_DOWN":  ["breakout down", "bearish breakout", "breakdown", "break down", "range expansion down", "bos down"],
+    "CONSOLIDATION":  ["consolidation", "mid-range", "midrange", "range bound", "rangebound", "balanced", "chop", "no trade", "hold / trail", "digestion"],
+    "RETRACEMENT":    ["retracement", "pullback", "dip buy", "dip-buy", "throwback"],
+    "SUPPORT":        ["support", "floor", "put wall", "demand zone", "put writing"],
+    "RESISTANCE":     ["resistance", "cap", "call wall", "supply zone", "call writing"],
+    "BULLISH":        ["strong bullish", "bullish", "long only", "buy ce", "ce only", "put dominated", "upside"],
+    "BEARISH":        ["strong bearish", "bearish", "short only", "buy pe", "pe only", "call dominated", "downside"],
+    "NEUTRAL":        ["neutral", "mixed", "forming", "pending", "awaiting", "unavailable", "flat"]
+  },
+
+  "verdict_bias": {
+    "_note": "Maps a normalised verdict to its directional vote used in consensus arithmetic.",
+    "BULLISH": 1, "REVERSAL_UP": 1, "BREAKOUT_UP": 1, "SUPPORT": 1,
+    "BEARISH": -1, "REVERSAL_DOWN": -1, "BREAKOUT_DOWN": -1, "RESISTANCE": -1,
+    "CONSOLIDATION": 0, "RETRACEMENT": 0, "NEUTRAL": 0, "UNKNOWN": 0
+  }
+}

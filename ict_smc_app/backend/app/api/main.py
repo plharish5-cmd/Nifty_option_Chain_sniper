@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import config
@@ -508,6 +508,87 @@ def desk_bias_endpoint(
         fut_contract=fut_contract,
         hub=h,
     )
+
+
+def _confluence_gather() -> Dict[str, Any]:
+    """Calls each registered engine's own route function in-process and returns
+    {engine_key: payload}. Every call is individually guarded: one failing engine
+    yields None for that key (rendered UNAVAILABLE) and never breaks the board.
+
+    Deliberately NOT async. FastAPI runs a sync `def` endpoint in a threadpool, so
+    a slow engine cannot stall the event loop — which is exactly how the desk died
+    on 2026-11-03 (16s of synchronous Excel inside the loop).
+    """
+    import asyncio
+    import inspect
+
+    callables = {
+        "desk_bias": desk_bias_endpoint,
+        "pe_ce_matrix": pece_matrix,
+        "pcr_trinity": globals().get("trinity") or globals().get("oc_trinity"),
+        "smart_oi": globals().get("smart_oi_endpoint") or globals().get("smart_oi"),
+        "itm_atm_oi_walls": globals().get("itm_atm_oi_walls_endpoint"),
+        "oi_matrix": globals().get("oi_matrix_endpoint") or globals().get("oi_matrix"),
+        "auction": globals().get("auction"),
+        "gamma_exposure": globals().get("gamma_exposure_review_endpoint"),
+        "expiry_playbook": globals().get("expiry_playbook_endpoint"),
+        "institutional_levels": globals().get("institutional_levels_endpoint"),
+        "gap_confluence": globals().get("gap_confluence_endpoint"),
+        "gift_nifty": globals().get("gift_nifty_live_endpoint"),
+        "oi_studio": globals().get("oi_studio_endpoint"),
+        "prahaar": globals().get("prahaar_endpoint") or globals().get("prahaar"),
+        "cvd_divergence": globals().get("cvd_divergence_endpoint"),
+    }
+
+    out: Dict[str, Any] = {}
+    for key, fn in callables.items():
+        if fn is None:
+            out[key] = None
+            continue
+        try:
+            res = fn()
+            if inspect.iscoroutine(res):
+                # We are on a threadpool worker, so there is no running loop here.
+                res = asyncio.run(res)
+            out[key] = res
+        except Exception as exc:
+            log.debug("confluence: %s unavailable: %s", key, exc)
+            out[key] = None
+    return out
+
+
+@app.get("/api/desk/confluence")
+def desk_confluence_endpoint(
+    log_it: bool = Query(True, alias="log", description="Append this board to signal_log"),
+):
+    """CONFLUENCE BOARD: every desk engine normalised to one verdict row, with the
+    age of its own data, its audit status, and a consensus gate for the algo desk.
+
+    Engines marked REFUTED (wick zones, Gann ladder, RSI divergence) are displayed
+    for context but structurally barred from the consensus — they were measured and
+    they failed. The gate FAILS OPEN: no consensus means nothing is blocked.
+    """
+    from ..engine import confluence
+    from .. import config as _config
+
+    board = confluence.build_board(_confluence_gather())
+    spot = None
+    try:
+        q = _h().quote() or {}
+        spot = float(q.get("ltp") or q.get("spot") or 0) or None
+    except Exception:
+        spot = None
+    if log_it:
+        confluence.log_board(str(_config.DB_PATH), board, spot=spot)
+    board["spot"] = spot
+    return board
+
+
+@app.get("/api/desk/confluence/table", response_class=PlainTextResponse)
+def desk_confluence_table_endpoint():
+    """The same board as plain text, for the console and for pasting into chat."""
+    from ..engine import confluence
+    return confluence.render_table(confluence.build_board(_confluence_gather()))
 
 
 @app.get("/api/desk/gap-confluence")
