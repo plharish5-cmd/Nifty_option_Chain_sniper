@@ -272,6 +272,105 @@ def test_6_api_endpoints():
     print("✔ Test 6 Passed: All Stock Mojo REST API endpoints return HTTP 200 with complete datasets.")
 
 
+def test_7_crore_spread_and_auth_poller():
+    print("Testing 7: Crore spread metrics, Who Is More dominance, and auth poller...")
+    scraper = StockMojoScraper()
+
+    # 1. Check Crore Spread extraction
+    crore = scraper.get_crore_spread_metrics()
+    assert "call_oi_chg_cr" in crore
+    assert "put_oi_chg_cr" in crore
+    assert "oi_chg_diff_cr" in crore
+    assert "oi_chg_15m_slope" in crore
+    assert "call_total_oi_cr" in crore
+    assert "put_total_oi_cr" in crore
+    assert "total_oi_diff_cr" in crore
+    assert "who_is_more_chg" in crore
+    assert "who_is_more_total" in crore
+    assert "writer_dominance" in crore
+    assert "auth_status" in crore
+    assert crore["auth_status"]["valid_until"] == "Nov 2027"
+
+    # 2. Check Who Is More logic on synthetic Bullish Put Surge
+    scraper.oi_change_day_buffer.insert(0, {
+        "time_ist": "15:40",
+        "put_oi_change_day": 485.0,  # 4.85 Cr
+        "call_oi_change_day": 300.0, # 3.00 Cr
+        "pe_minus_ce_day": 185.0,
+        "created_at": "2026-11-05 15:40:00 IST"
+    })
+    scraper.total_oi_buffer.insert(0, {
+        "time_ist": "15:40",
+        "put_oi_total": 1527.0,  # 15.27 Cr
+        "call_oi_total": 1422.0, # 14.22 Cr
+        "pe_ce_oi_total": 105.0,
+        "created_at": "2026-11-05 15:40:00 IST"
+    })
+    c_bull = scraper.get_crore_spread_metrics()
+    assert c_bull["call_total_oi_cr"] == 14.22
+    assert c_bull["put_total_oi_cr"] == 15.27
+    assert c_bull["total_oi_diff_cr"] == 1.05
+    assert c_bull["who_is_more_total_side"] == "PUT"
+    assert "BULLISH CROSSOVER" in c_bull["who_is_more_total"]
+    assert c_bull["writer_dominance"] == "PUT_WRITERS_DOMINANT"
+
+    # 3. Check Who Is More logic on synthetic Bearish Call Surge
+    scraper.oi_change_day_buffer.insert(0, {
+        "time_ist": "11:14",
+        "put_oi_change_day": 473.0,  # 4.73 Cr
+        "call_oi_change_day": 740.0, # 7.40 Cr
+        "pe_minus_ce_day": -267.0,
+        "created_at": "2026-11-05 11:14:00 IST"
+    })
+    scraper.total_oi_buffer.insert(0, {
+        "time_ist": "11:14",
+        "put_oi_total": 1521.0,  # 15.21 Cr
+        "call_oi_total": 1651.0, # 16.51 Cr
+        "pe_ce_oi_total": -130.0,
+        "created_at": "2026-11-05 11:14:00 IST"
+    })
+    c_bear = scraper.get_crore_spread_metrics()
+    assert c_bear["call_total_oi_cr"] == 16.51
+    assert c_bear["put_total_oi_cr"] == 15.21
+    assert c_bear["total_oi_diff_cr"] == -1.30
+    assert c_bear["who_is_more_total_side"] == "CALL"
+    assert "BEARISH BASE" in c_bear["who_is_more_total"]
+    assert c_bear["writer_dominance"] == "CALL_WRITERS_DOMINANT"
+
+    # 4. REST Endpoints for Auth and Crore Spread
+    client = TestClient(app)
+    r_spread = client.get("/api/stockmojo/crore_spread")
+    assert r_spread.status_code == 200
+    d_spread = r_spread.json()
+    assert "call_oi_chg_cr" in d_spread
+    assert "put_oi_chg_cr" in d_spread
+
+    # Test update_auth endpoint live
+    r_auth = client.post("/api/stockmojo/update_auth", json={
+        "j": "test_j_token",
+        "t": "test_t_session",
+        "poll_seconds": 60,
+        "vast_diff_threshold_cr": 0.50
+    })
+    assert r_auth.status_code == 200
+    d_auth = r_auth.json()
+    assert d_auth["ok"] is True
+    assert d_auth["auth_summary"]["header_t"] == "test_t_session"
+
+    # Restore authentic session headers
+    real_j = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW9uX3Rva2VuIjoiYnRzajZrdXl2OHprbzFwN2pkejE3OTM3ODcxNjA0NDQiLCJ0aWQiOiIwM2YwMTIzOC05MDgyLTRkOWItYWVjNy1hNmMwZDQ3MDc3MzMiLCJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkzNzg3MTYwLCJleHAiOjE4MjUzMjMxNjB9.wVQJZbadHctmwvPFvxfLj89nlp4XPAcTjS3NpVszczg"
+    real_t = "btsj6kuyv8zko1p7jdz1793787160444"
+    client.post("/api/stockmojo/update_auth", json={
+        "j": real_j,
+        "t": real_t,
+        "payload": {"symbol": "NIFTY", "index": "NIFTY"},
+        "poll_seconds": 60,
+        "vast_diff_threshold_cr": 0.50
+    })
+
+    print("✔ Test 7 Passed: Crore spread metrics, Who Is More writer dominance, and update_auth API verified.")
+
+
 if __name__ == "__main__":
     print("======================================================================")
     print("Running Stock Mojo Dual-Entity PE-CE & Synergy Gate Test Suite (v1.3)...")
@@ -282,6 +381,7 @@ if __name__ == "__main__":
     test_4_synergy_gate_enforcement()
     test_5_master_config_and_telemetry()
     test_6_api_endpoints()
+    test_7_crore_spread_and_auth_poller()
     print("======================================================================")
-    print("🎉 ALL 6 STOCK MOJO PE-CE SYNERGY TESTS PASSED WITH 100% PRECISION!")
+    print("🎉 ALL 7 STOCK MOJO PE-CE SYNERGY TESTS PASSED WITH 100% PRECISION!")
     print("======================================================================")

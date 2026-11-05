@@ -478,6 +478,30 @@ async def api_oi_update_token(req: Request):
     return JSONResponse(content=res)
 
 
+@app.post("/api/oi/update_auth")
+@app.post("/api/stockmojo/update_auth")
+async def api_oi_update_auth(req: Request):
+    """Live update of Stock Mojo session headers (j, t), payload, or cURL without server restart."""
+    body = await req.json()
+    res = await backend.stockmojo_scraper.update_auth(
+        j=body.get("j") or body.get("header_j") or body.get("STOCKMOJO_HEADER_J"),
+        t=body.get("t") or body.get("header_t") or body.get("STOCKMOJO_HEADER_T"),
+        payload=body.get("payload") or body.get("STOCKMOJO_PAYLOAD"),
+        poll_seconds=body.get("poll_seconds") or body.get("STOCKMOJO_POLL_SECONDS"),
+        vast_thresh=body.get("vast_diff_threshold_cr") or body.get("VAST_DIFF_THRESHOLD_CR"),
+        curl_command=body.get("curl") or body.get("curl_command") or body.get("command"),
+    )
+    return JSONResponse(content=res)
+
+
+@app.get("/api/oi/crore_spread")
+@app.get("/api/stockmojo/crore_spread")
+async def api_oi_crore_spread():
+    """Returns the latest 4 Crore values (Call vs Put) and Who Is More writer dominance."""
+    res = backend.stockmojo_scraper.get_crore_spread_metrics()
+    return JSONResponse(content=res)
+
+
 @app.post("/api/oi/configure_curl")
 @app.post("/api/stockmojo/configure_curl")
 async def api_oi_configure_curl(req: Request):

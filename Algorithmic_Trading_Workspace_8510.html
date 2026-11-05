@@ -859,6 +859,44 @@
                         <b id="tab1DayOiSummaryText" style="font-family:var(--font-mono);">+6.38 Lakhs (+8.74L step)</b>
                     </div>
                 </div>
+
+                <!-- High-Visibility 4-Crore Pill Badges (Call vs Put & Who Is More) -->
+                <div style="display:flex; flex-direction:column; gap:8px; background:rgba(15, 23, 42, 0.75); padding:10px 14px; border-radius:8px; border:1px solid var(--border-subtle); margin-top:12px;">
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
+                        <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
+                            <span style="color:var(--text-dim); font-weight:600;">OI Change (Call vs Put):</span>
+                            <span id="tab1PillCallOiChg" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🟢 Call Chg: -- Cr</span>
+                            <span style="color:var(--text-dim); font-size:11px;">vs</span>
+                            <span id="tab1PillPutOiChg" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#ef4444; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🔴 Put Chg: -- Cr</span>
+                        </div>
+                        <div style="font-size:12px;">
+                            <span style="color:var(--text-dim);">Who is More: </span>
+                            <b id="tab1WhoMoreChg" style="color:#38bdf8;">--</b>
+                        </div>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
+                        <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
+                            <span style="color:var(--text-dim); font-weight:600;">Total OI (Call vs Put):</span>
+                            <span id="tab1PillPutOiTot" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#ef4444; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🔴 Put Total: -- Cr</span>
+                            <span style="color:var(--text-dim); font-size:11px;">vs</span>
+                            <span id="tab1PillCallOiTot" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🟢 Call Total: -- Cr</span>
+                        </div>
+                        <div style="font-size:12px;">
+                            <span style="color:var(--text-dim);">Who is More: </span>
+                            <b id="tab1WhoMoreTot" style="color:#38bdf8;">--</b>
+                        </div>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border-top:1px dashed rgba(255,255,255,0.08); padding-top:6px; margin-top:2px;">
+                        <div style="font-size:11px; display:flex; align-items:center; gap:6px;">
+                            <span style="background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:2px 8px; border-radius:10px;">🔑 Stock Mojo JWT Active (Valid till Nov 2027)</span>
+                            <span id="tab1JwtLastPing" style="color:var(--text-dim); font-family:var(--font-mono);">Last Ping: --:--:--</span>
+                        </div>
+                        <div style="font-size:12px;">
+                            <span style="color:var(--text-dim);">Writer Dominance: </span>
+                            <b id="tab1WriterDomBadge" style="color:var(--text-main);">CALCULATING...</b>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Live Execution Strike Matrix: 4 Priority Contracts (2 CE + 2 PE) -->
@@ -1550,6 +1588,44 @@
                         <div style="font-size:10px; color:var(--text-dim); margin-top:2px;">Strict execution gate</div>
                     </div>
                 </div>
+
+                <!-- High-Visibility 4-Crore Pill Badges (Call vs Put & Who Is More) -->
+                <div style="display:flex; flex-direction:column; gap:8px; background:rgba(15, 23, 42, 0.75); padding:10px 14px; border-radius:8px; border:1px solid var(--border-subtle); margin-top:12px;">
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
+                        <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
+                            <span style="color:var(--text-dim); font-weight:600;">OI Change (Call vs Put):</span>
+                            <span id="tab6PillCallOiChg" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🟢 Call Chg: -- Cr</span>
+                            <span style="color:var(--text-dim); font-size:11px;">vs</span>
+                            <span id="tab6PillPutOiChg" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#ef4444; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🔴 Put Chg: -- Cr</span>
+                        </div>
+                        <div style="font-size:12px;">
+                            <span style="color:var(--text-dim);">Who is More: </span>
+                            <b id="tab6WhoMoreChg" style="color:#38bdf8;">--</b>
+                        </div>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
+                        <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
+                            <span style="color:var(--text-dim); font-weight:600;">Total OI (Call vs Put):</span>
+                            <span id="tab6PillPutOiTot" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#ef4444; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🔴 Put Total: -- Cr</span>
+                            <span style="color:var(--text-dim); font-size:11px;">vs</span>
+                            <span id="tab6PillCallOiTot" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🟢 Call Total: -- Cr</span>
+                        </div>
+                        <div style="font-size:12px;">
+                            <span style="color:var(--text-dim);">Who is More: </span>
+                            <b id="tab6WhoMoreTot" style="color:#38bdf8;">--</b>
+                        </div>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border-top:1px dashed rgba(255,255,255,0.08); padding-top:6px; margin-top:2px;">
+                        <div style="font-size:11px; display:flex; align-items:center; gap:6px;">
+                            <span style="background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:2px 8px; border-radius:10px;">🔑 Stock Mojo JWT Active (Valid till Nov 2027)</span>
+                            <span id="tab6JwtLastPing" style="color:var(--text-dim); font-family:var(--font-mono);">Last Ping: --:--:--</span>
+                        </div>
+                        <div style="font-size:12px;">
+                            <span style="color:var(--text-dim);">Writer Dominance: </span>
+                            <b id="tab6WriterDomBadge" style="color:var(--text-main);">CALCULATING...</b>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- 2. Master Control Card: ⚡ Stock Mojo PE-CE Master Filter & Trigger -->
@@ -1744,22 +1820,48 @@
             </div>
         </div>
 
-        <!-- Token / cURL Modal -->
-        <div id="authConfigModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:9999; align-items:center; justify-content:center;">
-            <div style="background:var(--bg-panel); border:1px solid var(--border-glow); border-radius:12px; width:90%; max-width:540px; padding:20px; box-shadow:0 20px 40px rgba(0,0,0,0.6);">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <h3 style="margin:0; font-size:16px; color:#38bdf8;">⚙️ Configure Live Ingestion Authentication</h3>
-                    <button type="button" onclick="toggleAuthModal()" style="background:none; border:none; color:var(--text-dim); font-size:18px; cursor:pointer;">&times;</button>
+        <!-- Stock Mojo Direct Poller & Authentication Modal -->
+        <div id="authConfigModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; align-items:center; justify-content:center;">
+            <div style="background:var(--bg-panel); border:1px solid #38bdf8; border-radius:12px; width:90%; max-width:580px; padding:22px; box-shadow:0 20px 50px rgba(0,0,0,0.7); max-height:90vh; overflow-y:auto;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px;">
+                    <h3 style="margin:0; font-size:16px; color:#38bdf8; display:flex; align-items:center; gap:8px;">
+                        <span>🔑 Stock Mojo Direct Poller &amp; Session Headers</span>
+                    </h3>
+                    <button type="button" onclick="toggleAuthModal()" style="background:none; border:none; color:var(--text-dim); font-size:20px; cursor:pointer;">&times;</button>
                 </div>
-                <p style="font-size:12px; color:var(--text-dim); line-height:1.5;">
-                    Option 1: Paste Chrome DevTools <b>Copy as cURL</b> command from <code>https://data.stockmojo.in/live/oi/pcr</code>.<br>
-                    Option 2: Enter raw <b>JWT Bearer Token</b> directly.
-                </p>
-                <textarea id="curlInputText" placeholder="curl 'https://data.stockmojo.in/live/oi/pcr' -H 'Authorization: Bearer ...' ..." style="width:100%; height:90px; font-family:var(--font-mono); font-size:11px; padding:8px; background:var(--bg-input); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:6px; margin-bottom:12px;"></textarea>
-                <input type="text" id="jwtTokenInput" placeholder="Or paste JWT Token only: eyJhbGciOi..." style="width:100%; font-family:var(--font-mono); font-size:12px; padding:8px; background:var(--bg-input); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:6px; margin-bottom:14px;">
-                <div style="display:flex; justify-content:flex-end; gap:8px;">
-                    <button type="button" class="secondary-btn" onclick="toggleAuthModal()">Cancel</button>
-                    <button type="button" class="emerald-btn" onclick="saveAuthConfig()">Save &amp; Connect</button>
+                <div style="font-size:11.5px; color:var(--text-dim); line-height:1.5; margin-bottom:12px;">
+                    Paste updated session headers <code>j</code>, <code>t</code>, or payload from Chrome DevTools (<b>F12 &rarr; Network &rarr; pcr</b>) to update live without restarting the server:
+                </div>
+                <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
+                    <div>
+                        <label style="font-size:11px; color:#38bdf8; font-weight:600; display:block; margin-bottom:3px;">Header 'j' (JWT Token):</label>
+                        <textarea id="authHeaderJ" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." style="width:100%; height:60px; font-family:var(--font-mono); font-size:11px; padding:6px; background:var(--bg-input); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:6px;"></textarea>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                        <div>
+                            <label style="font-size:11px; color:#38bdf8; font-weight:600; display:block; margin-bottom:3px;">Header 't' (Session Token):</label>
+                            <input type="text" id="authHeaderT" placeholder="btsj6kuyv8zko1p7jdz1793787160444" style="width:100%; font-family:var(--font-mono); font-size:11px; padding:6px; background:var(--bg-input); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:6px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#38bdf8; font-weight:600; display:block; margin-bottom:3px;">Vast Diff Threshold (Cr):</label>
+                            <input type="number" id="authVastThresh" step="0.05" value="0.50" style="width:100%; font-family:var(--font-mono); font-size:11px; padding:6px; background:var(--bg-input); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:6px;">
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-size:11px; color:#38bdf8; font-weight:600; display:block; margin-bottom:3px;">Request Payload (JSON):</label>
+                        <input type="text" id="authPayload" value='{"symbol":"NIFTY","index":"NIFTY"}' style="width:100%; font-family:var(--font-mono); font-size:11px; padding:6px; background:var(--bg-input); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:6px;">
+                    </div>
+                    <div>
+                        <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:3px;">Or Paste Chrome DevTools 'Copy as cURL':</label>
+                        <textarea id="curlInputText" placeholder="curl 'https://data.stockmojo.in/live/oi/pcr' -H 'j: ...' -H 't: ...' --data-raw '...'" style="width:100%; height:55px; font-family:var(--font-mono); font-size:10.5px; padding:6px; background:var(--bg-input); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:6px;"></textarea>
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span id="authSaveStatusText" style="font-size:11px; color:var(--text-dim); font-family:var(--font-mono);"></span>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="secondary-btn" onclick="toggleAuthModal()">Cancel</button>
+                        <button type="button" class="emerald-btn" onclick="saveAuthConfig()">💾 Save &amp; Ping Now</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2897,6 +2999,46 @@
             renderDualPeCeTable();
         }
 
+        function renderCrorePillBadges(crore, prefix) {
+            if (!crore) return;
+            const cChgEl = document.getElementById(`${prefix}PillCallOiChg`);
+            const pChgEl = document.getElementById(`${prefix}PillPutOiChg`);
+            const whoChgEl = document.getElementById(`${prefix}WhoMoreChg`);
+            const pTotEl = document.getElementById(`${prefix}PillPutOiTot`);
+            const cTotEl = document.getElementById(`${prefix}PillCallOiTot`);
+            const whoTotEl = document.getElementById(`${prefix}WhoMoreTot`);
+            const domEl = document.getElementById(`${prefix}WriterDomBadge`);
+            const lastPingEl = document.getElementById(`${prefix}JwtLastPing`);
+
+            if (cChgEl && crore.call_oi_chg_cr !== undefined) {
+                cChgEl.textContent = `🟢 Call Chg: ${crore.call_oi_chg_cr.toFixed(2)} Cr`;
+            }
+            if (pChgEl && crore.put_oi_chg_cr !== undefined) {
+                pChgEl.textContent = `🔴 Put Chg: ${crore.put_oi_chg_cr.toFixed(2)} Cr`;
+            }
+            if (whoChgEl && crore.who_is_more_chg) {
+                whoChgEl.textContent = crore.who_is_more_chg;
+                whoChgEl.style.color = crore.who_is_more_chg_side === "PUT" ? "var(--emerald)" : (crore.who_is_more_chg_side === "CALL" ? "#38bdf8" : "var(--text-main)");
+            }
+            if (pTotEl && crore.put_total_oi_cr !== undefined) {
+                pTotEl.textContent = `🔴 Put Total: ${crore.put_total_oi_cr.toFixed(2)} Cr`;
+            }
+            if (cTotEl && crore.call_total_oi_cr !== undefined) {
+                cTotEl.textContent = `🟢 Call Total: ${crore.call_total_oi_cr.toFixed(2)} Cr`;
+            }
+            if (whoTotEl && crore.who_is_more_total) {
+                whoTotEl.textContent = crore.who_is_more_total;
+                whoTotEl.style.color = crore.who_is_more_total_side === "PUT" ? "var(--emerald)" : (crore.who_is_more_total_side === "CALL" ? "#38bdf8" : "var(--text-main)");
+            }
+            if (domEl && crore.writer_dominance_label) {
+                domEl.textContent = crore.writer_dominance_label;
+                domEl.style.color = crore.writer_dominance === "PUT_WRITERS_DOMINANT" ? "var(--emerald)" : (crore.writer_dominance === "CALL_WRITERS_DOMINANT" ? "var(--crimson)" : "var(--text-dim)");
+            }
+            if (lastPingEl && crore.auth_status && crore.auth_status.last_ping) {
+                lastPingEl.textContent = `Last Ping: ${crore.auth_status.last_ping}`;
+            }
+        }
+
         function updateLiveSummaryBanner(syn, lastSyncTime) {
             if (!syn) return;
             const biasEl = document.getElementById("bannerBias");
@@ -2909,6 +3051,11 @@
             const scTagEl = document.getElementById("bannerShortCovering");
             const allowedEl = document.getElementById("bannerAllowedNow");
             const blockedEl = document.getElementById("bannerBlockedNow");
+
+            // Render 4-Crore Pill Badges in Tab 6 Banner
+            if (syn.crore_spread) {
+                renderCrorePillBadges(syn.crore_spread, 'tab6');
+            }
 
             if (biasEl) {
                 const b = syn.bias || "MIXED";
@@ -3225,6 +3372,11 @@
             if (daySum && day.pe_ce_day_lakhs !== undefined) {
                 daySum.textContent = `${day.pe_ce_day_lakhs >= 0 ? '+' : ''}${day.pe_ce_day_lakhs.toFixed(1)} L (${day.pe_ce_interval_lakhs >= 0 ? '+' : ''}${day.pe_ce_interval_lakhs.toFixed(1)}L 3m)`;
                 daySum.style.color = day.pe_ce_day_lakhs >= 0 ? "var(--emerald)" : "var(--crimson)";
+            }
+
+            // Render 4-Crore Pill Badges in Tab 1
+            if (syn.crore_spread) {
+                renderCrorePillBadges(syn.crore_spread, 'tab1');
             }
         }
 
@@ -3551,29 +3703,62 @@
             });
         }
 
-        function toggleAuthModal() {
+        async function toggleAuthModal() {
             const m = document.getElementById("authConfigModal");
-            if (m) m.style.display = m.style.display === "flex" ? "none" : "flex";
+            if (!m) return;
+            const willOpen = (m.style.display !== "flex");
+            m.style.display = willOpen ? "flex" : "none";
+            if (willOpen) {
+                try {
+                    const res = await fetch("/api/stockmojo/crore_spread");
+                    const data = await res.json();
+                    if (data && data.auth_status) {
+                        const st = document.getElementById("authSaveStatusText");
+                        if (st) st.textContent = `Status: ${data.auth_status.sync_status || 'OK'}`;
+                    }
+                } catch (e) {
+                    console.debug("Could not prefetch auth status:", e);
+                }
+            }
         }
 
         async function saveAuthConfig() {
-            const curl = document.getElementById("curlInputText").value.trim();
-            const jwt = document.getElementById("jwtTokenInput").value.trim();
-            if (curl) {
-                await fetch("/api/stockmojo/configure_curl", {
+            const curl = (document.getElementById("curlInputText")?.value || "").trim();
+            const j = (document.getElementById("authHeaderJ")?.value || document.getElementById("jwtTokenInput")?.value || "").trim();
+            const t = (document.getElementById("authHeaderT")?.value || "").trim();
+            const payload = (document.getElementById("authPayload")?.value || "").trim();
+            const vast_thresh = parseFloat(document.getElementById("authVastThresh")?.value || "0.50");
+
+            const reqBody = {};
+            if (curl) reqBody.curl = curl;
+            if (j) reqBody.j = j;
+            if (t) reqBody.t = t;
+            if (payload) reqBody.payload = payload;
+            if (!isNaN(vast_thresh)) reqBody.vast_diff_threshold_cr = vast_thresh;
+
+            const st = document.getElementById("authSaveStatusText");
+            if (st) st.textContent = "Saving & testing ping...";
+
+            try {
+                const resp = await fetch("/api/stockmojo/update_auth", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ curl })
+                    body: JSON.stringify(reqBody)
                 });
-            } else if (jwt) {
-                await fetch("/api/stockmojo/update_token", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ jwt_token: jwt })
-                });
+                const res = await resp.json();
+                if (res.ok) {
+                    if (st) st.textContent = "✔ Saved successfully!";
+                    setTimeout(() => toggleAuthModal(), 600);
+                } else {
+                    if (st) st.textContent = "⚠ " + (res.last_sync_status || "Saved with local fallback");
+                    setTimeout(() => toggleAuthModal(), 1200);
+                }
+            } catch (e) {
+                console.error("saveAuthConfig error:", e);
+                toggleAuthModal();
             }
-            toggleAuthModal();
             syncStockMojoNow();
+            fetchStockMojoDual();
         }
 
         // ── 10. UNIVERSAL EXCEL (.XLS XML) EXPORT ENGINE ──────────────────────

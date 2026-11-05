@@ -2034,6 +2034,7 @@ class QuantTerminalBackend:
             "institutional_pe_ce": oi_snap,
             "stockmojo_pe_ce": oi_snap,
             "stockmojo_synergy": self.stockmojo_scraper.evaluate_synergy_status(),
+            "stockmojo_crore_spread": self.stockmojo_scraper.get_crore_spread_metrics(),
             "stockmojo_synergy_config": self.stockmojo_synergy_cfg,
             "funds": {
                 "paper": paper_wallet,

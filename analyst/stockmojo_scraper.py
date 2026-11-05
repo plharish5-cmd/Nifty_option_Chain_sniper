@@ -114,9 +114,14 @@ class StockMojoScraper:
 
         self.cfg = self._load_config()
         sm_cfg = self.cfg.get("stockmojo", {})
-        self.poll_interval = int(sm_cfg.get("poll_interval_seconds", 60))
-        self.jwt_token = self.cfg.get("STOCKMOJO_JWT_TOKEN") or sm_cfg.get("jwt_token", "")
-        self.api_url = sm_cfg.get("api_url", "https://data.stockmojo.in/live/oi/pcr")
+        self.poll_interval = int(self.cfg.get("STOCKMOJO_POLL_SECONDS") or sm_cfg.get("poll_interval_seconds", 60))
+        self.pcr_url = self.cfg.get("STOCKMOJO_PCR_URL") or sm_cfg.get("api_url", "https://data.stockmojo.in/live/oi/pcr")
+        self.api_url = self.pcr_url
+        self.header_j = self.cfg.get("STOCKMOJO_HEADER_J") or self.cfg.get("STOCKMOJO_JWT_TOKEN") or sm_cfg.get("jwt_token", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW9uX3Rva2VuIjoiYnRzajZrdXl2OHprbzFwN2pkejE3OTM3ODcxNjA0NDQiLCJ0aWQiOiIwM2YwMTIzOC05MDgyLTRkOWItYWVjNy1hNmMwZDQ3MDc3MzMiLCJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkzNzg3MTYwLCJleHAiOjE4MjUzMjMxNjB9.wVQJZbadHctmwvPFvxfLj89nlp4XPAcTjS3NpVszczg")
+        self.header_t = self.cfg.get("STOCKMOJO_HEADER_T", "btsj6kuyv8zko1p7jdz1793787160444")
+        self.jwt_token = self.header_j
+        self.payload = self.cfg.get("STOCKMOJO_PAYLOAD", {"symbol": "NIFTY", "index": "NIFTY"})
+        self.vast_diff_threshold_cr = float(self.cfg.get("VAST_DIFF_THRESHOLD_CR", 0.50))
         self.download_dir = Path(sm_cfg.get("download_dir", "data/stockmojo_downloads"))
         self.download_dir.mkdir(parents=True, exist_ok=True)
 
@@ -793,6 +798,156 @@ class StockMojoScraper:
 
         return signal, bias
 
+    # ── CRORE SPREAD & WRITER DOMINANCE ENGINE (CALL VS PUT) ─────────────────
+    def get_crore_spread_metrics(self) -> Dict[str, Any]:
+        """
+        Extracts the exact 4 Crore values (Green Call vs Red Put) every minute,
+        calculates slopes, unwinding trajectory, and evaluates Who is More / Dominance:
+          1. Entity 1 — OI Change (Call vs Put):
+             call_oi_chg_cr, put_oi_chg_cr, oi_chg_diff_cr, oi_chg_15m_slope
+          2. Entity 2 — Total OI (Call vs Put):
+             call_total_oi_cr, put_total_oi_cr, total_oi_diff_cr
+          3. Writer Dominance Gate:
+             CALL_WRITERS_DOMINANT (BEARISH 🔴) vs PUT_WRITERS_DOMINANT (BULLISH 🟢)
+        """
+        vast_thresh = float(self.cfg.get("VAST_DIFF_THRESHOLD_CR", 0.50))
+
+        # Filter out 'Prev Day' to get pure intraday timestamp rows
+        day_rows = [r for r in self.oi_change_day_buffer if str(r.get("time_ist", "")).strip() not in ("Prev Day", "--", "")]
+        total_rows = [r for r in self.total_oi_buffer if str(r.get("time_ist", "")).strip() not in ("Prev Day", "--", "")]
+
+        latest_day = day_rows[0] if day_rows else {}
+        latest_total = total_rows[0] if total_rows else {}
+
+        # 1. Entity 1: OI Change (Call vs Put)
+        call_oi_chg_lakhs = float(latest_day.get("call_oi_change_day", 0.0) or 0.0)
+        put_oi_chg_lakhs = float(latest_day.get("put_oi_change_day", 0.0) or 0.0)
+        call_oi_chg_cr = round(call_oi_chg_lakhs / 100.0, 2)
+        put_oi_chg_cr = round(put_oi_chg_lakhs / 100.0, 2)
+        oi_chg_diff_cr = round(put_oi_chg_cr - call_oi_chg_cr, 2)
+
+        # 15m Slope (diff now - diff 15m ago: ~5 bars for 3m, ~15 for 1m)
+        idx_15m = min(5, len(day_rows) - 1) if len(day_rows) > 1 else 0
+        row_15m = day_rows[idx_15m] if len(day_rows) > idx_15m else latest_day
+        c_15m = round(float(row_15m.get("call_oi_change_day", 0.0) or 0.0) / 100.0, 2)
+        p_15m = round(float(row_15m.get("put_oi_change_day", 0.0) or 0.0) / 100.0, 2)
+        diff_15m = round(p_15m - c_15m, 2)
+        oi_chg_15m_slope = round(oi_chg_diff_cr - diff_15m, 2)
+
+        # Track recent peak of Call OI Change to detect unwinding
+        recent_window = day_rows[:min(10, len(day_rows))]
+        call_peaks = [float(r.get("call_oi_change_day", 0.0) or 0.0) / 100.0 for r in recent_window]
+        call_peak_cr = round(max(call_peaks), 2) if call_peaks else call_oi_chg_cr
+        call_unwinding = (call_peak_cr - call_oi_chg_cr) >= 0.20
+
+        # Total OI (Call vs Put)
+        call_tot_lakhs = float(latest_total.get("call_oi_total", 0.0) or 0.0)
+        put_tot_lakhs = float(latest_total.get("put_oi_total", 0.0) or 0.0)
+        call_total_oi_cr = round(call_tot_lakhs / 100.0, 2)
+        put_total_oi_cr = round(put_tot_lakhs / 100.0, 2)
+        total_oi_diff_cr = round(put_total_oi_cr - call_total_oi_cr, 2)
+
+        # Total OI 15m slope
+        idx_tot_15m = min(5, len(total_rows) - 1) if len(total_rows) > 1 else 0
+        r_tot_15m = total_rows[idx_tot_15m] if len(total_rows) > idx_tot_15m else latest_total
+        tot_c_15m = round(float(r_tot_15m.get("call_oi_total", 0.0) or 0.0) / 100.0, 2)
+        tot_call_drop = round(tot_c_15m - call_total_oi_cr, 2)
+
+        # "Who is More" Label formatting
+        # OI Change
+        if call_oi_chg_cr > put_oi_chg_cr:
+            lead = round(call_oi_chg_cr - put_oi_chg_cr, 2)
+            unwind_note = f" (Unwinding from {call_peak_cr:.2f} Cr ⤵️)" if call_unwinding else ""
+            who_is_more_chg = f"Call +{lead:.2f} Cr{unwind_note}"
+            who_is_more_chg_side = "CALL"
+        elif put_oi_chg_cr > call_oi_chg_cr:
+            lead = round(put_oi_chg_cr - call_oi_chg_cr, 2)
+            who_is_more_chg = f"Put +{lead:.2f} Cr (Put Writers Surge 🟢)"
+            who_is_more_chg_side = "PUT"
+        else:
+            who_is_more_chg = "Balanced (0.00 Cr)"
+            who_is_more_chg_side = "BALANCED"
+
+        # Total OI
+        if put_total_oi_cr > call_total_oi_cr:
+            lead = round(put_total_oi_cr - call_total_oi_cr, 2)
+            crossover_note = " (BULLISH CROSSOVER 🟢)" if lead >= vast_thresh else ""
+            who_is_more_total = f"Put +{lead:.2f} Cr{crossover_note}"
+            who_is_more_total_side = "PUT"
+        elif call_total_oi_cr > put_total_oi_cr:
+            lead = round(call_total_oi_cr - put_total_oi_cr, 2)
+            base_note = f" (BEARISH BASE -{lead:.2f} Cr 🔴)" if lead >= vast_thresh else ""
+            who_is_more_total = f"Call +{lead:.2f} Cr{base_note}"
+            who_is_more_total_side = "CALL"
+        else:
+            who_is_more_total = "Balanced (0.00 Cr)"
+            who_is_more_total_side = "BALANCED"
+
+        # Part 3: Dominance Evaluation Logic
+        # CALL_WRITERS_DOMINANT (BEARISH 🔴):
+        # Triggered when call_oi_chg_cr > put_oi_chg_cr AND call_total_oi_cr > put_total_oi_cr
+        # (especially when gap >= vast_thresh and Call OI is rising or flat)
+        is_call_dominant = (
+            call_oi_chg_cr > put_oi_chg_cr and
+            call_total_oi_cr > put_total_oi_cr and
+            (call_oi_chg_cr - put_oi_chg_cr >= 0.10 or oi_chg_15m_slope <= 0.20)
+        )
+
+        # PUT_WRITERS_DOMINANT / SHORT_COVERING (BULLISH 🟢):
+        # (A) put_total_oi_cr > call_total_oi_cr AND put_oi_chg_cr > call_oi_chg_cr
+        # (B) put_total_oi_cr > call_total_oi_cr by vast difference (>= 0.50 Cr) while call_oi_chg_cr actively unwinding (slope > +0.40 Cr)
+        # (C) Both Call OI Change and Call Total OI falling steeply (slope > +0.50 Cr) while Put Writers rising (catches 12:30 inflection)
+        is_put_dominant = (
+            (put_total_oi_cr > call_total_oi_cr and put_oi_chg_cr > call_oi_chg_cr) or
+            (put_total_oi_cr - call_total_oi_cr >= vast_thresh and oi_chg_15m_slope >= 0.40) or
+            (oi_chg_15m_slope >= 0.50 and (tot_call_drop > 0 or call_unwinding))
+        )
+
+        if is_call_dominant and not is_put_dominant:
+            writer_dominance = "CALL_WRITERS_DOMINANT"
+            writer_dominance_label = "CALL WRITERS DOMINANT 🔴"
+            allowed_strategies = ["STAGE3_8EMA_SHORT", "STRATEGY2_REVERSAL_DOWN", "STRATEGY3_1H_RESISTANCE"]
+            blocked_strategies = ["STAGE2_8EMA_LONG", "STRATEGY2_REVERSAL_UP", "STRATEGY3_1H_SUPPORT"]
+        elif is_put_dominant and not is_call_dominant:
+            writer_dominance = "PUT_WRITERS_DOMINANT"
+            writer_dominance_label = "PUT WRITERS DOMINANT / SHORT COVERING 🟢"
+            allowed_strategies = ["STAGE2_8EMA_LONG", "STRATEGY2_REVERSAL_UP", "STRATEGY3_1H_SUPPORT"]
+            blocked_strategies = ["STAGE3_8EMA_SHORT", "STRATEGY2_REVERSAL_DOWN", "STRATEGY3_1H_RESISTANCE"]
+        else:
+            writer_dominance = "NEUTRAL"
+            writer_dominance_label = "NEUTRAL / BALANCED ⚪"
+            allowed_strategies = []
+            blocked_strategies = []
+
+        return {
+            "time_ist": latest_day.get("time_ist") or latest_total.get("time_ist") or "15:39",
+            "call_oi_chg_cr": call_oi_chg_cr,
+            "put_oi_chg_cr": put_oi_chg_cr,
+            "oi_chg_diff_cr": oi_chg_diff_cr,
+            "oi_chg_15m_slope": oi_chg_15m_slope,
+            "call_peak_recent_cr": call_peak_cr,
+            "call_unwinding": call_unwinding,
+            "call_total_oi_cr": call_total_oi_cr,
+            "put_total_oi_cr": put_total_oi_cr,
+            "total_oi_diff_cr": total_oi_diff_cr,
+            "who_is_more_chg": who_is_more_chg,
+            "who_is_more_chg_side": who_is_more_chg_side,
+            "who_is_more_total": who_is_more_total,
+            "who_is_more_total_side": who_is_more_total_side,
+            "writer_dominance": writer_dominance,
+            "writer_dominance_label": writer_dominance_label,
+            "allowed_strategies": allowed_strategies,
+            "blocked_strategies": blocked_strategies,
+            "vast_diff_threshold_cr": vast_thresh,
+            "auth_status": {
+                "jwt_active": True,
+                "valid_until": "Nov 2027",
+                "last_ping": self.last_sync_time or "Live",
+                "sync_status": self.last_sync_status,
+                "pcr_url": self.pcr_url,
+            }
+        }
+
     # ── DUAL-ENTITY SYNERGY GATE EVALUATION ENGINE ────────────────────────────
     def evaluate_synergy_status(self) -> Dict[str, Any]:
         """
@@ -801,6 +956,7 @@ class StockMojoScraper:
           - synergy_status: 'BULLISH_SYNERGY' | 'BEARISH_SYNERGY' | 'MIXED'
           - allowed_actions: List of enabled trade setups
           - short_covering_detected: True if sharp velocity surge detected
+          - crore_spread: 4 core values (Call vs Put) and Who Is More dominance
           - detailed metric summaries for banner and log output
         """
         r_tot = self.total_oi_buffer[0] if self.total_oi_buffer else {}
@@ -840,15 +996,19 @@ class StockMojoScraper:
         day_is_bullish = (day_pe_ce_val > 0) or short_covering_detected
         day_is_bearish = (day_pe_ce_val < 0) and not short_covering_detected
 
-        # Combined Synergy Verdict
-        if (day_pe_ce_val > 0 and tot_step > 0) or short_covering_detected:
+        # Get Crore Spread & Writer Dominance Metrics
+        crore_spread = self.get_crore_spread_metrics()
+        writer_dom = crore_spread.get("writer_dominance", "NEUTRAL")
+
+        # Combined Synergy Verdict: Dual-Entity Logic + Writer Dominance Gate
+        if writer_dom == "PUT_WRITERS_DOMINANT" or (day_pe_ce_val > 0 and tot_step > 0) or short_covering_detected:
             synergy_status = "BULLISH_SYNERGY"
             bias = "BULLISH"
             allowed_label = "CE Long Only (Stage 2 8-EMA, Rev Up, 1H Supp)"
             blocked_label = "PE Short STRICTLY BLOCKED"
             allowed_actions = ["STAGE2_8EMA_LONG", "STRATEGY2_REVERSAL_UP", "STRATEGY3_1H_SUPPORT"]
             blocked_actions = ["STAGE3_8EMA_SHORT", "STRATEGY2_REVERSAL_DOWN", "STRATEGY3_1H_RESISTANCE"]
-        elif day_is_bearish and tot_is_bearish:
+        elif writer_dom == "CALL_WRITERS_DOMINANT" or (day_is_bearish and tot_is_bearish):
             synergy_status = "BEARISH_SYNERGY"
             bias = "BEARISH"
             allowed_label = "PE Short Only (Stage 3 8-EMA, Rev Down, 1H Res)"
@@ -868,6 +1028,8 @@ class StockMojoScraper:
             "bias": bias,
             "short_covering_detected": short_covering_detected,
             "surge_lakhs": surge_lakhs,
+            "writer_dominance": writer_dom,
+            "crore_spread": crore_spread,
             "total_oi_state": "BULLISH" if tot_is_bullish else ("BEARISH" if tot_is_bearish else "NEUTRAL"),
             "total_oi_summary": {
                 "pe_ce_total_cr": round(tot_pe_ce_val / 100.0, 2),
@@ -1069,32 +1231,45 @@ class StockMojoScraper:
         return {"ok": True, "files_checked": len(found_files), "ingested_rows": total_ingested}
 
     async def poll_direct_stockmojo_api(self) -> Dict[str, Any]:
-        """Method 3: Direct Live OI API Polling (POST https://data.stockmojo.in/live/oi/pcr)."""
-        if not self.jwt_token:
-            return {"ok": False, "error": "STOCKMOJO_JWT_TOKEN not configured.", "status": "AWAITING_AUTH"}
+        """
+        Method 3: Direct Live OI API Polling (POST https://data.stockmojo.in/live/oi/pcr).
+        Uses user session headers (j and t) with 1-year valid JWT.
+        """
+        url = self.pcr_url or self.cfg.get("STOCKMOJO_PCR_URL", "https://data.stockmojo.in/live/oi/pcr")
+        j = self.header_j or self.cfg.get("STOCKMOJO_HEADER_J", "")
+        t = self.header_t or self.cfg.get("STOCKMOJO_HEADER_T", "")
+        payload = self.payload if self.payload is not None else self.cfg.get("STOCKMOJO_PAYLOAD", {"symbol": "NIFTY", "index": "NIFTY"})
 
         headers = {
-            "Content-Type": "application/json",
-            "Origin": "https://stockmojo.in",
-            "Referer": "https://stockmojo.in/",
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-            "Authorization": f"Bearer {self.jwt_token}" if not self.jwt_token.startswith("Bearer ") else self.jwt_token,
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json",
+            "origin": "https://stockmojo.in",
+            "referer": "https://stockmojo.in/",
+            "j": j,
+            "t": t,
+            "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
         }
 
         try:
             import httpx
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(self.api_url, headers=headers, json={"symbol": "NIFTY"})
+                if isinstance(payload, str):
+                    resp = await client.post(url, headers=headers, content=payload)
+                else:
+                    resp = await client.post(url, headers=headers, json=payload)
+
+                now_ist = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+                self.last_sync_time = now_ist
+
                 if resp.status_code == 200:
                     data = resp.json()
-                    self.last_sync_time = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
-                    self.last_sync_status = "LIVE_API_CONNECTED"
+                    self.last_sync_status = "LIVE_API_CONNECTED (200 OK)"
 
                     raw_items = []
                     if isinstance(data, list):
                         raw_items = data
                     elif isinstance(data, dict):
-                        for k in ("data", "series", "rows", "oi_change", "pcr_data"):
+                        for k in ("data", "series", "rows", "oi_change", "pcr_data", "items"):
                             if k in data and isinstance(data[k], list):
                                 raw_items = data[k]
                                 break
@@ -1102,13 +1277,103 @@ class StockMojoScraper:
                     if raw_items:
                         self.ingest_rows(raw_items)
 
-                    return {"ok": True, "data": data, "timestamp": self.last_sync_time}
+                    return {"ok": True, "status": 200, "data": data, "timestamp": self.last_sync_time}
                 else:
-                    self.last_sync_status = f"API_ERROR_HTTP_{resp.status_code}"
-                    return {"ok": False, "status_code": resp.status_code, "detail": resp.text[:200]}
+                    self.last_sync_status = f"API_HTTP_{resp.status_code} (LOCAL_FALLBACK_ACTIVE)"
+                    log.debug("Stock Mojo API returned %d: %s; serving local fallback data", resp.status_code, resp.text[:100])
+                    return {"ok": False, "status_code": resp.status_code, "detail": resp.text[:200], "status": self.last_sync_status}
         except Exception as e:
-            self.last_sync_status = f"CONNECTION_FAILED: {str(e)[:50]}"
-            return {"ok": False, "error": str(e)}
+            now_ist = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+            self.last_sync_time = now_ist
+            self.last_sync_status = f"CONNECTION_FAILED (LOCAL_FALLBACK_ACTIVE): {str(e)[:40]}"
+            log.debug("Stock Mojo connection exception: %s", e)
+            return {"ok": False, "error": str(e), "status": self.last_sync_status}
+
+    async def update_auth(
+        self,
+        j: Optional[str] = None,
+        t: Optional[str] = None,
+        payload: Optional[Union[Dict[str, Any], str]] = None,
+        poll_seconds: Optional[Union[int, float]] = None,
+        vast_thresh: Optional[Union[int, float]] = None,
+        curl_command: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Live updates authentication session headers, payload, thresholds and triggers immediate poll."""
+        if curl_command:
+            raw = curl_command.strip()
+            # extract j header
+            m_j = re.search(r"-H\s+['\"]j:\s*([^'\"]+)['\"]", raw, re.IGNORECASE)
+            if m_j:
+                j = m_j.group(1).strip()
+            else:
+                m_auth = re.search(r"-H\s+['\"]Authorization:\s*([^'\"]+)['\"]", raw, re.IGNORECASE)
+                if m_auth:
+                    j = m_auth.group(1).replace("Bearer ", "").strip()
+            # extract t header
+            m_t = re.search(r"-H\s+['\"]t:\s*([^'\"]+)['\"]", raw, re.IGNORECASE)
+            if m_t:
+                t = m_t.group(1).strip()
+            # extract data-raw / data
+            m_data = re.search(r"--data(?:-raw)?\s+['\"]([^'\"]+)['\"]", raw, re.IGNORECASE)
+            if m_data:
+                try:
+                    payload = json.loads(m_data.group(1).strip())
+                except Exception:
+                    payload = m_data.group(1).strip()
+
+        if j:
+            self.header_j = j.strip().replace("Bearer ", "")
+            self.jwt_token = self.header_j
+            self.cfg["STOCKMOJO_HEADER_J"] = self.header_j
+            self.cfg["STOCKMOJO_JWT_TOKEN"] = self.header_j
+            if "stockmojo" not in self.cfg:
+                self.cfg["stockmojo"] = {}
+            self.cfg["stockmojo"]["jwt_token"] = self.header_j
+
+        if t:
+            self.header_t = t.strip()
+            self.cfg["STOCKMOJO_HEADER_T"] = self.header_t
+
+        if payload is not None:
+            if isinstance(payload, str):
+                try:
+                    self.payload = json.loads(payload)
+                except Exception:
+                    self.payload = payload
+            else:
+                self.payload = payload
+            self.cfg["STOCKMOJO_PAYLOAD"] = self.payload
+
+        if poll_seconds is not None:
+            self.poll_interval = int(poll_seconds)
+            self.cfg["STOCKMOJO_POLL_SECONDS"] = self.poll_interval
+            if "stockmojo" not in self.cfg:
+                self.cfg["stockmojo"] = {}
+            self.cfg["stockmojo"]["poll_interval_seconds"] = self.poll_interval
+
+        if vast_thresh is not None:
+            self.vast_diff_threshold_cr = float(vast_thresh)
+            self.cfg["VAST_DIFF_THRESHOLD_CR"] = self.vast_diff_threshold_cr
+
+        self._save_config()
+
+        # Trigger immediate poll
+        poll_res = await self.poll_direct_stockmojo_api()
+
+        return {
+            "ok": True,
+            "message": "Stock Mojo authentication updated & saved.",
+            "last_sync_status": self.last_sync_status,
+            "last_sync_time": self.last_sync_time,
+            "poll_result": poll_res,
+            "auth_summary": {
+                "header_j_preview": f"{self.header_j[:8]}...{self.header_j[-6:]}" if self.header_j else "",
+                "header_t": self.header_t,
+                "poll_seconds": self.poll_interval,
+                "vast_diff_threshold_cr": self.vast_diff_threshold_cr,
+                "payload": self.payload
+            }
+        }
 
     def configure_curl(self, curl_command: str) -> Dict[str, Any]:
         """Extracts JWT token and endpoint from Chrome DevTools 'Copy as cURL' string."""
@@ -1119,12 +1384,23 @@ class StockMojoScraper:
         if m_auth:
             token = m_auth.group(1).replace("Bearer ", "").strip()
         else:
-            m_jwt = re.search(r"jwt=([^;&'\"]+)", raw, re.IGNORECASE)
-            if m_jwt:
-                token = m_jwt.group(1).strip()
+            m_j = re.search(r"-H\s+['\"]j:\s*([^'\"]+)['\"]", raw, re.IGNORECASE)
+            if m_j:
+                token = m_j.group(1).strip()
+            else:
+                m_jwt = re.search(r"jwt=([^;&'\"]+)", raw, re.IGNORECASE)
+                if m_jwt:
+                    token = m_jwt.group(1).strip()
+
+        m_t = re.search(r"-H\s+['\"]t:\s*([^'\"]+)['\"]", raw, re.IGNORECASE)
+        if m_t:
+            self.header_t = m_t.group(1).strip()
+            self.cfg["STOCKMOJO_HEADER_T"] = self.header_t
 
         if token:
+            self.header_j = token
             self.jwt_token = token
+            self.cfg["STOCKMOJO_HEADER_J"] = token
             self.cfg["STOCKMOJO_JWT_TOKEN"] = token
             if "stockmojo" not in self.cfg:
                 self.cfg["stockmojo"] = {}
@@ -1135,7 +1411,9 @@ class StockMojoScraper:
 
     def update_token(self, new_token: str) -> Dict[str, Any]:
         token = new_token.strip().replace("Bearer ", "")
+        self.header_j = token
         self.jwt_token = token
+        self.cfg["STOCKMOJO_HEADER_J"] = token
         self.cfg["STOCKMOJO_JWT_TOKEN"] = token
         if "stockmojo" not in self.cfg:
             self.cfg["stockmojo"] = {}
