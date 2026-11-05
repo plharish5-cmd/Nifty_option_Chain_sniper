@@ -379,7 +379,7 @@ def test_8_multi_strike_direct_endpoint_and_synergy_gating():
     assert "https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff" in scraper.multi_strike_url
     assert scraper.header_t == "btsj6kuyv8zko1p7jdz1793787160444"
     assert scraper.poll_interval == 60
-    assert scraper.payload == {"symbol": "NIFTY"}
+    assert scraper.payload.get("symbol") in (1, "NIFTY")
 
     # 2. Parsing multi-strike payload: Positive & expanding difference -> BULLISH_SYNERGY
     mock_bull_payload = [

@@ -574,10 +574,16 @@ async def api_stockmojo_live_graph_ingest(req: Request):
     except Exception:
         body = {}
 
-    req_headers = body.get("request_headers") or body.get("headers") or {}
-    req_payload = body.get("request_payload") or body.get("payload") or None
-    resp_data = body.get("response_data") or body.get("data") or body
-    ms_data = body.get("multi_strike_data")
+    if isinstance(body, dict):
+        req_headers = body.get("request_headers") or body.get("headers") or {}
+        req_payload = body.get("request_payload") or body.get("payload") or None
+        resp_data = body.get("response_data") or body.get("data") or body
+        ms_data = body.get("multi_strike_data")
+    else:
+        req_headers = {}
+        req_payload = None
+        resp_data = body
+        ms_data = None
 
     # Auto-save credentials if captured from browser
     header_j = req_headers.get("j") or req_headers.get("authorization") or req_headers.get("Authorization") or ""
@@ -593,6 +599,8 @@ async def api_stockmojo_live_graph_ingest(req: Request):
     # Parse multi-strike if present
     if ms_data:
         backend.stockmojo_scraper.parse_multi_strike_data(ms_data)
+    elif isinstance(resp_data, dict) and "t" in resp_data and "co" in resp_data and "po" in resp_data:
+        backend.stockmojo_scraper.parse_multi_strike_data(resp_data)
 
     # Ingest live graph data
     res = backend.stockmojo_scraper.ingest_live_graph_data(resp_data, source="BROWSER_RELAY")
@@ -604,6 +612,12 @@ async def api_stockmojo_live_graph_ingest(req: Request):
         "synergy": backend.stockmojo_scraper.evaluate_synergy_status(),
         "multi_strike": backend.stockmojo_scraper.get_multi_strike_status(),
     })
+
+
+@app.get("/api/stockmojo/multi_strike_table")
+async def api_stockmojo_multi_strike_table(timeframe: str = "1m", mode: str = "all", limit: int = 120):
+    res = backend.stockmojo_scraper.get_multi_strike_table(timeframe=timeframe, mode=mode, limit=limit)
+    return JSONResponse(content=res)
 
 
 @app.post("/api/stockmojo/line_mapping")

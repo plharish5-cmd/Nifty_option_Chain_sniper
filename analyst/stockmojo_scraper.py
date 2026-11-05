@@ -125,6 +125,24 @@ def parse_val_to_crores(val: Any) -> float:
         return 0.0
 
 
+def format_indian_qty(val: Any, signed: bool = True) -> str:
+    """Formats contract count into clean Indian style Cr / L / K strings."""
+    try:
+        fval = float(val)
+    except Exception:
+        return str(val) if val is not None else "0"
+    sign = "+" if signed and fval > 0 else ("-" if fval < 0 else "")
+    abs_v = abs(fval)
+    if abs_v >= 1e7:
+        return f"{sign}{abs_v / 1e7:.2f} Cr"
+    elif abs_v >= 1e5:
+        return f"{sign}{abs_v / 1e5:.2f} L"
+    elif abs_v >= 1e3:
+        return f"{sign}{abs_v / 1e3:.1f} K"
+    else:
+        return f"{sign}{abs_v:.0f}"
+
+
 def parse_html_table_rows(html_content: str) -> Tuple[List[str], List[Dict[str, Any]]]:
     """Parses HTML table exported by Stock Mojo into column headers and list of dict rows."""
     trs = re.findall(r'<tr[^>]*>(.*?)</tr>', html_content, re.DOTALL | re.IGNORECASE)
@@ -161,19 +179,26 @@ class StockMojoScraper:
         self.pcr_url = self.cfg.get("STOCKMOJO_PCR_URL") or sm_cfg.get("api_url", "https://data.stockmojo.in/live/oi/pcr")
         self.api_url = self.pcr_url
         self.multi_strike_url = self.cfg.get("STOCKMOJO_MULTI_STRIKE_URL") or sm_cfg.get("multi_strike_url", "https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff")
+        self.active_expiry_id = int(self.cfg.get("STOCKMOJO_ACTIVE_EXPIRY_ID", 215))
+        self.pcr_payload = self.cfg.get("STOCKMOJO_PCR_PAYLOAD", {"symbol": 1, "dt": None, "expiries": [self.active_expiry_id]})
+        self.multi_strike_payload = self.cfg.get("STOCKMOJO_MULTI_STRIKE_PAYLOAD", {"symbol": 1, "expiry": self.active_expiry_id, "range": 10})
         self.header_j = self.cfg.get("STOCKMOJO_HEADER_J") or self.cfg.get("STOCKMOJO_JWT_TOKEN") or sm_cfg.get("jwt_token", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW9uX3Rva2VuIjoiYnRzajZrdXl2OHprbzFwN2pkejE3OTM3ODcxNjA0NDQiLCJ0aWQiOiIwM2YwMTIzOC05MDgyLTRkOWItYWVjNy1hNmMwZDQ3MDc3MzMiLCJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkzNzg3MTYwLCJleHAiOjE4MjUzMjMxNjB9.wVQJZbadHctmwvPFvxfLj89nlp4XPAcTjS3NpVszczg")
         self.header_t = self.cfg.get("STOCKMOJO_HEADER_T", "btsj6kuyv8zko1p7jdz1793787160444")
         self.jwt_token = self.header_j
-        self.payload = self.cfg.get("STOCKMOJO_PAYLOAD", {"symbol": "NIFTY"})
+        self.payload = self.pcr_payload
         self.vast_diff_threshold_cr = float(self.cfg.get("VAST_DIFF_THRESHOLD_CR", 0.50))
         self.download_dir = Path(sm_cfg.get("download_dir", "data/stockmojo_downloads"))
         self.download_dir.mkdir(parents=True, exist_ok=True)
 
         # Synchronize canonical config keys in self.cfg
+        self.cfg["STOCKMOJO_PCR_URL"] = self.pcr_url
         self.cfg["STOCKMOJO_MULTI_STRIKE_URL"] = self.multi_strike_url
+        self.cfg["STOCKMOJO_ACTIVE_EXPIRY_ID"] = self.active_expiry_id
+        self.cfg["STOCKMOJO_PCR_PAYLOAD"] = self.pcr_payload
+        self.cfg["STOCKMOJO_MULTI_STRIKE_PAYLOAD"] = self.multi_strike_payload
         self.cfg["STOCKMOJO_HEADER_J"] = self.header_j
         self.cfg["STOCKMOJO_HEADER_T"] = self.header_t
-        self.cfg["STOCKMOJO_PAYLOAD"] = self.payload
+        self.cfg["STOCKMOJO_PAYLOAD"] = self.pcr_payload
         self.cfg["POLL_INTERVAL_SECONDS"] = self.poll_interval
         self.cfg["STOCKMOJO_POLL_SECONDS"] = self.poll_interval
 
@@ -190,6 +215,14 @@ class StockMojoScraper:
         self.multi_strike_last_sync: str = ""
         self.multi_strike_status: str = "INITIALIZED"
         self.multi_strike_connected: bool = False
+        self._raw_multi_strike_data: Optional[Dict[str, Any]] = None
+        self.row_momentum: Dict[str, Any] = {
+            "delta_pe_ce_3m": 0.0,
+            "delta_pe_ce_5m": 0.0,
+            "delta_pe_ce_15m": 0.0,
+            "significant_put_surge": False,
+            "significant_call_surge": False,
+        }
 
         # Live Graph Point & Configurable Line Mapping (STANDARD: Red=Put / Green=Call; INVERTED: Red=Call / Green=Put)
         self.line_mapping: str = str(self.cfg.get("STOCKMOJO_LINE_MAPPING", "STANDARD")).upper()
@@ -350,7 +383,14 @@ class StockMojoScraper:
             log.error("Failed to init Stock Mojo tables in SQLite: %s", e)
 
     def _seed_baseline_if_empty(self) -> None:
-        """Seeds verified 04 Nov benchmark records from downloaded files or fallback."""
+        """
+        Seeds 04 Nov benchmark records from downloaded files marked as seed data.
+        These seed rows are tagged with is_seed=True so that get_crore_spread_metrics()
+        STRICTLY returns 'WAITING FOR LIVE SYNC' and NEVER serves stale yesterday's
+        values (5.10 Cr / 6.49 Cr) as live badge numbers until live sync arrives.
+        """
+        self.has_live_sync = False
+
         # Check SQLite first for Entity 1 & Entity 2
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -366,11 +406,11 @@ class StockMojoScraper:
                     ).fetchall()
                     self.total_oi_buffer = [self._sql_row_to_total_oi(r) for r in rows1]
                     self.oi_change_day_buffer = [self._sql_row_to_day_oi(r) for r in rows2]
+                    self.ring_buffer = self.oi_change_day_buffer
                     for r in self.total_oi_buffer:
                         r["is_seed"] = True
                     for r in self.oi_change_day_buffer:
                         r["is_seed"] = True
-                    self.ring_buffer = self.oi_change_day_buffer
                     return
         except Exception as e:
             log.debug("DB check during seed: %s", e)
@@ -984,6 +1024,8 @@ class StockMojoScraper:
                 "call_total_oi_cr": call_total_oi_cr,
                 "put_total_oi_cr": put_total_oi_cr,
                 "total_oi_diff_cr": total_oi_diff_cr,
+                "future_ltp": float(self.live_graph_data.get("future_ltp", 0.0) or 0.0),
+                "latest_ts": self.live_graph_data.get("latest_ts") or time_ist,
                 "who_is_more_chg": who_is_more_chg,
                 "who_is_more_chg_side": who_is_more_chg_side,
                 "who_is_more_total": who_is_more_total,
@@ -1031,6 +1073,8 @@ class StockMojoScraper:
                 "call_total_oi_cr": None,
                 "put_total_oi_cr": None,
                 "total_oi_diff_cr": None,
+                "future_ltp": None,
+                "latest_ts": "WAITING FOR LIVE SYNC",
                 "who_is_more_chg": "WAITING FOR LIVE SYNC",
                 "who_is_more_chg_side": "WAITING",
                 "who_is_more_total": "WAITING FOR LIVE SYNC",
@@ -1158,6 +1202,8 @@ class StockMojoScraper:
             "call_total_oi_cr": call_total_oi_cr,
             "put_total_oi_cr": put_total_oi_cr,
             "total_oi_diff_cr": total_oi_diff_cr,
+            "future_ltp": float(latest_day.get("future_ltp") or latest_total.get("future_ltp") or 0.0),
+            "latest_ts": latest_day.get("time_ist") or latest_total.get("time_ist") or "15:39",
             "who_is_more_chg": who_is_more_chg,
             "who_is_more_chg_side": who_is_more_chg_side,
             "who_is_more_total": who_is_more_total,
@@ -1505,15 +1551,53 @@ class StockMojoScraper:
 
         return {"ok": True, "files_checked": len(found_files), "ingested_rows": total_ingested}
 
+    async def fetch_active_nifty_expiry_id(self) -> int:
+        """
+        Auto-detects active NIFTY weekly expiry ID from GET https://data.stockmojo.in/symbols.
+        Defaults to active_expiry_id (215) if unavailable or on connection failure.
+        """
+        try:
+            import httpx
+            url = "https://data.stockmojo.in/symbols"
+            headers = {
+                "accept": "application/json, text/plain, */*",
+                "origin": "https://stockmojo.in",
+                "referer": "https://stockmojo.in/",
+                "j": self.header_j,
+                "t": self.header_t,
+                "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+            }
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict) and (item.get("id") == 1 or str(item.get("symbol", "")).upper() == "NIFTY"):
+                                exp_list = item.get("expiries") or item.get("expiry_ids") or item.get("expiry")
+                                if exp_list and isinstance(exp_list, list) and len(exp_list) > 0:
+                                    active_id = int(exp_list[0])
+                                    self.active_expiry_id = active_id
+                                    self.cfg["STOCKMOJO_ACTIVE_EXPIRY_ID"] = active_id
+                                    self.pcr_payload["expiries"] = [active_id]
+                                    self.multi_strike_payload["expiry"] = active_id
+                                    self._save_config()
+                                    log.info("✔ Detected active NIFTY expiry ID from Stock Mojo: %d", active_id)
+                                    return active_id
+        except Exception as e:
+            log.debug("Auto-detect expiry ID check failed: %s", e)
+        return self.active_expiry_id
+
     async def poll_direct_stockmojo_api(self) -> Dict[str, Any]:
         """
-        Method 3: Direct Live OI API Polling (POST https://data.stockmojo.in/live/oi/pcr).
-        Uses user session headers (j and t) with 1-year valid JWT.
+        Endpoint 1: Full-Chain Call vs. Put Graphs (POST https://data.stockmojo.in/live/oi/pcr).
+        Exact Payload: {"symbol": 1, "dt": null, "expiries": [215]}
+        Uses user session headers (j and t).
         """
         url = self.pcr_url or self.cfg.get("STOCKMOJO_PCR_URL", "https://data.stockmojo.in/live/oi/pcr")
         j = self.header_j or self.cfg.get("STOCKMOJO_HEADER_J", "")
         t = self.header_t or self.cfg.get("STOCKMOJO_HEADER_T", "")
-        payload = self.payload if self.payload is not None else self.cfg.get("STOCKMOJO_PAYLOAD", {"symbol": "NIFTY", "index": "NIFTY"})
+        payload = self.pcr_payload or self.cfg.get("STOCKMOJO_PCR_PAYLOAD", {"symbol": 1, "dt": None, "expiries": [self.active_expiry_id]})
 
         headers = {
             "accept": "application/json, text/plain, */*",
@@ -1541,42 +1625,28 @@ class StockMojoScraper:
                     self.last_sync_status = "LIVE_API_CONNECTED (200 OK)"
                     self.has_live_sync = True
                     self.ingest_live_graph_data(data, source="DIRECT_API")
-
-                    raw_items = []
-                    if isinstance(data, list):
-                        raw_items = data
-                    elif isinstance(data, dict):
-                        for k in ("data", "series", "rows", "oi_change", "pcr_data", "items"):
-                            if k in data and isinstance(data[k], list):
-                                raw_items = data[k]
-                                break
-
-                    if raw_items:
-                        self.ingest_rows(raw_items)
-
                     return {"ok": True, "status": 200, "data": data, "timestamp": self.last_sync_time}
                 else:
                     self.last_sync_status = f"API_HTTP_{resp.status_code} (LOCAL_FALLBACK_ACTIVE)"
-                    log.debug("Stock Mojo API returned %d: %s; serving local fallback data", resp.status_code, resp.text[:100])
+                    log.debug("Stock Mojo /live/oi/pcr returned %d: %s", resp.status_code, resp.text[:100])
                     return {"ok": False, "status_code": resp.status_code, "detail": resp.text[:200], "status": self.last_sync_status}
         except Exception as e:
             now_ist = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
             self.last_sync_time = now_ist
-            self.last_sync_status = f"CONNECTION_FAILED (LOCAL_FALLBACK_ACTIVE): {str(e)[:40]}"
-            log.debug("Stock Mojo connection exception: %s", e)
+            self.last_sync_status = f"CONNECTION_FAILED: {str(e)[:40]}"
+            log.debug("Stock Mojo /live/oi/pcr connection exception: %s", e)
             return {"ok": False, "error": str(e), "status": self.last_sync_status}
 
     async def poll_multi_strike_api(self) -> Dict[str, Any]:
         """
-        Polls Stock Mojo direct multi-strike PE-CE OI difference endpoint:
-        POST https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff
+        Endpoint 2: Multi-Strike PE − CE OI Table (POST https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff).
+        Exact Payload: {"symbol": 1, "expiry": 215, "range": 10}
         Headers: j, t, origin: https://stockmojo.in, referer: https://stockmojo.in/
-        Payload: {"symbol": "NIFTY"}
         """
         url = self.multi_strike_url or self.cfg.get("STOCKMOJO_MULTI_STRIKE_URL", "https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff")
         j = self.header_j or self.cfg.get("STOCKMOJO_HEADER_J", "")
         t = self.header_t or self.cfg.get("STOCKMOJO_HEADER_T", "")
-        payload = self.payload if self.payload is not None else self.cfg.get("STOCKMOJO_PAYLOAD", {"symbol": "NIFTY"})
+        payload = self.multi_strike_payload or self.cfg.get("STOCKMOJO_MULTI_STRIKE_PAYLOAD", {"symbol": 1, "expiry": self.active_expiry_id, "range": 10})
 
         headers = {
             "accept": "application/json, text/plain, */*",
@@ -1612,25 +1682,323 @@ class StockMojoScraper:
                         "net_diff_lakhs": self.multi_strike_net_diff,
                         "net_diff_cr": round(self.multi_strike_net_diff / 100.0, 2),
                         "expanding": self.multi_strike_expanding,
-                        "data": data,
+                        "parsed": parsed_res,
                         "timestamp": self.multi_strike_last_sync,
                     }
                 else:
                     self.multi_strike_status = f"API_HTTP_{resp.status_code} (LOCAL_FALLBACK_ACTIVE)"
-                    log.debug("Stock Mojo multi-strike API returned %d: %s; serving local fallback data", resp.status_code, resp.text[:100])
+                    log.debug("Stock Mojo multi-strike API returned %d: %s", resp.status_code, resp.text[:100])
                     return {"ok": False, "status_code": resp.status_code, "detail": resp.text[:200], "status": self.multi_strike_status}
         except Exception as e:
-            self.multi_strike_status = f"CONNECTION_FAILED (LOCAL_FALLBACK_ACTIVE): {str(e)[:40]}"
+            self.multi_strike_status = f"CONNECTION_FAILED: {str(e)[:40]}"
             log.debug("Stock Mojo multi-strike API exception: %s", e)
             return {"ok": False, "error": str(e), "status": self.multi_strike_status}
 
+    def parse_stockmojo_pcr_array(self, data: List[Any]) -> Dict[str, Any]:
+        """
+        Parses exact JSON array from POST https://data.stockmojo.in/live/oi/pcr.
+        data[0]: [[expiries], ts, ts, {date: [base_green, base_red]}]
+        data[-1]: [latest_ts, tot_green_raw, tot_red_raw, future_ltp]
+        """
+        if not isinstance(data, list) or len(data) < 2:
+            return {}
+
+        header = data[0]
+        base_green = 0.0
+        base_red = 0.0
+        if isinstance(header, (list, tuple)) and len(header) >= 4 and isinstance(header[3], dict):
+            date_dict = header[3]
+            if date_dict:
+                first_key = list(date_dict.keys())[0]
+                bases = date_dict[first_key]
+                if isinstance(bases, (list, tuple)) and len(bases) >= 2:
+                    base_green = float(bases[0])
+                    base_red = float(bases[1])
+
+        latest_row = data[-1]
+        if not isinstance(latest_row, (list, tuple)) or len(latest_row) < 3:
+            return {}
+
+        latest_ts = str(latest_row[0])
+        tot_green_raw = float(latest_row[1])
+        tot_red_raw = float(latest_row[2])
+        future_ltp = float(latest_row[3]) if len(latest_row) >= 4 else 0.0
+
+        # Total OI in Crores
+        total_oi_green_cr = round(tot_green_raw / 1e7, 2)
+        total_oi_red_cr = round(tot_red_raw / 1e7, 2)
+
+        # OI Change in Crores (subtract baseline)
+        oi_chg_green_cr = round((tot_green_raw - base_green) / 1e7, 2) if base_green > 0 else 0.0
+        oi_chg_red_cr = round((tot_red_raw - base_red) / 1e7, 2) if base_red > 0 else 0.0
+
+        # Apply configurable line mapping
+        if self.line_mapping == "STANDARD":
+            # Green = Call (CE), Red = Put (PE)
+            call_oi_chg_cr = oi_chg_green_cr
+            put_oi_chg_cr = oi_chg_red_cr
+            call_total_oi_cr = total_oi_green_cr
+            put_total_oi_cr = total_oi_red_cr
+        else:
+            # Inverted: Green = Put (PE), Red = Call (CE)
+            call_oi_chg_cr = oi_chg_red_cr
+            put_oi_chg_cr = oi_chg_green_cr
+            call_total_oi_cr = total_oi_red_cr
+            put_total_oi_cr = total_oi_green_cr
+
+        res = {
+            "time_ist": latest_ts,
+            "latest_ts": latest_ts,
+            "raw_red_oi_chg_cr": oi_chg_red_cr,
+            "raw_green_oi_chg_cr": oi_chg_green_cr,
+            "raw_red_total_oi_cr": total_oi_red_cr,
+            "raw_green_total_oi_cr": total_oi_green_cr,
+            "call_oi_chg_cr": call_oi_chg_cr,
+            "put_oi_chg_cr": put_oi_chg_cr,
+            "call_total_oi_cr": call_total_oi_cr,
+            "put_total_oi_cr": put_total_oi_cr,
+            "oi_chg_diff_cr": round(put_oi_chg_cr - call_oi_chg_cr, 2),
+            "total_oi_diff_cr": round(put_total_oi_cr - call_total_oi_cr, 2),
+            "future_ltp": future_ltp,
+            "tot_green_raw": tot_green_raw,
+            "tot_red_raw": tot_red_raw,
+            "base_green": base_green,
+            "base_red": base_red,
+            "line_mapping": self.line_mapping,
+        }
+        return res
+
     def parse_multi_strike_data(self, data: Any) -> Dict[str, Any]:
         """
-        Parses multi-strike PE-CE OI difference array from Stock Mojo:
-        Computes Net Multi-Strike Bias:
-          BULLISH_SYNERGY 🟢: Multi-strike PE-CE difference is positive and expanding (Put writers defending lower strikes / aggressive short covering).
-          BEARISH_SYNERGY 🔴: Multi-strike PE-CE difference is negative and expanding (Call writers heavy across strikes / short build-up).
+        Parses multi-strike PE − CE OI difference payload from https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff
+        Exact Parser for JSON: { "c": ..., "t": [...], "co": [...], "po": [...], "cv": [...], "pv": [...], "f": [...], "fo": [...] }
         """
+        if isinstance(data, dict):
+            # Store raw multi-strike payload for dynamic timeframe and mode calculations
+            if "t" in data and "co" in data and "po" in data:
+                self._raw_multi_strike_data = data
+                return self._parse_exact_multi_strike_json(data)
+            elif "multi_strike_data" in data and isinstance(data["multi_strike_data"], dict):
+                self._raw_multi_strike_data = data["multi_strike_data"]
+                return self._parse_exact_multi_strike_json(data["multi_strike_data"])
+
+        # Fallback to legacy structure if present
+        return self._parse_legacy_multi_strike_data(data)
+
+    def _parse_exact_multi_strike_json(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        c = data.get("c") or []
+        t = data.get("t") or []
+        co = data.get("co") or []
+        po = data.get("po") or []
+        f = data.get("f") or []
+        fo = data.get("fo") or []
+
+        if len(t) < 2 or len(co) < 2 or len(po) < 2:
+            return {"ok": False, "error": "Insufficient multi-strike rows"}
+
+        atm_strike = 24400
+        strike_range = [23900, 24900]
+        if isinstance(c, (list, tuple)) and len(c) >= 4:
+            if isinstance(c[2], (list, tuple)) and len(c[2]) >= 1:
+                try:
+                    atm_strike = int(c[2][0])
+                except Exception:
+                    pass
+            if isinstance(c[3], (list, tuple)) and len(c[3]) >= 2:
+                try:
+                    strike_range = [int(c[3][0]), int(c[3][1])]
+                except Exception:
+                    pass
+
+        # Index 0: Previous day baseline
+        t0 = str(t[0])
+        co0 = float(co[0])
+        po0 = float(po[0])
+        fo0 = float(fo[0]) if len(fo) > 0 else 0.0
+
+        n = len(t)
+        # Compute 1m chronological rows for row-to-row delta momentum
+        pe_minus_ce_day_arr: List[float] = []
+        for i in range(1, n):
+            poi = float(po[i])
+            coi = float(co[i])
+            p_chg = poi - po0
+            c_chg = coi - co0
+            pe_minus_ce_day_arr.append(p_chg - c_chg)
+
+        latest_pe_ce_day = pe_minus_ce_day_arr[-1] if pe_minus_ce_day_arr else 0.0
+        m_len = len(pe_minus_ce_day_arr)
+
+        delta_pe_ce_3m = round(latest_pe_ce_day - pe_minus_ce_day_arr[-4], 2) if m_len >= 4 else (round(latest_pe_ce_day - pe_minus_ce_day_arr[0], 2) if m_len > 1 else 0.0)
+        delta_pe_ce_5m = round(latest_pe_ce_day - pe_minus_ce_day_arr[-6], 2) if m_len >= 6 else delta_pe_ce_3m
+        delta_pe_ce_15m = round(latest_pe_ce_day - pe_minus_ce_day_arr[-16], 2) if m_len >= 16 else delta_pe_ce_5m
+
+        significant_put_surge = (
+            (latest_pe_ce_day > 0 and delta_pe_ce_5m >= 0) or
+            (delta_pe_ce_5m >= 500000) or
+            (delta_pe_ce_15m >= 1500000)
+        )
+        significant_call_surge = (
+            (latest_pe_ce_day < 0 and delta_pe_ce_5m <= 0) or
+            (delta_pe_ce_5m <= -500000) or
+            (delta_pe_ce_15m <= -1500000)
+        )
+
+        if significant_put_surge or latest_pe_ce_day > 0:
+            bias = "BULLISH_SYNERGY"
+        elif significant_call_surge or latest_pe_ce_day < 0:
+            bias = "BEARISH_SYNERGY"
+        else:
+            bias = "MIXED"
+
+        self.multi_strike_bias = bias
+        self.multi_strike_net_diff = round(latest_pe_ce_day / 1e5, 2)  # in Lakhs
+        self.multi_strike_expanding = (delta_pe_ce_5m >= 0) if latest_pe_ce_day >= 0 else (delta_pe_ce_5m <= 0)
+        self.multi_strike_connected = True
+        self.has_live_sync = True
+        now_ist = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+        self.multi_strike_last_sync = now_ist
+        self.multi_strike_status = "LIVE_MULTI_STRIKE_CONNECTED (200 OK)"
+
+        self.row_momentum = {
+            "delta_pe_ce_3m": delta_pe_ce_3m,
+            "delta_pe_ce_5m": delta_pe_ce_5m,
+            "delta_pe_ce_15m": delta_pe_ce_15m,
+            "delta_pe_ce_3m_lakhs": round(delta_pe_ce_3m / 1e5, 2),
+            "delta_pe_ce_5m_lakhs": round(delta_pe_ce_5m / 1e5, 2),
+            "delta_pe_ce_15m_lakhs": round(delta_pe_ce_15m / 1e5, 2),
+            "significant_put_surge": significant_put_surge,
+            "significant_call_surge": significant_call_surge,
+            "latest_pe_ce_day_raw": latest_pe_ce_day,
+            "latest_pe_ce_day_lakhs": round(latest_pe_ce_day / 1e5, 2),
+            "latest_pe_ce_day_cr": round(latest_pe_ce_day / 1e7, 2),
+        }
+
+        # Populate internal ring buffers with live computed rows (newest first)
+        new_day_rows = []
+        new_total_rows = []
+        for i in range(n - 1, 0, -1):
+            prev_i = max(0, i - 1)
+            poi = float(po[i])
+            coi = float(co[i])
+            p_day = poi - po0
+            c_day = coi - co0
+            p_int = poi - float(po[prev_i])
+            c_int = coi - float(co[prev_i])
+            pe_ce_d = p_day - c_day
+            pe_ce_int = p_int - c_int
+            pe_ce_tot = poi - coi
+            pcr = round(poi / coi, 2) if coi > 0 else 1.0
+            fltp = float(f[i]) if i < len(f) else 0.0
+            foi_day = float(fo[i]) - fo0 if i < len(fo) and len(fo) > 0 else 0.0
+            foi_tot = float(fo[i]) if i < len(fo) else 0.0
+            ts_item = str(t[i])
+            t_disp = ts_item.split(" ")[1] if " " in ts_item else ts_item
+
+            d_row = {
+                "time_ist": t_disp,
+                "Time": t_disp,
+                "put_oi_change_day_raw": str(round(p_day, 0)),
+                "put_oi_change_day": round(p_day / 1e5, 2),
+                "Put OI Change (Day)": round(p_day / 1e5, 2),
+                "put_oi_change_interval_raw": str(round(p_int, 0)),
+                "put_oi_change_interval": round(p_int / 1e5, 2),
+                "Put OI Change": round(p_int / 1e5, 2),
+                "call_oi_change_day_raw": str(round(c_day, 0)),
+                "call_oi_change_day": round(c_day / 1e5, 2),
+                "Call OI Change (Day)": round(c_day / 1e5, 2),
+                "call_oi_change_interval_raw": str(round(c_int, 0)),
+                "call_oi_change_interval": round(c_int / 1e5, 2),
+                "Call OI Change": round(c_int / 1e5, 2),
+                "pe_minus_ce_day_raw": str(round(pe_ce_d, 0)),
+                "pe_minus_ce_day": round(pe_ce_d / 1e5, 2),
+                "PE-CE OI Change (Day)": round(pe_ce_d / 1e5, 2),
+                "pe_minus_ce_interval_raw": str(round(pe_ce_int, 0)),
+                "pe_minus_ce_interval": round(pe_ce_int / 1e5, 2),
+                "PE-CE OI Change": round(pe_ce_int / 1e5, 2),
+                "pcr_total": pcr,
+                "PCR Total": pcr,
+                "future_ltp": fltp,
+                "Future LTP": fltp,
+                "future_oi_change_day_raw": str(round(foi_day, 0)),
+                "future_oi_change_day": round(foi_day / 1e5, 2),
+                "Future OI Change (Day)": round(foi_day / 1e5, 2),
+                "writer_signal": "BULLISH" if pe_ce_d > 0 else "BEARISH",
+                "created_at": now_ist,
+                "is_seed": False,
+            }
+            new_day_rows.append(d_row)
+
+            t_row = {
+                "time_ist": t_disp,
+                "Time": t_disp,
+                "put_oi_total_raw": str(round(poi, 0)),
+                "put_oi_total": round(poi / 1e5, 2),
+                "Put OI Total": round(poi / 1e5, 2),
+                "put_oi_change_raw": str(round(p_int, 0)),
+                "put_oi_change": round(p_int / 1e5, 2),
+                "Put OI Change": round(p_int / 1e5, 2),
+                "call_oi_total_raw": str(round(coi, 0)),
+                "call_oi_total": round(coi / 1e5, 2),
+                "Call OI Total": round(coi / 1e5, 2),
+                "call_oi_change_raw": str(round(c_int, 0)),
+                "call_oi_change": round(c_int / 1e5, 2),
+                "Call OI Change": round(c_int / 1e5, 2),
+                "pe_ce_oi_total_raw": str(round(pe_ce_tot, 0)),
+                "pe_ce_oi_total": round(pe_ce_tot / 1e5, 2),
+                "PE-CE OI Total": round(pe_ce_tot / 1e5, 2),
+                "pe_ce_oi_change_raw": str(round(pe_ce_int, 0)),
+                "pe_ce_oi_change": round(pe_ce_int / 1e5, 2),
+                "PE-CE OI Change": round(pe_ce_int / 1e5, 2),
+                "pcr_total": pcr,
+                "PCR Total": pcr,
+                "future_ltp": fltp,
+                "Future LTP": fltp,
+                "future_total_oi_raw": str(round(foi_tot, 0)),
+                "future_total_oi": round(foi_tot / 1e5, 2),
+                "Future Total OI": round(foi_tot / 1e5, 2),
+                "created_at": now_ist,
+                "is_seed": False,
+            }
+            new_total_rows.append(t_row)
+
+        if new_day_rows:
+            self.oi_change_day_buffer = new_day_rows[:180]
+            self.ring_buffer = self.oi_change_day_buffer
+        if new_total_rows:
+            self.total_oi_buffer = new_total_rows[:180]
+
+        snapshot = {
+            "time_ist": t[-1].split(" ")[1] if " " in str(t[-1]) else str(t[-1]),
+            "net_diff_lakhs": round(latest_pe_ce_day / 1e5, 2),
+            "net_diff_cr": round(latest_pe_ce_day / 1e7, 2),
+            "slope_lakhs": round(delta_pe_ce_3m / 1e5, 2),
+            "expanding": self.multi_strike_expanding,
+            "bias": bias,
+            "strikes_count": 21,
+            "atm_strike": atm_strike,
+            "strike_range": strike_range,
+        }
+        self.multi_strike_buffer.insert(0, snapshot)
+        self.multi_strike_buffer = self.multi_strike_buffer[:180]
+
+        log.info(
+            "✔ Multi-strike PE-CE parsed: Net Diff=%s Cr (+%s L), Bias=%s, 3m Δ=%s L, 5m Δ=%s L (ATM: %d, Range: %s)",
+            snapshot["net_diff_cr"], snapshot["net_diff_lakhs"], bias,
+            self.row_momentum["delta_pe_ce_3m_lakhs"], self.row_momentum["delta_pe_ce_5m_lakhs"],
+            atm_strike, strike_range
+        )
+        return {
+            "ok": True,
+            "bias": bias,
+            "snapshot": snapshot,
+            "row_momentum": self.row_momentum,
+            "atm_strike": atm_strike,
+            "strike_range": strike_range,
+        }
+
+    def _parse_legacy_multi_strike_data(self, data: Any) -> Dict[str, Any]:
+        """Legacy parser for list of strike difference dictionaries."""
         raw_items: List[Any] = []
         if isinstance(data, list):
             raw_items = data
@@ -1650,13 +2018,9 @@ class StockMojoScraper:
                 continue
             strike = item.get("strike") or item.get("Strike") or item.get("strike_price")
 
-            # Check difference representations:
-            # Note: endpoint is ce-pe-oi-diff.
-            # If item contains pe_ce_diff or pe_minus_ce:
             if "pe_ce_diff" in item or "pe_minus_ce" in item or "pe_ce" in item:
                 val = parse_indian_unit_to_lakhs(item.get("pe_ce_diff") or item.get("pe_minus_ce") or item.get("pe_ce"))
             elif "ce_pe_diff" in item or "ce_minus_pe" in item or "ce_pe" in item:
-                # ce_pe is CE - PE; PE - CE is -val
                 val = -parse_indian_unit_to_lakhs(item.get("ce_pe_diff") or item.get("ce_minus_pe") or item.get("ce_pe"))
             elif "put_oi" in item and "call_oi" in item:
                 val = parse_indian_unit_to_lakhs(item.get("put_oi")) - parse_indian_unit_to_lakhs(item.get("call_oi"))
@@ -1678,10 +2042,6 @@ class StockMojoScraper:
         net_pe_ce_diff = round(net_pe_ce_diff, 2)
         prev_diff = self.multi_strike_buffer[0]["net_diff_lakhs"] if self.multi_strike_buffer else 0.0
         slope = round(net_pe_ce_diff - prev_diff, 2)
-
-        # Expanding calculation:
-        # BULLISH_SYNERGY: PE-CE difference is positive and expanding (expanding >= 0 or recovering strongly)
-        # BEARISH_SYNERGY: PE-CE difference is negative and expanding (expanding <= 0 or deteriorating strongly)
         is_expanding = (slope >= 0) if net_pe_ce_diff >= 0 else (slope <= 0)
 
         if net_pe_ce_diff > 0 and (is_expanding or net_pe_ce_diff >= 10.0):
@@ -1713,6 +2073,177 @@ class StockMojoScraper:
         self.multi_strike_buffer = self.multi_strike_buffer[:180]
 
         return snapshot
+
+    def get_multi_strike_table(self, timeframe: str = "1m", mode: str = "all", limit: int = 120) -> Dict[str, Any]:
+        """
+        Computes exact Stock Mojo PE − CE Table for selected timeframe (1m, 3m, 5m, 15m) and mode (day_oi, total_oi, all).
+        Columns:
+          Time | Put OI | Call OI | PE - CE OI | PE - CE OI Bar | PCR Total | Future LTP / OI
+        With Indian units (Cr, L, K), progress bars, and surge badges.
+        """
+        data = getattr(self, "_raw_multi_strike_data", None)
+        if not data or not isinstance(data, dict):
+            return {
+                "ok": True,
+                "atm_strike": 24400,
+                "strike_range": [23900, 24900],
+                "timeframe": timeframe,
+                "mode": mode,
+                "rows": [],
+                "count": 0,
+                "message": "Waiting for live multi-strike data sync"
+            }
+
+        c = data.get("c") or []
+        t = data.get("t") or []
+        co = data.get("co") or []
+        po = data.get("po") or []
+        f = data.get("f") or []
+        fo = data.get("fo") or []
+
+        if len(t) < 2 or len(co) < 2 or len(po) < 2:
+            return {"ok": True, "rows": [], "count": 0}
+
+        atm_strike = 24400
+        strike_range = [23900, 24900]
+        if isinstance(c, (list, tuple)) and len(c) >= 4:
+            if isinstance(c[2], (list, tuple)) and len(c[2]) >= 1:
+                try:
+                    atm_strike = int(c[2][0])
+                except Exception:
+                    pass
+            if isinstance(c[3], (list, tuple)) and len(c[3]) >= 2:
+                try:
+                    strike_range = [int(c[3][0]), int(c[3][1])]
+                except Exception:
+                    pass
+
+        step_map = {"1m": 1, "3m": 3, "5m": 5, "15m": 15}
+        step = step_map.get(str(timeframe).lower(), 1)
+
+        po0 = float(po[0])
+        co0 = float(co[0])
+        fo0 = float(fo[0]) if len(fo) > 0 else 0.0
+
+        n = len(t)
+        rows: List[Dict[str, Any]] = []
+
+        # Calculate max values for bar scaling
+        max_abs_day = 1.0
+        max_abs_int = 1.0
+        temp_day_diffs: List[float] = []
+        temp_int_diffs: List[float] = []
+
+        for idx in range(1, n, step):
+            p_day = float(po[idx]) - po0
+            c_day = float(co[idx]) - co0
+            d_day = p_day - c_day
+            temp_day_diffs.append(abs(d_day))
+            prev_i = max(0, idx - step)
+            p_int = float(po[idx]) - float(po[prev_i])
+            c_int = float(co[idx]) - float(co[prev_i])
+            d_int = p_int - c_int
+            temp_int_diffs.append(abs(d_int))
+
+        if temp_day_diffs:
+            max_abs_day = max(temp_day_diffs) or 1.0
+        if temp_int_diffs:
+            max_abs_int = max(temp_int_diffs) or 1.0
+
+        # Build rows newest first (from n - 1 down to 1 in steps of step)
+        for i in range(n - 1, 0, -step):
+            prev_idx = max(0, i - step)
+            poi = float(po[i])
+            coi = float(co[i])
+
+            put_chg_day = poi - po0
+            call_chg_day = coi - co0
+            pe_ce_day = put_chg_day - call_chg_day
+            pe_ce_total = poi - coi
+
+            put_int = poi - float(po[prev_idx])
+            call_int = coi - float(co[prev_idx])
+            pe_ce_int = put_int - call_int
+
+            pcr = round(poi / coi, 2) if coi > 0 else 1.0
+            fut_ltp = float(f[i]) if i < len(f) else 0.0
+            fut_chg_day = float(fo[i]) - fo0 if i < len(fo) and len(fo) > 0 else 0.0
+            fut_tot_oi = float(fo[i]) if i < len(fo) else 0.0
+
+            ts_str = str(t[i])
+            time_display = ts_str.split(" ")[1] if " " in ts_str else ts_str
+
+            p3 = max(0, i - 3)
+            p15 = max(0, i - 15)
+            d3 = (poi - po0 - (coi - co0)) - ((float(po[p3]) - po0) - (float(co[p3]) - co0)) if p3 > 0 else 0.0
+            d15 = (poi - po0 - (coi - co0)) - ((float(po[p15]) - po0) - (float(co[p15]) - co0)) if p15 > 0 else 0.0
+
+            surge_badge = ""
+            if d3 >= 500000 or d15 >= 1500000:
+                surge_badge = "🚀 PUT SURGE"
+            elif d3 <= -500000 or d15 <= -1500000:
+                surge_badge = "⚠️ CALL SURGE"
+
+            bar_pct_day = min(100.0, max(6.0, round((abs(pe_ce_day) / max_abs_day) * 100, 1)))
+            bar_pct_int = min(100.0, max(6.0, round((abs(pe_ce_int) / max_abs_int) * 100, 1)))
+
+            row_item = {
+                "time_ist": time_display,
+                "timestamp": ts_str,
+                # Put OI
+                "put_oi_total": poi,
+                "put_oi_total_fmt": format_indian_qty(poi, signed=False),
+                "put_oi_chg_day": put_chg_day,
+                "put_oi_chg_day_fmt": format_indian_qty(put_chg_day, signed=True),
+                "put_oi_int_chg": put_int,
+                "put_oi_int_chg_fmt": format_indian_qty(put_int, signed=True),
+                # Call OI
+                "call_oi_total": coi,
+                "call_oi_total_fmt": format_indian_qty(coi, signed=False),
+                "call_oi_chg_day": call_chg_day,
+                "call_oi_chg_day_fmt": format_indian_qty(call_chg_day, signed=True),
+                "call_oi_int_chg": call_int,
+                "call_oi_int_chg_fmt": format_indian_qty(call_int, signed=True),
+                # PE - CE
+                "pe_minus_ce_day": pe_ce_day,
+                "pe_minus_ce_day_fmt": format_indian_qty(pe_ce_day, signed=True),
+                "pe_minus_ce_day_cr": round(pe_ce_day / 1e7, 2),
+                "pe_minus_ce_day_lakhs": round(pe_ce_day / 1e5, 2),
+                "pe_minus_ce_total": pe_ce_total,
+                "pe_minus_ce_total_fmt": format_indian_qty(pe_ce_total, signed=True),
+                "pe_minus_ce_total_cr": round(pe_ce_total / 1e7, 2),
+                "pe_minus_ce_int_chg": pe_ce_int,
+                "pe_minus_ce_int_chg_fmt": format_indian_qty(pe_ce_int, signed=True),
+                # Bars
+                "bar_pct_day": bar_pct_day,
+                "bar_color_day": "var(--emerald)" if pe_ce_day >= 0 else "var(--crimson)",
+                "bar_pct_int": bar_pct_int,
+                "bar_color_int": "var(--emerald)" if pe_ce_int >= 0 else "var(--crimson)",
+                # Meta
+                "pcr_total": pcr,
+                "future_ltp": fut_ltp,
+                "future_oi_chg_day": fut_chg_day,
+                "future_oi_chg_day_fmt": format_indian_qty(fut_chg_day, signed=True),
+                "future_total_oi": fut_tot_oi,
+                "future_total_oi_fmt": format_indian_qty(fut_tot_oi, signed=False),
+                "surge_badge": surge_badge,
+                "is_bullish_row": pe_ce_day >= 0,
+            }
+            rows.append(row_item)
+            if len(rows) >= limit:
+                break
+
+        return {
+            "ok": True,
+            "atm_strike": atm_strike,
+            "strike_range": strike_range,
+            "timeframe": timeframe,
+            "step": step,
+            "mode": mode,
+            "count": len(rows),
+            "rows": rows,
+            "row_momentum": getattr(self, "row_momentum", {}),
+        }
 
     def inject_multi_strike_snapshot(
         self,
@@ -1825,7 +2356,10 @@ class StockMojoScraper:
     def ingest_live_graph_data(self, data: Any, source: str = "BROWSER_RELAY") -> Dict[str, Any]:
         """
         Extracts the exact latest right-most data point ([-1]) from live Stock Mojo time-series graph array.
-        Handles direct array of points, highcharts/tradingview series objects, or summary points.
+        Handles:
+          1. Exact Stock Mojo /live/oi/pcr array: [[expiries, ts, ts, {date: [base_g, base_r]}], ..., [ts, g_tot, r_tot, fut_ltp]]
+          2. Multi-strike payload: { "c": ..., "t": [...], "co": [...], "po": [...] }
+          3. Direct array of points, highcharts/tradingview series objects, or summary points.
         Extracts:
           - oi_change_red_cr & oi_change_green_cr (e.g. 3.02 Cr vs 2.13 Cr)
           - total_oi_red_cr & total_oi_green_cr (e.g. 18.33 Cr vs 16.26 Cr)
@@ -1835,8 +2369,34 @@ class StockMojoScraper:
         if not data:
             return {"ok": False, "error": "Empty data passed to ingest_live_graph_data"}
 
-        if isinstance(data, dict) and "response_data" in data and data["response_data"]:
-            data = data["response_data"]
+        if isinstance(data, dict):
+            # Check if multi-strike payload is inside
+            if "multi_strike_data" in data and isinstance(data["multi_strike_data"], dict):
+                self.parse_multi_strike_data(data["multi_strike_data"])
+            elif "t" in data and "co" in data and "po" in data:
+                self.parse_multi_strike_data(data)
+
+            if "response_data" in data and data["response_data"]:
+                data = data["response_data"]
+
+        # Exact Stock Mojo /live/oi/pcr array structure
+        if isinstance(data, list) and len(data) >= 2 and isinstance(data[0], (list, tuple)) and isinstance(data[-1], (list, tuple)):
+            parsed_pcr = self.parse_stockmojo_pcr_array(data)
+            if parsed_pcr:
+                self.live_graph_data = dict(parsed_pcr)
+                self.live_graph_data["source"] = source
+                self.live_graph_data["timestamp"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+                self.live_graph_history.append(dict(self.live_graph_data))
+                self.live_graph_history = self.live_graph_history[-180:]
+                self.has_live_sync = True
+                self.last_sync_time = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+                self.last_sync_status = f"LIVE_GRAPH_INGESTED ({source})"
+                return {
+                    "ok": True,
+                    "live_graph_data": self.live_graph_data,
+                    "crore_spread": self.get_crore_spread_metrics(),
+                    "synergy": self.evaluate_synergy_status()
+                }
 
         latest_point: Dict[str, Any] = {}
         red_chg_raw: Any = None

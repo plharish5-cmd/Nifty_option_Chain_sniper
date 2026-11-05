@@ -95,11 +95,27 @@
   "STOCKMOJO_PCR_URL": "https://data.stockmojo.in/live/oi/pcr",
   "STOCKMOJO_MULTI_STRIKE_URL": "https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff",
   "STOCKMOJO_LINE_MAPPING": "STANDARD",
+  "STOCKMOJO_ACTIVE_EXPIRY_ID": 215,
+  "STOCKMOJO_PCR_PAYLOAD": {
+    "symbol": 1,
+    "dt": null,
+    "expiries": [
+      215
+    ]
+  },
+  "STOCKMOJO_MULTI_STRIKE_PAYLOAD": {
+    "symbol": 1,
+    "expiry": 215,
+    "range": 10
+  },
   "STOCKMOJO_HEADER_J": "new_jwt_captured",
   "STOCKMOJO_HEADER_T": "new_t_captured",
   "STOCKMOJO_PAYLOAD": {
-    "symbol": "NIFTY",
-    "timeframe": "1m"
+    "symbol": 1,
+    "dt": null,
+    "expiries": [
+      215
+    ]
   },
   "POLL_INTERVAL_SECONDS": 60,
   "STOCKMOJO_POLL_SECONDS": 60,

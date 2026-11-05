@@ -655,6 +655,102 @@ def test_stockmojo_and_port8600_confluence_integration():
     print("✔ Test 10 Passed: Port 8600 Removal, Institutional OI Ingestion & Generic Nomenclature verified 100%.")
 
 
+def test_11_stockmojo_dual_endpoint_parsers():
+    """
+    Verifies Stock Mojo Dual Endpoints and Mathematical Parsers:
+      1. Endpoint 1 (/live/oi/pcr):
+         Extracts baseline from data[0][3] and computes exact 4 Crore values:
+         At 10:55: 3.03 Cr Put Chg, 2.25 Cr Call Chg, 18.33 Cr Put Tot, 16.38 Cr Call Tot.
+         At 10:56: 3.04 Cr Put Chg, 2.26 Cr Call Chg, 18.35 Cr Put Tot, 16.39 Cr Call Tot.
+         At 11:01: 2.97 Cr Put Chg, 2.28 Cr Call Chg, 18.28 Cr Put Tot, 16.41 Cr Call Tot (Fut: 24365.9).
+      2. Endpoint 2 (/live/multi-strike/ce-pe-oi-diff):
+         Extracts baseline from index 0 and computes exact row values:
+         At 11:06: Put OI Chg (Day) = +433.25 L (+4.33 Cr), Call OI Chg (Day) = +93.23 L,
+         PE - CE OI Chg (Day) = +340.02 L (+3.40 Cr), PCR = 0.61.
+      3. Row-to-Row Surge Detection & Strategy Filter Gate.
+    """
+    from analyst.stockmojo_scraper import StockMojoScraper
+
+    test_db = ROOT / "data/terminal8510/test_dual_endpoints.sqlite3"
+    test_db.parent.mkdir(parents=True, exist_ok=True)
+    if test_db.exists():
+        test_db.unlink()
+
+    scraper = StockMojoScraper(db_path=test_db)
+    scraper.set_line_mapping("STANDARD")
+
+    # 1. Test Endpoint 1 (/live/oi/pcr) array parser
+    base_dict = {"2026-11-05": [141311495, 153086050]}
+    header = [[215], "2026-11-05 11:01:00", "2026-11-05 11:01:00", base_dict]
+    row_1055 = ["2026-11-05 10:55:00", 163806240, 183344070, 24360.0]
+    row_1056 = ["2026-11-05 10:56:00", 163934095, 183517360, 24362.5]
+    row_1101 = ["2026-11-05 11:01:00", 164106280, 182780325, 24365.9]
+
+    # Ingest 10:55
+    res_1055 = scraper.ingest_live_graph_data([header, row_1055])
+    lg_1055 = res_1055["live_graph_data"]
+    assert lg_1055["call_oi_chg_cr"] == 2.25, f"Expected 2.25 Cr Call Chg at 10:55, got {lg_1055['call_oi_chg_cr']}"
+    assert lg_1055["put_oi_chg_cr"] == 3.03, f"Expected 3.03 Cr Put Chg at 10:55, got {lg_1055['put_oi_chg_cr']}"
+    assert lg_1055["call_total_oi_cr"] == 16.38, f"Expected 16.38 Cr Call Tot at 10:55, got {lg_1055['call_total_oi_cr']}"
+    assert lg_1055["put_total_oi_cr"] == 18.33, f"Expected 18.33 Cr Put Tot at 10:55, got {lg_1055['put_total_oi_cr']}"
+
+    # Ingest 10:56
+    res_1056 = scraper.ingest_live_graph_data([header, row_1055, row_1056])
+    lg_1056 = res_1056["live_graph_data"]
+    assert lg_1056["call_oi_chg_cr"] == 2.26, f"Expected 2.26 Cr Call Chg at 10:56, got {lg_1056['call_oi_chg_cr']}"
+    assert lg_1056["put_oi_chg_cr"] == 3.04, f"Expected 3.04 Cr Put Chg at 10:56, got {lg_1056['put_oi_chg_cr']}"
+    assert lg_1056["call_total_oi_cr"] == 16.39, f"Expected 16.39 Cr Call Tot at 10:56, got {lg_1056['call_total_oi_cr']}"
+    assert lg_1056["put_total_oi_cr"] == 18.35, f"Expected 18.35 Cr Put Tot at 10:56, got {lg_1056['put_total_oi_cr']}"
+
+    # Ingest 11:01
+    res_1101 = scraper.ingest_live_graph_data([header, row_1055, row_1056, row_1101])
+    lg_1101 = res_1101["live_graph_data"]
+    assert lg_1101["call_oi_chg_cr"] == 2.28, f"Expected 2.28 Cr Call Chg at 11:01, got {lg_1101['call_oi_chg_cr']}"
+    assert lg_1101["put_oi_chg_cr"] == 2.97, f"Expected 2.97 Cr Put Chg at 11:01, got {lg_1101['put_oi_chg_cr']}"
+    assert lg_1101["call_total_oi_cr"] == 16.41, f"Expected 16.41 Cr Call Tot at 11:01, got {lg_1101['call_total_oi_cr']}"
+    assert lg_1101["put_total_oi_cr"] == 18.28, f"Expected 18.28 Cr Put Tot at 11:01, got {lg_1101['put_total_oi_cr']}"
+    assert lg_1101["future_ltp"] == 24365.9, f"Expected 24365.9 Fut LTP at 11:01, got {lg_1101['future_ltp']}"
+
+    # 2. Test Endpoint 2 (/live/multi-strike/ce-pe-oi-diff) table parser at 11:06:00
+    ms_payload = {
+        "c": [[215, 209, 10], ["2026-11-04 15:40:00", "2026-11-05 11:06:00"], [24400, 40000, 4], [23900, 24900]],
+        "t": ["2026-11-04 15:40:00", "2026-11-05 11:03:00", "2026-11-05 11:04:00", "2026-11-05 11:05:00", "2026-11-05 11:06:00"],
+        "co": [80484040, 89200000, 89400000, 89599770, 89807185],
+        "po": [11519235, 54500000, 54650000, 54789800, 54844335],
+        "f": [24400.0, 24410.0, 24415.0, 24418.0, 24420.0],
+        "fo": [13481715, 13200000, 13150000, 13100000, 13072410]
+    }
+    parsed_ms = scraper.parse_multi_strike_data(ms_payload)
+    assert parsed_ms["ok"] is True
+    assert parsed_ms["bias"] == "BULLISH_SYNERGY"
+
+    tbl = scraper.get_multi_strike_table(timeframe="1m", mode="day_oi")
+    assert tbl["ok"] is True
+    assert len(tbl["rows"]) == 4
+
+    row_latest = tbl["rows"][0]
+    assert row_latest["time_ist"] == "11:06:00"
+    assert row_latest["put_oi_chg_day"] == 43325100, f"Expected 43325100, got {row_latest['put_oi_chg_day']}"
+    assert row_latest["call_oi_chg_day"] == 9323145, f"Expected 9323145, got {row_latest['call_oi_chg_day']}"
+    assert row_latest["pe_minus_ce_day"] == 34001955, f"Expected 34001955, got {row_latest['pe_minus_ce_day']}"
+    assert row_latest["pe_minus_ce_day_lakhs"] == 340.02, f"Expected 340.02 L, got {row_latest['pe_minus_ce_day_lakhs']}"
+    assert row_latest["pcr_total"] == 0.61, f"Expected 0.61, got {row_latest['pcr_total']}"
+    assert row_latest["put_oi_chg_day_fmt"] == "+4.33 Cr"
+    assert row_latest["call_oi_chg_day_fmt"] == "+93.23 L"
+    assert row_latest["pe_minus_ce_day_fmt"] == "+3.40 Cr"
+    assert row_latest["future_ltp"] == 24420.0
+
+    # 3. Test Synergy Status Gate
+    syn = scraper.evaluate_synergy_status()
+    assert syn["synergy_status"] == "BULLISH_SYNERGY"
+    assert "STAGE2_8EMA_LONG" in syn["allowed_actions"]
+    assert "STAGE3_8EMA_SHORT" in syn["blocked_actions"]
+
+    if test_db.exists():
+        test_db.unlink()
+    print("✔ Test 11 Passed: Stock Mojo Dual Endpoints (/live/oi/pcr + /live/multi-strike/ce-pe-oi-diff) & Baseline Math verified 100%.")
+
+
 def main():
     print("Running Port 8510 Super Trail v1.1 & Multi-Strategy Strict MA Stack Test Suite...")
     test_trailing_sl_step_progression()
@@ -667,7 +763,8 @@ def main():
     test_strict_ma_stack_blocking()
     test_backtest_timestamp_logging_and_homework_reconciliation()
     test_stockmojo_and_port8600_confluence_integration()
-    print("\n🎉 ALL 10 UNIT TESTS PASSED WITH 100% PRECISION!")
+    test_11_stockmojo_dual_endpoint_parsers()
+    print("\n🎉 ALL 11 UNIT TESTS PASSED WITH 100% PRECISION!")
 
 
 if __name__ == "__main__":

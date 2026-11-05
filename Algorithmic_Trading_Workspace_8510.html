@@ -1007,6 +1007,7 @@
                         <div style="font-size:11px; display:flex; align-items:center; gap:6px;">
                             <span style="background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:2px 8px; border-radius:10px;">🔑 Stock Mojo JWT Active (Valid till Nov 2027)</span>
                             <span id="tab1JwtLastPing" style="color:var(--text-dim); font-family:var(--font-mono);">Last Ping: --:--:--</span>
+                            <span id="tab1FutTickBadge" style="background:rgba(245,158,11,0.12); color:#f59e0b; border:1px solid rgba(245,158,11,0.4); padding:2px 8px; border-radius:10px; font-family:var(--font-mono); font-weight:600;">Fut: -- | Tick: --</span>
                         </div>
                         <div style="font-size:12px;">
                             <span style="color:var(--text-dim);">Writer Dominance: </span>
@@ -1756,6 +1757,7 @@
                         <div style="font-size:11px; display:flex; flex-wrap:wrap; align-items:center; gap:6px;">
                             <span style="background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:2px 8px; border-radius:10px;">🔑 Stock Mojo JWT Active (Valid till Nov 2027)</span>
                             <span id="tab6JwtLastPing" style="color:var(--text-dim); font-family:var(--font-mono);">Last Ping: --:--:--</span>
+                            <span id="tab6FutTickBadge" style="background:rgba(245,158,11,0.12); color:#f59e0b; border:1px solid rgba(245,158,11,0.4); padding:2px 8px; border-radius:10px; font-family:var(--font-mono); font-weight:600;">Fut: -- | Tick: --</span>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <button id="btnCopyRelayScript" onclick="copyStockMojoRelayScript()" style="background:rgba(16,185,129,0.18); color:#10b981; border:1px solid #10b981; padding:3px 10px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px;">📋 Copy Live Graph Relay Script</button>
@@ -1934,21 +1936,35 @@
                 </div>
             </div>
 
-            <!-- 5. Dual-Entity Ingestion Table with Sub-Tabs Toggle -->
+            <!-- 5. Stock Mojo Multi-Strike PE − CE Table & Dual-Entity Ingestion Matrix -->
             <div class="card">
-                <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px;">
+                <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; margin-bottom:12px; gap:10px;">
                     <div>
-                        <h2 style="margin:0; border:none; padding:0; display:flex; align-items:center; gap:8px;">
-                            <span id="peCeTableTitle">📋 Stock Mojo P minus C Ingestion Ledger</span>
+                        <h2 style="margin:0; border:none; padding:0; display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
+                            <span id="peCeTableTitle">📋 Stock Mojo PE − CE Multi-Strike Matrix</span>
+                            <span id="smAtmRangeBadge" style="background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;">ATM: 24400 | Range: ±10 (23900 - 24900)</span>
                             <span id="smTableCountBadge" style="font-size:11px; color:var(--emerald); font-family:var(--font-mono);">-- INTERVALS</span>
                         </h2>
                     </div>
 
-                    <!-- Sub-Tabs View Toggle -->
-                    <div class="sub-tabs" style="margin:0;">
-                        <button type="button" id="btnViewCombined" class="sub-tab-btn active" onclick="switchPeCeView('combined')">⚡ Combined Side-by-Side</button>
-                        <button type="button" id="btnViewTotalOi" class="sub-tab-btn" onclick="switchPeCeView('total_oi')">📊 Total OI Tab (12 Cols)</button>
-                        <button type="button" id="btnViewDayOi" class="sub-tab-btn" onclick="switchPeCeView('day_oi')">📈 OI Change (Day) Tab (12 Cols)</button>
+                    <!-- Top Controls matching Stock Mojo: Timeframe & Mode Selectors -->
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px;">
+                        <!-- Timeframe Selector -->
+                        <div style="display:flex; align-items:center; gap:4px; background:rgba(15,23,42,0.8); border:1px solid var(--border-subtle); padding:3px 6px; border-radius:6px;">
+                            <span style="font-size:11px; color:var(--text-dim); margin-right:4px;">Timeframe:</span>
+                            <button type="button" id="btnTf1m" class="sub-tab-btn active" onclick="setSmTableTimeframe('1m')" style="padding:2px 8px; font-size:11px;">1m</button>
+                            <button type="button" id="btnTf3m" class="sub-tab-btn" onclick="setSmTableTimeframe('3m')" style="padding:2px 8px; font-size:11px;">3m</button>
+                            <button type="button" id="btnTf5m" class="sub-tab-btn" onclick="setSmTableTimeframe('5m')" style="padding:2px 8px; font-size:11px;">5m</button>
+                            <button type="button" id="btnTf15m" class="sub-tab-btn" onclick="setSmTableTimeframe('15m')" style="padding:2px 8px; font-size:11px;">15m</button>
+                        </div>
+
+                        <!-- Mode Selector -->
+                        <div style="display:flex; align-items:center; gap:4px; background:rgba(15,23,42,0.8); border:1px solid var(--border-subtle); padding:3px 6px; border-radius:6px;">
+                            <span style="font-size:11px; color:var(--text-dim); margin-right:4px;">Mode:</span>
+                            <button type="button" id="btnModeDayOi" class="sub-tab-btn active" onclick="setSmTableMode('day_oi')" style="padding:2px 8px; font-size:11px;">OI Change (Day)</button>
+                            <button type="button" id="btnModeTotalOi" class="sub-tab-btn" onclick="setSmTableMode('total_oi')" style="padding:2px 8px; font-size:11px;">Total OI</button>
+                            <button type="button" id="btnModeAll" class="sub-tab-btn" onclick="setSmTableMode('all')" style="padding:2px 8px; font-size:11px;">All</button>
+                        </div>
                     </div>
                 </div>
 
@@ -3403,6 +3419,164 @@
             renderDualPeCeTable();
         }
 
+        let smTableTimeframe = "1m";
+        let smTableMode = "day_oi";
+
+        function setSmTableTimeframe(tf) {
+            smTableTimeframe = tf;
+            ['btnTf1m', 'btnTf3m', 'btnTf5m', 'btnTf15m'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('active');
+            });
+            const activeBtn = document.getElementById(`btnTf${tf}`);
+            if (activeBtn) activeBtn.classList.add('active');
+            fetchAndRenderSmTable();
+        }
+
+        function setSmTableMode(mode) {
+            smTableMode = mode;
+            ['btnModeDayOi', 'btnModeTotalOi', 'btnModeAll'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('active');
+            });
+            const map = { 'day_oi': 'btnModeDayOi', 'total_oi': 'btnModeTotalOi', 'all': 'btnModeAll' };
+            const activeBtn = document.getElementById(map[mode]);
+            if (activeBtn) activeBtn.classList.add('active');
+            fetchAndRenderSmTable();
+        }
+
+        async function fetchAndRenderSmTable() {
+            try {
+                const res = await fetch(`/api/stockmojo/multi_strike_table?timeframe=${smTableTimeframe}&mode=${smTableMode}`);
+                const data = await res.json();
+                if (data.ok && data.rows && data.rows.length > 0) {
+                    renderStockMojoMultiStrikeTable(data);
+                } else {
+                    renderDualPeCeTable();
+                }
+            } catch (e) {
+                renderDualPeCeTable();
+            }
+        }
+
+        function renderStockMojoMultiStrikeTable(data) {
+            const thead = document.getElementById("dualPeCeThead");
+            const tbody = document.getElementById("dualPeCeTbody");
+            const countBadge = document.getElementById("smTableCountBadge");
+            const atmBadge = document.getElementById("smAtmRangeBadge");
+
+            if (!thead || !tbody) return;
+            if (atmBadge && data.atm_strike) {
+                const rngStr = (data.strike_range && data.strike_range.length >= 2) ? ` (${data.strike_range[0]} - ${data.strike_range[1]})` : "";
+                atmBadge.textContent = `ATM: ${data.atm_strike} | Range: ±10${rngStr}`;
+            }
+            if (countBadge) {
+                countBadge.textContent = `${data.count} INTERVALS (${data.timeframe.toUpperCase()})`;
+            }
+
+            const rows = data.rows || [];
+            if (smTableMode === "total_oi") {
+                thead.innerHTML = `
+                    <tr>
+                        <th>Time</th>
+                        <th>Put OI Total</th>
+                        <th>Put OI Change</th>
+                        <th>Call OI Total</th>
+                        <th>Call OI Change</th>
+                        <th>PE-CE OI Total</th>
+                        <th>PE-CE Bar Total</th>
+                        <th>PCR Total</th>
+                        <th>Future LTP</th>
+                        <th>Future Total OI</th>
+                        <th>Surge Alert</th>
+                    </tr>
+                `;
+                tbody.innerHTML = rows.map(r => {
+                    const rowClass = r.is_bullish_row ? "row-bullish-green" : "row-bearish-red";
+                    const surgeHtml = r.surge_badge ? `<span class="status-badge ${r.surge_badge.includes('PUT') ? 'badge-bull' : 'badge-bear'}">${r.surge_badge}</span>` : `<span style="color:var(--text-dim); font-size:10px;">NORMAL</span>`;
+                    return `
+                        <tr class="${rowClass}">
+                            <td><b>${r.time_ist}</b></td>
+                            <td style="color:var(--emerald); font-weight:600;">${r.put_oi_total_fmt}</td>
+                            <td style="color:${r.put_oi_int_chg >= 0 ? 'var(--emerald)' : 'var(--crimson)'}; font-weight:600;">${r.put_oi_int_chg_fmt}</td>
+                            <td style="color:var(--crimson); font-weight:600;">${r.call_oi_total_fmt}</td>
+                            <td style="color:${r.call_oi_int_chg >= 0 ? 'var(--crimson)' : 'var(--emerald)'}; font-weight:600;">${r.call_oi_int_chg_fmt}</td>
+                            <td style="font-weight:700; color:${r.pe_minus_ce_total >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">${r.pe_minus_ce_total_fmt}</td>
+                            <td>
+                                <div style="display:flex; align-items:center; gap:6px; min-width:130px;">
+                                    <span style="font-size:11px; font-weight:600; min-width:65px; color:${r.bar_color_day};">${r.pe_minus_ce_total_fmt}</span>
+                                    <div style="flex:1; background:rgba(255,255,255,0.06); height:8px; border-radius:4px; overflow:hidden;">
+                                        <div style="background:${r.bar_color_day}; width:${r.bar_pct_day}%; height:100%; border-radius:4px;"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td style="font-weight:700;">${r.pcr_total.toFixed(2)}</td>
+                            <td style="color:#38bdf8; font-weight:600;">${r.future_ltp.toFixed(1)}</td>
+                            <td>${r.future_total_oi_fmt}</td>
+                            <td>${surgeHtml}</td>
+                        </tr>
+                    `;
+                }).join("");
+            } else {
+                thead.innerHTML = `
+                    <tr>
+                        <th>Time</th>
+                        <th>Put OI (Change Day / Int)</th>
+                        <th>Call OI (Change Day / Int)</th>
+                        <th>PE-CE OI (Change Day / Int)</th>
+                        <th>PE-CE OI Bar (Change Day)</th>
+                        <th>PE-CE OI Bar (Change)</th>
+                        <th>PCR Total</th>
+                        <th>Future (LTP / OI Change)</th>
+                        <th>Surge Alert</th>
+                    </tr>
+                `;
+                tbody.innerHTML = rows.map(r => {
+                    const rowClass = r.is_bullish_row ? "row-bullish-green" : "row-bearish-red";
+                    const surgeHtml = r.surge_badge ? `<span class="status-badge ${r.surge_badge.includes('PUT') ? 'badge-bull' : 'badge-bear'}">${r.surge_badge}</span>` : `<span style="color:var(--text-dim); font-size:10px;">NORMAL</span>`;
+                    return `
+                        <tr class="${rowClass}">
+                            <td><b>${r.time_ist}</b></td>
+                            <td>
+                                <span style="color:var(--emerald); font-weight:700;">${r.put_oi_chg_day_fmt}</span>
+                                <span style="color:var(--text-dim); font-size:11px;"> (${r.put_oi_int_chg_fmt})</span>
+                            </td>
+                            <td>
+                                <span style="color:var(--crimson); font-weight:700;">${r.call_oi_chg_day_fmt}</span>
+                                <span style="color:var(--text-dim); font-size:11px;"> (${r.call_oi_int_chg_fmt})</span>
+                            </td>
+                            <td>
+                                <span style="color:${r.pe_minus_ce_day >= 0 ? 'var(--emerald)' : 'var(--crimson)'}; font-weight:700;">${r.pe_minus_ce_day_fmt}</span>
+                                <span style="color:${r.pe_minus_ce_int_chg >= 0 ? 'var(--emerald)' : 'var(--crimson)'}; font-size:11px;"> (${r.pe_minus_ce_int_chg_fmt})</span>
+                            </td>
+                            <td>
+                                <div style="display:flex; align-items:center; gap:6px; min-width:130px;">
+                                    <span style="font-size:11px; font-weight:600; min-width:65px; color:${r.bar_color_day};">${r.pe_minus_ce_day_fmt}</span>
+                                    <div style="flex:1; background:rgba(255,255,255,0.06); height:8px; border-radius:4px; overflow:hidden;">
+                                        <div style="background:${r.bar_color_day}; width:${r.bar_pct_day}%; height:100%; border-radius:4px;"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div style="display:flex; align-items:center; gap:6px; min-width:130px;">
+                                    <span style="font-size:11px; font-weight:600; min-width:65px; color:${r.bar_color_int};">${r.pe_minus_ce_int_chg_fmt}</span>
+                                    <div style="flex:1; background:rgba(255,255,255,0.06); height:8px; border-radius:4px; overflow:hidden;">
+                                        <div style="background:${r.bar_color_int}; width:${r.bar_pct_int}%; height:100%; border-radius:4px;"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td style="font-weight:700;">${r.pcr_total.toFixed(2)}</td>
+                            <td>
+                                <span style="color:#38bdf8; font-weight:600;">${r.future_ltp.toFixed(1)}</span>
+                                <span style="color:${r.future_oi_chg_day >= 0 ? 'var(--emerald)' : 'var(--crimson)'}; font-size:11px;"> (${r.future_oi_chg_day_fmt})</span>
+                            </td>
+                            <td>${surgeHtml}</td>
+                        </tr>
+                    `;
+                }).join("");
+            }
+        }
+
         function updateMappingButtons(mapping) {
             const isStd = (mapping === "STANDARD");
             const txt = isStd ? "🔄 Mapping: Standard (Red=Put / Green=Call)" : "🔄 Mapping: Inverted (Red=Call / Green=Put)";
@@ -3547,6 +3721,11 @@
                 if (lastPingEl && crore.auth_status && crore.auth_status.last_ping) {
                     lastPingEl.textContent = `Last Ping: ${crore.auth_status.last_ping}`;
                 }
+                const futTickEl = document.getElementById(`${prefix}FutTickBadge`);
+                if (futTickEl) {
+                    futTickEl.textContent = "Fut: -- | Tick: --";
+                    futTickEl.style.color = "#f59e0b";
+                }
                 return;
             }
 
@@ -3580,6 +3759,13 @@
             }
             if (lastPingEl && crore.auth_status && crore.auth_status.last_ping) {
                 lastPingEl.textContent = `Last Ping: ${crore.auth_status.last_ping}`;
+            }
+            const futTickEl = document.getElementById(`${prefix}FutTickBadge`);
+            if (futTickEl) {
+                const futFormatted = crore.future_ltp ? Number(crore.future_ltp).toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) : "--";
+                const tickTime = crore.latest_ts || crore.time_ist || "--";
+                futTickEl.textContent = `Fut: ${futFormatted} | Tick: ${tickTime}`;
+                futTickEl.style.color = "#38bdf8";
             }
         }
 
@@ -3911,16 +4097,13 @@
                 if (data && data.ok) {
                     dualStockMojoData = data;
                     liveStockMojoRows = data.oi_change_day_rows || [];
-                    renderDualPeCeTable();
+                    fetchAndRenderSmTable();
                     updateLiveSummaryBanner(data.synergy, data.last_sync_time);
                     renderTab1StockMojoCard(data);
                 }
             } catch (e) {
                 console.warn("fetchStockMojoDual error:", e);
-                if (typeof stockMojoData !== 'undefined') {
-                    dualStockMojoData.oi_change_day_rows = stockMojoData;
-                    renderDualPeCeTable();
-                }
+                fetchAndRenderSmTable();
             }
         }
         const fetchStockMojoTable = fetchStockMojoDual;
