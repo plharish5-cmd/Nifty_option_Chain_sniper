@@ -598,6 +598,7 @@ class DhanBroker:
         load_env_safe()
         self._last_ltp_call = 0.0
         self._ltp_cache: Dict[str, float] = {}
+        self._ltt_cache: Dict[str, Any] = {}
         self._cache_timestamps: Dict[str, float] = {}
         self._cached_ltp: Dict[str, float] = self._ltp_cache  # Backward-compatibility alias
         self._last_funds_call = 0.0
@@ -605,6 +606,7 @@ class DhanBroker:
         self._backoff_until: float = 0.0
         self._backoff_delay: float = 3.0
         self.LTP_TTL: float = 5.0
+        self.market_db = ROOT / self.cfg.get("market_db_path", "ict_smc_app/backend/data/ict_smc.sqlite3")
 
         # Dhan Connection & IP Config state
         dhan_cfg = self.cfg.get("dhan", {})
@@ -1267,6 +1269,9 @@ class DhanBroker:
                                     out[s_id] = price
                                     self._ltp_cache[s_id] = price
                                     self._cache_timestamps[s_id] = now
+                                    ltt = quote.get("last_trade_time") or quote.get("LTT") or quote.get("ltt")
+                                    if ltt is not None:
+                                        self._ltt_cache[s_id] = ltt
                     # Reset backoff upon successful response
                     self._backoff_delay = 3.0
                     self._backoff_until = 0.0
@@ -1295,6 +1300,10 @@ class DhanBroker:
             else:
                 log.debug("Marketfeed LTP exception: %s", e)
             return self._ltp_cache
+
+    def get_last_trade_time(self, sec_id: Union[str, int]) -> Optional[Any]:
+        """Returns exchange last trade timestamp (LTT) if provided by Dhan feed."""
+        return self._ltt_cache.get(str(sec_id))
 
     async def place_order(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Places order on Dhan v2."""
@@ -2781,7 +2790,14 @@ class QuantTerminalBackend:
             try:
                 with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
                     cur = conn.cursor()
-                    r_spot = cur.execute("SELECT ts, c FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 1").fetchone()
+                    r_spot = cur.execute("""
+                        SELECT ts, c FROM candles_1m 
+                        WHERE sec_id='13' 
+                          AND time(datetime(ts, 'unixepoch', '+330 minutes')) <= '15:30:00'
+                        ORDER BY ts DESC LIMIT 1
+                    """).fetchone()
+                    if not r_spot:
+                        r_spot = cur.execute("SELECT ts, c FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 1").fetchone()
                     if r_spot and r_spot[1]:
                         candle_spot_ts = int(r_spot[0]) if r_spot[0] else 0
                         candle_spot = float(r_spot[1])
@@ -2817,8 +2833,30 @@ class QuantTerminalBackend:
             req_seg = {"IDX_I": [13, 21], "NSE_FNO": [fut_sec_id] + candidate_sids}
             live_quotes = await self.broker.get_marketfeed_ltp(req_seg)
 
+        # Check NSE Market Open Status (moved above spot resolution for freshness classification)
+        mkt_res = self.is_nse_market_open(now_dt)
+        if isinstance(mkt_res, dict):
+            is_open = bool(mkt_res.get("is_open", False))
+            mkt_dict = {k: mkt_res[k] for k in mkt_res.keys()}
+        elif isinstance(mkt_res, (list, tuple)):
+            is_open = bool(mkt_res[0])
+            mkt_dict = {"is_open": is_open, "status": str(mkt_res[1])}
+        else:
+            is_open = False
+            mkt_dict = {"is_open": False, "status": "CLOSED"}
+
         # 3. Step 4A: 3-Tier Price Resolution Hierarchy
         # Tier 1: Live Quote
+        # Note on Dhan /v2/marketfeed/ltp:
+        # Verified live against Dhan HQ v2 API: the LTP endpoint response format is:
+        #   {"data": {"IDX_I": {"13": {"last_price": 24536.6}}}, "status": "success"}
+        # It does NOT return 'last_trade_time' or 'LTT' (only present in full quote mode).
+        # Dhan returns the last traded price 24/7, even when the market is closed.
+        # Therefore, we classify Tier 1 quote as LIVE only when BOTH hold:
+        #   1. self.is_nse_market_open() returns True (NSE regular trading hours 09:15 - 15:30 IST Mon-Fri).
+        #   2. If exchange trade timestamp (LTT / last_trade_time) is ever provided, verify age < 60s.
+        # When market is closed (or quote is stale), spot_status is marked 'STALE' (is_stale=True),
+        # and spot_time_ist is set to the exchange time if present, or the last closed 1m candle timestamp — NEVER datetime.now().
         spot = 0.0
         spot_status = "UNAVAILABLE"
         is_stale = False
@@ -2826,9 +2864,34 @@ class QuantTerminalBackend:
 
         if "13" in live_quotes and live_quotes["13"] > 0:
             spot = float(live_quotes["13"])
-            spot_status = "LIVE"
-            is_stale = False
-            spot_time_ist = now_dt.strftime("%H:%M:%S IST")
+            # Freshness verification
+            ltt = self.broker.get_last_trade_time("13")
+            is_quote_fresh = True
+            if ltt is not None:
+                try:
+                    is_quote_fresh = (time.time() - float(ltt)) < 60.0
+                except Exception:
+                    pass
+
+            if is_open and is_quote_fresh:
+                spot_status = "LIVE"
+                is_stale = False
+                spot_time_ist = now_dt.strftime("%H:%M:%S IST")
+            else:
+                spot_status = "STALE"
+                is_stale = True
+                if ltt is not None:
+                    try:
+                        dt_ltt = datetime.fromtimestamp(float(ltt), tz=timezone.utc).astimezone(IST)
+                        spot_time_ist = dt_ltt.strftime("%H:%M:%S IST")
+                    except Exception:
+                        pass
+                if not spot_time_ist:
+                    if candle_spot_ts > 0:
+                        c_dt = datetime.fromtimestamp(candle_spot_ts, tz=timezone.utc).astimezone(IST)
+                        spot_time_ist = c_dt.strftime("%H:%M:%S IST")
+                    else:
+                        spot_time_ist = "15:29:00 IST"
         # Tier 2: Last Closed 1m Candle
         elif candle_spot > 0:
             spot = candle_spot
@@ -2838,7 +2901,7 @@ class QuantTerminalBackend:
                 c_dt = datetime.fromtimestamp(candle_spot_ts, tz=timezone.utc).astimezone(IST)
                 spot_time_ist = c_dt.strftime("%H:%M:%S IST")
             else:
-                spot_time_ist = "Closed 1m Candle"
+                spot_time_ist = "15:29:00 IST"
         # Tier 3: Nothing at all -> spot = 0.0, fail closed loudly
         else:
             spot = 0.0
@@ -2854,7 +2917,6 @@ class QuantTerminalBackend:
             fut_spread = round(fut_price - spot, 2)
 
         # 4. Market status and spot availability
-        is_open, mkt_dict = self.is_nse_market_open()
         matrix_reason = None
         if spot <= 0.0:
             matrix_reason = "Spot unavailable — market closed / feed offline"
@@ -3038,7 +3100,7 @@ class QuantTerminalBackend:
         payload = {
             "timestamp_ist": now_dt.strftime("%Y-%m-%d %H:%M:%S IST"),
             "clock": now_dt.strftime("%H:%M:%S IST"),
-            "market_status": dict(self.is_nse_market_open()),
+            "market_status": mkt_dict,
             "allow_off_hours_paper_testing": self.allow_off_hours_paper_testing,
             "matrix_reason": matrix_reason,
             "spot": {

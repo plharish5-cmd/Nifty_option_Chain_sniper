@@ -139,7 +139,7 @@
     "block_ce_when_bearish": false,
     "show_pe_ce_table_in_tab1": true
   },
-  "allow_off_hours_paper_testing": false,
+  "allow_off_hours_paper_testing": true,
   "DHAN_CLIENT_ID": "1112377935",
   "TOKEN_EXPIRY_UTC": "2026-11-06T02:24:30Z"
 }
