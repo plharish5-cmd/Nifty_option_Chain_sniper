@@ -115,8 +115,11 @@
   "STOCKMOJO_HEADER_J": "new_jwt_captured",
   "STOCKMOJO_HEADER_T": "new_t_captured",
   "STOCKMOJO_PAYLOAD": {
-    "symbol": "NIFTY",
-    "timeframe": "1m"
+    "symbol": 1,
+    "dt": null,
+    "expiries": [
+      215
+    ]
   },
   "POLL_INTERVAL_SECONDS": 60,
   "STOCKMOJO_POLL_SECONDS": 60,

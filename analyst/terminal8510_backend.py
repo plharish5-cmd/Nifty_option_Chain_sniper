@@ -931,6 +931,12 @@ class DhanBroker:
         Calls Dhan API /v2/fundlimit and /v2/marketfeed/ltp to test connectivity.
         Strict 10-second timeout enforced.
         """
+        now_ts = time.time()
+        if self.last_connected_status and self.last_connected_status.get("ok"):
+            last_ts = getattr(self, "_last_test_conn_ts", 0.0)
+            if now_ts - last_ts < 3.0:
+                return self.last_connected_status
+
         now_time = datetime.now(IST).strftime("%H:%M:%S")
         curr_ip = await self.get_current_ip_async()
 
@@ -962,9 +968,9 @@ class DhanBroker:
                 if res_funds.status_code == 200:
                     funds_data = res_funds.json()
 
-                    # Fetch live spot & future quotes
-                    spot = 23960.60
-                    fut = 23960.10
+                    # Fetch live spot & future quotes (Tier 1 live lookup)
+                    spot = 0.0
+                    fut = 0.0
                     try:
                         req_payload = {"IDX_I": [13], "NSE_FNO": [int(fut_sec_id)]}
                         res_ltp = await asyncio.wait_for(
@@ -975,26 +981,52 @@ class DhanBroker:
                             data_ltp = res_ltp.json().get("data", {})
                             idx_map = data_ltp.get("IDX_I", {})
                             if "13" in idx_map:
-                                spot = float(idx_map["13"].get("last_price", spot))
-                                self._ltp_cache["13"] = spot
-                                self._cache_timestamps["13"] = time.time()
+                                val = float(idx_map["13"].get("last_price", 0.0))
+                                if val > 0:
+                                    spot = val
+                                    self._ltp_cache["13"] = spot
+                                    self._cache_timestamps["13"] = time.time()
                             fno_map = data_ltp.get("NSE_FNO", {})
                             if str(fut_sec_id) in fno_map:
-                                fut = float(fno_map[str(fut_sec_id)].get("last_price", fut))
-                                self._ltp_cache[str(fut_sec_id)] = fut
-                                self._cache_timestamps[str(fut_sec_id)] = time.time()
+                                val_fut = float(fno_map[str(fut_sec_id)].get("last_price", 0.0))
+                                if val_fut > 0:
+                                    fut = val_fut
+                                    self._ltp_cache[str(fut_sec_id)] = fut
+                                    self._cache_timestamps[str(fut_sec_id)] = time.time()
                     except Exception as e:
                         log.warning("Could not fetch test quotes: %s", e)
 
-                    status_msg = f"Loaded Saved Dhan API: {masked_t} | Token Valid Till: {exp_info['token_valid_till']} | Days Left: {exp_info['days_left']} | Status: CONNECTED ✅ | dhan_connected: true | Nifty Spot: {spot:.2f} | Nifty Future: {fut:.2f}"
+                    # Tier 2: last closed 1m candle fallback if unquoted/after-hours
+                    if spot <= 0 and self.market_db.exists():
+                        try:
+                            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
+                                cur = conn.cursor()
+                                r_s = cur.execute("SELECT c FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 1").fetchone()
+                                if r_s and r_s[0] and float(r_s[0]) > 0:
+                                    spot = float(r_s[0])
+                        except Exception:
+                            pass
+                    if fut <= 0 and self.market_db.exists():
+                        try:
+                            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
+                                cur = conn.cursor()
+                                r_f = cur.execute("SELECT c FROM candles_1m WHERE sec_id='FUT' ORDER BY ts DESC LIMIT 1").fetchone()
+                                if r_f and r_f[0] and float(r_f[0]) > 0:
+                                    fut = float(r_f[0])
+                        except Exception:
+                            pass
+
+                    spot_str = f"{spot:.2f}" if spot > 0 else "Unavailable"
+                    fut_str = f"{fut:.2f}" if fut > 0 else "Unavailable"
+                    status_msg = f"Loaded Saved Dhan API: {masked_t} | Token Valid Till: {exp_info['token_valid_till']} | Days Left: {exp_info['days_left']} | Status: CONNECTED ✅ | dhan_connected: true | Nifty Spot: {spot_str} | Nifty Future: {fut_str}"
                     status_obj = {
                         "ok": True,
                         "connected": True,
                         "dhan_connected": True,
                         "status": "CONNECTED ✅",
                         "message": status_msg,
-                        "spot_price": spot,
-                        "future_price": fut,
+                        "spot_price": spot if spot > 0 else None,
+                        "future_price": fut if fut > 0 else None,
                         "funds": funds_data,
                         "current_ip": curr_ip,
                         "last_updated": now_time,
@@ -1002,6 +1034,7 @@ class DhanBroker:
                         "days_left": exp_info["days_left"],
                         "masked_token": masked_t,
                     }
+                    self._last_test_conn_ts = now_ts
                     self.last_connected_status = status_obj
                     return status_obj
 
@@ -1031,6 +1064,7 @@ class DhanBroker:
                             "current_ip": curr_ip,
                             "last_updated": now_time,
                         }
+                    self._last_test_conn_ts = now_ts
                     self.last_connected_status = status_obj
                     return status_obj
 
@@ -1046,6 +1080,7 @@ class DhanBroker:
                         "current_ip": curr_ip,
                         "last_updated": now_time,
                     }
+                    self._last_test_conn_ts = now_ts
                     self.last_connected_status = status_obj
                     return status_obj
 
@@ -1064,7 +1099,7 @@ class DhanBroker:
             self.last_connected_status = status_obj
             return status_obj
         except Exception as e:
-            status_msg = f"❌ Dhan Connection Failed: {str(e)} | [ 🔄 Retry Connection ]"
+            status_msg = f"❌ Dhan Connection Failed: DISCONNECTED ❌ ({str(e)}) | [ 🔄 Retry Connection ]"
             status_obj = {
                 "ok": False,
                 "connected": False,
@@ -2185,7 +2220,8 @@ def get_replay_trades_for_date(target_date: str) -> List[Dict[str, Any]]:
             item = dict(t)
             dir_str = item.get("direction", "LONG")
             opt_t = "CE" if dir_str == "LONG" else "PE"
-            strk = round(float(item.get("index_entry", 23800.0)) / 50.0) * 50
+            entry_idx = float(item.get("index_entry", 0.0))
+            strk = (round(entry_idx / 100.0) * 100) if entry_idx > 0 else 0.0
             c_sym = format_contract_symbol(expiry=target_date, strike=strk, opt_type=opt_t, default_expiry=target_date)
             item["contract_symbol"] = c_sym
             item["symbol"] = c_sym
@@ -2666,8 +2702,9 @@ class QuantTerminalBackend:
         self.inst_mgr.ensure_loaded()
         now_dt = datetime.now(IST)
 
-        # 1. Fetch latest spot and VIX from database or memory
-        spot = 0.0
+        # 1. Fetch latest candle prices from database (Candle Fallback / Tier 2)
+        candle_spot = 0.0
+        candle_spot_ts = 0
         spot_net_chg = 0.0
         spot_pct_chg = 0.0
         vix = 0.0
@@ -2675,14 +2712,14 @@ class QuantTerminalBackend:
         fut_price = 0.0
         fut_spread = 0.0
 
-        # Query recent 1m candles
         if self.market_db.exists():
             try:
                 with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
                     cur = conn.cursor()
-                    r_spot = cur.execute("SELECT c FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 1").fetchone()
-                    if r_spot and r_spot[0]:
-                        spot = float(r_spot[0])
+                    r_spot = cur.execute("SELECT ts, c FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 1").fetchone()
+                    if r_spot and r_spot[1]:
+                        candle_spot_ts = int(r_spot[0]) if r_spot[0] else 0
+                        candle_spot = float(r_spot[1])
                     r_vix = cur.execute("SELECT c FROM candles_1m WHERE sec_id='21' ORDER BY ts DESC LIMIT 1").fetchone()
                     if r_vix and r_vix[0]:
                         vix = float(r_vix[0])
@@ -2692,70 +2729,89 @@ class QuantTerminalBackend:
             except Exception as e:
                 log.debug("DB read error in telemetry: %s", e)
 
-        # 2. Market status and spot availability
-        is_open, mkt_dict = self.is_nse_market_open()
-        matrix_reason = None
-        if not is_open:
-            matrix_reason = "Spot unavailable — market closed (Mon-Fri 09:15 AM - 03:30 PM IST)"
-        elif spot <= 0.0:
-            matrix_reason = "Spot unavailable — waiting for live Dhan feed"
-
         active_fut = self.inst_mgr.get_active_future_contract()
         fut_sec_id = int(active_fut["security_id"]) if active_fut else 61471
         nearest_expiry = self.inst_mgr.get_nearest_expiry()
 
+        # Pre-resolve candidate option security IDs for Dhan marketfeed LTP lookup
+        candidate_spot = self.broker._ltp_cache.get("13", 0.0) or candle_spot
+        candidate_sids = []
+        if candidate_spot > 0:
+            c_atm = float(round(candidate_spot / 100.0) * 100)
+            for c_strk, c_opt in [(c_atm - 100.0, "CE"), (c_atm, "CE"), (c_atm + 100.0, "PE"), (c_atm, "PE")]:
+                res_c = self.inst_mgr.resolve_option(nearest_expiry, c_strk, c_opt)
+                if res_c and res_c.get("security_id"):
+                    try:
+                        candidate_sids.append(int(res_c["security_id"]))
+                    except Exception:
+                        pass
+
+        # 2. Live Quote Fetch via Dhan /marketfeed/ltp
+        live_quotes = {}
+        if self.broker.is_configured():
+            req_seg = {"IDX_I": [13, 21], "NSE_FNO": [fut_sec_id] + candidate_sids}
+            live_quotes = await self.broker.get_marketfeed_ltp(req_seg)
+
+        # 3. Step 4A: 3-Tier Price Resolution Hierarchy
+        # Tier 1: Live Quote
+        spot = 0.0
+        spot_status = "UNAVAILABLE"
+        is_stale = False
+        spot_time_ist = None
+
+        if "13" in live_quotes and live_quotes["13"] > 0:
+            spot = float(live_quotes["13"])
+            spot_status = "LIVE"
+            is_stale = False
+            spot_time_ist = now_dt.strftime("%H:%M:%S IST")
+        # Tier 2: Last Closed 1m Candle
+        elif candle_spot > 0:
+            spot = candle_spot
+            spot_status = "STALE"
+            is_stale = True
+            if candle_spot_ts > 0:
+                c_dt = datetime.fromtimestamp(candle_spot_ts, tz=timezone.utc).astimezone(IST)
+                spot_time_ist = c_dt.strftime("%H:%M:%S IST")
+            else:
+                spot_time_ist = "Closed 1m Candle"
+        # Tier 3: Nothing at all -> spot = 0.0, fail closed loudly
+        else:
+            spot = 0.0
+            spot_status = "UNAVAILABLE"
+            is_stale = False
+            spot_time_ist = None
+
+        if "21" in live_quotes and live_quotes["21"] > 0:
+            vix = float(live_quotes["21"])
+        if str(fut_sec_id) in live_quotes and live_quotes[str(fut_sec_id)] > 0:
+            fut_price = float(live_quotes[str(fut_sec_id)])
+        if fut_price > 0 and spot > 0:
+            fut_spread = round(fut_price - spot, 2)
+
+        # 4. Market status and spot availability
+        is_open, mkt_dict = self.is_nse_market_open()
+        matrix_reason = None
         if spot <= 0.0:
+            matrix_reason = "Spot unavailable — market closed / feed offline"
             atm_strike = 0.0
             atm_ce_ltp = 0.0
             atm_pe_ltp = 0.0
             combined_straddle = 0.0
             priority_matrix = []
-            live_quotes = {}
         else:
-            # Dynamic ATM Strike calculation (nearest 50)
-            atm_strike = float(round(spot / 50.0) * 50)
+            # Step 4C: 100-multiples ATM strike
+            atm_strike = float(round(spot / 100.0) * 100)
 
-            # 3. Resolve Priority 4 Contracts around Spot
-            # CE Contracts:
-            # Long CE #1: ITM 100-multiple nearest ~₹200 premium (spot - 150 rounded to 100-mult)
-            itm_ce_strike = float(int(math.floor((spot - 150) / 100.0) * 100))
-            # Long CE #2: ATM CE
+            # Resolve Priority 4 Contracts around Spot (100-multiples)
+            itm_ce_strike = atm_strike - 100.0
             atm_ce_strike = atm_strike
-
-            # PE Contracts:
-            # Long PE #1: ITM 100-multiple nearest ~₹200 premium (spot + 150 rounded to 100-mult)
-            itm_pe_strike = float(int(math.ceil((spot + 150) / 100.0) * 100))
-            # Long PE #2: ATM PE
+            itm_pe_strike = atm_strike + 100.0
             atm_pe_strike = atm_strike
 
             resolved_itm_ce = self.inst_mgr.resolve_option(nearest_expiry, itm_ce_strike, "CE")
             resolved_atm_ce = self.inst_mgr.resolve_option(nearest_expiry, atm_ce_strike, "CE")
             resolved_itm_pe = self.inst_mgr.resolve_option(nearest_expiry, itm_pe_strike, "PE")
             resolved_atm_pe = self.inst_mgr.resolve_option(nearest_expiry, atm_pe_strike, "PE")
-
-            option_ids = []
-            for r in [resolved_itm_ce, resolved_atm_ce, resolved_itm_pe, resolved_atm_pe]:
-                if r and r.get("security_id"):
-                    try:
-                        option_ids.append(int(r["security_id"]))
-                    except Exception as e:
-                        log.debug("Sec id parse error: %s", e)
-
-            # 4. Live Quote Fetch via Dhan /marketfeed/ltp
-            live_quotes = {}
-            if self.broker.is_configured():
-                req_seg = {"IDX_I": [13, 21], "NSE_FNO": [fut_sec_id] + option_ids}
-                live_quotes = await self.broker.get_marketfeed_ltp(req_seg)
-
-            if "13" in live_quotes and live_quotes["13"] > 0:
-                spot = live_quotes["13"]
-                atm_strike = float(round(spot / 50.0) * 50)
-            if "21" in live_quotes and live_quotes["21"] > 0:
-                vix = live_quotes["21"]
-            if str(fut_sec_id) in live_quotes and live_quotes[str(fut_sec_id)] > 0:
-                fut_price = live_quotes[str(fut_sec_id)]
-            if fut_price > 0 and spot > 0:
-                fut_spread = round(fut_price - spot, 2)
 
             # Approximate option LTPs if closed/unquoted
             def get_opt_ltp(resolved, strike, opt_type):
@@ -2924,6 +2980,9 @@ class QuantTerminalBackend:
                 "price": spot,
                 "net_change": spot_net_chg,
                 "pct_change": spot_pct_chg,
+                "status": spot_status,
+                "is_stale": is_stale,
+                "time_ist": spot_time_ist,
             },
             "future": {
                 "price": fut_price,
@@ -3448,6 +3507,10 @@ class QuantTerminalBackend:
             try:
                 if self.scanner_enabled and not self.kill_switch_active:
                     spot = self.cached_telemetry.get("spot", {}).get("price")
+                    if not spot or spot <= 0:
+                        log.debug("Strategy scanner: spot price unavailable or <= 0, skipping scan cycle")
+                        await asyncio.sleep(interval)
+                        continue
                     signals = self.evaluate_all_strategies(spot_price=spot)
 
                     # Check Direct 15m Entry Trigger on PE-CE Synergy Flip if enabled
@@ -3456,21 +3519,24 @@ class QuantTerminalBackend:
                         cur_syn = syn.get("synergy_status", "MIXED")
                         if cur_syn in ("BULLISH_SYNERGY", "BEARISH_SYNERGY") and cur_syn != self._last_synergy_status:
                             self._last_synergy_status = cur_syn
-                            direct_sig = {
-                                "strategy_id": "STAGE2_DIRECT_TRIGGER" if cur_syn == "BULLISH_SYNERGY" else "STAGE3_DIRECT_TRIGGER",
-                                "setup_name": "Stage 2 PE-CE Direct 15m Trigger" if cur_syn == "BULLISH_SYNERGY" else "Stage 3 PE-CE Direct 15m Trigger",
-                                "direction": "LONG" if cur_syn == "BULLISH_SYNERGY" else "SHORT",
-                                "opt_side": "CE" if cur_syn == "BULLISH_SYNERGY" else "PE",
-                                "target_pts": 40.0,
-                                "sl_pts": 40.0,
-                                "index_price": spot or 23800.0,
-                                "conviction": "DIRECT_PE_CE_FLIP",
-                                "details": f"Direct entry triggered by Stock Mojo PE-CE Synergy Flip to {cur_syn}",
-                            }
-                            if not signals:
-                                signals = [direct_sig]
+                            if not spot or spot <= 0:
+                                log.critical("Rejecting direct PE-CE flip trigger: spot price unavailable or <= 0")
                             else:
-                                signals.append(direct_sig)
+                                direct_sig = {
+                                    "strategy_id": "STAGE2_DIRECT_TRIGGER" if cur_syn == "BULLISH_SYNERGY" else "STAGE3_DIRECT_TRIGGER",
+                                    "setup_name": "Stage 2 PE-CE Direct 15m Trigger" if cur_syn == "BULLISH_SYNERGY" else "Stage 3 PE-CE Direct 15m Trigger",
+                                    "direction": "LONG" if cur_syn == "BULLISH_SYNERGY" else "SHORT",
+                                    "opt_side": "CE" if cur_syn == "BULLISH_SYNERGY" else "PE",
+                                    "target_pts": 40.0,
+                                    "sl_pts": 40.0,
+                                    "index_price": float(spot),
+                                    "conviction": "DIRECT_PE_CE_FLIP",
+                                    "details": f"Direct entry triggered by Stock Mojo PE-CE Synergy Flip to {cur_syn}",
+                                }
+                                if not signals:
+                                    signals = [direct_sig]
+                                else:
+                                    signals.append(direct_sig)
 
                     if signals:
                         await self._process_strategy_signals(signals)
@@ -3776,6 +3842,33 @@ class QuantTerminalBackend:
                     "status": "REJECTED",
                     "error": err_msg,
                     "rejection_reason": "Directional Bias: SHORT_ONLY active (all CE / Long orders blocked)"
+                }
+
+            # Step 4A Fail-Closed Guard: Resolve spot from cache (Tier 1), Dhan quote, or last closed 1m candle (Tier 2)
+            current_spot = float(self.cached_telemetry.get("spot", {}).get("price", 0.0) or 0.0)
+            if current_spot <= 0:
+                current_spot = float(self.broker._ltp_cache.get("13", 0.0) or 0.0)
+            if current_spot <= 0 and self.market_db.exists():
+                try:
+                    with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
+                        cur = conn.cursor()
+                        r = cur.execute("SELECT c FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 1").fetchone()
+                        if r and r[0] and float(r[0]) > 0:
+                            current_spot = float(r[0])
+                except Exception:
+                    pass
+            if current_spot <= 0:
+                current_spot = float(contract.get("spot", 0.0) or contract.get("index_price", 0.0) or 0.0)
+
+            # Never invent a price: reject order if spot is 0.0 or unavailable
+            if current_spot <= 0:
+                err_msg = "🚨 ORDER REJECTED: Underlying spot price is 0.0 or unavailable. Routing aborted (fail closed)."
+                log.critical(err_msg)
+                return {
+                    "ok": False,
+                    "status": "REJECTED",
+                    "error": err_msg,
+                    "rejection_reason": "Underlying spot price is 0.0 or unavailable (fail closed)",
                 }
 
             # Stock Mojo PE-CE Synergy Advisory Check (Advisory-Only & Fail-Open)
@@ -4937,7 +5030,7 @@ class QuantTerminalBackend:
                 f"4EMA: {open_p + (2.5 if tr.get('EMA_Slope', 0) > 0 else -2.5):.1f} {'>' if tr.get('EMA_Slope', 0) > 0 else '<'} 8EMA: {open_p:.1f} | {'UBB: UP' if tr.get('EMA_Slope', 0) > 0 else 'LBB: DOWN'} | Width: {72.0 + abs(tr.get('EMA_Slope', 0)):.1f}"
             )
 
-            strike_cand = round(open_p / 50.0) * 50 if open_p else 24300
+            strike_cand = (round(open_p / 100.0) * 100) if open_p else 0.0
             opt_type_cand = "CE" if direction == "LONG" else "PE"
             c_sym = format_contract_symbol(expiry=t_date, strike=strike_cand, opt_type=opt_type_cand, default_expiry=t_date)
             struct_c = get_contract_structured_fields(c_sym, expiry=t_date)

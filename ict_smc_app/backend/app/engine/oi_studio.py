@@ -110,8 +110,20 @@ def compute_oi_studio_payload(
         if after:
             start_snap = after[0]
 
-    active_spot = float(end_snap.get("spot") or spot_price or 22700.0)
-    atm_strike = round(active_spot / 50.0) * 50.0
+    active_spot = float(end_snap.get("spot") or spot_price or 0.0)
+    if active_spot <= 0.0:
+        return {
+            "strikes": [],
+            "summary": {
+                "active_spot": 0.0,
+                "atm_strike": 0.0,
+                "status": "UNAVAILABLE",
+                "message": "Spot price unavailable — cannot compute OI matrix",
+            },
+            "pcr": 0.0,
+            "max_pain": 0.0,
+        }
+    atm_strike = round(active_spot / 100.0) * 100.0
 
     # 2. Compute Max Pain at end_snap across all strikes
     end_strikes_map: Dict[float, Dict[str, float]] = end_snap.get("strikes", {})
@@ -385,12 +397,13 @@ def get_oi_studio_data(
             return {"ok": False, "message": "No closed NIFTY candle existed at this replay time", "strikes": [], "timeline": [], "summary": {}}
 
     spot_by_ts: Dict[int, float] = {}
-    last_spot = 22700.0
+    last_spot = 0.0
     for sc in (spot_candles or []):
         t_c = int(sc["ts"])
         sp = float(sc.get("c") or sc.get("close") or last_spot)
         spot_by_ts[t_c] = sp
-        last_spot = sp
+        if sp > 0:
+            last_spot = sp
 
     def _lookup_spot(t: int) -> float:
         if t in spot_by_ts:

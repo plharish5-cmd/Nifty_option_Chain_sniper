@@ -536,19 +536,19 @@
         <div class="ribbon-items">
             <div class="ribbon-item">
                 <span class="ribbon-label">NIFTY 50 SPOT:</span>
-                <span class="ribbon-val up" id="ribbonSpot">23,960.60 (+0.42%)</span>
+                <span class="ribbon-val" id="ribbonSpot">--</span>
             </div>
             <div class="ribbon-item">
                 <span class="ribbon-label">NIFTY FUT:</span>
-                <span class="ribbon-val" id="ribbonFut">23,960.10 (-0.50 pts Disc)</span>
+                <span class="ribbon-val" id="ribbonFut">--</span>
             </div>
             <div class="ribbon-item">
                 <span class="ribbon-label">INDIA VIX:</span>
-                <span class="ribbon-val down" id="ribbonVix">15.19 (-2.1%)</span>
+                <span class="ribbon-val" id="ribbonVix">--</span>
             </div>
             <div class="ribbon-item">
                 <span class="ribbon-label">STOCKMOJO PCR:</span>
-                <span class="ribbon-val up" id="ribbonPcr">1.08 (BULLISH)</span>
+                <span class="ribbon-val" id="ribbonPcr">--</span>
             </div>
             <div class="ribbon-item">
                 <span class="ribbon-label">PORT 8510 STATUS:</span>
@@ -2129,6 +2129,7 @@
         // Problem 3 & 4 State Variables
         let cachedMarketStatus = null;
         let cachedAllowOffHours = false;
+        let cachedSpotPrice = 0.0;
         let currentPosSourceFilter = "ALL";
         let currentPosStrategyFilter = "ALL";
 
@@ -2637,11 +2638,27 @@
 
                 // 1. Ribbon updates (NO Max Pain)
                 if (data.spot) {
+                    cachedSpotPrice = Number(data.spot.price) || 0.0;
                     const spotEl = document.getElementById("ribbonSpot");
-                    const prevSpot = parseFloat(spotEl.dataset.prev || data.spot.price);
-                    spotEl.textContent = `${data.spot.price.toLocaleString('en-IN', {minimumFractionDigits: 2})} (${data.spot.net_change >= 0 ? '+' : ''}${data.spot.pct_change.toFixed(2)}%)`;
-                    triggerFlash(spotEl, data.spot.price, prevSpot);
-                    spotEl.dataset.prev = data.spot.price;
+                    if (spotEl) {
+                        if (data.spot.status === "UNAVAILABLE" || cachedSpotPrice <= 0) {
+                            spotEl.textContent = "-- (UNAVAILABLE)";
+                            spotEl.className = "ribbon-val down";
+                            spotEl.style.color = "#f87171";
+                        } else if (data.spot.is_stale) {
+                            const timeLabel = data.spot.time_ist ? ` ${data.spot.time_ist}` : '';
+                            spotEl.textContent = `${cachedSpotPrice.toLocaleString('en-IN', {minimumFractionDigits: 2})} (STALE${timeLabel})`;
+                            spotEl.className = "ribbon-val";
+                            spotEl.style.color = "#f59e0b";
+                        } else {
+                            const prevSpot = parseFloat(spotEl.dataset.prev || cachedSpotPrice);
+                            spotEl.textContent = `${cachedSpotPrice.toLocaleString('en-IN', {minimumFractionDigits: 2})} (LIVE)`;
+                            spotEl.className = "ribbon-val up";
+                            spotEl.style.color = "";
+                            triggerFlash(spotEl, cachedSpotPrice, prevSpot);
+                            spotEl.dataset.prev = cachedSpotPrice;
+                        }
+                    }
                 }
                 if (data.future) {
                     document.getElementById("ribbonFut").textContent = `${data.future.price.toLocaleString('en-IN', {minimumFractionDigits: 2})} (${data.future.spread_tag})`;

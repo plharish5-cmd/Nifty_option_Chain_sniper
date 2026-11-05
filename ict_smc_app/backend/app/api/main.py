@@ -1598,7 +1598,7 @@ def algo_smart_target_preview_endpoint(option_type: str = "CE", mode: Optional[s
     from ..engine import dhan_algo_executor
     import app.api.main as _m
     h = getattr(_m, "hub", None)
-    spot = dhan_algo_executor.executor._last_evaluated_spot or 23440.8
+    spot = dhan_algo_executor.executor._last_evaluated_spot
     net_pe_ce = 0.0
     if h and hasattr(h, "get_live_writer_flow_state"):
         try:

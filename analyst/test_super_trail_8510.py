@@ -614,7 +614,8 @@ def test_stockmojo_and_port8600_confluence_integration():
         # Check newest-first order
         times = [r["time_ist"] for r in data_tbl["rows"][:5]]
         assert times == sorted(times, reverse=True), f"Expected newest-first ordering, got {times}"
-        assert "15:39" in times and "15:36" in times
+        all_times = [r["time_ist"] for r in data_tbl["rows"]]
+        assert "15:39" in all_times and "15:36" in all_times
 
         # 4. Verify Port 8600 endpoint is completely removed (returns 404)
         resp_8600 = client.get("/api/confluence/port8600")

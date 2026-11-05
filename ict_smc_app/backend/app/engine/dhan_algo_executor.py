@@ -679,19 +679,24 @@ class DhanAlgoExecutor:
                 expiries = r_exp.json().get("data") if r_exp.status_code == 200 else []
                 active_expiry = expiries[0] if expiries else "2026-11-03"
 
-                spot = self._last_evaluated_spot or 23440.8
-                strike, sec_id, sym, ltp = self.resolve_atm_strike_and_contract(spot, "CE")
-
-                msg = f"✅ Dhan Live API Connected | Active Expiry: {active_expiry} | ATM Strike: {int(strike)} CE | SecurityID: {sec_id} | Lot Size: {self.lot_size}"
-                self.log_event("INFO", msg, {"expiry": active_expiry, "strike": strike, "sec_id": sec_id, "balance": avail_balance})
+                spot = self._last_evaluated_spot if (self._last_evaluated_spot and self._last_evaluated_spot > 0) else 0.0
+                if spot > 0:
+                    strike, sec_id, sym, ltp = self.resolve_atm_strike_and_contract(spot, "CE")
+                    atm_strike_val = int(strike)
+                    msg = f"✅ Dhan Live API Connected | Active Expiry: {active_expiry} | ATM Strike: {atm_strike_val} CE | SecurityID: {sec_id} | Lot Size: {self.lot_size}"
+                else:
+                    atm_strike_val = 0
+                    sec_id = ""
+                    msg = f"✅ Dhan Live API Connected | Active Expiry: {active_expiry} | ATM Strike: UNAVAILABLE | Lot Size: {self.lot_size}"
+                self.log_event("INFO", msg, {"expiry": active_expiry, "strike": atm_strike_val, "sec_id": sec_id, "balance": avail_balance})
 
                 return {
                     "ok": True,
                     "connected": True,
                     "active_expiry": active_expiry,
                     "expiry": active_expiry,
-                    "atm_strike": int(strike),
-                    "strike": int(strike),
+                    "atm_strike": atm_strike_val,
+                    "strike": atm_strike_val,
                     "option_type": "CE",
                     "security_id": sec_id,
                     "sec_id": sec_id,
