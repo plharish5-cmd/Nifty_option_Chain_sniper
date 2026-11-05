@@ -58,14 +58,13 @@ FETCH_TS_KEY = "_confluence_fetched_ts"
 # returns bias_theme="bullish" alongside a narrative mentioning "Stage 3 Bearish
 # Acceleration", and blending the two would let prose outvote the engine's own
 # stated verdict.
-VERDICT_KEYS = ("bias_theme", "alignment_state", "verdict", "verdict_badge",
-                "confluence_summary", "bias_title", "bias", "pcr_band",
-                "regime_state", "stage", "signal", "state", "action", "headline",
-                "direction", "side", "label", "status")
-
-# Sub-dicts worth looking one level into when no top-level verdict field exists.
-SUB_DICT_KEYS = ("regime", "skew", "first_hour", "verdict", "summary", "state",
-                 "bias", "today", "stats")
+VERDICT_KEYS = ("bias_theme", "alignment_state", "current_verdict", "verdict",
+                "verdict_badge", "confluence_summary", "dominant_bias", "dominant_tag",
+                "gamma_regime", "pin_state", "bias_title", "bias", "bias_trend",
+                "day_bias", "h1_bias", "pcr_band", "regime_state", "latest_state",
+                "stage", "phase", "signal", "state", "action", "headline",
+                "direction", "side", "gauge_label", "pin_label", "label", "mode",
+                "status")
 
 # Shown to the operator, never used for classification — prose may contain words
 # that contradict the engine's own verdict.
@@ -110,7 +109,10 @@ def classify_text(text: str, cfg: Optional[Dict[str, Any]] = None) -> str:
         return "UNKNOWN"
     cfg = cfg or load_config()
     keywords = cfg.get("keywords", {})
-    low = " ".join(str(text).lower().split())
+    # Engines emit SNAKE_CASE enums (BULLISH_PUT_CONTROL, POSITIVE_GAMMA) as well
+    # as prose. Normalising underscores to spaces lets one space-separated phrase
+    # in the config match both forms, instead of maintaining two spellings each.
+    low = " ".join(str(text).lower().replace("_", " ").split())
 
     best_verdict = "UNKNOWN"
     best_len = 0
@@ -180,8 +182,12 @@ def extract_verdict_text(payload: Any) -> Tuple[str, str]:
 
     Returns the FIRST VERDICT_KEYS hit rather than a concatenation, so an engine's
     own stated verdict cannot be outvoted by contradictory words in its prose.
-    Falls back to one level inside known sub-dicts (pe_ce_matrix nests its verdict
-    under `regime` / `first_hour`).
+
+    Many engines nest their verdict one level down and each uses a different
+    container name (auction under `today`, gamma under `gamma_review`,
+    pe_ce_matrix under `regime`). Rather than maintain a list of container names
+    that silently rots whenever an engine is refactored, the fallback scans every
+    top-level dict value one level deep, in VERDICT_KEYS priority order.
     """
     if not isinstance(payload, dict):
         return "", ""
@@ -189,11 +195,12 @@ def extract_verdict_text(payload: Any) -> Tuple[str, str]:
         val = payload.get(key)
         if isinstance(val, str) and val.strip():
             return val.strip(), key
-    for sub_key in SUB_DICT_KEYS:
-        sub = payload.get(sub_key)
-        if not isinstance(sub, dict):
-            continue
-        for key in VERDICT_KEYS:
+    # Priority is by verdict key, not by container, so a `regime` nested anywhere
+    # outranks a `status` nested anywhere.
+    for key in VERDICT_KEYS:
+        for sub_key, sub in payload.items():
+            if not isinstance(sub, dict):
+                continue
             val = sub.get(key)
             if isinstance(val, str) and val.strip():
                 return val.strip(), "{}.{}".format(sub_key, key)

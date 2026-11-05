@@ -122,6 +122,40 @@ def test_real_trinity_and_smart_oi_payloads_classify():
     assert smart["levels"]["resistance"] == 24800.0
 
 
+@pytest.mark.parametrize("text,expected", [
+    ("POSITIVE_GAMMA", "CONSOLIDATION"),
+    ("NEGATIVE_GAMMA", "NEUTRAL"),
+    ("BULLISH_TRINITY_LOCK", "BULLISH"),
+    ("BULLISH_PUT_CONTROL", "BULLISH"),
+    ("BEARISH_FIRST_HOUR", "BEARISH"),
+    ("INSIDE_RANGE", "CONSOLIDATION"),
+    ("idle", "NEUTRAL"),
+    ("Put dominated", "BULLISH"),
+])
+def test_snake_case_enums_classify(text, expected):
+    """Engines emit SNAKE_CASE enums as well as prose; one config phrase must
+    match both forms."""
+    assert cf.classify_text(text) == expected
+
+
+def test_gamma_regime_does_not_vote_on_direction():
+    """Dealer gamma says WHEN a setup should work, not which way. It must not
+    contribute a directional vote."""
+    cfg = cf.load_config()
+    gamma = [e for e in cfg["engines"] if e["key"] == "gamma_exposure"][0]
+    assert gamma["in_consensus"] is False
+
+
+def test_nested_verdict_is_found_at_any_container_name():
+    """auction nests under `today`, gamma under `gamma_review` — the scan must
+    not depend on a hardcoded list of container names."""
+    now = time.time()
+    row = cf.build_row(_eng(), {"some_unexpected_container": {"bias": "bearish"},
+                                "ts": now}, now)
+    assert row["verdict"] == "BEARISH"
+    assert row["verdict_source"] == "some_unexpected_container.bias"
+
+
 def test_nested_verdict_is_found_one_level_down():
     """pe_ce_matrix nests its verdict under `regime` / `first_hour`."""
     now = time.time()
