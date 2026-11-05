@@ -115,8 +115,11 @@
   "STOCKMOJO_HEADER_J": "new_jwt_captured",
   "STOCKMOJO_HEADER_T": "new_t_captured",
   "STOCKMOJO_PAYLOAD": {
-    "symbol": "NIFTY",
-    "timeframe": "1m"
+    "symbol": 1,
+    "dt": null,
+    "expiries": [
+      215
+    ]
   },
   "POLL_INTERVAL_SECONDS": 60,
   "STOCKMOJO_POLL_SECONDS": 60,
@@ -139,7 +142,7 @@
     "block_ce_when_bearish": false,
     "show_pe_ce_table_in_tab1": true
   },
-  "allow_off_hours_paper_testing": true,
+  "allow_off_hours_paper_testing": false,
   "DHAN_CLIENT_ID": "1112377935",
   "TOKEN_EXPIRY_UTC": "2026-11-06T02:24:30Z"
 }

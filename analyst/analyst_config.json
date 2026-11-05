@@ -33,7 +33,14 @@
   },
   "homework_reconciler": {
     "default_screenshot_dir": "data/UI_screenshot",
-    "supported_extensions": [".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG"],
+    "supported_extensions": [
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".PNG",
+      ".JPG",
+      ".JPEG"
+    ],
     "match_time_tolerance_mins": 30,
     "min_profit_target_pts": 20.0,
     "follow_through_ctc_max_loss_pts": 8.0,
@@ -358,7 +365,7 @@
     "itm_ce_scan_below_spot": 150.0,
     "otm_ce_scan_above_spot": 300.0,
     "panic_unwinding_buffer_pts": 20.0,
-    "pcr_overbought_threshold": 1.60,
+    "pcr_overbought_threshold": 1.6,
     "rsi_period": 14
   },
   "stockmojo_oi_change": {
@@ -377,6 +384,23 @@
       "call_color": "#ef4444",
       "put_color": "#22c55e",
       "fut_color": "#94a3b8"
+    }
+  },
+  "oi_state_classifier": {
+    "lookback_3m_min_sec": 60,
+    "lookback_3m_max_sec": 420,
+    "lookback_15m_min_sec": 600,
+    "lookback_15m_max_sec": 1500,
+    "empirical_percentiles": {
+      "pe_minus_ce_p25": -21563100.0,
+      "pe_minus_ce_p50": 15849892.5,
+      "pe_minus_ce_p75": 63274380.0,
+      "d_pe_minus_ce_15m_p25": -4205581.25,
+      "d_pe_minus_ce_15m_p50": -344142.5,
+      "d_pe_minus_ce_15m_p75": 4403733.75,
+      "pcr_p25": 0.8813551844439331,
+      "pcr_p50": 1.080098035553494,
+      "pcr_p75": 1.423088544433734
     }
   }
 }

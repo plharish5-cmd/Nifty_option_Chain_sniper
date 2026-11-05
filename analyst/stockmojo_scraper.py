@@ -231,6 +231,7 @@ class StockMojoScraper:
         self.cfg["STOCKMOJO_LINE_MAPPING"] = self.line_mapping
 
         self.has_live_sync: bool = False
+        self.last_successful_payload_ts: Optional[float] = None
         self.live_graph_data: Dict[str, Any] = {}
         self.live_graph_history: List[Dict[str, Any]] = []
 
@@ -1624,6 +1625,7 @@ class StockMojoScraper:
                     data = resp.json()
                     self.last_sync_status = "LIVE_API_CONNECTED (200 OK)"
                     self.has_live_sync = True
+                    self.last_successful_payload_ts = time.time()
                     self.ingest_live_graph_data(data, source="DIRECT_API")
                     return {"ok": True, "status": 200, "data": data, "timestamp": self.last_sync_time}
                 else:
@@ -1673,6 +1675,7 @@ class StockMojoScraper:
                     data = resp.json()
                     self.multi_strike_connected = True
                     self.has_live_sync = True
+                    self.last_successful_payload_ts = time.time()
                     self.multi_strike_status = "LIVE_MULTI_STRIKE_CONNECTED (200 OK)"
                     parsed_res = self.parse_multi_strike_data(data)
                     return {
@@ -2287,31 +2290,55 @@ class StockMojoScraper:
         return snapshot
 
     def get_multi_strike_status(self) -> Dict[str, Any]:
-        """Returns structured multi-strike endpoint telemetry and buffer."""
-        latest = self.multi_strike_buffer[0] if self.multi_strike_buffer else {}
+        """Returns structured multi-strike endpoint telemetry, real connection state and payload age."""
+        now_ts = time.time()
         now_time = datetime.now(IST).strftime("%H:%M:%S")
-        if self.multi_strike_last_sync and " " in self.multi_strike_last_sync:
-            parts = self.multi_strike_last_sync.split(" ")
-            last_sync_hhmmss = parts[1] if len(parts) > 1 else parts[0]
-        elif self.last_sync_time and " " in self.last_sync_time:
-            parts = self.last_sync_time.split(" ")
-            last_sync_hhmmss = parts[1] if len(parts) > 1 else parts[0]
+
+        if self.last_successful_payload_ts is None:
+            state_color = "RED"
+            status_code = "DISCONNECTED"
+            age_str = "No payload this session"
+            badge_text = "🔴 Stock Mojo Disconnected (No payload this session)"
+            payload_age_sec = None
         else:
-            last_sync_hhmmss = self.multi_strike_last_sync or now_time
+            payload_age_sec = round(now_ts - self.last_successful_payload_ts, 1)
+            if payload_age_sec < 60:
+                age_str = f"{int(payload_age_sec)}s ago"
+            else:
+                age_str = f"{int(payload_age_sec // 60)}m ago"
+
+            if payload_age_sec < 300:  # Under 5 minutes old
+                state_color = "GREEN"
+                status_code = "CONNECTED"
+                badge_text = f"🟢 Stock Mojo Multi-Strike API Connected ({age_str})"
+            else:
+                state_color = "AMBER"
+                status_code = "STALE"
+                badge_text = f"🟡 Stock Mojo Multi-Strike API Stale ({age_str})"
 
         bias = self.multi_strike_bias if self.multi_strike_bias in ("BULLISH_SYNERGY", "BEARISH_SYNERGY") else self.evaluate_synergy_status().get("synergy_status", "MIXED")
+        if self.last_successful_payload_ts is None:
+            status_card_text = badge_text
+        else:
+            status_card_text = f"{badge_text} | Last Sync: {age_str} | Bias: {bias}"
+
         return {
             "ok": True,
             "endpoint": self.multi_strike_url,
-            "connected": self.multi_strike_connected,
-            "status": self.multi_strike_status,
+            "connected": state_color == "GREEN",
+            "state_color": state_color,
+            "status": status_code,
+            "badge_text": badge_text,
+            "status_card_text": status_card_text,
+            "payload_age_seconds": payload_age_sec,
+            "payload_age_str": age_str,
+            "last_successful_payload_ts": self.last_successful_payload_ts,
             "last_sync_time": self.multi_strike_last_sync or now_time,
-            "last_sync_hhmmss": last_sync_hhmmss,
+            "last_sync_hhmmss": age_str if self.last_successful_payload_ts else "Never",
             "bias": bias,
             "net_diff_lakhs": self.multi_strike_net_diff,
             "net_diff_cr": round(self.multi_strike_net_diff / 100.0, 2),
             "expanding": self.multi_strike_expanding,
-            "status_card_text": f"🟢 Stock Mojo Multi-Strike API Connected | Last Sync: {last_sync_hhmmss} | Bias: {bias}",
             "buffer": self.multi_strike_buffer[:30],
         }
 

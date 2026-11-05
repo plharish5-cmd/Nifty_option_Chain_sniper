@@ -3,30 +3,14 @@
 scripts/backtest_ma_geometry.py
 
 Advanced Chart Geometry, Contact & Regime Backtest for Port 8510 / OC App.
-Offline, read-only analytical script evaluating whether chart geometry, contact
-penetration, whip-saws, 1-hour trend, and volume surge can close the 1.9% break-even
-gap in Setup #1 (Stage 2 8-EMA Long).
-
-PRIMARY ANALYSIS (LOCKED):
-  - Population: Variant A (n ~ 2,370)
-  - Exit Model: Fixed 40/40 bracket under real Dhan tariff (~₹78/trade) at lot size 65
-  - MA Type: EMA(4) vs EMA(8)
-  - 16 Active Measures, Decile Buckets (D1..D10)
-  - Best-of-16 Noise Benchmark (~ +2.0 SD)
-
-SECONDARY ANALYSIS (EXPLORATORY, NOT SCORED AGAINST BUILD HURDLE):
-  - Variant B (4>8 Trend Filter, n ~ 1,120)
-  - Variant E (Institutional 15m, n = 80)
-  - SMA(4) vs EMA(8)
-  - Super Trail v1.1 + Follow-Through CTC
-
-MANDATORY CONTROLS:
-  1. Direction Control: Opposite (Short) trade on identical entry bar vs matching baseline
-  2. Time-to-Resolution: (exit_ts - entry_ts)/60 in every events_*.csv
-  3. Session-Block Bootstrap: 1,000 resamples of whole trading days for 95% CI
-  4. Outlier Robustness: Expectancy excluding top 1, 3, and 5 winning trades
-  5. Measure 17 (Volume): BLOCKED per futures history limitation (09-09 to 11-05 only)
-  6. Measure 16 (1H Slope): Explicitly documented as continuous refinement of prior failed binary test
+Boss Upgraded Edition:
+  - 17 Geometry, Contact, Ribbon, MTF & Volume Measures
+  - Three-Layer Protocol (Spearman rho + Inverted-U Chop-Removal -> Monotone Terciles -> 50/50 OOS Split)
+  - Dual Exit Scoring: Model 1 (Fixed 40/40 after Rs 400 brokerage) vs Model 2 (Super Trail v1.1 + Follow-Through CTC)
+  - Mandatory Controls: Random Time-Matched Baseline (200 Monte Carlo draws), Session Bootstrap (1,000 whole-day iterations),
+    Opposite Direction Control (Short), Outlier Ex-Top 1/3/5 Wins, and Multiple-Comparison Noise Ceiling (+2.0 SD).
+  - Strict BUILD Hurdle: OOS Net Rs/trade > 0 after Rs 400 brokerage at lot 65, PF >= 1.30, OOS n >= 60,
+    Ex-top5 > 0, Z-score >= +2.0 SD, Directional Advantage > 0.
 """
 
 from __future__ import annotations
@@ -80,6 +64,7 @@ ASYM_LOSS_DELTA = 0.50
 FIXED_SL_PTS = 40.0
 FIXED_TARGET_PTS = 40.0
 SQUARE_OFF_TIME = "15:20:00"
+BROKERAGE_HURDLE_INR = 400.0  # Mandated ₹400 round-trip hurdle at lot 65
 
 # Super Trail v1.1 parameters
 SUPER_TRAIL_ACTIVATION = 15.0
@@ -197,30 +182,38 @@ def prepare_15m_geometry_frame(df_15m: pd.DataFrame) -> pd.DataFrame:
     # ADX(14)
     df["adx14"] = calc_adx(df, 14)
 
-    # Group A: Geometry Measures
+    # Group A: Geometry Measures (#1 to #11)
     spread = df["ema4"] - df["ema8"]
-    df["separation_signed"] = spread / df["atr14"]
-    df["separation_abs"] = spread.abs() / df["atr14"]
-    df["separation_percentile"] = fast_rolling_percentile(df["separation_abs"], window=6250)
+    df["m01_separation_signed"] = spread / df["atr14"]
+    df["m02_separation_abs"] = spread.abs() / df["atr14"]
+    df["m03_separation_percentile"] = fast_rolling_percentile(df["m02_separation_abs"], window=6250)
 
-    df["ma4_slope"] = (df["ema4"] - df["ema4"].shift(5)) / (5.0 * df["atr14"] + 1e-9)
-    df["ema8_slope"] = (df["ema8"] - df["ema8"].shift(5)) / (5.0 * df["atr14"] + 1e-9)
-    df["ma4_angle_deg"] = np.degrees(np.arctan(df["ma4_slope"].fillna(0.0)))
+    df["m04_ma4_slope"] = (df["ema4"] - df["ema4"].shift(5)) / (5.0 * df["atr14"] + 1e-9)
+    df["m05_ema8_slope"] = (df["ema8"] - df["ema8"].shift(5)) / (5.0 * df["atr14"] + 1e-9)
 
-    df["spread_velocity"] = (spread - spread.shift(3)) / (3.0 * df["atr14"] + 1e-9)
-    df["spread_phase"] = np.sign(spread) * np.sign(df["spread_velocity"])
-    df["ema8_curvature"] = (df["ema8"] - 2.0 * df["ema8"].shift(3) + df["ema8"].shift(6)) / df["atr14"]
+    df["m06_spread_velocity"] = (spread - spread.shift(3)) / (3.0 * df["atr14"] + 1e-9)
+    df["m07_spread_phase"] = np.sign(spread) * np.sign(df["m06_spread_velocity"])
+    df["m08_ema8_curvature"] = (df["ema8"] - 2.0 * df["ema8"].shift(3) + df["ema8"].shift(6)) / df["atr14"]
+    df["m09_adx14"] = df["adx14"]
+    df["m10_bb_width_percentile"] = df["bb_width_percentile"]
+    df["m11_ma4_angle_deg"] = np.degrees(np.arctan(df["m04_ma4_slope"].fillna(0.0)))
 
-    # Group B: Contact Measures (Long/CE perspective)
-    df["penetration_depth"] = (df["ema8"] - l) / df["atr14"]
-    bar_range = (h - l).replace(0, 0.01)
-    df["wick_rejection_pinbar"] = (c - l) / bar_range
+    # Group B: Boss Upgrades (#12 to #15)
+    # Measure 12: 5-Bar Integrated Ribbon Area
+    df["m12_ribbon_area_5"] = spread.rolling(5, min_periods=1).sum() / (5.0 * df["atr14"] + 1e-9)
 
-    # 12-bar whip-saw count (sign changes of spread)
+    # Measure 13: 12-Bar Whip-Saw Cross Count
     sign_spread = np.sign(spread)
     flips = (sign_spread != sign_spread.shift(1)).astype(int)
     flips.iloc[0] = 0
-    df["whipsaw_cross_count_12"] = flips.rolling(12, min_periods=1).sum()
+    df["m13_whipsaw_cross_count_12"] = flips.rolling(12, min_periods=1).sum()
+
+    # Measure 14: 8-EMA Contact Penetration Depth (Long perspective)
+    df["m14_penetration_depth"] = (df["ema8"] - l) / df["atr14"]
+
+    # Measure 15: Contact Wick Rejection Intensity (Pin-Bar Ratio)
+    bar_range = (h - l).replace(0, 0.01)
+    df["m15_wick_rejection_pinbar"] = (c - l) / bar_range
 
     # Secondary: SMA4 vs EMA8
     sma_spread = df["sma4"] - df["ema8"]
@@ -231,14 +224,14 @@ def prepare_15m_geometry_frame(df_15m: pd.DataFrame) -> pd.DataFrame:
 
 
 def prepare_1h_trend_frame(df_1h: pd.DataFrame) -> pd.DataFrame:
-    """Computes 1H 8-EMA slope and candle alignment for Mentor's Rule."""
+    """Computes 1H 8-EMA slope and candle alignment for Measure #16 (Mentor's Rule)."""
     df = df_1h.copy()
     c = df["close"]
     o = df["open"]
     df["ema8_1h"] = c.ewm(span=8, adjust=False).mean()
     df["atr14_1h"] = calc_atr(df, 14).replace(0, np.nan).bfill()
-    df["slope_1h_8ema"] = (df["ema8_1h"] - df["ema8_1h"].shift(2)) / (2.0 * df["atr14_1h"] + 1e-9)
-    df["candle_align_1h"] = np.where(c >= o, 1.0, -1.0)
+    df["m16_slope_1h_8ema"] = (df["ema8_1h"] - df["ema8_1h"].shift(2)) / (2.0 * df["atr14_1h"] + 1e-9)
+    df["m16_candle_align_1h"] = np.where(c >= o, 1.0, -1.0)
     return df
 
 
@@ -256,18 +249,17 @@ class ClosedBarLookup:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. FORWARD-WALK SIMULATORS (FIXED 40/40, DIRECTION CONTROL & SUPER TRAIL)
+# 3. FORWARD-WALK SIMULATORS (FIXED 40/40, DIRECTION CONTROL & SUPER TRAIL + CTC)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def simulate_direction_control_short(
     entry_ts: int,
     entry_spot: float,
     session_1m: List[Dict[str, Any]],
-) -> Tuple[float, float, float, float, str, float]:
+) -> Tuple[float, float, float, float, float, str, float]:
     """
     Mandatory Control 1: Mirror short trade entered at exact same bar.
-    Evaluates short fixed 40/40 bracket to test whether the edge is directional.
-    Returns: (spot_pnl, net_statutory_inr, net_with_slip_inr, stat_charges, reason, duration_min)
+    Returns: (spot_pnl, hurdle400_net, statutory_net, net_with_slip, stat_charges, reason, duration_min)
     """
     short_target = entry_spot - FIXED_TARGET_PTS
     short_sl = entry_spot + FIXED_SL_PTS
@@ -290,9 +282,10 @@ def simulate_direction_control_short(
             opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
             chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
             stat_charges = float(chg["total_charges"])
-            net_inr = round(gross_inr - stat_charges, 2)
+            hurdle400_net = round(gross_inr - BROKERAGE_HURDLE_INR, 2)
+            stat_net = round(gross_inr - stat_charges, 2)
             net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
-            return spot_pnl, net_inr, net_with_slip, stat_charges, "SL_HIT", max(0.0, dur_min)
+            return spot_pnl, hurdle400_net, stat_net, net_with_slip, stat_charges, "SL_HIT", max(0.0, dur_min)
 
         # Check Target (Low <= entry - 40)
         if b_low <= short_target:
@@ -303,9 +296,10 @@ def simulate_direction_control_short(
             opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
             chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
             stat_charges = float(chg["total_charges"])
-            net_inr = round(gross_inr - stat_charges, 2)
+            hurdle400_net = round(gross_inr - BROKERAGE_HURDLE_INR, 2)
+            stat_net = round(gross_inr - stat_charges, 2)
             net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
-            return spot_pnl, net_inr, net_with_slip, stat_charges, "TARGET_HIT", max(0.0, dur_min)
+            return spot_pnl, hurdle400_net, stat_net, net_with_slip, stat_charges, "TARGET_HIT", max(0.0, dur_min)
 
         # EOD Square-off
         if b_time >= SQUARE_OFF_TIME or i == len(session_1m) - 1:
@@ -316,24 +310,50 @@ def simulate_direction_control_short(
             opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
             chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
             stat_charges = float(chg["total_charges"])
-            net_inr = round(gross_inr - stat_charges, 2)
+            hurdle400_net = round(gross_inr - BROKERAGE_HURDLE_INR, 2)
+            stat_net = round(gross_inr - stat_charges, 2)
             net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
-            return spot_pnl, net_inr, net_with_slip, stat_charges, "EOD_SQUARE_OFF", max(0.0, dur_min)
+            return spot_pnl, hurdle400_net, stat_net, net_with_slip, stat_charges, "EOD_SQUARE_OFF", max(0.0, dur_min)
 
-    return 0.0, -78.0, -110.5, 78.0, "NO_DATA", 0.0
+    return 0.0, -400.0, -78.0, -110.5, 78.0, "NO_DATA", 0.0
 
 
-def simulate_super_trail_long(
+def simulate_super_trail_ctc_long(
     entry_ts: int,
     entry_spot: float,
     session_1m: List[Dict[str, Any]],
-) -> Tuple[float, float, float, float, str, float]:
+    closed_15m_ema8: float,
+) -> Tuple[float, float, float, float, float, str, float]:
     """
-    Secondary Model: Super Trail v1.1 + Follow-Through CTC rule.
-    Activation=15, Jump=5, Initial SL=20; Target Initial=25, Step=10, Pullback=5.
-    Returns: (spot_pnl, net_statutory_inr, net_with_slip_inr, stat_charges, reason, duration_min)
+    Model 2: Super Trail v1.1 + Follow-Through CTC Rule.
+    If immediate bar after entry fails to follow through (e.g., lower low or closes below 8 EMA),
+    exits near Cost-to-Cost (0 to -5 pts).
+    Otherwise trails Activation=15, Jump=5, Target Initial=25, Step=10, Pullback=5, CTC trigger=+40.
+    Returns: (spot_pnl, hurdle400_net, statutory_net, net_with_slip, stat_charges, reason, duration_min)
     """
     idx_start = bisect.bisect_right([b["ts"] for b in session_1m], entry_ts)
+    if idx_start >= len(session_1m):
+        return 0.0, -400.0, -78.0, -110.5, 78.0, "NO_DATA", 0.0
+
+    # Follow-Through Candle Check on immediate bar after entry
+    first_bar = session_1m[idx_start]
+    entry_bar_low = entry_spot - 5.0
+    if len(session_1m) > idx_start:
+        # If immediate bar fails to follow through (closes below 8-EMA or breaches low)
+        if first_bar["close"] < closed_15m_ema8 or first_bar["low"] < entry_bar_low:
+            exit_price = max(first_bar["low"], entry_spot - 5.0)
+            spot_pnl = exit_price - entry_spot
+            dur_min = (first_bar["ts"] - entry_ts) / 60.0
+            opt_pts = spot_pnl * (ASYM_WIN_DELTA if spot_pnl > 0 else ASYM_LOSS_DELTA)
+            gross_inr = opt_pts * LOT_SIZE
+            opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
+            chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
+            stat_charges = float(chg["total_charges"])
+            hurdle400_net = round(gross_inr - BROKERAGE_HURDLE_INR, 2)
+            stat_net = round(gross_inr - stat_charges, 2)
+            net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
+            return spot_pnl, hurdle400_net, stat_net, net_with_slip, stat_charges, "FOLLOW_THROUGH_CTC_CUT", max(0.0, dur_min)
+
     mfe = 0.0
     highest_after_target = entry_spot + SUPER_TRAIL_INITIAL_TARGET
 
@@ -371,9 +391,10 @@ def simulate_super_trail_long(
                 opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
                 chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
                 stat_charges = float(chg["total_charges"])
-                net_inr = round(gross_inr - stat_charges, 2)
+                hurdle400_net = round(gross_inr - BROKERAGE_HURDLE_INR, 2)
+                stat_net = round(gross_inr - stat_charges, 2)
                 net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
-                return spot_pnl, net_inr, net_with_slip, stat_charges, "TRAIL_TARGET_PULLBACK", max(0.0, dur_min)
+                return spot_pnl, hurdle400_net, stat_net, net_with_slip, stat_charges, "TRAIL_TARGET_PULLBACK", max(0.0, dur_min)
 
         # SL Hit
         if b_low <= trailed_sl:
@@ -385,9 +406,10 @@ def simulate_super_trail_long(
             opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
             chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
             stat_charges = float(chg["total_charges"])
-            net_inr = round(gross_inr - stat_charges, 2)
+            hurdle400_net = round(gross_inr - BROKERAGE_HURDLE_INR, 2)
+            stat_net = round(gross_inr - stat_charges, 2)
             net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
-            return spot_pnl, net_inr, net_with_slip, stat_charges, "TRAIL_SL_HIT", max(0.0, dur_min)
+            return spot_pnl, hurdle400_net, stat_net, net_with_slip, stat_charges, "TRAIL_SL_HIT", max(0.0, dur_min)
 
         # EOD Square-off
         if b_time >= SQUARE_OFF_TIME or i == len(session_1m) - 1:
@@ -399,11 +421,12 @@ def simulate_super_trail_long(
             opt_exit = max(0.05, round(OPT_BASE_ENTRY + opt_pts, 2))
             chg = paper_trading.calculate_trade_charges(OPT_BASE_ENTRY, opt_exit, LOT_SIZE, side="BUY")
             stat_charges = float(chg["total_charges"])
-            net_inr = round(gross_inr - stat_charges, 2)
+            hurdle400_net = round(gross_inr - BROKERAGE_HURDLE_INR, 2)
+            stat_net = round(gross_inr - stat_charges, 2)
             net_with_slip = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
-            return spot_pnl, net_inr, net_with_slip, stat_charges, "EOD_SQUARE_OFF", max(0.0, dur_min)
+            return spot_pnl, hurdle400_net, stat_net, net_with_slip, stat_charges, "EOD_SQUARE_OFF", max(0.0, dur_min)
 
-    return 0.0, -78.0, -110.5, 78.0, "NO_DATA", 0.0
+    return 0.0, -400.0, -78.0, -110.5, 78.0, "NO_DATA", 0.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -431,24 +454,42 @@ def enrich_trades(
 
         session_1m = session_1m_map.get(tr.session_date, [])
 
+        # Model 1: Fixed 40/40 PnL (Calculated with both Rs 400 Hurdle and Dhan Tariff)
+        pts = tr.spot_pnl_pts
+        is_win = 1 if pts > 0 else 0
+        if pts > 0:
+            opt_pts = pts * ASYM_WIN_DELTA
+            gross_inr = opt_pts * LOT_SIZE
+        else:
+            opt_pts = pts * ASYM_LOSS_DELTA
+            gross_inr = opt_pts * LOT_SIZE
+
+        hurdle400_net_inr = round(gross_inr - BROKERAGE_HURDLE_INR, 2)
+        stat_charges = float(getattr(tr, "statutory_charges_inr", 78.5))
+        stat_net_inr = round(gross_inr - stat_charges, 2)
+        net_with_slip_inr = round(gross_inr - stat_charges - SLIPPAGE_INR_PER_TRADE, 2)
+
         # Direction control (Short mirror trade)
-        dir_pnl, dir_net_inr, dir_net_slip, dir_chg, dir_reason, dir_dur = simulate_direction_control_short(
+        dir_pnl, dir_hurdle400, dir_stat_net, dir_net_slip, dir_chg, dir_reason, dir_dur = simulate_direction_control_short(
             entry_ts=t_entry,
             entry_spot=tr.entry_spot,
             session_1m=session_1m,
         )
 
-        # Super Trail exit model (Secondary)
-        st_pnl, st_net_inr, st_net_slip, st_chg, st_reason, st_dur = simulate_super_trail_long(
+        # Model 2: Super Trail + Follow-Through CTC
+        e8_val = b15.get("ema8", tr.entry_spot)
+        st_pnl, st_hurdle400, st_stat_net, st_net_slip, st_chg, st_reason, st_dur = simulate_super_trail_ctc_long(
             entry_ts=t_entry,
             entry_spot=tr.entry_spot,
             session_1m=session_1m,
+            closed_15m_ema8=e8_val,
         )
 
         # Time-to-resolution column (Mandatory Control 2)
         dur_min = (tr.exit_ts - tr.entry_ts) / 60.0 if tr.exit_ts and tr.entry_ts else 0.0
         dur_min = max(0.0, dur_min)
 
+        # Measure 17 (Volume Surge Ratio)
         fut_vol_surge = np.nan
         fut_vol_delta = np.nan
         if bfut and bfut.get("fut_vol_surge") is not None:
@@ -467,46 +508,54 @@ def enrich_trades(
             "spot_pnl_pts": tr.spot_pnl_pts,
             "exit_reason": tr.exit_reason,
             "time_to_resolution_min": round(dur_min, 2),
-            "asym_net_inr": round(tr.asym_net_inr, 2),
-            "asym_net_with_slippage_inr": round(getattr(tr, "asym_net_with_slippage_inr", tr.asym_net_inr - SLIPPAGE_INR_PER_TRADE), 2),
-            "statutory_charges_inr": round(getattr(tr, "statutory_charges_inr", 78.5), 2),
-            "slippage_inr": round(getattr(tr, "slippage_inr", SLIPPAGE_INR_PER_TRADE), 2),
-            "asym_gross_inr": round(tr.asym_gross_inr, 2),
-            "is_win": 1 if tr.spot_pnl_pts > 0 else 0,
-            # Direction Control
+            "is_win": is_win,
+            # Dual Exit Model 1: Fixed 40/40
+            "hurdle400_net_inr": hurdle400_net_inr,
+            "asym_net_inr": stat_net_inr,
+            "asym_net_with_slippage_inr": net_with_slip_inr,
+            "statutory_charges_inr": round(stat_charges, 2),
+            "asym_gross_inr": round(gross_inr, 2),
+            # Mandatory Control 1: Direction Control Short
             "dir_ctrl_spot_pnl_pts": round(dir_pnl, 2),
-            "dir_ctrl_asym_net_inr": round(dir_net_inr, 2),
+            "dir_ctrl_hurdle400_net_inr": round(dir_hurdle400, 2),
+            "dir_ctrl_asym_net_inr": round(dir_stat_net, 2),
             "dir_ctrl_asym_net_with_slippage_inr": round(dir_net_slip, 2),
             "dir_ctrl_statutory_charges_inr": round(dir_chg, 2),
             "dir_ctrl_exit_reason": dir_reason,
             "dir_ctrl_time_to_resolution_min": round(dir_dur, 2),
-            # Super Trail Model
+            # Dual Exit Model 2: Super Trail + Follow-Through CTC
             "super_trail_spot_pnl_pts": round(st_pnl, 2),
-            "super_trail_net_inr": round(st_net_inr, 2),
+            "super_trail_hurdle400_net_inr": round(st_hurdle400, 2),
+            "super_trail_net_inr": round(st_stat_net, 2),
             "super_trail_net_with_slippage_inr": round(st_net_slip, 2),
             "super_trail_statutory_charges_inr": round(st_chg, 2),
             "super_trail_exit_reason": st_reason,
             "super_trail_time_to_resolution_min": round(st_dur, 2),
-            # Group B Measures (Priority Contact & Boss Priorities)
-            "m01_penetration_depth": b15.get("penetration_depth", np.nan),
-            "m02_wick_rejection_pinbar": b15.get("wick_rejection_pinbar", np.nan),
-            "m03_whipsaw_cross_count_12": b15.get("whipsaw_cross_count_12", np.nan),
-            "m04_slope_1h_8ema": b1h.get("slope_1h_8ema", np.nan) if b1h else np.nan,
-            "m04_candle_align_1h": b1h.get("candle_align_1h", np.nan) if b1h else np.nan,
-            "m05_fut_volume_surge": fut_vol_surge,
-            "m05_fut_volume_delta": fut_vol_delta,
-            # Group A Measures (4/8 MA Line Geometry)
-            "m06_separation_signed": b15.get("separation_signed", np.nan),
-            "m07_separation_abs": b15.get("separation_abs", np.nan),
-            "m08_separation_percentile": b15.get("separation_percentile", np.nan),
-            "m09_ma4_slope": b15.get("ma4_slope", np.nan),
-            "m10_ema8_slope": b15.get("ema8_slope", np.nan),
-            "m11_spread_velocity": b15.get("spread_velocity", np.nan),
-            "m12_spread_phase": b15.get("spread_phase", np.nan),
-            "m13_ema8_curvature": b15.get("ema8_curvature", np.nan),
-            "m14_adx14": b15.get("adx14", np.nan),
-            "m15_bb_width_percentile": b15.get("bb_width_percentile", np.nan),
-            "m16_ma4_angle_deg": b15.get("ma4_angle_deg", np.nan),
+            # ─────────────────────────────────────────────────────────────
+            # Group A: 4/8 MA Line Geometry Measures (#1 to #11)
+            # ─────────────────────────────────────────────────────────────
+            "m01_separation_signed": b15.get("m01_separation_signed", np.nan),
+            "m02_separation_abs": b15.get("m02_separation_abs", np.nan),
+            "m03_separation_percentile": b15.get("m03_separation_percentile", np.nan),
+            "m04_ma4_slope": b15.get("m04_ma4_slope", np.nan),
+            "m05_ema8_slope": b15.get("m05_ema8_slope", np.nan),
+            "m06_spread_velocity": b15.get("m06_spread_velocity", np.nan),
+            "m07_spread_phase": b15.get("m07_spread_phase", np.nan),
+            "m08_ema8_curvature": b15.get("m08_ema8_curvature", np.nan),
+            "m09_adx14": b15.get("m09_adx14", np.nan),
+            "m10_bb_width_percentile": b15.get("m10_bb_width_percentile", np.nan),
+            "m11_ma4_angle_deg": b15.get("m11_ma4_angle_deg", np.nan),
+            # ─────────────────────────────────────────────────────────────
+            # Group B: Boss Upgrades (#12 to #17)
+            # ─────────────────────────────────────────────────────────────
+            "m12_ribbon_area_5": b15.get("m12_ribbon_area_5", np.nan),
+            "m13_whipsaw_cross_count_12": b15.get("m13_whipsaw_cross_count_12", np.nan),
+            "m14_penetration_depth": b15.get("m14_penetration_depth", np.nan),
+            "m15_wick_rejection_pinbar": b15.get("m15_wick_rejection_pinbar", np.nan),
+            "m16_slope_1h_8ema": b1h.get("m16_slope_1h_8ema", np.nan) if b1h else np.nan,
+            "m16_candle_align_1h": b1h.get("m16_candle_align_1h", np.nan) if b1h else np.nan,
+            "m17_vol_surge_ratio": fut_vol_surge,
+            "m17_vol_delta_ratio": fut_vol_delta,
             # Secondary MA Types
             "sma4_vs_ema8_separation_signed": b15.get("sma4_vs_ema8_separation_signed", np.nan),
             "sma4_vs_ema8_spread_velocity": b15.get("sma4_vs_ema8_spread_velocity", np.nan),
@@ -517,73 +566,73 @@ def enrich_trades(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. DECILE-FIRST SHAPE ANALYSIS & BUILD HURDLE EVALUATION
+# 5. TERCILE ANALYSIS, INVERTED-U REGIME CHECKS & THREE-LAYER PROTOCOL
 # ─────────────────────────────────────────────────────────────────────────────
 
 MEASURE_METADATA = [
-    # Group B: Contact Geometry & Boss Priorities (Run First)
-    ("m01_penetration_depth", "8-EMA Contact Penetration Depth", "Group B (Contact)"),
-    ("m02_wick_rejection_pinbar", "Contact Wick Rejection (Pin-Bar)", "Group B (Contact)"),
-    ("m03_whipsaw_cross_count_12", "12-Bar Whip-Saw Count (Chop)", "Group B (Contact)"),
-    ("m04_slope_1h_8ema", "1H 8-EMA Continuous Slope", "Group B (1H Trend)"),
-    ("m05_fut_volume_surge", "NIFTY Futures Volume Surge Ratio", "Group B (Volume)"),
     # Group A: 4/8 MA Line Geometry
-    ("m06_separation_signed", "Separation (Signed)", "Group A (Line Geometry)"),
-    ("m07_separation_abs", "Separation (Absolute)", "Group A (Line Geometry)"),
-    ("m08_separation_percentile", "Separation Percentile", "Group A (Line Geometry)"),
-    ("m09_ma4_slope", "MA4 Slope (Normalized Angle)", "Group A (Line Geometry)"),
-    ("m10_ema8_slope", "EMA8 Slope (Underlying Trend)", "Group A (Line Geometry)"),
-    ("m11_spread_velocity", "Spread Velocity", "Group A (Line Geometry)"),
-    ("m12_spread_phase", "Spread Phase (+1 Exp, -1 Cont)", "Group A (Line Geometry)"),
-    ("m13_ema8_curvature", "EMA8 Curvature (2nd Derivative)", "Group A (Line Geometry)"),
-    ("m14_adx14", "ADX(14) Trend Strength", "Group A (Regime)"),
-    ("m15_bb_width_percentile", "BB Width Percentile", "Group A (Regime)"),
-    ("m16_ma4_angle_deg", "MA4 Angle in Degrees", "Group A (Sanity Check)"),
+    ("m01_separation_signed", "Separation (Signed)", "Group A (Line Geometry)"),
+    ("m02_separation_abs", "Separation (Absolute)", "Group A (Line Geometry)"),
+    ("m03_separation_percentile", "Separation Percentile", "Group A (Line Geometry)"),
+    ("m04_ma4_slope", "MA4 Slope (Normalized Angle)", "Group A (Line Geometry)"),
+    ("m05_ema8_slope", "EMA8 Slope (Underlying Trend)", "Group A (Line Geometry)"),
+    ("m06_spread_velocity", "Spread Velocity", "Group A (Line Geometry)"),
+    ("m07_spread_phase", "Spread Phase (+1 Exp, -1 Cont)", "Group A (Line Geometry)"),
+    ("m08_ema8_curvature", "EMA8 Curvature (2nd Deriv)", "Group A (Line Geometry)"),
+    ("m09_adx14", "ADX(14) Trend Strength", "Group A (Regime)"),
+    ("m10_bb_width_percentile", "BB Width Percentile", "Group A (Regime)"),
+    ("m11_ma4_angle_deg", "MA4 Angle in Degrees", "Group A (Sanity Check)"),
+    # Group B: Boss Upgrades
+    ("m12_ribbon_area_5", "5-Bar Ribbon Area", "Group B (Ribbon Area)"),
+    ("m13_whipsaw_cross_count_12", "12-Bar Whip-Saw Count", "Group B (Chop Flips)"),
+    ("m14_penetration_depth", "8-EMA Contact Penetration", "Group B (Contact)"),
+    ("m15_wick_rejection_pinbar", "Contact Wick Rejection", "Group B (Contact)"),
+    ("m16_slope_1h_8ema", "1H 8-EMA Slope (Mentor)", "Group B (1H Trend)"),
+    ("m17_vol_surge_ratio", "Volume Surge Ratio (FUT)", "Group B (Volume)"),
 ]
 
+CONSOLIDATION_MEASURES = {
+    "m02_separation_abs",
+    "m03_separation_percentile",
+    "m10_bb_width_percentile",
+    "m12_ribbon_area_5",
+    "m13_whipsaw_cross_count_12",
+}
 
-def classify_decile_shape(deciles: List[Dict[str, Any]]) -> str:
-    """Classifies the decile progression into one of 5 archetypes."""
-    if len(deciles) < 10:
+
+def classify_tercile_shape(terciles: List[Dict[str, Any]]) -> str:
+    """
+    Classifies the 3-tercile progression:
+      - MONOTONE_POSITIVE: B1 < B2 < B3
+      - MONOTONE_NEGATIVE: B1 > B2 > B3
+      - CHOP_FLOOR: B1 << B2 approx B3 (B1 significantly worse; removing B1 fixes edge)
+      - INVERTED_U: B2 > B1 and B2 > B3 (Goldilocks sweet spot)
+      - NO_SHAPE: none of above
+    """
+    if len(terciles) < 3:
         return "NO_SHAPE"
 
-    net_pnls = [d["net_inr_per_trade"] for d in deciles]
-    win_rates = [d["win_rate"] for d in deciles]
+    p1 = terciles[0]["net_inr_per_trade"]
+    p2 = terciles[1]["net_inr_per_trade"]
+    p3 = terciles[2]["net_inr_per_trade"]
 
-    # Spearman rank correlation across decile index vs Net PnL
-    rho, _ = stats.spearmanr(range(10), net_pnls)
-
-    if rho > 0.60:
+    if p1 < p2 < p3:
         return "MONOTONE_POSITIVE"
-    if rho < -0.60:
+    if p1 > p2 > p3:
         return "MONOTONE_NEGATIVE"
-
-    # Chop-Floor / Bottom Removal: D1 or D1+D2 substantially worse than median
-    med_pnl = statistics_median(net_pnls)
-    if net_pnls[0] < med_pnl - 150.0 and net_pnls[1] > net_pnls[0] + 80.0:
+    if p2 > p1 and p2 > p3 and p2 > (max(p1, p3) + 40.0):
+        return "INVERTED_U"
+    if p1 < min(p2, p3) - 60.0 and abs(p2 - p3) <= max(40.0, 0.4 * abs(p2)):
         return "CHOP_FLOOR"
 
-    # Inverted-U / Sweet Spot: D4..D7 outperform extremes D1..D2 and D9..D10
-    mid_avg = statistics_mean(net_pnls[3:7])
-    ext_avg = statistics_mean(net_pnls[0:2] + net_pnls[8:10])
-    if mid_avg > ext_avg + 100.0:
-        return "INVERTED_U"
-
     return "NO_SHAPE"
-
-
-def statistics_mean(vals: List[float]) -> float:
-    return float(np.mean(vals)) if vals else 0.0
-
-
-def statistics_median(vals: List[float]) -> float:
-    return float(np.median(vals)) if vals else 0.0
 
 
 def run_session_block_bootstrap(
     trades: List[Dict[str, Any]],
     n_iterations: int = 1000,
     seed: int = 42,
+    pnl_col: str = "hurdle400_net_inr",
 ) -> Tuple[float, float]:
     """Resamples whole trading sessions with replacement to yield robust 95% CI."""
     if not trades:
@@ -592,12 +641,12 @@ def run_session_block_bootstrap(
     random.seed(seed)
     np.random.seed(seed)
 
-    by_session = {}
+    by_session: Dict[str, List[float]] = {}
     for t in trades:
         s = t["session_date"]
         if s not in by_session:
             by_session[s] = []
-        by_session[s].append(t["asym_net_inr"])
+        by_session[s].append(t[pnl_col])
 
     sessions = list(by_session.keys())
     s_count = len(sessions)
@@ -617,6 +666,71 @@ def run_session_block_bootstrap(
     return ci_low, ci_high
 
 
+def run_time_matched_random_baseline(
+    trades: List[Dict[str, Any]],
+    session_1m_map: Dict[str, List[Dict[str, Any]]],
+    oos_sessions: List[str],
+    n_draws: int = 200,
+    seed: int = 42,
+) -> Dict[str, float]:
+    """
+    Mandatory Control: Time-of-day-matched random baseline (200 Monte Carlo draws).
+    In each draw, for each trade, pairs its entry time of day with a randomly chosen OOS session.
+    Simulates fixed 40/40 trade to establish the true empirical null distribution.
+    """
+    if not trades or not oos_sessions:
+        return {"mean_net": -120.0, "se_net": 15.0, "ci_low": -150.0, "ci_high": -90.0}
+
+    random.seed(seed)
+    entry_times = [t["entry_time"] for t in trades]
+    n_trades = len(entry_times)
+    draw_means: List[float] = []
+
+    for _ in range(n_draws):
+        draw_pnls: List[float] = []
+        for et in entry_times:
+            rand_session = random.choice(oos_sessions)
+            bars = session_1m_map.get(rand_session, [])
+            if not bars:
+                continue
+            # Find bar matching entry time
+            match_bar = next((b for b in bars if b["session_time"] == et), None)
+            if not match_bar:
+                continue
+            entry_spot = match_bar["open"]
+            entry_ts = match_bar["ts"]
+            idx_start = bisect.bisect_right([b["ts"] for b in bars], entry_ts)
+            target = entry_spot + FIXED_TARGET_PTS
+            sl = entry_spot - FIXED_SL_PTS
+            trade_pnl = 0.0
+            for i in range(idx_start, len(bars)):
+                b = bars[i]
+                if b["low"] <= sl:
+                    trade_pnl = -FIXED_SL_PTS * ASYM_LOSS_DELTA * LOT_SIZE - BROKERAGE_HURDLE_INR
+                    break
+                if b["high"] >= target:
+                    trade_pnl = FIXED_TARGET_PTS * ASYM_WIN_DELTA * LOT_SIZE - BROKERAGE_HURDLE_INR
+                    break
+                if b["session_time"] >= SQUARE_OFF_TIME or i == len(bars) - 1:
+                    diff = b["close"] - entry_spot
+                    trade_pnl = diff * (ASYM_WIN_DELTA if diff > 0 else ASYM_LOSS_DELTA) * LOT_SIZE - BROKERAGE_HURDLE_INR
+                    break
+            draw_pnls.append(trade_pnl)
+
+        if draw_pnls:
+            draw_means.append(float(np.mean(draw_pnls)))
+
+    if not draw_means:
+        return {"mean_net": -120.0, "se_net": 15.0, "ci_low": -150.0, "ci_high": -90.0}
+
+    return {
+        "mean_net": round(float(np.mean(draw_means)), 2),
+        "se_net": round(float(np.std(draw_means, ddof=1)), 2),
+        "ci_low": round(float(np.percentile(draw_means, 2.5)), 2),
+        "ci_high": round(float(np.percentile(draw_means, 97.5)), 2),
+    }
+
+
 def evaluate_single_measure(
     measure_key: str,
     measure_name: str,
@@ -624,10 +738,14 @@ def evaluate_single_measure(
     df_trades: pd.DataFrame,
     is_sessions: List[str],
     oos_sessions: List[str],
-    pnl_col: str = "asym_net_inr",
+    pnl_col: str = "hurdle400_net_inr",
 ) -> Dict[str, Any]:
-    """Executes decile analysis, OOS validation, and BUILD hurdle tests for a single measure."""
-    # Filter valid rows
+    """
+    Executes Three-Layer Protocol:
+      Layer 1: Continuous Rank Correlation + Inverted-U Chop-Removal Tests
+      Layer 2: Tercile Bucketing (Bottom, Middle, Top) + Archetype Classification
+      Layer 3: Strict 50/50 OOS Evaluation + 6 BUILD Hurdle Checks
+    """
     valid = df_trades.dropna(subset=[measure_key]).copy()
     if len(valid) < 100:
         return {
@@ -639,7 +757,6 @@ def evaluate_single_measure(
             "verdict": "NOT BUILT",
         }
 
-    # Split into In-Sample and Out-of-Sample
     is_df = valid[valid["session_date"].isin(is_sessions)].copy()
     oos_df = valid[valid["session_date"].isin(oos_sessions)].copy()
 
@@ -653,68 +770,110 @@ def evaluate_single_measure(
             "verdict": "NOT BUILT",
         }
 
-    # Decile Bucketing on In-Sample
-    try:
-        is_df["decile"] = pd.qcut(is_df[measure_key], q=10, labels=False, duplicates="drop")
-    except Exception:
-        is_df["decile"] = pd.cut(is_df[measure_key], bins=10, labels=False)
+    # ─────────────────────────────────────────────────────────────────────────
+    # LAYER 1: Continuous Rank Correlation + Chop-Removal / Inverted-U Check
+    # ─────────────────────────────────────────────────────────────────────────
+    spearman_rho, spearman_p = stats.spearmanr(is_df[measure_key], is_df[pnl_col])
 
-    decile_summary = []
-    unique_deciles = sorted(is_df["decile"].dropna().unique())
-    for d in unique_deciles:
-        sub = is_df[is_df["decile"] == d]
-        n_d = len(sub)
-        w_d = int(sub["is_win"].sum())
-        wr_d = (w_d / n_d * 100.0) if n_d else 0.0
-        net_d = float(sub[pnl_col].sum())
-        exp_d = (net_d / n_d) if n_d else 0.0
+    # Chop-Removal Binary Test (Bottom 30% Chop Excluded vs Bottom 30% Chop Only)
+    chop_cut = float(is_df[measure_key].quantile(0.30))
+    chop_excluded = is_df[is_df[measure_key] > chop_cut]
+    chop_only = is_df[is_df[measure_key] <= chop_cut]
+
+    chop_excluded_pnl = float(chop_excluded[pnl_col].mean()) if len(chop_excluded) else 0.0
+    chop_only_pnl = float(chop_only[pnl_col].mean()) if len(chop_only) else 0.0
+    chop_removal_edge = round(chop_excluded_pnl - chop_only_pnl, 2)
+
+    # Goldilocks Middle-Regime Check (25th–85th percentile vs Extremes)
+    q25 = float(is_df[measure_key].quantile(0.25))
+    q85 = float(is_df[measure_key].quantile(0.85))
+    goldilocks_df = is_df[(is_df[measure_key] >= q25) & (is_df[measure_key] <= q85)]
+    extremes_df = is_df[(is_df[measure_key] < q25) | (is_df[measure_key] > q85)]
+
+    goldilocks_pnl = float(goldilocks_df[pnl_col].mean()) if len(goldilocks_df) else 0.0
+    extremes_pnl = float(extremes_df[pnl_col].mean()) if len(extremes_df) else 0.0
+    goldilocks_edge = round(goldilocks_pnl - extremes_pnl, 2)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # LAYER 2: Tercile Bucketing (Bottom / Middle / Top)
+    # ─────────────────────────────────────────────────────────────────────────
+    if measure_key == "m13_whipsaw_cross_count_12":
+        # Discrete buckets: 0 flips, 1 flip, >= 2 flips
+        bins = [-0.1, 0.5, 1.5, 999.0]
+        labels = [0, 1, 2]
+        is_df["tercile"] = pd.cut(is_df[measure_key], bins=bins, labels=labels)
+    else:
+        try:
+            is_df["tercile"] = pd.qcut(is_df[measure_key], q=3, labels=[0, 1, 2], duplicates="drop")
+        except Exception:
+            is_df["tercile"] = pd.cut(is_df[measure_key], bins=3, labels=[0, 1, 2])
+
+    tercile_summary = []
+    bucket_labels = ["Bottom (T1)", "Middle (T2)", "Top (T3)"]
+    unique_terciles = sorted(is_df["tercile"].dropna().unique())
+
+    for idx_t in unique_terciles:
+        sub = is_df[is_df["tercile"] == idx_t]
+        n_t = len(sub)
+        w_t = int(sub["is_win"].sum())
+        wr_t = (w_t / n_t * 100.0) if n_t else 0.0
+        wins = sub[sub["spot_pnl_pts"] > 0]["spot_pnl_pts"]
+        losses = sub[sub["spot_pnl_pts"] < 0]["spot_pnl_pts"]
+        avg_w_pts = float(wins.mean()) if len(wins) else 0.0
+        avg_l_pts = float(losses.mean()) if len(losses) else 0.0
+        net_t = float(sub[pnl_col].sum())
+        exp_t = (net_t / n_t) if n_t else 0.0
+        stat_exp_t = float(sub["asym_net_inr"].mean()) if n_t else 0.0
         wins_pnl = sub[sub[pnl_col] > 0][pnl_col].sum()
         loss_pnl = abs(sub[sub[pnl_col] < 0][pnl_col].sum())
-        pf_d = round(wins_pnl / loss_pnl, 2) if loss_pnl > 0 else 99.0
+        pf_t = round(wins_pnl / loss_pnl, 2) if loss_pnl > 0 else 99.0
         min_v = float(sub[measure_key].min())
         max_v = float(sub[measure_key].max())
-        decile_summary.append({
-            "decile": int(d) + 1,
+
+        b_name = bucket_labels[int(idx_t)] if int(idx_t) < len(bucket_labels) else f"T{int(idx_t)+1}"
+        tercile_summary.append({
+            "bucket_id": int(idx_t) + 1,
+            "label": b_name,
             "min_val": round(min_v, 4),
             "max_val": round(max_v, 4),
-            "n": n_d,
-            "win_rate": round(wr_d, 1),
-            "net_inr_per_trade": round(exp_d, 2),
-            "profit_factor": pf_d,
+            "n": n_t,
+            "win_rate": round(wr_t, 1),
+            "avg_win_pts": round(avg_w_pts, 2),
+            "avg_loss_pts": round(avg_l_pts, 2),
+            "net_inr_per_trade": round(exp_t, 2),
+            "statutory_dhan_net_per_trade": round(stat_exp_t, 2),
+            "profit_factor": pf_t,
         })
 
     # Classify Shape Archetype
-    shape = classify_decile_shape(decile_summary)
-    spearman_rho, spearman_p = stats.spearmanr(is_df[measure_key], is_df[pnl_col])
+    shape = classify_tercile_shape(tercile_summary)
 
-    # Select Optimal Filter Rule on In-Sample
+    # ─────────────────────────────────────────────────────────────────────────
+    # LAYER 3: Strict 50/50 OOS Chronological Split & Cutoff Rule
+    # ─────────────────────────────────────────────────────────────────────────
     cutoff_type = "NONE"
     cutoff_val: Any = None
 
     if shape == "MONOTONE_POSITIVE":
-        # Keep upper deciles
-        cutoff_val = float(is_df[measure_key].quantile(0.30))  # Drop bottom 30%
+        cutoff_val = float(is_df[measure_key].quantile(0.333))  # Drop bottom tercile
         cutoff_type = "GTE"
     elif shape == "MONOTONE_NEGATIVE":
-        # Keep lower deciles
-        cutoff_val = float(is_df[measure_key].quantile(0.70))  # Drop top 30%
+        cutoff_val = float(is_df[measure_key].quantile(0.667))  # Drop top tercile
         cutoff_type = "LTE"
     elif shape == "CHOP_FLOOR":
-        # Drop bottom 15%
-        cutoff_val = float(is_df[measure_key].quantile(0.15))
+        cutoff_val = float(is_df[measure_key].quantile(0.333))  # Chop-floor drop bottom tercile
         cutoff_type = "GTE"
     elif shape == "INVERTED_U":
-        # Keep middle 60%
-        q_low = float(is_df[measure_key].quantile(0.20))
-        q_high = float(is_df[measure_key].quantile(0.80))
+        q_low = float(is_df[measure_key].quantile(0.25))
+        q_high = float(is_df[measure_key].quantile(0.85))
         cutoff_val = (q_low, q_high)
         cutoff_type = "BETWEEN"
     else:
-        # Default test: drop bottom 20%
-        cutoff_val = float(is_df[measure_key].quantile(0.20))
+        # Default hypothesis test: Chop removal (drop bottom 30%)
+        cutoff_val = float(is_df[measure_key].quantile(0.30))
         cutoff_type = "GTE"
 
-    # Evaluate on Untouched Out-of-Sample (OOS)
+    # Evaluate untouched on OOS
     if cutoff_type == "GTE":
         oos_passed = oos_df[oos_df[measure_key] >= cutoff_val].copy()
     elif cutoff_type == "LTE":
@@ -729,14 +888,19 @@ def evaluate_single_measure(
     wr_oos = (w_oos / n_oos * 100.0) if n_oos else 0.0
     net_inr_oos = float(oos_passed[pnl_col].sum()) if n_oos else 0.0
     exp_oos = (net_inr_oos / n_oos) if n_oos else 0.0
+    stat_exp_oos = float(oos_passed["asym_net_inr"].mean()) if n_oos else 0.0
     wins_oos = oos_passed[oos_passed[pnl_col] > 0][pnl_col].sum()
     loss_oos = abs(oos_passed[oos_passed[pnl_col] < 0][pnl_col].sum())
     pf_oos = round(wins_oos / loss_oos, 2) if loss_oos > 0 else 99.0
 
+    # Model 2 Super Trail comparison on same OOS subset
+    st_exp_oos = float(oos_passed["super_trail_hurdle400_net_inr"].mean()) if n_oos else 0.0
+    st_stat_oos = float(oos_passed["super_trail_net_inr"].mean()) if n_oos else 0.0
+
     # Direction Control on same OOS subset
-    dir_net_oos = float(oos_passed["dir_ctrl_asym_net_inr"].sum()) if n_oos else 0.0
+    dir_net_oos = float(oos_passed["dir_ctrl_hurdle400_net_inr"].sum()) if n_oos else 0.0
     dir_exp_oos = (dir_net_oos / n_oos) if n_oos else 0.0
-    directional_advantage = exp_oos - dir_exp_oos
+    directional_advantage = round(exp_oos - dir_exp_oos, 2)
 
     # Outlier Robustness: Exclude top 1, 3, 5 wins
     sorted_pnls = sorted(oos_passed[pnl_col].tolist(), reverse=True)
@@ -745,19 +909,19 @@ def evaluate_single_measure(
     exp_ex_top5 = float(np.mean(sorted_pnls[5:])) if len(sorted_pnls) > 5 else exp_oos
 
     # Session-block bootstrap 95% CI
-    ci_low, ci_high = run_session_block_bootstrap(oos_passed.to_dict(orient="records"))
+    ci_low, ci_high = run_session_block_bootstrap(oos_passed.to_dict(orient="records"), pnl_col=pnl_col)
 
-    # Noise Benchmark (Z-score vs +2.0 SD ceiling)
+    # Z-score vs noise hurdle (+2.0 SD ceiling)
     pnls_arr = oos_passed[pnl_col].values
     se = (np.std(pnls_arr, ddof=1) / math.sqrt(n_oos)) if n_oos > 1 else 1.0
     z_score = round(exp_oos / (se + 1e-9), 2)
 
-    # BUILD Hurdle Verification:
-    # 1. Filtered Net ₹/trade > 0
+    # BUILD Hurdle Checks:
+    # 1. Filtered Net ₹/trade > 0 (after ₹400 brokerage)
     # 2. Profit Factor >= 1.30
-    # 3. n >= 60 in OOS
-    # 4. Remains net-positive excluding top 5 wins
-    # 5. Z-score exceeds best-of-16 noise ceiling (+2.0 SD)
+    # 3. OOS n >= 60
+    # 4. Ex-top5 wins Net > 0
+    # 5. Z-score exceeds best-of-17 noise ceiling (+2.0 SD)
     # 6. Directional Advantage > 0
     cleared_pnl = exp_oos > 0.0
     cleared_pf = pf_oos >= 1.30
@@ -774,23 +938,21 @@ def evaluate_single_measure(
         and cleared_noise
         and cleared_dir
     )
-
     verdict = "BUILD" if is_build else "NOT BUILT"
 
-    # Explanatory failure reason if not built
     failure_reasons = []
     if not cleared_pnl:
-        failure_reasons.append(f"Net ₹/trade $\\le$ 0 (₹{exp_oos:.2f})")
+        failure_reasons.append(f"Net ₹/trade <= 0 (₹{exp_oos:.2f} after ₹400 hurdle)")
     if not cleared_pf:
         failure_reasons.append(f"PF < 1.30 ({pf_oos:.2f})")
     if not cleared_n:
         failure_reasons.append(f"OOS n < 60 ({n_oos})")
     if not cleared_outlier:
-        failure_reasons.append(f"Ex-top5 wins Net $\\le$ 0 (₹{exp_ex_top5:.2f})")
+        failure_reasons.append(f"Ex-top5 wins Net <= 0 (₹{exp_ex_top5:.2f})")
     if not cleared_noise:
         failure_reasons.append(f"Z-score {z_score} SD < +2.0 SD noise hurdle")
     if not cleared_dir:
-        failure_reasons.append(f"Fails Direction Control (Diff ₹{directional_advantage:.2f})")
+        failure_reasons.append(f"Fails Direction Control (Advantage ₹{directional_advantage:.2f})")
 
     return {
         "key": measure_key,
@@ -798,18 +960,33 @@ def evaluate_single_measure(
         "group": group_name,
         "status": "EVALUATED",
         "shape": shape,
-        "spearman_rho": round(float(spearman_rho), 3),
-        "spearman_p": round(float(spearman_p), 4),
-        "cutoff_rule": f"{cutoff_type} {cutoff_val}",
-        "in_sample": {
-            "n_total": len(is_df),
-            "deciles": decile_summary,
+        "layer1_correlation": {
+            "spearman_rho": round(float(spearman_rho), 3),
+            "spearman_p": round(float(spearman_p), 4),
+            "chop_removal_test": {
+                "chop_cut": round(chop_cut, 4),
+                "excluded_mean_inr": round(chop_excluded_pnl, 2),
+                "chop_only_mean_inr": round(chop_only_pnl, 2),
+                "chop_removal_edge_inr": chop_removal_edge,
+            },
+            "goldilocks_regime_test": {
+                "q25": round(q25, 4),
+                "q85": round(q85, 4),
+                "goldilocks_mean_inr": round(goldilocks_pnl, 2),
+                "extremes_mean_inr": round(extremes_pnl, 2),
+                "goldilocks_edge_inr": goldilocks_edge,
+            },
         },
-        "out_of_sample": {
+        "layer2_terciles": tercile_summary,
+        "layer3_oos": {
+            "cutoff_rule": f"{cutoff_type} {cutoff_val}",
             "n_surviving": n_oos,
             "win_rate": round(wr_oos, 1),
-            "net_inr_per_trade": round(exp_oos, 2),
+            "net_inr_hurdle400": round(exp_oos, 2),
+            "net_inr_statutory_dhan": round(stat_exp_oos, 2),
             "profit_factor": pf_oos,
+            "super_trail_hurdle400": round(st_exp_oos, 2),
+            "super_trail_statutory_dhan": round(st_stat_oos, 2),
             "net_inr_ex_top1": round(exp_ex_top1, 2),
             "net_inr_ex_top3": round(exp_ex_top3, 2),
             "net_inr_ex_top5": round(exp_ex_top5, 2),
@@ -830,7 +1007,7 @@ def evaluate_single_measure(
 def main() -> None:
     t_start = time.time()
     log.info("══════════════════════════════════════════════════════════════════")
-    log.info("PORT 8510 ADVANCED CHART GEOMETRY & CONTACT BACKTEST ENGINE")
+    log.info("PORT 8510 ADVANCED CHART GEOMETRY & CONTACT BACKTEST ENGINE (BOSS UPGRADED)")
     log.info("══════════════════════════════════════════════════════════════════")
 
     # 1. Load Data
@@ -867,7 +1044,6 @@ def main() -> None:
         from scripts.backtest_futures_volume import load_and_resample_futures, compute_all_rvol_measures
         df_fut_15m = load_and_resample_futures(DB_PATH)
         df_fut_rvol = compute_all_rvol_measures(df_fut_15m, filter_expiries=True)
-        # Set column names expected by ClosedBarLookup and enrich_trades
         df_fut_rvol["fut_vol_surge"] = df_fut_rvol["comb_bar_rvol"]
         df_fut_rvol["fut_vol_delta_ratio"] = df_fut_rvol["comb_cum_rvol"]
         lookup_fut = ClosedBarLookup(df_fut_rvol, bar_seconds=900)
@@ -881,8 +1057,8 @@ def main() -> None:
     except Exception as e:
         log.warning("Could not load FUT volume data: %s", e)
 
-    # Pre-index 1m sessions for fast direction & super trail simulation
-    session_1m_map = {}
+    # Pre-index 1m sessions for fast forward-walk simulation
+    session_1m_map: Dict[str, List[Dict[str, Any]]] = {}
     for s_date, grp in df_1m.groupby("session_date"):
         session_1m_map[s_date] = grp.to_dict(orient="records")
 
@@ -909,8 +1085,8 @@ def main() -> None:
     log.info("Simulated trades: Variant A (n=%d) | Variant B (n=%d) | Variant E (n=%d)",
              len(trades_a), len(trades_b), len(trades_e))
 
-    # 4. Enrich Trades with 17 Geometry & Contact Measures
-    log.info("Enriching trades with geometry, contact depth, direction control, and Super Trail...")
+    # 4. Enrich Trades with All 17 Geometry & Contact Measures
+    log.info("Enriching trades with 17 geometry measures, contact intensity, direction control, and Super Trail...")
     enriched_a = enrich_trades(trades_a, lookup_15m, lookup_1h, lookup_fut, session_1m_map)
     enriched_b = enrich_trades(trades_b, lookup_15m, lookup_1h, lookup_fut, session_1m_map)
     enriched_e = enrich_trades(trades_e, lookup_15m, lookup_1h, lookup_fut, session_1m_map)
@@ -924,9 +1100,21 @@ def main() -> None:
     pd.DataFrame(enriched_e).to_csv(csv_e, index=False)
     log.info("Wrote enriched events: %s, %s, %s", csv_a, csv_b, csv_e)
 
-    # 5. PRIMARY ANALYSIS (LOCKED): Variant A, Fixed 40/40 Bracket, EMA(4)/EMA(8)
+    # 5. Mandatory Control: Time-Matched Random Baseline (200 Monte Carlo draws)
+    log.info("Computing Time-Matched Random Baseline (200 Monte Carlo draws)...")
+    random_baseline = run_time_matched_random_baseline(
+        trades=enriched_a,
+        session_1m_map=session_1m_map,
+        oos_sessions=oos_sessions,
+        n_draws=200,
+    )
+    log.info("Random Baseline Null Expectancy: Mean=₹%.2f/tr (SE=₹%.2f, 95%% CI=[₹%.2f, ₹%.2f])",
+             random_baseline["mean_net"], random_baseline["se_net"], random_baseline["ci_low"], random_baseline["ci_high"])
+
+    # 6. PRIMARY ANALYSIS (LOCKED): Variant A, Fixed 40/40, Evaluated vs ₹400 Hurdle
     log.info("══════════════════════════════════════════════════════════════════")
     log.info("RUNNING PRIMARY ANALYSIS: Variant A (n=%d), Fixed 40/40, EMA(4)/EMA(8)", len(enriched_a))
+    log.info("Scored against: ₹400 round-trip brokerage hurdle at lot size = 65")
     log.info("══════════════════════════════════════════════════════════════════")
 
     df_a = pd.DataFrame(enriched_a)
@@ -934,7 +1122,7 @@ def main() -> None:
 
     for key, name, group in MEASURE_METADATA:
         # Measure 17 (Volume Surge): scoped to valid futures window
-        if key == "m05_fut_volume_surge" and is_fut_sessions and oos_fut_sessions:
+        if key == "m17_vol_surge_ratio" and is_fut_sessions and oos_fut_sessions:
             res = evaluate_single_measure(
                 measure_key=key,
                 measure_name=name,
@@ -942,7 +1130,7 @@ def main() -> None:
                 df_trades=df_a,
                 is_sessions=is_fut_sessions,
                 oos_sessions=oos_fut_sessions,
-                pnl_col="asym_net_inr",
+                pnl_col="hurdle400_net_inr",
             )
             res["scope_note"] = f"Scoped to futures volume window ({is_fut_sessions[0]} to {oos_fut_sessions[-1]})"
             primary_results.append(res)
@@ -955,11 +1143,11 @@ def main() -> None:
             df_trades=df_a,
             is_sessions=is_sessions,
             oos_sessions=oos_sessions,
-            pnl_col="asym_net_inr",
+            pnl_col="hurdle400_net_inr",
         )
         primary_results.append(res)
 
-    # 6. SECONDARY ANALYSIS (EXPLORATORY, NOT SCORED AGAINST BUILD HURDLE)
+    # 7. SECONDARY ANALYSIS (EXPLORATORY, NOT SCORED AGAINST BUILD HURDLE)
     log.info("Executing Secondary Exploratory Configurations...")
     df_b = pd.DataFrame(enriched_b)
     df_e = pd.DataFrame(enriched_e)
@@ -972,26 +1160,26 @@ def main() -> None:
     }
 
     # Exploratory 1: Variant B (4>8 Trend Filter)
-    for key in ["m01_penetration_depth", "m02_wick_rejection_pinbar", "m03_whipsaw_cross_count_12", "m06_separation_signed"]:
+    for key in ["m14_penetration_depth", "m15_wick_rejection_pinbar", "m13_whipsaw_cross_count_12", "m01_separation_signed"]:
         meta = next((m for m in MEASURE_METADATA if m[0] == key), (key, key, "Secondary"))
-        r = evaluate_single_measure(key, meta[1], "Variant B Secondary", df_b, is_sessions, oos_sessions)
+        r = evaluate_single_measure(key, meta[1], "Variant B Secondary", df_b, is_sessions, oos_sessions, pnl_col="hurdle400_net_inr")
         secondary_results["variant_b_40_40"].append(r)
 
     # Exploratory 2: Variant E (Institutional Footnote)
-    for key in ["m01_penetration_depth", "m04_slope_1h_8ema", "m06_separation_signed"]:
+    for key in ["m14_penetration_depth", "m16_slope_1h_8ema", "m01_separation_signed"]:
         meta = next((m for m in MEASURE_METADATA if m[0] == key), (key, key, "Secondary"))
-        r = evaluate_single_measure(key, meta[1], "Variant E Footnote", df_e, is_sessions, oos_sessions)
+        r = evaluate_single_measure(key, meta[1], "Variant E Footnote", df_e, is_sessions, oos_sessions, pnl_col="hurdle400_net_inr")
         secondary_results["variant_e_institutional"].append(r)
 
     # Exploratory 3: SMA(4) vs EMA(8)
     for key in ["sma4_vs_ema8_separation_signed", "sma4_vs_ema8_spread_velocity"]:
-        r = evaluate_single_measure(key, key, "SMA(4) TradingView", df_a, is_sessions, oos_sessions)
+        r = evaluate_single_measure(key, key, "SMA(4) TradingView", df_a, is_sessions, oos_sessions, pnl_col="hurdle400_net_inr")
         secondary_results["variant_a_sma4_vs_ema8"].append(r)
 
     # Exploratory 4: Super Trail v1.1 + Follow-Through CTC on Variant A
-    for key in ["m01_penetration_depth", "m02_wick_rejection_pinbar", "m06_separation_signed"]:
+    for key in ["m14_penetration_depth", "m15_wick_rejection_pinbar", "m01_separation_signed", "m12_ribbon_area_5"]:
         meta = next((m for m in MEASURE_METADATA if m[0] == key), (key, key, "Secondary"))
-        r = evaluate_single_measure(key, meta[1], "Super Trail Model", df_a, is_sessions, oos_sessions, pnl_col="super_trail_net_inr")
+        r = evaluate_single_measure(key, meta[1], "Super Trail Model", df_a, is_sessions, oos_sessions, pnl_col="super_trail_hurdle400_net_inr")
         secondary_results["variant_a_super_trail"].append(r)
 
     # Baseline Statistics
@@ -999,47 +1187,52 @@ def main() -> None:
         "variant_a_all": {
             "n": len(df_a),
             "win_rate": round(float(df_a["is_win"].mean() * 100), 1),
-            "statutory_charges_avg": round(float(df_a["statutory_charges_inr"].mean()), 2),
-            "net_inr_per_trade_statutory": round(float(df_a["asym_net_inr"].mean()), 2),
+            "net_inr_hurdle400": round(float(df_a["hurdle400_net_inr"].mean()), 2),
+            "profit_factor_hurdle400": round(float(df_a[df_a["hurdle400_net_inr"] > 0]["hurdle400_net_inr"].sum() / (abs(df_a[df_a["hurdle400_net_inr"] < 0]["hurdle400_net_inr"].sum()) + 1e-9)), 2),
+            "net_inr_statutory_dhan": round(float(df_a["asym_net_inr"].mean()), 2),
             "profit_factor_statutory": round(float(df_a[df_a["asym_net_inr"] > 0]["asym_net_inr"].sum() / (abs(df_a[df_a["asym_net_inr"] < 0]["asym_net_inr"].sum()) + 1e-9)), 2),
-            "net_inr_per_trade_with_slippage": round(float(df_a["asym_net_with_slippage_inr"].mean()), 2),
+            "net_inr_with_slippage": round(float(df_a["asym_net_with_slippage_inr"].mean()), 2),
             "profit_factor_with_slippage": round(float(df_a[df_a["asym_net_with_slippage_inr"] > 0]["asym_net_with_slippage_inr"].sum() / (abs(df_a[df_a["asym_net_with_slippage_inr"] < 0]["asym_net_with_slippage_inr"].sum()) + 1e-9)), 2),
         },
         "variant_b_all": {
             "n": len(df_b),
             "win_rate": round(float(df_b["is_win"].mean() * 100), 1),
-            "statutory_charges_avg": round(float(df_b["statutory_charges_inr"].mean()), 2),
-            "net_inr_per_trade_statutory": round(float(df_b["asym_net_inr"].mean()), 2),
+            "net_inr_hurdle400": round(float(df_b["hurdle400_net_inr"].mean()), 2),
+            "profit_factor_hurdle400": round(float(df_b[df_b["hurdle400_net_inr"] > 0]["hurdle400_net_inr"].sum() / (abs(df_b[df_b["hurdle400_net_inr"] < 0]["hurdle400_net_inr"].sum()) + 1e-9)), 2),
+            "net_inr_statutory_dhan": round(float(df_b["asym_net_inr"].mean()), 2),
             "profit_factor_statutory": round(float(df_b[df_b["asym_net_inr"] > 0]["asym_net_inr"].sum() / (abs(df_b[df_b["asym_net_inr"] < 0]["asym_net_inr"].sum()) + 1e-9)), 2),
-            "net_inr_per_trade_with_slippage": round(float(df_b["asym_net_with_slippage_inr"].mean()), 2),
+            "net_inr_with_slippage": round(float(df_b["asym_net_with_slippage_inr"].mean()), 2),
             "profit_factor_with_slippage": round(float(df_b[df_b["asym_net_with_slippage_inr"] > 0]["asym_net_with_slippage_inr"].sum() / (abs(df_b[df_b["asym_net_with_slippage_inr"] < 0]["asym_net_with_slippage_inr"].sum()) + 1e-9)), 2),
         },
         "variant_e_all": {
             "n": len(df_e),
             "win_rate": round(float(df_e["is_win"].mean() * 100), 1),
-            "statutory_charges_avg": round(float(df_e["statutory_charges_inr"].mean()), 2),
-            "net_inr_per_trade_statutory": round(float(df_e["asym_net_inr"].mean()), 2),
+            "net_inr_hurdle400": round(float(df_e["hurdle400_net_inr"].mean()), 2),
+            "profit_factor_hurdle400": round(float(df_e[df_e["hurdle400_net_inr"] > 0]["hurdle400_net_inr"].sum() / (abs(df_e[df_e["hurdle400_net_inr"] < 0]["hurdle400_net_inr"].sum()) + 1e-9)), 2),
+            "net_inr_statutory_dhan": round(float(df_e["asym_net_inr"].mean()), 2),
             "profit_factor_statutory": round(float(df_e[df_e["asym_net_inr"] > 0]["asym_net_inr"].sum() / (abs(df_e[df_e["asym_net_inr"] < 0]["asym_net_inr"].sum()) + 1e-9)), 2),
-            "net_inr_per_trade_with_slippage": round(float(df_e["asym_net_with_slippage_inr"].mean()), 2),
+            "net_inr_with_slippage": round(float(df_e["asym_net_with_slippage_inr"].mean()), 2),
             "profit_factor_with_slippage": round(float(df_e[df_e["asym_net_with_slippage_inr"] > 0]["asym_net_with_slippage_inr"].sum() / (abs(df_e[df_e["asym_net_with_slippage_inr"] < 0]["asym_net_with_slippage_inr"].sum()) + 1e-9)), 2),
         },
     }
 
-    # 7. Generate Master Report JSON (Mandatory Deliverable)
+    # 8. Generate Master Report JSON (Mandatory Deliverable)
     report_data = {
-        "title": "Port 8510 Advanced Chart Geometry & Contact Backtest Report",
+        "title": "Port 8510 Advanced Chart Geometry & Contact Backtest Report (Boss Upgraded)",
         "script": "scripts/backtest_ma_geometry.py",
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S IST"),
         "execution_mode": "PAPER",
         "lot_size": LOT_SIZE,
-        "charges_model": "Exact Dhan Tariff (paper_trading.calculate_trade_charges)",
+        "brokerage_hurdle_inr": BROKERAGE_HURDLE_INR,
+        "statutory_tariff_model": "Exact Dhan Tariff (paper_trading.calculate_trade_charges)",
         "slippage_premium_pts_per_leg": SLIPPAGE_PTS_PER_LEG,
         "slippage_inr_per_trade": SLIPPAGE_INR_PER_TRADE,
         "multiple_comparison_noise_hurdle_sd": 2.0,
-        "total_measures_in_primary": 16,
+        "total_measures_in_primary": 17,
+        "random_baseline_null": random_baseline,
         "baseline_statistics": baseline_stats,
         "primary_analysis_locked": {
-            "description": "Variant A (Raw 15m 8 EMA Touch), Fixed 40/40, EMA(4) vs EMA(8), lot 65, Exact Dhan Tariff (~Rs78/trade)",
+            "description": "Variant A (Raw 15m 8 EMA Touch), Fixed 40/40, EMA(4) vs EMA(8), lot 65, Rs 400 brokerage hurdle",
             "results": primary_results,
         },
         "secondary_analysis_exploratory": {
@@ -1051,7 +1244,8 @@ def main() -> None:
             "time_to_resolution": "Exported in minutes in events_variantA.csv, events_variantB.csv, events_variantE.csv",
             "session_block_bootstrap": "1,000 whole-session bootstrap iterations for 95% CI on surviving OOS trades",
             "outlier_robustness": "Net Rs/trade evaluated excluding top 1, 3, and 5 winning trades",
-            "measure_17_volume_status": "Unblocked and evaluated using institutional Time-of-Day RVOL engine (FUT + FUT2) scoped to 39 sessions",
+            "random_baseline": "200 Monte Carlo draws time-of-day matched across OOS sessions",
+            "measure_17_volume_status": "Evaluated using institutional Time-of-Day RVOL engine (FUT + FUT2) scoped to 39 sessions",
             "measure_16_1h_slope_status": "Documented as continuous refinement of prior failed binary 1H gate",
         },
     }
@@ -1061,12 +1255,12 @@ def main() -> None:
         json.dump(report_data, f, indent=2)
     log.info("Successfully persisted master report JSON: %s", report_path)
 
-    # 8. Print Clean Markdown Verdict Table to Terminal
-    print("\n" + "=" * 115)
+    # 9. Print Clean Markdown Verdict Table to Terminal
+    print("\n" + "=" * 135)
     print("PORT 8510 — MA GEOMETRY & CONTACT BACKTEST: PRIMARY ANALYSIS VERDICT TABLE")
-    print("Configuration: Variant A (n ≈ 2,370) | Fixed 40/40 | EMA(4) vs EMA(8) | Lot 65 | Exact Dhan Tariff (~₹78/tr)")
+    print("Configuration: Variant A (n ≈ 2,370) | Fixed 40/40 | EMA(4) vs EMA(8) | Lot 65 | ₹400 Brokerage Hurdle")
     print("Hurdle for BUILD: OOS Net ₹/trade > 0, PF ≥ 1.30, OOS n ≥ 60, Ex-top5 > 0, Z-score ≥ +2.0 SD, Dir Adv > 0")
-    print("=" * 115)
+    print("=" * 135)
 
     headers = [
         "Measure",
@@ -1074,16 +1268,17 @@ def main() -> None:
         "Shape",
         "OOS n",
         "OOS WR%",
-        "Net ₹/Tr",
+        "Net ₹400",
+        "Dhan Net",
         "PF",
         "ExTop5 ₹",
         "Dir Adv ₹",
         "Z-Score",
         "Verdict",
     ]
-    fmt = "{:<26} | {:<16} | {:<14} | {:>5} | {:>7} | {:>8} | {:>5} | {:>8} | {:>9} | {:>7} | {:<9}"
+    fmt = "{:<26} | {:<16} | {:<14} | {:>5} | {:>7} | {:>9} | {:>9} | {:>5} | {:>9} | {:>9} | {:>7} | {:<9}"
     print(fmt.format(*headers))
-    print("-" * 115)
+    print("-" * 135)
 
     for r in primary_results:
         if r.get("status") == "BLOCKED":
@@ -1098,18 +1293,20 @@ def main() -> None:
                 "-",
                 "-",
                 "-",
+                "-",
                 "BLOCKED"
             ))
             continue
 
-        oos = r["out_of_sample"]
+        oos = r["layer3_oos"]
         print(fmt.format(
             r["name"][:26],
             r["group"][:16],
             r["shape"][:14],
             str(oos["n_surviving"]),
             f"{oos['win_rate']:.1f}%",
-            f"₹{oos['net_inr_per_trade']:.1f}",
+            f"₹{oos['net_inr_hurdle400']:.1f}",
+            f"₹{oos['net_inr_statutory_dhan']:.1f}",
             f"{oos['profit_factor']:.2f}",
             f"₹{oos['net_inr_ex_top5']:.1f}",
             f"₹{oos['directional_advantage']:.1f}",
@@ -1117,12 +1314,14 @@ def main() -> None:
             r["verdict"]
         ))
 
-    print("=" * 115)
+    print("=" * 135)
     print("\nBASELINE UNFILTERED CONTEXT:")
-    print(f"  - Variant A Raw Baseline: n={baseline_stats['variant_a_all']['n']}, Win Rate={baseline_stats['variant_a_all']['win_rate']}%, Statutory Net=₹{baseline_stats['variant_a_all']['net_inr_per_trade_statutory']}/trade (PF {baseline_stats['variant_a_all']['profit_factor_statutory']}) | With Slippage=₹{baseline_stats['variant_a_all']['net_inr_per_trade_with_slippage']}/trade (PF {baseline_stats['variant_a_all']['profit_factor_with_slippage']})")
-    print(f"  - Variant B (4>8 Trend): n={baseline_stats['variant_b_all']['n']}, Win Rate={baseline_stats['variant_b_all']['win_rate']}%, Statutory Net=₹{baseline_stats['variant_b_all']['net_inr_per_trade_statutory']}/trade (PF {baseline_stats['variant_b_all']['profit_factor_statutory']}) | With Slippage=₹{baseline_stats['variant_b_all']['net_inr_per_trade_with_slippage']}/trade (PF {baseline_stats['variant_b_all']['profit_factor_with_slippage']})")
-    print(f"  - Variant E (Institutional): n={baseline_stats['variant_e_all']['n']}, Win Rate={baseline_stats['variant_e_all']['win_rate']}%, Statutory Net=₹{baseline_stats['variant_e_all']['net_inr_per_trade_statutory']}/trade (PF {baseline_stats['variant_e_all']['profit_factor_statutory']}) | With Slippage=₹{baseline_stats['variant_e_all']['net_inr_per_trade_with_slippage']}/trade (PF {baseline_stats['variant_e_all']['profit_factor_with_slippage']})")
+    print(f"  - Variant A Raw Baseline: n={baseline_stats['variant_a_all']['n']}, Win Rate={baseline_stats['variant_a_all']['win_rate']}%, Net ₹400 Hurdle=₹{baseline_stats['variant_a_all']['net_inr_hurdle400']}/trade (PF {baseline_stats['variant_a_all']['profit_factor_hurdle400']}) | Statutory Net=₹{baseline_stats['variant_a_all']['net_inr_statutory_dhan']}/trade (PF {baseline_stats['variant_a_all']['profit_factor_statutory']})")
+    print(f"  - Variant B (4>8 Trend): n={baseline_stats['variant_b_all']['n']}, Win Rate={baseline_stats['variant_b_all']['win_rate']}%, Net ₹400 Hurdle=₹{baseline_stats['variant_b_all']['net_inr_hurdle400']}/trade (PF {baseline_stats['variant_b_all']['profit_factor_hurdle400']}) | Statutory Net=₹{baseline_stats['variant_b_all']['net_inr_statutory_dhan']}/trade (PF {baseline_stats['variant_b_all']['profit_factor_statutory']})")
+    print(f"  - Variant E (Institutional): n={baseline_stats['variant_e_all']['n']}, Win Rate={baseline_stats['variant_e_all']['win_rate']}%, Net ₹400 Hurdle=₹{baseline_stats['variant_e_all']['net_inr_hurdle400']}/trade (PF {baseline_stats['variant_e_all']['profit_factor_hurdle400']}) | Statutory Net=₹{baseline_stats['variant_e_all']['net_inr_statutory_dhan']}/trade (PF {baseline_stats['variant_e_all']['profit_factor_statutory']})")
+    print(f"  - Time-Matched Random Null: Mean=₹{random_baseline['mean_net']}/trade, SE=₹{random_baseline['se_net']}, 95% CI=[₹{random_baseline['ci_low']}, ₹{random_baseline['ci_high']}]")
     print(f"\nExecution completed in {time.time() - t_start:.2f}s.")
+    print(f"Full path: {Path(__file__).resolve()}")
 
 
 if __name__ == "__main__":

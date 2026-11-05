@@ -1,1968 +1,1623 @@
 {
-  "title": "Port 8510 Advanced Chart Geometry & Contact Backtest Report",
+  "title": "Port 8510 Advanced Chart Geometry & Contact Backtest Report (Boss Upgraded)",
   "script": "scripts/backtest_ma_geometry.py",
-  "timestamp": "2026-11-06 00:14:25 IST",
+  "timestamp": "2026-11-06 03:32:47 IST",
   "execution_mode": "PAPER",
   "lot_size": 65,
-  "charges_model": "Exact Dhan Tariff (paper_trading.calculate_trade_charges)",
+  "brokerage_hurdle_inr": 400.0,
+  "statutory_tariff_model": "Exact Dhan Tariff (paper_trading.calculate_trade_charges)",
   "slippage_premium_pts_per_leg": 0.25,
   "slippage_inr_per_trade": 32.5,
   "multiple_comparison_noise_hurdle_sd": 2.0,
-  "total_measures_in_primary": 16,
+  "total_measures_in_primary": 17,
+  "random_baseline_null": {
+    "mean_net": -421.87,
+    "se_net": 28.92,
+    "ci_low": -478.03,
+    "ci_high": -365.72
+  },
   "baseline_statistics": {
     "variant_a_all": {
       "n": 2378,
       "win_rate": 51.9,
-      "statutory_charges_avg": 78.16,
-      "net_inr_per_trade_statutory": -8.88,
+      "net_inr_hurdle400": -330.72,
+      "profit_factor_hurdle400": 0.31,
+      "net_inr_statutory_dhan": -8.88,
       "profit_factor_statutory": 0.97,
-      "net_inr_per_trade_with_slippage": -41.38,
+      "net_inr_with_slippage": -41.38,
       "profit_factor_with_slippage": 0.86
     },
     "variant_b_all": {
       "n": 1120,
       "win_rate": 55.6,
-      "statutory_charges_avg": 78.25,
-      "net_inr_per_trade_statutory": 39.93,
+      "net_inr_hurdle400": -281.82,
+      "profit_factor_hurdle400": 0.4,
+      "net_inr_statutory_dhan": 39.93,
       "profit_factor_statutory": 1.15,
-      "net_inr_per_trade_with_slippage": 7.43,
+      "net_inr_with_slippage": 7.43,
       "profit_factor_with_slippage": 1.03
     },
     "variant_e_all": {
       "n": 80,
       "win_rate": 57.5,
-      "statutory_charges_avg": 78.51,
-      "net_inr_per_trade_statutory": 177.11,
+      "net_inr_hurdle400": -144.39,
+      "profit_factor_hurdle400": 0.72,
+      "net_inr_statutory_dhan": 177.09,
       "profit_factor_statutory": 1.49,
-      "net_inr_per_trade_with_slippage": 144.61,
+      "net_inr_with_slippage": 144.59,
       "profit_factor_with_slippage": 1.38
     }
   },
   "primary_analysis_locked": {
-    "description": "Variant A (Raw 15m 8 EMA Touch), Fixed 40/40, EMA(4) vs EMA(8), lot 65, Exact Dhan Tariff (~Rs78/trade)",
+    "description": "Variant A (Raw 15m 8 EMA Touch), Fixed 40/40, EMA(4) vs EMA(8), lot 65, Rs 400 brokerage hurdle",
     "results": [
       {
-        "key": "m01_penetration_depth",
-        "name": "8-EMA Contact Penetration Depth",
-        "group": "Group B (Contact)",
-        "status": "EVALUATED",
-        "shape": "NO_SHAPE",
-        "spearman_rho": -0.014,
-        "spearman_p": 0.642,
-        "cutoff_rule": "GTE -0.007208030683269586",
-        "in_sample": {
-          "n_total": 1171,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": -0.9798,
-              "max_val": -0.1671,
-              "n": 118,
-              "win_rate": 62.7,
-              "net_inr_per_trade": 157.77,
-              "profit_factor": 1.5
-            },
-            {
-              "decile": 2,
-              "min_val": -0.1664,
-              "max_val": -0.0072,
-              "n": 117,
-              "win_rate": 48.7,
-              "net_inr_per_trade": -86.25,
-              "profit_factor": 0.73
-            },
-            {
-              "decile": 3,
-              "min_val": -0.0061,
-              "max_val": 0.178,
-              "n": 117,
-              "win_rate": 49.6,
-              "net_inr_per_trade": -4.32,
-              "profit_factor": 0.99
-            },
-            {
-              "decile": 4,
-              "min_val": 0.1805,
-              "max_val": 0.3516,
-              "n": 117,
-              "win_rate": 55.6,
-              "net_inr_per_trade": -81.11,
-              "profit_factor": 0.77
-            },
-            {
-              "decile": 5,
-              "min_val": 0.354,
-              "max_val": 0.4901,
-              "n": 117,
-              "win_rate": 53.8,
-              "net_inr_per_trade": 54.04,
-              "profit_factor": 1.22
-            },
-            {
-              "decile": 6,
-              "min_val": 0.4915,
-              "max_val": 0.6118,
-              "n": 118,
-              "win_rate": 51.7,
-              "net_inr_per_trade": 70.7,
-              "profit_factor": 1.27
-            },
-            {
-              "decile": 7,
-              "min_val": 0.6135,
-              "max_val": 0.7543,
-              "n": 116,
-              "win_rate": 44.8,
-              "net_inr_per_trade": -142.45,
-              "profit_factor": 0.55
-            },
-            {
-              "decile": 8,
-              "min_val": 0.7544,
-              "max_val": 0.9061,
-              "n": 117,
-              "win_rate": 46.2,
-              "net_inr_per_trade": -82.83,
-              "profit_factor": 0.71
-            },
-            {
-              "decile": 9,
-              "min_val": 0.9144,
-              "max_val": 1.141,
-              "n": 117,
-              "win_rate": 54.7,
-              "net_inr_per_trade": 42.83,
-              "profit_factor": 1.21
-            },
-            {
-              "decile": 10,
-              "min_val": 1.1566,
-              "max_val": 2.9059,
-              "n": 117,
-              "win_rate": 58.1,
-              "net_inr_per_trade": 65.98,
-              "profit_factor": 1.26
-            }
-          ]
-        },
-        "out_of_sample": {
-          "n_surviving": 961,
-          "win_rate": 50.6,
-          "net_inr_per_trade": -28.26,
-          "profit_factor": 0.89,
-          "net_inr_ex_top1": -31.12,
-          "net_inr_ex_top3": -35.54,
-          "net_inr_ex_top5": -39.02,
-          "bootstrap_ci_95": [
-            -67.74,
-            14.22
-          ],
-          "z_score_sd": -1.35,
-          "direction_control_short_net": 152.42,
-          "directional_advantage": -180.68
-        },
-        "verdict": "NOT BUILT",
-        "failure_reasons": [
-          "Net \u20b9/trade $\\le$ 0 (\u20b9-28.26)",
-          "PF < 1.30 (0.89)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-39.02)",
-          "Z-score -1.35 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-180.68)"
-        ]
-      },
-      {
-        "key": "m02_wick_rejection_pinbar",
-        "name": "Contact Wick Rejection (Pin-Bar)",
-        "group": "Group B (Contact)",
-        "status": "EVALUATED",
-        "shape": "MONOTONE_NEGATIVE",
-        "spearman_rho": -0.051,
-        "spearman_p": 0.0789,
-        "cutoff_rule": "LTE 0.7538304392236419",
-        "in_sample": {
-          "n_total": 1171,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": 0.0,
-              "max_val": 0.0831,
-              "n": 119,
-              "win_rate": 56.3,
-              "net_inr_per_trade": 76.69,
-              "profit_factor": 1.26
-            },
-            {
-              "decile": 2,
-              "min_val": 0.0838,
-              "max_val": 0.1991,
-              "n": 116,
-              "win_rate": 59.5,
-              "net_inr_per_trade": 65.8,
-              "profit_factor": 1.24
-            },
-            {
-              "decile": 3,
-              "min_val": 0.2016,
-              "max_val": 0.3127,
-              "n": 117,
-              "win_rate": 48.7,
-              "net_inr_per_trade": -75.23,
-              "profit_factor": 0.77
-            },
-            {
-              "decile": 4,
-              "min_val": 0.3165,
-              "max_val": 0.4291,
-              "n": 117,
-              "win_rate": 52.1,
-              "net_inr_per_trade": 24.23,
-              "profit_factor": 1.09
-            },
-            {
-              "decile": 5,
-              "min_val": 0.4303,
-              "max_val": 0.5483,
-              "n": 117,
-              "win_rate": 57.3,
-              "net_inr_per_trade": 55.93,
-              "profit_factor": 1.22
-            },
-            {
-              "decile": 6,
-              "min_val": 0.5484,
-              "max_val": 0.6427,
-              "n": 117,
-              "win_rate": 52.1,
-              "net_inr_per_trade": -66.76,
-              "profit_factor": 0.77
-            },
-            {
-              "decile": 7,
-              "min_val": 0.6435,
-              "max_val": 0.7538,
-              "n": 118,
-              "win_rate": 53.4,
-              "net_inr_per_trade": 10.54,
-              "profit_factor": 1.04
-            },
-            {
-              "decile": 8,
-              "min_val": 0.7547,
-              "max_val": 0.8569,
-              "n": 116,
-              "win_rate": 50.9,
-              "net_inr_per_trade": 16.14,
-              "profit_factor": 1.06
-            },
-            {
-              "decile": 9,
-              "min_val": 0.8574,
-              "max_val": 0.9361,
-              "n": 118,
-              "win_rate": 47.5,
-              "net_inr_per_trade": -81.57,
-              "profit_factor": 0.77
-            },
-            {
-              "decile": 10,
-              "min_val": 0.9368,
-              "max_val": 1.0,
-              "n": 116,
-              "win_rate": 48.3,
-              "net_inr_per_trade": -28.47,
-              "profit_factor": 0.9
-            }
-          ]
-        },
-        "out_of_sample": {
-          "n_surviving": 863,
-          "win_rate": 52.3,
-          "net_inr_per_trade": -13.73,
-          "profit_factor": 0.95,
-          "net_inr_ex_top1": -16.9,
-          "net_inr_ex_top3": -21.43,
-          "net_inr_ex_top5": -25.02,
-          "bootstrap_ci_95": [
-            -60.33,
-            37.36
-          ],
-          "z_score_sd": -0.59,
-          "direction_control_short_net": 85.61,
-          "directional_advantage": -99.34
-        },
-        "verdict": "NOT BUILT",
-        "failure_reasons": [
-          "Net \u20b9/trade $\\le$ 0 (\u20b9-13.73)",
-          "PF < 1.30 (0.95)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-25.02)",
-          "Z-score -0.59 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-99.34)"
-        ]
-      },
-      {
-        "key": "m03_whipsaw_cross_count_12",
-        "name": "12-Bar Whip-Saw Count (Chop)",
-        "group": "Group B (Contact)",
-        "status": "EVALUATED",
-        "shape": "NO_SHAPE",
-        "spearman_rho": 0.006,
-        "spearman_p": 0.8264,
-        "cutoff_rule": "GTE 0.0",
-        "in_sample": {
-          "n_total": 1171,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": 0.0,
-              "max_val": 1.0,
-              "n": 797,
-              "win_rate": 52.2,
-              "net_inr_per_trade": 1.51,
-              "profit_factor": 1.01
-            },
-            {
-              "decile": 2,
-              "min_val": 2.0,
-              "max_val": 2.0,
-              "n": 232,
-              "win_rate": 51.3,
-              "net_inr_per_trade": -22.63,
-              "profit_factor": 0.92
-            },
-            {
-              "decile": 3,
-              "min_val": 3.0,
-              "max_val": 3.0,
-              "n": 105,
-              "win_rate": 55.2,
-              "net_inr_per_trade": 4.05,
-              "profit_factor": 1.02
-            },
-            {
-              "decile": 4,
-              "min_val": 4.0,
-              "max_val": 6.0,
-              "n": 37,
-              "win_rate": 62.2,
-              "net_inr_per_trade": 90.05,
-              "profit_factor": 1.5
-            }
-          ]
-        },
-        "out_of_sample": {
-          "n_surviving": 1207,
-          "win_rate": 51.3,
-          "net_inr_per_trade": -17.26,
-          "profit_factor": 0.93,
-          "net_inr_ex_top1": -19.52,
-          "net_inr_ex_top3": -23.27,
-          "net_inr_ex_top5": -26.28,
-          "bootstrap_ci_95": [
-            -53.21,
-            23.57
-          ],
-          "z_score_sd": -0.87,
-          "direction_control_short_net": 103.79,
-          "directional_advantage": -121.05
-        },
-        "verdict": "NOT BUILT",
-        "failure_reasons": [
-          "Net \u20b9/trade $\\le$ 0 (\u20b9-17.26)",
-          "PF < 1.30 (0.93)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-26.28)",
-          "Z-score -0.87 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-121.05)"
-        ]
-      },
-      {
-        "key": "m04_slope_1h_8ema",
-        "name": "1H 8-EMA Continuous Slope",
-        "group": "Group B (1H Trend)",
-        "status": "EVALUATED",
-        "shape": "NO_SHAPE",
-        "spearman_rho": 0.085,
-        "spearman_p": 0.0038,
-        "cutoff_rule": "GTE -0.2509958842229464",
-        "in_sample": {
-          "n_total": 1168,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": -0.8438,
-              "max_val": -0.3625,
-              "n": 118,
-              "win_rate": 50.0,
-              "net_inr_per_trade": -19.44,
-              "profit_factor": 0.93
-            },
-            {
-              "decile": 2,
-              "min_val": -0.3624,
-              "max_val": -0.251,
-              "n": 117,
-              "win_rate": 48.7,
-              "net_inr_per_trade": -118.03,
-              "profit_factor": 0.64
-            },
-            {
-              "decile": 3,
-              "min_val": -0.2497,
-              "max_val": -0.1658,
-              "n": 116,
-              "win_rate": 47.4,
-              "net_inr_per_trade": -96.64,
-              "profit_factor": 0.7
-            },
-            {
-              "decile": 4,
-              "min_val": -0.165,
-              "max_val": -0.1016,
-              "n": 117,
-              "win_rate": 46.2,
-              "net_inr_per_trade": -41.26,
-              "profit_factor": 0.85
-            },
-            {
-              "decile": 5,
-              "min_val": -0.1013,
-              "max_val": -0.0294,
-              "n": 116,
-              "win_rate": 46.6,
-              "net_inr_per_trade": -52.85,
-              "profit_factor": 0.83
-            },
-            {
-              "decile": 6,
-              "min_val": -0.021,
-              "max_val": 0.0329,
-              "n": 119,
-              "win_rate": 56.3,
-              "net_inr_per_trade": 63.85,
-              "profit_factor": 1.24
-            },
-            {
-              "decile": 7,
-              "min_val": 0.0332,
-              "max_val": 0.1031,
-              "n": 117,
-              "win_rate": 62.4,
-              "net_inr_per_trade": 126.25,
-              "profit_factor": 1.57
-            },
-            {
-              "decile": 8,
-              "min_val": 0.1041,
-              "max_val": 0.1893,
-              "n": 117,
-              "win_rate": 52.1,
-              "net_inr_per_trade": -44.15,
-              "profit_factor": 0.86
-            },
-            {
-              "decile": 9,
-              "min_val": 0.192,
-              "max_val": 0.2747,
-              "n": 114,
-              "win_rate": 53.5,
-              "net_inr_per_trade": 41.14,
-              "profit_factor": 1.14
-            },
-            {
-              "decile": 10,
-              "min_val": 0.2747,
-              "max_val": 0.8311,
-              "n": 117,
-              "win_rate": 62.4,
-              "net_inr_per_trade": 124.0,
-              "profit_factor": 1.48
-            }
-          ]
-        },
-        "out_of_sample": {
-          "n_surviving": 957,
-          "win_rate": 51.8,
-          "net_inr_per_trade": -11.24,
-          "profit_factor": 0.96,
-          "net_inr_ex_top1": -13.6,
-          "net_inr_ex_top3": -17.99,
-          "net_inr_ex_top5": -21.45,
-          "bootstrap_ci_95": [
-            -54.95,
-            31.89
-          ],
-          "z_score_sd": -0.5,
-          "direction_control_short_net": 71.8,
-          "directional_advantage": -83.04
-        },
-        "verdict": "NOT BUILT",
-        "failure_reasons": [
-          "Net \u20b9/trade $\\le$ 0 (\u20b9-11.24)",
-          "PF < 1.30 (0.96)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-21.45)",
-          "Z-score -0.5 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-83.04)"
-        ]
-      },
-      {
-        "key": "m05_fut_volume_surge",
-        "name": "NIFTY Futures Volume Surge Ratio",
-        "group": "Group B (Volume)",
-        "status": "EVALUATED",
-        "shape": "CHOP_FLOOR",
-        "spearman_rho": 0.068,
-        "spearman_p": 0.3878,
-        "cutoff_rule": "GTE 0.2924",
-        "in_sample": {
-          "n_total": 165,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": 0.113,
-              "max_val": 0.251,
-              "n": 17,
-              "win_rate": 47.1,
-              "net_inr_per_trade": -104.27,
-              "profit_factor": 0.66
-            },
-            {
-              "decile": 2,
-              "min_val": 0.254,
-              "max_val": 0.325,
-              "n": 16,
-              "win_rate": 68.8,
-              "net_inr_per_trade": 81.12,
-              "profit_factor": 1.41
-            },
-            {
-              "decile": 3,
-              "min_val": 0.328,
-              "max_val": 0.474,
-              "n": 17,
-              "win_rate": 35.3,
-              "net_inr_per_trade": -177.94,
-              "profit_factor": 0.42
-            },
-            {
-              "decile": 4,
-              "min_val": 0.48,
-              "max_val": 0.546,
-              "n": 17,
-              "win_rate": 64.7,
-              "net_inr_per_trade": 61.46,
-              "profit_factor": 1.42
-            },
-            {
-              "decile": 5,
-              "min_val": 0.553,
-              "max_val": 0.688,
-              "n": 16,
-              "win_rate": 43.8,
-              "net_inr_per_trade": 125.38,
-              "profit_factor": 1.37
-            },
-            {
-              "decile": 6,
-              "min_val": 0.7,
-              "max_val": 0.832,
-              "n": 16,
-              "win_rate": 37.5,
-              "net_inr_per_trade": -228.33,
-              "profit_factor": 0.49
-            },
-            {
-              "decile": 7,
-              "min_val": 0.839,
-              "max_val": 0.997,
-              "n": 16,
-              "win_rate": 68.8,
-              "net_inr_per_trade": 140.35,
-              "profit_factor": 1.83
-            },
-            {
-              "decile": 8,
-              "min_val": 0.998,
-              "max_val": 1.254,
-              "n": 17,
-              "win_rate": 41.2,
-              "net_inr_per_trade": -180.21,
-              "profit_factor": 0.38
-            },
-            {
-              "decile": 9,
-              "min_val": 1.277,
-              "max_val": 1.728,
-              "n": 16,
-              "win_rate": 50.0,
-              "net_inr_per_trade": 141.35,
-              "profit_factor": 2.02
-            },
-            {
-              "decile": 10,
-              "min_val": 1.793,
-              "max_val": 5.035,
-              "n": 17,
-              "win_rate": 64.7,
-              "net_inr_per_trade": 85.74,
-              "profit_factor": 1.59
-            }
-          ]
-        },
-        "out_of_sample": {
-          "n_surviving": 128,
-          "win_rate": 57.0,
-          "net_inr_per_trade": 73.08,
-          "profit_factor": 1.23,
-          "net_inr_ex_top1": 56.09,
-          "net_inr_ex_top3": 32.1,
-          "net_inr_ex_top5": 8.58,
-          "bootstrap_ci_95": [
-            -69.58,
-            245.59
-          ],
-          "z_score_sd": 0.93,
-          "direction_control_short_net": -122.24,
-          "directional_advantage": 195.31
-        },
-        "verdict": "NOT BUILT",
-        "failure_reasons": [
-          "PF < 1.30 (1.23)",
-          "Z-score 0.93 SD < +2.0 SD noise hurdle"
-        ],
-        "scope_note": "Scoped to futures volume window (2026-09-17 to 2026-11-05)"
-      },
-      {
-        "key": "m06_separation_signed",
+        "key": "m01_separation_signed",
         "name": "Separation (Signed)",
         "group": "Group A (Line Geometry)",
         "status": "EVALUATED",
-        "shape": "NO_SHAPE",
-        "spearman_rho": 0.062,
-        "spearman_p": 0.0342,
-        "cutoff_rule": "GTE -0.26317684807059244",
-        "in_sample": {
-          "n_total": 1171,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": -0.9728,
-              "max_val": -0.3928,
-              "n": 118,
-              "win_rate": 51.7,
-              "net_inr_per_trade": -13.44,
-              "profit_factor": 0.95
-            },
-            {
-              "decile": 2,
-              "min_val": -0.3914,
-              "max_val": -0.2632,
-              "n": 118,
-              "win_rate": 43.2,
-              "net_inr_per_trade": -138.63,
-              "profit_factor": 0.51
-            },
-            {
-              "decile": 3,
-              "min_val": -0.261,
-              "max_val": -0.1837,
-              "n": 117,
-              "win_rate": 47.0,
-              "net_inr_per_trade": -48.21,
-              "profit_factor": 0.81
-            },
-            {
-              "decile": 4,
-              "min_val": -0.1836,
-              "max_val": -0.1103,
-              "n": 117,
-              "win_rate": 53.0,
-              "net_inr_per_trade": 94.11,
-              "profit_factor": 1.43
-            },
-            {
-              "decile": 5,
-              "min_val": -0.1094,
-              "max_val": -0.0306,
-              "n": 116,
-              "win_rate": 54.3,
-              "net_inr_per_trade": -117.8,
-              "profit_factor": 0.68
-            },
-            {
-              "decile": 6,
-              "min_val": -0.0298,
-              "max_val": 0.042,
-              "n": 117,
-              "win_rate": 49.6,
-              "net_inr_per_trade": -12.18,
-              "profit_factor": 0.96
-            },
-            {
-              "decile": 7,
-              "min_val": 0.0422,
-              "max_val": 0.1203,
-              "n": 117,
-              "win_rate": 57.3,
-              "net_inr_per_trade": 14.4,
-              "profit_factor": 1.06
-            },
-            {
-              "decile": 8,
-              "min_val": 0.1206,
-              "max_val": 0.2001,
-              "n": 117,
-              "win_rate": 62.4,
-              "net_inr_per_trade": 183.03,
-              "profit_factor": 1.95
-            },
-            {
-              "decile": 9,
-              "min_val": 0.2039,
-              "max_val": 0.316,
-              "n": 118,
-              "win_rate": 44.9,
-              "net_inr_per_trade": -42.98,
-              "profit_factor": 0.87
-            },
-            {
-              "decile": 10,
-              "min_val": 0.316,
-              "max_val": 0.8249,
-              "n": 116,
-              "win_rate": 62.9,
-              "net_inr_per_trade": 80.59,
-              "profit_factor": 1.21
-            }
-          ]
+        "shape": "MONOTONE_POSITIVE",
+        "layer1_correlation": {
+          "spearman_rho": 0.062,
+          "spearman_p": 0.0341,
+          "chop_removal_test": {
+            "chop_cut": -0.1837,
+            "excluded_mean_inr": -293.3,
+            "chop_only_mean_inr": -388.77,
+            "chop_removal_edge_inr": 95.47
+          },
+          "goldilocks_regime_test": {
+            "q25": -0.2221,
+            "q85": 0.2458,
+            "goldilocks_mean_inr": -300.12,
+            "extremes_mean_inr": -355.18,
+            "goldilocks_edge_inr": 55.06
+          }
         },
-        "out_of_sample": {
-          "n_surviving": 964,
-          "win_rate": 52.4,
-          "net_inr_per_trade": -4.03,
-          "profit_factor": 0.98,
-          "net_inr_ex_top1": -6.36,
-          "net_inr_ex_top3": -10.71,
-          "net_inr_ex_top5": -14.12,
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": -0.9728,
+            "max_val": -0.1564,
+            "n": 390,
+            "win_rate": 48.5,
+            "avg_win_pts": 13.18,
+            "avg_loss_pts": -13.19,
+            "net_inr_per_trade": -370.81,
+            "statutory_dhan_net_per_trade": -48.89,
+            "profit_factor": 0.24
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": -0.1561,
+            "max_val": 0.0917,
+            "n": 390,
+            "win_rate": 53.1,
+            "avg_win_pts": 15.13,
+            "avg_loss_pts": -16.53,
+            "net_inr_per_trade": -338.79,
+            "statutory_dhan_net_per_trade": -16.93,
+            "profit_factor": 0.32
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 0.0936,
+            "max_val": 0.8249,
+            "n": 391,
+            "win_rate": 56.3,
+            "avg_win_pts": 18.69,
+            "avg_loss_pts": -18.78,
+            "net_inr_per_trade": -256.81,
+            "statutory_dhan_net_per_trade": 64.89,
+            "profit_factor": 0.48
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "GTE -0.15620954370661005",
+          "n_surviving": 817,
+          "win_rate": 53.0,
+          "net_inr_hurdle400": -312.14,
+          "net_inr_statutory_dhan": 9.67,
+          "profit_factor": 0.34,
+          "super_trail_hurdle400": -340.79,
+          "super_trail_statutory_dhan": -18.93,
+          "net_inr_ex_top1": -314.88,
+          "net_inr_ex_top3": -319.99,
+          "net_inr_ex_top5": -324.0,
           "bootstrap_ci_95": [
-            -47.16,
-            40.35
+            -360.57,
+            -263.57
           ],
-          "z_score_sd": -0.18,
-          "direction_control_short_net": 68.13,
-          "directional_advantage": -72.16
+          "z_score_sd": -12.28,
+          "direction_control_short_net": -268.39,
+          "directional_advantage": -43.75
         },
         "verdict": "NOT BUILT",
         "failure_reasons": [
-          "Net \u20b9/trade $\\le$ 0 (\u20b9-4.03)",
-          "PF < 1.30 (0.98)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-14.12)",
-          "Z-score -0.18 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-72.16)"
+          "Net \u20b9/trade <= 0 (\u20b9-312.14 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.34)",
+          "Ex-top5 wins Net <= 0 (\u20b9-324.00)",
+          "Z-score -12.28 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-43.75)"
         ]
       },
       {
-        "key": "m07_separation_abs",
+        "key": "m02_separation_abs",
         "name": "Separation (Absolute)",
         "group": "Group A (Line Geometry)",
         "status": "EVALUATED",
-        "shape": "NO_SHAPE",
-        "spearman_rho": -0.007,
-        "spearman_p": 0.8009,
-        "cutoff_rule": "GTE 0.07674001986617496",
-        "in_sample": {
-          "n_total": 1171,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": 0.0,
-              "max_val": 0.04,
-              "n": 118,
-              "win_rate": 51.7,
-              "net_inr_per_trade": 11.42,
-              "profit_factor": 1.04
-            },
-            {
-              "decile": 2,
-              "min_val": 0.0402,
-              "max_val": 0.0767,
-              "n": 118,
-              "win_rate": 50.8,
-              "net_inr_per_trade": -159.69,
-              "profit_factor": 0.57
-            },
-            {
-              "decile": 3,
-              "min_val": 0.0775,
-              "max_val": 0.1161,
-              "n": 116,
-              "win_rate": 57.8,
-              "net_inr_per_trade": 24.58,
-              "profit_factor": 1.09
-            },
-            {
-              "decile": 4,
-              "min_val": 0.1168,
-              "max_val": 0.1521,
-              "n": 117,
-              "win_rate": 56.4,
-              "net_inr_per_trade": 124.69,
-              "profit_factor": 1.64
-            },
-            {
-              "decile": 5,
-              "min_val": 0.1545,
-              "max_val": 0.1916,
-              "n": 117,
-              "win_rate": 58.1,
-              "net_inr_per_trade": 110.2,
-              "profit_factor": 1.47
-            },
-            {
-              "decile": 6,
-              "min_val": 0.1922,
-              "max_val": 0.2325,
-              "n": 117,
-              "win_rate": 48.7,
-              "net_inr_per_trade": 17.97,
-              "profit_factor": 1.07
-            },
-            {
-              "decile": 7,
-              "min_val": 0.2328,
-              "max_val": 0.28,
-              "n": 117,
-              "win_rate": 47.9,
-              "net_inr_per_trade": -69.52,
-              "profit_factor": 0.75
-            },
-            {
-              "decile": 8,
-              "min_val": 0.2807,
-              "max_val": 0.3514,
-              "n": 117,
-              "win_rate": 44.4,
-              "net_inr_per_trade": -120.24,
-              "profit_factor": 0.65
-            },
-            {
-              "decile": 9,
-              "min_val": 0.3517,
-              "max_val": 0.4494,
-              "n": 117,
-              "win_rate": 51.3,
-              "net_inr_per_trade": -92.26,
-              "profit_factor": 0.73
-            },
-            {
-              "decile": 10,
-              "min_val": 0.4512,
-              "max_val": 0.9728,
-              "n": 117,
-              "win_rate": 59.0,
-              "net_inr_per_trade": 151.85,
-              "profit_factor": 1.59
-            }
-          ]
+        "shape": "INVERTED_U",
+        "layer1_correlation": {
+          "spearman_rho": -0.007,
+          "spearman_p": 0.8002,
+          "chop_removal_test": {
+            "chop_cut": 0.1161,
+            "excluded_mean_inr": -304.27,
+            "chop_only_mean_inr": -363.52,
+            "chop_removal_edge_inr": 59.25
+          },
+          "goldilocks_regime_test": {
+            "q25": 0.0989,
+            "q85": 0.3928,
+            "goldilocks_mean_inr": -313.35,
+            "extremes_mean_inr": -335.15,
+            "goldilocks_edge_inr": 21.8
+          }
         },
-        "out_of_sample": {
-          "n_surviving": 971,
-          "win_rate": 50.8,
-          "net_inr_per_trade": -15.17,
-          "profit_factor": 0.94,
-          "net_inr_ex_top1": -17.98,
-          "net_inr_ex_top3": -22.64,
-          "net_inr_ex_top5": -26.38,
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": 0.0,
+            "max_val": 0.1261,
+            "n": 392,
+            "win_rate": 54.1,
+            "avg_win_pts": 15.33,
+            "avg_loss_pts": -17.52,
+            "net_inr_per_trade": -338.09,
+            "statutory_dhan_net_per_trade": -16.23,
+            "profit_factor": 0.32
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": 0.1272,
+            "max_val": 0.2632,
+            "n": 388,
+            "win_rate": 53.4,
+            "avg_win_pts": 16.07,
+            "avg_loss_pts": -12.93,
+            "net_inr_per_trade": -261.71,
+            "statutory_dhan_net_per_trade": 60.0,
+            "profit_factor": 0.4
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 0.2634,
+            "max_val": 0.9728,
+            "n": 391,
+            "win_rate": 50.4,
+            "avg_win_pts": 16.03,
+            "avg_loss_pts": -17.51,
+            "net_inr_per_trade": -365.93,
+            "statutory_dhan_net_per_trade": -44.02,
+            "profit_factor": 0.32
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "BETWEEN (0.09888578650579352, 0.3927607465212407)",
+          "n_surviving": 722,
+          "win_rate": 51.8,
+          "net_inr_hurdle400": -338.63,
+          "net_inr_statutory_dhan": -16.77,
+          "profit_factor": 0.25,
+          "super_trail_hurdle400": -349.73,
+          "super_trail_statutory_dhan": -27.86,
+          "net_inr_ex_top1": -341.77,
+          "net_inr_ex_top3": -346.79,
+          "net_inr_ex_top5": -351.2,
           "bootstrap_ci_95": [
-            -57.1,
-            31.15
+            -383.77,
+            -288.34
           ],
-          "z_score_sd": -0.69,
-          "direction_control_short_net": 91.57,
-          "directional_advantage": -106.74
+          "z_score_sd": -14.29,
+          "direction_control_short_net": -289.05,
+          "directional_advantage": -49.58
         },
         "verdict": "NOT BUILT",
         "failure_reasons": [
-          "Net \u20b9/trade $\\le$ 0 (\u20b9-15.17)",
-          "PF < 1.30 (0.94)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-26.38)",
-          "Z-score -0.69 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-106.74)"
+          "Net \u20b9/trade <= 0 (\u20b9-338.63 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.25)",
+          "Ex-top5 wins Net <= 0 (\u20b9-351.20)",
+          "Z-score -14.29 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-49.58)"
         ]
       },
       {
-        "key": "m08_separation_percentile",
+        "key": "m03_separation_percentile",
         "name": "Separation Percentile",
         "group": "Group A (Line Geometry)",
         "status": "EVALUATED",
-        "shape": "NO_SHAPE",
-        "spearman_rho": -0.008,
-        "spearman_p": 0.7741,
-        "cutoff_rule": "GTE 11.471321695760599",
-        "in_sample": {
-          "n_total": 1161,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": 0.3204,
-              "max_val": 5.6384,
-              "n": 117,
-              "win_rate": 48.7,
-              "net_inr_per_trade": -58.23,
-              "profit_factor": 0.82
-            },
-            {
-              "decile": 2,
-              "min_val": 5.6673,
-              "max_val": 11.4713,
-              "n": 116,
-              "win_rate": 52.6,
-              "net_inr_per_trade": -105.55,
-              "profit_factor": 0.68
-            },
-            {
-              "decile": 3,
-              "min_val": 11.4796,
-              "max_val": 18.0835,
-              "n": 116,
-              "win_rate": 60.3,
-              "net_inr_per_trade": 76.1,
-              "profit_factor": 1.31
-            },
-            {
-              "decile": 4,
-              "min_val": 18.2063,
-              "max_val": 24.5714,
-              "n": 116,
-              "win_rate": 53.4,
-              "net_inr_per_trade": 45.06,
-              "profit_factor": 1.19
-            },
-            {
-              "decile": 5,
-              "min_val": 24.5855,
-              "max_val": 31.8008,
-              "n": 116,
-              "win_rate": 60.3,
-              "net_inr_per_trade": 183.14,
-              "profit_factor": 1.92
-            },
-            {
-              "decile": 6,
-              "min_val": 31.8637,
-              "max_val": 39.8225,
-              "n": 116,
-              "win_rate": 51.7,
-              "net_inr_per_trade": -29.25,
-              "profit_factor": 0.89
-            },
-            {
-              "decile": 7,
-              "min_val": 39.9257,
-              "max_val": 47.487,
-              "n": 117,
-              "win_rate": 44.4,
-              "net_inr_per_trade": -101.18,
-              "profit_factor": 0.66
-            },
-            {
-              "decile": 8,
-              "min_val": 47.6283,
-              "max_val": 58.1214,
-              "n": 115,
-              "win_rate": 44.3,
-              "net_inr_per_trade": -102.27,
-              "profit_factor": 0.7
-            },
-            {
-              "decile": 9,
-              "min_val": 58.1484,
-              "max_val": 69.5953,
-              "n": 117,
-              "win_rate": 56.4,
-              "net_inr_per_trade": -31.59,
-              "profit_factor": 0.9
-            },
-            {
-              "decile": 10,
-              "min_val": 69.9137,
-              "max_val": 100.0,
-              "n": 115,
-              "win_rate": 53.0,
-              "net_inr_per_trade": 86.19,
-              "profit_factor": 1.29
-            }
-          ]
+        "shape": "INVERTED_U",
+        "layer1_correlation": {
+          "spearman_rho": -0.008,
+          "spearman_p": 0.7734,
+          "chop_removal_test": {
+            "chop_cut": 18.0835,
+            "excluded_mean_inr": -314.8,
+            "chop_only_mean_inr": -351.2,
+            "chop_removal_edge_inr": 36.4
+          },
+          "goldilocks_regime_test": {
+            "q25": 15.1737,
+            "q85": 63.8249,
+            "goldilocks_mean_inr": -312.78,
+            "extremes_mean_inr": -345.22,
+            "goldilocks_edge_inr": 32.44
+          }
         },
-        "out_of_sample": {
-          "n_surviving": 986,
-          "win_rate": 50.9,
-          "net_inr_per_trade": -15.42,
-          "profit_factor": 0.94,
-          "net_inr_ex_top1": -18.19,
-          "net_inr_ex_top3": -22.78,
-          "net_inr_ex_top5": -26.46,
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": 0.3204,
+            "max_val": 19.8708,
+            "n": 388,
+            "win_rate": 53.1,
+            "avg_win_pts": 14.92,
+            "avg_loss_pts": -17.31,
+            "net_inr_per_trade": -354.82,
+            "statutory_dhan_net_per_trade": -32.93,
+            "profit_factor": 0.3
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": 19.943,
+            "max_val": 43.9024,
+            "n": 386,
+            "win_rate": 53.9,
+            "avg_win_pts": 15.64,
+            "avg_loss_pts": -13.16,
+            "net_inr_per_trade": -268.41,
+            "statutory_dhan_net_per_trade": 53.32,
+            "profit_factor": 0.38
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 43.9394,
+            "max_val": 100.0,
+            "n": 387,
+            "win_rate": 50.6,
+            "avg_win_pts": 16.28,
+            "avg_loss_pts": -17.26,
+            "net_inr_per_trade": -353.78,
+            "statutory_dhan_net_per_trade": -31.9,
+            "profit_factor": 0.33
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "BETWEEN (15.173674588665447, 63.824884792626726)",
+          "n_surviving": 750,
+          "win_rate": 52.1,
+          "net_inr_hurdle400": -336.77,
+          "net_inr_statutory_dhan": -14.92,
+          "profit_factor": 0.26,
+          "super_trail_hurdle400": -343.78,
+          "super_trail_statutory_dhan": -21.92,
+          "net_inr_ex_top1": -339.79,
+          "net_inr_ex_top3": -344.62,
+          "net_inr_ex_top5": -348.86,
           "bootstrap_ci_95": [
-            -56.43,
-            31.13
+            -382.66,
+            -285.76
           ],
-          "z_score_sd": -0.71,
-          "direction_control_short_net": 92.61,
-          "directional_advantage": -108.03
+          "z_score_sd": -14.35,
+          "direction_control_short_net": -280.93,
+          "directional_advantage": -55.84
         },
         "verdict": "NOT BUILT",
         "failure_reasons": [
-          "Net \u20b9/trade $\\le$ 0 (\u20b9-15.42)",
-          "PF < 1.30 (0.94)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-26.46)",
-          "Z-score -0.71 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-108.03)"
+          "Net \u20b9/trade <= 0 (\u20b9-336.77 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.26)",
+          "Ex-top5 wins Net <= 0 (\u20b9-348.86)",
+          "Z-score -14.35 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-55.84)"
         ]
       },
       {
-        "key": "m09_ma4_slope",
+        "key": "m04_ma4_slope",
         "name": "MA4 Slope (Normalized Angle)",
         "group": "Group A (Line Geometry)",
         "status": "EVALUATED",
-        "shape": "NO_SHAPE",
-        "spearman_rho": 0.045,
-        "spearman_p": 0.1237,
-        "cutoff_rule": "GTE -0.14766966720174174",
-        "in_sample": {
-          "n_total": 1169,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": -0.7035,
-              "max_val": -0.2327,
-              "n": 117,
-              "win_rate": 47.9,
-              "net_inr_per_trade": -74.12,
-              "profit_factor": 0.74
-            },
-            {
-              "decile": 2,
-              "min_val": -0.2327,
-              "max_val": -0.1477,
-              "n": 118,
-              "win_rate": 55.1,
-              "net_inr_per_trade": -2.86,
-              "profit_factor": 0.99
-            },
-            {
-              "decile": 3,
-              "min_val": -0.1465,
-              "max_val": -0.1033,
-              "n": 116,
-              "win_rate": 50.9,
-              "net_inr_per_trade": 50.47,
-              "profit_factor": 1.21
-            },
-            {
-              "decile": 4,
-              "min_val": -0.1033,
-              "max_val": -0.054,
-              "n": 117,
-              "win_rate": 47.9,
-              "net_inr_per_trade": -41.69,
-              "profit_factor": 0.84
-            },
-            {
-              "decile": 5,
-              "min_val": -0.0533,
-              "max_val": -0.0109,
-              "n": 117,
-              "win_rate": 50.4,
-              "net_inr_per_trade": -68.09,
-              "profit_factor": 0.8
-            },
-            {
-              "decile": 6,
-              "min_val": -0.0108,
-              "max_val": 0.0299,
-              "n": 116,
-              "win_rate": 56.9,
-              "net_inr_per_trade": 48.99,
-              "profit_factor": 1.18
-            },
-            {
-              "decile": 7,
-              "min_val": 0.0306,
-              "max_val": 0.0695,
-              "n": 118,
-              "win_rate": 50.8,
-              "net_inr_per_trade": -62.54,
-              "profit_factor": 0.81
-            },
-            {
-              "decile": 8,
-              "min_val": 0.07,
-              "max_val": 0.1256,
-              "n": 117,
-              "win_rate": 49.6,
-              "net_inr_per_trade": -30.91,
-              "profit_factor": 0.9
-            },
-            {
-              "decile": 9,
-              "min_val": 0.1258,
-              "max_val": 0.1968,
-              "n": 116,
-              "win_rate": 57.8,
-              "net_inr_per_trade": 72.03,
-              "profit_factor": 1.29
-            },
-            {
-              "decile": 10,
-              "min_val": 0.1974,
-              "max_val": 0.6425,
-              "n": 117,
-              "win_rate": 58.1,
-              "net_inr_per_trade": 83.0,
-              "profit_factor": 1.23
-            }
-          ]
+        "shape": "MONOTONE_POSITIVE",
+        "layer1_correlation": {
+          "spearman_rho": 0.045,
+          "spearman_p": 0.1235,
+          "chop_removal_test": {
+            "chop_cut": -0.1033,
+            "excluded_mean_inr": -321.94,
+            "chop_only_mean_inr": -330.84,
+            "chop_removal_edge_inr": 8.9
+          },
+          "goldilocks_regime_test": {
+            "q25": -0.1295,
+            "q85": 0.157,
+            "goldilocks_mean_inr": -344.22,
+            "extremes_mean_inr": -295.25,
+            "goldilocks_edge_inr": -48.97
+          }
         },
-        "out_of_sample": {
-          "n_surviving": 942,
-          "win_rate": 53.3,
-          "net_inr_per_trade": 7.38,
-          "profit_factor": 1.03,
-          "net_inr_ex_top1": 5.0,
-          "net_inr_ex_top3": 0.58,
-          "net_inr_ex_top5": -2.89,
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": -0.7035,
+            "max_val": -0.0863,
+            "n": 390,
+            "win_rate": 50.3,
+            "avg_win_pts": 14.1,
+            "avg_loss_pts": -13.05,
+            "net_inr_per_trade": -333.53,
+            "statutory_dhan_net_per_trade": -11.69,
+            "profit_factor": 0.29
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": -0.0862,
+            "max_val": 0.0562,
+            "n": 389,
+            "win_rate": 53.0,
+            "avg_win_pts": 15.96,
+            "avg_loss_pts": -16.79,
+            "net_inr_per_trade": -327.07,
+            "statutory_dhan_net_per_trade": -5.24,
+            "profit_factor": 0.34
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 0.0563,
+            "max_val": 0.6425,
+            "n": 390,
+            "win_rate": 54.4,
+            "avg_win_pts": 16.99,
+            "avg_loss_pts": -18.44,
+            "net_inr_per_trade": -313.24,
+            "statutory_dhan_net_per_trade": 8.57,
+            "profit_factor": 0.38
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "GTE -0.08636293333121309",
+          "n_surviving": 782,
+          "win_rate": 52.9,
+          "net_inr_hurdle400": -328.78,
+          "net_inr_statutory_dhan": -6.94,
+          "profit_factor": 0.31,
+          "super_trail_hurdle400": -335.83,
+          "super_trail_statutory_dhan": -13.99,
+          "net_inr_ex_top1": -331.67,
+          "net_inr_ex_top3": -337.05,
+          "net_inr_ex_top5": -341.18,
           "bootstrap_ci_95": [
-            -36.27,
-            52.09
+            -379.53,
+            -281.06
           ],
-          "z_score_sd": 0.32,
-          "direction_control_short_net": 53.7,
-          "directional_advantage": -46.33
+          "z_score_sd": -12.73,
+          "direction_control_short_net": -217.65,
+          "directional_advantage": -111.13
         },
         "verdict": "NOT BUILT",
         "failure_reasons": [
-          "PF < 1.30 (1.03)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-2.89)",
-          "Z-score 0.32 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-46.33)"
+          "Net \u20b9/trade <= 0 (\u20b9-328.78 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.31)",
+          "Ex-top5 wins Net <= 0 (\u20b9-341.18)",
+          "Z-score -12.73 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-111.13)"
         ]
       },
       {
-        "key": "m10_ema8_slope",
+        "key": "m05_ema8_slope",
         "name": "EMA8 Slope (Underlying Trend)",
         "group": "Group A (Line Geometry)",
         "status": "EVALUATED",
         "shape": "MONOTONE_POSITIVE",
-        "spearman_rho": 0.075,
-        "spearman_p": 0.01,
-        "cutoff_rule": "GTE -0.10685324207747796",
-        "in_sample": {
-          "n_total": 1169,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": -0.5314,
-              "max_val": -0.2166,
-              "n": 117,
-              "win_rate": 49.6,
-              "net_inr_per_trade": -40.3,
-              "profit_factor": 0.85
-            },
-            {
-              "decile": 2,
-              "min_val": -0.2156,
-              "max_val": -0.1521,
-              "n": 117,
-              "win_rate": 43.6,
-              "net_inr_per_trade": -114.49,
-              "profit_factor": 0.59
-            },
-            {
-              "decile": 3,
-              "min_val": -0.1516,
-              "max_val": -0.107,
-              "n": 117,
-              "win_rate": 45.3,
-              "net_inr_per_trade": -20.69,
-              "profit_factor": 0.92
-            },
-            {
-              "decile": 4,
-              "min_val": -0.1067,
-              "max_val": -0.0585,
-              "n": 117,
-              "win_rate": 52.1,
-              "net_inr_per_trade": -27.12,
-              "profit_factor": 0.9
-            },
-            {
-              "decile": 5,
-              "min_val": -0.0583,
-              "max_val": -0.0147,
-              "n": 118,
-              "win_rate": 50.0,
-              "net_inr_per_trade": -77.86,
-              "profit_factor": 0.77
-            },
-            {
-              "decile": 6,
-              "min_val": -0.0145,
-              "max_val": 0.0274,
-              "n": 115,
-              "win_rate": 60.9,
-              "net_inr_per_trade": 81.7,
-              "profit_factor": 1.35
-            },
-            {
-              "decile": 7,
-              "min_val": 0.0277,
-              "max_val": 0.0632,
-              "n": 117,
-              "win_rate": 55.6,
-              "net_inr_per_trade": -0.04,
-              "profit_factor": 1.0
-            },
-            {
-              "decile": 8,
-              "min_val": 0.0636,
-              "max_val": 0.1127,
-              "n": 118,
-              "win_rate": 57.6,
-              "net_inr_per_trade": 89.41,
-              "profit_factor": 1.39
-            },
-            {
-              "decile": 9,
-              "min_val": 0.1129,
-              "max_val": 0.1667,
-              "n": 116,
-              "win_rate": 51.7,
-              "net_inr_per_trade": -10.12,
-              "profit_factor": 0.96
-            },
-            {
-              "decile": 10,
-              "min_val": 0.17,
-              "max_val": 0.468,
-              "n": 117,
-              "win_rate": 59.0,
-              "net_inr_per_trade": 92.96,
-              "profit_factor": 1.22
-            }
-          ]
+        "layer1_correlation": {
+          "spearman_rho": 0.075,
+          "spearman_p": 0.01,
+          "chop_removal_test": {
+            "chop_cut": -0.1069,
+            "excluded_mean_inr": -300.66,
+            "chop_only_mean_inr": -380.43,
+            "chop_removal_edge_inr": 79.77
+          },
+          "goldilocks_regime_test": {
+            "q25": -0.1328,
+            "q85": 0.135,
+            "goldilocks_mean_inr": -317.6,
+            "extremes_mean_inr": -335.2,
+            "goldilocks_edge_inr": 17.61
+          }
         },
-        "out_of_sample": {
-          "n_surviving": 848,
-          "win_rate": 53.9,
-          "net_inr_per_trade": 12.22,
-          "profit_factor": 1.05,
-          "net_inr_ex_top1": 9.59,
-          "net_inr_ex_top3": 4.68,
-          "net_inr_ex_top5": 0.93,
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": -0.5314,
+            "max_val": -0.0888,
+            "n": 390,
+            "win_rate": 47.9,
+            "avg_win_pts": 14.35,
+            "avg_loss_pts": -13.1,
+            "net_inr_per_trade": -352.12,
+            "statutory_dhan_net_per_trade": -30.24,
+            "profit_factor": 0.28
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": -0.0886,
+            "max_val": 0.0493,
+            "n": 390,
+            "win_rate": 53.6,
+            "avg_win_pts": 14.4,
+            "avg_loss_pts": -16.68,
+            "net_inr_per_trade": -350.58,
+            "statutory_dhan_net_per_trade": -28.7,
+            "profit_factor": 0.29
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 0.0494,
+            "max_val": 0.468,
+            "n": 389,
+            "win_rate": 56.0,
+            "avg_win_pts": 18.17,
+            "avg_loss_pts": -18.76,
+            "net_inr_per_trade": -271.0,
+            "statutory_dhan_net_per_trade": 50.73,
+            "profit_factor": 0.45
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "GTE -0.08877190868185335",
+          "n_surviving": 800,
+          "win_rate": 54.0,
+          "net_inr_hurdle400": -305.66,
+          "net_inr_statutory_dhan": 16.13,
+          "profit_factor": 0.34,
+          "super_trail_hurdle400": -325.12,
+          "super_trail_statutory_dhan": -3.3,
+          "net_inr_ex_top1": -308.46,
+          "net_inr_ex_top3": -313.66,
+          "net_inr_ex_top5": -317.64,
           "bootstrap_ci_95": [
-            -29.08,
-            57.06
+            -351.4,
+            -257.98
           ],
-          "z_score_sd": 0.5,
-          "direction_control_short_net": 62.72,
-          "directional_advantage": -50.5
+          "z_score_sd": -12.03,
+          "direction_control_short_net": -264.18,
+          "directional_advantage": -41.48
         },
         "verdict": "NOT BUILT",
         "failure_reasons": [
-          "PF < 1.30 (1.05)",
-          "Z-score 0.5 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-50.50)"
+          "Net \u20b9/trade <= 0 (\u20b9-305.66 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.34)",
+          "Ex-top5 wins Net <= 0 (\u20b9-317.64)",
+          "Z-score -12.03 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-41.48)"
         ]
       },
       {
-        "key": "m11_spread_velocity",
+        "key": "m06_spread_velocity",
         "name": "Spread Velocity",
         "group": "Group A (Line Geometry)",
         "status": "EVALUATED",
-        "shape": "NO_SHAPE",
-        "spearman_rho": -0.061,
-        "spearman_p": 0.0373,
-        "cutoff_rule": "GTE -0.06103921459329742",
-        "in_sample": {
-          "n_total": 1170,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": -0.2452,
-              "max_val": -0.1028,
-              "n": 117,
-              "win_rate": 61.5,
-              "net_inr_per_trade": 114.32,
-              "profit_factor": 1.42
-            },
-            {
-              "decile": 2,
-              "min_val": -0.1023,
-              "max_val": -0.0617,
-              "n": 117,
-              "win_rate": 52.1,
-              "net_inr_per_trade": -64.19,
-              "profit_factor": 0.81
-            },
-            {
-              "decile": 3,
-              "min_val": -0.0609,
-              "max_val": -0.0375,
-              "n": 118,
-              "win_rate": 47.5,
-              "net_inr_per_trade": -85.29,
-              "profit_factor": 0.71
-            },
-            {
-              "decile": 4,
-              "min_val": -0.0374,
-              "max_val": -0.0126,
-              "n": 117,
-              "win_rate": 60.7,
-              "net_inr_per_trade": 170.43,
-              "profit_factor": 1.67
-            },
-            {
-              "decile": 5,
-              "min_val": -0.0121,
-              "max_val": 0.0097,
-              "n": 117,
-              "win_rate": 57.3,
-              "net_inr_per_trade": 65.78,
-              "profit_factor": 1.28
-            },
-            {
-              "decile": 6,
-              "min_val": 0.0102,
-              "max_val": 0.0302,
-              "n": 116,
-              "win_rate": 56.9,
-              "net_inr_per_trade": 49.13,
-              "profit_factor": 1.22
-            },
-            {
-              "decile": 7,
-              "min_val": 0.0302,
-              "max_val": 0.0537,
-              "n": 117,
-              "win_rate": 44.4,
-              "net_inr_per_trade": -119.31,
-              "profit_factor": 0.66
-            },
-            {
-              "decile": 8,
-              "min_val": 0.0538,
-              "max_val": 0.0763,
-              "n": 117,
-              "win_rate": 46.2,
-              "net_inr_per_trade": -75.06,
-              "profit_factor": 0.76
-            },
-            {
-              "decile": 9,
-              "min_val": 0.0769,
-              "max_val": 0.1158,
-              "n": 117,
-              "win_rate": 52.1,
-              "net_inr_per_trade": 31.98,
-              "profit_factor": 1.15
-            },
-            {
-              "decile": 10,
-              "min_val": 0.116,
-              "max_val": 0.2772,
-              "n": 117,
-              "win_rate": 47.0,
-              "net_inr_per_trade": -101.73,
-              "profit_factor": 0.7
-            }
-          ]
+        "shape": "INVERTED_U",
+        "layer1_correlation": {
+          "spearman_rho": -0.061,
+          "spearman_p": 0.0372,
+          "chop_removal_test": {
+            "chop_cut": -0.0375,
+            "excluded_mean_inr": -318.85,
+            "chop_only_mean_inr": -333.79,
+            "chop_removal_edge_inr": 14.94
+          },
+          "goldilocks_regime_test": {
+            "q25": -0.0467,
+            "q85": 0.0965,
+            "goldilocks_mean_inr": -308.21,
+            "extremes_mean_inr": -346.05,
+            "goldilocks_edge_inr": 37.84
+          }
         },
-        "out_of_sample": {
-          "n_surviving": 949,
-          "win_rate": 50.3,
-          "net_inr_per_trade": -25.99,
-          "profit_factor": 0.9,
-          "net_inr_ex_top1": -28.37,
-          "net_inr_ex_top3": -32.2,
-          "net_inr_ex_top5": -35.63,
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": -0.2452,
+            "max_val": -0.0279,
+            "n": 390,
+            "win_rate": 54.9,
+            "avg_win_pts": 16.07,
+            "avg_loss_pts": -18.1,
+            "net_inr_per_trade": -320.09,
+            "statutory_dhan_net_per_trade": 1.74,
+            "profit_factor": 0.37
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": -0.0278,
+            "max_val": 0.047,
+            "n": 391,
+            "win_rate": 55.8,
+            "avg_win_pts": 16.34,
+            "avg_loss_pts": -14.7,
+            "net_inr_per_trade": -256.19,
+            "statutory_dhan_net_per_trade": 65.51,
+            "profit_factor": 0.42
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 0.0473,
+            "max_val": 0.2772,
+            "n": 389,
+            "win_rate": 47.0,
+            "avg_win_pts": 14.73,
+            "avg_loss_pts": -15.36,
+            "net_inr_per_trade": -394.11,
+            "statutory_dhan_net_per_trade": -72.15,
+            "profit_factor": 0.25
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "BETWEEN (-0.0467271695342809, 0.096534244135765)",
+          "n_surviving": 679,
+          "win_rate": 51.7,
+          "net_inr_hurdle400": -323.53,
+          "net_inr_statutory_dhan": -1.7,
+          "profit_factor": 0.29,
+          "super_trail_hurdle400": -333.24,
+          "super_trail_statutory_dhan": -11.4,
+          "net_inr_ex_top1": -326.39,
+          "net_inr_ex_top3": -331.11,
+          "net_inr_ex_top5": -335.62,
           "bootstrap_ci_95": [
-            -67.71,
-            18.2
+            -370.19,
+            -268.83
           ],
-          "z_score_sd": -1.19,
-          "direction_control_short_net": 93.87,
-          "directional_advantage": -119.86
+          "z_score_sd": -12.89,
+          "direction_control_short_net": -235.44,
+          "directional_advantage": -88.1
         },
         "verdict": "NOT BUILT",
         "failure_reasons": [
-          "Net \u20b9/trade $\\le$ 0 (\u20b9-25.99)",
-          "PF < 1.30 (0.90)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-35.63)",
-          "Z-score -1.19 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-119.86)"
+          "Net \u20b9/trade <= 0 (\u20b9-323.53 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.29)",
+          "Ex-top5 wins Net <= 0 (\u20b9-335.62)",
+          "Z-score -12.89 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-88.10)"
         ]
       },
       {
-        "key": "m12_spread_phase",
+        "key": "m07_spread_phase",
         "name": "Spread Phase (+1 Exp, -1 Cont)",
         "group": "Group A (Line Geometry)",
         "status": "EVALUATED",
         "shape": "NO_SHAPE",
-        "spearman_rho": 0.007,
-        "spearman_p": 0.8169,
-        "cutoff_rule": "GTE -1.0",
-        "in_sample": {
-          "n_total": 1170,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": -1.0,
-              "max_val": 1.0,
-              "n": 1170,
-              "win_rate": 52.6,
-              "net_inr_per_trade": -1.51,
-              "profit_factor": 0.99
-            }
-          ]
+        "layer1_correlation": {
+          "spearman_rho": 0.007,
+          "spearman_p": 0.817,
+          "chop_removal_test": {
+            "chop_cut": -1.0,
+            "excluded_mean_inr": -328.7,
+            "chop_only_mean_inr": -318.5,
+            "chop_removal_edge_inr": -10.2
+          },
+          "goldilocks_regime_test": {
+            "q25": -1.0,
+            "q85": 1.0,
+            "goldilocks_mean_inr": -323.35,
+            "extremes_mean_inr": 0.0,
+            "goldilocks_edge_inr": -323.35
+          }
         },
-        "out_of_sample": {
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": -1.0,
+            "max_val": -1.0,
+            "n": 614,
+            "win_rate": 51.1,
+            "avg_win_pts": 16.3,
+            "avg_loss_pts": -15.33,
+            "net_inr_per_trade": -318.5,
+            "statutory_dhan_net_per_trade": 3.32,
+            "profit_factor": 0.35
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 1.0,
+            "max_val": 1.0,
+            "n": 556,
+            "win_rate": 54.1,
+            "avg_win_pts": 15.21,
+            "avg_loss_pts": -16.82,
+            "net_inr_per_trade": -328.7,
+            "statutory_dhan_net_per_trade": -6.86,
+            "profit_factor": 0.33
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "GTE -1.0",
           "n_surviving": 1207,
           "win_rate": 51.3,
-          "net_inr_per_trade": -17.26,
-          "profit_factor": 0.93,
-          "net_inr_ex_top1": -19.52,
-          "net_inr_ex_top3": -23.27,
-          "net_inr_ex_top5": -26.28,
+          "net_inr_hurdle400": -339.11,
+          "net_inr_statutory_dhan": -17.26,
+          "profit_factor": 0.28,
+          "super_trail_hurdle400": -347.46,
+          "super_trail_statutory_dhan": -25.59,
+          "net_inr_ex_top1": -341.38,
+          "net_inr_ex_top3": -345.14,
+          "net_inr_ex_top5": -348.15,
           "bootstrap_ci_95": [
-            -53.21,
-            23.57
+            -375.13,
+            -298.21
           ],
-          "z_score_sd": -0.87,
-          "direction_control_short_net": 103.79,
-          "directional_advantage": -121.05
+          "z_score_sd": -17.11,
+          "direction_control_short_net": -217.84,
+          "directional_advantage": -121.27
         },
         "verdict": "NOT BUILT",
         "failure_reasons": [
-          "Net \u20b9/trade $\\le$ 0 (\u20b9-17.26)",
-          "PF < 1.30 (0.93)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-26.28)",
-          "Z-score -0.87 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-121.05)"
+          "Net \u20b9/trade <= 0 (\u20b9-339.11 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.28)",
+          "Ex-top5 wins Net <= 0 (\u20b9-348.15)",
+          "Z-score -17.11 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-121.27)"
         ]
       },
       {
-        "key": "m13_ema8_curvature",
-        "name": "EMA8 Curvature (2nd Derivative)",
+        "key": "m08_ema8_curvature",
+        "name": "EMA8 Curvature (2nd Deriv)",
         "group": "Group A (Line Geometry)",
         "status": "EVALUATED",
-        "shape": "NO_SHAPE",
-        "spearman_rho": -0.043,
-        "spearman_p": 0.1395,
-        "cutoff_rule": "GTE -0.363022573103832",
-        "in_sample": {
-          "n_total": 1169,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": -1.6077,
-              "max_val": -0.6036,
-              "n": 117,
-              "win_rate": 59.0,
-              "net_inr_per_trade": 91.7,
-              "profit_factor": 1.34
-            },
-            {
-              "decile": 2,
-              "min_val": -0.6029,
-              "max_val": -0.3637,
-              "n": 117,
-              "win_rate": 50.4,
-              "net_inr_per_trade": -38.63,
-              "profit_factor": 0.89
-            },
-            {
-              "decile": 3,
-              "min_val": -0.3626,
-              "max_val": -0.21,
-              "n": 117,
-              "win_rate": 53.8,
-              "net_inr_per_trade": -26.04,
-              "profit_factor": 0.91
-            },
-            {
-              "decile": 4,
-              "min_val": -0.2085,
-              "max_val": -0.0893,
-              "n": 117,
-              "win_rate": 56.4,
-              "net_inr_per_trade": 13.56,
-              "profit_factor": 1.06
-            },
-            {
-              "decile": 5,
-              "min_val": -0.0876,
-              "max_val": 0.0361,
-              "n": 117,
-              "win_rate": 57.3,
-              "net_inr_per_trade": 92.18,
-              "profit_factor": 1.34
-            },
-            {
-              "decile": 6,
-              "min_val": 0.0367,
-              "max_val": 0.1496,
-              "n": 116,
-              "win_rate": 49.1,
-              "net_inr_per_trade": -46.66,
-              "profit_factor": 0.85
-            },
-            {
-              "decile": 7,
-              "min_val": 0.1506,
-              "max_val": 0.3101,
-              "n": 118,
-              "win_rate": 51.7,
-              "net_inr_per_trade": -17.03,
-              "profit_factor": 0.94
-            },
-            {
-              "decile": 8,
-              "min_val": 0.3108,
-              "max_val": 0.467,
-              "n": 117,
-              "win_rate": 46.2,
-              "net_inr_per_trade": -46.47,
-              "profit_factor": 0.84
-            },
-            {
-              "decile": 9,
-              "min_val": 0.4751,
-              "max_val": 0.6501,
-              "n": 116,
-              "win_rate": 55.2,
-              "net_inr_per_trade": 33.03,
-              "profit_factor": 1.14
-            },
-            {
-              "decile": 10,
-              "min_val": 0.6501,
-              "max_val": 1.7007,
-              "n": 117,
-              "win_rate": 46.2,
-              "net_inr_per_trade": -83.37,
-              "profit_factor": 0.76
-            }
-          ]
+        "shape": "MONOTONE_NEGATIVE",
+        "layer1_correlation": {
+          "spearman_rho": -0.043,
+          "spearman_p": 0.1393,
+          "chop_removal_test": {
+            "chop_cut": -0.2094,
+            "excluded_mean_inr": -329.68,
+            "chop_only_mean_inr": -312.8,
+            "chop_removal_edge_inr": -16.88
+          },
+          "goldilocks_regime_test": {
+            "q25": -0.2827,
+            "q85": 0.5672,
+            "goldilocks_mean_inr": -320.35,
+            "extremes_mean_inr": -331.0,
+            "goldilocks_edge_inr": 10.65
+          }
         },
-        "out_of_sample": {
-          "n_surviving": 961,
-          "win_rate": 50.3,
-          "net_inr_per_trade": -25.63,
-          "profit_factor": 0.9,
-          "net_inr_ex_top1": -28.49,
-          "net_inr_ex_top3": -33.22,
-          "net_inr_ex_top5": -37.02,
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": -1.6077,
+            "max_val": -0.1626,
+            "n": 390,
+            "win_rate": 55.4,
+            "avg_win_pts": 16.31,
+            "avg_loss_pts": -17.64,
+            "net_inr_per_trade": -302.01,
+            "statutory_dhan_net_per_trade": 19.78,
+            "profit_factor": 0.39
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": -0.1542,
+            "max_val": 0.2378,
+            "n": 389,
+            "win_rate": 53.2,
+            "avg_win_pts": 15.28,
+            "avg_loss_pts": -15.16,
+            "net_inr_per_trade": -313.44,
+            "statutory_dhan_net_per_trade": 8.37,
+            "profit_factor": 0.33
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 0.2415,
+            "max_val": 1.7007,
+            "n": 390,
+            "win_rate": 49.0,
+            "avg_win_pts": 15.54,
+            "avg_loss_pts": -15.39,
+            "net_inr_per_trade": -358.37,
+            "statutory_dhan_net_per_trade": -36.47,
+            "profit_factor": 0.3
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "LTE 0.24156208609797866",
+          "n_surviving": 803,
+          "win_rate": 53.4,
+          "net_inr_hurdle400": -326.4,
+          "net_inr_statutory_dhan": -4.57,
+          "profit_factor": 0.3,
+          "super_trail_hurdle400": -340.64,
+          "super_trail_statutory_dhan": -18.78,
+          "net_inr_ex_top1": -329.8,
+          "net_inr_ex_top3": -335.05,
+          "net_inr_ex_top5": -339.07,
           "bootstrap_ci_95": [
-            -71.28,
-            20.24
+            -369.49,
+            -282.04
           ],
-          "z_score_sd": -1.16,
-          "direction_control_short_net": 74.59,
-          "directional_advantage": -100.22
+          "z_score_sd": -13.47,
+          "direction_control_short_net": -218.9,
+          "directional_advantage": -107.5
         },
         "verdict": "NOT BUILT",
         "failure_reasons": [
-          "Net \u20b9/trade $\\le$ 0 (\u20b9-25.63)",
-          "PF < 1.30 (0.90)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-37.02)",
-          "Z-score -1.16 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-100.22)"
+          "Net \u20b9/trade <= 0 (\u20b9-326.40 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.30)",
+          "Ex-top5 wins Net <= 0 (\u20b9-339.07)",
+          "Z-score -13.47 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-107.50)"
         ]
       },
       {
-        "key": "m14_adx14",
+        "key": "m09_adx14",
         "name": "ADX(14) Trend Strength",
         "group": "Group A (Regime)",
         "status": "EVALUATED",
         "shape": "NO_SHAPE",
-        "spearman_rho": -0.039,
-        "spearman_p": 0.1823,
-        "cutoff_rule": "GTE 19.09107198176707",
-        "in_sample": {
-          "n_total": 1171,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": 0.0,
-              "max_val": 16.0881,
-              "n": 118,
-              "win_rate": 51.7,
-              "net_inr_per_trade": 36.81,
-              "profit_factor": 1.13
-            },
-            {
-              "decile": 2,
-              "min_val": 16.1124,
-              "max_val": 19.0911,
-              "n": 117,
-              "win_rate": 61.5,
-              "net_inr_per_trade": 107.8,
-              "profit_factor": 1.44
-            },
-            {
-              "decile": 3,
-              "min_val": 19.1559,
-              "max_val": 21.7137,
-              "n": 117,
-              "win_rate": 59.8,
-              "net_inr_per_trade": 100.02,
-              "profit_factor": 1.4
-            },
-            {
-              "decile": 4,
-              "min_val": 21.7481,
-              "max_val": 24.4654,
-              "n": 118,
-              "win_rate": 46.6,
-              "net_inr_per_trade": -66.94,
-              "profit_factor": 0.79
-            },
-            {
-              "decile": 5,
-              "min_val": 24.5473,
-              "max_val": 27.3595,
-              "n": 116,
-              "win_rate": 53.4,
-              "net_inr_per_trade": -7.48,
-              "profit_factor": 0.97
-            },
-            {
-              "decile": 6,
-              "min_val": 27.3683,
-              "max_val": 30.4269,
-              "n": 117,
-              "win_rate": 42.7,
-              "net_inr_per_trade": -108.61,
-              "profit_factor": 0.68
-            },
-            {
-              "decile": 7,
-              "min_val": 30.4387,
-              "max_val": 34.5689,
-              "n": 117,
-              "win_rate": 50.4,
-              "net_inr_per_trade": -8.59,
-              "profit_factor": 0.97
-            },
-            {
-              "decile": 8,
-              "min_val": 34.5787,
-              "max_val": 38.8766,
-              "n": 117,
-              "win_rate": 52.1,
-              "net_inr_per_trade": -25.9,
-              "profit_factor": 0.91
-            },
-            {
-              "decile": 9,
-              "min_val": 38.9166,
-              "max_val": 44.56,
-              "n": 117,
-              "win_rate": 60.7,
-              "net_inr_per_trade": 56.02,
-              "profit_factor": 1.29
-            },
-            {
-              "decile": 10,
-              "min_val": 44.5801,
-              "max_val": 65.4933,
-              "n": 117,
-              "win_rate": 47.0,
-              "net_inr_per_trade": -85.42,
-              "profit_factor": 0.75
-            }
-          ]
+        "layer1_correlation": {
+          "spearman_rho": -0.039,
+          "spearman_p": 0.1827,
+          "chop_removal_test": {
+            "chop_cut": 21.7137,
+            "excluded_mean_inr": -357.24,
+            "chop_only_mean_inr": -240.26,
+            "chop_removal_edge_inr": -116.98
+          },
+          "goldilocks_regime_test": {
+            "q25": 20.553,
+            "q85": 41.6447,
+            "goldilocks_mean_inr": -339.54,
+            "extremes_mean_inr": -295.94,
+            "goldilocks_edge_inr": -43.6
+          }
         },
-        "out_of_sample": {
-          "n_surviving": 943,
-          "win_rate": 50.8,
-          "net_inr_per_trade": -37.69,
-          "profit_factor": 0.86,
-          "net_inr_ex_top1": -40.61,
-          "net_inr_ex_top3": -45.46,
-          "net_inr_ex_top5": -48.77,
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": 0.0,
+            "max_val": 22.6472,
+            "n": 390,
+            "win_rate": 56.7,
+            "avg_win_pts": 16.92,
+            "avg_loss_pts": -15.86,
+            "net_inr_per_trade": -249.51,
+            "statutory_dhan_net_per_trade": 72.18,
+            "profit_factor": 0.45
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": 22.7146,
+            "max_val": 33.0828,
+            "n": 391,
+            "win_rate": 48.1,
+            "avg_win_pts": 15.5,
+            "avg_loss_pts": -15.95,
+            "net_inr_per_trade": -377.2,
+            "statutory_dhan_net_per_trade": -55.27,
+            "profit_factor": 0.29
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 33.1042,
+            "max_val": 65.4933,
+            "n": 390,
+            "win_rate": 53.1,
+            "avg_win_pts": 14.89,
+            "avg_loss_pts": -16.24,
+            "net_inr_per_trade": -339.38,
+            "statutory_dhan_net_per_trade": -17.53,
+            "profit_factor": 0.31
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "GTE 21.713683841412955",
+          "n_surviving": 824,
+          "win_rate": 49.3,
+          "net_inr_hurdle400": -377.9,
+          "net_inr_statutory_dhan": -55.97,
+          "profit_factor": 0.24,
+          "super_trail_hurdle400": -378.67,
+          "super_trail_statutory_dhan": -56.74,
+          "net_inr_ex_top1": -381.28,
+          "net_inr_ex_top3": -386.88,
+          "net_inr_ex_top5": -390.66,
           "bootstrap_ci_95": [
-            -76.53,
-            7.02
+            -419.69,
+            -330.64
           ],
-          "z_score_sd": -1.67,
-          "direction_control_short_net": 180.1,
-          "directional_advantage": -217.79
+          "z_score_sd": -15.65,
+          "direction_control_short_net": -83.0,
+          "directional_advantage": -294.9
         },
         "verdict": "NOT BUILT",
         "failure_reasons": [
-          "Net \u20b9/trade $\\le$ 0 (\u20b9-37.69)",
-          "PF < 1.30 (0.86)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-48.77)",
-          "Z-score -1.67 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-217.79)"
+          "Net \u20b9/trade <= 0 (\u20b9-377.90 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.24)",
+          "Ex-top5 wins Net <= 0 (\u20b9-390.66)",
+          "Z-score -15.65 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-294.90)"
         ]
       },
       {
-        "key": "m15_bb_width_percentile",
+        "key": "m10_bb_width_percentile",
         "name": "BB Width Percentile",
         "group": "Group A (Regime)",
         "status": "EVALUATED",
         "shape": "NO_SHAPE",
-        "spearman_rho": 0.009,
-        "spearman_p": 0.7483,
-        "cutoff_rule": "GTE 22.699004975124378",
-        "in_sample": {
-          "n_total": 1151,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": 0.1164,
-              "max_val": 10.0534,
-              "n": 116,
-              "win_rate": 52.6,
-              "net_inr_per_trade": -6.74,
-              "profit_factor": 0.97
-            },
-            {
-              "decile": 2,
-              "min_val": 10.0623,
-              "max_val": 22.699,
-              "n": 116,
-              "win_rate": 46.6,
-              "net_inr_per_trade": -76.64,
-              "profit_factor": 0.73
-            },
-            {
-              "decile": 3,
-              "min_val": 22.7405,
-              "max_val": 35.9424,
-              "n": 115,
-              "win_rate": 52.2,
-              "net_inr_per_trade": -24.06,
-              "profit_factor": 0.92
-            },
-            {
-              "decile": 4,
-              "min_val": 35.9712,
-              "max_val": 48.1099,
-              "n": 114,
-              "win_rate": 56.1,
-              "net_inr_per_trade": 34.6,
-              "profit_factor": 1.14
-            },
-            {
-              "decile": 5,
-              "min_val": 48.5976,
-              "max_val": 60.8605,
-              "n": 115,
-              "win_rate": 53.9,
-              "net_inr_per_trade": -25.92,
-              "profit_factor": 0.92
-            },
-            {
-              "decile": 6,
-              "min_val": 60.9162,
-              "max_val": 70.4545,
-              "n": 115,
-              "win_rate": 56.5,
-              "net_inr_per_trade": 34.79,
-              "profit_factor": 1.12
-            },
-            {
-              "decile": 7,
-              "min_val": 70.7692,
-              "max_val": 79.6618,
-              "n": 115,
-              "win_rate": 53.9,
-              "net_inr_per_trade": 81.07,
-              "profit_factor": 1.36
-            },
-            {
-              "decile": 8,
-              "min_val": 79.6825,
-              "max_val": 88.5036,
-              "n": 116,
-              "win_rate": 59.5,
-              "net_inr_per_trade": 38.28,
-              "profit_factor": 1.14
-            },
-            {
-              "decile": 9,
-              "min_val": 88.6969,
-              "max_val": 95.4585,
-              "n": 114,
-              "win_rate": 45.6,
-              "net_inr_per_trade": -128.29,
-              "profit_factor": 0.65
-            },
-            {
-              "decile": 10,
-              "min_val": 95.6202,
-              "max_val": 100.0,
-              "n": 115,
-              "win_rate": 52.2,
-              "net_inr_per_trade": 66.96,
-              "profit_factor": 1.21
-            }
-          ]
+        "layer1_correlation": {
+          "spearman_rho": 0.009,
+          "spearman_p": 0.7481,
+          "chop_removal_test": {
+            "chop_cut": 35.9424,
+            "excluded_mean_inr": -307.12,
+            "chop_only_mean_inr": -357.75,
+            "chop_removal_edge_inr": 50.63
+          },
+          "goldilocks_regime_test": {
+            "q25": 29.5421,
+            "q85": 92.5415,
+            "goldilocks_mean_inr": -302.43,
+            "extremes_mean_inr": -352.25,
+            "goldilocks_edge_inr": 49.82
+          }
         },
-        "out_of_sample": {
-          "n_surviving": 823,
-          "win_rate": 51.2,
-          "net_inr_per_trade": -12.96,
-          "profit_factor": 0.95,
-          "net_inr_ex_top1": -16.28,
-          "net_inr_ex_top3": -21.78,
-          "net_inr_ex_top5": -26.19,
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": 0.1164,
+            "max_val": 40.5082,
+            "n": 385,
+            "win_rate": 50.6,
+            "avg_win_pts": 13.98,
+            "avg_loss_pts": -14.24,
+            "net_inr_per_trade": -352.3,
+            "statutory_dhan_net_per_trade": -30.42,
+            "profit_factor": 0.28
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": 41.129,
+            "max_val": 76.6324,
+            "n": 382,
+            "win_rate": 56.3,
+            "avg_win_pts": 15.24,
+            "avg_loss_pts": -16.32,
+            "net_inr_per_trade": -296.04,
+            "statutory_dhan_net_per_trade": 25.73,
+            "profit_factor": 0.37
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 76.6486,
+            "max_val": 100.0,
+            "n": 384,
+            "win_rate": 51.8,
+            "avg_win_pts": 17.67,
+            "avg_loss_pts": -17.61,
+            "net_inr_per_trade": -318.6,
+            "statutory_dhan_net_per_trade": 3.22,
+            "profit_factor": 0.38
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "GTE 35.94239198497182",
+          "n_surviving": 674,
+          "win_rate": 51.3,
+          "net_inr_hurdle400": -338.0,
+          "net_inr_statutory_dhan": -16.14,
+          "profit_factor": 0.31,
+          "super_trail_hurdle400": -371.96,
+          "super_trail_statutory_dhan": -50.05,
+          "net_inr_ex_top1": -342.06,
+          "net_inr_ex_top3": -347.8,
+          "net_inr_ex_top5": -352.3,
           "bootstrap_ci_95": [
-            -64.22,
-            36.62
+            -390.45,
+            -290.34
           ],
-          "z_score_sd": -0.51,
-          "direction_control_short_net": 121.6,
-          "directional_advantage": -134.56
+          "z_score_sd": -11.99,
+          "direction_control_short_net": -203.72,
+          "directional_advantage": -134.28
         },
         "verdict": "NOT BUILT",
         "failure_reasons": [
-          "Net \u20b9/trade $\\le$ 0 (\u20b9-12.96)",
-          "PF < 1.30 (0.95)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-26.19)",
-          "Z-score -0.51 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-134.56)"
+          "Net \u20b9/trade <= 0 (\u20b9-338.00 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.31)",
+          "Ex-top5 wins Net <= 0 (\u20b9-352.30)",
+          "Z-score -11.99 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-134.28)"
         ]
       },
       {
-        "key": "m16_ma4_angle_deg",
+        "key": "m11_ma4_angle_deg",
         "name": "MA4 Angle in Degrees",
         "group": "Group A (Sanity Check)",
         "status": "EVALUATED",
-        "shape": "NO_SHAPE",
-        "spearman_rho": 0.045,
-        "spearman_p": 0.1208,
-        "cutoff_rule": "GTE -8.400141000953687",
-        "in_sample": {
-          "n_total": 1171,
-          "deciles": [
-            {
-              "decile": 1,
-              "min_val": -35.1247,
-              "max_val": -13.0981,
-              "n": 119,
-              "win_rate": 47.9,
-              "net_inr_per_trade": -72.82,
-              "profit_factor": 0.74
-            },
-            {
-              "decile": 2,
-              "min_val": -13.0379,
-              "max_val": -8.4001,
-              "n": 116,
-              "win_rate": 55.2,
-              "net_inr_per_trade": -2.96,
-              "profit_factor": 0.99
-            },
-            {
-              "decile": 3,
-              "min_val": -8.3331,
-              "max_val": -5.8954,
-              "n": 117,
-              "win_rate": 50.4,
-              "net_inr_per_trade": 47.77,
-              "profit_factor": 1.2
-            },
-            {
-              "decile": 4,
-              "min_val": -5.8213,
-              "max_val": -3.0524,
-              "n": 118,
-              "win_rate": 48.3,
-              "net_inr_per_trade": -38.55,
-              "profit_factor": 0.85
-            },
-            {
-              "decile": 5,
-              "min_val": -3.0389,
-              "max_val": -0.6172,
-              "n": 116,
-              "win_rate": 50.0,
-              "net_inr_per_trade": -80.82,
-              "profit_factor": 0.77
-            },
-            {
-              "decile": 6,
-              "min_val": -0.6071,
-              "max_val": 1.7145,
-              "n": 117,
-              "win_rate": 58.1,
-              "net_inr_per_trade": 85.35,
-              "profit_factor": 1.33
-            },
-            {
-              "decile": 7,
-              "min_val": 1.7549,
-              "max_val": 3.9755,
-              "n": 118,
-              "win_rate": 50.8,
-              "net_inr_per_trade": -62.54,
-              "profit_factor": 0.81
-            },
-            {
-              "decile": 8,
-              "min_val": 4.0055,
-              "max_val": 7.1595,
-              "n": 117,
-              "win_rate": 49.6,
-              "net_inr_per_trade": -30.91,
-              "profit_factor": 0.9
-            },
-            {
-              "decile": 9,
-              "min_val": 7.1686,
-              "max_val": 11.1317,
-              "n": 116,
-              "win_rate": 57.8,
-              "net_inr_per_trade": 72.03,
-              "profit_factor": 1.29
-            },
-            {
-              "decile": 10,
-              "min_val": 11.1691,
-              "max_val": 32.7209,
-              "n": 117,
-              "win_rate": 58.1,
-              "net_inr_per_trade": 83.0,
-              "profit_factor": 1.23
-            }
-          ]
+        "shape": "MONOTONE_POSITIVE",
+        "layer1_correlation": {
+          "spearman_rho": 0.045,
+          "spearman_p": 0.1206,
+          "chop_removal_test": {
+            "chop_cut": -5.8954,
+            "excluded_mean_inr": -318.0,
+            "chop_only_mean_inr": -331.57,
+            "chop_removal_edge_inr": 13.57
+          },
+          "goldilocks_regime_test": {
+            "q25": -7.3802,
+            "q85": 8.9156,
+            "goldilocks_mean_inr": -339.94,
+            "extremes_mean_inr": -295.25,
+            "goldilocks_edge_inr": -44.69
+          }
         },
-        "out_of_sample": {
-          "n_surviving": 942,
-          "win_rate": 53.3,
-          "net_inr_per_trade": 7.38,
-          "profit_factor": 1.03,
-          "net_inr_ex_top1": 5.0,
-          "net_inr_ex_top3": 0.58,
-          "net_inr_ex_top5": -2.89,
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": -35.1247,
+            "max_val": -4.9351,
+            "n": 390,
+            "win_rate": 50.3,
+            "avg_win_pts": 14.1,
+            "avg_loss_pts": -13.05,
+            "net_inr_per_trade": -333.53,
+            "statutory_dhan_net_per_trade": -11.69,
+            "profit_factor": 0.29
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": -4.929,
+            "max_val": 3.1964,
+            "n": 390,
+            "win_rate": 53.1,
+            "avg_win_pts": 16.21,
+            "avg_loss_pts": -16.79,
+            "net_inr_per_trade": -320.49,
+            "statutory_dhan_net_per_trade": 1.33,
+            "profit_factor": 0.35
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 3.2175,
+            "max_val": 32.7209,
+            "n": 391,
+            "win_rate": 54.5,
+            "avg_win_pts": 16.97,
+            "avg_loss_pts": -18.44,
+            "net_inr_per_trade": -312.23,
+            "statutory_dhan_net_per_trade": 9.58,
+            "profit_factor": 0.38
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "GTE -4.9313746015027755",
+          "n_surviving": 782,
+          "win_rate": 52.9,
+          "net_inr_hurdle400": -328.78,
+          "net_inr_statutory_dhan": -6.94,
+          "profit_factor": 0.31,
+          "super_trail_hurdle400": -335.83,
+          "super_trail_statutory_dhan": -13.99,
+          "net_inr_ex_top1": -331.67,
+          "net_inr_ex_top3": -337.05,
+          "net_inr_ex_top5": -341.18,
           "bootstrap_ci_95": [
-            -36.27,
-            52.09
+            -379.53,
+            -281.06
           ],
-          "z_score_sd": 0.32,
-          "direction_control_short_net": 53.7,
-          "directional_advantage": -46.33
+          "z_score_sd": -12.73,
+          "direction_control_short_net": -217.65,
+          "directional_advantage": -111.13
         },
         "verdict": "NOT BUILT",
         "failure_reasons": [
-          "PF < 1.30 (1.03)",
-          "Ex-top5 wins Net $\\le$ 0 (\u20b9-2.89)",
-          "Z-score 0.32 SD < +2.0 SD noise hurdle",
-          "Fails Direction Control (Diff \u20b9-46.33)"
+          "Net \u20b9/trade <= 0 (\u20b9-328.78 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.31)",
+          "Ex-top5 wins Net <= 0 (\u20b9-341.18)",
+          "Z-score -12.73 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-111.13)"
         ]
+      },
+      {
+        "key": "m12_ribbon_area_5",
+        "name": "5-Bar Ribbon Area",
+        "group": "Group B (Ribbon Area)",
+        "status": "EVALUATED",
+        "shape": "MONOTONE_POSITIVE",
+        "layer1_correlation": {
+          "spearman_rho": 0.084,
+          "spearman_p": 0.0041,
+          "chop_removal_test": {
+            "chop_cut": -0.2238,
+            "excluded_mean_inr": -291.36,
+            "chop_only_mean_inr": -393.56,
+            "chop_removal_edge_inr": 102.2
+          },
+          "goldilocks_regime_test": {
+            "q25": -0.293,
+            "q85": 0.2637,
+            "goldilocks_mean_inr": -298.34,
+            "extremes_mean_inr": -357.74,
+            "goldilocks_edge_inr": 59.4
+          }
+        },
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": -1.0213,
+            "max_val": -0.1922,
+            "n": 391,
+            "win_rate": 45.8,
+            "avg_win_pts": 13.61,
+            "avg_loss_pts": -14.47,
+            "net_inr_per_trade": -410.77,
+            "statutory_dhan_net_per_trade": -88.77,
+            "profit_factor": 0.22
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": -0.1917,
+            "max_val": 0.1149,
+            "n": 389,
+            "win_rate": 54.5,
+            "avg_win_pts": 14.55,
+            "avg_loss_pts": -14.48,
+            "net_inr_per_trade": -304.87,
+            "statutory_dhan_net_per_trade": 16.92,
+            "profit_factor": 0.33
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 0.1153,
+            "max_val": 0.9274,
+            "n": 391,
+            "win_rate": 57.5,
+            "avg_win_pts": 18.73,
+            "avg_loss_pts": -19.63,
+            "net_inr_per_trade": -250.51,
+            "statutory_dhan_net_per_trade": 71.18,
+            "profit_factor": 0.49
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "GTE -0.1922088986704406",
+          "n_surviving": 822,
+          "win_rate": 53.9,
+          "net_inr_hurdle400": -307.6,
+          "net_inr_statutory_dhan": 14.19,
+          "profit_factor": 0.33,
+          "super_trail_hurdle400": -327.0,
+          "super_trail_statutory_dhan": -5.17,
+          "net_inr_ex_top1": -310.33,
+          "net_inr_ex_top3": -315.39,
+          "net_inr_ex_top5": -319.27,
+          "bootstrap_ci_95": [
+            -350.95,
+            -260.07
+          ],
+          "z_score_sd": -12.36,
+          "direction_control_short_net": -265.31,
+          "directional_advantage": -42.29
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade <= 0 (\u20b9-307.60 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.33)",
+          "Ex-top5 wins Net <= 0 (\u20b9-319.27)",
+          "Z-score -12.36 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-42.29)"
+        ]
+      },
+      {
+        "key": "m13_whipsaw_cross_count_12",
+        "name": "12-Bar Whip-Saw Count",
+        "group": "Group B (Chop Flips)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "layer1_correlation": {
+          "spearman_rho": 0.006,
+          "spearman_p": 0.8266,
+          "chop_removal_test": {
+            "chop_cut": 0.0,
+            "excluded_mean_inr": -317.02,
+            "chop_only_mean_inr": -331.06,
+            "chop_removal_edge_inr": 14.05
+          },
+          "goldilocks_regime_test": {
+            "q25": 0.0,
+            "q85": 2.0,
+            "goldilocks_mean_inr": -325.77,
+            "extremes_mean_inr": -295.32,
+            "goldilocks_edge_inr": -30.46
+          }
+        },
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": 0.0,
+            "max_val": 0.0,
+            "n": 422,
+            "win_rate": 51.7,
+            "avg_win_pts": 16.1,
+            "avg_loss_pts": -16.34,
+            "net_inr_per_trade": -331.06,
+            "statutory_dhan_net_per_trade": -9.22,
+            "profit_factor": 0.34
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": 1.0,
+            "max_val": 1.0,
+            "n": 375,
+            "win_rate": 52.8,
+            "avg_win_pts": 16.89,
+            "avg_loss_pts": -16.69,
+            "net_inr_per_trade": -308.23,
+            "statutory_dhan_net_per_trade": 13.57,
+            "profit_factor": 0.38
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 2.0,
+            "max_val": 6.0,
+            "n": 374,
+            "win_rate": 53.5,
+            "avg_win_pts": 14.4,
+            "avg_loss_pts": -14.95,
+            "net_inr_per_trade": -325.83,
+            "statutory_dhan_net_per_trade": -3.99,
+            "profit_factor": 0.31
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "GTE 0.0",
+          "n_surviving": 1207,
+          "win_rate": 51.3,
+          "net_inr_hurdle400": -339.11,
+          "net_inr_statutory_dhan": -17.26,
+          "profit_factor": 0.28,
+          "super_trail_hurdle400": -347.46,
+          "super_trail_statutory_dhan": -25.59,
+          "net_inr_ex_top1": -341.38,
+          "net_inr_ex_top3": -345.14,
+          "net_inr_ex_top5": -348.15,
+          "bootstrap_ci_95": [
+            -375.13,
+            -298.21
+          ],
+          "z_score_sd": -17.11,
+          "direction_control_short_net": -217.84,
+          "directional_advantage": -121.27
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade <= 0 (\u20b9-339.11 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.28)",
+          "Ex-top5 wins Net <= 0 (\u20b9-348.15)",
+          "Z-score -17.11 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-121.27)"
+        ]
+      },
+      {
+        "key": "m14_penetration_depth",
+        "name": "8-EMA Contact Penetration",
+        "group": "Group B (Contact)",
+        "status": "EVALUATED",
+        "shape": "NO_SHAPE",
+        "layer1_correlation": {
+          "spearman_rho": -0.014,
+          "spearman_p": 0.6423,
+          "chop_removal_test": {
+            "chop_cut": 0.178,
+            "excluded_mean_inr": -332.0,
+            "chop_only_mean_inr": -299.0,
+            "chop_removal_edge_inr": -33.0
+          },
+          "goldilocks_regime_test": {
+            "q25": 0.0793,
+            "q85": 1.0122,
+            "goldilocks_mean_inr": -348.5,
+            "extremes_mean_inr": -282.53,
+            "goldilocks_edge_inr": -65.97
+          }
+        },
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": -0.9798,
+            "max_val": 0.228,
+            "n": 390,
+            "win_rate": 52.8,
+            "avg_win_pts": 17.25,
+            "avg_loss_pts": -18.16,
+            "net_inr_per_trade": -323.14,
+            "statutory_dhan_net_per_trade": -1.31,
+            "profit_factor": 0.37
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": 0.2336,
+            "max_val": 0.7209,
+            "n": 391,
+            "win_rate": 53.2,
+            "avg_win_pts": 16.15,
+            "avg_loss_pts": -16.46,
+            "net_inr_per_trade": -315.37,
+            "statutory_dhan_net_per_trade": 6.44,
+            "profit_factor": 0.35
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 0.7215,
+            "max_val": 2.9059,
+            "n": 390,
+            "win_rate": 51.8,
+            "avg_win_pts": 13.98,
+            "avg_loss_pts": -13.48,
+            "net_inr_per_trade": -327.74,
+            "statutory_dhan_net_per_trade": -5.9,
+            "profit_factor": 0.3
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "GTE 0.17803674972235226",
+          "n_surviving": 848,
+          "win_rate": 50.1,
+          "net_inr_hurdle400": -356.66,
+          "net_inr_statutory_dhan": -34.77,
+          "profit_factor": 0.24,
+          "super_trail_hurdle400": -361.81,
+          "super_trail_statutory_dhan": -39.91,
+          "net_inr_ex_top1": -359.91,
+          "net_inr_ex_top3": -364.96,
+          "net_inr_ex_top5": -368.85,
+          "bootstrap_ci_95": [
+            -398.37,
+            -309.74
+          ],
+          "z_score_sd": -16.01,
+          "direction_control_short_net": -168.2,
+          "directional_advantage": -188.45
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade <= 0 (\u20b9-356.66 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.24)",
+          "Ex-top5 wins Net <= 0 (\u20b9-368.85)",
+          "Z-score -16.01 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-188.45)"
+        ]
+      },
+      {
+        "key": "m15_wick_rejection_pinbar",
+        "name": "Contact Wick Rejection",
+        "group": "Group B (Contact)",
+        "status": "EVALUATED",
+        "shape": "MONOTONE_NEGATIVE",
+        "layer1_correlation": {
+          "spearman_rho": -0.051,
+          "spearman_p": 0.0789,
+          "chop_removal_test": {
+            "chop_cut": 0.3127,
+            "excluded_mean_inr": -331.92,
+            "chop_only_mean_inr": -299.19,
+            "chop_removal_edge_inr": -32.73
+          },
+          "goldilocks_regime_test": {
+            "q25": 0.2573,
+            "q85": 0.9029,
+            "goldilocks_mean_inr": -327.31,
+            "extremes_mean_inr": -314.25,
+            "goldilocks_edge_inr": -13.06
+          }
+        },
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": 0.0,
+            "max_val": 0.3607,
+            "n": 390,
+            "win_rate": 54.6,
+            "avg_win_pts": 16.95,
+            "avg_loss_pts": -17.91,
+            "net_inr_per_trade": -303.2,
+            "statutory_dhan_net_per_trade": 18.59,
+            "profit_factor": 0.39
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": 0.3614,
+            "max_val": 0.7176,
+            "n": 390,
+            "win_rate": 53.3,
+            "avg_win_pts": 14.96,
+            "avg_loss_pts": -15.05,
+            "net_inr_per_trade": -315.83,
+            "statutory_dhan_net_per_trade": 5.98,
+            "profit_factor": 0.33
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 0.7179,
+            "max_val": 1.0,
+            "n": 391,
+            "win_rate": 49.9,
+            "avg_win_pts": 15.45,
+            "avg_loss_pts": -15.2,
+            "net_inr_per_trade": -347.14,
+            "statutory_dhan_net_per_trade": -25.26,
+            "profit_factor": 0.31
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "LTE 0.7180824115249141",
+          "n_surviving": 821,
+          "win_rate": 51.8,
+          "net_inr_hurdle400": -341.39,
+          "net_inr_statutory_dhan": -19.53,
+          "profit_factor": 0.28,
+          "super_trail_hurdle400": -354.05,
+          "super_trail_statutory_dhan": -32.17,
+          "net_inr_ex_top1": -344.73,
+          "net_inr_ex_top3": -348.68,
+          "net_inr_ex_top5": -352.38,
+          "bootstrap_ci_95": [
+            -386.22,
+            -289.21
+          ],
+          "z_score_sd": -14.34,
+          "direction_control_short_net": -244.21,
+          "directional_advantage": -97.18
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade <= 0 (\u20b9-341.39 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.28)",
+          "Ex-top5 wins Net <= 0 (\u20b9-352.38)",
+          "Z-score -14.34 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-97.18)"
+        ]
+      },
+      {
+        "key": "m16_slope_1h_8ema",
+        "name": "1H 8-EMA Slope (Mentor)",
+        "group": "Group B (1H Trend)",
+        "status": "EVALUATED",
+        "shape": "MONOTONE_POSITIVE",
+        "layer1_correlation": {
+          "spearman_rho": 0.085,
+          "spearman_p": 0.0037,
+          "chop_removal_test": {
+            "chop_cut": -0.1657,
+            "excluded_mean_inr": -290.63,
+            "chop_only_mean_inr": -399.8,
+            "chop_removal_edge_inr": 109.17
+          },
+          "goldilocks_regime_test": {
+            "q25": -0.2115,
+            "q85": 0.2248,
+            "goldilocks_mean_inr": -311.04,
+            "extremes_mean_inr": -342.25,
+            "goldilocks_edge_inr": 31.21
+          }
+        },
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": -0.8438,
+            "max_val": -0.1422,
+            "n": 390,
+            "win_rate": 47.9,
+            "avg_win_pts": 14.2,
+            "avg_loss_pts": -15.39,
+            "net_inr_per_trade": -394.67,
+            "statutory_dhan_net_per_trade": -72.71,
+            "profit_factor": 0.25
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": -0.1421,
+            "max_val": 0.0845,
+            "n": 388,
+            "win_rate": 51.5,
+            "avg_win_pts": 16.12,
+            "avg_loss_pts": -15.27,
+            "net_inr_per_trade": -315.01,
+            "statutory_dhan_net_per_trade": 6.81,
+            "profit_factor": 0.35
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 0.0848,
+            "max_val": 0.8311,
+            "n": 390,
+            "win_rate": 58.2,
+            "avg_win_pts": 16.63,
+            "avg_loss_pts": -17.52,
+            "net_inr_per_trade": -260.59,
+            "statutory_dhan_net_per_trade": 61.12,
+            "profit_factor": 0.44
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "GTE -0.14223648173977277",
+          "n_surviving": 788,
+          "win_rate": 52.5,
+          "net_inr_hurdle400": -315.32,
+          "net_inr_statutory_dhan": 6.49,
+          "profit_factor": 0.33,
+          "super_trail_hurdle400": -345.6,
+          "super_trail_statutory_dhan": -23.73,
+          "net_inr_ex_top1": -318.17,
+          "net_inr_ex_top3": -323.48,
+          "net_inr_ex_top5": -327.54,
+          "bootstrap_ci_95": [
+            -361.56,
+            -265.75
+          ],
+          "z_score_sd": -12.37,
+          "direction_control_short_net": -290.12,
+          "directional_advantage": -25.19
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade <= 0 (\u20b9-315.32 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.33)",
+          "Ex-top5 wins Net <= 0 (\u20b9-327.54)",
+          "Z-score -12.37 SD < +2.0 SD noise hurdle",
+          "Fails Direction Control (Advantage \u20b9-25.19)"
+        ]
+      },
+      {
+        "key": "m17_vol_surge_ratio",
+        "name": "Volume Surge Ratio (FUT)",
+        "group": "Group B (Volume)",
+        "status": "EVALUATED",
+        "shape": "MONOTONE_POSITIVE",
+        "layer1_correlation": {
+          "spearman_rho": 0.068,
+          "spearman_p": 0.3869,
+          "chop_removal_test": {
+            "chop_cut": 0.4752,
+            "excluded_mean_inr": -301.8,
+            "chop_only_mean_inr": -391.95,
+            "chop_removal_edge_inr": 90.15
+          },
+          "goldilocks_regime_test": {
+            "q25": 0.393,
+            "q85": 1.537,
+            "goldilocks_mean_inr": -333.77,
+            "extremes_mean_inr": -321.78,
+            "goldilocks_edge_inr": -11.99
+          }
+        },
+        "layer2_terciles": [
+          {
+            "bucket_id": 1,
+            "label": "Bottom (T1)",
+            "min_val": 0.113,
+            "max_val": 0.492,
+            "n": 55,
+            "win_rate": 50.9,
+            "avg_win_pts": 11.3,
+            "avg_loss_pts": -13.2,
+            "net_inr_per_trade": -386.17,
+            "statutory_dhan_net_per_trade": -64.22,
+            "profit_factor": 0.19
+          },
+          {
+            "bucket_id": 2,
+            "label": "Middle (T2)",
+            "min_val": 0.496,
+            "max_val": 0.954,
+            "n": 55,
+            "win_rate": 50.9,
+            "avg_win_pts": 18.26,
+            "avg_loss_pts": -17.4,
+            "net_inr_per_trade": -304.76,
+            "statutory_dhan_net_per_trade": 17.03,
+            "profit_factor": 0.4
+          },
+          {
+            "bucket_id": 3,
+            "label": "Top (T3)",
+            "min_val": 0.966,
+            "max_val": 5.035,
+            "n": 55,
+            "win_rate": 54.5,
+            "avg_win_pts": 11.91,
+            "avg_loss_pts": -10.13,
+            "net_inr_per_trade": -296.43,
+            "statutory_dhan_net_per_trade": 25.35,
+            "profit_factor": 0.26
+          }
+        ],
+        "layer3_oos": {
+          "cutoff_rule": "GTE 0.494448",
+          "n_surviving": 117,
+          "win_rate": 59.0,
+          "net_inr_hurdle400": -215.56,
+          "net_inr_statutory_dhan": 106.06,
+          "profit_factor": 0.55,
+          "super_trail_hurdle400": -276.26,
+          "super_trail_statutory_dhan": 45.47,
+          "net_inr_ex_top1": -233.91,
+          "net_inr_ex_top3": -259.71,
+          "net_inr_ex_top5": -285.06,
+          "bootstrap_ci_95": [
+            -348.81,
+            -72.81
+          ],
+          "z_score_sd": -2.62,
+          "direction_control_short_net": -477.81,
+          "directional_advantage": 262.25
+        },
+        "verdict": "NOT BUILT",
+        "failure_reasons": [
+          "Net \u20b9/trade <= 0 (\u20b9-215.56 after \u20b9400 hurdle)",
+          "PF < 1.30 (0.55)",
+          "Ex-top5 wins Net <= 0 (\u20b9-285.06)",
+          "Z-score -2.62 SD < +2.0 SD noise hurdle"
+        ],
+        "scope_note": "Scoped to futures volume window (2026-09-17 to 2026-11-05)"
       }
     ]
   },
@@ -1971,477 +1626,394 @@
     "results": {
       "variant_b_40_40": [
         {
-          "key": "m01_penetration_depth",
-          "name": "8-EMA Contact Penetration Depth",
+          "key": "m14_penetration_depth",
+          "name": "8-EMA Contact Penetration",
           "group": "Variant B Secondary",
           "status": "EVALUATED",
           "shape": "NO_SHAPE",
-          "spearman_rho": 0.022,
-          "spearman_p": 0.6115,
-          "cutoff_rule": "GTE -0.17188663538383442",
-          "in_sample": {
-            "n_total": 560,
-            "deciles": [
-              {
-                "decile": 1,
-                "min_val": -0.9798,
-                "max_val": -0.3295,
-                "n": 56,
-                "win_rate": 67.9,
-                "net_inr_per_trade": 232.95,
-                "profit_factor": 1.72
-              },
-              {
-                "decile": 2,
-                "min_val": -0.3259,
-                "max_val": -0.1727,
-                "n": 56,
-                "win_rate": 55.4,
-                "net_inr_per_trade": 43.8,
-                "profit_factor": 1.13
-              },
-              {
-                "decile": 3,
-                "min_val": -0.1717,
-                "max_val": -0.1014,
-                "n": 56,
-                "win_rate": 41.1,
-                "net_inr_per_trade": -163.76,
-                "profit_factor": 0.54
-              },
-              {
-                "decile": 4,
-                "min_val": -0.0981,
-                "max_val": -0.0106,
-                "n": 56,
-                "win_rate": 66.1,
-                "net_inr_per_trade": 106.8,
-                "profit_factor": 1.46
-              },
-              {
-                "decile": 5,
-                "min_val": -0.0105,
-                "max_val": 0.0746,
-                "n": 56,
-                "win_rate": 42.9,
-                "net_inr_per_trade": -85.52,
-                "profit_factor": 0.71
-              },
-              {
-                "decile": 6,
-                "min_val": 0.0776,
-                "max_val": 0.188,
-                "n": 56,
-                "win_rate": 58.9,
-                "net_inr_per_trade": 129.09,
-                "profit_factor": 1.59
-              },
-              {
-                "decile": 7,
-                "min_val": 0.1885,
-                "max_val": 0.2833,
-                "n": 56,
-                "win_rate": 51.8,
-                "net_inr_per_trade": -111.65,
-                "profit_factor": 0.69
-              },
-              {
-                "decile": 8,
-                "min_val": 0.2856,
-                "max_val": 0.4363,
-                "n": 56,
-                "win_rate": 60.7,
-                "net_inr_per_trade": 9.79,
-                "profit_factor": 1.03
-              },
-              {
-                "decile": 9,
-                "min_val": 0.4419,
-                "max_val": 0.6113,
-                "n": 56,
-                "win_rate": 62.5,
-                "net_inr_per_trade": 358.58,
-                "profit_factor": 4.09
-              },
-              {
-                "decile": 10,
-                "min_val": 0.6247,
-                "max_val": 2.4416,
-                "n": 56,
-                "win_rate": 53.6,
-                "net_inr_per_trade": 16.22,
-                "profit_factor": 1.05
-              }
-            ]
+          "layer1_correlation": {
+            "spearman_rho": 0.022,
+            "spearman_p": 0.6104,
+            "chop_removal_test": {
+              "chop_cut": -0.0991,
+              "excluded_mean_inr": -261.24,
+              "chop_only_mean_inr": -284.09,
+              "chop_removal_edge_inr": 22.85
+            },
+            "goldilocks_regime_test": {
+              "q25": -0.1396,
+              "q85": 0.5061,
+              "goldilocks_mean_inr": -316.12,
+              "extremes_mean_inr": -195.52,
+              "goldilocks_edge_inr": -120.6
+            }
           },
-          "out_of_sample": {
-            "n_surviving": 432,
-            "win_rate": 56.0,
-            "net_inr_per_trade": 13.19,
-            "profit_factor": 1.05,
-            "net_inr_ex_top1": 8.02,
-            "net_inr_ex_top3": -1.66,
-            "net_inr_ex_top5": -9.1,
+          "layer2_terciles": [
+            {
+              "bucket_id": 1,
+              "label": "Bottom (T1)",
+              "min_val": -0.9798,
+              "max_val": -0.0659,
+              "n": 188,
+              "win_rate": 56.4,
+              "avg_win_pts": 19.05,
+              "avg_loss_pts": -20.83,
+              "net_inr_per_trade": -276.39,
+              "statutory_dhan_net_per_trade": 45.35,
+              "profit_factor": 0.47
+            },
+            {
+              "bucket_id": 2,
+              "label": "Middle (T2)",
+              "min_val": -0.0656,
+              "max_val": 0.2578,
+              "n": 185,
+              "win_rate": 52.4,
+              "avg_win_pts": 15.33,
+              "avg_loss_pts": -15.31,
+              "net_inr_per_trade": -323.06,
+              "statutory_dhan_net_per_trade": -1.23,
+              "profit_factor": 0.32
+            },
+            {
+              "bucket_id": 3,
+              "label": "Top (T3)",
+              "min_val": 0.2585,
+              "max_val": 2.4416,
+              "n": 187,
+              "win_rate": 59.4,
+              "avg_win_pts": 17.63,
+              "avg_loss_pts": -16.16,
+              "net_inr_per_trade": -205.39,
+              "statutory_dhan_net_per_trade": 116.22,
+              "profit_factor": 0.52
+            }
+          ],
+          "layer3_oos": {
+            "cutoff_rule": "GTE -0.09905862642456477",
+            "n_surviving": 393,
+            "win_rate": 55.2,
+            "net_inr_hurdle400": -316.51,
+            "net_inr_statutory_dhan": 5.31,
+            "profit_factor": 0.3,
+            "super_trail_hurdle400": -321.12,
+            "super_trail_statutory_dhan": 0.7,
+            "net_inr_ex_top1": -322.23,
+            "net_inr_ex_top3": -332.93,
+            "net_inr_ex_top5": -341.19,
             "bootstrap_ci_95": [
-              -52.4,
-              77.16
+              -384.0,
+              -243.67
             ],
-            "z_score_sd": 0.4,
-            "direction_control_short_net": 58.32,
-            "directional_advantage": -45.12
+            "z_score_sd": -9.16,
+            "direction_control_short_net": -274.4,
+            "directional_advantage": -42.11
           },
           "verdict": "NOT BUILT",
           "failure_reasons": [
-            "PF < 1.30 (1.05)",
-            "Ex-top5 wins Net $\\le$ 0 (\u20b9-9.10)",
-            "Z-score 0.4 SD < +2.0 SD noise hurdle",
-            "Fails Direction Control (Diff \u20b9-45.12)"
+            "Net \u20b9/trade <= 0 (\u20b9-316.51 after \u20b9400 hurdle)",
+            "PF < 1.30 (0.30)",
+            "Ex-top5 wins Net <= 0 (\u20b9-341.19)",
+            "Z-score -9.16 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Advantage \u20b9-42.11)"
           ]
         },
         {
-          "key": "m02_wick_rejection_pinbar",
-          "name": "Contact Wick Rejection (Pin-Bar)",
+          "key": "m15_wick_rejection_pinbar",
+          "name": "Contact Wick Rejection",
           "group": "Variant B Secondary",
           "status": "EVALUATED",
-          "shape": "NO_SHAPE",
-          "spearman_rho": -0.02,
-          "spearman_p": 0.6427,
-          "cutoff_rule": "GTE 0.16243943191307475",
-          "in_sample": {
-            "n_total": 560,
-            "deciles": [
-              {
-                "decile": 1,
-                "min_val": 0.0,
-                "max_val": 0.0551,
-                "n": 56,
-                "win_rate": 60.7,
-                "net_inr_per_trade": 135.18,
-                "profit_factor": 1.39
-              },
-              {
-                "decile": 2,
-                "min_val": 0.0558,
-                "max_val": 0.1614,
-                "n": 56,
-                "win_rate": 51.8,
-                "net_inr_per_trade": 91.1,
-                "profit_factor": 1.39
-              },
-              {
-                "decile": 3,
-                "min_val": 0.1627,
-                "max_val": 0.2538,
-                "n": 56,
-                "win_rate": 53.6,
-                "net_inr_per_trade": 25.11,
-                "profit_factor": 1.08
-              },
-              {
-                "decile": 4,
-                "min_val": 0.255,
-                "max_val": 0.3585,
-                "n": 57,
-                "win_rate": 54.4,
-                "net_inr_per_trade": -46.68,
-                "profit_factor": 0.86
-              },
-              {
-                "decile": 5,
-                "min_val": 0.3604,
-                "max_val": 0.4456,
-                "n": 55,
-                "win_rate": 61.8,
-                "net_inr_per_trade": 159.1,
-                "profit_factor": 1.76
-              },
-              {
-                "decile": 6,
-                "min_val": 0.4463,
-                "max_val": 0.5524,
-                "n": 56,
-                "win_rate": 57.1,
-                "net_inr_per_trade": 76.74,
-                "profit_factor": 1.31
-              },
-              {
-                "decile": 7,
-                "min_val": 0.5539,
-                "max_val": 0.6629,
-                "n": 57,
-                "win_rate": 57.9,
-                "net_inr_per_trade": -74.1,
-                "profit_factor": 0.78
-              },
-              {
-                "decile": 8,
-                "min_val": 0.6683,
-                "max_val": 0.7883,
-                "n": 55,
-                "win_rate": 58.2,
-                "net_inr_per_trade": 108.88,
-                "profit_factor": 1.65
-              },
-              {
-                "decile": 9,
-                "min_val": 0.7899,
-                "max_val": 0.9181,
-                "n": 56,
-                "win_rate": 44.6,
-                "net_inr_per_trade": -31.34,
-                "profit_factor": 0.92
-              },
-              {
-                "decile": 10,
-                "min_val": 0.9204,
-                "max_val": 1.0,
-                "n": 56,
-                "win_rate": 60.7,
-                "net_inr_per_trade": 99.25,
-                "profit_factor": 1.4
-              }
-            ]
+          "shape": "MONOTONE_NEGATIVE",
+          "layer1_correlation": {
+            "spearman_rho": -0.02,
+            "spearman_p": 0.643,
+            "chop_removal_test": {
+              "chop_cut": 0.2546,
+              "excluded_mean_inr": -281.05,
+              "chop_only_mean_inr": -237.87,
+              "chop_removal_edge_inr": -43.18
+            },
+            "goldilocks_regime_test": {
+              "q25": 0.2168,
+              "q85": 0.862,
+              "goldilocks_mean_inr": -276.54,
+              "extremes_mean_inr": -255.43,
+              "goldilocks_edge_inr": -21.11
+            }
           },
-          "out_of_sample": {
-            "n_surviving": 469,
-            "win_rate": 56.1,
-            "net_inr_per_trade": 31.45,
-            "profit_factor": 1.13,
-            "net_inr_ex_top1": 26.72,
-            "net_inr_ex_top3": 17.9,
-            "net_inr_ex_top5": 11.13,
+          "layer2_terciles": [
+            {
+              "bucket_id": 1,
+              "label": "Bottom (T1)",
+              "min_val": 0.0,
+              "max_val": 0.2923,
+              "n": 187,
+              "win_rate": 54.5,
+              "avg_win_pts": 19.03,
+              "avg_loss_pts": -17.54,
+              "net_inr_per_trade": -254.35,
+              "statutory_dhan_net_per_trade": 67.34,
+              "profit_factor": 0.48
+            },
+            {
+              "bucket_id": 2,
+              "label": "Middle (T2)",
+              "min_val": 0.2932,
+              "max_val": 0.6297,
+              "n": 186,
+              "win_rate": 59.7,
+              "avg_win_pts": 15.98,
+              "avg_loss_pts": -18.83,
+              "net_inr_per_trade": -274.82,
+              "statutory_dhan_net_per_trade": 46.92,
+              "profit_factor": 0.41
+            },
+            {
+              "bucket_id": 3,
+              "label": "Top (T3)",
+              "min_val": 0.6352,
+              "max_val": 1.0,
+              "n": 187,
+              "win_rate": 54.0,
+              "avg_win_pts": 17.31,
+              "avg_loss_pts": -16.05,
+              "net_inr_per_trade": -275.16,
+              "statutory_dhan_net_per_trade": 46.58,
+              "profit_factor": 0.42
+            }
+          ],
+          "layer3_oos": {
+            "cutoff_rule": "LTE 0.634430049268305",
+            "n_surviving": 360,
+            "win_rate": 54.4,
+            "net_inr_hurdle400": -296.89,
+            "net_inr_statutory_dhan": 24.89,
+            "profit_factor": 0.37,
+            "super_trail_hurdle400": -330.68,
+            "super_trail_statutory_dhan": -8.84,
+            "net_inr_ex_top1": -301.34,
+            "net_inr_ex_top3": -309.75,
+            "net_inr_ex_top5": -318.03,
             "bootstrap_ci_95": [
-              -30.85,
-              92.19
+              -375.81,
+              -223.97
             ],
-            "z_score_sd": 0.95,
-            "direction_control_short_net": 16.92,
-            "directional_advantage": 14.53
+            "z_score_sd": -7.49,
+            "direction_control_short_net": -332.97,
+            "directional_advantage": 36.09
           },
           "verdict": "NOT BUILT",
           "failure_reasons": [
-            "PF < 1.30 (1.13)",
-            "Z-score 0.95 SD < +2.0 SD noise hurdle"
+            "Net \u20b9/trade <= 0 (\u20b9-296.89 after \u20b9400 hurdle)",
+            "PF < 1.30 (0.37)",
+            "Ex-top5 wins Net <= 0 (\u20b9-318.03)",
+            "Z-score -7.49 SD < +2.0 SD noise hurdle"
           ]
         },
         {
-          "key": "m03_whipsaw_cross_count_12",
-          "name": "12-Bar Whip-Saw Count (Chop)",
+          "key": "m13_whipsaw_cross_count_12",
+          "name": "12-Bar Whip-Saw Count",
           "group": "Variant B Secondary",
           "status": "EVALUATED",
           "shape": "NO_SHAPE",
-          "spearman_rho": -0.047,
-          "spearman_p": 0.2709,
-          "cutoff_rule": "GTE 0.0",
-          "in_sample": {
-            "n_total": 560,
-            "deciles": [
-              {
-                "decile": 1,
-                "min_val": 0.0,
-                "max_val": 1.0,
-                "n": 358,
-                "win_rate": 56.7,
-                "net_inr_per_trade": 92.31,
-                "profit_factor": 1.32
-              },
-              {
-                "decile": 2,
-                "min_val": 2.0,
-                "max_val": 2.0,
-                "n": 115,
-                "win_rate": 51.3,
-                "net_inr_per_trade": -47.16,
-                "profit_factor": 0.85
-              },
-              {
-                "decile": 3,
-                "min_val": 3.0,
-                "max_val": 3.0,
-                "n": 62,
-                "win_rate": 53.2,
-                "net_inr_per_trade": -63.28,
-                "profit_factor": 0.76
-              },
-              {
-                "decile": 4,
-                "min_val": 4.0,
-                "max_val": 6.0,
-                "n": 25,
-                "win_rate": 76.0,
-                "net_inr_per_trade": 253.25,
-                "profit_factor": 3.76
-              }
-            ]
+          "layer1_correlation": {
+            "spearman_rho": -0.047,
+            "spearman_p": 0.2714,
+            "chop_removal_test": {
+              "chop_cut": 0.0,
+              "excluded_mean_inr": -280.36,
+              "chop_only_mean_inr": -242.62,
+              "chop_removal_edge_inr": -37.74
+            },
+            "goldilocks_regime_test": {
+              "q25": 0.0,
+              "q85": 3.0,
+              "goldilocks_mean_inr": -277.44,
+              "extremes_mean_inr": -68.09,
+              "goldilocks_edge_inr": -209.35
+            }
           },
-          "out_of_sample": {
+          "layer2_terciles": [
+            {
+              "bucket_id": 1,
+              "label": "Bottom (T1)",
+              "min_val": 0.0,
+              "max_val": 0.0,
+              "n": 182,
+              "win_rate": 57.1,
+              "avg_win_pts": 18.76,
+              "avg_loss_pts": -18.71,
+              "net_inr_per_trade": -242.62,
+              "statutory_dhan_net_per_trade": 79.05,
+              "profit_factor": 0.49
+            },
+            {
+              "bucket_id": 2,
+              "label": "Middle (T2)",
+              "min_val": 1.0,
+              "max_val": 1.0,
+              "n": 176,
+              "win_rate": 56.2,
+              "avg_win_pts": 20.0,
+              "avg_loss_pts": -17.9,
+              "net_inr_per_trade": -215.61,
+              "statutory_dhan_net_per_trade": 106.01,
+              "profit_factor": 0.55
+            },
+            {
+              "bucket_id": 3,
+              "label": "Top (T3)",
+              "min_val": 2.0,
+              "max_val": 6.0,
+              "n": 202,
+              "win_rate": 55.0,
+              "avg_win_pts": 13.8,
+              "avg_loss_pts": -15.88,
+              "net_inr_per_trade": -336.78,
+              "statutory_dhan_net_per_trade": -14.92,
+              "profit_factor": 0.29
+            }
+          ],
+          "layer3_oos": {
+            "cutoff_rule": "GTE 0.0",
             "n_surviving": 560,
             "win_rate": 55.2,
-            "net_inr_per_trade": 26.23,
-            "profit_factor": 1.1,
-            "net_inr_ex_top1": 22.26,
-            "net_inr_ex_top3": 14.87,
-            "net_inr_ex_top5": 9.2,
+            "net_inr_hurdle400": -295.55,
+            "net_inr_statutory_dhan": 26.23,
+            "profit_factor": 0.36,
+            "super_trail_hurdle400": -334.26,
+            "super_trail_statutory_dhan": -12.42,
+            "net_inr_ex_top1": -299.52,
+            "net_inr_ex_top3": -306.93,
+            "net_inr_ex_top5": -312.61,
             "bootstrap_ci_95": [
-              -34.38,
-              82.07
+              -356.28,
+              -239.61
             ],
-            "z_score_sd": 0.84,
-            "direction_control_short_net": 15.16,
-            "directional_advantage": 11.07
+            "z_score_sd": -9.43,
+            "direction_control_short_net": -306.64,
+            "directional_advantage": 11.1
           },
           "verdict": "NOT BUILT",
           "failure_reasons": [
-            "PF < 1.30 (1.10)",
-            "Z-score 0.84 SD < +2.0 SD noise hurdle"
+            "Net \u20b9/trade <= 0 (\u20b9-295.55 after \u20b9400 hurdle)",
+            "PF < 1.30 (0.36)",
+            "Ex-top5 wins Net <= 0 (\u20b9-312.61)",
+            "Z-score -9.43 SD < +2.0 SD noise hurdle"
           ]
         },
         {
-          "key": "m06_separation_signed",
+          "key": "m01_separation_signed",
           "name": "Separation (Signed)",
           "group": "Variant B Secondary",
           "status": "EVALUATED",
-          "shape": "NO_SHAPE",
-          "spearman_rho": 0.019,
-          "spearman_p": 0.6503,
-          "cutoff_rule": "GTE 0.051383835193853006",
-          "in_sample": {
-            "n_total": 560,
-            "deciles": [
-              {
-                "decile": 1,
-                "min_val": 0.0008,
-                "max_val": 0.0192,
-                "n": 56,
-                "win_rate": 50.0,
-                "net_inr_per_trade": -15.16,
-                "profit_factor": 0.93
-              },
-              {
-                "decile": 2,
-                "min_val": 0.0193,
-                "max_val": 0.0504,
-                "n": 56,
-                "win_rate": 55.4,
-                "net_inr_per_trade": 63.7,
-                "profit_factor": 1.24
-              },
-              {
-                "decile": 3,
-                "min_val": 0.0516,
-                "max_val": 0.09,
-                "n": 56,
-                "win_rate": 57.1,
-                "net_inr_per_trade": 8.84,
-                "profit_factor": 1.04
-              },
-              {
-                "decile": 4,
-                "min_val": 0.0901,
-                "max_val": 0.1274,
-                "n": 56,
-                "win_rate": 62.5,
-                "net_inr_per_trade": 103.13,
-                "profit_factor": 1.41
-              },
-              {
-                "decile": 5,
-                "min_val": 0.1285,
-                "max_val": 0.1681,
-                "n": 56,
-                "win_rate": 66.1,
-                "net_inr_per_trade": 132.98,
-                "profit_factor": 1.64
-              },
-              {
-                "decile": 6,
-                "min_val": 0.1685,
-                "max_val": 0.2091,
-                "n": 56,
-                "win_rate": 48.2,
-                "net_inr_per_trade": 100.71,
-                "profit_factor": 1.4
-              },
-              {
-                "decile": 7,
-                "min_val": 0.2107,
-                "max_val": 0.2477,
-                "n": 56,
-                "win_rate": 57.1,
-                "net_inr_per_trade": 91.57,
-                "profit_factor": 1.41
-              },
-              {
-                "decile": 8,
-                "min_val": 0.248,
-                "max_val": 0.3187,
-                "n": 56,
-                "win_rate": 35.7,
-                "net_inr_per_trade": -173.11,
-                "profit_factor": 0.58
-              },
-              {
-                "decile": 9,
-                "min_val": 0.326,
-                "max_val": 0.4106,
-                "n": 57,
-                "win_rate": 63.2,
-                "net_inr_per_trade": -9.61,
-                "profit_factor": 0.97
-              },
-              {
-                "decile": 10,
-                "min_val": 0.4227,
-                "max_val": 0.8249,
-                "n": 55,
-                "win_rate": 65.5,
-                "net_inr_per_trade": 237.67,
-                "profit_factor": 1.63
-              }
-            ]
+          "shape": "INVERTED_U",
+          "layer1_correlation": {
+            "spearman_rho": 0.019,
+            "spearman_p": 0.6521,
+            "chop_removal_test": {
+              "chop_cut": 0.09,
+              "excluded_mean_inr": -253.28,
+              "chop_only_mean_inr": -302.66,
+              "chop_removal_edge_inr": 49.38
+            },
+            "goldilocks_regime_test": {
+              "q25": 0.0753,
+              "q85": 0.3527,
+              "goldilocks_mean_inr": -271.35,
+              "extremes_mean_inr": -263.19,
+              "goldilocks_edge_inr": -8.16
+            }
           },
-          "out_of_sample": {
-            "n_surviving": 478,
-            "win_rate": 55.0,
-            "net_inr_per_trade": 38.7,
-            "profit_factor": 1.15,
-            "net_inr_ex_top1": 34.08,
-            "net_inr_ex_top3": 25.45,
-            "net_inr_ex_top5": 19.0,
+          "layer2_terciles": [
+            {
+              "bucket_id": 1,
+              "label": "Bottom (T1)",
+              "min_val": 0.0008,
+              "max_val": 0.1039,
+              "n": 187,
+              "win_rate": 54.5,
+              "avg_win_pts": 14.23,
+              "avg_loss_pts": -14.56,
+              "net_inr_per_trade": -312.25,
+              "statutory_dhan_net_per_trade": 9.56,
+              "profit_factor": 0.31
+            },
+            {
+              "bucket_id": 2,
+              "label": "Middle (T2)",
+              "min_val": 0.1039,
+              "max_val": 0.2331,
+              "n": 186,
+              "win_rate": 58.6,
+              "avg_win_pts": 17.78,
+              "avg_loss_pts": -14.52,
+              "net_inr_per_trade": -188.99,
+              "statutory_dhan_net_per_trade": 132.58,
+              "profit_factor": 0.54
+            },
+            {
+              "bucket_id": 3,
+              "label": "Top (T3)",
+              "min_val": 0.2332,
+              "max_val": 0.8249,
+              "n": 187,
+              "win_rate": 55.1,
+              "avg_win_pts": 20.13,
+              "avg_loss_pts": -22.95,
+              "net_inr_per_trade": -302.63,
+              "statutory_dhan_net_per_trade": 19.16,
+              "profit_factor": 0.46
+            }
+          ],
+          "layer3_oos": {
+            "cutoff_rule": "BETWEEN (0.07528857139738819, 0.35272700187739586)",
+            "n_surviving": 329,
+            "win_rate": 56.2,
+            "net_inr_hurdle400": -278.83,
+            "net_inr_statutory_dhan": 42.91,
+            "profit_factor": 0.34,
+            "super_trail_hurdle400": -327.77,
+            "super_trail_statutory_dhan": -5.94,
+            "net_inr_ex_top1": -285.55,
+            "net_inr_ex_top3": -296.26,
+            "net_inr_ex_top5": -305.27,
             "bootstrap_ci_95": [
-              -23.15,
-              102.4
+              -357.1,
+              -205.86
             ],
-            "z_score_sd": 1.13,
-            "direction_control_short_net": 3.02,
-            "directional_advantage": 35.68
+            "z_score_sd": -7.8,
+            "direction_control_short_net": -342.61,
+            "directional_advantage": 63.78
           },
           "verdict": "NOT BUILT",
           "failure_reasons": [
-            "PF < 1.30 (1.15)",
-            "Z-score 1.13 SD < +2.0 SD noise hurdle"
+            "Net \u20b9/trade <= 0 (\u20b9-278.83 after \u20b9400 hurdle)",
+            "PF < 1.30 (0.34)",
+            "Ex-top5 wins Net <= 0 (\u20b9-305.27)",
+            "Z-score -7.8 SD < +2.0 SD noise hurdle"
           ]
         }
       ],
       "variant_e_institutional": [
         {
-          "key": "m01_penetration_depth",
-          "name": "8-EMA Contact Penetration Depth",
+          "key": "m14_penetration_depth",
+          "name": "8-EMA Contact Penetration",
           "group": "Variant E Footnote",
           "status": "BLOCKED",
           "reason": "Insufficient sample size (n=80).",
           "verdict": "NOT BUILT"
         },
         {
-          "key": "m04_slope_1h_8ema",
-          "name": "1H 8-EMA Continuous Slope",
+          "key": "m16_slope_1h_8ema",
+          "name": "1H 8-EMA Slope (Mentor)",
           "group": "Variant E Footnote",
           "status": "BLOCKED",
           "reason": "Insufficient sample size (n=80).",
           "verdict": "NOT BUILT"
         },
         {
-          "key": "m06_separation_signed",
+          "key": "m01_separation_signed",
           "name": "Separation (Signed)",
           "group": "Variant E Footnote",
           "status": "BLOCKED",
@@ -2455,128 +2027,92 @@
           "name": "sma4_vs_ema8_separation_signed",
           "group": "SMA(4) TradingView",
           "status": "EVALUATED",
-          "shape": "NO_SHAPE",
-          "spearman_rho": 0.075,
-          "spearman_p": 0.0102,
-          "cutoff_rule": "GTE -0.347251566270691",
-          "in_sample": {
-            "n_total": 1171,
-            "deciles": [
-              {
-                "decile": 1,
-                "min_val": -1.4375,
-                "max_val": -0.4879,
-                "n": 118,
-                "win_rate": 52.5,
-                "net_inr_per_trade": -37.01,
-                "profit_factor": 0.86
-              },
-              {
-                "decile": 2,
-                "min_val": -0.4878,
-                "max_val": -0.3473,
-                "n": 117,
-                "win_rate": 41.9,
-                "net_inr_per_trade": -140.28,
-                "profit_factor": 0.49
-              },
-              {
-                "decile": 3,
-                "min_val": -0.3447,
-                "max_val": -0.2317,
-                "n": 117,
-                "win_rate": 46.2,
-                "net_inr_per_trade": 18.67,
-                "profit_factor": 1.07
-              },
-              {
-                "decile": 4,
-                "min_val": -0.2309,
-                "max_val": -0.1334,
-                "n": 117,
-                "win_rate": 52.1,
-                "net_inr_per_trade": -39.41,
-                "profit_factor": 0.87
-              },
-              {
-                "decile": 5,
-                "min_val": -0.1333,
-                "max_val": -0.0346,
-                "n": 117,
-                "win_rate": 48.7,
-                "net_inr_per_trade": -45.38,
-                "profit_factor": 0.84
-              },
-              {
-                "decile": 6,
-                "min_val": -0.0332,
-                "max_val": 0.0599,
-                "n": 117,
-                "win_rate": 61.5,
-                "net_inr_per_trade": 114.63,
-                "profit_factor": 1.56
-              },
-              {
-                "decile": 7,
-                "min_val": 0.0603,
-                "max_val": 0.1395,
-                "n": 117,
-                "win_rate": 57.3,
-                "net_inr_per_trade": 38.28,
-                "profit_factor": 1.15
-              },
-              {
-                "decile": 8,
-                "min_val": 0.1396,
-                "max_val": 0.2483,
-                "n": 117,
-                "win_rate": 53.8,
-                "net_inr_per_trade": 39.66,
-                "profit_factor": 1.15
-              },
-              {
-                "decile": 9,
-                "min_val": 0.2485,
-                "max_val": 0.3835,
-                "n": 118,
-                "win_rate": 52.5,
-                "net_inr_per_trade": -91.92,
-                "profit_factor": 0.71
-              },
-              {
-                "decile": 10,
-                "min_val": 0.3838,
-                "max_val": 1.3303,
-                "n": 116,
-                "win_rate": 59.5,
-                "net_inr_per_trade": 142.61,
-                "profit_factor": 1.38
-              }
-            ]
+          "shape": "MONOTONE_POSITIVE",
+          "layer1_correlation": {
+            "spearman_rho": 0.075,
+            "spearman_p": 0.0102,
+            "chop_removal_test": {
+              "chop_cut": -0.2317,
+              "excluded_mean_inr": -299.44,
+              "chop_only_mean_inr": -374.75,
+              "chop_removal_edge_inr": 75.31
+            },
+            "goldilocks_regime_test": {
+              "q25": -0.2741,
+              "q85": 0.3092,
+              "goldilocks_mean_inr": -323.89,
+              "extremes_mean_inr": -319.37,
+              "goldilocks_edge_inr": -4.51
+            }
           },
-          "out_of_sample": {
-            "n_surviving": 967,
-            "win_rate": 52.6,
-            "net_inr_per_trade": -2.91,
-            "profit_factor": 0.99,
-            "net_inr_ex_top1": -5.24,
-            "net_inr_ex_top3": -9.57,
-            "net_inr_ex_top5": -12.89,
+          "layer2_terciles": [
+            {
+              "bucket_id": 1,
+              "label": "Bottom (T1)",
+              "min_val": -1.4375,
+              "max_val": -0.2055,
+              "n": 390,
+              "win_rate": 47.2,
+              "avg_win_pts": 13.74,
+              "avg_loss_pts": -13.3,
+              "net_inr_per_trade": -374.33,
+              "statutory_dhan_net_per_trade": -52.4,
+              "profit_factor": 0.25
+            },
+            {
+              "bucket_id": 2,
+              "label": "Middle (T2)",
+              "min_val": -0.2031,
+              "max_val": 0.1122,
+              "n": 390,
+              "win_rate": 54.6,
+              "avg_win_pts": 15.31,
+              "avg_loss_pts": -15.98,
+              "net_inr_per_trade": -309.62,
+              "statutory_dhan_net_per_trade": 12.18,
+              "profit_factor": 0.35
+            },
+            {
+              "bucket_id": 3,
+              "label": "Top (T3)",
+              "min_val": 0.1139,
+              "max_val": 1.3303,
+              "n": 391,
+              "win_rate": 56.0,
+              "avg_win_pts": 18.02,
+              "avg_loss_pts": -19.3,
+              "net_inr_per_trade": -282.39,
+              "statutory_dhan_net_per_trade": 39.36,
+              "profit_factor": 0.44
+            }
+          ],
+          "layer3_oos": {
+            "cutoff_rule": "GTE -0.20406374253416684",
+            "n_surviving": 820,
+            "win_rate": 52.8,
+            "net_inr_hurdle400": -315.61,
+            "net_inr_statutory_dhan": 6.2,
+            "profit_factor": 0.32,
+            "super_trail_hurdle400": -327.69,
+            "super_trail_statutory_dhan": -5.86,
+            "net_inr_ex_top1": -318.35,
+            "net_inr_ex_top3": -323.45,
+            "net_inr_ex_top5": -327.35,
             "bootstrap_ci_95": [
-              -43.94,
-              38.43
+              -357.73,
+              -271.94
             ],
-            "z_score_sd": -0.13,
-            "direction_control_short_net": 76.79,
-            "directional_advantage": -79.7
+            "z_score_sd": -12.72,
+            "direction_control_short_net": -249.07,
+            "directional_advantage": -66.54
           },
           "verdict": "NOT BUILT",
           "failure_reasons": [
-            "Net \u20b9/trade $\\le$ 0 (\u20b9-2.91)",
-            "PF < 1.30 (0.99)",
-            "Ex-top5 wins Net $\\le$ 0 (\u20b9-12.89)",
-            "Z-score -0.13 SD < +2.0 SD noise hurdle",
-            "Fails Direction Control (Diff \u20b9-79.70)"
+            "Net \u20b9/trade <= 0 (\u20b9-315.61 after \u20b9400 hurdle)",
+            "PF < 1.30 (0.32)",
+            "Ex-top5 wins Net <= 0 (\u20b9-327.35)",
+            "Z-score -12.72 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Advantage \u20b9-66.54)"
           ]
         },
         {
@@ -2585,516 +2121,465 @@
           "group": "SMA(4) TradingView",
           "status": "EVALUATED",
           "shape": "NO_SHAPE",
-          "spearman_rho": -0.033,
-          "spearman_p": 0.2547,
-          "cutoff_rule": "GTE -0.08495045389583904",
-          "in_sample": {
-            "n_total": 1170,
-            "deciles": [
-              {
-                "decile": 1,
-                "min_val": -0.4461,
-                "max_val": -0.1449,
-                "n": 117,
-                "win_rate": 55.6,
-                "net_inr_per_trade": 112.07,
-                "profit_factor": 1.43
-              },
-              {
-                "decile": 2,
-                "min_val": -0.1444,
-                "max_val": -0.0853,
-                "n": 117,
-                "win_rate": 59.0,
-                "net_inr_per_trade": 66.38,
-                "profit_factor": 1.29
-              },
-              {
-                "decile": 3,
-                "min_val": -0.0849,
-                "max_val": -0.0507,
-                "n": 117,
-                "win_rate": 53.8,
-                "net_inr_per_trade": -19.8,
-                "profit_factor": 0.94
-              },
-              {
-                "decile": 4,
-                "min_val": -0.0507,
-                "max_val": -0.0234,
-                "n": 117,
-                "win_rate": 53.0,
-                "net_inr_per_trade": -30.44,
-                "profit_factor": 0.9
-              },
-              {
-                "decile": 5,
-                "min_val": -0.0231,
-                "max_val": 0.001,
-                "n": 117,
-                "win_rate": 51.3,
-                "net_inr_per_trade": -15.82,
-                "profit_factor": 0.94
-              },
-              {
-                "decile": 6,
-                "min_val": 0.0012,
-                "max_val": 0.024,
-                "n": 117,
-                "win_rate": 43.6,
-                "net_inr_per_trade": -38.33,
-                "profit_factor": 0.85
-              },
-              {
-                "decile": 7,
-                "min_val": 0.0243,
-                "max_val": 0.0617,
-                "n": 117,
-                "win_rate": 54.7,
-                "net_inr_per_trade": 17.08,
-                "profit_factor": 1.06
-              },
-              {
-                "decile": 8,
-                "min_val": 0.0624,
-                "max_val": 0.1021,
-                "n": 117,
-                "win_rate": 49.6,
-                "net_inr_per_trade": -129.44,
-                "profit_factor": 0.61
-              },
-              {
-                "decile": 9,
-                "min_val": 0.1037,
-                "max_val": 0.1473,
-                "n": 117,
-                "win_rate": 47.9,
-                "net_inr_per_trade": -40.97,
-                "profit_factor": 0.87
-              },
-              {
-                "decile": 10,
-                "min_val": 0.1487,
-                "max_val": 0.418,
-                "n": 117,
-                "win_rate": 57.3,
-                "net_inr_per_trade": 64.17,
-                "profit_factor": 1.23
-              }
-            ]
+          "layer1_correlation": {
+            "spearman_rho": -0.033,
+            "spearman_p": 0.2551,
+            "chop_removal_test": {
+              "chop_cut": -0.0507,
+              "excluded_mean_inr": -346.7,
+              "chop_only_mean_inr": -268.85,
+              "chop_removal_edge_inr": -77.85
+            },
+            "goldilocks_regime_test": {
+              "q25": -0.068,
+              "q85": 0.1233,
+              "goldilocks_mean_inr": -351.96,
+              "extremes_mean_inr": -280.57,
+              "goldilocks_edge_inr": -71.39
+            }
           },
-          "out_of_sample": {
-            "n_surviving": 953,
-            "win_rate": 51.7,
-            "net_inr_per_trade": -11.61,
-            "profit_factor": 0.95,
-            "net_inr_ex_top1": -14.47,
-            "net_inr_ex_top3": -18.89,
-            "net_inr_ex_top5": -22.36,
+          "layer2_terciles": [
+            {
+              "bucket_id": 1,
+              "label": "Bottom (T1)",
+              "min_val": -0.4461,
+              "max_val": -0.0427,
+              "n": 390,
+              "win_rate": 55.1,
+              "avg_win_pts": 16.48,
+              "avg_loss_pts": -16.42,
+              "net_inr_per_trade": -283.78,
+              "statutory_dhan_net_per_trade": 37.97,
+              "profit_factor": 0.41
+            },
+            {
+              "bucket_id": 2,
+              "label": "Middle (T2)",
+              "min_val": -0.0425,
+              "max_val": 0.0491,
+              "n": 390,
+              "win_rate": 49.7,
+              "avg_win_pts": 14.74,
+              "avg_loss_pts": -14.85,
+              "net_inr_per_trade": -356.75,
+              "statutory_dhan_net_per_trade": -34.86,
+              "profit_factor": 0.29
+            },
+            {
+              "bucket_id": 3,
+              "label": "Top (T3)",
+              "min_val": 0.0491,
+              "max_val": 0.418,
+              "n": 390,
+              "win_rate": 52.8,
+              "avg_win_pts": 15.98,
+              "avg_loss_pts": -16.88,
+              "net_inr_per_trade": -329.5,
+              "statutory_dhan_net_per_trade": -7.66,
+              "profit_factor": 0.34
+            }
+          ],
+          "layer3_oos": {
+            "cutoff_rule": "GTE -0.050724096401080186",
+            "n_surviving": 839,
+            "win_rate": 51.4,
+            "net_inr_hurdle400": -340.82,
+            "net_inr_statutory_dhan": -18.96,
+            "profit_factor": 0.28,
+            "super_trail_hurdle400": -327.34,
+            "super_trail_statutory_dhan": -5.51,
+            "net_inr_ex_top1": -344.09,
+            "net_inr_ex_top3": -349.14,
+            "net_inr_ex_top5": -353.11,
             "bootstrap_ci_95": [
-              -51.23,
-              28.13
+              -385.48,
+              -292.66
             ],
-            "z_score_sd": -0.52,
-            "direction_control_short_net": 72.63,
-            "directional_advantage": -84.23
+            "z_score_sd": -14.28,
+            "direction_control_short_net": -246.64,
+            "directional_advantage": -94.18
           },
           "verdict": "NOT BUILT",
           "failure_reasons": [
-            "Net \u20b9/trade $\\le$ 0 (\u20b9-11.61)",
-            "PF < 1.30 (0.95)",
-            "Ex-top5 wins Net $\\le$ 0 (\u20b9-22.36)",
-            "Z-score -0.52 SD < +2.0 SD noise hurdle",
-            "Fails Direction Control (Diff \u20b9-84.23)"
+            "Net \u20b9/trade <= 0 (\u20b9-340.82 after \u20b9400 hurdle)",
+            "PF < 1.30 (0.28)",
+            "Ex-top5 wins Net <= 0 (\u20b9-353.11)",
+            "Z-score -14.28 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Advantage \u20b9-94.18)"
           ]
         }
       ],
       "variant_a_super_trail": [
         {
-          "key": "m01_penetration_depth",
-          "name": "8-EMA Contact Penetration Depth",
-          "group": "Super Trail Model",
-          "status": "EVALUATED",
-          "shape": "NO_SHAPE",
-          "spearman_rho": -0.002,
-          "spearman_p": 0.9321,
-          "cutoff_rule": "GTE -0.007208030683269586",
-          "in_sample": {
-            "n_total": 1171,
-            "deciles": [
-              {
-                "decile": 1,
-                "min_val": -0.9798,
-                "max_val": -0.1671,
-                "n": 118,
-                "win_rate": 62.7,
-                "net_inr_per_trade": 147.86,
-                "profit_factor": 1.46
-              },
-              {
-                "decile": 2,
-                "min_val": -0.1664,
-                "max_val": -0.0072,
-                "n": 117,
-                "win_rate": 48.7,
-                "net_inr_per_trade": 52.79,
-                "profit_factor": 1.15
-              },
-              {
-                "decile": 3,
-                "min_val": -0.0061,
-                "max_val": 0.178,
-                "n": 117,
-                "win_rate": 49.6,
-                "net_inr_per_trade": -18.41,
-                "profit_factor": 0.95
-              },
-              {
-                "decile": 4,
-                "min_val": 0.1805,
-                "max_val": 0.3516,
-                "n": 117,
-                "win_rate": 55.6,
-                "net_inr_per_trade": -45.63,
-                "profit_factor": 0.89
-              },
-              {
-                "decile": 5,
-                "min_val": 0.354,
-                "max_val": 0.4901,
-                "n": 117,
-                "win_rate": 53.8,
-                "net_inr_per_trade": 56.69,
-                "profit_factor": 1.16
-              },
-              {
-                "decile": 6,
-                "min_val": 0.4915,
-                "max_val": 0.6118,
-                "n": 118,
-                "win_rate": 51.7,
-                "net_inr_per_trade": -44.59,
-                "profit_factor": 0.89
-              },
-              {
-                "decile": 7,
-                "min_val": 0.6135,
-                "max_val": 0.7543,
-                "n": 116,
-                "win_rate": 44.8,
-                "net_inr_per_trade": -44.07,
-                "profit_factor": 0.89
-              },
-              {
-                "decile": 8,
-                "min_val": 0.7544,
-                "max_val": 0.9061,
-                "n": 117,
-                "win_rate": 46.2,
-                "net_inr_per_trade": -104.82,
-                "profit_factor": 0.76
-              },
-              {
-                "decile": 9,
-                "min_val": 0.9144,
-                "max_val": 1.141,
-                "n": 117,
-                "win_rate": 54.7,
-                "net_inr_per_trade": -27.73,
-                "profit_factor": 0.93
-              },
-              {
-                "decile": 10,
-                "min_val": 1.1566,
-                "max_val": 2.9059,
-                "n": 117,
-                "win_rate": 58.1,
-                "net_inr_per_trade": 123.72,
-                "profit_factor": 1.36
-              }
-            ]
-          },
-          "out_of_sample": {
-            "n_surviving": 961,
-            "win_rate": 50.6,
-            "net_inr_per_trade": -39.99,
-            "profit_factor": 0.9,
-            "net_inr_ex_top1": -43.49,
-            "net_inr_ex_top3": -49.35,
-            "net_inr_ex_top5": -54.12,
-            "bootstrap_ci_95": [
-              -67.74,
-              14.22
-            ],
-            "z_score_sd": -1.57,
-            "direction_control_short_net": 152.42,
-            "directional_advantage": -192.41
-          },
-          "verdict": "NOT BUILT",
-          "failure_reasons": [
-            "Net \u20b9/trade $\\le$ 0 (\u20b9-39.99)",
-            "PF < 1.30 (0.90)",
-            "Ex-top5 wins Net $\\le$ 0 (\u20b9-54.12)",
-            "Z-score -1.57 SD < +2.0 SD noise hurdle",
-            "Fails Direction Control (Diff \u20b9-192.41)"
-          ]
-        },
-        {
-          "key": "m02_wick_rejection_pinbar",
-          "name": "Contact Wick Rejection (Pin-Bar)",
+          "key": "m14_penetration_depth",
+          "name": "8-EMA Contact Penetration",
           "group": "Super Trail Model",
           "status": "EVALUATED",
           "shape": "MONOTONE_NEGATIVE",
-          "spearman_rho": -0.062,
-          "spearman_p": 0.0326,
-          "cutoff_rule": "LTE 0.7538304392236419",
-          "in_sample": {
-            "n_total": 1171,
-            "deciles": [
-              {
-                "decile": 1,
-                "min_val": 0.0,
-                "max_val": 0.0831,
-                "n": 119,
-                "win_rate": 56.3,
-                "net_inr_per_trade": 60.51,
-                "profit_factor": 1.17
-              },
-              {
-                "decile": 2,
-                "min_val": 0.0838,
-                "max_val": 0.1991,
-                "n": 116,
-                "win_rate": 59.5,
-                "net_inr_per_trade": 169.92,
-                "profit_factor": 1.52
-              },
-              {
-                "decile": 3,
-                "min_val": 0.2016,
-                "max_val": 0.3127,
-                "n": 117,
-                "win_rate": 48.7,
-                "net_inr_per_trade": 59.74,
-                "profit_factor": 1.17
-              },
-              {
-                "decile": 4,
-                "min_val": 0.3165,
-                "max_val": 0.4291,
-                "n": 117,
-                "win_rate": 52.1,
-                "net_inr_per_trade": -4.49,
-                "profit_factor": 0.99
-              },
-              {
-                "decile": 5,
-                "min_val": 0.4303,
-                "max_val": 0.5483,
-                "n": 117,
-                "win_rate": 57.3,
-                "net_inr_per_trade": -89.51,
-                "profit_factor": 0.79
-              },
-              {
-                "decile": 6,
-                "min_val": 0.5484,
-                "max_val": 0.6427,
-                "n": 117,
-                "win_rate": 52.1,
-                "net_inr_per_trade": -1.06,
-                "profit_factor": 1.0
-              },
-              {
-                "decile": 7,
-                "min_val": 0.6435,
-                "max_val": 0.7538,
-                "n": 118,
-                "win_rate": 53.4,
-                "net_inr_per_trade": 16.6,
-                "profit_factor": 1.04
-              },
-              {
-                "decile": 8,
-                "min_val": 0.7547,
-                "max_val": 0.8569,
-                "n": 116,
-                "win_rate": 50.9,
-                "net_inr_per_trade": -45.7,
-                "profit_factor": 0.89
-              },
-              {
-                "decile": 9,
-                "min_val": 0.8574,
-                "max_val": 0.9361,
-                "n": 118,
-                "win_rate": 47.5,
-                "net_inr_per_trade": -34.99,
-                "profit_factor": 0.91
-              },
-              {
-                "decile": 10,
-                "min_val": 0.9368,
-                "max_val": 1.0,
-                "n": 116,
-                "win_rate": 48.3,
-                "net_inr_per_trade": -34.05,
-                "profit_factor": 0.92
-              }
-            ]
+          "layer1_correlation": {
+            "spearman_rho": 0.003,
+            "spearman_p": 0.9316,
+            "chop_removal_test": {
+              "chop_cut": 0.178,
+              "excluded_mean_inr": -333.51,
+              "chop_only_mean_inr": -267.07,
+              "chop_removal_edge_inr": -66.44
+            },
+            "goldilocks_regime_test": {
+              "q25": 0.0793,
+              "q85": 1.0122,
+              "goldilocks_mean_inr": -340.31,
+              "extremes_mean_inr": -273.47,
+              "goldilocks_edge_inr": -66.84
+            }
           },
-          "out_of_sample": {
-            "n_surviving": 863,
-            "win_rate": 52.3,
-            "net_inr_per_trade": -33.26,
-            "profit_factor": 0.91,
-            "net_inr_ex_top1": -36.29,
-            "net_inr_ex_top3": -41.5,
-            "net_inr_ex_top5": -45.79,
+          "layer2_terciles": [
+            {
+              "bucket_id": 1,
+              "label": "Bottom (T1)",
+              "min_val": -0.9798,
+              "max_val": 0.228,
+              "n": 390,
+              "win_rate": 52.8,
+              "avg_win_pts": 17.25,
+              "avg_loss_pts": -18.16,
+              "net_inr_per_trade": -289.64,
+              "statutory_dhan_net_per_trade": -1.31,
+              "profit_factor": 0.38
+            },
+            {
+              "bucket_id": 2,
+              "label": "Middle (T2)",
+              "min_val": 0.2336,
+              "max_val": 0.7209,
+              "n": 391,
+              "win_rate": 53.2,
+              "avg_win_pts": 16.15,
+              "avg_loss_pts": -16.46,
+              "net_inr_per_trade": -319.58,
+              "statutory_dhan_net_per_trade": 6.44,
+              "profit_factor": 0.34
+            },
+            {
+              "bucket_id": 3,
+              "label": "Top (T3)",
+              "min_val": 0.7215,
+              "max_val": 2.9059,
+              "n": 390,
+              "win_rate": 51.8,
+              "avg_win_pts": 13.98,
+              "avg_loss_pts": -13.48,
+              "net_inr_per_trade": -331.39,
+              "statutory_dhan_net_per_trade": -5.9,
+              "profit_factor": 0.33
+            }
+          ],
+          "layer3_oos": {
+            "cutoff_rule": "LTE 0.7211298210189158",
+            "n_surviving": 835,
+            "win_rate": 52.2,
+            "net_inr_hurdle400": -355.14,
+            "net_inr_statutory_dhan": -17.84,
+            "profit_factor": 0.3,
+            "super_trail_hurdle400": -355.14,
+            "super_trail_statutory_dhan": -33.25,
+            "net_inr_ex_top1": -360.01,
+            "net_inr_ex_top3": -366.83,
+            "net_inr_ex_top5": -371.28,
             "bootstrap_ci_95": [
-              -60.33,
-              37.36
+              -410.48,
+              -297.54
             ],
-            "z_score_sd": -1.26,
-            "direction_control_short_net": 85.61,
-            "directional_advantage": -118.87
+            "z_score_sd": -16.57,
+            "direction_control_short_net": -245.71,
+            "directional_advantage": -109.42
           },
           "verdict": "NOT BUILT",
           "failure_reasons": [
-            "Net \u20b9/trade $\\le$ 0 (\u20b9-33.26)",
-            "PF < 1.30 (0.91)",
-            "Ex-top5 wins Net $\\le$ 0 (\u20b9-45.79)",
-            "Z-score -1.26 SD < +2.0 SD noise hurdle",
-            "Fails Direction Control (Diff \u20b9-118.87)"
+            "Net \u20b9/trade <= 0 (\u20b9-355.14 after \u20b9400 hurdle)",
+            "PF < 1.30 (0.30)",
+            "Ex-top5 wins Net <= 0 (\u20b9-371.28)",
+            "Z-score -16.57 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Advantage \u20b9-109.42)"
           ]
         },
         {
-          "key": "m06_separation_signed",
-          "name": "Separation (Signed)",
+          "key": "m15_wick_rejection_pinbar",
+          "name": "Contact Wick Rejection",
           "group": "Super Trail Model",
           "status": "EVALUATED",
           "shape": "NO_SHAPE",
-          "spearman_rho": 0.053,
-          "spearman_p": 0.0698,
-          "cutoff_rule": "GTE -0.26317684807059244",
-          "in_sample": {
-            "n_total": 1171,
-            "deciles": [
-              {
-                "decile": 1,
-                "min_val": -0.9728,
-                "max_val": -0.3928,
-                "n": 118,
-                "win_rate": 51.7,
-                "net_inr_per_trade": 1.35,
-                "profit_factor": 1.0
-              },
-              {
-                "decile": 2,
-                "min_val": -0.3914,
-                "max_val": -0.2632,
-                "n": 118,
-                "win_rate": 43.2,
-                "net_inr_per_trade": -132.94,
-                "profit_factor": 0.71
-              },
-              {
-                "decile": 3,
-                "min_val": -0.261,
-                "max_val": -0.1837,
-                "n": 117,
-                "win_rate": 47.0,
-                "net_inr_per_trade": -67.26,
-                "profit_factor": 0.83
-              },
-              {
-                "decile": 4,
-                "min_val": -0.1836,
-                "max_val": -0.1103,
-                "n": 117,
-                "win_rate": 53.0,
-                "net_inr_per_trade": -73.68,
-                "profit_factor": 0.82
-              },
-              {
-                "decile": 5,
-                "min_val": -0.1094,
-                "max_val": -0.0306,
-                "n": 116,
-                "win_rate": 54.3,
-                "net_inr_per_trade": -72.95,
-                "profit_factor": 0.82
-              },
-              {
-                "decile": 6,
-                "min_val": -0.0298,
-                "max_val": 0.042,
-                "n": 117,
-                "win_rate": 49.6,
-                "net_inr_per_trade": -54.57,
-                "profit_factor": 0.87
-              },
-              {
-                "decile": 7,
-                "min_val": 0.0422,
-                "max_val": 0.1203,
-                "n": 117,
-                "win_rate": 57.3,
-                "net_inr_per_trade": 201.89,
-                "profit_factor": 1.67
-              },
-              {
-                "decile": 8,
-                "min_val": 0.1206,
-                "max_val": 0.2001,
-                "n": 117,
-                "win_rate": 62.4,
-                "net_inr_per_trade": 251.38,
-                "profit_factor": 1.91
-              },
-              {
-                "decile": 9,
-                "min_val": 0.2039,
-                "max_val": 0.316,
-                "n": 118,
-                "win_rate": 44.9,
-                "net_inr_per_trade": -45.75,
-                "profit_factor": 0.88
-              },
-              {
-                "decile": 10,
-                "min_val": 0.316,
-                "max_val": 0.8249,
-                "n": 116,
-                "win_rate": 62.9,
-                "net_inr_per_trade": 91.28,
-                "profit_factor": 1.26
-              }
-            ]
+          "layer1_correlation": {
+            "spearman_rho": -0.053,
+            "spearman_p": 0.0674,
+            "chop_removal_test": {
+              "chop_cut": 0.3127,
+              "excluded_mean_inr": -350.79,
+              "chop_only_mean_inr": -226.88,
+              "chop_removal_edge_inr": -123.91
+            },
+            "goldilocks_regime_test": {
+              "q25": 0.2573,
+              "q85": 0.9029,
+              "goldilocks_mean_inr": -346.02,
+              "extremes_mean_inr": -264.93,
+              "goldilocks_edge_inr": -81.09
+            }
           },
-          "out_of_sample": {
-            "n_surviving": 964,
-            "win_rate": 52.4,
-            "net_inr_per_trade": -17.73,
-            "profit_factor": 0.95,
-            "net_inr_ex_top1": -21.92,
-            "net_inr_ex_top3": -28.5,
-            "net_inr_ex_top5": -32.84,
+          "layer2_terciles": [
+            {
+              "bucket_id": 1,
+              "label": "Bottom (T1)",
+              "min_val": 0.0,
+              "max_val": 0.3607,
+              "n": 390,
+              "win_rate": 54.6,
+              "avg_win_pts": 16.95,
+              "avg_loss_pts": -17.91,
+              "net_inr_per_trade": -230.45,
+              "statutory_dhan_net_per_trade": 18.59,
+              "profit_factor": 0.47
+            },
+            {
+              "bucket_id": 2,
+              "label": "Middle (T2)",
+              "min_val": 0.3614,
+              "max_val": 0.7176,
+              "n": 390,
+              "win_rate": 53.3,
+              "avg_win_pts": 14.96,
+              "avg_loss_pts": -15.05,
+              "net_inr_per_trade": -384.47,
+              "statutory_dhan_net_per_trade": 5.98,
+              "profit_factor": 0.26
+            },
+            {
+              "bucket_id": 3,
+              "label": "Top (T3)",
+              "min_val": 0.7179,
+              "max_val": 1.0,
+              "n": 391,
+              "win_rate": 49.9,
+              "avg_win_pts": 15.45,
+              "avg_loss_pts": -15.2,
+              "net_inr_per_trade": -325.68,
+              "statutory_dhan_net_per_trade": -25.26,
+              "profit_factor": 0.33
+            }
+          ],
+          "layer3_oos": {
+            "cutoff_rule": "GTE 0.31273062730623613",
+            "n_surviving": 837,
+            "win_rate": 50.5,
+            "net_inr_hurdle400": -359.82,
+            "net_inr_statutory_dhan": -22.0,
+            "profit_factor": 0.3,
+            "super_trail_hurdle400": -359.82,
+            "super_trail_statutory_dhan": -37.93,
+            "net_inr_ex_top1": -364.68,
+            "net_inr_ex_top3": -372.33,
+            "net_inr_ex_top5": -377.21,
             "bootstrap_ci_95": [
-              -47.16,
-              40.35
+              -412.16,
+              -306.84
             ],
-            "z_score_sd": -0.7,
-            "direction_control_short_net": 68.13,
-            "directional_advantage": -85.86
+            "z_score_sd": -16.79,
+            "direction_control_short_net": -211.76,
+            "directional_advantage": -148.06
           },
           "verdict": "NOT BUILT",
           "failure_reasons": [
-            "Net \u20b9/trade $\\le$ 0 (\u20b9-17.73)",
-            "PF < 1.30 (0.95)",
-            "Ex-top5 wins Net $\\le$ 0 (\u20b9-32.84)",
-            "Z-score -0.7 SD < +2.0 SD noise hurdle",
-            "Fails Direction Control (Diff \u20b9-85.86)"
+            "Net \u20b9/trade <= 0 (\u20b9-359.82 after \u20b9400 hurdle)",
+            "PF < 1.30 (0.30)",
+            "Ex-top5 wins Net <= 0 (\u20b9-377.21)",
+            "Z-score -16.79 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Advantage \u20b9-148.06)"
+          ]
+        },
+        {
+          "key": "m01_separation_signed",
+          "name": "Separation (Signed)",
+          "group": "Super Trail Model",
+          "status": "EVALUATED",
+          "shape": "MONOTONE_POSITIVE",
+          "layer1_correlation": {
+            "spearman_rho": 0.028,
+            "spearman_p": 0.3357,
+            "chop_removal_test": {
+              "chop_cut": -0.1837,
+              "excluded_mean_inr": -295.34,
+              "chop_only_mean_inr": -355.72,
+              "chop_removal_edge_inr": 60.38
+            },
+            "goldilocks_regime_test": {
+              "q25": -0.2221,
+              "q85": 0.2458,
+              "goldilocks_mean_inr": -319.25,
+              "extremes_mean_inr": -304.94,
+              "goldilocks_edge_inr": -14.31
+            }
+          },
+          "layer2_terciles": [
+            {
+              "bucket_id": 1,
+              "label": "Bottom (T1)",
+              "min_val": -0.9728,
+              "max_val": -0.1564,
+              "n": 390,
+              "win_rate": 48.5,
+              "avg_win_pts": 13.18,
+              "avg_loss_pts": -13.19,
+              "net_inr_per_trade": -351.38,
+              "statutory_dhan_net_per_trade": -48.89,
+              "profit_factor": 0.31
+            },
+            {
+              "bucket_id": 2,
+              "label": "Middle (T2)",
+              "min_val": -0.1561,
+              "max_val": 0.0917,
+              "n": 390,
+              "win_rate": 53.1,
+              "avg_win_pts": 15.13,
+              "avg_loss_pts": -16.53,
+              "net_inr_per_trade": -350.8,
+              "statutory_dhan_net_per_trade": -16.93,
+              "profit_factor": 0.29
+            },
+            {
+              "bucket_id": 3,
+              "label": "Top (T3)",
+              "min_val": 0.0936,
+              "max_val": 0.8249,
+              "n": 391,
+              "win_rate": 56.3,
+              "avg_win_pts": 18.69,
+              "avg_loss_pts": -18.78,
+              "net_inr_per_trade": -238.64,
+              "statutory_dhan_net_per_trade": 64.89,
+              "profit_factor": 0.46
+            }
+          ],
+          "layer3_oos": {
+            "cutoff_rule": "GTE -0.15620954370661005",
+            "n_surviving": 817,
+            "win_rate": 53.0,
+            "net_inr_hurdle400": -340.79,
+            "net_inr_statutory_dhan": 9.67,
+            "profit_factor": 0.32,
+            "super_trail_hurdle400": -340.79,
+            "super_trail_statutory_dhan": -18.93,
+            "net_inr_ex_top1": -345.75,
+            "net_inr_ex_top3": -353.53,
+            "net_inr_ex_top5": -358.68,
+            "bootstrap_ci_95": [
+              -389.61,
+              -287.79
+            ],
+            "z_score_sd": -15.5,
+            "direction_control_short_net": -268.39,
+            "directional_advantage": -72.4
+          },
+          "verdict": "NOT BUILT",
+          "failure_reasons": [
+            "Net \u20b9/trade <= 0 (\u20b9-340.79 after \u20b9400 hurdle)",
+            "PF < 1.30 (0.32)",
+            "Ex-top5 wins Net <= 0 (\u20b9-358.68)",
+            "Z-score -15.5 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Advantage \u20b9-72.40)"
+          ]
+        },
+        {
+          "key": "m12_ribbon_area_5",
+          "name": "5-Bar Ribbon Area",
+          "group": "Super Trail Model",
+          "status": "EVALUATED",
+          "shape": "MONOTONE_POSITIVE",
+          "layer1_correlation": {
+            "spearman_rho": 0.043,
+            "spearman_p": 0.1403,
+            "chop_removal_test": {
+              "chop_cut": -0.2238,
+              "excluded_mean_inr": -288.72,
+              "chop_only_mean_inr": -371.31,
+              "chop_removal_edge_inr": 82.59
+            },
+            "goldilocks_regime_test": {
+              "q25": -0.293,
+              "q85": 0.2637,
+              "goldilocks_mean_inr": -289.64,
+              "extremes_mean_inr": -349.45,
+              "goldilocks_edge_inr": 59.81
+            }
+          },
+          "layer2_terciles": [
+            {
+              "bucket_id": 1,
+              "label": "Bottom (T1)",
+              "min_val": -1.0213,
+              "max_val": -0.1922,
+              "n": 391,
+              "win_rate": 45.8,
+              "avg_win_pts": 13.61,
+              "avg_loss_pts": -14.47,
+              "net_inr_per_trade": -371.98,
+              "statutory_dhan_net_per_trade": -88.77,
+              "profit_factor": 0.28
+            },
+            {
+              "bucket_id": 2,
+              "label": "Middle (T2)",
+              "min_val": -0.1917,
+              "max_val": 0.1149,
+              "n": 389,
+              "win_rate": 54.5,
+              "avg_win_pts": 14.55,
+              "avg_loss_pts": -14.48,
+              "net_inr_per_trade": -318.09,
+              "statutory_dhan_net_per_trade": 16.92,
+              "profit_factor": 0.34
+            },
+            {
+              "bucket_id": 3,
+              "label": "Top (T3)",
+              "min_val": 0.1153,
+              "max_val": 0.9274,
+              "n": 391,
+              "win_rate": 57.5,
+              "avg_win_pts": 18.73,
+              "avg_loss_pts": -19.63,
+              "net_inr_per_trade": -250.58,
+              "statutory_dhan_net_per_trade": 71.18,
+              "profit_factor": 0.45
+            }
+          ],
+          "layer3_oos": {
+            "cutoff_rule": "GTE -0.1922088986704406",
+            "n_surviving": 822,
+            "win_rate": 53.9,
+            "net_inr_hurdle400": -327.0,
+            "net_inr_statutory_dhan": 14.19,
+            "profit_factor": 0.34,
+            "super_trail_hurdle400": -327.0,
+            "super_trail_statutory_dhan": -5.17,
+            "net_inr_ex_top1": -331.92,
+            "net_inr_ex_top3": -339.62,
+            "net_inr_ex_top5": -344.7,
+            "bootstrap_ci_95": [
+              -375.34,
+              -272.82
+            ],
+            "z_score_sd": -14.89,
+            "direction_control_short_net": -265.31,
+            "directional_advantage": -61.69
+          },
+          "verdict": "NOT BUILT",
+          "failure_reasons": [
+            "Net \u20b9/trade <= 0 (\u20b9-327.00 after \u20b9400 hurdle)",
+            "PF < 1.30 (0.34)",
+            "Ex-top5 wins Net <= 0 (\u20b9-344.70)",
+            "Z-score -14.89 SD < +2.0 SD noise hurdle",
+            "Fails Direction Control (Advantage \u20b9-61.69)"
           ]
         }
       ]
@@ -3105,7 +2590,8 @@
     "time_to_resolution": "Exported in minutes in events_variantA.csv, events_variantB.csv, events_variantE.csv",
     "session_block_bootstrap": "1,000 whole-session bootstrap iterations for 95% CI on surviving OOS trades",
     "outlier_robustness": "Net Rs/trade evaluated excluding top 1, 3, and 5 winning trades",
-    "measure_17_volume_status": "Unblocked and evaluated using institutional Time-of-Day RVOL engine (FUT + FUT2) scoped to 39 sessions",
+    "random_baseline": "200 Monte Carlo draws time-of-day matched across OOS sessions",
+    "measure_17_volume_status": "Evaluated using institutional Time-of-Day RVOL engine (FUT + FUT2) scoped to 39 sessions",
     "measure_16_1h_slope_status": "Documented as continuous refinement of prior failed binary 1H gate"
   }
 }

@@ -1,0 +1,314 @@
+{
+  "discovered_percentiles": {
+    "pe_minus_ce_p25": -21563100.0,
+    "pe_minus_ce_p50": 15849892.5,
+    "pe_minus_ce_p75": 63274380.0,
+    "d_pe_minus_ce_15m_p25": -4205581.25,
+    "d_pe_minus_ce_15m_p50": -344142.5,
+    "d_pe_minus_ce_15m_p75": 4403733.75,
+    "pcr_p25": 0.8813551844439331,
+    "pcr_p50": 1.080098035553494,
+    "pcr_p75": 1.423088544433734
+  },
+  "total_snapshots": 1316,
+  "total_ce_trades": 104,
+  "total_pe_trades": 16,
+  "tables": {
+    "ce_by_composite": [
+      {
+        "state": "STRONG_BULLISH",
+        "n": 13,
+        "win_rate_pct": 30.8,
+        "mean_net_rs": -215.3,
+        "total_net_rs": -2798.9,
+        "profit_factor": 0.73
+      },
+      {
+        "state": "BULLISH",
+        "n": 35,
+        "win_rate_pct": 25.7,
+        "mean_net_rs": -273.4,
+        "total_net_rs": -9570.7,
+        "profit_factor": 0.52
+      },
+      {
+        "state": "BEARISH",
+        "n": 35,
+        "win_rate_pct": 28.6,
+        "mean_net_rs": -88.7,
+        "total_net_rs": -3104.1,
+        "profit_factor": 1.07
+      },
+      {
+        "state": "STRONG_BEARISH",
+        "n": 21,
+        "win_rate_pct": 28.6,
+        "mean_net_rs": -278.3,
+        "total_net_rs": -5843.4,
+        "profit_factor": 0.61
+      }
+    ],
+    "ce_by_level": [
+      {
+        "state": "STRONG_BULLISH",
+        "n": 19,
+        "win_rate_pct": 42.1,
+        "mean_net_rs": -46.2,
+        "total_net_rs": -877.0,
+        "profit_factor": 1.18
+      },
+      {
+        "state": "BULLISH",
+        "n": 22,
+        "win_rate_pct": 27.3,
+        "mean_net_rs": -466.0,
+        "total_net_rs": -10251.0,
+        "profit_factor": 0.34
+      },
+      {
+        "state": "BEARISH",
+        "n": 34,
+        "win_rate_pct": 26.5,
+        "mean_net_rs": -160.4,
+        "total_net_rs": -5452.1,
+        "profit_factor": 0.84
+      },
+      {
+        "state": "STRONG_BEARISH",
+        "n": 29,
+        "win_rate_pct": 20.7,
+        "mean_net_rs": -163.3,
+        "total_net_rs": -4737.0,
+        "profit_factor": 0.76
+      }
+    ],
+    "ce_by_15m_momentum": [
+      {
+        "state": "STRONG_BULLISH",
+        "n": 20,
+        "win_rate_pct": 20.0,
+        "mean_net_rs": -392.1,
+        "total_net_rs": -7841.4,
+        "profit_factor": 0.33
+      },
+      {
+        "state": "BULLISH",
+        "n": 23,
+        "win_rate_pct": 30.4,
+        "mean_net_rs": -19.5,
+        "total_net_rs": -448.1,
+        "profit_factor": 1.55
+      },
+      {
+        "state": "BEARISH",
+        "n": 24,
+        "win_rate_pct": 37.5,
+        "mean_net_rs": -46.9,
+        "total_net_rs": -1125.1,
+        "profit_factor": 1.17
+      },
+      {
+        "state": "STRONG_BEARISH",
+        "n": 22,
+        "win_rate_pct": 27.3,
+        "mean_net_rs": -392.2,
+        "total_net_rs": -8629.0,
+        "profit_factor": 0.42
+      },
+      {
+        "state": "UNKNOWN",
+        "n": 15,
+        "win_rate_pct": 20.0,
+        "mean_net_rs": -218.2,
+        "total_net_rs": -3273.5,
+        "profit_factor": 0.72
+      }
+    ],
+    "ce_by_call_buildup": [
+      {
+        "state": "CALL_WRITING",
+        "n": 26,
+        "win_rate_pct": 15.4,
+        "mean_net_rs": -535.2,
+        "total_net_rs": -13914.5,
+        "profit_factor": 0.31
+      },
+      {
+        "state": "CALL_UNWINDING",
+        "n": 13,
+        "win_rate_pct": 23.1,
+        "mean_net_rs": -83.2,
+        "total_net_rs": -1081.1,
+        "profit_factor": 1.22
+      },
+      {
+        "state": "UNKNOWN",
+        "n": 36,
+        "win_rate_pct": 33.3,
+        "mean_net_rs": -71.4,
+        "total_net_rs": -2569.3,
+        "profit_factor": 1.15
+      },
+      {
+        "state": "CALL_SHORT_COVERING",
+        "n": 10,
+        "win_rate_pct": 20.0,
+        "mean_net_rs": -321.4,
+        "total_net_rs": -3213.7,
+        "profit_factor": 0.35
+      },
+      {
+        "state": "CALL_BUYING",
+        "n": 19,
+        "win_rate_pct": 42.1,
+        "mean_net_rs": -28.3,
+        "total_net_rs": -538.4,
+        "profit_factor": 1.2
+      }
+    ],
+    "ce_by_put_buildup": [
+      {
+        "state": "PUT_BUYING",
+        "n": 28,
+        "win_rate_pct": 21.4,
+        "mean_net_rs": -294.6,
+        "total_net_rs": -8247.5,
+        "profit_factor": 0.51
+      },
+      {
+        "state": "UNKNOWN",
+        "n": 36,
+        "win_rate_pct": 33.3,
+        "mean_net_rs": -71.4,
+        "total_net_rs": -2569.3,
+        "profit_factor": 1.15
+      },
+      {
+        "state": "PUT_UNWINDING",
+        "n": 10,
+        "win_rate_pct": 10.0,
+        "mean_net_rs": -360.4,
+        "total_net_rs": -3604.4,
+        "profit_factor": 0.46
+      },
+      {
+        "state": "PUT_WRITING",
+        "n": 18,
+        "win_rate_pct": 44.4,
+        "mean_net_rs": 76.4,
+        "total_net_rs": 1375.7,
+        "profit_factor": 1.82
+      },
+      {
+        "state": "PUT_SHORT_COVERING",
+        "n": 12,
+        "win_rate_pct": 16.7,
+        "mean_net_rs": -689.3,
+        "total_net_rs": -8271.5,
+        "profit_factor": 0.25
+      }
+    ],
+    "pe_by_composite": [
+      {
+        "state": "BULLISH",
+        "n": 6,
+        "win_rate_pct": 16.7,
+        "mean_net_rs": -1398.2,
+        "total_net_rs": -8389.5,
+        "profit_factor": 0.03
+      },
+      {
+        "state": "BEARISH",
+        "n": 6,
+        "win_rate_pct": 50.0,
+        "mean_net_rs": -174.2,
+        "total_net_rs": -1045.2,
+        "profit_factor": 0.87
+      },
+      {
+        "state": "STRONG_BEARISH",
+        "n": 4,
+        "win_rate_pct": 25.0,
+        "mean_net_rs": -366.8,
+        "total_net_rs": -1467.2,
+        "profit_factor": 0.42
+      }
+    ],
+    "pe_by_level": [
+      {
+        "state": "STRONG_BULLISH",
+        "n": 3,
+        "win_rate_pct": 66.7,
+        "mean_net_rs": -478.1,
+        "total_net_rs": -1434.3,
+        "profit_factor": 0.31
+      },
+      {
+        "state": "BULLISH",
+        "n": 3,
+        "win_rate_pct": 33.3,
+        "mean_net_rs": -1268.1,
+        "total_net_rs": -3804.4,
+        "profit_factor": 0.28
+      },
+      {
+        "state": "BEARISH",
+        "n": 3,
+        "win_rate_pct": 33.3,
+        "mean_net_rs": -573.7,
+        "total_net_rs": -1721.1,
+        "profit_factor": 0.36
+      },
+      {
+        "state": "STRONG_BEARISH",
+        "n": 7,
+        "win_rate_pct": 14.3,
+        "mean_net_rs": -563.1,
+        "total_net_rs": -3942.0,
+        "profit_factor": 0.19
+      }
+    ],
+    "pe_by_put_buildup": [
+      {
+        "state": "PUT_BUYING",
+        "n": 3,
+        "win_rate_pct": 33.3,
+        "mean_net_rs": -499.9,
+        "total_net_rs": -1499.7,
+        "profit_factor": 0.41
+      },
+      {
+        "state": "UNKNOWN",
+        "n": 7,
+        "win_rate_pct": 42.9,
+        "mean_net_rs": -530.4,
+        "total_net_rs": -3712.6,
+        "profit_factor": 0.44
+      },
+      {
+        "state": "PUT_SHORT_COVERING",
+        "n": 1,
+        "win_rate_pct": 100.0,
+        "mean_net_rs": 179.5,
+        "total_net_rs": 179.5,
+        "profit_factor": null
+      },
+      {
+        "state": "PUT_WRITING",
+        "n": 5,
+        "win_rate_pct": 0.0,
+        "mean_net_rs": -1173.8,
+        "total_net_rs": -5869.1,
+        "profit_factor": 0.0
+      }
+    ]
+  },
+  "conclusion": {
+    "macro_composite_edge": false,
+    "ce_bullish_win_rate": 27.1,
+    "ce_bearish_win_rate": 28.6,
+    "put_writing_win_rate": 44.4,
+    "call_writing_win_rate": 15.4,
+    "recommendation": "Do not add macro PE-CE filter. Micro 3m CALL_WRITING veto is the only candidate with positive edge."
+  }
+}
