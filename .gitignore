@@ -119,3 +119,4 @@ ict_smc_app/kronos/.venv/
 ict_smc_app/kronos/*.log
 ict_smc_app/kronos/.kronos_*.pid
 ict_smc_app/backend/ict_desk.log
+.aider*
