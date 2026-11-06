@@ -613,6 +613,60 @@ def desk_confluence_endpoint(
     return board
 
 
+@app.get("/api/desk/volume-surge")
+def desk_volume_surge_endpoint(
+    tf: int = Query(15, ge=1, le=60, description="Slot size in minutes"),
+    lookback: int = Query(20, ge=3, le=120, description="Baseline sessions"),
+    combined: bool = Query(True, description="Sum front + next month futures"),
+):
+    """NIFTY futures volume surge, slot-normalised against the same clock-time
+    slot on prior sessions — NOT volume/SMA, which on a U-shaped intraday volume
+    curve mostly measures what time of day it is.
+
+    Shared by 8600 and 8510 so both read one number from one source.
+
+    This was the only measure of seventeen in backtest_ma_geometry.py with a
+    positive directional advantage. It is NOT yet a tradeable edge: see the
+    `_evidence` field in the response.
+    """
+    import sqlite3 as _sq
+    from ..engine import volume_store
+    from .. import config as _config
+    try:
+        conn = _sq.connect("file:{}?mode=ro".format(_config.DB_PATH), uri=True)
+    except _sq.Error as exc:
+        return {"ok": False, "reason": "database unavailable: {}".format(exc)}
+    try:
+        return volume_store.current_surge(
+            conn, tf_minutes=tf, lookback_sessions=lookback, use_combined=combined)
+    finally:
+        conn.close()
+
+
+@app.get("/api/desk/volume-coverage")
+def desk_volume_coverage_endpoint(sec_id: str = Query("FUT")):
+    """Which futures-volume sessions we hold and how complete each one is.
+
+    Futures volume cannot be backfilled — Dhan purges expired contracts from the
+    scrip master — so every recorded session is irreplaceable and the gaps are
+    permanent. Reported honestly rather than averaged over.
+    """
+    import sqlite3 as _sq
+    from ..engine import volume_store
+    from .. import config as _config
+    try:
+        conn = _sq.connect("file:{}?mode=ro".format(_config.DB_PATH), uri=True)
+    except _sq.Error as exc:
+        return {"ok": False, "reason": "database unavailable: {}".format(exc)}
+    try:
+        cov = volume_store.coverage_from_rows(volume_store.load_rows(conn, sec_id))
+        cov["ok"] = True
+        cov["sec_id"] = sec_id
+        return cov
+    finally:
+        conn.close()
+
+
 @app.get("/api/desk/confluence/table", response_class=PlainTextResponse)
 def desk_confluence_table_endpoint(watchlist: bool = Query(False)):
     """The same board as plain text, for the console and for pasting into chat."""
