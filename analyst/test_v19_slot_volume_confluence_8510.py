@@ -214,3 +214,11 @@ def test_closed_candle_confluence_context_and_radar_reuse(tmp_path,cfg,monkeypat
     assert result['pillar_2_anti_chop_regime'] is True
     assert result['pillar_5_pocket_execution'] is True
     assert result['score']==5
+
+
+def test_ui_source_and_atm_labels():
+    html=(ROOT/'Algorithmic_Trading_Workspace_8510.html').read_text()
+    assert 'DHAN OI PCR:' in html
+    assert 'Rounded to 100' in html
+    assert 'STOCKMOJO PCR:' not in html
+    assert 'Rounded to 50' not in html

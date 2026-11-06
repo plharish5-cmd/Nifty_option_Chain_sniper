@@ -547,7 +547,7 @@
                 <span class="ribbon-val" id="ribbonVix">--</span>
             </div>
             <div class="ribbon-item">
-                <span class="ribbon-label">STOCKMOJO PCR:</span>
+                <span class="ribbon-label">DHAN OI PCR:</span>
                 <span class="ribbon-val" id="ribbonPcr">--</span>
             </div>
             <div class="ribbon-item">
@@ -760,7 +760,7 @@
             <!-- Dynamic ATM Strike Widget (Main Page) -->
             <div class="atm-widget">
                 <div>
-                    <div class="atm-title">Dynamic ATM Strike (Rounded to 50)</div>
+                    <div class="atm-title">Dynamic ATM Strike (Rounded to 100)</div>
                     <div class="atm-highlight" id="atmStrikeDisplay">23,950</div>
                     <div style="font-size:11.5px; color:var(--text-dim); margin-top:2px;">Nearest Strike to Spot NIFTY</div>
                 </div>
@@ -3247,7 +3247,7 @@
                     const p5 = document.getElementById("pillGoldilocksSeparation_tab5");
                     [p1, p5].forEach(el => {
                         if (el) {
-                            el.textContent = pillHtml; el.title = vsr.tooltip || "";
+                            el.textContent = pillHtml; el.title = gold.badge || gold.badge_text || "";
                             const reg = String(gold.regime || "").toUpperCase();
                             if (reg.includes("GOLDILOCKS")) {
                                 el.style.background = "rgba(16, 185, 129, 0.15)";
