@@ -1,0 +1,2437 @@
+{
+  "mode": "ADVISORY_ONLY",
+  "parameters": {
+    "enabled": true,
+    "execution_action_mode": "ADVISORY_ONLY",
+    "continuation_entry_enabled": false,
+    "4ema_touch_tolerance_pts": 8.0,
+    "max_continuation_entries_per_day": 2,
+    "two_stage_switch_pts": 50.0,
+    "premium_switch_pts": 30.0,
+    "candle_buffer_pts": 5.0,
+    "candle_atr_buffer": 0.15,
+    "wide_spread_pts": 50.0,
+    "climax_move_pts": 120.0,
+    "catastrophe_pts": 15.0,
+    "ema8_buffer_pts": 10.0,
+    "ema4_buffer_pts": 5.0,
+    "chandelier_atr": 1.5,
+    "swing_buffer_pts": 5.0,
+    "premium_buffer_pts": 5.0,
+    "initial_spot_sl_pts": 20.0,
+    "rvol_threshold": 1.25,
+    "wide_separation_atr": 0.26,
+    "chop_separation_atr": 0.13,
+    "confluence_chop_max": 2,
+    "alignment_bars": 3,
+    "stage2_tolerance_pts": 20.0,
+    "stage2_band_slope_pts": 1.8,
+    "stage2_bb_width_pts": 60.0,
+    "sessions": 40,
+    "holdout_sessions": 10,
+    "gate_p50": 50.0,
+    "gate_option_p50": 30.0,
+    "gate_p75": 90.0,
+    "gate_trend_p50": 100.0,
+    "gate_fail_tail": 80.0,
+    "low_capture_fraction": 0.5,
+    "trend_body_pts": 150.0,
+    "trend_range_pts": 250.0,
+    "normal_delta_move_pts": 60.0,
+    "large_delta_move_pts": 100.0,
+    "entry_snapshot_wait_seconds": 60,
+    "refresh_seconds": 30,
+    "bootstrap_trials": 500,
+    "random_seed": 192,
+    "restrict_trailing_by_dte": [],
+    "_evidence": "Pre-registered defaults; advisory only. Read evidence report; missing premium prices are not estimated."
+  },
+  "n_sessions": 40,
+  "sessions": [
+    "2026-09-09",
+    "2026-09-10",
+    "2026-09-11",
+    "2026-09-15",
+    "2026-09-16",
+    "2026-09-17",
+    "2026-09-18",
+    "2026-09-21",
+    "2026-09-22",
+    "2026-09-23",
+    "2026-09-24",
+    "2026-09-25",
+    "2026-09-28",
+    "2026-09-29",
+    "2026-09-30",
+    "2026-10-01",
+    "2026-10-05",
+    "2026-10-06",
+    "2026-10-07",
+    "2026-10-08",
+    "2026-10-09",
+    "2026-10-12",
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-15",
+    "2026-10-16",
+    "2026-10-19",
+    "2026-10-21",
+    "2026-10-22",
+    "2026-10-23",
+    "2026-10-26",
+    "2026-10-27",
+    "2026-10-28",
+    "2026-10-29",
+    "2026-10-30",
+    "2026-11-02",
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06"
+  ],
+  "chain_sessions": 19,
+  "dynamic_current_master_lot": 65,
+  "gate": {
+    "passes": false,
+    "all_risk_bounded_eod": {
+      "n": 321,
+      "p25": 5.2,
+      "p50": 22.85,
+      "p75": 60.15,
+      "p90": 111.85,
+      "max": 305.85
+    },
+    "trend_risk_bounded_eod": {
+      "n": 140,
+      "p25": 5.888,
+      "p50": 30.475,
+      "p75": 101.15,
+      "p90": 165.38,
+      "max": 305.85
+    },
+    "verdict": "FAILED_GATE_NO_TRAILING_BUILD",
+    "limitations": "Risk-bounded horizon still stops at initial SL / closed EMA8 breach; unrestricted EOD is reported separately. Headroom is not expectancy. Sparse option observations understate true MFE."
+  },
+  "mfe_summary": [
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "ALL",
+      "horizon": "in_trade",
+      "n": 37,
+      "p25": 8.55,
+      "p50": 15.35,
+      "p75": 37.8,
+      "p90": 63.93,
+      "max": 85.3,
+      "option_observed": {
+        "n": 14,
+        "p25": 9.788,
+        "p50": 331.5,
+        "p75": 355.062,
+        "p90": 440.8,
+        "max": 440.9
+      },
+      "captured_fraction_proxy": {
+        "n": 37,
+        "p25": -0.803,
+        "p50": 0.13,
+        "p75": 0.59,
+        "p90": 0.894,
+        "max": 1.0
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "ALL",
+      "horizon": "60m",
+      "n": 221,
+      "p25": 0.0,
+      "p50": 5.55,
+      "p75": 31.1,
+      "p90": 150.15,
+      "max": 191.45,
+      "option_observed": {
+        "n": 13,
+        "p25": 0.0,
+        "p50": 16.35,
+        "p75": 364.85,
+        "p90": 440.8,
+        "max": 440.9
+      },
+      "captured_fraction_proxy": {
+        "n": 37,
+        "p25": -0.491,
+        "p50": 0.103,
+        "p75": 0.375,
+        "p90": 0.712,
+        "max": 1.244
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "ALL",
+      "horizon": "120m",
+      "n": 221,
+      "p25": 0.0,
+      "p50": 5.55,
+      "p75": 31.1,
+      "p90": 150.15,
+      "max": 252.95,
+      "option_observed": {
+        "n": 13,
+        "p25": 0.0,
+        "p50": 16.35,
+        "p75": 364.85,
+        "p90": 505.38,
+        "max": 540.7
+      },
+      "captured_fraction_proxy": {
+        "n": 37,
+        "p25": -0.491,
+        "p50": 0.103,
+        "p75": 0.297,
+        "p90": 0.41,
+        "max": 0.813
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "ALL",
+      "horizon": "eod",
+      "n": 221,
+      "p25": 0.0,
+      "p50": 5.55,
+      "p75": 31.1,
+      "p90": 150.15,
+      "max": 362.9,
+      "option_observed": {
+        "n": 13,
+        "p25": 0.0,
+        "p50": 16.35,
+        "p75": 364.85,
+        "p90": 602.7,
+        "max": 602.8
+      },
+      "captured_fraction_proxy": {
+        "n": 37,
+        "p25": -0.491,
+        "p50": 0.103,
+        "p75": 0.265,
+        "p90": 0.385,
+        "max": 0.813
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "ALL",
+      "horizon": "unrestricted_eod",
+      "n": 221,
+      "p25": 150.15,
+      "p50": 297.55,
+      "p75": 411.65,
+      "p90": 411.65,
+      "max": 443.05,
+      "option_observed": {
+        "n": 34,
+        "p25": 580.575,
+        "p50": 602.7,
+        "p75": 602.8,
+        "p90": 602.835,
+        "max": 602.85
+      },
+      "captured_fraction_proxy": {
+        "n": 37,
+        "p25": -0.062,
+        "p50": 0.007,
+        "p75": 0.141,
+        "p90": 0.208,
+        "max": 0.375
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "TREND",
+      "horizon": "in_trade",
+      "n": 37,
+      "p25": 8.55,
+      "p50": 15.35,
+      "p75": 37.8,
+      "p90": 63.93,
+      "max": 85.3,
+      "option_observed": {
+        "n": 14,
+        "p25": 9.788,
+        "p50": 331.5,
+        "p75": 355.062,
+        "p90": 440.8,
+        "max": 440.9
+      },
+      "captured_fraction_proxy": {
+        "n": 37,
+        "p25": -0.803,
+        "p50": 0.13,
+        "p75": 0.59,
+        "p90": 0.894,
+        "max": 1.0
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "TREND",
+      "horizon": "60m",
+      "n": 221,
+      "p25": 0.0,
+      "p50": 5.55,
+      "p75": 31.1,
+      "p90": 150.15,
+      "max": 191.45,
+      "option_observed": {
+        "n": 13,
+        "p25": 0.0,
+        "p50": 16.35,
+        "p75": 364.85,
+        "p90": 440.8,
+        "max": 440.9
+      },
+      "captured_fraction_proxy": {
+        "n": 37,
+        "p25": -0.491,
+        "p50": 0.103,
+        "p75": 0.375,
+        "p90": 0.712,
+        "max": 1.244
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "TREND",
+      "horizon": "120m",
+      "n": 221,
+      "p25": 0.0,
+      "p50": 5.55,
+      "p75": 31.1,
+      "p90": 150.15,
+      "max": 252.95,
+      "option_observed": {
+        "n": 13,
+        "p25": 0.0,
+        "p50": 16.35,
+        "p75": 364.85,
+        "p90": 505.38,
+        "max": 540.7
+      },
+      "captured_fraction_proxy": {
+        "n": 37,
+        "p25": -0.491,
+        "p50": 0.103,
+        "p75": 0.297,
+        "p90": 0.41,
+        "max": 0.813
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "TREND",
+      "horizon": "eod",
+      "n": 221,
+      "p25": 0.0,
+      "p50": 5.55,
+      "p75": 31.1,
+      "p90": 150.15,
+      "max": 362.9,
+      "option_observed": {
+        "n": 13,
+        "p25": 0.0,
+        "p50": 16.35,
+        "p75": 364.85,
+        "p90": 602.7,
+        "max": 602.8
+      },
+      "captured_fraction_proxy": {
+        "n": 37,
+        "p25": -0.491,
+        "p50": 0.103,
+        "p75": 0.265,
+        "p90": 0.385,
+        "max": 0.813
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "TREND",
+      "horizon": "unrestricted_eod",
+      "n": 221,
+      "p25": 150.15,
+      "p50": 297.55,
+      "p75": 411.65,
+      "p90": 411.65,
+      "max": 443.05,
+      "option_observed": {
+        "n": 34,
+        "p25": 580.575,
+        "p50": 602.7,
+        "p75": 602.8,
+        "p90": 602.835,
+        "max": 602.85
+      },
+      "captured_fraction_proxy": {
+        "n": 37,
+        "p25": -0.062,
+        "p50": 0.007,
+        "p75": 0.141,
+        "p90": 0.208,
+        "max": 0.375
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "CHOP",
+      "horizon": "in_trade",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "CHOP",
+      "horizon": "60m",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "CHOP",
+      "horizon": "120m",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "CHOP",
+      "horizon": "eod",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "RECORDED_POSITION",
+      "segment": "CHOP",
+      "horizon": "unrestricted_eod",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "ALL",
+      "horizon": "in_trade",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "ALL",
+      "horizon": "60m",
+      "n": 176,
+      "p25": 4.75,
+      "p50": 18.075,
+      "p75": 40.75,
+      "p90": 62.8,
+      "max": 169.05,
+      "option_observed": {
+        "n": 36,
+        "p25": 0.0,
+        "p50": 5.15,
+        "p75": 33.3,
+        "p90": 41.375,
+        "max": 70.25
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "ALL",
+      "horizon": "120m",
+      "n": 176,
+      "p25": 4.75,
+      "p50": 18.075,
+      "p75": 48.938,
+      "p90": 82.475,
+      "max": 209.5,
+      "option_observed": {
+        "n": 36,
+        "p25": 0.0,
+        "p50": 5.15,
+        "p75": 38.913,
+        "p90": 53.8,
+        "max": 70.25
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "ALL",
+      "horizon": "eod",
+      "n": 176,
+      "p25": 4.75,
+      "p50": 18.075,
+      "p75": 55.475,
+      "p90": 100.25,
+      "max": 305.85,
+      "option_observed": {
+        "n": 36,
+        "p25": 0.0,
+        "p50": 5.15,
+        "p75": 38.913,
+        "p90": 61.85,
+        "max": 180.35
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "ALL",
+      "horizon": "unrestricted_eod",
+      "n": 176,
+      "p25": 19.85,
+      "p50": 56.025,
+      "p75": 99.263,
+      "p90": 168.525,
+      "max": 331.1,
+      "option_observed": {
+        "n": 37,
+        "p25": 13.7,
+        "p50": 40.9,
+        "p75": 74.15,
+        "p90": 130.8,
+        "max": 262.45
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "TREND",
+      "horizon": "in_trade",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "TREND",
+      "horizon": "60m",
+      "n": 78,
+      "p25": 5.25,
+      "p50": 23.15,
+      "p75": 53.775,
+      "p90": 70.715,
+      "max": 169.05,
+      "option_observed": {
+        "n": 23,
+        "p25": 0.0,
+        "p50": 23.15,
+        "p75": 38.075,
+        "p90": 41.66,
+        "max": 55.45
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "TREND",
+      "horizon": "120m",
+      "n": 78,
+      "p25": 5.25,
+      "p50": 29.35,
+      "p75": 72.613,
+      "p90": 103.43,
+      "max": 209.5,
+      "option_observed": {
+        "n": 23,
+        "p25": 0.0,
+        "p50": 29.95,
+        "p75": 43.475,
+        "p90": 54.79,
+        "max": 63.3
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "TREND",
+      "horizon": "eod",
+      "n": 78,
+      "p25": 5.25,
+      "p50": 29.35,
+      "p75": 79.45,
+      "p90": 131.09,
+      "max": 305.85,
+      "option_observed": {
+        "n": 23,
+        "p25": 0.0,
+        "p50": 29.95,
+        "p75": 46.525,
+        "p90": 63.11,
+        "max": 180.35
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "TREND",
+      "horizon": "unrestricted_eod",
+      "n": 78,
+      "p25": 47.512,
+      "p50": 96.55,
+      "p75": 129.813,
+      "p90": 216.0,
+      "max": 331.1,
+      "option_observed": {
+        "n": 24,
+        "p25": 32.825,
+        "p50": 61.85,
+        "p75": 92.688,
+        "p90": 176.69,
+        "max": 262.45
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "CHOP",
+      "horizon": "in_trade",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "CHOP",
+      "horizon": "60m",
+      "n": 98,
+      "p25": 4.1,
+      "p50": 13.575,
+      "p75": 34.825,
+      "p90": 48.625,
+      "max": 114.5,
+      "option_observed": {
+        "n": 13,
+        "p25": 0.0,
+        "p50": 0.0,
+        "p75": 0.0,
+        "p90": 32.78,
+        "max": 70.25
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "CHOP",
+      "horizon": "120m",
+      "n": 98,
+      "p25": 4.1,
+      "p50": 13.575,
+      "p75": 35.95,
+      "p90": 55.61,
+      "max": 182.8,
+      "option_observed": {
+        "n": 13,
+        "p25": 0.0,
+        "p50": 0.0,
+        "p75": 0.0,
+        "p90": 32.78,
+        "max": 70.25
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "CHOP",
+      "horizon": "eod",
+      "n": 98,
+      "p25": 4.1,
+      "p50": 13.575,
+      "p75": 37.575,
+      "p90": 61.19,
+      "max": 190.4,
+      "option_observed": {
+        "n": 13,
+        "p25": 0.0,
+        "p50": 0.0,
+        "p75": 0.0,
+        "p90": 32.78,
+        "max": 70.25
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2",
+      "segment": "CHOP",
+      "horizon": "unrestricted_eod",
+      "n": 98,
+      "p25": 13.462,
+      "p50": 35.55,
+      "p75": 68.475,
+      "p90": 84.95,
+      "max": 190.4,
+      "option_observed": {
+        "n": 13,
+        "p25": 4.15,
+        "p50": 13.7,
+        "p75": 69.75,
+        "p90": 77.49,
+        "max": 101.5
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "ALL",
+      "horizon": "in_trade",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "ALL",
+      "horizon": "60m",
+      "n": 49,
+      "p25": 4.25,
+      "p50": 16.15,
+      "p75": 35.3,
+      "p90": 93.32,
+      "max": 160.15,
+      "option_observed": {
+        "n": 10,
+        "p25": 0.0,
+        "p50": 5.025,
+        "p75": 10.45,
+        "p90": 23.22,
+        "max": 85.95
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "ALL",
+      "horizon": "120m",
+      "n": 49,
+      "p25": 4.25,
+      "p50": 16.15,
+      "p75": 45.45,
+      "p90": 110.52,
+      "max": 216.5,
+      "option_observed": {
+        "n": 10,
+        "p25": 0.0,
+        "p50": 5.025,
+        "p75": 16.263,
+        "p90": 50.04,
+        "max": 85.95
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "ALL",
+      "horizon": "eod",
+      "n": 49,
+      "p25": 4.25,
+      "p50": 16.15,
+      "p75": 45.45,
+      "p90": 150.82,
+      "max": 260.25,
+      "option_observed": {
+        "n": 10,
+        "p25": 0.0,
+        "p50": 5.025,
+        "p75": 16.263,
+        "p90": 66.15,
+        "max": 85.95
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "ALL",
+      "horizon": "unrestricted_eod",
+      "n": 49,
+      "p25": 24.05,
+      "p50": 65.05,
+      "p75": 120.6,
+      "p90": 198.02,
+      "max": 270.75,
+      "option_observed": {
+        "n": 10,
+        "p25": 7.638,
+        "p50": 48.475,
+        "p75": 79.55,
+        "p90": 102.01,
+        "max": 246.55
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "TREND",
+      "horizon": "in_trade",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "TREND",
+      "horizon": "60m",
+      "n": 27,
+      "p25": 5.725,
+      "p50": 25.1,
+      "p75": 37.85,
+      "p90": 109.36,
+      "max": 127.15,
+      "option_observed": {
+        "n": 6,
+        "p25": 2.013,
+        "p50": 9.65,
+        "p75": 15.0,
+        "p90": 51.1,
+        "max": 85.95
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "TREND",
+      "horizon": "120m",
+      "n": 27,
+      "p25": 5.725,
+      "p50": 25.1,
+      "p75": 76.0,
+      "p90": 126.66,
+      "max": 185.85,
+      "option_observed": {
+        "n": 6,
+        "p25": 2.013,
+        "p50": 13.525,
+        "p75": 39.287,
+        "p90": 66.0,
+        "max": 85.95
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "TREND",
+      "horizon": "eod",
+      "n": 27,
+      "p25": 5.725,
+      "p50": 25.1,
+      "p75": 104.625,
+      "p90": 165.58,
+      "max": 260.25,
+      "option_observed": {
+        "n": 6,
+        "p25": 2.013,
+        "p50": 13.525,
+        "p75": 52.712,
+        "p90": 74.95,
+        "max": 85.95
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "TREND",
+      "horizon": "unrestricted_eod",
+      "n": 27,
+      "p25": 74.5,
+      "p50": 107.8,
+      "p75": 168.0,
+      "p90": 253.51,
+      "max": 270.75,
+      "option_observed": {
+        "n": 6,
+        "p25": 56.3,
+        "p50": 74.35,
+        "p75": 85.65,
+        "p90": 166.25,
+        "max": 246.55
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "CHOP",
+      "horizon": "in_trade",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "CHOP",
+      "horizon": "60m",
+      "n": 22,
+      "p25": 4.213,
+      "p50": 8.75,
+      "p75": 25.063,
+      "p90": 38.82,
+      "max": 160.15,
+      "option_observed": {
+        "n": 4,
+        "p25": 0.0,
+        "p50": 1.275,
+        "p75": 3.787,
+        "p90": 6.015,
+        "max": 7.5
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "CHOP",
+      "horizon": "120m",
+      "n": 22,
+      "p25": 4.213,
+      "p50": 8.75,
+      "p75": 29.038,
+      "p90": 38.82,
+      "max": 216.5,
+      "option_observed": {
+        "n": 4,
+        "p25": 0.0,
+        "p50": 1.275,
+        "p75": 3.787,
+        "p90": 6.015,
+        "max": 7.5
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "CHOP",
+      "horizon": "eod",
+      "n": 22,
+      "p25": 4.213,
+      "p50": 8.75,
+      "p75": 29.038,
+      "p90": 38.82,
+      "max": 216.5,
+      "option_observed": {
+        "n": 4,
+        "p25": 0.0,
+        "p50": 1.275,
+        "p75": 3.787,
+        "p90": 6.015,
+        "max": 7.5
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_2B",
+      "segment": "CHOP",
+      "horizon": "unrestricted_eod",
+      "n": 22,
+      "p25": 10.1,
+      "p50": 24.2,
+      "p75": 38.475,
+      "p90": 102.14,
+      "max": 216.5,
+      "option_observed": {
+        "n": 4,
+        "p25": 5.4,
+        "p50": 6.925,
+        "p75": 16.425,
+        "p90": 32.49,
+        "max": 43.2
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "ALL",
+      "horizon": "in_trade",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "ALL",
+      "horizon": "60m",
+      "n": 145,
+      "p25": 6.1,
+      "p50": 27.8,
+      "p75": 48.3,
+      "p90": 68.7,
+      "max": 182.3,
+      "option_observed": {
+        "n": 13,
+        "p25": 0.0,
+        "p50": 13.75,
+        "p75": 23.85,
+        "p90": 31.09,
+        "max": 64.85
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "ALL",
+      "horizon": "120m",
+      "n": 145,
+      "p25": 6.1,
+      "p50": 28.15,
+      "p75": 61.8,
+      "p90": 120.4,
+      "max": 253.85,
+      "option_observed": {
+        "n": 13,
+        "p25": 0.0,
+        "p50": 15.75,
+        "p75": 33.35,
+        "p90": 85.94,
+        "max": 127.1
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "ALL",
+      "horizon": "eod",
+      "n": 145,
+      "p25": 6.1,
+      "p50": 28.15,
+      "p75": 66.95,
+      "p90": 142.45,
+      "max": 260.25,
+      "option_observed": {
+        "n": 13,
+        "p25": 0.0,
+        "p50": 15.75,
+        "p75": 33.35,
+        "p90": 87.1,
+        "max": 127.1
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "ALL",
+      "horizon": "unrestricted_eod",
+      "n": 145,
+      "p25": 31.7,
+      "p50": 60.2,
+      "p75": 111.25,
+      "p90": 182.93,
+      "max": 357.35,
+      "option_observed": {
+        "n": 13,
+        "p25": 13.3,
+        "p50": 23.85,
+        "p75": 65.0,
+        "p90": 95.7,
+        "max": 127.1
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "TREND",
+      "horizon": "in_trade",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "TREND",
+      "horizon": "60m",
+      "n": 62,
+      "p25": 6.5,
+      "p50": 31.675,
+      "p75": 60.687,
+      "p90": 85.275,
+      "max": 182.3,
+      "option_observed": {
+        "n": 5,
+        "p25": 12.1,
+        "p50": 25.25,
+        "p75": 32.55,
+        "p90": 51.93,
+        "max": 64.85
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "TREND",
+      "horizon": "120m",
+      "n": 62,
+      "p25": 6.5,
+      "p50": 39.575,
+      "p75": 106.337,
+      "p90": 149.185,
+      "max": 193.1,
+      "option_observed": {
+        "n": 5,
+        "p25": 13.5,
+        "p50": 33.35,
+        "p75": 98.1,
+        "p90": 115.5,
+        "max": 127.1
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "TREND",
+      "horizon": "eod",
+      "n": 62,
+      "p25": 6.5,
+      "p50": 39.575,
+      "p75": 128.412,
+      "p90": 181.085,
+      "max": 260.25,
+      "option_observed": {
+        "n": 5,
+        "p25": 13.5,
+        "p50": 33.35,
+        "p75": 99.55,
+        "p90": 116.08,
+        "max": 127.1
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "TREND",
+      "horizon": "unrestricted_eod",
+      "n": 62,
+      "p25": 48.188,
+      "p50": 79.025,
+      "p75": 158.775,
+      "p90": 206.62,
+      "max": 323.65,
+      "option_observed": {
+        "n": 5,
+        "p25": 13.5,
+        "p50": 33.35,
+        "p75": 99.55,
+        "p90": 116.08,
+        "max": 127.1
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "CHOP",
+      "horizon": "in_trade",
+      "n": 0,
+      "option_observed": {
+        "n": 0
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "CHOP",
+      "horizon": "60m",
+      "n": 83,
+      "p25": 6.85,
+      "p50": 20.75,
+      "p75": 45.175,
+      "p90": 54.1,
+      "max": 169.85,
+      "option_observed": {
+        "n": 8,
+        "p25": 0.0,
+        "p50": 6.875,
+        "p75": 16.188,
+        "p90": 19.405,
+        "max": 23.85
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "CHOP",
+      "horizon": "120m",
+      "n": 83,
+      "p25": 6.85,
+      "p50": 20.75,
+      "p75": 49.925,
+      "p90": 67.99,
+      "max": 253.85,
+      "option_observed": {
+        "n": 8,
+        "p25": 0.0,
+        "p50": 7.875,
+        "p75": 19.087,
+        "p90": 27.885,
+        "max": 37.3
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "CHOP",
+      "horizon": "eod",
+      "n": 83,
+      "p25": 6.85,
+      "p50": 20.75,
+      "p75": 50.475,
+      "p90": 72.19,
+      "max": 253.85,
+      "option_observed": {
+        "n": 8,
+        "p25": 0.0,
+        "p50": 7.875,
+        "p75": 19.087,
+        "p90": 27.885,
+        "max": 37.3
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    },
+    {
+      "cohort": "STAGE_3",
+      "segment": "CHOP",
+      "horizon": "unrestricted_eod",
+      "n": 83,
+      "p25": 24.025,
+      "p50": 47.55,
+      "p75": 75.4,
+      "p90": 111.88,
+      "max": 357.35,
+      "option_observed": {
+        "n": 8,
+        "p25": 9.975,
+        "p50": 20.675,
+        "p75": 44.225,
+        "p90": 69.59,
+        "max": 80.3
+      },
+      "captured_fraction_proxy": {
+        "n": 0
+      }
+    }
+  ],
+  "position_exclusions": {
+    "no_regular_session_entry": 140
+  },
+  "detector": {
+    "truth_definition": "EOD abs(close-open)>=150 OR range>=250; labels used only for evaluation, never entry",
+    "true_positive_sessions": 20,
+    "trend_sessions": 21,
+    "true_positive_rate": 0.9523809523809523,
+    "false_positive_sessions": 15,
+    "chop_sessions": 19,
+    "false_positive_rate": 0.7894736842105263,
+    "fired_sessions": [
+      "2026-09-09",
+      "2026-09-11",
+      "2026-09-15",
+      "2026-09-17",
+      "2026-09-21",
+      "2026-09-22",
+      "2026-09-23",
+      "2026-09-24",
+      "2026-09-25",
+      "2026-09-28",
+      "2026-09-30",
+      "2026-10-01",
+      "2026-10-05",
+      "2026-10-06",
+      "2026-10-07",
+      "2026-10-08",
+      "2026-10-09",
+      "2026-10-12",
+      "2026-10-13",
+      "2026-10-14",
+      "2026-10-15",
+      "2026-10-16",
+      "2026-10-19",
+      "2026-10-21",
+      "2026-10-22",
+      "2026-10-23",
+      "2026-10-26",
+      "2026-10-27",
+      "2026-10-28",
+      "2026-10-29",
+      "2026-10-30",
+      "2026-11-02",
+      "2026-11-03",
+      "2026-11-05",
+      "2026-11-06"
+    ]
+  },
+  "stage2b_performance": [
+    {
+      "segment": "ALL",
+      "n_sessions": 40,
+      "candidates": 49,
+      "priced_trades": 10,
+      "unpriced": 39,
+      "sessions_with_prices": 7,
+      "net_per_trade": -32.23700000000008,
+      "total_net": -322.3700000000008,
+      "win_rate": 0.3,
+      "avg_win_net": 4364.066666666667,
+      "avg_loss_net": -1916.3671428571429,
+      "break_even_wr": 0.3051329256827952,
+      "worst_day_net": -4416.880000000003,
+      "session_mean_net_95_block_band": [
+        -2716.8816071428582,
+        3044.096821428571
+      ],
+      "gapped_trades": 10,
+      "premium_data_gap_minutes": 341
+    },
+    {
+      "segment": "TREND_BODY",
+      "n_sessions": 18,
+      "candidates": 27,
+      "priced_trades": 6,
+      "unpriced": 21,
+      "sessions_with_prices": 5,
+      "net_per_trade": 1285.5883333333338,
+      "total_net": 7713.5300000000025,
+      "win_rate": 0.5,
+      "avg_win_net": 4364.066666666667,
+      "avg_loss_net": -1792.8899999999994,
+      "break_even_wr": 0.2911974368289095,
+      "worst_day_net": -3414.6800000000003,
+      "session_mean_net_95_block_band": [
+        -1512.323999999999,
+        4887.874
+      ],
+      "gapped_trades": 6,
+      "premium_data_gap_minutes": 249
+    },
+    {
+      "segment": "CHOP_BODY",
+      "n_sessions": 22,
+      "candidates": 22,
+      "priced_trades": 4,
+      "unpriced": 18,
+      "sessions_with_prices": 2,
+      "net_per_trade": -2008.9750000000006,
+      "total_net": -8035.900000000002,
+      "win_rate": 0.0,
+      "avg_win_net": null,
+      "avg_loss_net": -2008.9750000000006,
+      "break_even_wr": null,
+      "worst_day_net": -4416.880000000003,
+      "session_mean_net_95_block_band": [
+        -4416.880000000003,
+        -3619.0199999999995
+      ],
+      "gapped_trades": 4,
+      "premium_data_gap_minutes": 92
+    },
+    {
+      "segment": "EXPIRY_OBSERVED",
+      "n_sessions": 4,
+      "candidates": 5,
+      "priced_trades": 0,
+      "unpriced": 5,
+      "sessions_with_prices": 0,
+      "net_per_trade": null,
+      "total_net": 0,
+      "win_rate": null,
+      "avg_win_net": null,
+      "avg_loss_net": null,
+      "break_even_wr": null,
+      "worst_day_net": null,
+      "session_mean_net_95_block_band": [],
+      "gapped_trades": 0,
+      "premium_data_gap_minutes": 0
+    },
+    {
+      "segment": "FIRST_30",
+      "n_sessions": 30,
+      "candidates": 36,
+      "priced_trades": 3,
+      "unpriced": 33,
+      "sessions_with_prices": 2,
+      "net_per_trade": -624.6633333333332,
+      "total_net": -1873.9899999999996,
+      "win_rate": 0.3333333333333333,
+      "avg_win_net": 1745.03,
+      "avg_loss_net": -1809.5099999999998,
+      "break_even_wr": 0.5090700906446403,
+      "worst_day_net": -3619.0199999999995,
+      "session_mean_net_95_block_band": [
+        -3619.0199999999995,
+        1745.03
+      ],
+      "gapped_trades": 3,
+      "premium_data_gap_minutes": 72
+    },
+    {
+      "segment": "LAST_10",
+      "n_sessions": 10,
+      "candidates": 13,
+      "priced_trades": 7,
+      "unpriced": 6,
+      "sessions_with_prices": 5,
+      "net_per_trade": 221.6600000000001,
+      "total_net": 1551.6200000000008,
+      "win_rate": 0.2857142857142857,
+      "avg_win_net": 5673.585,
+      "avg_loss_net": -1959.11,
+      "break_even_wr": 0.25667342924091685,
+      "worst_day_net": -4416.880000000003,
+      "session_mean_net_95_block_band": [
+        -3425.7281000000003,
+        4180.323099999999
+      ],
+      "gapped_trades": 7,
+      "premium_data_gap_minutes": 269
+    }
+  ],
+  "stage2b_trades": [
+    {
+      "ts": 1788940800,
+      "day": "2026-09-09",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23558.45,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1789117200,
+      "day": "2026-09-11",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23424.4,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1789450200,
+      "day": "2026-09-15",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23338.45,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1789451100,
+      "day": "2026-09-15",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23345.4,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1789629300,
+      "day": "2026-09-17",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23346.85,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1789973100,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23417.7,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1789978500,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23427.75,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1790055900,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23393.3,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1790142300,
+      "day": "2026-09-23",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23435.95,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1790232300,
+      "day": "2026-09-24",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23195.7,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1790328600,
+      "day": "2026-09-25",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23123.4,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1790572500,
+      "day": "2026-09-28",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22827.25,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1790577000,
+      "day": "2026-09-28",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22826.35,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1790752500,
+      "day": "2026-09-30",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22772.6,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1790838900,
+      "day": "2026-10-01",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22433.8,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1791266400,
+      "day": "2026-10-06",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22675.3,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1791362700,
+      "day": "2026-10-07",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22559.3,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1791437400,
+      "day": "2026-10-08",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22435.3,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1791438300,
+      "day": "2026-10-08",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22440.15,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1791522000,
+      "day": "2026-10-09",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22508.85,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1791522900,
+      "day": "2026-10-09",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22499.1,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1791782100,
+      "day": "2026-10-12",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22460.35,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1791882000,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22598.65,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1791965700,
+      "day": "2026-10-14",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22612.75,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1791967500,
+      "day": "2026-10-14",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22619.55,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1792043100,
+      "day": "2026-10-15",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22933.5,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1792044000,
+      "day": "2026-10-15",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22954.95,
+      "expiry": "2026-10-19",
+      "strike": 22900,
+      "entry": 157.55,
+      "status": "SNAPSHOT_PRICED",
+      "exit_ts": 1792048680,
+      "exit_premium": 185.55,
+      "exit_reason": "TRAIL_TARGET",
+      "gross": 1820.0,
+      "charges": 74.97,
+      "net": 1745.03,
+      "gaps": 63,
+      "hold_minutes": 78.0,
+      "premium_points": 28.0,
+      "fill_basis": "Recorded LTP; missing minutes unobserved, no spread/slippage estimate",
+      "spot_exit_minute_open": 22998.9,
+      "realised_delta": 0.6370875995449269,
+      "spot_move_abs": 43.95000000000073
+    },
+    {
+      "ts": 1792128600,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23109.65,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1792130400,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23117.5,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1792394100,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22928.65,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1792395900,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22922.1,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1792563300,
+      "day": "2026-10-21",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22830.0,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1792647900,
+      "day": "2026-10-22",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22776.4,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1792648800,
+      "day": "2026-10-22",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22758.8,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1792733400,
+      "day": "2026-10-23",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22426.35,
+      "expiry": "2026-10-27",
+      "strike": 22500,
+      "entry": 172.35,
+      "status": "SNAPSHOT_PRICED",
+      "exit_ts": 1792734180,
+      "exit_premium": 141.15,
+      "exit_reason": "INITIAL_OR_TRAIL_SL",
+      "gross": -2027.9999999999993,
+      "charges": 69.87,
+      "net": -2097.8699999999994,
+      "gaps": 7,
+      "hold_minutes": 13.0,
+      "premium_points": -31.19999999999999,
+      "fill_basis": "Recorded LTP; missing minutes unobserved, no spread/slippage estimate",
+      "spot_exit_minute_open": 22475.9,
+      "realised_delta": -0.629667003027208,
+      "spot_move_abs": 49.55000000000291
+    },
+    {
+      "ts": 1792734300,
+      "day": "2026-10-23",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22479.45,
+      "expiry": "2026-10-27",
+      "strike": 22600,
+      "entry": 197.75,
+      "status": "SNAPSHOT_PRICED",
+      "exit_ts": 1792734540,
+      "exit_premium": 175.5,
+      "exit_reason": "INITIAL_OR_TRAIL_SL",
+      "gross": -1446.25,
+      "charges": 74.9,
+      "net": -1521.15,
+      "gaps": 2,
+      "hold_minutes": 4.0,
+      "premium_points": -22.25,
+      "fill_basis": "Recorded LTP; missing minutes unobserved, no spread/slippage estimate",
+      "spot_exit_minute_open": 22507.85,
+      "realised_delta": -0.7834507042254123,
+      "spot_move_abs": 28.399999999997817
+    },
+    {
+      "ts": 1793005200,
+      "day": "2026-10-26",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22683.35,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1793164500,
+      "day": "2026-10-28",
+      "side": "PE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22538.85,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1793250000,
+      "day": "2026-10-29",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22849.05,
+      "expiry": "2026-11-09",
+      "strike": 22700,
+      "entry": 369.0,
+      "status": "SNAPSHOT_PRICED",
+      "exit_ts": 1793251560,
+      "exit_premium": 346.15,
+      "exit_reason": "INITIAL_OR_TRAIL_SL",
+      "gross": -1485.2500000000014,
+      "charges": 101.21,
+      "net": -1586.4600000000014,
+      "gaps": 19,
+      "hold_minutes": 26.0,
+      "premium_points": -22.850000000000023,
+      "fill_basis": "Recorded LTP; missing minutes unobserved, no spread/slippage estimate",
+      "spot_exit_minute_open": 22845.1,
+      "realised_delta": 5.784810126581219,
+      "spot_move_abs": 3.9500000000007276
+    },
+    {
+      "ts": 1793251800,
+      "day": "2026-10-29",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 22825.95,
+      "expiry": "2026-11-09",
+      "strike": 22700,
+      "entry": 338.0,
+      "status": "SNAPSHOT_PRICED",
+      "exit_ts": 1793258340,
+      "exit_premium": 311.35,
+      "exit_reason": "INITIAL_OR_TRAIL_SL",
+      "gross": -1732.2499999999986,
+      "charges": 95.97,
+      "net": -1828.2199999999987,
+      "gaps": 79,
+      "hold_minutes": 109.0,
+      "premium_points": -26.649999999999977,
+      "fill_basis": "Recorded LTP; missing minutes unobserved, no spread/slippage estimate",
+      "spot_exit_minute_open": 22811.8,
+      "realised_delta": 1.8833922261482146,
+      "spot_move_abs": 14.150000000001455
+    },
+    {
+      "ts": 1793341800,
+      "day": "2026-10-30",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23097.65,
+      "expiry": "2026-11-03",
+      "strike": 23000,
+      "entry": 178.05,
+      "status": "SNAPSHOT_PRICED",
+      "exit_ts": 1793345820,
+      "exit_premium": 155.0,
+      "exit_reason": "INITIAL_OR_TRAIL_SL",
+      "gross": -1498.2500000000007,
+      "charges": 71.76,
+      "net": -1570.0100000000007,
+      "gaps": 39,
+      "hold_minutes": 67.0,
+      "premium_points": -23.05000000000001,
+      "fill_basis": "Recorded LTP; missing minutes unobserved, no spread/slippage estimate",
+      "spot_exit_minute_open": 23085.55,
+      "realised_delta": 1.9049586776856078,
+      "spot_move_abs": 12.100000000002183
+    },
+    {
+      "ts": 1793343600,
+      "day": "2026-10-30",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23086.4,
+      "expiry": "2026-11-09",
+      "strike": 23000,
+      "entry": 275.6,
+      "status": "SNAPSHOT_PRICED",
+      "exit_ts": 1793347920,
+      "exit_premium": 233.1,
+      "exit_reason": "INITIAL_OR_TRAIL_SL",
+      "gross": -2762.500000000002,
+      "charges": 84.37,
+      "net": -2846.8700000000017,
+      "gaps": 44,
+      "hold_minutes": 72.0,
+      "premium_points": -42.50000000000003,
+      "fill_basis": "Recorded LTP; missing minutes unobserved, no spread/slippage estimate",
+      "spot_exit_minute_open": 23038.45,
+      "realised_delta": 0.8863399374348151,
+      "spot_move_abs": 47.95000000000073
+    },
+    {
+      "ts": 1793599200,
+      "day": "2026-11-02",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23333.5,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1793601900,
+      "day": "2026-11-02",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23335.55,
+      "expiry": "2026-11-09",
+      "strike": 23200,
+      "entry": 292.95,
+      "status": "SNAPSHOT_PRICED",
+      "exit_ts": 1793602980,
+      "exit_premium": 264.1,
+      "exit_reason": "INITIAL_OR_TRAIL_SL",
+      "gross": -1875.2499999999977,
+      "charges": 88.74,
+      "net": -1963.9899999999977,
+      "gaps": 13,
+      "hold_minutes": 18.0,
+      "premium_points": -28.849999999999966,
+      "fill_basis": "Recorded LTP; missing minutes unobserved, no spread/slippage estimate",
+      "spot_exit_minute_open": 23307.65,
+      "realised_delta": 1.0340501792115493,
+      "spot_move_abs": 27.899999999997817
+    },
+    {
+      "ts": 1793683800,
+      "day": "2026-11-03",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23662.6,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1793685600,
+      "day": "2026-11-03",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 23654.45,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1793864700,
+      "day": "2026-11-05",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 24472.1,
+      "expiry": "2026-11-17",
+      "strike": 24400,
+      "entry": 279.35,
+      "status": "SNAPSHOT_PRICED",
+      "exit_ts": 1793866980,
+      "exit_premium": 354.5,
+      "exit_reason": "TRAIL_TARGET",
+      "gross": 4884.749999999998,
+      "charges": 99.62,
+      "net": 4785.129999999998,
+      "gaps": 7,
+      "hold_minutes": 38.0,
+      "premium_points": 75.14999999999998,
+      "fill_basis": "Recorded LTP; missing minutes unobserved, no spread/slippage estimate",
+      "spot_exit_minute_open": 24563.85,
+      "realised_delta": 0.8190735694822886,
+      "spot_move_abs": 91.75
+    },
+    {
+      "ts": 1793949300,
+      "day": "2026-11-06",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 24697.6,
+      "status": "NO_EXACT_ENTRY_SNAPSHOT",
+      "net": null,
+      "gaps": 0
+    },
+    {
+      "ts": 1793950200,
+      "day": "2026-11-06",
+      "side": "CE",
+      "setup": "STAGE_2B",
+      "spot_entry": 24679.1,
+      "expiry": "2026-11-09",
+      "strike": 24600,
+      "entry": 199.45,
+      "status": "SNAPSHOT_PRICED",
+      "exit_ts": 1793954640,
+      "exit_premium": 301.8,
+      "exit_reason": "TRAIL_TARGET",
+      "gross": 6652.750000000002,
+      "charges": 90.71,
+      "net": 6562.040000000002,
+      "gaps": 68,
+      "hold_minutes": 74.0,
+      "premium_points": 102.35000000000002,
+      "fill_basis": "Recorded LTP; missing minutes unobserved, no spread/slippage estimate",
+      "spot_exit_minute_open": 24805.6,
+      "realised_delta": 0.8090909090909093,
+      "spot_move_abs": 126.5
+    }
+  ],
+  "delta_theta": {
+    "realised_delta": [
+      {
+        "side": "CE",
+        "move": "NORMAL_<60",
+        "n": 359,
+        "p25": 0.323,
+        "p50": 0.613,
+        "p75": 0.912,
+        "p90": 1.296,
+        "max": 33.5
+      },
+      {
+        "side": "CE",
+        "move": "LARGE_>=100",
+        "n": 94,
+        "p25": 0.528,
+        "p50": 0.66,
+        "p75": 0.745,
+        "p90": 0.886,
+        "max": 1.578
+      },
+      {
+        "side": "PE",
+        "move": "NORMAL_<60",
+        "n": 356,
+        "p25": -0.822,
+        "p50": -0.529,
+        "p75": -0.282,
+        "p90": 0.198,
+        "max": 64.0
+      },
+      {
+        "side": "PE",
+        "move": "LARGE_>=100",
+        "n": 96,
+        "p25": -0.669,
+        "p50": -0.565,
+        "p75": -0.466,
+        "p90": -0.396,
+        "max": 1.858
+      }
+    ],
+    "conditional_time_drift": [
+      {
+        "side": "CE",
+        "dte": "0DTE",
+        "hold_duration": "<30m",
+        "n": 17,
+        "time_drift_pts_per_hour": null,
+        "time_drift_rupees_per_hour": null
+      },
+      {
+        "side": "CE",
+        "dte": "0DTE",
+        "hold_duration": "30\u201390m",
+        "n": 10,
+        "time_drift_pts_per_hour": null,
+        "time_drift_rupees_per_hour": null
+      },
+      {
+        "side": "CE",
+        "dte": "0DTE",
+        "hold_duration": "90m+",
+        "n": 10,
+        "time_drift_pts_per_hour": null,
+        "time_drift_rupees_per_hour": null
+      },
+      {
+        "side": "CE",
+        "dte": "1DTE",
+        "hold_duration": "<30m",
+        "n": 6,
+        "time_drift_pts_per_hour": null,
+        "time_drift_rupees_per_hour": null
+      },
+      {
+        "side": "CE",
+        "dte": "1DTE",
+        "hold_duration": "30\u201390m",
+        "n": 6,
+        "time_drift_pts_per_hour": null,
+        "time_drift_rupees_per_hour": null
+      },
+      {
+        "side": "CE",
+        "dte": "1DTE",
+        "hold_duration": "90m+",
+        "n": 3,
+        "time_drift_pts_per_hour": null,
+        "time_drift_rupees_per_hour": null
+      },
+      {
+        "side": "CE",
+        "dte": "2+DTE",
+        "hold_duration": "<30m",
+        "n": 192,
+        "time_drift_pts_per_hour": 23.947708064196163,
+        "delta_coefficient": 0.5879843437424321,
+        "residual_std": 15.177871645905297,
+        "condition_number": 1824.3245074660042,
+        "mean_conditional_drift": 5.335127290002333,
+        "median_conditional_drift": 1.4341220716992253,
+        "time_drift_rupees_per_hour": 1556.6010241727506
+      },
+      {
+        "side": "CE",
+        "dte": "2+DTE",
+        "hold_duration": "30\u201390m",
+        "n": 172,
+        "time_drift_pts_per_hour": -92.21977069440283,
+        "delta_coefficient": 0.6130946389074898,
+        "residual_std": 16.90020313610405,
+        "condition_number": 4731.480786641332,
+        "mean_conditional_drift": 3.3942626074699747,
+        "median_conditional_drift": 0.9496160611226543,
+        "time_drift_rupees_per_hour": -5994.285095136183
+      },
+      {
+        "side": "CE",
+        "dte": "2+DTE",
+        "hold_duration": "90m+",
+        "n": 129,
+        "time_drift_pts_per_hour": 31.230159635502304,
+        "delta_coefficient": 0.6090581965488928,
+        "residual_std": 20.41689399090612,
+        "condition_number": 9914.227556716136,
+        "mean_conditional_drift": 3.3500942223375074,
+        "median_conditional_drift": 1.6214937766112396,
+        "time_drift_rupees_per_hour": 2029.9603763076498
+      },
+      {
+        "side": "PE",
+        "dte": "0DTE",
+        "hold_duration": "<30m",
+        "n": 17,
+        "time_drift_pts_per_hour": null,
+        "time_drift_rupees_per_hour": null
+      },
+      {
+        "side": "PE",
+        "dte": "0DTE",
+        "hold_duration": "30\u201390m",
+        "n": 10,
+        "time_drift_pts_per_hour": null,
+        "time_drift_rupees_per_hour": null
+      },
+      {
+        "side": "PE",
+        "dte": "0DTE",
+        "hold_duration": "90m+",
+        "n": 10,
+        "time_drift_pts_per_hour": null,
+        "time_drift_rupees_per_hour": null
+      },
+      {
+        "side": "PE",
+        "dte": "1DTE",
+        "hold_duration": "<30m",
+        "n": 6,
+        "time_drift_pts_per_hour": null,
+        "time_drift_rupees_per_hour": null
+      },
+      {
+        "side": "PE",
+        "dte": "1DTE",
+        "hold_duration": "30\u201390m",
+        "n": 6,
+        "time_drift_pts_per_hour": null,
+        "time_drift_rupees_per_hour": null
+      },
+      {
+        "side": "PE",
+        "dte": "1DTE",
+        "hold_duration": "90m+",
+        "n": 3,
+        "time_drift_pts_per_hour": null,
+        "time_drift_rupees_per_hour": null
+      },
+      {
+        "side": "PE",
+        "dte": "2+DTE",
+        "hold_duration": "<30m",
+        "n": 190,
+        "time_drift_pts_per_hour": 150.92545088438956,
+        "delta_coefficient": -0.21168509439489794,
+        "residual_std": 27.500970460219524,
+        "condition_number": 1823.041282009701,
+        "mean_conditional_drift": -23.302937298594326,
+        "median_conditional_drift": -12.962271799461115,
+        "time_drift_rupees_per_hour": 9810.154307485322
+      },
+      {
+        "side": "PE",
+        "dte": "2+DTE",
+        "hold_duration": "30\u201390m",
+        "n": 172,
+        "time_drift_pts_per_hour": 80.80738261939865,
+        "delta_coefficient": -0.5976418846289288,
+        "residual_std": 16.420724092426294,
+        "condition_number": 4713.898102550517,
+        "mean_conditional_drift": -1.523465672801239,
+        "median_conditional_drift": -1.8220221108188437,
+        "time_drift_rupees_per_hour": 5252.479870260912
+      },
+      {
+        "side": "PE",
+        "dte": "2+DTE",
+        "hold_duration": "90m+",
+        "n": 130,
+        "time_drift_pts_per_hour": -9.292192982990457,
+        "delta_coefficient": -0.5980763675548895,
+        "residual_std": 23.744536787861428,
+        "condition_number": 9681.181320390822,
+        "mean_conditional_drift": -2.186189244401769,
+        "median_conditional_drift": -2.6477017926581867,
+        "time_drift_rupees_per_hour": -603.9925438943797
+      }
+    ],
+    "pair_count": 1089,
+    "limitation": "Descriptive fixed-strike/expiry/day pairs selected at ATM\u00b1100 ITM anchors, adjacent minute-open spot proxy. IV, spreads and liquidity are not controlled; this is NOT identified pure theta. Overlapping pairs are dependent. No estimated delta or separate theta charge is applied to snapshot-priced exits.",
+    "estimated_delta_fallback_trades": 0,
+    "before_after_theta_adjustment": "Not applicable: no estimated-premium trades. Snapshot prices already include all premium drift; no second theta charge.",
+    "backtested_trade_realised_delta": [
+      {
+        "side": "CE",
+        "move": "NORMAL_<60",
+        "n": 6,
+        "p25": 0.923,
+        "p50": 1.459,
+        "p75": 1.9,
+        "p90": 3.845,
+        "max": 5.785
+      },
+      {
+        "side": "CE",
+        "move": "LARGE_>=100",
+        "n": 1,
+        "p25": 0.809,
+        "p50": 0.809,
+        "p75": 0.809,
+        "p90": 0.809,
+        "max": 0.809
+      },
+      {
+        "side": "PE",
+        "move": "NORMAL_<60",
+        "n": 2,
+        "p25": -0.745,
+        "p50": -0.707,
+        "p75": -0.668,
+        "p90": -0.645,
+        "max": -0.63
+      },
+      {
+        "side": "PE",
+        "move": "LARGE_>=100",
+        "n": 0
+      }
+    ]
+  },
+  "trailing_comparison": {
+    "status": "NOT_BUILT_FAILED_GATE",
+    "models_S_P": null,
+    "reason": "Part 1 pre-registered runner-headroom thresholds did not pass; no trailing engine or invented comparison PnL."
+  },
+  "trials_registered": [
+    "Stage2B defaults + unchanged v1.1 premium exit baseline",
+    "six trailing candidates CONDITIONAL on MFE gate: NOT RUN"
+  ],
+  "limits": [
+    "All 40 spot sessions included; only 19 have any chain snapshots, fewer exact entries/exits.",
+    "LTP-based counterfactuals omit unknown spread/slippage; gapped paths cannot establish missed intraminute stops.",
+    "Current master lot sizes rupee scenarios; historical contract lots are not independently archived.",
+    "Last 10 sessions form a chronological stability slice, NOT a pristine unseen holdout: recent sessions were already discussed.",
+    "No tuning, no edge claim, no delta fallback; sparse prices cannot support a 40-session options-profitability verdict.",
+    "Expiry segment includes only expiries present in the recorded chain; not a complete exchange expiry calendar."
+  ],
+  "input_hashes": {
+    "ledger.sqlite3": "f57b052be9b39c80ef531d821cd3650d4c749289bb00d6bc601f1247e54b65f3",
+    "instrument_master.csv": "76a38b528a3578be1eb49f555bee0fc23b6207886730f5f47d3dcf9cfcee6f9d",
+    "market.sqlite3": "964d1f888740ef679f6b6c4a046d5d4271b8ae9f1feb5d2b360535dd51c3d8a9"
+  },
+  "raw_archive_audit": "Additional single/multi-expiry archive audit is supplied separately; primary exact-chain pricing policy is unchanged."
+}

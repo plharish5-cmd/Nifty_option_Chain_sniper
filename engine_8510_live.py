@@ -179,6 +179,29 @@ async def startup_event():
     log.info("✔ Auto-Ingest post-market scheduler daemon launched.")
 
 
+@app.get('/api/trend_capture/status')
+async def trend_capture_status():
+    return await asyncio.to_thread(backend.trend_capture_service().status)
+
+@app.get('/api/trend_capture/backtest')
+async def trend_capture_backtest():
+    return backend.trend_capture_service().backtest()
+
+@app.get('/api/trend_capture/config')
+async def trend_capture_config():
+    return backend.trend_capture_service().cfg
+
+@app.post('/api/trend_capture/config')
+async def trend_capture_update(request: Request):
+    from analyst.trend_capture_service_8510 import update_config
+    try:
+        settings=update_config(backend.config_path,await request.json())
+        backend.cfg['trend_capture_v192']=settings
+        service=backend.trend_capture_service();service.cfg=settings;service.at=0
+        return {'ok':True,'config':settings,'execution_authorized':False}
+    except (ValueError,TypeError) as exc:
+        return JSONResponse(status_code=400,content={'ok':False,'error':str(exc)})
+
 @app.get("/")
 @app.head("/")
 async def serve_workspace_html():

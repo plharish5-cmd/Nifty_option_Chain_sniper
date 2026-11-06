@@ -637,6 +637,15 @@
         <!-- TAB 1: LIVE TERMINAL & AGGRESSIVE LIMIT STRIKE MATRIX               -->
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <div id="tabTerminal" class="tab-content active">
+<section class="card" id="trendCaptureV192" style="margin:16px 0;padding:18px;border:1px solid #334155;border-radius:10px">
+ <h2 style="font-size:16px">Trend capture study · <span style="color:#fbbf24">ADVISORY ONLY</span></h2>
+ <p id="trendCaptureStatus">Loading closed 15m context… Existing execution and v1.1 exits remain unchanged.</p>
+ <p id="trendCaptureGate">Trailing engine: not built — evidence gate did not pass.</p>
+ <div id="trendCaptureReadiness"></div>
+ <details><summary>Closed 15m observation ladder</summary><div style="max-height:240px;overflow:auto"><table><thead><tr><th>Time IST</th><th>Close</th><th>4 EMA</th><th>8 EMA</th><th>OR confirmed</th></tr></thead><tbody id="trendCaptureLadder"></tbody></table></div></details>
+ <details><summary>40-session evidence and data coverage</summary><p id="trendCaptureCoverage">Only recorded option prices qualify; no estimated premium fallback.</p><table><thead><tr><th>Segment</th><th>Candidates</th><th>Priced</th><th>Net ₹/trade</th><th>WR</th><th>Break-even WR</th></tr></thead><tbody id="trendCaptureEvidence"></tbody></table><p>Snapshot LTP scenarios are not fills; missing spread/slippage and sparse prices prevent an execution-edge claim.</p></details>
+</section>
+
 
             <!-- 📋 POST-MARKET DAILY EOD SUMMARY CARD (TAB 1) -->
             <div id="tab1EodSummaryCard" class="card" style="border: 1px solid #38bdf8; background: linear-gradient(180deg, rgba(56, 189, 248, 0.08) 0%, rgba(15, 23, 42, 0.95) 100%); margin-bottom: 16px;">
@@ -3234,6 +3243,7 @@
                     }
                 }
 
+                if(data.trend_capture_live) renderTrendCapture192(data.trend_capture_live);
                 // 4. Priority Matrix (4 contracts)
                 renderStrikeMatrix(data.priority_matrix || [], data.matrix_reason || null);
 
@@ -5376,6 +5386,25 @@
             if(confluence){const pill=document.getElementById('pillFiveFactorConfluence');if(pill){const detail=Object.values(confluence.pillars||{}).map(p=>p.label+' '+(p.passed?'✅':'⏳')).join(' | ');pill.textContent='🛡️ 5-Factor Confluence: '+confluence.score+'/5 ['+confluence.grade+'] ('+detail+')';pill.title=confluence.note+' '+(confluence.opportunity_basis||'');}}
         }
 
+
+        function renderTrendCapture192(d) {
+            const time=t=>new Date(t*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:false});
+            const n=v=>Number.isFinite(v)?v.toFixed(2):'—';
+            const o=d.opening_range||{};const r=d.readiness||{};
+            document.getElementById('trendCaptureStatus').textContent=`${d.status} · OR ${n(o.or_low)}–${n(o.or_high)} · Trend confirmed: ${o.trend_day_confirmed?'YES':'NO'} · Stage 2B: ${r.ready?'READY (advisory)':'WAIT'} · Entry switch ${d.continuation_entry_enabled?'ON (advisory only)':'OFF'}`;
+            document.getElementById('trendCaptureReadiness').textContent=Object.entries(r.checks||{}).map(([k,v])=>k.replaceAll('_',' ')+' '+(v?'✓':'…')).join(' | ');
+            const body=document.getElementById('trendCaptureLadder');body.replaceChildren();
+            for(const b of d.ladder||[]){const tr=document.createElement('tr');for(const v of [time(b.ts),n(b.close),n(b.ema4),n(b.ema8),b.trend_day_confirmed?'YES':'NO']){const td=document.createElement('td');td.textContent=v;tr.append(td);}body.append(tr);}
+        }
+        async function loadTrendCaptureEvidence192(){
+            try{const response=await fetch('/api/trend_capture/backtest');if(!response.ok)return;const d=await response.json();
+                document.getElementById('trendCaptureCoverage').textContent=`${d.n_sessions||0} spot sessions · ${d.chain_sessions||0} sessions with any option snapshots · ${d.parameter_status||'EVIDENCE'}. ${d.trials_registered?.join('; ')||'Evidence not available'}`;
+                const body=document.getElementById('trendCaptureEvidence');body.replaceChildren();
+                const fmt=v=>Number.isFinite(v)?v.toFixed(2):'—';
+                for(const r of d.stage2b_performance||[]){const tr=document.createElement('tr');for(const v of [r.segment,r.candidates,r.priced_trades,fmt(r.net_per_trade),fmt(r.win_rate==null?null:r.win_rate*100),fmt(r.break_even_wr==null?null:r.break_even_wr*100)]){const td=document.createElement('td');td.textContent=v;tr.append(td);}body.append(tr);}
+            }catch(e){console.debug('Trend capture evidence unavailable');}
+        }
+        loadTrendCaptureEvidence192();
     </script>
 
     <!-- Module 4: Order Placement Confirmation Toast -->
