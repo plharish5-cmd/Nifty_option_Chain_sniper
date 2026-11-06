@@ -183,5 +183,15 @@
     ]
   },
   "STOCKMOJO_POLL_SECONDS": 60,
-  "STOCKMOJO_LINE_MAPPING": "STANDARD"
+  "STOCKMOJO_LINE_MAPPING": "STANDARD",
+  "paper_execution": {
+    "simulated_slippage_pts": [
+      0.05,
+      0.1,
+      0.15,
+      0.2
+    ],
+    "deterministic_per_order": true,
+    "_evidence": "ASSUMED, NOT MEASURED. These four values were hardcoded as np.random.choice([0.05,0.10,0.15,0.20]) in execute_order_with_chaser with no source. Mean 0.125 pts = Rs8.13 on lot 65. The backtests separately assume SLIPPAGE_INR_PER_TRADE = 32.50 (0.5 pts), so the two halves of the desk disagree by 4x and neither figure comes from a fill. Real slippage cannot be measured while execution_mode is PAPER_ONLY, because a paper fill is booked from signal_ltp by construction and no order reaches a broker. Replace these with the output of scripts/report_slippage.py once ALGO_LIVE_ONLY has fills. Until then any execution optimisation (e.g. passive pocket limits) is optimising an unmeasured cost."
+  }
 }

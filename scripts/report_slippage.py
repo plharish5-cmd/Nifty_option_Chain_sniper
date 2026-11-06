@@ -163,12 +163,24 @@ def main() -> int:
         "assumed_in_backtests_inr": 32.50,
     }
     o = report["overall"]
+    modes = {str(r.get("mode") or "") for r in rows}
+    real_modes = {m for m in modes if "LIVE" in m or m == "BOTH"}
+    is_simulated = not real_modes
+    report["modes_present"] = sorted(modes)
+    report["is_simulated"] = is_simulated
     report["assumption_vs_reality"] = {
         "assumed_inr_per_trade": 32.50,
         "measured_inr_per_leg": o.get("mean_inr"),
-        "verdict": ("MEASURED COST IS HIGHER than the 32.50 assumed in the backtests"
-                    if (o.get("mean_inr") or 0) > 32.50 else
-                    "MEASURED COST IS LOWER than the 32.50 assumed in the backtests"),
+        "verdict": (
+            "NOT A MEASUREMENT. Every fill here is a PAPER fill, derived from "
+            "signal_ltp plus a simulated slippage the desk invented "
+            "(paper_execution.simulated_slippage_pts). No order reached a "
+            "broker, so this cannot confirm or refute the 32.50 assumption, and "
+            "it cannot justify an execution optimisation."
+            if is_simulated else
+            ("MEASURED COST IS HIGHER than the 32.50 assumed in the backtests"
+             if (o.get("mean_inr") or 0) > 32.50 else
+             "MEASURED COST IS LOWER than the 32.50 assumed in the backtests")),
     }
 
     if a.json:
@@ -201,9 +213,19 @@ def main() -> int:
     print()
     print("ASSUMPTION VS REALITY")
     print("-" * 76)
+    print("  modes present    : {}".format(", ".join(report["modes_present"]) or "-"))
     print("  backtests assume : Rs32.50 per trade (0.5 pts on lot 65)")
-    print("  measured         : Rs{} per leg (mean)".format(o.get("mean_inr")))
-    print("  {}".format(report["assumption_vs_reality"]["verdict"]))
+    print("  from this ledger : Rs{} per leg (mean)".format(o.get("mean_inr")))
+    if is_simulated:
+        print()
+        print("  *** PAPER FILLS ONLY — THIS IS NOT A MEASUREMENT ***")
+        print("  A paper fill is booked as signal_ltp + a simulated slippage")
+        print("  the desk chose itself (paper_execution.simulated_slippage_pts,")
+        print("  mean 0.125 pts = Rs8.13 on lot 65). No order reached a broker,")
+        print("  so this neither confirms nor refutes the Rs32.50 assumption.")
+        print("  Real slippage needs fills in ALGO_LIVE_ONLY or BOTH.")
+    else:
+        print("  {}".format(report["assumption_vs_reality"]["verdict"]))
     print()
     print("READING THIS FOR THE POCKET-LIMIT DECISION")
     print("-" * 76)

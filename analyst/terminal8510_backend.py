@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import csv
+import hashlib
 import io
 import json
 import logging
@@ -3022,6 +3023,34 @@ class QuantTerminalBackend:
         volume=self.futures_volume_engine.get_latest_vsr() if self.futures_volume_engine else {}
         return compute_five_factor_confluence(context,self.dhan_oi.cached_snapshot(),volume,self.cfg)
 
+    def _simulated_slippage_pts(self, order_id: str) -> float:
+        """Paper-fill slippage in points, stable for a given order id.
+
+        Reads the candidate values from config (paper_execution.
+        simulated_slippage_pts) rather than carrying them in code, and picks
+        deterministically from the order id so a replay of the same order
+        reproduces the same fill. Set deterministic_per_order to false to go
+        back to a random draw.
+
+        These values are ASSUMED. Nothing on this desk has measured real
+        slippage, because a paper fill is derived from signal_ltp and no order
+        reaches a broker while execution_mode is PAPER_ONLY.
+        """
+        cfg = self.cfg.get("paper_execution") or {}
+        # An ABSENT key falls back to the historical values; an explicitly EMPTY
+        # list means zero slippage. `or` would have conflated the two, because
+        # [] is falsy, and silently reinstated slippage someone had turned off.
+        raw = cfg.get("simulated_slippage_pts")
+        if raw is None:
+            raw = [0.05, 0.10, 0.15, 0.20]
+        choices = [float(x) for x in raw]
+        if not choices:
+            return 0.0
+        if not cfg.get("deterministic_per_order", True):
+            return round(float(np.random.choice(choices)), 2)
+        digest = hashlib.md5(str(order_id).encode("utf-8")).hexdigest()
+        return round(choices[int(digest, 16) % len(choices)], 2)
+
     # ── PROSPECTIVE SIGNAL OBSERVATION LOG ───────────────────────────────────
     #
     # WHY: the 5-factor confluence is computed and shown on the badge, but was
@@ -4947,8 +4976,27 @@ class QuantTerminalBackend:
             # ── 2. PAPER TRADE EXECUTION (if PAPER_ONLY or BOTH) ────────────
             if mode in ("PAPER_ONLY", "BOTH") and self.paper_execution_enabled:
                 paper_order_id = f"P_{order_id}"
-                sim_slippage = round(np.random.choice([0.05, 0.10, 0.15, 0.20]), 2)
+                # Simulated slippage, DETERMINISTIC per order.
+                #
+                # This was np.random.choice([0.05,0.10,0.15,0.20]) with no seed,
+                # so the same signal produced different P&L on every re-run and
+                # replay could never reconcile against the live ledger. Deriving
+                # the pick from the order id instead gives a stable value per
+                # order without a global seed, which would only make the whole
+                # sequence identical and break as soon as the order count moved.
+                #
+                # The values themselves are ASSUMED, not measured — see the
+                # paper_execution._evidence note in the config.
+                sim_slippage = self._simulated_slippage_pts(order_id)
                 paper_fill_price = round(signal_ltp + sim_slippage, 2)
+                # The orders book must agree with the position about the fill.
+                # Previously the order row kept fill_price = signal_ltp while the
+                # position booked signal_ltp + sim_slippage, so the two ledgers
+                # disagreed about the same trade and report_slippage.py read a
+                # constant zero. For BOTH, the live Dhan fill is the real one and
+                # stays authoritative.
+                if mode == "PAPER_ONLY":
+                    fill_price = paper_fill_price
                 paper_charges = self.calculate_dhan_charges(paper_fill_price, paper_fill_price + opt_target_pts, qty)
 
                 # Initialize super trail levels
