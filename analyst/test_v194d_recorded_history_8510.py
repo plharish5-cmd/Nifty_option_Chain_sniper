@@ -110,3 +110,11 @@ def test_research_route_is_read_only_and_available():
    assert result.status_code==200 and 'text/html' in result.headers['content-type']
    assert 'NO GO FOR EXECUTION' in result.text and 'CHAIN COVERAGE FOR THIS BACKTEST' in result.text
  asyncio.run(check())
+
+
+def test_backend_fixture_never_points_at_live_market_or_master():
+ from analyst.terminal8510_backend import QuantTerminalBackend
+ b=QuantTerminalBackend()
+ assert Path(b.market_db).resolve()!= (ROOT/'ict_smc_app/backend/data/ict_smc.sqlite3').resolve()
+ assert b.inst_mgr.master_path.resolve()!= (ROOT/'data/terminal8500/instrument_master.csv').resolve()
+ assert b.config_path.resolve()!= (ROOT/'analyst/terminal8510_config.json').resolve()

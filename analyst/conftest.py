@@ -18,12 +18,22 @@ os.environ['DHAN_CLIENT_ID']='TEST-CLIENT'
 from analyst import terminal8510_backend as terminal
 terminal.ROOT=SANDBOX
 terminal.REPLAY_DATA_DIR=SANDBOX/'analyst/replay_data'
+# SQLite backup retains committed WAL content and never opens the desk for writes.
+# Backend tests must not point at the live market database either.
+MARKET_COPY=SANDBOX/'market.sqlite3'
+source_market=SOURCE/'ict_smc_app/backend/data/ict_smc.sqlite3'
+if source_market.exists():
+    with sqlite3.connect('file:'+str(source_market)+'?mode=ro',uri=True) as source_db,sqlite3.connect(MARKET_COPY) as test_db:
+        source_db.backup(test_db)
+MASTER_COPY=SANDBOX/'instrument_master.csv'
+source_master=SOURCE/'data/terminal8500/instrument_master.csv'
+if source_master.exists():shutil.copyfile(source_master,MASTER_COPY)
 
 def config_at(root):
     cfg=json.loads((SOURCE/'analyst/terminal8510_config.json').read_text())
     cfg['ledger_db_path']=str(root/'ledger.sqlite3')
-    cfg['market_db_path']=str(SOURCE/'ict_smc_app/backend/data/ict_smc.sqlite3')
-    cfg['instrument_master_path']=str(SOURCE/'data/terminal8500/instrument_master.csv')
+    cfg['market_db_path']=str(MARKET_COPY)
+    cfg['instrument_master_path']=str(MASTER_COPY)
     cfg['DHAN_CLIENT_ID']='TEST-CLIENT'
     cfg['dhan']['client_id']='TEST-CLIENT'
     for k in ('DHAN_ACCESS_TOKEN','DHAN_API_KEY','DHAN_API_SECRET'):cfg.pop(k,None)
@@ -68,7 +78,7 @@ def private_8510_state(tmp_path,monkeypatch,request):
     monkeypatch.setattr(radar,'DEFAULT_REPLAY_DIR',root/'analyst/replay_data')
     monkeypatch.setattr(radar.ema_proximity_engine,'config_path',path)
     monkeypatch.setattr(radar.ema_proximity_engine,'replay_dir',root/'analyst/replay_data')
-    monkeypatch.setattr(radar.ema_proximity_engine,'db_path',SOURCE/'ict_smc_app/backend/data/ict_smc.sqlite3')
+    monkeypatch.setattr(radar.ema_proximity_engine,'db_path',MARKET_COPY)
     engine=sys.modules.get('engine_8510_live')
     names=getattr(getattr(request.function,'__code__',None),'co_names',())
     uses_app=engine is not None and (getattr(request.module,'app',None) is engine.app or isinstance(getattr(request.module,'backend',None),terminal.QuantTerminalBackend) or 'engine_8510_live' in names or 'TestClient' in names)

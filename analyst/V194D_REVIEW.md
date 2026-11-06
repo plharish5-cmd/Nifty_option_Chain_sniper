@@ -15,7 +15,7 @@ The running desk and its user-owned runtime data were NOT replaced.
 ## Safety and testing
 Live order/chaser, charges, configure_real_money, stop_live_trading, emergency kill and 15:20 EOD functions were compared with 615fa68 and are byte-identical in AST source. No live order was placed. NO_GO / dry-run safeguards stay unchanged. Nothing was reverted to a 100-point strike grid.
 
-Tests now construct temporary configs and ledgers before API app collection. Dhan credentials are fake/blank and external HTTP is blocked. The EMA-radar singleton is redirected too. A test guard refuses writes to the shipped config rather than silently restoring them. No existing test assertion was loosened.
+Tests now construct temporary configs and ledgers before API app collection. The final fixture also uses a private SQLite backup of market data and a private instrument-master copy. Dhan credentials are fake/blank and external HTTP is blocked. The EMA-radar singleton is redirected too. A test guard refuses writes to the shipped config rather than silently restoring them. No existing test assertion was loosened.
 
 Baseline comparison used the SAME private-state fixture, local instrument master and database snapshots on both revisions. This differs from the handoff's container-only baseline (21 failed / 342 passed / 12 skipped).
 
@@ -113,3 +113,6 @@ The inherited slippage script reported 0 dry-run depth rows: no measured bid/ask
 The ZIP includes full code files needed to move the earlier 952bf32 state to this branch, including Claude's inherited continuation files. It excludes the wholesale runtime config, every SQLite database, replay_data, .env and dependencies. Use the supplied narrow config patch after stopping only the 8510 daemon. Existing runtime preferences are preserved. Do not overwrite them with a repository-default config.
 
 No automated process stop, port-wide kill, real-money arm, order, deployment, or protected-module edit occurred. The legacy live-screen placeholder defaults outside the historical/EOD work were not redesigned in this task.
+
+## Final isolation follow-up
+A packaging review moved the backend/radar market DB and instrument master into the test sandbox too, instead of reading source paths. The final history/UI/live-switch/isolation batch passed 73 tests, with 4 existing FastAPI lifecycle deprecation warnings. The full-suite checkpoint above remains 11 failed / 397 passed / 12 skipped; it was not relabelled green. A follow-up tag post-chatgpt-v1.9.4d-final identifies this final fixture revision without moving the earlier post tag.
