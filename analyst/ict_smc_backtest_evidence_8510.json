@@ -1,0 +1,1413 @@
+{
+  "status": "ADVISORY \u2014 NOT VALIDATED FOR EXECUTION",
+  "coverage": "CHAIN COVERAGE FOR THIS BACKTEST: 19 of 40 sessions (47.5%). Signal evaluations scenario-priced (ESTIMATED premium exits): 1589 of 1589 (100.0%). VERDICT IS PROVISIONAL UNTIL RECORDING IMPROVES THIS.",
+  "recorded_prefixes": 1286,
+  "sampled": false,
+  "lot_from_current_master": 65,
+  "historical_lot_caveat": "Current instrument-master lot; historical contract lot changes not independently verified.",
+  "hypotheses": 128,
+  "bonferroni_alpha": 0.000390625,
+  "verdict": "NO_GO. No independent held-out validation; estimated exits are scenarios, not demonstrated option profits.",
+  "limitations": [
+    "Chain previous-close change absent: original adapter uses first-recorded-snapshot baseline.",
+    "All-strikes source scope; does not claim parity with an ATM-window screen.",
+    "Overlapping signals are correlated; t statistic not asserted from individual trades.",
+    "Synthetic premium exits use measured delta scenarios; they do not model IV, spread or slippage.",
+    "Direction control uses the same timestamps and data gates.",
+    "Active Corridor and Pullback Radar are context; Writer Stack-up remains NOT BUILT."
+  ],
+  "summary": [
+    {
+      "group": "Actionable Setups",
+      "horizon": "15",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 26.01631578947371,
+        "mean_forward_mae": 21.707052631578936,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 210,
+        "stop": 184,
+        "mean_mfe": 15.225473684210554,
+        "mean_mae": 14.116947368421112,
+        "net_per_trade": -27.91691052631646,
+        "best_day_gross_share_pct": 25.08922670191679
+      },
+      "opposite": {
+        "mean_forward_mfe": 21.707052631578936,
+        "mean_forward_mae": 26.01631578947371,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 184,
+        "stop": 210,
+        "mean_mfe": 14.116947368421112,
+        "mean_mae": 15.225473684210554,
+        "net_per_trade": -106.65864736842026,
+        "best_day_gross_share_pct": 18.781922303048557
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 43.46094049681329,
+        "t_stat": 0.41155161969327864,
+        "two_sided_p": 0.6855270771649526,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Actionable Setups",
+      "horizon": "15",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 26.01631578947371,
+        "mean_forward_mae": 21.707052631578936,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 210,
+        "stop": 184,
+        "mean_mfe": 15.225473684210554,
+        "mean_mae": 14.116947368421112,
+        "net_per_trade": -22.577500000000875,
+        "best_day_gross_share_pct": 25.089226701916783
+      },
+      "opposite": {
+        "mean_forward_mfe": 21.707052631578936,
+        "mean_forward_mae": 26.01631578947371,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 184,
+        "stop": 210,
+        "mean_mfe": 14.116947368421112,
+        "mean_mae": 15.225473684210554,
+        "net_per_trade": -111.99835263157811,
+        "best_day_gross_share_pct": 18.781922303048564
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 49.409055032499296,
+        "t_stat": 0.41186136317487865,
+        "two_sided_p": 0.6853041086837375,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Actionable Setups",
+      "horizon": "30",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 36.761789473684146,
+        "mean_forward_mae": 29.572315789473627,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 238,
+        "stop": 217,
+        "mean_mfe": 15.93463157894737,
+        "mean_mae": 14.78768421052638,
+        "net_per_trade": -35.036052631579516,
+        "best_day_gross_share_pct": 25.891233175700357
+      },
+      "opposite": {
+        "mean_forward_mfe": 29.572315789473627,
+        "mean_forward_mae": 36.761789473684146,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 217,
+        "stop": 238,
+        "mean_mfe": 14.78768421052638,
+        "mean_mae": 15.93463157894737,
+        "net_per_trade": -99.53946315789403,
+        "best_day_gross_share_pct": 20.020020020019853
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 37.20704634234363,
+        "t_stat": 0.34534999591605436,
+        "two_sided_p": 0.7338342723397134,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Actionable Setups",
+      "horizon": "30",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 36.761789473684146,
+        "mean_forward_mae": 29.572315789473627,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 238,
+        "stop": 217,
+        "mean_mfe": 15.93463157894737,
+        "mean_mae": 14.78768421052638,
+        "net_per_trade": -30.662178947369156,
+        "best_day_gross_share_pct": 25.891233175700357
+      },
+      "opposite": {
+        "mean_forward_mfe": 29.572315789473627,
+        "mean_forward_mae": 36.761789473684146,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 217,
+        "stop": 238,
+        "mean_mfe": 14.78768421052638,
+        "mean_mae": 15.93463157894737,
+        "net_per_trade": -103.91356842105189,
+        "best_day_gross_share_pct": 20.02002002001984
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 42.30664225794221,
+        "t_stat": 0.3456746450571784,
+        "two_sided_p": 0.7335943597951358,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Actionable Setups",
+      "horizon": "60",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 51.80757894736842,
+        "mean_forward_mae": 39.280631578947364,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 246,
+        "stop": 218,
+        "mean_mfe": 16.0937894736842,
+        "mean_mae": 14.803263157894804,
+        "net_per_trade": -24.072815789473708,
+        "best_day_gross_share_pct": 24.299065420560854
+      },
+      "opposite": {
+        "mean_forward_mfe": 39.280631578947364,
+        "mean_forward_mae": 51.80757894736842,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 218,
+        "stop": 246,
+        "mean_mfe": 14.803263157894804,
+        "mean_mae": 16.0937894736842,
+        "net_per_trade": -110.50259473684194,
+        "best_day_gross_share_pct": 22.036832992287156
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 54.45667860285518,
+        "t_stat": 0.5010509434814356,
+        "two_sided_p": 0.6224072480691425,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Actionable Setups",
+      "horizon": "60",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 51.80757894736842,
+        "mean_forward_mae": 39.280631578947364,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 246,
+        "stop": 218,
+        "mean_mfe": 16.0937894736842,
+        "mean_mae": 14.803263157894804,
+        "net_per_trade": -18.21245789473698,
+        "best_day_gross_share_pct": 24.299065420560854
+      },
+      "opposite": {
+        "mean_forward_mfe": 39.280631578947364,
+        "mean_forward_mae": 51.80757894736842,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 218,
+        "stop": 246,
+        "mean_mfe": 14.803263157894804,
+        "mean_mae": 16.0937894736842,
+        "net_per_trade": -116.36326842105251,
+        "best_day_gross_share_pct": 22.036832992287138
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 61.89519562608201,
+        "t_stat": 0.501322346824273,
+        "two_sided_p": 0.6222200292740792,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Actionable Setups",
+      "horizon": "EOD",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 92.5867368421052,
+        "mean_forward_mae": 60.189894736842085,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 246,
+        "stop": 218,
+        "mean_mfe": 16.0937894736842,
+        "mean_mae": 14.803263157894804,
+        "net_per_trade": -24.072815789473708,
+        "best_day_gross_share_pct": 24.299065420560854
+      },
+      "opposite": {
+        "mean_forward_mfe": 60.189894736842085,
+        "mean_forward_mae": 92.5867368421052,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 218,
+        "stop": 246,
+        "mean_mfe": 14.803263157894804,
+        "mean_mae": 16.0937894736842,
+        "net_per_trade": -110.50259473684194,
+        "best_day_gross_share_pct": 22.036832992287156
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 54.45667860285518,
+        "t_stat": 0.5010509434814356,
+        "two_sided_p": 0.6224072480691425,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Actionable Setups",
+      "horizon": "EOD",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 92.5867368421052,
+        "mean_forward_mae": 60.189894736842085,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 246,
+        "stop": 218,
+        "mean_mfe": 16.0937894736842,
+        "mean_mae": 14.803263157894804,
+        "net_per_trade": -18.21245789473698,
+        "best_day_gross_share_pct": 24.299065420560854
+      },
+      "opposite": {
+        "mean_forward_mfe": 60.189894736842085,
+        "mean_forward_mae": 92.5867368421052,
+        "n": 475,
+        "priced": 475,
+        "ambiguous": 0,
+        "target": 218,
+        "stop": 246,
+        "mean_mfe": 14.803263157894804,
+        "mean_mae": 16.0937894736842,
+        "net_per_trade": -116.36326842105251,
+        "best_day_gross_share_pct": 22.036832992287138
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 61.89519562608201,
+        "t_stat": 0.501322346824273,
+        "two_sided_p": 0.6222200292740792,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Burst",
+      "horizon": "15",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 25.74541751527498,
+        "mean_forward_mae": 21.39786150712829,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 218,
+        "stop": 186,
+        "mean_mfe": 15.223421588594736,
+        "mean_mae": 14.042973523421646,
+        "net_per_trade": -18.080824847251314,
+        "best_day_gross_share_pct": 23.007919831905706
+      },
+      "opposite": {
+        "mean_forward_mfe": 21.39786150712829,
+        "mean_forward_mae": 25.74541751527498,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 186,
+        "stop": 218,
+        "mean_mfe": 14.042973523421646,
+        "mean_mae": 15.223421588594736,
+        "net_per_trade": -116.44968431771801,
+        "best_day_gross_share_pct": 20.02144860584006
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 71.5082908804567,
+        "t_stat": 0.7568296928544033,
+        "two_sided_p": 0.45894449306030227,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Burst",
+      "horizon": "15",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 25.74541751527498,
+        "mean_forward_mae": 21.39786150712829,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 218,
+        "stop": 186,
+        "mean_mfe": 15.223421588594736,
+        "mean_mae": 14.042973523421646,
+        "net_per_trade": -11.407586558045836,
+        "best_day_gross_share_pct": 23.00791983190571
+      },
+      "opposite": {
+        "mean_forward_mfe": 21.39786150712829,
+        "mean_forward_mae": 25.74541751527498,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 186,
+        "stop": 218,
+        "mean_mfe": 14.042973523421646,
+        "mean_mae": 15.223421588594736,
+        "net_per_trade": -123.12320773930652,
+        "best_day_gross_share_pct": 20.02144860584007
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 81.26304832887247,
+        "t_stat": 0.7570573952880069,
+        "two_sided_p": 0.4588114487522349,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Burst",
+      "horizon": "30",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 36.32036659877795,
+        "mean_forward_mae": 29.135234215885877,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 247,
+        "stop": 219,
+        "mean_mfe": 15.950407331975564,
+        "mean_mae": 14.697148676171137,
+        "net_per_trade": -25.158951120163415,
+        "best_day_gross_share_pct": 23.843222645618006
+      },
+      "opposite": {
+        "mean_forward_mfe": 29.135234215885877,
+        "mean_forward_mae": 36.32036659877795,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 219,
+        "stop": 247,
+        "mean_mfe": 14.697148676171137,
+        "mean_mae": 15.950407331975564,
+        "net_per_trade": -109.37153767820712,
+        "best_day_gross_share_pct": 21.42146737051481
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 68.16505111832889,
+        "t_stat": 0.7017905604928716,
+        "two_sided_p": 0.49178511155321303,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Burst",
+      "horizon": "30",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 36.32036659877795,
+        "mean_forward_mae": 29.135234215885877,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 247,
+        "stop": 219,
+        "mean_mfe": 15.950407331975564,
+        "mean_mae": 14.697148676171137,
+        "net_per_trade": -19.445692464359098,
+        "best_day_gross_share_pct": 23.843222645618003
+      },
+      "opposite": {
+        "mean_forward_mfe": 29.135234215885877,
+        "mean_forward_mae": 36.32036659877795,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 219,
+        "stop": 247,
+        "mean_mfe": 14.697148676171137,
+        "mean_mae": 15.950407331975564,
+        "net_per_trade": -115.08497963340058,
+        "best_day_gross_share_pct": 21.421467370514787
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 77.46588771424149,
+        "t_stat": 0.7020366794189612,
+        "two_sided_p": 0.49163526530751767,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Burst",
+      "horizon": "60",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 51.16812627291243,
+        "mean_forward_mae": 38.84796334012219,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 255,
+        "stop": 222,
+        "mean_mfe": 16.104378818737263,
+        "mean_mae": 14.77301425661921,
+        "net_per_trade": -16.868294297352357,
+        "best_day_gross_share_pct": 22.556748405498652
+      },
+      "opposite": {
+        "mean_forward_mfe": 38.84796334012219,
+        "mean_forward_mae": 51.16812627291243,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 222,
+        "stop": 255,
+        "mean_mfe": 14.77301425661921,
+        "mean_mae": 16.104378818737263,
+        "net_per_trade": -117.66213340122182,
+        "best_day_gross_share_pct": 22.753128555176385
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 81.30345448814748,
+        "t_stat": 0.8277854445244135,
+        "two_sided_p": 0.4186322998014582,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Burst",
+      "horizon": "60",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 51.16812627291243,
+        "mean_forward_mae": 38.84796334012219,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 255,
+        "stop": 222,
+        "mean_mfe": 16.104378818737263,
+        "mean_mae": 14.77301425661921,
+        "net_per_trade": -10.03092158859484,
+        "best_day_gross_share_pct": 22.55674840549865
+      },
+      "opposite": {
+        "mean_forward_mfe": 38.84796334012219,
+        "mean_forward_mae": 51.16812627291243,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 222,
+        "stop": 255,
+        "mean_mfe": 14.77301425661921,
+        "mean_mae": 16.104378818737263,
+        "net_per_trade": -124.49981160896117,
+        "best_day_gross_share_pct": 22.753128555176367
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 92.3857945808008,
+        "t_stat": 0.8279907996069503,
+        "two_sided_p": 0.41851899898899814,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Burst",
+      "horizon": "EOD",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 91.33910386965371,
+        "mean_forward_mae": 59.23778004073317,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 255,
+        "stop": 222,
+        "mean_mfe": 16.104378818737263,
+        "mean_mae": 14.77301425661921,
+        "net_per_trade": -16.868294297352357,
+        "best_day_gross_share_pct": 22.556748405498652
+      },
+      "opposite": {
+        "mean_forward_mfe": 59.23778004073317,
+        "mean_forward_mae": 91.33910386965371,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 222,
+        "stop": 255,
+        "mean_mfe": 14.77301425661921,
+        "mean_mae": 16.104378818737263,
+        "net_per_trade": -117.66213340122182,
+        "best_day_gross_share_pct": 22.753128555176385
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 81.30345448814748,
+        "t_stat": 0.8277854445244135,
+        "two_sided_p": 0.4186322998014582,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "Burst",
+      "horizon": "EOD",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 91.33910386965371,
+        "mean_forward_mae": 59.23778004073317,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 255,
+        "stop": 222,
+        "mean_mfe": 16.104378818737263,
+        "mean_mae": 14.77301425661921,
+        "net_per_trade": -10.03092158859484,
+        "best_day_gross_share_pct": 22.55674840549865
+      },
+      "opposite": {
+        "mean_forward_mfe": 59.23778004073317,
+        "mean_forward_mae": 91.33910386965371,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 222,
+        "stop": 255,
+        "mean_mfe": 14.77301425661921,
+        "mean_mae": 16.104378818737263,
+        "net_per_trade": -124.49981160896117,
+        "best_day_gross_share_pct": 22.753128555176367
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 92.3857945808008,
+        "t_stat": 0.8279907996069503,
+        "two_sided_p": 0.41851899898899814,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "High Conviction",
+      "horizon": "15",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 25.74541751527498,
+        "mean_forward_mae": 21.39786150712829,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 218,
+        "stop": 186,
+        "mean_mfe": 15.223421588594736,
+        "mean_mae": 14.042973523421646,
+        "net_per_trade": -18.080824847251314,
+        "best_day_gross_share_pct": 23.007919831905706
+      },
+      "opposite": {
+        "mean_forward_mfe": 21.39786150712829,
+        "mean_forward_mae": 25.74541751527498,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 186,
+        "stop": 218,
+        "mean_mfe": 14.042973523421646,
+        "mean_mae": 15.223421588594736,
+        "net_per_trade": -116.44968431771801,
+        "best_day_gross_share_pct": 20.02144860584006
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 71.5082908804567,
+        "t_stat": 0.7568296928544033,
+        "two_sided_p": 0.45894449306030227,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "High Conviction",
+      "horizon": "15",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 25.74541751527498,
+        "mean_forward_mae": 21.39786150712829,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 218,
+        "stop": 186,
+        "mean_mfe": 15.223421588594736,
+        "mean_mae": 14.042973523421646,
+        "net_per_trade": -11.407586558045836,
+        "best_day_gross_share_pct": 23.00791983190571
+      },
+      "opposite": {
+        "mean_forward_mfe": 21.39786150712829,
+        "mean_forward_mae": 25.74541751527498,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 186,
+        "stop": 218,
+        "mean_mfe": 14.042973523421646,
+        "mean_mae": 15.223421588594736,
+        "net_per_trade": -123.12320773930652,
+        "best_day_gross_share_pct": 20.02144860584007
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 81.26304832887247,
+        "t_stat": 0.7570573952880069,
+        "two_sided_p": 0.4588114487522349,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "High Conviction",
+      "horizon": "30",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 36.32036659877795,
+        "mean_forward_mae": 29.135234215885877,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 247,
+        "stop": 219,
+        "mean_mfe": 15.950407331975564,
+        "mean_mae": 14.697148676171137,
+        "net_per_trade": -25.158951120163415,
+        "best_day_gross_share_pct": 23.843222645618006
+      },
+      "opposite": {
+        "mean_forward_mfe": 29.135234215885877,
+        "mean_forward_mae": 36.32036659877795,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 219,
+        "stop": 247,
+        "mean_mfe": 14.697148676171137,
+        "mean_mae": 15.950407331975564,
+        "net_per_trade": -109.37153767820712,
+        "best_day_gross_share_pct": 21.42146737051481
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 68.16505111832889,
+        "t_stat": 0.7017905604928716,
+        "two_sided_p": 0.49178511155321303,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "High Conviction",
+      "horizon": "30",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 36.32036659877795,
+        "mean_forward_mae": 29.135234215885877,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 247,
+        "stop": 219,
+        "mean_mfe": 15.950407331975564,
+        "mean_mae": 14.697148676171137,
+        "net_per_trade": -19.445692464359098,
+        "best_day_gross_share_pct": 23.843222645618003
+      },
+      "opposite": {
+        "mean_forward_mfe": 29.135234215885877,
+        "mean_forward_mae": 36.32036659877795,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 219,
+        "stop": 247,
+        "mean_mfe": 14.697148676171137,
+        "mean_mae": 15.950407331975564,
+        "net_per_trade": -115.08497963340058,
+        "best_day_gross_share_pct": 21.421467370514787
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 77.46588771424149,
+        "t_stat": 0.7020366794189612,
+        "two_sided_p": 0.49163526530751767,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "High Conviction",
+      "horizon": "60",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 51.16812627291243,
+        "mean_forward_mae": 38.84796334012219,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 255,
+        "stop": 222,
+        "mean_mfe": 16.104378818737263,
+        "mean_mae": 14.77301425661921,
+        "net_per_trade": -16.868294297352357,
+        "best_day_gross_share_pct": 22.556748405498652
+      },
+      "opposite": {
+        "mean_forward_mfe": 38.84796334012219,
+        "mean_forward_mae": 51.16812627291243,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 222,
+        "stop": 255,
+        "mean_mfe": 14.77301425661921,
+        "mean_mae": 16.104378818737263,
+        "net_per_trade": -117.66213340122182,
+        "best_day_gross_share_pct": 22.753128555176385
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 81.30345448814748,
+        "t_stat": 0.8277854445244135,
+        "two_sided_p": 0.4186322998014582,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "High Conviction",
+      "horizon": "60",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 51.16812627291243,
+        "mean_forward_mae": 38.84796334012219,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 255,
+        "stop": 222,
+        "mean_mfe": 16.104378818737263,
+        "mean_mae": 14.77301425661921,
+        "net_per_trade": -10.03092158859484,
+        "best_day_gross_share_pct": 22.55674840549865
+      },
+      "opposite": {
+        "mean_forward_mfe": 38.84796334012219,
+        "mean_forward_mae": 51.16812627291243,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 222,
+        "stop": 255,
+        "mean_mfe": 14.77301425661921,
+        "mean_mae": 16.104378818737263,
+        "net_per_trade": -124.49981160896117,
+        "best_day_gross_share_pct": 22.753128555176367
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 92.3857945808008,
+        "t_stat": 0.8279907996069503,
+        "two_sided_p": 0.41851899898899814,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "High Conviction",
+      "horizon": "EOD",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 91.33910386965371,
+        "mean_forward_mae": 59.23778004073317,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 255,
+        "stop": 222,
+        "mean_mfe": 16.104378818737263,
+        "mean_mae": 14.77301425661921,
+        "net_per_trade": -16.868294297352357,
+        "best_day_gross_share_pct": 22.556748405498652
+      },
+      "opposite": {
+        "mean_forward_mfe": 59.23778004073317,
+        "mean_forward_mae": 91.33910386965371,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 222,
+        "stop": 255,
+        "mean_mfe": 14.77301425661921,
+        "mean_mae": 16.104378818737263,
+        "net_per_trade": -117.66213340122182,
+        "best_day_gross_share_pct": 22.753128555176385
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 81.30345448814748,
+        "t_stat": 0.8277854445244135,
+        "two_sided_p": 0.4186322998014582,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "High Conviction",
+      "horizon": "EOD",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 91.33910386965371,
+        "mean_forward_mae": 59.23778004073317,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 255,
+        "stop": 222,
+        "mean_mfe": 16.104378818737263,
+        "mean_mae": 14.77301425661921,
+        "net_per_trade": -10.03092158859484,
+        "best_day_gross_share_pct": 22.55674840549865
+      },
+      "opposite": {
+        "mean_forward_mfe": 59.23778004073317,
+        "mean_forward_mae": 91.33910386965371,
+        "n": 491,
+        "priced": 491,
+        "ambiguous": 0,
+        "target": 222,
+        "stop": 255,
+        "mean_mfe": 14.77301425661921,
+        "mean_mae": 16.104378818737263,
+        "net_per_trade": -124.49981160896117,
+        "best_day_gross_share_pct": 22.753128555176367
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 92.3857945808008,
+        "t_stat": 0.8279907996069503,
+        "two_sided_p": 0.41851899898899814,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "State Change",
+      "horizon": "15",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 25.50227272727264,
+        "mean_forward_mae": 25.52537878787886,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 54,
+        "stop": 58,
+        "mean_mfe": 14.319318181818193,
+        "mean_mae": 14.969318181818297,
+        "net_per_trade": -92.60488636363428,
+        "best_day_gross_share_pct": 23.546725533480497
+      },
+      "opposite": {
+        "mean_forward_mfe": 25.52537878787886,
+        "mean_forward_mae": 25.50227272727264,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 58,
+        "stop": 54,
+        "mean_mfe": 14.969318181818297,
+        "mean_mae": 14.319318181818193,
+        "net_per_trade": -40.48481060606264,
+        "best_day_gross_share_pct": 32.83634245777593
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 69.70213306978454,
+        "t_stat": 0.384020198167476,
+        "two_sided_p": 0.7054621486869497,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "State Change",
+      "horizon": "15",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 25.50227272727264,
+        "mean_forward_mae": 25.52537878787886,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 54,
+        "stop": 58,
+        "mean_mfe": 14.319318181818193,
+        "mean_mae": 14.969318181818297,
+        "net_per_trade": -96.12268939393707,
+        "best_day_gross_share_pct": 23.546725533480505
+      },
+      "opposite": {
+        "mean_forward_mfe": 25.52537878787886,
+        "mean_forward_mae": 25.50227272727264,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 58,
+        "stop": 54,
+        "mean_mfe": 14.969318181818297,
+        "mean_mae": 14.319318181818193,
+        "net_per_trade": -36.96655303030539,
+        "best_day_gross_share_pct": 32.83634245777592
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 79.24534679465656,
+        "t_stat": 0.38438621285741187,
+        "two_sided_p": 0.7051956387153502,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "State Change",
+      "horizon": "30",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 32.69696969696962,
+        "mean_forward_mae": 36.70568181818186,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 62,
+        "stop": 66,
+        "mean_mfe": 14.867424242424297,
+        "mean_mae": 15.627651515151587,
+        "net_per_trade": -95.44662878787861,
+        "best_day_gross_share_pct": 24.999999999999986
+      },
+      "opposite": {
+        "mean_forward_mfe": 36.70568181818186,
+        "mean_forward_mae": 32.69696969696962,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 66,
+        "stop": 62,
+        "mean_mfe": 15.627651515151587,
+        "mean_mae": 14.867424242424297,
+        "net_per_trade": -37.643598484848596,
+        "best_day_gross_share_pct": 28.619127116623005
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 77.50365313195664,
+        "t_stat": 0.43338577371637804,
+        "two_sided_p": 0.6698836300850928,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "State Change",
+      "horizon": "30",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 32.69696969696962,
+        "mean_forward_mae": 36.70568181818186,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 62,
+        "stop": 66,
+        "mean_mfe": 14.867424242424297,
+        "mean_mae": 15.627651515151587,
+        "net_per_trade": -99.34935606060587,
+        "best_day_gross_share_pct": 25.0
+      },
+      "opposite": {
+        "mean_forward_mfe": 36.70568181818186,
+        "mean_forward_mae": 32.69696969696962,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 66,
+        "stop": 62,
+        "mean_mfe": 15.627651515151587,
+        "mean_mae": 14.867424242424297,
+        "net_per_trade": -33.7398106060608,
+        "best_day_gross_share_pct": 28.619127116622987
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 88.10501258171756,
+        "t_stat": 0.4337537744713112,
+        "two_sided_p": 0.669621271233108,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "State Change",
+      "horizon": "60",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 46.92234848484851,
+        "mean_forward_mae": 48.62765151515156,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 63,
+        "stop": 67,
+        "mean_mfe": 14.974621212121251,
+        "mean_mae": 15.683712121212205,
+        "net_per_trade": -88.48723484848465,
+        "best_day_gross_share_pct": 24.999999999999986
+      },
+      "opposite": {
+        "mean_forward_mfe": 48.62765151515156,
+        "mean_forward_mae": 46.92234848484851,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 67,
+        "stop": 63,
+        "mean_mfe": 15.683712121212205,
+        "mean_mae": 14.974621212121251,
+        "net_per_trade": -44.60291666666678,
+        "best_day_gross_share_pct": 30.35669112066791
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 102.41356102669303,
+        "t_stat": 0.5816591633480435,
+        "two_sided_p": 0.5680100191023587,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "State Change",
+      "horizon": "60",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 46.92234848484851,
+        "mean_forward_mae": 48.62765151515156,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 63,
+        "stop": 67,
+        "mean_mfe": 14.974621212121251,
+        "mean_mae": 15.683712121212205,
+        "net_per_trade": -91.44647727272708,
+        "best_day_gross_share_pct": 25.0
+      },
+      "opposite": {
+        "mean_forward_mfe": 48.62765151515156,
+        "mean_forward_mae": 46.92234848484851,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 67,
+        "stop": 63,
+        "mean_mfe": 15.683712121212205,
+        "mean_mae": 14.974621212121251,
+        "net_per_trade": -41.642840909091106,
+        "best_day_gross_share_pct": 30.3566911206679
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 116.39239416066445,
+        "t_stat": 0.5819986106997995,
+        "two_sided_p": 0.5677862445360233,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "State Change",
+      "horizon": "EOD",
+      "delta": 0.59,
+      "signal": {
+        "mean_forward_mfe": 97.30340909090891,
+        "mean_forward_mae": 71.06780303030298,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 63,
+        "stop": 67,
+        "mean_mfe": 14.974621212121251,
+        "mean_mae": 15.683712121212205,
+        "net_per_trade": -88.48723484848465,
+        "best_day_gross_share_pct": 24.999999999999986
+      },
+      "opposite": {
+        "mean_forward_mfe": 71.06780303030298,
+        "mean_forward_mae": 97.30340909090891,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 67,
+        "stop": 63,
+        "mean_mfe": 15.683712121212205,
+        "mean_mae": 14.974621212121251,
+        "net_per_trade": -44.60291666666678,
+        "best_day_gross_share_pct": 30.35669112066791
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 102.41356102669303,
+        "t_stat": 0.5816591633480435,
+        "two_sided_p": 0.5680100191023587,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    },
+    {
+      "group": "State Change",
+      "horizon": "EOD",
+      "delta": 0.67,
+      "signal": {
+        "mean_forward_mfe": 97.30340909090891,
+        "mean_forward_mae": 71.06780303030298,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 63,
+        "stop": 67,
+        "mean_mfe": 14.974621212121251,
+        "mean_mae": 15.683712121212205,
+        "net_per_trade": -91.44647727272708,
+        "best_day_gross_share_pct": 25.0
+      },
+      "opposite": {
+        "mean_forward_mfe": 71.06780303030298,
+        "mean_forward_mae": 97.30340909090891,
+        "n": 132,
+        "priced": 132,
+        "ambiguous": 0,
+        "target": 67,
+        "stop": 63,
+        "mean_mfe": 15.683712121212205,
+        "mean_mae": 14.974621212121251,
+        "net_per_trade": -41.642840909091106,
+        "best_day_gross_share_pct": 30.3566911206679
+      },
+      "direction_control_session_blocks": {
+        "n_sessions": 19,
+        "mean_paired_net_difference": 116.39239416066445,
+        "t_stat": 0.5819986106997995,
+        "two_sided_p": 0.5677862445360233,
+        "bonferroni_alpha": 0.000390625,
+        "critical_t": 4.344489465996299,
+        "validated": false
+      }
+    }
+  ],
+  "session_coverage": [
+    {
+      "day": "2026-10-12",
+      "snapshots": 31,
+      "replayed_prefixes": 29
+    },
+    {
+      "day": "2026-10-13",
+      "snapshots": 48,
+      "replayed_prefixes": 46
+    },
+    {
+      "day": "2026-10-14",
+      "snapshots": 57,
+      "replayed_prefixes": 55
+    },
+    {
+      "day": "2026-10-15",
+      "snapshots": 66,
+      "replayed_prefixes": 64
+    },
+    {
+      "day": "2026-10-16",
+      "snapshots": 66,
+      "replayed_prefixes": 64
+    },
+    {
+      "day": "2026-10-19",
+      "snapshots": 37,
+      "replayed_prefixes": 35
+    },
+    {
+      "day": "2026-10-21",
+      "snapshots": 105,
+      "replayed_prefixes": 103
+    },
+    {
+      "day": "2026-10-22",
+      "snapshots": 61,
+      "replayed_prefixes": 59
+    },
+    {
+      "day": "2026-10-23",
+      "snapshots": 111,
+      "replayed_prefixes": 109
+    },
+    {
+      "day": "2026-10-26",
+      "snapshots": 43,
+      "replayed_prefixes": 41
+    },
+    {
+      "day": "2026-10-27",
+      "snapshots": 87,
+      "replayed_prefixes": 85
+    },
+    {
+      "day": "2026-10-28",
+      "snapshots": 52,
+      "replayed_prefixes": 50
+    },
+    {
+      "day": "2026-10-29",
+      "snapshots": 50,
+      "replayed_prefixes": 48
+    },
+    {
+      "day": "2026-10-30",
+      "snapshots": 90,
+      "replayed_prefixes": 88
+    },
+    {
+      "day": "2026-11-02",
+      "snapshots": 29,
+      "replayed_prefixes": 27
+    },
+    {
+      "day": "2026-11-03",
+      "snapshots": 71,
+      "replayed_prefixes": 69
+    },
+    {
+      "day": "2026-11-04",
+      "snapshots": 135,
+      "replayed_prefixes": 133
+    },
+    {
+      "day": "2026-11-05",
+      "snapshots": 145,
+      "replayed_prefixes": 143
+    },
+    {
+      "day": "2026-11-06",
+      "snapshots": 40,
+      "replayed_prefixes": 38
+    }
+  ],
+  "source_revision": "615fa68",
+  "executed_paired_contrasts": 32,
+  "source_hashes": {
+    "analyst/ict_smc_signals_8510.py": "6514b6f4fca4f3702e87ce3e942458d3208d30aebdc4dc3a1ca760388f63a086",
+    "analyst/ict_smc_rules_8510.json": "f38f5cdf2490991017af9c215a46d5e2be079d1baca9a2e11841fa67620b5e91",
+    "analyst/ict_smc_research_8510.json": "ad950c783d12b45d33c1bf5f84fd51334fe39ed0f5659840ea3f9db565ff7dfa",
+    "scripts/backtest_ict_smc_signals_8510.py": "f19355df29d0548c7704af06a1dc30440f80f14f1a960b4418d22b909011ed0e",
+    "data/terminal8500/instrument_master.csv": "76a38b528a3578be1eb49f555bee0fc23b6207886730f5f47d3dcf9cfcee6f9d"
+  },
+  "unavailable_entry_groups": [
+    "Active Corridor",
+    "Pullback Radar",
+    "Writer Stack-up",
+    "Matrix 2.0 Diverging bars"
+  ]
+}

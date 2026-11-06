@@ -241,6 +241,12 @@ async def serve_workspace_html():
     )
 
 
+@app.get('/api/ict-smc-signals/research')
+async def ict_smc_research_report():
+    from analyst.ict_smc_research_view_8510 import render
+    evidence=ROOT/'analyst/ict_smc_backtest_evidence_8510.json'
+    return HTMLResponse(render(json.loads(evidence.read_text())))
+
 @app.get('/api/ict-smc-signals')
 async def ict_smc_status():
     bridge=getattr(app.state,'ict_smc_bridge',None)
@@ -451,6 +457,50 @@ async def api_order_submit(req: Request):
         'algo_only_blocked': True, 'error': 'Manual trading is permanently disabled; select watchlist strikes for enabled algo setups instead'})
 
 
+@app.get("/api/live/status")
+async def api_live_status():
+    """Header state for the live switch. Read-only; arms nothing."""
+    return JSONResponse(content=backend.get_live_status())
+
+
+@app.post("/api/live/arm")
+async def api_live_arm(req: Request):
+    """Arms or disarms real money. Delegates to the audited gate.
+
+    The gate is NOT reimplemented here: configure_real_money still requires
+    live_validation_status == 'APPROVED' plus the exact typed confirmation, and
+    still persists real_money_enabled=False so a restart never re-arms. While
+    the verdict is NO_GO this returns 403 with the backend's own wording.
+    """
+    body = await req.json()
+    enabled = body.get("enabled", body.get("real_money_enabled"))
+    if not isinstance(enabled, bool):
+        return JSONResponse(status_code=400,
+                            content={"ok": False, "error": "enabled must be a boolean"})
+    result = backend.configure_real_money(enabled, str(body.get("confirmation", "")))
+    result["live_status"] = backend.get_live_status()
+    return JSONResponse(status_code=200 if result.get("ok") else 403, content=result)
+
+
+@app.post("/api/live/stop")
+async def api_live_stop(req: Request):
+    """'STOP LIVE — Switch to PAPER ONLY'.
+
+    Disarms live and cancels pending live orders unconditionally. Does NOT
+    auto-square-off: pass {"square_off": true} only after the user answers the
+    prompt. The 15:20 EOD square-off is independent of this and still runs, so
+    an unanswered prompt cannot leave a live position open overnight.
+    """
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    sq = body.get("square_off", None)
+    res = await backend.stop_live_trading(sq if isinstance(sq, bool) else None)
+    res["live_status"] = backend.get_live_status()
+    return JSONResponse(content=res)
+
+
 @app.post("/api/super_trail/config")
 async def api_super_trail_config(req: Request):
     """Updates Super Trail parameters mid-trade without restart."""
@@ -642,6 +692,13 @@ async def api_positions():
     positions = backend.get_active_positions({})
     return JSONResponse(content=positions)
 
+
+@app.get('/api/history/recorded')
+async def api_recorded_history(from_date: str = '1900-01-01', to_date: str = '9999-12-31'):
+    try:
+        return await asyncio.to_thread(backend._recorded_history().report, from_date, to_date)
+    except ValueError as exc:
+        return JSONResponse({'ok':False,'error':str(exc)},status_code=400)
 
 @app.get("/api/replay/dates")
 async def api_replay_dates(req: Request):

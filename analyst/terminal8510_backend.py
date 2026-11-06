@@ -1226,6 +1226,78 @@ class DhanBroker:
             log.error("Positions query exception: %s", e)
             return []
 
+    async def get_marketfeed_quote(self, segment_ids: Dict[str, List[int]]) -> Dict[str, Dict[str, Any]]:
+        """Queries /v2/marketfeed/quote for DEPTH (best bid / best ask).
+
+        WHY THIS WAS ADDED (v1.9.4b)
+        ----------------------------
+        The desk only ever called /marketfeed/ltp, which returns last_price and
+        no depth. Without bid/ask there is no spread, and without a spread the
+        real cost of execution cannot be measured -- paper fill prices are taken
+        from the signal price, so scripts/report_slippage.py reads a constant
+        zero no matter how many fills accumulate. The dry-run ledger needs the
+        true touch, so this endpoint is required.
+
+        RATE LIMIT DISCIPLINE
+        ---------------------
+        claude/Incident_2026-10-30_Dhan_rate_limit.md records a stall caused by
+        hammering Dhan. This is called ONLY on a signal in dry-run -- a handful
+        of calls per session, not one per candle -- and it shares the same 429
+        backoff discipline as get_marketfeed_ltp. It never raises and never
+        blocks a trade: on any failure it returns {} and the dry-run row records
+        NULL bid/ask, so a missing measurement is visible rather than invented.
+        """
+        out: Dict[str, Dict[str, Any]] = {}
+        if not self.is_configured():
+            return out
+        now = time.time()
+        if now < getattr(self, "_backoff_until", 0.0):
+            return out
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                res = await client.post(f"{self.base_url}/marketfeed/quote",
+                                        json=segment_ids, headers=self._headers())
+            if res.status_code == 429:
+                log.warning("[WARNING] Dhan quote rate limit (429) — no depth this cycle, backing off.")
+                self._backoff_until = now + getattr(self, "_backoff_delay", 3.0)
+                self._backoff_delay = min(getattr(self, "_backoff_delay", 3.0) + 2.0, 15.0)
+                return out
+            if res.status_code != 200:
+                log.debug("Marketfeed quote returned status %s", res.status_code)
+                return out
+            data = res.json().get("data", {}) or {}
+            for _seg, sec_map in data.items():
+                if not isinstance(sec_map, dict):
+                    continue
+                for sid, q in sec_map.items():
+                    if not isinstance(q, dict):
+                        continue
+                    depth = q.get("depth") or {}
+                    buys = depth.get("buy") or []
+                    sells = depth.get("sell") or []
+                    bid = ask = None
+                    if isinstance(buys, list) and buys and isinstance(buys[0], dict):
+                        bid = buys[0].get("price")
+                    if isinstance(sells, list) and sells and isinstance(sells[0], dict):
+                        ask = sells[0].get("price")
+                    # Dhan has also returned flat top-of-book keys on some builds.
+                    bid = bid if bid is not None else q.get("best_bid_price") or q.get("buy_price")
+                    ask = ask if ask is not None else q.get("best_ask_price") or q.get("sell_price")
+                    out[str(sid)] = {
+                        "bid": float(bid) if bid not in (None, "") else None,
+                        "ask": float(ask) if ask not in (None, "") else None,
+                        "last_price": (float(q["last_price"])
+                                       if q.get("last_price") not in (None, "") else None),
+                    }
+            self._backoff_delay = 3.0
+            self._backoff_until = 0.0
+        except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+            if "429" in str(exc):
+                self._backoff_until = now + getattr(self, "_backoff_delay", 3.0)
+                self._backoff_delay = min(getattr(self, "_backoff_delay", 3.0) + 2.0, 15.0)
+            log.warning("Marketfeed quote unavailable: %s", exc)
+        return out
+
     async def get_marketfeed_ltp(self, segment_ids: Dict[str, List[int]]) -> Dict[str, float]:
         """
         Queries /v2/marketfeed/ltp with 5.0-second TTL caching and 429 rate limit backoff.
@@ -1362,934 +1434,13 @@ class DhanBroker:
 
 
 # ── CALIBRATED MENTOR BENCHMARK GROUND TRUTH REPLAY LEDGER ───────────────────
-CALIBRATED_BENCHMARK_REPLAY: Dict[str, List[Dict[str, Any]]] = {
-    "2026-11-05": [
-        {
-            "Trade_ID": 291,
-            "setup_name": "Stage 2 8-EMA (Long) [Pullback Touch]",
-            "strategy": "Stage 2 8-EMA Touch",
-            "strategy_setup": "Stage 2 8 EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-11-05 10:15:00",
-            "exit_ist": "2026-11-05 11:00:00",
-            "duration": "00h 45m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 24366.7,
-            "index_exit": 24441.95,
-            "option_entry": 200.00,
-            "option_exit": 225.00,
-            "outcome": "TARGET HIT (+25pts Trailed)",
-            "gross_pnl": 1625.00,
-            "dhan_charges": 81.15,
-            "net_pnl": 1543.85,
-            "setup": "Stage 2 8-EMA (Long) [Pullback Touch]",
-            "entry_time": "2026-11-05 10:15:00",
-            "exit_time": "2026-11-05 11:00:00",
-            "result": "TARGET HIT (+25pts Trailed)",
-            "charges": 81.15,
-            "ema_bb_state_at_entry": "4EMA: 24380.0 > 8EMA: 24365.0 | UBB: UP | Width: 75.0",
-            "exit_reason": "TRAIL_TARGET_HIT",
-            "source": "AUTO ALGO 🤖",
-            "Source": "AUTO ALGO 🤖",
-            "contract_symbol": "09 Nov 2026 — NIFTY 24200 CE",
-            "Contract_Symbol": "09 Nov 2026 — NIFTY 24200 CE",
-            "reconciliation_match": True,
-        }
-    ],
-    "2026-11-04": [
-        {
-            "setup_name": "Stage 2 8-EMA (Long) [Pullback Touch]",
-            "strategy": "Stage 2 8-EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-11-04 10:15:00",
-            "exit_ist": "2026-11-04 11:00:00",
-            "duration": "00h 45m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 23834.5,
-            "index_exit": 23867.5,
-            "option_entry": 200.00,
-            "option_exit": 207.00,
-            "outcome": "TARGET HIT (+33pts Trailed)",
-            "gross_pnl": 455.00,
-            "dhan_charges": 75.03,
-            "net_pnl": 379.97,
-            "setup": "Stage 2 8-EMA (Long) [Pullback Touch]",
-            "entry_time": "2026-11-04 10:15:00",
-            "exit_time": "2026-11-04 11:00:00",
-            "result": "TARGET HIT (+33pts Trailed)",
-            "charges": 75.03,
-            "ema_bb_state_at_entry": "4EMA: 23842.0 > 8EMA: 23830.0 | UBB: UP | Width: 74.2",
-            "exit_reason": "TSL_CANDLE_TRAIL",
-        },
-        {
-            "setup_name": "4 MA / 8 EMA Downside Reversal",
-            "strategy": "4/8 Crossover Reversal",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-11-04 11:30:00",
-            "exit_ist": "2026-11-04 12:15:00",
-            "duration": "00h 45m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 23821.7,
-            "index_exit": 23764.7,
-            "option_entry": 200.00,
-            "option_exit": 257.00,
-            "outcome": "TARGET HIT (+57pts PE Short)",
-            "gross_pnl": 3705.00,
-            "dhan_charges": 81.02,
-            "net_pnl": 3623.98,
-            "setup": "4 MA / 8 EMA Downside Reversal",
-            "entry_time": "2026-11-04 11:30:00",
-            "exit_time": "2026-11-04 12:15:00",
-            "result": "TARGET HIT (+57pts PE Short)",
-            "charges": 81.02,
-            "ema_bb_state_at_entry": "4EMA: 23815.0 < 8EMA: 23828.0 | LBB: DOWN | Width: 78.5",
-            "exit_reason": "TARGET_40",
-        },
-        {
-            "setup_name": "4 MA / 8 EMA Upside Reversal",
-            "strategy": "4/8 Crossover Reversal",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-11-04 12:30:00",
-            "exit_ist": "2026-11-04 13:15:00",
-            "duration": "00h 45m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 23737.7,
-            "index_exit": 23792.7,
-            "option_entry": 200.00,
-            "option_exit": 255.00,
-            "outcome": "TARGET HIT (+55pts CE Long)",
-            "gross_pnl": 3575.00,
-            "dhan_charges": 81.02,
-            "net_pnl": 3493.98,
-            "setup": "4 MA / 8 EMA Upside Reversal",
-            "entry_time": "2026-11-04 12:30:00",
-            "exit_time": "2026-11-04 13:15:00",
-            "result": "TARGET HIT (+55pts CE Long)",
-            "charges": 81.02,
-            "ema_bb_state_at_entry": "4EMA: 23755.0 > 8EMA: 23740.0 | UBB: UP | Width: 82.0",
-            "exit_reason": "TARGET_40",
-        },
-        {
-            "setup_name": "1H 8-EMA Support Bounce Confluence",
-            "strategy": "1H 8-EMA Support",
-            "timeframe": "1H + 15m",
-            "direction": "LONG",
-            "entry_ist": "2026-11-04 12:15:00",
-            "exit_ist": "2026-11-04 14:30:00",
-            "duration": "02h 15m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 23737.7,
-            "index_exit": 23837.7,
-            "option_entry": 200.00,
-            "option_exit": 300.00,
-            "outcome": "TARGET HIT (+100pts High Conviction)",
-            "gross_pnl": 6500.00,
-            "dhan_charges": 92.50,
-            "net_pnl": 6407.50,
-            "setup": "1H 8-EMA Support Bounce Confluence",
-            "entry_time": "2026-11-04 12:15:00",
-            "exit_time": "2026-11-04 14:30:00",
-            "result": "TARGET HIT (+100pts High Conviction)",
-            "charges": 92.50,
-            "ema_bb_state_at_entry": "1H-8EMA: 23740.0 Confluence | 4EMA > 8EMA | Width: 85.0",
-            "exit_reason": "SUPER_TRAIL_PULLBACK",
-        },
-    ],
-    "2026-11-03": [
-        {
-            "setup_name": "4 MA / 8 EMA Upside Reversal",
-            "strategy": "4/8 Crossover Reversal",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-11-03 09:45:00",
-            "exit_ist": "2026-11-03 10:30:00",
-            "duration": "00h 45m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 23620.0,
-            "index_exit": 23675.0,
-            "option_entry": 200.00,
-            "option_exit": 233.00,
-            "outcome": "TARGET HIT (+33pts CE Long)",
-            "gross_pnl": 2145.00,
-            "dhan_charges": 78.50,
-            "net_pnl": 2066.50,
-            "setup": "4 MA / 8 EMA Upside Reversal",
-            "entry_time": "2026-11-03 09:45:00",
-            "exit_time": "2026-11-03 10:30:00",
-            "result": "TARGET HIT (+33pts CE Long)",
-            "charges": 78.50,
-            "ema_bb_state_at_entry": "4EMA: 23635.0 > 8EMA: 23625.0 | UBB: UP | Width: 70.0",
-            "exit_reason": "TARGET_40",
-        },
-        {
-            "setup_name": "Stage 2 8-EMA (Long) [Pullback Touch]",
-            "strategy": "Stage 2 8-EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-11-03 11:00:00",
-            "exit_ist": "2026-11-03 11:45:00",
-            "duration": "00h 45m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 23640.0,
-            "index_exit": 23695.0,
-            "option_entry": 200.00,
-            "option_exit": 233.00,
-            "outcome": "TARGET HIT (+33pts Trailed)",
-            "gross_pnl": 2145.00,
-            "dhan_charges": 78.50,
-            "net_pnl": 2066.50,
-            "setup": "Stage 2 8-EMA (Long) [Pullback Touch]",
-            "entry_time": "2026-11-03 11:00:00",
-            "exit_time": "2026-11-03 11:45:00",
-            "result": "TARGET HIT (+33pts Trailed)",
-            "charges": 78.50,
-            "ema_bb_state_at_entry": "4EMA: 23650.0 > 8EMA: 23640.0 | UBB: UP | Width: 72.5",
-            "exit_reason": "TSL_CANDLE_TRAIL",
-        },
-        {
-            "setup_name": "1H 8-EMA Support Bounce Confluence",
-            "strategy": "1H 8-EMA Support",
-            "timeframe": "1H + 15m",
-            "direction": "LONG",
-            "entry_ist": "2026-11-03 12:15:00",
-            "exit_ist": "2026-11-03 13:45:00",
-            "duration": "01h 30m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 23660.0,
-            "index_exit": 23740.0,
-            "option_entry": 200.00,
-            "option_exit": 248.00,
-            "outcome": "TARGET HIT (+48pts High Conviction)",
-            "gross_pnl": 3120.00,
-            "dhan_charges": 80.12,
-            "net_pnl": 3039.88,
-            "setup": "1H 8-EMA Support Bounce Confluence",
-            "entry_time": "2026-11-03 12:15:00",
-            "exit_time": "2026-11-03 13:45:00",
-            "result": "TARGET HIT (+48pts High Conviction)",
-            "charges": 80.12,
-            "ema_bb_state_at_entry": "1H-8EMA: 23655.0 Support | 4EMA > 8EMA | Width: 75.0",
-            "exit_reason": "SUPER_TRAIL_PULLBACK",
-        },
-    ],
-    "2026-11-02": [
-        {
-            "setup_name": "Stage 2 8-EMA (Long)",
-            "strategy": "Stage 2 8-EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-11-02 11:45:00",
-            "exit_ist": "2026-11-02 12:30:00",
-            "duration": "00h 45m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 23280.0,
-            "index_exit": 23320.0,
-            "option_entry": 200.00,
-            "option_exit": 240.00,
-            "outcome": "TARGET HIT (+40pts)",
-            "gross_pnl": 2600.00,
-            "dhan_charges": 78.50,
-            "net_pnl": 2521.50,
-            "setup": "Stage 2 8-EMA (Long)",
-            "entry_time": "2026-11-02 11:45:00",
-            "exit_time": "2026-11-02 12:30:00",
-            "result": "TARGET HIT (+40pts)",
-            "charges": 78.50,
-            "ema_bb_state_at_entry": "4EMA: 23285.0 > 8EMA: 23272.0 | UBB: UP | Width: 74.2",
-            "exit_reason": "TARGET_40",
-        },
-        {
-            "setup_name": "8-EMA Reversal Down (Short)",
-            "strategy": "4/8 Crossover Reversal",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-11-02 12:30:00",
-            "exit_ist": "2026-11-02 13:30:00",
-            "duration": "01h 00m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 23320.0,
-            "index_exit": 23250.0,
-            "option_entry": 200.00,
-            "option_exit": 270.00,
-            "outcome": "TARGET HIT (+70pts T2)",
-            "gross_pnl": 4550.00,
-            "dhan_charges": 82.50,
-            "net_pnl": 4467.50,
-            "setup": "8-EMA Reversal Down (Short)",
-            "entry_time": "2026-11-02 12:30:00",
-            "exit_time": "2026-11-02 13:30:00",
-            "result": "TARGET HIT (+70pts T2)",
-            "charges": 82.50,
-            "ema_bb_state_at_entry": "4EMA: 23310.0 < 8EMA: 23322.0 | LBB: DOWN | Width: 76.0",
-            "exit_reason": "SUPER_TRAIL_PULLBACK",
-        },
-        {
-            "setup_name": "1H 8-EMA Support Bounce Confluence",
-            "strategy": "1H 8-EMA Support",
-            "timeframe": "1H + 15m",
-            "direction": "LONG",
-            "entry_ist": "2026-11-02 13:45:00",
-            "exit_ist": "2026-11-02 15:00:00",
-            "duration": "01h 15m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 23260.0,
-            "index_exit": 23318.0,
-            "option_entry": 200.00,
-            "option_exit": 258.00,
-            "outcome": "TARGET HIT (+58pts TSL)",
-            "gross_pnl": 3770.00,
-            "dhan_charges": 81.20,
-            "net_pnl": 3688.80,
-            "setup": "1H 8-EMA Support Bounce Confluence",
-            "entry_time": "2026-11-02 13:45:00",
-            "exit_time": "2026-11-02 15:00:00",
-            "result": "TARGET HIT (+58pts TSL)",
-            "charges": 81.20,
-            "ema_bb_state_at_entry": "1H Hammer Bounce | 4EMA > 8EMA | Width: 75.5",
-            "exit_reason": "TSL_CANDLE_TRAIL",
-        },
-    ],
-    "2026-10-30": [
-        {
-            "setup_name": "Stage 2 8-EMA (Long)",
-            "strategy": "Stage 2 8-EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-10-30 10:15:00",
-            "exit_ist": "2026-10-30 12:15:00",
-            "duration": "02h 00m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22980.0,
-            "index_exit": 23108.0,
-            "option_entry": 200.00,
-            "option_exit": 328.00,
-            "outcome": "TARGET HIT (+128pts TSL)",
-            "gross_pnl": 8320.00,
-            "dhan_charges": 95.50,
-            "net_pnl": 8224.50,
-            "setup": "Stage 2 8-EMA (Long)",
-            "entry_time": "2026-10-30 10:15:00",
-            "exit_time": "2026-10-30 12:15:00",
-            "result": "TARGET HIT (+128pts TSL)",
-            "charges": 95.50,
-            "ema_bb_state_at_entry": "4EMA: 22995.0 > 8EMA: 22980.0 | UBB: UP | Width: 88.0",
-            "exit_reason": "TSL_CANDLE_TRAIL",
-        },
-    ],
-    "2026-10-29": [
-        {
-            "setup_name": "Stage 2 8-EMA (Long)",
-            "strategy": "Stage 2 8-EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-10-29 09:45:00",
-            "exit_ist": "2026-10-29 10:45:00",
-            "duration": "01h 00m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22740.0,
-            "index_exit": 22864.0,
-            "option_entry": 200.00,
-            "option_exit": 324.00,
-            "outcome": "TARGET HIT (+124pts TSL)",
-            "gross_pnl": 8060.00,
-            "dhan_charges": 94.80,
-            "net_pnl": 7965.20,
-            "setup": "Stage 2 8-EMA (Long)",
-            "entry_time": "2026-10-29 09:45:00",
-            "exit_time": "2026-10-29 10:45:00",
-            "result": "TARGET HIT (+124pts TSL)",
-            "charges": 94.80,
-            "ema_bb_state_at_entry": "4EMA: 22755.0 > 8EMA: 22740.0 | UBB: UP | Width: 92.0",
-            "exit_reason": "TSL_CANDLE_TRAIL",
-        },
-        {
-            "setup_name": "Stage 2 8-EMA (Long)",
-            "strategy": "Stage 2 8-EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-10-29 11:30:00",
-            "exit_ist": "2026-10-29 15:00:00",
-            "duration": "03h 30m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22840.0,
-            "index_exit": 22930.0,
-            "option_entry": 200.00,
-            "option_exit": 290.00,
-            "outcome": "TARGET HIT (+90pts TSL)",
-            "gross_pnl": 5850.00,
-            "dhan_charges": 88.50,
-            "net_pnl": 5761.50,
-            "setup": "Stage 2 8-EMA (Long)",
-            "entry_time": "2026-10-29 11:30:00",
-            "exit_time": "2026-10-29 15:00:00",
-            "result": "TARGET HIT (+90pts TSL)",
-            "charges": 88.50,
-            "ema_bb_state_at_entry": "4EMA: 22855.0 > 8EMA: 22840.0 | Hammer High | Width: 95.0",
-            "exit_reason": "TSL_CANDLE_TRAIL",
-        },
-    ],
-    "2026-10-28": [
-        {
-            "setup_name": "Stage 2 8-EMA (Long)",
-            "strategy": "Stage 2 8-EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-10-28 10:30:00",
-            "exit_ist": "2026-10-28 11:45:00",
-            "duration": "01h 15m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22710.0,
-            "index_exit": 22750.0,
-            "option_entry": 200.00,
-            "option_exit": 240.00,
-            "outcome": "TARGET HIT (+40pts)",
-            "gross_pnl": 2600.00,
-            "dhan_charges": 78.50,
-            "net_pnl": 2521.50,
-            "setup": "Stage 2 8-EMA (Long)",
-            "entry_time": "2026-10-28 10:30:00",
-            "exit_time": "2026-10-28 11:45:00",
-            "result": "TARGET HIT (+40pts)",
-            "charges": 78.50,
-            "ema_bb_state_at_entry": "4EMA: 22718.0 > 8EMA: 22710.0 | UBB: UP | Width: 74.0",
-            "exit_reason": "TARGET_40",
-        },
-    ],
-    "2026-10-27": [
-        {
-            "setup_name": "Stage 2 8-EMA (Long)",
-            "strategy": "Stage 2 8-EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-10-27 10:00:00",
-            "exit_ist": "2026-10-27 11:00:00",
-            "duration": "01h 00m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22720.0,
-            "index_exit": 22760.0,
-            "option_entry": 200.00,
-            "option_exit": 240.00,
-            "outcome": "TARGET HIT (+40pts)",
-            "gross_pnl": 2600.00,
-            "dhan_charges": 78.50,
-            "net_pnl": 2521.50,
-            "setup": "Stage 2 8-EMA (Long)",
-            "entry_time": "2026-10-27 10:00:00",
-            "exit_time": "2026-10-27 11:00:00",
-            "result": "TARGET HIT (+40pts)",
-            "charges": 78.50,
-            "ema_bb_state_at_entry": "4EMA: 22728.0 > 8EMA: 22720.0 | 1H Support | Width: 71.0",
-            "exit_reason": "TARGET_40",
-        },
-        {
-            "setup_name": "8-EMA Reversal Down (Short)",
-            "strategy": "4/8 Crossover Reversal",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-10-27 12:00:00",
-            "exit_ist": "2026-10-27 13:30:00",
-            "duration": "01h 30m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22780.0,
-            "index_exit": 22734.0,
-            "option_entry": 200.00,
-            "option_exit": 246.00,
-            "outcome": "TARGET HIT (+46pts TSL)",
-            "gross_pnl": 2990.00,
-            "dhan_charges": 79.50,
-            "net_pnl": 2910.50,
-            "setup": "8-EMA Reversal Down (Short)",
-            "entry_time": "2026-10-27 12:00:00",
-            "exit_time": "2026-10-27 13:30:00",
-            "result": "TARGET HIT (+46pts TSL)",
-            "charges": 79.50,
-            "ema_bb_state_at_entry": "4EMA: 22772.0 < 8EMA: 22780.0 | LBB: DOWN | Width: 73.0",
-            "exit_reason": "TSL_CANDLE_TRAIL",
-        },
-    ],
-    "2026-10-19": [
-        {
-            "setup_name": "8-EMA Reversal Up (Long)",
-            "strategy": "4/8 Crossover Reversal",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-10-19 09:30:00",
-            "exit_ist": "2026-10-19 10:00:00",
-            "duration": "00h 30m 00s",
-            "day_outcome": "❌ LOSS (SL)",
-            "day_status": "❌ LOSS (SL)",
-            "index_entry": 23140.0,
-            "index_exit": 23112.0,
-            "option_entry": 200.00,
-            "option_exit": 172.00,
-            "outcome": "STOP LOSS HIT (-28pts)",
-            "gross_pnl": -1820.00,
-            "dhan_charges": 75.00,
-            "net_pnl": -1895.00,
-            "setup": "8-EMA Reversal Up (Long)",
-            "entry_time": "2026-10-19 09:30:00",
-            "exit_time": "2026-10-19 10:00:00",
-            "result": "STOP LOSS HIT (-28pts)",
-            "charges": 75.00,
-            "ema_bb_state_at_entry": "4EMA: 23145.0 > 8EMA: 23140.0 | Exited close below 8EMA",
-            "exit_reason": "STOP_LOSS",
-        },
-        {
-            "setup_name": "Stage 3 8-EMA (Short)",
-            "strategy": "Stage 3 8-EMA Rejection",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-10-19 10:30:00",
-            "exit_ist": "2026-10-19 13:00:00",
-            "duration": "02h 30m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 23080.0,
-            "index_exit": 22987.0,
-            "option_entry": 200.00,
-            "option_exit": 293.00,
-            "outcome": "TARGET HIT (+93pts TSL)",
-            "gross_pnl": 6045.00,
-            "dhan_charges": 89.20,
-            "net_pnl": 5955.80,
-            "setup": "Stage 3 8-EMA (Short)",
-            "entry_time": "2026-10-19 10:30:00",
-            "exit_time": "2026-10-19 13:00:00",
-            "result": "TARGET HIT (+93pts TSL)",
-            "charges": 89.20,
-            "ema_bb_state_at_entry": "4EMA: 23068.0 < 8EMA: 23080.0 | LBB: DOWN | Width: 88.0",
-            "exit_reason": "TSL_CANDLE_TRAIL",
-        },
-        {
-            "setup_name": "Stage 3 8-EMA (Short)",
-            "strategy": "Stage 3 8-EMA Rejection",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-10-19 13:30:00",
-            "exit_ist": "2026-10-19 15:00:00",
-            "duration": "01h 30m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22970.0,
-            "index_exit": 22894.0,
-            "option_entry": 200.00,
-            "option_exit": 276.00,
-            "outcome": "TARGET HIT (+76pts TSL)",
-            "gross_pnl": 4940.00,
-            "dhan_charges": 84.50,
-            "net_pnl": 4855.50,
-            "setup": "Stage 3 8-EMA (Short)",
-            "entry_time": "2026-10-19 13:30:00",
-            "exit_time": "2026-10-19 15:00:00",
-            "result": "TARGET HIT (+76pts TSL)",
-            "charges": 84.50,
-            "ema_bb_state_at_entry": "4EMA: 22960.0 < 8EMA: 22970.0 | Doji at Day Low | Width: 82.0",
-            "exit_reason": "TSL_CANDLE_TRAIL",
-        },
-    ],
-    "2026-10-14": [
-        {
-            "setup_name": "Stage 2 8-EMA (Long)",
-            "strategy": "Stage 2 8-EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-10-14 09:45:00",
-            "exit_ist": "2026-10-14 10:30:00",
-            "duration": "00h 45m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22710.0,
-            "index_exit": 22750.0,
-            "option_entry": 200.00,
-            "option_exit": 240.00,
-            "outcome": "TARGET HIT (+40pts)",
-            "gross_pnl": 2600.00,
-            "dhan_charges": 78.50,
-            "net_pnl": 2521.50,
-            "setup": "Stage 2 8-EMA (Long)",
-            "entry_time": "2026-10-14 09:45:00",
-            "exit_time": "2026-10-14 10:30:00",
-            "result": "TARGET HIT (+40pts)",
-            "charges": 78.50,
-            "ema_bb_state_at_entry": "4EMA: 22718.0 > 8EMA: 22710.0 | UBB: UP | Width: 68.0",
-            "exit_reason": "TARGET_40",
-        },
-        {
-            "setup_name": "8-EMA Reversal Down (Short)",
-            "strategy": "4/8 Crossover Reversal",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-10-14 11:00:00",
-            "exit_ist": "2026-10-14 11:45:00",
-            "duration": "00h 45m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22730.0,
-            "index_exit": 22710.0,
-            "option_entry": 200.00,
-            "option_exit": 220.00,
-            "outcome": "TARGET HIT (+20pts)",
-            "gross_pnl": 1300.00,
-            "dhan_charges": 77.20,
-            "net_pnl": 1222.80,
-            "setup": "8-EMA Reversal Down (Short)",
-            "entry_time": "2026-10-14 11:00:00",
-            "exit_time": "2026-10-14 11:45:00",
-            "result": "TARGET HIT (+20pts)",
-            "charges": 77.20,
-            "ema_bb_state_at_entry": "4EMA: 22722.0 < 8EMA: 22730.0 | LBB: DOWN | Width: 70.0",
-            "exit_reason": "TARGET_40",
-        },
-        {
-            "setup_name": "8-EMA Reversal Down (Short)",
-            "strategy": "4/8 Crossover Reversal",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-10-14 12:00:00",
-            "exit_ist": "2026-10-14 13:30:00",
-            "duration": "01h 30m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22700.0,
-            "index_exit": 22635.0,
-            "option_entry": 200.00,
-            "option_exit": 265.00,
-            "outcome": "TARGET HIT (+65pts TSL)",
-            "gross_pnl": 4225.00,
-            "dhan_charges": 81.50,
-            "net_pnl": 4143.50,
-            "setup": "8-EMA Reversal Down (Short)",
-            "entry_time": "2026-10-14 12:00:00",
-            "exit_time": "2026-10-14 13:30:00",
-            "result": "TARGET HIT (+65pts TSL)",
-            "charges": 81.50,
-            "ema_bb_state_at_entry": "4EMA: 22692.0 < 8EMA: 22700.0 | LBB: DOWN | Width: 74.0",
-            "exit_reason": "TSL_CANDLE_TRAIL",
-        },
-        {
-            "setup_name": "Stage 3 8-EMA (Short)",
-            "strategy": "Stage 3 8-EMA Rejection",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-10-14 14:00:00",
-            "exit_ist": "2026-10-14 15:00:00",
-            "duration": "01h 00m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22650.0,
-            "index_exit": 22610.0,
-            "option_entry": 200.00,
-            "option_exit": 240.00,
-            "outcome": "TARGET HIT (+40pts)",
-            "gross_pnl": 2600.00,
-            "dhan_charges": 78.50,
-            "net_pnl": 2521.50,
-            "setup": "Stage 3 8-EMA (Short)",
-            "entry_time": "2026-10-14 14:00:00",
-            "exit_time": "2026-10-14 15:00:00",
-            "result": "TARGET HIT (+40pts)",
-            "charges": 78.50,
-            "ema_bb_state_at_entry": "4EMA: 22642.0 < 8EMA: 22650.0 | LBB: DOWN | Width: 78.0",
-            "exit_reason": "TARGET_40",
-        },
-    ],
-    "2026-10-13": [
-        {
-            "setup_name": "8-EMA Reversal Down (Short)",
-            "strategy": "4/8 Crossover Reversal",
-            "timeframe": "5m",
-            "direction": "SHORT",
-            "entry_ist": "2026-10-13 09:45:00",
-            "exit_ist": "2026-10-13 10:30:00",
-            "duration": "00h 45m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22350.0,
-            "index_exit": 22320.0,
-            "option_entry": 200.00,
-            "option_exit": 230.00,
-            "outcome": "TARGET HIT (+30pts)",
-            "gross_pnl": 1950.00,
-            "dhan_charges": 77.80,
-            "net_pnl": 1872.20,
-            "setup": "8-EMA Reversal Down (Short)",
-            "entry_time": "2026-10-13 09:45:00",
-            "exit_time": "2026-10-13 10:30:00",
-            "result": "TARGET HIT (+30pts)",
-            "charges": 77.80,
-            "ema_bb_state_at_entry": "5m Reversal Cross | 4EMA < 8EMA | Width: 65.0",
-            "exit_reason": "TARGET_40",
-        },
-        {
-            "setup_name": "Stage 2 8-EMA (Long)",
-            "strategy": "Stage 2 8-EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-10-13 11:00:00",
-            "exit_ist": "2026-10-13 12:00:00",
-            "duration": "01h 00m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22440.0,
-            "index_exit": 22480.0,
-            "option_entry": 200.00,
-            "option_exit": 240.00,
-            "outcome": "TARGET HIT (+40pts)",
-            "gross_pnl": 2600.00,
-            "dhan_charges": 78.50,
-            "net_pnl": 2521.50,
-            "setup": "Stage 2 8-EMA (Long)",
-            "entry_time": "2026-10-13 11:00:00",
-            "exit_time": "2026-10-13 12:00:00",
-            "result": "TARGET HIT (+40pts)",
-            "charges": 78.50,
-            "ema_bb_state_at_entry": "4EMA: 22448.0 > 8EMA: 22440.0 | UBB: UP | Width: 75.0",
-            "exit_reason": "TARGET_40",
-        },
-        {
-            "setup_name": "Stage 2 8-EMA (Long)",
-            "strategy": "Stage 2 8-EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-10-13 13:15:00",
-            "exit_ist": "2026-10-13 14:15:00",
-            "duration": "01h 00m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22580.0,
-            "index_exit": 22605.0,
-            "option_entry": 200.00,
-            "option_exit": 225.00,
-            "outcome": "TARGET HIT (+25pts)",
-            "gross_pnl": 1625.00,
-            "dhan_charges": 77.50,
-            "net_pnl": 1547.50,
-            "setup": "Stage 2 8-EMA (Long)",
-            "entry_time": "2026-10-13 13:15:00",
-            "exit_time": "2026-10-13 14:15:00",
-            "result": "TARGET HIT (+25pts)",
-            "charges": 77.50,
-            "ema_bb_state_at_entry": "Day High Breakout | 4EMA > 8EMA | Width: 80.0",
-            "exit_reason": "TARGET_40",
-        },
-    ],
-    "2026-10-08": [
-        {
-            "setup_name": "Stage 3 8-EMA (Short)",
-            "strategy": "Stage 3 8-EMA Rejection",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-10-08 09:30:00",
-            "exit_ist": "2026-10-08 11:45:00",
-            "duration": "02h 15m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22560.0,
-            "index_exit": 22393.0,
-            "option_entry": 200.00,
-            "option_exit": 367.00,
-            "outcome": "TARGET HIT (+167pts TSL)",
-            "gross_pnl": 10855.00,
-            "dhan_charges": 98.50,
-            "net_pnl": 10756.50,
-            "setup": "Stage 3 8-EMA (Short)",
-            "entry_time": "2026-10-08 09:30:00",
-            "exit_time": "2026-10-08 11:45:00",
-            "result": "TARGET HIT (+167pts TSL)",
-            "charges": 98.50,
-            "ema_bb_state_at_entry": "4EMA: 22545.0 < 8EMA: 22560.0 | LBB: DOWN | Width: 95.0",
-            "exit_reason": "TSL_CANDLE_TRAIL",
-        },
-        {
-            "setup_name": "Stage 3 8-EMA (Short)",
-            "strategy": "Stage 3 8-EMA Rejection",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-10-08 12:30:00",
-            "exit_ist": "2026-10-08 14:00:00",
-            "duration": "01h 30m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22410.0,
-            "index_exit": 22370.0,
-            "option_entry": 200.00,
-            "option_exit": 240.00,
-            "outcome": "TARGET HIT (+40pts)",
-            "gross_pnl": 2600.00,
-            "dhan_charges": 78.50,
-            "net_pnl": 2521.50,
-            "setup": "Stage 3 8-EMA (Short)",
-            "entry_time": "2026-10-08 12:30:00",
-            "exit_time": "2026-10-08 14:00:00",
-            "result": "TARGET HIT (+40pts)",
-            "charges": 78.50,
-            "ema_bb_state_at_entry": "4EMA: 22400.0 < 8EMA: 22410.0 | Resistance Retracement | Width: 85.0",
-            "exit_reason": "TARGET_40",
-        },
-    ],
-    "2026-10-07": [
-        {
-            "setup_name": "8-EMA Reversal Down (Short)",
-            "strategy": "4/8 Crossover Reversal",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-10-07 09:45:00",
-            "exit_ist": "2026-10-07 13:15:00",
-            "duration": "03h 30m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22710.0,
-            "index_exit": 22610.0,
-            "option_entry": 200.00,
-            "option_exit": 300.00,
-            "outcome": "TARGET HIT (+100pts TSL)",
-            "gross_pnl": 6500.00,
-            "dhan_charges": 92.50,
-            "net_pnl": 6407.50,
-            "setup": "8-EMA Reversal Down (Short)",
-            "entry_time": "2026-10-07 09:45:00",
-            "exit_time": "2026-10-07 13:15:00",
-            "result": "TARGET HIT (+100pts TSL)",
-            "charges": 92.50,
-            "ema_bb_state_at_entry": "PDH Wick Rejection | 4EMA < 8EMA | Width: 75.0",
-            "exit_reason": "TSL_CANDLE_TRAIL",
-        },
-        {
-            "setup_name": "Stage 3 8-EMA (Short)",
-            "strategy": "Stage 3 8-EMA Rejection",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-10-07 13:45:00",
-            "exit_ist": "2026-10-07 14:45:00",
-            "duration": "01h 00m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22620.0,
-            "index_exit": 22595.0,
-            "option_entry": 200.00,
-            "option_exit": 225.00,
-            "outcome": "TARGET HIT (+25pts)",
-            "gross_pnl": 1625.00,
-            "dhan_charges": 77.50,
-            "net_pnl": 1547.50,
-            "setup": "Stage 3 8-EMA (Short)",
-            "entry_time": "2026-10-07 13:45:00",
-            "exit_time": "2026-10-07 14:45:00",
-            "result": "TARGET HIT (+25pts)",
-            "charges": 77.50,
-            "ema_bb_state_at_entry": "S2 Follow-through to 8-EMA | Width: 78.0",
-            "exit_reason": "TARGET_40",
-        },
-    ],
-    "2026-10-06": [
-        {
-            "setup_name": "Stage 2 8-EMA (Long)",
-            "strategy": "Stage 2 8-EMA Touch",
-            "timeframe": "15m",
-            "direction": "LONG",
-            "entry_ist": "2026-10-06 10:00:00",
-            "exit_ist": "2026-10-06 11:00:00",
-            "duration": "01h 00m 00s",
-            "day_outcome": "✅ WIN",
-            "day_status": "✅ WIN",
-            "index_entry": 22620.0,
-            "index_exit": 22660.0,
-            "option_entry": 200.00,
-            "option_exit": 240.00,
-            "outcome": "TARGET HIT (+40pts)",
-            "gross_pnl": 2600.00,
-            "dhan_charges": 78.50,
-            "net_pnl": 2521.50,
-            "setup": "Stage 2 8-EMA (Long)",
-            "entry_time": "2026-10-06 10:00:00",
-            "exit_time": "2026-10-06 11:00:00",
-            "result": "TARGET HIT (+40pts)",
-            "charges": 78.50,
-            "ema_bb_state_at_entry": "4EMA: 22628.0 > 8EMA: 22620.0 | UBB: UP | Width: 72.0",
-            "exit_reason": "TARGET_40",
-        },
-        {
-            "setup_name": "Stage 3 8-EMA (Short)",
-            "strategy": "Stage 3 8-EMA Rejection",
-            "timeframe": "15m",
-            "direction": "SHORT",
-            "entry_ist": "2026-10-06 12:00:00",
-            "exit_ist": "2026-10-06 12:45:00",
-            "duration": "00h 45m 00s",
-            "day_outcome": "⚪ CTC (0 Pts)",
-            "day_status": "⚪ CTC (0 Pts)",
-            "index_entry": 22750.0,
-            "index_exit": 22750.0,
-            "option_entry": 200.00,
-            "option_exit": 200.00,
-            "outcome": "CTC EXIT (0pts)",
-            "gross_pnl": 0.00,
-            "dhan_charges": 75.00,
-            "net_pnl": -75.00,
-            "setup": "Stage 3 8-EMA (Short)",
-            "entry_time": "2026-10-06 12:00:00",
-            "exit_time": "2026-10-06 12:45:00",
-            "result": "CTC EXIT (0pts)",
-            "charges": 75.00,
-            "ema_bb_state_at_entry": "IH low from Day High | No follow-through candle (Rule C)",
-            "exit_reason": "NO_FOLLOW_THROUGH_CTC",
-        },
-    ],
-}
 
 
 def get_replay_trades_for_date(target_date: str) -> List[Dict[str, Any]]:
-    """
-    Returns verified execution results for specific trading sessions respecting MA stack.
-    Checks analyst/replay_data/{target_date}.json first, then CALIBRATED_BENCHMARK_REPLAY.
-    """
-    json_path = REPLAY_DATA_DIR / f"{target_date}.json"
-    if json_path.exists():
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                d = json.load(f)
-                if "trades" in d and d["trades"]:
-                    return d["trades"]
-        except Exception as e:
-            log.error("Error reading replay json for %s: %s", target_date, e)
-
-    if target_date in CALIBRATED_BENCHMARK_REPLAY:
-        raw = CALIBRATED_BENCHMARK_REPLAY[target_date]
-        formatted = []
-        for t in raw:
-            item = dict(t)
-            dir_str = item.get("direction", "LONG")
-            opt_t = "CE" if dir_str == "LONG" else "PE"
-            entry_idx = float(item.get("index_entry", 0.0))
-            strk = (round(entry_idx / 100.0) * 100) if entry_idx > 0 else 0.0
-            c_sym = format_contract_symbol(expiry=target_date, strike=strk, opt_type=opt_t, default_expiry=target_date)
-            item["contract_symbol"] = c_sym
-            item["symbol"] = c_sym
-            item["structured_contract"] = get_contract_structured_fields(c_sym, expiry=target_date)
-            formatted.append(item)
-        return formatted
-    return []
+    """Legacy module API, now reads only the configured recorded paper ledger."""
+    from analyst.recorded_history_8510 import RecordedHistory
+    cfg=json.loads((ROOT/'analyst/terminal8510_config.json').read_text())
+    return RecordedHistory(ROOT/cfg['ledger_db_path'], ROOT/cfg['market_db_path']).trades(target_date,target_date)
 
 
 def compute_five_factor_confluence(trend=None,dhan_oi=None,volume=None,cfg=None):
@@ -2371,8 +1522,333 @@ class QuantTerminalBackend:
                         paper_execution_enabled=True, algo_only_execution=True)
         try: self.config_path.write_text(json.dumps(self.cfg, indent=2))
         except OSError: log.exception('Could not persist disarmed startup defaults')
+        if enabled:
+            self._live_disarm_reason = None
+        dry = self.dry_run_gate_state()
         return {'ok': True, 'execution_mode': self.execution_mode, 'real_money_enabled': enabled,
-                'paper_execution_enabled': True, 'algo_only_execution': True}
+                'paper_execution_enabled': True, 'algo_only_execution': True,
+                'dry_run': dry['dry_run'], 'dry_run_reason': dry['reason'],
+                'dry_run_orders_recorded': dry['recorded'],
+                'dry_run_orders_required': dry['required'],
+                'message': ('DRY-RUN ARMED: no real order will be placed. ' + dry['reason'])
+                           if (enabled and dry['dry_run']) else
+                           ('LIVE ARMED: real orders will be placed via Dhan.'
+                            if enabled else 'Live disarmed. Paper only.')}
+
+    # ── v1.9.4b LIVE EXECUTION GUARDS ────────────────────────────────────────
+    #
+    # These only ever DOWNGRADE execution (LIVE -> DRY_RUN -> PAPER_ONLY).
+    # Nothing here can arm real money; that remains configure_real_money's job,
+    # which itself requires live_validation_status == 'APPROVED'.
+
+    def _safety_cfg(self) -> Dict[str, Any]:
+        return self.cfg.get('execution_safety_v194', {}) or {}
+
+    def dry_run_gate_state(self) -> Dict[str, Any]:
+        """Dry-run is the mandatory first state after arming.
+
+        The exit condition is EVIDENCE, not elapsed days: a day count measures
+        nothing about execution cost. It is a number of recorded dry-run orders,
+        because each row carries a real bid/ask spread and those rows are the
+        only way to measure slippage at all -- paper fills are taken from the
+        signal price, so scripts/report_slippage.py can never measure it while
+        the desk is PAPER_ONLY.
+        """
+        cfg = self._safety_cfg()
+        required = int(cfg.get('dry_run_exit_min_orders', 30) or 0)
+        recorded = self.count_dry_run_orders()
+        forced = bool(cfg.get('live_dry_run', True))
+        if forced:
+            return {'dry_run': True, 'recorded': recorded, 'required': required,
+                    'reason': 'live_dry_run is enabled in config.'}
+        if recorded < required:
+            return {'dry_run': True, 'recorded': recorded, 'required': required,
+                    'reason': ('Only {} of {} dry-run orders recorded; real execution '
+                               'cost is still unmeasured.'.format(recorded, required))}
+        return {'dry_run': False, 'recorded': recorded, 'required': required,
+                'reason': 'Dry-run evidence threshold met.'}
+
+    def _ledger_scalar(self, sql: str, args: tuple = (), default=0):
+        """Read one number from the ledger, or the default.
+
+        Every caller is a guard or a measurement, so this must NEVER raise: a
+        backend with no ledger (unit fixtures), a missing table (fresh ledger),
+        or a locked file must all degrade to the default. The default is always
+        the SAFE direction -- zero evidence keeps the desk in dry-run, and zero
+        P&L never satisfies a loss limit by accident.
+        """
+        db = getattr(self, "ledger_db", None)
+        if not db:
+            return default
+        try:
+            with sqlite3.connect(db) as conn:
+                row = conn.execute(sql, args).fetchone()
+            return row[0] if row and row[0] is not None else default
+        except (sqlite3.Error, OSError, TypeError, ValueError):
+            return default
+
+    def count_dry_run_orders(self) -> int:
+        # Absent evidence counts as zero evidence, which keeps the desk in
+        # dry-run. Never fail open.
+        return int(self._ledger_scalar("SELECT COUNT(*) FROM dry_run_orders", (), 0) or 0)
+
+    def live_trades_today(self) -> int:
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        return int(self._ledger_scalar(
+            "SELECT COUNT(*) FROM orders WHERE mode IN ('LIVE','BOTH') "
+            "AND side='BUY' AND substr(created_at,1,10)=?", (today,), 0) or 0)
+
+    def live_pnl_today(self) -> float:
+        """Realised live P&L for today. Unknown is 0.0, never a guess."""
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        return round(float(self._ledger_scalar(
+            "SELECT COALESCE(SUM(net_pnl),0.0) FROM positions "
+            "WHERE status LIKE 'CLOSED%' AND mode IN ('LIVE','BOTH') "
+            "AND substr(COALESCE(exit_time,''),1,10)=?", (today,), 0.0) or 0.0), 2)
+
+    def live_entry_window(self) -> Dict[str, Any]:
+        """New LIVE entries close BEFORE the 15:20 square-off.
+
+        Allowing entries until 15:30 opens a window in which an order is placed
+        and immediately squared off, paying charges both ways for nothing. The
+        window therefore ends at 15:05 by default, leaving a minimum hold.
+        Paper and dry-run are unaffected; this gates real orders only.
+        """
+        cfg = self._safety_cfg()
+        start = str(cfg.get('live_entry_window_start', '09:20'))
+        end = str(cfg.get('live_entry_window_end', '15:05'))
+        now = datetime.now(IST).strftime('%H:%M')
+        return {'start': start, 'end': end, 'now': now, 'open': start <= now <= end}
+
+    def _dhan_credentials_live_ok(self) -> Dict[str, Any]:
+        """A real order must never ride on a disconnected or expired session."""
+        try:
+            if not self.broker.is_configured():
+                return {'ok': False, 'reason': 'Dhan Disconnected — Live Disabled'}
+            status = self.broker.get_status() or {}
+        except Exception as exc:                      # broker shape varies by build
+            log.warning('Dhan status check failed during live guard: %s', exc)
+            return {'ok': False, 'reason': 'Dhan status unavailable — Live Disabled'}
+        if status.get('token_expired') is True or status.get('connected') is False:
+            return {'ok': False, 'reason': 'Dhan Token Expired — Live Disabled'}
+        valid_till = status.get('token_valid_till') or status.get('valid_till')
+        if valid_till:
+            try:
+                exp = datetime.fromisoformat(str(valid_till).replace('Z', '+00:00'))
+                if exp.tzinfo is None:
+                    exp = exp.replace(tzinfo=IST)
+                if exp <= datetime.now(IST):
+                    return {'ok': False, 'reason': 'Dhan Token Expired — Live Disabled'}
+            except (TypeError, ValueError):
+                # Unparseable expiry is not evidence of validity.
+                return {'ok': False, 'reason': 'Dhan token expiry unreadable — Live Disabled'}
+        return {'ok': True, 'reason': ''}
+
+    def live_execution_decision(self) -> Dict[str, Any]:
+        """Resolve to exactly one of PAPER_ONLY / DRY_RUN / LIVE.
+
+        Called on every order. Returns the reason so the UI and the ledger can
+        both state why a real order was not placed, instead of silently not
+        placing one.
+        """
+        if self.execution_mode != 'BOTH':
+            return {'route': 'PAPER_ONLY', 'reason': 'Live not armed', 'disarm': False}
+
+        gate = self.dry_run_gate_state()
+        if gate['dry_run']:
+            return {'route': 'DRY_RUN', 'reason': gate['reason'], 'disarm': False}
+
+        cred = self._dhan_credentials_live_ok()
+        if not cred['ok']:
+            return {'route': 'PAPER_ONLY', 'reason': cred['reason'], 'disarm': True}
+
+        win = self.live_entry_window()
+        if not win['open']:
+            return {'route': 'PAPER_ONLY',
+                    'reason': 'Outside Live Window ({}-{} IST; now {})'.format(
+                        win['start'], win['end'], win['now']),
+                    'disarm': False}
+
+        cfg = self._safety_cfg()
+        max_trades = int(cfg.get('max_live_trades_per_day', 3) or 0)
+        if max_trades and self.live_trades_today() >= max_trades:
+            return {'route': 'PAPER_ONLY', 'reason': 'Daily Live Limit Reached', 'disarm': True}
+
+        max_loss = abs(float(cfg.get('max_live_loss_rupees_per_day', 5000.0) or 0.0))
+        if max_loss and self.live_pnl_today() <= -max_loss:
+            return {'route': 'PAPER_ONLY',
+                    'reason': 'Daily Live Loss Limit Hit — Live OFF', 'disarm': True}
+
+        return {'route': 'LIVE', 'reason': 'Live armed and within all guards', 'disarm': False}
+
+    def _apply_live_disarm(self, reason: str) -> None:
+        """Auto-disarm. Never squares off a position by itself."""
+        self._real_money_enabled = False
+        self._live_disarm_reason = reason
+        log.warning('LIVE AUTO-DISARMED: %s', reason)
+
+    def _record_dry_run_order(self, contract, side, qty, signal_ltp, strategy_name,
+                              order_id, quote=None) -> Dict[str, Any]:
+        """Record what a real order WOULD have been, with the real spread.
+
+        This is the measurement instrument. report_slippage.py reads these rows,
+        which is the only route to a measured execution cost while no real order
+        is ever sent.
+        """
+        q = quote or {}
+        bid = q.get('bid')
+        ask = q.get('ask')
+        try:
+            buffer_pts = float(getattr(self, 'chasing_cfg', {}).get(
+                'aggressive_limit_buffer_pts', 4.0))
+        except (AttributeError, TypeError, ValueError):
+            buffer_pts = 4.0
+        try:
+            ltp = float(signal_ltp)
+        except (TypeError, ValueError):
+            ltp = None
+        intended = None
+        if ltp is not None:
+            intended = round(ltp + buffer_pts, 2) if str(side).upper() == 'BUY' \
+                else round(ltp - buffer_pts, 2)
+        spread = None
+        try:
+            if bid is not None and ask is not None:
+                spread = round(float(ask) - float(bid), 2)
+        except (TypeError, ValueError):
+            spread = None
+        row = {
+            'ts': datetime.now(IST).isoformat(),
+            'strategy': strategy_name,
+            'symbol': contract.get('symbol'),
+            'security_id': str(contract.get('security_id') or ''),
+            'side': str(side).upper(),
+            'qty': int(qty or 0),
+            'signal_ltp': ltp,
+            'bid': bid,
+            'ask': ask,
+            'spread_pts': spread,
+            'intended_limit_price': intended,
+            'would_have_chased': 1,
+            'mode': 'DRY_RUN',
+            'order_id': str(order_id),
+        }
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO dry_run_orders (order_id, ts, strategy, symbol, "
+                    "security_id, side, qty, signal_ltp, bid, ask, spread_pts, "
+                    "intended_limit_price, would_have_chased, mode) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (row['order_id'], row['ts'], row['strategy'], row['symbol'],
+                     row['security_id'], row['side'], row['qty'], row['signal_ltp'],
+                     row['bid'], row['ask'], row['spread_pts'],
+                     row['intended_limit_price'], row['would_have_chased'], row['mode']))
+                conn.commit()
+        except sqlite3.Error:
+            # A measurement failure must never stop a trade.
+            log.exception('Could not record dry-run order %s', order_id)
+        return row
+
+    async def stop_live_trading(self, square_off: Optional[bool] = None) -> Dict[str, Any]:
+        """The 'STOP LIVE — Switch to PAPER ONLY' button.
+
+        This is NOT trigger_emergency_kill_switch, which halts every scanner and
+        squares everything off. That behaviour is correct for an emergency and is
+        left untouched. This narrower action stops REAL orders and returns the
+        desk to paper:
+
+          1. Disarm live immediately; block all new live orders.
+          2. Cancel pending/unfilled live orders UNCONDITIONALLY -- pure risk
+             reduction, so it needs no confirmation.
+          3. Do NOT auto-square-off open positions. Ask instead.
+
+        The 15:20 EOD square-off stays unconditional and independent of this, so
+        an unanswered prompt can never leave a live position open overnight --
+        the desk often runs unattended.
+        """
+        self._apply_live_disarm('Kill Switch pressed — Live OFF — New orders blocked')
+        stamp = datetime.now(IST).strftime('%H:%M:%S')
+        cancelled = 0
+        cancel_errors = []
+        try:
+            if self.broker.is_configured():
+                orders = await self.broker.get_orders()
+                for o in orders or []:
+                    st = str(o.get('orderStatus', ''))
+                    if st in ('PENDING', 'TRANSIT', 'TRIGGER_PENDING'):
+                        try:
+                            await self.broker.cancel_order(str(o.get('orderId')))
+                            cancelled += 1
+                        except Exception as exc:
+                            cancel_errors.append('{}: {}'.format(o.get('orderId'), exc))
+        except Exception as exc:
+            cancel_errors.append(str(exc))
+            log.error('STOP LIVE: pending-order cancellation error: %s', exc)
+
+        open_live = 0
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM positions WHERE status='OPEN' "
+                    "AND mode IN ('LIVE','BOTH')").fetchone()
+                open_live = int(row[0]) if row else 0
+        except sqlite3.Error:
+            log.exception('STOP LIVE: could not count open live positions')
+
+        log.warning('Kill Switch pressed at %s — Live OFF — New orders blocked '
+                    '(%d pending cancelled, %d open live positions left open)',
+                    stamp, cancelled, open_live)
+
+        if square_off is True and open_live:
+            res = await self.trigger_emergency_kill_switch()
+            return {'ok': True, 'live_armed': False, 'cancelled_orders': cancelled,
+                    'squared_off': True, 'detail': res,
+                    'cancel_errors': cancel_errors,
+                    'message': 'Live OFF. {} pending cancelled. Open live positions '
+                               'squared off on request.'.format(cancelled)}
+
+        return {
+            'ok': True, 'live_armed': False, 'execution_mode': self.execution_mode,
+            'cancelled_orders': cancelled, 'cancel_errors': cancel_errors,
+            'open_live_positions': open_live, 'squared_off': False,
+            'needs_square_off_decision': bool(open_live) and square_off is None,
+            'prompt': ('Square off open LIVE positions?' if open_live and square_off is None else ''),
+            'message': 'Kill Switch pressed at {} — Live OFF — New orders blocked'.format(stamp),
+        }
+
+    def get_live_status(self) -> Dict[str, Any]:
+        """Everything the header needs, with the reason always stated."""
+        cfg = self._safety_cfg()
+        decision = self.live_execution_decision()
+        gate = self.dry_run_gate_state()
+        win = self.live_entry_window()
+        armed = self.execution_mode == 'BOTH'
+        return {
+            'ok': True,
+            'paper_execution_enabled': True,          # permanent, by property
+            'algo_only_execution': True,              # permanent, by property
+            'live_armed': armed,
+            'route': decision['route'],
+            'route_reason': decision['reason'],
+            'dry_run': gate['dry_run'],
+            'dry_run_orders_recorded': gate['recorded'],
+            'dry_run_orders_required': gate['required'],
+            'live_validation_status': cfg.get('live_validation_status', 'NO_GO'),
+            'typed_confirmation_required': cfg.get('typed_confirmation', 'LIVE'),
+            'entry_window': win,
+            'live_trades_today': self.live_trades_today(),
+            'max_live_trades_per_day': cfg.get('max_live_trades_per_day', 3),
+            'live_pnl_today': self.live_pnl_today(),
+            'max_live_loss_rupees_per_day': cfg.get('max_live_loss_rupees_per_day', 5000.0),
+            'disarm_reason': getattr(self, '_live_disarm_reason', None),
+            'header': ('🔴 LIVE TRADING ON — REAL MONEY — Real Orders Will Be Placed via Dhan'
+                       if (armed and decision['route'] == 'LIVE') else
+                       '🟡 DRY-RUN ARMED — No Real Orders Will Be Placed'
+                       if (armed and decision['route'] == 'DRY_RUN') else
+                       '🟢 PAPER ONLY — No Real Orders Will Be Placed'),
+            'paper_header': '📝 PAPER: ON (Always)',
+        }
 
     def __init__(self, config_file: str = "analyst/terminal8510_config.json") -> None:
         self.config_path = ROOT / config_file
@@ -2418,6 +1894,10 @@ class QuantTerminalBackend:
         # execute; discretionary clicks are rejected rather than filled.
         self.algo_only_execution = bool(self.cfg.get("algo_only_execution", True))
         self.kill_switch_active = False
+        # v1.9.4b: why live was auto-disarmed, surfaced in the header. None =
+        # not disarmed this session. Real money starts OFF regardless, because
+        # configure_real_money persists real_money_enabled=False on every call.
+        self._live_disarm_reason: Optional[str] = None
 
         # Chasing parameters
         self.chasing_cfg = self.cfg.get("chasing", {
@@ -2587,6 +2067,41 @@ class QuantTerminalBackend:
                     order_status TEXT,
                     mode TEXT,
                     rejection_reason TEXT
+                );
+                """)
+                # v1.9.4b: the live broker order id lives on the EXISTING orders
+                # row, keyed by mode. It is deliberately NOT a separate
+                # live_orders table: parallel records are exactly how the orders
+                # book and the position came to disagree about the same fill,
+                # which analyst/test_paper_fill_consistency_8510.py exists to
+                # prevent. One row per order, one source of truth.
+                try:
+                    cols = {r[1] for r in cur.execute("PRAGMA table_info(orders)")}
+                    if "dhan_order_id" not in cols:
+                        cur.execute("ALTER TABLE orders ADD COLUMN dhan_order_id TEXT")
+                except sqlite3.Error:
+                    log.exception("Could not add orders.dhan_order_id")
+                # v1.9.4b: dry-run rows are genuinely new data, not a duplicate
+                # of anything -- they record the real bid/ask at signal time for
+                # an order that was never sent. This is the only route to a
+                # MEASURED execution cost: paper fill prices are taken from the
+                # signal price, so slippage is unmeasurable while PAPER_ONLY.
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS dry_run_orders (
+                    order_id TEXT PRIMARY KEY,
+                    ts TEXT,
+                    strategy TEXT,
+                    symbol TEXT,
+                    security_id TEXT,
+                    side TEXT,
+                    qty INTEGER,
+                    signal_ltp REAL,
+                    bid REAL,
+                    ask REAL,
+                    spread_pts REAL,
+                    intended_limit_price REAL,
+                    would_have_chased INTEGER,
+                    mode TEXT
                 );
                 """)
                 cur.execute("""
@@ -3536,7 +3051,15 @@ class QuantTerminalBackend:
             priority_matrix = []
         else:
             # Step 4C: 100-multiples ATM strike
-            atm_strike = float(round(spot / 100.0) * 100)
+            # v1.9.4c BUGFIX: this rounded to 100, but NIFTY strikes exist every
+            # 50 points. Rounding to 100 could only ever select even-hundred
+            # strikes and NEVER a 50-level one, so for spot 24,460 it bought
+            # 24500 while true ATM was 24450 -- up to 25 points off, with half
+            # the chain unreachable. A strike 50 points from ATM carries a
+            # visibly different premium, which is why entry prices looked wrong.
+            # The step comes from config; the repo already declares 50.
+            strike_step = float(self.cfg.get("recording_v193", {}).get("strike_step", 50) or 50)
+            atm_strike = float(round(spot / strike_step) * strike_step)
 
             # Resolve Priority 4 Contracts around Spot (100-multiples)
             itm_ce_strike = atm_strike - 100.0
@@ -3570,7 +3093,11 @@ class QuantTerminalBackend:
             priority_matrix = [
                 {
                     "id": "LONG_CE_ITM",
-                    "label": "1. Long ITM CE (~₹200)",
+                    # v1.9.4c: was "(~Rs200)", which read as a fixed entry price and is
+                    # what made the desk look like it always entered at 200. The
+                    # premium is the real live Dhan quote in "ltp"; the strike is
+                    # ATM-100 points. The label now states the rule, not a price.
+                    "label": "1. Long ITM CE (ATM-100)",
                     "strike": itm_ce_strike,
                     "opt_type": "CE",
                     "symbol": format_contract_symbol(expiry=nearest_expiry, strike=itm_ce_strike, opt_type="CE", raw_symbol=resolved_itm_ce["symbol"] if resolved_itm_ce else None),
@@ -3602,7 +3129,7 @@ class QuantTerminalBackend:
                 },
                 {
                     "id": "LONG_PE_ITM",
-                    "label": "3. Long ITM PE (~₹200)",
+                    "label": "3. Long ITM PE (ATM+100)",
                     "strike": itm_pe_strike,
                     "opt_type": "PE",
                     "symbol": format_contract_symbol(expiry=nearest_expiry, strike=itm_pe_strike, opt_type="PE", raw_symbol=resolved_itm_pe["symbol"] if resolved_itm_pe else None),
@@ -4790,6 +4317,18 @@ class QuantTerminalBackend:
             if self.kill_switch_active:
                 return {"ok": False, "error": "KILL SWITCH ACTIVE: All execution locked in STANDBY"}
 
+            # ── v1.9.4b LIVE ROUTING GATE ────────────────────────────────────
+            # Resolves to PAPER_ONLY / DRY_RUN / LIVE. This can only ever
+            # DOWNGRADE: `mode` is reassigned to PAPER_ONLY, never to BOTH or
+            # ALGO_LIVE_ONLY, so no guard failure and no config value here can
+            # cause a real order. Arming remains configure_real_money's job and
+            # still requires live_validation_status == 'APPROVED'.
+            live_route = self.live_execution_decision()
+            if live_route.get("disarm"):
+                self._apply_live_disarm(live_route["reason"])
+            if live_route["route"] != "LIVE":
+                mode = "PAPER_ONLY"
+
             # Directional Bias Enforcement Gate (Live Execution & Strike Matrix Orders)
             opt_type = str(contract.get("opt_type", "")).upper()
             cid = str(contract.get("id", "")).upper()
@@ -4971,11 +4510,34 @@ class QuantTerminalBackend:
             corr_id = f"chase_{int(time.time())}"
             now_str = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
+            # v1.9.4b: in DRY_RUN, record what the real order WOULD have been,
+            # with the actual bid/ask at signal time. No order is sent. These
+            # rows are the measurement instrument for execution cost.
+            dry_run_row = None
+            if live_route["route"] == "DRY_RUN":
+                quote = {}
+                try:
+                    sec_id = int(str(contract.get("security_id") or "0"))
+                    if sec_id:
+                        depth = await self.broker.get_marketfeed_quote({"NSE_FNO": [sec_id]})
+                        quote = depth.get(str(sec_id)) or {}
+                except (ValueError, TypeError, AttributeError) as exc:
+                    # A missing quote must not stop the paper leg; the row is
+                    # written with NULL bid/ask so the gap is visible, not faked.
+                    log.warning("Dry-run quote unavailable for %s: %s", symbol, exc)
+                dry_run_row = self._record_dry_run_order(
+                    contract, side, qty, signal_ltp, strategy_name, order_id, quote)
+                log.info("DRY-RUN — Would have placed LIVE order: %s %s %s @ limit %s "
+                         "(bid %s / ask %s)", symbol, side, qty,
+                         dry_run_row.get("intended_limit_price"),
+                         dry_run_row.get("bid"), dry_run_row.get("ask"))
+
             chase_retries_used = 0
             fill_price = signal_ltp
             order_status = "FILLED"
             rejection_reason = ""
             companion_sl_order_id = None
+            live_order_id = None          # v1.9.4b: broker id, live legs only
 
             # ── 1. LIVE DHAN API EXECUTION (if ALGO_LIVE_ONLY or BOTH) ───────
             if mode in ("ALGO_LIVE_ONLY", "BOTH"):
@@ -5167,12 +4729,15 @@ class QuantTerminalBackend:
                     order_id, correlation_id, created_at, strategy_name, symbol, security_id,
                     side, product, order_type, lots, qty, signal_ltp, limit_price, fill_price,
                     slippage, chase_retries, brokerage_taxes, order_status, mode, rejection_reason,
-                    placed_by, source, strategy_setup
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'INTRADAY', 'AGGR-LIMIT', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    placed_by, source, strategy_setup, dhan_order_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'INTRADAY', 'AGGR-LIMIT', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (order_id, corr_id, now_str, strategy_name, symbol, sec_id, side, qty,
                       signal_ltp, limit_sent, fill_price, slippage_pts, chase_retries_used,
                       dhan_charges, order_status, mode, rejection_reason,
-                      placed_source, placed_source, strategy_setup))
+                      placed_source, placed_source, strategy_setup,
+                      # Populated for live legs only; NULL for paper and dry-run,
+                      # so the broker id is never implied where none exists.
+                      (live_order_id if live_route["route"] == "LIVE" else None)))
                 conn.commit()
 
             res_dict = {
@@ -5189,7 +4754,23 @@ class QuantTerminalBackend:
                 "chase_retries": chase_retries_used,
                 "companion_sl_order_id": companion_sl_order_id,
                 "rejection_reason": rejection_reason,
+                # v1.9.4b: state the route and WHY, so a skipped real order is
+                # always explained rather than silently absent.
+                "live_route": live_route["route"],
+                "live_route_reason": live_route["reason"],
+                "dry_run_recorded": bool(dry_run_row),
             }
+            if live_route["route"] == "PAPER_ONLY" and self.execution_mode != "BOTH":
+                res_dict["live_note"] = ("Live OFF — Signal generated, Paper trade taken, "
+                                         "Real order SKIPPED (Live OFF)")
+            elif live_route["route"] == "DRY_RUN" and dry_run_row:
+                res_dict["live_note"] = (
+                    "DRY-RUN — Would have placed LIVE order: {} {} {} @ limit {} "
+                    "(bid {} / ask {})".format(
+                        symbol, side, qty, dry_run_row.get("intended_limit_price"),
+                        dry_run_row.get("bid"), dry_run_row.get("ask")))
+            elif live_route["route"] == "PAPER_ONLY":
+                res_dict["live_note"] = "Real order SKIPPED — {}".format(live_route["reason"])
             if not is_open:
                 res_dict["warning"] = "⚠️ Testing Mode — Market is Closed"
             return res_dict
@@ -5378,1024 +4959,52 @@ class QuantTerminalBackend:
         return {"ok": True, "message": "Kill switch disarmed. Ready for execution."}
 
     # ── PREVIOUS-DAY REPLAY (BACKTEST SIMULATION) ─────────────────────────────
+    def _recorded_history(self):
+        from analyst.recorded_history_8510 import RecordedHistory
+        return RecordedHistory(self.ledger_db, self.market_db)
+
     def get_available_dates(self) -> List[str]:
-        """
-        Unified canonical source of available dates for Replay, Backtester,
-        Trend Lab, and Tab 7 Daily Ingest.
-        Scans analyst/replay_data/*.json, daily_market_store, candles_1m, and benchmarks.
-        Returns a deduplicated, sorted list descending (newest first).
-        """
-        dates_set = set()
-        # 1. Scanned JSON files
-        try:
-            if REPLAY_DATA_DIR.exists():
-                for p in REPLAY_DATA_DIR.glob("*.json"):
-                    stem = p.stem.strip()
-                    if len(stem) == 10 and stem[4] == "-" and stem[7] == "-":
-                        dates_set.add(stem)
-        except Exception as e:
-            log.error("Error scanning replay_data: %s", e)
-
-        # 2. SQLite daily_market_store
-        try:
-            with sqlite3.connect(f"file:{self.ledger_db}?mode=ro", uri=True) as conn:
-                cur = conn.cursor()
-                for r in cur.execute("SELECT date FROM daily_market_store"):
-                    if r[0]:
-                        dates_set.add(str(r[0]))
-        except Exception:
-            pass
-
-        # 3. Market DB candles_1m
-        if self.market_db.exists():
-            try:
-                with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
-                    cur = conn.cursor()
-                    rows = cur.execute("""
-                    SELECT date(datetime(ts, 'unixepoch', 'localtime')) as dt, count(*)
-                    FROM candles_1m WHERE sec_id='13' GROUP BY dt ORDER BY dt DESC LIMIT 60
-                    """).fetchall()
-                    for r in rows:
-                        if r[1] >= 100:
-                            dates_set.add(r[0])
-            except Exception as e:
-                log.error("Error reading replay dates from market_db: %s", e)
-
-        # 4. Standard benchmark dates
-        benchmarks = [
-            "2026-11-05", "2026-11-04", "2026-11-03", "2026-11-02", "2026-10-30",
-            "2026-10-29", "2026-10-28", "2026-10-27", "2026-10-19", "2026-10-14",
-            "2026-10-13", "2026-10-08", "2026-10-07", "2026-10-06"
-        ]
-        for b in benchmarks:
-            dates_set.add(b)
-
-        return sorted(list(dates_set), reverse=True)
+        return self._recorded_history().dates()
 
     def get_available_replay_dates(self) -> List[str]:
         return self.get_available_dates()
 
     def daily_ingest(self, date_str: str, overwrite: bool = False) -> Dict[str, Any]:
-        """
-        Unified Daily Market Data Ingest.
-        Pulls, computes, and persists all 8 entities for date_str into:
-          - analyst/replay_data/{date_str}.json
-          - SQLite daily_market_store table
-        """
-        datetime.strptime(date_str,'%Y-%m-%d')
-        archive_result = self.run_post_market_archivers(date_str)
-        REPLAY_DATA_DIR.mkdir(parents=True, exist_ok=True)
-        json_file = REPLAY_DATA_DIR / f"{date_str}.json"
-
-        # Check existing file unless overwrite is requested
-        if json_file.exists() and not overwrite and date_str < datetime.now(IST).date().isoformat():
-            try:
-                with open(json_file, "r", encoding="utf-8") as f:
-                    stored = json.load(f)
-                    if stored.get("spot_candles_1m") and stored.get("eod_summary") and stored.get("dhan_oi",{}).get("source")=="DHAN_API":
-                        return stored
-            except Exception as e:
-                log.warning("Could not read existing %s: %s, re-ingesting", json_file, e)
-
-        dt_formatted = "05 Nov 2026"
-        try:
-            dt_formatted = datetime.strptime(date_str, "%Y-%m-%d").strftime("%d %b %Y")
-        except Exception:
-            pass
-
-        # 1. 1-Minute Candles — NIFTY Spot (375 candles, 09:15 to 15:29)
-        spot_candles = []
-        if self.market_db.exists():
-            try:
-                with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
-                    rows = conn.execute("""
-                        SELECT ts, o, h, l, c, v 
-                        FROM candles_1m 
-                        WHERE sec_id='13' 
-                          AND date(datetime(ts, 'unixepoch', 'localtime')) = ?
-                          AND time(datetime(ts, 'unixepoch', 'localtime')) >= '09:15:00'
-                          AND time(datetime(ts, 'unixepoch', 'localtime')) <= '15:29:00'
-                        ORDER BY ts ASC
-                    """, (date_str,)).fetchall()
-                    for r in rows:
-                        spot_candles.append({
-                            "ts": int(r[0]),
-                            "open": float(r[1]),
-                            "high": float(r[2]),
-                            "low": float(r[3]),
-                            "close": float(r[4]),
-                            "volume": float(r[5]) if r[5] is not None else 0.0,
-                        })
-            except Exception as e:
-                log.error("Error reading spot candles for %s: %s", date_str, e)
-
-        # Pad or synthesize if needed to guarantee 375 bars
-        if len(spot_candles) < 375:
-            base_ts = int(datetime.strptime(f"{date_str} 09:15:00", "%Y-%m-%d %H:%M:%S").replace(tzinfo=IST).timestamp())
-            last_close = spot_candles[-1]["close"] if spot_candles else 24500.0
-            existing_by_ts = {c["ts"]: c for c in spot_candles}
-            new_spot = []
-            cur_p = spot_candles[0]["open"] if spot_candles else last_close
-            for m in range(375):
-                ts = base_ts + (m * 60)
-                if ts in existing_by_ts:
-                    cur_p = existing_by_ts[ts]["close"]
-                    new_spot.append(existing_by_ts[ts])
-                else:
-                    new_spot.append({
-                        "ts": ts,
-                        "open": cur_p,
-                        "high": cur_p,
-                        "low": cur_p,
-                        "close": cur_p,
-                        "volume": 0.0,
-                    })
-            spot_candles = new_spot[:375]
-        else:
-            spot_candles = spot_candles[:375]
-
-        # 2. 1-Minute Candles — NIFTY Future + Volumes (375 candles)
-        future_candles = []
-        if self.market_db.exists():
-            try:
-                with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
-                    rows = conn.execute("""
-                        SELECT ts, o, h, l, c, v 
-                        FROM candles_1m 
-                        WHERE sec_id='FUT' 
-                          AND date(datetime(ts, 'unixepoch', 'localtime')) = ?
-                          AND time(datetime(ts, 'unixepoch', 'localtime')) >= '09:15:00'
-                          AND time(datetime(ts, 'unixepoch', 'localtime')) <= '15:29:00'
-                        ORDER BY ts ASC
-                    """, (date_str,)).fetchall()
-                    prev_v = 0.0
-                    for r in rows:
-                        vol = float(r[5]) if r[5] is not None else 0.0
-                        v_chg = vol - prev_v if prev_v > 0 else 0.0
-                        prev_v = vol
-                        future_candles.append({
-                            "ts": int(r[0]),
-                            "open": float(r[1]),
-                            "high": float(r[2]),
-                            "low": float(r[3]),
-                            "close": float(r[4]),
-                            "volume": vol,
-                            "volume_change": v_chg,
-                        })
-            except Exception as e:
-                log.error("Error reading fut candles for %s: %s", date_str, e)
-
-        if len(future_candles) < 375:
-            fut_offset = 20.0
-            future_candles = [
-                {
-                    "ts": sc["ts"],
-                    "open": round(sc["open"] + fut_offset, 2),
-                    "high": round(sc["high"] + fut_offset, 2),
-                    "low": round(sc["low"] + fut_offset, 2),
-                    "close": round(sc["close"] + fut_offset, 2),
-                    "volume": sc["volume"],
-                    "volume_change": 0.0,
-                }
-                for sc in spot_candles
-            ]
-        else:
-            future_candles = future_candles[:375]
-
-        # 3. Resampled Higher Timeframe Candles (5m: 75, 15m: 25, 30m: 12-13, 1H: 6-7)
-        def _resample(candles, chunk_size):
-            bars = []
-            for i in range(0, len(candles), chunk_size):
-                chunk = candles[i:i+chunk_size]
-                if not chunk:
-                    continue
-                bars.append({
-                    "ts": chunk[0]["ts"],
-                    "open": chunk[0]["open"],
-                    "high": max(c["high"] for c in chunk),
-                    "low": min(c["low"] for c in chunk),
-                    "close": chunk[-1]["close"],
-                    "volume": sum(c.get("volume", 0.0) for c in chunk),
-                })
-            df_b = pd.DataFrame(bars)
-            df_b["ma4"] = df_b["close"].rolling(4, min_periods=1).mean()
-            df_b["ema8"] = df_b["close"].ewm(span=8, adjust=False).mean()
-            mid = df_b["close"].rolling(20, min_periods=1).mean()
-            std = df_b["close"].rolling(20, min_periods=1).std().fillna(0.0)
-            df_b["bb_mid"] = mid
-            df_b["bb_upper"] = mid + 2 * std
-            df_b["bb_lower"] = mid - 2 * std
-            df_b["ubb_slope"] = df_b["bb_upper"].diff().fillna(0.0)
-            return df_b.to_dict("records")
-
-        res_5m = _resample(spot_candles, 5)
-        res_15m = _resample(spot_candles, 15)
-        res_30m = _resample(spot_candles, 30)
-        res_1h = _resample(spot_candles, 60)
-
-        # 4. Option Chain Snapshot (ATM ± 10 strikes, lot size 65 dynamic)
-        opt_chain = []
-        if self.market_db.exists():
-            try:
-                with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
-                    rows = conn.execute("""
-                        SELECT strike, max(ce_oi), max(pe_oi), avg(ce_ltp), avg(pe_ltp)
-                        FROM chain_snap 
-                        WHERE expiry='2026-11-09' 
-                          AND date(datetime(ts, 'unixepoch', 'localtime')) = ?
-                          AND strike >= 23500 AND strike <= 25500
-                        GROUP BY strike
-                        ORDER BY strike ASC
-                    """, (date_str,)).fetchall()
-                    for r in rows:
-                        opt_chain.append({
-                            "strike": float(r[0]),
-                            "lot_size": self.get_nifty_lot_size(),
-                            "ce_oi": float(r[1]) if r[1] is not None else 0.0,
-                            "pe_oi": float(r[2]) if r[2] is not None else 0.0,
-                            "ce_ltp": round(float(r[3]), 2) if r[3] is not None else 0.0,
-                            "pe_ltp": round(float(r[4]), 2) if r[4] is not None else 0.0,
-                        })
-            except Exception as e:
-                log.error("Error reading chain_snap for %s: %s", date_str, e)
-
-        # Historical OI is read strictly as-of the selected session close.
-        oi_cutoff = datetime.fromisoformat(date_str+'T15:30:00').replace(tzinfo=IST).timestamp()
-        oi_snapshot = self.dhan_oi.get_snapshot_at(oi_cutoff)
-        dhan_oi_data = {'source':'DHAN_API','snapshot':oi_snapshot,
-            'total_oi':{'put_total_cr':oi_snapshot['total_oi_pe']/1e7 if oi_snapshot['total_oi_pe'] is not None else None,
-                        'call_total_cr':oi_snapshot['total_oi_ce']/1e7 if oi_snapshot['total_oi_ce'] is not None else None,
-                        'bias':oi_snapshot['bias']},
-            'oi_change_day':{'pe_ce_day_cr':(oi_snapshot['oi_change_pe']-oi_snapshot['oi_change_ce'])/1e7 if oi_snapshot['oi_change_pe'] is not None else None,
-                             'bias':oi_snapshot['bias']}, 'combined_bias':oi_snapshot['bias']}
-
-        # 7. Strategy Signals Evaluated
-        strategy_signals = {
-            "stage_2_8_ema": "BULLISH",
-            "crossover_4_8": "BULLISH",
-            "ema_1h_8": "SUPPORT",
-            "atm_reversal": "BULLISH",
-            "stage_3_atm": "BULLISH",
-            "dhan_oi_filter": oi_snapshot["bias"]
-        }
-
-        # 8. Linked Paper Trades Executed
-        trades = []
-        if date_str == "2026-11-05":
-            trades = [
-                {
-                    "Trade_ID": 291,
-                    "trade_id": "TRADE_05NOV_01",
-                    "date": "2026-11-05",
-                    "Date": "2026-11-05",
-                    "setup_name": "Stage 2 8-EMA (Long) [Pullback Touch]",
-                    "Setup_Name": "Stage 2 8-EMA (Long) [Pullback Touch]",
-                    "strategy": "Stage 2 8 EMA Touch",
-                    "Strategy": "Stage 2 8 EMA Touch",
-                    "strategy_setup": "Stage 2 8 EMA Touch",
-                    "Setup_Type": "Trend Following",
-                    "timeframe": "15m",
-                    "direction": "LONG",
-                    "Direction": "LONG",
-                    "entry_ist": "2026-11-05 10:15:00",
-                    "exit_ist": "2026-11-05 11:00:00",
-                    "Entry_Time": "10:15:00",
-                    "Exit_Time": "11:00:00",
-                    "duration": "00h 45m 00s",
-                    "day_outcome": "✅ WIN",
-                    "day_status": "✅ WIN",
-                    "contract_symbol": "09 Nov 2026 — NIFTY 24200 CE",
-                    "Contract_Symbol": "09 Nov 2026 — NIFTY 24200 CE",
-                    "source": "AUTO ALGO 🤖",
-                    "Source": "AUTO ALGO 🤖",
-                    "index_entry": 24366.7,
-                    "index_exit": 24441.95,
-                    "option_entry": 200.0,
-                    "option_exit": 225.0,
-                    "outcome": "TARGET HIT (+25pts Trailed)",
-                    "Result": "TARGET HIT (+25pts Trailed)",
-                    "exit_reason": "TRAIL_TARGET_HIT",
-                    "gross_pnl": 1625.0,
-                    "Gross_Pnl_INR": 1625.0,
-                    "dhan_charges": 81.15,
-                    "Exact_Charges_INR": 81.15,
-                    "net_pnl": 1543.85,
-                    "Net_Pnl_INR": 1543.85,
-                    "Lot_Qty": 65,
-                    "qty": 65,
-                    "Option_Points": 25.0,
-                    "EMA_Aligned": True,
-                    "EMA_Slope": 15.0,
-                    "ADX": 28.0,
-                    "R_Squared": 0.75,
-                    "MTF_Aligned": True,
-                    "Vol_Mult": 1.5,
-                    "PCR_At_Entry": 1.15,
-                    "reconciliation_match": True,
-                }
-            ]
-        elif date_str in CALIBRATED_BENCHMARK_REPLAY:
-            trades = CALIBRATED_BENCHMARK_REPLAY[date_str]
-
-        # Structured EOD Summary & WhatsApp Digest
-        total_pnl = sum(t.get("net_pnl", t.get("Net_Pnl_INR", 0.0)) for t in trades)
-        pnl_prefix = "+" if total_pnl >= 0 else "-"
-        net_pnl_formatted = f"{pnl_prefix}₹{abs(total_pnl):,.2f}"
-
-        eod_summary = {
-            "date": date_str,
-            "date_formatted": dt_formatted,
-            "ingest_status": "COMPLETE ✅ (375/375 1m Candles)",
-            "paper_trades_count": len(trades),
-            "net_pnl_inr": net_pnl_formatted,
-            "trades_breakdown": [
-                {
-                    "trade_id": t.get("trade_id") or f"TRADE_{t.get('Trade_ID')}",
-                    "contract_symbol": t.get("contract_symbol", t.get("Contract_Symbol", "09 Nov 2026 — NIFTY 24200 CE")),
-                    "strategy_setup": t.get("strategy_setup", t.get("Strategy", "Stage 2 8 EMA Touch")),
-                    "source": t.get("source", "AUTO ALGO 🤖"),
-                    "entry_ist": t.get("Entry_Time", "10:15:00") + " IST",
-                    "exit_ist": t.get("Exit_Time", "11:00:00") + " IST",
-                    "pnl": f"{'+' if t.get('net_pnl', t.get('Net_Pnl_INR', 0)) >= 0 else '-'}₹{abs(t.get('net_pnl', t.get('Net_Pnl_INR', 0))):,.2f}",
-                }
-                for t in trades
-            ],
-            "signals_summary": "Stage 2: BULLISH | 4/8 Crossover: BULLISH | 1H 8 EMA: SUPPORT",
-            "total_oi_bias": dhan_oi_data["total_oi"]["bias"],
-            "oi_change_bias": dhan_oi_data["oi_change_day"]["bias"],
-            "combined_oi_bias": dhan_oi_data["combined_bias"],
-            "whatsapp_text": (
-                f"📊 *PORT 8510 EOD SUMMARY — {dt_formatted}*\n"
-                f"✅ *Ingest:* 375/375 1m Candles Synced (Replay + Backtest + Trend Lab Ready)\n"
-                f"🤖 *Paper Trades Taken:* {len(trades)} (AUTO ALGO — Stage 2 8 EMA Touch)\n"
-                f"💰 *Net P&L:* {net_pnl_formatted}\n"
-                f"📈 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n"
-                f"*Dhan OI Total OI:* {oi_snapshot['bias']}\n"
-                f"*Dhan OI Change:* {oi_snapshot['bias']}\n"
-                f"*Combined Bias:* {oi_snapshot['bias']}"
-            )
-        }
-
-        checklist = {
-            "spot_candles_1m": f"✅ {len(spot_candles)} candles",
-            "future_candles_1m": f"✅ {len(future_candles)} candles",
-            "volumes_and_change": "✅ Synced",
-            "option_chain": "✅ 09 Nov 2026 Expiry, Lot Size: 65 Dynamic",
-            "dhan_oi_total_oi": oi_snapshot["status"],
-            "dhan_oi_change_day": oi_snapshot["status"],
-            "strategy_signals": "✅ Stage 2 (15m 8 EMA), 4/8 Crossover, 1H 8 EMA, ATM Reversal, Stage 3",
-            "paper_trades": "✅ Linked to Replay + Backtester + Trend Lab",
-        }
-
-        payload = {
-            "ok": True,
-            "date": date_str,
-            "date_formatted": dt_formatted,
-            "ingest_timestamp": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
-            "status": "Pulled ✅",
-            "message": f"✅ {dt_formatted} data pulled — Available in Replay + Backtester + Trend Lab.",
-            "checklist": checklist,
-            "spot_candles_1m": spot_candles,
-            "future_candles_1m": future_candles,
-            "resampled": {
-                "5m": res_5m,
-                "15m": res_15m,
-                "30m": res_30m,
-                "1h": res_1h,
-            },
-            "option_chain": opt_chain,
-            "dhan_oi": dhan_oi_data,
-            "dhan_oi_observations": self.dhan_oi.get_session_observations(date_str),
-            "dhan_oi_observation_note": 'Receipt timestamps retained, including post-close captures; entry replay uses as-of lookup only.',
-            "post_market_archive": archive_result,
-            "strategy_signals": strategy_signals,
-            "trades": trades,
-            "summary": eod_summary,
-            "eod_summary": eod_summary,
-        }
-
-        # Save to JSON file
-        try:
-            with open(json_file, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2)
-            log.info("✅ Persisted daily ingest file: %s", json_file)
-        except Exception as e:
-            log.error("Failed persisting daily ingest json: %s", e)
-
-        # Save to SQLite daily_market_store
-        try:
-            with sqlite3.connect(self.ledger_db) as conn:
-                cur = conn.cursor()
-                cur.execute("""
-                    INSERT OR REPLACE INTO daily_market_store 
-                    (date, created_at, spot_candles_count, future_candles_count, payload, eod_summary)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    date_str,
-                    datetime.now(IST).isoformat(),
-                    len(spot_candles),
-                    len(future_candles),
-                    json.dumps(payload),
-                    json.dumps(eod_summary)
-                ))
-                conn.commit()
-        except Exception as e:
-            log.error("Failed saving to daily_market_store: %s", e)
-
+        archive = self.run_post_market_archivers(date_str)
+        payload = self._recorded_history().daily(date_str)
+        payload['post_market_archive'] = archive
+        self._recorded_history().persist_view(payload)
         return payload
 
     def get_eod_summary(self, date_str: str = "2026-11-05") -> Dict[str, Any]:
-        """Returns structured EOD summary for date_str."""
-        json_file = REPLAY_DATA_DIR / f"{date_str}.json"
-        if not json_file.exists():
-            self.daily_ingest(date_str)
-        if json_file.exists():
-            try:
-                with open(json_file, "r", encoding="utf-8") as f:
-                    d = json.load(f)
-                    summary = d.get("eod_summary") or d.get("summary")
-                    if summary:
-                        return {"ok": True, **summary}
-            except Exception as e:
-                log.error("Failed reading EOD summary for %s: %s", date_str, e)
-
-        dt_f = "05 Nov 2026"
-        try:
-            dt_f = datetime.strptime(date_str, "%Y-%m-%d").strftime("%d %b %Y")
-        except Exception:
-            pass
-        return {
-            "ok": True,
-            "date": date_str,
-            "date_formatted": dt_f,
-            "ingest_status": "COMPLETE ✅ (375/375 1m Candles)",
-            "paper_trades_count": 1,
-            "net_pnl_inr": "+₹1,543.85",
-            "trades_breakdown": [
-                {
-                    "trade_id": "TRADE_05NOV_01",
-                    "contract_symbol": "09 Nov 2026 — NIFTY 24200 CE",
-                    "strategy_setup": "Stage 2 8 EMA Touch",
-                    "source": "AUTO ALGO 🤖",
-                    "entry_ist": "10:15 IST",
-                    "exit_ist": "11:00 IST",
-                    "pnl": "+₹1,543.85"
-                }
-            ],
-            "signals_summary": "Stage 2: BULLISH | 4/8 Crossover: BULLISH | 1H 8 EMA: SUPPORT",
-            "total_oi_bias": "UNKNOWN — no recorded Dhan OI",
-            "oi_change_bias": "UNKNOWN — no recorded Dhan OI",
-            "combined_oi_bias": "STRONG BULLISH 🟢🟢",
-            "whatsapp_text": (
-                f"📊 *PORT 8510 EOD SUMMARY — {dt_f}*\n"
-                f"✅ *Ingest:* 375/375 1m Candles Synced (Replay + Backtest + Trend Lab Ready)\n"
-                f"🤖 *Paper Trades Taken:* 1 (AUTO ALGO — Stage 2 8 EMA Touch)\n"
-                f"💰 *Net P&L:* +₹1,543.85\n"
-                f"📈 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n"
-                f"*Dhan OI Total OI:* {oi_snapshot['bias']}\n"
-                f"*Dhan OI Change:* {oi_snapshot['bias']}\n"
-                f"*Combined Bias:* {oi_snapshot['bias']}"
-            )
-        }
+        return {'ok': True, **self._recorded_history().daily(date_str)['eod_summary']}
 
     def run_trend_lab(self, from_date: str = "2026-11-04", to_date: str = "2026-11-05") -> Dict[str, Any]:
-        """
-        Dynamically runs Multi-Factor Trend Lab for dates in range from unified store.
-        """
-        all_dates = self.get_available_dates()
-        in_range = [d for d in all_dates if from_date <= d <= to_date]
         rows = []
-        for d in in_range:
-            if d == "2026-11-05":
-                rows.append({
-                    "date": "2026-11-05",
-                    "date_formatted": "05 Nov 2026",
-                    "stage2": "BULLISH 🟢",
-                    "crossover_4_8": "BULLISH 🟢",
-                    "ema_1h_8": "SUPPORT",
-                    "total_oi_bias": "BULLISH 🟢",
-                    "oi_change_bias": "BULLISH 🟢",
-                    "combined_bias": "STRONG BULLISH 🟢🟢",
-                    "writers": "Call 16.41 Cr vs Put 18.28 Cr",
-                    "volumes": "Surge (1.5x)",
-                    "trend": "STRONG BULLISH",
-                    "score": "92%",
-                    "multi_factor_score": 92,
-                })
-            elif d == "2026-11-04":
-                rows.append({
-                    "date": "2026-11-04",
-                    "date_formatted": "04 Nov 2026",
-                    "stage2": "BULLISH 🟢",
-                    "crossover_4_8": "BEARISH 🔴 -> BULLISH 🟢",
-                    "ema_1h_8": "SUPPORT",
-                    "total_oi_bias": "BULLISH 🟢",
-                    "oi_change_bias": "BULLISH 🟢",
-                    "combined_bias": "STRONG BULLISH 🟢🟢",
-                    "writers": "Call 14.80 Cr vs Put 17.50 Cr",
-                    "volumes": "Normal (1.2x)",
-                    "trend": "BULLISH",
-                    "score": "88%",
-                    "multi_factor_score": 88,
-                })
-            else:
-                dt_f = d
-                try:
-                    dt_f = datetime.strptime(d, "%Y-%m-%d").strftime("%d %b %Y")
-                except Exception:
-                    pass
-                rows.append({
-                    "date": d,
-                    "date_formatted": dt_f,
-                    "stage2": "BULLISH 🟢",
-                    "crossover_4_8": "BULLISH 🟢",
-                    "ema_1h_8": "SUPPORT",
-                    "total_oi_bias": "BULLISH 🟢",
-                    "oi_change_bias": "BULLISH 🟢",
-                    "combined_bias": "BULLISH 🟢",
-                    "writers": "Call vs Put Aligned",
-                    "volumes": "Normal (1.1x)",
-                    "trend": "BULLISH",
-                    "score": "80%",
-                    "multi_factor_score": 80,
-                })
-        for row in rows:
-            stamp = datetime.fromisoformat(row['date']+'T15:30:00').replace(tzinfo=IST).timestamp()
-            oi = self.dhan_oi.get_snapshot_at(stamp)
-            row.update(total_oi_bias=oi['bias'], oi_change_bias=oi['bias'], combined_oi_bias=oi['bias'], combined_bias=oi['bias'],
-                       dhan_oi=oi, oi_source='DHAN_API')
-        return {
-            "ok": True,
-            "from_date": from_date,
-            "to_date": to_date,
-            "rows": rows,
-            "evaluations": rows,
-            "count": len(rows),
-        }
+        for day in self._recorded_history().dates():
+            if from_date <= day <= to_date:
+                data = self._recorded_history().daily(day)
+                rows.append({'date': day, 'stage2': 'UNKNOWN', 'crossover_4_8': 'UNKNOWN', 'ema_1h_8': 'UNKNOWN', 'total_oi_bias': 'UNKNOWN', 'oi_change_bias': 'UNKNOWN', 'combined_bias': 'UNKNOWN', 'writers': 'Not reconstructed', 'volumes': 'Not reconstructed', 'trend': 'UNKNOWN', 'score': None, 'multi_factor_score': None, 'recorded_trades': len(data['trades']), 'recorded_spot_minutes': len(data['spot_candles_1m'])})
+        return {'ok': True, 'from_date': from_date, 'to_date': to_date, 'rows': rows, 'evaluations': rows, 'count': len(rows), 'provenance': 'OBSERVATIONS_ONLY'}
 
     def check_and_run_auto_ingest(self, target_date: str = "2026-11-05", mock_ist_hour: Optional[int] = None) -> bool:
-        """
-        Auto-ingest trigger: if target_date json does not exist and
-        (mock_ist_hour or IST current hour) >= 16 (or if target_date has ledger activity):
-        automatically run daily_ingest(target_date).
-        """
         now = datetime.now(IST)
-        eff_hour = mock_ist_hour if mock_ist_hour is not None else now.hour
-
-        json_file = REPLAY_DATA_DIR / f"{target_date}.json"
-        should_run = False
-        if not json_file.exists():
-            if eff_hour >= 16 or target_date == "2026-11-05":
-                should_run = True
-
-        if should_run:
-            log.info("Auto-ingest: Checking %s replay file... | Creating from Dhan 1m + Dhan OI + Live Paper Ledger... ✅", target_date)
-            self.daily_ingest(target_date)
-            return True
-        return False
+        if (mock_ist_hour if mock_ist_hour is not None else now.hour) < 16:
+            return False
+        self.daily_ingest(target_date)
+        return True
 
     def get_replay_trades_for_date(self, target_date: str, bias: Optional[str] = None) -> List[Dict[str, Any]]:
-        raw = [dict(t) for t in get_replay_trades_for_date(target_date)]
-        for trade in raw:
-            entry = trade.get('entry_ist') or trade.get('Entry_Time')
-            try:
-                dt = datetime.fromisoformat(entry if len(entry)>10 else target_date+'T'+entry).replace(tzinfo=IST)
-                trade['dhan_oi'] = self.dhan_oi.get_snapshot_at(dt.timestamp())
-            except (ValueError,TypeError):
-                trade['dhan_oi'] = empty_bias('Entry timestamp missing; no OI substitution')
-        eff_bias = (bias or self.directional_bias).upper()
-        return self.filter_trades_by_directional_bias(raw, eff_bias)
+        return self._recorded_history().report(target_date, target_date, bias or self.directional_bias)['trades']
 
     async def run_date_replay(self, selected_date: str, speed_multiplier: float = 10.0, bias: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Runs paper trade replay on selected historical date.
-        Respects active Daily Directional Bias (LONG_ONLY / SHORT_ONLY / BOTH).
-        If a verified multi-strategy sequence exists (e.g. 2026-11-04), returns the verified sequence filtered by bias.
-        Otherwise evaluates 1-minute candles from market DB.
-        """
-        eff_bias = (bias or self.directional_bias).upper()
-        # 1. Check for verified multi-strategy sequence (e.g. 2026-11-04 3-Strategies Mode)
-        raw_verified = get_replay_trades_for_date(selected_date)
-        if raw_verified:
-            verified_trades = self.filter_trades_by_directional_bias(raw_verified, eff_bias)
-            total_net = sum(t["net_pnl"] for t in verified_trades)
-            wins = sum(1 for t in verified_trades if t["net_pnl"] > 0)
-            wr = round((wins / len(verified_trades) * 100), 1) if verified_trades else 0.0
-            candles_count = 375
-            if self.market_db.exists():
-                try:
-                    with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
-                        cur = conn.cursor()
-                        r = cur.execute(
-                            "SELECT count(*) FROM candles_1m WHERE sec_id='13' AND date(datetime(ts, 'unixepoch', 'localtime'))=?",
-                            (selected_date,)
-                        ).fetchone()
-                        if r and r[0]:
-                            candles_count = r[0]
-                except Exception:
-                    pass
-            return {
-                "ok": True,
-                "date": selected_date,
-                "directional_bias": eff_bias,
-                "candles_count": candles_count,
-                "trades_count": len(verified_trades),
-                "win_rate": wr,
-                "total_net_pnl": round(total_net, 2),
-                "trades": verified_trades,
-            }
-
-        # 2. Fallback to realistic candle simulation if unmapped date
-        if not self.market_db.exists():
-            return {"ok": False, "error": "Market DB candles_1m not found"}
-
-        with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
-            df = pd.read_sql_query(
-                "SELECT ts, o as open, h as high, l as low, c as close, v as volume FROM candles_1m WHERE sec_id='13' ORDER BY ts ASC",
-                conn
-            )
-        if df.empty:
-            return {"ok": False, "error": "No candle data found"}
-
-        df["dt"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-        df["date_str"] = df["dt"].dt.strftime("%Y-%m-%d")
-        day_candles = df[df["date_str"] == selected_date].copy().reset_index(drop=True)
-        if day_candles.empty:
-            return {"ok": False, "error": f"No candles found for date {selected_date}"}
-
-        # Run simulation
-        trades = []
-        in_trade = False
-        entry_price = 0.0
-        entry_time = ""
-        setup_name = ""
-        opt_entry = 200.0
-
-        for i in range(20, len(day_candles)):
-            row = day_candles.iloc[i]
-            ts_str = row["dt"].strftime("%H:%M:%S")
-            price = row["close"]
-
-            if not in_trade:
-                if i % 45 == 0:
-                    in_trade = True
-                    setup_name = "Stage 2 8-EMA (Long)"
-                    entry_price = price
-                    entry_time = f"{selected_date} {ts_str}"
-                    opt_entry = 200.0
-            else:
-                pts = price - entry_price
-                if pts >= 40.0:
-                    exit_time = f"{selected_date} {ts_str}"
-                    opt_exit = round(opt_entry + 24.0, 2)
-                    gross = round((opt_exit - opt_entry) * 65, 2)
-                    chg = self.calculate_dhan_charges(opt_entry, opt_exit, 65)
-                    trades.append({
-                        "setup_name": setup_name,
-                        "setup": setup_name,
-                        "entry_ist": entry_time,
-                        "entry_time": entry_time,
-                        "exit_ist": exit_time,
-                        "exit_time": exit_time,
-                        "duration": "00h 35m 12s",
-                        "index_entry": entry_price,
-                        "index_exit": price,
-                        "option_entry": opt_entry,
-                        "option_exit": opt_exit,
-                        "outcome": "TARGET HIT (+40pts)",
-                        "result": "TARGET HIT (+40pts)",
-                        "day_outcome": "✅ WIN",
-                        "day_status": "✅ WIN",
-                        "direction": "LONG",
-                        "ema_bb_state_at_entry": "4EMA > 8EMA | UBB: UP | Width: 72.0",
-                        "exit_reason": "TARGET_40",
-                        "gross_pnl": gross,
-                        "dhan_charges": chg,
-                        "charges": chg,
-                        "net_pnl": round(gross - chg, 2),
-                    })
-                    in_trade = False
-                elif pts <= -40.0:
-                    exit_time = f"{selected_date} {ts_str}"
-                    opt_exit = round(opt_entry - 24.0, 2)
-                    gross = round((opt_exit - opt_entry) * 65, 2)
-                    chg = self.calculate_dhan_charges(opt_entry, opt_exit, 65)
-                    trades.append({
-                        "setup_name": setup_name,
-                        "setup": setup_name,
-                        "entry_ist": entry_time,
-                        "entry_time": entry_time,
-                        "exit_ist": exit_time,
-                        "exit_time": exit_time,
-                        "duration": "00h 22m 45s",
-                        "index_entry": entry_price,
-                        "index_exit": price,
-                        "option_entry": opt_entry,
-                        "option_exit": opt_exit,
-                        "outcome": "STOP LOSS HIT (-40pts)",
-                        "result": "STOP LOSS HIT (-40pts)",
-                        "day_outcome": "❌ LOSS (SL)",
-                        "day_status": "❌ LOSS (SL)",
-                        "direction": "LONG",
-                        "ema_bb_state_at_entry": "4EMA > 8EMA | LBB: DOWN | Width: 72.0",
-                        "exit_reason": "STOP_LOSS",
-                        "gross_pnl": gross,
-                        "dhan_charges": chg,
-                        "charges": chg,
-                        "net_pnl": round(gross - chg, 2),
-                    })
-                    in_trade = False
-
-        trades = self.filter_trades_by_directional_bias(trades, eff_bias)
-        total_net = sum(t["net_pnl"] for t in trades)
-        wins = sum(1 for t in trades if t["net_pnl"] > 0)
-        wr = round((wins / len(trades) * 100), 1) if trades else 0.0
-
-        return {
-            "ok": True,
-            "date": selected_date,
-            "directional_bias": eff_bias,
-            "candles_count": len(day_candles),
-            "trades_count": len(trades),
-            "win_rate": wr,
-            "total_net_pnl": round(total_net, 2),
-            "trades": trades,
-        }
+        result = self._recorded_history().report(selected_date, selected_date, bias or self.directional_bias)
+        rows = result['trades']
+        return {**result, 'date': selected_date, 'trades_count': len(rows), 'candles_count': len(self._recorded_history().candles(selected_date)), 'total_net_pnl': result['recorded_net_pnl'], 'win_rate': 100*sum(r['net_pnl']>0 for r in rows)/len(rows) if rows else None, 'replay_kind': 'RECORDED_LEDGER_REVIEW'}
 
     # ── DATE-RANGE SUPER TRAIL BACKTESTER ────────────────────────────────────
     def _load_historical_trades(self) -> List[Dict[str, Any]]:
-        """Extracts and sanitizes legacy trades dataset respecting MA stack."""
-        src = ROOT / "Algorithmic_Trading_Workspace_8510.html"
-        if not src.exists():
-            src = ROOT / "Algorithmic_Trading_Workspace.html"
-        if not src.exists():
-            return []
-        try:
-            txt = src.read_text(encoding="utf-8")
-            m = re.search(r"const allTrades = (\[.*?\]);\n", txt)
-            if m:
-                raw_trades = json.loads(m.group(1))
-                clean_trades = [t for t in raw_trades if t.get("Date") not in ("2026-11-03", "2026-11-04", "2026-11-05")]
-                clean_trades.extend([
-                    {
-                        "Trade_ID": 284,
-                        "Date": "2026-11-03",
-                        "Setup_Name": "4 MA / 8 EMA Upside Reversal",
-                        "Setup_Type": "Reversal",
-                        "Open": 23620.0,
-                        "High": 23675.0,
-                        "Low": 23610.0,
-                        "Close": 23675.0,
-                        "Market_Gap_Pts": 15.0,
-                        "Result": "TARGET HIT (+33pts CE Long)",
-                        "Option_Points": 33.0,
-                        "Lot_Qty": 65,
-                        "Gross_Pnl_INR": 2145.00,
-                        "Exact_Charges_INR": 78.50,
-                        "Net_Pnl_INR": 2066.50,
-                        "Direction": "LONG",
-                        "EMA_Aligned": True,
-                        "EMA_Slope": 16.5,
-                        "ADX": 27.2,
-                        "R_Squared": 0.80,
-                        "MTF_Aligned": True,
-                        "Vol_Mult": 1.5,
-                        "PCR_At_Entry": 1.10,
-                        "Diag_Tags": "4/8 Upside Cross, Bullish Stack",
-                    },
-                    {
-                        "Trade_ID": 285,
-                        "Date": "2026-11-03",
-                        "Setup_Name": "Stage 2 8-EMA (Long) [Pullback Touch]",
-                        "Setup_Type": "Trend Following",
-                        "Open": 23640.0,
-                        "High": 23695.0,
-                        "Low": 23635.0,
-                        "Close": 23695.0,
-                        "Market_Gap_Pts": 10.0,
-                        "Result": "TARGET HIT (+33pts Trailed)",
-                        "Option_Points": 33.0,
-                        "Lot_Qty": 65,
-                        "Gross_Pnl_INR": 2145.00,
-                        "Exact_Charges_INR": 78.50,
-                        "Net_Pnl_INR": 2066.50,
-                        "Direction": "LONG",
-                        "EMA_Aligned": True,
-                        "EMA_Slope": 19.8,
-                        "ADX": 28.5,
-                        "R_Squared": 0.84,
-                        "MTF_Aligned": True,
-                        "Vol_Mult": 1.6,
-                        "PCR_At_Entry": 1.15,
-                        "Diag_Tags": "Pullback Touch, 4-EMA > 8-EMA Stack",
-                    },
-                    {
-                        "Trade_ID": 286,
-                        "Date": "2026-11-03",
-                        "Setup_Name": "1H 8-EMA Support Bounce Confluence",
-                        "Setup_Type": "Confluence Bounce",
-                        "Open": 23660.0,
-                        "High": 23740.0,
-                        "Low": 23655.0,
-                        "Close": 23740.0,
-                        "Market_Gap_Pts": 5.0,
-                        "Result": "TARGET HIT (+48pts High Conviction)",
-                        "Option_Points": 48.0,
-                        "Lot_Qty": 65,
-                        "Gross_Pnl_INR": 3120.00,
-                        "Exact_Charges_INR": 80.12,
-                        "Net_Pnl_INR": 3039.88,
-                        "Direction": "LONG",
-                        "EMA_Aligned": True,
-                        "EMA_Slope": 22.0,
-                        "ADX": 32.0,
-                        "R_Squared": 0.86,
-                        "MTF_Aligned": True,
-                        "Vol_Mult": 1.9,
-                        "PCR_At_Entry": 1.20,
-                        "Diag_Tags": "1H 8-EMA Support Confluence, Bullish Stack",
-                    },
-                    {
-                        "Trade_ID": 287,
-                        "Date": "2026-11-04",
-                        "Setup_Name": "Stage 2 8-EMA (Long) [Pullback Touch]",
-                        "Setup_Type": "Trend Following",
-                        "Open": 23834.5,
-                        "High": 23867.5,
-                        "Low": 23820.0,
-                        "Close": 23867.5,
-                        "Market_Gap_Pts": 10.0,
-                        "Result": "TARGET HIT (+33pts Trailed)",
-                        "Option_Points": 7.0,
-                        "Lot_Qty": 65,
-                        "Gross_Pnl_INR": 455.00,
-                        "Exact_Charges_INR": 75.03,
-                        "Net_Pnl_INR": 379.97,
-                        "Direction": "LONG",
-                        "EMA_Aligned": True,
-                        "EMA_Slope": 15.2,
-                        "ADX": 26.4,
-                        "R_Squared": 0.82,
-                        "MTF_Aligned": True,
-                        "Vol_Mult": 1.4,
-                        "PCR_At_Entry": 1.05,
-                        "Diag_Tags": "Pullback Touch, ADX > 20, R² > 0.35",
-                    },
-                    {
-                        "Trade_ID": 288,
-                        "Date": "2026-11-04",
-                        "Setup_Name": "4 MA / 8 EMA Downside Reversal",
-                        "Setup_Type": "Reversal",
-                        "Open": 23821.7,
-                        "High": 23825.0,
-                        "Low": 23764.7,
-                        "Close": 23764.7,
-                        "Market_Gap_Pts": -15.0,
-                        "Result": "TARGET HIT (+57pts PE Short)",
-                        "Option_Points": 57.0,
-                        "Lot_Qty": 65,
-                        "Gross_Pnl_INR": 3705.00,
-                        "Exact_Charges_INR": 81.02,
-                        "Net_Pnl_INR": 3623.98,
-                        "Direction": "SHORT",
-                        "EMA_Aligned": True,
-                        "EMA_Slope": -22.5,
-                        "ADX": 31.0,
-                        "R_Squared": 0.79,
-                        "MTF_Aligned": True,
-                        "Vol_Mult": 1.8,
-                        "PCR_At_Entry": 0.88,
-                        "Diag_Tags": "4/8 Downside Cross, ADX 31.0",
-                    },
-                    {
-                        "Trade_ID": 289,
-                        "Date": "2026-11-04",
-                        "Setup_Name": "4 MA / 8 EMA Upside Reversal",
-                        "Setup_Type": "Reversal",
-                        "Open": 23737.7,
-                        "High": 23792.7,
-                        "Low": 23730.0,
-                        "Close": 23792.7,
-                        "Market_Gap_Pts": 20.0,
-                        "Result": "TARGET HIT (+55pts CE Long)",
-                        "Option_Points": 55.0,
-                        "Lot_Qty": 65,
-                        "Gross_Pnl_INR": 3575.00,
-                        "Exact_Charges_INR": 81.02,
-                        "Net_Pnl_INR": 3493.98,
-                        "Direction": "LONG",
-                        "EMA_Aligned": True,
-                        "EMA_Slope": 18.7,
-                        "ADX": 29.5,
-                        "R_Squared": 0.81,
-                        "MTF_Aligned": True,
-                        "Vol_Mult": 1.6,
-                        "PCR_At_Entry": 1.15,
-                        "Diag_Tags": "4/8 Upside Cross, ADX 29.5",
-                    },
-                    {
-                        "Trade_ID": 290,
-                        "Date": "2026-11-04",
-                        "Setup_Name": "1H 8-EMA Support Bounce Confluence",
-                        "Setup_Type": "Confluence Bounce",
-                        "Open": 23737.7,
-                        "High": 23837.7,
-                        "Low": 23730.0,
-                        "Close": 23837.7,
-                        "Market_Gap_Pts": 5.0,
-                        "Result": "TARGET HIT (+100pts High Conviction)",
-                        "Option_Points": 100.0,
-                        "Lot_Qty": 65,
-                        "Gross_Pnl_INR": 6500.00,
-                        "Exact_Charges_INR": 92.50,
-                        "Net_Pnl_INR": 6407.50,
-                        "Direction": "LONG",
-                        "EMA_Aligned": True,
-                        "EMA_Slope": 24.3,
-                        "ADX": 35.0,
-                        "R_Squared": 0.88,
-                        "MTF_Aligned": True,
-                        "Vol_Mult": 2.1,
-                        "PCR_At_Entry": 1.25,
-                        "Diag_Tags": "1H 8-EMA Bounce Confluence",
-                    },
-                    {
-                        "Trade_ID": 291,
-                        "Date": "2026-11-05",
-                        "Setup_Name": "Stage 2 8-EMA (Long) [Pullback Touch]",
-                        "Setup_Type": "Trend Following",
-                        "Open": 24366.7,
-                        "High": 24442.0,
-                        "Low": 24360.0,
-                        "Close": 24441.95,
-                        "Market_Gap_Pts": 30.0,
-                        "Result": "TARGET HIT (+25pts Trailed)",
-                        "Option_Points": 25.0,
-                        "Lot_Qty": 65,
-                        "Gross_Pnl_INR": 1625.00,
-                        "Exact_Charges_INR": 81.15,
-                        "Net_Pnl_INR": 1543.85,
-                        "Direction": "LONG",
-                        "EMA_Aligned": True,
-                        "EMA_Slope": 15.0,
-                        "ADX": 28.0,
-                        "R_Squared": 0.75,
-                        "MTF_Aligned": True,
-                        "Vol_Mult": 1.5,
-                        "PCR_At_Entry": 1.15,
-                        "Diag_Tags": "Stage 2 8 EMA Touch, 15m Confluence",
-                        "Entry_Time": "10:15:00",
-                        "Exit_Time": "11:00:00",
-                        "Contract_Symbol": "09 Nov 2026 — NIFTY 24200 CE",
-                        "Source": "AUTO ALGO 🤖",
-                        "Strategy": "Stage 2 8 EMA Touch",
-                        "reconciliation_match": True,
-                    },
-                ])
-                # Ensure all historical trade rows carry mandatory audit columns (IST timestamps & MA/BB state)
-                for tr in clean_trades:
-                    d_str = tr.get("Date", "")
-                    direction = tr.get("Direction", "LONG").upper()
-                    open_p = float(tr.get("Open", 23600.0))
-                    close_p = float(tr.get("Close", open_p))
-                    net_pnl = float(tr.get("Net_Pnl_INR", 0.0))
-                    opt_pts = float(tr.get("Option_Points", 0.0))
-                    ema_slope = float(tr.get("EMA_Slope", 0.0))
-
-                    if not tr.get("entry_ist"):
-                        tr["entry_ist"] = f"{d_str} 10:15:00 IST"
-                        tr["entry_time"] = tr["entry_ist"]
-                    if not tr.get("exit_ist"):
-                        tr["exit_ist"] = f"{d_str} 11:00:00 IST"
-                        tr["exit_time"] = tr["exit_ist"]
-                    if not tr.get("duration"):
-                        tr["duration"] = "45m"
-                    if not tr.get("day_outcome"):
-                        if net_pnl > 0:
-                            tr["day_outcome"] = "✅ WIN"
-                        elif opt_pts == 0 or "CTC" in tr.get("Result", ""):
-                            tr["day_outcome"] = "⚪ CTC (0 Pts)"
-                        else:
-                            tr["day_outcome"] = "❌ LOSS (SL)"
-                        tr["day_status"] = tr["day_outcome"]
-                    if not tr.get("ema_bb_state_at_entry"):
-                        sign_str = ">" if (ema_slope > 0 or direction == "LONG") else "<"
-                        band_str = "UBB: UP" if (ema_slope > 0 or direction == "LONG") else "LBB: DOWN"
-                        w_val = 72.0 + abs(ema_slope) if abs(ema_slope) > 0 else 68.0
-                        fast_e = open_p + (2.5 if sign_str == ">" else -2.5)
-                        tr["ema_bb_state_at_entry"] = f"4EMA: {fast_e:.1f} {sign_str} 8EMA: {open_p:.1f} | {band_str} | Width: {w_val:.1f}"
-                        tr["ma_bb_state"] = tr["ema_bb_state_at_entry"]
-                    if "index_entry" not in tr:
-                        tr["index_entry"] = open_p
-                    if "index_exit" not in tr:
-                        tr["index_exit"] = close_p
-                    if "exit_reason" not in tr:
-                        tr["exit_reason"] = tr.get("Result") or ("TARGET_40" if net_pnl > 0 else "STOP_LOSS")
-
-                return clean_trades
-        except Exception as e:
-            log.error("Failed loading historical trades: %s", e)
-        return []
+        return self._recorded_history().trades()
 
     def run_date_range_backtest(
         self,
@@ -6406,438 +5015,4 @@ class QuantTerminalBackend:
         bias: Optional[str] = None,
         include_today_paper: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Runs comprehensive date-range backtest evaluating historical trades
-        with Super Trail (Trailing SL + Trailing Target pullback + Partial Exits)
-        vs Fixed 40/40 Baseline, enforcing Daily Directional Bias and MA Stack.
-        """
-        trades_data = self._load_historical_trades()
-        if not trades_data:
-            return {"ok": False, "error": "No historical trades found in workspace data"}
-
-        cfg = dict(self.super_trail_cfg)
-        if custom_cfg:
-            cfg.update(custom_cfg)
-
-        eff_bias = (bias or (custom_cfg.get("directional_bias") if custom_cfg else None) or self.directional_bias).upper()
-        trail_enabled = bool(cfg.get("enabled", True))
-        trail_act = float(cfg.get("trail_activation_profit_pts", 15.0))
-        trail_jump = float(cfg.get("trailing_jump_pts", 5.0))
-        init_sl = float(cfg.get("initial_sl_pts", 20.0))
-        trail_target_enabled = bool(cfg.get("trailing_target_enabled", True))
-        init_target = float(cfg.get("initial_target_pts", 25.0))
-        target_step = float(cfg.get("trail_target_step_pts", 10.0))
-        pullback_pts = float(cfg.get("trail_target_pullback_pts", 5.0))
-        partial_enabled = bool(cfg.get("partial_exit_enabled", False))
-        enforce_ma = bool(cfg.get("enforce_ma_stack", enforce_ma_stack))
-
-        # Filter by date range, Directional Bias, and strict MA stack validation
-        filtered = []
-        for tr in trades_data:
-            d_str = tr.get("Date", "")
-            if from_date <= d_str <= to_date:
-                direction = tr.get("Direction", "LONG").upper()
-                ema_slope = float(tr.get("EMA_Slope", 0.0))
-                setup = tr.get("Setup_Name", "")
-
-                # Daily Directional Bias filter:
-                if eff_bias == "LONG_ONLY" and direction == "SHORT":
-                    log.info("[DIRECTIONAL BIAS REJECT] Backtest trade %s (%s) blocked by LONG_ONLY filter.", tr.get("Trade_ID"), setup)
-                    continue
-                if eff_bias == "SHORT_ONLY" and direction == "LONG":
-                    log.info("[DIRECTIONAL BIAS REJECT] Backtest trade %s (%s) blocked by SHORT_ONLY filter.", tr.get("Trade_ID"), setup)
-                    continue
-
-                # Strict Moving Average Stack filtering:
-                if enforce_ma:
-                    # Bullish Stack (EMA_Slope > 0): Short trades strictly blocked
-                    if ema_slope > 0 and direction == "SHORT":
-                        continue
-                    # Bearish Stack (EMA_Slope < 0): Long trades strictly blocked
-                    if ema_slope < 0 and direction == "LONG":
-                        continue
-                    # Reversal Prerequisite: confirmed alignment
-                    if "Reversal" in setup and not tr.get("EMA_Aligned", True):
-                        continue
-
-                filtered.append(tr)
-
-        if not filtered and (from_date <= "2026-11-04" <= to_date or from_date <= "2026-11-05" <= to_date):
-            all_fb = [
-                {
-                    "Trade_ID": 287,
-                    "Date": "2026-11-04",
-                    "Setup_Name": "Stage 2 8-EMA (Long) [Pullback Touch]",
-                    "Setup_Type": "Trend Following",
-                    "Open": 23834.5,
-                    "High": 23867.5,
-                    "Low": 23820.0,
-                    "Close": 23867.5,
-                    "Result": "TARGET HIT (+33pts Trailed)",
-                    "Option_Points": 7.0,
-                    "Lot_Qty": 65,
-                    "Gross_Pnl_INR": 455.00,
-                    "Exact_Charges_INR": 75.03,
-                    "Net_Pnl_INR": 379.97,
-                    "Direction": "LONG",
-                    "source": "AUTO ALGO 🤖",
-                    "Source": "AUTO ALGO 🤖",
-                    "strategy_setup": "Stage 2 8-EMA (Long) [Pullback Touch]",
-                    "Strategy": "Stage 2 8-EMA Touch",
-                    "contract_symbol": "09 Nov 2026 — NIFTY 23800 CE",
-                    "Contract_Symbol": "09 Nov 2026 — NIFTY 23800 CE",
-                    "reconciliation_match": True,
-                    "Entry_Time": "10:15:00",
-                    "Exit_Time": "11:00:00",
-                },
-                {
-                    "Trade_ID": 288,
-                    "Date": "2026-11-04",
-                    "Setup_Name": "4 MA / 8 EMA Downside Reversal",
-                    "Setup_Type": "Reversal",
-                    "Open": 23821.7,
-                    "High": 23825.0,
-                    "Low": 23764.7,
-                    "Close": 23764.7,
-                    "Result": "TARGET HIT (+57pts PE Short)",
-                    "Option_Points": 57.0,
-                    "Lot_Qty": 65,
-                    "Gross_Pnl_INR": 3705.00,
-                    "Exact_Charges_INR": 81.02,
-                    "Net_Pnl_INR": 3623.98,
-                    "Direction": "SHORT",
-                    "source": "AUTO ALGO 🤖",
-                    "Source": "AUTO ALGO 🤖",
-                    "strategy_setup": "4 MA / 8 EMA Downside Reversal",
-                    "Strategy": "4/8 Crossover Reversal",
-                    "contract_symbol": "09 Nov 2026 — NIFTY 23800 PE",
-                    "Contract_Symbol": "09 Nov 2026 — NIFTY 23800 PE",
-                    "reconciliation_match": True,
-                    "Entry_Time": "11:30:00",
-                    "Exit_Time": "12:15:00",
-                },
-                {
-                    "Trade_ID": 289,
-                    "Date": "2026-11-04",
-                    "Setup_Name": "4 MA / 8 EMA Upside Reversal",
-                    "Setup_Type": "Reversal",
-                    "Open": 23737.7,
-                    "High": 23792.7,
-                    "Low": 23730.0,
-                    "Close": 23792.7,
-                    "Result": "TARGET HIT (+55pts CE Long)",
-                    "Option_Points": 55.0,
-                    "Lot_Qty": 65,
-                    "Gross_Pnl_INR": 3575.00,
-                    "Exact_Charges_INR": 81.02,
-                    "Net_Pnl_INR": 3493.98,
-                    "Direction": "LONG",
-                    "source": "AUTO ALGO 🤖",
-                    "Source": "AUTO ALGO 🤖",
-                    "strategy_setup": "4 MA / 8 EMA Upside Reversal",
-                    "Strategy": "4/8 Crossover Reversal",
-                    "contract_symbol": "09 Nov 2026 — NIFTY 23700 CE",
-                    "Contract_Symbol": "09 Nov 2026 — NIFTY 23700 CE",
-                    "reconciliation_match": True,
-                    "Entry_Time": "12:30:00",
-                    "Exit_Time": "13:15:00",
-                },
-                {
-                    "Trade_ID": 290,
-                    "Date": "2026-11-04",
-                    "Setup_Name": "1H 8-EMA Support Bounce Confluence",
-                    "Setup_Type": "Confluence Bounce",
-                    "Open": 23737.7,
-                    "High": 23837.7,
-                    "Low": 23730.0,
-                    "Close": 23837.7,
-                    "Result": "TARGET HIT (+100pts High Conviction)",
-                    "Option_Points": 100.0,
-                    "Lot_Qty": 65,
-                    "Gross_Pnl_INR": 6500.00,
-                    "Exact_Charges_INR": 92.50,
-                    "Net_Pnl_INR": 6407.50,
-                    "Direction": "LONG",
-                    "source": "AUTO ALGO 🤖",
-                    "Source": "AUTO ALGO 🤖",
-                    "strategy_setup": "1H 8-EMA Support Bounce Confluence",
-                    "Strategy": "1H 8-EMA Support",
-                    "contract_symbol": "09 Nov 2026 — NIFTY 23700 CE",
-                    "Contract_Symbol": "09 Nov 2026 — NIFTY 23700 CE",
-                    "reconciliation_match": True,
-                    "Entry_Time": "12:15:00",
-                    "Exit_Time": "14:30:00",
-                },
-                {
-                    "Trade_ID": 291,
-                    "Date": "2026-11-05",
-                    "Setup_Name": "Stage 2 8-EMA (Long) [Pullback Touch]",
-                    "Setup_Type": "Trend Following",
-                    "Open": 24366.7,
-                    "High": 24442.0,
-                    "Low": 24360.0,
-                    "Close": 24441.95,
-                    "Result": "TARGET HIT (+25pts Trailed)",
-                    "Option_Points": 25.0,
-                    "Lot_Qty": 65,
-                    "Gross_Pnl_INR": 1625.00,
-                    "Exact_Charges_INR": 81.15,
-                    "Net_Pnl_INR": 1543.85,
-                    "Direction": "LONG",
-                    "source": "AUTO ALGO 🤖",
-                    "Source": "AUTO ALGO 🤖",
-                    "strategy_setup": "Stage 2 8 EMA Touch",
-                    "Strategy": "Stage 2 8 EMA Touch",
-                    "contract_symbol": "09 Nov 2026 — NIFTY 24200 CE",
-                    "Contract_Symbol": "09 Nov 2026 — NIFTY 24200 CE",
-                    "reconciliation_match": True,
-                    "Entry_Time": "10:15:00",
-                    "Exit_Time": "11:00:00",
-                },
-            ]
-            filtered = [
-                t for t in all_fb
-                if from_date <= t.get("Date") <= to_date
-                and not (eff_bias == "LONG_ONLY" and t.get("Direction") == "SHORT")
-                and not (eff_bias == "SHORT_ONLY" and t.get("Direction") == "LONG")
-            ]
-
-        if not filtered:
-            return {"ok": False, "error": f"No trades found between {from_date} and {to_date}"}
-
-        evaluated = []
-        fixed_pnl_total = 0.0
-        trailing_pnl_total = 0.0
-        fixed_wins = 0
-        trailing_wins = 0
-
-        # Drawdown tracking
-        cum_fixed = 0.0
-        peak_fixed = 0.0
-        max_dd_fixed = 0.0
-
-        cum_trail = 0.0
-        peak_trail = 0.0
-        max_dd_trail = 0.0
-
-        # Profit factor tracking
-        fixed_gross_wins = 0.0
-        fixed_gross_losses = 0.0
-        trail_gross_wins = 0.0
-        trail_gross_losses = 0.0
-
-        for tr in filtered:
-            trade_id = tr.get("Trade_ID", len(evaluated) + 1)
-            t_date = tr.get("Date", "")
-            setup = tr.get("Setup_Name", "8-EMA")
-            direction = tr.get("Direction", "LONG")
-            qty = int(tr.get("Lot_Qty") or 0)
-            if qty<=0:
-                log.warning('Historical row lacks recorded quantity; monetary result omitted')
-                continue
-            open_p = float(tr.get("Open", 0.0))
-            high_p = float(tr.get("High", 0.0))
-            low_p = float(tr.get("Low", 0.0))
-            close_p = float(tr.get("Close", 0.0))
-            opt_entry = 200.0
-
-            # Delta model (0.60 standard)
-            delta = 0.60
-            if direction == "LONG":
-                opt_mfe = max(0.0, (high_p - open_p) * delta)
-                opt_mae = max(0.0, (open_p - low_p) * delta)
-            else:
-                opt_mfe = max(0.0, (open_p - low_p) * delta)
-                opt_mae = max(0.0, (high_p - open_p) * delta)
-
-            # Fixed trade outcome
-            fixed_net = float(tr.get("Net_Pnl_INR", 0.0))
-            fixed_pnl_total += fixed_net
-            if fixed_net > 0:
-                fixed_wins += 1
-                fixed_gross_wins += fixed_net
-            else:
-                fixed_gross_losses += abs(fixed_net)
-
-            cum_fixed += fixed_net
-            peak_fixed = max(peak_fixed, cum_fixed)
-            max_dd_fixed = max(max_dd_fixed, peak_fixed - cum_fixed)
-
-            # Super Trail Simulation
-            if not trail_enabled:
-                opt_exit = opt_entry + float(tr.get("Option_Points", 0.0))
-                exit_reason = tr.get("Result", "FIXED_BASELINE")
-            elif opt_mfe < trail_act:
-                # Trailing never activated
-                if "STOP LOSS" in tr.get("Result", "") or opt_mae >= init_sl:
-                    opt_exit = opt_entry - init_sl
-                    exit_reason = "INITIAL_SL"
-                else:
-                    opt_exit = opt_entry + float(tr.get("Option_Points", 0.0))
-                    exit_reason = "FIXED_TARGET"
-            else:
-                # Trailing SL activated (15/5 step progression)
-                steps = math.floor((opt_mfe - trail_act) / trail_jump) + 1
-                trailed_sl = (opt_entry - init_sl) + (steps * trail_jump)
-                trailed_sl_profit = trailed_sl - opt_entry
-
-                if trail_target_enabled and opt_mfe >= init_target:
-                    # Trailing target active with spike pullback
-                    pullback_exit = opt_mfe - pullback_pts
-                    opt_exit_profit = max(pullback_exit, trailed_sl_profit, init_target)
-                    opt_exit = opt_entry + opt_exit_profit
-                    exit_reason = "TRAIL_PULLBACK"
-                else:
-                    opt_exit = opt_entry + trailed_sl_profit
-                    exit_reason = "TRAIL_SL"
-
-            opt_pts = round(opt_exit - opt_entry, 2)
-            trail_gross = round(opt_pts * qty, 2)
-            trail_charges = self.calculate_dhan_charges(opt_entry, opt_exit, qty)
-            trail_net = round(trail_gross - trail_charges, 2)
-
-            trailing_pnl_total += trail_net
-            if trail_net > 0:
-                trailing_wins += 1
-                trail_gross_wins += trail_net
-            else:
-                trail_gross_losses += abs(trail_net)
-
-            cum_trail += trail_net
-            peak_trail = max(peak_trail, cum_trail)
-            max_dd_trail = max(max_dd_trail, peak_trail - cum_trail)
-
-            alpha = round(trail_net - fixed_net, 2)
-
-            entry_ist = tr.get("entry_ist") or tr.get("entry_time") or f"{t_date} 10:15:00 IST"
-            exit_ist = tr.get("exit_ist") or tr.get("exit_time") or f"{t_date} 11:00:00 IST"
-            duration = tr.get("duration") or "45m"
-            day_outcome = tr.get("day_outcome") or ("✅ WIN" if trail_net > 0 else ("⚪ CTC (0 Pts)" if opt_pts == 0 else "❌ LOSS (SL)"))
-            ema_bb = tr.get("ema_bb_state_at_entry") or tr.get("ma_bb_state") or (
-                f"4EMA: {open_p + (2.5 if tr.get('EMA_Slope', 0) > 0 else -2.5):.1f} {'>' if tr.get('EMA_Slope', 0) > 0 else '<'} 8EMA: {open_p:.1f} | {'UBB: UP' if tr.get('EMA_Slope', 0) > 0 else 'LBB: DOWN'} | Width: {72.0 + abs(tr.get('EMA_Slope', 0)):.1f}"
-            )
-
-            strike_cand = (round(open_p / 100.0) * 100) if open_p else 0.0
-            opt_type_cand = "CE" if direction == "LONG" else "PE"
-            c_sym = format_contract_symbol(expiry=t_date, strike=strike_cand, opt_type=opt_type_cand, default_expiry=t_date)
-            struct_c = get_contract_structured_fields(c_sym, expiry=t_date)
-
-            entry_time_clean = tr.get("Entry_Time") or (entry_ist.split(" ")[1] if " " in entry_ist else "10:15:00")
-            exit_time_clean = tr.get("Exit_Time") or (exit_ist.split(" ")[1] if " " in exit_ist else "11:00:00")
-            trade_src = tr.get("source") or tr.get("Source") or "AUTO ALGO 🤖"
-            trade_strat = tr.get("strategy_setup") or tr.get("Strategy") or setup
-            trade_csym = tr.get("contract_symbol") or tr.get("Contract_Symbol") or c_sym
-
-            evaluated.append({
-                "trade_id": trade_id,
-                "Trade_ID": trade_id,
-                "date": t_date,
-                "Date": t_date,
-                "contract_symbol": trade_csym,
-                "Contract_Symbol": trade_csym,
-                "symbol": trade_csym,
-                "structured_contract": struct_c,
-                "day_outcome": day_outcome,
-                "day_status": day_outcome,
-                "entry_ist": entry_ist,
-                "entry_time": entry_ist,
-                "exit_ist": exit_ist,
-                "exit_time": exit_ist,
-                "Entry_Time": entry_time_clean,
-                "Exit_Time": exit_time_clean,
-                "duration": duration,
-                "setup": setup,
-                "Setup_Name": setup,
-                "strategy": trade_strat,
-                "Strategy": trade_strat,
-                "strategy_setup": trade_strat,
-                "source": trade_src,
-                "Source": trade_src,
-                "reconciliation_match": True,
-                "direction": direction,
-                "qty": qty,
-                "index_entry": open_p,
-                "index_exit": close_p if close_p else open_p,
-                "index_high": high_p,
-                "index_low": low_p,
-                "ema_bb_state_at_entry": ema_bb,
-                "ma_bb_state": ema_bb,
-                "option_entry": opt_entry,
-                "option_exit": round(opt_exit, 2),
-                "option_pts": opt_pts,
-                "exit_reason": exit_reason,
-                "fixed_net_pnl": fixed_net,
-                "trailing_net_pnl": trail_net,
-                "alpha_locked": alpha,
-                "charges": trail_charges,
-                "gross_pnl": trail_gross,
-            })
-
-        n_trades = len(evaluated)
-        win_rate_fixed = round((fixed_wins / n_trades * 100), 1) if n_trades else 0.0
-        win_rate_trail = round((trailing_wins / n_trades * 100), 1) if n_trades else 0.0
-        pf_fixed = round(fixed_gross_wins / fixed_gross_losses, 2) if fixed_gross_losses > 0 else 99.0
-        pf_trail = round(trail_gross_wins / trail_gross_losses, 2) if trail_gross_losses > 0 else 99.0
-        total_alpha = round(trailing_pnl_total - fixed_pnl_total, 2)
-
-        # Build reconciliation list
-        reconciliation_list = []
-        if from_date <= "2026-11-05" <= to_date:
-            n_05 = sum(1 for t in evaluated if t.get("date") == "2026-11-05")
-            match_05 = (n_05 == 1)
-            reconciliation_list.append({
-                "date": "2026-11-05",
-                "date_key": "2026-11-05",
-                "date_formatted": "05 Nov 2026",
-                "live_paper_trades": 1,
-                "live_trades_taken": 1,
-                "backtester_trades": n_05,
-                "backtest_trades_found": n_05,
-                "match": match_05,
-                "match_bool": match_05,
-                "match_label": "✅ MATCH" if match_05 else "⚠️ MISMATCH",
-                "time_ist": "10:15 -> 11:00 IST",
-                "entry_exit_time": "10:15 -> 11:00 IST",
-                "strategy_reason": "Stage 2 8 EMA Touch (AUTO ALGO 🤖)"
-            })
-        if from_date <= "2026-11-04" <= to_date:
-            n_04 = sum(1 for t in evaluated if t.get("date") == "2026-11-04")
-            live_04 = n_04
-            match_04 = (live_04 == n_04)
-            reconciliation_list.append({
-                "date": "2026-11-04",
-                "date_key": "2026-11-04",
-                "date_formatted": "04 Nov 2026",
-                "live_paper_trades": live_04,
-                "live_trades_taken": live_04,
-                "backtester_trades": n_04,
-                "backtest_trades_found": n_04,
-                "match": match_04,
-                "match_bool": match_04,
-                "match_label": "✅ MATCH" if match_04 else "⚠️ MISMATCH",
-                "time_ist": "11:30 / 12:30 IST",
-                "entry_exit_time": "11:30 / 12:30 IST",
-                "strategy_reason": "Mentor Verified Ground Truth"
-            })
-
-        reconciliation_match = all(r.get("match") is True or r.get("match_bool") is True for r in reconciliation_list) if reconciliation_list else True
-
-        return {
-            "ok": True,
-            "from_date": from_date,
-            "to_date": to_date,
-            "directional_bias": eff_bias,
-            "total_trades": n_trades,
-            "win_rate_fixed": win_rate_fixed,
-            "win_rate_trailing": win_rate_trail,
-            "fixed_net_pnl": round(fixed_pnl_total, 2),
-            "trailing_net_pnl": round(trailing_pnl_total, 2),
-            "alpha_locked": total_alpha,
-            "max_drawdown_fixed": round(max_dd_fixed, 2),
-            "max_drawdown_trailing": round(max_dd_trail, 2),
-            "profit_factor_fixed": pf_fixed,
-            "profit_factor_trailing": pf_trail,
-            "trades": evaluated,
-            "reconciliation": reconciliation_list,
-            "reconciliation_match": reconciliation_match,
-        }
+        return self._recorded_history().report(from_date, to_date, bias or self.directional_bias)
