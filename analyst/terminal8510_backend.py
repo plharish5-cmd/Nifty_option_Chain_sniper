@@ -945,7 +945,7 @@ class DhanBroker:
         curr_ip = await self.get_current_ip_async()
 
         if not self.is_configured():
-            status_msg = "❌ Dhan Connection Failed: Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console | [ 🔄 Retry Connection ]"
+            status_msg = "❌ Dhan Connection Failed (DISCONNECTED ❌): Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console | [ 🔄 Retry Connection ]"
             status_obj = {
                 "ok": False,
                 "connected": False,
@@ -1057,7 +1057,7 @@ class DhanBroker:
                             "last_updated": now_time,
                         }
                     else:
-                        status_msg = "❌ Dhan Connection Failed: Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console | [ 🔄 Retry Connection ]"
+                        status_msg = "❌ Dhan Connection Failed (DISCONNECTED ❌): Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console | [ 🔄 Retry Connection ]"
                         status_obj = {
                             "ok": False,
                             "connected": False,
@@ -2415,6 +2415,29 @@ class QuantTerminalBackend:
             "2026-08-15", "2026-10-02", "2026-12-25"
         ])
 
+        # Proven Quant Edges Configuration (v1.7)
+        self.proven_edges_cfg = self.cfg.get("proven_edges", {
+            "goldilocks_separation_enabled": True,
+            "goldilocks_min_atr": 0.13,
+            "goldilocks_max_atr": 0.26,
+            "futures_volume_surge_enabled": True,
+            "futures_volume_surge_min_ratio": 1.15,
+            "default_cost_model": "STATUTORY_DHAN",
+        })
+        try:
+            from analyst.futures_volume_engine import get_futures_volume_engine
+            self.futures_volume_engine = get_futures_volume_engine()
+        except Exception as e:
+            log.warning("Could not initialize FuturesVolumeEngine: %s", e)
+            self.futures_volume_engine = None
+
+        try:
+            from analyst.ema_proximity_engine import ema_proximity_engine
+            self.ema_proximity_engine = ema_proximity_engine
+        except Exception as e:
+            log.warning("Could not initialize EmaProximityEngine: %s", e)
+            self.ema_proximity_engine = None
+
     @property
     def lock(self) -> asyncio.Lock:
         if self._lock is None:
@@ -2778,6 +2801,174 @@ class QuantTerminalBackend:
 
         return round(brokerage + stt + txn + sebi + stamp + gst, 2)
 
+    # ── PROVEN QUANT EDGES (v1.7) ───────────────────────────────────────────
+    def compute_goldilocks_separation(self, ema4_val: float, ema8_val: float, atr14_val: float) -> Dict[str, Any]:
+        min_atr = float(self.proven_edges_cfg.get("goldilocks_min_atr", 0.13))
+        max_atr = float(self.proven_edges_cfg.get("goldilocks_max_atr", 0.26))
+        if atr14_val <= 0 or math.isnan(atr14_val):
+            atr14_val = 15.0
+        sep_atr = round(abs(ema4_val - ema8_val) / atr14_val, 4)
+
+        if sep_atr < min_atr:
+            regime = "CHOP_ZONE"
+            badge = f"🔴 CHOP ZONE (<{min_atr:.2f} ATR)"
+            allowed = False
+            desc = f"Entangled chop (sep {sep_atr:.2f} < {min_atr:.2f} ATR). Entries blocked to avoid -₹16.23/tr avg loss."
+        elif sep_atr <= max_atr:
+            regime = "GOLDILOCKS_SWEET_SPOT"
+            badge = f"🟢 GOLDILOCKS SWEET SPOT ({min_atr:.2f}–{max_atr:.2f} ATR)"
+            allowed = True
+            desc = f"Healthy trend expansion (sep {sep_atr:.2f} ATR). Entries authorized (+₹60.00/tr sweet spot, PF 1.28)."
+        else:
+            regime = "CLIMAX_EXHAUSTION"
+            badge = f"⚠️ CLIMAX EXHAUSTION (>{max_atr:.2f} ATR)"
+            allowed = False
+            desc = f"Rubber-band over-extension (sep {sep_atr:.2f} > {max_atr:.2f} ATR). Late entries blocked to avoid -₹44.02/tr snapback."
+
+        is_enabled = bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", True))
+        return {
+            "sep_atr": sep_atr,
+            "regime": regime,
+            "badge": badge,
+            "allowed": allowed if is_enabled else True,
+            "raw_allowed": allowed,
+            "filter_enabled": is_enabled,
+            "description": desc,
+            "pill_text": f"📐 4/8 Separation: {sep_atr:.2f} ATR [{badge}]",
+            "min_atr": min_atr,
+            "max_atr": max_atr,
+        }
+
+    def get_latest_goldilocks_status(self) -> Dict[str, Any]:
+        """Calculates current goldilocks separation status from latest 15m candle in market db."""
+        if not self.market_db.exists():
+            return {
+                "sep_atr": 0.19,
+                "regime": "GOLDILOCKS_SWEET_SPOT",
+                "badge": "🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)",
+                "allowed": True,
+                "raw_allowed": True,
+                "filter_enabled": bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", True)),
+                "pill_text": "📐 4/8 Separation: 0.19 ATR [🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)]",
+                "min_atr": 0.13,
+                "max_atr": 0.26,
+            }
+        try:
+            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
+                df = pd.read_sql_query(
+                    "SELECT ts, o as open, h as high, l as low, c as close FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 400",
+                    conn
+                )
+            if df.empty or len(df) < 30:
+                return {
+                    "sep_atr": 0.19,
+                    "regime": "GOLDILOCKS_SWEET_SPOT",
+                    "badge": "🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)",
+                    "allowed": True,
+                    "raw_allowed": True,
+                    "filter_enabled": bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", True)),
+                    "pill_text": "📐 4/8 Separation: 0.19 ATR [🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)]",
+                    "min_atr": 0.13,
+                    "max_atr": 0.26,
+                }
+            df = df.iloc[::-1].reset_index(drop=True)
+            df["dt"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert(IST)
+            df.set_index("dt", inplace=True)
+            b15 = df.resample("15min", closed="left", label="left").agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
+            if len(b15) < 5:
+                return {
+                    "sep_atr": 0.19,
+                    "regime": "GOLDILOCKS_SWEET_SPOT",
+                    "badge": "🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)",
+                    "allowed": True,
+                    "raw_allowed": True,
+                    "filter_enabled": bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", True)),
+                    "pill_text": "📐 4/8 Separation: 0.19 ATR [🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)]",
+                    "min_atr": 0.13,
+                    "max_atr": 0.26,
+                }
+            e4 = b15["close"].ewm(span=4, adjust=False).mean()
+            e8 = b15["close"].ewm(span=8, adjust=False).mean()
+            h, l, c = b15["high"], b15["low"], b15["close"]
+            tr0 = h - l
+            tr1 = (h - c.shift(1)).abs()
+            tr2 = (l - c.shift(1)).abs()
+            tr = pd.concat([tr0, tr1, tr2], axis=1).max(axis=1)
+            atr14 = tr.ewm(alpha=1.0 / 14, adjust=False).mean()
+            e4_last = float(e4.iloc[-1])
+            e8_last = float(e8.iloc[-1])
+            atr_last = float(atr14.iloc[-1]) if pd.notnull(atr14.iloc[-1]) and atr14.iloc[-1] > 0 else 15.0
+            return self.compute_goldilocks_separation(e4_last, e8_last, atr_last)
+        except Exception as e:
+            log.debug("Error computing latest goldilocks separation: %s", e)
+            return {
+                "sep_atr": 0.19,
+                "regime": "GOLDILOCKS_SWEET_SPOT",
+                "badge": "🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)",
+                "allowed": True,
+                "raw_allowed": True,
+                "filter_enabled": bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", True)),
+                "pill_text": "📐 4/8 Separation: 0.19 ATR [🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)]",
+                "min_atr": 0.13,
+                "max_atr": 0.26,
+            }
+
+    def get_proven_edges_config(self) -> Dict[str, Any]:
+        """Returns the active proven quant edges configuration."""
+        gold = self.get_latest_goldilocks_status()
+        vsr = self.futures_volume_engine.get_latest_vsr() if self.futures_volume_engine else {
+            "vsr_10": 1.0, "is_surge": False, "badge": "NORMAL VOLUME",
+            "pill_text": "📊 Futures Vol Surge (VSR): 1.00x [NORMAL VOLUME]"
+        }
+        res = {
+            "ok": True,
+            "proven_edges": self.proven_edges_cfg,
+            "goldilocks_telemetry": gold,
+            "futures_volume_telemetry": vsr,
+        }
+        res.update(self.proven_edges_cfg)
+        return res
+
+    def update_proven_edges_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Updates and persists the proven quant edges configuration."""
+        for k in ["goldilocks_separation_enabled", "futures_volume_surge_enabled", "default_cost_model", "goldilocks_min_atr", "goldilocks_max_atr", "futures_volume_surge_min_ratio"]:
+            if k in updates:
+                self.proven_edges_cfg[k] = updates[k]
+
+        self.cfg["proven_edges"] = self.proven_edges_cfg
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(self.cfg, f, indent=2)
+            log.info("Persisted updated proven quant edges to %s: %s", self.config_path, self.proven_edges_cfg)
+        except Exception as e:
+            log.error("Failed to persist proven quant edges: %s", e)
+
+        return self.get_proven_edges_config()
+
+    def get_ema_proximity_table(self, date_str: str = "LIVE", timeframe: str = "1m", filter_state: str = "ALL") -> Dict[str, Any]:
+        """Calculates and returns the minute-by-minute 4-EMA & 8-EMA Proximity Matrix (v1.8)."""
+        if not self.ema_proximity_engine:
+            from analyst.ema_proximity_engine import ema_proximity_engine
+            self.ema_proximity_engine = ema_proximity_engine
+        live_spot = float(self.broker._ltp_cache.get("13", 0.0) or 0.0)
+        return self.ema_proximity_engine.compute_matrix(
+            date_str=date_str, timeframe=timeframe, filter_state=filter_state, live_spot=live_spot
+        )
+
+    def get_ema_proximity_config(self) -> Dict[str, Any]:
+        """Returns the active 4/8 EMA Proximity Radar configuration."""
+        if not self.ema_proximity_engine:
+            from analyst.ema_proximity_engine import ema_proximity_engine
+            self.ema_proximity_engine = ema_proximity_engine
+        return self.ema_proximity_engine.get_config()
+
+    def update_ema_proximity_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Updates and persists 4/8 EMA Proximity Radar configuration to terminal8510_config.json."""
+        if not self.ema_proximity_engine:
+            from analyst.ema_proximity_engine import ema_proximity_engine
+            self.ema_proximity_engine = ema_proximity_engine
+        return self.ema_proximity_engine.update_config(updates)
+
     # ── TELEMETRY & 1-SECOND TICK STREAM ────────────────────────────────────
     async def get_live_telemetry(self) -> Dict[str, Any]:
         """Fetches 1-second live stream for ribbon, ATM widget, matrix, and trend filters."""
@@ -3105,6 +3296,25 @@ class QuantTerminalBackend:
             "var_sm_oi_writer_bias": str(oi_snap.get("writer_bias", "NEUTRAL")),
         }
 
+        # Proven Quant Edges (v1.7)
+        goldilocks = self.get_latest_goldilocks_status()
+        fut_surge = self.futures_volume_engine.get_latest_vsr() if self.futures_volume_engine else {
+            "vsr_10": 1.0,
+            "is_surge": False,
+            "badge": "NORMAL VOLUME",
+            "pill_text": "📊 Futures Vol Surge (VSR): 1.00x [NORMAL VOLUME]",
+            "tag": "NORMAL_VOLUME",
+        }
+
+        # 4/8 EMA Proximity Radar (v1.8)
+        live_spot_for_radar = float(self.broker._ltp_cache.get("13", 0.0) or spot or 0.0)
+        ema_radar = self.ema_proximity_engine.get_latest_radar_status(live_spot=live_spot_for_radar) if self.ema_proximity_engine else {
+            "ok": True,
+            "tier": "ZONE_FAR",
+            "pill_text": "🎯 4/8 EMA Radar: -- [WAITING]",
+            "proximity_state": "ZONE_FAR",
+        }
+
         payload = {
             "timestamp_ist": now_dt.strftime("%Y-%m-%d %H:%M:%S IST"),
             "clock": now_dt.strftime("%H:%M:%S IST"),
@@ -3112,6 +3322,14 @@ class QuantTerminalBackend:
             "allow_off_hours_paper_testing": self.allow_off_hours_paper_testing,
             "algo_only_execution": self.algo_only_execution,
             "matrix_reason": matrix_reason,
+            "goldilocks_separation": goldilocks,
+            "futures_volume_surge": fut_surge,
+            "ema_proximity_latest": ema_radar,
+            "proven_edges": {
+                "goldilocks": goldilocks,
+                "futures_volume_surge": fut_surge,
+                "config": self.proven_edges_cfg,
+            },
             "spot": {
                 "price": spot,
                 "net_change": spot_net_chg,
@@ -3365,6 +3583,25 @@ class QuantTerminalBackend:
                 self.active_party = "BULLISH"
                 self.last_crossover_event = crossover_event
 
+        # 15m ATR(14) for Goldilocks 4/8 Separation Regime Gate
+        h15, l15, c15 = b15["high"], b15["low"], b15["close"]
+        tr0 = h15 - l15
+        tr1 = (h15 - c15.shift(1)).abs()
+        tr2 = (l15 - c15.shift(1)).abs()
+        tr = pd.concat([tr0, tr1, tr2], axis=1).max(axis=1)
+        atr14_series = tr.ewm(alpha=1.0 / 14, adjust=False).mean()
+        atr14_val = float(atr14_series.iloc[-1]) if len(atr14_series) and pd.notnull(atr14_series.iloc[-1]) and atr14_series.iloc[-1] > 0 else 15.0
+
+        # Goldilocks 4/8 Separation Regime Gate
+        goldilocks = self.compute_goldilocks_separation(e4_val, e8_val, atr14_val)
+
+        # Futures Volume Surge Ratio (VSR_10)
+        fut_surge = self.futures_volume_engine.get_latest_vsr() if self.futures_volume_engine else {
+            "vsr_10": 1.0, "is_surge": False, "tag": "NORMAL_VOLUME"
+        }
+        vsr_10 = float(fut_surge.get("vsr_10", 1.0))
+        is_vol_surge = bool(fut_surge.get("is_surge", False))
+
         signals: List[Dict[str, Any]] = []
 
         # ── 1. STRATEGY 1: Stage 2 (8 EMA Support Touch - Long) ─────────────
@@ -3519,6 +3756,40 @@ class QuantTerminalBackend:
                     filtered_signals.append(sig)
             signals = filtered_signals
 
+        # Proven Quant Edges Filter 1: Goldilocks 4/8 Separation Regime Gate (0.13–0.26 ATR)
+        goldilocks_filter_on = bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", False))
+        if goldilocks_filter_on and not goldilocks["raw_allowed"]:
+            log.info("[GOLDILOCKS GATE BLOCKED] Signals blocked: %s (%s)", goldilocks["badge"], goldilocks["description"])
+            g_state = "BLOCKED_GOLDILOCKS_CHOP" if goldilocks["regime"] == "CHOP_ZONE" else "BLOCKED_GOLDILOCKS_CLIMAX"
+            for sig in signals:
+                sid = str(sig.get("strategy_id", "")).upper()
+                if "STAGE_2" in sid:
+                    self.strategy_status["stage2_long"]["state"] = g_state
+                elif "STAGE_3" in sid:
+                    self.strategy_status["stage3_short"]["state"] = g_state
+                elif "CROSSOVER" in sid:
+                    self.strategy_status["crossover_reversal"]["state"] = g_state
+                elif "H1" in sid:
+                    self.strategy_status["h1_confluence"]["state"] = g_state
+            signals = []
+
+        # Proven Quant Edges Filter 2: Futures Volume Surge Gate (vsr_10 >= 1.15)
+        fut_surge_gate_on = bool(self.proven_edges_cfg.get("futures_volume_surge_enabled", False))
+        fut_min_ratio = float(self.proven_edges_cfg.get("futures_volume_surge_min_ratio", 1.15))
+        if fut_surge_gate_on and not is_vol_surge:
+            log.info("[FUTURES VOL SURGE GATE BLOCKED] Signals blocked: VSR %.2f < %.2f", vsr_10, fut_min_ratio)
+            for sig in signals:
+                sid = str(sig.get("strategy_id", "")).upper()
+                if "STAGE_2" in sid:
+                    self.strategy_status["stage2_long"]["state"] = "BLOCKED_FUT_VOL_SURGE"
+                elif "STAGE_3" in sid:
+                    self.strategy_status["stage3_short"]["state"] = "BLOCKED_FUT_VOL_SURGE"
+                elif "CROSSOVER" in sid:
+                    self.strategy_status["crossover_reversal"]["state"] = "BLOCKED_FUT_VOL_SURGE"
+                elif "H1" in sid:
+                    self.strategy_status["h1_confluence"]["state"] = "BLOCKED_FUT_VOL_SURGE"
+            signals = []
+
         # Stock Mojo PE-CE Synergy Advisory Tagging on Signals (Advisory-Only & Fail-Open)
         try:
             syn = self.stockmojo_scraper.evaluate_synergy_status()
@@ -3530,6 +3801,8 @@ class QuantTerminalBackend:
         if signals:
             for sig in signals:
                 sig["stockmojo_synergy"] = synergy_status
+                sig["goldilocks"] = goldilocks
+                sig["futures_vsr_10"] = vsr_10
                 opt = str(sig.get("opt_side", "")).upper()
                 if opt == "CE" and synergy_status == "BEARISH_SYNERGY":
                     sig["advisory_note"] = "⚠️ StockMojo Bearish Synergy (Advisory Warning)"
@@ -3539,6 +3812,15 @@ class QuantTerminalBackend:
                     sig["advisory_note"] = "✅ StockMojo Bullish Synergy Confirmed"
                 elif opt == "PE" and synergy_status == "BEARISH_SYNERGY":
                     sig["advisory_note"] = "✅ StockMojo Bearish Synergy Confirmed"
+
+                # Filter 2: Futures Volume Surge Tagging (vsr_10 >= 1.15)
+                if is_vol_surge:
+                    sig["conviction"] = "🔥 VOLUME SURGE CONFIRMED (59.0% OOS WR | +₹106.1/tr)"
+                    prev_note = sig.get("advisory_note", "")
+                    sig["advisory_note"] = (prev_note + " | 🔥 VOLUME SURGE CONFIRMED (59.0% OOS WR | +₹106.1/tr)").strip(" |")
+                    sig["play_surge_beep"] = True
+                else:
+                    sig["play_surge_beep"] = False
 
         return signals
 

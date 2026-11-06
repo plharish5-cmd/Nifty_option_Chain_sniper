@@ -8,8 +8,10 @@
     "environment": "LIVE",
     "whitelisted_ip": "49.205.39.195",
     "DHAN_CLIENT_ID": "1112377935",
-    "TOKEN_EXPIRY_UTC": "2026-11-06T02:24:30Z",
-    "token_expiry_utc": "2026-11-06T02:24:30Z"
+    "TOKEN_EXPIRY_UTC": "2026-11-07T03:43:09Z",
+    "token_expiry_utc": "2026-11-07T03:43:09Z",
+    "DHAN_ACCESS_TOKEN": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MDIyOTg5LCJpYXQiOjE3OTM5MzY1ODksInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.YG3kxBSuYCmKeY-x7fGXp0-Axq_Vu5NmzdWvE61J_t8XgkwHG_COBOI7t24kwCAbue8dIDwdop5tC_tcW8Aw4w",
+    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MDIyOTg5LCJpYXQiOjE3OTM5MzY1ODksInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.YG3kxBSuYCmKeY-x7fGXp0-Axq_Vu5NmzdWvE61J_t8XgkwHG_COBOI7t24kwCAbue8dIDwdop5tC_tcW8Aw4w"
   },
   "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
   "instrument_master_path": "data/terminal8500/instrument_master.csv",
@@ -138,12 +140,32 @@
     "filter_stage2_8ema_synergy": false,
     "filter_strategy2_reversal_synergy": false,
     "filter_strategy3_1h_synergy": false,
-    "use_as_direct_15m_trigger": true,
+    "use_as_direct_15m_trigger": false,
     "block_pe_when_bullish": true,
     "block_ce_when_bearish": false,
     "show_pe_ce_table_in_tab1": true
   },
   "allow_off_hours_paper_testing": false,
+  "proven_edges": {
+    "goldilocks_separation_enabled": false,
+    "goldilocks_min_atr": 0.13,
+    "goldilocks_max_atr": 0.26,
+    "futures_volume_surge_enabled": false,
+    "futures_volume_surge_min_ratio": 1.15,
+    "default_cost_model": "STATUTORY_DHAN"
+  },
+  "ema_proximity_radar": {
+    "enabled": true,
+    "audio_alerts_enabled": false,
+    "timeframe": "1m",
+    "approaching_pts_threshold": 12.0,
+    "touch_pts_threshold": 5.0,
+    "whipsaw_max_flips_12m": 3,
+    "goldilocks_min_atr": 0.13,
+    "goldilocks_max_atr": 0.26,
+    "auto_highlight_strike_matrix": true
+  },
   "DHAN_CLIENT_ID": "1112377935",
-  "TOKEN_EXPIRY_UTC": "2026-11-06T02:24:30Z"
+  "TOKEN_EXPIRY_UTC": "2026-11-07T03:43:09Z",
+  "DHAN_ACCESS_TOKEN": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MDIyOTg5LCJpYXQiOjE3OTM5MzY1ODksInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.YG3kxBSuYCmKeY-x7fGXp0-Axq_Vu5NmzdWvE61J_t8XgkwHG_COBOI7t24kwCAbue8dIDwdop5tC_tcW8Aw4w"
 }

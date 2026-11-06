@@ -503,6 +503,48 @@ async def api_scanner_toggle(req: Request):
     return JSONResponse(content={"ok": True, "enabled": backend.scanner_enabled})
 
 
+@app.get("/api/proven_edges/config")
+async def api_get_proven_edges_config():
+    """Returns the status and configuration for Goldilocks and Futures Volume Surge."""
+    return JSONResponse(content=backend.get_proven_edges_config())
+
+
+@app.post("/api/proven_edges/config")
+async def api_post_proven_edges_config(req: Request):
+    """Updates toggleable configuration for Goldilocks and Futures Volume Surge."""
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    return JSONResponse(content=backend.update_proven_edges_config(data))
+
+
+@app.get("/api/ema_proximity/table")
+async def api_ema_proximity_table(req: Request):
+    """Returns minute-by-minute 4-EMA & 8-EMA Proximity Matrix with summary KPIs (v1.8)."""
+    date_str = str(req.query_params.get("date", "LIVE")).strip()
+    timeframe = str(req.query_params.get("timeframe", "1m")).strip()
+    filter_state = str(req.query_params.get("filter_state", "ALL")).strip()
+    res = backend.get_ema_proximity_table(date_str=date_str, timeframe=timeframe, filter_state=filter_state)
+    return JSONResponse(content=res)
+
+
+@app.get("/api/ema_proximity/config")
+async def api_ema_proximity_get_config():
+    """Returns persisted 4/8 EMA Proximity Radar configuration."""
+    return JSONResponse(content=backend.get_ema_proximity_config())
+
+
+@app.post("/api/ema_proximity/config")
+async def api_ema_proximity_post_config(req: Request):
+    """Updates and persists 4/8 EMA Proximity Radar configuration."""
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    return JSONResponse(content=backend.update_ema_proximity_config(data))
+
+
 @app.post("/api/position/modify")
 @app.post("/api/positions/squareoff")
 @app.post("/api/paper/squareoff")
@@ -913,8 +955,7 @@ async def api_dhan_logout():
 async def api_dhan_connect_test():
     """Runs a live connection test against Dhan HQ v2 API, querying /fundlimit and /marketfeed/ltp with 10s timeout."""
     res = await backend.test_dhan_connection()
-    status_code = 200 if res.get("ok") else 400
-    return JSONResponse(content=res, status_code=status_code)
+    return JSONResponse(content=res, status_code=200)
 
 
 def main() -> int:
