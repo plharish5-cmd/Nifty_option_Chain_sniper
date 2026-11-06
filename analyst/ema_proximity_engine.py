@@ -612,6 +612,11 @@ class EmaProximityEngine:
                     proximity_state = "ZONE_FAR"
 
             # Stop-Loss Minimizer & Early Rescue Advisory
+            # Additive observation metadata: use the existing structural-stop formula
+            # even when the displayed guard is a crossover exit warning. No execution
+            # or original text/state calculation consumes these new fields.
+            structural_sl_spot = round(min(low_p, ema_8) - 0.20 * atr_14, 2) if ema_4 >= ema_8 else round(max(high_p, ema_8) + 0.20 * atr_14, 2)
+            risk_pts = round(abs(close_p - structural_sl_spot), 2)
             sl_guard_advice = "--"
             if crossover_state == "8_EMA_REVERSAL_DOWNSIDE_CROSS" or (t > 0 and float(ema_4_arr[t - 1]) >= float(ema_8_arr[t - 1]) and ema_4 < ema_8):
                 sl_guard_advice = "⚠️ LONG KILL-SWITCH WARNING (4 EMA crossed below 8 EMA) | Exit Long Immediately"
@@ -707,6 +712,8 @@ class EmaProximityEngine:
                 "proximity_state": proximity_state,
                 "action_recommendation": action_recommendation,
                 "sl_guard_advice": sl_guard_advice,
+                "micro_sl_price": structural_sl_spot,
+                "risk_points": risk_pts,
                 "forward_mfe_5m": fwd_mfe_5m,
                 "forward_mfe_15m": fwd_mfe_15m,
                 "forward_mae_15m": fwd_mae_15m,
@@ -865,6 +872,9 @@ class EmaProximityEngine:
         return {
             "ok": True,
             "tier": tier,
+            "bar_ts": r.get("ts"),
+            "micro_sl_price": r.get("micro_sl_price"),
+            "risk_points": r.get("risk_points"),
             "close_price": close_p,
             "ema_4": ema_4,
             "ema_8": ema_8,

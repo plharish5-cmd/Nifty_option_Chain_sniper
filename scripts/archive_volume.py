@@ -29,6 +29,10 @@ import gzip
 import csv
 import sqlite3
 import sys
+import json
+import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -113,8 +117,54 @@ def main() -> int:
                 len(p), "  e.g. " + ", ".join(p[-5:]) if p else ""))
         print()
 
+        # Unified, read-only coverage: legacy source and forward receipt ledger are separate.
+        sys.path.insert(0, str(ROOT))
+        try:
+            from analyst.market_recorder_8510 import market_coverage
+        except ModuleNotFoundError:
+            market_coverage = None
+            print('Unified coverage unavailable: recording module not installed in this portable archive copy')
+        def connect_ro(path):
+            database=sqlite3.connect('file:'+str(path)+'?mode=ro',uri=True)
+            database.row_factory=sqlite3.Row
+            return database
+        report_day = a.date or days[-1]
+        print("UNIFIED RECORDING COVERAGE " + report_day)
+        if market_coverage: print(json.dumps(market_coverage(DB, report_day), indent=2))
+        recording = ROOT / 'data/terminal8510/recording.sqlite3'
+        if recording.exists():
+            with connect_ro(recording) as rc:
+                row = rc.execute('SELECT * FROM chain_coverage WHERE session_date=?',(report_day,)).fetchone()
+                print('8510 forward chain:', dict(row) if row else 'No forward records')
+                print('Contract ticks:', rc.execute('SELECT count(*) FROM contract_tick WHERE session_date=?',(report_day,)).fetchone()[0])
+        else: print('8510 forward recorder: no database yet')
         if a.report:
             return 0
+
+        # Separate per-date option backups; existing volume files must not skip these.
+        sources = [(DB, 'chain_snap', 'legacy_chain')]
+        if recording.exists():
+            sources += [(recording,'chain_snap','forward_chain'),(recording,'contract_tick','contract_tick')]
+        for database, table, folder in sources:
+            with connect_ro(database) as rc:
+                option_days = [a.date] if a.date else [r[0] for r in rc.execute(
+                    "SELECT DISTINCT date(ts,'unixepoch','+5 hours','+30 minutes') FROM "+table+" ORDER BY 1")]
+                for day in option_days:
+                    dest = ROOT/'data/archive/recording'/folder/(day+'.csv.gz')
+                    # Current session backups are refreshed atomically; past dates stay idempotent.
+                    today=datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()
+                    if dest.exists() and not a.force and day<today: continue
+                    dest.parent.mkdir(parents=True,exist_ok=True)
+                    cur = rc.execute("SELECT * FROM "+table+" WHERE date(ts,'unixepoch','+5 hours','+30 minutes')=? ORDER BY ts",(day,))
+                    temporary = dest.with_suffix(dest.suffix+'.tmp')
+                    with gzip.open(temporary,'wt',newline='',encoding='utf-8') as handle:
+                        writer=csv.writer(handle);writer.writerow([d[0] for d in cur.description])
+                        while True:
+                            chunk=cur.fetchmany(256)
+                            if not chunk:break
+                            writer.writerows(chunk)
+                    os.replace(temporary,dest)
+                    print('  archived '+str(dest))
 
         written = skipped = 0
         total_rows = 0

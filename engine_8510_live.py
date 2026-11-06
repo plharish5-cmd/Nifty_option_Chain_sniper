@@ -34,7 +34,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 
 # Path resolution
 ROOT_DIR = Path(__file__).resolve().parent
@@ -77,6 +77,7 @@ backend = QuantTerminalBackend()
 async def startup_event():
     log.info("⚡ NIFTY Quant Terminal 8510 Engine starting up...")
     backend.inst_mgr.ensure_loaded()
+    backend.start_recording()
     try:
         await backend.get_live_telemetry()
         log.info("✔ Initial market telemetry loaded successfully.")
@@ -594,6 +595,53 @@ async def api_post_proven_edges_config(req: Request):
     return JSONResponse(content=backend.update_proven_edges_config(data))
 
 
+@app.get('/api/recording/coverage')
+async def recording_coverage():
+    recorder = getattr(backend, 'recording_service', None)
+    return {**recorder.health, 'last_error': recorder.store.last_error, 'last_write': recorder.store.last_write, 'queue_dropped': recorder.dropped, 'last_cycle_at': recorder.last_cycle_at} if recorder else {'status': 'UNAVAILABLE', 'reason': 'Recorder not started; check server log'}
+
+@app.get('/api/recording/history')
+async def recording_history():
+    recorder = getattr(backend, 'recording_service', None)
+    return {'ema_rows': recorder.today_history, 'radar': recorder.radars} if recorder else {'ema_rows': [], 'radar': {}}
+
+async def recording_export(request, table, prefix):
+    recorder = getattr(backend, 'recording_service', None)
+    if not recorder: return JSONResponse(status_code=503, content={'error': 'Recorder unavailable'})
+    today = datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()
+    start = request.query_params.get('from', today); end = request.query_params.get('to', today)
+    fmt = request.query_params.get('format', 'csv')
+    try:
+        recorder.store.validate_range(start, end)
+        if fmt not in ('csv', 'xlsx'): raise ValueError('format must be csv or xlsx')
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={'error': str(exc)})
+    name = prefix + '_' + start + ('_to_' + end if end != start else '') + '.' + fmt
+    if fmt == 'csv':
+        chunks = recorder.store.export_csv(table, start, end); mime = 'text/csv; charset=utf-8'
+    else:
+        try: file = await asyncio.to_thread(recorder.store.export_xlsx, table, start, end)
+        except Exception:
+            log.exception('Recording xlsx export failed')
+            return JSONResponse(status_code=503, content={'error': 'Excel export unavailable; CSV remains available'})
+        def chunks_file():
+            try:
+                while True:
+                    chunk = file.read(65536)
+                    if not chunk: break
+                    yield chunk
+            finally: file.close()
+        chunks = chunks_file(); mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    return StreamingResponse(chunks, media_type=mime, headers={'Content-Disposition': 'attachment; filename="'+name+'"'})
+
+@app.get('/api/ema_proximity/export')
+async def ema_export(request: Request):
+    return await recording_export(request, 'ema_proximity_history', 'EMA_Proximity')
+
+@app.get('/api/radar_tier/export')
+async def radar_export(request: Request):
+    return await recording_export(request, 'radar_tier_signals', 'Radar_Tier_Signals')
+
 @app.get("/api/ema_proximity/table")
 async def api_ema_proximity_table(req: Request):
     """Returns minute-by-minute 4-EMA & 8-EMA Proximity Matrix with summary KPIs (v1.8)."""
@@ -804,6 +852,8 @@ async def api_post_synergy_config(req: Request):
 
 @app.on_event('shutdown')
 async def stop_background_tasks():
+    recorder = getattr(backend, "recording_service", None)
+    if recorder: recorder.stop()
     for task in (getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
         if task:task.cancel()
 

@@ -256,7 +256,7 @@ def kv_set(k: str, v: Any) -> None:
 
 # ─── housekeeping ───────────────────────────────────────────────────────────
 def prune() -> Dict[str, int]:
-    """Run once a day: candles older than candles_keep_days, chain snapshots older than chain_keep_days."""
+    """Prune transient data; spot/FUT/FUT2 candles and option snapshots are permanent."""
     now = int(time.time())
     keep_c = int(config.rule("data", "candles_keep_days", 400)) * 86400
     # chain_snap now also holds the option VOLUME/bid-ask tape used for multi-day option baselines, so keep it for
@@ -264,8 +264,8 @@ def prune() -> Dict[str, int]:
     keep_oi = int(config.rule("data", "chain_keep_days", 5))
     keep_tape = int(config.rule("data", "option_tape_keep_days", 45))
     keep_s = max(keep_oi, keep_tape) * 86400
-    a = execute("DELETE FROM candles_1m WHERE ts < ?", (now - keep_c,)).rowcount
-    b = execute("DELETE FROM chain_snap WHERE ts < ?", (now - keep_s,)).rowcount
+    a = execute("DELETE FROM candles_1m WHERE ts < ? AND sec_id NOT IN ('13','FUT','FUT2')", (now - keep_c,)).rowcount
+    b = 0  # Permanent option tape: expired contracts cannot be re-fetched.
     keep_d = int(config.rule("delta", "keep_days", 10)) * 86400
     keep_z = int(config.rule("zones", "keep_days", 10)) * 86400
     z = execute("DELETE FROM zones WHERE created_at < ?", (now - keep_z,)).rowcount

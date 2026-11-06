@@ -3,6 +3,7 @@ OI measures outstanding positions; the bias is a positioning heuristic, not obse
 No scraper, browser session, external site or guessed OI fallback.
 """
 from __future__ import annotations
+import logging
 import json
 import math
 import os
@@ -87,7 +88,12 @@ class DhanOIEngine:
                 if not expiry:raise ValueError('No verified unexpired option-chain expiry')
                 datetime.strptime(expiry,'%Y-%m-%d')
                 if expiry<datetime.fromtimestamp(now,IST).date().isoformat():raise ValueError('Expired option-chain identity')
-                result=classify_chain(self._post('/optionchain',{'UnderlyingScrip':13,'UnderlyingSeg':'IDX_I','Expiry':expiry}),expiry,now)
+                raw_chain=self._post('/optionchain',{'UnderlyingScrip':13,'UnderlyingSeg':'IDX_I','Expiry':expiry})
+                callback=getattr(self,'record_callback',None)
+                if callback:
+                    try:callback(raw_chain,expiry,time.time())
+                    except Exception:logging.getLogger(__name__).exception('Chain recorder enqueue failed open')
+                result=classify_chain(raw_chain,expiry,now)
                 if result['status']!='OK':self._snapshot=result;return self.cached_snapshot(now)
                 with self.connect() as conn:
                     conn.execute('INSERT OR REPLACE INTO dhan_oi_snapshots VALUES(?,?,?)',(now,expiry,json.dumps(result,allow_nan=False)))

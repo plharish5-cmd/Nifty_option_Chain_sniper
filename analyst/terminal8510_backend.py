@@ -3115,6 +3115,17 @@ class QuantTerminalBackend:
     def _as_int_bool(v) -> int:
         return 1 if bool(v) else 0
 
+    def start_recording(self):
+        if getattr(self, 'recording_service', None) or not self.cfg.get('recording_v193', {}).get('enabled'):
+            return
+        try:
+            from analyst.market_recorder_8510 import MarketRecorder
+            self.recording_service = MarketRecorder(self)
+            self.dhan_oi.record_callback = lambda *args: self.recording_service.enqueue('chain', *args)
+            self.recording_service.start()
+        except Exception:
+            log.exception('Permanent recording startup failed open')
+
     def log_signal_observation(self, sig: Dict[str, Any],
                                contract: Optional[Dict[str, Any]] = None,
                                confluence: Optional[Dict[str, Any]] = None,
@@ -3169,6 +3180,9 @@ class QuantTerminalBackend:
                      str(oid.get("bias", "")), str(oid.get("source", "")),
                      sig.get("separation_atr"), sig.get("flips_12bar"),
                      0, "", ""))
+            recorder = getattr(self, 'recording_service', None)
+            if recorder and contract:
+                recorder.enqueue('signal', dict(contract), time.time())
             return uid
         except Exception as exc:
             log.warning("signal_observations insert failed (%s): %s",
@@ -3607,6 +3621,10 @@ class QuantTerminalBackend:
             "pill_text": "🎯 4/8 EMA Radar: -- [WAITING]",
             "proximity_state": "ZONE_FAR",
         }
+
+        recorder = getattr(self, 'recording_service', None)
+        if recorder and not is_stale and live_spot_for_radar > 0:
+            recorder.enqueue('radar', dict(ema_radar), live_spot_for_radar, time.time())
 
         payload = {
             "timestamp_ist": now_dt.strftime("%Y-%m-%d %H:%M:%S IST"),

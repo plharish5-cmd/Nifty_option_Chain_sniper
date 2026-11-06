@@ -20,6 +20,32 @@ say() { printf '%s\n' "$*"; }
 
 is_up() { ss -ltn "sport = :${PORT}" 2>/dev/null | grep -q LISTEN; }
 
+# A listening port may be the old after-hours Streamlit desk, not the algo daemon.
+# Verify identity without killing anything or launching a duplicate scanner.
+expected_app() {
+  [[ "${PORT}" == 8510 ]] || return 0
+  local py="${REPO_ROOT}/.venv/bin/python"
+  [[ -x "${py}" ]] || py="$(command -v python3)"
+  "${py}" - "${PORT}" <<'PYIDENTITY'
+import json,sys,urllib.request,urllib.error
+try:
+    with urllib.request.urlopen('http://127.0.0.1:'+sys.argv[1]+'/api/health',timeout=3) as response:
+        data=json.load(response)
+    valid=data.get('port')==8510 and data.get('status')=='ONLINE' and 'algo_only_execution' in data and 'execution_mode' in data
+except (urllib.error.URLError,TimeoutError) as exc:
+    print('Port 8510 is bound; waiting for its health endpoint to become ready.',file=sys.stderr)
+    sys.exit(2)
+except Exception as exc:
+    print('Port 8510 is occupied but did not return Algo Terminal health ('+type(exc).__name__+').',file=sys.stderr)
+    valid=False
+sys.exit(0 if valid else 1)
+PYIDENTITY
+}
+port_conflict() {
+  say "Port ${PORT} belongs to another app. No process was stopped and no duplicate was started."
+  say "Identify it with: sudo ss -ltnp 'sport = :${PORT}'"
+}
+
 open_browser() {
   local url="http://127.0.0.1:${PORT}"
   say "Opening ${url}"
@@ -50,26 +76,36 @@ start_8510() {
 }
 
 if is_up; then
-  say "Port ${PORT} is already serving — not starting a second instance."
-  open_browser
-  exit 0
+  expected_app; identity=$?
+  if [[ "$identity" == 0 ]]; then
+    say "Port ${PORT} is already serving the expected desk — not starting a second instance."
+    open_browser
+    exit 0
+  elif [[ "$identity" == 1 ]]; then
+    port_conflict; exit 1
+  fi
+  say "A process is already bound; waiting for startup without launching a duplicate."
+else
+  case "${PORT}" in
+    8600) start_8600 ;;
+    8510) start_8510 ;;
+    *) say "Unknown port ${PORT}. Use 8600 or 8510."; exit 2 ;;
+  esac
 fi
-
-case "${PORT}" in
-  8600) start_8600 ;;
-  8510) start_8510 ;;
-  *)    say "Unknown port ${PORT}. Use 8600 or 8510."; exit 2 ;;
-esac
 
 # The desk takes ~25s to bind (chain warm-up + Dhan backfill), so poll rather
 # than guess at a sleep.
 printf 'Waiting for port %s to bind' "${PORT}"
 for _ in $(seq 1 60); do
   if is_up; then
-    say ""
-    say "Up after $(( SECONDS ))s."
-    open_browser
-    exit 0
+    expected_app; identity=$?
+    if [[ "$identity" == 1 ]]; then port_conflict; exit 1; fi
+    if [[ "$identity" == 0 ]]; then
+      say ""
+      say "Up after $(( SECONDS ))s."
+      open_browser
+      exit 0
+    fi
   fi
   printf '.'
   sleep 1

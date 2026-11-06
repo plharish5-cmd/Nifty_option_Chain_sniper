@@ -637,6 +637,12 @@
         <!-- TAB 1: LIVE TERMINAL & AGGRESSIVE LIMIT STRIKE MATRIX               -->
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <div id="tabTerminal" class="tab-content active">
+<section class="card" id="recordingHealthV193" style="margin:16px 0;padding:16px;border:1px solid #334155;border-radius:10px">
+ <h3>Recording health <span id="recordingSession"></span></h3>
+ <p id="recordingStatus">Waiting for recorder — missing observations are never estimated.</p>
+ <div style="overflow:auto"><table><thead><tr><th>Series</th><th>Recorded / expected slots</th><th>Coverage</th><th>Largest missing interval</th></tr></thead><tbody id="recordingCoverageRows"></tbody></table></div>
+ <p id="recordingContracts"></p><small id="recordingWrite"></small>
+</section>
 <section class="card" id="trendCaptureV192" style="margin:16px 0;padding:18px;border:1px solid #334155;border-radius:10px">
  <h2 style="font-size:16px">Trend capture study · <span style="color:#fbbf24">ADVISORY ONLY</span></h2>
  <p id="trendCaptureStatus">Loading closed 15m context… Existing execution and v1.1 exits remain unchanged.</p>
@@ -1230,6 +1236,22 @@
                     <div>Avg 15m MFE: <b id="kpiEmaAvgMfe" style="color:#6ee7b7;">+-- pts</b></div>
                 </div>
 
+<section id="recordingHistoryV193" style="padding:12px;border:1px solid #334155;margin:12px 0;border-radius:8px">
+ <h4>Permanent EMA observations &amp; radar outcomes</h4>
+ <p id="recordingSaved">Saved Rows Today: — | Saved Locally: waiting | Last Saved: —</p>
+ <label>From <input id="recordingFrom" type="date"></label> <label>To <input id="recordingTo" type="date"></label>
+ <button type="button" onclick="recordingDownload('ema','csv',true)">⬇ Download CSV — Today</button>
+ <button type="button" onclick="recordingDownload('ema','csv')">EMA date-range CSV</button>
+ <button type="button" onclick="recordingDownload('ema','xlsx')">EMA Excel (.xlsx)</button>
+ <button type="button" onclick="recordingDownload('radar','csv')">⬇ Download Tier Signals CSV</button>
+ <button type="button" onclick="recordingDownload('radar','xlsx')">Tier Excel (.xlsx)</button>
+ <p id="recordingExportMessage">Exports include PAUSED and STALE observations. Maximum 90 calendar days.</p>
+ <details><summary>Saved EMA history — yesterday and today</summary><label>Date <select id="recordingHistoryDay" onchange="recHistoryPage=0;renderRecordingHistory()"></select></label> <label>Timeframe <select id="recordingHistoryTF" onchange="recHistoryPage=0;renderRecordingHistory()"><option>1m</option><option>15m</option><option>1H</option></select></label> <button type="button" onclick="recHistoryPage++;renderRecordingHistory()">Older</button> <button type="button" onclick="recHistoryPage=Math.max(0,recHistoryPage-1);renderRecordingHistory()">Newer</button> <small id="recordingHistoryPage"></small><div style="max-height:220px;overflow:auto"><table><thead><tr><th>Date/time IST</th><th>TF</th><th>Spot</th><th>Close</th><th>4 EMA</th><th>8 EMA</th><th>4−8 / ATR</th><th>Proximity</th><th>Signal</th><th>Status</th></tr></thead><tbody id="recordingEmaRows"></tbody></table></div></details>
+ <h4>Radar tier tracker — observational only</h4>
+ <div style="overflow:auto"><table><thead><tr><th>Tier</th><th>n</th><th>Avg max pts</th><th>Avg risk</th><th>Max/risk</th><th>T15 before SL</th><th>SL first</th><th>Ambiguous</th><th>Running / expired</th></tr></thead><tbody id="recordingTierSummary"></tbody></table></div>
+ <div style="max-height:260px;overflow:auto"><table><thead><tr><th>Time / tier / signal</th><th>Side</th><th>Signal / spot at signal</th><th>Micro SL / risk</th><th>Now / points</th><th>Max points / time</th><th>Max adverse</th><th>T15 before SL</th><th>Outcome / final</th><th>Premium signal / now / max points</th></tr></thead><tbody id="recordingRadarRows"></tbody></table></div>
+ <p id="recordingRadarCaption"></p><small>Missing spot bars also make sequencing unobservable (spot_gap in export); unresolved targets at expiry are NO only with a complete observed horizon. Pending rows are not counted as stop-first.</small>
+</section>
                 <!-- Table Container -->
                 <div id="emaProximityTableContainer" style="overflow-x:auto; max-height:550px; overflow-y:auto; border:1px solid rgba(255,255,255,0.1); border-radius:6px;">
                     <table style="width:100%; border-collapse:collapse; font-size:11.5px; font-family:var(--font-mono);">
@@ -5405,7 +5427,49 @@
             }catch(e){console.debug('Trend capture evidence unavailable');}
         }
         loadTrendCaptureEvidence192();
-    </script>
+
+// v1.9.3: cached read-only observations; deliberately outside execution handlers.
+const recText=(id,value)=>{const e=document.getElementById(id);if(e)e.textContent=value;};
+const recNum=(v)=>v===null||v===undefined?'—':Number(v).toFixed(2);
+function recRows(id,rows){const b=document.getElementById(id);if(!b)return;b.replaceChildren();for(const row of rows){const tr=document.createElement('tr');for(const v of row){const td=document.createElement('td');td.textContent=v??'—';td.style.padding='6px';tr.appendChild(td);}b.appendChild(tr);}}
+function recordingToday(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+async function recordingDownload(kind,format,todayOnly=false){
+ const today=recordingToday(),a=todayOnly?today:document.getElementById('recordingFrom').value,b=todayOnly?today:document.getElementById('recordingTo').value;
+ const days=(Date.parse(b)-Date.parse(a))/86400000+1;
+ if(!a||!b||!Number.isFinite(days)||days<1||days>90){recText('recordingExportMessage','Choose an ascending date range of at most 90 calendar days.');return;}
+ const url=(kind==='ema'?'/api/ema_proximity/export':'/api/radar_tier/export')+'?from='+encodeURIComponent(a)+'&to='+encodeURIComponent(b)+'&format='+format;
+ // Native download streams to the browser; do not buffer months into a JS Blob.
+ const link=document.createElement('a');link.href=url;link.download='';document.body.appendChild(link);link.click();link.remove();recText('recordingExportMessage','Download requested. Missing observations remain blank; no history is manufactured.');
+}
+let recHistoryRows=[],recHistoryPage=0;
+function renderRecordingHistory(){
+ const day=document.getElementById('recordingHistoryDay').value,tf=document.getElementById('recordingHistoryTF').value;
+ const all=recHistoryRows.filter(x=>x.date===day&&x.timeframe===tf);recHistoryPage=Math.min(recHistoryPage,Math.max(0,Math.ceil(all.length/120)-1));
+ const end=Math.max(0,all.length-recHistoryPage*120),start=Math.max(0,end-120);
+ recText('recordingHistoryPage',`${start+Number(all.length>0)}–${end} of ${all.length} saved rows`);
+ recRows('recordingEmaRows',all.slice(start,end).map(x=>[x.date+' '+x.time_ist,x.timeframe,recNum(x.nifty_spot_price),recNum(x.close_price),recNum(x.ma4),recNum(x.ema8),recNum(x.gap_vs_atr),x.proximity_status,x.signal,x.status]));
+}
+async function loadRecordingV193(){
+ try{
+ const response=await fetch('/api/recording/coverage');if(!response.ok)throw Error('HTTP '+response.status);const h=await response.json();
+ recText('recordingSession',h.session_date||'');recText('recordingStatus',h.status+(h.last_error?' · Recording error: '+h.last_error:'')+' · Forward only');
+ const rows=[];for(const [key,label] of [['spot','Spot candles'],['fut','FUT candles'],['fut2','FUT2 candles'],['chain','Option chain — 8510 forward'],['chain_legacy','Option chain — existing source']]){const raw=h[key],x=raw&&(h.status==='RECORDING'&&raw.elapsed?raw.elapsed:raw);if(x)rows.push([label,`${x.n_snapshots} / ${x.expected_snapshots}`,recNum(x.coverage_pct)+'%',`${recNum(x.max_gap_minutes)} min at ${x.max_gap_at}`]);}recRows('recordingCoverageRows',rows);
+ const body=document.getElementById('recordingCoverageRows');for(let i=0;i<rows.length;i++){const key=['spot','fut','fut2','chain','chain_legacy'].filter(k=>h[k])[i];const raw=h[key],x=h.status==='RECORDING'&&raw.elapsed?raw.elapsed:raw;const pct=x.coverage_pct;body.children[i].children[2].style.color=pct<h.coverage_alert_pct?'#f87171':pct<h.coverage_warn_pct?'#fbbf24':'#34d399';}
+ recText('recordingContracts',`${h.tracked??0} contracts tracked · ${h.contract_ticks??0} minute receipts · ${h.contract_missing_minutes??0} missing contract-minutes · queue drops ${h.queue_dropped??0}`);
+ recText('recordingWrite',`Last observation write: ${h.last_write?new Date(h.last_write*1000).toLocaleTimeString('en-GB',{timeZone:'Asia/Kolkata'})+' IST':'—'} · Expected slots elapsed so far while live; full-session totals after close. See the API for both denominators.`);
+ recText('recordingSaved',`Saved Rows Today: ${h.saved_rows_today??0} | Saved Locally: ${h.last_error?'⚠ check recording error':h.saved_rows_today>0?'✅ SQLite + daily CSV':'Ready — no forward rows yet'} | Last Saved: ${h.last_saved||'—'} IST`);
+ const r=await fetch('/api/recording/history');if(!r.ok)throw Error('History HTTP '+r.status);const d=await r.json();
+ recHistoryRows=d.ema_rows||[];
+ const selector=document.getElementById('recordingHistoryDay'),chosen=selector.value;selector.replaceChildren();
+ const days=[...new Set(recHistoryRows.map(x=>x.date))].sort();if(!days.length)days.push(recordingToday());
+ for(const day of days){const option=document.createElement('option');option.value=day;option.textContent=day;selector.appendChild(option);}selector.value=days.includes(chosen)?chosen:days[days.length-1];renderRecordingHistory();
+ const q=d.radar||{};recText('recordingRadarCaption',q.caption||'No live radar observations recorded.');
+ recRows('recordingTierSummary',(q.summary||[]).map(x=>[x.tier,x.n,recNum(x.avg_max),recNum(x.avg_risk),recNum(x.max_risk_ratio),recNum(x.yes_n_pct)+'%',recNum(x.stop_n_pct)+'%',recNum(x.ambiguous_n_pct)+'%',`${x.running_n||0} / ${x.expired_n||0}`]));
+ recRows('recordingRadarRows',(q.rows||[]).map(x=>[x.signal_time_ist+' / '+x.tier+' / '+x.signal_name,x.direction,recNum(x.signal_price)+' / '+recNum(x.nifty_spot_at_signal),recNum(x.micro_sl_price)+' / '+recNum(x.risk_points),recNum(x.current_nifty_spot)+' / '+recNum(x.points_moved_now),recNum(x.max_points_moved)+' / '+(x.max_move_time_ist||'—'),recNum(x.max_adverse_points),x.target_15_hit_before_sl||'PENDING',x.outcome+' / '+recNum(x.final_points),[x.premium_at_signal,x.premium_now,x.max_premium_points].map(recNum).join(' / ')]));
+ }catch(e){recText('recordingStatus','Recording monitor unavailable: '+e.message);}
+}
+document.addEventListener('DOMContentLoaded',()=>{for(const id of ['recordingFrom','recordingTo'])document.getElementById(id).value=recordingToday();loadRecordingV193();setInterval(loadRecordingV193,30000);});
+</script>
 
     <!-- Module 4: Order Placement Confirmation Toast -->
     <div id="orderConfirmationToast" style="display:none; position:fixed; bottom:24px; right:24px; z-index:99999; background:rgba(15, 23, 42, 0.95); border:1px solid #10b981; border-radius:10px; padding:16px 20px; box-shadow:0 10px 25px rgba(0,0,0,0.6); min-width:320px; color:#f8fafc; font-family:var(--font-mono);">
