@@ -266,7 +266,12 @@ def test_trade_count_guard_trips_and_disarms(tmp_path):
     b.broker = _ConnectedBroker()
     seed_dry_runs(b, 1)
     b.configure_real_money(True, 'LIVE')
-    today = __import__('datetime').datetime.now().strftime('%Y-%m-%d')
+    # Must match the implementation's clock exactly: live_trades_today() and
+    # live_pnl_today() both key on datetime.now(IST). Using a naive now()
+    # here made the test fail whenever the container's UTC date and the IST
+    # date disagreed -- i.e. every evening after 18:30 UTC.
+    from analyst.terminal8510_backend import IST
+    today = __import__('datetime').datetime.now(IST).strftime('%Y-%m-%d')
     with sqlite3.connect(b.ledger_db) as c:
         for i in range(3):
             c.execute("INSERT OR REPLACE INTO orders (order_id, created_at, side, mode) "
@@ -283,7 +288,12 @@ def test_loss_guard_trips_and_disarms(tmp_path):
                  live_entry_window_start='00:00', live_entry_window_end='23:59')
     b.broker = _ConnectedBroker()
     b.configure_real_money(True, 'LIVE')
-    today = __import__('datetime').datetime.now().strftime('%Y-%m-%d')
+    # Must match the implementation's clock exactly: live_trades_today() and
+    # live_pnl_today() both key on datetime.now(IST). Using a naive now()
+    # here made the test fail whenever the container's UTC date and the IST
+    # date disagreed -- i.e. every evening after 18:30 UTC.
+    from analyst.terminal8510_backend import IST
+    today = __import__('datetime').datetime.now(IST).strftime('%Y-%m-%d')
     with sqlite3.connect(b.ledger_db) as c:
         c.execute("INSERT OR REPLACE INTO positions (position_id, status, mode, "
                   "exit_time, net_pnl) VALUES ('P1','CLOSED_SL','LIVE',?,?)",
