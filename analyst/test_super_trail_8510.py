@@ -146,7 +146,7 @@ def test_strike_matrix_algo_checkbox_filtering():
     """
     Verifies that when a strike is unchecked in algo_strike_selection:
       - Automated Algo execution skips the strike.
-      - Manual order on that strike is still allowed.
+      - Manual order remains rejected by the permanent gate.
     """
     backend = QuantTerminalBackend()
     # Explicit manual PAPER fixture; production remains algo-only and hours-gated.
@@ -178,15 +178,15 @@ def test_strike_matrix_algo_checkbox_filtering():
     assert res_algo.get("skipped") is True
     assert "excluded by Trader Strike Matrix Filter" in res_algo["error"]
 
-    # 2. Manual Matrix trigger -> Must EXECUTE (not skipped)
+    # 2. Manual Matrix trigger -> permanently rejected
     res_manual = asyncio.run(backend.execute_order_with_chaser(
         contract=contract,
         side="BUY",
         strategy_name="Manual Matrix 8510",
         is_algo_trade=False,
     ))
-    assert res_manual["ok"] is True
-    assert res_manual["status"] == "FILLED"
+    assert res_manual["ok"] is False
+    assert res_manual.get("algo_only_blocked") is True
 
     # Reset checkbox
     backend.update_strike_selection({
@@ -670,7 +670,8 @@ def test_stockmojo_and_port8600_confluence_integration():
         # 6. Verify HTML Tab Cleanup & Port 8600 Removal
         html_path = ROOT / "Algorithmic_Trading_Workspace_8510.html"
         html_content = html_path.read_text(encoding="utf-8")
-        assert "8600" not in html_content, "Port 8600 MUST be completely removed from HTML"
+        assert "port8600_confluence" not in html_content, "Legacy execution confluence must stay removed"
+        assert "ICT SMC Desk Signals" in html_content  # v194 separate read-only advisory
         assert "var_8600" not in html_content, "var_8600_* MUST be completely removed from HTML"
         assert "tabTrendLab" in html_content, "tabTrendLab (Multi-Factor Trend Lab) MUST remain intact"
         # The OI tab was RENAMED from tabStockMojoSuite to tabDhanOISuite in v1.9

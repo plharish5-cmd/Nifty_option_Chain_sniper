@@ -6,7 +6,7 @@
   "dhan": {
     "client_id": "1112377935",
     "environment": "LIVE",
-    "whitelisted_ip": "49.205.39.195",
+    "whitelisted_ip": "127.0.0.1",
     "DHAN_CLIENT_ID": "1112377935"
   },
   "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
@@ -42,7 +42,7 @@
     "runner_pct": 20
   },
   "algo_strike_selection": {
-    "LONG_CE_ITM": false,
+    "LONG_CE_ITM": true,
     "LONG_CE_ATM": true,
     "LONG_PE_ITM": true,
     "LONG_PE_ATM": true
@@ -274,5 +274,28 @@
     "study_win_delta": 0.59,
     "study_loss_delta": 0.67,
     "_evidence": "Recording only. No signal, filter or threshold here is validated. The radar max-move column is descriptive and selection-biased by construction; target_N_hit_before_sl is the tradeable statistic. Added because v1.9.2 could price only 10 of 49 candidates (20.4%) for lack of per-contract minute data."
+  },
+  "real_money_enabled": false,
+  "execution_safety_v194": {
+    "live_validation_status": "NO_GO",
+    "typed_confirmation": "ENABLE REAL MONEY",
+    "_evidence": "Paper and algo-only are unconditional. Current NO-GO prevents real-money opt-in. Any future approved opt-in is session-only and resets OFF at restart."
+  },
+  "ict_smc_desk_signals": {
+    "enabled": true,
+    "use_for_algo_trades": false,
+    "base_url": "http://127.0.0.1:8600",
+    "cache_seconds": 20,
+    "timeout_seconds": 4.0,
+    "timeframe": "3m",
+    "max_source_age_seconds": 300,
+    "significance": {
+      "State Change": true,
+      "Actionable Setups": true,
+      "High Conviction": true,
+      "Burst": true
+    },
+    "_evidence": "UNVALIDATED. Read-only classification bridge; never execution. Ports and parity audited against locked TypeScript; sparse chain history prevents a final trading verdict.",
+    "max_payload_bytes": 4000000
   }
 }

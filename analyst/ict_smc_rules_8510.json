@@ -1,0 +1,105 @@
+{
+  "wall_bear": [
+    "SUPPORT BROKEN",
+    "Support broken",
+    "Floor broken",
+    "Floor \u2193",
+    "RESISTANCE being built",
+    "Ceiling \u2193"
+  ],
+  "wall_bull": [
+    "RESISTANCE BROKEN",
+    "Resistance broken",
+    "Ceiling broken",
+    "Floor \u2191",
+    "SUPPORT being built",
+    "Ceiling \u2191"
+  ],
+  "significance": {
+    "state_change": true,
+    "actionable": "isActionable",
+    "high_conviction": "isHighConviction",
+    "burst": "isHighConviction"
+  },
+  "source": "OcLab.tsx:124-699; fixed source thresholds, no optimization",
+  "numeric_literals": {
+    "1": 1,
+    "3": 3,
+    "5": 5,
+    "15": 15,
+    "60": 60,
+    "2": 2,
+    "30": 30,
+    "1e7": 10000000.0,
+    "2.5": 2.5,
+    "6": 6,
+    ".5": 0.5,
+    "99": 99,
+    "0": 0,
+    "1e5": 100000.0,
+    "4": 4,
+    ".25": 0.25,
+    "25": 25,
+    ".20": 0.2,
+    "18": 18,
+    "65": 65,
+    "10": 10,
+    "45": 45,
+    "50": 50,
+    "160": 160,
+    "12": 12,
+    "35": 35,
+    "5000000": 5000000,
+    ".88": 0.88,
+    "1.12": 1.12,
+    "75": 75,
+    "85": 85,
+    "20": 20,
+    ".3": 0.3,
+    "100": 100,
+    ".8": 0.8,
+    "8": 8,
+    "55": 55,
+    "70": 70,
+    "95": 95
+  },
+  "context": {
+    "overextended_drop": -80,
+    "ui_fallback_sup": 22500,
+    "ui_fallback_res": 23000,
+    "minimum_span": 50
+  },
+  "bridge_defaults": {
+    "enabled": true,
+    "use_for_algo_trades": false,
+    "base_url": "http://127.0.0.1:8600",
+    "cache_seconds": 20,
+    "timeout_seconds": 4.0,
+    "timeframe": "3m",
+    "max_source_age_seconds": 300,
+    "significance": {
+      "State Change": true,
+      "Actionable Setups": true,
+      "High Conviction": true,
+      "Burst": true
+    },
+    "_evidence": "UNVALIDATED. Read-only classification bridge; never execution. Ports and parity audited against locked TypeScript; sparse chain history prevents a final trading verdict.",
+    "max_payload_bytes": 4000000
+  },
+  "safety_defaults": {
+    "live_validation_status": "NO_GO",
+    "typed_confirmation": "ENABLE REAL MONEY",
+    "_evidence": "Paper and algo-only are unconditional. Current NO-GO prevents real-money opt-in. Any future approved opt-in is session-only and resets OFF at restart."
+  },
+  "numeric_context": {
+    "pcr_bull": 1.2,
+    "pcr_bear": 0.8,
+    "flow_balance": 0.25
+  },
+  "time_thresholds": {
+    "09:30": "09:30",
+    "09:45": "09:45",
+    "15:10": "15:10",
+    "15:30": "15:30"
+  }
+}

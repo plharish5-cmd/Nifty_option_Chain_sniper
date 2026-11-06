@@ -1,0 +1,1 @@
+{"sessions":40,"horizons_minutes":[15,30,60,"EOD"],"target_spot_points":20,"stop_spot_points":20,"measured_delta_scenarios":[0.59,0.67],"hypotheses":128,"family_alpha":0.05,"evidence":"Pre-registered descriptive 20/20 spot barrier study, not a new execution setup. Eight requested groups × two direction arms × four horizons × two delta scenarios. No tuning or winner selection."}

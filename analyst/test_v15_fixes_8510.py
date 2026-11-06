@@ -67,7 +67,7 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
         """
         backend = QuantTerminalBackend()
         test_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummyPayload.secret1234"
-        test_cid = "1100998877"
+        test_cid = os.environ.get("DHAN_CLIENT_ID", "")  # Fixed secure backend ID; UI cannot replace it
 
         res = backend.update_dhan_config({
             "client_id": test_cid,
@@ -90,10 +90,10 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
         status = backend.get_dhan_status()
         self.assertTrue(status["ok"])
         self.assertTrue(status["configured"])
-        self.assertEqual(status["masked_token"], "****1234")
-        self.assertNotIn(test_token, status["masked_token"])
+        self.assertNotIn("masked_token", status)
+        self.assertNotIn(test_token, json.dumps(status))
         self.assertIn("Auto-loaded saved Dhan API", status["auto_load_log"])
-        self.assertIn("1234", status["status_text"])
+        self.assertNotIn("1234", status["status_text"])
         self.assertIn("CONNECTED", status["status_text"])
 
         # 3. Verify a fresh broker instance automatically loads saved credentials from disk
@@ -199,8 +199,8 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
             strategy_name="Test Setup",
             target_pts=40.0,
             sl_pts=20.0,
-            source="MANUAL MATRIX ✋",
-            strategy_setup="Manual — No Strategy"
+            source="AUTO ALGO 🤖",
+            strategy_setup="Stage 2 Test Fixture", is_algo_trade=True
         )
         self.assertTrue(order_res["ok"])
 
@@ -264,13 +264,14 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
             side="BUY",
             strategy_name="Stage 2 Scanner",
             source="AUTO ALGO 🤖",
-            strategy_setup="Stage 2 8 EMA Touch"
+            strategy_setup="Stage 2 8 EMA Touch", is_algo_trade=True
         )
         self.assertTrue(order_res1["ok"])
         self.assertEqual(order_res1["source"], "AUTO ALGO 🤖")
         self.assertEqual(order_res1["strategy_setup"], "Stage 2 8 EMA Touch")
 
-        # 2. Place Manual Router order
+        prior_order_count = len(backend.get_order_book())
+        # 2. A manual router order is refused permanently
         order_res2 = await backend.execute_order_with_chaser(
             contract=contract,
             side="BUY",
@@ -278,9 +279,8 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
             source="MANUAL ROUTER ✋",
             strategy_setup="Manual — No Strategy"
         )
-        self.assertTrue(order_res2["ok"])
-        self.assertEqual(order_res2["source"], "MANUAL ROUTER ✋")
-        self.assertEqual(order_res2["strategy_setup"], "Manual — No Strategy")
+        self.assertFalse(order_res2["ok"])
+        self.assertTrue(order_res2["algo_only_blocked"])
 
         # 3. Check positions return exact source & strategy
         positions = backend.get_active_positions()
@@ -288,7 +288,7 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
         strats_found = [p.get("strategy_setup") for p in positions]
 
         self.assertIn("AUTO ALGO 🤖", sources_found)
-        self.assertIn("MANUAL ROUTER ✋", sources_found)
+        # Historical manual rows are retained, not erased by the safety upgrade.
         self.assertIn("Stage 2 8 EMA Touch", strats_found)
 
         # 4. Check order book returns exact source & strategy
@@ -297,7 +297,7 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
         order_strats = [o.get("strategy_setup") for o in orders]
 
         self.assertIn("AUTO ALGO 🤖", order_sources)
-        self.assertIn("MANUAL ROUTER ✋", order_sources)
+        self.assertEqual(len(orders), prior_order_count)
         self.assertIn("Stage 2 8 EMA Touch", order_strats)
 
         # Clean up
@@ -320,7 +320,7 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(r_dhan.status_code, 200)
             data_dhan = r_dhan.json()
             self.assertTrue(data_dhan.get("ok"))
-            self.assertIn("masked_token", data_dhan)
+            self.assertNotIn("masked_token", data_dhan)
 
             # 2. Market status endpoint
             r_m = await client.get("/api/market/status")
@@ -397,7 +397,7 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
             side="BUY",
             strategy_name="EOD Test",
             source="AUTO ALGO 🤖",
-            strategy_setup="Stage 2 8 EMA Touch"
+            strategy_setup="Stage 2 8 EMA Touch", is_algo_trade=True
         )
         self.assertTrue(res["ok"])
         self.assertGreater(len(backend.get_active_positions()), 0)

@@ -157,7 +157,8 @@ class TestDhanApiConfig8510(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(r_get.status_code, 200)
             data_get = r_get.json()
             self.assertTrue(data_get["ok"])
-            self.assertIn("masked_token", data_get)
+            self.assertNotIn("masked_token", data_get)
+            self.assertIn("token_configured", data_get)
             self.assertIn("current_ip", data_get)
 
             # 2. POST /api/dhan/config (update harmless field)

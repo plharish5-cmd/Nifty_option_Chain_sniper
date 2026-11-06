@@ -588,24 +588,10 @@
 
             <!-- Master Execution Mode Selector, Paper Switch, Settings & Kill Switch -->
             <div class="header-toolbar">
-                <div class="mode-toggle-group">
-                    <button type="button" class="mode-btn" id="btnModeLive" onclick="setMasterMode('ALGO_LIVE_ONLY')">🚀 ALGO LIVE ONLY</button>
-                    <button type="button" class="mode-btn active-paper" id="btnModePaper" onclick="setMasterMode('PAPER_ONLY')">🧪 PAPER TRADE ONLY</button>
-                    <button type="button" class="mode-btn" id="btnModeBoth" onclick="setMasterMode('BOTH')">⚡ BOTH: LIVE + PAPER SYNC</button>
-                </div>
-
-                <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);">
-                    <input type="checkbox" id="chkPaperExecutionSwitch" checked onchange="togglePaperExecutionSwitch(this.checked)" style="cursor:pointer;">
-                    <span>Paper Live Exec: <b id="paperExecBadge" style="color:var(--emerald);">ON</b></span>
-                </label>
-
-                <label title="8510 is an algo desk. When ALGO ONLY is on, only algo-generated signals execute — clicking a strike by hand is rejected, not filled."
-                       style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);">
-                    <input type="checkbox" id="chkAlgoOnlySwitch" checked onchange="toggleAlgoOnly(this.checked)" style="cursor:pointer;">
-                    <span>Execution: <b id="algoOnlyBadge" style="color:var(--emerald);">🤖 ALGO ONLY</b></span>
-                </label>
-
-                <!-- Problem 3 Testing Override Toggle in Settings -->
+                <div class="status-badge badge-bull">📝 PAPER TRADING: ALWAYS ON</div>
+                <label class="mode-btn"><input type="checkbox" id="enableRealMoney" onchange="requestRealMoney(this.checked)"> Enable REAL MONEY trading</label>
+                <span id="realMoneyReason" style="font-size:11px">OFF — current NO-GO verdict</span>
+                <span class="status-badge badge-side">Algo setups only · select strikes below</span>
                 <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);" title="Allow Paper Trading Outside Market Hours (For Testing Only) — Default = OFF">
                     <input type="checkbox" id="chkOffHoursPaperTesting" onchange="toggleOffHoursPaperTesting(this.checked)" style="cursor:pointer;">
                     <span>Allow Off-Hours Paper Testing: <b id="offHoursBadge" style="color:var(--crimson);">OFF</b></span>
@@ -671,7 +657,17 @@
             </div>
 
             <!-- ⚡ DHAN API CONNECTION — LIVE DATA + ORDER PLACEMENT CARD ⚡ -->
-            <div id="dhanApiConfigCard" class="card" style="border: 1px solid #10b981; background: linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, rgba(15, 23, 42, 0.95) 100%); margin-bottom: 16px;">
+<section class="card" id="ictSmcSignalsCard" style="margin:12px 0;padding:16px;border:1px solid #334155">
+<h3>ICT SMC Desk Signals <small style="color:#fbbf24">ADVISORY</small></h3>
+<p>Read-only context from the 8600 desk. Existing strategy rules remain unchanged.</p>
+<label><input type="checkbox" id="ictAlgoUse" disabled> Use ICT SMC Desk Signals for algo trades</label>
+<small>OFF — awaiting validation</small>
+<div id="ictSignalStatus">Waiting for source evaluation…</div>
+<div style="overflow:auto"><table style="width:100%"><thead><tr><th>Group</th><th>Verdict</th><th>Direction</th><th>Significant</th><th>Source age</th></tr></thead><tbody id="ictSignalRows"></tbody></table></div>
+</section>
+<details id="dhanApiConfigCard" class="card" style="margin:12px 0;border:1px solid #334155" ontoggle="rememberDhanPanel()">
+<summary style="cursor:pointer;padding:12px;list-style:none"><b>🔒 Dhan API — Live Data + Order Placement</b> | <span id="dhanShutterConnected">Connected = checking</span> | Token Valid Till: <span id="dhanShutterExpiry">—</span> | <span id="dhanShutterLive">Live Data: —</span> | <span id="dhanShutterOrders">Order Placement: DISABLED (PAPER)</span> | <span id="dhanShutterHint">⬇ Expand</span></summary>
+<div style="padding:14px">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
                     <div style="display:flex; align-items:center; gap:10px;">
                         <span style="font-size:16px; font-weight:800; color:#f8fafc;">⚡ Dhan API Connection — Live Data + Order Placement</span>
@@ -699,17 +695,17 @@
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; margin-bottom:12px;">
                     <!-- Dhan Client ID -->
                     <div>
-                        <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:600;">[ ] Dhan Client ID:</label>
-                        <input type="text" id="dhanClientIdInput" placeholder="Example: 1100XXXXXX" style="width:100%; margin-top:4px;" autocomplete="off">
+                        <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:600;">🔒 Fixed Client ID (backend configuration only):</label>
+                        <input type="text" id="dhanClientIdInput" readonly disabled aria-label="Fixed Dhan Client ID" placeholder="Example: 1100XXXXXX" style="width:100%; margin-top:4px;" autocomplete="off">
                     </div>
 
                     <!-- Dhan Access Token -->
                     <div>
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:600;">[ ] Dhan Access Token:</label>
-                            <button type="button" class="secondary-btn" onclick="toggleDhanTokenVisibility('dhanAccessTokenInput', 'tokenEyeBtn')" id="tokenEyeBtn" style="font-size:10px; padding:2px 6px; line-height:1;">👁️ Show</button>
+                            
                         </div>
-                        <input type="password" id="dhanAccessTokenInput" placeholder="••••••••••••••••" style="width:100%; margin-top:4px;" autocomplete="off">
+                        <input type="password" id="dhanAccessTokenInput" name="dhan-access-token-no-autofill" value="" autocapitalize="off" spellcheck="false" placeholder="Paste a fresh token — never pre-filled" style="width:100%; margin-top:4px;" autocomplete="off">
                     </div>
 
                     <!-- Dhan API Key / App ID -->
@@ -764,14 +760,13 @@
                         <button type="button" class="secondary-btn" onclick="saveDhanApiConfig()" style="padding:8px 18px; font-size:12px; font-weight:700;">💾 Save API Config</button>
                         <button type="button" class="cyan-btn" onclick="retryDhanConnection()" style="padding:8px 14px; font-size:12px; font-weight:700;">🔄 Retry Connection</button>
                         <button type="button" class="crimson-btn" onclick="logoutDhanApiConfig()" style="padding:8px 14px; font-size:12px; font-weight:700;">🚪 Logout / Clear API Config</button>
-                        <button type="button" class="secondary-btn" onclick="toggleDhanTokenVisibility('dhanAccessTokenInput', 'tokenEyeBtn')" style="padding:8px 14px; font-size:12px;">👁️ Show / Hide Token</button>
+                        
                     </div>
                     <div style="font-size:12px; color:#38bdf8; font-family:var(--font-mono); font-weight:700;" id="dhanActionFeedback">
                         Ready to connect
                     </div>
                 </div>
-            </div>
-
+            <label><input type="checkbox" id="dhanAutoCollapse" checked> Collapse after successful Connect</label></div></details>
             <!-- Dynamic ATM Strike Widget (Main Page) -->
             <div class="atm-widget">
                 <div>
@@ -1127,9 +1122,7 @@
                             Expiry Date: <b id="routerSelectedExpiry" style="color:#f8fafc;">--</b> | Symbol: <b id="routerSelectedSymbol" style="color:#f8fafc;">NIFTY</b> | Strike: <b id="routerSelectedStrike" style="color:var(--emerald);">--</b>
                         </div>
                         <div>
-                            <button type="button" class="emerald-btn" id="btnRouterPlaceOrder" onclick="submitRouterOrder('BUY')" style="padding:6px 16px; font-size:12px; font-weight:700;">
-                                🚀 Place Protected Limit Order
-                            </button>
+                            <span class="status-badge badge-side">ALGO ONLY</span>
                         </div>
                     </div>
                 </div>
@@ -1149,7 +1142,7 @@
                                 <th>Spread (Pts)</th>
                                 <th>OI (Lakhs)</th>
                                 <th>Vol (Lakhs)</th>
-                                <th>Action (1-Click Aggressive Limit)</th>
+                                <th>Algo watchlist status</th>
                             </tr>
                         </thead>
                         <tbody id="strikeMatrixTableBody">
@@ -2617,18 +2610,19 @@
                 if (!res.ok) return;
                 const data = await res.json();
                 cachedDhanConfig = data;
+            updateDhanShutter(data);
 
                 if (document.getElementById("dhanClientIdInput")) {
                     document.getElementById("dhanClientIdInput").value = data.client_id || "";
                 }
                 if (document.getElementById("dhanAccessTokenInput")) {
-                    document.getElementById("dhanAccessTokenInput").value = data.masked_token || "";
+                    document.getElementById("dhanAccessTokenInput").value = "";
                 }
                 if (document.getElementById("dhanApiKeyInput")) {
-                    document.getElementById("dhanApiKeyInput").value = data.api_key || "";
+                    document.getElementById("dhanApiKeyInput").value = "";
                 }
                 if (document.getElementById("dhanApiSecretInput")) {
-                    document.getElementById("dhanApiSecretInput").value = data.masked_secret || "";
+                    document.getElementById("dhanApiSecretInput").value = "";
                 }
                 if (document.getElementById("dhanEnvironmentSelect")) {
                     document.getElementById("dhanEnvironmentSelect").value = data.environment || "LIVE";
@@ -2708,25 +2702,28 @@
             }
         }
 
-        async function saveDhanApiConfig(showFeedback = true) {
+        async function saveDhanApiConfig(showFeedback = true, requireFresh = false) {
             const fb = document.getElementById("dhanActionFeedback");
             try {
                 if (fb) fb.textContent = "Saving config...";
+                const typedToken = document.getElementById("dhanAccessTokenInput").value.trim();
+                if (requireFresh && !typedToken) { if (fb) fb.textContent = "⚠️ Please paste fresh Dhan Access Token first — Field is blank for safety"; return null; }
                 const body = {
-                    client_id: document.getElementById("dhanClientIdInput").value.trim(),
-                    access_token: document.getElementById("dhanAccessTokenInput").value.trim(),
                     api_key: document.getElementById("dhanApiKeyInput").value.trim(),
                     api_secret: document.getElementById("dhanApiSecretInput").value.trim(),
                     environment: document.getElementById("dhanEnvironmentSelect").value,
                     whitelisted_ip: document.getElementById("dhanWhitelistedIpInput").value.trim(),
                 };
 
+                if (typedToken) body.access_token = typedToken;
                 const res = await fetch("/api/dhan/config", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(body)
                 });
                 const d = await res.json();
+                if (!res.ok || d.ok === false) throw new Error(d.error || "Config rejected");
+                document.getElementById("dhanAccessTokenInput").value = "";
                 cachedDhanConfig = d;
                 if (fb) fb.textContent = "💾 Config saved safely!";
                 checkIpMatchStatus();
@@ -2745,8 +2742,11 @@
         async function connectToDhanLive() {
             const fb = document.getElementById("dhanActionFeedback");
             if (fb) fb.textContent = "Connecting to Dhan HQ...";
-            await saveDhanApiConfig(false);
-            await testDhanLiveConnection(true);
+            const saved = await saveDhanApiConfig(false, true);
+            if (!saved) return;
+            const result = await testDhanLiveConnection(true);
+            document.getElementById("dhanAccessTokenInput").value = "";
+            if (result && result.connected && document.getElementById('dhanAutoCollapse').checked) setTimeout(() => setDhanPanelCollapsed(true), 2000);
         }
 
         async function retryDhanConnection() {
@@ -2760,7 +2760,7 @@
                 const res = await fetch("/api/dhan/logout", { method: "POST" });
                 const d = await res.json();
                 alert(d.message || "Logged out of Dhan API successfully.");
-                if (document.getElementById("dhanClientIdInput")) document.getElementById("dhanClientIdInput").value = "";
+                // Fixed Client ID is retained on logout.
                 if (document.getElementById("dhanAccessTokenInput")) document.getElementById("dhanAccessTokenInput").value = "";
                 if (document.getElementById("dhanApiKeyInput")) document.getElementById("dhanApiKeyInput").value = "";
                 if (document.getElementById("dhanApiSecretInput")) document.getElementById("dhanApiSecretInput").value = "";
@@ -2826,6 +2826,7 @@
         }
 
         function renderDhanStatus(res) {
+            updateDhanShutter(res);
             const banner = document.getElementById("dhanStatusBanner");
             const bannerText = document.getElementById("dhanStatusText");
             const bannerIcon = document.getElementById("dhanStatusIcon");
@@ -3427,11 +3428,9 @@
                 // 8. State Sync
                 if (data.execution) {
                     currentExecutionMode = data.execution.mode;
-                    updateModeButtonsUI(data.execution.mode);
+                    syncRealMoneyUI(data.execution.mode === "BOTH");
                     isPaperExecutionEnabled = data.execution.paper_enabled;
-                    document.getElementById("chkPaperExecutionSwitch").checked = isPaperExecutionEnabled;
-                    document.getElementById("paperExecBadge").textContent = isPaperExecutionEnabled ? "ON" : "OFF";
-                    document.getElementById("paperExecBadge").style.color = isPaperExecutionEnabled ? "var(--emerald)" : "var(--crimson)";
+                    isPaperExecutionEnabled = true;
 
                     isKillSwitchActive = data.execution.kill_switch_active;
                     document.getElementById("btnResetKill").style.display = isKillSwitchActive ? "inline-block" : "none";
@@ -3445,7 +3444,7 @@
                     cachedAllowOffHours = Boolean(data.allow_off_hours_paper_testing);
                 }
                 if (data.algo_only_execution !== undefined) {
-                    applyAlgoOnlyUI(Boolean(data.algo_only_execution));
+                    // Algo-only is permanent; there is no switch.
                 }
 
                 // 9. Staged Derivatives Confluence Variables (Multi-Factor Trend Lab)
@@ -3550,9 +3549,7 @@
                     <td>${c.oi_lakhs.toFixed(1)} L</td>
                     <td>${c.volume_lakhs.toFixed(1)} L</td>
                     <td>
-                        <button type="button" class="${c.opt_type === 'CE' ? 'emerald-btn' : 'crimson-btn'}" onclick="submitMatrixOrder('${c.id}', 'BUY')" ${btnDisabledAttr} ${!Number.isFinite(c.ltp)||c.ltp<=0||!Number.isInteger(c.lot_size)||!c.security_id?'disabled title="Verified quote and lot required"':''}>
-                            🚀 BUY AGGR-LIMIT (${Number.isInteger(c.lot_size)?c.lot_size:"—"} Qty)
-                        </button>
+                        <span class="status-badge badge-side">${c.algo_enabled !== false ? "SELECTED" : "ALGO ONLY"}</span>
                     </td>
                 </tr>
             `;
@@ -3571,51 +3568,7 @@
             if (stkEl) stkEl.textContent = opt.dataset.strike || "--";
         }
 
-        async function submitRouterOrder(side = "BUY") {
-            if (cachedMarketStatus && !cachedMarketStatus.is_open && !cachedAllowOffHours) {
-                const timeIst = (cachedMarketStatus && cachedMarketStatus.time_ist) ? cachedMarketStatus.time_ist : (new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + " IST");
-                alert(`❌ Market Closed — Cannot Place Order Now\nMarket Hours: Mon-Fri 09:15 AM - 03:30 PM IST\nCurrent Time: ${timeIst} | Market Status: CLOSED`);
-                return;
-            }
-            const sel = document.getElementById("routerContractDropdown");
-            const contractId = sel ? sel.value : null;
-            if (!contractId) {
-                alert("Please select a contract from the Order Router dropdown.");
-                return;
-            }
-            const btn = document.getElementById("btnRouterPlaceOrder");
-            if (btn) btn.disabled = true;
-            try {
-                const targetPts = parseFloat(document.getElementById("cfgTargetPts") ? document.getElementById("cfgTargetPts").value : 40) || 40;
-                const slPts = parseFloat(document.getElementById("cfgSlPts") ? document.getElementById("cfgSlPts").value : 40) || 40;
-                const res = await fetch("/api/order/submit", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        contract_id: contractId,
-                        side: side,
-                        strategy_name: "Aggressive Limit Router",
-                        source: "MANUAL ROUTER ✋",
-                        strategy_setup: "Manual — No Strategy",
-                        target_pts: targetPts,
-                        sl_pts: slPts
-                    })
-                });
-                const data = await res.json();
-                if (data.ok) {
-                    playAcousticChime("success");
-                    showOrderConfirmationToast(data.symbol || sel.options[sel.selectedIndex].text, data.fill_price, side, "MANUAL ROUTER ✋", "Manual — No Strategy");
-                    speakOrderEntryAlert(data.symbol, data.fill_price);
-                    pollLiveEngine();
-                } else {
-                    alert("Order failed / rejected: " + (data.error || data.rejection_reason));
-                }
-            } catch (e) {
-                alert("Router order submission error: " + e.message);
-            } finally {
-                if (btn) btn.disabled = false;
-            }
-        }
+        
 
         async function toggleAlgoStrike(contractId, isChecked) {
             try {
@@ -3635,45 +3588,7 @@
             }
         }
 
-        async function submitMatrixOrder(contractId, side) {
-            if (cachedMarketStatus && !cachedMarketStatus.is_open && !cachedAllowOffHours) {
-                const timeIst = (cachedMarketStatus && cachedMarketStatus.time_ist) ? cachedMarketStatus.time_ist : (new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + " IST");
-                alert(`❌ Market Closed — Cannot Place Order Now\nMarket Hours: Mon-Fri 09:15 AM - 03:30 PM IST\nCurrent Time: ${timeIst} | Market Status: CLOSED`);
-                return;
-            }
-            const btn = event ? event.currentTarget : null;
-            if (btn) btn.disabled = true;
-            try {
-                const targetPts = parseFloat(document.getElementById("cfgTargetPts") ? document.getElementById("cfgTargetPts").value : 40) || 40;
-                const slPts = parseFloat(document.getElementById("cfgSlPts") ? document.getElementById("cfgSlPts").value : 40) || 40;
-                const res = await fetch("/api/order/submit", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        contract_id: contractId,
-                        side: side,
-                        strategy_name: "Manual Matrix 8510",
-                        source: "MANUAL MATRIX ✋",
-                        strategy_setup: "Manual — No Strategy",
-                        target_pts: targetPts,
-                        sl_pts: slPts
-                    })
-                });
-                const data = await res.json();
-                if (data.ok) {
-                    playAcousticChime("success");
-                    showOrderConfirmationToast(data.symbol || "09 Nov 2026 — NIFTY 24300 CE", data.fill_price, side, "MANUAL MATRIX ✋", "Manual — No Strategy");
-                    speakOrderEntryAlert(data.symbol, data.fill_price);
-                    pollLiveEngine();
-                } else {
-                    alert("Order failed / rejected: " + (data.error || data.rejection_reason));
-                }
-            } catch (e) {
-                alert("Order submission error: " + e.message);
-            } finally {
-                if (btn) btn.disabled = false;
-            }
-        }
+        
 
         function showOrderConfirmationToast(symbol, price, side, source = "AUTO ALGO 🤖", strategy = "Stage 2 8 EMA Touch") {
             const toast = document.getElementById("orderConfirmationToast");
@@ -3977,72 +3892,17 @@
         }
 
         // ── 6. EXECUTION MODE, KILL SWITCH & CHASING CONFIG ────────────────────
-        async function setMasterMode(mode) {
-            try {
-                const res = await fetch("/api/mode", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ mode: mode })
-                });
-                const d = await res.json();
-                if (d.ok) {
-                    currentExecutionMode = mode;
-                    updateModeButtonsUI(mode);
-                }
-            } catch (e) {
-                alert("Mode update error: " + e.message);
-            }
-        }
+        
 
-        function updateModeButtonsUI(mode) {
-            const btnLive = document.getElementById("btnModeLive");
-            const btnPaper = document.getElementById("btnModePaper");
-            const btnBoth = document.getElementById("btnModeBoth");
-            btnLive.className = "mode-btn" + (mode === "ALGO_LIVE_ONLY" ? " active-live" : "");
-            btnPaper.className = "mode-btn" + (mode === "PAPER_ONLY" ? " active-paper" : "");
-            btnBoth.className = "mode-btn" + (mode === "BOTH" ? " active-both" : "");
-        }
+        
 
         // ALGO ONLY blocks discretionary orders at the engine, not just here, so
         // the scanner and strike matrix cannot route around it either.
-        async function toggleAlgoOnly(enabled) {
-            try {
-                const res = await fetch("/api/mode", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ algo_only: enabled })
-                });
-                const d = await res.json();
-                applyAlgoOnlyUI(d.algo_only_execution !== undefined ? d.algo_only_execution : enabled);
-            } catch (e) {
-                alert("Algo-Only toggle error: " + e.message);
-            }
-        }
+        
 
-        function applyAlgoOnlyUI(on) {
-            const chk = document.getElementById("chkAlgoOnlySwitch");
-            const badge = document.getElementById("algoOnlyBadge");
-            if (chk) chk.checked = !!on;
-            if (badge) {
-                badge.textContent = on ? "🤖 ALGO ONLY" : "✋ MANUAL ALLOWED";
-                badge.style.color = on ? "var(--emerald)" : "var(--amber)";
-            }
-        }
+        
 
-        async function togglePaperExecutionSwitch(enabled) {
-            try {
-                await fetch("/api/mode", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ paper_enabled: enabled })
-                });
-                isPaperExecutionEnabled = enabled;
-                document.getElementById("paperExecBadge").textContent = enabled ? "ON" : "OFF";
-                document.getElementById("paperExecBadge").style.color = enabled ? "var(--emerald)" : "var(--crimson)";
-            } catch (e) {
-                console.error("Paper switch error:", e);
-            }
-        }
+        
 
         async function triggerEmergencyKillSwitch() {
             if (!confirm("⚠️ ARE YOU SURE? This will immediately cancel all Dhan pending orders, square off all open positions, and lock execution in STANDBY.")) return;
@@ -5469,6 +5329,27 @@ async function loadRecordingV193(){
  }catch(e){recText('recordingStatus','Recording monitor unavailable: '+e.message);}
 }
 document.addEventListener('DOMContentLoaded',()=>{for(const id of ['recordingFrom','recordingTo'])document.getElementById(id).value=recordingToday();loadRecordingV193();setInterval(loadRecordingV193,30000);});
+
+function syncRealMoneyUI(enabled) { const box=document.getElementById('enableRealMoney');if(box)box.checked=!!enabled; }
+async function requestRealMoney(enabled) {
+ const box=document.getElementById('enableRealMoney');box.checked=false;
+ const confirmation=enabled?prompt('Type ENABLE REAL MONEY. Paper continues running. Real money is blocked while the verdict is NO-GO.') : '';
+ if(enabled&&confirmation!=='ENABLE REAL MONEY')return;
+ try{const r=await fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({real_money_enabled:enabled,confirmation})});const d=await r.json();syncRealMoneyUI(r.ok&&d.real_money_enabled);document.getElementById('realMoneyReason').textContent=d.error|| (d.real_money_enabled?'Real ON + Paper ALWAYS ON':'Real OFF · Paper ALWAYS ON');}catch(e){syncRealMoneyUI(false);document.getElementById('realMoneyReason').textContent='Real OFF — request failed';}
+}
+function setDhanPanelCollapsed(collapsed){const panel=document.getElementById('dhanApiConfigCard');panel.open=!collapsed;try{localStorage.setItem('dhanPanelCollapsed',String(collapsed));}catch(e){console.warn('Panel preference unavailable');}}
+function rememberDhanPanel(){const panel=document.getElementById('dhanApiConfigCard');document.getElementById('dhanShutterHint').textContent=panel.open?'⬆ Collapse / Minimise':'⬇ Expand';try{localStorage.setItem('dhanPanelCollapsed',String(!panel.open));}catch(e){console.warn('Panel preference unavailable');}}
+function updateDhanShutter(data){document.getElementById('dhanShutterConnected').textContent='Connected = '+!!(data.connected??data.dhan_connected);document.getElementById('dhanShutterExpiry').textContent=data.token_valid_till||'Not Connected';document.getElementById('dhanShutterLive').textContent='Live Data: '+((data.connected??data.dhan_connected)?'ON':'OFF');document.getElementById('dhanShutterOrders').textContent='Order Placement: '+(currentExecutionMode==='BOTH'?'REAL opt-in + PAPER':'DISABLED (PAPER mode)');}
+document.addEventListener('DOMContentLoaded',()=>{const panel=document.getElementById('dhanApiConfigCard');const tabs=document.querySelector('.workspace-tabs')||document.getElementById('tabTerminal');if(tabs)tabs.parentNode.insertBefore(panel,tabs);let collapsed=true;try{collapsed=localStorage.getItem('dhanPanelCollapsed')!=='false';}catch(e){console.warn('Panel preference unavailable');}setDhanPanelCollapsed(collapsed);document.getElementById('dhanAccessTokenInput').value='';});
+
+async function pollIctDeskSignals(){
+ try{const res=await fetch('/api/ict-smc-signals');if(!res.ok)throw Error('Source unavailable');const d=await res.json();
+ document.getElementById('ictSignalStatus').textContent=(d.status||'UNAVAILABLE')+' · '+(d.evaluated_at||'not evaluated')+(d.log_error?' · Recording error':'');
+ const body=document.getElementById('ictSignalRows');body.replaceChildren();
+ for(const r of d.rows||[]){const tr=document.createElement('tr');tr.title=r.reason||'';for(const value of [r.signal_group,r.verdict,r.direction,r.significant?'YES':'—',r.age_seconds==null?'—':Math.round(r.age_seconds)+'s']){const td=document.createElement('td');td.textContent=value;td.style.padding='6px';tr.appendChild(td);}body.appendChild(tr);}
+ }catch(e){document.getElementById('ictSignalStatus').textContent='UNAVAILABLE — source not reachable';}
+}
+document.addEventListener('DOMContentLoaded',()=>{pollIctDeskSignals();setInterval(pollIctDeskSignals,20000);});
 </script>
 
     <!-- Module 4: Order Placement Confirmation Toast -->

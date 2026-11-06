@@ -8,7 +8,7 @@ Endpoints:
   - GET  /api/telemetry        : Live 1-second tick telemetry & trend confluence
   - GET  /api/funds            : Live Dhan funds + Paper wallet
   - POST /api/funds/paper/update: Add / Decrease / Reset Paper funds
-  - POST /api/mode             : 3-way mode switch + Paper ON/OFF toggle
+  - POST /api/mode             : Explicit real-money opt-in; paper permanently ON
   - POST /api/kill             : Emergency Kill Switch
   - POST /api/kill/reset       : Disarm Kill Switch
   - POST /api/chaser/config    : Configure aggressive limit chaser
@@ -78,6 +78,19 @@ async def startup_event():
     log.info("⚡ NIFTY Quant Terminal 8510 Engine starting up...")
     backend.inst_mgr.ensure_loaded()
     backend.start_recording()
+    from analyst.ict_smc_signals_8510 import SignalBridge
+    app.state.ict_smc_bridge = SignalBridge(backend.cfg['ict_smc_desk_signals'],
+        backend.ledger_db.parent / 'ict_smc_signals.sqlite3')
+    async def ict_signal_poller():
+        while True:
+            try:
+                await asyncio.to_thread(app.state.ict_smc_bridge.evaluate)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                log.exception('ICT SMC Desk Signals evaluation unavailable')
+            await asyncio.sleep(backend.cfg['ict_smc_desk_signals']['cache_seconds'])
+    app.state.ict_smc_task = asyncio.create_task(ict_signal_poller())
     try:
         await backend.get_live_telemetry()
         log.info("✔ Initial market telemetry loaded successfully.")
@@ -228,6 +241,19 @@ async def serve_workspace_html():
     )
 
 
+@app.get('/api/ict-smc-signals')
+async def ict_smc_status():
+    bridge=getattr(app.state,'ict_smc_bridge',None)
+    return bridge.last if bridge and bridge.last else {'name':'ICT SMC Desk Signals','status':'UNAVAILABLE','rows':[], 'use_for_algo_trades':False}
+
+@app.post('/api/ict-smc-signals/config')
+async def ict_smc_settings(req: Request):
+    data=await req.json()
+    if data.get('use_for_algo_trades') is not False:
+        return JSONResponse({'ok':False,'error':'Unvalidated advisory: algo use remains OFF'},status_code=409)
+    backend.cfg['ict_smc_desk_signals']['use_for_algo_trades']=False
+    return {'ok':True,'use_for_algo_trades':False}
+
 @app.get("/api/health")
 async def api_health():
     m_status = backend.is_nse_market_open()
@@ -236,7 +262,9 @@ async def api_health():
         "port": 8510,
         "dhan_connected": backend.broker.is_configured(),
         "execution_mode": backend.execution_mode,
-        "paper_enabled": backend.paper_execution_enabled,
+        "paper_enabled": True,
+        "real_money_enabled": backend.execution_mode == "BOTH",
+        "real_money_available": backend.cfg.get("execution_safety_v194", {}).get("live_validation_status") == "APPROVED",
         "directional_bias": backend.directional_bias,
         "algo_only_execution": backend.algo_only_execution,
         "kill_switch_active": backend.kill_switch_active,
@@ -328,36 +356,16 @@ async def api_paper_reset_ledger(req: Request):
 @app.post("/api/mode")
 async def api_set_mode(req: Request):
     body = await req.json()
-    if "mode" in body:
-        new_mode = str(body["mode"])
-        if new_mode in ("ALGO_LIVE_ONLY", "PAPER_ONLY", "BOTH"):
-            backend.execution_mode = new_mode
-            log.info("Execution mode updated to %s", new_mode)
-    if "paper_enabled" in body:
-        backend.paper_execution_enabled = bool(body["paper_enabled"])
-        log.info("Paper execution enabled updated to %s", backend.paper_execution_enabled)
-    if "directional_bias" in body or "bias" in body:
-        bias_val = str(body.get("directional_bias") or body.get("bias", "")).upper()
-        if bias_val in ("LONG_ONLY", "SHORT_ONLY", "BOTH"):
-            backend.set_directional_bias(bias_val)
-    if "algo_only" in body or "algo_only_execution" in body:
-        val = body.get("algo_only", body.get("algo_only_execution"))
-        backend.algo_only_execution = bool(val)
-        backend.cfg["algo_only_execution"] = backend.algo_only_execution
-        try:
-            backend.config_path.write_text(json.dumps(backend.cfg, indent=2))
-        except OSError as exc:
-            log.error("Could not persist algo_only_execution: %s", exc)
-        log.warning("Algo-Only execution set to %s (manual orders %s)",
-                    backend.algo_only_execution,
-                    "BLOCKED" if backend.algo_only_execution else "allowed")
-    return JSONResponse(content={
-        "ok": True,
-        "execution_mode": backend.execution_mode,
-        "paper_execution_enabled": backend.paper_execution_enabled,
-        "directional_bias": backend.directional_bias,
-        "algo_only_execution": backend.algo_only_execution,
-    })
+    forbidden = {'mode','paper_enabled','paper_execution_enabled','algo_only','algo_only_execution'}
+    if forbidden.intersection(body):
+        return JSONResponse(status_code=400, content={'ok': False, 'error': 'Paper and algo-only are permanently ON; legacy mode switches are removed'})
+    if 'real_money_enabled' in body:
+        result = backend.configure_real_money(body['real_money_enabled'], body.get('confirmation',''))
+        return JSONResponse(status_code=200 if result['ok'] else 403, content=result)
+    if 'directional_bias' in body or 'bias' in body:
+        backend.set_directional_bias(str(body.get('directional_bias') or body.get('bias')).upper())
+    return {'ok': True, 'execution_mode': backend.execution_mode, 'paper_execution_enabled': True,
+            'algo_only_execution': True, 'real_money_enabled': backend.execution_mode == 'BOTH'}
 
 
 @app.post("/api/kill")
@@ -438,66 +446,9 @@ async def api_chaser_config(req: Request):
 @app.post("/api/orders/place")
 @app.post("/api/paper/order")
 async def api_order_submit(req: Request):
-    """Places Aggressive Limit order with Chasing Engine."""
-    body = await req.json()
-    contract_id = body.get("contract_id")
-    side = body.get("side", "BUY")
-    strategy_name = body.get("strategy_name", "Manual Matrix")
-    target_pts = float(body.get("target_pts", 40.0))
-    sl_pts = float(body.get("sl_pts", 40.0))
-    is_algo_trade = bool(body.get("is_algo_trade", False))
-    source = body.get("source") or body.get("placed_by")
-    strategy_setup = body.get("strategy_setup")
-
-    selected_contract = None
-    if contract_id:
-        for c in backend.priority_contracts:
-            if c.get("id") == contract_id:
-                selected_contract = c
-                break
-
-    if not selected_contract:
-        selected_contract = body.get("contract")
-
-    if not selected_contract:
-        return JSONResponse(content={"ok": False, "error": f"Contract not resolved for id {contract_id}"}, status_code=400)
-
-    # Directional Bias Enforcement Gate (Live Execution / Strike Matrix)
-    opt_type = str(selected_contract.get("opt_type", "")).upper()
-    cid = str(selected_contract.get("id", "")).upper()
-    sym = str(selected_contract.get("symbol", "")).upper()
-    is_pe = (opt_type == "PE" or "PE" in cid or "PE" in sym)
-    is_ce = (opt_type == "CE" or "CE" in cid or "CE" in sym)
-
-    if backend.directional_bias == "LONG_ONLY" and is_pe:
-        err_msg = f"[DIRECTIONAL BIAS REJECTED] PE / Short trade for {selected_contract.get('symbol', cid)} blocked by LONG_ONLY bias filter."
-        log.warning(err_msg)
-        return JSONResponse(
-            content={"ok": False, "status": "REJECTED", "error": err_msg, "rejection_reason": "Directional Bias: LONG_ONLY blocks all PE / Short trades"},
-            status_code=400
-        )
-
-    if backend.directional_bias == "SHORT_ONLY" and is_ce:
-        err_msg = f"[DIRECTIONAL BIAS REJECTED] CE / Long trade for {selected_contract.get('symbol', cid)} blocked by SHORT_ONLY bias filter."
-        log.warning(err_msg)
-        return JSONResponse(
-            content={"ok": False, "status": "REJECTED", "error": err_msg, "rejection_reason": "Directional Bias: SHORT_ONLY blocks all CE / Long trades"},
-            status_code=400
-        )
-
-    res = await backend.execute_order_with_chaser(
-        contract=selected_contract,
-        side=side,
-        strategy_name=strategy_name,
-        target_pts=target_pts,
-        sl_pts=sl_pts,
-        is_algo_trade=is_algo_trade,
-        source=source,
-        strategy_setup=strategy_setup,
-        enforce_market_hours=True,
-    )
-    status_code = 200 if res.get("ok") else 400
-    return JSONResponse(content=res, status_code=status_code)
+    # Scanner calls the engine internally. A browser cannot impersonate it by supplying a flag.
+    return JSONResponse(status_code=403, content={'ok': False, 'status': 'REJECTED',
+        'algo_only_blocked': True, 'error': 'Manual trading is permanently disabled; select watchlist strikes for enabled algo setups instead'})
 
 
 @app.post("/api/super_trail/config")
@@ -854,7 +805,7 @@ async def api_post_synergy_config(req: Request):
 async def stop_background_tasks():
     recorder = getattr(backend, "recording_service", None)
     if recorder: recorder.stop()
-    for task in (getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
+    for task in (getattr(app.state,'ict_smc_task',None),getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
         if task:task.cancel()
 
 @app.get("/api/dhan/config")
@@ -890,7 +841,7 @@ async def api_dhan_logout():
 async def api_dhan_connect_test():
     """Runs a live connection test against Dhan HQ v2 API, querying /fundlimit and /marketfeed/ltp with 10s timeout."""
     res = await backend.test_dhan_connection()
-    return JSONResponse(content=res, status_code=200)
+    return JSONResponse(content=backend._public_dhan_status(res), status_code=200)
 
 
 def main() -> int:

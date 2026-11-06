@@ -1,0 +1,23 @@
+{
+  "recorded_timestamps": 357,
+  "agreement": {
+    "stage": 100.0,
+    "stageBadge": 100.0,
+    "actionTone": 100.0,
+    "suppressed": 100.0,
+    "convictionPct": 100.0,
+    "isActionable": 100.0,
+    "isHighConviction": 100.0,
+    "isSynergy": 100.0,
+    "isScissor": 100.0,
+    "isPullbackToSupply": 100.0,
+    "isPullbackToDemand": 100.0,
+    "isShortCoveringReversal": 100.0,
+    "spotChange15m": 100.0,
+    "radar": 100.0,
+    "corridorPct": 100.0,
+    "stateKey": 100.0,
+    "stateChange": 100.0
+  },
+  "mismatches": []
+}

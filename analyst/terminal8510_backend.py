@@ -2330,9 +2330,60 @@ def compute_five_factor_confluence(trend=None,dhan_oi=None,volume=None,cfg=None)
 class QuantTerminalBackend:
     """Core 8510 Quant Engine coordinating market data, execution, chasing, and UI stream."""
 
+    @property
+    def paper_execution_enabled(self):
+        return True
+
+    @paper_execution_enabled.setter
+    def paper_execution_enabled(self, value):
+        if value is not True: log.warning('Paper execution is permanently ON; disable ignored')
+
+    @property
+    def algo_only_execution(self):
+        return True
+
+    @algo_only_execution.setter
+    def algo_only_execution(self, value):
+        if value is not True: log.warning('Algo-only execution is permanent; disable ignored')
+
+    @property
+    def execution_mode(self):
+        approved = getattr(self, 'cfg', {}).get('execution_safety_v194', {}).get('live_validation_status') == 'APPROVED'
+        return 'BOTH' if approved and getattr(self, '_real_money_enabled', False) else 'PAPER_ONLY'
+
+    @execution_mode.setter
+    def execution_mode(self, value):
+        # Legacy assignments cannot arm real money or replace the paper leg.
+        if value == 'PAPER_ONLY': self._real_money_enabled = False
+        elif value not in (None, ''): log.warning('Legacy execution-mode assignment ignored; use explicit real-money opt-in')
+
+    def configure_real_money(self, enabled, confirmation=''):
+        if type(enabled) is not bool: return {'ok': False, 'error': 'Boolean required'}
+        settings = self.cfg.get('execution_safety_v194', {})
+        if enabled:
+            if settings.get('live_validation_status') != 'APPROVED':
+                return {'ok': False, 'error': 'Real money remains OFF: current backtest verdict is NO-GO'}
+            if confirmation != settings.get('typed_confirmation') or not confirmation:
+                return {'ok': False, 'error': 'Exact typed confirmation required'}
+        self._real_money_enabled = enabled
+        # Deliberately persist OFF; a restart must never re-arm real capital.
+        self.cfg.update(execution_mode='PAPER_ONLY', real_money_enabled=False,
+                        paper_execution_enabled=True, algo_only_execution=True)
+        try: self.config_path.write_text(json.dumps(self.cfg, indent=2))
+        except OSError: log.exception('Could not persist disarmed startup defaults')
+        return {'ok': True, 'execution_mode': self.execution_mode, 'real_money_enabled': enabled,
+                'paper_execution_enabled': True, 'algo_only_execution': True}
+
     def __init__(self, config_file: str = "analyst/terminal8510_config.json") -> None:
         self.config_path = ROOT / config_file
         self.cfg = json.loads(self.config_path.read_text())
+        # Older running daemons may rewrite runtime config during deployment.
+        # Mandatory safe defaults therefore also live in versioned local rules.
+        from analyst.ict_smc_signals_8510 import rules as ict_rules
+        safe_defaults = ict_rules()
+        self.cfg.setdefault('ict_smc_desk_signals', safe_defaults['bridge_defaults'])
+        self.cfg.setdefault('execution_safety_v194', safe_defaults['safety_defaults'])
+        self.cfg['ict_smc_desk_signals']['use_for_algo_trades'] = False
         self.inst_mgr = InstrumentManager(self.cfg["instrument_master_path"], self.cfg["scrip_master_url"])
         self.broker = DhanBroker(self.cfg.get("dhan_base_url", "https://api.dhan.co/v2"), cfg=self.cfg)
         self.market_db = ROOT / self.cfg["market_db_path"]
@@ -2349,7 +2400,19 @@ class QuantTerminalBackend:
         self._confluence_context_at = 0.0
 
         # State Variables
-        self.execution_mode = self.cfg.get("execution_mode", "PAPER_ONLY")
+        self._real_money_enabled = False
+        if self.cfg.get('execution_mode') != 'PAPER_ONLY' or self.cfg.get('real_money_enabled'):
+            log.warning('Real-money state reset OFF at startup; paper remains always ON')
+        unsafe = (self.cfg.get('execution_mode') != 'PAPER_ONLY' or
+                  self.cfg.get('real_money_enabled') or self.cfg.get('paper_execution_enabled') is False or
+                  self.cfg.get('algo_only_execution') is False)
+        if self.cfg.get('paper_execution_enabled') is False:
+            log.warning('Paper execution disabled in config: overriding permanently ON')
+        self.cfg.update(execution_mode='PAPER_ONLY', real_money_enabled=False,
+                        paper_execution_enabled=True, algo_only_execution=True)
+        if unsafe:
+            self.config_path.write_text(json.dumps(self.cfg, indent=2))
+        self.execution_mode = 'PAPER_ONLY' 
         self.paper_execution_enabled = bool(self.cfg.get("paper_execution_enabled", True))
         # 8510 is an algo desk. With this on, only signals flagged is_algo_trade
         # execute; discretionary clicks are rejected rather than filled.
@@ -2725,13 +2788,24 @@ class QuantTerminalBackend:
             log.error("Failed persisting synergy config: %s", e)
         return {"ok": True, "dhan_oi_synergy": self.dhan_oi_synergy_cfg}
 
+    @staticmethod
+    def _public_dhan_status(value):
+        hidden = {'masked_token', 'masked_secret', 'access_token', 'DHAN_ACCESS_TOKEN',
+                  'api_secret', 'DHAN_API_SECRET', 'api_key', 'DHAN_API_KEY'}
+        def public(item):
+            if isinstance(item, dict): return {k: public(v) for k,v in item.items() if k not in hidden}
+            if isinstance(item, list): return [public(v) for v in item]
+            if isinstance(item, str): return re.sub(r'\*{4}[^\s|]+', '[saved]', item)
+            return item
+        return public(value)
+
     def get_dhan_config(self) -> Dict[str, Any]:
         """Returns Dhan configuration with secrets safely masked and IP match status."""
-        return self.broker.get_masked_config()
+        return self._public_dhan_status(self.broker.get_masked_config())
 
     def get_dhan_status(self) -> Dict[str, Any]:
         """Returns auto-load Dhan credentials status, masking, and time left."""
-        return self.broker.get_status()
+        return self._public_dhan_status(self.broker.get_status())
 
     def logout_dhan(self) -> Dict[str, Any]:
         """Clears saved credentials on logout."""
@@ -2793,8 +2867,15 @@ class QuantTerminalBackend:
 
     def update_dhan_config(self, body: Dict[str, Any]) -> Dict[str, Any]:
         """Safely updates Dhan credentials and metadata into .env and config."""
+        fixed_id = os.environ.get('DHAN_CLIENT_ID') or self.cfg.get('DHAN_CLIENT_ID') or self.cfg.get('dhan', {}).get('client_id')
+        proposed = body.get('client_id') or body.get('DHAN_CLIENT_ID')
+        if proposed is not None and str(proposed).strip() != str(fixed_id or ''):
+            return {'ok': False, 'error': 'Client ID is fixed; update the secure backend configuration instead'}
+        token = body.get('access_token', body.get('DHAN_ACCESS_TOKEN'))
+        if token is not None and (not str(token).strip() or str(token).strip().startswith(('****','••'))):
+            return {'ok': False, 'error': 'Paste a fresh Dhan Access Token; stored token placeholders are not accepted'}
         res = self.broker.update_credentials(
-            client_id=body.get("client_id") or body.get("DHAN_CLIENT_ID"),
+            client_id=None,
             access_token=body.get("access_token") or body.get("DHAN_ACCESS_TOKEN"),
             api_key=body.get("api_key") or body.get("DHAN_API_KEY"),
             api_secret=body.get("api_secret") or body.get("DHAN_API_SECRET"),
@@ -2802,7 +2883,7 @@ class QuantTerminalBackend:
             whitelisted_ip=body.get("whitelisted_ip") or body.get("DHAN_WHITELISTED_IP"),
         )
         self.cfg = self.broker.cfg
-        return res
+        return self._public_dhan_status(res)
 
     async def test_dhan_connection(self) -> Dict[str, Any]:
         """Runs live connection test against Dhan HQ v2 API with strict 10s timeout."""
@@ -4744,11 +4825,10 @@ class QuantTerminalBackend:
             # Deliberately placed AFTER the directional-bias checks: both gates
             # block the order either way, and the bias reason is the more
             # specific one to report when both apply.
-            if self.algo_only_execution and not is_algo_trade:
+            if is_algo_trade is not True:
                 err_msg = ("[MANUAL TRADE BLOCKED] 8510 is running ALGO-ONLY. "
                            "Only algo-generated signals execute; this order was "
-                           "placed manually. Turn Algo-Only off to allow manual "
-                           "orders.")
+                           "placed manually. Manual trading is permanently disabled.")
                 log.warning("%s (%s / %s)", err_msg, strategy_name,
                             contract.get("symbol", contract.get("id", "?")))
                 return {
