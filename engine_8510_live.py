@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 import json
 import logging
 import os
+import socket
 import sys
 import time
 from pathlib import Path
@@ -916,12 +917,38 @@ async def api_dhan_connect_test():
     return JSONResponse(content=res, status_code=status_code)
 
 
-def main():
+def main() -> int:
     port = int(backend.cfg.get("port", 8510))
     host = str(backend.cfg.get("host", "127.0.0.1"))
+
+    # ── CLAIM THE PORT BEFORE THE STARTUP EVENT CAN TRADE ────────────────────
+    # The startup event launches the strategy scanner, which can place a FILLED
+    # order within milliseconds. uvicorn runs that event BEFORE it binds, so a
+    # second instance started by accident would place a live trade and only then
+    # die on "address already in use" — leaving a real position behind with no
+    # running app to manage it.
+    #
+    # Binding here, and handing the bound socket to uvicorn, means a duplicate
+    # launch exits before the scanner or the broker are ever touched, and leaves
+    # no bind race for uvicorn to lose.
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind((host, port))
+    except OSError as exc:
+        sock.close()
+        log.error("Port %d on %s is already in use (%s).", port, host, exc)
+        log.error("8510 is ALREADY RUNNING. Nothing was started: no scanner, "
+                  "no broker call, no order placed.")
+        log.error("To see what holds the port:   ss -ltnp \"sport = :%d\"", port)
+        return 1
+    sock.listen(2048)
+
     log.info("Starting Port %d server on %s...", port, host)
-    uvicorn.run("engine_8510_live:app", host=host, port=port, reload=False, log_level="info")
+    cfg = uvicorn.Config(app, host=host, port=port, reload=False, log_level="info")
+    uvicorn.Server(cfg).run(sockets=[sock])
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
