@@ -206,6 +206,13 @@
             box-shadow: 0 0 14px rgba(239, 68, 68, 0.4);
             animation: pulseKill 2s infinite;
         }
+        /* v1.9.4b: the armed-live header pulses, but never blinks to
+           invisible -- opacity floors at 0.55 so the warning stays readable at
+           every point in the cycle. A warning you can miss is not a warning. */
+        @keyframes liveArmPulse {
+            0%, 100% { opacity: 1; }
+            50%      { opacity: 0.55; }
+        }
         @keyframes pulseKill {
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.03); }
@@ -588,9 +595,17 @@
 
             <!-- Master Execution Mode Selector, Paper Switch, Settings & Kill Switch -->
             <div class="header-toolbar">
-                <div class="status-badge badge-bull">📝 PAPER TRADING: ALWAYS ON</div>
-                <label class="mode-btn"><input type="checkbox" id="enableRealMoney" onchange="requestRealMoney(this.checked)"> Enable REAL MONEY trading</label>
+                <div class="status-badge badge-bull" id="paperAlwaysBadge">📝 PAPER: ON (Always)</div>
+                <!-- v1.9.4b live arm switch. The checkbox is only a request: the
+                     backend decides. It is reset to unchecked on every click and
+                     is re-checked only from the server's own response, so the UI
+                     can never show ARMED when the server refused. -->
+                <label class="mode-btn" id="liveArmLabel" title="Real orders via Dhan. Requires typed confirmation and an APPROVED backtest verdict.">
+                    <input type="checkbox" id="enableRealMoney" onchange="requestRealMoney(this.checked)"> 🔴 LIVE TRADING (Real Money)
+                </label>
+                <span id="liveHeaderState" class="status-badge badge-bull" style="font-weight:800;">🟢 PAPER ONLY — No Real Orders Will Be Placed</span>
                 <span id="realMoneyReason" style="font-size:11px">OFF — current NO-GO verdict</span>
+                <button type="button" id="stopLiveBtn" onclick="stopLiveTrading()" style="background:var(--crimson,#dc2626);color:#fff;font-weight:800;border:1px solid #7f1d1d;border-radius:6px;padding:6px 10px;cursor:pointer;font-family:var(--font-mono);" title="Disarm live, cancel pending live orders. Does not square off without asking.">🛑 STOP LIVE — Switch to PAPER ONLY</button>
                 <span class="status-badge badge-side">Algo setups only · select strikes below</span>
                 <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);" title="Allow Paper Trading Outside Market Hours (For Testing Only) — Default = OFF">
                     <input type="checkbox" id="chkOffHoursPaperTesting" onchange="toggleOffHoursPaperTesting(this.checked)" style="cursor:pointer;">
@@ -623,12 +638,13 @@
         <!-- TAB 1: LIVE TERMINAL & AGGRESSIVE LIMIT STRIKE MATRIX               -->
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <div id="tabTerminal" class="tab-content active">
-<section class="card" id="recordingHealthV193" style="margin:16px 0;padding:16px;border:1px solid #334155;border-radius:10px">
- <h3>Recording health <span id="recordingSession"></span></h3>
- <p id="recordingStatus">Waiting for recorder — missing observations are never estimated.</p>
- <div style="overflow:auto"><table><thead><tr><th>Series</th><th>Recorded / expected slots</th><th>Coverage</th><th>Largest missing interval</th></tr></thead><tbody id="recordingCoverageRows"></tbody></table></div>
- <p id="recordingContracts"></p><small id="recordingWrite"></small>
-</section>
+<!-- v1.9.4b: the recorder-coverage card was removed from the UI by request.
+     Recording itself did NOT stop and is not optional - it runs silently every
+     candle. What replaced the card is a COUNT in the EMA observations section
+     (#recordingSaved) rather than a verdict: "375 candles saved" is a fact the
+     trader can check, where a GOOD/BAD rating was a judgment they could not.
+     Failures go to analyst/recording_errors.log and the server log, never to a
+     popup. Do not reintroduce a coverage badge, bar or percentage here. -->
 <section class="card" id="trendCaptureV192" style="margin:16px 0;padding:18px;border:1px solid #334155;border-radius:10px">
  <h2 style="font-size:16px">Trend capture study · <span style="color:#fbbf24">ADVISORY ONLY</span></h2>
  <p id="trendCaptureStatus">Loading closed 15m context… Existing execution and v1.1 exits remain unchanged.</p>
@@ -1231,7 +1247,7 @@
 
 <section id="recordingHistoryV193" style="padding:12px;border:1px solid #334155;margin:12px 0;border-radius:8px">
  <h4>Permanent EMA observations &amp; radar outcomes</h4>
- <p id="recordingSaved">Saved Rows Today: — | Saved Locally: waiting | Last Saved: —</p>
+ <p id="recordingSaved">Counting saved rows… recording runs in the background every candle.</p>
  <label>From <input id="recordingFrom" type="date"></label> <label>To <input id="recordingTo" type="date"></label>
  <button type="button" onclick="recordingDownload('ema','csv',true)">⬇ Download CSV — Today</button>
  <button type="button" onclick="recordingDownload('ema','csv')">EMA date-range CSV</button>
@@ -5312,12 +5328,14 @@ function renderRecordingHistory(){
 async function loadRecordingV193(){
  try{
  const response=await fetch('/api/recording/coverage');if(!response.ok)throw Error('HTTP '+response.status);const h=await response.json();
- recText('recordingSession',h.session_date||'');recText('recordingStatus',h.status+(h.last_error?' · Recording error: '+h.last_error:'')+' · Forward only');
- const rows=[];for(const [key,label] of [['spot','Spot candles'],['fut','FUT candles'],['fut2','FUT2 candles'],['chain','Option chain — 8510 forward'],['chain_legacy','Option chain — existing source']]){const raw=h[key],x=raw&&(h.status==='RECORDING'&&raw.elapsed?raw.elapsed:raw);if(x)rows.push([label,`${x.n_snapshots} / ${x.expected_snapshots}`,recNum(x.coverage_pct)+'%',`${recNum(x.max_gap_minutes)} min at ${x.max_gap_at}`]);}recRows('recordingCoverageRows',rows);
- const body=document.getElementById('recordingCoverageRows');for(let i=0;i<rows.length;i++){const key=['spot','fut','fut2','chain','chain_legacy'].filter(k=>h[k])[i];const raw=h[key],x=h.status==='RECORDING'&&raw.elapsed?raw.elapsed:raw;const pct=x.coverage_pct;body.children[i].children[2].style.color=pct<h.coverage_alert_pct?'#f87171':pct<h.coverage_warn_pct?'#fbbf24':'#34d399';}
- recText('recordingContracts',`${h.tracked??0} contracts tracked · ${h.contract_ticks??0} minute receipts · ${h.contract_missing_minutes??0} missing contract-minutes · queue drops ${h.queue_dropped??0}`);
- recText('recordingWrite',`Last observation write: ${h.last_write?new Date(h.last_write*1000).toLocaleTimeString('en-GB',{timeZone:'Asia/Kolkata'})+' IST':'—'} · Expected slots elapsed so far while live; full-session totals after close. See the API for both denominators.`);
- recText('recordingSaved',`Saved Rows Today: ${h.saved_rows_today??0} | Saved Locally: ${h.last_error?'⚠ check recording error':h.saved_rows_today>0?'✅ SQLite + daily CSV':'Ready — no forward rows yet'} | Last Saved: ${h.last_saved||'—'} IST`);
+ // v1.9.4b: COUNTS, not a health verdict. No percentage, no coloured bar, no
+ // OK/GOOD/BAD. A full NSE session is 09:15-15:30 = 375 minutes, so 375 is the
+ // expected full-day candle count. Recording keeps running regardless of what
+ // is displayed; this line only proves it saved.
+ const sp=h.spot&&(h.status==='RECORDING'&&h.spot.elapsed?h.spot.elapsed:h.spot);
+ const candles=sp?(sp.n_snapshots??0):0;
+ const dayLabel=(h.session_date||recordingToday());
+ recText('recordingSaved',`✅ Today ${dayLabel}: ${candles} candles saved | ${h.saved_rows_today??0} EMA rows saved | ${h.radar_signals_today??h.tracked??0} Tier signals saved | Last saved ${h.last_saved||'—'} IST`);
  const r=await fetch('/api/recording/history');if(!r.ok)throw Error('History HTTP '+r.status);const d=await r.json();
  recHistoryRows=d.ema_rows||[];
  const selector=document.getElementById('recordingHistoryDay'),chosen=selector.value;selector.replaceChildren();
@@ -5326,17 +5344,158 @@ async function loadRecordingV193(){
  const q=d.radar||{};recText('recordingRadarCaption',q.caption||'No live radar observations recorded.');
  recRows('recordingTierSummary',(q.summary||[]).map(x=>[x.tier,x.n,recNum(x.avg_max),recNum(x.avg_risk),recNum(x.max_risk_ratio),recNum(x.yes_n_pct)+'%',recNum(x.stop_n_pct)+'%',recNum(x.ambiguous_n_pct)+'%',`${x.running_n||0} / ${x.expired_n||0}`]));
  recRows('recordingRadarRows',(q.rows||[]).map(x=>[x.signal_time_ist+' / '+x.tier+' / '+x.signal_name,x.direction,recNum(x.signal_price)+' / '+recNum(x.nifty_spot_at_signal),recNum(x.micro_sl_price)+' / '+recNum(x.risk_points),recNum(x.current_nifty_spot)+' / '+recNum(x.points_moved_now),recNum(x.max_points_moved)+' / '+(x.max_move_time_ist||'—'),recNum(x.max_adverse_points),x.target_15_hit_before_sl||'PENDING',x.outcome+' / '+recNum(x.final_points),[x.premium_at_signal,x.premium_now,x.max_premium_points].map(recNum).join(' / ')]));
- }catch(e){recText('recordingStatus','Recording monitor unavailable: '+e.message);}
+ // A display failure is not a recording failure. Recording continues in the
+ // backend; this only reports that the COUNTS could not be fetched, and it is
+ // deliberately not styled as an alert.
+ }catch(e){recText('recordingSaved','Saved-row counts unavailable ('+e.message+') — recording continues in the background; see analyst/recording_errors.log');}
 }
 document.addEventListener('DOMContentLoaded',()=>{for(const id of ['recordingFrom','recordingTo'])document.getElementById(id).value=recordingToday();loadRecordingV193();setInterval(loadRecordingV193,30000);});
 
-function syncRealMoneyUI(enabled) { const box=document.getElementById('enableRealMoney');if(box)box.checked=!!enabled; }
-async function requestRealMoney(enabled) {
- const box=document.getElementById('enableRealMoney');box.checked=false;
- const confirmation=enabled?prompt('Type ENABLE REAL MONEY. Paper continues running. Real money is blocked while the verdict is NO-GO.') : '';
- if(enabled&&confirmation!=='ENABLE REAL MONEY')return;
- try{const r=await fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({real_money_enabled:enabled,confirmation})});const d=await r.json();syncRealMoneyUI(r.ok&&d.real_money_enabled);document.getElementById('realMoneyReason').textContent=d.error|| (d.real_money_enabled?'Real ON + Paper ALWAYS ON':'Real OFF · Paper ALWAYS ON');}catch(e){syncRealMoneyUI(false);document.getElementById('realMoneyReason').textContent='Real OFF — request failed';}
+// ── v1.9.4b LIVE ARM SWITCH ──────────────────────────────────────────────────
+// The UI never decides. It asks /api/live/arm and renders whatever the server
+// says, including the server's own refusal wording. The checkbox is forced
+// unchecked before every request and only re-checked from the response, so a
+// refused arm can never leave the header claiming LIVE.
+function syncRealMoneyUI(enabled){const box=document.getElementById('enableRealMoney');if(box)box.checked=!!enabled;}
+
+function renderLiveStatus(s){
+ if(!s)return;
+ const hdr=document.getElementById('liveHeaderState');
+ if(hdr){
+  hdr.textContent=s.header||'🟢 PAPER ONLY — No Real Orders Will Be Placed';
+  const live=s.route==='LIVE', dry=s.route==='DRY_RUN';
+  hdr.style.background=live?'#7f1d1d':dry?'#78350f':'';
+  hdr.style.color=live||dry?'#fff':'';
+  hdr.classList.toggle('badge-bear',live);
+  hdr.classList.toggle('badge-bull',!live&&!dry);
+  // Pulse only when real orders can actually be placed. It must stay legible,
+  // so opacity floors at 0.55 rather than blinking to invisible.
+  hdr.style.animation=live?'liveArmPulse 1.2s ease-in-out infinite':'';
+ }
+ syncRealMoneyUI(!!s.live_armed);
+ const reason=document.getElementById('realMoneyReason');
+ if(reason){
+  const bits=[];
+  if(s.route_reason)bits.push(s.route_reason);
+  if(s.dry_run)bits.push(`dry-run ${s.dry_run_orders_recorded}/${s.dry_run_orders_required} orders recorded`);
+  if(s.entry_window&&!s.entry_window.open)bits.push(`live window ${s.entry_window.start}–${s.entry_window.end} IST`);
+  if(s.disarm_reason)bits.push('last auto-disarm: '+s.disarm_reason);
+  bits.push(`verdict ${s.live_validation_status}`);
+  bits.push(`live today ${s.live_trades_today}/${s.max_live_trades_per_day}, P&L ₹${s.live_pnl_today}`);
+  reason.textContent=bits.join(' · ');
+ }
+ const btn=document.getElementById('stopLiveBtn');
+ if(btn)btn.disabled=!s.live_armed;
+ const lbl=document.getElementById('liveArmLabel');
+ if(lbl&&s.entry_window){
+  const shut=!s.entry_window.open;
+  lbl.style.opacity=shut?'0.45':'';
+  lbl.title=shut?`Outside Live Window (${s.entry_window.start}–${s.entry_window.end} IST)`
+                :'Real orders via Dhan. Requires typed confirmation and an APPROVED backtest verdict.';
+ }
 }
+
+async function refreshLiveStatus(){
+ try{const r=await fetch('/api/live/status');if(!r.ok)return;renderLiveStatus(await r.json());}
+ catch(e){console.warn('live status unavailable',e);}
+}
+
+function closeLiveArmModal(){const m=document.getElementById('liveArmModal');if(m)m.remove();}
+
+async function sendLiveArm(enabled,confirmation){
+ syncRealMoneyUI(false);
+ try{
+  const r=await fetch('/api/live/arm',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({enabled:enabled,confirmation:confirmation||''})});
+  const d=await r.json();
+  // Render the SERVER's wording, not ours. While the verdict is NO_GO this
+  // shows "Real money remains OFF: current backtest verdict is NO-GO".
+  renderLiveStatus(d.live_status);
+  const reason=document.getElementById('realMoneyReason');
+  if(reason&&(d.error||d.message))reason.textContent=(d.error||d.message)+(reason.textContent?' · '+reason.textContent:'');
+  return d;
+ }catch(e){
+  syncRealMoneyUI(false);
+  const reason=document.getElementById('realMoneyReason');
+  if(reason)reason.textContent='Live OFF — request failed: '+e.message;
+  return {ok:false};
+ }
+}
+
+function requestRealMoney(enabled){
+ syncRealMoneyUI(false);
+ if(!enabled){sendLiveArm(false,'');return;}
+ closeLiveArmModal();
+ const wrap=document.createElement('div');
+ wrap.id='liveArmModal';
+ wrap.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(2,6,23,0.82);display:flex;align-items:center;justify-content:center;padding:16px;';
+ const card=document.createElement('div');
+ card.style.cssText='max-width:560px;width:100%;background:#0f172a;border:2px solid #dc2626;border-radius:12px;padding:20px;font-family:var(--font-mono);color:#e2e8f0;box-shadow:0 20px 60px rgba(0,0,0,0.6);';
+ const h=document.createElement('div');
+ h.style.cssText='font-size:15px;font-weight:800;color:#fca5a5;margin-bottom:10px;';
+ h.textContent='⚠️ YOU ARE ABOUT TO ENABLE LIVE TRADING WITH REAL MONEY';
+ const p=document.createElement('p');
+ p.style.cssText='font-size:12.5px;line-height:1.6;margin:0 0 12px;';
+ p.textContent='Real orders will be placed via Dhan. Paper trading continues in parallel and cannot be turned off. Type LIVE to confirm.';
+ const note=document.createElement('p');
+ note.id='liveArmModalNote';
+ note.style.cssText='font-size:11.5px;line-height:1.5;color:#fbbf24;margin:0 0 12px;';
+ note.textContent='Arming always enters DRY-RUN first: the desk records the real bid/ask for each signal without sending an order, until enough orders are recorded to measure execution cost.';
+ const input=document.createElement('input');
+ input.type='text';input.id='liveArmConfirmInput';input.autocomplete='off';input.placeholder='Type LIVE';
+ input.style.cssText='width:100%;padding:9px;border-radius:6px;border:1px solid #334155;background:#020617;color:#fff;font-family:var(--font-mono);font-size:14px;letter-spacing:1px;';
+ const err=document.createElement('div');
+ err.id='liveArmModalError';err.style.cssText='font-size:12px;color:#f87171;min-height:18px;margin-top:8px;';
+ const row=document.createElement('div');
+ row.style.cssText='display:flex;gap:10px;justify-content:flex-end;margin-top:14px;';
+ const cancel=document.createElement('button');
+ cancel.type='button';cancel.textContent='Cancel';
+ cancel.style.cssText='padding:8px 14px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;';
+ cancel.onclick=()=>{closeLiveArmModal();refreshLiveStatus();};
+ const go=document.createElement('button');
+ go.type='button';go.textContent='Confirm Enable Live';
+ go.style.cssText='padding:8px 14px;border-radius:6px;border:1px solid #7f1d1d;background:#dc2626;color:#fff;font-weight:800;cursor:pointer;';
+ go.onclick=async()=>{
+  const typed=document.getElementById('liveArmConfirmInput').value.trim();
+  const e=document.getElementById('liveArmModalError');
+  // The exact-match check also lives in the backend; this is only to save a
+  // round trip, never the authority.
+  if(typed!=='LIVE'){e.textContent='Type LIVE exactly to confirm.';return;}
+  go.disabled=true;e.textContent='Submitting…';
+  const d=await sendLiveArm(true,typed);
+  if(d&&d.ok){closeLiveArmModal();}
+  else{go.disabled=false;e.textContent=(d&&d.error)?d.error:'Refused. Live remains OFF.';}
+ };
+ row.appendChild(cancel);row.appendChild(go);
+ card.appendChild(h);card.appendChild(p);card.appendChild(note);card.appendChild(input);card.appendChild(err);card.appendChild(row);
+ wrap.appendChild(card);document.body.appendChild(wrap);
+ input.focus();
+ input.addEventListener('keydown',ev=>{if(ev.key==='Enter')go.click();if(ev.key==='Escape')cancel.click();});
+}
+
+async function stopLiveTrading(){
+ // Step 1+2 are unconditional: disarm and cancel pending live orders. No
+ // confirmation, because both only reduce risk. Squaring off is asked, never
+ // assumed; the 15:20 EOD square-off runs regardless of the answer.
+ const d=await (async()=>{try{
+  const r=await fetch('/api/live/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  return await r.json();
+ }catch(e){return {ok:false,message:'STOP LIVE request failed: '+e.message};}})();
+ renderLiveStatus(d.live_status);
+ const reason=document.getElementById('realMoneyReason');
+ if(reason&&d.message)reason.textContent=d.message;
+ if(d.needs_square_off_decision){
+  const yes=confirm(`${d.open_live_positions} open LIVE position(s) remain.\n\nSquare off open LIVE positions now?\n\nOK = square off.  Cancel = leave them open (15:20 EOD square-off still applies).`);
+  try{
+   const r2=await fetch('/api/live/stop',{method:'POST',headers:{'Content-Type':'application/json'},
+         body:JSON.stringify({square_off:!!yes})});
+   const d2=await r2.json();renderLiveStatus(d2.live_status);
+   if(reason)reason.textContent=d2.message||reason.textContent;
+  }catch(e){if(reason)reason.textContent='Square-off request failed: '+e.message;}
+ }
+}
+
+document.addEventListener('DOMContentLoaded',()=>{refreshLiveStatus();setInterval(refreshLiveStatus,15000);});
 function setDhanPanelCollapsed(collapsed){const panel=document.getElementById('dhanApiConfigCard');panel.open=!collapsed;try{localStorage.setItem('dhanPanelCollapsed',String(collapsed));}catch(e){console.warn('Panel preference unavailable');}}
 function rememberDhanPanel(){const panel=document.getElementById('dhanApiConfigCard');document.getElementById('dhanShutterHint').textContent=panel.open?'⬆ Collapse / Minimise':'⬇ Expand';try{localStorage.setItem('dhanPanelCollapsed',String(!panel.open));}catch(e){console.warn('Panel preference unavailable');}}
 function updateDhanShutter(data){document.getElementById('dhanShutterConnected').textContent='Connected = '+!!(data.connected??data.dhan_connected);document.getElementById('dhanShutterExpiry').textContent=data.token_valid_till||'Not Connected';document.getElementById('dhanShutterLive').textContent='Live Data: '+((data.connected??data.dhan_connected)?'ON':'OFF');document.getElementById('dhanShutterOrders').textContent='Order Placement: '+(currentExecutionMode==='BOTH'?'REAL opt-in + PAPER':'DISABLED (PAPER mode)');}
