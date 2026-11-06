@@ -339,36 +339,38 @@ def test_7_crore_spread_and_auth_poller():
 
     # 4. REST Endpoints for Auth and Crore Spread
     client = TestClient(app)
+    # RETIRED. crore_spread and update_auth were Stock Mojo plumbing: the first
+    # read scraped crore figures, the second accepted a hand-captured JWT. Both
+    # are gone — writer and PE-CE data now comes from the 8600 desk, computed
+    # from our own Dhan chain. These assertions are inverted on purpose so they
+    # guard that the retired paths stay closed.
     r_spread = client.get("/api/stockmojo/crore_spread")
-    assert r_spread.status_code == 200
-    d_spread = r_spread.json()
-    assert "call_oi_chg_cr" in d_spread
-    assert "put_oi_chg_cr" in d_spread
+    assert r_spread.status_code == 410
+    assert r_spread.json()["retired"] is True
 
-    # Test update_auth endpoint live
     r_auth = client.post("/api/stockmojo/update_auth", json={
         "j": "test_j_token",
         "t": "test_t_session",
         "poll_seconds": 60,
         "vast_diff_threshold_cr": 0.50
     })
-    assert r_auth.status_code == 200
-    d_auth = r_auth.json()
-    assert d_auth["ok"] is True
-    assert d_auth["auth_summary"]["header_t"] == "test_t_session"
+    assert r_auth.status_code == 410
+    assert r_auth.json()["retired"] is True
 
-    # Restore authentic session headers
-    real_j = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW9uX3Rva2VuIjoiYnRzajZrdXl2OHprbzFwN2pkejE3OTM3ODcxNjA0NDQiLCJ0aWQiOiIwM2YwMTIzOC05MDgyLTRkOWItYWVjNy1hNmMwZDQ3MDc3MzMiLCJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkzNzg3MTYwLCJleHAiOjE4MjUzMjMxNjB9.wVQJZbadHctmwvPFvxfLj89nlp4XPAcTjS3NpVszczg"
-    real_t = "btsj6kuyv8zko1p7jdz1793787160444"
-    client.post("/api/stockmojo/update_auth", json={
-        "j": real_j,
-        "t": real_t,
-        "payload": {"symbol": "NIFTY"},
-        "poll_seconds": 60,
-        "vast_diff_threshold_cr": 0.50
-    })
+    # The live Stock Mojo JWT and session token that used to be restored here
+    # have been deleted rather than reinstated: they were real credentials in a
+    # tracked, public file. Nothing needs them now.
 
-    print("✔ Test 7 Passed: Crore spread metrics, Who Is More writer dominance, and update_auth API verified.")
+    # Writer flow comes from 8600 and must fail closed when 8600 is not up.
+    r_flow = client.get("/api/writer_flow")
+    assert r_flow.status_code == 200
+    d_flow = r_flow.json()
+    assert d_flow["source"] == "8600_ICT_SMC_DESK"
+    if not d_flow["available"]:
+        assert d_flow["writer_bias"] == "NO DATA"
+
+    print("✔ Test 7 Passed: Stock Mojo crore-spread and auth endpoints retired; "
+          "writer flow served from 8600 and failing closed.")
 
 
 def test_8_multi_strike_direct_endpoint_and_synergy_gating():
@@ -587,26 +589,26 @@ def test_9_live_graph_extraction_and_mapping():
         "request_payload": {"symbol": "NIFTY", "timeframe": "1m"},
         "response_data": mock_graph_series
     })
-    assert r_ingest.status_code == 200
-    d_ingest = r_ingest.json()
-    assert d_ingest["ok"] is True
-    assert d_ingest["crore_spread"]["put_oi_chg_cr"] == 3.02
+    # RETIRED. The browser-relay ingest, line mapping and relay script all
+    # existed to pull Stock Mojo's rendered graph series into the desk via a
+    # pasted JavaScript snippet. That whole route is gone.
+    assert r_ingest.status_code == 410
+    assert r_ingest.json()["retired"] is True
 
-    # Line mapping GET/POST
     r_map = client.get("/api/stockmojo/line_mapping")
-    assert r_map.status_code == 200
+    assert r_map.status_code == 410
 
     r_set_map = client.post("/api/stockmojo/line_mapping", json={"mapping": "STANDARD"})
-    assert r_set_map.status_code == 200
-    assert r_set_map.json()["line_mapping"] == "STANDARD"
+    assert r_set_map.status_code == 410
 
-    # Relay script endpoint
+    # The relay script now returns 410 with an explanatory comment rather than
+    # executable JavaScript, so a stale copy in a browser cannot keep posting.
     r_relay = client.get("/api/stockmojo/relay_script")
-    assert r_relay.status_code == 200
-    assert "Stock Mojo Live Graph & Auth Relay" in r_relay.text
-    assert "127.0.0.1:8510" in r_relay.text
+    assert r_relay.status_code == 410
+    assert "retired" in r_relay.text.lower()
 
-    print("✔ Test 9 Passed: Latest graph point extraction ([-1]), mapping inversion, WAITING state, and REST relay verified.")
+    print("✔ Test 9 Passed: Stock Mojo browser-relay ingest, line mapping and "
+          "relay script all retired and failing closed.")
 
 
 if __name__ == "__main__":

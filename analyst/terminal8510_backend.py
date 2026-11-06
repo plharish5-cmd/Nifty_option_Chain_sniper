@@ -29,6 +29,7 @@ import pandas as pd
 
 from analyst.homework_reconciler import HomeworkReconciler, BENCHMARK_HOMEWORK
 from analyst.stockmojo_scraper import StockMojoScraper, parse_indian_unit_to_lakhs
+from analyst.writer_flow_bridge import get_writer_flow_bridge
 
 IST = ZoneInfo("Asia/Kolkata")
 ROOT = Path(__file__).resolve().parent.parent
@@ -2302,7 +2303,19 @@ class QuantTerminalBackend:
         self._init_sqlite()
         self.homework_reconciler = HomeworkReconciler()
         self.stockmojo_scraper = StockMojoScraper(db_path=self.ledger_db, config_path=self.config_path)
-        self.oi_scraper = self.stockmojo_scraper  # Generic Institutional OI Ingestion Engine
+
+        # Writer / PE-CE flow. Stock Mojo is retired (401, hand-recaptured JWT,
+        # third-party session). The 8600 desk computes the same numbers from our
+        # own Dhan chain via its StockMojo-parity endpoint, so oi_scraper is
+        # repointed there and the existing UI keeps working unchanged. Falls back
+        # to the retired scraper only if Stock Mojo is explicitly re-enabled.
+        self.writer_flow = get_writer_flow_bridge(self.cfg.get("writer_flow_source", {}))
+        if bool(self.cfg.get("stockmojo", {}).get("enabled", False)):
+            self.oi_scraper = self.stockmojo_scraper
+            log.warning("Writer flow: Stock Mojo re-enabled by config; using the "
+                        "retired scraper instead of the 8600 desk.")
+        else:
+            self.oi_scraper = self.writer_flow
 
         # State Variables
         self.execution_mode = self.cfg.get("execution_mode", "PAPER_ONLY")
@@ -3385,6 +3398,10 @@ class QuantTerminalBackend:
             "scanner": self.get_scanner_status(),
             "trend_lab_variables": trend_lab_variables,
             "institutional_pe_ce": oi_snap,
+            # So the UI can grey out rather than render zeros as real readings.
+            "writer_flow_available": bool(oi_snap.get("available", False)),
+            "writer_flow_source": str(oi_snap.get("source", "UNKNOWN")),
+            "writer_flow_reason": str(oi_snap.get("reason", "")),
             "stockmojo_pe_ce": oi_snap,
             "stockmojo_synergy": self.stockmojo_scraper.evaluate_synergy_status(),
             "stockmojo_crore_spread": self.stockmojo_scraper.get_crore_spread_metrics(),

@@ -697,238 +697,116 @@ async def api_reconcile_homework(req: Request):
     return JSONResponse(content=res)
 
 
-@app.get("/api/oi/matrix")
-@app.get("/api/stockmojo/matrix")
-async def api_oi_matrix():
-    return JSONResponse(content={
-        "pcr": backend.cached_telemetry.get("pcr", {}).get("ratio", 1.08),
-        "tag": backend.cached_telemetry.get("pcr", {}).get("tag", "BULLISH"),
-        "gap_cr": backend.cached_telemetry.get("pcr", {}).get("gap_cr", 1.14),
-    })
+# ─────────────────────────────────────────────────────────────────────────────
+# WRITER / PE-CE FLOW — SERVED FROM THE 8600 DESK
+#
+# Stock Mojo is retired. Its feed returned 401, its JWT had to be recaptured by
+# hand every few days, and the whole dependency rested on a third party's
+# session. The 8600 ICT-SMC desk computes the same call/put writer dominance
+# from OUR OWN Dhan option chain, and its /api/pe_ce_matrix endpoint was built
+# as a "StockMojo 12-Column Mathematical Parity" endpoint precisely so it could
+# stand in.
+#
+# The two routes that carry real writer data are kept and repointed at 8600.
+# The rest were Stock Mojo plumbing with no equivalent — JWT capture, curl
+# import, browser relay script, download-folder watcher, multi-strike scraping.
+# They now return 410 Gone with an explanation rather than 404, so a stale UI
+# fetch gets a readable answer instead of a mystery, and 500 AttributeError is
+# impossible now that oi_scraper is the bridge.
+# ─────────────────────────────────────────────────────────────────────────────
+
+RETIRED_NOTE = (
+    "Stock Mojo has been retired on this desk. Call/put writer and PE-CE data "
+    "now comes from the 8600 ICT-SMC desk (/api/pe_ce_matrix), computed from "
+    "our own Dhan option chain. See /api/writer_flow."
+)
 
 
-@app.post("/api/oi/ingest")
-@app.post("/api/stockmojo/ingest")
-async def api_oi_ingest(req: Request):
-    """Ingests 1-minute Institutional table rows from browser bookmarklet, scraper, or devtools."""
-    try:
-        body = await req.json()
-        res = backend.oi_scraper.ingest_rows(body)
-        return JSONResponse(content=res)
-    except Exception as e:
-        log.error("Live OI ingest error: %s", e)
-        return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
+def _retired(feature: str, status: int = 410) -> JSONResponse:
+    return JSONResponse(
+        status_code=status,
+        content={"ok": False, "retired": True, "feature": feature,
+                 "source": "8600_ICT_SMC_DESK", "error": RETIRED_NOTE},
+    )
+
+
+@app.get("/api/writer_flow")
+@app.get("/api/oi/writer_flow")
+async def api_writer_flow(force: bool = False):
+    """Call vs put writer dominance, from the 8600 desk.
+
+    Fails closed: when 8600 is unreachable this reports available=false and
+    writer_bias "NO DATA" rather than inventing a direction.
+    """
+    return JSONResponse(content=backend.writer_flow.get_snapshot(force=force))
 
 
 @app.get("/api/oi/pe_ce_table")
 @app.get("/api/stockmojo/pe_ce_table")
+@app.get("/api/oi/pe_ce_dual")
+@app.get("/api/stockmojo/pe_ce_dual")
 async def api_oi_pe_ce_table(limit: int = 60):
-    """Returns newest-first Institutional PE - CE table (last 60 minutes) + strike breakdown."""
-    res = backend.oi_scraper.get_pe_ce_table(limit=limit)
-    return JSONResponse(content=res)
+    """PE-CE table. Same shape as before; rows now come from 8600."""
+    return JSONResponse(content=backend.writer_flow.get_pe_ce_table(limit=limit))
 
 
-@app.post("/api/oi/sync_now")
-@app.post("/api/stockmojo/sync_now")
-async def api_oi_sync_now():
-    """1-click manual trigger to scan downloads folder and poll live Stock Mojo OI & Multi-Strike APIs."""
-    dl_res = backend.oi_scraper.check_download_folder()
-    api_res = await backend.oi_scraper.poll_direct_stockmojo_api()
-    ms_res = await backend.stockmojo_scraper.poll_multi_strike_api()
-    return JSONResponse(content={
-        "ok": True,
-        "downloads_scanned": dl_res,
-        "live_api": api_res,
-        "multi_strike_api": ms_res,
-        "multi_strike_bias": backend.stockmojo_scraper.multi_strike_bias,
-        "table_summary": backend.oi_scraper.get_pe_ce_table(limit=1),
-        "synergy": backend.stockmojo_scraper.evaluate_synergy_status(),
-    })
-
-
-@app.get("/api/oi/multi_strike")
-@app.get("/api/stockmojo/multi_strike")
-async def api_stockmojo_multi_strike():
-    """Returns real-time multi-strike PE-CE difference metrics and status."""
-    return JSONResponse(content=backend.stockmojo_scraper.get_multi_strike_status())
-
-
+@app.get("/api/oi/matrix")
+@app.get("/api/stockmojo/matrix")
 @app.get("/api/oi/live_curves")
 @app.get("/api/oi/live_oi")
 @app.get("/api/stockmojo/live_oi")
-async def api_oi_live_curves():
-    """Returns live time-series arrays for Institutional OI curves."""
-    res = backend.oi_scraper.get_live_oi_curves()
-    return JSONResponse(content=res)
-
-
-@app.post("/api/oi/update_token")
-@app.post("/api/stockmojo/update_token")
-async def api_oi_update_token(req: Request):
-    """Updates Live Ingestion JWT Bearer token."""
-    body = await req.json()
-    token = body.get("jwt_token") or body.get("token") or ""
-    res = backend.oi_scraper.update_token(token)
-    return JSONResponse(content=res)
-
-
-@app.post("/api/oi/update_auth")
-@app.post("/api/stockmojo/update_auth")
-async def api_oi_update_auth(req: Request):
-    """Live update of Stock Mojo session headers (j, t), payload, or cURL without server restart."""
-    body = await req.json()
-    res = await backend.stockmojo_scraper.update_auth(
-        j=body.get("j") or body.get("header_j") or body.get("STOCKMOJO_HEADER_J"),
-        t=body.get("t") or body.get("header_t") or body.get("STOCKMOJO_HEADER_T"),
-        payload=body.get("payload") or body.get("STOCKMOJO_PAYLOAD"),
-        poll_seconds=body.get("poll_seconds") or body.get("STOCKMOJO_POLL_SECONDS"),
-        vast_thresh=body.get("vast_diff_threshold_cr") or body.get("VAST_DIFF_THRESHOLD_CR"),
-        curl_command=body.get("curl") or body.get("curl_command") or body.get("command"),
-    )
-    return JSONResponse(content=res)
-
-
 @app.get("/api/oi/crore_spread")
 @app.get("/api/stockmojo/crore_spread")
-async def api_oi_crore_spread():
-    """Returns the latest 4 Crore values (Call vs Put) and Who Is More writer dominance."""
-    res = backend.stockmojo_scraper.get_crore_spread_metrics()
-    return JSONResponse(content=res)
-
-
-@app.post("/api/oi/configure_curl")
-@app.post("/api/stockmojo/configure_curl")
-async def api_oi_configure_curl(req: Request):
-    """Configures Live Ingestion auth from pasted Chrome DevTools cURL command."""
-    body = await req.json()
-    curl_str = body.get("curl") or body.get("command") or ""
-    res = backend.oi_scraper.configure_curl(curl_str)
-    return JSONResponse(content=res)
-
-
-@app.get("/api/oi/pe_ce_dual")
-@app.get("/api/stockmojo/pe_ce_dual")
-async def api_oi_pe_ce_dual(limit: int = 60):
-    """Returns dual-entity tables (Entity 1 Total OI & Entity 2 OI Change Day) + aligned Combined view."""
-    res = backend.stockmojo_scraper.get_dual_tables(limit=limit)
-    return JSONResponse(content=res)
-
-
+@app.get("/api/oi/multi_strike")
+@app.get("/api/stockmojo/multi_strike")
+@app.get("/api/stockmojo/multi_strike_table")
 @app.get("/api/oi/synergy_status")
 @app.get("/api/stockmojo/synergy_status")
-async def api_oi_synergy_status():
-    """Returns real-time quantitative synergy gate evaluation across Total OI & Day OI."""
-    res = backend.stockmojo_scraper.evaluate_synergy_status()
-    return JSONResponse(content=res)
+@app.get("/api/oi/audit_04nov")
+@app.get("/api/stockmojo/audit_04nov")
+@app.get("/api/stockmojo/line_mapping")
+async def api_stockmojo_retired_get():
+    return _retired("stockmojo-read")
+
+
+@app.get("/api/stockmojo/relay_script")
+async def api_stockmojo_relay_script_retired():
+    return PlainTextResponse(
+        status_code=410,
+        content="// " + RETIRED_NOTE + "\n",
+        media_type="text/javascript",
+    )
+
+
+@app.post("/api/oi/ingest")
+@app.post("/api/stockmojo/ingest")
+@app.post("/api/oi/sync_now")
+@app.post("/api/stockmojo/sync_now")
+@app.post("/api/oi/update_token")
+@app.post("/api/stockmojo/update_token")
+@app.post("/api/oi/update_auth")
+@app.post("/api/stockmojo/update_auth")
+@app.post("/api/oi/configure_curl")
+@app.post("/api/stockmojo/configure_curl")
+@app.post("/api/stockmojo/live_graph_ingest")
+@app.post("/api/stockmojo/line_mapping")
+async def api_stockmojo_retired_post():
+    return _retired("stockmojo-write")
 
 
 @app.get("/api/oi/synergy_config")
 @app.get("/api/stockmojo/synergy_config")
 async def api_get_synergy_config():
-    """Returns active Stock Mojo synergy gate filter switches."""
-    return JSONResponse(content=backend.get_synergy_config())
+    """Kept: the synergy filter flags are desk config, not Stock Mojo data."""
+    return JSONResponse(content={"ok": True,
+                                 "stockmojo_synergy": backend.get_synergy_config()})
 
 
 @app.post("/api/oi/synergy_config")
 @app.post("/api/stockmojo/synergy_config")
 async def api_post_synergy_config(req: Request):
-    """Updates Stock Mojo synergy gate filter switches and persists them."""
     body = await req.json()
-    res = backend.update_synergy_config(body)
-    return JSONResponse(content=res)
-
-
-@app.get("/api/oi/audit_04nov")
-@app.get("/api/stockmojo/audit_04nov")
-async def api_oi_audit_04nov():
-    """Returns built-in 04 Nov trading session verification checkpoints and audit actions."""
-    res = backend.stockmojo_scraper.get_04nov_audit_data()
-    return JSONResponse(content=res)
-
-
-@app.post("/api/stockmojo/live_graph_ingest")
-async def api_stockmojo_live_graph_ingest(req: Request):
-    """
-    Ingests live graph response data, request payload, and auth headers from browser relay script or manual input.
-    Auto-saves captured payload and headers into terminal8510_config.json so background httpx polling uses exact payload without 403.
-    """
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-
-    if isinstance(body, dict):
-        req_headers = body.get("request_headers") or body.get("headers") or {}
-        req_payload = body.get("request_payload") or body.get("payload") or None
-        resp_data = body.get("response_data") or body.get("data") or body
-        ms_data = body.get("multi_strike_data")
-    else:
-        req_headers = {}
-        req_payload = None
-        resp_data = body
-        ms_data = None
-
-    # Auto-save credentials if captured from browser
-    header_j = req_headers.get("j") or req_headers.get("authorization") or req_headers.get("Authorization") or ""
-    header_t = req_headers.get("t") or ""
-    if header_j or header_t or req_payload is not None:
-        await backend.stockmojo_scraper.update_auth(
-            j=header_j if header_j else None,
-            t=header_t if header_t else None,
-            payload=req_payload,
-        )
-        log.info("✔ Stock Mojo headers & payload auto-captured and saved to config.")
-
-    # Parse multi-strike if present
-    if ms_data:
-        backend.stockmojo_scraper.parse_multi_strike_data(ms_data)
-    elif isinstance(resp_data, dict) and "t" in resp_data and "co" in resp_data and "po" in resp_data:
-        backend.stockmojo_scraper.parse_multi_strike_data(resp_data)
-
-    # Ingest live graph data
-    res = backend.stockmojo_scraper.ingest_live_graph_data(resp_data, source="BROWSER_RELAY")
-    return JSONResponse(content={
-        "ok": True,
-        "message": "Stock Mojo live graph ingested successfully",
-        "ingest_result": res,
-        "crore_spread": backend.stockmojo_scraper.get_crore_spread_metrics(),
-        "synergy": backend.stockmojo_scraper.evaluate_synergy_status(),
-        "multi_strike": backend.stockmojo_scraper.get_multi_strike_status(),
-    })
-
-
-@app.get("/api/stockmojo/multi_strike_table")
-async def api_stockmojo_multi_strike_table(timeframe: str = "1m", mode: str = "all", limit: int = 120):
-    res = backend.stockmojo_scraper.get_multi_strike_table(timeframe=timeframe, mode=mode, limit=limit)
-    return JSONResponse(content=res)
-
-
-@app.post("/api/stockmojo/line_mapping")
-async def api_stockmojo_set_line_mapping(req: Request):
-    """Sets line mapping: 'STANDARD' (Red=Put, Green=Call) or 'INVERTED' (Red=Call, Green=Put)."""
-    body = await req.json()
-    mapping = body.get("mapping") or body.get("line_mapping") or "STANDARD"
-    res = backend.stockmojo_scraper.set_line_mapping(mapping)
-    return JSONResponse(content=res)
-
-
-@app.get("/api/stockmojo/line_mapping")
-async def api_stockmojo_get_line_mapping():
-    """Gets current line mapping setting."""
-    return JSONResponse(content={
-        "ok": True,
-        "line_mapping": backend.stockmojo_scraper.line_mapping,
-        "crore_spread": backend.stockmojo_scraper.get_crore_spread_metrics()
-    })
-
-
-@app.get("/api/stockmojo/relay_script")
-async def api_stockmojo_relay_script():
-    """Returns the browser auto-relay JavaScript snippet for 1-click clipboard copy."""
-    script = backend.stockmojo_scraper.get_browser_relay_script()
-    return PlainTextResponse(content=script, media_type="text/javascript")
-
-
+    return JSONResponse(content=backend.update_synergy_config(body))
 @app.get("/api/dhan/config")
 async def api_dhan_get_config():
     """Returns Dhan credentials metadata (masked) and IP match status."""

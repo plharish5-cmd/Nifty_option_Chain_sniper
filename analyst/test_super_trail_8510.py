@@ -599,23 +599,37 @@ def test_stockmojo_and_port8600_confluence_integration():
                 "Future OI Change (Day)": "-1.3 L",
             },
         ]
+        # Stock Mojo ingestion is RETIRED. This endpoint used to accept scraped
+        # rows; writer and PE-CE data now comes from the 8600 desk, computed
+        # from our own Dhan chain. The assertion is inverted deliberately: it
+        # now guards that the retired write path stays closed rather than
+        # quietly accepting third-party rows again.
         resp_ingest = client.post("/api/oi/ingest", json=sample_rows)
-        assert resp_ingest.status_code == 200, f"Ingest failed: {resp_ingest.text}"
+        assert resp_ingest.status_code == 410, f"Expected 410 Gone, got {resp_ingest.text}"
         data_ingest = resp_ingest.json()
-        assert data_ingest["ok"] is True
-        assert data_ingest["ingested_count"] == 3
+        assert data_ingest["ok"] is False
+        assert data_ingest["retired"] is True
+        assert data_ingest["source"] == "8600_ICT_SMC_DESK"
 
-        # 3. Test GET /api/oi/pe_ce_table
+        # 3. GET /api/oi/pe_ce_table still serves — repointed at 8600.
         resp_tbl = client.get("/api/oi/pe_ce_table?limit=10")
         assert resp_tbl.status_code == 200
         data_tbl = resp_tbl.json()
-        assert data_tbl["ok"] is True
-        assert len(data_tbl["rows"]) >= 3
-        # Check newest-first order
-        times = [r["time_ist"] for r in data_tbl["rows"][:5]]
-        assert times == sorted(times, reverse=True), f"Expected newest-first ordering, got {times}"
-        all_times = [r["time_ist"] for r in data_tbl["rows"]]
-        assert "15:39" in all_times and "15:36" in all_times
+        # ok is False when 8600 is not running in the test environment; the
+        # contract is that it answers without raising, not that data exists.
+        assert "rows" in data_tbl
+        assert isinstance(data_tbl["rows"], list)
+        # The old assertions here read back the three rows posted to the retired
+        # ingest endpoint, and expected a "15:39" timestamp — a time that cannot
+        # occur in a session ending 15:30, which is how the fabricated fixture
+        # data was spotted. With ingestion retired there is no round-trip to
+        # assert: the contract is now that the route answers without raising and
+        # names its source, failing closed when 8600 is not up.
+        if data_tbl.get("ok"):
+            assert data_tbl.get("source") == "8600_ICT_SMC_DESK"
+        else:
+            assert data_tbl["rows"] == []
+            assert "8600" in str(data_tbl.get("error", ""))
 
         # 4. Verify Port 8600 endpoint is completely removed (returns 404)
         resp_8600 = client.get("/api/confluence/port8600")
