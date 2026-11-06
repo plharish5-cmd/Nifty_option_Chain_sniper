@@ -178,6 +178,8 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
         """
         backend = QuantTerminalBackend()
         backend.paper_execution_enabled = True
+        backend.algo_only_execution = False  # Explicit fixture for manual paper-position / exit tests.
+        backend.execution_mode = 'PAPER_ONLY'
 
         # Temporarily enable testing override to create test position in paper ledger
         backend.set_off_hours_paper_testing(True)
@@ -188,7 +190,8 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
             "opt_type": "CE",
             "strike": 24300,
             "ltp": 80.0,
-            "security_id": 39951
+            "security_id": 39951,
+            "lot_size": backend.get_nifty_lot_size()
         }
         order_res = await backend.execute_order_with_chaser(
             contract=contract,
@@ -241,6 +244,8 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
         """
         backend = QuantTerminalBackend()
         backend.paper_execution_enabled = True
+        backend.algo_only_execution = False  # Explicit fixture for manual paper-position / exit tests.
+        backend.execution_mode = 'PAPER_ONLY'
         backend.set_off_hours_paper_testing(True)
 
         contract = {
@@ -249,7 +254,8 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
             "opt_type": "CE",
             "strike": 24400,
             "ltp": 95.0,
-            "security_id": 39955
+            "security_id": 39955,
+            "lot_size": backend.get_nifty_lot_size()
         }
 
         # 1. Place Auto-Algo order
@@ -373,6 +379,8 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
 
         # Create an open paper position with testing override
         backend.paper_execution_enabled = True
+        backend.algo_only_execution = False  # Explicit fixture for manual paper-position / exit tests.
+        backend.execution_mode = 'PAPER_ONLY'
         backend.set_off_hours_paper_testing(True)
 
         contract = {
@@ -381,7 +389,8 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
             "opt_type": "CE",
             "strike": 24300,
             "ltp": 110.0,
-            "security_id": 39951
+            "security_id": 39951,
+            "lot_size": backend.get_nifty_lot_size()
         }
         res = await backend.execute_order_with_chaser(
             contract=contract,

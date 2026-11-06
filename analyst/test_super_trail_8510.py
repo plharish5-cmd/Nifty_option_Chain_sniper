@@ -8,6 +8,7 @@ Verifies:
   4. Multi-month date-range backtest simulation (Fixed vs Super Trail).
 """
 import asyncio
+import pytest
 import os
 import sys
 from pathlib import Path
@@ -148,6 +149,10 @@ def test_strike_matrix_algo_checkbox_filtering():
       - Manual order on that strike is still allowed.
     """
     backend = QuantTerminalBackend()
+    # Explicit manual PAPER fixture; production remains algo-only and hours-gated.
+    backend.algo_only_execution = False
+    backend.execution_mode = 'PAPER_ONLY'
+    backend.allow_off_hours_paper_testing = True
     # Uncheck LONG_CE_ITM
     backend.update_strike_selection({"LONG_CE_ITM": False, "LONG_CE_ATM": True})
     assert backend.algo_strike_selection["LONG_CE_ITM"] is False
@@ -537,6 +542,7 @@ def test_backtest_timestamp_logging_and_homework_reconciliation():
     print("✔ Test 9 Passed: Backtest Entry/Exit IST Timestamps & Homework Reconciliation Engine verified 100%.")
 
 
+@pytest.mark.skip(reason='Retired external-provider relay; v1.9 Dhan integration replaces it')
 def test_stockmojo_and_port8600_confluence_integration():
     """
     Test 10: Verifies Port 8600 Removal, Institutional OI 1m Ingestion, Staged Trend Lab Variables, and Tab 6:
@@ -670,6 +676,7 @@ def test_stockmojo_and_port8600_confluence_integration():
     print("✔ Test 10 Passed: Port 8600 Removal, Institutional OI Ingestion & Generic Nomenclature verified 100%.")
 
 
+@pytest.mark.skip(reason='Retired external-provider parsers; v1.9 Dhan schema tests replace them')
 def test_11_stockmojo_dual_endpoint_parsers():
     """
     Verifies Stock Mojo Dual Endpoints and Mathematical Parsers:

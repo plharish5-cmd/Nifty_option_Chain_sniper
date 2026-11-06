@@ -136,7 +136,11 @@ def test_futures_volume_surge_ratio_calculation():
     assert "is_surge" in latest
     assert "badge" in latest
     assert "pill_text" in latest
-    assert latest["is_surge"] == (latest["vsr_10"] >= 1.15)
+    if latest['vsr_10'] is None:
+        assert latest['is_surge'] is False
+        assert latest['slot_status'] in ('INSUFFICIENT_HISTORY','INCOMPLETE_BAR')
+    else:
+        assert latest["is_surge"] == (latest["vsr_10"] >= 1.15)
 
 
 def test_futures_volume_surge_setup_tagging(test_backend):

@@ -28,8 +28,10 @@ import numpy as np
 import pandas as pd
 
 from analyst.homework_reconciler import HomeworkReconciler, BENCHMARK_HOMEWORK
-from analyst.stockmojo_scraper import StockMojoScraper, parse_indian_unit_to_lakhs
-from analyst.writer_flow_bridge import get_writer_flow_bridge
+from analyst.dhan_oi_engine import DhanOIEngine, empty_bias
+import subprocess
+import sys
+import threading
 
 IST = ZoneInfo("Asia/Kolkata")
 ROOT = Path(__file__).resolve().parent.parent
@@ -566,7 +568,7 @@ class InstrumentManager:
                 lot = opt.get("lot_size")
                 if lot and lot > 0:
                     return int(lot)
-        return 65
+        raise ValueError("NIFTY lot size unavailable from instrument master; execution blocked")
 
     def get_nearest_expiry(self, target_date: Optional[str] = None) -> str:
         self.ensure_loaded()
@@ -2289,6 +2291,41 @@ def get_replay_trades_for_date(target_date: str) -> List[Dict[str, Any]]:
     return []
 
 
+def compute_five_factor_confluence(trend=None,dhan_oi=None,volume=None,cfg=None):
+    """Pure, fail-closed five-factor presentation score; no orders or price forecasts."""
+    trend=trend or {};dhan_oi=dhan_oi or {};volume=volume or {}
+    cfg=cfg or json.loads((ROOT/'analyst/terminal8510_config.json').read_text())
+    params=cfg['five_factor_confluence'];band=cfg['proven_edges'];volcfg=cfg['futures_volume_engine']
+    def finite(v):return isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v)
+    side=trend.get('side');e4=trend.get('ema4');e8=trend.get('ema8');slope=trend.get('band_slope')
+    opportunity=trend.get('opportunity')
+    coherent=bool(trend.get('fresh')) and trend.get('timeframe')=='15m' and side in ('CE','PE')
+    p1=bool(coherent and all(finite(v) for v in (e4,e8,slope,opportunity)) and
+        (e4>e8 and slope>0 if side=='CE' else e4<e8 and slope<0) and params['first_opportunity']<=opportunity<=params['last_opportunity'])
+    atr=trend.get('atr');flips=trend.get('flips_last_12_bars');sep=abs(e4-e8)/atr if all(finite(v) for v in (e4,e8,atr)) and atr>0 else None
+    p2=bool(coherent and sep is not None and band['goldilocks_min_atr']<=sep<=band['goldilocks_max_atr'] and finite(flips) and flips<params['max_flips'])
+    slot=volume.get('slot_rvol_median');vsr=volume.get('vsr_10');accel=volume.get('bar_accel_ratio')
+    volume_age=time.time()-(volume.get('bar_ts')+900) if finite(volume.get('bar_ts')) else None
+    volume_fresh=volume_age is not None and 0<=volume_age<params['max_data_age_seconds']
+    primary=finite(slot) and slot>=volcfg['slot_rvol_threshold']
+    fallback=slot is None and volume.get('slot_status')=='INSUFFICIENT_HISTORY' and finite(vsr) and vsr>=volcfg['vsr_fallback_threshold'] and finite(accel) and accel>=volcfg['bar_accel_threshold']
+    p3=bool(volume_fresh and volume.get('available') and (primary or fallback))
+    age=dhan_oi.get('age_seconds');stamp=dhan_oi.get('timestamp_epoch')
+    if finite(stamp):age=time.time()-stamp
+    oi_fresh=finite(age) and 0<=age<=cfg['dhan_oi']['max_age_seconds']
+    p4=bool(coherent and oi_fresh and dhan_oi.get('source')=='DHAN_API' and dhan_oi.get('status')=='OK' and dhan_oi.get('available') and dhan_oi.get('bias')==('BULLISH' if side=='CE' else 'BEARISH'))
+    gap=trend.get('abs_gap_pts')
+    p5=bool(coherent and trend.get('price_fresh') and ((finite(gap) and gap<=params['pocket_touch_points']) or trend.get('wick_touched_ema8') is True))
+    values={'pillar_1_trend_structure':p1,'pillar_2_anti_chop_regime':p2,'pillar_3_slot_volume':p3,'pillar_4_option_writer_flow':p4,'pillar_5_pocket_execution':p5}
+    score=sum(values.values());grades={5:'A+ INSTITUTIONAL (5/5)',4:'A HIGH CONVICTION (4/5)',3:'B MODERATE (3/5)'}
+    labels=['Trend','Anti-Chop','Slot Vol','Dhan OI','Pocket']
+    return {**values,'score':score,'max_score':5,'grade':grades.get(score,'C DEFENSIVE / WAIT (<=2/5)'),
+        'pillars':{k:{'passed':v,'label':label} for (k,v),label in zip(values.items(),labels)},
+        'direction':side or 'UNKNOWN','source':'DHAN_API','informational_only':True,
+        'execution_authorized':False,'opportunity_basis':trend.get('opportunity_basis','Provided closed-candle opportunity'),
+        'note':'Agreement count, not independent evidence, win probability, or guaranteed zero-slippage fill.'}
+
+
 class QuantTerminalBackend:
     """Core 8510 Quant Engine coordinating market data, execution, chasing, and UI stream."""
 
@@ -2302,20 +2339,13 @@ class QuantTerminalBackend:
         self.ledger_db.parent.mkdir(parents=True, exist_ok=True)
         self._init_sqlite()
         self.homework_reconciler = HomeworkReconciler()
-        self.stockmojo_scraper = StockMojoScraper(db_path=self.ledger_db, config_path=self.config_path)
-
-        # Writer / PE-CE flow. Stock Mojo is retired (401, hand-recaptured JWT,
-        # third-party session). The 8600 desk computes the same numbers from our
-        # own Dhan chain via its StockMojo-parity endpoint, so oi_scraper is
-        # repointed there and the existing UI keeps working unchanged. Falls back
-        # to the retired scraper only if Stock Mojo is explicitly re-enabled.
-        self.writer_flow = get_writer_flow_bridge(self.cfg.get("writer_flow_source", {}))
-        if bool(self.cfg.get("stockmojo", {}).get("enabled", False)):
-            self.oi_scraper = self.stockmojo_scraper
-            log.warning("Writer flow: Stock Mojo re-enabled by config; using the "
-                        "retired scraper instead of the 8600 desk.")
-        else:
-            self.oi_scraper = self.writer_flow
+        self.dhan_oi = DhanOIEngine(self.cfg.get('dhan_oi'), self.ledger_db,
+            expiry_provider=self.inst_mgr.get_nearest_expiry, headers_provider=self.broker._headers)
+        self.writer_flow = self.dhan_oi
+        self.oi_scraper = self.dhan_oi
+        self._archive_lock = threading.Lock()
+        self._confluence_context_cache = {}
+        self._confluence_context_at = 0.0
 
         # State Variables
         self.execution_mode = self.cfg.get("execution_mode", "PAPER_ONLY")
@@ -2407,8 +2437,8 @@ class QuantTerminalBackend:
         if self.directional_bias not in ("LONG_ONLY", "SHORT_ONLY", "BOTH"):
             self.directional_bias = "BOTH"
 
-        # Stock Mojo Synergy Gating & Master Control Card Configuration
-        self.stockmojo_synergy_cfg = self.cfg.get("stockmojo_synergy", {
+        # Dhan OI Synergy Gating & Master Control Card Configuration
+        self.dhan_oi_synergy_cfg = self.cfg.get("dhan_oi_synergy", {
             "filter_stage2_8ema_synergy": False,
             "filter_strategy2_reversal_synergy": False,
             "filter_strategy3_1h_synergy": False,
@@ -2438,8 +2468,8 @@ class QuantTerminalBackend:
             "default_cost_model": "STATUTORY_DHAN",
         })
         try:
-            from analyst.futures_volume_engine import get_futures_volume_engine
-            self.futures_volume_engine = get_futures_volume_engine()
+            from analyst.futures_volume_engine import FuturesVolumeEngine
+            self.futures_volume_engine = FuturesVolumeEngine(db_path=self.market_db, config_path=self.config_path)
         except Exception as e:
             log.warning("Could not initialize FuturesVolumeEngine: %s", e)
             self.futures_volume_engine = None
@@ -2670,19 +2700,19 @@ class QuantTerminalBackend:
         return trades
 
     def get_synergy_config(self) -> Dict[str, Any]:
-        """Returns the active Stock Mojo PE-CE Synergy filter configuration."""
-        return dict(self.stockmojo_synergy_cfg)
+        """Returns the active Dhan OI PE-CE Synergy filter configuration."""
+        return dict(self.dhan_oi_synergy_cfg)
 
     def update_synergy_config(self, new_cfg: Dict[str, Any]) -> Dict[str, Any]:
-        """Updates and persists Stock Mojo PE-CE Synergy filter configuration."""
-        self.stockmojo_synergy_cfg.update(new_cfg)
-        self.cfg["stockmojo_synergy"] = self.stockmojo_synergy_cfg
+        """Updates and persists Dhan OI PE-CE Synergy filter configuration."""
+        self.dhan_oi_synergy_cfg.update(new_cfg)
+        self.cfg["dhan_oi_synergy"] = self.dhan_oi_synergy_cfg
         try:
             self.config_path.write_text(json.dumps(self.cfg, indent=2))
-            log.info("⚡ Stock Mojo Synergy Configuration updated & persisted: %s", self.stockmojo_synergy_cfg)
+            log.info("⚡ Dhan OI Synergy Configuration updated & persisted: %s", self.dhan_oi_synergy_cfg)
         except Exception as e:
             log.error("Failed persisting synergy config: %s", e)
-        return {"ok": True, "stockmojo_synergy": self.stockmojo_synergy_cfg}
+        return {"ok": True, "dhan_oi_synergy": self.dhan_oi_synergy_cfg}
 
     def get_dhan_config(self) -> Dict[str, Any]:
         """Returns Dhan configuration with secrets safely masked and IP match status."""
@@ -2826,17 +2856,17 @@ class QuantTerminalBackend:
             regime = "CHOP_ZONE"
             badge = f"🔴 CHOP ZONE (<{min_atr:.2f} ATR)"
             allowed = False
-            desc = f"Entangled chop (sep {sep_atr:.2f} < {min_atr:.2f} ATR). Entries blocked to avoid -₹16.23/tr avg loss."
+            desc = f"Entangled chop (sep {sep_atr:.2f} < {min_atr:.2f} ATR). Defensive chop blocker: no entry while averages are entangled."
         elif sep_atr <= max_atr:
             regime = "GOLDILOCKS_SWEET_SPOT"
             badge = f"🟢 GOLDILOCKS SWEET SPOT ({min_atr:.2f}–{max_atr:.2f} ATR)"
             allowed = True
-            desc = f"Healthy trend expansion (sep {sep_atr:.2f} ATR). Entries authorized (+₹60.00/tr sweet spot, PF 1.28)."
+            desc = f"Defensive separation band passes (sep {sep_atr:.2f} ATR); other entry checks still apply."
         else:
             regime = "CLIMAX_EXHAUSTION"
             badge = f"⚠️ CLIMAX EXHAUSTION (>{max_atr:.2f} ATR)"
             allowed = False
-            desc = f"Rubber-band over-extension (sep {sep_atr:.2f} > {max_atr:.2f} ATR). Late entries blocked to avoid -₹44.02/tr snapback."
+            desc = f"Rubber-band over-extension (sep {sep_atr:.2f} > {max_atr:.2f} ATR). Defensive over-extension blocker: wait for a new setup."
 
         is_enabled = bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", True))
         return {
@@ -2926,6 +2956,98 @@ class QuantTerminalBackend:
                 "max_atr": 0.26,
             }
 
+    def get_five_factor_confluence(self, spot=None, price_fresh=False):
+        """Advisory score from known, completed 15m bars. Never an execution authorization."""
+        now = time.time()
+        params = self.cfg['five_factor_confluence']
+        if now-self._confluence_context_at >= self.cfg['futures_volume_engine']['refresh_seconds']:
+            context = {}
+            try:
+                with sqlite3.connect('file:'+str(self.market_db)+'?mode=ro',uri=True) as conn:
+                    records = conn.execute("SELECT ts,o,h,l,c,v FROM candles_1m WHERE sec_id='13' AND ts<=? ORDER BY ts DESC LIMIT 6000",(int(now)-60,)).fetchall()
+                frame = pd.DataFrame(list(reversed(records)),columns=['ts','open','high','low','close','volume'])
+                if not frame.empty:
+                    stamp = pd.to_datetime(frame.ts,unit='s',utc=True).dt.tz_convert(IST)
+                    frame.index = stamp
+                    frame=frame[((stamp.dt.hour*60+stamp.dt.minute>=555)&(stamp.dt.hour*60+stamp.dt.minute<930)).to_numpy()]
+                    bars=frame.resample('15min').agg({'ts':'count','open':'first','high':'max','low':'min','close':'last'}).dropna()
+                    bars=bars[(bars.ts==15)&((bars.index.astype('int64')//10**9+900)<=now)]
+                    if len(bars)>=20:
+                        e4=bars.close.ewm(span=4,adjust=False).mean();e8=bars.close.ewm(span=8,adjust=False).mean()
+                        mid=bars.close.rolling(20).mean();std=bars.close.rolling(20).std()
+                        upper=mid+2*std;lower=mid-2*std
+                        sign=(e4>e8).astype(int)-(e4<e8).astype(int)
+                        regime=(sign!=sign.shift()).cumsum();active=regime.iloc[-1]
+                        touched=(bars.low<=e8)&(bars.high>=e8)
+                        # Count distinct closed-bar touch episodes within the current EMA regime.
+                        episodes=touched&(~touched.shift(1,fill_value=False))&(regime==active)
+                        opportunities=int(episodes.sum())
+                        if not opportunities and abs(float(bars.close.iloc[-1]-e8.iloc[-1]))<=params['pocket_touch_points']:opportunities=1
+                        b=bars.iloc[-1];side='CE' if e4.iloc[-1]>e8.iloc[-1] else 'PE'
+                        tr=pd.concat([bars.high-bars.low,(bars.high-bars.close.shift()).abs(),(bars.low-bars.close.shift()).abs()],axis=1).max(axis=1)
+                        atr=float(tr.ewm(alpha=1/14,adjust=False).mean().iloc[-1])
+                        signs=(bars.close>e8).astype(int)
+                        flips=int(signs.tail(12).diff().abs().fillna(0).sum())
+                        end=bars.index[-1].timestamp()+900
+                        context=dict(timeframe='15m',side=side,ema4=float(e4.iloc[-1]),ema8=float(e8.iloc[-1]),
+                            band_slope=float(upper.diff().iloc[-1] if side=='CE' else lower.diff().iloc[-1]),
+                            opportunity=opportunities,atr=atr,flips_last_12_bars=flips,
+                            wick_touched_ema8=bool(touched.iloc[-1]),signal_ts=end,
+                            fresh=0<=now-end<params['max_data_age_seconds'],
+                            opportunity_basis='Distinct closed 15m EMA8 touch episodes in current 4/8 regime; advisory proxy, not a validated D/E execution rule')
+            except Exception:
+                log.exception('Confluence context unavailable; missing pillars stay false')
+            self._confluence_context_cache=context;self._confluence_context_at=now
+        context=dict(self._confluence_context_cache)
+        if context:
+            e8=context['ema8'];p=spot if price_fresh and isinstance(spot,(int,float)) and spot>0 else None
+            context['abs_gap_pts']=abs(p-e8) if p is not None else None
+            context['price_fresh']=bool(p is not None)
+        radar = self.ema_proximity_engine.get_latest_radar_status(live_spot=spot if price_fresh else None) if self.ema_proximity_engine else {}
+        if context:
+            context['flips_last_12_bars'] = radar.get('flips_last_12_bars') if radar.get('ok') else None
+            context['abs_gap_pts'] = radar.get('abs_gap_pts') if price_fresh and radar.get('ok') else None
+            context['wick_touched_ema8'] = radar.get('wick_touched_ema8') is True and radar.get('ok') is True
+            context['pocket_timeframe'] = '1m proximity engine'
+        volume=self.futures_volume_engine.get_latest_vsr() if self.futures_volume_engine else {}
+        return compute_five_factor_confluence(context,self.dhan_oi.cached_snapshot(),volume,self.cfg)
+
+    def run_post_market_archivers(self,date_str=None,now=None):
+        """Idempotent, bounded subprocesses. Source SQLite is never opened writable here."""
+        now=now or datetime.now(IST)
+        date_str=date_str or now.date().isoformat()
+        selected=date.fromisoformat(date_str)
+        cfg=self.cfg['post_market_archivers']
+        if not cfg['enabled']:return {'ok':False,'status':'DISABLED','date':date_str}
+        if selected>now.date() or (selected==now.date() and now.strftime('%H:%M')<cfg['schedule_ist']):
+            return {'ok':False,'status':'NOT_DUE','date':date_str}
+        if not self._archive_lock.acquire(blocking=False):return {'ok':False,'status':'RUNNING','date':date_str}
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute('CREATE TABLE IF NOT EXISTS post_market_archives(day TEXT PRIMARY KEY, attempted REAL,payload TEXT)')
+                previous=conn.execute('SELECT attempted,payload FROM post_market_archives WHERE day=?',(date_str,)).fetchone()
+            if previous:
+                saved=json.loads(previous[1])
+                if saved.get('ok') or time.time()-previous[0]<cfg['retry_seconds']:return saved
+            results=[]
+            for name in ('archive_volume.py','archive_chain_day.py'):
+                try:
+                    proc=subprocess.run([sys.executable,str(ROOT/'scripts'/name),'--date',date_str],
+                        timeout=cfg['timeout_seconds'],check=False,capture_output=True,text=True,cwd=str(ROOT))
+                    results.append({'script':name,'returncode':proc.returncode,'ok':proc.returncode==0})
+                except Exception as exc:
+                    log.warning('Post-market archive %s failed (%s)',name,type(exc).__name__)
+                    results.append({'script':name,'ok':False,'error':type(exc).__name__})
+            outputs = {'volume':any((ROOT/'data/archive/volume'/(date_str+suffix)).exists() for suffix in ('.parquet','.csv.gz')),
+                       'chain':(ROOT/'data/archive/chain'/(date_str+'.parquet')).exists(),
+                       'candles':(ROOT/'data/archive/candles'/(date_str+'.parquet')).exists()}
+            result={'ok':all(r['ok'] for r in results) and all(outputs.values()),'date':date_str,'scripts':results,'outputs':outputs}
+            result['status']='COMPLETE' if result['ok'] else 'FAILED'
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute('INSERT OR REPLACE INTO post_market_archives VALUES(?,?,?)',(date_str,time.time(),json.dumps(result)))
+            return result
+        finally:self._archive_lock.release()
+
     def get_proven_edges_config(self) -> Dict[str, Any]:
         """Returns the active proven quant edges configuration."""
         gold = self.get_latest_goldilocks_status()
@@ -2986,6 +3108,7 @@ class QuantTerminalBackend:
     async def get_live_telemetry(self) -> Dict[str, Any]:
         """Fetches 1-second live stream for ribbon, ATM widget, matrix, and trend filters."""
         self.inst_mgr.ensure_loaded()
+        await asyncio.to_thread(self.dhan_oi.get_dhan_oi_bias)
         now_dt = datetime.now(IST)
 
         # 1. Fetch latest candle prices from database (Candle Fallback / Tier 2)
@@ -3152,26 +3275,22 @@ class QuantTerminalBackend:
             resolved_itm_pe = self.inst_mgr.resolve_option(nearest_expiry, itm_pe_strike, "PE")
             resolved_atm_pe = self.inst_mgr.resolve_option(nearest_expiry, atm_pe_strike, "PE")
 
-            # Approximate option LTPs if closed/unquoted
+            # Only a real, fresh Dhan quote can make a contract executable.
             def get_opt_ltp(resolved, strike, opt_type):
-                if not resolved:
-                    return round(max(30.0, 200.0 if "ITM" in opt_type else 150.0), 2)
-                sid = str(resolved.get("security_id"))
-                if sid in live_quotes:
-                    return live_quotes[sid]
-                # Intrinsic + time value model
-                if opt_type == "CE":
-                    intrinsic = max(0.0, spot - strike)
-                    return round(intrinsic + max(25.0, 60.0 - abs(spot - strike) * 0.15), 2)
-                else:
-                    intrinsic = max(0.0, strike - spot)
-                    return round(intrinsic + max(25.0, 60.0 - abs(strike - spot) * 0.15), 2)
+                if not resolved:return None
+                sid = str(resolved.get('security_id'))
+                value = live_quotes.get(sid)
+                stamp = self.broker._cache_timestamps.get(sid, 0)
+                max_age = float(self.cfg['five_factor_confluence']['quote_max_age_seconds'])
+                if not isinstance(value,(int,float)) or not math.isfinite(value) or value<=0 or time.time()-stamp>max_age:
+                    return None
+                return float(value)
 
             itm_ce_ltp = get_opt_ltp(resolved_itm_ce, itm_ce_strike, "CE")
             atm_ce_ltp = get_opt_ltp(resolved_atm_ce, atm_ce_strike, "CE")
             itm_pe_ltp = get_opt_ltp(resolved_itm_pe, itm_pe_strike, "PE")
             atm_pe_ltp = get_opt_ltp(resolved_atm_pe, atm_pe_strike, "PE")
-            combined_straddle = round(atm_ce_ltp + atm_pe_ltp, 2)
+            combined_straddle = round(atm_ce_ltp + atm_pe_ltp, 2) if atm_ce_ltp is not None and atm_pe_ltp is not None else None
 
             # Priority 4 Contracts list
             priority_matrix = [
@@ -3183,7 +3302,7 @@ class QuantTerminalBackend:
                     "symbol": format_contract_symbol(expiry=nearest_expiry, strike=itm_ce_strike, opt_type="CE", raw_symbol=resolved_itm_ce["symbol"] if resolved_itm_ce else None),
                     "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=itm_ce_strike, opt_type="CE"), expiry=nearest_expiry),
                     "security_id": resolved_itm_ce["security_id"] if resolved_itm_ce else None,
-                    "lot_size": resolved_itm_ce["lot_size"] if resolved_itm_ce else 65,
+                    "lot_size": resolved_itm_ce["lot_size"] if resolved_itm_ce else None,
                     "ltp": itm_ce_ltp,
                     "delta": 0.65,
                     "spread_pts": 0.45,
@@ -3199,7 +3318,7 @@ class QuantTerminalBackend:
                     "symbol": format_contract_symbol(expiry=nearest_expiry, strike=atm_ce_strike, opt_type="CE", raw_symbol=resolved_atm_ce["symbol"] if resolved_atm_ce else None),
                     "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=atm_ce_strike, opt_type="CE"), expiry=nearest_expiry),
                     "security_id": resolved_atm_ce["security_id"] if resolved_atm_ce else None,
-                    "lot_size": resolved_atm_ce["lot_size"] if resolved_atm_ce else 65,
+                    "lot_size": resolved_atm_ce["lot_size"] if resolved_atm_ce else None,
                     "ltp": atm_ce_ltp,
                     "delta": 0.50,
                     "spread_pts": 0.35,
@@ -3215,7 +3334,7 @@ class QuantTerminalBackend:
                     "symbol": format_contract_symbol(expiry=nearest_expiry, strike=itm_pe_strike, opt_type="PE", raw_symbol=resolved_itm_pe["symbol"] if resolved_itm_pe else None),
                     "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=itm_pe_strike, opt_type="PE"), expiry=nearest_expiry),
                     "security_id": resolved_itm_pe["security_id"] if resolved_itm_pe else None,
-                    "lot_size": resolved_itm_pe["lot_size"] if resolved_itm_pe else 65,
+                    "lot_size": resolved_itm_pe["lot_size"] if resolved_itm_pe else None,
                     "ltp": itm_pe_ltp,
                     "delta": -0.65,
                     "spread_pts": 0.45,
@@ -3231,7 +3350,7 @@ class QuantTerminalBackend:
                     "symbol": format_contract_symbol(expiry=nearest_expiry, strike=atm_pe_strike, opt_type="PE", raw_symbol=resolved_atm_pe["symbol"] if resolved_atm_pe else None),
                     "structured_contract": get_contract_structured_fields(format_contract_symbol(expiry=nearest_expiry, strike=atm_pe_strike, opt_type="PE"), expiry=nearest_expiry),
                     "security_id": resolved_atm_pe["security_id"] if resolved_atm_pe else None,
-                    "lot_size": resolved_atm_pe["lot_size"] if resolved_atm_pe else 65,
+                    "lot_size": resolved_atm_pe["lot_size"] if resolved_atm_pe else None,
                     "ltp": atm_pe_ltp,
                     "delta": -0.50,
                     "spread_pts": 0.35,
@@ -3250,42 +3369,12 @@ class QuantTerminalBackend:
 
         self.priority_contracts = priority_matrix
 
-        # 5. PCR & PE-CE from OUR OWN Dhan option chain (chain_snap).
-        #
-        # Despite the old "StockMojo" label this never used Stock Mojo: pe_oi and
-        # ce_oi come from our own chain_snap table. It therefore survives Stock
-        # Mojo being retired.
-        #
-        # The previous defaults were pcr=1.08 / "BULLISH" / gap=1.14, so an empty
-        # or unreadable chain_snap displayed a confident BULLISH reading with no
-        # data behind it. It now reports NO DATA instead of inventing a bias.
-        pcr = 1.0
-        pcr_tag = "NO DATA"
-        pe_ce_gap_cr = 0.0
-        pcr_available = False
-        if self.market_db.exists():
-            try:
-                with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
-                    cur = conn.cursor()
-                    cur.execute("SELECT sum(pe_oi), sum(ce_oi) FROM chain_snap WHERE ts=(SELECT max(ts) FROM chain_snap)")
-                    row = cur.fetchone()
-                    if row and row[0] and row[1]:
-                        pe_sum, ce_sum = float(row[0]), float(row[1])
-                        if ce_sum > 0:
-                            pcr = round(pe_sum / ce_sum, 2)
-                            pe_ce_gap_cr = round((pe_sum - ce_sum) / 1e7, 2)
-                            pcr_available = True
-            except Exception as e:
-                log.debug("PCR calculation from sqlite error: %s", e)
-
-        # Only classify when there is real chain data behind the number.
-        if pcr_available:
-            if pcr >= 1.05:
-                pcr_tag = "BULLISH"
-            elif pcr <= 0.85:
-                pcr_tag = "BEARISH"
-            else:
-                pcr_tag = "NEUTRAL"
+        # One Dhan expiry and observation, shared with pillar 4 and Tab 6.
+        oi_state = self.dhan_oi.cached_snapshot()
+        pcr_available = bool(oi_state['available'])
+        pcr = float(oi_state['pcr_total_oi']) if pcr_available else 0.0
+        pe_ce_gap_cr = -oi_state['ce_pe_oi_diff']/1e7 if pcr_available else 0.0
+        pcr_tag = oi_state['bias'] if pcr_available else 'NO DATA'
 
         # 6. Trend Confluence Mini-Watchlist (7 Indicators)
         trend_watchlist = self._calculate_trend_watchlist(spot, pcr, pcr_available)
@@ -3300,31 +3389,31 @@ class QuantTerminalBackend:
 
         # 9. Institutional Derivatives Confluence (Live OI & PE-CE Ingestion)
         try:
-            oi_snap = self.oi_scraper.get_snapshot()
+            oi_snap = self.dhan_oi.compatibility_snapshot(self.dhan_oi.cached_snapshot())
         except Exception as e:
             log.debug("Institutional OI scraper snapshot error: %s", e)
             oi_snap = {}
 
         trend_lab_variables = {
-            "var_pe_minus_ce": float(oi_snap.get("pe_minus_ce_day", 0.0)),
-            "var_call_oi_change": float(oi_snap.get("call_oi_change_day", 0.0)),
-            "var_put_oi_change": float(oi_snap.get("put_oi_change_day", 0.0)),
-            "var_total_call_oi": float(oi_snap.get("total_call_oi", 0.0)),
-            "var_total_put_oi": float(oi_snap.get("total_put_oi", 0.0)),
+            "var_pe_minus_ce": float(oi_snap.get("pe_minus_ce_day") or 0.0),
+            "var_call_oi_change": float(oi_snap.get("call_oi_change_day") or 0.0),
+            "var_put_oi_change": float(oi_snap.get("put_oi_change_day") or 0.0),
+            "var_total_call_oi": float(oi_snap.get("total_call_oi") or 0.0),
+            "var_total_put_oi": float(oi_snap.get("total_put_oi") or 0.0),
             "var_oi_writer_bias": str(oi_snap.get("writer_bias", "NEUTRAL")),
             # Backward-compatible aliases
-            "var_stockmojo_pe_minus_ce": float(oi_snap.get("pe_minus_ce_day", 0.0)),
-            "var_sm_call_oi_change": float(oi_snap.get("call_oi_change_day", 0.0)),
-            "var_sm_put_oi_change": float(oi_snap.get("put_oi_change_day", 0.0)),
-            "var_sm_total_call_oi": float(oi_snap.get("total_call_oi", 0.0)),
-            "var_sm_total_put_oi": float(oi_snap.get("total_put_oi", 0.0)),
-            "var_sm_oi_writer_bias": str(oi_snap.get("writer_bias", "NEUTRAL")),
+            "var_dhan_oi_pe_minus_ce": float(oi_snap.get("pe_minus_ce_day") or 0.0),
+            "var_dhan_call_oi_change": float(oi_snap.get("call_oi_change_day") or 0.0),
+            "var_dhan_put_oi_change": float(oi_snap.get("put_oi_change_day") or 0.0),
+            "var_dhan_total_call_oi": float(oi_snap.get("total_call_oi") or 0.0),
+            "var_dhan_total_put_oi": float(oi_snap.get("total_put_oi") or 0.0),
+            "var_dhan_oi_writer_bias": str(oi_snap.get("writer_bias", "NEUTRAL")),
         }
 
         # Proven Quant Edges (v1.7)
         goldilocks = self.get_latest_goldilocks_status()
         fut_surge = self.futures_volume_engine.get_latest_vsr() if self.futures_volume_engine else {
-            "vsr_10": 1.0,
+            "vsr_10": None,
             "is_surge": False,
             "badge": "NORMAL VOLUME",
             "pill_text": "📊 Futures Vol Surge (VSR): 1.00x [NORMAL VOLUME]",
@@ -3402,11 +3491,11 @@ class QuantTerminalBackend:
             "writer_flow_available": bool(oi_snap.get("available", False)),
             "writer_flow_source": str(oi_snap.get("source", "UNKNOWN")),
             "writer_flow_reason": str(oi_snap.get("reason", "")),
-            "stockmojo_pe_ce": oi_snap,
-            "stockmojo_synergy": self.stockmojo_scraper.evaluate_synergy_status(),
-            "stockmojo_crore_spread": self.stockmojo_scraper.get_crore_spread_metrics(),
-            "stockmojo_multi_strike": self.stockmojo_scraper.get_multi_strike_status(),
-            "stockmojo_synergy_config": self.stockmojo_synergy_cfg,
+            "dhan_oi_pe_ce": oi_snap,
+            "dhan_oi_synergy": self.dhan_oi.evaluate_synergy_status(),
+            "dhan_oi_crore_spread": self.dhan_oi.get_crore_spread_metrics(),
+            "dhan_oi_multi_strike": self.dhan_oi.get_multi_strike_status(),
+            "dhan_oi_synergy_config": self.dhan_oi_synergy_cfg,
             "funds": {
                 "paper": paper_wallet,
                 "live": live_funds,
@@ -3415,6 +3504,8 @@ class QuantTerminalBackend:
             "orders": orders,
             "dhan_connected": self.broker.is_configured(),
         }
+        payload['dhan_oi'] = self.dhan_oi.cached_snapshot()
+        payload['five_factor_confluence'] = self.get_five_factor_confluence(spot, not is_stale)
         self.cached_telemetry = payload
         return payload
 
@@ -3666,8 +3757,8 @@ class QuantTerminalBackend:
         fut_surge = self.futures_volume_engine.get_latest_vsr() if self.futures_volume_engine else {
             "vsr_10": 1.0, "is_surge": False, "tag": "NORMAL_VOLUME"
         }
-        vsr_10 = float(fut_surge.get("vsr_10", 1.0))
-        is_vol_surge = bool(fut_surge.get("is_surge", False))
+        vsr_10 = float(fut_surge.get("vsr_10") or 0.0)
+        is_vol_surge = bool(fut_surge.get("is_institutional_surge", False))
 
         signals: List[Dict[str, Any]] = []
 
@@ -3857,34 +3948,34 @@ class QuantTerminalBackend:
                     self.strategy_status["h1_confluence"]["state"] = "BLOCKED_FUT_VOL_SURGE"
             signals = []
 
-        # Stock Mojo PE-CE Synergy Advisory Tagging on Signals (Advisory-Only & Fail-Open)
+        # Dhan OI PE-CE Synergy Advisory Tagging on Signals (Advisory-Only & Fail-Open)
         try:
-            syn = self.stockmojo_scraper.evaluate_synergy_status()
+            syn = self.dhan_oi.evaluate_synergy_status()
             synergy_status = syn.get("synergy_status", "MIXED")
         except Exception as e:
-            log.debug("StockMojo signal synergy exception (failing open): %s", e)
+            log.debug("DhanOI signal synergy exception (failing open): %s", e)
             synergy_status = "MIXED"
 
         if signals:
             for sig in signals:
-                sig["stockmojo_synergy"] = synergy_status
+                sig["dhan_oi_synergy"] = synergy_status
                 sig["goldilocks"] = goldilocks
                 sig["futures_vsr_10"] = vsr_10
                 opt = str(sig.get("opt_side", "")).upper()
                 if opt == "CE" and synergy_status == "BEARISH_SYNERGY":
-                    sig["advisory_note"] = "⚠️ StockMojo Bearish Synergy (Advisory Warning)"
+                    sig["advisory_note"] = "⚠️ DhanOI Bearish Synergy (Advisory Warning)"
                 elif opt == "PE" and synergy_status == "BULLISH_SYNERGY":
-                    sig["advisory_note"] = "⚠️ StockMojo Bullish Synergy (Advisory Warning)"
+                    sig["advisory_note"] = "⚠️ DhanOI Bullish Synergy (Advisory Warning)"
                 elif opt == "CE" and synergy_status == "BULLISH_SYNERGY":
-                    sig["advisory_note"] = "✅ StockMojo Bullish Synergy Confirmed"
+                    sig["advisory_note"] = "✅ DhanOI Bullish Synergy Confirmed"
                 elif opt == "PE" and synergy_status == "BEARISH_SYNERGY":
-                    sig["advisory_note"] = "✅ StockMojo Bearish Synergy Confirmed"
+                    sig["advisory_note"] = "✅ DhanOI Bearish Synergy Confirmed"
 
                 # Filter 2: Futures Volume Surge Tagging (vsr_10 >= 1.15)
                 if is_vol_surge:
-                    sig["conviction"] = "🔥 VOLUME SURGE CONFIRMED (59.0% OOS WR | +₹106.1/tr)"
+                    sig["conviction"] = "🔥 VOLUME SURGE CONFIRMED"
                     prev_note = sig.get("advisory_note", "")
-                    sig["advisory_note"] = (prev_note + " | 🔥 VOLUME SURGE CONFIRMED (59.0% OOS WR | +₹106.1/tr)").strip(" |")
+                    sig["advisory_note"] = (prev_note + " | 🔥 VOLUME SURGE CONFIRMED").strip(" |")
                     sig["play_surge_beep"] = True
                 else:
                     sig["play_surge_beep"] = False
@@ -4000,30 +4091,7 @@ class QuantTerminalBackend:
                     signals = self.evaluate_all_strategies(spot_price=spot)
 
                     # Check Direct 15m Entry Trigger on PE-CE Synergy Flip if enabled
-                    if self.stockmojo_synergy_cfg.get("use_as_direct_15m_trigger", False):
-                        syn = self.stockmojo_scraper.evaluate_synergy_status()
-                        cur_syn = syn.get("synergy_status", "MIXED")
-                        if cur_syn in ("BULLISH_SYNERGY", "BEARISH_SYNERGY") and cur_syn != self._last_synergy_status:
-                            self._last_synergy_status = cur_syn
-                            if not spot or spot <= 0:
-                                log.critical("Rejecting direct PE-CE flip trigger: spot price unavailable or <= 0")
-                            else:
-                                direct_sig = {
-                                    "strategy_id": "STAGE2_DIRECT_TRIGGER" if cur_syn == "BULLISH_SYNERGY" else "STAGE3_DIRECT_TRIGGER",
-                                    "setup_name": "Stage 2 PE-CE Direct 15m Trigger" if cur_syn == "BULLISH_SYNERGY" else "Stage 3 PE-CE Direct 15m Trigger",
-                                    "direction": "LONG" if cur_syn == "BULLISH_SYNERGY" else "SHORT",
-                                    "opt_side": "CE" if cur_syn == "BULLISH_SYNERGY" else "PE",
-                                    "target_pts": 40.0,
-                                    "sl_pts": 40.0,
-                                    "index_price": float(spot),
-                                    "conviction": "DIRECT_PE_CE_FLIP",
-                                    "details": f"Direct entry triggered by Stock Mojo PE-CE Synergy Flip to {cur_syn}",
-                                }
-                                if not signals:
-                                    signals = [direct_sig]
-                                else:
-                                    signals.append(direct_sig)
-
+                    # Dhan OI is contextual; it never manufactures a standalone entry.
                     if signals:
                         await self._process_strategy_signals(signals)
             except Exception as e:
@@ -4138,7 +4206,12 @@ class QuantTerminalBackend:
                 p = dict(r)
                 sid = str(p.get("security_id"))
                 entry = float(p.get("entry_price") or 0.0)
-                qty = int(p.get("qty") or 65)
+                qty = int(p.get("qty") or 0)
+                if qty<=0:
+                    log.error('Position quantity missing; no guessed sizing or simulated exit')
+                    p['valuation_available']=False;p['data_error']='Missing recorded position quantity'
+                    positions.append(p)
+                    continue
                 target = float(p.get("target_price") or (entry + 24.0))
                 sl = float(p.get("sl_price") or (entry - 24.0))
 
@@ -4489,23 +4562,23 @@ class QuantTerminalBackend:
                     "rejection_reason": "Underlying spot price is 0.0 or unavailable (fail closed)",
                 }
 
-            # Stock Mojo PE-CE Synergy Advisory Check (Advisory-Only & Fail-Open)
+            # Dhan OI PE-CE Synergy Advisory Check (Advisory-Only & Fail-Open)
             # A third-party website must NEVER block or delay live order flow.
             try:
-                syn = self.stockmojo_scraper.evaluate_synergy_status()
+                syn = self.dhan_oi.evaluate_synergy_status()
                 synergy_status = syn.get("synergy_status", "MIXED")
             except Exception as e:
-                log.debug("StockMojo synergy evaluation exception (failing open): %s", e)
+                log.debug("DhanOI synergy evaluation exception (failing open): %s", e)
                 synergy_status = "MIXED"
 
             if is_pe and synergy_status == "BULLISH_SYNERGY":
-                log.info("[STOCK MOJO ADVISORY] PE order placed while StockMojo indicates Bullish synergy (Advisory only — failing open).")
+                log.info("[DHAN OI ADVISORY] PE order placed while DhanOI indicates Bullish synergy (Advisory only — failing open).")
             elif is_ce and synergy_status == "BEARISH_SYNERGY":
-                log.info("[STOCK MOJO ADVISORY] CE order placed while StockMojo indicates Bearish synergy (Advisory only — failing open).")
+                log.info("[DHAN OI ADVISORY] CE order placed while DhanOI indicates Bearish synergy (Advisory only — failing open).")
             elif is_ce and synergy_status == "BULLISH_SYNERGY":
-                log.info("[STOCK MOJO ADVISORY] Bullish multi-strike synergy confirmed for CE Long order.")
+                log.info("[DHAN OI ADVISORY] Bullish multi-strike synergy confirmed for CE Long order.")
             elif is_pe and synergy_status == "BEARISH_SYNERGY":
-                log.info("[STOCK MOJO ADVISORY] Bearish multi-strike synergy confirmed for PE Short order.")
+                log.info("[DHAN OI ADVISORY] Bearish multi-strike synergy confirmed for PE Short order.")
 
             # Check Strike Matrix Checkbox filter if triggered automatically by Algo
             contract_id = contract.get("id", "")
@@ -4555,11 +4628,17 @@ class QuantTerminalBackend:
                 raw_symbol=contract.get("symbol"),
             )
             sec_id = str(contract.get("security_id", ""))
-            qty = int(contract.get("lot_size", 65))
-            signal_ltp = float(contract.get("ltp", 200.0))
+            lot = contract.get('lot_size')
+            premium = contract.get('ltp')
+            if not isinstance(lot,int) or isinstance(lot,bool) or lot<=0 or not sec_id.isdigit():
+                return {'ok':False,'status':'REJECTED','error':'Verified instrument and dynamic lot size required'}
+            if not isinstance(premium,(int,float)) or not math.isfinite(premium) or premium<=0:
+                return {'ok':False,'status':'REJECTED','error':'Real positive Dhan option quote required'}
+            qty = lot
+            signal_ltp = float(premium)
             delta = float(contract.get("delta", 0.60))
 
-            placed_source = source or ("AUTO ALGO 🤖" if is_algo_trade else ("MANUAL MATRIX ✋" if "Matrix" in strategy_name else ("MANUAL ROUTER ✋" if "Router" in strategy_name else ("MANUAL TAB 6 ✋" if ("Tab 6" in strategy_name or "Stock Mojo" in strategy_name) else "MANUAL MATRIX ✋"))))
+            placed_source = source or ("AUTO ALGO 🤖" if is_algo_trade else ("MANUAL MATRIX ✋" if "Matrix" in strategy_name else ("MANUAL ROUTER ✋" if "Router" in strategy_name else ("MANUAL TAB 6 ✋" if ("Tab 6" in strategy_name or "Dhan OI" in strategy_name) else "MANUAL MATRIX ✋"))))
             if not strategy_setup:
                 if "Stage 2" in strategy_name:
                     strategy_setup = "Stage 2 8 EMA Touch"
@@ -4576,7 +4655,7 @@ class QuantTerminalBackend:
                     strategy_setup = "ATM Reversal Downside"
                 elif "Stage 3" in strategy_name:
                     strategy_setup = "Stage 3 ATM"
-                elif "P minus C" in strategy_name or "Synergy" in strategy_name or "Stock Mojo" in strategy_name:
+                elif "P minus C" in strategy_name or "Synergy" in strategy_name or "Dhan OI" in strategy_name:
                     strategy_setup = "P minus C Filter — Total OI + OI Change"
                 else:
                     strategy_setup = "Manual — No Strategy"
@@ -5040,15 +5119,17 @@ class QuantTerminalBackend:
           - analyst/replay_data/{date_str}.json
           - SQLite daily_market_store table
         """
+        datetime.strptime(date_str,'%Y-%m-%d')
+        archive_result = self.run_post_market_archivers(date_str)
         REPLAY_DATA_DIR.mkdir(parents=True, exist_ok=True)
         json_file = REPLAY_DATA_DIR / f"{date_str}.json"
 
         # Check existing file unless overwrite is requested
-        if json_file.exists() and not overwrite:
+        if json_file.exists() and not overwrite and date_str < datetime.now(IST).date().isoformat():
             try:
                 with open(json_file, "r", encoding="utf-8") as f:
                     stored = json.load(f)
-                    if stored.get("spot_candles_1m") and stored.get("eod_summary"):
+                    if stored.get("spot_candles_1m") and stored.get("eod_summary") and stored.get("dhan_oi",{}).get("source")=="DHAN_API":
                         return stored
             except Exception as e:
                 log.warning("Could not read existing %s: %s, re-ingesting", json_file, e)
@@ -5206,7 +5287,7 @@ class QuantTerminalBackend:
                     for r in rows:
                         opt_chain.append({
                             "strike": float(r[0]),
-                            "lot_size": 65,
+                            "lot_size": self.get_nifty_lot_size(),
                             "ce_oi": float(r[1]) if r[1] is not None else 0.0,
                             "pe_oi": float(r[2]) if r[2] is not None else 0.0,
                             "ce_ltp": round(float(r[3]), 2) if r[3] is not None else 0.0,
@@ -5215,19 +5296,15 @@ class QuantTerminalBackend:
             except Exception as e:
                 log.error("Error reading chain_snap for %s: %s", date_str, e)
 
-        # 5 & 6. Stock Mojo Dual-Entity Data
-        stockmojo_data = {
-            "total_oi": {
-                "put_total_cr": 18.28,
-                "call_total_cr": 16.41,
-                "bias": "BULLISH 🟢 (Put 18.28 Cr > Call 16.41 Cr)"
-            },
-            "oi_change_day": {
-                "pe_ce_day_cr": 3.40,
-                "bias": "BULLISH 🟢 (PE-CE Day +3.40 Cr)"
-            },
-            "combined_bias": "STRONG BULLISH 🟢🟢"
-        }
+        # Historical OI is read strictly as-of the selected session close.
+        oi_cutoff = datetime.fromisoformat(date_str+'T15:30:00').replace(tzinfo=IST).timestamp()
+        oi_snapshot = self.dhan_oi.get_snapshot_at(oi_cutoff)
+        dhan_oi_data = {'source':'DHAN_API','snapshot':oi_snapshot,
+            'total_oi':{'put_total_cr':oi_snapshot['total_oi_pe']/1e7 if oi_snapshot['total_oi_pe'] is not None else None,
+                        'call_total_cr':oi_snapshot['total_oi_ce']/1e7 if oi_snapshot['total_oi_ce'] is not None else None,
+                        'bias':oi_snapshot['bias']},
+            'oi_change_day':{'pe_ce_day_cr':(oi_snapshot['oi_change_pe']-oi_snapshot['oi_change_ce'])/1e7 if oi_snapshot['oi_change_pe'] is not None else None,
+                             'bias':oi_snapshot['bias']}, 'combined_bias':oi_snapshot['bias']}
 
         # 7. Strategy Signals Evaluated
         strategy_signals = {
@@ -5236,7 +5313,7 @@ class QuantTerminalBackend:
             "ema_1h_8": "SUPPORT",
             "atm_reversal": "BULLISH",
             "stage_3_atm": "BULLISH",
-            "stockmojo_filter": "STRONG BULLISH"
+            "dhan_oi_filter": oi_snapshot["bias"]
         }
 
         # 8. Linked Paper Trades Executed
@@ -5321,18 +5398,18 @@ class QuantTerminalBackend:
                 for t in trades
             ],
             "signals_summary": "Stage 2: BULLISH | 4/8 Crossover: BULLISH | 1H 8 EMA: SUPPORT",
-            "total_oi_bias": stockmojo_data["total_oi"]["bias"],
-            "oi_change_bias": stockmojo_data["oi_change_day"]["bias"],
-            "combined_oi_bias": stockmojo_data["combined_bias"],
+            "total_oi_bias": dhan_oi_data["total_oi"]["bias"],
+            "oi_change_bias": dhan_oi_data["oi_change_day"]["bias"],
+            "combined_oi_bias": dhan_oi_data["combined_bias"],
             "whatsapp_text": (
                 f"📊 *PORT 8510 EOD SUMMARY — {dt_formatted}*\n"
                 f"✅ *Ingest:* 375/375 1m Candles Synced (Replay + Backtest + Trend Lab Ready)\n"
                 f"🤖 *Paper Trades Taken:* {len(trades)} (AUTO ALGO — Stage 2 8 EMA Touch)\n"
                 f"💰 *Net P&L:* {net_pnl_formatted}\n"
                 f"📈 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n"
-                f"🟢 *Stock Mojo Total OI:* BULLISH (Put 18.28 Cr vs Call 16.41 Cr)\n"
-                f"🟢 *Stock Mojo OI Change:* BULLISH (PE-CE +3.40 Cr)\n"
-                f"🔥 *Combined Bias:* STRONG BULLISH 🟢🟢"
+                f"*Dhan OI Total OI:* {oi_snapshot['bias']}\n"
+                f"*Dhan OI Change:* {oi_snapshot['bias']}\n"
+                f"*Combined Bias:* {oi_snapshot['bias']}"
             )
         }
 
@@ -5341,8 +5418,8 @@ class QuantTerminalBackend:
             "future_candles_1m": f"✅ {len(future_candles)} candles",
             "volumes_and_change": "✅ Synced",
             "option_chain": "✅ 09 Nov 2026 Expiry, Lot Size: 65 Dynamic",
-            "stockmojo_total_oi": "✅ Call Writers vs Put Writers",
-            "stockmojo_oi_change_day": "✅ Call Writers vs Put Writers",
+            "dhan_oi_total_oi": oi_snapshot["status"],
+            "dhan_oi_change_day": oi_snapshot["status"],
             "strategy_signals": "✅ Stage 2 (15m 8 EMA), 4/8 Crossover, 1H 8 EMA, ATM Reversal, Stage 3",
             "paper_trades": "✅ Linked to Replay + Backtester + Trend Lab",
         }
@@ -5364,7 +5441,10 @@ class QuantTerminalBackend:
                 "1h": res_1h,
             },
             "option_chain": opt_chain,
-            "stockmojo": stockmojo_data,
+            "dhan_oi": dhan_oi_data,
+            "dhan_oi_observations": self.dhan_oi.get_session_observations(date_str),
+            "dhan_oi_observation_note": 'Receipt timestamps retained, including post-close captures; entry replay uses as-of lookup only.',
+            "post_market_archive": archive_result,
             "strategy_signals": strategy_signals,
             "trades": trades,
             "summary": eod_summary,
@@ -5440,8 +5520,8 @@ class QuantTerminalBackend:
                 }
             ],
             "signals_summary": "Stage 2: BULLISH | 4/8 Crossover: BULLISH | 1H 8 EMA: SUPPORT",
-            "total_oi_bias": "BULLISH 🟢 (Put 18.28 Cr > Call 16.41 Cr)",
-            "oi_change_bias": "BULLISH 🟢 (PE-CE Day +3.40 Cr)",
+            "total_oi_bias": "UNKNOWN — no recorded Dhan OI",
+            "oi_change_bias": "UNKNOWN — no recorded Dhan OI",
             "combined_oi_bias": "STRONG BULLISH 🟢🟢",
             "whatsapp_text": (
                 f"📊 *PORT 8510 EOD SUMMARY — {dt_f}*\n"
@@ -5449,9 +5529,9 @@ class QuantTerminalBackend:
                 f"🤖 *Paper Trades Taken:* 1 (AUTO ALGO — Stage 2 8 EMA Touch)\n"
                 f"💰 *Net P&L:* +₹1,543.85\n"
                 f"📈 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n"
-                f"🟢 *Stock Mojo Total OI:* BULLISH (Put 18.28 Cr vs Call 16.41 Cr)\n"
-                f"🟢 *Stock Mojo OI Change:* BULLISH (PE-CE +3.40 Cr)\n"
-                f"🔥 *Combined Bias:* STRONG BULLISH 🟢🟢"
+                f"*Dhan OI Total OI:* {oi_snapshot['bias']}\n"
+                f"*Dhan OI Change:* {oi_snapshot['bias']}\n"
+                f"*Combined Bias:* {oi_snapshot['bias']}"
             )
         }
 
@@ -5516,6 +5596,11 @@ class QuantTerminalBackend:
                     "score": "80%",
                     "multi_factor_score": 80,
                 })
+        for row in rows:
+            stamp = datetime.fromisoformat(row['date']+'T15:30:00').replace(tzinfo=IST).timestamp()
+            oi = self.dhan_oi.get_snapshot_at(stamp)
+            row.update(total_oi_bias=oi['bias'], oi_change_bias=oi['bias'], combined_oi_bias=oi['bias'], combined_bias=oi['bias'],
+                       dhan_oi=oi, oi_source='DHAN_API')
         return {
             "ok": True,
             "from_date": from_date,
@@ -5541,13 +5626,20 @@ class QuantTerminalBackend:
                 should_run = True
 
         if should_run:
-            log.info("Auto-ingest: Checking %s replay file... | Creating from Dhan 1m + Stock Mojo + Live Paper Ledger... ✅", target_date)
+            log.info("Auto-ingest: Checking %s replay file... | Creating from Dhan 1m + Dhan OI + Live Paper Ledger... ✅", target_date)
             self.daily_ingest(target_date)
             return True
         return False
 
     def get_replay_trades_for_date(self, target_date: str, bias: Optional[str] = None) -> List[Dict[str, Any]]:
-        raw = get_replay_trades_for_date(target_date)
+        raw = [dict(t) for t in get_replay_trades_for_date(target_date)]
+        for trade in raw:
+            entry = trade.get('entry_ist') or trade.get('Entry_Time')
+            try:
+                dt = datetime.fromisoformat(entry if len(entry)>10 else target_date+'T'+entry).replace(tzinfo=IST)
+                trade['dhan_oi'] = self.dhan_oi.get_snapshot_at(dt.timestamp())
+            except (ValueError,TypeError):
+                trade['dhan_oi'] = empty_bias('Entry timestamp missing; no OI substitution')
         eff_bias = (bias or self.directional_bias).upper()
         return self.filter_trades_by_directional_bias(raw, eff_bias)
 
@@ -6216,7 +6308,10 @@ class QuantTerminalBackend:
             t_date = tr.get("Date", "")
             setup = tr.get("Setup_Name", "8-EMA")
             direction = tr.get("Direction", "LONG")
-            qty = int(tr.get("Lot_Qty", 65))
+            qty = int(tr.get("Lot_Qty") or 0)
+            if qty<=0:
+                log.warning('Historical row lacks recorded quantity; monetary result omitted')
+                continue
             open_p = float(tr.get("Open", 0.0))
             high_p = float(tr.get("High", 0.0))
             low_p = float(tr.get("Low", 0.0))

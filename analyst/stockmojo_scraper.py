@@ -1,3 +1,4 @@
+# DEPRECATED - Stock Mojo decommissioned - Replaced by Dhan OI - Do NOT call
 """
 analyst/stockmojo_scraper.py — Stock Mojo 1-Minute PE-CE Dual-Entity & Live OI Ingestion Engine.
 

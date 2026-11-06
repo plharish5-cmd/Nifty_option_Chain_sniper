@@ -110,14 +110,17 @@ def test_3_tab7_pull_todays_data_api(client):
         "future_candles_1m",
         "volumes_and_change",
         "option_chain",
-        "stockmojo_total_oi",
-        "stockmojo_oi_change_day",
+        "dhan_oi_total_oi",
+        "dhan_oi_change_day",
         "strategy_signals",
         "paper_trades",
     ]
     for k in required_keys:
         assert k in checklist, f"Checklist item {k} missing from pull_date response."
-        assert "✅" in str(checklist[k]), f"Checklist item {k} not marked with ✅: {checklist[k]}"
+        if k.startswith('dhan_oi'):
+            assert checklist[k] in ('OK','STALE','FAILED')  # Never fabricate a successful OI capture.
+        else:
+            assert "✅" in str(checklist[k]), f"Checklist item {k} not marked with ✅: {checklist[k]}"
 
     # Verify GET /api/ingest/status
     res_status = client.get("/api/ingest/status?date=2026-11-05")
@@ -180,9 +183,11 @@ def test_5_multifactor_trend_lab_includes_05nov(client):
     assert "BULLISH" in eval_05.get("stage2", "")
     assert "BULLISH" in eval_05.get("crossover_4_8", "")
     assert "SUPPORT" in eval_05.get("ema_1h_8", "")
-    assert "BULLISH" in eval_05.get("total_oi_bias", "")
-    assert "BULLISH" in eval_05.get("oi_change_bias", "")
-    assert "STRONG BULLISH" in eval_05.get("combined_bias", "")
+    assert eval_05['oi_source'] == 'DHAN_API'
+    assert eval_05['total_oi_bias'] == eval_05['dhan_oi']['bias']
+    assert eval_05['oi_change_bias'] == eval_05['dhan_oi']['bias']
+    assert eval_05['combined_bias'] == eval_05['dhan_oi']['bias']
+    if not eval_05['dhan_oi']['available']:assert eval_05['combined_bias']=='UNKNOWN' 
     assert eval_05.get("multi_factor_score", 0) >= 80
 
 
@@ -223,13 +228,14 @@ def test_7_automated_post_market_eod_summary_and_whatsapp_digest(client):
     assert summary.get("paper_trades_count") == 1
     assert summary.get("net_pnl_inr") in ("+₹1,625.00", "+₹1,543.85")
     assert "Stage 2" in summary.get("signals_summary", "")
-    assert "BULLISH" in summary.get("total_oi_bias", "")
-    assert "BULLISH" in summary.get("oi_change_bias", "")
-    assert "STRONG BULLISH" in summary.get("combined_oi_bias", "")
+    assert summary['total_oi_bias'] in ('BULLISH','BEARISH','MIXED','UNKNOWN')
+    assert summary['oi_change_bias'] == summary['total_oi_bias']
+    assert summary['combined_oi_bias'] == summary['total_oi_bias']
 
     wa = summary.get("whatsapp_text", "")
     assert "PORT 8510 EOD SUMMARY" in wa
     assert "375/375 1m Candles Synced" in wa
     assert "AUTO ALGO" in wa
     assert ("+₹1,625.00" in wa or "+₹1,543.85" in wa) and "Net P&L" in wa
-    assert "STRONG BULLISH" in wa
+    assert 'Dhan OI' in wa
+    assert summary['combined_oi_bias'] in wa

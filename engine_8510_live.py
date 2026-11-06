@@ -18,7 +18,7 @@ Endpoints:
   - GET  /api/positions        : Real-time fluctuating Positions
   - GET  /api/replay/dates     : Available historical replay dates
   - POST /api/replay/run       : Run historical simulation replay
-  - GET  /api/stockmojo/matrix : StockMojo PE-CE confluence snapshot
+  - GET  /api/dhan_oi/matrix : DhanOI PE-CE confluence snapshot
 """
 import asyncio
 from datetime import datetime
@@ -100,23 +100,16 @@ async def startup_event():
     backend.scanner_task = asyncio.create_task(backend.start_strategy_scanner_loop())
     log.info("✔ 4-Strategy Live Scanner daemon launched.")
 
-    # Writer / PE-CE flow. Stock Mojo is being retired: its feed returns 401 and
-    # the 8600 ICT-SMC desk already computes the same call/put writer dominance
-    # from our own Dhan chain. start_background_polling() is a no-op when
-    # stockmojo.enabled is false, so this logs honestly rather than claiming a
-    # daemon that is not running.
-    backend.stockmojo_scraper.start_background_polling()
-    if getattr(backend.stockmojo_scraper, "enabled", True):
-        log.info("✔ Stock Mojo 60s Live OI & Multi-Strike Polling daemon launched.")
-    else:
-        log.info("✔ Writer / PE-CE flow source: 8600 ICT-SMC desk (Stock Mojo retired).")
-
-    # Auto-ingest check on startup (Problem 1A & Problem 5)
-    try:
-        backend.check_and_run_auto_ingest("2026-11-05")
-        backend.check_and_run_auto_ingest("2026-11-04")
-    except Exception as e:
-        log.error("Startup auto-ingest error: %s", e)
+    async def oi_poller():
+        while True:
+            try:
+                await asyncio.to_thread(backend.dhan_oi.get_dhan_oi_bias)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                log.exception('Dhan OI poll failed; confluence OI vote unavailable')
+            await asyncio.sleep(backend.cfg['dhan_oi']['poll_seconds'])
+    app.state.dhan_oi_task = asyncio.create_task(oi_poller())
 
     async def auto_ingest_background_scheduler():
         while True:
@@ -124,13 +117,14 @@ async def startup_event():
                 await asyncio.sleep(60)
                 now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
                 today_s = now_ist.strftime("%Y-%m-%d")
-                backend.check_and_run_auto_ingest(today_s)
+                if now_ist.strftime('%H:%M') >= backend.cfg['post_market_archivers']['schedule_ist']:
+                    await asyncio.to_thread(backend.daily_ingest,today_s)
             except asyncio.CancelledError:
                 break
             except Exception as ex:
                 log.error("Auto ingest scheduler error: %s", ex)
 
-    asyncio.create_task(auto_ingest_background_scheduler())
+    app.state.archive_task = asyncio.create_task(auto_ingest_background_scheduler())
     log.info("✔ Auto-Ingest post-market scheduler daemon launched.")
 
 
@@ -584,6 +578,7 @@ async def api_replay_dates(req: Request):
     return JSONResponse(content={"ok": True, "dates": dates, "latest": dates[0] if dates else None})
 
 
+@app.post("/api/daily_ingest")
 @app.post("/api/ingest/pull_date")
 async def api_ingest_pull_date(req: Request):
     """Pulls and persists 8 daily entities for date into unified store."""
@@ -592,9 +587,9 @@ async def api_ingest_pull_date(req: Request):
         body = await req.json()
     except Exception:
         pass
-    target_date = str(body.get("date", "2026-11-05")).strip()
+    target_date = str(body.get("date", datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat())).strip()
     overwrite = bool(body.get("overwrite", False))
-    res = backend.daily_ingest(target_date, overwrite=overwrite)
+    res = await asyncio.to_thread(backend.daily_ingest,target_date,overwrite=overwrite)
     return JSONResponse(content=res)
 
 
@@ -602,7 +597,7 @@ async def api_ingest_pull_date(req: Request):
 async def api_ingest_status(req: Request):
     """Returns ingestion status and checklist for target date."""
     target_date = req.query_params.get("date", "2026-11-05").strip()
-    res = backend.daily_ingest(target_date, overwrite=False)
+    res = await asyncio.to_thread(backend.daily_ingest,target_date,overwrite=False)
     return JSONResponse(content=res)
 
 
@@ -617,7 +612,7 @@ async def api_ingest_eod_summary(req: Request):
 @app.get("/api/trend_lab/run")
 @app.post("/api/trend_lab/run")
 async def api_trend_lab_run(req: Request):
-    """Dynamically evaluates multi-factor trend and Stock Mojo biases."""
+    """Dynamically evaluates multi-factor trend and Dhan OI biases."""
     from_date = "2026-11-04"
     to_date = "2026-11-05"
     if req.method == "POST":
@@ -698,115 +693,46 @@ async def api_reconcile_homework(req: Request):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# WRITER / PE-CE FLOW — SERVED FROM THE 8600 DESK
-#
-# Stock Mojo is retired. Its feed returned 401, its JWT had to be recaptured by
-# hand every few days, and the whole dependency rested on a third party's
-# session. The 8600 ICT-SMC desk computes the same call/put writer dominance
-# from OUR OWN Dhan option chain, and its /api/pe_ce_matrix endpoint was built
-# as a "StockMojo 12-Column Mathematical Parity" endpoint precisely so it could
-# stand in.
-#
-# The two routes that carry real writer data are kept and repointed at 8600.
-# The rest were Stock Mojo plumbing with no equivalent — JWT capture, curl
-# import, browser relay script, download-folder watcher, multi-strike scraping.
-# They now return 410 Gone with an explanation rather than 404, so a stale UI
-# fetch gets a readable answer instead of a mystery, and 500 AttributeError is
-# impossible now that oi_scraper is the bridge.
+# DHAN OI / PE-CE FLOW — direct official option-chain observations.
+# Compatibility writer-flow routes expose this same source; no third-party feed.
+# Receipt timestamps and freshness are retained; missing history stays UNKNOWN.
 # ─────────────────────────────────────────────────────────────────────────────
 
-RETIRED_NOTE = (
-    "Stock Mojo has been retired on this desk. Call/put writer and PE-CE data "
-    "now comes from the 8600 ICT-SMC desk (/api/pe_ce_matrix), computed from "
-    "our own Dhan option chain. See /api/writer_flow."
-)
+@app.get('/api/dhan_oi/bias')
+async def api_dhan_oi_bias(force: bool = False):
+    return JSONResponse(content=await asyncio.to_thread(backend.dhan_oi.get_dhan_oi_bias,force))
 
-
-def _retired(feature: str, status: int = 410) -> JSONResponse:
-    return JSONResponse(
-        status_code=status,
-        content={"ok": False, "retired": True, "feature": feature,
-                 "source": "8600_ICT_SMC_DESK", "error": RETIRED_NOTE},
-    )
-
-
-@app.get("/api/writer_flow")
-@app.get("/api/oi/writer_flow")
+@app.get('/api/writer_flow')
+@app.get('/api/oi/writer_flow')
 async def api_writer_flow(force: bool = False):
-    """Call vs put writer dominance, from the 8600 desk.
+    return JSONResponse(content=await asyncio.to_thread(backend.dhan_oi.get_snapshot,force))
 
-    Fails closed: when 8600 is unreachable this reports available=false and
-    writer_bias "NO DATA" rather than inventing a direction.
-    """
-    return JSONResponse(content=backend.writer_flow.get_snapshot(force=force))
-
-
-@app.get("/api/oi/pe_ce_table")
-@app.get("/api/stockmojo/pe_ce_table")
-@app.get("/api/oi/pe_ce_dual")
-@app.get("/api/stockmojo/pe_ce_dual")
+@app.get('/api/oi/pe_ce_table')
+@app.get('/api/oi/pe_ce_dual')
+@app.get('/api/dhan_oi/pe_ce_dual')
 async def api_oi_pe_ce_table(limit: int = 60):
-    """PE-CE table. Same shape as before; rows now come from 8600."""
-    return JSONResponse(content=backend.writer_flow.get_pe_ce_table(limit=limit))
+    return JSONResponse(content=backend.dhan_oi.get_pe_ce_table(limit))
 
+@app.get('/api/dhan_oi/live_oi')
+@app.get('/api/dhan_oi/synergy_status')
+async def api_oi_live():
+    return JSONResponse(content=await asyncio.to_thread(backend.dhan_oi.get_dhan_oi_bias))
 
-@app.get("/api/oi/matrix")
-@app.get("/api/stockmojo/matrix")
-@app.get("/api/oi/live_curves")
-@app.get("/api/oi/live_oi")
-@app.get("/api/stockmojo/live_oi")
-@app.get("/api/oi/crore_spread")
-@app.get("/api/stockmojo/crore_spread")
-@app.get("/api/oi/multi_strike")
-@app.get("/api/stockmojo/multi_strike")
-@app.get("/api/stockmojo/multi_strike_table")
-@app.get("/api/oi/synergy_status")
-@app.get("/api/stockmojo/synergy_status")
-@app.get("/api/oi/audit_04nov")
-@app.get("/api/stockmojo/audit_04nov")
-@app.get("/api/stockmojo/line_mapping")
-async def api_stockmojo_retired_get():
-    return _retired("stockmojo-read")
-
-
-@app.get("/api/stockmojo/relay_script")
-async def api_stockmojo_relay_script_retired():
-    return PlainTextResponse(
-        status_code=410,
-        content="// " + RETIRED_NOTE + "\n",
-        media_type="text/javascript",
-    )
-
-
-@app.post("/api/oi/ingest")
-@app.post("/api/stockmojo/ingest")
-@app.post("/api/oi/sync_now")
-@app.post("/api/stockmojo/sync_now")
-@app.post("/api/oi/update_token")
-@app.post("/api/stockmojo/update_token")
-@app.post("/api/oi/update_auth")
-@app.post("/api/stockmojo/update_auth")
-@app.post("/api/oi/configure_curl")
-@app.post("/api/stockmojo/configure_curl")
-@app.post("/api/stockmojo/live_graph_ingest")
-@app.post("/api/stockmojo/line_mapping")
-async def api_stockmojo_retired_post():
-    return _retired("stockmojo-write")
-
-
-@app.get("/api/oi/synergy_config")
-@app.get("/api/stockmojo/synergy_config")
+@app.get('/api/oi/synergy_config')
+@app.get('/api/dhan_oi/synergy_config')
 async def api_get_synergy_config():
-    """Kept: the synergy filter flags are desk config, not Stock Mojo data."""
-    return JSONResponse(content={"ok": True,
-                                 "stockmojo_synergy": backend.get_synergy_config()})
+    return JSONResponse(content={'ok':True,'dhan_oi_synergy':backend.get_synergy_config()})
 
-
-@app.post("/api/oi/synergy_config")
-@app.post("/api/stockmojo/synergy_config")
+@app.post('/api/oi/synergy_config')
+@app.post('/api/dhan_oi/synergy_config')
 async def api_post_synergy_config(req: Request):
-    body = await req.json()
-    return JSONResponse(content=backend.update_synergy_config(body))
+    return JSONResponse(content=backend.update_synergy_config(await req.json()))
+
+@app.on_event('shutdown')
+async def stop_background_tasks():
+    for task in (getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
+        if task:task.cancel()
+
 @app.get("/api/dhan/config")
 async def api_dhan_get_config():
     """Returns Dhan credentials metadata (masked) and IP match status."""

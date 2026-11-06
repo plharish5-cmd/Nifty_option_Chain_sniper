@@ -51,7 +51,8 @@ def test_off_hours_dhan_ltp_classified_as_stale():
         "regime": "CLOSED",
     })
 
-    with patch.object(backend.broker, "get_marketfeed_ltp", return_value={"13": 24536.6, "21": 15.2}), \
+    with patch.object(backend.broker, "is_configured", return_value=True), \
+         patch.object(backend.broker, "get_marketfeed_ltp", return_value={"13": 24536.6, "21": 15.2}), \
          patch.object(backend.broker, "get_fundlimit", return_value={"available_balance": 100000.0}), \
          patch.object(backend, "is_nse_market_open", return_value=(False, closed_status)):
         telemetry = asyncio.run(backend.get_live_telemetry())
@@ -89,7 +90,8 @@ def test_market_open_dhan_ltp_classified_as_live():
         "regime": "REGULAR_HOURS",
     })
 
-    with patch.object(backend.broker, "get_marketfeed_ltp", return_value={"13": 24550.0, "21": 15.2}), \
+    with patch.object(backend.broker, "is_configured", return_value=True), \
+         patch.object(backend.broker, "get_marketfeed_ltp", return_value={"13": 24550.0, "21": 15.2}), \
          patch.object(backend.broker, "get_fundlimit", return_value={"available_balance": 100000.0}), \
          patch.object(backend, "is_nse_market_open", return_value=(True, open_status)):
         telemetry = asyncio.run(backend.get_live_telemetry())

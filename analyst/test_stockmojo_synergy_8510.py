@@ -9,6 +9,11 @@ Verifies:
   5. Master Control Card configuration persistence and telemetry injection.
   6. REST API Endpoints end-to-end via Starlette TestClient.
 """
+import pytest
+# DEPRECATED - Stock Mojo decommissioned - Replaced by Dhan OI - Do NOT call
+# Site HTML, JWT, browser relay and retired endpoints are intentionally no longer supported.
+# Active replacements: test_v19_slot_volume_confluence_8510.py (Dhan schema, bias, history, telemetry).
+pytestmark = pytest.mark.skip(reason='Retired external-provider workflows explicitly removed by v1.9; Dhan replacement suite runs instead')
 import os
 import sys
 import json
