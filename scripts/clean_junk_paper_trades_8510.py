@@ -49,6 +49,7 @@ USAGE
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import sqlite3
 import sys
@@ -64,16 +65,26 @@ SESSION_OPEN = "09:15"
 SESSION_CLOSE = "15:30"
 
 
+TIME_RE = re.compile(r"(?:^|[T ])([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?")
+
+
 def hhmm(stamp: str) -> str:
-    """Extract HH:MM from the several timestamp shapes in this ledger."""
-    s = str(stamp or "")
-    if "T" in s:
-        return s.split("T", 1)[1][:5]
-    parts = s.split(" ")
-    for p in parts[1:]:
-        if ":" in p:
-            return p[:5]
-    return ""
+    """Extract HH:MM from any timestamp shape in this ledger.
+
+    THE BUG THIS REPLACES, which made the first run worthless: the old version
+    did `if "T" in s: s.split("T", 1)[1]` to detect ISO format. But this desk
+    writes positions.entry_time as "%Y-%m-%d %H:%M:%S IST" -- and "IST"
+    CONTAINS A "T". So every timestamp was split on that T, yielding an empty
+    string, so every row looked unreadable, so the off-hours check was skipped
+    for all of them and the 02:49 trades were reported as survivors.
+
+    A regex that matches the time itself handles every shape here:
+        2026-11-06 02:49:17 IST
+        2026-11-06T02:49:17+05:30
+        2026-11-06 02:49
+    """
+    m = TIME_RE.search(str(stamp or ""))
+    return "{}:{}".format(m.group(1), m.group(2)) if m else ""
 
 
 def daypart(stamp: str) -> str:
@@ -81,15 +92,41 @@ def daypart(stamp: str) -> str:
     return s.split("T", 1)[0] if "T" in s else s.split(" ", 1)[0]
 
 
-def classify(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+def best_time(r: Dict[str, Any], orders_by_pos: Dict[str, str]) -> str:
+    """HH:MM for a position, from whichever field actually carries it.
+
+    BUG THIS FIXES. The first version read only positions.entry_time and, when
+    that was empty, `if t and ...` silently skipped the off-hours check. On the
+    06 Nov ledger that meant ZERO off-hours rows were detected and the 02:49
+    trades were reported as survivors -- false comfort, which is worse than no
+    tool. positions.entry_time is absent on those rows (the UI reads a separate
+    `entry_ist` field, and the HTML even carries the string "entry_time is
+    absent."), so the order's created_at is used as the fallback and an
+    unreadable timestamp is now REPORTED rather than ignored.
+    """
+    for key in ("entry_time", "entry_ist"):
+        t = hhmm(r.get(key))
+        if t:
+            return t
+    oid = str(r.get("position_id") or "")
+    return hhmm(orders_by_pos.get(oid, "")) or hhmm(r.get("exit_time"))
+
+
+def classify(rows: List[Dict[str, Any]],
+             orders_by_pos: Dict[str, str]) -> Dict[str, List[Dict[str, Any]]]:
     out: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     seen: Dict[tuple, Dict[str, Any]] = {}
 
     for r in rows:
         if str(r.get("status") or "").upper() == "OPEN":
             continue                      # never delete a live position
-        t = hhmm(r.get("entry_time"))
-        if t and not (SESSION_OPEN <= t <= SESSION_CLOSE):
+        t = best_time(r, orders_by_pos)
+        r["_resolved_time"] = t
+        if not t:
+            # Fail LOUD, not closed. Reported, never auto-deleted.
+            out["UNREADABLE_TIME"].append(r)
+            continue
+        if not (SESSION_OPEN <= t <= SESSION_CLOSE):
             out["OFF_HOURS"].append(r)
             continue
 
@@ -136,8 +173,24 @@ def main() -> int:
     sql += " ORDER BY entry_time ASC"
     rows = [dict(r) for r in conn.execute(sql, args)]
 
-    groups = classify(rows)
-    doomed = {r["position_id"]: k for k, v in groups.items() for r in v}
+    # positions.entry_time is empty on the affected rows, so fall back to the
+    # order that opened the position.
+    orders_by_pos: Dict[str, str] = {}
+    try:
+        for o in conn.execute("SELECT order_id, created_at FROM orders"):
+            oid = str(o["order_id"] or "")
+            if oid.startswith("X_"):
+                orders_by_pos[oid[2:]] = str(o["created_at"] or "")
+            else:
+                orders_by_pos.setdefault(oid, str(o["created_at"] or ""))
+    except sqlite3.Error:
+        pass
+
+    groups = classify(rows, orders_by_pos)
+    # UNREADABLE_TIME is reported, never deleted: without a timestamp there
+    # is no evidence the trade was out of session.
+    doomed = {r["position_id"]: k for k, v in groups.items()
+              for r in v if k != "UNREADABLE_TIME"}
 
     print("JUNK PAPER TRADE CLEANUP{}".format(
         " — " + a.date if a.date else ""))
@@ -149,20 +202,20 @@ def main() -> int:
     print()
 
     net_removed = 0.0
-    for kind in ("OFF_HOURS", "DUPLICATE", "ZERO_DURATION"):
+    for kind in ("OFF_HOURS", "DUPLICATE", "ZERO_DURATION", "UNREADABLE_TIME"):
         v = groups.get(kind) or []
         if not v:
             continue
         s = sum(float(x.get("net_pnl") or 0.0) for x in v)
         net_removed += s
         print("{:<15} {:>5} rows   net Rs{:>12,.2f}".format(kind, len(v), s))
-        times = sorted({hhmm(x.get("entry_time")) for x in v})
+        times = sorted({x.get("_resolved_time") or "??:??" for x in v})
         print("                entry times: {}{}".format(
             ", ".join(times[:10]), " …" if len(times) > 10 else ""))
         worst = sorted(v, key=lambda x: -abs(float(x.get("net_pnl") or 0.0)))[:3]
         for w in worst:
             print("                e.g. {} {} @ {} -> {}  net Rs{}".format(
-                hhmm(w.get("entry_time")), w.get("symbol"),
+                w.get("_resolved_time") or "??:??", w.get("symbol"),
                 w.get("entry_price"), w.get("exit_price"), w.get("net_pnl")))
     print()
 
@@ -181,10 +234,17 @@ def main() -> int:
         print("What survives (real market-hours trades):")
         for r in kept[:15]:
             print("   {} {:<32} {:<26} net Rs{}".format(
-                hhmm(r.get("entry_time")), str(r.get("symbol"))[:32],
+                r.get("_resolved_time") or "??:??", str(r.get("symbol"))[:32],
                 str(r.get("exit_reason") or r.get("status"))[:26], r.get("net_pnl")))
         if len(kept) > 15:
             print("   … and {} more".format(len(kept) - 15))
+
+    if groups.get("UNREADABLE_TIME"):
+        print()
+        print("*** {} rows carry NO READABLE TIMESTAMP. They are NOT deleted, ***"
+              .format(len(groups["UNREADABLE_TIME"])))
+        print("*** because without a time there is no evidence they were out of  ***")
+        print("*** session. Inspect them before trusting any net P&L figure.     ***")
 
     if not a.apply:
         print()
