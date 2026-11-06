@@ -490,7 +490,7 @@ async def api_post_proven_edges_config(req: Request):
 @app.get("/api/ema_proximity/table")
 async def api_ema_proximity_table(req: Request):
     """Returns minute-by-minute 4-EMA & 8-EMA Proximity Matrix with summary KPIs (v1.8)."""
-    date_str = str(req.query_params.get("date", "2026-11-05")).strip()
+    date_str = str(req.query_params.get("date", "LIVE")).strip()
     timeframe = str(req.query_params.get("timeframe", "1m")).strip()
     filter_state = str(req.query_params.get("filter_state", "ALL")).strip()
     res = backend.get_ema_proximity_table(date_str=date_str, timeframe=timeframe, filter_state=filter_state)

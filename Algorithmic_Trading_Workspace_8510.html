@@ -1159,9 +1159,9 @@
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
                         <label style="font-size:12px; font-weight:600; color:var(--text-muted);">Date:</label>
                         <select id="selEmaMatrixDate" onchange="loadEmaProximityTable()" style="background:#0f172a; color:#f8fafc; border:1px solid #475569; padding:4px 8px; border-radius:6px; font-size:12px; font-family:var(--font-mono);">
+                            <option value="LIVE" selected>🔴 LIVE STREAMING (Real-Time 1s Stream)</option>
                             <option value="2026-11-05">05 Nov 2026</option>
                             <option value="2026-11-04">04 Nov 2026</option>
-                            <option value="LIVE">LIVE STREAMING</option>
                         </select>
 
                         <div style="display:flex; border:1px solid rgba(255,255,255,0.15); border-radius:6px; overflow:hidden;">
@@ -1215,7 +1215,7 @@
                 </div>
 
                 <!-- Table Container -->
-                <div style="overflow-x:auto; max-height:550px; overflow-y:auto; border:1px solid rgba(255,255,255,0.1); border-radius:6px;">
+                <div id="emaProximityTableContainer" style="overflow-x:auto; max-height:550px; overflow-y:auto; border:1px solid rgba(255,255,255,0.1); border-radius:6px;">
                     <table style="width:100%; border-collapse:collapse; font-size:11.5px; font-family:var(--font-mono);">
                         <thead style="position:sticky; top:0; background:#0f172a; z-index:2; border-bottom:2px solid #334155;">
                             <tr>
@@ -2728,17 +2728,24 @@
             toggleEmaTableSound(checked);
         }
 
-        async function loadEmaProximityTable() {
-            const selDate = document.getElementById("selEmaMatrixDate")?.value || '2026-11-05';
+        async function loadEmaProximityTable(isBackground = false) {
+            const selDate = document.getElementById("selEmaMatrixDate")?.value || 'LIVE';
             const selFilter = document.getElementById("selEmaMatrixFilter")?.value || 'ALL';
             const tbody = document.getElementById("emaProximityTableBody");
+            const container = document.getElementById("emaProximityTableContainer");
             if (!tbody) return;
+
+            // Check if user was already near bottom (within 80px)
+            const isNearBottom = container ? (container.scrollHeight - container.scrollTop - container.clientHeight < 80) : true;
+            const prevScrollTop = container ? container.scrollTop : 0;
 
             try {
                 const res = await fetch(`/api/ema_proximity/table?date=${encodeURIComponent(selDate)}&timeframe=${encodeURIComponent(currentEmaTimeframe)}&filter_state=${encodeURIComponent(selFilter)}`);
                 const data = await res.json();
                 if (!data.ok) {
-                    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center; padding:20px; color:#ef4444;">${data.error || 'Failed to load table'}</td></tr>`;
+                    if (!isBackground) {
+                        tbody.innerHTML = `<tr><td colspan="13" style="text-align:center; padding:20px; color:#ef4444;">${data.error || 'Failed to load table'}</td></tr>`;
+                    }
                     return;
                 }
 
@@ -2769,7 +2776,9 @@
                 }
 
                 let html = "";
-                rows.forEach(r => {
+                const totalRowCount = rows.length;
+                rows.forEach((r, idx) => {
+                    const isLatestBar = (idx === totalRowCount - 1 && selDate === 'LIVE');
                     let rowStyle = "";
                     let tierBadge = "";
                     if (r.proximity_state === "TIER_3_CONFIRMATION_TRIGGER") {
@@ -2784,6 +2793,10 @@
                     } else if (r.proximity_state === "WHIPSAW_CHOP_BLOCKED") {
                         rowStyle = "opacity:0.65;";
                         tierBadge = `<span style="background:rgba(239, 68, 68, 0.25); color:#fca5a5; padding:2px 6px; border-radius:4px;">🚫 CHOP</span>`;
+                    }
+
+                    if (isLatestBar) {
+                        rowStyle += " border-left: 4px solid #38bdf8; background: rgba(56, 189, 248, 0.10);";
                     }
 
                     const spreadColor = r.spread_4_minus_8 >= 0 ? '#10b981' : '#f87171';
@@ -2819,10 +2832,12 @@
                         mfeMaeHtml = `<b style="color:${mfeColor};">+${r.forward_mfe_15m.toFixed(1)}</b> / <span style="color:#ef4444;">-${r.forward_mae_15m.toFixed(1)}</span>`;
                     }
 
+                    const liveIndicator = isLatestBar ? `<span style="display:inline-block; margin-left:4px; padding:1px 4px; background:#0284c7; color:#fff; border-radius:3px; font-size:9.5px; font-weight:800; animation:pulse 1.5s infinite;">LIVE</span>` : '';
+
                     html += `
                         <tr style="${rowStyle}; border-bottom:1px solid rgba(255,255,255,0.06);">
                             <td style="padding:5px 8px; color:var(--text-muted);">${r.date}</td>
-                            <td style="padding:5px 8px; font-weight:700; color:#f8fafc;">${r.timestamp_ist}</td>
+                            <td style="padding:5px 8px; font-weight:700; color:#f8fafc;">${r.timestamp_ist}${liveIndicator}</td>
                             <td style="padding:5px 8px; text-align:right; font-weight:700; color:#38bdf8;">${r.close_price.toFixed(2)}</td>
                             <td style="padding:5px 8px; text-align:right; color:#e2e8f0;">${r.ema_4.toFixed(2)}</td>
                             <td style="padding:5px 8px; text-align:right; color:#e2e8f0;">${r.ema_8.toFixed(2)}</td>
@@ -2852,8 +2867,19 @@
                     `;
                 });
                 tbody.innerHTML = html;
+
+                // Handle auto-scroll: if user was at bottom, stay at bottom; else retain scroll position
+                if (container) {
+                    if (isNearBottom) {
+                        container.scrollTop = container.scrollHeight;
+                    } else {
+                        container.scrollTop = prevScrollTop;
+                    }
+                }
             } catch (e) {
-                console.error("Error loading EMA proximity table:", e);
+                if (!isBackground) {
+                    console.error("Error loading EMA proximity table:", e);
+                }
             }
         }
 
@@ -3636,6 +3662,14 @@
                         window.lastEmaAlertTier = tier;
                     }
                     lastEmaRadarTier = tier;
+                }
+
+                // 4D. Stream 4/8-EMA Proximity Matrix table automatically in real time (v1.8.2)
+                const selEmaDate = document.getElementById("selEmaMatrixDate")?.value || 'LIVE';
+                const nowEpoch = Date.now();
+                if (selEmaDate === 'LIVE' && (nowEpoch - (window.lastEmaTableStreamEpoch || 0) >= 2000)) {
+                    window.lastEmaTableStreamEpoch = nowEpoch;
+                    loadEmaProximityTable(true);
                 }
 
                 // 5. Positions table with live fluctuating MTM
@@ -6245,7 +6279,7 @@
                 const emaSelect = document.getElementById("selEmaMatrixDate");
                 if (emaSelect && dates.length > 0) {
                     const currentEmaVal = emaSelect.value;
-                    let opts = `<option value="LIVE">LIVE STREAMING</option>`;
+                    let opts = `<option value="LIVE">🔴 LIVE STREAMING (Real-Time 1s Stream)</option>`;
                     dates.forEach(d => {
                         let l = d;
                         if (d === "2026-11-05") l = "05 Nov 2026 (Benchmark)";
@@ -6253,10 +6287,10 @@
                         opts += `<option value="${d}">${l}</option>`;
                     });
                     emaSelect.innerHTML = opts;
-                    if (currentEmaVal && (currentEmaVal === "LIVE" || dates.includes(currentEmaVal))) {
+                    if (currentEmaVal && dates.includes(currentEmaVal)) {
                         emaSelect.value = currentEmaVal;
                     } else {
-                        emaSelect.value = dates[0] || "2026-11-05";
+                        emaSelect.value = "LIVE";
                     }
                 }
             } catch (e) {

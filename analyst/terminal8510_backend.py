@@ -2937,12 +2937,15 @@ class QuantTerminalBackend:
 
         return self.get_proven_edges_config()
 
-    def get_ema_proximity_table(self, date_str: str = "2026-11-05", timeframe: str = "1m", filter_state: str = "ALL") -> Dict[str, Any]:
+    def get_ema_proximity_table(self, date_str: str = "LIVE", timeframe: str = "1m", filter_state: str = "ALL") -> Dict[str, Any]:
         """Calculates and returns the minute-by-minute 4-EMA & 8-EMA Proximity Matrix (v1.8)."""
         if not self.ema_proximity_engine:
             from analyst.ema_proximity_engine import ema_proximity_engine
             self.ema_proximity_engine = ema_proximity_engine
-        return self.ema_proximity_engine.compute_matrix(date_str=date_str, timeframe=timeframe, filter_state=filter_state)
+        live_spot = float(self.broker._ltp_cache.get("13", 0.0) or 0.0)
+        return self.ema_proximity_engine.compute_matrix(
+            date_str=date_str, timeframe=timeframe, filter_state=filter_state, live_spot=live_spot
+        )
 
     def get_ema_proximity_config(self) -> Dict[str, Any]:
         """Returns the active 4/8 EMA Proximity Radar configuration."""
@@ -3296,7 +3299,8 @@ class QuantTerminalBackend:
         }
 
         # 4/8 EMA Proximity Radar (v1.8)
-        ema_radar = self.ema_proximity_engine.get_latest_radar_status() if self.ema_proximity_engine else {
+        live_spot_for_radar = float(self.broker._ltp_cache.get("13", 0.0) or spot or 0.0)
+        ema_radar = self.ema_proximity_engine.get_latest_radar_status(live_spot=live_spot_for_radar) if self.ema_proximity_engine else {
             "ok": True,
             "tier": "ZONE_FAR",
             "pill_text": "🎯 4/8 EMA Radar: -- [WAITING]",

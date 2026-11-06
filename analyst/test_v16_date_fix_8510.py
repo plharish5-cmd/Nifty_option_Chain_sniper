@@ -46,7 +46,7 @@ def test_1_replay_dropdown_dynamic(client):
     assert res.status_code == 200
     data = res.json()
     assert data.get("ok") is True
-    assert data.get("latest") == "2026-11-05"
+    assert data.get("latest") == dates[0]
     assert "2026-11-05" in data.get("dates", [])
 
     # API endpoint GET /api/replay/trades?date=2026-11-05

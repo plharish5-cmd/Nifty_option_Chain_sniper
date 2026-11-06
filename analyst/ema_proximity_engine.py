@@ -23,6 +23,7 @@ import logging
 import math
 import os
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -113,14 +114,16 @@ class EmaProximityEngine:
         Returns (df_1m, df_15m, df_1h) with columns: ts, open, high, low, close, volume.
         """
         target_date = date_str.strip()
-        if target_date.upper() == "LIVE":
-            target_date = datetime.now(IST).strftime("%Y-%m-%d")
+        is_live = (target_date.upper() == "LIVE")
+        today_iso = datetime.now(IST).strftime("%Y-%m-%d")
+        if is_live:
+            target_date = today_iso
 
         records: List[Dict[str, Any]] = []
 
-        # 1. Try reading pre-ingested replay_data/{target_date}.json
+        # 1. If historical replay date, try reading pre-ingested replay_data/{target_date}.json
         json_file = self.replay_dir / f"{target_date}.json"
-        if json_file.exists():
+        if not is_live and json_file.exists():
             try:
                 payload = json.loads(json_file.read_text(encoding="utf-8"))
                 if "spot_candles_1m" in payload and isinstance(payload["spot_candles_1m"], list) and len(payload["spot_candles_1m"]) >= 30:
@@ -137,10 +140,31 @@ class EmaProximityEngine:
                         SELECT ts, o, h, l, c, v
                         FROM candles_1m
                         WHERE sec_id='13'
-                          AND date(datetime(ts, 'unixepoch', '+5 hours 30 minutes')) = ?
+                          AND date(datetime(ts, 'unixepoch', '+330 minutes')) = ?
                         ORDER BY ts ASC
                     """, (target_date,)).fetchall()
                     if rows:
+                        warmup_records: List[Dict[str, Any]] = []
+                        if is_live or target_date == today_iso:
+                            first_ts = int(rows[0][0])
+                            w_rows = cur.execute("""
+                                SELECT ts, o, h, l, c, v
+                                FROM candles_1m
+                                WHERE sec_id='13'
+                                  AND ts < ?
+                                ORDER BY ts DESC
+                                LIMIT 120
+                            """, (first_ts,)).fetchall()
+                            for r in sorted(w_rows, key=lambda x: x[0]):
+                                warmup_records.append({
+                                    "ts": int(r[0]),
+                                    "open": float(r[1]),
+                                    "high": float(r[2]),
+                                    "low": float(r[3]),
+                                    "close": float(r[4]),
+                                    "volume": float(r[5] or 0.0),
+                                })
+
                         for r in rows:
                             records.append({
                                 "ts": int(r[0]),
@@ -150,11 +174,12 @@ class EmaProximityEngine:
                                 "close": float(r[4]),
                                 "volume": float(r[5] or 0.0),
                             })
+                        records = warmup_records + records
             except Exception as e:
                 log.warning("Error querying candles_1m from %s for %s: %s", self.db_path, target_date, e)
 
-        # 3. If live and records still empty or target is today, query latest 400 candles
-        if (not records or target_date == datetime.now(IST).strftime("%Y-%m-%d")) and self.db_path.exists():
+        # 3. If records still empty, fallback to latest available candles
+        if not records and self.db_path.exists():
             try:
                 with sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True) as conn:
                     cur = conn.cursor()
@@ -165,7 +190,7 @@ class EmaProximityEngine:
                         ORDER BY ts DESC
                         LIMIT 375
                     """).fetchall()
-                    if rows and not records:
+                    if rows:
                         rows = sorted(rows, key=lambda x: x[0])
                         for r in rows:
                             records.append({
@@ -227,6 +252,7 @@ class EmaProximityEngine:
         date_str: Optional[str] = None,
         timeframe: str = "1m",
         filter_state: str = "ALL",
+        live_spot: Optional[float] = None,
         custom_cfg: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
@@ -242,11 +268,14 @@ class EmaProximityEngine:
         max_flips = int(cfg.get("whipsaw_max_flips_12m", 3))
         goldilocks_min_atr = float(cfg.get("goldilocks_min_atr", 0.13))
 
-        target_date = date_str or "2026-11-05"
+        target_date = date_str or "LIVE"
+        is_live = (str(target_date).upper() == "LIVE")
+        today_iso = datetime.now(IST).strftime("%Y-%m-%d")
 
         # Determine inputs
         if isinstance(candles_input, str):
             target_date = candles_input
+            is_live = (str(target_date).upper() == "LIVE")
             df_1m, df_15m, df_1h = self.load_candles_for_date(target_date, timeframe=timeframe)
         elif isinstance(candles_input, pd.DataFrame):
             df_1m = candles_input.copy()
@@ -274,6 +303,39 @@ class EmaProximityEngine:
         else:
             df_1m, df_15m, df_1h = self.load_candles_for_date(target_date, timeframe=timeframe)
 
+        # Apply real-time forming bar if live_spot provided during live market
+        if live_spot and float(live_spot) > 0 and not df_1m.empty and (is_live or target_date == today_iso):
+            curr_spot = float(live_spot)
+            now_dt = datetime.now(IST)
+            now_ts = int(now_dt.timestamp())
+            curr_bar_ts = (now_ts // 60) * 60
+            last_bar_ts = int(df_1m["ts"].iloc[-1])
+
+            if last_bar_ts < curr_bar_ts:
+                last_c = float(df_1m["close"].iloc[-1])
+                forming_bar = {
+                    "ts": curr_bar_ts,
+                    "open": last_c,
+                    "high": max(last_c, curr_spot),
+                    "low": min(last_c, curr_spot),
+                    "close": curr_spot,
+                    "volume": 0.0,
+                    "datetime": pd.to_datetime(curr_bar_ts, unit="s", utc=True).tz_convert(IST),
+                }
+                df_1m = pd.concat([df_1m, pd.DataFrame([forming_bar])], ignore_index=True)
+            elif last_bar_ts == curr_bar_ts:
+                df_1m.loc[df_1m.index[-1], "close"] = curr_spot
+                df_1m.loc[df_1m.index[-1], "high"] = max(df_1m.loc[df_1m.index[-1], "high"], curr_spot)
+                df_1m.loc[df_1m.index[-1], "low"] = min(df_1m.loc[df_1m.index[-1], "low"], curr_spot)
+
+            df_idx = df_1m.set_index("datetime")
+            df_15m = df_idx.resample("15min", closed="left", label="left").agg({
+                "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
+            }).dropna().reset_index()
+            df_1h = df_idx.resample("1h", closed="left", label="left").agg({
+                "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
+            }).dropna().reset_index()
+
         # Handle active timeframe selection (1m, 5m, 15m, 1h)
         active_tf = timeframe.lower().strip()
         if active_tf == "5m":
@@ -300,10 +362,21 @@ class EmaProximityEngine:
             }
 
         # Format dates
-        first_ts = int(df_active["ts"].iloc[0])
-        dt_obj = datetime.fromtimestamp(first_ts, tz=timezone.utc).astimezone(IST)
-        formatted_date = dt_obj.strftime("%d %b %Y")
-        date_iso = dt_obj.strftime("%Y-%m-%d")
+        if is_live:
+            date_iso = today_iso
+            formatted_date = datetime.now(IST).strftime("%d %b %Y")
+        elif len(str(target_date)) == 10 and str(target_date)[4] == "-":
+            date_iso = str(target_date)
+            try:
+                dt_obj = datetime.strptime(date_iso, "%Y-%m-%d").replace(tzinfo=IST)
+                formatted_date = dt_obj.strftime("%d %b %Y")
+            except Exception:
+                formatted_date = date_iso
+        else:
+            first_ts = int(df_active["ts"].iloc[0])
+            dt_obj = datetime.fromtimestamp(first_ts, tz=timezone.utc).astimezone(IST)
+            formatted_date = dt_obj.strftime("%d %b %Y")
+            date_iso = dt_obj.strftime("%Y-%m-%d")
 
         # ── 1. Calculate Active Timeframe EMAs (4 and 8) ───────────────────────
         close_series = df_active["close"].astype(float)
@@ -372,40 +445,36 @@ class EmaProximityEngine:
                 return float(records_1h[0]["ema_4"]), float(records_1h[0]["ema_8"])
             return initial_close, initial_close
 
-        # ── 3. Build Minute-by-Minute Table Rows ──────────────────────────────
-        rows: List[Dict[str, Any]] = []
+        # ── 3. Build Minute-by-Minute Table Rows (Numpy-Vectorized) ───────────
+        ts_arr = df_active["ts"].to_numpy(dtype=np.int64)
+        open_arr = df_active["open"].to_numpy(dtype=np.float64)
+        high_arr = df_active["high"].to_numpy(dtype=np.float64)
+        low_arr = df_active["low"].to_numpy(dtype=np.float64)
+        close_arr = df_active["close"].to_numpy(dtype=np.float64)
+        vol_arr = df_active["volume"].to_numpy(dtype=np.float64) if "volume" in df_active.columns else np.zeros(n_bars, dtype=np.float64)
+        ema_4_arr = ema_4_series.to_numpy(dtype=np.float64)
+        ema_8_arr = ema_8_series.to_numpy(dtype=np.float64)
+        atr_14_arr = atr_14_series.to_numpy(dtype=np.float64)
 
-        # Tracking variables
+        all_computed_rows: List[Dict[str, Any]] = []
         flips_window: List[int] = []  # signs (+1 or -1) of (close - ema_8)
 
-        # KPI Counters
-        total_bars = n_bars
-        upside_crossovers = 0
-        downside_crossovers = 0
-        stage2_support_bounces = 0
-        stage3_resistance_rejects = 0
-        h1_sr_touches = 0
-        touches_8ema = 0
-        approaching_alerts = 0
-        whipsaw_blocks = 0
-        clean_triggers = 0
-        clean_bounce_wins = 0  # 15m MFE >= 15 pts
-        clean_mfe_sum = 0.0
-
         for t in range(n_bars):
-            ts_val = int(df_active["ts"].iloc[t])
+            ts_val = int(ts_arr[t])
             dt_bar = datetime.fromtimestamp(ts_val, tz=timezone.utc).astimezone(IST)
             timestamp_ist = dt_bar.strftime("%H:%M:%S")
+            row_date_iso = dt_bar.strftime("%Y-%m-%d")
+            row_date_str = dt_bar.strftime("%d %b %Y")
 
-            open_p = round(float(df_active["open"].iloc[t]), 2)
-            high_p = round(float(df_active["high"].iloc[t]), 2)
-            low_p = round(float(df_active["low"].iloc[t]), 2)
-            close_p = round(float(df_active["close"].iloc[t]), 2)
-            vol_val = float(df_active["volume"].iloc[t] if "volume" in df_active.columns else 0.0)
+            open_p = round(float(open_arr[t]), 2)
+            high_p = round(float(high_arr[t]), 2)
+            low_p = round(float(low_arr[t]), 2)
+            close_p = round(float(close_arr[t]), 2)
+            vol_val = float(vol_arr[t])
 
-            ema_4 = round(float(ema_4_series.iloc[t]), 2)
-            ema_8 = round(float(ema_8_series.iloc[t]), 2)
-            atr_14 = max(0.01, round(float(atr_14_series.iloc[t]), 2))
+            ema_4 = round(float(ema_4_arr[t]), 2)
+            ema_8 = round(float(ema_8_arr[t]), 2)
+            atr_14 = max(0.01, round(float(atr_14_arr[t]), 2))
 
             gap_close_to_4ema = round(close_p - ema_4, 2)
             gap_close_to_8ema = round(close_p - ema_8, 2)
@@ -446,24 +515,22 @@ class EmaProximityEngine:
             # Crossover & Reversal State
             crossover_state = "NEUTRAL"
             if t > 0:
-                prev_ema4 = float(ema_4_series.iloc[t - 1])
-                prev_ema8 = float(ema_8_series.iloc[t - 1])
+                prev_ema4 = float(ema_4_arr[t - 1])
+                prev_ema8 = float(ema_8_arr[t - 1])
                 prev_spread = prev_ema4 - prev_ema8
 
                 if prev_ema4 <= prev_ema8 and ema_4 > ema_8 and close_p > ema_8:
                     crossover_state = "8_EMA_REVERSAL_UPSIDE_CROSS"
-                    upside_crossovers += 1
                 elif prev_ema4 >= prev_ema8 and ema_4 < ema_8 and close_p < ema_8:
                     crossover_state = "8_EMA_REVERSAL_DOWNSIDE_CROSS"
-                    downside_crossovers += 1
                 elif ema_4 < ema_8 and abs(spread_4_minus_8) <= 3.0:
                     if t >= 2:
-                        prev2_spread = float(ema_4_series.iloc[t - 2]) - float(ema_8_series.iloc[t - 2])
+                        prev2_spread = float(ema_4_arr[t - 2]) - float(ema_8_arr[t - 2])
                         if spread_4_minus_8 > prev_spread > prev2_spread:
                             crossover_state = "PRE_CROSS_CONVERGING_UP"
                 elif ema_4 > ema_8 and spread_4_minus_8 <= 3.0:
                     if t >= 2:
-                        prev2_spread = float(ema_4_series.iloc[t - 2]) - float(ema_8_series.iloc[t - 2])
+                        prev2_spread = float(ema_4_arr[t - 2]) - float(ema_8_arr[t - 2])
                         if spread_4_minus_8 < prev_spread < prev2_spread:
                             crossover_state = "PRE_CROSS_CONVERGING_DOWN"
 
@@ -482,10 +549,8 @@ class EmaProximityEngine:
             if dist_1h <= 8.0:
                 if ema_4_1h >= ema_8_1h and close_p >= ema_8_1h and low_p <= ema_8_1h + 8.0:
                     sr_interaction = "1H_8EMA_SUPPORT_TOUCH"
-                    h1_sr_touches += 1
                 elif ema_4_1h <= ema_8_1h and close_p <= ema_8_1h and high_p >= ema_8_1h - 8.0:
                     sr_interaction = "1H_8EMA_RESISTANCE_REJECT"
-                    h1_sr_touches += 1
 
             # 2. Stage 2 Support Bounce (Long) vs Stage 3 Resistance Reject (Short)
             if sr_interaction == "NONE":
@@ -493,19 +558,16 @@ class EmaProximityEngine:
                     # In bullish ribbon pocket [ema_8, ema_4]
                     if (low_p <= ema_4 or abs(low_p - ema_8) <= touch_pts or low_p <= ema_8) and close_p > ema_8:
                         sr_interaction = "STAGE_2_8EMA_SUPPORT_BOUNCE"
-                        stage2_support_bounces += 1
                 elif ema_4 < ema_8:
                     # In bearish ribbon pocket [ema_4, ema_8]
                     if (high_p >= ema_4 or abs(high_p - ema_8) <= touch_pts or high_p >= ema_8) and close_p < ema_8:
                         sr_interaction = "STAGE_3_8EMA_RESISTANCE_REJECT"
-                        stage3_resistance_rejects += 1
 
             # 3-Tier Proximity Radar State Machine
             proximity_state = "ZONE_FAR"
             if is_whipsaw_chop:
                 if abs_gap_pts <= approaching_pts:
                     proximity_state = "WHIPSAW_CHOP_BLOCKED"
-                    whipsaw_blocks += 1
                 else:
                     proximity_state = "ZONE_FAR"
             else:
@@ -532,8 +594,6 @@ class EmaProximityEngine:
 
                 if is_clean_trigger:
                     proximity_state = "TIER_3_CONFIRMATION_TRIGGER"
-                    clean_triggers += 1
-                    touches_8ema += 1
                 elif (
                     wick_touched_ema8
                     or abs_gap_pts <= touch_pts
@@ -541,13 +601,11 @@ class EmaProximityEngine:
                     or (min(ema_4, ema_8) <= close_p <= max(ema_4, ema_8))
                 ):
                     proximity_state = "TIER_2_TOUCH_ZONE"
-                    touches_8ema += 1
                 elif abs_gap_pts <= approaching_pts:
                     # Check if distance is shrinking
-                    prev_abs_gap = abs(float(close_series.iloc[t - 1]) - float(ema_8_series.iloc[t - 1])) if t > 0 else abs_gap_pts
+                    prev_abs_gap = abs(float(close_arr[t - 1]) - float(ema_8_arr[t - 1])) if t > 0 else abs_gap_pts
                     if abs_gap_pts <= prev_abs_gap:
                         proximity_state = "TIER_1_APPROACHING"
-                        approaching_alerts += 1
                     else:
                         proximity_state = "TIER_1_APPROACHING"
                 else:
@@ -555,9 +613,9 @@ class EmaProximityEngine:
 
             # Stop-Loss Minimizer & Early Rescue Advisory
             sl_guard_advice = "--"
-            if crossover_state == "8_EMA_REVERSAL_DOWNSIDE_CROSS" or (t > 0 and float(ema_4_series.iloc[t - 1]) >= float(ema_8_series.iloc[t - 1]) and ema_4 < ema_8):
+            if crossover_state == "8_EMA_REVERSAL_DOWNSIDE_CROSS" or (t > 0 and float(ema_4_arr[t - 1]) >= float(ema_8_arr[t - 1]) and ema_4 < ema_8):
                 sl_guard_advice = "⚠️ LONG KILL-SWITCH WARNING (4 EMA crossed below 8 EMA) | Exit Long Immediately"
-            elif crossover_state == "8_EMA_REVERSAL_UPSIDE_CROSS" or (t > 0 and float(ema_4_series.iloc[t - 1]) <= float(ema_8_series.iloc[t - 1]) and ema_4 > ema_8):
+            elif crossover_state == "8_EMA_REVERSAL_UPSIDE_CROSS" or (t > 0 and float(ema_4_arr[t - 1]) <= float(ema_8_arr[t - 1]) and ema_4 > ema_8):
                 sl_guard_advice = "⚠️ SHORT KILL-SWITCH WARNING (4 EMA crossed above 8 EMA) | Exit Short Immediately"
             elif ema_4 >= ema_8:
                 structural_sl_spot = round(min(low_p, ema_8) - 0.20 * atr_14, 2)
@@ -590,38 +648,33 @@ class EmaProximityEngine:
             else:
                 action_recommendation = f"⚪ TRENDING OUTSIDE ZONE (Gap: {gap_pts:+.2f} pts)"
 
-            # Forward 5m / 15m MFE and MAE
+            # Forward 5m / 15m MFE and MAE (Numpy slice)
             fwd_mfe_5m: Optional[float] = None
             fwd_mfe_15m: Optional[float] = None
             fwd_mae_15m: Optional[float] = None
 
             is_bullish = (ema_4 >= ema_8)
             if t + 1 < n_bars:
-                bars_5 = df_active.iloc[t + 1 : min(t + 1 + 5, n_bars)]
-                bars_15 = df_active.iloc[t + 1 : min(t + 1 + 15, n_bars)]
+                end_5 = min(t + 1 + 5, n_bars)
+                end_15 = min(t + 1 + 15, n_bars)
 
-                if not bars_5.empty:
-                    if is_bullish:
-                        fwd_mfe_5m = round(max(0.0, float(bars_5["high"].max() - close_p)), 2)
-                    else:
-                        fwd_mfe_5m = round(max(0.0, float(close_p - bars_5["low"].min())), 2)
+                h5_max = float(high_arr[t + 1 : end_5].max())
+                l5_min = float(low_arr[t + 1 : end_5].min())
+                h15_max = float(high_arr[t + 1 : end_15].max())
+                l15_min = float(low_arr[t + 1 : end_15].min())
 
-                if not bars_15.empty:
-                    if is_bullish:
-                        fwd_mfe_15m = round(max(0.0, float(bars_15["high"].max() - close_p)), 2)
-                        fwd_mae_15m = round(max(0.0, float(close_p - bars_15["low"].min())), 2)
-                    else:
-                        fwd_mfe_15m = round(max(0.0, float(close_p - bars_15["low"].min())), 2)
-                        fwd_mae_15m = round(max(0.0, float(bars_15["high"].max() - close_p)), 2)
-
-                    if proximity_state in ("TIER_3_CONFIRMATION_TRIGGER", "TIER_2_TOUCH_ZONE"):
-                        if fwd_mfe_15m >= 15.0:
-                            clean_bounce_wins += 1
-                        clean_mfe_sum += fwd_mfe_15m
+                if is_bullish:
+                    fwd_mfe_5m = round(max(0.0, h5_max - close_p), 2)
+                    fwd_mfe_15m = round(max(0.0, h15_max - close_p), 2)
+                    fwd_mae_15m = round(max(0.0, close_p - l15_min), 2)
+                else:
+                    fwd_mfe_5m = round(max(0.0, close_p - l5_min), 2)
+                    fwd_mfe_15m = round(max(0.0, close_p - l15_min), 2)
+                    fwd_mae_15m = round(max(0.0, h15_max - close_p), 2)
 
             row_obj = {
-                "date": formatted_date,
-                "date_iso": date_iso,
+                "date": row_date_str,
+                "date_iso": row_date_iso,
                 "timestamp_ist": timestamp_ist,
                 "ts": ts_val,
                 "open_price": open_p,
@@ -658,15 +711,60 @@ class EmaProximityEngine:
                 "forward_mfe_15m": fwd_mfe_15m,
                 "forward_mae_15m": fwd_mae_15m,
             }
-            rows.append(row_obj)
+            all_computed_rows.append(row_obj)
 
-        # Summary KPIs
-        touch_and_clean_total = clean_triggers + (touches_8ema - clean_triggers)
+        # Check if rows should be filtered to target session date (excluding warmup bars)
+        target_rows = [r for r in all_computed_rows if r["date_iso"] == date_iso]
+        # If matching rows exist, use them as session rows; otherwise use all rows
+        session_rows = target_rows if target_rows else all_computed_rows
+
+        # Summary KPIs (calculated strictly over session rows)
+        upside_crossovers = 0
+        downside_crossovers = 0
+        stage2_support_bounces = 0
+        stage3_resistance_rejects = 0
+        h1_sr_touches = 0
+        touches_8ema = 0
+        approaching_alerts = 0
+        whipsaw_blocks = 0
+        clean_triggers = 0
+        clean_bounce_wins = 0  # 15m MFE >= 15 pts
+        clean_mfe_sum = 0.0
+
+        for r in session_rows:
+            if r["crossover_state"] == "8_EMA_REVERSAL_UPSIDE_CROSS":
+                upside_crossovers += 1
+            elif r["crossover_state"] == "8_EMA_REVERSAL_DOWNSIDE_CROSS":
+                downside_crossovers += 1
+
+            if r["sr_interaction"] == "STAGE_2_8EMA_SUPPORT_BOUNCE":
+                stage2_support_bounces += 1
+            elif r["sr_interaction"] == "STAGE_3_8EMA_RESISTANCE_REJECT":
+                stage3_resistance_rejects += 1
+            elif "1H" in r["sr_interaction"]:
+                h1_sr_touches += 1
+
+            if r["proximity_state"] == "TIER_3_CONFIRMATION_TRIGGER":
+                clean_triggers += 1
+                touches_8ema += 1
+            elif r["proximity_state"] == "TIER_2_TOUCH_ZONE":
+                touches_8ema += 1
+            elif r["proximity_state"] == "TIER_1_APPROACHING":
+                approaching_alerts += 1
+            elif r["proximity_state"] == "WHIPSAW_CHOP_BLOCKED":
+                whipsaw_blocks += 1
+
+            if r["proximity_state"] in ("TIER_3_CONFIRMATION_TRIGGER", "TIER_2_TOUCH_ZONE") and r["forward_mfe_15m"] is not None:
+                if r["forward_mfe_15m"] >= 15.0:
+                    clean_bounce_wins += 1
+                clean_mfe_sum += r["forward_mfe_15m"]
+
         win_rate = round((clean_bounce_wins / max(1, touches_8ema)) * 100, 1)
         avg_mfe = round(clean_mfe_sum / max(1, touches_8ema), 2)
+        rows = session_rows
 
         summary = {
-            "total_bars": total_bars,
+            "total_bars": len(session_rows),
             "upside_crossovers": upside_crossovers,
             "downside_crossovers": downside_crossovers,
             "stage2_support_bounces": stage2_support_bounces,
@@ -712,16 +810,21 @@ class EmaProximityEngine:
             "latest": latest_row,
         }
 
-    def get_latest_radar_status(self) -> Dict[str, Any]:
+    def get_latest_radar_status(self, live_spot: Optional[float] = None) -> Dict[str, Any]:
         """
         Returns fast 1-second radar status for cockpit telemetry header.
         """
-        if self._latest_radar_cache:
-            r = self._latest_radar_cache
-        else:
-            # Quick compute on latest available data
-            res = self.compute_matrix(date_str="LIVE", timeframe="1m")
+        now_epoch = time.time()
+        need_recompute = (
+            not self._latest_radar_cache
+            or (now_epoch - getattr(self, "_last_radar_compute_epoch", 0.0) >= 1.5)
+        )
+        if need_recompute:
+            res = self.compute_matrix(date_str="LIVE", timeframe="1m", live_spot=live_spot)
             r = res.get("latest", {})
+            self._last_radar_compute_epoch = now_epoch
+        else:
+            r = self._latest_radar_cache
 
         if not r:
             return {
