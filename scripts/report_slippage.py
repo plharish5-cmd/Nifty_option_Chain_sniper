@@ -45,6 +45,11 @@ from typing import Any, Dict, List, Optional
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "data" / "terminal8510" / "ledger.sqlite3"
 
+# The two figures in conflict across this desk. Neither is measured; the
+# dry-run ledger exists to decide between them.
+CONFIG_ASSUMED_INR = 8.13      # paper_execution.simulated_slippage_pts mean 0.125 pts x 65
+BACKTEST_ASSUMED_INR = 32.50   # SLIPPAGE_INR_PER_TRADE in the backtest scripts (0.5 pts)
+
 
 def load_fills(conn, mode: Optional[str] = None,
                since: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -109,6 +114,148 @@ def describe(vals: List[float], label: str, lot: Optional[int]) -> Dict[str, Any
     return out
 
 
+def load_dry_run(conn, since: Optional[str] = None) -> List[Dict[str, Any]]:
+    """v1.9.4b dry-run rows: the real touch at signal time, no order sent.
+
+    These exist because the question this script was written to answer is
+    otherwise unanswerable. Under PAPER_ONLY, fill_price is derived from
+    signal_ltp, so the recorded slippage is an artefact of the simulation, not a
+    measurement -- which is why the main report prints NOT A MEASUREMENT. A
+    dry-run row carries the actual bid and ask, so the half-spread in it is a
+    real cost that a real order would have paid.
+    """
+    sql = ("SELECT ts, strategy, symbol, side, qty, signal_ltp, bid, ask, "
+           "spread_pts, intended_limit_price FROM dry_run_orders")
+    args: List[Any] = []
+    if since:
+        sql += " WHERE ts >= ?"
+        args.append(since)
+    sql += " ORDER BY ts ASC"
+    try:
+        cur = conn.execute(sql, args)
+    except sqlite3.OperationalError:
+        return []          # table absent on a ledger that never armed dry-run
+    cols = [c[0] for c in cur.description]
+    return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def half_spreads(rows: List[Dict[str, Any]]) -> List[float]:
+    """Half the bid-ask spread: what crossing the touch costs one way.
+
+    A round trip crosses twice, so the per-leg cost is half the spread and the
+    per-trade cost is the full spread. Reported separately below so neither is
+    confused for the other.
+    """
+    out = []
+    for r in rows:
+        bid, ask = num(r.get("bid")), num(r.get("ask"))
+        if bid is None or ask is None or ask <= 0 or bid <= 0 or ask < bid:
+            continue
+        out.append((ask - bid) / 2.0)
+    return out
+
+
+def dry_run_report(rows: List[Dict[str, Any]], lot: int) -> Dict[str, Any]:
+    hs = half_spreads(rows)
+    rep: Dict[str, Any] = {
+        "n_rows": len(rows),
+        "n_with_depth": len(hs),
+        "n_missing_depth": len(rows) - len(hs),
+    }
+    if not hs:
+        rep["verdict"] = (
+            "NO MEASUREMENT YET. {} dry-run rows, none carrying a usable "
+            "bid/ask. Both the Rs8.13 config assumption and the Rs32.50 "
+            "backtest assumption remain unverified.".format(len(rows)))
+        return rep
+    srt = sorted(hs)
+    med = st.median(srt)
+    p90 = srt[int(0.9 * (len(srt) - 1))]
+    rep.update({
+        "median_half_spread_pts": round(med, 4),
+        "p90_half_spread_pts": round(p90, 4),
+        "median_half_spread_inr_per_leg": round(med * lot, 2),
+        "p90_half_spread_inr_per_leg": round(p90 * lot, 2),
+        "median_full_spread_inr_round_trip": round(2 * med * lot, 2),
+        "worst_half_spread_pts": round(max(srt), 4),
+        "best_half_spread_pts": round(min(srt), 4),
+    })
+    # UNIT DISCIPLINE. The two assumptions are quoted in DIFFERENT units and
+    # comparing them directly is the same apples-to-oranges error this script
+    # was written to stop. simulated_slippage_pts is applied per LEG; the
+    # backtests' SLIPPAGE_INR_PER_TRADE is per ROUND TRIP. Everything below is
+    # normalised to a round trip, which is what a trade actually costs.
+    measured_leg = med * lot
+    measured_trip = 2.0 * measured_leg
+    cfg_trip = 2.0 * CONFIG_ASSUMED_INR
+    d_cfg = abs(measured_trip - cfg_trip)
+    d_bt = abs(measured_trip - BACKTEST_ASSUMED_INR)
+    closer = ("config ({:.2f}/leg = Rs{:.2f}/trip)".format(CONFIG_ASSUMED_INR, cfg_trip)
+              if d_cfg < d_bt else
+              "backtest (Rs{:.2f}/trip)".format(BACKTEST_ASSUMED_INR))
+    rep.update({
+        "config_assumed_inr_per_leg": CONFIG_ASSUMED_INR,
+        "config_assumed_inr_per_round_trip": round(cfg_trip, 2),
+        "backtest_assumed_inr_per_round_trip": BACKTEST_ASSUMED_INR,
+        "measured_inr_per_leg": round(measured_leg, 2),
+        "measured_inr_per_round_trip": round(measured_trip, 2),
+        "closer_to_reality": closer,
+        "distance_from_config_inr": round(d_cfg, 2),
+        "distance_from_backtest_inr": round(d_bt, 2),
+        "ratio_measured_over_config": round(measured_trip / cfg_trip, 2) if cfg_trip else None,
+        "ratio_measured_over_backtest": (round(measured_trip / BACKTEST_ASSUMED_INR, 2)
+                                         if BACKTEST_ASSUMED_INR else None),
+        "verdict": (
+            "MEASURED median half-spread Rs{:.2f} per leg = Rs{:.2f} per round "
+            "trip. Normalised to a round trip, config assumes Rs{:.2f} and the "
+            "backtests assume Rs{:.2f}; the {} figure is closer, off by Rs{:.2f} "
+            "against Rs{:.2f}. NOTE the units: the two assumptions were never 4x "
+            "apart, they were quoted per-leg vs per-trade, which is a 2x "
+            "difference. This is a SPREAD, not a realised fill -- the cost of "
+            "crossing the touch, which an aggressive limit pays and a passive "
+            "limit converts into non-fill risk. No threshold is changed here."
+            .format(measured_leg, measured_trip, cfg_trip, BACKTEST_ASSUMED_INR,
+                    "config" if d_cfg < d_bt else "backtest",
+                    min(d_cfg, d_bt), max(d_cfg, d_bt))),
+    })
+    if len(hs) < 30:
+        rep["caution"] = ("Only {} rows with depth. The dry-run gate asks for 30 "
+                          "before this is treated as settled.".format(len(hs)))
+    return rep
+
+
+def print_dry_run(rep: Dict[str, Any]) -> None:
+    print()
+    print("DRY-RUN REAL SPREAD  (v1.9.4b — measured, no order sent)")
+    print("-" * 76)
+    print("  rows                 : {} ({} with depth, {} missing)".format(
+        rep["n_rows"], rep["n_with_depth"], rep["n_missing_depth"]))
+    if not rep.get("median_half_spread_pts"):
+        print("  {}".format(rep["verdict"]))
+        return
+    print("  median half-spread   : {} pts  = Rs{} per leg".format(
+        rep["median_half_spread_pts"], rep["median_half_spread_inr_per_leg"]))
+    print("  p90 half-spread      : {} pts  = Rs{} per leg".format(
+        rep["p90_half_spread_pts"], rep["p90_half_spread_inr_per_leg"]))
+    print("  full spread (2 legs) : Rs{} per round trip".format(
+        rep["median_full_spread_inr_round_trip"]))
+    print()
+    print("  NORMALISED TO A ROUND TRIP (the two assumptions use different units)")
+    print("  measured             : Rs{} per leg = Rs{} per round trip".format(
+        rep["measured_inr_per_leg"], rep["measured_inr_per_round_trip"]))
+    print("  config assumes       : Rs{} per leg = Rs{} per trip  (off by Rs{}, {}x)".format(
+        rep["config_assumed_inr_per_leg"], rep["config_assumed_inr_per_round_trip"],
+        rep["distance_from_config_inr"], rep["ratio_measured_over_config"]))
+    print("  backtests assume     : Rs{} per trip               (off by Rs{}, {}x)".format(
+        rep["backtest_assumed_inr_per_round_trip"],
+        rep["distance_from_backtest_inr"], rep["ratio_measured_over_backtest"]))
+    print("  CLOSER TO REALITY    : {}".format(rep["closer_to_reality"]))
+    print()
+    print("  {}".format(rep["verdict"]))
+    if rep.get("caution"):
+        print("  CAUTION: {}".format(rep["caution"]))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -125,16 +272,25 @@ def main() -> int:
     conn = sqlite3.connect("file:{}?mode=ro".format(LEDGER), uri=True)
     try:
         rows = load_fills(conn, a.mode, a.since)
+        dry_rows = load_dry_run(conn, a.since)
     finally:
         conn.close()
+
+    dry = dry_run_report(dry_rows, a.lot)
 
     if not rows:
         print("No FILLED orders recorded{}{}.".format(
             " for mode " + a.mode if a.mode else "",
             " since " + a.since if a.since else ""))
-        print("\nNothing to measure yet. Execution cost stays an ASSUMPTION until")
-        print("there are real fills, so the pocket-limit case cannot be settled.")
-        return 1
+        print("\nNo fills means no realised slippage to read. That is expected while")
+        print("the desk is PAPER_ONLY, and it is exactly why the dry-run ledger")
+        print("exists: it measures the spread a real order would have crossed.")
+        if a.json:
+            print(json.dumps({"n_filled_orders": 0, "dry_run": dry}, indent=2))
+        else:
+            print_dry_run(dry)
+        # Dry-run rows with depth ARE a measurement, so this is a success.
+        return 0 if dry.get("median_half_spread_pts") else 1
 
     pts = [(r, realised_slippage_pts(r)) for r in rows]
     pts = [(r, p) for r, p in pts if p is not None]
@@ -196,6 +352,8 @@ def main() -> int:
              if (o.get("mean_inr") or 0) > 32.50 else
              "MEASURED COST IS LOWER than the 32.50 assumed in the backtests")),
     }
+
+    report["dry_run"] = dry
 
     if a.json:
         print(json.dumps(report, indent=2))
@@ -263,6 +421,7 @@ def main() -> int:
     print("  '% improved' already shows how often fills beat the signal price.")
     print("  If mean pts is near zero, the pocket-limit idea is worth little and")
     print("  the effort belongs elsewhere.")
+    print_dry_run(dry)
     return 0
 
 
