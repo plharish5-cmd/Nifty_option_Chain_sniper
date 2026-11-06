@@ -72,6 +72,41 @@ app.add_middleware(
 
 backend = QuantTerminalBackend()
 
+# MATRIX has an isolated NIFTY-point paper ledger and no order-routing capability.
+from analyst.matrix_scalp_8510 import MatrixPaperService, read_rules as matrix_rules
+matrix_paper = MatrixPaperService(backend.market_db, backend.config_path,
+    backend.ledger_db.parent / 'matrix_paper.sqlite3')
+
+
+@app.get('/api/matrix-paper')
+async def api_matrix_paper():
+    return await asyncio.to_thread(matrix_paper.history)
+
+
+@app.get('/api/matrix-paper/backtest')
+async def api_matrix_backtest():
+    path = backend.ledger_db.parent / 'matrix_backtest.json'
+    if not path.exists():
+        return {'ok':False,'reason':'No saved MATRIX backtest. Run the offline report first.'}
+    def read_report():
+        return {'ok':True, **json.loads(path.read_text())}
+    return await asyncio.to_thread(read_report)
+
+
+@app.on_event('startup')
+async def start_matrix_paper():
+    async def poll():
+        while True:
+            try:
+                await asyncio.to_thread(matrix_paper.tick,
+                    entries_allowed=backend.scanner_enabled and not backend.kill_switch_active)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception('MATRIX paper update failed; no broker action')
+            await asyncio.sleep(matrix_rules()['poll_seconds'])
+    app.state.matrix_paper_task = asyncio.create_task(poll())
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -860,6 +895,8 @@ async def api_post_synergy_config(req: Request):
 
 @app.on_event('shutdown')
 async def stop_background_tasks():
+    matrix_task = getattr(app.state, 'matrix_paper_task', None)
+    if matrix_task: matrix_task.cancel()
     recorder = getattr(backend, "recording_service", None)
     if recorder: recorder.stop()
     for task in (getattr(app.state,'ict_smc_task',None),getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):

@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "setup_name": "MATRIX",
+  "mode": "PAPER_ONLY_INDEX",
+  "entry_tier": "TIER_3_CONFIRMATION_TRIGGER",
+  "initial_stop_pts": 15,
+  "activation_pts": 15,
+  "first_lock_pts": 10,
+  "step_pts": 5,
+  "session_start": "09:15",
+  "square_off": "15:20",
+  "poll_seconds": 5,
+  "freshness_seconds": 120,
+  "_evidence": "User-approved NIFTY-point ladder: -15 initially; +15 locks +10; +20 locks +15; then 5-point steps. Existing Matrix Tier 3 entry, next observed minute open, one position, new Tier 3 episode required. Research/paper only; no option PnL, wallet debit or broker order. OHLC ordering conflicts are unresolved, never counted as wins."
+}
