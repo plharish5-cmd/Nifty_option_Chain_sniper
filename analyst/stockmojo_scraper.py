@@ -188,8 +188,18 @@ class StockMojoScraper:
         self.active_expiry_id = int(self.cfg.get("STOCKMOJO_ACTIVE_EXPIRY_ID", 215))
         self.pcr_payload = self.cfg.get("STOCKMOJO_PCR_PAYLOAD", {"symbol": 1, "dt": None, "expiries": [self.active_expiry_id]})
         self.multi_strike_payload = self.cfg.get("STOCKMOJO_MULTI_STRIKE_PAYLOAD", {"symbol": 1, "expiry": self.active_expiry_id, "range": 10})
-        self.header_j = self.cfg.get("STOCKMOJO_HEADER_J") or self.cfg.get("STOCKMOJO_JWT_TOKEN") or sm_cfg.get("jwt_token", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW9uX3Rva2VuIjoiYnRzajZrdXl2OHprbzFwN2pkejE3OTM3ODcxNjA0NDQiLCJ0aWQiOiIwM2YwMTIzOC05MDgyLTRkOWItYWVjNy1hNmMwZDQ3MDc3MzMiLCJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkzNzg3MTYwLCJleHAiOjE4MjUzMjMxNjB9.wVQJZbadHctmwvPFvxfLj89nlp4XPAcTjS3NpVszczg")
-        self.header_t = self.cfg.get("STOCKMOJO_HEADER_T", "btsj6kuyv8zko1p7jdz1793787160444")
+        # Credentials come from config or the environment, NEVER from a literal
+        # here. A real Stock Mojo JWT and session token were previously baked in
+        # as the fallback defaults, in a tracked file that is public on GitHub.
+        # They are removed; the feed is retired anyway, so an empty credential
+        # is the correct default. (The exposed token still needs rotating at
+        # source: deleting it here does not remove it from git history.)
+        self.header_j = (self.cfg.get("STOCKMOJO_HEADER_J")
+                         or self.cfg.get("STOCKMOJO_JWT_TOKEN")
+                         or sm_cfg.get("jwt_token")
+                         or os.environ.get("STOCKMOJO_HEADER_J", ""))
+        self.header_t = (self.cfg.get("STOCKMOJO_HEADER_T")
+                         or os.environ.get("STOCKMOJO_HEADER_T", ""))
         self.jwt_token = self.header_j
         self.payload = self.pcr_payload
         self.vast_diff_threshold_cr = float(self.cfg.get("VAST_DIFF_THRESHOLD_CR", 0.50))
