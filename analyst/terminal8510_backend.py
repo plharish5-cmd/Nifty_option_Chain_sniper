@@ -3237,10 +3237,19 @@ class QuantTerminalBackend:
 
         self.priority_contracts = priority_matrix
 
-        # 5. StockMojo PCR & PE-CE Calculation
-        pcr = 1.08
-        pcr_tag = "BULLISH"
-        pe_ce_gap_cr = 1.14
+        # 5. PCR & PE-CE from OUR OWN Dhan option chain (chain_snap).
+        #
+        # Despite the old "StockMojo" label this never used Stock Mojo: pe_oi and
+        # ce_oi come from our own chain_snap table. It therefore survives Stock
+        # Mojo being retired.
+        #
+        # The previous defaults were pcr=1.08 / "BULLISH" / gap=1.14, so an empty
+        # or unreadable chain_snap displayed a confident BULLISH reading with no
+        # data behind it. It now reports NO DATA instead of inventing a bias.
+        pcr = 1.0
+        pcr_tag = "NO DATA"
+        pe_ce_gap_cr = 0.0
+        pcr_available = False
         if self.market_db.exists():
             try:
                 with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
@@ -3252,18 +3261,21 @@ class QuantTerminalBackend:
                         if ce_sum > 0:
                             pcr = round(pe_sum / ce_sum, 2)
                             pe_ce_gap_cr = round((pe_sum - ce_sum) / 1e7, 2)
+                            pcr_available = True
             except Exception as e:
                 log.debug("PCR calculation from sqlite error: %s", e)
 
-        if pcr >= 1.05:
-            pcr_tag = "BULLISH"
-        elif pcr <= 0.85:
-            pcr_tag = "BEARISH"
-        else:
-            pcr_tag = "NEUTRAL"
+        # Only classify when there is real chain data behind the number.
+        if pcr_available:
+            if pcr >= 1.05:
+                pcr_tag = "BULLISH"
+            elif pcr <= 0.85:
+                pcr_tag = "BEARISH"
+            else:
+                pcr_tag = "NEUTRAL"
 
         # 6. Trend Confluence Mini-Watchlist (7 Indicators)
-        trend_watchlist = self._calculate_trend_watchlist(spot, pcr)
+        trend_watchlist = self._calculate_trend_watchlist(spot, pcr, pcr_available)
 
         # 7. Funds & Paper Wallet
         paper_wallet = self.get_paper_wallet()
@@ -3389,17 +3401,43 @@ class QuantTerminalBackend:
         self.cached_telemetry = payload
         return payload
 
-    def _calculate_trend_watchlist(self, current_spot: float, pcr: float) -> Dict[str, Any]:
+    def _calculate_trend_watchlist(self, current_spot: float, pcr: float,
+                                   pcr_available: bool = False) -> Dict[str, Any]:
         """Calculates 7 trend confluence parameters from candles + PCR."""
         # Defaults
-        ema_stack = {"status": "BULLISH", "reading": "8-EMA (23,909) > 21-EMA (23,865) | Slope +18.4"}
-        h1_ema = {"status": "BULLISH", "reading": "1H 8-EMA at 23,230 (+730 pts Above Support)"}
-        adx_val = {"status": "BULLISH", "reading": "ADX(14) = 32.5 | Strong Trend (+DI > -DI)"}
-        r2_val = {"status": "BULLISH", "reading": "LinReg R² = 0.74 (Strong Directional Quality)"}
-        mtf_val = {"status": "BULLISH", "reading": "15m, 30m, 1H Triple Aligned Bullish"}
-        vol_surge = {"status": "BULLISH", "reading": "Vol 1.25x vs MA20 (Institutional Accumulation)"}
-        pcr_flow = {"status": "BULLISH" if pcr >= 1.0 else ("BEARISH" if pcr < 0.85 else "SIDEWAYS"),
-                    "reading": f"Institutional PCR = {pcr:.2f} | Put Writing Dominates"}
+        # These three ARE recomputed from candles below when market_db has data.
+        # Until then they must not vote, so they start UNAVAILABLE rather than
+        # BULLISH with an invented figure.
+        ema_stack = {"status": "UNAVAILABLE", "reading": "Awaiting 15m candle data"}
+        adx_val = {"status": "UNAVAILABLE", "reading": "Awaiting 15m candle data"}
+        r2_val = {"status": "UNAVAILABLE", "reading": "Awaiting 15m candle data"}
+
+        # NOT COMPUTED ANYWHERE. These were previously hardcoded to BULLISH with
+        # fabricated readings ("1H 8-EMA at 23,230 (+730 pts Above Support)",
+        # "15m, 30m, 1H Triple Aligned Bullish", "Vol 1.25x vs MA20
+        # (Institutional Accumulation)") and nothing ever overwrote them. Three
+        # permanent BULLISH votes out of seven meant the panel reached "STRONG
+        # BULLISH REGIME" on only two real signals, and "STRONG BEARISH REGIME"
+        # (bears >= 5) was arithmetically unreachable. They now abstain until
+        # they are genuinely implemented.
+        h1_ema = {"status": "UNAVAILABLE", "reading": "1H EMA check not implemented"}
+        mtf_val = {"status": "UNAVAILABLE", "reading": "Multi-timeframe alignment not implemented"}
+        vol_surge = {"status": "UNAVAILABLE", "reading": "Volume surge check not implemented"}
+        # "Put Writing Dominates" used to be hardcoded into this string, so the
+        # panel said it even at PCR 0.70 where call writers dominate. The phrase
+        # now follows the actual reading, and abstains without chain data.
+        if not pcr_available:
+            pcr_flow = {"status": "UNAVAILABLE",
+                        "reading": "No chain_snap data — PCR unavailable"}
+        else:
+            if pcr >= 1.0:
+                _pcr_state, _pcr_phrase = "BULLISH", "Put Writing Dominates"
+            elif pcr < 0.85:
+                _pcr_state, _pcr_phrase = "BEARISH", "Call Writing Dominates"
+            else:
+                _pcr_state, _pcr_phrase = "SIDEWAYS", "Writers Balanced"
+            pcr_flow = {"status": _pcr_state,
+                        "reading": f"Institutional PCR = {pcr:.2f} | {_pcr_phrase}"}
 
         if self.market_db.exists():
             try:
@@ -3472,21 +3510,33 @@ class QuantTerminalBackend:
 
         bulls = sum(1 for x in items if x["status"] == "BULLISH")
         bears = sum(1 for x in items if x["status"] == "BEARISH")
+        n_avail = sum(1 for x in items if x["status"] != "UNAVAILABLE")
 
-        if bulls >= 5:
-            regime = "🟢 STRONG BULLISH REGIME"
+        # Verdict is a supermajority of the indicators that ACTUALLY reported,
+        # not a fixed 5-of-7. With a fixed threshold, abstaining indicators made
+        # a bearish call unreachable; scaling to what reported keeps the two
+        # directions symmetric. Fewer than 3 live indicators is not a regime.
+        need = max(3, int(round(0.70 * n_avail))) if n_avail else 0
+        if n_avail < 3:
+            regime = "⚪ INSUFFICIENT DATA — {} of {} indicators reporting".format(n_avail, len(items))
+            badge = "NO_DATA"
+        elif bulls >= need:
+            regime = "🟢 STRONG BULLISH REGIME ({}/{} indicators)".format(bulls, n_avail)
             badge = "BULLISH"
-        elif bears >= 5:
-            regime = "🔴 STRONG BEARISH REGIME"
+        elif bears >= need:
+            regime = "🔴 STRONG BEARISH REGIME ({}/{} indicators)".format(bears, n_avail)
             badge = "BEARISH"
         else:
-            regime = "🟡 SIDEWAYS / NO-TRADE ZONE"
+            regime = "🟡 SIDEWAYS / NO-TRADE ZONE ({}B/{}S of {})".format(bulls, bears, n_avail)
             badge = "SIDEWAYS"
 
         return {
             "items": items,
             "bullish_count": bulls,
             "bearish_count": bears,
+            "available_count": n_avail,
+            "total_count": len(items),
+            "threshold_used": need,
             "regime_banner": regime,
             "regime_badge": badge,
         }

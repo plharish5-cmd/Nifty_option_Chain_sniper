@@ -100,9 +100,16 @@ async def startup_event():
     backend.scanner_task = asyncio.create_task(backend.start_strategy_scanner_loop())
     log.info("✔ 4-Strategy Live Scanner daemon launched.")
 
-    # Start 60s background polling daemon for Stock Mojo live direct OI and folder watcher
+    # Writer / PE-CE flow. Stock Mojo is being retired: its feed returns 401 and
+    # the 8600 ICT-SMC desk already computes the same call/put writer dominance
+    # from our own Dhan chain. start_background_polling() is a no-op when
+    # stockmojo.enabled is false, so this logs honestly rather than claiming a
+    # daemon that is not running.
     backend.stockmojo_scraper.start_background_polling()
-    log.info("✔ Stock Mojo 60s Live OI & Multi-Strike Polling daemon launched.")
+    if getattr(backend.stockmojo_scraper, "enabled", True):
+        log.info("✔ Stock Mojo 60s Live OI & Multi-Strike Polling daemon launched.")
+    else:
+        log.info("✔ Writer / PE-CE flow source: 8600 ICT-SMC desk (Stock Mojo retired).")
 
     # Auto-ingest check on startup (Problem 1A & Problem 5)
     try:

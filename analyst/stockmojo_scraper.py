@@ -175,6 +175,11 @@ class StockMojoScraper:
 
         self.cfg = self._load_config()
         sm_cfg = self.cfg.get("stockmojo", {})
+        # Master kill switch. start_background_polling() previously ignored this
+        # entirely and started the daemon unconditionally, so a dead or
+        # unauthorised feed kept polling and filling the log with 401s with no
+        # way to turn it off short of editing code.
+        self.enabled = bool(sm_cfg.get("enabled", True))
         self.poll_interval = int(self.cfg.get("POLL_INTERVAL_SECONDS") or self.cfg.get("STOCKMOJO_POLL_SECONDS") or sm_cfg.get("poll_interval_seconds", 60))
         self.pcr_url = self.cfg.get("STOCKMOJO_PCR_URL") or sm_cfg.get("api_url", "https://data.stockmojo.in/live/oi/pcr")
         self.api_url = self.pcr_url
@@ -245,7 +250,16 @@ class StockMojoScraper:
         self.last_sync_status: str = "INITIALIZED"
 
     def start_background_polling(self) -> None:
-        """Starts periodic background polling daemon."""
+        """Starts periodic background polling daemon.
+
+        Honours stockmojo.enabled: with it off, nothing is started and nothing
+        is polled. The 8510 desk now takes its call/put writer and PE-CE data
+        from the 8600 ICT-SMC engines instead.
+        """
+        if not self.enabled:
+            log.info("Stock Mojo polling is DISABLED (stockmojo.enabled=false). "
+                     "Writer and PE-CE data comes from the 8600 desk.")
+            return
         if self._is_running:
             return
         self._is_running = True
@@ -1594,7 +1608,14 @@ class StockMojoScraper:
         Endpoint 1: Full-Chain Call vs. Put Graphs (POST https://data.stockmojo.in/live/oi/pcr).
         Exact Payload: {"symbol": 1, "dt": null, "expiries": [215]}
         Uses user session headers (j and t).
+
+        Fails closed when disabled, so the on-demand route cannot reach the
+        network behind the kill switch either.
         """
+        if not self.enabled:
+            return {"ok": False, "disabled": True,
+                    "error": "Stock Mojo is disabled (stockmojo.enabled=false). "
+                             "Writer and PE-CE data comes from the 8600 desk."}
         url = self.pcr_url or self.cfg.get("STOCKMOJO_PCR_URL", "https://data.stockmojo.in/live/oi/pcr")
         j = self.header_j or self.cfg.get("STOCKMOJO_HEADER_J", "")
         t = self.header_t or self.cfg.get("STOCKMOJO_HEADER_T", "")
