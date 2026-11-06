@@ -379,7 +379,10 @@ def test_8_multi_strike_direct_endpoint_and_synergy_gating():
 
     # 1. Config and endpoint integrity verification
     assert "https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff" in scraper.multi_strike_url
-    assert scraper.header_t == "btsj6kuyv8zko1p7jdz1793787160444"
+    # The literal session token that used to be asserted here has been removed:
+    # a test should never pin a real credential. header_t now comes from config
+    # or the environment and is empty by default.
+    assert isinstance(scraper.header_t, str)
     assert scraper.poll_interval == 60
     assert scraper.payload.get("symbol") in (1, "NIFTY")
 
