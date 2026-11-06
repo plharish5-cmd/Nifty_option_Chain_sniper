@@ -588,21 +588,30 @@
 
             <!-- Master Execution Mode Selector, Paper Switch, Settings & Kill Switch -->
             <div class="header-toolbar">
-                <div class="mode-toggle-group">
-                    <button type="button" class="mode-btn" id="btnModeLive" onclick="setMasterMode('ALGO_LIVE_ONLY')">🚀 ALGO LIVE ONLY</button>
-                    <button type="button" class="mode-btn active-paper" id="btnModePaper" onclick="setMasterMode('PAPER_ONLY')">🧪 PAPER TRADE ONLY</button>
-                    <button type="button" class="mode-btn" id="btnModeBoth" onclick="setMasterMode('BOTH')">⚡ BOTH: LIVE + PAPER SYNC</button>
+                <!-- PAPER TRADING IS PERMANENT AND UNSWITCHABLE.
+                     The ALGO_LIVE_ONLY / PAPER_ONLY / BOTH selector was removed: ALGO_LIVE_ONLY
+                     would have turned paper OFF, and this desk exists to paper-trade every
+                     signal from an enabled setup so confidence is built on a record rather
+                     than an impression. Real money is now a separate, additive opt-in below.
+                     The ALGO ONLY checkbox was removed too, because manual buying has been
+                     removed outright — the gate is now permanent rather than toggleable. -->
+                <div style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono);
+                            background:rgba(16,185,129,0.10); padding:6px 12px; border-radius:6px;
+                            border:1px solid rgba(16,185,129,0.35);">
+                    <span>📝 PAPER TRADING: <b style="color:var(--emerald);">ALWAYS ON</b></span>
                 </div>
 
-                <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);">
-                    <input type="checkbox" id="chkPaperExecutionSwitch" checked onchange="togglePaperExecutionSwitch(this.checked)" style="cursor:pointer;">
-                    <span>Paper Live Exec: <b id="paperExecBadge" style="color:var(--emerald);">ON</b></span>
-                </label>
+                <div style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono);
+                            background:var(--bg-input); padding:6px 12px; border-radius:6px; border:1px solid var(--border-subtle);"
+                     title="Algo-generated signals only. Manual order placement has been removed from this desk.">
+                    <span>🤖 <b style="color:var(--emerald);">ALGO SIGNALS ONLY</b></span>
+                </div>
 
-                <label title="8510 is an algo desk. When ALGO ONLY is on, only algo-generated signals execute — clicking a strike by hand is rejected, not filled."
+                <label id="realMoneyToggleWrap"
+                       title="Real money is ADDITIVE: paper trading continues regardless. Requires typed confirmation."
                        style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);">
-                    <input type="checkbox" id="chkAlgoOnlySwitch" checked onchange="toggleAlgoOnly(this.checked)" style="cursor:pointer;">
-                    <span>Execution: <b id="algoOnlyBadge" style="color:var(--emerald);">🤖 ALGO ONLY</b></span>
+                    <input type="checkbox" id="chkRealMoneySwitch" onchange="toggleRealMoney(this.checked)" style="cursor:pointer;">
+                    <span>Real Money: <b id="realMoneyBadge" style="color:var(--text-muted);">OFF</b></span>
                 </label>
 
                 <!-- Problem 3 Testing Override Toggle in Settings -->
