@@ -164,19 +164,33 @@ def main() -> int:
     }
     o = report["overall"]
     modes = {str(r.get("mode") or "") for r in rows}
-    real_modes = {m for m in modes if "LIVE" in m or m == "BOTH"}
-    is_simulated = not real_modes
     report["modes_present"] = sorted(modes)
+
+    # Whether these are real fills is decided by EVIDENCE, not by the mode
+    # label. A row tagged BOTH proves nothing: if the broker was not configured
+    # the live leg never filled, only the paper one did, and the PAPER_ONLY
+    # fill_price override does not apply to BOTH — so the row still carries
+    # fill_price == signal_ltp and a slippage of exactly 0.
+    #
+    # A genuine market fill essentially never lands exactly on the signal price.
+    # So rows with slippage exactly 0.0 are treated as non-evidence, and the
+    # measurement is only trustworthy if a real share of fills moved at all.
+    nonzero = [p for p in allv if abs(p) > 1e-9]
+    report["n_nonzero_slippage"] = len(nonzero)
+    report["pct_nonzero"] = round(100.0 * len(nonzero) / len(allv), 1) if allv else 0.0
+    is_simulated = report["pct_nonzero"] < 50.0
     report["is_simulated"] = is_simulated
+    if nonzero:
+        report["nonzero_only"] = describe(nonzero, "fills that actually moved", a.lot)
     report["assumption_vs_reality"] = {
         "assumed_inr_per_trade": 32.50,
         "measured_inr_per_leg": o.get("mean_inr"),
         "verdict": (
-            "NOT A MEASUREMENT. Every fill here is a PAPER fill, derived from "
-            "signal_ltp plus a simulated slippage the desk invented "
-            "(paper_execution.simulated_slippage_pts). No order reached a "
-            "broker, so this cannot confirm or refute the 32.50 assumption, and "
-            "it cannot justify an execution optimisation."
+            "NOT A MEASUREMENT. Only {}% of fills differ from the signal price "
+            "at all, so these are simulated: fill_price was taken from "
+            "signal_ltp and no order reached a broker. Cannot confirm or refute "
+            "the 32.50 assumption, and cannot justify an execution "
+            "optimisation.".format(report["pct_nonzero"])
             if is_simulated else
             ("MEASURED COST IS HIGHER than the 32.50 assumed in the backtests"
              if (o.get("mean_inr") or 0) > 32.50 else
@@ -214,16 +228,27 @@ def main() -> int:
     print("ASSUMPTION VS REALITY")
     print("-" * 76)
     print("  modes present    : {}".format(", ".join(report["modes_present"]) or "-"))
+    print("  fills that moved : {} of {}  ({}%)".format(
+        report["n_nonzero_slippage"], len(allv), report["pct_nonzero"]))
     print("  backtests assume : Rs32.50 per trade (0.5 pts on lot 65)")
     print("  from this ledger : Rs{} per leg (mean)".format(o.get("mean_inr")))
     if is_simulated:
         print()
-        print("  *** PAPER FILLS ONLY — THIS IS NOT A MEASUREMENT ***")
-        print("  A paper fill is booked as signal_ltp + a simulated slippage")
-        print("  the desk chose itself (paper_execution.simulated_slippage_pts,")
-        print("  mean 0.125 pts = Rs8.13 on lot 65). No order reached a broker,")
-        print("  so this neither confirms nor refutes the Rs32.50 assumption.")
-        print("  Real slippage needs fills in ALGO_LIVE_ONLY or BOTH.")
+        print("  *** NOT A MEASUREMENT ***")
+        print("  Only {}% of fills differ from the signal price at all. A real".format(
+            report["pct_nonzero"]))
+        print("  market fill essentially never lands exactly on the signal, so")
+        print("  these are simulated: fill_price was taken from signal_ltp and")
+        print("  no order reached a broker. A 'BOTH' mode tag does not change")
+        print("  that -- if the broker was unconfigured only the paper leg")
+        print("  filled. So this neither confirms nor refutes the Rs32.50")
+        print("  assumption, and cannot justify an execution optimisation.")
+        if report.get("nonzero_only", {}).get("n"):
+            d = report["nonzero_only"]
+            print()
+            print("  Of the {} that DID move: mean {} pts (Rs{}).".format(
+                d["n"], d["mean_pts"], d.get("mean_inr")))
+            print("  Too few to conclude anything.")
     else:
         print("  {}".format(report["assumption_vs_reality"]["verdict"]))
     print()
