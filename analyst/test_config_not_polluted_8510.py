@@ -112,3 +112,74 @@ def test_config_is_not_dirty_relative_to_git(cfg):
             "config is modified in the working tree: {!r}. If this appeared "
             "during a test run, a test is writing to the live config."
             .format(out.stdout.strip()))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v1.9.4c — the off-hours override must not survive anything
+#
+# ROOT CAUSE OF THE 06 NOV JUNK LEDGER. set_off_hours_paper_testing() used to
+# write allow_off_hours_paper_testing=true to the live config. Tests call it
+# against the real file, so the flag stuck true, and since it is the only thing
+# permitting out-of-session execution the scanner recorded paper trades at
+# 02:49, 03:50, 04:10 and 16:56 IST. Those rows plus duplicates of one fill
+# were the Rs85,321 the replay reported.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _bare_backend(tmp_path):
+    import sys
+    sys.path.insert(0, str(ROOT))
+    from analyst.terminal8510_backend import QuantTerminalBackend
+    b = object.__new__(QuantTerminalBackend)
+    b.cfg = {}
+    b.config_path = tmp_path / "config.json"
+    b.allow_off_hours_paper_testing = False
+    b._off_hours_expires_at = 0.0
+    return b
+
+
+def test_enabling_off_hours_never_writes_to_config(tmp_path):
+    b = _bare_backend(tmp_path)
+    res = b.set_off_hours_paper_testing(True)
+    assert res["ok"] is True
+    assert res["persisted"] is False
+    assert b.cfg.get("allow_off_hours_paper_testing") is False, \
+        "the flag must not be recorded as enabled in config"
+    assert not b.config_path.exists(), "no config file should have been written"
+
+
+def test_off_hours_override_expires_on_its_own(tmp_path):
+    b = _bare_backend(tmp_path)
+    b.set_off_hours_paper_testing(True, minutes=1)
+    assert b.off_hours_testing_active() is True
+    # Wind the clock past the expiry rather than sleeping.
+    b._off_hours_expires_at = 1.0
+    assert b.off_hours_testing_active() is False, "a stale override must expire"
+    assert b.allow_off_hours_paper_testing is False, "and must clear itself"
+
+
+def test_disabling_is_immediate(tmp_path):
+    b = _bare_backend(tmp_path)
+    b.set_off_hours_paper_testing(True)
+    b.set_off_hours_paper_testing(False)
+    assert b.off_hours_testing_active() is False
+
+
+def test_a_persisted_true_cannot_revive_it(tmp_path):
+    """Even with the bad value still on disk, nothing resumes out-of-session
+    execution: off_hours_testing_active() reads the in-memory flag, which the
+    constructor forces to False."""
+    b = _bare_backend(tmp_path)
+    b.cfg["allow_off_hours_paper_testing"] = True      # the stale value
+    assert b.off_hours_testing_active() is False
+
+
+def test_the_execution_gates_use_the_expiring_check():
+    """Source guard: both gates must call off_hours_testing_active(), not read
+    the raw attribute, or an expired override still permits a trade."""
+    src = (ROOT / "analyst" / "terminal8510_backend.py").read_text(encoding="utf-8")
+    # Two call sites: the execution gate and the position gate. The
+    # definition line reads "def off_hours_testing_active(self)" and so
+    # does not match this pattern.
+    assert src.count("off_hours_testing_active()") >= 2
+    assert "is_paper_exec and self.allow_off_hours_paper_testing" not in src
+    assert "is_paper_pos and self.allow_off_hours_paper_testing" not in src

@@ -2930,7 +2930,13 @@ class QuantTerminalBackend:
         self._last_synergy_status: str = "INITIALIZED"
 
         # Market Hours Validator & Testing Override Toggle
-        self.allow_off_hours_paper_testing: bool = bool(self.cfg.get("allow_off_hours_paper_testing", False))
+        # v1.9.4c: ALWAYS starts false. A persisted true (left behind by a test
+        # run writing the live config) must never revive out-of-session
+        # execution on restart -- that is what produced 02:49 IST paper
+        # trades on 2026-11-06. Enable it per session via
+        # set_off_hours_paper_testing(), which expires on its own.
+        self.allow_off_hours_paper_testing: bool = False
+        self._off_hours_expires_at: float = 0.0
         self.nse_holidays: List[str] = self.cfg.get("nse_holidays", [
             "2026-01-26", "2026-03-25", "2026-04-14", "2026-05-01",
             "2026-08-15", "2026-10-02", "2026-12-25"
@@ -3309,18 +3315,61 @@ class QuantTerminalBackend:
         """Returns dynamic NIFTY lot size (65) from instrument master."""
         return self.inst_mgr.get_nifty_lot_size()
 
-    def set_off_hours_paper_testing(self, enabled: bool) -> Dict[str, Any]:
-        """Toggles paper trading outside market hours for testing."""
+    def set_off_hours_paper_testing(self, enabled: bool,
+                                    minutes: Optional[int] = None) -> Dict[str, Any]:
+        """Toggles paper trading outside market hours — SESSION-ONLY, EXPIRING.
+
+        THIS USED TO PERSIST TO DISK, AND THAT WAS THE BUG.
+        Several tests call this (and the Dhan config endpoints) against the real
+        analyst/terminal8510_config.json rather than a tmp_path copy, so a suite
+        run left allow_off_hours_paper_testing = true on disk. The flag is the
+        only thing permitting execution outside market hours, so with it stuck
+        true the scanner recorded paper trades at 02:49, 03:50, 04:10 and 16:56
+        IST on 2026-11-06 -- times when NIFTY is not trading and no quote can be
+        real. Those rows, plus duplicates of a single fill, made up the Rs85,321
+        that the 06 Nov replay reported.
+
+        An off-hours override is a temporary debugging aid by nature, so it is
+        now treated like the real-money arm: held in memory only, never written
+        to config, and expiring on its own. A restart clears it, and so does the
+        clock. Same reasoning as configure_real_money persisting disarmed.
+        """
         self.allow_off_hours_paper_testing = bool(enabled)
-        self.cfg["allow_off_hours_paper_testing"] = self.allow_off_hours_paper_testing
-        try:
-            self.config_path.write_text(json.dumps(self.cfg, indent=2))
-        except Exception as e:
-            log.warning("Could not persist allow_off_hours_paper_testing: %s", e)
+        ttl = int(minutes if minutes is not None
+                  else self.cfg.get("off_hours_testing_ttl_minutes", 60) or 60)
+        if enabled:
+            self._off_hours_expires_at = time.time() + max(1, ttl) * 60.0
+            log.warning("Off-hours paper testing ENABLED for %d minutes. "
+                        "Session-only: not persisted, cleared on restart.", ttl)
+        else:
+            self._off_hours_expires_at = 0.0
+            log.info("Off-hours paper testing disabled.")
+        # Deliberately NOT written to self.config_path. The shipped config must
+        # always read false; analyst/test_config_not_polluted_8510.py asserts it.
+        self.cfg["allow_off_hours_paper_testing"] = False
         return {
             "ok": True,
-            "allow_off_hours_paper_testing": self.allow_off_hours_paper_testing
+            "allow_off_hours_paper_testing": self.allow_off_hours_paper_testing,
+            "expires_in_minutes": (round(max(0.0, self._off_hours_expires_at - time.time()) / 60.0, 1)
+                                   if enabled else 0),
+            "persisted": False,
+            "note": ("Session-only and expiring. This never reaches the config "
+                     "file, so a test run cannot leave the desk trading "
+                     "outside market hours."),
         }
+
+    def off_hours_testing_active(self) -> bool:
+        """The gate. False once the override expires, even if the flag is set."""
+        if not getattr(self, "allow_off_hours_paper_testing", False):
+            return False
+        exp = float(getattr(self, "_off_hours_expires_at", 0.0) or 0.0)
+        if exp and time.time() > exp:
+            self.allow_off_hours_paper_testing = False
+            self._off_hours_expires_at = 0.0
+            log.warning("Off-hours paper testing override EXPIRED — "
+                        "out-of-session execution blocked again.")
+            return False
+        return True
 
     def update_dhan_config(self, body: Dict[str, Any]) -> Dict[str, Any]:
         """Safely updates Dhan credentials and metadata into .env and config."""
@@ -5577,7 +5626,7 @@ class QuantTerminalBackend:
             if enforce_market_hours:
                 is_paper_exec = (mode == "PAPER_ONLY" or (mode == "BOTH" and self.paper_execution_enabled))
                 if not is_open:
-                    if mode == "ALGO_LIVE_ONLY" or not (is_paper_exec and self.allow_off_hours_paper_testing):
+                    if mode == "ALGO_LIVE_ONLY" or not (is_paper_exec and self.off_hours_testing_active()):
                         curr_t = datetime.now(IST).strftime("%H:%M:%S")
                         err_msg = (
                             f"❌ Market Closed — Cannot Place Order Now\n"
@@ -5942,7 +5991,7 @@ class QuantTerminalBackend:
                 if not is_open:
                     pos_mode = str(pos["mode"]) if pos else ""
                     is_paper_pos = ("PAPER" in pos_mode)
-                    if not (is_paper_pos and self.allow_off_hours_paper_testing):
+                    if not (is_paper_pos and self.off_hours_testing_active()):
                         curr_t = datetime.now(IST).strftime("%H:%M:%S")
                         err_msg = (
                             f"❌ Market Closed — Cannot Square-Off Now\n"
