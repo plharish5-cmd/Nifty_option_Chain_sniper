@@ -111,14 +111,65 @@ async def startup_event():
             await asyncio.sleep(backend.cfg['dhan_oi']['poll_seconds'])
     app.state.dhan_oi_task = asyncio.create_task(oi_poller())
 
+    def should_run_post_market_ingest(now_hhmm, schedule_ist, today_s,
+                                      done_for_day, last_attempt_ts,
+                                      retry_seconds, now_ts):
+        """Pure guard for the post-market ingest. Extracted so it is testable.
+
+        A closure inside an infinite loop is exactly where the 505-ingests-per-
+        evening bug lived unnoticed, so the decision is a function with tests
+        rather than an inline condition.
+        """
+        if now_hhmm < schedule_ist:
+            return False
+        if done_for_day == today_s:
+            return False
+        if last_attempt_ts and (now_ts - last_attempt_ts) < retry_seconds:
+            return False
+        return True
+
+    app.state.should_run_post_market_ingest = should_run_post_market_ingest
+
     async def auto_ingest_background_scheduler():
+        """Post-market ingest, ONCE per day, with a bounded retry on failure.
+
+        The previous version fired whenever the clock read >= schedule_ist, a
+        condition that stays true until midnight. daily_ingest()'s own early
+        return is guarded by `date_str < today`, which is False for today, so
+        nothing stopped it: that was a full ingest every 60 seconds from 15:35
+        to 23:59 — roughly 505 per evening, each pulling Dhan and rewriting
+        analyst/replay_data/<today>.json. The archive subprocesses were safe
+        (run_post_market_archivers is idempotent via the post_market_archives
+        table) but the Dhan pulls around them were not, which is a plausible
+        contributor to the 429 rate-limit stalls.
+
+        Now: at most one successful ingest per calendar day, and on failure a
+        retry no sooner than retry_seconds, so a broken feed cannot turn into a
+        tight loop against the broker.
+        """
+        done_for_day = None          # date string of the last SUCCESSFUL ingest
+        last_attempt_ts = 0.0
         while True:
             try:
                 await asyncio.sleep(60)
                 now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
                 today_s = now_ist.strftime("%Y-%m-%d")
-                if now_ist.strftime('%H:%M') >= backend.cfg['post_market_archivers']['schedule_ist']:
-                    await asyncio.to_thread(backend.daily_ingest,today_s)
+                arch_cfg = backend.cfg['post_market_archivers']
+                retry_after = float(arch_cfg.get('retry_seconds', 300))
+                if not should_run_post_market_ingest(
+                        now_ist.strftime('%H:%M'), arch_cfg['schedule_ist'],
+                        today_s, done_for_day, last_attempt_ts,
+                        retry_after, time.time()):
+                    continue
+                last_attempt_ts = time.time()
+                res = await asyncio.to_thread(backend.daily_ingest, today_s)
+                if isinstance(res, dict) and res.get('eod_summary'):
+                    done_for_day = today_s
+                    log.info("✔ Post-market ingest complete for %s; no further "
+                             "ingest will run today.", today_s)
+                else:
+                    log.warning("Post-market ingest for %s did not complete; "
+                                "retrying in %.0fs.", today_s, retry_after)
             except asyncio.CancelledError:
                 break
             except Exception as ex:

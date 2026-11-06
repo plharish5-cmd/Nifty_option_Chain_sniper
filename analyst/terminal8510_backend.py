@@ -3022,6 +3022,140 @@ class QuantTerminalBackend:
         volume=self.futures_volume_engine.get_latest_vsr() if self.futures_volume_engine else {}
         return compute_five_factor_confluence(context,self.dhan_oi.cached_snapshot(),volume,self.cfg)
 
+    # ── PROSPECTIVE SIGNAL OBSERVATION LOG ───────────────────────────────────
+    #
+    # WHY: the 5-factor confluence is computed and shown on the badge, but was
+    # never persisted, so nothing linked pillar states to outcomes. Every filter
+    # tested on this desk so far has been scored on data that already existed
+    # when the idea was formed, which is how sixteen measures reached NOT BUILT.
+    # The one test that cannot be p-hacked is a prospective one, because the
+    # data does not exist yet.
+    #
+    # Rules this follows:
+    #   - EVERY signal is logged, traded or not. Logging only executed signals
+    #     would record exactly the survivors and bias the sample.
+    #   - It GATES NOTHING. Write-only observation.
+    #   - It can never break execution: all failures are swallowed and logged.
+    #   - Outcomes are NOT copied here. position_id is recorded and the P&L is
+    #     joined from positions later, so there is one source of truth.
+
+    SIGNAL_OBS_DDL = """
+    CREATE TABLE IF NOT EXISTS signal_observations (
+        signal_uid      TEXT PRIMARY KEY,
+        created_at      TEXT,
+        session_date    TEXT,
+        session_time    TEXT,
+        slot_15m        TEXT,
+        strategy_id     TEXT,
+        setup_name      TEXT,
+        direction       TEXT,
+        opt_side        TEXT,
+        conviction      TEXT,
+        symbol          TEXT,
+        security_id     TEXT,
+        spot            REAL,
+        premium         REAL,
+        score           INTEGER,
+        grade           TEXT,
+        pillar_1_trend          INTEGER,
+        pillar_2_anti_chop      INTEGER,
+        pillar_3_slot_volume    INTEGER,
+        pillar_4_writer_flow    INTEGER,
+        pillar_5_pocket         INTEGER,
+        slot_rvol_median        REAL,
+        vsr_10                  REAL,
+        bar_accel_ratio         REAL,
+        slot_status             TEXT,
+        oi_bias                 TEXT,
+        oi_source               TEXT,
+        separation_atr          REAL,
+        flips_12bar             INTEGER,
+        executed        INTEGER,
+        position_id     TEXT,
+        skip_reason     TEXT
+    )
+    """
+
+    @staticmethod
+    def _as_int_bool(v) -> int:
+        return 1 if bool(v) else 0
+
+    def log_signal_observation(self, sig: Dict[str, Any],
+                               contract: Optional[Dict[str, Any]] = None,
+                               confluence: Optional[Dict[str, Any]] = None,
+                               volume: Optional[Dict[str, Any]] = None,
+                               oi: Optional[Dict[str, Any]] = None,
+                               spot: Optional[float] = None) -> str:
+        """Record one signal and the pillar state at that instant. Returns its uid.
+
+        Never raises: a failure here must not stop a trade.
+        """
+        now = datetime.now(IST)
+        uid = "SIG_{}_{}".format(now.strftime("%Y%m%d%H%M%S"),
+                                 str(sig.get("strategy_id", "NA"))[:24])
+        try:
+            conf = confluence or {}
+            pillars = conf.get("pillars") or conf.get("values") or {}
+            vol = volume or {}
+            oid = oi or {}
+            hhmm = now.strftime("%H:%M")
+            mins = now.hour * 60 + now.minute
+            slot = "{:02d}:{:02d}".format((mins // 15 * 15) // 60, (mins // 15 * 15) % 60)
+
+            def pill(*names):
+                for n in names:
+                    if n in pillars:
+                        return self._as_int_bool(pillars[n])
+                return None
+
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute(self.SIGNAL_OBS_DDL)
+                conn.execute(
+                    "INSERT OR REPLACE INTO signal_observations VALUES "
+                    "(" + ",".join("?" * 32) + ")",
+                    (uid, now.strftime("%Y-%m-%d %H:%M:%S IST"),
+                     now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S"), slot,
+                     str(sig.get("strategy_id", "")), str(sig.get("setup_name", "")),
+                     str(sig.get("direction", "")), str(sig.get("opt_side", "")),
+                     str(sig.get("conviction", "")),
+                     str((contract or {}).get("symbol", "")),
+                     str((contract or {}).get("security_id", "")),
+                     float(spot) if spot else None,
+                     float((contract or {}).get("ltp") or 0.0) or None,
+                     int(conf.get("score")) if conf.get("score") is not None else None,
+                     str(conf.get("grade", "")),
+                     pill("pillar_1_trend_structure", "pillar_1_trend"),
+                     pill("pillar_2_anti_chop_regime", "pillar_2_anti_chop"),
+                     pill("pillar_3_slot_volume"),
+                     pill("pillar_4_option_writer_flow", "pillar_4_writer_flow"),
+                     pill("pillar_5_pocket_execution", "pillar_5_pocket"),
+                     vol.get("slot_rvol_median"), vol.get("vsr_10"),
+                     vol.get("bar_accel_ratio"), str(vol.get("slot_status", "")),
+                     str(oid.get("bias", "")), str(oid.get("source", "")),
+                     sig.get("separation_atr"), sig.get("flips_12bar"),
+                     0, "", ""))
+            return uid
+        except Exception as exc:
+            log.warning("signal_observations insert failed (%s): %s",
+                        type(exc).__name__, exc)
+            return uid
+
+    def mark_signal_outcome(self, signal_uid: str, executed: bool,
+                            position_id: str = "", skip_reason: str = "") -> None:
+        """Attach what happened to a logged signal. Never raises."""
+        if not signal_uid:
+            return
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute(
+                    "UPDATE signal_observations SET executed=?, position_id=?, "
+                    "skip_reason=? WHERE signal_uid=?",
+                    (1 if executed else 0, str(position_id or ""),
+                     str(skip_reason or ""), signal_uid))
+        except Exception as exc:
+            log.warning("signal_observations update failed (%s): %s",
+                        type(exc).__name__, exc)
+
     def run_post_market_archivers(self,date_str=None,now=None):
         """Idempotent, bounded subprocesses. Source SQLite is never opened writable here."""
         now=now or datetime.now(IST)
@@ -4041,6 +4175,21 @@ class QuantTerminalBackend:
             log.info("🔥 STRATEGY SIGNAL TRIGGERED: %s | %s | %s | Conviction: %s",
                      sig["setup_name"], sig["direction"], sig["details"], sig["conviction"])
 
+            # Prospective observation: record the pillar state for EVERY signal,
+            # before we know whether it will be executed. Gates nothing.
+            signal_uid = ""
+            try:
+                _spot = (self.cached_telemetry.get("spot") or {}).get("price")
+                signal_uid = self.log_signal_observation(
+                    sig,
+                    confluence=self.cached_telemetry.get("five_factor_confluence"),
+                    volume=self.cached_telemetry.get("futures_volume_surge"),
+                    oi=self.cached_telemetry.get("institutional_pe_ce"),
+                    spot=_spot,
+                )
+            except Exception as exc:
+                log.warning("signal observation skipped (%s)", type(exc).__name__)
+
             # Resolve Contract based on direction and algo_strike_selection
             opt_side = sig["opt_side"]
             target_contract = None
@@ -4056,6 +4205,8 @@ class QuantTerminalBackend:
 
             if not target_contract:
                 log.info("No enabled priority contract found for %s (%s)", sig["setup_name"], opt_side)
+                self.mark_signal_outcome(signal_uid, False,
+                                         skip_reason="NO_ENABLED_CONTRACT")
                 continue
 
             # Check if an identical position is already OPEN in ledger
@@ -4068,6 +4219,8 @@ class QuantTerminalBackend:
                     ).fetchone()
                     if r and r[0] > 0:
                         log.info("Position already OPEN for %s — skipping duplicate execution", target_contract["symbol"])
+                        self.mark_signal_outcome(signal_uid, False,
+                                                 skip_reason="DUPLICATE_POSITION_OPEN")
                         continue
             except Exception as e:
                 log.error("Ledger check error in signal execution: %s", e)
@@ -4082,6 +4235,13 @@ class QuantTerminalBackend:
                 is_algo_trade=True,
             )
             log.info("Strategy %s execution result: %s", sig["setup_name"], res.get("status", "SUBMITTED"))
+            self.mark_signal_outcome(
+                signal_uid,
+                executed=bool(res.get("ok")),
+                position_id=str(res.get("position_id", "") or ""),
+                skip_reason="" if res.get("ok") else str(
+                    res.get("rejection_reason") or res.get("error") or "")[:200],
+            )
 
     async def start_strategy_scanner_loop(self) -> None:
         """Continuous background daemon scanning all 4 core strategies."""
