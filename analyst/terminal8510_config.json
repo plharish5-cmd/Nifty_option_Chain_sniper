@@ -42,7 +42,7 @@
     "runner_pct": 20
   },
   "algo_strike_selection": {
-    "LONG_CE_ITM": true,
+    "LONG_CE_ITM": false,
     "LONG_CE_ATM": true,
     "LONG_PE_ITM": true,
     "LONG_PE_ATM": true
@@ -306,5 +306,6 @@
     },
     "_evidence": "UNVALIDATED. Read-only classification bridge; never execution. Ports and parity audited against locked TypeScript; sparse chain history prevents a final trading verdict.",
     "max_payload_bytes": 4000000
-  }
+  },
+  "algo_strike_selection_evidence": "Harish explicitly requested LONG_CE_ITM disabled on 2026-11-07; other strike selection entries unchanged."
 }

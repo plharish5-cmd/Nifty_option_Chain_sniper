@@ -687,6 +687,13 @@ async def api_positions():
     return JSONResponse(content=positions)
 
 
+@app.get('/api/history/recorded')
+async def api_recorded_history(from_date: str = '1900-01-01', to_date: str = '9999-12-31'):
+    try:
+        return await asyncio.to_thread(backend._recorded_history().report, from_date, to_date)
+    except ValueError as exc:
+        return JSONResponse({'ok':False,'error':str(exc)},status_code=400)
+
 @app.get("/api/replay/dates")
 async def api_replay_dates(req: Request):
     dates = backend.get_available_dates()
