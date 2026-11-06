@@ -84,5 +84,29 @@ def test_config_patch_preserves_unrelated_preferences(tmp_path):
  from analyst.apply_v194d_config import apply
  p=tmp_path/'config.json';before={'super_trail':{'partial_exit_enabled':True},'execution_safety_v194':{'live_validation_status':'NO_GO'},'dhan':{'whitelisted_ip':'EXAMPLE'},'algo_strike_selection':{'LONG_CE_ITM':True,'LONG_PE_ITM':False}}
  p.write_text(json.dumps(before));apply(p);after=json.loads(p.read_text())
- assert after['super_trail']==before['super_trail'] and after['execution_safety_v194']==before['execution_safety_v194'] and after['dhan']==before['dhan']
+ assert after['super_trail']==before['super_trail'] and after['dhan']==before['dhan']
+ assert all(after['execution_safety_v194'][key]==value for key,value in before['execution_safety_v194'].items())
  assert after['algo_strike_selection']=={'LONG_CE_ITM':False,'LONG_PE_ITM':False}
+
+def test_research_report_discloses_estimates_and_coverage_above_each_table():
+ from analyst.ict_smc_research_view_8510 import render
+ evidence=json.loads((ROOT/'analyst/ict_smc_backtest_evidence_8510.json').read_text());page=render(evidence)
+ assert page.count('CHAIN COVERAGE FOR THIS BACKTEST')>=page.count('<table>')
+ assert 'Estimated premium exits' in page and 'NO GO FOR EXECUTION' in page
+ assert evidence['executed_paired_contrasts']==32
+ assert max(abs(r['direction_control_session_blocks']['t_stat']) for r in evidence['summary'])<1
+
+def test_shipped_config_write_guard_prevents_pollution():
+ p=ROOT/'analyst/terminal8510_config.json';before=p.read_bytes()
+ with pytest.raises(AssertionError,match='shipped 8510 config'):p.write_text('{}')
+ assert p.read_bytes()==before
+
+def test_research_route_is_read_only_and_available():
+ import asyncio,httpx
+ from engine_8510_live import app
+ async def check():
+  async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://testserver') as client:
+   result=await client.get('/api/ict-smc-signals/research')
+   assert result.status_code==200 and 'text/html' in result.headers['content-type']
+   assert 'NO GO FOR EXECUTION' in result.text and 'CHAIN COVERAGE FOR THIS BACKTEST' in result.text
+ asyncio.run(check())

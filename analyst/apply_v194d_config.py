@@ -7,6 +7,10 @@ import json,os,tempfile
 
 def apply(path):
     path=Path(path);cfg=json.loads(path.read_text())
+    patch=json.loads(Path(__file__).with_name('v194d_config_patch.json').read_text())
+    safety=cfg.setdefault('execution_safety_v194',{})
+    for key,value in patch['execution_safety_defaults'].items():safety.setdefault(key,value)
+    if safety.get('typed_confirmation')=='ENABLE REAL MONEY':safety['typed_confirmation']='LIVE'
     cfg.setdefault('algo_strike_selection',{})['LONG_CE_ITM']=False
     cfg['algo_strike_selection_evidence']='Harish explicitly requested LONG_CE_ITM disabled on 2026-11-07; other strike selection entries unchanged.'
     fd,name=tempfile.mkstemp(prefix=path.name+'.',dir=path.parent)

@@ -61,10 +61,33 @@ def private_8510_state(tmp_path,monkeypatch,request):
     if hasattr(request.module,'CONFIG_PATH'):
         value=getattr(request.module,'CONFIG_PATH')
         if isinstance(value,Path) and value.name=='terminal8510_config.json':monkeypatch.setattr(request.module,'CONFIG_PATH',path)
+    # The radar module owns a singleton whose default path is otherwise the
+    # shipped config, even when the enclosing backend uses a private config.
+    from analyst import ema_proximity_engine as radar
+    monkeypatch.setattr(radar,'DEFAULT_CONFIG_PATH',path)
+    monkeypatch.setattr(radar,'DEFAULT_REPLAY_DIR',root/'analyst/replay_data')
+    monkeypatch.setattr(radar.ema_proximity_engine,'config_path',path)
+    monkeypatch.setattr(radar.ema_proximity_engine,'replay_dir',root/'analyst/replay_data')
+    monkeypatch.setattr(radar.ema_proximity_engine,'db_path',SOURCE/'ict_smc_app/backend/data/ict_smc.sqlite3')
     engine=sys.modules.get('engine_8510_live')
-    if engine is not None:
+    names=getattr(getattr(request.function,'__code__',None),'co_names',())
+    uses_app=engine is not None and (getattr(request.module,'app',None) is engine.app or isinstance(getattr(request.module,'backend',None),terminal.QuantTerminalBackend) or 'engine_8510_live' in names or 'TestClient' in names)
+    if uses_app:
         backend=terminal.QuantTerminalBackend(config_file=str(path))
         monkeypatch.setattr(engine,'backend',backend)
+        if isinstance(getattr(request.module,'backend',None),terminal.QuantTerminalBackend):
+            monkeypatch.setattr(request.module,'backend',backend)
+    # Refuse any missed direct write to the shipped config, rather than
+    # restoring it afterwards and disguising a test's side effect.
+    import io,builtins
+    original_io=io.open;original_open=builtins.open
+    protected=(SOURCE/'analyst/terminal8510_config.json').resolve()
+    def safe_open(original,file,mode='r',*args,**kwargs):
+        if isinstance(file,(str,bytes,os.PathLike)) and any(c in mode for c in 'wax+') and Path(file).resolve()==protected:
+            raise AssertionError('Test attempted to write shipped 8510 config; use tmp_path')
+        return original(file,mode,*args,**kwargs)
+    monkeypatch.setattr(io,'open',lambda file,mode='r',*args,**kwargs:safe_open(original_io,file,mode,*args,**kwargs))
+    monkeypatch.setattr(builtins,'open',lambda file,mode='r',*args,**kwargs:safe_open(original_open,file,mode,*args,**kwargs))
     yield
 
 def pytest_sessionfinish(session,exitstatus):

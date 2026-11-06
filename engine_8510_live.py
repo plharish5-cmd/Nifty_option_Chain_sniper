@@ -241,6 +241,12 @@ async def serve_workspace_html():
     )
 
 
+@app.get('/api/ict-smc-signals/research')
+async def ict_smc_research_report():
+    from analyst.ict_smc_research_view_8510 import render
+    evidence=ROOT/'analyst/ict_smc_backtest_evidence_8510.json'
+    return HTMLResponse(render(json.loads(evidence.read_text())))
+
 @app.get('/api/ict-smc-signals')
 async def ict_smc_status():
     bridge=getattr(app.state,'ict_smc_bridge',None)
