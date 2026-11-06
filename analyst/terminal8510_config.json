@@ -276,6 +276,22 @@
     "_evidence": "Recording only. No signal, filter or threshold here is validated. The radar max-move column is descriptive and selection-biased by construction; target_N_hit_before_sl is the tradeable statistic. Added because v1.9.2 could price only 10 of 49 candidates (20.4%) for lack of per-contract minute data."
   },
   "real_money_enabled": false,
+  "matrix_scalp": {
+    "enabled": false,
+    "tier3_only": true,
+    "spot_target_pts": 15.0,
+    "spot_stop_pts": 20.0,
+    "cooldown_minutes": 15,
+    "last_entry_ist": "15:05",
+    "delta_win": 0.59,
+    "delta_loss": 0.67,
+    "use_engine_micro_sl": false,
+    "min_engine_risk_pts": 2.0,
+    "max_engine_risk_pts": 40.0,
+    "_evidence": "PROSPECTIVE RECORDING ONLY. This exists to find out whether Tier 3 proximity signals can be scalped on NIFTY spot; it does NOT assume they can. Nothing here is validated. Measured facts it rests on: Tier 3 forward 15m MFE over 2026-11-04/05 (353 bars) had median 15.8 pts with 52% reaching +15 and 42% reaching +20, while the 06 Nov session reached +15 in 72.7% of bars - so the MOVES are real but the day-to-day hit rate swings 52-73%. First passage on the same data brackets to 28.8-51.6% against a 49.7% break-even at +15/-20, i.e. it straddles break-even and is NOT established. 85 of 372 windows breached target and stop inside the same 15 minutes, and minute OHLC cannot say which came first. Starting at 30-60 recorded paper sessions before any verdict.",
+    "_evidence_stop_width": "spot_stop_pts 20.0 is a STARTING POINT chosen by the desk owner, not an optimum. Do not treat it as tuned. Engine Micro-SL risk_points had median 8.5 pts (Tier 3) over the same sessions, and forward 15m adverse excursion had median 13.9 pts, so 8 is inside the noise and 20 sits above the median adverse move. A wider stop is NOT automatically better: break-even rises faster than the win rate does, so at +15/-30 the win-rate bracket only improves to 50.3-51.6% while break-even rises to 75.3%. The sweet spot is an open question and is exactly what these recorded paper trades are for. Every trade also stores the engine's own risk_points so the two stop rules can be compared after the fact rather than argued about now.",
+    "_evidence_units": "UNIT CONVERSION. The rule is stated in NIFTY SPOT points but execute_order_with_chaser interprets target_pts and sl_pts as OPTION PREMIUM points (initial_sl = entry_premium - sl_pts). Converting with the measured deltas: a 15-point spot target is ~8.85 premium points (15 x 0.59) and a 20-point spot stop is ~13.4 premium points (20 x 0.67). The loss-side delta 0.67 is used for the stop and the win-side 0.59 for the target because those are the separately measured figures. Both the spot levels and the converted premium levels are recorded on the position so the analysis can be done in spot terms later."
+  },
   "execution_safety_v194": {
     "live_validation_status": "NO_GO",
     "typed_confirmation": "LIVE",
