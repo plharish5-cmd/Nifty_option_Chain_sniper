@@ -2438,7 +2438,15 @@ class QuantTerminalBackend:
             self.directional_bias = "BOTH"
 
         # Dhan OI Synergy Gating & Master Control Card Configuration
-        self.dhan_oi_synergy_cfg = self.cfg.get("dhan_oi_synergy", {
+        # Defaults MERGED under the config, not replaced by it. With
+        # cfg.get(key, {defaults}) a config file that supplies the block at all
+        # discards every default it happens to omit — and the shipped config
+        # omits block_pe_when_bullish, block_ce_when_bearish, advisory_only and
+        # fail_open, so those four silently vanished at runtime while still
+        # being declared here. advisory_only and fail_open going missing is the
+        # dangerous pair: code reading them with .get() would see None and a
+        # synergy filter could stop being advisory without anyone changing it.
+        _dhan_oi_synergy_defaults = {
             "filter_stage2_8ema_synergy": False,
             "filter_strategy2_reversal_synergy": False,
             "filter_strategy3_1h_synergy": False,
@@ -2448,7 +2456,9 @@ class QuantTerminalBackend:
             "advisory_only": True,
             "fail_open": True,
             "show_pe_ce_table_in_tab1": True,
-        })
+        }
+        _dhan_oi_synergy_defaults.update(self.cfg.get("dhan_oi_synergy") or {})
+        self.dhan_oi_synergy_cfg = _dhan_oi_synergy_defaults
         self._last_synergy_status: str = "INITIALIZED"
 
         # Market Hours Validator & Testing Override Toggle

@@ -42,7 +42,7 @@
     "runner_pct": 20
   },
   "algo_strike_selection": {
-    "LONG_CE_ITM": true,
+    "LONG_CE_ITM": false,
     "LONG_CE_ATM": true,
     "LONG_PE_ITM": true,
     "LONG_PE_ATM": true
@@ -130,7 +130,8 @@
     "vsr_fallback_threshold": 1.25,
     "min_baseline_sessions": 5,
     "lookback_sessions": 20,
-    "refresh_seconds": 10
+    "refresh_seconds": 10,
+    "_evidence": "THRESHOLD 1.25 IS NOT VALIDATED AND SITS IN A LOSING BAND. Measured on 295 OOS trades (scripts/out/futures_volume/events_variantA_volume.csv, 39 sessions, real Dhan tariff, measured deltas 0.59 win / 0.67 loss) the slot-RVOL quintile means are: Q1 0.11-0.47 = -Rs278, Q2 0.47-0.79 = -Rs108, Q3 0.81-1.29 = -Rs121, Q4 1.29-2.58 = -Rs17, Q5 2.59-10.19 = +Rs58. 1.25 falls inside Q3. The only positive bucket starts at 2.59. Raising it to 2.59 was tried and reverted: the v19 suite parametrises on 1.25, and 2.59 is not validated either -- Q5 net is +Rs58 at t=0.44, bootstrap p=0.067, and the whole sample loses Rs93/trade. The one strong statistic is the direction control (Q5 gap long-minus-short +Rs830, t=2.86), which does not survive Bonferroni across ~190 comparisons (needs t~3.65). CONCLUSION: keep this pillar ADVISORY ONLY. Do not gate trades on it. vsr_fallback_threshold is weaker still: the flat SMA10 measure showed no monotone shape at all in the same data. See claude/Futures_Volume_Verdict.md."
   },
   "five_factor_confluence": {
     "max_flips": 3,
@@ -151,6 +152,36 @@
     "filter_strategy2_reversal_synergy": false,
     "filter_strategy3_1h_synergy": false,
     "use_as_direct_15m_trigger": false,
+    "block_pe_when_bullish": false,
+    "block_ce_when_bearish": false,
+    "advisory_only": true,
+    "fail_open": true,
     "show_pe_ce_table_in_tab1": true
-  }
+  },
+  "STOCKMOJO_PCR_URL": "https://data.stockmojo.in/live/oi/pcr",
+  "STOCKMOJO_MULTI_STRIKE_URL": "https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff",
+  "STOCKMOJO_ACTIVE_EXPIRY_ID": 215,
+  "STOCKMOJO_PCR_PAYLOAD": {
+    "symbol": 1,
+    "dt": null,
+    "expiries": [
+      215
+    ]
+  },
+  "STOCKMOJO_MULTI_STRIKE_PAYLOAD": {
+    "symbol": 1,
+    "expiry": 215,
+    "range": 10
+  },
+  "STOCKMOJO_HEADER_J": "",
+  "STOCKMOJO_HEADER_T": "",
+  "STOCKMOJO_PAYLOAD": {
+    "symbol": 1,
+    "dt": null,
+    "expiries": [
+      215
+    ]
+  },
+  "STOCKMOJO_POLL_SECONDS": 60,
+  "STOCKMOJO_LINE_MAPPING": "STANDARD"
 }

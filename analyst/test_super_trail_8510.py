@@ -542,7 +542,10 @@ def test_backtest_timestamp_logging_and_homework_reconciliation():
     print("✔ Test 9 Passed: Backtest Entry/Exit IST Timestamps & Homework Reconciliation Engine verified 100%.")
 
 
-@pytest.mark.skip(reason='Retired external-provider relay; v1.9 Dhan integration replaces it')
+# Un-skipped: this is a retirement GUARD, not a test of retired behaviour. It
+# asserts the decommissioned ingest path serves nothing and that the writer
+# flow route still answers. Skipping it meant nothing would catch a Stock Mojo
+# path being wired back in.
 def test_stockmojo_and_port8600_confluence_integration():
     """
     Test 10: Verifies Port 8600 Removal, Institutional OI 1m Ingestion, Staged Trend Lab Variables, and Tab 6:
@@ -611,31 +614,31 @@ def test_stockmojo_and_port8600_confluence_integration():
         # now guards that the retired write path stays closed rather than
         # quietly accepting third-party rows again.
         resp_ingest = client.post("/api/oi/ingest", json=sample_rows)
-        assert resp_ingest.status_code == 410, f"Expected 410 Gone, got {resp_ingest.text}"
-        data_ingest = resp_ingest.json()
-        assert data_ingest["ok"] is False
-        assert data_ingest["retired"] is True
-        assert data_ingest["source"] == "8600_ICT_SMC_DESK"
+        assert resp_ingest.status_code in (404, 410), resp_ingest.status_code
+        assert "ingested_count" not in resp_ingest.text
 
-        # 3. GET /api/oi/pe_ce_table still serves — repointed at 8600.
+        # 3. GET /api/oi/pe_ce_table still serves — now from Dhan OI.
         resp_tbl = client.get("/api/oi/pe_ce_table?limit=10")
         assert resp_tbl.status_code == 200
         data_tbl = resp_tbl.json()
-        # ok is False when 8600 is not running in the test environment; the
-        # contract is that it answers without raising, not that data exists.
+        # ok is False when the OI source has no observations in the test
+        # environment; the contract is that it answers without raising, not that
+        # data exists.
         assert "rows" in data_tbl
         assert isinstance(data_tbl["rows"], list)
         # The old assertions here read back the three rows posted to the retired
         # ingest endpoint, and expected a "15:39" timestamp — a time that cannot
         # occur in a session ending 15:30, which is how the fabricated fixture
         # data was spotted. With ingestion retired there is no round-trip to
-        # assert: the contract is now that the route answers without raising and
-        # names its source, failing closed when 8600 is not up.
+        # assert: the contract is now that the route answers without raising,
+        # names a source that is ours and not the retired provider, and fails
+        # closed with no rows when that source has nothing.
         if data_tbl.get("ok"):
-            assert data_tbl.get("source") == "8600_ICT_SMC_DESK"
+            src = str(data_tbl.get("source", ""))
+            assert src in ("DHAN_API", "8600_ICT_SMC_DESK"), src
+            assert "MOJO" not in src.upper()
         else:
             assert data_tbl["rows"] == []
-            assert "8600" in str(data_tbl.get("error", ""))
 
         # 4. Verify Port 8600 endpoint is completely removed (returns 404)
         resp_8600 = client.get("/api/confluence/port8600")
@@ -670,8 +673,13 @@ def test_stockmojo_and_port8600_confluence_integration():
         assert "8600" not in html_content, "Port 8600 MUST be completely removed from HTML"
         assert "var_8600" not in html_content, "var_8600_* MUST be completely removed from HTML"
         assert "tabTrendLab" in html_content, "tabTrendLab (Multi-Factor Trend Lab) MUST remain intact"
-        assert "tabStockMojoSuite" in html_content, "tabStockMojoSuite MUST remain intact"
-        assert "Institutional OI Writers" in html_content, "Institutional OI Writers nomenclature MUST be present in HTML DOM"
+        # The OI tab was RENAMED from tabStockMojoSuite to tabDhanOISuite in v1.9
+        # when the provider was decommissioned. The panel must still exist — what
+        # changed is the data behind it, not that the trader lost the tab — and the
+        # old Stock Mojo id must be gone.
+        assert "tabDhanOISuite" in html_content, "the OI tab MUST remain intact (now tabDhanOISuite)"
+        assert "tabStockMojoSuite" not in html_content, "the retired Stock Mojo tab id must be gone"
+        assert "stockmojo" not in html_content.lower(), "no Stock Mojo references may remain in the HTML"
 
     print("✔ Test 10 Passed: Port 8600 Removal, Institutional OI Ingestion & Generic Nomenclature verified 100%.")
 
