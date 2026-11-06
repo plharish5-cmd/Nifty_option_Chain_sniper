@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "setup_name": "MATRIX",
-  "mode": "PAPER_ONLY_INDEX",
+  "mode": "REPLAY_ONLY_INDEX",
   "entry_tier": "TIER_3_CONFIRMATION_TRIGGER",
   "initial_stop_pts": 15,
   "activation_pts": 15,

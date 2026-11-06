@@ -26,8 +26,8 @@ def read_rules(path=RULES):
             raise ValueError(k + ' must be positive and finite')
     if not 0 <= float(r['first_lock_pts']) < float(r['activation_pts']):
         raise ValueError('first lock must be below activation')
-    if r['mode'] != 'PAPER_ONLY_INDEX' or r['setup_name'] != 'MATRIX':
-        raise ValueError('MATRIX is index paper only')
+    if r['mode'] != 'REPLAY_ONLY_INDEX' or r['setup_name'] != 'MATRIX':
+        raise ValueError('MATRIX is historical replay only')
     return r
 
 
@@ -54,6 +54,7 @@ def path_result(points, peak, stop, rules):
 
 def advance(position, bar, rules):
     p = dict(position)
+    p['stop_trace'] = list(p.get('stop_trace', []))
     if bar['ts'] != p['last_ts'] + 60:
         return {**p, 'status': 'DATA_GAP', 'exit_ts': bar['ts'], 'points': None}
     sign = 1 if p['direction'] == 'CE' else -1
@@ -68,6 +69,10 @@ def advance(position, bar, rules):
                 'path_exit_a':exits[0], 'path_exit_b':exits[1],
                 'exit':None, 'stop_points':max(a['stop'],b['stop'])}
     p['stop_points'] = max(a['stop'], b['stop'])
+    if p['stop_points'] != position['stop_points']:
+        p['stop_trace'].append(dict(ts=bar['ts']+60, lock_points=p['stop_points'],
+            stop_spot=round(p['entry']+sign*p['stop_points'],4),
+            note='One-minute OHLC trail update; not a tick timestamp'))
     if exits[0] is not None:
         pts = round(exits[0], 4)
         p.update(status='STOP', points=pts, exit=p['entry']+sign*pts, exit_ts=bar['ts']+60)
@@ -96,7 +101,7 @@ def simulate(day, bars, matrix_rows, rules, now=None, allow_entries=True):
         if pending and not active and not exited:
             if ts == pending['ts'] + 60 and allow_entries:
                 side = 'CE' if pending['ema_4'] >= pending['ema_8'] else 'PE'
-                active = dict(id=f'MATRIX:{day}:{ts}', setup='MATRIX', mode='PAPER_ONLY_INDEX', day=day,
+                active = dict(id=f'MATRIX:{day}:{ts}', setup='MATRIX', mode='REPLAY_ONLY_INDEX', day=day,
                     direction=side, signal_ts=pending['ts']+60, entry_ts=ts, entry=float(bar['o']),
                     current=float(bar['o']), peak=0.0, stop_points=-float(rules['initial_stop_pts']),
                     last_ts=ts-60, points=None, status='OPEN', signal=pending.get('action_recommendation',''))
@@ -152,80 +157,19 @@ def summary(rows):
                 win_rate=round(100*sum(r['points']>0 for r in resolved)/len(resolved),2) if resolved else None)
 
 
-class MatrixPaperService:
-    """Dedicated durable paper ledger; cannot reach the broker or change other strategies."""
-    def __init__(self, market, config, ledger):
-        self.market, self.config, self.ledger = Path(market), Path(config), Path(ledger)
-
-    def tick(self, now=None, entries_allowed=True):
-        from analyst.ema_proximity_engine import EmaProximityEngine
-        now = float(now or datetime.now(IST).timestamp())
-        day = datetime.fromtimestamp(now, IST).date().isoformat()
-        rules = read_rules()
-        # Never invent historical forward fills on startup. A persisted start boundary
-        # permits restart recovery, while replay data remains outside this ledger.
-        self.ledger.parent.mkdir(parents=True, exist_ok=True)
-        engine = EmaProximityEngine(config_path=self.config, db_path=self.market)
-        with sqlite3.connect(self.ledger) as c:
-            c.execute('CREATE TABLE IF NOT EXISTS matrix_sessions(day TEXT PRIMARY KEY,start_ts REAL,halted INTEGER DEFAULT 0)')
-            c.execute('CREATE TABLE IF NOT EXISTS matrix_paper(id TEXT PRIMARY KEY, day TEXT,payload TEXT)')
-            c.execute('CREATE TABLE IF NOT EXISTS matrix_settings(day TEXT PRIMARY KEY,payload TEXT)')
-            c.execute('CREATE TABLE IF NOT EXISTS matrix_inputs(day TEXT,ts INTEGER,payload TEXT,PRIMARY KEY(day,ts))')
-            if not entries_allowed and not c.execute('SELECT 1 FROM matrix_paper WHERE day=? LIMIT 1',(day,)).fetchone():
-                # Starting with scanner OFF must not silently lock out the whole day.
-                return
-            c.execute('INSERT OR IGNORE INTO matrix_sessions VALUES(?,?,0)', (day,now))
-            c.execute('INSERT OR IGNORE INTO matrix_settings VALUES(?,?)',
-                      (day,json.dumps(dict(rules=rules,radar=engine.get_config()))))
-            frozen=json.loads(c.execute('SELECT payload FROM matrix_settings WHERE day=?',(day,)).fetchone()[0])
-            rules=frozen['rules']
-            start, halted = c.execute('SELECT start_ts,halted FROM matrix_sessions WHERE day=?',(day,)).fetchone()
-            if not entries_allowed:
-                c.execute('UPDATE matrix_sessions SET halted=1 WHERE day=?',(day,))
-                halted = 1
-        df = load_market(self.market, recent=True)
-        df = df[df.ts+60 <= now]
-        if day not in set(df.day):
-            return
-        rows, source = matrix_for_day(engine,df,day,radar_cfg=frozen['radar'])
-        # Signals predating service start are not eligible for forward paper entry.
-        rows = [r for r in rows if r['ts']+60 >= start]
-        available = df[(df.day==day)&(df.ts+60>=start)].to_dict('records')
-        by_ts={int(r['ts']):r for r in rows}
-        with sqlite3.connect(self.ledger) as c:
-            for bar in available:
-                # An old cached candle is never a new forward entry observation.
-                if now-(bar['ts']+60)>rules['freshness_seconds']:
-                    continue
-                c.execute('INSERT OR IGNORE INTO matrix_inputs VALUES(?,?,?)',
-                    (day,int(bar['ts']),json.dumps(dict(bar=bar,signal=by_ts.get(int(bar['ts']))))))
-            inputs=[json.loads(r[0]) for r in c.execute('SELECT payload FROM matrix_inputs WHERE day=? ORDER BY ts',(day,))]
-        bars=[r['bar'] for r in inputs]
-        rows=[r['signal'] for r in inputs if r['signal']]
-        # Rebuild from the saved eligible prefix, so restart/polling is idempotent.
-        # A halt freezes entries for the session and closes existing observations
-        # at the latest observed candle, never via the broker.
-        trades = simulate(day,bars,rows,rules,now=now,allow_entries=rules['enabled'])
-        if halted:
-            with sqlite3.connect(self.ledger) as c:
-                saved = [json.loads(r[0]) for r in c.execute('SELECT payload FROM matrix_paper WHERE day=?',(day,))]
-            trades = saved
-            for p in trades:
-                if p['status'] == 'OPEN' and bars:
-                    p.update(status='PAPER_HALTED', points=None, exit=None, exit_ts=int(now))
-        with sqlite3.connect(self.ledger) as c:
-            for p in trades:
-                c.execute('INSERT OR REPLACE INTO matrix_paper VALUES(?,?,?)',(p['id'],day,json.dumps(p)))
-
-    def history(self):
-        if not self.ledger.exists():
-            return dict(ok=True,rows=[],summary=summary([]),rules=read_rules())
-        with sqlite3.connect('file:'+str(self.ledger)+'?mode=ro',uri=True) as c:
-            rows=[json.loads(r[0]) for r in c.execute('SELECT payload FROM matrix_paper ORDER BY day DESC,id DESC LIMIT 2000')]
-            halted=[r[0] for r in c.execute('SELECT day FROM matrix_sessions WHERE halted=1')]
-        return dict(ok=True,rows=rows,summary=summary(rows),rules=read_rules(),
-                    halted_sessions=halted,
-                    units='NIFTY index points; option fills, fees and rupee PnL unavailable')
+def replay_date(market, config, day):
+    """Read-only archived-date replay, never inserts into any paper/live ledger."""
+    from analyst.ema_proximity_engine import EmaProximityEngine
+    datetime.strptime(day, '%Y-%m-%d')
+    rules=read_rules()
+    df=load_market(market)
+    if day not in set(df.day):
+        return dict(setup='MATRIX',rows=[],summary=summary([]),source='NO_RECORDED_CANDLES',rules=rules)
+    engine=EmaProximityEngine(config_path=Path(config),db_path=Path(market))
+    rows,source=matrix_for_day(engine,df,day)
+    trades=simulate(day,df[df.day==day].to_dict('records'),rows,rules)
+    return dict(setup='MATRIX',rows=trades,summary=summary(trades),source=source,rules=rules,
+                units='NIFTY index points, not option profit; OHLC conflicts unresolved')
 
 
 def run_backtest(market, config, output):

@@ -5000,7 +5000,9 @@ class QuantTerminalBackend:
     async def run_date_replay(self, selected_date: str, speed_multiplier: float = 10.0, bias: Optional[str] = None) -> Dict[str, Any]:
         result = self._recorded_history().report(selected_date, selected_date, bias or self.directional_bias)
         rows = result['trades']
-        return {**result, 'date': selected_date, 'trades_count': len(rows), 'candles_count': len(self._recorded_history().candles(selected_date)), 'total_net_pnl': result['recorded_net_pnl'], 'win_rate': 100*sum(r['net_pnl']>0 for r in rows)/len(rows) if rows else None, 'replay_kind': 'RECORDED_LEDGER_REVIEW'}
+        from analyst.matrix_scalp_8510 import replay_date
+        matrix = await asyncio.to_thread(replay_date, self.market_db, self.config_path, selected_date)
+        return {**result, 'date': selected_date, 'trades_count': len(rows), 'candles_count': len(self._recorded_history().candles(selected_date)), 'total_net_pnl': result['recorded_net_pnl'], 'win_rate': 100*sum(r['net_pnl']>0 for r in rows)/len(rows) if rows else None, 'replay_kind': 'RECORDED_LEDGER_REVIEW_WITH_MATRIX_RECONSTRUCTION', 'matrix_replay': matrix}
 
     # ── DATE-RANGE SUPER TRAIL BACKTESTER ────────────────────────────────────
     def _load_historical_trades(self) -> List[Dict[str, Any]]:

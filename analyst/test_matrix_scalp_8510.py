@@ -11,6 +11,41 @@ class MatrixScalpTests(unittest.TestCase):
         for peak,stop in [(0,-15),(14.99,-15),(15,10),(19.99,10),(20,15),(25,20),(30,25),(40,35)]:
             self.assertEqual(locked_points(peak,self.r),stop)
 
+    def test_replay_wrapper_preserves_recorded_money_and_separates_index_results(self):
+        import ast
+        import asyncio
+        from pathlib import Path
+        from unittest.mock import patch
+        from typing import Optional, Dict, Any
+        source=Path(__file__).with_name('terminal8510_backend.py').read_text()
+        tree=ast.parse(source)
+        cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='QuantTerminalBackend')
+        fn=next(n for n in cls.body if isinstance(n,ast.AsyncFunctionDef) and n.name=='run_date_replay')
+        namespace=dict(asyncio=asyncio,Optional=Optional,Dict=Dict,Any=Any)
+        exec(compile(ast.Module(body=[fn],type_ignores=[]),'<replay-wrapper>','exec'),namespace)
+        class History:
+            def report(self,*args):return dict(ok=True,trades=[dict(net_pnl=12)],recorded_net_pnl=12)
+            def candles(self,*args):return [1,2]
+        class Backend:
+            directional_bias='BOTH';market_db='unused';config_path='unused'
+            def _recorded_history(self):return History()
+        with patch('analyst.matrix_scalp_8510.replay_date',return_value=dict(rows=[dict(setup='MATRIX',points=-15)])) as replay:
+            result=asyncio.run(namespace['run_date_replay'](Backend(),'2026-11-06'))
+        self.assertEqual(result['total_net_pnl'],12)
+        self.assertEqual(result['trades_count'],1)
+        self.assertEqual(result['matrix_replay']['rows'][0]['setup'],'MATRIX')
+        self.assertEqual(replay.call_args.args[-1],'2026-11-06')
+
+    def test_no_forward_matrix_service_or_wallet_panel_remains(self):
+        from pathlib import Path
+        root=Path(__file__).resolve().parents[1]
+        engine=(root/'engine_8510_live.py').read_text()
+        page=(root/'Algorithmic_Trading_Workspace_8510.html').read_text()
+        self.assertNotIn('matrix_paper_task',engine)
+        self.assertNotIn('/api/matrix-paper',engine)
+        self.assertNotIn('matrixPaperCard',page)
+        self.assertIn('matrix_replay',page)
+
     def test_trail_never_loosens(self):
         r=path_result([0,30,27],0,-15,self.r)
         self.assertIsNone(r['exit']);self.assertEqual(r['stop'],25)

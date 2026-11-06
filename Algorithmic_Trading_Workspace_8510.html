@@ -1505,15 +1505,6 @@
                     </div>
                 </div>
 
-                <section class="card" id="matrixPaperCard">
-                    <h2>MATRIX · Algo paper scalps</h2>
-                    <p>NIFTY index-point simulation · initial stop −15; +15 locks +10; then 5-point steps. Existing Tier 3 confirmations only. No live orders or option-premium profit figures.</p>
-                    <details><summary>MATRIX historical replay · all available sessions</summary><button type="button" onclick="loadMatrixBacktest()">Load historical comparison</button><select id="matrixBacktestDay" onchange="renderMatrixBacktest()"></select><p id="matrixBacktestSummary"></p><div id="matrixBacktestRows" style="max-height:300px;overflow:auto"></div></details>
-                    <p id="matrixPaperSummary">Loading MATRIX paper ledger…</p>
-                    <button type="button" onclick="loadMatrixPaper()">Refresh MATRIX</button>
-                    <div style="max-height:300px;overflow:auto"><table style="width:100%"><thead><tr><th>Setup / side</th><th>Entry IST</th><th>Entry spot</th><th>Current spot</th><th>Stop spot</th><th>Exit IST</th><th>Exit spot</th><th>Duration</th><th>Index points</th><th>Outcome</th></tr></thead><tbody id="matrixPaperRows"></tbody></table></div>
-                    <small>Separate index paper ledger; does not debit the option wallet. Conflicting one-minute OHLC paths are AMBIGUOUS, not wins. Historical backtest is a separate export; startup does not insert past trades.</small>
-                </section>
                 <!-- Paper Trade Wallet Manager -->
                 <div class="card">
                     <h2>
@@ -1580,12 +1571,8 @@
                     <div>
                         <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">Select Historical Date</label>
                         <select id="replayDateSelect" style="display:block; margin-top:4px; min-width:180px;">
-                            <option value="2026-11-05" selected>2026-11-05 (Today - Live Paper + Auto Ingest ✅)</option>
-                            <option value="2026-11-04">2026-11-04 (Benchmark Day - 3 Strategies Active)</option>
-                            <option value="2026-11-03">2026-11-03 (Bullish MA Stack Continuation)</option>
-                            <option value="2026-11-02">2026-11-02</option>
-                            <option value="2026-10-30">2026-10-30</option>
-                        </select>
+<option value="">Loading recorded dates…</option>
+</select>
                     </div>
                     <div>
                         <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">Playback Speed</label>
@@ -1599,6 +1586,7 @@
                     <button type="button" class="cyan-btn" onclick="runHistoricalReplay()">▶️ Run Recorded Replay</button>
                 </div>
 
+                <p id="matrixReplaySummary">MATRIX Tier 3 historical trades will appear in the same replay ledger. Initial stop −15; +15 locks +10; then five-point steps. No forward MATRIX paper trading.</p>
                 <!-- Replay Summary Scoreboard -->
                 <div class="metrics-grid" style="margin-bottom:16px;">
                     <div class="metric-box">
@@ -1636,7 +1624,7 @@
                                 <th>Outcome</th>
                                 <th>Gross P&amp;L</th>
                                 <th>Dhan Charges</th>
-                                <th>Net P&amp;L (INR)</th>
+                                <th>Net P&amp;L (INR)</th><th>MATRIX stop / trail trace</th><th>MATRIX index points</th>
                             </tr>
                         </thead>
                         <tbody id="replayTableBody">
@@ -4010,63 +3998,35 @@
 
         // ── 8. HISTORICAL DATE REPLAY LOGIC ───────────────────────────────────
         async function runHistoricalReplay() {
-            const dt = document.getElementById("replayDateSelect").value;
-            const spd = parseFloat(document.getElementById("replaySpeedSelect").value || 10);
-            const tbody = document.getElementById("replayTableBody");
-            tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#38bdf8; padding:20px;">Loading recorded ledger for ${dt}…</td></tr>`;
-
-            try {
-                const res = await fetch("/api/replay/run", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ date: dt, speed: spd })
-                });
-                const d = await res.json();
-                if (!d.ok) {
-                    alert("Replay error: " + d.error);
-                    return;
+            const dt=document.getElementById('replayDateSelect').value;
+            if(!dt){alert('Select an available recorded date first.');return;}
+            const tbody=document.getElementById('replayTableBody');tbody.replaceChildren();
+            const placeholder=tbody.insertRow().insertCell();placeholder.colSpan=15;placeholder.textContent='Replaying archived data for '+dt+'…';
+            const fmt=v=>v==null?'—':Number(v).toFixed(2);
+            const money=v=>v==null?'—':'₹'+Number(v).toFixed(2);
+            const when=t=>t?new Date(t*1000).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:false}):'—';
+            try{
+                const res=await fetch('/api/replay/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:dt,speed:Number(document.getElementById('replaySpeedSelect').value)})});
+                const d=await res.json();if(!res.ok||!d.ok)throw Error(d.error||'Replay unavailable');
+                const m=d.matrix_replay||{rows:[],summary:{},source:'UNAVAILABLE'};
+                document.getElementById('replayCandlesCount').textContent=d.candles_count+' observed minutes';
+                document.getElementById('replayTradesCount').textContent=(d.trades||[]).length+' recorded + '+m.rows.length+' MATRIX';
+                document.getElementById('replayWinRate').textContent=d.win_rate==null?'—':d.win_rate.toFixed(1)+'% recorded only';
+                document.getElementById('replayNetPnl').textContent=money(d.total_net_pnl)+' recorded only';
+                document.getElementById('matrixReplaySummary').textContent=`MATRIX / ${dt}: ${m.rows.length} Tier 3 replay trades · ${m.summary.resolved||0} resolved · ${m.summary.ambiguous||0} ambiguous · ${m.summary.gaps||0} gaps · ${fmt(m.summary.index_points)} resolved NIFTY points. ${m.source}. MATRIX is reconstructed, not a recorded fill; no option PnL is invented. Ambiguous outcomes are excluded from this point subtotal.`;
+                tbody.replaceChildren();
+                for(const t of d.trades||[]){
+                    const tr=tbody.insertRow();
+                    for(const v of [t.contract_symbol||t.symbol||'UNKNOWN',t.setup_name||t.setup||'Recorded trade',t.entry_ist||t.entry_time||'—',t.exit_ist||t.exit_time||'—',t.duration||'—',fmt(t.index_entry),fmt(t.index_exit),money(t.option_entry),money(t.option_exit),t.outcome||t.result||'CLOSED',money(t.gross_pnl),money(t.dhan_charges??t.charges),money(t.net_pnl),'—','—'])tr.insertCell().textContent=v;
                 }
-
-                document.getElementById("replayCandlesCount").textContent = `${d.candles_count} / 375`;
-                document.getElementById("replayTradesCount").textContent = d.trades_count;
-                document.getElementById("replayWinRate").textContent = `${d.win_rate == null ? "—" : d.win_rate+"%"}`;
-                const netEl = document.getElementById("replayNetPnl");
-                netEl.textContent = `₹${d.total_net_pnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                netEl.style.color = d.total_net_pnl >= 0 ? "var(--emerald)" : "var(--crimson)";
-
-                if (d.trades.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:16px;">No recorded data for trades on ${dt}.</td></tr>`;
-                    return;
+                for(const t of m.rows){
+                    const tr=tbody.insertRow();const sign=t.direction==='CE'?1:-1;
+                    const duration=Math.max(0,Math.floor(((t.exit_ts||t.last_ts+60)-t.entry_ts)/60))+' min';
+                    const trace=(t.stop_trace||[]).map(x=>when(x.ts)+' → '+fmt(x.stop_spot)+' (lock '+fmt(x.lock_points)+')').join('; ');
+                    for(const v of ['NIFTY index · '+t.direction,'MATRIX',when(t.entry_ts),when(t.exit_ts),duration,fmt(t.entry),fmt(t.exit),'—','—',t.status+' · REPLAY','—','—','—','Initial '+fmt(t.entry-sign*m.rules.initial_stop_pts)+'; final '+fmt(t.entry+sign*t.stop_points)+(trace?'; '+trace:''),fmt(t.points)])tr.insertCell().textContent=v;
                 }
-
-                tbody.innerHTML = d.trades.map(t => {
-                    const setupName = t.setup_name || t.setup || "Strategy Trade";
-                    const entryTime = t.entry_ist || t.entry_time || "-";
-                    const exitTime = t.exit_ist || t.exit_time || "-";
-                    const outcomeText = t.outcome || t.result || "CLOSED";
-                    const chgVal = (t.dhan_charges != null) ? t.dhan_charges : (t.charges || 0);
-                    const sym = t.contract_symbol || t.symbol || 'UNKNOWN';
-                    return `
-                    <tr>
-                        <td><code style="font-family:var(--font-mono);">${sym}</code></td>
-                        <td><b>${setupName}</b></td>
-                        <td>${entryTime}</td>
-                        <td>${exitTime}</td>
-                        <td>${t.duration || '-'}</td>
-                        <td>${(t.index_entry != null ? Number(t.index_entry).toFixed(1) : '-')}</td>
-                        <td>${(t.index_exit != null ? Number(t.index_exit).toFixed(1) : '-')}</td>
-                        <td>₹${(t.option_entry != null ? Number(t.option_entry).toFixed(2) : '-')}</td>
-                        <td>₹${(t.option_exit != null ? Number(t.option_exit).toFixed(2) : '-')}</td>
-                        <td><span class="status-badge ${t.net_pnl >= 0 ? 'badge-bull' : 'badge-bear'}">${outcomeText}</span></td>
-                        <td style="color:${t.gross_pnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">${t.gross_pnl >= 0 ? '+' : ''}₹${Number(t.gross_pnl || 0).toFixed(2)}</td>
-                        <td>₹${Number(chgVal).toFixed(2)}</td>
-                        <td style="font-weight:700; color:${t.net_pnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">${t.net_pnl >= 0 ? '+' : ''}₹${Number(t.net_pnl || 0).toFixed(2)}</td>
-                    </tr>
-                `;}).join("");
-
-            } catch (e) {
-                alert("Replay request error: " + e.message);
-            }
+                if(!tbody.rows.length){const td=tbody.insertRow().insertCell();td.colSpan=15;td.textContent='No recorded or MATRIX replay trades for '+dt;}
+            }catch(e){tbody.replaceChildren();const td=tbody.insertRow().insertCell();td.colSpan=15;td.textContent='Replay unavailable: '+e.message;}
         }
 
         // ── 8B. MULTI-MONTH DATE-RANGE SUPER TRAIL BACKTESTER ──────────────────
@@ -4917,7 +4877,7 @@
         function exportReplayToExcel() {
             const table = document.getElementById("replayTableBody");
             const rows = Array.from(table.querySelectorAll("tr")).map(tr => Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim()));
-            const headers = ['Setup Name', 'Entry IST', 'Exit IST', 'Duration', 'Index Entry', 'Index Exit', 'Option Entry', 'Option Exit', 'Outcome', 'Gross PnL', 'Charges', 'Net PnL'];
+            const headers = ['Contract Symbol','Setup Name','Entry IST','Exit IST','Duration','Index Entry','Index Exit','Option Entry','Option Exit','Outcome','Gross PnL','Charges','Net PnL','MATRIX stop / trail trace','MATRIX index points'];
             exportTableToExcelXML('Port8510_Replay_Ledger.xls', 'ReplayLedger', headers, rows);
         }
 
@@ -5431,42 +5391,6 @@ document.addEventListener('DOMContentLoaded',()=>{pollIctDeskSignals();setInterv
         <div id="toastOrderDetails" style="font-size:12px; color:var(--text-dim);">Filled @ ₹0.00 | AUTO ALGO 🤖 | Stage 2 8 EMA Touch</div>
     </div>
 
-<script>
-let matrixBacktestData=null;
-async function loadMatrixBacktest(){
- const status=document.getElementById('matrixBacktestSummary');status.textContent='Loading saved offline replay…';
- try{const res=await fetch('/api/matrix-paper/backtest');if(!res.ok)throw new Error('HTTP '+res.status);const d=await res.json();if(!d.ok)throw new Error(d.reason);matrixBacktestData=d;
- const sel=document.getElementById('matrixBacktestDay');sel.replaceChildren();
- for(const [v,label] of [['ALL','All sessions'],...d.daily.map(r=>[r.day,r.day])]){const o=document.createElement('option');o.value=v;o.textContent=label;sel.appendChild(o);}renderMatrixBacktest();
- }catch(e){status.textContent=e.message;}
-}
-function renderMatrixBacktest(){
- const d=matrixBacktestData;if(!d)return;const day=document.getElementById('matrixBacktestDay').value;
- const s=day==='ALL'?d.summary:d.daily.find(r=>r.day===day);
- document.getElementById('matrixBacktestSummary').textContent=`RECONSTRUCTED MATRIX · ${s.trades} trades · ${s.resolved} resolved · ${s.ambiguous} ambiguous · ${s.gaps} gaps · ${s.index_points} resolved NIFTY points. Excluding ambiguous outcomes is selective; this is not a strategy win-rate or option-profit claim.`;
- const target=document.getElementById('matrixBacktestRows');target.replaceChildren();const table=document.createElement('table');table.style.width='100%';target.appendChild(table);
- const fields=day==='ALL'?['day','trades','resolved','ambiguous','gaps','index_points','source']:['setup','direction','entry_ts','entry','exit_ts','exit','points','status'];
- const header=table.insertRow();for(const f of fields)header.insertCell().textContent=f;
- for(const r of (day==='ALL'?d.daily:d.rows.filter(x=>x.day===day))){const tr=table.insertRow();for(const f of fields){let v=r[f];if(f.endsWith('_ts')&&v)v=new Date(v*1000).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:false});tr.insertCell().textContent=v==null?'—':String(v);}}
-}
-async function loadMatrixPaper(){
- const body=document.getElementById('matrixPaperRows');
- const fmt=(v)=>Number.isFinite(v)?v.toFixed(2):'—';
- const when=(t)=>t?new Date(t*1000).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:false}):'—';
- try{
-  const response=await fetch('/api/matrix-paper');if(!response.ok)throw new Error('HTTP '+response.status);
-  const d=await response.json();const s=d.summary;
-  document.getElementById('matrixPaperSummary').textContent=`${s.trades} observations · ${s.resolved} resolved · ${s.ambiguous} ambiguous · ${s.gaps} gaps · ${s.unresolved} open/unresolved · ${fmt(s.index_points)} resolved index points (excludes unresolved)`;
-  body.replaceChildren();
-  if(!d.rows.length){const tr=body.insertRow();const td=tr.insertCell();td.colSpan=10;td.textContent='No recorded MATRIX paper trades. Forward recording begins after startup while the scanner is enabled.';}
-  for(const r of d.rows){
-   const tr=body.insertRow();const sign=r.direction==='CE'?1:-1;
-   const duration=Math.max(0,Math.floor(((r.exit_ts||r.last_ts+60)-r.entry_ts)/60));
-   for(const value of [r.setup+' / '+r.direction,when(r.entry_ts),fmt(r.entry),fmt(r.current),fmt(r.entry+sign*r.stop_points),when(r.exit_ts),fmt(r.exit),duration+' min',fmt(r.points),r.status])tr.insertCell().textContent=value;
-  }
- }catch(e){document.getElementById('matrixPaperSummary').textContent='MATRIX unavailable: '+e.message;}
-}
-document.addEventListener('DOMContentLoaded',()=>{loadMatrixPaper();setInterval(loadMatrixPaper,15000);});
-</script>
+
 </body>
 </html>
