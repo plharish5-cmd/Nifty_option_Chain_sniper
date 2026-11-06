@@ -1,0 +1,2295 @@
+{
+  "sessions": [
+    "2026-09-09",
+    "2026-09-10",
+    "2026-09-11",
+    "2026-09-15",
+    "2026-09-16",
+    "2026-09-17",
+    "2026-09-18",
+    "2026-09-21",
+    "2026-09-22",
+    "2026-09-23",
+    "2026-09-24",
+    "2026-09-25",
+    "2026-09-28",
+    "2026-09-29",
+    "2026-09-30",
+    "2026-10-01",
+    "2026-10-05",
+    "2026-10-06",
+    "2026-10-07",
+    "2026-10-08",
+    "2026-10-09",
+    "2026-10-12",
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-15",
+    "2026-10-16",
+    "2026-10-19",
+    "2026-10-21",
+    "2026-10-22",
+    "2026-10-23",
+    "2026-10-26",
+    "2026-10-27",
+    "2026-10-28",
+    "2026-10-29",
+    "2026-10-30",
+    "2026-11-02",
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06"
+  ],
+  "source_sha256": "53a0f4e8e3966a3f76ac7fa0305c0edf3e15119691bfc6d4a8e5b11853f00867",
+  "note": "Frozen original v1.9.2 321 Stage2/Stage3 signal cohort. No recomputed entries or tuned exclusions.",
+  "rows": [
+    {
+      "ts": 1788930000,
+      "day": "2026-09-09",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23539.65
+    },
+    {
+      "ts": 1788930900,
+      "day": "2026-09-09",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23509.75
+    },
+    {
+      "ts": 1788931800,
+      "day": "2026-09-09",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23535.6
+    },
+    {
+      "ts": 1788932700,
+      "day": "2026-09-09",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23524.95
+    },
+    {
+      "ts": 1788933600,
+      "day": "2026-09-09",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23517.1
+    },
+    {
+      "ts": 1788934500,
+      "day": "2026-09-09",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23528.75
+    },
+    {
+      "ts": 1788935400,
+      "day": "2026-09-09",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23488.5
+    },
+    {
+      "ts": 1788937200,
+      "day": "2026-09-09",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23510.6
+    },
+    {
+      "ts": 1788945300,
+      "day": "2026-09-09",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23487.65
+    },
+    {
+      "ts": 1789012800,
+      "day": "2026-09-10",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23437.35
+    },
+    {
+      "ts": 1789014600,
+      "day": "2026-09-10",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23428.05
+    },
+    {
+      "ts": 1789015500,
+      "day": "2026-09-10",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23413.6
+    },
+    {
+      "ts": 1789016400,
+      "day": "2026-09-10",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23424.8
+    },
+    {
+      "ts": 1789017300,
+      "day": "2026-09-10",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23448.4
+    },
+    {
+      "ts": 1789018200,
+      "day": "2026-09-10",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23409.75
+    },
+    {
+      "ts": 1789019100,
+      "day": "2026-09-10",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23438.95
+    },
+    {
+      "ts": 1789020000,
+      "day": "2026-09-10",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23426.7
+    },
+    {
+      "ts": 1789020900,
+      "day": "2026-09-10",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23421.55
+    },
+    {
+      "ts": 1789032600,
+      "day": "2026-09-10",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23411.8
+    },
+    {
+      "ts": 1789102800,
+      "day": "2026-09-11",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23275.45
+    },
+    {
+      "ts": 1789103700,
+      "day": "2026-09-11",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23305.3
+    },
+    {
+      "ts": 1789104600,
+      "day": "2026-09-11",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23278.75
+    },
+    {
+      "ts": 1789445700,
+      "day": "2026-09-15",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23448.1
+    },
+    {
+      "ts": 1789452000,
+      "day": "2026-09-15",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23317.65
+    },
+    {
+      "ts": 1789454700,
+      "day": "2026-09-15",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23335.85
+    },
+    {
+      "ts": 1789456500,
+      "day": "2026-09-15",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23315.05
+    },
+    {
+      "ts": 1789457400,
+      "day": "2026-09-15",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23308.6
+    },
+    {
+      "ts": 1789458300,
+      "day": "2026-09-15",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23294.95
+    },
+    {
+      "ts": 1789459200,
+      "day": "2026-09-15",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23281.05
+    },
+    {
+      "ts": 1789460100,
+      "day": "2026-09-15",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23263.25
+    },
+    {
+      "ts": 1789461900,
+      "day": "2026-09-15",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23230.2
+    },
+    {
+      "ts": 1789464600,
+      "day": "2026-09-15",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23174.9
+    },
+    {
+      "ts": 1789531200,
+      "day": "2026-09-16",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23204.2
+    },
+    {
+      "ts": 1789533900,
+      "day": "2026-09-16",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23177.75
+    },
+    {
+      "ts": 1789544700,
+      "day": "2026-09-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23258.7
+    },
+    {
+      "ts": 1789619400,
+      "day": "2026-09-17",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23284.5
+    },
+    {
+      "ts": 1789620300,
+      "day": "2026-09-17",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23311.1
+    },
+    {
+      "ts": 1789621200,
+      "day": "2026-09-17",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23294.95
+    },
+    {
+      "ts": 1789623000,
+      "day": "2026-09-17",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23267.85
+    },
+    {
+      "ts": 1789625700,
+      "day": "2026-09-17",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23276.15
+    },
+    {
+      "ts": 1789626600,
+      "day": "2026-09-17",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23315.3
+    },
+    {
+      "ts": 1789627500,
+      "day": "2026-09-17",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23337.9
+    },
+    {
+      "ts": 1789630200,
+      "day": "2026-09-17",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23340.65
+    },
+    {
+      "ts": 1789631100,
+      "day": "2026-09-17",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23321.65
+    },
+    {
+      "ts": 1789704900,
+      "day": "2026-09-18",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23312.85
+    },
+    {
+      "ts": 1789716600,
+      "day": "2026-09-18",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23329.6
+    },
+    {
+      "ts": 1789717500,
+      "day": "2026-09-18",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23330.05
+    },
+    {
+      "ts": 1789722000,
+      "day": "2026-09-18",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23365.95
+    },
+    {
+      "ts": 1789722900,
+      "day": "2026-09-18",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23354.1
+    },
+    {
+      "ts": 1789723800,
+      "day": "2026-09-18",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23384.3
+    },
+    {
+      "ts": 1789964100,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23392.8
+    },
+    {
+      "ts": 1789965000,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23394.85
+    },
+    {
+      "ts": 1789967700,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23376.6
+    },
+    {
+      "ts": 1789968600,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23386.65
+    },
+    {
+      "ts": 1789969500,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23397.45
+    },
+    {
+      "ts": 1789970400,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23398.4
+    },
+    {
+      "ts": 1789971300,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23403.65
+    },
+    {
+      "ts": 1789972200,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23425.45
+    },
+    {
+      "ts": 1789973100,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23417.7
+    },
+    {
+      "ts": 1789977600,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23430.75
+    },
+    {
+      "ts": 1789978500,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23427.75
+    },
+    {
+      "ts": 1789979400,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23463.0
+    },
+    {
+      "ts": 1789980300,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23452.7
+    },
+    {
+      "ts": 1789981200,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23448.9
+    },
+    {
+      "ts": 1789982100,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23450.3
+    },
+    {
+      "ts": 1789983000,
+      "day": "2026-09-21",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23447.5
+    },
+    {
+      "ts": 1790051400,
+      "day": "2026-09-22",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23457.2
+    },
+    {
+      "ts": 1790052300,
+      "day": "2026-09-22",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23465.2
+    },
+    {
+      "ts": 1790054100,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23382.7
+    },
+    {
+      "ts": 1790056800,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23392.15
+    },
+    {
+      "ts": 1790057700,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23371.4
+    },
+    {
+      "ts": 1790058600,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23361.05
+    },
+    {
+      "ts": 1790059500,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23356.9
+    },
+    {
+      "ts": 1790060400,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23358.2
+    },
+    {
+      "ts": 1790061300,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23345.95
+    },
+    {
+      "ts": 1790062200,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23332.1
+    },
+    {
+      "ts": 1790063100,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23339.15
+    },
+    {
+      "ts": 1790064000,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23339.85
+    },
+    {
+      "ts": 1790064900,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23339.35
+    },
+    {
+      "ts": 1790065800,
+      "day": "2026-09-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23305.2
+    },
+    {
+      "ts": 1790139600,
+      "day": "2026-09-23",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23398.4
+    },
+    {
+      "ts": 1790140500,
+      "day": "2026-09-23",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23412.8
+    },
+    {
+      "ts": 1790142300,
+      "day": "2026-09-23",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23435.95
+    },
+    {
+      "ts": 1790143200,
+      "day": "2026-09-23",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23427.8
+    },
+    {
+      "ts": 1790144100,
+      "day": "2026-09-23",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23438.55
+    },
+    {
+      "ts": 1790145000,
+      "day": "2026-09-23",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23428.95
+    },
+    {
+      "ts": 1790145900,
+      "day": "2026-09-23",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23458.1
+    },
+    {
+      "ts": 1790146800,
+      "day": "2026-09-23",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23449.5
+    },
+    {
+      "ts": 1790148600,
+      "day": "2026-09-23",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23453.0
+    },
+    {
+      "ts": 1790149500,
+      "day": "2026-09-23",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23446.3
+    },
+    {
+      "ts": 1790150400,
+      "day": "2026-09-23",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23439.4
+    },
+    {
+      "ts": 1790228700,
+      "day": "2026-09-24",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23216.55
+    },
+    {
+      "ts": 1790229600,
+      "day": "2026-09-24",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23223.05
+    },
+    {
+      "ts": 1790230500,
+      "day": "2026-09-24",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23210.25
+    },
+    {
+      "ts": 1790231400,
+      "day": "2026-09-24",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23197.35
+    },
+    {
+      "ts": 1790232300,
+      "day": "2026-09-24",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23195.7
+    },
+    {
+      "ts": 1790233200,
+      "day": "2026-09-24",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23187.85
+    },
+    {
+      "ts": 1790234100,
+      "day": "2026-09-24",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23172.65
+    },
+    {
+      "ts": 1790235000,
+      "day": "2026-09-24",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23168.65
+    },
+    {
+      "ts": 1790237700,
+      "day": "2026-09-24",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23106.35
+    },
+    {
+      "ts": 1790241300,
+      "day": "2026-09-24",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23092.2
+    },
+    {
+      "ts": 1790242200,
+      "day": "2026-09-24",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23098.05
+    },
+    {
+      "ts": 1790310600,
+      "day": "2026-09-25",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23059.0
+    },
+    {
+      "ts": 1790321400,
+      "day": "2026-09-25",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23040.7
+    },
+    {
+      "ts": 1790322300,
+      "day": "2026-09-25",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23043.1
+    },
+    {
+      "ts": 1790323200,
+      "day": "2026-09-25",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23040.45
+    },
+    {
+      "ts": 1790324100,
+      "day": "2026-09-25",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23043.15
+    },
+    {
+      "ts": 1790325900,
+      "day": "2026-09-25",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23116.3
+    },
+    {
+      "ts": 1790328600,
+      "day": "2026-09-25",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23123.4
+    },
+    {
+      "ts": 1790568000,
+      "day": "2026-09-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22908.6
+    },
+    {
+      "ts": 1790576100,
+      "day": "2026-09-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22842.05
+    },
+    {
+      "ts": 1790577000,
+      "day": "2026-09-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22826.35
+    },
+    {
+      "ts": 1790577900,
+      "day": "2026-09-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22834.15
+    },
+    {
+      "ts": 1790578800,
+      "day": "2026-09-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22853.8
+    },
+    {
+      "ts": 1790579700,
+      "day": "2026-09-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22838.45
+    },
+    {
+      "ts": 1790580600,
+      "day": "2026-09-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22830.15
+    },
+    {
+      "ts": 1790586900,
+      "day": "2026-09-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22778.8
+    },
+    {
+      "ts": 1790587800,
+      "day": "2026-09-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22797.9
+    },
+    {
+      "ts": 1790654400,
+      "day": "2026-09-29",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22625.6
+    },
+    {
+      "ts": 1790659800,
+      "day": "2026-09-29",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22617.05
+    },
+    {
+      "ts": 1790742600,
+      "day": "2026-09-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22722.3
+    },
+    {
+      "ts": 1790743500,
+      "day": "2026-09-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22755.2
+    },
+    {
+      "ts": 1790749800,
+      "day": "2026-09-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22737.1
+    },
+    {
+      "ts": 1790751600,
+      "day": "2026-09-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22749.0
+    },
+    {
+      "ts": 1790752500,
+      "day": "2026-09-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22772.6
+    },
+    {
+      "ts": 1790755200,
+      "day": "2026-09-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22774.75
+    },
+    {
+      "ts": 1790758800,
+      "day": "2026-09-30",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22642.75
+    },
+    {
+      "ts": 1790829900,
+      "day": "2026-10-01",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22574.65
+    },
+    {
+      "ts": 1790830800,
+      "day": "2026-10-01",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22561.15
+    },
+    {
+      "ts": 1790831700,
+      "day": "2026-10-01",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22563.05
+    },
+    {
+      "ts": 1790832600,
+      "day": "2026-10-01",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22562.3
+    },
+    {
+      "ts": 1790833500,
+      "day": "2026-10-01",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22546.55
+    },
+    {
+      "ts": 1790834400,
+      "day": "2026-10-01",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22543.85
+    },
+    {
+      "ts": 1790838000,
+      "day": "2026-10-01",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22471.15
+    },
+    {
+      "ts": 1790846100,
+      "day": "2026-10-01",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22358.15
+    },
+    {
+      "ts": 1791180000,
+      "day": "2026-10-05",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22498.35
+    },
+    {
+      "ts": 1791189900,
+      "day": "2026-10-05",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22545.9
+    },
+    {
+      "ts": 1791259200,
+      "day": "2026-10-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22595.9
+    },
+    {
+      "ts": 1791261900,
+      "day": "2026-10-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22651.95
+    },
+    {
+      "ts": 1791263700,
+      "day": "2026-10-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22675.55
+    },
+    {
+      "ts": 1791264600,
+      "day": "2026-10-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22661.2
+    },
+    {
+      "ts": 1791265500,
+      "day": "2026-10-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22678.0
+    },
+    {
+      "ts": 1791267300,
+      "day": "2026-10-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22689.8
+    },
+    {
+      "ts": 1791268200,
+      "day": "2026-10-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22686.45
+    },
+    {
+      "ts": 1791270000,
+      "day": "2026-10-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22687.45
+    },
+    {
+      "ts": 1791270900,
+      "day": "2026-10-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22719.35
+    },
+    {
+      "ts": 1791271800,
+      "day": "2026-10-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22712.15
+    },
+    {
+      "ts": 1791272700,
+      "day": "2026-10-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22711.95
+    },
+    {
+      "ts": 1791345600,
+      "day": "2026-10-07",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22624.0
+    },
+    {
+      "ts": 1791350100,
+      "day": "2026-10-07",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22659.55
+    },
+    {
+      "ts": 1791356400,
+      "day": "2026-10-07",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22648.9
+    },
+    {
+      "ts": 1791358200,
+      "day": "2026-10-07",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22621.8
+    },
+    {
+      "ts": 1791359100,
+      "day": "2026-10-07",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22578.0
+    },
+    {
+      "ts": 1791361800,
+      "day": "2026-10-07",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22563.05
+    },
+    {
+      "ts": 1791365400,
+      "day": "2026-10-07",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22593.5
+    },
+    {
+      "ts": 1791432000,
+      "day": "2026-10-08",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22503.55
+    },
+    {
+      "ts": 1791438300,
+      "day": "2026-10-08",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22440.15
+    },
+    {
+      "ts": 1791439200,
+      "day": "2026-10-08",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22338.15
+    },
+    {
+      "ts": 1791447300,
+      "day": "2026-10-08",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22250.85
+    },
+    {
+      "ts": 1791450000,
+      "day": "2026-10-08",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22214.85
+    },
+    {
+      "ts": 1791450900,
+      "day": "2026-10-08",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22226.15
+    },
+    {
+      "ts": 1791451800,
+      "day": "2026-10-08",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22203.25
+    },
+    {
+      "ts": 1791526500,
+      "day": "2026-10-09",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22486.7
+    },
+    {
+      "ts": 1791527400,
+      "day": "2026-10-09",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22450.05
+    },
+    {
+      "ts": 1791528300,
+      "day": "2026-10-09",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22470.05
+    },
+    {
+      "ts": 1791529200,
+      "day": "2026-10-09",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22467.35
+    },
+    {
+      "ts": 1791530100,
+      "day": "2026-10-09",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22477.35
+    },
+    {
+      "ts": 1791531000,
+      "day": "2026-10-09",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22511.95
+    },
+    {
+      "ts": 1791537300,
+      "day": "2026-10-09",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22562.45
+    },
+    {
+      "ts": 1791538200,
+      "day": "2026-10-09",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22563.2
+    },
+    {
+      "ts": 1791780300,
+      "day": "2026-10-12",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22486.0
+    },
+    {
+      "ts": 1791781200,
+      "day": "2026-10-12",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22466.1
+    },
+    {
+      "ts": 1791783000,
+      "day": "2026-10-12",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22424.3
+    },
+    {
+      "ts": 1791788400,
+      "day": "2026-10-12",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22381.2
+    },
+    {
+      "ts": 1791789300,
+      "day": "2026-10-12",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22399.65
+    },
+    {
+      "ts": 1791790200,
+      "day": "2026-10-12",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22379.25
+    },
+    {
+      "ts": 1791792000,
+      "day": "2026-10-12",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22372.3
+    },
+    {
+      "ts": 1791792900,
+      "day": "2026-10-12",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22366.5
+    },
+    {
+      "ts": 1791793800,
+      "day": "2026-10-12",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22371.4
+    },
+    {
+      "ts": 1791794700,
+      "day": "2026-10-12",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22345.65
+    },
+    {
+      "ts": 1791796500,
+      "day": "2026-10-12",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22315.1
+    },
+    {
+      "ts": 1791868500,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22510.85
+    },
+    {
+      "ts": 1791869400,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22497.3
+    },
+    {
+      "ts": 1791870300,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22489.9
+    },
+    {
+      "ts": 1791871200,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22486.25
+    },
+    {
+      "ts": 1791872100,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22505.8
+    },
+    {
+      "ts": 1791873000,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22520.25
+    },
+    {
+      "ts": 1791873900,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22515.75
+    },
+    {
+      "ts": 1791874800,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22537.8
+    },
+    {
+      "ts": 1791875700,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22537.75
+    },
+    {
+      "ts": 1791876600,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22540.7
+    },
+    {
+      "ts": 1791882000,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22598.65
+    },
+    {
+      "ts": 1791882900,
+      "day": "2026-10-13",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22653.05
+    },
+    {
+      "ts": 1791950400,
+      "day": "2026-10-14",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22686.95
+    },
+    {
+      "ts": 1791951300,
+      "day": "2026-10-14",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22731.9
+    },
+    {
+      "ts": 1791952200,
+      "day": "2026-10-14",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22708.7
+    },
+    {
+      "ts": 1791953100,
+      "day": "2026-10-14",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22687.05
+    },
+    {
+      "ts": 1791954000,
+      "day": "2026-10-14",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22709.35
+    },
+    {
+      "ts": 1791954900,
+      "day": "2026-10-14",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22734.05
+    },
+    {
+      "ts": 1791955800,
+      "day": "2026-10-14",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22744.6
+    },
+    {
+      "ts": 1791956700,
+      "day": "2026-10-14",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22724.4
+    },
+    {
+      "ts": 1791963900,
+      "day": "2026-10-14",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22561.75
+    },
+    {
+      "ts": 1791966600,
+      "day": "2026-10-14",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22656.8
+    },
+    {
+      "ts": 1791968400,
+      "day": "2026-10-14",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22627.1
+    },
+    {
+      "ts": 1791969300,
+      "day": "2026-10-14",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22617.9
+    },
+    {
+      "ts": 1791970200,
+      "day": "2026-10-14",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22606.25
+    },
+    {
+      "ts": 1792036800,
+      "day": "2026-10-15",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22750.55
+    },
+    {
+      "ts": 1792044000,
+      "day": "2026-10-15",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22954.95
+    },
+    {
+      "ts": 1792046700,
+      "day": "2026-10-15",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22965.75
+    },
+    {
+      "ts": 1792047600,
+      "day": "2026-10-15",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22957.35
+    },
+    {
+      "ts": 1792048500,
+      "day": "2026-10-15",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22997.4
+    },
+    {
+      "ts": 1792051200,
+      "day": "2026-10-15",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23027.8
+    },
+    {
+      "ts": 1792125900,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23094.3
+    },
+    {
+      "ts": 1792128600,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23109.65
+    },
+    {
+      "ts": 1792129500,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23089.1
+    },
+    {
+      "ts": 1792130400,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23117.5
+    },
+    {
+      "ts": 1792131300,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23121.95
+    },
+    {
+      "ts": 1792132200,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23122.15
+    },
+    {
+      "ts": 1792133100,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23117.5
+    },
+    {
+      "ts": 1792134000,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23120.0
+    },
+    {
+      "ts": 1792134900,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23122.9
+    },
+    {
+      "ts": 1792135800,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23096.8
+    },
+    {
+      "ts": 1792136700,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23116.35
+    },
+    {
+      "ts": 1792137600,
+      "day": "2026-10-16",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23124.35
+    },
+    {
+      "ts": 1792385100,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23060.45
+    },
+    {
+      "ts": 1792387800,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23067.35
+    },
+    {
+      "ts": 1792388700,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23070.2
+    },
+    {
+      "ts": 1792389600,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23054.15
+    },
+    {
+      "ts": 1792390500,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 23003.95
+    },
+    {
+      "ts": 1792395900,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22922.1
+    },
+    {
+      "ts": 1792396800,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22862.0
+    },
+    {
+      "ts": 1792397700,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22864.05
+    },
+    {
+      "ts": 1792399500,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22871.35
+    },
+    {
+      "ts": 1792400400,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22856.05
+    },
+    {
+      "ts": 1792402200,
+      "day": "2026-10-19",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22888.4
+    },
+    {
+      "ts": 1792562400,
+      "day": "2026-10-21",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22885.15
+    },
+    {
+      "ts": 1792568700,
+      "day": "2026-10-21",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22706.6
+    },
+    {
+      "ts": 1792570500,
+      "day": "2026-10-21",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22703.9
+    },
+    {
+      "ts": 1792572300,
+      "day": "2026-10-21",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22679.75
+    },
+    {
+      "ts": 1792641600,
+      "day": "2026-10-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22601.35
+    },
+    {
+      "ts": 1792647900,
+      "day": "2026-10-22",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22776.4
+    },
+    {
+      "ts": 1792648800,
+      "day": "2026-10-22",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22758.8
+    },
+    {
+      "ts": 1792650600,
+      "day": "2026-10-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22630.9
+    },
+    {
+      "ts": 1792652400,
+      "day": "2026-10-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22627.05
+    },
+    {
+      "ts": 1792653300,
+      "day": "2026-10-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22621.45
+    },
+    {
+      "ts": 1792656900,
+      "day": "2026-10-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22623.2
+    },
+    {
+      "ts": 1792657800,
+      "day": "2026-10-22",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22644.35
+    },
+    {
+      "ts": 1792730700,
+      "day": "2026-10-23",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22504.6
+    },
+    {
+      "ts": 1792735200,
+      "day": "2026-10-23",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22469.45
+    },
+    {
+      "ts": 1792737000,
+      "day": "2026-10-23",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22427.35
+    },
+    {
+      "ts": 1792738800,
+      "day": "2026-10-23",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22417.0
+    },
+    {
+      "ts": 1792740600,
+      "day": "2026-10-23",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22424.05
+    },
+    {
+      "ts": 1792741500,
+      "day": "2026-10-23",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22403.8
+    },
+    {
+      "ts": 1792742400,
+      "day": "2026-10-23",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22411.45
+    },
+    {
+      "ts": 1792991700,
+      "day": "2026-10-26",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22621.05
+    },
+    {
+      "ts": 1792992600,
+      "day": "2026-10-26",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22615.4
+    },
+    {
+      "ts": 1792993500,
+      "day": "2026-10-26",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22584.0
+    },
+    {
+      "ts": 1792998000,
+      "day": "2026-10-26",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22610.7
+    },
+    {
+      "ts": 1792999800,
+      "day": "2026-10-26",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22594.0
+    },
+    {
+      "ts": 1793000700,
+      "day": "2026-10-26",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22617.65
+    },
+    {
+      "ts": 1793001600,
+      "day": "2026-10-26",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22643.05
+    },
+    {
+      "ts": 1793002500,
+      "day": "2026-10-26",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22652.25
+    },
+    {
+      "ts": 1793003400,
+      "day": "2026-10-26",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22649.3
+    },
+    {
+      "ts": 1793004300,
+      "day": "2026-10-26",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22704.4
+    },
+    {
+      "ts": 1793007000,
+      "day": "2026-10-26",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22709.0
+    },
+    {
+      "ts": 1793074500,
+      "day": "2026-10-27",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22758.65
+    },
+    {
+      "ts": 1793075400,
+      "day": "2026-10-27",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22745.7
+    },
+    {
+      "ts": 1793076300,
+      "day": "2026-10-27",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22774.0
+    },
+    {
+      "ts": 1793078100,
+      "day": "2026-10-27",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22758.0
+    },
+    {
+      "ts": 1793079000,
+      "day": "2026-10-27",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22770.5
+    },
+    {
+      "ts": 1793079900,
+      "day": "2026-10-27",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22749.95
+    },
+    {
+      "ts": 1793085300,
+      "day": "2026-10-27",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22819.0
+    },
+    {
+      "ts": 1793086200,
+      "day": "2026-10-27",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22777.15
+    },
+    {
+      "ts": 1793089800,
+      "day": "2026-10-27",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22697.9
+    },
+    {
+      "ts": 1793090700,
+      "day": "2026-10-27",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22657.6
+    },
+    {
+      "ts": 1793093400,
+      "day": "2026-10-27",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22769.7
+    },
+    {
+      "ts": 1793160000,
+      "day": "2026-10-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22552.45
+    },
+    {
+      "ts": 1793161800,
+      "day": "2026-10-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22599.9
+    },
+    {
+      "ts": 1793165400,
+      "day": "2026-10-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22575.1
+    },
+    {
+      "ts": 1793166300,
+      "day": "2026-10-28",
+      "side": "PE",
+      "setup": "STAGE_3",
+      "spot_entry": 22585.35
+    },
+    {
+      "ts": 1793178000,
+      "day": "2026-10-28",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22692.45
+    },
+    {
+      "ts": 1793178900,
+      "day": "2026-10-28",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22696.95
+    },
+    {
+      "ts": 1793179800,
+      "day": "2026-10-28",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22704.65
+    },
+    {
+      "ts": 1793249100,
+      "day": "2026-10-29",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22787.3
+    },
+    {
+      "ts": 1793252700,
+      "day": "2026-10-29",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22836.85
+    },
+    {
+      "ts": 1793254500,
+      "day": "2026-10-29",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22854.55
+    },
+    {
+      "ts": 1793255400,
+      "day": "2026-10-29",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22853.85
+    },
+    {
+      "ts": 1793256300,
+      "day": "2026-10-29",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22862.05
+    },
+    {
+      "ts": 1793257200,
+      "day": "2026-10-29",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22849.7
+    },
+    {
+      "ts": 1793258100,
+      "day": "2026-10-29",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22839.4
+    },
+    {
+      "ts": 1793259000,
+      "day": "2026-10-29",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22829.95
+    },
+    {
+      "ts": 1793262600,
+      "day": "2026-10-29",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22889.45
+    },
+    {
+      "ts": 1793264400,
+      "day": "2026-10-29",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22931.85
+    },
+    {
+      "ts": 1793332800,
+      "day": "2026-10-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22963.5
+    },
+    {
+      "ts": 1793334600,
+      "day": "2026-10-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22979.1
+    },
+    {
+      "ts": 1793335500,
+      "day": "2026-10-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22938.6
+    },
+    {
+      "ts": 1793336400,
+      "day": "2026-10-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22927.7
+    },
+    {
+      "ts": 1793337300,
+      "day": "2026-10-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 22955.7
+    },
+    {
+      "ts": 1793339100,
+      "day": "2026-10-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23006.25
+    },
+    {
+      "ts": 1793346300,
+      "day": "2026-10-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23096.8
+    },
+    {
+      "ts": 1793347200,
+      "day": "2026-10-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23053.4
+    },
+    {
+      "ts": 1793348100,
+      "day": "2026-10-30",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23044.3
+    },
+    {
+      "ts": 1793599200,
+      "day": "2026-11-02",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23333.5
+    },
+    {
+      "ts": 1793600100,
+      "day": "2026-11-02",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23309.3
+    },
+    {
+      "ts": 1793601000,
+      "day": "2026-11-02",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23310.05
+    },
+    {
+      "ts": 1793601900,
+      "day": "2026-11-02",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23335.55
+    },
+    {
+      "ts": 1793602800,
+      "day": "2026-11-02",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23335.65
+    },
+    {
+      "ts": 1793685600,
+      "day": "2026-11-03",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23654.45
+    },
+    {
+      "ts": 1793686500,
+      "day": "2026-11-03",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23667.1
+    },
+    {
+      "ts": 1793688300,
+      "day": "2026-11-03",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23664.0
+    },
+    {
+      "ts": 1793689200,
+      "day": "2026-11-03",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23672.3
+    },
+    {
+      "ts": 1793769300,
+      "day": "2026-11-04",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23826.3
+    },
+    {
+      "ts": 1793770200,
+      "day": "2026-11-04",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23813.2
+    },
+    {
+      "ts": 1793781900,
+      "day": "2026-11-04",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23874.4
+    },
+    {
+      "ts": 1793784600,
+      "day": "2026-11-04",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 23921.65
+    },
+    {
+      "ts": 1793869200,
+      "day": "2026-11-05",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 24517.0
+    },
+    {
+      "ts": 1793870100,
+      "day": "2026-11-05",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 24557.3
+    },
+    {
+      "ts": 1793939400,
+      "day": "2026-11-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 24626.0
+    },
+    {
+      "ts": 1793942100,
+      "day": "2026-11-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 24618.75
+    },
+    {
+      "ts": 1793948400,
+      "day": "2026-11-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 24683.85
+    },
+    {
+      "ts": 1793950200,
+      "day": "2026-11-06",
+      "side": "CE",
+      "setup": "STAGE_2",
+      "spot_entry": 24679.1
+    }
+  ]
+}

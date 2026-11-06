@@ -321,14 +321,14 @@ def test_algo_order_passes_the_gate(tmp_path):
     assert "MANUAL TRADE BLOCKED" not in str(res.get("error", ""))
 
 
-def test_manual_order_allowed_when_gate_is_off(tmp_path):
+def test_manual_order_rejected_even_when_disable_requested(tmp_path):
     b = make_backend(tmp_path, algo_only=False)
     try:
         res = asyncio.run(b.execute_order_with_chaser(
             contract=CONTRACT, strategy_name="Manual Matrix", is_algo_trade=False))
     except Exception:
         return
-    assert not res.get("algo_only_blocked")
+    assert res.get("algo_only_blocked") is True
 
 
 def test_kill_switch_still_wins_over_the_gate(tmp_path):

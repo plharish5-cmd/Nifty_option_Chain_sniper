@@ -588,24 +588,10 @@
 
             <!-- Master Execution Mode Selector, Paper Switch, Settings & Kill Switch -->
             <div class="header-toolbar">
-                <div class="mode-toggle-group">
-                    <button type="button" class="mode-btn" id="btnModeLive" onclick="setMasterMode('ALGO_LIVE_ONLY')">🚀 ALGO LIVE ONLY</button>
-                    <button type="button" class="mode-btn active-paper" id="btnModePaper" onclick="setMasterMode('PAPER_ONLY')">🧪 PAPER TRADE ONLY</button>
-                    <button type="button" class="mode-btn" id="btnModeBoth" onclick="setMasterMode('BOTH')">⚡ BOTH: LIVE + PAPER SYNC</button>
-                </div>
-
-                <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);">
-                    <input type="checkbox" id="chkPaperExecutionSwitch" checked onchange="togglePaperExecutionSwitch(this.checked)" style="cursor:pointer;">
-                    <span>Paper Live Exec: <b id="paperExecBadge" style="color:var(--emerald);">ON</b></span>
-                </label>
-
-                <label title="8510 is an algo desk. When ALGO ONLY is on, only algo-generated signals execute — clicking a strike by hand is rejected, not filled."
-                       style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);">
-                    <input type="checkbox" id="chkAlgoOnlySwitch" checked onchange="toggleAlgoOnly(this.checked)" style="cursor:pointer;">
-                    <span>Execution: <b id="algoOnlyBadge" style="color:var(--emerald);">🤖 ALGO ONLY</b></span>
-                </label>
-
-                <!-- Problem 3 Testing Override Toggle in Settings -->
+                <div class="status-badge badge-bull">📝 PAPER TRADING: ALWAYS ON</div>
+                <label class="mode-btn"><input type="checkbox" id="enableRealMoney" onchange="requestRealMoney(this.checked)"> Enable REAL MONEY trading</label>
+                <span id="realMoneyReason" style="font-size:11px">OFF — current NO-GO verdict</span>
+                <span class="status-badge badge-side">Algo setups only · select strikes below</span>
                 <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);" title="Allow Paper Trading Outside Market Hours (For Testing Only) — Default = OFF">
                     <input type="checkbox" id="chkOffHoursPaperTesting" onchange="toggleOffHoursPaperTesting(this.checked)" style="cursor:pointer;">
                     <span>Allow Off-Hours Paper Testing: <b id="offHoursBadge" style="color:var(--crimson);">OFF</b></span>
@@ -637,6 +623,12 @@
         <!-- TAB 1: LIVE TERMINAL & AGGRESSIVE LIMIT STRIKE MATRIX               -->
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <div id="tabTerminal" class="tab-content active">
+<section class="card" id="recordingHealthV193" style="margin:16px 0;padding:16px;border:1px solid #334155;border-radius:10px">
+ <h3>Recording health <span id="recordingSession"></span></h3>
+ <p id="recordingStatus">Waiting for recorder — missing observations are never estimated.</p>
+ <div style="overflow:auto"><table><thead><tr><th>Series</th><th>Recorded / expected slots</th><th>Coverage</th><th>Largest missing interval</th></tr></thead><tbody id="recordingCoverageRows"></tbody></table></div>
+ <p id="recordingContracts"></p><small id="recordingWrite"></small>
+</section>
 <section class="card" id="trendCaptureV192" style="margin:16px 0;padding:18px;border:1px solid #334155;border-radius:10px">
  <h2 style="font-size:16px">Trend capture study · <span style="color:#fbbf24">ADVISORY ONLY</span></h2>
  <p id="trendCaptureStatus">Loading closed 15m context… Existing execution and v1.1 exits remain unchanged.</p>
@@ -665,7 +657,17 @@
             </div>
 
             <!-- ⚡ DHAN API CONNECTION — LIVE DATA + ORDER PLACEMENT CARD ⚡ -->
-            <div id="dhanApiConfigCard" class="card" style="border: 1px solid #10b981; background: linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, rgba(15, 23, 42, 0.95) 100%); margin-bottom: 16px;">
+<section class="card" id="ictSmcSignalsCard" style="margin:12px 0;padding:16px;border:1px solid #334155">
+<h3>ICT SMC Desk Signals <small style="color:#fbbf24">ADVISORY</small></h3>
+<p>Read-only context from the 8600 desk. Existing strategy rules remain unchanged.</p>
+<label><input type="checkbox" id="ictAlgoUse" disabled> Use ICT SMC Desk Signals for algo trades</label>
+<small>OFF — awaiting validation</small>
+<div id="ictSignalStatus">Waiting for source evaluation…</div>
+<div style="overflow:auto"><table style="width:100%"><thead><tr><th>Group</th><th>Verdict</th><th>Direction</th><th>Significant</th><th>Source age</th></tr></thead><tbody id="ictSignalRows"></tbody></table></div>
+</section>
+<details id="dhanApiConfigCard" class="card" style="margin:12px 0;border:1px solid #334155" ontoggle="rememberDhanPanel()">
+<summary style="cursor:pointer;padding:12px;list-style:none"><b>🔒 Dhan API — Live Data + Order Placement</b> | <span id="dhanShutterConnected">Connected = checking</span> | Token Valid Till: <span id="dhanShutterExpiry">—</span> | <span id="dhanShutterLive">Live Data: —</span> | <span id="dhanShutterOrders">Order Placement: DISABLED (PAPER)</span> | <span id="dhanShutterHint">⬇ Expand</span></summary>
+<div style="padding:14px">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
                     <div style="display:flex; align-items:center; gap:10px;">
                         <span style="font-size:16px; font-weight:800; color:#f8fafc;">⚡ Dhan API Connection — Live Data + Order Placement</span>
@@ -693,17 +695,17 @@
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; margin-bottom:12px;">
                     <!-- Dhan Client ID -->
                     <div>
-                        <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:600;">[ ] Dhan Client ID:</label>
-                        <input type="text" id="dhanClientIdInput" placeholder="Example: 1100XXXXXX" style="width:100%; margin-top:4px;" autocomplete="off">
+                        <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:600;">🔒 Fixed Client ID (backend configuration only):</label>
+                        <input type="text" id="dhanClientIdInput" readonly disabled aria-label="Fixed Dhan Client ID" placeholder="Example: 1100XXXXXX" style="width:100%; margin-top:4px;" autocomplete="off">
                     </div>
 
                     <!-- Dhan Access Token -->
                     <div>
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:600;">[ ] Dhan Access Token:</label>
-                            <button type="button" class="secondary-btn" onclick="toggleDhanTokenVisibility('dhanAccessTokenInput', 'tokenEyeBtn')" id="tokenEyeBtn" style="font-size:10px; padding:2px 6px; line-height:1;">👁️ Show</button>
+                            
                         </div>
-                        <input type="password" id="dhanAccessTokenInput" placeholder="••••••••••••••••" style="width:100%; margin-top:4px;" autocomplete="off">
+                        <input type="password" id="dhanAccessTokenInput" name="dhan-access-token-no-autofill" value="" autocapitalize="off" spellcheck="false" placeholder="Paste a fresh token — never pre-filled" style="width:100%; margin-top:4px;" autocomplete="off">
                     </div>
 
                     <!-- Dhan API Key / App ID -->
@@ -758,14 +760,13 @@
                         <button type="button" class="secondary-btn" onclick="saveDhanApiConfig()" style="padding:8px 18px; font-size:12px; font-weight:700;">💾 Save API Config</button>
                         <button type="button" class="cyan-btn" onclick="retryDhanConnection()" style="padding:8px 14px; font-size:12px; font-weight:700;">🔄 Retry Connection</button>
                         <button type="button" class="crimson-btn" onclick="logoutDhanApiConfig()" style="padding:8px 14px; font-size:12px; font-weight:700;">🚪 Logout / Clear API Config</button>
-                        <button type="button" class="secondary-btn" onclick="toggleDhanTokenVisibility('dhanAccessTokenInput', 'tokenEyeBtn')" style="padding:8px 14px; font-size:12px;">👁️ Show / Hide Token</button>
+                        
                     </div>
                     <div style="font-size:12px; color:#38bdf8; font-family:var(--font-mono); font-weight:700;" id="dhanActionFeedback">
                         Ready to connect
                     </div>
                 </div>
-            </div>
-
+            <label><input type="checkbox" id="dhanAutoCollapse" checked> Collapse after successful Connect</label></div></details>
             <!-- Dynamic ATM Strike Widget (Main Page) -->
             <div class="atm-widget">
                 <div>
@@ -1121,9 +1122,7 @@
                             Expiry Date: <b id="routerSelectedExpiry" style="color:#f8fafc;">--</b> | Symbol: <b id="routerSelectedSymbol" style="color:#f8fafc;">NIFTY</b> | Strike: <b id="routerSelectedStrike" style="color:var(--emerald);">--</b>
                         </div>
                         <div>
-                            <button type="button" class="emerald-btn" id="btnRouterPlaceOrder" onclick="submitRouterOrder('BUY')" style="padding:6px 16px; font-size:12px; font-weight:700;">
-                                🚀 Place Protected Limit Order
-                            </button>
+                            <span class="status-badge badge-side">ALGO ONLY</span>
                         </div>
                     </div>
                 </div>
@@ -1143,7 +1142,7 @@
                                 <th>Spread (Pts)</th>
                                 <th>OI (Lakhs)</th>
                                 <th>Vol (Lakhs)</th>
-                                <th>Action (1-Click Aggressive Limit)</th>
+                                <th>Algo watchlist status</th>
                             </tr>
                         </thead>
                         <tbody id="strikeMatrixTableBody">
@@ -1230,6 +1229,22 @@
                     <div>Avg 15m MFE: <b id="kpiEmaAvgMfe" style="color:#6ee7b7;">+-- pts</b></div>
                 </div>
 
+<section id="recordingHistoryV193" style="padding:12px;border:1px solid #334155;margin:12px 0;border-radius:8px">
+ <h4>Permanent EMA observations &amp; radar outcomes</h4>
+ <p id="recordingSaved">Saved Rows Today: — | Saved Locally: waiting | Last Saved: —</p>
+ <label>From <input id="recordingFrom" type="date"></label> <label>To <input id="recordingTo" type="date"></label>
+ <button type="button" onclick="recordingDownload('ema','csv',true)">⬇ Download CSV — Today</button>
+ <button type="button" onclick="recordingDownload('ema','csv')">EMA date-range CSV</button>
+ <button type="button" onclick="recordingDownload('ema','xlsx')">EMA Excel (.xlsx)</button>
+ <button type="button" onclick="recordingDownload('radar','csv')">⬇ Download Tier Signals CSV</button>
+ <button type="button" onclick="recordingDownload('radar','xlsx')">Tier Excel (.xlsx)</button>
+ <p id="recordingExportMessage">Exports include PAUSED and STALE observations. Maximum 90 calendar days.</p>
+ <details><summary>Saved EMA history — yesterday and today</summary><label>Date <select id="recordingHistoryDay" onchange="recHistoryPage=0;renderRecordingHistory()"></select></label> <label>Timeframe <select id="recordingHistoryTF" onchange="recHistoryPage=0;renderRecordingHistory()"><option>1m</option><option>15m</option><option>1H</option></select></label> <button type="button" onclick="recHistoryPage++;renderRecordingHistory()">Older</button> <button type="button" onclick="recHistoryPage=Math.max(0,recHistoryPage-1);renderRecordingHistory()">Newer</button> <small id="recordingHistoryPage"></small><div style="max-height:220px;overflow:auto"><table><thead><tr><th>Date/time IST</th><th>TF</th><th>Spot</th><th>Close</th><th>4 EMA</th><th>8 EMA</th><th>4−8 / ATR</th><th>Proximity</th><th>Signal</th><th>Status</th></tr></thead><tbody id="recordingEmaRows"></tbody></table></div></details>
+ <h4>Radar tier tracker — observational only</h4>
+ <div style="overflow:auto"><table><thead><tr><th>Tier</th><th>n</th><th>Avg max pts</th><th>Avg risk</th><th>Max/risk</th><th>T15 before SL</th><th>SL first</th><th>Ambiguous</th><th>Running / expired</th></tr></thead><tbody id="recordingTierSummary"></tbody></table></div>
+ <div style="max-height:260px;overflow:auto"><table><thead><tr><th>Time / tier / signal</th><th>Side</th><th>Signal / spot at signal</th><th>Micro SL / risk</th><th>Now / points</th><th>Max points / time</th><th>Max adverse</th><th>T15 before SL</th><th>Outcome / final</th><th>Premium signal / now / max points</th></tr></thead><tbody id="recordingRadarRows"></tbody></table></div>
+ <p id="recordingRadarCaption"></p><small>Missing spot bars also make sequencing unobservable (spot_gap in export); unresolved targets at expiry are NO only with a complete observed horizon. Pending rows are not counted as stop-first.</small>
+</section>
                 <!-- Table Container -->
                 <div id="emaProximityTableContainer" style="overflow-x:auto; max-height:550px; overflow-y:auto; border:1px solid rgba(255,255,255,0.1); border-radius:6px;">
                     <table style="width:100%; border-collapse:collapse; font-size:11.5px; font-family:var(--font-mono);">
@@ -2595,18 +2610,19 @@
                 if (!res.ok) return;
                 const data = await res.json();
                 cachedDhanConfig = data;
+            updateDhanShutter(data);
 
                 if (document.getElementById("dhanClientIdInput")) {
                     document.getElementById("dhanClientIdInput").value = data.client_id || "";
                 }
                 if (document.getElementById("dhanAccessTokenInput")) {
-                    document.getElementById("dhanAccessTokenInput").value = data.masked_token || "";
+                    document.getElementById("dhanAccessTokenInput").value = "";
                 }
                 if (document.getElementById("dhanApiKeyInput")) {
-                    document.getElementById("dhanApiKeyInput").value = data.api_key || "";
+                    document.getElementById("dhanApiKeyInput").value = "";
                 }
                 if (document.getElementById("dhanApiSecretInput")) {
-                    document.getElementById("dhanApiSecretInput").value = data.masked_secret || "";
+                    document.getElementById("dhanApiSecretInput").value = "";
                 }
                 if (document.getElementById("dhanEnvironmentSelect")) {
                     document.getElementById("dhanEnvironmentSelect").value = data.environment || "LIVE";
@@ -2686,25 +2702,28 @@
             }
         }
 
-        async function saveDhanApiConfig(showFeedback = true) {
+        async function saveDhanApiConfig(showFeedback = true, requireFresh = false) {
             const fb = document.getElementById("dhanActionFeedback");
             try {
                 if (fb) fb.textContent = "Saving config...";
+                const typedToken = document.getElementById("dhanAccessTokenInput").value.trim();
+                if (requireFresh && !typedToken) { if (fb) fb.textContent = "⚠️ Please paste fresh Dhan Access Token first — Field is blank for safety"; return null; }
                 const body = {
-                    client_id: document.getElementById("dhanClientIdInput").value.trim(),
-                    access_token: document.getElementById("dhanAccessTokenInput").value.trim(),
                     api_key: document.getElementById("dhanApiKeyInput").value.trim(),
                     api_secret: document.getElementById("dhanApiSecretInput").value.trim(),
                     environment: document.getElementById("dhanEnvironmentSelect").value,
                     whitelisted_ip: document.getElementById("dhanWhitelistedIpInput").value.trim(),
                 };
 
+                if (typedToken) body.access_token = typedToken;
                 const res = await fetch("/api/dhan/config", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(body)
                 });
                 const d = await res.json();
+                if (!res.ok || d.ok === false) throw new Error(d.error || "Config rejected");
+                document.getElementById("dhanAccessTokenInput").value = "";
                 cachedDhanConfig = d;
                 if (fb) fb.textContent = "💾 Config saved safely!";
                 checkIpMatchStatus();
@@ -2723,8 +2742,11 @@
         async function connectToDhanLive() {
             const fb = document.getElementById("dhanActionFeedback");
             if (fb) fb.textContent = "Connecting to Dhan HQ...";
-            await saveDhanApiConfig(false);
-            await testDhanLiveConnection(true);
+            const saved = await saveDhanApiConfig(false, true);
+            if (!saved) return;
+            const result = await testDhanLiveConnection(true);
+            document.getElementById("dhanAccessTokenInput").value = "";
+            if (result && result.connected && document.getElementById('dhanAutoCollapse').checked) setTimeout(() => setDhanPanelCollapsed(true), 2000);
         }
 
         async function retryDhanConnection() {
@@ -2738,7 +2760,7 @@
                 const res = await fetch("/api/dhan/logout", { method: "POST" });
                 const d = await res.json();
                 alert(d.message || "Logged out of Dhan API successfully.");
-                if (document.getElementById("dhanClientIdInput")) document.getElementById("dhanClientIdInput").value = "";
+                // Fixed Client ID is retained on logout.
                 if (document.getElementById("dhanAccessTokenInput")) document.getElementById("dhanAccessTokenInput").value = "";
                 if (document.getElementById("dhanApiKeyInput")) document.getElementById("dhanApiKeyInput").value = "";
                 if (document.getElementById("dhanApiSecretInput")) document.getElementById("dhanApiSecretInput").value = "";
@@ -2804,6 +2826,7 @@
         }
 
         function renderDhanStatus(res) {
+            updateDhanShutter(res);
             const banner = document.getElementById("dhanStatusBanner");
             const bannerText = document.getElementById("dhanStatusText");
             const bannerIcon = document.getElementById("dhanStatusIcon");
@@ -3405,11 +3428,9 @@
                 // 8. State Sync
                 if (data.execution) {
                     currentExecutionMode = data.execution.mode;
-                    updateModeButtonsUI(data.execution.mode);
+                    syncRealMoneyUI(data.execution.mode === "BOTH");
                     isPaperExecutionEnabled = data.execution.paper_enabled;
-                    document.getElementById("chkPaperExecutionSwitch").checked = isPaperExecutionEnabled;
-                    document.getElementById("paperExecBadge").textContent = isPaperExecutionEnabled ? "ON" : "OFF";
-                    document.getElementById("paperExecBadge").style.color = isPaperExecutionEnabled ? "var(--emerald)" : "var(--crimson)";
+                    isPaperExecutionEnabled = true;
 
                     isKillSwitchActive = data.execution.kill_switch_active;
                     document.getElementById("btnResetKill").style.display = isKillSwitchActive ? "inline-block" : "none";
@@ -3423,7 +3444,7 @@
                     cachedAllowOffHours = Boolean(data.allow_off_hours_paper_testing);
                 }
                 if (data.algo_only_execution !== undefined) {
-                    applyAlgoOnlyUI(Boolean(data.algo_only_execution));
+                    // Algo-only is permanent; there is no switch.
                 }
 
                 // 9. Staged Derivatives Confluence Variables (Multi-Factor Trend Lab)
@@ -3528,9 +3549,7 @@
                     <td>${c.oi_lakhs.toFixed(1)} L</td>
                     <td>${c.volume_lakhs.toFixed(1)} L</td>
                     <td>
-                        <button type="button" class="${c.opt_type === 'CE' ? 'emerald-btn' : 'crimson-btn'}" onclick="submitMatrixOrder('${c.id}', 'BUY')" ${btnDisabledAttr} ${!Number.isFinite(c.ltp)||c.ltp<=0||!Number.isInteger(c.lot_size)||!c.security_id?'disabled title="Verified quote and lot required"':''}>
-                            🚀 BUY AGGR-LIMIT (${Number.isInteger(c.lot_size)?c.lot_size:"—"} Qty)
-                        </button>
+                        <span class="status-badge badge-side">${c.algo_enabled !== false ? "SELECTED" : "ALGO ONLY"}</span>
                     </td>
                 </tr>
             `;
@@ -3549,51 +3568,7 @@
             if (stkEl) stkEl.textContent = opt.dataset.strike || "--";
         }
 
-        async function submitRouterOrder(side = "BUY") {
-            if (cachedMarketStatus && !cachedMarketStatus.is_open && !cachedAllowOffHours) {
-                const timeIst = (cachedMarketStatus && cachedMarketStatus.time_ist) ? cachedMarketStatus.time_ist : (new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + " IST");
-                alert(`❌ Market Closed — Cannot Place Order Now\nMarket Hours: Mon-Fri 09:15 AM - 03:30 PM IST\nCurrent Time: ${timeIst} | Market Status: CLOSED`);
-                return;
-            }
-            const sel = document.getElementById("routerContractDropdown");
-            const contractId = sel ? sel.value : null;
-            if (!contractId) {
-                alert("Please select a contract from the Order Router dropdown.");
-                return;
-            }
-            const btn = document.getElementById("btnRouterPlaceOrder");
-            if (btn) btn.disabled = true;
-            try {
-                const targetPts = parseFloat(document.getElementById("cfgTargetPts") ? document.getElementById("cfgTargetPts").value : 40) || 40;
-                const slPts = parseFloat(document.getElementById("cfgSlPts") ? document.getElementById("cfgSlPts").value : 40) || 40;
-                const res = await fetch("/api/order/submit", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        contract_id: contractId,
-                        side: side,
-                        strategy_name: "Aggressive Limit Router",
-                        source: "MANUAL ROUTER ✋",
-                        strategy_setup: "Manual — No Strategy",
-                        target_pts: targetPts,
-                        sl_pts: slPts
-                    })
-                });
-                const data = await res.json();
-                if (data.ok) {
-                    playAcousticChime("success");
-                    showOrderConfirmationToast(data.symbol || sel.options[sel.selectedIndex].text, data.fill_price, side, "MANUAL ROUTER ✋", "Manual — No Strategy");
-                    speakOrderEntryAlert(data.symbol, data.fill_price);
-                    pollLiveEngine();
-                } else {
-                    alert("Order failed / rejected: " + (data.error || data.rejection_reason));
-                }
-            } catch (e) {
-                alert("Router order submission error: " + e.message);
-            } finally {
-                if (btn) btn.disabled = false;
-            }
-        }
+        
 
         async function toggleAlgoStrike(contractId, isChecked) {
             try {
@@ -3613,45 +3588,7 @@
             }
         }
 
-        async function submitMatrixOrder(contractId, side) {
-            if (cachedMarketStatus && !cachedMarketStatus.is_open && !cachedAllowOffHours) {
-                const timeIst = (cachedMarketStatus && cachedMarketStatus.time_ist) ? cachedMarketStatus.time_ist : (new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + " IST");
-                alert(`❌ Market Closed — Cannot Place Order Now\nMarket Hours: Mon-Fri 09:15 AM - 03:30 PM IST\nCurrent Time: ${timeIst} | Market Status: CLOSED`);
-                return;
-            }
-            const btn = event ? event.currentTarget : null;
-            if (btn) btn.disabled = true;
-            try {
-                const targetPts = parseFloat(document.getElementById("cfgTargetPts") ? document.getElementById("cfgTargetPts").value : 40) || 40;
-                const slPts = parseFloat(document.getElementById("cfgSlPts") ? document.getElementById("cfgSlPts").value : 40) || 40;
-                const res = await fetch("/api/order/submit", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        contract_id: contractId,
-                        side: side,
-                        strategy_name: "Manual Matrix 8510",
-                        source: "MANUAL MATRIX ✋",
-                        strategy_setup: "Manual — No Strategy",
-                        target_pts: targetPts,
-                        sl_pts: slPts
-                    })
-                });
-                const data = await res.json();
-                if (data.ok) {
-                    playAcousticChime("success");
-                    showOrderConfirmationToast(data.symbol || "09 Nov 2026 — NIFTY 24300 CE", data.fill_price, side, "MANUAL MATRIX ✋", "Manual — No Strategy");
-                    speakOrderEntryAlert(data.symbol, data.fill_price);
-                    pollLiveEngine();
-                } else {
-                    alert("Order failed / rejected: " + (data.error || data.rejection_reason));
-                }
-            } catch (e) {
-                alert("Order submission error: " + e.message);
-            } finally {
-                if (btn) btn.disabled = false;
-            }
-        }
+        
 
         function showOrderConfirmationToast(symbol, price, side, source = "AUTO ALGO 🤖", strategy = "Stage 2 8 EMA Touch") {
             const toast = document.getElementById("orderConfirmationToast");
@@ -3955,72 +3892,17 @@
         }
 
         // ── 6. EXECUTION MODE, KILL SWITCH & CHASING CONFIG ────────────────────
-        async function setMasterMode(mode) {
-            try {
-                const res = await fetch("/api/mode", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ mode: mode })
-                });
-                const d = await res.json();
-                if (d.ok) {
-                    currentExecutionMode = mode;
-                    updateModeButtonsUI(mode);
-                }
-            } catch (e) {
-                alert("Mode update error: " + e.message);
-            }
-        }
+        
 
-        function updateModeButtonsUI(mode) {
-            const btnLive = document.getElementById("btnModeLive");
-            const btnPaper = document.getElementById("btnModePaper");
-            const btnBoth = document.getElementById("btnModeBoth");
-            btnLive.className = "mode-btn" + (mode === "ALGO_LIVE_ONLY" ? " active-live" : "");
-            btnPaper.className = "mode-btn" + (mode === "PAPER_ONLY" ? " active-paper" : "");
-            btnBoth.className = "mode-btn" + (mode === "BOTH" ? " active-both" : "");
-        }
+        
 
         // ALGO ONLY blocks discretionary orders at the engine, not just here, so
         // the scanner and strike matrix cannot route around it either.
-        async function toggleAlgoOnly(enabled) {
-            try {
-                const res = await fetch("/api/mode", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ algo_only: enabled })
-                });
-                const d = await res.json();
-                applyAlgoOnlyUI(d.algo_only_execution !== undefined ? d.algo_only_execution : enabled);
-            } catch (e) {
-                alert("Algo-Only toggle error: " + e.message);
-            }
-        }
+        
 
-        function applyAlgoOnlyUI(on) {
-            const chk = document.getElementById("chkAlgoOnlySwitch");
-            const badge = document.getElementById("algoOnlyBadge");
-            if (chk) chk.checked = !!on;
-            if (badge) {
-                badge.textContent = on ? "🤖 ALGO ONLY" : "✋ MANUAL ALLOWED";
-                badge.style.color = on ? "var(--emerald)" : "var(--amber)";
-            }
-        }
+        
 
-        async function togglePaperExecutionSwitch(enabled) {
-            try {
-                await fetch("/api/mode", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ paper_enabled: enabled })
-                });
-                isPaperExecutionEnabled = enabled;
-                document.getElementById("paperExecBadge").textContent = enabled ? "ON" : "OFF";
-                document.getElementById("paperExecBadge").style.color = enabled ? "var(--emerald)" : "var(--crimson)";
-            } catch (e) {
-                console.error("Paper switch error:", e);
-            }
-        }
+        
 
         async function triggerEmergencyKillSwitch() {
             if (!confirm("⚠️ ARE YOU SURE? This will immediately cancel all Dhan pending orders, square off all open positions, and lock execution in STANDBY.")) return;
@@ -5405,7 +5287,70 @@
             }catch(e){console.debug('Trend capture evidence unavailable');}
         }
         loadTrendCaptureEvidence192();
-    </script>
+
+// v1.9.3: cached read-only observations; deliberately outside execution handlers.
+const recText=(id,value)=>{const e=document.getElementById(id);if(e)e.textContent=value;};
+const recNum=(v)=>v===null||v===undefined?'—':Number(v).toFixed(2);
+function recRows(id,rows){const b=document.getElementById(id);if(!b)return;b.replaceChildren();for(const row of rows){const tr=document.createElement('tr');for(const v of row){const td=document.createElement('td');td.textContent=v??'—';td.style.padding='6px';tr.appendChild(td);}b.appendChild(tr);}}
+function recordingToday(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+async function recordingDownload(kind,format,todayOnly=false){
+ const today=recordingToday(),a=todayOnly?today:document.getElementById('recordingFrom').value,b=todayOnly?today:document.getElementById('recordingTo').value;
+ const days=(Date.parse(b)-Date.parse(a))/86400000+1;
+ if(!a||!b||!Number.isFinite(days)||days<1||days>90){recText('recordingExportMessage','Choose an ascending date range of at most 90 calendar days.');return;}
+ const url=(kind==='ema'?'/api/ema_proximity/export':'/api/radar_tier/export')+'?from='+encodeURIComponent(a)+'&to='+encodeURIComponent(b)+'&format='+format;
+ // Native download streams to the browser; do not buffer months into a JS Blob.
+ const link=document.createElement('a');link.href=url;link.download='';document.body.appendChild(link);link.click();link.remove();recText('recordingExportMessage','Download requested. Missing observations remain blank; no history is manufactured.');
+}
+let recHistoryRows=[],recHistoryPage=0;
+function renderRecordingHistory(){
+ const day=document.getElementById('recordingHistoryDay').value,tf=document.getElementById('recordingHistoryTF').value;
+ const all=recHistoryRows.filter(x=>x.date===day&&x.timeframe===tf);recHistoryPage=Math.min(recHistoryPage,Math.max(0,Math.ceil(all.length/120)-1));
+ const end=Math.max(0,all.length-recHistoryPage*120),start=Math.max(0,end-120);
+ recText('recordingHistoryPage',`${start+Number(all.length>0)}–${end} of ${all.length} saved rows`);
+ recRows('recordingEmaRows',all.slice(start,end).map(x=>[x.date+' '+x.time_ist,x.timeframe,recNum(x.nifty_spot_price),recNum(x.close_price),recNum(x.ma4),recNum(x.ema8),recNum(x.gap_vs_atr),x.proximity_status,x.signal,x.status]));
+}
+async function loadRecordingV193(){
+ try{
+ const response=await fetch('/api/recording/coverage');if(!response.ok)throw Error('HTTP '+response.status);const h=await response.json();
+ recText('recordingSession',h.session_date||'');recText('recordingStatus',h.status+(h.last_error?' · Recording error: '+h.last_error:'')+' · Forward only');
+ const rows=[];for(const [key,label] of [['spot','Spot candles'],['fut','FUT candles'],['fut2','FUT2 candles'],['chain','Option chain — 8510 forward'],['chain_legacy','Option chain — existing source']]){const raw=h[key],x=raw&&(h.status==='RECORDING'&&raw.elapsed?raw.elapsed:raw);if(x)rows.push([label,`${x.n_snapshots} / ${x.expected_snapshots}`,recNum(x.coverage_pct)+'%',`${recNum(x.max_gap_minutes)} min at ${x.max_gap_at}`]);}recRows('recordingCoverageRows',rows);
+ const body=document.getElementById('recordingCoverageRows');for(let i=0;i<rows.length;i++){const key=['spot','fut','fut2','chain','chain_legacy'].filter(k=>h[k])[i];const raw=h[key],x=h.status==='RECORDING'&&raw.elapsed?raw.elapsed:raw;const pct=x.coverage_pct;body.children[i].children[2].style.color=pct<h.coverage_alert_pct?'#f87171':pct<h.coverage_warn_pct?'#fbbf24':'#34d399';}
+ recText('recordingContracts',`${h.tracked??0} contracts tracked · ${h.contract_ticks??0} minute receipts · ${h.contract_missing_minutes??0} missing contract-minutes · queue drops ${h.queue_dropped??0}`);
+ recText('recordingWrite',`Last observation write: ${h.last_write?new Date(h.last_write*1000).toLocaleTimeString('en-GB',{timeZone:'Asia/Kolkata'})+' IST':'—'} · Expected slots elapsed so far while live; full-session totals after close. See the API for both denominators.`);
+ recText('recordingSaved',`Saved Rows Today: ${h.saved_rows_today??0} | Saved Locally: ${h.last_error?'⚠ check recording error':h.saved_rows_today>0?'✅ SQLite + daily CSV':'Ready — no forward rows yet'} | Last Saved: ${h.last_saved||'—'} IST`);
+ const r=await fetch('/api/recording/history');if(!r.ok)throw Error('History HTTP '+r.status);const d=await r.json();
+ recHistoryRows=d.ema_rows||[];
+ const selector=document.getElementById('recordingHistoryDay'),chosen=selector.value;selector.replaceChildren();
+ const days=[...new Set(recHistoryRows.map(x=>x.date))].sort();if(!days.length)days.push(recordingToday());
+ for(const day of days){const option=document.createElement('option');option.value=day;option.textContent=day;selector.appendChild(option);}selector.value=days.includes(chosen)?chosen:days[days.length-1];renderRecordingHistory();
+ const q=d.radar||{};recText('recordingRadarCaption',q.caption||'No live radar observations recorded.');
+ recRows('recordingTierSummary',(q.summary||[]).map(x=>[x.tier,x.n,recNum(x.avg_max),recNum(x.avg_risk),recNum(x.max_risk_ratio),recNum(x.yes_n_pct)+'%',recNum(x.stop_n_pct)+'%',recNum(x.ambiguous_n_pct)+'%',`${x.running_n||0} / ${x.expired_n||0}`]));
+ recRows('recordingRadarRows',(q.rows||[]).map(x=>[x.signal_time_ist+' / '+x.tier+' / '+x.signal_name,x.direction,recNum(x.signal_price)+' / '+recNum(x.nifty_spot_at_signal),recNum(x.micro_sl_price)+' / '+recNum(x.risk_points),recNum(x.current_nifty_spot)+' / '+recNum(x.points_moved_now),recNum(x.max_points_moved)+' / '+(x.max_move_time_ist||'—'),recNum(x.max_adverse_points),x.target_15_hit_before_sl||'PENDING',x.outcome+' / '+recNum(x.final_points),[x.premium_at_signal,x.premium_now,x.max_premium_points].map(recNum).join(' / ')]));
+ }catch(e){recText('recordingStatus','Recording monitor unavailable: '+e.message);}
+}
+document.addEventListener('DOMContentLoaded',()=>{for(const id of ['recordingFrom','recordingTo'])document.getElementById(id).value=recordingToday();loadRecordingV193();setInterval(loadRecordingV193,30000);});
+
+function syncRealMoneyUI(enabled) { const box=document.getElementById('enableRealMoney');if(box)box.checked=!!enabled; }
+async function requestRealMoney(enabled) {
+ const box=document.getElementById('enableRealMoney');box.checked=false;
+ const confirmation=enabled?prompt('Type ENABLE REAL MONEY. Paper continues running. Real money is blocked while the verdict is NO-GO.') : '';
+ if(enabled&&confirmation!=='ENABLE REAL MONEY')return;
+ try{const r=await fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({real_money_enabled:enabled,confirmation})});const d=await r.json();syncRealMoneyUI(r.ok&&d.real_money_enabled);document.getElementById('realMoneyReason').textContent=d.error|| (d.real_money_enabled?'Real ON + Paper ALWAYS ON':'Real OFF · Paper ALWAYS ON');}catch(e){syncRealMoneyUI(false);document.getElementById('realMoneyReason').textContent='Real OFF — request failed';}
+}
+function setDhanPanelCollapsed(collapsed){const panel=document.getElementById('dhanApiConfigCard');panel.open=!collapsed;try{localStorage.setItem('dhanPanelCollapsed',String(collapsed));}catch(e){console.warn('Panel preference unavailable');}}
+function rememberDhanPanel(){const panel=document.getElementById('dhanApiConfigCard');document.getElementById('dhanShutterHint').textContent=panel.open?'⬆ Collapse / Minimise':'⬇ Expand';try{localStorage.setItem('dhanPanelCollapsed',String(!panel.open));}catch(e){console.warn('Panel preference unavailable');}}
+function updateDhanShutter(data){document.getElementById('dhanShutterConnected').textContent='Connected = '+!!(data.connected??data.dhan_connected);document.getElementById('dhanShutterExpiry').textContent=data.token_valid_till||'Not Connected';document.getElementById('dhanShutterLive').textContent='Live Data: '+((data.connected??data.dhan_connected)?'ON':'OFF');document.getElementById('dhanShutterOrders').textContent='Order Placement: '+(currentExecutionMode==='BOTH'?'REAL opt-in + PAPER':'DISABLED (PAPER mode)');}
+document.addEventListener('DOMContentLoaded',()=>{const panel=document.getElementById('dhanApiConfigCard');const tabs=document.querySelector('.workspace-tabs')||document.getElementById('tabTerminal');if(tabs)tabs.parentNode.insertBefore(panel,tabs);let collapsed=true;try{collapsed=localStorage.getItem('dhanPanelCollapsed')!=='false';}catch(e){console.warn('Panel preference unavailable');}setDhanPanelCollapsed(collapsed);document.getElementById('dhanAccessTokenInput').value='';});
+
+async function pollIctDeskSignals(){
+ try{const res=await fetch('/api/ict-smc-signals');if(!res.ok)throw Error('Source unavailable');const d=await res.json();
+ document.getElementById('ictSignalStatus').textContent=(d.status||'UNAVAILABLE')+' · '+(d.evaluated_at||'not evaluated')+(d.log_error?' · Recording error':'');
+ const body=document.getElementById('ictSignalRows');body.replaceChildren();
+ for(const r of d.rows||[]){const tr=document.createElement('tr');tr.title=r.reason||'';for(const value of [r.signal_group,r.verdict,r.direction,r.significant?'YES':'—',r.age_seconds==null?'—':Math.round(r.age_seconds)+'s']){const td=document.createElement('td');td.textContent=value;td.style.padding='6px';tr.appendChild(td);}body.appendChild(tr);}
+ }catch(e){document.getElementById('ictSignalStatus').textContent='UNAVAILABLE — source not reachable';}
+}
+document.addEventListener('DOMContentLoaded',()=>{pollIctDeskSignals();setInterval(pollIctDeskSignals,20000);});
+</script>
 
     <!-- Module 4: Order Placement Confirmation Toast -->
     <div id="orderConfirmationToast" style="display:none; position:fixed; bottom:24px; right:24px; z-index:99999; background:rgba(15, 23, 42, 0.95); border:1px solid #10b981; border-radius:10px; padding:16px 20px; box-shadow:0 10px 25px rgba(0,0,0,0.6); min-width:320px; color:#f8fafc; font-family:var(--font-mono);">

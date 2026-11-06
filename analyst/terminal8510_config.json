@@ -6,7 +6,7 @@
   "dhan": {
     "client_id": "1112377935",
     "environment": "LIVE",
-    "whitelisted_ip": "49.205.39.195",
+    "whitelisted_ip": "127.0.0.1",
     "DHAN_CLIENT_ID": "1112377935"
   },
   "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
@@ -42,7 +42,7 @@
     "runner_pct": 20
   },
   "algo_strike_selection": {
-    "LONG_CE_ITM": false,
+    "LONG_CE_ITM": true,
     "LONG_CE_ATM": true,
     "LONG_PE_ITM": true,
     "LONG_PE_ATM": true
@@ -239,5 +239,63 @@
     "random_seed": 192,
     "restrict_trailing_by_dte": [],
     "_evidence": "40-session risk-bounded MFE gate failed (p50 22.85 / p75 60.15 spot points; trend p50 30.475). Stage2B 49 candidates, 10 gapped snapshot-priced paths; no proven edge. ADVISORY_ONLY, continuation OFF. See evidence JSON."
+  },
+  "recording_v193": {
+    "enabled": true,
+    "contract_tick_enabled": true,
+    "contract_tick_minutes_after_exit": 30,
+    "track_atm_plus_minus": 100,
+    "coverage_warn_pct": 95.0,
+    "coverage_alert_pct": 80.0,
+    "export_max_days": 90,
+    "ema_proximity_persist": true,
+    "radar_tier_track": true,
+    "radar_targets_pts": [
+      10,
+      15,
+      20,
+      25,
+      30
+    ],
+    "chain_refresh_minutes": 3,
+    "queue_size": 256,
+    "freshness_seconds": 120,
+    "premium_freshness_seconds": 60,
+    "strike_step": 50,
+    "quote_timeout_seconds": 4,
+    "quote_backoff_seconds": 60,
+    "stop_widths": [
+      20,
+      30,
+      40,
+      50
+    ],
+    "study_target_pts": 40,
+    "study_win_delta": 0.59,
+    "study_loss_delta": 0.67,
+    "_evidence": "Recording only. No signal, filter or threshold here is validated. The radar max-move column is descriptive and selection-biased by construction; target_N_hit_before_sl is the tradeable statistic. Added because v1.9.2 could price only 10 of 49 candidates (20.4%) for lack of per-contract minute data."
+  },
+  "real_money_enabled": false,
+  "execution_safety_v194": {
+    "live_validation_status": "NO_GO",
+    "typed_confirmation": "ENABLE REAL MONEY",
+    "_evidence": "Paper and algo-only are unconditional. Current NO-GO prevents real-money opt-in. Any future approved opt-in is session-only and resets OFF at restart."
+  },
+  "ict_smc_desk_signals": {
+    "enabled": true,
+    "use_for_algo_trades": false,
+    "base_url": "http://127.0.0.1:8600",
+    "cache_seconds": 20,
+    "timeout_seconds": 4.0,
+    "timeframe": "3m",
+    "max_source_age_seconds": 300,
+    "significance": {
+      "State Change": true,
+      "Actionable Setups": true,
+      "High Conviction": true,
+      "Burst": true
+    },
+    "_evidence": "UNVALIDATED. Read-only classification bridge; never execution. Ports and parity audited against locked TypeScript; sparse chain history prevents a final trading verdict.",
+    "max_payload_bytes": 4000000
   }
 }

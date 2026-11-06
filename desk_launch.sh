@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # desk_launch.sh <harish|wife> — what the desktop icons run. Any time of day, no terminal needed:
 #   market hours → opens the automatic desk (8502 / 8503; waits up to 60 s if it is just starting)
-#   after hours  → starts a temporary desk on 8510 / 8511 (same account) and opens it; it stops itself after 4 h
+#   after hours  → starts a temporary desk on 8520 / 8511 (same account) and opens it; it stops itself after 4 h
 #                  or at 08:50, so it never runs next to the morning desk
 OC="$(cd "$(dirname "$0")" && pwd)"
 cd "$OC" || exit 1
 WHO="${1:-harish}"
 if [ "$WHO" = "wife" ]; then MAIN=8503; ALT=8511; PROFILE=wife; NAME="Paper Desk · Wife"
-else MAIN=8502; ALT=8510; PROFILE=""; NAME="Paper Desk · Harish"; fi
+else MAIN=8502; ALT=8520; PROFILE=""; NAME="Paper Desk · Harish"; fi
 PY="$OC/.venv/bin/python"
 note() { command -v notify-send >/dev/null && notify-send -i "$OC/data/icons/paperdesk_${WHO}.svg" "$NAME" "$1"; echo "$1"; }
 up() { "$PY" - "$1" <<'PYEOF' 2>/dev/null
