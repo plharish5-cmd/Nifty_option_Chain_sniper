@@ -155,10 +155,10 @@
   },
   "ema_proximity_radar": {
     "enabled": true,
-    "audio_alerts_enabled": true,
+    "audio_alerts_enabled": false,
     "timeframe": "1m",
-    "approaching_pts_threshold": 12,
-    "touch_pts_threshold": 5,
+    "approaching_pts_threshold": 12.0,
+    "touch_pts_threshold": 5.0,
     "whipsaw_max_flips_12m": 3,
     "goldilocks_min_atr": 0.13,
     "goldilocks_max_atr": 0.26,

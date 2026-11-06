@@ -40,7 +40,7 @@ DEFAULT_REPLAY_DIR = ROOT / "analyst" / "replay_data"
 
 DEFAULT_RADAR_CONFIG: Dict[str, Any] = {
     "enabled": True,
-    "audio_alerts_enabled": True,
+    "audio_alerts_enabled": False,
     "timeframe": "1m",
     "approaching_pts_threshold": 12.0,
     "touch_pts_threshold": 5.0,

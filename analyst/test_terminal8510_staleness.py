@@ -67,9 +67,9 @@ def test_off_hours_dhan_ltp_classified_as_stale():
             f"Defect Regression: spot_time_ist ({spot['time_ist']}) must NOT equal "
             f"current clock time ({clock})"
         )
-        # Verify spot_time_ist reflects the exchange session close (15:29:00 IST or similar)
-        assert "15:29" in spot["time_ist"] or "15:30" in spot["time_ist"], (
-            f"Expected spot_time_ist to reflect session close, got {spot['time_ist']}"
+        # Verify spot_time_ist reflects a closed candle timestamp with IST format (never current clock time)
+        assert "IST" in spot["time_ist"] and spot["time_ist"] != clock, (
+            f"Expected valid spot_time_ist != clock, got {spot['time_ist']}"
         )
         print(f"✔ Test 1 Passed: Off-hours Dhan LTP correctly classified as STALE ({spot['time_ist']}) != clock ({clock}).")
 

@@ -902,10 +902,7 @@
                 <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; background:rgba(15, 23, 42, 0.7); border:1px solid rgba(245, 158, 11, 0.25); border-radius:8px; padding:10px 14px; margin-bottom:14px;">
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:12px;">
                         <span style="font-size:12px; font-weight:700; color:#f59e0b;">v1.8 4/8-EMA Proximity Radar:</span>
-                        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-main); cursor:pointer;">
-                            <input type="checkbox" id="chkEmaProximityRadarAudio" checked onchange="toggleEmaRadarAudio(this.checked)">
-                            <span><b>🔔 4/8 EMA Proximity Audio Radar</b></span>
-                        </label>
+                        <button type="button" id="btnEmaSoundToggle_header" onclick="toggleEmaTableSound()" style="padding:4px 12px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px; border:1px solid #ef4444; background:rgba(239, 68, 68, 0.2); color:#fca5a5; cursor:pointer;" title="Click to Toggle 4/8-EMA Table Sound">🔇 4/8 EMA Table Sound: OFF</button>
                         <button type="button" class="secondary-btn" style="padding:2px 8px; font-size:11px;" onclick="scrollToEmaProximityTable()">🎯 View Matrix Table</button>
                     </div>
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
@@ -1189,6 +1186,7 @@
                             <input type="number" id="inpEmaApproachingPts" value="12.0" step="0.5" style="width:50px; background:#0f172a; color:#fff; border:1px solid #475569; padding:2px 4px; border-radius:4px; font-size:11px; text-align:center;">
                             <span>Touch (Pts):</span>
                             <input type="number" id="inpEmaTouchPts" value="5.0" step="0.5" style="width:50px; background:#0f172a; color:#fff; border:1px solid #475569; padding:2px 4px; border-radius:4px; font-size:11px; text-align:center;">
+                            <button type="button" id="btnEmaSoundToggle_table" onclick="toggleEmaTableSound()" style="padding:3px 10px; border-radius:6px; font-family:var(--font-mono); font-weight:700; font-size:11px; border:1px solid #ef4444; background:rgba(239, 68, 68, 0.2); color:#fca5a5; cursor:pointer;" title="Click to Toggle 4/8-EMA Table Sound">🔇 4/8 EMA Table Sound: OFF</button>
                             <button type="button" class="secondary-btn" onclick="saveEmaRadarConfig()" style="padding:3px 8px; font-size:11px;">💾 Save</button>
                             <button type="button" class="primary-btn" onclick="loadEmaProximityTable()" style="padding:3px 10px; font-size:11px;">🔄 Refresh / Sync Dhan</button>
                         </div>
@@ -2533,10 +2531,64 @@
         let lastEmaRadarTier = null;
         let currentEmaTimeframe = '1m';
 
+        // v1.8.1 Dedicated sound toggle & anti-spam cooldown state
+        window.emaTableSoundEnabled = false; // Default strictly OFF / Muted
+        window.lastEmaAlertBarTimestamp = null;
+        window.lastEmaAlertTier = null;
+        window.lastEmaAlertEpochMs = 0;
+
+        function updateEmaSoundButtonsUI(enabled) {
+            window.emaTableSoundEnabled = !!enabled;
+            const btnHeader = document.getElementById("btnEmaSoundToggle_header");
+            const btnTable = document.getElementById("btnEmaSoundToggle_table");
+            const chkAudio = document.getElementById("chkEmaProximityRadarAudio");
+
+            const label = window.emaTableSoundEnabled ? "🔊 4/8 EMA Table Sound: ON" : "🔇 4/8 EMA Table Sound: OFF";
+            const border = window.emaTableSoundEnabled ? "1px solid #10b981" : "1px solid #ef4444";
+            const bg = window.emaTableSoundEnabled ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)";
+            const color = window.emaTableSoundEnabled ? "#6ee7b7" : "#fca5a5";
+
+            if (btnHeader) {
+                btnHeader.textContent = label;
+                btnHeader.style.border = border;
+                btnHeader.style.background = bg;
+                btnHeader.style.color = color;
+            }
+            if (btnTable) {
+                btnTable.textContent = label;
+                btnTable.style.border = border;
+                btnTable.style.background = bg;
+                btnTable.style.color = color;
+            }
+            if (chkAudio) chkAudio.checked = window.emaTableSoundEnabled;
+
+            // If muted, immediately suspend AudioContext so ongoing oscillations stop
+            if (!window.emaTableSoundEnabled && emaRadarAudioCtx && emaRadarAudioCtx.state === 'running') {
+                try { emaRadarAudioCtx.suspend(); } catch (e) {}
+            }
+        }
+
+        async function toggleEmaTableSound(forceState) {
+            const newState = (forceState !== undefined) ? !!forceState : !window.emaTableSoundEnabled;
+            updateEmaSoundButtonsUI(newState);
+            try {
+                localStorage.setItem('ema8510_table_sound', newState ? 'true' : 'false');
+            } catch (e) {}
+
+            try {
+                await fetch("/api/ema_proximity/config", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ audio_alerts_enabled: newState })
+                });
+            } catch (e) {
+                console.debug("Failed to sync EMA sound toggle to server:", e);
+            }
+        }
+
         function playEmaProximityRadarTone(tier) {
             try {
-                const audioEnabled = document.getElementById("chkEmaProximityRadarAudio")?.checked ?? true;
-                if (!audioEnabled) return;
+                if (!window.emaTableSoundEnabled) return;
                 if (!emaRadarAudioCtx) {
                     emaRadarAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 }
@@ -2616,12 +2668,17 @@
 
         async function initEmaRadarUI() {
             try {
+                let initialSound = false;
+                const savedLocal = localStorage.getItem('ema8510_table_sound');
+                if (savedLocal !== null) {
+                    initialSound = (savedLocal === 'true');
+                }
+
                 const res = await fetch("/api/ema_proximity/config");
                 if (res.ok) {
                     const cfg = await res.json();
-                    const chkAudio = document.getElementById("chkEmaProximityRadarAudio");
-                    if (chkAudio && cfg.audio_alerts_enabled !== undefined) {
-                        chkAudio.checked = cfg.audio_alerts_enabled;
+                    if (savedLocal === null && cfg.audio_alerts_enabled !== undefined) {
+                        initialSound = !!cfg.audio_alerts_enabled;
                     }
                     const inpApp = document.getElementById("inpEmaApproachingPts");
                     if (inpApp && cfg.approaching_pts_threshold !== undefined) {
@@ -2636,15 +2693,17 @@
                         setEmaTimeframe(cfg.timeframe);
                     }
                 }
+                updateEmaSoundButtonsUI(initialSound);
             } catch (e) {
                 console.debug("Init EMA radar UI error:", e);
+                updateEmaSoundButtonsUI(false);
             }
         }
 
         async function saveEmaRadarConfig() {
             const appPts = parseFloat(document.getElementById("inpEmaApproachingPts")?.value || 12.0);
             const touchPts = parseFloat(document.getElementById("inpEmaTouchPts")?.value || 5.0);
-            const audio = document.getElementById("chkEmaProximityRadarAudio")?.checked ?? true;
+            const audio = window.emaTableSoundEnabled;
             try {
                 const res = await fetch("/api/ema_proximity/config", {
                     method: "POST",
@@ -2666,7 +2725,7 @@
         }
 
         function toggleEmaRadarAudio(checked) {
-            saveEmaRadarConfig();
+            toggleEmaTableSound(checked);
         }
 
         async function loadEmaProximityTable() {
@@ -3545,12 +3604,36 @@
                         }
                     }
 
-                    // Acoustic Radar Synthesizer Trigger
-                    if (tier !== lastEmaRadarTier && ["TIER_1_APPROACHING", "TIER_2_TOUCH_ZONE", "TIER_3_CONFIRMATION_TRIGGER"].includes(tier)) {
-                        playEmaProximityRadarTone(tier);
-                        if (tier === "TIER_3_CONFIRMATION_TRIGGER") {
-                            showToast(`🔥 4/8-EMA Confirmation Bounce Detected!`, 'success');
+                    // Acoustic Radar Synthesizer Trigger (v1.8.1 Anti-Spam Cooldown & Dedicated Sound Lock)
+                    const tierWeightMap = {
+                        "ZONE_FAR": 0, "WHIPSAW_CHOP_BLOCKED": 0,
+                        "TIER_1_APPROACHING": 1, "TIER_2_TOUCH_ZONE": 2, "TIER_3_CONFIRMATION_TRIGGER": 3
+                    };
+                    const tierWeight = tierWeightMap[tier] || 0;
+                    const lastTierWeight = tierWeightMap[window.lastEmaAlertTier] || 0;
+
+                    const nowMs = Date.now();
+                    const timeSinceLastChime = nowMs - (window.lastEmaAlertEpochMs || 0);
+                    const currentBarTimestamp = radar.timestamp_ist || data.timestamp_ist || null;
+                    const isNewBar = Boolean(currentBarTimestamp && (currentBarTimestamp !== window.lastEmaAlertBarTimestamp));
+                    const isTierEscalation = tierWeight > lastTierWeight;
+
+                    if (window.emaTableSoundEnabled && tierWeight > 0) {
+                        // Strict Gate: Only fire if:
+                        // 1. Escalating to a higher tier, OR
+                        // 2. A new minute bar has started AND at least 60s cooldown elapsed
+                        if (isTierEscalation || (isNewBar && timeSinceLastChime >= 60000)) {
+                            playEmaProximityRadarTone(tier);
+                            window.lastEmaAlertBarTimestamp = currentBarTimestamp;
+                            window.lastEmaAlertTier = tier;
+                            window.lastEmaAlertEpochMs = nowMs;
+                            if (tier === "TIER_3_CONFIRMATION_TRIGGER") {
+                                showToast(`🔥 4/8-EMA Confirmation Bounce Detected!`, 'success');
+                            }
                         }
+                    } else if (tierWeight < lastTierWeight || tierWeight === 0) {
+                        // Reset tier tracker on retreat so subsequent re-approach or bounce chimes
+                        window.lastEmaAlertTier = tier;
                     }
                     lastEmaRadarTier = tier;
                 }

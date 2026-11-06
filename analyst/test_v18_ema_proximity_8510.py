@@ -200,7 +200,7 @@ class TestV18EmaProximity8510(unittest.IsolatedAsyncioTestCase):
             await client.post("/api/ema_proximity/config", json={
                 "approaching_pts_threshold": 12.0,
                 "touch_pts_threshold": 5.0,
-                "audio_alerts_enabled": True
+                "audio_alerts_enabled": False
             })
 
             # 3. GET /api/ema_proximity/table?date=2026-11-05&timeframe=1m&filter_state=ALL
@@ -244,10 +244,43 @@ class TestV18EmaProximity8510(unittest.IsolatedAsyncioTestCase):
 
         print("✔ Test 5 Passed: MFE/MAE computed and all REST API endpoints verified with 100% precision.")
 
+    async def test_06_ema_table_sound_toggle_and_cooldown(self):
+        """Test 6: Verifies dedicated sound toggle (default=OFF/muted) and config persistence."""
+        print("Testing 6: EMA Table dedicated sound toggle and default OFF state...")
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+            # 1. Reset to default and verify audio_alerts_enabled is False
+            r_post = await client.post("/api/ema_proximity/config", json={"audio_alerts_enabled": False})
+            self.assertEqual(r_post.status_code, 200)
+            self.assertFalse(r_post.json()["audio_alerts_enabled"])
+
+            r_get = await client.get("/api/ema_proximity/config")
+            self.assertEqual(r_get.status_code, 200)
+            self.assertFalse(r_get.json()["audio_alerts_enabled"])
+
+            # 2. Toggle to True
+            r_post_on = await client.post("/api/ema_proximity/config", json={"audio_alerts_enabled": True})
+            self.assertEqual(r_post_on.status_code, 200)
+            self.assertTrue(r_post_on.json()["audio_alerts_enabled"])
+
+            r_get_on = await client.get("/api/ema_proximity/config")
+            self.assertEqual(r_get_on.status_code, 200)
+            self.assertTrue(r_get_on.json()["audio_alerts_enabled"])
+
+            # 3. Toggle back to False (default muted)
+            r_post_off = await client.post("/api/ema_proximity/config", json={"audio_alerts_enabled": False})
+            self.assertEqual(r_post_off.status_code, 200)
+            self.assertFalse(r_post_off.json()["audio_alerts_enabled"])
+
+            r_get_off = await client.get("/api/ema_proximity/config")
+            self.assertEqual(r_get_off.status_code, 200)
+            self.assertFalse(r_get_off.json()["audio_alerts_enabled"])
+
+        print("✔ Test 6 Passed: Dedicated Sound Toggle default OFF and toggle persistence verified.")
+
 
 def main():
     print("=" * 70)
-    print("Running v1.8 4/8-EMA Multi-Timeframe Proximity Matrix & Radar Alert Test Suite...")
+    print("Running v1.8.1 4/8-EMA Multi-Timeframe Proximity Matrix & Radar Alert Test Suite...")
     print("=" * 70)
     suite = unittest.TestLoader().loadTestsFromTestCase(TestV18EmaProximity8510)
     runner = unittest.TextTestRunner(verbosity=2)
@@ -255,7 +288,7 @@ def main():
     if not result.wasSuccessful():
         sys.exit(1)
     print("=" * 70)
-    print("🎉 ALL 5 v1.8 4/8-EMA PROXIMITY & RADAR TESTS PASSED WITH 100% PRECISION!")
+    print("🎉 ALL 6 v1.8.1 4/8-EMA PROXIMITY & RADAR TESTS PASSED WITH 100% PRECISION!")
     print("=" * 70)
 
 
