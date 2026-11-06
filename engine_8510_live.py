@@ -487,6 +487,32 @@ async def api_post_proven_edges_config(req: Request):
     return JSONResponse(content=backend.update_proven_edges_config(data))
 
 
+@app.get("/api/ema_proximity/table")
+async def api_ema_proximity_table(req: Request):
+    """Returns minute-by-minute 4-EMA & 8-EMA Proximity Matrix with summary KPIs (v1.8)."""
+    date_str = str(req.query_params.get("date", "2026-11-05")).strip()
+    timeframe = str(req.query_params.get("timeframe", "1m")).strip()
+    filter_state = str(req.query_params.get("filter_state", "ALL")).strip()
+    res = backend.get_ema_proximity_table(date_str=date_str, timeframe=timeframe, filter_state=filter_state)
+    return JSONResponse(content=res)
+
+
+@app.get("/api/ema_proximity/config")
+async def api_ema_proximity_get_config():
+    """Returns persisted 4/8 EMA Proximity Radar configuration."""
+    return JSONResponse(content=backend.get_ema_proximity_config())
+
+
+@app.post("/api/ema_proximity/config")
+async def api_ema_proximity_post_config(req: Request):
+    """Updates and persists 4/8 EMA Proximity Radar configuration."""
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    return JSONResponse(content=backend.update_ema_proximity_config(data))
+
+
 @app.post("/api/position/modify")
 @app.post("/api/positions/squareoff")
 @app.post("/api/paper/squareoff")

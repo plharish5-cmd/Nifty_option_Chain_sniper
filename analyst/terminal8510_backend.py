@@ -2428,6 +2428,13 @@ class QuantTerminalBackend:
             log.warning("Could not initialize FuturesVolumeEngine: %s", e)
             self.futures_volume_engine = None
 
+        try:
+            from analyst.ema_proximity_engine import ema_proximity_engine
+            self.ema_proximity_engine = ema_proximity_engine
+        except Exception as e:
+            log.warning("Could not initialize EmaProximityEngine: %s", e)
+            self.ema_proximity_engine = None
+
     @property
     def lock(self) -> asyncio.Lock:
         if self._lock is None:
@@ -2930,6 +2937,27 @@ class QuantTerminalBackend:
 
         return self.get_proven_edges_config()
 
+    def get_ema_proximity_table(self, date_str: str = "2026-11-05", timeframe: str = "1m", filter_state: str = "ALL") -> Dict[str, Any]:
+        """Calculates and returns the minute-by-minute 4-EMA & 8-EMA Proximity Matrix (v1.8)."""
+        if not self.ema_proximity_engine:
+            from analyst.ema_proximity_engine import ema_proximity_engine
+            self.ema_proximity_engine = ema_proximity_engine
+        return self.ema_proximity_engine.compute_matrix(date_str=date_str, timeframe=timeframe, filter_state=filter_state)
+
+    def get_ema_proximity_config(self) -> Dict[str, Any]:
+        """Returns the active 4/8 EMA Proximity Radar configuration."""
+        if not self.ema_proximity_engine:
+            from analyst.ema_proximity_engine import ema_proximity_engine
+            self.ema_proximity_engine = ema_proximity_engine
+        return self.ema_proximity_engine.get_config()
+
+    def update_ema_proximity_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Updates and persists 4/8 EMA Proximity Radar configuration to terminal8510_config.json."""
+        if not self.ema_proximity_engine:
+            from analyst.ema_proximity_engine import ema_proximity_engine
+            self.ema_proximity_engine = ema_proximity_engine
+        return self.ema_proximity_engine.update_config(updates)
+
     # ── TELEMETRY & 1-SECOND TICK STREAM ────────────────────────────────────
     async def get_live_telemetry(self) -> Dict[str, Any]:
         """Fetches 1-second live stream for ribbon, ATM widget, matrix, and trend filters."""
@@ -3267,6 +3295,14 @@ class QuantTerminalBackend:
             "tag": "NORMAL_VOLUME",
         }
 
+        # 4/8 EMA Proximity Radar (v1.8)
+        ema_radar = self.ema_proximity_engine.get_latest_radar_status() if self.ema_proximity_engine else {
+            "ok": True,
+            "tier": "ZONE_FAR",
+            "pill_text": "🎯 4/8 EMA Radar: -- [WAITING]",
+            "proximity_state": "ZONE_FAR",
+        }
+
         payload = {
             "timestamp_ist": now_dt.strftime("%Y-%m-%d %H:%M:%S IST"),
             "clock": now_dt.strftime("%H:%M:%S IST"),
@@ -3275,6 +3311,7 @@ class QuantTerminalBackend:
             "matrix_reason": matrix_reason,
             "goldilocks_separation": goldilocks,
             "futures_volume_surge": fut_surge,
+            "ema_proximity_latest": ema_radar,
             "proven_edges": {
                 "goldilocks": goldilocks,
                 "futures_volume_surge": fut_surge,

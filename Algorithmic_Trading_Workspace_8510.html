@@ -898,6 +898,21 @@
                     </div>
                 </div>
 
+                <!-- v1.8 4/8-EMA Ribbon & Proximity Radar Toolbar -->
+                <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; background:rgba(15, 23, 42, 0.7); border:1px solid rgba(245, 158, 11, 0.25); border-radius:8px; padding:10px 14px; margin-bottom:14px;">
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:12px;">
+                        <span style="font-size:12px; font-weight:700; color:#f59e0b;">v1.8 4/8-EMA Proximity Radar:</span>
+                        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-main); cursor:pointer;">
+                            <input type="checkbox" id="chkEmaProximityRadarAudio" checked onchange="toggleEmaRadarAudio(this.checked)">
+                            <span><b>🔔 4/8 EMA Proximity Audio Radar</b></span>
+                        </label>
+                        <button type="button" class="secondary-btn" style="padding:2px 8px; font-size:11px;" onclick="scrollToEmaProximityTable()">🎯 View Matrix Table</button>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
+                        <span id="pillEmaProximityRadar" style="background:rgba(245, 158, 11, 0.15); border:1px solid #f59e0b; color:#fbbf24; padding:3px 12px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">🎯 4/8 EMA Radar: -- [WAITING]</span>
+                    </div>
+                </div>
+
                 <!-- 4 Strategies Grid -->
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px;">
                     <!-- Strategy 1: Stage 2 8-EMA (Long) -->
@@ -1123,6 +1138,108 @@
                             <tr>
                                 <td colspan="12" style="text-align:center; padding:24px; color:var(--text-muted); font-family:var(--font-mono);">
                                     ⚡ Initializing Strike Matrix from Live Market Feed...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 🎯 4-EMA & 8-EMA vs. Price Multi-Timeframe Proximity, Crossover & S/R Matrix Panel (v1.8) -->
+            <div id="cardEmaProximityMatrix" class="card" style="border: 1px solid #f59e0b; background: linear-gradient(180deg, rgba(245, 158, 11, 0.05) 0%, rgba(15, 23, 42, 0.95) 100%); margin-top: 20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+                    <div>
+                        <h2 style="margin:0; font-size:16px; color:#fbbf24; display:flex; align-items:center; gap:8px;">
+                            <span>🎯 4-EMA &amp; 8-EMA vs. Price Multi-Timeframe Proximity, Crossover &amp; S/R Matrix</span>
+                            <span class="status-badge" style="background:rgba(245, 158, 11, 0.2); color:#fbbf24; border:1px solid #f59e0b;">v1.8 DEPLOYED</span>
+                        </h2>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">
+                            Minute-by-Minute Rolling Dynamic Ribbon, Zero Look-Ahead 15m/1H Anchors, 3-Tier Radar, Whip-Saw Chop Suppressor &amp; 15m MFE/MAE Outcomes
+                        </div>
+                    </div>
+
+                    <!-- Top Filter Controls -->
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
+                        <label style="font-size:12px; font-weight:600; color:var(--text-muted);">Date:</label>
+                        <select id="selEmaMatrixDate" onchange="loadEmaProximityTable()" style="background:#0f172a; color:#f8fafc; border:1px solid #475569; padding:4px 8px; border-radius:6px; font-size:12px; font-family:var(--font-mono);">
+                            <option value="2026-11-05">05 Nov 2026</option>
+                            <option value="2026-11-04">04 Nov 2026</option>
+                            <option value="LIVE">LIVE STREAMING</option>
+                        </select>
+
+                        <div style="display:flex; border:1px solid rgba(255,255,255,0.15); border-radius:6px; overflow:hidden;">
+                            <button type="button" class="secondary-btn" id="btnEmaTf_1m" onclick="setEmaTimeframe('1m')" style="padding:4px 10px; font-size:11.5px; border-radius:0; border:none; background:#f59e0b; color:#0f172a; font-weight:700;">1m (Rolling)</button>
+                            <button type="button" class="secondary-btn" id="btnEmaTf_5m" onclick="setEmaTimeframe('5m')" style="padding:4px 10px; font-size:11.5px; border-radius:0; border:none;">5m</button>
+                            <button type="button" class="secondary-btn" id="btnEmaTf_15m" onclick="setEmaTimeframe('15m')" style="padding:4px 10px; font-size:11.5px; border-radius:0; border:none;">15m (Stage 2/3)</button>
+                            <button type="button" class="secondary-btn" id="btnEmaTf_1h" onclick="setEmaTimeframe('1h')" style="padding:4px 10px; font-size:11.5px; border-radius:0; border:none;">1H (Master S/R)</button>
+                        </div>
+
+                        <select id="selEmaMatrixFilter" onchange="loadEmaProximityTable()" style="background:#0f172a; color:#f8fafc; border:1px solid #475569; padding:4px 8px; border-radius:6px; font-size:12px;">
+                            <option value="ALL">All Rows (375 Bars)</option>
+                            <option value="CROSSOVERS">🔥 4/8 Crossovers (Upside &amp; Downside)</option>
+                            <option value="STAGE2_STAGE3">🟢 Stage 2 Support / 🔴 Stage 3 Resistance</option>
+                            <option value="H1_SR">🛡️ 1H 4/8-EMA Touches</option>
+                            <option value="NEAR_TOUCHES">🎯 Approaching / Pocket Touches</option>
+                            <option value="CLEAN_BOUNCES">🟢🔥 Clean Confirmation Triggers</option>
+                            <option value="WHIPSAW_BLOCKED">🚫 Whip-Saw Chop Blocked</option>
+                        </select>
+
+                        <div style="display:flex; align-items:center; gap:4px; font-size:11.5px; color:var(--text-muted);">
+                            <span>Approaching (Pts):</span>
+                            <input type="number" id="inpEmaApproachingPts" value="12.0" step="0.5" style="width:50px; background:#0f172a; color:#fff; border:1px solid #475569; padding:2px 4px; border-radius:4px; font-size:11px; text-align:center;">
+                            <span>Touch (Pts):</span>
+                            <input type="number" id="inpEmaTouchPts" value="5.0" step="0.5" style="width:50px; background:#0f172a; color:#fff; border:1px solid #475569; padding:2px 4px; border-radius:4px; font-size:11px; text-align:center;">
+                            <button type="button" class="secondary-btn" onclick="saveEmaRadarConfig()" style="padding:3px 8px; font-size:11px;">💾 Save</button>
+                            <button type="button" class="primary-btn" onclick="loadEmaProximityTable()" style="padding:3px 10px; font-size:11px;">🔄 Refresh / Sync Dhan</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Summary KPI Ribbon -->
+                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); padding:8px 12px; border-radius:6px; font-family:var(--font-mono); font-size:11.5px;">
+                    <div>Bars: <b id="kpiEmaBars" style="color:#38bdf8;">--</b></div>
+                    <div style="color:rgba(255,255,255,0.2);">|</div>
+                    <div>4/8 Upside Cross: <b id="kpiEmaUpsideCross" style="color:#10b981;">--</b></div>
+                    <div style="color:rgba(255,255,255,0.2);">|</div>
+                    <div>4/8 Downside Cross: <b id="kpiEmaDownsideCross" style="color:#ef4444;">--</b></div>
+                    <div style="color:rgba(255,255,255,0.2);">|</div>
+                    <div>Stage 2 Support: <b id="kpiEmaStage2" style="color:#34d399;">--</b></div>
+                    <div style="color:rgba(255,255,255,0.2);">|</div>
+                    <div>Stage 3 Resist: <b id="kpiEmaStage3" style="color:#f87171;">--</b></div>
+                    <div style="color:rgba(255,255,255,0.2);">|</div>
+                    <div>1H S/R Touches: <b id="kpiEmaH1Touches" style="color:#a78bfa;">--</b></div>
+                    <div style="color:rgba(255,255,255,0.2);">|</div>
+                    <div>Chop Blocked: <b id="kpiEmaChop" style="color:#f43f5e;">--</b></div>
+                    <div style="color:rgba(255,255,255,0.2);">|</div>
+                    <div>Clean Bounce Win Rate: <b id="kpiEmaWinRate" style="color:#fbbf24;">--%</b></div>
+                    <div style="color:rgba(255,255,255,0.2);">|</div>
+                    <div>Avg 15m MFE: <b id="kpiEmaAvgMfe" style="color:#6ee7b7;">+-- pts</b></div>
+                </div>
+
+                <!-- Table Container -->
+                <div style="overflow-x:auto; max-height:550px; overflow-y:auto; border:1px solid rgba(255,255,255,0.1); border-radius:6px;">
+                    <table style="width:100%; border-collapse:collapse; font-size:11.5px; font-family:var(--font-mono);">
+                        <thead style="position:sticky; top:0; background:#0f172a; z-index:2; border-bottom:2px solid #334155;">
+                            <tr>
+                                <th style="padding:6px 8px; text-align:left;">Date</th>
+                                <th style="padding:6px 8px; text-align:left;">Time (IST)</th>
+                                <th style="padding:6px 8px; text-align:right;">Actual Close</th>
+                                <th style="padding:6px 8px; text-align:right;">4-EMA</th>
+                                <th style="padding:6px 8px; text-align:right;">8-EMA</th>
+                                <th style="padding:6px 8px; text-align:right;">4-8 Spread (Pts/ATR)</th>
+                                <th style="padding:6px 8px; text-align:right;">Gap to 8-EMA</th>
+                                <th style="padding:6px 8px; text-align:right;">15m 4/8 EMA</th>
+                                <th style="padding:6px 8px; text-align:right;">1H 4/8 EMA</th>
+                                <th style="padding:6px 8px; text-align:center;">Crossover / Regime</th>
+                                <th style="padding:6px 8px; text-align:center;">Support / Resist</th>
+                                <th style="padding:6px 8px; text-align:left;">Radar Alert &amp; Micro-SL Advice</th>
+                                <th style="padding:6px 8px; text-align:center;">15m MFE / MAE</th>
+                            </tr>
+                        </thead>
+                        <tbody id="emaProximityTableBody">
+                            <tr>
+                                <td colspan="13" style="text-align:center; padding:24px; color:var(--text-muted);">
+                                    ⚡ Click Refresh or Select Date to compute 4/8 EMA Proximity Matrix...
                                 </td>
                             </tr>
                         </tbody>
@@ -2338,6 +2455,8 @@
             setInterval(pollLiveEngine, 1000); // 1-second ticking live stream
             populateReplayDates();
             checkIngestStatus("2026-11-05");
+            initEmaRadarUI();
+            loadEmaProximityTable();
         });
 
         // ── v1.7 PROVEN QUANT FILTERS: GOLDILOCKS & FUTURES VOLUME SURGE ─────
@@ -2406,6 +2525,276 @@
                 }
             } catch (e) {
                 console.debug("Failed to init proven edges UI:", e);
+            }
+        }
+
+        // ── v1.8 4/8-EMA MULTI-TIMEFRAME PROXIMITY RADAR & MATRIX ──────────────
+        let emaRadarAudioCtx = null;
+        let lastEmaRadarTier = null;
+        let currentEmaTimeframe = '1m';
+
+        function playEmaProximityRadarTone(tier) {
+            try {
+                const audioEnabled = document.getElementById("chkEmaProximityRadarAudio")?.checked ?? true;
+                if (!audioEnabled) return;
+                if (!emaRadarAudioCtx) {
+                    emaRadarAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (emaRadarAudioCtx.state === 'suspended') {
+                    emaRadarAudioCtx.resume();
+                }
+                const now = emaRadarAudioCtx.currentTime;
+
+                if (tier === "TIER_1_APPROACHING") {
+                    // Soft radar ping (520 Hz, 120ms)
+                    const osc = emaRadarAudioCtx.createOscillator();
+                    const gain = emaRadarAudioCtx.createGain();
+                    osc.type = "sine";
+                    osc.frequency.setValueAtTime(520, now);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                    osc.connect(gain);
+                    gain.connect(emaRadarAudioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.12);
+                } else if (tier === "TIER_2_TOUCH_ZONE") {
+                    // Double radar pulse (680 Hz -> 780 Hz)
+                    const osc = emaRadarAudioCtx.createOscillator();
+                    const gain = emaRadarAudioCtx.createGain();
+                    osc.type = "sine";
+                    osc.frequency.setValueAtTime(680, now);
+                    osc.frequency.setValueAtTime(780, now + 0.08);
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+                    osc.connect(gain);
+                    gain.connect(emaRadarAudioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.22);
+                } else if (tier === "TIER_3_CONFIRMATION_TRIGGER") {
+                    // Distinct institutional chime (587 Hz -> 880 Hz -> 1174 Hz)
+                    const osc = emaRadarAudioCtx.createOscillator();
+                    const gain = emaRadarAudioCtx.createGain();
+                    osc.type = "triangle";
+                    osc.frequency.setValueAtTime(587.33, now); // D5
+                    osc.frequency.setValueAtTime(880.0, now + 0.10); // A5
+                    osc.frequency.setValueAtTime(1174.66, now + 0.20); // D6
+                    gain.gain.setValueAtTime(0.35, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+                    osc.connect(gain);
+                    gain.connect(emaRadarAudioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.38);
+                }
+            } catch (e) {
+                console.debug("Radar audio tone error:", e);
+            }
+        }
+
+        function setEmaTimeframe(tf) {
+            currentEmaTimeframe = tf;
+            ['1m', '5m', '15m', '1h'].forEach(t => {
+                const btn = document.getElementById(`btnEmaTf_${t}`);
+                if (btn) {
+                    if (t === tf) {
+                        btn.style.background = '#f59e0b';
+                        btn.style.color = '#0f172a';
+                        btn.style.fontWeight = '700';
+                    } else {
+                        btn.style.background = '';
+                        btn.style.color = '';
+                        btn.style.fontWeight = 'normal';
+                    }
+                }
+            });
+            loadEmaProximityTable();
+        }
+
+        function scrollToEmaProximityTable() {
+            const el = document.getElementById("cardEmaProximityMatrix");
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function initEmaRadarUI() {
+            try {
+                const res = await fetch("/api/ema_proximity/config");
+                if (res.ok) {
+                    const cfg = await res.json();
+                    const chkAudio = document.getElementById("chkEmaProximityRadarAudio");
+                    if (chkAudio && cfg.audio_alerts_enabled !== undefined) {
+                        chkAudio.checked = cfg.audio_alerts_enabled;
+                    }
+                    const inpApp = document.getElementById("inpEmaApproachingPts");
+                    if (inpApp && cfg.approaching_pts_threshold !== undefined) {
+                        inpApp.value = cfg.approaching_pts_threshold;
+                    }
+                    const inpTouch = document.getElementById("inpEmaTouchPts");
+                    if (inpTouch && cfg.touch_pts_threshold !== undefined) {
+                        inpTouch.value = cfg.touch_pts_threshold;
+                    }
+                    if (cfg.timeframe) {
+                        currentEmaTimeframe = cfg.timeframe;
+                        setEmaTimeframe(cfg.timeframe);
+                    }
+                }
+            } catch (e) {
+                console.debug("Init EMA radar UI error:", e);
+            }
+        }
+
+        async function saveEmaRadarConfig() {
+            const appPts = parseFloat(document.getElementById("inpEmaApproachingPts")?.value || 12.0);
+            const touchPts = parseFloat(document.getElementById("inpEmaTouchPts")?.value || 5.0);
+            const audio = document.getElementById("chkEmaProximityRadarAudio")?.checked ?? true;
+            try {
+                const res = await fetch("/api/ema_proximity/config", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        approaching_pts_threshold: appPts,
+                        touch_pts_threshold: touchPts,
+                        audio_alerts_enabled: audio,
+                        timeframe: currentEmaTimeframe
+                    })
+                });
+                if (res.ok) {
+                    showToast("💾 4/8 EMA Radar Config Persisted Successfully", "success");
+                    loadEmaProximityTable();
+                }
+            } catch (e) {
+                console.error("Save radar config error:", e);
+            }
+        }
+
+        function toggleEmaRadarAudio(checked) {
+            saveEmaRadarConfig();
+        }
+
+        async function loadEmaProximityTable() {
+            const selDate = document.getElementById("selEmaMatrixDate")?.value || '2026-11-05';
+            const selFilter = document.getElementById("selEmaMatrixFilter")?.value || 'ALL';
+            const tbody = document.getElementById("emaProximityTableBody");
+            if (!tbody) return;
+
+            try {
+                const res = await fetch(`/api/ema_proximity/table?date=${encodeURIComponent(selDate)}&timeframe=${encodeURIComponent(currentEmaTimeframe)}&filter_state=${encodeURIComponent(selFilter)}`);
+                const data = await res.json();
+                if (!data.ok) {
+                    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center; padding:20px; color:#ef4444;">${data.error || 'Failed to load table'}</td></tr>`;
+                    return;
+                }
+
+                const s = data.summary || {};
+                const elBars = document.getElementById("kpiEmaBars");
+                if (elBars) elBars.textContent = s.total_bars ?? '--';
+                const elUp = document.getElementById("kpiEmaUpsideCross");
+                if (elUp) elUp.textContent = s.upside_crossovers ?? '0';
+                const elDown = document.getElementById("kpiEmaDownsideCross");
+                if (elDown) elDown.textContent = s.downside_crossovers ?? '0';
+                const elS2 = document.getElementById("kpiEmaStage2");
+                if (elS2) elS2.textContent = s.stage2_support_bounces ?? '0';
+                const elS3 = document.getElementById("kpiEmaStage3");
+                if (elS3) elS3.textContent = s.stage3_resistance_rejects ?? '0';
+                const elH1 = document.getElementById("kpiEmaH1Touches");
+                if (elH1) elH1.textContent = s.h1_sr_touches ?? '0';
+                const elChop = document.getElementById("kpiEmaChop");
+                if (elChop) elChop.textContent = s.whipsaw_blocks ?? '0';
+                const elWin = document.getElementById("kpiEmaWinRate");
+                if (elWin) elWin.textContent = `${s.clean_trigger_win_rate_pct ?? '--'}%`;
+                const elMfe = document.getElementById("kpiEmaAvgMfe");
+                if (elMfe) elMfe.textContent = `+${s.avg_mfe_15m_pts ?? '--'} pts`;
+
+                const rows = data.rows || [];
+                if (rows.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center; padding:20px; color:var(--text-muted);">No rows match filter "${selFilter}"</td></tr>`;
+                    return;
+                }
+
+                let html = "";
+                rows.forEach(r => {
+                    let rowStyle = "";
+                    let tierBadge = "";
+                    if (r.proximity_state === "TIER_3_CONFIRMATION_TRIGGER") {
+                        rowStyle = "background:rgba(16, 185, 129, 0.12); box-shadow: inset 0 0 8px rgba(16, 185, 129, 0.25);";
+                        tierBadge = `<span style="background:#10b981; color:#0f172a; padding:2px 6px; border-radius:4px; font-weight:700;">🟢🔥 TIER 3</span>`;
+                    } else if (r.proximity_state === "TIER_2_TOUCH_ZONE") {
+                        rowStyle = "background:rgba(245, 158, 11, 0.12);";
+                        tierBadge = `<span style="background:#f59e0b; color:#0f172a; padding:2px 6px; border-radius:4px; font-weight:700;">🟠⚡ TIER 2</span>`;
+                    } else if (r.proximity_state === "TIER_1_APPROACHING") {
+                        rowStyle = "background:rgba(234, 179, 8, 0.06); border-left: 3px solid #eab308;";
+                        tierBadge = `<span style="background:rgba(234, 179, 8, 0.3); color:#fef08a; padding:2px 6px; border-radius:4px;">🟡 TIER 1</span>`;
+                    } else if (r.proximity_state === "WHIPSAW_CHOP_BLOCKED") {
+                        rowStyle = "opacity:0.65;";
+                        tierBadge = `<span style="background:rgba(239, 68, 68, 0.25); color:#fca5a5; padding:2px 6px; border-radius:4px;">🚫 CHOP</span>`;
+                    }
+
+                    const spreadColor = r.spread_4_minus_8 >= 0 ? '#10b981' : '#f87171';
+                    const gapColor = Math.abs(r.gap_pts) <= 5.0 ? '#fbbf24' : (r.gap_pts >= 0 ? '#38bdf8' : '#cbd5e1');
+
+                    let crossBadge = r.crossover_state;
+                    if (r.crossover_state === "8_EMA_REVERSAL_UPSIDE_CROSS") {
+                        crossBadge = `<span style="color:#10b981; font-weight:700;">🟢 CROSS UP 🚀</span>`;
+                    } else if (r.crossover_state === "8_EMA_REVERSAL_DOWNSIDE_CROSS") {
+                        crossBadge = `<span style="color:#ef4444; font-weight:700;">🔴 CROSS DOWN 📉</span>`;
+                    } else if (r.crossover_state === "PRE_CROSS_CONVERGING_UP") {
+                        crossBadge = `<span style="color:#fbbf24;">🟡 Conv Up ↗️</span>`;
+                    } else if (r.crossover_state === "PRE_CROSS_CONVERGING_DOWN") {
+                        crossBadge = `<span style="color:#fbbf24;">🟡 Conv Down ↘️</span>`;
+                    }
+
+                    let srBadge = r.sr_interaction;
+                    if (r.sr_interaction === "STAGE_2_8EMA_SUPPORT_BOUNCE") {
+                        srBadge = `<span style="color:#34d399; font-weight:700;">🟢 STAGE 2 BOUNCE</span>`;
+                    } else if (r.sr_interaction === "STAGE_3_8EMA_RESISTANCE_REJECT") {
+                        srBadge = `<span style="color:#f87171; font-weight:700;">🔴 STAGE 3 REJECT</span>`;
+                    } else if (r.sr_interaction === "1H_8EMA_SUPPORT_TOUCH") {
+                        srBadge = `<span style="color:#a78bfa; font-weight:700;">🛡️ 1H SUPPORT</span>`;
+                    } else if (r.sr_interaction === "1H_8EMA_RESISTANCE_REJECT") {
+                        srBadge = `<span style="color:#fb7185; font-weight:700;">🧱 1H RESIST</span>`;
+                    } else {
+                        srBadge = `<span style="color:var(--text-muted);">--</span>`;
+                    }
+
+                    let mfeMaeHtml = "--";
+                    if (r.forward_mfe_15m !== null && r.forward_mfe_15m !== undefined) {
+                        const mfeColor = r.forward_mfe_15m >= 15.0 ? '#10b981' : '#38bdf8';
+                        mfeMaeHtml = `<b style="color:${mfeColor};">+${r.forward_mfe_15m.toFixed(1)}</b> / <span style="color:#ef4444;">-${r.forward_mae_15m.toFixed(1)}</span>`;
+                    }
+
+                    html += `
+                        <tr style="${rowStyle}; border-bottom:1px solid rgba(255,255,255,0.06);">
+                            <td style="padding:5px 8px; color:var(--text-muted);">${r.date}</td>
+                            <td style="padding:5px 8px; font-weight:700; color:#f8fafc;">${r.timestamp_ist}</td>
+                            <td style="padding:5px 8px; text-align:right; font-weight:700; color:#38bdf8;">${r.close_price.toFixed(2)}</td>
+                            <td style="padding:5px 8px; text-align:right; color:#e2e8f0;">${r.ema_4.toFixed(2)}</td>
+                            <td style="padding:5px 8px; text-align:right; color:#e2e8f0;">${r.ema_8.toFixed(2)}</td>
+                            <td style="padding:5px 8px; text-align:right; color:${spreadColor}; font-weight:600;">
+                                ${r.spread_4_minus_8 > 0 ? '+' : ''}${r.spread_4_minus_8.toFixed(2)} <span style="font-size:10px; color:var(--text-muted);">(${r.spread_4_8_atr.toFixed(2)}A)</span>
+                            </td>
+                            <td style="padding:5px 8px; text-align:right; color:${gapColor}; font-weight:600;">
+                                ${r.gap_pts > 0 ? '+' : ''}${r.gap_pts.toFixed(2)}
+                            </td>
+                            <td style="padding:5px 8px; text-align:right; font-size:11px; color:#cbd5e1;">
+                                ${r.ema_4_15m.toFixed(1)} / ${r.ema_8_15m.toFixed(1)}
+                            </td>
+                            <td style="padding:5px 8px; text-align:right; font-size:11px; color:#cbd5e1;">
+                                ${r.ema_4_1h.toFixed(1)} / ${r.ema_8_1h.toFixed(1)}
+                            </td>
+                            <td style="padding:5px 8px; text-align:center;">${crossBadge}</td>
+                            <td style="padding:5px 8px; text-align:center;">${srBadge}</td>
+                            <td style="padding:5px 8px;">
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    ${tierBadge}
+                                    <span style="font-size:11px; color:#f1f5f9;">${r.action_recommendation}</span>
+                                </div>
+                                <div style="font-size:10px; color:#94a3b8; margin-top:2px;">${r.sl_guard_advice}</div>
+                            </td>
+                            <td style="padding:5px 8px; text-align:center; font-size:11px;">${mfeMaeHtml}</td>
+                        </tr>
+                    `;
+                });
+                tbody.innerHTML = html;
+            } catch (e) {
+                console.error("Error loading EMA proximity table:", e);
             }
         }
 
@@ -3119,6 +3508,51 @@
                         lastBeepedVsrBar = vsr.bar_time_ist;
                         playInstitutionalVolumeSurgeBeep();
                     }
+                }
+
+                // 4C. v1.8 4/8-EMA Proximity Radar Pill & Audio Alarm
+                if (data.ema_proximity_latest) {
+                    const radar = data.ema_proximity_latest;
+                    const tier = radar.tier || radar.proximity_state || 'ZONE_FAR';
+                    const pRadar = document.getElementById("pillEmaProximityRadar");
+                    if (pRadar) {
+                        pRadar.innerHTML = radar.pill_text || `🎯 4/8 EMA Radar: [${tier}]`;
+                        if (tier === "TIER_3_CONFIRMATION_TRIGGER") {
+                            pRadar.style.background = "rgba(16, 185, 129, 0.25)";
+                            pRadar.style.borderColor = "#10b981";
+                            pRadar.style.color = "#34d399";
+                            pRadar.style.boxShadow = "0 0 10px rgba(16, 185, 129, 0.4)";
+                        } else if (tier === "TIER_2_TOUCH_ZONE") {
+                            pRadar.style.background = "rgba(245, 158, 11, 0.25)";
+                            pRadar.style.borderColor = "#f59e0b";
+                            pRadar.style.color = "#fbbf24";
+                            pRadar.style.boxShadow = "0 0 10px rgba(245, 158, 11, 0.4)";
+                        } else if (tier === "TIER_1_APPROACHING") {
+                            pRadar.style.background = "rgba(234, 179, 8, 0.15)";
+                            pRadar.style.borderColor = "#eab308";
+                            pRadar.style.color = "#fef08a";
+                            pRadar.style.boxShadow = "none";
+                        } else if (tier === "WHIPSAW_CHOP_BLOCKED") {
+                            pRadar.style.background = "rgba(239, 68, 68, 0.15)";
+                            pRadar.style.borderColor = "#ef4444";
+                            pRadar.style.color = "#fca5a5";
+                            pRadar.style.boxShadow = "none";
+                        } else {
+                            pRadar.style.background = "rgba(100, 116, 139, 0.15)";
+                            pRadar.style.borderColor = "rgba(255, 255, 255, 0.2)";
+                            pRadar.style.color = "#94a3b8";
+                            pRadar.style.boxShadow = "none";
+                        }
+                    }
+
+                    // Acoustic Radar Synthesizer Trigger
+                    if (tier !== lastEmaRadarTier && ["TIER_1_APPROACHING", "TIER_2_TOUCH_ZONE", "TIER_3_CONFIRMATION_TRIGGER"].includes(tier)) {
+                        playEmaProximityRadarTone(tier);
+                        if (tier === "TIER_3_CONFIRMATION_TRIGGER") {
+                            showToast(`🔥 4/8-EMA Confirmation Bounce Detected!`, 'success');
+                        }
+                    }
+                    lastEmaRadarTier = tier;
                 }
 
                 // 5. Positions table with live fluctuating MTM
@@ -5724,6 +6158,24 @@
                     else if (d === "2026-11-03") label = "2026-11-03 (Bullish MA Stack Continuation)";
                     return `<option value="${d}" ${d === (currentVal || dates[0]) ? "selected" : ""}>${label}</option>`;
                 }).join("");
+
+                const emaSelect = document.getElementById("selEmaMatrixDate");
+                if (emaSelect && dates.length > 0) {
+                    const currentEmaVal = emaSelect.value;
+                    let opts = `<option value="LIVE">LIVE STREAMING</option>`;
+                    dates.forEach(d => {
+                        let l = d;
+                        if (d === "2026-11-05") l = "05 Nov 2026 (Benchmark)";
+                        else if (d === "2026-11-04") l = "04 Nov 2026";
+                        opts += `<option value="${d}">${l}</option>`;
+                    });
+                    emaSelect.innerHTML = opts;
+                    if (currentEmaVal && (currentEmaVal === "LIVE" || dates.includes(currentEmaVal))) {
+                        emaSelect.value = currentEmaVal;
+                    } else {
+                        emaSelect.value = dates[0] || "2026-11-05";
+                    }
+                }
             } catch (e) {
                 console.warn("Failed to populate replay dates:", e);
             }
