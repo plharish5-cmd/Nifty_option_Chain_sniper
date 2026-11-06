@@ -44,7 +44,7 @@ def test_algo_identity(tmp_path,valid):
  else:
   assert result.returncode==1 and not (tmp_path/'opened').exists()
   assert 'belongs to another app' in result.stdout and 'No process was stopped' in result.stdout
-@pytest.mark.parametrize('who,port',[('harish',8520),('wife',8521)])
+@pytest.mark.parametrize('who,port',[('harish',8520),('wife',8511)])
 def test_afterhours_ports(tmp_path,who,port):
  script,env=sandbox(tmp_path,Path('desk_launch.sh'),port,'ok')
  result=subprocess.run(['bash',str(script),who],env=env,capture_output=True,text=True,timeout=5)
