@@ -239,7 +239,7 @@
         .tab-content { display: none; }
         .tab-content.active { display: block; }
 
-        /* Stock Mojo PE-CE Sub-Tabs & Row Colors */
+        /* PE-CE Sub-Tabs & Row Colors */
         .sub-tabs {
             display: flex;
             gap: 6px;
@@ -547,7 +547,7 @@
                 <span class="ribbon-val" id="ribbonVix">--</span>
             </div>
             <div class="ribbon-item">
-                <span class="ribbon-label">STOCKMOJO PCR:</span>
+                <span class="ribbon-label">PCR:</span>
                 <span class="ribbon-val" id="ribbonPcr">--</span>
             </div>
             <div class="ribbon-item">
@@ -629,8 +629,7 @@
             <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabFundsWallet')">💰 3. Funds &amp; Paper Wallet</button>
             <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabReplayExplorer')">📅 4. Historical Date Replay</button>
             <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabTrendLab')">🔬 5. Multi-Factor Trend Lab &amp; 128 Combos</button>
-            <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabStockMojoSuite')">📊 6. Institutional OI Writers &amp; PE-CE Matrix</button>
-            <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tab7DailyIngest')">📥 7. Pull Today's Data</button>
+            <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tab7DailyIngest')">📥 6. Pull Today's Data</button>
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -968,128 +967,9 @@
                 </div>
             </div>
 
-            <!-- TAB 1: STOCK MOJO MULTI-STRIKE LIVE STATUS CARD -->
-            <div id="tab1MultiStrikeStatusCard" class="card" style="border:1px solid rgba(239, 68, 68, 0.4); background:rgba(239, 68, 68, 0.05); padding:10px 16px; margin-bottom:12px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <span id="tab1MultiStrikeIndicator" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#ef4444; box-shadow:0 0 8px #ef4444;"></span>
-                    <b id="tab1MultiStrikeText" style="color:#ef4444; font-size:12.5px;">🔴 Stock Mojo Disconnected (No payload this session)</b>
-                </div>
-                <div style="font-family:var(--font-mono); font-size:12px; color:var(--text-dim);">
-                    Last Sync: <span id="tab1MultiStrikeLastSync" style="color:var(--text-main); font-weight:600;">Never</span>
-                </div>
-                <div style="font-size:12px;">
-                    Bias: <span id="tab1MultiStrikeBiasBadge" class="status-badge badge-side" style="font-size:12px; font-weight:700;">WAITING</span>
-                </div>
-            </div>
-
-            <!-- TAB 1 SYNCHRONIZED STOCK MOJO PE-CE SYNERGY & MASTER TRIGGER CARD -->
-            <div id="tab1StockMojoCard" class="card" style="border:1px solid #38bdf8; background:rgba(56, 189, 248, 0.03);">
-                <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; border-bottom:1px solid var(--border-subtle); padding-bottom:10px; margin-bottom:14px;">
-                    <div>
-                        <h2 style="margin:0; border:none; padding:0; display:flex; align-items:center; gap:8px;">
-                            <span>⚡ Stock Mojo PE-CE Master Filter &amp; Trigger</span>
-                            <span id="tab1SynergyStatusBadge" class="status-badge badge-side" style="font-size:12px;">INITIALIZING...</span>
-                        </h2>
-                        <div style="font-size:11px; color:var(--text-dim); margin-top:3px;">
-                            Synchronized Dual-Entity Synergy Gating (Total OI + OI Change Day) across 8-EMA Strategies &amp; Order Execution
-                        </div>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span id="tab1LastSyncText" style="font-size:11px; color:var(--text-dim); font-family:var(--font-mono);">Last Sync: --:-- IST</span>
-                        <button type="button" class="emerald-btn" onclick="syncStockMojoNow()" style="padding:4px 10px; font-size:11px;">🔄 Sync Now</button>
-                    </div>
-                </div>
-
-                <!-- 6 Master Checkboxes Grid -->
-                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:10px; background:rgba(15, 23, 42, 0.5); padding:12px; border-radius:8px; border:1px solid var(--border-subtle); margin-bottom:14px;">
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-main); cursor:pointer;">
-                        <input type="checkbox" id="tab1_chk_stage2_synergy" onchange="syncAndSaveMasterConfig('stage2_synergy', this.checked)">
-                        <span>Filter Stage 2 8-EMA Touch (15m) with PE-CE Synergy</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-main); cursor:pointer;">
-                        <input type="checkbox" id="tab1_chk_strat2_synergy" onchange="syncAndSaveMasterConfig('strat2_synergy', this.checked)">
-                        <span>Filter Strategy 2 Reversal (4 MA vs 8 EMA) with PE-CE Synergy</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-main); cursor:pointer;">
-                        <input type="checkbox" id="tab1_chk_strat3_synergy" onchange="syncAndSaveMasterConfig('strat3_synergy', this.checked)">
-                        <span>Filter Strategy 3 1H 8-EMA Support/Resistance with PE-CE Synergy</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-main); cursor:pointer;">
-                        <input type="checkbox" id="tab1_chk_direct_15m_trigger" onchange="syncAndSaveMasterConfig('direct_15m_trigger', this.checked)">
-                        <span style="color:#f59e0b; font-weight:600;">Use PE-CE Flip as Direct 15m Entry Trigger</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-main); cursor:pointer;">
-                        <input type="checkbox" id="tab1_chk_block_pe_bull" onchange="syncAndSaveMasterConfig('block_pe_bull', this.checked)">
-                        <span>Block PE Buys when PE-CE is Bullish (Green)</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-main); cursor:pointer;">
-                        <input type="checkbox" id="tab1_chk_block_ce_bear" onchange="syncAndSaveMasterConfig('block_ce_bear', this.checked)">
-                        <span>Block CE Buys when PE-CE is Bearish (Red)</span>
-                    </label>
-                </div>
-
-                <!-- Live Allowed / Blocked Stream Indicators -->
-                <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; font-size:12px;">
-                    <div>
-                        <span style="color:var(--text-dim);">Allowed Now: </span>
-                        <b id="tab1AllowedNowText" style="color:var(--emerald);">CE Long Only (Stage 2 8-EMA, Rev Up, 1H Supp)</b>
-                    </div>
-                    <div>
-                        <span style="color:var(--text-dim);">Blocked Now: </span>
-                        <b id="tab1BlockedNowText" style="color:var(--crimson);">PE Short STRICTLY BLOCKED</b>
-                    </div>
-                    <div>
-                        <span style="color:var(--text-dim);">Total OI Deficit: </span>
-                        <b id="tab1TotalOiSummaryText" style="font-family:var(--font-mono);">-1.84 Cr (+7.32L step)</b>
-                    </div>
-                    <div>
-                        <span style="color:var(--text-dim);">Day PE-CE: </span>
-                        <b id="tab1DayOiSummaryText" style="font-family:var(--font-mono);">+6.38 Lakhs (+8.74L step)</b>
-                    </div>
-                </div>
-
-                <!-- High-Visibility 4-Crore Pill Badges (Call vs Put & Who Is More) -->
-                <div style="display:flex; flex-direction:column; gap:8px; background:rgba(15, 23, 42, 0.75); padding:10px 14px; border-radius:8px; border:1px solid var(--border-subtle); margin-top:12px;">
-                    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
-                        <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
-                            <span style="color:var(--text-dim); font-weight:600;">OI Change (Call vs Put):</span>
-                            <span id="tab1PillCallOiChg" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🟢 Call Chg: -- Cr</span>
-                            <span style="color:var(--text-dim); font-size:11px;">vs</span>
-                            <span id="tab1PillPutOiChg" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#ef4444; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🔴 Put Chg: -- Cr</span>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <button id="tab1MappingToggleBtn" onclick="toggleStockMojoLineMapping()" title="Click to toggle Red/Green line mapping" style="background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid #38bdf8; padding:2px 8px; border-radius:12px; font-size:11px; cursor:pointer; font-weight:600;">🔄 Mapping: Standard (Red=Put / Green=Call)</button>
-                            <div style="font-size:12px;">
-                                <span style="color:var(--text-dim);">Who is More: </span>
-                                <b id="tab1WhoMoreChg" style="color:#38bdf8;">--</b>
-                            </div>
-                        </div>
-                    </div>
-                    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
-                        <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
-                            <span style="color:var(--text-dim); font-weight:600;">Total OI (Call vs Put):</span>
-                            <span id="tab1PillPutOiTot" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#ef4444; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🔴 Put Total: -- Cr</span>
-                            <span style="color:var(--text-dim); font-size:11px;">vs</span>
-                            <span id="tab1PillCallOiTot" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🟢 Call Total: -- Cr</span>
-                        </div>
-                        <div style="font-size:12px;">
-                            <span style="color:var(--text-dim);">Who is More: </span>
-                            <b id="tab1WhoMoreTot" style="color:#38bdf8;">--</b>
-                        </div>
-                    </div>
-                    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border-top:1px dashed rgba(255,255,255,0.08); padding-top:6px; margin-top:2px;">
-                        <div style="font-size:11px; display:flex; align-items:center; gap:6px;">
-                            <span style="background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:2px 8px; border-radius:10px;">🔑 Stock Mojo JWT Active (Valid till Nov 2027)</span>
-                            <span id="tab1JwtLastPing" style="color:var(--text-dim); font-family:var(--font-mono);">Last Ping: --:--:--</span>
-                            <span id="tab1FutTickBadge" style="background:rgba(245,158,11,0.12); color:#f59e0b; border:1px solid rgba(245,158,11,0.4); padding:2px 8px; border-radius:10px; font-family:var(--font-mono); font-weight:600;">Fut: -- | Tick: --</span>
-                        </div>
-                        <div style="font-size:12px;">
-                            <span style="color:var(--text-dim);">Writer Dominance: </span>
-                            <b id="tab1WriterDomBadge" style="color:var(--text-main);">CALCULATING...</b>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <!-- Tab 1 Stock Mojo cards REMOVED (multi-strike status, PE-CE
+                 Master Filter & Trigger). The feed is retired; writer and
+                 PE-CE data now comes from our own Dhan chain. -->
 
             <!-- Live Execution Strike Matrix: 4 Priority Contracts (2 CE + 2 PE) -->
             <div class="card">
@@ -1817,7 +1697,7 @@
                     </div>
                     <div class="checkbox-group">
                         <input type="checkbox" id="fltPcr" onchange="runDateExplorer()">
-                        <label for="fltPcr" style="margin:0; flex:1; color:#38bdf8;"><b>7. StockMojo PCR Gate</b> (Long &ge; 0.85, Short &le; 1.15)</label>
+                        <label for="fltPcr" style="margin:0; flex:1; color:#38bdf8;"><b>7. PCR Gate</b> (Long &ge; 0.85, Short &le; 1.15)</label>
                     </div>
                     <div class="checkbox-group">
                         <input type="checkbox" id="fltGoldilocks" onchange="runDateExplorer()">
@@ -1992,357 +1872,15 @@
             </div>
         </div>
 
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <!-- TAB 6: STOCK MOJO DUAL-ENTITY PE-CE SUITE & SYNERGY GATE           -->
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <div id="tabStockMojoSuite" class="tab-content">
-            <!-- TAB 6: STOCK MOJO MULTI-STRIKE LIVE STATUS CARD -->
-            <div id="tab6MultiStrikeStatusCard" class="card" style="border:1px solid rgba(239, 68, 68, 0.4); background:rgba(239, 68, 68, 0.05); padding:10px 16px; margin-bottom:14px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <span id="tab6MultiStrikeIndicator" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#ef4444; box-shadow:0 0 8px #ef4444;"></span>
-                    <b id="tab6MultiStrikeText" style="color:#ef4444; font-size:12.5px;">🔴 Stock Mojo Disconnected (No payload this session)</b>
-                </div>
-                <div style="font-family:var(--font-mono); font-size:12px; color:var(--text-dim);">
-                    Last Sync: <span id="tab6MultiStrikeLastSync" style="color:var(--text-main); font-weight:600;">Never</span>
-                </div>
-                <div style="font-size:12px;">
-                    Bias: <span id="tab6MultiStrikeBiasBadge" class="status-badge badge-side" style="font-size:12px; font-weight:700;">WAITING</span>
-                </div>
-            </div>
-
-            <!-- 1. Top Live Summary Banner -->
-            <div class="card" style="border:1px solid #38bdf8; background:rgba(56, 189, 248, 0.04);">
-                <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px;">
-                    <div>
-                        <h2 style="margin:0; border:none; padding:0; display:flex; align-items:center; gap:8px;">
-                            <span>📊 Stock Mojo Dual-Entity PE-CE Suite &amp; Synergy Gate</span>
-                        </h2>
-                        <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">
-                            Dual-Entity Ingestion (Total OI &amp; OI Change Day) · 1-Minute Telemetry · Automated Strategy Synergy Gating
-                        </div>
-                    </div>
-                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-                        <button type="button" class="emerald-btn" onclick="syncStockMojoNow()">🔄 Sync Flow Now</button>
-                        <div style="display:flex; align-items:center; gap:4px; background:rgba(15,23,42,0.8); border:1px solid var(--border-subtle); padding:4px 8px; border-radius:6px; font-size:12px;">
-                            <label style="color:var(--text-dim);">Ping:</label>
-                            <select id="smPingIntervalSelect" onchange="changeSmPingInterval(this.value)" style="background:transparent; color:#38bdf8; border:none; font-weight:600; font-size:12px; cursor:pointer;">
-                                <option value="60" selected>Every 60s (1m)</option>
-                                <option value="180">Every 180s (3m)</option>
-                            </select>
-                        </div>
-                        <button type="button" class="secondary-btn" onclick="copyStockMojoBookmarklet()">📋 Copy 1m Browser Script</button>
-                        <button type="button" class="secondary-btn" onclick="toggleAuthModal()">⚙️ Ingestion Auth / cURL</button>
-                        <button type="button" class="emerald-btn" onclick="exportStockMojoToExcel()">📥 Export Matrix (.xls)</button>
-                    </div>
-                </div>
-
-                <!-- 6 Metric Boxes Grid -->
-                <div class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top:14px; gap:10px;">
-                    <div class="metric-box">
-                        <label>P minus C Bias</label>
-                        <div class="metric-value" id="bannerBias" style="font-size:15px; color:var(--emerald);">BULLISH</div>
-                        <div id="bannerLastSync" style="font-size:10px; color:var(--text-dim); margin-top:2px;">Last Sync: --:-- IST</div>
-                    </div>
-                    <div class="metric-box">
-                        <label>Total OI Tab (Entity 1)</label>
-                        <div class="metric-value" id="bannerTotalOiVal" style="font-size:15px; color:#38bdf8;">-1.84 Cr</div>
-                        <div id="bannerTotalOiStep" style="font-size:10px; color:var(--emerald); margin-top:2px;">3m Δ: +7.32 L · PCR 0.76</div>
-                    </div>
-                    <div class="metric-box">
-                        <label>OI Change Day (Entity 2)</label>
-                        <div class="metric-value" id="bannerDayOiVal" style="font-size:15px; color:var(--emerald);">+6.38 Lakhs</div>
-                        <div id="bannerDayOiStep" style="font-size:10px; color:var(--emerald); margin-top:2px;">3m Δ: +8.74 L · PCR 0.70</div>
-                    </div>
-                    <div class="metric-box">
-                        <label>Combined Synergy Gate</label>
-                        <div class="metric-value" id="bannerSynergyTag" style="font-size:13px; color:var(--emerald);">BULLISH_SYNERGY</div>
-                        <div id="bannerShortCovering" style="font-size:10px; color:var(--text-dim); margin-top:2px;">Short-Covering: Inactive</div>
-                    </div>
-                    <div class="metric-box">
-                        <label>Allowed Now</label>
-                        <div class="metric-value" id="bannerAllowedNow" style="font-size:12px; color:var(--emerald); font-weight:700;">CE Long Only</div>
-                        <div style="font-size:10px; color:var(--text-dim); margin-top:2px;">Stage 2, Rev Up, 1H Supp</div>
-                    </div>
-                    <div class="metric-box">
-                        <label>Blocked Now</label>
-                        <div class="metric-value" id="bannerBlockedNow" style="font-size:12px; color:var(--crimson); font-weight:700;">PE Short BLOCKED</div>
-                        <div style="font-size:10px; color:var(--text-dim); margin-top:2px;">Strict execution gate</div>
-                    </div>
-                </div>
-
-                <!-- High-Visibility 4-Crore Pill Badges (Call vs Put & Who Is More) -->
-                <div style="display:flex; flex-direction:column; gap:8px; background:rgba(15, 23, 42, 0.75); padding:10px 14px; border-radius:8px; border:1px solid var(--border-subtle); margin-top:12px;">
-                    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
-                        <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
-                            <span style="color:var(--text-dim); font-weight:600;">OI Change (Call vs Put):</span>
-                            <span id="tab6PillCallOiChg" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🟢 Call Chg: -- Cr</span>
-                            <span style="color:var(--text-dim); font-size:11px;">vs</span>
-                            <span id="tab6PillPutOiChg" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#ef4444; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🔴 Put Chg: -- Cr</span>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <button id="tab6MappingToggleBtn" onclick="toggleStockMojoLineMapping()" title="Click to toggle Red/Green line mapping" style="background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid #38bdf8; padding:2px 8px; border-radius:12px; font-size:11px; cursor:pointer; font-weight:600;">🔄 Mapping: Standard (Red=Put / Green=Call)</button>
-                            <div style="font-size:12px;">
-                                <span style="color:var(--text-dim);">Who is More: </span>
-                                <b id="tab6WhoMoreChg" style="color:#38bdf8;">--</b>
-                            </div>
-                        </div>
-                    </div>
-                    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
-                        <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
-                            <span style="color:var(--text-dim); font-weight:600;">Total OI (Call vs Put):</span>
-                            <span id="tab6PillPutOiTot" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#ef4444; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🔴 Put Total: -- Cr</span>
-                            <span style="color:var(--text-dim); font-size:11px;">vs</span>
-                            <span id="tab6PillCallOiTot" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700;">🟢 Call Total: -- Cr</span>
-                        </div>
-                        <div style="font-size:12px;">
-                            <span style="color:var(--text-dim);">Who is More: </span>
-                            <b id="tab6WhoMoreTot" style="color:#38bdf8;">--</b>
-                        </div>
-                    </div>
-                    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border-top:1px dashed rgba(255,255,255,0.08); padding-top:6px; margin-top:2px;">
-                        <div style="font-size:11px; display:flex; flex-wrap:wrap; align-items:center; gap:6px;">
-                            <span style="background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:2px 8px; border-radius:10px;">🔑 Stock Mojo JWT Active (Valid till Nov 2027)</span>
-                            <span id="tab6JwtLastPing" style="color:var(--text-dim); font-family:var(--font-mono);">Last Ping: --:--:--</span>
-                            <span id="tab6FutTickBadge" style="background:rgba(245,158,11,0.12); color:#f59e0b; border:1px solid rgba(245,158,11,0.4); padding:2px 8px; border-radius:10px; font-family:var(--font-mono); font-weight:600;">Fut: -- | Tick: --</span>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <button id="btnCopyRelayScript" onclick="copyStockMojoRelayScript()" style="background:rgba(16,185,129,0.18); color:#10b981; border:1px solid #10b981; padding:3px 10px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px;">📋 Copy Live Graph Relay Script</button>
-                            <button id="btnQuickLiveGraph" onclick="openLiveGraphModal()" style="background:rgba(168,85,247,0.18); color:#a855f7; border:1px solid #a855f7; padding:3px 10px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">⚡ Quick Ingest Live Graph</button>
-                            <div style="font-size:12px;">
-                                <span style="color:var(--text-dim);">Writer Dominance: </span>
-                                <b id="tab6WriterDomBadge" style="color:var(--text-main);">CALCULATING...</b>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 2. Master Control Card: ⚡ Stock Mojo PE-CE Master Filter & Trigger -->
-            <div class="card" style="border:1px solid #10b981; background:rgba(16, 185, 129, 0.02);">
-                <h2>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span>⚡ Stock Mojo PE-CE Master Filter &amp; Trigger</span>
-                        <span id="smMasterSyncBadge" class="status-badge badge-bull" style="font-size:11px;">ACTIVE &amp; GATING</span>
-                    </div>
-                    <label style="font-size:12px; font-weight:normal; display:flex; align-items:center; gap:6px; cursor:pointer;">
-                        <input type="checkbox" id="chk_show_tab1" checked onchange="toggleTab1Display(this.checked)">
-                        <span style="color:#38bdf8;">Show P minus C Table in Live Terminal (Tab 1)</span>
-                    </label>
-                </h2>
-                <div style="font-size:12px; color:var(--text-dim); margin-bottom:12px;">
-                    Quantitative synergy filters block conflicting trades and allow only high-probability aligned trend setups:
-                </div>
-                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap:12px; background:rgba(15,23,42,0.6); padding:14px; border-radius:8px; border:1px solid var(--border-subtle);">
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-main); cursor:pointer;">
-                        <input type="checkbox" id="chk_stage2_synergy" checked onchange="saveSynergyConfig()">
-                        <span><b>Filter Stage 2 8-EMA Touch (15m)</b> with PE-CE Synergy</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-main); cursor:pointer;">
-                        <input type="checkbox" id="chk_strat2_synergy" checked onchange="saveSynergyConfig()">
-                        <span><b>Filter Strategy 2 Reversal (4 MA vs 8 EMA)</b> with PE-CE Synergy</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-main); cursor:pointer;">
-                        <input type="checkbox" id="chk_strat3_synergy" checked onchange="saveSynergyConfig()">
-                        <span><b>Filter Strategy 3 1H 8-EMA Support/Res</b> with PE-CE Synergy</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-main); cursor:pointer;">
-                        <input type="checkbox" id="chk_direct_15m_trigger" onchange="saveSynergyConfig()">
-                        <span style="color:#f59e0b; font-weight:700;">Use PE-CE Flip as Direct 15m Entry Trigger</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-main); cursor:pointer;">
-                        <input type="checkbox" id="chk_block_pe_bull" checked onchange="saveSynergyConfig()">
-                        <span><b>Block PE Buys</b> when PE-CE is Bullish (Green)</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-main); cursor:pointer;">
-                        <input type="checkbox" id="chk_block_ce_bear" checked onchange="saveSynergyConfig()">
-                        <span><b>Block CE Buys</b> when PE-CE is Bearish (Red)</span>
-                    </label>
-                </div>
-            </div>
-
-
-
-            <!-- 4. Dedicated Live OI Curves & Writer Crossover Card -->
-            <div class="card" style="border:1px solid #10b981; background:rgba(16, 185, 129, 0.03);">
-                <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px;">
-                    <div>
-                        <h2 style="margin:0; border:none; padding:0;">
-                            <span>📊 Live Institutional OI Curves &amp; Writer Crossover Matrix</span>
-                        </h2>
-                        <div id="stockMojoLiveStatusBadge" style="font-size:12px; font-weight:600; color:var(--emerald); margin-top:3px;">
-                            🟢 Live Ingestion Active (Polling every 60s)
-                        </div>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <button type="button" class="emerald-btn" onclick="syncStockMojoNow()" style="padding:4px 10px; font-size:12px;">🔄 Sync Now</button>
-                        <button type="button" class="secondary-btn" onclick="toggleAuthModal()" style="padding:4px 10px; font-size:12px;">⚙️ Bearer Token</button>
-                    </div>
-                </div>
-
-                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap:16px;">
-                    <!-- Chart 1: OI Change (Call vs Put) + Future Price Overlay & Crossover Markers -->
-                    <div style="background:#070d19; border:1px solid var(--border-subtle); border-radius:8px; padding:12px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <span style="font-size:13px; font-weight:700; color:var(--text-main);">1. Intraday Change in OI (Call vs Put) &amp; Crossover Markers</span>
-                            <span style="font-size:10px; color:#38bdf8; font-family:var(--font-mono);">INTRADAY ΔOI (LAKHS)</span>
-                        </div>
-                        <div style="display:flex; gap:12px; font-size:11px; margin-bottom:8px; align-items:center; flex-wrap:wrap;">
-                            <span style="display:flex; align-items:center; gap:4px;"><span style="width:10px; height:3px; background:#f43f5e; display:inline-block;"></span> <b>Call OI Change</b></span>
-                            <span style="display:flex; align-items:center; gap:4px;"><span style="width:10px; height:3px; background:#10b981; display:inline-block;"></span> <b>Put OI Change</b></span>
-                            <span style="display:flex; align-items:center; gap:4px;"><span style="width:10px; height:2px; background:#38bdf8; display:inline-block; border-top:1px dashed #38bdf8;"></span> <b>Fut Price</b></span>
-                        </div>
-                        <div id="stockmojoOiChangeChart" style="width:100%; height:210px; position:relative; overflow:hidden;"></div>
-                    </div>
-
-                    <!-- Chart 2: Total OI (Call vs Put) + Future Price Overlay & PCR -->
-                    <div style="background:#070d19; border:1px solid var(--border-subtle); border-radius:8px; padding:12px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <span style="font-size:13px; font-weight:700; color:var(--text-main);">2. Cumulative Total OI (Call vs Put) &amp; PCR Overlay</span>
-                            <span style="font-size:10px; color:#10b981; font-family:var(--font-mono);">CUMULATIVE OI (LAKHS)</span>
-                        </div>
-                        <div style="display:flex; gap:12px; font-size:11px; margin-bottom:8px; align-items:center; flex-wrap:wrap;">
-                            <span style="display:flex; align-items:center; gap:4px;"><span style="width:10px; height:3px; background:#f43f5e; display:inline-block;"></span> <b>Total Call OI</b></span>
-                            <span style="display:flex; align-items:center; gap:4px;"><span style="width:10px; height:3px; background:#10b981; display:inline-block;"></span> <b>Total Put OI</b></span>
-                            <span style="display:flex; align-items:center; gap:4px;"><span style="width:10px; height:2px; background:#38bdf8; display:inline-block; border-top:1px dashed #38bdf8;"></span> <b>Fut Price</b></span>
-                            <span style="display:flex; align-items:center; gap:4px;"><span style="width:8px; height:8px; border-radius:50%; background:#f59e0b; display:inline-block;"></span> <b>PCR</b></span>
-                        </div>
-                        <div id="stockmojoTotalOiChart" style="width:100%; height:210px; position:relative; overflow:hidden;"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 5. Stock Mojo Multi-Strike PE − CE Table & Dual-Entity Ingestion Matrix -->
-            <div class="card">
-                <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; margin-bottom:12px; gap:10px;">
-                    <div>
-                        <h2 style="margin:0; border:none; padding:0; display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-                            <span id="peCeTableTitle">📋 Stock Mojo PE − CE Multi-Strike Matrix</span>
-                            <span id="smAtmRangeBadge" style="background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;">ATM: 24400 | Range: ±10 (23900 - 24900)</span>
-                            <span id="smTableCountBadge" style="font-size:11px; color:var(--emerald); font-family:var(--font-mono);">-- INTERVALS</span>
-                        </h2>
-                    </div>
-
-                    <!-- Top Controls matching Stock Mojo: Timeframe & Mode Selectors -->
-                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px;">
-                        <!-- Timeframe Selector -->
-                        <div style="display:flex; align-items:center; gap:4px; background:rgba(15,23,42,0.8); border:1px solid var(--border-subtle); padding:3px 6px; border-radius:6px;">
-                            <span style="font-size:11px; color:var(--text-dim); margin-right:4px;">Timeframe:</span>
-                            <button type="button" id="btnTf1m" class="sub-tab-btn active" onclick="setSmTableTimeframe('1m')" style="padding:2px 8px; font-size:11px;">1m</button>
-                            <button type="button" id="btnTf3m" class="sub-tab-btn" onclick="setSmTableTimeframe('3m')" style="padding:2px 8px; font-size:11px;">3m</button>
-                            <button type="button" id="btnTf5m" class="sub-tab-btn" onclick="setSmTableTimeframe('5m')" style="padding:2px 8px; font-size:11px;">5m</button>
-                            <button type="button" id="btnTf15m" class="sub-tab-btn" onclick="setSmTableTimeframe('15m')" style="padding:2px 8px; font-size:11px;">15m</button>
-                        </div>
-
-                        <!-- Mode Selector -->
-                        <div style="display:flex; align-items:center; gap:4px; background:rgba(15,23,42,0.8); border:1px solid var(--border-subtle); padding:3px 6px; border-radius:6px;">
-                            <span style="font-size:11px; color:var(--text-dim); margin-right:4px;">Mode:</span>
-                            <button type="button" id="btnModeDayOi" class="sub-tab-btn active" onclick="setSmTableMode('day_oi')" style="padding:2px 8px; font-size:11px;">OI Change (Day)</button>
-                            <button type="button" id="btnModeTotalOi" class="sub-tab-btn" onclick="setSmTableMode('total_oi')" style="padding:2px 8px; font-size:11px;">Total OI</button>
-                            <button type="button" id="btnModeAll" class="sub-tab-btn" onclick="setSmTableMode('all')" style="padding:2px 8px; font-size:11px;">All</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div style="overflow-x:auto; max-height:480px;">
-                    <table>
-                        <thead id="dualPeCeThead"></thead>
-                        <tbody id="dualPeCeTbody"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Stock Mojo Direct Poller & Authentication Modal -->
-        <div id="authConfigModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; align-items:center; justify-content:center;">
-            <div style="background:var(--bg-panel); border:1px solid #38bdf8; border-radius:12px; width:90%; max-width:580px; padding:22px; box-shadow:0 20px 50px rgba(0,0,0,0.7); max-height:90vh; overflow-y:auto;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px;">
-                    <h3 style="margin:0; font-size:16px; color:#38bdf8; display:flex; align-items:center; gap:8px;">
-                        <span>🔑 Stock Mojo Direct Poller &amp; Session Headers</span>
-                    </h3>
-                    <button type="button" onclick="toggleAuthModal()" style="background:none; border:none; color:var(--text-dim); font-size:20px; cursor:pointer;">&times;</button>
-                </div>
-                <div style="font-size:11.5px; color:var(--text-dim); line-height:1.5; margin-bottom:12px;">
-                    Paste updated session headers <code>j</code>, <code>t</code>, or payload from Chrome DevTools (<b>F12 &rarr; Network &rarr; pcr</b>) to update live without restarting the server:
-                </div>
-                <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
-                    <div>
-                        <label style="font-size:11px; color:#38bdf8; font-weight:600; display:block; margin-bottom:3px;">Header 'j' (JWT Token):</label>
-                        <textarea id="authHeaderJ" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." style="width:100%; height:60px; font-family:var(--font-mono); font-size:11px; padding:6px; background:var(--bg-input); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:6px;"></textarea>
-                    </div>
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-                        <div>
-                            <label style="font-size:11px; color:#38bdf8; font-weight:600; display:block; margin-bottom:3px;">Header 't' (Session Token):</label>
-                            <input type="text" id="authHeaderT" placeholder="session token (retired)" style="width:100%; font-family:var(--font-mono); font-size:11px; padding:6px; background:var(--bg-input); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:6px;">
-                        </div>
-                        <div>
-                            <label style="font-size:11px; color:#38bdf8; font-weight:600; display:block; margin-bottom:3px;">Vast Diff Threshold (Cr):</label>
-                            <input type="number" id="authVastThresh" step="0.05" value="0.50" style="width:100%; font-family:var(--font-mono); font-size:11px; padding:6px; background:var(--bg-input); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:6px;">
-                        </div>
-                    </div>
-                    <div>
-                        <label style="font-size:11px; color:#38bdf8; font-weight:600; display:block; margin-bottom:3px;">Request Payload (JSON):</label>
-                        <input type="text" id="authPayload" value='{"symbol":"NIFTY","index":"NIFTY"}' style="width:100%; font-family:var(--font-mono); font-size:11px; padding:6px; background:var(--bg-input); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:6px;">
-                    </div>
-                    <div>
-                        <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:3px;">Or Paste Chrome DevTools 'Copy as cURL':</label>
-                        <textarea id="curlInputText" placeholder="curl 'https://data.stockmojo.in/live/oi/pcr' -H 'j: ...' -H 't: ...' --data-raw '...'" style="width:100%; height:55px; font-family:var(--font-mono); font-size:10.5px; padding:6px; background:var(--bg-input); color:var(--text-main); border:1px solid var(--border-subtle); border-radius:6px;"></textarea>
-                    </div>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span id="authSaveStatusText" style="font-size:11px; color:var(--text-dim); font-family:var(--font-mono);"></span>
-                    <div style="display:flex; gap:8px;">
-                        <button type="button" class="secondary-btn" onclick="toggleAuthModal()">Cancel</button>
-                        <button type="button" class="emerald-btn" onclick="saveAuthConfig()">💾 Save &amp; Ping Now</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Stock Mojo Quick Live Graph Ingest Modal -->
-        <div id="liveGraphModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; align-items:center; justify-content:center;">
-            <div style="background:var(--bg-panel); border:1px solid #a855f7; border-radius:12px; width:90%; max-width:540px; padding:22px; box-shadow:0 20px 50px rgba(0,0,0,0.7); max-height:90vh; overflow-y:auto;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px;">
-                    <h3 style="margin:0; font-size:16px; color:#a855f7; display:flex; align-items:center; gap:8px;">
-                        <span>⚡ Quick Ingest Stock Mojo Live Graph Values</span>
-                    </h3>
-                    <button type="button" onclick="closeLiveGraphModal()" style="background:none; border:none; color:var(--text-dim); font-size:20px; cursor:pointer;">&times;</button>
-                </div>
-                <div style="font-size:11.5px; color:var(--text-dim); line-height:1.5; margin-bottom:12px;">
-                    Enter the latest right-most values from the live Stock Mojo chart (e.g. <b>10:48 AM</b>: Put Chg <b>3.02 Cr</b>, Call Chg <b>2.13 Cr</b>, Put Total <b>18.33 Cr</b>, Call Total <b>16.26 Cr</b>) or paste response JSON:
-                </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
-                    <div>
-                        <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:4px;">Put OI Change (Red line, Cr):</label>
-                        <input id="quickPutOiChg" type="number" step="0.01" placeholder="e.g. 3.02" style="width:100%; background:var(--bg-input); border:1px solid var(--border-subtle); color:var(--text-main); padding:6px 10px; border-radius:6px; font-family:var(--font-mono); font-size:12px;">
-                    </div>
-                    <div>
-                        <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:4px;">Call OI Change (Green line, Cr):</label>
-                        <input id="quickCallOiChg" type="number" step="0.01" placeholder="e.g. 2.13" style="width:100%; background:var(--bg-input); border:1px solid var(--border-subtle); color:var(--text-main); padding:6px 10px; border-radius:6px; font-family:var(--font-mono); font-size:12px;">
-                    </div>
-                    <div>
-                        <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:4px;">Put Total OI (Red line, Cr):</label>
-                        <input id="quickPutOiTot" type="number" step="0.01" placeholder="e.g. 18.33" style="width:100%; background:var(--bg-input); border:1px solid var(--border-subtle); color:var(--text-main); padding:6px 10px; border-radius:6px; font-family:var(--font-mono); font-size:12px;">
-                    </div>
-                    <div>
-                        <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:4px;">Call Total OI (Green line, Cr):</label>
-                        <input id="quickCallOiTot" type="number" step="0.01" placeholder="e.g. 16.26" style="width:100%; background:var(--bg-input); border:1px solid var(--border-subtle); color:var(--text-main); padding:6px 10px; border-radius:6px; font-family:var(--font-mono); font-size:12px;">
-                    </div>
-                </div>
-                <div style="margin-bottom:14px;">
-                    <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:4px;">Or Paste JSON / cURL Payload:</label>
-                    <textarea id="quickJsonPaste" placeholder='{"oi_change_red_cr": 3.02, "oi_change_green_cr": 2.13, ...}' style="width:100%; height:60px; background:var(--bg-input); border:1px solid var(--border-subtle); color:var(--text-main); padding:6px 10px; border-radius:6px; font-family:var(--font-mono); font-size:11px;"></textarea>
-                </div>
-                <div style="display:flex; justify-content:flex-end; gap:8px;">
-                    <button type="button" class="secondary-btn" onclick="closeLiveGraphModal()">Cancel</button>
-                    <button type="button" class="emerald-btn" onclick="submitQuickLiveGraph()">⚡ Ingest Live Point</button>
-                </div>
-            </div>
-        </div>
+        <!-- TAB 6 (Stock Mojo Institutional OI Writers & PE-CE Suite) REMOVED.
+             The feed returned 401 and its JWT had to be recaptured by hand.
+             Call/put writer and PE-CE data now comes from our own Dhan chain
+             via the desk at /api/writer_flow. The retired routes answer 410. -->
 
     </div>
 
         <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <!-- TAB 7: 📥 PULL TODAY'S DATA / DAILY DATA INGEST                     -->
+        <!-- TAB 6: 📥 PULL TODAY'S DATA / DAILY DATA INGEST                     -->
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <div id="tab7DailyIngest" class="tab-content">
             <!-- 📋 POST-MARKET DAILY SUMMARY CARD (TAB 7) -->
@@ -2417,12 +1955,12 @@
                     </div>
                     <div class="metric-box" style="text-align:left; padding:10px 14px;">
                         <span id="chk_sm_total_oi" style="color:var(--emerald); font-weight:700;">[ ✅ ]</span>
-                        <b style="color:#f8fafc; margin-left:6px;">Stock Mojo — Total OI</b>
+                        <b style="color:#f8fafc; margin-left:6px;">Institutional — Total OI</b>
                         <div id="chk_sm_total_detail" style="font-size:11px; color:var(--text-dim); margin-top:2px;">Put 18.28 Cr vs Call 16.41 Cr (BULLISH 🟢)</div>
                     </div>
                     <div class="metric-box" style="text-align:left; padding:10px 14px;">
                         <span id="chk_sm_oi_change" style="color:var(--emerald); font-weight:700;">[ ✅ ]</span>
-                        <b style="color:#f8fafc; margin-left:6px;">Stock Mojo — OI Change Day</b>
+                        <b style="color:#f8fafc; margin-left:6px;">Institutional — OI Change Day</b>
                         <div id="chk_sm_change_detail" style="font-size:11px; color:var(--text-dim); margin-top:2px;">PE-CE Day +3.40 Cr (BULLISH 🟢)</div>
                     </div>
                     <div class="metric-box" style="text-align:left; padding:10px 14px;">
@@ -2471,11 +2009,14 @@
             setInterval(updateClock, 1000);
             loadDhanConfig();
             initProvenEdgesUI();
+            // Stock Mojo is retired. fetchStockMojoLiveOI() ran on load and
+            // again every 15s against /api/stockmojo/live_oi, which now answers
+            // 410, so it logged a console error four times a minute forever.
+            // fetchStockMojoDual() is kept: /api/stockmojo/pe_ce_dual still
+            // serves, repointed at our own chain via the writer-flow bridge.
             fetchStockMojoDual();
-            fetchStockMojoLiveOI();
             fetchSynergyConfig();
-            initSmPollingTimer();
-            setInterval(fetchStockMojoLiveOI, 15000);
+            initSmPollingTimer();   // polls fetchStockMojoDual, which still serves
             runDateExplorer();
             runCombinatorialMonteCarlo();
             pollLiveEngine();
@@ -3396,10 +2937,7 @@
             const target = document.getElementById(tabId);
             if (target) target.classList.add("active");
             if (evt && evt.currentTarget) evt.currentTarget.classList.add("active");
-            if (tabId === 'tabStockMojoSuite') {
-                fetchStockMojoLiveOI();
-                fetchStockMojoTable();
-            }
+            // Tab 6 (Stock Mojo) is removed; its fetches are no longer wired.
             if (tabId === 'tab7DailyIngest') {
                 checkIngestStatus();
             }
@@ -4963,17 +4501,17 @@
                 const b = document.getElementById('btnViewCombined');
                 if (b) b.classList.add('active');
                 const t = document.getElementById('peCeTableTitle');
-                if (t) t.textContent = "📋 Stock Mojo Dual-Entity Combined Side-by-Side View";
+                if (t) t.textContent = "📋 PE-CE Dual-Entity Combined View (our own Dhan chain)";
             } else if (mode === 'total_oi') {
                 const b = document.getElementById('btnViewTotalOi');
                 if (b) b.classList.add('active');
                 const t = document.getElementById('peCeTableTitle');
-                if (t) t.textContent = "📊 Stock Mojo Entity 1: Total OI Tab (Exact 12 Reference Columns)";
+                if (t) t.textContent = "📊 Entity 1: Total OI (12 Reference Columns, our own Dhan chain)";
             } else if (mode === 'day_oi') {
                 const b = document.getElementById('btnViewDayOi');
                 if (b) b.classList.add('active');
                 const t = document.getElementById('peCeTableTitle');
-                if (t) t.textContent = "📈 Stock Mojo Entity 2: OI Change Day Tab (Exact 12 Reference Columns)";
+                if (t) t.textContent = "📈 Entity 2: OI Change Day (12 Reference Columns, our own Dhan chain)";
             }
             renderDualPeCeTable();
         }
@@ -5330,7 +4868,7 @@
 
         function updateStockMojoMultiStrikeCards(sm, lastSyncTime) {
             let stateColor = "RED";
-            let badgeText = "🔴 Stock Mojo Disconnected (No payload this session)";
+            let badgeText = "⚪ Writer flow: awaiting data";
             let ageLabel = "Never";
 
             if (sm && sm.last_successful_payload_ts) {
@@ -6245,18 +5783,27 @@
                     <span>📅 <b>${summary.date_formatted || summary.date}</b></span>
                     <span>🤖 Paper Trades: <b>${summary.paper_trades_count || 0}</b></span>
                     <span>💰 Net P&L: <b style="color:${pnlColor}">${summary.net_pnl_inr || "₹0.00"}</b></span>
-                    <span>📈 Stage 2: <b>${summary.signals_summary || "BULLISH 🟢"}</b></span>
+                    <span>📈 Stage 2: <b>${summary.signals_summary || "NO DATA"}</b></span>
                 </div>
                 <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:12px; color:var(--text-dim);">
-                    <span>Stock Mojo Total OI: <b style="color:var(--emerald);">${summary.total_oi_bias || "BULLISH 🟢"}</b></span>
+                    <span>Total OI: <b style="color:${biasColor(summary.total_oi_bias)};">${summary.total_oi_bias || "NO DATA"}</b></span>
                     <span>|</span>
-                    <span>Stock Mojo OI Change: <b style="color:var(--emerald);">${summary.oi_change_bias || "BULLISH 🟢"}</b></span>
+                    <span>OI Change: <b style="color:${biasColor(summary.oi_change_bias)};">${summary.oi_change_bias || "NO DATA"}</b></span>
                     <span>|</span>
-                    <span>Combined: <b style="color:var(--emerald); font-weight:800;">${summary.combined_oi_bias || "STRONG BULLISH 🟢🟢"}</b></span>
+                    <span>Combined: <b style="color:${biasColor(summary.combined_oi_bias)}; font-weight:800;">${summary.combined_oi_bias || "NO DATA"}</b></span>
                 </div>
             `;
             if (t1) t1.innerHTML = textHtml;
             if (t7) t7.innerHTML = textHtml;
+        }
+
+        // Colour follows the actual bias text. It used to be hardcoded to green
+        // regardless of value, so a BEARISH reading still rendered as green.
+        function biasColor(v) {
+            const s = String(v || "").toUpperCase();
+            if (s.includes("BEAR")) return "var(--crimson)";
+            if (s.includes("BULL")) return "var(--emerald)";
+            return "var(--text-muted)";
         }
 
         async function copyWhatsAppSummary() {
@@ -6264,14 +5811,16 @@
             if (globalCachedEodSummary && globalCachedEodSummary.whatsapp_text) {
                 text = globalCachedEodSummary.whatsapp_text;
             } else {
-                text = `📊 *PORT 8510 EOD SUMMARY — 05 Nov 2026*\n` +
-                       `✅ *Ingest:* 375/375 1m Candles Synced\n` +
-                       `🤖 *Paper Trades Taken:* 1 (AUTO ALGO — Stage 2 8 EMA Touch)\n` +
-                       `💰 *Net P&L:* +₹1,625.00\n` +
-                       `📈 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n` +
-                       `🟢 *Stock Mojo Total OI:* BULLISH\n` +
-                       `🟢 *Stock Mojo OI Change:* BULLISH\n` +
-                       `🔥 *Combined Bias:* STRONG BULLISH 🟢🟢`;
+                // This branch used to copy a COMPLETELY FABRICATED summary to the
+                // clipboard — a fixed "05 Nov 2026", "Net P&L: +₹1,625.00",
+                // "Paper Trades Taken: 1" and "STRONG BULLISH 🟢🟢", none of it
+                // read from anything. Pasted into a chat it would read as a real
+                // trading record. It now refuses rather than inventing one.
+                alert("No EOD summary available yet.\n\n" +
+                      "Run Pull Today's Data first, then copy. Nothing was copied: " +
+                      "this used to paste a fabricated summary with a fixed date and " +
+                      "P&L, which could be mistaken for a real result.");
+                return;
             }
             try {
                 if (navigator.clipboard && navigator.clipboard.writeText) {
