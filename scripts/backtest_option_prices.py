@@ -370,6 +370,26 @@ def main() -> None:
     rules_e = {"trend_filter": True, "ubb_filter": True, "first_opp": True, "daily_stop": True, "ctc": True, "ctc_brokerage_buffer": True, "fii_window": True, "gap_filter": True, "ema_sep": True, "vwap_filter": True}
     trades_e = sim._simulate_dataset(sessions_df, map_15m, list_15m_ts, "Variant E", rules_e)
 
+    # v1.9.4c: the charge base for the modelled sessions, taken from the ATM
+    # rule's MEASURED mean entry premium in Step 4 rather than a round 200.
+    # Falls back to the overall mean across rules, and only to a declared
+    # constant if Step 4 produced nothing -- in which case it is printed.
+    _atm_row = next((r for r in strike_comparison if r.get("rule") == "ATM"), None)
+    if _atm_row and _atm_row.get("avg_entry_premium"):
+        MODEL_ENTRY_PREMIUM = float(_atm_row["avg_entry_premium"])
+        MODEL_ENTRY_PREMIUM_SOURCE = "MEASURED_ATM_MEAN_STEP4"
+    else:
+        _prems = [float(r["avg_entry_premium"]) for r in strike_comparison
+                  if r.get("avg_entry_premium")]
+        if _prems:
+            MODEL_ENTRY_PREMIUM = sum(_prems) / len(_prems)
+            MODEL_ENTRY_PREMIUM_SOURCE = "MEASURED_MEAN_ACROSS_RULES_STEP4"
+        else:
+            MODEL_ENTRY_PREMIUM = 200.0
+            MODEL_ENTRY_PREMIUM_SOURCE = "ASSUMED_200_NO_MEASUREMENT_AVAILABLE"
+    log.info("Modelled-session charge base: Rs%.2f (%s)",
+             MODEL_ENTRY_PREMIUM, MODEL_ENTRY_PREMIUM_SOURCE)
+
     def get_approx_dte(date_str: str) -> int:
         dt = datetime.strptime(date_str, "%Y-%m-%d")
         wd = dt.weekday()
@@ -392,8 +412,19 @@ def main() -> None:
                 d_win, d_loss = 0.60, 0.50
 
             opt_pts = tr.spot_pnl_pts * d_win if tr.spot_pnl_pts > 0 else tr.spot_pnl_pts * d_loss
-            opt_exit = max(0.05, round(200.0 + opt_pts, 2))
-            chg = paper_trading.calculate_trade_charges(200.0, opt_exit, LOT_SIZE, side="BUY")
+            # v1.9.4c: this was a flat 200.0 entry premium, with charges computed
+            # on a 200.0 base. Charges scale with turnover, so an invented base
+            # mis-states every modelled session's cost -- and it was the source
+            # of the "Opt Entry = 200" figures in the .xls/.csv exports.
+            #
+            # These 250 modelled sessions have no recorded chain by design, so
+            # there is no real premium to look up. But the script has already
+            # MEASURED the mean entry premium for each strike rule in Step 4, so
+            # the fallback now uses that measured figure instead of a round
+            # number, and names it as an assumption rather than a price.
+            chg = paper_trading.calculate_trade_charges(
+                MODEL_ENTRY_PREMIUM, max(0.05, round(MODEL_ENTRY_PREMIUM + opt_pts, 2)),
+                LOT_SIZE, side="BUY")
             c = float(chg["total_charges"])
             gross = opt_pts * LOT_SIZE
             # Real median spread: 0.27 pts/leg * 2 legs = 0.54 pts = Rs 35.10
@@ -417,6 +448,15 @@ def main() -> None:
         }
 
     model_results = {
+        # v1.9.4c: the charge base is now declared in the output, so a reader can
+        # see what was assumed instead of discovering a 200 buried in the code.
+        "_model_entry_premium_inr": round(MODEL_ENTRY_PREMIUM, 2),
+        "_model_entry_premium_source": MODEL_ENTRY_PREMIUM_SOURCE,
+        "_note": ("These 250 sessions are MODELLED from spot P&L using measured "
+                  "per-DTE deltas; they carry no recorded option chain. The entry "
+                  "premium above is used only as the turnover base for statutory "
+                  "charges and is NOT a traded price. Rows priced from a real "
+                  "chain are reported separately in strike_comparison."),
         "variant_e_institutional": {
             "assumed_model_060_050": model_250_sessions(trades_e, use_measured=False),
             "measured_real_delta_model": model_250_sessions(trades_e, use_measured=True),

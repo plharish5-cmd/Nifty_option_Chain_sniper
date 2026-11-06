@@ -3972,7 +3972,15 @@ class QuantTerminalBackend:
             priority_matrix = []
         else:
             # Step 4C: 100-multiples ATM strike
-            atm_strike = float(round(spot / 100.0) * 100)
+            # v1.9.4c BUGFIX: this rounded to 100, but NIFTY strikes exist every
+            # 50 points. Rounding to 100 could only ever select even-hundred
+            # strikes and NEVER a 50-level one, so for spot 24,460 it bought
+            # 24500 while true ATM was 24450 -- up to 25 points off, with half
+            # the chain unreachable. A strike 50 points from ATM carries a
+            # visibly different premium, which is why entry prices looked wrong.
+            # The step comes from config; the repo already declares 50.
+            strike_step = float(self.cfg.get("recording_v193", {}).get("strike_step", 50) or 50)
+            atm_strike = float(round(spot / strike_step) * strike_step)
 
             # Resolve Priority 4 Contracts around Spot (100-multiples)
             itm_ce_strike = atm_strike - 100.0
@@ -4006,7 +4014,11 @@ class QuantTerminalBackend:
             priority_matrix = [
                 {
                     "id": "LONG_CE_ITM",
-                    "label": "1. Long ITM CE (~₹200)",
+                    # v1.9.4c: was "(~Rs200)", which read as a fixed entry price and is
+                    # what made the desk look like it always entered at 200. The
+                    # premium is the real live Dhan quote in "ltp"; the strike is
+                    # ATM-100 points. The label now states the rule, not a price.
+                    "label": "1. Long ITM CE (ATM-100)",
                     "strike": itm_ce_strike,
                     "opt_type": "CE",
                     "symbol": format_contract_symbol(expiry=nearest_expiry, strike=itm_ce_strike, opt_type="CE", raw_symbol=resolved_itm_ce["symbol"] if resolved_itm_ce else None),
@@ -4038,7 +4050,7 @@ class QuantTerminalBackend:
                 },
                 {
                     "id": "LONG_PE_ITM",
-                    "label": "3. Long ITM PE (~₹200)",
+                    "label": "3. Long ITM PE (ATM+100)",
                     "strike": itm_pe_strike,
                     "opt_type": "PE",
                     "symbol": format_contract_symbol(expiry=nearest_expiry, strike=itm_pe_strike, opt_type="PE", raw_symbol=resolved_itm_pe["symbol"] if resolved_itm_pe else None),
