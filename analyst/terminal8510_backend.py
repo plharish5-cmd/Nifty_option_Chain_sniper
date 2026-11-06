@@ -2967,6 +2967,12 @@ class QuantTerminalBackend:
                 "max_atr": 0.26,
             }
 
+    def trend_capture_service(self):
+        from analyst.trend_capture_service_8510 import TrendCaptureService
+        if not hasattr(self, '_trend_capture_service'):
+            self._trend_capture_service = TrendCaptureService(self.cfg, self.market_db, self.ledger_db, self.futures_volume_engine)
+        return self._trend_capture_service
+
     def get_five_factor_confluence(self, spot=None, price_fresh=False):
         """Advisory score from known, completed 15m bars. Never an execution authorization."""
         now = time.time()
@@ -3679,6 +3685,7 @@ class QuantTerminalBackend:
         }
         payload['dhan_oi'] = self.dhan_oi.cached_snapshot()
         payload['five_factor_confluence'] = self.get_five_factor_confluence(spot, not is_stale)
+        payload['trend_capture_live'] = await asyncio.to_thread(self.trend_capture_service().status)
         self.cached_telemetry = payload
         return payload
 
