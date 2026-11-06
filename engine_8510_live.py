@@ -897,8 +897,7 @@ async def api_dhan_logout():
 async def api_dhan_connect_test():
     """Runs a live connection test against Dhan HQ v2 API, querying /fundlimit and /marketfeed/ltp with 10s timeout."""
     res = await backend.test_dhan_connection()
-    status_code = 200 if res.get("ok") else 400
-    return JSONResponse(content=res, status_code=status_code)
+    return JSONResponse(content=res, status_code=200)
 
 
 def main():

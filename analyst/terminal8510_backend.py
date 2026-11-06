@@ -945,7 +945,7 @@ class DhanBroker:
         curr_ip = await self.get_current_ip_async()
 
         if not self.is_configured():
-            status_msg = "❌ Dhan Connection Failed: Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console | [ 🔄 Retry Connection ]"
+            status_msg = "❌ Dhan Connection Failed (DISCONNECTED ❌): Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console | [ 🔄 Retry Connection ]"
             status_obj = {
                 "ok": False,
                 "connected": False,
@@ -1057,7 +1057,7 @@ class DhanBroker:
                             "last_updated": now_time,
                         }
                     else:
-                        status_msg = "❌ Dhan Connection Failed: Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console | [ 🔄 Retry Connection ]"
+                        status_msg = "❌ Dhan Connection Failed (DISCONNECTED ❌): Invalid Access Token / Token Expired — Please regenerate Token from Dhan Console | [ 🔄 Retry Connection ]"
                         status_obj = {
                             "ok": False,
                             "connected": False,
