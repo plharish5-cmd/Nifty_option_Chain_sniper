@@ -1226,6 +1226,78 @@ class DhanBroker:
             log.error("Positions query exception: %s", e)
             return []
 
+    async def get_marketfeed_quote(self, segment_ids: Dict[str, List[int]]) -> Dict[str, Dict[str, Any]]:
+        """Queries /v2/marketfeed/quote for DEPTH (best bid / best ask).
+
+        WHY THIS WAS ADDED (v1.9.4b)
+        ----------------------------
+        The desk only ever called /marketfeed/ltp, which returns last_price and
+        no depth. Without bid/ask there is no spread, and without a spread the
+        real cost of execution cannot be measured -- paper fill prices are taken
+        from the signal price, so scripts/report_slippage.py reads a constant
+        zero no matter how many fills accumulate. The dry-run ledger needs the
+        true touch, so this endpoint is required.
+
+        RATE LIMIT DISCIPLINE
+        ---------------------
+        claude/Incident_2026-10-30_Dhan_rate_limit.md records a stall caused by
+        hammering Dhan. This is called ONLY on a signal in dry-run -- a handful
+        of calls per session, not one per candle -- and it shares the same 429
+        backoff discipline as get_marketfeed_ltp. It never raises and never
+        blocks a trade: on any failure it returns {} and the dry-run row records
+        NULL bid/ask, so a missing measurement is visible rather than invented.
+        """
+        out: Dict[str, Dict[str, Any]] = {}
+        if not self.is_configured():
+            return out
+        now = time.time()
+        if now < getattr(self, "_backoff_until", 0.0):
+            return out
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                res = await client.post(f"{self.base_url}/marketfeed/quote",
+                                        json=segment_ids, headers=self._headers())
+            if res.status_code == 429:
+                log.warning("[WARNING] Dhan quote rate limit (429) — no depth this cycle, backing off.")
+                self._backoff_until = now + getattr(self, "_backoff_delay", 3.0)
+                self._backoff_delay = min(getattr(self, "_backoff_delay", 3.0) + 2.0, 15.0)
+                return out
+            if res.status_code != 200:
+                log.debug("Marketfeed quote returned status %s", res.status_code)
+                return out
+            data = res.json().get("data", {}) or {}
+            for _seg, sec_map in data.items():
+                if not isinstance(sec_map, dict):
+                    continue
+                for sid, q in sec_map.items():
+                    if not isinstance(q, dict):
+                        continue
+                    depth = q.get("depth") or {}
+                    buys = depth.get("buy") or []
+                    sells = depth.get("sell") or []
+                    bid = ask = None
+                    if isinstance(buys, list) and buys and isinstance(buys[0], dict):
+                        bid = buys[0].get("price")
+                    if isinstance(sells, list) and sells and isinstance(sells[0], dict):
+                        ask = sells[0].get("price")
+                    # Dhan has also returned flat top-of-book keys on some builds.
+                    bid = bid if bid is not None else q.get("best_bid_price") or q.get("buy_price")
+                    ask = ask if ask is not None else q.get("best_ask_price") or q.get("sell_price")
+                    out[str(sid)] = {
+                        "bid": float(bid) if bid not in (None, "") else None,
+                        "ask": float(ask) if ask not in (None, "") else None,
+                        "last_price": (float(q["last_price"])
+                                       if q.get("last_price") not in (None, "") else None),
+                    }
+            self._backoff_delay = 3.0
+            self._backoff_until = 0.0
+        except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+            if "429" in str(exc):
+                self._backoff_until = now + getattr(self, "_backoff_delay", 3.0)
+                self._backoff_delay = min(getattr(self, "_backoff_delay", 3.0) + 2.0, 15.0)
+            log.warning("Marketfeed quote unavailable: %s", exc)
+        return out
+
     async def get_marketfeed_ltp(self, segment_ids: Dict[str, List[int]]) -> Dict[str, float]:
         """
         Queries /v2/marketfeed/ltp with 5.0-second TTL caching and 429 rate limit backoff.
@@ -2371,8 +2443,333 @@ class QuantTerminalBackend:
                         paper_execution_enabled=True, algo_only_execution=True)
         try: self.config_path.write_text(json.dumps(self.cfg, indent=2))
         except OSError: log.exception('Could not persist disarmed startup defaults')
+        if enabled:
+            self._live_disarm_reason = None
+        dry = self.dry_run_gate_state()
         return {'ok': True, 'execution_mode': self.execution_mode, 'real_money_enabled': enabled,
-                'paper_execution_enabled': True, 'algo_only_execution': True}
+                'paper_execution_enabled': True, 'algo_only_execution': True,
+                'dry_run': dry['dry_run'], 'dry_run_reason': dry['reason'],
+                'dry_run_orders_recorded': dry['recorded'],
+                'dry_run_orders_required': dry['required'],
+                'message': ('DRY-RUN ARMED: no real order will be placed. ' + dry['reason'])
+                           if (enabled and dry['dry_run']) else
+                           ('LIVE ARMED: real orders will be placed via Dhan.'
+                            if enabled else 'Live disarmed. Paper only.')}
+
+    # ── v1.9.4b LIVE EXECUTION GUARDS ────────────────────────────────────────
+    #
+    # These only ever DOWNGRADE execution (LIVE -> DRY_RUN -> PAPER_ONLY).
+    # Nothing here can arm real money; that remains configure_real_money's job,
+    # which itself requires live_validation_status == 'APPROVED'.
+
+    def _safety_cfg(self) -> Dict[str, Any]:
+        return self.cfg.get('execution_safety_v194', {}) or {}
+
+    def dry_run_gate_state(self) -> Dict[str, Any]:
+        """Dry-run is the mandatory first state after arming.
+
+        The exit condition is EVIDENCE, not elapsed days: a day count measures
+        nothing about execution cost. It is a number of recorded dry-run orders,
+        because each row carries a real bid/ask spread and those rows are the
+        only way to measure slippage at all -- paper fills are taken from the
+        signal price, so scripts/report_slippage.py can never measure it while
+        the desk is PAPER_ONLY.
+        """
+        cfg = self._safety_cfg()
+        required = int(cfg.get('dry_run_exit_min_orders', 30) or 0)
+        recorded = self.count_dry_run_orders()
+        forced = bool(cfg.get('live_dry_run', True))
+        if forced:
+            return {'dry_run': True, 'recorded': recorded, 'required': required,
+                    'reason': 'live_dry_run is enabled in config.'}
+        if recorded < required:
+            return {'dry_run': True, 'recorded': recorded, 'required': required,
+                    'reason': ('Only {} of {} dry-run orders recorded; real execution '
+                               'cost is still unmeasured.'.format(recorded, required))}
+        return {'dry_run': False, 'recorded': recorded, 'required': required,
+                'reason': 'Dry-run evidence threshold met.'}
+
+    def _ledger_scalar(self, sql: str, args: tuple = (), default=0):
+        """Read one number from the ledger, or the default.
+
+        Every caller is a guard or a measurement, so this must NEVER raise: a
+        backend with no ledger (unit fixtures), a missing table (fresh ledger),
+        or a locked file must all degrade to the default. The default is always
+        the SAFE direction -- zero evidence keeps the desk in dry-run, and zero
+        P&L never satisfies a loss limit by accident.
+        """
+        db = getattr(self, "ledger_db", None)
+        if not db:
+            return default
+        try:
+            with sqlite3.connect(db) as conn:
+                row = conn.execute(sql, args).fetchone()
+            return row[0] if row and row[0] is not None else default
+        except (sqlite3.Error, OSError, TypeError, ValueError):
+            return default
+
+    def count_dry_run_orders(self) -> int:
+        # Absent evidence counts as zero evidence, which keeps the desk in
+        # dry-run. Never fail open.
+        return int(self._ledger_scalar("SELECT COUNT(*) FROM dry_run_orders", (), 0) or 0)
+
+    def live_trades_today(self) -> int:
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        return int(self._ledger_scalar(
+            "SELECT COUNT(*) FROM orders WHERE mode IN ('LIVE','BOTH') "
+            "AND side='BUY' AND substr(created_at,1,10)=?", (today,), 0) or 0)
+
+    def live_pnl_today(self) -> float:
+        """Realised live P&L for today. Unknown is 0.0, never a guess."""
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        return round(float(self._ledger_scalar(
+            "SELECT COALESCE(SUM(net_pnl),0.0) FROM positions "
+            "WHERE status LIKE 'CLOSED%' AND mode IN ('LIVE','BOTH') "
+            "AND substr(COALESCE(exit_time,''),1,10)=?", (today,), 0.0) or 0.0), 2)
+
+    def live_entry_window(self) -> Dict[str, Any]:
+        """New LIVE entries close BEFORE the 15:20 square-off.
+
+        Allowing entries until 15:30 opens a window in which an order is placed
+        and immediately squared off, paying charges both ways for nothing. The
+        window therefore ends at 15:05 by default, leaving a minimum hold.
+        Paper and dry-run are unaffected; this gates real orders only.
+        """
+        cfg = self._safety_cfg()
+        start = str(cfg.get('live_entry_window_start', '09:20'))
+        end = str(cfg.get('live_entry_window_end', '15:05'))
+        now = datetime.now(IST).strftime('%H:%M')
+        return {'start': start, 'end': end, 'now': now, 'open': start <= now <= end}
+
+    def _dhan_credentials_live_ok(self) -> Dict[str, Any]:
+        """A real order must never ride on a disconnected or expired session."""
+        try:
+            if not self.broker.is_configured():
+                return {'ok': False, 'reason': 'Dhan Disconnected — Live Disabled'}
+            status = self.broker.get_status() or {}
+        except Exception as exc:                      # broker shape varies by build
+            log.warning('Dhan status check failed during live guard: %s', exc)
+            return {'ok': False, 'reason': 'Dhan status unavailable — Live Disabled'}
+        if status.get('token_expired') is True or status.get('connected') is False:
+            return {'ok': False, 'reason': 'Dhan Token Expired — Live Disabled'}
+        valid_till = status.get('token_valid_till') or status.get('valid_till')
+        if valid_till:
+            try:
+                exp = datetime.fromisoformat(str(valid_till).replace('Z', '+00:00'))
+                if exp.tzinfo is None:
+                    exp = exp.replace(tzinfo=IST)
+                if exp <= datetime.now(IST):
+                    return {'ok': False, 'reason': 'Dhan Token Expired — Live Disabled'}
+            except (TypeError, ValueError):
+                # Unparseable expiry is not evidence of validity.
+                return {'ok': False, 'reason': 'Dhan token expiry unreadable — Live Disabled'}
+        return {'ok': True, 'reason': ''}
+
+    def live_execution_decision(self) -> Dict[str, Any]:
+        """Resolve to exactly one of PAPER_ONLY / DRY_RUN / LIVE.
+
+        Called on every order. Returns the reason so the UI and the ledger can
+        both state why a real order was not placed, instead of silently not
+        placing one.
+        """
+        if self.execution_mode != 'BOTH':
+            return {'route': 'PAPER_ONLY', 'reason': 'Live not armed', 'disarm': False}
+
+        gate = self.dry_run_gate_state()
+        if gate['dry_run']:
+            return {'route': 'DRY_RUN', 'reason': gate['reason'], 'disarm': False}
+
+        cred = self._dhan_credentials_live_ok()
+        if not cred['ok']:
+            return {'route': 'PAPER_ONLY', 'reason': cred['reason'], 'disarm': True}
+
+        win = self.live_entry_window()
+        if not win['open']:
+            return {'route': 'PAPER_ONLY',
+                    'reason': 'Outside Live Window ({}-{} IST; now {})'.format(
+                        win['start'], win['end'], win['now']),
+                    'disarm': False}
+
+        cfg = self._safety_cfg()
+        max_trades = int(cfg.get('max_live_trades_per_day', 3) or 0)
+        if max_trades and self.live_trades_today() >= max_trades:
+            return {'route': 'PAPER_ONLY', 'reason': 'Daily Live Limit Reached', 'disarm': True}
+
+        max_loss = abs(float(cfg.get('max_live_loss_rupees_per_day', 5000.0) or 0.0))
+        if max_loss and self.live_pnl_today() <= -max_loss:
+            return {'route': 'PAPER_ONLY',
+                    'reason': 'Daily Live Loss Limit Hit — Live OFF', 'disarm': True}
+
+        return {'route': 'LIVE', 'reason': 'Live armed and within all guards', 'disarm': False}
+
+    def _apply_live_disarm(self, reason: str) -> None:
+        """Auto-disarm. Never squares off a position by itself."""
+        self._real_money_enabled = False
+        self._live_disarm_reason = reason
+        log.warning('LIVE AUTO-DISARMED: %s', reason)
+
+    def _record_dry_run_order(self, contract, side, qty, signal_ltp, strategy_name,
+                              order_id, quote=None) -> Dict[str, Any]:
+        """Record what a real order WOULD have been, with the real spread.
+
+        This is the measurement instrument. report_slippage.py reads these rows,
+        which is the only route to a measured execution cost while no real order
+        is ever sent.
+        """
+        q = quote or {}
+        bid = q.get('bid')
+        ask = q.get('ask')
+        try:
+            buffer_pts = float(getattr(self, 'chasing_cfg', {}).get(
+                'aggressive_limit_buffer_pts', 4.0))
+        except (AttributeError, TypeError, ValueError):
+            buffer_pts = 4.0
+        try:
+            ltp = float(signal_ltp)
+        except (TypeError, ValueError):
+            ltp = None
+        intended = None
+        if ltp is not None:
+            intended = round(ltp + buffer_pts, 2) if str(side).upper() == 'BUY' \
+                else round(ltp - buffer_pts, 2)
+        spread = None
+        try:
+            if bid is not None and ask is not None:
+                spread = round(float(ask) - float(bid), 2)
+        except (TypeError, ValueError):
+            spread = None
+        row = {
+            'ts': datetime.now(IST).isoformat(),
+            'strategy': strategy_name,
+            'symbol': contract.get('symbol'),
+            'security_id': str(contract.get('security_id') or ''),
+            'side': str(side).upper(),
+            'qty': int(qty or 0),
+            'signal_ltp': ltp,
+            'bid': bid,
+            'ask': ask,
+            'spread_pts': spread,
+            'intended_limit_price': intended,
+            'would_have_chased': 1,
+            'mode': 'DRY_RUN',
+            'order_id': str(order_id),
+        }
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO dry_run_orders (order_id, ts, strategy, symbol, "
+                    "security_id, side, qty, signal_ltp, bid, ask, spread_pts, "
+                    "intended_limit_price, would_have_chased, mode) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (row['order_id'], row['ts'], row['strategy'], row['symbol'],
+                     row['security_id'], row['side'], row['qty'], row['signal_ltp'],
+                     row['bid'], row['ask'], row['spread_pts'],
+                     row['intended_limit_price'], row['would_have_chased'], row['mode']))
+                conn.commit()
+        except sqlite3.Error:
+            # A measurement failure must never stop a trade.
+            log.exception('Could not record dry-run order %s', order_id)
+        return row
+
+    async def stop_live_trading(self, square_off: Optional[bool] = None) -> Dict[str, Any]:
+        """The 'STOP LIVE — Switch to PAPER ONLY' button.
+
+        This is NOT trigger_emergency_kill_switch, which halts every scanner and
+        squares everything off. That behaviour is correct for an emergency and is
+        left untouched. This narrower action stops REAL orders and returns the
+        desk to paper:
+
+          1. Disarm live immediately; block all new live orders.
+          2. Cancel pending/unfilled live orders UNCONDITIONALLY -- pure risk
+             reduction, so it needs no confirmation.
+          3. Do NOT auto-square-off open positions. Ask instead.
+
+        The 15:20 EOD square-off stays unconditional and independent of this, so
+        an unanswered prompt can never leave a live position open overnight --
+        the desk often runs unattended.
+        """
+        self._apply_live_disarm('Kill Switch pressed — Live OFF — New orders blocked')
+        stamp = datetime.now(IST).strftime('%H:%M:%S')
+        cancelled = 0
+        cancel_errors = []
+        try:
+            if self.broker.is_configured():
+                orders = await self.broker.get_orders()
+                for o in orders or []:
+                    st = str(o.get('orderStatus', ''))
+                    if st in ('PENDING', 'TRANSIT', 'TRIGGER_PENDING'):
+                        try:
+                            await self.broker.cancel_order(str(o.get('orderId')))
+                            cancelled += 1
+                        except Exception as exc:
+                            cancel_errors.append('{}: {}'.format(o.get('orderId'), exc))
+        except Exception as exc:
+            cancel_errors.append(str(exc))
+            log.error('STOP LIVE: pending-order cancellation error: %s', exc)
+
+        open_live = 0
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM positions WHERE status='OPEN' "
+                    "AND mode IN ('LIVE','BOTH')").fetchone()
+                open_live = int(row[0]) if row else 0
+        except sqlite3.Error:
+            log.exception('STOP LIVE: could not count open live positions')
+
+        log.warning('Kill Switch pressed at %s — Live OFF — New orders blocked '
+                    '(%d pending cancelled, %d open live positions left open)',
+                    stamp, cancelled, open_live)
+
+        if square_off is True and open_live:
+            res = await self.trigger_emergency_kill_switch()
+            return {'ok': True, 'live_armed': False, 'cancelled_orders': cancelled,
+                    'squared_off': True, 'detail': res,
+                    'cancel_errors': cancel_errors,
+                    'message': 'Live OFF. {} pending cancelled. Open live positions '
+                               'squared off on request.'.format(cancelled)}
+
+        return {
+            'ok': True, 'live_armed': False, 'execution_mode': self.execution_mode,
+            'cancelled_orders': cancelled, 'cancel_errors': cancel_errors,
+            'open_live_positions': open_live, 'squared_off': False,
+            'needs_square_off_decision': bool(open_live) and square_off is None,
+            'prompt': ('Square off open LIVE positions?' if open_live and square_off is None else ''),
+            'message': 'Kill Switch pressed at {} — Live OFF — New orders blocked'.format(stamp),
+        }
+
+    def get_live_status(self) -> Dict[str, Any]:
+        """Everything the header needs, with the reason always stated."""
+        cfg = self._safety_cfg()
+        decision = self.live_execution_decision()
+        gate = self.dry_run_gate_state()
+        win = self.live_entry_window()
+        armed = self.execution_mode == 'BOTH'
+        return {
+            'ok': True,
+            'paper_execution_enabled': True,          # permanent, by property
+            'algo_only_execution': True,              # permanent, by property
+            'live_armed': armed,
+            'route': decision['route'],
+            'route_reason': decision['reason'],
+            'dry_run': gate['dry_run'],
+            'dry_run_orders_recorded': gate['recorded'],
+            'dry_run_orders_required': gate['required'],
+            'live_validation_status': cfg.get('live_validation_status', 'NO_GO'),
+            'typed_confirmation_required': cfg.get('typed_confirmation', 'LIVE'),
+            'entry_window': win,
+            'live_trades_today': self.live_trades_today(),
+            'max_live_trades_per_day': cfg.get('max_live_trades_per_day', 3),
+            'live_pnl_today': self.live_pnl_today(),
+            'max_live_loss_rupees_per_day': cfg.get('max_live_loss_rupees_per_day', 5000.0),
+            'disarm_reason': getattr(self, '_live_disarm_reason', None),
+            'header': ('🔴 LIVE TRADING ON — REAL MONEY — Real Orders Will Be Placed via Dhan'
+                       if (armed and decision['route'] == 'LIVE') else
+                       '🟡 DRY-RUN ARMED — No Real Orders Will Be Placed'
+                       if (armed and decision['route'] == 'DRY_RUN') else
+                       '🟢 PAPER ONLY — No Real Orders Will Be Placed'),
+            'paper_header': '📝 PAPER: ON (Always)',
+        }
 
     def __init__(self, config_file: str = "analyst/terminal8510_config.json") -> None:
         self.config_path = ROOT / config_file
@@ -2418,6 +2815,10 @@ class QuantTerminalBackend:
         # execute; discretionary clicks are rejected rather than filled.
         self.algo_only_execution = bool(self.cfg.get("algo_only_execution", True))
         self.kill_switch_active = False
+        # v1.9.4b: why live was auto-disarmed, surfaced in the header. None =
+        # not disarmed this session. Real money starts OFF regardless, because
+        # configure_real_money persists real_money_enabled=False on every call.
+        self._live_disarm_reason: Optional[str] = None
 
         # Chasing parameters
         self.chasing_cfg = self.cfg.get("chasing", {
@@ -2587,6 +2988,41 @@ class QuantTerminalBackend:
                     order_status TEXT,
                     mode TEXT,
                     rejection_reason TEXT
+                );
+                """)
+                # v1.9.4b: the live broker order id lives on the EXISTING orders
+                # row, keyed by mode. It is deliberately NOT a separate
+                # live_orders table: parallel records are exactly how the orders
+                # book and the position came to disagree about the same fill,
+                # which analyst/test_paper_fill_consistency_8510.py exists to
+                # prevent. One row per order, one source of truth.
+                try:
+                    cols = {r[1] for r in cur.execute("PRAGMA table_info(orders)")}
+                    if "dhan_order_id" not in cols:
+                        cur.execute("ALTER TABLE orders ADD COLUMN dhan_order_id TEXT")
+                except sqlite3.Error:
+                    log.exception("Could not add orders.dhan_order_id")
+                # v1.9.4b: dry-run rows are genuinely new data, not a duplicate
+                # of anything -- they record the real bid/ask at signal time for
+                # an order that was never sent. This is the only route to a
+                # MEASURED execution cost: paper fill prices are taken from the
+                # signal price, so slippage is unmeasurable while PAPER_ONLY.
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS dry_run_orders (
+                    order_id TEXT PRIMARY KEY,
+                    ts TEXT,
+                    strategy TEXT,
+                    symbol TEXT,
+                    security_id TEXT,
+                    side TEXT,
+                    qty INTEGER,
+                    signal_ltp REAL,
+                    bid REAL,
+                    ask REAL,
+                    spread_pts REAL,
+                    intended_limit_price REAL,
+                    would_have_chased INTEGER,
+                    mode TEXT
                 );
                 """)
                 cur.execute("""
@@ -4790,6 +5226,18 @@ class QuantTerminalBackend:
             if self.kill_switch_active:
                 return {"ok": False, "error": "KILL SWITCH ACTIVE: All execution locked in STANDBY"}
 
+            # ── v1.9.4b LIVE ROUTING GATE ────────────────────────────────────
+            # Resolves to PAPER_ONLY / DRY_RUN / LIVE. This can only ever
+            # DOWNGRADE: `mode` is reassigned to PAPER_ONLY, never to BOTH or
+            # ALGO_LIVE_ONLY, so no guard failure and no config value here can
+            # cause a real order. Arming remains configure_real_money's job and
+            # still requires live_validation_status == 'APPROVED'.
+            live_route = self.live_execution_decision()
+            if live_route.get("disarm"):
+                self._apply_live_disarm(live_route["reason"])
+            if live_route["route"] != "LIVE":
+                mode = "PAPER_ONLY"
+
             # Directional Bias Enforcement Gate (Live Execution & Strike Matrix Orders)
             opt_type = str(contract.get("opt_type", "")).upper()
             cid = str(contract.get("id", "")).upper()
@@ -4971,11 +5419,34 @@ class QuantTerminalBackend:
             corr_id = f"chase_{int(time.time())}"
             now_str = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
+            # v1.9.4b: in DRY_RUN, record what the real order WOULD have been,
+            # with the actual bid/ask at signal time. No order is sent. These
+            # rows are the measurement instrument for execution cost.
+            dry_run_row = None
+            if live_route["route"] == "DRY_RUN":
+                quote = {}
+                try:
+                    sec_id = int(str(contract.get("security_id") or "0"))
+                    if sec_id:
+                        depth = await self.broker.get_marketfeed_quote({"NSE_FNO": [sec_id]})
+                        quote = depth.get(str(sec_id)) or {}
+                except (ValueError, TypeError, AttributeError) as exc:
+                    # A missing quote must not stop the paper leg; the row is
+                    # written with NULL bid/ask so the gap is visible, not faked.
+                    log.warning("Dry-run quote unavailable for %s: %s", symbol, exc)
+                dry_run_row = self._record_dry_run_order(
+                    contract, side, qty, signal_ltp, strategy_name, order_id, quote)
+                log.info("DRY-RUN — Would have placed LIVE order: %s %s %s @ limit %s "
+                         "(bid %s / ask %s)", symbol, side, qty,
+                         dry_run_row.get("intended_limit_price"),
+                         dry_run_row.get("bid"), dry_run_row.get("ask"))
+
             chase_retries_used = 0
             fill_price = signal_ltp
             order_status = "FILLED"
             rejection_reason = ""
             companion_sl_order_id = None
+            live_order_id = None          # v1.9.4b: broker id, live legs only
 
             # ── 1. LIVE DHAN API EXECUTION (if ALGO_LIVE_ONLY or BOTH) ───────
             if mode in ("ALGO_LIVE_ONLY", "BOTH"):
@@ -5167,12 +5638,15 @@ class QuantTerminalBackend:
                     order_id, correlation_id, created_at, strategy_name, symbol, security_id,
                     side, product, order_type, lots, qty, signal_ltp, limit_price, fill_price,
                     slippage, chase_retries, brokerage_taxes, order_status, mode, rejection_reason,
-                    placed_by, source, strategy_setup
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'INTRADAY', 'AGGR-LIMIT', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    placed_by, source, strategy_setup, dhan_order_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'INTRADAY', 'AGGR-LIMIT', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (order_id, corr_id, now_str, strategy_name, symbol, sec_id, side, qty,
                       signal_ltp, limit_sent, fill_price, slippage_pts, chase_retries_used,
                       dhan_charges, order_status, mode, rejection_reason,
-                      placed_source, placed_source, strategy_setup))
+                      placed_source, placed_source, strategy_setup,
+                      # Populated for live legs only; NULL for paper and dry-run,
+                      # so the broker id is never implied where none exists.
+                      (live_order_id if live_route["route"] == "LIVE" else None)))
                 conn.commit()
 
             res_dict = {
@@ -5189,7 +5663,23 @@ class QuantTerminalBackend:
                 "chase_retries": chase_retries_used,
                 "companion_sl_order_id": companion_sl_order_id,
                 "rejection_reason": rejection_reason,
+                # v1.9.4b: state the route and WHY, so a skipped real order is
+                # always explained rather than silently absent.
+                "live_route": live_route["route"],
+                "live_route_reason": live_route["reason"],
+                "dry_run_recorded": bool(dry_run_row),
             }
+            if live_route["route"] == "PAPER_ONLY" and self.execution_mode != "BOTH":
+                res_dict["live_note"] = ("Live OFF — Signal generated, Paper trade taken, "
+                                         "Real order SKIPPED (Live OFF)")
+            elif live_route["route"] == "DRY_RUN" and dry_run_row:
+                res_dict["live_note"] = (
+                    "DRY-RUN — Would have placed LIVE order: {} {} {} @ limit {} "
+                    "(bid {} / ask {})".format(
+                        symbol, side, qty, dry_run_row.get("intended_limit_price"),
+                        dry_run_row.get("bid"), dry_run_row.get("ask")))
+            elif live_route["route"] == "PAPER_ONLY":
+                res_dict["live_note"] = "Real order SKIPPED — {}".format(live_route["reason"])
             if not is_open:
                 res_dict["warning"] = "⚠️ Testing Mode — Market is Closed"
             return res_dict
