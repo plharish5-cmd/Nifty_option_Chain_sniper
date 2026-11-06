@@ -6,7 +6,7 @@
   "dhan": {
     "client_id": "1112377935",
     "environment": "LIVE",
-    "whitelisted_ip": "127.0.0.1",
+    "whitelisted_ip": "49.205.39.195",
     "DHAN_CLIENT_ID": "1112377935"
   },
   "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
