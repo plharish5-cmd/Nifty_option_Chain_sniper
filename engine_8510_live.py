@@ -161,6 +161,7 @@ async def api_health():
         "execution_mode": backend.execution_mode,
         "paper_enabled": backend.paper_execution_enabled,
         "directional_bias": backend.directional_bias,
+        "algo_only_execution": backend.algo_only_execution,
         "kill_switch_active": backend.kill_switch_active,
         "market": m_status,
         "allow_off_hours_paper_testing": backend.allow_off_hours_paper_testing,
@@ -229,6 +230,24 @@ async def api_paper_funds_update(req: Request):
     return JSONResponse(content=res)
 
 
+@app.post("/api/funds/paper/reset_ledger")
+async def api_paper_reset_ledger(req: Request):
+    """Start P&L tracking fresh. Explicit action only — never fires on deploy.
+
+    Open positions are preserved and their margin recomputed, so this is safe to
+    run mid-session: only the realised-P&L history is cleared.
+    """
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    res = backend.reset_paper_ledger(
+        clear_orders=bool(body.get("clear_orders", False)),
+        clear_closed_positions=bool(body.get("clear_closed_positions", False)),
+    )
+    return JSONResponse(content=res)
+
+
 @app.post("/api/mode")
 async def api_set_mode(req: Request):
     body = await req.json()
@@ -244,11 +263,23 @@ async def api_set_mode(req: Request):
         bias_val = str(body.get("directional_bias") or body.get("bias", "")).upper()
         if bias_val in ("LONG_ONLY", "SHORT_ONLY", "BOTH"):
             backend.set_directional_bias(bias_val)
+    if "algo_only" in body or "algo_only_execution" in body:
+        val = body.get("algo_only", body.get("algo_only_execution"))
+        backend.algo_only_execution = bool(val)
+        backend.cfg["algo_only_execution"] = backend.algo_only_execution
+        try:
+            backend.config_path.write_text(json.dumps(backend.cfg, indent=2))
+        except OSError as exc:
+            log.error("Could not persist algo_only_execution: %s", exc)
+        log.warning("Algo-Only execution set to %s (manual orders %s)",
+                    backend.algo_only_execution,
+                    "BLOCKED" if backend.algo_only_execution else "allowed")
     return JSONResponse(content={
         "ok": True,
         "execution_mode": backend.execution_mode,
         "paper_execution_enabled": backend.paper_execution_enabled,
         "directional_bias": backend.directional_bias,
+        "algo_only_execution": backend.algo_only_execution,
     })
 
 

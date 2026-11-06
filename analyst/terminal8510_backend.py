@@ -2307,6 +2307,9 @@ class QuantTerminalBackend:
         # State Variables
         self.execution_mode = self.cfg.get("execution_mode", "PAPER_ONLY")
         self.paper_execution_enabled = bool(self.cfg.get("paper_execution_enabled", True))
+        # 8510 is an algo desk. With this on, only signals flagged is_algo_trade
+        # execute; discretionary clicks are rejected rather than filled.
+        self.algo_only_execution = bool(self.cfg.get("algo_only_execution", True))
         self.kill_switch_active = False
 
         # Chasing parameters
@@ -2523,6 +2526,11 @@ class QuantTerminalBackend:
                     ("placed_by", "TEXT DEFAULT 'AUTO ALGO 🤖'"),
                     ("source", "TEXT DEFAULT 'AUTO ALGO 🤖'"),
                     ("strategy_setup", "TEXT DEFAULT 'Manual — No Strategy'"),
+                    # Exit-leg columns. Before these, only the BUY leg was ever
+                    # written, so every square-off was invisible in the book.
+                    ("position_id", "TEXT DEFAULT ''"),
+                    ("exit_reason", "TEXT DEFAULT ''"),
+                    ("net_pnl", "REAL DEFAULT 0.0"),
                 ]
                 for col_name, col_type in order_cols:
                     try:
@@ -3102,6 +3110,7 @@ class QuantTerminalBackend:
             "clock": now_dt.strftime("%H:%M:%S IST"),
             "market_status": mkt_dict,
             "allow_off_hours_paper_testing": self.allow_off_hours_paper_testing,
+            "algo_only_execution": self.algo_only_execution,
             "matrix_reason": matrix_reason,
             "spot": {
                 "price": spot,
@@ -3723,6 +3732,50 @@ class QuantTerminalBackend:
             conn.commit()
         return self.get_paper_wallet()
 
+    def reset_paper_ledger(self, clear_orders: bool = False,
+                           clear_closed_positions: bool = False) -> Dict[str, Any]:
+        """Start P&L tracking fresh, WITHOUT orphaning open positions.
+
+        update_paper_wallet(reset=True) zeroes margin_used unconditionally. With
+        positions still open that silently frees margin the desk is actually
+        using, and the wallet then disagrees with the position book. This instead
+        RECOMPUTES margin_used from the positions that are genuinely still OPEN.
+
+        Open positions are never deleted here: their margin is preserved and
+        their P&L will settle into the balance when they close as normal.
+        """
+        start_cap = float(self.cfg.get("starting_paper_capital", 100000.0))
+        out: Dict[str, Any] = {"cleared_orders": 0, "cleared_closed_positions": 0}
+        with sqlite3.connect(self.ledger_db) as conn:
+            cur = conn.cursor()
+            row = cur.execute(
+                "SELECT COUNT(*), COALESCE(SUM(entry_price * qty), 0.0) "
+                "FROM positions WHERE status='OPEN'").fetchone()
+            n_open, open_margin = int(row[0] or 0), float(row[1] or 0.0)
+
+            if clear_orders:
+                out["cleared_orders"] = int(cur.execute(
+                    "SELECT COUNT(*) FROM orders").fetchone()[0] or 0)
+                cur.execute("DELETE FROM orders")
+            if clear_closed_positions:
+                out["cleared_closed_positions"] = int(cur.execute(
+                    "SELECT COUNT(*) FROM positions WHERE status='CLOSED'").fetchone()[0] or 0)
+                cur.execute("DELETE FROM positions WHERE status='CLOSED'")
+
+            cur.execute("UPDATE paper_wallet SET balance=?, margin_used=?, "
+                        "realized_pnl=0.0, updated_at=? WHERE id=1",
+                        (start_cap, open_margin, datetime.now(IST).isoformat()))
+            conn.commit()
+
+        log.warning("Paper ledger reset: capital Rs%.2f, realised P&L zeroed, "
+                    "margin_used recomputed to Rs%.2f from %d open position(s); "
+                    "orders cleared=%d, closed positions cleared=%d",
+                    start_cap, open_margin, n_open,
+                    out["cleared_orders"], out["cleared_closed_positions"])
+        out.update({"ok": True, "open_positions_preserved": n_open,
+                    "wallet": self.get_paper_wallet()})
+        return out
+
     # ── POSITIONS & ORDERS RETRIEVAL ─────────────────────────────────────────
     def get_active_positions(self, live_quotes: Optional[Dict[str, float]] = None) -> List[Dict[str, Any]]:
         positions = []
@@ -3870,10 +3923,16 @@ class QuantTerminalBackend:
                     """, (exit_price, exit_time, gross, net, exit_reason, ltp, highest_ltp, current_trailing_sl,
                           target_status, trailing_target_level, highest_after_target, pullback_exit_level, p["position_id"]))
 
-                    # Release paper margin
+                    # Release paper margin and settle the realised P&L into the
+                    # balance. balance was previously written once at init and
+                    # never again, so the virtual wallet never moved no matter
+                    # how much the desk made or lost.
                     req_margin = entry * qty
-                    cur.execute("UPDATE paper_wallet SET margin_used = max(0.0, margin_used - ?), realized_pnl = realized_pnl + ? WHERE id=1",
-                                (req_margin, net))
+                    cur.execute("UPDATE paper_wallet SET balance = balance + ?, "
+                                "margin_used = max(0.0, margin_used - ?), "
+                                "realized_pnl = realized_pnl + ?, updated_at = ? WHERE id=1",
+                                (net, req_margin, net, datetime.now(IST).isoformat()))
+                    self._record_exit_order(cur, p, exit_price, qty, exit_reason, net, chg)
                     log.info("Position %s exited via %s @ ₹%.2f (Net PnL: ₹%.2f)", p["position_id"], exit_reason, exit_price, net)
 
                     # OCO cancellation of companion leg if live order
@@ -3900,6 +3959,65 @@ class QuantTerminalBackend:
                     positions.append(p)
             conn.commit()
         return positions
+
+    # ── EXIT LEG LEDGER ──────────────────────────────────────────────────────
+    def _record_exit_order(self, cur, pos: Any, exit_price: float, qty: int,
+                           exit_reason: str, net_pnl: float, charges: float) -> str:
+        """Write the SELL leg of a closed position into the orders book.
+
+        WHY THIS EXISTS
+        ---------------
+        execute_order_with_chaser only ever recorded the BUY leg. Positions were
+        closed by UPDATEing the positions row, so the Institutional Orders Book
+        showed entries and never the square-off that followed — every order read
+        as BUY no matter how many positions had been closed.
+
+        Takes the caller's open cursor so the exit row and the position UPDATE
+        commit together: a close must never be recorded without its order, or
+        the book would disagree with the ledger.
+
+        Accepts a sqlite3.Row or a dict (Row has no .get()).
+        """
+        def fld(key, default=None):
+            try:
+                val = pos[key]
+            except (KeyError, IndexError, TypeError):
+                return default
+            return default if val is None else val
+
+        pos_id = str(fld("position_id", ""))
+        order_id = "X_{}".format(pos_id) if pos_id else "X_{}".format(int(time.time() * 1000))
+        symbol = str(fld("symbol", ""))
+        entry = float(fld("entry_price", 0.0) or 0.0)
+        gross = round((float(exit_price) - entry) * int(qty), 2)
+        try:
+            cur.execute("""
+            INSERT OR REPLACE INTO orders (
+                order_id, correlation_id, created_at, strategy_name, symbol, security_id,
+                side, product, order_type, lots, qty, signal_ltp, limit_price, fill_price,
+                slippage, chase_retries, brokerage_taxes, order_status, mode, rejection_reason,
+                placed_by, source, strategy_setup, position_id, exit_reason, net_pnl
+            ) VALUES (?, ?, ?, ?, ?, ?, 'SELL', 'INTRADAY', 'AGGR-LIMIT', 1, ?, ?, ?, ?,
+                      0.0, 0, ?, 'FILLED', ?, '', ?, ?, ?, ?, ?, ?)
+            """, (
+                order_id, pos_id,
+                datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
+                str(fld("strategy_name", "") or fld("strategy_setup", "")),
+                symbol, str(fld("security_id", "")),
+                int(qty), float(exit_price), float(exit_price), float(exit_price),
+                float(charges), str(fld("mode", "PAPER_ONLY")),
+                str(fld("placed_by", "AUTO ALGO 🤖")),
+                str(fld("source", "AUTO ALGO 🤖")),
+                str(fld("strategy_setup", "Manual — No Strategy")),
+                pos_id, str(exit_reason), float(net_pnl),
+            ))
+        except sqlite3.Error as exc:
+            # A failed book entry must not abort the square-off itself.
+            log.error("Could not record exit order for %s: %s", pos_id, exc)
+            return ""
+        log.info("Exit leg recorded: %s SELL %s @ %.2f (%s, net Rs%.2f, gross Rs%.2f)",
+                 order_id, symbol, float(exit_price), exit_reason, float(net_pnl), gross)
+        return order_id
 
     def get_order_book(self) -> List[Dict[str, Any]]:
         with sqlite3.connect(self.ledger_db) as conn:
@@ -3970,6 +4088,29 @@ class QuantTerminalBackend:
                     "status": "REJECTED",
                     "error": err_msg,
                     "rejection_reason": "Directional Bias: SHORT_ONLY active (all CE / Long orders blocked)"
+                }
+
+            # ── ALGO-ONLY GATE ───────────────────────────────────────────────
+            # Enforced here rather than in the HTTP route so that EVERY caller
+            # is covered — route, scanner, strike matrix, Tab 6 — and no path
+            # can place a discretionary order behind the gate's back.
+            #
+            # Deliberately placed AFTER the directional-bias checks: both gates
+            # block the order either way, and the bias reason is the more
+            # specific one to report when both apply.
+            if self.algo_only_execution and not is_algo_trade:
+                err_msg = ("[MANUAL TRADE BLOCKED] 8510 is running ALGO-ONLY. "
+                           "Only algo-generated signals execute; this order was "
+                           "placed manually. Turn Algo-Only off to allow manual "
+                           "orders.")
+                log.warning("%s (%s / %s)", err_msg, strategy_name,
+                            contract.get("symbol", contract.get("id", "?")))
+                return {
+                    "ok": False,
+                    "status": "REJECTED",
+                    "error": err_msg,
+                    "rejection_reason": "Algo-Only mode: manual orders are blocked",
+                    "algo_only_blocked": True,
                 }
 
             # Step 4A Fail-Closed Guard: Resolve spot from cache (Tier 1), Dhan quote, or last closed 1m candle (Tier 2)
@@ -4367,8 +4508,12 @@ class QuantTerminalBackend:
                 """, (exit_price, exit_time, gross, net, position_id))
 
                 req_margin = entry * qty
-                cur.execute("UPDATE paper_wallet SET margin_used = max(0.0, margin_used - ?), realized_pnl = realized_pnl + ? WHERE id=1",
-                            (req_margin, net))
+                cur.execute("UPDATE paper_wallet SET balance = balance + ?, "
+                            "margin_used = max(0.0, margin_used - ?), "
+                            "realized_pnl = realized_pnl + ?, updated_at = ? WHERE id=1",
+                            (net, req_margin, net, datetime.now(IST).isoformat()))
+                self._record_exit_order(cur, pos, exit_price, qty,
+                                        "MANUAL_TRAILING_EXIT", net, charges)
                 msg = f"Position exited at Trailing Target ₹{exit_price:.2f} (Net P&L: ₹{net:+.2f})"
 
             elif action == "WIDEN_TARGET":
@@ -4392,10 +4537,14 @@ class QuantTerminalBackend:
                 WHERE position_id=?
                 """, (exit_price, exit_time, gross, net, position_id))
 
-                # Update paper wallet margin and realized pnl
+                # Update paper wallet margin, balance and realized pnl
                 req_margin = entry * qty
-                cur.execute("UPDATE paper_wallet SET margin_used = max(0.0, margin_used - ?), realized_pnl = realized_pnl + ? WHERE id=1",
-                            (req_margin, net))
+                cur.execute("UPDATE paper_wallet SET balance = balance + ?, "
+                            "margin_used = max(0.0, margin_used - ?), "
+                            "realized_pnl = realized_pnl + ?, updated_at = ? WHERE id=1",
+                            (net, req_margin, net, datetime.now(IST).isoformat()))
+                self._record_exit_order(cur, pos, exit_price, qty,
+                                        "MANUAL_CLOSE", net, charges)
                 msg = f"Position closed @ ₹{exit_price:.2f} (Net P&L: ₹{net:+.2f})"
 
             else:

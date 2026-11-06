@@ -18,6 +18,7 @@
   "default_lot_size": 65,
   "execution_mode": "PAPER_ONLY",
   "paper_execution_enabled": true,
+  "algo_only_execution": true,
   "directional_bias": "BOTH",
   "starting_paper_capital": 100000.0,
   "STOCKMOJO_JWT_TOKEN": "new_jwt_captured",

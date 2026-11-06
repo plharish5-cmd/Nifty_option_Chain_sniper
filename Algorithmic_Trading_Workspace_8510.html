@@ -599,6 +599,12 @@
                     <span>Paper Live Exec: <b id="paperExecBadge" style="color:var(--emerald);">ON</b></span>
                 </label>
 
+                <label title="8510 is an algo desk. When ALGO ONLY is on, only algo-generated signals execute — clicking a strike by hand is rejected, not filled."
+                       style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);">
+                    <input type="checkbox" id="chkAlgoOnlySwitch" checked onchange="toggleAlgoOnly(this.checked)" style="cursor:pointer;">
+                    <span>Execution: <b id="algoOnlyBadge" style="color:var(--emerald);">🤖 ALGO ONLY</b></span>
+                </label>
+
                 <!-- Problem 3 Testing Override Toggle in Settings -->
                 <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-family:var(--font-mono); cursor:pointer; background:var(--bg-input); padding:6px 10px; border-radius:6px; border:1px solid var(--border-subtle);" title="Allow Paper Trading Outside Market Hours (For Testing Only) — Default = OFF">
                     <input type="checkbox" id="chkOffHoursPaperTesting" onchange="toggleOffHoursPaperTesting(this.checked)" style="cursor:pointer;">
@@ -1220,6 +1226,13 @@
                         <button type="button" class="secondary-btn" id="btnFilterStrat_OI" onclick="setStrategyFilter('P minus C Filter')" style="padding:4px 10px; font-size:11.5px;">[ P minus C Filter ]</button>
                     </div>
                 </div>
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px; padding-top:10px; border-top:1px solid var(--border-subtle);">
+                    <span style="font-size:11px; font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">MONEY FILTER:</span>
+                    <button type="button" class="secondary-btn active-filter-btn" id="btnFilterMoney_ALL" onclick="setMoneyFilter('ALL')" style="padding:4px 10px; font-size:11.5px; font-weight:700;">[ All ]</button>
+                    <button type="button" class="secondary-btn" id="btnFilterMoney_PAPER" onclick="setMoneyFilter('PAPER')" style="padding:4px 10px; font-size:11.5px;">[ Paper Money 📝 ]</button>
+                    <button type="button" class="secondary-btn" id="btnFilterMoney_REAL" onclick="setMoneyFilter('REAL')" style="padding:4px 10px; font-size:11.5px;">[ Real Money 💰 ]</button>
+                    <span style="font-size:10.5px; color:var(--text-muted); margin-left:6px;">Orders placed in <b>BOTH</b> mode fired on both books, so they appear under either filter.</span>
+                </div>
             </div>
 
             <!-- Active Positions Section (Problem 4 Layout) -->
@@ -1235,6 +1248,7 @@
                                 <th>Contract Symbol</th>
                                 <th>Qty</th>
                                 <th>Entry Price</th>
+                                <th>Entry Time</th>
                                 <th>LTP</th>
                                 <th>Live MTM / P&amp;L</th>
                                 <th>Source</th>
@@ -1243,7 +1257,7 @@
                             </tr>
                         </thead>
                         <tbody id="positionsTableBody">
-                            <tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:16px;">No active open positions. Submit an order from Tab 1 to track live fluctuating MTM.</td></tr>
+                            <tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:16px;">No active open positions. Submit an order from Tab 1 to track live fluctuating MTM.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1270,11 +1284,13 @@
                                 <th>Signal LTP</th>
                                 <th>Avg Fill Price</th>
                                 <th>Slippage (Pts)</th>
+                                <th>Book</th>
+                                <th>Exit / Net P&amp;L</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
                         <tbody id="ordersTableBody">
-                            <tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:16px;">Loading order book...</td></tr>
+                            <tr><td colspan="14" style="text-align:center; color:var(--text-muted); padding:16px;">Loading order book...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1347,6 +1363,18 @@
                         <button type="button" class="emerald-btn" onclick="updatePaperFunds(100000)">+ ₹1,00,000</button>
                         <button type="button" class="crimson-btn" onclick="updatePaperFunds(-25000)">- ₹25,000</button>
                         <button type="button" class="secondary-btn" onclick="updatePaperFunds(0, true)">🔄 Reset to ₹1,00,000</button>
+                    </div>
+
+                    <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border-subtle);">
+                        <div style="font-size:12px; color:var(--text-dim); margin-bottom:4px;"><b>Start Fresh P&amp;L Tracking</b></div>
+                        <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px; line-height:1.5;">
+                            Zeroes Realized P&amp;L and resets capital to ₹1,00,000 so you can measure only the trades taken from now on.
+                            <b style="color:var(--amber);">Open positions are kept</b> and their blocked margin is recalculated, so this is safe to run with trades live.
+                        </div>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                            <button type="button" class="crimson-btn" onclick="resetPaperLedger(false)">🧹 Clear Realized P&amp;L Only</button>
+                            <button type="button" class="crimson-btn" onclick="resetPaperLedger(true)">🧹 Clear P&amp;L + Wipe Orders Book</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2278,6 +2306,7 @@
         let cachedAllowOffHours = false;
         let cachedSpotPrice = 0.0;
         let currentPosSourceFilter = "ALL";
+        let currentMoneyFilter = "ALL";   // ALL | PAPER | REAL (orders book)
         let currentPosStrategyFilter = "ALL";
 
         // ── 2. INITIALIZATION & CLOCK ─────────────────────────────────────────
@@ -2738,6 +2767,16 @@
             pollLiveEngine();
         }
 
+        function setMoneyFilter(kind) {
+            currentMoneyFilter = kind;
+            ["btnFilterMoney_ALL", "btnFilterMoney_PAPER", "btnFilterMoney_REAL"].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove("active-filter-btn");
+            });
+            document.getElementById("btnFilterMoney_" + kind)?.classList.add("active-filter-btn");
+            pollLiveEngine();
+        }
+
         function setStrategyFilter(strat) {
             currentPosStrategyFilter = strat;
             ["btnFilterStrat_ALL", "btnFilterStrat_Stage2", "btnFilterStrat_Cross", "btnFilterStrat_1H", "btnFilterStrat_Stage3", "btnFilterStrat_OI"].forEach(id => {
@@ -2983,6 +3022,9 @@
                 if (data.allow_off_hours_paper_testing !== undefined) {
                     cachedAllowOffHours = Boolean(data.allow_off_hours_paper_testing);
                 }
+                if (data.algo_only_execution !== undefined) {
+                    applyAlgoOnlyUI(Boolean(data.algo_only_execution));
+                }
 
                 // 9. Staged Derivatives Confluence Variables (Multi-Factor Trend Lab)
                 if (data.trend_lab_variables) {
@@ -3226,6 +3268,17 @@
         }
 
         // ── 5. POSITIONS & ORDERS RENDERING (Problems 3 & 4) ─────────────────
+        // Splits "2026-11-06 11:36:12 IST" into {time, date}. The clock time is
+        // what matters on the desk, so it is shown large and the date dimmed.
+        // Returns a dash rather than inventing "now" when entry_time is absent.
+        function splitEntryTime(raw) {
+            const s = String(raw || "").trim();
+            if (!s) return { time: "—", date: "" };
+            const m = s.match(/(\d{4}-\d{2}-\d{2})?[ T]?(\d{2}:\d{2}(?::\d{2})?)/);
+            if (!m) return { time: s, date: "" };
+            return { time: m[2], date: m[1] || "" };
+        }
+
         function renderPositionsTable(positions) {
             const tbody = document.getElementById("positionsTableBody");
             if (!tbody) return;
@@ -3249,7 +3302,7 @@
             }
 
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:16px;">No active positions matching current filter.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:16px;">No active positions matching current filter.</td></tr>`;
                 return;
             }
 
@@ -3263,6 +3316,7 @@
                 const pnlSign = pnlVal >= 0 ? "+" : "";
                 const sourceDisplay = p.source || (p.placed_by || "MANUAL MATRIX ✋");
                 const stratDisplay = p.strategy_setup || (p.strategy_name || "Manual — No Strategy");
+                const et = splitEntryTime(p.entry_time);
                 const structTip = p.structured_contract ?
                     `Expiry Date: ${p.structured_contract.expiry_display || ''}&#10;Symbol: ${p.structured_contract.symbol || 'NIFTY'}&#10;Strike: ${p.structured_contract.strike_display || ''}` :
                     `Symbol: ${p.symbol}`;
@@ -3271,6 +3325,10 @@
                     <td title="${structTip}"><b style="font-family:var(--font-mono);">${p.symbol}</b></td>
                     <td><b>${p.qty}</b></td>
                     <td>₹${Number(p.entry_price || 0).toFixed(2)}</td>
+                    <td title="Entered: ${p.entry_time || 'unknown'}">
+                        <b style="font-family:var(--font-mono); font-size:12.5px;">${et.time}</b>
+                        ${et.date ? `<div style="color:var(--text-muted); font-size:10px;">${et.date}</div>` : ``}
+                    </td>
                     <td style="font-weight:700;">₹${Number(p.current_ltp || 0).toFixed(2)}</td>
                     <td style="font-weight:800; color:${pnlColor}; font-size:13px;">${pnlSign}${Math.round(pnlVal)} ${pnlIcon}</td>
                     <td><span class="status-badge ${sourceDisplay.includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${sourceDisplay}</span></td>
@@ -3385,13 +3443,35 @@
                 });
             }
 
+            // Paper vs real money. mode is the execution mode the order fired
+            // under: PAPER_ONLY hit only the paper book, ALGO_LIVE_ONLY only the
+            // real one, and BOTH genuinely hit both — so BOTH is shown under
+            // either filter rather than being assigned to one arbitrarily.
+            if (currentMoneyFilter === "PAPER") {
+                filtered = filtered.filter(o => String(o.mode || "").includes("PAPER") || String(o.mode || "") === "BOTH");
+            } else if (currentMoneyFilter === "REAL") {
+                filtered = filtered.filter(o => String(o.mode || "").includes("LIVE") || String(o.mode || "") === "BOTH");
+            }
+
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:16px;">No orders found matching filters.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; color:var(--text-muted); padding:16px;">No orders found matching filters.</td></tr>`;
                 return;
             }
 
-            tbody.innerHTML = filtered.map(o => `
-                <tr>
+            tbody.innerHTML = filtered.map(o => {
+                const mode = String(o.mode || "");
+                const isPaper = mode.includes("PAPER");
+                const isReal = mode.includes("LIVE");
+                const bookLabel = mode === "BOTH" ? "PAPER + REAL" : (isPaper ? "PAPER 📝" : (isReal ? "REAL 💰" : (mode || "—")));
+                const bookBadge = mode === "BOTH" ? "badge-gold" : (isReal ? "badge-bear" : "badge-side");
+                const isExit = String(o.side || "") === "SELL";
+                const netPnl = Number(o.net_pnl || 0);
+                const exitCell = isExit
+                    ? `<b style="color:${netPnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">${netPnl >= 0 ? '+' : ''}${Math.round(netPnl)}</b>
+                       <div style="color:var(--text-muted); font-size:10px; font-family:var(--font-mono);">${o.exit_reason || 'EXIT'}</div>`
+                    : `<span style="color:var(--text-muted);">—</span>`;
+                return `
+                <tr${isExit ? ` style="background:rgba(239,68,68,0.05);"` : ``}>
                     <td><code>${o.order_id}</code></td>
                     <td style="color:var(--text-dim);">${o.created_at}</td>
                     <td><b style="font-family:var(--font-mono);">${o.symbol}</b></td>
@@ -3403,9 +3483,12 @@
                     <td>₹${Number(o.signal_ltp || 0).toFixed(2)}</td>
                     <td style="font-weight:700; color:var(--emerald);">₹${Number(o.fill_price || 0).toFixed(2)}</td>
                     <td style="color:${Number(o.slippage || 0) > 0 ? 'var(--crimson)' : 'var(--emerald)'};">${Number(o.slippage || 0) >= 0 ? '+' : ''}${Number(o.slippage || 0).toFixed(2)}</td>
+                    <td><span class="status-badge ${bookBadge}" style="font-size:10px;">${bookLabel}</span></td>
+                    <td>${exitCell}</td>
                     <td><span class="status-badge ${o.order_status === 'FILLED' ? 'badge-bull' : (o.order_status === 'CANCELLED' ? 'badge-side' : 'badge-bear')}">${o.order_status}</span></td>
                 </tr>
-            `).join("");
+            `;
+            }).join("");
         }
 
         function renderFunds(funds) {
@@ -3433,6 +3516,31 @@
                 renderFunds({ paper: d });
             } catch (e) {
                 alert("Paper funds update error: " + e.message);
+            }
+        }
+
+        // Explicit, confirmed action. Never fires on page load or deploy: the
+        // realised-P&L history is destroyed by this and cannot be recovered.
+        async function resetPaperLedger(clearOrders) {
+            const what = clearOrders
+                ? "Reset capital to ₹1,00,000, zero Realized P&L, and DELETE every row from the Institutional Orders Book."
+                : "Reset capital to ₹1,00,000 and zero Realized P&L.";
+            if (!confirm(what + "\n\nOpen positions are KEPT and their margin recalculated.\n\nThis cannot be undone. Continue?")) return;
+            try {
+                const res = await fetch("/api/funds/paper/reset_ledger", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ clear_orders: !!clearOrders })
+                });
+                const d = await res.json();
+                if (!d.ok) { alert("Reset failed: " + (d.error || "unknown error")); return; }
+                if (d.wallet) renderFunds({ paper: d.wallet });
+                alert(`✅ Fresh start.\n\nRealized P&L zeroed. Capital ₹1,00,000.\n` +
+                      `Open positions preserved: ${d.open_positions_preserved}\n` +
+                      `Orders cleared: ${d.cleared_orders}`);
+                pollLiveEngine();
+            } catch (e) {
+                alert("Reset error: " + e.message);
             }
         }
 
@@ -3471,6 +3579,32 @@
             btnLive.className = "mode-btn" + (mode === "ALGO_LIVE_ONLY" ? " active-live" : "");
             btnPaper.className = "mode-btn" + (mode === "PAPER_ONLY" ? " active-paper" : "");
             btnBoth.className = "mode-btn" + (mode === "BOTH" ? " active-both" : "");
+        }
+
+        // ALGO ONLY blocks discretionary orders at the engine, not just here, so
+        // the scanner and strike matrix cannot route around it either.
+        async function toggleAlgoOnly(enabled) {
+            try {
+                const res = await fetch("/api/mode", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ algo_only: enabled })
+                });
+                const d = await res.json();
+                applyAlgoOnlyUI(d.algo_only_execution !== undefined ? d.algo_only_execution : enabled);
+            } catch (e) {
+                alert("Algo-Only toggle error: " + e.message);
+            }
+        }
+
+        function applyAlgoOnlyUI(on) {
+            const chk = document.getElementById("chkAlgoOnlySwitch");
+            const badge = document.getElementById("algoOnlyBadge");
+            if (chk) chk.checked = !!on;
+            if (badge) {
+                badge.textContent = on ? "🤖 ALGO ONLY" : "✋ MANUAL ALLOWED";
+                badge.style.color = on ? "var(--emerald)" : "var(--amber)";
+            }
         }
 
         async function togglePaperExecutionSwitch(enabled) {
