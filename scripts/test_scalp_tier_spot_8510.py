@@ -92,6 +92,64 @@ def net_inr(points: float, won: bool) -> float:
     return (points * d * LOT) - FRICTION_INR
 
 
+CANDLE_DBS = [
+    ROOT / "ict_smc_app" / "backend" / "data" / "ict_smc.sqlite3",
+    ROOT / "data" / "terminal8510" / "ict_smc.sqlite3",
+    ROOT / "data" / "terminal8500" / "ict_smc.sqlite3",
+]
+
+
+def dates_from_dbs() -> List[str]:
+    """Sessions that actually hold 1-minute candles WITH high and low.
+
+    The engine's loader used to fabricate 375 flat candles for any unrecorded
+    date (removed in v1.9.4c), so this asks the data directly instead of
+    trusting that a date "loads". Only dates with real rows are returned.
+    """
+    import sqlite3
+    found = set()
+    for db in CANDLE_DBS:
+        if not db.exists():
+            continue
+        try:
+            conn = sqlite3.connect("file:{}?mode=ro".format(db), uri=True)
+            try:
+                rows = conn.execute(
+                    "SELECT DISTINCT date(ts,'unixepoch','+5 hours','+30 minutes') AS d, "
+                    "COUNT(*) FROM candles_1m WHERE h IS NOT NULL AND l IS NOT NULL "
+                    "GROUP BY d HAVING COUNT(*) >= 50 ORDER BY d"
+                ).fetchall()
+                for d, _n in rows:
+                    if d:
+                        found.add(str(d))
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            continue
+    return sorted(found)
+
+
+def dates_from_replay() -> List[str]:
+    out = []
+    import json as _json
+    for p in sorted((ROOT / "analyst" / "replay_data").glob("*.json")):
+        try:
+            d = _json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        c = d.get("spot_candles_1m") or []
+        # Must carry high AND low, or first passage cannot be resolved.
+        if c and isinstance(c[0], dict) and "high" in c[0] and "low" in c[0]:
+            out.append(p.stem)
+    return out
+
+
+def discover_dates(explicit: Optional[str]) -> List[str]:
+    if explicit:
+        return [d.strip() for d in explicit.split(",") if d.strip()]
+    return sorted(set(dates_from_replay()) | set(dates_from_dbs()))
+
+
 def collect_signals(engine, date_str: str, timeframe: str) -> List[Dict[str, Any]]:
     """Tier 2 / Tier 3 rows straight from the real engine."""
     res = engine.compute_matrix(date_str=date_str, timeframe=timeframe, filter_state="ALL")
@@ -101,19 +159,42 @@ def collect_signals(engine, date_str: str, timeframe: str) -> List[Dict[str, Any
         state = str(r.get("proximity_state") or r.get("proximity_status") or "")
         if state not in ("TIER_2_TOUCH_ZONE", "TIER_3_CONFIRMATION_TRIGGER"):
             continue
-        trend = str(r.get("trend") or "").upper()
+        # DIRECTION. Earlier versions of this function matched only "UPSIDE" /
+        # "DOWNSIDE" in crossover_state and read `trend`, which compute_matrix
+        # leaves as None on every row. The result was that 7 of 353 Tier 3 bars
+        # were sampled -- only the handful of 8_EMA_REVERSAL_*_CROSS rows -- and
+        # the study ran on a 2% unrepresentative subset. The real vocabulary the
+        # engine emits is below; all of it is handled explicitly and anything
+        # unrecognised is skipped rather than assumed.
         cross = str(r.get("crossover_state") or r.get("crossover_status") or "").upper()
-        # Direction from the structure the engine already decided, never guessed.
-        if "BULL" in trend or "UPSIDE" in cross or "SUPPORT" in str(r.get("support_resistance", "")).upper():
+        trend = str(r.get("trend") or "").upper()
+        sr = str(r.get("support_resistance") or "").upper()
+        blob = " ".join((cross, trend, sr))
+
+        LONG_TOKENS = ("BULLISH_SEPARATION", "PRE_CROSS_CONVERGING_UP",
+                       "REVERSAL_UPSIDE", "CROSS_UP", "CROSS UP",
+                       "BULL", "SUPPORT", "BOUNCE")
+        SHORT_TOKENS = ("BEARISH_SEPARATION", "PRE_CROSS_CONVERGING_DOWN",
+                        "REVERSAL_DOWNSIDE", "CROSS_DOWN", "CROSS DOWN",
+                        "BEAR", "RESISTANCE", "REJECT")
+        is_long = any(t in blob for t in LONG_TOKENS)
+        is_short = any(t in blob for t in SHORT_TOKENS)
+        if is_long and not is_short:
             direction = "LONG"
-        elif "BEAR" in trend or "DOWNSIDE" in cross or "RESISTANCE" in str(r.get("support_resistance", "")).upper():
+        elif is_short and not is_long:
             direction = "SHORT"
         else:
-            continue          # no stated direction -> not tradeable, skip honestly
+            # Genuinely undirected (e.g. ENTANGLED_CONSOLIDATION) or
+            # contradictory. Not tradeable; skipped, and counted as skipped.
+            continue
         out.append({
             "date": date_str, "tier": state, "direction": direction,
-            "ts": r.get("ts"), "time_ist": r.get("time_ist") or hhmm(r.get("ts")),
-            "spot": float(r.get("close_price") or r.get("nifty_spot_price") or 0.0),
+            "ts": r.get("ts"), # BUGFIX: the engine emits "timestamp_ist", not "time_ist". The old
+            # fallback hhmm(ts) returned UTC, which silently disabled the
+            # 15:05 entry cutoff and the 15:20 freeze.
+            "time_ist": (str(r.get("timestamp_ist") or r.get("time_ist") or "")[:5]
+                         or hhmm(r.get("ts"))),
+            "spot": float(r.get("close_price") or 0.0),
             "timeframe": timeframe,
         })
     return [s for s in out if s["spot"] > 0]
@@ -248,17 +329,33 @@ def main() -> int:
     ap.add_argument("--breakeven-lock", type=float, default=1.5)
     ap.add_argument("--no-breakeven-shift", action="store_true")
     ap.add_argument("--hold", type=int, default=60)
+    ap.add_argument("--trail-give", type=float, default=None,
+                    help="after the target is reached, square off if price gives "
+                         "back this many points from its peak (Harish's 11-12 pt rule)")
     ap.add_argument("--timeframes", default="1m,15m")
+    ap.add_argument("--dates", default=None,
+                    help="comma-separated YYYY-MM-DD; default = auto-discover "
+                         "every session with real high/low candles")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
 
     from analyst.ema_proximity_engine import EmaProximityEngine
     eng = EmaProximityEngine()
 
-    dates = sorted(p.stem for p in (ROOT / "analyst" / "replay_data").glob("*.json"))
+    dates = discover_dates(a.dates)
     if not dates:
-        print("No recorded sessions in analyst/replay_data/. Nothing to test.")
+        print("No recorded sessions found.")
+        print()
+        print("Looked in:")
+        print("  analyst/replay_data/*.json")
+        print("  ict_smc_app/backend/data/ict_smc.sqlite3  (table candles_1m)")
+        print("  data/terminal8510/*.sqlite3               (table candles_1m)")
+        print()
+        print("Run this on the desk where the recorded data lives, or pass dates")
+        print("explicitly with --dates 2026-11-04,2026-11-05,2026-11-06")
         return 2
+    print("sessions with REAL recorded candles: {}".format(", ".join(dates)))
+    print()
 
     be_at = None if a.no_breakeven_shift else a.breakeven_at
     report: Dict[str, Any] = {
