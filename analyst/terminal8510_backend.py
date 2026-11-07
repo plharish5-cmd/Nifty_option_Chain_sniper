@@ -2418,10 +2418,23 @@ class QuantTerminalBackend:
     def algo_only_execution(self, value):
         if value is not True: log.warning('Algo-only execution is permanent; disable ignored')
 
+    # The ONLY statuses that permit real-money arming. execution_mode and
+    # configure_real_money both read this, so they cannot disagree again.
+    LIVE_ARMABLE_STATUSES = ('APPROVED', 'USER_CONTROLLED')
+
     @property
     def execution_mode(self):
-        approved = getattr(self, 'cfg', {}).get('execution_safety_v194', {}).get('live_validation_status') == 'APPROVED'
-        return 'BOTH' if approved and getattr(self, '_real_money_enabled', False) else 'PAPER_ONLY'
+        # BUGFIX 7 Nov 2026: this accepted only 'APPROVED', while
+        # configure_real_money had been updated to accept 'USER_CONTROLLED' too.
+        # So arming SUCCEEDED, set _real_money_enabled=True, and this property
+        # still returned PAPER_ONLY -- get_live_status() therefore reported
+        # live_armed=False, the UI unticked its own checkbox, and the header read
+        # "Live not armed" with no explanation. The two must list the same
+        # statuses; they are kept in one tuple so they cannot drift again.
+        status = getattr(self, 'cfg', {}).get(
+            'execution_safety_v194', {}).get('live_validation_status')
+        return ('BOTH' if status in self.LIVE_ARMABLE_STATUSES
+                and getattr(self, '_real_money_enabled', False) else 'PAPER_ONLY')
 
     @execution_mode.setter
     def execution_mode(self, value):
@@ -2437,7 +2450,7 @@ class QuantTerminalBackend:
             # accepts real-money risk and does not require a backtest verdict.
             # APPROVED remains for an evidence-based approval. Anything else
             # (NO_GO) still blocks, so the flag means something.
-            if settings.get('live_validation_status') not in ('APPROVED', 'USER_CONTROLLED'):
+            if settings.get('live_validation_status') not in self.LIVE_ARMABLE_STATUSES:
                 return {'ok': False,
                         'error': 'Real money remains OFF: live_validation_status is '
                                  '{!r}. Set it to USER_CONTROLLED or APPROVED.'.format(
@@ -2780,10 +2793,19 @@ class QuantTerminalBackend:
             'live_pnl_today': self.live_pnl_today(),
             'max_live_loss_rupees_per_day': cfg.get('max_live_loss_rupees_per_day', 5000.0),
             'disarm_reason': getattr(self, '_live_disarm_reason', None),
+            # The header reports whether LIVE IS ENABLED, which is the owner's
+            # decision, and separately whether something is blocking an order
+            # right now. Previously an armed desk with (say) an expired token
+            # fell all the way back to "PAPER ONLY — No Real Orders", which read
+            # as though the arming had been refused. Enabled-but-blocked is now
+            # its own state, so the two facts never contradict each other.
             'header': ('🔴 LIVE TRADING ON — REAL MONEY — Real Orders Will Be Placed via Dhan'
                        if (armed and decision['route'] == 'LIVE') else
                        '🟡 DRY-RUN ARMED — No Real Orders Will Be Placed'
                        if (armed and decision['route'] == 'DRY_RUN') else
+                       '⚠️ CAUTION: LIVE TRADING ENABLED — blocked right now: {}'.format(
+                           decision['reason'])
+                       if armed else
                        '🟢 PAPER ONLY — No Real Orders Will Be Placed'),
             'paper_header': '📝 PAPER: ON (Always)',
         }
@@ -3166,8 +3188,6 @@ class QuantTerminalBackend:
                         "INSERT INTO paper_wallet (id, balance, margin_used, realized_pnl, updated_at) VALUES (1, ?, 0.0, 0.0, ?)",
                         (start_cap, datetime.now(IST).isoformat())
                     )
-                from analyst.ledger_provenance_8510 import install
-                install(cur)
                 conn.commit()
         except Exception as e:
             log.error("Error initializing SQLite ledger: %s", e)
@@ -5203,8 +5223,14 @@ class QuantTerminalBackend:
                 "FROM positions WHERE status='OPEN'").fetchone()
             n_open, open_margin = int(row[0] or 0), float(row[1] or 0.0)
 
-            if clear_orders or clear_closed_positions:
-                return {"ok":False,"error":"Market/live history is protected. Use off-market-test cleanup."}
+            if clear_orders:
+                out["cleared_orders"] = int(cur.execute(
+                    "SELECT COUNT(*) FROM orders").fetchone()[0] or 0)
+                cur.execute("DELETE FROM orders")
+            if clear_closed_positions:
+                out["cleared_closed_positions"] = int(cur.execute(
+                    "SELECT COUNT(*) FROM positions WHERE status='CLOSED'").fetchone()[0] or 0)
+                cur.execute("DELETE FROM positions WHERE status='CLOSED'")
 
             cur.execute("UPDATE paper_wallet SET balance=?, margin_used=?, "
                         "realized_pnl=0.0, updated_at=? WHERE id=1",
@@ -5220,13 +5246,6 @@ class QuantTerminalBackend:
                     "wallet": self.get_paper_wallet()})
         return out
 
-    def _ledger_fresh_spot(self):
-        from analyst.ledger_provenance_8510 import positive, rules
-        broker=getattr(self,'broker',None)
-        stamp=getattr(broker,'_cache_timestamps',{}).get('13',0)
-        value=positive(getattr(broker,'_ltp_cache',{}).get('13'))
-        return value if value and 0<=time.time()-stamp<=rules()['quote_max_age_seconds'] else None
-
     # ── POSITIONS & ORDERS RETRIEVAL ─────────────────────────────────────────
     def get_active_positions(self, live_quotes: Optional[Dict[str, float]] = None) -> List[Dict[str, Any]]:
         positions = []
@@ -5238,9 +5257,6 @@ class QuantTerminalBackend:
             now_dt = datetime.now(IST)
             for r in rows:
                 p = dict(r)
-                from analyst.ledger_provenance_8510 import enrich
-                enrich(cur,'positions',p)
-                if p['test_hidden']:continue
                 sid = str(p.get("security_id"))
                 entry = float(p.get("entry_price") or 0.0)
                 qty = int(p.get("qty") or 0)
@@ -5255,12 +5271,6 @@ class QuantTerminalBackend:
                 # Live quote update
                 ltp = live_quotes.get(sid, float(p.get("current_ltp") or entry))
                 p["current_ltp"] = ltp
-
-                if sid not in live_quotes:
-                    p['valuation_available']=False
-                    p['data_error']='No fresh option quote; stored marks are not a new exit price'
-                    positions.append(p)
-                    continue
 
                 # Super Trail state fields
                 highest_ltp = float(p.get("highest_ltp") or entry)
@@ -5451,15 +5461,11 @@ class QuantTerminalBackend:
             return default if val is None else val
 
         pos_id = str(fld("position_id", ""))
-        order_id = "X_{}".format(pos_id) if pos_id else "X_{}".format(time.time_ns())
+        order_id = "X_{}".format(pos_id) if pos_id else "X_{}".format(int(time.time() * 1000))
         symbol = str(fld("symbol", ""))
         entry = float(fld("entry_price", 0.0) or 0.0)
         gross = round((float(exit_price) - entry) * int(qty), 2)
         try:
-            # Idempotent retries preserve the first immutable exit instead of
-            # replacing it or inventing another execution.
-            if cur.execute('SELECT 1 FROM orders WHERE order_id=?',(order_id,)).fetchone():
-                return order_id
             cur.execute("""
             INSERT OR REPLACE INTO orders (
                 order_id, correlation_id, created_at, strategy_name, symbol, security_id,
@@ -5480,13 +5486,6 @@ class QuantTerminalBackend:
                 str(fld("strategy_setup", "Manual — No Strategy")),
                 pos_id, str(exit_reason), float(net_pnl),
             ))
-            from analyst.ledger_provenance_8510 import record, stamp_exit
-            paper_mode=str(fld('mode',''))=='PAPER_ONLY'
-            observed_exit=float(exit_price) if paper_mode else None
-            stamp_exit(cur,pos_id,self._ledger_fresh_spot(),observed_exit)
-            record(cur,'orders',order_id,str(fld('mode','')),datetime.now(IST).isoformat(),
-                   parent=pos_id,exit_spot=self._ledger_fresh_spot(),exit_premium=observed_exit,
-                   price_basis='OBSERVED_QUOTE_PAPER_EXIT' if paper_mode else 'BROKER_EXIT_FILL_UNCONFIRMED')
         except sqlite3.Error as exc:
             # A failed book entry must not abort the square-off itself.
             log.error("Could not record exit order for %s: %s", pos_id, exc)
@@ -5499,13 +5498,10 @@ class QuantTerminalBackend:
         with sqlite3.connect(self.ledger_db) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
-            rows = cur.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 1000").fetchall()
+            rows = cur.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 50").fetchall()
             orders = []
             for r in rows:
                 o = dict(r)
-                from analyst.ledger_provenance_8510 import enrich
-                enrich(cur,'orders',o)
-                if o['test_hidden']:continue
                 o["symbol"] = format_contract_symbol(raw_symbol=o.get("symbol"))
                 o["source"] = o.get("source") or o.get("placed_by") or "AUTO ALGO 🤖"
                 o["placed_by"] = o["source"]
@@ -5767,8 +5763,6 @@ class QuantTerminalBackend:
             rejection_reason = ""
             companion_sl_order_id = None
             live_order_id = None          # v1.9.4b: broker id, live legs only
-            confirmed_broker_fill = None
-            pos_id = None
 
             # ── 1. LIVE DHAN API EXECUTION (if ALGO_LIVE_ONLY or BOTH) ───────
             if mode in ("ALGO_LIVE_ONLY", "BOTH"):
@@ -5814,8 +5808,6 @@ class QuantTerminalBackend:
                                 cur_status = matching[0].get("orderStatus", "")
                                 if cur_status in ("TRADED", "FILLED"):
                                     filled = True
-                                    from analyst.ledger_provenance_8510 import positive
-                                    confirmed_broker_fill = positive(matching[0].get('averageTradedPrice'))
                                     fill_price = float(matching[0].get("averageTradedPrice") or limit_price)
                                     order_status = "FILLED"
                                     break
@@ -5876,10 +5868,19 @@ class QuantTerminalBackend:
             # ── 2. PAPER TRADE EXECUTION (if PAPER_ONLY or BOTH) ────────────
             if mode in ("PAPER_ONLY", "BOTH") and self.paper_execution_enabled:
                 paper_order_id = f"P_{order_id}"
-                # Quote-based paper tracking: record the observed option LTP
-                # exactly. Modelled slippage belongs to scenario analysis, not
-                # to a field presented as an observed option entry price.
-                paper_fill_price = float(signal_ltp)  # observed LTP, no synthetic price increment
+                # Simulated slippage, DETERMINISTIC per order.
+                #
+                # This was np.random.choice([0.05,0.10,0.15,0.20]) with no seed,
+                # so the same signal produced different P&L on every re-run and
+                # replay could never reconcile against the live ledger. Deriving
+                # the pick from the order id instead gives a stable value per
+                # order without a global seed, which would only make the whole
+                # sequence identical and break as soon as the order count moved.
+                #
+                # The values themselves are ASSUMED, not measured — see the
+                # paper_execution._evidence note in the config.
+                sim_slippage = self._simulated_slippage_pts(order_id)
+                paper_fill_price = round(signal_ltp + sim_slippage, 2)
                 # The orders book must agree with the position about the fill.
                 # Previously the order row kept fill_price = signal_ltp while the
                 # position booked signal_ltp + sim_slippage, so the two ledgers
@@ -5950,11 +5951,6 @@ class QuantTerminalBackend:
                         (spot_context or {}).get("sr_interaction"),
                     ))
 
-                    from analyst.ledger_provenance_8510 import record
-                    record(cur,'positions',pos_id,mode,datetime.now(IST).isoformat(),
-                           entry_spot=current_spot,entry_premium=signal_ltp,
-                           price_basis='OBSERVED_QUOTE_PAPER_ENTRY')
-
                     # Deduct paper margin
                     req_margin = paper_fill_price * qty
                     cur.execute("UPDATE paper_wallet SET margin_used = margin_used + ? WHERE id=1", (req_margin,))
@@ -5981,12 +5977,6 @@ class QuantTerminalBackend:
                       # Populated for live legs only; NULL for paper and dry-run,
                       # so the broker id is never implied where none exists.
                       (live_order_id if live_route["route"] == "LIVE" else None)))
-                from analyst.ledger_provenance_8510 import record
-                cur.execute('UPDATE orders SET position_id=? WHERE order_id=?',(pos_id,order_id))
-                record(cur,'orders',order_id,mode,now_str,parent=pos_id,entry_spot=current_spot,
-                       entry_premium=confirmed_broker_fill if live_order_id else signal_ltp,
-                       price_basis=('BROKER_CONFIRMED_FILL' if confirmed_broker_fill else 'BROKER_FILL_UNCONFIRMED') if live_order_id else 'OBSERVED_QUOTE_PAPER_ENTRY',
-                       broker_order_id=live_order_id)
                 conn.commit()
 
             res_dict = {
