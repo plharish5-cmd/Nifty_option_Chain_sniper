@@ -2793,10 +2793,19 @@ class QuantTerminalBackend:
             'live_pnl_today': self.live_pnl_today(),
             'max_live_loss_rupees_per_day': cfg.get('max_live_loss_rupees_per_day', 5000.0),
             'disarm_reason': getattr(self, '_live_disarm_reason', None),
+            # The header reports whether LIVE IS ENABLED, which is the owner's
+            # decision, and separately whether something is blocking an order
+            # right now. Previously an armed desk with (say) an expired token
+            # fell all the way back to "PAPER ONLY — No Real Orders", which read
+            # as though the arming had been refused. Enabled-but-blocked is now
+            # its own state, so the two facts never contradict each other.
             'header': ('🔴 LIVE TRADING ON — REAL MONEY — Real Orders Will Be Placed via Dhan'
                        if (armed and decision['route'] == 'LIVE') else
                        '🟡 DRY-RUN ARMED — No Real Orders Will Be Placed'
                        if (armed and decision['route'] == 'DRY_RUN') else
+                       '⚠️ CAUTION: LIVE TRADING ENABLED — blocked right now: {}'.format(
+                           decision['reason'])
+                       if armed else
                        '🟢 PAPER ONLY — No Real Orders Will Be Placed'),
             'paper_header': '📝 PAPER: ON (Always)',
         }

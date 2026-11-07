@@ -5364,10 +5364,13 @@ function renderLiveStatus(s){
  if(hdr){
   hdr.textContent=s.header||'🟢 PAPER ONLY — No Real Orders Will Be Placed';
   const live=s.route==='LIVE', dry=s.route==='DRY_RUN';
-  hdr.style.background=live?'#7f1d1d':dry?'#78350f':'';
-  hdr.style.color=live||dry?'#fff':'';
+  // Armed but something is blocking an order right now: amber caution, not
+  // the green 'paper only' badge, which read as a refused arming.
+  const blocked=!!s.live_armed&&!live&&!dry;
+  hdr.style.background=live?'#7f1d1d':(dry||blocked)?'#78350f':'';
+  hdr.style.color=(live||dry||blocked)?'#fff':'';
   hdr.classList.toggle('badge-bear',live);
-  hdr.classList.toggle('badge-bull',!live&&!dry);
+  hdr.classList.toggle('badge-bull',!live&&!dry&&!blocked);
   // Pulse only when real orders can actually be placed. It must stay legible,
   // so opacity floors at 0.55 rather than blinking to invisible.
   hdr.style.animation=live?'liveArmPulse 1.2s ease-in-out infinite':'';
@@ -5458,10 +5461,18 @@ function requestRealMoney(enabled){
   }else{
    note.style.color='#94a3b8';
    const w=st.entry_window||{};
-   note.textContent='Typing LIVE arms real orders immediately. Your guards stay in force: '
-    +'entry window '+(w.start||'09:20')+'–'+(w.end||'15:05')+' IST, max '
-    +(st.max_live_trades_per_day||3)+' live trades/day, max ₹'
-    +(st.max_live_loss_rupees_per_day||5000)+' daily loss, and the 15:20 square-off.';
+   // BUGFIX: this used (x||3) and (x||5000) as fallbacks. 0 is FALSY in JS, so
+   // once the caps were set to 0 (= unlimited) the banner printed 3 and 5000,
+   // advertising limits that had already been removed. Only state a limit the
+   // server actually reports as set.
+   const tc=Number(st.max_live_trades_per_day)||0;
+   const lc=Number(st.max_live_loss_rupees_per_day)||0;
+   const parts=[];
+   if(w.start&&w.end&&!w.disabled)parts.push('entry window '+w.start+'–'+w.end+' IST');
+   if(tc>0)parts.push('max '+tc+' live trades/day');
+   if(lc>0)parts.push('max ₹'+lc+' daily loss');
+   parts.push('15:20 square-off');
+   note.textContent='Typing LIVE arms real orders immediately. In force: '+parts.join(', ')+'.';
   }
  }).catch(()=>{});
  const input=document.createElement('input');

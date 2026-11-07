@@ -668,3 +668,32 @@ def test_the_two_gates_cannot_drift_apart():
     assert src.count('self.LIVE_ARMABLE_STATUSES') >= 2
     assert "live_validation_status') == 'APPROVED'" not in src, \
         'a hardcoded APPROVED-only check has come back'
+
+
+def test_armed_but_blocked_does_not_report_paper_only(tmp_path):
+    """REGRESSION. An armed desk with an expired token fell through to
+    '🟢 PAPER ONLY — No Real Orders Will Be Placed', which read as though the
+    arming had been refused -- directly contradicting the ticked LIVE checkbox
+    beside it. Enabled-but-blocked is now its own state."""
+    b = approved(tmp_path, live_validation_status='USER_CONTROLLED',
+                 live_entry_window_start='', live_entry_window_end='')
+    b.broker = _ExpiredTokenBroker()
+    b.configure_real_money(True, 'LIVE')
+    st = b.get_live_status()
+    assert st['live_armed'] is True, 'arming must stick even when blocked'
+    assert 'PAPER ONLY' not in st['header'], 'must not claim paper-only while armed'
+    assert 'LIVE TRADING ENABLED' in st['header']
+    assert 'Token Expired' in st['header'], 'the blocker must be named'
+
+
+def test_status_reports_caps_as_zero_not_as_defaults(tmp_path):
+    """The UI printed 3 and 5000 because it used (x||3) / (x||5000) and 0 is
+    falsy in JS. The server must send a clean 0 so a correct client shows no
+    cap, and the UI must no longer carry those fallbacks."""
+    b = approved(tmp_path, max_live_trades_per_day=0, max_live_loss_rupees_per_day=0.0)
+    st = b.get_live_status()
+    assert st['max_live_trades_per_day'] == 0
+    assert float(st['max_live_loss_rupees_per_day']) == 0.0
+    html = HTML.read_text(encoding='utf-8')
+    for bad in ("max_live_trades_per_day||3", "max_live_loss_rupees_per_day||5000"):
+        assert bad not in html.replace('// BUGFIX: this used (x||3) and (x||5000) as fallbacks.', ''), bad

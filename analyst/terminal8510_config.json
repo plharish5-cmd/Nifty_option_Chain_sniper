@@ -8,8 +8,8 @@
     "environment": "LIVE",
     "whitelisted_ip": "49.205.39.195",
     "DHAN_CLIENT_ID": "1112377935",
-    "TOKEN_EXPIRY_UTC": "2026-11-08T03:53:12Z",
-    "token_expiry_utc": "2026-11-08T03:53:12Z"
+    "TOKEN_EXPIRY_UTC": "2026-11-08T03:58:09Z",
+    "token_expiry_utc": "2026-11-08T03:58:09Z"
   },
   "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
   "instrument_master_path": "data/terminal8500/instrument_master.csv",
@@ -326,5 +326,5 @@
     "_evidence": "UNVALIDATED. Read-only classification bridge; never execution. Ports and parity audited against locked TypeScript; sparse chain history prevents a final trading verdict.",
     "max_payload_bytes": 4000000
   },
-  "TOKEN_EXPIRY_UTC": "2026-11-08T03:53:12Z"
+  "TOKEN_EXPIRY_UTC": "2026-11-08T03:58:09Z"
 }
