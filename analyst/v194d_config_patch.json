@@ -1,15 +1,15 @@
 {
   "execution_safety_defaults": {
-    "live_dry_run": true,
-    "dry_run_exit_min_orders": 30,
-    "live_entry_window_start": "09:20",
-    "live_entry_window_end": "15:05",
-    "max_live_trades_per_day": 3,
-    "max_live_loss_rupees_per_day": 5000.0,
-    "_evidence_live_dry_run": "Dry-run is the MANDATORY first state after arming and records the real bid/ask at signal time without sending an order. It exists because execution cost is currently unmeasurable: paper fill_price is taken from signal_ltp, so scripts/report_slippage.py reads a constant zero no matter how many fills accumulate. UNIT CORRECTION: the two standing assumptions were previously described as 4x apart, which was wrong - they are quoted in different units. simulated_slippage_pts mean 0.125 pts = Rs8.13 is PER LEG (Rs16.26 per round trip); the backtests' SLIPPAGE_INR_PER_TRADE = 32.50 (0.5 pts) is PER ROUND TRIP. Normalised, the disagreement is 2x, not 4x. Rs32.50 is therefore not an arbitrary constant: it is the round-trip cost of crossing a 0.5-point spread, which is a plausible NIFTY ATM option touch. Which figure is right is still UNMEASURED and is what the dry-run ledger decides. Exit is gated on 30 recorded dry-run orders, NOT on elapsed days, because a day count measures nothing about spread.",
-    "_evidence_live_entry_window": "New LIVE entries close at 15:05, not 15:30. EOD square-off is 15:20; allowing entries until 15:30 opens a window in which an order is placed and immediately squared off, paying charges both ways for nothing. 15:05 leaves a minimum hold. Paper and dry-run are unaffected - this gates real orders only.",
-    "_evidence_live_limits": "ARITHMETIC NOTE: these two limits conflict and the LOSS cap always fires first. One 40-point stop on lot 65 = Rs2,600 + ~Rs78 charges = ~Rs2,678, so a Rs5,000 daily loss cap halts trading after TWO losses and the 3-trade cap is never reached. The requested figure was 'Rs5000 or 40 pts x 65 lot', but 40 x 65 is Rs2,600, not Rs5,000. Both values are kept exactly as specified and neither is tuned; this note records that they are not equivalent.",
-    "_evidence": "Paper and algo-only are unconditional. Current NO-GO prevents real-money opt-in. Any future approved opt-in is session-only and resets OFF at restart."
+    "live_dry_run": false,
+    "dry_run_exit_min_orders": 0,
+    "live_entry_window_start": "09:15",
+    "live_entry_window_end": "15:20",
+    "max_live_trades_per_day": 0,
+    "max_live_loss_rupees_per_day": 0.0,
+    "_evidence_live_dry_run": "Dry-run is OPT-IN and defaults to FALSE. A mandatory 30-order dry-run gate was previously forced here; it was never requested by the desk owner and has been removed at his instruction. Set live_dry_run true to record real bid/ask without sending orders -- still the only way to measure execution cost, since paper fill_price is taken from signal_ltp and report_slippage.py therefore reads a constant zero. Unmeasured either way: the config assumes 0.125 pts = Rs8.13 PER LEG while the backtests assume Rs32.50 PER ROUND TRIP (2x apart, not 4x -- different units).",
+    "_evidence_live_entry_window": "09:15-15:20, i.e. market open to the EOD square-off. Set at the desk owner's instruction on 7 Nov 2026. A previous 09:20-15:05 window was MY narrowing, not his, and has been reverted. Set either value to \"\" to remove the window check entirely.",
+    "_evidence_live_limits": "BOTH DAILY CAPS ARE OFF (0 = no limit), set at the desk owner's explicit instruction on 7 Nov 2026: he manages his own risk and does not want the algo capped when it is producing signals. Previously 3 trades/day and Rs5,000/day, which came from his own earlier v1.9.4c spec and which he has now removed. Arithmetic kept on record only: one 40-point stop on lot 65 is Rs2,600 + ~Rs78 charges = ~Rs2,678, so a Rs5,000 cap would have halted after two losses. Set either value above 0 to re-enable that cap.",
+    "_evidence": "Paper and algo-only are unconditional. Harish explicitly selected USER_CONTROLLED on 7 Nov 2026: real-money arming is his decision and is not contingent on a backtest verdict. Exact LIVE confirmation remains required; arming is session-only and resets OFF at restart. This setting does not assert a validated trading edge."
   },
-  "_evidence": "Missing v1.9.4b guard defaults only. Never change live_validation_status, partial exits, broker IP, credentials or other watchlist selections."
+  "_evidence": "Missing defaults only, aligned with Harish's explicit 7 Nov 2026 gate/cap removals: dry-run false, required samples 0, both daily caps 0, entry window 09:15\u201315:20. Existing runtime keys are preserved. Never change live_validation_status, partial exits, broker IP, credentials or other watchlist selections."
 }

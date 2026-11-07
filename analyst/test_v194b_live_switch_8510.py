@@ -46,9 +46,10 @@ def make_backend(tmp_path, **safety):
     """A backend with a real ledger in tmp_path and nothing else wired."""
     b = object.__new__(QuantTerminalBackend)
     base = {'live_validation_status': 'NO_GO', 'typed_confirmation': 'LIVE',
-            'live_dry_run': True, 'dry_run_exit_min_orders': 30,
-            'live_entry_window_start': '09:20', 'live_entry_window_end': '15:05',
-            'max_live_trades_per_day': 3, 'max_live_loss_rupees_per_day': 5000.0}
+            # Matches the shipped config: dry-run is opt-in, not forced.
+            'live_dry_run': False, 'dry_run_exit_min_orders': 0,
+            'live_entry_window_start': '09:15', 'live_entry_window_end': '15:20',
+            'max_live_trades_per_day': 0, 'max_live_loss_rupees_per_day': 0.0}
     base.update(safety)
     b.cfg = {'execution_safety_v194': base, 'starting_paper_capital': 100000.0}
     b.config_path = tmp_path / 'config.json'
@@ -101,13 +102,32 @@ def test_default_state_is_not_armed(tmp_path):
     assert b.get_live_status()['live_armed'] is False
 
 
-def test_no_go_verdict_refuses_arming(tmp_path):
-    """The only thing between the algo and real capital."""
-    b = make_backend(tmp_path)
+def test_no_go_verdict_still_refuses_arming(tmp_path):
+    """NO_GO must keep blocking, or the flag means nothing.
+
+    The shipped config is now USER_CONTROLLED at the desk owner's instruction,
+    but an explicit NO_GO must still refuse -- otherwise there is no way to
+    disable arming at all. Only APPROVED and USER_CONTROLLED permit it."""
+    b = make_backend(tmp_path)                      # fixture is NO_GO
     res = b.configure_real_money(True, 'LIVE')
     assert res['ok'] is False
-    assert 'NO-GO' in res['error']
+    assert 'NO_GO' in res['error'] or 'NO-GO' in res['error']
     assert b.execution_mode == 'PAPER_ONLY'
+
+
+def test_user_controlled_permits_arming(tmp_path):
+    """The owner's documented decision: he accepts real-money risk without
+    requiring a backtest verdict. His own guards still apply."""
+    b = make_backend(tmp_path, live_validation_status='USER_CONTROLLED')
+    res = b.configure_real_money(True, 'LIVE')
+    assert res['ok'] is True
+    assert res['dry_run'] is False, "dry-run must not force itself on"
+
+
+def test_an_unknown_status_does_not_permit_arming(tmp_path):
+    for bad in ('', 'YES', 'GO', 'approved', 'user_controlled', None):
+        b = make_backend(tmp_path, live_validation_status=bad)
+        assert b.configure_real_money(True, 'LIVE')['ok'] is False, bad
 
 
 @pytest.mark.parametrize("typed", ['', 'live', 'LIVE ', 'ENABLE REAL MONEY', 'yes', None])
@@ -124,12 +144,25 @@ def test_non_boolean_enabled_is_refused(tmp_path):
         assert b.configure_real_money(bad, 'LIVE')['ok'] is False
 
 
-def test_correct_confirmation_arms_but_enters_dry_run(tmp_path):
-    """Arming is never the same as going live."""
-    b = approved(tmp_path)
+def test_correct_confirmation_arms_for_real_orders(tmp_path):
+    """With dry-run opt-in and off, a correct confirmation arms LIVE.
+
+    This previously asserted that arming could only reach DRY_RUN. That gate
+    was removed at the desk owner's instruction; dry-run is now opt-in."""
+    b = approved(tmp_path, live_entry_window_start='00:00',
+                 live_entry_window_end='23:59')
+    b.broker = _ConnectedBroker()
     res = b.configure_real_money(True, 'LIVE')
     assert res['ok'] is True
-    assert res['dry_run'] is True
+    assert res['dry_run'] is False
+    assert b.live_execution_decision()['route'] == 'LIVE'
+
+
+def test_dry_run_still_works_when_opted_into(tmp_path):
+    """The instrument must remain available for whenever it is wanted."""
+    b = approved(tmp_path, live_dry_run=True)
+    res = b.configure_real_money(True, 'LIVE')
+    assert res['ok'] is True and res['dry_run'] is True
     assert b.live_execution_decision()['route'] == 'DRY_RUN'
 
 
@@ -199,7 +232,7 @@ def test_gate_is_orders_not_days(tmp_path):
 
 def test_missing_ledger_counts_as_zero_evidence(tmp_path):
     """Absent evidence must keep the desk in dry-run, never fail open."""
-    b = approved(tmp_path, live_dry_run=False)
+    b = approved(tmp_path, live_dry_run=False, dry_run_exit_min_orders=30)
     b.ledger_db = tmp_path / 'nonexistent-dir' / 'ledger.sqlite3'
     assert b.count_dry_run_orders() == 0
     assert b.dry_run_gate_state()['dry_run'] is True
@@ -250,13 +283,44 @@ def test_recording_a_dry_run_never_raises(tmp_path):
 # 3. RUNTIME GUARDS — each one must downgrade, and only downgrade
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_entry_window_closes_before_the_1520_square_off(tmp_path):
-    """15:30 would allow an entry that is squared off minutes later, paying
-    charges both ways for nothing."""
+def test_the_entry_window_is_the_owners_choice(tmp_path):
+    """09:15-15:20: market open to the EOD square-off, as the owner specified.
+    A previous 09:20-15:05 narrowing was mine and was reverted at his
+    instruction."""
     b = make_backend(tmp_path)
     win = b.live_entry_window()
-    assert win['end'] == '15:05'
-    assert win['end'] < '15:20', "live entries must stop before EOD square-off"
+    assert win['start'] == '09:15'
+    assert win['end'] == '15:20'
+
+
+def test_the_window_check_can_be_removed_entirely(tmp_path):
+    """Blanking either bound disables it, so the owner can turn it off."""
+    b = make_backend(tmp_path, live_entry_window_start='', live_entry_window_end='')
+    win = b.live_entry_window()
+    assert win['open'] is True and win['disabled'] is True
+
+
+def test_zero_means_no_daily_cap(tmp_path):
+    """Both caps are OFF in the shipped config at the owner's instruction.
+    0 must mean unlimited, not "block everything"."""
+    b = approved(tmp_path, max_live_trades_per_day=0,
+                 max_live_loss_rupees_per_day=0.0,
+                 live_entry_window_start='', live_entry_window_end='')
+    b.broker = _ConnectedBroker()
+    b.configure_real_money(True, 'LIVE')
+    today = __import__('datetime').datetime.now(__import__(
+        'analyst.terminal8510_backend', fromlist=['IST']).IST).strftime('%Y-%m-%d')
+    with sqlite3.connect(b.ledger_db) as c:
+        for i in range(25):            # far beyond the old 3-trade cap
+            c.execute("INSERT OR REPLACE INTO orders (order_id, created_at, side, mode) "
+                      "VALUES (?,?,?,?)", ("L%d" % i, today + " 10:00:00", "BUY", "LIVE"))
+        c.execute("INSERT OR REPLACE INTO positions (position_id, status, mode, "
+                  "exit_time, net_pnl) VALUES ('PX','CLOSED_SL','LIVE',?,?)",
+                  (today + " 11:00:00", -99000.0))
+        c.commit()
+    d = b.live_execution_decision()
+    assert d['route'] == 'LIVE', \
+        "with caps at 0 neither 25 trades nor -Rs99,000 may block a signal: " + d['reason']
 
 
 def test_trade_count_guard_trips_and_disarms(tmp_path):
@@ -266,7 +330,12 @@ def test_trade_count_guard_trips_and_disarms(tmp_path):
     b.broker = _ConnectedBroker()
     seed_dry_runs(b, 1)
     b.configure_real_money(True, 'LIVE')
-    today = __import__('datetime').datetime.now().strftime('%Y-%m-%d')
+    # Must match the implementation's clock exactly: live_trades_today() and
+    # live_pnl_today() both key on datetime.now(IST). Using a naive now()
+    # here made the test fail whenever the container's UTC date and the IST
+    # date disagreed -- i.e. every evening after 18:30 UTC.
+    from analyst.terminal8510_backend import IST
+    today = __import__('datetime').datetime.now(IST).strftime('%Y-%m-%d')
     with sqlite3.connect(b.ledger_db) as c:
         for i in range(3):
             c.execute("INSERT OR REPLACE INTO orders (order_id, created_at, side, mode) "
@@ -283,7 +352,12 @@ def test_loss_guard_trips_and_disarms(tmp_path):
                  live_entry_window_start='00:00', live_entry_window_end='23:59')
     b.broker = _ConnectedBroker()
     b.configure_real_money(True, 'LIVE')
-    today = __import__('datetime').datetime.now().strftime('%Y-%m-%d')
+    # Must match the implementation's clock exactly: live_trades_today() and
+    # live_pnl_today() both key on datetime.now(IST). Using a naive now()
+    # here made the test fail whenever the container's UTC date and the IST
+    # date disagreed -- i.e. every evening after 18:30 UTC.
+    from analyst.terminal8510_backend import IST
+    today = __import__('datetime').datetime.now(IST).strftime('%Y-%m-%d')
     with sqlite3.connect(b.ledger_db) as c:
         c.execute("INSERT OR REPLACE INTO positions (position_id, status, mode, "
                   "exit_time, net_pnl) VALUES ('P1','CLOSED_SL','LIVE',?,?)",
@@ -482,26 +556,40 @@ def shipped():
     return json.loads((ROOT / 'analyst' / 'terminal8510_config.json').read_text(encoding='utf-8'))
 
 
-def test_the_verdict_is_still_no_go():
-    """The one flag this task must not change."""
+def test_the_shipped_verdict_is_the_owners_choice():
+    """USER_CONTROLLED, set 7 Nov 2026 on the desk owner's explicit
+    instruction. The evidence note must say so AND must not pretend an edge
+    exists."""
     s = shipped()['execution_safety_v194']
-    assert s['live_validation_status'] == 'NO_GO', \
-        "real-money approval is an evidenced decision, not a code change"
+    assert s['live_validation_status'] in ('USER_CONTROLLED', 'APPROVED', 'NO_GO')
+    if s['live_validation_status'] == 'USER_CONTROLLED':
+        ev = s.get('_evidence_live_validation_status', '')
+        assert 'instruction' in ev.lower()
+        assert 'NOT a claim of an edge' in ev or 'not a claim of an edge' in ev.lower()
+        assert '0.828' in ev, "the failed study result must stay on the record"
 
 
-def test_the_shipped_config_starts_in_dry_run():
+def test_dry_run_is_opt_in_not_forced():
+    """The mandatory 30-order gate was never requested by the desk owner and
+    was removed at his instruction. It must remain available, but off by
+    default -- it is still the only route to a measured execution cost."""
     s = shipped()['execution_safety_v194']
-    assert s['live_dry_run'] is True
-    assert int(s['dry_run_exit_min_orders']) >= 30
+    assert s['live_dry_run'] is False
+    assert 'live_dry_run' in s, "the option must still exist"
+    ev = s.get('_evidence_live_dry_run', '')
+    assert 'OPT-IN' in ev.upper()
 
 
 def test_the_typed_confirmation_is_live():
     assert shipped()['execution_safety_v194']['typed_confirmation'] == 'LIVE'
 
 
-def test_the_live_window_ends_before_square_off():
+def test_the_shipped_window_and_caps_match_the_owners_instruction():
     s = shipped()['execution_safety_v194']
-    assert s['live_entry_window_end'] < '15:20'
+    assert s['live_entry_window_start'] == '09:15'
+    assert s['live_entry_window_end'] == '15:20'
+    assert int(s['max_live_trades_per_day']) == 0, "daily trade cap must be off"
+    assert float(s['max_live_loss_rupees_per_day']) == 0.0, "daily loss cap must be off"
 
 
 def test_every_new_threshold_carries_an_evidence_note():
@@ -510,9 +598,11 @@ def test_every_new_threshold_carries_an_evidence_note():
     s = shipped()['execution_safety_v194']
     notes = ' '.join(v for k, v in s.items()
                      if k.startswith('_evidence') and isinstance(v, str))
-    assert '15:05' in notes and '15:20' in notes
+    assert '15:20' in notes
     assert '2,600' in notes or '2600' in notes
     assert 'dry-run' in notes.lower()
+    assert 'instruction' in notes.lower(), \
+        "a changed safety setting must record whose decision it was"
     assert 'PER LEG' in notes and 'PER ROUND TRIP' in notes, \
         "the per-leg vs per-trade unit correction must be recorded"
 
@@ -555,3 +645,55 @@ def test_a_fully_clear_path_does_reach_live(tmp_path):
     b.configure_real_money(True, 'LIVE')
     d = b.live_execution_decision()
     assert d['route'] == 'LIVE', d['reason']
+
+
+def test_user_controlled_actually_flips_execution_mode(tmp_path):
+    """REGRESSION. execution_mode accepted only 'APPROVED' while
+    configure_real_money had been updated to accept 'USER_CONTROLLED' too, so
+    arming succeeded, _real_money_enabled went True, and execution_mode still
+    returned PAPER_ONLY. get_live_status() therefore reported live_armed=False,
+    the UI unticked its own checkbox, and the header read 'Live not armed' with
+    no explanation given. The two now read one shared tuple."""
+    b = approved(tmp_path, live_validation_status='USER_CONTROLLED')
+    assert b.configure_real_money(True, 'LIVE')['ok'] is True
+    assert b.execution_mode == 'BOTH', "arming must flip the mode"
+    assert b.get_live_status()['live_armed'] is True, "the checkbox must stay checked"
+
+
+def test_the_two_gates_cannot_drift_apart():
+    """Both the property and the arming gate must read LIVE_ARMABLE_STATUSES,
+    so a status can never be armable in one and not the other."""
+    src = (ROOT / 'analyst' / 'terminal8510_backend.py').read_text(encoding='utf-8')
+    assert "LIVE_ARMABLE_STATUSES = ('APPROVED', 'USER_CONTROLLED')" in src
+    assert src.count('self.LIVE_ARMABLE_STATUSES') >= 2
+    assert "live_validation_status') == 'APPROVED'" not in src, \
+        'a hardcoded APPROVED-only check has come back'
+
+
+def test_armed_but_blocked_does_not_report_paper_only(tmp_path):
+    """REGRESSION. An armed desk with an expired token fell through to
+    '🟢 PAPER ONLY — No Real Orders Will Be Placed', which read as though the
+    arming had been refused -- directly contradicting the ticked LIVE checkbox
+    beside it. Enabled-but-blocked is now its own state."""
+    b = approved(tmp_path, live_validation_status='USER_CONTROLLED',
+                 live_entry_window_start='', live_entry_window_end='')
+    b.broker = _ExpiredTokenBroker()
+    b.configure_real_money(True, 'LIVE')
+    st = b.get_live_status()
+    assert st['live_armed'] is True, 'arming must stick even when blocked'
+    assert 'PAPER ONLY' not in st['header'], 'must not claim paper-only while armed'
+    assert 'LIVE TRADING ENABLED' in st['header']
+    assert 'Token Expired' in st['header'], 'the blocker must be named'
+
+
+def test_status_reports_caps_as_zero_not_as_defaults(tmp_path):
+    """The UI printed 3 and 5000 because it used (x||3) / (x||5000) and 0 is
+    falsy in JS. The server must send a clean 0 so a correct client shows no
+    cap, and the UI must no longer carry those fallbacks."""
+    b = approved(tmp_path, max_live_trades_per_day=0, max_live_loss_rupees_per_day=0.0)
+    st = b.get_live_status()
+    assert st['max_live_trades_per_day'] == 0
+    assert float(st['max_live_loss_rupees_per_day']) == 0.0
+    html = HTML.read_text(encoding='utf-8')
+    for bad in ("max_live_trades_per_day||3", "max_live_loss_rupees_per_day||5000"):
+        assert bad not in html.replace('// BUGFIX: this used (x||3) and (x||5000) as fallbacks.', ''), bad

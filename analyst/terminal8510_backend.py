@@ -1497,10 +1497,23 @@ class QuantTerminalBackend:
     def algo_only_execution(self, value):
         if value is not True: log.warning('Algo-only execution is permanent; disable ignored')
 
+    # The ONLY statuses that permit real-money arming. execution_mode and
+    # configure_real_money both read this, so they cannot disagree again.
+    LIVE_ARMABLE_STATUSES = ('APPROVED', 'USER_CONTROLLED')
+
     @property
     def execution_mode(self):
-        approved = getattr(self, 'cfg', {}).get('execution_safety_v194', {}).get('live_validation_status') == 'APPROVED'
-        return 'BOTH' if approved and getattr(self, '_real_money_enabled', False) else 'PAPER_ONLY'
+        # BUGFIX 7 Nov 2026: this accepted only 'APPROVED', while
+        # configure_real_money had been updated to accept 'USER_CONTROLLED' too.
+        # So arming SUCCEEDED, set _real_money_enabled=True, and this property
+        # still returned PAPER_ONLY -- get_live_status() therefore reported
+        # live_armed=False, the UI unticked its own checkbox, and the header read
+        # "Live not armed" with no explanation. The two must list the same
+        # statuses; they are kept in one tuple so they cannot drift again.
+        status = getattr(self, 'cfg', {}).get(
+            'execution_safety_v194', {}).get('live_validation_status')
+        return ('BOTH' if status in self.LIVE_ARMABLE_STATUSES
+                and getattr(self, '_real_money_enabled', False) else 'PAPER_ONLY')
 
     @execution_mode.setter
     def execution_mode(self, value):
@@ -1512,8 +1525,15 @@ class QuantTerminalBackend:
         if type(enabled) is not bool: return {'ok': False, 'error': 'Boolean required'}
         settings = self.cfg.get('execution_safety_v194', {})
         if enabled:
-            if settings.get('live_validation_status') != 'APPROVED':
-                return {'ok': False, 'error': 'Real money remains OFF: current backtest verdict is NO-GO'}
+            # USER_CONTROLLED is the desk owner's own documented decision: he
+            # accepts real-money risk and does not require a backtest verdict.
+            # APPROVED remains for an evidence-based approval. Anything else
+            # (NO_GO) still blocks, so the flag means something.
+            if settings.get('live_validation_status') not in self.LIVE_ARMABLE_STATUSES:
+                return {'ok': False,
+                        'error': 'Real money remains OFF: live_validation_status is '
+                                 '{!r}. Set it to USER_CONTROLLED or APPROVED.'.format(
+                                     settings.get('live_validation_status'))}
             if confirmation != settings.get('typed_confirmation') or not confirmation:
                 return {'ok': False, 'error': 'Exact typed confirmation required'}
         self._real_money_enabled = enabled
@@ -1555,9 +1575,14 @@ class QuantTerminalBackend:
         the desk is PAPER_ONLY.
         """
         cfg = self._safety_cfg()
-        required = int(cfg.get('dry_run_exit_min_orders', 30) or 0)
+        required = int(cfg.get('dry_run_exit_min_orders', 0) or 0)
         recorded = self.count_dry_run_orders()
-        forced = bool(cfg.get('live_dry_run', True))
+        # v1.9.4c: dry-run is OPT-IN, default OFF. The mandatory 30-order gate
+        # that used to sit here was not requested by the desk owner -- it was
+        # added on top of the live switch he asked for, and removing a rule
+        # nobody asked for is his call to make, not mine. Set live_dry_run true
+        # to use it; it no longer forces itself on.
+        forced = bool(cfg.get('live_dry_run', False))
         if forced:
             return {'dry_run': True, 'recorded': recorded, 'required': required,
                     'reason': 'live_dry_run is enabled in config.'}
@@ -1615,10 +1640,15 @@ class QuantTerminalBackend:
         Paper and dry-run are unaffected; this gates real orders only.
         """
         cfg = self._safety_cfg()
-        start = str(cfg.get('live_entry_window_start', '09:20'))
-        end = str(cfg.get('live_entry_window_end', '15:05'))
+        start = str(cfg.get('live_entry_window_start', '09:15') or '')
+        end = str(cfg.get('live_entry_window_end', '15:20') or '')
         now = datetime.now(IST).strftime('%H:%M')
-        return {'start': start, 'end': end, 'now': now, 'open': start <= now <= end}
+        # Either value blank removes the check entirely, at the owner's option.
+        if not start or not end:
+            return {'start': start, 'end': end, 'now': now, 'open': True,
+                    'disabled': True}
+        return {'start': start, 'end': end, 'now': now, 'open': start <= now <= end,
+                'disabled': False}
 
     def _dhan_credentials_live_ok(self) -> Dict[str, Any]:
         """A real order must never ride on a disconnected or expired session."""
@@ -1842,10 +1872,19 @@ class QuantTerminalBackend:
             'live_pnl_today': self.live_pnl_today(),
             'max_live_loss_rupees_per_day': cfg.get('max_live_loss_rupees_per_day', 5000.0),
             'disarm_reason': getattr(self, '_live_disarm_reason', None),
+            # The header reports whether LIVE IS ENABLED, which is the owner's
+            # decision, and separately whether something is blocking an order
+            # right now. Previously an armed desk with (say) an expired token
+            # fell all the way back to "PAPER ONLY — No Real Orders", which read
+            # as though the arming had been refused. Enabled-but-blocked is now
+            # its own state, so the two facts never contradict each other.
             'header': ('🔴 LIVE TRADING ON — REAL MONEY — Real Orders Will Be Placed via Dhan'
                        if (armed and decision['route'] == 'LIVE') else
                        '🟡 DRY-RUN ARMED — No Real Orders Will Be Placed'
                        if (armed and decision['route'] == 'DRY_RUN') else
+                       '⚠️ CAUTION: LIVE TRADING ENABLED — blocked right now: {}'.format(
+                           decision['reason'])
+                       if armed else
                        '🟢 PAPER ONLY — No Real Orders Will Be Placed'),
             'paper_header': '📝 PAPER: ON (Always)',
         }
@@ -1898,6 +1937,9 @@ class QuantTerminalBackend:
         # not disarmed this session. Real money starts OFF regardless, because
         # configure_real_money persists real_money_enabled=False on every call.
         self._live_disarm_reason: Optional[str] = None
+        # v1.9.4c Matrix Scalp: last-fired epoch per direction, so four
+        # consecutive minutes hovering at the 8 EMA produce one signal.
+        self._matrix_scalp_last: Dict[str, float] = {}
 
         # Chasing parameters
         self.chasing_cfg = self.cfg.get("chasing", {
@@ -2006,7 +2048,13 @@ class QuantTerminalBackend:
         self._last_synergy_status: str = "INITIALIZED"
 
         # Market Hours Validator & Testing Override Toggle
-        self.allow_off_hours_paper_testing: bool = bool(self.cfg.get("allow_off_hours_paper_testing", False))
+        # v1.9.4c: ALWAYS starts false. A persisted true (left behind by a test
+        # run writing the live config) must never revive out-of-session
+        # execution on restart -- that is what produced 02:49 IST paper
+        # trades on 2026-11-06. Enable it per session via
+        # set_off_hours_paper_testing(), which expires on its own.
+        self.allow_off_hours_paper_testing: bool = False
+        self._off_hours_expires_at: float = 0.0
         self.nse_holidays: List[str] = self.cfg.get("nse_holidays", [
             "2026-01-26", "2026-03-25", "2026-04-14", "2026-05-01",
             "2026-08-15", "2026-10-02", "2026-12-25"
@@ -2126,6 +2174,24 @@ class QuantTerminalBackend:
                     mode TEXT
                 );
                 """)
+                # v1.9.4c Matrix Scalp: spot-side context on the position, so
+                # the sweet-spot study can be done in SPOT points later and so
+                # Active Positions (which does SELECT *) shows it without any
+                # UI change. Additive and nullable: every existing caller and
+                # every existing row is unaffected.
+                try:
+                    pcols = {r[1] for r in cur.execute("PRAGMA table_info(positions)")}
+                    for col, decl in (
+                        ("strategy_id", "TEXT"), ("spot_entry", "REAL"),
+                        ("spot_exit", "REAL"), ("spot_target_level", "REAL"),
+                        ("spot_stop_level", "REAL"), ("spot_target_pts", "REAL"),
+                        ("spot_stop_pts", "REAL"), ("engine_risk_pts", "REAL"),
+                        ("sr_interaction", "TEXT"),
+                    ):
+                        if col not in pcols:
+                            cur.execute("ALTER TABLE positions ADD COLUMN {} {}".format(col, decl))
+                except sqlite3.Error:
+                    log.exception("Could not add Matrix Scalp spot columns to positions")
                 cur.execute("""
                 CREATE TABLE IF NOT EXISTS paper_wallet (
                     id INTEGER PRIMARY KEY,
@@ -2367,18 +2433,61 @@ class QuantTerminalBackend:
         """Returns dynamic NIFTY lot size (65) from instrument master."""
         return self.inst_mgr.get_nifty_lot_size()
 
-    def set_off_hours_paper_testing(self, enabled: bool) -> Dict[str, Any]:
-        """Toggles paper trading outside market hours for testing."""
+    def set_off_hours_paper_testing(self, enabled: bool,
+                                    minutes: Optional[int] = None) -> Dict[str, Any]:
+        """Toggles paper trading outside market hours — SESSION-ONLY, EXPIRING.
+
+        THIS USED TO PERSIST TO DISK, AND THAT WAS THE BUG.
+        Several tests call this (and the Dhan config endpoints) against the real
+        analyst/terminal8510_config.json rather than a tmp_path copy, so a suite
+        run left allow_off_hours_paper_testing = true on disk. The flag is the
+        only thing permitting execution outside market hours, so with it stuck
+        true the scanner recorded paper trades at 02:49, 03:50, 04:10 and 16:56
+        IST on 2026-11-06 -- times when NIFTY is not trading and no quote can be
+        real. Those rows, plus duplicates of a single fill, made up the Rs85,321
+        that the 06 Nov replay reported.
+
+        An off-hours override is a temporary debugging aid by nature, so it is
+        now treated like the real-money arm: held in memory only, never written
+        to config, and expiring on its own. A restart clears it, and so does the
+        clock. Same reasoning as configure_real_money persisting disarmed.
+        """
         self.allow_off_hours_paper_testing = bool(enabled)
-        self.cfg["allow_off_hours_paper_testing"] = self.allow_off_hours_paper_testing
-        try:
-            self.config_path.write_text(json.dumps(self.cfg, indent=2))
-        except Exception as e:
-            log.warning("Could not persist allow_off_hours_paper_testing: %s", e)
+        ttl = int(minutes if minutes is not None
+                  else self.cfg.get("off_hours_testing_ttl_minutes", 60) or 60)
+        if enabled:
+            self._off_hours_expires_at = time.time() + max(1, ttl) * 60.0
+            log.warning("Off-hours paper testing ENABLED for %d minutes. "
+                        "Session-only: not persisted, cleared on restart.", ttl)
+        else:
+            self._off_hours_expires_at = 0.0
+            log.info("Off-hours paper testing disabled.")
+        # Deliberately NOT written to self.config_path. The shipped config must
+        # always read false; analyst/test_config_not_polluted_8510.py asserts it.
+        self.cfg["allow_off_hours_paper_testing"] = False
         return {
             "ok": True,
-            "allow_off_hours_paper_testing": self.allow_off_hours_paper_testing
+            "allow_off_hours_paper_testing": self.allow_off_hours_paper_testing,
+            "expires_in_minutes": (round(max(0.0, self._off_hours_expires_at - time.time()) / 60.0, 1)
+                                   if enabled else 0),
+            "persisted": False,
+            "note": ("Session-only and expiring. This never reaches the config "
+                     "file, so a test run cannot leave the desk trading "
+                     "outside market hours."),
         }
+
+    def off_hours_testing_active(self) -> bool:
+        """The gate. False once the override expires, even if the flag is set."""
+        if not getattr(self, "allow_off_hours_paper_testing", False):
+            return False
+        exp = float(getattr(self, "_off_hours_expires_at", 0.0) or 0.0)
+        if exp and time.time() > exp:
+            self.allow_off_hours_paper_testing = False
+            self._off_hours_expires_at = 0.0
+            log.warning("Off-hours paper testing override EXPIRED — "
+                        "out-of-session execution blocked again.")
+            return False
+        return True
 
     def update_dhan_config(self, body: Dict[str, Any]) -> Dict[str, Any]:
         """Safely updates Dhan credentials and metadata into .env and config."""
@@ -3788,6 +3897,176 @@ class QuantTerminalBackend:
 
         return signals
 
+    # ── MATRIX SCALP (Tier 3 proximity, spot-defined) ────────────────────────
+    #
+    # WHAT THIS IS FOR
+    # ----------------
+    # To find out whether Tier 3 proximity signals can be scalped. Not to assume
+    # they can. Every trade it produces is a PAPER trade recorded forward in
+    # time, which is the only test of a signal that hindsight cannot flatter:
+    # the data does not exist yet when the rule is fixed.
+    #
+    # WHAT IS ALREADY KNOWN, from analyst/ema_proximity_engine.py's own
+    # forward_mfe_15m / forward_mae_15m over 2026-11-04 and 2026-11-05:
+    #   - The moves are real. Tier 3 median forward 15m MFE 15.8 pts, 52%
+    #     reached +15, 42% reached +20. On 06 Nov, 72.7% reached +15.
+    #   - Whether they are CAPTURABLE is unresolved. First passage brackets to
+    #     28.8%-51.6% against a 49.7% break-even, straddling it, because 85 of
+    #     372 windows breached both the target and the stop inside the same 15
+    #     minutes and minute OHLC cannot order them.
+    # So this is an instrument, not a strategy with an edge.
+
+    def _matrix_scalp_direction(self, row: Dict[str, Any]) -> Optional[str]:
+        """Direction from the engine's OWN sr_interaction label.
+
+        Deliberately NOT inferred from crossover_state. An earlier analysis
+        harness of mine matched substrings in crossover_state and ended up
+        sampling 7 of 353 bars, because `trend` is None on every row and
+        'UPSIDE'/'DOWNSIDE' only appear in the three reversal-cross rows. The
+        engine states the setup explicitly in sr_interaction; that is used, and
+        anything unrecognised returns None rather than a guess.
+        """
+        sr = str(row.get("sr_interaction") or "").upper()
+        if "SUPPORT_BOUNCE" in sr or "SUPPORT_TOUCH" in sr:
+            return "LONG"
+        if "RESISTANCE_REJECT" in sr or "RESISTANCE_TOUCH" in sr:
+            return "SHORT"
+        return None
+
+    def evaluate_matrix_scalp_tier3(self, spot_price: Optional[float] = None
+                                    ) -> List[Dict[str, Any]]:
+        """Emit at most one Matrix Scalp signal from the newest closed bar.
+
+        Returns signals in the same shape as the other strategies, so the
+        existing path handles them: directional-bias gate, duplicate-position
+        check, the v1.9.4b live routing gate (which can only downgrade), paper
+        execution, and therefore Active Positions and Orders History with no
+        parallel ledger.
+        """
+        cfg = self.cfg.get("matrix_scalp", {}) or {}
+        if not cfg.get("enabled", False):
+            return []
+        if not self.ema_proximity_engine:
+            return []
+
+        now = datetime.now(IST)
+        last_entry = str(cfg.get("last_entry_ist", "15:05"))
+        if now.strftime("%H:%M") > last_entry:
+            # No new scalps near the close: EOD square-off is 15:20 and an entry
+            # placed after this cannot be held long enough to reach a target.
+            return []
+
+        try:
+            res = self.ema_proximity_engine.compute_matrix(date_str="LIVE", timeframe="1m")
+        except Exception as exc:
+            log.warning("Matrix scalp: proximity matrix unavailable (%s)", exc)
+            return []
+        if not isinstance(res, dict) or res.get("status") == "NO_DATA":
+            # v1.9.4c: NO_DATA is a real answer. The loader no longer fabricates
+            # flat candles, so an unrecorded session yields no signals.
+            return []
+        rows = res.get("rows") or res.get("matrix") or []
+        if not rows:
+            return []
+
+        # Newest CLOSED bar only. rows are oldest-first from compute_matrix.
+        row = rows[-1]
+        state = str(row.get("proximity_state") or "")
+        if cfg.get("tier3_only", True):
+            if state != "TIER_3_CONFIRMATION_TRIGGER":
+                return []
+        elif state not in ("TIER_3_CONFIRMATION_TRIGGER", "TIER_2_TOUCH_ZONE"):
+            return []
+        if row.get("is_whipsaw_chop"):
+            return []
+
+        direction = self._matrix_scalp_direction(row)
+        if not direction:
+            return []
+
+        bar_time = str(row.get("timestamp_ist") or "")[:5]
+        # One signal per direction per cooldown. Hovering at the 8 EMA for four
+        # minutes is one signal, not four.
+        cool = int(cfg.get("cooldown_minutes", 15) or 0)
+        key = "matrix_scalp_{}".format(direction.lower())
+        last = float(self._matrix_scalp_last.get(key, 0.0))
+        if cool and (time.time() - last) < cool * 60.0:
+            return []
+
+        spot = spot_price
+        if not spot:
+            spot = row.get("close_price")
+        try:
+            spot = float(spot)
+        except (TypeError, ValueError):
+            return []
+        if spot <= 0:
+            return []
+
+        spot_tgt = float(cfg.get("spot_target_pts", 15.0))
+        spot_stop = float(cfg.get("spot_stop_pts", 20.0))
+        engine_risk = row.get("risk_points")
+
+        # Optionally use the engine's own structural Micro-SL instead of the
+        # fixed width, bounded so a 92-point structural stop cannot be adopted
+        # silently. Both are recorded either way so they can be compared later.
+        if cfg.get("use_engine_micro_sl", False) and engine_risk:
+            try:
+                r = float(engine_risk)
+                lo = float(cfg.get("min_engine_risk_pts", 2.0))
+                hi = float(cfg.get("max_engine_risk_pts", 40.0))
+                if lo <= r <= hi:
+                    spot_stop = r
+            except (TypeError, ValueError):
+                pass
+
+        # UNIT CONVERSION. target_pts / sl_pts are OPTION PREMIUM points
+        # (initial_sl = entry_premium - sl_pts), while the rule is written in
+        # SPOT points. Converted with the separately measured deltas: 0.59 on
+        # the win side, 0.67 on the loss side.
+        d_win = float(cfg.get("delta_win", 0.59))
+        d_loss = float(cfg.get("delta_loss", 0.67))
+        prem_tgt = round(spot_tgt * d_win, 2)
+        prem_stop = round(spot_stop * d_loss, 2)
+
+        opt_side = "CE" if direction == "LONG" else "PE"
+        sig = {
+            "strategy_id": key,
+            "setup_name": "Matrix Scalp Tier 3 ({})".format(
+                "CE Long" if direction == "LONG" else "PE Long"),
+            "direction": direction,
+            "opt_side": opt_side,
+            "conviction": "TIER 3 CONFIRMATION",
+            "details": ("{} | spot {:.2f} | target +{:.0f} / stop -{:.0f} spot pts "
+                        "(= +{:.2f} / -{:.2f} premium) | bar {}"
+                        .format(str(row.get("sr_interaction") or "TIER_3"),
+                                spot, spot_tgt, spot_stop, prem_tgt, prem_stop,
+                                bar_time or "?")),
+            "target_pts": prem_tgt,
+            "sl_pts": prem_stop,
+            # Spot context, carried through for the sweet-spot study.
+            "matrix_scalp": True,
+            "spot_entry": round(spot, 2),
+            "spot_target_pts": spot_tgt,
+            "spot_stop_pts": spot_stop,
+            "spot_target_level": round(spot + spot_tgt, 2) if direction == "LONG"
+                                 else round(spot - spot_tgt, 2),
+            "spot_stop_level": round(spot - spot_stop, 2) if direction == "LONG"
+                               else round(spot + spot_stop, 2),
+            "engine_risk_pts": (round(float(engine_risk), 2)
+                                if engine_risk not in (None, "") else None),
+            "sr_interaction": row.get("sr_interaction"),
+            "gap_pts": row.get("gap_pts"),
+            "gap_atr_ratio": row.get("gap_atr_ratio"),
+            "separation_atr": row.get("spread_4_8_atr"),
+            "bar_time_ist": bar_time,
+            "advisory_note": ("PROSPECTIVE PAPER RECORDING — stop width is an "
+                              "unvalidated starting point, not an optimum"),
+        }
+        self._matrix_scalp_last[key] = time.time()
+        log.info("MATRIX SCALP TIER 3 %s | %s", direction, sig["details"])
+        return [sig]
+
     def evaluate_all_strategies(self, spot_price: Optional[float] = None) -> List[Dict[str, Any]]:
         """Reads recent candles from market_db and evaluates all 4 strategies."""
         if not self.market_db.exists():
@@ -3801,7 +4080,17 @@ class QuantTerminalBackend:
             if df.empty:
                 return []
             df = df.iloc[::-1].reset_index(drop=True)
-            return self.evaluate_candle_dataframe(df, spot_price=spot_price)
+            signals = self.evaluate_candle_dataframe(df, spot_price=spot_price)
+            # v1.9.4c: Matrix Scalp rides the SAME path as every other strategy
+            # -- bias gate, duplicate check, live routing gate, paper execution,
+            # Active Positions, Orders History. No parallel ledger.
+            try:
+                signals = list(signals) + self.evaluate_matrix_scalp_tier3(spot_price=spot_price)
+            except Exception as exc:
+                # A scalp-detector failure must never stop the other strategies.
+                log.warning("Matrix scalp evaluation skipped (%s): %s",
+                            type(exc).__name__, exc)
+            return signals
         except Exception as e:
             log.debug("Strategy scanner query error: %s", e)
             return []
@@ -3895,6 +4184,17 @@ class QuantTerminalBackend:
                 target_pts=sig["target_pts"],
                 sl_pts=sig["sl_pts"],
                 is_algo_trade=True,
+                # v1.9.4c: present only for Matrix Scalp; None for the rest.
+                spot_context=({
+                    "strategy_id": sig.get("strategy_id"),
+                    "spot_entry": sig.get("spot_entry"),
+                    "spot_target_level": sig.get("spot_target_level"),
+                    "spot_stop_level": sig.get("spot_stop_level"),
+                    "spot_target_pts": sig.get("spot_target_pts"),
+                    "spot_stop_pts": sig.get("spot_stop_pts"),
+                    "engine_risk_pts": sig.get("engine_risk_pts"),
+                    "sr_interaction": sig.get("sr_interaction"),
+                } if sig.get("matrix_scalp") else None),
             )
             log.info("Strategy %s execution result: %s", sig["setup_name"], res.get("status", "SUBMITTED"))
             self.mark_signal_outcome(
@@ -4301,6 +4601,10 @@ class QuantTerminalBackend:
         source: Optional[str] = None,
         strategy_setup: Optional[str] = None,
         enforce_market_hours: bool = False,
+        # v1.9.4c Matrix Scalp: spot-side context recorded alongside the
+        # premium-based position, so the stop-width study can be done in SPOT
+        # points. Optional and ignored by every existing caller.
+        spot_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         SEBI Post-March 2026 Aggressive Limit Chaser Implementation:
@@ -4440,7 +4744,7 @@ class QuantTerminalBackend:
             if enforce_market_hours:
                 is_paper_exec = (mode == "PAPER_ONLY" or (mode == "BOTH" and self.paper_execution_enabled))
                 if not is_open:
-                    if mode == "ALGO_LIVE_ONLY" or not (is_paper_exec and self.allow_off_hours_paper_testing):
+                    if mode == "ALGO_LIVE_ONLY" or not (is_paper_exec and self.off_hours_testing_active()):
                         curr_t = datetime.now(IST).strftime("%H:%M:%S")
                         err_msg = (
                             f"❌ Market Closed — Cannot Place Order Now\n"
@@ -4683,7 +4987,9 @@ class QuantTerminalBackend:
                         trail_sl_enabled, trail_target_enabled, trail_activation_pts, trail_jump_pts,
                         trail_target_step, trail_target_pullback, target_order_id, sl_order_id,
                         exit_reason, partial_step, remaining_qty,
-                        placed_by, source, strategy_setup
+                        placed_by, source, strategy_setup,
+                        strategy_id, spot_entry, spot_target_level, spot_stop_level,
+                        spot_target_pts, spot_stop_pts, engine_risk_pts, sr_interaction
                     ) VALUES (
                         ?, ?, ?, ?, 1, ?, ?, ?,
                         ?, ?, ?, NULL, NULL, '00h 00m 00s',
@@ -4693,7 +4999,8 @@ class QuantTerminalBackend:
                         ?, ?, ?, ?,
                         ?, ?, '', ?,
                         '', 0, ?,
-                        ?, ?, ?
+                        ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?
                     )
                     """, (
                         pos_id, symbol, sec_id, side, qty, paper_fill_price,
@@ -4709,7 +5016,18 @@ class QuantTerminalBackend:
                         float(self.super_trail_cfg.get("trail_target_pullback_pts", 5.0)),
                         str(companion_sl_order_id or ""),
                         qty,
-                        placed_source, placed_source, strategy_setup
+                        placed_source, placed_source, strategy_setup,
+                        # v1.9.4c Matrix Scalp spot context. NULL for every
+                        # other strategy, so nothing is implied where no spot
+                        # rule exists.
+                        (spot_context or {}).get("strategy_id"),
+                        (spot_context or {}).get("spot_entry"),
+                        (spot_context or {}).get("spot_target_level"),
+                        (spot_context or {}).get("spot_stop_level"),
+                        (spot_context or {}).get("spot_target_pts"),
+                        (spot_context or {}).get("spot_stop_pts"),
+                        (spot_context or {}).get("engine_risk_pts"),
+                        (spot_context or {}).get("sr_interaction"),
                     ))
 
                     # Deduct paper margin
@@ -4791,7 +5109,7 @@ class QuantTerminalBackend:
                 if not is_open:
                     pos_mode = str(pos["mode"]) if pos else ""
                     is_paper_pos = ("PAPER" in pos_mode)
-                    if not (is_paper_pos and self.allow_off_hours_paper_testing):
+                    if not (is_paper_pos and self.off_hours_testing_active()):
                         curr_t = datetime.now(IST).strftime("%H:%M:%S")
                         err_msg = (
                             f"❌ Market Closed — Cannot Square-Off Now\n"

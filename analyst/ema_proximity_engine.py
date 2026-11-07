@@ -204,20 +204,31 @@ class EmaProximityEngine:
             except Exception as e:
                 log.debug("Live fallback query error: %s", e)
 
+        self.last_load_had_no_data = False
         if not records:
-            # Synthetic fallback to avoid crashes
-            base_dt = datetime.strptime(f"{target_date} 09:15:00", "%Y-%m-%d %H:%M:%S").replace(tzinfo=IST)
-            base_ts = int(base_dt.timestamp())
-            cur_p = 24350.0
-            for i in range(375):
-                records.append({
-                    "ts": base_ts + i * 60,
-                    "open": cur_p,
-                    "high": cur_p + 2.0,
-                    "low": cur_p - 2.0,
-                    "close": cur_p + 0.5,
-                    "volume": 1000.0,
-                })
+            # v1.9.4c: THE SYNTHETIC FALLBACK IS REMOVED.
+            #
+            # This block used to manufacture 375 flat candles at 24350.0 "to
+            # avoid crashes". The cost of that convenience was severe and
+            # silent: on a flat series the 4 MA and 8 EMA sit on top of price
+            # with a gap of ~0, so the proximity classifier marked almost every
+            # bar a TOUCH and the desk invented Tier 2 / Tier 3 signals for any
+            # date with no recorded data. Nothing downstream could tell those
+            # apart from real ones, so a CSV export or a backtest spanning
+            # unrecorded dates returned fabricated signals that looked like
+            # measurements. An empty export is a fact; a flat 24350.0 session is
+            # a lie.
+            #
+            # No data now means no rows. Callers must handle an empty frame;
+            # compute_matrix reports status NO_DATA.
+            self.last_load_had_no_data = True
+            log.warning(
+                "No recorded candles for %s (timeframe=%s). Returning EMPTY, not "
+                "synthetic candles. Nothing can be computed for this date.",
+                target_date, timeframe)
+            cols = ["ts", "open", "high", "low", "close", "volume", "datetime"]
+            empty = pd.DataFrame(columns=cols)
+            return empty, empty.copy(), empty.copy()
 
         df_1m = pd.DataFrame(records)
         df_1m["datetime"] = pd.to_datetime(df_1m["ts"], unit="s", utc=True).dt.tz_convert(IST)
@@ -268,6 +279,25 @@ class EmaProximityEngine:
         max_flips = int(cfg.get("whipsaw_max_flips_12m", 3))
         goldilocks_min_atr = float(cfg.get("goldilocks_min_atr", 0.13))
 
+        def no_data(date_label: str, tf: str) -> Dict[str, Any]:
+            """v1.9.4c: an explicit empty result, so a date with no recorded
+            candles yields no rows instead of rows computed from a fabricated
+            flat series. An empty table is the correct answer here."""
+            return {
+                "ok": False,
+                "status": "NO_DATA",
+                "date": date_label,
+                "timeframe": tf,
+                "rows": [],
+                "matrix": [],
+                "radar": [],
+                "n_bars": 0,
+                "message": ("No recorded candles for {} ({}). Nothing computed. "
+                            "This date was never recorded, so there are no "
+                            "signals to report -- real or otherwise."
+                            .format(date_label, tf)),
+            }
+
         target_date = date_str or "LIVE"
         is_live = (str(target_date).upper() == "LIVE")
         today_iso = datetime.now(IST).strftime("%Y-%m-%d")
@@ -304,6 +334,10 @@ class EmaProximityEngine:
             df_1m, df_15m, df_1h = self.load_candles_for_date(target_date, timeframe=timeframe)
 
         # Apply real-time forming bar if live_spot provided during live market
+        # v1.9.4c: bail out BEFORE computing anything on an empty frame.
+        if df_1m is None or df_1m.empty:
+            return no_data(str(target_date), timeframe)
+
         if live_spot and float(live_spot) > 0 and not df_1m.empty and (is_live or target_date == today_iso):
             curr_spot = float(live_spot)
             now_dt = datetime.now(IST)

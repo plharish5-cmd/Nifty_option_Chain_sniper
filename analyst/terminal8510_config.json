@@ -7,7 +7,9 @@
     "client_id": "1112377935",
     "environment": "LIVE",
     "whitelisted_ip": "49.205.39.195",
-    "DHAN_CLIENT_ID": "1112377935"
+    "DHAN_CLIENT_ID": "1112377935",
+    "TOKEN_EXPIRY_UTC": "2026-11-08T03:58:09Z",
+    "token_expiry_utc": "2026-11-08T03:58:09Z"
   },
   "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
   "instrument_master_path": "data/terminal8500/instrument_master.csv",
@@ -276,19 +278,36 @@
     "_evidence": "Recording only. No signal, filter or threshold here is validated. The radar max-move column is descriptive and selection-biased by construction; target_N_hit_before_sl is the tradeable statistic. Added because v1.9.2 could price only 10 of 49 candidates (20.4%) for lack of per-contract minute data."
   },
   "real_money_enabled": false,
+  "matrix_scalp": {
+    "enabled": false,
+    "tier3_only": true,
+    "spot_target_pts": 15.0,
+    "spot_stop_pts": 20.0,
+    "cooldown_minutes": 15,
+    "last_entry_ist": "15:05",
+    "delta_win": 0.59,
+    "delta_loss": 0.67,
+    "use_engine_micro_sl": false,
+    "min_engine_risk_pts": 2.0,
+    "max_engine_risk_pts": 40.0,
+    "_evidence": "PROSPECTIVE RECORDING ONLY. This exists to find out whether Tier 3 proximity signals can be scalped on NIFTY spot; it does NOT assume they can. Nothing here is validated. Measured facts it rests on: Tier 3 forward 15m MFE over 2026-11-04/05 (353 bars) had median 15.8 pts with 52% reaching +15 and 42% reaching +20, while the 06 Nov session reached +15 in 72.7% of bars - so the MOVES are real but the day-to-day hit rate swings 52-73%. First passage on the same data brackets to 28.8-51.6% against a 49.7% break-even at +15/-20, i.e. it straddles break-even and is NOT established. 85 of 372 windows breached target and stop inside the same 15 minutes, and minute OHLC cannot say which came first. Starting at 30-60 recorded paper sessions before any verdict.",
+    "_evidence_stop_width": "spot_stop_pts 20.0 is a STARTING POINT chosen by the desk owner, not an optimum. Do not treat it as tuned. Engine Micro-SL risk_points had median 8.5 pts (Tier 3) over the same sessions, and forward 15m adverse excursion had median 13.9 pts, so 8 is inside the noise and 20 sits above the median adverse move. A wider stop is NOT automatically better: break-even rises faster than the win rate does, so at +15/-30 the win-rate bracket only improves to 50.3-51.6% while break-even rises to 75.3%. The sweet spot is an open question and is exactly what these recorded paper trades are for. Every trade also stores the engine's own risk_points so the two stop rules can be compared after the fact rather than argued about now.",
+    "_evidence_units": "UNIT CONVERSION. The rule is stated in NIFTY SPOT points but execute_order_with_chaser interprets target_pts and sl_pts as OPTION PREMIUM points (initial_sl = entry_premium - sl_pts). Converting with the measured deltas: a 15-point spot target is ~8.85 premium points (15 x 0.59) and a 20-point spot stop is ~13.4 premium points (20 x 0.67). The loss-side delta 0.67 is used for the stop and the win-side 0.59 for the target because those are the separately measured figures. Both the spot levels and the converted premium levels are recorded on the position so the analysis can be done in spot terms later."
+  },
   "execution_safety_v194": {
-    "live_validation_status": "NO_GO",
+    "live_validation_status": "USER_CONTROLLED",
     "typed_confirmation": "LIVE",
-    "live_dry_run": true,
-    "dry_run_exit_min_orders": 30,
-    "live_entry_window_start": "09:20",
-    "live_entry_window_end": "15:05",
-    "max_live_trades_per_day": 3,
-    "max_live_loss_rupees_per_day": 5000.0,
-    "_evidence_live_dry_run": "Dry-run is the MANDATORY first state after arming and records the real bid/ask at signal time without sending an order. It exists because execution cost is currently unmeasurable: paper fill_price is taken from signal_ltp, so scripts/report_slippage.py reads a constant zero no matter how many fills accumulate. UNIT CORRECTION: the two standing assumptions were previously described as 4x apart, which was wrong - they are quoted in different units. simulated_slippage_pts mean 0.125 pts = Rs8.13 is PER LEG (Rs16.26 per round trip); the backtests' SLIPPAGE_INR_PER_TRADE = 32.50 (0.5 pts) is PER ROUND TRIP. Normalised, the disagreement is 2x, not 4x. Rs32.50 is therefore not an arbitrary constant: it is the round-trip cost of crossing a 0.5-point spread, which is a plausible NIFTY ATM option touch. Which figure is right is still UNMEASURED and is what the dry-run ledger decides. Exit is gated on 30 recorded dry-run orders, NOT on elapsed days, because a day count measures nothing about spread.",
-    "_evidence_live_entry_window": "New LIVE entries close at 15:05, not 15:30. EOD square-off is 15:20; allowing entries until 15:30 opens a window in which an order is placed and immediately squared off, paying charges both ways for nothing. 15:05 leaves a minimum hold. Paper and dry-run are unaffected - this gates real orders only.",
-    "_evidence_live_limits": "ARITHMETIC NOTE: these two limits conflict and the LOSS cap always fires first. One 40-point stop on lot 65 = Rs2,600 + ~Rs78 charges = ~Rs2,678, so a Rs5,000 daily loss cap halts trading after TWO losses and the 3-trade cap is never reached. The requested figure was 'Rs5000 or 40 pts x 65 lot', but 40 x 65 is Rs2,600, not Rs5,000. Both values are kept exactly as specified and neither is tuned; this note records that they are not equivalent.",
-    "_evidence": "Paper and algo-only are unconditional. Current NO-GO prevents real-money opt-in. Any future approved opt-in is session-only and resets OFF at restart."
+    "live_dry_run": false,
+    "dry_run_exit_min_orders": 0,
+    "live_entry_window_start": "09:15",
+    "live_entry_window_end": "15:20",
+    "max_live_trades_per_day": 0,
+    "max_live_loss_rupees_per_day": 0.0,
+    "_evidence_live_dry_run": "Dry-run is OPT-IN and defaults to FALSE. A mandatory 30-order dry-run gate was previously forced here; it was never requested by the desk owner and has been removed at his instruction. Set live_dry_run true to record real bid/ask without sending orders -- still the only way to measure execution cost, since paper fill_price is taken from signal_ltp and report_slippage.py therefore reads a constant zero. Unmeasured either way: the config assumes 0.125 pts = Rs8.13 PER LEG while the backtests assume Rs32.50 PER ROUND TRIP (2x apart, not 4x -- different units).",
+    "_evidence_live_entry_window": "09:15-15:20, i.e. market open to the EOD square-off. Set at the desk owner's instruction on 7 Nov 2026. A previous 09:20-15:05 window was MY narrowing, not his, and has been reverted. Set either value to \"\" to remove the window check entirely.",
+    "_evidence_live_limits": "BOTH DAILY CAPS ARE OFF (0 = no limit), set at the desk owner's explicit instruction on 7 Nov 2026: he manages his own risk and does not want the algo capped when it is producing signals. Previously 3 trades/day and Rs5,000/day, which came from his own earlier v1.9.4c spec and which he has now removed. Arithmetic kept on record only: one 40-point stop on lot 65 is Rs2,600 + ~Rs78 charges = ~Rs2,678, so a Rs5,000 cap would have halted after two losses. Set either value above 0 to re-enable that cap.",
+    "_evidence": "Paper and algo-only are unconditional. Harish explicitly selected USER_CONTROLLED on 7 Nov 2026: real-money arming is his decision and is not contingent on a backtest verdict. Exact LIVE confirmation remains required; arming is session-only and resets OFF at restart. This setting does not assert a validated trading edge.",
+    "_evidence_live_validation_status": "Set to USER_CONTROLLED on 7 Nov 2026 at the desk owner's explicit, repeated instruction. He accepts real-money risk and does not require a backtest verdict to arm. This records WHAT changed and WHY. It is NOT a claim of an edge: the pre-registered ICT/SMC study ran to a largest |t| of 0.828 against a corrected threshold of 4.344, and seventeen tested ideas have returned NOT BUILT. NO_GO still blocks arming, so the flag retains meaning. Harish subsequently removed the mandatory dry-run gate and both daily caps on 7 Nov 2026. Current settings are live_dry_run false, dry_run_exit_min_orders 0, both daily caps 0, and entry window 09:15-15:20. Typed LIVE confirmation, Dhan token validity, kill switch and the 15:20 EOD square-off remain. These removals are Harish's explicit instructions, not a strategy-validation verdict."
   },
   "ict_smc_desk_signals": {
     "enabled": true,
@@ -307,5 +326,6 @@
     "_evidence": "UNVALIDATED. Read-only classification bridge; never execution. Ports and parity audited against locked TypeScript; sparse chain history prevents a final trading verdict.",
     "max_payload_bytes": 4000000
   },
-  "algo_strike_selection_evidence": "Harish explicitly requested LONG_CE_ITM disabled on 2026-11-07; other strike selection entries unchanged."
+  "algo_strike_selection_evidence": "Harish explicitly requested LONG_CE_ITM disabled on 2026-11-07; other strike selection entries unchanged.",
+  "TOKEN_EXPIRY_UTC": "2026-11-08T03:58:09Z"
 }

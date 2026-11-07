@@ -457,6 +457,67 @@ async def api_order_submit(req: Request):
         'algo_only_blocked': True, 'error': 'Manual trading is permanently disabled; select watchlist strikes for enabled algo setups instead'})
 
 
+@app.get("/api/matrix_scalp/config")
+async def api_matrix_scalp_get():
+    """Matrix Scalp settings plus what has been recorded so far."""
+    cfg = dict(backend.cfg.get("matrix_scalp", {}) or {})
+    out = {"ok": True, "config": cfg}
+    try:
+        import sqlite3 as _s
+        with _s.connect("file:{}?mode=ro".format(backend.ledger_db), uri=True) as c:
+            c.row_factory = _s.Row
+            out["open_positions"] = [dict(r) for r in c.execute(
+                "SELECT * FROM positions WHERE status='OPEN' "
+                "AND strategy_id LIKE 'matrix_scalp%'")]
+            out["closed_count"] = c.execute(
+                "SELECT COUNT(*) FROM positions WHERE status LIKE 'CLOSED%' "
+                "AND strategy_id LIKE 'matrix_scalp%'").fetchone()[0]
+            out["sessions_recorded"] = c.execute(
+                "SELECT COUNT(DISTINCT substr(entry_time,1,10)) FROM positions "
+                "WHERE strategy_id LIKE 'matrix_scalp%'").fetchone()[0]
+    except Exception as exc:
+        out["ledger_error"] = str(exc)
+    return JSONResponse(content=out)
+
+
+@app.post("/api/matrix_scalp/config")
+async def api_matrix_scalp_set(req: Request):
+    """Enable/disable and set the spot target and stop width.
+
+    Only these keys are writable. The evidence notes, the deltas and the tier
+    filter are not settable from the browser, so the recorded study cannot be
+    silently redefined mid-flight.
+    """
+    body = await req.json()
+    cfg = dict(backend.cfg.get("matrix_scalp", {}) or {})
+    allowed = {"enabled": bool, "spot_target_pts": float, "spot_stop_pts": float,
+               "cooldown_minutes": int, "use_engine_micro_sl": bool,
+               "last_entry_ist": str}
+    applied, rejected = {}, {}
+    for k, v in (body or {}).items():
+        if k not in allowed:
+            rejected[k] = "not settable from the UI"
+            continue
+        try:
+            cfg[k] = allowed[k](v)
+            applied[k] = cfg[k]
+        except (TypeError, ValueError):
+            rejected[k] = "expected {}".format(allowed[k].__name__)
+    if cfg.get("spot_stop_pts", 0) <= 0 or cfg.get("spot_target_pts", 0) <= 0:
+        return JSONResponse(status_code=400, content={
+            "ok": False, "error": "target and stop must both be positive"})
+    backend.cfg["matrix_scalp"] = cfg
+    try:
+        backend.config_path.write_text(json.dumps(backend.cfg, indent=2))
+    except OSError as exc:
+        return JSONResponse(status_code=500, content={
+            "ok": False, "error": "could not persist: {}".format(exc)})
+    return JSONResponse(content={
+        "ok": True, "applied": applied, "rejected": rejected, "config": cfg,
+        "note": ("Paper only. The stop width is an unvalidated starting point; "
+                 "30-60 recorded sessions are needed before any verdict.")})
+
+
 @app.get("/api/live/status")
 async def api_live_status():
     """Header state for the live switch. Read-only; arms nothing."""
