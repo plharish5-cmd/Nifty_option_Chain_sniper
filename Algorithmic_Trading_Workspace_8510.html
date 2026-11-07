@@ -5381,7 +5381,11 @@ function renderLiveStatus(s){
   if(s.entry_window&&!s.entry_window.open)bits.push(`live window ${s.entry_window.start}–${s.entry_window.end} IST`);
   if(s.disarm_reason)bits.push('last auto-disarm: '+s.disarm_reason);
   bits.push(`verdict ${s.live_validation_status}`);
-  bits.push(`live today ${s.live_trades_today}/${s.max_live_trades_per_day}, P&L ₹${s.live_pnl_today}`);
+  // Show a cap only when one is actually set. 0 means unlimited, and
+  // printing '0/0' or a Rs0 limit reads as a restriction that isn't there.
+  const cap=Number(s.max_live_trades_per_day)||0;
+  bits.push(cap>0 ? `live today ${s.live_trades_today}/${cap}, P&L ₹${s.live_pnl_today}`
+                  : `live today ${s.live_trades_today}, P&L ₹${s.live_pnl_today}`);
   reason.textContent=bits.join(' · ');
  }
  const btn=document.getElementById('stopLiveBtn');

@@ -645,3 +645,26 @@ def test_a_fully_clear_path_does_reach_live(tmp_path):
     b.configure_real_money(True, 'LIVE')
     d = b.live_execution_decision()
     assert d['route'] == 'LIVE', d['reason']
+
+
+def test_user_controlled_actually_flips_execution_mode(tmp_path):
+    """REGRESSION. execution_mode accepted only 'APPROVED' while
+    configure_real_money had been updated to accept 'USER_CONTROLLED' too, so
+    arming succeeded, _real_money_enabled went True, and execution_mode still
+    returned PAPER_ONLY. get_live_status() therefore reported live_armed=False,
+    the UI unticked its own checkbox, and the header read 'Live not armed' with
+    no explanation given. The two now read one shared tuple."""
+    b = approved(tmp_path, live_validation_status='USER_CONTROLLED')
+    assert b.configure_real_money(True, 'LIVE')['ok'] is True
+    assert b.execution_mode == 'BOTH', "arming must flip the mode"
+    assert b.get_live_status()['live_armed'] is True, "the checkbox must stay checked"
+
+
+def test_the_two_gates_cannot_drift_apart():
+    """Both the property and the arming gate must read LIVE_ARMABLE_STATUSES,
+    so a status can never be armable in one and not the other."""
+    src = (ROOT / 'analyst' / 'terminal8510_backend.py').read_text(encoding='utf-8')
+    assert "LIVE_ARMABLE_STATUSES = ('APPROVED', 'USER_CONTROLLED')" in src
+    assert src.count('self.LIVE_ARMABLE_STATUSES') >= 2
+    assert "live_validation_status') == 'APPROVED'" not in src, \
+        'a hardcoded APPROVED-only check has come back'

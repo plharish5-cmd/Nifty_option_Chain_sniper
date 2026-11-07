@@ -2418,10 +2418,23 @@ class QuantTerminalBackend:
     def algo_only_execution(self, value):
         if value is not True: log.warning('Algo-only execution is permanent; disable ignored')
 
+    # The ONLY statuses that permit real-money arming. execution_mode and
+    # configure_real_money both read this, so they cannot disagree again.
+    LIVE_ARMABLE_STATUSES = ('APPROVED', 'USER_CONTROLLED')
+
     @property
     def execution_mode(self):
-        approved = getattr(self, 'cfg', {}).get('execution_safety_v194', {}).get('live_validation_status') == 'APPROVED'
-        return 'BOTH' if approved and getattr(self, '_real_money_enabled', False) else 'PAPER_ONLY'
+        # BUGFIX 7 Nov 2026: this accepted only 'APPROVED', while
+        # configure_real_money had been updated to accept 'USER_CONTROLLED' too.
+        # So arming SUCCEEDED, set _real_money_enabled=True, and this property
+        # still returned PAPER_ONLY -- get_live_status() therefore reported
+        # live_armed=False, the UI unticked its own checkbox, and the header read
+        # "Live not armed" with no explanation. The two must list the same
+        # statuses; they are kept in one tuple so they cannot drift again.
+        status = getattr(self, 'cfg', {}).get(
+            'execution_safety_v194', {}).get('live_validation_status')
+        return ('BOTH' if status in self.LIVE_ARMABLE_STATUSES
+                and getattr(self, '_real_money_enabled', False) else 'PAPER_ONLY')
 
     @execution_mode.setter
     def execution_mode(self, value):
@@ -2437,7 +2450,7 @@ class QuantTerminalBackend:
             # accepts real-money risk and does not require a backtest verdict.
             # APPROVED remains for an evidence-based approval. Anything else
             # (NO_GO) still blocks, so the flag means something.
-            if settings.get('live_validation_status') not in ('APPROVED', 'USER_CONTROLLED'):
+            if settings.get('live_validation_status') not in self.LIVE_ARMABLE_STATUSES:
                 return {'ok': False,
                         'error': 'Real money remains OFF: live_validation_status is '
                                  '{!r}. Set it to USER_CONTROLLED or APPROVED.'.format(
