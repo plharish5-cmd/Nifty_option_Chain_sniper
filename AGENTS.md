@@ -1,5 +1,11 @@
 # Standing Agent Rules for Nifty Scanner & AI Analyst
 
+## 0. MULTI-AGENT WORK — READ FIRST
+Claude, ChatGPT/Codex and Gemini work on this repo in parallel.
+**Read `MULTI_AGENT_GIT_RULES.md` and `AGENT_STATUS.md` before your first commit.**
+Own branch, tag before and after, never touch `integrate/v1.9` or `main` without
+being told, never commit runtime data, and never add an unrequested safeguard.
+
 1. **REUSE existing modules.** Do NOT rewrite:
    - `strategy1.py`
    - `dhan_frames.py`
@@ -25,7 +31,14 @@
 
 7. **After every file you create, print its full path** so placement can be verified.
 
-8. **Alert-only.** Nothing in this build places, modifies or cancels orders.
+8. **ORDERS ARE LIVE — this rule changed on 7 Nov 2026.** Port 8510 can place
+   REAL orders via Dhan. `execution_safety_v194.live_validation_status` is
+   `USER_CONTROLLED`: Harish arms it by typing `LIVE`, accepts the risk, and has
+   deliberately removed the daily trade and loss caps (`0` = unlimited).
+   Paper logging runs in parallel and cannot be disabled. Do NOT re-add caps,
+   dry-run gates or validation thresholds — see rule 10 of
+   `MULTI_AGENT_GIT_RULES.md`. The rest of the scanner stack (`dashboard.py`,
+   `analyst/`, `patterns/`) remains alert-only.
 
 9. **IMMUTABLE FEATURE LOCK**: Core features verified working with StockMojo parity are documented and protected in `PROTECTED_MODULES.md` with baseline manifest `ict_smc_app/LOCKED_MANIFEST.json`. NEVER modify any file or function listed in `PROTECTED_MODULES.md` (Trinity 3-tabs, Classic Writer Flow, Smart OI, PE-CE Matrix 2.0, CVD Divergence, Stacked Nodes, OI Walls, Big Trades) unless the user prompt explicitly contains `UNLOCK [Module Name]`.
 

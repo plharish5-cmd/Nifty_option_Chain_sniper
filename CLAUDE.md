@@ -1,5 +1,14 @@
 # AI Assistant Instructions & Architecture Rules
 
+## MULTI-AGENT WORK — READ FIRST
+Harish runs Claude, ChatGPT/Codex and Gemini in parallel on this repo.
+**Before your first commit, read `MULTI_AGENT_GIT_RULES.md` and `AGENT_STATUS.md`.**
+In short: own branch `<agent>/<version>-<topic>`, never commit to `integrate/v1.9`
+or `main`, tag `pre-`/`post-<agent>-<version>`, never commit `data/`,
+`analyst/replay_data/`, `*.sqlite3` or `.env`, change config only via a narrow
+patch script, merge only when Harish says so, and **never add a rule, gate or
+limit he did not ask for.**
+
 ## IMMUTABLE FEATURE LOCK (STRICT RULE)
 NEVER modify any file or function listed in `PROTECTED_MODULES.md` when building new features unless the user prompt explicitly contains `"UNLOCK [Module Name]"`.
 
