@@ -327,5 +327,10 @@
     "max_payload_bytes": 4000000
   },
   "algo_strike_selection_evidence": "Harish explicitly requested LONG_CE_ITM disabled on 2026-11-07; other strike selection entries unchanged.",
-  "TOKEN_EXPIRY_UTC": "2026-11-08T03:58:09Z"
+  "TOKEN_EXPIRY_UTC": "2026-11-08T03:58:09Z",
+  "grok_regime_bridge_v194d": {
+    "rules_path": "analyst/grok_bridge_rules_8510.json",
+    "execution_gate_mode": "ADVISORY_ONLY",
+    "_evidence": "Asynchronous observational bridge only; existing live settings, execution, strategy and risk rules are unchanged."
+  }
 }
