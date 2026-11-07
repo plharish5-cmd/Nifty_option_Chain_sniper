@@ -1382,54 +1382,23 @@
                 </div>
             </div>
 
-            <!-- Quick Filters Toolbar for Source and Strategy (Problem 4) -->
-            <div class="card" style="padding:12px 16px; margin-bottom:14px; background:var(--bg-input); border:1px solid var(--border-subtle);">
-                <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:space-between;">
-                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                        <span style="font-size:11px; font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">SOURCE FILTER:</span>
-                        <button type="button" class="secondary-btn active-filter-btn" id="btnFilterSource_ALL" onclick="setSourceFilter('ALL')" style="padding:4px 10px; font-size:11.5px; font-weight:700;">[ All ]</button>
-                        <button type="button" class="secondary-btn" id="btnFilterSource_AUTO" onclick="setSourceFilter('AUTO')" style="padding:4px 10px; font-size:11.5px;">[ Auto Algo 🤖 ]</button>
-                        <button type="button" class="secondary-btn" id="btnFilterSource_MANUAL" onclick="setSourceFilter('MANUAL')" style="padding:4px 10px; font-size:11.5px;">[ Manual ✋ ]</button>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                        <span style="font-size:11px; font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">STRATEGY FILTER:</span>
-                        <button type="button" class="secondary-btn active-filter-btn" id="btnFilterStrat_ALL" onclick="setStrategyFilter('ALL')" style="padding:4px 10px; font-size:11.5px; font-weight:700;">[ All Strategies ]</button>
-                        <button type="button" class="secondary-btn" id="btnFilterStrat_Stage2" onclick="setStrategyFilter('Stage 2')" style="padding:4px 10px; font-size:11.5px;">[ Stage 2 ]</button>
-                        <button type="button" class="secondary-btn" id="btnFilterStrat_Cross" onclick="setStrategyFilter('4/8 Crossover')" style="padding:4px 10px; font-size:11.5px;">[ 4/8 Crossover ]</button>
-                        <button type="button" class="secondary-btn" id="btnFilterStrat_1H" onclick="setStrategyFilter('1H 8 EMA')" style="padding:4px 10px; font-size:11.5px;">[ 1H 8 EMA ]</button>
-                        <button type="button" class="secondary-btn" id="btnFilterStrat_Stage3" onclick="setStrategyFilter('Stage 3')" style="padding:4px 10px; font-size:11.5px;">[ Stage 3 ]</button>
-                        <button type="button" class="secondary-btn" id="btnFilterStrat_OI" onclick="setStrategyFilter('P minus C Filter')" style="padding:4px 10px; font-size:11.5px;">[ P minus C Filter ]</button>
-                    </div>
-                </div>
-                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px; padding-top:10px; border-top:1px solid var(--border-subtle);">
-                    <span style="font-size:11px; font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">MONEY FILTER:</span>
-                    <button type="button" class="secondary-btn active-filter-btn" id="btnFilterMoney_ALL" onclick="setMoneyFilter('ALL')" style="padding:4px 10px; font-size:11.5px; font-weight:700;">[ All ]</button>
-                    <button type="button" class="secondary-btn" id="btnFilterMoney_PAPER" onclick="setMoneyFilter('PAPER')" style="padding:4px 10px; font-size:11.5px;">[ Paper Money 📝 ]</button>
-                    <button type="button" class="secondary-btn" id="btnFilterMoney_REAL" onclick="setMoneyFilter('REAL')" style="padding:4px 10px; font-size:11.5px;">[ Real Money 💰 ]</button>
-                    <span style="font-size:10.5px; color:var(--text-muted); margin-left:6px;">Orders placed in <b>BOTH</b> mode fired on both books, so they appear under either filter.</span>
-                </div>
+            <div class="card" style="padding:12px 16px">
+                <b>Session algo trades only</b>
+                <button type="button" class="secondary-btn active-filter-btn" id="btnFilterMoney_PAPER" onclick="setMoneyFilter('PAPER')">Paper Algo</button>
+                <button type="button" class="secondary-btn" id="btnFilterMoney_REAL" onclick="setMoneyFilter('REAL')">Real Algo</button>
+                <small>Manual, off-market, replay and test records are excluded, including older dates. Entry-session eligibility is 09:15–15:45; trading hours are unchanged.</small>
             </div>
 
             <!-- Active Positions Section (Problem 4 Layout) -->
             <div class="card">
                 <h2>
-                    <span>📈 Active Positions (Live Fluctuating MTM Like Dhan App)</span>
+                    <span>📈 Active Algo Positions</span>
                     <button type="button" class="emerald-btn" onclick="exportPositionsToExcel()">📥 Download Positions as Excel (.xls)</button>
                 </h2>
                 <div style="overflow-x:auto;">
                     <table>
                         <thead>
-                            <tr>
-                                <th>Contract Symbol</th>
-                                <th>Qty</th>
-                                <th>Entry Price</th>
-                                <th>Entry Time</th>
-                                <th>LTP</th>
-                                <th>Live MTM / P&amp;L</th>
-                                <th>Source</th>
-                                <th>Strategy / Setup</th>
-                                <th>Square-Off</th>
-                            </tr>
+                            <tr><th>Contract / strike</th><th>Qty</th><th>Setup</th><th>NIFTY entry</th><th>NIFTY exit</th><th>Entry time</th><th>Exit time</th><th>Option entry</th><th>Option exit</th><th>Live LTP</th><th>Live P&L</th><th>Status</th><th>Action</th></tr>
                         </thead>
                         <tbody id="positionsTableBody">
                             <tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:16px;">No active open positions. Submit an order from Tab 1 to track live fluctuating MTM.</td></tr>
@@ -1441,28 +1410,13 @@
             <!-- Orders Book Section (Problem 4 Source & Strategy Columns) -->
             <div class="card">
                 <h2>
-                    <span>📑 Institutional Orders Book</span>
+                    <span id="algoOrderBookTitle">Institutional Algo Orders · Paper</span>
                     <button type="button" class="emerald-btn" onclick="exportOrdersToExcel()">📥 Download Orders Book as Excel (.xls)</button>
                 </h2>
                 <div style="overflow-x:auto;">
                     <table>
                         <thead>
-                            <tr>
-                                <th>Order ID</th>
-                                <th>Timestamp</th>
-                                <th>Contract Symbol</th>
-                                <th>Source</th>
-                                <th>Strategy / Setup</th>
-                                <th>Side</th>
-                                <th>Type</th>
-                                <th>Qty</th>
-                                <th>Signal LTP</th>
-                                <th>Avg Fill Price</th>
-                                <th>Slippage (Pts)</th>
-                                <th>Book</th>
-                                <th>Exit / Net P&amp;L</th>
-                                <th>Status</th>
-                            </tr>
+                            <tr><th>Order ID</th><th>Contract / strike</th><th>Side</th><th>Qty</th><th>Setup</th><th>NIFTY entry</th><th>NIFTY exit</th><th>Entry time</th><th>Exit time</th><th>Option entry</th><th>Option exit</th><th>Live LTP</th><th>P&L</th><th>Status</th></tr>
                         </thead>
                         <tbody id="ordersTableBody">
                             <tr><td colspan="14" style="text-align:center; color:var(--text-muted); padding:16px;">Loading order book...</td></tr>
@@ -1548,7 +1502,7 @@
                         </div>
                         <div style="display:flex; gap:10px; flex-wrap:wrap;">
                             <button type="button" class="crimson-btn" onclick="resetPaperLedger(false)">🧹 Clear Realized P&amp;L Only</button>
-                            <button type="button" class="crimson-btn" onclick="resetPaperLedger(true)">🧹 Clear P&amp;L + Wipe Orders Book</button>
+                            <button type="button" class="crimson-btn" onclick="cleanupOffMarketTests(false)">Clear off-market test history</button>
                         </div>
                     </div>
                 </div>
@@ -2167,7 +2121,7 @@
         let cachedAllowOffHours = false;
         let cachedSpotPrice = 0.0;
         let currentPosSourceFilter = "ALL";
-        let currentMoneyFilter = "ALL";   // ALL | PAPER | REAL (orders book)
+        let currentMoneyFilter = "PAPER";   // ALL | PAPER | REAL (orders book)
         let currentPosStrategyFilter = "ALL";
 
         // ── 2. INITIALIZATION & CLOCK ─────────────────────────────────────────
@@ -3632,67 +3586,28 @@
             return { time: m[2], date: m[1] || "" };
         }
 
-        function renderPositionsTable(positions) {
-            const tbody = document.getElementById("positionsTableBody");
-            if (!tbody) return;
-
-            let filtered = positions || [];
-            if (currentPosSourceFilter === "AUTO") {
-                filtered = filtered.filter(p => (p.source && p.source.includes("AUTO")) || (p.placed_by && p.placed_by.includes("AUTO")));
-            } else if (currentPosSourceFilter === "MANUAL") {
-                filtered = filtered.filter(p => (p.source && p.source.includes("MANUAL")) || (p.placed_by && p.placed_by.includes("MANUAL")));
+        function algoViewRows(rows){
+            return (rows||[]).filter(r=>r.is_algo_session===true&&!r.test_hidden&&r.execution_book===currentMoneyFilter);
+        }
+        function algoValue(v){return v==null?'—':typeof v==='number'?v.toFixed(2):String(v);}
+        function appendAlgoCells(tr,values,timeCols,moneyCols,qtyCol){
+            values.forEach((value,i)=>{const td=tr.insertCell();
+                if(timeCols.includes(i)&&value){const t=splitEntryTime(value);td.textContent=t.time+(t.date?'\n'+t.date:'');td.style.whiteSpace='pre-line';}
+                else if(moneyCols.includes(i))td.textContent=value==null?'—':'₹'+Number(value).toFixed(2);
+                else td.textContent=i===qtyCol?String(value??'—'):algoValue(value);
+            });
+        }
+        function algoPositionValues(p){
+            const pnl=p.valuation_available===false||p.observed_entry_premium==null?null:p.net_pnl;
+            return [p.symbol,p.qty,p.strategy_setup||p.strategy_name||'Not recorded',p.recorded_entry_spot,p.recorded_exit_spot,p.entry_time,p.exit_time,p.observed_entry_premium,p.observed_exit_premium,p.valuation_available===false?null:p.current_ltp,pnl,p.valuation_available===false?'Awaiting fresh quote':p.status];
+        }
+        function renderPositionsTable(positions){
+            const body=document.getElementById('positionsTableBody');if(!body)return;body.replaceChildren();
+            const rows=algoViewRows(positions);
+            for(const p of rows){const tr=body.insertRow();appendAlgoCells(tr,algoPositionValues(p),[5,6],[7,8,9,10],1);
+                const cell=tr.insertCell(),button=document.createElement('button');button.type='button';button.textContent='Square off';button.className='crimson-btn';button.onclick=()=>handleSquareOffClick(p.position_id);cell.appendChild(button);
             }
-            if (currentPosStrategyFilter !== "ALL") {
-                filtered = filtered.filter(p => {
-                    const s = (p.strategy_setup || p.strategy_name || "");
-                    if (currentPosStrategyFilter === "Stage 2") return s.includes("Stage 2");
-                    if (currentPosStrategyFilter === "4/8 Crossover") return s.includes("Crossover");
-                    if (currentPosStrategyFilter === "1H 8 EMA") return s.includes("1H");
-                    if (currentPosStrategyFilter === "Stage 3") return s.includes("Stage 3");
-                    if (currentPosStrategyFilter === "P minus C Filter") return s.includes("P minus C") || s.includes("OI");
-                    return true;
-                });
-            }
-
-            if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:16px;">No active positions matching current filter.</td></tr>`;
-                return;
-            }
-
-            const isMarketBlocked = cachedMarketStatus && !cachedMarketStatus.is_open && !cachedAllowOffHours;
-            const sqBtnDisabledAttr = isMarketBlocked ? 'disabled title="Market Closed (Mon-Fri 09:15 AM - 03:30 PM IST)" style="opacity:0.5; cursor:not-allowed;"' : '';
-
-            tbody.innerHTML = filtered.map(p => {
-                const pnlVal = p.net_pnl !== undefined ? p.net_pnl : (p.gross_pnl !== undefined ? p.gross_pnl : 0);
-                const pnlColor = pnlVal >= 0 ? "var(--emerald)" : "var(--crimson)";
-                const pnlIcon = pnlVal >= 0 ? "🟢" : "🔴";
-                const pnlSign = pnlVal >= 0 ? "+" : "";
-                const sourceDisplay = p.source || (p.placed_by || "MANUAL MATRIX ✋");
-                const stratDisplay = p.strategy_setup || (p.strategy_name || "Manual — No Strategy");
-                const et = splitEntryTime(p.entry_time);
-                const structTip = p.structured_contract ?
-                    `Expiry Date: ${p.structured_contract.expiry_display || ''}&#10;Symbol: ${p.structured_contract.symbol || 'NIFTY'}&#10;Strike: ${p.structured_contract.strike_display || ''}` :
-                    `Symbol: ${p.symbol}`;
-
-                return `<tr>
-                    <td title="${structTip}"><b style="font-family:var(--font-mono);">${p.symbol}</b></td>
-                    <td><b>${p.qty}</b></td>
-                    <td>₹${Number(p.entry_price || 0).toFixed(2)}</td>
-                    <td title="Entered: ${p.entry_time || 'unknown'}">
-                        <b style="font-family:var(--font-mono); font-size:12.5px;">${et.time}</b>
-                        ${et.date ? `<div style="color:var(--text-muted); font-size:10px;">${et.date}</div>` : ``}
-                    </td>
-                    <td style="font-weight:700;">₹${Number(p.current_ltp || 0).toFixed(2)}</td>
-                    <td style="font-weight:800; color:${pnlColor}; font-size:13px;">${pnlSign}${Math.round(pnlVal)} ${pnlIcon}</td>
-                    <td><span class="status-badge ${sourceDisplay.includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${sourceDisplay}</span></td>
-                    <td><span style="font-family:var(--font-mono); font-weight:600; font-size:11.5px;">${stratDisplay}</span></td>
-                    <td>
-                        <button type="button" class="crimson-btn" style="padding:4px 10px; font-size:11px; font-weight:700;" onclick="handleSquareOffClick('${p.position_id}')" ${sqBtnDisabledAttr}>
-                            Square-Off
-                        </button>
-                    </td>
-                </tr>`;
-            }).join("");
+            if(!rows.length){const td=body.insertRow().insertCell();td.colSpan=13;td.textContent='No active '+(currentMoneyFilter==='REAL'?'real':'paper')+' algo positions for this session-trade view.';}
         }
 
         async function handleSquareOffClick(posId) {
@@ -3739,7 +3654,7 @@
         async function quickActionAllPositions(action) {
             try {
                 const posRes = await fetch("/api/positions");
-                const positions = await posRes.json();
+                const positions = algoViewRows(await posRes.json());
                 if (!positions || positions.length === 0) {
                     alert("No active open positions to modify.");
                     return;
@@ -3774,74 +3689,19 @@
             }
         }
 
-        function renderOrdersTable(orders) {
-            const tbody = document.getElementById("ordersTableBody");
-            if (!tbody) return;
-
-            let filtered = orders || [];
-            if (currentPosSourceFilter === "AUTO") {
-                filtered = filtered.filter(o => (o.source && o.source.includes("AUTO")) || (o.placed_by && o.placed_by.includes("AUTO")));
-            } else if (currentPosSourceFilter === "MANUAL") {
-                filtered = filtered.filter(o => (o.source && o.source.includes("MANUAL")) || (o.placed_by && o.placed_by.includes("MANUAL")));
-            }
-            if (currentPosStrategyFilter !== "ALL") {
-                filtered = filtered.filter(o => {
-                    const s = (o.strategy_setup || o.strategy_name || "");
-                    if (currentPosStrategyFilter === "Stage 2") return s.includes("Stage 2");
-                    if (currentPosStrategyFilter === "4/8 Crossover") return s.includes("Crossover");
-                    if (currentPosStrategyFilter === "1H 8 EMA") return s.includes("1H");
-                    if (currentPosStrategyFilter === "Stage 3") return s.includes("Stage 3");
-                    if (currentPosStrategyFilter === "P minus C Filter") return s.includes("P minus C") || s.includes("OI");
-                    return true;
-                });
-            }
-
-            // Paper vs real money. mode is the execution mode the order fired
-            // under: PAPER_ONLY hit only the paper book, ALGO_LIVE_ONLY only the
-            // real one, and BOTH genuinely hit both — so BOTH is shown under
-            // either filter rather than being assigned to one arbitrarily.
-            if (currentMoneyFilter === "PAPER") {
-                filtered = filtered.filter(o => String(o.mode || "").includes("PAPER") || String(o.mode || "") === "BOTH");
-            } else if (currentMoneyFilter === "REAL") {
-                filtered = filtered.filter(o => String(o.mode || "").includes("LIVE") || String(o.mode || "") === "BOTH");
-            }
-
-            if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; color:var(--text-muted); padding:16px;">No orders found matching filters.</td></tr>`;
-                return;
-            }
-
-            tbody.innerHTML = filtered.map(o => {
-                const mode = String(o.mode || "");
-                const isPaper = mode.includes("PAPER");
-                const isReal = mode.includes("LIVE");
-                const bookLabel = mode === "BOTH" ? "PAPER + REAL" : (isPaper ? "PAPER 📝" : (isReal ? "REAL 💰" : (mode || "—")));
-                const bookBadge = mode === "BOTH" ? "badge-gold" : (isReal ? "badge-bear" : "badge-side");
-                const isExit = String(o.side || "") === "SELL";
-                const netPnl = Number(o.net_pnl || 0);
-                const exitCell = isExit
-                    ? `<b style="color:${netPnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">${netPnl >= 0 ? '+' : ''}${Math.round(netPnl)}</b>
-                       <div style="color:var(--text-muted); font-size:10px; font-family:var(--font-mono);">${o.exit_reason || 'EXIT'}</div>`
-                    : `<span style="color:var(--text-muted);">—</span>`;
-                return `
-                <tr${isExit ? ` style="background:rgba(239,68,68,0.05);"` : ``}>
-                    <td><code>${o.order_id}</code></td>
-                    <td style="color:var(--text-dim);">${o.created_at}</td>
-                    <td><b style="font-family:var(--font-mono);">${o.symbol}</b></td>
-                    <td><span class="status-badge ${(o.source || o.placed_by || '').includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${o.source || o.placed_by || 'MANUAL MATRIX ✋'}</span></td>
-                    <td><span style="font-family:var(--font-mono); font-size:11.5px;">${o.strategy_setup || o.strategy_name || 'Manual — No Strategy'}</span></td>
-                    <td style="color:${o.side === 'BUY' ? 'var(--emerald)' : 'var(--crimson)'}; font-weight:700;">${o.side}</td>
-                    <td><span class="status-badge badge-side">${o.order_type}</span></td>
-                    <td><b>${o.qty}</b></td>
-                    <td>₹${Number(o.signal_ltp || 0).toFixed(2)}</td>
-                    <td style="font-weight:700; color:var(--emerald);">₹${Number(o.fill_price || 0).toFixed(2)}</td>
-                    <td style="color:${Number(o.slippage || 0) > 0 ? 'var(--crimson)' : 'var(--emerald)'};">${Number(o.slippage || 0) >= 0 ? '+' : ''}${Number(o.slippage || 0).toFixed(2)}</td>
-                    <td><span class="status-badge ${bookBadge}" style="font-size:10px;">${bookLabel}</span></td>
-                    <td>${exitCell}</td>
-                    <td><span class="status-badge ${o.order_status === 'FILLED' ? 'badge-bull' : (o.order_status === 'CANCELLED' ? 'badge-side' : 'badge-bear')}">${o.order_status}</span></td>
-                </tr>
-            `;
-            }).join("");
+        function algoOrderValues(o){
+            const pnl=o.execution_book==='REAL'?o.verified_live_mtm:o.observed_entry_premium==null?null:o.observed_exit_premium!=null?(o.position_net_pnl??o.net_pnl):o.position_status==='OPEN'&&o.live_ltp!=null?o.position_net_pnl:null;
+            return [o.order_id,o.symbol,o.side,o.qty,o.strategy_setup||o.strategy_name||'Not recorded',o.recorded_entry_spot,o.recorded_exit_spot,o.position_entry_time||(o.side==='BUY'?o.created_at:null),o.position_exit_time||(o.side==='SELL'?o.created_at:null),o.observed_entry_premium,o.observed_exit_premium,o.live_ltp,pnl,o.order_status];
+        }
+        function renderOrdersTable(orders){
+            const body=document.getElementById('ordersTableBody');if(!body)return;body.replaceChildren();
+            document.getElementById('algoOrderBookTitle').textContent='Institutional Algo Orders · '+(currentMoneyFilter==='REAL'?'Real':'Paper');
+            const rows=algoViewRows(orders);
+            for(const o of rows){const tr=body.insertRow();appendAlgoCells(tr,algoOrderValues(o),[7,8],[9,10,11,12],3);}
+            if(!rows.length){const td=body.insertRow().insertCell();td.colSpan=14;td.textContent='No '+(currentMoneyFilter==='REAL'?'real':'paper')+' session algo orders. Manual and testing records are excluded.';}
+        }
+        async function cleanupOffMarketTests(restore=false){
+            try{const res=await fetch('/api/ledger/off-market-tests/'+(restore?'restore':'cleanup'),{method:'POST'});const data=await res.json();if(!res.ok||!data.ok)throw Error(data.error||'Cleanup failed');alert(data.message||('Restored '+data.restored+' test records'));pollLiveEngine();}catch(e){alert(e.message);}
         }
 
         function renderFunds(funds) {
@@ -4974,20 +4834,11 @@
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         }
 
-        function exportPositionsToExcel() {
-            fetch('/api/positions').then(r => r.json()).then(rows => {
-                const headers = ['Symbol', 'Mode', 'Qty', 'Entry Price', 'Entry Time', 'Current LTP', 'Duration', 'Gross PnL', 'Net PnL', 'Status'];
-                const data = rows.map(p => [p.symbol, p.mode, p.qty, p.entry_price, p.entry_time, p.current_ltp, p.duration, p.gross_pnl, p.net_pnl, p.status]);
-                exportTableToExcelXML('Port8510_Active_Positions.xls', 'Positions', headers, data);
-            });
+        function exportPositionsToExcel(){
+            fetch('/api/positions').then(r=>r.json()).then(rows=>exportTableToExcelXML('Algo_Positions.xls','Positions',['Contract','Qty','Setup','NIFTY entry','NIFTY exit','Entry time','Exit time','Option entry','Option exit','Live LTP','Live PnL','Status'],algoViewRows(rows).map(algoPositionValues)));
         }
-
-        function exportOrdersToExcel() {
-            fetch('/api/orders').then(r => r.json()).then(rows => {
-                const headers = ['Order ID', 'Timestamp', 'Strategy', 'Symbol', 'Security ID', 'Side', 'Type', 'Qty', 'Signal LTP', 'Limit Price', 'Fill Price', 'Slippage', 'Retries', 'Charges', 'Status'];
-                const data = rows.map(o => [o.order_id, o.created_at, o.strategy_name, o.symbol, o.security_id, o.side, o.order_type, o.qty, o.signal_ltp, o.limit_price, o.fill_price, o.slippage, o.chase_retries, o.brokerage_taxes, o.order_status]);
-                exportTableToExcelXML('Port8510_Orders_Book.xls', 'Orders', headers, data);
-            });
+        function exportOrdersToExcel(){
+            fetch('/api/orders').then(r=>r.json()).then(rows=>exportTableToExcelXML('Algo_Orders.xls','Orders',['Order ID','Contract','Side','Qty','Setup','NIFTY entry','NIFTY exit','Entry time','Exit time','Option entry','Option exit','Live LTP','PnL','Status'],algoViewRows(rows).map(algoOrderValues)));
         }
 
         function exportReplayToExcel() {

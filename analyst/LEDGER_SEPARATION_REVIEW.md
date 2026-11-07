@@ -83,3 +83,34 @@ orders and positions matched before and after. No real ledger cleanup ran.
 The installed-source focused suite passes 45 tests with the two superseded
 blanket-delete tests explicitly deselected; the earlier full result (45 pass,
 2 fail) remains documented above. The daemon still requires restart.
+
+
+## Algo-only presentation refinement — 7 November 2026
+
+Positions and Orders now offer only Paper Algo and Real Algo. Eligibility is
+computed from explicit original source/placed-by fields (before display fallbacks),
+entry-session time and test/replay/manual markers. New executions also retain
+the explicit is_algo_trade boolean in provenance, inherited by exit legs. Late
+exits use their original position entry time. Unknown origin is not promoted
+into an algo merely by a default label. All old dates use the same filter.
+
+The Source column and manual/test/all-source controls were removed from this
+view. Test cleanup remains outside it in Funds; historical replay is unchanged.
+Execution rows are retained for audit, not physically purged. Order/position
+exports and bulk position actions use the same selected algo view. Emergency
+kill and risk-management queries still retain access to all underlying records.
+
+Paired columns: NIFTY entry/exit, entry/exit time, option entry/exit. Contract,
+quantity, setup, fresh LTP, PnL and status remain. Open-trade exits/missing recorded
+prices display a dash. Real order MTM uses its broker-confirmed fill rather than
+a paper-parent entry. No new broker reconciliation or historical fills are
+invented. Existing controls for square-off and trailing remain present.
+
+Validation: 15 ledger tests pass, including runtime origin, legacy late exits,
+shared UI/export/action filtering, retained action functions, and broker-fill
+MTM independent of a different paper parent price. The prior combined focused
+run had 49 passes with 2 superseded blanket-delete tests deselected, followed by
+one additional passing MTM regression. Python/JS syntax and all 11 locks pass.
+No live setting was modified, no broker order was submitted and no ledger row
+was deleted by this change. Restart 8510 and hard-refresh to load both backend
+eligibility flags and the new table layout.

@@ -1,6 +1,7 @@
 """Append-only price provenance and reversible, test-only ledger visibility."""
 import json
 import math
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -60,7 +61,7 @@ def install(cur):
 
 
 def record(cur,entity,key,mode,stamp,*,parent=None,entry_spot=None,entry_premium=None,
-           exit_spot=None,exit_premium=None,price_basis='UNVERIFIED_LEGACY',broker_order_id=None):
+           exit_spot=None,exit_premium=None,price_basis='UNVERIFIED_LEGACY',broker_order_id=None,is_algo=None):
     parent_row=cur.execute("SELECT category,payload FROM execution_provenance WHERE entity='positions' AND id=?",(parent,)).fetchone() if parent else None
     legacy_parent=cur.execute('SELECT mode,entry_time FROM positions WHERE position_id=?',(parent,)).fetchone() if parent and not parent_row else None
     cat=parent_row[0] if parent_row else category(legacy_parent[0],legacy_parent[1]) if legacy_parent else category(mode,stamp)
@@ -69,6 +70,7 @@ def record(cur,entity,key,mode,stamp,*,parent=None,entry_spot=None,entry_premium
     for name,val in values.items():
         if positive(val) is not None:payload[name]=float(val)
     payload.update(price_basis=price_basis,broker_order_id=broker_order_id)
+    if type(is_algo) is bool:payload['is_algo']=is_algo
     if price_basis=='BROKER_FILL_UNCONFIRMED':payload['entry_premium']=None
     cur.execute('INSERT OR IGNORE INTO execution_provenance(entity,id,category,parent_position,payload) VALUES(?,?,?,?,?)',
                 (entity,str(key),cat,parent,json.dumps(payload)))
@@ -84,6 +86,16 @@ def stamp_exit(cur,position_id,exit_spot,exit_premium):
     cur.execute("UPDATE execution_provenance SET payload=? WHERE entity='positions' AND id=?",(json.dumps(d),position_id))
 
 
+def algo_session(row,entry_time):
+    """Presentation eligibility only; never changes execution or risk management."""
+    origin=' '.join(str(row.get(k) or '') for k in ('source','placed_by')).upper()
+    setup=' '.join(str(row.get(k) or '') for k in ('strategy_name','strategy_setup')).upper()
+    words=re.sub('[^A-Z0-9]+',' ',origin+' '+setup)
+    if re.search(r'\b(MANUAL|TEST\d*|TESTING|REPLAY|BACKTEST|BACKTESTING|BENCHMARK|CALIBRATED|SYNTHETIC)\b',words):return False
+    if not ('ALGO' in origin or 'AUTO' in origin):return False
+    return category('PAPER_ONLY',entry_time)=='MARKET_SESSION' and not row.get('test_hidden',False)
+
+
 def enrich(cur,entity,row):
     key=row['order_id' if entity=='orders' else 'position_id']
     meta=cur.execute('SELECT category,hidden,payload,parent_position FROM execution_provenance WHERE entity=? AND id=?',(entity,key)).fetchone()
@@ -92,6 +104,8 @@ def enrich(cur,entity,row):
     else:
         cat=category(row.get('mode'),row.get('entry_time') if entity=='positions' else row.get('created_at'))
         hidden=0;detail={};parent=row.get('position_id')
+        if entity=='orders' and not parent and str(row.get('correlation_id') or '').startswith('POS_'):
+            parent=row['correlation_id']
         # A late SELL could close a protected market entry. Untagged exits aren't disposable.
         if entity=='orders' and row.get('side')=='SELL' and cat=='OFF_MARKET_TEST':cat='LEGACY_UNVERIFIED'
     row.update(record_category=cat,test_hidden=bool(hidden),price_provenance=detail,
@@ -105,8 +119,11 @@ def enrich(cur,entity,row):
             d=json.loads(parent_meta[0])
             row['recorded_exit_spot']=d.get('exit_spot')
             row['observed_exit_premium']=d.get('exit_premium') if not row['is_real_order'] else None
-        p=cur.execute('SELECT entry_price,exit_price,entry_time,exit_time,duration FROM positions WHERE position_id=?',(parent,)).fetchone()
-        if p:row.update(position_entry_price=p[0],position_exit_price=p[1],position_entry_time=p[2],position_exit_time=p[3],position_duration=p[4])
+        p=cur.execute('SELECT entry_price,exit_price,entry_time,exit_time,duration,net_pnl,status FROM positions WHERE position_id=?',(parent,)).fetchone()
+        if p:row.update(position_entry_price=p[0],position_exit_price=p[1],position_entry_time=p[2],position_exit_time=p[3],position_duration=p[4],position_net_pnl=p[5],position_status=p[6])
+    entry_time=row.get('entry_time') if entity=='positions' else row.get('position_entry_time') or (row.get('created_at') if row.get('side')=='BUY' else None)
+    row['is_algo_session']=algo_session(row,entry_time) and detail.get('is_algo') is not False
+    row['execution_book']='REAL' if row['is_real_order'] else 'PAPER' if row.get('mode')=='PAPER_ONLY' or row['price_basis'].startswith('OBSERVED_QUOTE_PAPER') else 'UNVERIFIED'
     return row
 
 

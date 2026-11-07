@@ -3,7 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from analyst.ledger_provenance_8510 import category,install,record,stamp_exit,enrich,hide_tests,restore_tests
+from analyst.ledger_provenance_8510 import category,install,record,stamp_exit,enrich,hide_tests,restore_tests,algo_session
 
 
 class LedgerTests(unittest.TestCase):
@@ -32,6 +32,53 @@ class LedgerTests(unittest.TestCase):
         for t in ['09:15','15:30','15:45']:self.assertEqual(category('PAPER_ONLY','2026-11-06 '+t),'MARKET_SESSION')
         self.assertEqual(category('PAPER_ONLY','2026-11-06 15:46'),'OFF_MARKET_TEST')
         self.assertEqual(category('PAPER_ONLY','bad date'),'LEGACY_UNVERIFIED')
+
+    def test_algo_only_session_excludes_manual_test_and_after_hours(self):
+        row=dict(source='AUTO ALGO',strategy_setup='Stage 2')
+        self.assertTrue(algo_session(row,'2026-11-06 10:00'))
+        self.assertFalse(algo_session(row,'2026-11-06 16:45'))
+        self.assertFalse(algo_session({**row,'source':'MANUAL MATRIX'},'2026-11-06 10:00'))
+        for setup in ['Stage 2 TEST','Replay Stage 2','BENCHMARK Stage 2','BACKTESTING']:
+            self.assertFalse(algo_session({**row,'strategy_setup':setup},'2026-11-06 10:00'))
+        self.assertFalse(algo_session({**row,'source':None},'2026-11-06 10:00'))
+        self.assertFalse(algo_session({**row,'test_hidden':True},'2026-11-06 10:00'))
+
+    def test_legacy_late_exit_uses_original_algo_entry_session(self):
+        self.add('session','2026-11-06 10:00')
+        with sqlite3.connect(self.path) as c:
+            c.row_factory=sqlite3.Row;cur=c.cursor()
+            raw=dict(order_id='late',mode='PAPER_ONLY',side='SELL',created_at='2026-11-06 17:00',correlation_id='session',position_id='session',source='AUTO ALGO',strategy_setup='Stage 2')
+            r=enrich(cur,'orders',raw)
+            self.assertTrue(r['is_algo_session']);self.assertEqual(r['execution_book'],'PAPER')
+
+    def test_explicit_manual_origin_cannot_be_promoted_by_auto_label(self):
+        with sqlite3.connect(self.path) as c:
+            cur=c.cursor()
+            record(cur,'orders','M','PAPER_ONLY','2026-11-06 10:00',is_algo=False)
+            row=enrich(cur,'orders',dict(order_id='M',created_at='2026-11-06 10:00',side='BUY',mode='PAPER_ONLY',source='AUTO ALGO',strategy_setup='Stage 2'))
+            self.assertFalse(row['is_algo_session'])
+
+    def test_ui_filters_and_exports_use_same_algo_view(self):
+        import re,subprocess
+        page=Path(__file__).resolve().parents[1]/'Algorithmic_Trading_Workspace_8510.html'
+        html=page.read_text()
+        fn=re.search(r'function algoViewRows\(rows\)\{.*?\n        \}',html,re.S).group()
+        js=fn+'''
+const rows=[{id:'algo',is_algo_session:true,execution_book:'PAPER'},
+{id:'manual',is_algo_session:false,execution_book:'PAPER'},
+{id:'test',is_algo_session:true,test_hidden:true,execution_book:'PAPER'},
+{id:'real',is_algo_session:true,execution_book:'REAL'}];
+let currentMoneyFilter='PAPER';
+if(JSON.stringify(algoViewRows(rows).map(r=>r.id))!=='["algo"]')throw Error('paper leak');
+currentMoneyFilter='REAL';
+if(JSON.stringify(algoViewRows(rows).map(r=>r.id))!=='["real"]')throw Error('real leak');
+'''
+        subprocess.run(['node','-e',js],check=True,capture_output=True)
+        self.assertTrue('algoViewRows(rows).map(algoPositionValues)' in html)
+        self.assertTrue('algoViewRows(rows).map(algoOrderValues)' in html)
+        self.assertTrue('algoViewRows(await posRes.json())' in html)
+        for name in ['handleSquareOffClick','saveSuperTrailConfig','quickActionAllPositions','modifyPosition']:
+            self.assertTrue(('async function '+name+'(') in html,name+' action missing')
 
     def test_real_or_mixed_is_never_disposable(self):
         for mode in ['BOTH','ALGO_LIVE_ONLY','LIVE']:self.assertEqual(category(mode,'2026-11-06 17:00'),'REAL_OR_MIXED')
@@ -71,6 +118,24 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(len(rows),1);self.assertFalse(rows[0]['valuation_available'])
         self.assertEqual(rows[0]['observed_entry_premium'],242)
         with sqlite3.connect(b.ledger_db) as c:self.assertEqual(c.execute('SELECT status FROM positions').fetchone()[0],'OPEN')
+
+    def test_real_order_mtm_uses_broker_fill_not_paper_parent_price(self):
+        import time
+        from types import SimpleNamespace
+        from analyst.terminal8510_backend import QuantTerminalBackend
+        b=QuantTerminalBackend.__new__(QuantTerminalBackend)
+        b.ledger_db=Path(self.tmp.name)/'real-mark.sqlite3';b.cfg={};b._init_sqlite()
+        b.broker=SimpleNamespace(_ltp_cache={'123':276},_cache_timestamps={'123':time.time()})
+        with sqlite3.connect(b.ledger_db) as c:
+            cur=c.cursor()
+            cur.execute("INSERT INTO positions(position_id,symbol,security_id,qty,entry_price,entry_time,status,mode) VALUES('P','NIFTY 09 NOV 24300 CALL','123',65,220,'2026-11-06 10:00','OPEN','BOTH')")
+            cur.execute("INSERT INTO orders(order_id,position_id,symbol,security_id,qty,created_at,mode,order_status,side,source,strategy_setup,dhan_order_id) VALUES('R','P','NIFTY 09 NOV 24300 CALL','123',65,'2026-11-06 10:00','BOTH','FILLED','BUY','AUTO ALGO','Stage 2','BROKER123')")
+            record(cur,'positions','P','BOTH','2026-11-06 10:00',entry_premium=220,is_algo=True)
+            record(cur,'orders','R','BOTH','2026-11-06 10:00',parent='P',entry_premium=242,broker_order_id='BROKER123',is_algo=True,price_basis='BROKER_CONFIRMED_FILL')
+        row=b.get_order_book()[0]
+        self.assertTrue(row['is_algo_session']);self.assertEqual(row['execution_book'],'REAL')
+        self.assertEqual(row['observed_entry_premium'],242)
+        self.assertEqual(row['verified_live_mtm'],round(34*65-b.calculate_dhan_charges(242,276,65),2))
 
     def test_late_exit_inherits_market_protection(self):
         self.add('session','2026-11-06 10:00')
