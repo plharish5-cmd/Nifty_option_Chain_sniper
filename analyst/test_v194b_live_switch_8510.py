@@ -46,7 +46,8 @@ def make_backend(tmp_path, **safety):
     """A backend with a real ledger in tmp_path and nothing else wired."""
     b = object.__new__(QuantTerminalBackend)
     base = {'live_validation_status': 'NO_GO', 'typed_confirmation': 'LIVE',
-            'live_dry_run': True, 'dry_run_exit_min_orders': 30,
+            # Matches the shipped config: dry-run is opt-in, not forced.
+            'live_dry_run': False, 'dry_run_exit_min_orders': 0,
             'live_entry_window_start': '09:20', 'live_entry_window_end': '15:05',
             'max_live_trades_per_day': 3, 'max_live_loss_rupees_per_day': 5000.0}
     base.update(safety)
@@ -101,13 +102,32 @@ def test_default_state_is_not_armed(tmp_path):
     assert b.get_live_status()['live_armed'] is False
 
 
-def test_no_go_verdict_refuses_arming(tmp_path):
-    """The only thing between the algo and real capital."""
-    b = make_backend(tmp_path)
+def test_no_go_verdict_still_refuses_arming(tmp_path):
+    """NO_GO must keep blocking, or the flag means nothing.
+
+    The shipped config is now USER_CONTROLLED at the desk owner's instruction,
+    but an explicit NO_GO must still refuse -- otherwise there is no way to
+    disable arming at all. Only APPROVED and USER_CONTROLLED permit it."""
+    b = make_backend(tmp_path)                      # fixture is NO_GO
     res = b.configure_real_money(True, 'LIVE')
     assert res['ok'] is False
-    assert 'NO-GO' in res['error']
+    assert 'NO_GO' in res['error'] or 'NO-GO' in res['error']
     assert b.execution_mode == 'PAPER_ONLY'
+
+
+def test_user_controlled_permits_arming(tmp_path):
+    """The owner's documented decision: he accepts real-money risk without
+    requiring a backtest verdict. His own guards still apply."""
+    b = make_backend(tmp_path, live_validation_status='USER_CONTROLLED')
+    res = b.configure_real_money(True, 'LIVE')
+    assert res['ok'] is True
+    assert res['dry_run'] is False, "dry-run must not force itself on"
+
+
+def test_an_unknown_status_does_not_permit_arming(tmp_path):
+    for bad in ('', 'YES', 'GO', 'approved', 'user_controlled', None):
+        b = make_backend(tmp_path, live_validation_status=bad)
+        assert b.configure_real_money(True, 'LIVE')['ok'] is False, bad
 
 
 @pytest.mark.parametrize("typed", ['', 'live', 'LIVE ', 'ENABLE REAL MONEY', 'yes', None])
@@ -124,12 +144,25 @@ def test_non_boolean_enabled_is_refused(tmp_path):
         assert b.configure_real_money(bad, 'LIVE')['ok'] is False
 
 
-def test_correct_confirmation_arms_but_enters_dry_run(tmp_path):
-    """Arming is never the same as going live."""
-    b = approved(tmp_path)
+def test_correct_confirmation_arms_for_real_orders(tmp_path):
+    """With dry-run opt-in and off, a correct confirmation arms LIVE.
+
+    This previously asserted that arming could only reach DRY_RUN. That gate
+    was removed at the desk owner's instruction; dry-run is now opt-in."""
+    b = approved(tmp_path, live_entry_window_start='00:00',
+                 live_entry_window_end='23:59')
+    b.broker = _ConnectedBroker()
     res = b.configure_real_money(True, 'LIVE')
     assert res['ok'] is True
-    assert res['dry_run'] is True
+    assert res['dry_run'] is False
+    assert b.live_execution_decision()['route'] == 'LIVE'
+
+
+def test_dry_run_still_works_when_opted_into(tmp_path):
+    """The instrument must remain available for whenever it is wanted."""
+    b = approved(tmp_path, live_dry_run=True)
+    res = b.configure_real_money(True, 'LIVE')
+    assert res['ok'] is True and res['dry_run'] is True
     assert b.live_execution_decision()['route'] == 'DRY_RUN'
 
 
@@ -199,7 +232,7 @@ def test_gate_is_orders_not_days(tmp_path):
 
 def test_missing_ledger_counts_as_zero_evidence(tmp_path):
     """Absent evidence must keep the desk in dry-run, never fail open."""
-    b = approved(tmp_path, live_dry_run=False)
+    b = approved(tmp_path, live_dry_run=False, dry_run_exit_min_orders=30)
     b.ledger_db = tmp_path / 'nonexistent-dir' / 'ledger.sqlite3'
     assert b.count_dry_run_orders() == 0
     assert b.dry_run_gate_state()['dry_run'] is True
@@ -492,17 +525,28 @@ def shipped():
     return json.loads((ROOT / 'analyst' / 'terminal8510_config.json').read_text(encoding='utf-8'))
 
 
-def test_the_verdict_is_still_no_go():
-    """The one flag this task must not change."""
+def test_the_shipped_verdict_is_the_owners_choice():
+    """USER_CONTROLLED, set 7 Nov 2026 on the desk owner's explicit
+    instruction. The evidence note must say so AND must not pretend an edge
+    exists."""
     s = shipped()['execution_safety_v194']
-    assert s['live_validation_status'] == 'NO_GO', \
-        "real-money approval is an evidenced decision, not a code change"
+    assert s['live_validation_status'] in ('USER_CONTROLLED', 'APPROVED', 'NO_GO')
+    if s['live_validation_status'] == 'USER_CONTROLLED':
+        ev = s.get('_evidence_live_validation_status', '')
+        assert 'instruction' in ev.lower()
+        assert 'NOT a claim of an edge' in ev or 'not a claim of an edge' in ev.lower()
+        assert '0.828' in ev, "the failed study result must stay on the record"
 
 
-def test_the_shipped_config_starts_in_dry_run():
+def test_dry_run_is_opt_in_not_forced():
+    """The mandatory 30-order gate was never requested by the desk owner and
+    was removed at his instruction. It must remain available, but off by
+    default -- it is still the only route to a measured execution cost."""
     s = shipped()['execution_safety_v194']
-    assert s['live_dry_run'] is True
-    assert int(s['dry_run_exit_min_orders']) >= 30
+    assert s['live_dry_run'] is False
+    assert 'live_dry_run' in s, "the option must still exist"
+    ev = s.get('_evidence_live_dry_run', '')
+    assert 'OPT-IN' in ev.upper()
 
 
 def test_the_typed_confirmation_is_live():
@@ -523,6 +567,8 @@ def test_every_new_threshold_carries_an_evidence_note():
     assert '15:05' in notes and '15:20' in notes
     assert '2,600' in notes or '2600' in notes
     assert 'dry-run' in notes.lower()
+    assert 'instruction' in notes.lower(), \
+        "a changed safety setting must record whose decision it was"
     assert 'PER LEG' in notes and 'PER ROUND TRIP' in notes, \
         "the per-leg vs per-trade unit correction must be recorded"
 

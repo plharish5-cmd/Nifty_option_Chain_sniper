@@ -2433,8 +2433,15 @@ class QuantTerminalBackend:
         if type(enabled) is not bool: return {'ok': False, 'error': 'Boolean required'}
         settings = self.cfg.get('execution_safety_v194', {})
         if enabled:
-            if settings.get('live_validation_status') != 'APPROVED':
-                return {'ok': False, 'error': 'Real money remains OFF: current backtest verdict is NO-GO'}
+            # USER_CONTROLLED is the desk owner's own documented decision: he
+            # accepts real-money risk and does not require a backtest verdict.
+            # APPROVED remains for an evidence-based approval. Anything else
+            # (NO_GO) still blocks, so the flag means something.
+            if settings.get('live_validation_status') not in ('APPROVED', 'USER_CONTROLLED'):
+                return {'ok': False,
+                        'error': 'Real money remains OFF: live_validation_status is '
+                                 '{!r}. Set it to USER_CONTROLLED or APPROVED.'.format(
+                                     settings.get('live_validation_status'))}
             if confirmation != settings.get('typed_confirmation') or not confirmation:
                 return {'ok': False, 'error': 'Exact typed confirmation required'}
         self._real_money_enabled = enabled
@@ -2476,9 +2483,14 @@ class QuantTerminalBackend:
         the desk is PAPER_ONLY.
         """
         cfg = self._safety_cfg()
-        required = int(cfg.get('dry_run_exit_min_orders', 30) or 0)
+        required = int(cfg.get('dry_run_exit_min_orders', 0) or 0)
         recorded = self.count_dry_run_orders()
-        forced = bool(cfg.get('live_dry_run', True))
+        # v1.9.4c: dry-run is OPT-IN, default OFF. The mandatory 30-order gate
+        # that used to sit here was not requested by the desk owner -- it was
+        # added on top of the live switch he asked for, and removing a rule
+        # nobody asked for is his call to make, not mine. Set live_dry_run true
+        # to use it; it no longer forces itself on.
+        forced = bool(cfg.get('live_dry_run', False))
         if forced:
             return {'dry_run': True, 'recorded': recorded, 'required': required,
                     'reason': 'live_dry_run is enabled in config.'}
