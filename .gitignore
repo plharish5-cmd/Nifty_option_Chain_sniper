@@ -122,5 +122,5 @@ ict_smc_app/backend/ict_desk.log
 .aider*
 
 # Advisory bridge runtime cache (never source evidence)
-analyst/grok_regime_cache.json
-analyst/grok_regime_cache.tmp
+analyst/*_regime_cache.json
+analyst/*_regime_cache.tmp

@@ -23,14 +23,10 @@ Any change to these modules will fail `scripts/verify_locks.py` and `ict_smc_app
 
 See `PROTECTED_MODULES.md` and `AGENTS.md` for complete rules.
 
-
-## Optional StockMojo adapter — owner request, 7 Nov 2026
-Harish reintroduced an optional authenticated StockMojo OI observation source for
-8510 v1.9.5. Use only `analyst/stockmojo_safe_poller_8510.py`; do not revive the
-legacy scraper, its seeds, token literals or browser-token extraction. Credentials
-and the exact provider request body come from the local environment, never Git.
-Stop on 401/403, respect Retry-After on 429/503; jitter is load spreading, not a
-promise of ban avoidance. Undated exports do not establish live freshness.
-Pillar 4 selects one configured OI source; StockMojo and Dhan are not two votes.
-Source changes affect the existing informational confluence score, not execution
-authorization. Existing live settings and all protected feature locks remain.
+## Institutional telemetry — owner request, 7 Nov 2026
+The optional remote interpreter and vendor adapter were retired in v1.9.6.
+Use local file/recorded observations, the deterministic institutional telemetry
+engine and optional local qwen2.5:3b only. No remote model/provider calls from
+this feature. Existing Dhan execution and live settings remain unchanged.
+The owner chose removal of old bridge modules and will revise their dependent
+tests; do not add compatibility shims or edit assertions just to make them pass.

@@ -645,67 +645,6 @@
      trader can check, where a GOOD/BAD rating was a judgment they could not.
      Failures go to analyst/recording_errors.log and the server log, never to a
      popup. Do not reintroduce a coverage badge, bar or percentage here. -->
-<div id="pillStockMojoLive" role="status" style="padding:6px 16px;color:#94a3b8">📊 StockMojo OI: waiting · optional source</div>
-<script>
-(function(){
- const pill=document.getElementById('pillStockMojoLive');
- const fmt=v=>v==null?'—':(Number(v)/1e6).toFixed(2)+'M';
- async function refresh(){
-  try{
-   const response=await fetch('/api/stockmojo/live');if(!response.ok)throw new Error('Unavailable');
-   const data=await response.json();
-   if(!data.configured){pill.textContent='📊 StockMojo: '+(data.configuration_status||data.status)+' · Pillar 4 retains Dhan OI';return;}
-   const at=data.timestamp?new Date(data.timestamp*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'}):'—';
-   const state=data.available?'Observed':'STALE / UNAVAILABLE';
-   pill.textContent='📊 StockMojo '+state+' | PE−CE total '+fmt(data.pe_ce_oi_total)+' | PCR '+(data.pcr_total==null?'—':Number(data.pcr_total).toFixed(2))+' | 3m Δ '+fmt(data.pe_ce_change_3m)+' | '+(data.sentiment||'waiting')+' | Source '+at+' IST | '+data.poll_status;
-   pill.title='OI change is positioning context, not proof of writer intent. One source contributes to Pillar 4; no duplicate vote. Source age: '+(data.age_seconds==null?'unknown':Math.round(data.age_seconds)+'s');
-  }catch(e){pill.textContent='📊 StockMojo unavailable';}
- }
- refresh();setInterval(refresh,10000);
-})();
-</script>
-<div id="pillGrokRegimeBridge" role="status" style="padding:8px 16px;color:#94a3b8">🤖 Grok 8600→8510: waiting · ADVISORY</div>
-<details id="grokRegimeBridgeCard" class="card" style="margin:16px 0;padding:16px">
- <summary style="cursor:pointer">🤖 Grok 8600→8510 Signal Screener · <span id="grokSummary">Waiting for observations</span> · ADVISORY · Expand</summary>
- <p>Observational context only. Existing setups and orders are unchanged. Confidence is not a measured win probability.</p>
- <pre id="grokInputs" style="white-space:pre-wrap">No recorded inputs</pre>
- <p id="grokReason"></p>
- <button type="button" id="grokEvaluate">Evaluate now</button>
- <label><input id="grokEnabled" type="checkbox"> Enable bridge</label>
- <select id="grokProvider"><option value="AUTO_XAI_OR_LOCAL_DETERMINISTIC">Grok with local fallback</option><option value="LOCAL_DETERMINISTIC">Local rules only</option></select>
- <div style="overflow:auto"><table><thead><tr><th>Time</th><th>Regime</th><th>Action</th><th>Source</th><th>Reason</th></tr></thead><tbody id="grokRows"></tbody></table></div>
- <p id="grokError" role="status"></p>
-</details>
-<script>
-(function(){
- const card=document.getElementById('grokRegimeBridgeCard');
- try {card.open=localStorage.getItem('grokBridgeCollapsed')==='false';} catch(e){card.open=false;}
- card.addEventListener('toggle',()=>{try{localStorage.setItem('grokBridgeCollapsed',String(!card.open));}catch(e){}});
- const text=(id,value)=>document.getElementById(id).textContent=value;
- async function refresh(){
-  try{
-   const response=await fetch('/api/grok_bridge/status');if(!response.ok)throw new Error('Bridge HTTP '+response.status);
-   const data=await response.json(),v=data.latest||{},p=v.features||{},oi=p.dhan_oi_synergy;
-   const number=value=>value==null?'missing':Number(value).toLocaleString('en-IN',{maximumFractionDigits:2});
-   const alerts=(p.ict_smc_desk_summary||[]).map(a=>[a.kind,a.side,a.title].filter(Boolean).join(' ')).join(' · ')||'none in the last 15 minutes';
-   const oiText=oi?'Expiry '+oi.expiry+' · CE '+number(oi.ce_oi)+' · PE '+number(oi.pe_oi)+' · change since previous snapshot: CE '+number(oi.ce_change)+' / PE '+number(oi.pe_change)+' · age '+number(oi.age_seconds)+'s. OI does not establish writer intent.':'No recorded snapshot';
-   const stale=v.stale||p.data_status!=='FRESH',score=v.source==='LOCAL_DETERMINISTIC_FALLBACK'?'unscored':String(v.confidence??'—')+'% self-report';
-   const summary=(!v.enabled?'DISABLED · ':stale?'STALE / MISSING · ':'')+(v.regime||'WAITING')+' | '+(v.effective_decision||'WAIT')+' | '+(v.source||'No source');
-   text('grokSummary',summary);text('pillGrokRegimeBridge','🤖 Grok 8600→8510: '+summary+' | '+score+' | ADVISORY');
-   text('grokInputs','Inputs: '+(p.data_status||'not observed')+' · closed 15m candle: '+(p.closed_15m_ts?new Date(p.closed_15m_ts*1000).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}):'—')+' IST\n8 EMA distance: '+(p.dist_from_15m_8ema_pts??'—')+' pts · 4/8 ATR spread: '+(p.sep_atr??'—')+' · 12-bar flips: '+(p.flips_12bars??'—')+'\nFUT+FUT2 slot RVOL: '+(p.slot_rvol_median??'missing')+' · acceleration: '+(p.bar_accel_ratio??'missing')+'\nRecorded ICT alerts: '+alerts+'\nDhan OI observations: '+oiText);
-   text('grokReason',v.reason||'No classification recorded');document.getElementById('grokEnabled').checked=!!data.config.enabled;document.getElementById('grokProvider').value=data.config.provider_mode;
-   const rows=document.getElementById('grokRows');rows.replaceChildren();
-   (data.rows||[]).slice(0,10).forEach(row=>{const tr=document.createElement('tr');[row.ist_time,row.regime,row.far_from_8ema_decision,row.source,row.reason].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.appendChild(td);});rows.appendChild(tr);});
-   text('grokError','');
-  }catch(e){text('grokError',e.message);text('pillGrokRegimeBridge','🤖 Grok bridge unavailable · ADVISORY');}
- }
- async function send(path,body){try{const r=await fetch('/api/grok_bridge/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error('Bridge HTTP '+r.status);await refresh();}catch(e){text('grokError',e.message);}}
- document.getElementById('grokEvaluate').onclick=async function(){this.disabled=true;await send('evaluate',{});this.disabled=false;};
- document.getElementById('grokEnabled').onchange=function(){send('config',{enabled:this.checked});};
- document.getElementById('grokProvider').onchange=function(){send('config',{provider_mode:this.value});};
- refresh();setInterval(refresh,10000);
-})();
-</script>
 <section class="card" id="trendCaptureV192" style="margin:16px 0;padding:18px;border:1px solid #334155;border-radius:10px">
  <h2 style="font-size:16px">Trend capture study · <span style="color:#fbbf24">ADVISORY ONLY</span></h2>
  <p id="trendCaptureStatus">Loading closed 15m context… Existing execution and v1.1 exits remain unchanged.</p>

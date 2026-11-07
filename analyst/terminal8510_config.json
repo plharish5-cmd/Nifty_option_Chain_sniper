@@ -160,32 +160,6 @@
     "fail_open": true,
     "show_pe_ce_table_in_tab1": true
   },
-  "STOCKMOJO_PCR_URL": "https://data.stockmojo.in/live/oi/pcr",
-  "STOCKMOJO_MULTI_STRIKE_URL": "https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff",
-  "STOCKMOJO_ACTIVE_EXPIRY_ID": 215,
-  "STOCKMOJO_PCR_PAYLOAD": {
-    "symbol": 1,
-    "dt": null,
-    "expiries": [
-      215
-    ]
-  },
-  "STOCKMOJO_MULTI_STRIKE_PAYLOAD": {
-    "symbol": 1,
-    "expiry": 215,
-    "range": 10
-  },
-  "STOCKMOJO_HEADER_J": "",
-  "STOCKMOJO_HEADER_T": "",
-  "STOCKMOJO_PAYLOAD": {
-    "symbol": 1,
-    "dt": null,
-    "expiries": [
-      215
-    ]
-  },
-  "STOCKMOJO_POLL_SECONDS": 60,
-  "STOCKMOJO_LINE_MAPPING": "STANDARD",
   "paper_execution": {
     "simulated_slippage_pts": [
       0.05,
@@ -327,10 +301,5 @@
     "max_payload_bytes": 4000000
   },
   "algo_strike_selection_evidence": "Harish explicitly requested LONG_CE_ITM disabled on 2026-11-07; other strike selection entries unchanged.",
-  "TOKEN_EXPIRY_UTC": "2026-11-08T03:58:09Z",
-  "grok_regime_bridge_v194d": {
-    "rules_path": "analyst/grok_bridge_rules_8510.json",
-    "execution_gate_mode": "ADVISORY_ONLY",
-    "_evidence": "Asynchronous observational bridge only; existing live settings, execution, strategy and risk rules are unchanged."
-  }
+  "TOKEN_EXPIRY_UTC": "2026-11-08T03:58:09Z"
 }

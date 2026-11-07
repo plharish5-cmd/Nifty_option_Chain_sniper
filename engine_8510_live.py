@@ -78,35 +78,6 @@ async def startup_event():
     log.info("⚡ NIFTY Quant Terminal 8510 Engine starting up...")
     backend.inst_mgr.ensure_loaded()
     backend.start_recording()
-    try:
-        from analyst.stockmojo_safe_poller_8510 import StockMojoPoller
-        backend.stockmojo_poller = await asyncio.to_thread(
-            StockMojoPoller, backend.ledger_db,
-            log_path=backend.config_path.parent / 'recording_errors.log',
-            holidays=backend.nse_holidays)
-        backend.stockmojo_poller.start()
-    except Exception:
-        log.error('Optional StockMojo observer unavailable; existing terminal continues')
-
-    async def grok_poller():
-        # Optional advisory failures must not prevent the trading terminal starting.
-        while True:
-            try:
-                if getattr(backend, 'grok_regime_bridge', None) is None:
-                    from analyst.grok_regime_bridge_8510 import GrokRegimeBridge
-                    backend.grok_regime_bridge = await asyncio.to_thread(
-                        GrokRegimeBridge, backend.ledger_db, backend.market_db,
-                        cache_path=ROOT_DIR / 'analyst/grok_regime_cache.json',
-                        volume_engine=backend.futures_volume_engine)
-                await asyncio.to_thread(backend.grok_regime_bridge.evaluate)
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                log.exception('Advisory Grok bridge unavailable')
-            bridge = getattr(backend, 'grok_regime_bridge', None)
-            await asyncio.sleep(bridge.rules['poll_seconds'] if bridge else 30)
-    app.state.grok_task = asyncio.create_task(grok_poller())
-
     from analyst.ict_smc_signals_8510 import SignalBridge
     app.state.ict_smc_bridge = SignalBridge(backend.cfg['ict_smc_desk_signals'],
         backend.ledger_db.parent / 'ict_smc_signals.sqlite3')
@@ -344,70 +315,24 @@ async def api_set_bias(req: Request):
     )
 
 
-def _grok_service():
-    from fastapi import HTTPException
-    service = getattr(backend, 'grok_regime_bridge', None)
-    if service is None:
-        raise HTTPException(status_code=503, detail='Bridge not started')
-    return service
 
 
-def _grok_local_write(req):
-    from fastapi import HTTPException
-    if req.client is None or req.client.host not in ('127.0.0.1', '::1', 'testclient'):
-        raise HTTPException(status_code=403, detail='Local desk only')
-    origin = req.headers.get('origin')
-    if origin and origin not in ('http://localhost:8510', 'http://127.0.0.1:8510'):
-        raise HTTPException(status_code=403, detail='Invalid origin')
 
 
-@app.get('/api/grok_bridge/status')
-async def grok_status():
-    return await asyncio.to_thread(_grok_service().status)
 
 
-@app.post('/api/grok_bridge/evaluate')
-async def grok_evaluate(req: Request):
-    _grok_local_write(req)
-    # No network awaits on the event loop. Concurrent requests coalesce in the worker.
-    return await asyncio.to_thread(_grok_service().evaluate, True)
 
 
-@app.post('/api/grok_bridge/config')
-async def grok_config(req: Request):
-    from fastapi import HTTPException
-    _grok_local_write(req)
-    try:
-        return await asyncio.to_thread(_grok_service().update_config, await req.json())
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
 
 
-@app.post('/api/grok_bridge/webhook')
-async def grok_webhook(req: Request):
-    import hmac
-    from fastapi import HTTPException
-    secret = os.environ.get('GROK_WEBHOOK_SECRET', '')
-    if not secret or not hmac.compare_digest(req.headers.get('authorization',''), 'Bearer '+secret):
-        raise HTTPException(status_code=401, detail='Webhook token required')
-    try:
-        return await asyncio.to_thread(_grok_service().ingest_grok_bot_webhook, await req.json())
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
 
 
-@app.get('/api/stockmojo/live')
-async def stockmojo_live():
-    """Read-only provider status and source observations; no network or SQL."""
-    return backend.get_stockmojo_live()
 
 
 @app.get("/api/telemetry")
 async def api_telemetry():
     """1-second ticking telemetry stream."""
     data = await backend.get_live_telemetry()
-    data["grok_regime_bridge"] = backend.get_grok_regime_cached()
-    data["stockmojo_live"] = backend.get_stockmojo_live()
     return JSONResponse(content=data)
 
 
@@ -1010,12 +935,9 @@ async def api_post_synergy_config(req: Request):
 
 @app.on_event('shutdown')
 async def stop_background_tasks():
-    observer = getattr(backend, 'stockmojo_poller', None)
-    if observer is not None:
-        observer.stop()
     recorder = getattr(backend, "recording_service", None)
     if recorder: recorder.stop()
-    for task in (getattr(app.state,'grok_task',None),getattr(app.state,'ict_smc_task',None),getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
+    for task in (getattr(app.state,'ict_smc_task',None),getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
         if task:task.cancel()
 
 @app.get("/api/dhan/config")
