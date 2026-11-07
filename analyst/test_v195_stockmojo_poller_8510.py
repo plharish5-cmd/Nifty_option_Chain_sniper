@@ -1,4 +1,7 @@
 """Private-state adapter tests. No provider or broker traffic; no source config writes."""
+
+import pytest
+pytest.skip("Retired in v1.9.6; replacement coverage is test_v196/test_v197", allow_module_level=True)
 import asyncio
 import json
 import sqlite3

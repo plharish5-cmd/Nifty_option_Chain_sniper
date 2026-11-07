@@ -16,39 +16,17 @@ import requests
 from analyst.options_telemetry_engine import build_telemetry,load_completed_rows,RULES,IST
 
 OLLAMA_MODEL=os.environ.get('OLLAMA_TELEMETRY_MODEL','qwen2.5:3b')
-SYSTEM_PROMPT="""You are a LOCAL institutional F&O telemetry interpreter, not an execution agent.
-Use only supplied timestamp, data_quality, latest, windows, optional and deterministic_result.
-Return one JSON object. The deterministic_result mathematics and structured fields are authoritative.
-You may improve summary prose and append evidence-grounded warnings; never change scores, regimes,
-quality, components, availability, participation, futures structures or confirmation fields.
-OI WORDING: say put-side OI dominance, call-side OI dominance or bullish/bearish OI-flow proxy.
-Aggregate OI cannot identify who initiated. Never claim confirmed put writers or confirmed call writers,
-even when strike data exists. Do not promise support, resistance, profit or a future price move.
-DATA QUALITY: DATA_UNRELIABLE means day_regime DATA_UNRELIABLE, bias_score_pct 0,
-confidence_pct at most 20, and no directional conclusion. Describe actual failures and missing fields.
-WINDOWS: N minutes requires N+1 contiguous minute observations; volume sums only the last N bars.
-FUTURES: LONG_BUILDUP is price up/OI up; SHORT_COVERING is price up/OI down;
-SHORT_BUILDUP is price down/OI up; LONG_UNWINDING is price down/OI down. Small changes are NEUTRAL.
-OI MAGNITUDE: absolute PE-CE gap below 10 lakh BALANCED; 10..20 MODERATE;
-20..30 STRONG; at least 30 EXTREME. Negative standing OI can still have a bullish rising flow proxy.
-VOLUME-SPEED: below .75 WEAK; .75..1.25 NORMAL; 1.25..1.75 ELEVATED; >=1.75 HIGH.
-Volume is participation, not direction. Its score follows directional subtotal; flat OI churn earns zero.
-MULTI-WINDOW DECISION: 5m/15m/30m/60m evidence must be separated, not treated as independent votes.
-DAY REGIME: strong regimes need direction, fresh buildup, participation and >=75% window agreement.
-TRANSITION_REVERSAL_WATCH requires all five consecutive completed minute prefix states, a proven
-prior opposite slope, price confirmation and an opposing 30m or 60m prior regime. Never infer it from one bar.
-EXTREME/CROWDING: >=30 lakh must retain: Extreme OI dominance can crowd; watch for profit booking or mean reversion.
-PREMIUM-SKEW: absent optional data is NOT_AVAILABLE, never invented. Premium difference is not initiator proof.
-SCORING: futures +/-35, PE-CE +/-30, PCR +/-15, signed agreement +/-10, signed volume +/-10;
-clamp total to [-100,100]. Copy supplied deterministic components rather than recomputing them.
-CONFIDENCE: heuristic, not probability of profit. Retain penalties: absent premium skew -8,
-absent strike data -7, weak volume -12, balanced gap -8, covering/unwinding -10, disagreement -15.
-OUTPUT SCHEMA: timestamp:string|null, data_status:string, day_regime:string,
-bias_score_pct:number, confidence_pct:number, oi_dominance:object, futures_structure:object,
-participation:object, confirmation:object, summary:string, warnings:array of strings.
-The application attaches the unchanged input_telemetry packet itself; do not invent or copy market data.
-session_regime describes the 09:15 anchor; current_regime describes recent windows. Neither score nor confidence is a probability. WARMING_UP is non-directional.
-Return no Markdown, commands, HTML or trading instructions. No fields beyond this schema are needed.
+SYSTEM_PROMPT="""You are a LOCAL, advisory-only telemetry narrator. Return ONLY JSON with
+summary (brief string) and warnings (array of brief strings). Deterministic classifications,
+quality and scores are authoritative; never recalculate or override them. Session regime
+uses the 09:15 anchor; current regime uses recent completed windows. Confidence and bias
+scores are HEURISTIC_NOT_CALIBRATED, never probabilities of profitable trades.
+OI describes outstanding contracts, not seller intent. Say OI-flow proxy or put/call-side
+OI dominance; never confirmed writers. Do not promise support, resistance or profits.
+WARMING_UP and DATA_UNRELIABLE are non-directional. A suspected partial bar is a
+volume/time heuristic, not proof of exchange completion. Missing optional data stays missing.
+Preserve crowding uncertainty: Extreme OI dominance can crowd; watch for profit booking
+or mean reversion. No orders, commands, HTML, Markdown or trading instructions.
 """
 REQUIRED=('timestamp','data_status','day_regime','bias_score_pct','confidence_pct','oi_dominance','futures_structure','participation','confirmation','summary','warnings','session_regime','current_regime','confidence_kind','session_context')
 
@@ -76,12 +54,19 @@ def interpret_local(result,transport=None):
     if parts.hostname not in ('127.0.0.1','localhost','::1') or parts.port!=11434:raise ValueError('Interpreter must be loopback-only')
     fallback={**copy.deepcopy(result),'interpreter_source':'DETERMINISTIC_PYTHON_ENGINE'}
     reference={k:result[k] for k in REQUIRED}
-    packet={**result['input_telemetry'],'deterministic_result':reference}
+    raw=result['input_telemetry']
+    packet={'timestamp':raw['timestamp'],'data_quality':{k:raw['data_quality'].get(k) for k in ('mode','partial_bar_flag','partial_latest_row_discarded','source_date_verified','active_windows')},
+      'latest':{k:raw['latest'].get(k) for k in ('future_ltp','pe_ce_oi_total','pcr')},
+      'windows':{k:{f:w.get(f) for f in ('valid','price_change','pe_ce_oi_change','futures_regime')} for k,w in raw['windows'].items()},
+      'optional':{k:'NOT_AVAILABLE' if v is None else 'AVAILABLE' for k,v in raw['optional'].items()},
+      'deterministic_result':{k:result[k] for k in ('data_status','session_regime','current_regime','bias_score_pct','confidence_pct','confidence_kind','oi_dominance','futures_structure','participation')},
+      'required_warnings':result['warnings']}
     payload={'model':OLLAMA_MODEL,'system':SYSTEM_PROMPT,'prompt':json.dumps(packet,allow_nan=False),'format':'json','stream':False,'keep_alive':RULES['qwen']['keep_alive'],'options':{'temperature':0.0,'num_predict':RULES['qwen']['num_predict'],'num_ctx':RULES['qwen']['num_ctx']}}
     try:
         response=(transport or requests.post)(url,json=payload,timeout=RULES['timeout_seconds'],allow_redirects=False)
         if response.status_code!=200:raise ValueError('Local interpreter HTTP status')
         candidate=json.loads(response.json()['response'])
+        if isinstance(candidate,dict) and set(candidate)=={'summary','warnings'}:candidate={**reference,**candidate}
         validated=validate_interpretation(candidate,result)
         return {**validated,'interpreter_source':'QWEN_2.5_3B_LOCAL'},'OK'
     except (requests.RequestException,OSError,ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:

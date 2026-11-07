@@ -63,6 +63,8 @@ httpx.Client.request=guarded;httpx.AsyncClient.request=guarded_async;requests.Se
 @pytest.fixture(autouse=True)
 def private_8510_state(tmp_path,monkeypatch,request):
     root=tmp_path/'desk';path=config_at(root)
+    monkeypatch.setenv('INSTITUTIONAL_DROP_FOLDER',str(root/'institutional_drops'))
+    monkeypatch.setenv('INSTITUTIONAL_DOWNLOADS_FOLDER',str(root/'Downloads'))
     monkeypatch.setattr(terminal,'ROOT',root)
     monkeypatch.setattr(terminal,'REPLAY_DATA_DIR',root/'analyst/replay_data')
     for key in ('DHAN_ACCESS_TOKEN','DHAN_API_KEY','DHAN_API_SECRET','TOKEN_EXPIRY_UTC'):monkeypatch.setenv(key,'')

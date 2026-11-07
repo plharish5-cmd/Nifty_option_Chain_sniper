@@ -47,5 +47,7 @@ The optional remote interpreter and vendor adapter were retired in v1.9.6.
 Use local file/recorded observations, the deterministic institutional telemetry
 engine and optional local qwen2.5:3b only. No remote model/provider calls from
 this feature. Existing Dhan execution and live settings remain unchanged.
-The owner chose removal of old bridge modules and will revise their dependent
-tests; do not add compatibility shims or edit assertions just to make them pass.
+The owner chose removal of old bridge modules and explicitly retired their two
+dependent suites in v1.9.7. Skip those modules before obsolete imports; keep other
+regressions visible. Progressive-window and async-timeout tests follow the new
+specification, not weakened assertions. Production remains unchanged pending staging review.

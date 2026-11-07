@@ -45,6 +45,21 @@ from analyst.terminal8510_backend import QuantTerminalBackend  # noqa: E402
 CFG = json.loads((ROOT / "analyst" / "terminal8510_config.json").read_text(encoding="utf-8"))
 
 
+@pytest.fixture(autouse=True)
+def matrix_clock(monkeypatch):
+    """Explicit deterministic clock; the production cutoff remains unchanged."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from analyst import terminal8510_backend as terminal
+    class Clock(datetime):
+        current=datetime(2026,11,6,11,30,tzinfo=ZoneInfo('Asia/Kolkata'))
+        @classmethod
+        def now(cls,tz=None):
+            return cls.current.astimezone(tz) if tz else cls.current.replace(tzinfo=None)
+    monkeypatch.setattr(terminal,'datetime',Clock)
+    return Clock
+
+
 def backend(tmp_path, **over):
     b = object.__new__(QuantTerminalBackend)
     ms = dict(CFG.get("matrix_scalp", {}))
@@ -328,3 +343,12 @@ def test_paper_and_algo_only_remain_permanent(tmp_path):
     b.algo_only_execution = False
     assert b.paper_execution_enabled is True
     assert b.algo_only_execution is True
+
+
+def test_injected_clock_preserves_exact_entry_cutoff(tmp_path,matrix_clock):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    matrix_clock.current=datetime(2026,11,6,15,5,tzinfo=ZoneInfo('Asia/Kolkata'))
+    assert len(sig_from(tmp_path,_Eng()))==1
+    matrix_clock.current=datetime(2026,11,6,15,6,tzinfo=ZoneInfo('Asia/Kolkata'))
+    assert sig_from(tmp_path,_Eng())==[]

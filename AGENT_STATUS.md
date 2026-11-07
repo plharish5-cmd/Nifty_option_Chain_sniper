@@ -366,3 +366,66 @@ latency guarantee. Confidence is heuristic, not a win probability.
 Derived crowding warning: Extreme OI dominance can crowd; watch for profit booking
 or mean reversion. Full derived SYSTEM_PROMPT is in the bridge and report artifact.
 Review artifacts: outputs/v196_institutional_telemetry in conversation workspace.
+
+
+## ChatGPT — v1.9.7 local exported-file collector (7 Nov 2026)
+
+Base4580d79; isolated branch chatgpt/v1.9.7-live-collector-and-staging.
+Move1 717f606; Move2 814fb4c; final checkpoint post-chatgpt-v1.9.7-collector.
+User chose local exported files in Downloads first; no automatic website export,
+remote vendor calls, credentials, live arming, production copy or daemon restart.
+
+Chronological CSV/JSON/TSV collector scans135–170s on weekday09:15–15:30 IST;
+atomic dedicated snapshots, raw-minute dedup, conflict quarantine, current/future
+minute holding, suspected-partial heuristic, restart recovery. Deterministic
+prefix calculations occur outside SQL write transactions, with a writer-lock
+regression test. Saved filename dates remain declared/unverified historical
+evidence, never silently promoted to live confluence. Explicit --scan-now supports
+manual historical inspection; final pending15:30 can need a later explicit scan.
+The schedule is weekday-only, not a complete exchange holiday calendar.
+
+Progressive warm-up4 rows, N+1 contiguous spans. Early3m/5m weights normalize;
+after15m is available,3m is diagnostic and registered full-window weights are
+preserved. Session/current regime fields and HEURISTIC_NOT_CALIBRATED are explicit.
+Supplied15:39 sample: SESSION_STRONG_BULLISH / NEUTRAL_MIXED; bias+7/100,
+confidence0/100. Suspected15:40 discard remains heuristic. Source date unverified.
+
+Bounded latest-pending Qwen daemon queue; generation guards;15s timeout,
+keep_alive30m, num_predict220, num_ctx1536. Slim narrative-only output cannot
+override deterministic fields. Model and SQL work never occur on cached reads.
+Real local-service attempts returned ConnectionError; successful cold/warm model
+inference remains UNVERIFIED. Mocked delayed/success/failure paths pass.
+
+| Verification / identical private fixture hashes | passed | failed | skipped | collection errors |
+|---|---:|---:|---:|---:|
+| Prior v1.9.6 reported continued suite (unfrozen clock) |470|21|12|2|
+| Reproduced4580d79 baseline, fixed clock, obsolete imports excluded |478|13|12|0|
+| v1.9.7 full suite |503|13|14|0|
+| Final telemetry + Matrix + config focus |101|0|0|0|
+
+All13 failure IDs are identical to baseline; no new failed IDs. Eight clock-
+dependent failures resolve. Matrix fixture injects11:30; a boundary test verifies
+15:05 allowed/15:06 blocked. No production Matrix method changed. Two explicitly
+retired bridge modules are skipped before obsolete imports; unrelated failures
+remain visible. v196 tests updated only for approved progressive warm-up,15s
+model timeout and current-minute completion semantics. Full suite is NOT GREEN.
+
+Tool environment loses async thread/socket wakeups; both comparison runs use an
+external uncommitted10ms event-loop polling plugin, not production changes. Host
+should rerun ordinary pytest. Fixture hashes/logs/XML and exact13 IDs retained
+in conversation outputs/v197_collector. Temporary dependency symlinks removed.
+Locks11/11; immutable tests10/10; parity9059x17 fields100%, zero mismatches.
+Runtime config and terminal8510_backend.py are byte-identical to4580d79. Pinned
+market/master fixtures unchanged. No data/, replay_data/, sqlite or .env staged.
+
+Actual UI script syntax/mock-DOM states pass. Browser validation BLOCKED: local
+listener EPERM and browser file-URL security rejection; no workaround attempted.
+Offline migration/rollback rehearsal PASS:1 old row preserved,21 unique additions,
+repeat import deduplicated, rollback restores1 and source files; config unchanged.
+One explicit historical scan saved376 rows through15:30 in dedicated staging
+recordings; collector is not installed as a persistent service.
+Measured386-row engine median8.45ms/p9512.01ms under shared tool load; cache
+median0.50ms/p950.77ms. No hard4ms guarantee; full-file ingestion can exceed25ms.
+Standalone launcher, probe, reports and recordings in outputs/v197_collector.
+GitHub fetch failed (DNS unavailable); final push result is recorded in external
+report. Production deployment remains NOT APPROVED.

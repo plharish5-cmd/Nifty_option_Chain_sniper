@@ -62,7 +62,7 @@ def test_04_data_quality_gate_emits_data_unreliable(rows,failure):
  if failure=='missing':rows[-1].pop('future_oi')
  if failure=='nan':rows[-1]['pcr']=float('nan')
  if failure=='gap':rows.pop(-3)
- if failure=='short':rows=rows[:60]
+ if failure=='short':rows=rows[:3] # v1.9.7: warm-up replaces 61-row lockout
  if failure=='empty':rows=[]
  if failure=='zero_volume_baseline':
   for row in rows:row.update(put_volume=0,call_volume=0)
@@ -71,6 +71,9 @@ def test_04_data_quality_gate_emits_data_unreliable(rows,failure):
  if failure=='live_date':kw['live']=True
  if failure=='invalid_time':rows.append({**rows[-1],'time':'bad'})
  r=e.build_telemetry(rows,**kw)
+ if failure=='short':
+  assert r['data_status']=='WARMING_UP' and r['bias_score_pct']==0 and r['confidence_pct']==0
+  return
  assert r['data_status']=='DATA_UNRELIABLE' and r['day_regime']=='DATA_UNRELIABLE'
  assert r['bias_score_pct']==0 and r['confidence_pct']<=20 and r['warnings']
  assert r['summary']=='Data unreliable; no directional conclusion.'
@@ -124,7 +127,7 @@ def test_09_qwen_local_adapter_and_offline_fallback(rows):
  assert status=='OK' and interpreted['interpreter_source']=='QWEN_2.5_3B_LOCAL'
  url,k=calls[0];assert url=='http://127.0.0.1:11434/api/generate'
  assert k['json']['format']=='json' and k['json']['stream'] is False and k['json']['options']['temperature']==0
- assert k['timeout']==3.0 and k['json']['model']=='qwen2.5:3b'
+ assert k['timeout']==15.0 and k['json']['model']=='qwen2.5:3b'
  for key in ('timestamp','data_quality','latest','windows','optional'):assert key in json.loads(k['json']['prompt'])
  def offline(*a,**kw):raise q.requests.ConnectionError('offline')
  fallback,status=q.interpret_local(deterministic,offline)
@@ -169,10 +172,10 @@ def test_optional_chain_same_observation(rows):
  for i,row in enumerate(rows):row['time']=(base+timedelta(minutes=i)).isoformat()
  stamp=(base+timedelta(minutes=99)).timestamp()
  snap={'timestamp':stamp,'ce_ltp':100,'pe_ltp':120,'ce_oi':100000,'pe_oi':200000,'strike':24200}
- r=e.build_telemetry(rows,reference_now=stamp,live=True,chain_snapshot=snap)
+ r=e.build_telemetry(rows,reference_now=stamp+60,live=True,chain_snapshot=snap)
  assert r['data_status']=='VALID' and r['confirmation']['premium_skew_status']=='AVAILABLE'
  snap['timestamp']+=30
- assert e.build_telemetry(rows,reference_now=stamp,live=True,chain_snapshot=snap)['confirmation']['premium_skew_status']=='NOT_AVAILABLE'
+ assert e.build_telemetry(rows,reference_now=stamp+60,live=True,chain_snapshot=snap)['confirmation']['premium_skew_status']=='NOT_AVAILABLE'
 
 
 def test_local_routes_no_order_authorization(tmp_path,rows,monkeypatch):

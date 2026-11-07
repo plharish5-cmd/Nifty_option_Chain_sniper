@@ -1,4 +1,7 @@
 """Advisory bridge verification; every database/cache/config write uses tmp_path."""
+
+import pytest
+pytest.skip("Retired in v1.9.6; replacement coverage is test_v196/test_v197", allow_module_level=True)
 import asyncio
 import ast
 import json

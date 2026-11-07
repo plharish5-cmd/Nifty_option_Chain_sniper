@@ -158,6 +158,8 @@ def session_features(data,bad=False):
     if bad or anchor is None or not data:
         return {'regime':'SESSION_NOT_AVAILABLE','anchor_time':None,'price_change':None,'oi_gap_change':None,'persistence_fraction':None,'basis':'Requires a valid 09:15 session observation'}
     start=data.index(anchor);window=data[start:];last=window[-1]
+    if not consecutive(window) or any(not finite(r.get(k)) for r in window for k in ('future_ltp','pe_ce_oi_total')):
+        return {'regime':'SESSION_NOT_AVAILABLE','anchor_time':anchor.get('time'),'basis':'Session history has gaps or invalid fields'}
     price=last['future_ltp']-anchor['future_ltp'];gap=last['pe_ce_oi_total']-anchor['pe_ce_oi_total']
     direction=sign(price)
     persistence=sum(direction*(r['future_ltp']-anchor['future_ltp'])>0 for r in window[1:])/max(1,len(window)-1)
@@ -169,6 +171,7 @@ def session_features(data,bad=False):
     return {'regime':label,'anchor_time':anchor.get('_source_timestamp') or anchor['time'],'price_change':price,'oi_gap_change':gap,'persistence_fraction':persistence,'basis':'Observed 09:15 anchor; price persistence plus OI-flow proxy, not writer intent'}
 
 def build_telemetry(rows,reference_now=None,discard_partial_bar=True,premium_skew=None,strike_level_data=None,live=False,chain_snapshot=None):
+    if live and reference_now is None:reference_now=datetime.now(IST)
     warnings=list(getattr(rows,'errors',()));data=[];invalid_timestamp=False
     for raw in rows:
         try:data.append(dict(raw) if '_minute' in raw else canonical(raw))
@@ -211,7 +214,7 @@ def build_telemetry(rows,reference_now=None,discard_partial_bar=True,premium_ske
     elif stale>RULES['max_stale_seconds']:warnings.append('Source data stale: more than 120 seconds')
     completed=bool(data) and (not partial or discarded)
     if not completed:warnings.append('No completed observation available' if not data else 'Latest suspected partial bar was not discarded')
-    if partial:warnings.append('Low-volume partial-bar heuristic detected; completion is not an exchange flag')
+    if partial:warnings.append('Suspected partial bar from time/volume heuristics; completion is not an exchange flag')
     required=bool(data) and all(all(finite(r.get(k)) and (r[k]>=0 if k not in ('pcr',) else r[k]>=0) for k in REQUIRED) for r in data[-61:])
     if not required:warnings.append('Required fields missing, negative or nonfinite')
     warming=len(data)<MIN_COMPLETED_ROWS
