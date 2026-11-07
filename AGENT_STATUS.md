@@ -181,3 +181,67 @@ Open / needs Harish:
 - The synthetic loop is gone, but the EMA loader still has a latest-available
   recorded-candle fallback before NO_DATA. This merge does not change that
   separate date-provenance behaviour or claim it is fixed.
+
+
+## 2026-11-07 · ChatGPT · v1.9.4d Grok advisory bridge
+
+Branch: `chatgpt/v1.9.4d-grok-regime-bridge`, based on `606332e` by Harish's
+explicit approval. The active desk checkout is dirty and was left untouched;
+no runtime data was discarded and no active daemon was restarted or deployed.
+The prompt's stale safety defaults were explicitly superseded by Harish:
+all existing config keys are unchanged, including USER_CONTROLLED, dry-run false,
+zero caps and entry window 09:15–15:20.
+
+Checkpoints:
+- pre: `pre-chatgpt-v1.9.4d-grok` (backup branch `backup-pre-chatgpt-v1.9.4d-grok`).
+- Move 1 `e992ef3`: rules + additive config summary; tag `chpoint-v1.9.4d-move1-config`.
+- Move 2 `d6bf7e7`: read-only extractor, async-worker classifier, memory cache and own SQLite observations;
+  tag `chpoint-v1.9.4d-move2-engine`.
+- Move 3 `a6179b9`: API routes, cached telemetry and collapsed advisory UI;
+  tag `chpoint-v1.9.4d-move3-ui`.
+- Move 4 (identified by `post-chatgpt-v1.9.4d-grok`): tmp_path tests plus test/review
+  hardening: source expiry, aligned FUT/FUT2 volume, minute flip semantics matching
+  EMA Proximity, optional startup fault isolation, safe human-readable UI text,
+  and ignore rules for the runtime cache. All paths staged explicitly.
+
+No pre-existing strategy, broker, arming or risk-decision backend method changed
+(AST comparison tested). The bridge is always ADVISORY_ONLY; network/SQL/file work
+runs off the order/event-loop path. Automatic evaluation deduplicates closed-minute
+observations. Missing/stale data shows WAIT, not a continuation authorization.
+Grok API responses are validated; API errors fall back to labelled local rules.
+Local rule output is unscored, and model confidence is self-reported, not win rate.
+Webhook requires GROK_WEBHOOK_SECRET; local config/evaluate writes reject foreign
+origins. No real Grok API request or broker order was used in verification.
+
+| verification / fixture provenance | passed | failed | skipped |
+|---|---:|---:|---:|
+| Previous `606332e`, ChatGPT isolated fixtures | 446 | 13 | 13 |
+| This branch, same private fixtures + TypeScript dependency available | 469 | 13 | 12 |
+| New Grok bridge suite | 22 | 0 | 0 |
+| Existing v194b live-switch suite | 62 | 0 | 0 |
+| Existing config-hygiene suite | 11 | 0 | 0 |
+
+The 13 full-suite failure IDs are exactly the baseline's 13 IDs, verified by
+set comparison. The 23 extra passes are 22 added tests and one former dependency
+skip now exercised. The full suite remains NOT GREEN. No old assertion was edited.
+A provisional run lost its temporary TypeScript dependency before its parity test;
+the final reported run kept that dependency for the entire run and resolved it.
+Claude's 419/21 baseline uses other fixtures and is not a quality delta here.
+
+Required v194c UI/scalp test and `analyst/scalp_matrix_8510.py` are absent from
+this approved base. Reported UNAVAILABLE, not invented or recreated; Harish approved
+proceeding on this basis. Existing Matrix Scalp implementation remains unchanged.
+
+Locks **11/11**; immutable tests **10 passed**; parity **9,059 rows × 17 fields,
+100%, zero mismatches**. All inline JS parsed; a mock-DOM smoke passed collapsed
+storage behaviour, text-only rendering, Evaluate and stale WAIT. No visual-browser
+or live-provider verification is claimed. Sample median latency: deterministic
+classifier 0.0104ms, memory reader 0.0034ms; not a scheduling guarantee.
+
+Market DB and instrument-master hashes match the previous checkpoint. Source config
+matches 606332e exactly except the new bridge-summary key. Tests write private
+config/ledger copies; the new bridge tests use tmp_path. The temporary dependency
+symlink was removed. No data/, analyst/replay_data/ or *.sqlite3 path is staged.
+Logs and executive report: conversation workspace `outputs/v194d_grok_bridge/`.
+Activation in the running app is pending reviewed deployment; existing live
+settings were not changed and main/integrate remain untouched.

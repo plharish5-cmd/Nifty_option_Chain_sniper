@@ -2,7 +2,6 @@
 All extraction, network and persistence run on the bridge worker, never a tick thread.
 """
 from __future__ import annotations
-import copy
 import json
 import logging
 import math
@@ -66,16 +65,20 @@ def build_8600_to_8510_feature_packet(market_db, volume_engine=None, now=None, r
                     close=bars.c; e4=close.ewm(span=r['ema_fast'],adjust=False).mean();e8=close.ewm(span=r['ema_anchor'],adjust=False).mean()
                     tr=pd.concat([bars.h-bars.l,(bars.h-close.shift()).abs(),(bars.l-close.shift()).abs()],axis=1).max(axis=1)
                     atr=float(tr.rolling(14).mean().iloc[-1]); spot=float(frame.c.iloc[-1]); a=float(e4.iloc[-1]);b=float(e8.iloc[-1])
-                    signs=(e4-e8).tail(13).apply(lambda x: 1 if x>0 else -1 if x<0 else 0)
-                    flips=int(((signs*signs.shift())<0).sum())
+                    # Match ema_proximity_engine's sign(close - minute 8 EMA), >=0 is positive.
+                    session=frame[frame.index.date==frame.index[-1].date()]
+                    minute8=session.c.ewm(span=r['ema_anchor'],adjust=False).mean()
+                    signs=(session.c-minute8).tail(12).apply(lambda x: 1 if x>=0 else -1)
+                    flips=int(((signs*signs.shift())<0).sum()) if len(signs)==12 else None
                     ts=float(frame.ts.iloc[-1]); bar_ts=float(bars.index[-1].timestamp())+900
                     fresh = now-ts-60 <=r['source_max_age_seconds'] and now-bar_ts <=900+r['source_max_age_seconds']
                     packet.update(data_status='FRESH' if fresh else 'STALE',source_ts=ts,closed_15m_ts=bar_ts,
                         spot_price=spot,ema_4_15m=a,ema_8_15m=b,atr_14_15m=atr,
                         dist_from_15m_8ema_pts=round(spot-b,2),dist_from_15m_4ma_pts=round(spot-a,2),
-                        sep_atr=round(abs(a-b)/max(atr,.01),4),flips_12bars=flips)
+                        sep_atr=round(abs(a-b)/max(atr,.01),4),flips_12bars=flips,
+                        flip_basis='12 closed 1m bars: sign(close - 1m 8 EMA), same rule as EMA Proximity engine')
             # Same expiry and snapshot on both legs; never combine unsynchronised snapshots.
-            snap=db.execute('SELECT expiry,MAX(ts) AS t FROM chain_snap WHERE ts<=? GROUP BY expiry ORDER BY expiry LIMIT 1',(now,)).fetchone()
+            snap=db.execute('SELECT expiry,MAX(ts) AS t FROM chain_snap WHERE ts<=? GROUP BY expiry ORDER BY t DESC,expiry LIMIT 1',(now,)).fetchone()
             if snap:
                 sums=db.execute('SELECT SUM(ce_oi),SUM(pe_oi) FROM chain_snap WHERE expiry=? AND ts=?',snap).fetchone()
                 prev=db.execute('SELECT MAX(ts) FROM chain_snap WHERE expiry=? AND ts<?',(snap[0],snap[1])).fetchone()[0]
@@ -85,14 +88,17 @@ def build_8600_to_8510_feature_packet(market_db, volume_engine=None, now=None, r
                     'pe_change':sums[1]-old[1] if sums[1] is not None and old[1] is not None else None,
                     'note':'Change between recorded snapshots; OI does not establish writer intent.'}
             packet['ict_smc_desk_summary']=[dict(zip(('ts','kind','side','title'),row)) for row in db.execute(
-                "SELECT ts,kind,side,title FROM alerts WHERE ts<=? AND ts>=? AND (UPPER(kind) LIKE '%BOS%' OR UPPER(kind) LIKE '%FVG%' OR UPPER(kind) LIKE '%SWEEP%' OR UPPER(kind) LIKE '%ORDER_BLOCK%') ORDER BY ts DESC LIMIT 8",(now,now-900))]
+                "SELECT ts,kind,side,title FROM alerts WHERE ts<=? AND ts>=? AND (UPPER(kind) LIKE '%BOS%' OR UPPER(kind) LIKE '%FVG%' OR UPPER(kind) LIKE '%SWEEP%' OR UPPER(kind) LIKE '%ORDER%BLOCK%' OR UPPER(kind)='OB') ORDER BY ts DESC LIMIT 8",(now,now-900))]
     except (sqlite3.Error, OSError, ValueError, KeyError) as exc:
         packet['extract_error']=type(exc).__name__
         log.warning('Grok read-only extraction unavailable: %s',type(exc).__name__)
     if volume_engine is not None:
         try:
             volume=volume_engine.get_latest_vsr()
-            packet.update(slot_rvol_median=volume.get('slot_rvol_median'),bar_accel_ratio=volume.get('bar_accel_ratio'))
+            aligned = volume.get('available') and volume.get('bar_ts') is not None and volume['bar_ts']+900 == packet.get('closed_15m_ts')
+            packet.update(slot_rvol_median=volume.get('slot_rvol_median') if aligned else None,
+                          bar_accel_ratio=volume.get('bar_accel_ratio') if aligned else None,
+                          volume_bar_ts=volume.get('bar_ts'),volume_status='ALIGNED' if aligned else 'MISSING_OR_UNALIGNED')
         except (sqlite3.Error, OSError, ValueError, KeyError) as exc:
             log.warning('Grok volume unavailable: %s',type(exc).__name__)
     return packet
@@ -149,7 +155,10 @@ class GrokRegimeBridge:
     def get_cached_grok_regime(self):
         # No file, SQL or network access, no worker lock on hot path.
         cached=self._cache
-        return {**cached,'stale':not cached or time.time()-cached['ts']>self.rules['cache_ttl_seconds'],'enabled':self.rules['enabled'],'execution_gate_mode':'ADVISORY_ONLY'}
+        now=time.time();p=cached.get('features',{})
+        stale=(not cached or now-cached['ts']>self.rules['cache_ttl_seconds'] or p.get('data_status')!='FRESH'
+               or now-p.get('source_ts',0)-60>self.rules['source_max_age_seconds'])
+        return {**cached,'stale':stale,'effective_decision':'WAIT_FOR_8EMA_TOUCH' if stale or not self.rules['enabled'] else cached.get('far_from_8ema_decision'),'enabled':self.rules['enabled'],'execution_gate_mode':'ADVISORY_ONLY'}
     def persist(self,result,packet,started):
         now=time.time();result={**result,'ts':now,'ist_time':datetime.fromtimestamp(now,ZoneInfo('Asia/Kolkata')).isoformat(),'execution_gate_mode':'ADVISORY_ONLY','latency_ms':round((time.perf_counter()-started)*1000,3),'features':packet}
         keys=['ts','ist_time','spot_price','ema_4_15m','ema_8_15m','dist_8ema_pts','sep_atr','slot_rvol_median','ict_smc_bias','regime','far_from_8ema_decision','recommended_bias','confidence','source','latency_ms','reason','execution_gate_mode']

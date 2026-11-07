@@ -666,11 +666,14 @@
  async function refresh(){
   try{
    const response=await fetch('/api/grok_bridge/status');if(!response.ok)throw new Error('Bridge HTTP '+response.status);
-   const data=await response.json(),v=data.latest||{},p=v.features||{};
+   const data=await response.json(),v=data.latest||{},p=v.features||{},oi=p.dhan_oi_synergy;
+   const number=value=>value==null?'missing':Number(value).toLocaleString('en-IN',{maximumFractionDigits:2});
+   const alerts=(p.ict_smc_desk_summary||[]).map(a=>[a.kind,a.side,a.title].filter(Boolean).join(' ')).join(' · ')||'none in the last 15 minutes';
+   const oiText=oi?'Expiry '+oi.expiry+' · CE '+number(oi.ce_oi)+' · PE '+number(oi.pe_oi)+' · change since previous snapshot: CE '+number(oi.ce_change)+' / PE '+number(oi.pe_change)+' · age '+number(oi.age_seconds)+'s. OI does not establish writer intent.':'No recorded snapshot';
    const stale=v.stale||p.data_status!=='FRESH',score=v.source==='LOCAL_DETERMINISTIC_FALLBACK'?'unscored':String(v.confidence??'—')+'% self-report';
-   const summary=(!v.enabled?'DISABLED · ':stale?'STALE / MISSING · ':'')+(v.regime||'WAITING')+' | '+(v.far_from_8ema_decision||'WAIT')+' | '+(v.source||'No source');
+   const summary=(!v.enabled?'DISABLED · ':stale?'STALE / MISSING · ':'')+(v.regime||'WAITING')+' | '+(v.effective_decision||'WAIT')+' | '+(v.source||'No source');
    text('grokSummary',summary);text('pillGrokRegimeBridge','🤖 Grok 8600→8510: '+summary+' | '+score+' | ADVISORY');
-   text('grokInputs','Inputs: '+(p.data_status||'not observed')+' · closed 15m candle: '+(p.closed_15m_ts?new Date(p.closed_15m_ts*1000).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}):'—')+' IST\n8 EMA distance: '+(p.dist_from_15m_8ema_pts??'—')+' pts · 4/8 ATR spread: '+(p.sep_atr??'—')+' · 12-bar flips: '+(p.flips_12bars??'—')+'\nFUT+FUT2 slot RVOL: '+(p.slot_rvol_median??'missing')+' · acceleration: '+(p.bar_accel_ratio??'missing')+'\nRecorded ICT alerts: '+JSON.stringify(p.ict_smc_desk_summary||[])+'\nDhan OI observations: '+JSON.stringify(p.dhan_oi_synergy||null));
+   text('grokInputs','Inputs: '+(p.data_status||'not observed')+' · closed 15m candle: '+(p.closed_15m_ts?new Date(p.closed_15m_ts*1000).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}):'—')+' IST\n8 EMA distance: '+(p.dist_from_15m_8ema_pts??'—')+' pts · 4/8 ATR spread: '+(p.sep_atr??'—')+' · 12-bar flips: '+(p.flips_12bars??'—')+'\nFUT+FUT2 slot RVOL: '+(p.slot_rvol_median??'missing')+' · acceleration: '+(p.bar_accel_ratio??'missing')+'\nRecorded ICT alerts: '+alerts+'\nDhan OI observations: '+oiText);
    text('grokReason',v.reason||'No classification recorded');document.getElementById('grokEnabled').checked=!!data.config.enabled;document.getElementById('grokProvider').value=data.config.provider_mode;
    const rows=document.getElementById('grokRows');rows.replaceChildren();
    (data.rows||[]).slice(0,10).forEach(row=>{const tr=document.createElement('tr');[row.ist_time,row.regime,row.far_from_8ema_decision,row.source,row.reason].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.appendChild(td);});rows.appendChild(tr);});

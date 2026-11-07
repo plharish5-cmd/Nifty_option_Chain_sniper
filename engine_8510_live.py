@@ -78,20 +78,23 @@ async def startup_event():
     log.info("⚡ NIFTY Quant Terminal 8510 Engine starting up...")
     backend.inst_mgr.ensure_loaded()
     backend.start_recording()
-    from analyst.grok_regime_bridge_8510 import GrokRegimeBridge
-    backend.grok_regime_bridge = await asyncio.to_thread(
-        GrokRegimeBridge, backend.ledger_db, backend.market_db,
-        cache_path=ROOT_DIR / 'analyst/grok_regime_cache.json',
-        volume_engine=backend.futures_volume_engine)
     async def grok_poller():
+        # Optional advisory failures must not prevent the trading terminal starting.
         while True:
             try:
+                if getattr(backend, 'grok_regime_bridge', None) is None:
+                    from analyst.grok_regime_bridge_8510 import GrokRegimeBridge
+                    backend.grok_regime_bridge = await asyncio.to_thread(
+                        GrokRegimeBridge, backend.ledger_db, backend.market_db,
+                        cache_path=ROOT_DIR / 'analyst/grok_regime_cache.json',
+                        volume_engine=backend.futures_volume_engine)
                 await asyncio.to_thread(backend.grok_regime_bridge.evaluate)
             except asyncio.CancelledError:
                 break
             except Exception:
                 log.exception('Advisory Grok bridge unavailable')
-            await asyncio.sleep(backend.grok_regime_bridge.rules['poll_seconds'])
+            bridge = getattr(backend, 'grok_regime_bridge', None)
+            await asyncio.sleep(bridge.rules['poll_seconds'] if bridge else 30)
     app.state.grok_task = asyncio.create_task(grok_poller())
 
     from analyst.ict_smc_signals_8510 import SignalBridge
