@@ -1443,7 +1443,7 @@ def get_replay_trades_for_date(target_date: str) -> List[Dict[str, Any]]:
     return RecordedHistory(ROOT/cfg['ledger_db_path'], ROOT/cfg['market_db_path']).trades(target_date,target_date)
 
 
-def compute_five_factor_confluence(trend=None,dhan_oi=None,volume=None,cfg=None):
+def compute_five_factor_confluence(trend=None,dhan_oi=None,volume=None,cfg=None,stockmojo=None):
     """Pure, fail-closed five-factor presentation score; no orders or price forecasts."""
     trend=trend or {};dhan_oi=dhan_oi or {};volume=volume or {}
     cfg=cfg or json.loads((ROOT/'analyst/terminal8510_config.json').read_text())
@@ -1462,18 +1462,24 @@ def compute_five_factor_confluence(trend=None,dhan_oi=None,volume=None,cfg=None)
     primary=finite(slot) and slot>=volcfg['slot_rvol_threshold']
     fallback=slot is None and volume.get('slot_status')=='INSUFFICIENT_HISTORY' and finite(vsr) and vsr>=volcfg['vsr_fallback_threshold'] and finite(accel) and accel>=volcfg['bar_accel_threshold']
     p3=bool(volume_fresh and volume.get('available') and (primary or fallback))
-    age=dhan_oi.get('age_seconds');stamp=dhan_oi.get('timestamp_epoch')
+    stockmojo=stockmojo or {}
+    use_stock=bool(stockmojo.get('configured') and stockmojo.get('enabled') and stockmojo.get('use_for_pillar4'))
+    oi=stockmojo if use_stock else dhan_oi
+    oi_source='STOCKMOJO_API' if use_stock else 'DHAN_API'
+    age=oi.get('age_seconds');stamp=oi.get('timestamp_epoch')
     if finite(stamp):age=time.time()-stamp
-    oi_fresh=finite(age) and 0<=age<=cfg['dhan_oi']['max_age_seconds']
-    p4=bool(coherent and oi_fresh and dhan_oi.get('source')=='DHAN_API' and dhan_oi.get('status')=='OK' and dhan_oi.get('available') and dhan_oi.get('bias')==('BULLISH' if side=='CE' else 'BEARISH'))
+    max_oi_age=oi.get('max_age_seconds') if use_stock else cfg['dhan_oi']['max_age_seconds']
+    oi_fresh=finite(age) and finite(max_oi_age) and 0<=age<=max_oi_age
+    stock_quality=(not use_stock or bool(oi.get('source_date_verified') and finite(oi.get('pe_ce_oi_total')) and finite(oi.get('pcr_total')) and finite(oi.get('pe_ce_change_3m'))))
+    p4=bool(coherent and oi_fresh and stock_quality and oi.get('source')==oi_source and oi.get('status')=='OK' and oi.get('available') and oi.get('bias')==('BULLISH' if side=='CE' else 'BEARISH'))
     gap=trend.get('abs_gap_pts')
     p5=bool(coherent and trend.get('price_fresh') and ((finite(gap) and gap<=params['pocket_touch_points']) or trend.get('wick_touched_ema8') is True))
     values={'pillar_1_trend_structure':p1,'pillar_2_anti_chop_regime':p2,'pillar_3_slot_volume':p3,'pillar_4_option_writer_flow':p4,'pillar_5_pocket_execution':p5}
     score=sum(values.values());grades={5:'A+ INSTITUTIONAL (5/5)',4:'A HIGH CONVICTION (4/5)',3:'B MODERATE (3/5)'}
-    labels=['Trend','Anti-Chop','Slot Vol','Dhan OI','Pocket']
+    labels=['Trend','Anti-Chop','Slot Vol','StockMojo 3m OI flow' if use_stock else 'Dhan OI','Pocket']
     return {**values,'score':score,'max_score':5,'grade':grades.get(score,'C DEFENSIVE / WAIT (<=2/5)'),
         'pillars':{k:{'passed':v,'label':label} for (k,v),label in zip(values.items(),labels)},
-        'direction':side or 'UNKNOWN','source':'DHAN_API','informational_only':True,
+        'direction':side or 'UNKNOWN','source':oi_source,'oi_source_status':oi.get('status','UNAVAILABLE'),'informational_only':True,
         'execution_authorized':False,'opportunity_basis':trend.get('opportunity_basis','Provided closed-candle opportunity'),
         'note':'Agreement count, not independent evidence, win probability, or guaranteed zero-slippage fill.'}
 
@@ -2732,7 +2738,7 @@ class QuantTerminalBackend:
             context['wick_touched_ema8'] = radar.get('wick_touched_ema8') is True and radar.get('ok') is True
             context['pocket_timeframe'] = '1m proximity engine'
         volume=self.futures_volume_engine.get_latest_vsr() if self.futures_volume_engine else {}
-        return compute_five_factor_confluence(context,self.dhan_oi.cached_snapshot(),volume,self.cfg)
+        return compute_five_factor_confluence(context,self.dhan_oi.cached_snapshot(),volume,self.cfg,self.get_stockmojo_live())
 
     def _simulated_slippage_pts(self, order_id: str) -> float:
         """Paper-fill slippage in points, stable for a given order id.
@@ -3001,6 +3007,12 @@ class QuantTerminalBackend:
             from analyst.ema_proximity_engine import ema_proximity_engine
             self.ema_proximity_engine = ema_proximity_engine
         return self.ema_proximity_engine.update_config(updates)
+
+    def get_stockmojo_live(self):
+        """Read memory only; optional provider does not replace Dhan unless configured."""
+        observer = getattr(self, 'stockmojo_poller', None)
+        return observer.snapshot() if observer else {
+            'source':'STOCKMOJO_API','status':'NOT_STARTED','available':False,'configured':False}
 
     def get_grok_regime_cached(self):
         """Memory-only observational status; never enters strategy decisions."""

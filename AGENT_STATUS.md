@@ -245,3 +245,77 @@ symlink was removed. No data/, analyst/replay_data/ or *.sqlite3 path is staged.
 Logs and executive report: conversation workspace `outputs/v194d_grok_bridge/`.
 Activation in the running app is pending reviewed deployment; existing live
 settings were not changed and main/integrate remain untouched.
+
+
+## 2026-11-07 · ChatGPT · v1.9.5 optional StockMojo adapter
+
+Branch: `chatgpt/v1.9.5-stockmojo-poller`. Harish explicitly approved basing this
+on tested `1e9fbff`, retaining the preceding fixes, rather than old integrate/v1.9.
+Tags: `pre-chatgpt-v1.9.5-poller` → `post-chatgpt-v1.9.5-poller`.
+No shared branch, active checkout, live config, credentials or daemon changed.
+
+Implemented the requested optional provider using a new daemon-thread adapter,
+separate from the retired legacy scraper. Rules are in a separate JSON file;
+terminal8510_config.json is byte-identical to 1e9fbff. Auth values and exact request
+JSON come from environment only; no credential extraction or literal token commits.
+No actual authenticated provider request was sent during this work.
+
+Scheduling follows the explicit 180 + [-10,+15] formula (170–195 seconds), with
+09:15–15:30 IST weekday/configured-holiday checks. 401/403 HALTS, with no bypass or
+automatic access-block retries; 429/503 respects Retry-After and exponential
+backoff. Jitter spreads load; no ban-safe or Cloudflare-acceptance claim is made.
+
+The provider's raw source timestamp, not request time alone, determines freshness.
+Exact 1m/3m changes require actual timestamp-spaced observations. No interpolation,
+zero-padding, date guessing, Indian-unit guessing or synthetic history. Separate
+SQLite scope keys avoid combining request scopes. Totals/PCR describe the configured
+request universe, not necessarily every chain strike. One memory-cached OI source
+contributes to informational Pillar 4; Dhan is retained when StockMojo is unconfigured.
+A configured but stale/blocked StockMojo feed cannot pass Pillar 4. OI flow alignment
+is context, not writer intent, independent evidence or an execution authorization.
+Existing execution/risk methods were verified unchanged by a narrow AST test.
+
+New read-only `/api/stockmojo/live`, cached telemetry and compact Tab 1 badge.
+Only the worker handles HTTP/SQLite writes; the score/telemetry reader does neither.
+Populated-cache microbenchmark: median 0.0106ms / p95 0.0231ms, sampled locally;
+no real-time scheduling guarantee, nor a claim that all parsing/DB work is <2ms.
+
+Provided export QA: 387/387 PE-CE totals agree with Put minus Call. 386 observation
+rows and one undated Prev Day baseline. The HH:MM rows have no verifiable source
+session date; none were imported into a live database or promoted to live signals.
+
+| verification / isolated fixture lineage | passed | failed | skipped |
+|---|---:|---:|---:|
+| Prior 1e9fbff full suite, TypeScript dependency available | 469 | 13 | 12 |
+| v1.9.5 full suite, same private fixtures | 499 | 16 | 12 |
+| New stockmojo poller suite | 33 | 0 | 0 |
+| Existing live-switch suite | 62 | 0 | 0 |
+| Existing config-hygiene suite | 11 | 0 | 0 |
+| Existing Grok suite | 21 | 1 | 0 |
+
+All 13 baseline failed IDs remain. Three added failures are existing assertions:
+- test_stockmojo_and_port8600_confluence_integration prohibits the provider's name
+  anywhere in HTML (the retired ingest routes remain closed).
+- test_05_no_stockmojo_references prohibits the provider's name in source.
+- Grok test_05_advisory_only_never_mutates_execution_or_live_guards compares EVERY
+  backend function to 606332e, including the two confluence functions deliberately
+  changed by this requested feature. Its actual advisory checks pass before that
+  broad comparator fails; new narrow execution-function preservation test passes.
+None of those old assertions was edited or evaded. Full suite is NOT GREEN.
+AGENTS.md and CLAUDE.md record the explicit owner-requested optional reintroduction.
+
+Locks 11/11. Immutable tests 10 passed. Parity 9,059 × 17 fields, 100%, 0 mismatches.
+JS syntax and mock-DOM status-state checks passed. The first full run hung in the
+local TestClient portal before app startup: reproduced with empty FastAPI, resolved
+by local network permission. Stalled test run was interrupted; final reported run
+completed, with the startup lifecycle test also passing independently. No production
+process was killed. Temporary TypeScript dependency symlink removed after the suite.
+Market DB/master hashes unchanged; no data/, replay_data/, *.sqlite3 or .env staged.
+
+Pending activation: Harish was asked for the exact REDACTED request body/expiry ID;
+no answer was received yet. Request shape is legacy-compatible, not live-verified.
+Set STOCKMOJO_JWT_J, STOCKMOJO_TOKEN_T and STOCKMOJO_REQUEST_JSON privately, confirm
+current request/response schema and scope, then review deployment. No active .env
+was edited; no credential value should be pasted into chat/Git. Current running
+terminal remains unchanged. Review logs/report in conversation workspace
+`outputs/v195_stockmojo_poller/`.

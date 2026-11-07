@@ -645,6 +645,25 @@
      trader can check, where a GOOD/BAD rating was a judgment they could not.
      Failures go to analyst/recording_errors.log and the server log, never to a
      popup. Do not reintroduce a coverage badge, bar or percentage here. -->
+<div id="pillStockMojoLive" role="status" style="padding:6px 16px;color:#94a3b8">📊 StockMojo OI: waiting · optional source</div>
+<script>
+(function(){
+ const pill=document.getElementById('pillStockMojoLive');
+ const fmt=v=>v==null?'—':(Number(v)/1e6).toFixed(2)+'M';
+ async function refresh(){
+  try{
+   const response=await fetch('/api/stockmojo/live');if(!response.ok)throw new Error('Unavailable');
+   const data=await response.json();
+   if(!data.configured){pill.textContent='📊 StockMojo: '+(data.configuration_status||data.status)+' · Pillar 4 retains Dhan OI';return;}
+   const at=data.timestamp?new Date(data.timestamp*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'}):'—';
+   const state=data.available?'Observed':'STALE / UNAVAILABLE';
+   pill.textContent='📊 StockMojo '+state+' | PE−CE total '+fmt(data.pe_ce_oi_total)+' | PCR '+(data.pcr_total==null?'—':Number(data.pcr_total).toFixed(2))+' | 3m Δ '+fmt(data.pe_ce_change_3m)+' | '+(data.sentiment||'waiting')+' | Source '+at+' IST | '+data.poll_status;
+   pill.title='OI change is positioning context, not proof of writer intent. One source contributes to Pillar 4; no duplicate vote. Source age: '+(data.age_seconds==null?'unknown':Math.round(data.age_seconds)+'s');
+  }catch(e){pill.textContent='📊 StockMojo unavailable';}
+ }
+ refresh();setInterval(refresh,10000);
+})();
+</script>
 <div id="pillGrokRegimeBridge" role="status" style="padding:8px 16px;color:#94a3b8">🤖 Grok 8600→8510: waiting · ADVISORY</div>
 <details id="grokRegimeBridgeCard" class="card" style="margin:16px 0;padding:16px">
  <summary style="cursor:pointer">🤖 Grok 8600→8510 Signal Screener · <span id="grokSummary">Waiting for observations</span> · ADVISORY · Expand</summary>

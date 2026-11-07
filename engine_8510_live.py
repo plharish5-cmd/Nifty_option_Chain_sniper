@@ -78,6 +78,16 @@ async def startup_event():
     log.info("⚡ NIFTY Quant Terminal 8510 Engine starting up...")
     backend.inst_mgr.ensure_loaded()
     backend.start_recording()
+    try:
+        from analyst.stockmojo_safe_poller_8510 import StockMojoPoller
+        backend.stockmojo_poller = await asyncio.to_thread(
+            StockMojoPoller, backend.ledger_db,
+            log_path=backend.config_path.parent / 'recording_errors.log',
+            holidays=backend.nse_holidays)
+        backend.stockmojo_poller.start()
+    except Exception:
+        log.error('Optional StockMojo observer unavailable; existing terminal continues')
+
     async def grok_poller():
         # Optional advisory failures must not prevent the trading terminal starting.
         while True:
@@ -386,11 +396,18 @@ async def grok_webhook(req: Request):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@app.get('/api/stockmojo/live')
+async def stockmojo_live():
+    """Read-only provider status and source observations; no network or SQL."""
+    return backend.get_stockmojo_live()
+
+
 @app.get("/api/telemetry")
 async def api_telemetry():
     """1-second ticking telemetry stream."""
     data = await backend.get_live_telemetry()
     data["grok_regime_bridge"] = backend.get_grok_regime_cached()
+    data["stockmojo_live"] = backend.get_stockmojo_live()
     return JSONResponse(content=data)
 
 
@@ -993,6 +1010,9 @@ async def api_post_synergy_config(req: Request):
 
 @app.on_event('shutdown')
 async def stop_background_tasks():
+    observer = getattr(backend, 'stockmojo_poller', None)
+    if observer is not None:
+        observer.stop()
     recorder = getattr(backend, "recording_service", None)
     if recorder: recorder.stop()
     for task in (getattr(app.state,'grok_task',None),getattr(app.state,'ict_smc_task',None),getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
