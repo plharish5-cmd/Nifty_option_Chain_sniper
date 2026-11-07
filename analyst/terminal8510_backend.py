@@ -3002,6 +3002,12 @@ class QuantTerminalBackend:
             self.ema_proximity_engine = ema_proximity_engine
         return self.ema_proximity_engine.update_config(updates)
 
+    def get_grok_regime_cached(self):
+        """Memory-only observational status; never enters strategy decisions."""
+        bridge = getattr(self, 'grok_regime_bridge', None)
+        return bridge.get_cached_grok_regime() if bridge else {
+            'enabled': False, 'stale': True, 'execution_gate_mode': 'ADVISORY_ONLY'}
+
     # ── TELEMETRY & 1-SECOND TICK STREAM ────────────────────────────────────
     async def get_live_telemetry(self) -> Dict[str, Any]:
         """Fetches 1-second live stream for ribbon, ATM widget, matrix, and trend filters."""
