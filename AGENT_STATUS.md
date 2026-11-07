@@ -319,3 +319,50 @@ current request/response schema and scope, then review deployment. No active .en
 was edited; no credential value should be pasted into chat/Git. Current running
 terminal remains unchanged. Review logs/report in conversation workspace
 `outputs/v195_stockmojo_poller/`.
+
+
+## ChatGPT — v1.9.6 institutional telemetry / local qwen (7 Nov 2026)
+
+Branch: chatgpt/v1.9.6-institutional-telemetry-qwen; base 10c22b0.
+Moves 1–3: 24d2dec, 29b4a70, cb5dccc. Final checkpoint: post-chatgpt-v1.9.6-inst-qwen.
+Owner explicitly authorized removal of old bridge files despite old tests importing
+them, and derivation/documentation of SYSTEM_PROMPT and crowding wording. No
+compatibility shims or old-test modifications. Retired routes/startup/UI removed.
+
+Deterministic N+1 windows, quality gates, causal reversal persistence and optional
+chain evidence feed a local-only qwen2.5:3b interpreter. Deterministic evidence is
+persisted before inference. Pillar 4 uses only the OI score component; HTTP overlay
+copies prevent mutation of execution telemetry. All original backend functions match
+606332e ASTs. Live settings preserved; only retired provider config keys removed.
+No broker orders, live arming, active-checkout deployment, credential changes or
+production restarts. Historical data never substitutes for live evidence.
+
+| Verification / private fixture lineage | passed | failed | skipped | collection errors |
+|---|---:|---:|---:|---:|
+| Parent 10c22b0 full suite | 499 | 16 | 12 | 0 |
+| v1.9.6 diagnostic continued suite | 470 | 21 | 12 | 2 |
+| New v1.9.6 suite | 31 | 0 | 0 | 0 |
+| Existing live-switch suite | 62 | 0 | 0 | 0 |
+| Existing config-hygiene suite | 11 | 0 | 0 | 0 |
+
+Exact ordinary full-suite command stops at the two old bridge import errors.
+Diagnostic --continue-on-collection-errors executes remaining tests: 13 baseline
+failures persist; 8 Matrix tests fail after the unchanged 15:05 IST clock cutoff.
+55 retired bridge cases no longer collect; raw totals are not directly comparable.
+Two existing naming assertions now pass; the third broad identity assertion belongs
+to an uncollectable retired bridge suite. Full suite is NOT GREEN. Tests unchanged.
+Locks 11/11; immutable tests 10 passed; parity 9059 ×17, 100%, zero mismatches.
+Inline JS syntax and mock-DOM checks pass; no browser visual verification claimed.
+Temporary dependency symlink removed; no runtime data/sqlite/.env staged.
+
+Supplied CSV: 386 timed rows; final 15:40 volume ratio 0.0128749 causes heuristic
+discard, so evaluation uses 15:39: VALID historical, NEUTRAL_MIXED, score7,
+confidence0. Source date is unverified; not evidence of a real 7 Nov session.
+Completion is a volume/history heuristic, not exchange completion proof.
+Real local model probe timed out at 3 seconds and correctly used deterministic
+fallback. Mocked valid-model path passes; actual narrative success not claimed.
+Measured deterministic full-file median about3.14ms, p95 about4.15ms; no hard
+latency guarantee. Confidence is heuristic, not a win probability.
+Derived crowding warning: Extreme OI dominance can crowd; watch for profit booking
+or mean reversion. Full derived SYSTEM_PROMPT is in the bridge and report artifact.
+Review artifacts: outputs/v196_institutional_telemetry in conversation workspace.

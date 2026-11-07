@@ -53,17 +53,19 @@ REQUIRED=('timestamp','data_status','day_regime','bias_score_pct','confidence_pc
 
 def validate_interpretation(candidate,deterministic):
     if not isinstance(candidate,dict) or any(k not in candidate for k in REQUIRED):raise ValueError('Incomplete local output schema')
+    if set(candidate)-set(REQUIRED)-{'input_telemetry'}:raise ValueError('Unexpected local output fields')
+    if any(isinstance(candidate[k],bool) or not isinstance(candidate[k],(int,float)) for k in ('bias_score_pct','confidence_pct')):raise ValueError('Invalid numeric schema')
     for key in REQUIRED:
         if key in ('summary','warnings'):continue
         if candidate[key]!=deterministic[key]:raise ValueError('Local output changed deterministic '+key)
     if not isinstance(candidate['summary'],str) or len(candidate['summary'])>1000:raise ValueError('Invalid summary')
     if not isinstance(candidate['warnings'],list) or any(not isinstance(w,str) or len(w)>500 for w in candidate['warnings']) or len(candidate['warnings'])>30:raise ValueError('Invalid warnings')
     text=(candidate['summary']+' '+' '.join(candidate['warnings'])).lower()
-    if any(phrase in text for phrase in ('confirmed put writers','confirmed call writers','<script','guaranteed profit')):raise ValueError('Unsupported interpretation claim')
+    if any(phrase in text for phrase in ('confirmed put writers','confirmed call writers','<script','guaranteed profit','buy now','sell now','place order')):raise ValueError('Unsupported interpretation claim')
     result=copy.deepcopy(deterministic);result['summary']=candidate['summary']
     result['warnings']=list(dict.fromkeys(deterministic['warnings']+candidate['warnings']))
     if deterministic['data_status']=='DATA_UNRELIABLE':
-        result['summary']='Data unreliable; no directional conclusion.';result['day_regime']='DATA_UNRELIABLE';result['bias_score_pct']=0;result['confidence_pct']=min(result['confidence_pct'],20)
+        result['summary']='Data unreliable; no directional conclusion.';result['day_regime']='DATA_UNRELIABLE';result['bias_score_pct']=0;result['confidence_pct']=min(result['confidence_pct'],RULES['scoring']['unreliable_confidence_max'])
     return result
 
 
@@ -92,7 +94,10 @@ class InstitutionalTelemetryBridge:
         with self.connect() as db:db.execute('''CREATE TABLE IF NOT EXISTS institutional_pe_ce_telemetry (
           id INTEGER PRIMARY KEY AUTOINCREMENT,evaluated_at REAL NOT NULL,source_key TEXT NOT NULL,
           event_time TEXT,mode TEXT,data_status TEXT,day_regime TEXT,bias_score_pct REAL,confidence_pct REAL,
-          interpreter_source TEXT NOT NULL,output_json TEXT NOT NULL)''')
+          interpreter_source TEXT NOT NULL,output_json TEXT NOT NULL,deterministic_json TEXT)''')
+        with self.connect() as db:
+            if 'deterministic_json' not in {r[1] for r in db.execute('PRAGMA table_info(institutional_pe_ce_telemetry)')}:
+                db.execute('ALTER TABLE institutional_pe_ce_telemetry ADD COLUMN deterministic_json TEXT')
     @contextmanager
     def connect(self):
         db=sqlite3.connect(self.ledger_db,timeout=1)
@@ -104,15 +109,17 @@ class InstitutionalTelemetryBridge:
         row=rows[-1];source=row.get('_source_timestamp')
         if not source:return None
         ts=datetime.fromisoformat(source).timestamp()
-        if abs(now-ts)>120:return None
+        if abs(now-ts)>RULES['max_stale_seconds']:return None
         try:
             with sqlite3.connect(self.market_db.resolve().as_uri()+'?mode=ro',uri=True,timeout=1) as db:
                 snap=db.execute('SELECT expiry,MAX(ts) AS t FROM chain_snap WHERE ts<=? AND ts>=? GROUP BY expiry ORDER BY t DESC LIMIT 1',(ts,ts-60)).fetchone()
                 if not snap:return None
-                atm=round(row['future_ltp']/50)*50
+                spot=db.execute("SELECT c FROM candles_1m WHERE sec_id='13' AND ts<=? AND ts>=? ORDER BY ts DESC LIMIT 1",(ts,ts-60)).fetchone()
+                if not spot:return None
+                atm=spot[0]
                 result=db.execute('SELECT strike,ce_ltp,pe_ltp,ce_oi,pe_oi FROM chain_snap WHERE expiry=? AND ts=? ORDER BY ABS(strike-?) LIMIT 1',(snap[0],snap[1],atm)).fetchone()
                 if not result:return None
-                return dict(zip(('strike','ce_ltp','pe_ltp','ce_oi','pe_oi'),result),timestamp=snap[1],expiry=snap[0],basis='Nearest listed strike to observed futures price; not spot ATM')
+                return dict(zip(('strike','ce_ltp','pe_ltp','ce_oi','pe_oi'),result),timestamp=snap[1],expiry=snap[0],basis='Nearest listed strike to contemporaneous recorded spot')
         except (sqlite3.Error,OSError,ValueError):return None
     def ingest_file(self,path,live=False,reference_now=None,use_local=True):
         if not self._lock.acquire(blocking=False):raise ValueError('Telemetry worker busy; retry')
@@ -120,13 +127,27 @@ class InstitutionalTelemetryBridge:
             p=Path(path).expanduser().resolve()
             if p.suffix.lower() not in ('.csv','.tsv','.json'):raise ValueError('Use CSV, TSV or JSON')
             rows=load_completed_rows(p)
-            now=time.time();chain=self.optional_chain(rows,now) if live else None
-            result=build_telemetry(rows,reference_now=reference_now,live=live,chain_snapshot=chain)
-            interpreted,status=interpret_local(result,self.transport) if use_local else ({**result,'interpreter_source':'DETERMINISTIC_PYTHON_ENGINE'},'DISABLED')
+            now=time.time()
+            effective_reference=datetime.fromtimestamp(now,IST) if live else reference_now
+            result=build_telemetry(rows,reference_now=effective_reference,live=live)
+            if live and result['input_telemetry']['data_quality']['source_date_verified']:
+                selected={'_source_timestamp':result['timestamp'],'future_ltp':result['input_telemetry']['latest']['future_ltp']}
+                chain=self.optional_chain([selected],now)
+                if chain:result=build_telemetry(rows,reference_now=effective_reference,live=live,chain_snapshot=chain)
+            # Publish and persist deterministic evidence before waiting on the local model.
+            initial={**result,'interpreter_source':'DETERMINISTIC_PYTHON_ENGINE'}
             source=hashlib.sha256(str(p).encode()).hexdigest()
+            encoded=json.dumps(initial,allow_nan=False)
             with self.connect() as db:
-                db.execute('INSERT INTO institutional_pe_ce_telemetry (evaluated_at,source_key,event_time,mode,data_status,day_regime,bias_score_pct,confidence_pct,interpreter_source,output_json) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                 (now,source,interpreted['timestamp'],interpreted['input_telemetry']['data_quality']['mode'],interpreted['data_status'],interpreted['day_regime'],interpreted['bias_score_pct'],interpreted['confidence_pct'],interpreted['interpreter_source'],json.dumps(interpreted,allow_nan=False)))
+                cursor=db.execute('INSERT INTO institutional_pe_ce_telemetry (evaluated_at,source_key,event_time,mode,data_status,day_regime,bias_score_pct,confidence_pct,interpreter_source,output_json,deterministic_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                 (now,source,initial['timestamp'],initial['input_telemetry']['data_quality']['mode'],initial['data_status'],initial['day_regime'],initial['bias_score_pct'],initial['confidence_pct'],initial['interpreter_source'],encoded,encoded))
+                row_id=cursor.lastrowid
+            self._cache={**initial,'evaluated_at':now,'execution_gate_mode':'ADVISORY_ONLY'}
+            self._qwen_status='EVALUATING_LOCAL' if use_local else 'DISABLED'
+            interpreted,status=interpret_local(result,self.transport) if use_local else (initial,'DISABLED')
+            with self.connect() as db:
+                db.execute('UPDATE institutional_pe_ce_telemetry SET interpreter_source=?,output_json=? WHERE id=?',
+                  (interpreted['interpreter_source'],json.dumps(interpreted,allow_nan=False),row_id))
             self._cache={**interpreted,'evaluated_at':now,'execution_gate_mode':'ADVISORY_ONLY'};self._qwen_status=status
             return self.snapshot()
         finally:self._lock.release()
@@ -137,8 +158,11 @@ class InstitutionalTelemetryBridge:
         q=result['input_telemetry']['data_quality'];available=False
         if q['mode']=='LIVE' and q['source_date_verified'] and result['data_status']=='VALID':
             age=time.time()-datetime.fromisoformat(result['timestamp']).timestamp();available=0<=age<=RULES['max_stale_seconds']
+        if q['mode']=='LIVE':
+            age=time.time()-datetime.fromisoformat(result['timestamp']).timestamp() if q['source_date_verified'] else None
+            result={**result,'input_telemetry':{**result['input_telemetry'],'data_quality':{**q,'stale_data_seconds':age}}}
         if q['mode']=='LIVE' and not available:
-            return {**result,'available':False,'data_status':'DATA_UNRELIABLE','day_regime':'DATA_UNRELIABLE','bias_score_pct':0,'confidence_pct':min(result['confidence_pct'],20),'summary':'Live observations unavailable or stale; no directional conclusion.'}
+            return {**result,'available':False,'data_status':'DATA_UNRELIABLE','day_regime':'DATA_UNRELIABLE','bias_score_pct':0,'confidence_pct':min(result['confidence_pct'],RULES['scoring']['unreliable_confidence_max']),'summary':'Live observations unavailable or stale; no directional conclusion.'}
         return {**result,'available':available}
     def qwen_status(self):
         return {'model':OLLAMA_MODEL,'url':RULES['local_url'],'last_status':self._qwen_status,'interpreter_source':self._cache.get('interpreter_source'),'execution_gate_mode':'ADVISORY_ONLY'}

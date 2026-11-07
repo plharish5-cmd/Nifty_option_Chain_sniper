@@ -375,7 +375,7 @@ async def institutional_ingest_file(req: Request):
 @app.get("/api/telemetry")
 async def api_telemetry():
     """1-second ticking telemetry stream."""
-    data = await backend.get_live_telemetry()
+    data = dict(await backend.get_live_telemetry())
     data["institutional_telemetry_live"]=backend.get_institutional_telemetry_cached()
     data["five_factor_confluence"]=backend.institutional_advisory_confluence(data.get("five_factor_confluence"))
     return JSONResponse(content=data)

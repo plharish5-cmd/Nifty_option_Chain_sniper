@@ -3015,7 +3015,12 @@ class QuantTerminalBackend:
         observation=self.get_institutional_telemetry_cached()
         if not observation.get('available'):
             return result
-        score=observation['bias_score_pct'];side=result.get('direction')
+        if not isinstance(result.get('pillars'),dict) or 'pillar_4_option_writer_flow' not in result['pillars']:
+            return result
+        score=observation.get('confirmation',{}).get('score_components',{}).get('pe_ce_points')
+        side=result.get('direction')
+        if not isinstance(score,(int,float)) or isinstance(score,bool) or not math.isfinite(score):
+            return result
         passed=bool(observation['data_status']=='VALID' and (score>0 if side=='CE' else score<0 if side=='PE' else False))
         name='pillar_4_option_writer_flow';result[name]=passed
         result['pillars'][name]={'passed':passed,'label':'Institutional OI-flow proxy'}
