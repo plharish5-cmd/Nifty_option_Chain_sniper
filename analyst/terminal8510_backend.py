@@ -2548,10 +2548,15 @@ class QuantTerminalBackend:
         Paper and dry-run are unaffected; this gates real orders only.
         """
         cfg = self._safety_cfg()
-        start = str(cfg.get('live_entry_window_start', '09:20'))
-        end = str(cfg.get('live_entry_window_end', '15:05'))
+        start = str(cfg.get('live_entry_window_start', '09:15') or '')
+        end = str(cfg.get('live_entry_window_end', '15:20') or '')
         now = datetime.now(IST).strftime('%H:%M')
-        return {'start': start, 'end': end, 'now': now, 'open': start <= now <= end}
+        # Either value blank removes the check entirely, at the owner's option.
+        if not start or not end:
+            return {'start': start, 'end': end, 'now': now, 'open': True,
+                    'disabled': True}
+        return {'start': start, 'end': end, 'now': now, 'open': start <= now <= end,
+                'disabled': False}
 
     def _dhan_credentials_live_ok(self) -> Dict[str, Any]:
         """A real order must never ride on a disconnected or expired session."""

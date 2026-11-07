@@ -48,8 +48,8 @@ def make_backend(tmp_path, **safety):
     base = {'live_validation_status': 'NO_GO', 'typed_confirmation': 'LIVE',
             # Matches the shipped config: dry-run is opt-in, not forced.
             'live_dry_run': False, 'dry_run_exit_min_orders': 0,
-            'live_entry_window_start': '09:20', 'live_entry_window_end': '15:05',
-            'max_live_trades_per_day': 3, 'max_live_loss_rupees_per_day': 5000.0}
+            'live_entry_window_start': '09:15', 'live_entry_window_end': '15:20',
+            'max_live_trades_per_day': 0, 'max_live_loss_rupees_per_day': 0.0}
     base.update(safety)
     b.cfg = {'execution_safety_v194': base, 'starting_paper_capital': 100000.0}
     b.config_path = tmp_path / 'config.json'
@@ -283,13 +283,44 @@ def test_recording_a_dry_run_never_raises(tmp_path):
 # 3. RUNTIME GUARDS — each one must downgrade, and only downgrade
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_entry_window_closes_before_the_1520_square_off(tmp_path):
-    """15:30 would allow an entry that is squared off minutes later, paying
-    charges both ways for nothing."""
+def test_the_entry_window_is_the_owners_choice(tmp_path):
+    """09:15-15:20: market open to the EOD square-off, as the owner specified.
+    A previous 09:20-15:05 narrowing was mine and was reverted at his
+    instruction."""
     b = make_backend(tmp_path)
     win = b.live_entry_window()
-    assert win['end'] == '15:05'
-    assert win['end'] < '15:20', "live entries must stop before EOD square-off"
+    assert win['start'] == '09:15'
+    assert win['end'] == '15:20'
+
+
+def test_the_window_check_can_be_removed_entirely(tmp_path):
+    """Blanking either bound disables it, so the owner can turn it off."""
+    b = make_backend(tmp_path, live_entry_window_start='', live_entry_window_end='')
+    win = b.live_entry_window()
+    assert win['open'] is True and win['disabled'] is True
+
+
+def test_zero_means_no_daily_cap(tmp_path):
+    """Both caps are OFF in the shipped config at the owner's instruction.
+    0 must mean unlimited, not "block everything"."""
+    b = approved(tmp_path, max_live_trades_per_day=0,
+                 max_live_loss_rupees_per_day=0.0,
+                 live_entry_window_start='', live_entry_window_end='')
+    b.broker = _ConnectedBroker()
+    b.configure_real_money(True, 'LIVE')
+    today = __import__('datetime').datetime.now(__import__(
+        'analyst.terminal8510_backend', fromlist=['IST']).IST).strftime('%Y-%m-%d')
+    with sqlite3.connect(b.ledger_db) as c:
+        for i in range(25):            # far beyond the old 3-trade cap
+            c.execute("INSERT OR REPLACE INTO orders (order_id, created_at, side, mode) "
+                      "VALUES (?,?,?,?)", ("L%d" % i, today + " 10:00:00", "BUY", "LIVE"))
+        c.execute("INSERT OR REPLACE INTO positions (position_id, status, mode, "
+                  "exit_time, net_pnl) VALUES ('PX','CLOSED_SL','LIVE',?,?)",
+                  (today + " 11:00:00", -99000.0))
+        c.commit()
+    d = b.live_execution_decision()
+    assert d['route'] == 'LIVE', \
+        "with caps at 0 neither 25 trades nor -Rs99,000 may block a signal: " + d['reason']
 
 
 def test_trade_count_guard_trips_and_disarms(tmp_path):
@@ -553,9 +584,12 @@ def test_the_typed_confirmation_is_live():
     assert shipped()['execution_safety_v194']['typed_confirmation'] == 'LIVE'
 
 
-def test_the_live_window_ends_before_square_off():
+def test_the_shipped_window_and_caps_match_the_owners_instruction():
     s = shipped()['execution_safety_v194']
-    assert s['live_entry_window_end'] < '15:20'
+    assert s['live_entry_window_start'] == '09:15'
+    assert s['live_entry_window_end'] == '15:20'
+    assert int(s['max_live_trades_per_day']) == 0, "daily trade cap must be off"
+    assert float(s['max_live_loss_rupees_per_day']) == 0.0, "daily loss cap must be off"
 
 
 def test_every_new_threshold_carries_an_evidence_note():
@@ -564,7 +598,7 @@ def test_every_new_threshold_carries_an_evidence_note():
     s = shipped()['execution_safety_v194']
     notes = ' '.join(v for k, v in s.items()
                      if k.startswith('_evidence') and isinstance(v, str))
-    assert '15:05' in notes and '15:20' in notes
+    assert '15:20' in notes
     assert '2,600' in notes or '2600' in notes
     assert 'dry-run' in notes.lower()
     assert 'instruction' in notes.lower(), \
