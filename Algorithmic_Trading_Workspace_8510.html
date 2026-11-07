@@ -1403,10 +1403,12 @@
                 </div>
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px; padding-top:10px; border-top:1px solid var(--border-subtle);">
                     <span style="font-size:11px; font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">MONEY FILTER:</span>
-                    <button type="button" class="secondary-btn active-filter-btn" id="btnFilterMoney_ALL" onclick="setMoneyFilter('ALL')" style="padding:4px 10px; font-size:11.5px; font-weight:700;">[ All ]</button>
+                    <button type="button" class="secondary-btn" id="btnFilterMoney_ALL" onclick="setMoneyFilter('ALL')" style="padding:4px 10px; font-size:11.5px; font-weight:700;">[ Session trades ]</button>
                     <button type="button" class="secondary-btn" id="btnFilterMoney_PAPER" onclick="setMoneyFilter('PAPER')" style="padding:4px 10px; font-size:11.5px;">[ Paper Money 📝 ]</button>
-                    <button type="button" class="secondary-btn" id="btnFilterMoney_REAL" onclick="setMoneyFilter('REAL')" style="padding:4px 10px; font-size:11.5px;">[ Real Money 💰 ]</button>
-                    <span style="font-size:10.5px; color:var(--text-muted); margin-left:6px;">Orders placed in <b>BOTH</b> mode fired on both books, so they appear under either filter.</span>
+                    <button type="button" class="secondary-btn active-filter-btn" id="btnFilterMoney_REAL" onclick="setMoneyFilter('REAL')" style="padding:4px 10px; font-size:11.5px;">[ Real Money 💰 ]</button><button type="button" class="secondary-btn" id="btnFilterMoney_TEST" onclick="setMoneyFilter('TEST')">Off-market tests</button>
+<button type="button" class="secondary-btn" onclick="cleanupOffMarketTests(false)">Clear off-market tests</button>
+<button type="button" class="secondary-btn" onclick="cleanupOffMarketTests(true)">Restore hidden tests</button><span id="offMarketCleanupStatus"></span>
+                    <span style="font-size:10.5px; color:var(--text-muted); margin-left:6px;">Real view requires a broker order ID. Off-market paper tests are separate; cleanup is reversible.</span>
                 </div>
             </div>
 
@@ -1428,7 +1430,7 @@
                                 <th>Live MTM / P&amp;L</th>
                                 <th>Source</th>
                                 <th>Strategy / Setup</th>
-                                <th>Square-Off</th>
+                                <th>Exit premium</th><th>NIFTY entry</th><th>NIFTY exit</th><th>Record / price basis</th><th>Square-Off</th>
                             </tr>
                         </thead>
                         <tbody id="positionsTableBody">
@@ -1441,28 +1443,13 @@
             <!-- Orders Book Section (Problem 4 Source & Strategy Columns) -->
             <div class="card">
                 <h2>
-                    <span>📑 Institutional Orders Book</span>
+                    <span id="ordersBookTitle">📑 Institutional Orders Book · real orders only</span>
                     <button type="button" class="emerald-btn" onclick="exportOrdersToExcel()">📥 Download Orders Book as Excel (.xls)</button>
                 </h2>
                 <div style="overflow-x:auto;">
                     <table>
                         <thead>
-                            <tr>
-                                <th>Order ID</th>
-                                <th>Timestamp</th>
-                                <th>Contract Symbol</th>
-                                <th>Source</th>
-                                <th>Strategy / Setup</th>
-                                <th>Side</th>
-                                <th>Type</th>
-                                <th>Qty</th>
-                                <th>Signal LTP</th>
-                                <th>Avg Fill Price</th>
-                                <th>Slippage (Pts)</th>
-                                <th>Book</th>
-                                <th>Exit / Net P&amp;L</th>
-                                <th>Status</th>
-                            </tr>
+                            <tr><th>Order ID</th><th>Timestamp</th><th>Contract / strike</th><th>Source</th><th>Setup</th><th>Side</th><th>Qty</th><th>Entry premium</th><th>Exit premium</th><th>Entry IST</th><th>Exit IST</th><th>Duration</th><th>NIFTY entry</th><th>NIFTY exit</th><th>Record category</th><th>Price basis</th><th>Status</th><th>Net PnL</th></tr>
                         </thead>
                         <tbody id="ordersTableBody">
                             <tr><td colspan="14" style="text-align:center; color:var(--text-muted); padding:16px;">Loading order book...</td></tr>
@@ -1548,7 +1535,7 @@
                         </div>
                         <div style="display:flex; gap:10px; flex-wrap:wrap;">
                             <button type="button" class="crimson-btn" onclick="resetPaperLedger(false)">🧹 Clear Realized P&amp;L Only</button>
-                            <button type="button" class="crimson-btn" onclick="resetPaperLedger(true)">🧹 Clear P&amp;L + Wipe Orders Book</button>
+                            <button type="button" class="crimson-btn" onclick="cleanupOffMarketTests(false)">Clear off-market tests only</button>
                         </div>
                     </div>
                 </div>
@@ -2167,7 +2154,7 @@
         let cachedAllowOffHours = false;
         let cachedSpotPrice = 0.0;
         let currentPosSourceFilter = "ALL";
-        let currentMoneyFilter = "ALL";   // ALL | PAPER | REAL (orders book)
+        let currentMoneyFilter = "REAL";   // ALL | PAPER | REAL (orders book)
         let currentPosStrategyFilter = "ALL";
 
         // ── 2. INITIALIZATION & CLOCK ─────────────────────────────────────────
@@ -3067,7 +3054,7 @@
 
         function setMoneyFilter(kind) {
             currentMoneyFilter = kind;
-            ["btnFilterMoney_ALL", "btnFilterMoney_PAPER", "btnFilterMoney_REAL"].forEach(id => {
+            ["btnFilterMoney_ALL", "btnFilterMoney_PAPER", "btnFilterMoney_REAL", "btnFilterMoney_TEST"].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove("active-filter-btn");
             });
@@ -3636,7 +3623,8 @@
             const tbody = document.getElementById("positionsTableBody");
             if (!tbody) return;
 
-            let filtered = positions || [];
+            let filtered = (positions || []).filter(p=>!p.test_hidden && (currentMoneyFilter==='TEST'?p.record_category==='OFF_MARKET_TEST':p.record_category!=='OFF_MARKET_TEST'));
+
             if (currentPosSourceFilter === "AUTO") {
                 filtered = filtered.filter(p => (p.source && p.source.includes("AUTO")) || (p.placed_by && p.placed_by.includes("AUTO")));
             } else if (currentPosSourceFilter === "MANUAL") {
@@ -3655,7 +3643,7 @@
             }
 
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:16px;">No active positions matching current filter.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="13" style="text-align:center; color:var(--text-muted); padding:16px;">No active positions matching current filter.</td></tr>`;
                 return;
             }
 
@@ -3677,15 +3665,18 @@
                 return `<tr>
                     <td title="${structTip}"><b style="font-family:var(--font-mono);">${p.symbol}</b></td>
                     <td><b>${p.qty}</b></td>
-                    <td>₹${Number(p.entry_price || 0).toFixed(2)}</td>
+                    <td>${ledgerPrice(p.observed_entry_premium)}</td>
                     <td title="Entered: ${p.entry_time || 'unknown'}">
                         <b style="font-family:var(--font-mono); font-size:12.5px;">${et.time}</b>
                         ${et.date ? `<div style="color:var(--text-muted); font-size:10px;">${et.date}</div>` : ``}
                     </td>
-                    <td style="font-weight:700;">₹${Number(p.current_ltp || 0).toFixed(2)}</td>
-                    <td style="font-weight:800; color:${pnlColor}; font-size:13px;">${pnlSign}${Math.round(pnlVal)} ${pnlIcon}</td>
+                    <td style="font-weight:700;">${p.valuation_available===false?'Awaiting fresh quote':ledgerPrice(p.current_ltp)}</td>
+                    <td style="font-weight:800; color:${pnlColor}; font-size:13px;">${p.valuation_available===false?'Awaiting quote':p.price_basis==='UNVERIFIED_LEGACY'?'Unverified legacy basis':pnlSign+Math.round(pnlVal)+' '+pnlIcon}</td>
                     <td><span class="status-badge ${sourceDisplay.includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${sourceDisplay}</span></td>
                     <td><span style="font-family:var(--font-mono); font-weight:600; font-size:11.5px;">${stratDisplay}</span></td>
+                    <td>${ledgerPrice(p.observed_exit_premium)}</td>
+                    <td>${ledgerNumber(p.recorded_entry_spot)}</td><td>${ledgerNumber(p.recorded_exit_spot)}</td>
+                    <td>${p.record_category||'LEGACY_UNVERIFIED'} / ${p.price_basis||'UNVERIFIED'}</td>
                     <td>
                         <button type="button" class="crimson-btn" style="padding:4px 10px; font-size:11px; font-weight:700;" onclick="handleSquareOffClick('${p.position_id}')" ${sqBtnDisabledAttr}>
                             Square-Off
@@ -3774,74 +3765,35 @@
             }
         }
 
-        function renderOrdersTable(orders) {
-            const tbody = document.getElementById("ordersTableBody");
-            if (!tbody) return;
-
-            let filtered = orders || [];
-            if (currentPosSourceFilter === "AUTO") {
-                filtered = filtered.filter(o => (o.source && o.source.includes("AUTO")) || (o.placed_by && o.placed_by.includes("AUTO")));
-            } else if (currentPosSourceFilter === "MANUAL") {
-                filtered = filtered.filter(o => (o.source && o.source.includes("MANUAL")) || (o.placed_by && o.placed_by.includes("MANUAL")));
-            }
-            if (currentPosStrategyFilter !== "ALL") {
-                filtered = filtered.filter(o => {
-                    const s = (o.strategy_setup || o.strategy_name || "");
-                    if (currentPosStrategyFilter === "Stage 2") return s.includes("Stage 2");
-                    if (currentPosStrategyFilter === "4/8 Crossover") return s.includes("Crossover");
-                    if (currentPosStrategyFilter === "1H 8 EMA") return s.includes("1H");
-                    if (currentPosStrategyFilter === "Stage 3") return s.includes("Stage 3");
-                    if (currentPosStrategyFilter === "P minus C Filter") return s.includes("P minus C") || s.includes("OI");
-                    return true;
-                });
-            }
-
-            // Paper vs real money. mode is the execution mode the order fired
-            // under: PAPER_ONLY hit only the paper book, ALGO_LIVE_ONLY only the
-            // real one, and BOTH genuinely hit both — so BOTH is shown under
-            // either filter rather than being assigned to one arbitrarily.
-            if (currentMoneyFilter === "PAPER") {
-                filtered = filtered.filter(o => String(o.mode || "").includes("PAPER") || String(o.mode || "") === "BOTH");
-            } else if (currentMoneyFilter === "REAL") {
-                filtered = filtered.filter(o => String(o.mode || "").includes("LIVE") || String(o.mode || "") === "BOTH");
-            }
-
-            if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; color:var(--text-muted); padding:16px;">No orders found matching filters.</td></tr>`;
-                return;
-            }
-
-            tbody.innerHTML = filtered.map(o => {
-                const mode = String(o.mode || "");
-                const isPaper = mode.includes("PAPER");
-                const isReal = mode.includes("LIVE");
-                const bookLabel = mode === "BOTH" ? "PAPER + REAL" : (isPaper ? "PAPER 📝" : (isReal ? "REAL 💰" : (mode || "—")));
-                const bookBadge = mode === "BOTH" ? "badge-gold" : (isReal ? "badge-bear" : "badge-side");
-                const isExit = String(o.side || "") === "SELL";
-                const netPnl = Number(o.net_pnl || 0);
-                const exitCell = isExit
-                    ? `<b style="color:${netPnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">${netPnl >= 0 ? '+' : ''}${Math.round(netPnl)}</b>
-                       <div style="color:var(--text-muted); font-size:10px; font-family:var(--font-mono);">${o.exit_reason || 'EXIT'}</div>`
-                    : `<span style="color:var(--text-muted);">—</span>`;
-                return `
-                <tr${isExit ? ` style="background:rgba(239,68,68,0.05);"` : ``}>
-                    <td><code>${o.order_id}</code></td>
-                    <td style="color:var(--text-dim);">${o.created_at}</td>
-                    <td><b style="font-family:var(--font-mono);">${o.symbol}</b></td>
-                    <td><span class="status-badge ${(o.source || o.placed_by || '').includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${o.source || o.placed_by || 'MANUAL MATRIX ✋'}</span></td>
-                    <td><span style="font-family:var(--font-mono); font-size:11.5px;">${o.strategy_setup || o.strategy_name || 'Manual — No Strategy'}</span></td>
-                    <td style="color:${o.side === 'BUY' ? 'var(--emerald)' : 'var(--crimson)'}; font-weight:700;">${o.side}</td>
-                    <td><span class="status-badge badge-side">${o.order_type}</span></td>
-                    <td><b>${o.qty}</b></td>
-                    <td>₹${Number(o.signal_ltp || 0).toFixed(2)}</td>
-                    <td style="font-weight:700; color:var(--emerald);">₹${Number(o.fill_price || 0).toFixed(2)}</td>
-                    <td style="color:${Number(o.slippage || 0) > 0 ? 'var(--crimson)' : 'var(--emerald)'};">${Number(o.slippage || 0) >= 0 ? '+' : ''}${Number(o.slippage || 0).toFixed(2)}</td>
-                    <td><span class="status-badge ${bookBadge}" style="font-size:10px;">${bookLabel}</span></td>
-                    <td>${exitCell}</td>
-                    <td><span class="status-badge ${o.order_status === 'FILLED' ? 'badge-bull' : (o.order_status === 'CANCELLED' ? 'badge-side' : 'badge-bear')}">${o.order_status}</span></td>
-                </tr>
-            `;
-            }).join("");
+        function ledgerNumber(v){return v==null?'Not recorded':Number(v).toFixed(2);}
+        function ledgerPrice(v){return v==null?'Not recorded':'₹'+Number(v).toFixed(2);}
+        function visibleLedgerOrders(orders){
+            return (orders||[]).filter(o=>!o.test_hidden).filter(o=>{
+                if(currentMoneyFilter==='TEST')return o.record_category==='OFF_MARKET_TEST';
+                if(o.record_category==='OFF_MARKET_TEST')return false;
+                if(currentMoneyFilter==='REAL')return o.is_real_order===true;
+                if(currentMoneyFilter==='PAPER')return o.mode==='PAPER_ONLY';
+                return true;
+            }).filter(o=>currentPosSourceFilter==='ALL'||String(o.source||o.placed_by||'').includes(currentPosSourceFilter))
+              .filter(o=>currentPosStrategyFilter==='ALL'||String(o.strategy_setup||o.strategy_name||'').includes(currentPosStrategyFilter==='4/8 Crossover'?'Crossover':currentPosStrategyFilter==='1H 8 EMA'?'1H':currentPosStrategyFilter));
+        }
+        function ledgerOrderValues(o){
+            const exit=o.side==='SELL';
+            return [o.order_id,o.created_at,o.symbol,o.source||o.placed_by,o.strategy_setup||o.strategy_name,o.side,o.qty,
+                o.observed_entry_premium,o.observed_exit_premium,o.position_entry_time||(!exit?o.created_at:null),o.position_exit_time||(exit?o.created_at:null),o.position_duration,
+                o.recorded_entry_spot,o.recorded_exit_spot,o.record_category,o.price_basis,o.order_status,(o.side==='SELL'&&o.observed_exit_premium!=null?o.net_pnl:null)];
+        }
+        function renderOrdersTable(orders){
+            const tbody=document.getElementById('ordersTableBody');if(!tbody)return;tbody.replaceChildren();
+            document.getElementById('ordersBookTitle').textContent=currentMoneyFilter==='REAL'?'Institutional Orders Book · real orders only':currentMoneyFilter==='TEST'?'Off-market testing · disposable paper tests':currentMoneyFilter==='PAPER'?'Market-session paper algo ledger':'Market-session execution ledger';
+            const rows=visibleLedgerOrders(orders);
+            for(const o of rows){const tr=tbody.insertRow();for(const value of ledgerOrderValues(o))tr.insertCell().textContent=value==null?'Not recorded':String(value);}
+            if(!rows.length){const td=tbody.insertRow().insertCell();td.colSpan=18;td.textContent='No orders in this view. Paper/off-market tests are separate from real broker orders.';}
+        }
+        async function cleanupOffMarketTests(restore){
+            const output=document.getElementById('offMarketCleanupStatus');
+            try{const r=await fetch('/api/ledger/off-market-tests/'+(restore?'restore':'cleanup'),{method:'POST'});const d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'Cleanup unavailable');output.textContent=restore?'Restored '+d.restored+' hidden records':d.message+' Hidden orders: '+d.hidden_orders+'; positions: '+d.hidden_positions;pollLiveEngine();}
+            catch(e){output.textContent=e.message;}
         }
 
         function renderFunds(funds) {
@@ -4974,19 +4926,18 @@
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         }
 
-        function exportPositionsToExcel() {
-            fetch('/api/positions').then(r => r.json()).then(rows => {
-                const headers = ['Symbol', 'Mode', 'Qty', 'Entry Price', 'Entry Time', 'Current LTP', 'Duration', 'Gross PnL', 'Net PnL', 'Status'];
-                const data = rows.map(p => [p.symbol, p.mode, p.qty, p.entry_price, p.entry_time, p.current_ltp, p.duration, p.gross_pnl, p.net_pnl, p.status]);
-                exportTableToExcelXML('Port8510_Active_Positions.xls', 'Positions', headers, data);
+        function exportPositionsToExcel(){
+            fetch('/api/positions').then(r=>r.json()).then(rows=>{
+                const headers=['Symbol','Mode','Qty','Observed entry premium','Entry time','Current LTP','Observed exit premium','NIFTY entry','NIFTY exit','Record category','Price basis','Duration','Status'];
+                const data=rows.filter(p=>!p.test_hidden&&(currentMoneyFilter==='TEST'?p.record_category==='OFF_MARKET_TEST':p.record_category!=='OFF_MARKET_TEST')).map(p=>[p.symbol,p.mode,p.qty,p.observed_entry_premium,p.entry_time,p.valuation_available===false?null:p.current_ltp,p.observed_exit_premium,p.recorded_entry_spot,p.recorded_exit_spot,p.record_category,p.price_basis,p.duration,p.status]);
+                exportTableToExcelXML('Port8510_Active_Positions.xls','Positions',headers,data);
             });
         }
 
-        function exportOrdersToExcel() {
-            fetch('/api/orders').then(r => r.json()).then(rows => {
-                const headers = ['Order ID', 'Timestamp', 'Strategy', 'Symbol', 'Security ID', 'Side', 'Type', 'Qty', 'Signal LTP', 'Limit Price', 'Fill Price', 'Slippage', 'Retries', 'Charges', 'Status'];
-                const data = rows.map(o => [o.order_id, o.created_at, o.strategy_name, o.symbol, o.security_id, o.side, o.order_type, o.qty, o.signal_ltp, o.limit_price, o.fill_price, o.slippage, o.chase_retries, o.brokerage_taxes, o.order_status]);
-                exportTableToExcelXML('Port8510_Orders_Book.xls', 'Orders', headers, data);
+        function exportOrdersToExcel(){
+            fetch('/api/orders').then(r=>r.json()).then(rows=>{
+                const headers='Order ID|Timestamp|Contract / strike|Source|Setup|Side|Qty|Entry premium|Exit premium|Entry IST|Exit IST|Duration|NIFTY entry|NIFTY exit|Record category|Price basis|Status|Net PnL'.split('|');
+                exportTableToExcelXML('Port8510_Orders_Book.xls','Orders',headers,visibleLedgerOrders(rows).map(ledgerOrderValues));
             });
         }
 

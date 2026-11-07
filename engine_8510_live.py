@@ -73,6 +73,20 @@ app.add_middleware(
 backend = QuantTerminalBackend()
 
 
+@app.post('/api/ledger/off-market-tests/cleanup')
+async def api_cleanup_off_market_tests():
+    from analyst.ledger_provenance_8510 import hide_tests
+    async with backend.lock:
+        return await asyncio.to_thread(hide_tests,backend.ledger_db)
+
+
+@app.post('/api/ledger/off-market-tests/restore')
+async def api_restore_off_market_tests():
+    from analyst.ledger_provenance_8510 import restore_tests
+    async with backend.lock:
+        return await asyncio.to_thread(restore_tests,backend.ledger_db)
+
+
 @app.get('/api/dry-evidence')
 async def api_dry_evidence():
     return await asyncio.to_thread(backend.dry_evidence_service().status)
