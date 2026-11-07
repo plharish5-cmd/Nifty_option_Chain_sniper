@@ -5377,7 +5377,7 @@ function renderLiveStatus(s){
  if(reason){
   const bits=[];
   if(s.route_reason)bits.push(s.route_reason);
-  if(s.dry_run)bits.push(`dry-run ${s.dry_run_orders_recorded}/${s.dry_run_orders_required} orders recorded`);
+  if(s.dry_run&&s.dry_run_orders_required>0)bits.push(`dry-run ${s.dry_run_orders_recorded}/${s.dry_run_orders_required} orders recorded`);
   if(s.entry_window&&!s.entry_window.open)bits.push(`live window ${s.entry_window.start}–${s.entry_window.end} IST`);
   if(s.disarm_reason)bits.push('last auto-disarm: '+s.disarm_reason);
   bits.push(`verdict ${s.live_validation_status}`);
@@ -5440,7 +5440,26 @@ function requestRealMoney(enabled){
  const note=document.createElement('p');
  note.id='liveArmModalNote';
  note.style.cssText='font-size:11.5px;line-height:1.5;color:#fbbf24;margin:0 0 12px;';
- note.textContent='Arming always enters DRY-RUN first: the desk records the real bid/ask for each signal without sending an order, until enough orders are recorded to measure execution cost.';
+ // v1.9.4c: the forced pre-live rehearsal gate was removed at the desk
+ // owner's instruction. This text no longer asserts any rule of its own --
+ // it reports the server's actual state and lists only the owner's own
+ // guards, which he specified himself.
+ note.textContent='';
+ fetch('/api/live/status').then(r=>r.ok?r.json():null).then(st=>{
+  if(!st)return;
+  if(st.dry_run){
+   note.style.color='#fbbf24';
+   note.textContent='DRY-RUN is currently ON in config, so no real order will be sent. '
+    +'Set live_dry_run to false to place real orders.';
+  }else{
+   note.style.color='#94a3b8';
+   const w=st.entry_window||{};
+   note.textContent='Typing LIVE arms real orders immediately. Your guards stay in force: '
+    +'entry window '+(w.start||'09:20')+'–'+(w.end||'15:05')+' IST, max '
+    +(st.max_live_trades_per_day||3)+' live trades/day, max ₹'
+    +(st.max_live_loss_rupees_per_day||5000)+' daily loss, and the 15:20 square-off.';
+  }
+ }).catch(()=>{});
  const input=document.createElement('input');
  input.type='text';input.id='liveArmConfirmInput';input.autocomplete='off';input.placeholder='Type LIVE';
  input.style.cssText='width:100%;padding:9px;border-radius:6px;border:1px solid #334155;background:#020617;color:#fff;font-family:var(--font-mono);font-size:14px;letter-spacing:1px;';
