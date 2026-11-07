@@ -3004,6 +3004,26 @@ class QuantTerminalBackend:
 
 
 
+    def get_institutional_telemetry_cached(self):
+        bridge=getattr(self,'institutional_telemetry_bridge',None)
+        return bridge.snapshot() if bridge else {'available':False,'data_status':'NO_RECORDED_DATA','execution_gate_mode':'ADVISORY_ONLY'}
+
+    def institutional_advisory_confluence(self, existing):
+        # Separate HTTP presentation layer; existing strategy/execution methods are untouched.
+        import copy
+        result=copy.deepcopy(existing or {})
+        observation=self.get_institutional_telemetry_cached()
+        if not observation.get('available'):
+            return result
+        score=observation['bias_score_pct'];side=result.get('direction')
+        passed=bool(observation['data_status']=='VALID' and (score>0 if side=='CE' else score<0 if side=='PE' else False))
+        name='pillar_4_option_writer_flow';result[name]=passed
+        result['pillars'][name]={'passed':passed,'label':'Institutional OI-flow proxy'}
+        result['score']=sum(bool(v['passed']) for v in result['pillars'].values())
+        result['grade']={5:'A+ INSTITUTIONAL (5/5)',4:'A HIGH CONVICTION (4/5)',3:'B MODERATE (3/5)'}.get(result['score'],'C DEFENSIVE / WAIT (<=2/5)')
+        result['source']='INSTITUTIONAL_TELEMETRY';result['informational_only']=True;result['execution_authorized']=False
+        return result
+
     # ── TELEMETRY & 1-SECOND TICK STREAM ────────────────────────────────────
     async def get_live_telemetry(self) -> Dict[str, Any]:
         """Fetches 1-second live stream for ribbon, ATM widget, matrix, and trend filters."""

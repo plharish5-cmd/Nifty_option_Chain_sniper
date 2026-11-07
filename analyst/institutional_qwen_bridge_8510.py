@@ -1,0 +1,150 @@
+"""Local-only narrative interpreter and recorded-file worker. Advisory, never an order gate."""
+from __future__ import annotations
+import copy
+import hashlib
+import json
+import os
+import sqlite3
+import threading
+import time
+from pathlib import Path
+from urllib.parse import urlparse
+from contextlib import contextmanager
+from datetime import datetime
+import requests
+from analyst.options_telemetry_engine import build_telemetry,load_completed_rows,RULES,IST
+
+OLLAMA_MODEL=os.environ.get('OLLAMA_TELEMETRY_MODEL','qwen2.5:3b')
+SYSTEM_PROMPT="""You are a LOCAL institutional F&O telemetry interpreter, not an execution agent.
+Use only supplied timestamp, data_quality, latest, windows, optional and deterministic_result.
+Return one JSON object. The deterministic_result mathematics and structured fields are authoritative.
+You may improve summary prose and append evidence-grounded warnings; never change scores, regimes,
+quality, components, availability, participation, futures structures or confirmation fields.
+OI WORDING: say put-side OI dominance, call-side OI dominance or bullish/bearish OI-flow proxy.
+Aggregate OI cannot identify who initiated. Never claim confirmed put writers or confirmed call writers,
+even when strike data exists. Do not promise support, resistance, profit or a future price move.
+DATA QUALITY: DATA_UNRELIABLE means day_regime DATA_UNRELIABLE, bias_score_pct 0,
+confidence_pct at most 20, and no directional conclusion. Describe actual failures and missing fields.
+WINDOWS: N minutes requires N+1 contiguous minute observations; volume sums only the last N bars.
+FUTURES: LONG_BUILDUP is price up/OI up; SHORT_COVERING is price up/OI down;
+SHORT_BUILDUP is price down/OI up; LONG_UNWINDING is price down/OI down. Small changes are NEUTRAL.
+OI MAGNITUDE: absolute PE-CE gap below 10 lakh BALANCED; 10..20 MODERATE;
+20..30 STRONG; at least 30 EXTREME. Negative standing OI can still have a bullish rising flow proxy.
+VOLUME-SPEED: below .75 WEAK; .75..1.25 NORMAL; 1.25..1.75 ELEVATED; >=1.75 HIGH.
+Volume is participation, not direction. Its score follows directional subtotal; flat OI churn earns zero.
+MULTI-WINDOW DECISION: 5m/15m/30m/60m evidence must be separated, not treated as independent votes.
+DAY REGIME: strong regimes need direction, fresh buildup, participation and >=75% window agreement.
+TRANSITION_REVERSAL_WATCH requires all five consecutive completed minute prefix states, a proven
+prior opposite slope, price confirmation and an opposing 30m or 60m prior regime. Never infer it from one bar.
+EXTREME/CROWDING: >=30 lakh must retain: Extreme OI dominance can crowd; watch for profit booking or mean reversion.
+PREMIUM-SKEW: absent optional data is NOT_AVAILABLE, never invented. Premium difference is not initiator proof.
+SCORING: futures +/-35, PE-CE +/-30, PCR +/-15, signed agreement +/-10, signed volume +/-10;
+clamp total to [-100,100]. Copy supplied deterministic components rather than recomputing them.
+CONFIDENCE: heuristic, not probability of profit. Retain penalties: absent premium skew -8,
+absent strike data -7, weak volume -12, balanced gap -8, covering/unwinding -10, disagreement -15.
+OUTPUT SCHEMA: timestamp:string|null, data_status:string, day_regime:string,
+bias_score_pct:number, confidence_pct:number, oi_dominance:object, futures_structure:object,
+participation:object, confirmation:object, summary:string, warnings:array of strings.
+The application attaches the unchanged input_telemetry packet itself; do not invent or copy market data.
+Return no Markdown, commands, HTML or trading instructions. No fields beyond this schema are needed.
+"""
+REQUIRED=('timestamp','data_status','day_regime','bias_score_pct','confidence_pct','oi_dominance','futures_structure','participation','confirmation','summary','warnings')
+
+
+def validate_interpretation(candidate,deterministic):
+    if not isinstance(candidate,dict) or any(k not in candidate for k in REQUIRED):raise ValueError('Incomplete local output schema')
+    for key in REQUIRED:
+        if key in ('summary','warnings'):continue
+        if candidate[key]!=deterministic[key]:raise ValueError('Local output changed deterministic '+key)
+    if not isinstance(candidate['summary'],str) or len(candidate['summary'])>1000:raise ValueError('Invalid summary')
+    if not isinstance(candidate['warnings'],list) or any(not isinstance(w,str) or len(w)>500 for w in candidate['warnings']) or len(candidate['warnings'])>30:raise ValueError('Invalid warnings')
+    text=(candidate['summary']+' '+' '.join(candidate['warnings'])).lower()
+    if any(phrase in text for phrase in ('confirmed put writers','confirmed call writers','<script','guaranteed profit')):raise ValueError('Unsupported interpretation claim')
+    result=copy.deepcopy(deterministic);result['summary']=candidate['summary']
+    result['warnings']=list(dict.fromkeys(deterministic['warnings']+candidate['warnings']))
+    if deterministic['data_status']=='DATA_UNRELIABLE':
+        result['summary']='Data unreliable; no directional conclusion.';result['day_regime']='DATA_UNRELIABLE';result['bias_score_pct']=0;result['confidence_pct']=min(result['confidence_pct'],20)
+    return result
+
+
+def interpret_local(result,transport=None):
+    url=RULES['local_url'];parts=urlparse(url)
+    if parts.hostname not in ('127.0.0.1','localhost','::1') or parts.port!=11434:raise ValueError('Interpreter must be loopback-only')
+    fallback={**copy.deepcopy(result),'interpreter_source':'DETERMINISTIC_PYTHON_ENGINE'}
+    reference={k:result[k] for k in REQUIRED}
+    packet={**result['input_telemetry'],'deterministic_result':reference}
+    payload={'model':OLLAMA_MODEL,'system':SYSTEM_PROMPT,'prompt':json.dumps(packet,allow_nan=False),'format':'json','stream':False,'options':{'temperature':0.0}}
+    try:
+        response=(transport or requests.post)(url,json=payload,timeout=RULES['timeout_seconds'],allow_redirects=False)
+        if response.status_code!=200:raise ValueError('Local interpreter HTTP status')
+        candidate=json.loads(response.json()['response'])
+        validated=validate_interpretation(candidate,result)
+        return {**validated,'interpreter_source':'QWEN_2.5_3B_LOCAL'},'OK'
+    except (requests.RequestException,OSError,ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:
+        return fallback,type(exc).__name__
+
+
+class InstitutionalTelemetryBridge:
+    def __init__(self,ledger_db,market_db=None,transport=None):
+        self.ledger_db=Path(ledger_db);self.market_db=Path(market_db) if market_db else None;self.transport=transport
+        self._cache={};self._lock=threading.Lock();self._last_file=None;self._qwen_status='NOT_EVALUATED'
+        self.ledger_db.parent.mkdir(parents=True,exist_ok=True)
+        with self.connect() as db:db.execute('''CREATE TABLE IF NOT EXISTS institutional_pe_ce_telemetry (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,evaluated_at REAL NOT NULL,source_key TEXT NOT NULL,
+          event_time TEXT,mode TEXT,data_status TEXT,day_regime TEXT,bias_score_pct REAL,confidence_pct REAL,
+          interpreter_source TEXT NOT NULL,output_json TEXT NOT NULL)''')
+    @contextmanager
+    def connect(self):
+        db=sqlite3.connect(self.ledger_db,timeout=1)
+        try:
+            with db:yield db
+        finally:db.close()
+    def optional_chain(self,rows,now):
+        if not self.market_db or not rows:return None
+        row=rows[-1];source=row.get('_source_timestamp')
+        if not source:return None
+        ts=datetime.fromisoformat(source).timestamp()
+        if abs(now-ts)>120:return None
+        try:
+            with sqlite3.connect(self.market_db.resolve().as_uri()+'?mode=ro',uri=True,timeout=1) as db:
+                snap=db.execute('SELECT expiry,MAX(ts) AS t FROM chain_snap WHERE ts<=? AND ts>=? GROUP BY expiry ORDER BY t DESC LIMIT 1',(ts,ts-60)).fetchone()
+                if not snap:return None
+                atm=round(row['future_ltp']/50)*50
+                result=db.execute('SELECT strike,ce_ltp,pe_ltp,ce_oi,pe_oi FROM chain_snap WHERE expiry=? AND ts=? ORDER BY ABS(strike-?) LIMIT 1',(snap[0],snap[1],atm)).fetchone()
+                if not result:return None
+                return dict(zip(('strike','ce_ltp','pe_ltp','ce_oi','pe_oi'),result),timestamp=snap[1],expiry=snap[0],basis='Nearest listed strike to observed futures price; not spot ATM')
+        except (sqlite3.Error,OSError,ValueError):return None
+    def ingest_file(self,path,live=False,reference_now=None,use_local=True):
+        if not self._lock.acquire(blocking=False):raise ValueError('Telemetry worker busy; retry')
+        try:
+            p=Path(path).expanduser().resolve()
+            if p.suffix.lower() not in ('.csv','.tsv','.json'):raise ValueError('Use CSV, TSV or JSON')
+            rows=load_completed_rows(p)
+            now=time.time();chain=self.optional_chain(rows,now) if live else None
+            result=build_telemetry(rows,reference_now=reference_now,live=live,chain_snapshot=chain)
+            interpreted,status=interpret_local(result,self.transport) if use_local else ({**result,'interpreter_source':'DETERMINISTIC_PYTHON_ENGINE'},'DISABLED')
+            source=hashlib.sha256(str(p).encode()).hexdigest()
+            with self.connect() as db:
+                db.execute('INSERT INTO institutional_pe_ce_telemetry (evaluated_at,source_key,event_time,mode,data_status,day_regime,bias_score_pct,confidence_pct,interpreter_source,output_json) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                 (now,source,interpreted['timestamp'],interpreted['input_telemetry']['data_quality']['mode'],interpreted['data_status'],interpreted['day_regime'],interpreted['bias_score_pct'],interpreted['confidence_pct'],interpreted['interpreter_source'],json.dumps(interpreted,allow_nan=False)))
+            self._cache={**interpreted,'evaluated_at':now,'execution_gate_mode':'ADVISORY_ONLY'};self._qwen_status=status
+            return self.snapshot()
+        finally:self._lock.release()
+    def snapshot(self):
+        # No SQL, files, model or broker calls on telemetry/order paths.
+        result=self._cache
+        if not result:return {'available':False,'data_status':'NO_RECORDED_DATA','execution_gate_mode':'ADVISORY_ONLY'}
+        q=result['input_telemetry']['data_quality'];available=False
+        if q['mode']=='LIVE' and q['source_date_verified'] and result['data_status']=='VALID':
+            age=time.time()-datetime.fromisoformat(result['timestamp']).timestamp();available=0<=age<=RULES['max_stale_seconds']
+        if q['mode']=='LIVE' and not available:
+            return {**result,'available':False,'data_status':'DATA_UNRELIABLE','day_regime':'DATA_UNRELIABLE','bias_score_pct':0,'confidence_pct':min(result['confidence_pct'],20),'summary':'Live observations unavailable or stale; no directional conclusion.'}
+        return {**result,'available':available}
+    def qwen_status(self):
+        return {'model':OLLAMA_MODEL,'url':RULES['local_url'],'last_status':self._qwen_status,'interpreter_source':self._cache.get('interpreter_source'),'execution_gate_mode':'ADVISORY_ONLY'}
+    def watch_once(self):
+        path=os.environ.get('INSTITUTIONAL_TELEMETRY_INPUT')
+        if not path:return
+        p=Path(path).expanduser();stat=p.stat();key=(str(p.resolve()),stat.st_mtime_ns,stat.st_size)
+        if key==self._last_file:return
+        self.ingest_file(p,live=True);self._last_file=key

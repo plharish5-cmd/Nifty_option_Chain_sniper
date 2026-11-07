@@ -78,6 +78,20 @@ async def startup_event():
     log.info("⚡ NIFTY Quant Terminal 8510 Engine starting up...")
     backend.inst_mgr.ensure_loaded()
     backend.start_recording()
+    async def institutional_worker():
+        while True:
+            try:
+                if getattr(backend,'institutional_telemetry_bridge',None) is None:
+                    from analyst.institutional_qwen_bridge_8510 import InstitutionalTelemetryBridge
+                    backend.institutional_telemetry_bridge=await asyncio.to_thread(InstitutionalTelemetryBridge,backend.ledger_db,backend.market_db)
+                await asyncio.to_thread(backend.institutional_telemetry_bridge.watch_once)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                log.warning('Optional institutional file worker unavailable')
+            await asyncio.sleep(5)
+    app.state.institutional_task=asyncio.create_task(institutional_worker())
+
     from analyst.ict_smc_signals_8510 import SignalBridge
     app.state.ict_smc_bridge = SignalBridge(backend.cfg['ict_smc_desk_signals'],
         backend.ledger_db.parent / 'ict_smc_signals.sqlite3')
@@ -329,10 +343,41 @@ async def api_set_bias(req: Request):
 
 
 
+def institutional_service():
+    from fastapi import HTTPException
+    bridge=getattr(backend,'institutional_telemetry_bridge',None)
+    if bridge is None:raise HTTPException(status_code=503,detail='Telemetry worker not started')
+    return bridge
+
+@app.get('/api/institutional_telemetry/live')
+async def institutional_live():
+    return backend.get_institutional_telemetry_cached()
+
+@app.get('/api/institutional_telemetry/qwen_status')
+async def institutional_qwen_status():
+    return institutional_service().qwen_status()
+
+@app.post('/api/institutional_telemetry/ingest_file')
+async def institutional_ingest_file(req: Request):
+    from fastapi import HTTPException
+    if req.client is None or req.client.host not in ('127.0.0.1','::1','testclient'):
+        raise HTTPException(status_code=403,detail='Local desk only')
+    if req.headers.get('origin') not in (None,'http://localhost:8510','http://127.0.0.1:8510'):
+        raise HTTPException(status_code=403,detail='Invalid origin')
+    try:
+        body=await req.json()
+        if not isinstance(body,dict) or type(body.get('live',False)) is not bool or type(body.get('use_local',True)) is not bool:raise ValueError('Invalid ingest request')
+        return await asyncio.to_thread(institutional_service().ingest_file,body['path'],body.get('live',False),body.get('reference_now'),body.get('use_local',True))
+    except (OSError,ValueError,TypeError,KeyError) as exc:
+        raise HTTPException(status_code=400,detail=type(exc).__name__)
+
+
 @app.get("/api/telemetry")
 async def api_telemetry():
     """1-second ticking telemetry stream."""
     data = await backend.get_live_telemetry()
+    data["institutional_telemetry_live"]=backend.get_institutional_telemetry_cached()
+    data["five_factor_confluence"]=backend.institutional_advisory_confluence(data.get("five_factor_confluence"))
     return JSONResponse(content=data)
 
 
@@ -937,7 +982,7 @@ async def api_post_synergy_config(req: Request):
 async def stop_background_tasks():
     recorder = getattr(backend, "recording_service", None)
     if recorder: recorder.stop()
-    for task in (getattr(app.state,'ict_smc_task',None),getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
+    for task in (getattr(app.state,'institutional_task',None),getattr(app.state,'ict_smc_task',None),getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
         if task:task.cancel()
 
 @app.get("/api/dhan/config")
