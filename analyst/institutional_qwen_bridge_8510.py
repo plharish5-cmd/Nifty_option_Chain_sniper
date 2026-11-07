@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import queue
 import sqlite3
 import threading
 import time
@@ -46,9 +47,10 @@ OUTPUT SCHEMA: timestamp:string|null, data_status:string, day_regime:string,
 bias_score_pct:number, confidence_pct:number, oi_dominance:object, futures_structure:object,
 participation:object, confirmation:object, summary:string, warnings:array of strings.
 The application attaches the unchanged input_telemetry packet itself; do not invent or copy market data.
+session_regime describes the 09:15 anchor; current_regime describes recent windows. Neither score nor confidence is a probability. WARMING_UP is non-directional.
 Return no Markdown, commands, HTML or trading instructions. No fields beyond this schema are needed.
 """
-REQUIRED=('timestamp','data_status','day_regime','bias_score_pct','confidence_pct','oi_dominance','futures_structure','participation','confirmation','summary','warnings')
+REQUIRED=('timestamp','data_status','day_regime','bias_score_pct','confidence_pct','oi_dominance','futures_structure','participation','confirmation','summary','warnings','session_regime','current_regime','confidence_kind','session_context')
 
 
 def validate_interpretation(candidate,deterministic):
@@ -56,7 +58,7 @@ def validate_interpretation(candidate,deterministic):
     if set(candidate)-set(REQUIRED)-{'input_telemetry'}:raise ValueError('Unexpected local output fields')
     if any(isinstance(candidate[k],bool) or not isinstance(candidate[k],(int,float)) for k in ('bias_score_pct','confidence_pct')):raise ValueError('Invalid numeric schema')
     for key in REQUIRED:
-        if key in ('summary','warnings'):continue
+        if key in ('summary','warnings','session_regime','current_regime','confidence_kind','session_context'):continue
         if candidate[key]!=deterministic[key]:raise ValueError('Local output changed deterministic '+key)
     if not isinstance(candidate['summary'],str) or len(candidate['summary'])>1000:raise ValueError('Invalid summary')
     if not isinstance(candidate['warnings'],list) or any(not isinstance(w,str) or len(w)>500 for w in candidate['warnings']) or len(candidate['warnings'])>30:raise ValueError('Invalid warnings')
@@ -75,7 +77,7 @@ def interpret_local(result,transport=None):
     fallback={**copy.deepcopy(result),'interpreter_source':'DETERMINISTIC_PYTHON_ENGINE'}
     reference={k:result[k] for k in REQUIRED}
     packet={**result['input_telemetry'],'deterministic_result':reference}
-    payload={'model':OLLAMA_MODEL,'system':SYSTEM_PROMPT,'prompt':json.dumps(packet,allow_nan=False),'format':'json','stream':False,'options':{'temperature':0.0}}
+    payload={'model':OLLAMA_MODEL,'system':SYSTEM_PROMPT,'prompt':json.dumps(packet,allow_nan=False),'format':'json','stream':False,'keep_alive':RULES['qwen']['keep_alive'],'options':{'temperature':0.0,'num_predict':RULES['qwen']['num_predict'],'num_ctx':RULES['qwen']['num_ctx']}}
     try:
         response=(transport or requests.post)(url,json=payload,timeout=RULES['timeout_seconds'],allow_redirects=False)
         if response.status_code!=200:raise ValueError('Local interpreter HTTP status')
@@ -89,7 +91,8 @@ def interpret_local(result,transport=None):
 class InstitutionalTelemetryBridge:
     def __init__(self,ledger_db,market_db=None,transport=None):
         self.ledger_db=Path(ledger_db);self.market_db=Path(market_db) if market_db else None;self.transport=transport
-        self._cache={};self._lock=threading.Lock();self._last_file=None;self._qwen_status='NOT_EVALUATED'
+        self._cache={};self._lock=threading.Lock();self._cache_lock=threading.Lock();self._last_file=None;self._qwen_status='NOT_EVALUATED'
+        self._queue=queue.Queue(maxsize=RULES['qwen']['queue_size']);self._stop=threading.Event();self._worker=None;self._generation=0;self._timings={};self._attempts=0
         self.ledger_db.parent.mkdir(parents=True,exist_ok=True)
         with self.connect() as db:db.execute('''CREATE TABLE IF NOT EXISTS institutional_pe_ce_telemetry (
           id INTEGER PRIMARY KEY AUTOINCREMENT,evaluated_at REAL NOT NULL,source_key TEXT NOT NULL,
@@ -142,18 +145,52 @@ class InstitutionalTelemetryBridge:
                 cursor=db.execute('INSERT INTO institutional_pe_ce_telemetry (evaluated_at,source_key,event_time,mode,data_status,day_regime,bias_score_pct,confidence_pct,interpreter_source,output_json,deterministic_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                  (now,source,initial['timestamp'],initial['input_telemetry']['data_quality']['mode'],initial['data_status'],initial['day_regime'],initial['bias_score_pct'],initial['confidence_pct'],initial['interpreter_source'],encoded,encoded))
                 row_id=cursor.lastrowid
-            self._cache={**initial,'evaluated_at':now,'execution_gate_mode':'ADVISORY_ONLY'}
-            self._qwen_status='EVALUATING_LOCAL' if use_local else 'DISABLED'
-            interpreted,status=interpret_local(result,self.transport) if use_local else (initial,'DISABLED')
-            with self.connect() as db:
-                db.execute('UPDATE institutional_pe_ce_telemetry SET interpreter_source=?,output_json=? WHERE id=?',
-                  (interpreted['interpreter_source'],json.dumps(interpreted,allow_nan=False),row_id))
-            self._cache={**interpreted,'evaluated_at':now,'execution_gate_mode':'ADVISORY_ONLY'};self._qwen_status=status
+            self._publish(initial,row_id,now,use_local)
             return self.snapshot()
         finally:self._lock.release()
+    def _publish(self,result,row_id,now,use_local):
+        with self._cache_lock:
+            self._generation+=1;generation=self._generation
+            self._cache={**result,'evaluated_at':now,'execution_gate_mode':'ADVISORY_ONLY',
+                'narrative_status':'PENDING' if use_local else 'DISABLED',
+                'authority_label':'DETERMINISTIC_AUTHORITATIVE (Qwen async pending/offline)'}
+            self._qwen_status='PENDING' if use_local else 'DISABLED'
+            if use_local:
+                if self._worker is None or not self._worker.is_alive():
+                    self._stop.clear();self._worker=threading.Thread(target=self._narrative_worker,name='institutional-qwen',daemon=True);self._worker.start()
+                try:self._queue.put_nowait((generation,result,row_id,now))
+                except queue.Full:
+                    try:self._queue.get_nowait();self._queue.task_done()
+                    except queue.Empty:pass
+                    self._queue.put_nowait((generation,result,row_id,now))
+    def publish_collected(self,result,row_id):
+        self._publish(result,row_id,time.time(),True)
+    def _narrative_worker(self):
+        while not self._stop.is_set():
+            try:item=self._queue.get(timeout=.1)
+            except queue.Empty:continue
+            generation,result,row_id,now=item
+            try:
+                start=time.perf_counter();interpreted,status=interpret_local(result,self.transport);elapsed=(time.perf_counter()-start)*1000
+                with self._cache_lock:
+                    kind='cold_inference_ms' if self._attempts==0 else 'warm_inference_ms';self._timings[kind]=round(elapsed,2);self._attempts+=1
+                if self._stop.is_set():continue
+                interpreted.update(authority_label='DETERMINISTIC_AUTHORITATIVE (Qwen narrative only)' if status=='OK' else 'DETERMINISTIC_AUTHORITATIVE (Qwen async pending/offline)',narrative_status='READY' if status=='OK' else 'FALLBACK',model_status=status)
+                with self.connect() as db:db.execute('UPDATE institutional_pe_ce_telemetry SET interpreter_source=?,output_json=? WHERE id=?',(interpreted['interpreter_source'],json.dumps(interpreted,allow_nan=False),row_id))
+                with self._cache_lock:
+                    if generation==self._generation:
+                        self._cache={**interpreted,'evaluated_at':now,'execution_gate_mode':'ADVISORY_ONLY'};self._qwen_status=status
+            except (sqlite3.Error,OSError,ValueError,TypeError) as exc:
+                with self._cache_lock:
+                    if generation==self._generation:
+                        self._qwen_status=type(exc).__name__;self._cache={**self._cache,'narrative_status':'FALLBACK'}
+            finally:self._queue.task_done()
+    def close(self):
+        self._stop.set()
+        if self._worker is not None:self._worker.join(timeout=.2)
     def snapshot(self):
         # No SQL, files, model or broker calls on telemetry/order paths.
-        result=self._cache
+        with self._cache_lock:result=copy.deepcopy(self._cache)
         if not result:return {'available':False,'data_status':'NO_RECORDED_DATA','execution_gate_mode':'ADVISORY_ONLY'}
         q=result['input_telemetry']['data_quality'];available=False
         if q['mode']=='LIVE' and q['source_date_verified'] and result['data_status']=='VALID':
@@ -162,10 +199,10 @@ class InstitutionalTelemetryBridge:
             age=time.time()-datetime.fromisoformat(result['timestamp']).timestamp() if q['source_date_verified'] else None
             result={**result,'input_telemetry':{**result['input_telemetry'],'data_quality':{**q,'stale_data_seconds':age}}}
         if q['mode']=='LIVE' and not available:
-            return {**result,'available':False,'data_status':'DATA_UNRELIABLE','day_regime':'DATA_UNRELIABLE','bias_score_pct':0,'confidence_pct':min(result['confidence_pct'],RULES['scoring']['unreliable_confidence_max']),'summary':'Live observations unavailable or stale; no directional conclusion.'}
+            return {**result,'available':False,'data_status':'DATA_UNRELIABLE','day_regime':'DATA_UNRELIABLE','current_regime':'DATA_UNRELIABLE','bias_score_pct':0,'confidence_pct':min(result['confidence_pct'],RULES['scoring']['unreliable_confidence_max']),'summary':'Live observations unavailable or stale; no directional conclusion.'}
         return {**result,'available':available}
     def qwen_status(self):
-        return {'model':OLLAMA_MODEL,'url':RULES['local_url'],'last_status':self._qwen_status,'interpreter_source':self._cache.get('interpreter_source'),'execution_gate_mode':'ADVISORY_ONLY'}
+        return {'model':OLLAMA_MODEL,'url':RULES['local_url'],'last_status':self._qwen_status,'interpreter_source':self._cache.get('interpreter_source'),'execution_gate_mode':'ADVISORY_ONLY',**self._timings,'requests_attempted':self._attempts,'timing_basis':'First request is cold-labelled; subsequent requests warm-labelled, not proof of model residency'}
     def watch_once(self):
         path=os.environ.get('INSTITUTIONAL_TELEMETRY_INPUT')
         if not path:return

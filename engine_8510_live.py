@@ -84,6 +84,11 @@ async def startup_event():
                 if getattr(backend,'institutional_telemetry_bridge',None) is None:
                     from analyst.institutional_qwen_bridge_8510 import InstitutionalTelemetryBridge
                     backend.institutional_telemetry_bridge=await asyncio.to_thread(InstitutionalTelemetryBridge,backend.ledger_db,backend.market_db)
+                if getattr(backend,'institutional_file_collector',None) is None:
+                    from analyst.institutional_file_collector_8510 import InstitutionalFileCollector
+                    backend.institutional_file_collector=await asyncio.to_thread(InstitutionalFileCollector,backend.ledger_db,
+                        os.environ.get('INSTITUTIONAL_DROP_FOLDER'),os.environ.get('INSTITUTIONAL_DOWNLOADS_FOLDER'),backend.institutional_telemetry_bridge)
+                await asyncio.to_thread(backend.institutional_file_collector.collect_once)
                 await asyncio.to_thread(backend.institutional_telemetry_bridge.watch_once)
             except asyncio.CancelledError:
                 break
@@ -351,7 +356,13 @@ def institutional_service():
 
 @app.get('/api/institutional_telemetry/live')
 async def institutional_live():
-    return backend.get_institutional_telemetry_cached()
+    collector=getattr(backend,'institutional_file_collector',None)
+    return {**backend.get_institutional_telemetry_cached(),'collector':collector.status() if collector else {'source_mode':'LOCAL_EXPORT_FILES_ONLY','automatic_website_download':False,'status':'NOT_STARTED'}}
+
+@app.get('/api/institutional_telemetry/collector_status')
+async def institutional_collector_status():
+    collector=getattr(backend,'institutional_file_collector',None)
+    return collector.status() if collector else {'status':'NOT_STARTED','automatic_website_download':False}
 
 @app.get('/api/institutional_telemetry/qwen_status')
 async def institutional_qwen_status():
@@ -982,6 +993,8 @@ async def api_post_synergy_config(req: Request):
 async def stop_background_tasks():
     recorder = getattr(backend, "recording_service", None)
     if recorder: recorder.stop()
+    bridge=getattr(backend,'institutional_telemetry_bridge',None)
+    if bridge:await asyncio.to_thread(bridge.close)
     for task in (getattr(app.state,'institutional_task',None),getattr(app.state,'ict_smc_task',None),getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
         if task:task.cancel()
 

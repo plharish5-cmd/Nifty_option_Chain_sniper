@@ -651,7 +651,7 @@
  <p>Historical files describe their own observations. Scores and confidence are heuristic summaries, not win probabilities.</p>
  <input id="institutionalFilePath" placeholder="Local path to a CSV, JSON or TSV file" style="width:65%">
  <button id="institutionalIngestButton" type="button">Evaluate historical file</button>
- <p id="institutionalTelemetrySummary">No recorded data</p><pre id="institutionalTelemetryDetails" style="white-space:pre-wrap"></pre>
+ <p id="institutionalCollectorStatus">Collector: waiting for local exports; no automatic website download.</p><p id="institutionalTelemetrySummary">No recorded data</p><pre id="institutionalTelemetryDetails" style="white-space:pre-wrap"></pre>
  <ul id="institutionalTelemetryWarnings"></ul><span id="institutionalTelemetryError" role="status"></span>
 </details>
 <script>
@@ -663,8 +663,10 @@ const num=v=>v==null?'not available':Number(v).toLocaleString('en-IN',{maximumFr
 async function refresh(){try{
  const response=await fetch('/api/institutional_telemetry/live');if(!response.ok)throw new Error('Telemetry HTTP '+response.status);
  const r=await response.json(),q=r.input_telemetry?.data_quality||{},oi=r.oi_dominance||{},p=r.participation||{};
- by('pillInstitutionalTelemetryLive').textContent='📊 Institutional F&O Telemetry [Qwen 2.5:3B] | '+(r.day_regime||r.data_status)+' | Score '+num(r.bias_score_pct)+' | Confidence '+num(r.confidence_pct)+' (heuristic) | '+(q.mode||'waiting')+' | ADVISORY';
- by('institutionalTelemetrySummary').textContent=r.summary||'No recorded data';
+ by('pillInstitutionalTelemetryLive').textContent='📊 Institutional F&O Telemetry [Qwen 2.5:3B] | '+'Session: '+(r.session_regime||'NOT_AVAILABLE')+' | Current: '+(r.current_regime||r.day_regime||r.data_status)+' | Bias score: '+(r.bias_score_pct>0?'+':'')+num(r.bias_score_pct)+'/100 | Heuristic confidence: '+num(r.confidence_pct)+'/100 (HEURISTIC_NOT_CALIBRATED) | '+(q.mode||'waiting')+' | ADVISORY';
+ const c=r.collector||{};
+ by('institutionalCollectorStatus').textContent='Local exports only · Folder: '+(c.drop_folder_path||'not started')+' · File: '+(c.latest_file_name||'none')+' · Rows today: '+(c.rows_collected_today??0)+' · Last row: '+(c.last_row_time_ist||'—')+' · Next scan: '+num(c.next_poll_in_sec)+'s · Pending: '+(c.pending_row_time||'none');
+ by('institutionalTelemetrySummary').textContent=(r.summary||'No recorded data')+' · '+(r.authority_label||'DETERMINISTIC_AUTHORITATIVE')+' · Narrative: '+(r.narrative_status||'not evaluated');
  by('institutionalTelemetryDetails').textContent='Observation: '+(r.timestamp||'—')+' · interpreter: '+(r.interpreter_source||'waiting')+'\nOI: '+(oi.interpretation||'—')+' · gap '+num(oi.gap_lakh)+' lakh · '+(oi.magnitude_band||'—')+' · 15m change '+num(oi.slope)+'\nFutures: '+Object.entries(r.futures_structure||{}).map(([k,v])=>k+' '+v).join(' | ')+'\nParticipation: '+num(p.volume_speed)+'× · '+(p.level||'—')+' · crowding '+(oi.crowding_risk?'YES':'NO')+'\nAgreement: '+num(r.confirmation?.cross_window_agreement_pct)+'% · premium skew '+(r.confirmation?.premium_skew_status||'—')+' · strike data '+(r.confirmation?.strike_level_status||'—')+'\nPartial heuristic: '+(q.partial_bar_flag?'flagged':'not flagged')+' · row discarded '+(q.partial_latest_row_discarded?(q.discarded_row_timestamp||'YES'):'NO')+' · source age '+num(q.stale_data_seconds)+'s';
  const list=by('institutionalTelemetryWarnings');list.replaceChildren();(r.warnings||[]).forEach(w=>{const li=document.createElement('li');li.textContent=w;list.appendChild(li);});
  by('institutionalTelemetryError').textContent='';
