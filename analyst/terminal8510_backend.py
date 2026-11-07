@@ -3801,6 +3801,7 @@ class QuantTerminalBackend:
             if df.empty:
                 return []
             df = df.iloc[::-1].reset_index(drop=True)
+            self._last_scanner_source_ts = float(df['ts'].max())
             return self.evaluate_candle_dataframe(df, spot_price=spot_price)
         except Exception as e:
             log.debug("Strategy scanner query error: %s", e)
@@ -3914,22 +3915,33 @@ class QuantTerminalBackend:
 
         while self.scanner_running:
             try:
+                signals = []
                 if self.scanner_enabled and not self.kill_switch_active:
                     spot = self.cached_telemetry.get("spot", {}).get("price")
                     if not spot or spot <= 0:
                         log.debug("Strategy scanner: spot price unavailable or <= 0, skipping scan cycle")
-                        await asyncio.sleep(interval)
-                        continue
-                    signals = self.evaluate_all_strategies(spot_price=spot)
+                    else:
+                        signals = self.evaluate_all_strategies(spot_price=spot)
 
                     # Check Direct 15m Entry Trigger on PE-CE Synergy Flip if enabled
                     # Dhan OI is contextual; it never manufactures a standalone entry.
                     if signals:
                         await self._process_strategy_signals(signals)
+                # Observer is independent of arming/NO_GO, never an execution route.
+                try:
+                    await self.dry_evidence_service().observe(self, signals)
+                except Exception:
+                    log.exception('Dry evidence observation failed; execution rules unchanged')
             except Exception as e:
                 log.error("Strategy scanner iteration error: %s", e)
 
             await asyncio.sleep(interval)
+
+    def dry_evidence_service(self):
+        from analyst.dry_evidence_8510 import DryEvidence
+        if not hasattr(self, '_dry_evidence_service'):
+            self._dry_evidence_service = DryEvidence(self.ledger_db.parent / 'dry_evidence.sqlite3')
+        return self._dry_evidence_service
 
     def get_scanner_status(self) -> Dict[str, Any]:
         """Returns real-time status of the 4-Strategy Scanner daemon and Party-Switch gate."""

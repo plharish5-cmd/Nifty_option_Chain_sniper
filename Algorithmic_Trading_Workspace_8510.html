@@ -994,6 +994,14 @@
             </div>
 
             <!-- TAB 1: DHAN OI MULTI-STRIKE LIVE STATUS CARD -->
+            <section class="card" id="dryEvidenceCard">
+                <h3>Dry-run evidence · four setups · no broker orders</h3>
+                <p>Works while NO_GO remains. Records setup decisions with Dhan OI/PCR, EMA stack/slope, ADX/DI and R² context. Missing data stays unknown. Spread observations are not fills, measured slippage or profitability validation.</p>
+                <p id="dryEvidenceStatus">Loading observation status…</p>
+                <button type="button" onclick="loadDryEvidence()">Refresh dry-run evidence</button>
+                <div style="overflow:auto"><table style="width:100%"><thead><tr><th>Setup</th><th>State observations</th><th>Triggers</th><th>Valid spread samples</th></tr></thead><tbody id="dryEvidenceTotals"></tbody></table></div>
+                <details><summary>Recent decisions and indicator context</summary><div style="max-height:320px;overflow:auto"><table style="min-width:1100px"><thead><tr><th>Time IST / setup</th><th>Decision / measurement</th><th>Bid / ask</th><th>EMA / ADX / R² / PCR context</th></tr></thead><tbody id="dryEvidenceRows"></tbody></table></div></details>
+            </section>
             <div id="tab1MultiStrikeStatusCard" class="card" style="border:1px solid rgba(239, 68, 68, 0.4); background:rgba(239, 68, 68, 0.05); padding:10px 16px; margin-bottom:12px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">
                 <div style="display:flex; align-items:center; gap:8px;">
                     <span id="tab1MultiStrikeIndicator" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#ef4444; box-shadow:0 0 8px #ef4444;"></span>
@@ -5392,5 +5400,24 @@ document.addEventListener('DOMContentLoaded',()=>{pollIctDeskSignals();setInterv
     </div>
 
 
+
+<script>
+async function loadDryEvidence(){
+ try{
+  const response=await fetch('/api/dry-evidence');if(!response.ok)throw Error('HTTP '+response.status);const data=await response.json();
+  document.getElementById('dryEvidenceStatus').textContent=(data.enabled?'Evidence collection enabled':'Evidence collection disabled')+' · live approval unchanged. Fresh market signals are required; blocked setups are recorded without forced entries.';
+  const totals=document.getElementById('dryEvidenceTotals');totals.replaceChildren();
+  for(const [name,v] of Object.entries(data.families||{})){const tr=totals.insertRow();for(const value of [name,v.states,v.triggers,v.valid_spreads])tr.insertCell().textContent=String(value);}
+  const rows=document.getElementById('dryEvidenceRows');rows.replaceChildren();
+  for(const r of data.rows||[]){
+   const tr=rows.insertRow();const when=new Date(r.ts*1000).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:false});
+   const readings=((r.context||{}).trend_watchlist||{}).items||[];
+   const text=readings.map(x=>x.name+': '+x.reading+' ['+x.status+']').join(' | ')||'Indicator context unavailable';
+   for(const value of [when+' / '+r.setup,(r.reason||'UNKNOWN')+' / '+(r.measurement||r.state.state||'UNKNOWN'),r.quote?String(r.quote.bid??'unknown')+' / '+String(r.quote.ask??'unknown'):'No depth requested',text])tr.insertCell().textContent=value;
+  }
+ }catch(e){document.getElementById('dryEvidenceStatus').textContent='Dry-run evidence unavailable: '+e.message;}
+}
+document.addEventListener('DOMContentLoaded',()=>{loadDryEvidence();setInterval(loadDryEvidence,30000);});
+</script>
 </body>
 </html>

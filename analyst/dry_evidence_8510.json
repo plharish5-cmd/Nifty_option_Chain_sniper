@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "sample_seconds": 60,
+  "signal_cooldown_seconds": 300,
+  "quote_min_interval_seconds": 2,
+  "telemetry_max_age_seconds": 30,
+  "candle_max_age_seconds": 180,
+  "session_start": "09:15",
+  "session_end": "15:20",
+  "families": ["stage2_long", "stage3_short", "crossover_reversal", "h1_confluence"],
+  "_evidence": "Prospective observation only, including blocked states. Does not change strategy filters, approval, live arming or execution. Quoted spread is not fill slippage. Missing depth does not qualify. Existing scanner may include forming-bar values."
+}

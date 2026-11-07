@@ -72,6 +72,11 @@ app.add_middleware(
 
 backend = QuantTerminalBackend()
 
+
+@app.get('/api/dry-evidence')
+async def api_dry_evidence():
+    return await asyncio.to_thread(backend.dry_evidence_service().status)
+
 @app.on_event("startup")
 async def startup_event():
     log.info("⚡ NIFTY Quant Terminal 8510 Engine starting up...")
