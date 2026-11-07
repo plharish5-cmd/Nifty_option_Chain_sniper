@@ -11,6 +11,7 @@
   "partial_prior_bars": 10,
   "max_stale_seconds": 120,
   "weights": {
+    "3m": 0.1,
     "5m": 0.2,
     "15m": 0.35,
     "30m": 0.25,
@@ -48,7 +49,7 @@
   "crowding_warning": "Extreme OI dominance can crowd; watch for profit booking or mean reversion.",
   "local_url": "http://127.0.0.1:11434/api/generate",
   "local_model": "qwen2.5:3b",
-  "timeout_seconds": 3.0,
+  "timeout_seconds": 15.0,
   "watch_seconds": 5,
   "execution_gate_mode": "ADVISORY_ONLY",
   "_evidence": "Owner-requested deterministic observational specification, 7 Nov 2026. Score and confidence are heuristic evidence summaries, not calibrated win probabilities. Low-volume partial-bar detection is a heuristic, not exchange completion proof. Historical file calculations never establish live provenance. Local interpreter cannot override deterministic mathematics or authorize orders.",
@@ -76,5 +77,31 @@
     "weak": 0.75,
     "elevated": 1.25,
     "high": 1.75
+  },
+  "min_completed_rows": 4,
+  "qwen": {
+    "keep_alive": "30m",
+    "num_predict": 220,
+    "num_ctx": 1536,
+    "queue_size": 1
+  },
+  "collector": {
+    "poll_min_seconds": 135,
+    "poll_max_seconds": 170,
+    "session_start": "09:15",
+    "session_end": "15:30",
+    "extensions": [
+      ".csv",
+      ".json",
+      ".tsv"
+    ],
+    "watch_glob": "PE_CE_NIFTY*",
+    "max_file_bytes": 20000000
+  },
+  "session": {
+    "open_minute": 555,
+    "strong_price_points": 100,
+    "strong_persistence_fraction": 0.65,
+    "direction_price_points": 20
   }
 }

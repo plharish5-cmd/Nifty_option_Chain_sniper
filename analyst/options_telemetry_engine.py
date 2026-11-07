@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 RULES_PATH=Path(__file__).with_name('institutional_telemetry_rules_8510.json')
 RULES=json.loads(RULES_PATH.read_text())
-WINDOWS=tuple(RULES['windows']);MIN_HISTORY=RULES['min_history'];IST=ZoneInfo('Asia/Kolkata')
+WINDOWS=tuple(RULES['windows']);MIN_HISTORY=RULES['min_history'];MIN_COMPLETED_ROWS=RULES['min_completed_rows'];IST=ZoneInfo('Asia/Kolkata')
 REQUIRED={'put_oi':'Put OI Total','call_oi':'Call OI Total','put_volume':'Put Vol','call_volume':'Call Vol','pcr':'PCR Total','future_ltp':'Future LTP','future_oi':'Future Total OI'}
 CROWDING_WARNING=RULES['crowding_warning']
 
@@ -115,7 +115,7 @@ def window_features(rows,minutes,prepared=None):
     result['volume_baseline_blocks']=len(volumes)
     required_calculations=('price_change','future_oi_change','put_oi_change','call_oi_change','oi_flow_gap','pe_ce_oi_change','pcr_change','put_volume','call_volume','price_range')
     bad_fields=[key for key in required_calculations if not finite(result.get(key))]
-    if minutes in (5,15) and not finite(result['volume_speed']):bad_fields.append('volume_speed')
+    if minutes in (5,15) and volumes and not finite(result['volume_speed']):bad_fields.append('volume_speed')
     if bad_fields:result.update(valid=False,reason=f'{minutes}m missing/nonfinite calculated fields: '+', '.join(bad_fields))
     return result
 
@@ -152,6 +152,22 @@ def clean(v):
     if isinstance(v,float) and not math.isfinite(v):return None
     return v
 
+def session_features(data,bad=False):
+    cfg=RULES['session']
+    anchor=next((r for r in data if r['_minute']==cfg['open_minute']),None)
+    if bad or anchor is None or not data:
+        return {'regime':'SESSION_NOT_AVAILABLE','anchor_time':None,'price_change':None,'oi_gap_change':None,'persistence_fraction':None,'basis':'Requires a valid 09:15 session observation'}
+    start=data.index(anchor);window=data[start:];last=window[-1]
+    price=last['future_ltp']-anchor['future_ltp'];gap=last['pe_ce_oi_total']-anchor['pe_ce_oi_total']
+    direction=sign(price)
+    persistence=sum(direction*(r['future_ltp']-anchor['future_ltp'])>0 for r in window[1:])/max(1,len(window)-1)
+    label='SESSION_NEUTRAL_MIXED'
+    if abs(price)>=cfg['direction_price_points']:
+        label='SESSION_BULLISH' if direction>0 else 'SESSION_BEARISH'
+        if abs(price)>=cfg['strong_price_points'] and persistence>=cfg['strong_persistence_fraction'] and sign(gap)==direction:
+            label='SESSION_STRONG_BULLISH' if direction>0 else 'SESSION_STRONG_BEARISH'
+    return {'regime':label,'anchor_time':anchor.get('_source_timestamp') or anchor['time'],'price_change':price,'oi_gap_change':gap,'persistence_fraction':persistence,'basis':'Observed 09:15 anchor; price persistence plus OI-flow proxy, not writer intent'}
+
 def build_telemetry(rows,reference_now=None,discard_partial_bar=True,premium_skew=None,strike_level_data=None,live=False,chain_snapshot=None):
     warnings=list(getattr(rows,'errors',()));data=[];invalid_timestamp=False
     for raw in rows:
@@ -160,12 +176,19 @@ def build_telemetry(rows,reference_now=None,discard_partial_bar=True,premium_ske
     data.sort(key=lambda r:r['_source_timestamp'] or str(r['time']))
     input_timestamp=(data[-1].get('_source_timestamp') or data[-1].get('time')) if data else None
     sc=RULES['scoring'];levels=RULES['participation_levels'];bands=RULES['magnitude_lakh']
-    partial=False;ratio=None;last_volume=None;baseline_volume=None
+    partial=False;ratio=None;last_volume=None;baseline_volume=None;ongoing=False
     if len(data)>=RULES['partial_prior_bars']+1:
         volumes=[r.get('put_volume',0)+r.get('call_volume',0) for r in data[-(RULES['partial_prior_bars']+1):] if finite(r.get('put_volume')) and finite(r.get('call_volume'))]
         if len(volumes)==RULES['partial_prior_bars']+1:
             baseline=statistics.median(volumes[:-1]);last_volume=volumes[-1];baseline_volume=baseline;ratio=volumes[-1]/baseline if baseline>0 else None
             partial=ratio is not None and ratio<RULES['partial_ratio']
+    if reference_now is not None and data:
+        ref=datetime.fromisoformat(reference_now) if isinstance(reference_now,str) else reference_now
+        if isinstance(ref,(int,float)):ref=datetime.fromtimestamp(ref,IST)
+        ref=ref.replace(tzinfo=IST) if ref.tzinfo is None else ref.astimezone(IST)
+        last=data[-1];source=last.get('_source_timestamp')
+        ongoing=(datetime.fromisoformat(source).replace(second=0,microsecond=0)==ref.replace(second=0,microsecond=0)) if source else last['_minute']==ref.hour*60+ref.minute
+    partial=partial or ongoing
     discarded=bool(partial and discard_partial_bar)
     if discarded:data=data[:-1]
     latest=dict(data[-1]) if data else {k:None for k in REQUIRED}
@@ -191,14 +214,18 @@ def build_telemetry(rows,reference_now=None,discard_partial_bar=True,premium_ske
     if partial:warnings.append('Low-volume partial-bar heuristic detected; completion is not an exchange flag')
     required=bool(data) and all(all(finite(r.get(k)) and (r[k]>=0 if k not in ('pcr',) else r[k]>=0) for k in REQUIRED) for r in data[-61:])
     if not required:warnings.append('Required fields missing, negative or nonfinite')
-    if len(data)<MIN_HISTORY:warnings.append('Insufficient history: need 61 completed observations')
+    warming=len(data)<MIN_COMPLETED_ROWS
+    if warming:warnings.append('Warming up: need 4 completed observations')
     prepared=prepare_windows(data)
     windows={f'{m}m':window_features(data,m,prepared) for m in WINDOWS}
-    for m in (5,15):
-        if not windows[f'{m}m']['valid']:warnings.append(windows[f'{m}m']['reason'])
-    # All four scoring windows need real complete spans; a long-window gap is not padded.
-    for m in (30,60):
-        if not windows[f'{m}m']['valid']:warnings.append(windows[f'{m}m']['reason'])
+    active=[f'{m}m' for m in WINDOWS if len(data)>=m+1]
+    for key in active:
+        if not windows[key]['valid']:warnings.append(windows[key]['reason'])
+    weights={key:RULES['weights'][key] for key in active if windows[key]['valid']}
+    # Preserve the registered full-session score; 3m contributes only during warm-up.
+    if len(data)>=16:weights.pop('3m',None)
+    total_weight=sum(weights.values())
+    weights={key:value/total_weight for key,value in weights.items()} if total_weight else {}
     if chain_snapshot and source_verified:
         try:
             ts=datetime.fromisoformat(latest['_source_timestamp']).timestamp()
@@ -208,7 +235,7 @@ def build_telemetry(rows,reference_now=None,discard_partial_bar=True,premium_ske
         except (ValueError,TypeError,KeyError):warnings.append('Optional chain snapshot failed alignment')
     ps=scale(data,'future_ltp',RULES['price_floor']);os=max(scale(data,'future_oi',RULES['oi_floor']),scale(data,'pe_ce_oi_total',RULES['oi_floor']));pcs=scale(data,'pcr',RULES['pcr_floor'])
     fp=op=pp=0.0;votes=[];structures={}
-    for key,weight in RULES['weights'].items():
+    for key,weight in weights.items():
         w=windows[key]
         if not w['valid']:structures[key]='NOT_AVAILABLE';continue
         m=int(key[:-1]);structure=regime(w['price_change'],w['future_oi_change'],ps,os);w['futures_regime']=structures[key]=structure
@@ -218,9 +245,10 @@ def build_telemetry(rows,reference_now=None,discard_partial_bar=True,premium_ske
     magnitude=latest.get('pe_ce_oi_day_total') if finite(latest.get('pe_ce_oi_day_total')) else latest.get('pe_ce_oi_total')
     if finite(magnitude):op+=sc['oi_max']*sc['oi_magnitude_weight']*clamp(magnitude/RULES['magnitude_scale'])
     majority=1 if votes.count(1)>votes.count(-1) else -1 if votes.count(-1)>votes.count(1) else 0
-    agree=votes.count(majority) if majority else 0;agreement=agree/4*100
-    ap=majority*(sc['agreement_all_points'] if agree==4 else sc['agreement_three_points'] if agree==3 else 0)
-    speed=windows['15m'].get('volume_speed');vmag=sc['volume_max'] if finite(speed) and speed>=levels['elevated'] else sc['volume_normal'] if finite(speed) and speed>=levels['weak'] else 0
+    agree=votes.count(majority) if majority else 0;agreement=agree/max(1,len(votes))*100
+    ap=majority*(sc['agreement_all_points'] if votes and agree==len(votes) else sc['agreement_three_points'] if agree>=3 else 0)
+    participation_key=next((k for k in ('15m','5m','3m') if k in weights),None)
+    speed=windows[participation_key].get('volume_speed') if participation_key else None;vmag=sc['volume_max'] if finite(speed) and speed>=levels['elevated'] else sc['volume_normal'] if finite(speed) and speed>=levels['weak'] else 0
     w15=windows['15m'];churn=w15['valid'] and abs(w15['pe_ce_oi_change'])<os*RULES['clear_slope_fraction'] and abs(w15['future_oi_change'])<os*RULES['clear_slope_fraction']
     if churn:vmag=0
     subtotal=fp+op+pp;ds=1 if subtotal>RULES['direction_threshold'] else -1 if subtotal< -RULES['direction_threshold'] else 0;vp=ds*vmag
@@ -238,25 +266,30 @@ def build_telemetry(rows,reference_now=None,discard_partial_bar=True,premium_ske
     if sum(v in ('SHORT_COVERING','LONG_UNWINDING') for v in structures.values())>=sc['covering_window_count']:penalties['covering_unwinding']=cfg['covering_unwinding'];warnings.append('Covering/unwinding dominates; fresh buildup is not established')
     if agreement<sc['agreement_percent']:penalties['disagreement']=cfg['disagreement']
     confidence=round(clamp(min(sc['confidence_max'],abs(score)*sc['confidence_score_weight']+agreement*sc['confidence_agreement_weight'])-sum(penalties.values()),0,sc['confidence_max']),2)
-    bad=(invalid_timestamp or not required or len(data)<MIN_HISTORY or not completed or stale is None or stale<0 or stale>RULES['max_stale_seconds'] or (live and not source_verified) or bool(getattr(rows,'errors',())) or any(not windows[f'{m}m']['valid'] for m in (5,15,30,60)))
+    bad=(invalid_timestamp or not required or warming or not completed or stale is None or stale<0 or stale>RULES['max_stale_seconds'] or (live and not source_verified) or bool(getattr(rows,'errors',())) or any(not windows[key]['valid'] for key in active))
     day='BULLISH' if score>=sc['directional_score'] else 'BEARISH' if score<=-sc['directional_score'] else 'NEUTRAL_MIXED'
     if abs(score)>=sc['strong_score'] and agreement>=sc['agreement_percent'] and finite(speed) and speed>=levels['weak'] and structures.get('15m')==('LONG_BUILDUP' if score>0 else 'SHORT_BUILDUP'):day='STRONG_'+day
     persistence=transition_watch(data,prepared) if not bad else False
     if persistence:day='TRANSITION_REVERSAL_WATCH'
     if bad:score=0;confidence=min(confidence,sc['unreliable_confidence_max']);day='DATA_UNRELIABLE'
+    status='DATA_UNRELIABLE' if bad else 'VALID'
+    if warming and required and completed and not invalid_timestamp and not getattr(rows,'errors',()) and not (live and not source_verified) and stale is not None and 0<=stale<=RULES['max_stale_seconds']:
+        status=day='WARMING_UP';score=confidence=0
+    session=session_features(data,bad=status=='DATA_UNRELIABLE')
     dominance='put-side OI dominance' if finite(gap) and gap>0 else 'call-side OI dominance' if finite(gap) and gap<0 else 'balanced OI'
-    quality={'last_input_timestamp':input_timestamp,'discarded_row_timestamp':input_timestamp if discarded else None,'last_input_volume':last_volume,'prior_volume_median':baseline_volume,'completed_bar_used':completed,'partial_bar_flag':partial,'partial_latest_row_discarded':discarded,'partial_volume_ratio':ratio,'required_fields_present':required,'history_rows_used':len(data),'stale_data_seconds':stale,'source_date_verified':source_verified,'mode':'LIVE' if live else 'HISTORICAL_FILE','completion_basis':'Historical/volume heuristic, not exchange completion proof'}
+    quality={'last_input_timestamp':input_timestamp,'discarded_row_timestamp':input_timestamp if discarded else None,'last_input_volume':last_volume,'prior_volume_median':baseline_volume,'completed_bar_used':completed,'partial_bar_flag':partial,'partial_latest_row_discarded':discarded,'partial_volume_ratio':ratio,'required_fields_present':required,'history_rows_used':len(data),'stale_data_seconds':stale,'source_date_verified':source_verified,'mode':'LIVE' if live else 'HISTORICAL_FILE','ongoing_minute_flag':ongoing,'active_windows':active,'scoring_weights':weights,'completion_basis':'Suspected partial: time/volume heuristics, not exchange completion proof'}
     packet={'timestamp':latest.get('_source_timestamp') or latest.get('time'),'data_quality':quality,'latest':clean(latest),'windows':clean(windows),'optional':{'premium_skew':premium_skew,'strike_level_data':strike_level_data}}
     extras={'pe_ce_oi_total':gap,'pe_ce_oi_change':latest['pe_ce_oi_change'],'pe_ce_gap_lakh':gap_lakh,'volume_speed_5m':windows['5m'].get('volume_speed'),'volume_speed_15m':speed,'futures_price_range_15m':w15.get('price_range'),'futures_price_range_30m':windows['30m'].get('price_range'),'cross_window_agreement_pct':agreement,'partial_bar_flag':partial,'stale_data_seconds':stale}
     for m in (5,15,30,60):extras[f'pe_ce_oi_change_{m}m']=windows[f'{m}m'].get('pe_ce_oi_change')
     packet.update(extras)
     level='NOT_AVAILABLE' if not finite(speed) else 'WEAK' if speed<levels['weak'] else 'NORMAL' if speed<levels['elevated'] else 'ELEVATED' if speed<levels['high'] else 'HIGH'
-    result={'timestamp':packet['timestamp'],'data_status':'DATA_UNRELIABLE' if bad else 'VALID','day_regime':day,'bias_score_pct':score,'confidence_pct':confidence,
+    result={'timestamp':packet['timestamp'],'data_status':status,'day_regime':day,'current_regime':day,'session_regime':session['regime'],'session_context':session,'confidence_kind':'HEURISTIC_NOT_CALIBRATED','bias_score_pct':score,'confidence_pct':confidence,
       'oi_dominance':{'interpretation':dominance,'gap_lakh':gap_lakh,'magnitude_band':band,'slope':w15.get('pe_ce_oi_change'),'crowding_risk':crowd},
       'futures_structure':structures,'participation':{'volume_speed':speed,'level':level,'churn':churn},
       'confirmation':{'cross_window_agreement_pct':agreement,'transition_persistence_proven':persistence,'premium_skew_status':'AVAILABLE' if premium_skew is not None else 'NOT_AVAILABLE','strike_level_status':'AVAILABLE' if strike_level_data is not None else 'NOT_AVAILABLE','confidence_penalties':penalties,'score_components':{'futures_points':fp,'pe_ce_points':op,'pcr_points':pp,'agreement_points':ap,'volume_points':vp}},
       'summary':'Data unreliable; no directional conclusion.' if bad else f'{dominance}; {day}; aggregate OI-flow proxy only.',
       'warnings':list(dict.fromkeys(warnings)),'input_telemetry':packet}
+    if status=='WARMING_UP':result['summary']='Warming up; insufficient completed observations for a 3m window.'
     result.update(extras);return clean(result)
 
 def main():

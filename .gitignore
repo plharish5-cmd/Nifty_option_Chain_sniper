@@ -124,3 +124,6 @@ ict_smc_app/backend/ict_desk.log
 # Advisory bridge runtime cache (never source evidence)
 analyst/*_regime_cache.json
 analyst/*_regime_cache.tmp
+
+# Local exported institutional observations
+analyst/institutional_drops/
