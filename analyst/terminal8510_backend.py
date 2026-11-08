@@ -3791,7 +3791,7 @@ class QuantTerminalBackend:
                     "details": f"Preceding Bearish Cross (Age {crossover_event['age']} bars), 4-EMA < 8-EMA, LBB Flat, 8-EMA touch",
                 })
 
-        # ── 4. STRATEGY 4: 1H 8 EMA Support & Resistance Confluence ──────────
+        # ── 4. STRATEGY 4: 1 HR FLAGSHIP (1H 8-EMA + 15m Price Action & VWAP) ──
         if h1_e8_last is not None and len(b60) >= 1:
             h1_close = float(b60["close"].iloc[-1])
             h1_low = float(b60["low"].iloc[-1])
@@ -3800,36 +3800,89 @@ class QuantTerminalBackend:
             h1_support_touch = (abs(current_p - h1_e8_last) <= tol or (h1_low <= (h1_e8_last + tol) and h1_close >= (h1_e8_last - 5.0)))
             h1_resist_touch = (abs(current_p - h1_e8_last) <= tol or (h1_high >= (h1_e8_last - tol) and h1_close <= (h1_e8_last + 5.0)))
 
-            # Support Bounce ONLY allowed in Bullish Stack (4-EMA > 8-EMA)
-            if h1_support_touch and is_bullish_stack and (stage2_cond or (crossover_event and crossover_event["type"] == "BULLISH_CROSS")):
+            # 15m Candlestick & VWAP Confirmation Detector (Doji, Hammer, Shooting Star, Engulfing, Morning/Evening Star, Mother-Baby, VWAP)
+            pa_long_tag = None
+            pa_short_tag = None
+            if len(b15) >= 1:
+                o0, h0, l0, c0 = float(b15["open"].iloc[-1]), float(b15["high"].iloc[-1]), float(b15["low"].iloc[-1]), float(b15["close"].iloc[-1])
+                rng0 = max(h0 - l0, 0.001)
+                body0 = abs(c0 - o0)
+                uw0 = h0 - max(o0, c0)
+                lw0 = min(o0, c0) - l0
+                near_1000 = abs(current_p - round(current_p / 1000.0) * 1000.0) <= 25.0
+
+                if len(b15) >= 2:
+                    o1, h1, l1, c1 = float(b15["open"].iloc[-2]), float(b15["high"].iloc[-2]), float(b15["low"].iloc[-2]), float(b15["close"].iloc[-2])
+                    body1 = abs(c1 - o1)
+                    if c1 < o1 and c0 > o0 and c0 >= o1 and o0 <= c1 and body0 > body1:
+                        pa_long_tag = "BULLISH_ENGULFING"
+                    elif c1 > o1 and c0 < o0 and c0 <= o1 and o0 >= c1 and body0 > body1:
+                        pa_short_tag = "BEARISH_ENGULFING"
+                    elif h0 <= h1 and l0 >= l1 and body1 > body0:
+                        if c0 > o0 and c1 < o1:
+                            pa_long_tag = "BULLISH_MOTHER_BABY"
+                        elif c0 < o0 and c1 > o1:
+                            pa_short_tag = "BEARISH_MOTHER_BABY"
+
+                if len(b15) >= 3 and not (pa_long_tag or pa_short_tag):
+                    o2, c2 = float(b15["open"].iloc[-3]), float(b15["close"].iloc[-3])
+                    o1, c1 = float(b15["open"].iloc[-2]), float(b15["close"].iloc[-2])
+                    body2, body1 = abs(c2 - o2), abs(c1 - o1)
+                    mid2 = (o2 + c2) / 2.0
+                    if c2 < o2 and body1 <= body2 * 0.4 and c0 > o0 and c0 > mid2:
+                        pa_long_tag = "MORNING_STAR"
+                    elif c2 > o2 and body1 <= body2 * 0.4 and c0 < o0 and c0 < mid2:
+                        pa_short_tag = "EVENING_STAR"
+
+                if not pa_long_tag and lw0 >= 2.0 * max(body0, 0.5) and uw0 <= rng0 * 0.25:
+                    pa_long_tag = "HAMMER"
+                if not pa_short_tag and uw0 >= 2.0 * max(body0, 0.5) and lw0 <= rng0 * 0.25:
+                    pa_short_tag = "SHOOTING_STAR"
+                if (body0 / rng0) <= 0.15 and (near_1000 or h1_support_touch or h1_resist_touch):
+                    pa_long_tag = pa_long_tag or "DOJI"
+                    pa_short_tag = pa_short_tag or "DOJI"
+
+                if "volume" in b15.columns and float(b15["volume"].sum()) > 0:
+                    vwap_15 = float((b15["close"] * b15["volume"]).sum() / b15["volume"].sum())
+                    if not pa_long_tag and c0 > o0 and c0 > vwap_15:
+                        pa_long_tag = "VWAP_CLOSE_ABOVE"
+                    if not pa_short_tag and c0 < o0 and c0 < vwap_15:
+                        pa_short_tag = "VWAP_CLOSE_BELOW"
+
+            # 1 HR FLAGSHIP Long: 1H 8-EMA touch + Bullish 1H/15m Stack + 15m PA Confirmation
+            if h1_support_touch and is_bullish_stack and (pa_long_tag or stage2_cond or (crossover_event and crossover_event["type"] == "BULLISH_CROSS")):
                 if self.active_party != "BEARISH":
                     self.strategy_status["h1_confluence"]["state"] = "DOUBLE_CONFIRMATION"
+                    conf_label = pa_long_tag or "STAGE2_CONFLUENCE"
+                    sl_val = 15.0 if pa_long_tag == "DOJI" else 40.0
                     signals.append({
                         "strategy_id": "H1_CONFLUENCE_SUPPORT",
-                        "setup_name": "1H 8-EMA Support Bounce Confluence",
+                        "setup_name": "1 HR FLAGSHIP (1H 8-EMA Support Bounce)",
                         "direction": "LONG",
                         "opt_side": "CE",
-                        "target_pts": float(self.scanner_cfg.get("h1_confluence_target_pts", 100.0)),
-                        "sl_pts": float(self.scanner_cfg.get("h1_confluence_sl_pts", 40.0)),
+                        "target_pts": 40.0,
+                        "sl_pts": sl_val,
                         "index_price": current_p,
                         "conviction": "DOUBLE_CONFIRMATION_HIGH_CONVICTION",
-                        "details": f"1H 8-EMA ({h1_e8_last:.0f}) Support Bounce + 4-EMA > 8-EMA Bullish Stack",
+                        "details": f"1 HR FLAGSHIP: 1H 8-EMA ({h1_e8_last:.0f}) Support Bounce + 15m {conf_label} (Tgt +40 / SL -{sl_val:.0f}, 2L Candle HL Trail)",
                     })
 
-            # Resistance Rejection ONLY allowed in Bearish Stack (4-EMA < 8-EMA)
-            if h1_resist_touch and is_bearish_stack and (stage3_cond or (crossover_event and crossover_event["type"] == "BEARISH_CROSS")):
+            # 1 HR FLAGSHIP Short: 1H 8-EMA rejection + Bearish 1H/15m Stack + 15m PA Confirmation
+            if h1_resist_touch and is_bearish_stack and (pa_short_tag or stage3_cond or (crossover_event and crossover_event["type"] == "BEARISH_CROSS")):
                 if self.active_party != "BULLISH":
                     self.strategy_status["h1_confluence"]["state"] = "DOUBLE_CONFIRMATION"
+                    conf_label = pa_short_tag or "STAGE3_CONFLUENCE"
+                    sl_val = 15.0 if pa_short_tag == "DOJI" else 40.0
                     signals.append({
                         "strategy_id": "H1_CONFLUENCE_RESIST",
-                        "setup_name": "1H 8-EMA Resistance Rejection Confluence",
+                        "setup_name": "1 HR FLAGSHIP (1H 8-EMA Resistance Rejection)",
                         "direction": "SHORT",
                         "opt_side": "PE",
-                        "target_pts": float(self.scanner_cfg.get("h1_confluence_target_pts", 100.0)),
-                        "sl_pts": float(self.scanner_cfg.get("h1_confluence_sl_pts", 40.0)),
+                        "target_pts": 40.0,
+                        "sl_pts": sl_val,
                         "index_price": current_p,
                         "conviction": "DOUBLE_CONFIRMATION_HIGH_CONVICTION",
-                        "details": f"1H 8-EMA ({h1_e8_last:.0f}) Resistance Rejection + 4-EMA < 8-EMA Bearish Stack",
+                        "details": f"1 HR FLAGSHIP: 1H 8-EMA ({h1_e8_last:.0f}) Resistance Rejection + 15m {conf_label} (Tgt +40 / SL -{sl_val:.0f}, 2L Candle HL Trail)",
                     })
 
         # Directional Bias filter on generated strategy signals
