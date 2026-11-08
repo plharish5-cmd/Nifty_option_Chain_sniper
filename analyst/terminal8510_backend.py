@@ -6114,6 +6114,17 @@ class QuantTerminalBackend:
                             contract_sym = f"NIFTY {atm_strike} {opt_type} (Synthesized Strike)"
                             trail_str = " -> ".join(trail_steps[:4]) + f" -> {st_reason}" if len(trail_steps) > 1 else f"No Trail, Fixed {int(sl_pts)}/{int(tgt_pts)}"
 
+                            h1_dt_str = pd.to_datetime(h1_ts_found, unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%H:%M")
+                            if f_code == "H1_FLAGSHIP":
+                                ema8_line_col = (
+                                    f"1H 8 EMA: {h1_e8:.2f} | 1H Candle: {b['day']} {h1_dt_str}, Touch: Yes "
+                                    f"(1H Close: {c_p:.1f}, High: {h_p:.1f}, Low: {l_p:.1f}) | "
+                                    f"Entry {entry_spot:.1f}, 8 EMA {h1_e8:.1f}, Distance {entry_spot - h1_e8:+.1f} pts | "
+                                    f"15m Confirmation: {pa_conf} at {hm}, Entry after confirmation"
+                                )
+                            else:
+                                ema8_line_col = f"15m 8 EMA: {e8_v:.2f} (4 EMA: {e4_v:.2f}) | Entry {entry_spot:.1f}, Distance {entry_spot - e8_v:+.1f} pts | 15m Confirmation: {pa_conf} at {hm}"
+
                             all_rows.append({
                                 "Trade_ID": f"SYN_{b['day']}_{hm}_{sid}",
                                 "Date": f"{b['day']} {hm}",
@@ -6122,8 +6133,6 @@ class QuantTerminalBackend:
                                 "Contract_Symbol": contract_sym,
                                 "Direction": direc,
                                 "Index_Entry": f"{entry_spot:.2f}",
-                                "Index_High": f"{idx_high:.2f}",
-                                "Index_Low": f"{idx_low:.2f}",
                                 "Option_Entry_Display": f"{synth_opt_entry:.2f} (Synthesized Option Price)",
                                 "Option_Exit_Display": f"{synth_opt_exit:.2f} (Synthesized Option Price)",
                                 "option_entry": synth_opt_entry,
@@ -6138,6 +6147,8 @@ class QuantTerminalBackend:
                                 "Trailing_Details": trail_str,
                                 "All_Fall_Off": f"MFE +{mfe_pts:.1f}p | Falloff {falloff_pts:.1f}p",
                                 "Strategy_Filter_Tag": f_tag,
+                                "Data_Type": "Synthetic Data",
+                                "Ema8_Line_Details": ema8_line_col,
                                 "strategy_id": sid,
                                 "source": "SYNTHESIZED",
                             })
@@ -6171,6 +6182,7 @@ class QuantTerminalBackend:
 
                 net_val = float(r.get("net_pnl") or 0.0)
                 entry_time_short = str(r.get("Entry_Time") or "09:30")[:5]
+                data_type_tag = "Algo Real Data" if r.get("source") == "ALGO" else "Real Data"
                 all_rows.append({
                     "Trade_ID": str(r.get("Trade_ID")),
                     "Date": f"{r.get('Date')} {entry_time_short}",
@@ -6179,8 +6191,6 @@ class QuantTerminalBackend:
                     "Contract_Symbol": f"{r.get('Contract_Symbol')} (Real)",
                     "Direction": direc,
                     "Index_Entry": str(r.get("index_entry") or "LIVE"),
-                    "Index_High": str(r.get("index_high") or "LIVE"),
-                    "Index_Low": str(r.get("index_low") or "LIVE"),
                     "Option_Entry_Display": ep_disp,
                     "Option_Exit_Display": xp_disp,
                     "option_entry": ep,
@@ -6195,6 +6205,8 @@ class QuantTerminalBackend:
                     "Trailing_Details": "Live Paper Execution (Real)",
                     "All_Fall_Off": "Real Fill",
                     "Strategy_Filter_Tag": f_tag,
+                    "Data_Type": data_type_tag,
+                    "Ema8_Line_Details": f"Live 8-EMA Captured: {r.get('ema8_entry', '-')}",
                     "strategy_id": f_code,
                     "source": "LIVE",
                 })
