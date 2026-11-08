@@ -415,6 +415,31 @@
         .badge-bull { background: rgba(16, 185, 129, 0.2); color: var(--emerald); border: 1px solid var(--emerald); }
         .badge-bear { background: rgba(244, 63, 94, 0.2); color: var(--crimson); border: 1px solid var(--crimson); }
         .badge-side { background: rgba(245, 158, 11, 0.2); color: var(--amber); border: 1px solid var(--amber); }
+        .strat-money-badge {
+            display: inline-block;
+            font-size: 9.5px;
+            font-weight: 800;
+            padding: 2px 7px;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            font-family: var(--font-mono);
+            letter-spacing: 0.02em;
+        }
+        .strat-money-badge.live-eligible {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.45);
+        }
+        .strat-money-badge.paper-only {
+            background: rgba(245, 158, 11, 0.12);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.45);
+        }
+        .strat-money-badge.context-only {
+            background: rgba(148, 163, 184, 0.12);
+            color: #94a3b8;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+        }
 
         /* Tables */
         table {
@@ -992,7 +1017,10 @@ refresh();setInterval(refresh,10000);
                     </div>
                 </div>
 
-                <!-- 4 Strategies Grid -->
+                <div id="stratMoneyLegend" style="font-size:11px; color:#94a3b8; font-family:var(--font-mono); margin-bottom:10px; padding:6px 10px; border-radius:6px; border:1px solid #334155; background:rgba(15,23,42,0.6);">
+                    🟢 PAPER ONLY — no real orders until LIVE TRADING is armed. Strategies 1–4 are real-money eligible when LIVE is on; 5–6 are paper-only by desk policy.
+                </div>
+                <!-- Strategy cockpit grid -->
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px;">
                     <!-- Strategy 1: Stage 2 8-EMA (Long) -->
                     <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
@@ -1000,6 +1028,7 @@ refresh();setInterval(refresh,10000);
                             <span style="font-weight:700; color:#38bdf8; font-size:13px;">1. Stage 2 8-EMA (Long)</span>
                             <span id="stratStatus_stage2" class="status-badge badge-bull">SCANNING</span>
                         </div>
+                        <span class="strat-money-badge live-eligible" title="Routes to Dhan when LIVE TRADING is armed and guards pass.">Real money eligible</span>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
                             UBB Up + Close &gt; 8 EMA + BB Width &gt; 60.<br>
                             Trigger: <b>Touch 8-EMA (±20pt)</b> · Tgt +40 / SL -40
@@ -1012,6 +1041,7 @@ refresh();setInterval(refresh,10000);
                             <span style="font-weight:700; color:#f87171; font-size:13px;">2. Stage 3 8-EMA (Short)</span>
                             <span id="stratStatus_stage3" class="status-badge badge-bear">SCANNING</span>
                         </div>
+                        <span class="strat-money-badge live-eligible" title="Routes to Dhan when LIVE TRADING is armed and guards pass.">Real money eligible</span>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
                             LBB Down + Close &lt; 8 EMA + BB Width &gt; 60.<br>
                             Trigger: <b>Reject 8-EMA (±20pt)</b> · Tgt +40 / SL -40
@@ -1024,6 +1054,7 @@ refresh();setInterval(refresh,10000);
                             <span style="font-weight:700; color:#fbbf24; font-size:13px;">3. 4/8 MA Crossover Reversal</span>
                             <span id="stratStatus_crossover" class="status-badge badge-gold">SCANNING</span>
                         </div>
+                        <span class="strat-money-badge live-eligible" title="Routes to Dhan when LIVE TRADING is armed and guards pass.">Real money eligible</span>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
                             4 EMA crosses 8 EMA + Flat Band.<br>
                             Trigger: <b>Touch 8-EMA within 3 bars</b> · Tgt +20 / SL -20
@@ -1036,6 +1067,7 @@ refresh();setInterval(refresh,10000);
                             <span style="font-weight:700; color:#c084fc; font-size:13px;">4. 1 HR FLAGSHIP (PA)</span>
                             <span id="stratStatus_h1" class="status-badge badge-neutral">SCANNING</span>
                         </div>
+                        <span class="strat-money-badge live-eligible" title="Routes to Dhan when LIVE TRADING is armed (flagship daily caps apply).">Real money eligible</span>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
                             Daily S/R + 1H swing zones + closed 15m PA.<br>
                             Tgt +40 / SL -40 · Candle trail · S/R exits · 15:20 square-off
@@ -1043,13 +1075,29 @@ refresh();setInterval(refresh,10000);
                     </div>
                     <!-- Strategy 5: Ribbon Scalp (Matrix Tier 3 — paper) -->
                     <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(56, 189, 248, 0.35); border-radius:8px; padding:12px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
                             <span style="font-weight:700; color:#38bdf8; font-size:13px;">5. Ribbon Scalp (1m Matrix)</span>
-                            <span id="stratStatus_ribbon" class="status-badge badge-neutral">OFF</span>
+                            <span style="display:flex; gap:6px; align-items:center;">
+                                <button type="button" class="cyan-btn" style="padding:3px 8px; font-size:10px;" onclick="enableRibbonPaperLive()" title="Persist matrix_scalp.enabled for live paper">Paper ON</button>
+                                <span id="stratStatus_ribbon" class="status-badge badge-neutral">OFF</span>
+                            </span>
                         </div>
+                        <span class="strat-money-badge paper-only" title="Homework / study lane. Keep LIVE TRADING off while testing Ribbon.">Paper trading only</span>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            Tier 3 + bounce/reject + MTF; grades A+/A/B.<br>
-                            Paper only · config <code style="font-size:10px;">matrix_scalp.enabled</code> · T1/T2 spot 15/40
+                            Tier 3 + bounce/reject + MTF; grades A+/A/B · evaluated each <strong>closed 1m</strong>.<br>
+                            Live paper only · T1/T2 spot 15/40 · Ledger: <code>ribbon_scalp_*</code>
+                        </div>
+                    </div>
+                    <!-- Strategy 6: PA @ S/R homework live paper -->
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(16, 185, 129, 0.35); border-radius:8px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700; color:#10b981; font-size:13px;">6. PA @ S/R (15m Homework)</span>
+                            <span id="stratStatus_pa_sr" class="status-badge badge-neutral">OFF</span>
+                        </div>
+                        <span class="strat-money-badge paper-only" title="Homework S/R price action. Paper ledger only by desk policy.">Paper trading only</span>
+                        <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
+                            Hammer / engulfing / star at S1–S4 or R1–R4 · break high/low.<br>
+                            Arms on closed 15m · fills on live spot · <code>PA_SR_*</code> paper ledger.
                         </div>
                     </div>
                     <!-- Daily S/R -->
@@ -1058,6 +1106,7 @@ refresh();setInterval(refresh,10000);
                             <span style="font-weight:700; color:#38bdf8; font-size:13px;">Daily S/R</span>
                             <span id="stratStatus_daily_sr" class="status-badge badge-neutral">SCANNING</span>
                         </div>
+                        <span class="strat-money-badge context-only" title="Levels for FLAGSHIP and PA context — does not place orders.">Context only — no orders</span>
                         <div id="flagshipDailySrText" style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); line-height:1.45;">S1–S3 / R1–R3 waiting…</div>
                     </div>
                     <!-- Daily Trend -->
@@ -1066,6 +1115,7 @@ refresh();setInterval(refresh,10000);
                             <span style="font-weight:700; color:#fbbf24; font-size:13px;">Daily Trend</span>
                             <span id="stratStatus_daily_trend" class="status-badge badge-neutral">NEUTRAL</span>
                         </div>
+                        <span class="strat-money-badge context-only" title="Bias context for party-switch — does not place orders.">Context only — no orders</span>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">Two-day reversal rule (profit booking vs reversal).</div>
                     </div>
                 </div>
@@ -1752,6 +1802,7 @@ refresh();setInterval(refresh,10000);
                             <option value="STAGE_3_SHORT">3. STAGE 3 8 EMA SHORT — Stage 3 8 EMA Short (8-EMA Resistance Rejection Short)</option>
                             <option value="CROSSOVER">4. 4x8 EMA CROSSOVER REVERSAL — 4 MA vs 8 EMA Crossover Reversal</option>
                             <option value="H1_FLAGSHIP">5. 1 HR FLAGSHIP — Price Action only (daily S/R · 1H swings · 15m PA)</option>
+                            <option value="PA_SR_HOMEWORK">6. 15m PA @ S/R — Hammer/Engulfing/Star @ S1–S4 R1–R4 break (Homework paper)</option>
                         </select>
                     </div>
                     <div>
@@ -3358,9 +3409,18 @@ refresh();setInterval(refresh,10000);
                         if (sRib && sc.strategies.ribbon_scalp) {
                             const rs = sc.strategies.ribbon_scalp;
                             const g = rs.grade ? ` [${rs.grade}]` : "";
-                            sRib.textContent = (rs.state || "OFF") + g;
-                            const st = rs.state || "OFF";
+                            const off = !sc.matrix_scalp_enabled;
+                            sRib.textContent = (off ? "OFF" : (rs.state || "SCANNING")) + g;
+                            const st = off ? "OFF" : (rs.state || "SCANNING");
                             sRib.className = `status-badge ${st === "TRIGGERED" ? "badge-bull" : (st === "BELOW_MIN_GRADE" ? "badge-bear" : (st === "OFF" ? "badge-neutral" : "badge-gold"))}`;
+                        }
+                        const sPa = document.getElementById("stratStatus_pa_sr");
+                        if (sPa && sc.strategies.pa_sr_homework) {
+                            const pa = sc.strategies.pa_sr_homework;
+                            const pend = pa.pending ? ` ·${pa.pending} pending` : "";
+                            sPa.textContent = (sc.pa_sr_live_enabled === false ? "OFF" : (pa.state || "SCANNING")) + pend;
+                            const st = pa.state || "SCANNING";
+                            sPa.className = `status-badge ${st === "TRIGGERED" ? "badge-bull" : (st === "ARMED" ? "badge-gold" : "badge-neutral")}`;
                         }
                         if (s2 && sc.strategies.stage2_long) {
                             s2.textContent = sc.strategies.stage2_long.state;
@@ -4148,6 +4208,21 @@ refresh();setInterval(refresh,10000);
             } catch (e) { console.debug('bollinger gate load', e); }
         }
 
+        async function enableRibbonPaperLive() {
+            try {
+                const r = await fetch("/api/matrix_scalp/config", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ enabled: true }),
+                });
+                const d = await r.json();
+                if (!r.ok || !d.ok) throw new Error(d.error || "enable failed");
+                alert("Ribbon Scalp live paper ENABLED (matrix_scalp.enabled=true). Restart not required.");
+            } catch (e) {
+                alert("Ribbon enable failed: " + (e.message || e));
+            }
+        }
+
         async function toggleBollingerGate() {
             const before = bollingerGateEnabled;
             const next = !before;
@@ -4439,7 +4514,8 @@ refresh();setInterval(refresh,10000);
                 STAGE_2_LONG: 'STAGE 2 8 EMA LONG',
                 STAGE_3_SHORT: 'STAGE 3 8 EMA SHORT',
                 CROSSOVER: '4x8 EMA CROSSOVER REVERSAL',
-                H1_FLAGSHIP: '1 HR FLAGSHIP'
+                H1_FLAGSHIP: '1 HR FLAGSHIP',
+                PA_SR_HOMEWORK: '15m PA @ S/R (Homework)'
             };
             const banner = document.getElementById('drActiveFilterBanner');
             if (banner) {
@@ -5765,6 +5841,27 @@ document.addEventListener('DOMContentLoaded',()=>{for(const id of ['recordingFro
 // refused arm can never leave the header claiming LIVE.
 function syncRealMoneyUI(enabled){const box=document.getElementById('enableRealMoney');if(box)box.checked=!!enabled;}
 
+function renderStrategyMoneyBadges(s){
+ const armed=!!(s&&s.live_armed);
+ const live=armed&&s&&s.route==='LIVE';
+ document.querySelectorAll('.strat-money-badge.live-eligible').forEach(el=>{
+  el.title=live?'Active: orders from this strategy may route to Dhan when signals fire.'
+    :'Eligible for Dhan when LIVE TRADING is armed and entry guards pass.';
+ });
+ document.querySelectorAll('.strat-money-badge.paper-only').forEach(el=>{
+  el.title=armed?'Desk policy: paper/homework only — keep LIVE off while testing Ribbon & PA.'
+    :'Paper ledger path; no real money by desk policy.';
+ });
+ const leg=document.getElementById('stratMoneyLegend');
+ if(leg){
+  leg.textContent=live
+    ? '🔴 LIVE active — strategies 1–4 may place real Dhan orders. Strategies 5–6: paper trading only (desk policy).'
+    : armed
+      ? '⚠️ LIVE armed but route is not LIVE — see reason below. Paper still records trades.'
+      : '🟢 PAPER ONLY — no real orders until LIVE TRADING is armed. Strategies 1–4: real money eligible when LIVE on; 5–6: paper only.';
+ }
+}
+
 function renderLiveStatus(s){
  if(!s)return;
  const hdr=document.getElementById('liveHeaderState');
@@ -5783,6 +5880,7 @@ function renderLiveStatus(s){
   hdr.style.animation=live?'liveArmPulse 1.2s ease-in-out infinite':'';
  }
  syncRealMoneyUI(!!s.live_armed);
+ renderStrategyMoneyBadges(s);
  const reason=document.getElementById('realMoneyReason');
  if(reason){
   const bits=[];

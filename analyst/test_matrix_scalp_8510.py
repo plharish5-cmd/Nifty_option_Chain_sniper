@@ -85,9 +85,10 @@ def backend(tmp_path, **over):
 # 1. SHIPPED CONFIG — off by default, and honest about what it is
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_it_ships_disabled():
-    """A strategy with no established edge must not start itself."""
-    assert CFG["matrix_scalp"]["enabled"] is False
+def test_it_ships_paper_live_enabled_not_real_money():
+    """Live ribbon paper is on for desk testing; still no real-money path in routing."""
+    assert CFG["matrix_scalp"]["enabled"] is True
+    assert CFG.get("real_money_enabled") is False
 
 
 def test_it_is_tier3_only_as_requested():

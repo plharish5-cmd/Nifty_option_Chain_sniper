@@ -718,6 +718,9 @@ def simulate_backtest_spot_exit(
     sr_levels: Optional[Dict[str, Any]],
     eod_hm: str = "15:20",
     sr_proximity: float = 15.0,
+    trail_every_bar: bool = False,
+    trail_green_only: bool = True,
+    exit_at_atma: bool = False,
 ) -> Tuple[float, float, float, str, List[str], float]:
     """
     Forward-walk spot exit on 15m bars.
@@ -763,6 +766,19 @@ def simulate_backtest_spot_exit(
                     st_reason = sr_hit
                     st_done = True
             if not st_done:
+                e8_here = float(fb.get("e8") or 0.0)
+                if exit_at_atma and e8_here > 0:
+                    if is_long and fh >= e8_here:
+                        exit_spot = e8_here
+                        st_pnl_pts = round(e8_here - entry_spot, 2)
+                        st_reason = "ATMA_HIT"
+                        st_done = True
+                    elif not is_long and fl <= e8_here:
+                        exit_spot = e8_here
+                        st_pnl_pts = round(entry_spot - e8_here, 2)
+                        st_reason = "ATMA_HIT"
+                        st_done = True
+            if not st_done:
                 if is_long:
                     if fl <= st_sl:
                         exit_spot = st_sl
@@ -774,11 +790,14 @@ def simulate_backtest_spot_exit(
                         st_pnl_pts = round(tgt_pts, 2)
                         st_reason = "TARGET_HIT"
                         st_done = True
-                    elif fc > fo and (is_flagship or fl > st_sl):
+                    elif trail_every_bar and fl > (entry_spot - sl_pts):
+                        st_sl = max(st_sl, round(fl, 2))
+                        trail_steps.append(f"Bar Low {st_sl:.0f}")
+                    elif (trail_green_only and fc > fo) and (is_flagship or fl > (entry_spot - sl_pts)):
                         if is_flagship:
                             st_sl = flagship_candle_trail_update(True, st_sl, fo, fh, fl, fc)
                         else:
-                            st_sl = round(fl, 2)
+                            st_sl = max(st_sl, round(fl, 2))
                         trail_steps.append(f"Green Low {st_sl:.0f}")
                 else:
                     if fh >= st_sl:
@@ -791,11 +810,14 @@ def simulate_backtest_spot_exit(
                         st_pnl_pts = round(tgt_pts, 2)
                         st_reason = "TARGET_HIT"
                         st_done = True
-                    elif fc < fo and (is_flagship or fh < st_sl):
+                    elif trail_every_bar and fh < (entry_spot + sl_pts):
+                        st_sl = min(st_sl, round(fh, 2))
+                        trail_steps.append(f"Bar High {st_sl:.0f}")
+                    elif (trail_green_only and fc < fo) and (is_flagship or fh < (entry_spot + sl_pts)):
                         if is_flagship:
                             st_sl = flagship_candle_trail_update(False, st_sl, fo, fh, fl, fc)
                         else:
-                            st_sl = round(fh, 2)
+                            st_sl = min(st_sl, round(fh, 2))
                         trail_steps.append(f"Red High {st_sl:.0f}")
 
         if str(fb.get("hm", "")) >= eod_hm:
@@ -2354,6 +2376,8 @@ class QuantTerminalBackend:
         })
         self.scanner_enabled: bool = bool(self.scanner_cfg.get("enabled", True))
         self._last_live_eval_closed_15m_ts: int = 0
+        self._last_live_eval_closed_1m_ts: int = 0
+        self._pa_sr_pending: List[Dict[str, Any]] = []
         self.scanner_running: bool = False
         self.active_party: str = "NEUTRAL"  # "BULLISH", "BEARISH", "NEUTRAL"
         self.last_crossover_event: Optional[Dict[str, Any]] = None
@@ -2388,7 +2412,18 @@ class QuantTerminalBackend:
                 "armed": False,
                 "grade": None,
             },
+            "pa_sr_homework": {
+                "name": "15m PA @ S/R (Homework)",
+                "state": "OFF",
+                "desc": "Pattern at S1–S4 / R1–R4 · break high/low · live paper",
+                "armed": False,
+                "pending": 0,
+            },
         }
+        ms_on = bool((self.cfg.get("matrix_scalp") or {}).get("enabled", False))
+        self.strategy_status["ribbon_scalp"]["state"] = "SCANNING" if ms_on else "OFF"
+        pa_on = bool((self.cfg.get("pa_sr_homework") or {}).get("live_paper_enabled", False))
+        self.strategy_status["pa_sr_homework"]["state"] = "SCANNING" if pa_on else "OFF"
         self.strategy_cooldowns: Dict[str, float] = {}
         self.scanner_task: Optional[asyncio.Task] = None
 
@@ -4620,6 +4655,10 @@ class QuantTerminalBackend:
         """
         cfg = self.cfg.get("matrix_scalp", {}) or {}
         if not cfg.get("enabled", False):
+            if isinstance(getattr(self, "strategy_status", None), dict):
+                rs = self.strategy_status.get("ribbon_scalp")
+                if isinstance(rs, dict):
+                    rs["state"] = "OFF"
             return []
         if not self.ema_proximity_engine:
             return []
@@ -4815,15 +4854,6 @@ class QuantTerminalBackend:
                 return []
             df = df.iloc[::-1].reset_index(drop=True)
             signals = self.evaluate_candle_dataframe(df, spot_price=spot_price)
-            # v1.9.4c: Matrix Scalp rides the SAME path as every other strategy
-            # -- bias gate, duplicate check, live routing gate, paper execution,
-            # Active Positions, Orders History. No parallel ledger.
-            try:
-                signals = list(signals) + self.evaluate_matrix_scalp_tier3(spot_price=spot_price)
-            except Exception as exc:
-                # A scalp-detector failure must never stop the other strategies.
-                log.warning("Matrix scalp evaluation skipped (%s): %s",
-                            type(exc).__name__, exc)
             return signals
         except Exception as e:
             log.debug("Strategy scanner query error: %s", e)
@@ -4923,7 +4953,7 @@ class QuantTerminalBackend:
             sl_pts_sig = float(sig.get("sl_pts", 40.0))
             tgt_pts_sig = float(sig.get("target_pts", 40.0))
             spot_ctx = None
-            if sig.get("matrix_scalp"):
+            if sig.get("matrix_scalp") or sig.get("pa_homework"):
                 spot_ctx = {
                     "strategy_id": sig.get("strategy_id"),
                     "spot_entry": sig.get("spot_entry"),
@@ -4945,6 +4975,14 @@ class QuantTerminalBackend:
                 }
 
             # Trigger execution with chaser
+            sid_u = str(sig.get("strategy_id", "")).upper()
+            paper_algo = (
+                "FLAGSHIP" in sid_u
+                or sig.get("matrix_scalp")
+                or sig.get("pa_homework")
+                or sid_u.startswith("PA_SR")
+                or sid_u.startswith("RIBBON_SCALP")
+            )
             res = await self.execute_order_with_chaser(
                 contract=target_contract,
                 side="BUY",
@@ -4952,7 +4990,7 @@ class QuantTerminalBackend:
                 target_pts=sig["target_pts"],
                 sl_pts=sig["sl_pts"],
                 is_algo_trade=True,
-                source="REAL_ALGO_PAPER" if "FLAGSHIP" in str(sig.get("strategy_id", "")).upper() else None,
+                source="REAL_ALGO_PAPER" if paper_algo else None,
                 spot_context=spot_ctx,
             )
             log.info("Strategy %s execution result: %s", sig["setup_name"], res.get("status", "SUBMITTED"))
@@ -4965,11 +5003,14 @@ class QuantTerminalBackend:
             )
 
     async def start_strategy_scanner_loop(self) -> None:
-        """Continuous background daemon scanning all 4 core strategies."""
+        """Live scanner: 4 core on closed 15m; Ribbon on closed 1m; PA @ S/R armed on 15m, break on spot."""
         self.scanner_running = True
         interval = float(self.scanner_cfg.get("scan_interval_seconds", 3))
-        log.info("🚀 4-Strategy Live Scanner Daemon started (Interval: %.1fs, Party-Switch: %s)",
-                 interval, self.scanner_cfg.get("party_switch_enabled", True))
+        log.info(
+            "🚀 Live Scanner started (%.1fs) — 4-core@15m · Ribbon@1m · PA/S/R paper · Party-Switch: %s",
+            interval,
+            self.scanner_cfg.get("party_switch_enabled", True),
+        )
 
         while self.scanner_running:
             try:
@@ -4979,23 +5020,30 @@ class QuantTerminalBackend:
                         log.debug("Strategy scanner: spot price unavailable or <= 0, skipping scan cycle")
                         await asyncio.sleep(interval)
                         continue
-                    closed_bar = self._latest_closed_15m_bar()
-                    if not closed_bar:
-                        await asyncio.sleep(interval)
-                        continue
-                    closed_ts = int(closed_bar.get("ts") or 0)
-                    if closed_ts <= 0:
-                        await asyncio.sleep(interval)
-                        continue
-                    if closed_ts == self._last_live_eval_closed_15m_ts:
-                        await asyncio.sleep(interval)
-                        continue
-                    self._last_live_eval_closed_15m_ts = closed_ts
-                    log.debug("15m closed bar eval slot ts=%s", closed_ts)
-                    signals = self.evaluate_all_strategies(spot_price=None)
+                    signals: List[Dict[str, Any]] = []
 
-                    # Check Direct 15m Entry Trigger on PE-CE Synergy Flip if enabled
-                    # Dhan OI is contextual; it never manufactures a standalone entry.
+                    closed_1m = self._latest_closed_1m_bar()
+                    if closed_1m:
+                        ts1 = int(closed_1m.get("ts") or 0)
+                        if ts1 > 0 and ts1 != self._last_live_eval_closed_1m_ts:
+                            self._last_live_eval_closed_1m_ts = ts1
+                            log.debug("1m closed bar eval ts=%s", ts1)
+                            try:
+                                signals.extend(self.evaluate_matrix_scalp_tier3(spot_price=spot))
+                            except Exception as exc:
+                                log.warning("Ribbon evaluate skipped: %s", exc)
+
+                    signals.extend(self.evaluate_pa_sr_live_breaks(float(spot), closed_1m))
+
+                    closed_bar = self._latest_closed_15m_bar()
+                    if closed_bar:
+                        closed_ts = int(closed_bar.get("ts") or 0)
+                        if closed_ts > 0 and closed_ts != self._last_live_eval_closed_15m_ts:
+                            self._last_live_eval_closed_15m_ts = closed_ts
+                            log.debug("15m closed bar eval slot ts=%s", closed_ts)
+                            signals.extend(self.evaluate_all_strategies(spot_price=spot))
+                            self.evaluate_pa_sr_live_arm_on_15m()
+
                     if signals:
                         await self._process_strategy_signals(signals)
             except Exception as e:
@@ -5019,6 +5067,8 @@ class QuantTerminalBackend:
             "tolerance_pts": float(self.scanner_cfg.get("tolerance_pts", 20.0)),
             "scanner_gates": self.get_scanner_gate_config(),
             "bollinger_master_off": not bool(self.scanner_cfg.get("bollinger_enabled", True)),
+            "matrix_scalp_enabled": bool((self.cfg.get("matrix_scalp") or {}).get("enabled", False)),
+            "pa_sr_live_enabled": bool((self.cfg.get("pa_sr_homework") or {}).get("live_paper_enabled", False)),
         }
 
     # ── FUNDS & PAPER WALLET MANAGEMENT ──────────────────────────────────────
@@ -6122,6 +6172,185 @@ class QuantTerminalBackend:
             log.warning("FLAGSHIP risk gate query failed (fail-open): %s", exc)
         return True, ""
 
+    def _latest_closed_1m_bar(self) -> Optional[Dict[str, float]]:
+        if not Path(self.market_db).exists():
+            return None
+        try:
+            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True, timeout=3) as conn:
+                df = pd.read_sql_query(
+                    "SELECT ts, h, l, c FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 4",
+                    conn,
+                )
+            if len(df) < 2:
+                return None
+            row = df.iloc[1]
+            return {
+                "high": float(row["h"]),
+                "low": float(row["l"]),
+                "close": float(row["c"]),
+                "ts": int(row["ts"]),
+            }
+        except Exception as exc:
+            log.debug("Latest 1m bar unavailable: %s", exc)
+            return None
+
+    def _recent_15m_bars_for_live(self, limit: int = 48) -> List[Dict[str, Any]]:
+        if not Path(self.market_db).exists():
+            return []
+        try:
+            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True, timeout=5) as conn:
+                df = pd.read_sql_query(
+                    """SELECT ts, o AS open, h AS high, l AS low, c AS close,
+                              date(ts, 'unixepoch', '+330 minutes') AS day,
+                              strftime('%H:%M', ts, 'unixepoch', '+330 minutes') AS hm
+                       FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT ?""",
+                    conn,
+                    params=(limit * 15 + 30,),
+                )
+            if df.empty:
+                return []
+            df = df.iloc[::-1].reset_index(drop=True)
+            df["dt"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
+            b15 = (
+                df.set_index("dt")
+                .resample("15min", closed="left", label="left")
+                .agg(
+                    {
+                        "ts": "first",
+                        "open": "first",
+                        "high": "max",
+                        "low": "min",
+                        "close": "last",
+                        "day": "first",
+                        "hm": "first",
+                    }
+                )
+                .dropna()
+                .reset_index()
+            )
+            if len(b15) < 3:
+                return []
+            tail = b15.iloc[-limit:].to_dict(orient="records")
+            for r in tail:
+                r["e8"] = None
+            if len(tail) >= 8:
+                closes = pd.Series([float(x["close"]) for x in tail])
+                e8 = closes.ewm(span=8, adjust=False).mean()
+                for i, r in enumerate(tail):
+                    r["e8"] = float(e8.iloc[i])
+            return tail
+        except Exception as exc:
+            log.warning("15m bars for PA live: %s", exc)
+            return []
+
+    def _live_pa_sr_config(self) -> Dict[str, Any]:
+        from analyst.pa_sr_homework_8510 import load_pa_sr_config
+
+        return load_pa_sr_config(self.cfg)
+
+    def _live_daily_sr_for_spot(self, spot: float) -> Dict[str, Any]:
+        from analyst.pa_sr_homework_8510 import extend_sr_s4_r4
+
+        if not Path(self.market_db).exists():
+            return {}
+        try:
+            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True, timeout=5) as conn:
+                raw = pd.read_sql_query(
+                    """SELECT ts, o AS open, h AS high, l AS low, c AS close,
+                              date(ts, 'unixepoch', '+330 minutes') AS day
+                       FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 8000""",
+                    conn,
+                )
+            if raw.empty:
+                return {}
+            raw = raw.iloc[::-1]
+            ddf = (
+                raw.groupby("day")
+                .agg(open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last"))
+                .tail(25)
+            )
+            return extend_sr_s4_r4(ddf, spot)
+        except Exception as exc:
+            log.debug("live daily S/R: %s", exc)
+            return {}
+
+    def evaluate_pa_sr_live_arm_on_15m(self) -> None:
+        cfg = self._live_pa_sr_config()
+        if not cfg.get("live_paper_enabled", False):
+            self.strategy_status["pa_sr_homework"]["state"] = "OFF"
+            return
+        bars = self._recent_15m_bars_for_live()
+        if len(bars) < 3:
+            return
+        from analyst.pa_sr_homework_8510 import scan_pa_sr_pattern_arm, session_vwap_up_to_ts
+
+        idx = len(bars) - 1
+        spot = float(bars[idx]["close"])
+        sr = self._live_daily_sr_for_spot(spot)
+        vwap = None
+        try:
+            today = str(bars[idx].get("day") or "")
+            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True, timeout=3) as conn:
+                d1 = pd.read_sql_query(
+                    "SELECT ts, c AS close, v AS volume FROM candles_1m "
+                    "WHERE sec_id='13' AND date(ts,'unixepoch','+330 minutes')=? ORDER BY ts",
+                    conn,
+                    params=(today,),
+                )
+            if not d1.empty:
+                vwap = session_vwap_up_to_ts(d1, int(bars[idx]["ts"]))
+        except Exception:
+            pass
+        armed = scan_pa_sr_pattern_arm(bars, idx, sr, cfg, vwap=vwap)
+        now = time.time()
+        for p in armed:
+            p["armed_at"] = now
+            p["expires_at"] = now + 20 * 60.0
+            key = (p.get("direction"), p.get("bar_hm"), p.get("day"))
+            if not any(
+                (x.get("direction"), x.get("bar_hm"), x.get("day")) == key for x in self._pa_sr_pending
+            ):
+                self._pa_sr_pending.append(p)
+        self._pa_sr_pending = [x for x in self._pa_sr_pending if float(x.get("expires_at", 0)) > now]
+        n = len(self._pa_sr_pending)
+        self.strategy_status["pa_sr_homework"].update(
+            {"state": "ARMED" if n else "SCANNING", "pending": n, "armed": n > 0}
+        )
+
+    def evaluate_pa_sr_live_breaks(
+        self, spot: float, bar_1m: Optional[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        cfg = self._live_pa_sr_config()
+        if not cfg.get("live_paper_enabled", False):
+            return []
+        from analyst.pa_sr_homework_8510 import live_pa_signal_from_pending
+
+        out: List[Dict[str, Any]] = []
+        now = time.time()
+        hi = float((bar_1m or {}).get("high") or spot)
+        lo = float((bar_1m or {}).get("low") or spot)
+        kept: List[Dict[str, Any]] = []
+        for p in self._pa_sr_pending:
+            if float(p.get("expires_at", 0)) < now:
+                continue
+            direction = p.get("direction")
+            ph = float(p.get("pattern_high") or 0)
+            pl = float(p.get("pattern_low") or 0)
+            fired = False
+            if direction == "LONG" and (spot >= ph or hi >= ph):
+                out.append(live_pa_signal_from_pending(p, max(spot, ph), cfg))
+                fired = True
+                self.strategy_status["pa_sr_homework"]["state"] = "TRIGGERED"
+            elif direction == "SHORT" and (spot <= pl or lo <= pl):
+                out.append(live_pa_signal_from_pending(p, min(spot, pl), cfg))
+                fired = True
+                self.strategy_status["pa_sr_homework"]["state"] = "TRIGGERED"
+            if not fired:
+                kept.append(p)
+        self._pa_sr_pending = kept
+        self.strategy_status["pa_sr_homework"]["pending"] = len(kept)
+        return out
+
     def _latest_closed_15m_bar(self) -> Optional[Dict[str, float]]:
         if not Path(self.market_db).exists():
             return None
@@ -6250,6 +6479,8 @@ class QuantTerminalBackend:
             return "STAGE_3_SHORT", "STAGE 3 8 EMA SHORT"
         if "CROSSOVER" in sid or "REVERSAL" in sname or "4 MA" in sname or "4X8" in sname:
             return "CROSSOVER", "4x8 EMA CROSSOVER REVERSAL"
+        if "PA_SR" in sid or "PA LONG" in sname or "PA SHORT" in sname:
+            return "PA_SR_HOMEWORK", "15m PA @ S/R (Homework)"
         return "STAGE_2_LONG", "STAGE 2 8 EMA LONG"
 
     def _compute_side_summary(self, pnl_pts_list: List[float], net_inr_list: List[float]) -> Dict[str, Any]:
@@ -6366,6 +6597,8 @@ class QuantTerminalBackend:
             return "STAGE_3_SHORT", "STAGE 3 ATMA SHORT"
         if "CROSSOVER" in sid or "REVERSAL" in sname or "4 MA" in sname or "4X8" in sname:
             return "CROSSOVER", "4x8 EMA CROSSOVER REVERSAL"
+        if "PA_SR" in sid or "PA LONG" in sname or "PA SHORT" in sname:
+            return "PA_SR_HOMEWORK", "15m PA @ S/R (Homework)"
         return "STAGE_2_LONG", "STAGE 2 ATMA LONG"
 
     def _compute_side_summary(self, pnl_pts_list: List[float], net_inr_list: List[float]) -> Dict[str, Any]:
@@ -6466,6 +6699,27 @@ class QuantTerminalBackend:
                     eod_hm = str(self.scanner_cfg.get("flagship_eod_square_off", "15:20"))
                     sr_prox = float(self.scanner_cfg.get("flagship_sr_exit_proximity_pts", 15.0))
                     delta_est = float(self.cfg.get("risk", {}).get("option_delta_default", delta_est))
+                    hw_bt = self.cfg.get("homework_backtest") or {}
+                    trail_every_bar = bool(hw_bt.get("candle_trail_every_bar", True))
+                    from analyst.pa_sr_homework_8510 import (
+                        entry_on_pattern_break,
+                        extend_sr_s4_r4,
+                        load_pa_sr_config,
+                        scan_pa_sr_breakout,
+                        session_vwap_up_to_ts,
+                    )
+
+                    pa_cfg = load_pa_sr_config(self.cfg)
+                    pa_enabled = bool(pa_cfg.get("enabled", True))
+                    daily_ohlc = (
+                        df_15m.groupby("day", sort=True)
+                        .agg(open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last"))
+                        .reset_index()
+                    )
+                    day_to_1m: Dict[str, pd.DataFrame] = {
+                        str(d): g for d, g in df_all.groupby("day")
+                    }
+                    sr_cache: Dict[str, Dict[str, Any]] = {}
 
                     for idx in range(20, len(bars) - 1):
                         b = bars[idx]
@@ -6489,6 +6743,24 @@ class QuantTerminalBackend:
                         )
                         cand_signals += self._backtest_flagship_signals_at_bar(df_all, int(b["ts"]), c_p)
 
+                        if pa_enabled and idx >= 21:
+                            day_key = str(b["day"])
+                            if day_key not in sr_cache:
+                                prior = daily_ohlc[daily_ohlc["day"] < day_key]
+                                if not prior.empty:
+                                    ddf = prior.set_index("day")
+                                    sr_cache[day_key] = extend_sr_s4_r4(ddf, c_p)
+                                else:
+                                    sr_cache[day_key] = extend_sr_s4_r4(daily_ohlc.set_index("day"), c_p)
+                            vwap = None
+                            d1 = day_to_1m.get(day_key)
+                            if d1 is not None:
+                                vwap = session_vwap_up_to_ts(d1, int(b["ts"]))
+                            pa_cands = scan_pa_sr_breakout(
+                                bars, idx - 1, sr_cache[day_key], pa_cfg, vwap=vwap
+                            )
+                            cand_signals += pa_cands
+
                         for sid, sname, direc, tgt_pts, sl_pts, meta in cand_signals:
                             f_code, f_tag = self._classify_strategy_filter_tag(sid, sname)
                             if strat_flt != "ALL" and f_code != strat_flt:
@@ -6498,13 +6770,19 @@ class QuantTerminalBackend:
                             if active_bias == "SHORT_ONLY" and direc != "SHORT":
                                 continue
 
-                            entry_spot = round(float(bars[idx + 1]["open"]), 2)
                             is_long = direc == "LONG"
                             is_flagship = bool(meta.get("flagship"))
+                            is_pa = bool(meta.get("pa_homework"))
+                            if is_pa:
+                                entry_spot = entry_on_pattern_break(bars, idx, meta, direc)
+                                start_i = idx
+                            else:
+                                entry_spot = round(float(bars[idx + 1]["open"]), 2)
+                                start_i = idx + 1
 
                             st_pnl_pts, fx_pnl_pts, exit_spot, st_reason, trail_steps, mfe_pts = simulate_backtest_spot_exit(
                                 bars,
-                                idx + 1,
+                                start_i,
                                 entry_spot,
                                 is_long,
                                 float(sl_pts),
@@ -6513,6 +6791,9 @@ class QuantTerminalBackend:
                                 meta.get("sr_levels") or {},
                                 eod_hm,
                                 sr_prox,
+                                trail_every_bar=trail_every_bar and not is_pa,
+                                trail_green_only=bool(meta.get("trail_green_only", not trail_every_bar)),
+                                exit_at_atma=bool(meta.get("exit_at_atma")) if is_pa else False,
                             )
 
                             synth_opt_entry, synth_opt_exit = synthesize_option_premium_from_spot(

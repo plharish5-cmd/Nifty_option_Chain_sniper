@@ -8,10 +8,10 @@
     "environment": "LIVE",
     "whitelisted_ip": "49.205.39.195",
     "DHAN_CLIENT_ID": "1112377935",
-    "TOKEN_EXPIRY_UTC": "2026-11-09T02:19:09Z",
-    "token_expiry_utc": "2026-11-09T02:19:09Z",
-    "DHAN_ACCESS_TOKEN": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MTkwNzQ5LCJpYXQiOjE3OTQxMDQzNDksInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.BfTl89XjcgGtvS-ySePKEBmHSGerokP4HjbDHFL5GgXLjY3NiS9UapzCuX76D7RSpwEfDT9IFh42vyQyKAw3cQ",
-    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MTkwNzQ5LCJpYXQiOjE3OTQxMDQzNDksInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.BfTl89XjcgGtvS-ySePKEBmHSGerokP4HjbDHFL5GgXLjY3NiS9UapzCuX76D7RSpwEfDT9IFh42vyQyKAw3cQ"
+    "TOKEN_EXPIRY_UTC": "2026-11-09T21:49:38Z",
+    "token_expiry_utc": "2026-11-09T21:49:38Z",
+    "DHAN_ACCESS_TOKEN": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MjYwOTc4LCJpYXQiOjE3OTQxNzQ1NzgsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.BQVA7Q2dem8eQlM-lFz1Sve9uf8VYwDNu5nQrNYO2XUX5OpZsuIP6PUQAvBubIvVAq-J349iGPCj3zMSUf3tyg",
+    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MjYwOTc4LCJpYXQiOjE3OTQxNzQ1NzgsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.BQVA7Q2dem8eQlM-lFz1Sve9uf8VYwDNu5nQrNYO2XUX5OpZsuIP6PUQAvBubIvVAq-J349iGPCj3zMSUf3tyg"
   },
   "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
   "instrument_master_path": "data/terminal8500/instrument_master.csv",
@@ -254,8 +254,30 @@
     "_evidence": "Recording only. No signal, filter or threshold here is validated. The radar max-move column is descriptive and selection-biased by construction; target_N_hit_before_sl is the tradeable statistic. Added because v1.9.2 could price only 10 of 49 candidates (20.4%) for lack of per-contract minute data."
   },
   "real_money_enabled": false,
+  "homework_backtest": {
+    "candle_trail_every_bar": true,
+    "fixed_sl_pts": 40.0,
+    "fixed_tgt_pts": 40.0,
+    "_note": "Super-trail column in date-range backtest: trail every 15m bar low (long) / high (short) after entry; fixed 40/40 column unchanged."
+  },
+  "pa_sr_homework": {
+    "enabled": true,
+    "live_paper_enabled": true,
+    "paper_only": true,
+    "delta_win": 0.59,
+    "delta_loss": 0.67,
+    "level_tolerance_pts": 25.0,
+    "require_below_vwap_for_long": false,
+    "require_above_vwap_for_short": false,
+    "exit_at_atma": true,
+    "swing_lookback_bars": 12,
+    "fixed_sl_pts": 40.0,
+    "fixed_tgt_pts": 40.0,
+    "pattern_trail_green_low_only": true,
+    "_note": "15m PA at S1-S4/R1-R4 + swing high; break pattern high/low; paper/homework backtest only."
+  },
   "matrix_scalp": {
-    "enabled": false,
+    "enabled": true,
     "locked": true,
     "display_name": "Ribbon Scalp",
     "min_grade": "B",
@@ -308,6 +330,6 @@
     "max_payload_bytes": 4000000
   },
   "algo_strike_selection_evidence": "Harish explicitly requested LONG_CE_ITM disabled on 2026-11-07; other strike selection entries unchanged.",
-  "TOKEN_EXPIRY_UTC": "2026-11-09T02:19:09Z",
-  "DHAN_ACCESS_TOKEN": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MTkwNzQ5LCJpYXQiOjE3OTQxMDQzNDksInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.BfTl89XjcgGtvS-ySePKEBmHSGerokP4HjbDHFL5GgXLjY3NiS9UapzCuX76D7RSpwEfDT9IFh42vyQyKAw3cQ"
+  "TOKEN_EXPIRY_UTC": "2026-11-09T21:49:38Z",
+  "DHAN_ACCESS_TOKEN": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MjYwOTc4LCJpYXQiOjE3OTQxNzQ1NzgsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.BQVA7Q2dem8eQlM-lFz1Sve9uf8VYwDNu5nQrNYO2XUX5OpZsuIP6PUQAvBubIvVAq-J349iGPCj3zMSUf3tyg"
 }
