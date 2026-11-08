@@ -71,6 +71,9 @@ app.add_middleware(
 )
 
 backend = QuantTerminalBackend()
+from algo_execution_engine.server import router as algo_execution_router
+app.include_router(algo_execution_router)
+
 
 # STOCKMOJO_RESEARCH_V199_BEGIN: no broker, downloader or model startup
 from analyst.stockmojo_workspace_8510 import router_for

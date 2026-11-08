@@ -2002,7 +2002,7 @@ class QuantTerminalBackend:
             "stage2_long": {"name": "Stage 2 8-EMA (Long)", "state": "SCANNING", "desc": "UBB Up + 8 EMA Touch (±20pt)", "armed": False},
             "stage3_short": {"name": "Stage 3 8-EMA (Short)", "state": "SCANNING", "desc": "LBB Down + 8 EMA Rejection (±20pt)", "armed": False},
             "crossover_reversal": {"name": "4/8 MA Crossover Reversal", "state": "SCANNING", "desc": "4/8 Cross + Flat Band + 3-bar Touch", "armed": False},
-            "h1_confluence": {"name": "1H 8-EMA Confluence", "state": "SCANNING", "desc": "1H 8-EMA Bounce/Rejection Confluence", "armed": False},
+            "h1_confluence": {"name": "1 HR FLAGSHIP (1H 8-EMA)", "state": "SCANNING", "desc": "1H 8-EMA Touch + 15m Price Action Confirmation (40/40 + 2L Trail)", "armed": False},
         }
         self.strategy_cooldowns: Dict[str, float] = {}
         self.scanner_task: Optional[asyncio.Task] = None
