@@ -72,6 +72,12 @@ app.add_middleware(
 
 backend = QuantTerminalBackend()
 
+# STOCKMOJO_RESEARCH_V199_BEGIN: no broker, downloader or model startup
+from analyst.stockmojo_workspace_8510 import router_for
+app.include_router(router_for(ROOT_DIR))
+# STOCKMOJO_RESEARCH_V199_END
+
+
 
 @app.on_event("startup")
 async def startup_event():

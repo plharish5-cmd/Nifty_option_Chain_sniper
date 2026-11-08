@@ -280,7 +280,7 @@ class DhanOrderGateway:
             if not result:return
         pos.spot_sl=new_spot_sl;pos.option_sl=trigger
     async def execute_position_exit(self,pos,exit_spot,reason):
-        self._exit_contract={'expiry':getattr(pos,'expiry',None)};price=self.get_live_option_exit_quote(pos.strike,pos.option_type)
+        self._exit_contract={'expiry':getattr(pos,'expiry',None)};price=self.get_live_option_exit_quote(getattr(pos,'strike',getattr(pos,'entry_spot',0.0)),pos.option_type)
         q=self._last_contract
         if not self.fresh(q):price=await self.fallback_exit_quote(pos);q=self._last_contract
         live=getattr(pos,'execution_mode',self.execution_mode) in ('LIVE','LIVE_1LOT')
