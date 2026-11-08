@@ -138,12 +138,17 @@
     "_evidence": "THRESHOLD 1.25 IS NOT VALIDATED AND SITS IN A LOSING BAND. Measured on 295 OOS trades (scripts/out/futures_volume/events_variantA_volume.csv, 39 sessions, real Dhan tariff, measured deltas 0.59 win / 0.67 loss) the slot-RVOL quintile means are: Q1 0.11-0.47 = -Rs278, Q2 0.47-0.79 = -Rs108, Q3 0.81-1.29 = -Rs121, Q4 1.29-2.58 = -Rs17, Q5 2.59-10.19 = +Rs58. 1.25 falls inside Q3. The only positive bucket starts at 2.59. Raising it to 2.59 was tried and reverted: the v19 suite parametrises on 1.25, and 2.59 is not validated either -- Q5 net is +Rs58 at t=0.44, bootstrap p=0.067, and the whole sample loses Rs93/trade. The one strong statistic is the direction control (Q5 gap long-minus-short +Rs830, t=2.86), which does not survive Bonferroni across ~190 comparisons (needs t~3.65). CONCLUSION: keep this pillar ADVISORY ONLY. Do not gate trades on it. vsr_fallback_threshold is weaker still: the flat SMA10 measure showed no monotone shape at all in the same data. See claude/Futures_Volume_Verdict.md."
   },
   "five_factor_confluence": {
+    "enabled": true,
+    "advisory_only": true,
+    "execution_authorized": false,
+    "scanner_min_score": 0,
     "max_flips": 3,
     "pocket_touch_points": 5.0,
     "max_data_age_seconds": 900,
     "first_opportunity": 1,
     "last_opportunity": 2,
-    "quote_max_age_seconds": 5
+    "quote_max_age_seconds": 5,
+    "_evidence_scanner_min_score": "0 = score is display + signal log only (default). Set 3-5 to hard-block scanner when pillars disagree. Slot-vol pillar is unvalidated; keep advisory_only true unless you accept that risk."
   },
   "post_market_archivers": {
     "enabled": true,
@@ -161,6 +166,30 @@
     "advisory_only": true,
     "fail_open": true,
     "show_pe_ce_table_in_tab1": true
+  },
+  "stockmojo_live": {
+    "enabled": false,
+    "poll_min_seconds": 120,
+    "poll_max_seconds": 180,
+    "ingest_download_folder": true,
+    "_setup": "Set STOCKMOJO_JWT_J and STOCKMOJO_TOKEN_T in .env (or run: python -m analyst.stockmojo_downloader_8510 --configure). Copy PE-CE network request as cURL for symbol/expiry/range: python -m analyst.stockmojo_downloader_8510 --configure-request"
+  },
+  "writer_flow_gate": {
+    "enabled": false,
+    "entity": "change_oi",
+    "surge_put_interval_lakhs": 20,
+    "surge_call_interval_lakhs": 20,
+    "surge_window_minutes": 5,
+    "divergence_enabled": true,
+    "fail_open_when_stale": true,
+    "paper_put_surge_mode": "alert",
+    "paper_call_surge_mode": "alert",
+    "live_put_surge_mode": "alert",
+    "live_call_surge_mode": "alert",
+    "block_ce_on_call_surge": true,
+    "block_pe_on_put_surge": true,
+    "block_ce_when_bearish": false,
+    "block_pe_when_bullish": false
   },
   "paper_execution": {
     "simulated_slippage_pts": [

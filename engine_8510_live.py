@@ -154,6 +154,28 @@ async def startup_event():
             await asyncio.sleep(backend.cfg['dhan_oi']['poll_seconds'])
     app.state.dhan_oi_task = asyncio.create_task(oi_poller())
 
+    async def stockmojo_live_poller():
+        sm_cfg = getattr(backend, "stockmojo_live_cfg", {}) or {}
+        while True:
+            try:
+                if not sm_cfg.get("enabled"):
+                    await asyncio.sleep(15)
+                    continue
+                poller = getattr(backend, "stockmojo_poller", None)
+                if not poller:
+                    await asyncio.sleep(30)
+                    continue
+                delay = await asyncio.to_thread(poller.poll_once)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                log.exception("StockMojo live poll failed")
+                delay = float(sm_cfg.get("poll_max_seconds", 180))
+            await asyncio.sleep(max(30.0, float(delay or sm_cfg.get("poll_min_seconds", 120))))
+
+    app.state.stockmojo_task = asyncio.create_task(stockmojo_live_poller())
+    log.info("StockMojo PE-CE poller task registered (master switch controls downloads).")
+
     def should_run_post_market_ingest(now_hhmm, schedule_ist, today_s,
                                       done_for_day, last_attempt_ts,
                                       retry_seconds, now_ts):
@@ -1028,7 +1050,56 @@ async def api_dhan_oi_bias(force: bool = False):
 @app.get('/api/writer_flow')
 @app.get('/api/oi/writer_flow')
 async def api_writer_flow(force: bool = False):
-    return JSONResponse(content=await asyncio.to_thread(backend.dhan_oi.get_snapshot,force))
+    dhan = await asyncio.to_thread(backend.dhan_oi.get_snapshot, force)
+    ctx = backend._writer_flow_context()
+    return JSONResponse(content={"ok": True, "dhan_oi": dhan, "writer_flow": ctx})
+
+
+@app.get("/api/stockmojo/live")
+async def api_stockmojo_live():
+    return JSONResponse(content=backend.get_stockmojo_live())
+
+
+@app.get("/api/stockmojo_live/config")
+async def api_stockmojo_live_config_get():
+    return JSONResponse(content=backend.get_stockmojo_live_config())
+
+
+@app.post("/api/stockmojo_live/config")
+async def api_stockmojo_live_config_post(req: Request):
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    return JSONResponse(content=backend.update_stockmojo_live_config(body))
+
+
+@app.get("/api/writer_flow_gate/config")
+async def api_writer_flow_gate_get():
+    return JSONResponse(content=backend.get_writer_flow_gate_config())
+
+
+@app.post("/api/writer_flow_gate/config")
+async def api_writer_flow_gate_post(req: Request):
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    return JSONResponse(content=backend.update_writer_flow_gate_config(body))
+
+
+@app.get("/api/five_factor_confluence/config")
+async def api_five_factor_config_get():
+    return JSONResponse(content=backend.get_five_factor_config())
+
+
+@app.post("/api/five_factor_confluence/config")
+async def api_five_factor_config_post(req: Request):
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    return JSONResponse(content=backend.update_five_factor_config(body))
 
 @app.get('/api/oi/pe_ce_table')
 @app.get('/api/oi/pe_ce_dual')
@@ -1057,7 +1128,7 @@ async def stop_background_tasks():
     if recorder: recorder.stop()
     bridge=getattr(backend,'institutional_telemetry_bridge',None)
     if bridge:await asyncio.to_thread(bridge.close)
-    for task in (getattr(app.state,'institutional_task',None),getattr(app.state,'ict_smc_task',None),getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
+    for task in (getattr(app.state,'institutional_task',None),getattr(app.state,'ict_smc_task',None),getattr(app.state,'dhan_oi_task',None),getattr(app.state,'stockmojo_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
         if task:task.cancel()
 
 @app.get("/api/dhan/config")

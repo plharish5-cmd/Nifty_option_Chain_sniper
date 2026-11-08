@@ -1810,38 +1810,123 @@ def get_replay_trades_for_date(target_date: str) -> List[Dict[str, Any]]:
 
 
 def compute_five_factor_confluence(trend=None,dhan_oi=None,volume=None,cfg=None):
-    """Pure, fail-closed five-factor presentation score; no orders or price forecasts."""
-    trend=trend or {};dhan_oi=dhan_oi or {};volume=volume or {}
+    """Live five-factor agreement score from Dhan OI, slot volume, and 15m structure (advisory by default)."""
+    trend=dict(trend or {});dhan_oi=dhan_oi or {};volume=volume or {}
+    if trend.get('fresh') and trend.get('timeframe')=='15m':
+        trend.setdefault('context_present', True)
     cfg=cfg or json.loads((ROOT/'analyst/terminal8510_config.json').read_text())
-    params=cfg['five_factor_confluence'];band=cfg['proven_edges'];volcfg=cfg['futures_volume_engine']
+    params=cfg.get('five_factor_confluence') or {};band=cfg.get('proven_edges') or {};volcfg=cfg.get('futures_volume_engine') or {}
+    ff_enabled=bool(params.get('enabled',True))
+
     def finite(v):return isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v)
     side=trend.get('side');e4=trend.get('ema4');e8=trend.get('ema8');slope=trend.get('band_slope')
     opportunity=trend.get('opportunity')
     coherent=bool(trend.get('fresh')) and trend.get('timeframe')=='15m' and side in ('CE','PE')
-    p1=bool(coherent and all(finite(v) for v in (e4,e8,slope,opportunity)) and
-        (e4>e8 and slope>0 if side=='CE' else e4<e8 and slope<0) and params['first_opportunity']<=opportunity<=params['last_opportunity'])
-    atr=trend.get('atr');flips=trend.get('flips_last_12_bars');sep=abs(e4-e8)/atr if all(finite(v) for v in (e4,e8,atr)) and atr>0 else None
-    p2=bool(coherent and sep is not None and band['goldilocks_min_atr']<=sep<=band['goldilocks_max_atr'] and finite(flips) and flips<params['max_flips'])
+    context_stale=bool(trend.get('context_present')) and not coherent
+
+    def r_pass():return 'PASS'
+    def r_wait(msg):return f'WAIT: {msg}'
+    def r_fail(msg):return f'FAIL: {msg}'
+
+    if not ff_enabled:
+        labels=['Trend','Anti-Chop','Slot Vol','Dhan OI','Pocket']
+        keys=['pillar_1_trend_structure','pillar_2_anti_chop_regime','pillar_3_slot_volume','pillar_4_option_writer_flow','pillar_5_pocket_execution']
+        return {'score':0,'max_score':5,'grade':'DISABLED','enabled':False,
+            'pillars':{k:{'passed':False,'label':label,'reason':r_wait('5-factor confluence disabled in config')} for k,label in zip(keys,labels)},
+            'direction':'UNKNOWN','source':'DHAN_API','informational_only':True,'execution_authorized':False,
+            'note':'Five-factor confluence is turned off in terminal8510_config.json.'}
+
+    # Pillar 1 — trend stack + band slope + touch opportunity window
+    if not trend.get('context_present'):
+        p1, reason1 = False, r_wait('no closed 15m bars (market hours / recorder)')
+    elif context_stale:
+        p1, reason1 = False, r_wait('15m context stale; waiting for fresh closed bar')
+    elif not all(finite(v) for v in (e4,e8,slope,opportunity)):
+        p1, reason1 = False, r_wait('EMA/slope/opportunity not ready')
+    elif not (e4>e8 and slope>0 if side=='CE' else e4<e8 and slope<0):
+        p1, reason1 = False, r_fail(f'stack/slope not aligned for {side}')
+    elif not params.get('first_opportunity',1)<=opportunity<=params.get('last_opportunity',2):
+        p1, reason1 = False, r_fail(f'touch opportunity {opportunity} outside {params.get("first_opportunity")}-{params.get("last_opportunity")}')
+    else:
+        p1, reason1 = True, r_pass()
+
+    atr=trend.get('atr');flips=trend.get('flips_last_12_bars')
+    sep=abs(e4-e8)/atr if all(finite(v) for v in (e4,e8,atr)) and atr and atr>0 else None
+    if not trend.get('context_present'):
+        p2, reason2 = False, r_wait('no 15m context')
+    elif context_stale:
+        p2, reason2 = False, r_wait('stale 15m context')
+    elif sep is None:
+        p2, reason2 = False, r_wait('ATR / separation unavailable')
+    elif not band.get('goldilocks_min_atr',0.13)<=sep<=band.get('goldilocks_max_atr',0.26):
+        p2, reason2 = False, r_fail(f'4/8 sep {sep:.2f} ATR outside Goldilocks band')
+    elif not finite(flips):
+        p2, reason2 = False, r_wait('flip count unavailable')
+    elif flips>=params.get('max_flips',3):
+        p2, reason2 = False, r_fail(f'{flips} EMA flips in 12 bars (max {params.get("max_flips",3)})')
+    else:
+        p2, reason2 = True, r_pass()
+
     slot=volume.get('slot_rvol_median');vsr=volume.get('vsr_10');accel=volume.get('bar_accel_ratio')
-    volume_age=time.time()-(volume.get('bar_ts')+900) if finite(volume.get('bar_ts')) else None
-    volume_fresh=volume_age is not None and 0<=volume_age<params['max_data_age_seconds']
-    primary=finite(slot) and slot>=volcfg['slot_rvol_threshold']
-    fallback=slot is None and volume.get('slot_status')=='INSUFFICIENT_HISTORY' and finite(vsr) and vsr>=volcfg['vsr_fallback_threshold'] and finite(accel) and accel>=volcfg['bar_accel_threshold']
-    p3=bool(volume_fresh and volume.get('available') and (primary or fallback))
+    bar_ts=volume.get('bar_ts')
+    volume_age=time.time()-(bar_ts+900) if finite(bar_ts) else None
+    volume_fresh=volume_age is not None and 0<=volume_age<params.get('max_data_age_seconds',900)
+    primary=finite(slot) and slot>=volcfg.get('slot_rvol_threshold',1.25)
+    fallback=(slot is None and volume.get('slot_status')=='INSUFFICIENT_HISTORY' and finite(vsr) and vsr>=volcfg.get('vsr_fallback_threshold',1.25)
+                and finite(accel) and accel>=volcfg.get('bar_accel_threshold',1.15))
+    if not volume.get('available'):
+        p3, reason3 = False, r_wait(volume.get('slot_status') or 'futures slot bar incomplete')
+    elif not volume_fresh:
+        p3, reason3 = False, r_wait('slot volume observation stale')
+    elif primary or fallback:
+        p3, reason3 = True, r_pass()
+    else:
+        p3, reason3 = False, r_fail(f'slot {slot} / vsr {vsr} below thresholds')
+
     age=dhan_oi.get('age_seconds');stamp=dhan_oi.get('timestamp_epoch')
     if finite(stamp):age=time.time()-stamp
-    oi_fresh=finite(age) and 0<=age<=cfg['dhan_oi']['max_age_seconds']
-    p4=bool(coherent and oi_fresh and dhan_oi.get('source')=='DHAN_API' and dhan_oi.get('status')=='OK' and dhan_oi.get('available') and dhan_oi.get('bias')==('BULLISH' if side=='CE' else 'BEARISH'))
+    oi_fresh=finite(age) and 0<=age<=cfg.get('dhan_oi',{}).get('max_age_seconds',90)
+    want='BULLISH' if side=='CE' else 'BEARISH' if side=='PE' else None
+    if dhan_oi.get('source')!='DHAN_API' or not dhan_oi.get('available'):
+        p4, reason4 = False, r_wait(dhan_oi.get('reason') or dhan_oi.get('status') or 'Dhan OI unavailable')
+    elif dhan_oi.get('status')!='OK':
+        p4, reason4 = False, r_wait(f"Dhan OI {dhan_oi.get('status')}")
+    elif not oi_fresh:
+        p4, reason4 = False, r_wait('Dhan OI stale')
+    elif not coherent or not want:
+        bias=str(dhan_oi.get('bias') or 'UNKNOWN')
+        p4, reason4 = False, r_wait(f'OI {bias}; need fresh 15m {side or "direction"} to score alignment')
+    elif dhan_oi.get('bias')==want:
+        p4, reason4 = True, r_pass()
+    else:
+        p4, reason4 = False, r_fail(f"OI {dhan_oi.get('bias')} vs {side} wants {want}")
+
     gap=trend.get('abs_gap_pts')
-    p5=bool(coherent and trend.get('price_fresh') and ((finite(gap) and gap<=params['pocket_touch_points']) or trend.get('wick_touched_ema8') is True))
+    if not trend.get('context_present'):
+        p5, reason5 = False, r_wait('no 15m context')
+    elif context_stale:
+        p5, reason5 = False, r_wait('stale 15m context')
+    elif not trend.get('price_fresh'):
+        p5, reason5 = False, r_wait('spot quote stale for pocket check')
+    elif (finite(gap) and gap<=params.get('pocket_touch_points',5.0)) or trend.get('wick_touched_ema8') is True:
+        p5, reason5 = True, r_pass()
+    else:
+        p5, reason5 = False, r_fail(f'spot {gap:.1f} pts from 8 EMA (pocket {params.get("pocket_touch_points",5)})' if finite(gap) else 'not at 8 EMA pocket')
+
     values={'pillar_1_trend_structure':p1,'pillar_2_anti_chop_regime':p2,'pillar_3_slot_volume':p3,'pillar_4_option_writer_flow':p4,'pillar_5_pocket_execution':p5}
+    reasons={'pillar_1_trend_structure':reason1,'pillar_2_anti_chop_regime':reason2,'pillar_3_slot_volume':reason3,'pillar_4_option_writer_flow':reason4,'pillar_5_pocket_execution':reason5}
     score=sum(values.values());grades={5:'A+ INSTITUTIONAL (5/5)',4:'A HIGH CONVICTION (4/5)',3:'B MODERATE (3/5)'}
     labels=['Trend','Anti-Chop','Slot Vol','Dhan OI','Pocket']
+    min_scan=int(params.get('scanner_min_score',0) or 0)
+    gate_mode=str(params.get('scanner_gate_mode','off') or 'off').lower()
+    scanner_gate_active=gate_mode!='off' and min_scan>0
     return {**values,'score':score,'max_score':5,'grade':grades.get(score,'C DEFENSIVE / WAIT (<=2/5)'),
-        'pillars':{k:{'passed':v,'label':label} for (k,v),label in zip(values.items(),labels)},
-        'direction':side or 'UNKNOWN','source':'DHAN_API','informational_only':True,
-        'execution_authorized':False,'opportunity_basis':trend.get('opportunity_basis','Provided closed-candle opportunity'),
-        'note':'Agreement count, not independent evidence, win probability, or guaranteed zero-slippage fill.'}
+        'pillars':{k:{'passed':v,'label':label,'reason':reasons[k]} for (k,v),label in zip(values.items(),labels)},
+        'direction':side or 'UNKNOWN','source':'DHAN_API','informational_only':bool(params.get('advisory_only',True)),
+        'execution_authorized':bool(params.get('execution_authorized',False) and score>=min_scan and min_scan>0),
+        'enabled':True,'scanner_min_score':min_scan,'scanner_gate_mode':gate_mode,'scanner_gate_active':scanner_gate_active,
+        'context_fresh':coherent,'context_stale':context_stale,'opportunity_basis':trend.get('opportunity_basis','Distinct closed 15m EMA8 touch episodes'),
+        'note':'Live pillars from Dhan OI + futures slot volume + closed 15m structure. Not a win guarantee.'}
 
 
 class QuantTerminalBackend:
@@ -2467,6 +2552,42 @@ class QuantTerminalBackend:
         self.dhan_oi_synergy_cfg = _dhan_oi_synergy_defaults
         self._last_synergy_status: str = "INITIALIZED"
 
+        _writer_flow_defaults = {
+            "enabled": False,
+            "entity": "change_oi",
+            "surge_put_interval_lakhs": 20,
+            "surge_call_interval_lakhs": 20,
+            "surge_window_minutes": 5,
+            "divergence_enabled": True,
+            "fail_open_when_stale": True,
+            "paper_put_surge_mode": "alert",
+            "paper_call_surge_mode": "alert",
+            "live_put_surge_mode": "alert",
+            "live_call_surge_mode": "alert",
+            "block_ce_on_call_surge": True,
+            "block_pe_on_put_surge": True,
+            "block_ce_when_bearish": False,
+            "block_pe_when_bullish": False,
+        }
+        _writer_flow_defaults.update(self.cfg.get("writer_flow_gate") or {})
+        self.writer_flow_gate_cfg = _writer_flow_defaults
+
+        _sm_live_defaults = {
+            "enabled": False,
+            "poll_min_seconds": 120,
+            "poll_max_seconds": 180,
+            "ingest_download_folder": True,
+        }
+        _sm_live_defaults.update(self.cfg.get("stockmojo_live") or {})
+        self.stockmojo_live_cfg = _sm_live_defaults
+        self.stockmojo_poller = None
+        try:
+            from analyst.stockmojo_safe_poller_8510 import poller_from_config
+
+            self.stockmojo_poller = poller_from_config(self.stockmojo_live_cfg)
+        except Exception as exc:
+            log.warning("StockMojo poller init failed: %s", exc)
+
         # Market Hours Validator & Testing Override Toggle
         # v1.9.4c: ALWAYS starts false. A persisted true (left behind by a test
         # run writing the live config) must never revive out-of-session
@@ -2788,6 +2909,168 @@ class QuantTerminalBackend:
         except Exception as e:
             log.error("Failed persisting synergy config: %s", e)
         return {"ok": True, "dhan_oi_synergy": self.dhan_oi_synergy_cfg}
+
+    def get_writer_flow_gate_config(self) -> Dict[str, Any]:
+        return {"ok": True, "writer_flow_gate": dict(self.writer_flow_gate_cfg)}
+
+    def update_writer_flow_gate_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        allowed = set(self.writer_flow_gate_cfg.keys()) | {
+            "enabled",
+            "entity",
+            "surge_put_interval_lakhs",
+            "surge_call_interval_lakhs",
+            "paper_put_surge_mode",
+            "paper_call_surge_mode",
+            "live_put_surge_mode",
+            "live_call_surge_mode",
+            "block_ce_on_call_surge",
+            "block_pe_on_put_surge",
+            "block_ce_when_bearish",
+            "block_pe_when_bullish",
+            "fail_open_when_stale",
+            "divergence_enabled",
+        }
+        for key, value in (updates or {}).items():
+            if key in allowed:
+                self.writer_flow_gate_cfg[key] = value
+        self.cfg["writer_flow_gate"] = self.writer_flow_gate_cfg
+        try:
+            self.config_path.write_text(json.dumps(self.cfg, indent=2))
+        except Exception as exc:
+            log.warning("Could not persist writer_flow_gate config: %s", exc)
+        return self.get_writer_flow_gate_config()
+
+    def get_stockmojo_live_config(self) -> Dict[str, Any]:
+        return {"ok": True, "stockmojo_live": dict(self.stockmojo_live_cfg)}
+
+    def update_stockmojo_live_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        allowed = {"enabled", "poll_min_seconds", "poll_max_seconds", "ingest_download_folder"}
+        for key, value in (updates or {}).items():
+            if key not in allowed:
+                continue
+            if key == "enabled":
+                self.stockmojo_live_cfg[key] = (
+                    value if isinstance(value, bool) else str(value).lower() in ("true", "1", "yes")
+                )
+            else:
+                self.stockmojo_live_cfg[key] = value
+        self.cfg["stockmojo_live"] = self.stockmojo_live_cfg
+        try:
+            self.config_path.write_text(json.dumps(self.cfg, indent=2))
+        except Exception as exc:
+            log.warning("Could not persist stockmojo_live config: %s", exc)
+        if self.stockmojo_poller is None and self.stockmojo_live_cfg.get("enabled"):
+            try:
+                from analyst.stockmojo_safe_poller_8510 import poller_from_config
+
+                self.stockmojo_poller = poller_from_config(self.stockmojo_live_cfg)
+            except Exception as exc:
+                log.warning("StockMojo poller lazy init failed: %s", exc)
+        return self.get_stockmojo_live()
+
+    def get_stockmojo_live(self) -> Dict[str, Any]:
+        from analyst.stockmojo_status_8510 import env_credential_flags, summarize_stockmojo_status
+
+        master = bool(self.stockmojo_live_cfg.get("enabled"))
+        poller = getattr(self, "stockmojo_poller", None)
+        snap: Dict[str, Any] = poller.snapshot() if poller else {}
+        if not master:
+            snap = {**snap, "available": False, "poll_status": "MASTER_DISABLED"}
+        status = summarize_stockmojo_status(
+            master_enabled=master,
+            writer_gate_enabled=bool(self.writer_flow_gate_cfg.get("enabled")),
+            snap=snap,
+            poller_present=poller is not None,
+        )
+        out = {
+            "ok": True,
+            "enabled": master,
+            "source": "STOCKMOJO_API",
+            "operational_status": status,
+            "env": env_credential_flags(),
+            "writer_flow": self._writer_flow_context(),
+        }
+        out.update(snap)
+        out["operational_status"] = status
+        return out
+
+    def _writer_flow_context(self) -> Dict[str, Any]:
+        from analyst.writer_flow_gate_8510 import evaluate_writer_context
+
+        sm: Dict[str, Any] = {}
+        master = bool(self.stockmojo_live_cfg.get("enabled"))
+        if master and self.stockmojo_poller:
+            sm = self.stockmojo_poller.snapshot()
+        dhan = self.dhan_oi.cached_snapshot()
+        return evaluate_writer_context(
+            sm,
+            dhan,
+            self.writer_flow_gate_cfg,
+            stockmojo_master_enabled=master,
+        )
+
+    def apply_writer_flow_gates(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        from analyst.writer_flow_gate_8510 import filter_signals_by_writer_gate
+
+        if not signals:
+            return signals
+        out = list(signals)
+        live_armed = bool(self._real_money_enabled and not self.kill_switch_active)
+        if self._confluence_gate_blocks(live_armed):
+            conf = self.cached_telemetry.get("five_factor_confluence") or {}
+            ff = self.cfg.get("five_factor_confluence") or {}
+            log.info("[5-FACTOR GATE] Blocked batch: score %s < %s mode=%s (%s)",
+                     conf.get("score"), ff.get("scanner_min_score"), ff.get("scanner_gate_mode"), conf.get("grade"))
+            return []
+        if not self.writer_flow_gate_cfg.get("enabled"):
+            return out
+        ctx = self._writer_flow_context()
+        return filter_signals_by_writer_gate(out, ctx, self.writer_flow_gate_cfg, live_armed)
+
+    def _confluence_gate_blocks(self, live_armed: bool) -> bool:
+        ff = self.cfg.get("five_factor_confluence") or {}
+        min_score = int(ff.get("scanner_min_score", 0) or 0)
+        mode = str(ff.get("scanner_gate_mode", "off") or "off").lower()
+        if min_score <= 0 or mode == "off":
+            return False
+        if mode == "paper" and live_armed:
+            return False
+        if mode == "live" and not live_armed:
+            return False
+        conf = self.cached_telemetry.get("five_factor_confluence") or {}
+        return int(conf.get("score") or 0) < min_score
+
+    def get_five_factor_config(self) -> Dict[str, Any]:
+        ff = dict(self.cfg.get("five_factor_confluence") or {})
+        return {"ok": True, "five_factor_confluence": ff}
+
+    def update_five_factor_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        ff = dict(self.cfg.get("five_factor_confluence") or {})
+        allowed = {
+            "enabled", "advisory_only", "execution_authorized", "scanner_min_score", "scanner_gate_mode",
+            "max_flips", "pocket_touch_points", "max_data_age_seconds", "first_opportunity", "last_opportunity",
+            "quote_max_age_seconds",
+        }
+        for key, value in (updates or {}).items():
+            if key not in allowed:
+                continue
+            if key == "scanner_gate_mode":
+                mode = str(value or "off").lower()
+                if mode not in ("off", "paper", "live", "both"):
+                    continue
+                ff[key] = mode
+            elif key == "scanner_min_score":
+                ff[key] = max(0, min(5, int(value)))
+            elif key in ("enabled", "advisory_only", "execution_authorized"):
+                ff[key] = value if isinstance(value, bool) else str(value).lower() in ("true", "1", "yes")
+            else:
+                ff[key] = value
+        self.cfg["five_factor_confluence"] = ff
+        try:
+            self.config_path.write_text(json.dumps(self.cfg, indent=2))
+        except Exception as exc:
+            log.warning("Could not persist five_factor_confluence: %s", exc)
+        return self.get_five_factor_config()
 
     @staticmethod
     def _public_dhan_status(value):
@@ -3113,7 +3396,8 @@ class QuantTerminalBackend:
                     frame.index = stamp
                     frame=frame[((stamp.dt.hour*60+stamp.dt.minute>=555)&(stamp.dt.hour*60+stamp.dt.minute<930)).to_numpy()]
                     bars=frame.resample('15min').agg({'ts':'count','open':'first','high':'max','low':'min','close':'last'}).dropna()
-                    bars=bars[(bars.ts==15)&((bars.index.astype('int64')//10**9+900)<=now)]
+                    closed=bars[(bars.ts==15)&((bars.index.astype('int64')//10**9+900)<=now)]
+                    bars=closed if len(closed)>=20 else bars[(bars.ts==15)]
                     if len(bars)>=20:
                         e4=bars.close.ewm(span=4,adjust=False).mean();e8=bars.close.ewm(span=8,adjust=False).mean()
                         mid=bars.close.rolling(20).mean();std=bars.close.rolling(20).std()
@@ -3131,11 +3415,12 @@ class QuantTerminalBackend:
                         signs=(bars.close>e8).astype(int)
                         flips=int(signs.tail(12).diff().abs().fillna(0).sum())
                         end=bars.index[-1].timestamp()+900
+                        bar_closed=end<=now
                         context=dict(timeframe='15m',side=side,ema4=float(e4.iloc[-1]),ema8=float(e8.iloc[-1]),
                             band_slope=float(upper.diff().iloc[-1] if side=='CE' else lower.diff().iloc[-1]),
                             opportunity=opportunities,atr=atr,flips_last_12_bars=flips,
-                            wick_touched_ema8=bool(touched.iloc[-1]),signal_ts=end,
-                            fresh=0<=now-end<params['max_data_age_seconds'],
+                            wick_touched_ema8=bool(touched.iloc[-1]),signal_ts=end,context_present=True,
+                            fresh=bar_closed and 0<=now-end<params['max_data_age_seconds'],
                             opportunity_basis='Distinct closed 15m EMA8 touch episodes in current 4/8 regime; advisory proxy, not a validated D/E execution rule')
             except Exception:
                 log.exception('Confluence context unavailable; missing pillars stay false')
@@ -3443,7 +3728,9 @@ class QuantTerminalBackend:
             return result
         passed=bool(observation['data_status']=='VALID' and (score>0 if side=='CE' else score<0 if side=='PE' else False))
         name='pillar_4_option_writer_flow';result[name]=passed
-        result['pillars'][name]={'passed':passed,'label':'Institutional OI-flow proxy'}
+        prev=result['pillars'].get(name) or {}
+        reason='PASS: institutional file telemetry' if passed else 'FAIL: institutional telemetry disagrees'
+        result['pillars'][name]={'passed':passed,'label':prev.get('label','Dhan OI'),'reason':reason}
         result['score']=sum(bool(v['passed']) for v in result['pillars'].values())
         result['grade']={5:'A+ INSTITUTIONAL (5/5)',4:'A HIGH CONVICTION (4/5)',3:'B MODERATE (3/5)'}.get(result['score'],'C DEFENSIVE / WAIT (<=2/5)')
         result['source']='INSTITUTIONAL_TELEMETRY';result['informational_only']=True;result['execution_authorized']=False
@@ -3857,6 +4144,9 @@ class QuantTerminalBackend:
             "dhan_oi_crore_spread": self.dhan_oi.get_crore_spread_metrics(),
             "dhan_oi_multi_strike": self.dhan_oi.get_multi_strike_status(),
             "dhan_oi_synergy_config": self.dhan_oi_synergy_cfg,
+            "stockmojo_live": self.get_stockmojo_live(),
+            "writer_flow_gate": self._writer_flow_context(),
+            "writer_flow_gate_config": self.writer_flow_gate_cfg,
             "funds": {
                 "paper": paper_wallet,
                 "live": live_funds,
@@ -4044,6 +4334,7 @@ class QuantTerminalBackend:
             "bollinger_enabled_stage3": self.scanner_cfg.get("bollinger_enabled_stage3"),
             "bollinger_enabled_crossover": self.scanner_cfg.get("bollinger_enabled_crossover"),
             "bollinger_enabled_flagship": self.scanner_cfg.get("bollinger_enabled_flagship"),
+            "party_switch_enabled": bool(self.scanner_cfg.get("party_switch_enabled", True)),
         }
 
     def update_scanner_gate_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -4053,12 +4344,13 @@ class QuantTerminalBackend:
             "bollinger_enabled_stage3",
             "bollinger_enabled_crossover",
             "bollinger_enabled_flagship",
+            "party_switch_enabled",
         }
         prev_bb = self.scanner_cfg.get("bollinger_enabled", True)
         for k, v in (updates or {}).items():
             if k not in allowed:
                 continue
-            if k == "bollinger_enabled":
+            if k in ("bollinger_enabled", "party_switch_enabled"):
                 if isinstance(v, bool):
                     self.scanner_cfg[k] = v
                 else:
@@ -5045,7 +5337,9 @@ class QuantTerminalBackend:
                             self.evaluate_pa_sr_live_arm_on_15m()
 
                     if signals:
-                        await self._process_strategy_signals(signals)
+                        signals = self.apply_writer_flow_gates(signals)
+                        if signals:
+                            await self._process_strategy_signals(signals)
             except Exception as e:
                 log.error("Strategy scanner iteration error: %s", e)
 
@@ -5066,6 +5360,7 @@ class QuantTerminalBackend:
             "algo_strike_selection": self.algo_strike_selection,
             "tolerance_pts": float(self.scanner_cfg.get("tolerance_pts", 20.0)),
             "scanner_gates": self.get_scanner_gate_config(),
+            "party_switch_enabled": bool(self.scanner_cfg.get("party_switch_enabled", True)),
             "bollinger_master_off": not bool(self.scanner_cfg.get("bollinger_enabled", True)),
             "matrix_scalp_enabled": bool((self.cfg.get("matrix_scalp") or {}).get("enabled", False)),
             "pa_sr_live_enabled": bool((self.cfg.get("pa_sr_homework") or {}).get("live_paper_enabled", False)),

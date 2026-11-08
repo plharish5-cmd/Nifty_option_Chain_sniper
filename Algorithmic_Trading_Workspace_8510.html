@@ -26,6 +26,9 @@
             --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             --font-mono: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Consolas, monospace;
         }
+        .gate-scope { font-size: 10px; margin-right: 5px; opacity: 0.95; vertical-align: middle; }
+        .shutter-panel > summary { list-style: disclosure-closed; }
+        .shutter-panel[open] > summary { list-style: disclosure-open; }
         * { box-sizing: border-box; }
         body {
             font-family: var(--font-sans);
@@ -670,64 +673,6 @@
      trader can check, where a GOOD/BAD rating was a judgment they could not.
      Failures go to analyst/recording_errors.log and the server log, never to a
      popup. Do not reintroduce a coverage badge, bar or percentage here. -->
-<div id="pillInstitutionalTelemetryLive" role="status" style="padding:8px 16px;color:#94a3b8">📊 Institutional F&amp;O Telemetry [Qwen 2.5:3B] · No recorded data</div>
-<details id="institutionalTelemetryCard" class="card" style="margin:12px 0;padding:16px">
- <summary style="cursor:pointer">Institutional telemetry · local interpretation · ADVISORY ONLY</summary>
- <p>Historical files describe their own observations. Scores and confidence are heuristic summaries, not win probabilities.</p>
- <input id="institutionalFilePath" placeholder="Local path to a CSV, JSON or TSV file" style="width:65%">
- <button id="institutionalIngestButton" type="button">Evaluate historical file</button>
- <p id="institutionalCollectorStatus">Collector: waiting for local exports; no automatic website download.</p><p id="institutionalTelemetrySummary">No recorded data</p><pre id="institutionalTelemetryDetails" style="white-space:pre-wrap"></pre>
- <ul id="institutionalTelemetryWarnings"></ul><span id="institutionalTelemetryError" role="status"></span>
-</details>
-<script>
-(function(){
-const by=id=>document.getElementById(id),card=by('institutionalTelemetryCard');
-try{card.open=localStorage.getItem('institutionalTelemetryCollapsed')==='false';}catch(e){card.open=false;}
-card.addEventListener('toggle',()=>{try{localStorage.setItem('institutionalTelemetryCollapsed',String(!card.open));}catch(e){}});
-const num=v=>v==null?'not available':Number(v).toLocaleString('en-IN',{maximumFractionDigits:2});
-async function refresh(){try{
- const response=await fetch('/api/institutional_telemetry/live');if(!response.ok)throw new Error('Telemetry HTTP '+response.status);
- const r=await response.json(),q=r.input_telemetry?.data_quality||{},oi=r.oi_dominance||{},p=r.participation||{};
- by('pillInstitutionalTelemetryLive').textContent='📊 Institutional F&O Telemetry [Qwen 2.5:3B] | '+'Session: '+(r.session_regime||'NOT_AVAILABLE')+' | Current: '+(r.current_regime||r.day_regime||r.data_status)+' | Bias score: '+(r.bias_score_pct>0?'+':'')+num(r.bias_score_pct)+'/100 | Heuristic confidence: '+num(r.confidence_pct)+'/100 (HEURISTIC_NOT_CALIBRATED) | '+(q.mode||'waiting')+' | ADVISORY';
- const c=r.collector||{};
- by('institutionalCollectorStatus').textContent='Local exports only · Folder: '+(c.drop_folder_path||'not started')+' · File: '+(c.latest_file_name||'none')+' · Rows today: '+(c.rows_collected_today??0)+' · Last row: '+(c.last_row_time_ist||'—')+' · Next scan: '+num(c.next_poll_in_sec)+'s · Pending: '+(c.pending_row_time||'none');
- by('institutionalTelemetrySummary').textContent=(r.summary||'No recorded data')+' · '+(r.authority_label||'DETERMINISTIC_AUTHORITATIVE')+' · Narrative: '+(r.narrative_status||'not evaluated');
- by('institutionalTelemetryDetails').textContent='Observation: '+(r.timestamp||'—')+' · interpreter: '+(r.interpreter_source||'waiting')+'\nOI: '+(oi.interpretation||'—')+' · gap '+num(oi.gap_lakh)+' lakh · '+(oi.magnitude_band||'—')+' · 15m change '+num(oi.slope)+'\nFutures: '+Object.entries(r.futures_structure||{}).map(([k,v])=>k+' '+v).join(' | ')+'\nParticipation: '+num(p.volume_speed)+'× · '+(p.level||'—')+' · crowding '+(oi.crowding_risk?'YES':'NO')+'\nAgreement: '+num(r.confirmation?.cross_window_agreement_pct)+'% · premium skew '+(r.confirmation?.premium_skew_status||'—')+' · strike data '+(r.confirmation?.strike_level_status||'—')+'\nPartial heuristic: '+(q.partial_bar_flag?'flagged':'not flagged')+' · row discarded '+(q.partial_latest_row_discarded?(q.discarded_row_timestamp||'YES'):'NO')+' · source age '+num(q.stale_data_seconds)+'s';
- const list=by('institutionalTelemetryWarnings');list.replaceChildren();(r.warnings||[]).forEach(w=>{const li=document.createElement('li');li.textContent=w;list.appendChild(li);});
- by('institutionalTelemetryError').textContent='';
-}catch(e){by('institutionalTelemetryError').textContent=e.message;}}
-by('institutionalIngestButton').onclick=async function(){this.disabled=true;try{const response=await fetch('/api/institutional_telemetry/ingest_file',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:by('institutionalFilePath').value,live:false})});if(!response.ok)throw new Error('File evaluation HTTP '+response.status);await refresh();}catch(e){by('institutionalTelemetryError').textContent=e.message;}finally{this.disabled=false;}};
-refresh();setInterval(refresh,10000);
-})();
-</script>
-<section class="card" id="trendCaptureV192" style="margin:16px 0;padding:18px;border:1px solid #334155;border-radius:10px">
- <h2 style="font-size:16px">Trend capture study · <span style="color:#fbbf24">ADVISORY ONLY</span></h2>
- <p id="trendCaptureStatus">Loading closed 15m context… Existing execution and v1.1 exits remain unchanged.</p>
- <p id="trendCaptureGate">Trailing engine: not built — evidence gate did not pass.</p>
- <div id="trendCaptureReadiness"></div>
- <details><summary>Closed 15m observation ladder</summary><div style="max-height:240px;overflow:auto"><table><thead>
-                            <tr>
-                                <th>1. Date</th>
-                                <th>2. Setup Name</th>
-                                <th>3. Contract Symbol</th>
-                                <th>4. Direction</th>
-                                <th>5. Index Entry</th>
-                                <th>6. Index Exit</th>
-                                <th>7. Option Entry</th>
-                                <th>8. Option Exit</th>
-                                <th>9. Exit Reason</th>
-                                <th>10. Net P&amp;L</th>
-                                <th>11. Trailing</th>
-                                <th>12. All Fall Off</th>
-                                <th>13. Strategy Filter Tag</th>
-                                <th>14. Data Type</th>
-                                <th>15. 8 EMA</th>
-                            </tr>
-                        </thead><tbody id="trendCaptureLadder"></tbody></table></div></details>
- <details><summary>40-session evidence and data coverage</summary><p id="trendCaptureCoverage">Only recorded option prices qualify; no estimated premium fallback.</p><table><thead><tr><th>Segment</th><th>Candidates</th><th>Priced</th><th>Net ₹/trade</th><th>WR</th><th>Break-even WR</th></tr></thead><tbody id="trendCaptureEvidence"></tbody></table><p>Snapshot LTP scenarios are not fills; missing spread/slippage and sparse prices prevent an execution-edge claim.</p></details>
-</section>
-
-
             <!-- 📋 POST-MARKET DAILY EOD SUMMARY CARD (TAB 1) -->
             <div id="tab1EodSummaryCard" class="card" style="border: 1px solid #38bdf8; background: linear-gradient(180deg, rgba(56, 189, 248, 0.08) 0%, rgba(15, 23, 42, 0.95) 100%); margin-bottom: 16px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:8px;">
@@ -744,14 +689,6 @@ refresh();setInterval(refresh,10000);
             </div>
 
             <!-- ⚡ DHAN API CONNECTION — LIVE DATA + ORDER PLACEMENT CARD ⚡ -->
-<section class="card" id="ictSmcSignalsCard" style="margin:12px 0;padding:16px;border:1px solid #334155">
-<h3>ICT SMC Desk Signals <small style="color:#fbbf24">ADVISORY</small></h3>
-<p>Read-only context from the 8600 desk. Existing strategy rules remain unchanged.</p>
-<label><input type="checkbox" id="ictAlgoUse" disabled> Use ICT SMC Desk Signals for algo trades</label>
-<small>OFF — awaiting validation</small>
-<div id="ictSignalStatus">Waiting for source evaluation…</div>
-<div style="overflow:auto"><table style="width:100%"><thead><tr><th>Group</th><th>Verdict</th><th>Direction</th><th>Significant</th><th>Source age</th></tr></thead><tbody id="ictSignalRows"></tbody></table></div>
-</section>
 <details id="dhanApiConfigCard" class="card" style="margin:12px 0;border:1px solid #334155" ontoggle="rememberDhanPanel()">
 <summary style="cursor:pointer;padding:12px;list-style:none"><b>🔒 Dhan API — Live Data + Order Placement</b> | <span id="dhanShutterConnected">Connected = checking</span> | Token Valid Till: <span id="dhanShutterExpiry">—</span> | <span id="dhanShutterLive">Live Data: —</span> | <span id="dhanShutterOrders">Order Placement: DISABLED (PAPER)</span> | <span id="dhanShutterHint">⬇ Expand</span></summary>
 <div style="padding:14px">
@@ -990,18 +927,64 @@ refresh();setInterval(refresh,10000);
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:12px;">
                         <span style="font-size:12px; font-weight:700; color:#38bdf8;">v1.7 Quant Edge Gates:</span>
                         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-main); cursor:pointer;">
-                            <input type="checkbox" id="chkGoldilocksSeparation" checked onchange="toggleProvenEdge('goldilocks_separation_enabled', this.checked)">
+                            <input type="checkbox" id="chkGoldilocksSeparation" checked onchange="toggleProvenEdge('goldilocks_separation_enabled', this.checked);updateGateScopeBadges();">
                             <span><b>Goldilocks Separation Band</b> (0.13–0.26 ATR)</span>
                         </label>
                         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-main); cursor:pointer;">
-                            <input type="checkbox" id="chkFuturesVolumeSurge" onchange="toggleProvenEdge('futures_volume_surge_enabled', this.checked)">
+                            <input type="checkbox" id="chkFuturesVolumeSurge" onchange="toggleProvenEdge('futures_volume_surge_enabled', this.checked);updateGateScopeBadges();">
                             <span><b>Futures Volume Surge Gate</b> (VSR &ge; 1.15)</span>
                         </label>
+                        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-main); cursor:pointer;">
+                            <span id="pillPartySwitchScope" class="gate-scope" title="Blocks paper + LIVE scanner signals when ON">💵📄</span>
+                            <input type="checkbox" id="chkPartySwitch" checked onchange="toggleScannerGate('party_switch_enabled', this.checked);updateGateScopeBadges();">
+                            <span><b>Party Switch</b> (block CE in bearish party / PE in bullish party)</span>
+                        </label>
+                        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#ec4899; cursor:pointer; border:1px solid rgba(236,72,153,0.35); padding:4px 8px; border-radius:6px;">
+                            <input type="checkbox" id="chkStockMojoMaster" checked onchange="toggleStockMojoMaster(this.checked)">
+                            <span><b>StockMojo PE-CE download</b> (master ON/OFF — no fetch when OFF)</span>
+                        </label>
+                        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#f472b6; cursor:pointer;">
+                            <input type="checkbox" id="chkWriterFlowGate" onchange="saveWriterFlowGate({enabled: this.checked});updateGateScopeBadges();">
+                            <span><b>Writer telemetry gates</b> (surge alerts/blocks)</span>
+                        </label>
+                    </div>
+                    <div id="stockMojoStatusBanner" style="width:100%; margin-top:8px; padding:8px 12px; border-radius:8px; font-size:11.5px; font-family:var(--font-mono); border:1px solid #475569; background:rgba(15,23,42,0.85); color:#94a3b8;">
+                        <div style="display:flex; flex-wrap:wrap; gap:12px 20px; align-items:center;">
+                            <span id="smStatusSummary">StockMojo: checking…</span>
+                            <span id="smCredLed">🔑 Credentials: —</span>
+                            <span id="smAuthLed">🔐 Auth: —</span>
+                            <span id="smDlLed">⬇ Download: —</span>
+                            <span id="smTelLed">📶 Telemetry: —</span>
+                        </div>
+                        <div id="smStatusDetail" style="margin-top:4px; color:#64748b; font-size:11px;"></div>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:8px; width:100%;">
+                        <span style="font-size:11px; color:#94a3b8;">OI entity:</span>
+                        <label style="font-size:11px;"><input type="radio" name="writerEntity" value="change_oi" onchange="saveWriterFlowGate({entity: this.value})" checked> Change in OI</label>
+                        <label style="font-size:11px;"><input type="radio" name="writerEntity" value="total_oi" onchange="saveWriterFlowGate({entity: this.value})"> Total OI</label>
+                        <label style="font-size:11px; font-weight:700; color:#f9a8d4;"><input type="radio" name="writerEntity" value="both" onchange="saveWriterFlowGate({entity: this.value})"> Both (change + total)</label>
+                        <span style="font-size:11px; color:#94a3b8; margin-left:8px;">Paper:</span>
+                        <select id="selPaperPutMode" style="font-size:11px;" onchange="saveWriterFlowGate({paper_put_surge_mode: this.value})"><option value="off">Put surge: Off</option><option value="alert" selected>Alert</option><option value="block">Block</option></select>
+                        <select id="selPaperCallMode" style="font-size:11px;" onchange="saveWriterFlowGate({paper_call_surge_mode: this.value})"><option value="off">Call surge: Off</option><option value="alert" selected>Alert</option><option value="block">Block</option></select>
+                        <span style="font-size:11px; color:#94a3b8;">Live:</span>
+                        <select id="selLivePutMode" style="font-size:11px;" onchange="saveWriterFlowGate({live_put_surge_mode: this.value})"><option value="off">Put surge: Off</option><option value="alert" selected>Alert</option><option value="block">Block</option></select>
+                        <select id="selLiveCallMode" style="font-size:11px;" onchange="saveWriterFlowGate({live_call_surge_mode: this.value});updateGateScopeBadges();"><option value="off">Call surge: Off</option><option value="alert" selected>Alert</option><option value="block">Block</option></select>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:6px; width:100%; font-size:11px;">
+                        <span style="color:#94a3b8;">5-Factor block:</span>
+                        <span class="gate-scope" title="📄 paper only · 💵 live when armed · 👁 display only">📄💵👁</span>
+                        <label><input type="radio" name="ffGateMode" value="off" checked onchange="saveFiveFactorGate()"> Off</label>
+                        <label><input type="radio" name="ffGateMode" value="paper" onchange="saveFiveFactorGate()"> Paper</label>
+                        <label><input type="radio" name="ffGateMode" value="live" onchange="saveFiveFactorGate()"> Live</label>
+                        <label><input type="radio" name="ffGateMode" value="both" onchange="saveFiveFactorGate()"> Both</label>
+                        <label>Min score <select id="selFfMinScore" onchange="saveFiveFactorGate()"><option value="0">0</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option></select>/5</label>
                     </div>
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-                        <span id="pillGoldilocksSeparation" style="background:rgba(16, 185, 129, 0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">📐 Goldilocks ATR: -- ATR [WAITING]</span>
-                        <span id="pillFuturesVolumeSurge" style="background:rgba(56, 189, 248, 0.15); border:1px solid #38bdf8; color:#38bdf8; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">📊 Futures Vol Surge (VSR): -- [WAITING]</span>
-                        <span id="pillFiveFactorConfluence" style="color:#38bdf8;padding:3px 10px;border:1px solid #334155;border-radius:14px;" title="Informational agreement count; not execution authorization">🛡️ 5-Factor Confluence: — / 5 [WAITING]</span>
+                        <span id="pillGoldilocksSeparation" data-gate-scope="view" style="background:rgba(16, 185, 129, 0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;"><span class="gate-scope">👁</span>📐 Goldilocks ATR: -- ATR [WAITING]</span>
+                        <span id="pillFuturesVolumeSurge" data-gate-scope="view" style="background:rgba(56, 189, 248, 0.15); border:1px solid #38bdf8; color:#38bdf8; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;"><span class="gate-scope">👁</span>📊 Futures Vol Surge (VSR): -- [WAITING]</span>
+                        <span id="pillStockMojoLive" data-gate-scope="view" style="background:rgba(244, 114, 182, 0.15); border:1px solid #f472b6; color:#f9a8d4; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;" title="StockMojo JSON poll every ~2–3 min when credentials configured"><span class="gate-scope">👁</span>📡 StockMojo PE-CE: [WAITING]</span>
+                        <span id="pillWriterSurge" data-gate-scope="view" style="background:rgba(168, 85, 247, 0.15); border:1px solid #a855f7; color:#d8b4fe; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;"><span class="gate-scope">👁</span>✍️ Writer surge: —</span>
+                        <span id="pillFiveFactorConfluence" data-gate-scope="view" style="color:#38bdf8;padding:3px 10px;border:1px solid #334155;border-radius:14px;" title="Informational agreement count; not execution authorization"><span class="gate-scope">👁</span>🛡️ 5-Factor Confluence: — / 5 [WAITING]</span>
                     </div>
                 </div>
 
@@ -1013,7 +996,7 @@ refresh();setInterval(refresh,10000);
                         <button type="button" class="secondary-btn" style="padding:2px 8px; font-size:11px;" onclick="scrollToEmaProximityTable()">🎯 View Matrix Table</button>
                     </div>
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-                        <span id="pillEmaProximityRadar" style="background:rgba(245, 158, 11, 0.15); border:1px solid #f59e0b; color:#fbbf24; padding:3px 12px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">🎯 4/8 EMA Radar: -- [WAITING]</span>
+                        <span id="pillEmaProximityRadar" data-gate-scope="view" style="background:rgba(245, 158, 11, 0.15); border:1px solid #f59e0b; color:#fbbf24; padding:3px 12px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;"><span class="gate-scope">👁</span>🎯 4/8 EMA Radar: -- [WAITING]</span>
                     </div>
                 </div>
 
@@ -1378,8 +1361,9 @@ refresh();setInterval(refresh,10000);
                     <div>Avg 15m MFE: <b id="kpiEmaAvgMfe" style="color:#6ee7b7;">+-- pts</b></div>
                 </div>
 
-<section id="recordingHistoryV193" style="padding:12px;border:1px solid #334155;margin:12px 0;border-radius:8px">
- <h4>Permanent EMA observations &amp; radar outcomes</h4>
+<details id="recordingHistoryV193" class="card shutter-panel" style="padding:12px;border:1px solid #334155;margin:12px 0;border-radius:8px">
+ <summary style="cursor:pointer;font-weight:700;font-size:13px;color:#94a3b8;">📁 Permanent EMA observations &amp; radar outcomes (click to expand)</summary>
+ <div style="margin-top:10px;">
  <p id="recordingSaved">Counting saved rows… recording runs in the background every candle.</p>
  <label>From <input id="recordingFrom" type="date"></label> <label>To <input id="recordingTo" type="date"></label>
  <button type="button" onclick="recordingDownload('ema','csv',true)">⬇ Download CSV — Today</button>
@@ -1392,8 +1376,9 @@ refresh();setInterval(refresh,10000);
  <h4>Radar tier tracker — observational only</h4>
  <div style="overflow:auto"><table><thead><tr><th>Tier</th><th>n</th><th>Avg max pts</th><th>Avg risk</th><th>Max/risk</th><th>T15 before SL</th><th>SL first</th><th>Ambiguous</th><th>Running / expired</th></tr></thead><tbody id="recordingTierSummary"></tbody></table></div>
  <div style="max-height:260px;overflow:auto"><table><thead><tr><th>Time / tier / signal</th><th>Side</th><th>Signal / spot at signal</th><th>Micro SL / risk</th><th>Now / points</th><th>Max points / time</th><th>Max adverse</th><th>T15 before SL</th><th>Outcome / final</th><th>Premium signal / now / max points</th></tr></thead><tbody id="recordingRadarRows"></tbody></table></div>
- <p id="recordingRadarCaption"></p><small>Missing spot bars also make sequencing unobservable (spot_gap in export); unresolved targets at expiry are NO only with a complete observed horizon. Pending rows are not counted as stop-first.</small>
-</section>
+ <p id="recordingRadarCaption"></p> <small>Missing spot bars also make sequencing unobservable (spot_gap in export); unresolved targets at expiry are NO only with a complete observed horizon. Pending rows are not counted as stop-first.</small>
+</div>
+</details>
                 <!-- Table Container -->
                 <div id="emaProximityTableContainer" style="overflow-x:auto; max-height:550px; overflow-y:auto; border:1px solid rgba(255,255,255,0.1); border-radius:6px;">
                     <table style="width:100%; border-collapse:collapse; font-size:11.5px; font-family:var(--font-mono);">
@@ -1692,11 +1677,6 @@ refresh();setInterval(refresh,10000);
         <!-- TAB 4: HISTORICAL DATE REPLAY (BACKTEST MODE)                       -->
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <div id="tabReplayExplorer" class="tab-content">
-            <section class="card" style="margin-bottom:16px;padding:16px">
-                <h3>ICT SMC Desk Signals — provisional research</h3>
-                <p>19 / 40 sessions with chain data. Premium exits are estimated scenarios, not executions. No corrected direction-control result passed.</p>
-                <a href="/api/ict-smc-signals/research" target="_blank" rel="noopener">Open coverage, excursions, direction controls and concentration report</a>
-            </section>
             <div class="card">
                 <h2>
                     <span>📅 Previous-Day / Recorded Date Replay Engine</span>
@@ -2318,6 +2298,12 @@ refresh();setInterval(refresh,10000);
             setInterval(updateClock, 1000);
             loadDhanConfig();
             initProvenEdgesUI();
+            initWriterFlowUI();
+            initStockMojoMasterUI();
+            initScannerGatesUI();
+            initFiveFactorGateUI();
+            updateGateScopeBadges();
+            initEmaRecordingShutter();
             fetchDhanOIDual();
             fetchDhanOILiveOI();
             fetchSynergyConfig();
@@ -2364,6 +2350,108 @@ refresh();setInterval(refresh,10000);
             }
         }
 
+        function gateScopeIcon(scope) {
+            if (scope === "paper") return "📄";
+            if (scope === "live") return "💵";
+            if (scope === "both") return "💵📄";
+            return "👁";
+        }
+        function gateScopeTitle(scope) {
+            if (scope === "paper") return "Blocks paper scanner signals";
+            if (scope === "live") return "Blocks LIVE scanner signals";
+            if (scope === "both") return "Blocks paper + LIVE scanner signals";
+            return "Display / alert only — does not block orders";
+        }
+        function setPillGateScope(id, scope) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.dataset.gateScope = scope;
+            const tag = el.querySelector(".gate-scope");
+            if (tag) {
+                tag.textContent = gateScopeIcon(scope);
+                tag.title = gateScopeTitle(scope);
+            }
+        }
+        function setPillLabel(id, label) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const scope = el.dataset.gateScope || "view";
+            let tag = el.querySelector(".gate-scope");
+            if (el.hasAttribute("data-gate-scope")) {
+                if (!tag) {
+                    tag = document.createElement("span");
+                    tag.className = "gate-scope";
+                    el.prepend(tag);
+                }
+                tag.textContent = gateScopeIcon(scope);
+                tag.title = gateScopeTitle(scope);
+                const text = document.createTextNode(label);
+                el.replaceChildren(tag, text);
+            } else {
+                el.textContent = label;
+            }
+        }
+        function updateGateScopeBadges() {
+            const g = !!document.getElementById("chkGoldilocksSeparation")?.checked;
+            const f = !!document.getElementById("chkFuturesVolumeSurge")?.checked;
+            const ps = !!document.getElementById("chkPartySwitch")?.checked;
+            const pps = document.getElementById("pillPartySwitchScope");
+            if (pps) {
+                pps.textContent = gateScopeIcon(ps ? "both" : "view");
+                pps.title = gateScopeTitle(ps ? "both" : "view");
+            }
+            setPillGateScope("pillGoldilocksSeparation", g ? "both" : "view");
+            setPillGateScope("pillFuturesVolumeSurge", f ? "both" : "view");
+            const wm = !!document.getElementById("chkWriterFlowGate")?.checked;
+            const pp = document.getElementById("selPaperPutMode")?.value;
+            const pc = document.getElementById("selPaperCallMode")?.value;
+            const lp = document.getElementById("selLivePutMode")?.value;
+            const lc = document.getElementById("selLiveCallMode")?.value;
+            let wScope = "view";
+            if (wm) {
+                const pb = pp === "block" || pc === "block";
+                const lb = lp === "block" || lc === "block";
+                wScope = pb && lb ? "both" : pb ? "paper" : lb ? "live" : "view";
+            }
+            setPillGateScope("pillWriterSurge", wScope);
+            const smOn = !!document.getElementById("chkStockMojoMaster")?.checked;
+            setPillGateScope("pillStockMojoLive", smOn && wm && wScope !== "view" ? wScope : "view");
+            const mode = document.querySelector('input[name="ffGateMode"]:checked')?.value || "off";
+            const min = parseInt(document.getElementById("selFfMinScore")?.value || "0", 10);
+            setPillGateScope("pillFiveFactorConfluence", mode !== "off" && min > 0 ? mode : "view");
+            setPillGateScope("pillEmaProximityRadar", "view");
+        }
+        function initEmaRecordingShutter() {
+            const rec = document.getElementById("recordingHistoryV193");
+            if (!rec) return;
+            try { rec.open = localStorage.getItem("emaRecordingOpen") === "true"; } catch (e) { rec.open = false; }
+            rec.addEventListener("toggle", () => { try { localStorage.setItem("emaRecordingOpen", String(rec.open)); } catch (e) {} });
+        }
+        async function initFiveFactorGateUI() {
+            try {
+                const res = await fetch("/api/five_factor_confluence/config");
+                if (!res.ok) return;
+                const body = await res.json();
+                const cfg = body.five_factor_confluence || body;
+                const mode = cfg.scanner_gate_mode || "off";
+                document.querySelectorAll('input[name="ffGateMode"]').forEach(r => { r.checked = r.value === mode; });
+                const sel = document.getElementById("selFfMinScore");
+                if (sel && cfg.scanner_min_score !== undefined) sel.value = String(cfg.scanner_min_score);
+                updateGateScopeBadges();
+            } catch (e) { console.debug("five factor init", e); }
+        }
+        async function saveFiveFactorGate() {
+            const mode = document.querySelector('input[name="ffGateMode"]:checked')?.value || "off";
+            const min = parseInt(document.getElementById("selFfMinScore")?.value || "0", 10);
+            try {
+                await fetch("/api/five_factor_confluence/config", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ scanner_gate_mode: mode, scanner_min_score: min }),
+                });
+                updateGateScopeBadges();
+            } catch (e) { console.error("five factor save", e); }
+        }
         async function toggleProvenEdge(key, value) {
             try {
                 const payload = {};
@@ -2376,6 +2464,7 @@ refresh();setInterval(refresh,10000);
                 if (res.ok) {
                     const data = await res.json();
                     console.log("Updated proven edges config:", data);
+                    updateGateScopeBadges();
                 }
             } catch (e) {
                 console.error("Failed to update proven edge config:", e);
@@ -2395,10 +2484,160 @@ refresh();setInterval(refresh,10000);
                     if (chkFut && cfg.futures_volume_surge_enabled !== undefined) {
                         chkFut.checked = cfg.futures_volume_surge_enabled;
                     }
+                    updateGateScopeBadges();
                 }
             } catch (e) {
                 console.debug("Failed to init proven edges UI:", e);
             }
+        }
+
+        async function initScannerGatesUI() {
+            try {
+                const res = await fetch("/api/scanner/gates");
+                if (!res.ok) return;
+                const cfg = await res.json();
+                const chk = document.getElementById("chkPartySwitch");
+                if (chk && cfg.party_switch_enabled !== undefined) chk.checked = !!cfg.party_switch_enabled;
+                updateGateScopeBadges();
+            } catch (e) { console.debug("scanner gates init", e); }
+        }
+
+        async function toggleScannerGate(key, value) {
+            try {
+                const payload = {}; payload[key] = value;
+                await fetch("/api/scanner/gates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+                updateGateScopeBadges();
+            } catch (e) { console.error("scanner gate update", e); }
+        }
+
+        async function initStockMojoMasterUI() {
+            try {
+                const res = await fetch("/api/stockmojo_live/config");
+                if (!res.ok) return;
+                const body = await res.json();
+                const cfg = body.stockmojo_live || body;
+                const chk = document.getElementById("chkStockMojoMaster");
+                if (chk && cfg.enabled !== undefined) chk.checked = !!cfg.enabled;
+            } catch (e) { console.debug("stockmojo master init", e); }
+        }
+
+        async function toggleStockMojoMaster(on) {
+            try {
+                const res = await fetch("/api/stockmojo_live/config", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ enabled: !!on }),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    renderStockMojoStatusBanner(data.operational_status || (data.stockmojo_live && data));
+                }
+            } catch (e) { console.error("stockmojo master toggle", e); }
+        }
+
+        function renderStockMojoStatusBanner(st) {
+            if (!st) return;
+            const banner = document.getElementById("stockMojoStatusBanner");
+            const sum = document.getElementById("smStatusSummary");
+            const det = document.getElementById("smStatusDetail");
+            const cred = document.getElementById("smCredLed");
+            const auth = document.getElementById("smAuthLed");
+            const dl = document.getElementById("smDlLed");
+            const tel = document.getElementById("smTelLed");
+            const pill = document.getElementById("pillStockMojoLive");
+            const ok = (t, v, good) => `${t} ${v}`;
+            const led = (on) => on ? "🟢" : "🔴";
+            if (sum) sum.textContent = `StockMojo: ${st.summary || "—"}`;
+            if (det) det.textContent = st.detail || "";
+            if (cred) cred.textContent = `${led(st.credentials_entered)} Credentials`;
+            if (auth) auth.textContent = `${led(st.authenticated)} Auth (${st.auth_state || "—"})`;
+            if (dl) dl.textContent = `${led(st.downloading_active)} Download (${st.download_state || "—"})`;
+            if (tel) tel.textContent = `${led(st.telemetry_active)} Telemetry (${st.telemetry_state || "—"})`;
+            if (banner) {
+                const s = st.summary || "";
+                if (s === "LIVE_OK") {
+                    banner.style.borderColor = "#10b981";
+                    banner.style.color = "#6ee7b7";
+                } else if (s === "OFF") {
+                    banner.style.borderColor = "#64748b";
+                    banner.style.color = "#94a3b8";
+                } else if (s === "AUTH_DENIED" || s === "SETUP_REQUIRED") {
+                    banner.style.borderColor = "#ef4444";
+                    banner.style.color = "#fca5a5";
+                } else {
+                    banner.style.borderColor = "#f59e0b";
+                    banner.style.color = "#fcd34d";
+                }
+            }
+            if (pill && !st.master_enabled) {
+                setPillLabel("pillStockMojoLive", "📡 StockMojo PE-CE: MASTER OFF (no download)");
+                pill.style.borderColor = "#64748b";
+                updateGateScopeBadges();
+            }
+        }
+
+        async function initWriterFlowUI() {
+            try {
+                const res = await fetch("/api/writer_flow_gate/config");
+                if (!res.ok) return;
+                const body = await res.json();
+                const cfg = body.writer_flow_gate || body;
+                const chk = document.getElementById("chkWriterFlowGate");
+                if (chk) chk.checked = !!cfg.enabled;
+                document.querySelectorAll('input[name="writerEntity"]').forEach(el => {
+                    el.checked = (el.value === (cfg.entity || "change_oi"));
+                });
+                const map = { selPaperPutMode: "paper_put_surge_mode", selPaperCallMode: "paper_call_surge_mode", selLivePutMode: "live_put_surge_mode", selLiveCallMode: "live_call_surge_mode" };
+                for (const [id, key] of Object.entries(map)) {
+                    const el = document.getElementById(id);
+                    if (el && cfg[key]) el.value = cfg[key];
+                }
+            } catch (e) { console.debug("writer flow init", e); }
+        }
+
+        async function saveWriterFlowGate(patch) {
+            try {
+                await fetch("/api/writer_flow_gate/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch || {}) });
+                updateGateScopeBadges();
+            } catch (e) { console.error("writer flow save", e); }
+        }
+
+        function renderWriterFlowTelemetry(sm, wf) {
+            const pillSm = document.getElementById("pillStockMojoLive");
+            const pillW = document.getElementById("pillWriterSurge");
+            const src = (sm && sm.available) ? "StockMojo" : (wf && wf.source) || "Dhan";
+            if (sm && sm.operational_status) renderStockMojoStatusBanner(sm.operational_status);
+            if (pillSm) {
+                const st = sm && sm.operational_status;
+                if (st && !st.master_enabled) {
+                    setPillLabel("pillStockMojoLive", "📡 StockMojo PE-CE: MASTER OFF");
+                } else if (st && st.summary === "LIVE_OK" && sm.available) {
+                    const ent = (wf && wf.entity_mode) || "both";
+                    setPillLabel("pillStockMojoLive", `📡 SM LIVE [${ent}] ${sm.time_ist || ""} | chg ${sm.pe_ce_change_3m_lakhs ?? "—"}L | tot ${sm.pe_ce_oi_total_lakhs ?? "—"}L`);
+                    pillSm.style.borderColor = "#10b981";
+                    pillSm.style.color = "#6ee7b7";
+                } else if (st) {
+                    setPillLabel("pillStockMojoLive", `📡 StockMojo: ${st.summary} — ${st.detail || ""}`.slice(0, 120));
+                    pillSm.style.borderColor = st.summary === "LIVE_OK" ? "#10b981" : "#f59e0b";
+                } else if (sm && !sm.enabled) {
+                    setPillLabel("pillStockMojoLive", "📡 StockMojo PE-CE: OFF");
+                } else {
+                    setPillLabel("pillStockMojoLive", "📡 StockMojo PE-CE: waiting status");
+                }
+            }
+            if (pillW && wf) {
+                const parts = [];
+                if (wf.significant_put_surge) parts.push("PUT SURGE");
+                if (wf.significant_call_surge) parts.push("CALL SURGE");
+                if (wf.writer_divergence) parts.push("DIVERGENCE " + (wf.atm_reversal_hint || ""));
+                setPillLabel("pillWriterSurge", parts.length ? `✍️ Writer (${src}): ` + parts.join(" · ") : `✍️ Writer (${src}): calm`);
+                if (wf.writer_divergence) {
+                    pillW.style.boxShadow = "0 0 8px rgba(168, 85, 247, 0.5)";
+                } else {
+                    pillW.style.boxShadow = "none";
+                }
+            }
+            updateGateScopeBadges();
         }
 
         // ── v1.8 4/8-EMA MULTI-TIMEFRAME PROXIMITY RADAR & MATRIX ──────────────
@@ -3457,7 +3696,6 @@ refresh();setInterval(refresh,10000);
                     }
                 }
 
-                if(data.trend_capture_live) renderTrendCapture192(data.trend_capture_live);
                 // 4. Priority Matrix (4 contracts)
                 renderStrikeMatrix(data.priority_matrix || [], data.matrix_reason || null);
 
@@ -3471,7 +3709,9 @@ refresh();setInterval(refresh,10000);
                     const p5 = document.getElementById("pillGoldilocksSeparation_tab5");
                     [p1, p5].forEach(el => {
                         if (el) {
-                            el.textContent = pillHtml; el.title = gold.badge || gold.badge_text || "";
+                            if (el === p1) setPillLabel("pillGoldilocksSeparation", pillHtml);
+                            else el.textContent = pillHtml;
+                            el.title = gold.badge || gold.badge_text || "";
                             const reg = String(gold.regime || "").toUpperCase();
                             if (reg.includes("GOLDILOCKS")) {
                                 el.style.background = "rgba(16, 185, 129, 0.15)";
@@ -3503,7 +3743,9 @@ refresh();setInterval(refresh,10000);
                     const p5 = document.getElementById("pillFuturesVolumeSurge_tab5");
                     [p1, p5].forEach(el => {
                         if (el) {
-                            el.textContent = pillHtml; el.title = vsr.tooltip || "";
+                            if (el === p1) setPillLabel("pillFuturesVolumeSurge", pillHtml);
+                            else el.textContent = pillHtml;
+                            el.title = vsr.tooltip || "";
                             if (vsr.is_institutional_surge) {
                                 el.style.background = "rgba(245, 158, 11, 0.2)";
                                 el.style.borderColor = "#f59e0b";
@@ -3524,13 +3766,14 @@ refresh();setInterval(refresh,10000);
                 }
 
                 renderDhanOI8510(data.dhan_oi, data.five_factor_confluence);
+                renderWriterFlowTelemetry(data.stockmojo_live, data.writer_flow_gate);
                 // 4C. v1.8 4/8-EMA Proximity Radar Pill & Audio Alarm
                 if (data.ema_proximity_latest) {
                     const radar = data.ema_proximity_latest;
                     const tier = radar.tier || radar.proximity_state || 'ZONE_FAR';
                     const pRadar = document.getElementById("pillEmaProximityRadar");
                     if (pRadar) {
-                        pRadar.innerHTML = radar.pill_text || `🎯 4/8 EMA Radar: [${tier}]`;
+                        setPillLabel("pillEmaProximityRadar", radar.pill_text || `🎯 4/8 EMA Radar: [${tier}]`);
                         if (tier === "TIER_3_CONFIRMATION_TRIGGER") {
                             pRadar.style.background = "rgba(16, 185, 129, 0.25)";
                             pRadar.style.borderColor = "#10b981";
@@ -5010,7 +5253,7 @@ refresh();setInterval(refresh,10000);
         let dualDhanOIData = { total_oi_rows: [], oi_change_day_rows: [], combined_rows: [], synergy: {} };
         let liveDhanOIRows = [];
         let currentPeCeView = 'combined';
-        let smPingIntervalMs = 60000;
+        let smPingIntervalMs = 120000;
         let smPollTimer = null;
 
         function initSmPollingTimer() {
@@ -5764,11 +6007,24 @@ refresh();setInterval(refresh,10000);
                 const fields={tab1TotalOiSummaryText:oi.ce_pe_oi_diff==null?'—':value(-oi.ce_pe_oi_diff/1e7)+' Cr PE−CE',tab1DayOiSummaryText:oi.oi_change_pe==null?'—':value((oi.oi_change_pe-oi.oi_change_ce)/1e5)+' L PE−CE',tab1SynergyStatusBadge:oi.bias||'UNKNOWN',tab1LastSyncText:oi.timestamp||'No observation',tab1MultiStrikeText:'Dhan OI · '+oi.status,tab1MultiStrikeBiasBadge:oi.bias||'UNKNOWN',tab1AllowedNowText:'See strategy and risk gates',tab1BlockedNowText:oi.status==='OK'?'No OI-only trade authorization':'OI pillar unavailable',tab1WriterDomBadge:oi.bias||'UNKNOWN'};
                 for(const [id,text] of Object.entries(fields)){const el=document.getElementById(id);if(el)el.textContent=text;}
             }
-            if(confluence){const pill=document.getElementById('pillFiveFactorConfluence');if(pill){const detail=Object.values(confluence.pillars||{}).map(p=>p.label+' '+(p.passed?'✅':'⏳')).join(' | ');pill.textContent='🛡️ 5-Factor Confluence: '+confluence.score+'/5 ['+confluence.grade+'] ('+detail+')';pill.title=confluence.note+' '+(confluence.opportunity_basis||'');}}
+            if(confluence){
+                const pill=document.getElementById('pillFiveFactorConfluence');
+                if(pill){
+                    const icon=p=>p.passed?'✅':((p.reason||'').startsWith('WAIT')?'⏳':'❌');
+                    const detail=Object.values(confluence.pillars||{}).map(p=>p.label+' '+icon(p)).join(' | ');
+                    const gate=confluence.scanner_gate_active?' [block '+ (confluence.scanner_gate_mode||'both')+' ≥'+confluence.scanner_min_score+']':' [advisory]';
+                    const live=confluence.enabled===false?' (OFF)':(confluence.context_fresh?'':' (last 15m)');
+                    setPillLabel('pillFiveFactorConfluence', '🛡️ 5-Factor Confluence: '+confluence.score+'/5 ['+confluence.grade+']'+live+gate+' ('+detail+')');
+                    updateGateScopeBadges();
+                    const tips=Object.values(confluence.pillars||{}).map(p=>(p.label+': '+(p.reason||''))).join('\n');
+                    pill.title=(confluence.note||'')+'\n'+tips+'\n'+(confluence.opportunity_basis||'');
+                }
+            }
         }
 
 
         function renderTrendCapture192(d) {
+            if (!document.getElementById("trendCaptureStatus")) return;
             const time=t=>new Date(t*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:false});
             const n=v=>Number.isFinite(v)?v.toFixed(2):'—';
             const o=d.opening_range||{};const r=d.readiness||{};
@@ -5785,7 +6041,6 @@ refresh();setInterval(refresh,10000);
                 for(const r of d.stage2b_performance||[]){const tr=document.createElement('tr');for(const v of [r.segment,r.candidates,r.priced_trades,fmt(r.net_per_trade),fmt(r.win_rate==null?null:r.win_rate*100),fmt(r.break_even_wr==null?null:r.break_even_wr*100)]){const td=document.createElement('td');td.textContent=v;tr.append(td);}body.append(tr);}
             }catch(e){console.debug('Trend capture evidence unavailable');}
         }
-        loadTrendCaptureEvidence192();
 
 // v1.9.3: cached read-only observations; deliberately outside execution handlers.
 const recText=(id,value)=>{const e=document.getElementById(id);if(e)e.textContent=value;};
@@ -6040,14 +6295,6 @@ function rememberDhanPanel(){const panel=document.getElementById('dhanApiConfigC
 function updateDhanShutter(data){document.getElementById('dhanShutterConnected').textContent='Connected = '+!!(data.connected??data.dhan_connected);document.getElementById('dhanShutterExpiry').textContent=data.token_valid_till||'Not Connected';document.getElementById('dhanShutterLive').textContent='Live Data: '+((data.connected??data.dhan_connected)?'ON':'OFF');document.getElementById('dhanShutterOrders').textContent='Order Placement: '+(currentExecutionMode==='BOTH'?'REAL opt-in + PAPER':'DISABLED (PAPER mode)');}
 document.addEventListener('DOMContentLoaded',()=>{const panel=document.getElementById('dhanApiConfigCard');const tabs=document.querySelector('.workspace-tabs')||document.getElementById('tabTerminal');if(tabs)tabs.parentNode.insertBefore(panel,tabs);let collapsed=true;try{collapsed=localStorage.getItem('dhanPanelCollapsed')!=='false';}catch(e){console.warn('Panel preference unavailable');}setDhanPanelCollapsed(collapsed);document.getElementById('dhanAccessTokenInput').value='';});
 
-async function pollIctDeskSignals(){
- try{const res=await fetch('/api/ict-smc-signals');if(!res.ok)throw Error('Source unavailable');const d=await res.json();
- document.getElementById('ictSignalStatus').textContent=(d.status||'UNAVAILABLE')+' · '+(d.evaluated_at||'not evaluated')+(d.log_error?' · Recording error':'');
- const body=document.getElementById('ictSignalRows');body.replaceChildren();
- for(const r of d.rows||[]){const tr=document.createElement('tr');tr.title=r.reason||'';for(const value of [r.signal_group,r.verdict,r.direction,r.significant?'YES':'—',r.age_seconds==null?'—':Math.round(r.age_seconds)+'s']){const td=document.createElement('td');td.textContent=value;td.style.padding='6px';tr.appendChild(td);}body.appendChild(tr);}
- }catch(e){document.getElementById('ictSignalStatus').textContent='UNAVAILABLE — source not reachable';}
-}
-document.addEventListener('DOMContentLoaded',()=>{pollIctDeskSignals();setInterval(pollIctDeskSignals,20000);});
 </script>
 
     <!-- Module 4: Order Placement Confirmation Toast -->
