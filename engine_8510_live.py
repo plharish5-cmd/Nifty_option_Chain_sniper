@@ -660,13 +660,16 @@ async def api_strike_matrix_selection(req: Request):
 @app.get("/api/backtest/date_range")
 @app.post("/api/backtest/date_range")
 async def api_backtest_date_range(req: Request):
-    """Runs Super Trail vs Fixed 40/40 backtest over historical date range."""
+    """Runs Super Trail vs Fixed 40/40 backtest over historical date range with 4-Strategy & Data-Type filters."""
     from_date = "2026-06-01"
     to_date = "2026-11-05"
     custom_cfg = None
     enforce_ma = False
     bias = None
     include_today_paper = True
+    strategy_filter = "ALL"
+    data_type_filter = "ALL"
+    use_previous_scanner = False
 
     if req.method == "POST":
         try:
@@ -676,6 +679,9 @@ async def api_backtest_date_range(req: Request):
             custom_cfg = body.get("super_trail_cfg") or body.get("custom_cfg")
             enforce_ma = bool(body.get("enforce_ma_stack", False))
             bias = body.get("directional_bias") or body.get("bias")
+            strategy_filter = str(body.get("strategy_filter", strategy_filter))
+            data_type_filter = str(body.get("data_type_filter", data_type_filter))
+            use_previous_scanner = bool(body.get("use_previous_scanner", False))
             if "include_today_paper" in body:
                 include_today_paper = bool(body.get("include_today_paper"))
         except Exception:
@@ -685,6 +691,9 @@ async def api_backtest_date_range(req: Request):
         to_date = str(req.query_params.get("to_date", to_date))
         enforce_ma = req.query_params.get("enforce_ma_stack") == "true"
         bias = req.query_params.get("directional_bias") or req.query_params.get("bias")
+        strategy_filter = str(req.query_params.get("strategy_filter", strategy_filter))
+        data_type_filter = str(req.query_params.get("data_type_filter", data_type_filter))
+        use_previous_scanner = req.query_params.get("use_previous_scanner") == "true"
         if "include_today_paper" in req.query_params:
             include_today_paper = req.query_params.get("include_today_paper") == "true"
 
@@ -692,11 +701,14 @@ async def api_backtest_date_range(req: Request):
         custom_cfg = custom_cfg or {}
         custom_cfg["enforce_ma_stack"] = True
     res = backend.run_date_range_backtest(
-        from_date=from_date, 
-        to_date=to_date, 
-        custom_cfg=custom_cfg, 
-        bias=bias, 
-        include_today_paper=include_today_paper
+        from_date=from_date,
+        to_date=to_date,
+        custom_cfg=custom_cfg,
+        bias=bias,
+        include_today_paper=include_today_paper,
+        strategy_filter=strategy_filter,
+        data_type_filter=data_type_filter,
+        use_previous_scanner=use_previous_scanner,
     )
     return JSONResponse(content=res)
 

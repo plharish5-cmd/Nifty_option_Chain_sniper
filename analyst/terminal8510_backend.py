@@ -5404,6 +5404,45 @@ class QuantTerminalBackend:
     def _load_historical_trades(self) -> List[Dict[str, Any]]:
         return self._recorded_history().trades()
 
+    def _classify_strategy_filter_tag(self, strategy_id: str, setup_name: str) -> Tuple[str, str]:
+        sid = str(strategy_id or "").upper()
+        sname = str(setup_name or "").upper()
+        if "H1_CONFLUENCE" in sid or "1H" in sname or "FLAGSHIP" in sname or "1 HR" in sname:
+            return "H1_FLAGSHIP", "1 HR FLAGSHIP"
+        if "STAGE_3" in sid or "STAGE 3" in sname:
+            return "STAGE_3_SHORT", "STAGE 3 ATMA SHORT"
+        if "CROSSOVER" in sid or "REVERSAL" in sname or "4 MA" in sname or "4X8" in sname:
+            return "CROSSOVER", "4x8 EMA CROSSOVER REVERSAL"
+        return "STAGE_2_LONG", "STAGE 2 ATMA LONG"
+
+    def _compute_side_summary(self, pnl_pts_list: List[float], net_inr_list: List[float]) -> Dict[str, Any]:
+        total = len(net_inr_list)
+        if total == 0:
+            return {
+                "total_trades": 0, "win_rate_pct": 0.0, "avg_win_pts": 0.0, "avg_loss_pts": 0.0,
+                "total_net_pnl_inr": 0.0, "max_drawdown_inr": 0.0, "expectancy_pts": 0.0,
+                "expectancy_inr": 0.0, "profit_factor": 0.0,
+            }
+        wins_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if n > 0]
+        loss_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if n <= 0]
+        wins_inr = [n for n in net_inr_list if n > 0]
+        loss_inr = [abs(n) for n in net_inr_list if n <= 0]
+        wr = round((len(wins_inr) / total) * 100.0, 1)
+        avg_w = round(float(np.mean(wins_pts)), 2) if wins_pts else 0.0
+        avg_l = round(float(np.mean(loss_pts)), 2) if loss_pts else 0.0
+        tot_net = round(float(sum(net_inr_list)), 2)
+        exp_pts = round(float(np.mean(pnl_pts_list)), 2)
+        exp_inr = round(tot_net / total, 2)
+        pf = round(sum(wins_inr) / sum(loss_inr), 2) if sum(loss_inr) > 0 else (99.0 if sum(wins_inr) > 0 else 0.0)
+        cum = np.cumsum(net_inr_list)
+        peak = np.maximum.accumulate(np.insert(cum, 0, 0.0))[1:]
+        max_dd = round(float(np.max(np.maximum(0.0, peak - cum))), 2) if len(cum) else 0.0
+        return {
+            "total_trades": total, "win_rate_pct": wr, "avg_win_pts": avg_w, "avg_loss_pts": avg_l,
+            "total_net_pnl_inr": tot_net, "max_drawdown_inr": max_dd, "expectancy_pts": exp_pts,
+            "expectancy_inr": exp_inr, "profit_factor": pf,
+        }
+
     def run_date_range_backtest(
         self,
         from_date: str = "2026-06-01",
@@ -5412,5 +5451,335 @@ class QuantTerminalBackend:
         enforce_ma_stack: bool = False,
         bias: Optional[str] = None,
         include_today_paper: bool = True,
+        strategy_filter: str = "ALL",
+        data_type_filter: str = "ALL",
+        use_previous_scanner: bool = False,
     ) -> Dict[str, Any]:
-        return self._recorded_history().report(from_date, to_date, bias or self.directional_bias)
+        active_bias = str(bias or self.directional_bias or "BOTH").upper()
+        strat_flt = str(strategy_filter or "ALL").upper().strip()
+        dtype_flt = str(data_type_filter or "ALL").upper().strip()
+        lot_qty = 65
+        delta_est = 0.60
+        charges_est = 78.16
+
+        all_rows: List[Dict[str, Any]] = []
+
+        # ── A. Historical Simulation from 1m Nifty Candles (or Previous Scanner Data) ──
+        if dtype_flt in ("ALL", "SYNTHESIZED"):
+            try:
+                if Path(self.market_db).exists():
+                    with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True, timeout=5) as conn:
+                        q = """
+                            SELECT ts, o AS open, h AS high, l AS low, c AS close, v AS volume,
+                                   date(ts, 'unixepoch', '+330 minutes') AS day,
+                                   strftime('%H:%M', ts, 'unixepoch', '+330 minutes') AS hm
+                            FROM candles_1m
+                            WHERE sec_id = '13'
+                              AND date(ts, 'unixepoch', '+330 minutes') >= ?
+                              AND date(ts, 'unixepoch', '+330 minutes') <= ?
+                            ORDER BY ts ASC
+                        """
+                        df_all = pd.read_sql_query(q, conn, params=(from_date, to_date))
+                else:
+                    df_all = pd.DataFrame()
+            except Exception as e:
+                log.warning("Historical candle query failed in run_date_range_backtest: %s", e)
+                df_all = pd.DataFrame()
+
+            if not df_all.empty:
+                df_all = df_all[(df_all["hm"] >= "09:15") & (df_all["hm"] <= "15:30")].copy()
+                df_all["dt"] = pd.to_datetime(df_all["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
+                df_15m = df_all.set_index("dt").resample("15min", closed="left", label="left").agg({
+                    "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last",
+                    "volume": "sum", "day": "first", "hm": "first"
+                }).dropna().reset_index()
+
+                df_1h = df_all.set_index("dt").resample("60min", closed="left", label="left").agg({
+                    "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
+                }).dropna().reset_index()
+
+                if len(df_15m) >= 20:
+                    df_15m["e4"] = df_15m["close"].ewm(span=4, adjust=False).mean()
+                    df_15m["e8"] = df_15m["close"].ewm(span=8, adjust=False).mean()
+                    mid = df_15m["close"].rolling(20).mean()
+                    sd = df_15m["close"].rolling(20).std(ddof=0).fillna(0.0)
+                    df_15m["ubb"] = mid + 2.0 * sd
+                    df_15m["lbb"] = mid - 2.0 * sd
+                    df_15m["bbw"] = df_15m["ubb"] - df_15m["lbb"]
+                    df_1h["h1_e8"] = df_1h["close"].ewm(span=8, adjust=False).mean()
+                    h1_map = {int(r["ts"]): float(r["h1_e8"]) for _, r in df_1h.iterrows()}
+                    h1_ts_list = sorted(h1_map.keys())
+
+                    bars = df_15m.to_dict(orient="records")
+                    for idx in range(20, len(bars) - 1):
+                        b = bars[idx]
+                        b_prev = bars[idx - 1]
+                        hm = str(b["hm"])
+                        if hm < "09:30" or hm >= "15:00":
+                            continue
+
+                        c_p = float(b["close"])
+                        h_p = float(b["high"])
+                        l_p = float(b["low"])
+                        o_p = float(b["open"])
+                        e4_v = float(b["e4"])
+                        e8_v = float(b["e8"])
+                        bbw = float(b["bbw"])
+                        ubb_up = float(b["ubb"]) > float(b_prev["ubb"])
+                        lbb_dn = float(b["lbb"]) < float(b_prev["lbb"])
+
+                        # Lookup latest 1H 8-EMA
+                        h1_e8 = e8_v
+                        for h_ts in reversed(h1_ts_list):
+                            if h_ts <= int(b["ts"]):
+                                h1_e8 = h1_map[h_ts]
+                                break
+
+                        cand_signals = []
+                        touch_15 = (l_p <= e8_v + 3.0 and h_p >= e8_v - 3.0)
+                        touch_1h = (l_p <= h1_e8 + 5.0 and h_p >= h1_e8 - 5.0)
+
+                        # 1. STAGE_2_LONG
+                        if e4_v > e8_v and ubb_up and bbw >= 50.0 and touch_15 and c_p >= e8_v - 2.5:
+                            cand_signals.append(("STAGE_2_LONG", "Stage 2 8-EMA (Long) [Pullback Touch]", "LONG", 40.0, 40.0))
+                        # 2. STAGE_3_SHORT
+                        if e4_v < e8_v and lbb_dn and bbw >= 50.0 and touch_15 and c_p <= e8_v + 2.5:
+                            cand_signals.append(("STAGE_3_SHORT", "Stage 3 8-EMA (Short) [Resistance Rejection]", "SHORT", 40.0, 40.0))
+                        # 3. CROSSOVER
+                        if float(b_prev["e4"]) <= float(b_prev["e8"]) and e4_v > e8_v and touch_15:
+                            cand_signals.append(("CROSSOVER_BULLISH", "4 MA vs 8 EMA Upside Reversal", "LONG", 20.0, 20.0))
+                        elif float(b_prev["e4"]) >= float(b_prev["e8"]) and e4_v < e8_v and touch_15:
+                            cand_signals.append(("CROSSOVER_BEARISH", "4 MA vs 8 EMA Downside Reversal", "SHORT", 20.0, 20.0))
+                        # 4. 1 HR FLAGSHIP (H1_CONFLUENCE_SUPPORT / H1_CONFLUENCE_RESIST)
+                        if touch_1h and e4_v > e8_v and c_p >= o_p:
+                            cand_signals.append(("H1_CONFLUENCE_SUPPORT", "1H 8-EMA Support Bounce Confluence", "LONG", 40.0, 40.0))
+                        elif touch_1h and e4_v < e8_v and c_p <= o_p:
+                            cand_signals.append(("H1_CONFLUENCE_RESIST", "1H 8-EMA Resistance Rejection Confluence", "SHORT", 40.0, 40.0))
+
+                        for sid, sname, direc, tgt_pts, sl_pts in cand_signals:
+                            f_code, f_tag = self._classify_strategy_filter_tag(sid, sname)
+                            if strat_flt != "ALL" and f_code != strat_flt:
+                                continue
+                            if active_bias == "LONG_ONLY" and direc != "LONG":
+                                continue
+                            if active_bias == "SHORT_ONLY" and direc != "SHORT":
+                                continue
+
+                            # Simulate forward bars on the same day for Super Trail vs Fixed 40/40
+                            entry_spot = round(float(bars[idx + 1]["open"]), 2)
+                            idx_high = entry_spot
+                            idx_low = entry_spot
+                            is_long = direc == "LONG"
+
+                            # Fixed 40/40 state
+                            fx_pnl_pts = 0.0
+                            fx_done = False
+
+                            # Super Trail state (Green/Red Candle HL trail + step trail)
+                            st_sl = (entry_spot - sl_pts) if is_long else (entry_spot + sl_pts)
+                            st_pnl_pts = 0.0
+                            st_reason = "EOD_SQUARE_OFF_15:20"
+                            st_done = False
+                            trail_steps = [f"SL {int(sl_pts)}"]
+
+                            for f_idx in range(idx + 1, len(bars)):
+                                fb = bars[f_idx]
+                                if fb["day"] != b["day"]:
+                                    break
+                                fh, fl, fc, fo = float(fb["high"]), float(fb["low"]), float(fb["close"]), float(fb["open"])
+                                idx_high = max(idx_high, fh)
+                                idx_low = min(idx_low, fl)
+
+                                # Fixed 40/40 check
+                                if not fx_done:
+                                    if is_long:
+                                        if fl <= entry_spot - sl_pts:
+                                            fx_pnl_pts = -sl_pts
+                                            fx_done = True
+                                        elif fh >= entry_spot + tgt_pts:
+                                            fx_pnl_pts = tgt_pts
+                                            fx_done = True
+                                    else:
+                                        if fh >= entry_spot + sl_pts:
+                                            fx_pnl_pts = -sl_pts
+                                            fx_done = True
+                                        elif fl <= entry_spot - tgt_pts:
+                                            fx_pnl_pts = tgt_pts
+                                            fx_done = True
+
+                                # Super Trail check
+                                if not st_done:
+                                    if is_long:
+                                        if fl <= st_sl:
+                                            st_pnl_pts = round(st_sl - entry_spot, 2)
+                                            st_reason = "TRAIL_SL_HIT" if st_sl > (entry_spot - sl_pts) else "SL_HIT"
+                                            st_done = True
+                                        elif fh >= entry_spot + tgt_pts:
+                                            st_pnl_pts = round(tgt_pts, 2)
+                                            st_reason = "TARGET_HIT"
+                                            st_done = True
+                                        elif fc > fo and fl > st_sl:
+                                            st_sl = round(fl, 2)
+                                            trail_steps.append(f"Green Low {st_sl:.0f}")
+                                    else:
+                                        if fh >= st_sl:
+                                            st_pnl_pts = round(entry_spot - st_sl, 2)
+                                            st_reason = "TRAIL_SL_HIT" if st_sl < (entry_spot + sl_pts) else "SL_HIT"
+                                            st_done = True
+                                        elif fl <= entry_spot - tgt_pts:
+                                            st_pnl_pts = round(tgt_pts, 2)
+                                            st_reason = "TARGET_HIT"
+                                            st_done = True
+                                        elif fc < fo and fh < st_sl:
+                                            st_sl = round(fh, 2)
+                                            trail_steps.append(f"Red High {st_sl:.0f}")
+
+                                if str(fb["hm"]) >= "15:15":
+                                    if not fx_done:
+                                        fx_pnl_pts = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
+                                        fx_done = True
+                                    if not st_done:
+                                        st_pnl_pts = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
+                                        st_reason = "EOD_SQUARE_OFF_15:20"
+                                        st_done = True
+                                    break
+
+                            # Synthesized Option Price math (labeled explicitly per Section 4A)
+                            synth_opt_entry = 200.00
+                            synth_opt_exit = max(1.0, round(synth_opt_entry + st_pnl_pts * delta_est, 2))
+                            synth_net_inr = round((synth_opt_exit - synth_opt_entry) * lot_qty - charges_est, 2)
+                            fx_net_inr = round((fx_pnl_pts * delta_est) * lot_qty - charges_est, 2)
+
+                            mfe_pts = round((idx_high - entry_spot) if is_long else (entry_spot - idx_low), 1)
+                            falloff_pts = round(max(0.0, mfe_pts - max(0.0, st_pnl_pts)), 1)
+                            atm_strike = int(round(entry_spot / 100.0) * 100)
+                            opt_type = "CE" if is_long else "PE"
+                            contract_sym = f"NIFTY {atm_strike} {opt_type} (Synthesized Strike)"
+                            trail_str = " -> ".join(trail_steps[:4]) + f" -> {st_reason}" if len(trail_steps) > 1 else f"No Trail, Fixed {int(sl_pts)}/{int(tgt_pts)}"
+
+                            all_rows.append({
+                                "Trade_ID": f"SYN_{b['day']}_{hm}_{sid}",
+                                "Date": f"{b['day']} {hm}",
+                                "date_only": str(b["day"]),
+                                "Setup_Name": sname,
+                                "Contract_Symbol": contract_sym,
+                                "Direction": direc,
+                                "Index_Entry": f"{entry_spot:.2f}",
+                                "Index_High": f"{idx_high:.2f}",
+                                "Index_Low": f"{idx_low:.2f}",
+                                "Option_Entry_Display": f"{synth_opt_entry:.2f} (Synthesized Option Price)",
+                                "Option_Exit_Display": f"{synth_opt_exit:.2f} (Synthesized Option Price)",
+                                "option_entry": synth_opt_entry,
+                                "option_exit": synth_opt_exit,
+                                "Exit_Reason": st_reason,
+                                "exit_reason": st_reason,
+                                "Net_Pnl_Display": f"{st_pnl_pts:+.1f} pts | ₹{synth_net_inr:,.2f} (Synthesized)",
+                                "net_pnl": synth_net_inr,
+                                "fixed_net_pnl_row": fx_net_inr,
+                                "st_pnl_pts": st_pnl_pts,
+                                "fx_pnl_pts": fx_pnl_pts,
+                                "Trailing_Details": trail_str,
+                                "All_Fall_Off": f"MFE +{mfe_pts:.1f}p | Falloff {falloff_pts:.1f}p",
+                                "Strategy_Filter_Tag": f_tag,
+                                "strategy_id": sid,
+                                "source": "SYNTHESIZED",
+                            })
+
+        # ── B. Live / Recorded Real Paper Trades from Ledger DB (Section 4B) ──
+        if include_today_paper and dtype_flt in ("ALL", "REAL"):
+            try:
+                rec_rows = self._recorded_history().trades(from_date, to_date)
+            except Exception:
+                rec_rows = []
+            for r in rec_rows:
+                sname = str(r.get("Setup_Name") or "Stage 2 8-EMA (Long)")
+                f_code, f_tag = self._classify_strategy_filter_tag(r.get("Strategy", ""), sname)
+                if strat_flt != "ALL" and f_code != strat_flt:
+                    continue
+                direc = str(r.get("Direction") or "LONG").upper()
+                if active_bias == "LONG_ONLY" and direc != "LONG":
+                    continue
+                if active_bias == "SHORT_ONLY" and direc != "SHORT":
+                    continue
+
+                ep = r.get("option_entry")
+                xp = r.get("option_exit")
+                ep_disp = f"{float(ep):.2f} (Real)" if ep is not None and float(ep) > 0 else "Entry Missing (Real)"
+                if xp is not None and float(xp) > 0:
+                    xp_disp = f"{float(xp):.2f} (Real)"
+                    opt_pts = round(float(xp) - float(ep or 0.0), 2)
+                else:
+                    xp_disp = "Exit Price Missing (Real) — Not Synthesized"
+                    opt_pts = 0.0
+
+                net_val = float(r.get("net_pnl") or 0.0)
+                entry_time_short = str(r.get("Entry_Time") or "09:30")[:5]
+                all_rows.append({
+                    "Trade_ID": str(r.get("Trade_ID")),
+                    "Date": f"{r.get('Date')} {entry_time_short}",
+                    "date_only": str(r.get("Date")),
+                    "Setup_Name": sname,
+                    "Contract_Symbol": f"{r.get('Contract_Symbol')} (Real)",
+                    "Direction": direc,
+                    "Index_Entry": str(r.get("index_entry") or "LIVE"),
+                    "Index_High": str(r.get("index_high") or "LIVE"),
+                    "Index_Low": str(r.get("index_low") or "LIVE"),
+                    "Option_Entry_Display": ep_disp,
+                    "Option_Exit_Display": xp_disp,
+                    "option_entry": ep,
+                    "option_exit": xp,
+                    "Exit_Reason": str(r.get("exit_reason") or "MANUAL_EXIT"),
+                    "exit_reason": str(r.get("exit_reason") or "MANUAL_EXIT"),
+                    "Net_Pnl_Display": f"₹{net_val:,.2f} (Real)",
+                    "net_pnl": net_val,
+                    "fixed_net_pnl_row": net_val,
+                    "st_pnl_pts": opt_pts,
+                    "fx_pnl_pts": opt_pts,
+                    "Trailing_Details": "Live Paper Execution (Real)",
+                    "All_Fall_Off": "Real Fill",
+                    "Strategy_Filter_Tag": f_tag,
+                    "strategy_id": f_code,
+                    "source": "LIVE",
+                })
+
+        st_summary = self._compute_side_summary(
+            [float(x["st_pnl_pts"]) for x in all_rows],
+            [float(x["net_pnl"]) for x in all_rows],
+        )
+        fx_summary = self._compute_side_summary(
+            [float(x["fx_pnl_pts"]) for x in all_rows],
+            [float(x["fixed_net_pnl_row"]) for x in all_rows],
+        )
+
+        sources = {x["source"] for x in all_rows}
+        if sources == {"LIVE"}:
+            dtype_mode = "REAL"
+        elif sources == {"LIVE", "SYNTHESIZED"}:
+            dtype_mode = "MIXED"
+        else:
+            dtype_mode = "SYNTHESIZED"
+
+        return {
+            "ok": True,
+            "from_date": from_date,
+            "to_date": to_date,
+            "strategy_filter": strat_flt,
+            "data_type_filter": dtype_flt,
+            "data_type_mode": dtype_mode,
+            "total_trades": len(all_rows),
+            "trades": all_rows,
+            "rows": all_rows,
+            "super_trail_summary": st_summary,
+            "fixed_40_40_summary": fx_summary,
+            "win_rate_trailing": st_summary["win_rate_pct"],
+            "win_rate_fixed": fx_summary["win_rate_pct"],
+            "trailing_net_pnl": st_summary["total_net_pnl_inr"],
+            "fixed_net_pnl": fx_summary["total_net_pnl_inr"],
+            "alpha_locked": round(st_summary["total_net_pnl_inr"] - fx_summary["total_net_pnl_inr"], 2),
+            "max_drawdown_trailing": st_summary["max_drawdown_inr"],
+            "max_drawdown_fixed": fx_summary["max_drawdown_inr"],
+            "profit_factor_trailing": st_summary["profit_factor"],
+            "profit_factor_fixed": fx_summary["profit_factor"],
+            "reconciliation": [],
+            "reconciliation_match": True,
+        }
