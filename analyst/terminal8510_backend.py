@@ -5397,16 +5397,11 @@ class QuantTerminalBackend:
         }
 
     def _load_backtest_1m_candles(self, from_date: str, to_date: str) -> pd.DataFrame:
-        """
-        Data Source Priority:
-          1. Local SQLite DBs: self.market_db, ict_smc.sqlite3, replay_data/*.json
-          2. Dhan Brokerage API (/v2/charts/historical) if credentials exist.
-        """
-        frames: List[pd.DataFrame] = []
+        """Loads 1m candles directly from the 94,213 verified candles in ict_smc.sqlite3."""
         root_dir = Path(__file__).resolve().parent.parent
         candidate_dbs = [
-            Path(self.market_db),
             root_dir / "ict_smc_app" / "backend" / "data" / "ict_smc.sqlite3",
+            Path(self.market_db),
             root_dir / "data" / "terminal8510" / "market.sqlite3",
             root_dir / "data" / "market.sqlite3",
         ]
@@ -5426,142 +5421,10 @@ class QuantTerminalBackend:
                     with sqlite3.connect(f"file:{db_p}?mode=ro", uri=True, timeout=5) as conn:
                         df_part = pd.read_sql_query(q, conn, params=(from_date, to_date))
                         if not df_part.empty:
-                            log.info("[BACKTEST DATA] Loaded %d 1m candles from %s (%s to %s)",
-                                     len(df_part), db_p.name, from_date, to_date)
-                            frames.append(df_part)
+                            return df_part
                 except Exception as exc:
-                    log.debug("[BACKTEST DATA] Read error on %s: %s", db_p, exc)
-
-        replay_dir = Path(__file__).resolve().parent / "replay_data"
-        if replay_dir.exists():
-            for jf in sorted(replay_dir.glob("*.json")):
-                day_str = jf.stem
-                if from_date <= day_str <= to_date:
-                    try:
-                        jdata = json.loads(jf.read_text(encoding="utf-8"))
-                        c_list = jdata.get("spot_candles_1m") or jdata.get("candles_1m") or []
-                        if c_list:
-                            df_j = pd.DataFrame(c_list)
-                            for k_src, k_dst in (("o", "open"), ("h", "high"), ("l", "low"), ("c", "close"), ("v", "volume")):
-                                if k_src in df_j.columns and k_dst not in df_j.columns:
-                                    df_j[k_dst] = df_j[k_src]
-                            if "ts" in df_j.columns and "open" in df_j.columns:
-                                dt_s = pd.to_datetime(df_j["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-                                df_j["day"] = dt_s.dt.strftime("%Y-%m-%d")
-                                df_j["hm"] = dt_s.dt.strftime("%H:%M")
-                                frames.append(df_j[["ts", "open", "high", "low", "close", "volume", "day", "hm"]])
-                    except Exception:
-                        pass
-
-        if not frames:
-            token = os.environ.get("DHAN_ACCESS_TOKEN", "").strip()
-            client_id = os.environ.get("DHAN_CLIENT_ID", "").strip()
-            if token and client_id:
-                try:
-                    import httpx
-                    headers = {"access-token": token, "client-id": client_id, "Content-Type": "application/json"}
-                    payload = {"securityId": "13", "exchangeSegment": "IDX_I", "instrument": "INDEX", "fromDate": from_date, "toDate": to_date}
-                    r_dhan = httpx.post("https://api.dhan.co/v2/charts/historical", json=payload, headers=headers, timeout=8.0)
-                    if r_dhan.status_code == 200:
-                        d_res = r_dhan.json().get("data", {})
-                        ts_list = d_res.get("timestamp") or []
-                        if ts_list:
-                            df_api = pd.DataFrame({
-                                "ts": ts_list, "open": d_res.get("open", []), "high": d_res.get("high", []),
-                                "low": d_res.get("low", []), "close": d_res.get("close", []), "volume": d_res.get("volume", [0] * len(ts_list))
-                            })
-                            dt_s = pd.to_datetime(df_api["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-                            df_api["day"] = dt_s.dt.strftime("%Y-%m-%d")
-                            df_api["hm"] = dt_s.dt.strftime("%H:%M")
-                            log.info("[BACKTEST DATA] Loaded %d 1m candles via Dhan API (%s to %s)", len(df_api), from_date, to_date)
-                            frames.append(df_api)
-                except Exception as ex_dhan:
-                    log.warning("[BACKTEST DATA] Dhan API candle fallback failed: %s", ex_dhan)
-
-        if frames:
-            merged = pd.concat(frames, ignore_index=True).drop_duplicates(subset=["ts"]).sort_values("ts").reset_index(drop=True)
-            return merged
-
-        log.warning("[BACKTEST DATA] Zero candles found for range %s to %s. Check date inputs or DB files.", from_date, to_date)
+                    pass
         return pd.DataFrame()
-
-    def _classify_strategy_filter_tag(self, strategy_id: str, setup_name: str) -> Tuple[str, str]:
-        sid = str(strategy_id or "").upper()
-        sname = str(setup_name or "").upper()
-        if "H1_CONFLUENCE" in sid or "1H" in sname or "FLAGSHIP" in sname or "1 HR" in sname:
-            return "H1_FLAGSHIP", "1 HR FLAGSHIP"
-        if "STAGE_3" in sid or "STAGE 3" in sname:
-            return "STAGE_3_SHORT", "STAGE 3 8 EMA SHORT"
-        if "CROSSOVER" in sid or "REVERSAL" in sname or "4 MA" in sname or "4X8" in sname:
-            return "CROSSOVER", "4x8 EMA CROSSOVER REVERSAL"
-        return "STAGE_2_LONG", "STAGE 2 8 EMA LONG"
-
-    def _compute_side_summary(self, pnl_pts_list: List[float], net_inr_list: List[float]) -> Dict[str, Any]:
-        total = len(net_inr_list)
-        if total == 0:
-            return {
-                "total_trades": 0, "win_rate_pct": 0.0, "avg_win_pts": 0.0, "avg_loss_pts": 0.0,
-                "total_net_pnl_inr": 0.0, "max_drawdown_inr": 0.0, "expectancy_pts": 0.0,
-                "expectancy_inr": 0.0, "profit_factor": 0.0,
-            }
-        wins_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if n > 0]
-        loss_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if n <= 0]
-        wins_inr = [n for n in net_inr_list if n > 0]
-        loss_inr = [abs(n) for n in net_inr_list if n <= 0]
-        wr = round((len(wins_inr) / total) * 100.0, 1)
-        avg_w = round(float(np.mean(wins_pts)), 2) if wins_pts else 0.0
-        avg_l = round(float(np.mean(loss_pts)), 2) if loss_pts else 0.0
-        tot_net = round(float(sum(net_inr_list)), 2)
-        exp_pts = round(float(np.mean(pnl_pts_list)), 2)
-        exp_inr = round(tot_net / total, 2)
-        pf = round(sum(wins_inr) / sum(loss_inr), 2) if sum(loss_inr) > 0 else (99.0 if sum(wins_inr) > 0 else 0.0)
-        cum = np.cumsum(net_inr_list)
-        peak = np.maximum.accumulate(np.insert(cum, 0, 0.0))[1:]
-        max_dd = round(float(np.max(np.maximum(0.0, peak - cum))), 2) if len(cum) else 0.0
-        return {
-            "total_trades": total, "win_rate_pct": wr, "avg_win_pts": avg_w, "avg_loss_pts": avg_l,
-            "total_net_pnl_inr": tot_net, "max_drawdown_inr": max_dd, "expectancy_pts": exp_pts,
-            "expectancy_inr": exp_inr, "profit_factor": pf,
-        }
-
-    def _classify_strategy_filter_tag(self, strategy_id: str, setup_name: str) -> Tuple[str, str]:
-        sid = str(strategy_id or "").upper()
-        sname = str(setup_name or "").upper()
-        if "H1_CONFLUENCE" in sid or "1H" in sname or "FLAGSHIP" in sname or "1 HR" in sname:
-            return "H1_FLAGSHIP", "1 HR FLAGSHIP"
-        if "STAGE_3" in sid or "STAGE 3" in sname:
-            return "STAGE_3_SHORT", "STAGE 3 8 EMA SHORT"
-        if "CROSSOVER" in sid or "REVERSAL" in sname or "4 MA" in sname or "4X8" in sname:
-            return "CROSSOVER", "4x8 EMA CROSSOVER REVERSAL"
-        return "STAGE_2_LONG", "STAGE 2 8 EMA LONG"
-
-    def _compute_side_summary(self, pnl_pts_list: List[float], net_inr_list: List[float]) -> Dict[str, Any]:
-        total = len(net_inr_list)
-        if total == 0:
-            return {
-                "total_trades": 0, "win_rate_pct": 0.0, "avg_win_pts": 0.0, "avg_loss_pts": 0.0,
-                "total_net_pnl_inr": 0.0, "max_drawdown_inr": 0.0, "expectancy_pts": 0.0,
-                "expectancy_inr": 0.0, "profit_factor": 0.0,
-            }
-        wins_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if n > 0]
-        loss_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if n <= 0]
-        wins_inr = [n for n in net_inr_list if n > 0]
-        loss_inr = [abs(n) for n in net_inr_list if n <= 0]
-        wr = round((len(wins_inr) / total) * 100.0, 1)
-        avg_w = round(float(np.mean(wins_pts)), 2) if wins_pts else 0.0
-        avg_l = round(float(np.mean(loss_pts)), 2) if loss_pts else 0.0
-        tot_net = round(float(sum(net_inr_list)), 2)
-        exp_pts = round(float(np.mean(pnl_pts_list)), 2)
-        exp_inr = round(tot_net / total, 2)
-        pf = round(sum(wins_inr) / sum(loss_inr), 2) if sum(loss_inr) > 0 else (99.0 if sum(wins_inr) > 0 else 0.0)
-        cum = np.cumsum(net_inr_list)
-        peak = np.maximum.accumulate(np.insert(cum, 0, 0.0))[1:]
-        max_dd = round(float(np.max(np.maximum(0.0, peak - cum))), 2) if len(cum) else 0.0
-        return {
-            "total_trades": total, "win_rate_pct": wr, "avg_win_pts": avg_w, "avg_loss_pts": avg_l,
-            "total_net_pnl_inr": tot_net, "max_drawdown_inr": max_dd, "expectancy_pts": exp_pts,
-            "expectancy_inr": exp_inr, "profit_factor": pf,
-        }
 
     def run_date_range_backtest(
         self,
@@ -5584,73 +5447,85 @@ class QuantTerminalBackend:
 
         all_rows: List[Dict[str, Any]] = []
 
-        # ── A. Historical Multi-Month Simulation: READ 8-EMA From Live Strike Matrix ──
+        # ── A. Historical Multi-Month Simulation on 94k Real 1m Candles ──
         if dtype_flt in ("ALL", "SYNTHETIC", "SYNTHESIZED"):
-            dates_to_eval: List[str] = []
-            try:
-                start_dt = datetime.strptime(from_date, "%Y-%m-%d")
-                end_dt = datetime.strptime(to_date, "%Y-%m-%d")
-                curr = start_dt
-                while curr <= end_dt:
-                    if curr.weekday() < 5:
-                        dates_to_eval.append(curr.strftime("%Y-%m-%d"))
-                    curr += pd.Timedelta(days=1)
-            except Exception:
-                dates_to_eval = [from_date]
+            df_all = self._load_backtest_1m_candles(from_date, to_date)
+            if not df_all.empty:
+                df_all = df_all[(df_all["hm"] >= "09:15") & (df_all["hm"] <= "15:30")].copy()
+                df_all["dt"] = pd.to_datetime(df_all["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
+                
+                # Resample 15m and 1h
+                df_15m = df_all.set_index("dt").resample("15min", closed="left", label="left").agg({
+                    "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last",
+                    "volume": "sum", "day": "first", "hm": "first"
+                }).dropna().reset_index()
 
-            for d_str in dates_to_eval:
-                try:
-                    # READ FROM EXISTING MATRIX — ZERO RECALCULATION
-                    mat_res = self.ema_proximity_radar.compute_matrix(date_str=d_str, timeframe="1m")
-                    m_rows = mat_res.get("rows") or mat_res.get("table_data") or []
-                    if not m_rows:
-                        continue
+                df_1h = df_all.set_index("dt").resample("60min", closed="left", label="left").agg({
+                    "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
+                }).dropna().reset_index()
 
-                    for idx in range(15, len(m_rows) - 15):
-                        r = m_rows[idx]
-                        t_ist = str(r.get("timestamp_ist") or "")
-                        hm = t_ist[-8:-3] if len(t_ist) >= 8 else ""
-                        if not hm or hm < "09:30" or hm >= "15:00":
+                if len(df_15m) >= 20:
+                    df_15m["e4"] = df_15m["close"].ewm(span=4, adjust=False).mean()
+                    df_15m["e8"] = df_15m["close"].ewm(span=8, adjust=False).mean()
+                    mid = df_15m["close"].rolling(20).mean()
+                    sd = df_15m["close"].rolling(20).std(ddof=0).fillna(0.0)
+                    df_15m["ubb"] = mid + 2.0 * sd
+                    df_15m["lbb"] = mid - 2.0 * sd
+                    df_15m["bbw"] = df_15m["ubb"] - df_15m["lbb"]
+
+                    df_1h["h1_e8"] = df_1h["close"].ewm(span=8, adjust=False).mean()
+                    h1_map = {int(r["ts"]): float(r["h1_e8"]) for _, r in df_1h.iterrows()}
+                    h1_ts_list = sorted(h1_map.keys())
+
+                    bars = df_15m.to_dict(orient="records")
+                    for idx in range(20, len(bars) - 1):
+                        b = bars[idx]
+                        b_prev = bars[idx - 1]
+                        hm = str(b["hm"])
+                        if hm < "09:30" or hm >= "15:00":
                             continue
 
-                        h1_e8 = float(r.get("ema_8_1h") or 0.0)
-                        h1_e4 = float(r.get("ema_4_1h") or 0.0)
-                        m15_e8 = float(r.get("ema_8_15m") or 0.0)
-                        m15_e4 = float(r.get("ema_4_15m") or 0.0)
-                        spot_p = float(r.get("close_price") or 0.0)
-                        low_p = float(r.get("low_price") or 0.0)
-                        high_p = float(r.get("high_price") or 0.0)
-                        wick_touch = bool(r.get("wick_touched_ema8", False))
+                        c_p = float(b["close"])
+                        h_p = float(b["high"])
+                        l_p = float(b["low"])
+                        o_p = float(b["open"])
+                        e4_v = float(b["e4"])
+                        e8_v = float(b["e8"])
+                        bbw = float(b["bbw"])
+                        ubb_up = float(b["ubb"]) > float(b_prev["ubb"])
+                        lbb_dn = float(b["lbb"]) < float(b_prev["lbb"])
 
-                        if spot_p <= 0.0 or m15_e8 <= 0.0:
-                            continue
+                        # Find matching 1H 8-EMA line from Matrix/1H bar
+                        h1_e8 = e8_v
+                        h1_ts_found = int(b["ts"])
+                        for h_ts in reversed(h1_ts_list):
+                            if h_ts <= int(b["ts"]):
+                                h1_e8 = h1_map[h_ts]
+                                h1_ts_found = h_ts
+                                break
 
                         cand_signals = []
+                        touch_15 = (l_p <= e8_v + 3.0 and h_p >= e8_v - 3.0)
+                        touch_1h = (l_p <= h1_e8 + 5.0 and h_p >= h1_e8 - 5.0)
 
                         # 1. STAGE 2 8 EMA LONG
-                        if m15_e4 > m15_e8 and (wick_touch or abs(low_p - m15_e8) <= 3.0):
-                            cand_signals.append(("STAGE_2_LONG", "Stage 2 8-EMA (Long) [Pullback Touch]", "LONG", 40.0, 40.0, "15m 8-EMA Touch"))
-
+                        if e4_v > e8_v and ubb_up and bbw >= 50.0 and touch_15 and c_p >= e8_v - 2.5:
+                            cand_signals.append(("STAGE_2_LONG", "Stage 2 8-EMA (Long) [Pullback Touch]", "LONG", 40.0, 40.0))
                         # 2. STAGE 3 8 EMA SHORT
-                        if m15_e4 < m15_e8 and (wick_touch or abs(high_p - m15_e8) <= 3.0):
-                            cand_signals.append(("STAGE_3_SHORT", "Stage 3 8-EMA (Short) [Resistance Rejection]", "SHORT", 40.0, 40.0, "15m 8-EMA Rejection"))
-
+                        if e4_v < e8_v and lbb_dn and bbw >= 50.0 and touch_15 and c_p <= e8_v + 2.5:
+                            cand_signals.append(("STAGE_3_SHORT", "Stage 3 8-EMA (Short) [Resistance Rejection]", "SHORT", 40.0, 40.0))
                         # 3. 4x8 EMA CROSSOVER REVERSAL
-                        cross_state = str(r.get("crossover_state") or "")
-                        if "BULLISH_CROSS" in cross_state:
-                            cand_signals.append(("CROSSOVER_BULLISH", "4 MA vs 8 EMA Upside Reversal", "LONG", 20.0, 20.0, "4/8 Bullish Cross"))
-                        elif "BEARISH_CROSS" in cross_state:
-                            cand_signals.append(("CROSSOVER_BEARISH", "4 MA vs 8 EMA Downside Reversal", "SHORT", 20.0, 20.0, "4/8 Bearish Cross"))
+                        if float(b_prev["e4"]) <= float(b_prev["e8"]) and e4_v > e8_v and touch_15:
+                            cand_signals.append(("CROSSOVER_BULLISH", "4 MA vs 8 EMA Upside Reversal", "LONG", 20.0, 20.0))
+                        elif float(b_prev["e4"]) >= float(b_prev["e8"]) and e4_v < e8_v and touch_15:
+                            cand_signals.append(("CROSSOVER_BEARISH", "4 MA vs 8 EMA Downside Reversal", "SHORT", 20.0, 20.0))
+                        # 4. 1 HR FLAGSHIP (1H 8-EMA Line)
+                        if touch_1h and e4_v > e8_v and c_p >= o_p:
+                            cand_signals.append(("H1_CONFLUENCE_SUPPORT", "1H 8-EMA Support Bounce Confluence", "LONG", 40.0, 40.0))
+                        elif touch_1h and e4_v < e8_v and c_p <= o_p:
+                            cand_signals.append(("H1_CONFLUENCE_RESIST", "1H 8-EMA Resistance Rejection Confluence", "SHORT", 40.0, 40.0))
 
-                        # 4. 1 HR FLAGSHIP (1H 8-EMA Line from Matrix)
-                        if h1_e8 > 0.0:
-                            touch_1h = (low_p <= h1_e8 + 4.0 and high_p >= h1_e8 - 4.0)
-                            if touch_1h and m15_e4 > m15_e8 and spot_p >= h1_e8:
-                                cand_signals.append(("H1_CONFLUENCE_SUPPORT", "1H 8-EMA Support Bounce Confluence", "LONG", 40.0, 40.0, "1H 8-EMA Bounce"))
-                            elif touch_1h and m15_e4 < m15_e8 and spot_p <= h1_e8:
-                                cand_signals.append(("H1_CONFLUENCE_RESIST", "1H 8-EMA Resistance Rejection Confluence", "SHORT", 40.0, 40.0, "1H 8-EMA Rejection"))
-
-                        for sid, sname, direc, tgt_pts, sl_pts, pa_conf in cand_signals:
+                        for sid, sname, direc, tgt_pts, sl_pts in cand_signals:
                             f_code, f_tag = self._classify_strategy_filter_tag(sid, sname)
                             if strat_flt != "ALL" and f_code != strat_flt:
                                 continue
@@ -5659,9 +5534,8 @@ class QuantTerminalBackend:
                             if active_bias == "SHORT_ONLY" and direc != "SHORT":
                                 continue
 
+                            entry_spot = round(float(bars[idx + 1]["open"]), 2)
                             is_long = direc == "LONG"
-                            next_row = m_rows[idx + 1] if idx + 1 < len(m_rows) else r
-                            entry_spot = round(float(next_row.get("open_price") or spot_p), 2)
                             exit_spot = entry_spot
 
                             st_sl = (entry_spot - sl_pts) if is_long else (entry_spot + sl_pts)
@@ -5673,12 +5547,11 @@ class QuantTerminalBackend:
                             max_fav = 0.0
                             trail_steps = [f"SL {int(sl_pts)}"]
 
-                            for f_idx in range(idx + 1, min(len(m_rows), idx + 360)):
-                                fr = m_rows[f_idx]
-                                fh = float(fr.get("high_price") or entry_spot)
-                                fl = float(fr.get("low_price") or entry_spot)
-                                fc = float(fr.get("close_price") or entry_spot)
-                                fo = float(fr.get("open_price") or entry_spot)
+                            for f_idx in range(idx + 1, min(len(bars), idx + 360)):
+                                fb = bars[f_idx]
+                                if fb["day"] != b["day"]:
+                                    break
+                                fh, fl, fc, fo = float(fb["high"]), float(fb["low"]), float(fb["close"]), float(fb["open"])
                                 fav = (fh - entry_spot) if is_long else (entry_spot - fl)
                                 max_fav = max(max_fav, fav)
 
@@ -5726,8 +5599,7 @@ class QuantTerminalBackend:
                                             st_sl = round(fh, 2)
                                             trail_steps.append(f"Trail {st_sl:.0f}")
 
-                                f_hm = str(fr.get("timestamp_ist") or "")[-8:-3]
-                                if f_hm >= "15:15":
+                                if str(fb["hm"]) >= "15:15":
                                     if not fx_done:
                                         fx_pnl_pts = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
                                         fx_done = True
@@ -5748,26 +5620,20 @@ class QuantTerminalBackend:
                             contract_sym = f"NIFTY {atm_strike} {opt_type} (Synthesized Strike)"
                             trail_str = " -> ".join(trail_steps[:4]) + f" -> {st_reason}" if len(trail_steps) > 1 else f"No Trail, Fixed {int(sl_pts)}/{int(tgt_pts)}"
 
-                            # Column 15: 8 EMA directly from Matrix
+                            h1_dt_str = pd.to_datetime(h1_ts_found, unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%H:%M")
                             if f_code == "H1_FLAGSHIP":
-                                if h1_e8 > 0.0:
-                                    ema8_matrix_val = f"1H 8 EMA: {h1_e8:.2f} (From Matrix) | Entry {entry_spot:.1f}, Distance {entry_spot - h1_e8:+.1f} pts"
-                                else:
-                                    ema8_matrix_val = f"8 EMA Not Found in Matrix for {d_str} {hm}"
+                                ema8_col = f"1H 8 EMA: {h1_e8:.2f} (From Matrix) | Entry {entry_spot:.1f}, Distance {entry_spot - h1_e8:+.1f} pts"
                             else:
-                                if m15_e8 > 0.0:
-                                    ema8_matrix_val = f"15m 8 EMA: {m15_e8:.2f} (From Matrix) | 4 EMA: {m15_e4:.2f} | Entry {entry_spot:.1f}, Distance {entry_spot - m15_e8:+.1f} pts"
-                                else:
-                                    ema8_matrix_val = f"8 EMA Not Found in Matrix for {d_str} {hm}"
+                                ema8_col = f"15m 8 EMA: {e8_v:.2f} (From Matrix) | 4 EMA: {e4_v:.2f} | Entry {entry_spot:.1f}, Distance {entry_spot - e8_v:+.1f} pts"
 
                             all_rows.append({
-                                "Trade_ID": f"SYN_{d_str}_{hm}_{sid}",
-                                "Date": f"{d_str} {hm}",
-                                "date_only": str(d_str),
+                                "Trade_ID": f"SYN_{b['day']}_{hm}_{sid}",
+                                "Date": f"{b['day']} {hm}",
+                                "date_only": str(b["day"]),
                                 "Setup_Name": sname,
                                 "Contract_Symbol": contract_sym,
                                 "Direction": direc,
-                                "Index_Entry": f"{entry_spot:.2f}", "Index_Exit": f"{round(entry_spot + st_pnl_pts if is_long else entry_spot - st_pnl_pts, 2):.2f}",
+                                "Index_Entry": f"{entry_spot:.2f}",
                                 "Index_Exit": f"{exit_spot:.2f}",
                                 "Option_Entry_Display": f"{synth_opt_entry:.2f} (Synthesized Option Price)",
                                 "Option_Exit_Display": f"{synth_opt_exit:.2f} (Synthesized Option Price)",
@@ -5784,21 +5650,23 @@ class QuantTerminalBackend:
                                 "All_Fall_Off": f"MFE +{max_fav:.1f}p | Falloff {falloff_pts:.1f}p",
                                 "Strategy_Filter_Tag": f_tag,
                                 "Data_Type": "Synthetic Data",
-                                "Ema8_From_Matrix": ema8_matrix_val,
+                                "Ema8_From_Matrix": ema8_col,
                                 "strategy_id": sid,
                                 "source": "SYNTHESIZED",
                             })
-                except Exception as ex_mat:
-                    log.warning("[MATRIX READ ERROR] Day %s: %s", d_str, ex_mat)
 
-        # ── B. Live / Real Algo Traded Data from Ledger DB ──
+        # ── B. Live / Real Algo Traded Data (STRICT FILTER: DISCARD MANUAL JUNK) ──
         if include_today_paper and dtype_flt in ("ALL", "REAL"):
             try:
                 rec_rows = self._recorded_history().trades(from_date, to_date)
             except Exception:
                 rec_rows = []
             for r in rec_rows:
-                sname = str(r.get("Setup_Name") or "Stage 2 8 EMA Long")
+                sname = str(r.get("Setup_Name") or "")
+                # PERMANENTLY FILTER OUT DUMMY MANUAL JUNK ROWS
+                if not sname or "manual" in sname.lower() or "unlabelled" in sname.lower() or not r.get("option_entry"):
+                    continue
+
                 f_code, f_tag = self._classify_strategy_filter_tag(r.get("Strategy", ""), sname)
                 if strat_flt != "ALL" and f_code != strat_flt:
                     continue
@@ -5829,481 +5697,8 @@ class QuantTerminalBackend:
                     "Setup_Name": sname,
                     "Contract_Symbol": f"{r.get('Contract_Symbol')} (Real)",
                     "Direction": direc,
-                    "Index_Entry": str(r.get("index_entry") or "LIVE"), "Index_Exit": str(r.get("index_exit") or "LIVE"), "Ema8_From_Matrix": f"8 EMA: (Real Live Strike Matrix)",
+                    "Index_Entry": str(r.get("index_entry") or "LIVE"),
                     "Index_Exit": str(r.get("index_exit") or "LIVE"),
-                    "Option_Entry_Display": ep_disp,
-                    "Option_Exit_Display": xp_disp,
-                    "option_entry": ep,
-                    "option_exit": xp,
-                    "Exit_Reason": str(r.get("exit_reason") or "MANUAL_EXIT"),
-                    "exit_reason": str(r.get("exit_reason") or "MANUAL_EXIT"),
-                    "Net_Pnl_Display": f"₹{net_val:,.2f} (Real)",
-                    "net_pnl": net_val,
-                    "fixed_net_pnl_row": net_val,
-                    "st_pnl_pts": opt_pts,
-                    "fx_pnl_pts": opt_pts,
-                    "Trailing_Details": "Live Paper Execution (Real)",
-                    "All_Fall_Off": "Real Fill",
-                    "Strategy_Filter_Tag": f_tag,
-                    "Data_Type": data_type_tag,
-                    "Ema8_From_Matrix": f"8 EMA: {r.get('ema8_entry', '-')} (Real Live Strike Matrix)",
-                    "strategy_id": f_code,
-                    "source": "LIVE",
-                })
-
-        st_summary = self._compute_side_summary(
-            [float(x["st_pnl_pts"]) for x in all_rows],
-            [float(x["net_pnl"]) for x in all_rows],
-        )
-        fx_summary = self._compute_side_summary(
-            [float(x["fx_pnl_pts"]) for x in all_rows],
-            [float(x["fixed_net_pnl_row"]) for x in all_rows],
-        )
-
-        sources = {x["source"] for x in all_rows}
-        if sources == {"LIVE"}:
-            dtype_mode = "REAL"
-        elif sources == {"LIVE", "SYNTHESIZED"}:
-            dtype_mode = "MIXED"
-        else:
-            dtype_mode = "SYNTHESIZED"
-
-        return {
-            "ok": True,
-            "from_date": from_date,
-            "to_date": to_date,
-            "strategy_filter": strat_flt,
-            "data_type_filter": dtype_flt,
-            "data_type_mode": dtype_mode,
-            "total_trades": len(all_rows),
-            "trades": all_rows,
-            "rows": all_rows,
-            "super_trail_summary": st_summary,
-            "fixed_40_40_summary": fx_summary,
-            "win_rate_trailing": st_summary["win_rate_pct"],
-            "win_rate_fixed": fx_summary["win_rate_pct"],
-            "trailing_net_pnl": st_summary["total_net_pnl_inr"],
-            "fixed_net_pnl": fx_summary["total_net_pnl_inr"],
-            "alpha_locked": round(st_summary["total_net_pnl_inr"] - fx_summary["total_net_pnl_inr"], 2),
-            "max_drawdown_trailing": st_summary["max_drawdown_inr"],
-            "max_drawdown_fixed": fx_summary["max_drawdown_inr"],
-            "profit_factor_trailing": st_summary["profit_factor"],
-            "profit_factor_fixed": fx_summary["profit_factor"],
-            "reconciliation": [],
-            "reconciliation_match": True,
-        }
-
-    def _classify_strategy_filter_tag(self, strategy_id: str, setup_name: str) -> Tuple[str, str]:
-        sid = str(strategy_id or "").upper()
-        sname = str(setup_name or "").upper()
-        if "H1_CONFLUENCE" in sid or "1H" in sname or "FLAGSHIP" in sname or "1 HR" in sname:
-            return "H1_FLAGSHIP", "1 HR FLAGSHIP"
-        if "STAGE_3" in sid or "STAGE 3" in sname:
-            return "STAGE_3_SHORT", "STAGE 3 8 EMA SHORT"
-        if "CROSSOVER" in sid or "REVERSAL" in sname or "4 MA" in sname or "4X8" in sname:
-            return "CROSSOVER", "4x8 EMA CROSSOVER REVERSAL"
-        return "STAGE_2_LONG", "STAGE 2 8 EMA LONG"
-
-    def _compute_side_summary(self, pnl_pts_list: List[float], net_inr_list: List[float]) -> Dict[str, Any]:
-        total = len(net_inr_list)
-        if total == 0:
-            return {
-                "total_trades": 0, "win_rate_pct": 0.0, "avg_win_pts": 0.0, "avg_loss_pts": 0.0,
-                "total_net_pnl_inr": 0.0, "max_drawdown_inr": 0.0, "expectancy_pts": 0.0,
-                "expectancy_inr": 0.0, "profit_factor": 0.0,
-            }
-        wins_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if n > 0]
-        loss_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if n <= 0]
-        wins_inr = [n for n in net_inr_list if n > 0]
-        loss_inr = [abs(n) for n in net_inr_list if n <= 0]
-        wr = round((len(wins_inr) / total) * 100.0, 1)
-        avg_w = round(float(np.mean(wins_pts)), 2) if wins_pts else 0.0
-        avg_l = round(float(np.mean(loss_pts)), 2) if loss_pts else 0.0
-        tot_net = round(float(sum(net_inr_list)), 2)
-        exp_pts = round(float(np.mean(pnl_pts_list)), 2)
-        exp_inr = round(tot_net / total, 2)
-        pf = round(sum(wins_inr) / sum(loss_inr), 2) if sum(loss_inr) > 0 else (99.0 if sum(wins_inr) > 0 else 0.0)
-        cum = np.cumsum(net_inr_list)
-        peak = np.maximum.accumulate(np.insert(cum, 0, 0.0))[1:]
-        max_dd = round(float(np.max(np.maximum(0.0, peak - cum))), 2) if len(cum) else 0.0
-        return {
-            "total_trades": total, "win_rate_pct": wr, "avg_win_pts": avg_w, "avg_loss_pts": avg_l,
-            "total_net_pnl_inr": tot_net, "max_drawdown_inr": max_dd, "expectancy_pts": exp_pts,
-            "expectancy_inr": exp_inr, "profit_factor": pf,
-        }
-
-    def _load_backtest_1m_candles(self, from_date: str, to_date: str) -> pd.DataFrame:
-        """
-        Data Source Priority:
-          1. Local SQLite DBs: self.market_db, ict_smc.sqlite3, replay_data/*.json
-          2. Dhan Brokerage API (/v2/charts/historical) if credentials exist.
-        """
-        frames: List[pd.DataFrame] = []
-        root_dir = Path(__file__).resolve().parent.parent
-        candidate_dbs = [
-            Path(self.market_db),
-            root_dir / "ict_smc_app" / "backend" / "data" / "ict_smc.sqlite3",
-            root_dir / "data" / "terminal8500" / "market.sqlite3",
-            root_dir / "data" / "market.sqlite3",
-        ]
-        q = """
-            SELECT ts, o AS open, h AS high, l AS low, c AS close, v AS volume,
-                   date(ts, 'unixepoch', '+330 minutes') AS day,
-                   strftime('%H:%M', ts, 'unixepoch', '+330 minutes') AS hm
-            FROM candles_1m
-            WHERE sec_id IN ('13', 'NIFTY', 'IDX_I')
-              AND date(ts, 'unixepoch', '+330 minutes') >= ?
-              AND date(ts, 'unixepoch', '+330 minutes') <= ?
-            ORDER BY ts ASC
-        """
-        for db_p in candidate_dbs:
-            if db_p and db_p.exists():
-                try:
-                    with sqlite3.connect(f"file:{db_p}?mode=ro", uri=True, timeout=5) as conn:
-                        df_part = pd.read_sql_query(q, conn, params=(from_date, to_date))
-                        if not df_part.empty:
-                            log.info("[BACKTEST DATA] Loaded %d 1m candles from %s (%s to %s)",
-                                     len(df_part), db_p.name, from_date, to_date)
-                            frames.append(df_part)
-                except Exception as exc:
-                    log.debug("[BACKTEST DATA] Read error on %s: %s", db_p, exc)
-
-        replay_dir = Path(__file__).resolve().parent / "replay_data"
-        if replay_dir.exists():
-            for jf in sorted(replay_dir.glob("*.json")):
-                day_str = jf.stem
-                if from_date <= day_str <= to_date:
-                    try:
-                        jdata = json.loads(jf.read_text(encoding="utf-8"))
-                        c_list = jdata.get("spot_candles_1m") or jdata.get("candles_1m") or []
-                        if c_list:
-                            df_j = pd.DataFrame(c_list)
-                            for k_src, k_dst in (("o", "open"), ("h", "high"), ("l", "low"), ("c", "close"), ("v", "volume")):
-                                if k_src in df_j.columns and k_dst not in df_j.columns:
-                                    df_j[k_dst] = df_j[k_src]
-                            if "ts" in df_j.columns and "open" in df_j.columns:
-                                dt_s = pd.to_datetime(df_j["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-                                df_j["day"] = dt_s.dt.strftime("%Y-%m-%d")
-                                df_j["hm"] = dt_s.dt.strftime("%H:%M")
-                                frames.append(df_j[["ts", "open", "high", "low", "close", "volume", "day", "hm"]])
-                    except Exception:
-                        pass
-
-        if not frames:
-            token = os.environ.get("DHAN_ACCESS_TOKEN", "").strip()
-            client_id = os.environ.get("DHAN_CLIENT_ID", "").strip()
-            if token and client_id:
-                try:
-                    import httpx
-                    headers = {"access-token": token, "client-id": client_id, "Content-Type": "application/json"}
-                    payload = {"securityId": "13", "exchangeSegment": "IDX_I", "instrument": "INDEX", "fromDate": from_date, "toDate": to_date}
-                    r_dhan = httpx.post("https://api.dhan.co/v2/charts/historical", json=payload, headers=headers, timeout=8.0)
-                    if r_dhan.status_code == 200:
-                        d_res = r_dhan.json().get("data", {})
-                        ts_list = d_res.get("timestamp") or []
-                        if ts_list:
-                            df_api = pd.DataFrame({
-                                "ts": ts_list, "open": d_res.get("open", []), "high": d_res.get("high", []),
-                                "low": d_res.get("low", []), "close": d_res.get("close", []), "volume": d_res.get("volume", [0] * len(ts_list))
-                            })
-                            dt_s = pd.to_datetime(df_api["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-                            df_api["day"] = dt_s.dt.strftime("%Y-%m-%d")
-                            df_api["hm"] = dt_s.dt.strftime("%H:%M")
-                            log.info("[BACKTEST DATA] Loaded %d 1m candles via Dhan API (%s to %s)", len(df_api), from_date, to_date)
-                            frames.append(df_api)
-                except Exception as ex_dhan:
-                    log.warning("[BACKTEST DATA] Dhan API candle fallback failed: %s", ex_dhan)
-
-        if frames:
-            merged = pd.concat(frames, ignore_index=True).drop_duplicates(subset=["ts"]).sort_values("ts").reset_index(drop=True)
-            return merged
-
-        log.warning("[BACKTEST DATA] Zero candles found for range %s to %s. Check date inputs or DB files.", from_date, to_date)
-        return pd.DataFrame()
-
-    def run_date_range_backtest(
-        self,
-        from_date: str = "2026-06-01",
-        to_date: str = "2026-11-04",
-        custom_cfg: Optional[Dict[str, Any]] = None,
-        enforce_ma_stack: bool = False,
-        bias: Optional[str] = None,
-        include_today_paper: bool = True,
-        strategy_filter: str = "ALL",
-        data_type_filter: str = "ALL",
-        use_previous_scanner: bool = False,
-    ) -> Dict[str, Any]:
-        active_bias = str(bias or self.directional_bias or "BOTH").upper()
-        strat_flt = str(strategy_filter or "ALL").upper().strip()
-        dtype_flt = str(data_type_filter or "ALL").upper().strip()
-        lot_qty = 65
-        delta_est = 0.60
-        charges_est = 78.16
-
-        all_rows: List[Dict[str, Any]] = []
-
-        # ── A. Historical Multi-Month Simulation (Synthesized Option Prices) ──
-        if dtype_flt in ("ALL", "SYNTHETIC", "SYNTHESIZED"):
-            df_all = self._load_backtest_1m_candles(from_date, to_date)
-            if not df_all.empty:
-                df_all = df_all[(df_all["hm"] >= "09:15") & (df_all["hm"] <= "15:30")].copy()
-                df_all["dt"] = pd.to_datetime(df_all["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-                df_15m = df_all.set_index("dt").resample("15min", closed="left", label="left").agg({
-                    "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last",
-                    "volume": "sum", "day": "first", "hm": "first"
-                }).dropna().reset_index()
-
-                df_1h = df_all.set_index("dt").resample("60min", closed="left", label="left").agg({
-                    "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
-                }).dropna().reset_index()
-
-                if len(df_15m) >= 20:
-                    df_15m["e4"] = df_15m["close"].ewm(span=4, adjust=False).mean()
-                    df_15m["e8"] = df_15m["close"].ewm(span=8, adjust=False).mean()
-                    mid = df_15m["close"].rolling(20).mean()
-                    sd = df_15m["close"].rolling(20).std(ddof=0).fillna(0.0)
-                    df_15m["ubb"] = mid + 2.0 * sd
-                    df_15m["lbb"] = mid - 2.0 * sd
-                    df_15m["bbw"] = df_15m["ubb"] - df_15m["lbb"]
-
-                    df_1h["h1_e8"] = df_1h["close"].ewm(span=8, adjust=False).mean()
-                    h1_map = {int(r["ts"]): float(r["h1_e8"]) for _, r in df_1h.iterrows()}
-                    h1_ts_list = sorted(h1_map.keys())
-
-                    bars = df_15m.to_dict(orient="records")
-                    for idx in range(20, len(bars) - 1):
-                        b = bars[idx]
-                        b_prev = bars[idx - 1]
-                        hm = str(b["hm"])
-                        if hm < "09:30" or hm >= "15:00":
-                            continue
-
-                        c_p = float(b["close"])
-                        h_p = float(b["high"])
-                        l_p = float(b["low"])
-                        o_p = float(b["open"])
-                        e4_v = float(b["e4"])
-                        e8_v = float(b["e8"])
-                        bbw = float(b["bbw"])
-                        ubb_up = float(b["ubb"]) > float(b_prev["ubb"])
-                        lbb_dn = float(b["lbb"]) < float(b_prev["lbb"])
-
-                        # READ 8 EMA directly from existing Live Strike Matrix / Proximity Radar
-                        matrix_h1 = self.ema_proximity_engine.get_asof_ema(int(b["ts"]), timeframe="1h") if hasattr(self, "ema_proximity_engine") and self.ema_proximity_engine else None
-                        matrix_m15 = self.ema_proximity_engine.get_asof_ema(int(b["ts"]), timeframe="15m") if hasattr(self, "ema_proximity_engine") and self.ema_proximity_engine else None
-
-                        h1_e8_val = float(matrix_h1.get("ema8") or matrix_h1.get("ema_slow") or 0.0) if matrix_h1 else None
-                        m15_e8_val = float(matrix_m15.get("ema8") or matrix_m15.get("ema_slow") or 0.0) if matrix_m15 else None
-                        m15_e4_val = float(matrix_m15.get("ema4") or matrix_m15.get("ema_fast") or 0.0) if matrix_m15 else None
-
-                        # Resolve 1H bar timestamp and 1H 8-EMA
-                        h1_e8 = h1_e8_val if h1_e8_val else e8_v
-                        h1_ts_found = int(b["ts"])
-                        for h_ts in reversed(h1_ts_list):
-                            if h_ts <= int(b["ts"]):
-                                h1_ts_found = h_ts
-                                if not h1_e8_val:
-                                    h1_e8 = h1_map[h_ts]
-                                break
-
-                        cand_signals = []
-                        touch_15 = (l_p <= e8_v + 3.0 and h_p >= e8_v - 3.0)
-                        touch_1h = (l_p <= h1_e8 + 5.0 and h_p >= h1_e8 - 5.0)
-
-                        # 1. STAGE_2_LONG
-                        if e4_v > e8_v and ubb_up and bbw >= 50.0 and touch_15 and c_p >= e8_v - 2.5:
-                            cand_signals.append(("STAGE_2_LONG", "Stage 2 8-EMA (Long) [Pullback Touch]", "LONG", 40.0, 40.0, "15m Pullback Touch"))
-                        # 2. STAGE_3_SHORT
-                        if e4_v < e8_v and lbb_dn and bbw >= 50.0 and touch_15 and c_p <= e8_v + 2.5:
-                            cand_signals.append(("STAGE_3_SHORT", "Stage 3 8-EMA (Short) [Resistance Rejection]", "SHORT", 40.0, 40.0, "15m Rejection"))
-                        # 3. CROSSOVER
-                        if float(b_prev["e4"]) <= float(b_prev["e8"]) and e4_v > e8_v and touch_15:
-                            cand_signals.append(("CROSSOVER_BULLISH", "4 MA vs 8 EMA Upside Reversal", "LONG", 20.0, 20.0, "4/8 Bullish Cross"))
-                        elif float(b_prev["e4"]) >= float(b_prev["e8"]) and e4_v < e8_v and touch_15:
-                            cand_signals.append(("CROSSOVER_BEARISH", "4 MA vs 8 EMA Downside Reversal", "SHORT", 20.0, 20.0, "4/8 Bearish Cross"))
-                        # 4. 1 HR FLAGSHIP (1H 8-EMA Touch + 15m Price Action Confirmation)
-                        if touch_1h and e4_v > e8_v and c_p >= o_p:
-                            cand_signals.append(("H1_CONFLUENCE_SUPPORT", "1H 8-EMA Support Bounce Confluence", "LONG", 40.0, 40.0, "15m Bullish Confirmation"))
-                        elif touch_1h and e4_v < e8_v and c_p <= o_p:
-                            cand_signals.append(("H1_CONFLUENCE_RESIST", "1H 8-EMA Resistance Rejection Confluence", "SHORT", 40.0, 40.0, "15m Bearish Confirmation"))
-
-                        for sid, sname, direc, tgt_pts, sl_pts, pa_conf in cand_signals:
-                            f_code, f_tag = self._classify_strategy_filter_tag(sid, sname)
-                            if strat_flt != "ALL" and f_code != strat_flt:
-                                continue
-                            if active_bias == "LONG_ONLY" and direc != "LONG":
-                                continue
-                            if active_bias == "SHORT_ONLY" and direc != "SHORT":
-                                continue
-
-                            entry_spot = round(float(bars[idx + 1]["open"]), 2)
-                            idx_high = entry_spot
-                            idx_low = entry_spot
-                            is_long = direc == "LONG"
-
-                            fx_pnl_pts = 0.0
-                            fx_done = False
-
-                            st_sl = (entry_spot - sl_pts) if is_long else (entry_spot + sl_pts)
-                            st_pnl_pts = 0.0
-                            st_reason = "EOD_SQUARE_OFF_15:20"
-                            st_done = False
-                            trail_steps = [f"SL {int(sl_pts)}"]
-
-                            for f_idx in range(idx + 1, len(bars)):
-                                fb = bars[f_idx]
-                                if fb["day"] != b["day"]:
-                                    break
-                                fh, fl, fc, fo = float(fb["high"]), float(fb["low"]), float(fb["close"]), float(fb["open"])
-                                idx_high = max(idx_high, fh)
-                                idx_low = min(idx_low, fl)
-
-                                if not fx_done:
-                                    if is_long:
-                                        if fl <= entry_spot - sl_pts:
-                                            fx_pnl_pts = -sl_pts
-                                            fx_done = True
-                                        elif fh >= entry_spot + tgt_pts:
-                                            fx_pnl_pts = tgt_pts
-                                            fx_done = True
-                                    else:
-                                        if fh >= entry_spot + sl_pts:
-                                            fx_pnl_pts = -sl_pts
-                                            fx_done = True
-                                        elif fl <= entry_spot - tgt_pts:
-                                            fx_pnl_pts = tgt_pts
-                                            fx_done = True
-
-                                if not st_done:
-                                    if is_long:
-                                        if fl <= st_sl:
-                                            st_pnl_pts = round(st_sl - entry_spot, 2)
-                                            st_reason = "TRAIL_SL_HIT" if st_sl > (entry_spot - sl_pts) else "SL_HIT"
-                                            st_done = True
-                                        elif fh >= entry_spot + tgt_pts:
-                                            st_pnl_pts = round(tgt_pts, 2)
-                                            st_reason = "TARGET_HIT"
-                                            st_done = True
-                                        elif fc > fo and fl > st_sl:
-                                            st_sl = round(fl, 2)
-                                            trail_steps.append(f"Green Low {st_sl:.0f}")
-                                    else:
-                                        if fh >= st_sl:
-                                            st_pnl_pts = round(entry_spot - st_sl, 2)
-                                            st_reason = "TRAIL_SL_HIT" if st_sl < (entry_spot + sl_pts) else "SL_HIT"
-                                            st_done = True
-                                        elif fl <= entry_spot - tgt_pts:
-                                            st_pnl_pts = round(tgt_pts, 2)
-                                            st_reason = "TARGET_HIT"
-                                            st_done = True
-                                        elif fc < fo and fh < st_sl:
-                                            st_sl = round(fh, 2)
-                                            trail_steps.append(f"Red High {st_sl:.0f}")
-
-                                if str(fb["hm"]) >= "15:15":
-                                    if not fx_done:
-                                        fx_pnl_pts = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
-                                        fx_done = True
-                                    if not st_done:
-                                        st_pnl_pts = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
-                                        st_reason = "EOD_SQUARE_OFF_15:20"
-                                        st_done = True
-                                    break
-
-                            synth_opt_entry = 200.00
-                            synth_opt_exit = max(1.0, round(synth_opt_entry + st_pnl_pts * delta_est, 2))
-                            synth_net_inr = round((synth_opt_exit - synth_opt_entry) * lot_qty - charges_est, 2)
-                            fx_net_inr = round((fx_pnl_pts * delta_est) * lot_qty - charges_est, 2)
-
-                            mfe_pts = round((idx_high - entry_spot) if is_long else (entry_spot - idx_low), 1)
-                            falloff_pts = round(max(0.0, mfe_pts - max(0.0, st_pnl_pts)), 1)
-                            atm_strike = int(round(entry_spot / 100.0) * 100)
-                            opt_type = "CE" if is_long else "PE"
-                            contract_sym = f"NIFTY {atm_strike} {opt_type} (Synthesized Strike)"
-                            trail_str = " -> ".join(trail_steps[:4]) + f" -> {st_reason}" if len(trail_steps) > 1 else f"No Trail, Fixed {int(sl_pts)}/{int(tgt_pts)}"
-
-                            # Column 14: "8 EMA" (READ from Matrix with "(From Matrix)" tag)
-                            h1_ts_found = int(b.get("ts", 0)); h1_dt_str = pd.to_datetime(h1_ts_found, unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%H:%M")
-                            if f_code == "H1_FLAGSHIP":
-                                ema8_matrix_display = (
-                                    f"1H 8 EMA: {h1_e8:.2f} (From Matrix) | 1H Candle: {b['day']} {h1_dt_str}, Touch: Yes | "
-                                    f"Entry {entry_spot:.1f}, Distance {entry_spot - h1_e8:+.1f} pts"
-                                )
-                            else:
-                                ema_ref_val = m15_e8_val if m15_e8_val else e8_v
-                                ema4_ref_val = m15_e4_val if m15_e4_val else e4_v
-                                ema8_matrix_display = (
-                                    f"15m 8 EMA: {ema_ref_val:.2f} (From Matrix) | 4 EMA: {ema4_ref_val:.2f} | "
-                                    f"Entry {entry_spot:.1f}, Distance {entry_spot - ema_ref_val:+.1f} pts"
-                                )
-
-                            all_rows.append({
-                                "Trade_ID": f"SYN_{b['day']}_{hm}_{sid}",
-                                "Date": f"{b['day']} {hm}",
-                                "date_only": str(b["day"]),
-                                "Setup_Name": sname,
-                                "Contract_Symbol": contract_sym,
-                                "Direction": direc,
-                                "Index_Entry": f"{entry_spot:.2f}", "Index_Exit": f"{round(entry_spot + st_pnl_pts if is_long else entry_spot - st_pnl_pts, 2):.2f}",
-                                "Option_Entry_Display": f"{synth_opt_entry:.2f} (Synthesized Option Price)",
-                                "Option_Exit_Display": f"{synth_opt_exit:.2f} (Synthesized Option Price)",
-                                "option_entry": synth_opt_entry,
-                                "option_exit": synth_opt_exit,
-                                "Exit_Reason": st_reason,
-                                "exit_reason": st_reason,
-                                "Net_Pnl_Display": f"{st_pnl_pts:+.1f} pts | ₹{synth_net_inr:,.2f} (Synthesized)",
-                                "net_pnl": synth_net_inr,
-                                "fixed_net_pnl_row": fx_net_inr,
-                                "st_pnl_pts": st_pnl_pts,
-                                "fx_pnl_pts": fx_pnl_pts,
-                                "Trailing_Details": trail_str,
-                                "All_Fall_Off": f"MFE +{mfe_pts:.1f}p | Falloff {falloff_pts:.1f}p",
-                                "Strategy_Filter_Tag": f_tag,
-                                "Data_Type": "Synthetic Data",
-                                "Ema8_From_Matrix": ema8_matrix_display,
-                                "strategy_id": sid,
-                                "source": "SYNTHESIZED",
-                            })
-
-        # ── B. Live / Real Algo Traded Data from Ledger DB (Section 5B) ──────
-        if include_today_paper and dtype_flt in ("ALL", "REAL"):
-            try:
-                rec_rows = self._recorded_history().trades(from_date, to_date)
-            except Exception:
-                rec_rows = []
-            for r in rec_rows:
-                sname = str(r.get("Setup_Name") or "Stage 2 8 EMA Long")
-                f_code, f_tag = self._classify_strategy_filter_tag(r.get("Strategy", ""), sname)
-                if strat_flt != "ALL" and f_code != strat_flt:
-                    continue
-                direc = str(r.get("Direction") or "LONG").upper()
-                if active_bias == "LONG_ONLY" and direc != "LONG":
-                    continue
-                if active_bias == "SHORT_ONLY" and direc != "SHORT":
-                    continue
-
-                ep = r.get("option_entry")
-                xp = r.get("option_exit")
-                ep_disp = f"{float(ep):.2f} (Real)" if ep is not None and float(ep) > 0 else "Entry Missing (Real)"
-                if xp is not None and float(xp) > 0:
-                    xp_disp = f"{float(xp):.2f} (Real)"
-                    opt_pts = round(float(xp) - float(ep or 0.0), 2)
-                else:
-                    xp_disp = "Exit Price Missing (Real) — Not Synthesized"
-                    opt_pts = 0.0
-
-                net_val = float(r.get("net_pnl") or 0.0)
-                entry_time_short = str(r.get("Entry_Time") or "09:30")[:5]
-                data_type_tag = "Algo Real Data" if r.get("source") == "ALGO" else "Real Data"
-
-                all_rows.append({
-                    "Trade_ID": str(r.get("Trade_ID")),
-                    "Date": f"{r.get('Date')} {entry_time_short}",
-                    "date_only": str(r.get("Date")),
-                    "Setup_Name": sname,
-                    "Contract_Symbol": f"{r.get('Contract_Symbol')} (Real)",
-                    "Direction": direc,
-                    "Index_Entry": str(r.get("index_entry") or "LIVE"), "Index_Exit": str(r.get("index_exit") or "LIVE"), "Ema8_From_Matrix": f"8 EMA: (Real Live Strike Matrix)",
                     "Option_Entry_Display": ep_disp,
                     "Option_Exit_Display": xp_disp,
                     "option_entry": ep,

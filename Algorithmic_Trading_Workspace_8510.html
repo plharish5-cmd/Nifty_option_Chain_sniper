@@ -680,7 +680,25 @@ refresh();setInterval(refresh,10000);
  <p id="trendCaptureStatus">Loading closed 15m context… Existing execution and v1.1 exits remain unchanged.</p>
  <p id="trendCaptureGate">Trailing engine: not built — evidence gate did not pass.</p>
  <div id="trendCaptureReadiness"></div>
- <details><summary>Closed 15m observation ladder</summary><div style="max-height:240px;overflow:auto"><table><thead><tr><th>Time IST</th><th>Close</th><th>4 EMA</th><th>8 EMA</th><th>OR confirmed</th></tr></thead><tbody id="trendCaptureLadder"></tbody></table></div></details>
+ <details><summary>Closed 15m observation ladder</summary><div style="max-height:240px;overflow:auto"><table><thead>
+                            <tr>
+                                <th>1. Date</th>
+                                <th>2. Setup Name</th>
+                                <th>3. Contract Symbol</th>
+                                <th>4. Direction</th>
+                                <th>5. Index Entry</th>
+                                <th>6. Index Exit</th>
+                                <th>7. Option Entry</th>
+                                <th>8. Option Exit</th>
+                                <th>9. Exit Reason</th>
+                                <th>10. Net P&amp;L</th>
+                                <th>11. Trailing</th>
+                                <th>12. All Fall Off</th>
+                                <th>13. Strategy Filter Tag</th>
+                                <th>14. Data Type</th>
+                                <th>15. 8 EMA</th>
+                            </tr>
+                        </thead><tbody id="trendCaptureLadder"></tbody></table></div></details>
  <details><summary>40-session evidence and data coverage</summary><p id="trendCaptureCoverage">Only recorded option prices qualify; no estimated premium fallback.</p><table><thead><tr><th>Segment</th><th>Candidates</th><th>Priced</th><th>Net ₹/trade</th><th>WR</th><th>Break-even WR</th></tr></thead><tbody id="trendCaptureEvidence"></tbody></table><p>Snapshot LTP scenarios are not fills; missing spread/slippage and sparse prices prevent an execution-edge claim.</p></details>
 </section>
 
@@ -4204,21 +4222,21 @@ refresh();setInterval(refresh,10000);
                 for (const t of (data.trades || [])) {
                     const tr = document.createElement('tr');
                     const cols = [
-                        t.Date,                  // 1. Date
-                        t.Setup_Name,            // 2. Setup Name
-                        t.Contract_Symbol,       // 3. Contract Symbol
-                        t.Direction,             // 4. Direction
-                        t.Index_Entry,           // 5. Index Entry
-                        t.Index_Exit,            // 6. Index Exit
-                        t.Option_Entry_Display,  // 7. Option Entry
-                        t.Option_Exit_Display,   // 8. Option Exit
-                        t.Exit_Reason,           // 9. Exit Reason
-                        t.Net_Pnl_Display,       // 10. Net P&L
-                        t.Trailing_Details,      // 11. Trailing
-                        t.All_Fall_Off,          // 12. All Fall Off
-                        t.Strategy_Filter_Tag,   // 13. Strategy Filter Tag
-                        t.Data_Type,             // 14. Data Type
-                        t.Ema8_From_Matrix       // 15. 8 EMA (from Matrix)
+                        t.Date,
+                        t.Setup_Name,
+                        t.Contract_Symbol,
+                        t.Direction,
+                        t.Index_Entry,
+                        t.Index_Exit,
+                        t.Option_Entry_Display,
+                        t.Option_Exit_Display,
+                        t.Exit_Reason,
+                        t.Net_Pnl_Display,
+                        t.Trailing_Details,
+                        t.All_Fall_Off,
+                        t.Strategy_Filter_Tag,
+                        t.Data_Type,
+                        t.Ema8_From_Matrix
                     ];
                     for (const val of cols) {
                         const td = document.createElement('td');
