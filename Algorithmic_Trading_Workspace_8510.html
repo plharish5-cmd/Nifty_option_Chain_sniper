@@ -940,7 +940,7 @@ refresh();setInterval(refresh,10000);
             <div class="card" style="border: 1px solid rgba(56, 189, 248, 0.35); background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(8, 14, 26, 0.98));">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
                     <div style="display:flex; align-items:center; gap:10px;">
-                        <span style="font-size:16px; font-weight:800; color:#f8fafc;">🤖 4-Core Strategy Scanner &amp; Party-Switch Cockpit</span>
+                        <span style="font-size:16px; font-weight:800; color:#f8fafc;">🤖 4-Core + Ribbon Scalp Scanner &amp; Party-Switch Cockpit</span>
                         <span id="scannerActiveBadge" class="status-badge badge-bull">🟢 SCANNER ACTIVE</span>
                         <span class="bb-off-badge-global status-badge badge-bear" style="display:none;">Bollinger OFF</span>
                     </div>
@@ -1039,6 +1039,17 @@ refresh();setInterval(refresh,10000);
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
                             Daily S/R + 1H swing zones + closed 15m PA.<br>
                             Tgt +40 / SL -40 · Candle trail · S/R exits · 15:20 square-off
+                        </div>
+                    </div>
+                    <!-- Strategy 5: Ribbon Scalp (Matrix Tier 3 — paper) -->
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(56, 189, 248, 0.35); border-radius:8px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700; color:#38bdf8; font-size:13px;">5. Ribbon Scalp (1m Matrix)</span>
+                            <span id="stratStatus_ribbon" class="status-badge badge-neutral">OFF</span>
+                        </div>
+                        <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
+                            Tier 3 + bounce/reject + MTF; grades A+/A/B.<br>
+                            Paper only · config <code style="font-size:10px;">matrix_scalp.enabled</code> · T1/T2 spot 15/40
                         </div>
                     </div>
                     <!-- Daily S/R -->
@@ -3343,6 +3354,14 @@ refresh();setInterval(refresh,10000);
                         const s3 = document.getElementById("stratStatus_stage3");
                         const sCross = document.getElementById("stratStatus_crossover");
                         const sH1 = document.getElementById("stratStatus_h1");
+                        const sRib = document.getElementById("stratStatus_ribbon");
+                        if (sRib && sc.strategies.ribbon_scalp) {
+                            const rs = sc.strategies.ribbon_scalp;
+                            const g = rs.grade ? ` [${rs.grade}]` : "";
+                            sRib.textContent = (rs.state || "OFF") + g;
+                            const st = rs.state || "OFF";
+                            sRib.className = `status-badge ${st === "TRIGGERED" ? "badge-bull" : (st === "BELOW_MIN_GRADE" ? "badge-bear" : (st === "OFF" ? "badge-neutral" : "badge-gold"))}`;
+                        }
                         if (s2 && sc.strategies.stage2_long) {
                             s2.textContent = sc.strategies.stage2_long.state;
                             s2.className = `status-badge ${sc.strategies.stage2_long.state === 'TRIGGERED' ? 'badge-bull' : (sc.strategies.stage2_long.state === 'ARMED' ? 'badge-gold' : 'badge-neutral')}`;

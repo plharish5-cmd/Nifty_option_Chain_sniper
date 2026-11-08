@@ -548,13 +548,15 @@ async def api_matrix_scalp_get():
             c.row_factory = _s.Row
             out["open_positions"] = [dict(r) for r in c.execute(
                 "SELECT * FROM positions WHERE status='OPEN' "
-                "AND strategy_id LIKE 'matrix_scalp%'")]
+                "AND (strategy_id LIKE 'ribbon_scalp%' OR strategy_id LIKE 'matrix_scalp%')")]
             out["closed_count"] = c.execute(
                 "SELECT COUNT(*) FROM positions WHERE status LIKE 'CLOSED%' "
-                "AND strategy_id LIKE 'matrix_scalp%'").fetchone()[0]
+                "AND (strategy_id LIKE 'ribbon_scalp%' OR strategy_id LIKE 'matrix_scalp%')"
+            ).fetchone()[0]
             out["sessions_recorded"] = c.execute(
                 "SELECT COUNT(DISTINCT substr(entry_time,1,10)) FROM positions "
-                "WHERE strategy_id LIKE 'matrix_scalp%'").fetchone()[0]
+                "WHERE strategy_id LIKE 'ribbon_scalp%' OR strategy_id LIKE 'matrix_scalp%'"
+            ).fetchone()[0]
     except Exception as exc:
         out["ledger_error"] = str(exc)
     return JSONResponse(content=out)

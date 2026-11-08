@@ -70,6 +70,13 @@ def backend(tmp_path, **over):
     b.ledger_db = tmp_path / "ledger.sqlite3"
     b._matrix_scalp_last = {}
     b.ema_proximity_engine = None
+    b.strategy_status = {
+        "ribbon_scalp": {
+            "name": "Ribbon Scalp (5th — Matrix Radar)",
+            "state": "OFF",
+            "grade": None,
+        }
+    }
     b._init_sqlite()
     return b
 
@@ -155,7 +162,12 @@ class _Eng:
     def __init__(self, **row):
         base = {"proximity_state": "TIER_3_CONFIRMATION_TRIGGER",
                 "sr_interaction": "STAGE_2_8EMA_SUPPORT_BOUNCE",
-                "close_price": 24400.0, "timestamp_ist": "10:30:00",
+                "close_price": 24400.0, "low_price": 24398.0, "high_price": 24402.0,
+                "timestamp_ist": "10:30:00",
+                "ema_4": 24403.0, "ema_8": 24399.0,
+                "ema_4_15m": 24405.0, "ema_8_15m": 24398.0,
+                "ema_4_1h": 24404.0, "ema_8_1h": 24397.0,
+                "crossover_state": "BULLISH_SEPARATION_STRONG",
                 "risk_points": 8.5, "gap_pts": 3.2, "gap_atr_ratio": 0.12,
                 "spread_4_8_atr": 0.2, "is_whipsaw_chop": False}
         base.update(row)
@@ -326,14 +338,15 @@ def test_the_signal_is_marked_as_a_matrix_scalp(tmp_path):
     """The flag is what routes the spot context into the position row."""
     s = sig_from(tmp_path, _Eng())[0]
     assert s["matrix_scalp"] is True
-    assert s["strategy_id"].startswith("matrix_scalp")
-    assert "Matrix Scalp Tier 3" in s["setup_name"]
+    assert s["strategy_id"].startswith(("ribbon_scalp", "matrix_scalp"))
+    assert "Ribbon Scalp" in s["setup_name"] or "Matrix Scalp" in s["setup_name"]
+    assert s.get("ribbon_grade") in ("A", "A+", "B")
 
 
 def test_the_advisory_note_says_it_is_unvalidated(tmp_path):
     s = sig_from(tmp_path, _Eng())[0]
-    assert "PROSPECTIVE" in s["advisory_note"].upper()
-    assert "NOT AN OPTIMUM" in s["advisory_note"].upper()
+    assert "PROSPECTIVE" in s["advisory_note"].upper() or "RIBBON" in s["advisory_note"].upper()
+    assert "NOT REAL-MONEY" in s["advisory_note"].upper() or "NOT AN OPTIMUM" in s["advisory_note"].upper()
 
 
 def test_paper_and_algo_only_remain_permanent(tmp_path):

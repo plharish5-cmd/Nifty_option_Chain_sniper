@@ -2381,6 +2381,13 @@ class QuantTerminalBackend:
                 "desc": "1H swing zones + 15m PA (40/40 candle trail)",
                 "armed": False,
             },
+            "ribbon_scalp": {
+                "name": "Ribbon Scalp (5th — Matrix Radar)",
+                "state": "OFF",
+                "desc": "Tier 3 proximity + bounce/reject; paper prospective",
+                "armed": False,
+                "grade": None,
+            },
         }
         self.strategy_cooldowns: Dict[str, float] = {}
         self.scanner_task: Optional[asyncio.Task] = None
@@ -4527,6 +4534,63 @@ class QuantTerminalBackend:
     #     minutes and minute OHLC cannot order them.
     # So this is an instrument, not a strategy with an edge.
 
+    _RIBBON_GRADE_RANK = {"B": 1, "A": 2, "A+": 3}
+
+    def _ribbon_fresh_cross_flags(self, rows: List[Dict[str, Any]]) -> Tuple[bool, bool]:
+        """Upside / downside reversal cross on newest bar or prior two 1m bars."""
+        tail = list(rows[-3:]) if rows else []
+        up = dn = False
+        for r in tail:
+            cs = str(r.get("crossover_state") or "")
+            if cs == "8_EMA_REVERSAL_UPSIDE_CROSS":
+                up = True
+            if cs == "8_EMA_REVERSAL_DOWNSIDE_CROSS":
+                dn = True
+        return up, dn
+
+    def _ribbon_mtf_agree(self, row: Dict[str, Any], direction: str) -> bool:
+        try:
+            e4 = float(row.get("ema_4") or 0)
+            e8 = float(row.get("ema_8") or 0)
+            e4_15 = float(row.get("ema_4_15m") or 0)
+            e8_15 = float(row.get("ema_8_15m") or 0)
+            e4_1h = float(row.get("ema_4_1h") or 0)
+            e8_1h = float(row.get("ema_8_1h") or 0)
+        except (TypeError, ValueError):
+            return False
+        if direction == "LONG":
+            if not (e4 > e8 and e4_15 > e8_15):
+                return False
+            return e4_1h >= e8_1h
+        if not (e4 < e8 and e4_15 < e8_15):
+            return False
+        return e4_1h <= e8_1h
+
+    def _ribbon_sr_matches_direction(self, row: Dict[str, Any], direction: str) -> bool:
+        sr = str(row.get("sr_interaction") or "").upper()
+        if direction == "LONG":
+            return "SUPPORT_BOUNCE" in sr or "SUPPORT_TOUCH" in sr
+        return "RESISTANCE_REJECT" in sr or "RESISTANCE_TOUCH" in sr
+
+    def _ribbon_scalp_grade(
+        self, row: Dict[str, Any], rows: List[Dict[str, Any]], direction: str
+    ) -> Optional[str]:
+        if row.get("is_whipsaw_chop"):
+            return None
+        state = str(row.get("proximity_state") or "")
+        if state != "TIER_3_CONFIRMATION_TRIGGER":
+            return None
+        if not self._ribbon_sr_matches_direction(row, direction):
+            return "B"
+        mtf = self._ribbon_mtf_agree(row, direction)
+        if not mtf:
+            return "B"
+        up_cross, dn_cross = self._ribbon_fresh_cross_flags(rows)
+        fresh = (direction == "LONG" and up_cross) or (direction == "SHORT" and dn_cross)
+        if fresh and self._ribbon_sr_matches_direction(row, direction):
+            return "A+"
+        return "A"
+
     def _matrix_scalp_direction(self, row: Dict[str, Any]) -> Optional[str]:
         """Direction from the engine's OWN sr_interaction label.
 
@@ -4591,8 +4655,26 @@ class QuantTerminalBackend:
         if row.get("is_whipsaw_chop"):
             return []
 
+        rib_status = (getattr(self, "strategy_status", None) or {}).get("ribbon_scalp")
+
+        def _rib_state(**kw):
+            if isinstance(rib_status, dict):
+                rib_status.update(kw)
+
         direction = self._matrix_scalp_direction(row)
         if not direction:
+            _rib_state(state="SCANNING", grade=None)
+            return []
+
+        grade = self._ribbon_scalp_grade(row, rows, direction)
+        if not grade:
+            _rib_state(state="FILTERED", grade=None)
+            return []
+        min_grade = str(cfg.get("min_grade", "B") or "B")
+        if min_grade not in self._RIBBON_GRADE_RANK:
+            min_grade = "B"
+        if self._RIBBON_GRADE_RANK.get(grade, 0) < self._RIBBON_GRADE_RANK[min_grade]:
+            _rib_state(state="BELOW_MIN_GRADE", grade=grade)
             return []
 
         bar_time = str(row.get("timestamp_ist") or "")[:5]
@@ -4615,8 +4697,23 @@ class QuantTerminalBackend:
             return []
 
         spot_tgt = float(cfg.get("spot_target_pts", 15.0))
+        spot_tgt2 = float(cfg.get("spot_target_pts_t2", 40.0))
         spot_stop = float(cfg.get("spot_stop_pts", 20.0))
         engine_risk = row.get("risk_points")
+
+        if cfg.get("use_wick_micro_sl", False):
+            try:
+                if direction == "LONG":
+                    wick_risk = spot - (float(row.get("low_price") or row.get("close_price") or spot) - 5.0)
+                else:
+                    wick_risk = (float(row.get("high_price") or row.get("close_price") or spot) + 5.0) - spot
+                wick_risk = max(0.0, float(wick_risk))
+                lo = float(cfg.get("min_engine_risk_pts", 2.0))
+                hi = float(cfg.get("max_engine_risk_pts", 40.0))
+                if lo <= wick_risk <= hi:
+                    spot_stop = round(wick_risk, 2)
+            except (TypeError, ValueError):
+                pass
 
         # Optionally use the engine's own structural Micro-SL instead of the
         # fixed width, bounded so a 92-point structural stop cannot be adopted
@@ -4641,18 +4738,35 @@ class QuantTerminalBackend:
         prem_stop = round(spot_stop * d_loss, 2)
 
         opt_side = "CE" if direction == "LONG" else "PE"
+        rib_id = "ribbon_scalp_{}".format(direction.lower())
+        display = str(cfg.get("display_name") or "Ribbon Scalp")
         sig = {
-            "strategy_id": key,
-            "setup_name": "Matrix Scalp Tier 3 ({})".format(
-                "CE Long" if direction == "LONG" else "PE Long"),
+            "strategy_id": rib_id,
+            "setup_name": "{} [{}] {} ({})".format(
+                display,
+                grade,
+                "CE Long" if direction == "LONG" else "PE Long",
+                str(row.get("sr_interaction") or "TIER_3"),
+            ),
             "direction": direction,
             "opt_side": opt_side,
-            "conviction": "TIER 3 CONFIRMATION",
-            "details": ("{} | spot {:.2f} | target +{:.0f} / stop -{:.0f} spot pts "
-                        "(= +{:.2f} / -{:.2f} premium) | bar {}"
-                        .format(str(row.get("sr_interaction") or "TIER_3"),
-                                spot, spot_tgt, spot_stop, prem_tgt, prem_stop,
-                                bar_time or "?")),
+            "conviction": "RIBBON {}".format(grade),
+            "ribbon_grade": grade,
+            "details": ("{} [{}] {} | spot {:.2f} | T1 +{:.0f} T2 +{:.0f} / stop -{:.0f} spot pts "
+                        "(= +{:.2f} / -{:.2f} premium) | cross={} | bar {}"
+                        .format(
+                            display,
+                            grade,
+                            str(row.get("sr_interaction") or "TIER_3"),
+                            spot,
+                            spot_tgt,
+                            spot_tgt2,
+                            spot_stop,
+                            prem_tgt,
+                            prem_stop,
+                            row.get("crossover_state") or "—",
+                            bar_time or "?",
+                        )),
             "target_pts": prem_tgt,
             "sl_pts": prem_stop,
             # Spot context, carried through for the sweet-spot study.
@@ -4671,11 +4785,20 @@ class QuantTerminalBackend:
             "gap_atr_ratio": row.get("gap_atr_ratio"),
             "separation_atr": row.get("spread_4_8_atr"),
             "bar_time_ist": bar_time,
-            "advisory_note": ("PROSPECTIVE PAPER RECORDING — stop width is an "
-                              "unvalidated starting point, not an optimum"),
+            "advisory_note": ("RIBBON SCALP LOCK — prospective paper only; "
+                              "stop width unvalidated; not real-money until UNLOCK"),
+            "spot_target_pts_t2": spot_tgt2,
         }
         self._matrix_scalp_last[key] = time.time()
-        log.info("MATRIX SCALP TIER 3 %s | %s", direction, sig["details"])
+        _rib_state(
+            state="TRIGGERED",
+            armed=True,
+            grade=grade,
+            last_direction=direction,
+        )
+        if not cfg.get("enabled", False):
+            _rib_state(state="OFF")
+        log.info("RIBBON SCALP %s [%s] | %s", direction, grade, sig["details"])
         return [sig]
 
     def evaluate_all_strategies(self, spot_price: Optional[float] = None) -> List[Dict[str, Any]]:
