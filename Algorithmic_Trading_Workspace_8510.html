@@ -1715,7 +1715,7 @@ refresh();setInterval(refresh,10000);
                 <!-- Active Filter Banner & Data Provenance Badge -->
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; padding:8px 12px; background:rgba(15,23,42,0.85); border:1px solid #334155; border-radius:6px; font-family:var(--font-mono); font-size:12px;">
                     <div id="drActiveFilterBanner" style="color:#38bdf8; font-weight:700;">
-                        Filter: 1 HR FLAGSHIP | Date: 2026-09-01 to 2026-10-31 | Super Trail vs Fixed 40/40
+                        Filter: ALL STRATEGIES | Date: 2026-09-01 to 2026-10-31 | Super Trail vs Fixed 40/40
                     </div>
                     <div id="drDataTypeBadge" style="padding:3px 10px; border-radius:4px; background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); font-weight:700;">
                         Data Type: Synthetic Data — Option Prices Artificially Populated, For Points Testing Only, Not Real P&amp;L
@@ -1752,7 +1752,7 @@ refresh();setInterval(refresh,10000);
                     </div>
                 </div>
 
-                <!-- 14-Column Results Table (Index High/Low REMOVED; Data Type & 8 EMA Line ADDED) -->
+                <!-- 14-Column Results Table (Exact order; Index High/Low deleted; 13: Data Type, 14: 8 EMA) -->
                 <div style="overflow-x:auto; max-height:480px;">
                     <table>
                         <thead>
@@ -1762,15 +1762,16 @@ refresh();setInterval(refresh,10000);
                                 <th>3. Contract Symbol</th>
                                 <th>4. Direction</th>
                                 <th>5. Index Entry</th>
-                                <th>6. Option Entry</th>
-                                <th>7. Option Exit</th>
-                                <th>8. Exit Reason</th>
-                                <th>9. Net P&amp;L</th>
-                                <th>10. Trailing</th>
-                                <th>11. All Fall Off</th>
-                                <th>12. Strategy Filter Tag</th>
-                                <th>13. Data Type</th>
-                                <th>14. 8 EMA Line</th>
+                                <th>6. Index Exit</th>
+                                <th>7. Option Entry</th>
+                                <th>8. Option Exit</th>
+                                <th>9. Exit Reason</th>
+                                <th>10. Net P&amp;L</th>
+                                <th>11. Trailing</th>
+                                <th>12. All Fall Off</th>
+                                <th>13. Strategy Filter Tag</th>
+                                <th>14. Data Type</th>
+                                <th>15. 8 EMA</th>
                             </tr>
                         </thead>
                         <tbody id="drBacktestTableBody">
@@ -4203,20 +4204,21 @@ refresh();setInterval(refresh,10000);
                 for (const t of (data.trades || [])) {
                     const tr = document.createElement('tr');
                     const cols = [
-                        t.Date,
-                        t.Setup_Name,
-                        t.Contract_Symbol,
-                        t.Direction,
-                        t.Index_Entry,
-                        t.Option_Entry_Display,
-                        t.Option_Exit_Display,
-                        t.Exit_Reason,
-                        t.Net_Pnl_Display,
-                        t.Trailing_Details,
-                        t.All_Fall_Off,
-                        t.Strategy_Filter_Tag,
-                        t.Data_Type,
-                        t.Ema8_Line_Details
+                        t.Date,                  // 1. Date
+                        t.Setup_Name,            // 2. Setup Name
+                        t.Contract_Symbol,       // 3. Contract Symbol
+                        t.Direction,             // 4. Direction
+                        t.Index_Entry,           // 5. Index Entry
+                        t.Index_Exit,            // 6. Index Exit
+                        t.Option_Entry_Display,  // 7. Option Entry
+                        t.Option_Exit_Display,   // 8. Option Exit
+                        t.Exit_Reason,           // 9. Exit Reason
+                        t.Net_Pnl_Display,       // 10. Net P&L
+                        t.Trailing_Details,      // 11. Trailing
+                        t.All_Fall_Off,          // 12. All Fall Off
+                        t.Strategy_Filter_Tag,   // 13. Strategy Filter Tag
+                        t.Data_Type,             // 14. Data Type
+                        t.Ema8_From_Matrix       // 15. 8 EMA (from Matrix)
                     ];
                     for (const val of cols) {
                         const td = document.createElement('td');
@@ -4228,7 +4230,7 @@ refresh();setInterval(refresh,10000);
 
                 if (!data.trades || !data.trades.length) {
                     const tr = document.createElement('tr'), td = document.createElement('td');
-                    td.colSpan = 14;
+                    td.colSpan = 15;
                     td.textContent = 'No trades matched the selected Strategy / Data Type filter in this date range.';
                     tr.appendChild(td);
                     tbody.appendChild(tr);
@@ -4236,7 +4238,7 @@ refresh();setInterval(refresh,10000);
                 renderReconciliation(data.reconciliation || [], data.reconciliation_match ?? null);
             } catch (e) {
                 const tr = document.createElement('tr'), td = document.createElement('td');
-                td.colSpan = 14;
+                td.colSpan = 15;
                 td.textContent = 'Backtest error: ' + e.message;
                 tr.appendChild(td);
                 tbody.appendChild(tr);
