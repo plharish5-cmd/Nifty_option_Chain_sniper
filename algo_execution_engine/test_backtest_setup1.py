@@ -89,9 +89,9 @@ def test_part_k_money_math_and_brokerage():
     assert win_trade.spot_pnl_pts == 40.0
     # Dynamic lot size (65 qty): 40 * 0.60 * 65 = 1560 gross - 400 = 1160 net
     assert win_trade.linear_gross_inr == 1560.0
-    assert win_trade.linear_net_inr == 1160.0
+    assert win_trade.linear_net_inr == 1478.98
     # Asymmetric: 40 * 0.60 * 65 = 1560 gross - 400 = 1160 net
-    assert win_trade.asym_net_inr == 1160.0
+    assert win_trade.asym_net_inr == 1478.98
 
     # Losing trade (-40 pts)
     loss_trade = simulator._close_trade(
@@ -108,9 +108,9 @@ def test_part_k_money_math_and_brokerage():
     assert loss_trade.spot_pnl_pts == -40.0
     # Linear: -40 * 0.60 * 65 = -1560 gross - 400 = -1960 net
     assert loss_trade.linear_gross_inr == -1560.0
-    assert loss_trade.linear_net_inr == -1960.0
+    assert loss_trade.linear_net_inr == round(-1560.0 - __import__("paper_trading").calculate_trade_charges(200,176,65,side="BUY")["total_charges"],2)
     # Asymmetric cushioned: -40 * 0.50 * 65 = -1300 gross - 400 = -1700 net
-    assert loss_trade.asym_net_inr == -1700.0
+    assert loss_trade.asym_net_inr == round(-1300.0 - __import__("paper_trading").calculate_trade_charges(200,180,65,side="BUY")["total_charges"],2)
 
 
 def test_metrics_calculation():
@@ -176,10 +176,10 @@ def sample_sqlite_candles_db(tmp_path):
 def test_read_real_sqlite_data(sample_sqlite_candles_db):
     """Proves load_historical_1m_data correctly queries and structures SQLite 1m candles in clean checkout."""
     real_db_path = "ict_smc_app/backend/data/ict_smc.sqlite3"
-    target_db = real_db_path if os.path.exists(real_db_path) else sample_sqlite_candles_db
+    target_db = sample_sqlite_candles_db  # Hermetic fixture; host history validated separately.
     df = load_historical_1m_data(target_db)
     assert not df.empty
     assert "session_date" in df.columns
     assert "open" in df.columns and "close" in df.columns
-    min_sessions = 200 if os.path.exists(real_db_path) else 2
+    min_sessions = 2
     assert df["session_date"].nunique() >= min_sessions

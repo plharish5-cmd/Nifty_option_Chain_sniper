@@ -206,14 +206,14 @@ class Setup1BacktestSimulator:
 
         self.fixed_sl = float(self.strat_cfg.get("fixed_sl_pts", 40.0))
         self.target_pts = float(self.strat_cfg.get("target_pts", 40.0))
-        self.ctc_trigger_pts = float(self.strat_cfg.get("cost_to_cost_trigger_pts", 40.0))
+        self.ctc_trigger_pts = float(self.strat_cfg.get("cost_to_cost_trigger_pts", 25.0))
         self.vol_candle_pts = float(self.strat_cfg.get("volatility_candle_pts", 100.0))
         self.bb_width_min_15m = float(self.strat_cfg.get("bb_width_min_15m", 60.0))
         self.touch_prox = float(self.strat_cfg.get("touch_proximity_pts", 2.5))
 
         self.lot_size = int(self.backtest_cfg.get("lot_size", 65))
         self.opt_base_entry = float(self.backtest_cfg.get("option_entry_base_premium", 200.0))
-        self.slippage_pts_leg = float(self.backtest_cfg.get("slippage_premium_pts_per_leg", 0.25))
+        self.slippage_pts_leg = float(self.backtest_cfg.get("slippage_premium_pts_per_leg", 1.0))
         self.cost_to_cost_brokerage_buffer_pts = float(self.strat_cfg.get("cost_to_cost_brokerage_buffer_pts", 2.0))
         self.brokerage = self.backtest_cfg.get("brokerage_inr_per_trade")
         self.asym_win_delta = float(self.backtest_cfg.get("itm_delta_win", 0.60))

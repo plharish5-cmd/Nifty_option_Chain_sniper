@@ -14,10 +14,14 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
+import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -57,7 +61,7 @@ def verify_admin_secret(req: Request) -> None:
 async def lifespan(app: FastAPI):
     global engine
     log.info("Starting Setup #1 Algorithmic Execution Service on port 8500...")
-    engine = Setup1ExecutionEngine()
+    engine = get_engine()
     await engine.start()
     yield
     log.info("Shutting down Setup #1 Algorithmic Execution Service...")
@@ -65,11 +69,13 @@ async def lifespan(app: FastAPI):
         await engine.stop()
 
 
+router=APIRouter(prefix="/api/algo",tags=["algo_execution_engine"])
+
 app = FastAPI(
     title="Setup #1 Algorithmic Execution Service",
     description="Headless Execution Engine for Stage 2 8 EMA Long with Exchange-Side SL-M",
     version="1.0.0",
-    lifespan=lifespan,
+
 )
 
 # Localhost origins only. An external website (e.g. stockmojo.in) must NEVER call local order engines.
@@ -125,19 +131,19 @@ def root() -> Dict[str, Any]:
     }
 
 
-@app.get("/api/algo/status")
+@router.get("/status")
 def get_algo_status() -> Dict[str, Any]:
     """Exposes active positions, daily trade count, P&L, rally counter state, and health check."""
     return get_engine().get_telemetry_status()
 
 
-@app.get("/api/algo/stage3-4-dashboard")
+@router.get("/stage3-4-dashboard")
 def get_stage3_4_dashboard() -> Dict[str, Any]:
     """Exposes Stage 2 Backtest summary, Stage 3 Sandbox 5 Gates, and Stage 4 Live Gatekeeper telemetry."""
     return get_engine().get_stage3_4_dashboard_data()
 
 
-@app.get("/api/algo/positions")
+@router.get("/positions")
 def get_positions() -> Dict[str, Any]:
     eng = get_engine()
     return {
@@ -148,7 +154,7 @@ def get_positions() -> Dict[str, Any]:
     }
 
 
-@app.post("/api/algo/mode", dependencies=[Depends(verify_admin_secret)])
+@router.post("/mode", dependencies=[Depends(verify_admin_secret)])
 def set_execution_mode(req: ModeRequest) -> Dict[str, Any]:
     eng = get_engine()
     res = eng.gateway.switch_execution_mode(new_mode=req.mode)
@@ -158,7 +164,7 @@ def set_execution_mode(req: ModeRequest) -> Dict[str, Any]:
     return res
 
 
-@app.post("/api/algo/emergency-flatten", dependencies=[Depends(verify_admin_secret)])
+@router.post("/emergency-flatten", dependencies=[Depends(verify_admin_secret)])
 async def emergency_flatten(req: Optional[EmergencyFlattenRequest] = None) -> Dict[str, Any]:
     """Instantly squares off any active position and cancels pending companion SL-M orders."""
     eng = get_engine()
@@ -167,18 +173,19 @@ async def emergency_flatten(req: Optional[EmergencyFlattenRequest] = None) -> Di
     return res
 
 
-@app.post("/api/algo/reset-circuit-breaker", dependencies=[Depends(verify_admin_secret)])
-def reset_circuit_breaker() -> Dict[str, Any]:
-    eng = get_engine()
-    eng.circuit_breaker_tripped = False
-    eng.circuit_breaker_reason = ""
-    eng.gateway.circuit_breaker_tripped = False
-    eng.gateway.circuit_breaker_reason = ""
-    log.warning("Circuit breaker manually reset by operator")
-    return {"ok": True, "circuit_breaker": "RESET"}
+@router.post("/reset-circuit-breaker", dependencies=[Depends(verify_admin_secret)])
+def reset_circuit_breaker() -> Dict[str,Any]:
+    eng=get_engine();now=datetime.now(ZoneInfo('Asia/Kolkata'))
+    with sqlite3.connect(eng.gateway.db_file())as c:
+        c.execute('CREATE TABLE IF NOT EXISTS algo_circuit_breaker_resets(session_date TEXT PRIMARY KEY,reset_ts INTEGER,reset_time TEXT,reason TEXT)')
+        try:c.execute('INSERT INTO algo_circuit_breaker_resets VALUES(?,?,?,?)',(now.date().isoformat(),int(now.timestamp()),now.isoformat(),'Operator single daily override'))
+        except sqlite3.IntegrityError:raise HTTPException(400,'Already reset this IST session') from None
+    eng.circuit_breaker_tripped=False;eng.circuit_breaker_reason='';eng.gateway.circuit_breaker_tripped=False
+    eng.gateway.circuit_breaker_reason=''
+    return {'ok':True,'circuit_breaker':'RESET'}
 
 
-@app.post("/api/algo/audit-screenshots")
+@router.post("/audit-screenshots")
 def audit_screenshots_endpoint(req: Optional[AuditScreenshotsRequest] = None) -> Dict[str, Any]:
     """
     Scans directory for daily 15-minute trading homework screenshots,
@@ -195,3 +202,13 @@ def audit_screenshots_endpoint(req: Optional[AuditScreenshotsRequest] = None) ->
         lookback_days=payload.lookback_days or 90,
     )
     return res
+
+@router.on_event('startup')
+async def start_router_engine():
+    await get_engine().start()
+
+@router.on_event('shutdown')
+async def stop_router_engine():
+    if engine is not None:await engine.stop()
+
+app.include_router(router)

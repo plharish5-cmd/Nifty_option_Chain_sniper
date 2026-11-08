@@ -1,5 +1,5 @@
 {
-  "_comment": "Configuration and thresholds for Setup #1 (Stage 2 8 EMA Long) Algorithmic Execution Service. Edit here, not in Python.",
+  "_comment": "Configuration for Setup #1 (15m 8 EMA Long) and Flagship 1-Hour 8-EMA Execution Engine on Port 8510.",
   "service": {
     "host": "127.0.0.1",
     "port": 8500,
@@ -18,8 +18,8 @@
     "timeframe": "15m",
     "fixed_sl_pts": 40.0,
     "target_pts": 40.0,
-    "cost_to_cost_trigger_pts": 40.0,
-    "cost_to_cost_brokerage_buffer_pts": 2.0,
+    "cost_to_cost_trigger_pts": 25.0,
+    "cost_to_cost_brokerage_buffer_pts": 9.0,
     "volatility_candle_pts": 100.0,
     "bb_length": 20,
     "bb_mult": 2.0,
@@ -32,7 +32,7 @@
     "ema_separation_min_pts": 3.0,
     "fii_commit_start_time": "09:30",
     "gap_up_max_pts": 60.0,
-    "option_delta_default": 0.60
+    "option_delta_default": 0.6
   },
   "execution": {
     "execution_mode": "PAPER",
@@ -41,49 +41,40 @@
     "product_type": "INTRADAY",
     "exchange_segment": "NSE_FNO",
     "dhan_base_url": "https://api.dhan.co/v2",
-    "sqlite_db_path": "ict_smc_app/backend/data/ict_smc.sqlite3"
+    "sqlite_db_path": "ict_smc_app/backend/data/ict_smc.sqlite3",
+    "max_bid_ask_spread_pct": 2.0,
+    "instrument_master_path": "data/terminal8500/instrument_master.csv",
+    "quote_age_seconds": 120,
+    "broker_timeout_seconds": 10.0,
+    "max_signal_age_seconds": 120,
+    "stop_order_type": "STOP_LOSS_MARKET"
   },
   "backtest": {
     "brokerage_inr_per_trade": null,
     "use_dynamic_dhan_charges": true,
     "option_entry_base_premium": 200.0,
-    "slippage_premium_pts_per_leg": 0.25,
-    "itm_delta_win": 0.60,
-    "itm_delta_loss": 0.50,
-    "linear_delta": 0.60,
+    "slippage_premium_pts_per_leg": 1.0,
+    "itm_delta_win": 0.6,
+    "itm_delta_loss": 0.5,
+    "linear_delta": 0.6,
     "lot_size": 65,
     "gap_threshold_pts": 60.0,
     "square_off_time": "15:20",
-    "profit_factor_min_verdict": 1.30
+    "profit_factor_min_verdict": 1.3
   },
   "strategy_1h_8ema": {
-    "name": "Flagship 1-Hour 8-EMA Touch Strategy (Alert-Only)",
+    "name": "Flagship 1-Hour 8-EMA Touch Strategy (Live)",
     "timeframe": "1h",
     "ema_period": 8,
     "touch_proximity_pts": 3.0,
     "fixed_sl_pts": 40.0,
     "target_pts": 40.0,
-    "cost_to_cost_trigger_pts": 40.0,
-    "cost_to_cost_brokerage_buffer_pts": 2.0,
+    "cost_to_cost_trigger_pts": 25.0,
+    "cost_to_cost_brokerage_buffer_pts": 9.0,
     "lot_size": 65,
     "gap_up_max_pts": 50.0,
     "gap_down_max_pts": -50.0,
-    "option_delta_default": 0.60,
-    "no_entry_after": "15:00"
-  },
-  "strategy_1h_80ema": {
-    "name": "Flagship 1-Hour 8-EMA Touch Strategy (Alert-Only)",
-    "timeframe": "1h",
-    "ema_period": 8,
-    "touch_proximity_pts": 3.0,
-    "fixed_sl_pts": 40.0,
-    "target_pts": 40.0,
-    "cost_to_cost_trigger_pts": 40.0,
-    "cost_to_cost_brokerage_buffer_pts": 2.0,
-    "lot_size": 65,
-    "gap_up_max_pts": 50.0,
-    "gap_down_max_pts": -50.0,
-    "option_delta_default": 0.60,
+    "option_delta_default": 0.6,
     "no_entry_after": "15:00"
   },
   "vision_audit": {
@@ -91,17 +82,41 @@
     "output_csv": "15m_homework_audit_summary.csv",
     "gap_threshold_pts": 50.0,
     "gemini_model": "gemini-3.8-flash",
-    "allowed_extensions": [".png", ".jpg", ".jpeg", ".webp", ".bmp"],
+    "allowed_extensions": [
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".webp",
+      ".bmp"
+    ],
     "lookback_months": 3,
     "setups_supported": [
       "Stage 2 8-EMA",
       "Stage 3 8-EMA",
       "8-EMA Reversal Up",
       "8-EMA Reversal Down",
-      "1H 80-EMA Touch",
-      "1H 80-EMA Support Bounce",
-      "1H 80-EMA Resistance Rejection"
+      "1H 8-EMA Support Bounce",
+      "1H 8-EMA Resistance Rejection"
     ],
     "sqlite_db_path": "ict_smc_app/backend/data/ict_smc.sqlite3"
+  },
+  "catcher": {
+    "15m": {
+      "arm_threshold_pts": 10.0,
+      "min_bounce_pts": 8.0,
+      "max_chase_pts": 12.0
+    },
+    "1h": {
+      "arm_threshold_pts": 15.0,
+      "min_bounce_pts": 10.0,
+      "max_chase_pts": 18.0
+    }
+  },
+  "graduation": {
+    "minimum_trades": 25,
+    "rolling_trades": 30,
+    "win_rate_pct": 55.0,
+    "expectancy_inr": 100.0,
+    "max_loss_inr": -2900.0
   }
 }

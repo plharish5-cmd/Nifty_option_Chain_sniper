@@ -46,9 +46,10 @@ SETUP_STAGE2_8EMA = "Stage 2 8-EMA"
 SETUP_STAGE3_8EMA = "Stage 3 8-EMA"
 SETUP_REV_UP = "8-EMA Reversal Up"
 SETUP_REV_DOWN = "8-EMA Reversal Down"
-SETUP_1H_80EMA = "1H 80-EMA Touch"
-SETUP_1H_SUPPORT = "1H 80-EMA Support Bounce"
-SETUP_1H_RESISTANCE = "1H 80-EMA Resistance Rejection"
+SETUP_1H_8EMA = "1H 8-EMA Touch"
+SETUP_1H_80EMA = SETUP_1H_8EMA  # Backward-compatible import; no 80-period EMA logic.
+SETUP_1H_SUPPORT = "1H 8-EMA Support Bounce"
+SETUP_1H_RESISTANCE = "1H 8-EMA Resistance Rejection"
 
 VALID_SETUPS = {
     SETUP_STAGE2_8EMA,
@@ -512,7 +513,7 @@ class VisionAuditAgent:
         self.lookback_months = int(self.audit_cfg.get("lookback_months", 3))
         self.setups_supported = list(self.audit_cfg.get("setups_supported", [
             SETUP_STAGE2_8EMA, SETUP_STAGE3_8EMA, SETUP_REV_UP, SETUP_REV_DOWN,
-            "1H 80-EMA Touch", "1H 80-EMA Support Bounce", "1H 80-EMA Resistance Rejection",
+            "1H 80-EMA Touch", "1H 8-EMA Support Bounce", "1H 8-EMA Resistance Rejection",
         ]))
 
         self.matcher = SqliteTradeMatcher(db_path=db_path)
