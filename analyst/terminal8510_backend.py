@@ -5677,6 +5677,11 @@ class QuantTerminalBackend:
                             trail_str = " -> ".join(trail_steps[:4]) + f" -> {st_reason}" if len(trail_steps) > 1 else f"No Trail, Fixed {int(sl_pts)}/{int(tgt_pts)}"
 
                             # Column 14: 8 EMA Line Details (1H 8-EMA for Flagship; 15m 8-EMA for other 3)
+                            h1_ts_found = int(b["ts"])
+                            for h_ts in reversed(h1_ts_list):
+                                if h_ts <= int(b["ts"]):
+                                    h1_ts_found = h_ts
+                                    break
                             h1_dt_str = pd.to_datetime(h1_ts_found, unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%H:%M")
                             if f_code == "H1_FLAGSHIP":
                                 ema8_line_col = (
