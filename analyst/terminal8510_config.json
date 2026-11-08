@@ -123,7 +123,7 @@
   },
   "ema_proximity_radar": {
     "enabled": true,
-    "audio_alerts_enabled": false,
+    "audio_alerts_enabled": true,
     "timeframe": "1m",
     "approaching_pts_threshold": 12.0,
     "touch_pts_threshold": 5.0,

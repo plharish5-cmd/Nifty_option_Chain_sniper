@@ -2,7 +2,7 @@
   "ok": true,
   "date": "2026-11-05",
   "date_formatted": "05 Nov 2026",
-  "ingest_timestamp": "2026-11-06 09:54:56 IST",
+  "ingest_timestamp": "2026-11-07 23:13:25 IST",
   "status": "Pulled \u2705",
   "message": "\u2705 05 Nov 2026 data pulled \u2014 Available in Replay + Backtester + Trend Lab.",
   "checklist": {
@@ -10,8 +10,8 @@
     "future_candles_1m": "\u2705 375 candles",
     "volumes_and_change": "\u2705 Synced",
     "option_chain": "\u2705 09 Nov 2026 Expiry, Lot Size: 65 Dynamic",
-    "stockmojo_total_oi": "\u2705 Call Writers vs Put Writers",
-    "stockmojo_oi_change_day": "\u2705 Call Writers vs Put Writers",
+    "dhan_oi_total_oi": "FAILED",
+    "dhan_oi_change_day": "FAILED",
     "strategy_signals": "\u2705 Stage 2 (15m 8 EMA), 4/8 Crossover, 1H 8 EMA, ATM Reversal, Stage 3",
     "paper_trades": "\u2705 Linked to Replay + Backtester + Trend Lab"
   },
@@ -8414,17 +8414,60 @@
       "pe_ltp": 1045.41
     }
   ],
-  "stockmojo": {
+  "dhan_oi": {
+    "source": "DHAN_API",
+    "snapshot": {
+      "total_oi_ce": null,
+      "total_oi_pe": null,
+      "oi_change_ce": null,
+      "oi_change_pe": null,
+      "pcr_total_oi": null,
+      "pcr_oi_change": null,
+      "ce_pe_oi_diff": null,
+      "bias": "UNKNOWN",
+      "source": "DHAN_API",
+      "status": "FAILED",
+      "timestamp": null,
+      "timestamp_epoch": null,
+      "timestamp_basis": "API_RECEIPT",
+      "available": false,
+      "reason": "No recorded Dhan API OI for this time; no historical substitution",
+      "expiry": null
+    },
     "total_oi": {
-      "put_total_cr": 18.28,
-      "call_total_cr": 16.41,
-      "bias": "BULLISH \ud83d\udfe2 (Put 18.28 Cr > Call 16.41 Cr)"
+      "put_total_cr": null,
+      "call_total_cr": null,
+      "bias": "UNKNOWN"
     },
     "oi_change_day": {
-      "pe_ce_day_cr": 3.4,
-      "bias": "BULLISH \ud83d\udfe2 (PE-CE Day +3.40 Cr)"
+      "pe_ce_day_cr": null,
+      "bias": "UNKNOWN"
     },
-    "combined_bias": "STRONG BULLISH \ud83d\udfe2\ud83d\udfe2"
+    "combined_bias": "UNKNOWN"
+  },
+  "dhan_oi_observations": [],
+  "dhan_oi_observation_note": "Receipt timestamps retained, including post-close captures; entry replay uses as-of lookup only.",
+  "post_market_archive": {
+    "ok": true,
+    "date": "2026-11-05",
+    "scripts": [
+      {
+        "script": "archive_volume.py",
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "script": "archive_chain_day.py",
+        "returncode": 0,
+        "ok": true
+      }
+    ],
+    "outputs": {
+      "volume": true,
+      "chain": true,
+      "candles": true
+    },
+    "status": "COMPLETE"
   },
   "strategy_signals": {
     "stage_2_8_ema": "BULLISH",
@@ -8432,7 +8475,7 @@
     "ema_1h_8": "SUPPORT",
     "atm_reversal": "BULLISH",
     "stage_3_atm": "BULLISH",
-    "stockmojo_filter": "STRONG BULLISH"
+    "dhan_oi_filter": "UNKNOWN"
   },
   "trades": [
     {
@@ -8504,10 +8547,10 @@
       }
     ],
     "signals_summary": "Stage 2: BULLISH | 4/8 Crossover: BULLISH | 1H 8 EMA: SUPPORT",
-    "total_oi_bias": "BULLISH \ud83d\udfe2 (Put 18.28 Cr > Call 16.41 Cr)",
-    "oi_change_bias": "BULLISH \ud83d\udfe2 (PE-CE Day +3.40 Cr)",
-    "combined_oi_bias": "STRONG BULLISH \ud83d\udfe2\ud83d\udfe2",
-    "whatsapp_text": "\ud83d\udcca *PORT 8510 EOD SUMMARY \u2014 05 Nov 2026*\n\u2705 *Ingest:* 375/375 1m Candles Synced (Replay + Backtest + Trend Lab Ready)\n\ud83e\udd16 *Paper Trades Taken:* 1 (AUTO ALGO \u2014 Stage 2 8 EMA Touch)\n\ud83d\udcb0 *Net P&L:* +\u20b91,543.85\n\ud83d\udcc8 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n\ud83d\udfe2 *Stock Mojo Total OI:* BULLISH (Put 18.28 Cr vs Call 16.41 Cr)\n\ud83d\udfe2 *Stock Mojo OI Change:* BULLISH (PE-CE +3.40 Cr)\n\ud83d\udd25 *Combined Bias:* STRONG BULLISH \ud83d\udfe2\ud83d\udfe2"
+    "total_oi_bias": "UNKNOWN",
+    "oi_change_bias": "UNKNOWN",
+    "combined_oi_bias": "UNKNOWN",
+    "whatsapp_text": "\ud83d\udcca *PORT 8510 EOD SUMMARY \u2014 05 Nov 2026*\n\u2705 *Ingest:* 375/375 1m Candles Synced (Replay + Backtest + Trend Lab Ready)\n\ud83e\udd16 *Paper Trades Taken:* 1 (AUTO ALGO \u2014 Stage 2 8 EMA Touch)\n\ud83d\udcb0 *Net P&L:* +\u20b91,543.85\n\ud83d\udcc8 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n*Dhan OI Total OI:* UNKNOWN\n*Dhan OI Change:* UNKNOWN\n*Combined Bias:* UNKNOWN"
   },
   "eod_summary": {
     "date": "2026-11-05",
@@ -8527,9 +8570,9 @@
       }
     ],
     "signals_summary": "Stage 2: BULLISH | 4/8 Crossover: BULLISH | 1H 8 EMA: SUPPORT",
-    "total_oi_bias": "BULLISH \ud83d\udfe2 (Put 18.28 Cr > Call 16.41 Cr)",
-    "oi_change_bias": "BULLISH \ud83d\udfe2 (PE-CE Day +3.40 Cr)",
-    "combined_oi_bias": "STRONG BULLISH \ud83d\udfe2\ud83d\udfe2",
-    "whatsapp_text": "\ud83d\udcca *PORT 8510 EOD SUMMARY \u2014 05 Nov 2026*\n\u2705 *Ingest:* 375/375 1m Candles Synced (Replay + Backtest + Trend Lab Ready)\n\ud83e\udd16 *Paper Trades Taken:* 1 (AUTO ALGO \u2014 Stage 2 8 EMA Touch)\n\ud83d\udcb0 *Net P&L:* +\u20b91,543.85\n\ud83d\udcc8 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n\ud83d\udfe2 *Stock Mojo Total OI:* BULLISH (Put 18.28 Cr vs Call 16.41 Cr)\n\ud83d\udfe2 *Stock Mojo OI Change:* BULLISH (PE-CE +3.40 Cr)\n\ud83d\udd25 *Combined Bias:* STRONG BULLISH \ud83d\udfe2\ud83d\udfe2"
+    "total_oi_bias": "UNKNOWN",
+    "oi_change_bias": "UNKNOWN",
+    "combined_oi_bias": "UNKNOWN",
+    "whatsapp_text": "\ud83d\udcca *PORT 8510 EOD SUMMARY \u2014 05 Nov 2026*\n\u2705 *Ingest:* 375/375 1m Candles Synced (Replay + Backtest + Trend Lab Ready)\n\ud83e\udd16 *Paper Trades Taken:* 1 (AUTO ALGO \u2014 Stage 2 8 EMA Touch)\n\ud83d\udcb0 *Net P&L:* +\u20b91,543.85\n\ud83d\udcc8 *Signals:* Stage 2: BULLISH | 1H 8 EMA: SUPPORT\n*Dhan OI Total OI:* UNKNOWN\n*Dhan OI Change:* UNKNOWN\n*Combined Bias:* UNKNOWN"
   }
 }
