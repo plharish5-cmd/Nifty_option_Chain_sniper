@@ -472,6 +472,350 @@ def compute_trailing_target(
     }
 
 
+def _near_round_number(price: float, step: float, tol: float = 25.0) -> bool:
+    base = round(price / step) * step
+    return abs(price - base) <= tol
+
+
+def compute_daily_sr_from_ohlc(daily: pd.DataFrame, spot: float) -> Dict[str, Any]:
+    """S1/R1 from prior session; S2/S3 and R2/R3 from deeper daily extremes; round-number candidates."""
+    out: Dict[str, Any] = {
+        "S1": None, "S2": None, "S3": None, "R1": None, "R2": None, "R3": None, "round_levels": [],
+    }
+    if daily is None or daily.empty:
+        return out
+    d = daily.sort_index()
+    hist = d.iloc[:-1] if len(d) > 1 else d
+    if hist.empty:
+        return out
+    y = hist.iloc[-1]
+    s1, r1 = float(y["low"]), float(y["high"])
+    out["S1"], out["R1"] = s1, r1
+    
+    uniq_lows = sorted({float(x) for x in hist["low"]}, reverse=True)
+    lower = [x for x in uniq_lows if x < s1 - 0.5]
+    if lower:
+        out["S2"] = lower[0]
+    if len(lower) > 1:
+        out["S3"] = lower[1]
+
+    uniq_highs = sorted({float(x) for x in hist["high"]})
+    higher = [x for x in uniq_highs if x > r1 + 0.5]
+    if higher:
+        out["R2"] = higher[-1]
+    if len(higher) > 1:
+        out["R3"] = higher[-2]
+
+    rounds: List[float] = []
+    for step in (500.0, 1000.0):
+        base = round(spot / step) * step
+        for mult in (-1, 0, 1):
+            lv = base + mult * step
+            if lv > 0:
+                rounds.append(lv)
+    out["round_levels"] = sorted(set(rounds))
+    return out
+
+
+def compute_daily_trend_two_day_rule(daily: pd.DataFrame) -> Tuple[str, str]:
+    """
+    Two-day reversal: one opposite candle is profit booking; reversal needs two consecutive
+    opposite candles with the second breaking the prior structural extreme.
+  Returns (trade_bias: BULLISH|BEARISH|NEUTRAL, state_label).
+    """
+    if daily is None or len(daily) < 4:
+        return "NEUTRAL", "NEUTRAL"
+    d = daily.sort_index()
+    hist = d.iloc[:-1] if len(d) > 1 else d
+    if len(hist) < 4:
+        return "NEUTRAL", "NEUTRAL"
+
+    def _green(row: pd.Series) -> bool:
+        return float(row["close"]) >= float(row["open"])
+
+    # Establish bias from last 3 completed dailies (higher-high/higher-low vs lower).
+    tail = hist.iloc[-4:]
+    c0, c1, c2 = [float(tail.iloc[i]["close"]) for i in (-3, -2, -1)]
+    h2, h1 = float(tail.iloc[-1]["high"]), float(tail.iloc[-2]["high"])
+    l2, l1 = float(tail.iloc[-1]["low"]), float(tail.iloc[-2]["low"])
+    if c2 > c1 > c0 or (h2 > h1 and l2 > l1):
+        bias = "BULLISH"
+    elif c2 < c1 < c0 or (h2 < h1 and l2 < l1):
+        bias = "BEARISH"
+    else:
+        return "NEUTRAL", "NEUTRAL"
+
+    last, prev, prior = tail.iloc[-1], tail.iloc[-2], tail.iloc[-3]
+    if bias == "BULLISH":
+        if not _green(last) and float(last["low"]) < float(prev["low"]):
+            if not _green(prev) and float(last["low"]) < float(prior["low"]):
+                return "BEARISH", "REVERSAL_TWO_RED"
+            return "BULLISH", "PROFIT_BOOKING"
+        return "BULLISH", "TREND_INTACT"
+    if _green(last) and float(last["high"]) > float(prev["high"]):
+        if _green(prev) and float(last["high"]) > float(prior["high"]):
+            return "BULLISH", "REVERSAL_TWO_GREEN"
+        return "BEARISH", "PROFIT_BOOKING"
+    return "BEARISH", "TREND_INTACT"
+
+
+def find_confirmed_h1_swings(h1: pd.DataFrame, pivot_bars: int = 2) -> List[Dict[str, Any]]:
+    """Fractal pivots; pivot at i is omitted until i + pivot_bars < len(h1) (no look-ahead)."""
+    swings: List[Dict[str, Any]] = []
+    if h1 is None or len(h1) < pivot_bars * 2 + 1:
+        return swings
+    hi_s, lo_s = h1["high"], h1["low"]
+    last_confirmable = len(h1) - pivot_bars
+    for i in range(pivot_bars, last_confirmable):
+        h_i, l_i = float(hi_s.iloc[i]), float(lo_s.iloc[i])
+        is_high = all(h_i > float(hi_s.iloc[j]) for j in range(i - pivot_bars, i + pivot_bars + 1) if j != i)
+        is_low = all(l_i < float(lo_s.iloc[j]) for j in range(i - pivot_bars, i + pivot_bars + 1) if j != i)
+        rng = h_i - l_i
+        ts = h1.index[i]
+        if is_high:
+            swings.append({"type": "HIGH", "price": h_i, "ts": ts, "idx": i, "range_pts": rng})
+        elif is_low:
+            swings.append({"type": "LOW", "price": l_i, "ts": ts, "idx": i, "range_pts": rng})
+    return swings
+
+
+def zone_from_15m_at_ts(
+    m15: pd.DataFrame,
+    pivot_ts: Any,
+    width_min: float = 10.0,
+    width_max: float = 20.0,
+    pad_minutes: int = 30,
+) -> Optional[Tuple[float, float]]:
+    if m15 is None or m15.empty or pivot_ts is None:
+        return None
+    try:
+        t0 = pd.Timestamp(pivot_ts)
+        if t0.tzinfo is None:
+            t0 = t0.tz_localize(IST)
+    except Exception:
+        return None
+    t_start = t0 - timedelta(minutes=pad_minutes)
+    t_end = t0 + timedelta(minutes=pad_minutes + 15)
+    chunk = m15[(m15.index >= t_start) & (m15.index <= t_end)]
+    if chunk.empty:
+        return None
+    z_lo, z_hi = float(chunk["low"].min()), float(chunk["high"].max())
+    mid = (z_lo + z_hi) / 2.0
+    half = min(width_max, max(width_min, (z_hi - z_lo) / 2.0))
+    return (round(mid - half, 2), round(mid + half, 2))
+
+
+def _detect_single_bar_pattern(o: float, h: float, l: float, c: float) -> Tuple[Optional[str], Optional[str]]:
+    rng = max(h - l, 0.001)
+    body = abs(c - o)
+    uw = h - max(o, c)
+    lw = min(o, c) - l
+    long_tag, short_tag = None, None
+    if (body / rng) <= 0.15:
+        long_tag = short_tag = "DOJI"
+    if lw >= 2.0 * max(body, 0.5) and uw <= rng * 0.25:
+        long_tag = "HAMMER"
+    if uw >= 2.0 * max(body, 0.5) and lw <= rng * 0.25:
+        short_tag = "SHOOTING_STAR"
+    return long_tag, short_tag
+
+
+def detect_flagship_15m_confirmation(b15: pd.DataFrame, conf_idx: int = -2) -> Tuple[Optional[str], Optional[str]]:
+    """Pattern on fully closed bar at conf_idx; no forming bar."""
+    if b15 is None or len(b15) < abs(conf_idx) + 1:
+        return None, None
+    i = len(b15) + conf_idx if conf_idx < 0 else conf_idx
+    if i < 1:
+        return None, None
+    o0, h0, l0, c0 = [float(b15[col].iloc[i]) for col in ("open", "high", "low", "close")]
+    o1, h1, l1, c1 = [float(b15[col].iloc[i - 1]) for col in ("open", "high", "low", "close")]
+    body0, body1 = abs(c0 - o0), abs(c1 - o1)
+    pa_long, pa_short = _detect_single_bar_pattern(o0, h0, l0, c0)
+    if c1 < o1 and c0 > o0 and c0 >= o1 and o0 <= c1 and body0 > body1:
+        pa_long = "BULLISH_ENGULFING"
+    elif c1 > o1 and c0 < o0 and c0 <= o1 and o0 >= c1 and body0 > body1:
+        pa_short = "BEARISH_ENGULFING"
+    elif h0 <= h1 and l0 >= l1 and body1 > body0:
+        if c0 > o0 and c1 < o1:
+            pa_long = "BULLISH_MOTHER_BABY"
+        elif c0 < o0 and c1 > o1:
+            pa_short = "BEARISH_MOTHER_BABY"
+    return pa_long, pa_short
+
+
+def _at_valid_level(low: float, high: float, levels: List[float], tol: float) -> bool:
+    for lv in levels:
+        if lv is None:
+            continue
+        if low - tol <= float(lv) <= high + tol:
+            return True
+    return False
+
+
+def compute_h1_trend_pa(h1: pd.DataFrame) -> str:
+    if h1 is None or len(h1) < 3:
+        return "NEUTRAL"
+    tail = h1.iloc[-3:]
+    greens = sum(1 for _, r in tail.iterrows() if float(r["close"]) >= float(r["open"]))
+    reds = 3 - greens
+    hh = float(tail["high"].iloc[-1]) > float(tail["high"].iloc[-2])
+    hl = float(tail["low"].iloc[-1]) > float(tail["low"].iloc[-2])
+    lh = float(tail["high"].iloc[-1]) < float(tail["high"].iloc[-2])
+    ll = float(tail["low"].iloc[-1]) < float(tail["low"].iloc[-2])
+    if hh and hl and greens >= 2:
+        return "UP"
+    if lh and ll and reds >= 2:
+        return "DOWN"
+    return "NEUTRAL"
+
+
+def flagship_candle_trail_update(
+    is_long: bool, stop: float, candle_o: float, candle_h: float, candle_l: float, candle_c: float
+) -> float:
+    if is_long and candle_c > candle_o:
+        return max(stop, candle_l)
+    if not is_long and candle_c < candle_o:
+        return min(stop, candle_h)
+    return stop
+
+
+def flagship_sr_exit_trigger(
+    is_long: bool, price: float, sr: Dict[str, Any], proximity: float = 15.0
+) -> Optional[str]:
+    if is_long:
+        keys = ("S1", "S2", "S3")
+    else:
+        keys = ("R1", "R2", "R3")
+    for k in keys:
+        lv = sr.get(k)
+        if lv is not None and abs(price - float(lv)) <= proximity:
+            return f"{k}_NEAR_EXIT"
+    return None
+
+
+def synthesize_option_premium_from_spot(
+    entry_spot: float,
+    exit_spot: float,
+    is_long: bool,
+    delta: float = 0.60,
+    base_premium: float = 200.0,
+) -> Tuple[float, float]:
+    """Map spot P&L points to synthetic option entry/exit (labeled SYNTHESIZED in callers)."""
+    spot_pts = (exit_spot - entry_spot) if is_long else (entry_spot - exit_spot)
+    opt_entry = round(base_premium, 2)
+    opt_exit = max(1.0, round(opt_entry + spot_pts * delta, 2))
+    return opt_entry, opt_exit
+
+
+def simulate_backtest_spot_exit(
+    bars: List[Dict[str, Any]],
+    start_idx: int,
+    entry_spot: float,
+    is_long: bool,
+    sl_pts: float,
+    tgt_pts: float,
+    is_flagship: bool,
+    sr_levels: Optional[Dict[str, Any]],
+    eod_hm: str = "15:20",
+    sr_proximity: float = 15.0,
+) -> Tuple[float, float, float, str, List[str], float]:
+    """
+    Forward-walk spot exit on 15m bars.
+    Returns (st_pnl_pts, fx_pnl_pts, exit_spot, exit_reason, trail_steps, mfe_pts).
+    """
+    st_sl = (entry_spot - sl_pts) if is_long else (entry_spot + sl_pts)
+    exit_spot = entry_spot
+    st_pnl_pts = 0.0
+    fx_pnl_pts = 0.0
+    st_reason = f"EOD_SQUARE_OFF_{eod_hm}"
+    fx_done = False
+    st_done = False
+    trail_steps = [f"SL {int(sl_pts)}"]
+    idx_high = entry_spot
+    idx_low = entry_spot
+
+    for f_idx in range(start_idx, len(bars)):
+        fb = bars[f_idx]
+        fh, fl, fc, fo = float(fb["high"]), float(fb["low"]), float(fb["close"]), float(fb["open"])
+        idx_high = max(idx_high, fh)
+        idx_low = min(idx_low, fl)
+
+        if not fx_done:
+            if is_long and fl <= entry_spot - sl_pts:
+                fx_pnl_pts = -sl_pts
+                fx_done = True
+            elif is_long and fh >= entry_spot + tgt_pts:
+                fx_pnl_pts = tgt_pts
+                fx_done = True
+            elif not is_long and fh >= entry_spot + sl_pts:
+                fx_pnl_pts = -sl_pts
+                fx_done = True
+            elif not is_long and fl <= entry_spot - tgt_pts:
+                fx_pnl_pts = tgt_pts
+                fx_done = True
+
+        if not st_done:
+            if is_flagship and sr_levels:
+                sr_hit = flagship_sr_exit_trigger(is_long, fc, sr_levels, sr_proximity)
+                if sr_hit:
+                    exit_spot = fc
+                    st_pnl_pts = round((exit_spot - entry_spot) if is_long else (entry_spot - exit_spot), 2)
+                    st_reason = sr_hit
+                    st_done = True
+            if not st_done:
+                if is_long:
+                    if fl <= st_sl:
+                        exit_spot = st_sl
+                        st_pnl_pts = round(st_sl - entry_spot, 2)
+                        st_reason = "TRAIL_SL_HIT" if st_sl > (entry_spot - sl_pts) else "SL_HIT"
+                        st_done = True
+                    elif fh >= entry_spot + tgt_pts:
+                        exit_spot = entry_spot + tgt_pts
+                        st_pnl_pts = round(tgt_pts, 2)
+                        st_reason = "TARGET_HIT"
+                        st_done = True
+                    elif fc > fo and (is_flagship or fl > st_sl):
+                        if is_flagship:
+                            st_sl = flagship_candle_trail_update(True, st_sl, fo, fh, fl, fc)
+                        else:
+                            st_sl = round(fl, 2)
+                        trail_steps.append(f"Green Low {st_sl:.0f}")
+                else:
+                    if fh >= st_sl:
+                        exit_spot = st_sl
+                        st_pnl_pts = round(entry_spot - st_sl, 2)
+                        st_reason = "TRAIL_SL_HIT" if st_sl < (entry_spot + sl_pts) else "SL_HIT"
+                        st_done = True
+                    elif fl <= entry_spot - tgt_pts:
+                        exit_spot = entry_spot - tgt_pts
+                        st_pnl_pts = round(tgt_pts, 2)
+                        st_reason = "TARGET_HIT"
+                        st_done = True
+                    elif fc < fo and (is_flagship or fh < st_sl):
+                        if is_flagship:
+                            st_sl = flagship_candle_trail_update(False, st_sl, fo, fh, fl, fc)
+                        else:
+                            st_sl = round(fh, 2)
+                        trail_steps.append(f"Red High {st_sl:.0f}")
+
+        if str(fb.get("hm", "")) >= eod_hm:
+            if not fx_done:
+                fx_pnl_pts = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
+                fx_done = True
+            if not st_done:
+                exit_spot = fc
+                st_pnl_pts = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
+                st_reason = f"EOD_SQUARE_OFF_{eod_hm}"
+                st_done = True
+            break
+
+    if not st_done:
+        exit_spot = float(bars[min(start_idx, len(bars) - 1)]["close"])
+        st_pnl_pts = round((exit_spot - entry_spot) if is_long else (entry_spot - exit_spot), 2)
+    mfe_pts = round((idx_high - entry_spot) if is_long else (entry_spot - idx_low), 1)
+    return st_pnl_pts, fx_pnl_pts, exit_spot, st_reason, trail_steps, mfe_pts
+
+
 class InstrumentManager:
     """Manages official Dhan scrip master and resolves security IDs and lot sizes."""
 
@@ -1989,9 +2333,17 @@ class QuantTerminalBackend:
             "crossover_target_pts": 20.0,
             "crossover_sl_pts": 20.0,
             "crossover_max_touch_candles": 3,
-            "h1_confluence_target_pts": 100.0,
-            "h1_confluence_sl_pts": 40.0,
             "party_switch_enabled": True,
+            "flagship_initial_sl_pts": 40.0,
+            "flagship_first_target_pts": 40.0,
+            "flagship_trail_by": "candle_low_high",
+            "flagship_max_trades_per_day": 2,
+            "flagship_max_daily_loss_inr": -3000.0,
+            "flagship_no_entry_after": "15:00",
+            "flagship_eod_square_off": "15:20",
+            "flagship_doji_sl_pts": 15.0,
+            "flagship_max_h1_range_pts": 120.0,
+            "flagship_sr_exit_proximity_pts": 15.0,
         })
         self.scanner_enabled: bool = bool(self.scanner_cfg.get("enabled", True))
         self.scanner_running: bool = False
@@ -2002,7 +2354,25 @@ class QuantTerminalBackend:
             "stage2_long": {"name": "Stage 2 8-EMA (Long)", "state": "SCANNING", "desc": "UBB Up + 8 EMA Touch (±20pt)", "armed": False},
             "stage3_short": {"name": "Stage 3 8-EMA (Short)", "state": "SCANNING", "desc": "LBB Down + 8 EMA Rejection (±20pt)", "armed": False},
             "crossover_reversal": {"name": "4/8 MA Crossover Reversal", "state": "SCANNING", "desc": "4/8 Cross + Flat Band + 3-bar Touch", "armed": False},
-            "h1_confluence": {"name": "1 HR FLAGSHIP (1H 8-EMA)", "state": "SCANNING", "desc": "1H 8-EMA Touch + 15m Price Action Confirmation (40/40 + 2L Trail)", "armed": False},
+            "daily_sr": {
+                "name": "Daily S/R",
+                "state": "SCANNING",
+                "desc": "S1–S3 / R1–R3 + round levels",
+                "armed": False,
+                "levels": {},
+            },
+            "daily_trend": {
+                "name": "Daily Trend",
+                "state": "NEUTRAL",
+                "desc": "Two-day reversal rule",
+                "armed": False,
+            },
+            "flagship_1h": {
+                "name": "1 HR FLAGSHIP",
+                "state": "SCANNING",
+                "desc": "1H swing zones + 15m PA (40/40 candle trail)",
+                "armed": False,
+            },
         }
         self.strategy_cooldowns: Dict[str, float] = {}
         self.scanner_task: Optional[asyncio.Task] = None
@@ -3639,10 +4009,6 @@ class QuantTerminalBackend:
         ubb_slope = "UP" if d_ubb > slope_tol else ("DOWN" if d_ubb < -slope_tol else "FLAT")
         lbb_slope = "UP" if d_lbb > slope_tol else ("DOWN" if d_lbb < -slope_tol else "FLAT")
 
-        # 1H Technicals
-        h1_e8 = b60["close"].ewm(span=8, adjust=False).mean() if len(b60) >= 3 else None
-        h1_e8_last = float(h1_e8.iloc[-1]) if h1_e8 is not None and len(h1_e8) else None
-
         current_p = float(spot_price) if spot_price else float(b15["close"].iloc[-1])
         e8_val = float(e8.iloc[-1])
         e4_val = float(e4.iloc[-1])
@@ -3791,99 +4157,153 @@ class QuantTerminalBackend:
                     "details": f"Preceding Bearish Cross (Age {crossover_event['age']} bars), 4-EMA < 8-EMA, LBB Flat, 8-EMA touch",
                 })
 
-        # ── 4. STRATEGY 4: 1 HR FLAGSHIP (1H 8-EMA + 15m Price Action & VWAP) ──
-        if h1_e8_last is not None and len(b60) >= 1:
-            h1_close = float(b60["close"].iloc[-1])
-            h1_low = float(b60["low"].iloc[-1])
-            h1_high = float(b60["high"].iloc[-1])
+        # ── 4. STRATEGY 4: 1 HR FLAGSHIP (price action: daily S/R, 1H swings, 15m confirmation) ──
+        scfg = self.scanner_cfg
+        flagship_tgt = float(scfg.get("flagship_first_target_pts", 40.0))
+        flagship_sl = float(scfg.get("flagship_initial_sl_pts", 40.0))
+        doji_cap = float(scfg.get("flagship_doji_sl_pts", 15.0))
+        max_h1_rng = float(scfg.get("flagship_max_h1_range_pts", 120.0))
+        no_entry_after = str(scfg.get("flagship_no_entry_after", "15:00"))
+        bar_hm = ""
+        if isinstance(b15.index, pd.DatetimeIndex) and len(b15):
+            bar_hm = b15.index[-1].strftime("%H:%M")
 
-            h1_support_touch = (abs(current_p - h1_e8_last) <= tol or (h1_low <= (h1_e8_last + tol) and h1_close >= (h1_e8_last - 5.0)))
-            h1_resist_touch = (abs(current_p - h1_e8_last) <= tol or (h1_high >= (h1_e8_last - tol) and h1_close <= (h1_e8_last + 5.0)))
+        b1d = df_work.resample("1D").agg(
+            {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+        ).dropna()
+        daily_sr = compute_daily_sr_from_ohlc(b1d, current_p)
+        daily_bias, daily_state = compute_daily_trend_two_day_rule(b1d)
+        h1_trend = compute_h1_trend_pa(b60) if len(b60) >= 3 else "NEUTRAL"
 
-            # 15m Candlestick & VWAP Confirmation Detector (Doji, Hammer, Shooting Star, Engulfing, Morning/Evening Star, Mother-Baby, VWAP)
-            pa_long_tag = None
-            pa_short_tag = None
-            if len(b15) >= 1:
-                o0, h0, l0, c0 = float(b15["open"].iloc[-1]), float(b15["high"].iloc[-1]), float(b15["low"].iloc[-1]), float(b15["close"].iloc[-1])
-                rng0 = max(h0 - l0, 0.001)
-                body0 = abs(c0 - o0)
-                uw0 = h0 - max(o0, c0)
-                lw0 = min(o0, c0) - l0
-                near_1000 = abs(current_p - round(current_p / 1000.0) * 1000.0) <= 25.0
+        self.strategy_status["daily_sr"]["levels"] = daily_sr
+        self.strategy_status["daily_sr"]["state"] = "ARMED" if daily_sr.get("S1") else "SCANNING"
+        self.strategy_status["daily_sr"]["armed"] = bool(daily_sr.get("S1"))
+        self.strategy_status["daily_trend"]["state"] = daily_state if daily_bias != "NEUTRAL" else "NEUTRAL"
+        self.strategy_status["daily_trend"]["armed"] = daily_bias in ("BULLISH", "BEARISH")
+        self.strategy_status["flagship_1h"]["state"] = "SCANNING"
+        self.strategy_status["flagship_1h"]["armed"] = False
 
-                if len(b15) >= 2:
-                    o1, h1, l1, c1 = float(b15["open"].iloc[-2]), float(b15["high"].iloc[-2]), float(b15["low"].iloc[-2]), float(b15["close"].iloc[-2])
-                    body1 = abs(c1 - o1)
-                    if c1 < o1 and c0 > o0 and c0 >= o1 and o0 <= c1 and body0 > body1:
-                        pa_long_tag = "BULLISH_ENGULFING"
-                    elif c1 > o1 and c0 < o0 and c0 <= o1 and o0 >= c1 and body0 > body1:
-                        pa_short_tag = "BEARISH_ENGULFING"
-                    elif h0 <= h1 and l0 >= l1 and body1 > body0:
-                        if c0 > o0 and c1 < o1:
-                            pa_long_tag = "BULLISH_MOTHER_BABY"
-                        elif c0 < o0 and c1 > o1:
-                            pa_short_tag = "BEARISH_MOTHER_BABY"
+        if len(b60) >= 5 and len(b15) >= 3 and (not bar_hm or bar_hm < no_entry_after):
+            pa_long, pa_short = detect_flagship_15m_confirmation(b15, conf_idx=-2)
+            conf_i = len(b15) - 2
+            co = float(b15["open"].iloc[conf_i])
+            ch = float(b15["high"].iloc[conf_i])
+            cl = float(b15["low"].iloc[conf_i])
+            cc = float(b15["close"].iloc[conf_i])
+            entry_open = float(b15["open"].iloc[-1])
 
-                if len(b15) >= 3 and not (pa_long_tag or pa_short_tag):
-                    o2, c2 = float(b15["open"].iloc[-3]), float(b15["close"].iloc[-3])
-                    o1, c1 = float(b15["open"].iloc[-2]), float(b15["close"].iloc[-2])
-                    body2, body1 = abs(c2 - o2), abs(c1 - o1)
-                    mid2 = (o2 + c2) / 2.0
-                    if c2 < o2 and body1 <= body2 * 0.4 and c0 > o0 and c0 > mid2:
-                        pa_long_tag = "MORNING_STAR"
-                    elif c2 > o2 and body1 <= body2 * 0.4 and c0 < o0 and c0 < mid2:
-                        pa_short_tag = "EVENING_STAR"
+            sr_levels = [daily_sr.get(k) for k in ("S1", "S2", "S3", "R1", "R2", "R3")]
+            sr_levels += list(daily_sr.get("round_levels") or [])
+            level_list = [float(x) for x in sr_levels if x is not None]
 
-                if not pa_long_tag and lw0 >= 2.0 * max(body0, 0.5) and uw0 <= rng0 * 0.25:
-                    pa_long_tag = "HAMMER"
-                if not pa_short_tag and uw0 >= 2.0 * max(body0, 0.5) and lw0 <= rng0 * 0.25:
-                    pa_short_tag = "SHOOTING_STAR"
-                if (body0 / rng0) <= 0.15 and (near_1000 or h1_support_touch or h1_resist_touch):
-                    pa_long_tag = pa_long_tag or "DOJI"
-                    pa_short_tag = pa_short_tag or "DOJI"
+            swings = find_confirmed_h1_swings(b60, pivot_bars=2)
+            swing_low_zones: List[Tuple[float, float, str]] = []
+            swing_high_zones: List[Tuple[float, float, str]] = []
+            for sw in swings:
+                if float(sw.get("range_pts") or 0.0) > max_h1_rng:
+                    continue
+                z = zone_from_15m_at_ts(b15, sw["ts"])
+                if not z:
+                    continue
+                if sw["type"] == "LOW":
+                    swing_low_zones.append((z[0], z[1], str(sw["ts"])))
+                else:
+                    swing_high_zones.append((z[0], z[1], str(sw["ts"])))
 
-                if "volume" in b15.columns and float(b15["volume"].sum()) > 0:
-                    vwap_15 = float((b15["close"] * b15["volume"]).sum() / b15["volume"].sum())
-                    if not pa_long_tag and c0 > o0 and c0 > vwap_15:
-                        pa_long_tag = "VWAP_CLOSE_ABOVE"
-                    if not pa_short_tag and c0 < o0 and c0 < vwap_15:
-                        pa_short_tag = "VWAP_CLOSE_BELOW"
+            near_daily_support = any(
+                daily_sr.get(k) is not None and abs(cl - float(daily_sr[k])) <= tol for k in ("S1", "S2", "S3")
+            )
+            near_daily_resist = any(
+                daily_sr.get(k) is not None and abs(ch - float(daily_sr[k])) <= tol for k in ("R1", "R2", "R3")
+            )
+            if pa_long == "DOJI" and not (
+                _at_valid_level(cl, ch, level_list, tol)
+                or near_daily_support
+                or _near_round_number(cl, 1000.0)
+                or _near_round_number(cl, 500.0)
+            ):
+                pa_long = None
+            if pa_short == "DOJI" and not (
+                _at_valid_level(cl, ch, level_list, tol)
+                or near_daily_resist
+                or _near_round_number(ch, 1000.0)
+                or _near_round_number(ch, 500.0)
+            ):
+                pa_short = None
 
-            # 1 HR FLAGSHIP Long: 1H 8-EMA touch + Bullish 1H/15m Stack + 15m PA Confirmation
-            if h1_support_touch and is_bullish_stack and (pa_long_tag or stage2_cond or (crossover_event and crossover_event["type"] == "BULLISH_CROSS")):
-                if self.active_party != "BEARISH":
-                    self.strategy_status["h1_confluence"]["state"] = "DOUBLE_CONFIRMATION"
-                    conf_label = pa_long_tag or "STAGE2_CONFLUENCE"
-                    sl_val = 15.0 if pa_long_tag == "DOJI" else 40.0
+            self.strategy_status["flagship_1h"]["armed"] = bool(swing_low_zones or swing_high_zones)
+
+            def _zone_touched(zlo: float, zhi: float, bar_low: float, bar_high: float) -> bool:
+                return bar_low <= zhi + 2.0 and bar_high >= zlo - 2.0
+
+            supports_txt = ",".join(
+                f"{k}:{daily_sr[k]:.0f}" for k in ("S1", "S2", "S3") if daily_sr.get(k) is not None
+            )
+            resist_txt = ",".join(
+                f"{k}:{daily_sr[k]:.0f}" for k in ("R1", "R2", "R3") if daily_sr.get(k) is not None
+            )
+
+            if pa_long and daily_bias == "BULLISH" and h1_trend == "UP":
+                for zlo, zhi, zts in swing_low_zones:
+                    if not _zone_touched(zlo, zhi, cl, ch):
+                        continue
+                    if cc < zlo or cc > zhi + tol:
+                        continue
+                    sl_val = flagship_sl
+                    if pa_long == "DOJI":
+                        dist = abs(cl - entry_open)
+                        sl_val = min(doji_cap, dist if dist > 0 else doji_cap)
+                    self.strategy_status["flagship_1h"]["state"] = "TRIGGERED"
                     signals.append({
-                        "strategy_id": "H1_CONFLUENCE_SUPPORT",
-                        "setup_name": "1 HR FLAGSHIP (1H 8-EMA Support Bounce)",
+                        "strategy_id": "FLAGSHIP_1H_LONG",
+                        "setup_name": "Flagship 1H Long [Supports / 15m confirmation]",
                         "direction": "LONG",
                         "opt_side": "CE",
-                        "target_pts": 40.0,
+                        "target_pts": flagship_tgt,
                         "sl_pts": sl_val,
-                        "index_price": current_p,
-                        "conviction": "DOUBLE_CONFIRMATION_HIGH_CONVICTION",
-                        "details": f"1 HR FLAGSHIP: 1H 8-EMA ({h1_e8_last:.0f}) Support Bounce + 15m {conf_label} (Tgt +40 / SL -{sl_val:.0f}, 2L Candle HL Trail)",
+                        "index_price": entry_open,
+                        "conviction": "STANDARD",
+                        "flagship_trail": scfg.get("flagship_trail_by", "candle_low_high"),
+                        "details": (
+                            f"Zone {zlo:.0f}-{zhi:.0f} + 15m {pa_long} + Daily Trend {daily_bias} "
+                            f"+ 1H Trend {h1_trend} | S/R {supports_txt}"
+                        ),
                     })
+                    break
 
-            # 1 HR FLAGSHIP Short: 1H 8-EMA rejection + Bearish 1H/15m Stack + 15m PA Confirmation
-            if h1_resist_touch and is_bearish_stack and (pa_short_tag or stage3_cond or (crossover_event and crossover_event["type"] == "BEARISH_CROSS")):
-                if self.active_party != "BULLISH":
-                    self.strategy_status["h1_confluence"]["state"] = "DOUBLE_CONFIRMATION"
-                    conf_label = pa_short_tag or "STAGE3_CONFLUENCE"
-                    sl_val = 15.0 if pa_short_tag == "DOJI" else 40.0
+            if (
+                pa_short
+                and daily_bias == "BEARISH"
+                and h1_trend == "DOWN"
+            ):
+                for zlo, zhi, zts in swing_high_zones:
+                    if not _zone_touched(zlo, zhi, cl, ch):
+                        continue
+                    if cc > zhi or cc < zlo - tol:
+                        continue
+                    sl_val = flagship_sl
+                    if pa_short == "DOJI":
+                        dist = abs(ch - entry_open)
+                        sl_val = min(doji_cap, dist if dist > 0 else doji_cap)
+                    self.strategy_status["flagship_1h"]["state"] = "TRIGGERED"
                     signals.append({
-                        "strategy_id": "H1_CONFLUENCE_RESIST",
-                        "setup_name": "1 HR FLAGSHIP (1H 8-EMA Resistance Rejection)",
+                        "strategy_id": "FLAGSHIP_1H_SHORT",
+                        "setup_name": "Flagship 1H Short [Resistances / 15m confirmation]",
                         "direction": "SHORT",
                         "opt_side": "PE",
-                        "target_pts": 40.0,
+                        "target_pts": flagship_tgt,
                         "sl_pts": sl_val,
-                        "index_price": current_p,
-                        "conviction": "DOUBLE_CONFIRMATION_HIGH_CONVICTION",
-                        "details": f"1 HR FLAGSHIP: 1H 8-EMA ({h1_e8_last:.0f}) Resistance Rejection + 15m {conf_label} (Tgt +40 / SL -{sl_val:.0f}, 2L Candle HL Trail)",
+                        "index_price": entry_open,
+                        "conviction": "STANDARD",
+                        "flagship_trail": scfg.get("flagship_trail_by", "candle_low_high"),
+                        "details": (
+                            f"Zone {zlo:.0f}-{zhi:.0f} + 15m {pa_short} + Daily Trend {daily_bias} "
+                            f"+ 1H Trend {h1_trend} | S/R {resist_txt}"
+                        ),
                     })
+                    break
+            elif self.strategy_status["flagship_1h"]["armed"] and self.strategy_status["flagship_1h"]["state"] != "TRIGGERED":
+                self.strategy_status["flagship_1h"]["state"] = "ARMED"
 
         # Directional Bias filter on generated strategy signals
         if self.directional_bias == "LONG_ONLY":
@@ -3922,8 +4342,8 @@ class QuantTerminalBackend:
                     self.strategy_status["stage3_short"]["state"] = g_state
                 elif "CROSSOVER" in sid:
                     self.strategy_status["crossover_reversal"]["state"] = g_state
-                elif "H1" in sid:
-                    self.strategy_status["h1_confluence"]["state"] = g_state
+                elif "FLAGSHIP" in sid:
+                    self.strategy_status["flagship_1h"]["state"] = g_state
             signals = []
 
         # Proven Quant Edges Filter 2: Futures Volume Surge Gate (vsr_10 >= 1.15)
@@ -3939,8 +4359,8 @@ class QuantTerminalBackend:
                     self.strategy_status["stage3_short"]["state"] = "BLOCKED_FUT_VOL_SURGE"
                 elif "CROSSOVER" in sid:
                     self.strategy_status["crossover_reversal"]["state"] = "BLOCKED_FUT_VOL_SURGE"
-                elif "H1" in sid:
-                    self.strategy_status["h1_confluence"]["state"] = "BLOCKED_FUT_VOL_SURGE"
+                elif "FLAGSHIP" in sid:
+                    self.strategy_status["flagship_1h"]["state"] = "BLOCKED_FUT_VOL_SURGE"
             signals = []
 
         # Dhan OI PE-CE Synergy Advisory Tagging on Signals (Advisory-Only & Fail-Open)
@@ -4193,6 +4613,12 @@ class QuantTerminalBackend:
                 continue
 
             strat_id = sig["strategy_id"]
+            if "FLAGSHIP" in str(strat_id).upper():
+                ok_risk, risk_reason = self._flagship_risk_allows_entry()
+                if not ok_risk:
+                    log.info("[FLAGSHIP BLOCKED] %s — %s", sig.get("setup_name"), risk_reason)
+                    continue
+
             last_ts = self.strategy_cooldowns.get(strat_id, 0.0)
             if (now_ts - last_ts) < 300.0:  # 5-minute cooldown
                 continue
@@ -4256,16 +4682,13 @@ class QuantTerminalBackend:
             except Exception as e:
                 log.error("Ledger check error in signal execution: %s", e)
 
-            # Trigger execution with chaser
-            res = await self.execute_order_with_chaser(
-                contract=target_contract,
-                side="BUY",
-                strategy_name=sig["setup_name"],
-                target_pts=sig["target_pts"],
-                sl_pts=sig["sl_pts"],
-                is_algo_trade=True,
-                # v1.9.4c: present only for Matrix Scalp; None for the rest.
-                spot_context=({
+            spot_entry = float(sig.get("index_price") or self.cached_telemetry.get("spot", {}).get("price") or 0.0)
+            is_long = str(sig.get("direction", "LONG")).upper() == "LONG"
+            sl_pts_sig = float(sig.get("sl_pts", 40.0))
+            tgt_pts_sig = float(sig.get("target_pts", 40.0))
+            spot_ctx = None
+            if sig.get("matrix_scalp"):
+                spot_ctx = {
                     "strategy_id": sig.get("strategy_id"),
                     "spot_entry": sig.get("spot_entry"),
                     "spot_target_level": sig.get("spot_target_level"),
@@ -4274,7 +4697,27 @@ class QuantTerminalBackend:
                     "spot_stop_pts": sig.get("spot_stop_pts"),
                     "engine_risk_pts": sig.get("engine_risk_pts"),
                     "sr_interaction": sig.get("sr_interaction"),
-                } if sig.get("matrix_scalp") else None),
+                }
+            elif "FLAGSHIP" in str(sig.get("strategy_id", "")).upper() and spot_entry > 0:
+                spot_ctx = {
+                    "strategy_id": sig.get("strategy_id"),
+                    "spot_entry": spot_entry,
+                    "spot_target_pts": tgt_pts_sig,
+                    "spot_stop_pts": sl_pts_sig,
+                    "spot_target_level": round(spot_entry + tgt_pts_sig, 2) if is_long else round(spot_entry - tgt_pts_sig, 2),
+                    "spot_stop_level": round(spot_entry - sl_pts_sig, 2) if is_long else round(spot_entry + sl_pts_sig, 2),
+                }
+
+            # Trigger execution with chaser
+            res = await self.execute_order_with_chaser(
+                contract=target_contract,
+                side="BUY",
+                strategy_name=sig["setup_name"],
+                target_pts=sig["target_pts"],
+                sl_pts=sig["sl_pts"],
+                is_algo_trade=True,
+                source="REAL_ALGO_PAPER" if "FLAGSHIP" in str(sig.get("strategy_id", "")).upper() else None,
+                spot_context=spot_ctx,
             )
             log.info("Strategy %s execution result: %s", sig["setup_name"], res.get("status", "SUBMITTED"))
             self.mark_signal_outcome(
@@ -4406,9 +4849,16 @@ class QuantTerminalBackend:
         return out
 
     # ── POSITIONS & ORDERS RETRIEVAL ─────────────────────────────────────────
-    def get_active_positions(self, live_quotes: Optional[Dict[str, float]] = None) -> List[Dict[str, Any]]:
+    def get_active_positions(self, live_quotes: Optional[Dict[str, float]] = None,
+                             spot_price: Optional[float] = None) -> List[Dict[str, Any]]:
         positions = []
         live_quotes = live_quotes or {}
+        spot_idx = float(spot_price or self.cached_telemetry.get("spot", {}).get("price") or 0.0)
+        sr_levels = dict(self.strategy_status.get("daily_sr", {}).get("levels") or {})
+        sr_prox = float(self.scanner_cfg.get("flagship_sr_exit_proximity_pts", 15.0))
+        eod_hm = str(self.scanner_cfg.get("flagship_eod_square_off", "15:20"))
+        if not hasattr(self, "_flagship_trail_bar_ts"):
+            self._flagship_trail_bar_ts = {}
         with sqlite3.connect(self.ledger_db) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
@@ -4441,8 +4891,9 @@ class QuantTerminalBackend:
                 highest_after_target = float(p.get("highest_after_target") or entry)
                 pullback_exit_level = float(p.get("pullback_exit_level") or 0.0)
 
-                trail_sl_enabled = bool(p.get("trail_sl_enabled", 1))
-                trail_target_enabled = bool(p.get("trail_target_enabled", 1))
+                is_flagship_pos = "FLAGSHIP" in str(p.get("strategy_id") or "").upper()
+                trail_sl_enabled = bool(p.get("trail_sl_enabled", 1)) and not is_flagship_pos
+                trail_target_enabled = bool(p.get("trail_target_enabled", 1)) and not is_flagship_pos
                 trail_act = float(p.get("trail_activation_pts") or self.super_trail_cfg.get("trail_activation_profit_pts", 15.0))
                 trail_jump = float(p.get("trail_jump_pts") or self.super_trail_cfg.get("trailing_jump_pts", 5.0))
                 init_sl_pts = float(self.super_trail_cfg.get("initial_sl_pts", 20.0))
@@ -4484,10 +4935,43 @@ class QuantTerminalBackend:
                 # 3. Check Real-Time Exit Conditions
                 should_close = False
                 exit_reason = ""
-                if trail_sl_enabled and ltp <= current_trailing_sl:
+                if is_flagship_pos and spot_idx > 0:
+                    spot_entry = float(p.get("spot_entry") or 0.0)
+                    spot_sl = float(p.get("spot_stop_level") or 0.0)
+                    is_long_spot = str(p.get("side", "BUY")).upper() == "BUY"
+                    if spot_sl > 0:
+                        bar15 = self._latest_closed_15m_bar()
+                        if bar15:
+                            last_bar_ts = int(self._flagship_trail_bar_ts.get(p["position_id"], 0))
+                            if int(bar15["ts"]) != last_bar_ts:
+                                spot_sl = flagship_candle_trail_update(
+                                    is_long_spot, spot_sl,
+                                    bar15["open"], bar15["high"], bar15["low"], bar15["close"],
+                                )
+                                self._flagship_trail_bar_ts[p["position_id"]] = int(bar15["ts"])
+                                cur.execute(
+                                    "UPDATE positions SET spot_stop_level=? WHERE position_id=?",
+                                    (spot_sl, p["position_id"]),
+                                )
+                                p["spot_stop_level"] = spot_sl
+                    if now_dt.strftime("%H:%M") >= eod_hm:
+                        should_close = True
+                        exit_reason = f"EOD_SQUARE_OFF_{eod_hm}"
+                    else:
+                        sr_hit = flagship_sr_exit_trigger(is_long_spot, spot_idx, sr_levels, sr_prox)
+                        if sr_hit:
+                            should_close = True
+                            exit_reason = sr_hit
+                        elif is_long_spot and spot_sl > 0 and spot_idx <= spot_sl:
+                            should_close = True
+                            exit_reason = "FLAGSHIP_SPOT_TRAIL_SL"
+                        elif (not is_long_spot) and spot_sl > 0 and spot_idx >= spot_sl:
+                            should_close = True
+                            exit_reason = "FLAGSHIP_SPOT_TRAIL_SL"
+                if not should_close and trail_sl_enabled and ltp <= current_trailing_sl:
                     should_close = True
                     exit_reason = "TRAIL_SL_HIT" if current_trailing_sl > initial_sl else "INITIAL_SL_HIT"
-                elif target_res["should_exit"]:
+                elif not should_close and target_res["should_exit"]:
                     should_close = True
                     exit_reason = target_res["exit_reason"]
 
@@ -4548,14 +5032,16 @@ class QuantTerminalBackend:
                     chg = self.calculate_dhan_charges(entry, exit_price, qty)
                     net = round(gross - chg, 2)
 
+                    exit_spot_val = spot_idx if is_flagship_pos and spot_idx > 0 else None
                     cur.execute("""
                     UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?,
                                          exit_reason=?, current_ltp=?, highest_ltp=?, current_trailing_sl=?,
                                          target_status=?, trailing_target_level=?, highest_after_target=?,
-                                         pullback_exit_level=?
+                                         pullback_exit_level=?, spot_exit=?
                     WHERE position_id=?
                     """, (exit_price, exit_time, gross, net, exit_reason, ltp, highest_ltp, current_trailing_sl,
-                          target_status, trailing_target_level, highest_after_target, pullback_exit_level, p["position_id"]))
+                          target_status, trailing_target_level, highest_after_target, pullback_exit_level,
+                          exit_spot_val, p["position_id"]))
 
                     # Release paper margin and settle the realised P&L into the
                     # balance. balance was previously written once at init and
@@ -5050,9 +5536,12 @@ class QuantTerminalBackend:
                     fill_price = paper_fill_price
                 paper_charges = self.calculate_dhan_charges(paper_fill_price, paper_fill_price + opt_target_pts, qty)
 
-                # Initialize super trail levels
+                is_flagship_pos = "FLAGSHIP" in str((spot_context or {}).get("strategy_id") or strategy_name).upper()
+                # Initialize super trail levels (premium); FLAGSHIP uses spot trail in get_active_positions.
                 init_sl = round_to_tick(paper_fill_price - float(self.super_trail_cfg.get("initial_sl_pts", 20.0)), 0.05)
                 init_target = round_to_tick(paper_fill_price + float(self.super_trail_cfg.get("initial_target_pts", 25.0)), 0.05)
+                trail_sl_on = 0 if is_flagship_pos else (1 if self.super_trail_cfg.get("trailing_sl_enabled", True) else 0)
+                trail_tgt_on = 0 if is_flagship_pos else (1 if self.super_trail_cfg.get("trailing_target_enabled", True) else 0)
 
                 pos_id = f"POS_{int(time.time()*1000)}"
                 with sqlite3.connect(self.ledger_db) as conn:
@@ -5088,8 +5577,8 @@ class QuantTerminalBackend:
                         paper_fill_price, init_target, init_sl, mode,
                         paper_fill_price, init_sl, init_sl, init_target,
                         init_target, paper_fill_price,
-                        1 if self.super_trail_cfg.get("trailing_sl_enabled", True) else 0,
-                        1 if self.super_trail_cfg.get("trailing_target_enabled", True) else 0,
+                        trail_sl_on,
+                        trail_tgt_on,
                         float(self.super_trail_cfg.get("trail_activation_profit_pts", 15.0)),
                         float(self.super_trail_cfg.get("trailing_jump_pts", 5.0)),
                         float(self.super_trail_cfg.get("trail_target_step_pts", 10.0)),
@@ -5356,11 +5845,117 @@ class QuantTerminalBackend:
         log.info("Kill switch disarmed. Standby cleared. Scanner enabled: %s", self.scanner_enabled)
         return {"ok": True, "message": "Kill switch disarmed. Ready for execution."}
 
+    def _flagship_risk_allows_entry(self) -> Tuple[bool, str]:
+        """Daily FLAGSHIP trade count and loss cap (config scanner.flagship_*)."""
+        max_tr = int(self.scanner_cfg.get("flagship_max_trades_per_day", 2))
+        max_loss = float(self.scanner_cfg.get("flagship_max_daily_loss_inr", -3000.0))
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                cur = conn.cursor()
+                cnt = int(cur.execute(
+                    "SELECT COUNT(*) FROM positions WHERE substr(entry_time,1,10)=? "
+                    "AND upper(coalesce(strategy_id,'')) LIKE 'FLAGSHIP%'",
+                    (today,),
+                ).fetchone()[0] or 0)
+                if cnt >= max_tr:
+                    return False, f"FLAGSHIP_MAX_TRADES_{max_tr}"
+                day_pnl = float(cur.execute(
+                    "SELECT COALESCE(SUM(net_pnl),0) FROM positions WHERE substr(entry_time,1,10)=? "
+                    "AND upper(coalesce(strategy_id,'')) LIKE 'FLAGSHIP%' AND status LIKE 'CLOSED%'",
+                    (today,),
+                ).fetchone()[0] or 0.0)
+                if day_pnl <= max_loss:
+                    return False, f"FLAGSHIP_MAX_DAILY_LOSS_{max_loss}"
+        except Exception as exc:
+            log.warning("FLAGSHIP risk gate query failed (fail-open): %s", exc)
+        return True, ""
+
+    def _latest_closed_15m_bar(self) -> Optional[Dict[str, float]]:
+        if not Path(self.market_db).exists():
+            return None
+        try:
+            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True, timeout=3) as conn:
+                q = """
+                    SELECT ts, o, h, l, c FROM candles_1m
+                    WHERE sec_id='13' ORDER BY ts DESC LIMIT 120
+                """
+                df = pd.read_sql_query(q, conn)
+            if df.empty:
+                return None
+            df["dt"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
+            b15 = df.set_index("dt").resample("15min").agg(
+                {"o": "first", "h": "max", "l": "min", "c": "last"}
+            ).dropna()
+            if len(b15) < 2:
+                return None
+            row = b15.iloc[-2]
+            return {
+                "open": float(row["o"]),
+                "high": float(row["h"]),
+                "low": float(row["l"]),
+                "close": float(row["c"]),
+                "ts": int(b15.index[-2].timestamp()),
+            }
+        except Exception as exc:
+            log.debug("Latest 15m bar unavailable: %s", exc)
+            return None
+
+    def _backtest_flagship_signals_at_bar(
+        self, df_all: pd.DataFrame, bar_ts: int, bar_close: float
+    ) -> List[Tuple[str, str, str, float, float, Dict[str, Any]]]:
+        sub = df_all[df_all["ts"] <= int(bar_ts)]
+        if len(sub) < 120:
+            return []
+        ohlc = sub.set_index("dt")[["open", "high", "low", "close", "volume"]].copy()
+        prev_party = self.active_party
+        self.active_party = "NEUTRAL"
+        prev_level = log.level
+        log.setLevel(logging.ERROR)
+        try:
+            sigs = self.evaluate_candle_dataframe(ohlc, spot_price=float(bar_close))
+        finally:
+            log.setLevel(prev_level)
+            self.active_party = prev_party
+        out: List[Tuple[str, str, str, float, float, Dict[str, Any]]] = []
+        sr = dict(self.strategy_status.get("daily_sr", {}).get("levels") or {})
+        for s in sigs:
+            sid = str(s.get("strategy_id", "")).upper()
+            if "FLAGSHIP" not in sid:
+                continue
+            out.append((
+                str(s["strategy_id"]),
+                str(s["setup_name"]),
+                str(s["direction"]),
+                float(s.get("target_pts", 40.0)),
+                float(s.get("sl_pts", 40.0)),
+                {"flagship": True, "sr_levels": sr},
+            ))
+        return out
+
+    def _backtest_legacy_cand_signals(
+        self, b: Dict[str, Any], b_prev: Dict[str, Any],
+        e4_v: float, e8_v: float, bbw: float, ubb_up: bool, lbb_dn: bool,
+    ) -> List[Tuple[str, str, str, float, float, Dict[str, Any]]]:
+        c_p, h_p, l_p = float(b["close"]), float(b["high"]), float(b["low"])
+        touch_15 = (l_p <= e8_v + 3.0 and h_p >= e8_v - 3.0)
+        cand: List[Tuple[str, str, str, float, float, Dict[str, Any]]] = []
+        meta = {"flagship": False, "sr_levels": {}}
+        if e4_v > e8_v and ubb_up and bbw >= 50.0 and touch_15 and c_p >= e8_v - 2.5:
+            cand.append(("STAGE_2_LONG", "Stage 2 8-EMA (Long) [Pullback Touch]", "LONG", 40.0, 40.0, meta))
+        if e4_v < e8_v and lbb_dn and bbw >= 50.0 and touch_15 and c_p <= e8_v + 2.5:
+            cand.append(("STAGE_3_SHORT", "Stage 3 8-EMA (Short) [Resistance Rejection]", "SHORT", 40.0, 40.0, meta))
+        if float(b_prev["e4"]) <= float(b_prev["e8"]) and e4_v > e8_v and touch_15:
+            cand.append(("CROSSOVER_BULLISH", "4 MA vs 8 EMA Upside Reversal", "LONG", 20.0, 20.0, meta))
+        elif float(b_prev["e4"]) >= float(b_prev["e8"]) and e4_v < e8_v and touch_15:
+            cand.append(("CROSSOVER_BEARISH", "4 MA vs 8 EMA Downside Reversal", "SHORT", 20.0, 20.0, meta))
+        return cand
+
     # ── PREVIOUS-DAY REPLAY (BACKTEST SIMULATION) ─────────────────────────────
     def _classify_strategy_filter_tag(self, strategy_id: str, setup_name: str) -> Tuple[str, str]:
         sid = str(strategy_id or "").upper()
         sname = str(setup_name or "").upper()
-        if "H1_CONFLUENCE" in sid or "1H" in sname or "FLAGSHIP" in sname or "1 HR" in sname:
+        if "FLAGSHIP_1H" in sid or "FLAGSHIP" in sname or "1 HR FLAGSHIP" in sname:
             return "H1_FLAGSHIP", "1 HR FLAGSHIP"
         if "STAGE_3" in sid or "STAGE 3" in sname:
             return "STAGE_3_SHORT", "STAGE 3 8 EMA SHORT"
@@ -5426,340 +6021,6 @@ class QuantTerminalBackend:
                     pass
         return pd.DataFrame()
 
-    def run_date_range_backtest(
-        self,
-        from_date: str = "2026-06-01",
-        to_date: str = "2026-11-04",
-        custom_cfg: Optional[Dict[str, Any]] = None,
-        enforce_ma_stack: bool = False,
-        bias: Optional[str] = None,
-        include_today_paper: bool = True,
-        strategy_filter: str = "ALL",
-        data_type_filter: str = "ALL",
-        use_previous_scanner: bool = False,
-    ) -> Dict[str, Any]:
-        active_bias = str(bias or self.directional_bias or "BOTH").upper()
-        strat_flt = str(strategy_filter or "ALL").upper().strip()
-        dtype_flt = str(data_type_filter or "ALL").upper().strip()
-        lot_qty = 65
-        delta_est = 0.60
-        charges_est = 78.16
-
-        all_rows: List[Dict[str, Any]] = []
-
-        # ── A. Historical Multi-Month Simulation on 94k Real 1m Candles ──
-        if dtype_flt in ("ALL", "SYNTHETIC", "SYNTHESIZED"):
-            df_all = self._load_backtest_1m_candles(from_date, to_date)
-            if not df_all.empty:
-                df_all = df_all[(df_all["hm"] >= "09:15") & (df_all["hm"] <= "15:30")].copy()
-                df_all["dt"] = pd.to_datetime(df_all["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-                
-                # Resample 15m and 1h
-                df_15m = df_all.set_index("dt").resample("15min", closed="left", label="left").agg({
-                    "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last",
-                    "volume": "sum", "day": "first", "hm": "first"
-                }).dropna().reset_index()
-
-                df_1h = df_all.set_index("dt").resample("60min", closed="left", label="left").agg({
-                    "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
-                }).dropna().reset_index()
-
-                if len(df_15m) >= 20:
-                    df_15m["e4"] = df_15m["close"].ewm(span=4, adjust=False).mean()
-                    df_15m["e8"] = df_15m["close"].ewm(span=8, adjust=False).mean()
-                    mid = df_15m["close"].rolling(20).mean()
-                    sd = df_15m["close"].rolling(20).std(ddof=0).fillna(0.0)
-                    df_15m["ubb"] = mid + 2.0 * sd
-                    df_15m["lbb"] = mid - 2.0 * sd
-                    df_15m["bbw"] = df_15m["ubb"] - df_15m["lbb"]
-
-                    df_1h["h1_e8"] = df_1h["close"].ewm(span=8, adjust=False).mean()
-                    h1_map = {int(r["ts"]): float(r["h1_e8"]) for _, r in df_1h.iterrows()}
-                    h1_ts_list = sorted(h1_map.keys())
-
-                    bars = df_15m.to_dict(orient="records")
-                    for idx in range(20, len(bars) - 1):
-                        b = bars[idx]
-                        b_prev = bars[idx - 1]
-                        hm = str(b["hm"])
-                        if hm < "09:30" or hm >= "15:00":
-                            continue
-
-                        c_p = float(b["close"])
-                        h_p = float(b["high"])
-                        l_p = float(b["low"])
-                        o_p = float(b["open"])
-                        e4_v = float(b["e4"])
-                        e8_v = float(b["e8"])
-                        bbw = float(b["bbw"])
-                        ubb_up = float(b["ubb"]) > float(b_prev["ubb"])
-                        lbb_dn = float(b["lbb"]) < float(b_prev["lbb"])
-
-                        # Find matching 1H 8-EMA line from Matrix/1H bar
-                        h1_e8 = e8_v
-                        h1_ts_found = int(b["ts"])
-                        for h_ts in reversed(h1_ts_list):
-                            if h_ts <= int(b["ts"]):
-                                h1_e8 = h1_map[h_ts]
-                                h1_ts_found = h_ts
-                                break
-
-                        cand_signals = []
-                        touch_15 = (l_p <= e8_v + 3.0 and h_p >= e8_v - 3.0)
-                        touch_1h = (l_p <= h1_e8 + 5.0 and h_p >= h1_e8 - 5.0)
-
-                        # 1. STAGE 2 8 EMA LONG
-                        if e4_v > e8_v and ubb_up and bbw >= 50.0 and touch_15 and c_p >= e8_v - 2.5:
-                            cand_signals.append(("STAGE_2_LONG", "Stage 2 8-EMA (Long) [Pullback Touch]", "LONG", 40.0, 40.0))
-                        # 2. STAGE 3 8 EMA SHORT
-                        if e4_v < e8_v and lbb_dn and bbw >= 50.0 and touch_15 and c_p <= e8_v + 2.5:
-                            cand_signals.append(("STAGE_3_SHORT", "Stage 3 8-EMA (Short) [Resistance Rejection]", "SHORT", 40.0, 40.0))
-                        # 3. 4x8 EMA CROSSOVER REVERSAL
-                        if float(b_prev["e4"]) <= float(b_prev["e8"]) and e4_v > e8_v and touch_15:
-                            cand_signals.append(("CROSSOVER_BULLISH", "4 MA vs 8 EMA Upside Reversal", "LONG", 20.0, 20.0))
-                        elif float(b_prev["e4"]) >= float(b_prev["e8"]) and e4_v < e8_v and touch_15:
-                            cand_signals.append(("CROSSOVER_BEARISH", "4 MA vs 8 EMA Downside Reversal", "SHORT", 20.0, 20.0))
-                        # 4. 1 HR FLAGSHIP (1H 8-EMA Line)
-                        if touch_1h and e4_v > e8_v and c_p >= o_p:
-                            cand_signals.append(("H1_CONFLUENCE_SUPPORT", "1H 8-EMA Support Bounce Confluence", "LONG", 40.0, 40.0))
-                        elif touch_1h and e4_v < e8_v and c_p <= o_p:
-                            cand_signals.append(("H1_CONFLUENCE_RESIST", "1H 8-EMA Resistance Rejection Confluence", "SHORT", 40.0, 40.0))
-
-                        for sid, sname, direc, tgt_pts, sl_pts in cand_signals:
-                            f_code, f_tag = self._classify_strategy_filter_tag(sid, sname)
-                            if strat_flt != "ALL" and f_code != strat_flt:
-                                continue
-                            if active_bias == "LONG_ONLY" and direc != "LONG":
-                                continue
-                            if active_bias == "SHORT_ONLY" and direc != "SHORT":
-                                continue
-
-                            entry_spot = round(float(bars[idx + 1]["open"]), 2)
-                            is_long = direc == "LONG"
-                            exit_spot = entry_spot
-
-                            st_sl = (entry_spot - sl_pts) if is_long else (entry_spot + sl_pts)
-                            st_pnl_pts = 0.0
-                            fx_pnl_pts = 0.0
-                            st_reason = "EOD_SQUARE_OFF_15:20"
-                            st_done = False
-                            fx_done = False
-                            max_fav = 0.0
-                            trail_steps = [f"SL {int(sl_pts)}"]
-
-                            for f_idx in range(idx + 1, min(len(bars), idx + 360)):
-                                fb = bars[f_idx]
-                                if fb["day"] != b["day"]:
-                                    break
-                                fh, fl, fc, fo = float(fb["high"]), float(fb["low"]), float(fb["close"]), float(fb["open"])
-                                fav = (fh - entry_spot) if is_long else (entry_spot - fl)
-                                max_fav = max(max_fav, fav)
-
-                                if not fx_done:
-                                    if is_long and fl <= entry_spot - sl_pts:
-                                        fx_pnl_pts = -sl_pts
-                                        fx_done = True
-                                    elif is_long and fh >= entry_spot + tgt_pts:
-                                        fx_pnl_pts = tgt_pts
-                                        fx_done = True
-                                    elif not is_long and fh >= entry_spot + sl_pts:
-                                        fx_pnl_pts = -sl_pts
-                                        fx_done = True
-                                    elif not is_long and fl <= entry_spot - tgt_pts:
-                                        fx_pnl_pts = tgt_pts
-                                        fx_done = True
-
-                                if not st_done:
-                                    if is_long:
-                                        if fl <= st_sl:
-                                            st_pnl_pts = round(st_sl - entry_spot, 2)
-                                            exit_spot = st_sl
-                                            st_reason = "TRAIL_SL_HIT" if st_sl > (entry_spot - sl_pts) else "SL_HIT"
-                                            st_done = True
-                                        elif fh >= entry_spot + tgt_pts:
-                                            st_pnl_pts = round(tgt_pts, 2)
-                                            exit_spot = entry_spot + tgt_pts
-                                            st_reason = "TARGET_HIT"
-                                            st_done = True
-                                        elif fc > fo and fl > st_sl:
-                                            st_sl = round(fl, 2)
-                                            trail_steps.append(f"Trail {st_sl:.0f}")
-                                    else:
-                                        if fh >= st_sl:
-                                            st_pnl_pts = round(entry_spot - st_sl, 2)
-                                            exit_spot = st_sl
-                                            st_reason = "TRAIL_SL_HIT" if st_sl < (entry_spot + sl_pts) else "SL_HIT"
-                                            st_done = True
-                                        elif fl <= entry_spot - tgt_pts:
-                                            st_pnl_pts = round(tgt_pts, 2)
-                                            exit_spot = entry_spot - tgt_pts
-                                            st_reason = "TARGET_HIT"
-                                            st_done = True
-                                        elif fc < fo and fh < st_sl:
-                                            st_sl = round(fh, 2)
-                                            trail_steps.append(f"Trail {st_sl:.0f}")
-
-                                if str(fb["hm"]) >= "15:15":
-                                    if not fx_done:
-                                        fx_pnl_pts = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
-                                        fx_done = True
-                                    if not st_done:
-                                        st_pnl_pts = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
-                                        exit_spot = fc
-                                        st_reason = "EOD_SQUARE_OFF_15:20"
-                                        st_done = True
-                                    break
-
-                            synth_opt_entry = 200.00
-                            synth_opt_exit = max(1.0, round(synth_opt_entry + st_pnl_pts * delta_est, 2))
-                            synth_net_inr = round((synth_opt_exit - synth_opt_entry) * lot_qty - charges_est, 2)
-                            fx_net_inr = round((fx_pnl_pts * delta_est) * lot_qty - charges_est, 2)
-                            falloff_pts = round(max(0.0, max_fav - max(0.0, st_pnl_pts)), 1)
-                            atm_strike = int(round(entry_spot / 100.0) * 100)
-                            opt_type = "CE" if is_long else "PE"
-                            contract_sym = f"NIFTY {atm_strike} {opt_type} (Synthesized Strike)"
-                            trail_str = " -> ".join(trail_steps[:4]) + f" -> {st_reason}" if len(trail_steps) > 1 else f"No Trail, Fixed {int(sl_pts)}/{int(tgt_pts)}"
-
-                            h1_dt_str = pd.to_datetime(h1_ts_found, unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%H:%M")
-                            if f_code == "H1_FLAGSHIP":
-                                ema8_col = f"1H 8 EMA: {h1_e8:.2f} (From Matrix) | Entry {entry_spot:.1f}, Distance {entry_spot - h1_e8:+.1f} pts"
-                            else:
-                                ema8_col = f"15m 8 EMA: {e8_v:.2f} (From Matrix) | 4 EMA: {e4_v:.2f} | Entry {entry_spot:.1f}, Distance {entry_spot - e8_v:+.1f} pts"
-
-                            all_rows.append({
-                                "Trade_ID": f"SYN_{b['day']}_{hm}_{sid}",
-                                "Date": f"{b['day']} {hm}",
-                                "date_only": str(b["day"]),
-                                "Setup_Name": sname,
-                                "Contract_Symbol": contract_sym,
-                                "Direction": direc,
-                                "Index_Entry": f"{entry_spot:.2f}",
-                                "Index_Exit": f"{exit_spot:.2f}",
-                                "Option_Entry_Display": f"{synth_opt_entry:.2f} (Synthesized Option Price)",
-                                "Option_Exit_Display": f"{synth_opt_exit:.2f} (Synthesized Option Price)",
-                                "option_entry": synth_opt_entry,
-                                "option_exit": synth_opt_exit,
-                                "Exit_Reason": st_reason,
-                                "exit_reason": st_reason,
-                                "Net_Pnl_Display": f"{st_pnl_pts:+.1f} pts | ₹{synth_net_inr:,.2f} (Synthesized)",
-                                "net_pnl": synth_net_inr,
-                                "fixed_net_pnl_row": fx_net_inr,
-                                "st_pnl_pts": st_pnl_pts,
-                                "fx_pnl_pts": fx_pnl_pts,
-                                "Trailing_Details": trail_str,
-                                "All_Fall_Off": f"MFE +{max_fav:.1f}p | Falloff {falloff_pts:.1f}p",
-                                "Strategy_Filter_Tag": f_tag,
-                                "Data_Type": "Synthetic Data",
-                                "Ema8_From_Matrix": ema8_col,
-                                "strategy_id": sid,
-                                "source": "SYNTHESIZED",
-                            })
-
-        # ── B. Live / Real Algo Traded Data (STRICT FILTER: DISCARD MANUAL JUNK) ──
-        if include_today_paper and dtype_flt in ("ALL", "REAL"):
-            try:
-                rec_rows = self._recorded_history().trades(from_date, to_date)
-            except Exception:
-                rec_rows = []
-            for r in rec_rows:
-                sname = str(r.get("Setup_Name") or "")
-                # PERMANENTLY FILTER OUT DUMMY MANUAL JUNK ROWS
-                if not sname or "manual" in sname.lower() or "unlabelled" in sname.lower() or not r.get("option_entry"):
-                    continue
-
-                f_code, f_tag = self._classify_strategy_filter_tag(r.get("Strategy", ""), sname)
-                if strat_flt != "ALL" and f_code != strat_flt:
-                    continue
-                direc = str(r.get("Direction") or "LONG").upper()
-                if active_bias == "LONG_ONLY" and direc != "LONG":
-                    continue
-                if active_bias == "SHORT_ONLY" and direc != "SHORT":
-                    continue
-
-                ep = r.get("option_entry")
-                xp = r.get("option_exit")
-                ep_disp = f"{float(ep):.2f} (Real)" if ep is not None and float(ep) > 0 else "Entry Missing (Real)"
-                if xp is not None and float(xp) > 0:
-                    xp_disp = f"{float(xp):.2f} (Real)"
-                    opt_pts = round(float(xp) - float(ep or 0.0), 2)
-                else:
-                    xp_disp = "Exit Price Missing (Real) — Not Synthesized"
-                    opt_pts = 0.0
-
-                net_val = float(r.get("net_pnl") or 0.0)
-                entry_time_short = str(r.get("Entry_Time") or "09:30")[:5]
-                data_type_tag = "Algo Real Data" if r.get("source") == "ALGO" else "Real Data"
-
-                all_rows.append({
-                    "Trade_ID": str(r.get("Trade_ID")),
-                    "Date": f"{r.get('Date')} {entry_time_short}",
-                    "date_only": str(r.get("Date")),
-                    "Setup_Name": sname,
-                    "Contract_Symbol": f"{r.get('Contract_Symbol')} (Real)",
-                    "Direction": direc,
-                    "Index_Entry": str(r.get("index_entry") or "LIVE"),
-                    "Index_Exit": str(r.get("index_exit") or "LIVE"),
-                    "Option_Entry_Display": ep_disp,
-                    "Option_Exit_Display": xp_disp,
-                    "option_entry": ep,
-                    "option_exit": xp,
-                    "Exit_Reason": str(r.get("exit_reason") or "MANUAL_EXIT"),
-                    "exit_reason": str(r.get("exit_reason") or "MANUAL_EXIT"),
-                    "Net_Pnl_Display": f"₹{net_val:,.2f} (Real)",
-                    "net_pnl": net_val,
-                    "fixed_net_pnl_row": net_val,
-                    "st_pnl_pts": opt_pts,
-                    "fx_pnl_pts": opt_pts,
-                    "Trailing_Details": "Live Paper Execution (Real)",
-                    "All_Fall_Off": "Real Fill",
-                    "Strategy_Filter_Tag": f_tag,
-                    "Data_Type": data_type_tag,
-                    "Ema8_From_Matrix": f"8 EMA: {r.get('ema8_entry', '-')} (Real Live Strike Matrix)",
-                    "strategy_id": f_code,
-                    "source": "LIVE",
-                })
-
-        st_summary = self._compute_side_summary(
-            [float(x["st_pnl_pts"]) for x in all_rows],
-            [float(x["net_pnl"]) for x in all_rows],
-        )
-        fx_summary = self._compute_side_summary(
-            [float(x["fx_pnl_pts"]) for x in all_rows],
-            [float(x["fixed_net_pnl_row"]) for x in all_rows],
-        )
-
-        sources = {x["source"] for x in all_rows}
-        if sources == {"LIVE"}:
-            dtype_mode = "REAL"
-        elif sources == {"LIVE", "SYNTHESIZED"}:
-            dtype_mode = "MIXED"
-        else:
-            dtype_mode = "SYNTHESIZED"
-
-        return {
-            "ok": True,
-            "from_date": from_date,
-            "to_date": to_date,
-            "strategy_filter": strat_flt,
-            "data_type_filter": dtype_flt,
-            "data_type_mode": dtype_mode,
-            "total_trades": len(all_rows),
-            "trades": all_rows,
-            "rows": all_rows,
-            "super_trail_summary": st_summary,
-            "fixed_40_40_summary": fx_summary,
-            "win_rate_trailing": st_summary["win_rate_pct"],
-            "win_rate_fixed": fx_summary["win_rate_pct"],
-            "trailing_net_pnl": st_summary["total_net_pnl_inr"],
-            "fixed_net_pnl": fx_summary["total_net_pnl_inr"],
-            "alpha_locked": round(st_summary["total_net_pnl_inr"] - fx_summary["total_net_pnl_inr"], 2),
-            "max_drawdown_trailing": st_summary["max_drawdown_inr"],
-            "max_drawdown_fixed": fx_summary["max_drawdown_inr"],
-            "profit_factor_trailing": st_summary["profit_factor"],
-            "profit_factor_fixed": fx_summary["profit_factor"],
-            "reconciliation": [],
-            "reconciliation_match": True,
-        }
     def _recorded_history(self):
         from analyst.recorded_history_8510 import RecordedHistory
         return RecordedHistory(self.ledger_db, self.market_db)
@@ -5810,7 +6071,7 @@ class QuantTerminalBackend:
     def _classify_strategy_filter_tag(self, strategy_id: str, setup_name: str) -> Tuple[str, str]:
         sid = str(strategy_id or "").upper()
         sname = str(setup_name or "").upper()
-        if "H1_CONFLUENCE" in sid or "1H" in sname or "FLAGSHIP" in sname or "1 HR" in sname:
+        if "FLAGSHIP_1H" in sid or "FLAGSHIP" in sname or "1 HR FLAGSHIP" in sname:
             return "H1_FLAGSHIP", "1 HR FLAGSHIP"
         if "STAGE_3" in sid or "STAGE 3" in sname:
             return "STAGE_3_SHORT", "STAGE 3 ATMA SHORT"
@@ -5897,10 +6158,6 @@ class QuantTerminalBackend:
                     "volume": "sum", "day": "first", "hm": "first"
                 }).dropna().reset_index()
 
-                df_1h = df_all.set_index("dt").resample("60min", closed="left", label="left").agg({
-                    "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
-                }).dropna().reset_index()
-
                 if len(df_15m) >= 20:
                     df_15m["e4"] = df_15m["close"].ewm(span=4, adjust=False).mean()
                     df_15m["e8"] = df_15m["close"].ewm(span=8, adjust=False).mean()
@@ -5909,11 +6166,12 @@ class QuantTerminalBackend:
                     df_15m["ubb"] = mid + 2.0 * sd
                     df_15m["lbb"] = mid - 2.0 * sd
                     df_15m["bbw"] = df_15m["ubb"] - df_15m["lbb"]
-                    df_1h["h1_e8"] = df_1h["close"].ewm(span=8, adjust=False).mean()
-                    h1_map = {int(r["ts"]): float(r["h1_e8"]) for _, r in df_1h.iterrows()}
-                    h1_ts_list = sorted(h1_map.keys())
 
                     bars = df_15m.to_dict(orient="records")
+                    eod_hm = str(self.scanner_cfg.get("flagship_eod_square_off", "15:20"))
+                    sr_prox = float(self.scanner_cfg.get("flagship_sr_exit_proximity_pts", 15.0))
+                    delta_est = float(self.cfg.get("risk", {}).get("option_delta_default", delta_est))
+
                     for idx in range(20, len(bars) - 1):
                         b = bars[idx]
                         b_prev = bars[idx - 1]
@@ -5922,44 +6180,18 @@ class QuantTerminalBackend:
                             continue
 
                         c_p = float(b["close"])
-                        h_p = float(b["high"])
-                        l_p = float(b["low"])
-                        o_p = float(b["open"])
                         e4_v = float(b["e4"])
                         e8_v = float(b["e8"])
                         bbw = float(b["bbw"])
                         ubb_up = float(b["ubb"]) > float(b_prev["ubb"])
                         lbb_dn = float(b["lbb"]) < float(b_prev["lbb"])
 
-                        # Lookup latest 1H 8-EMA
-                        h1_e8 = e8_v
-                        for h_ts in reversed(h1_ts_list):
-                            if h_ts <= int(b["ts"]):
-                                h1_e8 = h1_map[h_ts]
-                                break
+                        cand_signals = self._backtest_legacy_cand_signals(
+                            b, b_prev, e4_v, e8_v, bbw, ubb_up, lbb_dn
+                        )
+                        cand_signals += self._backtest_flagship_signals_at_bar(df_all, int(b["ts"]), c_p)
 
-                        cand_signals = []
-                        touch_15 = (l_p <= e8_v + 3.0 and h_p >= e8_v - 3.0)
-                        touch_1h = (l_p <= h1_e8 + 5.0 and h_p >= h1_e8 - 5.0)
-
-                        # 1. STAGE_2_LONG
-                        if e4_v > e8_v and ubb_up and bbw >= 50.0 and touch_15 and c_p >= e8_v - 2.5:
-                            cand_signals.append(("STAGE_2_LONG", "Stage 2 8-EMA (Long) [Pullback Touch]", "LONG", 40.0, 40.0))
-                        # 2. STAGE_3_SHORT
-                        if e4_v < e8_v and lbb_dn and bbw >= 50.0 and touch_15 and c_p <= e8_v + 2.5:
-                            cand_signals.append(("STAGE_3_SHORT", "Stage 3 8-EMA (Short) [Resistance Rejection]", "SHORT", 40.0, 40.0))
-                        # 3. CROSSOVER
-                        if float(b_prev["e4"]) <= float(b_prev["e8"]) and e4_v > e8_v and touch_15:
-                            cand_signals.append(("CROSSOVER_BULLISH", "4 MA vs 8 EMA Upside Reversal", "LONG", 20.0, 20.0))
-                        elif float(b_prev["e4"]) >= float(b_prev["e8"]) and e4_v < e8_v and touch_15:
-                            cand_signals.append(("CROSSOVER_BEARISH", "4 MA vs 8 EMA Downside Reversal", "SHORT", 20.0, 20.0))
-                        # 4. 1 HR FLAGSHIP (H1_CONFLUENCE_SUPPORT / H1_CONFLUENCE_RESIST)
-                        if touch_1h and e4_v > e8_v and c_p >= o_p:
-                            cand_signals.append(("H1_CONFLUENCE_SUPPORT", "1H 8-EMA Support Bounce Confluence", "LONG", 40.0, 40.0))
-                        elif touch_1h and e4_v < e8_v and c_p <= o_p:
-                            cand_signals.append(("H1_CONFLUENCE_RESIST", "1H 8-EMA Resistance Rejection Confluence", "SHORT", 40.0, 40.0))
-
-                        for sid, sname, direc, tgt_pts, sl_pts in cand_signals:
+                        for sid, sname, direc, tgt_pts, sl_pts, meta in cand_signals:
                             f_code, f_tag = self._classify_strategy_filter_tag(sid, sname)
                             if strat_flt != "ALL" and f_code != strat_flt:
                                 continue
@@ -5968,108 +6200,45 @@ class QuantTerminalBackend:
                             if active_bias == "SHORT_ONLY" and direc != "SHORT":
                                 continue
 
-                            # Simulate forward bars on the same day for Super Trail vs Fixed 40/40
                             entry_spot = round(float(bars[idx + 1]["open"]), 2)
-                            idx_high = entry_spot
-                            idx_low = entry_spot
                             is_long = direc == "LONG"
+                            is_flagship = bool(meta.get("flagship"))
 
-                            # Fixed 40/40 state
-                            fx_pnl_pts = 0.0
-                            fx_done = False
+                            st_pnl_pts, fx_pnl_pts, exit_spot, st_reason, trail_steps, mfe_pts = simulate_backtest_spot_exit(
+                                bars,
+                                idx + 1,
+                                entry_spot,
+                                is_long,
+                                float(sl_pts),
+                                float(tgt_pts),
+                                is_flagship,
+                                meta.get("sr_levels") or {},
+                                eod_hm,
+                                sr_prox,
+                            )
 
-                            # Super Trail state (Green/Red Candle HL trail + step trail)
-                            st_sl = (entry_spot - sl_pts) if is_long else (entry_spot + sl_pts)
-                            st_pnl_pts = 0.0
-                            st_reason = "EOD_SQUARE_OFF_15:20"
-                            st_done = False
-                            trail_steps = [f"SL {int(sl_pts)}"]
-
-                            for f_idx in range(idx + 1, len(bars)):
-                                fb = bars[f_idx]
-                                if fb["day"] != b["day"]:
-                                    break
-                                fh, fl, fc, fo = float(fb["high"]), float(fb["low"]), float(fb["close"]), float(fb["open"])
-                                idx_high = max(idx_high, fh)
-                                idx_low = min(idx_low, fl)
-
-                                # Fixed 40/40 check
-                                if not fx_done:
-                                    if is_long:
-                                        if fl <= entry_spot - sl_pts:
-                                            fx_pnl_pts = -sl_pts
-                                            fx_done = True
-                                        elif fh >= entry_spot + tgt_pts:
-                                            fx_pnl_pts = tgt_pts
-                                            fx_done = True
-                                    else:
-                                        if fh >= entry_spot + sl_pts:
-                                            fx_pnl_pts = -sl_pts
-                                            fx_done = True
-                                        elif fl <= entry_spot - tgt_pts:
-                                            fx_pnl_pts = tgt_pts
-                                            fx_done = True
-
-                                # Super Trail check
-                                if not st_done:
-                                    if is_long:
-                                        if fl <= st_sl:
-                                            st_pnl_pts = round(st_sl - entry_spot, 2)
-                                            st_reason = "TRAIL_SL_HIT" if st_sl > (entry_spot - sl_pts) else "SL_HIT"
-                                            st_done = True
-                                        elif fh >= entry_spot + tgt_pts:
-                                            st_pnl_pts = round(tgt_pts, 2)
-                                            st_reason = "TARGET_HIT"
-                                            st_done = True
-                                        elif fc > fo and fl > st_sl:
-                                            st_sl = round(fl, 2)
-                                            trail_steps.append(f"Green Low {st_sl:.0f}")
-                                    else:
-                                        if fh >= st_sl:
-                                            st_pnl_pts = round(entry_spot - st_sl, 2)
-                                            st_reason = "TRAIL_SL_HIT" if st_sl < (entry_spot + sl_pts) else "SL_HIT"
-                                            st_done = True
-                                        elif fl <= entry_spot - tgt_pts:
-                                            st_pnl_pts = round(tgt_pts, 2)
-                                            st_reason = "TARGET_HIT"
-                                            st_done = True
-                                        elif fc < fo and fh < st_sl:
-                                            st_sl = round(fh, 2)
-                                            trail_steps.append(f"Red High {st_sl:.0f}")
-
-                                if str(fb["hm"]) >= "15:15":
-                                    if not fx_done:
-                                        fx_pnl_pts = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
-                                        fx_done = True
-                                    if not st_done:
-                                        st_pnl_pts = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
-                                        st_reason = "EOD_SQUARE_OFF_15:20"
-                                        st_done = True
-                                    break
-
-                            # Synthesized Option Price math (labeled explicitly per Section 4A)
-                            synth_opt_entry = 200.00
-                            synth_opt_exit = max(1.0, round(synth_opt_entry + st_pnl_pts * delta_est, 2))
+                            synth_opt_entry, synth_opt_exit = synthesize_option_premium_from_spot(
+                                entry_spot, exit_spot, is_long, delta_est
+                            )
                             synth_net_inr = round((synth_opt_exit - synth_opt_entry) * lot_qty - charges_est, 2)
                             fx_net_inr = round((fx_pnl_pts * delta_est) * lot_qty - charges_est, 2)
 
-                            mfe_pts = round((idx_high - entry_spot) if is_long else (entry_spot - idx_low), 1)
                             falloff_pts = round(max(0.0, mfe_pts - max(0.0, st_pnl_pts)), 1)
                             atm_strike = int(round(entry_spot / 100.0) * 100)
                             opt_type = "CE" if is_long else "PE"
                             contract_sym = f"NIFTY {atm_strike} {opt_type} (Synthesized Strike)"
-                            trail_str = " -> ".join(trail_steps[:4]) + f" -> {st_reason}" if len(trail_steps) > 1 else f"No Trail, Fixed {int(sl_pts)}/{int(tgt_pts)}"
+                            trail_str = " -> ".join(trail_steps[:6]) + f" -> {st_reason}"
 
-                            h1_ts_found = int(b.get("ts", 0)); h1_dt_str = pd.to_datetime(h1_ts_found, unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%H:%M")
-                            if f_code == "H1_FLAGSHIP":
+                            if is_flagship:
                                 ema8_line_col = (
-                                    f"1H 8 EMA: {h1_e8:.2f} (From Matrix) | 1H Candle: {b['day']} {h1_dt_str}, Touch: Yes "
-                                    f"(1H Close: {c_p:.1f}, High: {h_p:.1f}, Low: {l_p:.1f}) | "
-                                    f"Entry {entry_spot:.1f}, 8 EMA {h1_e8:.1f}, Distance {entry_spot - h1_e8:+.1f} pts | "
-                                    f"15m Confirmation: Price Action at {hm}, Entry after confirmation"
+                                    f"1 HR FLAGSHIP PA | Spot entry {entry_spot:.1f} exit {exit_spot:.1f} | "
+                                    f"15m confirm {hm} | S/R aware trail"
                                 )
                             else:
-                                ema8_line_col = f"15m 8 EMA: {e8_v:.2f} (From Matrix) | 4 EMA: {e4_v:.2f}) | Entry {entry_spot:.1f}, Distance {entry_spot - e8_v:+.1f} pts | 15m Confirmation: Price Action at {hm}"
+                                ema8_line_col = (
+                                    f"15m 8 EMA: {e8_v:.2f} | 4 EMA: {e4_v:.2f} | "
+                                    f"Entry {entry_spot:.1f}, dist {entry_spot - e8_v:+.1f} pts"
+                                )
 
                             all_rows.append({
                                 "Trade_ID": f"SYN_{b['day']}_{hm}_{sid}",
@@ -6078,14 +6247,16 @@ class QuantTerminalBackend:
                                 "Setup_Name": sname,
                                 "Contract_Symbol": contract_sym,
                                 "Direction": direc,
-                                "Index_Entry": f"{entry_spot:.2f}", "Index_Exit": f"{round(entry_spot + st_pnl_pts if is_long else entry_spot - st_pnl_pts, 2):.2f}",
-                                "Option_Entry_Display": f"{synth_opt_entry:.2f} (Synthesized Option Price)",
-                                "Option_Exit_Display": f"{synth_opt_exit:.2f} (Synthesized Option Price)",
+                                "Index_Entry": f"{entry_spot:.2f}",
+                                "Index_Exit": f"{exit_spot:.2f}",
+                                "Option_Entry_Display": f"{synth_opt_entry:.2f} (SYNTHESIZED option from spot)",
+                                "Option_Exit_Display": f"{synth_opt_exit:.2f} (SYNTHESIZED option from spot)",
                                 "option_entry": synth_opt_entry,
                                 "option_exit": synth_opt_exit,
+                                "price_type": "SYNTHESIZED",
                                 "Exit_Reason": st_reason,
                                 "exit_reason": st_reason,
-                                "Net_Pnl_Display": f"{st_pnl_pts:+.1f} pts | ₹{synth_net_inr:,.2f} (Synthesized)",
+                                "Net_Pnl_Display": f"{st_pnl_pts:+.1f} pts | ₹{synth_net_inr:,.2f} (SYNTHESIZED)",
                                 "net_pnl": synth_net_inr,
                                 "fixed_net_pnl_row": fx_net_inr,
                                 "st_pnl_pts": st_pnl_pts,
@@ -6093,8 +6264,9 @@ class QuantTerminalBackend:
                                 "Trailing_Details": trail_str,
                                 "All_Fall_Off": f"MFE +{mfe_pts:.1f}p | Falloff {falloff_pts:.1f}p",
                                 "Strategy_Filter_Tag": f_tag,
-                                "Data_Type": "Synthetic Data",
-                                "Ema8_Line_Details": ema8_line_col, "Ema8_From_Matrix": ema8_line_col,
+                                "Data_Type": "SYNTHESIZED",
+                                "Ema8_Line_Details": ema8_line_col,
+                                "Ema8_From_Matrix": ema8_line_col,
                                 "strategy_id": sid,
                                 "source": "SYNTHESIZED",
                             })
@@ -6129,6 +6301,7 @@ class QuantTerminalBackend:
                 net_val = float(r.get("net_pnl") or 0.0)
                 entry_time_short = str(r.get("Entry_Time") or "09:30")[:5]
                 data_type_tag = "Algo Real Data" if r.get("source") == "ALGO" else "Real Data"
+                ptype = "REAL_ALGO_PAPER" if "FLAGSHIP" in f_code or "FLAGSHIP" in str(r.get("Strategy", "")).upper() else "REAL"
                 all_rows.append({
                     "Trade_ID": str(r.get("Trade_ID")),
                     "Date": f"{r.get('Date')} {entry_time_short}",
@@ -6155,6 +6328,7 @@ class QuantTerminalBackend:
                     "Ema8_Line_Details": f"Live 8-EMA Captured: {r.get('ema8_entry', '-')}",
                     "strategy_id": f_code,
                     "source": "LIVE",
+                    "price_type": ptype,
                 })
 
         st_summary = self._compute_side_summary(

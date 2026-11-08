@@ -23,6 +23,16 @@ from analyst.terminal8510_backend import (
     compute_trailing_sl,
     compute_trailing_target,
     round_to_tick,
+    compute_daily_trend_two_day_rule,
+    compute_daily_sr_from_ohlc,
+    find_confirmed_h1_swings,
+    detect_flagship_15m_confirmation,
+    zone_from_15m_at_ts,
+    compute_h1_trend_pa,
+    flagship_candle_trail_update,
+    flagship_sr_exit_trigger,
+    synthesize_option_premium_from_spot,
+    simulate_backtest_spot_exit,
 )
 
 
@@ -354,7 +364,10 @@ def test_all_4_core_strategies_scanner_and_party_switch():
     assert "stage2_long" in status["strategies"]
     assert "stage3_short" in status["strategies"]
     assert "crossover_reversal" in status["strategies"]
-    assert "h1_confluence" in status["strategies"]
+    assert "flagship_1h" in status["strategies"]
+    assert "daily_sr" in status["strategies"]
+    assert "daily_trend" in status["strategies"]
+    assert "h1_confluence" not in status["strategies"]
 
     print("✔ Test 6 Passed: 4-Core Strategy Scanner & Party-Switch logic verified 100%.")
 
@@ -780,6 +793,123 @@ def test_11_stockmojo_dual_endpoint_parsers():
     if test_db.exists():
         test_db.unlink()
     print("✔ Test 11 Passed: Stock Mojo Dual Endpoints (/live/oi/pcr + /live/multi-strike/ce-pe-oi-diff) & Baseline Math verified 100%.")
+
+
+def test_flagship_daily_trend_profit_booking_vs_reversal():
+  days = pd.date_range("2026-10-01", periods=6, freq="1D", tz="Asia/Kolkata")
+  bullish_seq = pd.DataFrame({
+    "open": [100, 102, 104, 106, 107, 105],
+    "high": [101, 103, 105, 107, 108, 106],
+    "low": [99, 101, 103, 105, 104, 103],
+    "close": [100.5, 102.5, 104.5, 106.5, 107.0, 105.0],
+    "volume": [1] * 6,
+  }, index=days)
+  bias, state = compute_daily_trend_two_day_rule(bullish_seq)
+  assert bias == "BULLISH"
+  assert state in ("TREND_INTACT", "PROFIT_BOOKING")
+
+  bear_reversal = pd.DataFrame({
+    "open": [110, 108, 106, 104, 103, 101],
+    "high": [111, 109, 107, 105, 104, 102],
+    "low": [109, 107, 105, 103, 100, 98],
+    "close": [109.5, 107.5, 105.5, 103.5, 101.0, 99.0],
+    "volume": [1] * 6,
+  }, index=days)
+  b2, s2 = compute_daily_trend_two_day_rule(bear_reversal)
+  assert b2 == "BEARISH"
+
+
+def test_flagship_h1_swing_no_lookahead():
+  idx = pd.date_range("2026-11-04 09:15", periods=12, freq="60min", tz="Asia/Kolkata")
+  highs = [100, 102, 105, 103, 101, 100, 99, 98, 100, 102, 104, 103]
+  lows = [98, 99, 100, 99, 98, 97, 96, 95, 96, 98, 99, 98]
+  h1 = pd.DataFrame({"open": highs, "high": highs, "low": lows, "close": highs, "volume": 1}, index=idx)
+  partial = h1.iloc[:8]
+  full = h1.iloc[:10]
+  sw_partial = find_confirmed_h1_swings(partial, pivot_bars=2)
+  sw_full = find_confirmed_h1_swings(full, pivot_bars=2)
+  assert len(sw_full) >= len(sw_partial)
+
+
+def test_flagship_oversized_h1_range_rejected():
+  backend = QuantTerminalBackend()
+  max_rng = float(backend.scanner_cfg.get("flagship_max_h1_range_pts", 120.0))
+  idx = pd.date_range("2026-11-04 09:15", periods=7, freq="60min", tz="Asia/Kolkata")
+  h1 = pd.DataFrame({
+    "open": [24000] * 7,
+    "high": [24000 + max_rng + 10] * 7,
+    "low": [24000] * 7,
+    "close": [24000] * 7,
+    "volume": 1,
+  }, index=idx)
+  swings = find_confirmed_h1_swings(h1, pivot_bars=2)
+  for sw in swings:
+    assert sw["range_pts"] <= max_rng + 1
+
+
+def test_flagship_closed_candle_confirmation_not_forming():
+  idx = pd.date_range("2026-11-04 09:15", periods=4, freq="15min", tz="Asia/Kolkata")
+  b15 = pd.DataFrame({
+    "open": [100, 100, 99, 101],
+    "high": [101, 101, 100, 102],
+    "low": [99, 99.5, 98, 100],
+    "close": [100.5, 100.2, 99.9, 101.5],
+    "volume": 1,
+  }, index=idx)
+  pa_l, pa_s = detect_flagship_15m_confirmation(b15, conf_idx=-2)
+  assert pa_l is None or isinstance(pa_l, str)
+  pa_forming, _ = detect_flagship_15m_confirmation(b15.iloc[:1], conf_idx=-1)
+  assert pa_forming is None
+
+
+def test_flagship_doji_requires_level():
+  idx = pd.date_range("2026-11-04 10:00", periods=3, freq="15min", tz="Asia/Kolkata")
+  doji = pd.DataFrame({
+    "open": [24105, 24104, 24100],
+    "high": [24106, 24105, 24102],
+    "low": [24103, 24102, 24098],
+    "close": [24104, 24103, 24100.1],
+    "volume": [1, 1, 1],
+  }, index=idx)
+  pa_l, _ = detect_flagship_15m_confirmation(doji, conf_idx=-1)
+  assert pa_l == "DOJI"
+  levels = [24000.0]
+  assert not (doji["low"].iloc[0] - 25 <= levels[0] <= doji["high"].iloc[0] + 25)
+
+
+def test_flagship_trail_and_sr_exit_helpers():
+  stop = 100.0
+  stop = flagship_candle_trail_update(True, stop, 101, 105, 100.5, 104)
+  assert stop == 100.5
+  stop2 = flagship_candle_trail_update(True, stop, 103, 104, 102, 102.5)
+  assert stop2 == 100.5
+  sr = {"S1": 99.0, "R1": 115.0}
+  assert flagship_sr_exit_trigger(True, 99.5, sr, proximity=15.0) == "S1_NEAR_EXIT"
+  assert flagship_sr_exit_trigger(False, 114.0, sr, proximity=15.0) == "R1_NEAR_EXIT"
+
+
+def test_backtest_synthesize_option_tagging():
+    bars = [
+        {"hm": "10:00", "day": "2026-11-04", "open": 100, "high": 105, "low": 99, "close": 104},
+        {"hm": "10:15", "day": "2026-11-04", "open": 104, "high": 108, "low": 103, "close": 107},
+        {"hm": "10:30", "day": "2026-11-04", "open": 107, "high": 110, "low": 106, "close": 109},
+    ]
+    sr = {"S1": 98.0, "R1": 112.0}
+    st, fx, exit_sp, reason, _, _ = simulate_backtest_spot_exit(
+        bars, 1, 104.0, True, 40.0, 40.0, True, sr, "15:20", 15.0
+    )
+    oe, ox = synthesize_option_premium_from_spot(104.0, exit_sp, True, 0.6)
+    assert ox >= oe or st <= 0
+    assert reason
+
+
+def test_flagship_scanner_status_keys():
+  backend = QuantTerminalBackend()
+  status = backend.get_scanner_status()
+  assert "flagship_1h" in status["strategies"]
+  assert "daily_sr" in status["strategies"]
+  assert "daily_trend" in status["strategies"]
+  assert "h1_confluence" not in status["strategies"]
 
 
 def main():

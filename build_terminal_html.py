@@ -968,17 +968,38 @@ def main() -> None:
                         </div>
                     </div>
 
-                    <!-- Strategy 4: 1H 8-EMA Confluence -->
+                    <!-- Strategy 4: 1 HR FLAGSHIP (Price Action) -->
                     <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                            <span style="font-weight:700; color:#c084fc; font-size:13px;">4. 1H 8-EMA Confluence</span>
-                            <span id="stratStatus_h1" class="status-badge badge-bull">SCANNING</span>
+                            <span style="font-weight:700; color:#c084fc; font-size:13px;">4. 1 HR FLAGSHIP (PA)</span>
+                            <span id="stratStatus_h1" class="status-badge badge-neutral">SCANNING</span>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            1H 8-EMA Support/Resistance Touch.<br>
-                            Trigger: <b>Double Confirmation</b> · Tgt +100 / SL -40
+                            Daily S/R + 1H swing zones + closed 15m PA.<br>
+                            Tgt +40 / SL -40 · Candle trail · S/R exits · 15:20 square-off
                         </div>
                     </div>
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700; color:#38bdf8; font-size:13px;">Daily S/R</span>
+                            <span id="stratStatus_daily_sr" class="status-badge badge-neutral">SCANNING</span>
+                        </div>
+                        <div id="flagshipDailySrText" style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">S1–S3 / R1–R3 waiting…</div>
+                    </div>
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700; color:#fbbf24; font-size:13px;">Daily Trend</span>
+                            <span id="stratStatus_daily_trend" class="status-badge badge-neutral">NEUTRAL</span>
+                        </div>
+                        <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">Two-day reversal rule.</div>
+                    </div>
+                </div>
+                <div id="flagshipDeskPanel" style="margin-top:12px; padding:12px; border-radius:8px; border:1px solid rgba(192,132,252,0.35); background:rgba(88,28,135,0.12); font-family:var(--font-mono); font-size:11.5px; line-height:1.55; color:#e9d5ff;">
+                    <div style="font-weight:800; color:#c084fc; margin-bottom:6px;">1H FLAGSHIP desk</div>
+                    <div>1H trend: <span id="flagshipH1Trend">—</span> · Armed: <span id="flagshipArmedState">—</span></div>
+                    <div>15m zone / confirmation: <span id="flagshipZoneConfirm">—</span></div>
+                    <div>Entry spot · SL · Target: <span id="flagshipEntrySlTgt">—</span></div>
+                    <div>Last signal: <span id="flagshipLastSignal">—</span></div>
                 </div>
             </div>
 
@@ -1830,6 +1851,24 @@ def main() -> None:
                         }}
                     }}
 
+                    function renderFlagshipDesk(sc) {{
+                        if (!sc?.strategies) return;
+                        const fs = sc.strategies.flagship_1h || {{}};
+                        const dsr = sc.strategies.daily_sr || {{}};
+                        const dt = sc.strategies.daily_trend || {{}};
+                        const lv = dsr.levels || {{}};
+                        const srLine = document.getElementById("flagshipDailySrText");
+                        if (srLine) {{
+                            const parts = [];
+                            for (const k of ["S1", "S2", "S3", "R1", "R2", "R3"]) {{
+                                if (lv[k] != null) parts.push(`${{k}}:${{Number(lv[k]).toFixed(0)}}`);
+                            }}
+                            srLine.textContent = parts.length ? parts.join(" · ") : "S1–S3 / R1–R3 waiting…";
+                        }}
+                        const set = (id, v) => {{ const el = document.getElementById(id); if (el) el.textContent = v ?? "—"; }};
+                        set("flagshipArmedState", `${{fs.state || "SCANNING"}} · Daily ${{dt.state || "NEUTRAL"}}`);
+                    }}
+
                     // Strategy Badges
                     if (sc.strategies) {{
                         const s2 = document.getElementById("stratStatus_stage2");
@@ -1848,10 +1887,25 @@ def main() -> None:
                             sCross.textContent = sc.strategies.crossover_reversal.state;
                             sCross.className = `status-badge ${{sc.strategies.crossover_reversal.state === 'TRIGGERED' ? 'badge-gold' : 'badge-neutral'}}`;
                         }}
-                        if (sH1 && sc.strategies.h1_confluence) {{
-                            sH1.textContent = sc.strategies.h1_confluence.state;
-                            sH1.className = `status-badge ${{sc.strategies.h1_confluence.state.includes('CONFIRMATION') ? 'badge-bull' : 'badge-neutral'}}`;
+                        const sDailySr = document.getElementById("stratStatus_daily_sr");
+                        const sDailyTrend = document.getElementById("stratStatus_daily_trend");
+                        const flagship = sc.strategies.flagship_1h;
+                        if (sH1 && flagship) {{
+                            sH1.textContent = flagship.state;
+                            const st = flagship.state || "";
+                            const bear = st.startsWith("BLOCKED");
+                            sH1.className = `status-badge ${{st === "TRIGGERED" ? "badge-bull" : (bear ? "badge-bear" : (st === "ARMED" ? "badge-gold" : "badge-neutral"))}}`;
                         }}
+                        if (sDailySr && sc.strategies.daily_sr) {{
+                            sDailySr.textContent = sc.strategies.daily_sr.state;
+                            sDailySr.className = `status-badge ${{sc.strategies.daily_sr.armed ? "badge-gold" : "badge-neutral"}}`;
+                        }}
+                        if (sDailyTrend && sc.strategies.daily_trend) {{
+                            sDailyTrend.textContent = sc.strategies.daily_trend.state;
+                            const ts = sc.strategies.daily_trend.state || "NEUTRAL";
+                            sDailyTrend.className = `status-badge ${{ts.includes("BULL") ? "badge-bull" : (ts.includes("BEAR") ? "badge-bear" : "badge-neutral")}}`;
+                        }}
+                        if (typeof renderFlagshipDesk === "function") renderFlagshipDesk(sc);
                     }}
                 }}
 

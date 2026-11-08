@@ -8,8 +8,10 @@
     "environment": "LIVE",
     "whitelisted_ip": "49.205.39.195",
     "DHAN_CLIENT_ID": "1112377935",
-    "TOKEN_EXPIRY_UTC": "2026-11-08T03:58:09Z",
-    "token_expiry_utc": "2026-11-08T03:58:09Z"
+    "TOKEN_EXPIRY_UTC": "2026-11-09T02:19:09Z",
+    "token_expiry_utc": "2026-11-09T02:19:09Z",
+    "DHAN_ACCESS_TOKEN": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MTkwNzQ5LCJpYXQiOjE3OTQxMDQzNDksInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.BfTl89XjcgGtvS-ySePKEBmHSGerokP4HjbDHFL5GgXLjY3NiS9UapzCuX76D7RSpwEfDT9IFh42vyQyKAw3cQ",
+    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MTkwNzQ5LCJpYXQiOjE3OTQxMDQzNDksInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.BfTl89XjcgGtvS-ySePKEBmHSGerokP4HjbDHFL5GgXLjY3NiS9UapzCuX76D7RSpwEfDT9IFh42vyQyKAw3cQ"
   },
   "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
   "instrument_master_path": "data/terminal8500/instrument_master.csv",
@@ -21,10 +23,10 @@
   "directional_bias": "BOTH",
   "starting_paper_capital": 100000.0,
   "chasing": {
-    "aggressive_limit_buffer_pts": 4.0,
+    "aggressive_limit_buffer_pts": 2.0,
     "auto_modify_interval_ms": 800,
     "max_chase_retries": 3,
-    "sl_limit_buffer_pts": 4.0
+    "sl_limit_buffer_pts": 2.0
   },
   "super_trail": {
     "enabled": true,
@@ -44,7 +46,7 @@
     "runner_pct": 20
   },
   "algo_strike_selection": {
-    "LONG_CE_ITM": false,
+    "LONG_CE_ITM": true,
     "LONG_CE_ATM": true,
     "LONG_PE_ITM": true,
     "LONG_PE_ATM": true
@@ -61,9 +63,17 @@
     "crossover_target_pts": 20.0,
     "crossover_sl_pts": 20.0,
     "crossover_max_touch_candles": 3,
-    "h1_confluence_target_pts": 100.0,
-    "h1_confluence_sl_pts": 40.0,
-    "party_switch_enabled": true
+    "party_switch_enabled": true,
+    "flagship_initial_sl_pts": 40.0,
+    "flagship_first_target_pts": 40.0,
+    "flagship_trail_by": "candle_low_high",
+    "flagship_max_trades_per_day": 2,
+    "flagship_max_daily_loss_inr": -3000,
+    "flagship_no_entry_after": "15:00",
+    "flagship_eod_square_off": "15:20",
+    "flagship_doji_sl_pts": 15.0,
+    "flagship_max_h1_range_pts": 120.0,
+    "flagship_sr_exit_proximity_pts": 15.0
   },
   "risk": {
     "max_daily_trades": 2,
@@ -301,5 +311,6 @@
     "max_payload_bytes": 4000000
   },
   "algo_strike_selection_evidence": "Harish explicitly requested LONG_CE_ITM disabled on 2026-11-07; other strike selection entries unchanged.",
-  "TOKEN_EXPIRY_UTC": "2026-11-08T03:58:09Z"
+  "TOKEN_EXPIRY_UTC": "2026-11-09T02:19:09Z",
+  "DHAN_ACCESS_TOKEN": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MTkwNzQ5LCJpYXQiOjE3OTQxMDQzNDksInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.BfTl89XjcgGtvS-ySePKEBmHSGerokP4HjbDHFL5GgXLjY3NiS9UapzCuX76D7RSpwEfDT9IFh42vyQyKAw3cQ"
 }

@@ -1027,17 +1027,40 @@ refresh();setInterval(refresh,10000);
                         </div>
                     </div>
 
-                    <!-- Strategy 4: 1H 8-EMA Confluence -->
+                    <!-- Strategy 4: 1 HR FLAGSHIP (Price Action) -->
                     <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                            <span style="font-weight:700; color:#c084fc; font-size:13px;">4. 1 HR FLAGSHIP (1H 8-EMA)</span>
-                            <span id="stratStatus_h1" class="status-badge badge-bull">SCANNING</span>
+                            <span style="font-weight:700; color:#c084fc; font-size:13px;">4. 1 HR FLAGSHIP (PA)</span>
+                            <span id="stratStatus_h1" class="status-badge badge-neutral">SCANNING</span>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            1H 8-EMA Support/Resistance Touch.<br>
-                            Trigger: <b>15m Price Action (Doji/Hammer/Engulf/Star/VWAP)</b> · Tgt +40 / SL -40 (2L Trail)
+                            Daily S/R + 1H swing zones + closed 15m PA.<br>
+                            Tgt +40 / SL -40 · Candle trail · S/R exits · 15:20 square-off
                         </div>
                     </div>
+                    <!-- Daily S/R -->
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700; color:#38bdf8; font-size:13px;">Daily S/R</span>
+                            <span id="stratStatus_daily_sr" class="status-badge badge-neutral">SCANNING</span>
+                        </div>
+                        <div id="flagshipDailySrText" style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); line-height:1.45;">S1–S3 / R1–R3 waiting…</div>
+                    </div>
+                    <!-- Daily Trend -->
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700; color:#fbbf24; font-size:13px;">Daily Trend</span>
+                            <span id="stratStatus_daily_trend" class="status-badge badge-neutral">NEUTRAL</span>
+                        </div>
+                        <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">Two-day reversal rule (profit booking vs reversal).</div>
+                    </div>
+                </div>
+                <div id="flagshipDeskPanel" style="margin-top:12px; padding:12px; border-radius:8px; border:1px solid rgba(192,132,252,0.35); background:rgba(88,28,135,0.12); font-family:var(--font-mono); font-size:11.5px; line-height:1.55; color:#e9d5ff;">
+                    <div style="font-weight:800; color:#c084fc; margin-bottom:6px;">1H FLAGSHIP desk (live algo + backtest fields)</div>
+                    <div>1H trend: <span id="flagshipH1Trend">—</span> · Armed: <span id="flagshipArmedState">—</span></div>
+                    <div>15m zone / confirmation: <span id="flagshipZoneConfirm">—</span></div>
+                    <div>Entry spot · SL · Target: <span id="flagshipEntrySlTgt">—</span></div>
+                    <div>Last signal: <span id="flagshipLastSignal">—</span></div>
                 </div>
             </div>
 
@@ -1708,7 +1731,7 @@ refresh();setInterval(refresh,10000);
                             <option value="STAGE_2_LONG">2. STAGE 2 8 EMA LONG — Stage 2 8 EMA Long (8-EMA Support Touch Long)</option>
                             <option value="STAGE_3_SHORT">3. STAGE 3 8 EMA SHORT — Stage 3 8 EMA Short (8-EMA Resistance Rejection Short)</option>
                             <option value="CROSSOVER">4. 4x8 EMA CROSSOVER REVERSAL — 4 MA vs 8 EMA Crossover Reversal</option>
-                            <option value="H1_FLAGSHIP">5. 1 HR FLAGSHIP — 1 Hour Flagship 1 HR 8 EMA (1H 8-EMA Support / Resistance Confluence)</option>
+                            <option value="H1_FLAGSHIP">5. 1 HR FLAGSHIP — Price Action only (daily S/R · 1H swings · 15m PA)</option>
                         </select>
                     </div>
                     <div>
@@ -1728,6 +1751,7 @@ refresh();setInterval(refresh,10000);
                         </label>
                     </div>
                     <button type="button" class="emerald-btn" style="padding:8px 18px;" onclick="runDateRangeBacktest()">📊 Run Date Range Backtester with Super Trail Logic</button>
+                    <button type="button" class="cyan-btn" style="padding:8px 14px;" onclick="runH1FlagshipOnlyBacktest()" title="Filter strategy to H1_FLAGSHIP only">🎯 H1 FLAGSHIP only</button>
                 </div>
 
                 <!-- Active Filter Banner & Data Provenance Badge -->
@@ -1789,11 +1813,12 @@ refresh();setInterval(refresh,10000);
                                 <th>12. All Fall Off</th>
                                 <th>13. Strategy Filter Tag</th>
                                 <th>14. Data Type</th>
-                                <th>15. 8 EMA</th>
+                                <th>15. Price Type</th>
+                                <th>16. FLAGSHIP / Context</th>
                             </tr>
                         </thead>
                         <tbody id="drBacktestTableBody">
-                            <tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:16px;">Select date range and click 'Run Date-Range Backtest'.</td></tr>
+                            <tr><td colspan="16" style="text-align:center; color:var(--text-muted); padding:16px;">Select date range and click 'Run Date-Range Backtest'.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1838,6 +1863,7 @@ refresh();setInterval(refresh,10000);
                 <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
                     <span id="pillGoldilocksSeparation_tab5" style="background:rgba(16, 185, 129, 0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">📐 4/8 Separation: -- ATR [WAITING]</span>
                     <span id="pillFuturesVolumeSurge_tab5" style="background:rgba(56, 189, 248, 0.15); border:1px solid #38bdf8; color:#38bdf8; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">📊 Futures Vol Surge (VSR): -- [WAITING]</span>
+                    <span id="pillFlagship1H_tab5" style="background:rgba(192, 132, 252, 0.15); border:1px solid #c084fc; color:#e9d5ff; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">🎯 1H FLAGSHIP: SCANNING</span>
                 </div>
             </div>
 
@@ -1863,7 +1889,7 @@ refresh();setInterval(refresh,10000);
                         <select id="explorerStrategy" onchange="runDateExplorer()" style="width:100%;">
                             <option value="ALL" selected>All recorded strategies</option>
                             <option value="TREND">Trend Following Only (Stage 2 &amp; 3)</option>
-                            <option value="H1">1-Hour 8-EMA Flagship Only</option>
+                            <option value="H1">1 HR FLAGSHIP (PA) Only</option>
                             <option value="REVERSAL">8-EMA Reversals Only</option>
                         </select>
                     </div>
@@ -3310,10 +3336,26 @@ refresh();setInterval(refresh,10000);
                             sCross.textContent = sc.strategies.crossover_reversal.state;
                             sCross.className = `status-badge ${sc.strategies.crossover_reversal.state === 'TRIGGERED' ? 'badge-gold' : 'badge-neutral'}`;
                         }
-                        if (sH1 && sc.strategies.h1_confluence) {
-                            sH1.textContent = sc.strategies.h1_confluence.state;
-                            sH1.className = `status-badge ${sc.strategies.h1_confluence.state.includes('CONFIRMATION') ? 'badge-bull' : 'badge-neutral'}`;
+                        const sDailySr = document.getElementById("stratStatus_daily_sr");
+                        const sDailyTrend = document.getElementById("stratStatus_daily_trend");
+                        const flagship = sc.strategies.flagship_1h;
+                        if (sH1 && flagship) {
+                            sH1.textContent = flagship.state;
+                            const st = flagship.state || "";
+                            const bull = st === "TRIGGERED" || st === "ARMED";
+                            const bear = st.startsWith("BLOCKED");
+                            sH1.className = `status-badge ${st === "TRIGGERED" ? "badge-bull" : (bear ? "badge-bear" : (bull ? "badge-gold" : "badge-neutral"))}`;
                         }
+                        if (sDailySr && sc.strategies.daily_sr) {
+                            sDailySr.textContent = sc.strategies.daily_sr.state;
+                            sDailySr.className = `status-badge ${sc.strategies.daily_sr.armed ? "badge-gold" : "badge-neutral"}`;
+                        }
+                        if (sDailyTrend && sc.strategies.daily_trend) {
+                            sDailyTrend.textContent = sc.strategies.daily_trend.state;
+                            const ts = sc.strategies.daily_trend.state || "NEUTRAL";
+                            sDailyTrend.className = `status-badge ${ts.includes("BULL") ? "badge-bull" : (ts.includes("BEAR") ? "badge-bear" : "badge-neutral")}`;
+                        }
+                        renderFlagshipDesk(sc);
                     }
                 }
 
@@ -4140,6 +4182,123 @@ refresh();setInterval(refresh,10000);
             }
         }
 
+        function badgeClassForState(state) {
+            const st = String(state || "");
+            if (st === "TRIGGERED") return "badge-bull";
+            if (st === "ARMED") return "badge-gold";
+            if (st.startsWith("BLOCKED")) return "badge-bear";
+            return "badge-neutral";
+        }
+
+        function resolvePriceType(t) {
+            const raw = String(t.price_type || "").toUpperCase();
+            if (raw === "SYNTHESIZED" || String(t.source || "").toUpperCase() === "SYNTHESIZED") return "SYNTHESIZED";
+            if (raw === "REAL_ALGO_PAPER") return "REAL_ALGO_PAPER";
+            if (String(t.Data_Type || "").toLowerCase().includes("synth")) return "SYNTHESIZED";
+            return "REAL_ALGO_PAPER";
+        }
+
+        function formatPriceTypeCell(t) {
+            const pt = resolvePriceType(t);
+            const cls = pt === "SYNTHESIZED" ? "badge-gold" : "badge-bull";
+            return `<span class="status-badge ${cls}">${pt}</span>`;
+        }
+
+        function sanitizeOptionDisplay(display, priceType) {
+            let s = display == null ? "-" : String(display);
+            if (priceType === "SYNTHESIZED") {
+                return s.replace(/\(Real\)/gi, "").replace(/Real Data/gi, "").trim() || s;
+            }
+            return s.replace(/SYNTHESIZED/gi, "Synth").trim();
+        }
+
+        function flagshipContextFromTrade(t) {
+            return t.Ema8_From_Matrix || t.Ema8_Line_Details || t.Trailing_Details || "-";
+        }
+
+        function renderFlagshipDesk(sc) {
+            const panel = document.getElementById("flagshipDeskPanel");
+            if (!panel || !sc?.strategies) return;
+            const fs = sc.strategies.flagship_1h || {};
+            const dsr = sc.strategies.daily_sr || {};
+            const dt = sc.strategies.daily_trend || {};
+            const lv = dsr.levels || {};
+            const srLine = document.getElementById("flagshipDailySrText");
+            if (srLine) {
+                const parts = [];
+                for (const k of ["S1", "S2", "S3", "R1", "R2", "R3"]) {
+                    if (lv[k] != null) parts.push(`${k}:${Number(lv[k]).toFixed(0)}`);
+                }
+                const rnd = (lv.round_levels || []).slice(0, 5).map(x => Number(x).toFixed(0));
+                srLine.textContent = parts.length ? parts.join(" · ") + (rnd.length ? " | ∅ " + rnd.join(",") : "") : "S1–S3 / R1–R3 waiting…";
+            }
+            const lastSig = (sc.recent_signals || []).find(s => String(s.strategy_id || "").toUpperCase().includes("FLAGSHIP"));
+            const details = lastSig?.details || "";
+            const zoneM = details.match(/Zone\s+([\d.]+)-([\d.]+)/);
+            const confirmM = details.match(/15m\s+(\w+)/);
+            const h1TrendM = details.match(/1H Trend\s+(\w+)/);
+            const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v ?? "—"; };
+            set("flagshipH1Trend", h1TrendM ? h1TrendM[1] : "—");
+            set("flagshipArmedState", `${fs.state || "SCANNING"} · Daily ${dt.state || "NEUTRAL"}`);
+            set("flagshipZoneConfirm", zoneM ? `${zoneM[1]}–${zoneM[2]} · ${confirmM ? confirmM[1] : "—"}` : (fs.armed ? "Zones armed — awaiting 15m PA" : "—"));
+            if (lastSig) {
+                const ep = Number(lastSig.index_price);
+                const sl = Number(lastSig.sl_pts);
+                const tg = Number(lastSig.target_pts);
+                const side = String(lastSig.direction || "").toUpperCase() === "SHORT" ? "SHORT" : "LONG";
+                const slSpot = side === "LONG" ? ep - sl : ep + sl;
+                const tgSpot = side === "LONG" ? ep + tg : ep - tg;
+                set("flagshipEntrySlTgt", `${ep.toFixed(1)} · SL ${slSpot.toFixed(1)} · Tgt ${tgSpot.toFixed(1)} (${sl}/${tg} pts)`);
+                set("flagshipLastSignal", `${lastSig.setup_name || lastSig.strategy_id} @ ${ep.toFixed(1)}`);
+            } else {
+                set("flagshipEntrySlTgt", "—");
+                set("flagshipLastSignal", "—");
+            }
+            const tab5 = document.getElementById("pillFlagship1H_tab5");
+            if (tab5) {
+                tab5.textContent = `🎯 1H FLAGSHIP: ${fs.state || "SCANNING"} · Daily ${dt.state || "NEUTRAL"} · ${srLine?.textContent?.slice(0, 48) || "—"}`;
+            }
+        }
+
+        function buildReconciliationFromTrades(trades) {
+            if (!trades || !trades.length) return [];
+            const byDate = {};
+            for (const t of trades) {
+                const day = t.date_only || String(t.Date || "").slice(0, 10);
+                if (!day) continue;
+                if (!byDate[day]) byDate[day] = { live: [], bt: [] };
+                const pt = resolvePriceType(t);
+                const tag = String(t.Strategy_Filter_Tag || "");
+                const isFlag = tag === "H1_FLAGSHIP" || String(t.strategy_id || "").includes("FLAGSHIP");
+                if (pt === "REAL_ALGO_PAPER" && isFlag) byDate[day].live.push(t);
+                if (pt === "SYNTHESIZED" && isFlag) byDate[day].bt.push(t);
+            }
+            return Object.keys(byDate).sort().map(day => {
+                const bucket = byDate[day];
+                const liveN = bucket.live.length;
+                const btN = bucket.bt.length;
+                const sample = bucket.live[0] || bucket.bt[0];
+                const ent = sample?.Date || day;
+                const exitReasons = [...bucket.live, ...bucket.bt].map(x => x.Exit_Reason || x.exit_reason).filter(Boolean);
+                const uniqExit = [...new Set(exitReasons)].slice(0, 3).join(" | ");
+                return {
+                    date: day,
+                    date_formatted: day,
+                    live_trades_taken: liveN,
+                    backtest_trades_found: btN,
+                    match: liveN === btN,
+                    entry_exit_time: ent,
+                    strategy_reason: uniqExit || "FLAGSHIP_1H · price_type REAL_ALGO_PAPER vs SYNTHESIZED",
+                };
+            });
+        }
+
+        function runH1FlagshipOnlyBacktest() {
+            const sel = document.getElementById("drStrategyFilter");
+            if (sel) sel.value = "H1_FLAGSHIP";
+            return runDateRangeBacktest();
+        }
+
         // ── 8B. MULTI-MONTH DATE-RANGE SUPER TRAIL BACKTESTER ──────────────────
         let lastDateRangeResults = null;
 
@@ -4221,6 +4380,10 @@ refresh();setInterval(refresh,10000);
 
                 for (const t of (data.trades || [])) {
                     const tr = document.createElement('tr');
+                    const pt = resolvePriceType(t);
+                    const dataType = pt === "SYNTHESIZED" ? "SYNTHESIZED" : (t.Data_Type || "REAL_ALGO_PAPER");
+                    const optIn = sanitizeOptionDisplay(t.Option_Entry_Display, pt);
+                    const optOut = sanitizeOptionDisplay(t.Option_Exit_Display, pt);
                     const cols = [
                         t.Date,
                         t.Setup_Name,
@@ -4228,35 +4391,50 @@ refresh();setInterval(refresh,10000);
                         t.Direction,
                         t.Index_Entry,
                         t.Index_Exit,
-                        t.Option_Entry_Display,
-                        t.Option_Exit_Display,
-                        t.Exit_Reason,
+                        optIn,
+                        optOut,
+                        t.Exit_Reason || t.exit_reason,
                         t.Net_Pnl_Display,
                         t.Trailing_Details,
                         t.All_Fall_Off,
                         t.Strategy_Filter_Tag,
-                        t.Data_Type,
-                        t.Ema8_From_Matrix
+                        dataType,
                     ];
                     for (const val of cols) {
                         const td = document.createElement('td');
                         td.textContent = val == null ? '-' : String(val);
                         tr.appendChild(td);
                     }
+                    const tdPt = document.createElement('td');
+                    tdPt.innerHTML = formatPriceTypeCell(t);
+                    tr.appendChild(tdPt);
+                    const tdCtx = document.createElement('td');
+                    tdCtx.textContent = flagshipContextFromTrade(t);
+                    tdCtx.style.fontSize = '11px';
+                    tdCtx.style.maxWidth = '280px';
+                    tr.appendChild(tdCtx);
                     tbody.appendChild(tr);
                 }
 
                 if (!data.trades || !data.trades.length) {
                     const tr = document.createElement('tr'), td = document.createElement('td');
-                    td.colSpan = 15;
+                    td.colSpan = 16;
                     td.textContent = 'No trades matched the selected Strategy / Data Type filter in this date range.';
                     tr.appendChild(td);
                     tbody.appendChild(tr);
                 }
-                renderReconciliation(data.reconciliation || [], data.reconciliation_match ?? null);
+                const recon = (data.reconciliation && data.reconciliation.length)
+                    ? data.reconciliation
+                    : buildReconciliationFromTrades(data.trades || []);
+                const reconMatch = data.reconciliation_match ?? (recon.length ? recon.every(r => r.match !== false) : null);
+                renderReconciliation(recon, reconMatch);
+                const syncBadge = document.getElementById('reconcileAutoSyncBadge');
+                if (syncBadge) {
+                    syncBadge.textContent = recon.length ? 'CLIENT RECON FROM price_type + H1_FLAGSHIP' : 'NOT INDEPENDENTLY RECONCILED';
+                }
             } catch (e) {
                 const tr = document.createElement('tr'), td = document.createElement('td');
-                td.colSpan = 15;
+                td.colSpan = 16;
                 td.textContent = 'Backtest error: ' + e.message;
                 tr.appendChild(td);
                 tbody.appendChild(tr);
@@ -4268,7 +4446,7 @@ refresh();setInterval(refresh,10000);
             const banner = document.getElementById("reconciliationMismatchBanner");
             if (!tbody) return;
             if (!reconcileList || reconcileList.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-dim); padding:12px;">No reconciliation data available.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-dim); padding:12px;">Run the date-range backtest to build Live (REAL_ALGO_PAPER) vs Backtest (SYNTHESIZED) reconciliation.</td></tr>`;
                 return;
             }
             let hasMismatch = matchOverall === false;
@@ -4386,7 +4564,7 @@ refresh();setInterval(refresh,10000);
             let inScope = allTrades.filter(t => {
                 if (t.Date < sDate || t.Date > eDate) return false;
                 if (strat === 'TREND' && !t.Setup_Name.includes('Stage')) return false;
-                if (strat === 'H1' && (!t.Setup_Name.includes('1H') || t.legacy_setup)) return false;
+                if (strat === 'H1' && !(String(t.Setup_Name || '').includes('Flagship') || String(t.strategy_id || '').includes('FLAGSHIP') || String(t.Setup_Name || '').includes('1 HR FLAGSHIP'))) return false;
                 if (strat === 'REVERSAL' && !t.Setup_Name.includes('Reversal')) return false;
                 return true;
             });
@@ -4503,7 +4681,7 @@ refresh();setInterval(refresh,10000);
             const trades = allTrades.filter(t => {
                 if (t.Date < sDate || t.Date > eDate) return false;
                 if (strat === 'TREND' && !t.Setup_Name.includes('Stage')) return false;
-                if (strat === 'H1' && (!t.Setup_Name.includes('1H') || t.legacy_setup)) return false;
+                if (strat === 'H1' && !(String(t.Setup_Name || '').includes('Flagship') || String(t.strategy_id || '').includes('FLAGSHIP') || String(t.Setup_Name || '').includes('1 HR FLAGSHIP'))) return false;
                 if (strat === 'REVERSAL' && !t.Setup_Name.includes('Reversal')) return false;
                 return true;
             });
