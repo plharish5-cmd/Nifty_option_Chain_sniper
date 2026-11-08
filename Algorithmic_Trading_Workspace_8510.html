@@ -1685,20 +1685,20 @@ refresh();setInterval(refresh,10000);
                     </div>
                     <div>
                         <label style="font-size:11px; color:#38bdf8; font-family:var(--font-mono); font-weight:700;">Strategy Filter</label>
-                        <select id="drStrategyFilter" style="display:block; margin-top:4px; min-width:290px; padding:6px 10px; background:#0f172a; color:#f8fafc; border:1px solid #38bdf8; border-radius:6px;">
-                            <option value="ALL" selected>1. ALL STRATEGIES (All 4 Together)</option>
-                            <option value="STAGE_2_LONG">2. STAGE 2 ATMA LONG — Stage 2 ATMA Long (8-EMA Support Touch Long)</option>
-                            <option value="STAGE_3_SHORT">3. STAGE 3 ATMA SHORT — Stage 3 ATMA Short (8-EMA Resistance Rejection Short)</option>
+                        <select id="drStrategyFilter" style="display:block; margin-top:4px; min-width:320px; padding:6px 10px; background:#0f172a; color:#f8fafc; border:1px solid #38bdf8; border-radius:6px;">
+                            <option value="ALL" selected>1. ALL STRATEGIES (Default)</option>
+                            <option value="STAGE_2_LONG">2. STAGE 2 8 EMA LONG — Stage 2 8 EMA Long (8-EMA Support Touch Long)</option>
+                            <option value="STAGE_3_SHORT">3. STAGE 3 8 EMA SHORT — Stage 3 8 EMA Short (8-EMA Resistance Rejection Short)</option>
                             <option value="CROSSOVER">4. 4x8 EMA CROSSOVER REVERSAL — 4 MA vs 8 EMA Crossover Reversal</option>
-                            <option value="H1_FLAGSHIP">5. 1 HR FLAGSHIP — 1 Hour Flagship 1 HR ATMA (1H 8-EMA Support / Resistance Confluence)</option>
+                            <option value="H1_FLAGSHIP">5. 1 HR FLAGSHIP — 1 Hour Flagship 1 HR 8 EMA (1H 8-EMA Support / Resistance Confluence)</option>
                         </select>
                     </div>
                     <div>
                         <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">Data Type Filter</label>
                         <select id="drDataTypeFilter" style="display:block; margin-top:4px; padding:6px 10px; background:#0f172a; color:#f8fafc; border:1px solid #334155; border-radius:6px;">
-                            <option value="ALL" selected>All (Real + Synthesized)</option>
-                            <option value="REAL">Real Only (Live Captured)</option>
-                            <option value="SYNTHESIZED">Synthesized Only (Historical Points)</option>
+                            <option value="ALL" selected>All (Real + Synthetic)</option>
+                            <option value="REAL">Real Only (Algo Real Data)</option>
+                            <option value="SYNTHETIC">Synthetic Only (Artificially Populated)</option>
                         </select>
                     </div>
                     <div style="display:flex; flex-direction:column; gap:4px; padding-bottom:2px;">
@@ -1712,13 +1712,13 @@ refresh();setInterval(refresh,10000);
                     <button type="button" class="emerald-btn" style="padding:8px 18px;" onclick="runDateRangeBacktest()">📊 Run Date Range Backtester with Super Trail Logic</button>
                 </div>
 
-                <!-- Active Filter & Data Provenance Badges -->
+                <!-- Active Filter Banner & Data Provenance Badge -->
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; padding:8px 12px; background:rgba(15,23,42,0.85); border:1px solid #334155; border-radius:6px; font-family:var(--font-mono); font-size:12px;">
                     <div id="drActiveFilterBanner" style="color:#38bdf8; font-weight:700;">
-                        Filter: ALL STRATEGIES | Date: 2026-09-01 to 2026-10-31 | Super Trail vs Fixed 40/40
+                        Filter: 1 HR FLAGSHIP | Date: 2026-09-01 to 2026-10-31 | Super Trail vs Fixed 40/40
                     </div>
                     <div id="drDataTypeBadge" style="padding:3px 10px; border-radius:4px; background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); font-weight:700;">
-                        Data Type: Synthesized Option Prices — For Points Testing Only, Not Real P&amp;L
+                        Data Type: Synthetic Data — Option Prices Artificially Populated, For Points Testing Only, Not Real P&amp;L
                     </div>
                 </div>
 
@@ -1752,25 +1752,25 @@ refresh();setInterval(refresh,10000);
                     </div>
                 </div>
 
-                <!-- 14-Column Comparison Trades Table -->
+                <!-- 14-Column Results Table (Index High/Low REMOVED; Data Type & 8 EMA Line ADDED) -->
                 <div style="overflow-x:auto; max-height:480px;">
                     <table>
                         <thead>
                             <tr>
-                                <th>Date</th>
-                                <th>Setup Name</th>
-                                <th>Contract Symbol</th>
-                                <th>Direction</th>
-                                <th>Index Entry</th>
-                                <th>Index High</th>
-                                <th>Index Low</th>
-                                <th>Option Entry</th>
-                                <th>Option Exit</th>
-                                <th>Exit Reason</th>
-                                <th>Net P&amp;L</th>
-                                <th>Trailing</th>
-                                <th>All Fall Off</th>
-                                <th>Strategy Filter Tag</th>
+                                <th>1. Date</th>
+                                <th>2. Setup Name</th>
+                                <th>3. Contract Symbol</th>
+                                <th>4. Direction</th>
+                                <th>5. Index Entry</th>
+                                <th>6. Option Entry</th>
+                                <th>7. Option Exit</th>
+                                <th>8. Exit Reason</th>
+                                <th>9. Net P&amp;L</th>
+                                <th>10. Trailing</th>
+                                <th>11. All Fall Off</th>
+                                <th>12. Strategy Filter Tag</th>
+                                <th>13. Data Type</th>
+                                <th>14. 8 EMA Line</th>
                             </tr>
                         </thead>
                         <tbody id="drBacktestTableBody">
@@ -4134,8 +4134,8 @@ refresh();setInterval(refresh,10000);
 
             const filterNames = {
                 ALL: 'ALL STRATEGIES',
-                STAGE_2_LONG: 'STAGE 2 ATMA LONG',
-                STAGE_3_SHORT: 'STAGE 3 ATMA SHORT',
+                STAGE_2_LONG: 'STAGE 2 8 EMA LONG',
+                STAGE_3_SHORT: 'STAGE 3 8 EMA SHORT',
                 CROSSOVER: '4x8 EMA CROSSOVER REVERSAL',
                 H1_FLAGSHIP: '1 HR FLAGSHIP'
             };
@@ -4168,11 +4168,11 @@ refresh();setInterval(refresh,10000);
                         badge.style.background = 'rgba(16,185,129,0.18)';
                         badge.style.color = '#34d399';
                     } else if (data.data_type_mode === 'MIXED') {
-                        badge.textContent = 'Data Type: Mixed (Real Live Trades + Synthesized Historical Points)';
+                        badge.textContent = 'Data Type: Mixed (Real Live Trades + Synthetic Backtest Data)';
                         badge.style.background = 'rgba(56,189,248,0.18)';
                         badge.style.color = '#38bdf8';
                     } else {
-                        badge.textContent = 'Data Type: Synthesized Option Prices — For Points Testing Only, Not Real P&L';
+                        badge.textContent = 'Data Type: Synthetic Data — Option Prices Artificially Populated, For Points Testing Only, Not Real P&L';
                         badge.style.background = 'rgba(245,158,11,0.18)';
                         badge.style.color = '#fbbf24';
                     }
@@ -4208,15 +4208,15 @@ refresh();setInterval(refresh,10000);
                         t.Contract_Symbol,
                         t.Direction,
                         t.Index_Entry,
-                        t.Index_High,
-                        t.Index_Low,
                         t.Option_Entry_Display,
                         t.Option_Exit_Display,
                         t.Exit_Reason,
                         t.Net_Pnl_Display,
                         t.Trailing_Details,
                         t.All_Fall_Off,
-                        t.Strategy_Filter_Tag
+                        t.Strategy_Filter_Tag,
+                        t.Data_Type,
+                        t.Ema8_Line_Details
                     ];
                     for (const val of cols) {
                         const td = document.createElement('td');
