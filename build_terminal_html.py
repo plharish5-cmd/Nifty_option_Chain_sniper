@@ -918,8 +918,7 @@ def main() -> None:
                         <span id="scannerBollingerGateBadge" class="status-badge badge-neutral" style="display:none;">Bollinger OFF</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                        <button type="button" id="btnToggleBollinger" class="emerald-btn" onclick="toggleScannerGate('bollinger_enabled')" style="padding:6px 12px; font-size:11.5px;">Bollinger Bands: ON</button>
-                        <button type="button" id="btnToggleEma48Sep" class="emerald-btn" onclick="toggleScannerGate('ema48_separation_enabled')" style="padding:6px 12px; font-size:11.5px;">4/8 Separation: ON</button>
+                        <button type="button" class="btn-bollinger-gate emerald-btn" onclick="toggleBollingerGate()" style="padding:6px 12px; font-size:11.5px;">Bollinger Bands: ON</button>
                         <button type="button" id="btnToggleScanner" class="cyan-btn" onclick="toggleScannerEngine()" style="padding:6px 14px; font-size:12px;">⏸ Pause Scanner</button>
                     </div>
                 </div>
@@ -2314,22 +2313,22 @@ def main() -> None:
             }}
         }}
 
-        function renderScannerGateButtons(gates) {{
-            if (!gates) return;
-            const bbOn = gates.bollinger_enabled !== false;
-            const btnBb = document.getElementById('btnToggleBollinger');
-            if (btnBb) btnBb.textContent = `Bollinger Bands: ${{bbOn ? 'ON' : 'OFF'}}`;
+        let bollingerGateEnabled = true;
+        function applyBollingerGateUI(enabled) {{
+            bollingerGateEnabled = enabled === true;
+            document.querySelectorAll('.btn-bollinger-gate').forEach(btn => {{
+                btn.textContent = `Bollinger Bands: ${{bollingerGateEnabled ? 'ON' : 'OFF'}}`;
+            }});
         }}
-        async function toggleScannerGate(field) {{
-            try {{
-                const cur = await (await fetch('/api/scanner/gates')).json();
-                const next = !(cur[field] !== false);
-                const d = await (await fetch('/api/scanner/gates', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{[field]: next}})}})).json();
-                renderScannerGateButtons(d);
-            }} catch (e) {{ console.debug(e); }}
+        async function loadBollingerGate() {{
+            try {{ const d = await (await fetch('/api/scanner/gates')).json(); applyBollingerGateUI(d.bollinger_enabled === true); }} catch(e){{}}
         }}
-        loadScannerGates = async () => {{ try {{ const d = await (await fetch('/api/scanner/gates')).json(); renderScannerGateButtons(d); }} catch(e){{}} }};
-        loadScannerGates();
+        async function toggleBollingerGate() {{
+            const next = !bollingerGateEnabled;
+            const d = await (await fetch('/api/scanner/gates', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{bollinger_enabled: next}})}})).json();
+            applyBollingerGateUI(d.bollinger_enabled === true);
+        }}
+        loadBollingerGate();
 
         async function toggleScannerEngine() {{
             try {{

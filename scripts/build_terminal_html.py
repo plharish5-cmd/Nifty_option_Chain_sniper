@@ -917,8 +917,7 @@ def main() -> None:
                         <span id="scannerActiveBadge" class="status-badge badge-bull">🟢 SCANNER ACTIVE</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                        <button type="button" id="btnToggleBollinger" class="emerald-btn" onclick="toggleScannerGate('bollinger_enabled')" style="padding:6px 12px; font-size:11.5px;">Bollinger Bands: ON</button>
-                        <button type="button" id="btnToggleEma48Sep" class="emerald-btn" onclick="toggleScannerGate('ema48_separation_enabled')" style="padding:6px 12px; font-size:11.5px;">4/8 Separation: ON</button>
+                        <button type="button" class="btn-bollinger-gate emerald-btn" onclick="toggleBollingerGate()" style="padding:6px 12px; font-size:11.5px;">Bollinger Bands: ON</button>
                         <button type="button" id="btnToggleScanner" class="cyan-btn" onclick="toggleScannerEngine()" style="padding:6px 14px; font-size:12px;">⏸ Pause Scanner</button>
                     </div>
                 </div>
@@ -2291,6 +2290,23 @@ def main() -> None:
                 alert("Save error: " + e.message);
             }}
         }}
+
+        let bollingerGateEnabled = true;
+        function applyBollingerGateUI(enabled) {{
+            bollingerGateEnabled = enabled === true;
+            document.querySelectorAll('.btn-bollinger-gate').forEach(btn => {{
+                btn.textContent = `Bollinger Bands: ${{bollingerGateEnabled ? 'ON' : 'OFF'}}`;
+            }});
+        }}
+        async function loadBollingerGate() {{
+            try {{ const d = await (await fetch('/api/scanner/gates')).json(); applyBollingerGateUI(d.bollinger_enabled === true); }} catch(e){{}}
+        }}
+        async function toggleBollingerGate() {{
+            const next = !bollingerGateEnabled;
+            const d = await (await fetch('/api/scanner/gates', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{bollinger_enabled: next}})}})).json();
+            applyBollingerGateUI(d.bollinger_enabled === true);
+        }}
+        loadBollingerGate();
 
         async function toggleScannerEngine() {{
             try {{

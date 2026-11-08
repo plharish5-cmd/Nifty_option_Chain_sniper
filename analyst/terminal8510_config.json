@@ -78,9 +78,7 @@
     "bollinger_enabled_stage2": null,
     "bollinger_enabled_stage3": null,
     "bollinger_enabled_crossover": null,
-    "bollinger_enabled_flagship": null,
-    "ema48_separation_enabled": true,
-    "ema48_separation_min_pts": 0.0
+    "bollinger_enabled_flagship": null
   },
   "risk": {
     "max_daily_trades": 2,

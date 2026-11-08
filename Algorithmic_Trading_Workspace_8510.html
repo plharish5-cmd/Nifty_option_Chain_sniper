@@ -942,12 +942,10 @@ refresh();setInterval(refresh,10000);
                     <div style="display:flex; align-items:center; gap:10px;">
                         <span style="font-size:16px; font-weight:800; color:#f8fafc;">🤖 4-Core Strategy Scanner &amp; Party-Switch Cockpit</span>
                         <span id="scannerActiveBadge" class="status-badge badge-bull">🟢 SCANNER ACTIVE</span>
-                        <span id="scannerBollingerGateBadge" class="status-badge badge-neutral" style="display:none;">Bollinger OFF</span>
-                        <span id="scannerEma48SepBadge" class="status-badge badge-neutral" style="display:none;">4/8 Sep OFF</span>
+                        <span class="bb-off-badge-global status-badge badge-bear" style="display:none;">Bollinger OFF</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                        <button type="button" id="btnToggleBollinger" class="emerald-btn" onclick="toggleScannerGate('bollinger_enabled')" style="padding:6px 12px; font-size:11.5px;">Bollinger Bands: ON</button>
-                        <button type="button" id="btnToggleEma48Sep" class="emerald-btn" onclick="toggleScannerGate('ema48_separation_enabled')" style="padding:6px 12px; font-size:11.5px;">4/8 Separation: ON</button>
+                        <button type="button" class="btn-bollinger-gate emerald-btn" onclick="toggleBollingerGate()" style="padding:6px 12px; font-size:11.5px;">Bollinger Bands: ON</button>
                         <button type="button" id="btnToggleScanner" class="cyan-btn" onclick="toggleScannerEngine()" style="padding:6px 14px; font-size:12px;">⏸ Pause Scanner</button>
                     </div>
                 </div>
@@ -975,7 +973,7 @@ refresh();setInterval(refresh,10000);
                         </label>
                     </div>
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-                        <span id="pillGoldilocksSeparation" style="background:rgba(16, 185, 129, 0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">📐 4/8 Separation: -- ATR [WAITING]</span>
+                        <span id="pillGoldilocksSeparation" style="background:rgba(16, 185, 129, 0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">📐 Goldilocks ATR: -- ATR [WAITING]</span>
                         <span id="pillFuturesVolumeSurge" style="background:rgba(56, 189, 248, 0.15); border:1px solid #38bdf8; color:#38bdf8; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">📊 Futures Vol Surge (VSR): -- [WAITING]</span>
                         <span id="pillFiveFactorConfluence" style="color:#38bdf8;padding:3px 10px;border:1px solid #334155;border-radius:14px;" title="Informational agreement count; not execution authorization">🛡️ 5-Factor Confluence: — / 5 [WAITING]</span>
                     </div>
@@ -1640,8 +1638,12 @@ refresh();setInterval(refresh,10000);
             <div class="card">
                 <h2>
                     <span>📅 Previous-Day / Recorded Date Replay Engine</span>
+                    <span class="bb-off-badge-global status-badge badge-bear" style="display:none; margin-left:8px;">Bollinger OFF</span>
                     <button type="button" class="emerald-btn" onclick="exportReplayToExcel()">📥 Download Replay Ledger as Excel (.xls)</button>
                 </h2>
+                <div style="margin-bottom:10px;">
+                    <button type="button" class="btn-bollinger-gate emerald-btn" onclick="toggleBollingerGate()" style="padding:6px 12px; font-size:11.5px;">Bollinger Bands: ON</button>
+                </div>
                 <div style="display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; margin-bottom:16px;">
                     <div>
                         <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">Select Historical Date</label>
@@ -1716,6 +1718,7 @@ refresh();setInterval(refresh,10000);
             <div class="card" style="margin-top:20px; border:1px solid rgba(16, 185, 129, 0.4); background: linear-gradient(180deg, rgba(13,19,34,0.95) 0%, rgba(16,28,40,0.95) 100%);">
                 <h2>
                     <span>📊 Multi-Month Date-Range Backtester (Super Trail vs Fixed 40/40 Baseline)</span>
+                    <span class="bb-off-badge-global status-badge badge-bear" style="display:none; margin-left:8px;">Bollinger OFF</span>
                     <button type="button" class="emerald-btn" onclick="exportDateRangeBacktestToExcel()">📥 Export Backtest Results (.xls)</button>
                 </h2>
                 
@@ -1754,6 +1757,7 @@ refresh();setInterval(refresh,10000);
                             <input type="checkbox" id="usePreviousScannerData"> Use Previous Scanner Data
                         </label>
                     </div>
+                    <button type="button" class="btn-bollinger-gate emerald-btn" style="padding:6px 12px;" onclick="toggleBollingerGate()">Bollinger Bands: ON</button>
                     <button type="button" class="emerald-btn" style="padding:8px 18px;" onclick="runDateRangeBacktest()">📊 Run Date Range Backtester with Super Trail Logic</button>
                     <button type="button" class="cyan-btn" style="padding:8px 14px;" onclick="runH1FlagshipOnlyBacktest()" title="Filter strategy to H1_FLAGSHIP only">🎯 H1 FLAGSHIP only</button>
                 </div>
@@ -1818,7 +1822,7 @@ refresh();setInterval(refresh,10000);
                                 <th>13. Strategy Filter Tag</th>
                                 <th>14. Data Type</th>
                                 <th>15. Price Type</th>
-                                <th>16. BB / 4-8 Sep</th>
+                                <th>16. BB Gate</th>
                                 <th>17. FLAGSHIP / Context</th>
                             </tr>
                         </thead>
@@ -1862,11 +1866,13 @@ refresh();setInterval(refresh,10000);
         <div id="tabTrendLab" class="tab-content">
             <!-- Live Quant Telemetry Pills (Tab 5) -->
             <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; background:rgba(15, 23, 42, 0.7); border:1px solid rgba(56, 189, 248, 0.25); border-radius:8px; padding:10px 14px; margin-bottom:16px;">
-                <div style="font-size:12px; font-weight:700; color:#38bdf8;">
+                <div style="font-size:12px; font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                     ⚡ Live Quant Telemetry (Last Closed 15m Bar):
+                    <span class="bb-off-badge-global status-badge badge-bear" style="display:none;">Bollinger OFF</span>
+                    <button type="button" class="btn-bollinger-gate emerald-btn" onclick="toggleBollingerGate()" style="padding:4px 10px; font-size:11px;">Bollinger Bands: ON</button>
                 </div>
                 <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-                    <span id="pillGoldilocksSeparation_tab5" style="background:rgba(16, 185, 129, 0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">📐 4/8 Separation: -- ATR [WAITING]</span>
+                    <span id="pillGoldilocksSeparation_tab5" style="background:rgba(16, 185, 129, 0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">📐 Goldilocks ATR: -- ATR [WAITING]</span>
                     <span id="pillFuturesVolumeSurge_tab5" style="background:rgba(56, 189, 248, 0.15); border:1px solid #38bdf8; color:#38bdf8; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">📊 Futures Vol Surge (VSR): -- [WAITING]</span>
                     <span id="pillFlagship1H_tab5" style="background:rgba(192, 132, 252, 0.15); border:1px solid #c084fc; color:#e9d5ff; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">🎯 1H FLAGSHIP: SCANNING</span>
                 </div>
@@ -1959,7 +1965,7 @@ refresh();setInterval(refresh,10000);
                     </div>
                     <div class="checkbox-group">
                         <input type="checkbox" id="fltGoldilocks" onchange="runDateExplorer()">
-                        <label for="fltGoldilocks" style="margin:0; flex:1; color:#10b981;"><b>8. Goldilocks 4/8 Separation Band</b> (0.13–0.26 ATR Sweet Spot)</label>
+                        <label for="fltGoldilocks" style="margin:0; flex:1; color:#10b981;"><b>8. Goldilocks ATR Band</b> (0.13–0.26 ATR Sweet Spot)</label>
                     </div>
                     <div class="checkbox-group" style="justify-content:space-between;">
                         <div style="display:flex; align-items:center; gap:8px;">
@@ -2022,6 +2028,7 @@ refresh();setInterval(refresh,10000);
             <div class="card">
                 <h2>
                     <span>🎲 Exhaustive Combinatorial (128 Combos) &amp; Monte Carlo Optimization Matrix</span>
+                    <span id="trendLabBbBanner" style="font-size:11px; color:#38bdf8; font-family:var(--font-mono);">BB: ON</span>
                     <button type="button" class="emerald-btn" onclick="exportMonteCarloToExcel()">📥 Export 128-Combo Matrix (.xls)</button>
                 </h2>
                 <div style="overflow-x:auto; max-height:300px;">
@@ -2037,6 +2044,7 @@ refresh();setInterval(refresh,10000);
                                 <th>Net P&amp;L (INR)</th>
                                 <th>Profit Factor</th>
                                 <th>Monte Carlo 5% Worst-Case</th>
+                                <th>BB Gate</th>
                                 <th>Action</th>
                             </tr>
                         </thead>
@@ -3275,7 +3283,7 @@ refresh();setInterval(refresh,10000);
                 // 3B. 4-Core Strategy Scanner & Party-Switch Cockpit
                 if (data.scanner) {
                     const sc = data.scanner;
-                    if (sc.scanner_gates) renderScannerGateButtons(sc.scanner_gates);
+                    if (sc.scanner_gates) applyBollingerGateUI(sc.scanner_gates.bollinger_enabled === true);
                     const badge = document.getElementById("scannerActiveBadge");
                     const btn = document.getElementById("btnToggleScanner");
                     if (badge && btn) {
@@ -3374,7 +3382,7 @@ refresh();setInterval(refresh,10000);
                     const gold = data.goldilocks_separation;
                     const sepVal = (gold.sep_atr !== null && gold.sep_atr !== undefined) ? gold.sep_atr.toFixed(2) : '--';
                     const badgeText = gold.badge || gold.badge_text || 'WAITING';
-                    const pillHtml = gold.pill_text || `📐 4/8 Separation: ${sepVal} ATR [${badgeText}]`;
+                    const pillHtml = gold.pill_text || `📐 Goldilocks ATR: ${sepVal} ATR [${badgeText}]`;
                     const p1 = document.getElementById("pillGoldilocksSeparation");
                     const p5 = document.getElementById("pillGoldilocksSeparation_tab5");
                     [p1, p5].forEach(el => {
@@ -4048,56 +4056,56 @@ refresh();setInterval(refresh,10000);
             }
         }
 
-        function renderScannerGateButtons(gates) {
-            if (!gates) return;
-            const bbOn = gates.bollinger_enabled !== false;
-            const sepOn = gates.ema48_separation_enabled !== false;
-            const btnBb = document.getElementById('btnToggleBollinger');
-            const btnSep = document.getElementById('btnToggleEma48Sep');
-            const badgeBb = document.getElementById('scannerBollingerGateBadge');
-            const badgeSep = document.getElementById('scannerEma48SepBadge');
-            if (btnBb) {
-                btnBb.textContent = `Bollinger Bands: ${bbOn ? 'ON' : 'OFF'}`;
-                btnBb.style.background = bbOn ? '' : 'rgba(239, 68, 68, 0.25)';
-                btnBb.style.borderColor = bbOn ? '' : '#ef4444';
-            }
-            if (btnSep) {
-                btnSep.textContent = `4/8 Separation: ${sepOn ? 'ON' : 'OFF'}`;
-                btnSep.style.background = sepOn ? '' : 'rgba(239, 68, 68, 0.25)';
-                btnSep.style.borderColor = sepOn ? '' : '#ef4444';
-            }
-            if (badgeBb) badgeBb.style.display = bbOn ? 'none' : 'inline-block';
-            if (badgeSep) badgeSep.style.display = sepOn ? 'none' : 'inline-block';
+        let bollingerGateEnabled = true;
+
+        function applyBollingerGateUI(enabled) {
+            bollingerGateEnabled = enabled === true;
+            document.querySelectorAll('.btn-bollinger-gate').forEach(btn => {
+                btn.textContent = `Bollinger Bands: ${bollingerGateEnabled ? 'ON' : 'OFF'}`;
+                btn.classList.toggle('emerald-btn', bollingerGateEnabled);
+                btn.classList.toggle('crimson-btn', !bollingerGateEnabled);
+                btn.style.background = bollingerGateEnabled ? '' : 'rgba(239, 68, 68, 0.22)';
+                btn.style.borderColor = bollingerGateEnabled ? '' : '#ef4444';
+            });
+            document.querySelectorAll('.bb-off-badge-global').forEach(el => {
+                el.style.display = bollingerGateEnabled ? 'none' : 'inline-block';
+            });
+            const bbLab = document.getElementById('trendLabBbBanner');
+            if (bbLab) bbLab.textContent = `BB: ${bollingerGateEnabled ? 'ON' : 'OFF'}`;
         }
 
-        async function loadScannerGates() {
+        async function loadBollingerGate() {
             try {
                 const res = await fetch('/api/scanner/gates');
                 const d = await res.json();
-                if (d.ok !== false) renderScannerGateButtons(d);
-            } catch (e) { console.debug('scanner gates', e); }
+                applyBollingerGateUI(d.bollinger_enabled === true);
+                console.log('[BB-GATE] load API bollinger_enabled=', d.bollinger_enabled);
+            } catch (e) { console.debug('bollinger gate load', e); }
         }
 
-        async function toggleScannerGate(field) {
+        async function toggleBollingerGate() {
+            const before = bollingerGateEnabled;
+            const next = !before;
+            console.log('[BB-GATE] toggle', before, '->', next);
             try {
-                const res = await fetch('/api/scanner/gates');
-                const cur = await res.json();
-                const next = !(cur[field] !== false);
                 const post = await fetch('/api/scanner/gates', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ [field]: next })
+                    body: JSON.stringify({ bollinger_enabled: next })
                 });
                 const d = await post.json();
-                if (d.ok !== false) renderScannerGateButtons(d);
-                speakVoiceAlert(field === 'bollinger_enabled'
-                    ? `Bollinger Bands ${next ? 'enabled' : 'disabled'}`
-                    : `4/8 Separation ${next ? 'enabled' : 'disabled'}`);
+                if (!post.ok || d.ok === false) throw new Error(d.error || 'Save failed');
+                const after = d.bollinger_enabled === true;
+                console.log('[BB-GATE] saved API bollinger_enabled=', after);
+                applyBollingerGateUI(after);
+                speakVoiceAlert(`Bollinger Bands ${after ? 'ON' : 'OFF'}`);
             } catch (e) {
-                alert('Gate toggle error: ' + e.message);
+                console.error('[BB-GATE] toggle failed', e);
+                applyBollingerGateUI(before);
+                alert('Bollinger toggle error: ' + e.message);
             }
         }
-        loadScannerGates();
+        loadBollingerGate();
 
         async function toggleScannerEngine() {
             try {
@@ -4376,7 +4384,7 @@ refresh();setInterval(refresh,10000);
             };
             const banner = document.getElementById('drActiveFilterBanner');
             if (banner) {
-                banner.textContent = `Filter: ${filterNames[strategy_filter] || strategy_filter} | Date: ${from_date} to ${to_date} | BB: … | 4/8 Sep: … | Super Trail vs Fixed 40/40${use_previous_scanner ? ' | [Previous Scanner Data]' : ''}`;
+                banner.textContent = `Filter: ${filterNames[strategy_filter] || strategy_filter} | Date: ${from_date} to ${to_date} | BB: … | Super Trail vs Fixed 40/40${use_previous_scanner ? ' | [Previous Scanner Data]' : ''}`;
             }
 
             const tbody = document.getElementById('drBacktestTableBody');
@@ -4396,9 +4404,9 @@ refresh();setInterval(refresh,10000);
                 if (!response.ok || !data.ok) throw Error(data.error || 'Backtest unavailable');
                 lastDateRangeResults = data;
                 if (banner) {
-                    const bb = data.bb_gate_run_label || (data.scanner_gates?.bollinger_enabled === false ? 'OFF' : 'ON');
-                    const sep = data.ema48_sep_run_label || (data.scanner_gates?.ema48_separation_enabled === false ? 'OFF' : 'ON');
-                    banner.textContent = `Filter: ${filterNames[strategy_filter] || strategy_filter} | Date: ${from_date} to ${to_date} | BB: ${bb} | 4/8 Sep: ${sep} | Super Trail vs Fixed 40/40${use_previous_scanner ? ' | [Previous Scanner Data]' : ''}`;
+                    const bb = data.bb_gate_run_label || (data.scanner_gates?.bollinger_enabled === true ? 'ON' : 'OFF');
+                    banner.textContent = `Filter: ${filterNames[strategy_filter] || strategy_filter} | Date: ${from_date} to ${to_date} | BB: ${bb} | Super Trail vs Fixed 40/40${use_previous_scanner ? ' | [Previous Scanner Data]' : ''}`;
+                    applyBollingerGateUI(data.scanner_gates?.bollinger_enabled === true);
                 }
 
                 const badge = document.getElementById('drDataTypeBadge');
@@ -4472,8 +4480,7 @@ refresh();setInterval(refresh,10000);
                     tr.appendChild(tdPt);
                     const tdGates = document.createElement('td');
                     const bbL = t.BB_Gate || data.bb_gate_run_label || 'ON';
-                    const sepL = t.Ema48_Sep_Gate || data.ema48_sep_run_label || 'ON';
-                    tdGates.textContent = `BB ${bbL} · Sep ${sepL}`;
+                    tdGates.textContent = `BB: ${bbL}`;
                     tr.appendChild(tdGates);
                     const tdCtx = document.createElement('td');
                     tdCtx.textContent = flagshipContextFromTrade(t);
@@ -4741,6 +4748,8 @@ refresh();setInterval(refresh,10000);
             const sDate = document.getElementById('startDate').value;
             const eDate = document.getElementById('endDate').value;
             const strat = document.getElementById('explorerStrategy').value;
+            const bbLab = document.getElementById('trendLabBbBanner');
+            if (bbLab) bbLab.textContent = `BB: ${bollingerGateEnabled ? 'ON' : 'OFF'}`;
 
             if(!allTrades.length || allTrades.some(t=>['EMA_Slope','ADX','R_Squared','MTF_Aligned','Vol_Mult','Market_Gap_Pts','PCR_At_Entry'].some(k=>t[k]==null))){
                 globalMcResults=[];document.getElementById('recordedHistoryStatus').textContent='128-combination study unavailable: recorded entry-time filter features are incomplete. No assumptions were substituted.';return;
@@ -4822,6 +4831,7 @@ refresh();setInterval(refresh,10000);
             results.sort((a, b) => b.net - a.net);
             globalMcResults = results;
 
+            const bbRow = bollingerGateEnabled ? 'ON' : 'OFF';
             const tbody = document.getElementById('mcOptimizerBody');
             tbody.innerHTML = results.slice(0, 30).map((r, rank) => `
                 <tr>
@@ -4838,6 +4848,7 @@ refresh();setInterval(refresh,10000);
                     <td style="color:${r.mcWorst5Pct >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">
                         ₹${Math.round(r.mcWorst5Pct).toLocaleString('en-IN')}
                     </td>
+                    <td style="font-family:var(--font-mono); font-weight:700; color:${bbRow === 'ON' ? 'var(--emerald)' : '#94a3b8'};">BB: ${bbRow}</td>
                     <td>
                         <button type="button" class="cyan-btn" style="padding:3px 10px; font-size:11px;" onclick="setCheckboxesFromBits(${r.bits})">
                             Apply

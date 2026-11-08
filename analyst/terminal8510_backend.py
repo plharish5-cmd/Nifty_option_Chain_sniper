@@ -2349,8 +2349,6 @@ class QuantTerminalBackend:
             "bollinger_enabled_stage3": None,
             "bollinger_enabled_crossover": None,
             "bollinger_enabled_flagship": None,
-            "ema48_separation_enabled": True,
-            "ema48_separation_min_pts": 0.0,
         })
         self.scanner_enabled: bool = bool(self.scanner_cfg.get("enabled", True))
         self.scanner_running: bool = False
@@ -2970,7 +2968,7 @@ class QuantTerminalBackend:
             "raw_allowed": allowed,
             "filter_enabled": is_enabled,
             "description": desc,
-            "pill_text": f"📐 4/8 Separation: {sep_atr:.2f} ATR [{badge}]",
+            "pill_text": f"📐 Goldilocks ATR: {sep_atr:.2f} [{badge}]",
             "min_atr": min_atr,
             "max_atr": max_atr,
         }
@@ -2985,7 +2983,7 @@ class QuantTerminalBackend:
                 "allowed": True,
                 "raw_allowed": True,
                 "filter_enabled": bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", True)),
-                "pill_text": "📐 4/8 Separation: 0.19 ATR [🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)]",
+                "pill_text": "📐 Goldilocks ATR: 0.19 [🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)]",
                 "min_atr": 0.13,
                 "max_atr": 0.26,
             }
@@ -3003,7 +3001,7 @@ class QuantTerminalBackend:
                     "allowed": True,
                     "raw_allowed": True,
                     "filter_enabled": bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", True)),
-                    "pill_text": "📐 4/8 Separation: 0.19 ATR [🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)]",
+                    "pill_text": "📐 Goldilocks ATR: 0.19 [🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)]",
                     "min_atr": 0.13,
                     "max_atr": 0.26,
                 }
@@ -3019,7 +3017,7 @@ class QuantTerminalBackend:
                     "allowed": True,
                     "raw_allowed": True,
                     "filter_enabled": bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", True)),
-                    "pill_text": "📐 4/8 Separation: 0.19 ATR [🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)]",
+                    "pill_text": "📐 Goldilocks ATR: 0.19 [🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)]",
                     "min_atr": 0.13,
                     "max_atr": 0.26,
                 }
@@ -3044,7 +3042,7 @@ class QuantTerminalBackend:
                 "allowed": True,
                 "raw_allowed": True,
                 "filter_enabled": bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", True)),
-                "pill_text": "📐 4/8 Separation: 0.19 ATR [🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)]",
+                "pill_text": "📐 Goldilocks ATR: 0.19 [🟢 GOLDILOCKS SWEET SPOT (0.13–0.26 ATR)]",
                 "min_atr": 0.13,
                 "max_atr": 0.26,
             }
@@ -3978,39 +3976,24 @@ class QuantTerminalBackend:
             return True
         return bool(override)
 
-    def _ema48_separation_active(self) -> bool:
-        return bool(self.scanner_cfg.get("ema48_separation_enabled", True))
-
-    def _ema48_separation_allows(self, e4: float, e8: float, atr14: float) -> bool:
-        if not self._ema48_separation_active():
-            return True
-        min_pts = float(self.scanner_cfg.get("ema48_separation_min_pts", 0.0))
-        if min_pts > 0 and abs(e4 - e8) < min_pts:
-            return False
-        gold = self.compute_goldilocks_separation(e4, e8, atr14)
-        return bool(gold.get("raw_allowed", True))
-
     def _gate_meta_for_signal(self, strategy_key: str) -> Dict[str, Any]:
         bb_on = self._bollinger_gate_active(strategy_key)
-        sep_on = self._ema48_separation_active()
         return {
             "bollinger_enabled": bb_on,
             "bollinger_applied": bb_on,
-            "ema48_separation_enabled": sep_on,
-            "ema48_separation_applied": sep_on,
             "bb_gate_label": "ON" if bb_on else "OFF",
-            "ema48_sep_label": "ON" if sep_on else "OFF",
         }
 
     def get_scanner_gate_config(self) -> Dict[str, Any]:
+        raw = self.scanner_cfg.get("bollinger_enabled", True)
+        enabled = raw is True or raw == "true" or raw == 1
         return {
-            "bollinger_enabled": bool(self.scanner_cfg.get("bollinger_enabled", True)),
+            "ok": True,
+            "bollinger_enabled": bool(enabled),
             "bollinger_enabled_stage2": self.scanner_cfg.get("bollinger_enabled_stage2"),
             "bollinger_enabled_stage3": self.scanner_cfg.get("bollinger_enabled_stage3"),
             "bollinger_enabled_crossover": self.scanner_cfg.get("bollinger_enabled_crossover"),
             "bollinger_enabled_flagship": self.scanner_cfg.get("bollinger_enabled_flagship"),
-            "ema48_separation_enabled": bool(self.scanner_cfg.get("ema48_separation_enabled", True)),
-            "ema48_separation_min_pts": float(self.scanner_cfg.get("ema48_separation_min_pts", 0.0)),
         }
 
     def update_scanner_gate_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -4020,20 +4003,30 @@ class QuantTerminalBackend:
             "bollinger_enabled_stage3",
             "bollinger_enabled_crossover",
             "bollinger_enabled_flagship",
-            "ema48_separation_enabled",
-            "ema48_separation_min_pts",
         }
+        prev_bb = self.scanner_cfg.get("bollinger_enabled", True)
         for k, v in (updates or {}).items():
             if k not in allowed:
                 continue
-            self.scanner_cfg[k] = v
+            if k == "bollinger_enabled":
+                self.scanner_cfg[k] = v is True or v == "true" or v == 1
+            else:
+                self.scanner_cfg[k] = v
         self.cfg["scanner"] = self.scanner_cfg
         try:
             with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(self.cfg, f, indent=2)
+            log.info(
+                "[BB-GATE] bollinger_enabled %s -> %s (persisted %s)",
+                prev_bb,
+                self.scanner_cfg.get("bollinger_enabled"),
+                self.config_path,
+            )
         except Exception as exc:
             log.warning("Could not persist scanner gate config: %s", exc)
-        return {"ok": True, **self.get_scanner_gate_config()}
+        out = self.get_scanner_gate_config()
+        out["ok"] = True
+        return out
 
     def evaluate_candle_dataframe(
         self,
@@ -4164,8 +4157,6 @@ class QuantTerminalBackend:
             if stage2_cond and stage2_touch:
                 if self.active_party == "BEARISH":
                     log.info("[BLOCKED] Stage 2 Long blocked by Party-Switch (Active Party is BEARISH)")
-                elif not self._ema48_separation_allows(e4_val, e8_val, atr14_val):
-                    log.info("[BLOCKED] Stage 2 Long blocked by 4/8 Separation gate")
                 else:
                     sig_row = {
                         "strategy_id": "STAGE_2_LONG",
@@ -4198,8 +4189,6 @@ class QuantTerminalBackend:
             if stage3_cond and stage3_touch:
                 if self.active_party == "BULLISH":
                     log.info("[BLOCKED] Stage 3 Short blocked by Party-Switch (Active Party is BULLISH)")
-                elif not self._ema48_separation_allows(e4_val, e8_val, atr14_val):
-                    log.info("[BLOCKED] Stage 3 Short blocked by 4/8 Separation gate")
                 else:
                     sig_row = {
                         "strategy_id": "STAGE_3_SHORT",
@@ -4225,36 +4214,34 @@ class QuantTerminalBackend:
             bear_bb_ok = (not bb_cross) or (lbb_slope == "FLAT")
             if crossover_event["type"] == "BULLISH_CROSS" and is_bullish_stack and bull_bb_ok and cross_touch:
                 self.strategy_status["crossover_reversal"]["state"] = "TRIGGERED"
-                if self._ema48_separation_allows(e4_val, e8_val, atr14_val):
-                    sig_row = {
-                        "strategy_id": "CROSSOVER_BULLISH",
-                        "setup_name": "4 MA / 8 EMA Upside Reversal",
-                        "direction": "LONG",
-                        "opt_side": "CE",
-                        "target_pts": float(self.scanner_cfg.get("crossover_target_pts", 20.0)),
-                        "sl_pts": float(self.scanner_cfg.get("crossover_sl_pts", 20.0)),
-                        "index_price": current_p,
-                        "conviction": "HIGH",
-                        "details": f"Preceding Bullish Cross (Age {crossover_event['age']} bars), 4-EMA > 8-EMA, UBB Flat, 8-EMA touch",
-                    }
-                    sig_row.update(self._gate_meta_for_signal("crossover"))
-                    signals.append(sig_row)
+                sig_row = {
+                    "strategy_id": "CROSSOVER_BULLISH",
+                    "setup_name": "4 MA / 8 EMA Upside Reversal",
+                    "direction": "LONG",
+                    "opt_side": "CE",
+                    "target_pts": float(self.scanner_cfg.get("crossover_target_pts", 20.0)),
+                    "sl_pts": float(self.scanner_cfg.get("crossover_sl_pts", 20.0)),
+                    "index_price": current_p,
+                    "conviction": "HIGH",
+                    "details": f"Preceding Bullish Cross (Age {crossover_event['age']} bars), 4-EMA > 8-EMA, UBB Flat, 8-EMA touch",
+                }
+                sig_row.update(self._gate_meta_for_signal("crossover"))
+                signals.append(sig_row)
             elif crossover_event["type"] == "BEARISH_CROSS" and is_bearish_stack and bear_bb_ok and cross_touch:
                 self.strategy_status["crossover_reversal"]["state"] = "TRIGGERED"
-                if self._ema48_separation_allows(e4_val, e8_val, atr14_val):
-                    sig_row = {
-                        "strategy_id": "CROSSOVER_BEARISH",
-                        "setup_name": "4 MA / 8 EMA Downside Reversal",
-                        "direction": "SHORT",
-                        "opt_side": "PE",
-                        "target_pts": float(self.scanner_cfg.get("crossover_target_pts", 20.0)),
-                        "sl_pts": float(self.scanner_cfg.get("crossover_sl_pts", 20.0)),
-                        "index_price": current_p,
-                        "conviction": "HIGH",
-                        "details": f"Preceding Bearish Cross (Age {crossover_event['age']} bars), 4-EMA < 8-EMA, LBB Flat, 8-EMA touch",
-                    }
-                    sig_row.update(self._gate_meta_for_signal("crossover"))
-                    signals.append(sig_row)
+                sig_row = {
+                    "strategy_id": "CROSSOVER_BEARISH",
+                    "setup_name": "4 MA / 8 EMA Downside Reversal",
+                    "direction": "SHORT",
+                    "opt_side": "PE",
+                    "target_pts": float(self.scanner_cfg.get("crossover_target_pts", 20.0)),
+                    "sl_pts": float(self.scanner_cfg.get("crossover_sl_pts", 20.0)),
+                    "index_price": current_p,
+                    "conviction": "HIGH",
+                    "details": f"Preceding Bearish Cross (Age {crossover_event['age']} bars), 4-EMA < 8-EMA, LBB Flat, 8-EMA touch",
+                }
+                sig_row.update(self._gate_meta_for_signal("crossover"))
+                signals.append(sig_row)
 
         # ── 4. STRATEGY 4: 1 HR FLAGSHIP (price action: daily S/R, 1H swings, 15m confirmation) ──
         scfg = self.scanner_cfg
@@ -4352,8 +4339,6 @@ class QuantTerminalBackend:
                     if pa_long == "DOJI":
                         dist = abs(cl - entry_open)
                         sl_val = min(doji_cap, dist if dist > 0 else doji_cap)
-                    if not self._ema48_separation_allows(e4_val, e8_val, atr14_val):
-                        break
                     self.strategy_status["flagship_1h"]["state"] = "TRIGGERED"
                     sig_row = {
                         "strategy_id": "FLAGSHIP_1H_LONG",
@@ -4388,8 +4373,6 @@ class QuantTerminalBackend:
                     if pa_short == "DOJI":
                         dist = abs(ch - entry_open)
                         sl_val = min(doji_cap, dist if dist > 0 else doji_cap)
-                    if not self._ema48_separation_allows(e4_val, e8_val, atr14_val):
-                        break
                     self.strategy_status["flagship_1h"]["state"] = "TRIGGERED"
                     sig_row = {
                         "strategy_id": "FLAGSHIP_1H_SHORT",
@@ -4436,11 +4419,8 @@ class QuantTerminalBackend:
                     filtered_signals.append(sig)
             signals = filtered_signals
 
-        # Proven Quant Edges Filter 1: optional v1.7 checkbox (scanner 4/8 sep is primary per-signal gate)
-        goldilocks_filter_on = (
-            bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", False))
-            and self._ema48_separation_active()
-        )
+        # Proven Quant Edges Filter 1: optional v1.7 checkbox only (independent of Bollinger gate)
+        goldilocks_filter_on = bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", False))
         if goldilocks_filter_on and not goldilocks["raw_allowed"]:
             log.info("[GOLDILOCKS GATE BLOCKED] Signals blocked: %s (%s)", goldilocks["badge"], goldilocks["description"])
             g_state = "BLOCKED_GOLDILOCKS_CHOP" if goldilocks["regime"] == "CHOP_ZONE" else "BLOCKED_GOLDILOCKS_CLIMAX"
@@ -6045,9 +6025,7 @@ class QuantTerminalBackend:
                     "flagship": True,
                     "sr_levels": sr,
                     "bb_gate_label": s.get("bb_gate_label", "ON"),
-                    "ema48_sep_label": s.get("ema48_sep_label", "ON"),
                     "bollinger_applied": s.get("bollinger_applied"),
-                    "ema48_separation_applied": s.get("ema48_separation_applied"),
                 },
             ))
         return out
@@ -6072,9 +6050,7 @@ class QuantTerminalBackend:
         bb_stage2 = self._bollinger_gate_active("stage2")
         bb_stage3 = self._bollinger_gate_active("stage3")
         bb_cross = self._bollinger_gate_active("crossover")
-        sep_ok = self._ema48_separation_allows(e4_v, e8_v, atr14)
         gate_bb = "ON" if bool(self.scanner_cfg.get("bollinger_enabled", True)) else "OFF"
-        gate_sep = "ON" if self._ema48_separation_active() else "OFF"
 
         def _meta(flagship: bool = False) -> Dict[str, Any]:
             return {
@@ -6082,14 +6058,8 @@ class QuantTerminalBackend:
                 "sr_levels": {},
                 "bollinger_enabled": gate_bb == "ON",
                 "bollinger_applied": gate_bb == "ON",
-                "ema48_separation_enabled": gate_sep == "ON",
-                "ema48_separation_applied": gate_sep == "ON",
                 "bb_gate_label": gate_bb,
-                "ema48_sep_label": gate_sep,
             }
-
-        if not sep_ok:
-            return cand
 
         if e4_v > e8_v and touch_15 and c_p >= e8_v - 2.5:
             if bb_stage2:
@@ -6286,7 +6256,6 @@ class QuantTerminalBackend:
         delta_est = 0.60
         charges_est = 78.16
         gate_bb = "ON" if bool(self.scanner_cfg.get("bollinger_enabled", True)) else "OFF"
-        gate_sep = "ON" if self._ema48_separation_active() else "OFF"
 
         all_rows: List[Dict[str, Any]] = []
 
@@ -6440,9 +6409,7 @@ class QuantTerminalBackend:
                                 "strategy_id": sid,
                                 "source": "SYNTHESIZED",
                                 "BB_Gate": meta.get("bb_gate_label", gate_bb),
-                                "Ema48_Sep_Gate": meta.get("ema48_sep_label", gate_sep),
                                 "Bollinger_Applied": meta.get("bollinger_applied", gate_bb == "ON"),
-                                "Ema48_Sep_Applied": meta.get("ema48_separation_applied", gate_sep == "ON"),
                             })
 
         # ── B. Live / Recorded Real Paper Trades from Ledger DB (Section 4B) ──
@@ -6504,7 +6471,6 @@ class QuantTerminalBackend:
                     "source": "LIVE",
                     "price_type": ptype,
                     "BB_Gate": gate_bb,
-                    "Ema48_Sep_Gate": gate_sep,
                 })
 
         st_summary = self._compute_side_summary(
@@ -6549,5 +6515,4 @@ class QuantTerminalBackend:
             "reconciliation_match": True,
             "scanner_gates": self.get_scanner_gate_config(),
             "bb_gate_run_label": gate_bb,
-            "ema48_sep_run_label": gate_sep,
         }
