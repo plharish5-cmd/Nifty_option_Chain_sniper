@@ -22,6 +22,7 @@ Endpoints:
 """
 import asyncio
 from datetime import datetime
+from typing import Any, Dict
 from zoneinfo import ZoneInfo
 import json
 import logging
@@ -731,17 +732,40 @@ async def api_scanner_gates_post(req: Request):
         data = await req.json()
     except Exception:
         data = {}
-    return JSONResponse(content=backend.update_scanner_gate_config(data))
+    try:
+        return JSONResponse(content=backend.update_scanner_gate_config(data))
+    except Exception as exc:
+        log.exception("[BB-GATE] POST failed: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": str(exc)},
+        )
 
 
 @app.post("/api/scanner/toggle")
 async def api_scanner_toggle(req: Request):
-    """Enables or pauses the live 4-strategy scanner."""
+    """Enables or pauses the live 4-strategy scanner; optional bollinger_enabled in body."""
+    body: Dict[str, Any] = {}
     try:
         body = await req.json()
-        enabled = bool(body.get("enabled", not backend.scanner_enabled))
+        if not isinstance(body, dict):
+            body = {}
     except Exception:
-        enabled = not backend.scanner_enabled
+        body = {}
+    if "bollinger_enabled" in body:
+        try:
+            out = backend.update_scanner_gate_config(
+                {"bollinger_enabled": body["bollinger_enabled"]}
+            )
+            out["enabled"] = backend.scanner_enabled
+            return JSONResponse(content=out)
+        except Exception as exc:
+            log.exception("[BB-GATE] toggle via scanner/toggle failed: %s", exc)
+            return JSONResponse(
+                status_code=500,
+                content={"ok": False, "error": str(exc)},
+            )
+    enabled = bool(body.get("enabled", not backend.scanner_enabled))
     backend.scanner_enabled = enabled
     log.info("Scanner enabled toggled to: %s", enabled)
     return JSONResponse(content={"ok": True, "enabled": backend.scanner_enabled})

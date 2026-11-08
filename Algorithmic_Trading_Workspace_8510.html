@@ -945,7 +945,8 @@ refresh();setInterval(refresh,10000);
                         <span class="bb-off-badge-global status-badge badge-bear" style="display:none;">Bollinger OFF</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                        <button type="button" class="btn-bollinger-gate emerald-btn" onclick="toggleBollingerGate()" style="padding:6px 12px; font-size:11.5px;">Bollinger Bands: ON</button>
+                        <span class="entry-tf-policy" style="font-size:10.5px; color:#94a3b8; font-family:var(--font-mono);">Entry TF: 15m | FLAGSHIP View: 1H + Daily | No 5m Trading</span>
+                        <button type="button" class="btn-bollinger-gate emerald-btn" onclick="toggleBollingerGate()" style="padding:6px 12px; font-size:11.5px;" title="Global: live, paper, real money, backtest, replay, Trend Lab">Bollinger Bands: ON</button>
                         <button type="button" id="btnToggleScanner" class="cyan-btn" onclick="toggleScannerEngine()" style="padding:6px 14px; font-size:12px;">⏸ Pause Scanner</button>
                     </div>
                 </div>
@@ -1641,7 +1642,8 @@ refresh();setInterval(refresh,10000);
                     <span class="bb-off-badge-global status-badge badge-bear" style="display:none; margin-left:8px;">Bollinger OFF</span>
                     <button type="button" class="emerald-btn" onclick="exportReplayToExcel()">📥 Download Replay Ledger as Excel (.xls)</button>
                 </h2>
-                <div style="margin-bottom:10px;">
+                <div style="margin-bottom:10px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                    <span class="entry-tf-policy" style="font-size:10.5px; color:#94a3b8; font-family:var(--font-mono);">Entry TF: 15m | FLAGSHIP View: 1H + Daily | No 5m Trading</span>
                     <button type="button" class="btn-bollinger-gate emerald-btn" onclick="toggleBollingerGate()" style="padding:6px 12px; font-size:11.5px;">Bollinger Bands: ON</button>
                 </div>
                 <div style="display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; margin-bottom:16px;">
@@ -1757,6 +1759,7 @@ refresh();setInterval(refresh,10000);
                             <input type="checkbox" id="usePreviousScannerData"> Use Previous Scanner Data
                         </label>
                     </div>
+                    <span class="entry-tf-policy" style="font-size:10.5px; color:#94a3b8; font-family:var(--font-mono);">Entry TF: 15m | FLAGSHIP View: 1H + Daily | No 5m Trading</span>
                     <button type="button" class="btn-bollinger-gate emerald-btn" style="padding:6px 12px;" onclick="toggleBollingerGate()">Bollinger Bands: ON</button>
                     <button type="button" class="emerald-btn" style="padding:8px 18px;" onclick="runDateRangeBacktest()">📊 Run Date Range Backtester with Super Trail Logic</button>
                     <button type="button" class="cyan-btn" style="padding:8px 14px;" onclick="runH1FlagshipOnlyBacktest()" title="Filter strategy to H1_FLAGSHIP only">🎯 H1 FLAGSHIP only</button>
@@ -1823,11 +1826,12 @@ refresh();setInterval(refresh,10000);
                                 <th>14. Data Type</th>
                                 <th>15. Price Type</th>
                                 <th>16. BB Gate</th>
-                                <th>17. FLAGSHIP / Context</th>
+                                <th>17. Entry TF</th>
+                                <th>18. FLAGSHIP / Context</th>
                             </tr>
                         </thead>
                         <tbody id="drBacktestTableBody">
-                            <tr><td colspan="17" style="text-align:center; color:var(--text-muted); padding:16px;">Select date range and click 'Run Date-Range Backtest'.</td></tr>
+                            <tr><td colspan="18" style="text-align:center; color:var(--text-muted); padding:16px;">Select date range and click 'Run Date-Range Backtest'.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1868,6 +1872,7 @@ refresh();setInterval(refresh,10000);
             <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; background:rgba(15, 23, 42, 0.7); border:1px solid rgba(56, 189, 248, 0.25); border-radius:8px; padding:10px 14px; margin-bottom:16px;">
                 <div style="font-size:12px; font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                     ⚡ Live Quant Telemetry (Last Closed 15m Bar):
+                    <span class="entry-tf-policy" style="font-size:10px; color:#94a3b8; font-family:var(--font-mono);">Entry TF: 15m | FLAGSHIP View: 1H + Daily | No 5m Trading</span>
                     <span class="bb-off-badge-global status-badge badge-bear" style="display:none;">Bollinger OFF</span>
                     <button type="button" class="btn-bollinger-gate emerald-btn" onclick="toggleBollingerGate()" style="padding:4px 10px; font-size:11px;">Bollinger Bands: ON</button>
                 </div>
@@ -4074,12 +4079,53 @@ refresh();setInterval(refresh,10000);
             if (bbLab) bbLab.textContent = `BB: ${bollingerGateEnabled ? 'ON' : 'OFF'}`;
         }
 
+        function parseBollingerEnabled(d) {
+            if (!d || typeof d !== 'object') return null;
+            if (typeof d.bollinger_enabled === 'boolean') return d.bollinger_enabled;
+            if (d.bollinger_enabled === 1 || d.bollinger_enabled === 'true') return true;
+            if (d.bollinger_enabled === 0 || d.bollinger_enabled === 'false') return false;
+            if (d.scanner_gates && typeof d.scanner_gates.bollinger_enabled === 'boolean') {
+                return d.scanner_gates.bollinger_enabled;
+            }
+            return null;
+        }
+
+        async function persistBollingerGate(next) {
+            let post = await fetch('/api/scanner/gates', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bollinger_enabled: next })
+            });
+            let d = await post.json().catch(() => ({}));
+            if (post.ok && d.ok !== false && parseBollingerEnabled(d) !== null) return d;
+            post = await fetch('/api/scanner/toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bollinger_enabled: next })
+            });
+            d = await post.json().catch(() => ({}));
+            if (!post.ok || d.ok === false) {
+                throw new Error(d.error || d.detail || `Save failed (HTTP ${post.status}). Restart engine_8510_live.py.`);
+            }
+            return d;
+        }
+
         async function loadBollingerGate() {
             try {
                 const res = await fetch('/api/scanner/gates');
-                const d = await res.json();
-                applyBollingerGateUI(d.bollinger_enabled === true);
-                console.log('[BB-GATE] load API bollinger_enabled=', d.bollinger_enabled);
+                const d = await res.json().catch(() => ({}));
+                let enabled = parseBollingerEnabled(d);
+                if (!res.ok || enabled === null) {
+                    const st = await fetch('/api/scanner/status');
+                    const sd = await st.json().catch(() => ({}));
+                    enabled = parseBollingerEnabled(sd);
+                    if (!st.ok || enabled === null) {
+                        console.warn('[BB-GATE] gates API unavailable — restart Port 8510 engine; keeping UI default ON');
+                        return;
+                    }
+                }
+                applyBollingerGateUI(enabled === true);
+                console.log('[BB-GATE] load bollinger_enabled=', enabled);
             } catch (e) { console.debug('bollinger gate load', e); }
         }
 
@@ -4088,17 +4134,11 @@ refresh();setInterval(refresh,10000);
             const next = !before;
             console.log('[BB-GATE] toggle', before, '->', next);
             try {
-                const post = await fetch('/api/scanner/gates', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ bollinger_enabled: next })
-                });
-                const d = await post.json();
-                if (!post.ok || d.ok === false) throw new Error(d.error || 'Save failed');
-                const after = d.bollinger_enabled === true;
-                console.log('[BB-GATE] saved API bollinger_enabled=', after);
+                const d = await persistBollingerGate(next);
+                const after = parseBollingerEnabled(d) === true;
+                console.log('[BB-GATE] saved bollinger_enabled=', after);
                 applyBollingerGateUI(after);
-                speakVoiceAlert(`Bollinger Bands ${after ? 'ON' : 'OFF'}`);
+                speakVoiceAlert(`Bollinger Bands ${after ? 'ON' : 'OFF'} — global for live, paper, real, backtest, replay, Trend Lab`);
             } catch (e) {
                 console.error('[BB-GATE] toggle failed', e);
                 applyBollingerGateUI(before);
@@ -4482,6 +4522,9 @@ refresh();setInterval(refresh,10000);
                     const bbL = t.BB_Gate || data.bb_gate_run_label || 'ON';
                     tdGates.textContent = `BB: ${bbL}`;
                     tr.appendChild(tdGates);
+                    const tdEtf = document.createElement('td');
+                    tdEtf.textContent = t.Entry_TF || '15m';
+                    tr.appendChild(tdEtf);
                     const tdCtx = document.createElement('td');
                     tdCtx.textContent = flagshipContextFromTrade(t);
                     tdCtx.style.fontSize = '11px';
@@ -4492,7 +4535,7 @@ refresh();setInterval(refresh,10000);
 
                 if (!data.trades || !data.trades.length) {
                     const tr = document.createElement('tr'), td = document.createElement('td');
-                    td.colSpan = 17;
+                    td.colSpan = 18;
                     td.textContent = 'No trades matched the selected Strategy / Data Type filter in this date range.';
                     tr.appendChild(td);
                     tbody.appendChild(tr);

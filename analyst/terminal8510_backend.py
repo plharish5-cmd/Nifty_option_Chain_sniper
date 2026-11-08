@@ -2349,8 +2349,11 @@ class QuantTerminalBackend:
             "bollinger_enabled_stage3": None,
             "bollinger_enabled_crossover": None,
             "bollinger_enabled_flagship": None,
+            "signal_cooldown_5m_min": 5.0,
+            "entry_timeframe": "15m",
         })
         self.scanner_enabled: bool = bool(self.scanner_cfg.get("enabled", True))
+        self._last_live_eval_closed_15m_ts: int = 0
         self.scanner_running: bool = False
         self.active_party: str = "NEUTRAL"  # "BULLISH", "BEARISH", "NEUTRAL"
         self.last_crossover_event: Optional[Dict[str, Any]] = None
@@ -3976,13 +3979,18 @@ class QuantTerminalBackend:
             return True
         return bool(override)
 
+    def _entry_tf_meta(self) -> Dict[str, str]:
+        return {"entry_timeframe": "15m", "Entry_TF": "15m"}
+
     def _gate_meta_for_signal(self, strategy_key: str) -> Dict[str, Any]:
         bb_on = self._bollinger_gate_active(strategy_key)
-        return {
+        meta = {
             "bollinger_enabled": bb_on,
             "bollinger_applied": bb_on,
             "bb_gate_label": "ON" if bb_on else "OFF",
         }
+        meta.update(self._entry_tf_meta())
+        return meta
 
     def get_scanner_gate_config(self) -> Dict[str, Any]:
         raw = self.scanner_cfg.get("bollinger_enabled", True)
@@ -4009,7 +4017,10 @@ class QuantTerminalBackend:
             if k not in allowed:
                 continue
             if k == "bollinger_enabled":
-                self.scanner_cfg[k] = v is True or v == "true" or v == 1
+                if isinstance(v, bool):
+                    self.scanner_cfg[k] = v
+                else:
+                    self.scanner_cfg[k] = v is True or str(v).lower() == "true" or v == 1
             else:
                 self.scanner_cfg[k] = v
         self.cfg["scanner"] = self.scanner_cfg
@@ -4049,10 +4060,16 @@ class QuantTerminalBackend:
                 df_work["dt"] = pd.to_datetime(df_work["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
                 df_work.set_index("dt", inplace=True)
 
-        # 15m Resampling
+        # 15m Resampling — entries NEVER on the forming bar (iloc[-1]); use last closed bar only.
         b15 = df_work.resample("15min").agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna()
-        if len(b15) < 10:
+        if len(b15) < 11:
             return []
+        entry_tf = str(self.scanner_cfg.get("entry_timeframe", "15m") or "15m").lower()
+        if entry_tf not in ("15m", "15min"):
+            log.info("SKIPPED_NOT_15M evaluate_candle_dataframe entry_tf=%s", entry_tf)
+            return []
+
+        bar_ci = -2  # last fully closed 15m candle
 
         # 1H Resampling
         b60 = df_work.resample("60min").agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna()
@@ -4068,20 +4085,20 @@ class QuantTerminalBackend:
         lbb = sma20 - 2 * std20
         bb_width = ubb - lbb
 
-        # Band Slopes
-        d_ubb = float(ubb.iloc[-1] - ubb.iloc[-2]) if len(ubb) >= 2 else 0.0
-        d_lbb = float(lbb.iloc[-1] - lbb.iloc[-2]) if len(lbb) >= 2 else 0.0
+        # Band Slopes (closed 15m bar vs prior closed)
+        d_ubb = float(ubb.iloc[bar_ci] - ubb.iloc[bar_ci - 1]) if len(ubb) >= abs(bar_ci) + 1 else 0.0
+        d_lbb = float(lbb.iloc[bar_ci] - lbb.iloc[bar_ci - 1]) if len(lbb) >= abs(bar_ci) + 1 else 0.0
         slope_tol = 1.8
         ubb_slope = "UP" if d_ubb > slope_tol else ("DOWN" if d_ubb < -slope_tol else "FLAT")
         lbb_slope = "UP" if d_lbb > slope_tol else ("DOWN" if d_lbb < -slope_tol else "FLAT")
 
-        current_p = float(spot_price) if spot_price else float(b15["close"].iloc[-1])
-        e8_val = float(e8.iloc[-1])
-        e4_val = float(e4.iloc[-1])
-        close_15 = float(b15["close"].iloc[-1])
-        low_15 = float(b15["low"].iloc[-1])
-        high_15 = float(b15["high"].iloc[-1])
-        width_val = float(bb_width.iloc[-1]) if pd.notnull(bb_width.iloc[-1]) else 70.0
+        current_p = float(b15["close"].iloc[bar_ci])
+        e8_val = float(e8.iloc[bar_ci])
+        e4_val = float(e4.iloc[bar_ci])
+        close_15 = float(b15["close"].iloc[bar_ci])
+        low_15 = float(b15["low"].iloc[bar_ci])
+        high_15 = float(b15["high"].iloc[bar_ci])
+        width_val = float(bb_width.iloc[bar_ci]) if pd.notnull(bb_width.iloc[bar_ci]) else 70.0
 
         tol = float(self.scanner_cfg.get("tolerance_pts", 20.0))
         bb_min = float(self.scanner_cfg.get("bb_width_min", 60.0))
@@ -4092,10 +4109,10 @@ class QuantTerminalBackend:
 
         # Check Crossover within last 3 bars for Party-Switch & Reversal Setup Prerequisite
         crossover_event = None
-        for lag in range(1, min(4, len(b15))):
-            idx = -lag
+        for lag in range(1, min(4, len(b15) - 1)):
+            idx = bar_ci - lag + 1
             prev_idx = idx - 1
-            if len(b15) > abs(prev_idx):
+            if len(b15) > abs(prev_idx) and idx <= bar_ci:
                 if e4.iloc[prev_idx] >= e8.iloc[prev_idx] and e4.iloc[idx] < e8.iloc[idx]:
                     crossover_event = {"type": "BEARISH_CROSS", "age": lag, "time": str(b15.index[idx])}
                     break
@@ -4122,7 +4139,11 @@ class QuantTerminalBackend:
         tr2 = (l15 - c15.shift(1)).abs()
         tr = pd.concat([tr0, tr1, tr2], axis=1).max(axis=1)
         atr14_series = tr.ewm(alpha=1.0 / 14, adjust=False).mean()
-        atr14_val = float(atr14_series.iloc[-1]) if len(atr14_series) and pd.notnull(atr14_series.iloc[-1]) and atr14_series.iloc[-1] > 0 else 15.0
+        atr14_val = (
+            float(atr14_series.iloc[bar_ci])
+            if len(atr14_series) and pd.notnull(atr14_series.iloc[bar_ci]) and atr14_series.iloc[bar_ci] > 0
+            else 15.0
+        )
 
         # Goldilocks 4/8 Separation Regime Gate
         goldilocks = self.compute_goldilocks_separation(e4_val, e8_val, atr14_val)
@@ -4710,7 +4731,9 @@ class QuantTerminalBackend:
                     continue
 
             last_ts = self.strategy_cooldowns.get(strat_id, 0.0)
-            if (now_ts - last_ts) < 300.0:  # 5-minute cooldown
+            cool_min = float(self.scanner_cfg.get("signal_cooldown_5m_min", 5.0) or 5.0)
+            cool_sec = max(0.0, cool_min) * 60.0  # 5m wait between signals — NOT an entry timeframe
+            if cool_sec and (now_ts - last_ts) < cool_sec:
                 continue
 
             self.strategy_cooldowns[strat_id] = now_ts
@@ -4833,7 +4856,20 @@ class QuantTerminalBackend:
                         log.debug("Strategy scanner: spot price unavailable or <= 0, skipping scan cycle")
                         await asyncio.sleep(interval)
                         continue
-                    signals = self.evaluate_all_strategies(spot_price=spot)
+                    closed_bar = self._latest_closed_15m_bar()
+                    if not closed_bar:
+                        await asyncio.sleep(interval)
+                        continue
+                    closed_ts = int(closed_bar.get("ts") or 0)
+                    if closed_ts <= 0:
+                        await asyncio.sleep(interval)
+                        continue
+                    if closed_ts == self._last_live_eval_closed_15m_ts:
+                        await asyncio.sleep(interval)
+                        continue
+                    self._last_live_eval_closed_15m_ts = closed_ts
+                    log.debug("15m closed bar eval slot ts=%s", closed_ts)
+                    signals = self.evaluate_all_strategies(spot_price=None)
 
                     # Check Direct 15m Entry Trigger on PE-CE Synergy Flip if enabled
                     # Dhan OI is contextual; it never manufactures a standalone entry.
@@ -6410,6 +6446,7 @@ class QuantTerminalBackend:
                                 "source": "SYNTHESIZED",
                                 "BB_Gate": meta.get("bb_gate_label", gate_bb),
                                 "Bollinger_Applied": meta.get("bollinger_applied", gate_bb == "ON"),
+                                "Entry_TF": "15m",
                             })
 
         # ── B. Live / Recorded Real Paper Trades from Ledger DB (Section 4B) ──
@@ -6471,6 +6508,7 @@ class QuantTerminalBackend:
                     "source": "LIVE",
                     "price_type": ptype,
                     "BB_Gate": gate_bb,
+                    "Entry_TF": "15m",
                 })
 
         st_summary = self._compute_side_summary(
