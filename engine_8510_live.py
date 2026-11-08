@@ -719,6 +719,21 @@ async def api_scanner_status():
     return JSONResponse(content=backend.get_scanner_status())
 
 
+@app.get("/api/scanner/gates")
+async def api_scanner_gates_get():
+    """Bollinger + 4/8 separation master switches for all 4 strategies."""
+    return JSONResponse(content={"ok": True, **backend.get_scanner_gate_config()})
+
+
+@app.post("/api/scanner/gates")
+async def api_scanner_gates_post(req: Request):
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    return JSONResponse(content=backend.update_scanner_gate_config(data))
+
+
 @app.post("/api/scanner/toggle")
 async def api_scanner_toggle(req: Request):
     """Enables or pauses the live 4-strategy scanner."""

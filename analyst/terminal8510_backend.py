@@ -2344,6 +2344,13 @@ class QuantTerminalBackend:
             "flagship_doji_sl_pts": 15.0,
             "flagship_max_h1_range_pts": 120.0,
             "flagship_sr_exit_proximity_pts": 15.0,
+            "bollinger_enabled": True,
+            "bollinger_enabled_stage2": None,
+            "bollinger_enabled_stage3": None,
+            "bollinger_enabled_crossover": None,
+            "bollinger_enabled_flagship": None,
+            "ema48_separation_enabled": True,
+            "ema48_separation_min_pts": 0.0,
         })
         self.scanner_enabled: bool = bool(self.scanner_cfg.get("enabled", True))
         self.scanner_running: bool = False
@@ -3962,6 +3969,72 @@ class QuantTerminalBackend:
         }
 
     # ── 4-CORE STRATEGIES LIVE SCANNER & PARTY-SWITCH ENGINE ───────────────────
+    def _bollinger_gate_active(self, strategy_key: str) -> bool:
+        """Global + optional per-strategy Bollinger gate (ON = apply BB slope/width/flat checks)."""
+        if not bool(self.scanner_cfg.get("bollinger_enabled", True)):
+            return False
+        override = self.scanner_cfg.get(f"bollinger_enabled_{strategy_key}")
+        if override is None:
+            return True
+        return bool(override)
+
+    def _ema48_separation_active(self) -> bool:
+        return bool(self.scanner_cfg.get("ema48_separation_enabled", True))
+
+    def _ema48_separation_allows(self, e4: float, e8: float, atr14: float) -> bool:
+        if not self._ema48_separation_active():
+            return True
+        min_pts = float(self.scanner_cfg.get("ema48_separation_min_pts", 0.0))
+        if min_pts > 0 and abs(e4 - e8) < min_pts:
+            return False
+        gold = self.compute_goldilocks_separation(e4, e8, atr14)
+        return bool(gold.get("raw_allowed", True))
+
+    def _gate_meta_for_signal(self, strategy_key: str) -> Dict[str, Any]:
+        bb_on = self._bollinger_gate_active(strategy_key)
+        sep_on = self._ema48_separation_active()
+        return {
+            "bollinger_enabled": bb_on,
+            "bollinger_applied": bb_on,
+            "ema48_separation_enabled": sep_on,
+            "ema48_separation_applied": sep_on,
+            "bb_gate_label": "ON" if bb_on else "OFF",
+            "ema48_sep_label": "ON" if sep_on else "OFF",
+        }
+
+    def get_scanner_gate_config(self) -> Dict[str, Any]:
+        return {
+            "bollinger_enabled": bool(self.scanner_cfg.get("bollinger_enabled", True)),
+            "bollinger_enabled_stage2": self.scanner_cfg.get("bollinger_enabled_stage2"),
+            "bollinger_enabled_stage3": self.scanner_cfg.get("bollinger_enabled_stage3"),
+            "bollinger_enabled_crossover": self.scanner_cfg.get("bollinger_enabled_crossover"),
+            "bollinger_enabled_flagship": self.scanner_cfg.get("bollinger_enabled_flagship"),
+            "ema48_separation_enabled": bool(self.scanner_cfg.get("ema48_separation_enabled", True)),
+            "ema48_separation_min_pts": float(self.scanner_cfg.get("ema48_separation_min_pts", 0.0)),
+        }
+
+    def update_scanner_gate_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        allowed = {
+            "bollinger_enabled",
+            "bollinger_enabled_stage2",
+            "bollinger_enabled_stage3",
+            "bollinger_enabled_crossover",
+            "bollinger_enabled_flagship",
+            "ema48_separation_enabled",
+            "ema48_separation_min_pts",
+        }
+        for k, v in (updates or {}).items():
+            if k not in allowed:
+                continue
+            self.scanner_cfg[k] = v
+        self.cfg["scanner"] = self.scanner_cfg
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(self.cfg, f, indent=2)
+        except Exception as exc:
+            log.warning("Could not persist scanner gate config: %s", exc)
+        return {"ok": True, **self.get_scanner_gate_config()}
+
     def evaluate_candle_dataframe(
         self,
         df: pd.DataFrame,
@@ -4070,13 +4143,20 @@ class QuantTerminalBackend:
 
         signals: List[Dict[str, Any]] = []
 
+        bb_stage2 = self._bollinger_gate_active("stage2")
+        bb_stage3 = self._bollinger_gate_active("stage3")
+        bb_cross = self._bollinger_gate_active("crossover")
+
         # ── 1. STRATEGY 1: Stage 2 (8 EMA Support Touch - Long) ─────────────
         # STRICT RULE: ALLOWED ONLY when Bullish Stack (4-EMA > 8-EMA). STRICTLY BLOCKED if 4-EMA < 8-EMA.
         if not is_bullish_stack:
             self.strategy_status["stage2_long"]["armed"] = False
             self.strategy_status["stage2_long"]["state"] = "BLOCKED_MA_STACK"
         else:
-            stage2_cond = (ubb_slope == "UP" and close_15 >= (e8_val - tol) and width_val >= bb_min)
+            if bb_stage2:
+                stage2_cond = (ubb_slope == "UP" and close_15 >= (e8_val - tol) and width_val >= bb_min)
+            else:
+                stage2_cond = close_15 >= (e8_val - tol)
             stage2_touch = (abs(current_p - e8_val) <= tol or abs(low_15 - e8_val) <= tol)
             self.strategy_status["stage2_long"]["armed"] = stage2_cond
             self.strategy_status["stage2_long"]["state"] = "TRIGGERED" if (stage2_cond and stage2_touch) else ("ARMED" if stage2_cond else "SCANNING")
@@ -4084,8 +4164,10 @@ class QuantTerminalBackend:
             if stage2_cond and stage2_touch:
                 if self.active_party == "BEARISH":
                     log.info("[BLOCKED] Stage 2 Long blocked by Party-Switch (Active Party is BEARISH)")
+                elif not self._ema48_separation_allows(e4_val, e8_val, atr14_val):
+                    log.info("[BLOCKED] Stage 2 Long blocked by 4/8 Separation gate")
                 else:
-                    signals.append({
+                    sig_row = {
                         "strategy_id": "STAGE_2_LONG",
                         "setup_name": "Stage 2 8-EMA (Long) [Pullback Touch]",
                         "direction": "LONG",
@@ -4095,7 +4177,9 @@ class QuantTerminalBackend:
                         "index_price": current_p,
                         "conviction": "STANDARD",
                         "details": f"UBB Slope {ubb_slope}, 4-EMA > 8-EMA Bullish Stack, 8-EMA {e8_val:.1f}, dist {abs(current_p - e8_val):.1f}pts",
-                    })
+                    }
+                    sig_row.update(self._gate_meta_for_signal("stage2"))
+                    signals.append(sig_row)
 
         # ── 2. STRATEGY 2: Stage 3 (8 EMA Resistance Rejection - Short) ──────
         # STRICT RULE: ALLOWED ONLY when Bearish Stack (4-EMA < 8-EMA). STRICTLY BLOCKED if 4-EMA > 8-EMA.
@@ -4103,7 +4187,10 @@ class QuantTerminalBackend:
             self.strategy_status["stage3_short"]["armed"] = False
             self.strategy_status["stage3_short"]["state"] = "BLOCKED_MA_STACK"
         else:
-            stage3_cond = (lbb_slope == "DOWN" and close_15 <= (e8_val + tol) and width_val >= bb_min)
+            if bb_stage3:
+                stage3_cond = (lbb_slope == "DOWN" and close_15 <= (e8_val + tol) and width_val >= bb_min)
+            else:
+                stage3_cond = close_15 <= (e8_val + tol)
             stage3_touch = (abs(current_p - e8_val) <= tol or abs(high_15 - e8_val) <= tol)
             self.strategy_status["stage3_short"]["armed"] = stage3_cond
             self.strategy_status["stage3_short"]["state"] = "TRIGGERED" if (stage3_cond and stage3_touch) else ("ARMED" if stage3_cond else "SCANNING")
@@ -4111,8 +4198,10 @@ class QuantTerminalBackend:
             if stage3_cond and stage3_touch:
                 if self.active_party == "BULLISH":
                     log.info("[BLOCKED] Stage 3 Short blocked by Party-Switch (Active Party is BULLISH)")
+                elif not self._ema48_separation_allows(e4_val, e8_val, atr14_val):
+                    log.info("[BLOCKED] Stage 3 Short blocked by 4/8 Separation gate")
                 else:
-                    signals.append({
+                    sig_row = {
                         "strategy_id": "STAGE_3_SHORT",
                         "setup_name": "Stage 3 8-EMA (Short) [Resistance Rejection]",
                         "direction": "SHORT",
@@ -4122,7 +4211,9 @@ class QuantTerminalBackend:
                         "index_price": current_p,
                         "conviction": "STANDARD",
                         "details": f"LBB Slope {lbb_slope}, 4-EMA < 8-EMA Bearish Stack, 8-EMA {e8_val:.1f}, dist {abs(current_p - e8_val):.1f}pts",
-                    })
+                    }
+                    sig_row.update(self._gate_meta_for_signal("stage3"))
+                    signals.append(sig_row)
 
         # ── 3. STRATEGY 3: 4 MA vs 8 EMA Crossover Reversal ──────────────────
         # Reversal Setup Prerequisite:
@@ -4130,32 +4221,40 @@ class QuantTerminalBackend:
         # - Setup #6 (Reversal Down) requires an actual preceding cross where 4-EMA crossed BELOW 8-EMA. Discard if already below from open.
         cross_touch = (abs(current_p - e8_val) <= tol or abs(low_15 - e8_val) <= tol or abs(high_15 - e8_val) <= tol)
         if crossover_event and crossover_event.get("age", 99) <= int(self.scanner_cfg.get("crossover_max_touch_candles", 3)):
-            if crossover_event["type"] == "BULLISH_CROSS" and is_bullish_stack and ubb_slope == "FLAT" and cross_touch:
+            bull_bb_ok = (not bb_cross) or (ubb_slope == "FLAT")
+            bear_bb_ok = (not bb_cross) or (lbb_slope == "FLAT")
+            if crossover_event["type"] == "BULLISH_CROSS" and is_bullish_stack and bull_bb_ok and cross_touch:
                 self.strategy_status["crossover_reversal"]["state"] = "TRIGGERED"
-                signals.append({
-                    "strategy_id": "CROSSOVER_BULLISH",
-                    "setup_name": "4 MA / 8 EMA Upside Reversal",
-                    "direction": "LONG",
-                    "opt_side": "CE",
-                    "target_pts": float(self.scanner_cfg.get("crossover_target_pts", 20.0)),
-                    "sl_pts": float(self.scanner_cfg.get("crossover_sl_pts", 20.0)),
-                    "index_price": current_p,
-                    "conviction": "HIGH",
-                    "details": f"Preceding Bullish Cross (Age {crossover_event['age']} bars), 4-EMA > 8-EMA, UBB Flat, 8-EMA touch",
-                })
-            elif crossover_event["type"] == "BEARISH_CROSS" and is_bearish_stack and lbb_slope == "FLAT" and cross_touch:
+                if self._ema48_separation_allows(e4_val, e8_val, atr14_val):
+                    sig_row = {
+                        "strategy_id": "CROSSOVER_BULLISH",
+                        "setup_name": "4 MA / 8 EMA Upside Reversal",
+                        "direction": "LONG",
+                        "opt_side": "CE",
+                        "target_pts": float(self.scanner_cfg.get("crossover_target_pts", 20.0)),
+                        "sl_pts": float(self.scanner_cfg.get("crossover_sl_pts", 20.0)),
+                        "index_price": current_p,
+                        "conviction": "HIGH",
+                        "details": f"Preceding Bullish Cross (Age {crossover_event['age']} bars), 4-EMA > 8-EMA, UBB Flat, 8-EMA touch",
+                    }
+                    sig_row.update(self._gate_meta_for_signal("crossover"))
+                    signals.append(sig_row)
+            elif crossover_event["type"] == "BEARISH_CROSS" and is_bearish_stack and bear_bb_ok and cross_touch:
                 self.strategy_status["crossover_reversal"]["state"] = "TRIGGERED"
-                signals.append({
-                    "strategy_id": "CROSSOVER_BEARISH",
-                    "setup_name": "4 MA / 8 EMA Downside Reversal",
-                    "direction": "SHORT",
-                    "opt_side": "PE",
-                    "target_pts": float(self.scanner_cfg.get("crossover_target_pts", 20.0)),
-                    "sl_pts": float(self.scanner_cfg.get("crossover_sl_pts", 20.0)),
-                    "index_price": current_p,
-                    "conviction": "HIGH",
-                    "details": f"Preceding Bearish Cross (Age {crossover_event['age']} bars), 4-EMA < 8-EMA, LBB Flat, 8-EMA touch",
-                })
+                if self._ema48_separation_allows(e4_val, e8_val, atr14_val):
+                    sig_row = {
+                        "strategy_id": "CROSSOVER_BEARISH",
+                        "setup_name": "4 MA / 8 EMA Downside Reversal",
+                        "direction": "SHORT",
+                        "opt_side": "PE",
+                        "target_pts": float(self.scanner_cfg.get("crossover_target_pts", 20.0)),
+                        "sl_pts": float(self.scanner_cfg.get("crossover_sl_pts", 20.0)),
+                        "index_price": current_p,
+                        "conviction": "HIGH",
+                        "details": f"Preceding Bearish Cross (Age {crossover_event['age']} bars), 4-EMA < 8-EMA, LBB Flat, 8-EMA touch",
+                    }
+                    sig_row.update(self._gate_meta_for_signal("crossover"))
+                    signals.append(sig_row)
 
         # ── 4. STRATEGY 4: 1 HR FLAGSHIP (price action: daily S/R, 1H swings, 15m confirmation) ──
         scfg = self.scanner_cfg
@@ -4253,8 +4352,10 @@ class QuantTerminalBackend:
                     if pa_long == "DOJI":
                         dist = abs(cl - entry_open)
                         sl_val = min(doji_cap, dist if dist > 0 else doji_cap)
+                    if not self._ema48_separation_allows(e4_val, e8_val, atr14_val):
+                        break
                     self.strategy_status["flagship_1h"]["state"] = "TRIGGERED"
-                    signals.append({
+                    sig_row = {
                         "strategy_id": "FLAGSHIP_1H_LONG",
                         "setup_name": "Flagship 1H Long [Supports / 15m confirmation]",
                         "direction": "LONG",
@@ -4268,7 +4369,9 @@ class QuantTerminalBackend:
                             f"Zone {zlo:.0f}-{zhi:.0f} + 15m {pa_long} + Daily Trend {daily_bias} "
                             f"+ 1H Trend {h1_trend} | S/R {supports_txt}"
                         ),
-                    })
+                    }
+                    sig_row.update(self._gate_meta_for_signal("flagship"))
+                    signals.append(sig_row)
                     break
 
             if (
@@ -4285,8 +4388,10 @@ class QuantTerminalBackend:
                     if pa_short == "DOJI":
                         dist = abs(ch - entry_open)
                         sl_val = min(doji_cap, dist if dist > 0 else doji_cap)
+                    if not self._ema48_separation_allows(e4_val, e8_val, atr14_val):
+                        break
                     self.strategy_status["flagship_1h"]["state"] = "TRIGGERED"
-                    signals.append({
+                    sig_row = {
                         "strategy_id": "FLAGSHIP_1H_SHORT",
                         "setup_name": "Flagship 1H Short [Resistances / 15m confirmation]",
                         "direction": "SHORT",
@@ -4300,7 +4405,9 @@ class QuantTerminalBackend:
                             f"Zone {zlo:.0f}-{zhi:.0f} + 15m {pa_short} + Daily Trend {daily_bias} "
                             f"+ 1H Trend {h1_trend} | S/R {resist_txt}"
                         ),
-                    })
+                    }
+                    sig_row.update(self._gate_meta_for_signal("flagship"))
+                    signals.append(sig_row)
                     break
             elif self.strategy_status["flagship_1h"]["armed"] and self.strategy_status["flagship_1h"]["state"] != "TRIGGERED":
                 self.strategy_status["flagship_1h"]["state"] = "ARMED"
@@ -4329,8 +4436,11 @@ class QuantTerminalBackend:
                     filtered_signals.append(sig)
             signals = filtered_signals
 
-        # Proven Quant Edges Filter 1: Goldilocks 4/8 Separation Regime Gate (0.13–0.26 ATR)
-        goldilocks_filter_on = bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", False))
+        # Proven Quant Edges Filter 1: optional v1.7 checkbox (scanner 4/8 sep is primary per-signal gate)
+        goldilocks_filter_on = (
+            bool(self.proven_edges_cfg.get("goldilocks_separation_enabled", False))
+            and self._ema48_separation_active()
+        )
         if goldilocks_filter_on and not goldilocks["raw_allowed"]:
             log.info("[GOLDILOCKS GATE BLOCKED] Signals blocked: %s (%s)", goldilocks["badge"], goldilocks["description"])
             g_state = "BLOCKED_GOLDILOCKS_CHOP" if goldilocks["regime"] == "CHOP_ZONE" else "BLOCKED_GOLDILOCKS_CLIMAX"
@@ -4768,6 +4878,8 @@ class QuantTerminalBackend:
             "recent_signals": self.recent_signals[:10],
             "algo_strike_selection": self.algo_strike_selection,
             "tolerance_pts": float(self.scanner_cfg.get("tolerance_pts", 20.0)),
+            "scanner_gates": self.get_scanner_gate_config(),
+            "bollinger_master_off": not bool(self.scanner_cfg.get("bollinger_enabled", True)),
         }
 
     # ── FUNDS & PAPER WALLET MANAGEMENT ──────────────────────────────────────
@@ -5929,26 +6041,74 @@ class QuantTerminalBackend:
                 str(s["direction"]),
                 float(s.get("target_pts", 40.0)),
                 float(s.get("sl_pts", 40.0)),
-                {"flagship": True, "sr_levels": sr},
+                {
+                    "flagship": True,
+                    "sr_levels": sr,
+                    "bb_gate_label": s.get("bb_gate_label", "ON"),
+                    "ema48_sep_label": s.get("ema48_sep_label", "ON"),
+                    "bollinger_applied": s.get("bollinger_applied"),
+                    "ema48_separation_applied": s.get("ema48_separation_applied"),
+                },
             ))
         return out
 
     def _backtest_legacy_cand_signals(
-        self, b: Dict[str, Any], b_prev: Dict[str, Any],
-        e4_v: float, e8_v: float, bbw: float, ubb_up: bool, lbb_dn: bool,
+        self,
+        b: Dict[str, Any],
+        b_prev: Dict[str, Any],
+        e4_v: float,
+        e8_v: float,
+        bbw: float,
+        ubb_up: bool,
+        lbb_dn: bool,
+        ubb_flat: bool,
+        lbb_flat: bool,
+        atr14: float,
     ) -> List[Tuple[str, str, str, float, float, Dict[str, Any]]]:
         c_p, h_p, l_p = float(b["close"]), float(b["high"]), float(b["low"])
         touch_15 = (l_p <= e8_v + 3.0 and h_p >= e8_v - 3.0)
         cand: List[Tuple[str, str, str, float, float, Dict[str, Any]]] = []
-        meta = {"flagship": False, "sr_levels": {}}
-        if e4_v > e8_v and ubb_up and bbw >= 50.0 and touch_15 and c_p >= e8_v - 2.5:
-            cand.append(("STAGE_2_LONG", "Stage 2 8-EMA (Long) [Pullback Touch]", "LONG", 40.0, 40.0, meta))
-        if e4_v < e8_v and lbb_dn and bbw >= 50.0 and touch_15 and c_p <= e8_v + 2.5:
-            cand.append(("STAGE_3_SHORT", "Stage 3 8-EMA (Short) [Resistance Rejection]", "SHORT", 40.0, 40.0, meta))
+        bb_min = float(self.scanner_cfg.get("bb_width_min", 60.0))
+        bb_stage2 = self._bollinger_gate_active("stage2")
+        bb_stage3 = self._bollinger_gate_active("stage3")
+        bb_cross = self._bollinger_gate_active("crossover")
+        sep_ok = self._ema48_separation_allows(e4_v, e8_v, atr14)
+        gate_bb = "ON" if bool(self.scanner_cfg.get("bollinger_enabled", True)) else "OFF"
+        gate_sep = "ON" if self._ema48_separation_active() else "OFF"
+
+        def _meta(flagship: bool = False) -> Dict[str, Any]:
+            return {
+                "flagship": flagship,
+                "sr_levels": {},
+                "bollinger_enabled": gate_bb == "ON",
+                "bollinger_applied": gate_bb == "ON",
+                "ema48_separation_enabled": gate_sep == "ON",
+                "ema48_separation_applied": gate_sep == "ON",
+                "bb_gate_label": gate_bb,
+                "ema48_sep_label": gate_sep,
+            }
+
+        if not sep_ok:
+            return cand
+
+        if e4_v > e8_v and touch_15 and c_p >= e8_v - 2.5:
+            if bb_stage2:
+                if ubb_up and bbw >= bb_min:
+                    cand.append(("STAGE_2_LONG", "Stage 2 8-EMA (Long) [Pullback Touch]", "LONG", 40.0, 40.0, _meta()))
+            else:
+                cand.append(("STAGE_2_LONG", "Stage 2 8-EMA (Long) [Pullback Touch]", "LONG", 40.0, 40.0, _meta()))
+        if e4_v < e8_v and touch_15 and c_p <= e8_v + 2.5:
+            if bb_stage3:
+                if lbb_dn and bbw >= bb_min:
+                    cand.append(("STAGE_3_SHORT", "Stage 3 8-EMA (Short) [Resistance Rejection]", "SHORT", 40.0, 40.0, _meta()))
+            else:
+                cand.append(("STAGE_3_SHORT", "Stage 3 8-EMA (Short) [Resistance Rejection]", "SHORT", 40.0, 40.0, _meta()))
         if float(b_prev["e4"]) <= float(b_prev["e8"]) and e4_v > e8_v and touch_15:
-            cand.append(("CROSSOVER_BULLISH", "4 MA vs 8 EMA Upside Reversal", "LONG", 20.0, 20.0, meta))
+            if (not bb_cross) or ubb_flat:
+                cand.append(("CROSSOVER_BULLISH", "4 MA vs 8 EMA Upside Reversal", "LONG", 20.0, 20.0, _meta()))
         elif float(b_prev["e4"]) >= float(b_prev["e8"]) and e4_v < e8_v and touch_15:
-            cand.append(("CROSSOVER_BEARISH", "4 MA vs 8 EMA Downside Reversal", "SHORT", 20.0, 20.0, meta))
+            if (not bb_cross) or lbb_flat:
+                cand.append(("CROSSOVER_BEARISH", "4 MA vs 8 EMA Downside Reversal", "SHORT", 20.0, 20.0, _meta()))
         return cand
 
     # ── PREVIOUS-DAY REPLAY (BACKTEST SIMULATION) ─────────────────────────────
@@ -6125,6 +6285,8 @@ class QuantTerminalBackend:
         lot_qty = 65
         delta_est = 0.60
         charges_est = 78.16
+        gate_bb = "ON" if bool(self.scanner_cfg.get("bollinger_enabled", True)) else "OFF"
+        gate_sep = "ON" if self._ema48_separation_active() else "OFF"
 
         all_rows: List[Dict[str, Any]] = []
 
@@ -6166,6 +6328,11 @@ class QuantTerminalBackend:
                     df_15m["ubb"] = mid + 2.0 * sd
                     df_15m["lbb"] = mid - 2.0 * sd
                     df_15m["bbw"] = df_15m["ubb"] - df_15m["lbb"]
+                    tr0 = df_15m["high"] - df_15m["low"]
+                    tr1 = (df_15m["high"] - df_15m["close"].shift(1)).abs()
+                    tr2 = (df_15m["low"] - df_15m["close"].shift(1)).abs()
+                    tr = pd.concat([tr0, tr1, tr2], axis=1).max(axis=1)
+                    df_15m["atr14"] = tr.ewm(alpha=1.0 / 14, adjust=False).mean()
 
                     bars = df_15m.to_dict(orient="records")
                     eod_hm = str(self.scanner_cfg.get("flagship_eod_square_off", "15:20"))
@@ -6185,9 +6352,12 @@ class QuantTerminalBackend:
                         bbw = float(b["bbw"])
                         ubb_up = float(b["ubb"]) > float(b_prev["ubb"])
                         lbb_dn = float(b["lbb"]) < float(b_prev["lbb"])
+                        ubb_flat = abs(float(b["ubb"]) - float(b_prev["ubb"])) <= 1.8
+                        lbb_flat = abs(float(b["lbb"]) - float(b_prev["lbb"])) <= 1.8
+                        atr14 = float(b.get("atr14") or 15.0)
 
                         cand_signals = self._backtest_legacy_cand_signals(
-                            b, b_prev, e4_v, e8_v, bbw, ubb_up, lbb_dn
+                            b, b_prev, e4_v, e8_v, bbw, ubb_up, lbb_dn, ubb_flat, lbb_flat, atr14
                         )
                         cand_signals += self._backtest_flagship_signals_at_bar(df_all, int(b["ts"]), c_p)
 
@@ -6269,6 +6439,10 @@ class QuantTerminalBackend:
                                 "Ema8_From_Matrix": ema8_line_col,
                                 "strategy_id": sid,
                                 "source": "SYNTHESIZED",
+                                "BB_Gate": meta.get("bb_gate_label", gate_bb),
+                                "Ema48_Sep_Gate": meta.get("ema48_sep_label", gate_sep),
+                                "Bollinger_Applied": meta.get("bollinger_applied", gate_bb == "ON"),
+                                "Ema48_Sep_Applied": meta.get("ema48_separation_applied", gate_sep == "ON"),
                             })
 
         # ── B. Live / Recorded Real Paper Trades from Ledger DB (Section 4B) ──
@@ -6329,6 +6503,8 @@ class QuantTerminalBackend:
                     "strategy_id": f_code,
                     "source": "LIVE",
                     "price_type": ptype,
+                    "BB_Gate": gate_bb,
+                    "Ema48_Sep_Gate": gate_sep,
                 })
 
         st_summary = self._compute_side_summary(
@@ -6371,4 +6547,7 @@ class QuantTerminalBackend:
             "profit_factor_fixed": fx_summary["profit_factor"],
             "reconciliation": [],
             "reconciliation_match": True,
+            "scanner_gates": self.get_scanner_gate_config(),
+            "bb_gate_run_label": gate_bb,
+            "ema48_sep_run_label": gate_sep,
         }

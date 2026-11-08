@@ -73,7 +73,14 @@
     "flagship_eod_square_off": "15:20",
     "flagship_doji_sl_pts": 15.0,
     "flagship_max_h1_range_pts": 120.0,
-    "flagship_sr_exit_proximity_pts": 15.0
+    "flagship_sr_exit_proximity_pts": 15.0,
+    "bollinger_enabled": true,
+    "bollinger_enabled_stage2": null,
+    "bollinger_enabled_stage3": null,
+    "bollinger_enabled_crossover": null,
+    "bollinger_enabled_flagship": null,
+    "ema48_separation_enabled": true,
+    "ema48_separation_min_pts": 0.0
   },
   "risk": {
     "max_daily_trades": 2,

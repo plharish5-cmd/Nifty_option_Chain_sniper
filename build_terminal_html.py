@@ -915,8 +915,11 @@ def main() -> None:
                     <div style="display:flex; align-items:center; gap:10px;">
                         <span style="font-size:16px; font-weight:800; color:#f8fafc;">🤖 4-Core Strategy Scanner &amp; Party-Switch Cockpit</span>
                         <span id="scannerActiveBadge" class="status-badge badge-bull">🟢 SCANNER ACTIVE</span>
+                        <span id="scannerBollingerGateBadge" class="status-badge badge-neutral" style="display:none;">Bollinger OFF</span>
                     </div>
-                    <div style="display:flex; align-items:center; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <button type="button" id="btnToggleBollinger" class="emerald-btn" onclick="toggleScannerGate('bollinger_enabled')" style="padding:6px 12px; font-size:11.5px;">Bollinger Bands: ON</button>
+                        <button type="button" id="btnToggleEma48Sep" class="emerald-btn" onclick="toggleScannerGate('ema48_separation_enabled')" style="padding:6px 12px; font-size:11.5px;">4/8 Separation: ON</button>
                         <button type="button" id="btnToggleScanner" class="cyan-btn" onclick="toggleScannerEngine()" style="padding:6px 14px; font-size:12px;">⏸ Pause Scanner</button>
                     </div>
                 </div>
@@ -2310,6 +2313,23 @@ def main() -> None:
                 alert("Save error: " + e.message);
             }}
         }}
+
+        function renderScannerGateButtons(gates) {{
+            if (!gates) return;
+            const bbOn = gates.bollinger_enabled !== false;
+            const btnBb = document.getElementById('btnToggleBollinger');
+            if (btnBb) btnBb.textContent = `Bollinger Bands: ${{bbOn ? 'ON' : 'OFF'}}`;
+        }}
+        async function toggleScannerGate(field) {{
+            try {{
+                const cur = await (await fetch('/api/scanner/gates')).json();
+                const next = !(cur[field] !== false);
+                const d = await (await fetch('/api/scanner/gates', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{[field]: next}})}})).json();
+                renderScannerGateButtons(d);
+            }} catch (e) {{ console.debug(e); }}
+        }}
+        loadScannerGates = async () => {{ try {{ const d = await (await fetch('/api/scanner/gates')).json(); renderScannerGateButtons(d); }} catch(e){{}} }};
+        loadScannerGates();
 
         async function toggleScannerEngine() {{
             try {{

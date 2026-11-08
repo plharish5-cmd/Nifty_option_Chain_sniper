@@ -297,6 +297,7 @@ def test_all_4_core_strategies_scanner_and_party_switch():
     backend = QuantTerminalBackend()
     backend.scanner_cfg["tolerance_pts"] = 25.0
     backend.scanner_cfg["bb_width_min"] = 40.0
+    backend.scanner_cfg["ema48_separation_enabled"] = False
 
     # 1. Test Party-Switch manually and via crossover
     backend.active_party = "BEARISH"
@@ -901,6 +902,32 @@ def test_backtest_synthesize_option_tagging():
     oe, ox = synthesize_option_premium_from_spot(104.0, exit_sp, True, 0.6)
     assert ox >= oe or st <= 0
     assert reason
+
+
+def test_scanner_bollinger_and_ema48_gate_config():
+    backend = QuantTerminalBackend()
+    assert backend._bollinger_gate_active("stage2") is True
+    backend.scanner_cfg["bollinger_enabled"] = False
+    assert backend._bollinger_gate_active("stage2") is False
+    saved = backend.update_scanner_gate_config(
+        {"bollinger_enabled": True, "ema48_separation_enabled": False}
+    )
+    assert saved.get("ema48_separation_enabled") is False
+    assert "scanner_gates" in backend.get_scanner_status()
+
+    b = {"close": 100.0, "high": 101.0, "low": 99.0}
+    b_prev = {"e4": 99.0, "e8": 100.0, "ubb": 108.0, "lbb": 92.0}
+    backend.scanner_cfg["bollinger_enabled"] = False
+    backend.scanner_cfg["ema48_separation_enabled"] = False
+    off = backend._backtest_legacy_cand_signals(
+        b, b_prev, 100.5, 100.0, 70.0, False, True, True, True, 15.0
+    )
+    backend.scanner_cfg["bollinger_enabled"] = True
+    on = backend._backtest_legacy_cand_signals(
+        b, b_prev, 100.5, 100.0, 70.0, False, True, True, True, 15.0
+    )
+    assert any(x[0] == "STAGE_2_LONG" for x in off)
+    assert not any(x[0] == "STAGE_2_LONG" for x in on)
 
 
 def test_flagship_scanner_status_keys():

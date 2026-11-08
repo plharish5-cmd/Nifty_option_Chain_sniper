@@ -942,8 +942,12 @@ refresh();setInterval(refresh,10000);
                     <div style="display:flex; align-items:center; gap:10px;">
                         <span style="font-size:16px; font-weight:800; color:#f8fafc;">🤖 4-Core Strategy Scanner &amp; Party-Switch Cockpit</span>
                         <span id="scannerActiveBadge" class="status-badge badge-bull">🟢 SCANNER ACTIVE</span>
+                        <span id="scannerBollingerGateBadge" class="status-badge badge-neutral" style="display:none;">Bollinger OFF</span>
+                        <span id="scannerEma48SepBadge" class="status-badge badge-neutral" style="display:none;">4/8 Sep OFF</span>
                     </div>
-                    <div style="display:flex; align-items:center; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <button type="button" id="btnToggleBollinger" class="emerald-btn" onclick="toggleScannerGate('bollinger_enabled')" style="padding:6px 12px; font-size:11.5px;">Bollinger Bands: ON</button>
+                        <button type="button" id="btnToggleEma48Sep" class="emerald-btn" onclick="toggleScannerGate('ema48_separation_enabled')" style="padding:6px 12px; font-size:11.5px;">4/8 Separation: ON</button>
                         <button type="button" id="btnToggleScanner" class="cyan-btn" onclick="toggleScannerEngine()" style="padding:6px 14px; font-size:12px;">⏸ Pause Scanner</button>
                     </div>
                 </div>
@@ -1814,11 +1818,12 @@ refresh();setInterval(refresh,10000);
                                 <th>13. Strategy Filter Tag</th>
                                 <th>14. Data Type</th>
                                 <th>15. Price Type</th>
-                                <th>16. FLAGSHIP / Context</th>
+                                <th>16. BB / 4-8 Sep</th>
+                                <th>17. FLAGSHIP / Context</th>
                             </tr>
                         </thead>
                         <tbody id="drBacktestTableBody">
-                            <tr><td colspan="16" style="text-align:center; color:var(--text-muted); padding:16px;">Select date range and click 'Run Date-Range Backtest'.</td></tr>
+                            <tr><td colspan="17" style="text-align:center; color:var(--text-muted); padding:16px;">Select date range and click 'Run Date-Range Backtest'.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -3270,6 +3275,7 @@ refresh();setInterval(refresh,10000);
                 // 3B. 4-Core Strategy Scanner & Party-Switch Cockpit
                 if (data.scanner) {
                     const sc = data.scanner;
+                    if (sc.scanner_gates) renderScannerGateButtons(sc.scanner_gates);
                     const badge = document.getElementById("scannerActiveBadge");
                     const btn = document.getElementById("btnToggleScanner");
                     if (badge && btn) {
@@ -4042,6 +4048,57 @@ refresh();setInterval(refresh,10000);
             }
         }
 
+        function renderScannerGateButtons(gates) {
+            if (!gates) return;
+            const bbOn = gates.bollinger_enabled !== false;
+            const sepOn = gates.ema48_separation_enabled !== false;
+            const btnBb = document.getElementById('btnToggleBollinger');
+            const btnSep = document.getElementById('btnToggleEma48Sep');
+            const badgeBb = document.getElementById('scannerBollingerGateBadge');
+            const badgeSep = document.getElementById('scannerEma48SepBadge');
+            if (btnBb) {
+                btnBb.textContent = `Bollinger Bands: ${bbOn ? 'ON' : 'OFF'}`;
+                btnBb.style.background = bbOn ? '' : 'rgba(239, 68, 68, 0.25)';
+                btnBb.style.borderColor = bbOn ? '' : '#ef4444';
+            }
+            if (btnSep) {
+                btnSep.textContent = `4/8 Separation: ${sepOn ? 'ON' : 'OFF'}`;
+                btnSep.style.background = sepOn ? '' : 'rgba(239, 68, 68, 0.25)';
+                btnSep.style.borderColor = sepOn ? '' : '#ef4444';
+            }
+            if (badgeBb) badgeBb.style.display = bbOn ? 'none' : 'inline-block';
+            if (badgeSep) badgeSep.style.display = sepOn ? 'none' : 'inline-block';
+        }
+
+        async function loadScannerGates() {
+            try {
+                const res = await fetch('/api/scanner/gates');
+                const d = await res.json();
+                if (d.ok !== false) renderScannerGateButtons(d);
+            } catch (e) { console.debug('scanner gates', e); }
+        }
+
+        async function toggleScannerGate(field) {
+            try {
+                const res = await fetch('/api/scanner/gates');
+                const cur = await res.json();
+                const next = !(cur[field] !== false);
+                const post = await fetch('/api/scanner/gates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [field]: next })
+                });
+                const d = await post.json();
+                if (d.ok !== false) renderScannerGateButtons(d);
+                speakVoiceAlert(field === 'bollinger_enabled'
+                    ? `Bollinger Bands ${next ? 'enabled' : 'disabled'}`
+                    : `4/8 Separation ${next ? 'enabled' : 'disabled'}`);
+            } catch (e) {
+                alert('Gate toggle error: ' + e.message);
+            }
+        }
+        loadScannerGates();
+
         async function toggleScannerEngine() {
             try {
                 const res = await fetch("/api/scanner/toggle", {
@@ -4319,7 +4376,7 @@ refresh();setInterval(refresh,10000);
             };
             const banner = document.getElementById('drActiveFilterBanner');
             if (banner) {
-                banner.textContent = `Filter: ${filterNames[strategy_filter] || strategy_filter} | Date: ${from_date} to ${to_date} | Super Trail vs Fixed 40/40${use_previous_scanner ? ' | [Previous Scanner Data]' : ''}`;
+                banner.textContent = `Filter: ${filterNames[strategy_filter] || strategy_filter} | Date: ${from_date} to ${to_date} | BB: … | 4/8 Sep: … | Super Trail vs Fixed 40/40${use_previous_scanner ? ' | [Previous Scanner Data]' : ''}`;
             }
 
             const tbody = document.getElementById('drBacktestTableBody');
@@ -4338,6 +4395,11 @@ refresh();setInterval(refresh,10000);
                 const data = await response.json();
                 if (!response.ok || !data.ok) throw Error(data.error || 'Backtest unavailable');
                 lastDateRangeResults = data;
+                if (banner) {
+                    const bb = data.bb_gate_run_label || (data.scanner_gates?.bollinger_enabled === false ? 'OFF' : 'ON');
+                    const sep = data.ema48_sep_run_label || (data.scanner_gates?.ema48_separation_enabled === false ? 'OFF' : 'ON');
+                    banner.textContent = `Filter: ${filterNames[strategy_filter] || strategy_filter} | Date: ${from_date} to ${to_date} | BB: ${bb} | 4/8 Sep: ${sep} | Super Trail vs Fixed 40/40${use_previous_scanner ? ' | [Previous Scanner Data]' : ''}`;
+                }
 
                 const badge = document.getElementById('drDataTypeBadge');
                 if (badge) {
@@ -4408,6 +4470,11 @@ refresh();setInterval(refresh,10000);
                     const tdPt = document.createElement('td');
                     tdPt.innerHTML = formatPriceTypeCell(t);
                     tr.appendChild(tdPt);
+                    const tdGates = document.createElement('td');
+                    const bbL = t.BB_Gate || data.bb_gate_run_label || 'ON';
+                    const sepL = t.Ema48_Sep_Gate || data.ema48_sep_run_label || 'ON';
+                    tdGates.textContent = `BB ${bbL} · Sep ${sepL}`;
+                    tr.appendChild(tdGates);
                     const tdCtx = document.createElement('td');
                     tdCtx.textContent = flagshipContextFromTrade(t);
                     tdCtx.style.fontSize = '11px';
@@ -4418,7 +4485,7 @@ refresh();setInterval(refresh,10000);
 
                 if (!data.trades || !data.trades.length) {
                     const tr = document.createElement('tr'), td = document.createElement('td');
-                    td.colSpan = 16;
+                    td.colSpan = 17;
                     td.textContent = 'No trades matched the selected Strategy / Data Type filter in this date range.';
                     tr.appendChild(td);
                     tbody.appendChild(tr);
@@ -4434,7 +4501,7 @@ refresh();setInterval(refresh,10000);
                 }
             } catch (e) {
                 const tr = document.createElement('tr'), td = document.createElement('td');
-                td.colSpan = 16;
+                td.colSpan = 17;
                 td.textContent = 'Backtest error: ' + e.message;
                 tr.appendChild(td);
                 tbody.appendChild(tr);
