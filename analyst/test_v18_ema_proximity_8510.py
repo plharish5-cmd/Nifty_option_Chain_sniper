@@ -81,6 +81,15 @@ class TestV18EmaProximity8510(unittest.IsolatedAsyncioTestCase):
 
         print("✔ Test 1 Passed: 4 EMA, 8 EMA, and 15m/1H anchors computed with zero look-ahead bias.")
 
+    def test_01b_15m_view_anchor_cols_match_closed_bar(self):
+        """On 15m tab, side 15m cols must equal main 4/8; 1H cols = last closed 1H at bar end."""
+        res = self.engine.compute_matrix(date_str="2026-11-05", timeframe="15m")
+        if not res.get("ok") or not res.get("rows"):
+            self.skipTest("no replay rows for 2026-11-05")
+        last = res["rows"][-1]
+        self.assertAlmostEqual(last["ema_4"], last["ema_4_15m"], places=2)
+        self.assertAlmostEqual(last["ema_8"], last["ema_8_15m"], places=2)
+
     def test_02_crossover_upside_downside_and_pre_cross(self):
         """Test 2: Verifies 4 EMA vs 8 EMA Crossover Upside & Downside and countdown alerts."""
         print("Testing 2: Crossover Upside & Downside state detection...")

@@ -72,6 +72,7 @@ app.add_middleware(
 )
 
 backend = QuantTerminalBackend()
+_ema_matrix_lock = asyncio.Lock()
 from algo_execution_engine.server import router as algo_execution_router
 app.include_router(algo_execution_router)
 
@@ -140,6 +141,7 @@ async def startup_event():
         except Exception as e:
             log.warning("⚠ Dhan connection check exception on startup: %s", e)
 
+    app.state.ema_live_cross_task = asyncio.create_task(backend.start_ema_live_cross_worker())
     backend.scanner_task = asyncio.create_task(backend.start_strategy_scanner_loop())
     log.info("✔ 4-Strategy Live Scanner daemon launched.")
 
@@ -310,6 +312,12 @@ async def ict_smc_settings(req: Request):
         return JSONResponse({'ok':False,'error':'Unvalidated advisory: algo use remains OFF'},status_code=409)
     backend.cfg['ict_smc_desk_signals']['use_for_algo_trades']=False
     return {'ok':True,'use_for_algo_trades':False}
+
+@app.get("/api/heartbeat")
+async def api_heartbeat():
+    """O(1) liveness probe for desk stale alarm — must never touch DB or EMA math."""
+    return JSONResponse(content={"ok": True, "ts": int(time.time()), "port": 8510})
+
 
 @app.get("/api/health")
 async def api_health():
@@ -858,13 +866,31 @@ async def ema_export(request: Request):
 async def radar_export(request: Request):
     return await recording_export(request, 'radar_tier_signals', 'Radar_Tier_Signals')
 
+@app.get("/api/ema_proximity/live_cross")
+async def api_ema_proximity_live_cross():
+    """Dhan-style live 4/8 EMA on 15m & 1H (forming bar + live spot tick)."""
+    spot = float(backend.broker._ltp_cache.get("13", 0.0) or 0.0)
+    if spot <= 0:
+        spot = float((backend.cached_telemetry.get("spot") or {}).get("price") or 0.0)
+    if spot <= 0 or not backend.ema_proximity_engine:
+        return JSONResponse(content={"ok": False, "error": "spot or engine unavailable"})
+    res = await asyncio.to_thread(backend.ema_proximity_engine.get_dhan_live_ema_cross, spot)
+    return JSONResponse(content=res)
+
+
 @app.get("/api/ema_proximity/table")
 async def api_ema_proximity_table(req: Request):
     """Returns minute-by-minute 4-EMA & 8-EMA Proximity Matrix with summary KPIs (v1.8)."""
     date_str = str(req.query_params.get("date", "LIVE")).strip()
     timeframe = str(req.query_params.get("timeframe", "1m")).strip()
     filter_state = str(req.query_params.get("filter_state", "ALL")).strip()
-    res = backend.get_ema_proximity_table(date_str=date_str, timeframe=timeframe, filter_state=filter_state)
+    async with _ema_matrix_lock:
+        res = await asyncio.to_thread(
+            backend.get_ema_proximity_table,
+            date_str,
+            timeframe,
+            filter_state,
+        )
     return JSONResponse(content=res)
 
 

@@ -30,6 +30,13 @@ import pandas as pd
 
 from analyst.homework_reconciler import HomeworkReconciler, BENCHMARK_HOMEWORK
 from analyst.dhan_oi_engine import DhanOIEngine, empty_bias
+from analyst.nse_spot_candles_8510 import (
+    EMA_WARMUP_1M_BARS,
+    ema4_ema8,
+    last_closed_bar_emas,
+    resample_nse_15m,
+    resample_nse_1h,
+)
 import subprocess
 import sys
 import threading
@@ -613,7 +620,7 @@ def _detect_single_bar_pattern(o: float, h: float, l: float, c: float) -> Tuple[
     long_tag, short_tag = None, None
     if (body / rng) <= 0.15:
         long_tag = short_tag = "DOJI"
-    if lw >= 2.0 * max(body, 0.5) and uw <= rng * 0.25:
+    if lw >= 1.75 * max(body, 0.5) and uw <= rng * 0.3:
         long_tag = "HAMMER"
     if uw >= 2.0 * max(body, 0.5) and lw <= rng * 0.25:
         short_tag = "SHOOTING_STAR"
@@ -2462,6 +2469,9 @@ class QuantTerminalBackend:
         self.scanner_enabled: bool = bool(self.scanner_cfg.get("enabled", True))
         self._last_live_eval_closed_15m_ts: int = 0
         self._last_live_eval_closed_1m_ts: int = 0
+        self._ema_live_cross_cache: Dict[str, Any] = {"ok": False}
+        self._ema_live_cross_worker_started: bool = False
+        self._scanner_heavy_lock = asyncio.Lock()
         self._pa_sr_pending: List[Dict[str, Any]] = []
         self.scanner_running: bool = False
         self.active_party: str = "NEUTRAL"  # "BULLISH", "BEARISH", "NEUTRAL"
@@ -2490,6 +2500,12 @@ class QuantTerminalBackend:
                 "desc": "1H swing zones + 15m PA (40/40 candle trail)",
                 "armed": False,
             },
+            "h1_8ema_homework": {
+                "name": "1H 8-EMA + 15m PA",
+                "state": "SCANNING",
+                "desc": "Closed 1H wick at 8 EMA + 15m hammer/engulf/doji or 8 EMA reclaim",
+                "armed": False,
+            },
             "ribbon_scalp": {
                 "name": "Ribbon Scalp (5th — Matrix Radar)",
                 "state": "OFF",
@@ -2515,6 +2531,7 @@ class QuantTerminalBackend:
         # Priority Contracts Tracking
         self.priority_contracts: List[Dict[str, Any]] = []
         self.cached_telemetry: Dict[str, Any] = {}
+        self._telemetry_lock = asyncio.Lock()
         self.cached_trend_confluence: Dict[str, Any] = {}
         self.active_replay_task: Optional[asyncio.Task] = None
         self._lock: Optional[asyncio.Lock] = None
@@ -2623,6 +2640,8 @@ class QuantTerminalBackend:
         except Exception as e:
             log.warning("Could not initialize EmaProximityEngine: %s", e)
             self.ema_proximity_engine = None
+        self._goldilocks_cache: Optional[Dict[str, Any]] = None
+        self._goldilocks_cache_at: float = 0.0
 
     @property
     def lock(self) -> asyncio.Lock:
@@ -3303,6 +3322,9 @@ class QuantTerminalBackend:
 
     def get_latest_goldilocks_status(self) -> Dict[str, Any]:
         """Calculates current goldilocks separation status from latest 15m candle in market db."""
+        now = time.time()
+        if self._goldilocks_cache is not None and (now - self._goldilocks_cache_at) < 15.0:
+            return self._goldilocks_cache
         if not self.market_db.exists():
             return {
                 "sep_atr": 0.19,
@@ -3318,7 +3340,7 @@ class QuantTerminalBackend:
         try:
             with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
                 df = pd.read_sql_query(
-                    "SELECT ts, o as open, h as high, l as low, c as close FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 400",
+                    f"SELECT ts, o as open, h as high, l as low, c as close FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT {EMA_WARMUP_1M_BARS}",
                     conn
                 )
             if df.empty or len(df) < 30:
@@ -3336,7 +3358,7 @@ class QuantTerminalBackend:
             df = df.iloc[::-1].reset_index(drop=True)
             df["dt"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert(IST)
             df.set_index("dt", inplace=True)
-            b15 = df.resample("15min", closed="left", label="left").agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
+            b15 = resample_nse_15m(df)
             if len(b15) < 5:
                 return {
                     "sep_atr": 0.19,
@@ -3349,8 +3371,7 @@ class QuantTerminalBackend:
                     "min_atr": 0.13,
                     "max_atr": 0.26,
                 }
-            e4 = b15["close"].ewm(span=4, adjust=False).mean()
-            e8 = b15["close"].ewm(span=8, adjust=False).mean()
+            e4, e8 = ema4_ema8(b15["close"])
             h, l, c = b15["high"], b15["low"], b15["close"]
             tr0 = h - l
             tr1 = (h - c.shift(1)).abs()
@@ -3360,7 +3381,10 @@ class QuantTerminalBackend:
             e4_last = float(e4.iloc[-1])
             e8_last = float(e8.iloc[-1])
             atr_last = float(atr14.iloc[-1]) if pd.notnull(atr14.iloc[-1]) and atr14.iloc[-1] > 0 else 15.0
-            return self.compute_goldilocks_separation(e4_last, e8_last, atr_last)
+            out = self.compute_goldilocks_separation(e4_last, e8_last, atr_last)
+            self._goldilocks_cache = out
+            self._goldilocks_cache_at = now
+            return out
         except Exception as e:
             log.debug("Error computing latest goldilocks separation: %s", e)
             return {
@@ -3395,11 +3419,11 @@ class QuantTerminalBackend:
                     stamp = pd.to_datetime(frame.ts,unit='s',utc=True).dt.tz_convert(IST)
                     frame.index = stamp
                     frame=frame[((stamp.dt.hour*60+stamp.dt.minute>=555)&(stamp.dt.hour*60+stamp.dt.minute<930)).to_numpy()]
-                    bars=frame.resample('15min').agg({'ts':'count','open':'first','high':'max','low':'min','close':'last'}).dropna()
-                    closed=bars[(bars.ts==15)&((bars.index.astype('int64')//10**9+900)<=now)]
-                    bars=closed if len(closed)>=20 else bars[(bars.ts==15)]
+                    bars=resample_nse_15m(frame)
+                    if len(bars) and (int(bars.index[-1].timestamp()) + 900 > int(now)):
+                        bars = bars.iloc[:-1]
                     if len(bars)>=20:
-                        e4=bars.close.ewm(span=4,adjust=False).mean();e8=bars.close.ewm(span=8,adjust=False).mean()
+                        e4,e8=ema4_ema8(bars.close)
                         mid=bars.close.rolling(20).mean();std=bars.close.rolling(20).std()
                         upper=mid+2*std;lower=mid-2*std
                         sign=(e4>e8).astype(int)-(e4<e8).astype(int)
@@ -3736,46 +3760,93 @@ class QuantTerminalBackend:
         result['source']='INSTITUTIONAL_TELEMETRY';result['informational_only']=True;result['execution_authorized']=False
         return result
 
+    def _read_telemetry_db_candles(self) -> Dict[str, float]:
+        """Sync SQLite read for spot/vix/fut fallback — run in a worker thread."""
+        out = {
+            "candle_spot": 0.0,
+            "candle_spot_ts": 0,
+            "vix": 0.0,
+            "fut_price": 0.0,
+        }
+        if not self.market_db.exists():
+            return out
+        try:
+            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
+                cur = conn.cursor()
+                r_spot = cur.execute("""
+                    SELECT ts, c FROM candles_1m
+                    WHERE sec_id='13'
+                      AND time(datetime(ts, 'unixepoch', '+330 minutes')) <= '15:30:00'
+                    ORDER BY ts DESC LIMIT 1
+                """).fetchone()
+                if not r_spot:
+                    r_spot = cur.execute(
+                        "SELECT ts, c FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 1"
+                    ).fetchone()
+                if r_spot and r_spot[1]:
+                    out["candle_spot_ts"] = int(r_spot[0]) if r_spot[0] else 0
+                    out["candle_spot"] = float(r_spot[1])
+                r_vix = cur.execute(
+                    "SELECT c FROM candles_1m WHERE sec_id='21' ORDER BY ts DESC LIMIT 1"
+                ).fetchone()
+                if r_vix and r_vix[0]:
+                    out["vix"] = float(r_vix[0])
+                r_fut = cur.execute(
+                    "SELECT c FROM candles_1m WHERE sec_id='FUT' ORDER BY ts DESC LIMIT 1"
+                ).fetchone()
+                if r_fut and r_fut[0]:
+                    out["fut_price"] = float(r_fut[0])
+        except Exception as e:
+            log.debug("DB read error in telemetry: %s", e)
+        return out
+
+    async def start_ema_live_cross_worker(self) -> None:
+        """Background EMA cross ticks — keeps /api/telemetry off the hot path."""
+        if self._ema_live_cross_worker_started:
+            return
+        self._ema_live_cross_worker_started = True
+        refresh = float(self.scanner_cfg.get("ema_live_cross_refresh_seconds", 2.0) or 2.0)
+        refresh = max(1.0, min(refresh, 30.0))
+        log.info("EMA live-cross worker started (%.1fs refresh)", refresh)
+        while True:
+            try:
+                spot = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
+                if self.ema_proximity_engine and spot > 0:
+                    payload = await asyncio.to_thread(
+                        self.ema_proximity_engine.get_dhan_live_ema_cross,
+                        spot,
+                    )
+                    if isinstance(payload, dict) and payload.get("ok"):
+                        self._ema_live_cross_cache = payload
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.debug("EMA live-cross worker: %s", exc)
+            await asyncio.sleep(refresh)
+
     # ── TELEMETRY & 1-SECOND TICK STREAM ────────────────────────────────────
     async def get_live_telemetry(self) -> Dict[str, Any]:
         """Fetches 1-second live stream for ribbon, ATM widget, matrix, and trend filters."""
+        if self._telemetry_lock.locked() and self.cached_telemetry:
+            return dict(self.cached_telemetry)
+        async with self._telemetry_lock:
+            return await self._build_live_telemetry()
+
+    async def _build_live_telemetry(self) -> Dict[str, Any]:
         self.inst_mgr.ensure_loaded()
         await asyncio.to_thread(self.dhan_oi.get_dhan_oi_bias)
         now_dt = datetime.now(IST)
 
         # 1. Fetch latest candle prices from database (Candle Fallback / Tier 2)
-        candle_spot = 0.0
-        candle_spot_ts = 0
         spot_net_chg = 0.0
         spot_pct_chg = 0.0
-        vix = 0.0
         vix_pct_chg = 0.0
-        fut_price = 0.0
         fut_spread = 0.0
-
-        if self.market_db.exists():
-            try:
-                with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
-                    cur = conn.cursor()
-                    r_spot = cur.execute("""
-                        SELECT ts, c FROM candles_1m 
-                        WHERE sec_id='13' 
-                          AND time(datetime(ts, 'unixepoch', '+330 minutes')) <= '15:30:00'
-                        ORDER BY ts DESC LIMIT 1
-                    """).fetchone()
-                    if not r_spot:
-                        r_spot = cur.execute("SELECT ts, c FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 1").fetchone()
-                    if r_spot and r_spot[1]:
-                        candle_spot_ts = int(r_spot[0]) if r_spot[0] else 0
-                        candle_spot = float(r_spot[1])
-                    r_vix = cur.execute("SELECT c FROM candles_1m WHERE sec_id='21' ORDER BY ts DESC LIMIT 1").fetchone()
-                    if r_vix and r_vix[0]:
-                        vix = float(r_vix[0])
-                    r_fut = cur.execute("SELECT c FROM candles_1m WHERE sec_id='FUT' ORDER BY ts DESC LIMIT 1").fetchone()
-                    if r_fut and r_fut[0]:
-                        fut_price = float(r_fut[0])
-            except Exception as e:
-                log.debug("DB read error in telemetry: %s", e)
+        db_row = await asyncio.to_thread(self._read_telemetry_db_candles)
+        candle_spot = float(db_row.get("candle_spot") or 0.0)
+        candle_spot_ts = int(db_row.get("candle_spot_ts") or 0)
+        vix = float(db_row.get("vix") or 0.0)
+        fut_price = float(db_row.get("fut_price") or 0.0)
 
         active_fut = self.inst_mgr.get_active_future_contract()
         fut_sec_id = int(active_fut["security_id"]) if active_fut else 61471
@@ -4021,7 +4092,9 @@ class QuantTerminalBackend:
         pcr_tag = oi_state['bias'] if pcr_available else 'NO DATA'
 
         # 6. Trend Confluence Mini-Watchlist (7 Indicators)
-        trend_watchlist = self._calculate_trend_watchlist(spot, pcr, pcr_available)
+        trend_watchlist = await asyncio.to_thread(
+            self._calculate_trend_watchlist, spot, pcr, pcr_available
+        )
 
         # 7. Funds & Paper Wallet
         paper_wallet = self.get_paper_wallet()
@@ -4073,6 +4146,8 @@ class QuantTerminalBackend:
             "proximity_state": "ZONE_FAR",
         }
 
+        ema_live_cross = dict(self._ema_live_cross_cache) if self._ema_live_cross_cache.get("ok") else {"ok": False}
+
         recorder = getattr(self, 'recording_service', None)
         if recorder and not is_stale and live_spot_for_radar > 0:
             recorder.enqueue('radar', dict(ema_radar), live_spot_for_radar, time.time())
@@ -4087,6 +4162,7 @@ class QuantTerminalBackend:
             "goldilocks_separation": goldilocks,
             "futures_volume_surge": fut_surge,
             "ema_proximity_latest": ema_radar,
+            "ema_live_cross": ema_live_cross,
             "proven_edges": {
                 "goldilocks": goldilocks,
                 "futures_volume_surge": fut_surge,
@@ -4156,7 +4232,9 @@ class QuantTerminalBackend:
             "dhan_connected": self.broker.is_configured(),
         }
         payload['dhan_oi'] = self.dhan_oi.cached_snapshot()
-        payload['five_factor_confluence'] = self.get_five_factor_confluence(spot, not is_stale)
+        payload["five_factor_confluence"] = await asyncio.to_thread(
+            self.get_five_factor_confluence, spot, not is_stale
+        )
         payload['trend_capture_live'] = await asyncio.to_thread(self.trend_capture_service().status)
         self.cached_telemetry = payload
         return payload
@@ -4210,9 +4288,9 @@ class QuantTerminalBackend:
                         df = df.iloc[::-1].reset_index(drop=True)
                         df["dt"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
                         df.set_index("dt", inplace=True)
-                        b15 = df.resample("15min").agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna()
+                        b15 = resample_nse_15m(df)
                         if len(b15) >= 21:
-                            ema8 = b15["close"].ewm(span=8, adjust=False).mean()
+                            _, ema8 = ema4_ema8(b15["close"])
                             ema21 = b15["close"].ewm(span=21, adjust=False).mean()
                             e8_last, e21_last = ema8.iloc[-1], ema21.iloc[-1]
                             slope = e8_last - ema8.iloc[-2]
@@ -4389,13 +4467,15 @@ class QuantTerminalBackend:
             return []
 
         df_work = df.copy()
-        if "dt" not in df_work.columns and not isinstance(df_work.index, pd.DatetimeIndex):
-            if "ts" in df_work.columns:
+        if not isinstance(df_work.index, pd.DatetimeIndex):
+            if "dt" in df_work.columns:
+                df_work = df_work.set_index("dt")
+            elif "ts" in df_work.columns:
                 df_work["dt"] = pd.to_datetime(df_work["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-                df_work.set_index("dt", inplace=True)
+                df_work = df_work.set_index("dt")
 
-        # 15m Resampling — entries NEVER on the forming bar (iloc[-1]); use last closed bar only.
-        b15 = df_work.resample("15min").agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna()
+        # 15m / 1H — NSE session anchored (09:15); entries on last CLOSED 15m bar only (iloc[-2]).
+        b15 = resample_nse_15m(df_work)
         if len(b15) < 11:
             return []
         entry_tf = str(self.scanner_cfg.get("entry_timeframe", "15m") or "15m").lower()
@@ -4404,13 +4484,10 @@ class QuantTerminalBackend:
             return []
 
         bar_ci = -2  # last fully closed 15m candle
-
-        # 1H Resampling
-        b60 = df_work.resample("60min").agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna()
+        b60 = resample_nse_1h(df_work)
 
         # 15m Technicals
-        e4 = b15["close"].ewm(span=4, adjust=False).mean()
-        e8 = b15["close"].ewm(span=8, adjust=False).mean()
+        e4, e8 = ema4_ema8(b15["close"])
         e21 = b15["close"].ewm(span=21, adjust=False).mean()
 
         sma20 = b15["close"].rolling(20, min_periods=5).mean()
@@ -4750,6 +4827,77 @@ class QuantTerminalBackend:
             elif self.strategy_status["flagship_1h"]["armed"] and self.strategy_status["flagship_1h"]["state"] != "TRIGGERED":
                 self.strategy_status["flagship_1h"]["state"] = "ARMED"
 
+        # ── 4b. HOMEWORK: 1H 8-EMA dynamic S/R + closed 15m price-action confirmation ──
+        # (Dhan 1H chart 8 EMA touch + 15m hammer/engulf/doji — not the swing-zone FLAGSHIP above.)
+        if bool(self.scanner_cfg.get("h1_8ema_homework_enabled", True)) and len(b60) >= 3:
+            touch_h1 = float(self.scanner_cfg.get("h1_8ema_touch_pts", 8.0))
+            tgt_h1 = float(self.scanner_cfg.get("h1_8ema_target_pts", 40.0))
+            sl_h1 = float(self.scanner_cfg.get("h1_8ema_sl_pts", 40.0))
+            _, e8h_series = ema4_ema8(b60["close"])
+            lo_h = float(b60["low"].iloc[bar_ci])
+            hi_h = float(b60["high"].iloc[bar_ci])
+            cl_h = float(b60["close"].iloc[bar_ci])
+            e8h = float(e8h_series.iloc[bar_ci])
+            pa_long, pa_short = detect_flagship_15m_confirmation(b15, conf_idx=bar_ci)
+            reclaim_long = low_15 <= (e8_val + tol) and close_15 > e8_val
+            reject_short = high_15 >= (e8_val - tol) and close_15 < e8_val
+            h1_support_touch = (
+                e8h > 0
+                and lo_h <= (e8h + touch_h1)
+                and hi_h >= (e8h - touch_h1)
+            )
+            h1_resist_touch = (
+                e8h > 0
+                and hi_h >= (e8h - touch_h1)
+                and lo_h <= (e8h + touch_h1)
+                and cl_h <= (e8h + touch_h1)
+            )
+            self.strategy_status["h1_8ema_homework"]["armed"] = h1_support_touch or h1_resist_touch
+            fired = False
+            if h1_support_touch and (pa_long or reclaim_long) and close_15 >= (e8_val - tol):
+                self.strategy_status["h1_8ema_homework"]["state"] = "TRIGGERED"
+                fired = True
+                sig_row = {
+                    "strategy_id": "H1_8EMA_SUPPORT_LONG",
+                    "setup_name": "1H 8-EMA Support + 15m PA (Homework)",
+                    "direction": "LONG",
+                    "opt_side": "CE",
+                    "target_pts": tgt_h1,
+                    "sl_pts": sl_h1,
+                    "index_price": current_p,
+                    "conviction": "STANDARD",
+                    "details": (
+                        f"1H 8-EMA {e8h:.1f} touched (low {lo_h:.1f}) | 15m {pa_long or '8EMA_RECLAIM'} "
+                        f"| 15m 8-EMA {e8_val:.1f} close {close_15:.1f}"
+                    ),
+                }
+                sig_row.update(self._gate_meta_for_signal("flagship"))
+                signals.append(sig_row)
+            elif h1_resist_touch and (pa_short or reject_short) and is_bearish_stack and close_15 <= (e8_val + tol):
+                self.strategy_status["h1_8ema_homework"]["state"] = "TRIGGERED"
+                fired = True
+                sig_row = {
+                    "strategy_id": "H1_8EMA_RESIST_SHORT",
+                    "setup_name": "1H 8-EMA Reject + 15m PA (Homework)",
+                    "direction": "SHORT",
+                    "opt_side": "PE",
+                    "target_pts": tgt_h1,
+                    "sl_pts": sl_h1,
+                    "index_price": current_p,
+                    "conviction": "STANDARD",
+                    "details": (
+                        f"1H 8-EMA {e8h:.1f} reject (high {hi_h:.1f}) | 15m {pa_short or '8EMA_REJECT'} "
+                        f"| 15m 8-EMA {e8_val:.1f} close {close_15:.1f}"
+                    ),
+                }
+                sig_row.update(self._gate_meta_for_signal("flagship"))
+                signals.append(sig_row)
+            if not fired:
+                if self.strategy_status["h1_8ema_homework"]["armed"]:
+                    self.strategy_status["h1_8ema_homework"]["state"] = "ARMED"
+                else:
+                    self.strategy_status["h1_8ema_homework"]["state"] = "SCANNING"
+
         # Directional Bias filter on generated strategy signals
         if self.directional_bias == "LONG_ONLY":
             filtered_signals = []
@@ -4963,7 +5111,10 @@ class QuantTerminalBackend:
             return []
 
         try:
-            res = self.ema_proximity_engine.compute_matrix(date_str="LIVE", timeframe="1m")
+            eng = self.ema_proximity_engine
+            res = getattr(eng, "_live_matrix_cache_payload", None)
+            if not isinstance(res, dict) or not res.get("rows"):
+                res = eng.compute_matrix(date_str="LIVE", timeframe="1m")
         except Exception as exc:
             log.warning("Matrix scalp: proximity matrix unavailable (%s)", exc)
             return []
@@ -5132,23 +5283,82 @@ class QuantTerminalBackend:
         log.info("RIBBON SCALP %s [%s] | %s", direction, grade, sig["details"])
         return [sig]
 
-    def evaluate_all_strategies(self, spot_price: Optional[float] = None) -> List[Dict[str, Any]]:
-        """Reads recent candles from market_db and evaluates all 4 strategies."""
+    def _load_spot_1m_for_scanner(self, asof_15m_open_ts: Optional[int] = None) -> pd.DataFrame:
+        """Load sec 13 1m with EMA warmup; optional cutoff at end of a closed 15m bar."""
         if not self.market_db.exists():
-            return []
+            return pd.DataFrame()
+        limit = int(EMA_WARMUP_1M_BARS)
         try:
-            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True) as conn:
+            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True, timeout=5) as conn:
                 df = pd.read_sql_query(
-                    "SELECT ts, o as open, h as high, l as low, c as close, v as volume FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT 600",
-                    conn
+                    "SELECT ts, o as open, h as high, l as low, c as close, v as volume "
+                    "FROM candles_1m WHERE sec_id='13' ORDER BY ts DESC LIMIT ?",
+                    conn,
+                    params=(limit,),
                 )
             if df.empty:
-                return []
+                return df
             df = df.iloc[::-1].reset_index(drop=True)
-            signals = self.evaluate_candle_dataframe(df, spot_price=spot_price)
-            return signals
+            if asof_15m_open_ts is not None:
+                cutoff = int(asof_15m_open_ts) + 900
+                df = df[df["ts"] <= cutoff].copy()
+            return df
+        except Exception as exc:
+            log.debug("Scanner 1m load failed: %s", exc)
+            return pd.DataFrame()
+
+    def _pending_closed_15m_open_ts(self) -> List[int]:
+        """15m bar OPEN unix timestamps not yet evaluated (after engine gap / restart)."""
+        bar = self._latest_closed_15m_bar()
+        if not bar:
+            return []
+        closed_open_ts = int(bar.get("ts") or 0)
+        if closed_open_ts <= 0:
+            return []
+        last = int(self._last_live_eval_closed_15m_ts or 0)
+        if closed_open_ts <= last:
+            return []
+        max_catch = int(self.scanner_cfg.get("scanner_catchup_max_15m_bars", 12) or 12)
+        if last <= 0:
+            return [closed_open_ts]
+        slots: List[int] = []
+        t = last + 900
+        while t <= closed_open_ts:
+            slots.append(t)
+            t += 900
+        if closed_open_ts not in slots:
+            slots.append(closed_open_ts)
+        slots = sorted(set(slots))
+        if len(slots) > max_catch:
+            log.warning(
+                "Scanner 15m catch-up truncated: %d bars missed, evaluating last %d only",
+                len(slots),
+                max_catch,
+            )
+            slots = slots[-max_catch:]
+        if bool(self.scanner_cfg.get("scanner_catchup_eval_latest_only", True)) and len(slots) > 1:
+            log.info(
+                "Scanner 15m catch-up: evaluating latest slot only (%d older slots skipped)",
+                len(slots) - 1,
+            )
+            slots = [slots[-1]]
+        return slots
+
+    def evaluate_all_strategies(
+        self,
+        spot_price: Optional[float] = None,
+        asof_15m_open_ts: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Evaluate core strategies on last closed 15m (optional historical bar for catch-up)."""
+        df = self._load_spot_1m_for_scanner(asof_15m_open_ts=asof_15m_open_ts)
+        if df.empty or len(df) < 30:
+            return []
+        if spot_price is None or float(spot_price) <= 0:
+            spot_price = float(df["close"].iloc[-1])
+        try:
+            return self.evaluate_candle_dataframe(df, spot_price=spot_price)
         except Exception as e:
-            log.debug("Strategy scanner query error: %s", e)
+            log.debug("Strategy scanner evaluate error: %s", e)
             return []
 
     async def _process_strategy_signals(self, signals: List[Dict[str, Any]]) -> None:
@@ -5312,34 +5522,43 @@ class QuantTerminalBackend:
                         log.debug("Strategy scanner: spot price unavailable or <= 0, skipping scan cycle")
                         await asyncio.sleep(interval)
                         continue
-                    signals: List[Dict[str, Any]] = []
+                    async with self._scanner_heavy_lock:
+                        signals: List[Dict[str, Any]] = []
+                        closed_1m = await asyncio.to_thread(self._latest_closed_1m_bar)
+                        if closed_1m:
+                            ts1 = int(closed_1m.get("ts") or 0)
+                            if ts1 > 0 and ts1 != self._last_live_eval_closed_1m_ts:
+                                self._last_live_eval_closed_1m_ts = ts1
+                                log.debug("1m closed bar eval ts=%s", ts1)
+                                try:
+                                    tier3 = await asyncio.to_thread(
+                                        self.evaluate_matrix_scalp_tier3,
+                                        spot_price=spot,
+                                    )
+                                    signals.extend(tier3)
+                                except Exception as exc:
+                                    log.warning("Ribbon evaluate skipped: %s", exc)
 
-                    closed_1m = self._latest_closed_1m_bar()
-                    if closed_1m:
-                        ts1 = int(closed_1m.get("ts") or 0)
-                        if ts1 > 0 and ts1 != self._last_live_eval_closed_1m_ts:
-                            self._last_live_eval_closed_1m_ts = ts1
-                            log.debug("1m closed bar eval ts=%s", ts1)
-                            try:
-                                signals.extend(self.evaluate_matrix_scalp_tier3(spot_price=spot))
-                            except Exception as exc:
-                                log.warning("Ribbon evaluate skipped: %s", exc)
+                        pa_breaks = await asyncio.to_thread(
+                            self.evaluate_pa_sr_live_breaks, float(spot), closed_1m
+                        )
+                        signals.extend(pa_breaks)
 
-                    signals.extend(self.evaluate_pa_sr_live_breaks(float(spot), closed_1m))
+                        for slot_ts in self._pending_closed_15m_open_ts():
+                            self._last_live_eval_closed_15m_ts = int(slot_ts)
+                            log.info("15m closed bar eval slot ts=%s", slot_ts)
+                            batch = await asyncio.to_thread(
+                                self.evaluate_all_strategies,
+                                spot_price=spot,
+                                asof_15m_open_ts=int(slot_ts),
+                            )
+                            signals.extend(batch)
+                            await asyncio.to_thread(self.evaluate_pa_sr_live_arm_on_15m)
 
-                    closed_bar = self._latest_closed_15m_bar()
-                    if closed_bar:
-                        closed_ts = int(closed_bar.get("ts") or 0)
-                        if closed_ts > 0 and closed_ts != self._last_live_eval_closed_15m_ts:
-                            self._last_live_eval_closed_15m_ts = closed_ts
-                            log.debug("15m closed bar eval slot ts=%s", closed_ts)
-                            signals.extend(self.evaluate_all_strategies(spot_price=spot))
-                            self.evaluate_pa_sr_live_arm_on_15m()
-
-                    if signals:
-                        signals = self.apply_writer_flow_gates(signals)
                         if signals:
-                            await self._process_strategy_signals(signals)
+                            signals = await asyncio.to_thread(self.apply_writer_flow_gates, signals)
+                            if signals:
+                                await self._process_strategy_signals(signals)
             except Exception as e:
                 log.error("Strategy scanner iteration error: %s", e)
 
@@ -6506,23 +6725,11 @@ class QuantTerminalBackend:
                 return []
             df = df.iloc[::-1].reset_index(drop=True)
             df["dt"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-            b15 = (
-                df.set_index("dt")
-                .resample("15min", closed="left", label="left")
-                .agg(
-                    {
-                        "ts": "first",
-                        "open": "first",
-                        "high": "max",
-                        "low": "min",
-                        "close": "last",
-                        "day": "first",
-                        "hm": "first",
-                    }
-                )
-                .dropna()
-                .reset_index()
-            )
+            b15 = resample_nse_15m(df.set_index("dt")).reset_index()
+            dt_col = "datetime" if "datetime" in b15.columns else b15.columns[0]
+            b15["ts"] = (pd.to_datetime(b15[dt_col]).astype("int64") // 10**9).astype(int)
+            b15["day"] = pd.to_datetime(b15[dt_col]).dt.strftime("%Y-%m-%d")
+            b15["hm"] = pd.to_datetime(b15[dt_col]).dt.strftime("%H:%M")
             if len(b15) < 3:
                 return []
             tail = b15.iloc[-limit:].to_dict(orient="records")
@@ -6653,23 +6860,22 @@ class QuantTerminalBackend:
             with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True, timeout=3) as conn:
                 q = """
                     SELECT ts, o, h, l, c FROM candles_1m
-                    WHERE sec_id='13' ORDER BY ts DESC LIMIT 120
+                    WHERE sec_id='13' ORDER BY ts DESC LIMIT ?
                 """
-                df = pd.read_sql_query(q, conn)
+                df = pd.read_sql_query(q, conn, params=(EMA_WARMUP_1M_BARS,))
             if df.empty:
                 return None
+            df = df.iloc[::-1]
             df["dt"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-            b15 = df.set_index("dt").resample("15min").agg(
-                {"o": "first", "h": "max", "l": "min", "c": "last"}
-            ).dropna()
+            b15 = resample_nse_15m(df.set_index("dt").rename(columns={"o": "open", "h": "high", "l": "low", "c": "close"}))
             if len(b15) < 2:
                 return None
             row = b15.iloc[-2]
             return {
-                "open": float(row["o"]),
-                "high": float(row["h"]),
-                "low": float(row["l"]),
-                "close": float(row["c"]),
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
                 "ts": int(b15.index[-2].timestamp()),
             }
         except Exception as exc:
@@ -6971,14 +7177,14 @@ class QuantTerminalBackend:
             if not df_all.empty:
                 df_all = df_all[(df_all["hm"] >= "09:15") & (df_all["hm"] <= "15:30")].copy()
                 df_all["dt"] = pd.to_datetime(df_all["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-                df_15m = df_all.set_index("dt").resample("15min", closed="left", label="left").agg({
-                    "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last",
-                    "volume": "sum", "day": "first", "hm": "first"
-                }).dropna().reset_index()
+                df_15m = resample_nse_15m(df_all.set_index("dt")).reset_index()
+                dt_col = "datetime" if "datetime" in df_15m.columns else df_15m.columns[0]
+                df_15m["ts"] = (pd.to_datetime(df_15m[dt_col]).astype("int64") // 10**9).astype(int)
+                df_15m["day"] = pd.to_datetime(df_15m[dt_col]).dt.strftime("%Y-%m-%d")
+                df_15m["hm"] = pd.to_datetime(df_15m[dt_col]).dt.strftime("%H:%M")
 
                 if len(df_15m) >= 20:
-                    df_15m["e4"] = df_15m["close"].ewm(span=4, adjust=False).mean()
-                    df_15m["e8"] = df_15m["close"].ewm(span=8, adjust=False).mean()
+                    df_15m["e4"], df_15m["e8"] = ema4_ema8(df_15m["close"])
                     mid = df_15m["close"].rolling(20).mean()
                     sd = df_15m["close"].rolling(20).std(ddof=0).fillna(0.0)
                     df_15m["ubb"] = mid + 2.0 * sd

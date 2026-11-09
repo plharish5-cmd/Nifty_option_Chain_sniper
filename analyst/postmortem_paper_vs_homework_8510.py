@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 
+from analyst.nse_spot_candles_8510 import ema4_ema8, resample_nse_15m
+
 ROOT = Path(__file__).resolve().parent.parent
 MARKET = ROOT / "ict_smc_app/backend/data/ict_smc.sqlite3"
 LEDGER = ROOT / "data/terminal8510/ledger.sqlite3"
@@ -33,28 +35,14 @@ def load_day_bars(day: str) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
         return df, []
     df = df[(df["hm"] >= "09:15") & (df["hm"] <= "15:30")].copy()
     df["dt"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
-    df15 = (
-        df.set_index("dt")
-        .resample("15min", closed="left", label="left")
-        .agg(
-            {
-                "ts": "first",
-                "open": "first",
-                "high": "max",
-                "low": "min",
-                "close": "last",
-                "volume": "sum",
-                "day": "first",
-                "hm": "first",
-            }
-        )
-        .dropna()
-        .reset_index()
-    )
+    df15 = resample_nse_15m(df.set_index("dt")).reset_index()
+    if "datetime" in df15.columns:
+        df15["hm"] = pd.to_datetime(df15["datetime"]).dt.strftime("%H:%M")
+        df15["day"] = pd.to_datetime(df15["datetime"]).dt.strftime("%Y-%m-%d")
+        df15["ts"] = (pd.to_datetime(df15["datetime"]).astype("int64") // 10**9).astype(int)
     if len(df15) < 20:
         return df, []
-    df15["e4"] = df15["close"].ewm(span=4, adjust=False).mean()
-    df15["e8"] = df15["close"].ewm(span=8, adjust=False).mean()
+    df15["e4"], df15["e8"] = ema4_ema8(df15["close"])
     mid = df15["close"].rolling(20).mean()
     sd = df15["close"].rolling(20).std(ddof=0).fillna(0.0)
     df15["ubb"] = mid + 2.0 * sd

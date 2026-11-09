@@ -65,7 +65,11 @@
     "crossover_max_touch_candles": 3,
     "h1_confluence_target_pts": 100.0,
     "h1_confluence_sl_pts": 40.0,
-    "party_switch_enabled": true
+    "party_switch_enabled": false,
+    "bollinger_enabled": true,
+    "scanner_catchup_max_15m_bars": 12,
+    "scanner_catchup_eval_latest_only": true,
+    "ema_live_cross_refresh_seconds": 2.0
   },
   "risk": {
     "max_daily_trades": 2,
@@ -111,7 +115,7 @@
   "ema_proximity_radar": {
     "enabled": true,
     "audio_alerts_enabled": false,
-    "timeframe": "1m",
+    "timeframe": "15m",
     "approaching_pts_threshold": 12.0,
     "touch_pts_threshold": 5.0,
     "whipsaw_max_flips_12m": 3,
@@ -176,7 +180,7 @@
   },
   "writer_flow_gate": {
     "enabled": false,
-    "entity": "change_oi",
+    "entity": "both",
     "surge_put_interval_lakhs": 20,
     "surge_call_interval_lakhs": 20,
     "surge_window_minutes": 5,

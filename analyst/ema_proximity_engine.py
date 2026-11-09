@@ -31,6 +31,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
+from analyst.nse_spot_candles_8510 import EMA_WARMUP_1M_BARS, ema4_ema8, resample_spot_from_1m
+
 log = logging.getLogger("ema_proximity_engine")
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -67,6 +69,10 @@ class EmaProximityEngine:
         self.db_path = db_path or DEFAULT_MARKET_DB
         self.replay_dir = replay_dir or DEFAULT_REPLAY_DIR
         self._latest_radar_cache: Optional[Dict[str, Any]] = None
+        self._live_matrix_cache_key: Optional[Tuple[Any, ...]] = None
+        self._live_matrix_cache_payload: Optional[Dict[str, Any]] = None
+        self._live_cross_cache: Optional[Tuple[float, float, Dict[str, Any]]] = None
+        self._live_1m_df_cache: Optional[Tuple[float, pd.DataFrame]] = None
 
     def get_config(self) -> Dict[str, Any]:
         """Loads 'ema_proximity_radar' section from terminal8510_config.json or returns default."""
@@ -153,8 +159,8 @@ class EmaProximityEngine:
                                 WHERE sec_id='13'
                                   AND ts < ?
                                 ORDER BY ts DESC
-                                LIMIT 120
-                            """, (first_ts,)).fetchall()
+                                LIMIT ?
+                            """, (first_ts, EMA_WARMUP_1M_BARS)).fetchall()
                             for r in sorted(w_rows, key=lambda x: x[0]):
                                 warmup_records.append({
                                     "ts": int(r[0]),
@@ -234,26 +240,12 @@ class EmaProximityEngine:
         df_1m["datetime"] = pd.to_datetime(df_1m["ts"], unit="s", utc=True).dt.tz_convert(IST)
         df_1m = df_1m.sort_values("ts").reset_index(drop=True)
 
-        # Resample 15m
         df_idx = df_1m.set_index("datetime")
-        resample_15m = df_idx.resample("15min", closed="left", label="left").agg({
-            "ts": "first",
-            "open": "first",
-            "high": "max",
-            "low": "min",
-            "close": "last",
-            "volume": "sum",
-        }).dropna().reset_index()
-
-        # Resample 1H
-        resample_1h = df_idx.resample("1h", closed="left", label="left").agg({
-            "ts": "first",
-            "open": "first",
-            "high": "max",
-            "low": "min",
-            "close": "last",
-            "volume": "sum",
-        }).dropna().reset_index()
+        _, resample_15m, resample_1h = resample_spot_from_1m(df_idx)
+        if not resample_15m.empty and "datetime" not in resample_15m.columns:
+            resample_15m = resample_15m.reset_index()
+        if not resample_1h.empty and "datetime" not in resample_1h.columns:
+            resample_1h = resample_1h.reset_index()
 
         return df_1m, resample_15m, resample_1h
 
@@ -301,6 +293,12 @@ class EmaProximityEngine:
         target_date = date_str or "LIVE"
         is_live = (str(target_date).upper() == "LIVE")
         today_iso = datetime.now(IST).strftime("%Y-%m-%d")
+        filter_key = str(filter_state).upper().strip()
+        tf_key = timeframe.lower().strip()
+        if is_live and candles_input is None:
+            cache_key = (tf_key, filter_key, int(time.time()) // 2)
+            if self._live_matrix_cache_key == cache_key and self._live_matrix_cache_payload is not None:
+                return self._live_matrix_cache_payload
 
         # Determine inputs
         if isinstance(candles_input, str):
@@ -312,24 +310,20 @@ class EmaProximityEngine:
             if "datetime" not in df_1m.columns and "ts" in df_1m.columns:
                 df_1m["datetime"] = pd.to_datetime(df_1m["ts"], unit="s", utc=True).dt.tz_convert(IST)
             # Build resampled 15m and 1h
-            df_idx = df_1m.set_index("datetime")
-            df_15m = df_idx.resample("15min", closed="left", label="left").agg({
-                "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
-            }).dropna().reset_index()
-            df_1h = df_idx.resample("1h", closed="left", label="left").agg({
-                "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
-            }).dropna().reset_index()
+            _, df_15m, df_1h = resample_spot_from_1m(df_1m.set_index("datetime"))
+            if not df_15m.empty and "datetime" not in df_15m.columns:
+                df_15m = df_15m.reset_index()
+            if not df_1h.empty and "datetime" not in df_1h.columns:
+                df_1h = df_1h.reset_index()
         elif isinstance(candles_input, list) and len(candles_input) > 0:
             df_1m = pd.DataFrame(candles_input)
             if "datetime" not in df_1m.columns and "ts" in df_1m.columns:
                 df_1m["datetime"] = pd.to_datetime(df_1m["ts"], unit="s", utc=True).dt.tz_convert(IST)
-            df_idx = df_1m.set_index("datetime")
-            df_15m = df_idx.resample("15min", closed="left", label="left").agg({
-                "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
-            }).dropna().reset_index()
-            df_1h = df_idx.resample("1h", closed="left", label="left").agg({
-                "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
-            }).dropna().reset_index()
+            _, df_15m, df_1h = resample_spot_from_1m(df_1m.set_index("datetime"))
+            if not df_15m.empty and "datetime" not in df_15m.columns:
+                df_15m = df_15m.reset_index()
+            if not df_1h.empty and "datetime" not in df_1h.columns:
+                df_1h = df_1h.reset_index()
         else:
             df_1m, df_15m, df_1h = self.load_candles_for_date(target_date, timeframe=timeframe)
 
@@ -363,12 +357,11 @@ class EmaProximityEngine:
                 df_1m.loc[df_1m.index[-1], "low"] = min(df_1m.loc[df_1m.index[-1], "low"], curr_spot)
 
             df_idx = df_1m.set_index("datetime")
-            df_15m = df_idx.resample("15min", closed="left", label="left").agg({
-                "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
-            }).dropna().reset_index()
-            df_1h = df_idx.resample("1h", closed="left", label="left").agg({
-                "ts": "first", "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
-            }).dropna().reset_index()
+            _, df_15m, df_1h = resample_spot_from_1m(df_idx)
+            if not df_15m.empty and "datetime" not in df_15m.columns:
+                df_15m = df_15m.reset_index()
+            if not df_1h.empty and "datetime" not in df_1h.columns:
+                df_1h = df_1h.reset_index()
 
         # Handle active timeframe selection (1m, 5m, 15m, 1h)
         active_tf = timeframe.lower().strip()
@@ -383,6 +376,24 @@ class EmaProximityEngine:
             df_active = df_1h.copy()
         else:
             df_active = df_1m.copy()
+
+        def _drop_forming(bars: pd.DataFrame, bar_seconds: int) -> pd.DataFrame:
+            if bars.empty or "ts" not in bars.columns:
+                return bars
+            now_ts = int(datetime.now(IST).timestamp())
+            out = bars
+            while len(out) > 0 and now_ts < int(out["ts"].iloc[-1]) + bar_seconds:
+                out = out.iloc[:-1]
+            return out
+
+        # Live: drop all forming higher-TF bars so EMAs match TradingView last closed candle.
+        if is_live or target_date == today_iso:
+            df_15m = _drop_forming(df_15m, 900)
+            df_1h = _drop_forming(df_1h, 3600)
+            if active_tf in ("15m", "15min"):
+                df_active = _drop_forming(df_active, 900)
+            elif active_tf in ("1h", "60m"):
+                df_active = _drop_forming(df_active, 3600)
 
         n_bars = len(df_active)
         if n_bars == 0:
@@ -414,8 +425,7 @@ class EmaProximityEngine:
 
         # ── 1. Calculate Active Timeframe EMAs (4 and 8) ───────────────────────
         close_series = df_active["close"].astype(float)
-        ema_4_series = close_series.ewm(span=4, adjust=False).mean()
-        ema_8_series = close_series.ewm(span=8, adjust=False).mean()
+        ema_4_series, ema_8_series = ema4_ema8(close_series)
 
         # True Range and 14-period ATR
         high_s = df_active["high"].astype(float)
@@ -431,10 +441,9 @@ class EmaProximityEngine:
         # Compute 15m rolling EMAs
         if not df_15m.empty:
             c15 = df_15m["close"].astype(float)
-            df_15m["ema_4"] = c15.ewm(span=4, adjust=False).mean()
-            df_15m["ema_8"] = c15.ewm(span=8, adjust=False).mean()
-            # The closing timestamp of 15m bar starting at ts is ts + 900
-            df_15m["close_ts"] = df_15m["ts"] + 900
+            df_15m["ema_4"], df_15m["ema_8"] = ema4_ema8(c15)
+            if "close_ts" not in df_15m.columns:
+                df_15m["close_ts"] = df_15m["ts"] + 900
         else:
             df_15m["ema_4"] = pd.Series(dtype=float)
             df_15m["ema_8"] = pd.Series(dtype=float)
@@ -443,9 +452,9 @@ class EmaProximityEngine:
         # Compute 1H rolling EMAs
         if not df_1h.empty:
             c1h = df_1h["close"].astype(float)
-            df_1h["ema_4"] = c1h.ewm(span=4, adjust=False).mean()
-            df_1h["ema_8"] = c1h.ewm(span=8, adjust=False).mean()
-            df_1h["close_ts"] = df_1h["ts"] + 3600
+            df_1h["ema_4"], df_1h["ema_8"] = ema4_ema8(c1h)
+            if "close_ts" not in df_1h.columns:
+                df_1h["close_ts"] = df_1h["ts"] + 3600
         else:
             df_1h["ema_4"] = pd.Series(dtype=float)
             df_1h["ema_8"] = pd.Series(dtype=float)
@@ -454,14 +463,28 @@ class EmaProximityEngine:
         # Lookup function for last closed bar strictly before or at bar_ts
         # For a 1m bar at timestamp ts, the last CLOSED 15m bar must have close_ts <= ts
         # (e.g. at 09:30:00, 15m bar from 09:15-09:30 closed at 09:30:00, so it is closed).
-        records_15m = df_15m.to_dict(orient="records") if not df_15m.empty else []
-        records_1h = df_1h.to_dict(orient="records") if not df_1h.empty else []
+        records_15m = sorted(
+            (df_15m.to_dict(orient="records") if not df_15m.empty else []),
+            key=lambda r: int(r.get("close_ts") or 0),
+        )
+        records_1h = sorted(
+            (df_1h.to_dict(orient="records") if not df_1h.empty else []),
+            key=lambda r: int(r.get("close_ts") or 0),
+        )
 
         initial_close = float(close_series.iloc[0])
+        if active_tf in ("15m", "15min"):
+            active_bar_seconds = 900
+        elif active_tf in ("1h", "60m"):
+            active_bar_seconds = 3600
+        elif active_tf == "5m":
+            active_bar_seconds = 300
+        else:
+            active_bar_seconds = 60
 
-        def get_anchor_15m(bar_ts: int) -> Tuple[float, float]:
-            # Find the latest 15m bar whose close_ts <= bar_ts
-            valid = [r for r in records_15m if r["close_ts"] <= bar_ts]
+        def get_anchor_15m(asof_ts: int) -> Tuple[float, float]:
+            # Latest 15m bar fully closed at or before asof_ts (bar end, not open).
+            valid = [r for r in records_15m if int(r["close_ts"]) <= asof_ts]
             if valid:
                 last_r = valid[-1]
                 return float(last_r["ema_4"]), float(last_r["ema_8"])
@@ -470,8 +493,8 @@ class EmaProximityEngine:
                 return float(records_15m[0]["ema_4"]), float(records_15m[0]["ema_8"])
             return initial_close, initial_close
 
-        def get_anchor_1h(bar_ts: int) -> Tuple[float, float]:
-            valid = [r for r in records_1h if r["close_ts"] <= bar_ts]
+        def get_anchor_1h(asof_ts: int) -> Tuple[float, float]:
+            valid = [r for r in records_1h if int(r["close_ts"]) <= asof_ts]
             if valid:
                 last_r = valid[-1]
                 return float(last_r["ema_4"]), float(last_r["ema_8"])
@@ -522,13 +545,21 @@ class EmaProximityEngine:
             wick_touched_ema8 = bool(low_p <= ema_8 <= high_p)
             wick_touched_ema4 = bool(low_p <= ema_4 <= high_p)
 
-            # Concurrent 15m & 1H Anchors (No Look-Ahead)
-            ema_4_15m, ema_8_15m = get_anchor_15m(ts_val)
+            # Higher-TF anchors: evaluate at this row's candle *close* so 15m/1H
+            # columns match Dhan/TradingView on the same closed bar (not one bar early).
+            asof_ts = int(ts_val) + active_bar_seconds
+            if active_tf in ("15m", "15min"):
+                ema_4_15m, ema_8_15m = ema_4, ema_8
+            else:
+                ema_4_15m, ema_8_15m = get_anchor_15m(asof_ts)
             ema_4_15m = round(ema_4_15m, 2)
             ema_8_15m = round(ema_8_15m, 2)
             spread_15m = round(ema_4_15m - ema_8_15m, 2)
 
-            ema_4_1h, ema_8_1h = get_anchor_1h(ts_val)
+            if active_tf in ("1h", "60m"):
+                ema_4_1h, ema_8_1h = ema_4, ema_8
+            else:
+                ema_4_1h, ema_8_1h = get_anchor_1h(asof_ts)
             ema_4_1h = round(ema_4_1h, 2)
             ema_8_1h = round(ema_8_1h, 2)
             spread_1h = round(ema_4_1h - ema_8_1h, 2)
@@ -839,8 +870,17 @@ class EmaProximityEngine:
 
         latest_row = rows[-1] if rows else {}
         self._latest_radar_cache = latest_row
+        if not df_1m.empty:
+            last_1m_ts = int(df_1m["ts"].iloc[-1])
+            summary["spot_1m_last_ist"] = datetime.fromtimestamp(last_1m_ts, tz=timezone.utc).astimezone(IST).strftime("%H:%M:%S")
+        if latest_row.get("timestamp_ist"):
+            summary["last_closed_bar_ist"] = latest_row.get("timestamp_ist")
+            summary["last_closed_bar_label"] = (
+                f"Last closed {active_tf} bar {latest_row.get('timestamp_ist')} "
+                f"(1m feed {summary.get('spot_1m_last_ist', '—')})"
+            )
 
-        return {
+        result = {
             "ok": True,
             "date": formatted_date,
             "date_iso": date_iso,
@@ -850,21 +890,128 @@ class EmaProximityEngine:
             "rows": filtered_rows,
             "latest": latest_row,
         }
+        if is_live and candles_input is None:
+            self._live_matrix_cache_key = (tf_key, filter_key, int(time.time()) // 2)
+            self._live_matrix_cache_payload = result
+        return result
+
+    def _live_1m_dataframe(self) -> pd.DataFrame:
+        """Reuse today's 1m+warmup ~45s — forming tick only patches OHLC."""
+        now = time.time()
+        if self._live_1m_df_cache and (now - self._live_1m_df_cache[0]) < 45:
+            return self._live_1m_df_cache[1].copy()
+        df_1m, _, _ = self.load_candles_for_date("LIVE", timeframe="15m")
+        if df_1m is None or df_1m.empty:
+            return pd.DataFrame()
+        self._live_1m_df_cache = (now, df_1m.copy())
+        return df_1m.copy()
+
+    def get_dhan_live_ema_cross(self, live_spot: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Dhan-style 4/8 EMA on NIFTY spot (sec 13): 15m and 1H include the *forming*
+        bar so values move every tick like the broker chart. Algos still use closed bars.
+        """
+        spot = float(live_spot or 0.0)
+        if spot <= 0:
+            return {"ok": False, "error": "no live spot"}
+
+        now = time.time()
+        cache = self._live_cross_cache
+        if cache and (now - cache[0]) < 0.85 and abs(cache[1] - spot) < 0.15:
+            return cache[2]
+
+        df_1m = self._live_1m_dataframe()
+        if df_1m is None or df_1m.empty:
+            return {"ok": False, "error": "no 1m candles"}
+
+        now_dt = datetime.now(IST)
+        now_ts = int(now_dt.timestamp())
+        curr_bar_ts = (now_ts // 60) * 60
+        last_bar_ts = int(df_1m["ts"].iloc[-1])
+
+        if last_bar_ts < curr_bar_ts:
+            last_c = float(df_1m["close"].iloc[-1])
+            forming_bar = {
+                "ts": curr_bar_ts,
+                "open": last_c,
+                "high": max(last_c, spot),
+                "low": min(last_c, spot),
+                "close": spot,
+                "volume": 0.0,
+                "datetime": pd.to_datetime(curr_bar_ts, unit="s", utc=True).tz_convert(IST),
+            }
+            df_1m = pd.concat([df_1m, pd.DataFrame([forming_bar])], ignore_index=True)
+        elif last_bar_ts == curr_bar_ts:
+            df_1m.loc[df_1m.index[-1], "close"] = spot
+            df_1m.loc[df_1m.index[-1], "high"] = max(float(df_1m.loc[df_1m.index[-1], "high"]), spot)
+            df_1m.loc[df_1m.index[-1], "low"] = min(float(df_1m.loc[df_1m.index[-1], "low"]), spot)
+
+        df_idx = df_1m.set_index("datetime")
+        _, df_15m, df_1h = resample_spot_from_1m(df_idx)
+
+        def _tf_block(bars: pd.DataFrame, bar_seconds: int, label: str) -> Dict[str, Any]:
+            if bars is None or bars.empty:
+                return {"ok": False, "timeframe": label}
+            close = bars["close"].astype(float)
+            e4_s, e8_s = ema4_ema8(close)
+            i = -1
+            e4 = round(float(e4_s.iloc[i]), 2)
+            e8 = round(float(e8_s.iloc[i]), 2)
+            cl = round(float(close.iloc[i]), 2)
+            spread = round(e4 - e8, 2)
+            gap8 = round(spot - e8, 2)
+            stack = "BULLISH" if e4 > e8 else ("BEARISH" if e4 < e8 else "FLAT")
+            cross = "NONE"
+            if len(close) >= 2:
+                pe4, pe8 = float(e4_s.iloc[-2]), float(e8_s.iloc[-2])
+                if pe4 <= pe8 and e4 > e8:
+                    cross = "4_CROSS_ABOVE_8"
+                elif pe4 >= pe8 and e4 < e8:
+                    cross = "4_CROSS_BELOW_8"
+            open_ts = int(bars["ts"].iloc[i]) if "ts" in bars.columns else 0
+            bar_open = datetime.fromtimestamp(open_ts, tz=timezone.utc).astimezone(IST).strftime("%H:%M") if open_ts else "—"
+            forming = now_ts < open_ts + bar_seconds
+            return {
+                "ok": True,
+                "timeframe": label,
+                "bar_open_ist": bar_open,
+                "forming": forming,
+                "close": cl,
+                "ema_4": e4,
+                "ema_8": e8,
+                "spread_4_minus_8": spread,
+                "gap_spot_to_8": gap8,
+                "stack": stack,
+                "cross_event": cross,
+            }
+
+        last_1m_ts = int(df_1m["ts"].iloc[-1])
+        payload = {
+            "ok": True,
+            "instrument": "NIFTY_SPOT",
+            "sec_id": "13",
+            "spot_live": round(spot, 2),
+            "spot_1m_last_ist": datetime.fromtimestamp(last_1m_ts, tz=timezone.utc).astimezone(IST).strftime("%H:%M:%S"),
+            "session_anchor": "09:15",
+            "mode": "forming_bar_included",
+            "note": "Matches Dhan EMA Cross on forming 15m/1H candle; matrix table uses last closed bar.",
+            "tf_15m": _tf_block(df_15m.reset_index(drop=False) if "datetime" in df_15m.columns else df_15m, 900, "15m"),
+            "tf_1h": _tf_block(df_1h.reset_index(drop=False) if "datetime" in df_1h.columns else df_1h, 3600, "1h"),
+            "updated_at_ist": now_dt.strftime("%H:%M:%S"),
+        }
+        self._live_cross_cache = (now, spot, payload)
+        return payload
 
     def get_latest_radar_status(self, live_spot: Optional[float] = None) -> Dict[str, Any]:
         """
-        Returns fast 1-second radar status for cockpit telemetry header.
+        Returns fast radar pill from the last matrix compute (telemetry must not
+        re-run compute_matrix — that blocks the HTTP event loop).
         """
-        now_epoch = time.time()
-        need_recompute = (
-            not self._latest_radar_cache
-            or (now_epoch - getattr(self, "_last_radar_compute_epoch", 0.0) >= 1.5)
-        )
-        if need_recompute:
-            res = self.compute_matrix(date_str="LIVE", timeframe="1m", live_spot=live_spot)
-            r = res.get("latest", {})
-            self._last_radar_compute_epoch = now_epoch
-        else:
+        r: Optional[Dict[str, Any]] = None
+        cached_payload = self._live_matrix_cache_payload
+        if isinstance(cached_payload, dict) and cached_payload.get("latest"):
+            r = cached_payload["latest"]
+        elif self._latest_radar_cache:
             r = self._latest_radar_cache
 
         if not r:

@@ -1312,12 +1312,13 @@
                         </select>
 
                         <div style="display:flex; border:1px solid rgba(255,255,255,0.15); border-radius:6px; overflow:hidden;">
-                            <button type="button" class="secondary-btn" id="btnEmaTf_1m" onclick="setEmaTimeframe('1m')" style="padding:4px 10px; font-size:11.5px; border-radius:0; border:none; background:#f59e0b; color:#0f172a; font-weight:700;">1m (Rolling)</button>
+                            <button type="button" class="secondary-btn" id="btnEmaTf_1m" onclick="setEmaTimeframe('1m')" style="padding:4px 10px; font-size:11.5px; border-radius:0; border:none;">1m (Rolling)</button>
                             <button type="button" class="secondary-btn" id="btnEmaTf_5m" onclick="setEmaTimeframe('5m')" style="padding:4px 10px; font-size:11.5px; border-radius:0; border:none;">5m</button>
-                            <button type="button" class="secondary-btn" id="btnEmaTf_15m" onclick="setEmaTimeframe('15m')" style="padding:4px 10px; font-size:11.5px; border-radius:0; border:none;">15m (Stage 2/3)</button>
+                            <button type="button" class="secondary-btn" id="btnEmaTf_15m" onclick="setEmaTimeframe('15m')" style="padding:4px 10px; font-size:11.5px; border-radius:0; border:none; background:#f59e0b; color:#0f172a; font-weight:700;">15m (Stage 2/3)</button>
                             <button type="button" class="secondary-btn" id="btnEmaTf_1h" onclick="setEmaTimeframe('1h')" style="padding:4px 10px; font-size:11.5px; border-radius:0; border:none;">1H (Master S/R)</button>
                         </div>
 
+                        <span style="font-size:10.5px; color:#94a3b8; font-family:var(--font-mono);">NIFTY Spot (sec 13) · closed bars · 09:15 IST buckets · Main 4/8 = selected TF (compare Dhan on same TF) · 1H cols = last closed 1H at bar end</span>
                         <select id="selEmaMatrixFilter" onchange="loadEmaProximityTable()" style="background:#0f172a; color:#f8fafc; border:1px solid #475569; padding:4px 8px; border-radius:6px; font-size:12px;">
                             <option value="ALL">All Rows (375 Bars)</option>
                             <option value="CROSSOVERS">🔥 4/8 Crossovers (Upside &amp; Downside)</option>
@@ -1340,9 +1341,35 @@
                     </div>
                 </div>
 
+                <!-- Live EMA Cross (Dhan-style: forming 15m / 1H bar, ticks with spot) -->
+                <div id="dhanEmaCrossPanel" style="margin-bottom:10px; padding:10px 12px; border-radius:8px; border:1px solid rgba(56,189,248,0.35); background:linear-gradient(90deg,rgba(15,23,42,0.95),rgba(30,41,59,0.9)); font-family:var(--font-mono); font-size:12px;">
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:8px;">
+                        <span style="font-weight:800; color:#38bdf8; font-size:13px;">📈 Live EMA Cross — NIFTY Spot (Dhan parity)</span>
+                        <span style="font-size:10.5px; color:#94a3b8;">forming 15m &amp; 1H · 4 EMA / 8 EMA · 09:15 buckets</span>
+                        <span id="dhanEmaCrossUpdated" style="font-size:10px; color:#64748b; margin-left:auto;">updated —</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap:10px;">
+                        <div style="padding:8px 10px; border-radius:6px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06);">
+                            <div style="color:#fbbf24; font-weight:700; margin-bottom:4px;">15m <span id="dhanEma15Forming" style="font-size:10px;color:#94a3b8;"></span></div>
+                            <div>Spot: <b id="dhanEmaSpot" style="color:#38bdf8;">—</b></div>
+                            <div>4 EMA: <b id="dhanEma15_e4" style="color:#fda4af;">—</b> &nbsp; 8 EMA: <b id="dhanEma15_e8" style="color:#86efac;">—</b></div>
+                            <div>4−8: <b id="dhanEma15_spread">—</b> &nbsp; Gap to 8: <b id="dhanEma15_gap">—</b> &nbsp; <span id="dhanEma15_stack" class="status-badge badge-neutral">—</span></div>
+                        </div>
+                        <div style="padding:8px 10px; border-radius:6px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06);">
+                            <div style="color:#a78bfa; font-weight:700; margin-bottom:4px;">1H <span id="dhanEma1hForming" style="font-size:10px;color:#94a3b8;"></span></div>
+                            <div>Bar close: <b id="dhanEma1h_close" style="color:#e2e8f0;">—</b></div>
+                            <div>4 EMA: <b id="dhanEma1h_e4" style="color:#fda4af;">—</b> &nbsp; 8 EMA: <b id="dhanEma1h_e8" style="color:#86efac;">—</b></div>
+                            <div>4−8: <b id="dhanEma1h_spread">—</b> &nbsp; Gap to 8: <b id="dhanEma1h_gap">—</b> &nbsp; <span id="dhanEma1h_stack" class="status-badge badge-neutral">—</span></div>
+                        </div>
+                    </div>
+                    <div id="dhanEmaCrossEvent" style="margin-top:6px; font-size:11px; color:#94a3b8;">Cross: —</div>
+                </div>
+
                 <!-- Summary KPI Ribbon -->
                 <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); padding:8px 12px; border-radius:6px; font-family:var(--font-mono); font-size:11.5px;">
                     <div>Bars: <b id="kpiEmaBars" style="color:#38bdf8;">--</b></div>
+                    <div>Last closed bar: <b id="kpiEmaLastClosed" style="color:#6ee7b7;">--</b></div>
+                    <div>1m spot feed: <b id="kpiEmaSpotFeed" style="color:#fbbf24;">--</b></div>
                     <div style="color:rgba(255,255,255,0.2);">|</div>
                     <div>4/8 Upside Cross: <b id="kpiEmaUpsideCross" style="color:#10b981;">--</b></div>
                     <div style="color:rgba(255,255,255,0.2);">|</div>
@@ -2643,7 +2670,7 @@
         // ── v1.8 4/8-EMA MULTI-TIMEFRAME PROXIMITY RADAR & MATRIX ──────────────
         let emaRadarAudioCtx = null;
         let lastEmaRadarTier = null;
-        let currentEmaTimeframe = '1m';
+        let currentEmaTimeframe = '15m';
 
         // v1.8.1 Dedicated sound toggle & anti-spam cooldown state
         window.emaTableSoundEnabled = false; // Default strictly OFF / Muted
@@ -2842,6 +2869,51 @@
             toggleEmaTableSound(checked);
         }
 
+        function renderDhanStyleEmaCross(cross, spotTel) {
+            const spot = cross.spot_live ?? spotTel?.price ?? 0;
+            const elSpot = document.getElementById("dhanEmaSpot");
+            if (elSpot && spot > 0) {
+                const prev = parseFloat(elSpot.dataset.prev || spot);
+                elSpot.textContent = Number(spot).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                if (prev !== spot) triggerFlash(elSpot, spot, prev);
+                elSpot.dataset.prev = spot;
+            }
+            const u = document.getElementById("dhanEmaCrossUpdated");
+            if (u) u.textContent = "updated " + (cross.updated_at_ist || "—") + " IST";
+
+            const paintTf = (tf, pfx) => {
+                if (!tf || !tf.ok) return;
+                const f = document.getElementById(pfx + "Forming");
+                if (f) f.textContent = tf.forming ? `(bar @ ${tf.bar_open_ist} · forming)` : `(bar @ ${tf.bar_open_ist} · closed)`;
+                const set = (id, val, dec = 2) => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = (val == null || Number.isNaN(val)) ? "—" : Number(val).toFixed(dec);
+                };
+                set(pfx + "_e4", tf.ema_4);
+                set(pfx + "_e8", tf.ema_8);
+                set(pfx + "_spread", tf.spread_4_minus_8);
+                set(pfx + "_gap", tf.gap_spot_to_8);
+                if (pfx === "dhanEma1h") set("dhanEma1h_close", tf.close);
+                const st = document.getElementById(pfx + "_stack");
+                if (st) {
+                    const s = tf.stack || "FLAT";
+                    st.textContent = s;
+                    st.className = "status-badge " + (s === "BULLISH" ? "badge-bull" : (s === "BEARISH" ? "badge-bear" : "badge-neutral"));
+                }
+            };
+            paintTf(cross.tf_15m, "dhanEma15");
+            paintTf(cross.tf_1h, "dhanEma1h");
+            const ev = document.getElementById("dhanEmaCrossEvent");
+            if (ev) {
+                const e15 = cross.tf_15m?.cross_event;
+                const e1h = cross.tf_1h?.cross_event;
+                const parts = [];
+                if (e15 && e15 !== "NONE") parts.push("15m " + e15.replace(/_/g, " "));
+                if (e1h && e1h !== "NONE") parts.push("1H " + e1h.replace(/_/g, " "));
+                ev.textContent = parts.length ? "Cross event: " + parts.join(" · ") : "Cross: none on current forming bar (compare to Dhan EMA Cross indicator)";
+            }
+        }
+
         async function loadEmaProximityTable(isBackground = false) {
             const selDate = document.getElementById("selEmaMatrixDate")?.value || 'LIVE';
             const selFilter = document.getElementById("selEmaMatrixFilter")?.value || 'ALL';
@@ -2866,6 +2938,10 @@
                 const s = data.summary || {};
                 const elBars = document.getElementById("kpiEmaBars");
                 if (elBars) elBars.textContent = s.total_bars ?? '--';
+                const elLc = document.getElementById("kpiEmaLastClosed");
+                if (elLc) elLc.textContent = s.last_closed_bar_ist ?? '--';
+                const elSf = document.getElementById("kpiEmaSpotFeed");
+                if (elSf) elSf.textContent = s.spot_1m_last_ist ?? '--';
                 const elUp = document.getElementById("kpiEmaUpsideCross");
                 if (elUp) elUp.textContent = s.upside_crossovers ?? '0';
                 const elDown = document.getElementById("kpiEmaDownsideCross");
@@ -3387,8 +3463,11 @@
         }
 
         async function checkCandlesHeartbeat() {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 8000);
             try {
-                const r = await fetch("/api/candles?tf=5m&days=1&inst=NIFTY", { cache: "no-store" });
+                const r = await fetch("/api/heartbeat", { cache: "no-store", signal: ctrl.signal });
+                clearTimeout(t);
                 if (r.status === 200) {
                     lastCandleSuccessTs = Date.now();
                     hideStaleDeskBanner();
@@ -3396,16 +3475,29 @@
                     evalStaleDesk(`HTTP ${r.status}`);
                 }
             } catch (err) {
-                evalStaleDesk(err.message);
+                clearTimeout(t);
+                const msg = err.name === "AbortError" ? "timeout (>8s)" : err.message;
+                evalStaleDesk(msg);
             }
         }
 
         function evalStaleDesk(reason) {
+            if (document.hidden) return;
             const elapsedSec = (Date.now() - lastCandleSuccessTs) / 1000;
             if (elapsedSec > 90) {
                 showStaleDeskBanner(Math.round(elapsedSec), reason);
             }
         }
+
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden) {
+                hideStaleDeskBanner();
+                return;
+            }
+            lastCandleSuccessTs = Date.now();
+            hideStaleDeskBanner();
+            checkCandlesHeartbeat();
+        });
 
         function showStaleDeskBanner(sec, reason) {
             let el = document.getElementById("deskStaleHeartbeatBanner");
@@ -3504,8 +3596,10 @@
         // ── 3. LIVE 1-SECOND POLLING & TELEMETRY STREAM ────────────────────────
         async function pollLiveEngine() {
             try {
-                const res = await fetch("/api/telemetry");
+                const res = await fetch("/api/telemetry", { cache: "no-store" });
                 if (!res.ok) return;
+                lastCandleSuccessTs = Date.now();
+                hideStaleDeskBanner();
                 const data = await res.json();
 
                 // 1. Ribbon updates (NO Max Pain)
@@ -3767,6 +3861,11 @@
 
                 renderDhanOI8510(data.dhan_oi, data.five_factor_confluence);
                 renderWriterFlowTelemetry(data.stockmojo_live, data.writer_flow_gate);
+
+                if (data.ema_live_cross && data.ema_live_cross.ok) {
+                    renderDhanStyleEmaCross(data.ema_live_cross, data.spot);
+                }
+
                 // 4C. v1.8 4/8-EMA Proximity Radar Pill & Audio Alarm
                 if (data.ema_proximity_latest) {
                     const radar = data.ema_proximity_latest;
@@ -3839,7 +3938,7 @@
                 // 4D. Stream 4/8-EMA Proximity Matrix table automatically in real time (v1.8.2)
                 const selEmaDate = document.getElementById("selEmaMatrixDate")?.value || 'LIVE';
                 const nowEpoch = Date.now();
-                if (selEmaDate === 'LIVE' && (nowEpoch - (window.lastEmaTableStreamEpoch || 0) >= 2000)) {
+                if (selEmaDate === 'LIVE' && (nowEpoch - (window.lastEmaTableStreamEpoch || 0) >= 5000)) {
                     window.lastEmaTableStreamEpoch = nowEpoch;
                     loadEmaProximityTable(true);
                 }
