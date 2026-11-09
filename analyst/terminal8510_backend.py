@@ -5945,10 +5945,11 @@ class QuantTerminalBackend:
                 o["strategy_setup"] = o.get("strategy_setup") or o.get("strategy_name") or "Manual — No Strategy"
                 o["structured_contract"] = get_contract_structured_fields(o["symbol"])
                 pos_link = o.get("position_id") or o.get("correlation_id")
+                prow = None
                 if pos_link:
                     try:
                         prow = cur.execute(
-                            "SELECT spot_entry, spot_exit FROM positions WHERE position_id=?",
+                            "SELECT spot_entry, spot_exit, entry_price, exit_price FROM positions WHERE position_id=?",
                             (pos_link,),
                         ).fetchone()
                         if prow:
@@ -5957,7 +5958,21 @@ class QuantTerminalBackend:
                             if not o.get("nifty_spot_exit") and prow[1]:
                                 o["nifty_spot_exit"] = float(prow[1])
                     except sqlite3.Error:
-                        pass
+                        prow = None
+                side_u = str(o.get("side") or "").upper()
+                fill_px = float(o.get("fill_price") or 0)
+                sig_px = float(o.get("signal_ltp") or 0)
+                pos_entry = float(prow[2]) if prow and prow[2] else 0.0
+                pos_exit = float(prow[3]) if prow and prow[3] else 0.0
+                if side_u == "BUY":
+                    o["option_entry"] = fill_px if fill_px > 0 else (sig_px if sig_px > 0 else pos_entry or None)
+                    o["option_exit"] = pos_exit if pos_exit > 0 else None
+                elif side_u == "SELL":
+                    o["option_entry"] = pos_entry if pos_entry > 0 else None
+                    o["option_exit"] = fill_px if fill_px > 0 else (pos_exit if pos_exit > 0 else None)
+                else:
+                    o["option_entry"] = fill_px if fill_px > 0 else None
+                    o["option_exit"] = None
                 orders.append(o)
             return orders
 
@@ -6214,6 +6229,7 @@ class QuantTerminalBackend:
             rejection_reason = ""
             companion_sl_order_id = None
             live_order_id = None          # v1.9.4b: broker id, live legs only
+            ledger_position_id = ""
 
             # ── 1. LIVE DHAN API EXECUTION (if ALGO_LIVE_ONLY or BOTH) ───────
             if mode in ("ALGO_LIVE_ONLY", "BOTH"):
@@ -6350,6 +6366,7 @@ class QuantTerminalBackend:
                 trail_tgt_on = 0 if is_flagship_pos else (1 if self.super_trail_cfg.get("trailing_target_enabled", True) else 0)
 
                 pos_id = f"POS_{int(time.time()*1000)}"
+                ledger_position_id = pos_id
                 with sqlite3.connect(self.ledger_db) as conn:
                     cur = conn.cursor()
                     cur.execute("""
@@ -6428,14 +6445,15 @@ class QuantTerminalBackend:
                     order_id, correlation_id, created_at, strategy_name, symbol, security_id,
                     side, product, order_type, lots, qty, signal_ltp, limit_price, fill_price,
                     slippage, chase_retries, brokerage_taxes, order_status, mode, rejection_reason,
-                    placed_by, source, strategy_setup, dhan_order_id, nifty_spot_entry, nifty_spot_exit
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'INTRADAY', 'AGGR-LIMIT', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                    placed_by, source, strategy_setup, dhan_order_id, nifty_spot_entry, nifty_spot_exit,
+                    position_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'INTRADAY', 'AGGR-LIMIT', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
                 """, (order_id, corr_id, now_str, strategy_name, symbol, sec_id, side, qty,
                       signal_ltp, limit_sent, fill_price, slippage_pts, chase_retries_used,
                       dhan_charges, order_status, mode, rejection_reason,
                       placed_source, placed_source, strategy_setup,
                       (live_order_id if live_route["route"] == "LIVE" else None),
-                      nifty_entry))
+                      nifty_entry, ledger_position_id or None))
                 conn.commit()
 
             res_dict = {
