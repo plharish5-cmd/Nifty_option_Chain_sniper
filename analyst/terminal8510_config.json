@@ -69,7 +69,21 @@
     "bollinger_enabled": true,
     "scanner_catchup_max_15m_bars": 12,
     "scanner_catchup_eval_latest_only": true,
-    "ema_live_cross_refresh_seconds": 2.0
+    "ema_live_cross_refresh_seconds": 2.0,
+    "mj_sir_lecture": {
+      "enabled": true,
+      "spec_tag": "MJ_SIR_LECTURE_UNDERSTANDING",
+      "touch_tol_pts": 20.0,
+      "bb_width_min_pts": 60.0,
+      "ribbon_max_pts": 5.0,
+      "ribbon_max_atr_ratio": 0.13,
+      "stage_target_pts": 40.0,
+      "stage_sl_pts": 40.0,
+      "reversal_target_pts": 20.0,
+      "reversal_sl_pts": 20.0,
+      "reversal_wait_bars_after_cross": 2,
+      "reversal_touch_window_bars": 2
+    }
   },
   "risk": {
     "max_daily_trades": 2,
@@ -111,6 +125,22 @@
     "futures_volume_surge_enabled": false,
     "futures_volume_surge_min_ratio": 1.15,
     "default_cost_model": "STATUTORY_DHAN"
+  },
+  "tradingview_ema_cross": {
+    "indicator": "MACD + EMA Cross",
+    "fast_source": "close",
+    "fast_length": 4,
+    "slow_source": "close",
+    "slow_length": 8,
+    "momentum_source": "close",
+    "momentum_ema_period": 12,
+    "direction_source": "close",
+    "direction_ema_period": 200,
+    "macd_fast_length": 4,
+    "macd_slow_length": 8,
+    "macd_source": "close",
+    "signal_smoothing": 9,
+    "adjust": false
   },
   "ema_proximity_radar": {
     "enabled": true,

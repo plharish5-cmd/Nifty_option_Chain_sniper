@@ -1011,10 +1011,11 @@
                             <span style="font-weight:700; color:#38bdf8; font-size:13px;">1. Stage 2 8-EMA (Long)</span>
                             <span id="stratStatus_stage2" class="status-badge badge-bull">SCANNING</span>
                         </div>
-                        <span class="strat-money-badge live-eligible" title="Routes to Dhan when LIVE TRADING is armed and guards pass.">Real money eligible</span>
+                        <span class="strat-money-badge paper-only" title="MJ Sir lecture spec — paper only until validated.">MJ Sir · Paper only</span>
+                        <div id="stratBlock_stage2" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            UBB Up + Close &gt; 8 EMA + BB Width &gt; 60.<br>
-                            Trigger: <b>Touch 8-EMA (±20pt)</b> · Tgt +40 / SL -40
+                            UBB Up 2 bars · 4&gt;8 · first touch 8 EMA · BB &gt; 60 · Tgt/SL 40.<br>
+                            <span style="color:#64748b;">BB gate toggle applies UBB rules only.</span>
                         </div>
                     </div>
 
@@ -1024,23 +1025,23 @@
                             <span style="font-weight:700; color:#f87171; font-size:13px;">2. Stage 3 8-EMA (Short)</span>
                             <span id="stratStatus_stage3" class="status-badge badge-bear">SCANNING</span>
                         </div>
-                        <span class="strat-money-badge live-eligible" title="Routes to Dhan when LIVE TRADING is armed and guards pass.">Real money eligible</span>
+                        <span class="strat-money-badge paper-only" title="MJ Sir lecture spec — paper only until validated.">MJ Sir · Paper only</span>
+                        <div id="stratBlock_stage3" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            LBB Down + Close &lt; 8 EMA + BB Width &gt; 60.<br>
-                            Trigger: <b>Reject 8-EMA (±20pt)</b> · Tgt +40 / SL -40
+                            LBB Down 2 bars · 4&lt;8 · first touch 8 EMA · BB &gt; 60 · Tgt/SL 40.
                         </div>
                     </div>
 
                     <!-- Strategy 3: 4 MA vs 8 EMA Crossover Reversal -->
                     <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                            <span style="font-weight:700; color:#fbbf24; font-size:13px;">3. 4/8 MA Crossover Reversal</span>
+                            <span style="font-weight:700; color:#fbbf24; font-size:13px;">3. 8 EMA Reversal Up / Down</span>
                             <span id="stratStatus_crossover" class="status-badge badge-gold">SCANNING</span>
                         </div>
-                        <span class="strat-money-badge live-eligible" title="Routes to Dhan when LIVE TRADING is armed and guards pass.">Real money eligible</span>
+                        <span class="strat-money-badge paper-only" title="MJ Sir fixed 8 EMA after cross — paper only.">MJ Sir · Paper only</span>
+                        <div id="stratBlock_crossover" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            4 EMA crosses 8 EMA + Flat Band.<br>
-                            Trigger: <b>Touch 8-EMA within 3 bars</b> · Tgt +20 / SL -20
+                            Cross 4/8 · wait 2 bars · touch <b>fixed</b> 8 EMA within 2 bars · Tgt/SL 20.
                         </div>
                     </div>
 
@@ -1341,11 +1342,11 @@
                     </div>
                 </div>
 
-                <!-- Live EMA Cross (Dhan-style: forming 15m / 1H bar, ticks with spot) -->
+                <!-- Live EMA Cross (TradingView MACD+EMA Cross: Fast 4 / Slow 8 on Close) -->
                 <div id="dhanEmaCrossPanel" style="margin-bottom:10px; padding:10px 12px; border-radius:8px; border:1px solid rgba(56,189,248,0.35); background:linear-gradient(90deg,rgba(15,23,42,0.95),rgba(30,41,59,0.9)); font-family:var(--font-mono); font-size:12px;">
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:8px;">
-                        <span style="font-weight:800; color:#38bdf8; font-size:13px;">📈 Live EMA Cross — NIFTY Spot (Dhan parity)</span>
-                        <span style="font-size:10.5px; color:#94a3b8;">forming 15m &amp; 1H · 4 EMA / 8 EMA · 09:15 buckets</span>
+                        <span style="font-weight:800; color:#38bdf8; font-size:13px;">📈 TV MACD+EMA Cross — NIFTY Spot sec 13</span>
+                        <span id="dhanEmaTvSpec" style="font-size:10.5px; color:#94a3b8;">Fast 4 / Slow 8 · Source Close · 09:15 15m/1H · live tick + closed row</span>
                         <span id="dhanEmaCrossUpdated" style="font-size:10px; color:#64748b; margin-left:auto;">updated —</span>
                     </div>
                     <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap:10px;">
@@ -1599,18 +1600,17 @@
                                 <th>Source</th>
                                 <th>Strategy / Setup</th>
                                 <th>Side</th>
-                                <th>Type</th>
                                 <th>Qty</th>
                                 <th>Signal LTP</th>
-                                <th>Avg Fill Price</th>
-                                <th>Slippage (Pts)</th>
+                                <th>NIFTY 50 Spot (Entry)</th>
+                                <th>NIFTY 50 Spot (Exit)</th>
                                 <th>Book</th>
                                 <th>Exit / Net P&amp;L</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
                         <tbody id="ordersTableBody">
-                            <tr><td colspan="14" style="text-align:center; color:var(--text-muted); padding:16px;">Loading order book...</td></tr>
+                            <tr><td colspan="13" style="text-align:center; color:var(--text-muted); padding:16px;">Loading order book...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -2903,6 +2903,11 @@
             };
             paintTf(cross.tf_15m, "dhanEma15");
             paintTf(cross.tf_1h, "dhanEma1h");
+            const tvSpec = document.getElementById("dhanEmaTvSpec");
+            if (tvSpec && cross.tradingview_ema_cross) {
+                const t = cross.tradingview_ema_cross;
+                tvSpec.textContent = `Fast ${t.fast_length} / Slow ${t.slow_length} · ${t.fast_source || "close"} · Mom ${t.momentum_ema_period} · Dir ${t.direction_ema_period} · matrix=${(cross.tf_15m_closed && cross.tf_15m_closed.ok) ? "closed " + cross.tf_15m_closed.bar_open_ist : "—"}`;
+            }
             const ev = document.getElementById("dhanEmaCrossEvent");
             if (ev) {
                 const e15 = cross.tf_15m?.cross_event;
@@ -2910,7 +2915,9 @@
                 const parts = [];
                 if (e15 && e15 !== "NONE") parts.push("15m " + e15.replace(/_/g, " "));
                 if (e1h && e1h !== "NONE") parts.push("1H " + e1h.replace(/_/g, " "));
-                ev.textContent = parts.length ? "Cross event: " + parts.join(" · ") : "Cross: none on current forming bar (compare to Dhan EMA Cross indicator)";
+                const cl = cross.tf_15m_closed;
+                const clTxt = (cl && cl.ok) ? ` | Matrix closed 15m: 4=${cl.ema_4} 8=${cl.ema_8}` : "";
+                ev.textContent = parts.length ? "Cross event: " + parts.join(" · ") + clTxt : "Cross: none on forming bar" + clTxt;
             }
         }
 
@@ -3755,17 +3762,28 @@
                             const st = pa.state || "SCANNING";
                             sPa.className = `status-badge ${st === "TRIGGERED" ? "badge-bull" : (st === "ARMED" ? "badge-gold" : "badge-neutral")}`;
                         }
+                        const mjBlock = (id, st) => {
+                            const el = document.getElementById(id);
+                            if (!el || !st) return;
+                            const br = st.mj_no_trade || st.block_reason || "";
+                            el.textContent = br ? br : (st.state === "TRIGGERED" ? "" : "");
+                            el.style.color = br.startsWith("NO TRADE") ? "#fbbf24" : "#64748b";
+                        };
                         if (s2 && sc.strategies.stage2_long) {
                             s2.textContent = sc.strategies.stage2_long.state;
                             s2.className = `status-badge ${sc.strategies.stage2_long.state === 'TRIGGERED' ? 'badge-bull' : (sc.strategies.stage2_long.state === 'ARMED' ? 'badge-gold' : 'badge-neutral')}`;
+                            mjBlock("stratBlock_stage2", sc.strategies.stage2_long);
                         }
                         if (s3 && sc.strategies.stage3_short) {
                             s3.textContent = sc.strategies.stage3_short.state;
                             s3.className = `status-badge ${sc.strategies.stage3_short.state === 'TRIGGERED' ? 'badge-bear' : (sc.strategies.stage3_short.state === 'ARMED' ? 'badge-gold' : 'badge-neutral')}`;
+                            mjBlock("stratBlock_stage3", sc.strategies.stage3_short);
                         }
-                        if (sCross && sc.strategies.crossover_reversal) {
-                            sCross.textContent = sc.strategies.crossover_reversal.state;
-                            sCross.className = `status-badge ${sc.strategies.crossover_reversal.state === 'TRIGGERED' ? 'badge-gold' : 'badge-neutral'}`;
+                        const sx = document.getElementById("stratStatus_crossover");
+                        if (sx && sc.strategies.crossover_reversal) {
+                            sx.textContent = sc.strategies.crossover_reversal.state;
+                            sx.className = `status-badge ${sc.strategies.crossover_reversal.state === 'TRIGGERED' ? 'badge-bull' : (sc.strategies.crossover_reversal.state === 'ARMED' ? 'badge-gold' : 'badge-neutral')}`;
+                            mjBlock("stratBlock_crossover", sc.strategies.crossover_reversal);
                         }
                         const sDailySr = document.getElementById("stratStatus_daily_sr");
                         const sDailyTrend = document.getElementById("stratStatus_daily_trend");
@@ -4291,6 +4309,24 @@
             }
         }
 
+        function shortOrderId(id) {
+            if (!id) return "—";
+            const s = String(id);
+            if (s.startsWith("X_POS_") || s.startsWith("X_")) {
+                return "X…" + s.slice(-6);
+            }
+            if (s.startsWith("ORD_")) {
+                return s.slice(-8);
+            }
+            return s.length > 10 ? s.slice(-8) : s;
+        }
+
+        function fmtNiftySpot(v) {
+            const n = Number(v);
+            if (!n || n <= 0) return '<span style="color:var(--text-muted);">—</span>';
+            return `<b style="font-family:var(--font-mono);">${n.toFixed(2)}</b>`;
+        }
+
         function renderOrdersTable(orders) {
             const tbody = document.getElementById("ordersTableBody");
             if (!tbody) return;
@@ -4324,7 +4360,7 @@
             }
 
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; color:var(--text-muted); padding:16px;">No orders found matching filters.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="13" style="text-align:center; color:var(--text-muted); padding:16px;">No orders found matching filters.</td></tr>`;
                 return;
             }
 
@@ -4342,17 +4378,16 @@
                     : `<span style="color:var(--text-muted);">—</span>`;
                 return `
                 <tr${isExit ? ` style="background:rgba(239,68,68,0.05);"` : ``}>
-                    <td><code>${o.order_id}</code></td>
+                    <td title="${o.order_id}"><code>${shortOrderId(o.order_id)}</code></td>
                     <td style="color:var(--text-dim);">${o.created_at}</td>
                     <td><b style="font-family:var(--font-mono);">${o.symbol}</b></td>
                     <td><span class="status-badge ${(o.source || o.placed_by || '').includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${o.source || o.placed_by || 'MANUAL MATRIX ✋'}</span></td>
                     <td><span style="font-family:var(--font-mono); font-size:11.5px;">${o.strategy_setup || o.strategy_name || 'Manual — No Strategy'}</span></td>
                     <td style="color:${o.side === 'BUY' ? 'var(--emerald)' : 'var(--crimson)'}; font-weight:700;">${o.side}</td>
-                    <td><span class="status-badge badge-side">${o.order_type}</span></td>
                     <td><b>${o.qty}</b></td>
                     <td>₹${Number(o.signal_ltp || 0).toFixed(2)}</td>
-                    <td style="font-weight:700; color:var(--emerald);">₹${Number(o.fill_price || 0).toFixed(2)}</td>
-                    <td style="color:${Number(o.slippage || 0) > 0 ? 'var(--crimson)' : 'var(--emerald)'};">${Number(o.slippage || 0) >= 0 ? '+' : ''}${Number(o.slippage || 0).toFixed(2)}</td>
+                    <td>${fmtNiftySpot(o.nifty_spot_entry)}</td>
+                    <td>${fmtNiftySpot(o.nifty_spot_exit)}</td>
                     <td><span class="status-badge ${bookBadge}" style="font-size:10px;">${bookLabel}</span></td>
                     <td>${exitCell}</td>
                     <td><span class="status-badge ${o.order_status === 'FILLED' ? 'badge-bull' : (o.order_status === 'CANCELLED' ? 'badge-side' : 'badge-bear')}">${o.order_status}</span></td>
@@ -5823,8 +5858,11 @@
 
         function exportOrdersToExcel() {
             fetch('/api/orders').then(r => r.json()).then(rows => {
-                const headers = ['Order ID', 'Timestamp', 'Strategy', 'Symbol', 'Security ID', 'Side', 'Type', 'Qty', 'Signal LTP', 'Limit Price', 'Fill Price', 'Slippage', 'Retries', 'Charges', 'Status'];
-                const data = rows.map(o => [o.order_id, o.created_at, o.strategy_name, o.symbol, o.security_id, o.side, o.order_type, o.qty, o.signal_ltp, o.limit_price, o.fill_price, o.slippage, o.chase_retries, o.brokerage_taxes, o.order_status]);
+                const headers = ['Order ID', 'Timestamp', 'Strategy', 'Symbol', 'Security ID', 'Side', 'Qty', 'Signal LTP', 'NIFTY Spot Entry', 'NIFTY Spot Exit', 'Book', 'Exit Reason', 'Net PnL', 'Status'];
+                const data = rows.map(o => [
+                    o.order_id, o.created_at, o.strategy_name, o.symbol, o.security_id, o.side, o.qty, o.signal_ltp,
+                    o.nifty_spot_entry, o.nifty_spot_exit, o.mode, o.exit_reason, o.net_pnl, o.order_status,
+                ]);
                 exportTableToExcelXML('Port8510_Orders_Book.xls', 'Orders', headers, data);
             });
         }

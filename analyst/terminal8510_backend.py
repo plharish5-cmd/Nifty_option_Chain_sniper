@@ -2472,6 +2472,7 @@ class QuantTerminalBackend:
         self._ema_live_cross_cache: Dict[str, Any] = {"ok": False}
         self._ema_live_cross_worker_started: bool = False
         self._scanner_heavy_lock = asyncio.Lock()
+        self._mj_sir_state: Dict[str, Any] = {}
         self._pa_sr_pending: List[Dict[str, Any]] = []
         self.scanner_running: bool = False
         self.active_party: str = "NEUTRAL"  # "BULLISH", "BEARISH", "NEUTRAL"
@@ -2812,6 +2813,8 @@ class QuantTerminalBackend:
                     ("position_id", "TEXT DEFAULT ''"),
                     ("exit_reason", "TEXT DEFAULT ''"),
                     ("net_pnl", "REAL DEFAULT 0.0"),
+                    ("nifty_spot_entry", "REAL"),
+                    ("nifty_spot_exit", "REAL"),
                 ]
                 for col_name, col_type in order_cols:
                     try:
@@ -4572,108 +4575,44 @@ class QuantTerminalBackend:
         bb_stage3 = self._bollinger_gate_active("stage3")
         bb_cross = self._bollinger_gate_active("crossover")
 
-        # ── 1. STRATEGY 1: Stage 2 (8 EMA Support Touch - Long) ─────────────
-        # STRICT RULE: ALLOWED ONLY when Bullish Stack (4-EMA > 8-EMA). STRICTLY BLOCKED if 4-EMA < 8-EMA.
-        if not is_bullish_stack:
-            self.strategy_status["stage2_long"]["armed"] = False
-            self.strategy_status["stage2_long"]["state"] = "BLOCKED_MA_STACK"
-        else:
-            if bb_stage2:
-                stage2_cond = (ubb_slope == "UP" and close_15 >= (e8_val - tol) and width_val >= bb_min)
-            else:
-                stage2_cond = close_15 >= (e8_val - tol)
-            stage2_touch = (abs(current_p - e8_val) <= tol or abs(low_15 - e8_val) <= tol)
-            self.strategy_status["stage2_long"]["armed"] = stage2_cond
-            self.strategy_status["stage2_long"]["state"] = "TRIGGERED" if (stage2_cond and stage2_touch) else ("ARMED" if stage2_cond else "SCANNING")
+        # ── MJ SIR LECTURE: Stage 2 / Stage 3 / 8 EMA Reversal (15m, paper-only) ──
+        from analyst.mj_sir_stage_reversal_8510 import evaluate_mj_sir_four_pack, load_mj_cfg
 
-            if stage2_cond and stage2_touch:
-                if self.active_party == "BEARISH":
-                    log.info("[BLOCKED] Stage 2 Long blocked by Party-Switch (Active Party is BEARISH)")
-                else:
-                    sig_row = {
-                        "strategy_id": "STAGE_2_LONG",
-                        "setup_name": "Stage 2 8-EMA (Long) [Pullback Touch]",
-                        "direction": "LONG",
-                        "opt_side": "CE",
-                        "target_pts": float(self.scanner_cfg.get("stage2_target_pts", 40.0)),
-                        "sl_pts": float(self.scanner_cfg.get("stage2_sl_pts", 40.0)),
-                        "index_price": current_p,
-                        "conviction": "STANDARD",
-                        "details": f"UBB Slope {ubb_slope}, 4-EMA > 8-EMA Bullish Stack, 8-EMA {e8_val:.1f}, dist {abs(current_p - e8_val):.1f}pts",
-                    }
-                    sig_row.update(self._gate_meta_for_signal("stage2"))
-                    signals.append(sig_row)
+        mj_cfg = load_mj_cfg(self.scanner_cfg)
+        session_day = ""
+        try:
+            session_day = str(b15.index[bar_ci].strftime("%Y-%m-%d"))
+        except Exception:
+            session_day = datetime.now(IST).strftime("%Y-%m-%d")
 
-        # ── 2. STRATEGY 2: Stage 3 (8 EMA Resistance Rejection - Short) ──────
-        # STRICT RULE: ALLOWED ONLY when Bearish Stack (4-EMA < 8-EMA). STRICTLY BLOCKED if 4-EMA > 8-EMA.
-        if not is_bearish_stack:
-            self.strategy_status["stage3_short"]["armed"] = False
-            self.strategy_status["stage3_short"]["state"] = "BLOCKED_MA_STACK"
-        else:
-            if bb_stage3:
-                stage3_cond = (lbb_slope == "DOWN" and close_15 <= (e8_val + tol) and width_val >= bb_min)
-            else:
-                stage3_cond = close_15 <= (e8_val + tol)
-            stage3_touch = (abs(current_p - e8_val) <= tol or abs(high_15 - e8_val) <= tol)
-            self.strategy_status["stage3_short"]["armed"] = stage3_cond
-            self.strategy_status["stage3_short"]["state"] = "TRIGGERED" if (stage3_cond and stage3_touch) else ("ARMED" if stage3_cond else "SCANNING")
+        if crossover_event and crossover_event.get("type") == "BULLISH_CROSS":
+            self._mj_sir_state.pop("stage2_fired_key", None)
+        if crossover_event and crossover_event.get("type") == "BEARISH_CROSS":
+            self._mj_sir_state.pop("stage3_fired_key", None)
 
-            if stage3_cond and stage3_touch:
-                if self.active_party == "BULLISH":
-                    log.info("[BLOCKED] Stage 3 Short blocked by Party-Switch (Active Party is BULLISH)")
-                else:
-                    sig_row = {
-                        "strategy_id": "STAGE_3_SHORT",
-                        "setup_name": "Stage 3 8-EMA (Short) [Resistance Rejection]",
-                        "direction": "SHORT",
-                        "opt_side": "PE",
-                        "target_pts": float(self.scanner_cfg.get("stage3_target_pts", 40.0)),
-                        "sl_pts": float(self.scanner_cfg.get("stage3_sl_pts", 40.0)),
-                        "index_price": current_p,
-                        "conviction": "STANDARD",
-                        "details": f"LBB Slope {lbb_slope}, 4-EMA < 8-EMA Bearish Stack, 8-EMA {e8_val:.1f}, dist {abs(current_p - e8_val):.1f}pts",
-                    }
-                    sig_row.update(self._gate_meta_for_signal("stage3"))
-                    signals.append(sig_row)
-
-        # ── 3. STRATEGY 3: 4 MA vs 8 EMA Crossover Reversal ──────────────────
-        # Reversal Setup Prerequisite:
-        # - Setup #5 (Reversal Up) requires an actual preceding cross where 4-EMA crossed ABOVE 8-EMA. Discard if already above from open.
-        # - Setup #6 (Reversal Down) requires an actual preceding cross where 4-EMA crossed BELOW 8-EMA. Discard if already below from open.
-        cross_touch = (abs(current_p - e8_val) <= tol or abs(low_15 - e8_val) <= tol or abs(high_15 - e8_val) <= tol)
-        if crossover_event and crossover_event.get("age", 99) <= int(self.scanner_cfg.get("crossover_max_touch_candles", 3)):
-            bull_bb_ok = (not bb_cross) or (ubb_slope == "FLAT")
-            bear_bb_ok = (not bb_cross) or (lbb_slope == "FLAT")
-            if crossover_event["type"] == "BULLISH_CROSS" and is_bullish_stack and bull_bb_ok and cross_touch:
-                self.strategy_status["crossover_reversal"]["state"] = "TRIGGERED"
-                sig_row = {
-                    "strategy_id": "CROSSOVER_BULLISH",
-                    "setup_name": "4 MA / 8 EMA Upside Reversal",
-                    "direction": "LONG",
-                    "opt_side": "CE",
-                    "target_pts": float(self.scanner_cfg.get("crossover_target_pts", 20.0)),
-                    "sl_pts": float(self.scanner_cfg.get("crossover_sl_pts", 20.0)),
-                    "index_price": current_p,
-                    "conviction": "HIGH",
-                    "details": f"Preceding Bullish Cross (Age {crossover_event['age']} bars), 4-EMA > 8-EMA, UBB Flat, 8-EMA touch",
-                }
-                sig_row.update(self._gate_meta_for_signal("crossover"))
-                signals.append(sig_row)
-            elif crossover_event["type"] == "BEARISH_CROSS" and is_bearish_stack and bear_bb_ok and cross_touch:
-                self.strategy_status["crossover_reversal"]["state"] = "TRIGGERED"
-                sig_row = {
-                    "strategy_id": "CROSSOVER_BEARISH",
-                    "setup_name": "4 MA / 8 EMA Downside Reversal",
-                    "direction": "SHORT",
-                    "opt_side": "PE",
-                    "target_pts": float(self.scanner_cfg.get("crossover_target_pts", 20.0)),
-                    "sl_pts": float(self.scanner_cfg.get("crossover_sl_pts", 20.0)),
-                    "index_price": current_p,
-                    "conviction": "HIGH",
-                    "details": f"Preceding Bearish Cross (Age {crossover_event['age']} bars), 4-EMA < 8-EMA, LBB Flat, 8-EMA touch",
-                }
-                sig_row.update(self._gate_meta_for_signal("crossover"))
-                signals.append(sig_row)
+        if bool(mj_cfg.get("enabled", True)):
+            mj_sigs, mj_status = evaluate_mj_sir_four_pack(
+                b15,
+                bar_ci=bar_ci,
+                cfg=mj_cfg,
+                bb_stage2=bb_stage2,
+                bb_stage3=bb_stage3,
+                bb_cross=bb_cross,
+                party_switch_enabled=bool(self.scanner_cfg.get("party_switch_enabled", False)),
+                active_party=self.active_party,
+                mj_state=self._mj_sir_state,
+                session_day=session_day,
+                daily_sr=None,
+                b60=b60,
+                gate_meta=self._gate_meta_for_signal,
+            )
+            signals.extend(mj_sigs)
+            for key in ("stage2_long", "stage3_short", "crossover_reversal"):
+                if key in mj_status:
+                    prev = dict(self.strategy_status.get(key) or {})
+                    prev.update(mj_status[key])
+                    prev["spec"] = "MJ_SIR_LECTURE_UNDERSTANDING"
+                    self.strategy_status[key] = prev
 
         # ── 4. STRATEGY 4: 1 HR FLAGSHIP (price action: daily S/R, 1H swings, 15m confirmation) ──
         scfg = self.scanner_cfg
@@ -4927,7 +4866,11 @@ class QuantTerminalBackend:
         if goldilocks_filter_on and not goldilocks["raw_allowed"]:
             log.info("[GOLDILOCKS GATE BLOCKED] Signals blocked: %s (%s)", goldilocks["badge"], goldilocks["description"])
             g_state = "BLOCKED_GOLDILOCKS_CHOP" if goldilocks["regime"] == "CHOP_ZONE" else "BLOCKED_GOLDILOCKS_CLIMAX"
+            passed: List[Dict[str, Any]] = []
             for sig in signals:
+                if sig.get("mj_sir_paper_only"):
+                    passed.append(sig)
+                    continue
                 sid = str(sig.get("strategy_id", "")).upper()
                 if "STAGE_2" in sid:
                     self.strategy_status["stage2_long"]["state"] = g_state
@@ -4937,7 +4880,7 @@ class QuantTerminalBackend:
                     self.strategy_status["crossover_reversal"]["state"] = g_state
                 elif "FLAGSHIP" in sid:
                     self.strategy_status["flagship_1h"]["state"] = g_state
-            signals = []
+            signals = passed
 
         # Proven Quant Edges Filter 2: Futures Volume Surge Gate (vsr_10 >= 1.15)
         fut_surge_gate_on = bool(self.proven_edges_cfg.get("futures_volume_surge_enabled", False))
@@ -5480,6 +5423,10 @@ class QuantTerminalBackend:
             sid_u = str(sig.get("strategy_id", "")).upper()
             paper_algo = (
                 "FLAGSHIP" in sid_u
+                or sid_u.startswith("STAGE_2")
+                or sid_u.startswith("STAGE_3")
+                or sid_u.startswith("CROSSOVER")
+                or sig.get("mj_sir_paper_only")
                 or sig.get("matrix_scalp")
                 or sig.get("pa_homework")
                 or sid_u.startswith("PA_SR")
@@ -5847,7 +5794,7 @@ class QuantTerminalBackend:
                     chg = self.calculate_dhan_charges(entry, exit_price, qty)
                     net = round(gross - chg, 2)
 
-                    exit_spot_val = spot_idx if is_flagship_pos and spot_idx > 0 else None
+                    exit_spot_val = spot_idx if spot_idx > 0 else None
                     cur.execute("""
                     UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?,
                                          exit_reason=?, current_ltp=?, highest_ltp=?, current_trailing_sl=?,
@@ -5867,7 +5814,9 @@ class QuantTerminalBackend:
                                 "margin_used = max(0.0, margin_used - ?), "
                                 "realized_pnl = realized_pnl + ?, updated_at = ? WHERE id=1",
                                 (net, req_margin, net, datetime.now(IST).isoformat()))
-                    self._record_exit_order(cur, p, exit_price, qty, exit_reason, net, chg)
+                    self._record_exit_order(
+                        cur, p, exit_price, qty, exit_reason, net, chg, nifty_spot_exit=exit_spot_val
+                    )
                     log.info("Position %s exited via %s @ ₹%.2f (Net PnL: ₹%.2f)", p["position_id"], exit_reason, exit_price, net)
 
                     # OCO cancellation of companion leg if live order
@@ -5896,8 +5845,17 @@ class QuantTerminalBackend:
         return positions
 
     # ── EXIT LEG LEDGER ──────────────────────────────────────────────────────
-    def _record_exit_order(self, cur, pos: Any, exit_price: float, qty: int,
-                           exit_reason: str, net_pnl: float, charges: float) -> str:
+    def _record_exit_order(
+        self,
+        cur,
+        pos: Any,
+        exit_price: float,
+        qty: int,
+        exit_reason: str,
+        net_pnl: float,
+        charges: float,
+        nifty_spot_exit: Optional[float] = None,
+    ) -> str:
         """Write the SELL leg of a closed position into the orders book.
 
         WHY THIS EXISTS
@@ -5931,9 +5889,10 @@ class QuantTerminalBackend:
                 order_id, correlation_id, created_at, strategy_name, symbol, security_id,
                 side, product, order_type, lots, qty, signal_ltp, limit_price, fill_price,
                 slippage, chase_retries, brokerage_taxes, order_status, mode, rejection_reason,
-                placed_by, source, strategy_setup, position_id, exit_reason, net_pnl
+                placed_by, source, strategy_setup, position_id, exit_reason, net_pnl,
+                nifty_spot_entry, nifty_spot_exit
             ) VALUES (?, ?, ?, ?, ?, ?, 'SELL', 'INTRADAY', 'AGGR-LIMIT', 1, ?, ?, ?, ?,
-                      0.0, 0, ?, 'FILLED', ?, '', ?, ?, ?, ?, ?, ?)
+                      0.0, 0, ?, 'FILLED', ?, '', ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 order_id, pos_id,
                 datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
@@ -5945,6 +5904,8 @@ class QuantTerminalBackend:
                 str(fld("source", "AUTO ALGO 🤖")),
                 str(fld("strategy_setup", "Manual — No Strategy")),
                 pos_id, str(exit_reason), float(net_pnl),
+                float(fld("spot_entry") or 0.0) or None,
+                float(nifty_spot_exit) if nifty_spot_exit and nifty_spot_exit > 0 else None,
             ))
         except sqlite3.Error as exc:
             # A failed book entry must not abort the square-off itself.
@@ -5953,6 +5914,22 @@ class QuantTerminalBackend:
         log.info("Exit leg recorded: %s SELL %s @ %.2f (%s, net Rs%.2f, gross Rs%.2f)",
                  order_id, symbol, float(exit_price), exit_reason, float(net_pnl), gross)
         return order_id
+
+    def _ledger_nifty_spot(self) -> float:
+        sp = float(self.cached_telemetry.get("spot", {}).get("price", 0.0) or 0.0)
+        if sp <= 0:
+            sp = float(self.broker._ltp_cache.get("13", 0.0) or 0.0)
+        if sp <= 0 and self.market_db.exists():
+            try:
+                with sqlite3.connect(self.market_db) as mconn:
+                    r = mconn.execute(
+                        "SELECT close FROM spot_candles WHERE sec_id='13' ORDER BY ts DESC LIMIT 1"
+                    ).fetchone()
+                    if r and r[0]:
+                        sp = float(r[0])
+            except sqlite3.Error:
+                pass
+        return sp
 
     def get_order_book(self) -> List[Dict[str, Any]]:
         with sqlite3.connect(self.ledger_db) as conn:
@@ -5967,6 +5944,20 @@ class QuantTerminalBackend:
                 o["placed_by"] = o["source"]
                 o["strategy_setup"] = o.get("strategy_setup") or o.get("strategy_name") or "Manual — No Strategy"
                 o["structured_contract"] = get_contract_structured_fields(o["symbol"])
+                pos_link = o.get("position_id") or o.get("correlation_id")
+                if pos_link:
+                    try:
+                        prow = cur.execute(
+                            "SELECT spot_entry, spot_exit FROM positions WHERE position_id=?",
+                            (pos_link,),
+                        ).fetchone()
+                        if prow:
+                            if not o.get("nifty_spot_entry") and prow[0]:
+                                o["nifty_spot_entry"] = float(prow[0])
+                            if not o.get("nifty_spot_exit") and prow[1]:
+                                o["nifty_spot_exit"] = float(prow[1])
+                    except sqlite3.Error:
+                        pass
                 orders.append(o)
             return orders
 
@@ -6424,6 +6415,12 @@ class QuantTerminalBackend:
             slippage_pts = round(fill_price - signal_ltp, 2)
             dhan_charges = self.calculate_dhan_charges(fill_price, fill_price + opt_target_pts, qty)
 
+            nifty_entry = None
+            if spot_context and spot_context.get("spot_entry"):
+                nifty_entry = float(spot_context["spot_entry"])
+            elif current_spot > 0:
+                nifty_entry = float(current_spot)
+
             with sqlite3.connect(self.ledger_db) as conn:
                 cur = conn.cursor()
                 cur.execute("""
@@ -6431,15 +6428,14 @@ class QuantTerminalBackend:
                     order_id, correlation_id, created_at, strategy_name, symbol, security_id,
                     side, product, order_type, lots, qty, signal_ltp, limit_price, fill_price,
                     slippage, chase_retries, brokerage_taxes, order_status, mode, rejection_reason,
-                    placed_by, source, strategy_setup, dhan_order_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'INTRADAY', 'AGGR-LIMIT', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    placed_by, source, strategy_setup, dhan_order_id, nifty_spot_entry, nifty_spot_exit
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'INTRADAY', 'AGGR-LIMIT', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
                 """, (order_id, corr_id, now_str, strategy_name, symbol, sec_id, side, qty,
                       signal_ltp, limit_sent, fill_price, slippage_pts, chase_retries_used,
                       dhan_charges, order_status, mode, rejection_reason,
                       placed_source, placed_source, strategy_setup,
-                      # Populated for live legs only; NULL for paper and dry-run,
-                      # so the broker id is never implied where none exists.
-                      (live_order_id if live_route["route"] == "LIVE" else None)))
+                      (live_order_id if live_route["route"] == "LIVE" else None),
+                      nifty_entry))
                 conn.commit()
 
             res_dict = {
@@ -6516,6 +6512,8 @@ class QuantTerminalBackend:
             entry = float(pos["entry_price"])
             ltp = float(pos["current_ltp"] or entry)
             qty = int(pos["qty"])
+            nifty_spot = self._ledger_nifty_spot()
+            exit_spot = nifty_spot if nifty_spot > 0 else None
 
             if action == "TRAIL_COST":
                 # Trail Stop-loss to Cost / Breakeven
@@ -6537,17 +6535,19 @@ class QuantTerminalBackend:
 
                 cur.execute("""
                 UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?,
-                                     exit_reason='MANUAL_TRAILING_EXIT'
+                                     exit_reason='MANUAL_TRAILING_EXIT', spot_exit=COALESCE(?, spot_exit)
                 WHERE position_id=?
-                """, (exit_price, exit_time, gross, net, position_id))
+                """, (exit_price, exit_time, gross, net, exit_spot, position_id))
 
                 req_margin = entry * qty
                 cur.execute("UPDATE paper_wallet SET balance = balance + ?, "
                             "margin_used = max(0.0, margin_used - ?), "
                             "realized_pnl = realized_pnl + ?, updated_at = ? WHERE id=1",
                             (net, req_margin, net, datetime.now(IST).isoformat()))
-                self._record_exit_order(cur, pos, exit_price, qty,
-                                        "MANUAL_TRAILING_EXIT", net, charges)
+                self._record_exit_order(
+                    cur, pos, exit_price, qty, "MANUAL_TRAILING_EXIT", net, charges,
+                    nifty_spot_exit=exit_spot,
+                )
                 msg = f"Position exited at Trailing Target ₹{exit_price:.2f} (Net P&L: ₹{net:+.2f})"
 
             elif action == "WIDEN_TARGET":
@@ -6567,9 +6567,9 @@ class QuantTerminalBackend:
 
                 cur.execute("""
                 UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?,
-                                     exit_reason='MANUAL_CLOSE'
+                                     exit_reason='MANUAL_CLOSE', spot_exit=COALESCE(?, spot_exit)
                 WHERE position_id=?
-                """, (exit_price, exit_time, gross, net, position_id))
+                """, (exit_price, exit_time, gross, net, exit_spot, position_id))
 
                 # Update paper wallet margin, balance and realized pnl
                 req_margin = entry * qty
@@ -6577,8 +6577,10 @@ class QuantTerminalBackend:
                             "margin_used = max(0.0, margin_used - ?), "
                             "realized_pnl = realized_pnl + ?, updated_at = ? WHERE id=1",
                             (net, req_margin, net, datetime.now(IST).isoformat()))
-                self._record_exit_order(cur, pos, exit_price, qty,
-                                        "MANUAL_CLOSE", net, charges)
+                self._record_exit_order(
+                    cur, pos, exit_price, qty, "MANUAL_CLOSE", net, charges,
+                    nifty_spot_exit=exit_spot,
+                )
                 msg = f"Position closed @ ₹{exit_price:.2f} (Net P&L: ₹{net:+.2f})"
 
             else:
@@ -6737,7 +6739,7 @@ class QuantTerminalBackend:
                 r["e8"] = None
             if len(tail) >= 8:
                 closes = pd.Series([float(x["close"]) for x in tail])
-                e8 = closes.ewm(span=8, adjust=False).mean()
+                _, e8 = ema4_ema8(closes)
                 for i, r in enumerate(tail):
                     r["e8"] = float(e8.iloc[i])
             return tail

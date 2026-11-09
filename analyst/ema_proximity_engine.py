@@ -31,7 +31,12 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from analyst.nse_spot_candles_8510 import EMA_WARMUP_1M_BARS, ema4_ema8, resample_spot_from_1m
+from analyst.nse_spot_candles_8510 import (
+    EMA_WARMUP_1M_BARS,
+    ema4_ema8,
+    load_tradingview_ema_cross_config,
+    resample_spot_from_1m,
+)
 
 log = logging.getLogger("ema_proximity_engine")
 
@@ -73,6 +78,12 @@ class EmaProximityEngine:
         self._live_matrix_cache_payload: Optional[Dict[str, Any]] = None
         self._live_cross_cache: Optional[Tuple[float, float, Dict[str, Any]]] = None
         self._live_1m_df_cache: Optional[Tuple[float, pd.DataFrame]] = None
+        self._tv_ema_cfg: Optional[Dict[str, Any]] = None
+
+    def tv_ema_settings(self) -> Dict[str, Any]:
+        if self._tv_ema_cfg is None:
+            self._tv_ema_cfg = load_tradingview_ema_cross_config(self.config_path)
+        return dict(self._tv_ema_cfg)
 
     def get_config(self) -> Dict[str, Any]:
         """Loads 'ema_proximity_radar' section from terminal8510_config.json or returns default."""
@@ -265,6 +276,7 @@ class EmaProximityEngine:
         cfg = self.get_config()
         if custom_cfg:
             cfg.update(custom_cfg)
+        tv_ema = self.tv_ema_settings()
 
         approaching_pts = float(cfg.get("approaching_pts_threshold", 12.0))
         touch_pts = float(cfg.get("touch_pts_threshold", 5.0))
@@ -425,7 +437,7 @@ class EmaProximityEngine:
 
         # ── 1. Calculate Active Timeframe EMAs (4 and 8) ───────────────────────
         close_series = df_active["close"].astype(float)
-        ema_4_series, ema_8_series = ema4_ema8(close_series)
+        ema_4_series, ema_8_series = ema4_ema8(close_series, tv_ema)
 
         # True Range and 14-period ATR
         high_s = df_active["high"].astype(float)
@@ -441,7 +453,7 @@ class EmaProximityEngine:
         # Compute 15m rolling EMAs
         if not df_15m.empty:
             c15 = df_15m["close"].astype(float)
-            df_15m["ema_4"], df_15m["ema_8"] = ema4_ema8(c15)
+            df_15m["ema_4"], df_15m["ema_8"] = ema4_ema8(c15, tv_ema)
             if "close_ts" not in df_15m.columns:
                 df_15m["close_ts"] = df_15m["ts"] + 900
         else:
@@ -452,7 +464,7 @@ class EmaProximityEngine:
         # Compute 1H rolling EMAs
         if not df_1h.empty:
             c1h = df_1h["close"].astype(float)
-            df_1h["ema_4"], df_1h["ema_8"] = ema4_ema8(c1h)
+            df_1h["ema_4"], df_1h["ema_8"] = ema4_ema8(c1h, tv_ema)
             if "close_ts" not in df_1h.columns:
                 df_1h["close_ts"] = df_1h["ts"] + 3600
         else:
@@ -850,6 +862,7 @@ class EmaProximityEngine:
             "clean_trigger_win_rate_pct": win_rate,
             "avg_mfe_15m_pts": avg_mfe,
             "active_timeframe": active_tf,
+            "tradingview_ema_cross": tv_ema,
         }
 
         # Filtering support
@@ -948,12 +961,22 @@ class EmaProximityEngine:
 
         df_idx = df_1m.set_index("datetime")
         _, df_15m, df_1h = resample_spot_from_1m(df_idx)
+        tv_ema = self.tv_ema_settings()
+
+        def _drop_forming_bar(bars: pd.DataFrame, bar_seconds: int) -> pd.DataFrame:
+            if bars is None or bars.empty or "ts" not in bars.columns:
+                return bars
+            now_ts = int(now_dt.timestamp())
+            out = bars
+            while len(out) > 0 and now_ts < int(out["ts"].iloc[-1]) + bar_seconds:
+                out = out.iloc[:-1]
+            return out
 
         def _tf_block(bars: pd.DataFrame, bar_seconds: int, label: str) -> Dict[str, Any]:
             if bars is None or bars.empty:
                 return {"ok": False, "timeframe": label}
             close = bars["close"].astype(float)
-            e4_s, e8_s = ema4_ema8(close)
+            e4_s, e8_s = ema4_ema8(close, tv_ema)
             i = -1
             e4 = round(float(e4_s.iloc[i]), 2)
             e8 = round(float(e8_s.iloc[i]), 2)
@@ -985,6 +1008,14 @@ class EmaProximityEngine:
                 "cross_event": cross,
             }
 
+        def _prep(bars: pd.DataFrame) -> pd.DataFrame:
+            if bars is None or bars.empty:
+                return bars
+            return bars.reset_index(drop=False) if "datetime" in bars.columns else bars
+
+        closed_15 = _drop_forming_bar(_prep(df_15m), 900)
+        closed_1h = _drop_forming_bar(_prep(df_1h), 3600)
+
         last_1m_ts = int(df_1m["ts"].iloc[-1])
         payload = {
             "ok": True,
@@ -993,10 +1024,16 @@ class EmaProximityEngine:
             "spot_live": round(spot, 2),
             "spot_1m_last_ist": datetime.fromtimestamp(last_1m_ts, tz=timezone.utc).astimezone(IST).strftime("%H:%M:%S"),
             "session_anchor": "09:15",
+            "tradingview_ema_cross": tv_ema,
             "mode": "forming_bar_included",
-            "note": "Matches Dhan EMA Cross on forming 15m/1H candle; matrix table uses last closed bar.",
-            "tf_15m": _tf_block(df_15m.reset_index(drop=False) if "datetime" in df_15m.columns else df_15m, 900, "15m"),
-            "tf_1h": _tf_block(df_1h.reset_index(drop=False) if "datetime" in df_1h.columns else df_1h, 3600, "1h"),
+            "note": (
+                "TradingView MACD+EMA Cross: Fast 4 / Slow 8 on Close, 09:15 NIFTY spot. "
+                "Panel tick = forming bar; tf_*_closed = matrix parity."
+            ),
+            "tf_15m": _tf_block(_prep(df_15m), 900, "15m"),
+            "tf_1h": _tf_block(_prep(df_1h), 3600, "1h"),
+            "tf_15m_closed": _tf_block(closed_15, 900, "15m_closed"),
+            "tf_1h_closed": _tf_block(closed_1h, 3600, "1h_closed"),
             "updated_at_ist": now_dt.strftime("%H:%M:%S"),
         }
         self._live_cross_cache = (now, spot, payload)

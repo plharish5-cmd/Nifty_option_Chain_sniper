@@ -5,15 +5,37 @@ Matrix, scanner, and party-switch must share this module — not pandas default 
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
+
+_DEFAULT_CFG_PATH = Path(__file__).resolve().parent / "terminal8510_config.json"
 
 NSE_SESSION_OPEN = "09:15"
 NSE_SESSION_CLOSE = "15:30"
 NSE_15M_OFFSET = "9h15min"
 # Enough 1m history so 15m/1H EMA(4/8) match a TV chart with long history (~3–4 weeks).
 EMA_WARMUP_1M_BARS = 12000
+
+# TradingView built-in "MACD + EMA Cross" inputs (NIFTY spot chart reference).
+TRADINGVIEW_EMA_CROSS_DEFAULTS: Dict[str, Any] = {
+    "indicator": "MACD + EMA Cross",
+    "fast_source": "close",
+    "fast_length": 4,
+    "slow_source": "close",
+    "slow_length": 8,
+    "momentum_source": "close",
+    "momentum_ema_period": 12,
+    "direction_source": "close",
+    "direction_ema_period": 200,
+    "macd_fast_length": 4,
+    "macd_slow_length": 8,
+    "macd_source": "close",
+    "signal_smoothing": 9,
+    "adjust": False,
+}
 
 _AGG_OHLCV = {
     "open": "first",
@@ -24,9 +46,47 @@ _AGG_OHLCV = {
 }
 
 
-def ema4_ema8(close: pd.Series) -> Tuple[pd.Series, pd.Series]:
+def load_tradingview_ema_cross_config(cfg_path: Optional[Path] = None) -> Dict[str, Any]:
+    out = dict(TRADINGVIEW_EMA_CROSS_DEFAULTS)
+    path = cfg_path or _DEFAULT_CFG_PATH
+    try:
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            block = data.get("tradingview_ema_cross")
+            if isinstance(block, dict):
+                out.update(block)
+    except Exception:
+        pass
+    return out
+
+
+def ema_tv(close: pd.Series, length: int, adjust: bool = False) -> pd.Series:
+    """Pine `ta.ema(source, length)` — source Close, span=length, adjust=False."""
+    return close.astype(float).ewm(span=int(length), adjust=bool(adjust)).mean()
+
+
+def ema4_ema8(
+    close: pd.Series,
+    tv_cfg: Optional[Dict[str, Any]] = None,
+) -> Tuple[pd.Series, pd.Series]:
+    cfg = tv_cfg or load_tradingview_ema_cross_config()
+    fast = int(cfg.get("fast_length", 4))
+    slow = int(cfg.get("slow_length", 8))
+    adjust = bool(cfg.get("adjust", False))
     c = close.astype(float)
-    return c.ewm(span=4, adjust=False).mean(), c.ewm(span=8, adjust=False).mean()
+    return ema_tv(c, fast, adjust), ema_tv(c, slow, adjust)
+
+
+def ema_momentum_direction(
+    close: pd.Series, tv_cfg: Optional[Dict[str, Any]] = None
+) -> Tuple[pd.Series, pd.Series]:
+    """TV panel: momentum EMA(12) and direction EMA(200) on close — advisory only."""
+    cfg = tv_cfg or load_tradingview_ema_cross_config()
+    c = close.astype(float)
+    mom = int(cfg.get("momentum_ema_period", 12))
+    dire = int(cfg.get("direction_ema_period", 200))
+    adjust = bool(cfg.get("adjust", False))
+    return ema_tv(c, mom, adjust), ema_tv(c, dire, adjust)
 
 
 def _session_slice(g: pd.DataFrame) -> pd.DataFrame:
