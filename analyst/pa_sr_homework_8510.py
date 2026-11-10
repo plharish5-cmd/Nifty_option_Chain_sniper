@@ -50,7 +50,7 @@ DEFAULT_CFG: Dict[str, Any] = {
     "level_tolerance_pts": 25.0,
     "require_below_vwap_for_long": False,
     "require_above_vwap_for_short": False,
-    "exit_at_atma": True,
+    "exit_at_8ema": True,
     "swing_lookback_bars": 12,
     "fixed_sl_pts": 40.0,
     "fixed_tgt_pts": 40.0,
@@ -212,7 +212,7 @@ def scan_pa_sr_breakout(
                 "pattern_high": ph,
                 "pattern_low": pl,
                 "sr_levels": sr,
-                "exit_at_atma": bool(cfg.get("exit_at_atma", True)),
+                "exit_at_8ema": bool(cfg.get("exit_at_8ema", cfg.get("exit_at_atma", True))),
                 "trail_green_only": bool(cfg.get("pattern_trail_green_low_only", True)),
             }
             out.append(("PA_SR_LONG", name, "LONG", tgt, sl, meta))
@@ -229,7 +229,7 @@ def scan_pa_sr_breakout(
                 "pattern_high": ph,
                 "pattern_low": pl,
                 "sr_levels": sr,
-                "exit_at_atma": bool(cfg.get("exit_at_atma", True)),
+                "exit_at_8ema": bool(cfg.get("exit_at_8ema", cfg.get("exit_at_atma", True))),
                 "trail_green_only": bool(cfg.get("pattern_trail_green_low_only", True)),
             }
             out.append(("PA_SR_SHORT", name, "SHORT", tgt, sl, meta))

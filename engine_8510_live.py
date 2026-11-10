@@ -11,6 +11,7 @@ Endpoints:
   - POST /api/mode             : Explicit real-money opt-in; paper permanently ON
   - POST /api/kill             : Emergency Kill Switch
   - POST /api/kill/reset       : Disarm Kill Switch
+  - POST /api/engine/restart   : Stop this process and relaunch engine (desk reload)
   - POST /api/chaser/config    : Configure aggressive limit chaser
   - POST /api/order/submit     : Aggressive Limit Chaser order submission
   - POST /api/position/modify  : In-flight SL trail, target widen, or square off
@@ -28,6 +29,7 @@ import json
 import logging
 import os
 import socket
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -142,6 +144,7 @@ async def startup_event():
             log.warning("⚠ Dhan connection check exception on startup: %s", e)
 
     app.state.ema_live_cross_task = asyncio.create_task(backend.start_ema_live_cross_worker())
+    app.state.ema8_proto_task = asyncio.create_task(backend.start_ema8_prototype_intrabar_worker())
     backend.scanner_task = asyncio.create_task(backend.start_strategy_scanner_loop())
     log.info("✔ 4-Strategy Live Scanner daemon launched.")
 
@@ -425,10 +428,15 @@ async def institutional_ingest_file(req: Request):
 
 @app.get("/api/telemetry")
 async def api_telemetry():
-    """1-second ticking telemetry stream."""
-    data = dict(await backend.get_live_telemetry())
-    data["institutional_telemetry_live"]=backend.get_institutional_telemetry_cached()
-    data["five_factor_confluence"]=backend.institutional_advisory_confluence(data.get("five_factor_confluence"))
+    """Desk tick stream — serves cached telemetry when refresh is slow (UI polls every 1s)."""
+    data = dict(await backend.get_live_telemetry_stale_ok())
+    data["institutional_telemetry_live"] = backend.get_institutional_telemetry_cached()
+    data["five_factor_confluence"] = backend.institutional_advisory_confluence(
+        data.get("five_factor_confluence")
+    )
+    data["telemetry_served_from_cache"] = bool(
+        backend.cached_telemetry and backend._telemetry_refresh_inflight
+    )
     return JSONResponse(content=data)
 
 
@@ -496,6 +504,63 @@ async def api_reset_kill():
     """Disarms Kill Switch."""
     res = backend.reset_kill_switch()
     return JSONResponse(content=res)
+
+
+@app.post("/api/engine/restart")
+async def api_engine_restart(req: Request):
+    """Stop this 8510 process and spawn a fresh engine after a short delay."""
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    if str(body.get("confirm", "")).strip().upper() != "RESTART":
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "confirm must be RESTART"},
+        )
+
+    restart_helper = ROOT / "scripts" / "restart_8510_engine.py"
+    if not restart_helper.is_file():
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": "restart helper missing"},
+        )
+
+    async def _shutdown_and_relaunch() -> None:
+        try:
+            backend.scanner_running = False
+        except Exception as exc:
+            log.warning("scanner stop before restart: %s", exc)
+        try:
+            task = getattr(app.state, "institutional_task", None)
+            if task and not task.done():
+                task.cancel()
+        except Exception:
+            pass
+        await asyncio.sleep(0.3)
+        try:
+            subprocess.Popen(
+                [sys.executable, str(restart_helper)],
+                cwd=str(ROOT),
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as exc:
+            log.error("Failed to spawn restart helper: %s", exc)
+            return
+        await asyncio.sleep(0.2)
+        log.info("8510 engine restart requested — exiting process for relaunch")
+        os._exit(0)
+
+    asyncio.create_task(_shutdown_and_relaunch())
+    return JSONResponse(
+        content={
+            "ok": True,
+            "message": "8510 engine stopping; fresh process in ~3 seconds. Reloading desk…",
+        }
+    )
 
 
 @app.get("/api/desk/alarm-status")
@@ -774,6 +839,24 @@ async def api_scanner_gates_post(req: Request):
         )
 
 
+@app.get("/api/scanner/ema8_prototype/filters")
+async def api_ema8_proto_filters_get():
+    return JSONResponse(content=backend.get_ema8_prototype_filter_config())
+
+
+@app.post("/api/scanner/ema8_prototype/filters")
+async def api_ema8_proto_filters_post(req: Request):
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    try:
+        return JSONResponse(content=backend.update_ema8_prototype_filter_config(data))
+    except Exception as exc:
+        log.exception("[EMA8_PROTOTYPE] filter update failed: %s", exc)
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(exc)})
+
+
 @app.post("/api/scanner/toggle")
 async def api_scanner_toggle(req: Request):
     """Enables or pauses the live 4-strategy scanner; optional bollinger_enabled in body."""
@@ -937,7 +1020,7 @@ async def api_positions():
 @app.get('/api/history/recorded')
 async def api_recorded_history(from_date: str = '1900-01-01', to_date: str = '9999-12-31'):
     try:
-        return await asyncio.to_thread(backend._recorded_history().report, from_date, to_date)
+        return await asyncio.to_thread(backend.get_unified_trades_report, from_date, to_date)
     except ValueError as exc:
         return JSONResponse({'ok':False,'error':str(exc)},status_code=400)
 
@@ -1000,6 +1083,38 @@ async def api_trend_lab_run(req: Request):
     return JSONResponse(content=res)
 
 
+@app.get("/api/algo/execution-master")
+@app.post("/api/algo/execution-master")
+async def api_algo_execution_master(req: Request):
+    from_date = "2026-06-01"
+    to_date = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+    strategy_filter = "ALL"
+    if req.method == "POST":
+        try:
+            body = await req.json()
+            from_date = str(body.get("from_date") or body.get("start_date") or from_date)
+            to_date = str(body.get("to_date") or body.get("end_date") or to_date)
+            strategy_filter = str(body.get("strategy_filter") or body.get("strategy") or "ALL")
+        except Exception:
+            pass
+    else:
+        from_date = req.query_params.get("from_date") or req.query_params.get("start_date") or from_date
+        to_date = req.query_params.get("to_date") or req.query_params.get("end_date") or to_date
+        strategy_filter = req.query_params.get("strategy_filter") or req.query_params.get("strategy") or "ALL"
+    trades = backend.get_algo_execution_master(from_date, to_date, strategy_filter)
+    return JSONResponse(
+        content={
+            "ok": True,
+            "from_date": from_date,
+            "to_date": to_date,
+            "strategy_filter": strategy_filter,
+            "immutable": True,
+            "trades_count": len(trades),
+            "trades": trades,
+        }
+    )
+
+
 @app.get("/api/replay/trades")
 @app.post("/api/replay/trades")
 async def api_replay_trades(req: Request):
@@ -1031,13 +1146,32 @@ async def api_replay_get(req: Request):
     return JSONResponse(content=res)
 
 
+@app.get("/api/replay/candles")
+async def api_replay_candles(req: Request):
+    session_date = str(req.query_params.get("date") or req.query_params.get("session") or "")
+    tf = str(req.query_params.get("tf") or "15m")
+    if not session_date:
+        return JSONResponse(content={"ok": False, "error": "date required"}, status_code=400)
+    return JSONResponse(content=backend.get_replay_session_candles(session_date, tf=tf))
+
+
 @app.post("/api/replay/run")
 async def api_replay_run(req: Request):
     body = await req.json()
     target_date = str(body.get("date", ""))
     speed = float(body.get("speed", 10.0))
     bias = body.get("directional_bias") or body.get("bias")
-    res = await backend.run_date_replay(selected_date=target_date, speed_multiplier=speed, bias=bias)
+    strategy_filter = body.get("strategy_filter") or body.get("strategy")
+    spot_replay = bool(body.get("spot_replay", False))
+    if str(strategy_filter or "").upper() == "EMA8_PROTOTYPE":
+        spot_replay = True
+    res = await backend.run_date_replay(
+        selected_date=target_date,
+        speed_multiplier=speed,
+        bias=bias,
+        strategy_filter=strategy_filter,
+        spot_replay=spot_replay,
+    )
     return JSONResponse(content=res)
 
 

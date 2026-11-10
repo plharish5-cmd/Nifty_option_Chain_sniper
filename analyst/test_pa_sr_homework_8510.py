@@ -35,7 +35,7 @@ def test_trail_every_bar_tightens_stop():
         _bar(100, 105, 99.5, 104, hm="10:15", e8=102),
         _bar(104, 104.5, 103, 103.5, hm="10:30", e8=102),
     ]
-    pnl, _, _, reason, steps, _ = simulate_backtest_spot_exit(
+    pnl, _, _, reason, steps, _, *_ = simulate_backtest_spot_exit(
         bars, 1, 100.0, True, 40, 40, False, {}, trail_every_bar=True, trail_green_only=False
     )
     assert any("Bar Low" in s for s in steps)

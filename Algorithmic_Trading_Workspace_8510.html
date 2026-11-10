@@ -194,6 +194,31 @@
             box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
         }
 
+        .engine-restart-switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-family: var(--font-mono);
+            cursor: pointer;
+            background: rgba(56, 189, 248, 0.12);
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            user-select: none;
+        }
+        .engine-restart-switch input {
+            width: 38px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: #38bdf8;
+        }
+        .engine-restart-switch.restarting {
+            opacity: 0.65;
+            pointer-events: none;
+            border-color: #fbbf24;
+        }
+
         .kill-switch-btn {
             background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
             color: #fff;
@@ -563,6 +588,7 @@
             transition: width 0.3s;
         }
     </style>
+    <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" crossorigin="anonymous"></script>
 </head>
 <body>
 
@@ -646,6 +672,10 @@
                 </label>
                 <button type="button" class="secondary-btn" onclick="testSpokenVoiceAlert()" title="Test Web Speech API">🔊 Test Voice</button>
 
+                <label class="engine-restart-switch" id="engineRestartSwitchWrap" title="Stops Port 8510 and starts it again. Does not square positions — use KILL SWITCH first if needed.">
+                    <input type="checkbox" id="chkEngineRestart" onchange="onEngineRestartSwitch(this)">
+                    <span id="engineRestartLabel">🔄 Kill &amp; Restart 8510</span>
+                </label>
                 <button type="button" class="kill-switch-btn" id="btnKillSwitch" onclick="triggerEmergencyKillSwitch()">🛑 KILL SWITCH</button>
                 <button type="button" class="secondary-btn" id="btnResetKill" style="display:none;" onclick="resetEmergencyKillSwitch()">🔄 Disarm Standby</button>
             </div>
@@ -1045,6 +1075,58 @@
                         </div>
                     </div>
 
+                    <!-- 8 EMA Prototype — separate lane (NOT Stage 2/3/FLAGSHIP) -->
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(251, 191, 36, 0.45); border-radius:8px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+                            <span style="font-weight:700; color:#fbbf24; font-size:13px;">8 EMA Prototype</span>
+                            <span id="stratStatus_ema8_proto" class="status-badge badge-neutral">SCANNING</span>
+                        </div>
+                        <span id="ema8ProtoExecBadge" class="strat-money-badge live-eligible" title="Config: LIVE_ALLOWED routes to Dhan when LIVE armed; else paper.">Prototype · LIVE_ALLOWED</span>
+                        <div id="stratPhase_ema8_proto" style="font-size:10.5px; color:#94a3b8; margin:4px 0; font-family:var(--font-mono);">Phase: WAITING_FOR_CLOSE</div>
+                        <div id="stratBlock_ema8_proto" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
+                        <div style="margin:8px 0; padding:8px; background:rgba(15,23,42,0.65); border:1px solid rgba(251,191,36,0.25); border-radius:6px; font-family:var(--font-mono); font-size:10.5px;">
+                            <div style="font-weight:700; color:#fbbf24; margin-bottom:6px;">Prototype filters (optional)</div>
+                            <div style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center;">
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoRibbon" id="protoRibbonOff" value="off" checked> Ribbon OFF
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoRibbon" id="protoRibbonOn" value="on"> Ribbon ON
+                                </label>
+                                <span style="color:#64748b;">(block if 4–8 within <span id="protoRibbonPts">3</span> pts)</span>
+                            </div>
+                            <div style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin-top:6px;">
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoEmaSep" id="protoEmaSepOff" value="off" checked> EMA separation OFF
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoEmaSep" id="protoEmaSepOn" value="on"> EMA separation ON
+                                </label>
+                                <span style="color:#64748b;">(long: 4&gt;8 · short: 4&lt;8)</span>
+                            </div>
+                            <div style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin-top:6px;">
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoSt" id="protoStOff" value="off" checked> SuperTrend OFF
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoSt" id="protoStOn" value="on"> SuperTrend ON
+                                </label>
+                                <span style="color:#64748b;">(len <b id="protoStLen">5</b> · factor <b id="protoStFac">1</b>)</span>
+                            </div>
+                            <div style="margin-top:6px; color:#94a3b8;" id="protoFilterSaveStatus">—</div>
+                        </div>
+                        <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
+                            15m <b>close cross</b> 8 EMA → <b>ARM</b> (no entry on cross bar) → entry on <b>touch</b> of 8 EMA refreshed every <b>30s</b> on Nifty spot.<br>
+                            CE/PE ≥ ₹200 · current week · Tgt/SL 40 spot <i>or</i> 40 option pts (whichever first).<br>
+                            Flip arm on opposite 15m close. Backtest/replay: <b>EMA8_PROTOTYPE</b> only — not Stage 2/3/FLAGSHIP.
+                        </div>
+                        <div style="margin-top:8px; max-height:88px; overflow-y:auto; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px;">
+                            <table style="width:100%; font-size:10px; font-family:var(--font-mono);">
+                                <thead><tr><th style="text-align:left;">Time</th><th style="text-align:left;">Side</th><th style="text-align:left;">Setup</th></tr></thead>
+                                <tbody id="ema8PrototypeLogBody"><tr><td colspan="3" style="color:#64748b;">No prototype signals yet</td></tr></tbody>
+                            </table>
+                        </div>
+                    </div>
                     <!-- Strategy 4: 1 HR FLAGSHIP (Price Action) -->
                     <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -1720,11 +1802,24 @@
                     <div>
                         <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">Select Historical Date</label>
                         <select id="replayDateSelect" style="display:block; margin-top:4px; min-width:180px;">
-                            <option value="2026-11-05" selected>2026-11-05 (Today - Live Paper + Auto Ingest ✅)</option>
+                            <option value="2026-11-09" selected>2026-11-09 (Latest session)</option>
+                            <option value="2026-11-08">2026-11-08</option>
+                            <option value="2026-11-06">2026-11-06</option>
+                            <option value="2026-11-05">2026-11-05</option>
                             <option value="2026-11-04">2026-11-04 (Benchmark Day - 3 Strategies Active)</option>
                             <option value="2026-11-03">2026-11-03 (Bullish MA Stack Continuation)</option>
                             <option value="2026-11-02">2026-11-02</option>
                             <option value="2026-10-30">2026-10-30</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">Select Strategy Setup</label>
+                        <select id="replayStrategyFilter" style="display:block; margin-top:4px; min-width:220px;">
+                            <option value="ALL" selected>All strategies</option>
+                            <option value="EMA8_PROTOTYPE">8 EMA Prototype (Paper)</option>
+                            <option value="STAGE_2_LONG">Stage 2 8 EMA Long</option>
+                            <option value="STAGE_3_SHORT">Stage 3 8 EMA Short</option>
+                            <option value="H1_FLAGSHIP">1 HR FLAGSHIP</option>
                         </select>
                     </div>
                     <div>
@@ -1736,7 +1831,7 @@
                             <option value="999">⚡ Instant Full-Day Run</option>
                         </select>
                     </div>
-                    <button type="button" class="cyan-btn" onclick="runHistoricalReplay()">▶️ Run Recorded Replay</button>
+                    <button type="button" class="cyan-btn" onclick="runHistoricalReplay()">▶️ Run Replay (Ledger or Spot OHLC)</button>
                 </div>
 
                 <!-- Replay Summary Scoreboard -->
@@ -1759,6 +1854,14 @@
                     </div>
                 </div>
 
+                <div id="replayAlgoChartWrap" style="display:none; margin-bottom:16px; border:1px solid var(--border-subtle); border-radius:8px; padding:8px 10px 4px; background:rgba(9,14,26,0.85);">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap;">
+                        <span style="font-size:12px; font-weight:700; color:#38bdf8;">ALGO CHART — 15m Nifty spot + 4/8 EMA</span>
+                        <span style="font-size:10px; color:var(--text-muted);">Small arrows = entry &amp; target · Large red arrow + label = stop loss (matches homework markup)</span>
+                    </div>
+                    <div id="replayAlgoChart" style="width:100%; height:420px;"></div>
+                </div>
+
                 <!-- Replay Trades Table -->
                 <div style="overflow-x:auto;">
                     <table>
@@ -1777,6 +1880,7 @@
                                 <th>Gross P&amp;L</th>
                                 <th>Dhan Charges</th>
                                 <th>Net P&amp;L (INR)</th>
+                                <th>Data Source</th>
                             </tr>
                         </thead>
                         <tbody id="replayTableBody">
@@ -1801,7 +1905,7 @@
                     </div>
                     <div>
                         <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">To Date</label>
-                        <input type="date" id="replayToDate" value="2026-10-31" style="display:block; margin-top:4px;">
+                        <input type="date" id="replayToDate" value="2026-11-09" style="display:block; margin-top:4px;">
                     </div>
                     <div>
                         <label style="font-size:11px; color:#38bdf8; font-family:var(--font-mono); font-weight:700;">Strategy Filter</label>
@@ -1812,14 +1916,15 @@
                             <option value="CROSSOVER">4. 4x8 EMA CROSSOVER REVERSAL — 4 MA vs 8 EMA Crossover Reversal</option>
                             <option value="H1_FLAGSHIP">5. 1 HR FLAGSHIP — Price Action only (daily S/R · 1H swings · 15m PA)</option>
                             <option value="PA_SR_HOMEWORK">6. 15m PA @ S/R — Hammer/Engulfing/Star @ S1–S4 R1–R4 break (Homework paper)</option>
+                            <option value="EMA8_PROTOTYPE">7. 8 EMA Prototype — Close + retouch 8 EMA (Paper only, 40/40)</option>
                         </select>
                     </div>
                     <div>
                         <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">Data Type Filter</label>
                         <select id="drDataTypeFilter" style="display:block; margin-top:4px; padding:6px 10px; background:#0f172a; color:#f8fafc; border:1px solid #334155; border-radius:6px;">
-                            <option value="ALL" selected>All (Real + Synthetic)</option>
-                            <option value="REAL">Real Only (Algo Real Data)</option>
-                            <option value="SYNTHETIC">Synthetic Only (Artificially Populated)</option>
+                            <option value="ALL" selected>All — NSE spot replay + live ledger</option>
+                            <option value="SYNTHETIC">NSE spot OHLC replay (real 1m candles; modeled option)</option>
+                            <option value="REAL">Live ledger fills only (paper that actually fired)</option>
                         </select>
                     </div>
                     <div style="display:flex; flex-direction:column; gap:4px; padding-bottom:2px;">
@@ -1894,7 +1999,7 @@
                                 <th>11. Trailing</th>
                                 <th>12. All Fall Off</th>
                                 <th>13. Strategy Filter Tag</th>
-                                <th>14. Data Type</th>
+                                <th>14. Data Source</th>
                                 <th>15. Price Type</th>
                                 <th>16. BB Gate</th>
                                 <th>17. Entry TF</th>
@@ -1944,6 +2049,13 @@
                 <div style="font-size:12px; font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                     ⚡ Live Quant Telemetry (Last Closed 15m Bar):
                     <span class="entry-tf-policy" style="font-size:10px; color:#94a3b8; font-family:var(--font-mono);">Entry TF: 15m | FLAGSHIP View: 1H + Daily | No 5m Trading</span>
+                    <label style="font-size:10px; color:#94a3b8;">Strategy focus</label>
+                    <select id="liveStrategyFocus" style="font-size:10.5px; padding:2px 6px; background:#0f172a; color:#f8fafc; border:1px solid #334155; border-radius:4px;">
+                        <option value="ALL" selected>All strategies</option>
+                        <option value="EMA8_PROTOTYPE">8 EMA Prototype</option>
+                        <option value="STAGE_2_LONG">Stage 2 8 EMA</option>
+                        <option value="H1_FLAGSHIP">1 HR FLAGSHIP</option>
+                    </select>
                     <span class="bb-off-badge-global status-badge badge-bear" style="display:none;">Bollinger OFF</span>
                     <button type="button" class="btn-bollinger-gate emerald-btn" onclick="toggleBollingerGate()" style="padding:4px 10px; font-size:11px;">Bollinger Bands: ON</button>
                 </div>
@@ -1978,6 +2090,7 @@
                             <option value="TREND">Trend Following Only (Stage 2 &amp; 3)</option>
                             <option value="H1">1 HR FLAGSHIP (PA) Only</option>
                             <option value="REVERSAL">8-EMA Reversals Only</option>
+                            <option value="EMA8_PROTOTYPE">8 EMA Prototype (Paper) Only</option>
                         </select>
                     </div>
                     <div style="margin-bottom:14px;">
@@ -2306,6 +2419,29 @@
         // False precision Exact_Charges_INR dropped; uses measured historical parameters.
         let allTrades = []; // Loaded exclusively from the recorded paper ledger.
         const dhanOiLegacyData = []; // No imported provider sample rows.
+
+        /** Turn ISO / DB times into desk-readable IST, e.g. 09 Nov 2026, 14:00:00 IST */
+        function formatDeskTimestamp(raw) {
+            if (raw == null || raw === "") return "—";
+            const s = String(raw).trim();
+            if (!s || s === "—" || s === "-") return "—";
+            if (/,/.test(s) && /\bIST\b/.test(s) && !/^20\d{2}-\d{2}-\d{2}T/.test(s)) return s;
+            let d = null;
+            try {
+                if (/^20\d{2}-\d{2}-\d{2}[T ]/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) || s.endsWith("Z")) {
+                    const norm = s.replace(" IST", "").replace(" ", "T");
+                    d = new Date(norm.includes("+") || norm.endsWith("Z") ? norm : norm + "+05:30");
+                } else if (/^\d{2}:\d{2}/.test(s) && s.length <= 15) {
+                    return s.replace(/\s*IST\s*$/i, "") + " IST";
+                }
+            } catch (e) { /* keep fallback */ }
+            if (d && !Number.isNaN(d.getTime())) {
+                const datePart = d.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
+                const timePart = d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+                return `${datePart}, ${timePart} IST`;
+            }
+            return s;
+        }
         let currentExecutionMode = "PAPER_ONLY";
         let isPaperExecutionEnabled = true;
         let isKillSwitchActive = false;
@@ -2340,7 +2476,7 @@
             setInterval(fetchDhanOILiveOI, 15000);
             loadRecordedHistory();
             pollLiveEngine();
-            setInterval(pollLiveEngine, 1000); // 1-second ticking live stream
+            setInterval(pollLiveEngine, 1000); // 1-second live desk stream
             populateReplayDates();
             checkIngestStatus(new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date()));
             initEmaRadarUI();
@@ -3603,9 +3739,12 @@
         }
 
         // ── 3. LIVE 1-SECOND POLLING & TELEMETRY STREAM ────────────────────────
+        let pollLiveEngineInFlight = false;
         async function pollLiveEngine() {
+            if (pollLiveEngineInFlight) return;
+            pollLiveEngineInFlight = true;
             try {
-                const res = await fetch("/api/telemetry", { cache: "no-store" });
+                const res = await fetch("/api/telemetry", { cache: "no-store", signal: AbortSignal.timeout(12000) });
                 if (!res.ok) return;
                 lastCandleSuccessTs = Date.now();
                 hideStaleDeskBanner();
@@ -3805,6 +3944,38 @@
                             sDailyTrend.textContent = sc.strategies.daily_trend.state;
                             const ts = sc.strategies.daily_trend.state || "NEUTRAL";
                             sDailyTrend.className = `status-badge ${ts.includes("BULL") ? "badge-bull" : (ts.includes("BEAR") ? "badge-bear" : "badge-neutral")}`;
+                        }
+                        const ep = sc.strategies.ema8_prototype;
+                        const epSt = document.getElementById("stratStatus_ema8_proto");
+                        const epPh = document.getElementById("stratPhase_ema8_proto");
+                        const epBk = document.getElementById("stratBlock_ema8_proto");
+                        if (ep && epSt) {
+                            epSt.textContent = ep.state || "SCANNING";
+                            const st = ep.state || "";
+                            epSt.className = `status-badge ${st === "TRIGGERED" ? "badge-bull" : (st === "EXPIRED" ? "badge-bear" : (st === "ARMED" ? "badge-gold" : "badge-neutral"))}`;
+                            if (epPh) epPh.textContent = `Phase: ${ep.phase || "WAITING_FOR_CLOSE"}`;
+                            mjBlock("stratBlock_ema8_proto", ep);
+                            const pb = document.getElementById("ema8ProtoExecBadge");
+                            if (pb && ep.execution_mode) {
+                                const live = String(ep.execution_mode).includes("LIVE");
+                                pb.textContent = `Prototype · ${ep.execution_mode}`;
+                                pb.className = live ? "strat-money-badge live-eligible" : "strat-money-badge paper-only";
+                            }
+                            applyEma8ProtoFilterUI(ep);
+                        }
+                        const protoLog = document.getElementById("ema8PrototypeLogBody");
+                        if (protoLog) {
+                            const rows = (sc.ema8_prototype_log || []);
+                            if (!rows.length) {
+                                protoLog.innerHTML = '<tr><td colspan="3" style="color:#64748b;">No prototype signals yet</td></tr>';
+                            } else {
+                                protoLog.innerHTML = rows.map(r => `
+                                    <tr>
+                                        <td>${formatDeskTimestamp(r.ts) || "—"}</td>
+                                        <td>${r.direction || ""}</td>
+                                        <td style="max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${(r.setup_name || "").replace(/"/g, "&quot;")}">${r.setup_name || ""}</td>
+                                    </tr>`).join("");
+                            }
                         }
                         renderFlagshipDesk(sc);
                     }
@@ -4017,6 +4188,8 @@
 
             } catch (err) {
                 console.debug("Polling error:", err);
+            } finally {
+                pollLiveEngineInFlight = false;
             }
         }
 
@@ -4158,15 +4331,16 @@
         }
 
         // ── 5. POSITIONS & ORDERS RENDERING (Problems 3 & 4) ─────────────────
-        // Splits "2026-11-06 11:36:12 IST" into {time, date}. The clock time is
-        // what matters on the desk, so it is shown large and the date dimmed.
-        // Returns a dash rather than inventing "now" when entry_time is absent.
+        // Splits formatted IST into {time, date} for the positions table.
         function splitEntryTime(raw) {
-            const s = String(raw || "").trim();
-            if (!s) return { time: "—", date: "" };
-            const m = s.match(/(\d{4}-\d{2}-\d{2})?[ T]?(\d{2}:\d{2}(?::\d{2})?)/);
-            if (!m) return { time: s, date: "" };
-            return { time: m[2], date: m[1] || "" };
+            const full = formatDeskTimestamp(raw);
+            if (full === "—") return { time: "—", date: "" };
+            const noIst = full.replace(/\s+IST\s*$/i, "");
+            const comma = noIst.lastIndexOf(", ");
+            if (comma > 0) {
+                return { time: noIst.slice(comma + 2), date: noIst.slice(0, comma) };
+            }
+            return { time: full, date: "" };
         }
 
         function renderPositionsTable(positions) {
@@ -4215,7 +4389,7 @@
                     <td title="${structTip}"><b style="font-family:var(--font-mono);">${p.symbol}</b></td>
                     <td><b>${p.qty}</b></td>
                     <td>₹${Number(p.entry_price || 0).toFixed(2)}</td>
-                    <td title="Entered: ${p.entry_time || 'unknown'}">
+                    <td title="Entered: ${formatDeskTimestamp(p.entry_time) || 'unknown'}">
                         <b style="font-family:var(--font-mono); font-size:12.5px;">${et.time}</b>
                         ${et.date ? `<div style="color:var(--text-muted); font-size:10px;">${et.date}</div>` : ``}
                     </td>
@@ -4398,7 +4572,7 @@
                     <td>${fmtNiftySpot(o.nifty_spot_exit)}</td>
                     <td>${fmtOptionPrem(o.option_entry)}</td>
                     <td>${fmtOptionPrem(o.option_exit)}</td>
-                    <td style="color:var(--text-dim);">${o.created_at}</td>
+                    <td style="color:var(--text-dim);">${formatDeskTimestamp(o.created_at)}</td>
                     <td>${exitCell}</td>
                     <td><span class="status-badge ${o.order_status === 'FILLED' ? 'badge-bull' : (o.order_status === 'CANCELLED' ? 'badge-side' : 'badge-bear')}">${o.order_status}</span></td>
                 </tr>
@@ -4507,6 +4681,54 @@
             }
         }
 
+        async function onEngineRestartSwitch(el) {
+            el.checked = false;
+            if (!confirm(
+                "Kill the Port 8510 engine and start it again?\n\n"
+                + "• Open positions are NOT auto-closed (use 🛑 KILL SWITCH first if you need that).\n"
+                + "• This tab will reload when the server is back."
+            )) return;
+
+            const wrap = document.getElementById("engineRestartSwitchWrap");
+            const label = document.getElementById("engineRestartLabel");
+            if (wrap) wrap.classList.add("restarting");
+            if (label) label.textContent = "⏳ Restarting 8510…";
+
+            try {
+                const res = await fetch("/api/engine/restart", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ confirm: "RESTART" }),
+                });
+                const d = await res.json();
+                if (!d.ok) {
+                    alert(d.error || "Restart rejected");
+                    if (wrap) wrap.classList.remove("restarting");
+                    if (label) label.textContent = "🔄 Kill & Restart 8510";
+                    return;
+                }
+                await waitForEngineRestart();
+            } catch (e) {
+                await waitForEngineRestart();
+            }
+        }
+
+        async function waitForEngineRestart(maxMs = 90000) {
+            const started = Date.now();
+            while (Date.now() - started < maxMs) {
+                await new Promise(r => setTimeout(r, 2000));
+                try {
+                    const res = await fetch("/api/health", { cache: "no-store" });
+                    if (res.ok) {
+                        location.reload();
+                        return;
+                    }
+                } catch (_) { /* server still down */ }
+            }
+            alert("Engine may still be starting. Try refreshing the page.");
+            location.reload();
+        }
+
         async function saveChasingParameters() {
             try {
                 const body = {
@@ -4576,6 +4798,70 @@
             return d;
         }
 
+        function applyEma8ProtoFilterUI(cfg) {
+            if (!cfg) return;
+            const rib = !!cfg.ribbon_filter_enabled;
+            const sep = !!cfg.ema_separation_enabled;
+            const st = !!cfg.supertrend_enabled;
+            const rOff = document.getElementById('protoRibbonOff');
+            const rOn = document.getElementById('protoRibbonOn');
+            const sOff = document.getElementById('protoEmaSepOff');
+            const sOn = document.getElementById('protoEmaSepOn');
+            const tOff = document.getElementById('protoStOff');
+            const tOn = document.getElementById('protoStOn');
+            if (rOff && rOn) { rOff.checked = !rib; rOn.checked = rib; }
+            if (sOff && sOn) { sOff.checked = !sep; sOn.checked = sep; }
+            if (tOff && tOn) { tOff.checked = !st; tOn.checked = st; }
+            const rp = document.getElementById('protoRibbonPts');
+            if (rp && cfg.ribbon_max_pts != null) rp.textContent = Number(cfg.ribbon_max_pts).toFixed(1);
+            const sl = document.getElementById('protoStLen');
+            const sf = document.getElementById('protoStFac');
+            if (sl && cfg.supertrend_length != null) sl.textContent = String(cfg.supertrend_length);
+            if (sf && cfg.supertrend_factor != null) sf.textContent = String(cfg.supertrend_factor);
+        }
+
+        async function saveEma8PrototypeFilters(payload) {
+            const stat = document.getElementById('protoFilterSaveStatus');
+            try {
+                const res = await fetch('/api/scanner/ema8_prototype/filters', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
+                applyEma8ProtoFilterUI(d);
+                if (stat) stat.textContent = 'Saved to config (live on next eval).';
+                return d;
+            } catch (e) {
+                if (stat) stat.textContent = 'Save failed: ' + (e.message || e);
+                throw e;
+            }
+        }
+
+        function wireEma8PrototypeFilterRadios() {
+            const post = () => {
+                const payload = {
+                    ribbon_filter_enabled: document.getElementById('protoRibbonOn')?.checked === true,
+                    ema_separation_enabled: document.getElementById('protoEmaSepOn')?.checked === true,
+                    supertrend_enabled: document.getElementById('protoStOn')?.checked === true,
+                };
+                saveEma8PrototypeFilters(payload).catch(() => {});
+            };
+            ['protoRibbonOff', 'protoRibbonOn', 'protoEmaSepOff', 'protoEmaSepOn', 'protoStOff', 'protoStOn'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('change', post);
+            });
+        }
+
+        async function loadEma8PrototypeFilters() {
+            try {
+                const res = await fetch('/api/scanner/ema8_prototype/filters');
+                const d = await res.json().catch(() => ({}));
+                if (res.ok && d.ok !== false) applyEma8ProtoFilterUI(d);
+            } catch (e) { console.debug('ema8 proto filters load', e); }
+        }
+
         async function loadBollingerGate() {
             try {
                 const res = await fetch('/api/scanner/gates');
@@ -4627,6 +4913,8 @@
             }
         }
         loadBollingerGate();
+        wireEma8PrototypeFilterRadios();
+        loadEma8PrototypeFilters();
 
         async function toggleScannerEngine() {
             try {
@@ -4707,18 +4995,135 @@
             speakVoiceAlert("Order has been executed for NIFTY 23800 Call for Long, at Entry Price 222 rupees, at time 09:30 AM.");
         }
 
+        let _replayAlgoChart = null;
+        let _replayCandleSeries = null;
+        let _replayEma4Series = null;
+        let _replayEma8Series = null;
+
+        async function renderReplayAlgoChart(sessionDate, trades, chartMarkers) {
+            const wrap = document.getElementById('replayAlgoChartWrap');
+            const el = document.getElementById('replayAlgoChart');
+            if (!wrap || !el || typeof LightweightCharts === 'undefined') return;
+            const protoTrades = (trades || []).filter(t => {
+                const sid = String(t.strategy_id || '').toUpperCase();
+                const setup = String(t.setup_name || t.setup || '');
+                return sid.includes('EMA8_PROTOTYPE') || setup.includes('8 EMA Prototype');
+            });
+            if (!protoTrades.length) {
+                wrap.style.display = 'none';
+                return;
+            }
+            try {
+                const cr = await fetch(`/api/replay/candles?date=${encodeURIComponent(sessionDate)}&tf=15m`);
+                const cd = await cr.json();
+                if (!cd.ok || !(cd.candles || []).length) {
+                    wrap.style.display = 'none';
+                    return;
+                }
+                wrap.style.display = 'block';
+                if (!_replayAlgoChart) {
+                    _replayAlgoChart = LightweightCharts.createChart(el, {
+                        layout: { background: { color: '#0b1220' }, textColor: '#94a3b8' },
+                        grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+                        timeScale: { timeVisible: true, secondsVisible: true, borderColor: '#334155' },
+                        rightPriceScale: { borderColor: '#334155' },
+                    });
+                    _replayCandleSeries = _replayAlgoChart.addCandlestickSeries({
+                        upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
+                        wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+                    });
+                    _replayEma4Series = _replayAlgoChart.addLineSeries({ color: '#fda4af', lineWidth: 2, title: '4 EMA' });
+                    _replayEma8Series = _replayAlgoChart.addLineSeries({ color: '#86efac', lineWidth: 2, title: '8 EMA' });
+                }
+                const candles = cd.candles.map(c => ({
+                    time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
+                }));
+                const e4 = cd.candles.filter(c => c.e4 != null).map(c => ({ time: c.time, value: c.e4 }));
+                const e8 = cd.candles.filter(c => c.e8 != null).map(c => ({ time: c.time, value: c.e8 }));
+                _replayCandleSeries.setData(candles);
+                _replayEma4Series.setData(e4);
+                _replayEma8Series.setData(e8);
+                const markers = (chartMarkers && chartMarkers.length)
+                    ? chartMarkers
+                    : buildReplayMarkersClient(protoTrades);
+                _replayCandleSeries.setMarkers(markers.map(m => ({
+                    time: m.time,
+                    position: m.position,
+                    shape: m.shape,
+                    color: m.color,
+                    text: m.text || '',
+                    size: m.size != null ? m.size : 1,
+                })));
+                _replayAlgoChart.timeScale().fitContent();
+            } catch (err) {
+                console.warn('replay chart', err);
+                wrap.style.display = 'none';
+            }
+        }
+
+        function buildReplayMarkersClient(trades) {
+            const markers = [];
+            for (const t of trades) {
+                const ent = Number(t.entry_unix);
+                const ex = Number(t.exit_unix);
+                if (!ent || !ex) continue;
+                const setup = String(t.setup_name || t.setup || '');
+                let direction = String(t.direction || '').toUpperCase();
+                if (!direction) direction = setup.includes('Long') ? 'LONG' : setup.includes('Short') ? 'SHORT' : '';
+                const isLong = direction === 'LONG';
+                const outcome = String(t.outcome || t.result || '').toUpperCase();
+                markers.push({
+                    time: ent,
+                    position: isLong ? 'belowBar' : 'aboveBar',
+                    shape: isLong ? 'arrowUp' : 'arrowDown',
+                    color: isLong ? '#22c55e' : '#ef4444',
+                    size: 1,
+                    text: '',
+                });
+                if (outcome.includes('SL')) {
+                    const d = new Date(ex * 1000);
+                    const hm = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+                    markers.push({
+                        time: ex,
+                        position: isLong ? 'aboveBar' : 'belowBar',
+                        shape: isLong ? 'arrowDown' : 'arrowUp',
+                        color: '#dc2626',
+                        size: 3,
+                        text: `STOP LOSS HIT ON ${direction} ${hm}`,
+                    });
+                } else if (outcome.includes('TARGET')) {
+                    markers.push({
+                        time: ex,
+                        position: isLong ? 'aboveBar' : 'belowBar',
+                        shape: isLong ? 'arrowUp' : 'arrowDown',
+                        color: '#10b981',
+                        size: 1,
+                        text: '',
+                    });
+                }
+            }
+            return markers.sort((a, b) => a.time - b.time);
+        }
+
         // ── 8. HISTORICAL DATE REPLAY LOGIC ───────────────────────────────────
         async function runHistoricalReplay() {
             const dt = document.getElementById("replayDateSelect").value;
             const spd = parseFloat(document.getElementById("replaySpeedSelect").value || 10);
             const tbody = document.getElementById("replayTableBody");
-            tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#38bdf8; padding:20px;">Loading recorded ledger for ${dt}…</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; color:#38bdf8; padding:20px;">Loading recorded ledger for ${dt}…</td></tr>`;
 
             try {
+                const replayFlt = (document.getElementById("replayStrategyFilter")?.value || "ALL").toUpperCase();
+                const spotReplay = replayFlt === "EMA8_PROTOTYPE";
                 const res = await fetch("/api/replay/run", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ date: dt, speed: spd })
+                    body: JSON.stringify({
+                        date: dt,
+                        speed: spd,
+                        strategy_filter: replayFlt,
+                        spot_replay: spotReplay,
+                    })
                 });
                 const d = await res.json();
                 if (!d.ok) {
@@ -4729,22 +5134,48 @@
                 document.getElementById("replayCandlesCount").textContent = `${d.candles_count} / 375`;
                 document.getElementById("replayTradesCount").textContent = d.trades_count;
                 document.getElementById("replayWinRate").textContent = `${d.win_rate == null ? "—" : d.win_rate+"%"}`;
+                let trades = d.trades || [];
                 const netEl = document.getElementById("replayNetPnl");
-                netEl.textContent = `₹${d.total_net_pnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                netEl.style.color = d.total_net_pnl >= 0 ? "var(--emerald)" : "var(--crimson)";
+                const allSynth = trades.length && trades.every(t => resolveDataSourceTag(t) === 'SYNTHESIZED');
+                if (allSynth) {
+                    const pts = trades.reduce((a, t) => a + Number(t.st_pnl_pts || 0), 0);
+                    netEl.textContent = `${pts >= 0 ? '+' : ''}${pts.toFixed(1)} pts spot (no modeled INR)`;
+                    netEl.style.color = pts >= 0 ? "var(--emerald)" : "var(--crimson)";
+                } else {
+                    netEl.textContent = `₹${Number(d.total_net_pnl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    netEl.style.color = (d.total_net_pnl ?? 0) >= 0 ? "var(--emerald)" : "var(--crimson)";
+                }
+                const backendFlt = String(d.strategy_filter || "ALL").toUpperCase();
+                if (replayFlt !== "ALL" && backendFlt !== replayFlt) {
+                    trades = trades.filter(t => {
+                        const sid = String(t.strategy_id || t.strategy || "").toUpperCase();
+                        const setup = String(t.setup_name || t.setup || "").toUpperCase();
+                        if (replayFlt === "EMA8_PROTOTYPE") return sid.includes("EMA8_PROTOTYPE") || setup.includes("8 EMA PROTOTYPE");
+                        if (replayFlt === "STAGE_2_LONG") return sid.includes("STAGE_2");
+                        if (replayFlt === "STAGE_3_SHORT") return sid.includes("STAGE_3");
+                        if (replayFlt === "H1_FLAGSHIP") return sid.includes("FLAGSHIP") || setup.includes("FLAGSHIP");
+                        return true;
+                    });
+                }
 
-                if (d.trades.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:16px;">No recorded data for trades on ${dt}.</td></tr>`;
+                if (trades.length === 0) {
+                    const hint = d.replay_kind === 'REAL_SPOT_OHLC_RULE_REPLAY'
+                        ? ' Spot rule replay returned no signals for this strategy/date (check BB gate and candles).'
+                        : ' No immutable master rows for this strategy on this date.';
+                    tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; color:var(--text-muted); padding:16px;">No trades to show on ${dt}${replayFlt !== "ALL" ? " (filter: " + replayFlt + ")" : ""}.${hint}</td></tr>`;
                     return;
                 }
 
-                tbody.innerHTML = d.trades.map(t => {
+                tbody.innerHTML = trades.map(t => {
                     const setupName = t.setup_name || t.setup || "Strategy Trade";
-                    const entryTime = t.entry_ist || t.entry_time || "-";
-                    const exitTime = t.exit_ist || t.exit_time || "-";
+                    const entryTime = formatDeskTimestamp(t.entry_ist || t.entry_time || "-");
+                    const exitTime = formatDeskTimestamp(t.exit_ist || t.exit_time || "-");
                     const outcomeText = t.outcome || t.result || "CLOSED";
                     const chgVal = (t.dhan_charges != null) ? t.dhan_charges : (t.charges || 0);
                     const sym = t.contract_symbol || t.symbol || 'UNKNOWN';
+                    const pt = resolvePriceType(t);
+                    const optIn = sanitizeOptionDisplay(t.option_entry, pt);
+                    const optOut = sanitizeOptionDisplay(t.option_exit, pt);
                     return `
                     <tr>
                         <td><code style="font-family:var(--font-mono);">${sym}</code></td>
@@ -4754,14 +5185,17 @@
                         <td>${t.duration || '-'}</td>
                         <td>${(t.index_entry != null ? Number(t.index_entry).toFixed(1) : '-')}</td>
                         <td>${(t.index_exit != null ? Number(t.index_exit).toFixed(1) : '-')}</td>
-                        <td>₹${(t.option_entry != null ? Number(t.option_entry).toFixed(2) : '-')}</td>
-                        <td>₹${(t.option_exit != null ? Number(t.option_exit).toFixed(2) : '-')}</td>
-                        <td><span class="status-badge ${t.net_pnl >= 0 ? 'badge-bull' : 'badge-bear'}">${outcomeText}</span></td>
-                        <td style="color:${t.gross_pnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">${t.gross_pnl >= 0 ? '+' : ''}₹${Number(t.gross_pnl || 0).toFixed(2)}</td>
-                        <td>₹${Number(chgVal).toFixed(2)}</td>
-                        <td style="font-weight:700; color:${t.net_pnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">${t.net_pnl >= 0 ? '+' : ''}₹${Number(t.net_pnl || 0).toFixed(2)}</td>
+                        <td>${optIn}</td>
+                        <td>${optOut}</td>
+                        <td><span class="status-badge ${(t.net_pnl != null && t.net_pnl >= 0) || (t.st_pnl_pts != null && t.st_pnl_pts >= 0) ? 'badge-bull' : 'badge-bear'}">${outcomeText}</span></td>
+                        <td>${fmtMoneyOrDash(t.gross_pnl, t)}</td>
+                        <td>${fmtMoneyOrDash(chgVal, t)}</td>
+                        <td style="font-weight:700;">${fmtMoneyOrDash(t.net_pnl, t)}${pt === 'SYNTHESIZED' && t.st_pnl_pts != null ? ` <span style="color:var(--text-muted);font-size:10px;">(${Number(t.st_pnl_pts).toFixed(1)} pts)</span>` : ''}</td>
+                        <td>${formatDataSourceCell(t)}</td>
                     </tr>
                 `;}).join("");
+
+                await renderReplayAlgoChart(dt, trades, d.chart_markers);
 
             } catch (e) {
                 alert("Replay request error: " + e.message);
@@ -4776,12 +5210,38 @@
             return "badge-neutral";
         }
 
+        function resolveDataSourceTag(t) {
+            const tag = String(t.data_source_tag || t.replay_mode || "").toUpperCase();
+            if (tag.includes("IMMUTABLE") || tag === "IMMUTABLE_MASTER") return "IMMUTABLE_MASTER";
+            if (tag.includes("SYNTH")) return "SYNTHESIZED";
+            if (String(t.primary_source || "").includes("IMMUTABLE")) return "IMMUTABLE_MASTER";
+            if (resolvePriceType(t) === "SYNTHESIZED") return "SYNTHESIZED";
+            return "IMMUTABLE_MASTER";
+        }
+
         function resolvePriceType(t) {
             const raw = String(t.price_type || "").toUpperCase();
             if (raw === "SYNTHESIZED" || String(t.source || "").toUpperCase() === "SYNTHESIZED") return "SYNTHESIZED";
-            if (raw === "REAL_ALGO_PAPER") return "REAL_ALGO_PAPER";
+            if (String(t.data_source_tag || "").toUpperCase() === "SYNTHESIZED") return "SYNTHESIZED";
+            if (raw === "REAL_ALGO_MASTER" || raw === "REAL_ALGO_PAPER") return raw;
             if (String(t.Data_Type || "").toLowerCase().includes("synth")) return "SYNTHESIZED";
+            if (String(t.Data_Type || "").includes("IMMUTABLE")) return "REAL_ALGO_MASTER";
             return "REAL_ALGO_PAPER";
+        }
+
+        function formatDataSourceCell(t) {
+            const ds = resolveDataSourceTag(t);
+            const cls = ds === "IMMUTABLE_MASTER" ? "badge-bull" : "badge-gold";
+            const mode = t.execution_mode || t.mode;
+            const suffix = (ds === "IMMUTABLE_MASTER" && mode) ? ` (${mode})` : "";
+            return `<span class="status-badge ${cls}">${ds}${suffix}</span>`;
+        }
+
+        function fmtMoneyOrDash(val, t) {
+            if (resolveDataSourceTag(t) === "SYNTHESIZED") return "—";
+            if (val == null || val === "") return "—";
+            const n = Number(val);
+            return Number.isFinite(n) ? `₹${n.toFixed(2)}` : "—";
         }
 
         function formatPriceTypeCell(t) {
@@ -4791,10 +5251,8 @@
         }
 
         function sanitizeOptionDisplay(display, priceType) {
+            if (priceType === "SYNTHESIZED") return "—";
             let s = display == null ? "-" : String(display);
-            if (priceType === "SYNTHESIZED") {
-                return s.replace(/\(Real\)/gi, "").replace(/Real Data/gi, "").trim() || s;
-            }
             return s.replace(/SYNTHESIZED/gi, "Synth").trim();
         }
 
@@ -4892,7 +5350,16 @@
             const from_date = document.getElementById('replayFromDate').value;
             const to_date = document.getElementById('replayToDate').value;
             const strategy_filter = document.getElementById('drStrategyFilter')?.value || 'ALL';
-            const data_type_filter = document.getElementById('drDataTypeFilter')?.value || 'ALL';
+            let data_type_filter = document.getElementById('drDataTypeFilter')?.value || 'ALL';
+            if (strategy_filter === 'EMA8_PROTOTYPE' && data_type_filter === 'REAL') {
+                alert(
+                    '8 EMA Prototype history uses real NSE spot 1m candles (not ledger-only).\n\n'
+                    + 'Switching Data Type to spot OHLC replay.'
+                );
+                data_type_filter = 'SYNTHETIC';
+                const dsel = document.getElementById('drDataTypeFilter');
+                if (dsel) dsel.value = 'SYNTHETIC';
+            }
             const include_today_paper = document.getElementById('includeTodayPaperTrades')?.checked ?? true;
             const use_previous_scanner = document.getElementById('usePreviousScannerData')?.checked ?? false;
 
@@ -4902,7 +5369,8 @@
                 STAGE_3_SHORT: 'STAGE 3 8 EMA SHORT',
                 CROSSOVER: '4x8 EMA CROSSOVER REVERSAL',
                 H1_FLAGSHIP: '1 HR FLAGSHIP',
-                PA_SR_HOMEWORK: '15m PA @ S/R (Homework)'
+                PA_SR_HOMEWORK: '15m PA @ S/R (Homework)',
+                EMA8_PROTOTYPE: '8 EMA Prototype (Paper)'
             };
             const banner = document.getElementById('drActiveFilterBanner');
             if (banner) {
@@ -4970,14 +5438,23 @@
                 const alpha = Number(st.total_net_pnl_inr ?? 0) - Number(fx.total_net_pnl_inr ?? 0);
                 setTxt('drAlphaLocked', `${alpha >= 0 ? '+' : ''}₹${alpha.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}`);
 
+                if (strategy_filter === 'EMA8_PROTOTYPE' && !(data.trades || []).length) {
+                    const hint = document.createElement('tr');
+                    const td = document.createElement('td');
+                    td.colSpan = 16;
+                    td.style.cssText = 'padding:16px;color:#fbbf24;font-family:var(--font-mono);font-size:11.5px;line-height:1.5;';
+                    td.textContent = 'No 8 EMA Prototype rows for this range. Check: (1) engine restarted after latest code, (2) To Date includes session day, (3) Data Type = All or Synthetic (not Real Only), (4) dates use ict_smc spot candles.';
+                    hint.appendChild(td);
+                    tbody.appendChild(hint);
+                }
                 for (const t of (data.trades || [])) {
                     const tr = document.createElement('tr');
                     const pt = resolvePriceType(t);
-                    const dataType = pt === "SYNTHESIZED" ? "SYNTHESIZED" : (t.Data_Type || "REAL_ALGO_PAPER");
-                    const optIn = sanitizeOptionDisplay(t.Option_Entry_Display, pt);
-                    const optOut = sanitizeOptionDisplay(t.Option_Exit_Display, pt);
+                    const dataType = resolveDataSourceTag(t);
+                    const optIn = sanitizeOptionDisplay(pt === 'SYNTHESIZED' ? null : (t.Option_Entry_Display ?? t.option_entry), pt);
+                    const optOut = sanitizeOptionDisplay(pt === 'SYNTHESIZED' ? null : (t.Option_Exit_Display ?? t.option_exit), pt);
                     const cols = [
-                        t.Date,
+                        formatDeskTimestamp(t.Date) !== "—" ? formatDeskTimestamp(t.Date) : (t.Date || "—"),
                         t.Setup_Name,
                         t.Contract_Symbol,
                         t.Direction,
@@ -5059,7 +5536,7 @@
                     <td>${r.live_trades_taken}</td>
                     <td>${r.backtest_trades_found}</td>
                     <td>${matchBadge}</td>
-                    <td>${r.entry_exit_time || "-"}</td>
+                    <td>${formatDeskTimestamp(r.entry_exit_time) || "-"}</td>
                     <td>${r.strategy_reason || "-"}</td>
                 </tr>`;
             }).join("");
@@ -5077,7 +5554,10 @@
         function exportDateRangeBacktestToExcel(){
  if(!lastDateRangeResults){alert('Load recorded history first');return;}
  const headers=['Ledger ID','Date','Setup','Direction','Symbol','Entry premium','Exit premium','Quantity','Exit reason','Stored gross P&L','Stored charges','Stored net P&L','Provenance'];
- const rows=lastDateRangeResults.trades.map(t=>[t.Trade_ID,t.Date,t.Setup_Name,t.Direction,t.Contract_Symbol,t.option_entry,t.option_exit,t.qty,t.exit_reason,t.gross_pnl,t.charges,t.net_pnl,t.provenance]);
+ const rows=lastDateRangeResults.trades.map(t=>{
+   const syn=resolveDataSourceTag(t)==='SYNTHESIZED';
+   return [t.Trade_ID,t.Date,t.Setup_Name,t.Direction,t.Contract_Symbol,syn?'':(t.option_entry??''),syn?'':(t.option_exit??''),t.qty,t.exit_reason,syn?'':(t.gross_pnl??''),syn?'':(t.charges??''),syn?'':(t.net_pnl??''),t.data_source_tag||t.provenance];
+ });
  exportTableToExcelXML('Recorded_Paper_Ledger.xls','RecordedPaper',headers,rows);
 }
 
@@ -5144,7 +5624,8 @@
                 const data=await response.json();
                 allTrades=Array.isArray(data.trades)?data.trades:[];
                 if(allTrades.length){const latest=allTrades.map(t=>t.Date).sort().at(-1);const end=document.getElementById('endDate');if(end&&end.value<latest)end.value=latest;}
-                status.textContent=allTrades.length+' recorded closed paper trades. Legacy paper ledger, including possible testing entries; not audited broker fills or strategy backtest evidence. Missing entry-time indicators are UNKNOWN.';
+                const src = data.primary_source || data.provenance || 'RECORDED';
+                status.textContent=allTrades.length+` trades — primary source: ${src}. Immutable master first; legacy ledger only when master is empty for that range.`;
             } catch(e) {allTrades=[];status.textContent='No recorded data — '+e.message;}
             runDateExplorer();
         }
@@ -5165,6 +5646,7 @@
                 if (strat === 'TREND' && !t.Setup_Name.includes('Stage')) return false;
                 if (strat === 'H1' && !(String(t.Setup_Name || '').includes('Flagship') || String(t.strategy_id || '').includes('FLAGSHIP') || String(t.Setup_Name || '').includes('1 HR FLAGSHIP'))) return false;
                 if (strat === 'REVERSAL' && !t.Setup_Name.includes('Reversal')) return false;
+                if (strat === 'EMA8_PROTOTYPE' && !(String(t.strategy_id || '').includes('EMA8_PROTOTYPE') || String(t.Setup_Name || '').includes('8 EMA Prototype'))) return false;
                 return true;
             });
 
@@ -5228,7 +5710,7 @@
             tbody.innerHTML = displayTrades.map((t, idx) => `
                 <tr>
                     <td>${idx + 1}</td>
-                    <td>${t.Date}</td>
+                    <td>${formatDeskTimestamp(t.Date) !== "—" ? formatDeskTimestamp(t.Date) : (t.Date || "—")}</td>
                     <td><b>${t.Setup_Name}</b></td>
                     <td>${t.Market_Gap_Pts > 0 ? '+' : ''}${t.Market_Gap_Pts ?? "UNKNOWN"}</td>
                     <td>${t.EMA_Slope > 0 ? '+' : ''}${t.EMA_Slope ?? "UNKNOWN"}</td>
@@ -5284,6 +5766,7 @@
                 if (strat === 'TREND' && !t.Setup_Name.includes('Stage')) return false;
                 if (strat === 'H1' && !(String(t.Setup_Name || '').includes('Flagship') || String(t.strategy_id || '').includes('FLAGSHIP') || String(t.Setup_Name || '').includes('1 HR FLAGSHIP'))) return false;
                 if (strat === 'REVERSAL' && !t.Setup_Name.includes('Reversal')) return false;
+                if (strat === 'EMA8_PROTOTYPE' && !(String(t.strategy_id || '').includes('EMA8_PROTOTYPE') || String(t.Setup_Name || '').includes('8 EMA Prototype'))) return false;
                 return true;
             });
 
@@ -5861,7 +6344,7 @@
         function exportPositionsToExcel() {
             fetch('/api/positions').then(r => r.json()).then(rows => {
                 const headers = ['Symbol', 'Mode', 'Qty', 'Entry Price', 'Entry Time', 'Current LTP', 'Duration', 'Gross PnL', 'Net PnL', 'Status'];
-                const data = rows.map(p => [p.symbol, p.mode, p.qty, p.entry_price, p.entry_time, p.current_ltp, p.duration, p.gross_pnl, p.net_pnl, p.status]);
+                const data = rows.map(p => [p.symbol, p.mode, p.qty, p.entry_price, formatDeskTimestamp(p.entry_time), p.current_ltp, p.duration, p.gross_pnl, p.net_pnl, p.status]);
                 exportTableToExcelXML('Port8510_Active_Positions.xls', 'Positions', headers, data);
             });
         }
@@ -5872,7 +6355,7 @@
                 const data = rows.map(o => [
                     o.order_id, o.mode, o.symbol, (o.source || o.placed_by), (o.strategy_setup || o.strategy_name),
                     o.side, o.qty, o.signal_ltp, o.nifty_spot_entry, o.nifty_spot_exit,
-                    o.option_entry, o.option_exit, o.created_at,
+                    o.option_entry, o.option_exit, formatDeskTimestamp(o.created_at),
                     o.exit_reason, o.net_pnl, o.order_status,
                 ]);
                 exportTableToExcelXML('Port8510_Orders_Book.xls', 'Orders', headers, data);
@@ -6066,11 +6549,18 @@
                 const dates = data.dates || (Array.isArray(data) ? data : []);
                 const select = document.getElementById("replayDateSelect");
                 if (!select || dates.length === 0) return;
-                const currentVal = select.value;
+                const latest = data.latest || dates[0];
+                const prefer = dates.includes(select.value) ? select.value : latest;
                 select.innerHTML = dates.map(d => {
                     let label = d;
-                    return `<option value="${d}" ${d === (currentVal || dates[0]) ? "selected" : ""}>${label}</option>`;
+                    if (d === latest) label += " (Latest session)";
+                    return `<option value="${d}" ${d === prefer ? "selected" : ""}>${label}</option>`;
                 }).join("");
+                const toDt = document.getElementById("replayToDate");
+                if (toDt && latest) {
+                    const cur = toDt.value;
+                    if (!cur || cur < latest) toDt.value = latest;
+                }
 
                 const emaSelect = document.getElementById("selEmaMatrixDate");
                 if (emaSelect && dates.length > 0) {
@@ -6210,7 +6700,7 @@ function renderRecordingHistory(){
  const all=recHistoryRows.filter(x=>x.date===day&&x.timeframe===tf);recHistoryPage=Math.min(recHistoryPage,Math.max(0,Math.ceil(all.length/120)-1));
  const end=Math.max(0,all.length-recHistoryPage*120),start=Math.max(0,end-120);
  recText('recordingHistoryPage',`${start+Number(all.length>0)}–${end} of ${all.length} saved rows`);
- recRows('recordingEmaRows',all.slice(start,end).map(x=>[x.date+' '+x.time_ist,x.timeframe,recNum(x.nifty_spot_price),recNum(x.close_price),recNum(x.ma4),recNum(x.ema8),recNum(x.gap_vs_atr),x.proximity_status,x.signal,x.status]));
+ recRows('recordingEmaRows',all.slice(start,end).map(x=>[formatDeskTimestamp((x.date||'')+' '+x.time_ist),x.timeframe,recNum(x.nifty_spot_price),recNum(x.close_price),recNum(x.ma4),recNum(x.ema8),recNum(x.gap_vs_atr),x.proximity_status,x.signal,x.status]));
 }
 async function loadRecordingV193(){
  try{
@@ -6230,7 +6720,7 @@ async function loadRecordingV193(){
  for(const day of days){const option=document.createElement('option');option.value=day;option.textContent=day;selector.appendChild(option);}selector.value=days.includes(chosen)?chosen:days[days.length-1];renderRecordingHistory();
  const q=d.radar||{};recText('recordingRadarCaption',q.caption||'No live radar observations recorded.');
  recRows('recordingTierSummary',(q.summary||[]).map(x=>[x.tier,x.n,recNum(x.avg_max),recNum(x.avg_risk),recNum(x.max_risk_ratio),recNum(x.yes_n_pct)+'%',recNum(x.stop_n_pct)+'%',recNum(x.ambiguous_n_pct)+'%',`${x.running_n||0} / ${x.expired_n||0}`]));
- recRows('recordingRadarRows',(q.rows||[]).map(x=>[x.signal_time_ist+' / '+x.tier+' / '+x.signal_name,x.direction,recNum(x.signal_price)+' / '+recNum(x.nifty_spot_at_signal),recNum(x.micro_sl_price)+' / '+recNum(x.risk_points),recNum(x.current_nifty_spot)+' / '+recNum(x.points_moved_now),recNum(x.max_points_moved)+' / '+(x.max_move_time_ist||'—'),recNum(x.max_adverse_points),x.target_15_hit_before_sl||'PENDING',x.outcome+' / '+recNum(x.final_points),[x.premium_at_signal,x.premium_now,x.max_premium_points].map(recNum).join(' / ')]));
+ recRows('recordingRadarRows',(q.rows||[]).map(x=>[formatDeskTimestamp(x.signal_time_ist)+' / '+x.tier+' / '+x.signal_name,x.direction,recNum(x.signal_price)+' / '+recNum(x.nifty_spot_at_signal),recNum(x.micro_sl_price)+' / '+recNum(x.risk_points),recNum(x.current_nifty_spot)+' / '+recNum(x.points_moved_now),recNum(x.max_points_moved)+' / '+formatDeskTimestamp(x.max_move_time_ist||'—'),recNum(x.max_adverse_points),x.target_15_hit_before_sl||'PENDING',x.outcome+' / '+recNum(x.final_points),[x.premium_at_signal,x.premium_now,x.max_premium_points].map(recNum).join(' / ')]));
  // A display failure is not a recording failure. Recording continues in the
  // backend; this only reports that the COUNTS could not be fetched, and it is
  // deliberately not styled as an alert.

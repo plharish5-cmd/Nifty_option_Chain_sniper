@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import sqlite3, math, logging
 
+from analyst.desk_timestamp_8510 import format_desk_timestamp_ist
+
 IST=ZoneInfo('Asia/Kolkata');log=logging.getLogger(__name__)
 
 def parsed_time(value):
@@ -52,18 +54,20 @@ class RecordedHistory:
                 continue
             name=p.get('strategy_setup') or p.get('strategy_name') or 'Unlabelled recorded setup'
             # A legacy setup is not relabelled as the current 8-EMA strategy.
-            legacy='80' in name or 'ATMA' in name.upper()
+            legacy='80' in name or '8 EMA' in name.upper() or 'ATMA' in name.upper()
             charges=gross-net
             direction='LONG' if 'CE' in p['symbol'].upper() or 'CALL' in p['symbol'].upper() else 'SHORT' if 'PE' in p['symbol'].upper() or 'PUT' in p['symbol'].upper() else 'UNKNOWN'
             duration=str(exit-entry)
+            entry_disp=format_desk_timestamp_ist(entry);exit_disp=format_desk_timestamp_ist(exit)
             result.append(dict(Trade_ID=p['position_id'],trade_id=p['position_id'],Date=day,date=day,Setup_Name=name,setup_name=name,strategy_setup=name,Strategy=name,Direction=direction,direction=direction,
-                Entry_Time=entry.strftime('%H:%M:%S'),Exit_Time=exit.strftime('%H:%M:%S'),entry_ist=entry.isoformat(),exit_ist=exit.isoformat(),entry_time=entry.isoformat(),exit_time=exit.isoformat(),duration=duration,
+                Entry_Time=entry.strftime('%H:%M:%S'),Exit_Time=exit.strftime('%H:%M:%S'),entry_ist=entry_disp,exit_ist=exit_disp,entry_time=entry_disp,exit_time=exit_disp,duration=duration,_entry_ts=entry.timestamp(),
                 Contract_Symbol=p['symbol'],contract_symbol=p['symbol'],symbol=p['symbol'],security_id=str(p['security_id']),Lot_Qty=int(qty),qty=int(qty),option_entry=ep,option_exit=xp,Option_Points=xp-ep,
                 Gross_Pnl_INR=gross,gross_pnl=gross,Exact_Charges_INR=charges,dhan_charges=charges,charges=charges,Net_Pnl_INR=net,net_pnl=net,
                 Result=p.get('exit_reason') or 'Recorded close',outcome=p.get('exit_reason') or 'Recorded close',exit_reason=p.get('exit_reason'),source=p.get('source') or p.get('placed_by'),
                 provenance='RECORDED_PAPER_LEDGER',pricing_basis='Stored simulated fills; not verified broker executions',legacy_setup=legacy,mode=mode,
                 **{key:None for key in ('Market_Gap_Pts','EMA_Slope','EMA_Aligned','ADX','R_Squared','MTF_Aligned','Vol_Mult','PCR_At_Entry','index_entry','index_exit')}))
-        return sorted(result,key=lambda r:(r['entry_ist'],str(r['Trade_ID'])))
+        rows=sorted(result,key=lambda r:(r.pop('_entry_ts',0),str(r['Trade_ID'])))
+        return rows
     def candles(self,day,security='13'):
         start=datetime.fromisoformat(day+'T09:15:00').replace(tzinfo=IST);end=start.replace(hour=15,minute=30)
         return [dict(ts=r['ts'],open=r['o'],high=r['h'],low=r['l'],close=r['c'],volume=r['v']) for r in self.read(self.market,'SELECT ts,o,h,l,c,v FROM candles_1m WHERE sec_id=? AND ts>=? AND ts<? ORDER BY ts',(security,int(start.timestamp()),int(end.timestamp())))]

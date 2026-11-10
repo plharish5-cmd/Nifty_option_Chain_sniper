@@ -894,7 +894,7 @@ def test_backtest_synthesize_option_tagging():
         {"hm": "10:30", "day": "2026-11-04", "open": 107, "high": 110, "low": 106, "close": 109},
     ]
     sr = {"S1": 98.0, "R1": 112.0}
-    st, fx, exit_sp, reason, _, _ = simulate_backtest_spot_exit(
+    st, fx, exit_sp, reason, _, _, *_ = simulate_backtest_spot_exit(
         bars, 1, 104.0, True, 40.0, 40.0, True, sr, "15:20", 15.0
     )
     oe, ox = synthesize_option_premium_from_spot(104.0, exit_sp, True, 0.6)

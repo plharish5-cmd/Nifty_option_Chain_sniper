@@ -36,10 +36,10 @@ def test_algo_identity(tmp_path,valid):
  script,env=sandbox(tmp_path,Path('scripts/desk_launch.sh'),8510,payload)
  result=subprocess.run(['bash',str(script),'8510'],env=env,capture_output=True,text=True,timeout=5)
  if valid:
-  assert result.returncode==0 and opened(tmp_path)=='http://127.0.0.1:8510'
+  assert result.returncode==0 and opened(tmp_path)=='http://127.0.0.1:8510/'
   (tmp_path/'opened').unlink()
   warm=subprocess.run(['bash',str(script),'8510'],env={**env,'FAKE_WAIT':'1'},capture_output=True,text=True,timeout=5)
-  assert warm.returncode==0 and opened(tmp_path)=='http://127.0.0.1:8510'
+  assert warm.returncode==0 and opened(tmp_path)=='http://127.0.0.1:8510/'
   assert 'without launching a duplicate' in warm.stdout
  else:
   assert result.returncode==1 and not (tmp_path/'opened').exists()
