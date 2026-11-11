@@ -34,9 +34,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 IST = timezone(timedelta(hours=5, minutes=30))
 
 DEFAULT_CFG: Dict[str, Any] = {
-    "enabled": True,                 # compute + record. Blocks nothing by itself.
-    "filter_block": False,           # True: failing gates stop the trade for `apply_to` lanes
-    "apply_to": ["EMA8_PROTOTYPE"],  # strategy-id prefixes the block applies to
+    "enabled": True,                 # compute + record. Blocks nothing: blocking is the 8600 board's job.
     "gate_direction": True,
     "gate_agreement": True,
     "gate_room": True,
@@ -55,9 +53,6 @@ DEFAULT_CFG: Dict[str, Any] = {
 def load_cfg(scanner_cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     out = dict(DEFAULT_CFG)
     out.update((scanner_cfg or {}).get("oi_context") or {})
-    # the cockpit checkbox is saved as one flat key by the existing gate endpoint
-    if "oi_filter_block" in (scanner_cfg or {}):
-        out["filter_block"] = bool(scanner_cfg["oi_filter_block"])
     return out
 
 
@@ -184,6 +179,21 @@ def compute_context(rows: List[Dict[str, Any]], spot: float, cfg: Dict[str, Any]
             slope_state = "RISING" if slope > 0 else "FALLING"
     fading = (bias == "CE" and slope_state == "FALLING") or (bias == "PE" and slope_state == "RISING")
 
+    # The fast view, as the 8600 bar-flow table shows it: the last 3-minute bar
+    # and the last 15 minutes of the same PE - CE number, plus traded volume.
+    def window(minutes: int) -> Tuple[Optional[float], float, float, float, float]:
+        t0 = _snapshot_at(by_ts, ts_sorted, last_t - 60 * minutes, False)
+        if t0 is None or t0 < base_t or t0 >= last_t:
+            return None, 0.0, 0.0, 0.0, 0.0
+        c0, p0 = adds(base_t, t0) if t0 > base_t else (0.0, 0.0)
+        a, b = by_ts[t0], by_ts[last_t]
+        cv = sum(b[k]["ce_vol"] - a[k]["ce_vol"] for k in b if k in a and abs(k - spot) <= band)
+        pv = sum(b[k]["pe_vol"] - a[k]["pe_vol"] for k in b if k in a and abs(k - spot) <= band)
+        return net - (p0 - c0), call_add - c0, put_add - p0, cv, pv
+
+    flow_3m, call_3m, put_3m, _cv3, _pv3 = window(3)
+    impulse_15m, call_15m, put_15m, call_vol_15m, put_vol_15m = window(15)
+
     # walls from total OI now
     now_chain = by_ts[last_t]
     near = {k: v for k, v in now_chain.items() if abs(k - spot) <= band}
@@ -215,6 +225,14 @@ def compute_context(rows: List[Dict[str, Any]], spot: float, cfg: Dict[str, Any]
         slope_30m=round(slope, 0),
         slope_state=slope_state,
         fading=bool(fading),
+        flow_3m=None if flow_3m is None else round(flow_3m, 0),
+        call_added_3m=round(call_3m, 0),
+        put_added_3m=round(put_3m, 0),
+        impulse_15m=None if impulse_15m is None else round(impulse_15m, 0),
+        call_added_15m=round(call_15m, 0),
+        put_added_15m=round(put_15m, 0),
+        call_volume_15m=round(call_vol_15m, 0),
+        put_volume_15m=round(put_vol_15m, 0),
         call_wall_above=wall_above,
         put_wall_below=wall_below,
         room_up_pts=None if room_up is None else round(room_up, 1),
@@ -282,11 +300,6 @@ def evaluate_gates(ctx: Dict[str, Any], direction: str, cfg: Dict[str, Any]) -> 
     out["reasons"] = reasons
     out["would_block"] = bool(reasons)
     return out
-
-
-def lane_is_filtered(strategy_id: str, cfg: Dict[str, Any]) -> bool:
-    sid = str(strategy_id or "").upper()
-    return any(sid.startswith(str(p).upper()) for p in (cfg.get("apply_to") or []))
 
 
 def recorded_days(db_paths: Iterable[Path]) -> List[Tuple[str, int]]:

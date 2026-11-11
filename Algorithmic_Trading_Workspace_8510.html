@@ -1156,13 +1156,24 @@
                                 <span style="color:#64748b;">(tol 0.0 pts)</span>
                             </div>
                             <div style="margin-top:6px; color:#94a3b8;" id="protoFilterSaveStatus">—</div>
-                            <div style="margin-top:8px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.08);">
-                                <div style="font-weight:700; color:#e2e8f0;">Option-chain context (recorded with every signal)</div>
-                                <div id="oiContextLine" style="margin-top:3px; color:#94a3b8; line-height:1.45;">waiting for option-chain snapshots…</div>
-                                <label style="display:inline-flex; align-items:center; gap:6px; margin-top:5px; cursor:pointer;">
-                                    <input type="checkbox" id="chkOiFilterBlock" onchange="toggleScannerGate('oi_filter_block', this.checked);">
-                                    <span><b>Block 8 EMA Prototype trades that fail the OI gates</b> (OFF = record only, trade as normal)</span>
-                                </label>
+                            <div id="desk8600Board" style="margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.08);">
+                                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px;">
+                                    <span style="font-weight:800; color:#e2e8f0; letter-spacing:.3px;">8600 BOARD — option-chain reads</span>
+                                    <span id="d86Status" style="color:#94a3b8;">waiting…</span>
+                                </div>
+                                <div id="d86Preview" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;"></div>
+                                <div id="d86Rows" style="margin-top:6px; font-size:11px;"><div style="color:#64748b; padding:4px;">No data yet</div></div>
+                                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px;">
+                                    <span style="color:#94a3b8;">Rule:</span><span id="d86Rule"></span>
+                                    <span id="d86Neutral"></span>
+                                    <span id="d86All"></span>
+                                </div>
+                                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:6px;">
+                                    <span style="color:#94a3b8;">Applies to:</span><span id="d86Lanes" style="display:inline-flex; flex-wrap:wrap; gap:5px;"></span>
+                                </div>
+                                <div style="margin-top:6px; color:#64748b; line-height:1.4;">
+                                    Every signal is recorded with every reading. A source skips trades only when its button is ON. A source with no data never skips a trade.
+                                </div>
                             </div>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
@@ -2719,34 +2730,76 @@
                 const cfg = await res.json();
                 const chk = document.getElementById("chkPartySwitch");
                 if (chk && cfg.party_switch_enabled !== undefined) chk.checked = !!cfg.party_switch_enabled;
-                const chkOi = document.getElementById("chkOiFilterBlock");
-                if (chkOi && cfg.oi_filter_block !== undefined) chkOi.checked = !!cfg.oi_filter_block;
                 const chkOr = document.getElementById("chkFlagshipOrTrend");
                 if (chkOr && cfg.flagship_or_8ema_require_trend !== undefined) chkOr.checked = !!cfg.flagship_or_8ema_require_trend;
                 updateGateScopeBadges();
             } catch (e) { console.debug("scanner gates init", e); }
         }
 
-        function renderOiContext8510(c) {
-            const el = document.getElementById("oiContextLine");
-            if (!el) return;
-            if (!c || c.status !== "OK") {
-                el.textContent = "No reading: " + ((c && c.reason) || "no option-chain snapshots yet") + ". Nothing is blocked.";
-                return;
-            }
-            const lakh = (v) => (Number(v || 0) / 100000).toFixed(1) + "L";
-            const col = c.bias === "CE" ? "#34d399" : (c.bias === "PE" ? "#f87171" : "#fbbf24");
-            const room = (v) => (v === null || v === undefined) ? "—" : Number(v).toFixed(0) + " pts";
-            el.innerHTML =
-                '<span style="color:' + col + '; font-weight:700;">' + c.bias_label + '</span>' +
-                ' · since ' + c.baseline_time + ': calls ' + lakh(c.call_added) + ', puts ' + lakh(c.put_added) +
-                ' (PE−CE ' + lakh(c.net_pe_minus_ce) + ', ' + c.imbalance_pct + '%)' +
-                ' · 30m flow ' + c.slope_state + (c.fading ? ' <b style="color:#fbbf24;">against bias</b>' : '') +
-                '<br>Call wall above ' + (c.call_wall_above ?? "—") + ' (' + room(c.room_up_pts) + ')' +
-                ' · Put wall below ' + (c.put_wall_below ?? "—") + ' (' + room(c.room_down_pts) + ')' +
-                (c.boxed ? ' · <b style="color:#fbbf24;">BOXED (range)</b>' : '') +
-                ' · snapshot ' + c.snapshot_time +
-                ' · mode: ' + (c.filter_block ? '<b style="color:#f87171;">BLOCKING</b>' : 'record only');
+        // ── 8600 board ─────────────────────────────────────────────────────
+        function d86Esc(v) { return String(v ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])); }
+        function d86Btn(label, on, call, title) {
+            const st = on
+                ? "background:#0f766e; color:#ecfeff; border:1px solid #14b8a6;"
+                : "background:transparent; color:#94a3b8; border:1px solid #334155;";
+            return '<button type="button" title="' + d86Esc(title || "") + '" onclick="' + call + '" style="' + st +
+                ' border-radius:5px; padding:2px 9px; font-size:11px; font-weight:700; cursor:pointer;">' + label + '</button>';
+        }
+        function d86Chip(dir) {
+            const m = { CE: ["CE ▲", "#34d399"], PE: ["PE ▼", "#f87171"], NEUTRAL: ["NEUTRAL", "#fbbf24"], ROOM: ["ROOM", "#93c5fd"] };
+            const x = m[dir] || ["no data", "#64748b"];
+            return '<span style="color:' + x[1] + '; font-weight:800;">' + x[0] + '</span>';
+        }
+        async function d86Post(payload) {
+            try {
+                const res = await fetch("/api/desk8600/board", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+                if (res.ok) renderDesk8600Board(await res.json());
+            } catch (e) { console.error("8600 board update", e); }
+        }
+        function renderDesk8600Board(b) {
+            const rows = document.getElementById("d86Rows");
+            if (!rows || !b || !Array.isArray(b.sources)) return;
+            const live = b.sources.filter((s) => s.direction).length;
+            document.getElementById("d86Status").innerHTML =
+                live + "/" + b.sources.length + " sources live · " + d86Esc(b.as_of) + " · " +
+                (b.filters_on ? '<b style="color:#f87171;">' + b.filters_on + ' FILTERING</b>' : "record only");
+            rows.innerHTML = b.sources.map((s) => {
+                const on = s.mode === "FILTER";
+                const age = (s.age_sec === null || s.age_sec === undefined) ? "" : " · " + (s.age_sec < 90 ? s.age_sec + "s" : Math.round(s.age_sec / 60) + "m") + " old";
+                return '<div style="border-top:1px solid rgba(255,255,255,0.06); padding:4px 3px;' + (on ? " background:rgba(20,184,166,0.08);" : "") + '">' +
+                    '<div style="display:flex; align-items:center; gap:6px;">' +
+                    d86Btn(on ? "ON" : "OFF", on, "d86Post({source:'" + s.id + "', on:" + (!on) + "})", "Skip trades this source is against") +
+                    '<span style="flex:1; min-width:0; color:#e2e8f0; font-weight:600;">' + d86Esc(s.label) + '</span>' +
+                    '<span style="white-space:nowrap;">' + d86Chip(s.direction) + '</span></div>' +
+                    '<div style="color:#94a3b8; margin-top:2px; line-height:1.35; overflow-wrap:anywhere;">' +
+                    (s.direction === "ROOM" && (s.blocks || []).length ? '<b style="color:#f87171;">no room for ' + s.blocks.join(" / ") + '</b> · ' : "") +
+                    d86Esc(s.detail) + '<span style="color:#475569;">' + age + ' · ' + (s.origin === "8600" ? "8600 app" : "chain snapshots") + '</span></div></div>';
+            }).join("");
+            const labelOf = {}; b.sources.forEach((s) => { labelOf[s.id] = s.label; });
+            const pv = (side) => {
+                const p = (b.preview || {})[side] || {};
+                const col = p.would_block ? "#f87171" : "#34d399";
+                const bad = (p.votes || []).filter((v) => v.used && v.verdict === "AGAINST").map((v) => labelOf[v.id]);
+                const neu = (p.votes || []).filter((v) => v.used && v.verdict === "NEUTRAL").map((v) => labelOf[v.id]);
+                let txt = "TAKE (" + p.agree + " agree, " + p.against + " against)";
+                if (!b.filters_on) txt = "TAKE — no filter on";
+                else if (p.would_block) txt = "SKIP — " + (bad.length ? "against: " + d86Esc(bad.join(", ")) : "neutral: " + d86Esc(neu.join(", ")));
+                return '<div style="flex:1 1 100%; border:1px solid ' + col + '; border-radius:5px; padding:3px 8px; color:' + col + '; line-height:1.35;">' +
+                    '<b>' + side + ' signal now:</b> ' + txt + '</div>';
+            };
+            document.getElementById("d86Preview").innerHTML = pv("CE") + pv("PE");
+            document.getElementById("d86Rule").innerHTML =
+                d86Btn("None against", b.rule === "NO_OPPOSE", "d86Post({rule:'NO_OPPOSE'})", "Skip when any ON source points the other way") + " " +
+                d86Btn("Majority agrees", b.rule === "MAJORITY", "d86Post({rule:'MAJORITY'})", "Skip unless more ON sources agree than oppose");
+            document.getElementById("d86Neutral").innerHTML =
+                d86Btn("Neutral = skip", !!b.neutral_blocks, "d86Post({neutral_blocks:" + (!b.neutral_blocks) + "})",
+                    "Also skip when an ON source is neutral. With the 8600 ticket ON: trade only on a ticket.");
+            document.getElementById("d86All").innerHTML =
+                d86Btn("All ON", false, "d86Post({all_sources:true})", "") + " " + d86Btn("All OFF", false, "d86Post({all_sources:false})", "");
+            document.getElementById("d86Lanes").innerHTML = (b.lanes || []).map((l) => {
+                const on = (b.apply_to || []).includes(l.prefix);
+                return d86Btn(d86Esc(l.label), on, "d86Post({lane:'" + l.prefix + "', on:" + (!on) + "})", "");
+            }).join("");
         }
 
         async function toggleScannerGate(key, value) {
@@ -4156,7 +4209,7 @@
                 }
 
                 renderDhanOI8510(data.dhan_oi, data.five_factor_confluence);
-                renderOiContext8510(data.oi_context);
+                renderDesk8600Board(data.desk8600_board);
                 renderWriterFlowTelemetry(data.stockmojo_live, data.writer_flow_gate);
 
                 if (data.ema_live_cross && data.ema_live_cross.ok) {

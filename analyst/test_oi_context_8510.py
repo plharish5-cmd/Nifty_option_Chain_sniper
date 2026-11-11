@@ -14,9 +14,9 @@ What each test pins down:
  7. A gate that is switched off never produces a reason.
  8. The loader reads `chain_snap`, picks this week's expiry and honours as-of.
  9. Config: defaults, the nested block, and the cockpit's flat key.
-10. Backend: the context reaches the Prototype state as `oi_bias`; with
-    blocking OFF a failing signal is recorded and not blocked; the checkbox key
-    is accepted by the gate-config endpoint code.
+10. Backend: the context reaches the Prototype state as `oi_bias` and is
+    recorded per signal. Blocking is the 8600 board's job (test_desk8600_board_8510).
+11. The 3-minute bar and the 15-minute impulse of the PE - CE number.
 
 Every test uses private databases in tmp_path.
 """
@@ -35,7 +35,6 @@ from analyst.oi_context_8510 import (  # noqa: E402
     DEFAULT_CFG,
     compute_context,
     evaluate_gates,
-    lane_is_filtered,
     load_cfg,
     load_day_snapshots,
     recorded_days,
@@ -201,12 +200,19 @@ def test_loader_reads_nearest_expiry_and_respects_asof(tmp_path):
 
 # 9
 def test_config_defaults_nested_block_and_cockpit_key():
-    assert load_cfg(None)["filter_block"] is False and load_cfg({})["enabled"] is True
+    assert load_cfg(None)["enabled"] is True and load_cfg({})["slope_minutes"] == 30
     assert load_cfg({"oi_context": {"min_room_pts": 60}})["min_room_pts"] == 60
-    assert load_cfg({"oi_filter_block": True})["filter_block"] is True
-    assert load_cfg({"oi_context": {"filter_block": True}, "oi_filter_block": False})["filter_block"] is False
-    cfg = load_cfg({})
-    assert lane_is_filtered("EMA8_PROTOTYPE_CE", cfg) and not lane_is_filtered("STAGE_2_LONG", cfg)
+
+
+def test_three_minute_bar_and_fifteen_minute_impulse():
+    rows = (snap("09:15", flat(1000.0), flat(1000.0))
+            + snap("11:45", flat(1100.0), flat(1500.0))      # net +2000 by 11:45
+            + snap("11:57", flat(1100.0), flat(1700.0))      # net +3000
+            + snap("12:00", flat(1200.0), flat(1700.0)))     # net +2500: last bar went to the calls
+    ctx, _ = ctx_of(rows)
+    assert ctx["bias"] == "CE"
+    assert ctx["flow_3m"] == -500 and ctx["call_added_3m"] == 500 and ctx["put_added_3m"] == 0
+    assert ctx["impulse_15m"] == 500 and ctx["put_added_15m"] == 1000
 
 
 # 10
@@ -241,15 +247,13 @@ def test_backend_context_feeds_prototype_state_and_logs_without_blocking(tmp_pat
         return                                             # the first 30 seconds of the day: nothing to compare
     ctx = b.oi_context()
     assert ctx["status"] == "OK" and ctx["bias"] == "PE"
-    assert ctx["filter_block"] is False
     assert b._ema8_prototype_state["oi_bias"] == "PE"
 
     cfg = load_cfg(b.scanner_cfg)
     sig = {"strategy_id": "EMA8_PROTOTYPE_CE", "direction": "LONG"}
     gates = evaluate_gates(ctx, "LONG", cfg)
-    blocked = bool(cfg["filter_block"] and gates["would_block"] and lane_is_filtered(sig["strategy_id"], cfg))
-    assert gates["would_block"] is True and blocked is False     # recorded, not blocked
-    b.log_signal_oi_context("uid-1", sig, ctx, gates, blocked)
+    assert gates["would_block"] is True
+    b.log_signal_oi_context("uid-1", sig, ctx, gates, False)
     with sqlite3.connect(b.ledger_db) as conn:
         row = conn.execute("SELECT signal_uid, bias, gate_direction_pass, would_block, blocked, reasons "
                            "FROM signal_oi_context").fetchone()
@@ -267,7 +271,4 @@ def test_backend_no_snapshots_is_no_data_and_clears_bias(tmp_path):
 def test_backend_wiring_is_present():
     src = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
     assert 'payload["oi_context"]' in src
-    assert src.count('"oi_filter_block"') >= 3
-    assert "self.log_signal_oi_context(signal_uid, sig, oi_ctx, oi_gates, oi_block)" in src
-    html = (ROOT / "Algorithmic_Trading_Workspace_8510.html").read_text(encoding="utf-8")
-    assert 'id="chkOiFilterBlock"' in html and "renderOiContext8510(data.oi_context)" in html
+    assert "self.log_signal_oi_context(" in src and "oi_filter_block" not in src

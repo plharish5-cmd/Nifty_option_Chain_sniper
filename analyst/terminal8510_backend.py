@@ -3904,10 +3904,10 @@ class QuantTerminalBackend:
     def _oi_context_db_paths(self) -> List[Path]:
         return [ROOT / "data/terminal8510/recording.sqlite3", Path(self.market_db)]
 
-    def oi_context(self, spot: Optional[float] = None, max_age_sec: float = 60.0) -> Dict[str, Any]:
-        """Day OI bias, 30-minute flow and walls from the recorded chain snapshots.
+    def oi_context(self, spot: Optional[float] = None, max_age_sec: float = 20.0) -> Dict[str, Any]:
+        """Day OI bias, 3-minute / 15-minute flow and walls from the recorded chain snapshots.
 
-        Cached for a minute. Never raises; with no data the status is NO_DATA
+        Cached for 20 seconds. Never raises; with no data the status is NO_DATA
         and nothing downstream is blocked.
         """
         from analyst.oi_context_8510 import compute_context, load_cfg, load_day_snapshots
@@ -3927,8 +3927,6 @@ class QuantTerminalBackend:
             ctx = compute_context(rows, px, cfg, day=day, now_ts=int(now.timestamp()))
         except Exception as exc:
             ctx = {"status": "NO_DATA", "bias": None, "reason": f"error: {type(exc).__name__}"}
-        ctx["filter_block"] = bool(cfg.get("filter_block", False))
-        ctx["apply_to"] = list(cfg.get("apply_to") or [])
         self._oi_context_cache = (now_mono, ctx)
         # Feed for the Prototype's OI placeholder (used only if that switch is on).
         try:
@@ -3939,6 +3937,64 @@ class QuantTerminalBackend:
         except Exception:
             pass
         return ctx
+
+    # ── 8600 BOARD (every option-chain read, one switch each) ───────────────
+    def desk8600_board(self) -> Dict[str, Any]:
+        """All 8600 / option-chain sources with their current reading. Never raises."""
+        from analyst.desk8600_board_8510 import build_board
+
+        bridge = self.__dict__.get("desk8600_bridge")
+        last = getattr(bridge, "last", None) or {}
+        return build_board(last, self.oi_context(), self.scanner_cfg, datetime.now(IST))
+
+    def update_desk8600_board(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Cockpit change to the board's switches; saved the same way as the other gates."""
+        from analyst.desk8600_board_8510 import apply_update
+
+        apply_update(self.scanner_cfg, updates or {})
+        self.cfg["scanner"] = self.scanner_cfg
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(self.cfg, f, indent=2)
+        except Exception as exc:
+            log.warning("Could not persist 8600 board config: %s", exc)
+        log.info("[8600 BOARD] switches now: %s", json.dumps(self.scanner_cfg.get("desk8600_board")))
+        out = self.desk8600_board()
+        out["ok"] = True
+        return out
+
+    def log_signal_desk8600(self, signal_uid: str, sig: Dict[str, Any], board: Dict[str, Any],
+                            verdict: Dict[str, Any]) -> None:
+        """One row per signal: every source's reading and the verdict. Never raises."""
+        try:
+            readings = {
+                s["id"]: {"direction": s.get("direction"), "detail": s.get("detail"),
+                          "age_sec": s.get("age_sec"), "mode": s.get("mode")}
+                for s in board.get("sources") or []
+            }
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS signal_desk8600 (
+                        signal_uid TEXT, logged_at TEXT, strategy_id TEXT, direction TEXT, side TEXT,
+                        rule TEXT, neutral_blocks INTEGER, filters_on INTEGER,
+                        agree INTEGER, against INTEGER, neutral INTEGER,
+                        sources_against_all TEXT, would_block INTEGER, blocked INTEGER,
+                        reasons TEXT, readings TEXT)"""
+                )
+                conn.execute(
+                    "INSERT INTO signal_desk8600 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        signal_uid, datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S"),
+                        str(sig.get("strategy_id") or ""), str(sig.get("direction") or ""), verdict.get("side"),
+                        board.get("rule"), 1 if board.get("neutral_blocks") else 0, int(board.get("filters_on") or 0),
+                        int(verdict.get("agree") or 0), int(verdict.get("against") or 0), int(verdict.get("neutral") or 0),
+                        ",".join(verdict.get("sources_against_all") or []),
+                        1 if verdict.get("would_block") else 0, 1 if verdict.get("blocked") else 0,
+                        " | ".join(verdict.get("reasons") or []), json.dumps(readings, default=str),
+                    ),
+                )
+        except Exception as exc:
+            log.warning("signal 8600 board not logged (%s)", type(exc).__name__)
 
     def log_signal_oi_context(self, signal_uid: str, sig: Dict[str, Any], ctx: Dict[str, Any],
                               gates: Dict[str, Any], blocked: bool) -> None:
@@ -5434,6 +5490,7 @@ class QuantTerminalBackend:
         )
         payload['trend_capture_live'] = await asyncio.to_thread(self.trend_capture_service().status)
         payload["oi_context"] = await asyncio.to_thread(self.oi_context, spot)
+        payload["desk8600_board"] = await asyncio.to_thread(self.desk8600_board)
         self.cached_telemetry = payload
         self._telemetry_last_refresh_mono = time.monotonic()
         return payload
@@ -5765,7 +5822,6 @@ class QuantTerminalBackend:
             "flagship_or_8ema_require_trend": bool(
                 self.scanner_cfg.get("flagship_or_8ema_require_trend", True)
             ),
-            "oi_filter_block": bool(self.scanner_cfg.get("oi_filter_block", False)),
         }
 
     def update_scanner_gate_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -5777,13 +5833,12 @@ class QuantTerminalBackend:
             "bollinger_enabled_flagship",
             "party_switch_enabled",
             "flagship_or_8ema_require_trend",
-            "oi_filter_block",
         }
         prev_bb = self.scanner_cfg.get("bollinger_enabled", True)
         for k, v in (updates or {}).items():
             if k not in allowed:
                 continue
-            if k in ("bollinger_enabled", "party_switch_enabled", "flagship_or_8ema_require_trend", "oi_filter_block"):
+            if k in ("bollinger_enabled", "party_switch_enabled", "flagship_or_8ema_require_trend"):
                 if isinstance(v, bool):
                     self.scanner_cfg[k] = v
                 else:
@@ -6935,33 +6990,35 @@ class QuantTerminalBackend:
             except Exception as exc:
                 log.warning("signal observation skipped (%s)", type(exc).__name__)
 
-            # Option-chain context: recorded for every signal. It stops a trade
-            # only when the owner has switched blocking on, only for the lanes
-            # listed, and never when there is no data.
+            # 8600 board: every option-chain source's reading is recorded for every
+            # signal. A trade is skipped only by sources the owner has switched
+            # to FILTER in the cockpit, only for the lanes he selected, and never
+            # by a source that has no data.
             try:
-                from analyst.oi_context_8510 import evaluate_gates, lane_is_filtered, load_cfg as _oi_cfg
+                from analyst.desk8600_board_8510 import judge as _board_judge, load_cfg as _board_cfg
+                from analyst.oi_context_8510 import evaluate_gates, load_cfg as _oi_cfg
 
-                oi_cfg = _oi_cfg(self.scanner_cfg)
-                if bool(oi_cfg.get("enabled", True)):
+                board_cfg = _board_cfg(self.scanner_cfg)
+                if bool(board_cfg.get("enabled", True)):
                     oi_ctx = self.oi_context()
-                    oi_gates = evaluate_gates(oi_ctx, sig.get("direction", ""), oi_cfg)
-                    oi_block = bool(
-                        oi_cfg.get("filter_block", False)
-                        and oi_gates["would_block"]
-                        and lane_is_filtered(strat_id, oi_cfg)
+                    self.log_signal_oi_context(
+                        signal_uid, sig, oi_ctx,
+                        evaluate_gates(oi_ctx, sig.get("direction", ""), _oi_cfg(self.scanner_cfg)), False,
                     )
-                    self.log_signal_oi_context(signal_uid, sig, oi_ctx, oi_gates, oi_block)
-                    sig["oi_context"] = {
-                        "bias": oi_ctx.get("bias"), "would_block": oi_gates["would_block"],
-                        "reasons": oi_gates["reasons"], "blocked": oi_block,
+                    board = self.desk8600_board()
+                    verdict = _board_judge(board["sources"], sig.get("direction", ""), board_cfg, strat_id)
+                    self.log_signal_desk8600(signal_uid, sig, board, verdict)
+                    sig["desk8600"] = {
+                        "agree": verdict["agree"], "against": verdict["against"],
+                        "blocked": verdict["blocked"], "reasons": verdict["reasons"],
                     }
-                    if oi_block:
-                        why = "OI filter: " + "; ".join(oi_gates["reasons"])
-                        log.info("[OI FILTER] %s (%s) not taken — %s", sig.get("setup_name"), strat_id, why)
-                        self.mark_signal_outcome(signal_uid, False, skip_reason=why[:200])
+                    if verdict["blocked"]:
+                        why = "8600 board: " + "; ".join(verdict["reasons"])
+                        log.info("[8600 BOARD] %s (%s) not taken — %s", sig.get("setup_name"), strat_id, why)
+                        self.mark_signal_outcome(signal_uid, False, skip_reason=why[:300])
                         continue
             except Exception as exc:
-                log.warning("OI context skipped (%s)", type(exc).__name__)
+                log.warning("8600 board skipped (%s)", type(exc).__name__)
 
             # Resolve Contract based on direction and algo_strike_selection
             opt_side = sig["opt_side"]

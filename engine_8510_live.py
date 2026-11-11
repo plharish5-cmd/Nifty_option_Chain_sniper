@@ -113,6 +113,7 @@ async def startup_event():
     from analyst.ict_smc_signals_8510 import SignalBridge
     app.state.ict_smc_bridge = SignalBridge(backend.cfg['ict_smc_desk_signals'],
         backend.ledger_db.parent / 'ict_smc_signals.sqlite3')
+    backend.desk8600_bridge = app.state.ict_smc_bridge   # read-only: the 8600 board reads its last result
     async def ict_signal_poller():
         while True:
             try:
@@ -816,6 +817,21 @@ async def api_backtest_date_range(req: Request):
 async def api_scanner_status():
     """Returns active 4-strategy scanner telemetry and Party-Switch state."""
     return JSONResponse(content=backend.get_scanner_status())
+
+
+@app.get("/api/desk8600/board")
+async def api_desk8600_board_get():
+    """Every 8600 / option-chain source with its current reading and its switch."""
+    return JSONResponse(content={"ok": True, **backend.desk8600_board()})
+
+
+@app.post("/api/desk8600/board")
+async def api_desk8600_board_post(req: Request):
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    return JSONResponse(content=backend.update_desk8600_board(data if isinstance(data, dict) else {}))
 
 
 @app.get("/api/scanner/gates")

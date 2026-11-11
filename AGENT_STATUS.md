@@ -871,3 +871,31 @@ this branch (sandbox: missing StockMojo module, data files, wall-clock tests).
 Not verified: never run against real snapshots — both databases are empty here. Thresholds
 (20% dead zone, 10% slope, 40 pts room, 100 pts box, top-3 walls) are first guesses, not fitted
 and not tested. Not in the backtest yet: needs enough recorded snapshot days.
+
+## Claude — `claude/v2.0.9-desk8600-board` (11 Nov 2026) — owner request: 8600 reads every 3 min, cockpit buttons to filter trades
+Base `claude/v2.0.8-oi-context` @ `310e3e7`. Tags (local): `pre-/post-claude-v2.0.9-desk8600-board`.
+Not merged anywhere. Replaces v2.0.8's single "block on OI gates" checkbox (`oi_filter_block` removed).
+
+- **`analyst/desk8600_board_8510.py`** (new). Eleven sources, each CE / PE / NEUTRAL / no data:
+  seven from the 8600 app through the existing read-only `SignalBridge` (closed 3-minute bars,
+  polled every 20 s): 3-min tape verdict, ticket, high-conviction ticket, Classic Writer Flow,
+  Fresh Change in OI, Cumulative Total OI, PCR OI vs Futures; four from the recorded chain
+  snapshots: day OI since 09:15, 15-min impulse, 3-min bar, walls/room.
+  `SignalBridge` and its `use_for_algo_trades=False` flag are untouched; the board reads `bridge.last`.
+- **Owner switches (cockpit panel on the Prototype card, `GET/POST /api/desk8600/board`):** one
+  ON/OFF per source; rule "None against" or "Majority agrees"; "Neutral = skip"; lane buttons
+  (Prototype, Stage 2, Stage 3, Reversal, Flagship, 1H 8 EMA; default Prototype). Saved to
+  `scanner.desk8600_board` by the app the same way the other cockpit gates are saved.
+  **Everything is OFF until he presses a button.** A source with no data never skips a trade.
+- **Record:** every signal → ledger table `signal_desk8600` (all eleven readings as JSON, counts,
+  which sources were against whether switched on or not, blocked + reasons).
+- `oi_context_8510`: adds `flow_3m`, `impulse_15m` and 15-min option volume; cache 60 s → 20 s.
+- `engine_8510_live.py`: one line handing the bridge to the backend, two endpoints.
+
+Tests: `test_desk8600_board_8510.py` 13 + `test_oi_context_8510.py` 15 passed; related suites 119
+passed; locks 11/11; whole `analyst` suite 45 failed / 37 errors, the same counts as the base
+(620 passed, +13). Panel rendered in Chromium with sample readings.
+
+Not verified: no live 8600 app or real snapshots here — never seen with real data. Not built:
+8600 tickets do not open trades by themselves (no new lane); Option Volume, Smart OI / Matrix 2.0
+bars and Writer Stack-up have no direction rule in the bridge, so they have no button.
