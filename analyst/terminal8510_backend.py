@@ -2934,9 +2934,14 @@ class QuantTerminalBackend:
                     cross_e8 REAL,
                     consumed_cross_ts INTEGER,
                     last_flip TEXT,
+                    away_seen INTEGER DEFAULT 0,
                     updated_at TEXT
                 );
                 """)
+                try:
+                    cur.execute("ALTER TABLE ema8_prototype_state ADD COLUMN away_seen INTEGER DEFAULT 0")
+                except Exception:
+                    pass
 
                 # Super Trail Column Migrations
                 pos_cols = [
@@ -3054,11 +3059,12 @@ class QuantTerminalBackend:
                     d = str(row["direction"] or "")
                     ts = row["cross_bar_open_ts"]
                     if d and ts:
+                        away = bool(row["away_seen"]) if ("away_seen" in row.keys() and row["away_seen"] is not None) else False
                         self._ema8_prototype_state["arm"] = {
                             "direction": d,
                             "cross_bar_open_ts": int(ts),
                             "cross_e8": float(row["cross_e8"] or 0.0),
-                            "away_seen": False,
+                            "away_seen": away,
                         }
                     if row["consumed_cross_ts"]:
                         self._ema8_prototype_state["consumed_cross_ts"] = int(row["consumed_cross_ts"])
@@ -3076,6 +3082,7 @@ class QuantTerminalBackend:
             direction = arm.get("direction")
             cross_bar_open_ts = arm.get("cross_bar_open_ts")
             cross_e8 = arm.get("cross_e8")
+            away_seen = 1 if arm.get("away_seen") else 0
             consumed_cross_ts = self._ema8_prototype_state.get("consumed_cross_ts")
             last_flip = self._ema8_prototype_state.get("last_flip")
             now_str = datetime.now(IST).isoformat()
@@ -3083,14 +3090,14 @@ class QuantTerminalBackend:
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO ema8_prototype_state (
-                        id, direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, updated_at
-                    ) VALUES (1, ?, ?, ?, ?, ?, ?)
+                        id, direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, away_seen, updated_at
+                    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, now_str),
+                    (direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, away_seen, now_str),
                 )
+                conn.commit()
         except Exception as exc:
             log.warning("Could not persist ema8_prototype_state: %s", exc)
-            log.error("Error initializing SQLite ledger: %s", e)
 
     def update_super_trail_config(self, new_cfg: Dict[str, Any]) -> Dict[str, Any]:
         """Live updates Super Trail parameters without restarting server."""
@@ -4128,12 +4135,25 @@ class QuantTerminalBackend:
                 bar_open_ts = current_nse_15m_open_ts(datetime.now(IST))
                 b15, _bar_ci = ensure_forming_b15_bar(b15, bar_open_ts=bar_open_ts, live_spot=spot)
                 form_high = form_low = None
+                tick_high = tick_low = None
                 try:
                     bar_open = pd.Timestamp(bar_open_ts, unit="s", tz="Asia/Kolkata")
                     forming = df1[df1["dt"] >= bar_open]
                     if not forming.empty:
                         form_high = float(forming["high"].max())
                         form_low = float(forming["low"].min())
+                    last_tick_ts = getattr(self, "_ema8_proto_last_tick_ts", 0)
+                    cur_ts = int(time.time())
+                    if last_tick_ts > 0:
+                        recent_1m = df1[(df1["ts"] >= last_tick_ts) & (df1["ts"] <= cur_ts)]
+                        if not recent_1m.empty:
+                            tick_high = max(float(recent_1m["high"].max()), spot)
+                            tick_low = min(float(recent_1m["low"].min()), spot)
+                        else:
+                            tick_high = tick_low = spot
+                    else:
+                        tick_high = tick_low = spot
+                    self._ema8_proto_last_tick_ts = cur_ts
                 except Exception as exc:
                     log.debug("ema8 proto forming ohlc: %s", exc)
                 session_day = datetime.now(IST).strftime("%Y-%m-%d")
@@ -4148,6 +4168,8 @@ class QuantTerminalBackend:
                     gate_meta=self._gate_meta_for_signal,
                     form_high=form_high,
                     form_low=form_low,
+                    tick_high=tick_high,
+                    tick_low=tick_low,
                 )
                 prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})
                 prev_proto.update(st)

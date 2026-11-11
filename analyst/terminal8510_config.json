@@ -99,7 +99,8 @@
       "supertrend_length": 5,
       "supertrend_factor": 1.0,
       "arm_until_opposite_close": true,
-      "_note": "Standalone 8 EMA Prototype \u2014 not Stage 2/3/FLAGSHIP. Dynamic 8 EMA every 30s; optional ribbon, EMA separation, SuperTrend(5,1)."
+      "_note": "Standalone 8 EMA Prototype \u2014 not Stage 2/3/FLAGSHIP. Dynamic 8 EMA every 30s; optional ribbon, EMA separation, SuperTrend(5,1).",
+      "retouch_requires_away": true
     }
   },
   "risk": {

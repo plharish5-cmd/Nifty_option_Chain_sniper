@@ -57,7 +57,7 @@ def test_1_cross_bar_open_ts_blocks_same_bar_permits_next():
     cross_ts = bar_open_timestamp(b15, 5)
 
     proto_state: Dict[str, Any] = {}
-    _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=24980.0)
+    _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=24980.0, away_seen=True)
 
     cfg = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False}})
 
@@ -95,7 +95,7 @@ def test_2_consumed_cross_ts_blocks_second_entry_on_same_cross():
     cross_ts = bar_open_timestamp(b15, 5)
 
     proto_state: Dict[str, Any] = {}
-    _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=24980.0)
+    _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=24980.0, away_seen=True)
     cfg = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False}})
 
     # First entry on bar 6
@@ -238,7 +238,7 @@ def test_6_spot_entry_records_real_spot_not_8ema():
     cross_ts = bar_open_timestamp(b15, 5)
 
     proto_state: Dict[str, Any] = {}
-    _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=24980.0)
+    _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=24980.0, away_seen=True)
     cfg = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False, "touch_tol_pts": 5.0}})
 
     live_spot_tick = 24982.50

@@ -36,6 +36,7 @@ DEFAULT_CFG: Dict[str, Any] = {
     "supertrend_length": 5,
     "supertrend_factor": 1.0,
     "arm_until_opposite_close": True,
+    "retouch_requires_away": True,
 }
 
 
@@ -281,6 +282,55 @@ def _touch_retest(*, bullish: bool, low: float, high: float, e8: float, tol: flo
     return high >= band_lo and low <= band_hi
 
 
+def check_retouch(
+    arm: Dict[str, Any],
+    *,
+    bullish: bool,
+    e8_val: float,
+    tol: float,
+    spot: float,
+    tick_high: Optional[float] = None,
+    tick_low: Optional[float] = None,
+    retouch_requires_away: bool = True,
+    candle_high: Optional[float] = None,
+    candle_low: Optional[float] = None,
+) -> bool:
+    """Evaluates whether price retouches dynamic 8 EMA from the correct side.
+
+    If retouch_requires_away is True:
+      - Price must have moved away from dynamic 8 EMA:
+        For CE (bullish): tick_high > dynamic_e8 + tol
+        For PE (bearish): tick_low < dynamic_e8 - tol
+      - Retouch fires only when away_seen is True and:
+        For CE (bullish): tick_low <= dynamic_e8 + tol
+        For PE (bearish): tick_high >= dynamic_e8 - tol
+    If retouch_requires_away is False:
+      - Uses legacy overlap check on candle_high and candle_low (or tick).
+    """
+    if not retouch_requires_away:
+        lo = candle_low if candle_low is not None else (tick_low if tick_low is not None else spot)
+        hi = candle_high if candle_high is not None else (tick_high if tick_high is not None else spot)
+        return _touch_retest(bullish=bullish, low=lo, high=hi, e8=e8_val, tol=tol)
+
+    chk_high = float(tick_high) if tick_high is not None else float(spot)
+    chk_low = float(tick_low) if tick_low is not None else float(spot)
+
+    if bullish:
+        if not arm.get("away_seen", False):
+            if chk_high > e8_val + tol:
+                arm["away_seen"] = True
+        if arm.get("away_seen", False):
+            return chk_low <= e8_val + tol
+        return False
+    else:
+        if not arm.get("away_seen", False):
+            if chk_low < e8_val - tol:
+                arm["away_seen"] = True
+        if arm.get("away_seen", False):
+            return chk_high >= e8_val - tol
+        return False
+
+
 def current_nse_15m_open_ts(now: Optional[datetime] = None) -> int:
     """IST wall-clock floor to current 15m bucket open (09:15 anchor)."""
     from zoneinfo import ZoneInfo
@@ -412,13 +462,14 @@ def _arm_new(
     direction: str,
     cross_bar_open_ts: int,
     e8: float,
+    away_seen: bool = False,
     day: str = "",
 ) -> None:
     proto_state["arm"] = {
         "direction": direction,
         "cross_bar_open_ts": int(cross_bar_open_ts),
         "cross_e8": float(e8),
-        "away_seen": False,
+        "away_seen": bool(away_seen),
     }
 
 
@@ -497,6 +548,8 @@ def evaluate_ema8_prototype(
     intrabar: bool = False,
     form_high: Optional[float] = None,
     form_low: Optional[float] = None,
+    tick_high: Optional[float] = None,
+    tick_low: Optional[float] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Closed-bar cross/flip + optional intrabar touch on dynamic 8 EMA."""
     gate_meta = gate_meta or (lambda _k: {})
@@ -667,9 +720,21 @@ def evaluate_ema8_prototype(
         st["actions"] = actions
         return [], st
 
-    touched = _touch_retest(bullish=bullish, low=low, high=high, e8=e8_val, tol=tol)
+    retouch_requires_away = bool(cfg.get("retouch_requires_away", True))
+    real_spot = float(live_spot) if (live_spot is not None and live_spot > 0) else c
+    touched = check_retouch(
+        arm,
+        bullish=bullish,
+        e8_val=e8_val,
+        tol=tol,
+        spot=real_spot,
+        tick_high=tick_high,
+        tick_low=tick_low,
+        retouch_requires_away=retouch_requires_away,
+        candle_high=high,
+        candle_low=low,
+    )
     if touched:
-        real_spot = float(live_spot) if (live_spot is not None and live_spot > 0) else c
         signals.append(
             _build_signal(
                 bullish=bullish,
@@ -693,7 +758,12 @@ def evaluate_ema8_prototype(
         st["actions"] = actions
         return signals, st
 
-    wait = "NO TRADE — Waiting for re-touch to dynamic 8 EMA"
+    away_flag = bool(arm.get("away_seen", False))
+    if retouch_requires_away and not away_flag:
+        wait = "NO TRADE — Waiting for price to move away from dynamic 8 EMA"
+    else:
+        wait = "NO TRADE — Waiting for re-touch to dynamic 8 EMA"
+
     st = _status(
         "ARMED",
         phase="WAITING_FOR_RETOUCH",
@@ -701,7 +771,7 @@ def evaluate_ema8_prototype(
         direction=direction,
         block_reason=wait,
         cfg=cfg,
-        extra={"dynamic_e8": round(e8_val, 2)},
+        extra={"dynamic_e8": round(e8_val, 2), "away_seen": away_flag},
     )
     st["actions"] = actions
     return [], st
@@ -717,6 +787,8 @@ def evaluate_ema8_prototype_intrabar(
     gate_meta: Optional[Callable[[str], Dict[str, Any]]] = None,
     form_high: Optional[float] = None,
     form_low: Optional[float] = None,
+    tick_high: Optional[float] = None,
+    tick_low: Optional[float] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     if live_spot <= 0:
         return [], _status("SCANNING", phase="WAITING_FOR_CLOSE", cfg=cfg)
@@ -731,6 +803,8 @@ def evaluate_ema8_prototype_intrabar(
         intrabar=True,
         form_high=form_high,
         form_low=form_low,
+        tick_high=tick_high,
+        tick_low=tick_low,
     )
 
 
@@ -806,10 +880,20 @@ def backtest_ema8_prototype_at_bar(
             if use_intrabar:
                 bar_ci = idx
                 ticks = intrabar_tick_timestamps(bar_open_ts, refresh)
+                prev_tick_ts = bar_open_ts
                 for tick_ts in ticks:
                     fh, fl, spot = forming_ohlc_from_1m(day_1m, bar_open_ts=bar_open_ts, tick_ts=tick_ts)
                     if spot <= 0:
+                        prev_tick_ts = tick_ts
                         continue
+                    tick_slice = day_1m[(day_1m["ts"] >= prev_tick_ts) & (day_1m["ts"] <= tick_ts)]
+                    if not tick_slice.empty:
+                        tick_h = max(float(tick_slice["high"].max()), spot)
+                        tick_l = min(float(tick_slice["low"].min()), spot)
+                    else:
+                        tick_h = tick_l = spot
+                    prev_tick_ts = tick_ts
+
                     e4, e8_tick, high, low = compute_dynamic_emas_on_bar(
                         b15_df,
                         bar_ci=bar_ci,
@@ -830,7 +914,19 @@ def backtest_ema8_prototype_at_bar(
                     )
                     if block:
                         continue
-                    if _touch_retest(bullish=bullish, low=fl, high=fh, e8=e8_tick, tol=tol):
+                    retouch_requires_away = bool(cfg.get("retouch_requires_away", True))
+                    if check_retouch(
+                        arm,
+                        bullish=bullish,
+                        e8_val=e8_tick,
+                        tol=tol,
+                        spot=spot,
+                        tick_high=tick_h,
+                        tick_low=tick_l,
+                        retouch_requires_away=retouch_requires_away,
+                        candle_high=fh,
+                        candle_low=fl,
+                    ):
                         tick_hm = (
                             pd.to_datetime(tick_ts, unit="s", utc=True)
                             .tz_convert("Asia/Kolkata")
@@ -863,7 +959,19 @@ def backtest_ema8_prototype_at_bar(
                 )
                 bar_ci = idx if b15_df is not None and idx < len(b15_df) else -1
                 block = _filter_blocks(bullish, e4, e8, frame, cfg, bar_ci)
-                if not block and _touch_retest(bullish=bullish, low=low, high=high, e8=e8, tol=tol):
+                retouch_requires_away = bool(cfg.get("retouch_requires_away", True))
+                if not block and check_retouch(
+                    arm,
+                    bullish=bullish,
+                    e8_val=e8,
+                    tol=tol,
+                    spot=c,
+                    tick_high=high,
+                    tick_low=low,
+                    retouch_requires_away=retouch_requires_away,
+                    candle_high=high,
+                    candle_low=low,
+                ):
                     sid = SID_LONG if bullish else SID_SHORT
                     sname = "8 EMA Prototype (Long) — retouch" if bullish else "8 EMA Prototype (Short) — retouch"
                     meta = _proto_signal_meta(
