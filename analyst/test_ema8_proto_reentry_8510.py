@@ -361,3 +361,39 @@ def test_oi_placeholder_is_inert_until_switched_on_and_fed():
     _tick(b15, state, 25005.0, cfg=cfg)
     sigs, st = _tick(b15, state, 25002.0, cfg=cfg)
     assert sigs == [] and "OI direction filter" in st["block_reason"]
+
+
+def test_0915_candle_is_always_arming_up_not_entry():
+    """Harish rule: even with no_entry_before_hm="09:15", the 09:15 candle is strictly
+    for arming up, NOT entry. Earliest trade entry is allowed at 09:30."""
+    cfg = _cfg(no_entry_before_hm="09:15")
+    b15, state = _armed("SHORT")
+    _tick(b15, state, 24990.0, hm="09:16", cfg=cfg)
+    assert state["arm"]["away_seen"] is True
+
+    early_1, st_1 = _tick(b15, state, 24999.0, hm="09:20", cfg=cfg)
+    assert early_1 == []
+    assert "09:15 candle is arming only, not entry" in st_1["block_reason"]
+
+    early_2, st_2 = _tick(b15, state, 24999.0, hm="09:29", cfg=cfg)
+    assert early_2 == []
+    assert "09:15 candle is arming only, not entry" in st_2["block_reason"]
+
+    ok, st_ok = _tick(b15, state, 24999.0, hm="09:30", cfg=cfg)
+    assert [s["direction"] for s in ok] == ["SHORT"]
+    assert st_ok["phase"] == "ENTRY"
+
+
+def test_ten_point_tolerance_catches_wick_retest():
+    """With touch_tol_pts=10.0, a 9.15-pt wick distance touches the band."""
+    cfg = _cfg(touch_tol_pts=10.0, away_min_pts=2.0)
+    b15, state = _armed("SHORT", level=24976.40)
+    _tick(b15, state, 24950.0, cfg=cfg)
+    assert state["arm"]["away_seen"] is True
+
+    # 9.15 pts below 8 EMA (24976.40 - 24967.25 = 9.15 pts):
+    # Fails under 3.0 pt tol, succeeds under 10.0 pt tol
+    sigs, st = _tick(b15, state, 24967.25, cfg=cfg)
+    assert [s["direction"] for s in sigs] == ["SHORT"]
+    assert st["phase"] == "ENTRY"
+

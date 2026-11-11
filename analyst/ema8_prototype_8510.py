@@ -886,12 +886,15 @@ def evaluate_ema8_prototype(
     # and the arm is left as it is.
     no_from = str(cfg.get("no_entry_from_hm", "15:20") or "")
     no_before = str(cfg.get("no_entry_before_hm", "09:30") or "")
+    # Harish rule: 09:15 AM candle is ALWAYS arming up, NOT entry.
+    # Earliest entry of the day is at 09:30:00 (when 09:15 candle closes and arms).
+    effective_no_before = max(no_before, "09:30") if no_before else "09:30"
     entry_hm = now_hm or (_hm_ist(current_bar_open_ts + 900) if (not intrabar and current_bar_open_ts > 0) else "")
     hold = ""
     if touched and no_from and entry_hm and entry_hm >= no_from:
         hold = f"NO TRADE — No new entry from {no_from}"
-    elif touched and no_before and entry_hm and entry_hm < no_before:
-        hold = f"NO TRADE — No entry before {no_before}"
+    elif touched and effective_no_before and entry_hm and entry_hm < effective_no_before:
+        hold = f"NO TRADE — No entry before {effective_no_before} (09:15 candle is arming only, not entry)"
     elif touched and _oi_filter_blocks(bullish, cfg, proto_state):
         hold = "NO TRADE — OI direction filter"
     if hold:
@@ -1046,6 +1049,7 @@ def backtest_ema8_prototype_at_bar(
     away_pts = float(cfg.get("away_min_pts", tol))
     no_from = str(cfg.get("no_entry_from_hm", "15:20") or "")
     no_before = str(cfg.get("no_entry_before_hm", "09:30") or "")
+    effective_no_before = max(no_before, "09:30") if no_before else "09:30"
     refresh = float(cfg.get("e8_refresh_seconds", 30.0) or 30.0)
     if reentry_enabled(cfg):
         proto_state.pop("consumed_cross_ts", None)
@@ -1076,7 +1080,7 @@ def backtest_ema8_prototype_at_bar(
                         continue
                     if no_from and _hm_ist(tick_ts) >= no_from:
                         break
-                    if no_before and _hm_ist(tick_ts) < no_before:
+                    if effective_no_before and _hm_ist(tick_ts) < effective_no_before:
                         prev_tick_ts = tick_ts
                         continue
                     tick_slice = day_1m[(day_1m["ts"] >= prev_tick_ts) & (day_1m["ts"] <= tick_ts)]
@@ -1154,7 +1158,13 @@ def backtest_ema8_prototype_at_bar(
                 bar_ci = idx if b15_df is not None and idx < len(b15_df) else -1
                 block = _filter_blocks(bullish, e4, e8, frame, cfg, bar_ci)
                 retouch_requires_away = bool(cfg.get("retouch_requires_away", True))
-                if not block and check_retouch(
+                bar_hm = str(b.get("hm") or "")
+                time_blocked = False
+                if no_from and bar_hm and bar_hm >= no_from:
+                    time_blocked = True
+                elif effective_no_before and bar_hm and bar_hm < effective_no_before:
+                    time_blocked = True
+                if not block and not time_blocked and check_retouch(
                     arm,
                     bullish=bullish,
                     e8_val=e8,

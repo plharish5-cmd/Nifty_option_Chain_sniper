@@ -13,6 +13,7 @@ Trunk: **`integrate/v1.9`**
 | `chatgpt/v1.9.4d` | ChatGPT | done, tag `post-chatgpt-v1.9.4d-final` | **NO — awaiting Harish** |
 | `claude/v1.9.4-safety-lock` | Claude | **BROKEN, `2d116b7` — DELETE** | never merge |
 | `agy/ema8-proto-corrections` | Antigravity | **done, `b1d23ca`**, tag `post-agy-ema8-proto-corrections` | **NO — awaiting Harish** |
+| `agy/v2.0.6-10pt-retest` | Antigravity | **done**, tag `post-agy-v2.0.6-10pt-retest` | **NO — awaiting Harish** |
 
 ---
 
@@ -802,3 +803,41 @@ tests, same as before). Locks 11/11. Config file not edited. Not deployed, not m
 
 Note for whoever continues: with away = 2 and touch = 3, "away" and "touch" overlap by a point.
 The touch still has to come on a later 30-second tick than the away.
+
+---
+
+## 2026-11-11 · Antigravity · `agy/v2.0.6-10pt-retest`
+Tag: pre-agy-v2.0.6-10pt-retest → post-agy-v2.0.6-10pt-retest
+Branched from: `fix/8510-algo-v206` @ `aed34fa` (contains Claude's second `ema8-proto-reentry` commit)
+
+What changed:
+- Applied Harish's approved 10-point retest setup:
+  - `touch_tol_pts`: 10.0 (expanded from 3.0 to capture 8-10 pt wick retests).
+  - `away_min_pts`: 2.0 (owner confirmed 2 points away).
+  - `no_entry_before_hm`: "09:15" with strict 09:15 candle arming guard.
+  - **Strict rule enforced**: "9:15 am CANDLE ALWAYS ARMING UP NOT ENTRY".
+    Regardless of `no_entry_before_hm="09:15"`, any tick or bar during the 09:15 candle
+    (prior to 09:30:00 IST) is strictly blocked from entry. The 09:15 candle evaluates
+    and arms on its close at 09:30:00; earliest possible trade entry is at 09:30:00 on the
+    subsequent candle.
+  - `reentry_same_side`: true (re-enter same direction after +40 profit).
+  - `reentry_after_stop_loss`: false (stop-loss cancels the side until opposite flip).
+  - `slow_market_exact_line`: false (active 10.0 pt tolerance).
+  - `ribbon_filter_enabled`: false.
+  - `no_entry_from_hm`: "15:20" (EOD square-off).
+- Narrow config patch script delivered: `analyst/apply_v206_10pt_retest_config.py`
+  (preserves all runtime broker tokens, secrets, live safety switches, and IP).
+- Added 2 new tests in `test_ema8_proto_reentry_8510.py`:
+  - `test_0915_candle_is_always_arming_up_not_entry`
+  - `test_ten_point_tolerance_catches_wick_retest`
+
+Config keys touched (and the patch script used):
+- `scanner.ema8_prototype`: `touch_tol_pts=10.0`, `no_entry_before_hm="09:15"`, `away_min_pts=2.0`, `reentry_same_side=true`, `reentry_after_stop_loss=false`, `slow_market_exact_line=false`, `ribbon_filter_enabled=false`, `no_entry_from_hm="15:20"`.
+- Script: `analyst/apply_v206_10pt_retest_config.py`
+
+Baseline:
+- Prototype suites (`test_ema8_proto_reentry_8510.py` + `test_ema8_prototype_8510.py`): 39 passed / 0 failed.
+- Algorithm & exit suites: 115 passed / 4 failed (the 4 are wall-clock EOD square-off after 15:20 IST, same as baseline).
+- Locks: 11/11 verified intact.
+- Parity: 9,059 rows, 100.0%, 0 mismatches.
+

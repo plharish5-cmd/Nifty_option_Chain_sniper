@@ -87,7 +87,7 @@
     "ema8_prototype": {
       "enabled": true,
       "execution_mode": "LIVE_ALLOWED",
-      "touch_tol_pts": 3.0,
+      "touch_tol_pts": 10.0,
       "target_pts": 40.0,
       "sl_pts": 40.0,
       "e8_refresh_seconds": 30.0,
@@ -102,7 +102,12 @@
       "_note": "Standalone 8 EMA Prototype \u2014 not Stage 2/3/FLAGSHIP. Dynamic 8 EMA every 30s; optional ribbon, EMA separation, SuperTrend(5,1).",
       "retouch_requires_away": true,
       "touch_tol_slow_pts": 0.0,
-      "slow_market_exact_line": false
+      "slow_market_exact_line": false,
+      "no_entry_before_hm": "09:15",
+      "away_min_pts": 2.0,
+      "reentry_same_side": true,
+      "reentry_after_stop_loss": false,
+      "no_entry_from_hm": "15:20"
     }
   },
   "risk": {
