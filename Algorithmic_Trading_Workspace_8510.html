@@ -1085,6 +1085,30 @@
                         <div id="stratPhase_ema8_proto" style="font-size:10.5px; color:#94a3b8; margin:4px 0; font-family:var(--font-mono);">Phase: WAITING_FOR_CLOSE</div>
                         <div id="stratBlock_ema8_proto" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
                         <div style="margin:8px 0; padding:8px; background:rgba(15,23,42,0.65); border:1px solid rgba(251,191,36,0.25); border-radius:6px; font-family:var(--font-mono); font-size:10.5px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,0.08); flex-wrap:wrap; gap:8px;">
+                                <div>
+                                    <span style="font-weight:700; color:#38bdf8; margin-right:8px;">Master Control:</span>
+                                    <label style="display:inline-flex; align-items:center; gap:4px; margin-right:12px; cursor:pointer;">
+                                        <input type="radio" name="protoEnabled" id="protoEnabledOn" value="on" checked>
+                                        <span style="color:#22c55e; font-weight:600;">ACTIVE</span>
+                                    </label>
+                                    <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+                                        <input type="radio" name="protoEnabled" id="protoEnabledOff" value="off">
+                                        <span style="color:#ef4444; font-weight:600;">PAUSED / OFF</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <span style="font-weight:700; color:#cbd5e1; margin-right:8px;">Route:</span>
+                                    <label style="display:inline-flex; align-items:center; gap:4px; margin-right:8px; cursor:pointer;">
+                                        <input type="radio" name="protoExec" id="protoExecLive" value="LIVE_ALLOWED" checked>
+                                        <span style="color:#fbbf24;">LIVE_ALLOWED</span>
+                                    </label>
+                                    <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+                                        <input type="radio" name="protoExec" id="protoExecPaper" value="PAPER_ONLY">
+                                        <span style="color:#94a3b8;">PAPER_ONLY</span>
+                                    </label>
+                                </div>
+                            </div>
                             <div style="font-weight:700; color:#fbbf24; margin-bottom:6px;">Prototype filters (optional)</div>
                             <div style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center;">
                                 <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
@@ -3968,13 +3992,16 @@
                         const epPh = document.getElementById("stratPhase_ema8_proto");
                         const epBk = document.getElementById("stratBlock_ema8_proto");
                         if (ep && epSt) {
-                            epSt.textContent = ep.state || "SCANNING";
+                            const isPaused = ep.enabled === false || ep.state === "PAUSED";
+                            epSt.textContent = isPaused ? "PAUSED" : (ep.state || "SCANNING");
                             const st = ep.state || "";
-                            epSt.className = `status-badge ${st === "TRIGGERED" ? "badge-bull" : (st === "EXPIRED" ? "badge-bear" : (st === "ARMED" ? "badge-gold" : "badge-neutral"))}`;
-                            if (epPh) epPh.textContent = ep.phase || "WAITING FOR CLOSE";
+                            epSt.className = `status-badge ${isPaused ? "badge-bear" : (st === "TRIGGERED" ? "badge-bull" : (st === "EXPIRED" ? "badge-bear" : (st === "ARMED" ? "badge-gold" : "badge-neutral")))}`;
+                            if (epPh) epPh.textContent = isPaused ? "DISABLED (PAUSED IN COCKPIT)" : (ep.phase || "WAITING FOR CLOSE");
                             if (epBk) {
                                 let bk = "";
-                                if (sc.exit_failure_banner && sc.exit_failure_banner.error) {
+                                if (isPaused) {
+                                    bk = "Prototype manually PAUSED in cockpit";
+                                } else if (sc.exit_failure_banner && sc.exit_failure_banner.error) {
                                     bk = `EXIT FAILED — ${sc.exit_failure_banner.error}`;
                                 } else if (ep.last_exit_reason === "OPPOSITE_8EMA_CLOSE" || ep.exit_reason === "OPPOSITE_8EMA_CLOSE" || (ep.block_reason && ep.block_reason.includes("Opposite Close"))) {
                                     bk = "Opposite Close — Exited";
@@ -3991,13 +4018,13 @@
                                     }
                                 }
                                 epBk.textContent = bk;
-                                epBk.style.color = bk.includes("FAILED") ? "#ef4444" : (bk ? "#fbbf24" : "#64748b");
+                                epBk.style.color = (bk.includes("FAILED") || isPaused) ? "#ef4444" : (bk ? "#fbbf24" : "#64748b");
                             }
                             const pb = document.getElementById("ema8ProtoExecBadge");
                             if (pb && ep.execution_mode) {
                                 const live = String(ep.execution_mode).includes("LIVE");
-                                pb.textContent = `Prototype · ${ep.execution_mode}`;
-                                pb.className = live ? "strat-money-badge live-eligible" : "strat-money-badge paper-only";
+                                pb.textContent = isPaused ? "Prototype · DISABLED" : `Prototype · ${ep.execution_mode}`;
+                                pb.className = isPaused ? "strat-money-badge paper-only" : (live ? "strat-money-badge live-eligible" : "strat-money-badge paper-only");
                             }
                             applyEma8ProtoFilterUI(ep);
                         }
@@ -4845,6 +4872,16 @@
 
         function applyEma8ProtoFilterUI(cfg) {
             if (!cfg) return;
+            const en = cfg.enabled !== false;
+            const enOn = document.getElementById('protoEnabledOn');
+            const enOff = document.getElementById('protoEnabledOff');
+            if (enOn && enOff) { enOn.checked = en; enOff.checked = !en; }
+
+            const isLive = String(cfg.execution_mode || '').toUpperCase().includes('LIVE');
+            const exLive = document.getElementById('protoExecLive');
+            const exPaper = document.getElementById('protoExecPaper');
+            if (exLive && exPaper) { exLive.checked = isLive; exPaper.checked = !isLive; }
+
             const rib = !!cfg.ribbon_filter_enabled;
             const sep = !!cfg.ema_separation_enabled;
             const st = !!cfg.supertrend_enabled;
@@ -4895,6 +4932,8 @@
         function wireEma8PrototypeFilterRadios() {
             const post = () => {
                 const payload = {
+                    enabled: document.getElementById('protoEnabledOn')?.checked === true,
+                    execution_mode: document.getElementById('protoExecLive')?.checked ? 'LIVE_ALLOWED' : 'PAPER_ONLY',
                     ribbon_filter_enabled: document.getElementById('protoRibbonOn')?.checked === true,
                     ema_separation_enabled: document.getElementById('protoEmaSepOn')?.checked === true,
                     supertrend_enabled: document.getElementById('protoStOn')?.checked === true,
@@ -4903,7 +4942,7 @@
                 };
                 saveEma8PrototypeFilters(payload).catch(() => {});
             };
-            ['protoRibbonOff', 'protoRibbonOn', 'protoEmaSepOff', 'protoEmaSepOn', 'protoStOff', 'protoStOn', 'protoAwayOff', 'protoAwayOn', 'protoSlowOff', 'protoSlowOn'].forEach(id => {
+            ['protoEnabledOn', 'protoEnabledOff', 'protoExecLive', 'protoExecPaper', 'protoRibbonOff', 'protoRibbonOn', 'protoEmaSepOff', 'protoEmaSepOn', 'protoStOff', 'protoStOn', 'protoAwayOff', 'protoAwayOn', 'protoSlowOff', 'protoSlowOn'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('change', post);
             });

@@ -312,10 +312,20 @@ def test_phase7_cockpit_filter_config_updates():
             "retouch_requires_away": False,
             "slow_market_exact_line": True,
             "ribbon_filter_enabled": True,
+            "enabled": False,
+            "execution_mode": "PAPER_ONLY",
         })
         assert updated["retouch_requires_away"] is False
         assert updated["slow_market_exact_line"] is True
         assert updated["ribbon_filter_enabled"] is True
+        assert updated["enabled"] is False
+        assert updated["execution_mode"] == "PAPER_ONLY"
+
+        # Verify strategy status updated to PAUSED / DISABLED
+        st_row = backend.strategy_status.get("ema8_prototype") or {}
+        assert st_row.get("state") == "PAUSED"
+        assert st_row.get("phase") == "DISABLED"
+        assert st_row.get("paper_only_lane") is True
 
         # Verify persisted to file
         with open(cfg_path, "r", encoding="utf-8") as f:
@@ -323,6 +333,8 @@ def test_phase7_cockpit_filter_config_updates():
         proto_cfg = disk["scanner"]["ema8_prototype"]
         assert proto_cfg["retouch_requires_away"] is False
         assert proto_cfg["slow_market_exact_line"] is True
+        assert proto_cfg["enabled"] is False
+        assert proto_cfg["execution_mode"] == "PAPER_ONLY"
 
 
 def test_phase7_active_positions_row_exit_pending_and_failed():
@@ -365,6 +377,11 @@ def test_phase7_cockpit_html_dom_elements():
     assert 'id="protoAwayOff"' in html
     assert 'id="protoSlowOff"' in html
     assert 'id="protoSlowOn"' in html
+    assert 'id="protoEnabledOn"' in html
+    assert 'id="protoEnabledOff"' in html
+    assert 'id="protoExecLive"' in html
+    assert 'id="protoExecPaper"' in html
+    assert 'Prototype manually PAUSED in cockpit' in html
 
     # 2. Table header Status / Source
     assert "<th>Status / Source</th>" in html

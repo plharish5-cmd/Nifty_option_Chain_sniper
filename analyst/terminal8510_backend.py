@@ -5355,6 +5355,11 @@ class QuantTerminalBackend:
         row["name"] = "8 EMA Prototype"
         row["execution_mode"] = exec_label
         row["paper_only_lane"] = paper_only
+        row["enabled"] = bool(cfg.get("enabled", True))
+        if not row["enabled"]:
+            row["state"] = "PAUSED"
+            row["phase"] = "DISABLED"
+            row["block_reason"] = "Prototype manually PAUSED in cockpit"
         row["desc"] = (
             "Close cross 8 EMA · 30s retouch · dual ±40 spot+option · opposite 15m close exit"
         )
@@ -5808,6 +5813,13 @@ class QuantTerminalBackend:
                 )
             if len(self._ema8_prototype_log) > 40:
                 self._ema8_prototype_log = self._ema8_prototype_log[:40]
+        else:
+            prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})
+            prev_proto["state"] = "PAUSED"
+            prev_proto["phase"] = "DISABLED"
+            prev_proto["block_reason"] = "Prototype manually PAUSED in cockpit"
+            prev_proto["enabled"] = False
+            self.strategy_status["ema8_prototype"] = prev_proto
 
         # ── 4. STRATEGY 4: 1 HR FLAGSHIP (price action: daily S/R, 1H swings, 15m confirmation) ──
         scfg = self.scanner_cfg

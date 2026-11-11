@@ -529,4 +529,37 @@ Tags: `pre-agy-ema8-proto-corrections` @ `ef3ded4`, `post-agy-ema8-proto-correct
 - **Immutable Lock Suite:** 10/10 passed (`ict_smc_app/backend/tests/test_immutable_feature_lock.py`).
 - **Safety Integrity:** No dry-run gates or daily caps restored; other strategy modules unchanged.
 
+---
+
+## 2026-11-11 — AGY — In-App Master Controls & Safety Rollback Instrumentation
+
+### Scope & Delivered Capabilities:
+1. **Interactive In-App Master & Route Controls (`Algorithmic_Trading_Workspace_8510.html`):**
+   - Added **Master Control** (`ACTIVE` vs `PAUSED / OFF`) directly to the 8 EMA Prototype card.
+   - Added **Route Control** (`LIVE_ALLOWED` vs `PAPER_ONLY`) directly to the card.
+   - Switching to `PAUSED / OFF` immediately posts `{enabled: false}` to `/api/scanner/ema8_prototype/filters` without requiring terminal access or app restart.
+   - UI status badge dynamically displays `PAUSED` (red badge), phase `DISABLED (PAUSED IN COCKPIT)`, block reason `Prototype manually PAUSED in cockpit`, and badge `Prototype · DISABLED`.
+   - Switching to `PAPER_ONLY` safely routes signals to paper ledger only, preventing live Dhan order placement.
+
+2. **Backend Pause Bypass (`analyst/terminal8510_backend.py`):**
+   - Both `start_ema8_prototype_intrabar_worker` and `evaluate_candle_dataframe` immediately halt scanning and trade entry when `enabled=False`.
+   - `_sync_ema8_prototype_desk_status` marks `state="PAUSED"`, `phase="DISABLED"`, and `paper_only_lane=True` when `enabled=False`.
+
+3. **Dedicated Safety Rollback Utility (`scripts/take_back_ema8_prototype.py`):**
+   - `--status`: Inspects git branch, commit hash, prototype enabled state, execution mode, and tolerance.
+   - `--disable`: Instantly pauses prototype in config (`enabled=false`) without code changes.
+   - `--enable`: Re-enables prototype in config.
+   - `--paper-only`: Forces prototype to paper execution mode.
+   - `--live-allowed`: Restores live execution mode.
+   - `--git-rollback`: Checks out tag `pre-agy-ema8-proto-corrections` (commit `ef3ded4`) cleanly.
+
+4. **Permanent Remote Rollback Anchor:**
+   - Safety branch `backup-pre-ema8-proto-corrections` created at `ef3ded4` and pushed to `origin`.
+
+### Verification:
+- **Prototype + Workspace Suite:** 55/55 passed (`pytest analyst/test_live_exit_orders_8510.py analyst/test_phase2_option_points_8510.py analyst/test_phase3_state_8510.py analyst/test_phase4_retouch_8510.py analyst/test_phase5_eod_8510.py analyst/test_phase6_backtest_8510.py analyst/test_phase7_cockpit_log_8510.py analyst/test_ema8_prototype_8510.py analyst/test_workspace_8510_html.py`).
+- **Locks:** 11/11 intact (`python scripts/verify_locks.py`).
+- **Immutable Lock Suite:** 10/10 passed (`pytest ict_smc_app/backend/tests/test_immutable_feature_lock.py -q`).
+
+
 
