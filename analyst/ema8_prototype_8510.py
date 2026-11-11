@@ -838,6 +838,7 @@ def _proto_signal_meta(
     entry_day: str,
     entry_hm: str,
     e8: float,
+    cross_bar_open_ts: int = 0,
 ) -> Dict[str, Any]:
     return {
         "ema8_prototype": True,
@@ -852,6 +853,7 @@ def _proto_signal_meta(
         "dynamic_e8_at_entry": round(e8, 2),
         "intrabar_30s": True,
         "exit_on_opposite_8ema_close": True,
+        "cross_bar_open_ts": cross_bar_open_ts,
     }
 
 
@@ -967,6 +969,7 @@ def backtest_ema8_prototype_at_bar(
                             entry_day=day_key,
                             entry_hm=str(tick_hm),
                             e8=e8_tick,
+                            cross_bar_open_ts=cross_ts,
                         )
                         proto_state["consumed_cross_ts"] = cross_ts
                         proto_state["last_traded_direction"] = direction
@@ -1004,6 +1007,7 @@ def backtest_ema8_prototype_at_bar(
                         entry_day=day_key,
                         entry_hm=str(b.get("hm") or ""),
                         e8=e8,
+                        cross_bar_open_ts=cross_ts,
                     )
                     meta["intrabar_30s"] = False
                     proto_state["consumed_cross_ts"] = cross_ts

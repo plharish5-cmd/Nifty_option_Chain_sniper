@@ -772,6 +772,456 @@ def synthesize_option_premium_from_spot(
     return opt_entry, opt_exit
 
 
+def simulate_prototype_spot_exit(
+    bars: List[Dict[str, Any]],
+    start_idx: int,
+    entry_spot: float,
+    is_long: bool,
+    sl_pts: float = 40.0,
+    tgt_pts: float = 40.0,
+    eod_hm: str = "15:20",
+    *,
+    day_1m: Optional[pd.DataFrame] = None,
+    entry_ts: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Forward-walk exit for 8 EMA Prototype matching Harish's specification:
+    1. Exit walk starts strictly from the first completed 1m candle AFTER entry_ts (ts > entry_ts).
+    2. Target (+40) and Stop (-40) checked on completed 1m candles.
+    3. If single 1m candle touches BOTH target and stop -> marked AMBIGUOUS (is_ambiguous=True).
+    4. Opposite 8 EMA close is checked ONLY at 15m candle closes (including entry candle's close).
+    5. EOD square-off at eod_hm (15:20) closes position with reason EOD_SQUARE_OFF_15:20.
+    """
+    entry_day = str(bars[start_idx].get("day") or "") if 0 <= start_idx < len(bars) else ""
+    entry_hm = str(bars[start_idx].get("hm") or "") if 0 <= start_idx < len(bars) else ""
+    target_spot = round(entry_spot + tgt_pts, 2) if is_long else round(entry_spot - tgt_pts, 2)
+    stop_spot = round(entry_spot - sl_pts, 2) if is_long else round(entry_spot + sl_pts, 2)
+
+    # 15m candle boundary map: close_ts -> 15m bar
+    b15_by_close_ts: Dict[int, Dict[str, Any]] = {}
+    b15_by_close_hm: Dict[str, Dict[str, Any]] = {}
+    for b in bars:
+        b_ts = int(b.get("ts") or 0)
+        if b_ts > 0:
+            c_ts = b_ts + 900
+            b15_by_close_ts[c_ts] = b
+            c_hm = (
+                pd.to_datetime(c_ts, unit="s", utc=True)
+                .tz_convert("Asia/Kolkata")
+                .strftime("%H:%M")
+            )
+            b15_by_close_hm[c_hm] = b
+
+    # If 1m candles are available, do the precise 1m-resolution exit walk
+    if day_1m is not None and not day_1m.empty:
+        threshold_ts = int(entry_ts) if (entry_ts is not None and entry_ts > 0) else int(bars[start_idx].get("ts") or 0)
+        candles = day_1m[day_1m["ts"] > threshold_ts].sort_values("ts")
+        checked_15m_closes = set()
+
+        for _, row in candles.iterrows():
+            m_ts = int(row["ts"])
+            m_hi = float(row["high"])
+            m_lo = float(row["low"])
+            m_c = float(row["close"])
+            m_day = str(row.get("day") or "")
+            if not m_day and m_ts > 0:
+                m_day = pd.to_datetime(m_ts, unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%Y-%m-%d")
+            if not m_day:
+                m_day = entry_day
+
+            m_hm = str(row.get("hm") or "")
+            if not m_hm and m_ts > 0:
+                m_hm = pd.to_datetime(m_ts, unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%H:%M")
+            if not m_hm:
+                m_hm = entry_hm
+
+            # 1. EOD square-off check at 15:20
+            if m_hm >= eod_hm:
+                exit_spot = m_c
+                pnl = round((exit_spot - entry_spot) if is_long else (entry_spot - exit_spot), 2)
+                return {
+                    "st_pnl_pts": pnl,
+                    "fx_pnl_pts": pnl,
+                    "exit_spot": exit_spot,
+                    "exit_reason": f"EOD_SQUARE_OFF_{eod_hm}",
+                    "trail_steps": [f"SL {int(sl_pts)}", f"EOD 15:20 {exit_spot:.1f}"],
+                    "mfe_pts": max(0.0, pnl),
+                    "entry_day": entry_day,
+                    "entry_hm": entry_hm,
+                    "exit_day": m_day,
+                    "exit_hm": m_hm,
+                    "exit_ts": m_ts,
+                    "is_ambiguous": False,
+                }
+
+            # 2. Ambiguous candle: touched both target and stop on single 1m candle
+            is_amb = False
+            if is_long:
+                if m_hi >= target_spot and m_lo <= stop_spot:
+                    is_amb = True
+            else:
+                if m_lo <= target_spot and m_hi >= stop_spot:
+                    is_amb = True
+
+            if is_amb:
+                return {
+                    "st_pnl_pts": -sl_pts,
+                    "fx_pnl_pts": -sl_pts,
+                    "exit_spot": stop_spot,
+                    "exit_reason": "AMBIGUOUS",
+                    "trail_steps": [f"SL {int(sl_pts)}", "AMBIGUOUS 1m bar"],
+                    "mfe_pts": tgt_pts,
+                    "entry_day": entry_day,
+                    "entry_hm": entry_hm,
+                    "exit_day": m_day,
+                    "exit_hm": m_hm,
+                    "exit_ts": m_ts,
+                    "is_ambiguous": True,
+                }
+
+            # 3. Stop check on 1m candle
+            if (is_long and m_lo <= stop_spot) or (not is_long and m_hi >= stop_spot):
+                return {
+                    "st_pnl_pts": -sl_pts,
+                    "fx_pnl_pts": -sl_pts,
+                    "exit_spot": stop_spot,
+                    "exit_reason": "SPOT_SL_HIT",
+                    "trail_steps": [f"SL {int(sl_pts)}", f"SL hit {stop_spot:.1f}"],
+                    "mfe_pts": 0.0,
+                    "entry_day": entry_day,
+                    "entry_hm": entry_hm,
+                    "exit_day": m_day,
+                    "exit_hm": m_hm,
+                    "exit_ts": m_ts,
+                    "is_ambiguous": False,
+                }
+
+            # 4. Target check on 1m candle
+            if (is_long and m_hi >= target_spot) or (not is_long and m_lo <= target_spot):
+                return {
+                    "st_pnl_pts": tgt_pts,
+                    "fx_pnl_pts": tgt_pts,
+                    "exit_spot": target_spot,
+                    "exit_reason": "SPOT_TARGET_HIT",
+                    "trail_steps": [f"SL {int(sl_pts)}", f"Target hit {target_spot:.1f}"],
+                    "mfe_pts": tgt_pts,
+                    "entry_day": entry_day,
+                    "entry_hm": entry_hm,
+                    "exit_day": m_day,
+                    "exit_hm": m_hm,
+                    "exit_ts": m_ts,
+                    "is_ambiguous": False,
+                }
+
+            # 5. Check opposite 8 EMA close at 15m candle close ONLY
+            for c_ts, b15 in b15_by_close_ts.items():
+                if c_ts <= m_ts and c_ts not in checked_15m_closes and c_ts > threshold_ts:
+                    checked_15m_closes.add(c_ts)
+                    c15 = float(b15.get("close") or m_c)
+                    e8_15 = float(b15.get("e8") or 0.0)
+                    if e8_15 > 0:
+                        opp_close = (c15 < e8_15) if is_long else (c15 > e8_15)
+                        if opp_close:
+                            pnl = round((c15 - entry_spot) if is_long else (entry_spot - c15), 2)
+                            return {
+                                "st_pnl_pts": pnl,
+                                "fx_pnl_pts": pnl,
+                                "exit_spot": c15,
+                                "exit_reason": "OPPOSITE_8EMA_CLOSE",
+                                "trail_steps": [f"SL {int(sl_pts)}", f"Opposite 8 EMA Close {c15:.1f}"],
+                                "mfe_pts": max(0.0, pnl),
+                                "entry_day": entry_day,
+                                "entry_hm": entry_hm,
+                                "exit_day": m_day,
+                                "exit_hm": m_hm,
+                                "exit_ts": m_ts,
+                                "is_ambiguous": False,
+                            }
+
+        # If 1m walk completed without exit, square off at final bar
+        last_c = float(candles.iloc[-1]["close"]) if not candles.empty else entry_spot
+        last_day = str(candles.iloc[-1].get("day") or entry_day) if not candles.empty else entry_day
+        last_hm = str(candles.iloc[-1].get("hm") or "15:20") if not candles.empty else "15:20"
+        last_ts = int(candles.iloc[-1].get("ts") or 0) if not candles.empty else 0
+        pnl = round((last_c - entry_spot) if is_long else (entry_spot - last_c), 2)
+        return {
+            "st_pnl_pts": pnl,
+            "fx_pnl_pts": pnl,
+            "exit_spot": last_c,
+            "exit_reason": f"EOD_SQUARE_OFF_{eod_hm}",
+            "trail_steps": [f"SL {int(sl_pts)}", f"EOD {last_c:.1f}"],
+            "mfe_pts": max(0.0, pnl),
+            "entry_day": entry_day,
+            "entry_hm": entry_hm,
+            "exit_day": last_day,
+            "exit_hm": last_hm,
+            "exit_ts": last_ts,
+            "is_ambiguous": False,
+        }
+
+    # Fallback to 15m walk if day_1m is not provided
+    for f_idx in range(start_idx, len(bars)):
+        fb = bars[f_idx]
+        fh = float(fb.get("high") or entry_spot)
+        fl = float(fb.get("low") or entry_spot)
+        fc = float(fb.get("close") or entry_spot)
+        f_day = str(fb.get("day") or entry_day)
+        f_hm = str(fb.get("hm") or entry_hm)
+        f_ts = int(fb.get("ts") or 0)
+
+        if f_hm >= eod_hm:
+            pnl = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
+            return {
+                "st_pnl_pts": pnl,
+                "fx_pnl_pts": pnl,
+                "exit_spot": fc,
+                "exit_reason": f"EOD_SQUARE_OFF_{eod_hm}",
+                "trail_steps": [f"SL {int(sl_pts)}", f"EOD 15:20 {fc:.1f}"],
+                "mfe_pts": max(0.0, pnl),
+                "entry_day": entry_day,
+                "entry_hm": entry_hm,
+                "exit_day": f_day,
+                "exit_hm": f_hm,
+                "exit_ts": f_ts + 900,
+                "is_ambiguous": False,
+            }
+
+        is_amb = False
+        if is_long:
+            if fh >= target_spot and fl <= stop_spot:
+                is_amb = True
+        else:
+            if fl <= target_spot and fh >= stop_spot:
+                is_amb = True
+
+        if is_amb:
+            return {
+                "st_pnl_pts": -sl_pts,
+                "fx_pnl_pts": -sl_pts,
+                "exit_spot": stop_spot,
+                "exit_reason": "AMBIGUOUS",
+                "trail_steps": [f"SL {int(sl_pts)}", "AMBIGUOUS bar"],
+                "mfe_pts": tgt_pts,
+                "entry_day": entry_day,
+                "entry_hm": entry_hm,
+                "exit_day": f_day,
+                "exit_hm": f_hm,
+                "exit_ts": f_ts + 900,
+                "is_ambiguous": True,
+            }
+
+        if (is_long and fl <= stop_spot) or (not is_long and fh >= stop_spot):
+            return {
+                "st_pnl_pts": -sl_pts,
+                "fx_pnl_pts": -sl_pts,
+                "exit_spot": stop_spot,
+                "exit_reason": "SPOT_SL_HIT",
+                "trail_steps": [f"SL {int(sl_pts)}", f"SL hit {stop_spot:.1f}"],
+                "mfe_pts": 0.0,
+                "entry_day": entry_day,
+                "entry_hm": entry_hm,
+                "exit_day": f_day,
+                "exit_hm": f_hm,
+                "exit_ts": f_ts + 900,
+                "is_ambiguous": False,
+            }
+
+        if (is_long and fh >= target_spot) or (not is_long and fl <= target_spot):
+            return {
+                "st_pnl_pts": tgt_pts,
+                "fx_pnl_pts": tgt_pts,
+                "exit_spot": target_spot,
+                "exit_reason": "SPOT_TARGET_HIT",
+                "trail_steps": [f"SL {int(sl_pts)}", f"Target hit {target_spot:.1f}"],
+                "mfe_pts": tgt_pts,
+                "entry_day": entry_day,
+                "entry_hm": entry_hm,
+                "exit_day": f_day,
+                "exit_hm": f_hm,
+                "exit_ts": f_ts + 900,
+                "is_ambiguous": False,
+            }
+
+        e8_here = float(fb.get("e8") or 0.0)
+        if e8_here > 0:
+            opp_close = (fc < e8_here) if is_long else (fc > e8_here)
+            if opp_close:
+                pnl = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
+                bar_close_hm = (
+                    pd.to_datetime(f_ts + 900, unit="s", utc=True)
+                    .tz_convert("Asia/Kolkata")
+                    .strftime("%H:%M")
+                    if f_ts > 0
+                    else f_hm
+                )
+                return {
+                    "st_pnl_pts": pnl,
+                    "fx_pnl_pts": pnl,
+                    "exit_spot": fc,
+                    "exit_reason": "OPPOSITE_8EMA_CLOSE",
+                    "trail_steps": [f"SL {int(sl_pts)}", f"Opposite 8 EMA Close {fc:.1f}"],
+                    "mfe_pts": max(0.0, pnl),
+                    "entry_day": entry_day,
+                    "entry_hm": entry_hm,
+                    "exit_day": f_day,
+                    "exit_hm": bar_close_hm,
+                    "exit_ts": f_ts + 900,
+                    "is_ambiguous": False,
+                }
+
+    last_b = bars[-1] if bars else {}
+    fc = float(last_b.get("close") or entry_spot)
+    pnl = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
+    return {
+        "st_pnl_pts": pnl,
+        "fx_pnl_pts": pnl,
+        "exit_spot": fc,
+        "exit_reason": f"EOD_SQUARE_OFF_{eod_hm}",
+        "trail_steps": [f"SL {int(sl_pts)}"],
+        "mfe_pts": max(0.0, pnl),
+        "entry_day": entry_day,
+        "entry_hm": entry_hm,
+        "exit_day": str(last_b.get("day") or entry_day),
+        "exit_hm": str(last_b.get("hm") or "15:20"),
+        "exit_ts": int(last_b.get("ts") or 0) + 900,
+        "is_ambiguous": False,
+    }
+
+
+def compute_ema8_prototype_summary(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Computes summary metrics for 8 EMA Prototype according to Harish's specification:
+    - total trades, wins, losses, breakeven, win rate %
+    - avg win (points), avg loss (points), payoff ratio, net points
+    - exit reasons breakdown: SPOT_TARGET_HIT, SPOT_SL_HIT, OPPOSITE_8EMA_CLOSE, EOD_SQUARE_OFF_15:20, AMBIGUOUS
+    - ambiguous trades dual reporting: stops hit first vs targets hit first
+    """
+    total = len(trades)
+    if total == 0:
+        return {
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "breakeven": 0,
+            "win_rate": 0.0,
+            "win_rate_pct": 0.0,
+            "avg_win_pts": 0.0,
+            "avg_loss_pts": 0.0,
+            "payoff_ratio": 0.0,
+            "net_points": 0.0,
+            "exit_reasons": {
+                "SPOT_TARGET_HIT": 0,
+                "SPOT_SL_HIT": 0,
+                "OPPOSITE_8EMA_CLOSE": 0,
+                "EOD_SQUARE_OFF_15:20": 0,
+                "AMBIGUOUS": 0,
+            },
+            "ambiguous_count": 0,
+            "ambiguous_summary": "0 ambiguous trades",
+            "scenario_stops_first": {
+                "wins": 0,
+                "losses": 0,
+                "win_rate_pct": 0.0,
+                "net_points": 0.0,
+            },
+            "scenario_targets_first": {
+                "wins": 0,
+                "losses": 0,
+                "win_rate_pct": 0.0,
+                "net_points": 0.0,
+            },
+        }
+
+    exit_reasons = {
+        "SPOT_TARGET_HIT": 0,
+        "SPOT_SL_HIT": 0,
+        "OPPOSITE_8EMA_CLOSE": 0,
+        "EOD_SQUARE_OFF_15:20": 0,
+        "AMBIGUOUS": 0,
+    }
+
+    for t in trades:
+        r = str(t.get("exit_reason") or t.get("Exit_Reason") or t.get("reason") or "").strip()
+        if "AMBIGUOUS" in r or t.get("is_ambiguous"):
+            exit_reasons["AMBIGUOUS"] += 1
+        elif "TARGET" in r:
+            exit_reasons["SPOT_TARGET_HIT"] += 1
+        elif "OPPOSITE" in r:
+            exit_reasons["OPPOSITE_8EMA_CLOSE"] += 1
+        elif "EOD" in r:
+            exit_reasons["EOD_SQUARE_OFF_15:20"] += 1
+        elif "SL" in r:
+            exit_reasons["SPOT_SL_HIT"] += 1
+        else:
+            exit_reasons[r] = exit_reasons.get(r, 0) + 1
+
+    amb_count = exit_reasons["AMBIGUOUS"]
+    non_amb = [
+        t
+        for t in trades
+        if not t.get("is_ambiguous") and "AMBIGUOUS" not in str(t.get("exit_reason") or t.get("Exit_Reason") or "")
+    ]
+
+    wins_non_amb = [t for t in non_amb if float(t.get("st_pnl_pts") or t.get("pnl_pts") or 0.0) > 0]
+    losses_non_amb = [t for t in non_amb if float(t.get("st_pnl_pts") or t.get("pnl_pts") or 0.0) < 0]
+    be_non_amb = [t for t in non_amb if float(t.get("st_pnl_pts") or t.get("pnl_pts") or 0.0) == 0]
+
+    # Scenario 1: Stops hit first on ambiguous trades (-40 pts each)
+    wins_stops_first = len(wins_non_amb)
+    losses_stops_first = len(losses_non_amb) + amb_count
+    wr_stops_first = round((wins_stops_first / total) * 100.0, 1) if total > 0 else 0.0
+    pts_non_amb = sum(float(t.get("st_pnl_pts") or t.get("pnl_pts") or 0.0) for t in non_amb)
+    pts_stops_first = round(pts_non_amb + (-40.0 * amb_count), 2)
+
+    # Scenario 2: Targets hit first on ambiguous trades (+40 pts each)
+    wins_targets_first = len(wins_non_amb) + amb_count
+    losses_targets_first = len(losses_non_amb)
+    wr_targets_first = round((wins_targets_first / total) * 100.0, 1) if total > 0 else 0.0
+    pts_targets_first = round(pts_non_amb + (40.0 * amb_count), 2)
+
+    if amb_count > 0:
+        amb_summary = (
+            f"{wins_stops_first} wins / {losses_stops_first} losses if stops hit first, "
+            f"{wins_targets_first} wins / {losses_targets_first} losses if targets hit first"
+        )
+    else:
+        amb_summary = f"{wins_stops_first} wins / {losses_stops_first} losses (0 ambiguous trades)"
+
+    win_pts_list = [float(t.get("st_pnl_pts") or t.get("pnl_pts") or 0.0) for t in wins_non_amb]
+    loss_pts_list = [abs(float(t.get("st_pnl_pts") or t.get("pnl_pts") or 0.0)) for t in losses_non_amb] + ([40.0] * amb_count)
+    avg_w = round(float(np.mean(win_pts_list)), 2) if win_pts_list else 0.0
+    avg_l = round(float(np.mean(loss_pts_list)), 2) if loss_pts_list else 0.0
+    payoff = round(avg_w / avg_l, 2) if avg_l > 0 else 0.0
+
+    return {
+        "total_trades": total,
+        "wins": wins_stops_first,
+        "losses": losses_stops_first,
+        "breakeven": len(be_non_amb),
+        "win_rate": wr_stops_first,
+        "win_rate_pct": wr_stops_first,
+        "avg_win_pts": avg_w,
+        "avg_loss_pts": avg_l,
+        "payoff_ratio": payoff,
+        "net_points": pts_stops_first,
+        "exit_reasons": exit_reasons,
+        "ambiguous_count": amb_count,
+        "ambiguous_summary": amb_summary,
+        "scenario_stops_first": {
+            "wins": wins_stops_first,
+            "losses": losses_stops_first,
+            "win_rate_pct": wr_stops_first,
+            "net_points": pts_stops_first,
+        },
+        "scenario_targets_first": {
+            "wins": wins_targets_first,
+            "losses": losses_targets_first,
+            "win_rate_pct": wr_targets_first,
+            "net_points": pts_targets_first,
+        },
+    }
+
+
 def simulate_backtest_spot_exit(
     bars: List[Dict[str, Any]],
     start_idx: int,
@@ -787,12 +1237,39 @@ def simulate_backtest_spot_exit(
     trail_green_only: bool = True,
     exit_at_8ema: bool = False,
     exit_on_opposite_8ema_close: bool = False,
+    *,
+    day_1m: Optional[pd.DataFrame] = None,
+    entry_ts: Optional[int] = None,
 ) -> Tuple[float, float, float, str, List[str], float, str, str, str, str]:
     """
     Forward-walk spot exit on 15m bars.
     Returns (st_pnl_pts, fx_pnl_pts, exit_spot, exit_reason, trail_steps, mfe_pts,
              entry_day, entry_hm, exit_day, exit_hm).
     """
+    if exit_on_opposite_8ema_close:
+        res = simulate_prototype_spot_exit(
+            bars=bars,
+            start_idx=start_idx,
+            entry_spot=entry_spot,
+            is_long=is_long,
+            sl_pts=sl_pts,
+            tgt_pts=tgt_pts,
+            eod_hm=eod_hm,
+            day_1m=day_1m,
+            entry_ts=entry_ts,
+        )
+        return (
+            res["st_pnl_pts"],
+            res["fx_pnl_pts"],
+            res["exit_spot"],
+            res["exit_reason"],
+            res["trail_steps"],
+            res["mfe_pts"],
+            res["entry_day"],
+            res["entry_hm"],
+            res["exit_day"],
+            res["exit_hm"],
+        )
     entry_day = str(bars[start_idx].get("day") or "")
     entry_hm = str(bars[start_idx].get("hm") or "")
     exit_day = entry_day
@@ -8856,6 +9333,12 @@ class QuantTerminalBackend:
                         lbb_flat = abs(float(b["lbb"]) - float(b_prev["lbb"])) <= 1.8
                         atr14 = float(b.get("atr14") or 15.0)
 
+                        if proto_bt_state.get("bt_open"):
+                            open_exit_ts = int(proto_bt_state["bt_open"].get("exit_ts") or 0)
+                            bar_open_ts = int(b.get("ts") or 0)
+                            if bar_open_ts >= open_exit_ts:
+                                proto_bt_state.pop("bt_open", None)
+
                         cand_signals = self._backtest_legacy_cand_signals(
                             b, b_prev, e4_v, e8_v, bbw, ubb_up, lbb_dn, ubb_flat, lbb_flat, atr14
                         )
@@ -8914,42 +9397,78 @@ class QuantTerminalBackend:
                             tgo = False if is_proto else bool(
                                 meta.get("trail_green_only", not trail_every_bar)
                             )
-                            st_pnl_pts, fx_pnl_pts, exit_spot, st_reason, trail_steps, mfe_pts, ent_day, ent_hm, ex_day, ex_hm = simulate_backtest_spot_exit(
-                                bars,
-                                start_i,
-                                entry_spot,
-                                is_long,
-                                float(sl_pts),
-                                float(tgt_pts),
-                                is_flagship,
-                                meta.get("sr_levels") or {},
-                                eod_hm,
-                                sr_prox,
-                                trail_every_bar=teb,
-                                trail_green_only=tgo,
-                                exit_at_8ema=bool(
-                                    meta.get("exit_at_8ema", meta.get("exit_at_atma"))
+                            if is_proto:
+                                proto_res = simulate_prototype_spot_exit(
+                                    bars=bars,
+                                    start_idx=start_i,
+                                    entry_spot=entry_spot,
+                                    is_long=is_long,
+                                    sl_pts=float(sl_pts),
+                                    tgt_pts=float(tgt_pts),
+                                    eod_hm=eod_hm,
+                                    day_1m=day_to_1m.get(day_key),
+                                    entry_ts=int(meta.get("entry_ts") or 0),
                                 )
-                                if is_pa
-                                else False,
-                                exit_on_opposite_8ema_close=bool(
-                                    meta.get("exit_on_opposite_8ema_close")
-                                )
-                                if is_proto
-                                else False,
-                            )
-                            if is_proto and st_reason == "TRAIL_SL_HIT":
-                                st_reason = "SL_HIT"
-                            if is_proto and meta.get("entry_hm"):
-                                ent_day = str(meta.get("entry_day") or ent_day)
-                                ent_hm = str(meta["entry_hm"])
+                                st_pnl_pts = proto_res["st_pnl_pts"]
+                                fx_pnl_pts = proto_res["fx_pnl_pts"]
+                                exit_spot = proto_res["exit_spot"]
+                                st_reason = proto_res["exit_reason"]
+                                trail_steps = proto_res["trail_steps"]
+                                mfe_pts = proto_res["mfe_pts"]
+                                ent_day = str(meta.get("entry_day") or proto_res["entry_day"])
+                                ent_hm = str(meta.get("entry_hm") or proto_res["entry_hm"])
+                                ex_day = proto_res["exit_day"]
+                                ex_hm = proto_res["exit_hm"]
+                                exit_ts = proto_res["exit_ts"]
+                                is_ambiguous = proto_res["is_ambiguous"]
 
-                            synth_opt_entry, synth_opt_exit = synthesize_option_premium_from_spot(
-                                entry_spot, exit_spot, is_long, delta_est
-                            )
-                            synth_gross_inr = round((synth_opt_exit - synth_opt_entry) * lot_qty, 2)
-                            synth_net_inr = round(synth_gross_inr - charges_est, 2)
-                            fx_net_inr = round((fx_pnl_pts * delta_est) * lot_qty - charges_est, 2)
+                                # Track open trade for alternating trades rule
+                                proto_bt_state["bt_open"] = {
+                                    "direction": direc,
+                                    "entry_ts": int(meta.get("entry_ts") or 0),
+                                    "exit_ts": exit_ts,
+                                }
+                                proto_bt_state["last_traded_direction"] = direc
+                                proto_bt_state["consumed_cross_ts"] = meta.get("cross_bar_open_ts") or meta.get("entry_ts")
+                            else:
+                                st_pnl_pts, fx_pnl_pts, exit_spot, st_reason, trail_steps, mfe_pts, ent_day, ent_hm, ex_day, ex_hm = simulate_backtest_spot_exit(
+                                    bars,
+                                    start_i,
+                                    entry_spot,
+                                    is_long,
+                                    float(sl_pts),
+                                    float(tgt_pts),
+                                    is_flagship,
+                                    meta.get("sr_levels") or {},
+                                    eod_hm,
+                                    sr_prox,
+                                    trail_every_bar=teb,
+                                    trail_green_only=tgo,
+                                    exit_at_8ema=bool(
+                                        meta.get("exit_at_8ema", meta.get("exit_at_atma"))
+                                    )
+                                    if is_pa
+                                    else False,
+                                    exit_on_opposite_8ema_close=False,
+                                )
+                                is_ambiguous = False
+                                if meta.get("entry_hm"):
+                                    ent_day = str(meta.get("entry_day") or ent_day)
+                                    ent_hm = str(meta["entry_hm"])
+
+                            if is_proto:
+                                synth_opt_entry, synth_opt_exit = None, None
+                                synth_gross_inr = 0.0
+                                synth_net_inr = 0.0
+                                fx_net_inr = 0.0
+                                charges_est = 0.0
+                            else:
+                                synth_opt_entry, synth_opt_exit = synthesize_option_premium_from_spot(
+                                    entry_spot, exit_spot, is_long, delta_est
+                                )
+                                synth_gross_inr = round((synth_opt_exit - synth_opt_entry) * lot_qty, 2)
+                                synth_net_inr = round(synth_gross_inr - charges_est, 2)
+                                fx_net_inr = round((fx_pnl_pts * delta_est) * lot_qty - charges_est, 2)
 
                             falloff_pts = round(max(0.0, mfe_pts - max(0.0, st_pnl_pts)), 1)
                             atm_strike = int(round(entry_spot / 100.0) * 100)
@@ -8994,13 +9513,13 @@ class QuantTerminalBackend:
                                 "data_source_tag": DATA_SOURCE_SYNTHESIZED,
                                 "Exit_Reason": st_reason,
                                 "exit_reason": st_reason,
-                                "Net_Pnl_Display": f"{st_pnl_pts:+.1f} pts | ₹{synth_net_inr:,.2f} (SYNTHESIZED)",
-                                "net_pnl": synth_net_inr,
-                                "gross_pnl": synth_gross_inr,
-                                "gross_pnl_inr": synth_gross_inr,
-                                "charges": charges_est,
-                                "dhan_charges": charges_est,
-                                "fixed_net_pnl_row": fx_net_inr,
+                                "Net_Pnl_Display": f"{st_pnl_pts:+.1f} pts (Spot)" if is_proto else f"{st_pnl_pts:+.1f} pts | ₹{synth_net_inr:,.2f} (SYNTHESIZED)",
+                                "net_pnl": 0.0 if is_proto else synth_net_inr,
+                                "gross_pnl": 0.0 if is_proto else synth_gross_inr,
+                                "gross_pnl_inr": 0.0 if is_proto else synth_gross_inr,
+                                "charges": 0.0 if is_proto else charges_est,
+                                "dhan_charges": 0.0 if is_proto else charges_est,
+                                "fixed_net_pnl_row": 0.0 if is_proto else fx_net_inr,
                                 "st_pnl_pts": st_pnl_pts,
                                 "fx_pnl_pts": fx_pnl_pts,
                                 "Trailing_Details": trail_str,
@@ -9009,12 +9528,22 @@ class QuantTerminalBackend:
                                 "Data_Type": "SYNTHESIZED",
                                 "Ema8_Line_Details": ema8_line_col,
                                 "Ema8_From_Matrix": ema8_line_col,
+                                "dynamic_8ema_entry": meta.get("dynamic_e8_at_entry") or meta.get("e8"),
+                                "Dynamic_8EMA_Entry": f"{float(meta.get('dynamic_e8_at_entry') or meta.get('e8') or 0.0):.2f}" if is_proto else "—",
+                                "is_ambiguous": is_ambiguous if is_proto else False,
                                 "strategy_id": sid,
                                 "source": "SYNTHESIZED",
                                 "BB_Gate": meta.get("bb_gate_label", gate_bb),
                                 "Bollinger_Applied": meta.get("bollinger_applied", gate_bb == "ON"),
                                 "Entry_TF": "15m",
                             })
+
+                        # If prototype trade closed during this 15m bar, clear bt_open so bar close flip check can arm
+                        if proto_bt_state.get("bt_open"):
+                            open_exit_ts = int(proto_bt_state["bt_open"].get("exit_ts") or 0)
+                            bar_close_ts = int(b.get("ts") or 0) + 900
+                            if bar_close_ts >= open_exit_ts:
+                                proto_bt_state.pop("bt_open", None)
 
         # ── B. Immutable master (append-only algo fills — paper or live) ──
         master_src: List[Dict[str, Any]] = []
@@ -9055,6 +9584,21 @@ class QuantTerminalBackend:
             [_row_net_inr(x) for x in all_rows],
         )
 
+        proto_trades = [x for x in all_rows if x.get("ema8_prototype")]
+        proto_summary = compute_ema8_prototype_summary(proto_trades)
+
+        if strat_flt == "EMA8_PROTOTYPE":
+            st_summary["win_rate_pct"] = proto_summary["win_rate_pct"]
+            st_summary["avg_win_pts"] = proto_summary["avg_win_pts"]
+            st_summary["avg_loss_pts"] = proto_summary["avg_loss_pts"]
+            st_summary["total_net_pnl_inr"] = 0.0
+            st_summary["total_net_pts"] = proto_summary["net_points"]
+            fx_summary["win_rate_pct"] = proto_summary["win_rate_pct"]
+            fx_summary["avg_win_pts"] = proto_summary["avg_win_pts"]
+            fx_summary["avg_loss_pts"] = proto_summary["avg_loss_pts"]
+            fx_summary["total_net_pnl_inr"] = 0.0
+            fx_summary["total_net_pts"] = proto_summary["net_points"]
+
         tags = {str(x.get("data_source_tag") or "") for x in all_rows}
         if tags == {DATA_SOURCE_IMMUTABLE} or (DATA_SOURCE_IMMUTABLE in tags and DATA_SOURCE_SYNTHESIZED not in tags):
             dtype_mode = "REAL"
@@ -9088,4 +9632,5 @@ class QuantTerminalBackend:
             "reconciliation_match": True,
             "scanner_gates": self.get_scanner_gate_config(),
             "bb_gate_run_label": gate_bb,
+            "ema8_prototype_summary": proto_summary,
         }
