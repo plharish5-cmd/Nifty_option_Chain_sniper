@@ -132,13 +132,23 @@ def forming_ohlc_from_1m(
     *,
     bar_open_ts: int,
     tick_ts: int,
+    completed_only: bool = False,
 ) -> Tuple[float, float, float]:
-    """High/low/close of the forming 15m bar from 1m candles up to tick_ts."""
+    """High/low/close of the forming 15m bar from 1m candles up to tick_ts.
+
+    A 1-minute candle is stamped with the minute it OPENS. Live, the newest
+    row is the minute in progress and reading it is real-time data. In a
+    backtest that same row already holds the minute's final high, low and
+    close, so reading it at tick_ts looks up to 60 seconds into the future.
+    completed_only=True reads a candle only once its minute is over
+    (ts + 60 <= tick_ts); backtests must pass it.
+    """
     if day_1m is None or day_1m.empty:
         return 0.0, 0.0, 0.0
-    w = day_1m[(day_1m["ts"] >= int(bar_open_ts)) & (day_1m["ts"] <= int(tick_ts))]
+    edge = int(tick_ts) - 60 if completed_only else int(tick_ts)
+    w = day_1m[(day_1m["ts"] >= int(bar_open_ts)) & (day_1m["ts"] <= edge)]
     if w.empty:
-        prior = day_1m[day_1m["ts"] <= int(tick_ts)]
+        prior = day_1m[day_1m["ts"] <= edge]
         if prior.empty:
             return 0.0, 0.0, 0.0
         row = prior.iloc[-1]
@@ -1047,6 +1057,20 @@ def backtest_ema8_prototype_at_bar(
     no_from = str(cfg.get("no_entry_from_hm", "15:20") or "")
     no_before = str(cfg.get("no_entry_before_hm", "09:30") or "")
     refresh = float(cfg.get("e8_refresh_seconds", 30.0) or 30.0)
+    # With a recursive EMA (adjust=False) the value on the running candle is
+    # prev + alpha * (spot - prev). SuperTrend needs the full frame, so the
+    # shortcut is used only when that filter is off.
+    prev_e4 = float(b_prev.get("e4") or 0.0)
+    fast_ema = None
+    if not bool(cfg.get("supertrend_enabled", False)) and prev_e4 > 0 and prev_e8 > 0:
+        from analyst.nse_spot_candles_8510 import load_tradingview_ema_cross_config
+
+        tv = load_tradingview_ema_cross_config()
+        if not bool(tv.get("adjust", False)):
+            fast_ema = (
+                2.0 / (int(tv.get("fast_length", 4)) + 1.0),
+                2.0 / (int(tv.get("slow_length", 8)) + 1.0),
+            )
     if reentry_enabled(cfg):
         proto_state.pop("consumed_cross_ts", None)
         proto_state.pop("last_traded_direction", None)
@@ -1070,7 +1094,9 @@ def backtest_ema8_prototype_at_bar(
                 ticks = intrabar_tick_timestamps(bar_open_ts, refresh)
                 prev_tick_ts = bar_open_ts
                 for tick_ts in ticks:
-                    fh, fl, spot = forming_ohlc_from_1m(day_1m, bar_open_ts=bar_open_ts, tick_ts=tick_ts)
+                    fh, fl, spot = forming_ohlc_from_1m(
+                        day_1m, bar_open_ts=bar_open_ts, tick_ts=tick_ts, completed_only=True
+                    )
                     if spot <= 0:
                         prev_tick_ts = tick_ts
                         continue
@@ -1079,7 +1105,12 @@ def backtest_ema8_prototype_at_bar(
                     if no_before and _hm_ist(tick_ts) < no_before:
                         prev_tick_ts = tick_ts
                         continue
-                    tick_slice = day_1m[(day_1m["ts"] >= prev_tick_ts) & (day_1m["ts"] <= tick_ts)]
+                    # minutes that finished since the previous tick, inside this candle
+                    tick_slice = day_1m[
+                        (day_1m["ts"] + 60 > prev_tick_ts)
+                        & (day_1m["ts"] + 60 <= tick_ts)
+                        & (day_1m["ts"] >= bar_open_ts)
+                    ]
                     if not tick_slice.empty:
                         tick_h = max(float(tick_slice["high"].max()), spot)
                         tick_l = min(float(tick_slice["low"].min()), spot)
@@ -1087,13 +1118,19 @@ def backtest_ema8_prototype_at_bar(
                         tick_h = tick_l = spot
                     prev_tick_ts = tick_ts
 
-                    e4, e8_tick, high, low = compute_dynamic_emas_on_bar(
-                        b15_df,
-                        bar_ci=bar_ci,
-                        live_spot=spot,
-                        form_high=fh,
-                        form_low=fl,
-                    )
+                    if fast_ema is not None:
+                        # Same numbers as compute_dynamic_emas_on_bar, without
+                        # rebuilding the whole EMA series on every tick.
+                        e4 = prev_e4 + fast_ema[0] * (spot - prev_e4)
+                        e8_tick = prev_e8 + fast_ema[1] * (spot - prev_e8)
+                    else:
+                        e4, e8_tick, _h, _l = compute_dynamic_emas_on_bar(
+                            b15_df,
+                            bar_ci=bar_ci,
+                            live_spot=spot,
+                            form_high=fh,
+                            form_low=fl,
+                        )
                     block = _filter_blocks(
                         bullish,
                         e4,

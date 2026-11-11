@@ -9991,6 +9991,13 @@ class QuantTerminalBackend:
 
                     mj_bt_state: Dict[str, Any] = {}
                     mj_dynamic_bt = bool(_load_mj_cfg(self.scanner_cfg).get("dynamic_8ema_entry", True))
+                    # Only build the lanes the caller asked for. Rows of other
+                    # lanes were discarded further down anyway; generating them
+                    # (the Flagship pass above all) was most of the run time.
+                    want_mj = strat_flt in ("ALL", "STAGE_2_LONG", "STAGE_3_SHORT", "CROSSOVER")
+                    want_proto = strat_flt in ("ALL", "EMA8_PROTOTYPE")
+                    want_flagship = strat_flt in ("ALL", "H1_FLAGSHIP")
+                    want_pa = strat_flt in ("ALL", "PA_SR_HOMEWORK")
 
                     for idx in range(20, len(bars) - 1):
                         b = bars[idx]
@@ -10018,7 +10025,9 @@ class QuantTerminalBackend:
                             if bar_open_ts >= open_exit_ts:
                                 proto_bt_state.pop("bt_open", None)
 
-                        if mj_dynamic_bt:
+                        if not want_mj:
+                            cand_signals = []
+                        elif mj_dynamic_bt:
                             cand_signals = backtest_mj_dynamic_at_bar(
                                 bars,
                                 idx,
@@ -10034,18 +10043,20 @@ class QuantTerminalBackend:
                             cand_signals = self._backtest_legacy_cand_signals(
                                 b, b_prev, e4_v, e8_v, bbw, ubb_up, lbb_dn, ubb_flat, lbb_flat, atr14
                             )
-                        cand_signals += backtest_ema8_prototype_at_bar(
-                            bars,
-                            idx,
-                            proto_bt_state,
-                            self.scanner_cfg,
-                            bb_gate_active=False,
-                            b15_df=df_15m,
-                            day_1m=day_to_1m.get(day_key),
-                        )
-                        cand_signals += self._backtest_flagship_signals_at_bar(df_all, int(b["ts"]), c_p)
+                        if want_proto:
+                            cand_signals += backtest_ema8_prototype_at_bar(
+                                bars,
+                                idx,
+                                proto_bt_state,
+                                self.scanner_cfg,
+                                bb_gate_active=False,
+                                b15_df=df_15m,
+                                day_1m=day_to_1m.get(day_key),
+                            )
+                        if want_flagship:
+                            cand_signals += self._backtest_flagship_signals_at_bar(df_all, int(b["ts"]), c_p)
 
-                        if pa_enabled and idx >= 21:
+                        if pa_enabled and want_pa and idx >= 21:
                             day_key = str(b["day"])
                             if day_key not in sr_cache:
                                 prior = daily_ohlc[daily_ohlc["day"] < day_key]

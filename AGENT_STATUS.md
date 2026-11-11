@@ -802,3 +802,41 @@ tests, same as before). Locks 11/11. Config file not edited. Not deployed, not m
 
 Note for whoever continues: with away = 2 and touch = 3, "away" and "touch" overlap by a point.
 The touch still has to come on a later 30-second tick than the away.
+
+---
+
+## 2026-11-11 · Claude · `claude/v2.0.7-holdout-study` @ see log
+Tag: pre-claude-v2.0.7-holdout-study → post-claude-v2.0.7-holdout-study
+Branched from: `fix/8510-algo-v206` @ `aed34fa`. It does **not** contain AGY's local, unpushed
+`agy/v2.0.6-10pt-retest` (`995fa68`: touch 10, 09:15 arming-only guard). That commit touches the
+same area of `ema8_prototype_8510.py` (`no_entry_before`); expect a small merge there.
+
+Harish asked for (a) the Prototype backtest's look-ahead fix and (b) a train/test study built
+into the app's own backtest. No strategy rule and no config file changed.
+
+What changed:
+- **Look-ahead removed from the Prototype backtest.** A 1-minute candle is stamped with the
+  minute it opens; on the 30-second grid the backtest read it while that minute was still
+  running, up to 60 seconds ahead. `forming_ohlc_from_1m(..., completed_only=True)` and the
+  tick slice now read a candle only when `ts + 60 <= tick`. The live default is unchanged
+  (live, the newest row is real-time data). Entries move up to a minute later; results from
+  before this commit are flattered and should not be compared with results after it.
+- **Backtest speed.** `run_date_range_backtest` now builds only the lanes the `strategy_filter`
+  asks for (the Flagship pass ran for every candle whatever the filter), and the Prototype's
+  per-tick EMA uses `prev + alpha * (spot - prev)` instead of rebuilding the whole series
+  (identical to 1e-9; SuperTrend ON still uses the full path).
+- **`analyst/holdout_study_8510.py`** — `python3 -m analyst.holdout_study_8510
+  [--train-days 170 --test-days 84 --cost-pts 2.0]`. Splits the sessions in the market database
+  by date, runs a fixed list of variants through `run_date_range_backtest` on both sets with a
+  per-trade cost, picks on the train days only, and reports that pick's test result as the
+  answer (pass rule fixed in the file: test net > 0 and t >= 2.0). Writes a markdown report to
+  `data/terminal8510/holdout/` (ignored by git). Overrides live on a copy of the scanner config
+  for the length of one call; the config file and the live object are not touched.
+  Lists what cannot be tested yet (OI filter, trend agreement, option exit) and why.
+
+Baseline: Prototype/exit/Stage/backtest suites + 7 new = 129 passed / 4 failed (AGY's
+wall-clock tests, unchanged). Locks 11/11.
+
+Not verified: never run on the real 254-day database — I do not have it. Run time on the desk is
+unknown. AGY's 254-day figures came from its own `fast_backtest_254_days.py`, which is not in
+the repo; they are not comparable with this study until it has been run.
