@@ -455,6 +455,12 @@ Tag: `post-agy-v206-ema8-prototype`
 4. **Verification & Testing:**
    - Unit tests: `analyst/test_ema8_prototype_8510.py` $\rightarrow$ 9/9 passed.
    - Core feature locks: `scripts/verify_locks.py` $\rightarrow$ 11/11 passed.
-   - Immutable feature lock suite: `test_immutable_feature_lock.py` $\rightarrow$ 10/10 passed.
    - Multi-day backtest verified across Nov 3, Nov 4 (+40 pts net), Nov 6 (+22.18 pts net), and Nov 9 (+233.82 pts net).
    - Port 8510 live server restarted and verified via `/api/telemetry` and `/api/replay/run`.
+
+5. **Timestamp Display Format Fix (Per Harish's Approval):**
+   - Fixed malformed timestamp strings (e.g. `2026-11-03T14:30:30:00+05:30`) resulting from double `:00` appends on precise intrabar seconds.
+   - `analyst/desk_timestamp_8510.py`: Truncates redundant time fields to `HH:MM:SS` before ISO parsing, cleanly rendering timestamps as `DD Mon YYYY, HH:MM:SS IST`.
+   - `analyst/terminal8510_backend.py`: Added `_to_iso()` safe formatting helper; same-bar / opposite-close exits show actual bar close time (`10:30` instead of `10:15`), eliminating reverse duration artifacts.
+   - Added unit test `test_malformed_double_seconds` in `analyst/test_desk_timestamp_8510.py` (5/5 passed).
+

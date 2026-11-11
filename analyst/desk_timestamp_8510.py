@@ -28,6 +28,21 @@ def parse_desk_timestamp(value: Any) -> Optional[datetime]:
         norm = s.replace(" IST", "").replace("Z", "+00:00")
         if " " in norm and "T" not in norm:
             norm = norm.replace(" ", "T", 1)
+        if "T" in norm and ":" in norm:
+            date_part, time_part = norm.split("T", 1)
+            tz_part = ""
+            if "+" in time_part:
+                time_str, tz_part = time_part.split("+", 1)
+                tz_part = "+" + tz_part
+            elif "-" in time_part:
+                time_str, tz_part = time_part.split("-", 1)
+                tz_part = "-" + tz_part
+            else:
+                time_str = time_part
+            colons = time_str.split(":")
+            if len(colons) > 3:
+                time_str = ":".join(colons[:3])
+            norm = f"{date_part}T{time_str}{tz_part}"
         dt = datetime.fromisoformat(norm)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=IST)

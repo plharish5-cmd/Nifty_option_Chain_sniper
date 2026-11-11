@@ -8005,8 +8005,19 @@ class QuantTerminalBackend:
             and st_pts != 0
         ):
             ex_hm_disp = self._fifteen_min_bar_close_hm(ent_hm)
-        entry_raw = f"{ent_day}T{ent_hm}:00+05:30"
-        exit_raw = f"{ex_day}T{ex_hm_disp}:00+05:30"
+        def _to_iso(day_s: str, hm_s: str) -> str:
+            d = str(day_s or "").strip() or str(day or "")
+            t = str(hm_s or "").strip() or str(hm or "")
+            if "T" in t:
+                return t
+            if t.count(":") == 1:
+                t = f"{t}:00"
+            elif t.count(":") > 2:
+                t = t[:8]
+            return f"{d}T{t}+05:30"
+
+        entry_raw = _to_iso(ent_day, ent_hm)
+        exit_raw = _to_iso(ex_day, ex_hm_disp)
         entry_disp = format_desk_timestamp_ist(entry_raw)
         exit_disp = format_desk_timestamp_ist(exit_raw)
         is_proto = bool(row.get("ema8_prototype")) or "EMA8_PROTOTYPE" in str(
