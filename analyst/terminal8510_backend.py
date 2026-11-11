@@ -2586,6 +2586,8 @@ class QuantTerminalBackend:
         self._ema_live_cross_cache: Dict[str, Any] = {"ok": False}
         self._ema_live_cross_worker_started: bool = False
         self._scanner_heavy_lock = asyncio.Lock()
+        self._position_close_locks: Dict[str, asyncio.Lock] = {}
+        self.exit_failure_banner: Optional[Dict[str, Any]] = None
         self._mj_sir_state: Dict[str, Any] = {}
         self._ema8_prototype_state: Dict[str, Any] = {}
         self._ema8_prototype_log: List[Dict[str, Any]] = []
@@ -4366,6 +4368,8 @@ class QuantTerminalBackend:
         live_funds = await self.broker.get_fundlimit()
 
         # 8. Active Positions with live fluctuating MTM
+        if self.broker.is_configured():
+            await self._check_broker_sl_fills()
         positions = self.get_active_positions(live_quotes)
         orders = self.get_order_book()
 
@@ -4495,6 +4499,7 @@ class QuantTerminalBackend:
             "positions": positions,
             "orders": orders,
             "dhan_connected": self.broker.is_configured(),
+            "exit_failure_banner": getattr(self, "exit_failure_banner", None),
         }
         payload['dhan_oi'] = self.dhan_oi.cached_snapshot()
         payload["five_factor_confluence"] = await asyncio.to_thread(
@@ -4704,13 +4709,16 @@ class QuantTerminalBackend:
         for act in actions or []:
             if str(act.get("type")).upper() != "SQUARE_OFF":
                 continue
-            self._square_off_open_ema8_prototype_positions(
-                str(act.get("reason") or "OPPOSITE_8EMA_CLOSE")
-            )
+            reason = str(act.get("reason") or "OPPOSITE_8EMA_CLOSE")
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._square_off_open_ema8_prototype_positions(reason))
+            except RuntimeError:
+                asyncio.run(self._square_off_open_ema8_prototype_positions(reason))
             self._ema8_prototype_state.pop("open", None)
             self._ema8_prototype_state.pop("arm", None)
 
-    def _square_off_open_ema8_prototype_positions(self, reason: str) -> None:
+    async def _square_off_open_ema8_prototype_positions(self, reason: str) -> None:
         try:
             with sqlite3.connect(self.ledger_db) as conn:
                 conn.row_factory = sqlite3.Row
@@ -4718,41 +4726,17 @@ class QuantTerminalBackend:
                 rows = cur.execute(
                     """
                     SELECT * FROM positions
-                    WHERE status='OPEN'
+                    WHERE status IN ('OPEN', 'EXIT_FAILED')
                       AND upper(coalesce(strategy_id,'')) LIKE 'EMA8_PROTOTYPE%'
                     """
                 ).fetchall()
-                now_dt = datetime.now(IST)
-                exit_time = now_dt.strftime("%Y-%m-%d %H:%M:%S IST")
-                for r in rows:
-                    p = dict(r)
-                    pid = p["position_id"]
-                    entry = float(p.get("entry_price") or 0.0)
-                    qty = int(p.get("qty") or 0)
-                    sec_id = str(p.get("security_id") or "")
-                    ltp = float(
-                        (self.cached_telemetry.get("quotes") or {}).get(sec_id) or entry
-                    )
-                    gross = round((ltp - entry) * qty, 2)
-                    chg = self.calculate_dhan_charges(entry, ltp, qty)
-                    net = round(gross - chg, 2)
-                    spot_idx = float(
-                        (self.cached_telemetry.get("spot") or {}).get("price") or 0.0
-                    )
-                    cur.execute(
-                        """
-                        UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED',
-                            gross_pnl=?, net_pnl=?, exit_reason=?, current_ltp=?, spot_exit=?
-                        WHERE position_id=?
-                        """,
-                        (ltp, exit_time, gross, net, reason, ltp, spot_idx or None, pid),
-                    )
-                    self._record_exit_order(cur, p, ltp, qty, reason, net, chg, nifty_spot_exit=spot_idx or None)
-                    closed = dict(p)
-                    closed.update(exit_price=ltp, exit_time=exit_time, net_pnl=net, exit_reason=reason)
-                    append_algo_execution_master(self.ledger_db, master_row_from_position(closed))
-                    log.info("[EMA8_PROTOTYPE] Square-off %s — %s", p.get("symbol"), reason)
-                conn.commit()
+            spot_idx = float(
+                (self.cached_telemetry.get("spot") or {}).get("price") or 0.0
+            )
+            for r in rows:
+                p = dict(r)
+                await self._close_position_with_broker(p, reason, spot_exit=spot_idx or None)
+                log.info("[EMA8_PROTOTYPE] Routed square-off %s — %s via shared close path", p.get("symbol"), reason)
         except Exception as exc:
             log.warning("ema8 prototype square-off: %s", exc)
 
@@ -6245,10 +6229,16 @@ class QuantTerminalBackend:
         with sqlite3.connect(self.ledger_db) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
-            rows = cur.execute("SELECT * FROM positions WHERE status='OPEN' ORDER BY entry_time DESC").fetchall()
+            rows = cur.execute("SELECT * FROM positions WHERE status IN ('OPEN', 'EXIT_PENDING', 'EXIT_FAILED') ORDER BY entry_time DESC").fetchall()
             now_dt = datetime.now(IST)
             for r in rows:
                 p = dict(r)
+                pos_status = str(p.get("status", "OPEN")).upper()
+                if pos_status == "EXIT_PENDING":
+                    if p.get("entry_time"):
+                        p["entry_time"] = format_desk_timestamp_ist(p["entry_time"])
+                    positions.append(p)
+                    continue
                 sid = str(p.get("security_id"))
                 entry = float(p.get("entry_price") or 0.0)
                 qty = int(p.get("qty") or 0)
@@ -6446,59 +6436,18 @@ class QuantTerminalBackend:
                 p["target_status"] = target_status
 
                 if should_close:
-                    exit_price = ltp
-                    exit_time = now_dt.strftime("%Y-%m-%d %H:%M:%S IST")
-                    gross = round((exit_price - entry) * qty, 2)
-                    chg = self.calculate_dhan_charges(entry, exit_price, qty)
-                    net = round(gross - chg, 2)
-
                     exit_spot_val = spot_idx if spot_idx > 0 else None
-                    cur.execute("""
-                    UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?,
-                                         exit_reason=?, current_ltp=?, highest_ltp=?, current_trailing_sl=?,
-                                         target_status=?, trailing_target_level=?, highest_after_target=?,
-                                         pullback_exit_level=?, spot_exit=?
-                    WHERE position_id=?
-                    """, (exit_price, exit_time, gross, net, exit_reason, ltp, highest_ltp, current_trailing_sl,
-                          target_status, trailing_target_level, highest_after_target, pullback_exit_level,
-                          exit_spot_val, p["position_id"]))
-
-                    # Release paper margin and settle the realised P&L into the
-                    # balance. balance was previously written once at init and
-                    # never again, so the virtual wallet never moved no matter
-                    # how much the desk made or lost.
-                    req_margin = entry * qty
-                    cur.execute("UPDATE paper_wallet SET balance = balance + ?, "
-                                "margin_used = max(0.0, margin_used - ?), "
-                                "realized_pnl = realized_pnl + ?, updated_at = ? WHERE id=1",
-                                (net, req_margin, net, datetime.now(IST).isoformat()))
-                    self._record_exit_order(
-                        cur, p, exit_price, qty, exit_reason, net, chg, nifty_spot_exit=exit_spot_val
-                    )
-                    closed = dict(p)
-                    closed.update(
-                        exit_price=exit_price,
-                        exit_time=exit_time,
-                        gross_pnl=gross,
-                        net_pnl=net,
-                        dhan_charges=chg,
-                        exit_reason=exit_reason,
-                        spot_exit=exit_spot_val,
-                        duration=duration_between(p.get("entry_time"), exit_time),
-                    )
-                    append_algo_execution_master(
-                        self.ledger_db, master_row_from_position(closed)
-                    )
-                    log.info("Position %s exited via %s @ ₹%.2f (Net PnL: ₹%.2f)", p["position_id"], exit_reason, exit_price, net)
-
-                    # OCO cancellation of companion leg if live order
-                    target_oid = p.get("target_order_id")
-                    sl_oid = p.get("sl_order_id")
-                    if self.broker.is_configured():
-                        if "SL" in exit_reason and target_oid:
-                            asyncio.create_task(self.broker.cancel_order(str(target_oid)))
-                        elif "TARGET" in exit_reason and sl_oid:
-                            asyncio.create_task(self.broker.cancel_order(str(sl_oid)))
+                    cur.execute("UPDATE positions SET status='EXIT_PENDING' WHERE position_id=?", (p["position_id"],))
+                    p["status"] = "EXIT_PENDING"
+                    if p.get("entry_time"):
+                        p["entry_time"] = format_desk_timestamp_ist(p["entry_time"])
+                    positions.append(p)
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(self._close_position_with_broker(p, exit_reason, spot_exit=exit_spot_val))
+                    except RuntimeError:
+                        asyncio.run(self._close_position_with_broker(p, exit_reason, spot_exit=exit_spot_val))
+                    continue
                 else:
                     cur.execute("""
                     UPDATE positions SET current_ltp=?, highest_ltp=?, current_trailing_sl=?, target_status=?,
@@ -6517,6 +6466,358 @@ class QuantTerminalBackend:
                     positions.append(p)
             conn.commit()
         return positions
+
+    # ── UNIFIED POSITION CLOSE WITH BROKER (PHASE 1) ─────────────────────────
+    async def _check_broker_sl_fills(self) -> None:
+        """Inspects Dhan HQ orders to detect if any companion SL-L order filled on its own."""
+        if not self.broker.is_configured():
+            return
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT * FROM positions WHERE status IN ('OPEN', 'EXIT_PENDING', 'EXIT_FAILED') AND sl_order_id != ''"
+                ).fetchall()
+            if not rows:
+                return
+
+            orders = await self.broker.get_orders()
+            orders_by_id = {str(o.get("orderId")): o for o in orders or [] if o.get("orderId")}
+
+            spot_idx = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
+            for r in rows:
+                p = dict(r)
+                mode = str(p.get("mode") or "").upper()
+                if mode not in ("LIVE", "REAL", "LIVE_ALLOWED", "BOTH"):
+                    continue
+                sl_oid = str(p.get("sl_order_id") or "").strip()
+                if sl_oid and sl_oid in orders_by_id:
+                    matching = orders_by_id[sl_oid]
+                    st = str(matching.get("orderStatus") or "").upper()
+                    if st in ("TRADED", "FILLED"):
+                        entry = float(p.get("entry_price") or 0.0)
+                        fill_price = float(matching.get("averageTradedPrice") or p.get("sl_price") or entry)
+                        fill_qty = int(matching.get("filledQty") or p.get("qty") or 0)
+                        await self._finalize_closed_position(
+                            p, fill_price, fill_qty, "BROKER_SL_FILLED", spot_exit=spot_idx if spot_idx > 0 else None
+                        )
+        except Exception as exc:
+            log.debug("Error in _check_broker_sl_fills: %s", exc)
+
+    async def _close_position_with_broker(
+        self,
+        pos: Dict[str, Any],
+        reason: str,
+        spot_exit: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Unified close path for ALL positions (Live & Paper).
+
+        Routes every exit (target, stop, opposite close, EOD, manual, kill switch)
+        through a single locked broker execution path:
+          1. Sets status='EXIT_PENDING' under per-position lock to prevent double-sell.
+          2. For LIVE positions:
+             - Checks if companion SL-L already filled at Dhan; if so, closes ledger as BROKER_SL_FILLED.
+             - Cancels companion SL-L and confirms cancel before selling.
+             - Dispatches aggressive limit SELL with chasing loop (never MARKET/SL-M).
+             - If sell rejected: marks EXIT_FAILED, raises cockpit banner, re-places protective SL-L.
+             - Chases until confirmed filled by Dhan with real fill price and qty.
+          3. For PAPER positions: closes at current quote.
+          4. Updates paper_wallet, orders book, algo_execution_master, and positions table.
+        """
+        pos_id = str(pos.get("position_id") or "")
+        if not pos_id:
+            return {"ok": False, "error": "Missing position_id"}
+
+        if not hasattr(self, "_position_close_locks"):
+            self._position_close_locks = {}
+        lock = self._position_close_locks.setdefault(pos_id, asyncio.Lock())
+
+        async with lock:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.row_factory = sqlite3.Row
+                cur_row = conn.execute("SELECT * FROM positions WHERE position_id=?", (pos_id,)).fetchone()
+
+            if not cur_row:
+                return {"ok": False, "error": "Position not found"}
+
+            st = str(cur_row["status"]).upper()
+            if st == "CLOSED":
+                return {"ok": True, "status": "ALREADY_CLOSED"}
+            if st == "EXIT_PENDING" and pos.get("status") != "EXIT_PENDING":
+                return {"ok": False, "status": "EXIT_PENDING"}
+
+            # Mark EXIT_PENDING in database
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute("UPDATE positions SET status='EXIT_PENDING' WHERE position_id=?", (pos_id,))
+
+            mode = str(cur_row["mode"] or pos.get("mode") or "").upper()
+            is_live = mode in ("LIVE", "REAL", "LIVE_ALLOWED", "BOTH") and self.broker.is_configured()
+            sec_id = str(cur_row["security_id"] or pos.get("security_id") or "")
+            symbol = str(cur_row["symbol"] or pos.get("symbol") or "")
+            entry = float(cur_row["entry_price"] or pos.get("entry_price") or 0.0)
+            qty = int(cur_row["remaining_qty"] or cur_row["qty"] or pos.get("qty") or 0)
+            sl_oid = str(cur_row["sl_order_id"] or pos.get("sl_order_id") or "").strip()
+
+            if is_live:
+                matching_sl = None
+                if sl_oid:
+                    try:
+                        orders = await self.broker.get_orders()
+                        for o in orders or []:
+                            if str(o.get("orderId")) == sl_oid:
+                                matching_sl = o
+                                break
+                    except Exception as exc:
+                        log.warning("Could not read companion SL order %s: %s", sl_oid, exc)
+
+                # If companion SL-L has already filled, do not send sell order
+                if matching_sl and str(matching_sl.get("orderStatus", "")).upper() in ("TRADED", "FILLED"):
+                    fill_price = float(matching_sl.get("averageTradedPrice") or cur_row["sl_price"] or entry)
+                    fill_qty = int(matching_sl.get("filledQty") or qty)
+                    return await self._finalize_closed_position(
+                        dict(cur_row), fill_price, fill_qty, "BROKER_SL_FILLED", spot_exit=spot_exit
+                    )
+
+                # Otherwise cancel companion SL-L and confirm before selling
+                if sl_oid:
+                    try:
+                        await self.broker.cancel_order(sl_oid)
+                    except Exception as exc:
+                        log.warning("Cancel companion SL-L %s error: %s", sl_oid, exc)
+
+                    # Confirm cancel or check if filled in the meantime
+                    try:
+                        orders = await self.broker.get_orders()
+                        for o in orders or []:
+                            if str(o.get("orderId")) == sl_oid:
+                                if str(o.get("orderStatus", "")).upper() in ("TRADED", "FILLED"):
+                                    fill_price = float(o.get("averageTradedPrice") or cur_row["sl_price"] or entry)
+                                    fill_qty = int(o.get("filledQty") or qty)
+                                    return await self._finalize_closed_position(
+                                        dict(cur_row), fill_price, fill_qty, "BROKER_SL_FILLED", spot_exit=spot_exit
+                                    )
+                                break
+                    except Exception as exc:
+                        log.warning("Re-check companion SL-L %s error: %s", sl_oid, exc)
+
+                # Fetch fresh quote
+                fresh_ltp = None
+                try:
+                    quotes = await self.broker.get_marketfeed_ltp({"NSE_FNO": [int(sec_id)]})
+                    fresh_ltp = float(quotes.get(sec_id) or 0.0)
+                except Exception as exc:
+                    log.warning("Fetch marketfeed quote error for %s: %s", sec_id, exc)
+
+                if not fresh_ltp or fresh_ltp <= 0:
+                    fresh_ltp = float((self.cached_telemetry.get("quotes") or {}).get(sec_id) or 0.0)
+
+                if not fresh_ltp or fresh_ltp <= 0:
+                    log.error("Missing quote for %s during exit. Leaving OPEN to retry.", pos_id)
+                    with sqlite3.connect(self.ledger_db) as conn:
+                        conn.execute("UPDATE positions SET status='OPEN' WHERE position_id=?", (pos_id,))
+                    return {"ok": False, "error": "MISSING_QUOTE_RETRY"}
+
+                buf = float(self.cfg.get("chasing", {}).get("aggressive_limit_buffer_pts", 2.0))
+                limit_price = max(0.5, round_to_tick(fresh_ltp - buf, 0.05))
+                corr_id = f"exit_{pos_id}"
+
+                sell_payload = {
+                    "dhanClientId": getattr(self.broker, "client_id", ""),
+                    "correlationId": corr_id,
+                    "transactionType": "SELL",
+                    "exchangeSegment": "NSE_FNO",
+                    "productType": "INTRADAY",
+                    "orderType": "LIMIT",
+                    "validity": "DAY",
+                    "tradingSymbol": symbol,
+                    "securityId": str(sec_id),
+                    "quantity": qty,
+                    "disclosedQuantity": 0,
+                    "price": limit_price,
+                    "triggerPrice": 0.0,
+                    "afterMarketOrder": False,
+                }
+                res = await self.broker.place_order(sell_payload)
+                if not res.get("ok"):
+                    err = str(res.get("error") or res.get("rejection_reason") or "Sell order rejected")
+                    log.error("Live exit SELL rejected for %s: %s", pos_id, err)
+                    with sqlite3.connect(self.ledger_db) as conn:
+                        conn.execute(
+                            "UPDATE positions SET status='EXIT_FAILED', exit_reason=? WHERE position_id=?",
+                            (f"EXIT_FAILED: {err}", pos_id),
+                        )
+                    self.exit_failure_banner = {
+                        "position_id": pos_id,
+                        "symbol": symbol,
+                        "error": err,
+                        "time": datetime.now(IST).strftime("%H:%M:%S IST"),
+                    }
+                    # Re-place protective SL-L
+                    sl_price = float(cur_row["current_trailing_sl"] or cur_row["sl_price"] or (entry - 24.0))
+                    sl_trigger = max(1.0, round_to_tick(sl_price, 0.05))
+                    sl_limit = max(0.5, round_to_tick(sl_trigger - buf, 0.05))
+                    try:
+                        re_sl = await self.broker.place_order({
+                            "correlationId": f"resl_{pos_id}_{int(time.time())}",
+                            "transactionType": "SELL",
+                            "exchangeSegment": "NSE_FNO",
+                            "productType": "INTRADAY",
+                            "orderType": "STOP_LOSS_LIMIT",
+                            "validity": "DAY",
+                            "securityId": str(sec_id),
+                            "quantity": qty,
+                            "price": sl_limit,
+                            "triggerPrice": sl_trigger,
+                            "disclosedQuantity": 0,
+                            "afterMarketOrder": False,
+                        })
+                        if re_sl.get("ok"):
+                            new_sl_oid = str(re_sl.get("order_id") or "")
+                            with sqlite3.connect(self.ledger_db) as conn:
+                                conn.execute("UPDATE positions SET sl_order_id=? WHERE position_id=?", (new_sl_oid, pos_id))
+                    except Exception as exc:
+                        log.error("Failed re-placing SL-L for %s: %s", pos_id, exc)
+                    return {"ok": False, "status": "EXIT_FAILED", "error": err}
+
+                sell_order_id = str(res.get("order_id") or "")
+                interval_s = float(self.cfg.get("chasing", {}).get("auto_modify_interval_ms", 800)) / 1000.0
+                filled = False
+                fill_price = limit_price
+                fill_qty = qty
+
+                # Chaser loop: keeps chasing at refreshed price until filled
+                while not filled:
+                    await asyncio.sleep(interval_s)
+                    orders = await self.broker.get_orders()
+                    matching = [o for o in orders or [] if str(o.get("orderId")) == sell_order_id]
+                    if matching:
+                        cur_st = str(matching[0].get("orderStatus", "")).upper()
+                        if cur_st in ("TRADED", "FILLED"):
+                            filled = True
+                            fill_price = float(matching[0].get("averageTradedPrice") or limit_price)
+                            fill_qty = int(matching[0].get("filledQty") or qty)
+                            break
+                        elif cur_st in ("CANCELLED", "REJECTED"):
+                            err = matching[0].get("omsErrorDescription") or cur_st
+                            with sqlite3.connect(self.ledger_db) as conn:
+                                conn.execute(
+                                    "UPDATE positions SET status='EXIT_FAILED', exit_reason=? WHERE position_id=?",
+                                    (f"EXIT_FAILED: {err}", pos_id),
+                                )
+                            self.exit_failure_banner = {
+                                "position_id": pos_id,
+                                "symbol": symbol,
+                                "error": err,
+                                "time": datetime.now(IST).strftime("%H:%M:%S IST"),
+                            }
+                            return {"ok": False, "status": "EXIT_FAILED", "error": err}
+
+                    try:
+                        fresh_quotes = await self.broker.get_marketfeed_ltp({"NSE_FNO": [int(sec_id)]})
+                        latest_ltp = float(fresh_quotes.get(sec_id) or 0.0)
+                    except Exception:
+                        latest_ltp = 0.0
+
+                    if latest_ltp > 0:
+                        new_limit = max(0.5, round_to_tick(latest_ltp - buf, 0.05))
+                        try:
+                            await self.broker.modify_order(sell_order_id, {
+                                "orderType": "LIMIT",
+                                "quantity": qty,
+                                "price": new_limit,
+                                "triggerPrice": 0.0,
+                                "validity": "DAY",
+                            })
+                        except Exception as exc:
+                            log.debug("Modify exit order %s error: %s", sell_order_id, exc)
+
+                return await self._finalize_closed_position(
+                    dict(cur_row), fill_price, fill_qty, reason, spot_exit=spot_exit
+                )
+
+            else:
+                # 3. Paper position: close at current quote
+                ltp = None
+                if sec_id:
+                    ltp = float((self.cached_telemetry.get("quotes") or {}).get(sec_id) or 0.0)
+                if not ltp or ltp <= 0:
+                    ltp = float(cur_row["current_ltp"] or pos.get("current_ltp") or 0.0)
+                if not ltp or ltp <= 0:
+                    try:
+                        quotes = await self.broker.get_marketfeed_ltp({"NSE_FNO": [int(sec_id)]})
+                        ltp = float(quotes.get(sec_id) or 0.0)
+                    except Exception:
+                        pass
+                if not ltp or ltp <= 0:
+                    log.error("No valid quote for paper position %s. Leaving OPEN to retry.", pos_id)
+                    with sqlite3.connect(self.ledger_db) as conn:
+                        conn.execute("UPDATE positions SET status='OPEN' WHERE position_id=?", (pos_id,))
+                    return {"ok": False, "error": "MISSING_QUOTE_RETRY"}
+
+                return await self._finalize_closed_position(
+                    dict(cur_row), ltp, qty, reason, spot_exit=spot_exit
+                )
+
+    async def _finalize_closed_position(
+        self,
+        pos: Dict[str, Any],
+        exit_price: float,
+        qty: int,
+        exit_reason: str,
+        spot_exit: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Finalizes position closure in positions, paper_wallet, orders, and master table."""
+        pos_id = str(pos["position_id"])
+        entry = float(pos.get("entry_price") or 0.0)
+        now_dt = datetime.now(IST)
+        exit_time = now_dt.strftime("%Y-%m-%d %H:%M:%S IST")
+        gross = round((exit_price - entry) * qty, 2)
+        charges = self.calculate_dhan_charges(entry, exit_price, qty)
+        net = round(gross - charges, 2)
+
+        with sqlite3.connect(self.ledger_db) as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE positions SET
+                    exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?,
+                    exit_reason=?, current_ltp=?, spot_exit=COALESCE(?, spot_exit)
+                WHERE position_id=?
+            """, (exit_price, exit_time, gross, net, exit_reason, exit_price, spot_exit, pos_id))
+
+            # Update paper wallet margin, balance, and realized pnl
+            req_margin = entry * qty
+            cur.execute("""
+                UPDATE paper_wallet SET
+                    balance = balance + ?,
+                    margin_used = max(0.0, margin_used - ?),
+                    realized_pnl = realized_pnl + ?,
+                    updated_at = ?
+                WHERE id=1
+            """, (net, req_margin, net, now_dt.isoformat()))
+
+            self._record_exit_order(
+                cur, pos, exit_price, qty, exit_reason, net, charges, nifty_spot_exit=spot_exit
+            )
+            conn.commit()
+
+        closed = dict(pos)
+        closed.update(
+            exit_price=exit_price,
+            exit_time=exit_time,
+            gross_pnl=gross,
+            net_pnl=net,
+            dhan_charges=charges,
+            exit_reason=exit_reason,
+            spot_exit=spot_exit,
+            duration=duration_between(pos.get("entry_time"), exit_time),
+        )
+        append_algo_execution_master(self.ledger_db, master_row_from_position(closed))
+
+        if getattr(self, "exit_failure_banner", None) and self.exit_failure_banner.get("position_id") == pos_id:
+            self.exit_failure_banner = None
+
+        log.info("Position %s exited via %s @ ₹%.2f (Net PnL: ₹%.2f)", pos_id, exit_reason, exit_price, net)
+        return {"ok": True, "fill_price": exit_price, "net_pnl": net, "exit_reason": exit_reason}
 
     # ── EXIT LEG LEDGER ──────────────────────────────────────────────────────
     def _record_exit_order(
@@ -7267,29 +7568,12 @@ class QuantTerminalBackend:
                 msg = "Super Trail disabled. Position locked at current levels."
 
             elif action == "EXIT_TRAILING_TARGET":
-                # Immediately fire protected limit exit at current LTP
-                exit_price = ltp
-                exit_time = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
-                gross = round((exit_price - entry) * qty, 2)
-                charges = self.calculate_dhan_charges(entry, exit_price, qty)
-                net = round(gross - charges, 2)
-
-                cur.execute("""
-                UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?,
-                                     exit_reason='MANUAL_TRAILING_EXIT', spot_exit=COALESCE(?, spot_exit)
-                WHERE position_id=?
-                """, (exit_price, exit_time, gross, net, exit_spot, position_id))
-
-                req_margin = entry * qty
-                cur.execute("UPDATE paper_wallet SET balance = balance + ?, "
-                            "margin_used = max(0.0, margin_used - ?), "
-                            "realized_pnl = realized_pnl + ?, updated_at = ? WHERE id=1",
-                            (net, req_margin, net, datetime.now(IST).isoformat()))
-                self._record_exit_order(
-                    cur, pos, exit_price, qty, "MANUAL_TRAILING_EXIT", net, charges,
-                    nifty_spot_exit=exit_spot,
-                )
-                msg = f"Position exited at Trailing Target ₹{exit_price:.2f} (Net P&L: ₹{net:+.2f})"
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._close_position_with_broker(dict(pos), "MANUAL_TRAILING_EXIT", spot_exit=exit_spot))
+                except RuntimeError:
+                    asyncio.run(self._close_position_with_broker(dict(pos), "MANUAL_TRAILING_EXIT", spot_exit=exit_spot))
+                msg = f"Trailing target exit initiated for {position_id}"
 
             elif action == "WIDEN_TARGET":
                 # Widen target by +40 pts
@@ -7299,30 +7583,12 @@ class QuantTerminalBackend:
                 msg = f"Target widened to ₹{new_target:.2f} (+40 Spot pts)"
 
             elif action in ("CLOSE", "SQUARE_OFF"):
-                # Close position immediately
-                exit_price = ltp
-                exit_time = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
-                gross = round((exit_price - entry) * qty, 2)
-                charges = self.calculate_dhan_charges(entry, exit_price, qty)
-                net = round(gross - charges, 2)
-
-                cur.execute("""
-                UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?,
-                                     exit_reason='MANUAL_CLOSE', spot_exit=COALESCE(?, spot_exit)
-                WHERE position_id=?
-                """, (exit_price, exit_time, gross, net, exit_spot, position_id))
-
-                # Update paper wallet margin, balance and realized pnl
-                req_margin = entry * qty
-                cur.execute("UPDATE paper_wallet SET balance = balance + ?, "
-                            "margin_used = max(0.0, margin_used - ?), "
-                            "realized_pnl = realized_pnl + ?, updated_at = ? WHERE id=1",
-                            (net, req_margin, net, datetime.now(IST).isoformat()))
-                self._record_exit_order(
-                    cur, pos, exit_price, qty, "MANUAL_CLOSE", net, charges,
-                    nifty_spot_exit=exit_spot,
-                )
-                msg = f"Position closed @ ₹{exit_price:.2f} (Net P&L: ₹{net:+.2f})"
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._close_position_with_broker(dict(pos), "MANUAL_CLOSE", spot_exit=exit_spot))
+                except RuntimeError:
+                    asyncio.run(self._close_position_with_broker(dict(pos), "MANUAL_CLOSE", spot_exit=exit_spot))
+                msg = f"Square-off initiated for {position_id} (MANUAL_CLOSE)"
 
             else:
                 return {"ok": False, "error": f"Unknown action {action}"}
@@ -7368,25 +7634,17 @@ class QuantTerminalBackend:
         # Square off open positions
         with sqlite3.connect(self.ledger_db) as conn:
             conn.row_factory = sqlite3.Row
-            cur = conn.cursor()
-            rows = cur.execute("SELECT * FROM positions WHERE status='OPEN'").fetchall()
-            exit_time = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
-            for r in rows:
-                pid = r["position_id"]
-                entry = float(r["entry_price"])
-                ltp = float(r["current_ltp"] or entry)
-                qty = int(r["qty"])
-                gross = round((ltp - entry) * qty, 2)
-                charges = self.calculate_dhan_charges(entry, ltp, qty)
-                net = round(gross - charges, 2)
-                cur.execute("""
-                UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED_KILL_SWITCH',
-                                     gross_pnl=?, net_pnl=? WHERE position_id=?
-                """, (ltp, exit_time, gross, net, pid))
-                squared_positions += 1
-
-            cur.execute("UPDATE paper_wallet SET margin_used=0.0 WHERE id=1")
-            conn.commit()
+            rows = conn.execute("SELECT * FROM positions WHERE status IN ('OPEN', 'EXIT_PENDING', 'EXIT_FAILED')").fetchall()
+        nifty_spot = self._ledger_nifty_spot()
+        spot_val = nifty_spot if nifty_spot > 0 else None
+        for r in rows:
+            p = dict(r)
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._close_position_with_broker(p, "CLOSED_KILL_SWITCH", spot_exit=spot_val))
+            except RuntimeError:
+                asyncio.run(self._close_position_with_broker(p, "CLOSED_KILL_SWITCH", spot_exit=spot_val))
+            squared_positions += 1
 
         log.warning("🛑 EMERGENCY KILL SWITCH ACTIVATED! Cancelled %d orders, squared off %d positions.",
                     cancelled_orders, squared_positions)
