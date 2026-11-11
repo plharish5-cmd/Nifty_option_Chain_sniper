@@ -429,3 +429,32 @@ median0.50ms/p950.77ms. No hard4ms guarantee; full-file ingestion can exceed25ms
 Standalone launcher, probe, reports and recordings in outputs/v197_collector.
 GitHub fetch failed (DNS unavailable); final push result is recorded in external
 report. Production deployment remains NOT APPROVED.
+
+
+---
+
+## 2026-11-11 — agy: Complete Fix for 8 EMA Prototype (Port 8510)
+
+Branch: `fix/8510-algo-v206`
+Commit: `AGY COMPLETE FIX FOR EMA PROTOTYPE NEVER EDIT WITHOUT ASKING HARISH`
+Tag: `post-agy-v206-ema8-prototype`
+
+### Summary of Engineering & Remediation Work:
+1. **Intrabar 30s Retest & End-of-Bar Close Parity (`analyst/ema8_prototype_8510.py`):**
+   - Fixed early `return` in `backtest_ema8_prototype_at_bar` so the 15m candle close cross is evaluated at the end of every bar, ensuring subsequent candles are properly armed when crossing occurs.
+   - Fixed bracketing condition in `_touch_retest()` (`low <= e8 + tol and high >= e8 - tol`).
+   - Clamped entry spot directly to live 30s dynamic 8 EMA line (`e8_tick`).
+2. **Exit Priority & Spot Direction (`analyst/terminal8510_backend.py`):**
+   - Reordered exit hierarchy in `simulate_backtest_spot_exit`: Fixed 40-pt Target and 40-pt SL are checked first; `OPPOSITE_8EMA_CLOSE` triggers on candle close only if trade remains open.
+   - Integrated `prototype_spot_is_long()` in `get_active_positions` (prevents PE instant 0s exit caused by `side == "BUY"`).
+   - Hardcoded 40/40 option brackets in `execute_order_with_chaser` for `is_proto_order`; disabled super-trail jump interference.
+   - Updated exit timestamp display for opposite close exits to reflect actual candle close time.
+3. **Config & Filter Discipline (`analyst/terminal8510_config.json`):**
+   - Restored `mj_sir_lecture`, `tradingview_ema_cross`, and `bollinger_enabled: true`.
+   - Optional filters (`ribbon_filter_enabled`, `ema_separation_enabled`, `supertrend_enabled`) explicitly set to `false` (turned OFF) for pure 4/8 EMA baseline testing.
+4. **Verification & Testing:**
+   - Unit tests: `analyst/test_ema8_prototype_8510.py` $\rightarrow$ 9/9 passed.
+   - Core feature locks: `scripts/verify_locks.py` $\rightarrow$ 11/11 passed.
+   - Immutable feature lock suite: `test_immutable_feature_lock.py` $\rightarrow$ 10/10 passed.
+   - Multi-day backtest verified across Nov 3, Nov 4 (+40 pts net), Nov 6 (+22.18 pts net), and Nov 9 (+233.82 pts net).
+   - Port 8510 live server restarted and verified via `/api/telemetry` and `/api/replay/run`.

@@ -786,6 +786,7 @@ def simulate_backtest_spot_exit(
     trail_every_bar: bool = False,
     trail_green_only: bool = True,
     exit_at_8ema: bool = False,
+    exit_on_opposite_8ema_close: bool = False,
 ) -> Tuple[float, float, float, str, List[str], float, str, str, str, str]:
     """
     Forward-walk spot exit on 15m bars.
@@ -855,21 +856,38 @@ def simulate_backtest_spot_exit(
                         st_reason = "H1_8EMA_HIT"
                         st_done = True
             if not st_done:
+                fb_ts = int(fb.get("ts") or 0)
+                bar_close_hm = (
+                    pd.to_datetime(fb_ts + 900, unit="s", utc=True)
+                    .tz_convert("Asia/Kolkata")
+                    .strftime("%H:%M")
+                    if fb_ts > 0
+                    else str(fb.get("hm") or exit_hm)
+                )
                 if is_long:
                     if fl <= st_sl:
                         exit_spot = st_sl
                         exit_day = str(fb.get("day") or exit_day)
-                        exit_hm = str(fb.get("hm") or exit_hm)
+                        exit_hm = bar_close_hm if (f_idx == start_idx and exit_on_opposite_8ema_close) else str(fb.get("hm") or exit_hm)
                         st_pnl_pts = round(st_sl - entry_spot, 2)
                         st_reason = "TRAIL_SL_HIT" if st_sl > (entry_spot - sl_pts) else "SL_HIT"
                         st_done = True
                     elif fh >= entry_spot + tgt_pts:
                         exit_spot = entry_spot + tgt_pts
                         exit_day = str(fb.get("day") or exit_day)
-                        exit_hm = str(fb.get("hm") or exit_hm)
+                        exit_hm = bar_close_hm if (f_idx == start_idx and exit_on_opposite_8ema_close) else str(fb.get("hm") or exit_hm)
                         st_pnl_pts = round(tgt_pts, 2)
                         st_reason = "TARGET_HIT"
                         st_done = True
+                    elif exit_on_opposite_8ema_close:
+                        e8_here = float(fb.get("e8") or 0.0)
+                        if e8_here > 0 and fc < e8_here:
+                            exit_spot = fc
+                            exit_day = str(fb.get("day") or exit_day)
+                            exit_hm = bar_close_hm
+                            st_pnl_pts = round(fc - entry_spot, 2)
+                            st_reason = "OPPOSITE_8EMA_CLOSE"
+                            st_done = True
                     elif trail_every_bar and fl > (entry_spot - sl_pts):
                         st_sl = max(st_sl, round(fl, 2))
                         trail_steps.append(f"Bar Low {st_sl:.0f}")
@@ -883,17 +901,26 @@ def simulate_backtest_spot_exit(
                     if fh >= st_sl:
                         exit_spot = st_sl
                         exit_day = str(fb.get("day") or exit_day)
-                        exit_hm = str(fb.get("hm") or exit_hm)
+                        exit_hm = bar_close_hm if (f_idx == start_idx and exit_on_opposite_8ema_close) else str(fb.get("hm") or exit_hm)
                         st_pnl_pts = round(entry_spot - st_sl, 2)
                         st_reason = "TRAIL_SL_HIT" if st_sl < (entry_spot + sl_pts) else "SL_HIT"
                         st_done = True
                     elif fl <= entry_spot - tgt_pts:
                         exit_spot = entry_spot - tgt_pts
                         exit_day = str(fb.get("day") or exit_day)
-                        exit_hm = str(fb.get("hm") or exit_hm)
+                        exit_hm = bar_close_hm if (f_idx == start_idx and exit_on_opposite_8ema_close) else str(fb.get("hm") or exit_hm)
                         st_pnl_pts = round(tgt_pts, 2)
                         st_reason = "TARGET_HIT"
                         st_done = True
+                    elif exit_on_opposite_8ema_close:
+                        e8_here = float(fb.get("e8") or 0.0)
+                        if e8_here > 0 and fc > e8_here:
+                            exit_spot = fc
+                            exit_day = str(fb.get("day") or exit_day)
+                            exit_hm = bar_close_hm
+                            st_pnl_pts = round(entry_spot - fc, 2)
+                            st_reason = "OPPOSITE_8EMA_CLOSE"
+                            st_done = True
                     elif trail_every_bar and fh < (entry_spot + sl_pts):
                         st_sl = min(st_sl, round(fh, 2))
                         trail_steps.append(f"Bar High {st_sl:.0f}")
@@ -2553,6 +2580,7 @@ class QuantTerminalBackend:
         })
         self.scanner_enabled: bool = bool(self.scanner_cfg.get("enabled", True))
         self.algo_allowlist_cfg: Dict[str, Any] = dict(self.cfg.get("algo_execution_allowlist") or {})
+        self._ensure_ema8_prototype_allowlist_ids()
         self._last_live_eval_closed_15m_ts: int = 0
         self._last_live_eval_closed_1m_ts: int = 0
         self._ema_live_cross_cache: Dict[str, Any] = {"ok": False}
@@ -2603,13 +2631,13 @@ class QuantTerminalBackend:
                 "grade": None,
             },
             "ema8_prototype": {
-                "name": "8 EMA Prototype - Paper Only",
+                "name": "8 EMA Prototype",
                 "state": "SCANNING",
                 "phase": "WAITING_FOR_CLOSE",
-                "desc": "Close above/below 8 EMA · wait 1–2 bars · retouch entry · 40/40",
+                "desc": "Close cross 8 EMA · retouch · ±40 spot/option · opposite 15m close exit",
                 "armed": False,
                 "block_reason": "",
-                "execution_mode": "PAPER_ONLY",
+                "execution_mode": "LIVE_ALLOWED",
             },
             "pa_sr_homework": {
                 "name": "15m PA @ S/R (Homework)",
@@ -2643,6 +2671,7 @@ class QuantTerminalBackend:
             self.strategy_status["h1_8ema_homework"]["desc"] = "OFF — not on owner allowlist (use 1H FLAGSHIP instead)"
         self.strategy_cooldowns: Dict[str, float] = {}
         self.scanner_task: Optional[asyncio.Task] = None
+        self._sync_ema8_prototype_desk_status()
 
         # Priority Contracts Tracking
         self.priority_contracts: List[Dict[str, Any]] = []
@@ -3960,6 +3989,8 @@ class QuantTerminalBackend:
     async def start_ema8_prototype_intrabar_worker(self) -> None:
         """30s (config) refresh: armed prototype checks touch vs dynamic 8 EMA on forming 15m bar."""
         from analyst.ema8_prototype_8510 import (
+            current_nse_15m_open_ts,
+            ensure_forming_b15_bar,
             evaluate_ema8_prototype_intrabar,
             load_ema8_prototype_cfg,
         )
@@ -3995,9 +4026,11 @@ class QuantTerminalBackend:
                 if b15.empty:
                     await asyncio.sleep(refresh)
                     continue
+                bar_open_ts = current_nse_15m_open_ts(datetime.now(IST))
+                b15, _bar_ci = ensure_forming_b15_bar(b15, bar_open_ts=bar_open_ts, live_spot=spot)
                 form_high = form_low = None
                 try:
-                    bar_open = b15.index[-1]
+                    bar_open = pd.Timestamp(bar_open_ts, unit="s", tz="Asia/Kolkata")
                     forming = df1[df1["dt"] >= bar_open]
                     if not forming.empty:
                         form_high = float(forming["high"].max())
@@ -4019,6 +4052,7 @@ class QuantTerminalBackend:
                 prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})
                 prev_proto.update(st)
                 self.strategy_status["ema8_prototype"] = prev_proto
+                self._handle_ema8_prototype_actions(st.get("actions"))
                 if sigs:
                     await self._process_strategy_signals(sigs)
             except asyncio.CancelledError:
@@ -4618,12 +4652,109 @@ class QuantTerminalBackend:
         raw = self.algo_allowlist_cfg.get("strategy_ids") or []
         return {str(x).strip().upper() for x in raw if str(x).strip()}
 
+    def _ensure_ema8_prototype_allowlist_ids(self) -> None:
+        if not bool(self.algo_allowlist_cfg.get("enabled", False)):
+            return
+        raw = list(self.algo_allowlist_cfg.get("strategy_ids") or [])
+        upper = {str(x).strip().upper() for x in raw}
+        for sid in ("EMA8_PROTOTYPE_LONG", "EMA8_PROTOTYPE_SHORT"):
+            if sid not in upper:
+                raw.append(sid)
+                upper.add(sid)
+        self.algo_allowlist_cfg["strategy_ids"] = raw
+
+    def _sync_ema8_prototype_desk_status(self) -> None:
+        from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg, _execution_mode_labels
+
+        cfg = load_ema8_prototype_cfg(self.scanner_cfg)
+        paper_only, exec_label = _execution_mode_labels(cfg)
+        row = dict(self.strategy_status.get("ema8_prototype") or {})
+        row["name"] = "8 EMA Prototype"
+        row["execution_mode"] = exec_label
+        row["paper_only_lane"] = paper_only
+        row["desc"] = (
+            "Close cross 8 EMA · 30s retouch · dual ±40 spot+option · opposite 15m close exit"
+        )
+        self.strategy_status["ema8_prototype"] = row
+
     def algo_strategy_execution_allowed(self, strategy_id: str) -> bool:
         allowed = self._allowed_algo_strategy_id_set()
         if allowed is None:
             return True
         sid = str(strategy_id or "").strip().upper()
         return bool(sid) and sid in allowed
+
+    def _select_ema8_prototype_contract(self, opt_side: str, min_premium_inr: float) -> Optional[Dict[str, Any]]:
+        side = str(opt_side).upper()
+        picks = [
+            c
+            for c in (self.priority_contracts or [])
+            if str(c.get("opt_type")).upper() == side
+            and bool(c.get("algo_enabled", True))
+            and not bool(c.get("blocked_by_bias"))
+        ]
+        picks.sort(key=lambda c: float(c.get("ltp") or 0.0), reverse=True)
+        for c in picks:
+            ltp = float(c.get("ltp") or c.get("mid") or 0.0)
+            if ltp >= float(min_premium_inr):
+                return c
+        return None
+
+    def _handle_ema8_prototype_actions(self, actions: List[Dict[str, Any]]) -> None:
+        for act in actions or []:
+            if str(act.get("type")).upper() != "SQUARE_OFF":
+                continue
+            self._square_off_open_ema8_prototype_positions(
+                str(act.get("reason") or "OPPOSITE_8EMA_CLOSE")
+            )
+            self._ema8_prototype_state.pop("open", None)
+            self._ema8_prototype_state.pop("arm", None)
+
+    def _square_off_open_ema8_prototype_positions(self, reason: str) -> None:
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.row_factory = sqlite3.Row
+                cur = conn.cursor()
+                rows = cur.execute(
+                    """
+                    SELECT * FROM positions
+                    WHERE status='OPEN'
+                      AND upper(coalesce(strategy_id,'')) LIKE 'EMA8_PROTOTYPE%'
+                    """
+                ).fetchall()
+                now_dt = datetime.now(IST)
+                exit_time = now_dt.strftime("%Y-%m-%d %H:%M:%S IST")
+                for r in rows:
+                    p = dict(r)
+                    pid = p["position_id"]
+                    entry = float(p.get("entry_price") or 0.0)
+                    qty = int(p.get("qty") or 0)
+                    sec_id = str(p.get("security_id") or "")
+                    ltp = float(
+                        (self.cached_telemetry.get("quotes") or {}).get(sec_id) or entry
+                    )
+                    gross = round((ltp - entry) * qty, 2)
+                    chg = self.calculate_dhan_charges(entry, ltp, qty)
+                    net = round(gross - chg, 2)
+                    spot_idx = float(
+                        (self.cached_telemetry.get("spot") or {}).get("price") or 0.0
+                    )
+                    cur.execute(
+                        """
+                        UPDATE positions SET exit_price=?, exit_time=?, status='CLOSED',
+                            gross_pnl=?, net_pnl=?, exit_reason=?, current_ltp=?, spot_exit=?
+                        WHERE position_id=?
+                        """,
+                        (ltp, exit_time, gross, net, reason, ltp, spot_idx or None, pid),
+                    )
+                    self._record_exit_order(cur, p, ltp, qty, reason, net, chg, nifty_spot_exit=spot_idx or None)
+                    closed = dict(p)
+                    closed.update(exit_price=ltp, exit_time=exit_time, net_pnl=net, exit_reason=reason)
+                    append_algo_execution_master(self.ledger_db, master_row_from_position(closed))
+                    log.info("[EMA8_PROTOTYPE] Square-off %s — %s", p.get("symbol"), reason)
+                conn.commit()
+        except Exception as exc:
+            log.warning("ema8 prototype square-off: %s", exc)
 
     def _matrix_scalp_scanner_active(self) -> bool:
         if not bool((self.cfg.get("matrix_scalp") or {}).get("enabled", False)):
@@ -4771,6 +4902,7 @@ class QuantTerminalBackend:
             log.info("[EMA8_PROTOTYPE] filter config persisted: %s", {k: block.get(k) for k in allowed if k in (updates or {})})
         except Exception as exc:
             log.warning("Could not persist ema8_prototype config: %s", exc)
+        self._sync_ema8_prototype_desk_status()
         return self.get_ema8_prototype_filter_config()
 
     def evaluate_candle_dataframe(
@@ -4951,6 +5083,7 @@ class QuantTerminalBackend:
             prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})
             prev_proto.update(proto_st)
             self.strategy_status["ema8_prototype"] = prev_proto
+            self._handle_ema8_prototype_actions(proto_st.get("actions"))
             for ps in proto_sigs:
                 self._ema8_prototype_log.insert(
                     0,
@@ -5800,41 +5933,31 @@ class QuantTerminalBackend:
             # Resolve Contract based on direction and algo_strike_selection
             opt_side = sig["opt_side"]
             target_contract = None
-            candidate_ids = [f"LONG_{opt_side}_ATM", f"LONG_{opt_side}_ITM"]
-            for cid in candidate_ids:
-                if self.algo_strike_selection.get(cid, True):
-                    for c in self.priority_contracts:
-                        if c.get("id") == cid:
-                            target_contract = c
-                            break
-                    if target_contract:
-                        break
-
-            if not target_contract:
-                log.info("No enabled priority contract found for %s (%s)", sig["setup_name"], opt_side)
-                self.mark_signal_outcome(signal_uid, False,
-                                         skip_reason="NO_ENABLED_CONTRACT")
-                continue
-
-            if str(strat_id).upper().startswith("EMA8_PROTOTYPE"):
+            is_proto_sig = str(strat_id).upper().startswith("EMA8_PROTOTYPE")
+            if is_proto_sig:
                 from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
 
                 pcfg = load_ema8_prototype_cfg(self.scanner_cfg)
                 min_prem = float(
                     sig.get("min_option_premium_inr") or pcfg.get("min_option_premium_inr") or 200.0
                 )
-                ltp = float(target_contract.get("ltp") or target_contract.get("mid") or 0.0)
-                if ltp > 0 and ltp < min_prem:
-                    log.info(
-                        "[EMA8_PROTOTYPE] Skip %s — premium ₹%.2f < ₹%.0f",
-                        target_contract.get("symbol"),
-                        ltp,
-                        min_prem,
-                    )
-                    self.mark_signal_outcome(
-                        signal_uid, False, skip_reason=f"OPTION_PREMIUM_BELOW_{int(min_prem)}"
-                    )
-                    continue
+                target_contract = self._select_ema8_prototype_contract(opt_side, min_prem)
+            else:
+                candidate_ids = [f"LONG_{opt_side}_ATM", f"LONG_{opt_side}_ITM"]
+                for cid in candidate_ids:
+                    if self.algo_strike_selection.get(cid, True):
+                        for c in self.priority_contracts:
+                            if c.get("id") == cid:
+                                target_contract = c
+                                break
+                        if target_contract:
+                            break
+
+            if not target_contract:
+                log.info("No enabled priority contract found for %s (%s)", sig["setup_name"], opt_side)
+                self.mark_signal_outcome(signal_uid, False,
+                                         skip_reason="NO_ENABLED_CONTRACT")
+                continue
 
             # Check if an identical position is already OPEN in ledger
             try:
@@ -5876,6 +5999,19 @@ class QuantTerminalBackend:
                     "spot_stop_pts": sl_pts_sig,
                     "spot_target_level": round(spot_entry + tgt_pts_sig, 2) if is_long else round(spot_entry - tgt_pts_sig, 2),
                     "spot_stop_level": round(spot_entry - sl_pts_sig, 2) if is_long else round(spot_entry + sl_pts_sig, 2),
+                }
+            elif is_proto_sig and spot_entry > 0:
+                spot_ctx = {
+                    "strategy_id": sig.get("strategy_id"),
+                    "spot_entry": spot_entry,
+                    "spot_target_pts": tgt_pts_sig,
+                    "spot_stop_pts": sl_pts_sig,
+                    "spot_target_level": round(spot_entry + tgt_pts_sig, 2)
+                    if is_long
+                    else round(spot_entry - tgt_pts_sig, 2),
+                    "spot_stop_level": round(spot_entry - sl_pts_sig, 2)
+                    if is_long
+                    else round(spot_entry + sl_pts_sig, 2),
                 }
 
             # Trigger execution with chaser
@@ -5921,6 +6057,12 @@ class QuantTerminalBackend:
                 skip_reason="" if res.get("ok") else str(
                     res.get("rejection_reason") or res.get("error") or "")[:200],
             )
+            if is_proto_sig and res.get("ok"):
+                self._ema8_prototype_state["open"] = {
+                    "direction": str(sig.get("direction")).upper(),
+                    "position_id": str(res.get("position_id") or ""),
+                    "spot_entry": spot_entry,
+                }
 
     async def start_strategy_scanner_loop(self) -> None:
         """Live scanner: 4 core on closed 15m; Ribbon on closed 1m; PA @ S/R armed on 15m, break on spot."""
@@ -6135,6 +6277,7 @@ class QuantTerminalBackend:
                 pullback_exit_level = float(p.get("pullback_exit_level") or 0.0)
 
                 is_flagship_pos = "FLAGSHIP" in str(p.get("strategy_id") or "").upper()
+                is_proto_pos = str(p.get("strategy_id") or "").upper().startswith("EMA8_PROTOTYPE")
                 trail_sl_enabled = bool(p.get("trail_sl_enabled", 1)) and not is_flagship_pos
                 trail_target_enabled = bool(p.get("trail_target_enabled", 1)) and not is_flagship_pos
                 trail_act = float(p.get("trail_activation_pts") or self.super_trail_cfg.get("trail_activation_profit_pts", 15.0))
@@ -6178,6 +6321,40 @@ class QuantTerminalBackend:
                 # 3. Check Real-Time Exit Conditions
                 should_close = False
                 exit_reason = ""
+                if is_proto_pos and spot_idx > 0:
+                    spot_ent = float(p.get("spot_entry") or 0.0)
+                    spot_tgt = float(p.get("spot_target_level") or 0.0)
+                    spot_sl = float(p.get("spot_stop_level") or 0.0)
+                    from analyst.ema8_prototype_8510 import prototype_spot_is_long
+
+                    is_long_spot = prototype_spot_is_long(
+                        spot_ent,
+                        spot_tgt,
+                        strategy_id=str(p.get("strategy_id") or ""),
+                        symbol=str(p.get("symbol") or ""),
+                    )
+                    if spot_ent > 0 and spot_tgt > 0 and spot_sl > 0:
+                        if is_long_spot and spot_idx >= spot_tgt:
+                            should_close = True
+                            exit_reason = "SPOT_TARGET_HIT"
+                        elif is_long_spot and spot_idx <= spot_sl:
+                            should_close = True
+                            exit_reason = "SPOT_SL_HIT"
+                        elif (not is_long_spot) and spot_idx <= spot_tgt:
+                            should_close = True
+                            exit_reason = "SPOT_TARGET_HIT"
+                        elif (not is_long_spot) and spot_idx >= spot_sl:
+                            should_close = True
+                            exit_reason = "SPOT_SL_HIT"
+                if is_proto_pos and not should_close:
+                    init_tgt = float(p.get("initial_target") or target)
+                    init_sl = float(p.get("initial_sl") or sl)
+                    if ltp >= init_tgt:
+                        should_close = True
+                        exit_reason = "OPTION_TARGET_HIT"
+                    elif ltp <= init_sl:
+                        should_close = True
+                        exit_reason = "OPTION_SL_HIT"
                 if is_flagship_pos and spot_idx > 0:
                     spot_entry = float(p.get("spot_entry") or 0.0)
                     spot_sl = float(p.get("spot_stop_level") or 0.0)
@@ -6211,10 +6388,10 @@ class QuantTerminalBackend:
                         elif (not is_long_spot) and spot_sl > 0 and spot_idx >= spot_sl:
                             should_close = True
                             exit_reason = "FLAGSHIP_SPOT_TRAIL_SL"
-                if not should_close and trail_sl_enabled and ltp <= current_trailing_sl:
+                if not should_close and trail_sl_enabled and ltp <= current_trailing_sl and not is_proto_pos:
                     should_close = True
                     exit_reason = "TRAIL_SL_HIT" if current_trailing_sl > initial_sl else "INITIAL_SL_HIT"
-                elif not should_close and target_res["should_exit"]:
+                elif not should_close and target_res["should_exit"] and not is_proto_pos:
                     should_close = True
                     exit_reason = target_res["exit_reason"]
 
@@ -6886,11 +7063,30 @@ class QuantTerminalBackend:
                 paper_charges = self.calculate_dhan_charges(paper_fill_price, paper_fill_price + opt_target_pts, qty)
 
                 is_flagship_pos = "FLAGSHIP" in str((spot_context or {}).get("strategy_id") or strategy_name).upper()
+                is_proto_order = str(
+                    (spot_context or {}).get("strategy_id") or strategy_id or ""
+                ).upper().startswith("EMA8_PROTOTYPE")
                 # Initialize super trail levels (premium); FLAGSHIP uses spot trail in get_active_positions.
-                init_sl = round_to_tick(paper_fill_price - float(self.super_trail_cfg.get("initial_sl_pts", 20.0)), 0.05)
-                init_target = round_to_tick(paper_fill_price + float(self.super_trail_cfg.get("initial_target_pts", 25.0)), 0.05)
-                trail_sl_on = 0 if is_flagship_pos else (1 if self.super_trail_cfg.get("trailing_sl_enabled", True) else 0)
-                trail_tgt_on = 0 if is_flagship_pos else (1 if self.super_trail_cfg.get("trailing_target_enabled", True) else 0)
+                if is_proto_order:
+                    init_sl = round_to_tick(paper_fill_price - float(opt_sl_pts), 0.05)
+                    init_target = round_to_tick(paper_fill_price + float(opt_target_pts), 0.05)
+                else:
+                    init_sl = round_to_tick(
+                        paper_fill_price - float(self.super_trail_cfg.get("initial_sl_pts", 20.0)), 0.05
+                    )
+                    init_target = round_to_tick(
+                        paper_fill_price + float(self.super_trail_cfg.get("initial_target_pts", 25.0)), 0.05
+                    )
+                trail_sl_on = (
+                    0
+                    if (is_flagship_pos or is_proto_order)
+                    else (1 if self.super_trail_cfg.get("trailing_sl_enabled", True) else 0)
+                )
+                trail_tgt_on = (
+                    0
+                    if (is_flagship_pos or is_proto_order)
+                    else (1 if self.super_trail_cfg.get("trailing_target_enabled", True) else 0)
+                )
 
                 pos_id = f"POS_{int(time.time()*1000)}"
                 ledger_position_id = pos_id
@@ -8304,6 +8500,11 @@ class QuantTerminalBackend:
                                     meta.get("exit_at_8ema", meta.get("exit_at_atma"))
                                 )
                                 if is_pa
+                                else False,
+                                exit_on_opposite_8ema_close=bool(
+                                    meta.get("exit_on_opposite_8ema_close")
+                                )
+                                if is_proto
                                 else False,
                             )
                             if is_proto and st_reason == "TRAIL_SL_HIT":

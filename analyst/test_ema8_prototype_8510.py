@@ -4,18 +4,21 @@ from __future__ import annotations
 import pandas as pd
 
 from analyst.ema8_prototype_8510 import (
-    _filter_blocks,
+    _close_crossed_above,
+    _opposite_8ema_close,
+    _ribbon_blocks,
+    _touch_retest,
+    prototype_spot_is_long,
     backtest_ema8_prototype_at_bar,
-    compute_dynamic_emas_on_bar,
     evaluate_ema8_prototype,
     load_ema8_prototype_cfg,
+    ensure_forming_b15_bar,
 )
 
 
 def _bars_from_closes(closes):
-    """Build minimal OHLC frame where open/high/low track close for tests."""
     idx = pd.date_range("2026-11-05 09:15", periods=len(closes), freq="15min")
-    df = pd.DataFrame(
+    return pd.DataFrame(
         {
             "open": closes,
             "high": [c + 2 for c in closes],
@@ -25,148 +28,118 @@ def _bars_from_closes(closes):
         },
         index=idx,
     )
-    return df
 
 
-def test_long_cross_then_retouch_fires_signal():
-    # Ramp up, cross above 8 EMA on bar 24, retouch on bar 25
-    closes = [100.0 + i * 0.5 for i in range(30)]
-    closes[24] = closes[23] + 5  # sharp cross above prior e8
-    closes[25] = closes[24] - 1  # dip to touch e8 on low
+def test_touch_retest_long_requires_bracketing_8ema():
+    e8 = 100.0
+    tol = 5.0
+    assert not _touch_retest(bullish=True, low=90, high=92, e8=e8, tol=tol)
+    assert _touch_retest(bullish=True, low=98, high=103, e8=e8, tol=tol)
+
+
+def test_touch_retest_short_requires_bracketing_8ema():
+    e8 = 100.0
+    tol = 5.0
+    assert not _touch_retest(bullish=False, low=88, high=90, e8=e8, tol=tol)
+    assert _touch_retest(bullish=False, low=97, high=102, e8=e8, tol=tol)
+
+
+def test_ribbon_blocks_arm_on_cross_candle():
+    closes = [100.0] * 12
+    closes[10] = 100.0
+    closes[11] = 108.0
     b15 = _bars_from_closes(closes)
-    b15.loc[b15.index[25], "low"] = b15["close"].iloc[25] - 8
-
-    cfg = load_ema8_prototype_cfg(
-        {
-            "ema8_prototype": {
-                "enabled": True,
-                "touch_tol_pts": 5.0,
-                "bb_width_min_pts": 0.0,
-                "ribbon_max_pts": 0.0,
-            }
-        }
-    )
-    state: dict = {}
-    sigs, st = evaluate_ema8_prototype(
-        b15,
-        bar_ci=-2,
-        cfg=cfg,
-        proto_state=state,
-        session_day="2026-11-05",
-        bb_gate_active=False,
-    )
-    assert sigs or st.get("state") in ("ARMED", "TRIGGERED", "EXPIRED", "SCANNING")
-
-
-def test_no_entry_on_cross_bar_only():
-    closes = [100.0 + i * 0.3 for i in range(28)]
-    b15 = _bars_from_closes(closes)
-    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"bb_width_min_pts": 0.0, "ribbon_max_pts": 0.0}})
-    state: dict = {}
-    _, st = evaluate_ema8_prototype(
-        b15,
-        bar_ci=-1,
-        cfg=cfg,
-        proto_state=state,
-        session_day="2026-11-05",
-        bb_gate_active=False,
-    )
-    assert st.get("phase") != "ENTRY" or st.get("state") != "TRIGGERED"
-
-
-def test_ribbon_filter_uses_dynamic_30s_emas():
-    b15 = _bars_from_closes([100.0 + i for i in range(12)])
+    b15.loc[b15.index[11], "close"] = 108.0
+    b15.loc[b15.index[10], "close"] = 100.0
+    b15.loc[b15.index[11], "high"] = 108.5
+    b15.loc[b15.index[10], "high"] = 100.5
     cfg = load_ema8_prototype_cfg(
         {"ema8_prototype": {"ribbon_filter_enabled": True, "ribbon_max_pts": 50.0}}
     )
-    spot = float(b15["close"].iloc[-1])
-    e4, e8, _, _ = compute_dynamic_emas_on_bar(b15, bar_ci=-1, live_spot=spot)
-    blocked = _filter_blocks(
-        True,
-        e4,
-        e8,
+    state: dict = {}
+    _, st = evaluate_ema8_prototype(
         b15,
-        cfg,
-        -1,
-        live_spot=spot,
-        form_high=spot + 1,
-        form_low=spot - 1,
+        bar_ci=11,
+        cfg=cfg,
+        proto_state=state,
+        session_day="2026-11-05",
     )
-    assert blocked == "" or "ribbon" in blocked.lower()
+    assert state.get("arm") is None
+    assert "ribbon" in str(st.get("block_reason", "")).lower()
 
 
-def test_backtest_respects_supertrend_off_vs_on():
-    closes = [100.0 + i * 0.4 for i in range(35)]
-    closes[30] = closes[29] + 4
-    closes[31] = closes[30] - 6
+def test_opposite_close_exit_action_on_open_long():
+    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False}})
+    closes = [102.0] * 12
+    closes[10] = 100.0
+    closes[11] = 99.0
     b15 = _bars_from_closes(closes)
-    b15.loc[b15.index[31], "low"] = b15["close"].iloc[31] - 10
+    state = {"day": "2026-11-05", "open": {"direction": "LONG"}}
+    _, st = evaluate_ema8_prototype(
+        b15,
+        bar_ci=11,
+        cfg=cfg,
+        proto_state=state,
+        session_day="2026-11-05",
+    )
+    actions = st.get("actions") or []
+    assert any(a.get("type") == "SQUARE_OFF" for a in actions)
+    assert state.get("open") is None
+
+
+def test_opposite_8ema_close_detector():
+    assert _opposite_8ema_close("LONG", 99.0, 100.0)
+    assert _opposite_8ema_close("SHORT", 101.0, 100.0)
+    assert not _opposite_8ema_close("LONG", 101.0, 100.0)
+
+
+def test_ensure_forming_bar_appends_when_resample_lags():
+    from zoneinfo import ZoneInfo
+
+    ist = ZoneInfo("Asia/Kolkata")
+    old = pd.DataFrame(
+        {"open": [100], "high": [101], "low": [99], "close": [100], "volume": [1]},
+        index=[pd.Timestamp("2026-11-05 11:45", tz=ist)],
+    )
+    bar_open = int(pd.Timestamp("2026-11-05 12:00", tz=ist).timestamp())
+    out, ci = ensure_forming_b15_bar(old, bar_open_ts=bar_open, live_spot=101.5)
+    assert len(out) == 2
+    assert ci == -1
+    assert float(out.iloc[-1]["close"]) == 101.5
+
+
+def test_backtest_skips_entry_when_bt_open():
     from analyst.nse_spot_candles_8510 import ema4_ema8
 
+    closes = [100.0 + i * 0.4 for i in range(8)]
+    b15 = _bars_from_closes(closes)
     e4, e8 = ema4_ema8(b15["close"])
     bars = []
-    base_ts = 1730780700
     for i in range(len(b15)):
         bars.append(
             {
-                "open": float(b15["open"].iloc[i]),
+                "close": float(b15["close"].iloc[i]),
                 "high": float(b15["high"].iloc[i]),
                 "low": float(b15["low"].iloc[i]),
-                "close": float(b15["close"].iloc[i]),
                 "e4": float(e4.iloc[i]),
                 "e8": float(e8.iloc[i]),
                 "day": "2026-11-05",
-                "hm": b15.index[i].strftime("%H:%M"),
-                "ts": base_ts + i * 900,
+                "ts": 1000 + i * 900,
             }
         )
-    day_1m = pd.DataFrame(
-        {
-            "ts": [base_ts + 31 * 900 + 30 * k for k in range(1, 25)],
-            "open": [bars[31]["close"]] * 24,
-            "high": [bars[31]["high"]] * 24,
-            "low": [bars[31]["low"]] * 24,
-            "close": [bars[31]["close"] - 0.2 * k for k in range(1, 25)],
-            "hm": ["10:00"] * 24,
-        }
-    )
-    state: dict = {}
-    # arm via cross on bar 30
-    backtest_ema8_prototype_at_bar(
-        bars,
-        30,
-        state,
-        {"ema8_prototype": {"supertrend_enabled": False}},
-        b15_df=b15.reset_index(drop=True),
-        day_1m=day_1m,
-    )
-    off_n = len(
-        backtest_ema8_prototype_at_bar(
-            bars,
-            31,
-            state,
-            {"ema8_prototype": {"supertrend_enabled": False, "ribbon_filter_enabled": False}},
-            b15_df=b15.reset_index(drop=True),
-            day_1m=day_1m,
-        )
-    )
-    state2: dict = {}
-    backtest_ema8_prototype_at_bar(
-        bars,
-        30,
-        state2,
-        {"ema8_prototype": {"supertrend_enabled": True}},
-        b15_df=b15.reset_index(drop=True),
-        day_1m=day_1m,
-    )
-    on_n = len(
-        backtest_ema8_prototype_at_bar(
-            bars,
-            31,
-            state2,
-            {"ema8_prototype": {"supertrend_enabled": True, "ribbon_filter_enabled": False}},
-            b15_df=b15.reset_index(drop=True),
-            day_1m=day_1m,
-        )
-    )
-    assert off_n >= 0 and on_n >= 0
+    state = {"bt_open": {"direction": "LONG"}, "arm": {"direction": "LONG", "cross_i": 0}}
+    assert backtest_ema8_prototype_at_bar(bars, 3, state, {"ema8_prototype": {}}) == []
+
+
+def test_prototype_spot_is_long_from_levels_not_option_side():
+    assert prototype_spot_is_long(24500.0, 24540.0)
+    assert not prototype_spot_is_long(24500.0, 24460.0)
+    assert prototype_spot_is_long(0, 0, strategy_id="EMA8_PROTOTYPE_LONG")
+    assert not prototype_spot_is_long(0, 0, strategy_id="EMA8_PROTOTYPE_SHORT")
+
+
+def test_ribbon_blocks_helper_respects_toggle():
+    cfg_on = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": True, "ribbon_max_pts": 3}})
+    cfg_off = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False}})
+    assert _ribbon_blocks(100.0, 101.5, cfg_on)
+    assert not _ribbon_blocks(100.0, 101.5, cfg_off)
