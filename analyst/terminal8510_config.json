@@ -87,7 +87,7 @@
     "ema8_prototype": {
       "enabled": true,
       "execution_mode": "LIVE_ALLOWED",
-      "touch_tol_pts": 5.0,
+      "touch_tol_pts": 3.0,
       "target_pts": 40.0,
       "sl_pts": 40.0,
       "e8_refresh_seconds": 30.0,
@@ -100,7 +100,9 @@
       "supertrend_factor": 1.0,
       "arm_until_opposite_close": true,
       "_note": "Standalone 8 EMA Prototype \u2014 not Stage 2/3/FLAGSHIP. Dynamic 8 EMA every 30s; optional ribbon, EMA separation, SuperTrend(5,1).",
-      "retouch_requires_away": true
+      "retouch_requires_away": true,
+      "touch_tol_slow_pts": 0.0,
+      "slow_market_exact_line": false
     }
   },
   "risk": {

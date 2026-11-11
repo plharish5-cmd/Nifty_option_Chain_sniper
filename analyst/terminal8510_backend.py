@@ -2935,11 +2935,16 @@ class QuantTerminalBackend:
                     consumed_cross_ts INTEGER,
                     last_flip TEXT,
                     away_seen INTEGER DEFAULT 0,
+                    last_traded_direction TEXT,
                     updated_at TEXT
                 );
                 """)
                 try:
                     cur.execute("ALTER TABLE ema8_prototype_state ADD COLUMN away_seen INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("ALTER TABLE ema8_prototype_state ADD COLUMN last_traded_direction TEXT")
                 except Exception:
                     pass
 
@@ -3070,6 +3075,8 @@ class QuantTerminalBackend:
                         self._ema8_prototype_state["consumed_cross_ts"] = int(row["consumed_cross_ts"])
                     if row["last_flip"]:
                         self._ema8_prototype_state["last_flip"] = str(row["last_flip"])
+                    if "last_traded_direction" in row.keys() and row["last_traded_direction"]:
+                        self._ema8_prototype_state["last_traded_direction"] = str(row["last_traded_direction"])
         except Exception as exc:
             log.warning("Could not load ema8_prototype_state: %s", exc)
 
@@ -3085,15 +3092,16 @@ class QuantTerminalBackend:
             away_seen = 1 if arm.get("away_seen") else 0
             consumed_cross_ts = self._ema8_prototype_state.get("consumed_cross_ts")
             last_flip = self._ema8_prototype_state.get("last_flip")
+            last_traded_dir = self._ema8_prototype_state.get("last_traded_direction")
             now_str = datetime.now(IST).isoformat()
             with sqlite3.connect(self.ledger_db) as conn:
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO ema8_prototype_state (
-                        id, direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, away_seen, updated_at
-                    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+                        id, direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, away_seen, last_traded_direction, updated_at
+                    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, away_seen, now_str),
+                    (direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, away_seen, last_traded_dir, now_str),
                 )
                 conn.commit()
         except Exception as exc:
@@ -3403,11 +3411,12 @@ class QuantTerminalBackend:
 
         closed_positions = []
         if dt.time() >= eod_target_time:
+            eod_reason = f"EOD_SQUARE_OFF_{eod_cfg[:5]}"
             open_positions = self.get_active_positions()
             for p in open_positions:
                 pos_id = p.get("position_id")
                 if pos_id:
-                    res = self.modify_open_position(pos_id, action="CLOSE", enforce_market_hours=False)
+                    res = self.modify_open_position(pos_id, action="CLOSE", enforce_market_hours=False, reason=eod_reason)
                     if res.get("ok"):
                         closed_positions.append(res)
         return closed_positions
@@ -6460,14 +6469,19 @@ class QuantTerminalBackend:
                             should_close = True
                             exit_reason = "SPOT_SL_HIT"
                 if is_proto_pos and not should_close:
-                    init_tgt = float(p.get("initial_target") or target)
-                    init_sl = float(p.get("initial_sl") or sl)
-                    if ltp >= init_tgt:
+                    proto_eod_hm = str(self.cfg.get("eod_square_off_time", "15:20")).strip()[:5]
+                    if now_dt.strftime("%H:%M") >= proto_eod_hm:
                         should_close = True
-                        exit_reason = "OPTION_TARGET_HIT"
-                    elif ltp <= init_sl:
-                        should_close = True
-                        exit_reason = "OPTION_SL_HIT"
+                        exit_reason = f"EOD_SQUARE_OFF_{proto_eod_hm}"
+                    else:
+                        init_tgt = float(p.get("initial_target") or target)
+                        init_sl = float(p.get("initial_sl") or sl)
+                        if ltp >= init_tgt:
+                            should_close = True
+                            exit_reason = "OPTION_TARGET_HIT"
+                        elif ltp <= init_sl:
+                            should_close = True
+                            exit_reason = "OPTION_SL_HIT"
                 if is_flagship_pos and spot_idx > 0:
                     spot_entry = float(p.get("spot_entry") or 0.0)
                     spot_sl = float(p.get("spot_stop_level") or 0.0)
@@ -7656,7 +7670,14 @@ class QuantTerminalBackend:
             return res_dict
 
     # ── IN-FLIGHT POSITION MODIFICATION ──────────────────────────────────────
-    def modify_open_position(self, position_id: str, action: str, new_val: Optional[float] = None, enforce_market_hours: bool = True) -> Dict[str, Any]:
+    def modify_open_position(
+        self,
+        position_id: str,
+        action: str,
+        new_val: Optional[float] = None,
+        enforce_market_hours: bool = True,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
         with sqlite3.connect(self.ledger_db) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
@@ -7723,12 +7744,13 @@ class QuantTerminalBackend:
                 msg = f"Target widened to ₹{new_target:.2f} (+40 Spot pts)"
 
             elif action in ("CLOSE", "SQUARE_OFF"):
+                ex_reason = reason or "MANUAL_CLOSE"
                 try:
                     loop = asyncio.get_running_loop()
-                    loop.create_task(self._close_position_with_broker(dict(pos), "MANUAL_CLOSE", spot_exit=exit_spot))
+                    loop.create_task(self._close_position_with_broker(dict(pos), ex_reason, spot_exit=exit_spot))
                 except RuntimeError:
-                    asyncio.run(self._close_position_with_broker(dict(pos), "MANUAL_CLOSE", spot_exit=exit_spot))
-                msg = f"Square-off initiated for {position_id} (MANUAL_CLOSE)"
+                    asyncio.run(self._close_position_with_broker(dict(pos), ex_reason, spot_exit=exit_spot))
+                msg = f"Square-off initiated for {position_id} ({ex_reason})"
 
             else:
                 return {"ok": False, "error": f"Unknown action {action}"}

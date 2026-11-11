@@ -22,7 +22,10 @@ def patch_config() -> None:
     scanner = data.setdefault("scanner", {})
     ema8_proto = scanner.setdefault("ema8_prototype", {})
 
-    # Apply named keys
+    # Apply named keys per Harish's specifications
+    ema8_proto["touch_tol_pts"] = 3.0
+    ema8_proto["touch_tol_slow_pts"] = 0.0
+    ema8_proto["slow_market_exact_line"] = False
     ema8_proto["retouch_requires_away"] = True
     ema8_proto["arm_until_opposite_close"] = True
 
@@ -30,8 +33,14 @@ def patch_config() -> None:
         json.dump(data, f, indent=2)
 
     print(f"Successfully patched {CONFIG_PATH}")
-    print(f"scanner.ema8_prototype.retouch_requires_away = {ema8_proto['retouch_requires_away']}")
-    print(f"scanner.ema8_prototype.arm_until_opposite_close = {ema8_proto['arm_until_opposite_close']}")
+    for k in [
+        "touch_tol_pts",
+        "touch_tol_slow_pts",
+        "slow_market_exact_line",
+        "retouch_requires_away",
+        "arm_until_opposite_close",
+    ]:
+        print(f"scanner.ema8_prototype.{k} = {ema8_proto[k]}")
 
 
 if __name__ == "__main__":

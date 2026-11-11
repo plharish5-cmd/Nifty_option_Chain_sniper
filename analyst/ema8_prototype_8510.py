@@ -24,7 +24,9 @@ SID_SHORT = "EMA8_PROTOTYPE_SHORT"
 DEFAULT_CFG: Dict[str, Any] = {
     "enabled": True,
     "execution_mode": "LIVE_ALLOWED",
-    "touch_tol_pts": 5.0,
+    "touch_tol_pts": 3.0,
+    "touch_tol_slow_pts": 0.0,
+    "slow_market_exact_line": False,
     "target_pts": 40.0,
     "sl_pts": 40.0,
     "e8_refresh_seconds": 30.0,
@@ -38,6 +40,13 @@ DEFAULT_CFG: Dict[str, Any] = {
     "arm_until_opposite_close": True,
     "retouch_requires_away": True,
 }
+
+
+def get_effective_touch_tolerance(cfg: Dict[str, Any]) -> float:
+    """Return touch tolerance in points (3.0 default, 0.0 when slow market exact line is ON)."""
+    if bool(cfg.get("slow_market_exact_line", False)):
+        return float(cfg.get("touch_tol_slow_pts", 0.0) or 0.0)
+    return float(cfg.get("touch_tol_pts", 3.0) or 3.0)
 
 
 def load_ema8_prototype_cfg(scanner_cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -246,6 +255,11 @@ def _status(
                 "supertrend_enabled": bool(cfg.get("supertrend_enabled", False)),
                 "supertrend_length": int(cfg.get("supertrend_length", 5)),
                 "supertrend_factor": float(cfg.get("supertrend_factor", 1.0)),
+                "retouch_requires_away": bool(cfg.get("retouch_requires_away", True)),
+                "slow_market_exact_line": bool(cfg.get("slow_market_exact_line", False)),
+                "touch_tol_pts": float(cfg.get("touch_tol_pts", 3.0)),
+                "touch_tol_slow_pts": float(cfg.get("touch_tol_slow_pts", 0.0)),
+                "effective_touch_tol_pts": get_effective_touch_tolerance(cfg),
             }
         )
     if extra:
@@ -482,14 +496,21 @@ def _maybe_flip_arm(
     day: str = "",
 ) -> None:
     arm = proto_state.get("arm")
+    last_dir = str(proto_state.get("last_traded_direction") or "").upper()
     if bull_cross:
+        if last_dir == "LONG":
+            return
         if arm and str(arm.get("direction")).upper() == "SHORT":
             proto_state["last_flip"] = "FLIPPED_TO_LONG_ARM"
-        _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_bar_open_ts, e8=e8, day=day)
+        proto_state.pop("last_traded_direction", None)
+        _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_bar_open_ts, e8=e8, away_seen=False, day=day)
     elif bear_cross:
+        if last_dir == "SHORT":
+            return
         if arm and str(arm.get("direction")).upper() == "LONG":
             proto_state["last_flip"] = "FLIPPED_TO_SHORT_ARM"
-        _arm_new(proto_state, direction="SHORT", cross_bar_open_ts=cross_bar_open_ts, e8=e8, day=day)
+        proto_state.pop("last_traded_direction", None)
+        _arm_new(proto_state, direction="SHORT", cross_bar_open_ts=cross_bar_open_ts, e8=e8, away_seen=False, day=day)
 
 
 def _build_signal(
@@ -553,7 +574,7 @@ def evaluate_ema8_prototype(
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Closed-bar cross/flip + optional intrabar touch on dynamic 8 EMA."""
     gate_meta = gate_meta or (lambda _k: {})
-    tol = float(cfg.get("touch_tol_pts", 5.0))
+    tol = get_effective_touch_tolerance(cfg)
 
     if session_day:
         if proto_state.get("day") != session_day:
@@ -747,6 +768,7 @@ def evaluate_ema8_prototype(
             )
         )
         proto_state["consumed_cross_ts"] = cross_bar_open_ts
+        proto_state["last_traded_direction"] = direction
         proto_state.pop("arm", None)
         st = _status(
             "TRIGGERED",
@@ -860,7 +882,7 @@ def backtest_ema8_prototype_at_bar(
     e8 = float(b["e8"])
     prev_c = float(b_prev["close"])
     prev_e8 = float(b_prev["e8"])
-    tol = float(cfg.get("touch_tol_pts", 5.0))
+    tol = get_effective_touch_tolerance(cfg)
     refresh = float(cfg.get("e8_refresh_seconds", 30.0) or 30.0)
 
     bar_open_ts = int(b.get("ts") or 0)
@@ -947,6 +969,7 @@ def backtest_ema8_prototype_at_bar(
                             e8=e8_tick,
                         )
                         proto_state["consumed_cross_ts"] = cross_ts
+                        proto_state["last_traded_direction"] = direction
                         proto_state.pop("arm", None)
                         signals.append((sid, sname, direction, float(cfg["target_pts"]), float(cfg["sl_pts"]), meta))
                         break
@@ -984,6 +1007,7 @@ def backtest_ema8_prototype_at_bar(
                     )
                     meta["intrabar_30s"] = False
                     proto_state["consumed_cross_ts"] = cross_ts
+                    proto_state["last_traded_direction"] = direction
                     proto_state.pop("arm", None)
                     signals.append((sid, sname, direction, float(cfg["target_pts"]), float(cfg["sl_pts"]), meta))
 
