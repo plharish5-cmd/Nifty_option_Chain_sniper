@@ -12,6 +12,7 @@ Trunk: **`integrate/v1.9`**
 | `claude/v1.9.4b-live-switch` | Claude | **done, `d374e06`**, tag `post-claude-v1.9.4c` | **NO — awaiting Harish** |
 | `chatgpt/v1.9.4d` | ChatGPT | done, tag `post-chatgpt-v1.9.4d-final` | **NO — awaiting Harish** |
 | `claude/v1.9.4-safety-lock` | Claude | **BROKEN, `2d116b7` — DELETE** | never merge |
+| `agy/ema8-proto-corrections` | Antigravity | **done, `b1d23ca`**, tag `post-agy-ema8-proto-corrections` | **NO — awaiting Harish** |
 
 ---
 
@@ -463,4 +464,69 @@ Tag: `post-agy-v206-ema8-prototype`
    - `analyst/desk_timestamp_8510.py`: Truncates redundant time fields to `HH:MM:SS` before ISO parsing, cleanly rendering timestamps as `DD Mon YYYY, HH:MM:SS IST`.
    - `analyst/terminal8510_backend.py`: Added `_to_iso()` safe formatting helper; same-bar / opposite-close exits show actual bar close time (`10:30` instead of `10:15`), eliminating reverse duration artifacts.
    - Added unit test `test_malformed_double_seconds` in `analyst/test_desk_timestamp_8510.py` (5/5 passed).
+
+---
+
+## 2026-11-11 — agy: 8 EMA Prototype Corrections (Phases 1 to 7) — Port 8510
+
+Branch: `agy/ema8-proto-corrections`
+Base: `origin/fix/8510-algo-v206` @ `ef3ded4`
+Tags: `pre-agy-ema8-proto-corrections` @ `ef3ded4`, `post-agy-ema8-proto-corrections` @ `b1d23ca`
+
+### Remediation Deliverables (Phases 1 through 7):
+1. **Phase 1 — Real Exit Orders (`analyst/terminal8510_backend.py`):**
+   - Built unified `_close_position_with_broker(pos, reason, spot_exit)` close path used by both live and paper executions.
+   - Live exits route all triggers (target, stop, opposite close, EOD, manual, kill switch) through companion SL-L cancel confirmation, fresh marketfeed quote check, aggressive limit order with chasing loop (`place_order`/`modify_order`), and real fill ledger finalization.
+   - Double-sell prevented via per-position `asyncio.Lock` and `EXIT_PENDING` ledger state.
+   - If sell order is rejected: position marks `status='EXIT_FAILED'`, raises cockpit banner, re-places protective SL-L at Dhan.
+   - Unit tests: `analyst/test_live_exit_orders_8510.py` (7/7 passed).
+
+2. **Phase 2 — Option Exit is 40 Premium Points (`analyst/terminal8510_backend.py`):**
+   - For `is_proto_order`, initial option target and stop levels in `execute_order_with_chaser` set to entry ± 40.0 points flat (instead of delta-scaled).
+   - Non-prototype lanes (Flagship, Stage 2/3, Crossover, Matrix Scalp) remain delta-scaled.
+   - Unit tests: `analyst/test_phase2_option_points_8510.py` (2/2 passed).
+
+3. **Phase 3 — State: Timestamps, Persistence, One Arm (`analyst/ema8_prototype_8510.py`, `analyst/terminal8510_backend.py`):**
+   - `cross_bar_open_ts`: Identifies crossing candle by open unix timestamp. No entry permitted on crossing candle.
+   - `consumed_cross_ts`: Tracks consumed cross; exactly one trade per cross.
+   - SQLite table `ema8_prototype_state` persists state across restarts.
+   - Open position state derived directly from SQLite `positions` ledger (`status='OPEN'`), eliminating in-memory state drift.
+   - Unit tests: `analyst/test_phase3_state_8510.py` (6/6 passed).
+
+4. **Phase 4 — Retouch Distance & Movement from Correct Side (`analyst/ema8_prototype_8510.py`, `analyst/terminal8510_backend.py`):**
+   - Retouch tolerance `touch_tol_pts = 3.0` points (Harish: ±2 to 3 points).
+   - Moving away requirement: Price must first move > 3.0 points away from dynamic 8 EMA before a return to within 3.0 points triggers entry.
+   - State `arm["away_seen"]` tracks this per arm across ticks and restarts.
+   - Slow market exact line control: `touch_tol_slow_pts = 0.0` with manual toggle `slow_market_exact_line`.
+   - Unit tests: `analyst/test_phase4_retouch_8510.py` (8/8 passed).
+
+5. **Phase 5 — EOD Square-Off & Alternating CE/PE Trades (`analyst/terminal8510_backend.py`, `analyst/ema8_prototype_8510.py`):**
+   - EOD square-off at desk's `eod_square_off_time` (15:20) squares off open prototype positions through Phase 1 close path (`EOD_SQUARE_OFF_15:20`) and clears pending arm.
+   - Strict CE/PE alternation: Exactly 1 entry per cross; after a trade closes (target, stop, opposite close, EOD), no same-direction re-entry until an opposite 15m close arms the other side.
+   - Unit tests: `analyst/test_phase5_eod_8510.py` (5/5 passed).
+
+6. **Phase 6 — Backtest Matches Live Specification (`analyst/terminal8510_backend.py`):**
+   - `simulate_prototype_spot_exit`: Forward walk starts strictly from the first completed 1m candle after entry (`ts > entry_ts`).
+   - Opposite 8 EMA close checked ONLY at 15m candle closes (including entry candle close).
+   - 30-second grid reads completed 1m candles (`day_1m.ts <= tick_ts`).
+   - Ambiguous candles touching both target (+40) and stop (-40) marked `AMBIGUOUS` with dual scenario reporting (stops-first vs targets-first).
+   - Synthetic prototype trades reported with zero fake delta and zero fake INR; real spot entry and separate dynamic 8 EMA column preserved.
+   - Replay respects CE/PE alternation.
+   - Unit tests: `analyst/test_phase6_backtest_8510.py` (8/8 passed).
+
+7. **Phase 7 — Cockpit and Log (`analyst/terminal8510_backend.py`, `engine_8510_live.py`, `Algorithmic_Trading_Workspace_8510.html`):**
+   - Persistent SQLite table `ema8_prototype_log` (`time`, `event`, `direction`, `dynamic_8ema`, `spot`, `reason`, `position_id`). Logs all transitions (ARMED, RETOUCH SEEN, ENTRY PLACED, TARGET HIT, STOP HIT, OPPOSITE CLOSE, EOD SQUARE OFF, CANCELLED, EXIT FAILED).
+   - Strategy card displays plain English lifecycle phases:
+     `WAITING FOR CLOSE`, `ARMED CE` / `ARMED PE`, `WAITING FOR RE-TOUCH (away_seen: YES/NO)`, `ENTRY`, `EXITED — <reason>`, `FLIPPED TO EMA SHORT / LONG`.
+   - Filter block reasons displayed ONLY when filter is ON: `4-8 Attached (Ribbon ON)`, `EMA Separation`, `SuperTrend`, `Opposite Close — Exited`, `EXIT FAILED — <Dhan error>`.
+   - Cockpit controls: Radio buttons for `retouch_requires_away` (ON/OFF) and `slow_market_exact_line` (Normal ±3 pts / Slow market exact line 0.0 pts) wired to `/api/scanner/ema8_prototype/filters`.
+   - Active Positions table renders `EXIT_PENDING` (badge-gold) and `EXIT_FAILED` (badge-bear with tooltip error) under `Status / Source` column.
+   - Unit tests: `analyst/test_phase7_cockpit_log_8510.py` (6/6 passed).
+
+### Verification Summary:
+- **Full Prototype Suite:** 51/51 tests passing (`pytest analyst/test_live_exit_orders_8510.py analyst/test_phase2_option_points_8510.py analyst/test_phase3_state_8510.py analyst/test_phase4_retouch_8510.py analyst/test_phase5_eod_8510.py analyst/test_phase6_backtest_8510.py analyst/test_phase7_cockpit_log_8510.py analyst/test_ema8_prototype_8510.py`).
+- **Core Feature Locks:** 11/11 locked modules verified intact against `LOCKED_MANIFEST.json` (`python scripts/verify_locks.py`).
+- **Immutable Lock Suite:** 10/10 passed (`ict_smc_app/backend/tests/test_immutable_feature_lock.py`).
+- **Safety Integrity:** No dry-run gates or daily caps restored; other strategy modules unchanged.
+
 
