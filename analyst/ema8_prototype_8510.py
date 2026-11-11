@@ -439,9 +439,9 @@ def _filter_blocks(
             form_low=form_low,
         )
     if _ribbon_blocks(e4, e8, cfg):
-        return 'NO TRADE — 4/8 ribbon (filter ON)'
+        return "4-8 Attached (Ribbon ON)"
     if _separation_blocks(bullish, e4, e8, cfg):
-        return "NO TRADE — EMA separation filter (4 must be above 8 for long, below for short)"
+        return "EMA Separation"
     if _supertrend_blocks(
         bullish,
         b15,
@@ -451,7 +451,7 @@ def _filter_blocks(
         form_high=form_high,
         form_low=form_low,
     ):
-        return "NO TRADE — SuperTrend confirmation failed"
+        return "SuperTrend"
     return ""
 
 
@@ -494,6 +494,8 @@ def _maybe_flip_arm(
     cross_bar_open_ts: int,
     e8: float,
     day: str = "",
+    actions: Optional[List[Dict[str, Any]]] = None,
+    spot: Optional[float] = None,
 ) -> None:
     arm = proto_state.get("arm")
     last_dir = str(proto_state.get("last_traded_direction") or "").upper()
@@ -502,6 +504,8 @@ def _maybe_flip_arm(
             return
         if arm and str(arm.get("direction")).upper() == "SHORT":
             proto_state["last_flip"] = "FLIPPED_TO_LONG_ARM"
+            if actions is not None:
+                actions.append({"type": "FLIP", "direction": "LONG", "dynamic_8ema": e8, "spot": spot})
         proto_state.pop("last_traded_direction", None)
         _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_bar_open_ts, e8=e8, away_seen=False, day=day)
     elif bear_cross:
@@ -509,6 +513,8 @@ def _maybe_flip_arm(
             return
         if arm and str(arm.get("direction")).upper() == "LONG":
             proto_state["last_flip"] = "FLIPPED_TO_SHORT_ARM"
+            if actions is not None:
+                actions.append({"type": "FLIP", "direction": "SHORT", "dynamic_8ema": e8, "spot": spot})
         proto_state.pop("last_traded_direction", None)
         _arm_new(proto_state, direction="SHORT", cross_bar_open_ts=cross_bar_open_ts, e8=e8, away_seen=False, day=day)
 
@@ -586,14 +592,14 @@ def evaluate_ema8_prototype(
     if n < 5:
         return [], _status(
             "SCANNING",
-            phase="WAITING_FOR_CLOSE",
-            block_reason="NO TRADE — Insufficient 15m bars",
+            phase="WAITING FOR CLOSE",
+            block_reason="",
             cfg=cfg,
         )
 
     i = _idx_abs(bar_ci, n)
     if i < 1:
-        return [], _status("SCANNING", phase="WAITING_FOR_CLOSE", block_reason="NO TRADE — Need prior bar", cfg=cfg)
+        return [], _status("SCANNING", phase="WAITING FOR CLOSE", block_reason="", cfg=cfg)
 
     if live_spot and live_spot > 0 and (intrabar or bar_ci == -1):
         e4_val, e8_val, high, low = compute_dynamic_emas_on_bar(
@@ -638,30 +644,34 @@ def evaluate_ema8_prototype(
         bull_cross = _close_crossed_above(prev_c, prev_e8, c, e8_val, o_bar)
         bear_cross = _close_crossed_below(prev_c, prev_e8, c, e8_val, o_bar)
         if bull_cross or bear_cross:
+            proto_state.pop("last_exit_reason", None)
             if _ribbon_blocks(e4_val, e8_val, cfg):
                 proto_state.pop("arm", None)
                 st = _status(
                     "SCANNING",
-                    phase="WAITING_FOR_CLOSE",
+                    phase="WAITING FOR CLOSE",
                     armed=False,
-                    block_reason="NO TRADE — 4/8 ribbon (filter ON) — do not arm",
+                    block_reason="4-8 Attached (Ribbon ON)",
                     cfg=cfg,
                 )
                 st["actions"] = actions
                 return [], st
             cross_open_ts = bar_open_timestamp(b15, bar_ci)
-            _maybe_flip_arm(proto_state, bull_cross, bear_cross, cross_open_ts, e8_val, session_day)
+            _maybe_flip_arm(proto_state, bull_cross, bear_cross, cross_open_ts, e8_val, session_day, actions=actions, spot=c)
             if bull_cross:
-                actions.append({"type": "ARM", "direction": "LONG", "cross_bar_open_ts": cross_open_ts})
+                actions.append({"type": "ARM", "direction": "LONG", "cross_bar_open_ts": cross_open_ts, "dynamic_8ema": e8_val, "spot": c})
             elif bear_cross:
-                actions.append({"type": "ARM", "direction": "SHORT", "cross_bar_open_ts": cross_open_ts})
+                actions.append({"type": "ARM", "direction": "SHORT", "cross_bar_open_ts": cross_open_ts, "dynamic_8ema": e8_val, "spot": c})
 
     arm = proto_state.get("arm")
     if not arm:
+        last_exit = proto_state.get("last_exit_reason")
+        ph = f"EXITED — {last_exit}" if last_exit else "WAITING FOR CLOSE"
+        br = "Opposite Close — Exited" if last_exit == "OPPOSITE_8EMA_CLOSE" else ""
         st = _status(
             "SCANNING",
-            phase="WAITING_FOR_CLOSE",
-            block_reason="NO TRADE — Waiting for 15m close cross of 8 EMA",
+            phase=ph,
+            block_reason=br,
             cfg=cfg,
         )
         st["actions"] = actions
@@ -678,9 +688,16 @@ def evaluate_ema8_prototype(
 
     # 1. No entry on crossing candle
     if current_bar_open_ts <= cross_bar_open_ts:
+        last_flip = proto_state.get("last_flip")
+        if last_flip == "FLIPPED_TO_LONG_ARM":
+            ph = "FLIPPED TO EMA LONG"
+        elif last_flip == "FLIPPED_TO_SHORT_ARM":
+            ph = "FLIPPED TO EMA SHORT"
+        else:
+            ph = "ARMED CE" if bullish else "ARMED PE"
         st = _status(
             "ARMED",
-            phase="ARMED_CE" if bullish else "ARMED_PE",
+            phase=ph,
             armed=True,
             direction=direction,
             block_reason="NO TRADE — No entry on crossing candle; wait for re-touch",
@@ -690,11 +707,13 @@ def evaluate_ema8_prototype(
         st["actions"] = actions
         return [], st
 
+    proto_state.pop("last_flip", None)
+
     # 2. One entry per cross
     if proto_state.get("consumed_cross_ts") == cross_bar_open_ts:
         st = _status(
             "ARMED",
-            phase="ARMED_CE" if bullish else "ARMED_PE",
+            phase="ARMED CE" if bullish else "ARMED PE",
             armed=True,
             direction=direction,
             block_reason="NO TRADE — Cross already consumed by an entry",
@@ -708,7 +727,7 @@ def evaluate_ema8_prototype(
     if proto_state.get("open"):
         st = _status(
             "IN_TRADE",
-            phase="IN_POSITION",
+            phase="ENTRY",
             armed=False,
             direction=direction,
             block_reason="NO TRADE — Prototype position already open",
@@ -730,13 +749,15 @@ def evaluate_ema8_prototype(
         form_low=form_low if intrabar else None,
     )
     if block:
+        away_flag = bool(arm.get("away_seen", False))
         st = _status(
             "ARMED",
-            phase="WAITING_FOR_RETOUCH",
+            phase=f"WAITING FOR RE-TOUCH (away_seen: {'YES' if away_flag else 'NO'})",
             armed=True,
             direction=direction,
             block_reason=block,
             cfg=cfg,
+            extra={"dynamic_e8": round(e8_val, 2), "away_seen": away_flag},
         )
         st["actions"] = actions
         return [], st
@@ -770,6 +791,9 @@ def evaluate_ema8_prototype(
         proto_state["consumed_cross_ts"] = cross_bar_open_ts
         proto_state["last_traded_direction"] = direction
         proto_state.pop("arm", None)
+        proto_state.pop("last_flip", None)
+        proto_state.pop("last_exit_reason", None)
+        actions.append({"type": "RETOUCH_SEEN", "direction": direction, "dynamic_8ema": e8_val, "spot": real_spot})
         st = _status(
             "TRIGGERED",
             phase="ENTRY",
@@ -788,7 +812,7 @@ def evaluate_ema8_prototype(
 
     st = _status(
         "ARMED",
-        phase="WAITING_FOR_RETOUCH",
+        phase=f"WAITING FOR RE-TOUCH (away_seen: {'YES' if away_flag else 'NO'})",
         armed=True,
         direction=direction,
         block_reason=wait,

@@ -844,6 +844,11 @@ async def api_ema8_proto_filters_get():
     return JSONResponse(content=backend.get_ema8_prototype_filter_config())
 
 
+@app.get("/api/scanner/ema8_prototype/log")
+async def api_ema8_proto_log_get(limit: int = 50):
+    return JSONResponse(content={"ok": True, "log": backend.get_ema8_prototype_log(limit=limit)})
+
+
 @app.post("/api/scanner/ema8_prototype/filters")
 async def api_ema8_proto_filters_post(req: Request):
     try:

@@ -3425,6 +3425,20 @@ class QuantTerminalBackend:
                 except Exception:
                     pass
 
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS ema8_prototype_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    time TEXT NOT NULL,
+                    event TEXT NOT NULL,
+                    direction TEXT,
+                    dynamic_8ema REAL,
+                    spot REAL,
+                    reason TEXT,
+                    position_id TEXT
+                );
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_ema8_prototype_log_id ON ema8_prototype_log(id DESC);")
+
                 # Super Trail Column Migrations
                 pos_cols = [
                     ("highest_ltp", "REAL DEFAULT 0.0"),
@@ -3583,6 +3597,63 @@ class QuantTerminalBackend:
                 conn.commit()
         except Exception as exc:
             log.warning("Could not persist ema8_prototype_state: %s", exc)
+
+    def log_ema8_prototype_event(
+        self,
+        event: str,
+        direction: Optional[str] = None,
+        dynamic_8ema: Optional[float] = None,
+        spot: Optional[float] = None,
+        reason: Optional[str] = None,
+        position_id: Optional[str] = None,
+        time_str: Optional[str] = None,
+    ) -> None:
+        """Saves a prototype lifecycle event to SQLite table ema8_prototype_log."""
+        t = time_str or datetime.now(IST).strftime("%H:%M:%S")
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO ema8_prototype_log (time, event, direction, dynamic_8ema, spot, reason, position_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        t,
+                        str(event).upper(),
+                        str(direction).upper() if direction else None,
+                        round(float(dynamic_8ema), 2) if dynamic_8ema is not None else None,
+                        round(float(spot), 2) if spot is not None else None,
+                        str(reason) if reason else None,
+                        str(position_id) if position_id else None,
+                    ),
+                )
+                conn.commit()
+        except Exception as exc:
+            log.warning("Could not persist ema8_prototype_log event: %s", exc)
+
+    def get_ema8_prototype_log(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Reads latest prototype lifecycle events from SQLite table ema8_prototype_log."""
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    """
+                    SELECT time, event, direction, dynamic_8ema, spot, reason, position_id
+                    FROM ema8_prototype_log
+                    ORDER BY id DESC LIMIT ?
+                    """,
+                    (int(limit),),
+                ).fetchall()
+                out = []
+                for r in rows:
+                    d = dict(r)
+                    d["ts"] = d["time"]
+                    d["setup_name"] = f"{d['event']}: {d.get('reason') or ''}".strip(": ")
+                    out.append(d)
+                return out
+        except Exception as exc:
+            log.debug("Could not read ema8_prototype_log: %s", exc)
+            return []
 
     def update_super_trail_config(self, new_cfg: Dict[str, Any]) -> Dict[str, Any]:
         """Live updates Super Trail parameters without restarting server."""
@@ -5326,7 +5397,37 @@ class QuantTerminalBackend:
                 self._ema8_prototype_state.pop("arm", None)
                 self._save_ema8_prototype_state()
             elif atype == "ARM":
+                self.log_ema8_prototype_event(
+                    event="ARMED",
+                    direction=act.get("direction"),
+                    dynamic_8ema=act.get("dynamic_8ema"),
+                    spot=act.get("spot"),
+                    reason=f"ARMED {act.get('direction')}",
+                )
                 self._save_ema8_prototype_state()
+            elif atype == "FLIP":
+                self.log_ema8_prototype_event(
+                    event=f"FLIPPED TO EMA {act.get('direction')}",
+                    direction=act.get("direction"),
+                    dynamic_8ema=act.get("dynamic_8ema"),
+                    spot=act.get("spot"),
+                    reason=f"FLIPPED TO EMA {act.get('direction')}",
+                )
+                self._save_ema8_prototype_state()
+            elif atype == "RETOUCH_SEEN":
+                self.log_ema8_prototype_event(
+                    event="RETOUCH SEEN",
+                    direction=act.get("direction"),
+                    dynamic_8ema=act.get("dynamic_8ema"),
+                    spot=act.get("spot"),
+                    reason="DYNAMIC 8 EMA TOUCHED",
+                )
+            elif atype == "CANCEL":
+                self.log_ema8_prototype_event(
+                    event="CANCELLED",
+                    direction=act.get("direction"),
+                    reason=act.get("reason"),
+                )
 
     async def _square_off_open_ema8_prototype_positions(self, reason: str) -> None:
         try:
@@ -5454,6 +5555,10 @@ class QuantTerminalBackend:
             "supertrend_enabled": bool(c.get("supertrend_enabled", False)),
             "supertrend_length": int(c.get("supertrend_length", 5)),
             "supertrend_factor": float(c.get("supertrend_factor", 1.0)),
+            "retouch_requires_away": bool(c.get("retouch_requires_away", True)),
+            "slow_market_exact_line": bool(c.get("slow_market_exact_line", False)),
+            "touch_tol_pts": float(c.get("touch_tol_pts", 3.0)),
+            "touch_tol_slow_pts": float(c.get("touch_tol_slow_pts", 0.0)),
         }
 
     def update_ema8_prototype_filter_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -5466,6 +5571,10 @@ class QuantTerminalBackend:
             "supertrend_enabled",
             "supertrend_length",
             "supertrend_factor",
+            "retouch_requires_away",
+            "slow_market_exact_line",
+            "touch_tol_pts",
+            "touch_tol_slow_pts",
         }
         block = self.scanner_cfg.setdefault("ema8_prototype", {})
         if not isinstance(block, dict):
@@ -5479,11 +5588,13 @@ class QuantTerminalBackend:
                 "ema_separation_enabled",
                 "supertrend_enabled",
                 "enabled",
+                "retouch_requires_away",
+                "slow_market_exact_line",
             ):
                 block[k] = v is True or str(v).lower() in ("true", "1", "on", "yes")
             elif k == "execution_mode":
                 block[k] = str(v).upper()
-            elif k in ("ribbon_max_pts", "supertrend_factor"):
+            elif k in ("ribbon_max_pts", "supertrend_factor", "touch_tol_pts", "touch_tol_slow_pts"):
                 block[k] = float(v)
             elif k == "supertrend_length":
                 block[k] = int(v)
@@ -5677,6 +5788,10 @@ class QuantTerminalBackend:
             signals.extend(proto_sigs)
             prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})
             prev_proto.update(proto_st)
+            if getattr(self, "exit_failure_banner", None):
+                prev_proto["block_reason"] = f"EXIT FAILED — {self.exit_failure_banner.get('error')}"
+            elif prev_proto.get("last_exit_reason") == "OPPOSITE_8EMA_CLOSE":
+                prev_proto["block_reason"] = "Opposite Close — Exited"
             self.strategy_status["ema8_prototype"] = prev_proto
             self._handle_ema8_prototype_actions(proto_st.get("actions"))
             self._save_ema8_prototype_state()
@@ -6732,7 +6847,7 @@ class QuantTerminalBackend:
             "kill_switch_active": self.kill_switch_active,
             "strategies": self.strategy_status,
             "recent_signals": self.recent_signals[:10],
-            "ema8_prototype_log": self._ema8_prototype_log[:15],
+            "ema8_prototype_log": self.get_ema8_prototype_log(limit=15),
             "algo_strike_selection": self.algo_strike_selection,
             "tolerance_pts": float(self.scanner_cfg.get("tolerance_pts", 20.0)),
             "scanner_gates": self.get_scanner_gate_config(),
@@ -7266,6 +7381,15 @@ class QuantTerminalBackend:
                         "error": err,
                         "time": datetime.now(IST).strftime("%H:%M:%S IST"),
                     }
+                    if "EMA8_PROTOTYPE" in str(cur_row["strategy_id"] or "").upper():
+                        sid_u = str(cur_row["strategy_id"] or "").upper()
+                        self.log_ema8_prototype_event(
+                            event="EXIT FAILED",
+                            direction="LONG" if "LONG" in sid_u else "SHORT",
+                            spot=spot_exit,
+                            reason=f"EXIT FAILED — {err}",
+                            position_id=pos_id,
+                        )
                     # Re-place protective SL-L
                     sl_price = float(cur_row["current_trailing_sl"] or cur_row["sl_price"] or (entry - 24.0))
                     sl_trigger = max(1.0, round_to_tick(sl_price, 0.05))
@@ -7324,6 +7448,15 @@ class QuantTerminalBackend:
                                 "error": err,
                                 "time": datetime.now(IST).strftime("%H:%M:%S IST"),
                             }
+                            if "EMA8_PROTOTYPE" in str(cur_row["strategy_id"] or "").upper():
+                                sid_u = str(cur_row["strategy_id"] or "").upper()
+                                self.log_ema8_prototype_event(
+                                    event="EXIT FAILED",
+                                    direction="LONG" if "LONG" in sid_u else "SHORT",
+                                    spot=spot_exit,
+                                    reason=f"EXIT FAILED — {err}",
+                                    position_id=pos_id,
+                                )
                             return {"ok": False, "status": "EXIT_FAILED", "error": err}
 
                     try:
@@ -7433,6 +7566,26 @@ class QuantTerminalBackend:
         strat_id = str(pos.get("strategy_id") or "").upper()
         if strat_id.startswith("EMA8_PROTOTYPE"):
             self._sync_open_ema8_prototype_position()
+            evt = "EXITED"
+            er_u = str(exit_reason).upper()
+            if "TARGET" in er_u:
+                evt = "TARGET HIT"
+            elif "SL_HIT" in er_u or "STOP" in er_u or "BROKER_SL" in er_u:
+                evt = "STOP HIT"
+            elif "OPPOSITE" in er_u:
+                evt = "OPPOSITE CLOSE"
+            elif "EOD" in er_u:
+                evt = "EOD SQUARE OFF"
+
+            direction = str(pos.get("direction") or ("LONG" if "LONG" in strat_id else "SHORT")).upper()
+            self.log_ema8_prototype_event(
+                event=evt,
+                direction=direction,
+                spot=spot_exit,
+                reason=exit_reason,
+                position_id=pos_id,
+            )
+            self._ema8_prototype_state["last_exit_reason"] = exit_reason
             self._save_ema8_prototype_state()
 
         log.info("Position %s exited via %s @ ₹%.2f (Net PnL: ₹%.2f)", pos_id, exit_reason, exit_price, net)
@@ -8076,6 +8229,18 @@ class QuantTerminalBackend:
                     req_margin = paper_fill_price * qty
                     cur.execute("UPDATE paper_wallet SET margin_used = margin_used + ? WHERE id=1", (req_margin,))
                     conn.commit()
+
+                if is_proto_order:
+                    dyn_e8 = (spot_context or {}).get("dynamic_e8_at_entry") or (spot_context or {}).get("dynamic_e8")
+                    proto_dir = (spot_context or {}).get("direction") or ("LONG" if "LONG" in str((spot_context or {}).get("strategy_id")).upper() else "SHORT")
+                    self.log_ema8_prototype_event(
+                        event="ENTRY PLACED",
+                        direction=proto_dir,
+                        dynamic_8ema=dyn_e8,
+                        spot=(spot_context or {}).get("spot_entry"),
+                        position_id=pos_id,
+                        reason=f"ENTRY @ ₹{base_fill:.2f}",
+                    )
 
             # Record in Orders Book
             limit_sent = round_to_tick(signal_ltp + buf, 0.05)

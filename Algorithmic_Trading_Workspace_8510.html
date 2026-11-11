@@ -1113,6 +1113,24 @@
                                 </label>
                                 <span style="color:#64748b;">(len <b id="protoStLen">5</b> · factor <b id="protoStFac">1</b>)</span>
                             </div>
+                            <div style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin-top:6px;">
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoAway" id="protoAwayOn" value="on" checked> Retouch requires away ON
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoAway" id="protoAwayOff" value="off"> Retouch requires away OFF
+                                </label>
+                                <span style="color:#64748b;">(move &gt;3 pts away before re-touch)</span>
+                            </div>
+                            <div style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin-top:6px;">
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoSlow" id="protoSlowOff" value="off" checked> Normal tol (±3 pts)
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoSlow" id="protoSlowOn" value="on"> Slow market — exact 8 EMA line
+                                </label>
+                                <span style="color:#64748b;">(tol 0.0 pts)</span>
+                            </div>
                             <div style="margin-top:6px; color:#94a3b8;" id="protoFilterSaveStatus">—</div>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
@@ -1654,7 +1672,7 @@
                                 <th>Entry Time</th>
                                 <th>LTP</th>
                                 <th>Live MTM / P&amp;L</th>
-                                <th>Source</th>
+                                <th>Status / Source</th>
                                 <th>Strategy / Setup</th>
                                 <th>Square-Off</th>
                             </tr>
@@ -3953,8 +3971,28 @@
                             epSt.textContent = ep.state || "SCANNING";
                             const st = ep.state || "";
                             epSt.className = `status-badge ${st === "TRIGGERED" ? "badge-bull" : (st === "EXPIRED" ? "badge-bear" : (st === "ARMED" ? "badge-gold" : "badge-neutral"))}`;
-                            if (epPh) epPh.textContent = `Phase: ${ep.phase || "WAITING_FOR_CLOSE"}`;
-                            mjBlock("stratBlock_ema8_proto", ep);
+                            if (epPh) epPh.textContent = ep.phase || "WAITING FOR CLOSE";
+                            if (epBk) {
+                                let bk = "";
+                                if (sc.exit_failure_banner && sc.exit_failure_banner.error) {
+                                    bk = `EXIT FAILED — ${sc.exit_failure_banner.error}`;
+                                } else if (ep.last_exit_reason === "OPPOSITE_8EMA_CLOSE" || ep.exit_reason === "OPPOSITE_8EMA_CLOSE" || (ep.block_reason && ep.block_reason.includes("Opposite Close"))) {
+                                    bk = "Opposite Close — Exited";
+                                } else if (ep.block_reason) {
+                                    const br = ep.block_reason;
+                                    if ((br.includes("Ribbon") || br.includes("4-8")) && ep.ribbon_filter_enabled) {
+                                        bk = "4-8 Attached (Ribbon ON)";
+                                    } else if ((br.includes("Separation") || br.includes("separation")) && ep.ema_separation_enabled) {
+                                        bk = "EMA Separation";
+                                    } else if ((br.includes("SuperTrend") || br.includes("supertrend")) && ep.supertrend_enabled) {
+                                        bk = "SuperTrend";
+                                    } else if (br.includes("EXIT FAILED")) {
+                                        bk = br;
+                                    }
+                                }
+                                epBk.textContent = bk;
+                                epBk.style.color = bk.includes("FAILED") ? "#ef4444" : (bk ? "#fbbf24" : "#64748b");
+                            }
                             const pb = document.getElementById("ema8ProtoExecBadge");
                             if (pb && ep.execution_mode) {
                                 const live = String(ep.execution_mode).includes("LIVE");
@@ -4385,6 +4423,13 @@
                     `Expiry Date: ${p.structured_contract.expiry_display || ''}&#10;Symbol: ${p.structured_contract.symbol || 'NIFTY'}&#10;Strike: ${p.structured_contract.strike_display || ''}` :
                     `Symbol: ${p.symbol}`;
 
+                let statusBadge = `<span class="status-badge ${sourceDisplay.includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${sourceDisplay}</span>`;
+                if (p.status === "EXIT_PENDING") {
+                    statusBadge = `<span class="status-badge badge-gold">EXIT_PENDING</span>`;
+                } else if (p.status === "EXIT_FAILED") {
+                    statusBadge = `<span class="status-badge badge-bear" title="${(p.exit_reason || '').replace(/"/g, '&quot;')}">EXIT_FAILED</span>`;
+                }
+
                 return `<tr>
                     <td title="${structTip}"><b style="font-family:var(--font-mono);">${p.symbol}</b></td>
                     <td><b>${p.qty}</b></td>
@@ -4395,7 +4440,7 @@
                     </td>
                     <td style="font-weight:700;">₹${Number(p.current_ltp || 0).toFixed(2)}</td>
                     <td style="font-weight:800; color:${pnlColor}; font-size:13px;">${pnlSign}${Math.round(pnlVal)} ${pnlIcon}</td>
-                    <td><span class="status-badge ${sourceDisplay.includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${sourceDisplay}</span></td>
+                    <td>${statusBadge}</td>
                     <td><span style="font-family:var(--font-mono); font-weight:600; font-size:11.5px;">${stratDisplay}</span></td>
                     <td>
                         <button type="button" class="crimson-btn" style="padding:4px 10px; font-size:11px; font-weight:700;" onclick="handleSquareOffClick('${p.position_id}')" ${sqBtnDisabledAttr}>
@@ -4803,15 +4848,23 @@
             const rib = !!cfg.ribbon_filter_enabled;
             const sep = !!cfg.ema_separation_enabled;
             const st = !!cfg.supertrend_enabled;
+            const away = cfg.retouch_requires_away !== false;
+            const slow = !!cfg.slow_market_exact_line;
             const rOff = document.getElementById('protoRibbonOff');
             const rOn = document.getElementById('protoRibbonOn');
             const sOff = document.getElementById('protoEmaSepOff');
             const sOn = document.getElementById('protoEmaSepOn');
             const tOff = document.getElementById('protoStOff');
             const tOn = document.getElementById('protoStOn');
+            const aOff = document.getElementById('protoAwayOff');
+            const aOn = document.getElementById('protoAwayOn');
+            const slOff = document.getElementById('protoSlowOff');
+            const slOn = document.getElementById('protoSlowOn');
             if (rOff && rOn) { rOff.checked = !rib; rOn.checked = rib; }
             if (sOff && sOn) { sOff.checked = !sep; sOn.checked = sep; }
             if (tOff && tOn) { tOff.checked = !st; tOn.checked = st; }
+            if (aOff && aOn) { aOff.checked = !away; aOn.checked = away; }
+            if (slOff && slOn) { slOff.checked = !slow; slOn.checked = slow; }
             const rp = document.getElementById('protoRibbonPts');
             if (rp && cfg.ribbon_max_pts != null) rp.textContent = Number(cfg.ribbon_max_pts).toFixed(1);
             const sl = document.getElementById('protoStLen');
@@ -4845,10 +4898,12 @@
                     ribbon_filter_enabled: document.getElementById('protoRibbonOn')?.checked === true,
                     ema_separation_enabled: document.getElementById('protoEmaSepOn')?.checked === true,
                     supertrend_enabled: document.getElementById('protoStOn')?.checked === true,
+                    retouch_requires_away: document.getElementById('protoAwayOn')?.checked === true,
+                    slow_market_exact_line: document.getElementById('protoSlowOn')?.checked === true,
                 };
                 saveEma8PrototypeFilters(payload).catch(() => {});
             };
-            ['protoRibbonOff', 'protoRibbonOn', 'protoEmaSepOff', 'protoEmaSepOn', 'protoStOff', 'protoStOn'].forEach(id => {
+            ['protoRibbonOff', 'protoRibbonOn', 'protoEmaSepOff', 'protoEmaSepOn', 'protoStOff', 'protoStOn', 'protoAwayOff', 'protoAwayOn', 'protoSlowOff', 'protoSlowOn'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('change', post);
             });
