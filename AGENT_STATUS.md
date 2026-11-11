@@ -840,3 +840,34 @@ wall-clock tests, unchanged). Locks 11/11.
 Not verified: never run on the real 254-day database — I do not have it. Run time on the desk is
 unknown. AGY's 254-day figures came from its own `fast_backtest_254_days.py`, which is not in
 the repo; they are not comparable with this study until it has been run.
+
+## Claude — `claude/v2.0.8-oi-context` (11 Nov 2026) — owner request: "integrate full fledged into app"
+Base `claude/v2.0.7-holdout-study` @ `06d042c`. Tags (local): `pre-/post-claude-v2.0.8-oi-context`.
+Not merged anywhere.
+
+- **`analyst/oi_context_8510.py`** (new, pure functions). From the recorded `chain_snap`
+  snapshots (8510 recorder DB first, then the market DB; read-only): OI added since 09:15 on
+  each side within spot ±1000 → day bias (more puts added = CE, more calls = PE, within 20% of
+  each other = NEUTRAL); 30-minute change of the same number (against the bias = fading);
+  nearest of the 3 heaviest call strikes above / put strikes below, room in points, boxed when
+  both are within 100 pts in total. Three gates: direction, agreement, room. No locked module
+  is imported or changed.
+- **Backend.** `oi_context()` cached 60 s; `payload["oi_context"]` in telemetry; the bias is
+  written to the Prototype state as `oi_bias` (the placeholder still needs its own switch);
+  every signal gets a row in the new ledger table `signal_oi_context` (context + each gate's
+  verdict + would_block/blocked), keyed by the same `signal_uid` as `signal_observations`.
+- **Blocking is OFF by default.** A trade is stopped only when `oi_filter_block` is true (cockpit
+  checkbox on the Prototype card, saved through the existing gate endpoint), only for lanes in
+  `oi_context.apply_to` (default `EMA8_PROTOTYPE`), and never with NO_DATA (no snapshots, one
+  snapshot, or newest older than 10 minutes). A blocked Prototype touch is logged with its
+  reason; the arm stays and the next away-and-touch is judged again.
+- **Config file not edited.** All values are code defaults under `scanner.oi_context`.
+- `python3 -m analyst.oi_context_8510` prints the days that have recorded snapshots.
+
+Tests: `test_oi_context_8510.py` 15 passed; related Prototype/exit/Stage/backtest/HTML suites 91
+passed; locks 11/11. Whole `analyst` suite: the same 45 failures / 37 errors with and without
+this branch (sandbox: missing StockMojo module, data files, wall-clock tests).
+
+Not verified: never run against real snapshots — both databases are empty here. Thresholds
+(20% dead zone, 10% slope, 40 pts room, 100 pts box, top-3 walls) are first guesses, not fitted
+and not tested. Not in the backtest yet: needs enough recorded snapshot days.

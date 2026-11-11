@@ -3900,6 +3900,82 @@ class QuantTerminalBackend:
             stockmojo_master_enabled=master,
         )
 
+    # ── OPTION-CHAIN CONTEXT (day OI bias, walls) ───────────────────────────
+    def _oi_context_db_paths(self) -> List[Path]:
+        return [ROOT / "data/terminal8510/recording.sqlite3", Path(self.market_db)]
+
+    def oi_context(self, spot: Optional[float] = None, max_age_sec: float = 60.0) -> Dict[str, Any]:
+        """Day OI bias, 30-minute flow and walls from the recorded chain snapshots.
+
+        Cached for a minute. Never raises; with no data the status is NO_DATA
+        and nothing downstream is blocked.
+        """
+        from analyst.oi_context_8510 import compute_context, load_cfg, load_day_snapshots
+
+        cfg = load_cfg(self.scanner_cfg)
+        if not bool(cfg.get("enabled", True)):
+            return {"status": "OFF", "bias": None, "reason": "oi_context disabled"}
+        cache = self.__dict__.get("_oi_context_cache")
+        now_mono = time.monotonic()
+        if cache and (now_mono - cache[0]) < max_age_sec:
+            return cache[1]
+        try:
+            px = float(spot or (self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
+            now = datetime.now(IST)
+            day = now.strftime("%Y-%m-%d")
+            rows = load_day_snapshots(self._oi_context_db_paths(), day)
+            ctx = compute_context(rows, px, cfg, day=day, now_ts=int(now.timestamp()))
+        except Exception as exc:
+            ctx = {"status": "NO_DATA", "bias": None, "reason": f"error: {type(exc).__name__}"}
+        ctx["filter_block"] = bool(cfg.get("filter_block", False))
+        ctx["apply_to"] = list(cfg.get("apply_to") or [])
+        self._oi_context_cache = (now_mono, ctx)
+        # Feed for the Prototype's OI placeholder (used only if that switch is on).
+        try:
+            if ctx.get("status") == "OK" and ctx.get("bias"):
+                self._ema8_prototype_state["oi_bias"] = ctx["bias"]
+            else:
+                self._ema8_prototype_state.pop("oi_bias", None)
+        except Exception:
+            pass
+        return ctx
+
+    def log_signal_oi_context(self, signal_uid: str, sig: Dict[str, Any], ctx: Dict[str, Any],
+                              gates: Dict[str, Any], blocked: bool) -> None:
+        """One row per signal: the OI context and what each gate said. Never raises."""
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS signal_oi_context (
+                        signal_uid TEXT, logged_at TEXT, strategy_id TEXT, direction TEXT, spot REAL,
+                        status TEXT, bias TEXT, call_added REAL, put_added REAL, net_pe_minus_ce REAL,
+                        imbalance_pct REAL, slope_30m REAL, slope_state TEXT,
+                        call_wall_above REAL, put_wall_below REAL, room_up_pts REAL, room_down_pts REAL,
+                        boxed INTEGER, call_volume REAL, put_volume REAL,
+                        gate_direction_pass INTEGER, gate_agreement_pass INTEGER, gate_room_pass INTEGER,
+                        would_block INTEGER, blocked INTEGER, reasons TEXT)"""
+                )
+                conn.execute(
+                    "INSERT INTO signal_oi_context VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        signal_uid, datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S"),
+                        str(sig.get("strategy_id") or ""), str(sig.get("direction") or ""),
+                        ctx.get("spot"), ctx.get("status"), ctx.get("bias"),
+                        ctx.get("call_added"), ctx.get("put_added"), ctx.get("net_pe_minus_ce"),
+                        ctx.get("imbalance_pct"), ctx.get("slope_30m"), ctx.get("slope_state"),
+                        ctx.get("call_wall_above"), ctx.get("put_wall_below"),
+                        ctx.get("room_up_pts"), ctx.get("room_down_pts"),
+                        1 if ctx.get("boxed") else 0, ctx.get("call_volume"), ctx.get("put_volume"),
+                        1 if gates["direction"]["pass"] else 0,
+                        1 if gates["agreement"]["pass"] else 0,
+                        1 if gates["room"]["pass"] else 0,
+                        1 if gates.get("would_block") else 0, 1 if blocked else 0,
+                        " | ".join(gates.get("reasons") or []),
+                    ),
+                )
+        except Exception as exc:
+            log.warning("signal OI context not logged (%s)", type(exc).__name__)
+
     def apply_writer_flow_gates(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         from analyst.writer_flow_gate_8510 import filter_signals_by_writer_gate
 
@@ -5357,6 +5433,7 @@ class QuantTerminalBackend:
             self.get_five_factor_confluence, spot, not is_stale
         )
         payload['trend_capture_live'] = await asyncio.to_thread(self.trend_capture_service().status)
+        payload["oi_context"] = await asyncio.to_thread(self.oi_context, spot)
         self.cached_telemetry = payload
         self._telemetry_last_refresh_mono = time.monotonic()
         return payload
@@ -5688,6 +5765,7 @@ class QuantTerminalBackend:
             "flagship_or_8ema_require_trend": bool(
                 self.scanner_cfg.get("flagship_or_8ema_require_trend", True)
             ),
+            "oi_filter_block": bool(self.scanner_cfg.get("oi_filter_block", False)),
         }
 
     def update_scanner_gate_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -5699,12 +5777,13 @@ class QuantTerminalBackend:
             "bollinger_enabled_flagship",
             "party_switch_enabled",
             "flagship_or_8ema_require_trend",
+            "oi_filter_block",
         }
         prev_bb = self.scanner_cfg.get("bollinger_enabled", True)
         for k, v in (updates or {}).items():
             if k not in allowed:
                 continue
-            if k in ("bollinger_enabled", "party_switch_enabled", "flagship_or_8ema_require_trend"):
+            if k in ("bollinger_enabled", "party_switch_enabled", "flagship_or_8ema_require_trend", "oi_filter_block"):
                 if isinstance(v, bool):
                     self.scanner_cfg[k] = v
                 else:
@@ -6855,6 +6934,34 @@ class QuantTerminalBackend:
                 )
             except Exception as exc:
                 log.warning("signal observation skipped (%s)", type(exc).__name__)
+
+            # Option-chain context: recorded for every signal. It stops a trade
+            # only when the owner has switched blocking on, only for the lanes
+            # listed, and never when there is no data.
+            try:
+                from analyst.oi_context_8510 import evaluate_gates, lane_is_filtered, load_cfg as _oi_cfg
+
+                oi_cfg = _oi_cfg(self.scanner_cfg)
+                if bool(oi_cfg.get("enabled", True)):
+                    oi_ctx = self.oi_context()
+                    oi_gates = evaluate_gates(oi_ctx, sig.get("direction", ""), oi_cfg)
+                    oi_block = bool(
+                        oi_cfg.get("filter_block", False)
+                        and oi_gates["would_block"]
+                        and lane_is_filtered(strat_id, oi_cfg)
+                    )
+                    self.log_signal_oi_context(signal_uid, sig, oi_ctx, oi_gates, oi_block)
+                    sig["oi_context"] = {
+                        "bias": oi_ctx.get("bias"), "would_block": oi_gates["would_block"],
+                        "reasons": oi_gates["reasons"], "blocked": oi_block,
+                    }
+                    if oi_block:
+                        why = "OI filter: " + "; ".join(oi_gates["reasons"])
+                        log.info("[OI FILTER] %s (%s) not taken — %s", sig.get("setup_name"), strat_id, why)
+                        self.mark_signal_outcome(signal_uid, False, skip_reason=why[:200])
+                        continue
+            except Exception as exc:
+                log.warning("OI context skipped (%s)", type(exc).__name__)
 
             # Resolve Contract based on direction and algo_strike_selection
             opt_side = sig["opt_side"]

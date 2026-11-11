@@ -1156,6 +1156,14 @@
                                 <span style="color:#64748b;">(tol 0.0 pts)</span>
                             </div>
                             <div style="margin-top:6px; color:#94a3b8;" id="protoFilterSaveStatus">—</div>
+                            <div style="margin-top:8px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.08);">
+                                <div style="font-weight:700; color:#e2e8f0;">Option-chain context (recorded with every signal)</div>
+                                <div id="oiContextLine" style="margin-top:3px; color:#94a3b8; line-height:1.45;">waiting for option-chain snapshots…</div>
+                                <label style="display:inline-flex; align-items:center; gap:6px; margin-top:5px; cursor:pointer;">
+                                    <input type="checkbox" id="chkOiFilterBlock" onchange="toggleScannerGate('oi_filter_block', this.checked);">
+                                    <span><b>Block 8 EMA Prototype trades that fail the OI gates</b> (OFF = record only, trade as normal)</span>
+                                </label>
+                            </div>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
                             15m <b>close cross</b> 8 EMA → <b>ARM</b> (no entry on cross bar) → price moves <b>2 pts away</b>, then entry on <b>touch</b> (±3) of 8 EMA refreshed every <b>30s</b> on Nifty spot.<br>
@@ -2711,10 +2719,34 @@
                 const cfg = await res.json();
                 const chk = document.getElementById("chkPartySwitch");
                 if (chk && cfg.party_switch_enabled !== undefined) chk.checked = !!cfg.party_switch_enabled;
+                const chkOi = document.getElementById("chkOiFilterBlock");
+                if (chkOi && cfg.oi_filter_block !== undefined) chkOi.checked = !!cfg.oi_filter_block;
                 const chkOr = document.getElementById("chkFlagshipOrTrend");
                 if (chkOr && cfg.flagship_or_8ema_require_trend !== undefined) chkOr.checked = !!cfg.flagship_or_8ema_require_trend;
                 updateGateScopeBadges();
             } catch (e) { console.debug("scanner gates init", e); }
+        }
+
+        function renderOiContext8510(c) {
+            const el = document.getElementById("oiContextLine");
+            if (!el) return;
+            if (!c || c.status !== "OK") {
+                el.textContent = "No reading: " + ((c && c.reason) || "no option-chain snapshots yet") + ". Nothing is blocked.";
+                return;
+            }
+            const lakh = (v) => (Number(v || 0) / 100000).toFixed(1) + "L";
+            const col = c.bias === "CE" ? "#34d399" : (c.bias === "PE" ? "#f87171" : "#fbbf24");
+            const room = (v) => (v === null || v === undefined) ? "—" : Number(v).toFixed(0) + " pts";
+            el.innerHTML =
+                '<span style="color:' + col + '; font-weight:700;">' + c.bias_label + '</span>' +
+                ' · since ' + c.baseline_time + ': calls ' + lakh(c.call_added) + ', puts ' + lakh(c.put_added) +
+                ' (PE−CE ' + lakh(c.net_pe_minus_ce) + ', ' + c.imbalance_pct + '%)' +
+                ' · 30m flow ' + c.slope_state + (c.fading ? ' <b style="color:#fbbf24;">against bias</b>' : '') +
+                '<br>Call wall above ' + (c.call_wall_above ?? "—") + ' (' + room(c.room_up_pts) + ')' +
+                ' · Put wall below ' + (c.put_wall_below ?? "—") + ' (' + room(c.room_down_pts) + ')' +
+                (c.boxed ? ' · <b style="color:#fbbf24;">BOXED (range)</b>' : '') +
+                ' · snapshot ' + c.snapshot_time +
+                ' · mode: ' + (c.filter_block ? '<b style="color:#f87171;">BLOCKING</b>' : 'record only');
         }
 
         async function toggleScannerGate(key, value) {
@@ -4124,6 +4156,7 @@
                 }
 
                 renderDhanOI8510(data.dhan_oi, data.five_factor_confluence);
+                renderOiContext8510(data.oi_context);
                 renderWriterFlowTelemetry(data.stockmojo_live, data.writer_flow_gate);
 
                 if (data.ema_live_cross && data.ema_live_cross.ok) {
