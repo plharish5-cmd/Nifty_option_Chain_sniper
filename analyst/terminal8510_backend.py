@@ -5360,6 +5360,10 @@ class QuantTerminalBackend:
             row["state"] = "PAUSED"
             row["phase"] = "DISABLED"
             row["block_reason"] = "Prototype manually PAUSED in cockpit"
+        elif row.get("state") == "PAUSED":
+            row["state"] = "SCANNING"
+            row["phase"] = "WAITING FOR CLOSE"
+            row["block_reason"] = ""
         row["desc"] = (
             "Close cross 8 EMA · 30s retouch · dual ±40 spot+option · opposite 15m close exit"
         )
