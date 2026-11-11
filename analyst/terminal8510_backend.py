@@ -747,15 +747,31 @@ def flagship_candle_trail_update(
 def flagship_sr_exit_trigger(
     is_long: bool, price: float, sr: Dict[str, Any], proximity: float = 15.0
 ) -> Optional[str]:
+    # Owner rule, 11 Nov 2026: a long secures profit as price reaches
+    # resistance, a short as it reaches support. (This was the other way
+    # round, which closed a long at the support it was bought from.)
     if is_long:
-        keys = ("S1", "S2", "S3")
+        keys = ("R1", "R2", "R3", "R4")
     else:
-        keys = ("R1", "R2", "R3")
+        keys = ("S1", "S2", "S3", "S4")
     for k in keys:
         lv = sr.get(k)
         if lv is not None and abs(price - float(lv)) <= proximity:
             return f"{k}_NEAR_EXIT"
     return None
+
+
+FIXED_SPOT_OR_OPTION_EXIT_PREFIXES = ("EMA8_PROTOTYPE", "STAGE_2", "STAGE_3", "CROSSOVER")
+
+
+def uses_fixed_spot_or_option_exit(strategy_id: Any) -> bool:
+    """Lanes whose exit is: spot moves N points OR the option moves N points,
+    whichever comes first, plus the 15:20 square-off. No Super Trail.
+
+    Owner rule, 11 Nov 2026, for Stage 2, Stage 3 and the 8 EMA Reversal; the
+    8 EMA Prototype already worked this way.
+    """
+    return str(strategy_id or "").upper().startswith(FIXED_SPOT_OR_OPTION_EXIT_PREFIXES)
 
 
 def synthesize_option_premium_from_spot(
@@ -4755,6 +4771,100 @@ class QuantTerminalBackend:
                 log.debug("ema8 prototype intrabar worker: %s", exc)
             await asyncio.sleep(refresh)
 
+    async def start_mj_dynamic_intrabar_worker(self) -> None:
+        """Every 30s: Stage 2 / Stage 3 / 8 EMA Reversal first touch of the dynamic 8 EMA.
+
+        The closed-candle scanner decides whether each setup is armed (4/8
+        stack, BB width, band slope). This worker supplies the touch: the
+        running 15m candle against the 8 EMA recomputed with live spot, the
+        same line the 8 EMA Prototype uses.
+        """
+        from analyst.ema8_prototype_8510 import current_nse_15m_open_ts, ensure_forming_b15_bar
+        from analyst.mj_sir_stage_reversal_8510 import evaluate_mj_sir_four_pack, load_mj_cfg
+        from analyst.nse_spot_candles_8510 import resample_nse_15m
+
+        if getattr(self, "_mj_dyn_worker_started", False):
+            return
+        self._mj_dyn_worker_started = True
+        log.info("Stage 2/3 + Reversal dynamic 8 EMA worker started")
+        while True:
+            refresh = 30.0
+            try:
+                mj_cfg = load_mj_cfg(self.scanner_cfg)
+                refresh = max(5.0, min(float(mj_cfg.get("dynamic_refresh_seconds", 30.0) or 30.0), 60.0))
+                spot = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
+                is_open, _status_txt = self.is_nse_market_open()
+                if (
+                    not bool(mj_cfg.get("enabled", True))
+                    or not bool(mj_cfg.get("dynamic_8ema_entry", True))
+                    or not self.scanner_enabled
+                    or self.kill_switch_active
+                    or not is_open
+                    or spot <= 0
+                ):
+                    await asyncio.sleep(refresh)
+                    continue
+                df1 = await asyncio.to_thread(self._load_spot_1m_for_scanner)
+                if df1.empty or len(df1) < 30:
+                    await asyncio.sleep(refresh)
+                    continue
+                df1 = df1.copy()
+                df1["dt"] = pd.to_datetime(df1["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
+                b15 = resample_nse_15m(df1.set_index("dt"))
+                if b15.empty:
+                    await asyncio.sleep(refresh)
+                    continue
+                now = datetime.now(IST)
+                b15, _ci = ensure_forming_b15_bar(
+                    b15, bar_open_ts=current_nse_15m_open_ts(now), live_spot=spot
+                )
+                # Price range since the previous tick, not the whole candle.
+                tick_high = tick_low = spot
+                last_ts = int(getattr(self, "_mj_dyn_last_tick_ts", 0) or 0)
+                cur_ts = int(time.time())
+                if last_ts > 0:
+                    recent = df1[(df1["ts"] >= last_ts) & (df1["ts"] <= cur_ts)]
+                    if not recent.empty:
+                        tick_high = max(float(recent["high"].max()), spot)
+                        tick_low = min(float(recent["low"].min()), spot)
+                self._mj_dyn_last_tick_ts = cur_ts
+
+                sigs, mj_status = await asyncio.to_thread(
+                    evaluate_mj_sir_four_pack,
+                    b15,
+                    bar_ci=-2,
+                    cfg=mj_cfg,
+                    bb_stage2=self._bollinger_gate_active("stage2"),
+                    bb_stage3=self._bollinger_gate_active("stage3"),
+                    bb_cross=self._bollinger_gate_active("crossover"),
+                    party_switch_enabled=bool(self.scanner_cfg.get("party_switch_enabled", False)),
+                    active_party=self.active_party,
+                    mj_state=self._mj_sir_state,
+                    session_day=now.strftime("%Y-%m-%d"),
+                    gate_meta=self._gate_meta_for_signal,
+                    dynamic={
+                        "live_spot": spot,
+                        "tick_high": tick_high,
+                        "tick_low": tick_low,
+                        "now_hm": now.strftime("%H:%M"),
+                    },
+                )
+                for key in ("stage2_long", "stage3_short", "crossover_reversal"):
+                    if key in mj_status:
+                        prev = dict(self.strategy_status.get(key) or {})
+                        prev.update(mj_status[key])
+                        prev["spec"] = "MJ_SIR_LECTURE_UNDERSTANDING"
+                        self.strategy_status[key] = prev
+                if sigs:
+                    sigs = await asyncio.to_thread(self.apply_writer_flow_gates, sigs)
+                    if sigs:
+                        await self._process_strategy_signals(sigs)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("Stage/Reversal dynamic 8 EMA worker: %s", exc)
+            await asyncio.sleep(refresh)
+
     # ── TELEMETRY & 1-SECOND TICK STREAM ────────────────────────────────────
     async def get_live_telemetry(self) -> Dict[str, Any]:
         """Fetches 1-second live stream for ribbon, ATM widget, matrix, and trend filters."""
@@ -5526,6 +5636,9 @@ class QuantTerminalBackend:
             "bollinger_enabled_crossover": self.scanner_cfg.get("bollinger_enabled_crossover"),
             "bollinger_enabled_flagship": self.scanner_cfg.get("bollinger_enabled_flagship"),
             "party_switch_enabled": bool(self.scanner_cfg.get("party_switch_enabled", True)),
+            "flagship_or_8ema_require_trend": bool(
+                self.scanner_cfg.get("flagship_or_8ema_require_trend", True)
+            ),
         }
 
     def update_scanner_gate_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -5536,12 +5649,13 @@ class QuantTerminalBackend:
             "bollinger_enabled_crossover",
             "bollinger_enabled_flagship",
             "party_switch_enabled",
+            "flagship_or_8ema_require_trend",
         }
         prev_bb = self.scanner_cfg.get("bollinger_enabled", True)
         for k, v in (updates or {}).items():
             if k not in allowed:
                 continue
-            if k in ("bollinger_enabled", "party_switch_enabled"):
+            if k in ("bollinger_enabled", "party_switch_enabled", "flagship_or_8ema_require_trend"):
                 if isinstance(v, bool):
                     self.scanner_cfg[k] = v
                 else:
@@ -5764,10 +5878,15 @@ class QuantTerminalBackend:
         except Exception:
             session_day = datetime.now(IST).strftime("%Y-%m-%d")
 
-        if crossover_event and crossover_event.get("type") == "BULLISH_CROSS":
-            self._mj_sir_state.pop("stage2_fired_key", None)
-        if crossover_event and crossover_event.get("type") == "BEARISH_CROSS":
-            self._mj_sir_state.pop("stage3_fired_key", None)
+        # With dynamic first-touch entries the setup is keyed to the cross
+        # candle itself, so a new cross is a new setup without this reset —
+        # and this reset, which repeats for three candles after a cross, would
+        # let the same setup fire again.
+        if not bool(mj_cfg.get("dynamic_8ema_entry", True)):
+            if crossover_event and crossover_event.get("type") == "BULLISH_CROSS":
+                self._mj_sir_state.pop("stage2_fired_key", None)
+            if crossover_event and crossover_event.get("type") == "BEARISH_CROSS":
+                self._mj_sir_state.pop("stage3_fired_key", None)
 
         if bool(mj_cfg.get("enabled", True)):
             mj_sigs, mj_status = evaluate_mj_sir_four_pack(
@@ -5797,7 +5916,11 @@ class QuantTerminalBackend:
         from analyst.ema8_prototype_8510 import evaluate_ema8_prototype, load_ema8_prototype_cfg
 
         proto_cfg = load_ema8_prototype_cfg(self.scanner_cfg)
-        if bool(proto_cfg.get("enabled", True)):
+        if getattr(self, "_historical_eval", False):
+            # Backtest / replay pass over old candles: the live prototype
+            # state, its open position, its log and its card are not touched.
+            pass
+        elif bool(proto_cfg.get("enabled", True)):
             self._sync_open_ema8_prototype_position()
             proto_sigs, proto_st = evaluate_ema8_prototype(
                 b15,
@@ -5865,7 +5988,13 @@ class QuantTerminalBackend:
         self.strategy_status["flagship_1h"]["state"] = "SCANNING"
         self.strategy_status["flagship_1h"]["armed"] = False
 
-        if len(b60) >= 5 and len(b15) >= 3 and (not bar_hm or bar_hm < no_entry_after):
+        no_entry_before = str(scfg.get("flagship_no_entry_before", "09:30") or "")
+        if (
+            len(b60) >= 5
+            and len(b15) >= 3
+            and (not bar_hm or bar_hm < no_entry_after)
+            and (not bar_hm or not no_entry_before or bar_hm >= no_entry_before)
+        ):
             pa_long, pa_short = detect_flagship_15m_confirmation(b15, conf_idx=-2)
             conf_i = len(b15) - 2
             co = float(b15["open"].iloc[conf_i])
@@ -5997,11 +6126,17 @@ class QuantTerminalBackend:
             or_on = bool(scfg.get("flagship_or_8ema_enabled", True))
             or_touch = float(scfg.get("flagship_or_8ema_touch_pts", 10.0))
             or_below = float(scfg.get("flagship_or_8ema_below_pts", 10.0))
+            # Cockpit option: the OR 8 EMA entry must agree with the daily and
+            # 1H trend (long only when both are up, short only when both down).
+            or_trend = bool(scfg.get("flagship_or_8ema_require_trend", True))
+            or_long_ok = (not or_trend) or (daily_bias == "BULLISH" and h1_trend == "UP")
+            or_short_ok = (not or_trend) or (daily_bias == "BEARISH" and h1_trend == "DOWN")
             if or_on and len(b60) >= abs(bar_ci) + 2:
                 _, e8h_series = ema4_ema8(b60["close"])
                 e8h = float(e8h_series.iloc[bar_ci])
                 if (
                     not flagship_long_fired
+                    and or_long_ok
                     and pa_long
                     and e8h > 0
                     and _h1_came_from_above(b60, bar_ci, e8h, or_touch)
@@ -6031,6 +6166,7 @@ class QuantTerminalBackend:
 
                 if (
                     not flagship_short_fired
+                    and or_short_ok
                     and pa_short
                     and e8h > 0
                     and _h1_well_below_8ema(b60, bar_ci, e8h, or_below)
@@ -6741,7 +6877,7 @@ class QuantTerminalBackend:
                     "spot_target_level": round(spot_entry + tgt_pts_sig, 2) if is_long else round(spot_entry - tgt_pts_sig, 2),
                     "spot_stop_level": round(spot_entry - sl_pts_sig, 2) if is_long else round(spot_entry + sl_pts_sig, 2),
                 }
-            elif is_proto_sig and spot_entry > 0:
+            elif (is_proto_sig or uses_fixed_spot_or_option_exit(strat_id)) and spot_entry > 0:
                 spot_ctx = {
                     "strategy_id": sig.get("strategy_id"),
                     "spot_entry": spot_entry,
@@ -7028,7 +7164,9 @@ class QuantTerminalBackend:
                 pullback_exit_level = float(p.get("pullback_exit_level") or 0.0)
 
                 is_flagship_pos = "FLAGSHIP" in str(p.get("strategy_id") or "").upper()
-                is_proto_pos = str(p.get("strategy_id") or "").upper().startswith("EMA8_PROTOTYPE")
+                # "proto" here means the fixed spot-or-option exit, which Stage 2,
+                # Stage 3 and the Reversal now share with the 8 EMA Prototype.
+                is_proto_pos = uses_fixed_spot_or_option_exit(p.get("strategy_id"))
                 trail_sl_enabled = bool(p.get("trail_sl_enabled", 1)) and not is_flagship_pos
                 trail_target_enabled = bool(p.get("trail_target_enabled", 1)) and not is_flagship_pos
                 trail_act = float(p.get("trail_activation_pts") or self.super_trail_cfg.get("trail_activation_profit_pts", 15.0))
@@ -7114,7 +7252,16 @@ class QuantTerminalBackend:
                 if is_flagship_pos and spot_idx > 0:
                     spot_entry = float(p.get("spot_entry") or 0.0)
                     spot_sl = float(p.get("spot_stop_level") or 0.0)
-                    is_long_spot = str(p.get("side", "BUY")).upper() == "BUY"
+                    # Every option is bought, so "BUY" says nothing about
+                    # direction: a PE is a short on spot.
+                    from analyst.ema8_prototype_8510 import prototype_spot_is_long
+
+                    is_long_spot = prototype_spot_is_long(
+                        spot_entry,
+                        float(p.get("spot_target_level") or 0.0),
+                        strategy_id=str(p.get("strategy_id") or ""),
+                        symbol=str(p.get("symbol") or ""),
+                    )
                     if spot_sl > 0:
                         bar15 = self._latest_closed_15m_bar()
                         if bar15:
@@ -8200,7 +8347,10 @@ class QuantTerminalBackend:
                 or "8 EMA PROTOTYPE" in str(strategy_name or "").upper()
             )
 
-            if is_proto_order:
+            fixed_exit_order = is_proto_order or uses_fixed_spot_or_option_exit(
+                (spot_context or {}).get("strategy_id") or strategy_id
+            )
+            if fixed_exit_order:
                 opt_target_pts = float(target_pts)
                 opt_sl_pts = float(sl_pts)
             else:
@@ -8391,7 +8541,7 @@ class QuantTerminalBackend:
                 base_fill = fill_price if (mode in ("ALGO_LIVE_ONLY", "BOTH") and order_status == "FILLED") else paper_fill_price
                 is_flagship_pos = "FLAGSHIP" in str((spot_context or {}).get("strategy_id") or strategy_name).upper()
                 # Initialize super trail levels (premium); FLAGSHIP uses spot trail in get_active_positions.
-                if is_proto_order:
+                if fixed_exit_order:
                     init_sl = round_to_tick(base_fill - float(opt_sl_pts), 0.05)
                     init_target = round_to_tick(base_fill + float(opt_target_pts), 0.05)
                 else:
@@ -8403,12 +8553,12 @@ class QuantTerminalBackend:
                     )
                 trail_sl_on = (
                     0
-                    if (is_flagship_pos or is_proto_order)
+                    if (is_flagship_pos or fixed_exit_order)
                     else (1 if self.super_trail_cfg.get("trailing_sl_enabled", True) else 0)
                 )
                 trail_tgt_on = (
                     0
-                    if (is_flagship_pos or is_proto_order)
+                    if (is_flagship_pos or fixed_exit_order)
                     else (1 if self.super_trail_cfg.get("trailing_target_enabled", True) else 0)
                 )
 
@@ -8955,17 +9105,34 @@ class QuantTerminalBackend:
         if len(sub) < 120:
             return []
         ohlc = sub.set_index("dt")[["open", "high", "low", "close", "volume"]].copy()
-        prev_party = self.active_party
+        # This runs the live scanner function over old candles. Everything it
+        # writes to is swapped for a throwaway copy first and put back after,
+        # so a backtest or replay cannot change the live desk: not the
+        # party side, the Stage/Reversal memory, the crossover record, or the
+        # cockpit cards. Prototype evaluation is skipped via _historical_eval.
+        import copy as _copy
+
+        saved = {
+            "active_party": self.active_party,
+            "_mj_sir_state": self._mj_sir_state,
+            "strategy_status": self.strategy_status,
+            "last_crossover_event": getattr(self, "last_crossover_event", None),
+            "_historical_eval": getattr(self, "_historical_eval", False),
+        }
         self.active_party = "NEUTRAL"
+        self._mj_sir_state = {}
+        self.strategy_status = _copy.deepcopy(self.strategy_status)
+        self._historical_eval = True
         prev_level = log.level
         log.setLevel(logging.ERROR)
         try:
             sigs = self.evaluate_candle_dataframe(ohlc, spot_price=float(bar_close))
+            sr = dict(self.strategy_status.get("daily_sr", {}).get("levels") or {})
         finally:
             log.setLevel(prev_level)
-            self.active_party = prev_party
+            for name, value in saved.items():
+                setattr(self, name, value)
         out: List[Tuple[str, str, str, float, float, Dict[str, Any]]] = []
-        sr = dict(self.strategy_status.get("daily_sr", {}).get("levels") or {})
         for s in sigs:
             sid = str(s.get("strategy_id", "")).upper()
             if "FLAGSHIP" not in sid:
@@ -9060,11 +9227,16 @@ class QuantTerminalBackend:
                 "total_net_pnl_inr": 0.0, "max_drawdown_inr": 0.0, "expectancy_pts": 0.0,
                 "expectancy_inr": 0.0, "profit_factor": 0.0,
             }
-        wins_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if n > 0]
-        loss_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if n <= 0]
+        # Backtested rows carry no rupee figure (it is 0 by design), so they
+        # are judged on points. Before, every one of them counted as a loss.
+        def _is_win(pts: float, inr: float) -> bool:
+            return inr > 0 if inr != 0 else pts > 0
+
+        wins_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if _is_win(p, n)]
+        loss_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if not _is_win(p, n)]
         wins_inr = [n for n in net_inr_list if n > 0]
         loss_inr = [abs(n) for n in net_inr_list if n <= 0]
-        wr = round((len(wins_inr) / total) * 100.0, 1)
+        wr = round((len(wins_pts) / total) * 100.0, 1)
         avg_w = round(float(np.mean(wins_pts)), 2) if wins_pts else 0.0
         avg_l = round(float(np.mean(loss_pts)), 2) if loss_pts else 0.0
         tot_net = round(float(sum(net_inr_list)), 2)
@@ -9613,11 +9785,16 @@ class QuantTerminalBackend:
                 "total_net_pnl_inr": 0.0, "max_drawdown_inr": 0.0, "expectancy_pts": 0.0,
                 "expectancy_inr": 0.0, "profit_factor": 0.0,
             }
-        wins_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if n > 0]
-        loss_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if n <= 0]
+        # Backtested rows carry no rupee figure (it is 0 by design), so they
+        # are judged on points. Before, every one of them counted as a loss.
+        def _is_win(pts: float, inr: float) -> bool:
+            return inr > 0 if inr != 0 else pts > 0
+
+        wins_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if _is_win(p, n)]
+        loss_pts = [p for p, n in zip(pnl_pts_list, net_inr_list) if not _is_win(p, n)]
         wins_inr = [n for n in net_inr_list if n > 0]
         loss_inr = [abs(n) for n in net_inr_list if n <= 0]
-        wr = round((len(wins_inr) / total) * 100.0, 1)
+        wr = round((len(wins_pts) / total) * 100.0, 1)
         avg_w = round(float(np.mean(wins_pts)), 2) if wins_pts else 0.0
         avg_l = round(float(np.mean(loss_pts)), 2) if loss_pts else 0.0
         tot_net = round(float(sum(net_inr_list)), 2)

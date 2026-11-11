@@ -1044,7 +1044,7 @@
                         <span class="strat-money-badge paper-only" title="MJ Sir lecture spec — paper only until validated.">MJ Sir · Paper only</span>
                         <div id="stratBlock_stage2" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            UBB Up 2 bars · 4&gt;8 · first touch 8 EMA · BB &gt; 60 · Tgt/SL 40.<br>
+                            UBB Up 2 bars · 4&gt;8 · <b>first touch</b> of dynamic 8 EMA (30s, ±3) · BB &gt; 60 · no entry before 09:30.<br>Tgt/SL 40 spot <i>or</i> 40 option pts (whichever first) · 15:20 square-off.<br>
                             <span style="color:#64748b;">BB gate toggle applies UBB rules only.</span>
                         </div>
                     </div>
@@ -1058,7 +1058,7 @@
                         <span class="strat-money-badge paper-only" title="MJ Sir lecture spec — paper only until validated.">MJ Sir · Paper only</span>
                         <div id="stratBlock_stage3" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            LBB Down 2 bars · 4&lt;8 · first touch 8 EMA · BB &gt; 60 · Tgt/SL 40.
+                            LBB Down 2 bars · 4&lt;8 · <b>first touch</b> of dynamic 8 EMA (30s, ±3) · BB &gt; 60 · no entry before 09:30.<br>Tgt/SL 40 spot <i>or</i> 40 option pts (whichever first) · 15:20 square-off.
                         </div>
                     </div>
 
@@ -1071,7 +1071,7 @@
                         <span class="strat-money-badge paper-only" title="MJ Sir fixed 8 EMA after cross — paper only.">MJ Sir · Paper only</span>
                         <div id="stratBlock_crossover" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            Cross 4/8 · wait 2 bars · touch <b>fixed</b> 8 EMA within 2 bars · Tgt/SL 20.
+                            Cross 4/8 · wait 2 bars · touch <b>dynamic</b> 8 EMA (30s, ±3) within 2 bars · no entry before 09:30.<br>Tgt/SL 20 spot <i>or</i> 20 option pts (whichever first) · 15:20 square-off.
                         </div>
                     </div>
 
@@ -1178,7 +1178,12 @@
                         <span class="strat-money-badge live-eligible" title="Routes to Dhan when LIVE TRADING is armed (flagship daily caps apply).">Real money eligible</span>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
                             Daily S/R + 1H swing zones + closed 15m PA.<br>
-                            Tgt +40 / SL -40 · Candle trail · S/R exits · 15:20 square-off
+                            Tgt +40 / SL -40 · Candle trail · 15:20 square-off · no entry before 09:30.<br>
+                            S/R exit: long books profit near R1–R4, short near S1–S4.<br>
+                            <label style="display:inline-flex; align-items:center; gap:6px; margin-top:4px; cursor:pointer;">
+                                <input type="checkbox" id="chkFlagshipOrTrend" checked onchange="toggleScannerGate('flagship_or_8ema_require_trend', this.checked);">
+                                <span><b>OR 8 EMA entry must agree with Daily + 1H trend</b> (long only when both up, short only when both down)</span>
+                            </label>
                         </div>
                     </div>
                     <!-- Strategy 5: Ribbon Scalp (Matrix Tier 3 — paper) -->
@@ -2705,6 +2710,8 @@
                 const cfg = await res.json();
                 const chk = document.getElementById("chkPartySwitch");
                 if (chk && cfg.party_switch_enabled !== undefined) chk.checked = !!cfg.party_switch_enabled;
+                const chkOr = document.getElementById("chkFlagshipOrTrend");
+                if (chkOr && cfg.flagship_or_8ema_require_trend !== undefined) chkOr.checked = !!cfg.flagship_or_8ema_require_trend;
                 updateGateScopeBadges();
             } catch (e) { console.debug("scanner gates init", e); }
         }

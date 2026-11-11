@@ -628,3 +628,72 @@ Open / needs Harish:
   not in the task registry.
 - AGY moved `fix/8510-algo-v206` itself to `f89f950`.
 - Same-tick "away then touch" in `check_retouch` is unchanged.
+
+---
+
+## 2026-11-11 · Claude · `claude/four-algo-corrections`
+Tag: pre-claude-four-algo-corrections → post-claude-four-algo-corrections
+Branched from: `claude/ema8-proto-live-exit-fixes` @ `6686cac` (contains AGY Phases 1–7 and the live-exit fixes)
+
+Harish answered the questions in `claude/Four_Algo_And_Backtest_Review_2026-11-11.md` (project doc)
+and asked for the corrections. These are **his rules of 11 Nov 2026**, not agent preferences.
+
+What changed:
+- **Stage 2 / Stage 3: first touch of the dynamic 8 EMA.** The closed-candle scanner now only
+  reports whether the setup is armed. A new 30-second worker
+  (`start_mj_dynamic_intrabar_worker`, started in `engine_8510_live.py`) reads the running candle
+  against the 8 EMA recomputed with live spot and fires on the first touch within 3 points.
+  One entry per 4/8 stack (keyed to the cross candle). No entry before 09:30.
+- **8 EMA Reversal:** touches the dynamic 8 EMA (not the fixed value at the cross), same 3 points,
+  same wait-2 / window-2. The ribbon rule no longer blocks it.
+- **Exits for Stage 2, Stage 3 and Reversal:** spot ±N or option ±N, whichever first (40 for
+  Stage, 20 for Reversal), plus 15:20. No Super Trail. Same block the Prototype uses
+  (`uses_fixed_spot_or_option_exit`). The Dhan companion stop is now fill − N flat.
+- **Flagship:** direction comes from the trade, not from "BUY" (a PE was treated as a long and
+  closed at once). S/R exit: long near R1–R4, short near S1–S4 (was the reverse). No entry before
+  09:30. New cockpit option `flagship_or_8ema_require_trend` (default ON): the OR 8 EMA entry
+  must agree with the daily and 1H trend.
+- **Backtest / replay is read-only.** The per-candle pass over old data now runs on throwaway
+  copies of the party side, Stage/Reversal memory, crossover record and cockpit cards, and skips
+  the Prototype entirely. Before, it could square off a real open Prototype position.
+- **Backtest summary:** backtested rows are scored on points. Before, every one counted as a loss.
+- Cockpit card text updated for all four.
+
+Config keys touched: none written by this branch. New keys read with defaults:
+`scanner.mj_sir_lecture.{dynamic_8ema_entry=true, dynamic_touch_tol_pts=3.0,
+no_entry_before_hm="09:30", reversal_ribbon_block=false, dynamic_refresh_seconds=30}`,
+`scanner.flagship_no_entry_before="09:30"`, `scanner.flagship_or_8ema_require_trend=true`
+(the last one is saved by the existing `/api/scanner/gates` when the cockpit box is changed).
+
+Tests changed because the owner's rule changed (reported, not loosened):
+- `test_phase2_option_points_8510.py::test_non_prototype_buy_delta_scaled` used Stage 2 as the
+  "still delta-scaled" control; it now uses the 1H 8-EMA homework lane.
+- `test_super_trail_8510.py::test_flagship_trail_and_sr_exit_helpers` pinned the reversed S/R exit.
+
+Baseline, same sandbox, `pytest analyst --continue-on-collection-errors`:
+- `6686cac`: 44 failed / 530 passed / 12 skipped / 37 errors.
+- This branch (new file excluded): same failing set. Differences are sandbox-only
+  (`test_nse_spot_candles` ×2 and `test_classifier_port_evidence` depend on which checkout has
+  local data / node_modules).
+- New `test_four_algo_corrections_8510.py`: 22/22. Locks 11/11. Immutable-lock + HTML: 14/14.
+- Note: AGY's `test_phase5_eod_8510` (3) and one `test_phase7` test fail when run after 15:20 IST
+  because they read the wall clock. They pass before 15:20. Same on `6686cac`.
+Compared against: my own run of `6686cac` minutes earlier.
+
+NOT done — still open:
+- **Backtest of Stage 2/3/Reversal still uses the old `_backtest_legacy_cand_signals` rules**
+  and the old candle-trail exit. It does not describe the new live rules. Do not use its numbers.
+- 1H 8 EMA is not yet dynamic (Flagship OR branch and the H1 homework lane still read the last
+  closed 1H candle).
+- Flagship: doji stop has no minimum; the OR branch books entry at the candle high/low; 1H trend
+  reads the forming hour. The +40 spot target is still not checked live.
+- Stage/Reversal memory is in RAM; a restart forgets "first touch taken".
+- Overlapping backtest trades; band maths (sample vs population) differ between live and backtest.
+- "Paper only" lanes still send a real BUY when the desk is armed. Not changed: Harish's answer
+  was that paper must always run alongside live, which it already does.
+- `_compute_side_summary` is defined twice in the backend; both copies were fixed.
+- Nothing was run against Dhan or the desk database. Not deployed, not restarted, not merged.
+
+Correction to my earlier review: I wrote that the scanner re-reads the same closed 15m candle on
+every 3-second pass. It does not — `_pending_closed_15m_open_ts` evaluates each closed candle
+once. The "re-arming on every pass" and "card flicker" points were wrong.

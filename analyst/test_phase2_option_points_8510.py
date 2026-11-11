@@ -219,8 +219,11 @@ def test_non_prototype_buy_delta_scaled(tmp_path: Path):
         res = await b.execute_order_with_chaser(
             contract=contract,
             side="BUY",
-            strategy_name="Stage 2 8 EMA Support",
-            strategy_id="STAGE_2_LONG",
+            # Owner rule 11 Nov 2026: Stage 2/3 and the Reversal now use flat
+            # option points like the Prototype, so the delta-scaled control
+            # here is a lane that still scales (1H 8-EMA homework).
+            strategy_name="1H 8-EMA Support + 15m PA (Homework)",
+            strategy_id="H1_8EMA_SUPPORT_LONG",
             target_pts=40.0,
             sl_pts=40.0,
             is_algo_trade=True,

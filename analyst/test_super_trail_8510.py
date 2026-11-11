@@ -883,8 +883,12 @@ def test_flagship_trail_and_sr_exit_helpers():
   stop2 = flagship_candle_trail_update(True, stop, 103, 104, 102, 102.5)
   assert stop2 == 100.5
   sr = {"S1": 99.0, "R1": 115.0}
-  assert flagship_sr_exit_trigger(True, 99.5, sr, proximity=15.0) == "S1_NEAR_EXIT"
-  assert flagship_sr_exit_trigger(False, 114.0, sr, proximity=15.0) == "R1_NEAR_EXIT"
+  # Owner rule 11 Nov 2026: a long books profit near resistance, a short near
+  # support. The earlier assertions pinned the reverse.
+  assert flagship_sr_exit_trigger(True, 114.0, sr, proximity=15.0) == "R1_NEAR_EXIT"
+  assert flagship_sr_exit_trigger(False, 99.5, sr, proximity=15.0) == "S1_NEAR_EXIT"
+  assert flagship_sr_exit_trigger(True, 99.5, sr, proximity=15.0) is None
+  assert flagship_sr_exit_trigger(False, 120.0, sr, proximity=15.0) is None  # 21 from S1
 
 
 def test_backtest_synthesize_option_tagging():

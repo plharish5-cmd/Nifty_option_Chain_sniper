@@ -33,6 +33,14 @@ DEFAULT_MJ_CFG: Dict[str, Any] = {
     "reversal_lookback_bars": 8,
     "sr_touch_tol_pts": 25.0,
     "h1_ema_resist_tol_pts": 12.0,
+    # Owner rules, 11 Nov 2026: entries are taken on the FIRST touch of the
+    # 8 EMA as it moves with the running candle (recomputed every 30s, same
+    # as the 8 EMA Prototype), within a few points, and not before 09:30.
+    "dynamic_8ema_entry": True,
+    "dynamic_touch_tol_pts": 3.0,
+    "no_entry_before_hm": "09:30",
+    # The 4-8 "attached" (ribbon) block does not apply to the Reversal.
+    "reversal_ribbon_block": False,
 }
 
 
@@ -152,6 +160,24 @@ def _status(
     return row
 
 
+def _last_stack_flip(e4: pd.Series, e8: pd.Series, bullish: bool, end_i: int) -> Optional[int]:
+    """Last candle at or before end_i on which the 4 EMA moved to this side of the 8 EMA."""
+    for i in range(end_i, 0, -1):
+        if bullish and e4.iloc[i - 1] <= e8.iloc[i - 1] and e4.iloc[i] > e8.iloc[i]:
+            return i
+        if not bullish and e4.iloc[i - 1] >= e8.iloc[i - 1] and e4.iloc[i] < e8.iloc[i]:
+            return i
+    return None
+
+
+def dynamic_8ema(b15: pd.DataFrame, live_spot: float) -> Tuple[float, float]:
+    """(4 EMA, 8 EMA) on the running candle with its close set to live spot."""
+    close = b15["close"].astype(float).copy()
+    close.iloc[-1] = float(live_spot)
+    e4d, e8d = ema4_ema8(close)
+    return float(e4d.iloc[-1]), float(e8d.iloc[-1])
+
+
 def _find_cross_index(
     e4: pd.Series, e8: pd.Series, close: pd.Series, bullish: bool, end_i: int
 ) -> Optional[int]:
@@ -181,9 +207,17 @@ def evaluate_mj_sir_four_pack(
     daily_sr: Optional[Dict[str, Any]] = None,
     b60: Optional[pd.DataFrame] = None,
     gate_meta: Optional[Callable[[str], Dict[str, Any]]] = None,
+    dynamic: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
     """
   Returns (signals, strategy_status_updates for stage2, stage3, crossover_reversal).
+
+    With cfg["dynamic_8ema_entry"] on, the preset conditions (4/8 stack, BB
+    width, band slope) are read on the last closed candle at bar_ci, and the
+    touch is read on the running candle b15.iloc[-1] against the 8 EMA
+    recomputed with live spot. `dynamic` carries that tick:
+    {"live_spot", "tick_high", "tick_low", "now_hm"}. A call without it (the
+    closed-candle scanner) reports status only and never fires.
     """
     gate_meta = gate_meta or (lambda _k: {})
     signals: List[Dict[str, Any]] = []
@@ -220,18 +254,59 @@ def evaluate_mj_sir_four_pack(
 
     status: Dict[str, Dict[str, Any]] = {}
 
-    def common_blocks() -> Optional[str]:
+    def common_blocks(ribbon: bool = True) -> Optional[str]:
         if width_val < bb_min:
             return "NO TRADE — BB width < 60 pts"
-        if ribbon_attached(e4_val, e8_val, atr_val, cfg):
+        if ribbon and ribbon_attached(e4_val, e8_val, atr_val, cfg):
             return "NO TRADE — 4-8 EMA attached (ribbon)"
         return None
 
+    # ── Touch source: running candle vs dynamic 8 EMA, or the closed candle ──
+    dyn_on = bool(cfg.get("dynamic_8ema_entry", True))
+    dtol = float(cfg.get("dynamic_touch_tol_pts", 3.0))
+    no_before = str(cfg.get("no_entry_before_hm", "09:30") or "")
+    wait_msg = "NO TRADE — Price did not touch 8 EMA"
+    early = False
+    e8_dyn = e8_val
+    entry_px = close_15
+    if dyn_on and dynamic and float(dynamic.get("live_spot") or 0.0) > 0:
+        spot = float(dynamic["live_spot"])
+        t_hi = float(dynamic.get("tick_high") or spot)
+        t_lo = float(dynamic.get("tick_low") or spot)
+        _e4_dyn, e8_dyn = dynamic_8ema(b15, spot)
+        # Reached the line from the trade's side and has not gone through it.
+        touch_long = t_lo <= e8_dyn + dtol and spot >= e8_dyn - dtol
+        touch_short = t_hi >= e8_dyn - dtol and spot <= e8_dyn + dtol
+        entry_px = spot
+        early = bool(no_before) and str(dynamic.get("now_hm") or "") < no_before
+        wait_msg = f"NO TRADE — Waiting for first touch of dynamic 8 EMA {e8_dyn:.1f}"
+    elif dyn_on:
+        touch_long = touch_short = False
+        wait_msg = "NO TRADE — Waiting for first touch of dynamic 8 EMA (30s)"
+    else:
+        touch_long = touch_8ema_support(low_15, close_15, e8_val, tol)
+        touch_short = touch_8ema_resistance(high_15, close_15, e8_val, tol)
+    early_msg = f"NO TRADE — No entries before {no_before}"
+
+    def _setup_key(tag: str, bullish: bool) -> str:
+        if not dyn_on:
+            return f"{session_day}:{tag}:{round(e8_val, 1)}"
+        # One setup per 4/8 stack: from the candle the 4 EMA moved to this side
+        # of the 8 EMA until it moves back. The first touch uses it up.
+        flip = _last_stack_flip(e4, e8, bullish, i)
+        return f"{session_day}:{tag}:{b15.index[flip] if flip is not None else 'session'}"
+
+    taken_msg = (
+        "NO TRADE — First touch already taken for this setup"
+        if dyn_on
+        else "NO TRADE — Second touch on same 8 EMA setup"
+    )
+
     # ── STAGE 2 ─────────────────────────────────────────────────────────────
     s2_block = common_blocks()
-    setup_key_s2 = f"{session_day}:S2:{round(e8_val, 1)}"
+    setup_key_s2 = _setup_key("S2", True)
     if mj_state.get("stage2_fired_key") == setup_key_s2:
-        s2_block = s2_block or "NO TRADE — Second touch on same 8 EMA setup"
+        s2_block = s2_block or taken_msg
 
     if e4_val <= e8_val:
         status["stage2_long"] = _status("BLOCKED_MA_STACK", block_reason="NO TRADE — 4 EMA not above 8 EMA")
@@ -248,11 +323,13 @@ def evaluate_mj_sir_four_pack(
                 ubb_block = "NO TRADE — UBB downward (buyers weak)"
         if party_switch_enabled and active_party == "BEARISH":
             ubb_block = ubb_block or "NO TRADE — Party-Switch BEARISH blocks CE"
-        if not touch_8ema_support(low_15, close_15, e8_val, tol):
+        if early:
+            status["stage2_long"] = _status("NO_TRADE", block_reason=ubb_block or early_msg)
+        elif not touch_long:
             status["stage2_long"] = _status(
                 "ARMED" if not ubb_block else "NO_TRADE",
                 armed=not bool(ubb_block),
-                block_reason=ubb_block or "NO TRADE — Price did not touch 8 EMA",
+                block_reason=ubb_block or wait_msg,
             )
         elif ubb_block:
             status["stage2_long"] = _status("NO_TRADE", block_reason=ubb_block)
@@ -265,13 +342,16 @@ def evaluate_mj_sir_four_pack(
                 "opt_side": "CE",
                 "target_pts": float(cfg["stage_target_pts"]),
                 "sl_pts": float(cfg["stage_sl_pts"]),
-                "index_price": close_15,
+                "index_price": entry_px,
                 "conviction": "MJ_SIR",
                 "paper_only": True,
                 "mj_sir_paper_only": True,
+                "dynamic_e8_at_entry": round(e8_dyn, 2),
                 "details": (
-                    f"{SPEC_TAG} | UBB up 2 bars | 4>{e4_val:.1f}>{e8_val:.1f} | "
-                    f"touch low {low_15:.1f} | BB width {width_val:.1f}"
+                    f"{SPEC_TAG} | 4>{e4_val:.1f}>{e8_val:.1f} | "
+                    + (f"first touch dynamic 8EMA {e8_dyn:.1f} @ spot {entry_px:.1f}" if dyn_on
+                       else f"touch low {low_15:.1f}")
+                    + f" | BB width {width_val:.1f}"
                 ),
             }
             sig.update(gate_meta("stage2"))
@@ -280,9 +360,9 @@ def evaluate_mj_sir_four_pack(
 
     # ── STAGE 3 ─────────────────────────────────────────────────────────────
     s3_block = common_blocks()
-    setup_key_s3 = f"{session_day}:S3:{round(e8_val, 1)}"
+    setup_key_s3 = _setup_key("S3", False)
     if mj_state.get("stage3_fired_key") == setup_key_s3:
-        s3_block = s3_block or "NO TRADE — Second touch on same 8 EMA setup"
+        s3_block = s3_block or taken_msg
 
     if e4_val >= e8_val:
         status["stage3_short"] = _status("BLOCKED_MA_STACK", block_reason="NO TRADE — 4 EMA not below 8 EMA")
@@ -299,11 +379,13 @@ def evaluate_mj_sir_four_pack(
                 lbb_block = "NO TRADE — LBB upward (sellers weak)"
         if party_switch_enabled and active_party == "BULLISH":
             lbb_block = lbb_block or "NO TRADE — Party-Switch BULLISH blocks PE"
-        if not touch_8ema_resistance(high_15, close_15, e8_val, tol):
+        if early:
+            status["stage3_short"] = _status("NO_TRADE", block_reason=lbb_block or early_msg)
+        elif not touch_short:
             status["stage3_short"] = _status(
                 "ARMED" if not lbb_block else "NO_TRADE",
                 armed=not bool(lbb_block),
-                block_reason=lbb_block or "NO TRADE — Price did not touch 8 EMA",
+                block_reason=lbb_block or wait_msg,
             )
         elif lbb_block:
             status["stage3_short"] = _status("NO_TRADE", block_reason=lbb_block)
@@ -316,13 +398,16 @@ def evaluate_mj_sir_four_pack(
                 "opt_side": "PE",
                 "target_pts": float(cfg["stage_target_pts"]),
                 "sl_pts": float(cfg["stage_sl_pts"]),
-                "index_price": close_15,
+                "index_price": entry_px,
                 "conviction": "MJ_SIR",
                 "paper_only": True,
                 "mj_sir_paper_only": True,
+                "dynamic_e8_at_entry": round(e8_dyn, 2),
                 "details": (
-                    f"{SPEC_TAG} | LBB down 2 bars | 4<{e4_val:.1f}<{e8_val:.1f} | "
-                    f"touch high {high_15:.1f} | BB width {width_val:.1f}"
+                    f"{SPEC_TAG} | 4<{e4_val:.1f}<{e8_val:.1f} | "
+                    + (f"first touch dynamic 8EMA {e8_dyn:.1f} @ spot {entry_px:.1f}" if dyn_on
+                       else f"touch high {high_15:.1f}")
+                    + f" | BB width {width_val:.1f}"
                 ),
             }
             sig.update(gate_meta("stage3"))
@@ -337,8 +422,10 @@ def evaluate_mj_sir_four_pack(
     cross_up = _find_cross_index(e4, e8, b15["close"], True, i)
     cross_dn = _find_cross_index(e4, e8, b15["close"], False, i)
 
-    rev_block = common_blocks()
+    rev_block = common_blocks(ribbon=bool(cfg.get("reversal_ribbon_block", False)))
     rev_status = _status("SCANNING", block_reason=rev_block or "")
+    # Candle on which the touch is looked for: the running one when dynamic.
+    t_i = (n - 1) if dyn_on else i
 
     def eval_reversal(bullish: bool, cross_i: Optional[int]) -> Optional[Dict[str, Any]]:
         if cross_i is None:
@@ -351,7 +438,7 @@ def evaluate_mj_sir_four_pack(
             return None
         if not bullish and fixed_e4 >= fixed_e8:
             return None
-        age = i - cross_i
+        age = t_i - cross_i
         if age < wait_bars:
             return {
                 "pending": True,
@@ -360,10 +447,12 @@ def evaluate_mj_sir_four_pack(
             }
         win_start = cross_i + wait_bars
         win_end = cross_i + wait_bars + touch_win - 1
-        if i < win_start:
+        if t_i < win_start:
             return {"pending": True, "reason": "NO TRADE — Before reversal touch window", "fixed_e8": fixed_e8}
-        if i > win_end:
-            return {"pending": False, "reason": "NO TRADE — Missed fixed 8 EMA touch window", "fixed_e8": fixed_e8}
+        if t_i > win_end:
+            return {"pending": False, "reason": "NO TRADE — Missed 8 EMA touch window", "fixed_e8": fixed_e8}
+        if early:
+            return {"pending": True, "reason": early_msg, "fixed_e8": fixed_e8}
         if rev_block:
             return {"pending": False, "reason": rev_block, "fixed_e8": fixed_e8}
         if bb_cross and bullish and not ubb_not_down_recent(ubb, bar_ci, slope_tol):
@@ -374,14 +463,19 @@ def evaluate_mj_sir_four_pack(
             return {"pending": False, "reason": "NO TRADE — Party-Switch BEARISH", "fixed_e8": fixed_e8}
         if party_switch_enabled and not bullish and active_party == "BULLISH":
             return {"pending": False, "reason": "NO TRADE — Party-Switch BULLISH", "fixed_e8": fixed_e8}
-        touched = touch_fixed_level(low_15, high_15, fixed_e8, tol, bullish)
+        if dyn_on:
+            touched = touch_long if bullish else touch_short
+            miss = wait_msg
+        else:
+            touched = touch_fixed_level(low_15, high_15, fixed_e8, tol, bullish)
+            miss = f"NO TRADE — Price did not touch fixed 8 EMA {fixed_e8:.1f}"
         if not touched:
-            return {
-                "pending": True,
-                "reason": f"NO TRADE — Price did not touch fixed 8 EMA {fixed_e8:.1f}",
-                "fixed_e8": fixed_e8,
-            }
-        fired_key = f"{session_day}:REV_{'UP' if bullish else 'DN'}:{round(fixed_e8, 1)}"
+            return {"pending": True, "reason": miss, "fixed_e8": fixed_e8}
+        fired_key = (
+            f"{session_day}:REV_{'UP' if bullish else 'DN'}:{b15.index[cross_i]}"
+            if dyn_on
+            else f"{session_day}:REV_{'UP' if bullish else 'DN'}:{round(fixed_e8, 1)}"
+        )
         if mj_state.get("reversal_fired_key") == fired_key:
             return {"pending": False, "reason": "NO TRADE — Reversal already fired for this fixed EMA", "fixed_e8": fixed_e8}
         sid = "CROSSOVER_BULLISH" if bullish else "CROSSOVER_BEARISH"
@@ -390,18 +484,21 @@ def evaluate_mj_sir_four_pack(
         return {
             "signal": {
                 "strategy_id": sid,
-                "setup_name": f"MJ Sir {name} — fixed 8 EMA touch",
+                "setup_name": f"MJ Sir {name} — " + ("dynamic 8 EMA touch" if dyn_on else "fixed 8 EMA touch"),
                 "direction": "LONG" if bullish else "SHORT",
                 "opt_side": "CE" if bullish else "PE",
                 "target_pts": float(cfg["reversal_target_pts"]),
                 "sl_pts": float(cfg["reversal_sl_pts"]),
-                "index_price": close_15,
+                "index_price": entry_px,
                 "conviction": "MJ_SIR",
                 "paper_only": True,
                 "mj_sir_paper_only": True,
                 "fixed_8ema_entry": fixed_e8,
+                "dynamic_e8_at_entry": round(e8_dyn, 2),
                 "details": (
-                    f"{SPEC_TAG} | cross age {age} | fixed 8EMA {fixed_e8:.1f} | "
+                    f"{SPEC_TAG} | cross age {age} | "
+                    + (f"dynamic 8EMA {e8_dyn:.1f} @ spot {entry_px:.1f}" if dyn_on else f"fixed 8EMA {fixed_e8:.1f}")
+                    + " | "
                     f"gap 4{'>' if bullish else '<'}8 at cross"
                 ),
                 **gate_meta("crossover"),
