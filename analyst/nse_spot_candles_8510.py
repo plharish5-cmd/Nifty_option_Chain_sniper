@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 _DEFAULT_CFG_PATH = Path(__file__).resolve().parent / "terminal8510_config.json"
@@ -98,6 +99,20 @@ def _session_slice(g: pd.DataFrame) -> pd.DataFrame:
         return g
 
 
+def epoch_seconds(values: Any) -> np.ndarray:
+    """Datetimes -> whole epoch seconds, whatever unit pandas stores them in.
+
+    `astype("int64") // 10**9` is only right when the values are held in
+    nanoseconds. Newer pandas keeps seconds or microseconds, and the same
+    line then returns 1 for every candle, which silently empties every
+    backtest that walks 1-minute candles by timestamp.
+    """
+    idx = pd.DatetimeIndex(pd.to_datetime(values))
+    if idx.tz is None:
+        idx = idx.tz_localize("UTC")
+    return np.asarray((idx - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(seconds=1), dtype="int64")
+
+
 def resample_nse_15m(df_indexed: pd.DataFrame, agg: Optional[Dict[str, str]] = None) -> pd.DataFrame:
     """Build 15m bars anchored at 09:15 IST per calendar day."""
     agg = agg or _AGG_OHLCV
@@ -140,7 +155,7 @@ def attach_bar_timestamps(df_bars: pd.DataFrame, bar_seconds: int) -> pd.DataFra
     """Add ts (open) and close_ts for closed-bar lookups."""
     out = df_bars.copy()
     if isinstance(out.index, pd.DatetimeIndex):
-        out["ts"] = (out.index.view("int64") // 10**9).astype(int)
+        out["ts"] = epoch_seconds(out.index)
     elif "ts" not in out.columns:
         out["ts"] = 0
     out["close_ts"] = out["ts"] + int(bar_seconds)

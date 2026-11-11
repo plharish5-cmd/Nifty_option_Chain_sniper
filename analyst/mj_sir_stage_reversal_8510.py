@@ -529,3 +529,120 @@ def evaluate_mj_sir_four_pack(
     signals.extend(rev_signals)
 
     return signals, status
+
+
+def backtest_mj_dynamic_at_bar(
+    bars: List[Dict[str, Any]],
+    idx: int,
+    mj_bt_state: Dict[str, Any],
+    scanner_cfg: Dict[str, Any],
+    *,
+    b15_df: Optional[pd.DataFrame],
+    day_1m: Optional[pd.DataFrame],
+    bb_stage2: bool = False,
+    bb_stage3: bool = False,
+    bb_cross: bool = False,
+    window_bars: int = 160,
+    prefilter_pts: float = 15.0,
+) -> List[Tuple[str, str, str, float, float, Dict[str, Any]]]:
+    """Historical step for Stage 2 / Stage 3 / 8 EMA Reversal.
+
+    It does not re-state the rules. Candle `idx` is treated as the running
+    candle and walked on a 30-second grid built from completed 1-minute
+    candles; each tick is handed to `evaluate_mj_sir_four_pack`, the same
+    function the live worker calls, with the same kind of `dynamic` tick. So
+    first touch, the 3-point tolerance, the 09:30 start, BB width, the band
+    rule and the Reversal wait/window are whatever live does.
+
+    `mj_bt_state` is the backtest's own memory; live state is never passed in.
+    Returns (strategy_id, setup_name, direction, target_pts, sl_pts, meta).
+    """
+    cfg = load_mj_cfg(scanner_cfg)
+    if (
+        not bool(cfg.get("enabled", True))
+        or not bool(cfg.get("dynamic_8ema_entry", True))
+        or b15_df is None
+        or b15_df.empty
+        or day_1m is None
+        or day_1m.empty
+        or idx < 21
+        or idx >= len(bars)
+    ):
+        return []
+    from analyst.ema8_prototype_8510 import intrabar_tick_timestamps
+
+    b, prev = bars[idx], bars[idx - 1]
+    bar_open_ts = int(b.get("ts") or 0)
+    if bar_open_ts <= 0:
+        return []
+    # A touch needs price within a few points of the moving 8 EMA, which sits
+    # between the last closed 8 EMA and price. A candle that never comes
+    # within prefilter_pts of the closed 8 EMA cannot touch; skip its ticks.
+    e8_closed = float(prev.get("e8") or 0.0)
+    if e8_closed > 0 and not (
+        float(b["low"]) <= e8_closed + prefilter_pts and float(b["high"]) >= e8_closed - prefilter_pts
+    ):
+        return []
+
+    frame = b15_df.iloc[max(0, idx - window_bars): idx + 1][["open", "high", "low", "close"]].copy()
+    day_key = str(b.get("day") or "")
+    refresh = float(cfg.get("dynamic_refresh_seconds", 30.0) or 30.0)
+    out: List[Tuple[str, str, str, float, float, Dict[str, Any]]] = []
+    # A 1-minute candle is stamped with the minute it OPENS (the live desk
+    # treats the newest row as still forming). It is known only once that
+    # minute is over, so a tick may read a candle only if ts + 60 <= tick.
+    m_ts = day_1m["ts"].astype("int64")
+    m_end = m_ts + 60
+    prev_tick_ts = bar_open_ts
+    for tick_ts in intrabar_tick_timestamps(bar_open_ts, refresh):
+        known = day_1m[m_end <= tick_ts]
+        if known.empty:
+            prev_tick_ts = tick_ts
+            continue
+        spot = float(known.iloc[-1]["close"])
+        if spot <= 0:
+            prev_tick_ts = tick_ts
+            continue
+        recent = day_1m[(m_end > prev_tick_ts) & (m_end <= tick_ts) & (m_ts >= bar_open_ts)]
+        tick_high = max(float(recent["high"].max()), spot) if not recent.empty else spot
+        tick_low = min(float(recent["low"].min()), spot) if not recent.empty else spot
+        prev_tick_ts = tick_ts
+        t_ist = pd.to_datetime(tick_ts, unit="s", utc=True).tz_convert("Asia/Kolkata")
+        sigs, _status_rows = evaluate_mj_sir_four_pack(
+            frame,
+            bar_ci=-2,
+            cfg=cfg,
+            bb_stage2=bb_stage2,
+            bb_stage3=bb_stage3,
+            bb_cross=bb_cross,
+            party_switch_enabled=False,
+            active_party="NEUTRAL",
+            mj_state=mj_bt_state,
+            session_day=day_key,
+            dynamic={
+                "live_spot": spot,
+                "tick_high": tick_high,
+                "tick_low": tick_low,
+                "now_hm": t_ist.strftime("%H:%M"),
+            },
+        )
+        for sig in sigs:
+            out.append((
+                str(sig["strategy_id"]),
+                str(sig["setup_name"]),
+                str(sig["direction"]),
+                float(sig["target_pts"]),
+                float(sig["sl_pts"]),
+                {
+                    "mj_dynamic": True,
+                    "flagship": False,
+                    "sr_levels": {},
+                    "entry_spot": float(sig["index_price"]),
+                    "entry_ts": int(tick_ts),
+                    "entry_day": day_key,
+                    "entry_hm": t_ist.strftime("%H:%M:%S"),
+                    "dynamic_e8_at_entry": sig.get("dynamic_e8_at_entry"),
+                    "bollinger_applied": bool(bb_stage2 or bb_stage3 or bb_cross),
+                },
+            ))
+    return out

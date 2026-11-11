@@ -697,3 +697,36 @@ NOT done — still open:
 Correction to my earlier review: I wrote that the scanner re-reads the same closed 15m candle on
 every 3-second pass. It does not — `_pending_closed_15m_open_ts` evaluates each closed candle
 once. The "re-arming on every pass" and "card flicker" points were wrong.
+
+---
+
+## 2026-11-11 · Claude · `claude/four-algo-corrections` (second commit)
+Same branch and pre-tag as the block above.
+
+What changed:
+- **Stage 2 / Stage 3 / Reversal are now backtested with the live rules.** New
+  `backtest_mj_dynamic_at_bar` (in `mj_sir_stage_reversal_8510.py`) walks each candle on a
+  30-second grid and hands every tick to `evaluate_mj_sir_four_pack` — the same function the live
+  worker calls. It does not restate any rule. It keeps its own memory; live memory is not passed in.
+- Their backtest exit is the 1-minute walk after the entry tick (spot target / stop / 15:20),
+  via `simulate_prototype_spot_exit(..., exit_on_opposite_close=False)`. Rows are in spot points;
+  no modelled premium, rupees or charges. The option-points exit cannot be modelled from spot.
+- `_backtest_legacy_cand_signals` is used only when `dynamic_8ema_entry` is switched off.
+- **No look-ahead on the 30-second grid for these lanes:** a 1-minute candle is stamped with the
+  minute it opens, so a tick reads it only when `ts + 60 <= tick`.
+- **Epoch conversion made pandas-version-safe** (`epoch_seconds` in `nse_spot_candles_8510.py`,
+  used in 3 places). `astype("int64") // 10**9` returns 1 for every candle on pandas 3, where
+  datetimes are not held in nanoseconds; that silently emptied every 1-minute-walk backtest,
+  the Prototype's included. `requirements.txt` allows `pandas>=2.0`. On pandas 2 the result is
+  unchanged.
+
+Tests: new `test_mj_dynamic_backtest_8510.py` 6/6, including an end-to-end date-range backtest
+on a synthetic market database. Full suite: same failing set as `52cd66a` (sandbox-only
+differences as before). Locks 11/11.
+
+Still open:
+- **The Prototype backtest still reads the 1-minute candle that is open at the tick**
+  (`forming_ohlc_from_1m` uses `ts <= tick`), a look-ahead of up to 60 seconds. AGY's
+  `test_3_30s_grid_reads_completed_1m_candles` pins that reading, so I left it and am reporting it.
+- Backtest trades of one lane can still overlap in time; Flagship backtest unchanged.
+- Everything listed as open in the block above, except the Stage/Reversal backtest.

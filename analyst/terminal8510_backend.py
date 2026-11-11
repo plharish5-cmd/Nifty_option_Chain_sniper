@@ -48,6 +48,7 @@ from analyst.dhan_oi_engine import DhanOIEngine, empty_bias
 from analyst.nse_spot_candles_8510 import (
     EMA_WARMUP_1M_BARS,
     ema4_ema8,
+    epoch_seconds as _epoch_seconds,
     last_closed_bar_emas,
     resample_nse_15m,
     resample_nse_1h,
@@ -799,8 +800,12 @@ def simulate_prototype_spot_exit(
     *,
     day_1m: Optional[pd.DataFrame] = None,
     entry_ts: Optional[int] = None,
+    exit_on_opposite_close: bool = True,
 ) -> Dict[str, Any]:
     """
+    exit_on_opposite_close=False gives the same 1-minute walk without rule 4,
+    for Stage 2, Stage 3 and the 8 EMA Reversal (spot target / stop / 15:20).
+
     Forward-walk exit for 8 EMA Prototype matching Harish's specification:
     1. Exit walk starts strictly from the first completed 1m candle AFTER entry_ts (ts > entry_ts).
     2. Target (+40) and Stop (-40) checked on completed 1m candles.
@@ -935,7 +940,7 @@ def simulate_prototype_spot_exit(
                     checked_15m_closes.add(c_ts)
                     c15 = float(b15.get("close") or m_c)
                     e8_15 = float(b15.get("e8") or 0.0)
-                    if e8_15 > 0:
+                    if e8_15 > 0 and exit_on_opposite_close:
                         opp_close = (c15 < e8_15) if is_long else (c15 > e8_15)
                         if opp_close:
                             pnl = round((c15 - entry_spot) if is_long else (entry_spot - c15), 2)
@@ -1059,7 +1064,7 @@ def simulate_prototype_spot_exit(
             }
 
         e8_here = float(fb.get("e8") or 0.0)
-        if e8_here > 0:
+        if e8_here > 0 and exit_on_opposite_close:
             opp_close = (fc < e8_here) if is_long else (fc > e8_here)
             if opp_close:
                 pnl = round((fc - entry_spot) if is_long else (entry_spot - fc), 2)
@@ -8943,7 +8948,7 @@ class QuantTerminalBackend:
             df["dt"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
             b15 = resample_nse_15m(df.set_index("dt")).reset_index()
             dt_col = "datetime" if "datetime" in b15.columns else b15.columns[0]
-            b15["ts"] = (pd.to_datetime(b15[dt_col]).astype("int64") // 10**9).astype(int)
+            b15["ts"] = _epoch_seconds(b15[dt_col])
             b15["day"] = pd.to_datetime(b15[dt_col]).dt.strftime("%Y-%m-%d")
             b15["hm"] = pd.to_datetime(b15[dt_col]).dt.strftime("%H:%M")
             if len(b15) < 3:
@@ -9870,7 +9875,7 @@ class QuantTerminalBackend:
                 df_all["dt"] = pd.to_datetime(df_all["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
                 df_15m = resample_nse_15m(df_all.set_index("dt")).reset_index()
                 dt_col = "datetime" if "datetime" in df_15m.columns else df_15m.columns[0]
-                df_15m["ts"] = (pd.to_datetime(df_15m[dt_col]).astype("int64") // 10**9).astype(int)
+                df_15m["ts"] = _epoch_seconds(df_15m[dt_col])
                 df_15m["day"] = pd.to_datetime(df_15m[dt_col]).dt.strftime("%Y-%m-%d")
                 df_15m["hm"] = pd.to_datetime(df_15m[dt_col]).dt.strftime("%H:%M")
 
@@ -9915,6 +9920,17 @@ class QuantTerminalBackend:
                     from analyst.ema8_prototype_8510 import backtest_ema8_prototype_at_bar
 
                     proto_bt_state: Dict[str, Any] = {}
+                    # Stage 2 / Stage 3 / Reversal: backtested through the live
+                    # evaluator with their own memory. The older rule set in
+                    # _backtest_legacy_cand_signals is used only when dynamic
+                    # entries are switched off in config.
+                    from analyst.mj_sir_stage_reversal_8510 import (
+                        backtest_mj_dynamic_at_bar,
+                        load_mj_cfg as _load_mj_cfg,
+                    )
+
+                    mj_bt_state: Dict[str, Any] = {}
+                    mj_dynamic_bt = bool(_load_mj_cfg(self.scanner_cfg).get("dynamic_8ema_entry", True))
 
                     for idx in range(20, len(bars) - 1):
                         b = bars[idx]
@@ -9942,9 +9958,22 @@ class QuantTerminalBackend:
                             if bar_open_ts >= open_exit_ts:
                                 proto_bt_state.pop("bt_open", None)
 
-                        cand_signals = self._backtest_legacy_cand_signals(
-                            b, b_prev, e4_v, e8_v, bbw, ubb_up, lbb_dn, ubb_flat, lbb_flat, atr14
-                        )
+                        if mj_dynamic_bt:
+                            cand_signals = backtest_mj_dynamic_at_bar(
+                                bars,
+                                idx,
+                                mj_bt_state,
+                                self.scanner_cfg,
+                                b15_df=df_15m,
+                                day_1m=day_to_1m.get(day_key),
+                                bb_stage2=self._bollinger_gate_active("stage2"),
+                                bb_stage3=self._bollinger_gate_active("stage3"),
+                                bb_cross=self._bollinger_gate_active("crossover"),
+                            )
+                        else:
+                            cand_signals = self._backtest_legacy_cand_signals(
+                                b, b_prev, e4_v, e8_v, bbw, ubb_up, lbb_dn, ubb_flat, lbb_flat, atr14
+                            )
                         cand_signals += backtest_ema8_prototype_at_bar(
                             bars,
                             idx,
@@ -9987,10 +10016,14 @@ class QuantTerminalBackend:
                             is_flagship = bool(meta.get("flagship"))
                             is_pa = bool(meta.get("pa_homework"))
                             is_proto = bool(meta.get("ema8_prototype")) or f_code == "EMA8_PROTOTYPE"
+                            is_mj_dyn = bool(meta.get("mj_dynamic"))
+                            # Entered inside the candle at a known tick: exit is
+                            # walked on 1-minute candles after that tick.
+                            fixed_walk = is_proto or is_mj_dyn
                             if is_pa:
                                 entry_spot = entry_on_pattern_break(bars, idx, meta, direc)
                                 start_i = idx
-                            elif is_proto and meta.get("entry_spot") is not None:
+                            elif fixed_walk and meta.get("entry_spot") is not None:
                                 entry_spot = round(float(meta["entry_spot"]), 2)
                                 start_i = idx
                             else:
@@ -10000,7 +10033,7 @@ class QuantTerminalBackend:
                             tgo = False if is_proto else bool(
                                 meta.get("trail_green_only", not trail_every_bar)
                             )
-                            if is_proto:
+                            if fixed_walk:
                                 proto_res = simulate_prototype_spot_exit(
                                     bars=bars,
                                     start_idx=start_i,
@@ -10011,6 +10044,7 @@ class QuantTerminalBackend:
                                     eod_hm=eod_hm,
                                     day_1m=day_to_1m.get(day_key),
                                     entry_ts=int(meta.get("entry_ts") or 0),
+                                    exit_on_opposite_close=is_proto,
                                 )
                                 st_pnl_pts = proto_res["st_pnl_pts"]
                                 fx_pnl_pts = proto_res["fx_pnl_pts"]
@@ -10026,13 +10060,14 @@ class QuantTerminalBackend:
                                 is_ambiguous = proto_res["is_ambiguous"]
 
                                 # Track open trade for alternating trades rule
-                                proto_bt_state["bt_open"] = {
-                                    "direction": direc,
-                                    "entry_ts": int(meta.get("entry_ts") or 0),
-                                    "exit_ts": exit_ts,
-                                }
-                                proto_bt_state["last_traded_direction"] = direc
-                                proto_bt_state["consumed_cross_ts"] = meta.get("cross_bar_open_ts") or meta.get("entry_ts")
+                                if is_proto:
+                                    proto_bt_state["bt_open"] = {
+                                        "direction": direc,
+                                        "entry_ts": int(meta.get("entry_ts") or 0),
+                                        "exit_ts": exit_ts,
+                                    }
+                                    proto_bt_state["last_traded_direction"] = direc
+                                    proto_bt_state["consumed_cross_ts"] = meta.get("cross_bar_open_ts") or meta.get("entry_ts")
                             else:
                                 st_pnl_pts, fx_pnl_pts, exit_spot, st_reason, trail_steps, mfe_pts, ent_day, ent_hm, ex_day, ex_hm = simulate_backtest_spot_exit(
                                     bars,
@@ -10059,12 +10094,12 @@ class QuantTerminalBackend:
                                     ent_day = str(meta.get("entry_day") or ent_day)
                                     ent_hm = str(meta["entry_hm"])
 
-                            if is_proto:
+                            if fixed_walk:
+                                # Spot rule only: no modelled premium, no rupees.
                                 synth_opt_entry, synth_opt_exit = None, None
                                 synth_gross_inr = 0.0
                                 synth_net_inr = 0.0
                                 fx_net_inr = 0.0
-                                charges_est = 0.0
                             else:
                                 synth_opt_entry, synth_opt_exit = synthesize_option_premium_from_spot(
                                     entry_spot, exit_spot, is_long, delta_est
@@ -10078,8 +10113,8 @@ class QuantTerminalBackend:
                             opt_type = "CE" if is_long else "PE"
                             contract_sym = f"NIFTY {atm_strike} {opt_type} (Synthesized Strike)"
                             trail_str = (
-                                f"Fixed {int(sl_pts)}/{int(tgt_pts)} Nifty spot (8 EMA Prototype — no Super Trail) → {st_reason}"
-                                if is_proto
+                                f"Fixed {int(sl_pts)}/{int(tgt_pts)} Nifty spot, 1m walk after entry (no Super Trail; option exit not modelled) → {st_reason}"
+                                if fixed_walk
                                 else " -> ".join(trail_steps[:6]) + f" -> {st_reason}"
                             )
 
@@ -10120,8 +10155,8 @@ class QuantTerminalBackend:
                                 "net_pnl": 0.0 if is_proto else synth_net_inr,
                                 "gross_pnl": 0.0 if is_proto else synth_gross_inr,
                                 "gross_pnl_inr": 0.0 if is_proto else synth_gross_inr,
-                                "charges": 0.0 if is_proto else charges_est,
-                                "dhan_charges": 0.0 if is_proto else charges_est,
+                                "charges": 0.0 if fixed_walk else charges_est,
+                                "dhan_charges": 0.0 if fixed_walk else charges_est,
                                 "fixed_net_pnl_row": 0.0 if is_proto else fx_net_inr,
                                 "st_pnl_pts": st_pnl_pts,
                                 "fx_pnl_pts": fx_pnl_pts,
@@ -10132,8 +10167,8 @@ class QuantTerminalBackend:
                                 "Ema8_Line_Details": ema8_line_col,
                                 "Ema8_From_Matrix": ema8_line_col,
                                 "dynamic_8ema_entry": meta.get("dynamic_e8_at_entry") or meta.get("e8"),
-                                "Dynamic_8EMA_Entry": f"{float(meta.get('dynamic_e8_at_entry') or meta.get('e8') or 0.0):.2f}" if is_proto else "—",
-                                "is_ambiguous": is_ambiguous if is_proto else False,
+                                "Dynamic_8EMA_Entry": f"{float(meta.get('dynamic_e8_at_entry') or meta.get('e8') or 0.0):.2f}" if fixed_walk else "—",
+                                "is_ambiguous": is_ambiguous if fixed_walk else False,
                                 "strategy_id": sid,
                                 "source": "SYNTHESIZED",
                                 "BB_Gate": meta.get("bb_gate_label", gate_bb),
