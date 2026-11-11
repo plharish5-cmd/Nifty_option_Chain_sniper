@@ -563,3 +563,68 @@ Tags: `pre-agy-ema8-proto-corrections` @ `ef3ded4`, `post-agy-ema8-proto-correct
 
 
 
+
+---
+
+## 2026-11-11 · Claude · `claude/ema8-proto-live-exit-fixes`
+Tag: pre-claude-ema8-proto-live-exit-fixes → post-claude-ema8-proto-live-exit-fixes
+Branched from: `agy/ema8-proto-corrections` @ `f89f950` (contains all of AGY's Phases 1–7 and its in-app toggles)
+
+Harish asked for the live-exit faults found in the read-only review of `f89f950` to be fixed.
+Only `analyst/terminal8510_backend.py` changed, plus one new test file. No strategy rule,
+signal, target or stop was changed for any lane. No config file was edited. No limit added.
+
+What changed:
+- **Sell only what was bought.** New `positions` columns `live_filled`, `live_order_id`,
+  `live_fill_qty`, written at entry from what Dhan actually filled. The close path sends a
+  real SELL only when `live_filled = 1`. Before, it trusted `mode`, which is `BOTH` whenever
+  the desk is armed, so a paper leg whose real BUY was rejected would have been sold at
+  Dhan (opening a short option). Rows from before the columns existed (NULL) keep the old
+  mode-based behaviour.
+- **Prototype PAPER_ONLY route is real.** With the lane set to PAPER_ONLY, the order now
+  runs as PAPER_ONLY even when the desk is armed. Before, only the label changed.
+- **A BUY that part-fills before its cancel** is recorded and gets a stop for the filled
+  quantity. Before, it was booked as CANCELLED and the real holding was untracked.
+- **The companion stop must be out of the market before a SELL is sent** (filled, dead, or
+  absent from the book with the cancel accepted). If that cannot be confirmed, no SELL is
+  sent and the position is EXIT_FAILED with the stop still tracked.
+- **Exits survive a crash or restart.** The exit order id and the exit reason are stored.
+  The monitor restarts any EXIT_PENDING position that has no running close, and a restart
+  resumes the stored order instead of sending a second one. Close tasks are tracked, one
+  per position, and their exceptions are logged.
+- **Sell chaser.** Modifies only when the price moved; swaps to a fresh order after
+  `chasing.exit_max_modifications_per_order` modifications (default 20, read with a
+  default, not written to config); handles EXPIRED and partial fills; closes the ledger
+  only when the whole quantity is filled, at the quantity-weighted average; reads the
+  desk's quote feed before calling Dhan; backs off when the order book cannot be read.
+
+Config keys touched: none. Optional new key read with a default:
+`chasing.exit_max_modifications_per_order`.
+
+Baseline (same sandbox, same command, `pytest analyst --continue-on-collection-errors`):
+- `f89f950`: 40 failed / 519 passed / 12 skipped / 37 errors.
+- This branch, excluding the new file: same failing set. Two differences are sandbox-only:
+  `test_nse_spot_candles` (2) fails in the checkout with or without this change, and
+  `test_classifier_port_evidence` needs `node_modules`, present in one checkout only.
+- AGY's prototype suites + HTML: 55/55. New `test_live_exit_fixes_8510.py`: 15/15; 14 of
+  the 15 fail or hang on `f89f950`, the 15th is a control that must pass on both.
+- Locks 11/11. Immutable-lock tests 10/10.
+Compared against: AGY's reported 55/55 at `f89f950`, reproduced here before changing anything.
+
+Not verified — needs the live desk or Dhan's documentation:
+- Dhan's real field names and status values (`orderStatus`, `filledQty`,
+  `averageTradedPrice`, `PART_TRADED`, `EXPIRED`) are taken from the existing code.
+- Dhan's per-order modification allowance (20 is a guess kept under the 25 I believe it is).
+- Whether `quantity` on a modify means total or remaining quantity for a part-filled order.
+- Nothing here was run against Dhan. Not deployed, not restarted, not merged.
+
+Open / needs Harish:
+- Every lane labelled "paper" (FLAGSHIP, Stage 2/3, Crossover, Matrix Scalp, PA @ S/R)
+  still sends a real BUY when the desk is armed and the allowlist permits it: the label
+  does not change the route. Only the prototype was changed, as asked. Say if the others
+  should follow their label.
+- The kill switch and the manual close still start their close directly rather than
+  through the tracked-task helper. The per-position lock keeps them safe; they are just
+  not in the task registry.
+- AGY moved `fix/8510-algo-v206` itself to `f89f950`.
+- Same-tick "away then touch" in `check_retouch` is unchanged.

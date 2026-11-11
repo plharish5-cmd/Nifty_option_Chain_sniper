@@ -3381,6 +3381,20 @@ class QuantTerminalBackend:
                             cur.execute("ALTER TABLE positions ADD COLUMN {} {}".format(col, decl))
                 except sqlite3.Error:
                     log.exception("Could not add Matrix Scalp spot columns to positions")
+                # Live-exit bookkeeping. Nullable on purpose: NULL live_filled
+                # marks a row written before these columns existed, and the
+                # close path then falls back to the stored mode for that row.
+                try:
+                    pcols = {r[1] for r in cur.execute("PRAGMA table_info(positions)")}
+                    for col, decl in (
+                        ("live_filled", "INTEGER"), ("live_order_id", "TEXT"),
+                        ("live_fill_qty", "INTEGER"), ("exit_order_id", "TEXT"),
+                        ("exit_filled_qty", "INTEGER"), ("exit_filled_value", "REAL"),
+                    ):
+                        if col not in pcols:
+                            cur.execute("ALTER TABLE positions ADD COLUMN {} {}".format(col, decl))
+                except sqlite3.Error:
+                    log.exception("Could not add live-exit columns to positions")
                 cur.execute("""
                 CREATE TABLE IF NOT EXISTS paper_wallet (
                     id INTEGER PRIMARY KEY,
@@ -6971,10 +6985,17 @@ class QuantTerminalBackend:
             cur = conn.cursor()
             rows = cur.execute("SELECT * FROM positions WHERE status IN ('OPEN', 'EXIT_PENDING', 'EXIT_FAILED') ORDER BY entry_time DESC").fetchall()
             now_dt = datetime.now(IST)
+            resume: List[Tuple[Dict[str, Any], str, Optional[float]]] = []
             for r in rows:
                 p = dict(r)
                 pos_status = str(p.get("status", "OPEN")).upper()
                 if pos_status == "EXIT_PENDING":
+                    # An exit that is not being worked (close task crashed, or
+                    # the app restarted mid-exit) is picked up again here.
+                    pending_reason = str(p.get("exit_reason") or "")
+                    if not pending_reason or pending_reason.startswith("EXIT_FAILED"):
+                        pending_reason = "EXIT_RECOVERED"
+                    resume.append((dict(p), pending_reason, spot_idx if spot_idx > 0 else None))
                     if p.get("entry_time"):
                         p["entry_time"] = format_desk_timestamp_ist(p["entry_time"])
                     positions.append(p)
@@ -7182,16 +7203,15 @@ class QuantTerminalBackend:
 
                 if should_close:
                     exit_spot_val = spot_idx if spot_idx > 0 else None
-                    cur.execute("UPDATE positions SET status='EXIT_PENDING' WHERE position_id=?", (p["position_id"],))
+                    cur.execute(
+                        "UPDATE positions SET status='EXIT_PENDING', exit_reason=? WHERE position_id=?",
+                        (exit_reason, p["position_id"]),
+                    )
                     p["status"] = "EXIT_PENDING"
+                    resume.append((dict(p), exit_reason, exit_spot_val))
                     if p.get("entry_time"):
                         p["entry_time"] = format_desk_timestamp_ist(p["entry_time"])
                     positions.append(p)
-                    try:
-                        loop = asyncio.get_running_loop()
-                        loop.create_task(self._close_position_with_broker(p, exit_reason, spot_exit=exit_spot_val))
-                    except RuntimeError:
-                        asyncio.run(self._close_position_with_broker(p, exit_reason, spot_exit=exit_spot_val))
                     continue
                 else:
                     cur.execute("""
@@ -7210,7 +7230,43 @@ class QuantTerminalBackend:
                         p["entry_time"] = format_desk_timestamp_ist(p["entry_time"])
                     positions.append(p)
             conn.commit()
+        # Start the closes only after the ledger write above is committed, so
+        # the close path never reads a position mid-transaction.
+        for close_pos, close_reason, close_spot in resume:
+            close_pos["status"] = "EXIT_PENDING"
+            self._spawn_close(close_pos, close_reason, close_spot)
         return positions
+
+    def _spawn_close(self, pos: Dict[str, Any], reason: str, spot_exit: Optional[float]) -> None:
+        """Start one close per position and keep its handle.
+
+        A close that is still running is left alone. A close that died is
+        logged, and the monitor starts it again on its next pass because the
+        position is still EXIT_PENDING.
+        """
+        pos_id = str(pos.get("position_id") or "")
+        if not pos_id:
+            return
+        tasks = self.__dict__.setdefault("_close_tasks", {})
+        running = tasks.get(pos_id)
+        if running is not None and not running.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(self._close_position_with_broker(pos, reason, spot_exit=spot_exit))
+            return
+        task = loop.create_task(self._close_position_with_broker(pos, reason, spot_exit=spot_exit))
+        tasks[pos_id] = task
+
+        def _done(t: "asyncio.Task", _pid: str = pos_id) -> None:
+            tasks.pop(_pid, None)
+            if t.cancelled():
+                log.error("Close task for %s was cancelled; it will be retried", _pid)
+            elif t.exception() is not None:
+                log.error("Close task for %s failed; it will be retried", _pid, exc_info=t.exception())
+
+        task.add_done_callback(_done)
 
     # ── UNIFIED POSITION CLOSE WITH BROKER (PHASE 1) ─────────────────────────
     async def _check_broker_sl_fills(self) -> None:
@@ -7232,8 +7288,7 @@ class QuantTerminalBackend:
             spot_idx = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
             for r in rows:
                 p = dict(r)
-                mode = str(p.get("mode") or "").upper()
-                if mode not in ("LIVE", "REAL", "LIVE_ALLOWED", "BOTH"):
+                if not self._position_live_filled(p):
                     continue
                 sl_oid = str(p.get("sl_order_id") or "").strip()
                 if sl_oid and sl_oid in orders_by_id:
@@ -7291,212 +7346,23 @@ class QuantTerminalBackend:
             if st == "EXIT_PENDING" and pos.get("status") != "EXIT_PENDING":
                 return {"ok": False, "status": "EXIT_PENDING"}
 
-            # Mark EXIT_PENDING in database
+            # Mark EXIT_PENDING in database, with the reason, so an exit that
+            # is interrupted can be resumed for the same reason.
             with sqlite3.connect(self.ledger_db) as conn:
-                conn.execute("UPDATE positions SET status='EXIT_PENDING' WHERE position_id=?", (pos_id,))
+                conn.execute(
+                    "UPDATE positions SET status='EXIT_PENDING', exit_reason=? WHERE position_id=?",
+                    (reason, pos_id),
+                )
 
-            mode = str(cur_row["mode"] or pos.get("mode") or "").upper()
-            is_live = mode in ("LIVE", "REAL", "LIVE_ALLOWED", "BOTH") and self.broker.is_configured()
+            row = dict(cur_row)
+            is_live = self._position_live_filled(row) and self.broker.is_configured()
             sec_id = str(cur_row["security_id"] or pos.get("security_id") or "")
             symbol = str(cur_row["symbol"] or pos.get("symbol") or "")
             entry = float(cur_row["entry_price"] or pos.get("entry_price") or 0.0)
             qty = int(cur_row["remaining_qty"] or cur_row["qty"] or pos.get("qty") or 0)
-            sl_oid = str(cur_row["sl_order_id"] or pos.get("sl_order_id") or "").strip()
 
             if is_live:
-                matching_sl = None
-                if sl_oid:
-                    try:
-                        orders = await self.broker.get_orders()
-                        for o in orders or []:
-                            if str(o.get("orderId")) == sl_oid:
-                                matching_sl = o
-                                break
-                    except Exception as exc:
-                        log.warning("Could not read companion SL order %s: %s", sl_oid, exc)
-
-                # If companion SL-L has already filled, do not send sell order
-                if matching_sl and str(matching_sl.get("orderStatus", "")).upper() in ("TRADED", "FILLED"):
-                    fill_price = float(matching_sl.get("averageTradedPrice") or cur_row["sl_price"] or entry)
-                    fill_qty = int(matching_sl.get("filledQty") or qty)
-                    return await self._finalize_closed_position(
-                        dict(cur_row), fill_price, fill_qty, "BROKER_SL_FILLED", spot_exit=spot_exit
-                    )
-
-                # Otherwise cancel companion SL-L and confirm before selling
-                if sl_oid:
-                    try:
-                        await self.broker.cancel_order(sl_oid)
-                    except Exception as exc:
-                        log.warning("Cancel companion SL-L %s error: %s", sl_oid, exc)
-
-                    # Confirm cancel or check if filled in the meantime
-                    try:
-                        orders = await self.broker.get_orders()
-                        for o in orders or []:
-                            if str(o.get("orderId")) == sl_oid:
-                                if str(o.get("orderStatus", "")).upper() in ("TRADED", "FILLED"):
-                                    fill_price = float(o.get("averageTradedPrice") or cur_row["sl_price"] or entry)
-                                    fill_qty = int(o.get("filledQty") or qty)
-                                    return await self._finalize_closed_position(
-                                        dict(cur_row), fill_price, fill_qty, "BROKER_SL_FILLED", spot_exit=spot_exit
-                                    )
-                                break
-                    except Exception as exc:
-                        log.warning("Re-check companion SL-L %s error: %s", sl_oid, exc)
-
-                # Fetch fresh quote
-                fresh_ltp = None
-                try:
-                    quotes = await self.broker.get_marketfeed_ltp({"NSE_FNO": [int(sec_id)]})
-                    fresh_ltp = float(quotes.get(sec_id) or 0.0)
-                except Exception as exc:
-                    log.warning("Fetch marketfeed quote error for %s: %s", sec_id, exc)
-
-                if not fresh_ltp or fresh_ltp <= 0:
-                    fresh_ltp = float((self.cached_telemetry.get("quotes") or {}).get(sec_id) or 0.0)
-
-                if not fresh_ltp or fresh_ltp <= 0:
-                    log.error("Missing quote for %s during exit. Leaving OPEN to retry.", pos_id)
-                    with sqlite3.connect(self.ledger_db) as conn:
-                        conn.execute("UPDATE positions SET status='OPEN' WHERE position_id=?", (pos_id,))
-                    return {"ok": False, "error": "MISSING_QUOTE_RETRY"}
-
-                buf = float(self.cfg.get("chasing", {}).get("aggressive_limit_buffer_pts", 2.0))
-                limit_price = max(0.5, round_to_tick(fresh_ltp - buf, 0.05))
-                corr_id = f"exit_{pos_id}"
-
-                sell_payload = {
-                    "dhanClientId": getattr(self.broker, "client_id", ""),
-                    "correlationId": corr_id,
-                    "transactionType": "SELL",
-                    "exchangeSegment": "NSE_FNO",
-                    "productType": "INTRADAY",
-                    "orderType": "LIMIT",
-                    "validity": "DAY",
-                    "tradingSymbol": symbol,
-                    "securityId": str(sec_id),
-                    "quantity": qty,
-                    "disclosedQuantity": 0,
-                    "price": limit_price,
-                    "triggerPrice": 0.0,
-                    "afterMarketOrder": False,
-                }
-                res = await self.broker.place_order(sell_payload)
-                if not res.get("ok"):
-                    err = str(res.get("error") or res.get("rejection_reason") or "Sell order rejected")
-                    log.error("Live exit SELL rejected for %s: %s", pos_id, err)
-                    with sqlite3.connect(self.ledger_db) as conn:
-                        conn.execute(
-                            "UPDATE positions SET status='EXIT_FAILED', exit_reason=? WHERE position_id=?",
-                            (f"EXIT_FAILED: {err}", pos_id),
-                        )
-                    self.exit_failure_banner = {
-                        "position_id": pos_id,
-                        "symbol": symbol,
-                        "error": err,
-                        "time": datetime.now(IST).strftime("%H:%M:%S IST"),
-                    }
-                    if "EMA8_PROTOTYPE" in str(cur_row["strategy_id"] or "").upper():
-                        sid_u = str(cur_row["strategy_id"] or "").upper()
-                        self.log_ema8_prototype_event(
-                            event="EXIT FAILED",
-                            direction="LONG" if "LONG" in sid_u else "SHORT",
-                            spot=spot_exit,
-                            reason=f"EXIT FAILED — {err}",
-                            position_id=pos_id,
-                        )
-                    # Re-place protective SL-L
-                    sl_price = float(cur_row["current_trailing_sl"] or cur_row["sl_price"] or (entry - 24.0))
-                    sl_trigger = max(1.0, round_to_tick(sl_price, 0.05))
-                    sl_limit = max(0.5, round_to_tick(sl_trigger - buf, 0.05))
-                    try:
-                        re_sl = await self.broker.place_order({
-                            "correlationId": f"resl_{pos_id}_{int(time.time())}",
-                            "transactionType": "SELL",
-                            "exchangeSegment": "NSE_FNO",
-                            "productType": "INTRADAY",
-                            "orderType": "STOP_LOSS_LIMIT",
-                            "validity": "DAY",
-                            "securityId": str(sec_id),
-                            "quantity": qty,
-                            "price": sl_limit,
-                            "triggerPrice": sl_trigger,
-                            "disclosedQuantity": 0,
-                            "afterMarketOrder": False,
-                        })
-                        if re_sl.get("ok"):
-                            new_sl_oid = str(re_sl.get("order_id") or "")
-                            with sqlite3.connect(self.ledger_db) as conn:
-                                conn.execute("UPDATE positions SET sl_order_id=? WHERE position_id=?", (new_sl_oid, pos_id))
-                    except Exception as exc:
-                        log.error("Failed re-placing SL-L for %s: %s", pos_id, exc)
-                    return {"ok": False, "status": "EXIT_FAILED", "error": err}
-
-                sell_order_id = str(res.get("order_id") or "")
-                interval_s = float(self.cfg.get("chasing", {}).get("auto_modify_interval_ms", 800)) / 1000.0
-                filled = False
-                fill_price = limit_price
-                fill_qty = qty
-
-                # Chaser loop: keeps chasing at refreshed price until filled
-                while not filled:
-                    await asyncio.sleep(interval_s)
-                    orders = await self.broker.get_orders()
-                    matching = [o for o in orders or [] if str(o.get("orderId")) == sell_order_id]
-                    if matching:
-                        cur_st = str(matching[0].get("orderStatus", "")).upper()
-                        if cur_st in ("TRADED", "FILLED"):
-                            filled = True
-                            fill_price = float(matching[0].get("averageTradedPrice") or limit_price)
-                            fill_qty = int(matching[0].get("filledQty") or qty)
-                            break
-                        elif cur_st in ("CANCELLED", "REJECTED"):
-                            err = matching[0].get("omsErrorDescription") or cur_st
-                            with sqlite3.connect(self.ledger_db) as conn:
-                                conn.execute(
-                                    "UPDATE positions SET status='EXIT_FAILED', exit_reason=? WHERE position_id=?",
-                                    (f"EXIT_FAILED: {err}", pos_id),
-                                )
-                            self.exit_failure_banner = {
-                                "position_id": pos_id,
-                                "symbol": symbol,
-                                "error": err,
-                                "time": datetime.now(IST).strftime("%H:%M:%S IST"),
-                            }
-                            if "EMA8_PROTOTYPE" in str(cur_row["strategy_id"] or "").upper():
-                                sid_u = str(cur_row["strategy_id"] or "").upper()
-                                self.log_ema8_prototype_event(
-                                    event="EXIT FAILED",
-                                    direction="LONG" if "LONG" in sid_u else "SHORT",
-                                    spot=spot_exit,
-                                    reason=f"EXIT FAILED — {err}",
-                                    position_id=pos_id,
-                                )
-                            return {"ok": False, "status": "EXIT_FAILED", "error": err}
-
-                    try:
-                        fresh_quotes = await self.broker.get_marketfeed_ltp({"NSE_FNO": [int(sec_id)]})
-                        latest_ltp = float(fresh_quotes.get(sec_id) or 0.0)
-                    except Exception:
-                        latest_ltp = 0.0
-
-                    if latest_ltp > 0:
-                        new_limit = max(0.5, round_to_tick(latest_ltp - buf, 0.05))
-                        try:
-                            await self.broker.modify_order(sell_order_id, {
-                                "orderType": "LIMIT",
-                                "quantity": qty,
-                                "price": new_limit,
-                                "triggerPrice": 0.0,
-                                "validity": "DAY",
-                            })
-                        except Exception as exc:
-                            log.debug("Modify exit order %s error: %s", sell_order_id, exc)
-
-                return await self._finalize_closed_position(
-                    dict(cur_row), fill_price, fill_qty, reason, spot_exit=spot_exit
-                )
+                return await self._close_live_position(row, reason, spot_exit, ledger_qty=qty)
 
             else:
                 # 3. Paper position: close at current quote
@@ -7514,12 +7380,337 @@ class QuantTerminalBackend:
                 if not ltp or ltp <= 0:
                     log.error("No valid quote for paper position %s. Leaving OPEN to retry.", pos_id)
                     with sqlite3.connect(self.ledger_db) as conn:
-                        conn.execute("UPDATE positions SET status='OPEN' WHERE position_id=?", (pos_id,))
+                        conn.execute("UPDATE positions SET status='OPEN', exit_reason='' WHERE position_id=?", (pos_id,))
                     return {"ok": False, "error": "MISSING_QUOTE_RETRY"}
 
                 return await self._finalize_closed_position(
                     dict(cur_row), ltp, qty, reason, spot_exit=spot_exit
                 )
+
+    # ── LIVE EXIT: one real position, one real sell ──────────────────────────
+    _BROKER_FILLED = ("TRADED", "FILLED")
+    _BROKER_DEAD = ("CANCELLED", "REJECTED", "EXPIRED")
+
+    @staticmethod
+    def _position_live_filled(row: Dict[str, Any]) -> bool:
+        """True when a real BUY filled at Dhan for this position.
+
+        Rows written before the live_filled column existed carry NULL and fall
+        back to the stored mode, which is how they were treated before.
+        """
+        flag = row.get("live_filled")
+        if flag is None:
+            return str(row.get("mode") or "").upper() in ("LIVE", "REAL", "LIVE_ALLOWED", "BOTH")
+        try:
+            return int(flag) == 1
+        except (TypeError, ValueError):
+            return False
+
+    async def _broker_order(self, order_id: str) -> Tuple[Optional[Dict[str, Any]], bool]:
+        """Return (order, book_readable).
+
+        Dhan's order book comes back empty both when there are no orders and
+        when the call failed, so an empty book is reported as unreadable and
+        the caller must not conclude anything from the order being absent.
+        """
+        try:
+            orders = await self.broker.get_orders()
+        except Exception as exc:
+            log.warning("Order book read failed while looking for %s: %s", order_id, exc)
+            return None, False
+        for o in orders or []:
+            if str(o.get("orderId")) == str(order_id):
+                return o, True
+        return None, bool(orders)
+
+    async def _exit_quote(self, sec_id: str) -> float:
+        """Latest option price for an exit: the desk's quote feed first, then Dhan."""
+        ltp = float((self.cached_telemetry.get("quotes") or {}).get(sec_id) or 0.0)
+        if ltp > 0:
+            return ltp
+        try:
+            quotes = await self.broker.get_marketfeed_ltp({"NSE_FNO": [int(sec_id)]})
+            return float(quotes.get(sec_id) or 0.0)
+        except Exception as exc:
+            log.warning("Exit quote unavailable for %s: %s", sec_id, exc)
+            return 0.0
+
+    def _update_position(self, pos_id: str, **cols: Any) -> None:
+        if not cols:
+            return
+        sets = ", ".join(f"{k}=?" for k in cols)
+        with sqlite3.connect(self.ledger_db) as conn:
+            conn.execute(f"UPDATE positions SET {sets} WHERE position_id=?", (*cols.values(), pos_id))
+
+    def _flag_exit_failed(self, row: Dict[str, Any], err: str, spot_exit: Optional[float]) -> Dict[str, Any]:
+        pos_id = str(row["position_id"])
+        log.error("Live exit failed for %s: %s", pos_id, err)
+        self._update_position(pos_id, status="EXIT_FAILED", exit_reason=f"EXIT_FAILED: {err}")
+        self.exit_failure_banner = {
+            "position_id": pos_id,
+            "symbol": str(row.get("symbol") or ""),
+            "error": err,
+            "time": datetime.now(IST).strftime("%H:%M:%S IST"),
+        }
+        sid_u = str(row.get("strategy_id") or "").upper()
+        if "EMA8_PROTOTYPE" in sid_u:
+            self.log_ema8_prototype_event(
+                event="EXIT FAILED",
+                direction="LONG" if "LONG" in sid_u else "SHORT",
+                spot=spot_exit,
+                reason=f"EXIT FAILED — {err}",
+                position_id=pos_id,
+            )
+        return {"ok": False, "status": "EXIT_FAILED", "error": err}
+
+    async def _replace_protective_stop(self, row: Dict[str, Any], qty: int, buf: float) -> None:
+        """Put the stop back for the quantity still held after a failed sell."""
+        pos_id = str(row["position_id"])
+        entry = float(row.get("entry_price") or 0.0)
+        sl_price = float(row.get("current_trailing_sl") or row.get("sl_price") or (entry - 24.0))
+        sl_trigger = max(1.0, round_to_tick(sl_price, 0.05))
+        sl_limit = max(0.5, round_to_tick(sl_trigger - buf, 0.05))
+        try:
+            re_sl = await self.broker.place_order({
+                "correlationId": f"resl_{pos_id}_{int(time.time())}",
+                "transactionType": "SELL",
+                "exchangeSegment": "NSE_FNO",
+                "productType": "INTRADAY",
+                "orderType": "STOP_LOSS_LIMIT",
+                "validity": "DAY",
+                "securityId": str(row.get("security_id") or ""),
+                "quantity": qty,
+                "price": sl_limit,
+                "triggerPrice": sl_trigger,
+                "disclosedQuantity": 0,
+                "afterMarketOrder": False,
+            })
+            if re_sl.get("ok"):
+                self._update_position(pos_id, sl_order_id=str(re_sl.get("order_id") or ""))
+            else:
+                log.error("Protective stop for %s was not accepted: %s", pos_id, re_sl.get("error"))
+        except Exception as exc:
+            log.error("Failed re-placing SL-L for %s: %s", pos_id, exc)
+
+    async def _close_live_position(
+        self,
+        row: Dict[str, Any],
+        reason: str,
+        spot_exit: Optional[float],
+        *,
+        ledger_qty: int,
+    ) -> Dict[str, Any]:
+        """Sell a real position at Dhan and close the ledger from the real fills.
+
+        Order of work, each step required before the next:
+          1. A quote must exist. Without one nothing at Dhan is touched.
+          2. The companion stop must be out of the market: filled (then the
+             stop was the exit), or confirmed cancelled. If it cannot be
+             confirmed, no sell is sent, so the two can never both fill.
+          3. One sell order works the remaining quantity. Its id is stored, so
+             a restart resumes that order instead of sending a second one.
+          4. The ledger closes only when the whole quantity is filled, at the
+             quantity-weighted average of every fill.
+        """
+        pos_id = str(row["position_id"])
+        sec_id = str(row.get("security_id") or "")
+        symbol = str(row.get("symbol") or "")
+        entry = float(row.get("entry_price") or 0.0)
+        chase = self.cfg.get("chasing", {}) or {}
+        buf = float(chase.get("aggressive_limit_buffer_pts", 2.0))
+        interval_s = float(chase.get("auto_modify_interval_ms", 800)) / 1000.0
+        # Plumbing value, not a trading limit: how many price changes one
+        # order takes before it is swapped for a fresh one, kept under the
+        # broker's per-order modification allowance.
+        max_mods = int(chase.get("exit_max_modifications_per_order", 20))
+
+        total_qty = int(row.get("live_fill_qty") or ledger_qty or 0)
+        done_qty = int(row.get("exit_filled_qty") or 0)
+        done_val = float(row.get("exit_filled_value") or 0.0)
+        order_id = str(row.get("exit_order_id") or "").strip()
+        sl_oid = str(row.get("sl_order_id") or "").strip()
+
+        def _book(fill_qty: int, price: float) -> None:
+            nonlocal done_qty, done_val
+            if fill_qty <= 0:
+                return
+            done_qty += fill_qty
+            done_val += fill_qty * price
+            self._update_position(pos_id, exit_filled_qty=done_qty, exit_filled_value=round(done_val, 4))
+
+        async def _finish(final_reason: str) -> Dict[str, Any]:
+            avg = round(done_val / done_qty, 2) if done_qty > 0 else 0.0
+            self._update_position(pos_id, exit_order_id="")
+            return await self._finalize_closed_position(row, avg, ledger_qty, final_reason, spot_exit=spot_exit)
+
+        # 1. Quote first. Nothing at Dhan has been touched yet, so the
+        #    position simply goes back to OPEN with its stop still working.
+        if not order_id and await self._exit_quote(sec_id) <= 0:
+            log.error("Missing quote for %s during exit. Leaving OPEN to retry.", pos_id)
+            self._update_position(pos_id, status="OPEN", exit_reason="")
+            return {"ok": False, "error": "MISSING_QUOTE_RETRY"}
+
+        # 2. Companion stop out of the market.
+        if sl_oid:
+            stop_state = "ACTIVE"
+            stop_order: Optional[Dict[str, Any]] = None
+            for _attempt in range(3):
+                stop_order, readable = await self._broker_order(sl_oid)
+                st = str((stop_order or {}).get("orderStatus") or "").upper()
+                if st in self._BROKER_FILLED:
+                    stop_state = "FILLED"
+                    break
+                if st in self._BROKER_DEAD:
+                    stop_state = "INACTIVE"
+                    break
+                try:
+                    cancel = await self.broker.cancel_order(sl_oid)
+                except Exception as exc:
+                    cancel = {"ok": False, "error": str(exc)}
+                    log.warning("Cancel companion SL-L %s error: %s", sl_oid, exc)
+                if stop_order is None and cancel.get("ok"):
+                    # Not in the book, and Dhan accepted the cancel: it is gone.
+                    stop_state = "INACTIVE"
+                    break
+                await asyncio.sleep(interval_s)
+            else:
+                stop_order, _ = await self._broker_order(sl_oid)
+                st = str((stop_order or {}).get("orderStatus") or "").upper()
+                if st in self._BROKER_FILLED:
+                    stop_state = "FILLED"
+                elif st in self._BROKER_DEAD:
+                    stop_state = "INACTIVE"
+
+            stop_filled = int((stop_order or {}).get("filledQty") or 0)
+            stop_avg = float((stop_order or {}).get("averageTradedPrice") or row.get("sl_price") or entry)
+            if stop_state == "FILLED":
+                _book(stop_filled or (total_qty - done_qty), stop_avg)
+                return await _finish("BROKER_SL_FILLED")
+            if stop_state == "ACTIVE":
+                return self._flag_exit_failed(
+                    row, "Companion stop could not be confirmed cancelled; no sell sent", spot_exit
+                )
+            _book(min(stop_filled, total_qty - done_qty), stop_avg)  # stop part-filled before the cancel
+            self._update_position(pos_id, sl_order_id="")
+
+        # 3. Work one sell order for whatever is still held.
+        last_limit: Optional[float] = None
+        mods = 0
+        we_cancelled = False
+        unreadable = 0
+        while True:
+            remaining = total_qty - done_qty
+            if remaining <= 0:
+                return await _finish(reason)
+
+            if not order_id:
+                ltp = await self._exit_quote(sec_id)
+                if ltp <= 0:
+                    await asyncio.sleep(interval_s)
+                    continue
+                last_limit = max(0.5, round_to_tick(ltp - buf, 0.05))
+                res = await self.broker.place_order({
+                    "dhanClientId": getattr(self.broker, "client_id", ""),
+                    "correlationId": f"exit_{pos_id}",
+                    "transactionType": "SELL",
+                    "exchangeSegment": "NSE_FNO",
+                    "productType": "INTRADAY",
+                    "orderType": "LIMIT",
+                    "validity": "DAY",
+                    "tradingSymbol": symbol,
+                    "securityId": sec_id,
+                    "quantity": remaining,
+                    "disclosedQuantity": 0,
+                    "price": last_limit,
+                    "triggerPrice": 0.0,
+                    "afterMarketOrder": False,
+                })
+                if not res.get("ok"):
+                    err = str(res.get("error") or res.get("rejection_reason") or "Sell order rejected")
+                    out = self._flag_exit_failed(row, err, spot_exit)
+                    await self._replace_protective_stop(row, remaining, buf)
+                    return out
+                order_id = str(res.get("order_id") or "")
+                mods = 0
+                we_cancelled = False
+                self._update_position(pos_id, exit_order_id=order_id)
+
+            await asyncio.sleep(interval_s if unreadable == 0 else min(5.0, interval_s * (1 + unreadable)))
+            order, readable = await self._broker_order(order_id)
+            if order is None:
+                if readable:
+                    # The book is readable and this order is not in it (for
+                    # example an id left over from an earlier day). Start clean.
+                    order_id = ""
+                    self._update_position(pos_id, exit_order_id="")
+                    unreadable = 0
+                    continue
+                unreadable += 1
+                if unreadable >= 15:
+                    # Still EXIT_PENDING with its order id stored: the monitor
+                    # resumes this same order on its next pass.
+                    self.exit_failure_banner = {
+                        "position_id": pos_id,
+                        "symbol": symbol,
+                        "error": "Cannot read order status from Dhan; exit still working",
+                        "time": datetime.now(IST).strftime("%H:%M:%S IST"),
+                    }
+                    return {"ok": False, "status": "EXIT_PENDING", "error": "ORDER_STATUS_UNREADABLE"}
+                continue
+            unreadable = 0
+
+            st = str(order.get("orderStatus") or "").upper()
+            got = int(order.get("filledQty") or 0)
+            avg = float(order.get("averageTradedPrice") or last_limit or 0.0)
+            if avg <= 0:
+                avg = await self._exit_quote(sec_id)
+
+            if st in self._BROKER_FILLED:
+                _book(remaining, avg)
+                continue
+            if st in self._BROKER_DEAD:
+                _book(min(got, remaining), avg)
+                order_id = ""
+                self._update_position(pos_id, exit_order_id="")
+                if we_cancelled and st != "REJECTED":
+                    continue  # our own swap for a fresh order
+                left = total_qty - done_qty
+                if left <= 0:
+                    continue
+                err = str(order.get("omsErrorDescription") or st)
+                out = self._flag_exit_failed(row, err, spot_exit)
+                await self._replace_protective_stop(row, left, buf)
+                return out
+
+            # Still working: follow the price, but only when it has moved.
+            ltp = await self._exit_quote(sec_id)
+            if ltp <= 0:
+                continue
+            new_limit = max(0.5, round_to_tick(ltp - buf, 0.05))
+            if last_limit is not None and abs(new_limit - last_limit) < 0.05:
+                continue
+            if mods >= max_mods:
+                try:
+                    await self.broker.cancel_order(order_id)
+                    we_cancelled = True
+                except Exception as exc:
+                    log.warning("Cancel of exit order %s for re-place failed: %s", order_id, exc)
+                continue
+            try:
+                mod = await self.broker.modify_order(order_id, {
+                    "orderType": "LIMIT",
+                    "quantity": remaining,
+                    "price": new_limit,
+                    "triggerPrice": 0.0,
+                    "validity": "DAY",
+                })
+            except Exception as exc:
+                mod = {"ok": False, "error": str(exc)}
+            if mod.get("ok"):
+                last_limit = new_limit
+                mods += 1
+            else:
+                log.warning("Modify exit order %s failed: %s", order_id, mod.get("error"))
 
     async def _finalize_closed_position(
         self,
@@ -7786,6 +7977,23 @@ class QuantTerminalBackend:
             if live_route["route"] != "LIVE":
                 mode = "PAPER_ONLY"
 
+            # 8 EMA Prototype route switch. The cockpit's PAPER_ONLY setting
+            # for this lane previously changed only the label on the order;
+            # the order itself still followed the desk and went to Dhan when
+            # LIVE was armed. Downgrade only, and only for this lane.
+            proto_lane_paper = False
+            if mode != "PAPER_ONLY" and str(
+                (spot_context or {}).get("strategy_id") or strategy_id or ""
+            ).upper().startswith("EMA8_PROTOTYPE"):
+                from analyst.ema8_prototype_8510 import (
+                    _execution_mode_labels,
+                    load_ema8_prototype_cfg,
+                )
+
+                if _execution_mode_labels(load_ema8_prototype_cfg(self.scanner_cfg))[0]:
+                    mode = "PAPER_ONLY"
+                    proto_lane_paper = True
+
             # Directional Bias Enforcement Gate (Live Execution & Strike Matrix Orders)
             opt_type = str(contract.get("opt_type", "")).upper()
             cid = str(contract.get("id", "")).upper()
@@ -8031,6 +8239,7 @@ class QuantTerminalBackend:
             rejection_reason = ""
             companion_sl_order_id = None
             live_order_id = None          # v1.9.4b: broker id, live legs only
+            live_filled_qty = 0           # quantity Dhan actually filled on the BUY
             ledger_position_id = ""
 
             # ── 1. LIVE DHAN API EXECUTION (if ALGO_LIVE_ONLY or BOTH) ───────
@@ -8078,6 +8287,7 @@ class QuantTerminalBackend:
                                 if cur_status in ("TRADED", "FILLED"):
                                     filled = True
                                     fill_price = float(matching[0].get("averageTradedPrice") or limit_price)
+                                    live_filled_qty = int(matching[0].get("filledQty") or qty)
                                     order_status = "FILLED"
                                     break
                                 elif cur_status in ("CANCELLED", "REJECTED"):
@@ -8111,9 +8321,27 @@ class QuantTerminalBackend:
                             await self.broker.cancel_order(live_order_id)
                             order_status = "CANCELLED"
                             rejection_reason = "Not Filled — Slippage Too High"
+                            # The cancel can land on an order that filled, fully
+                            # or in part, in the meantime. Whatever Dhan filled
+                            # is a real holding and must be tracked and protected.
+                            try:
+                                after = [o for o in (await self.broker.get_orders() or [])
+                                         if str(o.get("orderId")) == str(live_order_id)]
+                            except Exception as exc:
+                                after = []
+                                log.warning("Could not re-read BUY %s after cancel: %s", live_order_id, exc)
+                            got = int((after[0].get("filledQty") if after else 0) or 0)
+                            if got > 0:
+                                live_filled_qty = got
+                                fill_price = float(after[0].get("averageTradedPrice") or limit_price)
+                                order_status = "FILLED"
+                                rejection_reason = (
+                                    "" if got >= qty else f"Partial live fill {got}/{qty}; rest cancelled"
+                                )
 
                         # If filled, place companion SL-L
                         if order_status == "FILLED":
+                            sl_qty = live_filled_qty or qty
                             sl_trigger = max(1.0, round_to_tick(fill_price - opt_sl_pts, 0.05))
                             sl_limit = max(0.5, round_to_tick(sl_trigger - sl_buf, 0.05))
                             log.info("🛡️ Placing Companion SL-L: Trigger ₹%.2f | Limit ₹%.2f", sl_trigger, sl_limit)
@@ -8125,7 +8353,7 @@ class QuantTerminalBackend:
                                 "orderType": "STOP_LOSS_LIMIT",
                                 "validity": "DAY",
                                 "securityId": sec_id,
-                                "quantity": qty,
+                                "quantity": sl_qty,
                                 "price": sl_limit,
                                 "triggerPrice": sl_trigger,
                                 "disclosedQuantity": 0,
@@ -8241,6 +8469,20 @@ class QuantTerminalBackend:
                         (spot_context or {}).get("sr_interaction"),
                     ))
 
+                    # Whether a real BUY filled at Dhan for this position. The
+                    # close path sends a real SELL only when this is 1; the
+                    # stored mode says what the desk was set to, not what Dhan did.
+                    real_fill = bool(live_order_id) and order_status == "FILLED" and mode in ("ALGO_LIVE_ONLY", "BOTH")
+                    cur.execute(
+                        "UPDATE positions SET live_filled=?, live_order_id=?, live_fill_qty=? WHERE position_id=?",
+                        (
+                            1 if real_fill else 0,
+                            str(live_order_id or "") if real_fill else "",
+                            int(live_filled_qty or qty) if real_fill else 0,
+                            pos_id,
+                        ),
+                    )
+
                     # Deduct paper margin
                     req_margin = paper_fill_price * qty
                     cur.execute("UPDATE paper_wallet SET margin_used = margin_used + ? WHERE id=1", (req_margin,))
@@ -8312,7 +8554,10 @@ class QuantTerminalBackend:
                 "live_route_reason": live_route["reason"],
                 "dry_run_recorded": bool(dry_run_row),
             }
-            if live_route["route"] == "PAPER_ONLY" and self.execution_mode != "BOTH":
+            if proto_lane_paper:
+                res_dict["live_note"] = ("Real order SKIPPED — 8 EMA Prototype route is "
+                                         "set to PAPER_ONLY")
+            elif live_route["route"] == "PAPER_ONLY" and self.execution_mode != "BOTH":
                 res_dict["live_note"] = ("Live OFF — Signal generated, Paper trade taken, "
                                          "Real order SKIPPED (Live OFF)")
             elif live_route["route"] == "DRY_RUN" and dry_run_row:
