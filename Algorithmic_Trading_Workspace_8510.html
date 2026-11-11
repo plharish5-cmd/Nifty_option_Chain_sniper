@@ -1158,8 +1158,9 @@
                             <div style="margin-top:6px; color:#94a3b8;" id="protoFilterSaveStatus">—</div>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            15m <b>close cross</b> 8 EMA → <b>ARM</b> (no entry on cross bar) → entry on <b>touch</b> of 8 EMA refreshed every <b>30s</b> on Nifty spot.<br>
-                            CE/PE ≥ ₹200 · current week · Tgt/SL 40 spot <i>or</i> 40 option pts (whichever first).<br>
+                            15m <b>close cross</b> 8 EMA → <b>ARM</b> (no entry on cross bar) → price moves <b>10 pts away</b>, then entry on <b>touch</b> of 8 EMA refreshed every <b>30s</b> on Nifty spot.<br>
+                            CE/PE ≥ ₹200 · current week · Tgt/SL 40 spot <i>or</i> 40 option pts (whichever first) · 15:20 square-off, no new entry from 15:20.<br>
+                            <b>Re-entry:</b> after a trade closes (profit or loss) the same side is taken again on the next away-and-touch. One trade at a time.<br>
                             Flip arm on opposite 15m close. Backtest/replay: <b>EMA8_PROTOTYPE</b> only — not Stage 2/3/FLAGSHIP.
                         </div>
                         <div style="margin-top:8px; max-height:88px; overflow-y:auto; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px;">

@@ -35,6 +35,14 @@ from analyst.ema8_prototype_8510 import (  # noqa: E402
 from analyst.terminal8510_backend import QuantTerminalBackend  # noqa: E402
 
 
+
+# NOTE (Claude, 11 Nov 2026 evening): Harish changed two Prototype rules after
+# these tests were written — same-side re-entry is now allowed, and the away
+# distance is its own setting (10 points). Both old behaviours are still in the
+# code behind config, so the tests below pin them explicitly with
+# LEGACY = {"reentry_same_side": False, "away_min_pts": <touch tolerance>}.
+# The new rules are tested in test_ema8_proto_reentry_8510.py.
+
 def _make_b15(closes: List[float], start_time: str = "2026-11-10 09:15") -> pd.DataFrame:
     idx = pd.date_range(start_time, periods=len(closes), freq="15min", tz="Asia/Kolkata")
     return pd.DataFrame(
@@ -59,7 +67,7 @@ def test_1_cross_bar_open_ts_blocks_same_bar_permits_next():
     proto_state: Dict[str, Any] = {}
     _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=24980.0, away_seen=True)
 
-    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False}})
+    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "ribbon_filter_enabled": False}})
 
     # Intrabar test while still on the crossing candle (bar_ci = 5)
     sigs, st = evaluate_ema8_prototype(
@@ -96,7 +104,7 @@ def test_2_consumed_cross_ts_blocks_second_entry_on_same_cross():
 
     proto_state: Dict[str, Any] = {}
     _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=24980.0, away_seen=True)
-    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False}})
+    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "ribbon_filter_enabled": False}})
 
     # First entry on bar 6
     sigs1, st1 = evaluate_ema8_prototype(
@@ -216,7 +224,7 @@ def test_5_arm_until_opposite_close_persists_across_days():
         "day": "2026-11-09",
         "arm": {"direction": "LONG", "cross_bar_open_ts": cross_ts, "cross_e8": 24980.0},
     }
-    cfg1 = load_ema8_prototype_cfg({"ema8_prototype": {"arm_until_opposite_close": True}})
+    cfg1 = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "arm_until_opposite_close": True}})
     evaluate_ema8_prototype(b15, bar_ci=6, cfg=cfg1, proto_state=state1, session_day="2026-11-10")
     assert state1.get("arm") is not None
     assert state1["day"] == "2026-11-10"
@@ -226,7 +234,7 @@ def test_5_arm_until_opposite_close_persists_across_days():
         "day": "2026-11-09",
         "arm": {"direction": "LONG", "cross_bar_open_ts": cross_ts, "cross_e8": 24980.0},
     }
-    cfg2 = load_ema8_prototype_cfg({"ema8_prototype": {"arm_until_opposite_close": False}})
+    cfg2 = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "arm_until_opposite_close": False}})
     evaluate_ema8_prototype(b15, bar_ci=6, cfg=cfg2, proto_state=state2, session_day="2026-11-10")
     assert state2.get("arm") is None
 
@@ -239,7 +247,7 @@ def test_6_spot_entry_records_real_spot_not_8ema():
 
     proto_state: Dict[str, Any] = {}
     _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=24980.0, away_seen=True)
-    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False, "touch_tol_pts": 5.0}})
+    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "ribbon_filter_enabled": False, "touch_tol_pts": 5.0}})
 
     live_spot_tick = 24982.50
     sigs, st = evaluate_ema8_prototype(

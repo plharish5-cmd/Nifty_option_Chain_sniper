@@ -730,3 +730,50 @@ Still open:
   `test_3_30s_grid_reads_completed_1m_candles` pins that reading, so I left it and am reporting it.
 - Backtest trades of one lane can still overlap in time; Flagship backtest unchanged.
 - Everything listed as open in the block above, except the Stage/Reversal backtest.
+
+---
+
+## 2026-11-11 · Claude · `claude/ema8-proto-reentry`
+Tag: pre-claude-ema8-proto-reentry → post-claude-ema8-proto-reentry
+Branched from: `claude/four-algo-corrections` @ `48f7b87`
+
+Harish's rules for the 8 EMA Prototype, given the evening of 11 Nov. **These replace his earlier
+answer** ("do not take the same side again after a trade closes"):
+
+- **Re-entry on the same side.** After a trade closes — spot ±40, option ±40, or 15:20 — the arm
+  stays and the next away-and-touch takes the same side again. Only an opposite 15m close removes
+  the arm (and arms the other side). One Prototype trade open at a time.
+- **Away distance is its own setting: `away_min_pts` = 10.** ("Go ahead" on the suggested 10–15;
+  10 chosen. Touch tolerance stays 3.)
+
+Also built (bug-level, reported to Harish):
+- The tick that first sees "away" is never also the touch; the return must be on a later tick.
+- No new entry from `no_entry_from_hm` = "15:20": a trade opened then was closed by the 15:20
+  rule on the next pass. The arm is kept.
+- The live workers (Prototype and Stage/Reversal) now record the high and low of the 1-second
+  spot between 30-second ticks. Before, most ticks saw one price and a quick touch was missed.
+- Prototype worker errors are logged as warnings, not debug.
+- Old one-trade-per-cross memory saved earlier in the day is ignored when re-entry is on.
+
+Config keys: none written. New keys read with defaults in `scanner.ema8_prototype`:
+`away_min_pts=10.0`, `reentry_same_side=true`, `no_entry_from_hm="15:20"`.
+`reentry_same_side=false` and `away_min_pts=<touch tolerance>` give the previous behaviour.
+
+Tests changed because the owner's rule changed (reported, not loosened): AGY's
+`test_phase3_state`, `test_phase4_retouch` and `test_phase7_cockpit_log` pinned one-trade-per-
+cross, alternation and away = 3. Their configs now set the two legacy switches explicitly, with a
+note at the top of each file; every assertion is unchanged. New rules are in
+`test_ema8_proto_reentry_8510.py` (11 tests, including Harish's 11 Nov PE example).
+
+Baseline: Prototype + exit + Stage + backtest suites 104 passed / 4 failed. The 4 are AGY's
+wall-clock tests (they fail after 15:20 IST, same on `48f7b87`). Locks 11/11.
+
+Still open / needs Harish:
+- Should the Prototype also wait until 09:30? Not answered; unchanged (can enter from 09:15).
+- With a 10-point away rule, a candle that closes just across the line and comes straight back
+  without first moving 10 points does not trade. His 12:15 example may be such a case.
+- The backtest allows a re-entry only from the candle after the previous trade's exit; live can
+  re-enter inside the same candle.
+- Prototype backtest still reads the 1-minute candle open at the tick (look-ahead up to 60s).
+- No cockpit control yet for `away_min_pts` or the re-entry switch (config only).
+- Nothing run against Dhan or desk data. Not deployed, not restarted, not merged.

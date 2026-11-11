@@ -34,6 +34,14 @@ from analyst.ema8_prototype_8510 import (  # noqa: E402
 from analyst.terminal8510_backend import QuantTerminalBackend  # noqa: E402
 
 
+
+# NOTE (Claude, 11 Nov 2026 evening): Harish changed two Prototype rules after
+# these tests were written — same-side re-entry is now allowed, and the away
+# distance is its own setting (10 points). Both old behaviours are still in the
+# code behind config, so the tests below pin them explicitly with
+# LEGACY = {"reentry_same_side": False, "away_min_pts": <touch tolerance>}.
+# The new rules are tested in test_ema8_proto_reentry_8510.py.
+
 def _make_b15(closes: List[float], start_time: str = "2026-11-10 09:15") -> pd.DataFrame:
     idx = pd.date_range(start_time, periods=len(closes), freq="15min", tz="Asia/Kolkata")
     return pd.DataFrame(
@@ -56,7 +64,7 @@ def test_1_candle_inside_band_never_leaves_no_entry():
 
     proto_state: Dict[str, Any] = {}
     _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=25000.0)
-    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False, "touch_tol_pts": 3.0}})
+    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "ribbon_filter_enabled": False, "touch_tol_pts": 3.0}})
     assert get_effective_touch_tolerance(cfg) == 3.0
 
     # Bar 9: dynamic 8 EMA = 25000. Spot stays inside 25000 ± 3 (25001.0, 25002.5, 24998.0, 25000.5)
@@ -83,7 +91,7 @@ def test_2_ce_away_seen_then_returns_to_line_entry_fires():
 
     proto_state: Dict[str, Any] = {}
     _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=25000.0)
-    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False, "touch_tol_pts": 3.0}})
+    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "ribbon_filter_enabled": False, "touch_tol_pts": 3.0}})
 
     # Tick 1 on bar 9: price moves > 3.0 points above dynamic 8 EMA (dynamic e8 = 25000, spot = 25008)
     sigs1, st1 = evaluate_ema8_prototype(
@@ -126,7 +134,7 @@ def test_3_pe_away_seen_then_returns_to_line_entry_fires():
 
     proto_state: Dict[str, Any] = {}
     _arm_new(proto_state, direction="SHORT", cross_bar_open_ts=cross_ts, e8=25000.0)
-    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False, "touch_tol_pts": 3.0}})
+    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "ribbon_filter_enabled": False, "touch_tol_pts": 3.0}})
 
     # Tick 1 on bar 9: price drops > 3.0 points below dynamic 8 EMA (dynamic e8 = 25000, spot = 24992)
     sigs1, st1 = evaluate_ema8_prototype(
@@ -169,7 +177,7 @@ def test_4_ce_falls_straight_through_without_away_no_entry():
 
     proto_state: Dict[str, Any] = {}
     _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=25000.0)
-    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False, "touch_tol_pts": 3.0}})
+    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "ribbon_filter_enabled": False, "touch_tol_pts": 3.0}})
 
     # Bar 9: price opens at 25001 and falls straight down to 24985 without ever exceeding 25003
     for spot in [25001.0, 24998.0, 24990.0, 24985.0]:
@@ -246,6 +254,8 @@ def test_7_slow_market_exact_line_requires_zero_tolerance():
                 "ribbon_filter_enabled": False,
                 "slow_market_exact_line": True,
                 "touch_tol_slow_pts": 0.0,
+                "reentry_same_side": False,   # legacy switches, see NOTE at top
+                "away_min_pts": 0.0,
             }
         }
     )
@@ -299,7 +309,7 @@ def test_8_alternating_ce_and_pe_trades_per_cross():
 
     proto_state: Dict[str, Any] = {}
     _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_ts, e8=25000.0)
-    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False, "touch_tol_pts": 3.0}})
+    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "ribbon_filter_enabled": False, "touch_tol_pts": 3.0}})
 
     # 1. CE entry fires on bar 9
     evaluate_ema8_prototype(b15, bar_ci=9, cfg=cfg, proto_state=proto_state, session_day="2026-11-10", live_spot=25008.0, intrabar=True)

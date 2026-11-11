@@ -39,6 +39,16 @@ DEFAULT_CFG: Dict[str, Any] = {
     "supertrend_factor": 1.0,
     "arm_until_opposite_close": True,
     "retouch_requires_away": True,
+    # Owner rules, 11 Nov 2026 (evening):
+    # - price must move this far from the dynamic 8 EMA before a touch counts;
+    # - after a trade closes (profit or loss) the same side is taken again on
+    #   the next touch, as long as no opposite 15m close has flipped the arm.
+    #   One Prototype trade open at a time.
+    "away_min_pts": 10.0,
+    "reentry_same_side": True,
+    # No new entry from the desk's square-off time: a trade opened then would
+    # be closed by the 15:20 rule on the next pass.
+    "no_entry_from_hm": "15:20",
 }
 
 
@@ -308,8 +318,14 @@ def check_retouch(
     retouch_requires_away: bool = True,
     candle_high: Optional[float] = None,
     candle_low: Optional[float] = None,
+    away_pts: Optional[float] = None,
 ) -> bool:
     """Evaluates whether price retouches dynamic 8 EMA from the correct side.
+
+    away_pts is how far price must first move from the line (defaults to tol
+    for callers that do not pass it). The tick that first sees "away" never
+    also counts as the touch: within one tick the order of its high and low
+    is unknown, so the return to the line has to be seen on a later tick.
 
     If retouch_requires_away is True:
       - Price must have moved away from dynamic 8 EMA:
@@ -329,20 +345,19 @@ def check_retouch(
     chk_high = float(tick_high) if tick_high is not None else float(spot)
     chk_low = float(tick_low) if tick_low is not None else float(spot)
 
+    away = float(tol if away_pts is None else away_pts)
     if bullish:
         if not arm.get("away_seen", False):
-            if chk_high > e8_val + tol:
+            if chk_high > e8_val + away:
                 arm["away_seen"] = True
-        if arm.get("away_seen", False):
-            return chk_low <= e8_val + tol
-        return False
+            return False
+        return chk_low <= e8_val + tol
     else:
         if not arm.get("away_seen", False):
-            if chk_low < e8_val - tol:
+            if chk_low < e8_val - away:
                 arm["away_seen"] = True
-        if arm.get("away_seen", False):
-            return chk_high >= e8_val - tol
-        return False
+            return False
+        return chk_high >= e8_val - tol
 
 
 def current_nse_15m_open_ts(now: Optional[datetime] = None) -> int:
@@ -519,6 +534,34 @@ def _maybe_flip_arm(
         _arm_new(proto_state, direction="SHORT", cross_bar_open_ts=cross_bar_open_ts, e8=e8, away_seen=False, day=day)
 
 
+def reentry_enabled(cfg: Dict[str, Any]) -> bool:
+    return bool(cfg.get("reentry_same_side", True))
+
+
+def _after_entry(proto_state: Dict[str, Any], cfg: Dict[str, Any], direction: str, cross_ts: int) -> None:
+    """What the lane remembers once a trade has been taken.
+
+    Re-entry ON (owner rule): the arm stays. Price has to leave the line and
+    come back again, and the open position blocks a second trade until it has
+    closed. Only an opposite 15m close removes the arm.
+    Re-entry OFF: one trade per cross, and the same side waits for a flip.
+    """
+    if reentry_enabled(cfg):
+        arm = proto_state.get("arm")
+        if arm is not None:
+            arm["away_seen"] = False
+        proto_state.pop("consumed_cross_ts", None)
+        proto_state.pop("last_traded_direction", None)
+    else:
+        proto_state["consumed_cross_ts"] = cross_ts
+        proto_state["last_traded_direction"] = direction
+        proto_state.pop("arm", None)
+
+
+def _hm_ist(ts: int) -> str:
+    return pd.to_datetime(int(ts), unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%H:%M")
+
+
 def _build_signal(
     *,
     bullish: bool,
@@ -577,10 +620,16 @@ def evaluate_ema8_prototype(
     form_low: Optional[float] = None,
     tick_high: Optional[float] = None,
     tick_low: Optional[float] = None,
+    now_hm: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Closed-bar cross/flip + optional intrabar touch on dynamic 8 EMA."""
     gate_meta = gate_meta or (lambda _k: {})
     tol = get_effective_touch_tolerance(cfg)
+    if reentry_enabled(cfg):
+        # Memory from the one-trade-per-cross rule (possibly saved earlier in
+        # the day) must not block re-entries.
+        proto_state.pop("consumed_cross_ts", None)
+        proto_state.pop("last_traded_direction", None)
 
     if session_day:
         if proto_state.get("day") != session_day:
@@ -762,6 +811,8 @@ def evaluate_ema8_prototype(
         st["actions"] = actions
         return [], st
 
+    # (The last closed 15m candle is on the armed side by construction: a
+    # close on the other side is a cross, and a cross flips the arm.)
     retouch_requires_away = bool(cfg.get("retouch_requires_away", True))
     real_spot = float(live_spot) if (live_spot is not None and live_spot > 0) else c
     touched = check_retouch(
@@ -775,7 +826,25 @@ def evaluate_ema8_prototype(
         retouch_requires_away=retouch_requires_away,
         candle_high=high,
         candle_low=low,
+        away_pts=float(cfg.get("away_min_pts", tol)),
     )
+    # No new entry from the square-off time: the touch is seen but not traded,
+    # and the arm is left as it is.
+    no_from = str(cfg.get("no_entry_from_hm", "15:20") or "")
+    entry_hm = now_hm or (_hm_ist(current_bar_open_ts + 900) if (not intrabar and current_bar_open_ts > 0) else "")
+    if touched and no_from and entry_hm and entry_hm >= no_from:
+        st = _status(
+            "ARMED",
+            phase="ARMED CE" if bullish else "ARMED PE",
+            armed=True,
+            direction=direction,
+            block_reason=f"NO TRADE — No new entry from {no_from}",
+            cfg=cfg,
+            extra={"dynamic_e8": round(e8_val, 2)},
+        )
+        st["actions"] = actions
+        return [], st
+
     if touched:
         signals.append(
             _build_signal(
@@ -788,9 +857,7 @@ def evaluate_ema8_prototype(
                 gate_meta=gate_meta,
             )
         )
-        proto_state["consumed_cross_ts"] = cross_bar_open_ts
-        proto_state["last_traded_direction"] = direction
-        proto_state.pop("arm", None)
+        _after_entry(proto_state, cfg, direction, cross_bar_open_ts)
         proto_state.pop("last_flip", None)
         proto_state.pop("last_exit_reason", None)
         actions.append({"type": "RETOUCH_SEEN", "direction": direction, "dynamic_8ema": e8_val, "spot": real_spot})
@@ -806,7 +873,10 @@ def evaluate_ema8_prototype(
 
     away_flag = bool(arm.get("away_seen", False))
     if retouch_requires_away and not away_flag:
-        wait = "NO TRADE — Waiting for price to move away from dynamic 8 EMA"
+        wait = (
+            "NO TRADE — Waiting for price to move away from dynamic 8 EMA "
+            f"({float(cfg.get('away_min_pts', tol)):g} pts)"
+        )
     else:
         wait = "NO TRADE — Waiting for re-touch to dynamic 8 EMA"
 
@@ -835,6 +905,7 @@ def evaluate_ema8_prototype_intrabar(
     form_low: Optional[float] = None,
     tick_high: Optional[float] = None,
     tick_low: Optional[float] = None,
+    now_hm: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     if live_spot <= 0:
         return [], _status("SCANNING", phase="WAITING_FOR_CLOSE", cfg=cfg)
@@ -851,6 +922,7 @@ def evaluate_ema8_prototype_intrabar(
         form_low=form_low,
         tick_high=tick_high,
         tick_low=tick_low,
+        now_hm=now_hm,
     )
 
 
@@ -909,7 +981,12 @@ def backtest_ema8_prototype_at_bar(
     prev_c = float(b_prev["close"])
     prev_e8 = float(b_prev["e8"])
     tol = get_effective_touch_tolerance(cfg)
+    away_pts = float(cfg.get("away_min_pts", tol))
+    no_from = str(cfg.get("no_entry_from_hm", "15:20") or "")
     refresh = float(cfg.get("e8_refresh_seconds", 30.0) or 30.0)
+    if reentry_enabled(cfg):
+        proto_state.pop("consumed_cross_ts", None)
+        proto_state.pop("last_traded_direction", None)
 
     bar_open_ts = int(b.get("ts") or 0)
     use_intrabar = b15_df is not None and not b15_df.empty and day_1m is not None and bar_open_ts > 0
@@ -934,6 +1011,8 @@ def backtest_ema8_prototype_at_bar(
                     if spot <= 0:
                         prev_tick_ts = tick_ts
                         continue
+                    if no_from and _hm_ist(tick_ts) >= no_from:
+                        break
                     tick_slice = day_1m[(day_1m["ts"] >= prev_tick_ts) & (day_1m["ts"] <= tick_ts)]
                     if not tick_slice.empty:
                         tick_h = max(float(tick_slice["high"].max()), spot)
@@ -974,6 +1053,7 @@ def backtest_ema8_prototype_at_bar(
                         retouch_requires_away=retouch_requires_away,
                         candle_high=fh,
                         candle_low=fl,
+                        away_pts=away_pts,
                     ):
                         tick_hm = (
                             pd.to_datetime(tick_ts, unit="s", utc=True)
@@ -995,9 +1075,7 @@ def backtest_ema8_prototype_at_bar(
                             e8=e8_tick,
                             cross_bar_open_ts=cross_ts,
                         )
-                        proto_state["consumed_cross_ts"] = cross_ts
-                        proto_state["last_traded_direction"] = direction
-                        proto_state.pop("arm", None)
+                        _after_entry(proto_state, cfg, direction, cross_ts)
                         signals.append((sid, sname, direction, float(cfg["target_pts"]), float(cfg["sl_pts"]), meta))
                         break
             else:
@@ -1021,6 +1099,7 @@ def backtest_ema8_prototype_at_bar(
                     retouch_requires_away=retouch_requires_away,
                     candle_high=high,
                     candle_low=low,
+                    away_pts=away_pts,
                 ):
                     sid = SID_LONG if bullish else SID_SHORT
                     sname = "8 EMA Prototype (Long) — retouch" if bullish else "8 EMA Prototype (Short) — retouch"
@@ -1034,9 +1113,7 @@ def backtest_ema8_prototype_at_bar(
                         cross_bar_open_ts=cross_ts,
                     )
                     meta["intrabar_30s"] = False
-                    proto_state["consumed_cross_ts"] = cross_ts
-                    proto_state["last_traded_direction"] = direction
-                    proto_state.pop("arm", None)
+                    _after_entry(proto_state, cfg, direction, cross_ts)
                     signals.append((sid, sname, direction, float(cfg["target_pts"]), float(cfg["sl_pts"]), meta))
 
     # At the close of this 15m bar: check close-cross of 8 EMA to arm / flip for subsequent bars

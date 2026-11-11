@@ -4684,6 +4684,31 @@ class QuantTerminalBackend:
                 log.debug("EMA live-cross worker: %s", exc)
             await asyncio.sleep(refresh)
 
+    async def _sleep_tracking_spot(self, key: str, seconds: float) -> None:
+        """Wait for the next tick while recording the high and low of spot.
+
+        A 30-second tick used to see only the price at that instant, so a dip
+        that touched the 8 EMA and bounced between two ticks was missed. Spot
+        is refreshed about once a second; this keeps its range for the worker.
+        """
+        ranges = self.__dict__.setdefault("_tick_spot_range", {})
+        hi = lo = 0.0
+        waited = 0.0
+        while waited < seconds:
+            step = min(1.0, seconds - waited)
+            await asyncio.sleep(step)
+            waited += step
+            px = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
+            if px > 0:
+                hi = px if hi <= 0 else max(hi, px)
+                lo = px if lo <= 0 else min(lo, px)
+        ranges[key] = (hi, lo)
+
+    def _take_tick_spot_range(self, key: str, spot: float) -> Tuple[float, float]:
+        """(high, low) of spot since the previous tick, always including spot now."""
+        hi, lo = self.__dict__.setdefault("_tick_spot_range", {}).pop(key, (0.0, 0.0))
+        return (max(hi, spot) if hi > 0 else spot, min(lo, spot) if lo > 0 else spot)
+
     async def start_ema8_prototype_intrabar_worker(self) -> None:
         """30s (config) refresh: armed prototype checks touch vs dynamic 8 EMA on forming 15m bar."""
         from analyst.ema8_prototype_8510 import (
@@ -4748,6 +4773,9 @@ class QuantTerminalBackend:
                     self._ema8_proto_last_tick_ts = cur_ts
                 except Exception as exc:
                     log.debug("ema8 proto forming ohlc: %s", exc)
+                seen_hi, seen_lo = self._take_tick_spot_range("ema8_proto", spot)
+                tick_high = max(float(tick_high or spot), seen_hi)
+                tick_low = min(float(tick_low or spot), seen_lo)
                 session_day = datetime.now(IST).strftime("%Y-%m-%d")
                 self._sync_open_ema8_prototype_position()
                 sigs, st = await asyncio.to_thread(
@@ -4762,6 +4790,7 @@ class QuantTerminalBackend:
                     form_low=form_low,
                     tick_high=tick_high,
                     tick_low=tick_low,
+                    now_hm=datetime.now(IST).strftime("%H:%M"),
                 )
                 prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})
                 prev_proto.update(st)
@@ -4773,8 +4802,8 @@ class QuantTerminalBackend:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                log.debug("ema8 prototype intrabar worker: %s", exc)
-            await asyncio.sleep(refresh)
+                log.warning("ema8 prototype intrabar worker: %s", exc)
+            await self._sleep_tracking_spot("ema8_proto", refresh)
 
     async def start_mj_dynamic_intrabar_worker(self) -> None:
         """Every 30s: Stage 2 / Stage 3 / 8 EMA Reversal first touch of the dynamic 8 EMA.
@@ -4833,6 +4862,8 @@ class QuantTerminalBackend:
                         tick_high = max(float(recent["high"].max()), spot)
                         tick_low = min(float(recent["low"].min()), spot)
                 self._mj_dyn_last_tick_ts = cur_ts
+                seen_hi, seen_lo = self._take_tick_spot_range("mj_dynamic", spot)
+                tick_high, tick_low = max(tick_high, seen_hi), min(tick_low, seen_lo)
 
                 sigs, mj_status = await asyncio.to_thread(
                     evaluate_mj_sir_four_pack,
@@ -4868,7 +4899,7 @@ class QuantTerminalBackend:
                 raise
             except Exception as exc:
                 log.warning("Stage/Reversal dynamic 8 EMA worker: %s", exc)
-            await asyncio.sleep(refresh)
+            await self._sleep_tracking_spot("mj_dynamic", refresh)
 
     # ── TELEMETRY & 1-SECOND TICK STREAM ────────────────────────────────────
     async def get_live_telemetry(self) -> Dict[str, Any]:
@@ -10066,8 +10097,14 @@ class QuantTerminalBackend:
                                         "entry_ts": int(meta.get("entry_ts") or 0),
                                         "exit_ts": exit_ts,
                                     }
-                                    proto_bt_state["last_traded_direction"] = direc
-                                    proto_bt_state["consumed_cross_ts"] = meta.get("cross_bar_open_ts") or meta.get("entry_ts")
+                                    from analyst.ema8_prototype_8510 import (
+                                        load_ema8_prototype_cfg as _lpc,
+                                        reentry_enabled as _reentry_on,
+                                    )
+
+                                    if not _reentry_on(_lpc(self.scanner_cfg)):
+                                        proto_bt_state["last_traded_direction"] = direc
+                                        proto_bt_state["consumed_cross_ts"] = meta.get("cross_bar_open_ts") or meta.get("entry_ts")
                             else:
                                 st_pnl_pts, fx_pnl_pts, exit_spot, st_reason, trail_steps, mfe_pts, ent_day, ent_hm, ex_day, ex_hm = simulate_backtest_spot_exit(
                                     bars,

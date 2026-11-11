@@ -48,6 +48,14 @@ class FakeBroker:
         return False
 
 
+
+# NOTE (Claude, 11 Nov 2026 evening): Harish changed two Prototype rules after
+# these tests were written — same-side re-entry is now allowed, and the away
+# distance is its own setting (10 points). Both old behaviours are still in the
+# code behind config, so the tests below pin them explicitly with
+# LEGACY = {"reentry_same_side": False, "away_min_pts": <touch tolerance>}.
+# The new rules are tested in test_ema8_proto_reentry_8510.py.
+
 def _make_bars(closes, start_time="2026-11-05 09:15"):
     idx = pd.date_range(start_time, periods=len(closes), freq="15min")
     return pd.DataFrame(
@@ -195,7 +203,7 @@ def test_phase7_card_state_6_phases():
     5. EXITED — <reason>
     6. FLIPPED TO EMA SHORT / LONG
     """
-    cfg = load_ema8_prototype_cfg({"ema8_prototype": {}})
+    cfg = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, }})
 
     # Phase 1: WAITING FOR CLOSE (no arm)
     closes_flat = [100.0] * 12
@@ -262,29 +270,29 @@ def test_phase7_filter_block_reasons_only_when_on():
     b15 = _make_bars(closes)
 
     # 1. Ribbon filter
-    cfg_ribbon_off = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": False, "ribbon_max_pts": 5.0}})
+    cfg_ribbon_off = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "ribbon_filter_enabled": False, "ribbon_max_pts": 5.0}})
     block_off = _filter_blocks(bullish=True, e4=100.0, e8=100.0, b15=b15, cfg=cfg_ribbon_off, bar_ci=11)
     assert block_off == ""
 
-    cfg_ribbon_on = load_ema8_prototype_cfg({"ema8_prototype": {"ribbon_filter_enabled": True, "ribbon_max_pts": 5.0}})
+    cfg_ribbon_on = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "ribbon_filter_enabled": True, "ribbon_max_pts": 5.0}})
     block_on = _filter_blocks(bullish=True, e4=100.0, e8=100.0, b15=b15, cfg=cfg_ribbon_on, bar_ci=11)
     assert block_on == "4-8 Attached (Ribbon ON)"
 
     # 2. EMA Separation filter
-    cfg_sep_off = load_ema8_prototype_cfg({"ema8_prototype": {"ema_separation_enabled": False}})
+    cfg_sep_off = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "ema_separation_enabled": False}})
     block_sep_off = _filter_blocks(bullish=True, e4=95.0, e8=100.0, b15=b15, cfg=cfg_sep_off, bar_ci=11)
     assert block_sep_off == ""
 
-    cfg_sep_on = load_ema8_prototype_cfg({"ema8_prototype": {"ema_separation_enabled": True}})
+    cfg_sep_on = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "ema_separation_enabled": True}})
     block_sep_on = _filter_blocks(bullish=True, e4=95.0, e8=100.0, b15=b15, cfg=cfg_sep_on, bar_ci=11)
     assert block_sep_on == "EMA Separation"
 
     # 3. SuperTrend filter
-    cfg_st_off = load_ema8_prototype_cfg({"ema8_prototype": {"supertrend_enabled": False}})
+    cfg_st_off = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "supertrend_enabled": False}})
     block_st_off = _filter_blocks(bullish=False, e4=95.0, e8=100.0, b15=b15, cfg=cfg_st_off, bar_ci=11)
     assert block_st_off == ""
 
-    cfg_st_on = load_ema8_prototype_cfg({"ema8_prototype": {"supertrend_enabled": True}})
+    cfg_st_on = load_ema8_prototype_cfg({"ema8_prototype": {"reentry_same_side": False, "away_min_pts": 3.0, "supertrend_enabled": True}})
     # On flat bars, SuperTrend is UP -> blocks bearish direction (bullish=False)
     block_st_on = _filter_blocks(bullish=False, e4=95.0, e8=100.0, b15=b15, cfg=cfg_st_on, bar_ci=11)
     assert block_st_on == "SuperTrend"
