@@ -44,8 +44,18 @@ DEFAULT_CFG: Dict[str, Any] = {
     # - after a trade closes (profit or loss) the same side is taken again on
     #   the next touch, as long as no opposite 15m close has flipped the arm.
     #   One Prototype trade open at a time.
-    "away_min_pts": 10.0,
+    "away_min_pts": 2.0,
     "reentry_same_side": True,
+    # Re-entry is for PROFIT exits only. A stop-loss (spot or option) cancels
+    # that side: its arm is removed and it cannot arm again until a 15m close
+    # has armed the opposite side. An opposite 15m close does the same.
+    "reentry_after_stop_loss": False,
+    # No entry before this time (owner: 09:30 for now).
+    "no_entry_before_hm": "09:30",
+    # PLACEHOLDER — not built. A later feed (CE/PE change in OI, total change
+    # in OI) will write proto_state["oi_bias"] = "CE" or "PE"; when this is ON
+    # only that side is traded. OFF, or no bias written: no effect.
+    "oi_direction_filter_enabled": False,
     # No new entry from the desk's square-off time: a trade opened then would
     # be closed by the 15:20 rule on the next pass.
     "no_entry_from_hm": "15:20",
@@ -514,6 +524,12 @@ def _maybe_flip_arm(
 ) -> None:
     arm = proto_state.get("arm")
     last_dir = str(proto_state.get("last_traded_direction") or "").upper()
+    # After a stop-loss that side cannot arm again; the opposite cross clears it.
+    sl_side = str(proto_state.get("sl_blocked_side") or "").upper()
+    if (bull_cross and sl_side == "LONG") or (bear_cross and sl_side == "SHORT"):
+        return
+    if (bull_cross and sl_side == "SHORT") or (bear_cross and sl_side == "LONG"):
+        proto_state.pop("sl_blocked_side", None)
     if bull_cross:
         if last_dir == "LONG":
             return
@@ -536,6 +552,44 @@ def _maybe_flip_arm(
 
 def reentry_enabled(cfg: Dict[str, Any]) -> bool:
     return bool(cfg.get("reentry_same_side", True))
+
+
+STOP_LOSS_EXIT_REASONS = ("SPOT_SL_HIT", "OPTION_SL_HIT", "BROKER_SL_FILLED")
+
+
+def is_stop_loss_exit(reason: Any) -> bool:
+    return str(reason or "").upper().startswith(STOP_LOSS_EXIT_REASONS)
+
+
+def note_prototype_exit(proto_state: Dict[str, Any], cfg: Dict[str, Any], direction: str, reason: Any) -> bool:
+    """Apply the owner's exit rule to the lane's memory. Returns True if it changed.
+
+    Profit exit (+40 spot or option): nothing changes; the arm stays and the
+    same side is taken again on the next touch.
+    Stop-loss exit (-40 spot or option, or the broker stop filled): that side
+    is cancelled. Its arm is removed and it stays blocked until a 15m close
+    arms the opposite side.
+    """
+    if not is_stop_loss_exit(reason) or bool(cfg.get("reentry_after_stop_loss", False)):
+        return False
+    side = str(direction or "").upper()
+    if side not in ("LONG", "SHORT"):
+        return False
+    arm = proto_state.get("arm")
+    if arm and str(arm.get("direction", "")).upper() == side:
+        proto_state.pop("arm", None)
+    proto_state["sl_blocked_side"] = side
+    return True
+
+
+def _oi_filter_blocks(bullish: bool, cfg: Dict[str, Any], proto_state: Dict[str, Any]) -> bool:
+    """PLACEHOLDER for the OI-based CE/PE choice. Inert unless switched on AND a bias has been written."""
+    if not bool(cfg.get("oi_direction_filter_enabled", False)):
+        return False
+    bias = str(proto_state.get("oi_bias") or "").upper()
+    if bias not in ("CE", "PE"):
+        return False
+    return bias != ("CE" if bullish else "PE")
 
 
 def _after_entry(proto_state: Dict[str, Any], cfg: Dict[str, Any], direction: str, cross_ts: int) -> None:
@@ -831,14 +885,22 @@ def evaluate_ema8_prototype(
     # No new entry from the square-off time: the touch is seen but not traded,
     # and the arm is left as it is.
     no_from = str(cfg.get("no_entry_from_hm", "15:20") or "")
+    no_before = str(cfg.get("no_entry_before_hm", "09:30") or "")
     entry_hm = now_hm or (_hm_ist(current_bar_open_ts + 900) if (not intrabar and current_bar_open_ts > 0) else "")
+    hold = ""
     if touched and no_from and entry_hm and entry_hm >= no_from:
+        hold = f"NO TRADE — No new entry from {no_from}"
+    elif touched and no_before and entry_hm and entry_hm < no_before:
+        hold = f"NO TRADE — No entry before {no_before}"
+    elif touched and _oi_filter_blocks(bullish, cfg, proto_state):
+        hold = "NO TRADE — OI direction filter"
+    if hold:
         st = _status(
             "ARMED",
             phase="ARMED CE" if bullish else "ARMED PE",
             armed=True,
             direction=direction,
-            block_reason=f"NO TRADE — No new entry from {no_from}",
+            block_reason=hold,
             cfg=cfg,
             extra={"dynamic_e8": round(e8_val, 2)},
         )
@@ -983,6 +1045,7 @@ def backtest_ema8_prototype_at_bar(
     tol = get_effective_touch_tolerance(cfg)
     away_pts = float(cfg.get("away_min_pts", tol))
     no_from = str(cfg.get("no_entry_from_hm", "15:20") or "")
+    no_before = str(cfg.get("no_entry_before_hm", "09:30") or "")
     refresh = float(cfg.get("e8_refresh_seconds", 30.0) or 30.0)
     if reentry_enabled(cfg):
         proto_state.pop("consumed_cross_ts", None)
@@ -1013,6 +1076,9 @@ def backtest_ema8_prototype_at_bar(
                         continue
                     if no_from and _hm_ist(tick_ts) >= no_from:
                         break
+                    if no_before and _hm_ist(tick_ts) < no_before:
+                        prev_tick_ts = tick_ts
+                        continue
                     tick_slice = day_1m[(day_1m["ts"] >= prev_tick_ts) & (day_1m["ts"] <= tick_ts)]
                     if not tick_slice.empty:
                         tick_h = max(float(tick_slice["high"].max()), spot)

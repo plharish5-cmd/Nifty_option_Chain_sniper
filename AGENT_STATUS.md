@@ -777,3 +777,28 @@ Still open / needs Harish:
 - Prototype backtest still reads the 1-minute candle open at the tick (look-ahead up to 60s).
 - No cockpit control yet for `away_min_pts` or the re-entry switch (config only).
 - Nothing run against Dhan or desk data. Not deployed, not restarted, not merged.
+
+---
+
+## 2026-11-11 · Claude · `claude/ema8-proto-reentry` (second commit)
+Same branch and pre-tag as the block above. Harish's final answers for the 8 EMA Prototype:
+
+- **Away distance = 2 points** ("GO AHEAD 2"). `away_min_pts` default 10 → 2. Touch stays ±3.
+- **No entry before 09:30** (`no_entry_before_hm`, "we shall see later if we need 09:15").
+- **Re-entry depends on how the trade closed:**
+  - Profit (+40 spot or +40 option): the arm stays; same side again on the next touch.
+  - Stop-loss (−40 spot, −40 option, or the broker stop filled): that side is **cancelled**. Its
+    arm is removed and it cannot arm again until a 15m close has armed the opposite side
+    (`sl_blocked_side`, saved in `ema8_prototype_state`). `reentry_after_stop_loss=false`.
+  - Opposite 15m close: as before — close, cancel, arm the other side.
+  - 15:20 exit: neither; the arm is left as it is.
+- **Placeholder only:** `oi_direction_filter_enabled` (default false). When ON *and* something has
+  written `proto_state["oi_bias"]` = "CE"/"PE", only that side trades. Nothing writes it yet;
+  the CE/PE change-in-OI logic is not built.
+
+One rule function, `note_prototype_exit`, is called by both the live close path and the backtest.
+Tests: `test_ema8_proto_reentry_8510.py` now 28. Suites: 122 passed / 4 failed (AGY's wall-clock
+tests, same as before). Locks 11/11. Config file not edited. Not deployed, not merged.
+
+Note for whoever continues: with away = 2 and touch = 3, "away" and "touch" overlap by a point.
+The touch still has to come on a later 30-second tick than the away.

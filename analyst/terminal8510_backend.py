@@ -3452,6 +3452,10 @@ class QuantTerminalBackend:
                 );
                 """)
                 try:
+                    cur.execute("ALTER TABLE ema8_prototype_state ADD COLUMN sl_blocked_side TEXT")
+                except Exception:
+                    pass
+                try:
                     cur.execute("ALTER TABLE ema8_prototype_state ADD COLUMN away_seen INTEGER DEFAULT 0")
                 except Exception:
                     pass
@@ -3603,6 +3607,8 @@ class QuantTerminalBackend:
                         self._ema8_prototype_state["last_flip"] = str(row["last_flip"])
                     if "last_traded_direction" in row.keys() and row["last_traded_direction"]:
                         self._ema8_prototype_state["last_traded_direction"] = str(row["last_traded_direction"])
+                    if "sl_blocked_side" in row.keys() and row["sl_blocked_side"]:
+                        self._ema8_prototype_state["sl_blocked_side"] = str(row["sl_blocked_side"])
         except Exception as exc:
             log.warning("Could not load ema8_prototype_state: %s", exc)
 
@@ -3629,6 +3635,13 @@ class QuantTerminalBackend:
                     """,
                     (direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, away_seen, last_traded_dir, now_str),
                 )
+                try:
+                    conn.execute(
+                        "UPDATE ema8_prototype_state SET sl_blocked_side=? WHERE id=1",
+                        (self._ema8_prototype_state.get("sl_blocked_side"),),
+                    )
+                except sqlite3.OperationalError:
+                    pass  # table created before the column existed and not yet migrated
                 conn.commit()
         except Exception as exc:
             log.warning("Could not persist ema8_prototype_state: %s", exc)
@@ -7976,6 +7989,22 @@ class QuantTerminalBackend:
                 position_id=pos_id,
             )
             self._ema8_prototype_state["last_exit_reason"] = exit_reason
+            from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg, note_prototype_exit
+
+            # Profit: the arm stays for a re-entry. Stop-loss: that side is cancelled.
+            # Side from the strategy id: the ledger's own direction field is not
+            # guaranteed to say LONG / SHORT.
+            direction = "LONG" if "LONG" in strat_id else "SHORT"
+            if note_prototype_exit(
+                self._ema8_prototype_state, load_ema8_prototype_cfg(self.scanner_cfg), direction, exit_reason
+            ):
+                self.log_ema8_prototype_event(
+                    event="SIDE CANCELLED",
+                    direction=direction,
+                    spot=spot_exit,
+                    reason=f"Stop-loss on {direction}: no re-entry on this side until the opposite side is armed",
+                    position_id=pos_id,
+                )
             self._save_ema8_prototype_state()
 
         log.info("Position %s exited via %s @ ₹%.2f (Net PnL: ₹%.2f)", pos_id, exit_reason, exit_price, net)
@@ -10102,6 +10131,9 @@ class QuantTerminalBackend:
                                         reentry_enabled as _reentry_on,
                                     )
 
+                                    from analyst.ema8_prototype_8510 import note_prototype_exit as _note_exit
+
+                                    _note_exit(proto_bt_state, _lpc(self.scanner_cfg), direc, st_reason)
                                     if not _reentry_on(_lpc(self.scanner_cfg)):
                                         proto_bt_state["last_traded_direction"] = direc
                                         proto_bt_state["consumed_cross_ts"] = meta.get("cross_bar_open_ts") or meta.get("entry_ts")

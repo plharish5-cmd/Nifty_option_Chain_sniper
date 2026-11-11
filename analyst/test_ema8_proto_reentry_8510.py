@@ -1,6 +1,9 @@
 """8 EMA Prototype — owner rules of 11 Nov 2026 (evening).
 
- 1. Away distance is its own setting (10 points): 8 points away is not enough.
+ 0. Final answers: away distance 2 points; no entry before 09:30; re-entry
+    after a PROFIT exit only — a stop-loss cancels that side until the
+    opposite side has been armed. OI-based CE/PE choice is a placeholder.
+ 1. Away distance is its own setting: with 10 configured, 8 away is not enough.
  2. The tick that first sees "away" is never also the touch.
  3. Re-entry: after a trade, the arm stays; the same side is taken again on the
     next away-and-touch. One trade open at a time.
@@ -64,19 +67,23 @@ def _armed(direction: str = "LONG", n: int = 10, level: float = 25000.0):
 
 
 def test_defaults_are_the_owner_rules():
-    assert DEFAULT_CFG["away_min_pts"] == 10.0
+    assert DEFAULT_CFG["away_min_pts"] == 2.0                 # "GO AHEAD 2"
     assert DEFAULT_CFG["reentry_same_side"] is True
+    assert DEFAULT_CFG["reentry_after_stop_loss"] is False
+    assert DEFAULT_CFG["no_entry_before_hm"] == "09:30"
+    assert DEFAULT_CFG["oi_direction_filter_enabled"] is False
     assert DEFAULT_CFG["no_entry_from_hm"] == "15:20"
     assert DEFAULT_CFG["touch_tol_pts"] == 3.0
 
 
 def test_eight_points_is_not_away_twelve_is():
+    cfg = _cfg(away_min_pts=10.0)
     b15, state = _armed("LONG")
-    _tick(b15, state, 25008.0)
+    _tick(b15, state, 25008.0, cfg=cfg)
     assert state["arm"]["away_seen"] is False
-    sigs, st = _tick(b15, state, 25002.0)          # back at the line, but it never left
+    sigs, st = _tick(b15, state, 25002.0, cfg=cfg)  # back at the line, but it never left
     assert sigs == [] and "move away" in st["block_reason"] and "10 pts" in st["block_reason"]
-    _tick(b15, state, 25016.0)                     # dynamic line follows a little; still > 10 away
+    _tick(b15, state, 25016.0, cfg=cfg)             # dynamic line follows a little; still > 10 away
     assert state["arm"]["away_seen"] is True
 
 
@@ -203,3 +210,154 @@ def test_worker_tick_range_includes_spot_seen_between_ticks(tmp_path: Path):
         assert b._take_tick_spot_range("ema8_proto", 25009.0) == (25009.0, 25009.0)   # used once
 
     asyncio.run(_go())
+
+
+# ── final answers of 11 Nov ──────────────────────────────────────────────────
+from analyst.ema8_prototype_8510 import (  # noqa: E402
+    _maybe_flip_arm,
+    is_stop_loss_exit,
+    note_prototype_exit,
+)
+
+
+def test_default_away_is_two_points():
+    b15, state = _armed("LONG")
+    _tick(b15, state, 25001.5)                     # 1.5 above: not away
+    assert state["arm"]["away_seen"] is False
+    _tick(b15, state, 25004.0)                     # more than 2 above the moving line: away
+    assert state["arm"]["away_seen"] is True
+    sigs, _ = _tick(b15, state, 25002.0)           # back within 3 on a later tick
+    assert [s["direction"] for s in sigs] == ["LONG"]
+
+
+def test_no_entry_before_0930_then_allowed():
+    b15, state = _armed("SHORT")
+    _tick(b15, state, 24990.0, hm="09:20")
+    early, st = _tick(b15, state, 24999.0, hm="09:29")
+    assert early == [] and "No entry before 09:30" in st["block_reason"]
+    assert state["arm"]["direction"] == "SHORT" and state["arm"]["away_seen"] is True
+    ok, _ = _tick(b15, state, 24999.0, hm="09:30")
+    assert [s["direction"] for s in ok] == ["SHORT"]
+
+
+@pytest.mark.parametrize("reason,is_sl", [
+    ("SPOT_TARGET_HIT", False), ("OPTION_TARGET_HIT", False), ("EOD_SQUARE_OFF_15:20", False),
+    ("OPPOSITE_8EMA_CLOSE", False),
+    ("SPOT_SL_HIT", True), ("OPTION_SL_HIT", True), ("BROKER_SL_FILLED", True),
+])
+def test_which_exits_are_stop_losses(reason, is_sl):
+    assert is_stop_loss_exit(reason) is is_sl
+
+
+def test_profit_exit_keeps_the_arm_and_reenters():
+    b15, state = _armed("SHORT")
+    _tick(b15, state, 24990.0)
+    first, _ = _tick(b15, state, 24999.0)
+    assert len(first) == 1
+    assert note_prototype_exit(state, _cfg(), "SHORT", "SPOT_TARGET_HIT") is False
+    assert note_prototype_exit(state, _cfg(), "SHORT", "OPTION_TARGET_HIT") is False
+    assert state["arm"]["direction"] == "SHORT" and "sl_blocked_side" not in state
+    _tick(b15, state, 24960.0)
+    again, _ = _tick(b15, state, 24999.0)
+    assert [s["direction"] for s in again] == ["SHORT"]          # PE again
+
+
+@pytest.mark.parametrize("reason", ["SPOT_SL_HIT", "OPTION_SL_HIT", "BROKER_SL_FILLED"])
+def test_stop_loss_cancels_that_side_until_the_opposite_side_is_armed(reason):
+    b15, state = _armed("SHORT")
+    _tick(b15, state, 24990.0)
+    first, _ = _tick(b15, state, 24999.0)
+    assert len(first) == 1
+
+    assert note_prototype_exit(state, _cfg(), "SHORT", reason) is True
+    assert "arm" not in state and state["sl_blocked_side"] == "SHORT"
+    # price comes back to the line: no PE
+    _tick(b15, state, 24990.0)
+    none, st = _tick(b15, state, 24999.0)
+    assert none == [] and st["phase"].startswith(("EXITED", "WAITING FOR CLOSE"))
+
+    # a later bear cross cannot re-arm PE while it is cancelled
+    _maybe_flip_arm(state, False, True, 111, 25000.0)
+    assert "arm" not in state and state["sl_blocked_side"] == "SHORT"
+    # a close above arms CE and lifts the cancel
+    _maybe_flip_arm(state, True, False, 222, 25000.0)
+    assert state["arm"]["direction"] == "LONG" and "sl_blocked_side" not in state
+    # after that, a close below can arm PE again
+    _maybe_flip_arm(state, False, True, 333, 25000.0)
+    assert state["arm"]["direction"] == "SHORT"
+
+
+def test_stop_loss_on_ce_mirror():
+    state: Dict[str, Any] = {}
+    _arm_new(state, direction="LONG", cross_bar_open_ts=1, e8=25000.0)
+    assert note_prototype_exit(state, _cfg(), "LONG", "OPTION_SL_HIT") is True
+    assert "arm" not in state and state["sl_blocked_side"] == "LONG"
+    _maybe_flip_arm(state, True, False, 2, 25000.0)
+    assert "arm" not in state
+    _maybe_flip_arm(state, False, True, 3, 25000.0)
+    assert state["arm"]["direction"] == "SHORT" and "sl_blocked_side" not in state
+
+
+def test_stop_loss_does_not_remove_an_arm_for_the_other_side():
+    state: Dict[str, Any] = {}
+    _arm_new(state, direction="LONG", cross_bar_open_ts=1, e8=25000.0)   # already flipped to CE
+    assert note_prototype_exit(state, _cfg(), "SHORT", "SPOT_SL_HIT") is True
+    assert state["arm"]["direction"] == "LONG"
+
+
+def test_reentry_after_stop_loss_can_be_switched_on():
+    state: Dict[str, Any] = {}
+    _arm_new(state, direction="SHORT", cross_bar_open_ts=1, e8=25000.0)
+    assert note_prototype_exit(state, _cfg(reentry_after_stop_loss=True), "SHORT", "SPOT_SL_HIT") is False
+    assert state["arm"]["direction"] == "SHORT"
+
+
+def test_live_close_applies_the_rule_and_saves_it(tmp_path: Path):
+    from analyst.test_live_exit_orders_8510 import insert_test_position
+
+    async def _go():
+        b = make_test_backend(tmp_path, FakeBroker(configured=False))
+        b.cached_telemetry["quotes"]["54321"] = 160.0
+        _arm_new(b._ema8_prototype_state, direction="SHORT", cross_bar_open_ts=1, e8=25000.0)
+        pos = insert_test_position(b, "P_SL", mode="PAPER_ONLY", sl_order_id="",
+                                   strategy_id="EMA8_PROTOTYPE_SHORT", symbol="NIFTY 25000 PE",
+                                   spot_target=24960.0, spot_stop=25040.0)
+        await b._close_position_with_broker(pos, "SPOT_SL_HIT", spot_exit=25040.0)
+        assert "arm" not in b._ema8_prototype_state
+        assert b._ema8_prototype_state["sl_blocked_side"] == "SHORT"
+
+        b._ema8_prototype_state = {}                       # restart
+        b._load_ema8_prototype_state()
+        assert b._ema8_prototype_state.get("sl_blocked_side") == "SHORT"
+
+        # a profit exit leaves the arm alone
+        _arm_new(b._ema8_prototype_state, direction="LONG", cross_bar_open_ts=2, e8=25000.0)
+        b._ema8_prototype_state.pop("sl_blocked_side", None)
+        pos2 = insert_test_position(b, "P_TG", mode="PAPER_ONLY", sl_order_id="",
+                                    strategy_id="EMA8_PROTOTYPE_LONG", symbol="NIFTY 25000 CE")
+        b.cached_telemetry["quotes"]["54321"] = 241.0
+        await b._close_position_with_broker(pos2, "OPTION_TARGET_HIT", spot_exit=25030.0)
+        assert b._ema8_prototype_state["arm"]["direction"] == "LONG"
+        assert "sl_blocked_side" not in b._ema8_prototype_state
+
+    asyncio.run(_go())
+
+
+def test_oi_placeholder_is_inert_until_switched_on_and_fed():
+    b15, state = _armed("LONG")
+    state["oi_bias"] = "PE"                                # a bias exists, but the filter is OFF
+    _tick(b15, state, 25005.0)
+    sigs, _ = _tick(b15, state, 25002.0)
+    assert len(sigs) == 1
+
+    cfg = _cfg(oi_direction_filter_enabled=True)
+    b15, state = _armed("LONG")                            # ON, nothing fed -> still no effect
+    _tick(b15, state, 25005.0, cfg=cfg)
+    sigs, _ = _tick(b15, state, 25002.0, cfg=cfg)
+    assert len(sigs) == 1
+
+    b15, state = _armed("LONG")                            # ON and fed PE -> CE is held back
+    state["oi_bias"] = "PE"
+    _tick(b15, state, 25005.0, cfg=cfg)
+    sigs, st = _tick(b15, state, 25002.0, cfg=cfg)
+    assert sigs == [] and "OI direction filter" in st["block_reason"]
