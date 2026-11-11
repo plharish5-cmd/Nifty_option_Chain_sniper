@@ -2926,6 +2926,18 @@ class QuantTerminalBackend:
                 );
                 """)
 
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS ema8_prototype_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    direction TEXT,
+                    cross_bar_open_ts INTEGER,
+                    cross_e8 REAL,
+                    consumed_cross_ts INTEGER,
+                    last_flip TEXT,
+                    updated_at TEXT
+                );
+                """)
+
                 # Super Trail Column Migrations
                 pos_cols = [
                     ("highest_ltp", "REAL DEFAULT 0.0"),
@@ -2992,7 +3004,92 @@ class QuantTerminalBackend:
                     bf.get("skipped_duplicate"),
                     bf.get("skipped_invalid"),
                 )
+            self._load_ema8_prototype_state()
+            self._sync_open_ema8_prototype_position()
         except Exception as e:
+            log.error("Error initializing SQLite ledger: %s", e)
+
+    def _sync_open_ema8_prototype_position(self) -> None:
+        """Derives 'open' prototype state directly from the positions ledger."""
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    """
+                    SELECT * FROM positions
+                    WHERE status='OPEN'
+                      AND upper(coalesce(strategy_id,'')) LIKE 'EMA8_PROTOTYPE%'
+                    ORDER BY entry_time DESC LIMIT 1
+                    """
+                ).fetchone()
+            if not hasattr(self, "_ema8_prototype_state"):
+                self._ema8_prototype_state = {}
+            if row:
+                from analyst.ema8_prototype_8510 import prototype_spot_is_long
+                is_long = prototype_spot_is_long(
+                    float(row["spot_entry"] or 0.0),
+                    float(row["spot_target_level"] or 0.0),
+                    strategy_id=str(row["strategy_id"] or ""),
+                    symbol=str(row["symbol"] or ""),
+                )
+                self._ema8_prototype_state["open"] = {
+                    "direction": "LONG" if is_long else "SHORT",
+                    "position_id": str(row["position_id"]),
+                    "spot_entry": float(row["spot_entry"] or 0.0),
+                }
+            else:
+                self._ema8_prototype_state.pop("open", None)
+        except Exception as exc:
+            log.debug("Error in _sync_open_ema8_prototype_position: %s", exc)
+
+    def _load_ema8_prototype_state(self) -> None:
+        """Loads persisted arm & consumed cross state from ema8_prototype_state table."""
+        try:
+            if not hasattr(self, "_ema8_prototype_state"):
+                self._ema8_prototype_state = {}
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute("SELECT * FROM ema8_prototype_state WHERE id=1").fetchone()
+                if row:
+                    d = str(row["direction"] or "")
+                    ts = row["cross_bar_open_ts"]
+                    if d and ts:
+                        self._ema8_prototype_state["arm"] = {
+                            "direction": d,
+                            "cross_bar_open_ts": int(ts),
+                            "cross_e8": float(row["cross_e8"] or 0.0),
+                            "away_seen": False,
+                        }
+                    if row["consumed_cross_ts"]:
+                        self._ema8_prototype_state["consumed_cross_ts"] = int(row["consumed_cross_ts"])
+                    if row["last_flip"]:
+                        self._ema8_prototype_state["last_flip"] = str(row["last_flip"])
+        except Exception as exc:
+            log.warning("Could not load ema8_prototype_state: %s", exc)
+
+    def _save_ema8_prototype_state(self) -> None:
+        """Persists arm & consumed cross state to ema8_prototype_state table."""
+        try:
+            if not hasattr(self, "_ema8_prototype_state"):
+                return
+            arm = self._ema8_prototype_state.get("arm") or {}
+            direction = arm.get("direction")
+            cross_bar_open_ts = arm.get("cross_bar_open_ts")
+            cross_e8 = arm.get("cross_e8")
+            consumed_cross_ts = self._ema8_prototype_state.get("consumed_cross_ts")
+            last_flip = self._ema8_prototype_state.get("last_flip")
+            now_str = datetime.now(IST).isoformat()
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO ema8_prototype_state (
+                        id, direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, updated_at
+                    ) VALUES (1, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, now_str),
+                )
+        except Exception as exc:
+            log.warning("Could not persist ema8_prototype_state: %s", exc)
             log.error("Error initializing SQLite ledger: %s", e)
 
     def update_super_trail_config(self, new_cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -4040,6 +4137,7 @@ class QuantTerminalBackend:
                 except Exception as exc:
                     log.debug("ema8 proto forming ohlc: %s", exc)
                 session_day = datetime.now(IST).strftime("%Y-%m-%d")
+                self._sync_open_ema8_prototype_position()
                 sigs, st = await asyncio.to_thread(
                     evaluate_ema8_prototype_intrabar,
                     b15,
@@ -4055,6 +4153,7 @@ class QuantTerminalBackend:
                 prev_proto.update(st)
                 self.strategy_status["ema8_prototype"] = prev_proto
                 self._handle_ema8_prototype_actions(st.get("actions"))
+                self._save_ema8_prototype_state()
                 if sigs:
                     await self._process_strategy_signals(sigs)
             except asyncio.CancelledError:
@@ -4707,16 +4806,19 @@ class QuantTerminalBackend:
 
     def _handle_ema8_prototype_actions(self, actions: List[Dict[str, Any]]) -> None:
         for act in actions or []:
-            if str(act.get("type")).upper() != "SQUARE_OFF":
-                continue
-            reason = str(act.get("reason") or "OPPOSITE_8EMA_CLOSE")
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self._square_off_open_ema8_prototype_positions(reason))
-            except RuntimeError:
-                asyncio.run(self._square_off_open_ema8_prototype_positions(reason))
-            self._ema8_prototype_state.pop("open", None)
-            self._ema8_prototype_state.pop("arm", None)
+            atype = str(act.get("type")).upper()
+            if atype == "SQUARE_OFF":
+                reason = str(act.get("reason") or "OPPOSITE_8EMA_CLOSE")
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._square_off_open_ema8_prototype_positions(reason))
+                except RuntimeError:
+                    asyncio.run(self._square_off_open_ema8_prototype_positions(reason))
+                self._ema8_prototype_state.pop("open", None)
+                self._ema8_prototype_state.pop("arm", None)
+                self._save_ema8_prototype_state()
+            elif atype == "ARM":
+                self._save_ema8_prototype_state()
 
     async def _square_off_open_ema8_prototype_positions(self, reason: str) -> None:
         try:
@@ -5054,6 +5156,7 @@ class QuantTerminalBackend:
 
         proto_cfg = load_ema8_prototype_cfg(self.scanner_cfg)
         if bool(proto_cfg.get("enabled", True)):
+            self._sync_open_ema8_prototype_position()
             proto_sigs, proto_st = evaluate_ema8_prototype(
                 b15,
                 bar_ci=bar_ci,
@@ -5068,6 +5171,7 @@ class QuantTerminalBackend:
             prev_proto.update(proto_st)
             self.strategy_status["ema8_prototype"] = prev_proto
             self._handle_ema8_prototype_actions(proto_st.get("actions"))
+            self._save_ema8_prototype_state()
             for ps in proto_sigs:
                 self._ema8_prototype_log.insert(
                     0,
@@ -6042,11 +6146,8 @@ class QuantTerminalBackend:
                     res.get("rejection_reason") or res.get("error") or "")[:200],
             )
             if is_proto_sig and res.get("ok"):
-                self._ema8_prototype_state["open"] = {
-                    "direction": str(sig.get("direction")).upper(),
-                    "position_id": str(res.get("position_id") or ""),
-                    "spot_entry": spot_entry,
-                }
+                self._sync_open_ema8_prototype_position()
+                self._save_ema8_prototype_state()
 
     async def start_strategy_scanner_loop(self) -> None:
         """Live scanner: 4 core on closed 15m; Ribbon on closed 1m; PA @ S/R armed on 15m, break on spot."""
@@ -6815,6 +6916,11 @@ class QuantTerminalBackend:
 
         if getattr(self, "exit_failure_banner", None) and self.exit_failure_banner.get("position_id") == pos_id:
             self.exit_failure_banner = None
+
+        strat_id = str(pos.get("strategy_id") or "").upper()
+        if strat_id.startswith("EMA8_PROTOTYPE"):
+            self._sync_open_ema8_prototype_position()
+            self._save_ema8_prototype_state()
 
         log.info("Position %s exited via %s @ ₹%.2f (Net PnL: ₹%.2f)", pos_id, exit_reason, exit_price, net)
         return {"ok": True, "fill_price": exit_price, "net_pnl": net, "exit_reason": exit_reason}

@@ -67,10 +67,10 @@ def apply_forming_bar_to_b15(
     n = len(work)
     i = _idx_abs(bar_ci, n)
     work.iat[i, work.columns.get_loc("close")] = float(live_spot)
-    if form_high is not None:
-        work.iat[i, work.columns.get_loc("high")] = max(float(form_high), float(live_spot))
-    if form_low is not None:
-        work.iat[i, work.columns.get_loc("low")] = min(float(form_low), float(live_spot))
+    cur_h = float(form_high) if form_high is not None else float(work.iat[i, work.columns.get_loc("high")])
+    cur_l = float(form_low) if form_low is not None else float(work.iat[i, work.columns.get_loc("low")])
+    work.iat[i, work.columns.get_loc("high")] = max(cur_h, float(live_spot))
+    work.iat[i, work.columns.get_loc("low")] = min(cur_l, float(live_spot))
     return work
 
 
@@ -391,25 +391,54 @@ def _filter_blocks(
     return ""
 
 
-def _arm_new(proto_state: Dict[str, Any], *, direction: str, cross_i: int, e8: float, day: str) -> None:
+def bar_open_timestamp(b15: pd.DataFrame, i: int) -> int:
+    """Extract unix timestamp of b15[i] open time."""
+    n = len(b15)
+    if n == 0:
+        return 0
+    idx = _idx_abs(i, n)
+    val = b15.index[idx]
+    if hasattr(val, "timestamp"):
+        return int(val.timestamp())
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return int(pd.Timestamp(val).timestamp())
+
+
+def _arm_new(
+    proto_state: Dict[str, Any],
+    *,
+    direction: str,
+    cross_bar_open_ts: int,
+    e8: float,
+    day: str = "",
+) -> None:
     proto_state["arm"] = {
         "direction": direction,
-        "cross_i": cross_i,
-        "cross_e8": e8,
-        "fired_key": f"{day}:PROTO_{direction}:{cross_i}",
+        "cross_bar_open_ts": int(cross_bar_open_ts),
+        "cross_e8": float(e8),
+        "away_seen": False,
     }
 
 
-def _maybe_flip_arm(proto_state: Dict[str, Any], bull_cross: bool, bear_cross: bool, cross_i: int, e8: float, day: str) -> None:
+def _maybe_flip_arm(
+    proto_state: Dict[str, Any],
+    bull_cross: bool,
+    bear_cross: bool,
+    cross_bar_open_ts: int,
+    e8: float,
+    day: str = "",
+) -> None:
     arm = proto_state.get("arm")
     if bull_cross:
         if arm and str(arm.get("direction")).upper() == "SHORT":
             proto_state["last_flip"] = "FLIPPED_TO_LONG_ARM"
-        _arm_new(proto_state, direction="LONG", cross_i=cross_i, e8=e8, day=day)
+        _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_bar_open_ts, e8=e8, day=day)
     elif bear_cross:
         if arm and str(arm.get("direction")).upper() == "LONG":
             proto_state["last_flip"] = "FLIPPED_TO_SHORT_ARM"
-        _arm_new(proto_state, direction="SHORT", cross_i=cross_i, e8=e8, day=day)
+        _arm_new(proto_state, direction="SHORT", cross_bar_open_ts=cross_bar_open_ts, e8=e8, day=day)
 
 
 def _build_signal(
@@ -418,11 +447,11 @@ def _build_signal(
     cfg: Dict[str, Any],
     index_price: float,
     e8_val: float,
-    cross_i: int,
-    slot: int,
-    intrabar: bool,
-    gate_meta: Callable[[str], Dict[str, Any]],
+    cross_bar_open_ts: int = 0,
+    intrabar: bool = True,
+    gate_meta: Optional[Callable[[str], Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
+    gate_meta = gate_meta or (lambda _k: {})
     paper_only, exec_label = _execution_mode_labels(cfg)
     sid = SID_LONG if bullish else SID_SHORT
     setup = (
@@ -438,7 +467,9 @@ def _build_signal(
         "opt_side": "CE" if bullish else "PE",
         "target_pts": float(cfg["target_pts"]),
         "sl_pts": float(cfg["sl_pts"]),
-        "index_price": index_price,
+        "index_price": float(index_price),
+        "spot_entry": float(index_price),
+        "dynamic_e8_at_entry": round(float(e8_val), 2),
         "conviction": SPEC_TAG,
         "paper_only": paper_only,
         "ema8_prototype_paper_only": paper_only,
@@ -446,7 +477,7 @@ def _build_signal(
         "execution_mode": exec_label,
         "min_option_premium_inr": float(cfg.get("min_option_premium_inr", 200)),
         "details": (
-            f"{SPEC_TAG} | {touch_mode} | cross bar {cross_i} | slot {slot} | "
+            f"{SPEC_TAG} | {touch_mode} | cross_ts {cross_bar_open_ts} | "
             f"8EMA {e8_val:.1f} | spot {index_price:.1f}"
         ),
         **gate_meta("ema8_prototype"),
@@ -471,9 +502,11 @@ def evaluate_ema8_prototype(
     gate_meta = gate_meta or (lambda _k: {})
     tol = float(cfg.get("touch_tol_pts", 5.0))
 
-    if session_day and proto_state.get("day") != session_day:
-        proto_state.clear()
-        proto_state["day"] = session_day
+    if session_day:
+        if proto_state.get("day") != session_day:
+            if not bool(cfg.get("arm_until_opposite_close", True)):
+                proto_state.clear()
+            proto_state["day"] = session_day
 
     n = len(b15)
     if n < 5:
@@ -542,11 +575,12 @@ def evaluate_ema8_prototype(
                 )
                 st["actions"] = actions
                 return [], st
-            _maybe_flip_arm(proto_state, bull_cross, bear_cross, i, e8_val, session_day)
+            cross_open_ts = bar_open_timestamp(b15, bar_ci)
+            _maybe_flip_arm(proto_state, bull_cross, bear_cross, cross_open_ts, e8_val, session_day)
             if bull_cross:
-                actions.append({"type": "ARM", "direction": "LONG", "cross_i": i})
+                actions.append({"type": "ARM", "direction": "LONG", "cross_bar_open_ts": cross_open_ts})
             elif bear_cross:
-                actions.append({"type": "ARM", "direction": "SHORT", "cross_i": i})
+                actions.append({"type": "ARM", "direction": "SHORT", "cross_bar_open_ts": cross_open_ts})
 
     arm = proto_state.get("arm")
     if not arm:
@@ -560,11 +594,16 @@ def evaluate_ema8_prototype(
         return [], st
 
     direction = str(arm.get("direction", "")).upper()
-    cross_i = int(arm.get("cross_i", i))
-    slot = i - cross_i
+    cross_bar_open_ts = int(arm.get("cross_bar_open_ts", 0))
+    if cross_bar_open_ts == 0 and "cross_i" in arm:
+        ci = int(arm["cross_i"])
+        cross_bar_open_ts = bar_open_timestamp(b15, ci) if 0 <= ci < len(b15) else ci
+
+    current_bar_open_ts = bar_open_timestamp(b15, bar_ci)
     bullish = direction == "LONG"
 
-    if slot <= 0:
+    # 1. No entry on crossing candle
+    if current_bar_open_ts <= cross_bar_open_ts:
         st = _status(
             "ARMED",
             phase="ARMED_CE" if bullish else "ARMED_PE",
@@ -573,6 +612,34 @@ def evaluate_ema8_prototype(
             block_reason="NO TRADE — No entry on crossing candle; wait for re-touch",
             cfg=cfg,
             extra={"dynamic_e8": round(e8_val, 2), "e8_refresh_seconds": cfg.get("e8_refresh_seconds")},
+        )
+        st["actions"] = actions
+        return [], st
+
+    # 2. One entry per cross
+    if proto_state.get("consumed_cross_ts") == cross_bar_open_ts:
+        st = _status(
+            "ARMED",
+            phase="ARMED_CE" if bullish else "ARMED_PE",
+            armed=True,
+            direction=direction,
+            block_reason="NO TRADE — Cross already consumed by an entry",
+            cfg=cfg,
+            extra={"dynamic_e8": round(e8_val, 2)},
+        )
+        st["actions"] = actions
+        return [], st
+
+    # 3. Position already open
+    if proto_state.get("open"):
+        st = _status(
+            "IN_TRADE",
+            phase="IN_POSITION",
+            armed=False,
+            direction=direction,
+            block_reason="NO TRADE — Prototype position already open",
+            cfg=cfg,
+            extra={"dynamic_e8": round(e8_val, 2)},
         )
         st["actions"] = actions
         return [], st
@@ -602,19 +669,19 @@ def evaluate_ema8_prototype(
 
     touched = _touch_retest(bullish=bullish, low=low, high=high, e8=e8_val, tol=tol)
     if touched:
-        entry_idx = round(e8_val, 2) if intrabar else c
+        real_spot = float(live_spot) if (live_spot is not None and live_spot > 0) else c
         signals.append(
             _build_signal(
                 bullish=bullish,
                 cfg=cfg,
-                index_price=entry_idx,
+                index_price=real_spot,
                 e8_val=e8_val,
-                cross_i=cross_i,
-                slot=slot,
+                cross_bar_open_ts=cross_bar_open_ts,
                 intrabar=intrabar,
                 gate_meta=gate_meta,
             )
         )
+        proto_state["consumed_cross_ts"] = cross_bar_open_ts
         proto_state.pop("arm", None)
         st = _status(
             "TRIGGERED",
@@ -626,7 +693,7 @@ def evaluate_ema8_prototype(
         st["actions"] = actions
         return signals, st
 
-    wait = f"NO TRADE — Waiting for re-touch to dynamic 8 EMA (slot {slot})"
+    wait = "NO TRADE — Waiting for re-touch to dynamic 8 EMA"
     st = _status(
         "ARMED",
         phase="WAITING_FOR_RETOUCH",
@@ -709,7 +776,8 @@ def backtest_ema8_prototype_at_bar(
 
     day_key = str(bars[idx].get("day") or "")
     if day_key and proto_state.get("day") != day_key:
-        proto_state.clear()
+        if not bool(cfg.get("arm_until_opposite_close", True)):
+            proto_state.clear()
         proto_state["day"] = day_key
 
     b = bars[idx]
@@ -726,12 +794,15 @@ def backtest_ema8_prototype_at_bar(
 
     signals: List[Tuple[str, str, str, float, float, Dict[str, Any]]] = []
     arm = proto_state.get("arm")
-    if arm and not proto_state.get("bt_open"):
+    has_open = bool(proto_state.get("open") or proto_state.get("bt_open"))
+    if arm and not has_open:
         direction = str(arm["direction"]).upper()
-        cross_i = int(arm["cross_i"])
-        slot = idx - cross_i
+        cross_ts = int(arm.get("cross_bar_open_ts", 0))
+        if cross_ts == 0 and "cross_i" in arm:
+            ci = int(arm["cross_i"])
+            cross_ts = int(bars[ci].get("ts") or 0) if 0 <= ci < len(bars) else ci
         bullish = direction == "LONG"
-        if slot > 0:
+        if bar_open_ts > cross_ts and proto_state.get("consumed_cross_ts") != cross_ts:
             if use_intrabar:
                 bar_ci = idx
                 ticks = intrabar_tick_timestamps(bar_open_ts, refresh)
@@ -773,12 +844,13 @@ def backtest_ema8_prototype_at_bar(
                         )
                         meta = _proto_signal_meta(
                             cfg,
-                            entry_spot=round(e8_tick, 2),
+                            entry_spot=float(spot),
                             entry_ts=tick_ts,
                             entry_day=day_key,
                             entry_hm=str(tick_hm),
                             e8=e8_tick,
                         )
+                        proto_state["consumed_cross_ts"] = cross_ts
                         proto_state.pop("arm", None)
                         signals.append((sid, sname, direction, float(cfg["target_pts"]), float(cfg["sl_pts"]), meta))
                         break
@@ -796,13 +868,14 @@ def backtest_ema8_prototype_at_bar(
                     sname = "8 EMA Prototype (Long) — retouch" if bullish else "8 EMA Prototype (Short) — retouch"
                     meta = _proto_signal_meta(
                         cfg,
-                        entry_spot=round(e8, 2),
+                        entry_spot=float(c),
                         entry_ts=bar_open_ts + 900,
                         entry_day=day_key,
                         entry_hm=str(b.get("hm") or ""),
                         e8=e8,
                     )
                     meta["intrabar_30s"] = False
+                    proto_state["consumed_cross_ts"] = cross_ts
                     proto_state.pop("arm", None)
                     signals.append((sid, sname, direction, float(cfg["target_pts"]), float(cfg["sl_pts"]), meta))
 
@@ -815,6 +888,6 @@ def backtest_ema8_prototype_at_bar(
         if _ribbon_blocks(e4_cross, e8, cfg):
             proto_state.pop("arm", None)
         else:
-            _maybe_flip_arm(proto_state, bull_cross, bear_cross, idx, e8, day_key)
+            _maybe_flip_arm(proto_state, bull_cross, bear_cross, bar_open_ts, e8, day_key)
 
     return signals
