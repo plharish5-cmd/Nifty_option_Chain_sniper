@@ -7199,8 +7199,17 @@ class QuantTerminalBackend:
                 else:
                     strategy_setup = "Manual — No Strategy"
 
-            opt_target_pts = round(target_pts * abs(delta), 1)
-            opt_sl_pts = round(sl_pts * abs(delta), 1)
+            is_proto_order = (
+                str((spot_context or {}).get("strategy_id") or strategy_id or "").upper().startswith("EMA8_PROTOTYPE")
+                or "8 EMA PROTOTYPE" in str(strategy_name or "").upper()
+            )
+
+            if is_proto_order:
+                opt_target_pts = float(target_pts)
+                opt_sl_pts = float(sl_pts)
+            else:
+                opt_target_pts = round(target_pts * abs(delta), 1)
+                opt_sl_pts = round(sl_pts * abs(delta), 1)
 
             order_id = f"ORD_{int(time.time()*1000)}"
             corr_id = f"chase_{int(time.time())}"
@@ -7363,20 +7372,18 @@ class QuantTerminalBackend:
                     fill_price = paper_fill_price
                 paper_charges = self.calculate_dhan_charges(paper_fill_price, paper_fill_price + opt_target_pts, qty)
 
+                base_fill = fill_price if (mode in ("ALGO_LIVE_ONLY", "BOTH") and order_status == "FILLED") else paper_fill_price
                 is_flagship_pos = "FLAGSHIP" in str((spot_context or {}).get("strategy_id") or strategy_name).upper()
-                is_proto_order = str(
-                    (spot_context or {}).get("strategy_id") or strategy_id or ""
-                ).upper().startswith("EMA8_PROTOTYPE")
                 # Initialize super trail levels (premium); FLAGSHIP uses spot trail in get_active_positions.
                 if is_proto_order:
-                    init_sl = round_to_tick(paper_fill_price - float(opt_sl_pts), 0.05)
-                    init_target = round_to_tick(paper_fill_price + float(opt_target_pts), 0.05)
+                    init_sl = round_to_tick(base_fill - float(opt_sl_pts), 0.05)
+                    init_target = round_to_tick(base_fill + float(opt_target_pts), 0.05)
                 else:
                     init_sl = round_to_tick(
-                        paper_fill_price - float(self.super_trail_cfg.get("initial_sl_pts", 20.0)), 0.05
+                        base_fill - float(self.super_trail_cfg.get("initial_sl_pts", 20.0)), 0.05
                     )
                     init_target = round_to_tick(
-                        paper_fill_price + float(self.super_trail_cfg.get("initial_target_pts", 25.0)), 0.05
+                        base_fill + float(self.super_trail_cfg.get("initial_target_pts", 25.0)), 0.05
                     )
                 trail_sl_on = (
                     0
@@ -7419,11 +7426,11 @@ class QuantTerminalBackend:
                         ?, ?, ?, ?, ?, ?, ?, ?
                     )
                     """, (
-                        pos_id, symbol, sec_id, side, qty, paper_fill_price,
+                        pos_id, symbol, sec_id, side, qty, base_fill,
                         datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
-                        paper_fill_price, init_target, init_sl, mode,
-                        paper_fill_price, init_sl, init_sl, init_target,
-                        init_target, paper_fill_price,
+                        base_fill, init_target, init_sl, mode,
+                        base_fill, init_sl, init_sl, init_target,
+                        init_target, base_fill,
                         trail_sl_on,
                         trail_tgt_on,
                         float(self.super_trail_cfg.get("trail_activation_profit_pts", 15.0)),
@@ -7483,6 +7490,7 @@ class QuantTerminalBackend:
             res_dict = {
                 "ok": order_status == "FILLED",
                 "order_id": order_id,
+                "position_id": ledger_position_id,
                 "status": order_status,
                 "symbol": symbol,
                 "source": placed_source,
@@ -7492,6 +7500,10 @@ class QuantTerminalBackend:
                 "signal_ltp": signal_ltp,
                 "slippage": slippage_pts,
                 "chase_retries": chase_retries_used,
+                "opt_target_pts": opt_target_pts,
+                "opt_sl_pts": opt_sl_pts,
+                "target_price": round_to_tick(fill_price + opt_target_pts, 0.05),
+                "sl_price": round_to_tick(fill_price - opt_sl_pts, 0.05),
                 "companion_sl_order_id": companion_sl_order_id,
                 "rejection_reason": rejection_reason,
                 # v1.9.4b: state the route and WHY, so a skipped real order is
