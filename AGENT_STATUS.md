@@ -958,3 +958,19 @@ Display only; no trade logic changed.
   from the engine is shown as "8510 engine is running OLD code — restart it".
 Tests: 23 in `test_ticket_lane_chain_reads_8510.py`; board + HTML suites pass; locks 11/11.
 Not verified against a running 8600 app.
+
+## Claude — `claude/v2.0.13-proto-line-in-banner` (12 Nov 2026) — owner: show the Prototype's own 8 EMA in the live banner, prove it ticks
+Base `composer/v2.0.12-tv-ema-live-panel` @ `4040077` (Composer's 3-s live banner; includes all Claude branches up to v2.0.11).
+Tags (local): `pre-/post-claude-v2.0.13-proto-line-in-banner`. Not merged. Display only.
+
+- The Prototype's 30-s worker now records what it used (`_ema8_proto_last_check`: line, spot, tick
+  range, touch band, verdict, time). `ema8_prototype_check_status()` serves it; the live-cross
+  endpoint adds it as `prototype_check` with `server_time_ist` and `market_open`.
+- Banner, new third row: "8 EMA Prototype line" — live value (same math as the algo), touch band
+  (±tol), spot distance with "ON THE LINE" inside the band, the algo's last 30-s check (time, line,
+  spot, range, verdict, next in N s), how far the live line moved since; and a tick proof: counter,
+  server time, last change; green dot when moving, amber "NOT MOVING" after 20 s unchanged with the
+  market open, grey "market closed — frozen at the last bar".
+Tests: +1 in `test_ticket_lane_chain_reads_8510.py` (24 pass); Prototype re-entry + HTML suites pass;
+locks 11/11. `test_nse_spot_candles_8510.py`: two tests fail on Composer's base too (resample
+returns empty frame under pandas 3 — not from this branch). Not verified with a live spot feed.

@@ -5052,6 +5052,22 @@ class QuantTerminalBackend:
                 prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})
                 prev_proto.update(st)
                 self.strategy_status["ema8_prototype"] = prev_proto
+                # What the algo itself just used, for the banner: the line, the spot it
+                # compared, the touch band, and when. Display only.
+                try:
+                    from analyst.ema8_prototype_8510 import get_effective_touch_tolerance
+                    self._ema8_proto_last_check = {
+                        "e8": st.get("dynamic_e8"), "spot": round(float(spot), 2),
+                        "tick_high": round(float(tick_high), 2), "tick_low": round(float(tick_low), 2),
+                        "tol_pts": float(get_effective_touch_tolerance(proto_cfg)),
+                        "at": datetime.now(IST).strftime("%H:%M:%S"), "at_ts": time.time(),
+                        "refresh_sec": refresh, "armed": True,
+                        "direction": ((self._ema8_prototype_state.get("arm") or {}).get("direction") or ""),
+                        "away_seen": bool((self._ema8_prototype_state.get("arm") or {}).get("away_seen")),
+                        "verdict": str(st.get("block_reason") or st.get("phase") or ""),
+                    }
+                except Exception:
+                    pass
                 self._handle_ema8_prototype_actions(st.get("actions"))
                 self._save_ema8_prototype_state()
                 if sigs:
@@ -5766,6 +5782,27 @@ class QuantTerminalBackend:
                 raw.append(sid)
                 upper.add(sid)
         self.algo_allowlist_cfg["strategy_ids"] = raw
+
+    def ema8_prototype_check_status(self) -> Dict[str, Any]:
+        """The Prototype's own last 30-second 8 EMA check, for the live banner. Never raises."""
+        try:
+            from analyst.ema8_prototype_8510 import get_effective_touch_tolerance, load_ema8_prototype_cfg
+
+            cfg = load_ema8_prototype_cfg(self.scanner_cfg)
+            last = dict(self.__dict__.get("_ema8_proto_last_check") or {})
+            armed = bool(self._ema8_prototype_state.get("arm")) if hasattr(self, "_ema8_prototype_state") else False
+            refresh = float(cfg.get("e8_refresh_seconds", 30.0) or 30.0)
+            out = {
+                "armed": armed, "enabled": bool(cfg.get("enabled", True)), "refresh_sec": refresh,
+                "tol_pts": float(get_effective_touch_tolerance(cfg)),
+                "away_pts": float(cfg.get("away_min_pts", 2.0)),
+            }
+            if last:
+                age = max(0.0, time.time() - float(last.get("at_ts") or 0.0))
+                out.update(last, age_sec=round(age), next_in_sec=max(0, round(refresh - age)) if armed else None)
+            return out
+        except Exception as exc:
+            return {"armed": False, "error": type(exc).__name__}
 
     def _ema8_prototype_view(self) -> Dict[str, Any]:
         """Plain-language position of the Prototype in its sequence (display only). Never raises."""

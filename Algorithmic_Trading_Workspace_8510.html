@@ -663,6 +663,16 @@
                 <span id="dhanEmaCrossUpdated" style="font-size:10px; color:#64748b; white-space:nowrap;">updated —</span>
             </div>
             <div id="dhanEmaCrossEvent" style="margin-top:4px; font-size:10.5px; color:#94a3b8;">Cross: —</div>
+            <div id="dhanEmaProtoLine" style="margin-top:5px; padding-top:5px; border-top:1px solid rgba(255,255,255,0.08); display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; font-size:11px; line-height:1.45;">
+                <span style="font-weight:800; color:#fbbf24; white-space:nowrap;">8 EMA Prototype line</span>
+                <span>live <b id="protoLineLive" style="color:#86efac;">—</b> <span style="color:#64748b;">(same math the algo uses: 15m, forming bar close = spot)</span></span>
+                <span>touch band <b id="protoLineBand" style="color:#e2e8f0;">—</b></span>
+                <span>spot is <b id="protoLineGap" style="color:#e2e8f0;">—</b></span>
+                <span style="color:rgba(255,255,255,0.15);">|</span>
+                <span id="protoLineCheck" style="color:#cbd5e1;">algo's last 30-s check: —</span>
+                <span id="protoLineDiff" style="color:#94a3b8;"></span>
+                <span id="dhanEmaTick" style="margin-left:auto; white-space:nowrap; color:#64748b; font-size:10.5px;"><span id="dhanEmaTickDot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#475569; margin-right:5px; vertical-align:middle;"></span>tick #0 · no change yet</span>
+            </div>
         </div>
 
         <header>
@@ -3339,6 +3349,66 @@
             }
         }
 
+        // Proof that the banner is alive, and the Prototype's own line next to it.
+        const _emaTick = { n: 0, lastSig: "", lastChangeAt: 0, lastChangeHm: "" };
+        function renderProtoLineRow(cross) {
+            const tf = cross.tf_15m || {};
+            const pc = cross.prototype_check || {};
+            const spot = Number(cross.spot_live || 0), e8 = Number(tf.ema_8);
+            const fmt = (v, d = 2) => (v == null || Number.isNaN(Number(v))) ? "—" : Number(v).toFixed(d);
+            const live = document.getElementById("protoLineLive");
+            if (live) {
+                const prev = parseFloat(live.dataset.prev || e8);
+                live.textContent = fmt(e8);
+                if (isFinite(e8) && prev !== e8) triggerFlash(live, e8, prev);
+                live.dataset.prev = String(e8);
+            }
+            const tol = Number(pc.tol_pts ?? 3);
+            const band = document.getElementById("protoLineBand");
+            if (band) band.textContent = isFinite(e8) ? fmt(e8 - tol) + " – " + fmt(e8 + tol) + " (±" + tol + ")" : "—";
+            const gap = document.getElementById("protoLineGap");
+            if (gap && isFinite(e8) && spot > 0) {
+                const g = spot - e8, inBand = Math.abs(g) <= tol;
+                gap.textContent = Math.abs(g).toFixed(2) + " pts " + (g >= 0 ? "above" : "below") + (inBand ? " — ON THE LINE" : "");
+                gap.style.color = inBand ? "#fbbf24" : (g >= 0 ? "#34d399" : "#f87171");
+            }
+            const chk = document.getElementById("protoLineCheck"), diff = document.getElementById("protoLineDiff");
+            if (chk) {
+                if (pc.enabled === false) { chk.textContent = "algo is switched off"; chk.style.color = "#f87171"; }
+                else if (!pc.armed) { chk.textContent = "algo not armed — the 30-s check runs only after a 15-min close across the line"; chk.style.color = "#94a3b8"; }
+                else if (!pc.at) { chk.textContent = "algo armed " + (pc.direction === "LONG" ? "CE" : (pc.direction === "SHORT" ? "PE" : "")) + " — first 30-s check pending"; chk.style.color = "#cbd5e1"; }
+                else {
+                    chk.textContent = "algo's last " + Math.round(pc.refresh_sec || 30) + "-s check " + pc.at + " → line " + fmt(pc.e8) + ", spot " + fmt(pc.spot, 1) +
+                        " (range " + fmt(pc.tick_low, 1) + "–" + fmt(pc.tick_high, 1) + ") · " + (pc.verdict || "") + " · next in " + (pc.next_in_sec ?? "—") + " s";
+                    chk.style.color = "#cbd5e1";
+                }
+                if (diff) {
+                    if (pc.at && isFinite(e8) && pc.e8 != null) {
+                        const d = e8 - Number(pc.e8);
+                        diff.textContent = "live line moved " + (d >= 0 ? "+" : "") + d.toFixed(2) + " since that check";
+                    } else diff.textContent = "";
+                }
+            }
+            // tick proof
+            _emaTick.n += 1;
+            const sig = [spot, tf.ema_4, tf.ema_8, (cross.tf_1h || {}).ema_8].join("|");
+            const now = Date.now();
+            if (sig !== _emaTick.lastSig) { _emaTick.lastSig = sig; _emaTick.lastChangeAt = now; _emaTick.lastChangeHm = cross.updated_at_ist || ""; }
+            const el = document.getElementById("dhanEmaTick"), dot = document.getElementById("dhanEmaTickDot");
+            if (el) {
+                const since = _emaTick.lastChangeAt ? Math.round((now - _emaTick.lastChangeAt) / 1000) : null;
+                const closed = cross.market_open === false;
+                const stuck = !closed && since !== null && since > 20;
+                const col = closed ? "#64748b" : (stuck ? "#fbbf24" : "#34d399");
+                if (dot) { dot.style.background = col; dot.style.boxShadow = (closed || stuck) ? "none" : "0 0 6px " + col; }
+                el.innerHTML = '<span id="dhanEmaTickDot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:' + col + '; margin-right:5px; vertical-align:middle;' + ((closed || stuck) ? "" : " box-shadow:0 0 6px " + col + ";") + '"></span>' +
+                    "tick #" + _emaTick.n + " · server " + (cross.server_time_ist || cross.updated_at_ist || "—") +
+                    (closed ? " · market closed — values frozen at the last bar" :
+                        (since === null ? "" : " · last change " + (_emaTick.lastChangeHm || "") + " (" + since + " s ago)" + (stuck ? " · NOT MOVING — check the spot feed" : "")));
+                el.style.color = col;
+            }
+        }
+
         function renderDhanStyleEmaCross(cross, spotTel) {
             const spot = cross.spot_live ?? spotTel?.price ?? 0;
             const elSpot = document.getElementById("dhanEmaSpot");
@@ -3350,6 +3420,7 @@
             }
             const u = document.getElementById("dhanEmaCrossUpdated");
             if (u) u.textContent = "updated " + (cross.updated_at_ist || "—") + " IST";
+            renderProtoLineRow(cross);
 
             const paintTf = (tf, pfx) => {
                 if (!tf || !tf.ok) return;

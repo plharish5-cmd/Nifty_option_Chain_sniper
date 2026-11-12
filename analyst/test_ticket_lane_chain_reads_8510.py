@@ -378,3 +378,27 @@ def test_link_is_served_and_shown(tmp_path):
     html = (ROOT / "Algorithmic_Trading_Workspace_8510.html").read_text(encoding="utf-8")
     assert 'id="deskLinkStrip"' in html and "pollDesk8600Direct" in html and "renderDeskLink(data.desk8600_link)" in html
     assert '"/api/desk8600/link"' in (ROOT / "engine_8510_live.py").read_text(encoding="utf-8")
+
+
+# ── the Prototype's own line in the live banner ──────────────────────────────
+def test_prototype_check_status_and_banner_wiring(tmp_path):
+    import time as _t
+    from analyst.test_live_exit_orders_8510 import FakeBroker, make_test_backend
+
+    b = make_test_backend(tmp_path, FakeBroker(configured=True))
+    b._ema8_prototype_state = {}
+    st = b.ema8_prototype_check_status()
+    assert st["armed"] is False and st["refresh_sec"] == 30.0 and st["tol_pts"] > 0 and "at" not in st
+    b._ema8_prototype_state = {"arm": {"direction": "SHORT", "away_seen": True}}
+    b._ema8_proto_last_check = {"e8": 25212.4, "spot": 25230.1, "tick_high": 25231.0, "tick_low": 25228.0,
+                                "tol_pts": 3.0, "at": "10:31:30", "at_ts": _t.time() - 12, "refresh_sec": 30.0,
+                                "armed": True, "direction": "SHORT", "away_seen": True, "verdict": "ARMED PE"}
+    st = b.ema8_prototype_check_status()
+    assert st["armed"] and st["e8"] == 25212.4 and 11 <= st["age_sec"] <= 13 and 17 <= st["next_in_sec"] <= 19
+    src = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
+    assert "self._ema8_proto_last_check = {" in src
+    eng = (ROOT / "engine_8510_live.py").read_text(encoding="utf-8")
+    assert 'res["prototype_check"] = backend.ema8_prototype_check_status()' in eng
+    html = (ROOT / "Algorithmic_Trading_Workspace_8510.html").read_text(encoding="utf-8")
+    for needle in ('id="dhanEmaProtoLine"', 'id="protoLineLive"', 'id="protoLineCheck"', 'id="dhanEmaTick"', "renderProtoLineRow(cross)"):
+        assert needle in html, needle

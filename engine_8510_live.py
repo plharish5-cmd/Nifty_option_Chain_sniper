@@ -1001,6 +1001,13 @@ async def api_ema_proximity_live_cross():
     if spot <= 0 or not backend.ema_proximity_engine:
         return JSONResponse(content={"ok": False, "error": "spot or engine unavailable"})
     res = await asyncio.to_thread(backend.ema_proximity_engine.get_dhan_live_ema_cross, spot)
+    if isinstance(res, dict):
+        res["prototype_check"] = backend.ema8_prototype_check_status()
+        res["server_time_ist"] = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%H:%M:%S")
+        try:
+            res["market_open"] = bool((backend.cached_telemetry.get("market_status") or {}).get("is_open"))
+        except Exception:
+            res["market_open"] = None
     return JSONResponse(content=res)
 
 
