@@ -762,7 +762,7 @@ def flagship_sr_exit_trigger(
     return None
 
 
-FIXED_SPOT_OR_OPTION_EXIT_PREFIXES = ("EMA8_PROTOTYPE", "STAGE_2", "STAGE_3", "CROSSOVER")
+FIXED_SPOT_OR_OPTION_EXIT_PREFIXES = ("EMA8_PROTOTYPE", "STAGE_2", "STAGE_3", "CROSSOVER", "DESK8600_TICKET")
 
 
 def uses_fixed_spot_or_option_exit(strategy_id: Any) -> bool:
@@ -3945,7 +3945,97 @@ class QuantTerminalBackend:
 
         bridge = self.__dict__.get("desk8600_bridge")
         last = getattr(bridge, "last", None) or {}
-        return build_board(last, self.oi_context(), self.scanner_cfg, datetime.now(IST))
+        return build_board(last, self.oi_context(), self.scanner_cfg, datetime.now(IST),
+                           chain_reads=self.chain_reads())
+
+    def chain_reads(self, max_age_sec: float = 20.0) -> Dict[str, Any]:
+        """PCR zone, price-vs-OI buildup, volume-backed OI and gamma regime. Cached 20 s. Never raises."""
+        from analyst.chain_reads_8510 import compute_reads, load_cfg as _cr_cfg
+        from analyst.oi_context_8510 import load_day_snapshots
+
+        cache = self.__dict__.get("_chain_reads_cache")
+        now_mono = time.monotonic()
+        if cache and (now_mono - cache[0]) < max_age_sec:
+            return cache[1]
+        try:
+            px = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
+            now = datetime.now(IST)
+            day = now.strftime("%Y-%m-%d")
+            rows = load_day_snapshots(self._oi_context_db_paths(), day)
+            out = compute_reads(rows, px, _cr_cfg(self.scanner_cfg), day=day, now_ts=int(now.timestamp()))
+        except Exception as exc:
+            out = {"status": "NO_DATA", "reason": f"error: {type(exc).__name__}", "reads": {}, "facts": {}}
+        self._chain_reads_cache = (now_mono, out)
+        return out
+
+    # ── 8600 TICKET LANE ────────────────────────────────────────────────────
+    def _desk8600_ticket_position_open(self) -> bool:
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                r = conn.execute(
+                    "SELECT count(*) FROM positions WHERE status IN ('OPEN','EXIT_PENDING') "
+                    "AND UPPER(COALESCE(strategy_id,'')) LIKE 'DESK8600_TICKET%'"
+                ).fetchone()
+            return bool(r and r[0] > 0)
+        except Exception:
+            return False
+
+    def evaluate_desk8600_ticket_lane(self, spot: Optional[float] = None) -> List[Dict[str, Any]]:
+        """Signals from the newest 8600 entry ticket (one per closed 3-minute bar). Never raises."""
+        from analyst.desk8600_ticket_lane_8510 import evaluate
+
+        try:
+            bridge = self.__dict__.get("desk8600_bridge")
+            last = getattr(bridge, "last", None) or {}
+            state = self.__dict__.setdefault("_desk8600_ticket_state", {})
+            sigs, status = evaluate(
+                last, self.scanner_cfg, state, datetime.now(IST),
+                has_open_position=self._desk8600_ticket_position_open(), spot=spot,
+            )
+            self._desk8600_ticket_status = status
+            if sigs:
+                log.info("[8600 TICKET] %s", status.get("detail"))
+            return sigs
+        except Exception as exc:
+            log.warning("8600 ticket lane skipped (%s)", type(exc).__name__)
+            return []
+
+    def desk8600_ticket_lane_status(self) -> Dict[str, Any]:
+        from analyst.desk8600_ticket_lane_8510 import load_cfg as _tl_cfg
+
+        st = dict(self.__dict__.get("_desk8600_ticket_status") or {})
+        cfg = _tl_cfg(self.scanner_cfg)
+        st.update(enabled=cfg["enabled"], route=cfg["route"], high_conviction_only=cfg["high_conviction_only"],
+                  target_pts=float(cfg["target_pts"]), sl_pts=float(cfg["sl_pts"]))
+        if not cfg["enabled"]:
+            st.setdefault("detail", "lane is switched off")
+            st["state"] = "OFF"
+        st.setdefault("state", "WAITING")
+        st["position_open"] = self._desk8600_ticket_position_open()
+        return st
+
+    def update_desk8600_ticket_lane(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Cockpit change to the ticket lane; saved the same way as the other cockpit switches."""
+        from analyst.desk8600_ticket_lane_8510 import SID_LONG, SID_SHORT, apply_update
+
+        cfg = apply_update(self.scanner_cfg, updates or {})
+        # If the desk runs an execution allowlist, a lane the owner switches on must be on it.
+        if cfg["enabled"] and bool(self.algo_allowlist_cfg.get("enabled", False)):
+            raw = list(self.algo_allowlist_cfg.get("strategy_ids") or [])
+            have = {str(x).strip().upper() for x in raw}
+            raw += [sid for sid in (SID_LONG, SID_SHORT) if sid not in have]
+            self.algo_allowlist_cfg["strategy_ids"] = raw
+            self.cfg["algo_execution_allowlist"] = self.algo_allowlist_cfg
+        self.cfg["scanner"] = self.scanner_cfg
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(self.cfg, f, indent=2)
+        except Exception as exc:
+            log.warning("Could not persist 8600 ticket lane config: %s", exc)
+        log.info("[8600 TICKET] lane settings now: %s", json.dumps(self.scanner_cfg.get("desk8600_ticket_lane")))
+        out = self.desk8600_ticket_lane_status()
+        out["ok"] = True
+        return out
 
     def update_desk8600_board(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         """Cockpit change to the board's switches; saved the same way as the other gates."""
@@ -5491,6 +5581,7 @@ class QuantTerminalBackend:
         payload['trend_capture_live'] = await asyncio.to_thread(self.trend_capture_service().status)
         payload["oi_context"] = await asyncio.to_thread(self.oi_context, spot)
         payload["desk8600_board"] = await asyncio.to_thread(self.desk8600_board)
+        payload["desk8600_ticket_lane"] = await asyncio.to_thread(self.desk8600_ticket_lane_status)
         self.cached_telemetry = payload
         self._telemetry_last_refresh_mono = time.monotonic()
         return payload
@@ -5652,6 +5743,21 @@ class QuantTerminalBackend:
                 raw.append(sid)
                 upper.add(sid)
         self.algo_allowlist_cfg["strategy_ids"] = raw
+
+    def _ema8_prototype_view(self) -> Dict[str, Any]:
+        """Plain-language position of the Prototype in its sequence (display only). Never raises."""
+        try:
+            from analyst.cockpit_views_8510 import prototype_view
+
+            route = "LIVE" if str(getattr(self, "execution_mode", "")) == "BOTH" else ""
+            return prototype_view(
+                self.strategy_status.get("ema8_prototype"),
+                self.__dict__.get("_ema8_prototype_state"),
+                (self.cached_telemetry.get("spot") or {}).get("price"),
+                route,
+            )
+        except Exception as exc:
+            return {"step": 0, "headline": "status unavailable", "sub": type(exc).__name__, "steps": [], "route": ""}
 
     def _sync_ema8_prototype_desk_status(self) -> None:
         from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg, _execution_mode_labels
@@ -7114,6 +7220,7 @@ class QuantTerminalBackend:
                 or sid_u.startswith("CROSSOVER")
                 or sig.get("mj_sir_paper_only")
                 or (sid_u.startswith("EMA8_PROTOTYPE") and proto_paper)
+                or (sid_u.startswith("DESK8600_TICKET") and bool(sig.get("paper_only")))
                 or sig.get("matrix_scalp")
                 or sig.get("pa_homework")
                 or sid_u.startswith("PA_SR")
@@ -7193,6 +7300,10 @@ class QuantTerminalBackend:
                             )
                             signals.extend(pa_breaks)
 
+                        signals.extend(
+                            await asyncio.to_thread(self.evaluate_desk8600_ticket_lane, float(spot))
+                        )
+
                         for slot_ts in self._pending_closed_15m_open_ts():
                             self._last_live_eval_closed_15m_ts = int(slot_ts)
                             log.info("15m closed bar eval slot ts=%s", slot_ts)
@@ -7227,6 +7338,7 @@ class QuantTerminalBackend:
             "strategies": self.strategy_status,
             "recent_signals": self.recent_signals[:10],
             "ema8_prototype_log": self.get_ema8_prototype_log(limit=15),
+            "ema8_prototype_view": self._ema8_prototype_view(),
             "algo_strike_selection": self.algo_strike_selection,
             "tolerance_pts": float(self.scanner_cfg.get("tolerance_pts", 20.0)),
             "scanner_gates": self.get_scanner_gate_config(),
@@ -8369,6 +8481,16 @@ class QuantTerminalBackend:
                 if _execution_mode_labels(load_ema8_prototype_cfg(self.scanner_cfg))[0]:
                     mode = "PAPER_ONLY"
                     proto_lane_paper = True
+
+            # 8600 Ticket lane route switch: PAPER_ONLY for this lane never sends
+            # a real order. Downgrade only, and only for this lane.
+            if mode != "PAPER_ONLY" and str(
+                (spot_context or {}).get("strategy_id") or strategy_id or ""
+            ).upper().startswith("DESK8600_TICKET"):
+                from analyst.desk8600_ticket_lane_8510 import load_cfg as _ticket_lane_cfg
+
+                if _ticket_lane_cfg(self.scanner_cfg)["route"] == "PAPER_ONLY":
+                    mode = "PAPER_ONLY"
 
             # Directional Bias Enforcement Gate (Live Execution & Strike Matrix Orders)
             opt_type = str(contract.get("opt_type", "")).upper()

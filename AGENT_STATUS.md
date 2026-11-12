@@ -899,3 +899,47 @@ passed; locks 11/11; whole `analyst` suite 45 failed / 37 errors, the same count
 Not verified: no live 8600 app or real snapshots here — never seen with real data. Not built:
 8600 tickets do not open trades by themselves (no new lane); Option Volume, Smart OI / Matrix 2.0
 bars and Writer Stack-up have no direction rule in the bridge, so they have no button.
+
+## Claude — `claude/v2.0.10-ticket-lane-chain-reads` (12 Nov 2026) — owner request: ticket lane (paper and live), more option-chain reads, cockpit rework
+Base `claude/v2.0.9-desk8600-board` @ `02f00c7`. Tags (local): `pre-/post-claude-v2.0.10-ticket-lane-chain-reads`.
+Not merged anywhere. No existing strategy's entry or exit rule is changed.
+
+- **8600 Ticket lane** (`analyst/desk8600_ticket_lane_8510.py`, new lane, ids `DESK8600_TICKET_LONG/SHORT`).
+  A 🎯 Dip Buy / Sniper Breakout badge on the newest closed 3-minute 8600 bar buys CE; 🎯 Pullback
+  Sell / Sniper Breakdown buys PE. One signal per ticket bar, no second ticket trade while one is
+  open, ticket bar must be under 200 s old. The signal goes down the normal path (board filters,
+  contract pick, chaser, paper ledger, live route). Exit = the fixed spot-or-option exit
+  (`DESK8600_TICKET` added to `FIXED_SPOT_OR_OPTION_EXIT_PREFIXES`) + 15:20.
+  Owner switches (cockpit card, `GET/POST /api/desk8600/ticket-lane`, saved to
+  `scanner.desk8600_ticket_lane`): ON/OFF (**off until pressed**), route "Real when desk is armed"
+  (default, as he asked: paper and live) or "Paper only" (downgrade in `execute_order_with_chaser`),
+  high-conviction only, target/stop points (40/40). Switching it on adds its ids to the execution
+  allowlist if that list is enabled. `SignalBridge` and its `use_for_algo_trades=False` are untouched;
+  the lane reads `bridge.last`.
+- **Four more board sources** (`analyst/chain_reads_8510.py`, from the recorded snapshots; the loader
+  now also selects `ce_ltp, pe_ltp`): PCR zone, price-vs-OI buildup (15 min, ATM ±3 strikes),
+  volume-backed OI (churn = neutral, self-calibrated against the day's earlier windows), gamma
+  regime (Black-Scholes, IV solved from LTP; positive = "no room" both sides). Facts line: PCR,
+  max pain, gamma flip. The board now has 15 sources and a seventh lane button (8600 Ticket lane).
+- **Cockpit** (`Algorithmic_Trading_Workspace_8510.html`, `analyst/cockpit_views_8510.py`):
+  Prototype card header replaced by a sentence + five-step tracker + spot / 8 EMA / gap and a route
+  label in words (old elements kept hidden; `sc.ema8_prototype_view`, display only).
+  Active Positions: summary cards (open MTM, booked today, day total, real-money MTM), per row
+  real/paper badge, minutes held, spot move, tick flash, points and %, stop→target bar.
+  Orders Book: summary cards, Today / All days, "Completed trades" view (one row per exit).
+  Replay and Backtester: result in spot points — net, win rate, max drawdown, losing streak, profit
+  factor, running-total curve, tables by exit reason / entry hour / side / day. All computed in the
+  page from rows already returned; no backend change to replay or backtest.
+  The vendor name of the external PE-CE feed no longer appears in visible cockpit text (element
+  ids and endpoints unchanged).
+
+Tests: `test_ticket_lane_chain_reads_8510.py` 21 passed; board + context 28 passed; locks 11/11;
+whole `analyst` suite 645 passed / 41 failed / 37 errors — the same failing files as the base minus
+AGY's four wall-clock tests (run before 15:20 IST this time). Cockpit rendered in Chromium with
+sample data, no page errors.
+
+Not verified: no live 8600 app, no real snapshots, no broker here. The ticket lane has never
+taken a ticket from the real 8600 app. Thresholds in the chain reads are first guesses. The gamma
+read assumes hedgers are long calls and short puts. Not built: vega / skew / premium decay /
+straddle / VPIN / participant data from the 8501 app; ticket lane in replay or backtest; the
+8600 ticket's own SL/target text (the bridge does not carry it).

@@ -89,7 +89,7 @@ def load_day_snapshots(db_paths: Iterable[Path], day: str, asof_ts: Optional[int
                 upcoming = [e for e in expiries if e[:10] >= day] or expiries
                 expiry = upcoming[0]
                 rows = conn.execute(
-                    "SELECT ts, strike, ce_oi, pe_oi, ce_vol, pe_vol FROM chain_snap "
+                    "SELECT ts, strike, ce_oi, pe_oi, ce_vol, pe_vol, ce_ltp, pe_ltp FROM chain_snap "
                     "WHERE expiry = ? AND ts >= ? AND ts < ? ORDER BY ts, strike",
                     (expiry, lo, hi),
                 ).fetchall()

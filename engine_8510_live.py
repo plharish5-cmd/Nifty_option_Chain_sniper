@@ -819,6 +819,21 @@ async def api_scanner_status():
     return JSONResponse(content=backend.get_scanner_status())
 
 
+@app.get("/api/desk8600/ticket-lane")
+async def api_desk8600_ticket_lane_get():
+    """8600 Ticket lane: switches and what the lane sees now."""
+    return JSONResponse(content={"ok": True, **backend.desk8600_ticket_lane_status()})
+
+
+@app.post("/api/desk8600/ticket-lane")
+async def api_desk8600_ticket_lane_post(req: Request):
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    return JSONResponse(content=backend.update_desk8600_ticket_lane(data if isinstance(data, dict) else {}))
+
+
 @app.get("/api/desk8600/board")
 async def api_desk8600_board_get():
     """Every 8600 / option-chain source with its current reading and its switch."""

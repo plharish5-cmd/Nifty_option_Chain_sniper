@@ -54,7 +54,12 @@ SOURCES: List[Dict[str, str]] = [
     {"id": "oi_15m", "label": "15-min OI impulse (PE − CE)", "origin": "chain"},
     {"id": "oi_3m", "label": "3-min OI bar (PE − CE)", "origin": "chain"},
     {"id": "walls", "label": "OI walls — room to target", "origin": "chain"},
+    {"id": "pcr_zone", "label": "PCR zone (who is in control)", "origin": "chain"},
+    {"id": "price_oi", "label": "Price vs OI buildup (15 min, at the money)", "origin": "chain"},
+    {"id": "volume_oi", "label": "Volume-backed OI (15 min) — churn = neutral", "origin": "chain"},
+    {"id": "gamma_regime", "label": "Gamma regime — range (skip) or trend (model)", "origin": "chain"},
 ]
+CHAIN_READ_IDS = ("pcr_zone", "price_oi", "volume_oi", "gamma_regime")
 SOURCE_IDS = [s["id"] for s in SOURCES]
 TICKET_SOURCES = ("ticket", "high_conviction")
 
@@ -65,6 +70,7 @@ LANES: List[Dict[str, str]] = [
     {"prefix": "CROSSOVER", "label": "8 EMA Reversal"},
     {"prefix": "FLAGSHIP", "label": "1H Flagship"},
     {"prefix": "H1_8EMA", "label": "1H 8 EMA"},
+    {"prefix": "DESK8600_TICKET", "label": "8600 Ticket lane"},
 ]
 LANE_PREFIXES = [x["prefix"] for x in LANES]
 RULES = ("NO_OPPOSE", "MAJORITY")
@@ -279,13 +285,18 @@ def judge(sources: List[Dict[str, Any]], direction: str, cfg: Dict[str, Any], st
 
 
 def build_board(bridge_last: Optional[Dict[str, Any]], oi_ctx: Optional[Dict[str, Any]],
-                scanner_cfg: Optional[Dict[str, Any]], now: datetime) -> Dict[str, Any]:
+                scanner_cfg: Optional[Dict[str, Any]], now: datetime,
+                chain_reads: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The whole board for the cockpit and for judging signals. Never raises."""
     cfg = load_cfg(scanner_cfg)
     try:
         merged_cfg = dict(cfg, min_room_pts=((scanner_cfg or {}).get("oi_context") or {}).get("min_room_pts", 40.0))
         vals = _bridge_sources(bridge_last or {}, now, float(cfg.get("max_age_sec", 420)))
         vals.update(_chain_sources(oi_ctx or {}, merged_cfg))
+        cr = chain_reads or {}
+        why = str(cr.get("reason") or "no option-chain snapshots")
+        for rid in CHAIN_READ_IDS:
+            vals[rid] = dict((cr.get("reads") or {}).get(rid) or {"direction": None, "detail": why, "age_sec": None})
     except Exception as exc:  # a broken read must never stop a trade
         vals = {i: {"direction": None, "detail": f"error: {type(exc).__name__}", "age_sec": None} for i in SOURCE_IDS}
     sources = []
@@ -303,5 +314,6 @@ def build_board(bridge_last: Optional[Dict[str, Any]], oi_ctx: Optional[Dict[str
         "apply_to": cfg["apply_to"],
         "lanes": LANES,
         "filters_on": len(cfg["sources"]),
+        "facts": dict((chain_reads or {}).get("facts") or {}),
         "preview": {"CE": judge(sources, "LONG", cfg), "PE": judge(sources, "SHORT", cfg)},
     }

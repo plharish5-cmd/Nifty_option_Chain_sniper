@@ -971,7 +971,7 @@
                         </label>
                         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#ec4899; cursor:pointer; border:1px solid rgba(236,72,153,0.35); padding:4px 8px; border-radius:6px;">
                             <input type="checkbox" id="chkStockMojoMaster" checked onchange="toggleStockMojoMaster(this.checked)">
-                            <span><b>StockMojo PE-CE download</b> (master ON/OFF — no fetch when OFF)</span>
+                            <span><b>External PE-CE feed</b> (master ON/OFF — no fetch when OFF)</span>
                         </label>
                         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#f472b6; cursor:pointer;">
                             <input type="checkbox" id="chkWriterFlowGate" onchange="saveWriterFlowGate({enabled: this.checked});updateGateScopeBadges();">
@@ -980,7 +980,7 @@
                     </div>
                     <div id="stockMojoStatusBanner" style="width:100%; margin-top:8px; padding:8px 12px; border-radius:8px; font-size:11.5px; font-family:var(--font-mono); border:1px solid #475569; background:rgba(15,23,42,0.85); color:#94a3b8;">
                         <div style="display:flex; flex-wrap:wrap; gap:12px 20px; align-items:center;">
-                            <span id="smStatusSummary">StockMojo: checking…</span>
+                            <span id="smStatusSummary">External feed: checking…</span>
                             <span id="smCredLed">🔑 Credentials: —</span>
                             <span id="smAuthLed">🔐 Auth: —</span>
                             <span id="smDlLed">⬇ Download: —</span>
@@ -1012,7 +1012,7 @@
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
                         <span id="pillGoldilocksSeparation" data-gate-scope="view" style="background:rgba(16, 185, 129, 0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;"><span class="gate-scope">👁</span>📐 Goldilocks ATR: -- ATR [WAITING]</span>
                         <span id="pillFuturesVolumeSurge" data-gate-scope="view" style="background:rgba(56, 189, 248, 0.15); border:1px solid #38bdf8; color:#38bdf8; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;"><span class="gate-scope">👁</span>📊 Futures Vol Surge (VSR): -- [WAITING]</span>
-                        <span id="pillStockMojoLive" data-gate-scope="view" style="background:rgba(244, 114, 182, 0.15); border:1px solid #f472b6; color:#f9a8d4; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;" title="StockMojo JSON poll every ~2–3 min when credentials configured"><span class="gate-scope">👁</span>📡 StockMojo PE-CE: [WAITING]</span>
+                        <span id="pillStockMojoLive" data-gate-scope="view" style="background:rgba(244, 114, 182, 0.15); border:1px solid #f472b6; color:#f9a8d4; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;" title="External PE-CE feed, polled every ~2–3 min when credentials are configured"><span class="gate-scope">👁</span>📡 External PE-CE feed: [WAITING]</span>
                         <span id="pillWriterSurge" data-gate-scope="view" style="background:rgba(168, 85, 247, 0.15); border:1px solid #a855f7; color:#d8b4fe; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;"><span class="gate-scope">👁</span>✍️ Writer surge: —</span>
                         <span id="pillFiveFactorConfluence" data-gate-scope="view" style="color:#38bdf8;padding:3px 10px;border:1px solid #334155;border-radius:14px;" title="Informational agreement count; not execution authorization"><span class="gate-scope">👁</span>🛡️ 5-Factor Confluence: — / 5 [WAITING]</span>
                     </div>
@@ -1079,10 +1079,17 @@
                     <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(251, 191, 36, 0.45); border-radius:8px; padding:12px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
                             <span style="font-weight:700; color:#fbbf24; font-size:13px;">8 EMA Prototype</span>
-                            <span id="stratStatus_ema8_proto" class="status-badge badge-neutral">SCANNING</span>
+                            <span id="protoViewRoute" style="font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:10px; border:1px solid #475569; color:#94a3b8;">—</span>
+                            <span id="stratStatus_ema8_proto" class="status-badge badge-neutral" style="display:none;">SCANNING</span>
                         </div>
-                        <span id="ema8ProtoExecBadge" class="strat-money-badge live-eligible" title="Config: LIVE_ALLOWED routes to Dhan when LIVE armed; else paper.">Prototype · LIVE_ALLOWED</span>
-                        <div id="stratPhase_ema8_proto" style="font-size:10.5px; color:#94a3b8; margin:4px 0; font-family:var(--font-mono);">Phase: WAITING_FOR_CLOSE</div>
+                        <span id="ema8ProtoExecBadge" class="strat-money-badge live-eligible" style="display:none;">Prototype</span>
+                        <div id="stratPhase_ema8_proto" style="display:none;"></div>
+                        <div id="protoView" style="margin:4px 0 8px; padding:9px 10px; border-radius:8px; background:rgba(15,23,42,0.7); border:1px solid rgba(148,163,184,0.25);">
+                            <div id="protoViewHeadline" style="font-size:14px; font-weight:800; color:#e2e8f0; line-height:1.3;">Waiting for status…</div>
+                            <div id="protoViewSub" style="font-size:11px; color:#94a3b8; margin-top:2px; min-height:1.2em;"></div>
+                            <div id="protoViewSteps" style="display:flex; gap:4px; margin-top:8px;"></div>
+                            <div id="protoViewNums" style="display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:7px; font-family:var(--font-mono); font-size:11px; color:#cbd5e1;"></div>
+                        </div>
                         <div id="stratBlock_ema8_proto" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
                         <div style="margin:8px 0; padding:8px; background:rgba(15,23,42,0.65); border:1px solid rgba(251,191,36,0.25); border-radius:6px; font-family:var(--font-mono); font-size:10.5px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,0.08); flex-wrap:wrap; gap:8px;">
@@ -1161,6 +1168,7 @@
                                     <span style="font-weight:800; color:#e2e8f0; letter-spacing:.3px;">8600 BOARD — option-chain reads</span>
                                     <span id="d86Status" style="color:#94a3b8;">waiting…</span>
                                 </div>
+                                <div id="d86Facts" style="margin-top:5px; color:#cbd5e1;"></div>
                                 <div id="d86Preview" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;"></div>
                                 <div id="d86Rows" style="margin-top:6px; font-size:11px;"><div style="color:#64748b; padding:4px;">No data yet</div></div>
                                 <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px;">
@@ -1187,6 +1195,33 @@
                                 <thead><tr><th style="text-align:left;">Time</th><th style="text-align:left;">Side</th><th style="text-align:left;">Setup</th></tr></thead>
                                 <tbody id="ema8PrototypeLogBody"><tr><td colspan="3" style="color:#64748b;">No prototype signals yet</td></tr></tbody>
                             </table>
+                        </div>
+                    </div>
+                    <!-- 8600 Ticket lane — an 8600 entry ticket opens a trade here -->
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(45, 212, 191, 0.45); border-radius:8px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+                            <span style="font-weight:700; color:#2dd4bf; font-size:13px;">8600 Ticket Lane</span>
+                            <span id="tklRoute" style="font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:10px; border:1px solid #475569; color:#94a3b8;">—</span>
+                        </div>
+                        <div style="margin:4px 0 8px; padding:9px 10px; border-radius:8px; background:rgba(15,23,42,0.7); border:1px solid rgba(148,163,184,0.25);">
+                            <div id="tklHeadline" style="font-size:14px; font-weight:800; color:#e2e8f0; line-height:1.3;">Waiting for status…</div>
+                            <div id="tklSub" style="font-size:11px; color:#94a3b8; margin-top:2px; min-height:1.2em;"></div>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11px; font-family:var(--font-mono);">
+                            <span style="color:#94a3b8;">Lane:</span><span id="tklOnOff"></span>
+                            <span style="color:#94a3b8; margin-left:6px;">Orders:</span><span id="tklRouteBtns"></span>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:6px; font-size:11px; font-family:var(--font-mono);">
+                            <span id="tklHc"></span>
+                            <span style="color:#94a3b8; margin-left:6px;">Target</span>
+                            <input id="tklTgt" type="number" min="1" max="500" step="1" style="width:56px; background:#0f172a; color:#e2e8f0; border:1px solid #475569; border-radius:4px; padding:2px 4px;" onchange="tklPost({target_pts: this.value})">
+                            <span style="color:#94a3b8;">Stop</span>
+                            <input id="tklSl" type="number" min="1" max="500" step="1" style="width:56px; background:#0f172a; color:#e2e8f0; border:1px solid #475569; border-radius:4px; padding:2px 4px;" onchange="tklPost({sl_pts: this.value})">
+                            <span style="color:#64748b;">pts (spot or option, whichever first)</span>
+                        </div>
+                        <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4; margin-top:8px;">
+                            A <b>Dip Buy / Sniper Breakout</b> ticket on a closed 3-minute bar buys <b>CE</b>; a <b>Pullback Sell / Sniper Breakdown</b> ticket buys <b>PE</b>.
+                            One trade per ticket bar, one ticket trade at a time, 15:20 square-off. The 8600 Board filters apply when this lane is selected there.
                         </div>
                     </div>
                     <!-- Strategy 4: 1 HR FLAGSHIP (Price Action) -->
@@ -1711,6 +1746,7 @@
                     <span>📈 Active Positions (Live Fluctuating MTM Like Dhan App)</span>
                     <button type="button" class="emerald-btn" onclick="exportPositionsToExcel()">📥 Download Positions as Excel (.xls)</button>
                 </h2>
+                <div id="positionsSummary" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px;"></div>
                 <div style="overflow-x:auto;">
                     <table>
                         <thead>
@@ -1739,7 +1775,24 @@
                     <span>📑 Institutional Orders Book</span>
                     <button type="button" class="emerald-btn" onclick="exportOrdersToExcel()">📥 Download Orders Book as Excel (.xls)</button>
                 </h2>
-                <div style="overflow-x:auto;">
+                <div id="ordersSummary" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px;"></div>
+                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:10px; font-size:11.5px;">
+                    <span style="color:var(--text-muted);">View:</span>
+                    <span id="ordersViewBtns"></span>
+                    <span style="color:var(--text-muted); margin-left:8px;">Day:</span>
+                    <span id="ordersDayBtns"></span>
+                </div>
+                <div id="tradesViewWrap" style="display:none; overflow-x:auto;">
+                    <table>
+                        <thead><tr>
+                            <th>Exit Time</th><th>Book</th><th>Symbol</th><th>Strategy / Setup</th>
+                            <th>Option Entry → Exit</th><th>Option Pts</th><th>Spot Entry → Exit</th><th>Spot Pts</th>
+                            <th>Qty</th><th>Net P&amp;L</th><th>Exit Reason</th>
+                        </tr></thead>
+                        <tbody id="tradesViewBody"></tbody>
+                    </table>
+                </div>
+                <div id="ordersViewWrap" style="overflow-x:auto;">
                     <table>
                         <thead>
                             <tr>
@@ -1921,6 +1974,8 @@
                     </div>
                 </div>
 
+                <div id="replayAnalysis" style="margin-bottom:16px;"></div>
+
                 <div id="replayAlgoChartWrap" style="display:none; margin-bottom:16px; border:1px solid var(--border-subtle); border-radius:8px; padding:8px 10px 4px; background:rgba(9,14,26,0.85);">
                     <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap;">
                         <span style="font-size:12px; font-weight:700; color:#38bdf8;">ALGO CHART — 15m Nifty spot + 4/8 EMA</span>
@@ -2047,6 +2102,8 @@
                         </div>
                     </div>
                 </div>
+
+                <div id="drAnalysis" style="margin-bottom:16px;"></div>
 
                 <!-- 14-Column Results Table (Exact order; Index High/Low deleted; 13: Data Type, 14: 8 EMA) -->
                 <div style="overflow-x:auto; max-height:480px;">
@@ -2775,6 +2832,15 @@
                     (s.direction === "ROOM" && (s.blocks || []).length ? '<b style="color:#f87171;">no room for ' + s.blocks.join(" / ") + '</b> · ' : "") +
                     d86Esc(s.detail) + '<span style="color:#475569;">' + age + ' · ' + (s.origin === "8600" ? "8600 app" : "chain snapshots") + '</span></div></div>';
             }).join("");
+            const f = b.facts || {}, fx = document.getElementById("d86Facts");
+            if (fx) {
+                const bits = [];
+                if (f.pcr !== undefined && f.pcr !== null) bits.push("PCR <b>" + f.pcr + "</b>");
+                if (f.max_pain) bits.push("Max pain <b>" + Number(f.max_pain).toFixed(0) + "</b>");
+                if (f.gamma_flip) bits.push("Gamma flip <b>" + Number(f.gamma_flip).toFixed(0) + "</b>");
+                if (f.net_gex !== undefined && f.net_gex !== null) bits.push("Net gamma <b style=\"color:" + (f.net_gex > 0 ? "#fbbf24" : "#93c5fd") + ";\">" + (f.net_gex > 0 ? "positive (range)" : "negative (trend)") + "</b>");
+                fx.innerHTML = bits.join(" · ");
+            }
             const labelOf = {}; b.sources.forEach((s) => { labelOf[s.id] = s.label; });
             const pv = (side) => {
                 const p = (b.preview || {})[side] || {};
@@ -2800,6 +2866,69 @@
                 const on = (b.apply_to || []).includes(l.prefix);
                 return d86Btn(d86Esc(l.label), on, "d86Post({lane:'" + l.prefix + "', on:" + (!on) + "})", "");
             }).join("");
+        }
+
+        function renderProtoView(v) {
+            const head = document.getElementById("protoViewHeadline");
+            if (!head || !v) return;
+            const tone = { ce: "#34d399", pe: "#f87171", off: "#ef4444", wait: "#e2e8f0" }[v.tone] || "#e2e8f0";
+            if (v.spot) window._deskSpot = Number(v.spot);
+            head.textContent = v.headline || "";
+            head.style.color = tone;
+            document.getElementById("protoViewSub").textContent = v.sub || "";
+            const steps = v.steps || [];
+            document.getElementById("protoViewSteps").innerHTML = steps.map((label, i) => {
+                const done = v.step > i, now = v.step === i;
+                const bg = now ? tone : (done ? "rgba(52,211,153,0.35)" : "rgba(148,163,184,0.18)");
+                const fg = now ? "#0f172a" : (done ? "#a7f3d0" : "#64748b");
+                return '<div title="' + d86Esc(label) + '" style="flex:1; min-width:0; text-align:center; padding:4px 3px; border-radius:5px; font-size:9.5px; font-weight:' + (now ? 800 : 600) +
+                    '; background:' + bg + '; color:' + fg + '; line-height:1.2;">' + (i + 1) + '. ' + d86Esc(label) + '</div>';
+            }).join("");
+            const n = [];
+            if (v.spot) n.push("Spot <b>" + Number(v.spot).toFixed(1) + "</b>");
+            if (v.ema8 !== null && v.ema8 !== undefined) n.push("8 EMA (30s) <b>" + Number(v.ema8).toFixed(1) + "</b>");
+            if (v.gap_pts !== null && v.gap_pts !== undefined) n.push("Spot is <b>" + Math.abs(v.gap_pts).toFixed(1) + " pts " + (v.gap_pts >= 0 ? "above" : "below") + "</b> the line");
+            document.getElementById("protoViewNums").innerHTML = n.join("");
+            const r = document.getElementById("protoViewRoute");
+            if (r) {
+                r.textContent = v.route || "—";
+                r.style.color = v.route_live ? "#fecaca" : "#94a3b8";
+                r.style.borderColor = v.route_live ? "#ef4444" : "#475569";
+                r.style.background = v.route_live ? "rgba(239,68,68,0.18)" : "transparent";
+            }
+        }
+
+        async function tklPost(payload) {
+            try {
+                const res = await fetch("/api/desk8600/ticket-lane", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+                if (res.ok) renderTicketLane(await res.json());
+            } catch (e) { console.error("8600 ticket lane update", e); }
+        }
+        function renderTicketLane(t) {
+            const head = document.getElementById("tklHeadline");
+            if (!head || !t) return;
+            const names = { OFF: "Switched off", WAITING: "Waiting for an 8600 entry ticket", TICKET: "Ticket taken — order sent", TAKEN: "Ticket already taken on this bar", "IN TRADE": "In a ticket trade", ERROR: "Lane error" };
+            head.textContent = t.position_open ? "In a ticket trade" : (names[t.state] || t.state || "");
+            head.style.color = !t.enabled ? "#ef4444" : (t.position_open || t.state === "TICKET" ? "#34d399" : "#e2e8f0");
+            const age = (t.bar_age_sec === null || t.bar_age_sec === undefined) ? "" : " · 8600 bar " + (t.bar_age_sec < 90 ? t.bar_age_sec + "s" : Math.round(t.bar_age_sec / 60) + "m") + " old";
+            document.getElementById("tklSub").textContent = (t.detail || "") + age + (t.last_fired ? " · last taken " + t.last_fired : "");
+            document.getElementById("tklOnOff").innerHTML =
+                d86Btn("ON", !!t.enabled, "tklPost({enabled:true})", "Take 8600 entry tickets") + " " +
+                d86Btn("OFF", !t.enabled, "tklPost({enabled:false})", "Do not take 8600 tickets");
+            document.getElementById("tklRouteBtns").innerHTML =
+                d86Btn("Real when desk is armed", t.route === "LIVE_ALLOWED", "tklPost({route:'LIVE_ALLOWED'})", "Real order when LIVE is armed, paper otherwise") + " " +
+                d86Btn("Paper only", t.route === "PAPER_ONLY", "tklPost({route:'PAPER_ONLY'})", "Never send a real order from this lane");
+            document.getElementById("tklHc").innerHTML =
+                d86Btn("High conviction only", !!t.high_conviction_only, "tklPost({high_conviction_only:" + (!t.high_conviction_only) + "})", "Take a ticket only when 8600 marks it high conviction");
+            const tg = document.getElementById("tklTgt"), sl = document.getElementById("tklSl");
+            if (tg && document.activeElement !== tg) tg.value = t.target_pts;
+            if (sl && document.activeElement !== sl) sl.value = t.sl_pts;
+            const r = document.getElementById("tklRoute");
+            if (r) {
+                r.textContent = !t.enabled ? "OFF" : (t.route === "PAPER_ONLY" ? "Paper only" : "Real orders when desk is armed");
+                r.style.color = !t.enabled ? "#64748b" : (t.route === "PAPER_ONLY" ? "#94a3b8" : "#fecaca");
+                r.style.borderColor = (!t.enabled || t.route === "PAPER_ONLY") ? "#475569" : "#ef4444";
+            }
         }
 
         async function toggleScannerGate(key, value) {
@@ -2847,7 +2976,7 @@
             const pill = document.getElementById("pillStockMojoLive");
             const ok = (t, v, good) => `${t} ${v}`;
             const led = (on) => on ? "🟢" : "🔴";
-            if (sum) sum.textContent = `StockMojo: ${st.summary || "—"}`;
+            if (sum) sum.textContent = `External feed: ${st.summary || "—"}`.replace(/stock\s*mojo/ig, "feed");
             if (det) det.textContent = st.detail || "";
             if (cred) cred.textContent = `${led(st.credentials_entered)} Credentials`;
             if (auth) auth.textContent = `${led(st.authenticated)} Auth (${st.auth_state || "—"})`;
@@ -2870,7 +2999,7 @@
                 }
             }
             if (pill && !st.master_enabled) {
-                setPillLabel("pillStockMojoLive", "📡 StockMojo PE-CE: MASTER OFF (no download)");
+                setPillLabel("pillStockMojoLive", "📡 External PE-CE feed: MASTER OFF (no download)");
                 pill.style.borderColor = "#64748b";
                 updateGateScopeBadges();
             }
@@ -2905,24 +3034,24 @@
         function renderWriterFlowTelemetry(sm, wf) {
             const pillSm = document.getElementById("pillStockMojoLive");
             const pillW = document.getElementById("pillWriterSurge");
-            const src = (sm && sm.available) ? "StockMojo" : (wf && wf.source) || "Dhan";
+            const src = (sm && sm.available) ? "External feed" : (wf && wf.source) || "Dhan";
             if (sm && sm.operational_status) renderStockMojoStatusBanner(sm.operational_status);
             if (pillSm) {
                 const st = sm && sm.operational_status;
                 if (st && !st.master_enabled) {
-                    setPillLabel("pillStockMojoLive", "📡 StockMojo PE-CE: MASTER OFF");
+                    setPillLabel("pillStockMojoLive", "📡 External PE-CE feed: MASTER OFF");
                 } else if (st && st.summary === "LIVE_OK" && sm.available) {
                     const ent = (wf && wf.entity_mode) || "both";
-                    setPillLabel("pillStockMojoLive", `📡 SM LIVE [${ent}] ${sm.time_ist || ""} | chg ${sm.pe_ce_change_3m_lakhs ?? "—"}L | tot ${sm.pe_ce_oi_total_lakhs ?? "—"}L`);
+                    setPillLabel("pillStockMojoLive", `📡 FEED LIVE [${ent}] ${sm.time_ist || ""} | chg ${sm.pe_ce_change_3m_lakhs ?? "—"}L | tot ${sm.pe_ce_oi_total_lakhs ?? "—"}L`);
                     pillSm.style.borderColor = "#10b981";
                     pillSm.style.color = "#6ee7b7";
                 } else if (st) {
-                    setPillLabel("pillStockMojoLive", `📡 StockMojo: ${st.summary} — ${st.detail || ""}`.slice(0, 120));
+                    setPillLabel("pillStockMojoLive", `📡 External feed: ${st.summary} — ${st.detail || ""}`.replace(/stock\s*mojo/ig, "feed").slice(0, 120));
                     pillSm.style.borderColor = st.summary === "LIVE_OK" ? "#10b981" : "#f59e0b";
                 } else if (sm && !sm.enabled) {
-                    setPillLabel("pillStockMojoLive", "📡 StockMojo PE-CE: OFF");
+                    setPillLabel("pillStockMojoLive", "📡 External PE-CE feed: OFF");
                 } else {
-                    setPillLabel("pillStockMojoLive", "📡 StockMojo PE-CE: waiting status");
+                    setPillLabel("pillStockMojoLive", "📡 External PE-CE feed: waiting status");
                 }
             }
             if (pillW && wf) {
@@ -4121,6 +4250,7 @@
                             }
                             applyEma8ProtoFilterUI(ep);
                         }
+                        renderProtoView(sc.ema8_prototype_view);
                         const protoLog = document.getElementById("ema8PrototypeLogBody");
                         if (protoLog) {
                             const rows = (sc.ema8_prototype_log || []);
@@ -4210,6 +4340,7 @@
 
                 renderDhanOI8510(data.dhan_oi, data.five_factor_confluence);
                 renderDesk8600Board(data.desk8600_board);
+                renderTicketLane(data.desk8600_ticket_lane);
                 renderWriterFlowTelemetry(data.stockmojo_live, data.writer_flow_gate);
 
                 if (data.ema_live_cross && data.ema_live_cross.ok) {
@@ -4524,6 +4655,7 @@
                 });
             }
 
+            renderPositionsSummary(filtered);
             if (filtered.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:16px;">No active positions matching current filter.</td></tr>`;
                 return;
@@ -4551,16 +4683,21 @@
                     statusBadge = `<span class="status-badge badge-bear" title="${(p.exit_reason || '').replace(/"/g, '&quot;')}">EXIT_FAILED</span>`;
                 }
 
+                const x = positionExtras(p, pnlVal);
                 return `<tr>
-                    <td title="${structTip}"><b style="font-family:var(--font-mono);">${p.symbol}</b></td>
+                    <td title="${structTip}"><b style="font-family:var(--font-mono);">${p.symbol}</b>
+                        <div style="margin-top:3px;"><span class="status-badge ${x.real ? 'badge-bear' : 'badge-side'}" style="font-size:9.5px;">${x.real ? 'REAL 💰' : 'PAPER 📝'}</span>
+                        <span style="color:var(--text-muted); font-size:10px; margin-left:4px;">${x.held}</span></div></td>
                     <td><b>${p.qty}</b></td>
-                    <td>₹${Number(p.entry_price || 0).toFixed(2)}</td>
+                    <td>₹${Number(p.entry_price || 0).toFixed(2)}${x.spotLine}</td>
                     <td title="Entered: ${formatDeskTimestamp(p.entry_time) || 'unknown'}">
                         <b style="font-family:var(--font-mono); font-size:12.5px;">${et.time}</b>
                         ${et.date ? `<div style="color:var(--text-muted); font-size:10px;">${et.date}</div>` : ``}
                     </td>
-                    <td style="font-weight:700;">₹${Number(p.current_ltp || 0).toFixed(2)}</td>
-                    <td style="font-weight:800; color:${pnlColor}; font-size:13px;">${pnlSign}${Math.round(pnlVal)} ${pnlIcon}</td>
+                    <td style="font-weight:700;" class="${x.flash}">₹${Number(p.current_ltp || 0).toFixed(2)} <span style="color:${x.tickCol}; font-size:11px;">${x.tick}</span></td>
+                    <td style="font-weight:800; color:${pnlColor}; font-size:15px; min-width:150px;">${pnlSign}₹${Math.abs(Math.round(pnlVal)).toLocaleString('en-IN')} ${pnlIcon}
+                        <div style="font-size:10.5px; font-weight:600; font-family:var(--font-mono);">${x.pts >= 0 ? '+' : ''}${x.pts.toFixed(2)} pts · ${x.pct >= 0 ? '+' : ''}${x.pct.toFixed(1)}%</div>
+                        ${x.bar}</td>
                     <td>${statusBadge}</td>
                     <td><span style="font-family:var(--font-mono); font-weight:600; font-size:11.5px;">${stratDisplay}</span></td>
                     <td>
@@ -4675,7 +4812,207 @@
             return `<b style="font-family:var(--font-mono); color:var(--emerald);">₹${n.toFixed(2)}</b>`;
         }
 
+        // ── Desk summaries (display only; computed from the rows already on screen) ──
+        let ordersViewMode = "ORDERS", ordersDayMode = "ALL", lastOrdersPayload = [];
+        const _lastPosLtp = {};
+        function deskCard(label, value, color, sub) {
+            return '<div style="flex:1 1 130px; min-width:120px; background:rgba(15,23,42,0.7); border:1px solid rgba(148,163,184,0.22); border-radius:8px; padding:8px 10px;">' +
+                '<div style="font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:.4px;">' + label + '</div>' +
+                '<div style="font-size:17px; font-weight:800; font-family:var(--font-mono); color:' + (color || "#e2e8f0") + ';">' + value + '</div>' +
+                (sub ? '<div style="font-size:10px; color:#64748b;">' + sub + '</div>' : '') + '</div>';
+        }
+        function deskMoney(v) { const n = Math.round(Number(v || 0)); return (n >= 0 ? "+" : "−") + "₹" + Math.abs(n).toLocaleString("en-IN"); }
+        function deskCol(v) { return Number(v || 0) >= 0 ? "var(--emerald)" : "var(--crimson)"; }
+        function deskTodayKey() { return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); }
+        function orderDayKey(raw) {
+            const s = String(raw || "");
+            let m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+            if (m) return m[1] + "-" + m[2] + "-" + m[3];
+            m = s.match(/(\d{2})[-\/](\d{2})[-\/](\d{4})/);
+            return m ? m[3] + "-" + m[2] + "-" + m[1] : "";
+        }
+        function positionExtras(p, pnlVal) {
+            const entry = Number(p.entry_price || 0), ltp = Number(p.current_ltp || 0), qty = Number(p.qty || 0);
+            const pts = (entry > 0 && ltp > 0) ? ltp - entry : 0, pct = entry > 0 ? pts / entry * 100 : 0;
+            const prev = _lastPosLtp[p.position_id];
+            const up = prev !== undefined && ltp > prev, down = prev !== undefined && ltp < prev;
+            _lastPosLtp[p.position_id] = ltp;
+            const tgt = Number(p.target_price || 0), sl = Number(p.sl_price || 0);
+            let bar = "";
+            if (tgt > 0 && sl > 0 && tgt > sl && ltp > 0) {
+                const pos = Math.max(0, Math.min(100, (ltp - sl) / (tgt - sl) * 100));
+                const ent = Math.max(0, Math.min(100, (entry - sl) / (tgt - sl) * 100));
+                bar = '<div title="Stop ' + sl.toFixed(2) + ' · Entry ' + entry.toFixed(2) + ' · Target ' + tgt.toFixed(2) + '" style="position:relative; height:6px; margin-top:5px; border-radius:3px; background:linear-gradient(90deg, rgba(244,63,94,0.45) 0%, rgba(244,63,94,0.45) ' + ent + '%, rgba(16,185,129,0.45) ' + ent + '%, rgba(16,185,129,0.45) 100%);">' +
+                    '<div style="position:absolute; top:-3px; left:calc(' + pos + '% - 2px); width:4px; height:12px; border-radius:2px; background:#f8fafc;"></div></div>' +
+                    '<div style="display:flex; justify-content:space-between; font-size:9.5px; font-weight:600; color:#94a3b8; font-family:var(--font-mono); margin-top:2px;"><span>SL ' + sl.toFixed(1) + '</span><span>TGT ' + tgt.toFixed(1) + '</span></div>';
+            }
+            const se = Number(p.spot_entry || 0), sn = Number(window._deskSpot || 0);
+            const isPe = /PE\b|PUT/i.test(String(p.symbol || ""));
+            let spotLine = "";
+            if (se > 0) {
+                const sp = sn > 0 ? (isPe ? se - sn : sn - se) : null;
+                spotLine = '<div style="color:var(--text-muted); font-size:10px; font-family:var(--font-mono);">spot ' + se.toFixed(1) +
+                    (sp === null ? "" : ' <span style="color:' + deskCol(sp) + ';">' + (sp >= 0 ? "+" : "") + sp.toFixed(1) + '</span>') + '</div>';
+            }
+            let held = "";
+            const m = String(p.entry_time || "").match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+            if (m) {
+                const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+                let mins = (now.getHours() * 60 + now.getMinutes()) - (Number(m[1]) * 60 + Number(m[2]));
+                if (/PM/i.test(String(p.entry_time)) && Number(m[1]) < 12) mins -= 720;
+                if (mins >= 0 && mins < 400) held = mins + " min";
+            }
+            return { pts, pct, bar, spotLine, held, real: Number(p.live_filled || 0) === 1,
+                     flash: up ? "flash-up" : (down ? "flash-down" : ""), tick: up ? "▲" : (down ? "▼" : ""), tickCol: up ? "var(--emerald)" : "var(--crimson)",
+                     value: entry * qty };
+        }
+        function renderPositionsSummary(list) {
+            const el = document.getElementById("positionsSummary");
+            if (!el) return;
+            let mtm = 0, invested = 0, real = 0, realMtm = 0;
+            (list || []).forEach(p => {
+                const v = p.net_pnl !== undefined ? p.net_pnl : (p.gross_pnl !== undefined ? p.gross_pnl : 0);
+                mtm += Number(v || 0); invested += Number(p.entry_price || 0) * Number(p.qty || 0);
+                if (Number(p.live_filled || 0) === 1) { real += 1; realMtm += Number(v || 0); }
+            });
+            const day = window._deskRealizedToday || { net: 0, n: 0 };
+            el.innerHTML =
+                deskCard("Open P&L (MTM)", deskMoney(mtm), deskCol(mtm), invested > 0 ? (mtm / invested * 100).toFixed(2) + "% on ₹" + Math.round(invested).toLocaleString("en-IN") : "") +
+                deskCard("Booked today", deskMoney(day.net), deskCol(day.net), day.n + " closed trade" + (day.n === 1 ? "" : "s")) +
+                deskCard("Day total", deskMoney(mtm + day.net), deskCol(mtm + day.net), "open + booked") +
+                deskCard("Open positions", String((list || []).length), "#e2e8f0", real + " real · " + ((list || []).length - real) + " paper") +
+                deskCard("Real-money MTM", deskMoney(realMtm), real ? deskCol(realMtm) : "#64748b", real ? "" : "no real position open");
+        }
+        function exitsOf(orders) { return (orders || []).filter(o => String(o.side || "") === "SELL" && String(o.order_status || "") === "FILLED"); }
+        function renderOrdersSummary(filtered) {
+            const el = document.getElementById("ordersSummary");
+            if (!el) return;
+            const ex = exitsOf(filtered);
+            const wins = ex.filter(o => Number(o.net_pnl || 0) > 0), losses = ex.filter(o => Number(o.net_pnl || 0) < 0);
+            const net = ex.reduce((a, o) => a + Number(o.net_pnl || 0), 0);
+            const sum = (arr) => arr.reduce((a, o) => a + Number(o.net_pnl || 0), 0);
+            const gw = sum(wins), gl = Math.abs(sum(losses));
+            const rejected = (filtered || []).filter(o => /REJECT|FAIL/i.test(String(o.order_status || ""))).length;
+            el.innerHTML =
+                deskCard("Closed trades", String(ex.length), "#e2e8f0", wins.length + " won · " + losses.length + " lost") +
+                deskCard("Win rate", ex.length ? (wins.length / ex.length * 100).toFixed(0) + "%" : "—", "#e2e8f0", "") +
+                deskCard("Net P&L", deskMoney(net), deskCol(net), ex.length ? "avg " + deskMoney(net / ex.length) + " / trade" : "") +
+                deskCard("Avg win / avg loss", (wins.length ? deskMoney(gw / wins.length) : "—") + " / " + (losses.length ? deskMoney(-gl / losses.length) : "—"), "#e2e8f0", "profit factor " + (gl > 0 ? (gw / gl).toFixed(2) : "—")) +
+                deskCard("Rejected / failed", String(rejected), rejected ? "var(--crimson)" : "#64748b", "orders");
+            const today = deskTodayKey();
+            const td = exitsOf(lastOrdersPayload).filter(o => orderDayKey(o.created_at) === today);
+            window._deskRealizedToday = { net: td.reduce((a, o) => a + Number(o.net_pnl || 0), 0), n: td.length };
+            const vb = document.getElementById("ordersViewBtns"), db = document.getElementById("ordersDayBtns");
+            if (vb) vb.innerHTML = d86Btn("Every order", ordersViewMode === "ORDERS", "setOrdersView('ORDERS')", "One row per order sent") + " " +
+                d86Btn("Completed trades", ordersViewMode === "TRADES", "setOrdersView('TRADES')", "One row per closed trade: entry to exit");
+            if (db) db.innerHTML = d86Btn("Today", ordersDayMode === "TODAY", "setOrdersDay('TODAY')", "") + " " + d86Btn("All days", ordersDayMode === "ALL", "setOrdersDay('ALL')", "");
+        }
+        function setOrdersView(m) { ordersViewMode = m; renderOrdersTable(lastOrdersPayload); }
+        function setOrdersDay(m) { ordersDayMode = m; renderOrdersTable(lastOrdersPayload); }
+        function renderTradesView(filtered) {
+            const tw = document.getElementById("tradesViewWrap"), ow = document.getElementById("ordersViewWrap"), body = document.getElementById("tradesViewBody");
+            if (!tw || !ow || !body) return;
+            tw.style.display = ordersViewMode === "TRADES" ? "" : "none";
+            ow.style.display = ordersViewMode === "TRADES" ? "none" : "";
+            if (ordersViewMode !== "TRADES") return;
+            const ex = exitsOf(filtered);
+            if (!ex.length) { body.innerHTML = '<tr><td colspan="11" style="text-align:center; color:var(--text-muted); padding:16px;">No completed trades for this filter.</td></tr>'; return; }
+            body.innerHTML = ex.map(o => {
+                const oe = Number(o.option_entry || 0), ox = Number(o.option_exit || 0), se = Number(o.nifty_spot_entry || 0), sx = Number(o.nifty_spot_exit || 0);
+                const isPe = /PE\b|PUT/i.test(String(o.symbol || ""));
+                const op = (oe > 0 && ox > 0) ? ox - oe : null, sp = (se > 0 && sx > 0) ? (isPe ? se - sx : sx - se) : null;
+                const net = Number(o.net_pnl || 0), mode = String(o.mode || "");
+                const book = mode === "BOTH" ? "PAPER + REAL" : (mode.includes("LIVE") ? "REAL 💰" : "PAPER 📝");
+                const cell = (v) => v === null ? "—" : '<b style="color:' + deskCol(v) + ';">' + (v >= 0 ? "+" : "") + v.toFixed(1) + '</b>';
+                return '<tr><td style="color:var(--text-dim);">' + formatDeskTimestamp(o.created_at) + '</td>' +
+                    '<td><span class="status-badge ' + (mode.includes("LIVE") ? "badge-bear" : (mode === "BOTH" ? "badge-gold" : "badge-side")) + '" style="font-size:10px;">' + book + '</span></td>' +
+                    '<td><b style="font-family:var(--font-mono);">' + d86Esc(o.symbol) + '</b></td>' +
+                    '<td style="font-family:var(--font-mono); font-size:11.5px;">' + d86Esc(o.strategy_setup || o.strategy_name || "Manual") + '</td>' +
+                    '<td>' + (oe > 0 ? oe.toFixed(2) : "—") + ' → ' + (ox > 0 ? ox.toFixed(2) : "—") + '</td><td>' + cell(op) + '</td>' +
+                    '<td>' + (se > 0 ? se.toFixed(1) : "—") + ' → ' + (sx > 0 ? sx.toFixed(1) : "—") + '</td><td>' + cell(sp) + '</td>' +
+                    '<td><b>' + d86Esc(o.qty) + '</b></td>' +
+                    '<td><b style="color:' + deskCol(net) + '; font-size:13px;">' + deskMoney(net) + '</b></td>' +
+                    '<td style="font-family:var(--font-mono); font-size:10.5px; color:var(--text-muted);">' + d86Esc(o.exit_reason || "EXIT") + '</td></tr>';
+            }).join("");
+        }
+
+        // ── Trade analysis for Replay and the Backtester (spot points; display only) ──
+        function tradePoints(t) {
+            for (const k of ["st_pnl_pts", "ST_PnL_Pts", "Spot_PnL_Pts", "spot_pnl_pts", "pnl_pts"]) {
+                if (t[k] !== undefined && t[k] !== null && t[k] !== "" && isFinite(Number(t[k]))) return Number(t[k]);
+            }
+            const a = Number(t.Index_Entry ?? t.index_entry), b = Number(t.Index_Exit ?? t.index_exit);
+            if (!isFinite(a) || !isFinite(b) || a <= 0 || b <= 0) return null;
+            const d = String(t.Direction || t.direction || t.Contract_Symbol || t.contract_symbol || t.symbol || "").toUpperCase();
+            const short = /SHORT|\bPE\b|PUT|BEAR/.test(d) && !/LONG|\bCE\b|CALL|BULL/.test(d);
+            return short ? a - b : b - a;
+        }
+        function renderTradeAnalysis(containerId, trades) {
+            const el = document.getElementById(containerId);
+            if (!el) return;
+            const rows = (trades || []).map(t => ({
+                pts: tradePoints(t),
+                when: String(t.Date || t.entry_ist || t.entry_time || ""),
+                reason: String(t.Exit_Reason || t.exit_reason || t.outcome || t.result || "—"),
+                side: (() => { const d = String(t.Direction || t.direction || t.Contract_Symbol || t.contract_symbol || t.symbol || "").toUpperCase(); return (/SHORT|\bPE\b|PUT/.test(d) && !/LONG|\bCE\b/.test(d)) ? "PE" : "CE"; })(),
+            })).filter(r => r.pts !== null);
+            if (!rows.length) { el.innerHTML = ""; return; }
+            let eq = 0, peak = 0, dd = 0, streak = 0, worstStreak = 0;
+            const curve = [0];
+            rows.forEach(r => {
+                eq += r.pts; curve.push(eq); peak = Math.max(peak, eq); dd = Math.max(dd, peak - eq);
+                streak = r.pts < 0 ? streak + 1 : 0; worstStreak = Math.max(worstStreak, streak);
+            });
+            const wins = rows.filter(r => r.pts > 0), losses = rows.filter(r => r.pts < 0);
+            const gw = wins.reduce((a, r) => a + r.pts, 0), gl = Math.abs(losses.reduce((a, r) => a + r.pts, 0));
+            const best = Math.max(...rows.map(r => r.pts)), worst = Math.min(...rows.map(r => r.pts));
+            const p = (v) => (v >= 0 ? "+" : "") + v.toFixed(1);
+            const W = 900, H = 120, lo = Math.min(...curve), hi = Math.max(...curve), span = (hi - lo) || 1;
+            const X = (i) => (i / (curve.length - 1 || 1)) * W, Y = (v) => H - 6 - ((v - lo) / span) * (H - 12);
+            const path = curve.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
+            const group = (keyFn) => {
+                const m = {};
+                rows.forEach(r => { const k = keyFn(r); if (!k) return; m[k] = m[k] || { n: 0, w: 0, pts: 0 }; m[k].n += 1; m[k].w += r.pts > 0 ? 1 : 0; m[k].pts += r.pts; });
+                return m;
+            };
+            const table = (title, m, sorter, head) => {
+                const keys = Object.keys(m).sort(sorter || ((a, b) => m[b].n - m[a].n));
+                if (!keys.length) return "";
+                return '<div style="flex:1 1 240px; min-width:220px;"><div style="font-size:11px; font-weight:700; color:#94a3b8; margin-bottom:3px;">' + title + '</div>' +
+                    '<table style="font-size:11px;"><thead><tr><th style="text-align:left;">' + (head || title.split(" ").slice(1).join(" ")) + '</th><th>Trades</th><th>Win %</th><th>Net pts</th></tr></thead><tbody>' +
+                    keys.map(k => '<tr><td style="text-align:left; font-family:var(--font-mono);">' + d86Esc(k) + '</td><td>' + m[k].n + '</td><td>' + (m[k].w / m[k].n * 100).toFixed(0) + '%</td>' +
+                        '<td><b style="color:' + deskCol(m[k].pts) + ';">' + p(m[k].pts) + '</b></td></tr>').join("") + '</tbody></table></div>';
+            };
+            const hourOf = (r) => { const m = r.when.match(/(\d{1,2}):(\d{2})/); if (!m) return ""; let h = Number(m[1]); if (/PM/i.test(r.when) && h < 12) h += 12; return String(h).padStart(2, "0") + ":00"; };
+            const dayOf = (r) => orderDayKey(r.when);
+            const days = group(dayOf), dayKeys = Object.keys(days);
+            let dayBlock = "";
+            if (dayKeys.length > 1) {
+                const sorted = dayKeys.slice().sort((a, b) => days[a].pts - days[b].pts);
+                const pick = {}; sorted.slice(0, 5).concat(sorted.slice(-5)).forEach(k => { pick[k] = days[k]; });
+                const green = dayKeys.filter(k => days[k].pts > 0).length;
+                dayBlock = table("By day (5 worst and 5 best of " + dayKeys.length + "; " + green + " green)", pick, (a, b) => pick[a].pts - pick[b].pts, "day");
+            }
+            el.innerHTML =
+                '<div style="font-size:12px; font-weight:800; color:#e2e8f0; margin-bottom:6px;">Result in NIFTY spot points <span style="font-weight:500; color:#64748b;">— before costs; ' + rows.length + ' trades</span></div>' +
+                '<div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:8px;">' +
+                deskCard("Net points", p(eq), deskCol(eq), "avg " + p(eq / rows.length) + " / trade") +
+                deskCard("Win rate", (wins.length / rows.length * 100).toFixed(0) + "%", "#e2e8f0", wins.length + " won · " + losses.length + " lost") +
+                deskCard("Max drawdown", "−" + dd.toFixed(1), "var(--crimson)", "peak to trough, points") +
+                deskCard("Losing streak", String(worstStreak), "#e2e8f0", "longest run of losers") +
+                deskCard("Profit factor", gl > 0 ? (gw / gl).toFixed(2) : "—", "#e2e8f0", "avg win " + (wins.length ? p(gw / wins.length) : "—") + " · avg loss " + (losses.length ? p(-gl / losses.length) : "—")) +
+                deskCard("Best / worst", p(best) + " / " + p(worst), "#e2e8f0", "single trade") + '</div>' +
+                '<div style="border:1px solid rgba(148,163,184,0.2); border-radius:8px; background:rgba(9,14,26,0.85); padding:6px 8px;">' +
+                '<div style="font-size:10.5px; color:#94a3b8; margin-bottom:2px;">Running total, trade by trade (points)</div>' +
+                '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="width:100%; height:' + H + 'px; display:block;">' +
+                '<line x1="0" x2="' + W + '" y1="' + Y(0).toFixed(1) + '" y2="' + Y(0).toFixed(1) + '" stroke="#475569" stroke-dasharray="4 4" stroke-width="1"/>' +
+                '<path d="' + path + '" fill="none" stroke="' + (eq >= 0 ? "#34d399" : "#f87171") + '" stroke-width="2" vector-effect="non-scaling-stroke"/></svg></div>' +
+                '<div style="display:flex; flex-wrap:wrap; gap:14px; margin-top:10px;">' +
+                table("By exit reason", group(r => r.reason)) + table("By entry hour", group(hourOf), (a, b) => a.localeCompare(b)) + table("By side", group(r => r.side)) + dayBlock + '</div>';
+        }
+
         function renderOrdersTable(orders) {
+            lastOrdersPayload = orders || [];
             const tbody = document.getElementById("ordersTableBody");
             if (!tbody) return;
 
@@ -4707,6 +5044,12 @@
                 filtered = filtered.filter(o => String(o.mode || "").includes("LIVE") || String(o.mode || "") === "BOTH");
             }
 
+            if (ordersDayMode === "TODAY") {
+                const today = deskTodayKey();
+                filtered = filtered.filter(o => orderDayKey(o.created_at) === today);
+            }
+            renderOrdersSummary(filtered);
+            renderTradesView(filtered);
             if (filtered.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; color:var(--text-muted); padding:16px;">No orders found matching filters.</td></tr>`;
                 return;
@@ -5383,6 +5726,7 @@
                     </tr>
                 `;}).join("");
 
+                renderTradeAnalysis("replayAnalysis", trades);
                 await renderReplayAlgoChart(dt, trades, d.chart_markers);
 
             } catch (e) {
@@ -5680,6 +6024,7 @@
                     tbody.appendChild(tr);
                 }
 
+                renderTradeAnalysis("drAnalysis", data.trades || []);
                 if (!data.trades || !data.trades.length) {
                     const tr = document.createElement('tr'), td = document.createElement('td');
                     td.colSpan = 18;
