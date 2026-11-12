@@ -636,6 +636,35 @@
     </div>
 
     <div class="workspace-wrapper">
+        <!-- Global: visible on every workspace tab (above terminal title) -->
+        <div id="dhanEmaCrossPanel" style="position:sticky; top:0; z-index:120; margin-bottom:10px; padding:8px 12px; border-radius:8px; border:1px solid rgba(56,189,248,0.35); background:linear-gradient(90deg,rgba(15,23,42,0.98),rgba(30,41,59,0.96)); font-family:var(--font-mono); font-size:11.5px; box-shadow:0 4px 24px rgba(0,0,0,0.35);">
+            <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; line-height:1.45;">
+                <span style="font-weight:800; color:#38bdf8; font-size:13px; white-space:nowrap;">📈 TV MACD+EMA Cross — sec 13</span>
+                <span style="color:rgba(255,255,255,0.15);">|</span>
+                <span>Spot <b id="dhanEmaSpot" style="color:#38bdf8;">—</b></span>
+                <span style="color:rgba(255,255,255,0.15);">|</span>
+                <span style="color:#fbbf24; font-weight:700;">15m</span>
+                <span id="dhanEma15Forming" style="font-size:10.5px;color:#94a3b8;"></span>
+                <span>4 <b id="dhanEma15_e4" style="color:#fda4af;">—</b></span>
+                <span>8 <b id="dhanEma15_e8" style="color:#86efac;">—</b></span>
+                <span>4−8 <b id="dhanEma15_spread">—</b></span>
+                <span>Gap8 <b id="dhanEma15_gap">—</b></span>
+                <span id="dhanEma15_stack" class="status-badge badge-neutral">—</span>
+                <span style="color:rgba(255,255,255,0.15);">|</span>
+                <span style="color:#a78bfa; font-weight:700;">1H</span>
+                <span id="dhanEma1hForming" style="font-size:10.5px;color:#94a3b8;"></span>
+                <span>Close <b id="dhanEma1h_close" style="color:#e2e8f0;">—</b></span>
+                <span>4 <b id="dhanEma1h_e4" style="color:#fda4af;">—</b></span>
+                <span>8 <b id="dhanEma1h_e8" style="color:#86efac;">—</b></span>
+                <span>4−8 <b id="dhanEma1h_spread">—</b></span>
+                <span>Gap8 <b id="dhanEma1h_gap">—</b></span>
+                <span id="dhanEma1h_stack" class="status-badge badge-neutral">—</span>
+                <span id="dhanEmaTvSpec" style="font-size:10px; color:#64748b; flex:1 1 200px; min-width:160px;">Fast 4 / Slow 8 · 3s live forming bar</span>
+                <span id="dhanEmaCrossUpdated" style="font-size:10px; color:#64748b; white-space:nowrap;">updated —</span>
+            </div>
+            <div id="dhanEmaCrossEvent" style="margin-top:4px; font-size:10.5px; color:#94a3b8;">Cross: —</div>
+        </div>
+
         <header>
             <div class="brand-block">
                 <div class="brand-logo">⚡</div>
@@ -1534,30 +1563,6 @@
                             <button type="button" class="primary-btn" onclick="loadEmaProximityTable()" style="padding:3px 10px; font-size:11px;">🔄 Refresh / Sync Dhan</button>
                         </div>
                     </div>
-                </div>
-
-                <!-- Live EMA Cross (TradingView MACD+EMA Cross: Fast 4 / Slow 8 on Close) -->
-                <div id="dhanEmaCrossPanel" style="margin-bottom:10px; padding:10px 12px; border-radius:8px; border:1px solid rgba(56,189,248,0.35); background:linear-gradient(90deg,rgba(15,23,42,0.95),rgba(30,41,59,0.9)); font-family:var(--font-mono); font-size:12px;">
-                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:8px;">
-                        <span style="font-weight:800; color:#38bdf8; font-size:13px;">📈 TV MACD+EMA Cross — NIFTY Spot sec 13</span>
-                        <span id="dhanEmaTvSpec" style="font-size:10.5px; color:#94a3b8;">Fast 4 / Slow 8 · forming bar · refreshes every 3s (prototype-style dynamic 4/8)</span>
-                        <span id="dhanEmaCrossUpdated" style="font-size:10px; color:#64748b; margin-left:auto;">updated —</span>
-                    </div>
-                    <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap:10px;">
-                        <div style="padding:8px 10px; border-radius:6px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06);">
-                            <div style="color:#fbbf24; font-weight:700; margin-bottom:4px;">15m <span id="dhanEma15Forming" style="font-size:10px;color:#94a3b8;"></span></div>
-                            <div>Spot: <b id="dhanEmaSpot" style="color:#38bdf8;">—</b></div>
-                            <div>4 EMA: <b id="dhanEma15_e4" style="color:#fda4af;">—</b> &nbsp; 8 EMA: <b id="dhanEma15_e8" style="color:#86efac;">—</b></div>
-                            <div>4−8: <b id="dhanEma15_spread">—</b> &nbsp; Gap to 8: <b id="dhanEma15_gap">—</b> &nbsp; <span id="dhanEma15_stack" class="status-badge badge-neutral">—</span></div>
-                        </div>
-                        <div style="padding:8px 10px; border-radius:6px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06);">
-                            <div style="color:#a78bfa; font-weight:700; margin-bottom:4px;">1H <span id="dhanEma1hForming" style="font-size:10px;color:#94a3b8;"></span></div>
-                            <div>Bar close: <b id="dhanEma1h_close" style="color:#e2e8f0;">—</b></div>
-                            <div>4 EMA: <b id="dhanEma1h_e4" style="color:#fda4af;">—</b> &nbsp; 8 EMA: <b id="dhanEma1h_e8" style="color:#86efac;">—</b></div>
-                            <div>4−8: <b id="dhanEma1h_spread">—</b> &nbsp; Gap to 8: <b id="dhanEma1h_gap">—</b> &nbsp; <span id="dhanEma1h_stack" class="status-badge badge-neutral">—</span></div>
-                        </div>
-                    </div>
-                    <div id="dhanEmaCrossEvent" style="margin-top:6px; font-size:11px; color:#94a3b8;">Cross: —</div>
                 </div>
 
                 <!-- Summary KPI Ribbon -->
