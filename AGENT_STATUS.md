@@ -982,3 +982,12 @@ Base `claude/v2.0.13-proto-line-in-banner` @ `30a6bd8`. Tags (local): `pre-/post
 - Feeds tile: 8510 engine (LIVE + build commit / DEAD / OLD CODE), 8600 app (LIVE · bar time / OLD DATA / DEAD / no bars yet), Option chain
   (LIVE / OLD / no snapshots today), from the existing 15-s link poll.
 Tests: `test_workspace_8510_html` + my suites pass (28); locks 11/11. 8 `test_super_trail_8510` failures are pre-existing on the base.
+
+## Claude — `claude/v2.0.15-horizontal-cockpit` (12 Nov 2026) — owner: "make the strategy column a horizontal stack"
+Base `claude/v2.0.14-banner-redesign` @ `3a71841`. Tags (local): `pre-/post-claude-v2.0.15-horizontal-cockpit`. Not merged. HTML only.
+- Strategy grid (`#strategyCockpitGrid`): auto-fill 250 px cards, dense packing, top-aligned — Stage 2, Stage 3, Reversal,
+  Ticket Lane, Flagship in one row; Ribbon, PA@S/R, Daily S/R, Daily Trend in another.
+- 8 EMA Prototype card spans the full row: status + Master Control + route + filters + rules + log on the left,
+  the 8600 Board on the right with its 15 sources in a 3-column grid (was one 15-row list inside the controls box).
+  No ids changed; every renderer and switch works as before.
+Tests: HTML + my suites 28 pass; locks 11/11. Rendered in Chromium at 1600 px.

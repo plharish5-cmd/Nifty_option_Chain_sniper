@@ -1097,7 +1097,7 @@
                     🟢 PAPER ONLY — no real orders until LIVE TRADING is armed. Strategies 1–4 are real-money eligible when LIVE is on; 5–6 are paper-only by desk policy.
                 </div>
                 <!-- Strategy cockpit grid -->
-                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px;">
+                <div id="strategyCockpitGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); grid-auto-flow:dense; gap:10px; align-items:start;">
                     <!-- Strategy 1: Stage 2 8-EMA (Long) -->
                     <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -1139,7 +1139,8 @@
                     </div>
 
                     <!-- 8 EMA Prototype — separate lane (NOT Stage 2/3/FLAGSHIP) -->
-                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(251, 191, 36, 0.45); border-radius:8px; padding:12px;">
+                    <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(251, 191, 36, 0.45); border-radius:8px; padding:12px; grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:14px; align-items:flex-start;">
+                    <div class="proto-left" style="flex:1 1 380px; min-width:320px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
                             <span style="font-weight:700; color:#fbbf24; font-size:13px;">8 EMA Prototype</span>
                             <span id="protoViewRoute" style="font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:10px; border:1px solid #475569; color:#94a3b8;">—</span>
@@ -1226,26 +1227,6 @@
                                 <span style="color:#64748b;">(tol 0.0 pts)</span>
                             </div>
                             <div style="margin-top:6px; color:#94a3b8;" id="protoFilterSaveStatus">—</div>
-                            <div id="desk8600Board" style="margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.08);">
-                                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px;">
-                                    <span style="font-weight:800; color:#e2e8f0; letter-spacing:.3px;">8600 BOARD — option-chain reads</span>
-                                    <span id="d86Status" style="color:#94a3b8;">waiting…</span>
-                                </div>
-                                <div id="d86Facts" style="margin-top:5px; color:#cbd5e1;"></div>
-                                <div id="d86Preview" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;"></div>
-                                <div id="d86Rows" style="margin-top:6px; font-size:11px;"><div style="color:#64748b; padding:4px;">No data yet</div></div>
-                                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px;">
-                                    <span style="color:#94a3b8;">Rule:</span><span id="d86Rule"></span>
-                                    <span id="d86Neutral"></span>
-                                    <span id="d86All"></span>
-                                </div>
-                                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:6px;">
-                                    <span style="color:#94a3b8;">Applies to:</span><span id="d86Lanes" style="display:inline-flex; flex-wrap:wrap; gap:5px;"></span>
-                                </div>
-                                <div style="margin-top:6px; color:#64748b; line-height:1.4;">
-                                    Every signal is recorded with every reading. A source skips trades only when its button is ON. A source with no data never skips a trade.
-                                </div>
-                            </div>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
                             15m <b>close cross</b> 8 EMA → <b>ARM</b> (no entry on cross bar) → price moves <b>2 pts away</b>, then entry on <b>touch</b> (±3) of 8 EMA refreshed every <b>30s</b> on Nifty spot.<br>
@@ -1259,6 +1240,29 @@
                                 <tbody id="ema8PrototypeLogBody"><tr><td colspan="3" style="color:#64748b;">No prototype signals yet</td></tr></tbody>
                             </table>
                         </div>
+                    </div>
+                    <div class="proto-right" style="flex:2 1 620px; min-width:480px;">
+                            <div id="desk8600Board" style="padding:8px 10px; background:rgba(15,23,42,0.65); border:1px solid rgba(251,191,36,0.25); border-radius:6px; font-family:var(--font-mono); font-size:10.5px;">
+                                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px;">
+                                    <span style="font-weight:800; color:#e2e8f0; letter-spacing:.3px;">8600 BOARD — option-chain reads</span>
+                                    <span id="d86Status" style="color:#94a3b8;">waiting…</span>
+                                </div>
+                                <div id="d86Facts" style="margin-top:5px; color:#cbd5e1;"></div>
+                                <div id="d86Preview" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;"></div>
+                                <div id="d86Rows" style="margin-top:6px; font-size:11px; display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:0 14px;"><div style="color:#64748b; padding:4px;">No data yet</div></div>
+                                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px;">
+                                    <span style="color:#94a3b8;">Rule:</span><span id="d86Rule"></span>
+                                    <span id="d86Neutral"></span>
+                                    <span id="d86All"></span>
+                                </div>
+                                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:6px;">
+                                    <span style="color:#94a3b8;">Applies to:</span><span id="d86Lanes" style="display:inline-flex; flex-wrap:wrap; gap:5px;"></span>
+                                </div>
+                                <div style="margin-top:6px; color:#64748b; line-height:1.4;">
+                                    Every signal is recorded with every reading. A source skips trades only when its button is ON. A source with no data never skips a trade.
+                                </div>
+                            </div>
+                    </div>
                     </div>
                     <!-- 8600 Ticket lane — an 8600 entry ticket opens a trade here -->
                     <div style="background:rgba(30, 41, 59, 0.6); border:1px solid rgba(45, 212, 191, 0.45); border-radius:8px; padding:12px;">
