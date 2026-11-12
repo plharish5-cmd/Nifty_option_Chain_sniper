@@ -696,6 +696,17 @@
         <!-- TAB 1: LIVE TERMINAL & AGGRESSIVE LIMIT STRIKE MATRIX               -->
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <div id="tabTerminal" class="tab-content active">
+            <div id="deskLinkStrip" style="margin-bottom:12px; padding:10px 12px; border-radius:10px; background:rgba(15,23,42,0.85); border:1px solid rgba(148,163,184,0.3); font-size:12px;">
+                <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:stretch;">
+                    <div id="deskLink8600" style="flex:1 1 300px; min-width:260px;">Checking the 8600 app…</div>
+                    <div id="deskLinkChain" style="flex:1 1 300px; min-width:260px;"></div>
+                    <div id="deskLinkBuild" style="flex:0 1 240px; min-width:200px; color:#94a3b8;"></div>
+                </div>
+                <details style="margin-top:8px;">
+                    <summary style="cursor:pointer; color:#38bdf8; font-weight:700;">What is new in this build, and where to find it</summary>
+                    <div id="deskWhatsNew" style="margin-top:6px; line-height:1.55; color:#cbd5e1;"></div>
+                </details>
+            </div>
 <!-- v1.9.4b: the recorder-coverage card was removed from the UI by request.
      Recording itself did NOT stop and is not optional - it runs silently every
      candle. What replaced the card is a COUNT in the EMA observations section
@@ -2898,6 +2909,54 @@
             }
         }
 
+        function deskLinkBox(title, x) {
+            const col = { LIVE: "#34d399", STALE: "#fbbf24", NO_SESSION: "#93c5fd", STARTING: "#93c5fd", NO_DATA: "#fbbf24", NOT_ANSWERING: "#f87171", OFF: "#f87171" }[x.state] || "#94a3b8";
+            return '<div style="border-left:4px solid ' + col + '; padding-left:9px;">' +
+                '<div style="font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:.4px;">' + title + '</div>' +
+                '<div style="font-weight:800; color:' + col + '; font-size:13.5px;">' + (x.state === "LIVE" ? "● " : "○ ") + d86Esc(x.headline) + '</div>' +
+                (x.detail ? '<div style="color:#cbd5e1; font-family:var(--font-mono); font-size:11px; overflow-wrap:anywhere;">' + d86Esc(x.detail) + '</div>' : '') +
+                (x.fix ? '<div style="color:#fbbf24; font-size:11.5px; margin-top:2px;"><b>What to do:</b> ' + d86Esc(x.fix) + '</div>' : '') + '</div>';
+        }
+        let _deskLinkSeen = 0;
+        function renderDeskLink(l) {
+            const a = document.getElementById("deskLink8600");
+            if (!a || !l || !l.desk8600) return;
+            _deskLinkSeen = Date.now();
+            a.innerHTML = deskLinkBox("8600 app" + (l.desk8600.base_url ? " · " + l.desk8600.base_url : ""), l.desk8600);
+            document.getElementById("deskLinkChain").innerHTML = deskLinkBox("Stored option chain", l.chain || {});
+            const b = l.build || {};
+            document.getElementById("deskLinkBuild").innerHTML =
+                '<div style="font-size:10px; text-transform:uppercase; letter-spacing:.4px;">8510 engine build</div>' +
+                '<div style="font-weight:800; color:#e2e8f0; font-size:13.5px; font-family:var(--font-mono);">' + d86Esc(b.label || "?") + ' · ' + d86Esc(b.commit || "?") + '</div>' +
+                '<div style="font-size:11px;">checked ' + d86Esc(l.checked_at || "") + '</div>';
+            const w = document.getElementById("deskWhatsNew");
+            if (w && Array.isArray(l.whats_new)) w.innerHTML = l.whats_new.map((r) => '<div>• <b style="color:#e2e8f0;">' + d86Esc(r[0]) + '</b> — ' + d86Esc(r[1]) + '</div>').join("");
+        }
+        // Asked directly, so the cards fill even when the main telemetry stream is not delivering.
+        async function pollDesk8600Direct() {
+            const oldEngine = () => {
+                const msg = { state: "OFF", headline: "The 8510 engine is running OLD code", detail: "this page is new, the running engine is not",
+                              fix: "Stop the 8510 app and start it again, then reload this page." };
+                const a = document.getElementById("deskLink8600"); if (a) a.innerHTML = deskLinkBox("8510 engine", msg);
+                const hd = document.getElementById("tklHeadline"), sb = document.getElementById("tklSub");
+                if (hd) { hd.textContent = "8510 engine needs a restart"; hd.style.color = "#f87171"; }
+                if (sb) sb.textContent = "The running engine does not have the ticket lane yet. Stop the 8510 app, start it again, reload this page.";
+            };
+            try {
+                const r1 = await fetch("/api/desk8600/link", { cache: "no-store" });
+                if (r1.status === 404) { oldEngine(); return; }
+                if (r1.ok) renderDeskLink(await r1.json());
+                const r2 = await fetch("/api/desk8600/ticket-lane", { cache: "no-store" });
+                if (r2.ok) renderTicketLane(await r2.json());
+                const r3 = await fetch("/api/desk8600/board", { cache: "no-store" });
+                if (r3.ok) renderDesk8600Board(await r3.json());
+            } catch (e) {
+                const a = document.getElementById("deskLink8600");
+                if (a && Date.now() - _deskLinkSeen > 30000) a.innerHTML = deskLinkBox("8510 engine", { state: "NOT_ANSWERING", headline: "The 8510 engine is not answering this page", detail: String(e && e.message || e), fix: "Check the 8510 app is running, then reload this page." });
+            }
+        }
+        document.addEventListener("DOMContentLoaded", () => { pollDesk8600Direct(); setInterval(pollDesk8600Direct, 15000); });
+
         async function tklPost(payload) {
             try {
                 const res = await fetch("/api/desk8600/ticket-lane", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -2912,6 +2971,7 @@
             head.style.color = !t.enabled ? "#ef4444" : (t.position_open || t.state === "TICKET" ? "#34d399" : "#e2e8f0");
             const age = (t.bar_age_sec === null || t.bar_age_sec === undefined) ? "" : " · 8600 bar " + (t.bar_age_sec < 90 ? t.bar_age_sec + "s" : Math.round(t.bar_age_sec / 60) + "m") + " old";
             document.getElementById("tklSub").textContent = (t.detail || "") + age + (t.last_fired ? " · last taken " + t.last_fired : "");
+            if (!t.enabled) head.textContent = "Lane is OFF — press ON to take 8600 tickets";
             document.getElementById("tklOnOff").innerHTML =
                 d86Btn("ON", !!t.enabled, "tklPost({enabled:true})", "Take 8600 entry tickets") + " " +
                 d86Btn("OFF", !t.enabled, "tklPost({enabled:false})", "Do not take 8600 tickets");
@@ -4341,6 +4401,7 @@
                 renderDhanOI8510(data.dhan_oi, data.five_factor_confluence);
                 renderDesk8600Board(data.desk8600_board);
                 renderTicketLane(data.desk8600_ticket_lane);
+                renderDeskLink(data.desk8600_link);
                 renderWriterFlowTelemetry(data.stockmojo_live, data.writer_flow_gate);
 
                 if (data.ema_live_cross && data.ema_live_cross.ok) {

@@ -943,3 +943,18 @@ taken a ticket from the real 8600 app. Thresholds in the chain reads are first g
 read assumes hedgers are long calls and short puts. Not built: vega / skew / premium decay /
 straddle / VPIN / participant data from the 8501 app; ticket lane in replay or backtest; the
 8600 ticket's own SL/target text (the bridge does not carry it).
+
+## Claude — `claude/v2.0.11-link-status` (12 Nov 2026) — owner: "ticket lane shows waiting for status; how do I know 8600 is connected and live; where are the changes"
+Base `claude/v2.0.10-ticket-lane-chain-reads` @ `4adfaac`. Tags (local): `pre-/post-claude-v2.0.11-link-status`. Not merged.
+Display only; no trade logic changed.
+
+- `analyst/desk8600_link_8510.py` + `GET /api/desk8600/link` + `payload["desk8600_link"]`: one plain
+  answer for the 8600 app (LIVE / OLD data / NOT answering / no bars for today yet / starting / off)
+  with the reason and what to do, the same for the stored option chain, and the engine build
+  (label + git commit).
+- Cockpit: a strip at the top of the Algo Terminal tab shows the three, plus a fold-out
+  "What is new in this build, and where to find it". The strip, the Ticket Lane card and the Board
+  are now also asked for directly every 15 s, so they fill without the telemetry stream; a 404
+  from the engine is shown as "8510 engine is running OLD code — restart it".
+Tests: 23 in `test_ticket_lane_chain_reads_8510.py`; board + HTML suites pass; locks 11/11.
+Not verified against a running 8600 app.

@@ -819,6 +819,12 @@ async def api_scanner_status():
     return JSONResponse(content=backend.get_scanner_status())
 
 
+@app.get("/api/desk8600/link")
+async def api_desk8600_link_get():
+    """Is the 8600 app connected and live; which build this engine runs."""
+    return JSONResponse(content={"ok": True, **backend.desk8600_link()})
+
+
 @app.get("/api/desk8600/ticket-lane")
 async def api_desk8600_ticket_lane_get():
     """8600 Ticket lane: switches and what the lane sees now."""

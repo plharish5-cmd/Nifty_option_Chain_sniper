@@ -3968,6 +3968,28 @@ class QuantTerminalBackend:
         self._chain_reads_cache = (now_mono, out)
         return out
 
+    def desk8600_link(self) -> Dict[str, Any]:
+        """Is the 8600 app connected and live, are chain snapshots live, and which build is running."""
+        from analyst.desk8600_link_8510 import BUILD_LABEL, WHATS_NEW, build_id, link_status
+
+        try:
+            mkt = None
+            try:
+                ms = (self.cached_telemetry.get("market_status") or {})
+                if "is_open" in ms:
+                    mkt = bool(ms.get("is_open"))
+            except Exception:
+                mkt = None
+            out = link_status(self.__dict__.get("desk8600_bridge"), self.oi_context(), datetime.now(IST), market_open=mkt)
+        except Exception as exc:
+            out = {"desk8600": {"state": "NOT_ANSWERING", "headline": "link check failed", "detail": type(exc).__name__, "fix": ""},
+                   "chain": {"state": "NO_DATA", "headline": "", "detail": "", "fix": ""}}
+        if "_build_id" not in self.__dict__:
+            self._build_id = build_id(ROOT)
+        out["build"] = {"label": BUILD_LABEL, "commit": self._build_id}
+        out["whats_new"] = WHATS_NEW
+        return out
+
     # ── 8600 TICKET LANE ────────────────────────────────────────────────────
     def _desk8600_ticket_position_open(self) -> bool:
         try:
@@ -5582,6 +5604,7 @@ class QuantTerminalBackend:
         payload["oi_context"] = await asyncio.to_thread(self.oi_context, spot)
         payload["desk8600_board"] = await asyncio.to_thread(self.desk8600_board)
         payload["desk8600_ticket_lane"] = await asyncio.to_thread(self.desk8600_ticket_lane_status)
+        payload["desk8600_link"] = await asyncio.to_thread(self.desk8600_link)
         self.cached_telemetry = payload
         self._telemetry_last_refresh_mono = time.monotonic()
         return payload

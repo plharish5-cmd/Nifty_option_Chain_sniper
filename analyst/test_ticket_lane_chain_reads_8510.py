@@ -338,3 +338,43 @@ def test_cockpit_has_the_new_panels_and_no_vendor_name_on_screen():
     src = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
     assert '"ema8_prototype_view": self._ema8_prototype_view()' in src
     assert 'payload["desk8600_ticket_lane"]' in src
+
+
+# ── is the 8600 app connected, and live? ─────────────────────────────────────
+def test_link_status_states():
+    from analyst.desk8600_link_8510 import link_status
+
+    class Br:
+        cfg = {"base_url": "http://127.0.0.1:8600", "cache_seconds": 20}
+        last = {}
+
+    def with_row(**kw):
+        b = Br()
+        b.last = {"evaluated_at": NOW.isoformat(), "rows": [dict({"signal_group": "Actionable Setups"}, **kw)]}
+        return b
+
+    ok_ctx = {"status": "OK", "snapshot_time": "10:03:00", "snapshot_age_sec": 20, "expiry": "2026-11-17"}
+    assert link_status(None, {}, NOW)["desk8600"]["state"] == "OFF"
+    assert link_status(Br(), {}, NOW)["desk8600"]["state"] == "STARTING"
+    live = link_status(with_row(verdict="NOISE", source_ts=(NOW - timedelta(seconds=40)).isoformat()), ok_ctx, NOW)
+    assert live["desk8600"]["state"] == "LIVE" and "40 s ago" in live["desk8600"]["detail"] and live["chain"]["state"] == "LIVE"
+    old = link_status(with_row(verdict="NOISE", source_ts=(NOW - timedelta(minutes=30)).isoformat()), {}, NOW)
+    assert old["desk8600"]["state"] == "STALE" and old["chain"]["state"] == "NO_DATA"
+    down = link_status(with_row(verdict="UNAVAILABLE", reason="URLError: <urlopen error [Errno 111] Connection refused>"), {}, NOW)
+    assert down["desk8600"]["state"] == "NOT_ANSWERING" and "Start the 8600 app" in down["desk8600"]["fix"]
+    closed = link_status(with_row(verdict="UNAVAILABLE", reason="Source session is not current"), {}, NOW, market_open=False)
+    assert closed["desk8600"]["state"] == "NO_SESSION" and "Market is closed" in closed["desk8600"]["fix"]
+    stale = link_status(with_row(verdict="UNAVAILABLE", reason="Closed source data stale"), {"status": "NO_DATA", "reason": "latest snapshot is 14 min old"}, NOW)
+    assert stale["desk8600"]["state"] == "STALE" and stale["chain"]["state"] == "STALE"
+
+
+def test_link_is_served_and_shown(tmp_path):
+    from analyst.test_live_exit_orders_8510 import FakeBroker, make_test_backend
+
+    b = make_test_backend(tmp_path, FakeBroker(configured=True))
+    b.market_db = tmp_path / "none.sqlite3"
+    out = b.desk8600_link()
+    assert out["desk8600"]["state"] == "OFF" and out["build"]["label"] and len(out["whats_new"]) >= 5
+    html = (ROOT / "Algorithmic_Trading_Workspace_8510.html").read_text(encoding="utf-8")
+    assert 'id="deskLinkStrip"' in html and "pollDesk8600Direct" in html and "renderDeskLink(data.desk8600_link)" in html
+    assert '"/api/desk8600/link"' in (ROOT / "engine_8510_live.py").read_text(encoding="utf-8")
