@@ -6043,6 +6043,8 @@ class QuantTerminalBackend:
             "supertrend_factor": float(c.get("supertrend_factor", 1.0)),
             "retouch_requires_away": bool(c.get("retouch_requires_away", True)),
             "slow_market_exact_line": bool(c.get("slow_market_exact_line", False)),
+            "reentry_same_side": bool(c.get("reentry_same_side", True)),
+            "reentry_after_stop_loss": bool(c.get("reentry_after_stop_loss", False)),
             "touch_tol_pts": float(c.get("touch_tol_pts", 3.0)),
             "touch_tol_slow_pts": float(c.get("touch_tol_slow_pts", 0.0)),
         }
@@ -6059,6 +6061,8 @@ class QuantTerminalBackend:
             "supertrend_factor",
             "retouch_requires_away",
             "slow_market_exact_line",
+            "reentry_same_side",
+            "reentry_after_stop_loss",
             "touch_tol_pts",
             "touch_tol_slow_pts",
         }
@@ -6076,6 +6080,8 @@ class QuantTerminalBackend:
                 "enabled",
                 "retouch_requires_away",
                 "slow_market_exact_line",
+                "reentry_same_side",
+                "reentry_after_stop_loss",
             ):
                 block[k] = v is True or str(v).lower() in ("true", "1", "on", "yes")
             elif k == "execution_mode":

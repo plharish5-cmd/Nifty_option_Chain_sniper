@@ -414,3 +414,18 @@ def test_cooldown_stamped_only_when_an_order_is_placed():
     before = body[:stamps[0]]
     assert "execute_order_with_chaser(" in before                      # the stamp comes after the order attempt
     assert body[stamps[0] - 60:stamps[0]].strip().endswith('if res.get("ok"):')
+
+
+# ── re-entry switches on the cockpit (display + save only; defaults unchanged) ─
+def test_reentry_switches_exposed_and_saved(tmp_path):
+    from analyst.test_live_exit_orders_8510 import FakeBroker, make_test_backend
+
+    b = make_test_backend(tmp_path, FakeBroker(configured=True))
+    c = b.get_ema8_prototype_filter_config()
+    assert c["reentry_same_side"] is True and c["reentry_after_stop_loss"] is False     # owner's 11 Nov rules
+    b.update_ema8_prototype_filter_config({"reentry_after_stop_loss": "true", "reentry_same_side": False})
+    c = b.get_ema8_prototype_filter_config()
+    assert c["reentry_after_stop_loss"] is True and c["reentry_same_side"] is False
+    html = (ROOT / "Algorithmic_Trading_Workspace_8510.html").read_text(encoding="utf-8")
+    for needle in ('id="protoReSlOn"', 'id="protoReSlOff" value="off" checked', 'id="protoReProfitOn" value="on" checked', "reentry_after_stop_loss: document"):
+        assert needle in html, needle

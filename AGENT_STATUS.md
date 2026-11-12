@@ -1001,3 +1001,11 @@ Base `claude/v2.0.15-horizontal-cockpit` @ `fffed8b`. Tags (local): `pre-/post-c
   the wait between placed orders is unchanged; a skipped touch simply lets the next touch try again.
   Applies to every lane that goes through `_process_strategy_signals`.
 Tests: +1 guard; Prototype re-entry, live-exit, phase-2 suites pass (70); locks 11/11.
+
+## Claude — `claude/v2.0.17-reentry-buttons` (12 Nov 2026) — owner: "don't switch on, just show both options as cockpit buttons"
+Base `claude/v2.0.16-cooldown-after-fill` @ `3e102c3`. Tags (local): `pre-/post-claude-v2.0.17-reentry-buttons`. Not merged.
+- Prototype card, new "Re-entry after an exit" block: "After profit: same side again ON/OFF" (default ON) and
+  "After stop-loss: side cancelled, flip only / same side again ON" (default cancelled). Saved through the existing
+  `/api/scanner/ema8_prototype/filters` endpoint as `reentry_same_side` / `reentry_after_stop_loss` — the switches that
+  already existed in `ema8_prototype_8510.py`. **Defaults unchanged**; nothing switched on.
+Tests: +1; Prototype re-entry + HTML suites pass (58); locks 11/11.

@@ -1226,6 +1226,25 @@
                                 </label>
                                 <span style="color:#64748b;">(tol 0.0 pts)</span>
                             </div>
+                            <div style="font-weight:700; color:#fbbf24; margin:10px 0 6px;">Re-entry after an exit</div>
+                            <div style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center;">
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoReProfit" id="protoReProfitOn" value="on" checked> After profit: same side again ON
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoReProfit" id="protoReProfitOff" value="off"> OFF
+                                </label>
+                                <span style="color:#64748b;">(next touch of the 8 EMA re-enters the same side)</span>
+                            </div>
+                            <div style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin-top:6px;">
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoReSl" id="protoReSlOff" value="off" checked> After stop-loss: side cancelled, flip only
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="radio" name="protoReSl" id="protoReSlOn" value="on"> After stop-loss: same side again ON
+                                </label>
+                                <span style="color:#64748b;">(with "EMA separation ON" above: keeps re-entering only while 4 and 8 stay apart on the trade's side)</span>
+                            </div>
                             <div style="margin-top:6px; color:#94a3b8;" id="protoFilterSaveStatus">—</div>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
@@ -5535,6 +5554,11 @@
             if (tOff && tOn) { tOff.checked = !st; tOn.checked = st; }
             if (aOff && aOn) { aOff.checked = !away; aOn.checked = away; }
             if (slOff && slOn) { slOff.checked = !slow; slOn.checked = slow; }
+            const reP = cfg.reentry_same_side !== false, reS = !!cfg.reentry_after_stop_loss;
+            const rpOn = document.getElementById('protoReProfitOn'), rpOff = document.getElementById('protoReProfitOff');
+            const rsOn = document.getElementById('protoReSlOn'), rsOff = document.getElementById('protoReSlOff');
+            if (rpOn && rpOff) { rpOn.checked = reP; rpOff.checked = !reP; }
+            if (rsOn && rsOff) { rsOn.checked = reS; rsOff.checked = !reS; }
             const rp = document.getElementById('protoRibbonPts');
             if (rp && cfg.ribbon_max_pts != null) rp.textContent = Number(cfg.ribbon_max_pts).toFixed(1);
             const sl = document.getElementById('protoStLen');
@@ -5572,10 +5596,12 @@
                     supertrend_enabled: document.getElementById('protoStOn')?.checked === true,
                     retouch_requires_away: document.getElementById('protoAwayOn')?.checked === true,
                     slow_market_exact_line: document.getElementById('protoSlowOn')?.checked === true,
+                    reentry_same_side: document.getElementById('protoReProfitOn')?.checked === true,
+                    reentry_after_stop_loss: document.getElementById('protoReSlOn')?.checked === true,
                 };
                 saveEma8PrototypeFilters(payload).catch(() => {});
             };
-            ['protoEnabledOn', 'protoEnabledOff', 'protoExecLive', 'protoExecPaper', 'protoRibbonOff', 'protoRibbonOn', 'protoEmaSepOff', 'protoEmaSepOn', 'protoStOff', 'protoStOn', 'protoAwayOff', 'protoAwayOn', 'protoSlowOff', 'protoSlowOn'].forEach(id => {
+            ['protoEnabledOn', 'protoEnabledOff', 'protoExecLive', 'protoExecPaper', 'protoRibbonOff', 'protoRibbonOn', 'protoEmaSepOff', 'protoEmaSepOn', 'protoStOff', 'protoStOn', 'protoAwayOff', 'protoAwayOn', 'protoSlowOff', 'protoSlowOn', 'protoReProfitOn', 'protoReProfitOff', 'protoReSlOff', 'protoReSlOn'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('change', post);
             });
