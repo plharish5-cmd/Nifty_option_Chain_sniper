@@ -402,5 +402,39 @@
       "pcr_p50": 1.080098035553494,
       "pcr_p75": 1.423088544433734
     }
+  },
+  "opening_15m_level_reaction": {
+    "execution_start_time": "09:15:00",
+    "execution_last_entry_time": "09:28:00",
+    "execution_exit_time": "09:30:00",
+    "touch_tolerance_pts": 5.0,
+    "touch_tolerance_choices": [
+      3.0,
+      5.0,
+      8.0
+    ],
+    "breakout_stop_pts": 20.0,
+    "confluence_proximity_pts": 15.0,
+    "target_25_pts": 25.0,
+    "target_40_pts": 40.0,
+    "target_50_pts": 50.0,
+    "lot_size": 65,
+    "option_delta": 0.55,
+    "statutory_charges_inr": 78.0,
+    "slippage_inr": 32.5,
+    "total_trade_cost_inr": 110.5,
+    "breakeven_win_rate": 0.365,
+    "min_sample_size": 30,
+    "double_bottom_lookback_days": 3,
+    "double_bottom_min_bars_separation": 4,
+    "double_bottom_interim_move_pts": 40.0,
+    "double_bottom_price_tol_pct": 0.0015,
+    "double_bottom_level_proximity_pts": 30.0,
+    "h1_ema_span": 8,
+    "default_source": "auto",
+    "csv_path": "data/ohlc/nifty_1m_dhan.csv",
+    "sqlite_path": "ict_smc_app/backend/data/ict_smc.sqlite3",
+    "output_csv_path": "analyst/reports/nifty_915_930_level_reactions.csv",
+    "output_report_path": "analyst/reports/nifty_915_930_level_reactions_summary.md"
   }
 }

@@ -1093,3 +1093,18 @@ Not changed: Stage/Flagship contract choice stays ATM/ITM from the Strike Matrix
 Tests: 34 in `test_ticket_lane_chain_reads_8510.py` (classifier run in Node; release behaviour run through the real
 signal processor); whole `analyst` suite 650 passed / 39 failed / 37 errors, no new failure vs the base; locks 11/11.
 Not run against the broker or a live session.
+
+## Antigravity (agy) — `agy/v2.0.22-915-level-reaction` (13 Nov 2026) — NIFTY 50 Opening 15-Minute (09:15–09:30 IST) Pre-Market Level Reaction & Confluence Backtester
+Base `claude/v2.0.21-equity-guys-view-and-retry` @ `7bbb16d`. Tags: `pre-agy-v2.0.22-915-level-reaction` → `post-agy-v2.0.22-915-level-reaction`. Not merged.
+
+What changed:
+- Built zero-lookahead, path-dependent Python backtesting engine: `scripts/backtest_915_level_reaction.py`.
+- Evaluated continuous 1-minute NIFTY 50 Spot candles across 1,263 completed sessions (2021-10-06 to 2026-11-12) covering the strict 09:15:00 to 09:30:00 IST window (15 x 1m bars, hard EOD exit at 09:30:00 close).
+- Enforced 8 EMA only (`span=8, adjust=False`) on continuous 1H bars frozen strictly at Day D-1 15:30 IST (zero lookahead).
+- Enforced 3-day swing pivot double bottoms / double tops on 15m bars across completed Days D-3, D-2, D-1 only.
+- Added Ambiguity Guard: detects bars hitting both 20pt SL and +25pt favorable target in the same 1m bar; reports both pessimistic and optimistic outcomes.
+- Configured all thresholds in JSON under `analyst/analyst_config.json` (`opening_15m_level_reaction`).
+- Generated Table 1 (Level-by-Level Matrix), Table 2 (Multi-Factor Confluence Combinations), and Table 3 Session-by-Session Audit Log (`analyst/reports/nifty_915_930_level_reactions.csv`, 1,263 rows × 20 columns).
+- Statistical Edge Verdict: Ranked Top 2 Setups (`Touch PDH + DOUBLE_TOP_3D` Short @ 30.28% win rate, +₹131.06/lot; `BELOW_1H_8EMA + Touch PDC` Short @ 28.10% win rate, -₹69.83/lot) against 36.5% break-even hurdle ($N \ge 30$).
+- Core locks verified intact: 11/11 modules locked. No live or execution code modified.
+
