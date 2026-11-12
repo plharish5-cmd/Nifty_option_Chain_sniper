@@ -284,7 +284,7 @@ def evaluate_mj_sir_four_pack(
         wait_msg = f"NO TRADE — Waiting for first touch of dynamic 8 EMA {e8_dyn:.1f}"
     elif dyn_on:
         touch_long = touch_short = False
-        wait_msg = "NO TRADE — Waiting for first touch of dynamic 8 EMA (30s)"
+        wait_msg = "NO TRADE — Waiting for first touch of dynamic 8 EMA"
     else:
         touch_long = touch_8ema_support(low_15, close_15, e8_val, tol)
         touch_short = touch_8ema_resistance(high_15, close_15, e8_val, tol)

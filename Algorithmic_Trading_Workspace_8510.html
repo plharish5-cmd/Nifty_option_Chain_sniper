@@ -564,6 +564,7 @@
             background: linear-gradient(90deg, #06b6d4, #10b981);
             transition: width 0.3s;
         }
+        .secondary-btn.active-filter-btn { background: rgba(251, 191, 36, 0.18) !important; border-color: #fbbf24 !important; color: #fde68a !important; box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35) inset; }
     </style>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" crossorigin="anonymous"></script>
 </head>
@@ -1023,7 +1024,7 @@
                         <span class="strat-money-badge paper-only" title="MJ Sir lecture spec — paper only until validated.">MJ Sir · Paper only</span>
                         <div id="stratBlock_stage2" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            UBB Up 2 bars · 4&gt;8 · <b>first touch</b> of dynamic 8 EMA (30s, ±3) · BB &gt; 60 · no entry before 09:30.<br>Tgt/SL 40 spot <i>or</i> 40 option pts (whichever first) · 15:20 square-off.<br>
+                            UBB Up 2 bars · 4&gt;8 · <b>first touch</b> of dynamic 8 EMA (checked every 3s, ±3) · BB &gt; 60 · no entry before 09:30.<br>Tgt/SL 40 spot <i>or</i> 40 option pts (whichever first) · 15:20 square-off.<br>
                             <span style="color:#64748b;">BB gate toggle applies UBB rules only.</span>
                         </div>
                     </div>
@@ -1037,7 +1038,7 @@
                         <span class="strat-money-badge paper-only" title="MJ Sir lecture spec — paper only until validated.">MJ Sir · Paper only</span>
                         <div id="stratBlock_stage3" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            LBB Down 2 bars · 4&lt;8 · <b>first touch</b> of dynamic 8 EMA (30s, ±3) · BB &gt; 60 · no entry before 09:30.<br>Tgt/SL 40 spot <i>or</i> 40 option pts (whichever first) · 15:20 square-off.
+                            LBB Down 2 bars · 4&lt;8 · <b>first touch</b> of dynamic 8 EMA (checked every 3s, ±3) · BB &gt; 60 · no entry before 09:30.<br>Tgt/SL 40 spot <i>or</i> 40 option pts (whichever first) · 15:20 square-off.
                         </div>
                     </div>
 
@@ -1050,7 +1051,7 @@
                         <span class="strat-money-badge paper-only" title="MJ Sir fixed 8 EMA after cross — paper only.">MJ Sir · Paper only</span>
                         <div id="stratBlock_crossover" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            Cross 4/8 · wait 2 bars · touch <b>dynamic</b> 8 EMA (30s, ±3) within 2 bars · no entry before 09:30.<br>Tgt/SL 20 spot <i>or</i> 20 option pts (whichever first) · 15:20 square-off.
+                            Cross 4/8 · wait 2 bars · touch <b>dynamic</b> 8 EMA (checked every 3s, ±3) within 2 bars · no entry before 09:30.<br>Tgt/SL 20 spot <i>or</i> 20 option pts (whichever first) · 15:20 square-off.
                         </div>
                     </div>
 
@@ -1164,7 +1165,7 @@
                             <div style="margin-top:6px; color:#94a3b8;" id="protoFilterSaveStatus">—</div>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
-                            15m <b>close cross</b> 8 EMA → <b>ARM</b> (no entry on cross bar) → price moves <b>2 pts away</b>, then entry on <b>touch</b> (±3) of 8 EMA refreshed every <b>30s</b> on Nifty spot.<br>
+                            15m <b>close cross</b> 8 EMA → <b>ARM</b> (no entry on cross bar) → price moves <b>2 pts away</b>, then entry on <b>touch</b> (±3) of 8 EMA checked every <b>3s</b> on Nifty spot.<br>
                             CE/PE ≥ ₹200 · current week · Tgt/SL 40 spot <i>or</i> 40 option pts (whichever first) · entries 09:30–15:20 · 15:20 square-off.<br>
                             <b>Profit (+40):</b> same side again on the next touch. <b>Stop-loss (−40) or opposite 15m close:</b> that side cancelled, opposite side arms. One trade at a time.<br>
                             Flip arm on opposite 15m close. Backtest/replay: <b>EMA8_PROTOTYPE</b> only — not Stage 2/3/FLAGSHIP.
@@ -1678,6 +1679,13 @@
 
             <!-- Quick Filters Toolbar for Source and Strategy (Problem 4) -->
             <div class="card" style="padding:12px 16px; margin-bottom:14px; background:var(--bg-input); border:1px solid var(--border-subtle);">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--border-subtle);">
+                    <span style="font-size:11px; font-weight:800; color:#fbbf24; font-family:var(--font-mono);">VIEW:</span>
+                    <button type="button" class="secondary-btn active-filter-btn" id="btnFilterView_ALL" onclick="setGroupView('ALL')" style="padding:5px 12px; font-size:12px; font-weight:700;">[ Everything ]</button>
+                    <button type="button" class="secondary-btn" id="btnFilterView_EG" onclick="setGroupView('EG')" style="padding:5px 12px; font-size:12px; font-weight:700;">[ Equity Guys ]</button>
+                    <button type="button" class="secondary-btn" id="btnFilterView_OTHERS" onclick="setGroupView('OTHERS')" style="padding:5px 12px; font-size:12px; font-weight:700;">[ Others ]</button>
+                    <span id="groupViewNote" style="font-size:11px; color:var(--text-muted);">Equity Guys = Stage 2 · Stage 3 · 8 EMA Reversal · 1 HR Flagship · 8 EMA Prototype. Others = 8600 Ticket Lane, Ribbon Scalp, PA @ S/R, manual and the rest.</span>
+                </div>
                 <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:space-between;">
                     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                         <span style="font-size:11px; font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">SOURCE FILTER:</span>
@@ -1689,10 +1697,11 @@
                         <span style="font-size:11px; font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">STRATEGY FILTER:</span>
                         <button type="button" class="secondary-btn active-filter-btn" id="btnFilterStrat_ALL" onclick="setStrategyFilter('ALL')" style="padding:4px 10px; font-size:11.5px; font-weight:700;">[ All Strategies ]</button>
                         <button type="button" class="secondary-btn" id="btnFilterStrat_Stage2" onclick="setStrategyFilter('Stage 2')" style="padding:4px 10px; font-size:11.5px;">[ Stage 2 ]</button>
-                        <button type="button" class="secondary-btn" id="btnFilterStrat_Cross" onclick="setStrategyFilter('4/8 Crossover')" style="padding:4px 10px; font-size:11.5px;">[ 4/8 Crossover ]</button>
-                        <button type="button" class="secondary-btn" id="btnFilterStrat_1H" onclick="setStrategyFilter('1H 8 EMA')" style="padding:4px 10px; font-size:11.5px;">[ 1H 8 EMA ]</button>
                         <button type="button" class="secondary-btn" id="btnFilterStrat_Stage3" onclick="setStrategyFilter('Stage 3')" style="padding:4px 10px; font-size:11.5px;">[ Stage 3 ]</button>
-                        <button type="button" class="secondary-btn" id="btnFilterStrat_OI" onclick="setStrategyFilter('P minus C Filter')" style="padding:4px 10px; font-size:11.5px;">[ P minus C Filter ]</button>
+                        <button type="button" class="secondary-btn" id="btnFilterStrat_Cross" onclick="setStrategyFilter('4/8 Crossover')" style="padding:4px 10px; font-size:11.5px;">[ 8 EMA Reversal ]</button>
+                        <button type="button" class="secondary-btn" id="btnFilterStrat_1H" onclick="setStrategyFilter('1H 8 EMA')" style="padding:4px 10px; font-size:11.5px;">[ 1 HR Flagship ]</button>
+                        <button type="button" class="secondary-btn" id="btnFilterStrat_Proto" onclick="setStrategyFilter('8 EMA Prototype')" style="padding:4px 10px; font-size:11.5px;">[ 8 EMA Prototype ]</button>
+                        <button type="button" class="secondary-btn" id="btnFilterStrat_Ticket" onclick="setStrategyFilter('8600 Ticket')" style="padding:4px 10px; font-size:11.5px;">[ 8600 Ticket ]</button>
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px; padding-top:10px; border-top:1px solid var(--border-subtle);">
@@ -2733,7 +2742,7 @@
             }).join("");
             const n = [];
             if (v.spot) n.push("Spot <b>" + Number(v.spot).toFixed(1) + "</b>");
-            if (v.ema8 !== null && v.ema8 !== undefined) n.push("8 EMA (30s) <b>" + Number(v.ema8).toFixed(1) + "</b>");
+            if (v.ema8 !== null && v.ema8 !== undefined) n.push("8 EMA (live) <b>" + Number(v.ema8).toFixed(1) + "</b>");
             if (v.gap_pts !== null && v.gap_pts !== undefined) n.push("Spot is <b>" + Math.abs(v.gap_pts).toFixed(1) + " pts " + (v.gap_pts >= 0 ? "above" : "below") + "</b> the line");
             document.getElementById("protoViewNums").innerHTML = n.join("");
             const r = document.getElementById("protoViewRoute");
@@ -3847,9 +3856,40 @@
             pollLiveEngine();
         }
 
+        // Which lane a position / order belongs to, from its strategy id or setup text.
+        function strategyLaneOf(row) {
+            const s = [row.strategy_id, row.strategy_setup, row.strategy_name].filter(Boolean).join(" ").toUpperCase();
+            if (/HOMEWORK|PA_SR|RIBBON|MATRIX_SCALP/.test(s)) return "Other";          // paper side-lanes, not Equity Guys
+            if (/EMA8_PROTOTYPE|8 EMA PROTOTYPE/.test(s)) return "8 EMA Prototype";
+            if (/DESK8600_TICKET|8600 TICKET/.test(s)) return "8600 Ticket";
+            if (/STAGE_2|STAGE 2/.test(s)) return "Stage 2";
+            if (/STAGE_3|STAGE 3/.test(s)) return "Stage 3";
+            if (/CROSSOVER|REVERSAL/.test(s)) return "4/8 Crossover";
+            if (/FLAGSHIP|H1_8EMA|1H 8 ?EMA|1 ?HR/.test(s)) return "1H 8 EMA";
+            return "Other";
+        }
+        const EQUITY_GUYS_LANES = ["Stage 2", "Stage 3", "4/8 Crossover", "1H 8 EMA", "8 EMA Prototype"];
+        let currentGroupView = "ALL";
+        function rowInGroupView(row) {
+            if (currentGroupView === "ALL") return true;
+            const eg = EQUITY_GUYS_LANES.includes(strategyLaneOf(row));
+            return currentGroupView === "EG" ? eg : !eg;
+        }
+        function setGroupView(v) {
+            currentGroupView = v;
+            ["ALL", "EG", "OTHERS"].forEach(k => document.getElementById("btnFilterView_" + k)?.classList.toggle("active-filter-btn", k === v));
+            try { localStorage.setItem("desk8510_group_view", v); } catch (e) {}
+            pollLiveEngine();
+        }
+        document.addEventListener("DOMContentLoaded", () => {
+            let v = "ALL";
+            try { v = localStorage.getItem("desk8510_group_view") || "ALL"; } catch (e) {}
+            if (["EG", "OTHERS"].includes(v)) { currentGroupView = v; ["ALL", "EG", "OTHERS"].forEach(k => document.getElementById("btnFilterView_" + k)?.classList.toggle("active-filter-btn", k === v)); }
+        });
+
         function setStrategyFilter(strat) {
             currentPosStrategyFilter = strat;
-            ["btnFilterStrat_ALL", "btnFilterStrat_Stage2", "btnFilterStrat_Cross", "btnFilterStrat_1H", "btnFilterStrat_Stage3", "btnFilterStrat_OI"].forEach(id => {
+            ["btnFilterStrat_ALL", "btnFilterStrat_Stage2", "btnFilterStrat_Cross", "btnFilterStrat_1H", "btnFilterStrat_Stage3", "btnFilterStrat_Proto", "btnFilterStrat_Ticket"].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove("active-filter-btn");
             });
@@ -3859,7 +3899,8 @@
                 "4/8 Crossover": "btnFilterStrat_Cross",
                 "1H 8 EMA": "btnFilterStrat_1H",
                 "Stage 3": "btnFilterStrat_Stage3",
-                "P minus C Filter": "btnFilterStrat_OI",
+                "8 EMA Prototype": "btnFilterStrat_Proto",
+                "8600 Ticket": "btnFilterStrat_Ticket",
             };
             if (mapId[strat]) document.getElementById(mapId[strat])?.classList.add("active-filter-btn");
             pollLiveEngine();
@@ -4457,16 +4498,9 @@
             } else if (currentPosSourceFilter === "MANUAL") {
                 filtered = filtered.filter(p => (p.source && p.source.includes("MANUAL")) || (p.placed_by && p.placed_by.includes("MANUAL")));
             }
+            filtered = filtered.filter(rowInGroupView);
             if (currentPosStrategyFilter !== "ALL") {
-                filtered = filtered.filter(p => {
-                    const s = (p.strategy_setup || p.strategy_name || "");
-                    if (currentPosStrategyFilter === "Stage 2") return s.includes("Stage 2");
-                    if (currentPosStrategyFilter === "4/8 Crossover") return s.includes("Crossover");
-                    if (currentPosStrategyFilter === "1H 8 EMA") return s.includes("1H");
-                    if (currentPosStrategyFilter === "Stage 3") return s.includes("Stage 3");
-                    if (currentPosStrategyFilter === "P minus C Filter") return s.includes("P minus C") || s.includes("OI");
-                    return true;
-                });
+                filtered = filtered.filter(p => strategyLaneOf(p) === currentPosStrategyFilter);
             }
 
             renderPositionsSummary(filtered);
@@ -4714,7 +4748,7 @@
                 deskCard("Avg win / avg loss", (wins.length ? deskMoney(gw / wins.length) : "—") + " / " + (losses.length ? deskMoney(-gl / losses.length) : "—"), "#e2e8f0", "profit factor " + (gl > 0 ? (gw / gl).toFixed(2) : "—")) +
                 deskCard("Rejected / failed", String(rejected), rejected ? "var(--crimson)" : "#64748b", "orders");
             const today = deskTodayKey();
-            const td = exitsOf(lastOrdersPayload).filter(o => orderDayKey(o.created_at) === today);
+            const td = exitsOf(lastOrdersPayload).filter(rowInGroupView).filter(o => orderDayKey(o.created_at) === today);
             window._deskRealizedToday = { net: td.reduce((a, o) => a + Number(o.net_pnl || 0), 0), n: td.length };
             const vb = document.getElementById("ordersViewBtns"), db = document.getElementById("ordersDayBtns");
             if (vb) vb.innerHTML = d86Btn("Every order", ordersViewMode === "ORDERS", "setOrdersView('ORDERS')", "One row per order sent") + " " +
@@ -4836,16 +4870,9 @@
             } else if (currentPosSourceFilter === "MANUAL") {
                 filtered = filtered.filter(o => (o.source && o.source.includes("MANUAL")) || (o.placed_by && o.placed_by.includes("MANUAL")));
             }
+            filtered = filtered.filter(rowInGroupView);
             if (currentPosStrategyFilter !== "ALL") {
-                filtered = filtered.filter(o => {
-                    const s = (o.strategy_setup || o.strategy_name || "");
-                    if (currentPosStrategyFilter === "Stage 2") return s.includes("Stage 2");
-                    if (currentPosStrategyFilter === "4/8 Crossover") return s.includes("Crossover");
-                    if (currentPosStrategyFilter === "1H 8 EMA") return s.includes("1H");
-                    if (currentPosStrategyFilter === "Stage 3") return s.includes("Stage 3");
-                    if (currentPosStrategyFilter === "P minus C Filter") return s.includes("P minus C") || s.includes("OI");
-                    return true;
-                });
+                filtered = filtered.filter(o => strategyLaneOf(o) === currentPosStrategyFilter);
             }
 
             // Paper vs real money. mode is the execution mode the order fired

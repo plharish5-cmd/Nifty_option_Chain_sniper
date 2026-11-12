@@ -1064,3 +1064,32 @@ Tests of removed features were removed with them (owner removed the features): 4
 Whole `analyst` suite: 642 passed / 43 failed / 37 errors; **no test fails that did not fail on the base** (47 before).
 Locks 11/11. Page loaded in Chromium against real telemetry from the trimmed backend, all six tabs clicked: 0 script errors.
 Size: page 7,705 → 7,273 lines; backend 10,780 → 10,402; engine 1,414 → 1,328; four modules deleted.
+
+## Claude — `claude/v2.0.21-equity-guys-view-and-retry` (13 Nov 2026) — owner: "Equity Guys" view; look for the Prototype's bugs in the other lanes
+Base `claude/v2.0.20-lightweight` @ `7c5b730`. Tags (local): `pre-/post-claude-v2.0.21-equity-guys-view-and-retry`. Not merged.
+
+**View (page only).** Positions & Orders tab, filter card, new first row: VIEW [Everything] [Equity Guys] [Others].
+Equity Guys = Stage 2, Stage 3, 8 EMA Reversal, 1 HR Flagship, 8 EMA Prototype; Others = 8600 Ticket lane, Ribbon Scalp,
+PA @ S/R (incl. its "Homework" names), manual, anything else. One classifier (`strategyLaneOf`) from strategy id / setup
+text drives Active Positions, the Orders Book, Completed trades, both summary strips and "Booked today". Choice is
+remembered in the browser. Strategy buttons updated to the lanes that exist (Reversal, Flagship, Prototype, 8600 Ticket;
+the dead "P minus C Filter" button removed). Selected filter buttons are now visibly highlighted.
+
+**Same bug class in the other lanes — found and fixed.**
+- Stage 2 / Stage 3 / 8 EMA Reversal marked "first touch taken" the moment the signal was emitted. If the order step
+  then skipped (no contract, stale quote, duplicate, filter, rejection) the setup was used up for that whole 4/8 stack.
+  Worse than the Prototype's 5-minute loss. Now `_process_strategy_signals` wraps each signal in try/finally and calls
+  `_release_unfilled_setup` whenever no order was placed: Stage/Reversal fired keys are cleared, the Prototype's
+  "moved away" is restored (it is still on the line), the Ticket lane's bar mark is cleared.
+- 1 HR Flagship (and its 8 EMA entry) is evaluated once per 15-minute close; a skipped order lost the candle's signal.
+  It is now offered again for `closed_candle_retry_seconds` (default 60) from first seen.
+- Retries are spaced `skipped_signal_retry_seconds` (default 5) per strategy so the ledger is not flooded.
+- Matrix lanes' NO_ENABLED_CONTRACT now says why ("both CE ATM and CE ITM are unticked in the Strike Matrix" /
+  "matrix contract not built yet").
+- Already common to all lanes from earlier branches: 5-minute wait starts only on a placed order; 3-second touch check.
+- Card wording "30s" → "checked every 3s".
+Not changed: Stage/Flagship contract choice stays ATM/ITM from the Strike Matrix (no premium rule exists for them).
+
+Tests: 34 in `test_ticket_lane_chain_reads_8510.py` (classifier run in Node; release behaviour run through the real
+signal processor); whole `analyst` suite 650 passed / 39 failed / 37 errors, no new failure vs the base; locks 11/11.
+Not run against the broker or a live session.

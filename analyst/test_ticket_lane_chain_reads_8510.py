@@ -414,7 +414,7 @@ def test_cooldown_stamped_only_when_an_order_is_placed():
     assert len(stamps) == 1
     before = body[:stamps[0]]
     assert "execute_order_with_chaser(" in before                      # the stamp comes after the order attempt
-    assert body[stamps[0] - 60:stamps[0]].strip().endswith('if res.get("ok"):')
+    assert 'if res.get("ok"):' in body[stamps[0] - 120:stamps[0]]
 
 
 # ── re-entry switches on the cockpit (display + save only; defaults unchanged) ─
@@ -557,3 +557,125 @@ def test_removed_features_are_gone_and_config_patch_is_narrow(tmp_path):
     assert (repo / "analyst/terminal8510_config.before_dead_config_patch.json").exists()
     again = subprocess.run([sys.executable, str(repo / "scripts/patch_remove_dead_config_8510.py")], capture_output=True, text=True)
     assert "Nothing to remove" in again.stdout
+
+
+# ── a skipped signal gives the setup back (Stage 2/3, Reversal, Prototype, Ticket lane) ──
+def _sig(sid, direction="LONG", side="CE"):
+    return {"strategy_id": sid, "setup_name": sid, "direction": direction, "opt_side": side,
+            "target_pts": 40.0, "sl_pts": 40.0, "index_price": 25200.0, "details": "test", "conviction": "TEST"}
+
+
+def test_release_unfilled_setup_per_lane(tmp_path):
+    from analyst.test_live_exit_orders_8510 import FakeBroker, make_test_backend
+
+    b = make_test_backend(tmp_path, FakeBroker(configured=True))
+    b._mj_sir_state = {"stage2_fired_key": "k2", "stage3_fired_key": "k3", "reversal_fired_key": "kr"}
+    b._release_unfilled_setup(_sig("STAGE_2_LONG"))
+    assert "stage2_fired_key" not in b._mj_sir_state and b._mj_sir_state["stage3_fired_key"] == "k3"
+    b._release_unfilled_setup(_sig("STAGE_3_SHORT", "SHORT", "PE"))
+    b._release_unfilled_setup(_sig("CROSSOVER_BULLISH"))
+    assert b._mj_sir_state == {}
+    b._ema8_prototype_state = {"arm": {"direction": "SHORT", "away_seen": False}}
+    b._release_unfilled_setup(_sig("EMA8_PROTOTYPE_LONG"))                 # other side: untouched
+    assert b._ema8_prototype_state["arm"]["away_seen"] is False
+    b._release_unfilled_setup(_sig("EMA8_PROTOTYPE_SHORT", "SHORT", "PE"))
+    assert b._ema8_prototype_state["arm"]["away_seen"] is True
+    b._ema8_prototype_state = {"arm": {"direction": "SHORT", "away_seen": False}, "open": {"direction": "SHORT"}}
+    b._release_unfilled_setup(_sig("EMA8_PROTOTYPE_SHORT", "SHORT", "PE"))  # a trade is open: untouched
+    assert b._ema8_prototype_state["arm"]["away_seen"] is False
+    b._desk8600_ticket_state = {"last_key": "bar|CE", "last_fired": "x"}
+    b._release_unfilled_setup(_sig("DESK8600_TICKET_LONG"))
+    assert "last_key" not in b._desk8600_ticket_state
+    b._release_unfilled_setup({})                                           # never raises
+
+
+def test_skipped_signal_releases_and_placed_signal_keeps_the_setup(tmp_path):
+    import asyncio
+    from analyst.test_live_exit_orders_8510 import FakeBroker, make_test_backend
+
+    b = make_test_backend(tmp_path, FakeBroker(configured=True))
+    b.directional_bias = "NEUTRAL"
+    b.algo_allowlist_cfg = {"enabled": False}
+    b.strategy_cooldowns = {}
+    b.recent_signals = []
+    b.priority_contracts = []                     # nothing built -> the order step must skip
+    b.algo_strike_selection = {}
+    b.market_db = tmp_path / "none.sqlite3"
+    b._mj_sir_state = {"stage2_fired_key": "2026-11-13:S2:x"}
+    asyncio.run(b._process_strategy_signals([_sig("STAGE_2_LONG")]))
+    assert "stage2_fired_key" not in b._mj_sir_state          # given back: the next touch retries
+    assert "STAGE_2_LONG" not in b.strategy_cooldowns          # and no 5-minute wait was started
+    # within the 5-second spacing the retry is held, and the setup is still free
+    b._mj_sir_state["stage2_fired_key"] = "2026-11-13:S2:x"
+    asyncio.run(b._process_strategy_signals([_sig("STAGE_2_LONG")]))
+    assert "stage2_fired_key" not in b._mj_sir_state
+    src = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
+    body = src[src.index("async def _process_strategy_signals"):src.index("async def start_strategy_scanner_loop")]
+    assert "placed = True" in body and "if not placed:" in body and "self._release_unfilled_setup(sig)" in body
+    assert "matrix contract not built yet" in body and "unticked in the Strike Matrix" in body
+
+
+# ── "Equity Guys" view: classifier checked in a real browser engine ──────────
+def test_equity_guys_view_classifier():
+    import json, re, subprocess, shutil
+
+    html = (ROOT / "Algorithmic_Trading_Workspace_8510.html").read_text(encoding="utf-8")
+    for needle in ('id="btnFilterView_EG"', 'id="btnFilterView_OTHERS"', "filtered = filtered.filter(rowInGroupView);",
+                   'id="btnFilterStrat_Proto"'):
+        assert needle in html, needle
+    assert html.count("filtered = filtered.filter(rowInGroupView);") == 2          # positions and orders
+    node = shutil.which("node")
+    if not node:
+        return
+    fn = html[html.index("        function strategyLaneOf(row) {"):html.index("        let currentGroupView")]
+    cases = {
+        "MJ Sir Stage 2 8-EMA (Long) — first touch": "Stage 2",
+        "MJ Sir Stage 3 8-EMA (Short) — first touch": "Stage 3",
+        "MJ Sir 8 EMA Reversal Upside — dynamic 8 EMA touch": "4/8 Crossover",
+        "4 MA / 8 EMA Downside Reversal": "4/8 Crossover",
+        "Flagship 1H Long [OR 8 EMA support + 15m PA]": "1H 8 EMA",
+        "Flagship 1H Short [Swing zone / 15m PA]": "1H 8 EMA",
+        "1H FLAGSHIP PA": "1H 8 EMA",
+        "8 EMA Prototype (Short) — retouch": "8 EMA Prototype",
+        "8600 Ticket — Dip Buy Ce": "8600 Ticket",
+        "1H 8-EMA Support + 15m PA (Homework)": "Other",
+        "Hammer [S1] break": "Other",
+        "Ribbon Scalp A+": "Other",
+        "Manual": "Other",
+        "": "Other",
+    }
+    script = fn + "\nconst cases=" + json.dumps(list(cases)) + ";console.log(JSON.stringify(cases.map(c=>strategyLaneOf({strategy_setup:c}))));" \
+        + "console.log(strategyLaneOf({strategy_id:'EMA8_PROTOTYPE_SHORT'}), '|', strategyLaneOf({strategy_id:'STAGE_3_SHORT'}), '|', strategyLaneOf({strategy_id:'PA_SR_HAMMER'}));" \
+        + "console.log(JSON.stringify(EQUITY_GUYS_LANES));"
+    out = subprocess.run([node, "-e", script], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    lines = out.stdout.strip().split("\n")
+    assert json.loads(lines[0]) == list(cases.values())
+    assert lines[1] == "8 EMA Prototype | Stage 3 | Other"
+    assert json.loads(lines[2]) == ["Stage 2", "Stage 3", "4/8 Crossover", "1H 8 EMA", "8 EMA Prototype"]
+
+
+def test_flagship_signal_is_offered_again_for_a_minute_when_the_order_step_skips(tmp_path):
+    import time as _t
+    from analyst.test_live_exit_orders_8510 import FakeBroker, make_test_backend
+
+    b = make_test_backend(tmp_path, FakeBroker(configured=True))
+    sig = _sig("FLAGSHIP_1H_LONG")
+    b._release_unfilled_setup(sig)
+    kept = b._closed_candle_retry["FLAGSHIP_1H_LONG"]
+    assert kept["strategy_id"] == "FLAGSHIP_1H_LONG" and kept["_first_seen_ts"] <= _t.time()
+    # the clock runs from the first time it was seen, not from each retry
+    old = dict(kept, _first_seen_ts=_t.time() - 61)
+    b._closed_candle_retry.clear()
+    b._release_unfilled_setup(old)
+    assert b._closed_candle_retry == {}
+    b._release_unfilled_setup(_sig("H1_8EMA_SUPPORT_LONG"))
+    assert "H1_8EMA_SUPPORT_LONG" in b._closed_candle_retry
+    b._closed_candle_retry.clear()
+    b._release_unfilled_setup(_sig("STAGE_2_LONG"))                 # touch lanes are not queued: they re-signal themselves
+    assert b._closed_candle_retry == {}
+    b.scanner_cfg["closed_candle_retry_seconds"] = 0
+    b._release_unfilled_setup(_sig("FLAGSHIP_1H_SHORT", "SHORT", "PE"))
+    assert b._closed_candle_retry == {}
+    src = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
+    assert 'pending = self.__dict__.get("_closed_candle_retry") or {}' in src

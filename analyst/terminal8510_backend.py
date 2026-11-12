@@ -6788,237 +6788,296 @@ class QuantTerminalBackend:
             log.debug("Strategy scanner evaluate error: %s", e)
             return []
 
+    def _release_unfilled_setup(self, sig: Dict[str, Any]) -> None:
+        """Give a lane its setup back when its signal did not become an order.
+
+        Stage 2 / Stage 3 / 8 EMA Reversal mark "first touch taken" when they emit
+        the signal; the Prototype resets "price moved away"; the Ticket lane marks
+        the bar as acted on. If the order step then skips (no contract, filter,
+        duplicate, rejection), those marks would throw the trade away. Never raises.
+        """
+        try:
+            sid = str(sig.get("strategy_id") or "").upper()
+            mj = self.__dict__.get("_mj_sir_state")
+            if isinstance(mj, dict):
+                if sid.startswith("STAGE_2"):
+                    mj.pop("stage2_fired_key", None)
+                elif sid.startswith("STAGE_3"):
+                    mj.pop("stage3_fired_key", None)
+                elif sid.startswith("CROSSOVER"):
+                    mj.pop("reversal_fired_key", None)
+            if sid.startswith("EMA8_PROTOTYPE"):
+                st = self.__dict__.get("_ema8_prototype_state") or {}
+                arm = st.get("arm")
+                if isinstance(arm, dict) and not st.get("open") \
+                        and str(arm.get("direction") or "").upper() == str(sig.get("direction") or "").upper():
+                    arm["away_seen"] = True          # still on the line: the next tick may enter
+            if sid.startswith("DESK8600_TICKET"):
+                (self.__dict__.get("_desk8600_ticket_state") or {}).pop("last_key", None)
+            # Closed-candle lanes (1H Flagship and its 8 EMA entry) are evaluated once per
+            # 15-minute close. An order step that skips would lose the candle's signal, so
+            # it is kept and offered again for a short while (default 60 s).
+            if "FLAGSHIP" in sid or sid.startswith("H1_8EMA"):
+                keep = float(self.scanner_cfg.get("closed_candle_retry_seconds", 60.0) or 0.0)
+                first = float(sig.get("_first_seen_ts") or time.time())
+                if keep > 0 and (time.time() - first) < keep:
+                    again = dict(sig)
+                    again["_first_seen_ts"] = first
+                    self.__dict__.setdefault("_closed_candle_retry", {})[sid] = again
+        except Exception as exc:
+            log.debug("release of unfilled setup skipped (%s)", type(exc).__name__)
+
     async def _process_strategy_signals(self, signals: List[Dict[str, Any]]) -> None:
         """Processes actionable strategy signals with cooldown deduplication and triggers orders."""
         now_ts = time.time()
         for sig in signals:
-            d = str(sig.get("direction", "")).upper()
-            opt = str(sig.get("opt_side", "")).upper()
+            placed = False
+            try:
+                d = str(sig.get("direction", "")).upper()
+                opt = str(sig.get("opt_side", "")).upper()
 
-            # Directional Bias Enforcement Gate:
-            if self.directional_bias == "LONG_ONLY" and (d == "SHORT" or opt == "PE"):
-                log.warning("[DIRECTIONAL BIAS REJECTED] Signal %s (%s / %s) blocked: LONG_ONLY bias blocks all PE / Short trades.",
-                            sig.get("setup_name"), d, opt)
-                continue
-            if self.directional_bias == "SHORT_ONLY" and (d == "LONG" or opt == "CE"):
-                log.warning("[DIRECTIONAL BIAS REJECTED] Signal %s (%s / %s) blocked: SHORT_ONLY bias blocks all CE / Long trades.",
-                            sig.get("setup_name"), d, opt)
-                continue
-
-            strat_id = str(sig.get("strategy_id", "") or "")
-            if not self.algo_strategy_execution_allowed(strat_id):
-                log.info(
-                    "[ALLOWLIST BLOCKED] %s (%s) — not in algo_execution_allowlist",
-                    sig.get("setup_name"),
-                    strat_id,
-                )
-                continue
-
-            if "FLAGSHIP" in str(strat_id).upper():
-                ok_risk, risk_reason = self._flagship_risk_allows_entry()
-                if not ok_risk:
-                    log.info("[FLAGSHIP BLOCKED] %s — %s", sig.get("setup_name"), risk_reason)
+                # Directional Bias Enforcement Gate:
+                if self.directional_bias == "LONG_ONLY" and (d == "SHORT" or opt == "PE"):
+                    log.warning("[DIRECTIONAL BIAS REJECTED] Signal %s (%s / %s) blocked: LONG_ONLY bias blocks all PE / Short trades.",
+                                sig.get("setup_name"), d, opt)
+                    continue
+                if self.directional_bias == "SHORT_ONLY" and (d == "LONG" or opt == "CE"):
+                    log.warning("[DIRECTIONAL BIAS REJECTED] Signal %s (%s / %s) blocked: SHORT_ONLY bias blocks all CE / Long trades.",
+                                sig.get("setup_name"), d, opt)
                     continue
 
-            last_ts = self.strategy_cooldowns.get(strat_id, 0.0)
-            cool_min = float(self.scanner_cfg.get("signal_cooldown_5m_min", 5.0) or 5.0)
-            cool_sec = max(0.0, cool_min) * 60.0  # 5m wait between signals — NOT an entry timeframe
-            if cool_sec and (now_ts - last_ts) < cool_sec:
-                continue
-
-            # The 5-minute wait starts only when an order is actually placed
-            # (stamped after execute_order_with_chaser). A touch that is skipped
-            # further down (strike, premium, route, board) must not start it,
-            # or the next 30-second touch is thrown away for five minutes.
-            sig["timestamp"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
-            self.recent_signals.insert(0, sig)
-            if len(self.recent_signals) > 30:
-                self.recent_signals.pop()
-
-            log.info("🔥 STRATEGY SIGNAL TRIGGERED: %s | %s | %s | Conviction: %s",
-                     sig["setup_name"], sig["direction"], sig["details"], sig["conviction"])
-
-            # Prospective observation: record the pillar state for EVERY signal,
-            # before we know whether it will be executed. Gates nothing.
-            signal_uid = ""
-            _spot = (self.cached_telemetry.get("spot") or {}).get("price")
-            try:
-                signal_uid = self.log_signal_observation(
-                    sig,
-                    confluence=self.cached_telemetry.get("five_factor_confluence"),
-                    volume=None,
-                    oi=self.cached_telemetry.get("institutional_pe_ce"),
-                    spot=_spot,
-                )
-            except Exception as exc:
-                log.warning("signal observation skipped (%s)", type(exc).__name__)
-
-            # 8600 board: every option-chain source's reading is recorded for every
-            # signal. A trade is skipped only by sources the owner has switched
-            # to FILTER in the cockpit, only for the lanes he selected, and never
-            # by a source that has no data.
-            try:
-                from analyst.desk8600_board_8510 import judge as _board_judge, load_cfg as _board_cfg
-                from analyst.oi_context_8510 import evaluate_gates, load_cfg as _oi_cfg
-
-                board_cfg = _board_cfg(self.scanner_cfg)
-                if bool(board_cfg.get("enabled", True)):
-                    oi_ctx = self.oi_context()
-                    self.log_signal_oi_context(
-                        signal_uid, sig, oi_ctx,
-                        evaluate_gates(oi_ctx, sig.get("direction", ""), _oi_cfg(self.scanner_cfg)), False,
+                strat_id = str(sig.get("strategy_id", "") or "")
+                if not self.algo_strategy_execution_allowed(strat_id):
+                    log.info(
+                        "[ALLOWLIST BLOCKED] %s (%s) — not in algo_execution_allowlist",
+                        sig.get("setup_name"),
+                        strat_id,
                     )
-                    board = self.desk8600_board()
-                    verdict = _board_judge(board["sources"], sig.get("direction", ""), board_cfg, strat_id)
-                    self.log_signal_desk8600(signal_uid, sig, board, verdict)
-                    sig["desk8600"] = {
-                        "agree": verdict["agree"], "against": verdict["against"],
-                        "blocked": verdict["blocked"], "reasons": verdict["reasons"],
-                    }
-                    if verdict["blocked"]:
-                        why = "8600 board: " + "; ".join(verdict["reasons"])
-                        log.info("[8600 BOARD] %s (%s) not taken — %s", sig.get("setup_name"), strat_id, why)
-                        self.mark_signal_outcome(signal_uid, False, skip_reason=why[:300])
+                    continue
+
+                if "FLAGSHIP" in str(strat_id).upper():
+                    ok_risk, risk_reason = self._flagship_risk_allows_entry()
+                    if not ok_risk:
+                        log.info("[FLAGSHIP BLOCKED] %s — %s", sig.get("setup_name"), risk_reason)
                         continue
-            except Exception as exc:
-                log.warning("8600 board skipped (%s)", type(exc).__name__)
 
-            # Resolve Contract based on direction and algo_strike_selection
-            opt_side = sig["opt_side"]
-            target_contract = None
-            is_proto_sig = str(strat_id).upper().startswith("EMA8_PROTOTYPE")
-            if is_proto_sig:
-                from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
+                retry_at = self.__dict__.setdefault("_skip_retry_at", {})
+                if now_ts < float(retry_at.get(strat_id, 0.0)):
+                    continue
+                retry_at[strat_id] = now_ts + float(self.scanner_cfg.get("skipped_signal_retry_seconds", 5.0) or 5.0)
 
-                pcfg = load_ema8_prototype_cfg(self.scanner_cfg)
-                min_prem = float(
-                    sig.get("min_option_premium_inr") or pcfg.get("min_option_premium_inr") or 200.0
-                )
-                target_contract, contract_why = await self._select_ema8_prototype_contract_any_strike(
-                    opt_side, min_prem, float(_spot or 0.0)
-                )
-            else:
-                contract_why = ""
-                candidate_ids = [f"LONG_{opt_side}_ATM", f"LONG_{opt_side}_ITM"]
-                for cid in candidate_ids:
-                    if self.algo_strike_selection.get(cid, True):
-                        for c in self.priority_contracts:
-                            if c.get("id") == cid:
-                                target_contract = c
+                last_ts = self.strategy_cooldowns.get(strat_id, 0.0)
+                cool_min = float(self.scanner_cfg.get("signal_cooldown_5m_min", 5.0) or 5.0)
+                cool_sec = max(0.0, cool_min) * 60.0  # 5m wait between signals — NOT an entry timeframe
+                if cool_sec and (now_ts - last_ts) < cool_sec:
+                    continue
+
+                # The 5-minute wait starts only when an order is actually placed
+                # (stamped after execute_order_with_chaser). A touch that is skipped
+                # further down (strike, premium, route, board) must not start it,
+                # or the next 30-second touch is thrown away for five minutes.
+                sig["timestamp"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+                self.recent_signals.insert(0, sig)
+                if len(self.recent_signals) > 30:
+                    self.recent_signals.pop()
+
+                log.info("🔥 STRATEGY SIGNAL TRIGGERED: %s | %s | %s | Conviction: %s",
+                         sig["setup_name"], sig["direction"], sig["details"], sig["conviction"])
+
+                # Prospective observation: record the pillar state for EVERY signal,
+                # before we know whether it will be executed. Gates nothing.
+                signal_uid = ""
+                _spot = (self.cached_telemetry.get("spot") or {}).get("price")
+                try:
+                    signal_uid = self.log_signal_observation(
+                        sig,
+                        confluence=self.cached_telemetry.get("five_factor_confluence"),
+                        volume=None,
+                        oi=self.cached_telemetry.get("institutional_pe_ce"),
+                        spot=_spot,
+                    )
+                except Exception as exc:
+                    log.warning("signal observation skipped (%s)", type(exc).__name__)
+
+                # 8600 board: every option-chain source's reading is recorded for every
+                # signal. A trade is skipped only by sources the owner has switched
+                # to FILTER in the cockpit, only for the lanes he selected, and never
+                # by a source that has no data.
+                try:
+                    from analyst.desk8600_board_8510 import judge as _board_judge, load_cfg as _board_cfg
+                    from analyst.oi_context_8510 import evaluate_gates, load_cfg as _oi_cfg
+
+                    board_cfg = _board_cfg(self.scanner_cfg)
+                    if bool(board_cfg.get("enabled", True)):
+                        oi_ctx = self.oi_context()
+                        self.log_signal_oi_context(
+                            signal_uid, sig, oi_ctx,
+                            evaluate_gates(oi_ctx, sig.get("direction", ""), _oi_cfg(self.scanner_cfg)), False,
+                        )
+                        board = self.desk8600_board()
+                        verdict = _board_judge(board["sources"], sig.get("direction", ""), board_cfg, strat_id)
+                        self.log_signal_desk8600(signal_uid, sig, board, verdict)
+                        sig["desk8600"] = {
+                            "agree": verdict["agree"], "against": verdict["against"],
+                            "blocked": verdict["blocked"], "reasons": verdict["reasons"],
+                        }
+                        if verdict["blocked"]:
+                            why = "8600 board: " + "; ".join(verdict["reasons"])
+                            log.info("[8600 BOARD] %s (%s) not taken — %s", sig.get("setup_name"), strat_id, why)
+                            self.mark_signal_outcome(signal_uid, False, skip_reason=why[:300])
+                            continue
+                except Exception as exc:
+                    log.warning("8600 board skipped (%s)", type(exc).__name__)
+
+                # Resolve Contract based on direction and algo_strike_selection
+                opt_side = sig["opt_side"]
+                target_contract = None
+                is_proto_sig = str(strat_id).upper().startswith("EMA8_PROTOTYPE")
+                if is_proto_sig:
+                    from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
+
+                    pcfg = load_ema8_prototype_cfg(self.scanner_cfg)
+                    min_prem = float(
+                        sig.get("min_option_premium_inr") or pcfg.get("min_option_premium_inr") or 200.0
+                    )
+                    target_contract, contract_why = await self._select_ema8_prototype_contract_any_strike(
+                        opt_side, min_prem, float(_spot or 0.0)
+                    )
+                else:
+                    candidate_ids = [f"LONG_{opt_side}_ATM", f"LONG_{opt_side}_ITM"]
+                    ticked = [c for c in candidate_ids if self.algo_strike_selection.get(c, True)]
+                    built = {c.get("id") for c in self.priority_contracts}
+                    if not ticked:
+                        contract_why = f"both {opt_side} ATM and {opt_side} ITM are unticked in the Strike Matrix"
+                    elif not any(c in built for c in ticked):
+                        contract_why = f"{opt_side} matrix contract not built yet (instrument master / Dhan quote not ready)"
+                    else:
+                        contract_why = ""
+                    for cid in candidate_ids:
+                        if self.algo_strike_selection.get(cid, True):
+                            for c in self.priority_contracts:
+                                if c.get("id") == cid:
+                                    target_contract = c
+                                    break
+                            if target_contract:
                                 break
-                        if target_contract:
-                            break
 
-            if not target_contract:
-                log.info("No enabled priority contract found for %s (%s) %s", sig["setup_name"], opt_side, contract_why)
-                self.mark_signal_outcome(signal_uid, False,
-                                         skip_reason=("NO_ENABLED_CONTRACT: " + contract_why)[:200] if contract_why else "NO_ENABLED_CONTRACT")
-                continue
+                if not target_contract:
+                    log.info("No enabled priority contract found for %s (%s) %s", sig["setup_name"], opt_side, contract_why)
+                    self.mark_signal_outcome(signal_uid, False,
+                                             skip_reason=("NO_ENABLED_CONTRACT: " + contract_why)[:200] if contract_why else "NO_ENABLED_CONTRACT")
+                    continue
 
-            # Check if an identical position is already OPEN in ledger
-            try:
-                with sqlite3.connect(self.ledger_db) as conn:
-                    cur = conn.cursor()
-                    r = cur.execute(
-                        "SELECT count(*) FROM positions WHERE status='OPEN' AND symbol=?",
-                        (target_contract["symbol"],)
-                    ).fetchone()
-                    if r and r[0] > 0:
-                        log.info("Position already OPEN for %s — skipping duplicate execution", target_contract["symbol"])
-                        self.mark_signal_outcome(signal_uid, False,
-                                                 skip_reason="DUPLICATE_POSITION_OPEN")
-                        continue
-            except Exception as e:
-                log.error("Ledger check error in signal execution: %s", e)
+                # Check if an identical position is already OPEN in ledger
+                try:
+                    with sqlite3.connect(self.ledger_db) as conn:
+                        cur = conn.cursor()
+                        r = cur.execute(
+                            "SELECT count(*) FROM positions WHERE status='OPEN' AND symbol=?",
+                            (target_contract["symbol"],)
+                        ).fetchone()
+                        if r and r[0] > 0:
+                            log.info("Position already OPEN for %s — skipping duplicate execution", target_contract["symbol"])
+                            self.mark_signal_outcome(signal_uid, False,
+                                                     skip_reason="DUPLICATE_POSITION_OPEN")
+                            continue
+                except Exception as e:
+                    log.error("Ledger check error in signal execution: %s", e)
 
-            spot_entry = float(sig.get("index_price") or self.cached_telemetry.get("spot", {}).get("price") or 0.0)
-            is_long = str(sig.get("direction", "LONG")).upper() == "LONG"
-            sl_pts_sig = float(sig.get("sl_pts", 40.0))
-            tgt_pts_sig = float(sig.get("target_pts", 40.0))
-            spot_ctx = None
-            if sig.get("matrix_scalp") or sig.get("pa_homework"):
-                spot_ctx = {
-                    "strategy_id": sig.get("strategy_id"),
-                    "spot_entry": sig.get("spot_entry"),
-                    "spot_target_level": sig.get("spot_target_level"),
-                    "spot_stop_level": sig.get("spot_stop_level"),
-                    "spot_target_pts": sig.get("spot_target_pts"),
-                    "spot_stop_pts": sig.get("spot_stop_pts"),
-                    "engine_risk_pts": sig.get("engine_risk_pts"),
-                    "sr_interaction": sig.get("sr_interaction"),
-                }
-            elif "FLAGSHIP" in str(sig.get("strategy_id", "")).upper() and spot_entry > 0:
-                spot_ctx = {
-                    "strategy_id": sig.get("strategy_id"),
-                    "spot_entry": spot_entry,
-                    "spot_target_pts": tgt_pts_sig,
-                    "spot_stop_pts": sl_pts_sig,
-                    "spot_target_level": round(spot_entry + tgt_pts_sig, 2) if is_long else round(spot_entry - tgt_pts_sig, 2),
-                    "spot_stop_level": round(spot_entry - sl_pts_sig, 2) if is_long else round(spot_entry + sl_pts_sig, 2),
-                }
-            elif (is_proto_sig or uses_fixed_spot_or_option_exit(strat_id)) and spot_entry > 0:
-                spot_ctx = {
-                    "strategy_id": sig.get("strategy_id"),
-                    "spot_entry": spot_entry,
-                    "spot_target_pts": tgt_pts_sig,
-                    "spot_stop_pts": sl_pts_sig,
-                    "spot_target_level": round(spot_entry + tgt_pts_sig, 2)
-                    if is_long
-                    else round(spot_entry - tgt_pts_sig, 2),
-                    "spot_stop_level": round(spot_entry - sl_pts_sig, 2)
-                    if is_long
-                    else round(spot_entry + sl_pts_sig, 2),
-                }
+                spot_entry = float(sig.get("index_price") or self.cached_telemetry.get("spot", {}).get("price") or 0.0)
+                is_long = str(sig.get("direction", "LONG")).upper() == "LONG"
+                sl_pts_sig = float(sig.get("sl_pts", 40.0))
+                tgt_pts_sig = float(sig.get("target_pts", 40.0))
+                spot_ctx = None
+                if sig.get("matrix_scalp") or sig.get("pa_homework"):
+                    spot_ctx = {
+                        "strategy_id": sig.get("strategy_id"),
+                        "spot_entry": sig.get("spot_entry"),
+                        "spot_target_level": sig.get("spot_target_level"),
+                        "spot_stop_level": sig.get("spot_stop_level"),
+                        "spot_target_pts": sig.get("spot_target_pts"),
+                        "spot_stop_pts": sig.get("spot_stop_pts"),
+                        "engine_risk_pts": sig.get("engine_risk_pts"),
+                        "sr_interaction": sig.get("sr_interaction"),
+                    }
+                elif "FLAGSHIP" in str(sig.get("strategy_id", "")).upper() and spot_entry > 0:
+                    spot_ctx = {
+                        "strategy_id": sig.get("strategy_id"),
+                        "spot_entry": spot_entry,
+                        "spot_target_pts": tgt_pts_sig,
+                        "spot_stop_pts": sl_pts_sig,
+                        "spot_target_level": round(spot_entry + tgt_pts_sig, 2) if is_long else round(spot_entry - tgt_pts_sig, 2),
+                        "spot_stop_level": round(spot_entry - sl_pts_sig, 2) if is_long else round(spot_entry + sl_pts_sig, 2),
+                    }
+                elif (is_proto_sig or uses_fixed_spot_or_option_exit(strat_id)) and spot_entry > 0:
+                    spot_ctx = {
+                        "strategy_id": sig.get("strategy_id"),
+                        "spot_entry": spot_entry,
+                        "spot_target_pts": tgt_pts_sig,
+                        "spot_stop_pts": sl_pts_sig,
+                        "spot_target_level": round(spot_entry + tgt_pts_sig, 2)
+                        if is_long
+                        else round(spot_entry - tgt_pts_sig, 2),
+                        "spot_stop_level": round(spot_entry - sl_pts_sig, 2)
+                        if is_long
+                        else round(spot_entry + sl_pts_sig, 2),
+                    }
 
-            # Trigger execution with chaser
-            sid_u = str(sig.get("strategy_id", "")).upper()
-            proto_paper = bool(sig.get("ema8_prototype_paper_only")) or bool(sig.get("paper_only"))
-            paper_algo = (
-                "FLAGSHIP" in sid_u
-                or sid_u.startswith("STAGE_2")
-                or sid_u.startswith("STAGE_3")
-                or sid_u.startswith("CROSSOVER")
-                or sig.get("mj_sir_paper_only")
-                or (sid_u.startswith("EMA8_PROTOTYPE") and proto_paper)
-                or (sid_u.startswith("DESK8600_TICKET") and bool(sig.get("paper_only")))
-                or sig.get("matrix_scalp")
-                or sig.get("pa_homework")
-                or sid_u.startswith("PA_SR")
-                or sid_u.startswith("RIBBON_SCALP")
-            )
-            if not self.algo_strategy_execution_allowed(strat_id):
+                # Trigger execution with chaser
+                sid_u = str(sig.get("strategy_id", "")).upper()
+                proto_paper = bool(sig.get("ema8_prototype_paper_only")) or bool(sig.get("paper_only"))
+                paper_algo = (
+                    "FLAGSHIP" in sid_u
+                    or sid_u.startswith("STAGE_2")
+                    or sid_u.startswith("STAGE_3")
+                    or sid_u.startswith("CROSSOVER")
+                    or sig.get("mj_sir_paper_only")
+                    or (sid_u.startswith("EMA8_PROTOTYPE") and proto_paper)
+                    or (sid_u.startswith("DESK8600_TICKET") and bool(sig.get("paper_only")))
+                    or sig.get("matrix_scalp")
+                    or sig.get("pa_homework")
+                    or sid_u.startswith("PA_SR")
+                    or sid_u.startswith("RIBBON_SCALP")
+                )
+                if not self.algo_strategy_execution_allowed(strat_id):
+                    self.mark_signal_outcome(
+                        signal_uid,
+                        False,
+                        skip_reason=f"ALLOWLIST_NOT_ENABLED:{strat_id}",
+                    )
+                    continue
+
+                res = await self.execute_order_with_chaser(
+                    contract=target_contract,
+                    side="BUY",
+                    strategy_name=sig["setup_name"],
+                    strategy_setup=sig.get("setup_name"),
+                    strategy_id=strat_id,
+                    target_pts=sig["target_pts"],
+                    sl_pts=sig["sl_pts"],
+                    is_algo_trade=True,
+                    source="REAL_ALGO_PAPER" if paper_algo else None,
+                    spot_context=spot_ctx,
+                )
+                log.info("Strategy %s execution result: %s", sig["setup_name"], res.get("status", "SUBMITTED"))
+                if res.get("ok"):
+                    placed = True
+                    self.strategy_cooldowns[strat_id] = now_ts
                 self.mark_signal_outcome(
                     signal_uid,
-                    False,
-                    skip_reason=f"ALLOWLIST_NOT_ENABLED:{strat_id}",
+                    executed=bool(res.get("ok")),
+                    position_id=str(res.get("position_id", "") or ""),
+                    skip_reason="" if res.get("ok") else str(
+                        res.get("rejection_reason") or res.get("error") or "")[:200],
                 )
-                continue
-
-            res = await self.execute_order_with_chaser(
-                contract=target_contract,
-                side="BUY",
-                strategy_name=sig["setup_name"],
-                strategy_setup=sig.get("setup_name"),
-                strategy_id=strat_id,
-                target_pts=sig["target_pts"],
-                sl_pts=sig["sl_pts"],
-                is_algo_trade=True,
-                source="REAL_ALGO_PAPER" if paper_algo else None,
-                spot_context=spot_ctx,
-            )
-            log.info("Strategy %s execution result: %s", sig["setup_name"], res.get("status", "SUBMITTED"))
-            if res.get("ok"):
-                self.strategy_cooldowns[strat_id] = now_ts
-            self.mark_signal_outcome(
-                signal_uid,
-                executed=bool(res.get("ok")),
-                position_id=str(res.get("position_id", "") or ""),
-                skip_reason="" if res.get("ok") else str(
-                    res.get("rejection_reason") or res.get("error") or "")[:200],
-            )
-            if is_proto_sig and res.get("ok"):
-                self._sync_open_ema8_prototype_position()
-                self._save_ema8_prototype_state()
+                if is_proto_sig and res.get("ok"):
+                    self._sync_open_ema8_prototype_position()
+                    self._save_ema8_prototype_state()
+            finally:
+                # A signal that did not become an order must not use up its setup:
+                # the next touch tick tries again (owner, 12 Nov: "do not miss trades").
+                if not placed:
+                    self._release_unfilled_setup(sig)
 
     async def start_strategy_scanner_loop(self) -> None:
         """Live scanner: 4 core on closed 15m; Ribbon on closed 1m; PA @ S/R armed on 15m, break on spot."""
@@ -7077,6 +7136,15 @@ class QuantTerminalBackend:
                             signals.extend(batch)
                             if self._pa_sr_live_scanner_active():
                                 await asyncio.to_thread(self.evaluate_pa_sr_live_arm_on_15m)
+
+                        # closed-candle signals whose order step skipped a moment ago
+                        pending = self.__dict__.get("_closed_candle_retry") or {}
+                        if pending:
+                            have = {str(x.get("strategy_id")) for x in signals}
+                            for sid_r in list(pending):
+                                sig_r = pending.pop(sid_r)
+                                if sid_r not in have:
+                                    signals.append(sig_r)
 
                         if signals:
                             signals = await asyncio.to_thread(self.apply_signal_gates, signals)
