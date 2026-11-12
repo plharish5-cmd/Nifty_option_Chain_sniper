@@ -388,8 +388,9 @@ def test_prototype_check_status_and_banner_wiring(tmp_path):
     b = make_test_backend(tmp_path, FakeBroker(configured=True))
     b._ema8_prototype_state = {}
     st = b.ema8_prototype_check_status()
-    assert st["armed"] is False and st["refresh_sec"] == 30.0 and st["tol_pts"] > 0 and "at" not in st
+    assert st["armed"] is False and st["refresh_sec"] == 3.0 and st["tol_pts"] > 0 and "at" not in st
     b._ema8_prototype_state = {"arm": {"direction": "SHORT", "away_seen": True}}
+    b.scanner_cfg.setdefault("ema8_prototype", {})["e8_refresh_seconds"] = 30.0
     b._ema8_proto_last_check = {"e8": 25212.4, "spot": 25230.1, "tick_high": 25231.0, "tick_low": 25228.0,
                                 "tol_pts": 3.0, "at": "10:31:30", "at_ts": _t.time() - 12, "refresh_sec": 30.0,
                                 "armed": True, "direction": "SHORT", "away_seen": True, "verdict": "ARMED PE"}
@@ -479,3 +480,33 @@ def test_prototype_contract_walks_deeper_itm_until_premium_qualifies(tmp_path):
     assert c is None and "bias" in why
     src = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
     assert 'skip_reason=("NO_ENABLED_CONTRACT: " + contract_why)' in src
+
+
+# ── touch cadence: 3 s live, 30 s backtest grid, patch script narrow ─────────
+def test_touch_cadence_defaults_and_patch_script(tmp_path):
+    import json, subprocess, sys
+    from analyst.ema8_prototype_8510 import DEFAULT_CFG as P
+    from analyst.mj_sir_stage_reversal_8510 import DEFAULT_MJ_CFG as M
+
+    assert P["e8_refresh_seconds"] == 3.0 and P["backtest_tick_seconds"] == 30.0
+    assert M["dynamic_refresh_seconds"] == 3.0
+    src = (ROOT / "analyst/ema8_prototype_8510.py").read_text(encoding="utf-8")
+    assert 'refresh = float(cfg.get("backtest_tick_seconds", 30.0) or 30.0)' in src
+    be = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
+    assert be.count("max(2.0, min(") >= 3                      # both workers clamp at 2 s, re-read each loop
+    # patch script touches only the two keys
+    import shutil
+    cfg_path = ROOT / "analyst/terminal8510_config.json"
+    before = json.loads(cfg_path.read_text(encoding="utf-8"))
+    tmp_repo = tmp_path / "repo"; (tmp_repo / "analyst").mkdir(parents=True); (tmp_repo / "scripts").mkdir()
+    shutil.copy(cfg_path, tmp_repo / "analyst/terminal8510_config.json")
+    shutil.copy(ROOT / "scripts/patch_touch_cadence_8510.py", tmp_repo / "scripts/patch_touch_cadence_8510.py")
+    out = subprocess.run([sys.executable, str(tmp_repo / "scripts/patch_touch_cadence_8510.py")], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    after = json.loads((tmp_repo / "analyst/terminal8510_config.json").read_text(encoding="utf-8"))
+    assert after["scanner"]["ema8_prototype"]["e8_refresh_seconds"] == 3.0
+    assert after["scanner"]["mj_sir_lecture"]["dynamic_refresh_seconds"] == 3.0
+    after["scanner"]["ema8_prototype"]["e8_refresh_seconds"] = before["scanner"]["ema8_prototype"]["e8_refresh_seconds"]
+    after["scanner"]["mj_sir_lecture"].pop("dynamic_refresh_seconds", None)
+    before["scanner"]["mj_sir_lecture"].pop("dynamic_refresh_seconds", None)
+    assert after == before

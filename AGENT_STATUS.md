@@ -1021,3 +1021,15 @@ Base `claude/v2.0.17-reentry-buttons` @ `d5bf62b`. Tags (local): `pre-/post-clau
   ("NO_ENABLED_CONTRACT: no PE with premium ≥ ₹200 up to 500 pts ITM (best 25450 @ 188.00)").
 - Prototype only; Stage/Flagship contract choice unchanged. Not a new limit.
 Tests: +1 (72 pass across Prototype/exit/phase-2 suites); locks 11/11. Not run against the broker.
+
+## Claude — `claude/v2.0.19-touch-every-3s` (12 Nov 2026) — owner: "catch the touch as soon as it happens, why 30 s"
+Base `claude/v2.0.18-proto-contract-ge200` @ `3c976ae`. Tags (local): `pre-/post-claude-v2.0.19-touch-every-3s`. Not merged.
+- Live touch check for the 8 EMA Prototype (`e8_refresh_seconds`) and Stage 2/3/Reversal (`dynamic_refresh_seconds`)
+  defaults 30 → 3 s; workers clamp at 2–60 s and re-read the cadence every loop (no restart for a change).
+  The tick high/low between checks is still used, so nothing between ticks is lost; what changes is the reaction time.
+- Backtest/replay keep a 30-second grid under a new key `backtest_tick_seconds` (1-minute data cannot be read finer),
+  so backtest numbers stay comparable with before.
+- "RETOUCH SEEN" log line at most once per 30 s per side (the check now fires ten times more often).
+- `scripts/patch_touch_cadence_8510.py` — narrow patch: sets only the two cadence keys in the config file
+  (the repo config and the owner's local config both carry `e8_refresh_seconds: 30`, which overrides the default).
+Tests: +1 (56 across Prototype/Stage/backtest suites, 93+ earlier suites); locks 11/11.

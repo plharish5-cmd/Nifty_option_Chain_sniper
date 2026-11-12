@@ -38,6 +38,8 @@ DEFAULT_MJ_CFG: Dict[str, Any] = {
     # as the 8 EMA Prototype), within a few points, and not before 09:30.
     "dynamic_8ema_entry": True,
     "dynamic_touch_tol_pts": 3.0,
+    "dynamic_refresh_seconds": 3.0,   # live touch check cadence (owner, 12 Nov)
+    "backtest_tick_seconds": 30.0,     # backtest grid inside a 15m bar
     "no_entry_before_hm": "09:30",
     # The 4-8 "attached" (ribbon) block does not apply to the Reversal.
     "reversal_ribbon_block": False,
@@ -586,7 +588,7 @@ def backtest_mj_dynamic_at_bar(
 
     frame = b15_df.iloc[max(0, idx - window_bars): idx + 1][["open", "high", "low", "close"]].copy()
     day_key = str(b.get("day") or "")
-    refresh = float(cfg.get("dynamic_refresh_seconds", 30.0) or 30.0)
+    refresh = float(cfg.get("backtest_tick_seconds", 30.0) or 30.0)   # backtest grid; live cadence is dynamic_refresh_seconds
     out: List[Tuple[str, str, str, float, float, Dict[str, Any]]] = []
     # A 1-minute candle is stamped with the minute it OPENS (the live desk
     # treats the newest row as still forming). It is known only once that

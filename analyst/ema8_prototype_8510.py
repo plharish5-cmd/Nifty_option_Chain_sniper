@@ -29,7 +29,8 @@ DEFAULT_CFG: Dict[str, Any] = {
     "slow_market_exact_line": False,
     "target_pts": 40.0,
     "sl_pts": 40.0,
-    "e8_refresh_seconds": 30.0,
+    "e8_refresh_seconds": 3.0,        # live: the 8 EMA and the touch are checked this often (owner, 12 Nov: "as soon as it touches")
+    "backtest_tick_seconds": 30.0,    # backtest/replay grid inside a 15m bar (1-minute data cannot be read finer than this honestly)
     "min_option_premium_inr": 200.0,
     "ribbon_filter_enabled": False,
     "ribbon_max_pts": 3.0,
@@ -1056,7 +1057,7 @@ def backtest_ema8_prototype_at_bar(
     away_pts = float(cfg.get("away_min_pts", tol))
     no_from = str(cfg.get("no_entry_from_hm", "15:20") or "")
     no_before = str(cfg.get("no_entry_before_hm", "09:30") or "")
-    refresh = float(cfg.get("e8_refresh_seconds", 30.0) or 30.0)
+    refresh = float(cfg.get("backtest_tick_seconds", 30.0) or 30.0)
     # With a recursive EMA (adjust=False) the value on the running candle is
     # prev + alpha * (spot - prev). SuperTrend needs the full frame, so the
     # shortcut is used only when that filter is off.
