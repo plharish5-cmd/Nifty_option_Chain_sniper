@@ -8,10 +8,10 @@
     "environment": "LIVE",
     "whitelisted_ip": "49.205.39.195",
     "DHAN_CLIENT_ID": "1112377935",
-    "TOKEN_EXPIRY_UTC": "2026-11-09T21:49:38Z",
-    "token_expiry_utc": "2026-11-09T21:49:38Z",
-    "DHAN_ACCESS_TOKEN": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MjYwOTc4LCJpYXQiOjE3OTQxNzQ1NzgsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.BQVA7Q2dem8eQlM-lFz1Sve9uf8VYwDNu5nQrNYO2XUX5OpZsuIP6PUQAvBubIvVAq-J349iGPCj3zMSUf3tyg",
-    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MjYwOTc4LCJpYXQiOjE3OTQxNzQ1NzgsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.BQVA7Q2dem8eQlM-lFz1Sve9uf8VYwDNu5nQrNYO2XUX5OpZsuIP6PUQAvBubIvVAq-J349iGPCj3zMSUf3tyg"
+    "TOKEN_EXPIRY_UTC": "2026-11-12T23:52:23Z",
+    "token_expiry_utc": "2026-11-12T23:52:23Z",
+    "DHAN_ACCESS_TOKEN": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0NTI3NTQzLCJpYXQiOjE3OTQ0NDExNDMsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.6ewY10Z5hNjAUSuWah-0mNGBMfdz49c0fzajVu7Hu4LJBgRUilRAcRYa_iHFdZsKLTlCPftNFo6WglNzL0RshA",
+    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0NTI3NTQzLCJpYXQiOjE3OTQ0NDExNDMsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.6ewY10Z5hNjAUSuWah-0mNGBMfdz49c0fzajVu7Hu4LJBgRUilRAcRYa_iHFdZsKLTlCPftNFo6WglNzL0RshA"
   },
   "scrip_master_url": "https://images.dhan.co/api-data/api-scrip-master.csv",
   "instrument_master_path": "data/terminal8500/instrument_master.csv",
@@ -69,7 +69,7 @@
     "bollinger_enabled": false,
     "scanner_catchup_max_15m_bars": 12,
     "scanner_catchup_eval_latest_only": true,
-    "ema_live_cross_refresh_seconds": 2.0,
+    "ema_live_cross_refresh_seconds": 3.0,
     "mj_sir_lecture": {
       "enabled": true,
       "spec_tag": "MJ_SIR_LECTURE_UNDERSTANDING",
@@ -86,7 +86,7 @@
     },
     "ema8_prototype": {
       "enabled": true,
-      "execution_mode": "LIVE_ALLOWED",
+      "execution_mode": "PAPER_ONLY",
       "touch_tol_pts": 3.0,
       "target_pts": 40.0,
       "sl_pts": 40.0,
@@ -102,7 +102,18 @@
       "_note": "Standalone 8 EMA Prototype \u2014 not Stage 2/3/FLAGSHIP. Dynamic 8 EMA every 30s; optional ribbon, EMA separation, SuperTrend(5,1).",
       "retouch_requires_away": true,
       "touch_tol_slow_pts": 0.0,
-      "slow_market_exact_line": false
+      "slow_market_exact_line": true
+    },
+    "desk8600_board": {
+      "sources": {},
+      "apply_to": [
+        "EMA8_PROTOTYPE"
+      ],
+      "rule": "MAJORITY"
+    },
+    "desk8600_ticket_lane": {
+      "enabled": true,
+      "route": "LIVE_ALLOWED"
     }
   },
   "risk": {
@@ -413,6 +424,6 @@
     "max_payload_bytes": 4000000
   },
   "algo_strike_selection_evidence": "Harish explicitly requested LONG_CE_ITM disabled on 2026-11-07; other strike selection entries unchanged.",
-  "TOKEN_EXPIRY_UTC": "2026-11-09T21:49:38Z",
-  "DHAN_ACCESS_TOKEN": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0MjYwOTc4LCJpYXQiOjE3OTQxNzQ1NzgsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.BQVA7Q2dem8eQlM-lFz1Sve9uf8VYwDNu5nQrNYO2XUX5OpZsuIP6PUQAvBubIvVAq-J349iGPCj3zMSUf3tyg"
+  "TOKEN_EXPIRY_UTC": "2026-11-12T23:52:23Z",
+  "DHAN_ACCESS_TOKEN": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJ1c2VyUmVnaW9uIjoiUjEiLCJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzk0NTI3NTQzLCJpYXQiOjE3OTQ0NDExNDMsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTEyMzc3OTM1In0.6ewY10Z5hNjAUSuWah-0mNGBMfdz49c0fzajVu7Hu4LJBgRUilRAcRYa_iHFdZsKLTlCPftNFo6WglNzL0RshA"
 }

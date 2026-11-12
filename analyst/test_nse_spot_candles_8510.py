@@ -9,6 +9,7 @@ import pandas as pd
 from analyst.nse_spot_candles_8510 import (
     EMA_WARMUP_1M_BARS,
     TRADINGVIEW_EMA_CROSS_DEFAULTS,
+    compute_dynamic_emas_on_forming_bar,
     ema4_ema8,
     load_tradingview_ema_cross_config,
     resample_nse_15m,
@@ -49,6 +50,18 @@ def test_15m_buckets_start_at_0915():
     mins = {t.strftime("%H:%M") for t in b15.index}
     assert "09:15" in mins
     assert not any(m.endswith(":07") or m.endswith(":23") for m in mins)
+
+
+def test_dynamic_emas_move_with_live_spot_on_forming_bar():
+    idx = pd.date_range("2026-11-05 09:15", periods=20, freq="15min", tz="Asia/Kolkata")
+    closes = [25200.0 + i * 2 for i in range(20)]
+    b15 = pd.DataFrame(
+        {"open": closes, "high": [c + 5 for c in closes], "low": [c - 5 for c in closes], "close": closes, "volume": 1},
+        index=idx,
+    )
+    e4a, e8a, _, _ = compute_dynamic_emas_on_forming_bar(b15, live_spot=25255.0)
+    e4b, e8b, _, _ = compute_dynamic_emas_on_forming_bar(b15, live_spot=25200.0)
+    assert e4a != e4b or e8a != e8b
 
 
 def test_1h_not_wall_clock_10am():

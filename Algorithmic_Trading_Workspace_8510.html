@@ -688,8 +688,7 @@
             <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabFundsWallet')">💰 3. Funds &amp; Paper Wallet</button>
             <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabReplayExplorer')">📅 4. Historical Date Replay</button>
             <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabTrendLab')">🔬 5. Multi-Factor Trend Lab &amp; 128 Combos</button>
-            <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabDhanOISuite')">📊 6. Dhan OI — Total OI + OI Change</button>
-            <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tab7DailyIngest')">📥 7. Pull Today's Data</button>
+            <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tab7DailyIngest')">📥 6. Pull Today's Data</button>
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -1541,7 +1540,7 @@
                 <div id="dhanEmaCrossPanel" style="margin-bottom:10px; padding:10px 12px; border-radius:8px; border:1px solid rgba(56,189,248,0.35); background:linear-gradient(90deg,rgba(15,23,42,0.95),rgba(30,41,59,0.9)); font-family:var(--font-mono); font-size:12px;">
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:8px;">
                         <span style="font-weight:800; color:#38bdf8; font-size:13px;">📈 TV MACD+EMA Cross — NIFTY Spot sec 13</span>
-                        <span id="dhanEmaTvSpec" style="font-size:10.5px; color:#94a3b8;">Fast 4 / Slow 8 · Source Close · 09:15 15m/1H · live tick + closed row</span>
+                        <span id="dhanEmaTvSpec" style="font-size:10.5px; color:#94a3b8;">Fast 4 / Slow 8 · forming bar · refreshes every 3s (prototype-style dynamic 4/8)</span>
                         <span id="dhanEmaCrossUpdated" style="font-size:10px; color:#64748b; margin-left:auto;">updated —</span>
                     </div>
                     <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap:10px;">
@@ -2436,21 +2435,7 @@
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <!-- TAB 6: DHAN OI DUAL-ENTITY PE-CE SUITE & SYNERGY GATE           -->
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <div id="tabDhanOISuite" class="tab-content">
-            <div class="card"><h2>Dhan OI — Total OI + OI Change</h2>
-                <div id="dhanOiSource">Source: Dhan API | Updated: — | Waiting for verified data</div>
-                <p style="color:var(--text-dim)">One expiry, one API observation. OI is positioning; it does not identify who initiated. Missing or stale OI contributes no confluence vote.</p>
-                <button onclick="fetchDhanOISnapshot()">Refresh Dhan OI</button>
-                <div style="overflow:auto"><table><thead><tr><th>Expiry</th><th>CE total OI</th><th>PE total OI</th><th>CE day change</th><th>PE day change</th><th>Total PCR</th><th>Change PCR</th><th>CE − PE total OI</th><th>Positioning bias</th></tr></thead><tbody id="dhanOiSummary"></tbody></table></div>
-                <div id="dhanOiStatus" role="status"></div>
-            </div>
-        </div>
-
-
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <!-- TAB 7: 📥 PULL TODAY'S DATA / DAILY DATA INGEST                     -->
+        <!-- TAB 6: 📥 PULL TODAY'S DATA / DAILY DATA INGEST                     -->
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <div id="tab7DailyIngest" class="tab-content">
             <!-- 📋 POST-MARKET DAILY SUMMARY CARD (TAB 7) -->
@@ -2612,6 +2597,8 @@
             loadRecordedHistory();
             pollLiveEngine();
             setInterval(pollLiveEngine, 1000); // 1-second live desk stream
+            pollDhanEmaCrossPanel();
+            setInterval(pollDhanEmaCrossPanel, 3000); // TV 4/8 EMA panel — forming bar tick (matches backend refresh)
             populateReplayDates();
             checkIngestStatus(new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date()));
             initEmaRadarUI();
@@ -3331,6 +3318,22 @@
             toggleEmaTableSound(checked);
         }
 
+        let dhanEmaCrossPollInFlight = false;
+        async function pollDhanEmaCrossPanel() {
+            if (dhanEmaCrossPollInFlight) return;
+            dhanEmaCrossPollInFlight = true;
+            try {
+                const res = await fetch("/api/ema_proximity/live_cross", { cache: "no-store", signal: AbortSignal.timeout(8000) });
+                if (!res.ok) return;
+                const cross = await res.json();
+                if (cross && cross.ok) renderDhanStyleEmaCross(cross, { price: cross.spot_live });
+            } catch (e) {
+                console.debug("dhan ema cross poll", e);
+            } finally {
+                dhanEmaCrossPollInFlight = false;
+            }
+        }
+
         function renderDhanStyleEmaCross(cross, spotTel) {
             const spot = cross.spot_live ?? spotTel?.price ?? 0;
             const elSpot = document.getElementById("dhanEmaSpot");
@@ -3346,16 +3349,38 @@
             const paintTf = (tf, pfx) => {
                 if (!tf || !tf.ok) return;
                 const f = document.getElementById(pfx + "Forming");
-                if (f) f.textContent = tf.forming ? `(bar @ ${tf.bar_open_ist} · forming)` : `(bar @ ${tf.bar_open_ist} · closed)`;
-                const set = (id, val, dec = 2) => {
+                if (f) {
+                    f.textContent = tf.dynamic_tick || tf.forming
+                        ? `(bar @ ${tf.bar_open_ist} · live tick)`
+                        : `(bar @ ${tf.bar_open_ist} · closed)`;
+                }
+                const setFlash = (id, val, dec = 2) => {
                     const el = document.getElementById(id);
-                    if (el) el.textContent = (val == null || Number.isNaN(val)) ? "—" : Number(val).toFixed(dec);
+                    if (!el) return;
+                    const num = (val == null || Number.isNaN(val)) ? null : Number(val);
+                    if (num == null) {
+                        el.textContent = "—";
+                        return;
+                    }
+                    const prev = parseFloat(el.dataset.prev || num);
+                    el.textContent = num.toFixed(dec);
+                    if (prev !== num) triggerFlash(el, num, prev);
+                    el.dataset.prev = String(num);
                 };
-                set(pfx + "_e4", tf.ema_4);
-                set(pfx + "_e8", tf.ema_8);
-                set(pfx + "_spread", tf.spread_4_minus_8);
-                set(pfx + "_gap", tf.gap_spot_to_8);
-                if (pfx === "dhanEma1h") set("dhanEma1h_close", tf.close);
+                setFlash(pfx + "_e4", tf.ema_4);
+                setFlash(pfx + "_e8", tf.ema_8);
+                setFlash(pfx + "_spread", tf.spread_4_minus_8);
+                setFlash(pfx + "_gap", tf.gap_spot_to_8);
+                if (pfx === "dhanEma1h") {
+                    const bc = document.getElementById("dhanEma1h_close");
+                    if (bc) {
+                        const cl = Number(tf.close);
+                        const prev = parseFloat(bc.dataset.prev || cl);
+                        bc.textContent = Number.isFinite(cl) ? cl.toFixed(2) : "—";
+                        if (Number.isFinite(cl) && prev !== cl) triggerFlash(bc, cl, prev);
+                        bc.dataset.prev = String(cl);
+                    }
+                }
                 const st = document.getElementById(pfx + "_stack");
                 if (st) {
                     const s = tf.stack || "FLAT";
@@ -4050,10 +4075,6 @@
             const target = document.getElementById(tabId);
             if (target) target.classList.add("active");
             if (evt && evt.currentTarget) evt.currentTarget.classList.add("active");
-            if (tabId === 'tabDhanOISuite') {
-                fetchDhanOILiveOI();
-                fetchDhanOITable();
-            }
             if (tabId === 'tab7DailyIngest') {
                 checkIngestStatus();
             }
@@ -6546,7 +6567,7 @@
         function updateMappingButtons(mapping) {
             const isStd = (mapping === "STANDARD");
             const txt = isStd ? "🔄 Mapping: Standard (Red=Put / Green=Call)" : "🔄 Mapping: Inverted (Red=Call / Green=Put)";
-            ['tab1MappingToggleBtn', 'tab6MappingToggleBtn'].forEach(id => {
+            ['tab1MappingToggleBtn'].forEach(id => {
                 const b = document.getElementById(id);
                 if (b) {
                     b.textContent = txt;
@@ -6605,7 +6626,6 @@
                     closeLiveGraphModal();
                     if (data.crore_spread) {
                         renderCrorePillBadges(data.crore_spread, 'tab1');
-                        renderCrorePillBadges(data.crore_spread, 'tab6');
                     }
                     if (data.synergy) {
                         updateLiveSummaryBanner(data.synergy);
@@ -6718,9 +6738,8 @@
             const allowedEl = document.getElementById("bannerAllowedNow");
             const blockedEl = document.getElementById("bannerBlockedNow");
 
-            // Render 4-Crore Pill Badges in Tab 6 Banner
             if (syn.crore_spread) {
-                renderCrorePillBadges(syn.crore_spread, 'tab6');
+                renderCrorePillBadges(syn.crore_spread, 'tab1');
             }
 
             if (biasEl) {

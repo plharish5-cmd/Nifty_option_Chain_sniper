@@ -33,8 +33,19 @@ import pandas as pd
 
 from analyst.nse_spot_candles_8510 import (
     EMA_WARMUP_1M_BARS,
+    IST_TZ,
+    apply_forming_bar_close,
+    attach_bar_timestamps,
+    compute_dynamic_emas_on_forming_bar,
+    current_nse_15m_open_ts,
+    current_nse_1h_open_ts,
+    epoch_seconds,
     ema4_ema8,
+    ensure_forming_htf_bar,
+    forming_ohlc_from_1m_ts,
     load_tradingview_ema_cross_config,
+    resample_nse_15m,
+    resample_nse_1h,
     resample_spot_from_1m,
 )
 
@@ -930,14 +941,14 @@ class EmaProximityEngine:
 
         now = time.time()
         cache = self._live_cross_cache
-        if cache and (now - cache[0]) < 0.85 and abs(cache[1] - spot) < 0.15:
+        if cache and (now - cache[0]) < 0.25 and abs(cache[1] - spot) < 0.01:
             return cache[2]
 
         df_1m = self._live_1m_dataframe()
         if df_1m is None or df_1m.empty:
             return {"ok": False, "error": "no 1m candles"}
 
-        now_dt = datetime.now(IST)
+        now_dt = datetime.now(IST_TZ)
         now_ts = int(now_dt.timestamp())
         curr_bar_ts = (now_ts // 60) * 60
         last_bar_ts = int(df_1m["ts"].iloc[-1])
@@ -960,8 +971,11 @@ class EmaProximityEngine:
             df_1m.loc[df_1m.index[-1], "low"] = min(float(df_1m.loc[df_1m.index[-1], "low"]), spot)
 
         df_idx = df_1m.set_index("datetime")
-        _, df_15m, df_1h = resample_spot_from_1m(df_idx)
+        b15_raw = resample_nse_15m(df_idx)
+        b1h_raw = resample_nse_1h(df_idx)
         tv_ema = self.tv_ema_settings()
+        open_15_ts = current_nse_15m_open_ts(now_dt)
+        open_1h_ts = current_nse_1h_open_ts(now_dt)
 
         def _drop_forming_bar(bars: pd.DataFrame, bar_seconds: int) -> pd.DataFrame:
             if bars is None or bars.empty or "ts" not in bars.columns:
@@ -972,10 +986,11 @@ class EmaProximityEngine:
                 out = out.iloc[:-1]
             return out
 
-        def _tf_block(bars: pd.DataFrame, bar_seconds: int, label: str) -> Dict[str, Any]:
+        def _tf_block_closed(bars: pd.DataFrame, bar_seconds: int, label: str) -> Dict[str, Any]:
             if bars is None or bars.empty:
                 return {"ok": False, "timeframe": label}
-            close = bars["close"].astype(float)
+            prep = _prep(bars)
+            close = prep["close"].astype(float)
             e4_s, e8_s = ema4_ema8(close, tv_ema)
             i = -1
             e4 = round(float(e4_s.iloc[i]), 2)
@@ -991,14 +1006,69 @@ class EmaProximityEngine:
                     cross = "4_CROSS_ABOVE_8"
                 elif pe4 >= pe8 and e4 < e8:
                     cross = "4_CROSS_BELOW_8"
-            open_ts = int(bars["ts"].iloc[i]) if "ts" in bars.columns else 0
-            bar_open = datetime.fromtimestamp(open_ts, tz=timezone.utc).astimezone(IST).strftime("%H:%M") if open_ts else "—"
-            forming = now_ts < open_ts + bar_seconds
+            open_ts = int(prep["ts"].iloc[i]) if "ts" in prep.columns else 0
+            bar_open = (
+                datetime.fromtimestamp(open_ts, tz=timezone.utc).astimezone(IST).strftime("%H:%M")
+                if open_ts
+                else "—"
+            )
+            return {
+                "ok": True,
+                "timeframe": label,
+                "bar_open_ist": bar_open,
+                "forming": False,
+                "close": cl,
+                "ema_4": e4,
+                "ema_8": e8,
+                "spread_4_minus_8": spread,
+                "gap_spot_to_8": gap8,
+                "stack": stack,
+                "cross_event": cross,
+            }
+
+        def _tf_block_live(
+            bars_indexed: pd.DataFrame,
+            bar_seconds: int,
+            bar_open_ts: int,
+            label: str,
+        ) -> Dict[str, Any]:
+            if bars_indexed is None or bars_indexed.empty:
+                return {"ok": False, "timeframe": label}
+            work = ensure_forming_htf_bar(bars_indexed, bar_open_ts=bar_open_ts, live_spot=spot)
+            fh, fl, _ = forming_ohlc_from_1m_ts(df_1m, bar_open_ts=bar_open_ts, tick_spot=spot)
+            e4_v, e8_v, _, _ = compute_dynamic_emas_on_forming_bar(
+                work,
+                bar_ci=-1,
+                live_spot=spot,
+                form_high=fh,
+                form_low=fl,
+                tv_cfg=tv_ema,
+            )
+            e4 = round(e4_v, 2)
+            e8 = round(e8_v, 2)
+            cl = round(spot, 2)
+            spread = round(e4 - e8, 2)
+            gap8 = round(spot - e8, 2)
+            stack = "BULLISH" if e4 > e8 else ("BEARISH" if e4 < e8 else "FLAT")
+            cross = "NONE"
+            patched = apply_forming_bar_close(
+                work, bar_ci=-1, live_spot=spot, form_high=fh, form_low=fl
+            )
+            e4_s, e8_s = ema4_ema8(patched["close"], tv_ema)
+            if len(e4_s) >= 2:
+                pe4, pe8 = float(e4_s.iloc[-2]), float(e8_s.iloc[-2])
+                if pe4 <= pe8 and e4 > e8:
+                    cross = "4_CROSS_ABOVE_8"
+                elif pe4 >= pe8 and e4 < e8:
+                    cross = "4_CROSS_BELOW_8"
+            bar_open = datetime.fromtimestamp(int(bar_open_ts), tz=timezone.utc).astimezone(IST).strftime("%H:%M")
+            forming = bar_open_ts <= now_ts < bar_open_ts + bar_seconds
             return {
                 "ok": True,
                 "timeframe": label,
                 "bar_open_ist": bar_open,
                 "forming": forming,
+                "dynamic_tick": True,
                 "close": cl,
                 "ema_4": e4,
                 "ema_8": e8,
@@ -1011,8 +1081,13 @@ class EmaProximityEngine:
         def _prep(bars: pd.DataFrame) -> pd.DataFrame:
             if bars is None or bars.empty:
                 return bars
-            return bars.reset_index(drop=False) if "datetime" in bars.columns else bars
+            out = bars.reset_index(drop=False) if "datetime" in bars.columns else bars.copy()
+            if "ts" not in out.columns and "datetime" in out.columns:
+                out["ts"] = epoch_seconds(out["datetime"])
+            return out
 
+        df_15m = attach_bar_timestamps(b15_raw, 900) if not b15_raw.empty else b15_raw
+        df_1h = attach_bar_timestamps(b1h_raw, 3600) if not b1h_raw.empty else b1h_raw
         closed_15 = _drop_forming_bar(_prep(df_15m), 900)
         closed_1h = _drop_forming_bar(_prep(df_1h), 3600)
 
@@ -1025,15 +1100,16 @@ class EmaProximityEngine:
             "spot_1m_last_ist": datetime.fromtimestamp(last_1m_ts, tz=timezone.utc).astimezone(IST).strftime("%H:%M:%S"),
             "session_anchor": "09:15",
             "tradingview_ema_cross": tv_ema,
-            "mode": "forming_bar_included",
+            "mode": "dynamic_forming_bar",
+            "refresh_seconds": 3,
             "note": (
                 "TradingView MACD+EMA Cross: Fast 4 / Slow 8 on Close, 09:15 NIFTY spot. "
-                "Panel tick = forming bar; tf_*_closed = matrix parity."
+                "tf_15m / tf_1h = live spot on forming bar (prototype-style); tf_*_closed = last closed bar."
             ),
-            "tf_15m": _tf_block(_prep(df_15m), 900, "15m"),
-            "tf_1h": _tf_block(_prep(df_1h), 3600, "1h"),
-            "tf_15m_closed": _tf_block(closed_15, 900, "15m_closed"),
-            "tf_1h_closed": _tf_block(closed_1h, 3600, "1h_closed"),
+            "tf_15m": _tf_block_live(b15_raw, 900, open_15_ts, "15m"),
+            "tf_1h": _tf_block_live(b1h_raw, 3600, open_1h_ts, "1h"),
+            "tf_15m_closed": _tf_block_closed(closed_15, 900, "15m_closed"),
+            "tf_1h_closed": _tf_block_closed(closed_1h, 3600, "1h_closed"),
             "updated_at_ist": now_dt.strftime("%H:%M:%S"),
         }
         self._live_cross_cache = (now, spot, payload)

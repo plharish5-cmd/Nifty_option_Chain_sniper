@@ -686,11 +686,9 @@ def test_stockmojo_and_port8600_confluence_integration():
         assert "ICT SMC Desk Signals" in html_content  # v194 separate read-only advisory
         assert "var_8600" not in html_content, "var_8600_* MUST be completely removed from HTML"
         assert "tabTrendLab" in html_content, "tabTrendLab (Multi-Factor Trend Lab) MUST remain intact"
-        # The OI tab was RENAMED from tabStockMojoSuite to tabDhanOISuite in v1.9
-        # when the provider was decommissioned. The panel must still exist — what
-        # changed is the data behind it, not that the trader lost the tab — and the
-        # old Stock Mojo id must be gone.
-        assert "tabDhanOISuite" in html_content, "the OI tab MUST remain intact (now tabDhanOISuite)"
+        # Standalone Dhan OI tab removed; live OI context remains on Tab 1 (tab1DhanOICard).
+        assert "tabDhanOISuite" not in html_content, "standalone Dhan OI workspace tab removed"
+        assert "tab1DhanOICard" in html_content, "Tab 1 Dhan OI filter card must remain"
         assert "tabStockMojoSuite" not in html_content, "the retired Stock Mojo tab id must be gone"
         assert "stockmojo" not in html_content.lower(), "no Stock Mojo references may remain in the HTML"
 
