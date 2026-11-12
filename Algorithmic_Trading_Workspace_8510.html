@@ -369,29 +369,6 @@
         }
 
         /* ATM Widget Box */
-        .atm-widget {
-            background: linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(19, 28, 49, 0.95) 100%);
-            border: 2px solid var(--cyan);
-            border-radius: 12px;
-            padding: 16px 20px;
-            margin-bottom: 20px;
-            display: grid;
-            grid-template-columns: 1.2fr 1fr 1fr 1.2fr;
-            gap: 16px;
-            align-items: center;
-        }
-        .atm-title {
-            font-size: 12px;
-            color: var(--text-dim);
-            font-family: var(--font-mono);
-            text-transform: uppercase;
-        }
-        .atm-highlight {
-            font-size: 26px;
-            font-weight: 800;
-            color: var(--cyan);
-            font-family: var(--font-mono);
-        }
 
         /* Regime Banner */
         .regime-banner {
@@ -884,29 +861,6 @@
                     </div>
                 </div>
             <label><input type="checkbox" id="dhanAutoCollapse" checked> Collapse after successful Connect</label></div></details>
-            <!-- Dynamic ATM Strike Widget (Main Page) -->
-            <div class="atm-widget">
-                <div>
-                    <div class="atm-title">Dynamic ATM Strike (Rounded to 100)</div>
-                    <div class="atm-highlight" id="atmStrikeDisplay">23,950</div>
-                    <div style="font-size:11.5px; color:var(--text-dim); margin-top:2px;">Nearest Strike to Spot NIFTY</div>
-                </div>
-                <div>
-                    <div class="atm-title">ATM CE Live LTP</div>
-                    <div class="atm-highlight" id="atmCeDisplay" style="color:var(--emerald);">₹146.60</div>
-                    <div style="font-size:11.5px; color:var(--text-dim); margin-top:2px;">Call Option (Delta ~0.50)</div>
-                </div>
-                <div>
-                    <div class="atm-title">ATM PE Live LTP</div>
-                    <div class="atm-highlight" id="atmPeDisplay" style="color:var(--crimson);">₹186.35</div>
-                    <div style="font-size:11.5px; color:var(--text-dim); margin-top:2px;">Put Option (Delta ~-0.50)</div>
-                </div>
-                <div>
-                    <div class="atm-title">Combined Straddle Premium</div>
-                    <div class="atm-highlight" id="straddleDisplay" style="color:#38bdf8;">₹332.95</div>
-                    <div style="font-size:11.5px; color:var(--text-dim); margin-top:2px;">CE + PE Intraday Straddle Cost</div>
-                </div>
-            </div>
 
             <div class="grid-2">
                 <!-- Trend Confluence Mini-Watchlist Card -->
@@ -1379,20 +1333,6 @@
                     <div>15m zone / confirmation: <span id="flagshipZoneConfirm">—</span></div>
                     <div>Entry spot · SL · Target: <span id="flagshipEntrySlTgt">—</span></div>
                     <div>Last signal: <span id="flagshipLastSignal">—</span></div>
-                </div>
-            </div>
-
-            <!-- TAB 1: DHAN OI MULTI-STRIKE LIVE STATUS CARD -->
-            <div id="tab1MultiStrikeStatusCard" class="card" style="border:1px solid rgba(239, 68, 68, 0.4); background:rgba(239, 68, 68, 0.05); padding:10px 16px; margin-bottom:12px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <span id="tab1MultiStrikeIndicator" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#ef4444; box-shadow:0 0 8px #ef4444;"></span>
-                    <b id="tab1MultiStrikeText" style="color:#ef4444; font-size:12.5px;">🔴 Dhan OI Disconnected (No payload this session)</b>
-                </div>
-                <div style="font-family:var(--font-mono); font-size:12px; color:var(--text-dim);">
-                    Last Sync: <span id="tab1MultiStrikeLastSync" style="color:var(--text-main); font-weight:600;">Never</span>
-                </div>
-                <div style="font-size:12px;">
-                    Bias: <span id="tab1MultiStrikeBiasBadge" class="status-badge badge-side" style="font-size:12px; font-weight:700;">WAITING</span>
                 </div>
             </div>
 
@@ -4264,13 +4204,6 @@
                     pcrEl.className = `ribbon-val ${data.pcr.tag === 'BULLISH' ? 'up' : (data.pcr.tag === 'BEARISH' ? 'down' : '')}`;
                 }
 
-                // 2. Dynamic ATM Widget
-                if (data.atm) {
-                    document.getElementById("atmStrikeDisplay").textContent = data.atm.strike.toLocaleString('en-IN');
-                    document.getElementById("atmCeDisplay").textContent = `₹${(Number.isFinite(data.atm.ce_ltp)?data.atm.ce_ltp.toFixed(2):'—')}`;
-                    document.getElementById("atmPeDisplay").textContent = `₹${(Number.isFinite(data.atm.pe_ltp)?data.atm.pe_ltp.toFixed(2):'—')}`;
-                    document.getElementById("straddleDisplay").textContent = `₹${(Number.isFinite(data.atm.combined_straddle)?data.atm.combined_straddle.toFixed(2):'—')}`;
-                }
 
                 // 3. Trend Confluence Mini-Watchlist & Regime Banner
                 if (data.trend_watchlist) {
@@ -7396,7 +7329,7 @@
                 if(body){body.replaceChildren();const row=document.createElement('tr');
                     [oi.expiry||'—',value(oi.total_oi_ce),value(oi.total_oi_pe),value(oi.oi_change_ce),value(oi.oi_change_pe),value(oi.pcr_total_oi),value(oi.pcr_oi_change),value(oi.ce_pe_oi_diff),oi.bias||'UNKNOWN'].forEach(text=>{const cell=document.createElement('td');cell.textContent=text;row.append(cell);});body.append(row);}
                 const status=document.getElementById('dhanOiStatus');if(status)status.textContent=oi.reason||'Observation time is API receipt; exchange timestamp is not supplied.';
-                const fields={tab1TotalOiSummaryText:oi.ce_pe_oi_diff==null?'—':value(-oi.ce_pe_oi_diff/1e7)+' Cr PE−CE',tab1DayOiSummaryText:oi.oi_change_pe==null?'—':value((oi.oi_change_pe-oi.oi_change_ce)/1e5)+' L PE−CE',tab1SynergyStatusBadge:oi.bias||'UNKNOWN',tab1LastSyncText:oi.timestamp||'No observation',tab1MultiStrikeText:'Dhan OI · '+oi.status,tab1MultiStrikeBiasBadge:oi.bias||'UNKNOWN',tab1AllowedNowText:'See strategy and risk gates',tab1BlockedNowText:oi.status==='OK'?'No OI-only trade authorization':'OI pillar unavailable',tab1WriterDomBadge:oi.bias||'UNKNOWN'};
+                const fields={tab1TotalOiSummaryText:oi.ce_pe_oi_diff==null?'—':value(-oi.ce_pe_oi_diff/1e7)+' Cr PE−CE',tab1DayOiSummaryText:oi.oi_change_pe==null?'—':value((oi.oi_change_pe-oi.oi_change_ce)/1e5)+' L PE−CE',tab1SynergyStatusBadge:oi.bias||'UNKNOWN',tab1LastSyncText:oi.timestamp||'No observation',tab1AllowedNowText:'See strategy and risk gates',tab1BlockedNowText:oi.status==='OK'?'No OI-only trade authorization':'OI pillar unavailable',tab1WriterDomBadge:oi.bias||'UNKNOWN'};
                 for(const [id,text] of Object.entries(fields)){const el=document.getElementById(id);if(el)el.textContent=text;}
             }
             if(confluence){
