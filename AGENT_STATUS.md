@@ -991,3 +991,13 @@ Base `claude/v2.0.14-banner-redesign` @ `3a71841`. Tags (local): `pre-/post-clau
   the 8600 Board on the right with its 15 sources in a 3-column grid (was one 15-row list inside the controls box).
   No ids changed; every renderer and switch works as before.
 Tests: HTML + my suites 28 pass; locks 11/11. Rendered in Chromium at 1600 px.
+
+## Claude — `claude/v2.0.16-cooldown-after-fill` (12 Nov 2026) — owner: "only one Prototype trade today, why"
+Base `claude/v2.0.15-horizontal-cockpit` @ `fffed8b`. Tags (local): `pre-/post-claude-v2.0.16-cooldown-after-fill`. Not merged.
+- Defect found in the 12 Nov log: the Prototype's first touch 11:18:48 was skipped after the 5-minute
+  signal wait had already been stamped, so the next nine 30-second touches were discarded and the entry
+  came at 11:24:20; the 12:16:29 touch after the profit exit was lost the same way. Fix: the wait
+  (`signal_cooldown_5m_min`) is stamped only after `execute_order_with_chaser` returns ok. No rule change:
+  the wait between placed orders is unchanged; a skipped touch simply lets the next touch try again.
+  Applies to every lane that goes through `_process_strategy_signals`.
+Tests: +1 guard; Prototype re-entry, live-exit, phase-2 suites pass (70); locks 11/11.

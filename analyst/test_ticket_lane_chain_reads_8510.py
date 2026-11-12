@@ -403,3 +403,14 @@ def test_prototype_check_status_and_banner_wiring(tmp_path):
     for needle in ('class="bnr-grid"', 'id="protoLineLive"', 'id="protoLineCheck"', 'id="dhanEmaTick"', "renderProtoLineRow(cross)",
                    'id="bnrLink8510"', 'id="bnrLink8600"', 'id="bnrLinkChain"'):
         assert needle in html, needle
+
+
+# ── the 5-minute wait must not eat a touch that was skipped ─────────────────
+def test_cooldown_stamped_only_when_an_order_is_placed():
+    src = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
+    body = src[src.index("async def _process_strategy_signals"):src.index("async def start_strategy_scanner_loop")]
+    stamps = [i for i in range(len(body)) if body.startswith("self.strategy_cooldowns[strat_id] = now_ts", i)]
+    assert len(stamps) == 1
+    before = body[:stamps[0]]
+    assert "execute_order_with_chaser(" in before                      # the stamp comes after the order attempt
+    assert body[stamps[0] - 60:stamps[0]].strip().endswith('if res.get("ok"):')

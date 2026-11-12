@@ -7132,7 +7132,10 @@ class QuantTerminalBackend:
             if cool_sec and (now_ts - last_ts) < cool_sec:
                 continue
 
-            self.strategy_cooldowns[strat_id] = now_ts
+            # The 5-minute wait starts only when an order is actually placed
+            # (stamped after execute_order_with_chaser). A touch that is skipped
+            # further down (strike, premium, route, board) must not start it,
+            # or the next 30-second touch is thrown away for five minutes.
             sig["timestamp"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
             self.recent_signals.insert(0, sig)
             if len(self.recent_signals) > 30:
@@ -7307,6 +7310,8 @@ class QuantTerminalBackend:
                 spot_context=spot_ctx,
             )
             log.info("Strategy %s execution result: %s", sig["setup_name"], res.get("status", "SUBMITTED"))
+            if res.get("ok"):
+                self.strategy_cooldowns[strat_id] = now_ts
             self.mark_signal_outcome(
                 signal_uid,
                 executed=bool(res.get("ok")),
