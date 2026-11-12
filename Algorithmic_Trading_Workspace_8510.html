@@ -969,53 +969,19 @@
                     <span id="partySwitchBlockNotice" style="font-size:11.5px; padding:3px 8px; border-radius:4px; background:rgba(239, 68, 68, 0.2); color:#f87171; border:1px solid rgba(239, 68, 68, 0.4);">⛔ PE Shorts BLOCKED</span>
                 </div>
 
-                <!-- v1.7 Proven Quant Winners (Goldilocks Separation & Futures Volume Surge) Toolbar -->
+                <!-- Scanner gates toolbar -->
                 <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; background:rgba(15, 23, 42, 0.7); border:1px solid rgba(56, 189, 248, 0.25); border-radius:8px; padding:10px 14px; margin-bottom:14px;">
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:12px;">
-                        <span style="font-size:12px; font-weight:700; color:#38bdf8;">v1.7 Quant Edge Gates:</span>
+                        <span style="font-size:12px; font-weight:700; color:#38bdf8;">Scanner gates:</span>
                         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-main); cursor:pointer;">
-                            <input type="checkbox" id="chkGoldilocksSeparation" checked onchange="toggleProvenEdge('goldilocks_separation_enabled', this.checked);updateGateScopeBadges();">
-                            <span><b>Goldilocks Separation Band</b> (0.13–0.26 ATR)</span>
-                        </label>
                         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-main); cursor:pointer;">
-                            <input type="checkbox" id="chkFuturesVolumeSurge" onchange="toggleProvenEdge('futures_volume_surge_enabled', this.checked);updateGateScopeBadges();">
-                            <span><b>Futures Volume Surge Gate</b> (VSR &ge; 1.15)</span>
-                        </label>
                         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-main); cursor:pointer;">
                             <span id="pillPartySwitchScope" class="gate-scope" title="Blocks paper + LIVE scanner signals when ON">💵📄</span>
                             <input type="checkbox" id="chkPartySwitch" checked onchange="toggleScannerGate('party_switch_enabled', this.checked);updateGateScopeBadges();">
                             <span><b>Party Switch</b> (block CE in bearish party / PE in bullish party)</span>
                         </label>
                         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#ec4899; cursor:pointer; border:1px solid rgba(236,72,153,0.35); padding:4px 8px; border-radius:6px;">
-                            <input type="checkbox" id="chkStockMojoMaster" checked onchange="toggleStockMojoMaster(this.checked)">
-                            <span><b>External PE-CE feed</b> (master ON/OFF — no fetch when OFF)</span>
-                        </label>
                         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#f472b6; cursor:pointer;">
-                            <input type="checkbox" id="chkWriterFlowGate" onchange="saveWriterFlowGate({enabled: this.checked});updateGateScopeBadges();">
-                            <span><b>Writer telemetry gates</b> (surge alerts/blocks)</span>
-                        </label>
-                    </div>
-                    <div id="stockMojoStatusBanner" style="width:100%; margin-top:8px; padding:8px 12px; border-radius:8px; font-size:11.5px; font-family:var(--font-mono); border:1px solid #475569; background:rgba(15,23,42,0.85); color:#94a3b8;">
-                        <div style="display:flex; flex-wrap:wrap; gap:12px 20px; align-items:center;">
-                            <span id="smStatusSummary">External feed: checking…</span>
-                            <span id="smCredLed">🔑 Credentials: —</span>
-                            <span id="smAuthLed">🔐 Auth: —</span>
-                            <span id="smDlLed">⬇ Download: —</span>
-                            <span id="smTelLed">📶 Telemetry: —</span>
-                        </div>
-                        <div id="smStatusDetail" style="margin-top:4px; color:#64748b; font-size:11px;"></div>
-                    </div>
-                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:8px; width:100%;">
-                        <span style="font-size:11px; color:#94a3b8;">OI entity:</span>
-                        <label style="font-size:11px;"><input type="radio" name="writerEntity" value="change_oi" onchange="saveWriterFlowGate({entity: this.value})" checked> Change in OI</label>
-                        <label style="font-size:11px;"><input type="radio" name="writerEntity" value="total_oi" onchange="saveWriterFlowGate({entity: this.value})"> Total OI</label>
-                        <label style="font-size:11px; font-weight:700; color:#f9a8d4;"><input type="radio" name="writerEntity" value="both" onchange="saveWriterFlowGate({entity: this.value})"> Both (change + total)</label>
-                        <span style="font-size:11px; color:#94a3b8; margin-left:8px;">Paper:</span>
-                        <select id="selPaperPutMode" style="font-size:11px;" onchange="saveWriterFlowGate({paper_put_surge_mode: this.value})"><option value="off">Put surge: Off</option><option value="alert" selected>Alert</option><option value="block">Block</option></select>
-                        <select id="selPaperCallMode" style="font-size:11px;" onchange="saveWriterFlowGate({paper_call_surge_mode: this.value})"><option value="off">Call surge: Off</option><option value="alert" selected>Alert</option><option value="block">Block</option></select>
-                        <span style="font-size:11px; color:#94a3b8;">Live:</span>
-                        <select id="selLivePutMode" style="font-size:11px;" onchange="saveWriterFlowGate({live_put_surge_mode: this.value})"><option value="off">Put surge: Off</option><option value="alert" selected>Alert</option><option value="block">Block</option></select>
-                        <select id="selLiveCallMode" style="font-size:11px;" onchange="saveWriterFlowGate({live_call_surge_mode: this.value});updateGateScopeBadges();"><option value="off">Call surge: Off</option><option value="alert" selected>Alert</option><option value="block">Block</option></select>
                     </div>
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:6px; width:100%; font-size:11px;">
                         <span style="color:#94a3b8;">5-Factor block:</span>
@@ -1027,10 +993,6 @@
                         <label>Min score <select id="selFfMinScore" onchange="saveFiveFactorGate()"><option value="0">0</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option></select>/5</label>
                     </div>
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-                        <span id="pillGoldilocksSeparation" data-gate-scope="view" style="background:rgba(16, 185, 129, 0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;"><span class="gate-scope">👁</span>📐 Goldilocks ATR: -- ATR [WAITING]</span>
-                        <span id="pillFuturesVolumeSurge" data-gate-scope="view" style="background:rgba(56, 189, 248, 0.15); border:1px solid #38bdf8; color:#38bdf8; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;"><span class="gate-scope">👁</span>📊 Futures Vol Surge (VSR): -- [WAITING]</span>
-                        <span id="pillStockMojoLive" data-gate-scope="view" style="background:rgba(244, 114, 182, 0.15); border:1px solid #f472b6; color:#f9a8d4; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;" title="External PE-CE feed, polled every ~2–3 min when credentials are configured"><span class="gate-scope">👁</span>📡 External PE-CE feed: [WAITING]</span>
-                        <span id="pillWriterSurge" data-gate-scope="view" style="background:rgba(168, 85, 247, 0.15); border:1px solid #a855f7; color:#d8b4fe; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;"><span class="gate-scope">👁</span>✍️ Writer surge: —</span>
                         <span id="pillFiveFactorConfluence" data-gate-scope="view" style="color:#38bdf8;padding:3px 10px;border:1px solid #334155;border-radius:14px;" title="Informational agreement count; not execution authorization"><span class="gate-scope">👁</span>🛡️ 5-Factor Confluence: — / 5 [WAITING]</span>
                     </div>
                 </div>
@@ -2186,8 +2148,6 @@
                     <button type="button" class="btn-bollinger-gate emerald-btn" onclick="toggleBollingerGate()" style="padding:4px 10px; font-size:11px;">Bollinger Bands: ON</button>
                 </div>
                 <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-                    <span id="pillGoldilocksSeparation_tab5" style="background:rgba(16, 185, 129, 0.15); border:1px solid #10b981; color:#10b981; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">📐 Goldilocks ATR: -- ATR [WAITING]</span>
-                    <span id="pillFuturesVolumeSurge_tab5" style="background:rgba(56, 189, 248, 0.15); border:1px solid #38bdf8; color:#38bdf8; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">📊 Futures Vol Surge (VSR): -- [WAITING]</span>
                     <span id="pillFlagship1H_tab5" style="background:rgba(192, 132, 252, 0.15); border:1px solid #c084fc; color:#e9d5ff; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">🎯 1H FLAGSHIP: SCANNING</span>
                 </div>
             </div>
@@ -2277,17 +2237,6 @@
                     <div class="checkbox-group">
                         <input type="checkbox" id="fltPcr" onchange="runDateExplorer()">
                         <label for="fltPcr" style="margin:0; flex:1; color:#38bdf8;"><b>7. DhanOI PCR Gate</b> (Long &ge; 0.85, Short &le; 1.15)</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="fltGoldilocks" onchange="runDateExplorer()">
-                        <label for="fltGoldilocks" style="margin:0; flex:1; color:#10b981;"><b>8. Goldilocks ATR Band</b> (0.13–0.26 ATR Sweet Spot)</label>
-                    </div>
-                    <div class="checkbox-group" style="justify-content:space-between;">
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <input type="checkbox" id="fltFutVolSurge" onchange="runDateExplorer()">
-                            <label for="fltFutVolSurge" style="margin:0; color:#f59e0b;"><b>9. Futures Volume Surge Gate</b> (VSR &ge; 1.15)</label>
-                        </div>
-                        <input type="number" id="paramFutVolMin" value="1.15" step="0.05" min="1.0" max="3.0" style="width:65px; padding:3px 6px;" onchange="runDateExplorer()">
                     </div>
                 </div>
 
@@ -2574,9 +2523,6 @@
             updateClock();
             setInterval(updateClock, 1000);
             loadDhanConfig();
-            initProvenEdgesUI();
-            initWriterFlowUI();
-            initStockMojoMasterUI();
             initScannerGatesUI();
             initFiveFactorGateUI();
             updateGateScopeBadges();
@@ -2597,37 +2543,7 @@
             loadEmaProximityTable();
         });
 
-        // ── v1.7 PROVEN QUANT FILTERS: GOLDILOCKS & FUTURES VOLUME SURGE ─────
-        let lastBeepedVsrBar = null;
-        let vsrAudioCtx = null;
 
-        function playInstitutionalVolumeSurgeBeep() {
-            try {
-                const voiceEnabled = document.getElementById("chkVoiceAlerts")?.checked ?? true;
-                if (!voiceEnabled) return;
-                if (!vsrAudioCtx) {
-                    vsrAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                }
-                if (vsrAudioCtx.state === 'suspended') {
-                    vsrAudioCtx.resume();
-                }
-                const osc = vsrAudioCtx.createOscillator();
-                const gain = vsrAudioCtx.createGain();
-                osc.type = "sine";
-                const now = vsrAudioCtx.currentTime;
-                // Dual-tone ascending institutional chirp (600Hz -> 950Hz)
-                osc.frequency.setValueAtTime(600, now);
-                osc.frequency.exponentialRampToValueAtTime(950, now + 0.15);
-                gain.gain.setValueAtTime(0.25, now);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-                osc.connect(gain);
-                gain.connect(vsrAudioCtx.destination);
-                osc.start(now);
-                osc.stop(now + 0.3);
-            } catch (e) {
-                console.debug("Volume surge beep blocked or unavailable:", e);
-            }
-        }
 
         function gateScopeIcon(scope) {
             if (scope === "paper") return "📄";
@@ -2671,34 +2587,12 @@
             }
         }
         function updateGateScopeBadges() {
-            const g = !!document.getElementById("chkGoldilocksSeparation")?.checked;
-            const f = !!document.getElementById("chkFuturesVolumeSurge")?.checked;
             const ps = !!document.getElementById("chkPartySwitch")?.checked;
             const pps = document.getElementById("pillPartySwitchScope");
             if (pps) {
                 pps.textContent = gateScopeIcon(ps ? "both" : "view");
                 pps.title = gateScopeTitle(ps ? "both" : "view");
             }
-            setPillGateScope("pillGoldilocksSeparation", g ? "both" : "view");
-            setPillGateScope("pillFuturesVolumeSurge", f ? "both" : "view");
-            const wm = !!document.getElementById("chkWriterFlowGate")?.checked;
-            const pp = document.getElementById("selPaperPutMode")?.value;
-            const pc = document.getElementById("selPaperCallMode")?.value;
-            const lp = document.getElementById("selLivePutMode")?.value;
-            const lc = document.getElementById("selLiveCallMode")?.value;
-            let wScope = "view";
-            if (wm) {
-                const pb = pp === "block" || pc === "block";
-                const lb = lp === "block" || lc === "block";
-                wScope = pb && lb ? "both" : pb ? "paper" : lb ? "live" : "view";
-            }
-            setPillGateScope("pillWriterSurge", wScope);
-            const smOn = !!document.getElementById("chkStockMojoMaster")?.checked;
-            setPillGateScope("pillStockMojoLive", smOn && wm && wScope !== "view" ? wScope : "view");
-            const mode = document.querySelector('input[name="ffGateMode"]:checked')?.value || "off";
-            const min = parseInt(document.getElementById("selFfMinScore")?.value || "0", 10);
-            setPillGateScope("pillFiveFactorConfluence", mode !== "off" && min > 0 ? mode : "view");
-            setPillGateScope("pillEmaProximityRadar", "view");
         }
         function initEmaRecordingShutter() {
             const rec = document.getElementById("recordingHistoryV193");
@@ -2731,44 +2625,7 @@
                 updateGateScopeBadges();
             } catch (e) { console.error("five factor save", e); }
         }
-        async function toggleProvenEdge(key, value) {
-            try {
-                const payload = {};
-                payload[key] = value;
-                const res = await fetch("/api/proven_edges/config", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    console.log("Updated proven edges config:", data);
-                    updateGateScopeBadges();
-                }
-            } catch (e) {
-                console.error("Failed to update proven edge config:", e);
-            }
-        }
 
-        async function initProvenEdgesUI() {
-            try {
-                const res = await fetch("/api/proven_edges/config");
-                if (res.ok) {
-                    const cfg = await res.json();
-                    const chkGold = document.getElementById("chkGoldilocksSeparation");
-                    const chkFut = document.getElementById("chkFuturesVolumeSurge");
-                    if (chkGold && cfg.goldilocks_separation_enabled !== undefined) {
-                        chkGold.checked = cfg.goldilocks_separation_enabled;
-                    }
-                    if (chkFut && cfg.futures_volume_surge_enabled !== undefined) {
-                        chkFut.checked = cfg.futures_volume_surge_enabled;
-                    }
-                    updateGateScopeBadges();
-                }
-            } catch (e) {
-                console.debug("Failed to init proven edges UI:", e);
-            }
-        }
 
         async function initScannerGatesUI() {
             try {
@@ -2997,135 +2854,11 @@
             } catch (e) { console.error("scanner gate update", e); }
         }
 
-        async function initStockMojoMasterUI() {
-            try {
-                const res = await fetch("/api/stockmojo_live/config");
-                if (!res.ok) return;
-                const body = await res.json();
-                const cfg = body.stockmojo_live || body;
-                const chk = document.getElementById("chkStockMojoMaster");
-                if (chk && cfg.enabled !== undefined) chk.checked = !!cfg.enabled;
-            } catch (e) { console.debug("stockmojo master init", e); }
-        }
 
-        async function toggleStockMojoMaster(on) {
-            try {
-                const res = await fetch("/api/stockmojo_live/config", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ enabled: !!on }),
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    renderStockMojoStatusBanner(data.operational_status || (data.stockmojo_live && data));
-                }
-            } catch (e) { console.error("stockmojo master toggle", e); }
-        }
 
-        function renderStockMojoStatusBanner(st) {
-            if (!st) return;
-            const banner = document.getElementById("stockMojoStatusBanner");
-            const sum = document.getElementById("smStatusSummary");
-            const det = document.getElementById("smStatusDetail");
-            const cred = document.getElementById("smCredLed");
-            const auth = document.getElementById("smAuthLed");
-            const dl = document.getElementById("smDlLed");
-            const tel = document.getElementById("smTelLed");
-            const pill = document.getElementById("pillStockMojoLive");
-            const ok = (t, v, good) => `${t} ${v}`;
-            const led = (on) => on ? "🟢" : "🔴";
-            if (sum) sum.textContent = `External feed: ${st.summary || "—"}`.replace(/stock\s*mojo/ig, "feed");
-            if (det) det.textContent = st.detail || "";
-            if (cred) cred.textContent = `${led(st.credentials_entered)} Credentials`;
-            if (auth) auth.textContent = `${led(st.authenticated)} Auth (${st.auth_state || "—"})`;
-            if (dl) dl.textContent = `${led(st.downloading_active)} Download (${st.download_state || "—"})`;
-            if (tel) tel.textContent = `${led(st.telemetry_active)} Telemetry (${st.telemetry_state || "—"})`;
-            if (banner) {
-                const s = st.summary || "";
-                if (s === "LIVE_OK") {
-                    banner.style.borderColor = "#10b981";
-                    banner.style.color = "#6ee7b7";
-                } else if (s === "OFF") {
-                    banner.style.borderColor = "#64748b";
-                    banner.style.color = "#94a3b8";
-                } else if (s === "AUTH_DENIED" || s === "SETUP_REQUIRED") {
-                    banner.style.borderColor = "#ef4444";
-                    banner.style.color = "#fca5a5";
-                } else {
-                    banner.style.borderColor = "#f59e0b";
-                    banner.style.color = "#fcd34d";
-                }
-            }
-            if (pill && !st.master_enabled) {
-                setPillLabel("pillStockMojoLive", "📡 External PE-CE feed: MASTER OFF (no download)");
-                pill.style.borderColor = "#64748b";
-                updateGateScopeBadges();
-            }
-        }
 
-        async function initWriterFlowUI() {
-            try {
-                const res = await fetch("/api/writer_flow_gate/config");
-                if (!res.ok) return;
-                const body = await res.json();
-                const cfg = body.writer_flow_gate || body;
-                const chk = document.getElementById("chkWriterFlowGate");
-                if (chk) chk.checked = !!cfg.enabled;
-                document.querySelectorAll('input[name="writerEntity"]').forEach(el => {
-                    el.checked = (el.value === (cfg.entity || "change_oi"));
-                });
-                const map = { selPaperPutMode: "paper_put_surge_mode", selPaperCallMode: "paper_call_surge_mode", selLivePutMode: "live_put_surge_mode", selLiveCallMode: "live_call_surge_mode" };
-                for (const [id, key] of Object.entries(map)) {
-                    const el = document.getElementById(id);
-                    if (el && cfg[key]) el.value = cfg[key];
-                }
-            } catch (e) { console.debug("writer flow init", e); }
-        }
 
-        async function saveWriterFlowGate(patch) {
-            try {
-                await fetch("/api/writer_flow_gate/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch || {}) });
-                updateGateScopeBadges();
-            } catch (e) { console.error("writer flow save", e); }
-        }
 
-        function renderWriterFlowTelemetry(sm, wf) {
-            const pillSm = document.getElementById("pillStockMojoLive");
-            const pillW = document.getElementById("pillWriterSurge");
-            const src = (sm && sm.available) ? "External feed" : (wf && wf.source) || "Dhan";
-            if (sm && sm.operational_status) renderStockMojoStatusBanner(sm.operational_status);
-            if (pillSm) {
-                const st = sm && sm.operational_status;
-                if (st && !st.master_enabled) {
-                    setPillLabel("pillStockMojoLive", "📡 External PE-CE feed: MASTER OFF");
-                } else if (st && st.summary === "LIVE_OK" && sm.available) {
-                    const ent = (wf && wf.entity_mode) || "both";
-                    setPillLabel("pillStockMojoLive", `📡 FEED LIVE [${ent}] ${sm.time_ist || ""} | chg ${sm.pe_ce_change_3m_lakhs ?? "—"}L | tot ${sm.pe_ce_oi_total_lakhs ?? "—"}L`);
-                    pillSm.style.borderColor = "#10b981";
-                    pillSm.style.color = "#6ee7b7";
-                } else if (st) {
-                    setPillLabel("pillStockMojoLive", `📡 External feed: ${st.summary} — ${st.detail || ""}`.replace(/stock\s*mojo/ig, "feed").slice(0, 120));
-                    pillSm.style.borderColor = st.summary === "LIVE_OK" ? "#10b981" : "#f59e0b";
-                } else if (sm && !sm.enabled) {
-                    setPillLabel("pillStockMojoLive", "📡 External PE-CE feed: OFF");
-                } else {
-                    setPillLabel("pillStockMojoLive", "📡 External PE-CE feed: waiting status");
-                }
-            }
-            if (pillW && wf) {
-                const parts = [];
-                if (wf.significant_put_surge) parts.push("PUT SURGE");
-                if (wf.significant_call_surge) parts.push("CALL SURGE");
-                if (wf.writer_divergence) parts.push("DIVERGENCE " + (wf.atm_reversal_hint || ""));
-                setPillLabel("pillWriterSurge", parts.length ? `✍️ Writer (${src}): ` + parts.join(" · ") : `✍️ Writer (${src}): calm`);
-                if (wf.writer_divergence) {
-                    pillW.style.boxShadow = "0 0 8px rgba(168, 85, 247, 0.5)";
-                } else {
-                    pillW.style.boxShadow = "none";
-                }
-            }
-            updateGateScopeBadges();
-        }
 
         // ── v1.8 4/8-EMA MULTI-TIMEFRAME PROXIMITY RADAR & MATRIX ──────────────
         let emaRadarAudioCtx = null;
@@ -4419,77 +4152,10 @@
                 // 4. Priority Matrix (4 contracts)
                 renderStrikeMatrix(data.priority_matrix || [], data.matrix_reason || null);
 
-                // 4B. v1.7 Proven Quant Telemetry: Goldilocks Separation & Futures Volume Surge
-                if (data.goldilocks_separation) {
-                    const gold = data.goldilocks_separation;
-                    const sepVal = (gold.sep_atr !== null && gold.sep_atr !== undefined) ? gold.sep_atr.toFixed(2) : '--';
-                    const badgeText = gold.badge || gold.badge_text || 'WAITING';
-                    const pillHtml = gold.pill_text || `📐 Goldilocks ATR: ${sepVal} ATR [${badgeText}]`;
-                    const p1 = document.getElementById("pillGoldilocksSeparation");
-                    const p5 = document.getElementById("pillGoldilocksSeparation_tab5");
-                    [p1, p5].forEach(el => {
-                        if (el) {
-                            if (el === p1) setPillLabel("pillGoldilocksSeparation", pillHtml);
-                            else el.textContent = pillHtml;
-                            el.title = gold.badge || gold.badge_text || "";
-                            const reg = String(gold.regime || "").toUpperCase();
-                            if (reg.includes("GOLDILOCKS")) {
-                                el.style.background = "rgba(16, 185, 129, 0.15)";
-                                el.style.borderColor = "#10b981";
-                                el.style.color = "#10b981";
-                            } else if (reg.includes("CHOP")) {
-                                el.style.background = "rgba(239, 68, 68, 0.15)";
-                                el.style.borderColor = "#ef4444";
-                                el.style.color = "#ef4444";
-                            } else if (reg.includes("CLIMAX")) {
-                                el.style.background = "rgba(245, 158, 11, 0.15)";
-                                el.style.borderColor = "#f59e0b";
-                                el.style.color = "#f59e0b";
-                            } else {
-                                el.style.background = "rgba(100, 116, 139, 0.15)";
-                                el.style.borderColor = "#64748b";
-                                el.style.color = "#94a3b8";
-                            }
-                        }
-                    });
-                }
-
-                if (data.futures_volume_surge) {
-                    const vsr = data.futures_volume_surge;
-                    const vsrVal = (vsr.vsr_10 !== null && vsr.vsr_10 !== undefined) ? `${vsr.vsr_10.toFixed(2)}x` : '--';
-                    const badgeText = vsr.badge || vsr.badge_text || (vsr.is_surge ? '🔥 INSTITUTIONAL VOLUME SURGE' : 'NORMAL VOLUME');
-                    const pillHtml = vsr.pill_text || `📊 Futures Vol Surge (VSR): ${vsrVal} [${badgeText}]`;
-                    const p1 = document.getElementById("pillFuturesVolumeSurge");
-                    const p5 = document.getElementById("pillFuturesVolumeSurge_tab5");
-                    [p1, p5].forEach(el => {
-                        if (el) {
-                            if (el === p1) setPillLabel("pillFuturesVolumeSurge", pillHtml);
-                            else el.textContent = pillHtml;
-                            el.title = vsr.tooltip || "";
-                            if (vsr.is_institutional_surge) {
-                                el.style.background = "rgba(245, 158, 11, 0.2)";
-                                el.style.borderColor = "#f59e0b";
-                                el.style.color = "#fbbf24";
-                            } else {
-                                el.style.background = "rgba(56, 189, 248, 0.15)";
-                                el.style.borderColor = "#38bdf8";
-                                el.style.color = "#38bdf8";
-                            }
-                        }
-                    });
-
-                    // Trigger audio alert beep if institutional volume surge detected on newly closed bar
-                    if (vsr.is_institutional_surge && vsr.bar_time_ist && vsr.bar_time_ist !== lastBeepedVsrBar) {
-                        lastBeepedVsrBar = vsr.bar_time_ist;
-                        playInstitutionalVolumeSurgeBeep();
-                    }
-                }
-
                 renderDhanOI8510(data.dhan_oi, data.five_factor_confluence);
                 renderDesk8600Board(data.desk8600_board);
                 renderTicketLane(data.desk8600_ticket_lane);
                 renderDeskLink(data.desk8600_link);
-                renderWriterFlowTelemetry(data.stockmojo_live, data.writer_flow_gate);
 
                 if (data.ema_live_cross && data.ema_live_cross.ok) {
                     renderDhanStyleEmaCross(data.ema_live_cross, data.spot);
@@ -6289,18 +5955,6 @@
                 if (t.Direction === 'SHORT' && t.PCR_At_Entry > 1.15) return false;
             }
 
-            const fltGoldilocks = document.getElementById('fltGoldilocks')?.checked;
-            const fltFutVolSurge = document.getElementById('fltFutVolSurge')?.checked;
-            const paramFutVol = parseFloat(document.getElementById('paramFutVolMin')?.value || 1.15);
-
-            if (fltGoldilocks) {
-                const sep = t.sep_atr ?? t.m02_sep_atr;
-                if (sep !== undefined && (sep < 0.13 || sep > 0.26)) return false;
-            }
-            if (fltFutVolSurge) {
-                const vsr = t.vsr_10 ?? t.vol_surge_ratio ?? (t.Vol_Mult !== undefined ? t.Vol_Mult : undefined);
-                if (vsr !== undefined && vsr < paramFutVol) return false;
-            }
             return true;
         }
 
@@ -6381,7 +6035,7 @@
             document.getElementById('explorerProfitFactor').textContent = `PF: ${profitFactor}`;
 
             // Active filter count
-            const filterIds = ['fltEmaSlope', 'fltAdx', 'fltRSquared', 'fltMtf', 'fltVolume', 'fltGap', 'fltPcr', 'fltGoldilocks', 'fltFutVolSurge'];
+            const filterIds = ['fltEmaSlope', 'fltAdx', 'fltRSquared', 'fltMtf', 'fltVolume', 'fltGap', 'fltPcr'];
             const activeCount = filterIds.filter(id => {
                 const el = document.getElementById(id);
                 return el && el.checked;
@@ -6424,7 +6078,7 @@
         }
 
         function applyFilterPreset(preset) {
-            const ids = ['fltEmaSlope', 'fltAdx', 'fltRSquared', 'fltMtf', 'fltVolume', 'fltGap', 'fltPcr', 'fltGoldilocks', 'fltFutVolSurge'];
+            const ids = ['fltEmaSlope', 'fltAdx', 'fltRSquared', 'fltMtf', 'fltVolume', 'fltGap', 'fltPcr'];
             ids.forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.checked = false;
@@ -7348,24 +7002,6 @@
         }
 
 
-        function renderTrendCapture192(d) {
-            if (!document.getElementById("trendCaptureStatus")) return;
-            const time=t=>new Date(t*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:false});
-            const n=v=>Number.isFinite(v)?v.toFixed(2):'—';
-            const o=d.opening_range||{};const r=d.readiness||{};
-            document.getElementById('trendCaptureStatus').textContent=`${d.status} · OR ${n(o.or_low)}–${n(o.or_high)} · Trend confirmed: ${o.trend_day_confirmed?'YES':'NO'} · Stage 2B: ${r.ready?'READY (advisory)':'WAIT'} · Entry switch ${d.continuation_entry_enabled?'ON (advisory only)':'OFF'}`;
-            document.getElementById('trendCaptureReadiness').textContent=Object.entries(r.checks||{}).map(([k,v])=>k.replaceAll('_',' ')+' '+(v?'✓':'…')).join(' | ');
-            const body=document.getElementById('trendCaptureLadder');body.replaceChildren();
-            for(const b of d.ladder||[]){const tr=document.createElement('tr');for(const v of [time(b.ts),n(b.close),n(b.ema4),n(b.ema8),b.trend_day_confirmed?'YES':'NO']){const td=document.createElement('td');td.textContent=v;tr.append(td);}body.append(tr);}
-        }
-        async function loadTrendCaptureEvidence192(){
-            try{const response=await fetch('/api/trend_capture/backtest');if(!response.ok)return;const d=await response.json();
-                document.getElementById('trendCaptureCoverage').textContent=`${d.n_sessions||0} spot sessions · ${d.chain_sessions||0} sessions with any option snapshots · ${d.parameter_status||'EVIDENCE'}. ${d.trials_registered?.join('; ')||'Evidence not available'}`;
-                const body=document.getElementById('trendCaptureEvidence');body.replaceChildren();
-                const fmt=v=>Number.isFinite(v)?v.toFixed(2):'—';
-                for(const r of d.stage2b_performance||[]){const tr=document.createElement('tr');for(const v of [r.segment,r.candidates,r.priced_trades,fmt(r.net_per_trade),fmt(r.win_rate==null?null:r.win_rate*100),fmt(r.break_even_wr==null?null:r.break_even_wr*100)]){const td=document.createElement('td');td.textContent=v;tr.append(td);}body.append(tr);}
-            }catch(e){console.debug('Trend capture evidence unavailable');}
-        }
 
 // v1.9.3: cached read-only observations; deliberately outside execution handlers.
 const recText=(id,value)=>{const e=document.getElementById(id);if(e)e.textContent=value;};
@@ -7632,7 +7268,6 @@ document.addEventListener('DOMContentLoaded',()=>{const panel=document.getElemen
         <div id="toastOrderDetails" style="font-size:12px; color:var(--text-dim);">Filled @ ₹0.00 | AUTO ALGO 🤖 | Stage 2 8 EMA Touch</div>
     </div>
 <!-- STOCKMOJO_RESEARCH_V199_BEGIN -->
-<script src="/api/stockmojo/research/panel.js"></script>
 <!-- STOCKMOJO_RESEARCH_V199_END -->
 </body>
 </html>

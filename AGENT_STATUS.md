@@ -1033,3 +1033,34 @@ Base `claude/v2.0.18-proto-contract-ge200` @ `3c976ae`. Tags (local): `pre-/post
 - `scripts/patch_touch_cadence_8510.py` — narrow patch: sets only the two cadence keys in the config file
   (the repo config and the owner's local config both carry `e8_refresh_seconds: 30`, which overrides the default).
 Tests: +1 (56 across Prototype/Stage/backtest suites, 93+ earlier suites); locks 11/11.
+
+## Claude — `claude/v2.0.20-lightweight` (12 Nov 2026) — owner's removal list from the lightweight review
+Base `claude/v2.0.19-touch-every-3s` @ `620145f`. Tags (local): `pre-/post-claude-v2.0.20-lightweight`. Not merged.
+Owner's list, verbatim: "B3, B8 · Writer-flow gate, Trend Capture v1.9.2 service, External PE-CE feed (the vendor JSON
+poll), trend_filters block, Futures Volume Surge (VSR), Goldilocks ATR separation". Nothing else was removed.
+
+- **B3 Dynamic ATM Strike widget, B8 Multi-Strike Live Status card** — page only (commit `8fedc98`).
+- **Goldilocks ATR separation** — `compute_goldilocks_separation`, `get_latest_goldilocks_status`, the scanner gate,
+  telemetry fields, cockpit checkbox + pills (Tab 1 and Tab 5). `goldilocks_min/max_atr` stay: the EMA proximity engine
+  and the five-factor score use them as band widths.
+- **Futures Volume Surge** — engine no longer constructed (`futures_volume_engine = None`), signal tagging, telemetry,
+  cockpit checkbox + pills. `analyst/futures_volume_engine.py` (module + its own tests) left on disk: research scripts import it.
+  Consequence: the five-factor score no longer receives a volume reading, so it tops out at 4 of 5. Its gate is off.
+- **Writer-flow gate** — config, `_writer_flow_context`, `filter_signals_by_writer_gate`, 3 endpoints, cockpit controls;
+  `analyst/writer_flow_gate_8510.py` deleted. `apply_writer_flow_gates` → `apply_signal_gates` (only the optional
+  five-factor gate is left in it).
+- **External PE-CE vendor poll** — poller init, background task, `get_stockmojo_live*`, 3 endpoints, cockpit banner and
+  master switch; `stockmojo_safe_poller_8510.py`, `stockmojo_status_8510.py` deleted. NOT touched: the research workspace
+  router (`STOCKMOJO_RESEARCH_V199` block in the engine) and the old unwired `stockmojo_scraper.py`.
+- **Trend Capture v1.9.2 service** — backend accessor, telemetry field, 4 endpoints, orphaned page functions;
+  `trend_capture_service_8510.py` deleted. Research/evaluation/study modules stay (scripts import them).
+- **`trend_filters` config block** — no code reads it. Config is not edited by hand:
+  `scripts/patch_remove_dead_config_8510.py` deletes only `trend_filters`, `writer_flow_gate`, `stockmojo_live` and the three
+  dead `proven_edges` switches, after writing a copy of the file.
+
+Tests of removed features were removed with them (owner removed the features): 4 in `test_v17_proven_edges`, 4 in
+`test_v192_trend_capture`, files `test_writer_flow_gate_8510.py` and `test_v195_stockmojo_poller_8510.py`; two assertions in
+`test_v19_slot_volume_confluence` updated (no volume field; score 4). New guard test keeps the removed pieces removed.
+Whole `analyst` suite: 642 passed / 43 failed / 37 errors; **no test fails that did not fail on the base** (47 before).
+Locks 11/11. Page loaded in Chromium against real telemetry from the trimmed backend, all six tabs clicked: 0 script errors.
+Size: page 7,705 → 7,273 lines; backend 10,780 → 10,402; engine 1,414 → 1,328; four modules deleted.

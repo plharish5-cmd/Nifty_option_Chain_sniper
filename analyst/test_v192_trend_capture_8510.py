@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from analyst.trend_continuation_entry_8510 import config,continuation_readiness,opening_range_states,closed_bars,historical_signals
 from analyst.trend_capture_research_8510 import distribution,evidence_gate,select_contract,measure_mfe,day_labels
-from analyst.trend_capture_service_8510 import TrendCaptureService,update_config
+# The live Trend Capture service was removed by the owner on 12 Nov 2026; its tests went with it.
 from analyst.trend_capture_evaluation_8510 import master_lot,performance,baseline_replay
 IST=ZoneInfo('Asia/Kolkata');ROOT=Path(__file__).resolve().parents[1]
 
@@ -72,42 +72,10 @@ def test_statutory_cost_and_dynamic_master_no_delta_fallback(tmp_path):
     sc=json.loads((ROOT/'analyst/terminal8510_config.json').read_text())['super_trail']
     r=baseline_replay(sig,pd.DataFrame(),empty,lot,sc);assert r['net'] is None and r['status']=='NO_EXACT_ENTRY_SNAPSHOT'
 
-def test_advisory_only_never_mutates_positions_or_market(tmp_path):
-    market=tmp_path/'market.sqlite';ledger=tmp_path/'ledger.sqlite'
-    start=int(datetime(2026,11,6,9,15,tzinfo=IST).timestamp())
-    with sqlite3.connect(market) as c:
-        c.execute('create table candles_1m(sec_id text,ts integer,o real,h real,l real,c real,v real)')
-        c.executemany('insert into candles_1m values(?,?,?,?,?,?,?)',[('13',start+i*60,100+i,102+i,99+i,101+i,10) for i in range(120)])
-    with sqlite3.connect(ledger) as c:c.execute('create table positions(symbol text,status text)');c.execute("insert into positions values('NIFTY-X-CE','OPEN')")
-    before=hashlib.sha256(market.read_bytes()).hexdigest();s=TrendCaptureService({},market,ledger)
-    for _ in range(2):s.at=0;result=s.status(start+120*60+1)
-    assert result['mode']=='ADVISORY_ONLY' and not result['execution_authorized']
-    assert result['final_ratchet'] is None and result['candidate_stops']=={}
-    with sqlite3.connect(ledger) as c:
-        assert c.execute('select * from positions').fetchall()==[('NIFTY-X-CE','OPEN')]
-        assert c.execute('select count(*) from trail_observations').fetchone()[0]==1
-        assert not c.execute("select 1 from sqlite_master where name='orders'").fetchone()
-    assert hashlib.sha256(market.read_bytes()).hexdigest()==before
-    s.at=0;stale=s.status(start+7*3600)
-    assert not stale['readiness']['ready'] and not stale['readiness']['advisory_entry']
-
-def test_config_defaults_safe_and_cannot_arm_execution(tmp_path):
-    c=config({'execution_action_mode':'LIVE'});assert c['execution_action_mode']=='ADVISORY_ONLY';assert c['continuation_entry_enabled'] is False
-    p=tmp_path/'cfg.json';original={'execution_mode':'PAPER_ONLY','super_trail':{'initial_sl_pts':20},'trend_capture_v192':c};p.write_text(json.dumps(original))
-    for body in [{'execution_action_mode':'LIVE'},{'max_continuation_entries_per_day':3},{'initial_sl_pts':10},{'two_stage_switch_pts':float('nan')}]:
-        with pytest.raises(ValueError):update_config(p,body)
-    out=update_config(p,{'continuation_entry_enabled':True});assert out['execution_action_mode']=='ADVISORY_ONLY'
-    final=json.loads(p.read_text());assert final['execution_mode']==original['execution_mode'];assert final['super_trail']==original['super_trail']
-
 @pytest.mark.parametrize('assertion',['ratchet_CE_PE_monotonic','close_only_vs_wick','catastrophe_gap','regime_auto_selector','two_stage_switch','premium_gap_holds_ratchet'])
 @pytest.mark.skip(reason='Part 1 evidence gate failed: hybrid trailing engine intentionally NOT BUILT; no passing implementation asserted')
 def test_conditional_trailing_assertions_not_built(assertion):
     raise AssertionError('Gate must pass before this test can acquire a trailing implementation')
-
-def test_evidence_ui_never_advertises_proven_trailing():
-    html=(ROOT/'Algorithmic_Trading_Workspace_8510.html').read_text()
-    assert 'trendCaptureV192' in html and 'ADVISORY ONLY' in html
-    assert 'not built — evidence gate did not pass' in html
 
 def test_absent_data_and_undefined_winrate():
     r=performance([],['d']);assert r['net_per_trade'] is None;assert r['break_even_wr'] is None
@@ -127,21 +95,3 @@ def test_mfe_measures_after_actual_exit_without_ignoring_initial_stop():
     row=measure_mfe([signal],minutes,bars,chain)[0]
     assert row['eod_mfe']==9 and row['unrestricted_eod_mfe']==31
 
-
-def test_advisory_api_config_cannot_arm_and_uses_own_service(tmp_path,monkeypatch):
-    from fastapi.testclient import TestClient
-    from types import SimpleNamespace
-    import engine_8510_live as server
-    settings=config();path=tmp_path/'config.json';path.write_text(json.dumps({'execution_mode':'PAPER_ONLY','trend_capture_v192':settings}))
-    service=SimpleNamespace(cfg=settings,at=1,status=lambda:{'mode':'ADVISORY_ONLY','execution_authorized':False},backtest=lambda:{'gate':{'passes':False}})
-    monkeypatch.setattr(server.backend,'trend_capture_service',lambda:service)
-    monkeypatch.setattr(server.backend,'config_path',path)
-    monkeypatch.setattr(server.backend,'cfg',{'execution_mode':'PAPER_ONLY','trend_capture_v192':settings})
-    client=TestClient(server.app)
-    assert client.get('/api/trend_capture/status').json()['execution_authorized'] is False
-    assert client.get('/api/trend_capture/backtest').json()['gate']['passes'] is False
-    assert client.get('/api/trend_capture/config').json()['continuation_entry_enabled'] is False
-    assert client.post('/api/trend_capture/config',json={'execution_action_mode':'LIVE'}).status_code==400
-    assert client.post('/api/trend_capture/config',json={'continuation_entry_enabled':False}).json()['execution_authorized'] is False
-    assert json.loads(path.read_text())['execution_mode']=='PAPER_ONLY'
-    client.close()

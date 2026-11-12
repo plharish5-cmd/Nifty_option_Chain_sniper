@@ -164,7 +164,7 @@ def test_telemetry_integration(tmp_path,cfg,monkeypatch):
     data=asyncio.run(engine.get_live_telemetry())
     assert 'five_factor_confluence' in data;assert data['five_factor_confluence']['score']==0
     assert data['dhan_oi']['source']=='DHAN_API'
-    assert 'slot_status' in data['futures_volume_surge']
+    assert 'futures_volume_surge' not in data          # removed by the owner, 12 Nov 2026
 
 
 def test_real_archivers_read_only_round_trip(tmp_path,cfg,monkeypatch):
@@ -213,7 +213,9 @@ def test_closed_candle_confluence_context_and_radar_reuse(tmp_path,cfg,monkeypat
     assert engine._confluence_context_cache.get('signal_ts')==now
     assert result['pillar_2_anti_chop_regime'] is True
     assert result['pillar_5_pocket_execution'] is True
-    assert result['score']==5
+    # The volume engine was removed by the owner on 12 Nov 2026: the volume pillar is no
+    # longer supplied, so the live score tops out at 4 of 5.
+    assert result['score']==4
 
 
 def test_ui_source_and_atm_labels():

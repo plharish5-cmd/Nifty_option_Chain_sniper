@@ -510,3 +510,50 @@ def test_touch_cadence_defaults_and_patch_script(tmp_path):
     after["scanner"]["mj_sir_lecture"].pop("dynamic_refresh_seconds", None)
     before["scanner"]["mj_sir_lecture"].pop("dynamic_refresh_seconds", None)
     assert after == before
+
+
+# ── lightweight pass, 12 Nov: removed pieces stay removed; config patch is narrow ──
+def test_removed_features_are_gone_and_config_patch_is_narrow(tmp_path):
+    import json, shutil, subprocess, sys
+
+    be = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
+    eng = (ROOT / "engine_8510_live.py").read_text(encoding="utf-8")
+    html = (ROOT / "Algorithmic_Trading_Workspace_8510.html").read_text(encoding="utf-8")
+    for gone in ("writer_flow_gate_cfg", "_writer_flow_context", "stockmojo_poller", "get_stockmojo_live",
+                 "trend_capture_service", "compute_goldilocks_separation", "FuturesVolumeEngine("):
+        assert gone not in be, gone
+    for gone in ("/api/writer_flow", "/api/stockmojo", "/api/trend_capture", "stockmojo_live_poller"):
+        assert gone not in eng, gone
+    for gone in ("chkWriterFlowGate", "chkStockMojoMaster", "chkGoldilocksSeparation", "chkFuturesVolumeSurge",
+                 "tab1MultiStrikeStatusCard", "renderTrendCapture192"):
+        assert gone not in html, gone
+    for name in ("writer_flow_gate_8510.py", "stockmojo_safe_poller_8510.py", "stockmojo_status_8510.py", "trend_capture_service_8510.py"):
+        assert not (ROOT / "analyst" / name).exists(), name
+    # what must still be there
+    assert "def apply_signal_gates" in be and "def _confluence_gate_blocks" in be
+    assert 'id="desk8600Board"' in html and 'id="strategyCockpitGrid"' in html
+
+    repo = tmp_path / "repo"; (repo / "analyst").mkdir(parents=True); (repo / "scripts").mkdir()
+    before = json.loads((ROOT / "analyst/terminal8510_config.json").read_text(encoding="utf-8"))
+    before.setdefault("trend_filters", {"adx_min": 20})
+    before.setdefault("writer_flow_gate", {"enabled": False})
+    before.setdefault("stockmojo_live", {"enabled": False})
+    before.setdefault("proven_edges", {}).update(goldilocks_separation_enabled=False, futures_volume_surge_enabled=False,
+                                                futures_volume_surge_min_ratio=1.15, goldilocks_min_atr=0.13)
+    (repo / "analyst/terminal8510_config.json").write_text(json.dumps(before, indent=2), encoding="utf-8")
+    shutil.copy(ROOT / "scripts/patch_remove_dead_config_8510.py", repo / "scripts/patch_remove_dead_config_8510.py")
+    out = subprocess.run([sys.executable, str(repo / "scripts/patch_remove_dead_config_8510.py")], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    after = json.loads((repo / "analyst/terminal8510_config.json").read_text(encoding="utf-8"))
+    for k in ("trend_filters", "writer_flow_gate", "stockmojo_live"):
+        assert k not in after
+    assert "goldilocks_separation_enabled" not in after["proven_edges"] and after["proven_edges"]["goldilocks_min_atr"] == 0.13
+    expect = json.loads(json.dumps(before))
+    for k in ("trend_filters", "writer_flow_gate", "stockmojo_live"):
+        expect.pop(k)
+    for k in ("goldilocks_separation_enabled", "futures_volume_surge_enabled", "futures_volume_surge_min_ratio"):
+        expect["proven_edges"].pop(k)
+    assert after == expect
+    assert (repo / "analyst/terminal8510_config.before_dead_config_patch.json").exists()
+    again = subprocess.run([sys.executable, str(repo / "scripts/patch_remove_dead_config_8510.py")], capture_output=True, text=True)
+    assert "Nothing to remove" in again.stdout
