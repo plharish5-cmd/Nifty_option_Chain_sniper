@@ -637,42 +637,56 @@
 
     <div class="workspace-wrapper">
         <!-- Global: visible on every workspace tab (above terminal title) -->
-        <div id="dhanEmaCrossPanel" style="position:sticky; top:0; z-index:120; margin-bottom:10px; padding:8px 12px; border-radius:8px; border:1px solid rgba(56,189,248,0.35); background:linear-gradient(90deg,rgba(15,23,42,0.98),rgba(30,41,59,0.96)); font-family:var(--font-mono); font-size:11.5px; box-shadow:0 4px 24px rgba(0,0,0,0.35);">
-            <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; line-height:1.45;">
-                <span style="font-weight:800; color:#38bdf8; font-size:13px; white-space:nowrap;">📈 TV MACD+EMA Cross — sec 13</span>
-                <span style="color:rgba(255,255,255,0.15);">|</span>
-                <span>Spot <b id="dhanEmaSpot" style="color:#38bdf8;">—</b></span>
-                <span style="color:rgba(255,255,255,0.15);">|</span>
-                <span style="color:#fbbf24; font-weight:700;">15m</span>
-                <span id="dhanEma15Forming" style="font-size:10.5px;color:#94a3b8;"></span>
-                <span>4 <b id="dhanEma15_e4" style="color:#fda4af;">—</b></span>
-                <span>8 <b id="dhanEma15_e8" style="color:#86efac;">—</b></span>
-                <span>4−8 <b id="dhanEma15_spread">—</b></span>
-                <span>Gap8 <b id="dhanEma15_gap">—</b></span>
-                <span id="dhanEma15_stack" class="status-badge badge-neutral">—</span>
-                <span style="color:rgba(255,255,255,0.15);">|</span>
-                <span style="color:#a78bfa; font-weight:700;">1H</span>
-                <span id="dhanEma1hForming" style="font-size:10.5px;color:#94a3b8;"></span>
-                <span>Close <b id="dhanEma1h_close" style="color:#e2e8f0;">—</b></span>
-                <span>4 <b id="dhanEma1h_e4" style="color:#fda4af;">—</b></span>
-                <span>8 <b id="dhanEma1h_e8" style="color:#86efac;">—</b></span>
-                <span>4−8 <b id="dhanEma1h_spread">—</b></span>
-                <span>Gap8 <b id="dhanEma1h_gap">—</b></span>
-                <span id="dhanEma1h_stack" class="status-badge badge-neutral">—</span>
-                <span id="dhanEmaTvSpec" style="font-size:10px; color:#64748b; flex:1 1 200px; min-width:160px;">Fast 4 / Slow 8 · 3s live forming bar</span>
-                <span id="dhanEmaCrossUpdated" style="font-size:10px; color:#64748b; white-space:nowrap;">updated —</span>
+        <div id="dhanEmaCrossPanel" title="TradingView MACD+EMA Cross: Fast 4 / Slow 8 on close, NIFTY spot sec 13, 09:15 anchor. 15m and 1H use the forming bar with close = live spot, recomputed every 3 s." style="position:sticky; top:0; z-index:120; margin-bottom:10px; padding:8px 10px; border-radius:10px; border:1px solid rgba(56,189,248,0.35); background:linear-gradient(90deg,rgba(15,23,42,0.98),rgba(30,41,59,0.96)); font-family:var(--font-mono); box-shadow:0 4px 24px rgba(0,0,0,0.35);">
+            <style>
+                .bnr-grid { display:grid; grid-template-columns: 185px repeat(2, minmax(240px, 1fr)) minmax(360px, 1.5fr) minmax(240px, 0.9fr); gap:8px; align-items:stretch; }
+                @media (max-width: 1400px) { .bnr-grid { grid-template-columns: 1fr 1fr; } .bnr-tile.bnr-spot { grid-column: 1 / -1; } }
+                .bnr-tile { background:rgba(0,0,0,0.28); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:6px 10px; min-height:58px; display:flex; flex-direction:column; justify-content:center; gap:3px; }
+                .bnr-lbl { font-size:9.5px; letter-spacing:.6px; text-transform:uppercase; color:#94a3b8; display:flex; justify-content:space-between; gap:8px; white-space:nowrap; }
+                .bnr-lbl .bnr-sub { color:#64748b; text-transform:none; letter-spacing:0; font-weight:400; }
+                .bnr-row { display:flex; flex-wrap:nowrap; align-items:baseline; gap:12px; white-space:nowrap; overflow:hidden; }
+                .bnr-k { font-size:9.5px; color:#64748b; margin-right:4px; }
+                .bnr-v { font-size:15px; font-weight:800; color:#e2e8f0; padding:0 3px; border-radius:3px; }
+                .bnr-v.e4 { color:#fda4af; } .bnr-v.e8 { color:#86efac; }
+                .bnr-badge { font-size:10px; font-weight:800; padding:2px 8px; border-radius:10px; border:1px solid; margin-left:auto; }
+                .bnr-badge.badge-bull { color:#34d399; border-color:#34d399; background:rgba(52,211,153,0.12); }
+                .bnr-badge.badge-bear { color:#f87171; border-color:#f87171; background:rgba(248,113,113,0.12); }
+                .bnr-badge.badge-neutral { color:#94a3b8; border-color:#475569; background:transparent; }
+                .bnr-small { font-size:10.5px; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+                .bnr-wrap { white-space:normal; line-height:1.35; }
+                .bnr-dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:#475569; margin-right:5px; vertical-align:middle; }
+                .bnr-link { font-size:11px; color:#cbd5e1; white-space:nowrap; display:flex; align-items:center; gap:4px; }
+                .bnr-link b { color:#e2e8f0; }
+            </style>
+            <div class="bnr-grid">
+                <div class="bnr-tile bnr-spot">
+                    <div class="bnr-lbl"><span>NIFTY spot</span><span class="bnr-sub" id="dhanEmaCrossUpdated">—</span></div>
+                    <div class="bnr-row"><b id="dhanEmaSpot" class="bnr-v" style="font-size:22px; color:#38bdf8;">—</b></div>
+                    <div class="bnr-small" id="dhanEmaTick"><span class="bnr-dot" id="dhanEmaTickDot"></span>tick #0</div>
+                </div>
+                <div class="bnr-tile">
+                    <div class="bnr-lbl"><span style="color:#fbbf24;">15m · 4 / 8 EMA</span><span class="bnr-sub" id="dhanEma15Forming"></span></div>
+                    <div class="bnr-row"><span><span class="bnr-k">4</span><b id="dhanEma15_e4" class="bnr-v e4">—</b></span><span><span class="bnr-k">8</span><b id="dhanEma15_e8" class="bnr-v e8">—</b></span><span id="dhanEma15_stack" class="bnr-badge badge-neutral">—</span></div>
+                    <div class="bnr-row bnr-small"><span><span class="bnr-k">4−8</span><b id="dhanEma15_spread">—</b></span><span><span class="bnr-k">spot−8</span><b id="dhanEma15_gap">—</b></span><span id="dhanEmaCrossEvent" style="margin-left:auto;">—</span></div>
+                </div>
+                <div class="bnr-tile">
+                    <div class="bnr-lbl"><span style="color:#a78bfa;">1H · 4 / 8 EMA</span><span class="bnr-sub" id="dhanEma1hForming"></span></div>
+                    <div class="bnr-row"><span><span class="bnr-k">4</span><b id="dhanEma1h_e4" class="bnr-v e4">—</b></span><span><span class="bnr-k">8</span><b id="dhanEma1h_e8" class="bnr-v e8">—</b></span><span id="dhanEma1h_stack" class="bnr-badge badge-neutral">—</span></div>
+                    <div class="bnr-row bnr-small"><span><span class="bnr-k">4−8</span><b id="dhanEma1h_spread">—</b></span><span><span class="bnr-k">spot−8</span><b id="dhanEma1h_gap">—</b></span><span><span class="bnr-k">close</span><b id="dhanEma1h_close">—</b></span></div>
+                </div>
+                <div class="bnr-tile" style="border-color:rgba(251,191,36,0.35);">
+                    <div class="bnr-lbl"><span style="color:#fbbf24;">8 EMA Prototype line</span><span class="bnr-sub">same math as the algo · 15m forming bar</span></div>
+                    <div class="bnr-row"><span><span class="bnr-k">line</span><b id="protoLineLive" class="bnr-v e8">—</b></span><span><span class="bnr-k">band ±<span id="protoLineTol">3</span></span><b id="protoLineBand" style="font-size:12px; color:#e2e8f0;">—</b></span><span style="margin-left:auto;"><b id="protoLineGap" style="font-size:12px;">—</b></span></div>
+                    <div class="bnr-small bnr-wrap"><span id="protoLineCheck">algo: —</span> <span id="protoLineDiff" style="color:#64748b;"></span></div>
+                </div>
+                <div class="bnr-tile">
+                    <div class="bnr-lbl"><span>Feeds — live or dead</span><span class="bnr-sub" id="bnrBuild"></span></div>
+                    <div class="bnr-link" id="bnrLink8510"><span class="bnr-dot"></span><b>8510 engine</b> <span>checking…</span></div>
+                    <div class="bnr-link" id="bnrLink8600"><span class="bnr-dot"></span><b>8600 app</b> <span>checking…</span></div>
+                    <div class="bnr-link" id="bnrLinkChain"><span class="bnr-dot"></span><b>Option chain</b> <span>checking…</span></div>
+                </div>
             </div>
-            <div id="dhanEmaCrossEvent" style="margin-top:4px; font-size:10.5px; color:#94a3b8;">Cross: —</div>
-            <div id="dhanEmaProtoLine" style="margin-top:5px; padding-top:5px; border-top:1px solid rgba(255,255,255,0.08); display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; font-size:11px; line-height:1.45;">
-                <span style="font-weight:800; color:#fbbf24; white-space:nowrap;">8 EMA Prototype line</span>
-                <span>live <b id="protoLineLive" style="color:#86efac;">—</b> <span style="color:#64748b;">(same math the algo uses: 15m, forming bar close = spot)</span></span>
-                <span>touch band <b id="protoLineBand" style="color:#e2e8f0;">—</b></span>
-                <span>spot is <b id="protoLineGap" style="color:#e2e8f0;">—</b></span>
-                <span style="color:rgba(255,255,255,0.15);">|</span>
-                <span id="protoLineCheck" style="color:#cbd5e1;">algo's last 30-s check: —</span>
-                <span id="protoLineDiff" style="color:#94a3b8;"></span>
-                <span id="dhanEmaTick" style="margin-left:auto; white-space:nowrap; color:#64748b; font-size:10.5px;"><span id="dhanEmaTickDot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#475569; margin-right:5px; vertical-align:middle;"></span>tick #0 · no change yet</span>
-            </div>
+            <span id="dhanEmaTvSpec" style="display:none;"></span>
         </div>
 
         <header>
@@ -2919,8 +2933,24 @@
                 (x.detail ? '<div style="color:#cbd5e1; font-family:var(--font-mono); font-size:11px; overflow-wrap:anywhere;">' + d86Esc(x.detail) + '</div>' : '') +
                 (x.fix ? '<div style="color:#fbbf24; font-size:11.5px; margin-top:2px;"><b>What to do:</b> ' + d86Esc(x.fix) + '</div>' : '') + '</div>';
         }
+        function bnrLink(id, state, text) {
+            const el = document.getElementById(id); if (!el) return;
+            const col = { LIVE: "#34d399", STALE: "#fbbf24", NO_SESSION: "#93c5fd", STARTING: "#93c5fd", NO_DATA: "#fbbf24", NOT_ANSWERING: "#f87171", OFF: "#f87171" }[state] || "#94a3b8";
+            el.querySelector(".bnr-dot").style.background = col;
+            el.querySelector(".bnr-dot").style.boxShadow = state === "LIVE" ? "0 0 6px " + col : "none";
+            el.querySelector("span:last-child").textContent = text;
+            el.querySelector("span:last-child").style.color = col;
+            el.title = text;
+        }
         let _deskLinkSeen = 0;
         function renderDeskLink(l) {
+            if (l && l.desk8600) {
+                const short = { LIVE: "LIVE", STALE: "OLD DATA", NO_SESSION: "no bars yet", STARTING: "starting", NOT_ANSWERING: "DEAD — not answering", OFF: "off" };
+                bnrLink("bnrLink8510", "LIVE", "LIVE · build " + ((l.build || {}).commit || "?"));
+                bnrLink("bnrLink8600", l.desk8600.state, (short[l.desk8600.state] || l.desk8600.state) + (l.desk8600.bar_time ? " · bar " + l.desk8600.bar_time : ""));
+                bnrLink("bnrLinkChain", (l.chain || {}).state, { LIVE: "LIVE", STALE: "OLD DATA", NO_DATA: "no snapshots today" }[(l.chain || {}).state] || "—");
+                const bb = document.getElementById("bnrBuild"); if (bb) bb.textContent = "checked " + (l.checked_at || "");
+            }
             const a = document.getElementById("deskLink8600");
             if (!a || !l || !l.desk8600) return;
             _deskLinkSeen = Date.now();
@@ -2946,13 +2976,16 @@
             };
             try {
                 const r1 = await fetch("/api/desk8600/link", { cache: "no-store" });
-                if (r1.status === 404) { oldEngine(); return; }
+                if (r1.status === 404) { oldEngine(); bnrLink("bnrLink8510", "OFF", "OLD CODE — restart the 8510 app"); return; }
                 if (r1.ok) renderDeskLink(await r1.json());
                 const r2 = await fetch("/api/desk8600/ticket-lane", { cache: "no-store" });
                 if (r2.ok) renderTicketLane(await r2.json());
                 const r3 = await fetch("/api/desk8600/board", { cache: "no-store" });
                 if (r3.ok) renderDesk8600Board(await r3.json());
             } catch (e) {
+                bnrLink("bnrLink8510", "NOT_ANSWERING", "DEAD — not answering this page");
+                bnrLink("bnrLink8600", "STARTING", "unknown (8510 down)");
+                bnrLink("bnrLinkChain", "STARTING", "unknown (8510 down)");
                 const a = document.getElementById("deskLink8600");
                 if (a && Date.now() - _deskLinkSeen > 30000) a.innerHTML = deskLinkBox("8510 engine", { state: "NOT_ANSWERING", headline: "The 8510 engine is not answering this page", detail: String(e && e.message || e), fix: "Check the 8510 app is running, then reload this page." });
             }
@@ -3365,27 +3398,27 @@
             }
             const tol = Number(pc.tol_pts ?? 3);
             const band = document.getElementById("protoLineBand");
-            if (band) band.textContent = isFinite(e8) ? fmt(e8 - tol) + " – " + fmt(e8 + tol) + " (±" + tol + ")" : "—";
+            if (band) band.textContent = isFinite(e8) ? fmt(e8 - tol) + "–" + fmt(e8 + tol) : "—";
+            const tolEl = document.getElementById("protoLineTol"); if (tolEl) tolEl.textContent = String(tol);
             const gap = document.getElementById("protoLineGap");
             if (gap && isFinite(e8) && spot > 0) {
                 const g = spot - e8, inBand = Math.abs(g) <= tol;
-                gap.textContent = Math.abs(g).toFixed(2) + " pts " + (g >= 0 ? "above" : "below") + (inBand ? " — ON THE LINE" : "");
+                gap.textContent = inBand ? "ON THE LINE " + (g >= 0 ? "+" : "") + g.toFixed(1) : (g >= 0 ? "▲ " : "▼ ") + Math.abs(g).toFixed(1) + " pts";
                 gap.style.color = inBand ? "#fbbf24" : (g >= 0 ? "#34d399" : "#f87171");
             }
             const chk = document.getElementById("protoLineCheck"), diff = document.getElementById("protoLineDiff");
             if (chk) {
-                if (pc.enabled === false) { chk.textContent = "algo is switched off"; chk.style.color = "#f87171"; }
-                else if (!pc.armed) { chk.textContent = "algo not armed — the 30-s check runs only after a 15-min close across the line"; chk.style.color = "#94a3b8"; }
-                else if (!pc.at) { chk.textContent = "algo armed " + (pc.direction === "LONG" ? "CE" : (pc.direction === "SHORT" ? "PE" : "")) + " — first 30-s check pending"; chk.style.color = "#cbd5e1"; }
+                if (pc.enabled === false) { chk.textContent = "algo: switched OFF"; chk.style.color = "#f87171"; }
+                else if (!pc.armed) { chk.textContent = "algo: not armed · arms on a 15-min close across the line · then checks every " + Math.round(pc.refresh_sec || 30) + " s"; chk.style.color = "#94a3b8"; }
+                else if (!pc.at) { chk.textContent = "algo: armed " + (pc.direction === "LONG" ? "CE" : (pc.direction === "SHORT" ? "PE" : "")) + " · first check pending"; chk.style.color = "#cbd5e1"; }
                 else {
-                    chk.textContent = "algo's last " + Math.round(pc.refresh_sec || 30) + "-s check " + pc.at + " → line " + fmt(pc.e8) + ", spot " + fmt(pc.spot, 1) +
-                        " (range " + fmt(pc.tick_low, 1) + "–" + fmt(pc.tick_high, 1) + ") · " + (pc.verdict || "") + " · next in " + (pc.next_in_sec ?? "—") + " s";
+                    chk.textContent = "algo: " + (pc.verdict || "") + " · checked " + pc.at + " line " + fmt(pc.e8) + " spot " + fmt(pc.spot, 1) + " · next in " + (pc.next_in_sec ?? "—") + " s";
                     chk.style.color = "#cbd5e1";
                 }
                 if (diff) {
                     if (pc.at && isFinite(e8) && pc.e8 != null) {
                         const d = e8 - Number(pc.e8);
-                        diff.textContent = "live line moved " + (d >= 0 ? "+" : "") + d.toFixed(2) + " since that check";
+                        diff.textContent = "· line " + (d >= 0 ? "+" : "") + d.toFixed(2) + " since";
                     } else diff.textContent = "";
                 }
             }
@@ -3401,10 +3434,10 @@
                 const stuck = !closed && since !== null && since > 20;
                 const col = closed ? "#64748b" : (stuck ? "#fbbf24" : "#34d399");
                 if (dot) { dot.style.background = col; dot.style.boxShadow = (closed || stuck) ? "none" : "0 0 6px " + col; }
-                el.innerHTML = '<span id="dhanEmaTickDot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:' + col + '; margin-right:5px; vertical-align:middle;' + ((closed || stuck) ? "" : " box-shadow:0 0 6px " + col + ";") + '"></span>' +
-                    "tick #" + _emaTick.n + " · server " + (cross.server_time_ist || cross.updated_at_ist || "—") +
-                    (closed ? " · market closed — values frozen at the last bar" :
-                        (since === null ? "" : " · last change " + (_emaTick.lastChangeHm || "") + " (" + since + " s ago)" + (stuck ? " · NOT MOVING — check the spot feed" : "")));
+                el.innerHTML = '<span class="bnr-dot" id="dhanEmaTickDot" style="background:' + col + ';' + ((closed || stuck) ? "" : " box-shadow:0 0 6px " + col + ";") + '"></span>' +
+                    "tick #" + _emaTick.n +
+                    (closed ? " · closed" :
+                        (since === null ? "" : " · " + since + " s" + (stuck ? " NOT MOVING" : "")));
                 el.style.color = col;
             }
         }
@@ -3419,7 +3452,7 @@
                 elSpot.dataset.prev = spot;
             }
             const u = document.getElementById("dhanEmaCrossUpdated");
-            if (u) u.textContent = "updated " + (cross.updated_at_ist || "—") + " IST";
+            if (u) u.textContent = (cross.updated_at_ist || "—") + " IST";
             renderProtoLineRow(cross);
 
             const paintTf = (tf, pfx) => {
@@ -3427,8 +3460,8 @@
                 const f = document.getElementById(pfx + "Forming");
                 if (f) {
                     f.textContent = tf.dynamic_tick || tf.forming
-                        ? `(bar @ ${tf.bar_open_ist} · live tick)`
-                        : `(bar @ ${tf.bar_open_ist} · closed)`;
+                        ? `bar ${tf.bar_open_ist} · live`
+                        : `bar ${tf.bar_open_ist} · closed`;
                 }
                 const setFlash = (id, val, dec = 2) => {
                     const el = document.getElementById(id);
@@ -3461,7 +3494,7 @@
                 if (st) {
                     const s = tf.stack || "FLAT";
                     st.textContent = s;
-                    st.className = "status-badge " + (s === "BULLISH" ? "badge-bull" : (s === "BEARISH" ? "badge-bear" : "badge-neutral"));
+                    st.className = "bnr-badge " + (s === "BULLISH" ? "badge-bull" : (s === "BEARISH" ? "badge-bear" : "badge-neutral"));
                 }
             };
             paintTf(cross.tf_15m, "dhanEma15");
@@ -3480,7 +3513,8 @@
                 if (e1h && e1h !== "NONE") parts.push("1H " + e1h.replace(/_/g, " "));
                 const cl = cross.tf_15m_closed;
                 const clTxt = (cl && cl.ok) ? ` | Matrix closed 15m: 4=${cl.ema_4} 8=${cl.ema_8}` : "";
-                ev.textContent = parts.length ? "Cross event: " + parts.join(" · ") + clTxt : "Cross: none on forming bar" + clTxt;
+                ev.textContent = parts.length ? "✦ " + parts.join(" · ") : "";
+                ev.title = clTxt ? clTxt.replace(/^ \| /, "") : "";
             }
         }
 

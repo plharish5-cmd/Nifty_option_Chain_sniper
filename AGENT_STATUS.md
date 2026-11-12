@@ -974,3 +974,11 @@ Tags (local): `pre-/post-claude-v2.0.13-proto-line-in-banner`. Not merged. Displ
 Tests: +1 in `test_ticket_lane_chain_reads_8510.py` (24 pass); Prototype re-entry + HTML suites pass;
 locks 11/11. `test_nse_spot_candles_8510.py`: two tests fail on Composer's base too (resample
 returns empty frame under pandas 3 — not from this branch). Not verified with a live spot feed.
+
+## Claude — `claude/v2.0.14-banner-redesign` (12 Nov 2026) — owner: "banner is a long column, make it horizontal; how do I see 8600/8510 live or dead"
+Base `claude/v2.0.13-proto-line-in-banner` @ `30a6bd8`. Tags (local): `pre-/post-claude-v2.0.14-banner-redesign`. Not merged. HTML only.
+- Sticky banner rebuilt as five tiles in one row (spot · 15m · 1H · 8 EMA Prototype line · Feeds), two rows under 1400 px.
+  Same element ids, so Composer's 3-s poll and renderers are untouched; the spec text moved to a tooltip.
+- Feeds tile: 8510 engine (LIVE + build commit / DEAD / OLD CODE), 8600 app (LIVE · bar time / OLD DATA / DEAD / no bars yet), Option chain
+  (LIVE / OLD / no snapshots today), from the existing 15-s link poll.
+Tests: `test_workspace_8510_html` + my suites pass (28); locks 11/11. 8 `test_super_trail_8510` failures are pre-existing on the base.

@@ -400,5 +400,6 @@ def test_prototype_check_status_and_banner_wiring(tmp_path):
     eng = (ROOT / "engine_8510_live.py").read_text(encoding="utf-8")
     assert 'res["prototype_check"] = backend.ema8_prototype_check_status()' in eng
     html = (ROOT / "Algorithmic_Trading_Workspace_8510.html").read_text(encoding="utf-8")
-    for needle in ('id="dhanEmaProtoLine"', 'id="protoLineLive"', 'id="protoLineCheck"', 'id="dhanEmaTick"', "renderProtoLineRow(cross)"):
+    for needle in ('class="bnr-grid"', 'id="protoLineLive"', 'id="protoLineCheck"', 'id="dhanEmaTick"', "renderProtoLineRow(cross)",
+                   'id="bnrLink8510"', 'id="bnrLink8600"', 'id="bnrLinkChain"'):
         assert needle in html, needle
