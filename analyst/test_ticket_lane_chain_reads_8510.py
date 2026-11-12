@@ -429,3 +429,53 @@ def test_reentry_switches_exposed_and_saved(tmp_path):
     html = (ROOT / "Algorithmic_Trading_Workspace_8510.html").read_text(encoding="utf-8")
     for needle in ('id="protoReSlOn"', 'id="protoReSlOff" value="off" checked', 'id="protoReProfitOn" value="on" checked', "reentry_after_stop_loss: document"):
         assert needle in html, needle
+
+
+# ── Prototype contract: ≥ ₹200 means any current-week strike, not only the matrix four ──
+def test_prototype_contract_walks_deeper_itm_until_premium_qualifies(tmp_path):
+    import asyncio
+    from analyst.test_live_exit_orders_8510 import FakeBroker, make_test_backend
+
+    b = make_test_backend(tmp_path, FakeBroker(configured=True))
+    b.directional_bias = "NEUTRAL"
+    b.cfg.setdefault("recording_v193", {})["strike_step"] = 50
+    # the four matrix contracts all decayed below 200 (the 12 Nov afternoon)
+    b.priority_contracts = [
+        {"id": "LONG_PE_ITM", "opt_type": "PE", "strike": 25400.0, "ltp": 188.0, "algo_enabled": True},
+        {"id": "LONG_PE_ATM", "opt_type": "PE", "strike": 25300.0, "ltp": 140.0, "algo_enabled": True},
+    ]
+
+    class Inst:
+        def get_nearest_expiry(self):
+            return "2026-11-17"
+        def resolve_option(self, expiry, strike, side):
+            return {"security_id": str(int(strike)) + ("1" if side == "CE" else "2"), "symbol": f"NIFTY {int(strike)} {side}", "lot_size": 65}
+    b.inst_mgr = Inst()
+    ltps = {"253002": 140.0, "253502": 165.0, "254002": 188.0, "254502": 221.5, "255002": 262.0}
+
+    async def quotes(req):
+        return {str(sid): ltps.get(str(sid), 0.0) for sid in req["NSE_FNO"]}
+    b.broker.get_marketfeed_ltp = quotes
+
+    c, why = asyncio.run(b._select_ema8_prototype_contract_any_strike("PE", 200.0, 25270.0))
+    assert c and c["strike"] == 25450.0 and c["ltp"] == 221.5 and c["security_id"] == "254502" and why == ""
+    assert c["opt_type"] == "PE" and c["algo_enabled"] is True and "structured_contract" in c
+
+    # nothing qualifies within 500 pts -> a reason the owner can read
+    b.broker.get_marketfeed_ltp = lambda req: asyncio.sleep(0, result={str(s): 150.0 for s in req["NSE_FNO"]})
+    c, why = asyncio.run(b._select_ema8_prototype_contract_any_strike("PE", 200.0, 25270.0))
+    assert c is None and "≥ ₹200" in why and "@ 150.00" in why
+
+    # a qualifying matrix contract is still taken first, no search
+    b.priority_contracts[0]["ltp"] = 248.85
+    c, why = asyncio.run(b._select_ema8_prototype_contract_any_strike("PE", 200.0, 25300.0))
+    assert c["id"] == "LONG_PE_ITM"
+
+    # directional bias still blocks
+    b.priority_contracts[0]["ltp"] = 188.0
+    b.directional_bias = "LONG_ONLY"
+    b.broker.get_marketfeed_ltp = quotes
+    c, why = asyncio.run(b._select_ema8_prototype_contract_any_strike("PE", 200.0, 25270.0))
+    assert c is None and "bias" in why
+    src = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
+    assert 'skip_reason=("NO_ENABLED_CONTRACT: " + contract_why)' in src

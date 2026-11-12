@@ -5865,6 +5865,65 @@ class QuantTerminalBackend:
                 return c
         return None
 
+    async def _select_ema8_prototype_contract_any_strike(
+        self, opt_side: str, min_premium_inr: float, spot: float
+    ) -> Tuple[Optional[Dict[str, Any]], str]:
+        """The Prototype's rule is "CE/PE ≥ ₹200, current week" — not "one of the four
+        matrix strikes". When none of the four priority contracts is at or above the
+        minimum (afternoon decay, or a stale quote), walk deeper in the money in
+        50-point steps and take the nearest strike whose fresh quote qualifies.
+
+        Returns (contract, reason). reason explains a None.
+        """
+        side = str(opt_side).upper()
+        first = self._select_ema8_prototype_contract(side, min_premium_inr)
+        if first is not None:
+            return first, ""
+        try:
+            px = float(spot or 0.0)
+            if px <= 0 or not self.broker.is_configured():
+                return None, "no spot / broker not configured"
+            step = float(self.cfg.get("recording_v193", {}).get("strike_step", 50) or 50)
+            atm = float(round(px / step) * step)
+            expiry = self.inst_mgr.get_nearest_expiry()
+            sign = -1.0 if side == "CE" else 1.0            # deeper ITM: CE below spot, PE above
+            cands: List[Tuple[float, Dict[str, Any]]] = []
+            for n in range(0, 11):                           # ATM .. ATM ± 500
+                k = atm + sign * step * n
+                r = self.inst_mgr.resolve_option(expiry, k, side)
+                if r and r.get("security_id"):
+                    cands.append((k, r))
+            if not cands:
+                return None, f"no {side} strikes resolved for {expiry}"
+            quotes = await self.broker.get_marketfeed_ltp(
+                {"NSE_FNO": [int(r["security_id"]) for _, r in cands]}
+            )
+            best_k, best_ltp = None, 0.0
+            for k, r in cands:                               # nearest-the-money first
+                ltp = float((quotes or {}).get(str(r["security_id"])) or 0.0)
+                if ltp > best_ltp:
+                    best_k, best_ltp = k, ltp
+                if ltp >= float(min_premium_inr):
+                    sym = format_contract_symbol(expiry=expiry, strike=k, opt_type=side, raw_symbol=r.get("symbol"))
+                    bias_block = (
+                        (self.directional_bias == "LONG_ONLY" and side == "PE")
+                        or (self.directional_bias == "SHORT_ONLY" and side == "CE")
+                    )
+                    if bias_block:
+                        return None, f"{side} blocked by directional bias {self.directional_bias}"
+                    return {
+                        "id": f"EMA8_PROTO_{side}_ITM{int(abs(k - atm))}",
+                        "label": f"Prototype {side} {int(k)} (≥₹{int(min_premium_inr)}, {int(abs(k - atm))} pts ITM)",
+                        "strike": k, "opt_type": side, "symbol": sym,
+                        "structured_contract": get_contract_structured_fields(sym, expiry=expiry),
+                        "security_id": r["security_id"], "lot_size": r.get("lot_size"),
+                        "ltp": ltp, "algo_enabled": True, "blocked_by_bias": False,
+                        "bias_mode": self.directional_bias,
+                    }, ""
+            return None, f"no {side} with premium ≥ ₹{int(min_premium_inr)} up to 500 pts ITM (best {int(best_k) if best_k else '—'} @ {best_ltp:.2f})"
+        except Exception as exc:
+            return None, f"contract search failed: {type(exc).__name__}"
+
     def _handle_ema8_prototype_actions(self, actions: List[Dict[str, Any]]) -> None:
         for act in actions or []:
             atype = str(act.get("type")).upper()
@@ -7153,8 +7212,8 @@ class QuantTerminalBackend:
             # Prospective observation: record the pillar state for EVERY signal,
             # before we know whether it will be executed. Gates nothing.
             signal_uid = ""
+            _spot = (self.cached_telemetry.get("spot") or {}).get("price")
             try:
-                _spot = (self.cached_telemetry.get("spot") or {}).get("price")
                 signal_uid = self.log_signal_observation(
                     sig,
                     confluence=self.cached_telemetry.get("five_factor_confluence"),
@@ -7206,8 +7265,11 @@ class QuantTerminalBackend:
                 min_prem = float(
                     sig.get("min_option_premium_inr") or pcfg.get("min_option_premium_inr") or 200.0
                 )
-                target_contract = self._select_ema8_prototype_contract(opt_side, min_prem)
+                target_contract, contract_why = await self._select_ema8_prototype_contract_any_strike(
+                    opt_side, min_prem, float(_spot or 0.0)
+                )
             else:
+                contract_why = ""
                 candidate_ids = [f"LONG_{opt_side}_ATM", f"LONG_{opt_side}_ITM"]
                 for cid in candidate_ids:
                     if self.algo_strike_selection.get(cid, True):
@@ -7219,9 +7281,9 @@ class QuantTerminalBackend:
                             break
 
             if not target_contract:
-                log.info("No enabled priority contract found for %s (%s)", sig["setup_name"], opt_side)
+                log.info("No enabled priority contract found for %s (%s) %s", sig["setup_name"], opt_side, contract_why)
                 self.mark_signal_outcome(signal_uid, False,
-                                         skip_reason="NO_ENABLED_CONTRACT")
+                                         skip_reason=("NO_ENABLED_CONTRACT: " + contract_why)[:200] if contract_why else "NO_ENABLED_CONTRACT")
                 continue
 
             # Check if an identical position is already OPEN in ledger

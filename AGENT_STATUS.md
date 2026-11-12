@@ -1009,3 +1009,15 @@ Base `claude/v2.0.16-cooldown-after-fill` @ `3e102c3`. Tags (local): `pre-/post-
   `/api/scanner/ema8_prototype/filters` endpoint as `reentry_same_side` / `reentry_after_stop_loss` — the switches that
   already existed in `ema8_prototype_8510.py`. **Defaults unchanged**; nothing switched on.
 Tests: +1; Prototype re-entry + HTML suites pass (58); locks 11/11.
+
+## Claude — `claude/v2.0.18-proto-contract-ge200` (12 Nov 2026) — owner's ledger: 18 Prototype touches skipped NO_ENABLED_CONTRACT
+Base `claude/v2.0.17-reentry-buttons` @ `d5bf62b`. Tags (local): `pre-/post-claude-v2.0.18-proto-contract-ge200`. Not merged.
+- Cause: the Prototype could only buy one of the four matrix contracts (ATM, ATM±100). On 12 Nov afternoon all
+  four were under ₹200 (or their quote was stale), so every touch from 13:32 to 14:57 was rejected, and the
+  11:18:48 touch too. The owner's rule is "CE/PE ≥ ₹200, current week".
+- Fix: `_select_ema8_prototype_contract_any_strike` — the four first; if none qualifies, resolve strikes deeper in
+  the money in 50-pt steps up to 500 pts (CE below spot, PE above), fetch fresh LTPs in one call, take the nearest
+  strike with LTP ≥ the minimum. Directional-bias block still applies. The skip reason now says why
+  ("NO_ENABLED_CONTRACT: no PE with premium ≥ ₹200 up to 500 pts ITM (best 25450 @ 188.00)").
+- Prototype only; Stage/Flagship contract choice unchanged. Not a new limit.
+Tests: +1 (72 pass across Prototype/exit/phase-2 suites); locks 11/11. Not run against the broker.
