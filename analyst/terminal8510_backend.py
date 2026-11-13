@@ -5508,6 +5508,15 @@ class QuantTerminalBackend:
         row["execution_mode"] = exec_label
         row["paper_only_lane"] = paper_only
         row["enabled"] = bool(cfg.get("enabled", True))
+        # Carry the full filter set so the cockpit's per-second telemetry reflects the
+        # saved toggles instead of resetting them (the re-entry radios in particular).
+        row["ribbon_filter_enabled"] = bool(cfg.get("ribbon_filter_enabled", False))
+        row["ema_separation_enabled"] = bool(cfg.get("ema_separation_enabled", False))
+        row["supertrend_enabled"] = bool(cfg.get("supertrend_enabled", False))
+        row["retouch_requires_away"] = bool(cfg.get("retouch_requires_away", True))
+        row["slow_market_exact_line"] = bool(cfg.get("slow_market_exact_line", False))
+        row["reentry_same_side"] = bool(cfg.get("reentry_same_side", True))
+        row["reentry_after_stop_loss"] = bool(cfg.get("reentry_after_stop_loss", False))
         if not row["enabled"]:
             row["state"] = "PAUSED"
             row["phase"] = "DISABLED"
@@ -7075,6 +7084,23 @@ class QuantTerminalBackend:
 
         while self.scanner_running:
             try:
+                # EOD square-off runs every tick, even when the scanner is paused:
+                # once past 15:20 IST any still-open position must be closed. It is
+                # idempotent (modify_open_position only acts on OPEN) and only logs
+                # the first sweep of the day.
+                try:
+                    now_ist = datetime.now(IST)
+                    eod_cfg = str(self.cfg.get("eod_square_off_time", "15:20")).strip()[:5]
+                    hh, mm = (int(x) for x in eod_cfg.split(":")[:2])
+                    if now_ist.time() >= dtime(hh, mm, 0) and now_ist.time() < dtime(15, 30, 30):
+                        today_key = now_ist.strftime("%Y-%m-%d")
+                        closed = await asyncio.to_thread(self.check_eod_square_off, now_ist)
+                        if closed and self.__dict__.get("_eod_sweep_logged") != today_key:
+                            self._eod_sweep_logged = today_key
+                            log.info("[EOD %s] squared off %d open position(s)", eod_cfg, len(closed))
+                except Exception as exc:
+                    log.error("EOD square-off check failed: %s", exc)
+
                 if self.scanner_enabled and not self.kill_switch_active:
                     spot = self.cached_telemetry.get("spot", {}).get("price")
                     if not spot or spot <= 0:
@@ -8230,6 +8256,10 @@ class QuantTerminalBackend:
                     o["option_entry"] = fill_px if fill_px > 0 else None
                     o["option_exit"] = None
                 if o.get("created_at"):
+                    # Keep a machine-readable day BEFORE reformatting for display, so the
+                    # cockpit's Today / Booked-today grouping has something it can parse.
+                    raw_created = str(o["created_at"])
+                    o["created_day"] = raw_created[:10] if raw_created[:4].isdigit() else ""
                     o["created_at"] = format_desk_timestamp_ist(o["created_at"])
                 orders.append(o)
             return orders

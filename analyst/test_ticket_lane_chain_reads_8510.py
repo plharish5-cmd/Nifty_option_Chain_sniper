@@ -679,3 +679,56 @@ def test_flagship_signal_is_offered_again_for_a_minute_when_the_order_step_skips
     assert b._closed_candle_retry == {}
     src = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
     assert 'pending = self.__dict__.get("_closed_candle_retry") or {}' in src
+
+
+# ── 13 Nov bugs: EOD square-off wired, radio persistence, orders-book day parse ──
+def test_eod_square_off_is_called_in_the_scanner_loop():
+    src = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
+    loop = src[src.index("async def start_strategy_scanner_loop"):src.index("def get_scanner_status")]
+    assert "self.check_eod_square_off" in loop, "EOD square-off is never called in the live loop"
+    # it must run before the scanner_enabled gate, so a paused desk still closes positions
+    assert loop.index("check_eod_square_off") < loop.index("if self.scanner_enabled")
+
+
+def test_prototype_status_carries_reentry_flags(tmp_path):
+    from analyst.test_live_exit_orders_8510 import FakeBroker, make_test_backend
+
+    b = make_test_backend(tmp_path, FakeBroker(configured=True))
+    b.update_ema8_prototype_filter_config({"reentry_after_stop_loss": True, "reentry_same_side": False})
+    b._sync_ema8_prototype_desk_status()
+    row = b.strategy_status["ema8_prototype"]
+    # the per-second telemetry object now carries the toggles, so the cockpit won't reset them
+    assert row["reentry_after_stop_loss"] is True and row["reentry_same_side"] is False
+    assert "ribbon_filter_enabled" in row and "ema_separation_enabled" in row
+    # and the round-trip the UI reads is consistent
+    cfg = b.get_ema8_prototype_filter_config()
+    assert cfg["reentry_after_stop_loss"] is True and cfg["reentry_same_side"] is False
+
+
+def test_apply_filter_ui_only_sets_present_keys():
+    html = (ROOT / "Algorithmic_Trading_Workspace_8510.html").read_text(encoding="utf-8")
+    fn = html[html.index("function applyEma8ProtoFilterUI"):html.index("async function saveEma8PrototypeFilters")]
+    assert "if (!(key in cfg)) return;" in fn           # partial telemetry never clobbers a toggle
+    assert "setRadio('reentry_after_stop_loss'" in fn and "setRadio('reentry_same_side'" in fn
+
+
+def test_order_book_sends_machine_readable_day_and_ui_parses_it(tmp_path):
+    import sqlite3
+    from datetime import datetime as _dt
+    from analyst.test_live_exit_orders_8510 import FakeBroker, make_test_backend
+
+    b = make_test_backend(tmp_path, FakeBroker(configured=True))
+    now = _dt.now(__import__("analyst.terminal8510_backend", fromlist=["IST"]).IST).strftime("%Y-%m-%d %H:%M:%S")
+    with sqlite3.connect(b.ledger_db) as c:
+        c.execute("INSERT INTO orders (order_id,created_at,strategy_name,symbol,side,qty,signal_ltp,fill_price,"
+                  "order_status,mode,strategy_setup,source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                  ("T1", now, "EMA8_PROTOTYPE_SHORT", "NIFTY 25400 PE", "BUY", 65, 248.85, 248.85, "FILLED",
+                   "PAPER_ONLY", "8 EMA Prototype (Short) — retouch", "AUTO ALGO"))
+        c.commit()
+    book = b.get_order_book()
+    assert len(book) == 1
+    assert book[0]["created_day"] == now[:10]                # machine-readable, matches deskTodayKey()
+    assert "Nov" in book[0]["created_at"]                    # display stays human
+    html = (ROOT / "Algorithmic_Trading_Workspace_8510.html").read_text(encoding="utf-8")
+    assert "function orderDay(o)" in html and "o => orderDay(o) === today" in html
+    assert "13 Nov 2026" or "MONTHS[m[2].toLowerCase()]" in html

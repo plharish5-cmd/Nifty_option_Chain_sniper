@@ -1124,3 +1124,33 @@ loaded in Chromium against real backend telemetry and stubbed lab endpoints, all
 breakdowns/day-detail/by-day/past-runs all render, 0 script errors. End-to-end: real engine on a synthetic market db
 produced 420 rows across lanes → lab normalized, split, graded.
 Verified by running the real engine; not run against the live broker. Build label → v2.0.22.
+
+## Claude — `claude/v2.0.23-proto-glitches` (13 Nov 2026) — owner: 3 live glitches + "look for Prototype bugs"
+Base `claude/v2.0.22-backtest-revamp` @ `f6ae7c5`. Tags (local): `pre-/post-claude-v2.0.23-proto-glitches`. Not merged.
+Three confirmed bugs, each found by following the code:
+
+1. **15:20 square-off never ran (ALL lanes, real + paper).** `check_eod_square_off()` existed but was called by
+   nothing — grep showed zero callers. Open positions were never auto-closed; the owner had 2 left open after close.
+   Fix: the live scanner loop now calls it every tick, **before** the `scanner_enabled` gate (a paused desk must still
+   close positions), guarded to 15:20–15:30:30 and logged once/day. Idempotent — `modify_open_position` only acts on
+   OPEN, so repeated ticks and EXIT_PENDING/EXIT_FAILED rows are safe.
+2. **Orders Book "Today" / "Booked today" showed nothing.** `get_order_book()` reformats `created_at` to a display
+   string ("13 Nov 2026, 17:21 IST") that the cockpit's `orderDayKey` could not parse, so the day filter excluded
+   every row. Orders DID record (proved by a round-trip test). Fix: backend adds a machine-readable `created_day`
+   (ISO) before reformatting; frontend `orderDay(o)` prefers it, and `orderDayKey` also parses the "13 Nov 2026" form.
+3. **"After stop-loss: same side again ON" radio snapped back to OFF.** The per-second telemetry calls
+   `applyEma8ProtoFilterUI(sc.strategies.ema8_prototype)` with a status object that lacked the re-entry keys, so
+   `!!undefined` forced the radio OFF every second. Fix: the status row now carries the full filter set
+   (reentry_same_side/after_stop_loss + ribbon/sep/supertrend/away/slow), and `applyEma8ProtoFilterUI` only sets a
+   radio when that key is present in the object (`setRadio` helper) — partial telemetry can never clobber a toggle.
+
+Design answer recorded for the owner: the Prototype has no cap on trades/day — one at a time, re-enter same side on
+the next touch after a +40, flip to the opposite side after a −40 stop or an opposite 15m close, 09:30–15:20, square
+off 15:20. The 13 Nov chart's 5 trades (+40/−40/+40/+40/+35 ≈ +115) are all reachable under the current defaults
+(the −40 stop naturally flips CE→PE); the stop-loss-same-side toggle is not needed for that sequence.
+
+Tests: +4 in `test_ticket_lane_chain_reads_8510.py` (41 total): EOD call wired before the gate; status carries the
+re-entry flags; applyFilterUI only sets present keys; order book sends created_day and the UI parses it. Radio
+persistence also verified in a real browser (stays ON through a partial telemetry poll, still responds to an explicit
+change). Whole suite 661 passed / 43 failed / 37 errors — the 4 "new" vs the pre-15:20 baseline are the known
+wall-clock EOD/phase7 tests (test_4 fails identically on the committed base). Locks 11/11. Build label → v2.0.23.

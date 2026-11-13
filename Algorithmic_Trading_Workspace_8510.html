@@ -4319,13 +4319,20 @@
         function deskMoney(v) { const n = Math.round(Number(v || 0)); return (n >= 0 ? "+" : "−") + "₹" + Math.abs(n).toLocaleString("en-IN"); }
         function deskCol(v) { return Number(v || 0) >= 0 ? "var(--emerald)" : "var(--crimson)"; }
         function deskTodayKey() { return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); }
+        const MONTHS = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
         function orderDayKey(raw) {
             const s = String(raw || "");
             let m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
             if (m) return m[1] + "-" + m[2] + "-" + m[3];
             m = s.match(/(\d{2})[-\/](\d{2})[-\/](\d{4})/);
-            return m ? m[3] + "-" + m[2] + "-" + m[1] : "";
+            if (m) return m[3] + "-" + m[2] + "-" + m[1];
+            // "13 Nov 2026, 17:21:53 IST" — the display format get_order_book sends
+            m = s.match(/(\d{1,2})\s+([A-Za-z]{3})[a-z]*\s+(\d{4})/);
+            if (m && MONTHS[m[2].toLowerCase()]) return m[3] + "-" + MONTHS[m[2].toLowerCase()] + "-" + String(m[1]).padStart(2, "0");
+            return "";
         }
+        // Prefer the machine-readable day the backend now sends; fall back to parsing the display string.
+        function orderDay(o) { return (o && o.created_day) ? o.created_day : orderDayKey(o && o.created_at); }
         function positionExtras(p, pnlVal) {
             const entry = Number(p.entry_price || 0), ltp = Number(p.current_ltp || 0), qty = Number(p.qty || 0);
             const pts = (entry > 0 && ltp > 0) ? ltp - entry : 0, pct = entry > 0 ? pts / entry * 100 : 0;
@@ -4395,7 +4402,7 @@
                 deskCard("Avg win / avg loss", (wins.length ? deskMoney(gw / wins.length) : "—") + " / " + (losses.length ? deskMoney(-gl / losses.length) : "—"), "#e2e8f0", "profit factor " + (gl > 0 ? (gw / gl).toFixed(2) : "—")) +
                 deskCard("Rejected / failed", String(rejected), rejected ? "var(--crimson)" : "#64748b", "orders");
             const today = deskTodayKey();
-            const td = exitsOf(lastOrdersPayload).filter(rowInGroupView).filter(o => orderDayKey(o.created_at) === today);
+            const td = exitsOf(lastOrdersPayload).filter(rowInGroupView).filter(o => orderDay(o) === today);
             window._deskRealizedToday = { net: td.reduce((a, o) => a + Number(o.net_pnl || 0), 0), n: td.length };
             const vb = document.getElementById("ordersViewBtns"), db = document.getElementById("ordersDayBtns");
             if (vb) vb.innerHTML = d86Btn("Every order", ordersViewMode === "ORDERS", "setOrdersView('ORDERS')", "One row per order sent") + " " +
@@ -4534,7 +4541,7 @@
 
             if (ordersDayMode === "TODAY") {
                 const today = deskTodayKey();
-                filtered = filtered.filter(o => orderDayKey(o.created_at) === today);
+                filtered = filtered.filter(o => orderDay(o) === today);
             }
             renderOrdersSummary(filtered);
             renderTradesView(filtered);
@@ -4797,41 +4804,21 @@
 
         function applyEma8ProtoFilterUI(cfg) {
             if (!cfg) return;
-            const en = cfg.enabled !== false;
-            const enOn = document.getElementById('protoEnabledOn');
-            const enOff = document.getElementById('protoEnabledOff');
-            if (enOn && enOff) { enOn.checked = en; enOff.checked = !en; }
-
-            const isLive = String(cfg.execution_mode || '').toUpperCase().includes('LIVE');
-            const exLive = document.getElementById('protoExecLive');
-            const exPaper = document.getElementById('protoExecPaper');
-            if (exLive && exPaper) { exLive.checked = isLive; exPaper.checked = !isLive; }
-
-            const rib = !!cfg.ribbon_filter_enabled;
-            const sep = !!cfg.ema_separation_enabled;
-            const st = !!cfg.supertrend_enabled;
-            const away = cfg.retouch_requires_away !== false;
-            const slow = !!cfg.slow_market_exact_line;
-            const rOff = document.getElementById('protoRibbonOff');
-            const rOn = document.getElementById('protoRibbonOn');
-            const sOff = document.getElementById('protoEmaSepOff');
-            const sOn = document.getElementById('protoEmaSepOn');
-            const tOff = document.getElementById('protoStOff');
-            const tOn = document.getElementById('protoStOn');
-            const aOff = document.getElementById('protoAwayOff');
-            const aOn = document.getElementById('protoAwayOn');
-            const slOff = document.getElementById('protoSlowOff');
-            const slOn = document.getElementById('protoSlowOn');
-            if (rOff && rOn) { rOff.checked = !rib; rOn.checked = rib; }
-            if (sOff && sOn) { sOff.checked = !sep; sOn.checked = sep; }
-            if (tOff && tOn) { tOff.checked = !st; tOn.checked = st; }
-            if (aOff && aOn) { aOff.checked = !away; aOn.checked = away; }
-            if (slOff && slOn) { slOff.checked = !slow; slOn.checked = slow; }
-            const reP = cfg.reentry_same_side !== false, reS = !!cfg.reentry_after_stop_loss;
-            const rpOn = document.getElementById('protoReProfitOn'), rpOff = document.getElementById('protoReProfitOff');
-            const rsOn = document.getElementById('protoReSlOn'), rsOff = document.getElementById('protoReSlOff');
-            if (rpOn && rpOff) { rpOn.checked = reP; rpOff.checked = !reP; }
-            if (rsOn && rsOff) { rsOn.checked = reS; rsOff.checked = !reS; }
+            const setRadio = (key, onId, offId, onWhen) => {
+                if (!(key in cfg)) return;                 // partial telemetry object: leave the user's setting
+                const on = onWhen(cfg[key]);
+                const e1 = document.getElementById(onId), e0 = document.getElementById(offId);
+                if (e1 && e0) { e1.checked = on; e0.checked = !on; }
+            };
+            setRadio('enabled', 'protoEnabledOn', 'protoEnabledOff', v => v !== false);
+            setRadio('execution_mode', 'protoExecLive', 'protoExecPaper', v => String(v || '').toUpperCase().includes('LIVE'));
+            setRadio('ribbon_filter_enabled', 'protoRibbonOn', 'protoRibbonOff', v => !!v);
+            setRadio('ema_separation_enabled', 'protoEmaSepOn', 'protoEmaSepOff', v => !!v);
+            setRadio('supertrend_enabled', 'protoStOn', 'protoStOff', v => !!v);
+            setRadio('retouch_requires_away', 'protoAwayOn', 'protoAwayOff', v => v !== false);
+            setRadio('slow_market_exact_line', 'protoSlowOn', 'protoSlowOff', v => !!v);
+            setRadio('reentry_same_side', 'protoReProfitOn', 'protoReProfitOff', v => v !== false);
+            setRadio('reentry_after_stop_loss', 'protoReSlOn', 'protoReSlOff', v => !!v);
             const rp = document.getElementById('protoRibbonPts');
             if (rp && cfg.ribbon_max_pts != null) rp.textContent = Number(cfg.ribbon_max_pts).toFixed(1);
             const sl = document.getElementById('protoStLen');
