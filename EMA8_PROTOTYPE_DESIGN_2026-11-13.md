@@ -1,8 +1,8 @@
-# The 8 EMA Prototype ("ATMA") — Complete Design
+# The 8 EMA Prototype — Complete Design
 
 **Branch:** `claude/v2.0.23-proto-glitches` · **13 Nov 2026** · every mechanic below is read from the code, not paraphrased.
 
-"ATMA" = the number **8** = the **8 EMA**. Everywhere in this app the 8 EMA is the **dynamic / running** 8 EMA on the 15-minute NIFTY-spot chart — a line that keeps moving, like an LTP, not a value frozen at the last candle's close.
+Everywhere in this app the 8 EMA is the **dynamic / running** 8 EMA on the 15-minute NIFTY-spot chart — a line that keeps moving, like an LTP, not a value frozen at the last candle's close.
 
 Files: `analyst/ema8_prototype_8510.py` (the rules), `analyst/nse_spot_candles_8510.py` (the EMA maths and 15m bars), `analyst/terminal8510_backend.py` (the live worker + order path), `analyst/backtest_lab_8510.py` + `run_date_range_backtest` (history).
 
