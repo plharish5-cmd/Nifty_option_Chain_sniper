@@ -96,6 +96,15 @@ def load_backtest_config() -> Dict[str, Any]:
         "rejection_sl_buffer_pts": 5.0,
         "pdl_breakdown_trigger_pts": 3.0,
         "pdl_breakdown_sl_pts": 15.0,
+        "be_trail_trigger_pts": 20.0,
+        "p3_max_risk_cap_pts": 22.0,
+        "p3_max_close_from_level_pts": 12.0,
+        "p3_retest_limit_wick_pct": 0.50,
+        "p3_retest_limit_validity_bars": 3,
+        "p3_retest_risk_cap_pts": 18.0,
+        "p3_pdl_breakdown_immediate_close_dist_pts": 10.0,
+        "p3_pdl_breakdown_sl_pts": 12.0,
+        "horizons": ["09:30:00", "09:45:00", "10:00:00"],
         "default_source": "auto",
         "csv_path": "data/ohlc/nifty_1m_dhan.csv",
         "sqlite_path": "ict_smc_app/backend/data/ict_smc.sqlite3",
@@ -562,14 +571,182 @@ class LevelReactionRecord:
     is_optimistic_win_40: bool
 
 
+@dataclass
+class Phase3TradeResult:
+    variant: str
+    hold_until: str
+    date: str
+    entry_time_ist: str
+    entry_price: float
+    initial_sl: float
+    risk_pts: float
+    mfe_before_stop: float
+    mae_pts: float
+    hit_25_plus: bool
+    hit_40_plus: bool
+    hit_50_plus: bool
+    is_be_scratch: bool
+    is_sl_fail: bool
+    net_pnl_inr_25: float
+    net_pnl_inr_40: float
+
+
+def simulate_phase3_trade_horizons(
+    bars_extended: pd.DataFrame,
+    date_str: str,
+    variant_name: str,
+    direction: str,
+    entry_bar_idx: int,
+    entry_price: float,
+    initial_sl: float,
+    cfg: Dict[str, Any],
+    is_confirmed_close: bool = False,
+) -> List[Phase3TradeResult]:
+    """
+    Evaluates a Phase 3 trade across 3 holding horizons:
+      - Horizon 1: 09:30:00 IST (Phase 1/2 baseline)
+      - Horizon 2: 09:45:00 IST (+15 mins breathing room + Breakeven Trail at +20 pts)
+      - Horizon 3: 10:00:00 IST (+30 mins breathing room + Breakeven Trail at +20 pts)
+    Applies Breakeven Trail:
+      Once favorable move reaches +20.0 Spot pts, move SL to Entry_Price.
+    """
+    lot_size = cfg.get("lot_size", 65)
+    opt_delta = cfg.get("option_delta", 0.55)
+    total_cost = cfg.get("total_trade_cost_inr", 110.50)
+    be_trigger = cfg.get("be_trail_trigger_pts", 20.0)
+    risk_pts = round(abs(initial_sl - entry_price), 2)
+
+    entry_tm = str(bars_extended.iloc[entry_bar_idx]["tm"])
+    results: List[Phase3TradeResult] = []
+
+    horizon_specs = [
+        ("09:30 IST", 14),
+        ("09:45 IST", 29),
+        ("10:00 IST", 44),
+    ]
+
+    for horizon_label, target_end_idx in horizon_specs:
+        end_idx = min(target_end_idx, len(bars_extended) - 1)
+        start_idx = (entry_bar_idx + 1) if is_confirmed_close else entry_bar_idx
+
+        mfe_before_stop = 0.0
+        mae_pts = 0.0
+        be_active = False
+        stopped_out = False
+        stop_type = ""
+        exit_bar_idx = end_idx
+        exit_price = float(bars_extended.iloc[end_idx]["close"])
+
+        for b_idx in range(start_idx, end_idx + 1):
+            bar = bars_extended.iloc[b_idx]
+            bh = float(bar["high"])
+            bl = float(bar["low"])
+
+            if direction == "SHORT":
+                bar_fav = entry_price - bl
+                bar_adv = bh - entry_price
+                hit_initial_sl = (bh >= initial_sl)
+                hit_be_sl = (bh >= entry_price)
+                hit_be_trigger = (bar_fav >= be_trigger)
+            else:
+                bar_fav = bh - entry_price
+                bar_adv = entry_price - bl
+                hit_initial_sl = (bl <= initial_sl)
+                hit_be_sl = (bl <= entry_price)
+                hit_be_trigger = (bar_fav >= be_trigger)
+
+            mae_pts = max(mae_pts, max(0.0, bar_adv))
+
+            if not be_active:
+                if hit_initial_sl and hit_be_trigger:
+                    stopped_out = True
+                    stop_type = "SL_FAIL"
+                    exit_bar_idx = b_idx
+                    exit_price = initial_sl
+                    mfe_before_stop = max(mfe_before_stop, max(0.0, bar_fav))
+                    break
+                elif hit_initial_sl:
+                    stopped_out = True
+                    stop_type = "SL_FAIL"
+                    exit_bar_idx = b_idx
+                    exit_price = initial_sl
+                    mfe_before_stop = max(mfe_before_stop, max(0.0, bar_fav))
+                    break
+                elif hit_be_trigger:
+                    be_active = True
+                    mfe_before_stop = max(mfe_before_stop, bar_fav)
+                else:
+                    mfe_before_stop = max(mfe_before_stop, max(0.0, bar_fav))
+            else:
+                if hit_be_sl:
+                    stopped_out = True
+                    stop_type = "BE_SCRATCH"
+                    exit_bar_idx = b_idx
+                    exit_price = entry_price
+                    break
+                else:
+                    mfe_before_stop = max(mfe_before_stop, max(0.0, bar_fav))
+
+        hit_25_plus = (mfe_before_stop >= 25.0)
+        hit_40_plus = (mfe_before_stop >= 40.0)
+        hit_50_plus = (mfe_before_stop >= 50.0)
+        is_sl_fail = (stopped_out and stop_type == "SL_FAIL")
+        is_be_scratch = (stopped_out and stop_type == "BE_SCRATCH")
+
+        # Financial Model 25pt Target
+        if hit_25_plus:
+            pnl_25 = 25.0 * opt_delta * lot_size - total_cost
+        elif is_sl_fail:
+            pnl_25 = -risk_pts * opt_delta * lot_size - total_cost
+        elif is_be_scratch:
+            pnl_25 = 0.0 * opt_delta * lot_size - total_cost
+        else:
+            close_pts = (entry_price - exit_price) if direction == "SHORT" else (exit_price - entry_price)
+            pnl_25 = close_pts * opt_delta * lot_size - total_cost
+
+        # Financial Model 40pt Target
+        if hit_40_plus:
+            pnl_40 = 40.0 * opt_delta * lot_size - total_cost
+        elif is_sl_fail:
+            pnl_40 = -risk_pts * opt_delta * lot_size - total_cost
+        elif is_be_scratch:
+            pnl_40 = 0.0 * opt_delta * lot_size - total_cost
+        else:
+            close_pts = (entry_price - exit_price) if direction == "SHORT" else (exit_price - entry_price)
+            pnl_40 = close_pts * opt_delta * lot_size - total_cost
+
+        results.append(
+            Phase3TradeResult(
+                variant=variant_name,
+                hold_until=horizon_label,
+                date=date_str,
+                entry_time_ist=entry_tm,
+                entry_price=round(entry_price, 2),
+                initial_sl=round(initial_sl, 2),
+                risk_pts=risk_pts,
+                mfe_before_stop=round(mfe_before_stop, 2),
+                mae_pts=round(mae_pts, 2),
+                hit_25_plus=hit_25_plus,
+                hit_40_plus=hit_40_plus,
+                hit_50_plus=hit_50_plus,
+                is_be_scratch=is_be_scratch,
+                is_sl_fail=is_sl_fail,
+                net_pnl_inr_25=round(pnl_25, 2),
+                net_pnl_inr_40=round(pnl_40, 2),
+            )
+        )
+
+    return results
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. BACKTEST ENGINE (PHASE 1 + PHASE 2 HEAD-TO-HEAD)
+# 5. BACKTEST ENGINE (PHASE 1, 2 & 3)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_915_level_backtest(
     df_1m: pd.DataFrame,
     cfg: Dict[str, Any],
-) -> Tuple[List[LevelReactionRecord], List[ReactionResult], List[ReactionResult], List[ReactionResult]]:
+) -> Tuple[List[LevelReactionRecord], List[ReactionResult], List[ReactionResult], List[ReactionResult], List[Phase3TradeResult]]:
     """
     Runs zero-lookahead backtest across all sessions:
       Returns:
@@ -577,6 +754,7 @@ def run_915_level_backtest(
         2. level_results: all qualifying level touches in 09:15-09:28 (Table 1 matrix)
         3. confluence_results: all qualifying multi-factor setup reactions (Table 2 matrix)
         4. phase2_results: all Phase 2 comparison trades (Table 4 comparison)
+        5. phase3_results: all Phase 3 multi-horizon trades (Table 5 matrix)
     """
     touch_tol = cfg.get("touch_tolerance_pts", 5.0)
     stop_width = cfg.get("breakout_stop_pts", 20.0)
@@ -585,6 +763,13 @@ def run_915_level_backtest(
     rejection_sl_buf = cfg.get("rejection_sl_buffer_pts", 5.0)
     pdl_bd_trigger = cfg.get("pdl_breakdown_trigger_pts", 3.0)
     pdl_bd_sl = cfg.get("pdl_breakdown_sl_pts", 15.0)
+    p3_max_risk = cfg.get("p3_max_risk_cap_pts", 22.0)
+    p3_max_close_dist = cfg.get("p3_max_close_from_level_pts", 12.0)
+    p3_retest_wick_pct = cfg.get("p3_retest_limit_wick_pct", 0.50)
+    p3_retest_bars = cfg.get("p3_retest_limit_validity_bars", 3)
+    p3_retest_risk_cap = cfg.get("p3_retest_risk_cap_pts", 18.0)
+    p3_pdl_close_dist = cfg.get("p3_pdl_breakdown_immediate_close_dist_pts", 10.0)
+    p3_pdl_sl_pts = cfg.get("p3_pdl_breakdown_sl_pts", 12.0)
 
     log.info("Computing continuous 1H 8-EMA across all sessions...")
     df_1h = compute_standard_1h_8ema(df_1m, span=cfg.get("h1_ema_span", 8))
@@ -603,6 +788,7 @@ def run_915_level_backtest(
     level_results: List[ReactionResult] = []
     confluence_results: List[ReactionResult] = []
     phase2_results: List[ReactionResult] = []
+    phase3_results: List[Phase3TradeResult] = []
 
     for idx in range(3, len(sessions)):
         date_d = sessions[idx]
@@ -648,6 +834,10 @@ def run_915_level_backtest(
 
         bars_15m_window = day_d_m1[
             (day_d_m1["tm"] >= "09:15:00") & (day_d_m1["tm"] <= "09:29:00")
+        ].sort_values("tm").reset_index(drop=True)
+
+        bars_extended_window = day_d_m1[
+            (day_d_m1["tm"] >= "09:15:00") & (day_d_m1["tm"] <= "09:59:00")
         ].sort_values("tm").reset_index(drop=True)
 
         if len(bars_15m_window) < 15:
@@ -1032,14 +1222,120 @@ def run_915_level_backtest(
                     phase2_results.append(res)
                     break
 
+        # ─────────────────────────────────────────────────────────────────────
+        # Part E: Phase 3 Execution Mechanics & Multi-Horizon Simulation
+        # ─────────────────────────────────────────────────────────────────────
+        # 1. PDH Short (Blind Touch + 20pt SL + Breakeven Trail at +20pts)
+        if open_915 < (pdh - touch_tol):
+            for b_i in range(14):
+                if float(bars_15m_window.iloc[b_i]["high"]) >= (pdh - touch_tol):
+                    entry = min(float(bars_15m_window.iloc[b_i]["high"]), pdh)
+                    sl = pdh + stop_width
+                    res_p3 = simulate_phase3_trade_horizons(
+                        bars_extended_window, date_d, "1. PDH Short (Blind Touch)", "SHORT",
+                        b_i, entry, sl, cfg, is_confirmed_close=False
+                    )
+                    phase3_results.extend(res_p3)
+                    break
+
+        # 2. Touch PDH + DOUBLE_TOP_3D Short (Blind Touch + 20pt SL + Breakeven Trail at +20pts)
+        if levels.double_top_3d and open_915 < (pdh - touch_tol):
+            for b_i in range(14):
+                if float(bars_15m_window.iloc[b_i]["high"]) >= (pdh - touch_tol):
+                    entry = min(float(bars_15m_window.iloc[b_i]["high"]), pdh)
+                    sl = pdh + stop_width
+                    res_p3 = simulate_phase3_trade_horizons(
+                        bars_extended_window, date_d, "2. Touch PDH + DOUBLE_TOP_3D", "SHORT",
+                        b_i, entry, sl, cfg, is_confirmed_close=False
+                    )
+                    phase3_results.extend(res_p3)
+                    break
+
+        # 3. PDH Short (P3-A Max Risk <=22pts Wick Confirmed + Breakeven Trail at +20pts)
+        if open_915 < (pdh - touch_tol):
+            for t in range(13):
+                b = bars_15m_window.iloc[t]
+                bh = float(b["high"])
+                bl = float(b["low"])
+                bc = float(b["close"])
+                br = bh - bl
+                if bh >= (pdh - touch_tol) and bc <= pdh and br > 0 and (bh - bc) >= (wick_ratio * br):
+                    sl_p3a = max(bh + 3.0, pdh + 10.0)
+                    risk_p3a = sl_p3a - bc
+                    if (pdh - bc) <= p3_max_close_dist and risk_p3a <= p3_max_risk:
+                        res_p3 = simulate_phase3_trade_horizons(
+                            bars_extended_window, date_d, "3. PDH Short (P3-A Max Risk <=22pts)", "SHORT",
+                            t, bc, sl_p3a, cfg, is_confirmed_close=True
+                        )
+                        phase3_results.extend(res_p3)
+                        break
+
+        # 4. PDH Short (P3-B 50% Wick Retest Limit + Breakeven Trail at +20pts)
+        if open_915 < (pdh - touch_tol):
+            for t in range(13):
+                b = bars_15m_window.iloc[t]
+                bh = float(b["high"])
+                bl = float(b["low"])
+                bc = float(b["close"])
+                br = bh - bl
+                if bh >= (pdh - touch_tol) and bc <= pdh and br > 0 and (bh - bc) >= (wick_ratio * br):
+                    limit_entry = bc + p3_retest_wick_pct * (bh - bc)
+                    sl_p3b = min(bh + 5.0, limit_entry + p3_retest_risk_cap)
+                    filled = False
+                    for k in range(t + 1, min(t + 1 + p3_retest_bars, 14)):
+                        kb = bars_15m_window.iloc[k]
+                        if float(kb["high"]) >= limit_entry:
+                            res_p3 = simulate_phase3_trade_horizons(
+                                bars_extended_window, date_d, "4. PDH Short (P3-B 50% Wick Retest Limit)", "SHORT",
+                                k, limit_entry, sl_p3b, cfg, is_confirmed_close=False
+                            )
+                            phase3_results.extend(res_p3)
+                            filled = True
+                            break
+                    if filled:
+                        break
+
+        # 5. PDL Breakdown Short (50% Retest/<=10pt Close, SL=PDL+12, held to 09:45/10:00)
+        if open_915 > pdl:
+            for t in range(13):
+                b = bars_15m_window.iloc[t]
+                bc = float(b["close"])
+                bh = float(b["high"])
+                bl = float(b["low"])
+                if bc <= (pdl - pdl_bd_trigger):
+                    sl_p5 = pdl + p3_pdl_sl_pts
+                    if (pdl - bc) <= p3_pdl_close_dist:
+                        res_p3 = simulate_phase3_trade_horizons(
+                            bars_extended_window, date_d, "5. PDL Breakdown Short (50% Retest/<=10pt Close)", "SHORT",
+                            t, bc, sl_p5, cfg, is_confirmed_close=True
+                        )
+                        phase3_results.extend(res_p3)
+                        break
+                    else:
+                        limit_entry = bc + 0.50 * (bh - bc)
+                        filled = False
+                        for k in range(t + 1, min(t + 1 + p3_retest_bars, 14)):
+                            kb = bars_15m_window.iloc[k]
+                            if float(kb["high"]) >= limit_entry:
+                                res_p3 = simulate_phase3_trade_horizons(
+                                    bars_extended_window, date_d, "5. PDL Breakdown Short (50% Retest/<=10pt Close)", "SHORT",
+                                    k, limit_entry, sl_p5, cfg, is_confirmed_close=False
+                                )
+                                phase3_results.extend(res_p3)
+                                filled = True
+                                break
+                        if filled:
+                            break
+
     log.info(
-        "Backtest completed: %d sessions evaluated, %d total level tests, %d confluence triggers, %d phase2 refinement trades.",
+        "Backtest completed: %d sessions evaluated, %d total level tests, %d confluence triggers, %d phase2 refinement trades, %d phase3 horizon trades.",
         len(session_records),
         len(level_results),
         len(confluence_results),
         len(phase2_results),
+        len(phase3_results),
     )
-    return session_records, level_results, confluence_results, phase2_results
+    return session_records, level_results, confluence_results, phase2_results, phase3_results
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1253,6 +1549,122 @@ def build_table_4_head_to_head(
     return pd.DataFrame(rows)
 
 
+def build_table_5_horizon_matrix(
+    phase3_results: List[Phase3TradeResult],
+    cfg: Dict[str, Any],
+) -> pd.DataFrame:
+    """
+    Table 5 — Phase 3 Horizon (09:30 vs 09:45 vs 10:00) & Breakeven-Trail Expectancy Matrix:
+    Compares 5 variants across 3 holding horizons:
+      1. PDH Short (Blind Touch + 20pt SL + Breakeven Trail at +20pts)
+      2. Touch PDH + DOUBLE_TOP_3D Short (Blind Touch + 20pt SL + Breakeven Trail at +20pts)
+      3. PDH Short (P3-A Max Risk <=22pts Wick Confirmed + Breakeven Trail at +20pts)
+      4. PDH Short (P3-B 50% Wick Retest Limit + Breakeven Trail at +20pts)
+      5. PDL Breakdown Short (50% Retest/<=10pt Close, SL = PDL + 12 pts)
+    """
+    if not phase3_results:
+        return pd.DataFrame()
+
+    df = pd.DataFrame([asdict(r) for r in phase3_results])
+    breakeven_p = cfg.get("breakeven_win_rate", 0.365)
+
+    variants_order = [
+        "1. PDH Short (Blind Touch)",
+        "2. Touch PDH + DOUBLE_TOP_3D",
+        "3. PDH Short (P3-A Max Risk <=22pts)",
+        "4. PDH Short (P3-B 50% Wick Retest Limit)",
+        "5. PDL Breakdown Short (50% Retest/<=10pt Close)",
+    ]
+    horizons_order = ["09:30 IST", "09:45 IST", "10:00 IST"]
+
+    rows = []
+    for var in variants_order:
+        for hor in horizons_order:
+            sub = df[(df["variant"] == var) & (df["hold_until"] == hor)]
+            n = len(sub)
+            if n == 0:
+                continue
+
+            win_25 = (sub["hit_25_plus"].sum() / n) * 100.0
+            win_40 = (sub["hit_40_plus"].sum() / n) * 100.0
+            win_50 = (sub["hit_50_plus"].sum() / n) * 100.0
+            be_scratch = (sub["is_be_scratch"].sum() / n) * 100.0
+            sl_fail = (sub["is_sl_fail"].sum() / n) * 100.0
+            avg_risk = float(sub["risk_pts"].mean())
+            pnl_25 = float(sub["net_pnl_inr_25"].mean())
+            pnl_40 = float(sub["net_pnl_inr_40"].mean())
+
+            # t-stat of 40pt model PnL
+            std_40 = float(sub["net_pnl_inr_40"].std()) if n > 1 else 0.0
+            se_40 = std_40 / math.sqrt(n) if n > 0 else 1.0
+            t_stat_pnl = pnl_40 / se_40 if se_40 > 0 else 0.0
+
+            rows.append({
+                "Variant": var,
+                "Hold Until": hor,
+                "Sample (N)": n,
+                "Win >= 25 Pts %": round(win_25, 1),
+                "Win >= 40 Pts %": round(win_40, 1),
+                "Win >= 50 Pts %": round(win_50, 1),
+                "BE Scratch %": round(be_scratch, 1),
+                "SL Fail %": round(sl_fail, 1),
+                "Avg Risk (Pts)": round(avg_risk, 1),
+                "Est Net ₹/Lot (25pt Tgt)": round(pnl_25, 2),
+                "Est Net ₹/Lot (40pt Tgt)": round(pnl_40, 2),
+                "t-stat": round(t_stat_pnl, 2),
+            })
+
+    return pd.DataFrame(rows)
+
+
+def compute_phase3_edge_verdict(
+    table5_df: pd.DataFrame,
+    cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Identifies every configuration achieving t-stat >= 2.5 and Est Net ₹/Lot >= +₹250.
+    """
+    if table5_df.empty:
+        return {"qualifiers": [], "total_configs": 0}
+
+    qualifiers = []
+    for _, row in table5_df.iterrows():
+        t_stat = float(row["t-stat"])
+        pnl_40 = float(row["Est Net ₹/Lot (40pt Tgt)"])
+        pnl_25 = float(row["Est Net ₹/Lot (25pt Tgt)"])
+        if t_stat >= 2.5 and pnl_40 >= 250.0:
+            qualifiers.append({
+                "variant": row["Variant"],
+                "hold_until": row["Hold Until"],
+                "model": "40pt Target",
+                "sample": row["Sample (N)"],
+                "win_40": row["Win >= 40 Pts %"],
+                "win_25": row["Win >= 25 Pts %"],
+                "be_scratch": row["BE Scratch %"],
+                "sl_fail": row["SL Fail %"],
+                "net_pnl": pnl_40,
+                "t_stat": t_stat,
+            })
+        elif pnl_25 >= 250.0 and t_stat >= 2.0:
+            qualifiers.append({
+                "variant": row["Variant"],
+                "hold_until": row["Hold Until"],
+                "model": "25pt Target",
+                "sample": row["Sample (N)"],
+                "win_40": row["Win >= 40 Pts %"],
+                "win_25": row["Win >= 25 Pts %"],
+                "be_scratch": row["BE Scratch %"],
+                "sl_fail": row["SL Fail %"],
+                "net_pnl": pnl_25,
+                "t_stat": t_stat,
+            })
+
+    return {
+        "qualifiers": qualifiers,
+        "total_configs": len(table5_df),
+    }
+
+
 def export_table_3_audit_log(records: List[LevelReactionRecord], csv_path: Path) -> None:
     """Exports Session-by-Session Audit Log CSV matching Table 3 specification."""
     fieldnames = [
@@ -1390,7 +1802,9 @@ def print_and_save_full_report(
     table1: pd.DataFrame,
     table2: pd.DataFrame,
     table4: pd.DataFrame,
+    table5: pd.DataFrame,
     verdict: Dict[str, Any],
+    phase3_verdict: Dict[str, Any],
     cfg: Dict[str, Any],
     output_md_path: Path,
 ) -> None:
@@ -1434,9 +1848,13 @@ def print_and_save_full_report(
     t4_str = format_cli_table(table4, "TABLE 4 — PHASE 2 HEAD-TO-HEAD COMPARISON (BLIND TOUCH vs. WICK CONFIRMATION vs. PDL BREAKDOWN)")
     _out(t4_str)
 
-    # Statistical Edge Verdict
+    # Table 5 (Phase 3 Horizon & Breakeven-Trail Expectancy Matrix)
+    t5_str = format_cli_table(table5, "TABLE 5 — PHASE 3 HORIZON (09:30 vs 09:45 vs 10:00) & BREAKEVEN-TRAIL EXPECTANCY MATRIX")
+    _out(t5_str)
+
+    # Statistical Edge Verdict (Phase 1 & Phase 2)
     _out("=" * 125)
-    _out("                          STATISTICAL EDGE VERDICT & SETUP RANKINGS")
+    _out("                    STATISTICAL EDGE VERDICT & SETUP RANKINGS (PHASE 1 & 2)")
     _out("=" * 125)
 
     top2 = verdict.get("top2", [])
@@ -1470,6 +1888,30 @@ def print_and_save_full_report(
         _out(f"  - Sample Size (N)   : {baseline['N']}")
         _out(f"  - Win >= 40 Pts Rate: {baseline['win_rate_40_pct']}% | Fail Rate: {baseline['fail_rate_pct']}%")
         _out(f"  - Est Net PnL/Trade : ₹{baseline['avg_net_inr_40m']:+.2f} / lot")
+
+    # Phase 3 Statistical Edge Verdict
+    _out("\n" + "=" * 125)
+    _out("                PHASE 3 STATISTICAL EDGE VERDICT (t-stat >= 2.5 & Est Net ₹/Lot >= +₹250)")
+    _out("=" * 125)
+    p3_qualifiers = phase3_verdict.get("qualifiers", [])
+    if p3_qualifiers:
+        _out(f"\n[QUALIFYING SETUPS ACHIEVING t-stat >= 2.5 AND Est Net ₹ >= +₹250/lot]:")
+        for q in p3_qualifiers:
+            _out(f"\n* {q['variant']} | Hold: {q['hold_until']} ({q['model']}):")
+            _out(f"  - Sample Size (N)       : {q['sample']}")
+            _out(f"  - Win >= 40 Pts Rate    : {q['win_40']}%")
+            _out(f"  - Win >= 25 Pts Rate    : {q['win_25']}%")
+            _out(f"  - Breakeven Scratch Rate: {q['be_scratch']}%")
+            _out(f"  - Initial SL Fail Rate  : {q['sl_fail']}%")
+            _out(f"  - Est Net ₹/Lot         : ₹{q['net_pnl']:+.2f}")
+            _out(f"  - t-statistic           : {q['t_stat']:+.2f}")
+    else:
+        _out("\n[NOTICE]: No individual Phase 3 configuration met both t-stat >= 2.5 AND Net ₹ >= +₹250/lot hurdles.")
+        if not table5.empty:
+            _out("\nTop performing Phase 3 configurations ranked by Net ₹/Lot (40pt Target):")
+            top_p3 = table5.sort_values("Est Net ₹/Lot (40pt Tgt)", ascending=False).head(3)
+            for _, r in top_p3.iterrows():
+                _out(f"  - {r['Variant']} [{r['Hold Until']}]: Net ₹{r['Est Net ₹/Lot (40pt Tgt)']:+.2f} / lot (t-stat = {r['t-stat']:+.2f}, Win40 = {r['Win >= 40 Pts %']}%, SL Fail = {r['SL Fail %']}%)")
 
     _out("\n" + "=" * 125 + "\n")
 
@@ -1530,8 +1972,8 @@ def main() -> int:
         end_date=args.end_date,
     )
 
-    # Step 2: Run zero-lookahead backtest (Phase 1 + Phase 2)
-    session_records, level_results, confluence_results, phase2_results = run_915_level_backtest(df_1m, cfg)
+    # Step 2: Run zero-lookahead backtest (Phase 1 + Phase 2 + Phase 3)
+    session_records, level_results, confluence_results, phase2_results, phase3_results = run_915_level_backtest(df_1m, cfg)
 
     if not session_records:
         log.error("No records produced. Exiting.")
@@ -1541,13 +1983,24 @@ def main() -> int:
     table1 = build_table_1_matrix(level_results)
     table2 = build_table_2_matrix(confluence_results, session_records)
     table4 = build_table_4_head_to_head(level_results, confluence_results, phase2_results, cfg)
+    table5 = build_table_5_horizon_matrix(phase3_results, cfg)
     verdict = compute_statistical_edge_verdict(confluence_results, phase2_results, session_records, cfg)
+    phase3_verdict = compute_phase3_edge_verdict(table5, cfg)
 
     # Step 4: Export Table 3 CSV Audit Log
     export_table_3_audit_log(session_records, csv_path)
 
     # Step 5: Print CLI report and save markdown artifact
-    print_and_save_full_report(session_records, table1, table2, table4, verdict, cfg, report_path)
+    print_and_save_full_report(session_records, table1, table2, table4, table5, verdict, phase3_verdict, cfg, report_path)
+
+    elapsed = time.time() - t0
+    log.info("Full execution completed in %.2f seconds.", elapsed)
+    print(f"\n[DELIVERABLE FILE PATHS]:")
+    print(f"1. Engine Script : {Path(__file__).resolve()}")
+    print(f"2. Audit Log CSV : {csv_path.resolve()}")
+    print(f"3. Summary Report: {report_path.resolve()}\n")
+
+    return 0
 
     elapsed = time.time() - t0
     log.info("Full execution completed in %.2f seconds.", elapsed)

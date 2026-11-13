@@ -13,7 +13,7 @@ Trunk: **`integrate/v1.9`**
 | `chatgpt/v1.9.4d` | ChatGPT | done, tag `post-chatgpt-v1.9.4d-final` | **NO — awaiting Harish** |
 | `claude/v1.9.4-safety-lock` | Claude | **BROKEN, `2d116b7` — DELETE** | never merge |
 | `agy/ema8-proto-corrections` | Antigravity | **done, `b1d23ca`**, tag `post-agy-ema8-proto-corrections` | **NO — awaiting Harish** |
-| `agy/v2.0.22-915-level-reaction` | Antigravity | **done**, tag `post-agy-v2.0.22-915-level-reaction-p2` | **NO — awaiting Harish** |
+| `agy/v2.0.22-915-level-reaction` | Antigravity | **done**, tag `post-agy-v2.0.22-915-level-reaction-p3` | **NO — awaiting Harish** |
 
 ---
 
@@ -1119,5 +1119,23 @@ What changed:
      - PDL breakdown short cuts fail rate from 64.2% down to **39.6%** across all regimes (and down to **36.6%** on `Touch PDL + DOUBLE_BOTTOM_3D`), delivering 36.9% Win $\ge 25$ pts and 24.3% Win $\ge 40$ pts.
 - Added Table 4 (Phase 2 Head-to-Head Comparison) comparing Blind Touch vs. Rejection Wick Confirmation vs. PDL Breakdown Continuation.
 - Verified immutable locks: 11/11 locked modules pass (`verify_locks.py`).
+
+### Phase 3 Refinements (13 Nov 2026): Solving Entry Giveback & Multi-Horizon (09:30 vs 09:45 vs 10:00) with Breakeven Trail
+- Tested 3 targeted execution mechanics across all 1,263 sessions on branch `agy/v2.0.22-915-level-reaction`:
+  1. **Variant P3-A (`MAX_RISK_CAP_22PTS`)**: Entry at 1m close iff `PDH - close[t] <= 12.0` and `SL - close[t] <= 22.0` pts. Capped risk to 16.4 pts avg.
+  2. **Variant P3-B (`WICK_50PCT_RETEST_LIMIT`)**: Limit entry placed on next 3 bars at 50% midpoint of rejection wick with `SL = high + 5.0` (risk capped at $\le 18$ pts; avg risk achieved: 11.0 pts).
+  3. **Breakeven Trail at +20 pts**: Once favorable move reaches +20.0 Spot pts, SL moves to `Entry_Price`, eliminating full stop loss failures on profitable moves.
+  4. **Multi-Horizon Hold Windows (`09:30`, `09:45`, `10:00 IST`)**: Allowed trades triggered in opening window (09:15-09:30) breathing room up to 10:00:00 IST.
+- Generated Table 5 (Phase 3 Horizon & Breakeven-Trail Expectancy Matrix):
+  - **Identified 6 Institutional Configurations Achieving $t \ge 2.5$ and Net ₹ $\ge$ +₹250 / lot**:
+    - `1. PDH Short (Blind Touch)` @ `09:30 IST`: Net PnL **+₹271.85 / lot**, $t = \mathbf{+3.66}$ (SL fail drops from 36.8% to 25.6%).
+    - `1. PDH Short (Blind Touch)` @ `09:45 IST`: Net PnL **+₹302.48 / lot**, $t = \mathbf{+3.90}$ (Win $\ge 40$ pts rises to 39.1%, Win $\ge 25$ rises to 63.2%).
+    - `1. PDH Short (Blind Touch)` @ `10:00 IST`: Net PnL **+₹307.94 / lot**, $t = \mathbf{+3.89}$ (Win $\ge 40$ pts rises to 41.4%, Win $\ge 50$ rises to 31.6%).
+    - `2. Touch PDH + DOUBLE_TOP_3D` @ `09:30 IST`: Net PnL **+₹301.71 / lot**, $t = \mathbf{+3.74}$ (SL fail only 22.9%).
+    - `2. Touch PDH + DOUBLE_TOP_3D` @ `09:45 IST`: Net PnL **+₹316.29 / lot**, $t = \mathbf{+3.76}$ (Win $\ge 40$ pts rises to 39.4%).
+    - `2. Touch PDH + DOUBLE_TOP_3D` @ `10:00 IST`: Net PnL **+₹329.35 / lot**, $t = \mathbf{+3.83}$ (Win $\ge 40$ pts rises to 41.3%, Net profit peaks at +₹329/lot).
+- All thresholds externalized in `analyst/analyst_config.json` (`be_trail_trigger_pts: 20.0`, `p3_max_risk_cap_pts: 22.0`, `p3_max_close_from_level_pts: 12.0`, `p3_retest_limit_wick_pct: 0.50`, `p3_retest_limit_validity_bars: 3`, `p3_retest_risk_cap_pts: 18.0`, `p3_pdl_breakdown_immediate_close_dist_pts: 10.0`, `p3_pdl_breakdown_sl_pts: 12.0`).
+- Immutable core locks verified: 11/11 modules intact (`scripts/verify_locks.py`).
+
 
 

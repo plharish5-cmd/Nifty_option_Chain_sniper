@@ -443,7 +443,23 @@
     "entry_modes": [
       "BLIND_TOUCH",
       "CONFIRMED_1M_REJECTION_CLOSE",
-      "BREAKDOWN_CONTINUATION"
+      "BREAKDOWN_CONTINUATION",
+      "P3A_MAX_RISK_CAP_22PTS",
+      "P3B_WICK_50PCT_RETEST_LIMIT",
+      "P3_PDL_BREAKDOWN_RETEST"
+    ],
+    "be_trail_trigger_pts": 20.0,
+    "p3_max_risk_cap_pts": 22.0,
+    "p3_max_close_from_level_pts": 12.0,
+    "p3_retest_limit_wick_pct": 0.5,
+    "p3_retest_limit_validity_bars": 3,
+    "p3_retest_risk_cap_pts": 18.0,
+    "p3_pdl_breakdown_immediate_close_dist_pts": 10.0,
+    "p3_pdl_breakdown_sl_pts": 12.0,
+    "horizons": [
+      "09:30:00",
+      "09:45:00",
+      "10:00:00"
     ]
   }
 }

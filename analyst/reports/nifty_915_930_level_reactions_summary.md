@@ -70,8 +70,31 @@ Strategy Variant                                                 | N   | Win >=2
 5b. Touch PDL + DOUBLE_BOTTOM_3D Breakdown Short (Phase 2)       | 82  | 36.6           | 24.4           | 36.6            | 36.7           | 33.2          | -145.97          | -63.13           | -2.28           
 ====================================================================================================================================================================================================================
 
+
+===========================================================================================================================================================================================================================================
+                                                                          TABLE 5 — PHASE 3 HORIZON (09:30 vs 09:45 vs 10:00) & BREAKEVEN-TRAIL EXPECTANCY MATRIX                                                                          
+===========================================================================================================================================================================================================================================
+Variant                                          | Hold Until | Sample (N) | Win >= 25 Pts % | Win >= 40 Pts % | Win >= 50 Pts % | BE Scratch % | SL Fail % | Avg Risk (Pts) | Est Net ₹/Lot (25pt Tgt) | Est Net ₹/Lot (40pt Tgt) | t-stat
+-------------------------------------------------+------------+------------+-----------------+-----------------+-----------------+--------------+-----------+----------------+--------------------------+--------------------------+-------
+1. PDH Short (Blind Touch)                       | 09:30 IST  | 133        | 55.6            | 34.6            | 27.1            | 30.8         | 25.6      | 21.1           | 265.47                   | 271.85                   | 3.66  
+1. PDH Short (Blind Touch)                       | 09:45 IST  | 133        | 63.2            | 39.1            | 30.1            | 40.6         | 28.6      | 21.1           | 297.33                   | 302.48                   | 3.9   
+1. PDH Short (Blind Touch)                       | 10:00 IST  | 133        | 63.2            | 41.4            | 31.6            | 46.6         | 29.3      | 21.1           | 300.44                   | 307.94                   | 3.89  
+2. Touch PDH + DOUBLE_TOP_3D                     | 09:30 IST  | 109        | 56.9            | 35.8            | 26.6            | 32.1         | 22.9      | 21.0           | 285.34                   | 301.71                   | 3.74  
+2. Touch PDH + DOUBLE_TOP_3D                     | 09:45 IST  | 109        | 63.3            | 39.4            | 28.4            | 43.1         | 26.6      | 21.0           | 311.5                    | 316.29                   | 3.76  
+2. Touch PDH + DOUBLE_TOP_3D                     | 10:00 IST  | 109        | 63.3            | 41.3            | 29.4            | 47.7         | 27.5      | 21.0           | 315.28                   | 329.35                   | 3.83  
+3. PDH Short (P3-A Max Risk <=22pts)             | 09:30 IST  | 67         | 28.4            | 11.9            | 6.0             | 14.9         | 35.8      | 16.4           | -59.12                   | -60.61                   | -0.71 
+3. PDH Short (P3-A Max Risk <=22pts)             | 09:45 IST  | 67         | 41.8            | 20.9            | 14.9            | 26.9         | 44.8      | 16.4           | 4.19                     | -26.25                   | -0.27 
+3. PDH Short (P3-A Max Risk <=22pts)             | 10:00 IST  | 67         | 41.8            | 25.4            | 19.4            | 34.3         | 44.8      | 16.4           | 1.31                     | -9.36                    | -0.09 
+4. PDH Short (P3-B 50% Wick Retest Limit)        | 09:30 IST  | 66         | 25.8            | 12.1            | 4.5             | 13.6         | 48.5      | 11.0           | -27.7                    | -10.04                   | -0.13 
+4. PDH Short (P3-B 50% Wick Retest Limit)        | 09:45 IST  | 66         | 33.3            | 18.2            | 12.1            | 19.7         | 57.6      | 11.0           | -6.96                    | -2.81                    | -0.03 
+4. PDH Short (P3-B 50% Wick Retest Limit)        | 10:00 IST  | 66         | 33.3            | 22.7            | 15.2            | 24.2         | 59.1      | 11.0           | -13.94                   | 3.39                     | 0.04  
+5. PDL Breakdown Short (50% Retest/<=10pt Close) | 09:30 IST  | 109        | 42.2            | 21.1            | 15.6            | 20.2         | 33.0      | 32.4           | 40.62                    | 49.68                    | 0.58  
+5. PDL Breakdown Short (50% Retest/<=10pt Close) | 09:45 IST  | 109        | 48.6            | 31.2            | 22.9            | 30.3         | 39.4      | 32.4           | 14.24                    | 56.41                    | 0.61  
+5. PDL Breakdown Short (50% Retest/<=10pt Close) | 10:00 IST  | 109        | 49.5            | 33.0            | 25.7            | 34.9         | 39.4      | 32.4           | 13.54                    | 63.57                    | 0.66  
+===========================================================================================================================================================================================================================================
+
 =============================================================================================================================
-                          STATISTICAL EDGE VERDICT & SETUP RANKINGS
+                    STATISTICAL EDGE VERDICT & SETUP RANKINGS (PHASE 1 & 2)
 =============================================================================================================================
 
 [RANK #1 TOP CONFLUENCE SETUP]: Touch PDH + DOUBLE_TOP_3D (SHORT)
@@ -96,6 +119,66 @@ Strategy Variant                                                 | N   | Win >=2
   - Sample Size (N)   : 110
   - Win >= 40 Pts Rate: 23.64% | Fail Rate: 56.36%
   - Est Net PnL/Trade : ₹-121.36 / lot
+
+=============================================================================================================================
+                PHASE 3 STATISTICAL EDGE VERDICT (t-stat >= 2.5 & Est Net ₹/Lot >= +₹250)
+=============================================================================================================================
+
+[QUALIFYING SETUPS ACHIEVING t-stat >= 2.5 AND Est Net ₹ >= +₹250/lot]:
+
+* 1. PDH Short (Blind Touch) | Hold: 09:30 IST (40pt Target):
+  - Sample Size (N)       : 133
+  - Win >= 40 Pts Rate    : 34.6%
+  - Win >= 25 Pts Rate    : 55.6%
+  - Breakeven Scratch Rate: 30.8%
+  - Initial SL Fail Rate  : 25.6%
+  - Est Net ₹/Lot         : ₹+271.85
+  - t-statistic           : +3.66
+
+* 1. PDH Short (Blind Touch) | Hold: 09:45 IST (40pt Target):
+  - Sample Size (N)       : 133
+  - Win >= 40 Pts Rate    : 39.1%
+  - Win >= 25 Pts Rate    : 63.2%
+  - Breakeven Scratch Rate: 40.6%
+  - Initial SL Fail Rate  : 28.6%
+  - Est Net ₹/Lot         : ₹+302.48
+  - t-statistic           : +3.90
+
+* 1. PDH Short (Blind Touch) | Hold: 10:00 IST (40pt Target):
+  - Sample Size (N)       : 133
+  - Win >= 40 Pts Rate    : 41.4%
+  - Win >= 25 Pts Rate    : 63.2%
+  - Breakeven Scratch Rate: 46.6%
+  - Initial SL Fail Rate  : 29.3%
+  - Est Net ₹/Lot         : ₹+307.94
+  - t-statistic           : +3.89
+
+* 2. Touch PDH + DOUBLE_TOP_3D | Hold: 09:30 IST (40pt Target):
+  - Sample Size (N)       : 109
+  - Win >= 40 Pts Rate    : 35.8%
+  - Win >= 25 Pts Rate    : 56.9%
+  - Breakeven Scratch Rate: 32.1%
+  - Initial SL Fail Rate  : 22.9%
+  - Est Net ₹/Lot         : ₹+301.71
+  - t-statistic           : +3.74
+
+* 2. Touch PDH + DOUBLE_TOP_3D | Hold: 09:45 IST (40pt Target):
+  - Sample Size (N)       : 109
+  - Win >= 40 Pts Rate    : 39.4%
+  - Win >= 25 Pts Rate    : 63.3%
+  - Breakeven Scratch Rate: 43.1%
+  - Initial SL Fail Rate  : 26.6%
+  - Est Net ₹/Lot         : ₹+316.29
+  - t-statistic           : +3.76
+
+* 2. Touch PDH + DOUBLE_TOP_3D | Hold: 10:00 IST (40pt Target):
+  - Sample Size (N)       : 109
+  - Win >= 40 Pts Rate    : 41.3%
+  - Win >= 25 Pts Rate    : 63.3%
+  - Breakeven Scratch Rate: 47.7%
+  - Initial SL Fail Rate  : 27.5%
+  - Est Net ₹/Lot         : ₹+329.35
+  - t-statistic           : +3.83
 
 =============================================================================================================================
 
