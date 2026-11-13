@@ -565,6 +565,8 @@
             transition: width 0.3s;
         }
         .secondary-btn.active-filter-btn { background: rgba(251, 191, 36, 0.18) !important; border-color: #fbbf24 !important; color: #fde68a !important; box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35) inset; }
+        .btl-lbl { display:block; font-size:10px; font-weight:800; color:var(--text-muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px; }
+        .btl-in { padding:7px 10px; background:#0f172a; color:#f8fafc; border:1px solid #334155; border-radius:6px; font-size:13px; }
     </style>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" crossorigin="anonymous"></script>
 </head>
@@ -718,8 +720,7 @@
             <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabPositionsOrders')">💼 2. Positions &amp; Orders Book</button>
             <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabFundsWallet')">💰 3. Funds &amp; Paper Wallet</button>
             <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabReplayExplorer')">📅 4. Historical Date Replay</button>
-            <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tabTrendLab')">🔬 5. Multi-Factor Trend Lab &amp; 128 Combos</button>
-            <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tab7DailyIngest')">📥 6. Pull Today's Data</button>
+            <button class="tab-btn" onclick="switchWorkspaceTab(event, 'tab7DailyIngest')">📥 5. Pull Today's Data</button>
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -1986,405 +1987,61 @@
             </div>
 
             <!-- Date-Range Super Trail Backtester -->
-            <div class="card" style="margin-top:20px; border:1px solid rgba(16, 185, 129, 0.4); background: linear-gradient(180deg, rgba(13,19,34,0.95) 0%, rgba(16,28,40,0.95) 100%);">
-                <h2>
-                    <span>📊 Multi-Month Date-Range Backtester (Super Trail vs Fixed 40/40 Baseline)</span>
-                    <span class="bb-off-badge-global status-badge badge-bear" style="display:none; margin-left:8px;">Bollinger OFF</span>
-                    <button type="button" class="emerald-btn" onclick="exportDateRangeBacktestToExcel()">📥 Export Backtest Results (.xls)</button>
-                </h2>
-                
-                <div style="display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px;">
-                    <div>
-                        <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">From Date</label>
-                        <input type="date" id="replayFromDate" value="2026-09-01" style="display:block; margin-top:4px;">
+            <!-- ══ BACKTEST LAB — robust, honest, held-out ══ -->
+            <div class="card" style="margin-top:20px; border:1px solid rgba(56,189,248,0.4); background:linear-gradient(180deg, rgba(13,19,34,0.96), rgba(16,28,40,0.96));">
+                <h2><span>📊 Backtest Lab — multi-month, held-out, in NIFTY spot points</span></h2>
+                <p style="color:var(--text-muted); font-size:12px; margin:4px 0 14px; line-height:1.5;">
+                    Runs in the background so the desk keeps trading. Picks a verdict from days it did <b>not</b> see while choosing. Every number is in spot points after the cost you set — no invented rupees.
+                    Not simulated: option premium (so "40 option points" exits are not modelled), the 8600 Board filters, the 8600 Ticket lane.
+                </p>
+                <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end;">
+                    <div><label class="btl-lbl">From</label><input type="date" id="btlFrom" class="btl-in"></div>
+                    <div><label class="btl-lbl">To</label><input type="date" id="btlTo" class="btl-in"></div>
+                    <div style="flex:1 1 300px; min-width:280px;">
+                        <label class="btl-lbl">Strategies</label>
+                        <div id="btlLanes" style="display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:4px;"></div>
                     </div>
-                    <div>
-                        <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">To Date</label>
-                        <input type="date" id="replayToDate" value="2026-11-09" style="display:block; margin-top:4px;">
-                    </div>
-                    <div>
-                        <label style="font-size:11px; color:#38bdf8; font-family:var(--font-mono); font-weight:700;">Strategy Filter</label>
-                        <select id="drStrategyFilter" style="display:block; margin-top:4px; min-width:320px; padding:6px 10px; background:#0f172a; color:#f8fafc; border:1px solid #38bdf8; border-radius:6px;">
-                            <option value="ALL" selected>1. ALL STRATEGIES (Default)</option>
-                            <option value="STAGE_2_LONG">2. STAGE 2 8 EMA LONG — Stage 2 8 EMA Long (8-EMA Support Touch Long)</option>
-                            <option value="STAGE_3_SHORT">3. STAGE 3 8 EMA SHORT — Stage 3 8 EMA Short (8-EMA Resistance Rejection Short)</option>
-                            <option value="CROSSOVER">4. 4x8 EMA CROSSOVER REVERSAL — 4 MA vs 8 EMA Crossover Reversal</option>
-                            <option value="H1_FLAGSHIP">5. 1 HR FLAGSHIP — Price Action only (daily S/R · 1H swings · 15m PA)</option>
-                            <option value="PA_SR_HOMEWORK">6. 15m PA @ S/R — Hammer/Engulfing/Star @ S1–S4 R1–R4 break (Homework paper)</option>
-                            <option value="EMA8_PROTOTYPE">7. 8 EMA Prototype — Close + retouch 8 EMA (Paper only, 40/40)</option>
+                    <div><label class="btl-lbl">Cost / trade (pts)</label><input type="number" id="btlCost" value="2" min="0" max="50" step="0.5" class="btl-in" style="width:90px;"></div>
+                    <div><label class="btl-lbl">Hold out last</label>
+                        <select id="btlHoldout" class="btl-in" style="width:150px;">
+                            <option value="0.3" selected>30% of days</option>
+                            <option value="0.4">40% of days</option>
+                            <option value="0.5">50% of days</option>
+                            <option value="0.2">20% of days</option>
+                            <option value="0">None (not a test)</option>
                         </select>
                     </div>
-                    <div>
-                        <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">Data Type Filter</label>
-                        <select id="drDataTypeFilter" style="display:block; margin-top:4px; padding:6px 10px; background:#0f172a; color:#f8fafc; border:1px solid #334155; border-radius:6px;">
-                            <option value="ALL" selected>All — NSE spot replay + live ledger</option>
-                            <option value="SYNTHETIC">NSE spot OHLC replay (real 1m candles; modeled option)</option>
-                            <option value="REAL">Live ledger fills only (paper that actually fired)</option>
-                        </select>
-                    </div>
-                    <div style="display:flex; flex-direction:column; gap:4px; padding-bottom:2px;">
-                        <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:#38bdf8;">
-                            <input type="checkbox" id="includeTodayPaperTrades" checked> Include Live Paper Trades
-                        </label>
-                        <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:#c084fc;">
-                            <input type="checkbox" id="usePreviousScannerData"> Use Previous Scanner Data
-                        </label>
-                    </div>
-                    <span class="entry-tf-policy" style="font-size:10.5px; color:#94a3b8; font-family:var(--font-mono);">Entry TF: 15m | FLAGSHIP View: 1H + Daily | No 5m Trading</span>
-                    <button type="button" class="btn-bollinger-gate emerald-btn" style="padding:6px 12px;" onclick="toggleBollingerGate()">Bollinger Bands: ON</button>
-                    <button type="button" class="emerald-btn" style="padding:8px 18px;" onclick="runDateRangeBacktest()">📊 Run Date Range Backtester with Super Trail Logic</button>
-                    <button type="button" class="cyan-btn" style="padding:8px 14px;" onclick="runH1FlagshipOnlyBacktest()" title="Filter strategy to H1_FLAGSHIP only">🎯 H1 FLAGSHIP only</button>
+                    <button type="button" class="emerald-btn" style="padding:9px 20px;" id="btlRunBtn" onclick="btlStart()">▶ Run backtest</button>
+                    <button type="button" class="secondary-btn" style="padding:9px 16px; display:none;" id="btlCancelBtn" onclick="btlCancel()">■ Cancel</button>
                 </div>
-
-                <!-- Active Filter Banner & Data Provenance Badge -->
-                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; padding:8px 12px; background:rgba(15,23,42,0.85); border:1px solid #334155; border-radius:6px; font-family:var(--font-mono); font-size:12px;">
-                    <div id="drActiveFilterBanner" style="color:#38bdf8; font-weight:700;">
-                        Filter: ALL STRATEGIES | Date: 2026-09-01 to 2026-10-31 | Super Trail vs Fixed 40/40
+                <div id="btlDataNote" style="font-size:11px; color:var(--text-muted); margin-top:8px;"></div>
+                <div id="btlProgress" style="display:none; margin-top:14px; padding:12px 14px; border-radius:8px; background:rgba(15,23,42,0.8); border:1px solid rgba(56,189,248,0.3);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <span id="btlProgressMsg" style="font-weight:700; color:#38bdf8;">Starting…</span>
+                        <span id="btlProgressStat" style="font-family:var(--font-mono); font-size:12px; color:var(--text-muted);"></span>
                     </div>
-                    <div id="drDataTypeBadge" style="padding:3px 10px; border-radius:4px; background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); font-weight:700;">
-                        Data Type: Synthetic Data — Option Prices Artificially Populated, For Points Testing Only, Not Real P&amp;L
+                    <div style="height:8px; margin-top:8px; border-radius:4px; background:rgba(148,163,184,0.18); overflow:hidden;">
+                        <div id="btlProgressBar" style="height:100%; width:0%; background:linear-gradient(90deg,#38bdf8,#34d399); transition:width .3s;"></div>
                     </div>
                 </div>
-
-                <!-- Side-by-Side Summary: Super Trail vs Fixed 40/40 Baseline -->
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
-                    <div style="padding:12px; border:1px solid rgba(16,185,129,0.4); border-radius:8px; background:rgba(16,185,129,0.05);">
-                        <div style="font-size:12px; font-weight:800; color:var(--emerald); margin-bottom:8px;">⚡ SUPER TRAIL SUMMARY</div>
-                        <div class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap:8px;">
-                            <div class="metric-box"><label>Total Trades</label><div class="metric-value" id="drTradesCount">0</div></div>
-                            <div class="metric-box"><label>Win Rate</label><div class="metric-value" id="drWinRateTrail" style="color:var(--emerald);">0.0%</div></div>
-                            <div class="metric-box"><label>Avg Win</label><div class="metric-value" id="drAvgWinTrail">+0.0 pts</div></div>
-                            <div class="metric-box"><label>Avg Loss</label><div class="metric-value" id="drAvgLossTrail">-0.0 pts</div></div>
-                            <div class="metric-box"><label>Total Net P&amp;L</label><div class="metric-value" id="drNetPnlTrail" style="color:var(--emerald);">₹0.00</div></div>
-                            <div class="metric-box"><label>Max Drawdown</label><div class="metric-value" id="drMaxDdTrail" style="color:var(--crimson);">₹0.00</div></div>
-                            <div class="metric-box"><label>Expectancy</label><div class="metric-value" id="drExpTrail">₹0.00</div></div>
-                            <div class="metric-box"><label>Profit Factor</label><div class="metric-value" id="drPfTrail" style="color:var(--cyan);">0.00</div></div>
-                        </div>
-                    </div>
-                    <div style="padding:12px; border:1px solid #334155; border-radius:8px; background:rgba(30,41,59,0.4);">
-                        <div style="font-size:12px; font-weight:800; color:#94a3b8; margin-bottom:8px;">📏 FIXED 40/40 BASELINE SUMMARY</div>
-                        <div class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap:8px;">
-                            <div class="metric-box"><label>Total Trades</label><div class="metric-value" id="drTradesCountFixed">0</div></div>
-                            <div class="metric-box"><label>Win Rate</label><div class="metric-value" id="drWinRateFixed">0.0%</div></div>
-                            <div class="metric-box"><label>Avg Win</label><div class="metric-value" id="drAvgWinFixed">+0.0 pts</div></div>
-                            <div class="metric-box"><label>Avg Loss</label><div class="metric-value" id="drAvgLossFixed">-0.0 pts</div></div>
-                            <div class="metric-box"><label>Total Net P&amp;L</label><div class="metric-value" id="drNetPnlFixed">₹0.00</div></div>
-                            <div class="metric-box"><label>Max Drawdown</label><div class="metric-value" id="drMaxDdFixed" style="color:var(--crimson);">₹0.00</div></div>
-                            <div class="metric-box"><label>Expectancy</label><div class="metric-value" id="drExpFixed">₹0.00</div></div>
-                            <div class="metric-box"><label>Alpha Locked</label><div class="metric-value" id="drAlphaLocked" style="color:var(--emerald); font-weight:800;">+₹0.00</div></div>
-                        </div>
-                    </div>
+                <div id="btlVerdict" style="display:none; margin-top:16px;"></div>
+                <div id="btlSummary" style="display:none; margin-top:14px;"></div>
+                <div id="btlEquityWrap" style="display:none; margin-top:14px; padding:10px 12px; border:1px solid rgba(148,163,184,0.2); border-radius:8px; background:rgba(9,14,26,0.85);">
+                    <div style="font-size:11px; color:#94a3b8; margin-bottom:4px;">Running net total, trade by trade (spot points). The amber line is where the held-out days begin.</div>
+                    <svg id="btlEquity" viewBox="0 0 1000 170" preserveAspectRatio="none" style="width:100%; height:170px; display:block;"></svg>
                 </div>
-
-                <div id="drAnalysis" style="margin-bottom:16px;"></div>
-
-                <!-- 14-Column Results Table (Exact order; Index High/Low deleted; 13: Data Type, 14: 8 EMA) -->
-                <div style="overflow-x:auto; max-height:480px;">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>1. Date</th>
-                                <th>2. Setup Name</th>
-                                <th>3. Contract Symbol</th>
-                                <th>4. Direction</th>
-                                <th>5. Index Entry</th>
-                                <th>6. Index Exit</th>
-                                <th>7. Option Entry</th>
-                                <th>8. Option Exit</th>
-                                <th>9. Exit Reason</th>
-                                <th>10. Net P&amp;L</th>
-                                <th>11. Trailing</th>
-                                <th>12. All Fall Off</th>
-                                <th>13. Strategy Filter Tag</th>
-                                <th>14. Data Source</th>
-                                <th>15. Price Type</th>
-                                <th>16. BB Gate</th>
-                                <th>17. Entry TF</th>
-                                <th>18. FLAGSHIP / Context</th>
-                            </tr>
-                        </thead>
-                        <tbody id="drBacktestTableBody">
-                            <tr><td colspan="18" style="text-align:center; color:var(--text-muted); padding:16px;">Select date range and click 'Run Date-Range Backtest'.</td></tr>
-                        </tbody>
-                    </table>
+                <div id="btlLaneTable" style="display:none; margin-top:16px;"></div>
+                <div id="btlBreakdowns" style="display:none; margin-top:16px;"></div>
+                <div id="btlDayWrap" style="display:none; margin-top:16px;">
+                    <div style="font-size:12px; font-weight:800; color:#e2e8f0; margin-bottom:6px;">Day detail <span style="font-weight:500; color:#64748b;">— click a day in the table below to load its 15-minute chart and trades</span></div>
+                    <div id="btlDayChart" style="width:100%; height:360px; border:1px solid var(--border-subtle); border-radius:8px;"></div>
+                    <div id="btlDayTrades" style="overflow-x:auto; margin-top:8px;"></div>
                 </div>
-
-                <!-- Live Paper vs. Backtester Reconciliation Table -->
-                <div class="card" style="margin-top:20px; border:1px solid rgba(56, 189, 248, 0.4); background:rgba(15, 23, 42, 0.8);">
-                    <h2>
-                        <span>⚖️ Live Paper vs. Backtester Reconciliation Table</span>
-                        <span id="reconcileAutoSyncBadge" style="font-size:11px; color:var(--emerald); font-family:var(--font-mono);">NOT INDEPENDENTLY RECONCILED</span>
-                    </h2>
-                    <div id="reconciliationMismatchBanner" style="display:none; padding:10px 14px; background:rgba(239, 68, 68, 0.15); border:1px solid var(--crimson); border-radius:6px; color:#fca5a5; margin-bottom:12px; font-weight:700;">
-                        ⚠️ Mismatch: Live took X trade(s) on 05 Nov, Backtester found Y — Auto-syncing from Live Paper Ledger...
-                    </div>
-                    <div style="overflow-x:auto;">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Live Paper Trades Taken</th>
-                                    <th>Backtester Trades Found</th>
-                                    <th>Match?</th>
-                                    <th>Entry / Exit Time (IST)</th>
-                                    <th>Strategy &amp; Difference Reason</th>
-                                </tr>
-                            </thead>
-                            <tbody id="reconciliationTableBody"><tr><td colspan="6">No recorded data loaded</td></tr></tbody>
-                        </table>
-                    </div>
-                </div>
+                <div id="btlDaysWrap" style="display:none; margin-top:16px;"></div>
+                <div id="btlRuns" style="margin-top:18px; padding-top:12px; border-top:1px solid var(--border-subtle);"></div>
             </div>
         </div>
 
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <!-- TAB 5: MULTI-FACTOR TREND LAB & 128-COMBO OPTIMIZER (LEGACY)        -->
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
-        <div id="tabTrendLab" class="tab-content">
-            <!-- Live Quant Telemetry Pills (Tab 5) -->
-            <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; background:rgba(15, 23, 42, 0.7); border:1px solid rgba(56, 189, 248, 0.25); border-radius:8px; padding:10px 14px; margin-bottom:16px;">
-                <div style="font-size:12px; font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                    ⚡ Live Quant Telemetry (Last Closed 15m Bar):
-                    <span class="entry-tf-policy" style="font-size:10px; color:#94a3b8; font-family:var(--font-mono);">Entry TF: 15m | FLAGSHIP View: 1H + Daily | No 5m Trading</span>
-                    <label style="font-size:10px; color:#94a3b8;">Strategy focus</label>
-                    <select id="liveStrategyFocus" style="font-size:10.5px; padding:2px 6px; background:#0f172a; color:#f8fafc; border:1px solid #334155; border-radius:4px;">
-                        <option value="ALL" selected>All strategies</option>
-                        <option value="EMA8_PROTOTYPE">8 EMA Prototype</option>
-                        <option value="STAGE_2_LONG">Stage 2 8 EMA</option>
-                        <option value="H1_FLAGSHIP">1 HR FLAGSHIP</option>
-                    </select>
-                    <span class="bb-off-badge-global status-badge badge-bear" style="display:none;">Bollinger OFF</span>
-                    <button type="button" class="btn-bollinger-gate emerald-btn" onclick="toggleBollingerGate()" style="padding:4px 10px; font-size:11px;">Bollinger Bands: ON</button>
-                </div>
-                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-                    <span id="pillFlagship1H_tab5" style="background:rgba(192, 132, 252, 0.15); border:1px solid #c084fc; color:#e9d5ff; padding:3px 10px; border-radius:14px; font-family:var(--font-mono); font-weight:700; font-size:11.5px;">🎯 1H FLAGSHIP: SCANNING</span>
-                </div>
-            </div>
-
-            <div class="grid-3">
-                <!-- Card 1: Date Range & Audit Mode -->
-                <div class="card">
-                    <h2>
-                        <span>📅 Date Range &amp; Audit Mode</span>
-                        <span style="font-size:11px; color:#38bdf8; font-family:var(--font-mono);">RECORDED PAPER LEDGER</span>
-                    </h2>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
-                        <div>
-                            <label style="font-size:11px; color:var(--text-muted);">Start Date</label>
-                            <input type="date" id="startDate" value="2026-06-01" onchange="runDateExplorer()" style="width:100%;">
-                        </div>
-                        <div>
-                            <label style="font-size:11px; color:var(--text-muted);">End Date</label>
-                            <input type="date" id="endDate" value="2026-11-05" onchange="runDateExplorer()" style="width:100%;">
-                        </div>
-                    </div>
-                    <div style="margin-bottom:12px;">
-                        <label style="font-size:11px; color:var(--text-muted);">Select Strategy Setup</label>
-                        <select id="explorerStrategy" onchange="runDateExplorer()" style="width:100%;">
-                            <option value="ALL" selected>All recorded strategies</option>
-                            <option value="TREND">Trend Following Only (Stage 2 &amp; 3)</option>
-                            <option value="H1">1 HR FLAGSHIP (PA) Only</option>
-                            <option value="REVERSAL">8-EMA Reversals Only</option>
-                            <option value="EMA8_PROTOTYPE">8 EMA Prototype (Paper) Only</option>
-                        </select>
-                    </div>
-                    <div style="margin-bottom:14px;">
-                        <label style="font-size:11px; color:var(--text-muted);">🔬 Failed-Trade Inspection Mode</label>
-                        <select id="explorerAuditMode" onchange="runDateExplorer()" style="width:100%; border-color:#38bdf8; font-weight:700;">
-                            <option value="PASSED" selected>✅ Show Trades Passing Checked Filters</option>
-                            <option value="ELIMINATED_FAILURES">🛡️ Check Failed Trades FIRST: Blocked Losses</option>
-                            <option value="REMAINING_FAILURES">⚠️ Remaining Failed Trades (Slipped Through)</option>
-                            <option value="ALL_FAILED_BASELINE">❌ Show All Failed Trades</option>
-                        </select>
-                    </div>
-                    <div style="display:flex; gap:8px;">
-                        <button class="emerald-btn" onclick="autoSelectOptimalCombo('MAX_PROFIT')">🏆 Auto-Pick Max Profit</button>
-                        <button class="crimson-btn" onclick="autoSelectOptimalCombo('MIN_PROFIT')">📉 Show Least Profit</button>
-                        <button class="secondary-btn" onclick="applyFilterPreset('NONE')">🔄 Reset All</button>
-                    </div>
-                </div>
-
-                <!-- Card 2: 7 Multi-Factor Checkboxes -->
-                <div class="card">
-                    <h2>
-                        <span>🧭 Multi-Factor Trend Identification Checkboxes</span>
-                        <span style="font-size:11px; color:var(--emerald); font-family:var(--font-mono);">LONG=BULL / SHORT=BEAR</span>
-                    </h2>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="fltEmaSlope" onchange="runDateExplorer()">
-                        <label for="fltEmaSlope" style="margin:0; flex:1;"><b>1. EMA Stack &amp; Slope</b> (8-EMA &gt; 21-EMA &amp; Slope &gt; 0)</label>
-                    </div>
-                    <div class="checkbox-group" style="justify-content:space-between;">
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <input type="checkbox" id="fltAdx" onchange="runDateExplorer()">
-                            <label for="fltAdx" style="margin:0;"><b>2. ADX Strength Filter</b></label>
-                        </div>
-                        <input type="number" id="paramAdxMin" value="20.0" step="1.0" min="10" max="40" style="width:65px; padding:3px 6px;" onchange="runDateExplorer()">
-                    </div>
-                    <div class="checkbox-group" style="justify-content:space-between;">
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <input type="checkbox" id="fltRSquared" onchange="runDateExplorer()">
-                            <label for="fltRSquared" style="margin:0;"><b>3. Linear Regression R²</b></label>
-                        </div>
-                        <input type="number" id="paramR2Min" value="0.35" step="0.05" min="0.1" max="0.95" style="width:65px; padding:3px 6px;" onchange="runDateExplorer()">
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="fltMtf" onchange="runDateExplorer()">
-                        <label for="fltMtf" style="margin:0; flex:1;"><b>4. Multi-Timeframe Alignment</b> (1H + 30m + 15m)</label>
-                    </div>
-                    <div class="checkbox-group" style="justify-content:space-between;">
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <input type="checkbox" id="fltVolume" onchange="runDateExplorer()">
-                            <label for="fltVolume" style="margin:0;"><b>5. Volume Surge Filter</b></label>
-                        </div>
-                        <input type="number" id="paramVolMult" value="1.00" step="0.05" min="1.0" max="3.0" style="width:65px; padding:3px 6px;" onchange="runDateExplorer()">
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="fltGap" onchange="runDateExplorer()">
-                        <label for="fltGap" style="margin:0; flex:1;"><b>6. Contra-Gap Protection</b> (±50 pts Gate)</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="fltPcr" onchange="runDateExplorer()">
-                        <label for="fltPcr" style="margin:0; flex:1; color:#38bdf8;"><b>7. DhanOI PCR Gate</b> (Long &ge; 0.85, Short &le; 1.15)</label>
-                    </div>
-                </div>
-
-                <!-- Card 3: Scoreboard -->
-                <div class="card">
-                    <h2>
-                        <span>📊 Trend Impact Scoreboard</span>
-                        <span id="activeFilterCountBadge" style="font-size:11px; color:var(--emerald); font-family:var(--font-mono);">0 FILTERS ON</span>
-                    </h2>
-                    <div class="metrics-grid" style="grid-template-columns: 1fr 1fr; margin-bottom:14px;">
-                        <div class="metric-box">
-                            <label>Filtered Net P&amp;L</label>
-                            <div class="metric-value" id="explorerNetPnl" style="color:var(--emerald);">₹0</div>
-                            <div id="explorerBaselinePnlCompare" style="font-size:11px; color:var(--text-dim); margin-top:2px;">Recorded baseline: not loaded</div>
-                        </div>
-                        <div class="metric-box">
-                            <label>Filtered Win Rate</label>
-                            <div class="metric-value" id="explorerWinRate" style="color:var(--emerald);">0%</div>
-                            <div id="explorerBaselineWrCompare" style="font-size:11px; color:var(--text-dim); margin-top:2px;">Recorded baseline: not loaded</div>
-                        </div>
-                        <div class="metric-box">
-                            <label>Failed Eliminated</label>
-                            <div class="metric-value" id="explorerFailedEliminated" style="color:#38bdf8;">0 / 101</div>
-                            <div id="explorerSavedLossInr" style="font-size:11px; color:var(--emerald); margin-top:2px;">Saved: +₹0</div>
-                        </div>
-                        <div class="metric-box">
-                            <label>Trades &amp; PF</label>
-                            <div class="metric-value" id="explorerTradesCount">0</div>
-                            <div id="explorerProfitFactor" style="font-size:11px; color:var(--text-dim); margin-top:2px;">PF: 0.00</div>
-                        </div>
-                    </div>
-                    <button type="button" class="cyan-btn" style="width:100%;" onclick="runCombinatorialMonteCarlo()">⚡ Recalculate 128 Combinations</button>
-                </div>
-            </div>
-
-            <!-- 🧬 STAGED INSTITUTIONAL DERIVATIVES CONFLUENCE VARIABLES (MULTI-FACTOR TREND LAB) -->
-            <div class="card" style="border:1px solid #38bdf8; background:rgba(56, 189, 248, 0.03); margin-top:16px;">
-                <h2>
-                    <span>🧬 Staged Institutional Derivatives Confluence Variables</span>
-                    <span style="font-size:11px; color:#38bdf8; font-family:var(--font-mono);">STAGED FOR FUTURE AUTO-EXECUTION</span>
-                </h2>
-                <div class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:10px;">
-                    <div class="metric-box"><label>var_pe_minus_ce</label><div class="metric-value" id="var_dhan_oi_pe_minus_ce" style="font-size:16px; color:var(--emerald);">--</div></div>
-                    <div class="metric-box"><label>var_call_oi_change</label><div class="metric-value" id="var_sm_call_oi_change" style="font-size:16px; color:var(--crimson);">--</div></div>
-                    <div class="metric-box"><label>var_put_oi_change</label><div class="metric-value" id="var_sm_put_oi_change" style="font-size:16px; color:var(--emerald);">--</div></div>
-                    <div class="metric-box"><label>var_total_call_oi</label><div class="metric-value" id="var_sm_total_call_oi" style="font-size:16px; color:var(--text-main);">--</div></div>
-                    <div class="metric-box"><label>var_total_put_oi</label><div class="metric-value" id="var_sm_total_put_oi" style="font-size:16px; color:var(--text-main);">--</div></div>
-                    <div class="metric-box"><label>var_oi_writer_bias</label><div class="metric-value" id="var_sm_oi_writer_bias" style="font-size:16px; color:var(--emerald);">--</div></div>
-                </div>
-            </div>
-
-            <!-- Exhaustive 128-Combination & Monte Carlo Optimization Matrix -->
-            <div class="card">
-                <h2>
-                    <span>🎲 Exhaustive Combinatorial (128 Combos) &amp; Monte Carlo Optimization Matrix</span>
-                    <span id="trendLabBbBanner" style="font-size:11px; color:#38bdf8; font-family:var(--font-mono);">BB: ON</span>
-                    <button type="button" class="emerald-btn" onclick="exportMonteCarloToExcel()">📥 Export 128-Combo Matrix (.xls)</button>
-                </h2>
-                <div style="overflow-x:auto; max-height:300px;">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Rank</th>
-                                <th>Filter Combination</th>
-                                <th># Filters</th>
-                                <th>Trades (W / L)</th>
-                                <th>Failed Blocked</th>
-                                <th>Win Rate</th>
-                                <th>Net P&amp;L (INR)</th>
-                                <th>Profit Factor</th>
-                                <th>Monte Carlo 5% Worst-Case</th>
-                                <th>BB Gate</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="mcOptimizerBody"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Filtered Trades Ledger (Simulated - modelled fills, not executed) -->
-            <div class="card">
-                <h2>
-                    <span id="explorerTableTitle">📋 Recorded Paper Trades — stored simulated fills</span>
-                    <button type="button" class="emerald-btn" onclick="exportFilteredLedgerToExcel()">📥 Download Recorded Paper Ledger as Excel (.xls)</button>
-                </h2>
-                <div style="overflow-x:auto; max-height:400px;">
-                    <p id="recordedHistoryStatus" role="status">Loading recorded paper history…</p><table>
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Date</th>
-                                <th>Setup Name</th>
-                                <th>Gap</th>
-                                <th>EMA Slope</th>
-                                <th>ADX</th>
-                                <th>LinReg R²</th>
-                                <th>MTF</th>
-                                <th>Vol Surge</th>
-                                <th>PCR</th>
-                                <th>Result</th>
-                                <th>Net P&amp;L (INR)</th>
-                            </tr>
-                        </thead>
-                        <tbody id="explorerTableBody"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- 🔬 MULTI-FACTOR TREND LAB DYNAMIC INGEST MATRIX -->
-            <div class="card" style="margin-top:16px; border:1px solid #38bdf8; background:rgba(15, 23, 42, 0.85);">
-                <h2>
-                    <span>🔬 Multi-Factor Trend Evaluation Matrix (Unified Ingest Store)</span>
-                    <button type="button" class="cyan-btn" onclick="runTrendLabAPI()">⚡ Run Trend Lab Evaluation</button>
-                </h2>
-                <div style="overflow-x:auto;">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Stage 2 (15m 8 EMA)</th>
-                                <th>4/8 Crossover</th>
-                                <th>1H 8 EMA</th>
-                                <th>Total OI Bias</th>
-                                <th>OI Change Bias</th>
-                                <th>Combined Bias</th>
-                                <th>Writers (Call vs Put)</th>
-                                <th>Volumes</th>
-                                <th>Trend</th>
-                                <th>Multi-Factor Score</th>
-                            </tr>
-                        </thead>
-                        <tbody id="trendLabTableBody"><tr><td colspan="11">No recorded data loaded</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══════════════════════════════════════════════════════════════════ -->
         <!-- TAB 6: 📥 PULL TODAY'S DATA / DAILY DATA INGEST                     -->
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <div id="tab7DailyIngest" class="tab-content">
@@ -2487,7 +2144,6 @@
         // ── 1. HISTORICAL DATASET (Simulated - modelled fills, not executed) ───────────────────────────
         // Note: Modelled baseline fills from index point moves, not real broker fills.
         // False precision Exact_Charges_INR dropped; uses measured historical parameters.
-        let allTrades = []; // Loaded exclusively from the recorded paper ledger.
         const dhanOiLegacyData = []; // No imported provider sample rows.
 
         /** Turn ISO / DB times into desk-readable IST, e.g. 09 Nov 2026, 14:00:00 IST */
@@ -2541,12 +2197,12 @@
             fetchSynergyConfig();
             initSmPollingTimer();
             setInterval(fetchDhanOILiveOI, 15000);
-            loadRecordedHistory();
             pollLiveEngine();
             setInterval(pollLiveEngine, 1000); // 1-second live desk stream
             pollDhanEmaCrossPanel();
             setInterval(pollDhanEmaCrossPanel, 3000); // TV 4/8 EMA panel — forming bar tick (matches backend refresh)
             populateReplayDates();
+            btlInit();
             checkIngestStatus(new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date()));
             initEmaRadarUI();
             loadEmaProximityTable();
@@ -4316,15 +3972,6 @@
                     // Algo-only is permanent; there is no switch.
                 }
 
-                // 9. Staged Derivatives Confluence Variables (Multi-Factor Trend Lab)
-                if (data.trend_lab_variables) {
-                    const tv = data.trend_lab_variables;
-                    for (const [k, v] of Object.entries(tv)) {
-                        const el = document.getElementById(k);
-                        if (el) el.textContent = typeof v === 'number' ? v.toLocaleString('en-IN') : v;
-                    }
-                }
-
                 // 10. Live Confluence Sync for Tab 1 & Tab 6
                 updateDhanOIMultiStrikeCards(data.dhan_oi_multi_strike || data.dhan_oi_synergy, data.dhan_oi_synergy ? data.dhan_oi_synergy.last_sync_time : null);
                 if (data.institutional_pe_ce || data.dhan_oi_pe_ce) {
@@ -5678,10 +5325,6 @@
                 set("flagshipEntrySlTgt", "—");
                 set("flagshipLastSignal", "—");
             }
-            const tab5 = document.getElementById("pillFlagship1H_tab5");
-            if (tab5) {
-                tab5.textContent = `🎯 1H FLAGSHIP: ${fs.state || "SCANNING"} · Daily ${dt.state || "NEUTRAL"} · ${srLine?.textContent?.slice(0, 48) || "—"}`;
-            }
         }
 
         function buildReconciliationFromTrades(trades) {
@@ -5717,541 +5360,282 @@
             });
         }
 
-        function runH1FlagshipOnlyBacktest() {
-            const sel = document.getElementById("drStrategyFilter");
-            if (sel) sel.value = "H1_FLAGSHIP";
-            return runDateRangeBacktest();
+        // ══════════════════════════════════════════════════════════════════
+        //  BACKTEST LAB — background jobs, held-out verdict, spot points
+        // ══════════════════════════════════════════════════════════════════
+        let btlMeta = null, btlActiveId = null, btlPoll = null, btlResult = null, btlDayChart = null, btlDayCandles = null, btlDayLine = null;
+
+        function btlFmt(v, d = 1) { return (v === null || v === undefined || Number.isNaN(Number(v))) ? "—" : Number(v).toFixed(d); }
+        function btlSignedCol(v) { return Number(v || 0) >= 0 ? "var(--emerald)" : "var(--crimson)"; }
+        function btlPts(v) { const n = Number(v || 0); return (n >= 0 ? "+" : "") + btlFmt(n, 1); }
+
+        async function btlInit() {
+            try {
+                const r = await fetch("/api/backtest_lab/meta");
+                btlMeta = await r.json();
+                if (!btlMeta.ok) return;
+                const lanesEl = document.getElementById("btlLanes");
+                const pre = (btlMeta.defaults.lanes || []);
+                lanesEl.innerHTML = (btlMeta.lanes || []).map(l =>
+                    '<label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; font-size:12px;">' +
+                    '<input type="checkbox" class="btl-lane" value="' + l.id + '"' + (pre.includes(l.id) ? " checked" : "") + '> ' +
+                    d86Esc(l.label) + ' <span style="color:#64748b; font-size:10px;">' + d86Esc(l.group) + '</span></label>').join("");
+                const d = btlMeta.data || {};
+                if (d.first_day) {
+                    const f = document.getElementById("btlFrom"), t = document.getElementById("btlTo");
+                    if (f && !f.value) f.value = d.first_day;
+                    if (t && !t.value) t.value = d.last_day;
+                }
+                document.getElementById("btlDataNote").innerHTML = d.days
+                    ? "Recorded NIFTY spot data: <b>" + d.days + " trading days</b> from " + d.first_day + " to " + d.last_day + ". A date outside that range is simply ignored."
+                    : "<span style='color:#fbbf24;'>No recorded spot candles yet. Use the Pull Today's Data tab to collect sessions first.</span>";
+                btlRenderRuns(btlMeta.runs || []);
+                if (btlMeta.running_id) { btlActiveId = btlMeta.running_id; btlStartPolling(); }
+                else if ((btlMeta.runs || []).some(r => r.state === "DONE")) {
+                    const done = btlMeta.runs.find(r => r.state === "DONE");
+                    if (done && !btlResult) btlLoadResult(done.id);
+                }
+            } catch (e) { console.error("btlInit", e); }
         }
 
-        // ── 8B. MULTI-MONTH DATE-RANGE SUPER TRAIL BACKTESTER ──────────────────
-        let lastDateRangeResults = null;
-
-        async function runDateRangeBacktest(){
-            const from_date = document.getElementById('replayFromDate').value;
-            const to_date = document.getElementById('replayToDate').value;
-            const strategy_filter = document.getElementById('drStrategyFilter')?.value || 'ALL';
-            let data_type_filter = document.getElementById('drDataTypeFilter')?.value || 'ALL';
-            if (strategy_filter === 'EMA8_PROTOTYPE' && data_type_filter === 'REAL') {
-                alert(
-                    '8 EMA Prototype history uses real NSE spot 1m candles (not ledger-only).\n\n'
-                    + 'Switching Data Type to spot OHLC replay.'
-                );
-                data_type_filter = 'SYNTHETIC';
-                const dsel = document.getElementById('drDataTypeFilter');
-                if (dsel) dsel.value = 'SYNTHETIC';
-            }
-            const include_today_paper = document.getElementById('includeTodayPaperTrades')?.checked ?? true;
-            const use_previous_scanner = document.getElementById('usePreviousScannerData')?.checked ?? false;
-
-            const filterNames = {
-                ALL: 'ALL STRATEGIES',
-                STAGE_2_LONG: 'STAGE 2 8 EMA LONG',
-                STAGE_3_SHORT: 'STAGE 3 8 EMA SHORT',
-                CROSSOVER: '4x8 EMA CROSSOVER REVERSAL',
-                H1_FLAGSHIP: '1 HR FLAGSHIP',
-                PA_SR_HOMEWORK: '15m PA @ S/R (Homework)',
-                EMA8_PROTOTYPE: '8 EMA Prototype (Paper)'
+        async function btlStart() {
+            const lanes = [...document.querySelectorAll(".btl-lane:checked")].map(c => c.value);
+            const body = {
+                from: document.getElementById("btlFrom").value, to: document.getElementById("btlTo").value,
+                lanes, cost_pts: parseFloat(document.getElementById("btlCost").value),
+                holdout_frac: parseFloat(document.getElementById("btlHoldout").value),
             };
-            const banner = document.getElementById('drActiveFilterBanner');
-            if (banner) {
-                banner.textContent = `Filter: ${filterNames[strategy_filter] || strategy_filter} | Date: ${from_date} to ${to_date} | BB: … | Super Trail vs Fixed 40/40${use_previous_scanner ? ' | [Previous Scanner Data]' : ''}`;
-            }
-
-            const tbody = document.getElementById('drBacktestTableBody');
-            tbody.replaceChildren();
-
+            document.getElementById("btlRunBtn").disabled = true;
             try {
-                const params = new URLSearchParams({
-                    from_date,
-                    to_date,
-                    strategy_filter,
-                    data_type_filter,
-                    include_today_paper: String(include_today_paper),
-                    use_previous_scanner: String(use_previous_scanner)
-                });
-                const response = await fetch('/api/backtest/date_range?' + params.toString());
-                const data = await response.json();
-                if (!response.ok || !data.ok) throw Error(data.error || 'Backtest unavailable');
-                lastDateRangeResults = data;
-                if (banner) {
-                    const bb = data.bb_gate_run_label || (data.scanner_gates?.bollinger_enabled === true ? 'ON' : 'OFF');
-                    banner.textContent = `Filter: ${filterNames[strategy_filter] || strategy_filter} | Date: ${from_date} to ${to_date} | BB: ${bb} | Super Trail vs Fixed 40/40${use_previous_scanner ? ' | [Previous Scanner Data]' : ''}`;
-                    applyBollingerGateUI(data.scanner_gates?.bollinger_enabled === true);
-                }
+                const r = await fetch("/api/backtest_lab/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+                const d = await r.json();
+                if (!d.ok) { alert(d.error || "Could not start the backtest."); document.getElementById("btlRunBtn").disabled = false; return; }
+                btlActiveId = d.id; btlResult = null;
+                ["btlVerdict", "btlSummary", "btlEquityWrap", "btlLaneTable", "btlBreakdowns", "btlDayWrap", "btlDaysWrap"].forEach(id => document.getElementById(id).style.display = "none");
+                btlStartPolling();
+            } catch (e) { alert("Could not reach the engine."); document.getElementById("btlRunBtn").disabled = false; }
+        }
 
-                const badge = document.getElementById('drDataTypeBadge');
-                if (badge) {
-                    if (data.data_type_mode === 'REAL') {
-                        badge.textContent = 'Data Type: Real Data — Real Option Entry / Exit Captured from Live Market';
-                        badge.style.background = 'rgba(16,185,129,0.18)';
-                        badge.style.color = '#34d399';
-                    } else if (data.data_type_mode === 'MIXED') {
-                        badge.textContent = 'Data Type: Mixed (Real Live Trades + Synthetic Backtest Data)';
-                        badge.style.background = 'rgba(56,189,248,0.18)';
-                        badge.style.color = '#38bdf8';
-                    } else {
-                        badge.textContent = 'Data Type: Synthetic Data — Option Prices Artificially Populated, For Points Testing Only, Not Real P&L';
-                        badge.style.background = 'rgba(245,158,11,0.18)';
-                        badge.style.color = '#fbbf24';
+        async function btlCancel() {
+            if (!btlActiveId) return;
+            try { await fetch("/api/backtest_lab/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: btlActiveId }) }); } catch (e) {}
+        }
+
+        function btlStartPolling() {
+            document.getElementById("btlProgress").style.display = "block";
+            document.getElementById("btlRunBtn").style.display = "none";
+            document.getElementById("btlCancelBtn").style.display = "inline-block";
+            if (btlPoll) clearInterval(btlPoll);
+            const tick = async () => {
+                if (!btlActiveId) return;
+                try {
+                    const r = await fetch("/api/backtest_lab/status?id=" + encodeURIComponent(btlActiveId));
+                    const s = await r.json();
+                    if (!s.ok) return;
+                    document.getElementById("btlProgressMsg").textContent = s.message || s.state;
+                    const done = s.done_chunks || 0, total = s.total_chunks || 0;
+                    document.getElementById("btlProgressBar").style.width = (total ? (done / total * 100) : 5).toFixed(0) + "%";
+                    document.getElementById("btlProgressStat").textContent =
+                        (total ? done + "/" + total + " months · " : "") + (s.trades_so_far || 0) + " trades · net " + btlPts(s.net_so_far) +
+                        (s.elapsed_sec ? " · " + s.elapsed_sec + "s" : "");
+                    if (["DONE", "FAILED", "CANCELLED"].includes(s.state)) {
+                        clearInterval(btlPoll); btlPoll = null;
+                        document.getElementById("btlRunBtn").style.display = "inline-block";
+                        document.getElementById("btlRunBtn").disabled = false;
+                        document.getElementById("btlCancelBtn").style.display = "none";
+                        if (s.state === "DONE") { document.getElementById("btlProgress").style.display = "none"; btlLoadResult(btlActiveId); }
+                        else document.getElementById("btlProgressMsg").style.color = s.state === "CANCELLED" ? "#fbbf24" : "#f87171";
+                        btlInit();
                     }
-                }
-
-                const st = data.super_trail_summary || {};
-                const fx = data.fixed_40_40_summary || {};
-                const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-
-                setTxt('drTradesCount', String(data.total_trades ?? 0));
-                setTxt('drTradesCountFixed', String(data.total_trades ?? 0));
-                setTxt('drWinRateTrail', `${Number(st.win_rate_pct ?? data.win_rate_trailing ?? 0).toFixed(1)}%`);
-                setTxt('drWinRateFixed', `${Number(fx.win_rate_pct ?? data.win_rate_fixed ?? 0).toFixed(1)}%`);
-                setTxt('drAvgWinTrail', `+${Number(st.avg_win_pts ?? 0).toFixed(1)} pts`);
-                setTxt('drAvgLossTrail', `${Number(st.avg_loss_pts ?? 0).toFixed(1)} pts`);
-                setTxt('drAvgWinFixed', `+${Number(fx.avg_win_pts ?? 0).toFixed(1)} pts`);
-                setTxt('drAvgLossFixed', `${Number(fx.avg_loss_pts ?? 0).toFixed(1)} pts`);
-                setTxt('drNetPnlTrail', `₹${Number(st.total_net_pnl_inr ?? data.trailing_net_pnl ?? 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}`);
-                setTxt('drNetPnlFixed', `₹${Number(fx.total_net_pnl_inr ?? data.fixed_net_pnl ?? 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}`);
-                setTxt('drMaxDdTrail', `₹${Number(st.max_drawdown_inr ?? data.max_drawdown_trailing ?? 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}`);
-                setTxt('drMaxDdFixed', `₹${Number(fx.max_drawdown_inr ?? data.max_drawdown_fixed ?? 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}`);
-                setTxt('drExpTrail', `${Number(st.expectancy_pts ?? 0) >= 0 ? '+' : ''}${Number(st.expectancy_pts ?? 0).toFixed(1)} pts (₹${Number(st.expectancy_inr ?? 0).toFixed(0)})`);
-                setTxt('drExpFixed', `${Number(fx.expectancy_pts ?? 0) >= 0 ? '+' : ''}${Number(fx.expectancy_pts ?? 0).toFixed(1)} pts (₹${Number(fx.expectancy_inr ?? 0).toFixed(0)})`);
-                setTxt('drPfTrail', Number(st.profit_factor ?? data.profit_factor_trailing ?? 0).toFixed(2));
-                const alpha = Number(st.total_net_pnl_inr ?? 0) - Number(fx.total_net_pnl_inr ?? 0);
-                setTxt('drAlphaLocked', `${alpha >= 0 ? '+' : ''}₹${alpha.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}`);
-
-                if (strategy_filter === 'EMA8_PROTOTYPE' && !(data.trades || []).length) {
-                    const hint = document.createElement('tr');
-                    const td = document.createElement('td');
-                    td.colSpan = 16;
-                    td.style.cssText = 'padding:16px;color:#fbbf24;font-family:var(--font-mono);font-size:11.5px;line-height:1.5;';
-                    td.textContent = 'No 8 EMA Prototype rows for this range. Check: (1) engine restarted after latest code, (2) To Date includes session day, (3) Data Type = All or Synthetic (not Real Only), (4) dates use ict_smc spot candles.';
-                    hint.appendChild(td);
-                    tbody.appendChild(hint);
-                }
-                for (const t of (data.trades || [])) {
-                    const tr = document.createElement('tr');
-                    const pt = resolvePriceType(t);
-                    const dataType = resolveDataSourceTag(t);
-                    const optIn = sanitizeOptionDisplay(pt === 'SYNTHESIZED' ? null : (t.Option_Entry_Display ?? t.option_entry), pt);
-                    const optOut = sanitizeOptionDisplay(pt === 'SYNTHESIZED' ? null : (t.Option_Exit_Display ?? t.option_exit), pt);
-                    const cols = [
-                        formatDeskTimestamp(t.Date) !== "—" ? formatDeskTimestamp(t.Date) : (t.Date || "—"),
-                        t.Setup_Name,
-                        t.Contract_Symbol,
-                        t.Direction,
-                        t.Index_Entry,
-                        t.Index_Exit,
-                        optIn,
-                        optOut,
-                        t.Exit_Reason || t.exit_reason,
-                        t.Net_Pnl_Display,
-                        t.Trailing_Details,
-                        t.All_Fall_Off,
-                        t.Strategy_Filter_Tag,
-                        dataType,
-                    ];
-                    for (const val of cols) {
-                        const td = document.createElement('td');
-                        td.textContent = val == null ? '-' : String(val);
-                        tr.appendChild(td);
-                    }
-                    const tdPt = document.createElement('td');
-                    tdPt.innerHTML = formatPriceTypeCell(t);
-                    tr.appendChild(tdPt);
-                    const tdGates = document.createElement('td');
-                    const bbL = t.BB_Gate || data.bb_gate_run_label || 'ON';
-                    tdGates.textContent = `BB: ${bbL}`;
-                    tr.appendChild(tdGates);
-                    const tdEtf = document.createElement('td');
-                    tdEtf.textContent = t.Entry_TF || '15m';
-                    tr.appendChild(tdEtf);
-                    const tdCtx = document.createElement('td');
-                    tdCtx.textContent = flagshipContextFromTrade(t);
-                    tdCtx.style.fontSize = '11px';
-                    tdCtx.style.maxWidth = '280px';
-                    tr.appendChild(tdCtx);
-                    tbody.appendChild(tr);
-                }
-
-                renderTradeAnalysis("drAnalysis", data.trades || []);
-                if (!data.trades || !data.trades.length) {
-                    const tr = document.createElement('tr'), td = document.createElement('td');
-                    td.colSpan = 18;
-                    td.textContent = 'No trades matched the selected Strategy / Data Type filter in this date range.';
-                    tr.appendChild(td);
-                    tbody.appendChild(tr);
-                }
-                const recon = (data.reconciliation && data.reconciliation.length)
-                    ? data.reconciliation
-                    : buildReconciliationFromTrades(data.trades || []);
-                const reconMatch = data.reconciliation_match ?? (recon.length ? recon.every(r => r.match !== false) : null);
-                renderReconciliation(recon, reconMatch);
-                const syncBadge = document.getElementById('reconcileAutoSyncBadge');
-                if (syncBadge) {
-                    syncBadge.textContent = recon.length ? 'CLIENT RECON FROM price_type + H1_FLAGSHIP' : 'NOT INDEPENDENTLY RECONCILED';
-                }
-            } catch (e) {
-                const tr = document.createElement('tr'), td = document.createElement('td');
-                td.colSpan = 17;
-                td.textContent = 'Backtest error: ' + e.message;
-                tr.appendChild(td);
-                tbody.appendChild(tr);
-            }
+                } catch (e) {}
+            };
+            tick(); btlPoll = setInterval(tick, 1500);
         }
 
-        function renderReconciliation(reconcileList, matchOverall) {
-            const tbody = document.getElementById("reconciliationTableBody");
-            const banner = document.getElementById("reconciliationMismatchBanner");
-            if (!tbody) return;
-            if (!reconcileList || reconcileList.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-dim); padding:12px;">Run the date-range backtest to build Live (REAL_ALGO_PAPER) vs Backtest (SYNTHESIZED) reconciliation.</td></tr>`;
-                return;
-            }
-            let hasMismatch = matchOverall === false;
-            tbody.innerHTML = reconcileList.map(r => {
-                if (r.match === false) hasMismatch = true;
-                const matchBadge = r.match 
-                    ? `<span class="status-badge badge-bull">✅ MATCH</span>` 
-                    : `<span class="status-badge badge-bear">⚠️ MISMATCH</span>`;
-                return `<tr>
-                    <td style="font-weight:700; color:#f8fafc;">${r.date_formatted || r.date}</td>
-                    <td>${r.live_trades_taken}</td>
-                    <td>${r.backtest_trades_found}</td>
-                    <td>${matchBadge}</td>
-                    <td>${formatDeskTimestamp(r.entry_exit_time) || "-"}</td>
-                    <td>${r.strategy_reason || "-"}</td>
-                </tr>`;
-            }).join("");
-
-            if (banner) {
-                if (hasMismatch) {
-                    banner.style.display = "block";
-                    banner.innerHTML = `⚠️ Mismatch detected between Live Paper ledger and Backtester — Auto-syncing from Live Paper Ledger...`;
-                } else {
-                    banner.style.display = "none";
-                }
-            }
-        }
-
-        function exportDateRangeBacktestToExcel(){
- if(!lastDateRangeResults){alert('Load recorded history first');return;}
- const headers=['Ledger ID','Date','Setup','Direction','Symbol','Entry premium','Exit premium','Quantity','Exit reason','Stored gross P&L','Stored charges','Stored net P&L','Provenance'];
- const rows=lastDateRangeResults.trades.map(t=>{
-   const syn=resolveDataSourceTag(t)==='SYNTHESIZED';
-   return [t.Trade_ID,t.Date,t.Setup_Name,t.Direction,t.Contract_Symbol,syn?'':(t.option_entry??''),syn?'':(t.option_exit??''),t.qty,t.exit_reason,syn?'':(t.gross_pnl??''),syn?'':(t.charges??''),syn?'':(t.net_pnl??''),t.data_source_tag||t.provenance];
- });
- exportTableToExcelXML('Recorded_Paper_Ledger.xls','RecordedPaper',headers,rows);
-}
-
-        // ── 9. LEGACY ANALYTICAL LAB & 128-COMBO OPTIMIZER ────────────────────
-        function evaluateTradeAgainstTrendFilters(t) {
-            const fltSlope = document.getElementById('fltEmaSlope').checked;
-            const fltAdx = document.getElementById('fltAdx').checked;
-            const paramAdx = parseFloat(document.getElementById('paramAdxMin').value || 20.0);
-            const fltR2 = document.getElementById('fltRSquared').checked;
-            const paramR2 = parseFloat(document.getElementById('paramR2Min').value || 0.35);
-            const fltMtf = document.getElementById('fltMtf').checked;
-            const fltVol = document.getElementById('fltVolume').checked;
-            const paramVol = parseFloat(document.getElementById('paramVolMult').value || 1.0);
-            const fltGap = document.getElementById('fltGap').checked;
-            const fltPcr = document.getElementById('fltPcr').checked;
-
-            const requirements=[[fltSlope,'EMA_Slope'],[fltAdx,'ADX'],[fltR2,'R_Squared'],[fltMtf,'MTF_Aligned'],[fltVol,'Vol_Mult'],[fltGap,'Market_Gap_Pts'],[fltPcr,'PCR_At_Entry']];
-            if(requirements.some(([enabled,key])=>enabled && (t[key]===null || t[key]===undefined)))return false;
-            if(missingSelectedFeatures(t))return false;
-            // Strict Moving Average Stack & Trend Validation:
-            // Bullish Stack (EMA_Slope > 0): Short trades strictly blocked
-            // Bearish Stack (EMA_Slope < 0): Long trades strictly blocked
-            if (t.Direction === 'LONG' && t.EMA_Slope < 0) return false;
-            if (t.Direction === 'SHORT' && t.EMA_Slope > 0) return false;
-            if (t.Setup_Name && t.Setup_Name.includes('Reversal') && t.EMA_Aligned === false) return false;
-
-            if (fltSlope) {
-                if (t.Direction === 'LONG' && t.EMA_Slope <= 0) return false;
-                if (t.Direction === 'SHORT' && t.EMA_Slope >= 0) return false;
-            }
-            if (fltAdx && t.ADX < paramAdx) return false;
-            if (fltR2 && t.R_Squared < paramR2) return false;
-            if (fltMtf && !t.MTF_Aligned) return false;
-            if (fltVol && t.Vol_Mult < paramVol) return false;
-            if (fltGap) {
-                if (t.Direction === 'LONG' && t.Market_Gap_Pts < -50) return false;
-                if (t.Direction === 'SHORT' && t.Market_Gap_Pts > 50) return false;
-            }
-            if (fltPcr) {
-                if (t.Direction === 'LONG' && t.PCR_At_Entry < 0.85) return false;
-                if (t.Direction === 'SHORT' && t.PCR_At_Entry > 1.15) return false;
-            }
-
-            return true;
-        }
-
-        async function loadRecordedHistory() {
-            const status=document.getElementById('recordedHistoryStatus');
+        async function btlLoadResult(id) {
             try {
-                const response=await fetch('/api/history/recorded');
-                if(!response.ok)throw new Error('HTTP '+response.status);
-                const data=await response.json();
-                allTrades=Array.isArray(data.trades)?data.trades:[];
-                if(allTrades.length){const latest=allTrades.map(t=>t.Date).sort().at(-1);const end=document.getElementById('endDate');if(end&&end.value<latest)end.value=latest;}
-                const src = data.primary_source || data.provenance || 'RECORDED';
-                status.textContent=allTrades.length+` trades — primary source: ${src}. Immutable master first; legacy ledger only when master is empty for that range.`;
-            } catch(e) {allTrades=[];status.textContent='No recorded data — '+e.message;}
-            runDateExplorer();
+                const r = await fetch("/api/backtest_lab/result?id=" + encodeURIComponent(id));
+                const d = await r.json();
+                if (!d.ok) return;
+                btlActiveId = id; btlResult = d; btlRenderResult(d.report);
+            } catch (e) { console.error("btlLoadResult", e); }
         }
 
-        function missingSelectedFeatures(t){
-            const fields=[['fltEmaSlope','EMA_Slope'],['fltAdx','ADX'],['fltRSquared','R_Squared'],['fltMtf','MTF_Aligned'],['fltVolume','Vol_Mult'],['fltGap','Market_Gap_Pts'],['fltPcr','PCR_At_Entry'],['fltGoldilocks','sep_atr'],['fltFutVolSurge','vsr_10']];
-            return fields.some(([id,key])=>document.getElementById(id)?.checked && t[key]==null);
+        function btlStatRow(label, s, highlight) {
+            const c = highlight ? "background:rgba(56,189,248,0.08);" : "";
+            return '<tr style="' + c + '"><td style="font-weight:700;">' + label + '</td>' +
+                '<td>' + (s.trades || 0) + '</td>' +
+                '<td style="color:' + btlSignedCol(s.net_pts) + '; font-weight:800;">' + btlPts(s.net_pts) + '</td>' +
+                '<td>' + btlFmt(s.avg_net_pts, 2) + '</td>' +
+                '<td>' + (s.win_rate_pct === null ? "—" : s.win_rate_pct + "%") + '</td>' +
+                '<td>' + (s.profit_factor === null ? "—" : btlFmt(s.profit_factor, 2)) + '</td>' +
+                '<td>' + (s.t_stat === null ? "—" : btlFmt(s.t_stat, 2)) + '</td>' +
+                '<td style="color:var(--crimson);">−' + btlFmt(s.max_drawdown_pts, 1) + '</td>' +
+                '<td>' + (s.longest_losing_run || 0) + '</td></tr>';
         }
 
-        function runDateExplorer() {
-            const sDate = document.getElementById('startDate').value;
-            const eDate = document.getElementById('endDate').value;
-            const strat = document.getElementById('explorerStrategy').value;
-            const auditMode = document.getElementById('explorerAuditMode').value;
+        function btlRenderResult(rep) {
+            // verdict
+            const v = rep.verdict, tone = { good: ["#064e3b", "#34d399", "✓"], warn: ["#422006", "#fbbf24", "⚠"], bad: ["#450a0a", "#f87171", "✗"], neutral: ["#1e293b", "#94a3b8", "•"] }[v.tone] || ["#1e293b", "#94a3b8", "•"];
+            const vd = document.getElementById("btlVerdict");
+            vd.style.display = "block";
+            vd.innerHTML = '<div style="padding:14px 18px; border-radius:10px; background:' + tone[0] + '; border:1px solid ' + tone[1] + ';">' +
+                '<div style="font-size:18px; font-weight:800; color:' + tone[1] + ';">' + tone[2] + ' ' + d86Esc(v.grade) + '</div>' +
+                '<div style="color:#e2e8f0; font-size:13px; margin-top:4px; line-height:1.5;">' + d86Esc(v.text) + '</div>' +
+                '<div style="color:#94a3b8; font-size:11px; margin-top:6px;">' +
+                'Chose on ' + (rep.split.earlier_days || 0) + ' earlier days (' + (rep.split.earlier_from || "—") + ' → ' + (rep.split.earlier_to || "—") + '), ' +
+                'judged on ' + (rep.split.held_out_days || 0) + ' held-out days (' + (rep.split.held_from || "—") + ' → ' + (rep.split.held_to || "—") + ').</div></div>';
+            // summary table
+            const sm = document.getElementById("btlSummary");
+            sm.style.display = "block";
+            sm.innerHTML = '<div style="overflow-x:auto;"><table style="font-size:12px;"><thead><tr>' +
+                ['Period', 'Trades', 'Net pts', 'Avg', 'Win %', 'Profit factor', 't-stat', 'Max DD', 'Losing run'].map(h => '<th>' + h + '</th>').join("") +
+                '</tr></thead><tbody>' +
+                btlStatRow("Everything", rep.all, false) +
+                btlStatRow("Earlier (chosen on)", rep.earlier, false) +
+                btlStatRow("HELD-OUT (the test)", rep.held_out, true) +
+                '</tbody></table>' +
+                '<div style="font-size:11px; color:#64748b; margin-top:4px;">t-stat ≥ 2 means the average is far enough from zero that luck is an unlikely explanation. ' +
+                (rep.all.ambiguous ? 'Ambiguous trades (target and stop in the same minute): <b>' + rep.all.ambiguous + '</b>, booked as stops; net if they had all been targets: <b>' + btlPts(rep.all.net_if_ambiguous_were_targets) + '</b>. ' : '') +
+                (rep.coverage && rep.coverage.weekdays_without_data ? 'Weekdays without data in range: ' + rep.coverage.weekdays_without_data + ' (holidays or ungathered).' : '') +
+                '</div></div>';
+            btlRenderEquity(rep.equity, rep.split.split_trade_index);
+            btlRenderLaneTable(rep.per_lane);
+            btlRenderBreakdowns(rep);
+            btlRenderDays(rep.days);
+        }
 
-            let inScope = allTrades.filter(t => {
-                if (t.Date < sDate || t.Date > eDate) return false;
-                if (strat === 'TREND' && !t.Setup_Name.includes('Stage')) return false;
-                if (strat === 'H1' && !(String(t.Setup_Name || '').includes('Flagship') || String(t.strategy_id || '').includes('FLAGSHIP') || String(t.Setup_Name || '').includes('1 HR FLAGSHIP'))) return false;
-                if (strat === 'REVERSAL' && !t.Setup_Name.includes('Reversal')) return false;
-                if (strat === 'EMA8_PROTOTYPE' && !(String(t.strategy_id || '').includes('EMA8_PROTOTYPE') || String(t.Setup_Name || '').includes('8 EMA Prototype'))) return false;
-                return true;
+        function btlRenderEquity(curve, splitIdx) {
+            const wrap = document.getElementById("btlEquityWrap"), svg = document.getElementById("btlEquity");
+            if (!curve || curve.length < 2) { wrap.style.display = "none"; return; }
+            wrap.style.display = "block";
+            const W = 1000, H = 170, lo = Math.min(...curve.map(p => p.net)), hi = Math.max(...curve.map(p => p.net)), span = (hi - lo) || 1;
+            const n = curve.length - 1;
+            const X = i => (i / n) * W, Y = val => H - 8 - ((val - lo) / span) * (H - 16);
+            const path = curve.map((p, i) => (i ? "L" : "M") + X(p.i).toFixed(1) + " " + Y(p.net).toFixed(1)).join(" ");
+            const last = curve[curve.length - 1].net;
+            let splitX = null;
+            if (splitIdx && splitIdx > 0 && splitIdx < curve[curve.length - 1].i) splitX = X(splitIdx);
+            svg.innerHTML =
+                '<line x1="0" x2="' + W + '" y1="' + Y(0).toFixed(1) + '" y2="' + Y(0).toFixed(1) + '" stroke="#475569" stroke-dasharray="4 4"/>' +
+                (splitX !== null ? '<line x1="' + splitX.toFixed(1) + '" x2="' + splitX.toFixed(1) + '" y1="0" y2="' + H + '" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="3 3"/>' +
+                    '<text x="' + (splitX + 5).toFixed(1) + '" y="14" fill="#fbbf24" font-size="11">held-out →</text>' : '') +
+                '<path d="' + path + '" fill="none" stroke="' + (last >= 0 ? "#34d399" : "#f87171") + '" stroke-width="2" vector-effect="non-scaling-stroke"/>';
+        }
+
+        function btlRenderLaneTable(lanes) {
+            const el = document.getElementById("btlLaneTable");
+            if (!lanes || !lanes.length) { el.style.display = "none"; return; }
+            el.style.display = "block";
+            const grade = g => { const c = { PASS: "#34d399", WEAK: "#fbbf24", FAIL: "#f87171" }[g] || "#94a3b8"; return '<span style="color:' + c + '; font-weight:700;">' + (g || "—") + '</span>'; };
+            el.innerHTML = '<div style="font-size:12px; font-weight:800; color:#e2e8f0; margin-bottom:6px;">Each strategy on its own (held-out days)</div>' +
+                '<div style="overflow-x:auto;"><table style="font-size:12px;"><thead><tr>' +
+                ['Strategy', 'Verdict', 'Held-out trades', 'Held-out net', 'Held-out t-stat', 'All net', 'All win %'].map(h => '<th>' + h + '</th>').join("") +
+                '</tr></thead><tbody>' + lanes.map(l =>
+                    '<tr><td style="font-weight:700; text-align:left;">' + d86Esc(l.label) + '</td>' +
+                    '<td>' + grade((l.verdict || {}).grade) + '</td>' +
+                    '<td>' + (l.held_out.trades || 0) + '</td>' +
+                    '<td style="color:' + btlSignedCol(l.held_out.net_pts) + '; font-weight:700;">' + btlPts(l.held_out.net_pts) + '</td>' +
+                    '<td>' + (l.held_out.t_stat === null ? "—" : btlFmt(l.held_out.t_stat, 2)) + '</td>' +
+                    '<td style="color:' + btlSignedCol(l.all.net_pts) + ';">' + btlPts(l.all.net_pts) + '</td>' +
+                    '<td>' + (l.all.win_rate_pct === null ? "—" : l.all.win_rate_pct + "%") + '</td></tr>').join("") +
+                '</tbody></table></div>';
+        }
+
+        function btlMiniTable(title, rows, keyName) {
+            if (!rows || !rows.length) return "";
+            return '<div style="flex:1 1 260px; min-width:240px;"><div style="font-size:11px; font-weight:700; color:#94a3b8; margin-bottom:3px;">' + title + '</div>' +
+                '<table style="font-size:11px;"><thead><tr><th style="text-align:left;">' + keyName + '</th><th>Trades</th><th>Win %</th><th>Net pts</th><th>t</th></tr></thead><tbody>' +
+                rows.map(r => '<tr><td style="text-align:left; font-family:var(--font-mono);">' + d86Esc(r.key) + '</td><td>' + r.trades + '</td><td>' + (r.win_rate_pct === null ? "—" : r.win_rate_pct) + '</td>' +
+                    '<td style="color:' + btlSignedCol(r.net_pts) + '; font-weight:700;">' + btlPts(r.net_pts) + '</td><td>' + (r.t_stat === null ? "—" : btlFmt(r.t_stat, 2)) + '</td></tr>').join("") +
+                '</tbody></table></div>';
+        }
+
+        function btlRenderBreakdowns(rep) {
+            const el = document.getElementById("btlBreakdowns");
+            el.style.display = "block";
+            el.innerHTML = '<div style="font-size:12px; font-weight:800; color:#e2e8f0; margin-bottom:6px;">Where the result comes from</div>' +
+                '<div style="display:flex; flex-wrap:wrap; gap:14px;">' +
+                btlMiniTable("By month", rep.by_month, "Month") +
+                btlMiniTable("By weekday", rep.by_weekday, "Day") +
+                btlMiniTable("By entry hour", rep.by_hour, "Hour") +
+                btlMiniTable("By exit reason", rep.by_exit, "Reason") +
+                btlMiniTable("By side", rep.by_side, "Side") + '</div>';
+        }
+
+        function btlRenderDays(days) {
+            const el = document.getElementById("btlDaysWrap");
+            if (!days || !days.length) { el.style.display = "none"; return; }
+            el.style.display = "block";
+            el.innerHTML = '<div style="font-size:12px; font-weight:800; color:#e2e8f0; margin-bottom:6px;">By day <span style="font-weight:500; color:#64748b;">— click a day to see its chart and trades above</span></div>' +
+                '<div style="display:flex; flex-wrap:wrap; gap:4px;">' + days.map(d =>
+                    '<button type="button" onclick="btlLoadDay(\'' + d.day + '\')" title="' + d.trades + ' trades" style="cursor:pointer; padding:3px 7px; border-radius:4px; font-size:10.5px; font-family:var(--font-mono); border:1px solid ' +
+                    (d.held_out ? "#fbbf24" : "rgba(148,163,184,0.3)") + '; background:' + (d.net_pts >= 0 ? "rgba(16,185,129,0.15)" : "rgba(244,63,94,0.15)") + '; color:' + btlSignedCol(d.net_pts) + ';">' +
+                    d.day.slice(5) + " " + btlPts(d.net_pts) + '</button>').join("") +
+                '</div><div style="font-size:10.5px; color:#64748b; margin-top:4px;">Amber border = held-out day.</div>';
+        }
+
+        async function btlLoadDay(day) {
+            if (!btlActiveId) return;
+            const wrap = document.getElementById("btlDayWrap");
+            wrap.style.display = "block"; wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            try {
+                const r = await fetch("/api/backtest_lab/day?id=" + encodeURIComponent(btlActiveId) + "&day=" + day);
+                const d = await r.json();
+                if (!d.ok) return;
+                btlRenderDayChart(d.chart, d.trades);
+                const tb = document.getElementById("btlDayTrades");
+                tb.innerHTML = !d.trades.length ? '<div style="color:#64748b; padding:8px;">No trades this day.</div>' :
+                    '<table style="font-size:11.5px;"><thead><tr>' + ['Entry', 'Exit', 'Strategy', 'Side', 'Spot in → out', 'Net pts', 'Exit reason'].map(h => '<th>' + h + '</th>').join("") + '</tr></thead><tbody>' +
+                    d.trades.map(t => '<tr><td>' + d86Esc(t.entry_hm) + '</td><td>' + d86Esc(t.exit_hm) + '</td><td style="text-align:left;">' + d86Esc(t.setup || t.lane) + '</td>' +
+                        '<td>' + t.side + '</td><td>' + btlFmt(t.entry, 1) + " → " + btlFmt(t.exit, 1) + '</td>' +
+                        '<td style="color:' + btlSignedCol(t.net) + '; font-weight:700;">' + btlPts(t.net) + '</td><td style="font-family:var(--font-mono); font-size:10px; color:#94a3b8;">' + d86Esc(t.reason) + '</td></tr>').join("") +
+                    '</tbody></table>';
+            } catch (e) { console.error("btlLoadDay", e); }
+        }
+
+        function btlRenderDayChart(chart, trades) {
+            const el = document.getElementById("btlDayChart");
+            if (!chart || !chart.ok || typeof LightweightCharts === "undefined") { el.innerHTML = '<div style="padding:16px; color:#64748b;">Chart unavailable for this day.</div>'; return; }
+            el.innerHTML = "";
+            btlDayChart = LightweightCharts.createChart(el, {
+                layout: { background: { color: "#0b1220" }, textColor: "#94a3b8" },
+                grid: { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
+                timeScale: { timeVisible: true, borderColor: "#334155" }, rightPriceScale: { borderColor: "#334155" }, height: 360,
             });
-
-            const baselineNet = inScope.reduce((acc, t) => acc + t.Net_Pnl_INR, 0);
-            document.getElementById('explorerBaselinePnlCompare').textContent='Recorded baseline: ₹'+baselineNet.toLocaleString('en-IN');
-            document.getElementById('explorerBaselineWrCompare').textContent=inScope.length ? 'Recorded baseline WR: '+(inScope.filter(t=>t.Net_Pnl_INR>0).length/inScope.length*100).toFixed(1)+'%' : 'No recorded data';
-            const baselineWins = inScope.filter(t => t.Net_Pnl_INR > 0).length;
-            const baselineLosses = inScope.filter(t => t.Net_Pnl_INR <= 0);
-            const baselineLossTotal = baselineLosses.length;
-
-            let displayTrades = [];
-            let eliminatedLosses = 0;
-            let savedInr = 0;
-
-            inScope.forEach(t => {
-                const pass = evaluateTradeAgainstTrendFilters(t);
-                const isLoss = t.Net_Pnl_INR <= 0;
-                if (!pass && isLoss) {
-                    eliminatedLosses++;
-                    savedInr += Math.abs(t.Net_Pnl_INR);
-                }
-
-                if (auditMode === 'PASSED' && pass) displayTrades.push(t);
-                else if (auditMode === 'ELIMINATED_FAILURES' && !pass && isLoss) displayTrades.push(t);
-                else if (auditMode === 'REMAINING_FAILURES' && pass && isLoss) displayTrades.push(t);
-                else if (auditMode === 'ALL_FAILED_BASELINE' && isLoss) displayTrades.push(t);
+            const cs = btlDayChart.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", borderVisible: false, wickUpColor: "#22c55e", wickDownColor: "#ef4444" });
+            cs.setData(chart.candles.map(c => ({ time: c.t, open: c.o, high: c.h, low: c.l, close: c.c })));
+            const e8 = btlDayChart.addLineSeries({ color: "#fbbf24", lineWidth: 2, priceLineVisible: false });
+            e8.setData(chart.candles.map(c => ({ time: c.t, value: c.e8 })));
+            const e4 = btlDayChart.addLineSeries({ color: "#38bdf8", lineWidth: 1, priceLineVisible: false });
+            e4.setData(chart.candles.map(c => ({ time: c.t, value: c.e4 })));
+            const byHm = {}; chart.candles.forEach(c => { byHm[c.hm] = c.t; });
+            const markers = [];
+            (trades || []).forEach(t => {
+                const et = byHm[t.entry_hm] || byHm[(t.entry_hm || "").slice(0, 4) + "0"];
+                if (et) markers.push({ time: et, position: t.side === "CE" ? "belowBar" : "aboveBar", color: t.side === "CE" ? "#22c55e" : "#ef4444", shape: t.side === "CE" ? "arrowUp" : "arrowDown", text: t.side + " " + btlPts(t.net) });
             });
-
-            const filteredTrades = inScope.filter(t => evaluateTradeAgainstTrendFilters(t));
-            const filteredNet = filteredTrades.reduce((acc, t) => acc + t.Net_Pnl_INR, 0);
-            const filteredWins = filteredTrades.filter(t => t.Net_Pnl_INR > 0).length;
-            const winRate = filteredTrades.length > 0 ? (filteredWins / filteredTrades.length * 100) : 0;
-
-            const grossProfit = filteredTrades.filter(t => t.Net_Pnl_INR > 0).reduce((acc, t) => acc + t.Net_Pnl_INR, 0);
-            const grossLoss = Math.abs(filteredTrades.filter(t => t.Net_Pnl_INR < 0).reduce((acc, t) => acc + t.Net_Pnl_INR, 0));
-            const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss).toFixed(2) : (grossProfit > 0 ? "99.9" : "0.00");
-
-            document.getElementById('explorerNetPnl').textContent = `₹${Math.round(filteredNet).toLocaleString('en-IN')}`;
-            document.getElementById('explorerNetPnl').style.color = filteredNet >= 0 ? "var(--emerald)" : "var(--crimson)";
-            document.getElementById('explorerWinRate').textContent = `${winRate.toFixed(1)}%`;
-            document.getElementById('explorerFailedEliminated').textContent = `${eliminatedLosses} / ${baselineLossTotal}`;
-            document.getElementById('explorerSavedLossInr').textContent = `Saved: +₹${Math.round(savedInr).toLocaleString('en-IN')}`;
-            document.getElementById('explorerTradesCount').textContent = `${filteredTrades.length} trades`;
-            document.getElementById('explorerProfitFactor').textContent = `PF: ${profitFactor}`;
-
-            // Active filter count
-            const filterIds = ['fltEmaSlope', 'fltAdx', 'fltRSquared', 'fltMtf', 'fltVolume', 'fltGap', 'fltPcr'];
-            const activeCount = filterIds.filter(id => {
-                const el = document.getElementById(id);
-                return el && el.checked;
-            }).length;
-            document.getElementById('activeFilterCountBadge').textContent = `${activeCount} FILTERS ON`;
-
-            // Render table
-            const unknownCount=inScope.filter(missingSelectedFeatures).length;
-            if(unknownCount){
-                for(const id of ['explorerNetPnl','explorerWinRate','explorerFailedEliminated','explorerSavedLossInr','explorerProfitFactor'])document.getElementById(id).textContent='UNKNOWN';
-                document.getElementById('recordedHistoryStatus').textContent=unknownCount+' records lack selected entry-time filter measurements. No savings or edge estimated.';
-            }
-            const tbody = document.getElementById('explorerTableBody');
-            tbody.innerHTML = displayTrades.map((t, idx) => `
-                <tr>
-                    <td>${idx + 1}</td>
-                    <td>${formatDeskTimestamp(t.Date) !== "—" ? formatDeskTimestamp(t.Date) : (t.Date || "—")}</td>
-                    <td><b>${t.Setup_Name}</b></td>
-                    <td>${t.Market_Gap_Pts > 0 ? '+' : ''}${t.Market_Gap_Pts ?? "UNKNOWN"}</td>
-                    <td>${t.EMA_Slope > 0 ? '+' : ''}${t.EMA_Slope ?? "UNKNOWN"}</td>
-                    <td>${t.ADX ?? "UNKNOWN"}</td>
-                    <td>${t.R_Squared ?? "UNKNOWN"}</td>
-                    <td>${t.MTF_Aligned == null ? 'UNKNOWN' : t.MTF_Aligned ? '✔ ALIGNED' : '❌ CONFLICT'}</td>
-                    <td>${t.Vol_Mult == null ? "UNKNOWN" : t.Vol_Mult+"x"}</td>
-                    <td>${t.PCR_At_Entry ?? "UNKNOWN"}</td>
-                    <td><span class="status-badge ${t.Net_Pnl_INR > 0 ? 'badge-bull' : 'badge-bear'}">${t.Result}</span></td>
-                    <td style="font-weight:700; color:${t.Net_Pnl_INR > 0 ? 'var(--emerald)' : 'var(--crimson)'};">
-                        ${t.Net_Pnl_INR > 0 ? '+' : ''}₹${t.Net_Pnl_INR.toFixed(2)}
-                    </td>
-                </tr>
-            `).join("") || '<tr><td colspan="12">No recorded data matching this range and filters. Unknown features do not pass enabled filters.</td></tr>';
+            markers.sort((a, b) => a.time - b.time);
+            cs.setMarkers(markers);
+            btlDayChart.timeScale().fitContent();
         }
 
-        function setCheckboxesFromBits(bits) {
-            const ids = ['fltEmaSlope', 'fltAdx', 'fltRSquared', 'fltMtf', 'fltVolume', 'fltGap', 'fltPcr'];
-            ids.forEach((id, idx) => {
-                document.getElementById(id).checked = Boolean((bits >> idx) & 1);
-            });
-            runDateExplorer();
+        function btlRenderRuns(runs) {
+            const el = document.getElementById("btlRuns");
+            if (!runs || !runs.length) { el.innerHTML = '<div style="font-size:11px; color:#64748b;">Past runs appear here.</div>'; return; }
+            const grade = g => { const c = { PASS: "#34d399", WEAK: "#fbbf24", FAIL: "#f87171", "NOT ENOUGH DATA": "#94a3b8" }[g] || "#94a3b8"; return '<span style="color:' + c + '; font-weight:700;">' + (g || "—") + '</span>'; };
+            el.innerHTML = '<div style="font-size:12px; font-weight:800; color:#e2e8f0; margin-bottom:6px;">Past runs</div>' +
+                '<div style="overflow-x:auto;"><table style="font-size:11.5px;"><thead><tr>' + ['When', 'Range', 'Strategies', 'Cost', 'State', 'Trades', 'Net', 'Verdict', ''].map(h => '<th>' + h + '</th>').join("") + '</tr></thead><tbody>' +
+                runs.map(r => '<tr><td>' + d86Esc((r.started || r.id || "").slice(0, 16)) + '</td><td style="font-family:var(--font-mono);">' + d86Esc(r.from) + "→" + d86Esc(r.to) + '</td>' +
+                    '<td>' + (r.lanes || []).length + '</td><td>' + btlFmt(r.cost_pts, 1) + '</td><td>' + d86Esc(r.state) + '</td>' +
+                    '<td>' + (r.trades === undefined ? "—" : r.trades) + '</td><td style="color:' + btlSignedCol(r.net_pts) + ';">' + (r.net_pts === undefined ? "—" : btlPts(r.net_pts)) + '</td>' +
+                    '<td>' + grade(r.verdict) + '</td>' +
+                    '<td>' + (r.state === "DONE" ? '<button type="button" class="secondary-btn" style="padding:2px 8px; font-size:10px;" onclick="btlLoadResult(\'' + r.id + '\')">open</button>' : "") + '</td></tr>').join("") +
+                '</tbody></table></div>';
         }
 
-        function applyFilterPreset(preset) {
-            const ids = ['fltEmaSlope', 'fltAdx', 'fltRSquared', 'fltMtf', 'fltVolume', 'fltGap', 'fltPcr'];
-            ids.forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.checked = false;
-            });
-            if (preset === 'TREND_OPTIMAL') {
-                document.getElementById('fltEmaSlope').checked = true;
-                document.getElementById('fltMtf').checked = true;
-                document.getElementById('fltGap').checked = true;
-                if (document.getElementById('fltGoldilocks')) document.getElementById('fltGoldilocks').checked = true;
-            }
-            runDateExplorer();
-        }
-
-        let globalMcResults = [];
-        function runCombinatorialMonteCarlo() {
-            const sDate = document.getElementById('startDate').value;
-            const eDate = document.getElementById('endDate').value;
-            const strat = document.getElementById('explorerStrategy').value;
-            const bbLab = document.getElementById('trendLabBbBanner');
-            if (bbLab) bbLab.textContent = `BB: ${bollingerGateEnabled ? 'ON' : 'OFF'}`;
-
-            if(!allTrades.length || allTrades.some(t=>['EMA_Slope','ADX','R_Squared','MTF_Aligned','Vol_Mult','Market_Gap_Pts','PCR_At_Entry'].some(k=>t[k]==null))){
-                globalMcResults=[];document.getElementById('recordedHistoryStatus').textContent='128-combination study unavailable: recorded entry-time filter features are incomplete. No assumptions were substituted.';return;
-            }
-            const trades = allTrades.filter(t => {
-                if (t.Date < sDate || t.Date > eDate) return false;
-                if (strat === 'TREND' && !t.Setup_Name.includes('Stage')) return false;
-                if (strat === 'H1' && !(String(t.Setup_Name || '').includes('Flagship') || String(t.strategy_id || '').includes('FLAGSHIP') || String(t.Setup_Name || '').includes('1 HR FLAGSHIP'))) return false;
-                if (strat === 'REVERSAL' && !t.Setup_Name.includes('Reversal')) return false;
-                if (strat === 'EMA8_PROTOTYPE' && !(String(t.strategy_id || '').includes('EMA8_PROTOTYPE') || String(t.Setup_Name || '').includes('8 EMA Prototype'))) return false;
-                return true;
-            });
-
-            const minAdx = parseFloat(document.getElementById('paramAdxMin').value || 20.0);
-            const minR2 = parseFloat(document.getElementById('paramR2Min').value || 0.35);
-            const minVol = parseFloat(document.getElementById('paramVolMult').value || 1.0);
-            const fNames = ['1.EMA', '2.ADX>=' + minAdx, '3.R²>=' + minR2, '4.MTF', '5.Vol>=' + minVol + 'x', '6.Gap', '7.PCR'];
-
-            const results = [];
-            for (let bits = 0; bits < 128; bits++) {
-                const activeNames = [];
-                let activeCount = 0;
-                for (let i = 0; i < 7; i++) {
-                    if ((bits >> i) & 1) {
-                        activeNames.push(fNames[i]);
-                        activeCount++;
-                    }
-                }
-                const label = activeCount === 0 ? "Baseline (All Off)" : activeNames.join(" + ");
-
-                let w = 0, l = 0, net = 0, blockedFail = 0;
-                let grossProf = 0, grossLoss = 0;
-                const pnlList = [];
-
-                trades.forEach(t => {
-                    let pass = true;
-                    if ((bits & 1) && ((t.Direction === 'LONG' && t.EMA_Slope <= 0) || (t.Direction === 'SHORT' && t.EMA_Slope >= 0))) pass = false;
-                    if (pass && ((bits >> 1) & 1) && t.ADX < minAdx) pass = false;
-                    if (pass && ((bits >> 2) & 1) && t.R_Squared < minR2) pass = false;
-                    if (pass && ((bits >> 3) & 1) && !t.MTF_Aligned) pass = false;
-                    if (pass && ((bits >> 4) & 1) && t.Vol_Mult < minVol) pass = false;
-                    if (pass && ((bits >> 5) & 1) && ((t.Direction === 'LONG' && t.Market_Gap_Pts < -50) || (t.Direction === 'SHORT' && t.Market_Gap_Pts > 50))) pass = false;
-                    if (pass && ((bits >> 6) & 1) && ((t.Direction === 'LONG' && t.PCR_At_Entry < 0.85) || (t.Direction === 'SHORT' && t.PCR_At_Entry > 1.15))) pass = false;
-
-                    const isLoss = t.Net_Pnl_INR <= 0;
-                    if (!pass && isLoss) blockedFail++;
-                    if (pass) {
-                        pnlList.push(t.Net_Pnl_INR);
-                        net += t.Net_Pnl_INR;
-                        if (t.Net_Pnl_INR > 0) { w++; grossProf += t.Net_Pnl_INR; }
-                        else { l++; grossLoss += Math.abs(t.Net_Pnl_INR); }
-                    }
-                });
-
-                const totalTrades = w + l;
-                const wr = totalTrades > 0 ? (w / totalTrades * 100) : 0;
-                const pf = grossLoss > 0 ? (grossProf / grossLoss) : (grossProf > 0 ? 99.9 : 0);
-
-                // Bootstrap Monte Carlo 500 iterations
-                let mcWorst5Pct = 0;
-                if (pnlList.length >= 10) {
-                    const runs = [];
-                    for (let iter = 0; iter < 200; iter++) {
-                        let simPnl = 0;
-                        for (let k = 0; k < pnlList.length; k++) {
-                            simPnl += pnlList[Math.floor(Math.random() * pnlList.length)];
-                        }
-                        runs.push(simPnl);
-                    }
-                    runs.sort((a, b) => a - b);
-                    mcWorst5Pct = runs[Math.floor(runs.length * 0.05)];
-                }
-
-                results.push({
-                    bits, label, activeCount, trades: totalTrades, w, l,
-                    blockedFail, wr, net, pf, mcWorst5Pct
-                });
-            }
-
-            results.sort((a, b) => b.net - a.net);
-            globalMcResults = results;
-
-            const bbRow = bollingerGateEnabled ? 'ON' : 'OFF';
-            const tbody = document.getElementById('mcOptimizerBody');
-            tbody.innerHTML = results.slice(0, 30).map((r, rank) => `
-                <tr>
-                    <td><b>#${rank + 1}</b></td>
-                    <td><b>${r.label}</b></td>
-                    <td>${r.activeCount}</td>
-                    <td>${r.trades} (${r.w}W / ${r.l}L)</td>
-                    <td><span style="color:var(--emerald);">+${r.blockedFail}</span></td>
-                    <td style="font-weight:700;">${r.wr.toFixed(1)}%</td>
-                    <td style="font-weight:800; color:${r.net >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">
-                        ${r.net >= 0 ? '+' : ''}₹${Math.round(r.net).toLocaleString('en-IN')}
-                    </td>
-                    <td>${r.pf.toFixed(2)}</td>
-                    <td style="color:${r.mcWorst5Pct >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">
-                        ₹${Math.round(r.mcWorst5Pct).toLocaleString('en-IN')}
-                    </td>
-                    <td style="font-family:var(--font-mono); font-weight:700; color:${bbRow === 'ON' ? 'var(--emerald)' : '#94a3b8'};">BB: ${bbRow}</td>
-                    <td>
-                        <button type="button" class="cyan-btn" style="padding:3px 10px; font-size:11px;" onclick="setCheckboxesFromBits(${r.bits})">
-                            Apply
-                        </button>
-                    </td>
-                </tr>
-            `).join("");
-        }
-
-        function autoSelectOptimalCombo(mode) {
-            if (!globalMcResults || globalMcResults.length === 0) runCombinatorialMonteCarlo();
-            if (globalMcResults.length === 0) return;
-            if (mode === 'MAX_PROFIT') {
-                setCheckboxesFromBits(globalMcResults[0].bits);
-            } else if (mode === 'MIN_PROFIT') {
-                const lowest = [...globalMcResults].sort((a, b) => a.net - b.net)[0];
-                setCheckboxesFromBits(lowest.bits);
-            }
-        }
-
-        let dualDhanOIData = { total_oi_rows: [], oi_change_day_rows: [], combined_rows: [], synergy: {} };
-        let liveDhanOIRows = [];
-        let currentPeCeView = 'combined';
-        let smPingIntervalMs = 120000;
-        let smPollTimer = null;
-
+        // ── Dhan OI poll timer (Tab 1 confluence) ─────────────────────────────
+        let smPollTimer = null, smPingIntervalMs = 3000;
         function initSmPollingTimer() {
             if (smPollTimer) clearInterval(smPollTimer);
             smPollTimer = setInterval(fetchDhanOIDual, smPingIntervalMs);
@@ -6736,22 +6120,6 @@
             exportTableToExcelXML('Port8510_Replay_Ledger.xls', 'ReplayLedger', headers, rows);
         }
 
-        function exportFilteredLedgerToExcel() {
-            const sDate = document.getElementById('startDate').value;
-            const eDate = document.getElementById('endDate').value;
-            const filtered = allTrades.filter(t => t.Date >= sDate && t.Date <= eDate && evaluateTradeAgainstTrendFilters(t));
-            const headers = ['Trade ID', 'Date', 'Setup', 'Direction', 'Gap', 'EMA Slope', 'ADX', 'R2', 'MTF', 'Vol Mult', 'PCR', 'Result', 'Net PnL'];
-            const rows = filtered.map(t => [t.Trade_ID, t.Date, t.Setup_Name, t.Direction, t.Market_Gap_Pts, t.EMA_Slope, t.ADX, t.R_Squared, t.MTF_Aligned == null ? 'UNKNOWN' : t.MTF_Aligned ? 'YES' : 'NO', t.Vol_Mult, t.PCR_At_Entry, t.Result, t.Net_Pnl_INR]);
-            exportTableToExcelXML('Port8510_Filtered_Ledger.xls', 'FilteredLedger', headers, rows);
-        }
-
-        function exportMonteCarloToExcel() {
-            if (!globalMcResults || globalMcResults.length === 0) runCombinatorialMonteCarlo();
-            const headers = ['Rank', 'Combination', '# Filters', 'Total Trades', 'Wins', 'Losses', 'Blocked Failures', 'Win Rate %', 'Net PnL INR', 'Profit Factor', 'Monte Carlo 5% Worst Case'];
-            const rows = globalMcResults.map((r, i) => [i + 1, r.label, r.activeCount, r.trades, r.w, r.l, r.blockedFail, r.wr, r.net, r.pf, r.mcWorst5Pct]);
-            exportTableToExcelXML('Port8510_128_Combination_Matrix.xls', '128Combos', headers, rows);
-        }
-
         async function exportDhanOIToExcel() { return fetchDhanOISnapshot(); }
 
         // ── 9. TAB 7 DAILY INGEST, EOD SUMMARY & TREND LAB HANDLERS ────────────
@@ -6949,44 +6317,6 @@
             }
         }
 
-        async function runTrendLabAPI() {
-            const startInput = document.getElementById("startDate");
-            const endInput = document.getElementById("endDate");
-            const fromDate = startInput ? startInput.value : "2026-11-04";
-            const toDate = endInput ? endInput.value : "2026-11-05";
-            const tbody = document.getElementById("trendLabTableBody");
-            if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#38bdf8; padding:16px;">⏳ Evaluating Multi-Factor Trends for ${fromDate} to ${toDate}...</td></tr>`;
-            try {
-                const res = await fetch(`/api/trend_lab/run?from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}`);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
-                if (!data.ok || !data.evaluations || data.evaluations.length === 0) {
-                    if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:var(--crimson); padding:16px;">No evaluation results found for selected range.</td></tr>`;
-                    return;
-                }
-                if (tbody) {
-                    tbody.innerHTML = data.evaluations.map(row => {
-                        const scoreNum = row.multi_factor_score;
-                        const scoreColor = scoreNum >= 80 ? "var(--emerald)" : (scoreNum >= 60 ? "#38bdf8" : "var(--crimson)");
-                        return `<tr>
-                            <td style="font-weight:700; color:#f8fafc;">${row.date_formatted || row.date}</td>
-                            <td><span class="status-badge ${row.stage2.includes('BULL') ? 'badge-bull' : 'badge-bear'}">${row.stage2}</span></td>
-                            <td><span class="status-badge ${row.crossover_4_8.includes('BULL') ? 'badge-bull' : 'badge-bear'}">${row.crossover_4_8}</span></td>
-                            <td><span class="status-badge badge-bull">${row.ema_1h_8}</span></td>
-                            <td><span class="status-badge ${row.total_oi_bias.includes('BULL') ? 'badge-bull' : 'badge-bear'}">${row.total_oi_bias}</span></td>
-                            <td><span class="status-badge ${row.oi_change_bias.includes('BULL') ? 'badge-bull' : 'badge-bear'}">${row.oi_change_bias}</span></td>
-                            <td><span class="status-badge badge-bull" style="background:#059669; font-weight:800;">${row.combined_bias}</span></td>
-                            <td>${row.writers}</td>
-                            <td>${row.volumes}</td>
-                            <td style="font-weight:700;">${row.trend}</td>
-                            <td><b style="color:${scoreColor};">${row.score || (scoreNum + '%')}</b></td>
-                        </tr>`;
-                    }).join("");
-                }
-            } catch (e) {
-                if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:var(--crimson); padding:16px;">Failed loading Trend Lab: ${e.message}</td></tr>`;
-            }
-        }
 
         let dhanOiRefreshInFlight = false;
         async function fetchDhanOISnapshot() {

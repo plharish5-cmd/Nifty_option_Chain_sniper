@@ -329,7 +329,7 @@ def test_cockpit_has_the_new_panels_and_no_vendor_name_on_screen():
     for needle in ('id="protoView"', "renderProtoView(sc.ema8_prototype_view)", 'id="tklHeadline"',
                    "renderTicketLane(data.desk8600_ticket_lane)", "/api/desk8600/ticket-lane", 'id="d86Facts"',
                    'id="positionsSummary"', 'id="ordersSummary"', 'id="tradesViewBody"',
-                   'renderTradeAnalysis("replayAnalysis", trades)', 'renderTradeAnalysis("drAnalysis", data.trades || [])'):
+                   'renderTradeAnalysis("replayAnalysis", trades)', 'function btlStart', 'function btlInit'):
         assert needle in html, needle
     visible = re.sub(r"<script.*?</script>|<style.*?</style>|<!--.*?-->|<[^>]+>", " ", html, flags=re.S)
     assert not re.search(r"stock\s*mojo", visible, flags=re.I)

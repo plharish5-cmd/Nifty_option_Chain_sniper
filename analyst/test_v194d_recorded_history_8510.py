@@ -61,7 +61,8 @@ def test_ui_and_server_no_embedded_trade_history():
  h=(ROOT/'Algorithmic_Trading_Workspace_8510.html').read_text();s=(ROOT/'analyst/terminal8510_backend.py').read_text()
  assert 'const allTrades = [' not in h and 'CALIBRATED_BENCHMARK_REPLAY' not in s
  assert "if date_str == \"2026-11-05\"" not in s
- assert '/api/history/recorded' in h and 'No recorded data' in h
+ # The Backtest Lab runs as a background job (12 Nov 2026); the old /api/history/recorded feed went with the old backtester.
+ assert '/api/backtest_lab/result' in h and '/api/replay/run' in h
  assert 'No recorded summary loaded' in h and 'const scoreNum = row.multi_factor_score || 85' not in h
 
 def test_user_watchlist_decision_and_live_safety_preserved():

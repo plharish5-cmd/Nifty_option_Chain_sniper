@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-BUILD_LABEL = "v2.0.21"
+BUILD_LABEL = "v2.0.22"
 WHATS_NEW = [
     ["8 EMA Prototype card", "Algo Terminal tab → strategy cards → gold-bordered card. Sentence + 5-step tracker at the top."],
     ["8600 Board (15 option-chain reads, ON/OFF buttons)", "Inside the 8 EMA Prototype card, below the filter checkboxes. Scroll down inside the card."],

@@ -1093,3 +1093,34 @@ Not changed: Stage/Flagship contract choice stays ATM/ITM from the Strike Matrix
 Tests: 34 in `test_ticket_lane_chain_reads_8510.py` (classifier run in Node; release behaviour run through the real
 signal processor); whole `analyst` suite 650 passed / 39 failed / 37 errors, no new failure vs the base; locks 11/11.
 Not run against the broker or a live session.
+
+## Claude — `claude/v2.0.22-backtest-revamp` (13 Nov 2026) — owner: remove Tab 5; revamp the backtester and replay so backtesting is robust and gives confidence
+Base `claude/v2.0.21-equity-guys-view-and-retry` @ `7bbb16d`. Tags (local): `pre-/post-claude-v2.0.22-backtest-revamp`. Not merged.
+
+**Removed (safely): Tab 5 "Multi-Factor Trend Lab & 128 Combos".** Nav button, the whole `#tabTrendLab` panel,
+the JS (runTrendLabAPI, runCombinatorialMonteCarlo, autoSelectOptimalCombo, applyFilterPreset, runDateExplorer,
+evaluateTradeAgainstTrendFilters, exportFilteredLedgerToExcel, exportMonteCarloToExcel), the backend
+`run_trend_lab()` + its `trend_lab_variables` telemetry, and the `/api/trend_lab/run` endpoint. Tab 6 renumbered to 5.
+
+**New: Backtest Lab** (`analyst/backtest_lab_8510.py`, +6 endpoints already present `/api/backtest_lab/{meta,start,status,result,day,cancel}`),
+replacing the old date-range backtester card on the Historical Date Replay tab.
+- A run is a BACKGROUND JOB in its own process (`subprocess`, niced): private config copy, throw-away ledger,
+  market db read-only, cannot place an order or touch the live desk. Progress/result/cancel via files. One run at a time.
+- Walks the range month-by-month through the app's own `run_date_range_backtest` (no second strategy implementation).
+- Everything in NIFTY spot points, per trade, after a per-trade cost. No invented rupees.
+- Reports: net/avg/win/profit-factor, t-stat + bootstrap 95% CI, max drawdown, longest losing run, by lane/month/weekday/
+  hour/exit/side, equity curve, per-day heatmap, per-day 15m chart + trades. Ambiguous (target&stop in one minute) booked
+  as stops with the "if targets" swing shown. Coverage of missing weekdays.
+- **Hold-out verdict** (the confidence piece): split by date, last 30% held out, verdict PASS/WEAK/FAIL/NOT ENOUGH DATA
+  read from held-out days only (PASS = held-out net>0 & t≥2 & earlier>0). Rule fixed before any run.
+- CLI: `python3 -m analyst.backtest_lab_8510 --from .. --to ..`.
+Replay card left intact (its points-analysis block from v2.0.10 stays); `run_date_range_backtest` kept (the lab uses it).
+
+Tests: `test_backtest_lab_8510.py` 11 pass (stats, hold-out split, verdict, job lifecycle with a fake engine, cancel,
+no ledger-path leak in result). Updated 3 tests for the removed features (required-fns list, my cockpit test, the
+embedded-history test). Full `analyst` suite 661 passed / 39 failed / 37 errors — **no failure new to this branch**
+(39 < 42 at base; the 4 EOD/phase7 wall-clock tests pass before 15:20 IST). Locks 11/11. Page: 7,300 → 6,630 lines;
+loaded in Chromium against real backend telemetry and stubbed lab endpoints, all 5 tabs, verdict/summary/lanes/equity/
+breakdowns/day-detail/by-day/past-runs all render, 0 script errors. End-to-end: real engine on a synthetic market db
+produced 420 rows across lanes → lab normalized, split, graded.
+Verified by running the real engine; not run against the live broker. Build label → v2.0.22.

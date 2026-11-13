@@ -5205,21 +5205,6 @@ class QuantTerminalBackend:
             log.debug("Institutional OI scraper snapshot error: %s", e)
             oi_snap = {}
 
-        trend_lab_variables = {
-            "var_pe_minus_ce": float(oi_snap.get("pe_minus_ce_day") or 0.0),
-            "var_call_oi_change": float(oi_snap.get("call_oi_change_day") or 0.0),
-            "var_put_oi_change": float(oi_snap.get("put_oi_change_day") or 0.0),
-            "var_total_call_oi": float(oi_snap.get("total_call_oi") or 0.0),
-            "var_total_put_oi": float(oi_snap.get("total_put_oi") or 0.0),
-            "var_oi_writer_bias": str(oi_snap.get("writer_bias", "NEUTRAL")),
-            # Backward-compatible aliases
-            "var_dhan_oi_pe_minus_ce": float(oi_snap.get("pe_minus_ce_day") or 0.0),
-            "var_dhan_call_oi_change": float(oi_snap.get("call_oi_change_day") or 0.0),
-            "var_dhan_put_oi_change": float(oi_snap.get("put_oi_change_day") or 0.0),
-            "var_dhan_total_call_oi": float(oi_snap.get("total_call_oi") or 0.0),
-            "var_dhan_total_put_oi": float(oi_snap.get("total_put_oi") or 0.0),
-            "var_dhan_oi_writer_bias": str(oi_snap.get("writer_bias", "NEUTRAL")),
-        }
 
 
         # 4/8 EMA Proximity Radar (v1.8)
@@ -5288,7 +5273,6 @@ class QuantTerminalBackend:
             "priority_matrix": priority_matrix,
             "trend_watchlist": trend_watchlist,
             "scanner": self.get_scanner_status(),
-            "trend_lab_variables": trend_lab_variables,
             "institutional_pe_ce": oi_snap,
             # So the UI can grey out rather than render zeros as real readings.
             "writer_flow_available": bool(oi_snap.get("available", False)),
@@ -9482,48 +9466,6 @@ class QuantTerminalBackend:
 
     def get_eod_summary(self, date_str: str = "2026-11-05") -> Dict[str, Any]:
         return {'ok': True, **self._recorded_history().daily(date_str)['eod_summary']}
-
-    def run_trend_lab(self, from_date: str = "2026-11-04", to_date: str = "2026-11-05") -> Dict[str, Any]:
-        rows = []
-        master_all = fetch_master_trades(self.ledger_db, from_date, to_date)
-        master_by_day: Dict[str, int] = {}
-        for m in master_all:
-            d = str(m.get("trade_date") or m.get("Date") or "")[:10]
-            if d:
-                master_by_day[d] = master_by_day.get(d, 0) + 1
-        for day in self._recorded_history().dates():
-            if from_date <= day <= to_date:
-                data = self._recorded_history().daily(day)
-                m_cnt = master_by_day.get(day, 0)
-                trade_src = DATA_SOURCE_IMMUTABLE if m_cnt else "NONE"
-                rows.append({
-                    'date': day,
-                    'stage2': 'UNKNOWN',
-                    'crossover_4_8': 'UNKNOWN',
-                    'ema_1h_8': 'UNKNOWN',
-                    'total_oi_bias': 'UNKNOWN',
-                    'oi_change_bias': 'UNKNOWN',
-                    'combined_bias': 'UNKNOWN',
-                    'writers': 'Not reconstructed',
-                    'volumes': 'Not reconstructed',
-                    'trend': 'UNKNOWN',
-                    'score': None,
-                    'multi_factor_score': None,
-                    'recorded_trades': m_cnt or len(data['trades']),
-                    'trade_data_source': trade_src,
-                    'immutable_master_trades': m_cnt,
-                    'recorded_spot_minutes': len(data['spot_candles_1m']),
-                })
-        return {
-            'ok': True,
-            'from_date': from_date,
-            'to_date': to_date,
-            'rows': rows,
-            'evaluations': rows,
-            'count': len(rows),
-            'provenance': 'OBSERVATIONS_ONLY',
-            'primary_trade_source': DATA_SOURCE_IMMUTABLE,
-        }
 
     def check_and_run_auto_ingest(self, target_date: str = "2026-11-05", mock_ist_hour: Optional[int] = None) -> bool:
         now = datetime.now(IST)

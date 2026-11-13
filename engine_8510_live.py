@@ -712,6 +712,68 @@ async def api_strike_matrix_selection(req: Request):
     return JSONResponse(content=res)
 
 
+# ── Backtest Lab: runs are separate processes; the engine only starts them and reads their files ──
+@app.get("/api/backtest_lab/meta")
+async def api_backtest_lab_meta():
+    from analyst import backtest_lab_8510 as lab
+
+    def _meta():
+        days = lab.trading_days(Path(backend.market_db))
+        return {
+            "ok": True, "lanes": lab.LANES, "defaults": lab.DEFAULT_SPEC,
+            "data": {"days": len(days), "first_day": days[0] if days else None, "last_day": days[-1] if days else None,
+                     "recent_days": days[-40:]},
+            "running_id": lab.running_job(), "runs": lab.list_jobs(),
+        }
+    return JSONResponse(content=await asyncio.to_thread(_meta))
+
+
+@app.post("/api/backtest_lab/start")
+async def api_backtest_lab_start(req: Request):
+    from analyst import backtest_lab_8510 as lab
+
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    return JSONResponse(content=await asyncio.to_thread(lab.start_job, body if isinstance(body, dict) else {}))
+
+
+@app.get("/api/backtest_lab/status")
+async def api_backtest_lab_status(req: Request):
+    from analyst import backtest_lab_8510 as lab
+
+    return JSONResponse(content=await asyncio.to_thread(lab.job_status, str(req.query_params.get("id") or "")))
+
+
+@app.get("/api/backtest_lab/result")
+async def api_backtest_lab_result(req: Request):
+    from analyst import backtest_lab_8510 as lab
+
+    jid = str(req.query_params.get("id") or "")
+    with_trades = str(req.query_params.get("trades") or "") in ("1", "true")
+    return JSONResponse(content=await asyncio.to_thread(lab.job_result, jid, lab.JOBS_DIR, with_trades))
+
+
+@app.get("/api/backtest_lab/day")
+async def api_backtest_lab_day(req: Request):
+    from analyst import backtest_lab_8510 as lab
+
+    jid, day = str(req.query_params.get("id") or ""), str(req.query_params.get("day") or "")[:10]
+    return JSONResponse(content=await asyncio.to_thread(lab.job_day, jid, day, Path(backend.market_db)))
+
+
+@app.post("/api/backtest_lab/cancel")
+async def api_backtest_lab_cancel(req: Request):
+    from analyst import backtest_lab_8510 as lab
+
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    return JSONResponse(content=await asyncio.to_thread(lab.cancel_job, str((body or {}).get("id") or "")))
+
+
 @app.get("/api/backtest/date_range")
 @app.post("/api/backtest/date_range")
 async def api_backtest_date_range(req: Request):
@@ -1066,26 +1128,6 @@ async def api_ingest_eod_summary(req: Request):
     target_date = req.query_params.get("date", "2026-11-05").strip()
     summary = backend.get_eod_summary(target_date)
     return JSONResponse(content=summary)
-
-
-@app.get("/api/trend_lab/run")
-@app.post("/api/trend_lab/run")
-async def api_trend_lab_run(req: Request):
-    """Dynamically evaluates multi-factor trend and Dhan OI biases."""
-    from_date = "2026-11-04"
-    to_date = "2026-11-05"
-    if req.method == "POST":
-        try:
-            body = await req.json()
-            from_date = str(body.get("from_date") or body.get("start_date") or from_date).strip()
-            to_date = str(body.get("to_date") or body.get("end_date") or to_date).strip()
-        except Exception:
-            pass
-    else:
-        from_date = req.query_params.get("from_date") or req.query_params.get("start_date") or from_date
-        to_date = req.query_params.get("to_date") or req.query_params.get("end_date") or to_date
-    res = backend.run_trend_lab(from_date=from_date, to_date=to_date)
-    return JSONResponse(content=res)
 
 
 @app.get("/api/algo/execution-master")
