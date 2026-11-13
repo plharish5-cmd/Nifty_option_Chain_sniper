@@ -104,6 +104,9 @@ def load_backtest_config() -> Dict[str, Any]:
         "p3_retest_risk_cap_pts": 18.0,
         "p3_pdl_breakdown_immediate_close_dist_pts": 10.0,
         "p3_pdl_breakdown_sl_pts": 12.0,
+        "p3_partial_lock_trigger_pts": 25.0,
+        "p3_partial_trail_profit_pts": 15.0,
+        "p3_partial_runner_target_pts": 40.0,
         "horizons": ["09:30:00", "09:45:00", "10:00:00"],
         "default_source": "auto",
         "csv_path": "data/ohlc/nifty_1m_dhan.csv",
@@ -574,21 +577,269 @@ class LevelReactionRecord:
 @dataclass
 class Phase3TradeResult:
     variant: str
-    hold_until: str
+    target_mode: str       # "25pt Target", "40pt Target", "Partial (25pt/40pt Profit-Lock)"
+    hold_until: str        # "09:30 IST", "09:45 IST", "10:00 IST"
     date: str
     entry_time_ist: str
     entry_price: float
     initial_sl: float
     risk_pts: float
-    mfe_before_stop: float
-    mae_pts: float
-    hit_25_plus: bool
-    hit_40_plus: bool
-    hit_50_plus: bool
-    is_be_scratch: bool
-    is_sl_fail: bool
-    net_pnl_inr_25: float
-    net_pnl_inr_40: float
+    state: str             # "TARGET_HIT", "BE_SCRATCH", "PROFIT_LOCK_SCRATCH", "SL_FAIL", "TIME_EXIT"
+    exit_pts: float
+    net_pnl_inr: float
+
+
+def simulate_single_target_causal(
+    bars_extended: pd.DataFrame,
+    entry_bar_idx: int,
+    entry_price: float,
+    initial_sl: float,
+    target_pts: float,
+    direction: str,
+    horizon_end_idx: int,
+    cfg: Dict[str, Any],
+    is_confirmed_close: bool = False,
+    be_trigger_pts: float = 20.0,
+) -> Tuple[str, float, float]:
+    """
+    Simulates a single target trade with strict causal accounting.
+    Returns: (state, exit_pts, net_pnl_inr)
+    """
+    lot_size = cfg.get("lot_size", 65)
+    opt_delta = cfg.get("option_delta", 0.55)
+    total_cost = cfg.get("total_trade_cost_inr", 110.50)
+    risk_pts = round(abs(initial_sl - entry_price), 2)
+
+    state = None
+    exit_pts = 0.0
+    be_armed = False
+
+    end_idx = min(horizon_end_idx, len(bars_extended) - 1)
+
+    # Touch-bar lookahead guard: on t == t_touch, do NOT look at low[t]
+    if not is_confirmed_close:
+        tb = bars_extended.iloc[entry_bar_idx]
+        th = float(tb["high"])
+        tl = float(tb["low"])
+        tc = float(tb["close"])
+
+        # Check initial stop loss breach on entry bar
+        if direction == "SHORT":
+            if th >= initial_sl:
+                state = "SL_FAIL"
+                exit_pts = -risk_pts
+            else:
+                fav_c = entry_price - tc
+                if fav_c >= target_pts:
+                    state = "TARGET_HIT"
+                    exit_pts = target_pts
+                elif fav_c >= be_trigger_pts:
+                    be_armed = True
+        else:
+            if tl <= initial_sl:
+                state = "SL_FAIL"
+                exit_pts = -risk_pts
+            else:
+                fav_c = tc - entry_price
+                if fav_c >= target_pts:
+                    state = "TARGET_HIT"
+                    exit_pts = target_pts
+                elif fav_c >= be_trigger_pts:
+                    be_armed = True
+
+        start_eval_idx = entry_bar_idx + 1
+    else:
+        start_eval_idx = entry_bar_idx + 1
+
+    if state is None:
+        for b_idx in range(start_eval_idx, end_idx + 1):
+            bar = bars_extended.iloc[b_idx]
+            bh = float(bar["high"])
+            bl = float(bar["low"])
+
+            if direction == "SHORT":
+                bar_fav = entry_price - bl
+                hit_initial_sl = (bh >= initial_sl)
+                hit_target = (bar_fav >= target_pts)
+                hit_be_trigger = (bar_fav >= be_trigger_pts)
+                hit_scratch = (bh >= entry_price)
+            else:
+                bar_fav = bh - entry_price
+                hit_initial_sl = (bl <= initial_sl)
+                hit_target = (bar_fav >= target_pts)
+                hit_be_trigger = (bar_fav >= be_trigger_pts)
+                hit_scratch = (bl <= entry_price)
+
+            if not be_armed:
+                if hit_initial_sl:
+                    state = "SL_FAIL"
+                    exit_pts = -risk_pts
+                    break
+                elif hit_target:
+                    state = "TARGET_HIT"
+                    exit_pts = target_pts
+                    break
+                elif hit_be_trigger:
+                    be_armed = True
+            else:
+                # Once BE is armed, stop is entry_price
+                if hit_scratch:
+                    state = "BE_SCRATCH"
+                    exit_pts = 0.0
+                    break
+                elif hit_target:
+                    state = "TARGET_HIT"
+                    exit_pts = target_pts
+                    break
+
+        if state is None:
+            state = "TIME_EXIT"
+            cutoff_bar = bars_extended.iloc[end_idx]
+            cc = float(cutoff_bar["close"])
+            exit_pts = (entry_price - cc) if direction == "SHORT" else (cc - entry_price)
+
+    net_pnl = (exit_pts * opt_delta * lot_size) - total_cost
+    return state, exit_pts, net_pnl
+
+
+def simulate_partial_profit_causal(
+    bars_extended: pd.DataFrame,
+    entry_bar_idx: int,
+    entry_price: float,
+    initial_sl: float,
+    direction: str,
+    horizon_end_idx: int,
+    cfg: Dict[str, Any],
+    is_confirmed_close: bool = False,
+    be_trigger_pts: float = 20.0,
+    lock_trigger_pts: float = 25.0,
+    trail_profit_pts: float = 15.0,
+    runner_target_pts: float = 40.0,
+) -> Tuple[str, float, float]:
+    """
+    Simulates BOOK_50PCT_AT_25PTS_TRAIL_50PCT_TO_40PTS:
+      - Once +20 pts reached: move stop to Entry_Price (0.0).
+      - Once +25 pts reached: Half 1 takes profit (+25 pts). Half 2 stop trailed to +15 pts.
+      - If Half 2 reaches +40 pts: exits at +40 pts.
+      - If Half 2 retraces to +15 pts: exits at +15 pts.
+    Returns: (state, exit_pts_avg, net_pnl_inr_avg)
+    """
+    lot_size = cfg.get("lot_size", 65)
+    opt_delta = cfg.get("option_delta", 0.55)
+    total_cost = cfg.get("total_trade_cost_inr", 110.50)
+    risk_pts = round(abs(initial_sl - entry_price), 2)
+
+    end_idx = min(horizon_end_idx, len(bars_extended) - 1)
+    be_armed = False
+    half1_booked = False
+    half2_exited = False
+    overall_state = None
+    overall_pts = 0.0
+
+    lock_stop = (entry_price - trail_profit_pts) if direction == "SHORT" else (entry_price + trail_profit_pts)
+
+    if not is_confirmed_close:
+        tb = bars_extended.iloc[entry_bar_idx]
+        th = float(tb["high"])
+        tl = float(tb["low"])
+        tc = float(tb["close"])
+
+        if direction == "SHORT":
+            if th >= initial_sl:
+                return "SL_FAIL", -risk_pts, (-risk_pts * opt_delta * lot_size) - total_cost
+            fav_c = entry_price - tc
+        else:
+            if tl <= initial_sl:
+                return "SL_FAIL", -risk_pts, (-risk_pts * opt_delta * lot_size) - total_cost
+            fav_c = tc - entry_price
+
+        if fav_c >= runner_target_pts:
+            return "TARGET_HIT", (lock_trigger_pts + runner_target_pts) / 2.0, (((lock_trigger_pts + runner_target_pts) / 2.0) * opt_delta * lot_size) - total_cost
+        elif fav_c >= lock_trigger_pts:
+            half1_booked = True
+            be_armed = True
+        elif fav_c >= be_trigger_pts:
+            be_armed = True
+
+        start_eval_idx = entry_bar_idx + 1
+    else:
+        start_eval_idx = entry_bar_idx + 1
+
+    for b_idx in range(start_eval_idx, end_idx + 1):
+        bar = bars_extended.iloc[b_idx]
+        bh = float(bar["high"])
+        bl = float(bar["low"])
+
+        if direction == "SHORT":
+            bar_fav = entry_price - bl
+            hit_initial_sl = (bh >= initial_sl)
+            hit_be_scratch = (bh >= entry_price)
+            hit_lock_scratch = (bh >= lock_stop)
+            hit_be_trig = (bar_fav >= be_trigger_pts)
+            hit_25 = (bar_fav >= lock_trigger_pts)
+            hit_40 = (bar_fav >= runner_target_pts)
+        else:
+            bar_fav = bh - entry_price
+            hit_initial_sl = (bl <= initial_sl)
+            hit_be_scratch = (bl <= entry_price)
+            hit_lock_scratch = (bl <= lock_stop)
+            hit_be_trig = (bar_fav >= be_trigger_pts)
+            hit_25 = (bar_fav >= lock_trigger_pts)
+            hit_40 = (bar_fav >= runner_target_pts)
+
+        if not half1_booked:
+            if not be_armed:
+                if hit_initial_sl:
+                    overall_state = "SL_FAIL"
+                    overall_pts = -risk_pts
+                    break
+                elif hit_25:
+                    half1_booked = True
+                    be_armed = True
+                    if hit_40:
+                        overall_state = "TARGET_HIT"
+                        overall_pts = (lock_trigger_pts + runner_target_pts) / 2.0
+                        half2_exited = True
+                        break
+                elif hit_be_trig:
+                    be_armed = True
+            else:
+                if hit_be_scratch:
+                    overall_state = "BE_SCRATCH"
+                    overall_pts = 0.0
+                    break
+                elif hit_25:
+                    half1_booked = True
+                    if hit_40:
+                        overall_state = "TARGET_HIT"
+                        overall_pts = (lock_trigger_pts + runner_target_pts) / 2.0
+                        half2_exited = True
+                        break
+        else:
+            # Half 1 already booked at +25. Half 2 is trailing at +15 profit stop
+            if hit_lock_scratch:
+                overall_state = "PROFIT_LOCK_SCRATCH"
+                overall_pts = (lock_trigger_pts + trail_profit_pts) / 2.0
+                half2_exited = True
+                break
+            elif hit_40:
+                overall_state = "TARGET_HIT"
+                overall_pts = (lock_trigger_pts + runner_target_pts) / 2.0
+                half2_exited = True
+                break
+
+    if overall_state is None:
+        cutoff_bar = bars_extended.iloc[end_idx]
+        cc = float(cutoff_bar["close"])
+        close_pts = (entry_price - cc) if direction == "SHORT" else (cc - entry_price)
+        overall_state = "TIME_EXIT"
+        if half1_booked:
+            overall_pts = (lock_trigger_pts + close_pts) / 2.0
+        else:
+            overall_pts = close_pts
+
+    net_pnl = (overall_pts * opt_delta * lot_size) - total_cost
+    return overall_state, overall_pts, net_pnl
 
 
 def simulate_phase3_trade_horizons(
@@ -604,19 +855,21 @@ def simulate_phase3_trade_horizons(
 ) -> List[Phase3TradeResult]:
     """
     Evaluates a Phase 3 trade across 3 holding horizons:
-      - Horizon 1: 09:30:00 IST (Phase 1/2 baseline)
-      - Horizon 2: 09:45:00 IST (+15 mins breathing room + Breakeven Trail at +20 pts)
-      - Horizon 3: 10:00:00 IST (+30 mins breathing room + Breakeven Trail at +20 pts)
-    Applies Breakeven Trail:
-      Once favorable move reaches +20.0 Spot pts, move SL to Entry_Price.
+      - Horizon 1: 09:30:00 IST (bar index 14)
+      - Horizon 2: 09:45:00 IST (bar index 29)
+      - Horizon 3: 10:00:00 IST (bar index 44)
+    For each horizon, evaluates 3 mutually exclusive target models:
+      - 25pt Target
+      - 40pt Target
+      - Partial (25pt/40pt Profit-Lock)
     """
-    lot_size = cfg.get("lot_size", 65)
-    opt_delta = cfg.get("option_delta", 0.55)
-    total_cost = cfg.get("total_trade_cost_inr", 110.50)
-    be_trigger = cfg.get("be_trail_trigger_pts", 20.0)
-    risk_pts = round(abs(initial_sl - entry_price), 2)
-
     entry_tm = str(bars_extended.iloc[entry_bar_idx]["tm"])
+    risk_pts = round(abs(initial_sl - entry_price), 2)
+    be_trigger = cfg.get("be_trail_trigger_pts", 20.0)
+    lock_trigger = cfg.get("p3_partial_lock_trigger_pts", 25.0)
+    trail_profit = cfg.get("p3_partial_trail_profit_pts", 15.0)
+    runner_target = cfg.get("p3_partial_runner_target_pts", 40.0)
+
     results: List[Phase3TradeResult] = []
 
     horizon_specs = [
@@ -626,113 +879,92 @@ def simulate_phase3_trade_horizons(
     ]
 
     for horizon_label, target_end_idx in horizon_specs:
-        end_idx = min(target_end_idx, len(bars_extended) - 1)
-        start_idx = (entry_bar_idx + 1) if is_confirmed_close else entry_bar_idx
-
-        mfe_before_stop = 0.0
-        mae_pts = 0.0
-        be_active = False
-        stopped_out = False
-        stop_type = ""
-        exit_bar_idx = end_idx
-        exit_price = float(bars_extended.iloc[end_idx]["close"])
-
-        for b_idx in range(start_idx, end_idx + 1):
-            bar = bars_extended.iloc[b_idx]
-            bh = float(bar["high"])
-            bl = float(bar["low"])
-
-            if direction == "SHORT":
-                bar_fav = entry_price - bl
-                bar_adv = bh - entry_price
-                hit_initial_sl = (bh >= initial_sl)
-                hit_be_sl = (bh >= entry_price)
-                hit_be_trigger = (bar_fav >= be_trigger)
-            else:
-                bar_fav = bh - entry_price
-                bar_adv = entry_price - bl
-                hit_initial_sl = (bl <= initial_sl)
-                hit_be_sl = (bl <= entry_price)
-                hit_be_trigger = (bar_fav >= be_trigger)
-
-            mae_pts = max(mae_pts, max(0.0, bar_adv))
-
-            if not be_active:
-                if hit_initial_sl and hit_be_trigger:
-                    stopped_out = True
-                    stop_type = "SL_FAIL"
-                    exit_bar_idx = b_idx
-                    exit_price = initial_sl
-                    mfe_before_stop = max(mfe_before_stop, max(0.0, bar_fav))
-                    break
-                elif hit_initial_sl:
-                    stopped_out = True
-                    stop_type = "SL_FAIL"
-                    exit_bar_idx = b_idx
-                    exit_price = initial_sl
-                    mfe_before_stop = max(mfe_before_stop, max(0.0, bar_fav))
-                    break
-                elif hit_be_trigger:
-                    be_active = True
-                    mfe_before_stop = max(mfe_before_stop, bar_fav)
-                else:
-                    mfe_before_stop = max(mfe_before_stop, max(0.0, bar_fav))
-            else:
-                if hit_be_sl:
-                    stopped_out = True
-                    stop_type = "BE_SCRATCH"
-                    exit_bar_idx = b_idx
-                    exit_price = entry_price
-                    break
-                else:
-                    mfe_before_stop = max(mfe_before_stop, max(0.0, bar_fav))
-
-        hit_25_plus = (mfe_before_stop >= 25.0)
-        hit_40_plus = (mfe_before_stop >= 40.0)
-        hit_50_plus = (mfe_before_stop >= 50.0)
-        is_sl_fail = (stopped_out and stop_type == "SL_FAIL")
-        is_be_scratch = (stopped_out and stop_type == "BE_SCRATCH")
-
-        # Financial Model 25pt Target
-        if hit_25_plus:
-            pnl_25 = 25.0 * opt_delta * lot_size - total_cost
-        elif is_sl_fail:
-            pnl_25 = -risk_pts * opt_delta * lot_size - total_cost
-        elif is_be_scratch:
-            pnl_25 = 0.0 * opt_delta * lot_size - total_cost
-        else:
-            close_pts = (entry_price - exit_price) if direction == "SHORT" else (exit_price - entry_price)
-            pnl_25 = close_pts * opt_delta * lot_size - total_cost
-
-        # Financial Model 40pt Target
-        if hit_40_plus:
-            pnl_40 = 40.0 * opt_delta * lot_size - total_cost
-        elif is_sl_fail:
-            pnl_40 = -risk_pts * opt_delta * lot_size - total_cost
-        elif is_be_scratch:
-            pnl_40 = 0.0 * opt_delta * lot_size - total_cost
-        else:
-            close_pts = (entry_price - exit_price) if direction == "SHORT" else (exit_price - entry_price)
-            pnl_40 = close_pts * opt_delta * lot_size - total_cost
-
+        # Model 1: 25pt Target
+        st_25, ep_25, pnl_25 = simulate_single_target_causal(
+            bars_extended=bars_extended,
+            entry_bar_idx=entry_bar_idx,
+            entry_price=entry_price,
+            initial_sl=initial_sl,
+            target_pts=25.0,
+            direction=direction,
+            horizon_end_idx=target_end_idx,
+            cfg=cfg,
+            is_confirmed_close=is_confirmed_close,
+            be_trigger_pts=be_trigger,
+        )
         results.append(
             Phase3TradeResult(
                 variant=variant_name,
+                target_mode="25pt Target",
                 hold_until=horizon_label,
                 date=date_str,
                 entry_time_ist=entry_tm,
                 entry_price=round(entry_price, 2),
                 initial_sl=round(initial_sl, 2),
                 risk_pts=risk_pts,
-                mfe_before_stop=round(mfe_before_stop, 2),
-                mae_pts=round(mae_pts, 2),
-                hit_25_plus=hit_25_plus,
-                hit_40_plus=hit_40_plus,
-                hit_50_plus=hit_50_plus,
-                is_be_scratch=is_be_scratch,
-                is_sl_fail=is_sl_fail,
-                net_pnl_inr_25=round(pnl_25, 2),
-                net_pnl_inr_40=round(pnl_40, 2),
+                state=st_25,
+                exit_pts=round(ep_25, 2),
+                net_pnl_inr=round(pnl_25, 2),
+            )
+        )
+
+        # Model 2: 40pt Target
+        st_40, ep_40, pnl_40 = simulate_single_target_causal(
+            bars_extended=bars_extended,
+            entry_bar_idx=entry_bar_idx,
+            entry_price=entry_price,
+            initial_sl=initial_sl,
+            target_pts=40.0,
+            direction=direction,
+            horizon_end_idx=target_end_idx,
+            cfg=cfg,
+            is_confirmed_close=is_confirmed_close,
+            be_trigger_pts=be_trigger,
+        )
+        results.append(
+            Phase3TradeResult(
+                variant=variant_name,
+                target_mode="40pt Target",
+                hold_until=horizon_label,
+                date=date_str,
+                entry_time_ist=entry_tm,
+                entry_price=round(entry_price, 2),
+                initial_sl=round(initial_sl, 2),
+                risk_pts=risk_pts,
+                state=st_40,
+                exit_pts=round(ep_40, 2),
+                net_pnl_inr=round(pnl_40, 2),
+            )
+        )
+
+        # Model 3: Partial (25pt/40pt Profit-Lock)
+        st_part, ep_part, pnl_part = simulate_partial_profit_causal(
+            bars_extended=bars_extended,
+            entry_bar_idx=entry_bar_idx,
+            entry_price=entry_price,
+            initial_sl=initial_sl,
+            direction=direction,
+            horizon_end_idx=target_end_idx,
+            cfg=cfg,
+            is_confirmed_close=is_confirmed_close,
+            be_trigger_pts=be_trigger,
+            lock_trigger_pts=lock_trigger,
+            trail_profit_pts=trail_profit,
+            runner_target_pts=runner_target,
+        )
+        results.append(
+            Phase3TradeResult(
+                variant=variant_name,
+                target_mode="Partial (25pt/40pt Profit-Lock)",
+                hold_until=horizon_label,
+                date=date_str,
+                entry_time_ist=entry_tm,
+                entry_price=round(entry_price, 2),
+                initial_sl=round(initial_sl, 2),
+                risk_pts=risk_pts,
+                state=st_part,
+                exit_pts=round(ep_part, 2),
+                net_pnl_inr=round(pnl_part, 2),
             )
         )
 
@@ -1554,19 +1786,19 @@ def build_table_5_horizon_matrix(
     cfg: Dict[str, Any],
 ) -> pd.DataFrame:
     """
-    Table 5 — Phase 3 Horizon (09:30 vs 09:45 vs 10:00) & Breakeven-Trail Expectancy Matrix:
-    Compares 5 variants across 3 holding horizons:
-      1. PDH Short (Blind Touch + 20pt SL + Breakeven Trail at +20pts)
-      2. Touch PDH + DOUBLE_TOP_3D Short (Blind Touch + 20pt SL + Breakeven Trail at +20pts)
-      3. PDH Short (P3-A Max Risk <=22pts Wick Confirmed + Breakeven Trail at +20pts)
-      4. PDH Short (P3-B 50% Wick Retest Limit + Breakeven Trail at +20pts)
-      5. PDL Breakdown Short (50% Retest/<=10pt Close, SL = PDL + 12 pts)
+    Table 5B — Phase 3B Mutually Exclusive (100.0%-Sum) Causal Audit Matrix:
+    Enforces strict single-exit state machine per Target (25pt, 40pt, Partial).
+    Every trade terminates in exactly one of 4 mutually exclusive states:
+      1. Target Hit
+      2. BE Scratch / Profit-Lock
+      3. SL Fail
+      4. Time Exit
+    Whose percentages sum to strictly 100.0%.
     """
     if not phase3_results:
         return pd.DataFrame()
 
     df = pd.DataFrame([asdict(r) for r in phase3_results])
-    breakeven_p = cfg.get("breakeven_win_rate", 0.365)
 
     variants_order = [
         "1. PDH Short (Blind Touch)",
@@ -1575,44 +1807,42 @@ def build_table_5_horizon_matrix(
         "4. PDH Short (P3-B 50% Wick Retest Limit)",
         "5. PDL Breakdown Short (50% Retest/<=10pt Close)",
     ]
+    targets_order = ["25pt Target", "40pt Target", "Partial (25pt/40pt Profit-Lock)"]
     horizons_order = ["09:30 IST", "09:45 IST", "10:00 IST"]
 
     rows = []
     for var in variants_order:
-        for hor in horizons_order:
-            sub = df[(df["variant"] == var) & (df["hold_until"] == hor)]
-            n = len(sub)
-            if n == 0:
-                continue
+        for tgt in targets_order:
+            for hor in horizons_order:
+                sub = df[(df["variant"] == var) & (df["target_mode"] == tgt) & (df["hold_until"] == hor)]
+                n = len(sub)
+                if n == 0:
+                    continue
 
-            win_25 = (sub["hit_25_plus"].sum() / n) * 100.0
-            win_40 = (sub["hit_40_plus"].sum() / n) * 100.0
-            win_50 = (sub["hit_50_plus"].sum() / n) * 100.0
-            be_scratch = (sub["is_be_scratch"].sum() / n) * 100.0
-            sl_fail = (sub["is_sl_fail"].sum() / n) * 100.0
-            avg_risk = float(sub["risk_pts"].mean())
-            pnl_25 = float(sub["net_pnl_inr_25"].mean())
-            pnl_40 = float(sub["net_pnl_inr_40"].mean())
+                tgt_hit = round(((sub["state"] == "TARGET_HIT").sum() / n) * 100.0, 1)
+                be_or_lock = round(((sub["state"].isin(["BE_SCRATCH", "PROFIT_LOCK_SCRATCH"])).sum() / n) * 100.0, 1)
+                sl_fail = round(((sub["state"] == "SL_FAIL").sum() / n) * 100.0, 1)
+                time_exit = round(100.0 - (tgt_hit + be_or_lock + sl_fail), 1)
+                sum_pct = round(tgt_hit + be_or_lock + sl_fail + time_exit, 1)
 
-            # t-stat of 40pt model PnL
-            std_40 = float(sub["net_pnl_inr_40"].std()) if n > 1 else 0.0
-            se_40 = std_40 / math.sqrt(n) if n > 0 else 1.0
-            t_stat_pnl = pnl_40 / se_40 if se_40 > 0 else 0.0
+                pnl_mean = float(sub["net_pnl_inr"].mean())
+                pnl_std = float(sub["net_pnl_inr"].std()) if n > 1 else 0.0
+                se = pnl_std / math.sqrt(n) if n > 0 else 1.0
+                t_stat = pnl_mean / se if se > 0 else 0.0
 
-            rows.append({
-                "Variant": var,
-                "Hold Until": hor,
-                "Sample (N)": n,
-                "Win >= 25 Pts %": round(win_25, 1),
-                "Win >= 40 Pts %": round(win_40, 1),
-                "Win >= 50 Pts %": round(win_50, 1),
-                "BE Scratch %": round(be_scratch, 1),
-                "SL Fail %": round(sl_fail, 1),
-                "Avg Risk (Pts)": round(avg_risk, 1),
-                "Est Net ₹/Lot (25pt Tgt)": round(pnl_25, 2),
-                "Est Net ₹/Lot (40pt Tgt)": round(pnl_40, 2),
-                "t-stat": round(t_stat_pnl, 2),
-            })
+                rows.append({
+                    "Variant": var,
+                    "Target": tgt,
+                    "Hold Until": hor,
+                    "N": n,
+                    "Target Hit %": tgt_hit,
+                    "BE Scratch / Profit-Lock %": be_or_lock,
+                    "SL Fail %": sl_fail,
+                    "Time Exit %": time_exit,
+                    "Sum % (Must = 100.0%)": sum_pct,
+                    "True Net ₹/Lot": round(pnl_mean, 2),
+                    "True t-stat": round(t_stat, 2),
+                })
 
     return pd.DataFrame(rows)
 
@@ -1622,40 +1852,26 @@ def compute_phase3_edge_verdict(
     cfg: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Identifies every configuration achieving t-stat >= 2.5 and Est Net ₹/Lot >= +₹250.
+    Identifies every configuration achieving True t-stat >= 2.5 and True Net ₹/Lot >= +₹250.
     """
     if table5_df.empty:
         return {"qualifiers": [], "total_configs": 0}
 
     qualifiers = []
     for _, row in table5_df.iterrows():
-        t_stat = float(row["t-stat"])
-        pnl_40 = float(row["Est Net ₹/Lot (40pt Tgt)"])
-        pnl_25 = float(row["Est Net ₹/Lot (25pt Tgt)"])
-        if t_stat >= 2.5 and pnl_40 >= 250.0:
+        t_stat = float(row["True t-stat"])
+        pnl = float(row["True Net ₹/Lot"])
+        if t_stat >= 2.5 and pnl >= 250.0:
             qualifiers.append({
                 "variant": row["Variant"],
+                "target": row["Target"],
                 "hold_until": row["Hold Until"],
-                "model": "40pt Target",
-                "sample": row["Sample (N)"],
-                "win_40": row["Win >= 40 Pts %"],
-                "win_25": row["Win >= 25 Pts %"],
-                "be_scratch": row["BE Scratch %"],
+                "sample": row["N"],
+                "target_hit": row["Target Hit %"],
+                "be_or_lock": row["BE Scratch / Profit-Lock %"],
                 "sl_fail": row["SL Fail %"],
-                "net_pnl": pnl_40,
-                "t_stat": t_stat,
-            })
-        elif pnl_25 >= 250.0 and t_stat >= 2.0:
-            qualifiers.append({
-                "variant": row["Variant"],
-                "hold_until": row["Hold Until"],
-                "model": "25pt Target",
-                "sample": row["Sample (N)"],
-                "win_40": row["Win >= 40 Pts %"],
-                "win_25": row["Win >= 25 Pts %"],
-                "be_scratch": row["BE Scratch %"],
-                "sl_fail": row["SL Fail %"],
-                "net_pnl": pnl_25,
+                "time_exit": row["Time Exit %"],
+                "net_pnl": pnl,
                 "t_stat": t_stat,
             })
 
@@ -1848,8 +2064,8 @@ def print_and_save_full_report(
     t4_str = format_cli_table(table4, "TABLE 4 — PHASE 2 HEAD-TO-HEAD COMPARISON (BLIND TOUCH vs. WICK CONFIRMATION vs. PDL BREAKDOWN)")
     _out(t4_str)
 
-    # Table 5 (Phase 3 Horizon & Breakeven-Trail Expectancy Matrix)
-    t5_str = format_cli_table(table5, "TABLE 5 — PHASE 3 HORIZON (09:30 vs 09:45 vs 10:00) & BREAKEVEN-TRAIL EXPECTANCY MATRIX")
+    # Table 5B (Phase 3B Mutually Exclusive 100%-Sum Audit Matrix)
+    t5_str = format_cli_table(table5, "TABLE 5B — PHASE 3B MUTUALLY EXCLUSIVE (100.0%-SUM) CAUSAL AUDIT MATRIX")
     _out(t5_str)
 
     # Statistical Edge Verdict (Phase 1 & Phase 2)
@@ -1889,29 +2105,29 @@ def print_and_save_full_report(
         _out(f"  - Win >= 40 Pts Rate: {baseline['win_rate_40_pct']}% | Fail Rate: {baseline['fail_rate_pct']}%")
         _out(f"  - Est Net PnL/Trade : ₹{baseline['avg_net_inr_40m']:+.2f} / lot")
 
-    # Phase 3 Statistical Edge Verdict
+    # Phase 3B Statistical Edge Verdict
     _out("\n" + "=" * 125)
-    _out("                PHASE 3 STATISTICAL EDGE VERDICT (t-stat >= 2.5 & Est Net ₹/Lot >= +₹250)")
+    _out("         PHASE 3B STATISTICAL EDGE VERDICT (True t-stat >= 2.5 & True Net ₹/Lot >= +₹250)")
     _out("=" * 125)
     p3_qualifiers = phase3_verdict.get("qualifiers", [])
     if p3_qualifiers:
-        _out(f"\n[QUALIFYING SETUPS ACHIEVING t-stat >= 2.5 AND Est Net ₹ >= +₹250/lot]:")
+        _out(f"\n[QUALIFYING SETUPS ACHIEVING True t-stat >= 2.5 AND True Net ₹ >= +₹250/lot]:")
         for q in p3_qualifiers:
-            _out(f"\n* {q['variant']} | Hold: {q['hold_until']} ({q['model']}):")
+            _out(f"\n* {q['variant']} | Target: {q['target']} | Hold: {q['hold_until']}:")
             _out(f"  - Sample Size (N)       : {q['sample']}")
-            _out(f"  - Win >= 40 Pts Rate    : {q['win_40']}%")
-            _out(f"  - Win >= 25 Pts Rate    : {q['win_25']}%")
-            _out(f"  - Breakeven Scratch Rate: {q['be_scratch']}%")
+            _out(f"  - Target Hit Rate       : {q['target_hit']}%")
+            _out(f"  - BE/Lock Scratch Rate  : {q['be_or_lock']}%")
             _out(f"  - Initial SL Fail Rate  : {q['sl_fail']}%")
-            _out(f"  - Est Net ₹/Lot         : ₹{q['net_pnl']:+.2f}")
-            _out(f"  - t-statistic           : {q['t_stat']:+.2f}")
+            _out(f"  - Time Exit Rate        : {q['time_exit']}%")
+            _out(f"  - True Net ₹/Lot        : ₹{q['net_pnl']:+.2f}")
+            _out(f"  - True t-statistic      : {q['t_stat']:+.2f}")
     else:
-        _out("\n[NOTICE]: No individual Phase 3 configuration met both t-stat >= 2.5 AND Net ₹ >= +₹250/lot hurdles.")
+        _out("\n[NOTICE]: No individual Phase 3 configuration met both True t-stat >= 2.5 AND True Net ₹ >= +₹250/lot hurdles.")
         if not table5.empty:
-            _out("\nTop performing Phase 3 configurations ranked by Net ₹/Lot (40pt Target):")
-            top_p3 = table5.sort_values("Est Net ₹/Lot (40pt Tgt)", ascending=False).head(3)
+            _out("\nTop performing Phase 3 configurations ranked by True Net ₹/Lot:")
+            top_p3 = table5.sort_values("True Net ₹/Lot", ascending=False).head(5)
             for _, r in top_p3.iterrows():
-                _out(f"  - {r['Variant']} [{r['Hold Until']}]: Net ₹{r['Est Net ₹/Lot (40pt Tgt)']:+.2f} / lot (t-stat = {r['t-stat']:+.2f}, Win40 = {r['Win >= 40 Pts %']}%, SL Fail = {r['SL Fail %']}%)")
+                _out(f"  - {r['Variant']} [{r['Target']} | {r['Hold Until']}]: Net ₹{r['True Net ₹/Lot']:+.2f} / lot (t-stat = {r['True t-stat']:+.2f}, Hit = {r['Target Hit %']}%, SL Fail = {r['SL Fail %']}%, Sum = {r['Sum % (Must = 100.0%)']}%)")
 
     _out("\n" + "=" * 125 + "\n")
 

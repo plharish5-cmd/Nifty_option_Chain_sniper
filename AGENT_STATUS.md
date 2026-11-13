@@ -13,7 +13,7 @@ Trunk: **`integrate/v1.9`**
 | `chatgpt/v1.9.4d` | ChatGPT | done, tag `post-chatgpt-v1.9.4d-final` | **NO — awaiting Harish** |
 | `claude/v1.9.4-safety-lock` | Claude | **BROKEN, `2d116b7` — DELETE** | never merge |
 | `agy/ema8-proto-corrections` | Antigravity | **done, `b1d23ca`**, tag `post-agy-ema8-proto-corrections` | **NO — awaiting Harish** |
-| `agy/v2.0.22-915-level-reaction` | Antigravity | **done**, tag `post-agy-v2.0.22-915-level-reaction-p3` | **NO — awaiting Harish** |
+| `agy/v2.0.22-915-level-reaction` | Antigravity | **done**, tag `post-agy-v2.0.22-915-level-reaction-p3b` | **NO — awaiting Harish** |
 
 ---
 
@@ -1136,6 +1136,26 @@ What changed:
     - `2. Touch PDH + DOUBLE_TOP_3D` @ `10:00 IST`: Net PnL **+₹329.35 / lot**, $t = \mathbf{+3.83}$ (Win $\ge 40$ pts rises to 41.3%, Net profit peaks at +₹329/lot).
 - All thresholds externalized in `analyst/analyst_config.json` (`be_trail_trigger_pts: 20.0`, `p3_max_risk_cap_pts: 22.0`, `p3_max_close_from_level_pts: 12.0`, `p3_retest_limit_wick_pct: 0.50`, `p3_retest_limit_validity_bars: 3`, `p3_retest_risk_cap_pts: 18.0`, `p3_pdl_breakdown_immediate_close_dist_pts: 10.0`, `p3_pdl_breakdown_sl_pts: 12.0`).
 - Immutable core locks verified: 11/11 modules intact (`scripts/verify_locks.py`).
+
+### Phase 3B Audit (13 Nov 2026): Mutually Exclusive 100%-Sum State Machine, Touch-Bar Lookahead Fix & Partial Profit-Lock
+- Solved the non-mutually-exclusive 116.5% sum bug in Table 5 where cumulative excursion flags overlapped with trailing stop hits:
+  1. **Strict Single-Exit Causal State Machine**: Evaluated discrete termination events per target ($T \in \{25.0, 40.0\}$ and Partial Lock). Every trade terminates in exactly one of four mutually exclusive states:
+     - `TARGET_HIT`: Reaches $+T$ pts before stop (immediate exit; subsequent bars ignored).
+     - `SL_FAIL`: Breaches initial $-20$ pt SL before $+20$ pts (immediate exit; subsequent bars ignored).
+     - `BE_SCRATCH` / `PROFIT_LOCK_SCRATCH`: Arms BE trail at $+20$ pts (or locks $+25$ pts on Half 1 and trails Half 2 to $+15$ pts) and retraces to scratch before reaching runner target. Any favorable move after scratch is strictly ignored.
+     - `TIME_EXIT`: Trade reaches horizon cutoff (`09:30`, `09:45`, or `10:00 IST`) without hitting target or stop, exiting at market close.
+  2. **Intrabar Touch-Bar Lookahead Guard ($t == t_{touch}$)**:
+     - For blind touch entries, forbidden from using $low[t_{touch}]$ to award $+20$ pt BE trail activation or target hit.
+     - Checks only if $high[t_{touch}] \ge initial\_sl$ (immediate `SL_FAIL`), and measures post-entry favorable excursion strictly starting from $close[t_{touch}]$ and subsequent bars $t > t_{touch}$.
+  3. **Two-Step Partial-Profit Structure (`BOOK_50PCT_AT_25PTS_TRAIL_50PCT_TO_40PTS`)**:
+     - At $+25$ pts, locks $+25.0$ pts on Half 1 ($+₹783.25$/lot net) and trails Half 2 stop to $+15.0$ pts in profit instead of 0.0 BE (banking $+₹425.75$/lot profit instead of $-₹110.50$ scratch on reversal).
+  4. **Table 5B Generated & Verified**:
+     - Columns: `Variant | Target | Hold Until | N | Target Hit % | BE Scratch / Profit-Lock % | SL Fail % | Time Exit % | Sum % (Must = 100.0%) | True Net ₹/Lot | True t-stat`.
+     - **Verification**: Evaluated across 4,365 trade-horizon simulations over 1,264 sessions (2021-10-06 to 2026-11-13). Every single row in Table 5B sums to **strictly 100.0%**.
+     - Top audited institutional setup: `Touch PDH + DOUBLE_TOP_3D` Short [40pt Target, Hold to 10:00 IST]: **38.5% Target Hit**, 16.5% BE Scratch, 37.6% SL Fail, 7.4% Time Exit, **Sum = 100.0%**, **True Net ₹+179.76/lot**, True $t = \mathbf{+1.94}$.
+- All thresholds in JSON: `analyst/analyst_config.json` (`p3_partial_lock_trigger_pts: 25.0`, `p3_partial_trail_profit_pts: 15.0`, `p3_partial_runner_target_pts: 40.0`).
+- Core locks verified intact: 11/11 modules pass (`scripts/verify_locks.py`).
+
 
 
 
