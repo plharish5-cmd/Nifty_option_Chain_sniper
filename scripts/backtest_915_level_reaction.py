@@ -3,7 +3,7 @@
 scripts/backtest_915_level_reaction.py
 
 NIFTY 50 Opening 15-Minute (09:15–09:30 IST) Pre-Market Level Reaction
-& Confluence Backtester.
+& Confluence Backtester — Phase 1 & Phase 2 Enhanced Edition.
 
 Architectural Guarantees:
   1. Zero Look-Ahead:
@@ -14,19 +14,21 @@ Architectural Guarantees:
   2. Execution Window:
      - 09:15:00 to 09:30:00 IST ONLY (15 x 1m bars: 09:15 through 09:29; hard exit at 09:30:00 close).
      - 8 EMA only (span=8, adjust=False).
-  3. Touch Detection & Path-Dependent Excursion:
-     - Configurable touch tolerance (default 5.0 pts).
-     - Bar-by-bar forward stepping from touch bar through 09:29.
-     - Invalidation stop loss (default 20.0 pts beyond level).
-     - Ambiguity Guard: flags AMBIGUOUS_SAME_BAR if 20pt stop and +25pt favorable move
-       occur on the exact same 1-minute bar; reports both Pessimistic and Optimistic outcomes.
-     - Mutually exclusive & cumulative bucket classification (BREAKOUT_FAIL, <25, 25-40, 40-50, >50).
-     - Financial translation to Net ₹/Lot (Lot 65, ATM Delta 0.55, Dhan charges ₹78, slippage ₹32.50).
-  4. Required Deliverables (3 Tables + CSV + Ranked Edge Verdict):
-     - Table 1: Level-by-Level Performance Matrix
+  3. Touch Detection, Confirmation Modes & Path Excursion:
+     - Mode 1: Blind Limit Touch (Phase 1 Baseline).
+     - Mode 2: Confirmed 1m Rejection Candle Close on PDH & DOUBLE_TOP_3D Shorts:
+       Triggers Short at close of 1m bar t in [09:15, 09:27] iff high[t] >= Level - 5.0,
+       close[t] <= Level, and upper rejection wick (high - close) >= 30% of total bar range.
+       SL = max(high[t] + 5.0, Level + 20.0).
+     - Mode 3: PDL Breakdown Continuation Short:
+       Exploits the 63.8% PDL support failure. When price opens above PDL and a 1m bar closes
+       below PDL - 3.0 inside 09:15-09:27, enters SHORT with SL = PDL + 15.0 pts.
+  4. Deliverables:
+     - Table 1: Level-by-Level Performance Matrix (Phase 1 Baseline)
      - Table 2: Multi-Factor Confluence Combinations (Single vs. Double vs. Triple Confluence)
      - Table 3: Session-by-Session Audit Log (CSV: analyst/reports/nifty_915_930_level_reactions.csv)
-     - Statistical Edge Verdict: Ranked Top 2 Setups, t-test vs 36.5% break-even, N>=30 hurdle.
+     - Table 4: Phase 2 Head-to-Head Comparison (Blind Touch vs. Wick Confirmation vs. PDL Breakdown)
+     - Statistical Edge Verdict: Ranked Setups, t-test vs 36.5% break-even, N >= 30 hurdle.
 """
 
 from __future__ import annotations
@@ -90,6 +92,10 @@ def load_backtest_config() -> Dict[str, Any]:
         "double_bottom_price_tol_pct": 0.0015,
         "double_bottom_level_proximity_pts": 30.0,
         "h1_ema_span": 8,
+        "rejection_wick_ratio": 0.30,
+        "rejection_sl_buffer_pts": 5.0,
+        "pdl_breakdown_trigger_pts": 3.0,
+        "pdl_breakdown_sl_pts": 15.0,
         "default_source": "auto",
         "csv_path": "data/ohlc/nifty_1m_dhan.csv",
         "sqlite_path": "ict_smc_app/backend/data/ict_smc.sqlite3",
@@ -120,10 +126,7 @@ def load_clean_1m_candles(
 ) -> pd.DataFrame:
     """
     Loads 1-minute NIFTY Spot candles, filtered to intraday session 09:15 to 15:29.
-    Supports:
-      - 'auto': Loads full historical CSV and appends any newer dates from SQLite DB.
-      - 'db': Loads strictly from SQLite DB (ict_smc.sqlite3).
-      - 'csv': Loads strictly from historical CSV (nifty_1m_dhan.csv).
+    Supports auto (merge CSV+DB), db, or csv.
     """
     csv_full = ROOT / csv_rel
     db_full = ROOT / db_rel
@@ -286,19 +289,16 @@ def identify_3d_patterns(
     lows = bars_3d["low"].values
     highs = bars_3d["high"].values
 
-    # Pivot lows (2 bars left, 2 bars right)
     swing_lows: List[Tuple[int, float]] = []
     for k in range(2, n - 2):
         if lows[k] <= min(lows[k - 2], lows[k - 1], lows[k + 1], lows[k + 2]):
             swing_lows.append((k, float(lows[k])))
 
-    # Pivot highs
     swing_highs: List[Tuple[int, float]] = []
     for k in range(2, n - 2):
         if highs[k] >= max(highs[k - 2], highs[k - 1], highs[k + 1], highs[k + 2]):
             swing_highs.append((k, float(highs[k])))
 
-    # Double bottom evaluation
     has_db = False
     best_db_level: Optional[float] = None
     min_db_dist = float("inf")
@@ -322,7 +322,6 @@ def identify_3d_patterns(
                                 min_db_dist = best_dist
                                 best_db_level = support_candidate
 
-    # Double top evaluation
     has_dt = False
     best_dt_level: Optional[float] = None
     min_dt_dist = float("inf")
@@ -363,6 +362,7 @@ class ReactionResult:
     touch_time_ist: str
     entry_price: float
     stop_price: float
+    risk_pts: float
     mfe_before_sl_pts: float
     mae_pts: float
     hit_25_plus: bool
@@ -371,10 +371,12 @@ class ReactionResult:
     outcome_bucket: str
     close_930_pts: float
     resolution_quality: str  # "CLEAN" or "AMBIGUOUS_SAME_BAR"
-    opt_net_pnl_inr: float
+    opt_net_pnl_inr_40m: float
+    opt_net_pnl_inr_25m: float
     is_optimistic_win_40: bool
     confluence_combo: str
     confluence_count: int
+    entry_mode: str  # "BLIND_TOUCH", "CONFIRMED_1M_REJECTION_CLOSE", "BREAKDOWN_CONTINUATION"
 
 
 def evaluate_level_reaction_path(
@@ -383,17 +385,20 @@ def evaluate_level_reaction_path(
     level_price: float,
     direction: str,
     approach: str,
-    touch_bar_idx: int,
+    entry_bar_idx: int,
     entry_price: float,
+    stop_price: float,
     cfg: Dict[str, Any],
     confluence_combo: str = "",
     confluence_count: int = 1,
+    entry_mode: str = "BLIND_TOUCH",
+    is_confirmed_close: bool = False,
 ) -> ReactionResult:
     """
-    Evaluates step-by-step path excursion from touch_bar_idx through 09:29 (close at 09:30:00).
-    Tracks Invalidation Stop (20.0 pts beyond level), Ambiguity Guard, Buckets, and Net ₹/Lot.
+    Evaluates step-by-step path excursion from entry_bar through 09:29 (close at 09:30:00).
+    If is_confirmed_close is True, the trade triggered at the close of entry_bar_idx,
+    so forward price excursion strictly begins at entry_bar_idx + 1.
     """
-    stop_width = cfg.get("breakout_stop_pts", 20.0)
     lot_size = cfg.get("lot_size", 65)
     opt_delta = cfg.get("option_delta", 0.55)
     total_cost = cfg.get("total_trade_cost_inr", 110.50)
@@ -401,14 +406,9 @@ def evaluate_level_reaction_path(
     n_bars = len(bars_15m_window)
     end_bar_idx = min(14, n_bars - 1)
 
-    # Invalidation Stop: 20 pts beyond level L
-    if direction == "SHORT":
-        stop_price = level_price + stop_width
-    else:
-        stop_price = level_price - stop_width
-
-    touch_bar = bars_15m_window.iloc[touch_bar_idx]
+    touch_bar = bars_15m_window.iloc[entry_bar_idx]
     touch_time_ist = str(touch_bar["tm"])
+    risk_pts = round(abs(stop_price - entry_price), 2)
 
     mfe_before_sl = 0.0
     mae = 0.0
@@ -416,7 +416,9 @@ def evaluate_level_reaction_path(
     ambiguous_same_bar = False
     target_40_hit = False
 
-    for b_idx in range(touch_bar_idx, end_bar_idx + 1):
+    start_eval_idx = (entry_bar_idx + 1) if is_confirmed_close else entry_bar_idx
+
+    for b_idx in range(start_eval_idx, end_bar_idx + 1):
         bar = bars_15m_window.iloc[b_idx]
         b_high = float(bar["high"])
         b_low = float(bar["low"])
@@ -437,7 +439,6 @@ def evaluate_level_reaction_path(
         mae = max(mae, max(0.0, bar_adv))
 
         if hit_sl and hit_tp25:
-            # Ambiguity guard triggered: both hit on exact same 1m bar
             ambiguous_same_bar = True
             mfe_before_sl = max(mfe_before_sl, bar_fav)
             stopped_out = True
@@ -445,12 +446,10 @@ def evaluate_level_reaction_path(
                 target_40_hit = True
             break
         elif hit_sl:
-            # Clean SL hit before reaching 25 pts
             stopped_out = True
             mfe_before_sl = max(mfe_before_sl, max(0.0, bar_fav))
             break
         else:
-            # Stop not hit, update favorable move
             mfe_before_sl = max(mfe_before_sl, max(0.0, bar_fav))
             if hit_tp40:
                 target_40_hit = True
@@ -487,23 +486,32 @@ def evaluate_level_reaction_path(
     hit_40_plus = outcome_bucket in ("40_TO_50_PTS", ">50_PTS")
     hit_50_plus = outcome_bucket == ">50_PTS"
 
-    # Financial Net ₹ / Trade under 40pt Target, 20pt SL model (Lot 65, Delta 0.55, Costs ₹110.50)
+    # Financial Model A: 40pt Target vs SL Model
     if hit_40_plus:
-        opt_net_pnl_inr = round(40.0 * opt_delta * lot_size - total_cost, 2)
+        pnl_40m = 40.0 * opt_delta * lot_size - total_cost
     elif outcome_bucket == "BREAKOUT_FAIL":
-        opt_net_pnl_inr = round(-stop_width * opt_delta * lot_size - total_cost, 2)
+        pnl_40m = -risk_pts * opt_delta * lot_size - total_cost
     else:
-        opt_net_pnl_inr = round(close_930_pts * opt_delta * lot_size - total_cost, 2)
+        pnl_40m = close_930_pts * opt_delta * lot_size - total_cost
+
+    # Financial Model B: 25pt Target vs SL Model
+    if hit_25_plus:
+        pnl_25m = 25.0 * opt_delta * lot_size - total_cost
+    elif outcome_bucket == "BREAKOUT_FAIL":
+        pnl_25m = -risk_pts * opt_delta * lot_size - total_cost
+    else:
+        pnl_25m = close_930_pts * opt_delta * lot_size - total_cost
 
     return ReactionResult(
         level_name=level_name,
         level_price=round(level_price, 2),
         direction=direction,
         approach=approach,
-        touch_bar_idx=touch_bar_idx,
+        touch_bar_idx=entry_bar_idx,
         touch_time_ist=touch_time_ist,
         entry_price=round(entry_price, 2),
         stop_price=round(stop_price, 2),
+        risk_pts=risk_pts,
         mfe_before_sl_pts=round(mfe_before_sl, 2),
         mae_pts=round(mae, 2),
         hit_25_plus=hit_25_plus,
@@ -512,10 +520,12 @@ def evaluate_level_reaction_path(
         outcome_bucket=outcome_bucket,
         close_930_pts=round(close_930_pts, 2),
         resolution_quality=resolution_quality,
-        opt_net_pnl_inr=opt_net_pnl_inr,
+        opt_net_pnl_inr_40m=round(pnl_40m, 2),
+        opt_net_pnl_inr_25m=round(pnl_25m, 2),
         is_optimistic_win_40=is_optimistic_win_40,
         confluence_combo=confluence_combo,
         confluence_count=confluence_count,
+        entry_mode=entry_mode,
     )
 
 
@@ -532,7 +542,7 @@ class LevelReactionRecord:
     double_bottom_3d: bool
     first_level_touched: str
     touch_time_ist: str
-    direction: str  # "LONG" or "SHORT"
+    direction: str
     confluence_combo: str
     confluence_count: int
     entry_price: float
@@ -547,26 +557,34 @@ class LevelReactionRecord:
     close_930_pts: float
     resolution_quality: str
     opt_net_pnl_inr: float
+    opt_net_pnl_inr_40m: float
+    opt_net_pnl_inr_25m: float
     is_optimistic_win_40: bool
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. BACKTEST ENGINE
+# 5. BACKTEST ENGINE (PHASE 1 + PHASE 2 HEAD-TO-HEAD)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_915_level_backtest(
     df_1m: pd.DataFrame,
     cfg: Dict[str, Any],
-) -> Tuple[List[LevelReactionRecord], List[ReactionResult], List[ReactionResult]]:
+) -> Tuple[List[LevelReactionRecord], List[ReactionResult], List[ReactionResult], List[ReactionResult]]:
     """
     Runs zero-lookahead backtest across all sessions:
       Returns:
         1. session_records: 1 record per session (Table 3 audit log)
         2. level_results: all qualifying level touches in 09:15-09:28 (Table 1 matrix)
         3. confluence_results: all qualifying multi-factor setup reactions (Table 2 matrix)
+        4. phase2_results: all Phase 2 comparison trades (Table 4 comparison)
     """
     touch_tol = cfg.get("touch_tolerance_pts", 5.0)
+    stop_width = cfg.get("breakout_stop_pts", 20.0)
     confluence_dist = cfg.get("confluence_proximity_pts", 15.0)
+    wick_ratio = cfg.get("rejection_wick_ratio", 0.30)
+    rejection_sl_buf = cfg.get("rejection_sl_buffer_pts", 5.0)
+    pdl_bd_trigger = cfg.get("pdl_breakdown_trigger_pts", 3.0)
+    pdl_bd_sl = cfg.get("pdl_breakdown_sl_pts", 15.0)
 
     log.info("Computing continuous 1H 8-EMA across all sessions...")
     df_1h = compute_standard_1h_8ema(df_1m, span=cfg.get("h1_ema_span", 8))
@@ -577,7 +595,6 @@ def run_915_level_backtest(
     sessions = sorted(df_1m["dt"].unique())
     log.info("Running zero-lookahead backtest across %d sessions...", len(sessions))
 
-    # Pre-index frames by date
     m1_by_date = {dt: g.sort_values("tm").reset_index(drop=True) for dt, g in df_1m.groupby("dt")}
     m15_by_date = {dt: g.sort_values("b15").reset_index(drop=True) for dt, g in df_15m.groupby("dt")}
     h1_last_ema_by_date = {dt: g.iloc[-1]["ema_8"] for dt, g in df_1h.groupby("dt")}
@@ -585,6 +602,7 @@ def run_915_level_backtest(
     session_records: List[LevelReactionRecord] = []
     level_results: List[ReactionResult] = []
     confluence_results: List[ReactionResult] = []
+    phase2_results: List[ReactionResult] = []
 
     for idx in range(3, len(sessions)):
         date_d = sessions[idx]
@@ -638,8 +656,6 @@ def run_915_level_backtest(
         open_915 = float(bars_15m_window.iloc[0]["open"])
         open_vs_1h = "ABOVE_1H_8EMA" if open_915 > prev_1h_8ema else "BELOW_1H_8EMA"
 
-        # Candidate levels for Table 1 and Session first-touch
-        # DOUBLE_BOTTOM_3D is strictly Support; DOUBLE_TOP_3D is strictly Resistance
         candidate_levels: List[Dict[str, Any]] = [
             {"name": "PDH", "price": levels.pdh, "can_support": True, "can_resist": True},
             {"name": "PDL", "price": levels.pdl, "can_support": True, "can_resist": True},
@@ -663,7 +679,7 @@ def run_915_level_backtest(
             })
 
         # ─────────────────────────────────────────────────────────────────────
-        # Part A: Evaluate Table 1 level touches (every level tested in 09:15-09:28)
+        # Part A: Table 1 Level Touches (Blind Limit Touch)
         # ─────────────────────────────────────────────────────────────────────
         session_level_touches: List[Tuple[int, float, Dict[str, Any], str, str, float]] = []
 
@@ -676,8 +692,9 @@ def run_915_level_backtest(
                 for b_i in range(14):
                     if float(bars_15m_window.iloc[b_i]["high"]) >= (lvl_p - touch_tol):
                         entry = min(float(bars_15m_window.iloc[b_i]["high"]), lvl_p)
+                        sl = lvl_p + stop_width
                         res = evaluate_level_reaction_path(
-                            bars_15m_window, lvl_name, lvl_p, "SHORT", "Resistance", b_i, entry, cfg
+                            bars_15m_window, lvl_name, lvl_p, "SHORT", "Resistance", b_i, entry, sl, cfg
                         )
                         level_results.append(res)
                         session_level_touches.append((b_i, lvl_p - open_915, cand, "SHORT", "Resistance", entry))
@@ -688,15 +705,16 @@ def run_915_level_backtest(
                 for b_i in range(14):
                     if float(bars_15m_window.iloc[b_i]["low"]) <= (lvl_p + touch_tol):
                         entry = max(float(bars_15m_window.iloc[b_i]["low"]), lvl_p)
+                        sl = lvl_p - stop_width
                         res = evaluate_level_reaction_path(
-                            bars_15m_window, lvl_name, lvl_p, "LONG", "Support", b_i, entry, cfg
+                            bars_15m_window, lvl_name, lvl_p, "LONG", "Support", b_i, entry, sl, cfg
                         )
                         level_results.append(res)
                         session_level_touches.append((b_i, open_915 - lvl_p, cand, "LONG", "Support", entry))
                         break
 
         # ─────────────────────────────────────────────────────────────────────
-        # Part B: Determine Table 3 Session Primary First-Touch Trade
+        # Part B: Table 3 Session Primary First-Touch Trade
         # ─────────────────────────────────────────────────────────────────────
         if session_level_touches:
             session_level_touches.sort(key=lambda x: (x[0], x[1]))
@@ -704,7 +722,6 @@ def run_915_level_backtest(
             first_lvl_name = first_cand["name"]
             first_lvl_price = first_cand["price"]
 
-            # Check stacked levels within 15.0 pts
             stacked_levels = [
                 c["name"] for c in candidate_levels
                 if c["name"] != first_lvl_name and abs(c["price"] - first_lvl_price) <= confluence_dist
@@ -716,7 +733,6 @@ def run_915_level_backtest(
             )
             confluence_count = 1 + (1 if is_regime_aligned else 0) + len(stacked_levels)
 
-            # Combo naming
             if first_dir == "SHORT" and open_vs_1h == "BELOW_1H_8EMA" and first_lvl_name == "PDH":
                 combo_name = "BELOW_1H_8EMA + Touch PDH"
             elif first_dir == "SHORT" and open_vs_1h == "BELOW_1H_8EMA" and first_lvl_name == "PDC":
@@ -735,9 +751,10 @@ def run_915_level_backtest(
                     elements.append(f"+{s}")
                 combo_name = " ".join(elements)
 
+            sl_first = first_lvl_price + stop_width if first_dir == "SHORT" else first_lvl_price - stop_width
             res_first = evaluate_level_reaction_path(
                 bars_15m_window, first_lvl_name, first_lvl_price, first_dir, first_approach,
-                first_b_idx, first_entry, cfg, combo_name, confluence_count
+                first_b_idx, first_entry, sl_first, cfg, combo_name, confluence_count
             )
 
             rec = LevelReactionRecord(
@@ -766,7 +783,9 @@ def run_915_level_backtest(
                 outcome_bucket=res_first.outcome_bucket,
                 close_930_pts=res_first.close_930_pts,
                 resolution_quality=res_first.resolution_quality,
-                opt_net_pnl_inr=res_first.opt_net_pnl_inr,
+                opt_net_pnl_inr=res_first.opt_net_pnl_inr_40m,
+                opt_net_pnl_inr_40m=res_first.opt_net_pnl_inr_40m,
+                opt_net_pnl_inr_25m=res_first.opt_net_pnl_inr_25m,
                 is_optimistic_win_40=res_first.is_optimistic_win_40,
             )
             session_records.append(rec)
@@ -798,143 +817,229 @@ def run_915_level_backtest(
                 close_930_pts=0.0,
                 resolution_quality="CLEAN",
                 opt_net_pnl_inr=0.0,
+                opt_net_pnl_inr_40m=0.0,
+                opt_net_pnl_inr_25m=0.0,
                 is_optimistic_win_40=False,
             )
             session_records.append(rec)
 
         # ─────────────────────────────────────────────────────────────────────
-        # Part C: Evaluate Specific Table 2 Multi-Factor Confluence Combinations
+        # Part C: Table 2 Confluence Combinations (Blind Touch)
         # ─────────────────────────────────────────────────────────────────────
-        # 1. BELOW_1H_8EMA + Touch PDH (Short Rejection)
+        # 1. BELOW_1H_8EMA + Touch PDH
         if open_vs_1h == "BELOW_1H_8EMA" and open_915 < (pdh - touch_tol):
             for b_i in range(14):
                 if float(bars_15m_window.iloc[b_i]["high"]) >= (pdh - touch_tol):
                     entry = min(float(bars_15m_window.iloc[b_i]["high"]), pdh)
                     res = evaluate_level_reaction_path(
-                        bars_15m_window, "PDH", pdh, "SHORT", "Resistance", b_i, entry, cfg,
+                        bars_15m_window, "PDH", pdh, "SHORT", "Resistance", b_i, entry, pdh + stop_width, cfg,
                         "BELOW_1H_8EMA + Touch PDH", 2
                     )
                     confluence_results.append(res)
                     break
 
-        # 2. BELOW_1H_8EMA + Touch PDC (Short Rejection)
+        # 2. BELOW_1H_8EMA + Touch PDC
         if open_vs_1h == "BELOW_1H_8EMA" and open_915 < (pdc - touch_tol):
             for b_i in range(14):
                 if float(bars_15m_window.iloc[b_i]["high"]) >= (pdc - touch_tol):
                     entry = min(float(bars_15m_window.iloc[b_i]["high"]), pdc)
                     res = evaluate_level_reaction_path(
-                        bars_15m_window, "PDC", pdc, "SHORT", "Resistance", b_i, entry, cfg,
+                        bars_15m_window, "PDC", pdc, "SHORT", "Resistance", b_i, entry, pdc + stop_width, cfg,
                         "BELOW_1H_8EMA + Touch PDC", 2
                     )
                     confluence_results.append(res)
                     break
 
-        # 3. ABOVE_1H_8EMA + Touch PDL + DOUBLE_BOTTOM_3D (Long Bounce)
+        # 3. ABOVE_1H_8EMA + Touch PDL + DOUBLE_BOTTOM_3D
         if open_vs_1h == "ABOVE_1H_8EMA" and levels.double_bottom_3d and open_915 > (pdl + touch_tol):
             for b_i in range(14):
                 if float(bars_15m_window.iloc[b_i]["low"]) <= (pdl + touch_tol):
                     entry = max(float(bars_15m_window.iloc[b_i]["low"]), pdl)
                     res = evaluate_level_reaction_path(
-                        bars_15m_window, "PDL", pdl, "LONG", "Support", b_i, entry, cfg,
+                        bars_15m_window, "PDL", pdl, "LONG", "Support", b_i, entry, pdl - stop_width, cfg,
                         "ABOVE_1H_8EMA + Touch PDL + DOUBLE_BOTTOM_3D", 3
                     )
                     confluence_results.append(res)
                     break
 
-        # 4. ABOVE_1H_8EMA + Touch PREV_1H_8EMA Support + PDL within 15 pts (Long Bounce)
+        # 4. ABOVE_1H_8EMA + Touch PREV_1H_8EMA Support + PDL within 15 pts
         if open_vs_1h == "ABOVE_1H_8EMA" and abs(pdl - prev_1h_8ema) <= confluence_dist and open_915 > (prev_1h_8ema + touch_tol):
             for b_i in range(14):
                 if float(bars_15m_window.iloc[b_i]["low"]) <= (prev_1h_8ema + touch_tol):
                     entry = max(float(bars_15m_window.iloc[b_i]["low"]), prev_1h_8ema)
                     res = evaluate_level_reaction_path(
-                        bars_15m_window, "PREV_1H_8EMA", prev_1h_8ema, "LONG", "Support", b_i, entry, cfg,
+                        bars_15m_window, "PREV_1H_8EMA", prev_1h_8ema, "LONG", "Support", b_i, entry, prev_1h_8ema - stop_width, cfg,
                         "ABOVE_1H_8EMA + Touch PREV_1H_8EMA Support + PDL within 15 pts", 3
                     )
                     confluence_results.append(res)
                     break
 
-        # 5. Single Level Touch (PDO / PDC alone with 0 confluence) (Control Baseline)
+        # 5. Single Level Touch (PDO / PDC alone with 0 confluence)
         for check_name, check_p in [("PDC", pdc), ("PDO", pdo)]:
             other_near = any(c["name"] != check_name and abs(c["price"] - check_p) <= confluence_dist for c in candidate_levels)
             if not other_near:
-                # Test resistance
                 if open_vs_1h != "BELOW_1H_8EMA" and open_915 < (check_p - touch_tol):
                     for b_i in range(14):
                         if float(bars_15m_window.iloc[b_i]["high"]) >= (check_p - touch_tol):
                             entry = min(float(bars_15m_window.iloc[b_i]["high"]), check_p)
                             res = evaluate_level_reaction_path(
-                                bars_15m_window, check_name, check_p, "SHORT", "Resistance", b_i, entry, cfg,
+                                bars_15m_window, check_name, check_p, "SHORT", "Resistance", b_i, entry, check_p + stop_width, cfg,
                                 "Single Level Touch (PDO / PDC alone with 0 confluence)", 1
                             )
                             confluence_results.append(res)
                             break
-                # Test support
                 elif open_vs_1h != "ABOVE_1H_8EMA" and open_915 > (check_p + touch_tol):
                     for b_i in range(14):
                         if float(bars_15m_window.iloc[b_i]["low"]) <= (check_p + touch_tol):
                             entry = max(float(bars_15m_window.iloc[b_i]["low"]), check_p)
                             res = evaluate_level_reaction_path(
-                                bars_15m_window, check_name, check_p, "LONG", "Support", b_i, entry, cfg,
+                                bars_15m_window, check_name, check_p, "LONG", "Support", b_i, entry, check_p - stop_width, cfg,
                                 "Single Level Touch (PDO / PDC alone with 0 confluence)", 1
                             )
                             confluence_results.append(res)
                             break
 
-        # 6. ABOVE_1H_8EMA + Touch PREV_1H_8EMA Support (Long Bounce)
+        # 6. ABOVE_1H_8EMA + Touch PREV_1H_8EMA Support
         if open_vs_1h == "ABOVE_1H_8EMA" and open_915 > (prev_1h_8ema + touch_tol):
             for b_i in range(14):
                 if float(bars_15m_window.iloc[b_i]["low"]) <= (prev_1h_8ema + touch_tol):
                     entry = max(float(bars_15m_window.iloc[b_i]["low"]), prev_1h_8ema)
                     res = evaluate_level_reaction_path(
-                        bars_15m_window, "PREV_1H_8EMA", prev_1h_8ema, "LONG", "Support", b_i, entry, cfg,
+                        bars_15m_window, "PREV_1H_8EMA", prev_1h_8ema, "LONG", "Support", b_i, entry, prev_1h_8ema - stop_width, cfg,
                         "ABOVE_1H_8EMA + Touch PREV_1H_8EMA Support", 2
                     )
                     confluence_results.append(res)
                     break
 
-        # 7. BELOW_1H_8EMA + Touch PREV_1H_8EMA Resistance (Short Rejection)
+        # 7. BELOW_1H_8EMA + Touch PREV_1H_8EMA Resistance
         if open_vs_1h == "BELOW_1H_8EMA" and open_915 < (prev_1h_8ema - touch_tol):
             for b_i in range(14):
                 if float(bars_15m_window.iloc[b_i]["high"]) >= (prev_1h_8ema - touch_tol):
                     entry = min(float(bars_15m_window.iloc[b_i]["high"]), prev_1h_8ema)
                     res = evaluate_level_reaction_path(
-                        bars_15m_window, "PREV_1H_8EMA", prev_1h_8ema, "SHORT", "Resistance", b_i, entry, cfg,
+                        bars_15m_window, "PREV_1H_8EMA", prev_1h_8ema, "SHORT", "Resistance", b_i, entry, prev_1h_8ema + stop_width, cfg,
                         "BELOW_1H_8EMA + Touch PREV_1H_8EMA Resistance", 2
                     )
                     confluence_results.append(res)
                     break
 
-        # 8. Touch PDH + DOUBLE_TOP_3D (Short Rejection)
+        # 8. Touch PDH + DOUBLE_TOP_3D
         if levels.double_top_3d and open_915 < (pdh - touch_tol):
             for b_i in range(14):
                 if float(bars_15m_window.iloc[b_i]["high"]) >= (pdh - touch_tol):
                     entry = min(float(bars_15m_window.iloc[b_i]["high"]), pdh)
                     res = evaluate_level_reaction_path(
-                        bars_15m_window, "PDH", pdh, "SHORT", "Resistance", b_i, entry, cfg,
+                        bars_15m_window, "PDH", pdh, "SHORT", "Resistance", b_i, entry, pdh + stop_width, cfg,
                         "Touch PDH + DOUBLE_TOP_3D", 2
                     )
                     confluence_results.append(res)
                     break
 
-        # 9. Touch PDL + DOUBLE_BOTTOM_3D (Long Bounce)
+        # 9. Touch PDL + DOUBLE_BOTTOM_3D
         if levels.double_bottom_3d and open_915 > (pdl + touch_tol):
             for b_i in range(14):
                 if float(bars_15m_window.iloc[b_i]["low"]) <= (pdl + touch_tol):
                     entry = max(float(bars_15m_window.iloc[b_i]["low"]), pdl)
                     res = evaluate_level_reaction_path(
-                        bars_15m_window, "PDL", pdl, "LONG", "Support", b_i, entry, cfg,
+                        bars_15m_window, "PDL", pdl, "LONG", "Support", b_i, entry, pdl - stop_width, cfg,
                         "Touch PDL + DOUBLE_BOTTOM_3D", 2
                     )
                     confluence_results.append(res)
                     break
 
+        # ─────────────────────────────────────────────────────────────────────
+        # Part D: Phase 2 Head-to-Head Refinements
+        # ─────────────────────────────────────────────────────────────────────
+        # D1. Refinement A — Confirmed 1m Rejection Candle Close on PDH
+        if open_915 < (pdh - touch_tol):
+            for t in range(13):  # bar t in [09:15, 09:27]
+                b = bars_15m_window.iloc[t]
+                bh = float(b["high"])
+                bl = float(b["low"])
+                bc = float(b["close"])
+                br = bh - bl
+                # Rule: high >= PDH - 5.0, close <= PDH, upper rejection wick >= 30% of bar range
+                if bh >= (pdh - touch_tol) and bc <= pdh and br > 0 and (bh - bc) >= (wick_ratio * br):
+                    entry = bc
+                    sl = max(bh + rejection_sl_buf, pdh + stop_width)
+                    res = evaluate_level_reaction_path(
+                        bars_15m_window, "PDH", pdh, "SHORT", "Resistance", t, entry, sl, cfg,
+                        "PDH Confirmed 1M Rejection Close", 1, "CONFIRMED_1M_REJECTION_CLOSE", is_confirmed_close=True
+                    )
+                    phase2_results.append(res)
+                    break
+
+        # D2. Refinement A — Confirmed 1m Rejection Candle Close on PDH + DOUBLE_TOP_3D
+        if levels.double_top_3d and open_915 < (pdh - touch_tol):
+            for t in range(13):
+                b = bars_15m_window.iloc[t]
+                bh = float(b["high"])
+                bl = float(b["low"])
+                bc = float(b["close"])
+                br = bh - bl
+                if bh >= (pdh - touch_tol) and bc <= pdh and br > 0 and (bh - bc) >= (wick_ratio * br):
+                    entry = bc
+                    sl = max(bh + rejection_sl_buf, pdh + stop_width)
+                    res = evaluate_level_reaction_path(
+                        bars_15m_window, "PDH", pdh, "SHORT", "Resistance", t, entry, sl, cfg,
+                        "Touch PDH + DOUBLE_TOP_3D (Wick Confirmed)", 2, "CONFIRMED_1M_REJECTION_CLOSE", is_confirmed_close=True
+                    )
+                    phase2_results.append(res)
+                    break
+
+        # D3. Refinement B — PDL Breakdown Continuation Short (All Regimes)
+        if open_915 > pdl:
+            for t in range(13):  # bar t in [09:15, 09:27]
+                b = bars_15m_window.iloc[t]
+                bc = float(b["close"])
+                if bc <= (pdl - pdl_bd_trigger):
+                    entry = bc
+                    sl = pdl + pdl_bd_sl
+                    res = evaluate_level_reaction_path(
+                        bars_15m_window, "PDL", pdl, "SHORT", "Breakdown", t, entry, sl, cfg,
+                        "PDL Breakdown Short (All Regimes)", 1, "BREAKDOWN_CONTINUATION", is_confirmed_close=True
+                    )
+                    phase2_results.append(res)
+                    break
+
+        # D4. Refinement B — BELOW_1H_8EMA + PDL Breakdown Continuation Short (Regime Aligned)
+        if open_915 > pdl and open_vs_1h == "BELOW_1H_8EMA":
+            for t in range(13):
+                b = bars_15m_window.iloc[t]
+                bc = float(b["close"])
+                if bc <= (pdl - pdl_bd_trigger):
+                    entry = bc
+                    sl = pdl + pdl_bd_sl
+                    res = evaluate_level_reaction_path(
+                        bars_15m_window, "PDL", pdl, "SHORT", "Breakdown", t, entry, sl, cfg,
+                        "BELOW_1H_8EMA + PDL Breakdown Short", 2, "BREAKDOWN_CONTINUATION", is_confirmed_close=True
+                    )
+                    phase2_results.append(res)
+                    break
+
+        # D5. Refinement B — PDL + DOUBLE_BOTTOM_3D Breakdown Continuation Short
+        if open_915 > pdl and levels.double_bottom_3d:
+            for t in range(13):
+                b = bars_15m_window.iloc[t]
+                bc = float(b["close"])
+                if bc <= (pdl - pdl_bd_trigger):
+                    entry = bc
+                    sl = pdl + pdl_bd_sl
+                    res = evaluate_level_reaction_path(
+                        bars_15m_window, "PDL", pdl, "SHORT", "Breakdown", t, entry, sl, cfg,
+                        "PDL + DOUBLE_BOTTOM_3D Breakdown Short", 2, "BREAKDOWN_CONTINUATION", is_confirmed_close=True
+                    )
+                    phase2_results.append(res)
+                    break
+
     log.info(
-        "Backtest completed: %d sessions evaluated, %d total level tests, %d confluence setup triggers.",
+        "Backtest completed: %d sessions evaluated, %d total level tests, %d confluence triggers, %d phase2 refinement trades.",
         len(session_records),
         len(level_results),
         len(confluence_results),
+        len(phase2_results),
     )
-    return session_records, level_results, confluence_results
+    return session_records, level_results, confluence_results, phase2_results
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -942,12 +1047,7 @@ def run_915_level_backtest(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_table_1_matrix(level_results: List[ReactionResult]) -> pd.DataFrame:
-    """
-    Table 1 — Level-by-Level Performance Matrix:
-    Columns: Level Name | Approach (Support/Resistance) | Total Touches | Ambiguous Bars |
-             Win >=25 Pts % | Win >=40 Pts % | Win >=50 Pts % | <25 Pts Stall % |
-             Breakout Fail % | Avg MFE (Pts) | Avg MAE (Pts) | Est Net ₹/Trade
-    """
+    """Table 1 — Level-by-Level Performance Matrix (Phase 1 Baseline)."""
     if not level_results:
         return pd.DataFrame()
 
@@ -964,7 +1064,7 @@ def build_table_1_matrix(level_results: List[ReactionResult]) -> pd.DataFrame:
         fail = ((g["outcome_bucket"] == "BREAKOUT_FAIL").sum() / n) * 100.0
         avg_mfe = float(g["mfe_before_sl_pts"].mean())
         avg_mae = float(g["mae_pts"].mean())
-        avg_pnl = float(g["opt_net_pnl_inr"].mean())
+        avg_pnl = float(g["opt_net_pnl_inr_40m"].mean())
 
         rows.append({
             "Level Name": lvl,
@@ -998,7 +1098,7 @@ def build_table_1_matrix(level_results: List[ReactionResult]) -> pd.DataFrame:
         "Breakout Fail %": round(((df["outcome_bucket"] == "BREAKOUT_FAIL").sum() / tot_n) * 100.0, 1),
         "Avg MFE (Pts)": round(float(df["mfe_before_sl_pts"].mean()), 1),
         "Avg MAE (Pts)": round(float(df["mae_pts"].mean()), 1),
-        "Est Net ₹/Trade": round(float(df["opt_net_pnl_inr"].mean()), 2),
+        "Est Net ₹/Trade": round(float(df["opt_net_pnl_inr_40m"].mean()), 2),
     })
 
     return pd.DataFrame(rows)
@@ -1008,17 +1108,7 @@ def build_table_2_matrix(
     confluence_results: List[ReactionResult],
     session_records: List[LevelReactionRecord],
 ) -> pd.DataFrame:
-    """
-    Table 2 — Multi-Factor Confluence Combinations (Single vs. Double vs. Triple Confluence):
-    Specifically compares:
-      - BELOW_1H_8EMA + Touch PDH (Short Rejection)
-      - BELOW_1H_8EMA + Touch PDC (Short Rejection)
-      - ABOVE_1H_8EMA + Touch PDL + DOUBLE_BOTTOM_3D (Long Bounce)
-      - ABOVE_1H_8EMA + Touch PREV_1H_8EMA Support + PDL within 15 pts (Long Bounce)
-      - Single Level Touch (PDO / PDC alone with 0 confluence) (Control Baseline)
-      - Key high-conviction combinations
-      - Confluence Tiers (Single vs. Double vs. Triple+)
-    """
+    """Table 2 — Multi-Factor Confluence Combinations (Single vs. Double vs. Triple Confluence)."""
     if not confluence_results:
         return pd.DataFrame()
 
@@ -1068,10 +1158,9 @@ def build_table_2_matrix(
             "Breakout Fail %": round(((sub["outcome_bucket"] == "BREAKOUT_FAIL").sum() / n) * 100.0, 1),
             "Avg MFE (Pts)": round(float(sub["mfe_before_sl_pts"].mean()), 1),
             "Avg MAE (Pts)": round(float(sub["mae_pts"].mean()), 1),
-            "Est Net ₹/Trade": round(float(sub["opt_net_pnl_inr"].mean()), 2),
+            "Est Net ₹/Trade": round(float(sub["opt_net_pnl_inr_40m"].mean()), 2),
         })
 
-    # Confluence Tiers from session records
     for tier_label, cond in [
         ("Tier 1: Single Level (1 Factor)", df_sess["confluence_count"] <= 1),
         ("Tier 2: Double Confluence (2 Factors)", df_sess["confluence_count"] == 2),
@@ -1091,20 +1180,81 @@ def build_table_2_matrix(
                 "Breakout Fail %": round(((sub["outcome_bucket"] == "BREAKOUT_FAIL").sum() / n) * 100.0, 1),
                 "Avg MFE (Pts)": round(float(sub["mfe_before_sl_pts"].mean()), 1),
                 "Avg MAE (Pts)": round(float(sub["mae_pts"].mean()), 1),
-                "Est Net ₹/Trade": round(float(sub["opt_net_pnl_inr"].mean()), 2),
+                "Est Net ₹/Trade": round(float(sub["opt_net_pnl_inr_40m"].mean()), 2),
             })
 
     return pd.DataFrame(rows)
 
 
+def build_table_4_head_to_head(
+    level_results: List[ReactionResult],
+    confluence_results: List[ReactionResult],
+    phase2_results: List[ReactionResult],
+    cfg: Dict[str, Any],
+) -> pd.DataFrame:
+    """
+    Table 4 — Phase 2 Head-to-Head Comparison:
+    Compares:
+      1. PDH Short: Blind Touch vs. Confirmed 1M Rejection Close
+      2. PDH + DOUBLE_TOP_3D: Blind Touch vs. Confirmed 1M Rejection Close
+      3. PDL Support Bounce (Blind Touch) vs. PDL Breakdown Continuation Short (All Regimes)
+      4. PDL Support Bounce (Blind Touch) vs. BELOW_1H_8EMA + PDL Breakdown Continuation Short
+      5. PDL + DOUBLE_BOTTOM_3D Long vs. PDL + DOUBLE_BOTTOM_3D Breakdown Short
+    """
+    breakeven_p = cfg.get("breakeven_win_rate", 0.365)
+    all_trades = level_results + confluence_results + phase2_results
+    df = pd.DataFrame([asdict(r) for r in all_trades])
+
+    comparison_specs = [
+        # (Label, Filter condition, Target model)
+        ("1a. PDH Short (Phase 1 Blind Touch)", (df["level_name"] == "PDH") & (df["approach"] == "Resistance") & (df["entry_mode"] == "BLIND_TOUCH")),
+        ("1b. PDH Short (Phase 2 Confirmed 1M Rejection Close)", df["confluence_combo"] == "PDH Confirmed 1M Rejection Close"),
+        ("2a. Touch PDH + DOUBLE_TOP_3D (Phase 1 Blind Touch)", df["confluence_combo"] == "Touch PDH + DOUBLE_TOP_3D"),
+        ("2b. Touch PDH + DOUBLE_TOP_3D (Phase 2 Wick Confirmed)", df["confluence_combo"] == "Touch PDH + DOUBLE_TOP_3D (Wick Confirmed)"),
+        ("3a. PDL Support Bounce (Phase 1 Blind Touch - Failed 63.8%)", (df["level_name"] == "PDL") & (df["approach"] == "Support") & (df["entry_mode"] == "BLIND_TOUCH")),
+        ("3b. PDL Breakdown Short (Phase 2 All Regimes)", df["confluence_combo"] == "PDL Breakdown Short (All Regimes)"),
+        ("4a. BELOW_1H_8EMA + PDL Support Bounce (Phase 1 Blind Touch)", (df["level_name"] == "PDL") & (df["approach"] == "Support") & (df["entry_mode"] == "BLIND_TOUCH")),
+        ("4b. BELOW_1H_8EMA + PDL Breakdown Short (Phase 2 Regime-Aligned)", df["confluence_combo"] == "BELOW_1H_8EMA + PDL Breakdown Short"),
+        ("5a. Touch PDL + DOUBLE_BOTTOM_3D Long (Phase 1 Blind Touch)", df["confluence_combo"] == "Touch PDL + DOUBLE_BOTTOM_3D"),
+        ("5b. Touch PDL + DOUBLE_BOTTOM_3D Breakdown Short (Phase 2)", df["confluence_combo"] == "PDL + DOUBLE_BOTTOM_3D Breakdown Short"),
+    ]
+
+    rows = []
+    for label, cond in comparison_specs:
+        sub = df[cond].drop_duplicates(subset=["touch_bar_idx", "entry_price", "stop_price", "mfe_before_sl_pts", "confluence_combo"])
+        n = len(sub)
+        if n == 0:
+            continue
+        win_25 = (sub["hit_25_plus"].sum() / n) * 100.0
+        win_40 = (sub["hit_40_plus"].sum() / n) * 100.0
+        fail_rate = ((sub["outcome_bucket"] == "BREAKOUT_FAIL").sum() / n) * 100.0
+        avg_risk = float(sub["risk_pts"].mean())
+        avg_mfe = float(sub["mfe_before_sl_pts"].mean())
+        pnl_25 = float(sub["opt_net_pnl_inr_25m"].mean())
+        pnl_40 = float(sub["opt_net_pnl_inr_40m"].mean())
+
+        # t-stat vs 36.5% break-even
+        se_null = math.sqrt(breakeven_p * (1.0 - breakeven_p) / n) if n > 0 else 1.0
+        t_stat_40 = ((win_40 / 100.0) - breakeven_p) / se_null if se_null > 0 else 0.0
+
+        rows.append({
+            "Strategy Variant": label,
+            "N": n,
+            "Win >=25 Pts %": round(win_25, 1),
+            "Win >=40 Pts %": round(win_40, 1),
+            "Breakout Fail %": round(fail_rate, 1),
+            "Avg Risk (Pts)": round(avg_risk, 1),
+            "Avg MFE (Pts)": round(avg_mfe, 1),
+            "Net ₹ (25pt Tgt)": round(pnl_25, 2),
+            "Net ₹ (40pt Tgt)": round(pnl_40, 2),
+            "t-stat (40pt BE)": round(t_stat_40, 2),
+        })
+
+    return pd.DataFrame(rows)
+
+
 def export_table_3_audit_log(records: List[LevelReactionRecord], csv_path: Path) -> None:
-    """
-    Exports Session-by-Session Audit Log CSV matching Table 3 specification:
-    Date | Open_915 | PDH | PDL | PDC | PDO | Prev_1H_8EMA | Open_vs_1H_8EMA |
-    Double_Bottom_3D | First_Level_Touched | Touch_Time_IST | Direction (LONG/SHORT) |
-    Confluence_Combo | MFE_Before_SL_Pts | MAE_Pts | Hit_25_Plus | Hit_40_Plus |
-    Hit_50_Plus | Outcome_Bucket | Close_930_Pts
-    """
+    """Exports Session-by-Session Audit Log CSV matching Table 3 specification."""
     fieldnames = [
         "Date", "Open_915", "PDH", "PDL", "PDC", "PDO", "Prev_1H_8EMA",
         "Open_vs_1H_8EMA", "Double_Bottom_3D", "First_Level_Touched",
@@ -1145,18 +1295,16 @@ def export_table_3_audit_log(records: List[LevelReactionRecord], csv_path: Path)
 
 def compute_statistical_edge_verdict(
     confluence_results: List[ReactionResult],
+    phase2_results: List[ReactionResult],
     session_records: List[LevelReactionRecord],
     cfg: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """
-    Ranks Top 2 Confluence Setups with highest Win >= 40 Pts % and lowest Breakout Fail %.
-    Tests against break-even win rate (36.5% for 40pt target vs 20pt SL after ₹110.50 costs).
-    Computes sample size N, proportion t-stat, p-value, and flags NOT_ENOUGH_SAMPLE if N < 30.
-    """
+    """Ranks Top Confluence Setups across Phase 1 and Phase 2."""
     breakeven_p = cfg.get("breakeven_win_rate", 0.365)
     min_n = cfg.get("min_sample_size", 30)
 
-    df_conf = pd.DataFrame([asdict(r) for r in confluence_results])
+    combined_results = confluence_results + phase2_results
+    df_conf = pd.DataFrame([asdict(r) for r in combined_results])
     setup_stats = []
 
     for combo, sub in df_conf.groupby("confluence_combo"):
@@ -1164,19 +1312,21 @@ def compute_statistical_edge_verdict(
         if n == 0:
             continue
         wins_40 = int(sub["hit_40_plus"].sum())
+        wins_25 = int(sub["hit_25_plus"].sum())
         fails = int((sub["outcome_bucket"] == "BREAKOUT_FAIL").sum())
         win_rate_40 = wins_40 / n
+        win_rate_25 = wins_25 / n
         fail_rate = fails / n
 
-        # Standard proportion z/t-test against 36.5% break-even
         se_null = math.sqrt(breakeven_p * (1.0 - breakeven_p) / n) if n > 0 else 1.0
         t_stat = (win_rate_40 - breakeven_p) / se_null if se_null > 0 else 0.0
         p_val = float(stats.norm.sf(t_stat))
 
-        pnl_mean = float(sub["opt_net_pnl_inr"].mean())
-        pnl_std = float(sub["opt_net_pnl_inr"].std()) if n > 1 else 0.0
+        pnl_mean_40 = float(sub["opt_net_pnl_inr_40m"].mean())
+        pnl_mean_25 = float(sub["opt_net_pnl_inr_25m"].mean())
+        pnl_std = float(sub["opt_net_pnl_inr_40m"].std()) if n > 1 else 0.0
         pnl_se = pnl_std / math.sqrt(n) if n > 0 else 1.0
-        t_stat_pnl = pnl_mean / pnl_se if pnl_se > 0 else 0.0
+        t_stat_pnl = pnl_mean_40 / pnl_se if pnl_se > 0 else 0.0
 
         setup_stats.append({
             "setup": combo,
@@ -1184,11 +1334,14 @@ def compute_statistical_edge_verdict(
             "N": n,
             "wins_40": wins_40,
             "win_rate_40_pct": round(win_rate_40 * 100.0, 2),
+            "wins_25": wins_25,
+            "win_rate_25_pct": round(win_rate_25 * 100.0, 2),
             "fails": fails,
             "fail_rate_pct": round(fail_rate * 100.0, 2),
             "t_stat_prop": round(t_stat, 3),
             "p_val_prop": round(p_val, 4),
-            "avg_net_inr": round(pnl_mean, 2),
+            "avg_net_inr_40m": round(pnl_mean_40, 2),
+            "avg_net_inr_25m": round(pnl_mean_25, 2),
             "t_stat_pnl": round(t_stat_pnl, 3),
             "has_enough_sample": (n >= min_n),
         })
@@ -1236,6 +1389,7 @@ def print_and_save_full_report(
     session_records: List[LevelReactionRecord],
     table1: pd.DataFrame,
     table2: pd.DataFrame,
+    table4: pd.DataFrame,
     verdict: Dict[str, Any],
     cfg: Dict[str, Any],
     output_md_path: Path,
@@ -1254,9 +1408,9 @@ def print_and_save_full_report(
         print(msg)
         report_lines.append(msg)
 
-    _out("=" * 115)
+    _out("=" * 125)
     _out("   NIFTY 50 OPENING 15-MINUTE (09:15-09:30 IST) PRE-MARKET LEVEL REACTION & CONFLUENCE BACKTESTER")
-    _out("=" * 115)
+    _out("=" * 125)
     _out(f"Session Coverage        : {total_sessions} completed trading sessions ({session_records[0].date} to {session_records[-1].date})")
     _out(f"Opening Trade Activity  : {active_trades} sessions touched a pre-market level ({active_trades/total_sessions*100:.1f}%)")
     _out(f"Touch Tolerance Zone    : {cfg.get('touch_tolerance_pts', 5.0)} Spot points")
@@ -1269,17 +1423,21 @@ def print_and_save_full_report(
     _out(f"  - Optimistic Win >=40 : {optimistic_wins} ({optimistic_wins/active_trades*100:.1f}%) [Favorable move counted first]")
 
     # Table 1
-    t1_str = format_cli_table(table1, "TABLE 1 — LEVEL-BY-LEVEL PERFORMANCE MATRIX (09:15–09:30 IST)")
+    t1_str = format_cli_table(table1, "TABLE 1 — LEVEL-BY-LEVEL PERFORMANCE MATRIX (PHASE 1 BASELINE)")
     _out(t1_str)
 
     # Table 2
-    t2_str = format_cli_table(table2, "TABLE 2 — MULTI-FACTOR CONFLUENCE COMBINATIONS (09:15–09:30 IST)")
+    t2_str = format_cli_table(table2, "TABLE 2 — MULTI-FACTOR CONFLUENCE COMBINATIONS (PHASE 1 BASELINE)")
     _out(t2_str)
 
+    # Table 4 (Phase 2 Head-to-Head Comparison)
+    t4_str = format_cli_table(table4, "TABLE 4 — PHASE 2 HEAD-TO-HEAD COMPARISON (BLIND TOUCH vs. WICK CONFIRMATION vs. PDL BREAKDOWN)")
+    _out(t4_str)
+
     # Statistical Edge Verdict
-    _out("=" * 115)
+    _out("=" * 125)
     _out("                          STATISTICAL EDGE VERDICT & SETUP RANKINGS")
-    _out("=" * 115)
+    _out("=" * 125)
 
     top2 = verdict.get("top2", [])
     if len(top2) >= 1:
@@ -1288,9 +1446,11 @@ def print_and_save_full_report(
         _out(f"\n[RANK #1 TOP CONFLUENCE SETUP]: {s1['setup']} ({s1['direction']})")
         _out(f"  - Sample Size (N)   : {s1['N']} [{n_flag1}]")
         _out(f"  - Win >= 40 Pts Rate: {s1['win_rate_40_pct']}% ({s1['wins_40']}/{s1['N']})")
+        _out(f"  - Win >= 25 Pts Rate: {s1['win_rate_25_pct']}% ({s1['wins_25']}/{s1['N']})")
         _out(f"  - Breakout Fail Rate: {s1['fail_rate_pct']}% ({s1['fails']}/{s1['N']})")
         _out(f"  - t-stat vs 36.5% BE: {s1['t_stat_prop']:+.3f} (p-value = {s1['p_val_prop']:.4f})")
-        _out(f"  - Est Net PnL/Trade : ₹{s1['avg_net_inr']:+.2f} / lot (t_pnl = {s1['t_stat_pnl']:+.2f})")
+        _out(f"  - Est Net PnL (40pt): ₹{s1['avg_net_inr_40m']:+.2f} / lot (t_pnl = {s1['t_stat_pnl']:+.2f})")
+        _out(f"  - Est Net PnL (25pt): ₹{s1['avg_net_inr_25m']:+.2f} / lot")
 
     if len(top2) >= 2:
         s2 = top2[1]
@@ -1298,18 +1458,20 @@ def print_and_save_full_report(
         _out(f"\n[RANK #2 TOP CONFLUENCE SETUP]: {s2['setup']} ({s2['direction']})")
         _out(f"  - Sample Size (N)   : {s2['N']} [{n_flag2}]")
         _out(f"  - Win >= 40 Pts Rate: {s2['win_rate_40_pct']}% ({s2['wins_40']}/{s2['N']})")
+        _out(f"  - Win >= 25 Pts Rate: {s2['win_rate_25_pct']}% ({s2['wins_25']}/{s2['N']})")
         _out(f"  - Breakout Fail Rate: {s2['fail_rate_pct']}% ({s2['fails']}/{s2['N']})")
         _out(f"  - t-stat vs 36.5% BE: {s2['t_stat_prop']:+.3f} (p-value = {s2['p_val_prop']:.4f})")
-        _out(f"  - Est Net PnL/Trade : ₹{s2['avg_net_inr']:+.2f} / lot (t_pnl = {s2['t_stat_pnl']:+.2f})")
+        _out(f"  - Est Net PnL (40pt): ₹{s2['avg_net_inr_40m']:+.2f} / lot (t_pnl = {s2['t_stat_pnl']:+.2f})")
+        _out(f"  - Est Net PnL (25pt): ₹{s2['avg_net_inr_25m']:+.2f} / lot")
 
     baseline = verdict.get("baseline")
     if baseline:
         _out(f"\n[CONTROL BASELINE]: {baseline['setup']}")
         _out(f"  - Sample Size (N)   : {baseline['N']}")
         _out(f"  - Win >= 40 Pts Rate: {baseline['win_rate_40_pct']}% | Fail Rate: {baseline['fail_rate_pct']}%")
-        _out(f"  - Est Net PnL/Trade : ₹{baseline['avg_net_inr']:+.2f} / lot")
+        _out(f"  - Est Net PnL/Trade : ₹{baseline['avg_net_inr_40m']:+.2f} / lot")
 
-    _out("\n" + "=" * 115 + "\n")
+    _out("\n" + "=" * 125 + "\n")
 
     try:
         output_md_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1368,8 +1530,8 @@ def main() -> int:
         end_date=args.end_date,
     )
 
-    # Step 2: Run zero-lookahead backtest
-    session_records, level_results, confluence_results = run_915_level_backtest(df_1m, cfg)
+    # Step 2: Run zero-lookahead backtest (Phase 1 + Phase 2)
+    session_records, level_results, confluence_results, phase2_results = run_915_level_backtest(df_1m, cfg)
 
     if not session_records:
         log.error("No records produced. Exiting.")
@@ -1378,13 +1540,14 @@ def main() -> int:
     # Step 3: Build deliverables
     table1 = build_table_1_matrix(level_results)
     table2 = build_table_2_matrix(confluence_results, session_records)
-    verdict = compute_statistical_edge_verdict(confluence_results, session_records, cfg)
+    table4 = build_table_4_head_to_head(level_results, confluence_results, phase2_results, cfg)
+    verdict = compute_statistical_edge_verdict(confluence_results, phase2_results, session_records, cfg)
 
     # Step 4: Export Table 3 CSV Audit Log
     export_table_3_audit_log(session_records, csv_path)
 
     # Step 5: Print CLI report and save markdown artifact
-    print_and_save_full_report(session_records, table1, table2, verdict, cfg, report_path)
+    print_and_save_full_report(session_records, table1, table2, table4, verdict, cfg, report_path)
 
     elapsed = time.time() - t0
     log.info("Full execution completed in %.2f seconds.", elapsed)

@@ -13,6 +13,7 @@ Trunk: **`integrate/v1.9`**
 | `chatgpt/v1.9.4d` | ChatGPT | done, tag `post-chatgpt-v1.9.4d-final` | **NO — awaiting Harish** |
 | `claude/v1.9.4-safety-lock` | Claude | **BROKEN, `2d116b7` — DELETE** | never merge |
 | `agy/ema8-proto-corrections` | Antigravity | **done, `b1d23ca`**, tag `post-agy-ema8-proto-corrections` | **NO — awaiting Harish** |
+| `agy/v2.0.22-915-level-reaction` | Antigravity | **done**, tag `post-agy-v2.0.22-915-level-reaction-p2` | **NO — awaiting Harish** |
 
 ---
 
@@ -1107,4 +1108,16 @@ What changed:
 - Generated Table 1 (Level-by-Level Matrix), Table 2 (Multi-Factor Confluence Combinations), and Table 3 Session-by-Session Audit Log (`analyst/reports/nifty_915_930_level_reactions.csv`, 1,263 rows × 20 columns).
 - Statistical Edge Verdict: Ranked Top 2 Setups (`Touch PDH + DOUBLE_TOP_3D` Short @ 30.28% win rate, +₹131.06/lot; `BELOW_1H_8EMA + Touch PDC` Short @ 28.10% win rate, -₹69.83/lot) against 36.5% break-even hurdle ($N \ge 30$).
 - Core locks verified intact: 11/11 modules locked. No live or execution code modified.
+
+### Phase 2 Refinements (13 Nov 2026): 1-Minute Rejection Wick Confirmation on PDH & PDL Breakdown Continuation Short
+- Extended `scripts/backtest_915_level_reaction.py` and `analyst/analyst_config.json` with two targeted refinements across the 1,263 sessions:
+  1. **Refinement A (`CONFIRMED_1M_REJECTION_CLOSE` on PDH & DOUBLE_TOP_3D shorts)**:
+     - Requires 1m candle close with upper rejection wick $\ge 30\%$ at/below level inside 09:15-09:27 (`rejection_wick_ratio: 0.30`, `rejection_sl_buffer_pts: 5.0`).
+     - Halved Breakout Fail rate: PDH Short fail rate dropped from 35.7% (Blind Touch) down to **18.1%** (Confirmed 1m Close); Touch PDH + DOUBLE_TOP_3D fail rate plunged from 34.9% to **18.4%**.
+  2. **Refinement B (`BREAKDOWN_CONTINUATION` on PDL support failure)**:
+     - Inverted the 63.8%–66.4% PDL support failure into a momentum continuation short triggered on 1m close below `PDL - 3.0 pts` inside 09:15–09:27 (`pdl_breakdown_trigger_pts: 3.0`, `pdl_breakdown_sl_pts: 15.0`).
+     - PDL breakdown short cuts fail rate from 64.2% down to **39.6%** across all regimes (and down to **36.6%** on `Touch PDL + DOUBLE_BOTTOM_3D`), delivering 36.9% Win $\ge 25$ pts and 24.3% Win $\ge 40$ pts.
+- Added Table 4 (Phase 2 Head-to-Head Comparison) comparing Blind Touch vs. Rejection Wick Confirmation vs. PDL Breakdown Continuation.
+- Verified immutable locks: 11/11 locked modules pass (`verify_locks.py`).
+
 

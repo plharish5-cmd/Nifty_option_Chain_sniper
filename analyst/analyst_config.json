@@ -435,6 +435,15 @@
     "csv_path": "data/ohlc/nifty_1m_dhan.csv",
     "sqlite_path": "ict_smc_app/backend/data/ict_smc.sqlite3",
     "output_csv_path": "analyst/reports/nifty_915_930_level_reactions.csv",
-    "output_report_path": "analyst/reports/nifty_915_930_level_reactions_summary.md"
+    "output_report_path": "analyst/reports/nifty_915_930_level_reactions_summary.md",
+    "rejection_wick_ratio": 0.3,
+    "rejection_sl_buffer_pts": 5.0,
+    "pdl_breakdown_trigger_pts": 3.0,
+    "pdl_breakdown_sl_pts": 15.0,
+    "entry_modes": [
+      "BLIND_TOUCH",
+      "CONFIRMED_1M_REJECTION_CLOSE",
+      "BREAKDOWN_CONTINUATION"
+    ]
   }
 }
