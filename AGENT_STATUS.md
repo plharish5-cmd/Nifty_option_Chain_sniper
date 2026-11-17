@@ -18,7 +18,7 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.26-oi3m-separate-feature` | Gemini/Cursor | **done, `4ec5afa`** tags `pre/post-gemini-v2.0.26` | **NO — awaiting Harish** |
 | `gemini/v2.0.27-pece-volume` | Gemini/Cursor | **done, `e2f5199`** tags `pre/post-gemini-v2.0.27` | **NO — awaiting Harish** |
 | `gemini/v2.0.28-dhan-expiry-parse` | Gemini/Cursor | **done, `d35ef9d`** tags `pre/post-gemini-v2.0.28` | **NO — awaiting Harish** |
-| `gemini/v2.0.29-backtest-sweep` | Gemini/Cursor | **done** (this block) tags `pre/post-gemini-v2.0.29` | **NO — awaiting Harish** |
+| `gemini/v2.0.29-backtest-sweep` | Gemini/Cursor | **done, `1bedd34`** tags `pre/post-gemini-v2.0.29` | **NO — awaiting Harish** |
 
 ---
 
@@ -36,6 +36,8 @@ python3 -m analyst.proto_sweep_8510 --from YYYY-MM-DD --to YYYY-MM-DD --stage al
 Outputs: `sweep_ranked.csv`, `sweep_report.md`, `sweep_result.json` in that folder (under `data/`, gitignored).
 
 **Verify:** `verify_locks.py` 11/11; `pytest analyst/test_proto_sweep_8510.py` 6/6 (+ backtest_lab tests).
+
+**Commit:** `1bedd34`; tags `pre-gemini-v2.0.29` / `post-gemini-v2.0.29`.
 
 **Not verified:** full sweep execution in sandbox (no recorded market DB / long engine run).
 
