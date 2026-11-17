@@ -38,6 +38,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
+DEFAULT_MOMENTUM_CFG: Dict[str, Any] = {
+    "window_min": 10,
+    "deadzone_cr_per_min": 0.05,
+    "crore_divisor": 1e7,
+}
+
 DEFAULT_CFG: Dict[str, Any] = {
     "band_pts": 1000.0,
     "atm_strikes_each_side": 3,
@@ -109,6 +115,150 @@ def _years_to_expiry(expiry: str, now_ts: int) -> float:
     return max(0.0, (end.timestamp() - now_ts) / (365.0 * 86400.0))
 
 
+def _hm_ts(day: str, hm: str) -> int:
+    return int(datetime.strptime(f"{day} {hm}", "%Y-%m-%d %H:%M").replace(tzinfo=IST).timestamp())
+
+
+def _snapshot_at(ts_sorted: List[int], want: int, *, at_or_before: bool = True) -> Optional[int]:
+    if at_or_before:
+        best = None
+        for t in ts_sorted:
+            if t <= want:
+                best = t
+            else:
+                break
+        return best
+    for t in ts_sorted:
+        if t >= want:
+            return t
+    return None
+
+
+def _chain_totals(chain: Dict[float, Dict[str, float]], spot: float, band: float) -> Tuple[float, float]:
+    ce = pe = 0.0
+    for k, v in chain.items():
+        if abs(k - spot) <= band:
+            ce += float(v.get("ce_oi") or 0.0)
+            pe += float(v.get("pe_oi") or 0.0)
+    return ce, pe
+
+
+def _chain_totals_full(chain: Dict[float, Dict[str, float]]) -> Tuple[float, float]:
+    """Sum Call/Put OI across every strike in the snapshot (matches 8600 total-OI charts)."""
+    ce = pe = 0.0
+    for v in chain.values():
+        ce += float(v.get("ce_oi") or 0.0)
+        pe += float(v.get("pe_oi") or 0.0)
+    return ce, pe
+
+
+def momentum_direction_from_crpm(calls_crpm: float, puts_crpm: float, *, deadzone: float) -> str:
+    """Divergence / convergence rule (owner spec 17 Nov 2026)."""
+    t = float(deadzone)
+    if puts_crpm > t and calls_crpm < -t:
+        return "CE"
+    if puts_crpm < -t and calls_crpm > t:
+        return "PE"
+    net = puts_crpm - calls_crpm
+    if net > t:
+        return "CE"
+    if net < -t:
+        return "PE"
+    return "NEUTRAL"
+
+
+def _momentum_item(
+    *,
+    calls_crpm: float,
+    puts_crpm: float,
+    deadzone: float,
+    age_sec: int,
+    label: str,
+) -> Dict[str, Any]:
+    direction = momentum_direction_from_crpm(calls_crpm, puts_crpm, deadzone=deadzone)
+    detail = (
+        f"{label}: calls {calls_crpm:+.2f} · puts {puts_crpm:+.2f} Cr/min → {direction}"
+    )
+    return {
+        "direction": direction,
+        "detail": detail,
+        "age_sec": age_sec,
+        "calls_crpm": round(calls_crpm, 3),
+        "puts_crpm": round(puts_crpm, 3),
+    }
+
+
+def compute_momentum_oi_reads(
+    by_ts: Dict[int, Dict[float, Dict[str, float]]],
+    ts_sorted: List[int],
+    *,
+    spot: float,
+    band: float,
+    day: str,
+    now_ts: int,
+    last_t: int,
+    age_sec: int,
+    momentum_cfg: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Cr/min momentum for total_oi, fresh_oi, writer_flow. Missing history → direction None (fail OPEN)."""
+    cfg = dict(DEFAULT_MOMENTUM_CFG)
+    if isinstance(momentum_cfg, dict):
+        cfg.update({k: v for k, v in momentum_cfg.items() if not k.startswith("_")})
+    w_min = max(1, int(cfg.get("window_min", 10)))
+    dead = float(cfg.get("deadzone_cr_per_min", 0.05))
+    div = float(cfg.get("crore_divisor", 1e7) or 1e7)
+    miss = lambda why: {
+        "direction": None,
+        "detail": why,
+        "age_sec": age_sec if age_sec >= 0 else None,
+        "calls_crpm": None,
+        "puts_crpm": None,
+    }
+    prev_t = _snapshot_at(ts_sorted, last_t - w_min * 60)
+    if prev_t is None or prev_t >= last_t:
+        return {
+            "total_oi": miss(f"need {w_min} min of snapshots for momentum"),
+            "fresh_oi": miss(f"need {w_min} min of snapshots for momentum"),
+            "writer_flow": miss(f"need {w_min} min of snapshots for momentum"),
+        }
+    base_t = _snapshot_at(ts_sorted, _hm_ts(day, "09:15"), at_or_before=True)
+    if base_t is None or base_t >= last_t:
+        return {
+            "total_oi": miss("waiting for 09:15 baseline snapshot"),
+            "fresh_oi": miss("waiting for 09:15 baseline snapshot"),
+            "writer_flow": miss("waiting for 09:15 baseline snapshot"),
+        }
+    ce_l, pe_l = _chain_totals_full(by_ts[last_t])
+    ce_p, pe_p = _chain_totals_full(by_ts[prev_t])
+    w_actual = max(1.0, (last_t - prev_t) / 60.0)
+    call_crpm_total = (ce_l - ce_p) / w_actual / div
+    put_crpm_total = (pe_l - pe_p) / w_actual / div
+    total = _momentum_item(
+        calls_crpm=call_crpm_total,
+        puts_crpm=put_crpm_total,
+        deadzone=dead,
+        age_sec=age_sec,
+        label="Total OI",
+    )
+    ce_b, pe_b = _chain_totals_full(by_ts[base_t])
+    call_f_l = ce_l - ce_b
+    put_f_l = pe_l - pe_b
+    call_f_p = ce_p - ce_b
+    put_f_p = pe_p - pe_b
+    call_crpm_fresh = (call_f_l - call_f_p) / w_actual / div
+    put_crpm_fresh = (put_f_l - put_f_p) / w_actual / div
+    fresh = _momentum_item(
+        calls_crpm=call_crpm_fresh,
+        puts_crpm=put_crpm_fresh,
+        deadzone=dead,
+        age_sec=age_sec,
+        label="OI chg since 09:15",
+    )
+    writer = dict(fresh)
+    writer["detail"] = writer["detail"].replace("OI chg since 09:15", "Writer flow")
+    return {"total_oi": total, "fresh_oi": fresh, "writer_flow": writer}
+
+
 def max_pain(chain: Dict[float, Dict[str, float]]) -> Optional[float]:
     """The strike at which option buyers, in total, are paid the least."""
     strikes = sorted(chain)
@@ -136,8 +286,15 @@ def _net_gex(chain: Dict[float, Dict[str, float]], ivs: Dict[float, Tuple[Option
     return total * s * s * 0.01
 
 
-def compute_reads(rows: List[Dict[str, Any]], spot: float, cfg: Dict[str, Any], *, day: str,
-                  now_ts: int) -> Dict[str, Any]:
+def compute_reads(
+    rows: List[Dict[str, Any]],
+    spot: float,
+    cfg: Dict[str, Any],
+    *,
+    day: str,
+    now_ts: int,
+    momentum_cfg: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """{"status": "OK"|"NO_DATA", "reads": {id: {direction, detail, [blocks]}}, "facts": {...}}"""
     out: Dict[str, Any] = {"status": "NO_DATA", "reason": "", "reads": {}, "facts": {}}
     if not rows or spot <= 0:
@@ -304,4 +461,18 @@ def compute_reads(rows: List[Dict[str, Any]], spot: float, cfg: Dict[str, Any], 
         v["age_sec"] = int(age) if v.get("direction") is not None else None
     out["reads"] = reads
     out["facts"] = facts
+    try:
+        out["momentum_oi"] = compute_momentum_oi_reads(
+            by_ts,
+            ts_sorted,
+            spot=spot,
+            band=band,
+            day=day,
+            now_ts=now_ts,
+            last_t=last_t,
+            age_sec=int(age),
+            momentum_cfg=momentum_cfg,
+        )
+    except Exception:
+        out["momentum_oi"] = {}
     return out

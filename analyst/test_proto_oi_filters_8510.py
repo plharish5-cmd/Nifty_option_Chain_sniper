@@ -102,3 +102,10 @@ def test_all_off_ignores_opposing_reads():
     cfg = copy.deepcopy(DEFAULT_CFG)
     blocked, _ = oi_switch_block(True, cfg, _reads(writer_flow="PE", total_oi="PE"))
     assert blocked is False
+
+
+def test_load_oi_filters_momentum_defaults():
+    cfg = {"oi_filters": {"momentum": {"window_min": 15}}}
+    oi = load_oi_filters_cfg(cfg)
+    assert oi["momentum"]["window_min"] == 15
+    assert oi["momentum"]["deadzone_cr_per_min"] == 0.05

@@ -28,6 +28,10 @@ DEFAULT_OI = {
         "fresh_oi": False,
         "volume_oi": False,
     },
+    "momentum": {
+        "window_min": 10,
+        "deadzone_cr_per_min": 0.05,
+    },
 }
 
 
@@ -45,6 +49,9 @@ def main() -> None:
         sw = dict(DEFAULT_OI["switches"])
         sw.update(before.get("switches") or {})
         merged["switches"] = sw
+        mom = dict(DEFAULT_OI["momentum"])
+        mom.update(before.get("momentum") or {})
+        merged["momentum"] = mom
         block["oi_filters"] = merged
     else:
         block["oi_filters"] = dict(DEFAULT_OI)

@@ -34,6 +34,10 @@ DEFAULT_OI_FILTERS: Dict[str, Any] = {
         "fresh_oi": False,
         "volume_oi": False,
     },
+    "momentum": {
+        "window_min": 10,
+        "deadzone_cr_per_min": 0.05,
+    },
 }
 
 OI_FILTER_RULES = ("all_agree", "any_agrees", "majority")
@@ -47,6 +51,7 @@ def load_oi_filters_cfg(proto_cfg: Dict[str, Any]) -> Dict[str, Any]:
         "neutral_blocks": DEFAULT_OI_FILTERS["neutral_blocks"],
         "max_age_sec": DEFAULT_OI_FILTERS["max_age_sec"],
         "switches": dict(DEFAULT_OI_FILTERS["switches"]),
+        "momentum": dict(DEFAULT_OI_FILTERS["momentum"]),
     }
     raw = (proto_cfg or {}).get("oi_filters")
     if not isinstance(raw, dict):
@@ -66,6 +71,14 @@ def load_oi_filters_cfg(proto_cfg: Dict[str, Any]) -> Dict[str, Any]:
         for rid in PROTO_OI_READ_IDS:
             if rid in sw:
                 out["switches"][rid] = bool(sw[rid])
+    mom = raw.get("momentum")
+    if isinstance(mom, dict):
+        m = dict(out.get("momentum") or DEFAULT_OI_FILTERS["momentum"])
+        if "window_min" in mom:
+            m["window_min"] = int(mom["window_min"])
+        if "deadzone_cr_per_min" in mom:
+            m["deadzone_cr_per_min"] = float(mom["deadzone_cr_per_min"])
+        out["momentum"] = m
     return out
 
 
@@ -75,11 +88,16 @@ def board_reads_from_board(board: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
     for rid in PROTO_OI_READ_IDS:
         s = by_id.get(rid) or {}
-        out[rid] = {
+        item = {
             "direction": s.get("direction"),
             "age_sec": s.get("age_sec"),
             "detail": str(s.get("detail") or "")[:160],
         }
+        if s.get("calls_crpm") is not None:
+            item["calls_crpm"] = s.get("calls_crpm")
+        if s.get("puts_crpm") is not None:
+            item["puts_crpm"] = s.get("puts_crpm")
+        out[rid] = item
     return out
 
 
@@ -211,6 +229,7 @@ def backtest_board_reads_at(
     note_parts: List[str] = []
     try:
         from analyst.chain_reads_8510 import compute_reads, load_cfg as cr_cfg
+        from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
         from analyst.desk8600_board_8510 import build_board
         from analyst.oi_context_8510 import compute_context, load_cfg as oi_load, load_day_snapshots
 
@@ -224,11 +243,16 @@ def backtest_board_reads_at(
         spot = 0.0
         if rows:
             spot = float(rows[-1].get("spot") or rows[-1].get("underlying") or 0)
-        cr = compute_reads(rows, spot, cr_cfg(scanner_cfg or {}), day=day, now_ts=asof_ts) if rows else {
-            "status": "NO_DATA",
-            "reads": {},
-            "reason": "no snapshots",
-        }
+        momentum = (load_ema8_prototype_cfg(scanner_cfg or {}).get("oi_filters") or {}).get("momentum")
+        cr = (
+            compute_reads(rows, spot, cr_cfg(scanner_cfg or {}), day=day, now_ts=asof_ts, momentum_cfg=momentum)
+            if rows
+            else {
+                "status": "NO_DATA",
+                "reads": {},
+                "reason": "no snapshots",
+            }
+        )
         if cr.get("status") != "OK":
             note_parts.append(str(cr.get("reason") or "chain reads unavailable"))
         now = datetime.fromtimestamp(int(asof_ts), tz=IST)

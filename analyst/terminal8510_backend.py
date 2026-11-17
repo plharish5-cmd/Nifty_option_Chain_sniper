@@ -3819,7 +3819,18 @@ class QuantTerminalBackend:
             now = datetime.now(IST)
             day = now.strftime("%Y-%m-%d")
             rows = load_day_snapshots(self._oi_context_db_paths(), day)
-            out = compute_reads(rows, px, _cr_cfg(self.scanner_cfg), day=day, now_ts=int(now.timestamp()))
+            from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
+
+            proto = load_ema8_prototype_cfg(self.scanner_cfg)
+            momentum = (proto.get("oi_filters") or {}).get("momentum")
+            out = compute_reads(
+                rows,
+                px,
+                _cr_cfg(self.scanner_cfg),
+                day=day,
+                now_ts=int(now.timestamp()),
+                momentum_cfg=momentum,
+            )
         except Exception as exc:
             out = {"status": "NO_DATA", "reason": f"error: {type(exc).__name__}", "reads": {}, "facts": {}}
         self._chain_reads_cache = (now_mono, out)

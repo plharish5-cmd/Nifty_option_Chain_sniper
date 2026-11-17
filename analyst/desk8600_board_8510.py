@@ -297,6 +297,10 @@ def build_board(bridge_last: Optional[Dict[str, Any]], oi_ctx: Optional[Dict[str
         why = str(cr.get("reason") or "no option-chain snapshots")
         for rid in CHAIN_READ_IDS:
             vals[rid] = dict((cr.get("reads") or {}).get(rid) or {"direction": None, "detail": why, "age_sec": None})
+        mom = (chain_reads or {}).get("momentum_oi") or {}
+        for rid in ("writer_flow", "fresh_oi", "total_oi"):
+            if rid in mom and isinstance(mom[rid], dict):
+                vals[rid] = dict(mom[rid])
     except Exception as exc:  # a broken read must never stop a trade
         vals = {i: {"direction": None, "detail": f"error: {type(exc).__name__}", "age_sec": None} for i in SOURCE_IDS}
     sources = []

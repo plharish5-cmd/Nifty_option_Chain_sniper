@@ -72,6 +72,10 @@ DEFAULT_CFG: Dict[str, Any] = {
             "fresh_oi": False,
             "volume_oi": False,
         },
+        "momentum": {
+            "window_min": 10,
+            "deadzone_cr_per_min": 0.05,
+        },
     },
 }
 

@@ -4939,15 +4939,29 @@
             (board?.sources || []).forEach(s => { if (s?.id) byId[s.id] = s; });
             const tel = ep?.oi_filter_telemetry || {};
             const reads = tel.reads || {};
+            const momIds = new Set(['writer_flow', 'total_oi', 'fresh_oi']);
+            const momLabel = { writer_flow: 'Writer', total_oi: 'Total OI', fresh_oi: 'Fresh OI' };
+            const fmtCrpm = v => {
+                const n = Number(v);
+                if (!Number.isFinite(n)) return '—';
+                return (n >= 0 ? '+' : '') + n.toFixed(2);
+            };
             document.querySelectorAll('.proto-oi-dir').forEach(span => {
                 const id = span.getAttribute('data-id');
                 const src = byId[id] || reads[id] || {};
                 const d = src.direction;
                 const age = src.age_sec;
                 const stale = d == null || age == null || (ep?.oi_filters?.max_age_sec != null && age > ep.oi_filters.max_age_sec);
-                span.textContent = stale ? '— stale' : String(d);
+                let text = stale ? '— stale' : String(d);
+                if (!stale && momIds.has(id) && src.calls_crpm != null && src.puts_crpm != null) {
+                    const lab = momLabel[id] || id;
+                    text = `${lab}: calls ${fmtCrpm(src.calls_crpm)} · puts ${fmtCrpm(src.puts_crpm)} Cr/min → ${d}`;
+                } else if (!stale && src.detail) {
+                    span.title = String(src.detail).slice(0, 200);
+                }
+                span.textContent = text;
                 span.style.color = stale ? '#64748b' : color(d);
-                if (!stale && age != null) span.title = `${age}s old`;
+                if (!stale && age != null && !span.title) span.title = `${age}s old`;
             });
             const line = document.getElementById('protoOiBlockLine');
             if (!line) return;

@@ -13,7 +13,33 @@ Trunk: **`integrate/v1.9`**
 | `chatgpt/v1.9.4d` | ChatGPT | done, tag `post-chatgpt-v1.9.4d-final` | **NO — awaiting Harish** |
 | `claude/v1.9.4-safety-lock` | Claude | **BROKEN, `2d116b7` — DELETE** | never merge |
 | `agy/ema8-proto-corrections` | Antigravity | **done, `b1d23ca`**, tag `post-agy-ema8-proto-corrections` | **NO — awaiting Harish** |
-| `gemini/v2.0.24-proto-oi-filters` | Gemini/Cursor | **done (commit pending push)** | **NO — awaiting Harish** |
+| `gemini/v2.0.24-proto-oi-filters` | Gemini/Cursor | **done, momentum commit** tags `pre/post-gemini-v2.0.24` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-17 (evening) · Gemini/Cursor · `gemini/v2.0.24-proto-oi-filters` — OI momentum Cr/min
+
+**Goal:** Replace **level-based** direction on `writer_flow`, `total_oi`, `fresh_oi` with rolling Cr/min **divergence/convergence** (window + dead-zone in config). `price_oi` / `volume_oi` unchanged. Insufficient history → `direction: None` (fail OPEN). All switches still default OFF, `mode: log_only`.
+
+**Files**
+- `analyst/chain_reads_8510.py` — `momentum_direction_from_crpm`, `compute_momentum_oi_reads` (full-chain OI sums from `chain_snap` rows)
+- `analyst/desk8600_board_8510.py` — board override for the three momentum reads
+- `analyst/proto_oi_filters_8510.py`, `analyst/ema8_prototype_8510.py` — `oi_filters.momentum` defaults
+- `analyst/terminal8510_backend.py`, backtest path — pass `momentum_cfg`
+- `Algorithmic_Trading_Workspace_8510.html` — cockpit Cr/min lines on filter rows
+- `scripts/patch_add_oi_filters_8510.py` — merges `momentum` block
+- `analyst/test_oi_momentum_8510.py` — divergence / convergence / net / dead-zone / no-history
+- `analyst/test_proto_oi_filters_8510.py` — +1 momentum config load
+
+**Config:** `scanner.ema8_prototype.oi_filters.momentum`: `{ "window_min": 10, "deadzone_cr_per_min": 0.05 }` via patch script only (not committing `terminal8510_config.json`).
+
+**Verify:** `scripts/verify_locks.py` 11/11; `pytest analyst/test_oi_momentum_8510.py analyst/test_proto_oi_filters_8510.py`; full `pytest analyst --continue-on-collection-errors` in `.venv` — diff vs handover §6 (~661 passed; phase5_eod/phase7 wall-clock after 15:20 IST).
+
+**Recorder note:** `market_recorder_8510.record_chain` stores every strike in the Dhan OC payload (not the 4-strike matrix). Momentum sums **all** strikes per snapshot. Harish should still spot-check cockpit Cr/min vs 8600 OI-Change chart in live hours.
+
+**Ops:** log-only week → points saved vs cost on held-out days → only then `block` on `fresh_oi`/`total_oi` (per guide). **Block live:** not recommended until log shows net benefit.
+
+**Not verified here:** live 8600 chart parity at desk; browser toggle persist + 0 console errors (see commit session notes).
 
 ---
 
