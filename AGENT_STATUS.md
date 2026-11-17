@@ -32,7 +32,9 @@ Trunk: **`integrate/v1.9`**
 
 **Verify:** `verify_locks.py` 11/11; `pytest analyst/test_offhours_cleanup_8510.py` 8/8; `test_phase5_eod_8510.py` 5/5.
 
-**Commit:** `5c58145`; tags `pre-gemini-v2.0.31` / `post-gemini-v2.0.31`.
+**Commit:** `5c58145` (+ v15/conftest follow-up); tags `pre-gemini-v2.0.31` / `post-gemini-v2.0.31`.
+
+**Follow-up:** `test_v15_fixes_8510` off-hours override → asserts entry **blocked**; `conftest` market-only entry guard for general unit tests; full `pytest analyst`: **866 passed, 35 failed, 42 errors** (failure count matches handover baseline).
 
 **Not verified:** live scanner loop with stuck paper positions; browser.
 
