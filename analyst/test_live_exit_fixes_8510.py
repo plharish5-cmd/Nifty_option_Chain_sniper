@@ -32,11 +32,30 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import time
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+from analyst.terminal8510_backend import (  # noqa: E402
+    QuantTerminalBackend,
+    parse_dhan_token_expiry_from_status,
+)
 from analyst.test_live_exit_orders_8510 import (  # noqa: E402
     FakeBroker,
     insert_test_position,
     make_test_backend,
 )
+
+IST = ZoneInfo("Asia/Kolkata")
+
+
+class StatusBroker(FakeBroker):
+    def __init__(self, status: Dict[str, Any], configured: bool = True):
+        super().__init__(configured=configured)
+        self._status = dict(status)
+
+    def get_status(self) -> Dict[str, Any]:
+        return dict(self._status)
 from analyst.test_phase2_option_points_8510 import (  # noqa: E402
     FakeBroker as EntryFakeBroker,
     make_test_backend as make_entry_backend,
@@ -101,6 +120,77 @@ def _stop(broker: FakeBroker, oid: str = "SL_INIT_101", status: str = "TRANSIT")
          "orderType": "STOP_LOSS_LIMIT", "quantity": 65, "filledQty": 0}
     broker.orders.append(o)
     return o
+
+
+def _live_cred(tmp_path: Path, status: Dict[str, Any]) -> Dict[str, Any]:
+    b = make_test_backend(tmp_path, StatusBroker(status))
+    return QuantTerminalBackend._dhan_credentials_live_ok(b)
+
+
+def test_dhan_live_guard_future_exp_ts_ok(tmp_path: Path):
+    cred = _live_cred(
+        tmp_path,
+        {
+            "connected": True,
+            "is_expired": False,
+            "token_expired": False,
+            "exp_ts": time.time() + 86400,
+            "token_valid_till": "not-iso-human-ignored-when-exp_ts-present",
+        },
+    )
+    assert cred["ok"] is True
+
+
+def test_dhan_live_guard_is_expired_not_unreadable(tmp_path: Path):
+    cred = _live_cred(
+        tmp_path,
+        {"connected": True, "is_expired": True, "exp_ts": time.time() + 86400},
+    )
+    assert cred["ok"] is False
+    assert "Expired" in cred["reason"]
+    assert "unreadable" not in cred["reason"]
+
+
+def test_dhan_live_guard_past_exp_ts_not_unreadable(tmp_path: Path):
+    cred = _live_cred(
+        tmp_path,
+        {
+            "connected": True,
+            "is_expired": False,
+            "exp_ts": time.time() - 60,
+        },
+    )
+    assert cred["ok"] is False
+    assert "Expired" in cred["reason"]
+    assert "unreadable" not in cred["reason"]
+
+
+def test_dhan_live_guard_human_token_valid_till_only(tmp_path: Path):
+    future = datetime.now(IST) + timedelta(days=14)
+    human = future.strftime("%d %b %Y %H:%M IST")
+    past = datetime.now(IST) - timedelta(days=1)
+    cred_ok = _live_cred(
+        tmp_path,
+        {"connected": True, "is_expired": False, "token_valid_till": human},
+    )
+    assert cred_ok["ok"] is True
+    cred_bad = _live_cred(
+        tmp_path,
+        {
+            "connected": True,
+            "is_expired": False,
+            "token_valid_till": past.strftime("%d %b %Y %H:%M IST"),
+        },
+    )
+    assert cred_bad["ok"] is False
+    assert "Expired" in cred_bad["reason"]
+    assert parse_dhan_token_expiry_from_status({"token_valid_till": human}) is not None
+
+
+def test_dhan_live_guard_no_expiry_fields_fail_safe_unreadable(tmp_path: Path):
+    cred = _live_cred(tmp_path, {"connected": True, "is_expired": False})
+    assert cred["ok"] is False
+    assert "unreadable" in cred["reason"]
 
 
 async def _until(cond, timeout: float = 3.0) -> None:

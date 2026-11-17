@@ -184,6 +184,36 @@ def decode_token_expiry(token: str, default_ttl_seconds: float = 86400.0) -> Dic
     }
 
 
+_DHAN_TOKEN_HUMAN_TILL_FMT = "%d %b %Y %H:%M IST"
+
+
+def parse_dhan_token_expiry_from_status(status: Dict[str, Any]) -> Optional[datetime]:
+    """Parse token expiry to IST. Prefer epoch/ISO from status; human till string is last resort."""
+    exp_ts = status.get("exp_ts")
+    if exp_ts is not None:
+        try:
+            return datetime.fromtimestamp(float(exp_ts), tz=IST)
+        except (TypeError, ValueError, OSError):
+            pass
+    utc = status.get("token_expiry_utc")
+    if utc and str(utc).strip() not in ("", "--"):
+        try:
+            exp = datetime.fromisoformat(str(utc).replace("Z", "+00:00"))
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            return exp.astimezone(IST)
+        except (TypeError, ValueError):
+            pass
+    human = status.get("token_valid_till") or status.get("valid_till")
+    if human and str(human).strip() not in ("", "--"):
+        try:
+            exp = datetime.strptime(str(human).strip(), _DHAN_TOKEN_HUMAN_TILL_FMT)
+            return exp.replace(tzinfo=IST)
+        except ValueError:
+            pass
+    return None
+
+
 def format_contract_symbol(
     expiry: Optional[str] = None,
     strike: Optional[Union[float, int, str]] = None,
@@ -1901,9 +1931,12 @@ class DhanBroker:
             "client_id": client_id,
             "masked_token": masked_token,
             "token_valid_till": exp_info["token_valid_till"],
+            "token_expiry_utc": exp_info.get("token_expiry_utc"),
+            "exp_ts": exp_info.get("exp_ts"),
             "time_left": exp_info["time_left"],
             "days_left": exp_info["days_left"],
             "is_expired": exp_info["is_expired"],
+            "token_expired": exp_info.get("is_expired"),
             "connected": connected,
             "dhan_connected": connected,
             "status": status_tag,
@@ -2726,20 +2759,18 @@ class QuantTerminalBackend:
         except Exception as exc:                      # broker shape varies by build
             log.warning('Dhan status check failed during live guard: %s', exc)
             return {'ok': False, 'reason': 'Dhan status unavailable — Live Disabled'}
-        if status.get('token_expired') is True or status.get('connected') is False:
+        if (
+            status.get('is_expired') is True
+            or status.get('token_expired') is True
+            or status.get('connected') is False
+        ):
             return {'ok': False, 'reason': 'Dhan Token Expired — Live Disabled'}
-        valid_till = status.get('token_valid_till') or status.get('valid_till')
-        if valid_till:
-            try:
-                exp = datetime.fromisoformat(str(valid_till).replace('Z', '+00:00'))
-                if exp.tzinfo is None:
-                    exp = exp.replace(tzinfo=IST)
-                if exp <= datetime.now(IST):
-                    return {'ok': False, 'reason': 'Dhan Token Expired — Live Disabled'}
-            except (TypeError, ValueError):
-                # Unparseable expiry is not evidence of validity.
-                return {'ok': False, 'reason': 'Dhan token expiry unreadable — Live Disabled'}
-        return {'ok': True, 'reason': ''}
+        exp = parse_dhan_token_expiry_from_status(status)
+        if exp is not None:
+            if exp <= datetime.now(IST):
+                return {'ok': False, 'reason': 'Dhan Token Expired — Live Disabled'}
+            return {'ok': True, 'reason': ''}
+        return {'ok': False, 'reason': 'Dhan token expiry unreadable — Live Disabled'}
 
     def live_execution_decision(self) -> Dict[str, Any]:
         """Resolve to exactly one of PAPER_ONLY / DRY_RUN / LIVE.
