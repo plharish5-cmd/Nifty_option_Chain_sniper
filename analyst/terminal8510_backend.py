@@ -801,6 +801,7 @@ def simulate_prototype_spot_exit(
     day_1m: Optional[pd.DataFrame] = None,
     entry_ts: Optional[int] = None,
     exit_on_opposite_close: bool = True,
+    candle_trail: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     exit_on_opposite_close=False gives the same 1-minute walk without rule 4,
@@ -833,11 +834,31 @@ def simulate_prototype_spot_exit(
             )
             b15_by_close_hm[c_hm] = b
 
+    from analyst.proto_candle_trail_8510 import (
+        aggregate_tf_bar,
+        floor_trail_stop,
+        fav_points,
+        load_candle_trail_cfg,
+        session_anchor_ts,
+    )
+
+    ct_cfg = load_candle_trail_cfg({"candle_trail": candle_trail}) if isinstance(candle_trail, dict) else load_candle_trail_cfg({})
+    ct_on = bool(ct_cfg.get("enabled"))
+    activate_pts = float(ct_cfg.get("activate_pts", tgt_pts))
+    tf_sec = max(60, int(ct_cfg.get("candle_tf_min", 15)) * 60)
+    use_completed_ct = bool(ct_cfg.get("use_completed_candles", True))
+
     # If 1m candles are available, do the precise 1m-resolution exit walk
     if day_1m is not None and not day_1m.empty:
         threshold_ts = int(entry_ts) if (entry_ts is not None and entry_ts > 0) else int(bars[start_idx].get("ts") or 0)
         candles = day_1m[day_1m["ts"] > threshold_ts].sort_values("ts")
         checked_15m_closes = set()
+        trail_armed = False
+        trailed_stop = stop_spot
+        running_mfe = 0.0
+        trail_steps_ct: List[str] = [f"SL {int(sl_pts)}"]
+        processed_tf: set = set()
+        session_anchor = session_anchor_ts(entry_day) if entry_day else 0
 
         for _, row in candles.iterrows():
             m_ts = int(row["ts"])
@@ -856,6 +877,14 @@ def simulate_prototype_spot_exit(
             if not m_hm:
                 m_hm = entry_hm
 
+            running_mfe = max(running_mfe, fav_points(is_long, entry_spot, m_hi, m_lo))
+            if ct_on and not trail_armed and running_mfe >= activate_pts:
+                trail_armed = True
+                trailed_stop = stop_spot
+                trail_steps_ct.append(f"TRAIL armed +{int(activate_pts)}")
+
+            active_stop = floor_trail_stop(is_long, trailed_stop, stop_spot) if trail_armed else stop_spot
+
             # 1. EOD square-off check at 15:20
             if m_hm >= eod_hm:
                 exit_spot = m_c
@@ -865,7 +894,7 @@ def simulate_prototype_spot_exit(
                     "fx_pnl_pts": pnl,
                     "exit_spot": exit_spot,
                     "exit_reason": f"EOD_SQUARE_OFF_{eod_hm}",
-                    "trail_steps": [f"SL {int(sl_pts)}", f"EOD 15:20 {exit_spot:.1f}"],
+                    "trail_steps": trail_steps_ct + [f"EOD 15:20 {exit_spot:.1f}"],
                     "mfe_pts": max(0.0, pnl),
                     "entry_day": entry_day,
                     "entry_hm": entry_hm,
@@ -877,12 +906,13 @@ def simulate_prototype_spot_exit(
 
             # 2. Ambiguous candle: touched both target and stop on single 1m candle
             is_amb = False
-            if is_long:
-                if m_hi >= target_spot and m_lo <= stop_spot:
-                    is_amb = True
-            else:
-                if m_lo <= target_spot and m_hi >= stop_spot:
-                    is_amb = True
+            if not trail_armed:
+                if is_long:
+                    if m_hi >= target_spot and m_lo <= stop_spot:
+                        is_amb = True
+                else:
+                    if m_lo <= target_spot and m_hi >= stop_spot:
+                        is_amb = True
 
             if is_amb:
                 return {
@@ -890,7 +920,7 @@ def simulate_prototype_spot_exit(
                     "fx_pnl_pts": -sl_pts,
                     "exit_spot": stop_spot,
                     "exit_reason": "AMBIGUOUS",
-                    "trail_steps": [f"SL {int(sl_pts)}", "AMBIGUOUS 1m bar"],
+                    "trail_steps": trail_steps_ct + ["AMBIGUOUS 1m bar"],
                     "mfe_pts": tgt_pts,
                     "entry_day": entry_day,
                     "entry_hm": entry_hm,
@@ -900,14 +930,17 @@ def simulate_prototype_spot_exit(
                     "is_ambiguous": True,
                 }
 
-            # 3. Stop check on 1m candle
-            if (is_long and m_lo <= stop_spot) or (not is_long and m_hi >= stop_spot):
+            # 3. Stop check on 1m candle (trailed stop when armed)
+            if (is_long and m_lo <= active_stop) or (not is_long and m_hi >= active_stop):
+                hit_spot = active_stop
+                pnl_hit = round((hit_spot - entry_spot) if is_long else (entry_spot - hit_spot), 2)
+                reason = "CANDLE_TRAIL_HIT" if trail_armed else "SPOT_SL_HIT"
                 return {
-                    "st_pnl_pts": -sl_pts,
-                    "fx_pnl_pts": -sl_pts,
-                    "exit_spot": stop_spot,
-                    "exit_reason": "SPOT_SL_HIT",
-                    "trail_steps": [f"SL {int(sl_pts)}", f"SL hit {stop_spot:.1f}"],
+                    "st_pnl_pts": pnl_hit if trail_armed else -sl_pts,
+                    "fx_pnl_pts": pnl_hit if trail_armed else -sl_pts,
+                    "exit_spot": hit_spot,
+                    "exit_reason": reason,
+                    "trail_steps": trail_steps_ct + [f"{'trail hit' if trail_armed else 'SL hit'} {hit_spot:.1f}"],
                     "mfe_pts": 0.0,
                     "entry_day": entry_day,
                     "entry_hm": entry_hm,
@@ -917,14 +950,16 @@ def simulate_prototype_spot_exit(
                     "is_ambiguous": False,
                 }
 
-            # 4. Target check on 1m candle
-            if (is_long and m_hi >= target_spot) or (not is_long and m_lo <= target_spot):
+            # 4. Target check on 1m candle (disabled once candle trail is armed)
+            if not trail_armed and (
+                (is_long and m_hi >= target_spot) or (not is_long and m_lo <= target_spot)
+            ):
                 return {
                     "st_pnl_pts": tgt_pts,
                     "fx_pnl_pts": tgt_pts,
                     "exit_spot": target_spot,
                     "exit_reason": "SPOT_TARGET_HIT",
-                    "trail_steps": [f"SL {int(sl_pts)}", f"Target hit {target_spot:.1f}"],
+                    "trail_steps": trail_steps_ct + [f"Target hit {target_spot:.1f}"],
                     "mfe_pts": tgt_pts,
                     "entry_day": entry_day,
                     "entry_hm": entry_hm,
@@ -933,6 +968,23 @@ def simulate_prototype_spot_exit(
                     "exit_ts": m_ts,
                     "is_ambiguous": False,
                 }
+
+            if ct_on and trail_armed and use_completed_ct and session_anchor > 0:
+                bar_close = m_ts + 60
+                if bar_close > session_anchor and (bar_close - session_anchor) % tf_sec == 0:
+                    bar_open = bar_close - tf_sec
+                    if bar_open not in processed_tf and bar_open > threshold_ts:
+                        ohlc = aggregate_tf_bar(day_1m, bar_open, bar_close)
+                        if ohlc:
+                            fo, fh, fl, fc = ohlc
+                            trailed_stop = flagship_candle_trail_update(
+                                is_long, trailed_stop, fo, fh, fl, fc
+                            )
+                            trailed_stop = floor_trail_stop(is_long, trailed_stop, stop_spot)
+                            trail_steps_ct.append(
+                                f"trail -> {'low' if is_long else 'high'} {trailed_stop:.0f}"
+                            )
+                            processed_tf.add(bar_open)
 
             # 5. Check opposite 8 EMA close at 15m candle close ONLY
             for c_ts, b15 in b15_by_close_ts.items():
@@ -949,7 +1001,7 @@ def simulate_prototype_spot_exit(
                                 "fx_pnl_pts": pnl,
                                 "exit_spot": c15,
                                 "exit_reason": "OPPOSITE_8EMA_CLOSE",
-                                "trail_steps": [f"SL {int(sl_pts)}", f"Opposite 8 EMA Close {c15:.1f}"],
+                                "trail_steps": trail_steps_ct + [f"Opposite 8 EMA Close {c15:.1f}"],
                                 "mfe_pts": max(0.0, pnl),
                                 "entry_day": entry_day,
                                 "entry_hm": entry_hm,
@@ -970,7 +1022,7 @@ def simulate_prototype_spot_exit(
             "fx_pnl_pts": pnl,
             "exit_spot": last_c,
             "exit_reason": f"EOD_SQUARE_OFF_{eod_hm}",
-            "trail_steps": [f"SL {int(sl_pts)}", f"EOD {last_c:.1f}"],
+            "trail_steps": trail_steps_ct + [f"EOD {last_c:.1f}"],
             "mfe_pts": max(0.0, pnl),
             "entry_day": entry_day,
             "entry_hm": entry_hm,
@@ -5563,6 +5615,19 @@ class QuantTerminalBackend:
         row["reentry_same_side"] = bool(cfg.get("reentry_same_side", True))
         row["reentry_after_stop_loss"] = bool(cfg.get("reentry_after_stop_loss", False))
         row["oi_filters"] = dict(cfg.get("oi_filters") or {})
+        row["candle_trail"] = dict(cfg.get("candle_trail") or {})
+        trail_line = "Trailing after +40 (off)"
+        if row["candle_trail"].get("enabled"):
+            ap = float(row["candle_trail"].get("activate_pts", 40.0))
+            trail_line = f"Trailing after +{int(ap)} (idle)"
+            for st in (getattr(self, "_proto_candle_trail_state", None) or {}).values():
+                if st.get("armed"):
+                    trail_line = (
+                        f"Trailing: stop {float(st.get('trailed_stop') or 0):,.0f}"
+                        f" · locked +{float(st.get('mfe') or 0):.0f}"
+                    )
+                    break
+        row["candle_trail_status"] = trail_line
         self._enrich_proto_oi_telemetry(row)
         if not row["enabled"]:
             row["state"] = "PAUSED"
@@ -5847,6 +5912,7 @@ class QuantTerminalBackend:
             "touch_tol_pts": float(c.get("touch_tol_pts", 3.0)),
             "touch_tol_slow_pts": float(c.get("touch_tol_slow_pts", 0.0)),
             "oi_filters": dict(c.get("oi_filters") or {}),
+            "candle_trail": dict(c.get("candle_trail") or {}),
         }
 
     def update_ema8_prototype_filter_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -5866,6 +5932,7 @@ class QuantTerminalBackend:
             "touch_tol_pts",
             "touch_tol_slow_pts",
             "oi_filters",
+            "candle_trail",
         }
         block = self.scanner_cfg.setdefault("ema8_prototype", {})
         if not isinstance(block, dict):
@@ -5907,6 +5974,18 @@ class QuantTerminalBackend:
                     elif ok == "max_age_sec":
                         merged[ok] = float(ov)
                 block["oi_filters"] = merged
+            elif k == "candle_trail" and isinstance(v, dict):
+                from analyst.proto_candle_trail_8510 import DEFAULT_CANDLE_TRAIL
+
+                cur_ct = block.get("candle_trail") if isinstance(block.get("candle_trail"), dict) else {}
+                merged_ct = dict(DEFAULT_CANDLE_TRAIL)
+                merged_ct.update(cur_ct)
+                merged_ct.update(v)
+                if "candle_tf_min" in merged_ct:
+                    tf = int(merged_ct["candle_tf_min"])
+                    if tf not in (3, 5, 15):
+                        merged_ct["candle_tf_min"] = DEFAULT_CANDLE_TRAIL["candle_tf_min"]
+                block["candle_trail"] = merged_ct
             else:
                 block[k] = v
         self.cfg["scanner"] = self.scanner_cfg
@@ -7350,6 +7429,8 @@ class QuantTerminalBackend:
         eod_hm = str(self.scanner_cfg.get("flagship_eod_square_off", "15:20"))
         if not hasattr(self, "_flagship_trail_bar_ts"):
             self._flagship_trail_bar_ts = {}
+        if not hasattr(self, "_proto_candle_trail_state"):
+            self._proto_candle_trail_state = {}
         with sqlite3.connect(self.ledger_db) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
@@ -7398,9 +7479,15 @@ class QuantTerminalBackend:
                 pullback_exit_level = float(p.get("pullback_exit_level") or 0.0)
 
                 is_flagship_pos = "FLAGSHIP" in str(p.get("strategy_id") or "").upper()
+                is_ema8_proto = str(p.get("strategy_id") or "").upper().startswith("EMA8_PROTOTYPE")
                 # "proto" here means the fixed spot-or-option exit, which Stage 2,
                 # Stage 3 and the Reversal now share with the 8 EMA Prototype.
                 is_proto_pos = uses_fixed_spot_or_option_exit(p.get("strategy_id"))
+                from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg, prototype_spot_is_long
+                from analyst.proto_candle_trail_8510 import floor_trail_stop, load_candle_trail_cfg
+
+                ct_cfg = load_candle_trail_cfg(load_ema8_prototype_cfg(self.scanner_cfg)) if is_ema8_proto else {}
+                trail_live = bool(is_ema8_proto and ct_cfg.get("enabled"))
                 trail_sl_enabled = bool(p.get("trail_sl_enabled", 1)) and not is_flagship_pos
                 trail_target_enabled = bool(p.get("trail_target_enabled", 1)) and not is_flagship_pos
                 trail_act = float(p.get("trail_activation_pts") or self.super_trail_cfg.get("trail_activation_profit_pts", 15.0))
@@ -7448,41 +7535,85 @@ class QuantTerminalBackend:
                     spot_ent = float(p.get("spot_entry") or 0.0)
                     spot_tgt = float(p.get("spot_target_level") or 0.0)
                     spot_sl = float(p.get("spot_stop_level") or 0.0)
-                    from analyst.ema8_prototype_8510 import prototype_spot_is_long
-
                     is_long_spot = prototype_spot_is_long(
                         spot_ent,
                         spot_tgt,
                         strategy_id=str(p.get("strategy_id") or ""),
                         symbol=str(p.get("symbol") or ""),
                     )
-                    if spot_ent > 0 and spot_tgt > 0 and spot_sl > 0:
-                        if is_long_spot and spot_idx >= spot_tgt:
-                            should_close = True
-                            exit_reason = "SPOT_TARGET_HIT"
-                        elif is_long_spot and spot_idx <= spot_sl:
-                            should_close = True
-                            exit_reason = "SPOT_SL_HIT"
-                        elif (not is_long_spot) and spot_idx <= spot_tgt:
-                            should_close = True
-                            exit_reason = "SPOT_TARGET_HIT"
-                        elif (not is_long_spot) and spot_idx >= spot_sl:
-                            should_close = True
-                            exit_reason = "SPOT_SL_HIT"
+                    trail_st = self._proto_candle_trail_state.setdefault(str(p.get("position_id") or ""), {})
+                    if trail_live and spot_ent > 0:
+                        fav = (spot_idx - spot_ent) if is_long_spot else (spot_ent - spot_idx)
+                        trail_st["mfe"] = max(float(trail_st.get("mfe") or 0.0), fav)
+                        if not trail_st.get("armed") and trail_st["mfe"] >= float(ct_cfg.get("activate_pts", 40.0)):
+                            trail_st["armed"] = True
+                            trail_st["trailed_stop"] = spot_sl
+                        if trail_st.get("armed"):
+                            bar15 = self._latest_closed_15m_bar()
+                            if bar15 and int(ct_cfg.get("candle_tf_min", 15)) == 15:
+                                last_ts = int(trail_st.get("last_bar_ts") or 0)
+                                if int(bar15["ts"]) != last_ts:
+                                    tr = float(trail_st.get("trailed_stop") or spot_sl)
+                                    tr = flagship_candle_trail_update(
+                                        is_long_spot,
+                                        tr,
+                                        float(bar15["open"]),
+                                        float(bar15["high"]),
+                                        float(bar15["low"]),
+                                        float(bar15["close"]),
+                                    )
+                                    tr = floor_trail_stop(is_long_spot, tr, spot_sl)
+                                    trail_st["trailed_stop"] = tr
+                                    trail_st["last_bar_ts"] = int(bar15["ts"])
+                                    cur.execute(
+                                        "UPDATE positions SET spot_stop_level=? WHERE position_id=?",
+                                        (tr, p["position_id"]),
+                                    )
+                                    spot_sl = tr
+                                    p["spot_stop_level"] = tr
+                            active_sl = floor_trail_stop(
+                                is_long_spot, float(trail_st.get("trailed_stop") or spot_sl), spot_sl
+                            )
+                            if is_long_spot and spot_idx <= active_sl:
+                                should_close = True
+                                exit_reason = "CANDLE_TRAIL_HIT"
+                            elif (not is_long_spot) and spot_idx >= active_sl:
+                                should_close = True
+                                exit_reason = "CANDLE_TRAIL_HIT"
+                            locked = round((spot_idx - spot_ent) if is_long_spot else (spot_ent - spot_idx), 1)
+                            p["candle_trail_locked_pts"] = locked
+                            p["candle_trail_stop"] = active_sl
+                    if not should_close and spot_ent > 0 and spot_tgt > 0 and spot_sl > 0:
+                        if not (trail_live and trail_st.get("armed")):
+                            if is_long_spot and spot_idx >= spot_tgt:
+                                should_close = True
+                                exit_reason = "SPOT_TARGET_HIT"
+                            elif is_long_spot and spot_idx <= spot_sl:
+                                should_close = True
+                                exit_reason = "SPOT_SL_HIT"
+                            elif (not is_long_spot) and spot_idx <= spot_tgt:
+                                should_close = True
+                                exit_reason = "SPOT_TARGET_HIT"
+                            elif (not is_long_spot) and spot_idx >= spot_sl:
+                                should_close = True
+                                exit_reason = "SPOT_SL_HIT"
                 if is_proto_pos and not should_close:
                     proto_eod_hm = str(self.cfg.get("eod_square_off_time", "15:20")).strip()[:5]
                     if now_dt.strftime("%H:%M") >= proto_eod_hm:
                         should_close = True
                         exit_reason = f"EOD_SQUARE_OFF_{proto_eod_hm}"
                     else:
-                        init_tgt = float(p.get("initial_target") or target)
-                        init_sl = float(p.get("initial_sl") or sl)
-                        if ltp >= init_tgt:
-                            should_close = True
-                            exit_reason = "OPTION_TARGET_HIT"
-                        elif ltp <= init_sl:
-                            should_close = True
-                            exit_reason = "OPTION_SL_HIT"
+                        trail_st = self._proto_candle_trail_state.get(str(p.get("position_id") or ""), {})
+                        armed_trail = trail_live and trail_st.get("armed")
+                        if not armed_trail:
+                            init_tgt = float(p.get("initial_target") or target)
+                            init_sl = float(p.get("initial_sl") or sl)
+                            if ltp >= init_tgt:
+                                should_close = True
+                                exit_reason = "OPTION_TARGET_HIT"
+                            elif ltp <= init_sl:
+                                should_close = True
+                                exit_reason = "OPTION_SL_HIT"
                 if is_flagship_pos and spot_idx > 0:
                     spot_entry = float(p.get("spot_entry") or 0.0)
                     spot_sl = float(p.get("spot_stop_level") or 0.0)
@@ -10263,6 +10394,9 @@ class QuantTerminalBackend:
                                 meta.get("trail_green_only", not trail_every_bar)
                             )
                             if fixed_walk:
+                                from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg as _lp
+
+                                _proto_cfg = _lp(self.scanner_cfg)
                                 proto_res = simulate_prototype_spot_exit(
                                     bars=bars,
                                     start_idx=start_i,
@@ -10274,6 +10408,7 @@ class QuantTerminalBackend:
                                     day_1m=day_to_1m.get(day_key),
                                     entry_ts=int(meta.get("entry_ts") or 0),
                                     exit_on_opposite_close=is_proto,
+                                    candle_trail=_proto_cfg.get("candle_trail") if is_proto else None,
                                 )
                                 st_pnl_pts = proto_res["st_pnl_pts"]
                                 fx_pnl_pts = proto_res["fx_pnl_pts"]

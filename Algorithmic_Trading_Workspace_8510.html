@@ -1184,6 +1184,17 @@
                                 <label><input type="checkbox" class="proto-oi-sw" data-id="volume_oi"> Volume-backed OI <span class="proto-oi-dir" data-id="volume_oi">—</span></label>
                             </div>
                             <div id="protoOiBlockLine" style="margin-top:6px; color:#94a3b8; font-size:10px;">OI filter verdict: —</div>
+                            <div style="font-weight:700; color:#a78bfa; margin:10px 0 6px;">Ride the trend (candle trail after +40)</div>
+                            <div style="display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; font-size:10px;">
+                                <label style="cursor:pointer;"><input type="checkbox" id="protoCandleTrailOn"> Trail green/red candle after profit</label>
+                                <label>Activate at <input type="number" id="protoCandleTrailPts" min="5" max="200" step="1" value="40" style="width:48px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;"> spot pts</label>
+                                <label>Candle <select id="protoCandleTrailTf" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;font-size:10px;">
+                                    <option value="15">15 min</option>
+                                    <option value="5">5 min</option>
+                                    <option value="3">3 min</option>
+                                </select></label>
+                            </div>
+                            <div id="protoCandleTrailLine" style="margin-top:4px; color:#94a3b8; font-size:10px;">Trailing after +40 (off)</div>
                             <div style="margin-top:6px; color:#94a3b8;" id="protoFilterSaveStatus">—</div>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
@@ -4872,6 +4883,23 @@
             const sf = document.getElementById('protoStFac');
             if (sl && cfg.supertrend_length != null) sl.textContent = String(cfg.supertrend_length);
             if (sf && cfg.supertrend_factor != null) sf.textContent = String(cfg.supertrend_factor);
+            const ct = cfg.candle_trail;
+            if (ct && typeof ct === 'object') {
+                if ('enabled' in ct) {
+                    const el = document.getElementById('protoCandleTrailOn');
+                    if (el) el.checked = !!ct.enabled;
+                }
+                if ('activate_pts' in ct) {
+                    const ap = document.getElementById('protoCandleTrailPts');
+                    if (ap) ap.value = String(ct.activate_pts);
+                }
+                if ('candle_tf_min' in ct) {
+                    const tf = document.getElementById('protoCandleTrailTf');
+                    if (tf) tf.value = String(ct.candle_tf_min);
+                }
+            }
+            const ctl = document.getElementById('protoCandleTrailLine');
+            if (ctl && cfg.candle_trail_status) ctl.textContent = String(cfg.candle_trail_status);
         }
 
         async function saveEma8PrototypeFilters(payload) {
@@ -4917,6 +4945,12 @@
                             volume_oi: document.querySelector('.proto-oi-sw[data-id="volume_oi"]')?.checked === true,
                         },
                     },
+                    candle_trail: {
+                        enabled: document.getElementById('protoCandleTrailOn')?.checked === true,
+                        activate_pts: Number(document.getElementById('protoCandleTrailPts')?.value || 40),
+                        candle_tf_min: Number(document.getElementById('protoCandleTrailTf')?.value || 15),
+                        use_completed_candles: true,
+                    },
                 };
                 saveEma8PrototypeFilters(payload).catch(() => {});
             };
@@ -4925,6 +4959,10 @@
                 if (el) el.addEventListener('change', post);
             });
             document.querySelectorAll('.proto-oi-sw').forEach(el => el.addEventListener('change', post));
+            ['protoCandleTrailOn', 'protoCandleTrailPts', 'protoCandleTrailTf'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('change', post);
+            });
         }
 
         function renderProtoOiFilters(ep, board) {

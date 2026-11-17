@@ -77,6 +77,12 @@ DEFAULT_CFG: Dict[str, Any] = {
             "deadzone_cr_per_min": 0.05,
         },
     },
+    "candle_trail": {
+        "enabled": False,
+        "activate_pts": 40.0,
+        "candle_tf_min": 15,
+        "use_completed_candles": True,
+    },
 }
 
 
@@ -90,17 +96,24 @@ def get_effective_touch_tolerance(cfg: Dict[str, Any]) -> float:
 def load_ema8_prototype_cfg(scanner_cfg: Dict[str, Any]) -> Dict[str, Any]:
     from analyst.proto_oi_filters_8510 import DEFAULT_OI_FILTERS, load_oi_filters_cfg
 
+    from analyst.proto_candle_trail_8510 import DEFAULT_CANDLE_TRAIL, load_candle_trail_cfg
+
     out = dict(DEFAULT_CFG)
     block = scanner_cfg.get("ema8_prototype")
     if isinstance(block, dict):
-        out.update({k: v for k, v in block.items() if k != "oi_filters"})
+        out.update({k: v for k, v in block.items() if k not in ("oi_filters", "candle_trail")})
         if isinstance(block.get("oi_filters"), dict):
             merged = dict(DEFAULT_OI_FILTERS)
             merged.update(block["oi_filters"])
             if isinstance(block["oi_filters"].get("switches"), dict):
                 merged["switches"] = {**DEFAULT_OI_FILTERS["switches"], **block["oi_filters"]["switches"]}
             out["oi_filters"] = merged
+        if isinstance(block.get("candle_trail"), dict):
+            ct = dict(DEFAULT_CANDLE_TRAIL)
+            ct.update(block["candle_trail"])
+            out["candle_trail"] = ct
     out["oi_filters"] = load_oi_filters_cfg(out)
+    out["candle_trail"] = load_candle_trail_cfg(out)
     return out
 
 

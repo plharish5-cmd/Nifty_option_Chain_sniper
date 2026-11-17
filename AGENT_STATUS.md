@@ -14,6 +14,34 @@ Trunk: **`integrate/v1.9`**
 | `claude/v1.9.4-safety-lock` | Claude | **BROKEN, `2d116b7` — DELETE** | never merge |
 | `agy/ema8-proto-corrections` | Antigravity | **done, `b1d23ca`**, tag `post-agy-ema8-proto-corrections` | **NO — awaiting Harish** |
 | `gemini/v2.0.24-proto-oi-filters` | Gemini/Cursor | **done, `41fd6be`** tags `pre/post-gemini-v2.0.24` | **NO — awaiting Harish** |
+| `gemini/v2.0.25-proto-candle-trail` | Gemini/Cursor | **done** (see block below) tags `pre/post-gemini-v2.0.25` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-17 (night) · Gemini/Cursor · `gemini/v2.0.25-proto-candle-trail` — ride trend after +40
+
+**Goal:** Optional 8 EMA Prototype exit: after `activate_pts` (default 40) MFE, disarm fixed +40 spot/option targets and trail stop on completed green-low (long) / red-high (short) candles via `flagship_candle_trail_update`. Opposite 15m 8 EMA close and 15:20 square-off unchanged. **Default OFF** — disabled path matches prior +40 behaviour.
+
+**Branch:** cut from `gemini/v2.0.24-proto-oi-filters` (carries OI momentum work).
+
+**Files**
+- `analyst/proto_candle_trail_8510.py` — config, TF aggregation, floor/monotonic helpers
+- `analyst/ema8_prototype_8510.py` — `candle_trail` defaults in `DEFAULT_CFG` / load merge
+- `analyst/terminal8510_backend.py` — `simulate_prototype_spot_exit(..., candle_trail=)`, live armed state `_proto_candle_trail_state`, filter GET/POST, desk `candle_trail_status`
+- `Algorithmic_Trading_Workspace_8510.html` — toggle, activate pts, TF 15/5/3, status line
+- `scripts/patch_add_candle_trail_8510.py` — merges `scanner.ema8_prototype.candle_trail` (backup first)
+- `analyst/test_proto_candle_trail_8510.py` — 6 tests (disabled +40 parity, arm threshold, monotonic, long/short trail hit)
+
+**Config (patch only, do not commit `terminal8510_config.json`):**
+`candle_trail`: `{ "enabled": false, "activate_pts": 40.0, "candle_tf_min": 15, "use_completed_candles": true }`
+
+**Verify:** `scripts/verify_locks.py` 11/11; `pytest analyst/test_proto_candle_trail_8510.py` 6/6; full `.venv` `PYTHONPATH=. pytest analyst -q --continue-on-collection-errors` (17 Nov ~21:33 IST): **831 passed / 34 failed / 42 errors** (+5 passes vs 826 baseline — includes 6 new trail tests; same 34/42 failure buckets as v2.0.24; phase5/phase7 wall-clock after 15:20 IST not attributable).
+
+**Ops:** `python3 scripts/patch_add_candle_trail_8510.py` → restart 8510 → hard-refresh; enable toggle only after backtest on held-out days.
+
+**Not verified here:** live Dhan protective SL modify on each trail ratchet (live updates `spot_stop_level` in DB like Flagship spot trail — no new `_replace_protective_stop` hook yet); live 5m/3m bar source (live path uses `_latest_closed_15m_bar` when `candle_tf_min==15`); broker/market hours; browser toggle persistence this session.
+
+**Confirm (owner rule):** default OFF; arm only at ≥ `activate_pts`; +40 targets off once armed; opposite-close + 15:20 still exit; monotonic via `flagship_candle_trail_update`.
 
 ---
 
