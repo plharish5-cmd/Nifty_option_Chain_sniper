@@ -310,7 +310,14 @@ def test_prototype_view_says_where_the_lane_is():
     arm = {"direction": "SHORT", "cross_bar_open_ts": 1794464100, "away_seen": False}
     v = prototype_view(row, {"arm": dict(arm)}, 25198.7, "LIVE")
     assert v["step"] == 2 and "Armed PE" in v["headline"] and "move away" in v["headline"] and v["route_live"] is True
-    v = prototype_view(row, {"arm": dict(arm, away_seen=True)}, 25198.7, "LIVE")
+    v = prototype_view(
+        row,
+        {"arm": dict(arm, away_seen=True)},
+        25198.7,
+        "LIVE",
+        ema_audit={"e8_live": 25190.0, "e8_closed": 25188.0, "stale": False},
+    )
+    assert v.get("ema8_closed") == 25188.0
     assert v["step"] == 3 and "touch" in v["headline"] and "±3" in v["sub"]
     v = prototype_view(row, {"arm": arm, "open": {"direction": "LONG"}}, 25198.7, "")
     assert v["step"] == 4 and v["headline"] == "In a CE trade"

@@ -9,8 +9,13 @@ IST = timezone(timedelta(hours=5, minutes=30))
 PROTO_STEPS = ["15m close crosses 8 EMA", "Armed", "Price moves away", "Touch of 8 EMA → entry", "In trade"]
 
 
-def prototype_view(row: Optional[Dict[str, Any]], proto_state: Optional[Dict[str, Any]], spot: Optional[float],
-                   live_route: str = "") -> Dict[str, Any]:
+def prototype_view(
+    row: Optional[Dict[str, Any]],
+    proto_state: Optional[Dict[str, Any]],
+    spot: Optional[float],
+    live_route: str = "",
+    ema_audit: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Where the 8 EMA Prototype is in its sequence, in words.
 
     step 0..4 indexes PROTO_STEPS (the step being waited for; 4 = in trade).
@@ -64,4 +69,17 @@ def prototype_view(row: Optional[Dict[str, Any]], proto_state: Optional[Dict[str
     hold = str(row.get("block_reason") or "")
     if hold:
         out["sub"] = (out["sub"] + " · " if out["sub"] else "") + hold
-    return out
+    audit = ema_audit if isinstance(ema_audit, dict) else {}
+    e8_live = audit.get("e8_live", e8)
+    e8_closed = audit.get("e8_closed")
+    stale = bool(audit.get("stale") or row.get("ema_stale"))
+    if stale:
+        out["sub"] = (out["sub"] + " · " if out["sub"] else "") + "EMA STALE — spot feed not fresh"
+    from analyst.ema8_display_audit_8510 import EMA_CONVERGENCE_NOTE, enrich_prototype_view
+
+    return enrich_prototype_view(
+        out,
+        e8_live=e8_live,
+        e8_closed=e8_closed,
+        ema_stale=stale,
+    ) | {"ema_convergence_note": EMA_CONVERGENCE_NOTE}

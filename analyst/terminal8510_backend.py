@@ -3684,6 +3684,8 @@ class QuantTerminalBackend:
                     d = dict(r)
                     d["ts"] = d["time"]
                     d["setup_name"] = f"{d['event']}: {d.get('reason') or ''}".strip(": ")
+                    if d.get("reason") and "8EMA" in str(d["reason"]):
+                        d["audit_line"] = d["reason"]
                     out.append(d)
                 return out
         except Exception as exc:
@@ -4834,6 +4836,20 @@ class QuantTerminalBackend:
                 if spot <= 0:
                     await asyncio.sleep(refresh)
                     continue
+                from analyst.ema8_display_audit_8510 import spot_quote_stale
+
+                stale, spot_age = spot_quote_stale(self.cached_telemetry.get("spot"), max_age_sec=5.0)
+                if stale:
+                    prev = dict(self.strategy_status.get("ema8_prototype") or {})
+                    prev["ema_stale"] = True
+                    age_txt = f"{spot_age:.0f}s" if spot_age is not None else "n/a"
+                    prev["block_reason"] = f"EMA STALE — spot not updated ({age_txt})"
+                    self.strategy_status["ema8_prototype"] = prev
+                    audit = dict(getattr(self, "_proto_ema_audit", None) or {})
+                    audit["stale"] = True
+                    self._proto_ema_audit = audit
+                    await asyncio.sleep(refresh)
+                    continue
                 df1 = await asyncio.to_thread(self._load_spot_1m_for_scanner)
                 if df1.empty or len(df1) < 30:
                     await asyncio.sleep(refresh)
@@ -4871,6 +4887,22 @@ class QuantTerminalBackend:
                 seen_hi, seen_lo = self._take_tick_spot_range("ema8_proto", spot)
                 tick_high = max(float(tick_high or spot), seen_hi)
                 tick_low = min(float(tick_low or spot), seen_lo)
+                from analyst.nse_spot_candles_8510 import (
+                    compute_dynamic_emas_on_forming_bar,
+                    last_closed_bar_emas,
+                )
+
+                _, _, e8_closed, _ = last_closed_bar_emas(b15, offset=-2)
+                _, e8_live, _, _ = compute_dynamic_emas_on_forming_bar(
+                    b15, live_spot=spot, form_high=form_high, form_low=form_low
+                )
+                self._proto_ema_audit = {
+                    "e8_live": round(float(e8_live), 2),
+                    "e8_closed": round(float(e8_closed), 2) if e8_closed else None,
+                    "stale": False,
+                    "spot": round(float(spot), 2),
+                    "at": datetime.now(IST).strftime("%H:%M:%S"),
+                }
                 session_day = datetime.now(IST).strftime("%Y-%m-%d")
                 self._sync_open_ema8_prototype_position()
                 from analyst.proto_oi_filters_8510 import board_reads_from_board
@@ -4904,6 +4936,7 @@ class QuantTerminalBackend:
                 )
                 prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})
                 prev_proto.update(st)
+                prev_proto["ema_stale"] = False
                 self.strategy_status["ema8_prototype"] = prev_proto
                 # What the algo itself just used, for the banner: the line, the spot it
                 # compared, the touch band, and when. Display only.
@@ -4927,6 +4960,17 @@ class QuantTerminalBackend:
                 self._handle_ema8_prototype_actions(st.get("actions"))
                 self._save_ema8_prototype_state()
                 if sigs:
+                    from analyst.ema8_display_audit_8510 import format_ema_touch_audit
+
+                    audit = getattr(self, "_proto_ema_audit", {}) or {}
+                    for sig in sigs:
+                        line = format_ema_touch_audit(
+                            e8_live=float(sig.get("dynamic_e8_at_entry") or audit.get("e8_live") or 0),
+                            spot=float(sig.get("spot_entry") or audit.get("spot") or spot),
+                            e8_closed=float(audit.get("e8_closed") or 0),
+                            at_hm=audit.get("at"),
+                        )
+                        sig["ema_touch_audit"] = line
                     await self._process_strategy_signals(sigs)
             except asyncio.CancelledError:
                 raise
@@ -5381,6 +5425,7 @@ class QuantTerminalBackend:
                 "status": spot_status,
                 "is_stale": is_stale,
                 "time_ist": spot_time_ist,
+                "updated_epoch": time.time() if spot > 0 and spot_status == "LIVE" else None,
             },
             "future": {
                 "price": fut_price,
@@ -5688,6 +5733,7 @@ class QuantTerminalBackend:
                 self.__dict__.get("_ema8_prototype_state"),
                 (self.cached_telemetry.get("spot") or {}).get("price"),
                 route,
+                ema_audit=getattr(self, "_proto_ema_audit", None),
             )
         except Exception as exc:
             return {"step": 0, "headline": "status unavailable", "sub": type(exc).__name__, "steps": [], "route": ""}
@@ -5845,12 +5891,21 @@ class QuantTerminalBackend:
                 if time.time() - float(seen.get(key, 0.0)) < 30.0:
                     continue
                 seen[key] = time.time()
+                from analyst.ema8_display_audit_8510 import format_ema_touch_audit
+
+                audit = getattr(self, "_proto_ema_audit", {}) or {}
+                reason = format_ema_touch_audit(
+                    e8_live=float(act.get("dynamic_8ema") or audit.get("e8_live") or 0),
+                    spot=float(act.get("spot") or audit.get("spot") or 0),
+                    e8_closed=float(audit.get("e8_closed") or 0),
+                    at_hm=audit.get("at"),
+                )
                 self.log_ema8_prototype_event(
                     event="RETOUCH SEEN",
                     direction=act.get("direction"),
                     dynamic_8ema=act.get("dynamic_8ema"),
                     spot=act.get("spot"),
-                    reason="DYNAMIC 8 EMA TOUCHED",
+                    reason=reason,
                 )
             elif atype == "CANCEL":
                 self.log_ema8_prototype_event(
@@ -7232,6 +7287,8 @@ class QuantTerminalBackend:
                         "spot_entry": spot_entry,
                         "spot_target_pts": tgt_pts_sig,
                         "spot_stop_pts": sl_pts_sig,
+                        "ema_touch_audit": sig.get("ema_touch_audit"),
+                        "dynamic_e8_closed": (getattr(self, "_proto_ema_audit", None) or {}).get("e8_closed"),
                         "spot_target_level": round(spot_entry + tgt_pts_sig, 2)
                         if is_long
                         else round(spot_entry - tgt_pts_sig, 2),
@@ -9060,13 +9117,22 @@ class QuantTerminalBackend:
                 if is_proto_order:
                     dyn_e8 = (spot_context or {}).get("dynamic_e8_at_entry") or (spot_context or {}).get("dynamic_e8")
                     proto_dir = (spot_context or {}).get("direction") or ("LONG" if "LONG" in str((spot_context or {}).get("strategy_id")).upper() else "SHORT")
+                    from analyst.ema8_display_audit_8510 import format_ema_touch_audit
+
+                    audit_line = (spot_context or {}).get("ema_touch_audit")
+                    if not audit_line and dyn_e8:
+                        audit_line = format_ema_touch_audit(
+                            e8_live=float(dyn_e8),
+                            spot=float((spot_context or {}).get("spot_entry") or 0),
+                            e8_closed=float((spot_context or {}).get("dynamic_e8_closed") or 0),
+                        )
                     self.log_ema8_prototype_event(
                         event="ENTRY PLACED",
                         direction=proto_dir,
                         dynamic_8ema=dyn_e8,
                         spot=(spot_context or {}).get("spot_entry"),
                         position_id=pos_id,
-                        reason=f"ENTRY @ ₹{base_fill:.2f}",
+                        reason=audit_line or f"ENTRY @ ₹{base_fill:.2f}",
                     )
 
             # Record in Orders Book

@@ -19,6 +19,19 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.27-pece-volume` | Gemini/Cursor | **done, `e2f5199`** tags `pre/post-gemini-v2.0.27` | **NO — awaiting Harish** |
 | `gemini/v2.0.28-dhan-expiry-parse` | Gemini/Cursor | **done, `d35ef9d`** tags `pre/post-gemini-v2.0.28` | **NO — awaiting Harish** |
 | `gemini/v2.0.29-backtest-sweep` | Gemini/Cursor | **done, `1bedd34`** tags `pre/post-gemini-v2.0.29` | **NO — awaiting Harish** |
+| `gemini/v2.0.30-ema-display-audit` | Gemini/Cursor | **done** (this block) tags `pre/post-gemini-v2.0.30` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-18 · Gemini/Cursor · `gemini/v2.0.30-ema-display-audit`
+
+**Goal:** Display + audit only — **8EMA (live)** vs **8EMA (15m close)** in Prototype cockpit; touch audit lines in `ema8_prototype_log`; **>5s stale spot → EMA STALE**, worker skips touch (fail-open). **No EMA maths change**, no rounding, no new engine.
+
+**Files:** `analyst/ema8_display_audit_8510.py`, `cockpit_views_8510.py`, `terminal8510_backend.py`, `Algorithmic_Trading_Workspace_8510.html`, `test_ema8_display_audit_8510.py` (5).
+
+**Verify:** `verify_locks.py` 11/11; `pytest analyst/test_ema8_display_audit_8510.py` 5/5.
+
+**Not verified:** live cockpit screenshot at 10:15; browser.
 
 ---
 
