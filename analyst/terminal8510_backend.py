@@ -3836,6 +3836,88 @@ class QuantTerminalBackend:
         self._chain_reads_cache = (now_mono, out)
         return out
 
+    def _compute_oi_3m_read(self) -> Dict[str, Any]:
+        """3m normalized-S read from recorded chain snapshots. Never raises."""
+        from analyst.oi_3m_gate_8510 import compute_oi_3m_read, load_oi_3m_feature_cfg
+        from analyst.oi_context_8510 import load_day_snapshots
+
+        feat = load_oi_3m_feature_cfg(self.scanner_cfg)
+        gate = feat.get("gate") if isinstance(feat.get("gate"), dict) else {}
+        try:
+            px = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
+            now = datetime.now(IST)
+            day = now.strftime("%Y-%m-%d")
+            rows = load_day_snapshots(self._oi_context_db_paths(), day, asof_ts=int(now.timestamp()))
+            return compute_oi_3m_read(
+                rows,
+                px,
+                day=day,
+                now_ts=int(now.timestamp()),
+                gate_cfg=gate,
+                chain_reads_cfg=(self.scanner_cfg or {}).get("chain_reads"),
+            )
+        except Exception as exc:
+            return {"direction": None, "detail": f"error: {type(exc).__name__}", "S": None}
+
+    def get_oi_3m_feature_config(self) -> Dict[str, Any]:
+        from analyst.oi_3m_gate_8510 import format_oi_3m_line, load_oi_3m_feature_cfg
+        from analyst.oi_context_panel_8510 import build_context_panel
+
+        feat = load_oi_3m_feature_cfg(self.scanner_cfg)
+        out = {"ok": True, **feat}
+        if feat.get("enabled"):
+            read = self._compute_oi_3m_read()
+            out["oi_3m_read"] = read
+            out["oi_3m_line"] = format_oi_3m_line(read)
+        cp = feat.get("context_panel") if isinstance(feat.get("context_panel"), dict) else {}
+        if feat.get("enabled") and cp.get("enabled"):
+            bridge = self.__dict__.get("desk8600_bridge")
+            last = getattr(bridge, "last", None) or {}
+            out["context_panel_rows"] = build_context_panel(
+                board=self.desk8600_board(),
+                bridge_last=last,
+                show=cp.get("show"),
+            )
+        return out
+
+    def update_oi_3m_feature_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        from analyst.oi_3m_gate_8510 import DEFAULT_OI_3M_FEATURE, load_oi_3m_feature_cfg
+
+        cur = load_oi_3m_feature_cfg(self.scanner_cfg)
+        u = updates or {}
+        if "enabled" in u:
+            cur["enabled"] = u["enabled"] is True or str(u["enabled"]).lower() in ("true", "1", "on", "yes")
+        if isinstance(u.get("gate"), dict):
+            g = dict(cur.get("gate") or {})
+            for k in ("enabled", "window_min", "sig_min", "sig_extreme", "mode"):
+                if k in u["gate"]:
+                    if k == "enabled":
+                        g["enabled"] = u["gate"][k] is True or str(u["gate"][k]).lower() in ("true", "1", "on", "yes")
+                    elif k == "window_min":
+                        g["window_min"] = int(u["gate"][k])
+                    elif k in ("sig_min", "sig_extreme"):
+                        g[k] = float(u["gate"][k])
+                    else:
+                        g[k] = str(u["gate"][k]).lower()
+            cur["gate"] = g
+        if isinstance(u.get("context_panel"), dict):
+            cp = dict(cur.get("context_panel") or {})
+            if "enabled" in u["context_panel"]:
+                cp["enabled"] = u["context_panel"]["enabled"] is True or str(
+                    u["context_panel"]["enabled"]
+                ).lower() in ("true", "1", "on", "yes")
+            if isinstance(u["context_panel"].get("show"), list):
+                cp["show"] = [str(x) for x in u["context_panel"]["show"]]
+            cur["context_panel"] = cp
+        self.scanner_cfg["oi_3m_feature"] = cur
+        self.cfg.setdefault("scanner", self.scanner_cfg)
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(self.cfg, f, indent=2)
+        except Exception as exc:
+            log.warning("Could not persist oi_3m_feature config: %s", exc)
+        return self.get_oi_3m_feature_config()
+
     def desk8600_link(self) -> Dict[str, Any]:
         """Is the 8600 app connected and live, are chain snapshots live, and which build is running."""
         from analyst.desk8600_link_8510 import BUILD_LABEL, WHATS_NEW, build_id, link_status
@@ -4764,6 +4846,14 @@ class QuantTerminalBackend:
 
                 board = await asyncio.to_thread(self.desk8600_board)
                 board_reads = board_reads_from_board(board)
+                from analyst.oi_3m_gate_8510 import load_oi_3m_feature_cfg
+
+                oi3_feat = load_oi_3m_feature_cfg(self.scanner_cfg)
+                oi3_read = (
+                    await asyncio.to_thread(self._compute_oi_3m_read)
+                    if oi3_feat.get("enabled")
+                    else None
+                )
                 sigs, st = await asyncio.to_thread(
                     evaluate_ema8_prototype_intrabar,
                     b15,
@@ -4778,6 +4868,8 @@ class QuantTerminalBackend:
                     tick_low=tick_low,
                     now_hm=datetime.now(IST).strftime("%H:%M"),
                     board_reads=board_reads,
+                    oi_3m_read=oi3_read,
+                    oi_3m_feature=oi3_feat,
                 )
                 prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})
                 prev_proto.update(st)
@@ -5525,6 +5617,32 @@ class QuantTerminalBackend:
                 "rule": detail.get("rule"),
                 "mode": detail.get("mode"),
             }
+            from analyst.oi_3m_gate_8510 import (
+                format_oi_3m_line,
+                load_oi_3m_feature_cfg,
+                oi_3m_gate_decision,
+            )
+            from analyst.oi_context_panel_8510 import build_context_panel
+
+            oi3 = load_oi_3m_feature_cfg(self.scanner_cfg)
+            row["oi_3m_feature"] = oi3
+            if oi3.get("enabled"):
+                read = self._compute_oi_3m_read()
+                row["oi_3m_read"] = read
+                row["oi_3m_line"] = format_oi_3m_line(read)
+                if direc in ("LONG", "SHORT"):
+                    bull = direc == "LONG"
+                    _, oi3d = oi_3m_gate_decision(bull, oi3, read)
+                    row["oi_3m_telemetry"] = oi3d
+                cp = oi3.get("context_panel") if isinstance(oi3.get("context_panel"), dict) else {}
+                if cp.get("enabled"):
+                    bridge = self.__dict__.get("desk8600_bridge")
+                    last = getattr(bridge, "last", None) or {}
+                    row["oi_3m_context_panel"] = build_context_panel(
+                        board=self.desk8600_board(),
+                        bridge_last=last,
+                        show=cp.get("show"),
+                    )
         except Exception as exc:
             row["oi_filter_telemetry"] = {"error": type(exc).__name__}
 
@@ -6074,6 +6192,10 @@ class QuantTerminalBackend:
             from analyst.proto_oi_filters_8510 import board_reads_from_board
 
             _brd = board_reads_from_board(self.desk8600_board())
+            from analyst.oi_3m_gate_8510 import load_oi_3m_feature_cfg
+
+            oi3_feat = load_oi_3m_feature_cfg(self.scanner_cfg)
+            oi3_read = self._compute_oi_3m_read() if oi3_feat.get("enabled") else None
             proto_sigs, proto_st = evaluate_ema8_prototype(
                 b15,
                 bar_ci=bar_ci,
@@ -6083,6 +6205,8 @@ class QuantTerminalBackend:
                 bb_gate_active=False,
                 gate_meta=self._gate_meta_for_signal,
                 board_reads=_brd,
+                oi_3m_read=oi3_read,
+                oi_3m_feature=oi3_feat,
             )
             signals.extend(proto_sigs)
             prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})

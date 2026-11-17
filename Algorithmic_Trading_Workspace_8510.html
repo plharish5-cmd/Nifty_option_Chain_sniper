@@ -1184,6 +1184,18 @@
                                 <label><input type="checkbox" class="proto-oi-sw" data-id="volume_oi"> Volume-backed OI <span class="proto-oi-dir" data-id="volume_oi">—</span></label>
                             </div>
                             <div id="protoOiBlockLine" style="margin-top:6px; color:#94a3b8; font-size:10px;">OI filter verdict: —</div>
+                            <div style="margin-top:14px; padding-top:10px; border-top:1px dashed rgba(148,163,184,0.35);">
+                                <div style="font-weight:700; color:#38bdf8; margin-bottom:6px;">OI 3m + 8600 Context <span style="font-weight:400;color:#64748b;">(separate feature)</span></div>
+                                <label style="font-size:10px;"><input type="checkbox" id="oi3mFeatureOn"> Feature enabled</label>
+                                <label style="font-size:10px; margin-left:10px;"><input type="checkbox" id="oi3mGateOn"> 3m gate</label>
+                                <label style="font-size:10px; margin-left:10px;"><input type="radio" name="oi3mMode" id="oi3mModeLog" value="log_only" checked> Log only</label>
+                                <label style="font-size:10px;"><input type="radio" name="oi3mMode" id="oi3mModeBlock" value="block"> Block</label>
+                                <label style="font-size:10px; margin-left:10px;"><input type="checkbox" id="oi3mContextOn"> Context panel</label>
+                                <div id="oi3mLine" style="margin-top:6px; color:#94a3b8; font-size:10px;">3m: —</div>
+                                <div id="oi3mVerdict" style="color:#94a3b8; font-size:10px;">oi_3m verdict: —</div>
+                                <div id="oi3mContextGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:4px 8px; font-size:10px; margin-top:6px;"></div>
+                                <div id="oi3mSaveStatus" style="margin-top:4px; color:#64748b; font-size:10px;">—</div>
+                            </div>
                             <div style="margin-top:6px; color:#94a3b8;" id="protoFilterSaveStatus">—</div>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
@@ -3848,6 +3860,8 @@
                             }
                             applyEma8ProtoFilterUI(ep);
                             renderProtoOiFilters(ep, data.desk8600_board);
+                            if (ep.oi_3m_feature) applyOi3mFeatureUI(ep.oi_3m_feature);
+                            renderOi3mTelemetry(ep);
                         }
                         renderProtoView(sc.ema8_prototype_view);
                         const protoLog = document.getElementById("ema8PrototypeLogBody");
@@ -4991,6 +5005,101 @@
             } catch (e) { console.debug('ema8 proto filters load', e); }
         }
 
+        function applyOi3mFeatureUI(cfg) {
+            if (!cfg || typeof cfg !== 'object') return;
+            if ('enabled' in cfg) {
+                const el = document.getElementById('oi3mFeatureOn');
+                if (el) el.checked = !!cfg.enabled;
+            }
+            const g = cfg.gate || {};
+            if ('enabled' in g) {
+                const el = document.getElementById('oi3mGateOn');
+                if (el) el.checked = !!g.enabled;
+            }
+            if ('mode' in g) {
+                const log = document.getElementById('oi3mModeLog');
+                const blk = document.getElementById('oi3mModeBlock');
+                if (log && blk) {
+                    log.checked = String(g.mode).toLowerCase() !== 'block';
+                    blk.checked = String(g.mode).toLowerCase() === 'block';
+                }
+            }
+            const cp = cfg.context_panel || {};
+            if ('enabled' in cp) {
+                const el = document.getElementById('oi3mContextOn');
+                if (el) el.checked = !!cp.enabled;
+            }
+        }
+
+        function renderOi3mTelemetry(ep) {
+            const line = document.getElementById('oi3mLine');
+            const ver = document.getElementById('oi3mVerdict');
+            const grid = document.getElementById('oi3mContextGrid');
+            if (!ep) return;
+            if (line) line.textContent = ep.oi_3m_line || '3m: —';
+            const t = ep.oi_3m_telemetry || {};
+            if (ver) {
+                if (!ep.oi_3m_feature?.enabled) ver.textContent = 'oi_3m verdict: feature off';
+                else if (t.would_block) ver.textContent = t.blocks_trade
+                    ? `oi_3m BLOCK: ${t.reason || t.direction}`
+                    : `oi_3m would block (log_only): ${t.direction || '—'}`;
+                else ver.textContent = 'oi_3m: not opposing touch';
+            }
+            if (grid && Array.isArray(ep.oi_3m_context_panel)) {
+                grid.innerHTML = ep.oi_3m_context_panel.map(r =>
+                    `<div><span style="color:#94a3b8;">${r.label}:</span> ${r.value}</div>`
+                ).join('');
+            } else if (grid) grid.innerHTML = '';
+        }
+
+        async function saveOi3mFeature() {
+            const stat = document.getElementById('oi3mSaveStatus');
+            const payload = {
+                enabled: document.getElementById('oi3mFeatureOn')?.checked === true,
+                gate: {
+                    enabled: document.getElementById('oi3mGateOn')?.checked === true,
+                    mode: document.getElementById('oi3mModeBlock')?.checked ? 'block' : 'log_only',
+                    window_min: 3,
+                    sig_min: 0.15,
+                    sig_extreme: 0.30,
+                },
+                context_panel: { enabled: document.getElementById('oi3mContextOn')?.checked === true },
+            };
+            try {
+                const res = await fetch('/api/scanner/oi_3m_feature', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok || d.ok === false) throw new Error(d.error || `HTTP ${res.status}`);
+                applyOi3mFeatureUI(d);
+                renderOi3mTelemetry(d);
+                if (stat) stat.textContent = 'Saved (separate from OI filters).';
+            } catch (e) {
+                if (stat) stat.textContent = 'Save failed: ' + (e.message || e);
+            }
+        }
+
+        async function loadOi3mFeature() {
+            try {
+                const res = await fetch('/api/scanner/oi_3m_feature');
+                const d = await res.json().catch(() => ({}));
+                if (res.ok && d.ok !== false) {
+                    applyOi3mFeatureUI(d);
+                    renderOi3mTelemetry({ oi_3m_line: d.oi_3m_line, oi_3m_context_panel: d.context_panel_rows, oi_3m_feature: d });
+                }
+            } catch (e) { console.debug('oi3m feature load', e); }
+        }
+
+        function wireOi3mFeatureControls() {
+            ['oi3mFeatureOn', 'oi3mGateOn', 'oi3mContextOn'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('change', saveOi3mFeature);
+            });
+            document.querySelectorAll('input[name="oi3mMode"]').forEach(el => el.addEventListener('change', saveOi3mFeature));
+        }
+
         async function loadBollingerGate() {
             try {
                 const res = await fetch('/api/scanner/gates');
@@ -5043,7 +5152,9 @@
         }
         loadBollingerGate();
         wireEma8PrototypeFilterRadios();
+        wireOi3mFeatureControls();
         loadEma8PrototypeFilters();
+        loadOi3mFeature();
 
         async function toggleScannerEngine() {
             try {

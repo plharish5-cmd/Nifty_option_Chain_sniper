@@ -715,6 +715,8 @@ def evaluate_ema8_prototype(
     tick_low: Optional[float] = None,
     now_hm: Optional[str] = None,
     board_reads: Optional[Dict[str, Dict[str, Any]]] = None,
+    oi_3m_read: Optional[Dict[str, Any]] = None,
+    oi_3m_feature: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Closed-bar cross/flip + optional intrabar touch on dynamic 8 EMA."""
     gate_meta = gate_meta or (lambda _k: {})
@@ -944,7 +946,19 @@ def evaluate_ema8_prototype(
         by = ", ".join(oi_detail.get("blocked_by") or []) or "oi_filters"
         hold = f"NO TRADE — 8600 OI filters ({by})"
 
-    oi_extra = {"oi_filters": oi_detail, "oi_would_block": oi_would_block}
+    from analyst.oi_3m_gate_8510 import load_oi_3m_feature_cfg, oi_3m_gate_decision
+
+    oi3_feat = oi_3m_feature if isinstance(oi_3m_feature, dict) else load_oi_3m_feature_cfg({})
+    oi3_block, oi3_detail = oi_3m_gate_decision(bullish, oi3_feat, oi_3m_read)
+    if touched and oi3_block and not hold:
+        hold = f"NO TRADE — {oi3_detail.get('reason') or 'oi_3m gate'}"
+
+    oi_extra = {
+        "oi_filters": oi_detail,
+        "oi_would_block": oi_would_block,
+        "oi_3m": oi3_detail,
+        "oi_3m_would_block": bool(oi3_detail.get("would_block")),
+    }
 
     if hold:
         st = _status(
@@ -1024,6 +1038,8 @@ def evaluate_ema8_prototype_intrabar(
     tick_low: Optional[float] = None,
     now_hm: Optional[str] = None,
     board_reads: Optional[Dict[str, Dict[str, Any]]] = None,
+    oi_3m_read: Optional[Dict[str, Any]] = None,
+    oi_3m_feature: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     if live_spot <= 0:
         return [], _status("SCANNING", phase="WAITING_FOR_CLOSE", cfg=cfg)
@@ -1042,6 +1058,8 @@ def evaluate_ema8_prototype_intrabar(
         tick_low=tick_low,
         now_hm=now_hm,
         board_reads=board_reads,
+        oi_3m_read=oi_3m_read,
+        oi_3m_feature=oi_3m_feature,
     )
 
 
@@ -1222,6 +1240,28 @@ def backtest_ema8_prototype_at_bar(
                             )
                             oi_block, _ = oi_switch_block(bullish, cfg, reads)
                             if oi_block and str(oi_cfg.get("mode") or "").lower() == "block":
+                                continue
+                        from analyst.oi_3m_gate_8510 import (
+                            compute_oi_3m_read,
+                            load_oi_3m_feature_cfg,
+                            oi_3m_gate_decision,
+                        )
+                        from analyst.oi_context_8510 import load_day_snapshots
+
+                        oi3_feat = load_oi_3m_feature_cfg(scanner_cfg or {})
+                        if oi3_feat.get("enabled") and (oi3_feat.get("gate") or {}).get("enabled"):
+                            db_paths = [market_db] if market_db else []
+                            bt_rows = load_day_snapshots(db_paths, day_key, asof_ts=tick_ts) if db_paths else []
+                            gcfg = oi3_feat.get("gate") or {}
+                            oi3_read = compute_oi_3m_read(
+                                bt_rows,
+                                float(spot),
+                                day=day_key,
+                                now_ts=tick_ts,
+                                gate_cfg=gcfg,
+                            )
+                            oi3_blk, _ = oi_3m_gate_decision(bullish, oi3_feat, oi3_read)
+                            if oi3_blk:
                                 continue
                         tick_hm = (
                             pd.to_datetime(tick_ts, unit="s", utc=True)

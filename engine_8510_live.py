@@ -904,6 +904,24 @@ async def api_ema8_proto_log_get(limit: int = 50):
     return JSONResponse(content={"ok": True, "log": backend.get_ema8_prototype_log(limit=limit)})
 
 
+@app.get("/api/scanner/oi_3m_feature")
+async def api_oi_3m_feature_get():
+    return JSONResponse(content=backend.get_oi_3m_feature_config())
+
+
+@app.post("/api/scanner/oi_3m_feature")
+async def api_oi_3m_feature_post(req: Request):
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    try:
+        return JSONResponse(content=backend.update_oi_3m_feature_config(data))
+    except Exception as exc:
+        log.exception("[OI_3M] feature update failed: %s", exc)
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(exc)})
+
+
 @app.post("/api/scanner/ema8_prototype/filters")
 async def api_ema8_proto_filters_post(req: Request):
     try:
