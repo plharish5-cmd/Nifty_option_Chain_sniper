@@ -108,4 +108,6 @@ def test_load_oi_filters_momentum_defaults():
     cfg = {"oi_filters": {"momentum": {"window_min": 15}}}
     oi = load_oi_filters_cfg(cfg)
     assert oi["momentum"]["window_min"] == 15
-    assert oi["momentum"]["deadzone_cr_per_min"] == 0.05
+    assert oi["momentum"]["sig_min"] == 0.15
+    assert oi["momentum"]["sig_extreme"] == 0.30
+    assert oi["momentum"]["require_cumd_confirm"] is False

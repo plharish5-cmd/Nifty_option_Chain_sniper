@@ -4941,7 +4941,7 @@
             const reads = tel.reads || {};
             const momIds = new Set(['writer_flow', 'total_oi', 'fresh_oi']);
             const momLabel = { writer_flow: 'Writer', total_oi: 'Total OI', fresh_oi: 'Fresh OI' };
-            const fmtCrpm = v => {
+            const fmtSig = v => {
                 const n = Number(v);
                 if (!Number.isFinite(n)) return '—';
                 return (n >= 0 ? '+' : '') + n.toFixed(2);
@@ -4953,9 +4953,12 @@
                 const age = src.age_sec;
                 const stale = d == null || age == null || (ep?.oi_filters?.max_age_sec != null && age > ep.oi_filters.max_age_sec);
                 let text = stale ? '— stale' : String(d);
-                if (!stale && momIds.has(id) && src.calls_crpm != null && src.puts_crpm != null) {
+                if (!stale && momIds.has(id) && src.S != null) {
                     const lab = momLabel[id] || id;
-                    text = `${lab}: calls ${fmtCrpm(src.calls_crpm)} · puts ${fmtCrpm(src.puts_crpm)} Cr/min → ${d}`;
+                    const b = src.B != null ? fmtSig(src.B) : '—';
+                    const cd = src.CumD_lakh != null ? fmtSig(src.CumD_lakh) + 'L' : '—';
+                    const str = src.strength && src.strength !== 'NEUTRAL' ? ` ${src.strength}` : '';
+                    text = `${lab}: S ${fmtSig(src.S)} · bias ${b} · CumD ${cd} → ${d}${str}`;
                 } else if (!stale && src.detail) {
                     span.title = String(src.detail).slice(0, 200);
                 }

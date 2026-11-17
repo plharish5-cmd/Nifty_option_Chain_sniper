@@ -40,9 +40,18 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 DEFAULT_MOMENTUM_CFG: Dict[str, Any] = {
     "window_min": 10,
-    "deadzone_cr_per_min": 0.05,
-    "crore_divisor": 1e7,
+    "sig_min": 0.15,
+    "sig_extreme": 0.30,
+    "require_cumd_confirm": False,
+    "deadzone_cr_per_min": 0.05,  # retired — ignored; kept for config back-compat
 }
+
+LAKH_DIVISOR = 1e5  # 1 lakh contracts; 1 crore = 100 lakh
+
+
+def _to_lakhs(oi_raw: float) -> float:
+    """Single unit conversion at the OI read boundary (spec: compute/display in lakhs)."""
+    return float(oi_raw) / LAKH_DIVISOR
 
 DEFAULT_CFG: Dict[str, Any] = {
     "band_pts": 1000.0,
@@ -152,39 +161,99 @@ def _chain_totals_full(chain: Dict[float, Dict[str, float]]) -> Tuple[float, flo
     return ce, pe
 
 
-def momentum_direction_from_crpm(calls_crpm: float, puts_crpm: float, *, deadzone: float) -> str:
-    """Divergence / convergence rule (owner spec 17 Nov 2026)."""
-    t = float(deadzone)
-    if puts_crpm > t and calls_crpm < -t:
-        return "CE"
-    if puts_crpm < -t and calls_crpm > t:
-        return "PE"
-    net = puts_crpm - calls_crpm
-    if net > t:
-        return "CE"
-    if net < -t:
-        return "PE"
-    return "NEUTRAL"
+def _snapshot_in_momentum_window(ts_sorted: List[int], last_t: int, w_min: int) -> Optional[int]:
+    """Closest snapshot to (last_t − window_min), only if it lies in [w±2] min band — no stale fallback."""
+    target = last_t - w_min * 60
+    lo = last_t - (w_min + 2) * 60
+    hi = last_t - (w_min - 2) * 60
+    candidates = [t for t in ts_sorted if lo <= t <= hi and t < last_t]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda t: abs(t - target))
+
+
+def momentum_direction_from_significance(
+    s: float,
+    *,
+    sig_min: float,
+    sig_extreme: float,
+) -> Tuple[str, str]:
+    """Gate on normalized significance S = dD/T (Option A). B is never used here."""
+    if s >= float(sig_extreme):
+        return "CE", "EXTREME"
+    if s >= float(sig_min):
+        return "CE", "STRONG"
+    if s <= -float(sig_extreme):
+        return "PE", "EXTREME"
+    if s <= -float(sig_min):
+        return "PE", "STRONG"
+    return "NEUTRAL", "NEUTRAL"
+
+
+def _apply_cumd_confirm(direction: str, strength: str, cumd: float, required: bool) -> Tuple[str, str]:
+    if not required or direction == "NEUTRAL":
+        return direction, strength
+    if direction == "CE" and cumd <= 0:
+        return "NEUTRAL", "NEUTRAL"
+    if direction == "PE" and cumd >= 0:
+        return "NEUTRAL", "NEUTRAL"
+    return direction, strength
+
+
+def _momentum_significance(
+    ce_t: float,
+    pe_t: float,
+    ce_prev: float,
+    pe_prev: float,
+    ce_open: float,
+    pe_open: float,
+) -> Optional[Dict[str, float]]:
+    c = _to_lakhs(ce_t)
+    p = _to_lakhs(pe_t)
+    t = p + c
+    if t <= 0:
+        return None
+    d = p - c
+    d_prev = _to_lakhs(pe_prev) - _to_lakhs(ce_prev)
+    dd = d - d_prev
+    s = dd / t
+    b = d / t
+    d_open = _to_lakhs(pe_open) - _to_lakhs(ce_open)
+    cumd = d - d_open
+    return {"C": c, "P": p, "T": t, "D": d, "S": s, "B": b, "CumD": cumd}
 
 
 def _momentum_item(
     *,
-    calls_crpm: float,
-    puts_crpm: float,
-    deadzone: float,
+    metrics: Dict[str, float],
+    sig_min: float,
+    sig_extreme: float,
+    require_cumd: bool,
     age_sec: int,
     label: str,
 ) -> Dict[str, Any]:
-    direction = momentum_direction_from_crpm(calls_crpm, puts_crpm, deadzone=deadzone)
+    s = float(metrics["S"])
+    b = float(metrics["B"])
+    cumd = float(metrics["CumD"])
+    c = float(metrics["C"])
+    p = float(metrics["P"])
+    direction, strength = momentum_direction_from_significance(s, sig_min=sig_min, sig_extreme=sig_extreme)
+    direction, strength = _apply_cumd_confirm(direction, strength, cumd, require_cumd)
     detail = (
-        f"{label}: calls {calls_crpm:+.2f} · puts {puts_crpm:+.2f} Cr/min → {direction}"
+        f"{label}: S {s:+.2f} · bias {b:+.2f} · CumD {cumd:+.0f}L "
+        f"(C {c:.0f} P {p:.0f}) → {direction}"
+        + (f" {strength}" if strength and strength != "NEUTRAL" else "")
     )
     return {
         "direction": direction,
+        "strength": strength,
         "detail": detail,
         "age_sec": age_sec,
-        "calls_crpm": round(calls_crpm, 3),
-        "puts_crpm": round(puts_crpm, 3),
+        "S": round(s, 4),
+        "B": round(b, 4),
+        "CumD_lakh": round(cumd, 2),
+        "C_lakh": round(c, 1),
+        "P_lakh": round(p, 1),
     }
 
 
@@ -200,26 +269,28 @@ def compute_momentum_oi_reads(
     age_sec: int,
     momentum_cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Cr/min momentum for total_oi, fresh_oi, writer_flow. Missing history → direction None (fail OPEN)."""
+    """Normalized S = dD/T momentum for total_oi, fresh_oi, writer_flow. Missing window → None (fail OPEN)."""
     cfg = dict(DEFAULT_MOMENTUM_CFG)
     if isinstance(momentum_cfg, dict):
         cfg.update({k: v for k, v in momentum_cfg.items() if not k.startswith("_")})
     w_min = max(1, int(cfg.get("window_min", 10)))
-    dead = float(cfg.get("deadzone_cr_per_min", 0.05))
-    div = float(cfg.get("crore_divisor", 1e7) or 1e7)
+    sig_min = float(cfg.get("sig_min", 0.15))
+    sig_extreme = float(cfg.get("sig_extreme", 0.30))
+    require_cumd = bool(cfg.get("require_cumd_confirm", False))
     miss = lambda why: {
         "direction": None,
         "detail": why,
         "age_sec": age_sec if age_sec >= 0 else None,
-        "calls_crpm": None,
-        "puts_crpm": None,
+        "S": None,
+        "B": None,
+        "CumD_lakh": None,
     }
-    prev_t = _snapshot_at(ts_sorted, last_t - w_min * 60)
-    if prev_t is None or prev_t >= last_t:
+    prev_t = _snapshot_in_momentum_window(ts_sorted, last_t, w_min)
+    if prev_t is None:
         return {
-            "total_oi": miss(f"need {w_min} min of snapshots for momentum"),
-            "fresh_oi": miss(f"need {w_min} min of snapshots for momentum"),
-            "writer_flow": miss(f"need {w_min} min of snapshots for momentum"),
+            "total_oi": miss(f"no snapshot in {w_min}±2 min window for momentum"),
+            "fresh_oi": miss(f"no snapshot in {w_min}±2 min window for momentum"),
+            "writer_flow": miss(f"no snapshot in {w_min}±2 min window for momentum"),
         }
     base_t = _snapshot_at(ts_sorted, _hm_ts(day, "09:15"), at_or_before=True)
     if base_t is None or base_t >= last_t:
@@ -230,32 +301,41 @@ def compute_momentum_oi_reads(
         }
     ce_l, pe_l = _chain_totals_full(by_ts[last_t])
     ce_p, pe_p = _chain_totals_full(by_ts[prev_t])
-    w_actual = max(1.0, (last_t - prev_t) / 60.0)
-    call_crpm_total = (ce_l - ce_p) / w_actual / div
-    put_crpm_total = (pe_l - pe_p) / w_actual / div
+    ce_b, pe_b = _chain_totals_full(by_ts[base_t])
+    total_m = _momentum_significance(ce_l, pe_l, ce_p, pe_p, ce_b, pe_b)
+    if total_m is None:
+        return {
+            "total_oi": miss("zero total OI — cannot normalize"),
+            "fresh_oi": miss("zero total OI — cannot normalize"),
+            "writer_flow": miss("zero total OI — cannot normalize"),
+        }
     total = _momentum_item(
-        calls_crpm=call_crpm_total,
-        puts_crpm=put_crpm_total,
-        deadzone=dead,
+        metrics=total_m,
+        sig_min=sig_min,
+        sig_extreme=sig_extreme,
+        require_cumd=require_cumd,
         age_sec=age_sec,
         label="Total OI",
     )
-    ce_b, pe_b = _chain_totals_full(by_ts[base_t])
     call_f_l = ce_l - ce_b
     put_f_l = pe_l - pe_b
     call_f_p = ce_p - ce_b
     put_f_p = pe_p - pe_b
-    call_crpm_fresh = (call_f_l - call_f_p) / w_actual / div
-    put_crpm_fresh = (put_f_l - put_f_p) / w_actual / div
-    fresh = _momentum_item(
-        calls_crpm=call_crpm_fresh,
-        puts_crpm=put_crpm_fresh,
-        deadzone=dead,
-        age_sec=age_sec,
-        label="OI chg since 09:15",
-    )
+    fresh_m = _momentum_significance(call_f_l, put_f_l, call_f_p, put_f_p, 0.0, 0.0)
+    if fresh_m is None:
+        fresh = miss("zero fresh OI components")
+    else:
+        fresh = _momentum_item(
+            metrics=fresh_m,
+            sig_min=sig_min,
+            sig_extreme=sig_extreme,
+            require_cumd=require_cumd,
+            age_sec=age_sec,
+            label="OI chg since 09:15",
+        )
     writer = dict(fresh)
-    writer["detail"] = writer["detail"].replace("OI chg since 09:15", "Writer flow")
+    if writer.get("detail"):
+        writer["detail"] = str(writer["detail"]).replace("OI chg since 09:15", "Writer flow")
     return {"total_oi": total, "fresh_oi": fresh, "writer_flow": writer}
 
 

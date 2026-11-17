@@ -74,7 +74,9 @@ DEFAULT_CFG: Dict[str, Any] = {
         },
         "momentum": {
             "window_min": 10,
-            "deadzone_cr_per_min": 0.05,
+            "sig_min": 0.15,
+            "sig_extreme": 0.30,
+            "require_cumd_confirm": False,
         },
     },
 }

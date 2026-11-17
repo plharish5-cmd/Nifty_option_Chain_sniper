@@ -13,7 +13,23 @@ Trunk: **`integrate/v1.9`**
 | `chatgpt/v1.9.4d` | ChatGPT | done, tag `post-chatgpt-v1.9.4d-final` | **NO — awaiting Harish** |
 | `claude/v1.9.4-safety-lock` | Claude | **BROKEN, `2d116b7` — DELETE** | never merge |
 | `agy/ema8-proto-corrections` | Antigravity | **done, `b1d23ca`**, tag `post-agy-ema8-proto-corrections` | **NO — awaiting Harish** |
-| `gemini/v2.0.24-proto-oi-filters` | Gemini/Cursor | **done, `41fd6be`** tags `pre/post-gemini-v2.0.24` | **NO — awaiting Harish** |
+| `gemini/v2.0.24-proto-oi-filters` | Gemini/Cursor | **done, `41fd6be` + momentum v2** (see block) tags `pre/post-gemini-v2.0.24` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-17 (late) · Gemini/Cursor · `gemini/v2.0.24-proto-oi-filters` — OI momentum v2 (S = dD/T)
+
+**Goal:** Replace raw Cr/min direction with scale-free **Significance** `S = dD/T` (Option A, no per-minute division). Gate on **S only**; **B** (level bias) and cockpit display only; optional `require_cumd_confirm` (default off). Window snapshot must fall in `window_min±2` min band or direction `None` (fail OPEN). Units: `_to_lakhs()` at read boundary.
+
+**Files:** `analyst/chain_reads_8510.py` (core math), `proto_oi_filters_8510.py`, `ema8_prototype_8510.py`, `scripts/patch_add_oi_filters_8510.py`, `Algorithmic_Trading_Workspace_8510.html`, `analyst/test_oi_momentum_8510.py` (10 tests), `test_proto_oi_filters_8510.py` defaults.
+
+**Config `oi_filters.momentum`:** `{ "window_min": 10, "sig_min": 0.15, "sig_extreme": 0.30, "require_cumd_confirm": false }` — `deadzone_cr_per_min` retired/ignored.
+
+**Verify:** `verify_locks.py` 11/11; `pytest analyst/test_oi_momentum_8510.py` 10/10; `test_proto_oi_filters_8510.py` 11/11.
+
+**Not verified:** full analyst suite diff this session; live cockpit vs 8600; browser persist.
+
+---
 
 ---
 

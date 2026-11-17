@@ -36,7 +36,9 @@ DEFAULT_OI_FILTERS: Dict[str, Any] = {
     },
     "momentum": {
         "window_min": 10,
-        "deadzone_cr_per_min": 0.05,
+        "sig_min": 0.15,
+        "sig_extreme": 0.30,
+        "require_cumd_confirm": False,
     },
 }
 
@@ -76,8 +78,14 @@ def load_oi_filters_cfg(proto_cfg: Dict[str, Any]) -> Dict[str, Any]:
         m = dict(out.get("momentum") or DEFAULT_OI_FILTERS["momentum"])
         if "window_min" in mom:
             m["window_min"] = int(mom["window_min"])
+        if "sig_min" in mom:
+            m["sig_min"] = float(mom["sig_min"])
+        if "sig_extreme" in mom:
+            m["sig_extreme"] = float(mom["sig_extreme"])
+        if "require_cumd_confirm" in mom:
+            m["require_cumd_confirm"] = bool(mom["require_cumd_confirm"])
         if "deadzone_cr_per_min" in mom:
-            m["deadzone_cr_per_min"] = float(mom["deadzone_cr_per_min"])
+            pass  # retired — ignored
         out["momentum"] = m
     return out
 
@@ -93,10 +101,9 @@ def board_reads_from_board(board: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             "age_sec": s.get("age_sec"),
             "detail": str(s.get("detail") or "")[:160],
         }
-        if s.get("calls_crpm") is not None:
-            item["calls_crpm"] = s.get("calls_crpm")
-        if s.get("puts_crpm") is not None:
-            item["puts_crpm"] = s.get("puts_crpm")
+        for key in ("S", "B", "CumD_lakh", "strength"):
+            if s.get(key) is not None:
+                item[key] = s.get(key)
         out[rid] = item
     return out
 
