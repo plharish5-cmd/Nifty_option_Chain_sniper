@@ -13,6 +13,30 @@ Trunk: **`integrate/v1.9`**
 | `chatgpt/v1.9.4d` | ChatGPT | done, tag `post-chatgpt-v1.9.4d-final` | **NO — awaiting Harish** |
 | `claude/v1.9.4-safety-lock` | Claude | **BROKEN, `2d116b7` — DELETE** | never merge |
 | `agy/ema8-proto-corrections` | Antigravity | **done, `b1d23ca`**, tag `post-agy-ema8-proto-corrections` | **NO — awaiting Harish** |
+| `gemini/v2.0.24-proto-oi-filters` | Gemini/Cursor | **done (commit pending push)** | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-17 · Gemini/Cursor · `gemini/v2.0.24-proto-oi-filters`
+
+**Goal:** Five independent ON/OFF switches (`writer_flow`, `price_oi`, `total_oi`, `fresh_oi`, `volume_oi`) gate 8 EMA Prototype entries via 8600 board directions. Defaults: all OFF, `mode: log_only`, `rule: all_agree`, stale/missing fail OPEN.
+
+**Files**
+- `analyst/proto_oi_filters_8510.py` — `oi_switch_block`, backtest read helper
+- `analyst/ema8_prototype_8510.py` — wired at touch; `DEFAULT_CFG.oi_filters`
+- `analyst/terminal8510_backend.py` — board reads into intrabar/closed eval; telemetry; filter API
+- `analyst/backtest_lab_8510.py` — optional `spec.oi_filters` on private config
+- `Algorithmic_Trading_Workspace_8510.html` — Prototype “8600 OI Filters” cockpit
+- `scripts/patch_add_oi_filters_8510.py` — narrow config patch (backs up first)
+- `analyst/test_proto_oi_filters_8510.py` — unit tests (10 passed)
+
+**Defaults:** `mode=log_only`, `rule=all_agree`, all switches OFF, `neutral_blocks=false`, stale/None fail OPEN.
+
+**Verify:** `scripts/verify_locks.py` (11/11); `pytest analyst/test_proto_oi_filters_8510.py` (10); full `pytest analyst` **818 passed / 34 failed / 42 errors** (17 Nov ~20:42 IST) — compare to handover §6 baseline; no new failures attributed to this feature.
+
+**Ops:** `python3 scripts/patch_add_oi_filters_8510.py` then restart 8510 + hard-refresh.
+
+**Not verified here:** live 8600 bridge, browser click-through (toggles persist / 0 console errors).
 
 ---
 

@@ -1163,6 +1163,27 @@
                                 </label>
                                 <span style="color:#64748b;">(with "EMA separation ON" above: keeps re-entering only while 4 and 8 stay apart on the trade's side)</span>
                             </div>
+                            <div style="font-weight:700; color:#a78bfa; margin:10px 0 6px;">8600 OI Filters (optional)</div>
+                            <div style="display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin-bottom:6px;">
+                                <span style="color:#cbd5e1;">Mode:</span>
+                                <label><input type="radio" name="protoOiMode" id="protoOiModeLog" value="log_only" checked> Log only</label>
+                                <label><input type="radio" name="protoOiMode" id="protoOiModeBlock" value="block"> Block</label>
+                                <span style="color:#64748b;">| Rule:</span>
+                                <select id="protoOiRule" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;font-size:10px;">
+                                    <option value="all_agree">All agree (strict)</option>
+                                    <option value="any_agrees">Any agrees</option>
+                                    <option value="majority">Majority</option>
+                                </select>
+                                <label style="margin-left:6px;"><input type="checkbox" id="protoOiNeutralBlock"> Neutral blocks</label>
+                            </div>
+                            <div id="protoOiSwitchGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:6px 10px; font-size:10px;">
+                                <label><input type="checkbox" class="proto-oi-sw" data-id="writer_flow"> Classic Writer Flow <span class="proto-oi-dir" data-id="writer_flow">—</span></label>
+                                <label><input type="checkbox" class="proto-oi-sw" data-id="price_oi"> Price vs OI (15m ATM) <span class="proto-oi-dir" data-id="price_oi">—</span></label>
+                                <label><input type="checkbox" class="proto-oi-sw" data-id="total_oi"> Cumulative Total OI <span class="proto-oi-dir" data-id="total_oi">—</span></label>
+                                <label><input type="checkbox" class="proto-oi-sw" data-id="fresh_oi"> Fresh Change in OI <span class="proto-oi-dir" data-id="fresh_oi">—</span></label>
+                                <label><input type="checkbox" class="proto-oi-sw" data-id="volume_oi"> Volume-backed OI <span class="proto-oi-dir" data-id="volume_oi">—</span></label>
+                            </div>
+                            <div id="protoOiBlockLine" style="margin-top:6px; color:#94a3b8; font-size:10px;">OI filter verdict: —</div>
                             <div style="margin-top:6px; color:#94a3b8;" id="protoFilterSaveStatus">—</div>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
@@ -3826,6 +3847,7 @@
                                 pb.className = isPaused ? "strat-money-badge paper-only" : (live ? "strat-money-badge live-eligible" : "strat-money-badge paper-only");
                             }
                             applyEma8ProtoFilterUI(ep);
+                            renderProtoOiFilters(ep, data.desk8600_board);
                         }
                         renderProtoView(sc.ema8_prototype_view);
                         const protoLog = document.getElementById("ema8PrototypeLogBody");
@@ -4819,6 +4841,31 @@
             setRadio('slow_market_exact_line', 'protoSlowOn', 'protoSlowOff', v => !!v);
             setRadio('reentry_same_side', 'protoReProfitOn', 'protoReProfitOff', v => v !== false);
             setRadio('reentry_after_stop_loss', 'protoReSlOn', 'protoReSlOff', v => !!v);
+            const oi = cfg.oi_filters;
+            if (oi && typeof oi === 'object') {
+                if ('mode' in oi) {
+                    const log = document.getElementById('protoOiModeLog');
+                    const blk = document.getElementById('protoOiModeBlock');
+                    if (log && blk) {
+                        const m = String(oi.mode || 'log_only').toLowerCase();
+                        log.checked = m !== 'block';
+                        blk.checked = m === 'block';
+                    }
+                }
+                if ('rule' in oi) {
+                    const sel = document.getElementById('protoOiRule');
+                    if (sel) sel.value = String(oi.rule || 'all_agree');
+                }
+                if ('neutral_blocks' in oi) {
+                    const nb = document.getElementById('protoOiNeutralBlock');
+                    if (nb) nb.checked = !!oi.neutral_blocks;
+                }
+                const sw = oi.switches || {};
+                document.querySelectorAll('.proto-oi-sw').forEach(el => {
+                    const id = el.getAttribute('data-id');
+                    if (id && id in sw) el.checked = !!sw[id];
+                });
+            }
             const rp = document.getElementById('protoRibbonPts');
             if (rp && cfg.ribbon_max_pts != null) rp.textContent = Number(cfg.ribbon_max_pts).toFixed(1);
             const sl = document.getElementById('protoStLen');
@@ -4858,13 +4905,65 @@
                     slow_market_exact_line: document.getElementById('protoSlowOn')?.checked === true,
                     reentry_same_side: document.getElementById('protoReProfitOn')?.checked === true,
                     reentry_after_stop_loss: document.getElementById('protoReSlOn')?.checked === true,
+                    oi_filters: {
+                        mode: document.getElementById('protoOiModeBlock')?.checked ? 'block' : 'log_only',
+                        rule: document.getElementById('protoOiRule')?.value || 'all_agree',
+                        neutral_blocks: document.getElementById('protoOiNeutralBlock')?.checked === true,
+                        switches: {
+                            writer_flow: document.querySelector('.proto-oi-sw[data-id="writer_flow"]')?.checked === true,
+                            price_oi: document.querySelector('.proto-oi-sw[data-id="price_oi"]')?.checked === true,
+                            total_oi: document.querySelector('.proto-oi-sw[data-id="total_oi"]')?.checked === true,
+                            fresh_oi: document.querySelector('.proto-oi-sw[data-id="fresh_oi"]')?.checked === true,
+                            volume_oi: document.querySelector('.proto-oi-sw[data-id="volume_oi"]')?.checked === true,
+                        },
+                    },
                 };
                 saveEma8PrototypeFilters(payload).catch(() => {});
             };
-            ['protoEnabledOn', 'protoEnabledOff', 'protoExecLive', 'protoExecPaper', 'protoRibbonOff', 'protoRibbonOn', 'protoEmaSepOff', 'protoEmaSepOn', 'protoStOff', 'protoStOn', 'protoAwayOff', 'protoAwayOn', 'protoSlowOff', 'protoSlowOn', 'protoReProfitOn', 'protoReProfitOff', 'protoReSlOff', 'protoReSlOn'].forEach(id => {
+            ['protoEnabledOn', 'protoEnabledOff', 'protoExecLive', 'protoExecPaper', 'protoRibbonOff', 'protoRibbonOn', 'protoEmaSepOff', 'protoEmaSepOn', 'protoStOff', 'protoStOn', 'protoAwayOff', 'protoAwayOn', 'protoSlowOff', 'protoSlowOn', 'protoReProfitOn', 'protoReProfitOff', 'protoReSlOff', 'protoReSlOn', 'protoOiModeLog', 'protoOiModeBlock', 'protoOiRule', 'protoOiNeutralBlock'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('change', post);
             });
+            document.querySelectorAll('.proto-oi-sw').forEach(el => el.addEventListener('change', post));
+        }
+
+        function renderProtoOiFilters(ep, board) {
+            const color = d => {
+                const u = String(d || '').toUpperCase();
+                if (u === 'CE') return '#22c55e';
+                if (u === 'PE') return '#ef4444';
+                if (u === 'NEUTRAL') return '#94a3b8';
+                return '#64748b';
+            };
+            const byId = {};
+            (board?.sources || []).forEach(s => { if (s?.id) byId[s.id] = s; });
+            const tel = ep?.oi_filter_telemetry || {};
+            const reads = tel.reads || {};
+            document.querySelectorAll('.proto-oi-dir').forEach(span => {
+                const id = span.getAttribute('data-id');
+                const src = byId[id] || reads[id] || {};
+                const d = src.direction;
+                const age = src.age_sec;
+                const stale = d == null || age == null || (ep?.oi_filters?.max_age_sec != null && age > ep.oi_filters.max_age_sec);
+                span.textContent = stale ? '— stale' : String(d);
+                span.style.color = stale ? '#64748b' : color(d);
+                if (!stale && age != null) span.title = `${age}s old`;
+            });
+            const line = document.getElementById('protoOiBlockLine');
+            if (!line) return;
+            const arm = String(ep?.direction || '').toUpperCase();
+            const side = arm === 'LONG' ? 'CE' : (arm === 'SHORT' ? 'PE' : '—');
+            if (tel.would_block) {
+                const by = (tel.blocked_by || []).join(', ') || 'oi';
+                line.textContent = `Right now this armed ${side} setup WOULD be blocked by: ${by}`;
+                line.style.color = '#fbbf24';
+            } else if (arm) {
+                line.textContent = `Right now this armed ${side} setup is not blocked by OI filters`;
+                line.style.color = '#94a3b8';
+            } else {
+                line.textContent = 'OI filter verdict: not armed';
+                line.style.color = '#64748b';
+            }
         }
 
         async function loadEma8PrototypeFilters() {

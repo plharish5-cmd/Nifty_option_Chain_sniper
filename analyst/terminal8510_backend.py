@@ -4749,6 +4749,10 @@ class QuantTerminalBackend:
                 tick_low = min(float(tick_low or spot), seen_lo)
                 session_day = datetime.now(IST).strftime("%Y-%m-%d")
                 self._sync_open_ema8_prototype_position()
+                from analyst.proto_oi_filters_8510 import board_reads_from_board
+
+                board = await asyncio.to_thread(self.desk8600_board)
+                board_reads = board_reads_from_board(board)
                 sigs, st = await asyncio.to_thread(
                     evaluate_ema8_prototype_intrabar,
                     b15,
@@ -4762,6 +4766,7 @@ class QuantTerminalBackend:
                     tick_high=tick_high,
                     tick_low=tick_low,
                     now_hm=datetime.now(IST).strftime("%H:%M"),
+                    board_reads=board_reads,
                 )
                 prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})
                 prev_proto.update(st)
@@ -4770,6 +4775,7 @@ class QuantTerminalBackend:
                 # compared, the touch band, and when. Display only.
                 try:
                     from analyst.ema8_prototype_8510 import get_effective_touch_tolerance
+                    oi_extra = (st.get("extra") or {}).get("oi_filters") if isinstance(st.get("extra"), dict) else {}
                     self._ema8_proto_last_check = {
                         "e8": st.get("dynamic_e8"), "spot": round(float(spot), 2),
                         "tick_high": round(float(tick_high), 2), "tick_low": round(float(tick_low), 2),
@@ -4779,6 +4785,8 @@ class QuantTerminalBackend:
                         "direction": ((self._ema8_prototype_state.get("arm") or {}).get("direction") or ""),
                         "away_seen": bool((self._ema8_prototype_state.get("arm") or {}).get("away_seen")),
                         "verdict": str(st.get("block_reason") or st.get("phase") or ""),
+                        "oi_filters": oi_extra or {},
+                        "board_reads": board_reads,
                     }
                 except Exception:
                     pass
@@ -5483,6 +5491,32 @@ class QuantTerminalBackend:
         except Exception as exc:
             return {"armed": False, "error": type(exc).__name__}
 
+    def _enrich_proto_oi_telemetry(self, row: Dict[str, Any]) -> None:
+        """Attach live 8600 read directions + would-block for the armed side. Never raises."""
+        try:
+            from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
+            from analyst.proto_oi_filters_8510 import board_reads_from_board, oi_switch_block
+
+            cfg = load_ema8_prototype_cfg(self.scanner_cfg)
+            reads = board_reads_from_board(self.desk8600_board())
+            arm = (getattr(self, "_ema8_prototype_state", None) or {}).get("arm") or {}
+            direc = str(arm.get("direction") or "").upper()
+            if direc == "LONG":
+                would_block, detail = oi_switch_block(True, cfg, reads)
+            elif direc == "SHORT":
+                would_block, detail = oi_switch_block(False, cfg, reads)
+            else:
+                would_block, detail = False, {"reads": reads, "would_block": False}
+            row["oi_filter_telemetry"] = {
+                "would_block": would_block,
+                "blocked_by": detail.get("blocked_by") or [],
+                "reads": detail.get("reads") or reads,
+                "rule": detail.get("rule"),
+                "mode": detail.get("mode"),
+            }
+        except Exception as exc:
+            row["oi_filter_telemetry"] = {"error": type(exc).__name__}
+
     def _ema8_prototype_view(self) -> Dict[str, Any]:
         """Plain-language position of the Prototype in its sequence (display only). Never raises."""
         try:
@@ -5517,6 +5551,8 @@ class QuantTerminalBackend:
         row["slow_market_exact_line"] = bool(cfg.get("slow_market_exact_line", False))
         row["reentry_same_side"] = bool(cfg.get("reentry_same_side", True))
         row["reentry_after_stop_loss"] = bool(cfg.get("reentry_after_stop_loss", False))
+        row["oi_filters"] = dict(cfg.get("oi_filters") or {})
+        self._enrich_proto_oi_telemetry(row)
         if not row["enabled"]:
             row["state"] = "PAUSED"
             row["phase"] = "DISABLED"
@@ -5799,6 +5835,7 @@ class QuantTerminalBackend:
             "reentry_after_stop_loss": bool(c.get("reentry_after_stop_loss", False)),
             "touch_tol_pts": float(c.get("touch_tol_pts", 3.0)),
             "touch_tol_slow_pts": float(c.get("touch_tol_slow_pts", 0.0)),
+            "oi_filters": dict(c.get("oi_filters") or {}),
         }
 
     def update_ema8_prototype_filter_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -5817,6 +5854,7 @@ class QuantTerminalBackend:
             "reentry_after_stop_loss",
             "touch_tol_pts",
             "touch_tol_slow_pts",
+            "oi_filters",
         }
         block = self.scanner_cfg.setdefault("ema8_prototype", {})
         if not isinstance(block, dict):
@@ -5842,6 +5880,22 @@ class QuantTerminalBackend:
                 block[k] = float(v)
             elif k == "supertrend_length":
                 block[k] = int(v)
+            elif k == "oi_filters" and isinstance(v, dict):
+                cur_oi = block.get("oi_filters") if isinstance(block.get("oi_filters"), dict) else {}
+                merged = dict(cur_oi)
+                for ok, ov in v.items():
+                    if ok == "switches" and isinstance(ov, dict):
+                        sw = dict(merged.get("switches") or {})
+                        for sid, on in ov.items():
+                            sw[sid] = on is True or str(on).lower() in ("true", "1", "on", "yes")
+                        merged["switches"] = sw
+                    elif ok in ("mode", "rule"):
+                        merged[ok] = str(ov).lower()
+                    elif ok == "neutral_blocks":
+                        merged[ok] = ov is True or str(ov).lower() in ("true", "1", "on", "yes")
+                    elif ok == "max_age_sec":
+                        merged[ok] = float(ov)
+                block["oi_filters"] = merged
             else:
                 block[k] = v
         self.cfg["scanner"] = self.scanner_cfg
@@ -6006,6 +6060,9 @@ class QuantTerminalBackend:
             pass
         elif bool(proto_cfg.get("enabled", True)):
             self._sync_open_ema8_prototype_position()
+            from analyst.proto_oi_filters_8510 import board_reads_from_board
+
+            _brd = board_reads_from_board(self.desk8600_board())
             proto_sigs, proto_st = evaluate_ema8_prototype(
                 b15,
                 bar_ci=bar_ci,
@@ -6014,6 +6071,7 @@ class QuantTerminalBackend:
                 session_day=session_day,
                 bb_gate_active=False,
                 gate_meta=self._gate_meta_for_signal,
+                board_reads=_brd,
             )
             signals.extend(proto_sigs)
             prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})
@@ -10140,6 +10198,7 @@ class QuantTerminalBackend:
                                 bb_gate_active=False,
                                 b15_df=df_15m,
                                 day_1m=day_to_1m.get(day_key),
+                                market_db=self.market_db,
                             )
                         if want_flagship:
                             cand_signals += self._backtest_flagship_signals_at_bar(df_all, int(b["ts"]), c_p)
@@ -10337,6 +10396,7 @@ class QuantTerminalBackend:
                                 "dynamic_8ema_entry": meta.get("dynamic_e8_at_entry") or meta.get("e8"),
                                 "Dynamic_8EMA_Entry": f"{float(meta.get('dynamic_e8_at_entry') or meta.get('e8') or 0.0):.2f}" if fixed_walk else "—",
                                 "is_ambiguous": is_ambiguous if fixed_walk else False,
+                                "cross_bar_open_ts": int(meta.get("cross_bar_open_ts") or 0) if is_proto else 0,
                                 "strategy_id": sid,
                                 "source": "SYNTHESIZED",
                                 "BB_Gate": meta.get("bb_gate_label", gate_bb),

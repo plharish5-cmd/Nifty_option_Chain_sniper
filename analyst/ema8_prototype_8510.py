@@ -60,6 +60,19 @@ DEFAULT_CFG: Dict[str, Any] = {
     # No new entry from the desk's square-off time: a trade opened then would
     # be closed by the 15:20 rule on the next pass.
     "no_entry_from_hm": "15:20",
+    "oi_filters": {
+        "mode": "log_only",
+        "rule": "all_agree",
+        "neutral_blocks": False,
+        "max_age_sec": 420.0,
+        "switches": {
+            "writer_flow": False,
+            "price_oi": False,
+            "total_oi": False,
+            "fresh_oi": False,
+            "volume_oi": False,
+        },
+    },
 }
 
 
@@ -71,10 +84,19 @@ def get_effective_touch_tolerance(cfg: Dict[str, Any]) -> float:
 
 
 def load_ema8_prototype_cfg(scanner_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    from analyst.proto_oi_filters_8510 import DEFAULT_OI_FILTERS, load_oi_filters_cfg
+
     out = dict(DEFAULT_CFG)
     block = scanner_cfg.get("ema8_prototype")
     if isinstance(block, dict):
-        out.update(block)
+        out.update({k: v for k, v in block.items() if k != "oi_filters"})
+        if isinstance(block.get("oi_filters"), dict):
+            merged = dict(DEFAULT_OI_FILTERS)
+            merged.update(block["oi_filters"])
+            if isinstance(block["oi_filters"].get("switches"), dict):
+                merged["switches"] = {**DEFAULT_OI_FILTERS["switches"], **block["oi_filters"]["switches"]}
+            out["oi_filters"] = merged
+    out["oi_filters"] = load_oi_filters_cfg(out)
     return out
 
 
@@ -686,6 +708,7 @@ def evaluate_ema8_prototype(
     tick_high: Optional[float] = None,
     tick_low: Optional[float] = None,
     now_hm: Optional[str] = None,
+    board_reads: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Closed-bar cross/flip + optional intrabar touch on dynamic 8 EMA."""
     gate_meta = gate_meta or (lambda _k: {})
@@ -905,6 +928,18 @@ def evaluate_ema8_prototype(
         hold = f"NO TRADE — No entry before {no_before}"
     elif touched and _oi_filter_blocks(bullish, cfg, proto_state):
         hold = "NO TRADE — OI direction filter"
+
+    from analyst.proto_oi_filters_8510 import load_oi_filters_cfg, oi_switch_block
+
+    oi_cfg = load_oi_filters_cfg(cfg)
+    oi_would_block, oi_detail = oi_switch_block(bullish, cfg, board_reads or {})
+    oi_mode = str(oi_cfg.get("mode") or "log_only").lower()
+    if touched and oi_would_block and oi_mode == "block" and not hold:
+        by = ", ".join(oi_detail.get("blocked_by") or []) or "oi_filters"
+        hold = f"NO TRADE — 8600 OI filters ({by})"
+
+    oi_extra = {"oi_filters": oi_detail, "oi_would_block": oi_would_block}
+
     if hold:
         st = _status(
             "ARMED",
@@ -913,23 +948,25 @@ def evaluate_ema8_prototype(
             direction=direction,
             block_reason=hold,
             cfg=cfg,
-            extra={"dynamic_e8": round(e8_val, 2)},
+            extra={"dynamic_e8": round(e8_val, 2), **oi_extra},
         )
         st["actions"] = actions
         return [], st
 
     if touched:
-        signals.append(
-            _build_signal(
-                bullish=bullish,
-                cfg=cfg,
-                index_price=real_spot,
-                e8_val=e8_val,
-                cross_bar_open_ts=cross_bar_open_ts,
-                intrabar=intrabar,
-                gate_meta=gate_meta,
-            )
+        sig = _build_signal(
+            bullish=bullish,
+            cfg=cfg,
+            index_price=real_spot,
+            e8_val=e8_val,
+            cross_bar_open_ts=cross_bar_open_ts,
+            intrabar=intrabar,
+            gate_meta=gate_meta,
         )
+        if oi_would_block:
+            sig["oi_filter_would_block"] = True
+            sig["oi_filter_detail"] = oi_detail
+        signals.append(sig)
         _after_entry(proto_state, cfg, direction, cross_bar_open_ts)
         proto_state.pop("last_flip", None)
         proto_state.pop("last_exit_reason", None)
@@ -940,6 +977,7 @@ def evaluate_ema8_prototype(
             armed=True,
             direction=direction,
             cfg=cfg,
+            extra=oi_extra,
         )
         st["actions"] = actions
         return signals, st
@@ -979,6 +1017,7 @@ def evaluate_ema8_prototype_intrabar(
     tick_high: Optional[float] = None,
     tick_low: Optional[float] = None,
     now_hm: Optional[str] = None,
+    board_reads: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     if live_spot <= 0:
         return [], _status("SCANNING", phase="WAITING_FOR_CLOSE", cfg=cfg)
@@ -996,6 +1035,7 @@ def evaluate_ema8_prototype_intrabar(
         tick_high=tick_high,
         tick_low=tick_low,
         now_hm=now_hm,
+        board_reads=board_reads,
     )
 
 
@@ -1035,6 +1075,7 @@ def backtest_ema8_prototype_at_bar(
     bb_gate_active: bool = True,
     b15_df: Optional[pd.DataFrame] = None,
     day_1m: Optional[pd.DataFrame] = None,
+    market_db: Any = None,
 ) -> List[Tuple[str, str, str, float, float, Dict[str, Any]]]:
     """Historical step — 15m close cross + 30s retouch (ribbon / separation / SuperTrend on forming bar)."""
     cfg = load_ema8_prototype_cfg(scanner_cfg)
@@ -1159,6 +1200,23 @@ def backtest_ema8_prototype_at_bar(
                         candle_low=fl,
                         away_pts=away_pts,
                     ):
+                        from analyst.proto_oi_filters_8510 import (
+                            backtest_board_reads_at,
+                            load_oi_filters_cfg,
+                            oi_switch_block,
+                        )
+
+                        oi_cfg = load_oi_filters_cfg(cfg)
+                        if any((oi_cfg.get("switches") or {}).values()):
+                            reads, _cov = backtest_board_reads_at(
+                                day=day_key,
+                                asof_ts=tick_ts,
+                                market_db=market_db,
+                                scanner_cfg=scanner_cfg,
+                            )
+                            oi_block, _ = oi_switch_block(bullish, cfg, reads)
+                            if oi_block and str(oi_cfg.get("mode") or "").lower() == "block":
+                                continue
                         tick_hm = (
                             pd.to_datetime(tick_ts, unit="s", utc=True)
                             .tz_convert("Asia/Kolkata")

@@ -90,6 +90,7 @@ DEFAULT_SPEC: Dict[str, Any] = {
     "holdout_frac": 0.30,
     "min_holdout_trades": 30,
     "pass_t_stat": 2.0,
+    "oi_filters": None,
 }
 
 
@@ -446,8 +447,11 @@ def clean_spec(raw: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("Cost per trade must be between 0 and 50 points.")
     if not (0.0 <= hold <= 0.8):
         raise ValueError("Hold-out must be between 0% and 80% of the days.")
+    oi_filters = raw.get("oi_filters")
+    if oi_filters is not None and not isinstance(oi_filters, dict):
+        raise ValueError("oi_filters must be an object when set.")
     spec.update({"from": f, "to": t, "lanes": [l for l in LANE_IDS if l in lanes], "cost_pts": cost, "holdout_frac": hold,
-                 "label": str(raw.get("label") or "")[:80]})
+                 "label": str(raw.get("label") or "")[:80], "oi_filters": oi_filters})
     return spec
 
 
@@ -558,7 +562,7 @@ def job_day(job_id: str, day: str, market_db: Path, jobs_dir: Path = JOBS_DIR) -
 
 
 # ── the worker ───────────────────────────────────────────────────────────────
-def _private_backend(tmp: Path):
+def _private_backend(tmp: Path, proto_overrides: Optional[Dict[str, Any]] = None):
     """A backend object of this process's own: private config copy, throw-away ledger."""
     from analyst.terminal8510_backend import QuantTerminalBackend
 
@@ -567,6 +571,15 @@ def _private_backend(tmp: Path):
     market = Path(str(cfg.get("market_db_path") or ""))
     cfg["market_db_path"] = str(market if market.is_absolute() else (ROOT / market))
     cfg["ledger_db_path"] = str(tmp / "ledger.sqlite3")
+    if proto_overrides:
+        block = cfg.setdefault("scanner", {}).setdefault("ema8_prototype", {})
+        if isinstance(proto_overrides.get("oi_filters"), dict):
+            cur = block.get("oi_filters") if isinstance(block.get("oi_filters"), dict) else {}
+            merged = dict(cur)
+            merged.update(proto_overrides["oi_filters"])
+            if isinstance(proto_overrides["oi_filters"].get("switches"), dict):
+                merged["switches"] = {**(cur.get("switches") or {}), **proto_overrides["oi_filters"]["switches"]}
+            block["oi_filters"] = merged
     private = tmp / "config.json"
     private.write_text(json.dumps(cfg), encoding="utf-8")
     try:
@@ -625,7 +638,8 @@ def run_job(spec_path: Path, backend: Any = None) -> int:
 
     try:
         with tempfile.TemporaryDirectory(prefix="bt8510_") as td:
-            be = backend or _private_backend(Path(td))
+            proto_ov = {"oi_filters": spec["oi_filters"]} if isinstance(spec.get("oi_filters"), dict) else None
+            be = backend or _private_backend(Path(td), proto_ov)
             cov = coverage_of(Path(be.market_db), spec["from"], spec["to"])
             days = cov["days"]
             if not days:
