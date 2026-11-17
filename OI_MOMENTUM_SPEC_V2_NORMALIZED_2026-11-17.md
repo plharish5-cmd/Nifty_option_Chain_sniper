@@ -16,7 +16,14 @@ the day's volume and needed hand-tuning. Normalizing the momentum by total OI ma
 
 ## 2. Variables (per read, from the recorded chain snapshot series)
 
-At snapshot t, with C = total Call-writer OI, P = total Put-writer OI (lakhs or Cr, consistent):
+At snapshot t, with C = total Call-writer OI, P = total Put-writer OI.
+
+**Unit: everything in LAKHS.** Convert all OI to lakhs on read (1 crore = 100 lakh, so 20 crore
+= 2000 lakh, 2 crore = 200 lakh) and store/compute/display in lakhs throughout — days start in
+lakhs and grow into crores, so one unit keeps the whole series on a single scale and the cockpit
+numbers match the 8600 chart. Note B and S are RATIOS so the unit cancels (same value in any
+unit); the unit only fixes the displayed C, P, D and CumD. Add a single `_to_lakhs()` helper at
+the read boundary and use it once — do not mix units.
 
 ```
 T(t)  = P + C                      # total pressure
@@ -84,7 +91,8 @@ ignored for back-compat. If window history is insufficient → direction None �
   fresh_oi, writer_flow. price_oi/volume_oi untouched.
 - Everything else (board override, oi_switch_block, fail-open, log-only/Block, backtest,
   toggles) is unchanged — they consume `direction` as before.
-- Cockpit: show `S +0.21 · bias +0.42 · CumD +6` per writer read; the gate uses S only.
+- Cockpit: show `S +0.21 · bias +0.42 · CumD +6L` per writer read (C, P, D, CumD in LAKHS via
+  `_to_lakhs()`); the gate uses S only.
 
 ## 8. Worked check (owner's figures)
 
