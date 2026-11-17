@@ -2737,7 +2737,9 @@ class QuantTerminalBackend:
         Allowing entries until 15:30 opens a window in which an order is placed
         and immediately squared off, paying charges both ways for nothing. The
         window therefore ends at 15:05 by default, leaving a minimum hold.
-        Paper and dry-run are unaffected; this gates real orders only.
+        Paper and dry-run still follow strategy windows; live routing uses this
+        window only. All lanes also pass new_position_entry_allowed (market +
+        fresh spot) before any open.
         """
         cfg = self._safety_cfg()
         start = str(cfg.get('live_entry_window_start', '09:15') or '')
@@ -3263,6 +3265,9 @@ class QuantTerminalBackend:
         # set_off_hours_paper_testing(), which expires on its own.
         self.allow_off_hours_paper_testing: bool = False
         self._off_hours_expires_at: float = 0.0
+        self._auto_cleanup_count_today: int = 0
+        self._auto_cleanup_count_date: str = ""
+        self._last_auto_cleanup: Optional[Dict[str, Any]] = None
         self.nse_holidays: List[str] = self.cfg.get("nse_holidays", [
             "2026-01-26", "2026-03-25", "2026-04-14", "2026-05-01",
             "2026-08-15", "2026-10-02", "2026-12-25"
@@ -4213,12 +4218,59 @@ class QuantTerminalBackend:
         """Validates if NSE market is open (09:15 to 15:30 IST Mon-Fri)."""
         return is_nse_market_open(dt=dt, holidays=self.nse_holidays)
 
-    def check_eod_square_off(self, dt: Optional[datetime] = None) -> List[Dict[str, Any]]:
-        """
-        Square off all open intraday positions at 15:20:00 IST (Correction 2).
-        Reason: broker's auto-square-off carries extra charges, matches backtester.
-        Reads eod_square_off_time dynamically from config.
-        """
+    def position_cleanup_status(self) -> Dict[str, Any]:
+        """Cockpit telemetry: last auto-close note and today's cleanup count."""
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        count = int(self._auto_cleanup_count_today)
+        if self._auto_cleanup_count_date != today:
+            count = 0
+        return {
+            "last": self._last_auto_cleanup,
+            "auto_closed_today": count,
+            "count_date": today,
+        }
+
+    def _record_auto_position_cleanup(
+        self, pos: Dict[str, Any], reason: str, res: Dict[str, Any], dt: datetime
+    ) -> None:
+        today = dt.strftime("%Y-%m-%d")
+        if getattr(self, "_auto_cleanup_count_date", "") != today:
+            self._auto_cleanup_count_date = today
+            self._auto_cleanup_count_today = 0
+        self._auto_cleanup_count_today = int(getattr(self, "_auto_cleanup_count_today", 0)) + 1
+        ltp = float(pos.get("current_ltp") or pos.get("entry_price") or res.get("exit_price") or 0.0)
+        from analyst.offhours_cleanup_8510 import format_auto_close_log_line
+
+        line = format_auto_close_log_line(
+            symbol=str(pos.get("symbol") or "?"),
+            mode=str(pos.get("mode") or "PAPER"),
+            reason=reason,
+            at=dt,
+            ltp=ltp,
+        )
+        log.info(line)
+        self._last_auto_cleanup = {
+            "note": line,
+            "reason": reason,
+            "at_ist": dt.strftime("%Y-%m-%d %H:%M:%S IST"),
+            "symbol": pos.get("symbol"),
+            "mode": pos.get("mode"),
+            "position_id": pos.get("position_id"),
+        }
+
+    def new_position_entry_allowed(self) -> Tuple[bool, str]:
+        """Outer guard: NSE open + non-stale NIFTY spot (paper, dry-run, and live)."""
+        is_open, mkt_status = self.is_nse_market_open()
+        from analyst.offhours_cleanup_8510 import new_position_entry_allowed as _guard
+
+        return _guard(
+            market_open=bool(is_open),
+            market_status=str(mkt_status),
+            spot_blob=self.cached_telemetry.get("spot") if isinstance(self.cached_telemetry, dict) else {},
+        )
+
+    def check_open_position_cleanup(self, dt: Optional[datetime] = None) -> List[Dict[str, Any]]:
+        """Close strays: EOD (>=15:20), off-hours, or expired contract. Idempotent."""
         if dt is None:
             dt = datetime.now(IST)
         elif dt.tzinfo is None:
@@ -4227,18 +4279,43 @@ class QuantTerminalBackend:
         eod_cfg = str(self.cfg.get("eod_square_off_time", "15:20")).strip()
         eod_parts = [int(x) for x in eod_cfg.split(":")[:2]]
         eod_target_time = dtime(eod_parts[0], eod_parts[1], 0)
+        try:
+            is_open, _ = self.is_nse_market_open(dt)
+        except TypeError:
+            is_open, _ = self.is_nse_market_open()
+        from analyst.offhours_cleanup_8510 import resolve_position_cleanup_reason
 
-        closed_positions = []
-        if dt.time() >= eod_target_time:
-            eod_reason = f"EOD_SQUARE_OFF_{eod_cfg[:5]}"
-            open_positions = self.get_active_positions()
-            for p in open_positions:
-                pos_id = p.get("position_id")
-                if pos_id:
-                    res = self.modify_open_position(pos_id, action="CLOSE", enforce_market_hours=False, reason=eod_reason)
-                    if res.get("ok"):
-                        closed_positions.append(res)
+        closed_positions: List[Dict[str, Any]] = []
+        for p in self.get_active_positions():
+            pos_id = p.get("position_id")
+            if not pos_id:
+                continue
+            reason = resolve_position_cleanup_reason(
+                symbol=str(p.get("symbol") or ""),
+                now=dt,
+                market_open=bool(is_open),
+                eod_square_off_time=eod_target_time,
+            )
+            if not reason:
+                continue
+            res = self.modify_open_position(
+                pos_id, action="CLOSE", enforce_market_hours=False, reason=reason
+            )
+            if res.get("ok"):
+                self._record_auto_position_cleanup(p, reason, res, dt)
+                closed_positions.append(res)
+            else:
+                log.warning(
+                    "AUTO-CLOSE could not close %s (%s): %s",
+                    pos_id,
+                    reason,
+                    res.get("error") or res.get("rejection_reason") or res,
+                )
         return closed_positions
+
+    def check_eod_square_off(self, dt: Optional[datetime] = None) -> List[Dict[str, Any]]:
+        """Backward-compatible alias for scanner loop and tests."""
+        return self.check_open_position_cleanup(dt)
 
     @property
     def eod_square_off_time(self) -> str:
@@ -5476,6 +5553,7 @@ class QuantTerminalBackend:
             },
             "positions": positions,
             "orders": orders,
+            "position_cleanup": self.position_cleanup_status(),
             "dhan_connected": self.broker.is_configured(),
             "exit_failure_banner": getattr(self, "exit_failure_banner", None),
         }
@@ -7365,22 +7443,14 @@ class QuantTerminalBackend:
 
         while self.scanner_running:
             try:
-                # EOD square-off runs every tick, even when the scanner is paused:
-                # once past 15:20 IST any still-open position must be closed. It is
-                # idempotent (modify_open_position only acts on OPEN) and only logs
-                # the first sweep of the day.
+                # Stray cleanup every tick (EOD, off-hours, expired contract).
                 try:
                     now_ist = datetime.now(IST)
-                    eod_cfg = str(self.cfg.get("eod_square_off_time", "15:20")).strip()[:5]
-                    hh, mm = (int(x) for x in eod_cfg.split(":")[:2])
-                    if now_ist.time() >= dtime(hh, mm, 0) and now_ist.time() < dtime(15, 30, 30):
-                        today_key = now_ist.strftime("%Y-%m-%d")
-                        closed = await asyncio.to_thread(self.check_eod_square_off, now_ist)
-                        if closed and self.__dict__.get("_eod_sweep_logged") != today_key:
-                            self._eod_sweep_logged = today_key
-                            log.info("[EOD %s] squared off %d open position(s)", eod_cfg, len(closed))
+                    closed = await asyncio.to_thread(self.check_open_position_cleanup, now_ist)
+                    if closed:
+                        log.info("[POSITION CLEANUP] closed %d open position(s)", len(closed))
                 except Exception as exc:
-                    log.error("EOD square-off check failed: %s", exc)
+                    log.error("Position cleanup check failed: %s", exc)
 
                 if self.scanner_enabled and not self.kill_switch_active:
                     spot = self.cached_telemetry.get("spot", {}).get("price")
@@ -8708,6 +8778,18 @@ class QuantTerminalBackend:
                     "rejection_reason": "Underlying spot price is 0.0 or unavailable (fail closed)",
                 }
 
+            if str(side).upper() == "BUY":
+                ok_entry, why_entry = self.new_position_entry_allowed()
+                if not ok_entry:
+                    log.warning("[ENTRY BLOCKED] %s — %s", contract.get("symbol"), why_entry)
+                    return {
+                        "ok": False,
+                        "status": "REJECTED",
+                        "error": why_entry,
+                        "rejection_reason": why_entry,
+                        "entry_guard": True,
+                    }
+
             # Dhan OI PE-CE Synergy Advisory Check (Advisory-Only & Fail-Open)
             # A third-party website must NEVER block or delay live order flow.
             try:
@@ -8738,11 +8820,27 @@ class QuantTerminalBackend:
                         "error": f"[SKIPPED] Strike {sym} excluded by Trader Strike Matrix Filter"
                     }
 
-            # Market Hours Validator (Live + Paper)
+            # Market Hours Validator (Live + Paper) — entries never bypass; exits may with override
             is_open, mkt_status = self.is_nse_market_open()
             if enforce_market_hours:
                 is_paper_exec = (mode == "PAPER_ONLY" or (mode == "BOTH" and self.paper_execution_enabled))
                 if not is_open:
+                    if str(side).upper() == "BUY":
+                        curr_t = datetime.now(IST).strftime("%H:%M:%S")
+                        err_msg = (
+                            f"❌ Market Closed — Cannot Place Order Now\n"
+                            f"Market Hours: Mon-Fri 09:15 AM - 03:30 PM IST\n"
+                            f"Current Time: {curr_t} IST | Market Status: CLOSED"
+                        )
+                        log.warning(err_msg)
+                        return {
+                            "ok": False,
+                            "status": "REJECTED",
+                            "error": err_msg,
+                            "rejection_reason": err_msg,
+                            "market_status": "CLOSED",
+                            "market_closed": True,
+                        }
                     if mode == "ALGO_LIVE_ONLY" or not (is_paper_exec and self.off_hours_testing_active()):
                         curr_t = datetime.now(IST).strftime("%H:%M:%S")
                         err_msg = (

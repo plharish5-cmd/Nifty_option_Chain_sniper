@@ -3982,6 +3982,9 @@
                 if (data.positions) {
                     renderPositionsTable(data.positions);
                 }
+                if (data.position_cleanup) {
+                    window._positionCleanup = data.position_cleanup;
+                }
 
                 // 6. Orders table
                 if (data.orders) {
@@ -4421,12 +4424,18 @@
                 if (Number(p.live_filled || 0) === 1) { real += 1; realMtm += Number(v || 0); }
             });
             const day = window._deskRealizedToday || { net: 0, n: 0 };
+            const cleanup = window._positionCleanup || {};
+            const cleanupNote = cleanup.last && cleanup.last.note
+                ? cleanup.last.note
+                : "No auto-cleanup yet today";
+            const cleanupCount = Number(cleanup.auto_closed_today || 0);
             el.innerHTML =
                 deskCard("Open P&L (MTM)", deskMoney(mtm), deskCol(mtm), invested > 0 ? (mtm / invested * 100).toFixed(2) + "% on ₹" + Math.round(invested).toLocaleString("en-IN") : "") +
                 deskCard("Booked today", deskMoney(day.net), deskCol(day.net), day.n + " closed trade" + (day.n === 1 ? "" : "s")) +
                 deskCard("Day total", deskMoney(mtm + day.net), deskCol(mtm + day.net), "open + booked") +
                 deskCard("Open positions", String((list || []).length), "#e2e8f0", real + " real · " + ((list || []).length - real) + " paper") +
-                deskCard("Real-money MTM", deskMoney(realMtm), real ? deskCol(realMtm) : "#64748b", real ? "" : "no real position open");
+                deskCard("Real-money MTM", deskMoney(realMtm), real ? deskCol(realMtm) : "#64748b", real ? "" : "no real position open") +
+                deskCard("Auto-closed today", String(cleanupCount), cleanupCount ? "#fbbf24" : "#64748b", cleanupNote);
         }
         function exitsOf(orders) { return (orders || []).filter(o => String(o.side || "") === "SELL" && String(o.order_status || "") === "FILLED"); }
         function renderOrdersSummary(filtered) {

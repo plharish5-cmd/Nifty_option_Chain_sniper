@@ -122,7 +122,7 @@ def _insert_open_proto_pos(db_path: Path, pos_id: str, mode: str = "LIVE", sl_or
                 current_ltp, target_price, sl_price, status, mode, strategy_id, spot_entry,
                 spot_target_level, spot_stop_level, sl_order_id, initial_target, initial_sl
             ) VALUES (
-                ?, 'NIFTY 25000 CE', '54321', 'BUY', 1, 65, 200.0,
+                ?, '11 Nov 2026 — NIFTY 25000 CE', '54321', 'BUY', 1, 65, 200.0,
                 '2026-11-10 10:00:00 IST', 210.0, 240.0, 160.0, 'OPEN', ?,
                 'EMA8_PROTOTYPE_LONG', 25000.0, 25040.0, 24960.0, ?, 240.0, 160.0
             )

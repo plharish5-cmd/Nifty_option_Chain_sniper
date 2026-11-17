@@ -20,6 +20,19 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.28-dhan-expiry-parse` | Gemini/Cursor | **done, `d35ef9d`** tags `pre/post-gemini-v2.0.28` | **NO — awaiting Harish** |
 | `gemini/v2.0.29-backtest-sweep` | Gemini/Cursor | **done, `1bedd34`** tags `pre/post-gemini-v2.0.29` | **NO — awaiting Harish** |
 | `gemini/v2.0.30-ema-display-audit` | Gemini/Cursor | **done, `2631903`** tags `pre/post-gemini-v2.0.30` | **NO — awaiting Harish** |
+| `gemini/v2.0.31-no-offhours-cleanup` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.31` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-18 · Gemini/Cursor · `gemini/v2.0.31-no-offhours-cleanup`
+
+**Goal:** Block **all** new entries (paper, dry-run, live) when NSE closed or spot stale; catch-all cleanup closes EOD / off-hours / expired strays; every auto-close logged + cockpit **Auto-closed today** card. Real `live_entry_window` unchanged. Exits off-hours still allowed via `enforce_market_hours=False`.
+
+**Files:** `analyst/offhours_cleanup_8510.py`, `terminal8510_backend.py`, `Algorithmic_Trading_Workspace_8510.html`, `test_offhours_cleanup_8510.py` (8); `test_phase5_eod_8510.py` (fixture symbol).
+
+**Verify:** `verify_locks.py` 11/11; `pytest analyst/test_offhours_cleanup_8510.py` 8/8; `test_phase5_eod_8510.py` 5/5.
+
+**Not verified:** live scanner loop with stuck paper positions; browser.
 
 ---
 
