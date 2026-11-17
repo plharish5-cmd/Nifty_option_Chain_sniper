@@ -27,6 +27,8 @@ Trunk: **`integrate/v1.9`**
 
 **Verify:** `verify_locks.py` 11/11; `pytest analyst/test_oi_momentum_8510.py` 10/10; `test_proto_oi_filters_8510.py` 11/11.
 
+**Commit:** `51d6268`; tags `pre-gemini-v2.0.24b-momentum-s` / `post-gemini-v2.0.24b-momentum-s`.
+
 **Not verified:** full analyst suite diff this session; live cockpit vs 8600; browser persist.
 
 ---
