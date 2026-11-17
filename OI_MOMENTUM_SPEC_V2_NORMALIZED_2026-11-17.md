@@ -30,13 +30,16 @@ T(t)  = P + C                      # total pressure
 D(t)  = P − C                      # net bias (level)
 B(t)  = D / T                      # normalized LEVEL bias, in [−1, +1]   (CONTEXT ONLY — see §4)
 dD    = D(t) − D(t−Δ)              # change in net bias over the window
-S(t)  = dD / T                     # normalized SIGNIFICANCE (momentum)   <-- the gating signal
+S(t)  = dD / T                     # normalized SIGNIFICANCE (momentum)   <-- the gating signal (Option A: over the window, NOT per-minute)
 CumD  = D(t) − D(session_open)     # integral of net bias since 09:15     (optional confirm)
 ```
 
-Normalize the window to per-minute so the threshold is cadence-independent: if snapshots are
-Δ minutes apart, use `S = (dD / Δ) / T` (or compute dD over a fixed `window_min`, default 10,
-then divide by window_min). Keep it consistent between live and backtest.
+**LOCKED: Option A — S = dD / T over a fixed window, NO per-minute division.** `dD` is measured
+against the snapshot ~`window_min` minutes ago, found **by time** (the closest snapshot to
+now − window_min), not by counting snapshots — so the window is cadence-independent and
+live = backtest identical without rescaling. The thresholds stay **0.15 / 0.30**. (Do NOT divide
+by window_min; that is the rejected Option B and would force thresholds of 0.015 / 0.03.) If
+there is no snapshot ~window_min old yet → direction None → fail OPEN.
 
 ## 3. Direction = sign of S (the momentum), with thresholds
 
