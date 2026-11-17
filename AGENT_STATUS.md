@@ -19,7 +19,7 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.27-pece-volume` | Gemini/Cursor | **done, `e2f5199`** tags `pre/post-gemini-v2.0.27` | **NO — awaiting Harish** |
 | `gemini/v2.0.28-dhan-expiry-parse` | Gemini/Cursor | **done, `d35ef9d`** tags `pre/post-gemini-v2.0.28` | **NO — awaiting Harish** |
 | `gemini/v2.0.29-backtest-sweep` | Gemini/Cursor | **done, `1bedd34`** tags `pre/post-gemini-v2.0.29` | **NO — awaiting Harish** |
-| `gemini/v2.0.30-ema-display-audit` | Gemini/Cursor | **done** (this block) tags `pre/post-gemini-v2.0.30` | **NO — awaiting Harish** |
+| `gemini/v2.0.30-ema-display-audit` | Gemini/Cursor | **done, `2631903`** tags `pre/post-gemini-v2.0.30` | **NO — awaiting Harish** |
 
 ---
 
@@ -30,6 +30,8 @@ Trunk: **`integrate/v1.9`**
 **Files:** `analyst/ema8_display_audit_8510.py`, `cockpit_views_8510.py`, `terminal8510_backend.py`, `Algorithmic_Trading_Workspace_8510.html`, `test_ema8_display_audit_8510.py` (5).
 
 **Verify:** `verify_locks.py` 11/11; `pytest analyst/test_ema8_display_audit_8510.py` 5/5.
+
+**Commit:** `2631903`; tags `pre-gemini-v2.0.30` / `post-gemini-v2.0.30`.
 
 **Not verified:** live cockpit screenshot at 10:15; browser.
 
