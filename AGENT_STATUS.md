@@ -14,6 +14,22 @@ Trunk: **`integrate/v1.9`**
 | `claude/v1.9.4-safety-lock` | Claude | **BROKEN, `2d116b7` — DELETE** | never merge |
 | `agy/ema8-proto-corrections` | Antigravity | **done, `b1d23ca`**, tag `post-agy-ema8-proto-corrections` | **NO — awaiting Harish** |
 | `gemini/v2.0.24-proto-oi-filters` | Gemini/Cursor | **done, `41fd6be` + momentum v2** (see block) tags `pre/post-gemini-v2.0.24` | **NO — awaiting Harish** |
+| `gemini/v2.0.25-proto-candle-trail` | Gemini/Cursor | **done, `18eaee4`** tags `pre/post-gemini-v2.0.25` | **NO — awaiting Harish** |
+| `gemini/v2.0.26-oi3m-separate-feature` | Gemini/Cursor | **done, `4ec5afa`** tags `pre/post-gemini-v2.0.26` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-17 (night) · Gemini/Cursor · `gemini/v2.0.26-oi3m-separate-feature`
+
+**Goal:** Isolated **oi_3m** gate (3-min `S=dD/T` via `compute_momentum_oi_reads` import) + **8600 context panel** (display-only). Config `scanner.oi_3m_feature` — separate from `oi_filters`. Default all OFF / log_only.
+
+**Files:** `analyst/oi_3m_gate_8510.py`, `analyst/oi_context_panel_8510.py`, `analyst/test_oi_3m_separate_8510.py` (10), `scripts/patch_add_oi_3m_feature_8510.py`; wiring `ema8_prototype_8510.py`, `terminal8510_backend.py`, `engine_8510_live.py`, `Algorithmic_Trading_Workspace_8510.html`.
+
+**Verify:** `verify_locks.py` 11/11; `pytest analyst/test_oi_3m_separate_8510.py` 10/10; `test_proto_oi_filters_8510.py` 11/11.
+
+**Commit:** `4ec5afa`; tags `pre-gemini-v2.0.26` / `post-gemini-v2.0.26`.
+
+**Not verified:** full analyst pytest diff; live 8600 bridge for Smart OI / PE-CE / CVD rows; browser.
 
 ---
 
