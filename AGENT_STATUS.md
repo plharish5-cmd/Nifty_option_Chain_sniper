@@ -41,7 +41,9 @@ Trunk: **`integrate/v1.9`**
 
 **Ops:** log-only week → points saved vs cost on held-out days → only then `block` on `fresh_oi`/`total_oi` (per guide). **Block live:** not recommended until log shows net benefit.
 
-**Not verified here:** live 8600 chart parity at desk; browser toggle persist + 0 console errors (see commit session notes).
+**Browser (17 Nov ~21:12 IST, hard-refresh):** 8600 OI Filters block present; toggling **Fresh Change in OI** persisted across reload; filter rows show **—** after hours (no chain snapshots / stale reads — expected). No console errors captured via CDP during the check. **Restart 8510** after `git pull` so the running engine loads `41fd6be` Python (momentum + Cr/min telemetry); HTML may refresh without restart.
+
+**Not verified here:** live-session Cr/min vs 8600 OI-Change chart parity (needs market hours + engine restart on this branch).
 
 ---
 
