@@ -38,8 +38,12 @@ CumD  = D(t) − D(session_open)     # integral of net bias since 09:15     (opt
 against the snapshot ~`window_min` minutes ago, found **by time** (the closest snapshot to
 now − window_min), not by counting snapshots — so the window is cadence-independent and
 live = backtest identical without rescaling. The thresholds stay **0.15 / 0.30**. (Do NOT divide
-by window_min; that is the rejected Option B and would force thresholds of 0.015 / 0.03.) If
-there is no snapshot ~window_min old yet → direction None → fail OPEN.
+by window_min; that is the rejected Option B and would force thresholds of 0.015 / 0.03.)
+
+**Window tolerance:** accept the prev snapshot only if its timestamp is within `window_min ± 2 min`
+of the target (8–12 min ago for window_min=10). If no snapshot falls in that band → direction
+None → fail OPEN. **Never** fall back to a much older snapshot (e.g. a 45-min-old one as "10-min")
+— that silently corrupts S on sparse/backtest history.
 
 ## 3. Direction = sign of S (the momentum), with thresholds
 
@@ -89,7 +93,8 @@ ignored for back-compat. If window history is insufficient → direction None �
 ## 7. What changes in code
 
 - `analyst/chain_reads_8510.py`: in the momentum computation already added, replace the raw
-  `calls_crpm/puts_crpm` direction with S = (dD/window)/T and the §3 thresholds; also expose
+  `calls_crpm/puts_crpm` direction with **S = dD / T** where `dD = D(t) − D(t − window_min)`
+  found by timestamp (Option A, §2 — NO division by window_min) and the §3 thresholds; also expose
   B and CumD in the read's `facts`/detail for display. Keep feeding `direction` to total_oi,
   fresh_oi, writer_flow. price_oi/volume_oi untouched.
 - Everything else (board override, oi_switch_block, fail-open, log-only/Block, backtest,
@@ -100,9 +105,10 @@ ignored for back-compat. If window history is insufficient → direction None �
 ## 8. Worked check (owner's figures)
 
 - 09:15 C=10 P=10 → T=20, D=0, B=0, S=0 → NEUTRAL.
-- 09:20 C=15 P=5  → T=20, D=−10, dD=−10, S=−0.50 → **PE EXTREME** (correct; Total unchanged but
-  momentum extreme bearish).
-- 09:21→09:22 reversal: S swings to +0.23 → **CE STRONG** — early long signal, as in the tracker.
+- 09:25 C=15 P=5 (10-min window from 09:15) → T=20, D=−10, dD=−10, S=−0.50 → **PE EXTREME**
+  (correct; Total unchanged but momentum extreme bearish). (Before 09:25 there is no 10-min-old
+  snapshot → direction None → fail OPEN.)
+- 09:25 → 09:35 reversal: S swings to +0.23 → **CE STRONG** — early long signal, as in the tracker.
 - 17 Nov 12:30–13:10: puts falling + calls rising → dD negative → S negative → **PE allowed**,
   catching the 150-pt drop; B stayed positive all day but is display-only, so it does not block.
 
