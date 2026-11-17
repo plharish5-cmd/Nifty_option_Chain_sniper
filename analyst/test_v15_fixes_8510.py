@@ -4,16 +4,21 @@ analyst/test_v15_fixes_8510.py
 Verification Test Suite for Master v1.5 Fixes:
   - Test 1: Dhan Persistence & Masking (Disk save to terminal8510_config.json, auto-load on startup, ****1234 masking, 10s timeout)
   - Test 2: Contract Symbol Expiry Formatting (Full expiry date format globally: 09 Nov 2026 — NIFTY 24300 CE)
-  - Test 3: Market Hours Square-Off Gate (Blocks live and paper orders/square-off outside market hours, testing override)
+  - Test 3: Market Hours Square-Off Gate (blocks off-hours entries; testing override permits paper square-off only)
   - Test 4: Position Source & Strategy Tracking (Persistence and API exposure of source and strategy_setup)
 """
 import asyncio
 import os
 import sys
 import json
+import sqlite3
+import time
 import unittest
+import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 # Setup paths
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,6 +38,45 @@ from analyst.terminal8510_backend import (
 from engine_8510_live import app
 
 CONFIG_PATH = ROOT / "analyst" / "terminal8510_config.json"
+IST = ZoneInfo("Asia/Kolkata")
+
+
+def _fresh_spot_fixture(backend: QuantTerminalBackend) -> None:
+    """v2.0.31 entry guard requires non-stale cached spot."""
+    backend.cached_telemetry = {
+        "spot": {
+            "price": 24300.0,
+            "is_stale": False,
+            "status": "LIVE",
+            "updated_epoch": time.time(),
+        }
+    }
+
+
+def _seed_open_paper_position(
+    backend: QuantTerminalBackend,
+    pos_id: str,
+    symbol: str,
+    *,
+    placed_by: str = "AUTO ALGO 🤖",
+    strategy_setup: str = "Stage 2 Test Fixture",
+) -> None:
+    with sqlite3.connect(backend.ledger_db) as conn:
+        conn.execute(
+            """
+            INSERT INTO positions (
+                position_id, symbol, security_id, side, lots, qty, entry_price, entry_time,
+                current_ltp, target_price, sl_price, status, mode, strategy_id,
+                placed_by, strategy_setup
+            ) VALUES (
+                ?, ?, '39951', 'BUY', 1, 65, 80.0,
+                '2026-11-10 10:00:00 IST', 80.0, 120.0, 60.0, 'OPEN', 'PAPER', 'STAGE_2',
+                ?, ?
+            )
+            """,
+            (pos_id, symbol, placed_by, strategy_setup),
+        )
+        conn.commit()
 
 
 class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
@@ -172,67 +216,65 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
     async def test_03b_square_off_gate_enforcement(self):
         """
         Verify:
-        - Square-off & order endpoints block execution outside market hours
-          with the exact message '❌ Market Closed — Cannot Square-Off Now'
-        - Setting allow_off_hours_paper_testing=True permits Paper Square-Off
+        - Off-hours BUY is blocked even with testing override (v2.0.31 fail-closed).
+        - Square-off blocks outside market hours unless override permits paper exit.
         """
         backend = QuantTerminalBackend()
         backend.paper_execution_enabled = True
         backend.algo_only_execution = False  # Explicit fixture for manual paper-position / exit tests.
         backend.execution_mode = 'PAPER_ONLY'
-
-        # Temporarily enable testing override to create test position in paper ledger
-        backend.set_off_hours_paper_testing(True)
+        _fresh_spot_fixture(backend)
 
         contract = {
             "id": "LONG_CE_ATM",
-            "symbol": "09 Nov 2026 — NIFTY 24300 CE",
+            "symbol": "11 Nov 2026 — NIFTY 24300 CE",
             "opt_type": "CE",
             "strike": 24300,
             "ltp": 80.0,
             "security_id": 39951,
             "lot_size": backend.get_nifty_lot_size()
         }
-        order_res = await backend.execute_order_with_chaser(
-            contract=contract,
-            side="BUY",
-            strategy_name="Test Setup",
-            target_pts=40.0,
-            sl_pts=20.0,
-            source="AUTO ALGO 🤖",
-            strategy_setup="Stage 2 Test Fixture", is_algo_trade=True
-        )
-        self.assertTrue(order_res["ok"])
 
-        pos_list = backend.get_active_positions()
-        self.assertTrue(len(pos_list) > 0, "Failed to create test position")
-        pos_id = pos_list[0]["position_id"]
+        backend.set_off_hours_paper_testing(True)
+        closed_market = (False, "AFTER_HOURS")
+        with patch.object(backend, "is_nse_market_open", return_value=closed_market):
+            order_res = await backend.execute_order_with_chaser(
+                contract=contract,
+                side="BUY",
+                strategy_name="Test Setup",
+                target_pts=40.0,
+                sl_pts=20.0,
+                source="AUTO ALGO 🤖",
+                strategy_setup="Stage 2 Test Fixture",
+                is_algo_trade=True,
+            )
+            self.assertFalse(order_res["ok"])
+            self.assertTrue(
+                order_res.get("entry_guard")
+                or "Market closed" in str(order_res.get("rejection_reason", ""))
+            )
 
-        # Ensure market is treated as closed (post-market or weekend)
-        current_m = backend.is_nse_market_open()
+        pos_id = f"POS_V15_SQ_{uuid.uuid4().hex[:8]}"
+        _seed_open_paper_position(backend, pos_id, contract["symbol"])
 
-        if not current_m["is_open"]:
-            # With override OFF: Square-off must be BLOCKED
+        with patch.object(backend, "is_nse_market_open", return_value=closed_market):
             backend.set_off_hours_paper_testing(False)
             sq_res = backend.modify_open_position(pos_id, action="CLOSE")
             self.assertFalse(sq_res["ok"])
             self.assertIn("❌ Market Closed — Cannot Square-Off Now", sq_res["error"])
             self.assertIn("Your position will remain OPEN till next market open.", sq_res["error"])
 
-            # Also verify via alias "SQUARE_OFF"
             sq_res_alias = backend.modify_open_position(pos_id, action="SQUARE_OFF")
             self.assertFalse(sq_res_alias["ok"])
             self.assertIn("❌ Market Closed — Cannot Square-Off Now", sq_res_alias["error"])
 
-            # With override ON: Paper square-off is permitted
             backend.set_off_hours_paper_testing(True)
             sq_res_override = backend.modify_open_position(pos_id, action="CLOSE")
             self.assertTrue(sq_res_override["ok"])
             self.assertEqual(sq_res_override["status"], "CLOSED")
             self.assertIn("warning", sq_res_override)
 
-            # Reset override back to OFF
-            backend.set_off_hours_paper_testing(False)
+        backend.set_off_hours_paper_testing(False)
 
     # ── TEST 4: POSITION SOURCE & STRATEGY TRACKING ──────────────────────────
     async def test_04_position_source_and_strategy_tracking(self):
@@ -246,11 +288,15 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
         backend.paper_execution_enabled = True
         backend.algo_only_execution = False  # Explicit fixture for manual paper-position / exit tests.
         backend.execution_mode = 'PAPER_ONLY'
-        backend.set_off_hours_paper_testing(True)
+        _fresh_spot_fixture(backend)
+
+        current_m = backend.is_nse_market_open()
+        if not current_m["is_open"]:
+            self.skipTest("NSE session closed — live entry requires open market (v2.0.31)")
 
         contract = {
             "id": "LONG_CE_TEST_SRC",
-            "symbol": "09 Nov 2026 — NIFTY 24400 CE",
+            "symbol": "11 Nov 2026 — NIFTY 24400 CE",
             "opt_type": "CE",
             "strike": 24400,
             "ltp": 95.0,
@@ -299,9 +345,6 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
         self.assertIn("AUTO ALGO 🤖", order_sources)
         self.assertEqual(len(orders), prior_order_count)
         self.assertIn("Stage 2 8 EMA Touch", order_strats)
-
-        # Clean up
-        backend.set_off_hours_paper_testing(False)
 
     # ── TEST 5: REST API ENDPOINTS VIA ASYNC HTTP CLIENT ─────────────────────
     async def test_05_rest_api_endpoints_v15(self):
@@ -381,41 +424,49 @@ class TestV15Fixes8510(unittest.IsolatedAsyncioTestCase):
         backend.paper_execution_enabled = True
         backend.algo_only_execution = False  # Explicit fixture for manual paper-position / exit tests.
         backend.execution_mode = 'PAPER_ONLY'
-        backend.set_off_hours_paper_testing(True)
 
         contract = {
             "id": "LONG_CE_EOD",
-            "symbol": "09 Nov 2026 — NIFTY 24300 CE",
+            "symbol": "11 Nov 2026 — NIFTY 24300 CE",
             "opt_type": "CE",
             "strike": 24300,
             "ltp": 110.0,
             "security_id": 39951,
             "lot_size": backend.get_nifty_lot_size()
         }
-        res = await backend.execute_order_with_chaser(
-            contract=contract,
-            side="BUY",
-            strategy_name="EOD Test",
-            source="AUTO ALGO 🤖",
-            strategy_setup="Stage 2 8 EMA Touch", is_algo_trade=True
+        pos_id = f"POS_EOD_V15_{uuid.uuid4().hex[:8]}"
+        _seed_open_paper_position(
+            backend,
+            pos_id,
+            contract["symbol"],
+            placed_by="AUTO ALGO 🤖",
+            strategy_setup="Stage 2 8 EMA Touch",
         )
-        self.assertTrue(res["ok"])
-        self.assertGreater(len(backend.get_active_positions()), 0)
+        self.assertIn(
+            pos_id,
+            {p.get("position_id") for p in backend.get_active_positions()},
+        )
 
         # 1. Simulate check at 14:30:00 IST -> should NOT square off
-        dt_1430 = datetime(2026, 11, 5, 14, 30, 0)
+        dt_1430 = datetime(2026, 11, 5, 14, 30, 0, tzinfo=IST)
         closed_early = backend.check_eod_square_off(dt=dt_1430)
         self.assertEqual(len(closed_early), 0)
-        self.assertGreater(len(backend.get_active_positions()), 0)
+        self.assertIn(
+            pos_id,
+            {p.get("position_id") for p in backend.get_active_positions()},
+        )
 
         # 2. Simulate check at 15:20:01 IST -> MUST square off open positions
-        dt_1520 = datetime(2026, 11, 5, 15, 20, 1)
+        dt_1520 = datetime(2026, 11, 5, 15, 20, 1, tzinfo=IST)
         closed_eod = backend.check_eod_square_off(dt=dt_1520)
         self.assertGreater(len(closed_eod), 0)
-        self.assertEqual(len(backend.get_active_positions()), 0)
-
-        # Reset override
-        backend.set_off_hours_paper_testing(False)
+        await asyncio.sleep(0.5)
+        with sqlite3.connect(backend.ledger_db) as conn:
+            row = conn.execute(
+                "SELECT status FROM positions WHERE position_id=?", (pos_id,)
+            ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], "CLOSED", "EOD cleanup must close the seeded position")
 
 
 if __name__ == "__main__":

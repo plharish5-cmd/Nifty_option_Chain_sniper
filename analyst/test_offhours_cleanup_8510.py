@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from analyst.offhours_cleanup_8510 import new_position_entry_allowed as _entry_allowed_full
 from analyst.terminal8510_backend import QuantTerminalBackend  # noqa: E402
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -75,6 +76,16 @@ def make_backend(tmp_path: Path) -> QuantTerminalBackend:
     b._init_sqlite()
     b.algo_strike_selection = {"LONG_CE_ATM": True}
     b.dhan_oi = type("OI", (), {"evaluate_synergy_status": lambda self: {"synergy_status": "MIXED"}})()
+
+    def _full_guard():
+        is_open, st = b.is_nse_market_open()
+        return _entry_allowed_full(
+            market_open=bool(is_open),
+            market_status=str(st),
+            spot_blob=b.cached_telemetry.get("spot"),
+        )
+
+    b.new_position_entry_allowed = _full_guard
     return b
 
 

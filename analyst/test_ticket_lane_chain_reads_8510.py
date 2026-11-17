@@ -692,9 +692,9 @@ def test_flagship_signal_is_offered_again_for_a_minute_when_the_order_step_skips
 def test_eod_square_off_is_called_in_the_scanner_loop():
     src = (ROOT / "analyst/terminal8510_backend.py").read_text(encoding="utf-8")
     loop = src[src.index("async def start_strategy_scanner_loop"):src.index("def get_scanner_status")]
-    assert "self.check_eod_square_off" in loop, "EOD square-off is never called in the live loop"
+    assert "self.check_open_position_cleanup" in loop, "Position cleanup is never called in the live loop"
     # it must run before the scanner_enabled gate, so a paused desk still closes positions
-    assert loop.index("check_eod_square_off") < loop.index("if self.scanner_enabled")
+    assert loop.index("check_open_position_cleanup") < loop.index("if self.scanner_enabled")
 
 
 def test_prototype_status_carries_reentry_flags(tmp_path):

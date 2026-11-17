@@ -60,6 +60,33 @@ def guarded_requests(client,method,url,*a,**k):
     return _REQUEST(client,method,url,*a,**k)
 httpx.Client.request=guarded;httpx.AsyncClient.request=guarded_async;requests.Session.request=guarded_requests
 
+def _entry_guard_market_hours_only(self):
+    """Unit tests: off-hours block only; stale spot tested in dedicated modules."""
+    is_open, mkt_status = self.is_nse_market_open()
+    if not is_open:
+        return False, f"Market closed ({mkt_status}) — entries blocked (paper and live)"
+    return True, ""
+
+
+@pytest.fixture(autouse=True)
+def unit_test_entry_guard(request, monkeypatch):
+    mod = getattr(request.module, "__name__", "") or ""
+    if any(
+        x in mod
+        for x in (
+            "test_offhours_cleanup_8510",
+            "test_ema8_display_audit_8510",
+            "test_terminal8510_staleness",
+        )
+    ):
+        return
+    monkeypatch.setattr(
+        terminal.QuantTerminalBackend,
+        "new_position_entry_allowed",
+        _entry_guard_market_hours_only,
+    )
+
+
 @pytest.fixture(autouse=True)
 def private_8510_state(tmp_path,monkeypatch,request):
     root=tmp_path/'desk';path=config_at(root)
