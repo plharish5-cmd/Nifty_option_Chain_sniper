@@ -43,6 +43,7 @@ DEFAULT_MOMENTUM_CFG: Dict[str, Any] = {
     "sig_min": 0.15,
     "sig_extreme": 0.30,
     "require_cumd_confirm": False,
+    "require_volume_confirm": False,
     "deadzone_cr_per_min": 0.05,  # retired — ignored; kept for config back-compat
 }
 
@@ -190,6 +191,70 @@ def momentum_direction_from_significance(
     return "NEUTRAL", "NEUTRAL"
 
 
+def volume_backing_between_snapshots(
+    by_ts: Dict[int, Dict[float, Dict[str, float]]],
+    ts_sorted: List[int],
+    t0: int,
+    t1: int,
+    spot: float,
+    band: float,
+    cfg: Dict[str, Any],
+) -> Tuple[Optional[bool], str]:
+    """Same churn test as volume_oi, on window [t0,t1]. None = unknown → fail-open (do not downgrade)."""
+    if t0 not in by_ts or t1 not in by_ts or t0 >= t1:
+        return None, "unknown"
+    atm = [k for k in by_ts[t1] if abs(k - spot) <= band]
+    if not atm:
+        return None, "unknown"
+    a, b = by_ts[t0], by_ts[t1]
+    ks = [k for k in atm if k in a and k in b]
+    if not ks:
+        return None, "unknown"
+
+    def g(side: str, field: str) -> float:
+        return sum(b[k][f"{side}_{field}"] - a[k][f"{side}_{field}"] for k in ks)
+
+    ch_vol = max(0.0, g("ce", "vol")) + max(0.0, g("pe", "vol"))
+    if ch_vol <= 0:
+        return None, "no vol"
+    win = 60 * int(cfg.get("window_minutes", 15))
+    ratios: List[float] = []
+    t_end = t0
+    while t_end is not None and len(ratios) < 40:
+        t_start = None
+        for t in ts_sorted:
+            if t <= t_end - win:
+                t_start = t
+        if t_start is None:
+            break
+        a2, b2 = by_ts.get(t_start), by_ts.get(t_end)
+        if not a2 or not b2:
+            break
+        ks2 = [k for k in atm if k in a2 and k in b2]
+        if not ks2:
+            t_end = t_start
+            continue
+        vol = max(
+            0.0,
+            sum(b2[k]["ce_vol"] - a2[k]["ce_vol"] for k in ks2)
+            + sum(b2[k]["pe_vol"] - a2[k]["pe_vol"] for k in ks2),
+        )
+        oi = abs(sum(b2[k]["ce_oi"] - a2[k]["ce_oi"] for k in ks2)) + abs(
+            sum(b2[k]["pe_oi"] - a2[k]["pe_oi"] for k in ks2)
+        )
+        if vol > 0:
+            ratios.append(oi / vol)
+        t_end = t_start
+    if len(ratios) < 3:
+        return None, "unknown"
+    oi_chg = abs(g("ce", "oi")) + abs(g("pe", "oi"))
+    ratio = oi_chg / ch_vol
+    usual = median(ratios)
+    if usual > 0 and ratio < float(cfg.get("churn_fraction_of_usual", 0.5)) * usual:
+        return False, "churn"
+    return True, "backed"
+
+
 def _apply_cumd_confirm(direction: str, strength: str, cumd: float, required: bool) -> Tuple[str, str]:
     if not required or direction == "NEUTRAL":
         return direction, strength
@@ -229,6 +294,9 @@ def _momentum_item(
     sig_min: float,
     sig_extreme: float,
     require_cumd: bool,
+    require_volume: bool,
+    volume_label: str,
+    volume_backed: Optional[bool],
     age_sec: int,
     label: str,
 ) -> Dict[str, Any]:
@@ -239,9 +307,12 @@ def _momentum_item(
     p = float(metrics["P"])
     direction, strength = momentum_direction_from_significance(s, sig_min=sig_min, sig_extreme=sig_extreme)
     direction, strength = _apply_cumd_confirm(direction, strength, cumd, require_cumd)
+    if require_volume and direction in ("CE", "PE") and volume_backed is False:
+        direction, strength = "NEUTRAL", "NEUTRAL"
+    vol_note = f" · vol: {volume_label}" if volume_label else ""
     detail = (
         f"{label}: S {s:+.2f} · bias {b:+.2f} · CumD {cumd:+.0f}L "
-        f"(C {c:.0f} P {p:.0f}) → {direction}"
+        f"(C {c:.0f} P {p:.0f}){vol_note} → {direction}"
         + (f" {strength}" if strength and strength != "NEUTRAL" else "")
     )
     return {
@@ -254,6 +325,7 @@ def _momentum_item(
         "CumD_lakh": round(cumd, 2),
         "C_lakh": round(c, 1),
         "P_lakh": round(p, 1),
+        "volume_backing": volume_label or None,
     }
 
 
@@ -277,6 +349,7 @@ def compute_momentum_oi_reads(
     sig_min = float(cfg.get("sig_min", 0.15))
     sig_extreme = float(cfg.get("sig_extreme", 0.30))
     require_cumd = bool(cfg.get("require_cumd_confirm", False))
+    require_vol = bool(cfg.get("require_volume_confirm", False))
     miss = lambda why: {
         "direction": None,
         "detail": why,
@@ -299,6 +372,12 @@ def compute_momentum_oi_reads(
             "fresh_oi": miss("waiting for 09:15 baseline snapshot"),
             "writer_flow": miss("waiting for 09:15 baseline snapshot"),
         }
+    vol_backed: Optional[bool] = None
+    vol_lbl = ""
+    if require_vol:
+        vol_backed, vol_lbl = volume_backing_between_snapshots(
+            by_ts, ts_sorted, prev_t, last_t, spot, band, DEFAULT_CFG
+        )
     ce_l, pe_l = _chain_totals_full(by_ts[last_t])
     ce_p, pe_p = _chain_totals_full(by_ts[prev_t])
     ce_b, pe_b = _chain_totals_full(by_ts[base_t])
@@ -314,6 +393,9 @@ def compute_momentum_oi_reads(
         sig_min=sig_min,
         sig_extreme=sig_extreme,
         require_cumd=require_cumd,
+        require_volume=require_vol,
+        volume_label=vol_lbl,
+        volume_backed=vol_backed,
         age_sec=age_sec,
         label="Total OI",
     )
@@ -330,6 +412,9 @@ def compute_momentum_oi_reads(
             sig_min=sig_min,
             sig_extreme=sig_extreme,
             require_cumd=require_cumd,
+            require_volume=require_vol,
+            volume_label=vol_lbl,
+            volume_backed=vol_backed,
             age_sec=age_sec,
             label="OI chg since 09:15",
         )

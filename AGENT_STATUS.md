@@ -16,6 +16,23 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.24-proto-oi-filters` | Gemini/Cursor | **done, `41fd6be` + momentum v2** (see block) tags `pre/post-gemini-v2.0.24` | **NO — awaiting Harish** |
 | `gemini/v2.0.25-proto-candle-trail` | Gemini/Cursor | **done, `18eaee4`** tags `pre/post-gemini-v2.0.25` | **NO — awaiting Harish** |
 | `gemini/v2.0.26-oi3m-separate-feature` | Gemini/Cursor | **done, `4ec5afa`** tags `pre/post-gemini-v2.0.26` | **NO — awaiting Harish** |
+| `gemini/v2.0.27-pece-volume` | Gemini/Cursor | **done, `4cefbe4`** tags `pre/post-gemini-v2.0.27` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-17 (late night) · Gemini/Cursor · `gemini/v2.0.27-pece-volume`
+
+**Owner UNLOCK (module #4 only):** PE-CE Matrix — Put/Call/PE−CE **per-interval volume** columns (additive). **Re-lock:** `LOCKED_MANIFEST.json` hashes for `pe_ce_matrix.py` + `PeceMatrix.tsx` only; `relock_history` entry 2026-11-17. **Parity honesty:** per-interval Δ cumulative Dhan `ce_vol`/`pe_vol` summed over the same strike scope as the table; owner's reference sheet is a **different vendor** — method match, not exact figures.
+
+**Part A files:** `ict_smc_app/backend/app/engine/pe_ce_matrix.py` (`interval_volumes_from_cumulative`), `PeceMatrix.tsx`, `test_pe_ce_matrix.py`, `test_immutable_feature_lock.py`, `LOCKED_MANIFEST.json`.
+
+**Part B (8510, not locked):** `require_volume_confirm` default **false** on `oi_filters.momentum`; churn downgrades S-based CE/PE → NEUTRAL (fail-open on unknown). Cockpit `· vol: backed|churn` on momentum rows. `scripts/patch_add_oi_filters_8510.py` + `proto_oi_filters_8510.py` / `ema8_prototype_8510.py` / `chain_reads_8510.py` / `Algorithmic_Trading_Workspace_8510.html` / `test_oi_momentum_8510.py`.
+
+**Verify:** `scripts/verify_locks.py` **11/11**; `pytest ict_smc_app/backend/tests/test_pe_ce_matrix.py test_immutable_feature_lock.py analyst/test_oi_momentum_8510.py` (37+); `test_proto_oi_filters_8510.py` 11/11.
+
+**Commit:** `4cefbe4`; tags `pre-gemini-v2.0.27` / `post-gemini-v2.0.27`.
+
+**Not verified:** live Dhan feed vs owner sheet magnitudes; browser PE-CE table; 8510 cockpit vol labels after engine restart.
 
 ---
 

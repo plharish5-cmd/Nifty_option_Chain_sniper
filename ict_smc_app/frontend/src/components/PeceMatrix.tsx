@@ -19,6 +19,9 @@ export interface MatrixRow {
   call_oi_step_chg: number;
   pe_ce_day_diff: number;
   pe_ce_step_diff: number;
+  put_vol?: number;
+  call_vol?: number;
+  pece_vol?: number;
   pcr_day: number;
   step_span_s?: number;
   step_is_gap?: boolean;
@@ -809,6 +812,9 @@ export default function PeceMatrix({ tick = 0 }: PeceMatrixProps) {
               <th className={`${th} w-32 cursor-help`} title={HOVER.putOi}>Put OI (Floor)</th>
               <th className={`${th} w-32 cursor-help`} title={HOVER.callOi}>Call OI (Cap)</th>
               <th className={`${th} w-28 cursor-help`} title={HOVER.peCeDiff}>PE − CE Difference</th>
+              <th className={`${th} w-24 cursor-help`} title="Per-interval Put volume (Δ cumulative Dhan pe_vol, strikes in scope). Method matches owner sheet; feed may differ.">Put Vol</th>
+              <th className={`${th} w-24 cursor-help`} title="Per-interval Call volume (Δ cumulative Dhan ce_vol).">Call Vol</th>
+              <th className={`${th} w-24 cursor-help`} title="Put interval vol minus Call interval vol.">PE−CE Vol</th>
               <th className={`${th} w-32 text-center cursor-help`} title={HOVER.dayNetBar}>Day Net Bar</th>
               <th className={`${th} w-24 text-center cursor-help`} title={HOVER.intervalBar}>Interval Δ Bar</th>
               <th className={`${th} w-16 text-center cursor-help`} title={HOVER.pcr}>PCR</th>
@@ -908,6 +914,23 @@ export default function PeceMatrix({ tick = 0 }: PeceMatrixProps) {
                         </span>
                       )}
                     </div>
+                  </td>
+
+                  {/* 4b. Interval volumes */}
+                  <td className={td}>
+                    <span className="font-bold text-emerald-400">{inr(r.put_vol ?? 0, true)}</span>
+                  </td>
+                  <td className={td}>
+                    <span className="font-bold text-rose-300">{inr(r.call_vol ?? 0, true)}</span>
+                  </td>
+                  <td className={td}>
+                    <span
+                      className={`font-bold ${
+                        (r.pece_vol ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"
+                      }`}
+                    >
+                      {inr(r.pece_vol ?? 0, true)}
+                    </span>
                   </td>
 
                   {/* 5. Center-Zero Day Net Bar */}

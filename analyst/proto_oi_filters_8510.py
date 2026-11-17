@@ -39,6 +39,7 @@ DEFAULT_OI_FILTERS: Dict[str, Any] = {
         "sig_min": 0.15,
         "sig_extreme": 0.30,
         "require_cumd_confirm": False,
+        "require_volume_confirm": False,
     },
 }
 
@@ -84,6 +85,8 @@ def load_oi_filters_cfg(proto_cfg: Dict[str, Any]) -> Dict[str, Any]:
             m["sig_extreme"] = float(mom["sig_extreme"])
         if "require_cumd_confirm" in mom:
             m["require_cumd_confirm"] = bool(mom["require_cumd_confirm"])
+        if "require_volume_confirm" in mom:
+            m["require_volume_confirm"] = bool(mom["require_volume_confirm"])
         if "deadzone_cr_per_min" in mom:
             pass  # retired — ignored
         out["momentum"] = m

@@ -166,6 +166,8 @@ def test_pe_ce_matrix_contract_and_action_verdicts():
             assert r["pe_ce_day_diff"] == r["put_oi_day_chg"] - r["call_oi_day_chg"], "Matrix day diff invariant broken"
         if "pe_ce_step_diff" in r and "put_oi_step_chg" in r and "call_oi_step_chg" in r:
             assert r["pe_ce_step_diff"] == r["put_oi_step_chg"] - r["call_oi_step_chg"], "Matrix step diff invariant broken"
+        for vk in ("put_vol", "call_vol", "pece_vol"):
+            assert vk in r, f"Matrix row missing volume key {vk}"
 
     # Stage verdict resolution invariant
     verdict_keys = [
@@ -252,6 +254,7 @@ def test_frontend_pe_ce_matrix_invariants():
     assert "Stage 3" in src
     assert "Stage 4" in src
     assert "Stage 5" in src
+    assert "Put Vol" in src and "PE−CE Vol" in src
 
 
 def test_frontend_cvd_and_chart_overlays_invariants():

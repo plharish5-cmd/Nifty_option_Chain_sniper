@@ -11,8 +11,8 @@
       "size_bytes": 23717
     },
     "ict_smc_app/backend/app/engine/pe_ce_matrix.py": {
-      "sha256": "b3138aa6cd2c143a0808544db3a33a29736461ecabe3ab65100e6c4f777785b8",
-      "size_bytes": 34021
+      "sha256": "2773c28d77f813ab0cf09bd19e12bba60bb8095a48a7ee2a78b2deed4b0c934b",
+      "size_bytes": 35458
     },
     "ict_smc_app/backend/app/engine/cvd_divergence.py": {
       "sha256": "981cbb2379b09e53a2f8c38a696b1b0f1d850024fd721c2871bac8c0a5236356",
@@ -27,8 +27,8 @@
       "size_bytes": 80595
     },
     "ict_smc_app/frontend/src/components/PeceMatrix.tsx": {
-      "sha256": "ee28294d9ddd3922df65b13a2327d585ad85b1f856095a46d2ffff4f40332628",
-      "size_bytes": 57048
+      "sha256": "206850e9aa009da3b6359af87fc855056ba35494c1e138fc23e4c8d2211c6eb9",
+      "size_bytes": 58273
     },
     "ict_smc_app/frontend/src/components/CvdAlertWidget.tsx": {
       "sha256": "85abee0def886189d584eff92684a2b83dfad53bf61e6e4261151da9c79fcbf0",
@@ -70,6 +70,16 @@
       "reason": "Removed refuted 1H wick-zone layer from Chart.tsx (user-authorised UNLOCK Chart.tsx per claude/Wick_Zone_Verdict.md: 247 sessions -0.7 sd refutation).",
       "files": [
         "ict_smc_app/frontend/src/components/Chart.tsx"
+      ]
+    },
+    {
+      "at": "2026-11-17T23:50:00+05:30",
+      "module": "PE-CE Matrix",
+      "reason": "owner UNLOCK: add Put/Call/PE-CE volume columns",
+      "author": "Cursor/Gemini",
+      "files": [
+        "ict_smc_app/backend/app/engine/pe_ce_matrix.py",
+        "ict_smc_app/frontend/src/components/PeceMatrix.tsx"
       ]
     }
   ]

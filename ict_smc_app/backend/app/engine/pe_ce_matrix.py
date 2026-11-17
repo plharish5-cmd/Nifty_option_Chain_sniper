@@ -23,6 +23,19 @@ from ..timeutil import chart_time, hm, now_epoch, now_ist, session_bounds
 
 log = logging.getLogger("pe_ce_matrix")
 
+# Interval volume method: Dhan ce_vol/pe_vol are cumulative session totals; per-row interval
+# volume = delta of summed cumulative vol across the strike range in scope (same strikes as OI).
+# Owner reference sheet uses a different vendor — match METHOD, not vendor-exact magnitudes.
+
+
+def interval_volumes_from_cumulative(
+    curr_ce_vol: float, curr_pe_vol: float, prev_ce_vol: float, prev_pe_vol: float
+) -> Tuple[int, int, int]:
+    """put_vol, call_vol, pe_ce_vol for one table row. Negative deltas clamped (reset/new session)."""
+    call_iv = max(0, int(round(curr_ce_vol - prev_ce_vol)))
+    put_iv = max(0, int(round(curr_pe_vol - prev_pe_vol)))
+    return put_iv, call_iv, put_iv - call_iv
+
 
 def get_cfg() -> Dict[str, Any]:
     return config.rules().get("pe_ce_matrix", {})
@@ -613,6 +626,8 @@ def compute_pe_ce_matrix(
     prev_fut_oi = open_fut_oi
     prev_curr_ce_oi = baseline_ce_oi
     prev_curr_pe_oi = baseline_pe_oi
+    prev_curr_ce_vol = 0.0
+    prev_curr_pe_vol = 0.0
 
     step_diffs: List[int] = []
     call_step_diffs: List[int] = []
@@ -624,6 +639,8 @@ def compute_pe_ce_matrix(
     for b_ts in bucket_keys:
         curr_ce_oi = 0.0
         curr_pe_oi = 0.0
+        curr_ce_vol = 0.0
+        curr_pe_vol = 0.0
         effective_snap_t = b_ts
 
         # Forward-fill latest snapshot for each target expiry at or before interval end
@@ -637,6 +654,8 @@ def compute_pe_ce_matrix(
                     s_rows = [r for r in snaps_by_exp[e][snap_t] if min_strike <= float(r["strike"]) <= max_strike]
                     curr_ce_oi += sum(float(r["ce_oi"] or 0) for r in s_rows)
                     curr_pe_oi += sum(float(r["pe_oi"] or 0) for r in s_rows)
+                    curr_ce_vol += sum(float(r["ce_vol"] or 0) for r in s_rows)
+                    curr_pe_vol += sum(float(r["pe_vol"] or 0) for r in s_rows)
 
         # Dropped-frame glitch filter
         if prev_curr_ce_oi > 0 and curr_ce_oi < 0.25 * prev_curr_ce_oi:
@@ -690,6 +709,12 @@ def compute_pe_ce_matrix(
         step_span_s = int(step_s if prev_b_ts is None else b_ts - prev_b_ts)
         step_is_gap = prev_b_ts is not None and step_span_s > step_s * gap_factor
 
+        put_vol, call_vol, pece_vol = (
+            interval_volumes_from_cumulative(curr_ce_vol, curr_pe_vol, prev_curr_ce_vol, prev_curr_pe_vol)
+            if prev_b_ts is not None
+            else (0, 0, 0)
+        )
+
         ledger_rows.append({
             "time": chart_time(effective_snap_t),
             "time_label": t_label,
@@ -699,6 +724,9 @@ def compute_pe_ce_matrix(
             "call_oi_step_chg": step_ce_chg,
             "pe_ce_day_diff": pe_ce_day_diff,
             "pe_ce_step_diff": pe_ce_step_diff,
+            "put_vol": put_vol,
+            "call_vol": call_vol,
+            "pece_vol": pece_vol,
             "pcr_day": pcr_day,
             "step_span_s": step_span_s,
             "step_is_gap": step_is_gap,
@@ -715,6 +743,8 @@ def compute_pe_ce_matrix(
         prev_fut_oi = fut_oi_val
         prev_curr_ce_oi = curr_ce_oi
         prev_curr_pe_oi = curr_pe_oi
+        prev_curr_ce_vol = curr_ce_vol
+        prev_curr_pe_vol = curr_pe_vol
 
     # Append "Prev Day" row at the bottom (oldest anchor)
     open_ts = all_snap_ts[0]
@@ -727,6 +757,9 @@ def compute_pe_ce_matrix(
         "call_oi_step_chg": 0,
         "pe_ce_day_diff": 0,
         "pe_ce_step_diff": 0,
+        "put_vol": 0,
+        "call_vol": 0,
+        "pece_vol": 0,
         "pcr_day": round(min(max(baseline_pe_oi / max(baseline_ce_oi, 1.0), pcr_min), pcr_max), 2) if baseline_ce_oi > 0 else 1.0,
         "fut_ltp": round(fut_candles[0]["c"] if fut_candles else 22500.0, 1),
         "fut_oi_day_chg": 0,

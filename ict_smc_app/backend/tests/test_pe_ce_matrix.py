@@ -46,6 +46,13 @@ def test_magnitude_regime_classification():
     assert "30L+" in txt
 
 
+def test_interval_volumes_from_cumulative():
+    put_v, call_v, pece = pe_ce_matrix.interval_volumes_from_cumulative(5000, 8000, 3000, 5000)
+    assert (put_v, call_v, pece) == (3000, 2000, 1000)
+    put_v2, call_v2, pece2 = pe_ce_matrix.interval_volumes_from_cumulative(1000, 900, 2000, 1500)
+    assert put_v2 == 0 and call_v2 == 0 and pece2 == 0
+
+
 def test_slope_flip_detection():
     cfg = {
         "slope_flip_bars": 3,

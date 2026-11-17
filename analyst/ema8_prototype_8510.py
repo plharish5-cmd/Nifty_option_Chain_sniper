@@ -77,6 +77,7 @@ DEFAULT_CFG: Dict[str, Any] = {
             "sig_min": 0.15,
             "sig_extreme": 0.30,
             "require_cumd_confirm": False,
+            "require_volume_confirm": False,
         },
     },
 }

@@ -4972,7 +4972,8 @@
                     const b = src.B != null ? fmtSig(src.B) : '—';
                     const cd = src.CumD_lakh != null ? fmtSig(src.CumD_lakh) + 'L' : '—';
                     const str = src.strength && src.strength !== 'NEUTRAL' ? ` ${src.strength}` : '';
-                    text = `${lab}: S ${fmtSig(src.S)} · bias ${b} · CumD ${cd} → ${d}${str}`;
+                    const vb = src.volume_backing ? ` · vol: ${src.volume_backing}` : '';
+                    text = `${lab}: S ${fmtSig(src.S)} · bias ${b} · CumD ${cd}${vb} → ${d}${str}`;
                 } else if (!stale && src.detail) {
                     span.title = String(src.detail).slice(0, 200);
                 }

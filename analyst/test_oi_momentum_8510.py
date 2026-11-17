@@ -6,6 +6,8 @@ from analyst.chain_reads_8510 import (
     _to_lakhs,
     compute_momentum_oi_reads,
     momentum_direction_from_significance,
+    volume_backing_between_snapshots,
+    DEFAULT_CFG,
 )
 
 
@@ -173,6 +175,172 @@ def test_convergence_pe_within_window():
 def test_to_lakhs():
     assert _to_lakhs(20e7) == 2000.0
     assert _to_lakhs(2e7) == 200.0
+
+
+def _strike_row(ce_oi: float, pe_oi: float, ce_vol: float, pe_vol: float) -> dict:
+    return {"ce_oi": ce_oi, "pe_oi": pe_oi, "ce_vol": ce_vol, "pe_vol": pe_vol}
+
+
+def _synthetic_volume_history(day: str, n_steps: int = 12, step_min: int = 10) -> tuple:
+    """Cumulative vol/OI series with stable high OI-per-vol on prior windows."""
+    t_open = _hm_ts(day, "09:15")
+    ts_sorted = [t_open + i * step_min * 60 for i in range(n_steps)]
+    k = 25000.0
+    by_ts = {}
+    ce_oi = pe_oi = 10 * 1e5
+    ce_vol = pe_vol = 0.0
+    for i, t in enumerate(ts_sorted):
+        if i > 0:
+            ce_oi += 5 * 1e4
+            pe_oi += 5 * 1e4
+            ce_vol += 1000.0
+            pe_vol += 1000.0
+        by_ts[t] = {k: _strike_row(ce_oi, pe_oi, ce_vol, pe_vol)}
+    return by_ts, ts_sorted
+
+
+def test_volume_backing_churn_and_backed_labels():
+    day = "2026-11-17"
+    by_ts, ts_sorted = _synthetic_volume_history(day, n_steps=14)
+    k = 25000.0
+    t_prev = ts_sorted[-3]
+    t_now = ts_sorted[-2]
+    # Churn: huge volume tick, tiny OI change on the last window.
+    prev = by_ts[t_prev][k]
+    by_ts[t_now][k] = _strike_row(
+        prev["ce_oi"] + 2e3,
+        prev["pe_oi"] + 2e3,
+        prev["ce_vol"] + 5e6,
+        prev["pe_vol"] + 5e6,
+    )
+    backed, lbl = volume_backing_between_snapshots(
+        by_ts, ts_sorted, t_prev, t_now, spot=25000.0, band=1000.0, cfg=DEFAULT_CFG
+    )
+    assert backed is False and lbl == "churn"
+
+    by_ts2, ts_sorted2 = _synthetic_volume_history(day, n_steps=14)
+    tp = ts_sorted2[-3]
+    tn = ts_sorted2[-2]
+    p2 = by_ts2[tp][k]
+    by_ts2[tn][k] = _strike_row(
+        p2["ce_oi"] + 5e4,
+        p2["pe_oi"] + 5e4,
+        p2["ce_vol"] + 1000.0,
+        p2["pe_vol"] + 1000.0,
+    )
+    backed2, lbl2 = volume_backing_between_snapshots(
+        by_ts2, ts_sorted2, tp, tn, spot=25000.0, band=1000.0, cfg=DEFAULT_CFG
+    )
+    assert backed2 is True and lbl2 == "backed"
+
+
+def test_volume_confirm_on_churn_downgrades_to_neutral():
+    day = "2026-11-17"
+    t_open = _hm_ts(day, "09:15")
+    t_prev = _hm_ts(day, "10:25")
+    t_now = _hm_ts(day, "10:35")
+    k = 25000.0
+    by_ts, ts_sorted = _synthetic_volume_history(day, n_steps=12)
+    by_ts[t_open] = {k: _strike_row(10 * 1e5, 10 * 1e5, 0, 0)}
+    by_ts[t_prev] = {k: _strike_row(10 * 1e5, 16 * 1e5, 11000, 11000)}
+    # PE momentum vs t_prev: calls up, puts down (with churn volume on last window).
+    by_ts[t_now] = {k: _strike_row(20 * 1e5, 5 * 1e5, 5e6 + 11000, 5e6 + 11000)}
+    for t in (t_open, t_prev, t_now):
+        if t not in ts_sorted:
+            ts_sorted.append(t)
+    ts_sorted = sorted(ts_sorted)
+    out_off = compute_momentum_oi_reads(
+        by_ts,
+        ts_sorted,
+        spot=25000.0,
+        band=1000.0,
+        day=day,
+        now_ts=t_now,
+        last_t=t_now,
+        age_sec=60,
+        momentum_cfg={"require_volume_confirm": False},
+    )
+    assert out_off["total_oi"]["direction"] == "PE"
+    out_on = compute_momentum_oi_reads(
+        by_ts,
+        ts_sorted,
+        spot=25000.0,
+        band=1000.0,
+        day=day,
+        now_ts=t_now,
+        last_t=t_now,
+        age_sec=60,
+        momentum_cfg={"require_volume_confirm": True},
+    )
+    assert out_on["total_oi"]["direction"] == "NEUTRAL"
+    assert out_on["total_oi"].get("volume_backing") == "churn"
+
+
+def test_volume_confirm_on_backed_keeps_direction():
+    day = "2026-11-17"
+    t_open = _hm_ts(day, "09:15")
+    t_prev = _hm_ts(day, "10:25")
+    t_now = _hm_ts(day, "10:35")
+    k = 25000.0
+    by_ts, ts_sorted = _synthetic_volume_history(day, n_steps=12)
+    by_ts[t_open] = {k: _strike_row(10 * 1e5, 10 * 1e5, 0, 0)}
+    by_ts[t_prev] = {k: _strike_row(10 * 1e5, 15 * 1e5, 11000, 11000)}
+    by_ts[t_now] = {k: _strike_row(5 * 1e5, 5 * 1e5, 12000, 12000)}
+    for t in (t_open, t_prev, t_now):
+        if t not in ts_sorted:
+            ts_sorted.append(t)
+    ts_sorted = sorted(ts_sorted)
+    out = compute_momentum_oi_reads(
+        by_ts,
+        ts_sorted,
+        spot=25000.0,
+        band=1000.0,
+        day=day,
+        now_ts=t_now,
+        last_t=t_now,
+        age_sec=60,
+        momentum_cfg={"require_volume_confirm": True},
+    )
+    assert out["total_oi"]["direction"] == "PE"
+    assert out["total_oi"].get("volume_backing") == "backed"
+
+
+def test_volume_confirm_off_unchanged_direction():
+    from analyst.chain_reads_8510 import _hm_ts
+
+    day = "2026-11-17"
+    t_open = _hm_ts(day, "09:15")
+    t_now = _hm_ts(day, "09:25")
+    by_ts = {
+        t_open: {25000.0: {"ce_oi": 10 * 1e5, "pe_oi": 10 * 1e5}},
+        t_now: {25000.0: {"ce_oi": 15 * 1e5, "pe_oi": 5 * 1e5}},
+    }
+    base = {
+        "momentum_cfg": {"require_volume_confirm": False},
+    }
+    out_a = compute_momentum_oi_reads(
+        by_ts,
+        sorted(by_ts),
+        spot=25000.0,
+        band=1000.0,
+        day=day,
+        now_ts=t_now,
+        last_t=t_now,
+        age_sec=60,
+        momentum_cfg=base["momentum_cfg"],
+    )
+    out_b = compute_momentum_oi_reads(
+        by_ts,
+        sorted(by_ts),
+        spot=25000.0,
+        band=1000.0,
+        day=day,
+        now_ts=t_now,
+        last_t=t_now,
+        age_sec=60,
+        momentum_cfg={},
+    )
+    assert out_a["total_oi"]["direction"] == out_b["total_oi"]["direction"]
 
 
 def test_insufficient_history_direction_none():
