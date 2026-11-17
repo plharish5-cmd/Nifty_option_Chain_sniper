@@ -13,7 +13,7 @@ Trunk: **`integrate/v1.9`**
 | `chatgpt/v1.9.4d` | ChatGPT | done, tag `post-chatgpt-v1.9.4d-final` | **NO — awaiting Harish** |
 | `claude/v1.9.4-safety-lock` | Claude | **BROKEN, `2d116b7` — DELETE** | never merge |
 | `agy/ema8-proto-corrections` | Antigravity | **done, `b1d23ca`**, tag `post-agy-ema8-proto-corrections` | **NO — awaiting Harish** |
-| `gemini/v2.0.24-proto-oi-filters` | Gemini/Cursor | **done, momentum commit** tags `pre/post-gemini-v2.0.24` | **NO — awaiting Harish** |
+| `gemini/v2.0.24-proto-oi-filters` | Gemini/Cursor | **done, `41fd6be`** tags `pre/post-gemini-v2.0.24` | **NO — awaiting Harish** |
 
 ---
 
@@ -33,7 +33,9 @@ Trunk: **`integrate/v1.9`**
 
 **Config:** `scanner.ema8_prototype.oi_filters.momentum`: `{ "window_min": 10, "deadzone_cr_per_min": 0.05 }` via patch script only (not committing `terminal8510_config.json`).
 
-**Verify:** `scripts/verify_locks.py` 11/11; `pytest analyst/test_oi_momentum_8510.py analyst/test_proto_oi_filters_8510.py`; full `pytest analyst --continue-on-collection-errors` in `.venv` — diff vs handover §6 (~661 passed; phase5_eod/phase7 wall-clock after 15:20 IST).
+**Verify:** `scripts/verify_locks.py` 11/11; full `.venv` `PYTHONPATH=. pytest analyst -q --continue-on-collection-errors` (17 Nov ~21:09 IST): **826 passed / 34 failed / 42 errors** — same failure count as prior OI-filters run (818/34/42); **no new failed test IDs** attributable to momentum (`test_oi_momentum_8510` 6 pass, `test_proto_oi_filters_8510` 11 pass). Expected after 15:20 IST: `test_phase5_eod_*` ×3, extra `test_phase7_*` wall-clock sensitivity.
+
+**Commit:** `41fd6be` on `gemini/v2.0.24-proto-oi-filters`; `post-gemini-v2.0.24` moved to this SHA; pushed.
 
 **Recorder note:** `market_recorder_8510.record_chain` stores every strike in the Dhan OC payload (not the 4-strike matrix). Momentum sums **all** strikes per snapshot. Harish should still spot-check cockpit Cr/min vs 8600 OI-Change chart in live hours.
 
