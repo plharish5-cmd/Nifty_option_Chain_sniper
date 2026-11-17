@@ -76,6 +76,9 @@ WIRING
   In log_only, record the would-block verdict to telemetry/log; still take the trade. In block,
   skip the entry via the existing setup-release path. Independent of the oi_filters gate — the
   overall decision is: existing gates OR oi_3m gate (when both enabled).
+- **Missing-config safety:** if the scanner.oi_3m_feature block is absent entirely, treat it as
+  enabled:false and do nothing — never raise a KeyError. Read every key with a default so a
+  terminal that never ran the patch script behaves exactly as before this feature.
 - Backtest: apply the same oi_3m gate in the Prototype backtest when snapshots exist; a spec flag
   turns the feature/gate on so its effect on held-out points can be measured. Fail-OPEN on no data.
 - Cockpit: a new panel "OI 3m + 8600 Context" placed BELOW and visually separate from the 8600
