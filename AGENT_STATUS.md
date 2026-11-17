@@ -16,7 +16,7 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.24-proto-oi-filters` | Gemini/Cursor | **done, `41fd6be` + momentum v2** (see block) tags `pre/post-gemini-v2.0.24` | **NO — awaiting Harish** |
 | `gemini/v2.0.25-proto-candle-trail` | Gemini/Cursor | **done, `18eaee4`** tags `pre/post-gemini-v2.0.25` | **NO — awaiting Harish** |
 | `gemini/v2.0.26-oi3m-separate-feature` | Gemini/Cursor | **done, `4ec5afa`** tags `pre/post-gemini-v2.0.26` | **NO — awaiting Harish** |
-| `gemini/v2.0.27-pece-volume` | Gemini/Cursor | **done, `4cefbe4`** tags `pre/post-gemini-v2.0.27` | **NO — awaiting Harish** |
+| `gemini/v2.0.27-pece-volume` | Gemini/Cursor | **done, `e2f5199`** tags `pre/post-gemini-v2.0.27` | **NO — awaiting Harish** |
 
 ---
 
@@ -30,7 +30,7 @@ Trunk: **`integrate/v1.9`**
 
 **Verify:** `scripts/verify_locks.py` **11/11**; `pytest ict_smc_app/backend/tests/test_pe_ce_matrix.py test_immutable_feature_lock.py analyst/test_oi_momentum_8510.py` (37+); `test_proto_oi_filters_8510.py` 11/11.
 
-**Commit:** `4cefbe4`; tags `pre-gemini-v2.0.27` / `post-gemini-v2.0.27`.
+**Commit:** `e2f5199`; tags `pre-gemini-v2.0.27` / `post-gemini-v2.0.27`.
 
 **Not verified:** live Dhan feed vs owner sheet magnitudes; browser PE-CE table; 8510 cockpit vol labels after engine restart.
 
