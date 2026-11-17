@@ -18,6 +18,26 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.26-oi3m-separate-feature` | Gemini/Cursor | **done, `4ec5afa`** tags `pre/post-gemini-v2.0.26` | **NO — awaiting Harish** |
 | `gemini/v2.0.27-pece-volume` | Gemini/Cursor | **done, `e2f5199`** tags `pre/post-gemini-v2.0.27` | **NO — awaiting Harish** |
 | `gemini/v2.0.28-dhan-expiry-parse` | Gemini/Cursor | **done, `d35ef9d`** tags `pre/post-gemini-v2.0.28` | **NO — awaiting Harish** |
+| `gemini/v2.0.29-backtest-sweep` | Gemini/Cursor | **done** (this block) tags `pre/post-gemini-v2.0.29` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-18 · Gemini/Cursor · `gemini/v2.0.29-backtest-sweep`
+
+**Goal:** Staged Prototype filter sweep harness on `backtest_lab_8510` — held-out 70/30, Benjamini–Hochberg FDR (q=0.10), block-bootstrap by day, permutation null, random-sign floor. Stages 0–3 (not 2^N). Honest “keep filters OFF” verdict allowed.
+
+**Files:** `analyst/proto_sweep_8510.py`, `analyst/test_proto_sweep_8510.py` (6); `backtest_lab_8510.py` adds `merge_proto_overrides`, `run_ema8_prototype_trades`.
+
+**Run (owner machine, recorded spot + chain DB):**
+```bash
+python3 -m analyst.proto_sweep_8510 --from YYYY-MM-DD --to YYYY-MM-DD --stage all \
+  --out data/terminal8510/sweeps/$(date +%Y%m%d-%H%M%S)/
+```
+Outputs: `sweep_ranked.csv`, `sweep_report.md`, `sweep_result.json` in that folder (under `data/`, gitignored).
+
+**Verify:** `verify_locks.py` 11/11; `pytest analyst/test_proto_sweep_8510.py` 6/6 (+ backtest_lab tests).
+
+**Not verified:** full sweep execution in sandbox (no recorded market DB / long engine run).
 
 ---
 

@@ -376,6 +376,47 @@ def month_chunks(days: List[str]) -> List[Tuple[str, str]]:
     return out
 
 
+def run_ema8_prototype_trades(
+    from_day: str,
+    to_day: str,
+    *,
+    cost_pts: float = DEFAULT_SPEC["cost_pts"],
+    proto_overrides: Optional[Dict[str, Any]] = None,
+    backend: Any = None,
+    on_progress: Optional[Callable[[str], None]] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Run only the 8 EMA Prototype lane; returns normalized trades + coverage."""
+    import tempfile
+
+    lanes = ["EMA8_PROTOTYPE"]
+    engine_filter = ENGINE_FILTER["EMA8_PROTOTYPE"]
+    with tempfile.TemporaryDirectory(prefix="bt8510_sweep_") as td:
+        be = backend or _private_backend(Path(td), proto_overrides)
+        cov = coverage_of(Path(be.market_db), from_day, to_day)
+        days = cov["days"]
+        if not days:
+            return [], cov
+        chunks = month_chunks(days)
+        trades: List[Dict[str, Any]] = []
+        for i, (c_from, c_to) in enumerate(chunks):
+            if on_progress:
+                on_progress(f"{c_from[:7]} ({i + 1}/{len(chunks)})")
+            res = be.run_date_range_backtest(
+                c_from, c_to, include_today_paper=False,
+                strategy_filter=engine_filter, data_type_filter="SYNTHESIZED",
+            )
+            if not res.get("ok", True):
+                raise RuntimeError(f"engine failed {c_from}..{c_to}: {res.get('error')}")
+            part = [
+                t for t in normalize_rows(res.get("trades") or [])
+                if c_from <= t["day"] <= c_to and t["lane"] in lanes
+            ]
+            trades.extend(part)
+        trades.sort(key=lambda t: (t["day"], t["entry_hm"], t["lane"]))
+        cov["cost_pts"] = cost_pts
+        return trades, cov
+
+
 def day_chart(market_db: Path, day: str) -> Dict[str, Any]:
     """15-minute candles of one day with the 4 and 8 EMA (seeded from the days before)."""
     import pandas as pd
@@ -562,6 +603,32 @@ def job_day(job_id: str, day: str, market_db: Path, jobs_dir: Path = JOBS_DIR) -
 
 
 # ── the worker ───────────────────────────────────────────────────────────────
+def merge_proto_overrides(cfg: Dict[str, Any], proto_overrides: Dict[str, Any]) -> None:
+    """Merge prototype sweep / lab overrides into a full terminal8510 config dict."""
+    if not proto_overrides:
+        return
+    block = cfg.setdefault("scanner", {}).setdefault("ema8_prototype", {})
+    if isinstance(proto_overrides.get("oi_filters"), dict):
+        cur = block.get("oi_filters") if isinstance(block.get("oi_filters"), dict) else {}
+        merged = dict(cur)
+        merged.update(proto_overrides["oi_filters"])
+        if isinstance(proto_overrides["oi_filters"].get("switches"), dict):
+            merged["switches"] = {**(cur.get("switches") or {}), **proto_overrides["oi_filters"]["switches"]}
+        if isinstance(proto_overrides["oi_filters"].get("momentum"), dict):
+            merged["momentum"] = {**(cur.get("momentum") or {}), **proto_overrides["oi_filters"]["momentum"]}
+        block["oi_filters"] = merged
+    if isinstance(proto_overrides.get("candle_trail"), dict):
+        block["candle_trail"] = {**(block.get("candle_trail") or {}), **proto_overrides["candle_trail"]}
+    if isinstance(proto_overrides.get("oi_3m_feature"), dict):
+        sc = cfg.setdefault("scanner", {})
+        feat = sc.get("oi_3m_feature") if isinstance(sc.get("oi_3m_feature"), dict) else {}
+        merged_feat = dict(feat)
+        merged_feat.update(proto_overrides["oi_3m_feature"])
+        if isinstance(proto_overrides["oi_3m_feature"].get("gate"), dict):
+            merged_feat["gate"] = {**(feat.get("gate") or {}), **proto_overrides["oi_3m_feature"]["gate"]}
+        sc["oi_3m_feature"] = merged_feat
+
+
 def _private_backend(tmp: Path, proto_overrides: Optional[Dict[str, Any]] = None):
     """A backend object of this process's own: private config copy, throw-away ledger."""
     from analyst.terminal8510_backend import QuantTerminalBackend
@@ -572,14 +639,7 @@ def _private_backend(tmp: Path, proto_overrides: Optional[Dict[str, Any]] = None
     cfg["market_db_path"] = str(market if market.is_absolute() else (ROOT / market))
     cfg["ledger_db_path"] = str(tmp / "ledger.sqlite3")
     if proto_overrides:
-        block = cfg.setdefault("scanner", {}).setdefault("ema8_prototype", {})
-        if isinstance(proto_overrides.get("oi_filters"), dict):
-            cur = block.get("oi_filters") if isinstance(block.get("oi_filters"), dict) else {}
-            merged = dict(cur)
-            merged.update(proto_overrides["oi_filters"])
-            if isinstance(proto_overrides["oi_filters"].get("switches"), dict):
-                merged["switches"] = {**(cur.get("switches") or {}), **proto_overrides["oi_filters"]["switches"]}
-            block["oi_filters"] = merged
+        merge_proto_overrides(cfg, proto_overrides)
     private = tmp / "config.json"
     private.write_text(json.dumps(cfg), encoding="utf-8")
     try:
