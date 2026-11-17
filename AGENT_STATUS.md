@@ -14,7 +14,7 @@ Trunk: **`integrate/v1.9`**
 | `claude/v1.9.4-safety-lock` | Claude | **BROKEN, `2d116b7` — DELETE** | never merge |
 | `agy/ema8-proto-corrections` | Antigravity | **done, `b1d23ca`**, tag `post-agy-ema8-proto-corrections` | **NO — awaiting Harish** |
 | `gemini/v2.0.24-proto-oi-filters` | Gemini/Cursor | **done, `41fd6be`** tags `pre/post-gemini-v2.0.24` | **NO — awaiting Harish** |
-| `gemini/v2.0.25-proto-candle-trail` | Gemini/Cursor | **done** (see block below) tags `pre/post-gemini-v2.0.25` | **NO — awaiting Harish** |
+| `gemini/v2.0.25-proto-candle-trail` | Gemini/Cursor | **done, `18eaee4`** tags `pre/post-gemini-v2.0.25` | **NO — awaiting Harish** |
 
 ---
 
@@ -42,6 +42,8 @@ Trunk: **`integrate/v1.9`**
 **Not verified here:** live Dhan protective SL modify on each trail ratchet (live updates `spot_stop_level` in DB like Flagship spot trail — no new `_replace_protective_stop` hook yet); live 5m/3m bar source (live path uses `_latest_closed_15m_bar` when `candle_tf_min==15`); broker/market hours; browser toggle persistence this session.
 
 **Confirm (owner rule):** default OFF; arm only at ≥ `activate_pts`; +40 targets off once armed; opposite-close + 15:20 still exit; monotonic via `flagship_candle_trail_update`.
+
+**Commit:** `18eaee4` on `gemini/v2.0.25-proto-candle-trail`; `post-gemini-v2.0.25` at this SHA.
 
 ---
 
