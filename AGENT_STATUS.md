@@ -17,7 +17,7 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.25-proto-candle-trail` | Gemini/Cursor | **done, `18eaee4`** tags `pre/post-gemini-v2.0.25` | **NO — awaiting Harish** |
 | `gemini/v2.0.26-oi3m-separate-feature` | Gemini/Cursor | **done, `4ec5afa`** tags `pre/post-gemini-v2.0.26` | **NO — awaiting Harish** |
 | `gemini/v2.0.27-pece-volume` | Gemini/Cursor | **done, `e2f5199`** tags `pre/post-gemini-v2.0.27` | **NO — awaiting Harish** |
-| `gemini/v2.0.28-dhan-expiry-parse` | Gemini/Cursor | **done** (this block) tags `pre/post-gemini-v2.0.28` | **NO — awaiting Harish** |
+| `gemini/v2.0.28-dhan-expiry-parse` | Gemini/Cursor | **done, `d35ef9d`** tags `pre/post-gemini-v2.0.28` | **NO — awaiting Harish** |
 
 ---
 
@@ -30,6 +30,8 @@ Trunk: **`integrate/v1.9`**
 **Files:** `analyst/terminal8510_backend.py` (`parse_dhan_token_expiry_from_status`), `analyst/test_live_exit_fixes_8510.py` (+5 guard tests).
 
 **Verify:** `verify_locks.py` 11/11; `pytest analyst/test_live_exit_fixes_8510.py` 20/20; full `pytest analyst -q --continue-on-collection-errors` on owner machine vs baseline (~829/34/42 +5 passes expected).
+
+**Commit:** `d35ef9d`; tags `pre-gemini-v2.0.28` / `post-gemini-v2.0.28`.
 
 **Not verified:** live Dhan session in sandbox.
 
