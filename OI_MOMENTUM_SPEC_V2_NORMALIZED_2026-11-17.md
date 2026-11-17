@@ -119,3 +119,7 @@ PROTECTED MODULES untouched; verify_locks 11/11; new unit tests for S thresholds
 B-not-gating, CumD confirm on/off, insufficient-history None; full pytest diffed against the
 handover baseline. Judge live value by the log-only week + points-saved-vs-points-cost test —
 cleaner maths is not automatically more points.
+
+**If any ambiguity, prefer fail OPEN and NEUTRAL over blocking.** When a value, window, or unit is
+unclear or missing, return direction None / NEUTRAL (no block) — never invent a fallback that
+blocks a trade.
