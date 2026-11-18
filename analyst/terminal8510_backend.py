@@ -3004,6 +3004,9 @@ class QuantTerminalBackend:
         self.broker = DhanBroker(self.cfg.get("dhan_base_url", "https://api.dhan.co/v2"), cfg=self.cfg)
         self.market_db = ROOT / self.cfg["market_db_path"]
         self.ledger_db = ROOT / self.cfg["ledger_db_path"]
+        from analyst.ledger_guard_8510 import assert_not_production_ledger_under_pytest
+
+        assert_not_production_ledger_under_pytest(self.ledger_db)
         self.ledger_db.parent.mkdir(parents=True, exist_ok=True)
         self._init_sqlite()
         self.homework_reconciler = HomeworkReconciler()
@@ -4019,8 +4022,11 @@ class QuantTerminalBackend:
 
     def evaluate_desk8600_ticket_lane(self, spot: Optional[float] = None) -> List[Dict[str, Any]]:
         """Signals from the newest 8600 entry ticket (one per closed 3-minute bar). Never raises."""
+        from analyst.desk_scope_8510 import load_desk_scope
         from analyst.desk8600_ticket_lane_8510 import evaluate
 
+        if not bool(load_desk_scope(self.scanner_cfg).get("ticket_lane_enabled", True)):
+            return []
         try:
             bridge = self.__dict__.get("desk8600_bridge")
             last = getattr(bridge, "last", None) or {}
@@ -4172,10 +4178,16 @@ class QuantTerminalBackend:
                      conf.get("score"), ff.get("scanner_min_score"), ff.get("scanner_gate_mode"), conf.get("grade"))
             return []
         try:
+            from analyst.desk_scope_8510 import strategy_id_allowed
             from analyst.ema_lane_entry_gate_8510 import filter_signals_one_ema_trade
 
+            scoped = [
+                s
+                for s in signals
+                if strategy_id_allowed(self.scanner_cfg, str(s.get("strategy_id") or ""))
+            ]
             n_open = len(self.get_active_positions())
-            return filter_signals_one_ema_trade(list(signals), self._ema_lane_lock, open_position_count=n_open)
+            return filter_signals_one_ema_trade(list(scoped), self._ema_lane_lock, open_position_count=n_open)
         except Exception:
             return list(signals)
 
@@ -6085,6 +6097,10 @@ class QuantTerminalBackend:
             log.warning("ema8 prototype square-off: %s", exc)
 
     def _matrix_scalp_scanner_active(self) -> bool:
+        from analyst.desk_scope_8510 import load_desk_scope
+
+        if not bool(load_desk_scope(self.scanner_cfg).get("matrix_scalp_enabled", True)):
+            return False
         if not bool((self.cfg.get("matrix_scalp") or {}).get("enabled", False)):
             return False
         if bool(self.algo_allowlist_cfg.get("enabled")) and bool(
@@ -6094,6 +6110,10 @@ class QuantTerminalBackend:
         return True
 
     def _pa_sr_live_scanner_active(self) -> bool:
+        from analyst.desk_scope_8510 import load_desk_scope
+
+        if not bool(load_desk_scope(self.scanner_cfg).get("pa_sr_live_enabled", True)):
+            return False
         pa = self.cfg.get("pa_sr_homework") or {}
         if not bool(pa.get("enabled", False)) or not bool(pa.get("live_paper_enabled", False)):
             return False
@@ -7726,6 +7746,14 @@ class QuantTerminalBackend:
             "reversal_revamp": __import__(
                 "analyst.reversal_revamp_8510", fromlist=["load_reversal_cfg"]
             ).load_reversal_cfg(self.scanner_cfg),
+            "desk_scope_8510": {
+                **__import__(
+                    "analyst.desk_scope_8510", fromlist=["load_desk_scope"]
+                ).load_desk_scope(self.scanner_cfg),
+                "equity_lane_labels": __import__(
+                    "analyst.desk_scope_8510", fromlist=["enabled_equity_lane_labels"]
+                ).enabled_equity_lane_labels(self.scanner_cfg),
+            },
         }
 
     # ── FUNDS & PAPER WALLET MANAGEMENT ──────────────────────────────────────
@@ -8806,9 +8834,13 @@ class QuantTerminalBackend:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
             rows = cur.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 50").fetchall()
+            from analyst.desk_scope_8510 import order_book_row_visible
+
             orders = []
             for r in rows:
                 o = dict(r)
+                if not order_book_row_visible(self.scanner_cfg, o):
+                    continue
                 o["symbol"] = format_contract_symbol(raw_symbol=o.get("symbol"))
                 o["source"] = o.get("source") or o.get("placed_by") or "AUTO ALGO 🤖"
                 o["placed_by"] = o["source"]

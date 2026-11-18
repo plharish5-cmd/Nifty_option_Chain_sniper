@@ -9,6 +9,8 @@ import pytest
 
 SOURCE=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(SOURCE))
+from analyst.ledger_guard_8510 import install_sqlite_connect_guard
+install_sqlite_connect_guard()
 _SESSION=tempfile.TemporaryDirectory(prefix='8510-pytest-')
 SANDBOX=Path(_SESSION.name)
 _ORIGINAL_ENV=dict(os.environ)
@@ -127,6 +129,10 @@ def private_8510_state(tmp_path,monkeypatch,request):
         return original(file,mode,*args,**kwargs)
     monkeypatch.setattr(io,'open',lambda file,mode='r',*args,**kwargs:safe_open(original_io,file,mode,*args,**kwargs))
     monkeypatch.setattr(builtins,'open',lambda file,mode='r',*args,**kwargs:safe_open(original_open,file,mode,*args,**kwargs))
+    from analyst.ledger_guard_8510 import production_ledger_path
+
+    led = (root / "ledger.sqlite3").resolve()
+    assert led != production_ledger_path(), "private_8510_state must not use production ledger"
     yield
 
 def pytest_sessionfinish(session,exitstatus):

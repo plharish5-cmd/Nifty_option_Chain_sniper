@@ -24,6 +24,25 @@ Trunk: **`integrate/v1.9`**
 | `agy/v2.0.32-reversal-revamp` | AGY/Cursor | **WIP foundation** tags `pre-agy-v2.0.32` | **NO — awaiting Harish** |
 | `gemini/v2.0.34-finish-and-enable` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.34` | **NO — awaiting Harish** |
 | `gemini/v2.0.35-reversal-oi-panel` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.35` | **NO — awaiting Harish** |
+| `gemini/v2.0.36-clean-and-scope` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.36` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-18 · Gemini/Cursor · `gemini/v2.0.36-clean-and-scope`
+
+**Goal:** Paper ledger hygiene + desk scoped to Prototype, Reversal, 1H Flagship only (config reversible).
+
+**Done:** `desk_scope_8510` + patch `patch_desk_scope_three_lanes_8510.py`; `clean_paper_ledger_8510.py` (--preview / --drop); `ledger_guard_8510` + conftest sqlite guard; orders book API/UI hide fixtures & disabled lanes; expired contract cleanup already in off-hours helper.
+
+**Verify:** `verify_locks.py` 11/11; `pytest analyst/test_clean_scope_8510.py analyst/test_offhours_cleanup_8510.py` 14/14.
+
+**Owner run:**
+```bash
+python3 scripts/clean_paper_ledger_8510.py --preview
+python3 scripts/clean_paper_ledger_8510.py --drop
+python3 scripts/patch_desk_scope_three_lanes_8510.py
+# restart engine_8510_live.py
+```
 
 ---
 

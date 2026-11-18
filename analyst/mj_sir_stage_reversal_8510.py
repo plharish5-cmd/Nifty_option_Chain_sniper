@@ -306,117 +306,129 @@ def evaluate_mj_sir_four_pack(
         else "NO TRADE — Second touch on same 8 EMA setup"
     )
 
-    # ── STAGE 2 ─────────────────────────────────────────────────────────────
-    s2_block = common_blocks()
-    setup_key_s2 = _setup_key("S2", True)
-    if mj_state.get("stage2_fired_key") == setup_key_s2:
-        s2_block = s2_block or taken_msg
+    from analyst.desk_scope_8510 import load_desk_scope
 
-    if e4_val <= e8_val:
-        status["stage2_long"] = _status("BLOCKED_MA_STACK", block_reason="NO TRADE — 4 EMA not above 8 EMA")
-    elif s2_block:
-        status["stage2_long"] = _status("NO_TRADE", block_reason=s2_block)
+    scope = load_desk_scope(scanner_cfg)
+    stage2_on = bool(scope.get("stage2_enabled", True))
+    stage3_on = bool(scope.get("stage3_enabled", True))
+
+    # ── STAGE 2 ─────────────────────────────────────────────────────────────
+    if not stage2_on:
+        status["stage2_long"] = _status("OFF", block_reason="DISABLED — desk scope (Stage 2 off)")
     else:
-        ubb_block = ""
-        if bb_stage2:
-            if bb_inward_two(bb_width, bar_ci, shrink):
-                ubb_block = "NO TRADE — UBB inward (BB shrinking 2 candles)"
-            elif not ubb_up_two_candles(ubb, bar_ci, slope_tol):
-                ubb_block = "NO TRADE — UBB not UP for 2 closed candles"
-            elif not ubb_not_down_recent(ubb, bar_ci, slope_tol):
-                ubb_block = "NO TRADE — UBB downward (buyers weak)"
-        if party_switch_enabled and active_party == "BEARISH":
-            ubb_block = ubb_block or "NO TRADE — Party-Switch BEARISH blocks CE"
-        if early:
-            status["stage2_long"] = _status("NO_TRADE", block_reason=ubb_block or early_msg)
-        elif not touch_long:
-            status["stage2_long"] = _status(
-                "ARMED" if not ubb_block else "NO_TRADE",
-                armed=not bool(ubb_block),
-                block_reason=ubb_block or wait_msg,
-            )
-        elif ubb_block:
-            status["stage2_long"] = _status("NO_TRADE", block_reason=ubb_block)
+        s2_block = common_blocks()
+        setup_key_s2 = _setup_key("S2", True)
+        if mj_state.get("stage2_fired_key") == setup_key_s2:
+            s2_block = s2_block or taken_msg
+
+        if e4_val <= e8_val:
+            status["stage2_long"] = _status("BLOCKED_MA_STACK", block_reason="NO TRADE — 4 EMA not above 8 EMA")
+        elif s2_block:
+            status["stage2_long"] = _status("NO_TRADE", block_reason=s2_block)
         else:
-            status["stage2_long"] = _status("TRIGGERED", armed=True, block_reason="")
-            sig = {
-                "strategy_id": "STAGE_2_LONG",
-                "setup_name": "MJ Sir Stage 2 8-EMA (Long) — first touch",
-                "direction": "LONG",
-                "opt_side": "CE",
-                "target_pts": float(cfg["stage_target_pts"]),
-                "sl_pts": float(cfg["stage_sl_pts"]),
-                "index_price": entry_px,
-                "conviction": "MJ_SIR",
-                "paper_only": True,
-                "mj_sir_paper_only": True,
-                "dynamic_e8_at_entry": round(e8_dyn, 2),
-                "details": (
-                    f"{SPEC_TAG} | 4>{e4_val:.1f}>{e8_val:.1f} | "
-                    + (f"first touch dynamic 8EMA {e8_dyn:.1f} @ spot {entry_px:.1f}" if dyn_on
-                       else f"touch low {low_15:.1f}")
-                    + f" | BB width {width_val:.1f}"
-                ),
-            }
-            sig.update(gate_meta("stage2"))
-            signals.append(sig)
-            mj_state["stage2_fired_key"] = setup_key_s2
+            ubb_block = ""
+            if bb_stage2:
+                if bb_inward_two(bb_width, bar_ci, shrink):
+                    ubb_block = "NO TRADE — UBB inward (BB shrinking 2 candles)"
+                elif not ubb_up_two_candles(ubb, bar_ci, slope_tol):
+                    ubb_block = "NO TRADE — UBB not UP for 2 closed candles"
+                elif not ubb_not_down_recent(ubb, bar_ci, slope_tol):
+                    ubb_block = "NO TRADE — UBB downward (buyers weak)"
+            if party_switch_enabled and active_party == "BEARISH":
+                ubb_block = ubb_block or "NO TRADE — Party-Switch BEARISH blocks CE"
+            if early:
+                status["stage2_long"] = _status("NO_TRADE", block_reason=ubb_block or early_msg)
+            elif not touch_long:
+                status["stage2_long"] = _status(
+                    "ARMED" if not ubb_block else "NO_TRADE",
+                    armed=not bool(ubb_block),
+                    block_reason=ubb_block or wait_msg,
+                )
+            elif ubb_block:
+                status["stage2_long"] = _status("NO_TRADE", block_reason=ubb_block)
+            else:
+                status["stage2_long"] = _status("TRIGGERED", armed=True, block_reason="")
+                sig = {
+                    "strategy_id": "STAGE_2_LONG",
+                    "setup_name": "MJ Sir Stage 2 8-EMA (Long) — first touch",
+                    "direction": "LONG",
+                    "opt_side": "CE",
+                    "target_pts": float(cfg["stage_target_pts"]),
+                    "sl_pts": float(cfg["stage_sl_pts"]),
+                    "index_price": entry_px,
+                    "conviction": "MJ_SIR",
+                    "paper_only": True,
+                    "mj_sir_paper_only": True,
+                    "dynamic_e8_at_entry": round(e8_dyn, 2),
+                    "details": (
+                        f"{SPEC_TAG} | 4>{e4_val:.1f}>{e8_val:.1f} | "
+                        + (f"first touch dynamic 8EMA {e8_dyn:.1f} @ spot {entry_px:.1f}" if dyn_on
+                           else f"touch low {low_15:.1f}")
+                        + f" | BB width {width_val:.1f}"
+                    ),
+                }
+                sig.update(gate_meta("stage2"))
+                signals.append(sig)
+                mj_state["stage2_fired_key"] = setup_key_s2
 
     # ── STAGE 3 ─────────────────────────────────────────────────────────────
-    s3_block = common_blocks()
-    setup_key_s3 = _setup_key("S3", False)
-    if mj_state.get("stage3_fired_key") == setup_key_s3:
-        s3_block = s3_block or taken_msg
-
-    if e4_val >= e8_val:
-        status["stage3_short"] = _status("BLOCKED_MA_STACK", block_reason="NO TRADE — 4 EMA not below 8 EMA")
-    elif s3_block:
-        status["stage3_short"] = _status("NO_TRADE", block_reason=s3_block)
+    if not stage3_on:
+        status["stage3_short"] = _status("OFF", block_reason="DISABLED — desk scope (Stage 3 off)")
     else:
-        lbb_block = ""
-        if bb_stage3:
-            if bb_inward_two(bb_width, bar_ci, shrink):
-                lbb_block = "NO TRADE — LBB inward (BB shrinking 2 candles)"
-            elif not lbb_down_two_candles(lbb, bar_ci, slope_tol):
-                lbb_block = "NO TRADE — LBB not DOWN for 2 closed candles"
-            elif not lbb_not_up_recent(lbb, bar_ci, slope_tol):
-                lbb_block = "NO TRADE — LBB upward (sellers weak)"
-        if party_switch_enabled and active_party == "BULLISH":
-            lbb_block = lbb_block or "NO TRADE — Party-Switch BULLISH blocks PE"
-        if early:
-            status["stage3_short"] = _status("NO_TRADE", block_reason=lbb_block or early_msg)
-        elif not touch_short:
-            status["stage3_short"] = _status(
-                "ARMED" if not lbb_block else "NO_TRADE",
-                armed=not bool(lbb_block),
-                block_reason=lbb_block or wait_msg,
-            )
-        elif lbb_block:
-            status["stage3_short"] = _status("NO_TRADE", block_reason=lbb_block)
+        s3_block = common_blocks()
+        setup_key_s3 = _setup_key("S3", False)
+        if mj_state.get("stage3_fired_key") == setup_key_s3:
+            s3_block = s3_block or taken_msg
+
+        if e4_val >= e8_val:
+            status["stage3_short"] = _status("BLOCKED_MA_STACK", block_reason="NO TRADE — 4 EMA not below 8 EMA")
+        elif s3_block:
+            status["stage3_short"] = _status("NO_TRADE", block_reason=s3_block)
         else:
-            status["stage3_short"] = _status("TRIGGERED", armed=True, block_reason="")
-            sig = {
-                "strategy_id": "STAGE_3_SHORT",
-                "setup_name": "MJ Sir Stage 3 8-EMA (Short) — first touch",
-                "direction": "SHORT",
-                "opt_side": "PE",
-                "target_pts": float(cfg["stage_target_pts"]),
-                "sl_pts": float(cfg["stage_sl_pts"]),
-                "index_price": entry_px,
-                "conviction": "MJ_SIR",
-                "paper_only": True,
-                "mj_sir_paper_only": True,
-                "dynamic_e8_at_entry": round(e8_dyn, 2),
-                "details": (
-                    f"{SPEC_TAG} | 4<{e4_val:.1f}<{e8_val:.1f} | "
-                    + (f"first touch dynamic 8EMA {e8_dyn:.1f} @ spot {entry_px:.1f}" if dyn_on
-                       else f"touch high {high_15:.1f}")
-                    + f" | BB width {width_val:.1f}"
-                ),
-            }
-            sig.update(gate_meta("stage3"))
-            signals.append(sig)
-            mj_state["stage3_fired_key"] = setup_key_s3
+            lbb_block = ""
+            if bb_stage3:
+                if bb_inward_two(bb_width, bar_ci, shrink):
+                    lbb_block = "NO TRADE — LBB inward (BB shrinking 2 candles)"
+                elif not lbb_down_two_candles(lbb, bar_ci, slope_tol):
+                    lbb_block = "NO TRADE — LBB not DOWN for 2 closed candles"
+                elif not lbb_not_up_recent(lbb, bar_ci, slope_tol):
+                    lbb_block = "NO TRADE — LBB upward (sellers weak)"
+            if party_switch_enabled and active_party == "BULLISH":
+                lbb_block = lbb_block or "NO TRADE — Party-Switch BULLISH blocks PE"
+            if early:
+                status["stage3_short"] = _status("NO_TRADE", block_reason=lbb_block or early_msg)
+            elif not touch_short:
+                status["stage3_short"] = _status(
+                    "ARMED" if not lbb_block else "NO_TRADE",
+                    armed=not bool(lbb_block),
+                    block_reason=lbb_block or wait_msg,
+                )
+            elif lbb_block:
+                status["stage3_short"] = _status("NO_TRADE", block_reason=lbb_block)
+            else:
+                status["stage3_short"] = _status("TRIGGERED", armed=True, block_reason="")
+                sig = {
+                    "strategy_id": "STAGE_3_SHORT",
+                    "setup_name": "MJ Sir Stage 3 8-EMA (Short) — first touch",
+                    "direction": "SHORT",
+                    "opt_side": "PE",
+                    "target_pts": float(cfg["stage_target_pts"]),
+                    "sl_pts": float(cfg["stage_sl_pts"]),
+                    "index_price": entry_px,
+                    "conviction": "MJ_SIR",
+                    "paper_only": True,
+                    "mj_sir_paper_only": True,
+                    "dynamic_e8_at_entry": round(e8_dyn, 2),
+                    "details": (
+                        f"{SPEC_TAG} | 4<{e4_val:.1f}<{e8_val:.1f} | "
+                        + (f"first touch dynamic 8EMA {e8_dyn:.1f} @ spot {entry_px:.1f}" if dyn_on
+                           else f"touch high {high_15:.1f}")
+                        + f" | BB width {width_val:.1f}"
+                    ),
+                }
+                sig.update(gate_meta("stage3"))
+                signals.append(sig)
+                mj_state["stage3_fired_key"] = setup_key_s3
 
     # ── REVERSALS (15m legacy or revamp lanes) ─────────────────────────────
     rev_block = common_blocks(ribbon=bool(cfg.get("reversal_ribbon_block", False)))

@@ -3596,8 +3596,12 @@
             if (/FLAGSHIP|H1_8EMA|1H 8 ?EMA|1 ?HR/.test(s)) return "1H 8 EMA";
             return "Other";
         }
-        const EQUITY_GUYS_LANES = ["Stage 2", "Stage 3", "4/8 Crossover", "1H 8 EMA", "8 EMA Prototype"];
+        let EQUITY_GUYS_LANES = ["8 EMA Prototype", "4/8 Crossover", "1H 8 EMA"];
         let currentGroupView = "ALL";
+        function deskJunkOrderRow(o) {
+            const s = [o.strategy_setup, o.strategy_name, o.order_id, o.strategy_id].filter(Boolean).join(" ");
+            return /Test Fixture|Q_GATE|OD_V15|PYTEST/i.test(s);
+        }
         function rowInGroupView(row) {
             if (currentGroupView === "ALL") return true;
             const eg = EQUITY_GUYS_LANES.includes(strategyLaneOf(row));
@@ -3744,6 +3748,14 @@
                 // 3B. 4-Core Strategy Scanner & Party-Switch Cockpit
                 if (data.scanner) {
                     const sc = data.scanner;
+                    if (sc?.desk_scope_8510?.equity_lane_labels?.length) {
+                        EQUITY_GUYS_LANES = sc.desk_scope_8510.equity_lane_labels.slice();
+                        const gn = document.getElementById("groupViewNote");
+                        if (gn) {
+                            gn.textContent =
+                                "Active lanes: " + EQUITY_GUYS_LANES.join(" · ") + ". Stage 2/3, ticket, ribbon, PA @ S/R off when scoped.";
+                        }
+                    }
                     if (sc.scanner_gates) applyBollingerGateUI(sc.scanner_gates.bollinger_enabled === true);
                     const badge = document.getElementById("scannerActiveBadge");
                     const btn = document.getElementById("btnToggleScanner");
@@ -4625,11 +4637,12 @@
         }
 
         function renderOrdersTable(orders) {
-            lastOrdersPayload = orders || [];
+            const raw = (orders || []).filter(o => !deskJunkOrderRow(o));
+            lastOrdersPayload = raw;
             const tbody = document.getElementById("ordersTableBody");
             if (!tbody) return;
 
-            let filtered = orders || [];
+            let filtered = raw;
             if (currentPosSourceFilter === "AUTO") {
                 filtered = filtered.filter(o => (o.source && o.source.includes("AUTO")) || (o.placed_by && o.placed_by.includes("AUTO")));
             } else if (currentPosSourceFilter === "MANUAL") {
