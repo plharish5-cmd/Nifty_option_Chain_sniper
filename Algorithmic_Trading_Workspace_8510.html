@@ -4889,7 +4889,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             if (stkEl) stkEl.textContent = opt.dataset.strike || "--";
         }
 
-
+        
 
         async function toggleAlgoStrike(contractId, isChecked) {
             try {
@@ -4909,7 +4909,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             }
         }
 
-
+        
 
         function showOrderConfirmationToast(symbol, price, side, source = "AUTO ALGO 🤖", strategy = "Stage 2 8 EMA Touch") {
             const toast = document.getElementById("orderConfirmationToast");
@@ -5458,17 +5458,17 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
         }
 
         // ── 6. EXECUTION MODE, KILL SWITCH & CHASING CONFIG ────────────────────
+        
 
-
-
+        
 
         // ALGO ONLY blocks discretionary orders at the engine, not just here, so
         // the scanner and strike matrix cannot route around it either.
+        
 
+        
 
-
-
-
+        
 
         async function triggerEmergencyKillSwitch() {
             if (!confirm("⚠️ ARE YOU SURE? This will immediately cancel all Dhan pending orders, square off all open positions, and lock execution in STANDBY.")) return;
@@ -7357,7 +7357,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             globalCachedEodSummary = summary;
             const t1 = document.getElementById("tab1EodSummaryContent");
             const t7 = document.getElementById("tab7EodSummaryContent");
-
+            
             const pnlColor = (summary.net_pnl_inr && summary.net_pnl_inr.startsWith("-")) ? "var(--crimson)" : "var(--emerald)";
             const textHtml = `
                 <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center; margin-bottom:6px;">
@@ -7482,7 +7482,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             if (!data) return;
             const spotCount = data.spot_candles_1m ? data.spot_candles_1m.length : (data.checks && data.checks.spot_candles ? data.checks.spot_candles.count : 0);
             const futCount = data.future_candles_1m ? data.future_candles_1m.length : (data.checks && data.checks.future_candles ? data.checks.future_candles.count : 0);
-
+            
             const spotDetail = document.getElementById("chk_spot_detail");
             if (spotDetail) spotDetail.textContent = `${spotCount} closed candles (09:15 to 15:29)`;
             const futDetail = document.getElementById("chk_fut_detail");
