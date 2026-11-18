@@ -2,13 +2,22 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import pytest
 
 from analyst.ema8_prototype_8510 import DEFAULT_CFG
 from analyst.proto_oi_filters_8510 import (
     DEFAULT_OI_FILTERS,
+    backtest_board_reads_at,
     oi_switch_block,
     load_oi_filters_cfg,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
+IST = ZoneInfo("Asia/Kolkata")
 def _reads(**pairs):
     return {k: {"direction": v, "age_sec": 30.0} for k, v in pairs.items()}
 
@@ -112,3 +121,17 @@ def test_load_oi_filters_momentum_defaults():
     assert oi["momentum"]["sig_extreme"] == 0.30
     assert oi["momentum"]["require_cumd_confirm"] is False
     assert oi["momentum"]["require_price_confirm"] is False
+
+
+@pytest.mark.skipif(
+    not (ROOT / "ict_smc_app/backend/data/ict_smc.sqlite3").is_file(),
+    reason="owner market db not present",
+)
+def test_backtest_board_reads_resolves_spot_from_candles():
+    db = ROOT / "ict_smc_app/backend/data/ict_smc.sqlite3"
+    asof = int(datetime(2026, 11, 12, 11, 0, tzinfo=IST).timestamp())
+    reads, note = backtest_board_reads_at(day="2026-11-12", asof_ts=asof, market_db=db, scanner_cfg={})
+    assert "error:" not in (note or "")
+    toi = reads.get("total_oi") or {}
+    assert toi.get("detail") or toi.get("direction")
+    assert "no option-chain snapshots" not in str(toi.get("detail") or "")

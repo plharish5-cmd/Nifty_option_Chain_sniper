@@ -247,8 +247,12 @@ def backtest_board_reads_at(
         from analyst.oi_context_8510 import compute_context, load_cfg as oi_load, load_day_snapshots
 
         db = Path(market_db) if market_db else None
+        root = Path(__file__).resolve().parents[1]
         rows: List[Dict[str, Any]] = []
-        paths = [db] if db and db.exists() else []
+        paths: List[Path] = []
+        for p in (db, root / "data/terminal8510/recording.sqlite3"):
+            if p is not None and p.exists():
+                paths.append(p)
         if paths:
             rows = load_day_snapshots(paths, day, asof_ts=asof_ts)
         if not rows:
@@ -256,6 +260,19 @@ def backtest_board_reads_at(
         spot = 0.0
         if rows:
             spot = float(rows[-1].get("spot") or rows[-1].get("underlying") or 0)
+        if spot <= 0 and db is not None and db.exists():
+            import sqlite3
+
+            try:
+                with sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=3) as conn:
+                    row = conn.execute(
+                        "SELECT c FROM candles_1m WHERE sec_id='13' AND ts<=? ORDER BY ts DESC LIMIT 1",
+                        (int(asof_ts),),
+                    ).fetchone()
+                    if row and row[0]:
+                        spot = float(row[0])
+            except sqlite3.Error:
+                pass
         momentum = (load_ema8_prototype_cfg(scanner_cfg or {}).get("oi_filters") or {}).get("momentum")
         spot_bars = None
         if isinstance(momentum, dict) and momentum.get("require_price_confirm"):

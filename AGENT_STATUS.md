@@ -25,6 +25,21 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.34-finish-and-enable` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.34` | **NO — awaiting Harish** |
 | `gemini/v2.0.35-reversal-oi-panel` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.35` | **NO — awaiting Harish** |
 | `gemini/v2.0.36-clean-and-scope` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.36` | **NO — awaiting Harish** |
+| `gemini/v2.0.37-oi-filter-backtest` | Gemini/Cursor | **done** (run job + backtest path fix) tags `pre/post-gemini-v2.0.37` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-18 · Gemini/Cursor · `gemini/v2.0.37-oi-filter-backtest`
+
+**Goal:** RUN — Proto OI filters `total_oi` / `fresh_oi` / `writer_flow` on max **chain** history (not full spot history).
+
+**Coverage:** 26 spot days, **25 chain_snap days** (2026-10-12..2026-11-17), 3573 snapshots. Held-out baseline **−66.6 pts** (34 trades).
+
+**Result:** All three block configs **0 trades touched on held-out** → **NOT TESTABLE on test**; **keep OFF**. Train-only blocks for fresh/writer (−17 pts train) — not a PASS. Fix: `backtest_board_reads_at` spot from `candles_1m` + recording chain fallback.
+
+**Report (gitignored):** `data/terminal8510/sweeps/20261118-165037/OI_FILTER_BACKTEST_REPORT.md`
+
+**Verify:** `test_proto_oi_filters_8510.py` 12/12; `verify_locks` 11/11.
 
 ---
 
