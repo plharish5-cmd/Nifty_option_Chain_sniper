@@ -3599,8 +3599,21 @@
         let EQUITY_GUYS_LANES = ["8 EMA Prototype", "4/8 Crossover", "1H 8 EMA"];
         let currentGroupView = "ALL";
         function deskJunkOrderRow(o) {
+            if (o.book_hidden || o.execution_hidden) return true;
             const s = [o.strategy_setup, o.strategy_name, o.order_id, o.strategy_id].filter(Boolean).join(" ");
-            return /Test Fixture|Q_GATE|OD_V15|PYTEST/i.test(s);
+            if (/Test Fixture|Q_GATE|OD_V15|PYTEST/i.test(s)) return true;
+            const sym = String(o.symbol || "");
+            const head = sym.split("—")[0].trim();
+            const m = head.match(/^(\d{1,2}\s+\w{3}\s+\d{4})$/);
+            if (m) {
+                const exp = new Date(m[1] + " 12:00:00 GMT+0530");
+                if (!isNaN(exp)) {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    if (exp < today) return true;
+                }
+            }
+            return false;
         }
         function rowInGroupView(row) {
             if (currentGroupView === "ALL") return true;

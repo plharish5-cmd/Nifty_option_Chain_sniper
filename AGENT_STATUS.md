@@ -39,10 +39,12 @@ Trunk: **`integrate/v1.9`**
 **Owner run:**
 ```bash
 python3 scripts/clean_paper_ledger_8510.py --preview
-python3 scripts/clean_paper_ledger_8510.py --drop
+python3 scripts/clean_paper_ledger_8510.py --hide
 python3 scripts/patch_desk_scope_three_lanes_8510.py
 # restart engine_8510_live.py
 ```
+
+**Follow-up (ledger hide, same branch):** Append-only ledger rejects DELETE; cleanup uses `execution_provenance.hidden=1` (`ledger_execution_hide_8510.py`). Script `--hide` (not delete); `order_book_row_visible` + API/UI also drop expired contracts and provenance-hidden rows. Tags `pre/post-gemini-v2.0.36-ledger-hide`.
 
 ---
 

@@ -3427,6 +3427,12 @@ class QuantTerminalBackend:
                 );
                 """)
                 ensure_algo_execution_master(conn)
+                try:
+                    from analyst.ledger_execution_hide_8510 import ensure_execution_provenance
+
+                    ensure_execution_provenance(conn)
+                except Exception:
+                    log.exception("Could not ensure execution_provenance table")
 
                 cur.execute("""
                 CREATE TABLE IF NOT EXISTS daily_market_store (
@@ -8833,13 +8839,18 @@ class QuantTerminalBackend:
         with sqlite3.connect(self.ledger_db) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
-            rows = cur.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 50").fetchall()
+            rows = cur.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 200").fetchall()
             from analyst.desk_scope_8510 import order_book_row_visible
+            from analyst.ledger_execution_hide_8510 import hidden_execution_ids
 
+            hidden_orders = hidden_execution_ids(conn, "orders")
+            today_ist = datetime.now(IST).date()
             orders = []
             for r in rows:
                 o = dict(r)
-                if not order_book_row_visible(self.scanner_cfg, o):
+                if not order_book_row_visible(
+                    self.scanner_cfg, o, today=today_ist, hidden_ids=hidden_orders
+                ):
                     continue
                 o["symbol"] = format_contract_symbol(raw_symbol=o.get("symbol"))
                 o["source"] = o.get("source") or o.get("placed_by") or "AUTO ALGO 🤖"
@@ -8882,6 +8893,8 @@ class QuantTerminalBackend:
                     o["created_day"] = raw_created[:10] if raw_created[:4].isdigit() else ""
                     o["created_at"] = format_desk_timestamp_ist(o["created_at"])
                 orders.append(o)
+                if len(orders) >= 50:
+                    break
             return orders
 
     # ── AGGRESSIVE LIMIT ORDER CHASING ENGINE ────────────────────────────────

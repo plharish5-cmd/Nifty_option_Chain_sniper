@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Backup and purge junk PAPER rows from the 8510 ledger (never LIVE/BOTH)."""
+"""Backup and hide junk PAPER rows in the 8510 ledger (append-only; never DELETE)."""
 from __future__ import annotations
 
 import argparse
@@ -13,10 +13,17 @@ from typing import Any, Dict, List, Set, Tuple
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 CFG = ROOT / "analyst/terminal8510_config.json"
 IST = ZoneInfo("Asia/Kolkata")
 
 from analyst.desk_scope_8510 import is_disabled_lane_setup, is_test_fixture_text  # noqa: E402
+from analyst.ledger_execution_hide_8510 import (  # noqa: E402
+    ensure_execution_provenance,
+    hide_execution_rows,
+    pick_hide_category,
+)
 from analyst.offhours_cleanup_8510 import parse_contract_expiry_date  # noqa: E402
 
 
@@ -46,13 +53,6 @@ def _scanner_cfg() -> Dict[str, Any]:
     return json.loads(CFG.read_text(encoding="utf-8")).get("scanner") or {}
 
 
-def _row_blob(row: Dict[str, Any]) -> str:
-    return " ".join(
-        str(row.get(k) or "")
-        for k in ("order_id", "strategy_setup", "strategy_name", "strategy_id", "symbol", "position_id")
-    )
-
-
 def classify_row(row: Dict[str, Any], *, drop_disabled: bool, today: date) -> List[str]:
     reasons: List[str] = []
     if _is_live_mode(row.get("mode")):
@@ -79,28 +79,14 @@ def _fetch(conn: sqlite3.Connection, table: str) -> List[Dict[str, Any]]:
         return []
 
 
-def main(argv: List[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Clean junk PAPER rows from 8510 ledger")
-    ap.add_argument("--preview", action="store_true", help="List rows only (default)")
-    ap.add_argument("--drop", action="store_true", help="Delete after backup")
-    ap.add_argument(
-        "--drop-disabled",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Remove rows from disabled lanes (default on)",
-    )
-    ap.add_argument("--ledger", default="", help="Override ledger sqlite path")
-    args = ap.parse_args(argv)
-    if args.drop and args.preview:
-        print("use either --preview or --drop", file=sys.stderr)
-        return 2
-    do_drop = bool(args.drop)
-    ledger = Path(args.ledger) if args.ledger else _ledger_path()
-    if not ledger.is_file():
-        print("ledger not found:", ledger, file=sys.stderr)
-        return 1
-    today = datetime.now(IST).date()
-    to_delete: Dict[str, Set[str]] = {"orders": set(), "positions": set()}
+def _collect_targets(
+    ledger: Path,
+    *,
+    drop_disabled: bool,
+    today: date,
+) -> Tuple[Dict[str, Dict[str, Set[str]]], Dict[str, int]]:
+    """Map table -> {row_id: {reason, ...}}."""
+    targets: Dict[str, Dict[str, Set[str]]] = {"orders": {}, "positions": {}}
     summary: Dict[str, int] = {"test_fixture": 0, "expired_contract": 0, "disabled_lane": 0}
 
     with sqlite3.connect(ledger) as conn:
@@ -108,54 +94,84 @@ def main(argv: List[str] | None = None) -> int:
             for row in _fetch(conn, table):
                 if _is_live_mode(row.get("mode")):
                     continue
-                reasons = classify_row(row, drop_disabled=bool(args.drop_disabled), today=today)
+                reasons = classify_row(row, drop_disabled=drop_disabled, today=today)
                 if not reasons:
                     continue
                 rid = str(row.get(id_col) or "")
                 if not rid:
                     continue
-                to_delete[table].add(rid)
+                targets[table].setdefault(rid, set()).update(reasons)
                 for r in reasons:
                     summary[r] = summary.get(r, 0) + 1
+    return targets, summary
+
+
+def main(argv: List[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="Hide junk PAPER rows in 8510 ledger (audit-safe)")
+    ap.add_argument("--preview", action="store_true", help="List rows only (default)")
+    ap.add_argument("--hide", action="store_true", help="Mark hidden after backup")
+    ap.add_argument(
+        "--drop",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    ap.add_argument(
+        "--drop-disabled",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Hide rows from disabled lanes (default on)",
+    )
+    ap.add_argument("--ledger", default="", help="Override ledger sqlite path")
+    args = ap.parse_args(argv)
+    do_hide = bool(args.hide or args.drop)
+    if args.drop and not args.hide:
+        print("note: --drop is deprecated; using hide (rows stay in ledger)", file=sys.stderr)
+    if do_hide and args.preview:
+        print("use either --preview or --hide", file=sys.stderr)
+        return 2
+    ledger = Path(args.ledger) if args.ledger else _ledger_path()
+    if not ledger.is_file():
+        print("ledger not found:", ledger, file=sys.stderr)
+        return 1
+    today = datetime.now(IST).date()
+    targets, summary = _collect_targets(ledger, drop_disabled=bool(args.drop_disabled), today=today)
+    n_orders = len(targets["orders"])
+    n_positions = len(targets["positions"])
 
     print("ledger:", ledger)
     print("today:", today.isoformat())
-    print("would remove — orders:", len(to_delete["orders"]), "positions:", len(to_delete["positions"]))
+    print("would hide — orders:", n_orders, "positions:", n_positions)
     print("by reason (row hits, may overlap):", summary)
     for table in ("orders", "positions"):
-        for rid in sorted(to_delete[table])[:40]:
+        for rid in sorted(targets[table].keys())[:40]:
             print(f"  [{table}] {rid}")
-        if len(to_delete[table]) > 40:
-            print(f"  ... +{len(to_delete[table]) - 40} more in {table}")
+        if len(targets[table]) > 40:
+            print(f"  ... +{len(targets[table]) - 40} more in {table}")
 
-    if not do_drop:
-        print("(preview only — pass --drop to delete after backup)")
+    if not do_hide:
+        print("(preview only — pass --hide to mark hidden after backup)")
         return 0
 
-    if not any(to_delete.values()):
-        print("nothing to delete")
+    if not n_orders and not n_positions:
+        print("nothing to hide")
         return 0
 
     bak = ledger.with_suffix(f".sqlite3.bak-clean-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
     shutil.copy2(ledger, bak)
     print("backup:", bak)
 
+    hidden_counts = {"orders": 0, "positions": 0}
     with sqlite3.connect(ledger) as conn:
-        for table, id_col in (("orders", "order_id"), ("positions", "position_id")):
-            ids = list(to_delete[table])
-            if not ids:
-                continue
-            placeholders = ",".join("?" for _ in ids)
-            rows = conn.execute(
-                f"SELECT {id_col}, mode FROM {table} WHERE {id_col} IN ({placeholders})",
-                ids,
-            ).fetchall()
-            for rid, mode in rows:
-                if _is_live_mode(mode):
-                    raise RuntimeError(f"Refusing delete on live row {table}:{rid} mode={mode}")
-            conn.execute(f"DELETE FROM {table} WHERE {id_col} IN ({placeholders})", ids)
+        ensure_execution_provenance(conn)
+        for table, entity in (("orders", "orders"), ("positions", "positions")):
+            for rid, reasons in targets[table].items():
+                cat = pick_hide_category(reasons)
+                reason = ",".join(sorted(reasons))
+                hidden_counts[entity] += hide_execution_rows(
+                    conn, entity, [rid], category=cat, reason=reason
+                )
         conn.commit()
-    print("deleted ok")
+    print("hidden ok — orders:", hidden_counts["orders"], "positions:", hidden_counts["positions"])
     return 0
 
 

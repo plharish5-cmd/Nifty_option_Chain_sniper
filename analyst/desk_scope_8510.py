@@ -1,7 +1,10 @@
 """Desk lane scope — which scanner lanes may emit signals (config-only, reversible)."""
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Dict, List, Optional
+
+from analyst.offhours_cleanup_8510 import parse_contract_expiry_date
 
 DEFAULT_DESK_SCOPE: Dict[str, Any] = {
     "enabled_strategy_lanes": None,  # None = all legacy lanes on
@@ -105,7 +108,18 @@ def is_disabled_lane_setup(scanner_cfg: Optional[Dict[str, Any]], strategy_id: s
     return not strategy_id_allowed(scanner_cfg, sid)
 
 
-def order_book_row_visible(scanner_cfg: Optional[Dict[str, Any]], row: Dict[str, Any]) -> bool:
+def order_book_row_visible(
+    scanner_cfg: Optional[Dict[str, Any]],
+    row: Dict[str, Any],
+    *,
+    today: Optional[date] = None,
+    hidden_ids: Optional[set] = None,
+) -> bool:
+    rid = str(row.get("order_id") or row.get("position_id") or "")
+    if hidden_ids is not None and rid and rid in hidden_ids:
+        return False
+    if row.get("execution_hidden") or row.get("book_hidden"):
+        return False
     if is_test_fixture_text(row.get("strategy_setup"), row.get("strategy_name"), row.get("order_id")):
         return False
     if is_disabled_lane_setup(
@@ -114,4 +128,8 @@ def order_book_row_visible(scanner_cfg: Optional[Dict[str, Any]], row: Dict[str,
         str(row.get("strategy_setup") or row.get("strategy_name") or ""),
     ):
         return False
+    if today is not None:
+        exp = parse_contract_expiry_date(str(row.get("symbol") or ""))
+        if exp is not None and exp < today:
+            return False
     return True

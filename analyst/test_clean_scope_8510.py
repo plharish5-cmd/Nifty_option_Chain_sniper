@@ -16,8 +16,10 @@ from analyst.desk_scope_8510 import (
 )
 from analyst.ledger_guard_8510 import assert_not_production_ledger_under_pytest, production_ledger_path
 from analyst.offhours_cleanup_8510 import parse_contract_expiry_date, resolve_position_cleanup_reason
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
+
+from analyst.ledger_execution_hide_8510 import is_execution_hidden
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -56,6 +58,18 @@ def test_order_book_hides_fixture():
     sc = {"desk_scope_8510": {"stage2_enabled": False}}
     assert not order_book_row_visible(sc, {"strategy_setup": "Stage 2 Test Fixture", "mode": "PAPER_ONLY"})
     assert order_book_row_visible(sc, {"strategy_setup": "8 EMA Prototype", "mode": "PAPER_ONLY"})
+
+
+def test_order_book_hides_expired_and_provenance():
+    sc = {}
+    sym = "10 Nov 2025 — NIFTY 11 Nov 2025 24300 CE"
+    assert not order_book_row_visible(sc, {"symbol": sym, "mode": "PAPER_ONLY"}, today=date(2026, 11, 18))
+    assert order_book_row_visible(sc, {"symbol": sym, "mode": "PAPER_ONLY"}, today=date(2025, 11, 10))
+    assert not order_book_row_visible(
+        sc,
+        {"order_id": "ORD_X", "symbol": "live", "mode": "PAPER_ONLY"},
+        hidden_ids={"ORD_X"},
+    )
 
 
 def test_expired_contract_cleanup_reason():
@@ -101,5 +115,42 @@ def test_clean_script_preview(tmp_path: Path):
     try:
         rc = clean.main(["--preview"])
         assert rc == 0
+    finally:
+        clean.CFG = old_cfg
+
+
+def test_clean_script_hide_not_delete(tmp_path: Path):
+    led = tmp_path / "led.sqlite3"
+    with sqlite3.connect(led) as conn:
+        conn.execute(
+            "CREATE TABLE orders (order_id TEXT PRIMARY KEY, mode TEXT, strategy_setup TEXT, symbol TEXT, order_status TEXT, fill_price REAL, qty INTEGER, created_at TEXT, security_id TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO orders VALUES ('OD_V15_1','PAPER_ONLY','Stage 2 Test Fixture','10 Nov 2025 — NIFTY 11 Nov 2025 24300 CE','FILLED',1,25,'2025-11-10','0')"
+        )
+        conn.execute(
+            """
+            CREATE TRIGGER protect_orders_delete
+            BEFORE DELETE ON orders BEGIN
+            SELECT RAISE(ABORT,'Execution history cannot be deleted; hide off-market paper tests instead');
+            END
+            """
+        )
+        conn.commit()
+    cfg = tmp_path / "terminal8510_config.json"
+    cfg.write_text(json.dumps({"ledger_db_path": str(led), "scanner": {}}), encoding="utf-8")
+    import scripts.clean_paper_ledger_8510 as clean
+
+    old_cfg = clean.CFG
+    clean.CFG = cfg
+    try:
+        with pytest.raises(sqlite3.IntegrityError, match="cannot be deleted"):
+            with sqlite3.connect(led) as conn:
+                conn.execute("DELETE FROM orders WHERE order_id='OD_V15_1'")
+        assert clean.main(["--hide"]) == 0
+        with sqlite3.connect(led) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 1
+            assert is_execution_hidden(conn, "orders", "OD_V15_1")
+        assert not order_book_row_visible({}, {"order_id": "OD_V15_1", "strategy_setup": "Stage 2 Test Fixture"}, hidden_ids={"OD_V15_1"})
     finally:
         clean.CFG = old_cfg
