@@ -5590,7 +5590,7 @@ class QuantTerminalBackend:
             },
             "priority_matrix": priority_matrix,
             "trend_watchlist": trend_watchlist,
-            "scanner": self.get_scanner_status(),
+            "scanner": self.get_scanner_status(positions=positions),
             "institutional_pe_ce": oi_snap,
             # So the UI can grey out rather than render zeros as real readings.
             "writer_flow_available": bool(oi_snap.get("available", False)),
@@ -7721,8 +7721,23 @@ class QuantTerminalBackend:
 
             await asyncio.sleep(interval)
 
-    def get_scanner_status(self) -> Dict[str, Any]:
-        """Returns real-time status of the 4-Strategy Scanner daemon and Party-Switch gate."""
+    def get_scanner_status(self, positions=None) -> Dict[str, Any]:
+        """Scanner status plus read-only, two-sided OI decision boards."""
+        strategies = {k: dict(v) if isinstance(v, dict) else v for k, v in self.strategy_status.items()}
+        try:
+            from analyst.oi_decision_board_8510 import enrich_strategy_rows
+
+            strategies = enrich_strategy_rows(
+                self.scanner_cfg, strategies, self.desk8600_board(),
+                self.__dict__.get("_ema8_prototype_state") or {},
+                positions if positions is not None else (self.__dict__.get("cached_telemetry") or {}).get("positions", []),
+            )
+        except Exception as exc:
+            # Display failure must never alter a gate or stop the scanner.
+            for key in ("ema8_prototype", "crossover_reversal"):
+                row = dict(strategies.get(key) or {})
+                row["oi_decision_board"] = {"error": type(exc).__name__}
+                strategies[key] = row
         return {
             "ok": True,
             "enabled": self.scanner_enabled,
@@ -7731,7 +7746,7 @@ class QuantTerminalBackend:
             "directional_bias": self.directional_bias,
             "last_crossover": self.last_crossover_event,
             "kill_switch_active": self.kill_switch_active,
-            "strategies": self.strategy_status,
+            "strategies": strategies,
             "recent_signals": self.recent_signals[:10],
             "ema8_prototype_log": self.get_ema8_prototype_log(limit=15),
             "ema8_prototype_view": self._ema8_prototype_view(),
