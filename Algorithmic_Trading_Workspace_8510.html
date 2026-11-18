@@ -567,6 +567,22 @@
         .secondary-btn.active-filter-btn { background: rgba(251, 191, 36, 0.18) !important; border-color: #fbbf24 !important; color: #fde68a !important; box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35) inset; }
         .btl-lbl { display:block; font-size:10px; font-weight:800; color:var(--text-muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px; }
         .btl-in { padding:7px 10px; background:#0f172a; color:#f8fafc; border:1px solid #334155; border-radius:6px; font-size:13px; }
+
+        /* Display-only OI decisions. Scoped to the two cockpit boards. */
+        .oi-decision-board { margin-top:10px; padding:10px; border:1px solid #334155; border-radius:8px; background:#0b1525; font-size:11px; color:#cbd5e1; }
+        .oi-decision-board h4 { margin:0 0 5px; color:#e2e8f0; font-size:12px; }
+        .oi-decision-board table { width:100%; border-collapse:collapse; table-layout:fixed; margin:8px 0; }
+        .oi-decision-board th, .oi-decision-board td { padding:6px 4px; text-align:left; border-bottom:1px solid #233247; vertical-align:top; overflow-wrap:anywhere; }
+        .oi-decision-board th { color:#94a3b8; font-size:10px; }
+        .oi-decision-board th:first-child { width:23%; }
+        .oi-decision-board th:nth-child(2), .oi-decision-board th:nth-child(3) { width:17%; }
+        .oi-decision-board .oi-agree { color:#34d399; }
+        .oi-decision-board .oi-oppose { color:#fb7185; }
+        .oi-decision-board .oi-muted { color:#94a3b8; }
+        .oi-decision-board .oi-warning { color:#fbbf24; margin:6px 0; }
+        .oi-decision-board .oi-sides { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+        .oi-decision-board .oi-side { padding:7px; border:1px solid #334155; border-radius:5px; }
+        .oi-decision-board .oi-scope { font-size:10px; color:#94a3b8; margin:6px 0 0; }
     </style>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" crossorigin="anonymous"></script>
 </head>
@@ -1082,6 +1098,7 @@
                                 <label><input type="checkbox" class="rev-oi-sw" data-id="volume_oi"> Volume-backed OI <span class="rev-oi-dir" data-id="volume_oi">—</span></label>
                             </div>
                             <div id="revOiBlockLine" style="margin-top:6px; color:#94a3b8; font-size:10px;">OI filter verdict: —</div>
+                            <section id="revOiDecisionBoard" class="oi-decision-board" aria-label="Reversal OI filter decision board"><p>Waiting for OI decision telemetry…</p></section>
                             <div id="revOiSaveStatus" style="margin-top:4px; color:#64748b; font-size:10px;">—</div>
                         </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
@@ -1218,6 +1235,7 @@
                                 <label><input type="checkbox" class="proto-oi-sw" data-id="volume_oi"> Volume-backed OI <span class="proto-oi-dir" data-id="volume_oi">—</span></label>
                             </div>
                             <div id="protoOiBlockLine" style="margin-top:6px; color:#94a3b8; font-size:10px;">OI filter verdict: —</div>
+                            <section id="protoOiDecisionBoard" class="oi-decision-board" aria-label="Prototype OI filter decision board"><p>Waiting for OI decision telemetry…</p></section>
                             <div style="margin-top:14px; padding-top:10px; border-top:1px dashed rgba(148,163,184,0.35);">
                                 <div style="font-weight:700; color:#38bdf8; margin-bottom:6px;">OI 3m + 8600 Context <span style="font-weight:400;color:#64748b;">(separate feature)</span></div>
                                 <label style="font-size:10px;"><input type="checkbox" id="oi3mFeatureOn"> Feature enabled</label>
@@ -3889,6 +3907,7 @@
                             if (revPre) revPre.checked = !!rv.pre_arm_15m_from_5m;
                             applyReversalOiFilterUI(rv);
                             renderReversalOiFilters(sc.strategies.crossover_reversal, data.desk8600_board);
+                            renderOiDecisionBoard("revOiDecisionBoard", sc.strategies.crossover_reversal);
                         }
                         const sDailySr = document.getElementById("stratStatus_daily_sr");
                         const sDailyTrend = document.getElementById("stratStatus_daily_trend");
@@ -3950,6 +3969,7 @@
                             }
                             applyEma8ProtoFilterUI(ep);
                             renderProtoOiFilters(ep, data.desk8600_board);
+                            renderOiDecisionBoard("protoOiDecisionBoard", ep);
                             if (ep.oi_3m_feature) applyOi3mFeatureUI(ep.oi_3m_feature);
                             renderOi3mTelemetry(ep);
                         }
@@ -4987,6 +5007,75 @@
             const sf = document.getElementById('protoStFac');
             if (sl && cfg.supertrend_length != null) sl.textContent = String(cfg.supertrend_length);
             if (sf && cfg.supertrend_factor != null) sf.textContent = String(cfg.supertrend_factor);
+        }
+
+
+        function renderOiDecisionBoard(id, lane) {
+            const host = document.getElementById(id);
+            // Partial telemetry must not reset the board or any filter controls.
+            if (!host || !lane || !Object.prototype.hasOwnProperty.call(lane, "oi_decision_board")) return;
+            const board = lane.oi_decision_board;
+            const make = (tag, text, cls) => {
+                const el = document.createElement(tag);
+                if (text != null) el.textContent = String(text);
+                if (cls) el.className = cls;
+                return el;
+            };
+            host.replaceChildren();
+            if (!board || board.error) {
+                host.append(make("p", "OI decision board unavailable — no allow/block verdict available.", "oi-warning"));
+                return;
+            }
+            host.append(make("h4", `${board.title} — armed: ${board.armed?.line || "not reported"}`));
+            const mode = board.mode === "block" ? "Block (actual OI gate)" : "Log-only (observational)";
+            host.append(make("div", `Mode: ${mode} · Rule: ${board.rule} · Updated: ${board.as_of || "not reported"}`));
+            if (board.configured_rule !== board.rule || board.configured_mode !== board.mode) {
+                host.append(make("div", `Configured: ${board.configured_mode} / ${board.configured_rule}; effective mode/rule shown above.`, "oi-warning"));
+            }
+            (board.warnings || []).forEach(w => host.append(make("p", w, "oi-warning")));
+            const table = make("table");
+            table.setAttribute("aria-label", `${board.title} BUY versus SELL filter votes`);
+            const head = make("thead"), hr = make("tr");
+            ["Enabled filter", "BUY (CE)", "SELL (PE)", "Live reading"].forEach(label => hr.append(make("th", label)));
+            head.append(hr); table.append(head);
+            const body = make("tbody");
+            const vote = v => {
+                if (v === "AGREE") return ["✓ agrees", "oi-agree"];
+                if (v === "OPPOSE") return ["✗ opposes", "oi-oppose"];
+                if (v === "NEUTRAL_BLOCK") return ["— neutral (blocks)", "oi-muted"];
+                if (v === "STALE") return ["— stale", "oi-muted"];
+                if (v === "OFF") return ["— not applied", "oi-muted"];
+                return ["— neutral", "oi-muted"];
+            };
+            (board.rows || []).forEach(r => {
+                const tr = make("tr"); tr.append(make("td", r.label));
+                [r.vote_buy, r.vote_sell].forEach(v => { const [text, cls] = vote(v); tr.append(make("td", text, cls)); });
+                const age = r.age_sec == null || !Number.isFinite(Number(r.age_sec)) ? "" : ` · ${Number(r.age_sec).toFixed(0)}s old`;
+                tr.append(make("td", (r.live_detail || "— no data") + age)); body.append(tr);
+            });
+            if (!(board.rows || []).length) {
+                const tr = make("tr"), cell = make("td", board.enabled ? "No OI switches enabled — these filters do not block either side." : "OI filter feature is OFF — no votes applied.", "oi-muted");
+                cell.colSpan = 4; tr.append(cell); body.append(tr);
+            }
+            (board.context_rows || []).forEach(r => {
+                const tr = make("tr"); tr.append(make("td", r.label));
+                tr.append(make("td", "— context", "oi-muted")); tr.append(make("td", "— context", "oi-muted"));
+                tr.append(make("td", r.live_detail, "oi-muted")); body.append(tr);
+            });
+            table.append(body); host.append(table);
+            const sides = make("div", null, "oi-sides");
+            const labels = Object.fromEntries((board.rows || []).map(r => [r.id, r.label]));
+            [["BUY (CE)", board.buy], ["SELL (PE)", board.sell]].forEach(([label, v]) => {
+                if (!v) return;
+                const hypothetical = v.would_block && !v.actual_block;
+                const text = v.verdict + (hypothetical ? " (would-block — not actually blocking)" : "");
+                const cell = make("div", null, "oi-side");
+                cell.append(make("strong", `${label}: ${text}`, v.would_block ? "oi-oppose" : "oi-agree"));
+                if ((v.blockers || []).length) cell.append(make("div", "By " + v.blockers.map(k => labels[k] || k).join(", ")));
+                sides.append(cell);
+            });
+            host.append(sides); host.append(make("p", board.summary));
+            host.append(make("p", board.scope + " BUY/SELL are directional labels; PE does not mean writing an option.", "oi-scope"));
         }
 
         function collectReversalOiFiltersFromDom() {
