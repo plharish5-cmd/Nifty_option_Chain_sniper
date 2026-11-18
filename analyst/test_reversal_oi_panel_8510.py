@@ -10,7 +10,7 @@ HTML = ROOT / "Algorithmic_Trading_Workspace_8510.html"
 
 def test_reversal_oi_panel_markup_in_reversal_card():
     html = HTML.read_text(encoding="utf-8")
-    i = html.index("3. 8 EMA Reversal Up / Down")
+    i = html.index("8 EMA Reversal Up / Down")
     chunk = html[i : i + 4500]
     assert "revOiModeLog" in chunk
     assert "revOiModeBlock" in chunk
