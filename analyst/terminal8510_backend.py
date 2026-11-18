@@ -51,6 +51,7 @@ from analyst.nse_spot_candles_8510 import (
     epoch_seconds as _epoch_seconds,
     last_closed_bar_emas,
     resample_nse_15m,
+    resample_nse_5m,
     resample_nse_1h,
 )
 import subprocess
@@ -3122,6 +3123,7 @@ class QuantTerminalBackend:
         self._position_close_locks: Dict[str, asyncio.Lock] = {}
         self.exit_failure_banner: Optional[Dict[str, Any]] = None
         self._mj_sir_state: Dict[str, Any] = {}
+        self._ema_lane_lock: Dict[str, Any] = {}
         self._ema8_prototype_state: Dict[str, Any] = {}
         self._ema8_prototype_log: List[Dict[str, Any]] = []
         self._pa_sr_pending: List[Dict[str, Any]] = []
@@ -5115,6 +5117,7 @@ class QuantTerminalBackend:
                 seen_hi, seen_lo = self._take_tick_spot_range("mj_dynamic", spot)
                 tick_high, tick_low = max(tick_high, seen_hi), min(tick_low, seen_lo)
 
+                b5 = resample_nse_5m(df1.set_index("dt")) if "dt" in df1.columns else None
                 sigs, mj_status = await asyncio.to_thread(
                     evaluate_mj_sir_four_pack,
                     b15,
@@ -5134,6 +5137,8 @@ class QuantTerminalBackend:
                         "tick_low": tick_low,
                         "now_hm": now.strftime("%H:%M"),
                     },
+                    scanner_cfg=self.scanner_cfg,
+                    b5=b5,
                 )
                 for key in ("stage2_long", "stage3_short", "crossover_reversal"):
                     if key in mj_status:
@@ -6320,6 +6325,7 @@ class QuantTerminalBackend:
                 self._mj_sir_state.pop("stage3_fired_key", None)
 
         if bool(mj_cfg.get("enabled", True)):
+            b5 = resample_nse_5m(df_work) if len(df_work) >= 30 else None
             mj_sigs, mj_status = evaluate_mj_sir_four_pack(
                 b15,
                 bar_ci=bar_ci,
@@ -6334,6 +6340,8 @@ class QuantTerminalBackend:
                 daily_sr=None,
                 b60=b60,
                 gate_meta=self._gate_meta_for_signal,
+                scanner_cfg=self.scanner_cfg,
+                b5=b5,
             )
             signals.extend(mj_sigs)
             for key in ("stage2_long", "stage3_short", "crossover_reversal"):
@@ -7197,6 +7205,41 @@ class QuantTerminalBackend:
                     continue
 
                 strat_id = str(sig.get("strategy_id", "") or "")
+                sid_u = strat_id.upper()
+                n_open = len(self.get_active_positions())
+                from analyst.ema_lane_lock_8510 import (
+                    LANE_PROTOTYPE,
+                    LANE_REVERSAL,
+                    lane_lock_blocks_entry,
+                )
+
+                if sid_u.startswith("CROSSOVER") or sid_u.startswith("EMA8_PROTOTYPE"):
+                    lane = LANE_REVERSAL if sid_u.startswith("CROSSOVER") else LANE_PROTOTYPE
+                    blocked_lane, why_lane = lane_lock_blocks_entry(
+                        self._ema_lane_lock, lane, open_position_count=n_open
+                    )
+                    if blocked_lane:
+                        log.info("[LANE LOCK] %s — %s", sig.get("setup_name"), why_lane)
+                        continue
+                if sid_u.startswith("CROSSOVER"):
+                    try:
+                        from analyst.reversal_revamp_8510 import load_reversal_cfg
+                        from analyst.proto_oi_filters_8510 import board_reads_from_board, load_oi_filters_cfg, oi_switch_block
+
+                        rev_oi = load_reversal_cfg(self.scanner_cfg).get("oi_filters") or {}
+                        if bool(rev_oi.get("enabled")):
+                            oi_cfg = load_oi_filters_cfg(self.scanner_cfg)
+                            oi_cfg = {**oi_cfg, **rev_oi, "switches": {**(oi_cfg.get("switches") or {}), **(rev_oi.get("switches") or {})}}
+                            board = self.desk8600_board()
+                            reads = board_reads_from_board(board)
+                            bullish = str(sig.get("direction", "")).upper() == "LONG"
+                            oi_block, oi_det = oi_switch_block(bullish, oi_cfg, reads)
+                            if oi_block and not bool(rev_oi.get("log_only", True)):
+                                log.info("[REVERSAL OI] blocked %s — %s", sig.get("setup_name"), oi_det)
+                                continue
+                    except Exception as exc:
+                        log.warning("Reversal OI filter skipped (%s)", type(exc).__name__)
+
                 if not self.algo_strategy_execution_allowed(strat_id):
                     log.info(
                         "[ALLOWLIST BLOCKED] %s (%s) — not in algo_execution_allowlist",
@@ -7415,6 +7458,15 @@ class QuantTerminalBackend:
                 if res.get("ok"):
                     placed = True
                     self.strategy_cooldowns[strat_id] = now_ts
+                    try:
+                        from analyst.ema_lane_lock_8510 import LANE_PROTOTYPE, LANE_REVERSAL, try_acquire_lane_lock
+
+                        if sid_u.startswith("CROSSOVER"):
+                            try_acquire_lane_lock(self._ema_lane_lock, LANE_REVERSAL, note=sig.get("setup_name", ""))
+                        elif sid_u.startswith("EMA8_PROTOTYPE"):
+                            try_acquire_lane_lock(self._ema_lane_lock, LANE_PROTOTYPE, note=sig.get("setup_name", ""))
+                    except Exception:
+                        pass
                 self.mark_signal_outcome(
                     signal_uid,
                     executed=bool(res.get("ok")),
@@ -7541,6 +7593,12 @@ class QuantTerminalBackend:
                 "enabled": bool(self.algo_allowlist_cfg.get("enabled", False)),
                 "strategy_ids": list(self.algo_allowlist_cfg.get("strategy_ids") or []),
             },
+            "ema_lane_lock": __import__("analyst.ema_lane_lock_8510", fromlist=["lane_lock_snapshot"]).lane_lock_snapshot(
+                getattr(self, "_ema_lane_lock", {})
+            ),
+            "reversal_revamp": __import__(
+                "analyst.reversal_revamp_8510", fromlist=["load_reversal_cfg"]
+            ).load_reversal_cfg(self.scanner_cfg),
         }
 
     # ── FUNDS & PAPER WALLET MANAGEMENT ──────────────────────────────────────
@@ -8429,6 +8487,13 @@ class QuantTerminalBackend:
             duration=duration_between(pos.get("entry_time"), exit_time),
         )
         append_algo_execution_master(self.ledger_db, master_row_from_position(closed))
+
+        try:
+            from analyst.ema_lane_lock_8510 import release_lane_lock
+
+            release_lane_lock(getattr(self, "_ema_lane_lock", {}))
+        except Exception:
+            pass
 
         if getattr(self, "exit_failure_banner", None) and self.exit_failure_banner.get("position_id") == pos_id:
             self.exit_failure_banner = None

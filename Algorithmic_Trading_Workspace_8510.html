@@ -1051,6 +1051,7 @@
                         </div>
                         <span class="strat-money-badge paper-only" title="MJ Sir fixed 8 EMA after cross — paper only.">MJ Sir · Paper only</span>
                         <div id="stratBlock_crossover" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
+                        <div id="reversalRevampNote" style="font-size:10px; color:#94a3b8; margin-top:4px; font-family:var(--font-mono);"></div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
                             Cross 4/8 · wait 2 bars · touch <b>dynamic</b> 8 EMA (checked every 3s, ±3) within 2 bars · no entry before 09:30.<br>Tgt/SL 20 spot <i>or</i> 20 option pts (whichever first) · 15:20 square-off.
                         </div>
@@ -3805,6 +3806,14 @@
                             sx.textContent = sc.strategies.crossover_reversal.state;
                             sx.className = `status-badge ${sc.strategies.crossover_reversal.state === 'TRIGGERED' ? 'badge-bull' : (sc.strategies.crossover_reversal.state === 'ARMED' ? 'badge-gold' : 'badge-neutral')}`;
                             mjBlock("stratBlock_crossover", sc.strategies.crossover_reversal);
+                            const rv = sc.reversal_revamp || {};
+                            const lk = sc.ema_lane_lock || {};
+                            const elRv = document.getElementById("reversalRevampNote");
+                            if (elRv) {
+                                const tf = rv.timeframe_mode || "15m";
+                                const pre = rv.pre_arm_15m_from_5m ? " · 5m pre-arms 15m" : "";
+                                elRv.textContent = `Reversal TF: ${tf}${pre} | Lock: ${lk.note || "—"}`;
+                            }
                         }
                         const sDailySr = document.getElementById("stratStatus_daily_sr");
                         const sDailyTrend = document.getElementById("stratStatus_daily_trend");

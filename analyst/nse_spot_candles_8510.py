@@ -117,6 +117,25 @@ def epoch_seconds(values: Any) -> np.ndarray:
     return np.asarray((idx - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(seconds=1), dtype="int64")
 
 
+def resample_nse_5m(df_indexed: pd.DataFrame, agg: Optional[Dict[str, str]] = None) -> pd.DataFrame:
+    """Build 5m bars anchored at 09:15 IST per calendar day (300s buckets)."""
+    agg = agg or _AGG_OHLCV
+    use_cols = {k: v for k, v in agg.items() if k in df_indexed.columns}
+    if not use_cols:
+        use_cols = {"close": "last"}
+    chunks = []
+    for _, g in df_indexed.groupby(df_indexed.index.date):
+        g = _session_slice(g)
+        if g.empty:
+            continue
+        r = g.resample("5min", origin="start_day", offset=NSE_15M_OFFSET).agg(use_cols).dropna()
+        if not r.empty:
+            chunks.append(r)
+    if not chunks:
+        return pd.DataFrame()
+    return pd.concat(chunks).sort_index()
+
+
 def resample_nse_15m(df_indexed: pd.DataFrame, agg: Optional[Dict[str, str]] = None) -> pd.DataFrame:
     """Build 15m bars anchored at 09:15 IST per calendar day."""
     agg = agg or _AGG_OHLCV

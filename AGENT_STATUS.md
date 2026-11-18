@@ -21,6 +21,19 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.29-backtest-sweep` | Gemini/Cursor | **done, `1bedd34`** tags `pre/post-gemini-v2.0.29` | **NO — awaiting Harish** |
 | `gemini/v2.0.30-ema-display-audit` | Gemini/Cursor | **done, `2631903`** tags `pre/post-gemini-v2.0.30` | **NO — awaiting Harish** |
 | `gemini/v2.0.31-no-offhours-cleanup` | Gemini/Cursor | **done, `5c58145`** tags `pre/post-gemini-v2.0.31` | **NO — awaiting Harish** |
+| `agy/v2.0.32-reversal-revamp` | AGY/Cursor | **WIP foundation** tags `pre-agy-v2.0.32` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-18 · AGY/Cursor · `agy/v2.0.32-reversal-revamp` (foundation)
+
+**Goal:** Prototype-grade Reversal revamp scaffold — **all new options default OFF**; Stage 2/3 legacy path preserved inside `mj_sir_stage_reversal_8510.py`.
+
+**Done:** `resample_nse_5m`; `reversal_revamp_8510.py` (5m/15m/both, pre-arm, separation, execution labels); `ema_lane_lock_8510.py` + backend gates (OI import, lock telemetry); `scripts/patch_reversal_revamp_8510.py`; `test_reversal_revamp_8510.py` (6).
+
+**Not in this commit (follow-up):** full cockpit filter toggles; Reversal live candle-trail exit loop; Prototype-grade contract picker on Reversal; `proto_sweep` factor rows; wider test matrix from prompt; live Dhan.
+
+**Verify:** `verify_locks.py` 11/11; `pytest analyst/test_reversal_revamp_8510.py` 6/6.
 
 ---
 

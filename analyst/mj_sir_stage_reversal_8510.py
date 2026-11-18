@@ -210,6 +210,8 @@ def evaluate_mj_sir_four_pack(
     b60: Optional[pd.DataFrame] = None,
     gate_meta: Optional[Callable[[str], Dict[str, Any]]] = None,
     dynamic: Optional[Dict[str, Any]] = None,
+    scanner_cfg: Optional[Dict[str, Any]] = None,
+    b5: Optional[pd.DataFrame] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
     """
   Returns (signals, strategy_status_updates for stage2, stage3, crossover_reversal).
@@ -416,117 +418,151 @@ def evaluate_mj_sir_four_pack(
             signals.append(sig)
             mj_state["stage3_fired_key"] = setup_key_s3
 
-    # ── REVERSALS (fixed 8 EMA at cross) ────────────────────────────────────
-    wait_bars = int(cfg["reversal_wait_bars_after_cross"])
-    touch_win = int(cfg["reversal_touch_window_bars"])
-    lookback = int(cfg["reversal_lookback_bars"])
-
-    cross_up = _find_cross_index(e4, e8, b15["close"], True, i)
-    cross_dn = _find_cross_index(e4, e8, b15["close"], False, i)
-
+    # ── REVERSALS (15m legacy or revamp lanes) ─────────────────────────────
     rev_block = common_blocks(ribbon=bool(cfg.get("reversal_ribbon_block", False)))
-    rev_status = _status("SCANNING", block_reason=rev_block or "")
-    # Candle on which the touch is looked for: the running one when dynamic.
-    t_i = (n - 1) if dyn_on else i
 
-    def eval_reversal(bullish: bool, cross_i: Optional[int]) -> Optional[Dict[str, Any]]:
-        if cross_i is None:
-            return None
-        if i - cross_i > lookback:
-            return None
-        fixed_e8 = float(e8.iloc[cross_i])
-        fixed_e4 = float(e4.iloc[cross_i])
-        if bullish and fixed_e4 <= fixed_e8:
-            return None
-        if not bullish and fixed_e4 >= fixed_e8:
-            return None
-        age = t_i - cross_i
-        if age < wait_bars:
+    def _legacy_crossover_reversal() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        wait_bars = int(cfg["reversal_wait_bars_after_cross"])
+        touch_win = int(cfg["reversal_touch_window_bars"])
+        lookback = int(cfg["reversal_lookback_bars"])
+
+        cross_up = _find_cross_index(e4, e8, b15["close"], True, i)
+        cross_dn = _find_cross_index(e4, e8, b15["close"], False, i)
+
+        rev_status = _status("SCANNING", block_reason=rev_block or "")
+        t_i = (n - 1) if dyn_on else i
+
+        def eval_reversal(bullish: bool, cross_i: Optional[int]) -> Optional[Dict[str, Any]]:
+            if cross_i is None:
+                return None
+            if i - cross_i > lookback:
+                return None
+            fixed_e8 = float(e8.iloc[cross_i])
+            fixed_e4 = float(e4.iloc[cross_i])
+            if bullish and fixed_e4 <= fixed_e8:
+                return None
+            if not bullish and fixed_e4 >= fixed_e8:
+                return None
+            age = t_i - cross_i
+            if age < wait_bars:
+                return {
+                    "pending": True,
+                    "reason": f"NO TRADE — Wait {wait_bars - age} more bar(s) after cross",
+                    "fixed_e8": fixed_e8,
+                }
+            win_start = cross_i + wait_bars
+            win_end = cross_i + wait_bars + touch_win - 1
+            if t_i < win_start:
+                return {"pending": True, "reason": "NO TRADE — Before reversal touch window", "fixed_e8": fixed_e8}
+            if t_i > win_end:
+                return {"pending": False, "reason": "NO TRADE — Missed 8 EMA touch window", "fixed_e8": fixed_e8}
+            if early:
+                return {"pending": True, "reason": early_msg, "fixed_e8": fixed_e8}
+            if rev_block:
+                return {"pending": False, "reason": rev_block, "fixed_e8": fixed_e8}
+            if bb_cross and bullish and not ubb_not_down_recent(ubb, bar_ci, slope_tol):
+                return {"pending": False, "reason": "NO TRADE — UBB down (reversal CE)", "fixed_e8": fixed_e8}
+            if bb_cross and not bullish and not lbb_not_up_recent(lbb, bar_ci, slope_tol):
+                return {"pending": False, "reason": "NO TRADE — LBB up (reversal PE)", "fixed_e8": fixed_e8}
+            if party_switch_enabled and bullish and active_party == "BEARISH":
+                return {"pending": False, "reason": "NO TRADE — Party-Switch BEARISH", "fixed_e8": fixed_e8}
+            if party_switch_enabled and not bullish and active_party == "BULLISH":
+                return {"pending": False, "reason": "NO TRADE — Party-Switch BULLISH", "fixed_e8": fixed_e8}
+            if dyn_on:
+                touched = touch_long if bullish else touch_short
+                miss = wait_msg
+            else:
+                touched = touch_fixed_level(low_15, high_15, fixed_e8, tol, bullish)
+                miss = f"NO TRADE — Price did not touch fixed 8 EMA {fixed_e8:.1f}"
+            if not touched:
+                return {"pending": True, "reason": miss, "fixed_e8": fixed_e8}
+            fired_key = (
+                f"{session_day}:REV_{'UP' if bullish else 'DN'}:{b15.index[cross_i]}"
+                if dyn_on
+                else f"{session_day}:REV_{'UP' if bullish else 'DN'}:{round(fixed_e8, 1)}"
+            )
+            if mj_state.get("reversal_fired_key") == fired_key:
+                return {"pending": False, "reason": "NO TRADE — Reversal already fired for this fixed EMA", "fixed_e8": fixed_e8}
+            sid = "CROSSOVER_BULLISH" if bullish else "CROSSOVER_BEARISH"
+            name = "8 EMA Reversal Upside" if bullish else "8 EMA Reversal Downside"
+            mj_state["reversal_fired_key"] = fired_key
             return {
-                "pending": True,
-                "reason": f"NO TRADE — Wait {wait_bars - age} more bar(s) after cross",
-                "fixed_e8": fixed_e8,
+                "signal": {
+                    "strategy_id": sid,
+                    "setup_name": f"MJ Sir {name} — " + ("dynamic 8 EMA touch" if dyn_on else "fixed 8 EMA touch"),
+                    "direction": "LONG" if bullish else "SHORT",
+                    "opt_side": "CE" if bullish else "PE",
+                    "target_pts": float(cfg["reversal_target_pts"]),
+                    "sl_pts": float(cfg["reversal_sl_pts"]),
+                    "index_price": entry_px,
+                    "conviction": "MJ_SIR",
+                    "paper_only": True,
+                    "mj_sir_paper_only": True,
+                    "fixed_8ema_entry": fixed_e8,
+                    "dynamic_e8_at_entry": round(e8_dyn, 2),
+                    "details": (
+                        f"{SPEC_TAG} | cross age {age} | "
+                        + (f"dynamic 8EMA {e8_dyn:.1f} @ spot {entry_px:.1f}" if dyn_on else f"fixed 8EMA {fixed_e8:.1f}")
+                        + " | "
+                        f"gap 4{'>' if bullish else '<'}8 at cross"
+                    ),
+                    **gate_meta("crossover"),
+                }
             }
-        win_start = cross_i + wait_bars
-        win_end = cross_i + wait_bars + touch_win - 1
-        if t_i < win_start:
-            return {"pending": True, "reason": "NO TRADE — Before reversal touch window", "fixed_e8": fixed_e8}
-        if t_i > win_end:
-            return {"pending": False, "reason": "NO TRADE — Missed 8 EMA touch window", "fixed_e8": fixed_e8}
-        if early:
-            return {"pending": True, "reason": early_msg, "fixed_e8": fixed_e8}
-        if rev_block:
-            return {"pending": False, "reason": rev_block, "fixed_e8": fixed_e8}
-        if bb_cross and bullish and not ubb_not_down_recent(ubb, bar_ci, slope_tol):
-            return {"pending": False, "reason": "NO TRADE — UBB down (reversal CE)", "fixed_e8": fixed_e8}
-        if bb_cross and not bullish and not lbb_not_up_recent(lbb, bar_ci, slope_tol):
-            return {"pending": False, "reason": "NO TRADE — LBB up (reversal PE)", "fixed_e8": fixed_e8}
-        if party_switch_enabled and bullish and active_party == "BEARISH":
-            return {"pending": False, "reason": "NO TRADE — Party-Switch BEARISH", "fixed_e8": fixed_e8}
-        if party_switch_enabled and not bullish and active_party == "BULLISH":
-            return {"pending": False, "reason": "NO TRADE — Party-Switch BULLISH", "fixed_e8": fixed_e8}
-        if dyn_on:
-            touched = touch_long if bullish else touch_short
-            miss = wait_msg
+
+        up_eval = eval_reversal(True, cross_up)
+        dn_eval = eval_reversal(False, cross_dn)
+
+        rev_signals: List[Dict[str, Any]] = []
+        reasons: List[str] = []
+        if up_eval and up_eval.get("signal"):
+            rev_signals.append(up_eval["signal"])
+            rev_status = _status("TRIGGERED", armed=True, extra={"reversal_side": "UP"})
+        elif dn_eval and dn_eval.get("signal"):
+            rev_signals.append(dn_eval["signal"])
+            rev_status = _status("TRIGGERED", armed=True, extra={"reversal_side": "DOWN"})
         else:
-            touched = touch_fixed_level(low_15, high_15, fixed_e8, tol, bullish)
-            miss = f"NO TRADE — Price did not touch fixed 8 EMA {fixed_e8:.1f}"
-        if not touched:
-            return {"pending": True, "reason": miss, "fixed_e8": fixed_e8}
-        fired_key = (
-            f"{session_day}:REV_{'UP' if bullish else 'DN'}:{b15.index[cross_i]}"
-            if dyn_on
-            else f"{session_day}:REV_{'UP' if bullish else 'DN'}:{round(fixed_e8, 1)}"
-        )
-        if mj_state.get("reversal_fired_key") == fired_key:
-            return {"pending": False, "reason": "NO TRADE — Reversal already fired for this fixed EMA", "fixed_e8": fixed_e8}
-        sid = "CROSSOVER_BULLISH" if bullish else "CROSSOVER_BEARISH"
-        name = "8 EMA Reversal Upside" if bullish else "8 EMA Reversal Downside"
-        mj_state["reversal_fired_key"] = fired_key
-        return {
-            "signal": {
-                "strategy_id": sid,
-                "setup_name": f"MJ Sir {name} — " + ("dynamic 8 EMA touch" if dyn_on else "fixed 8 EMA touch"),
-                "direction": "LONG" if bullish else "SHORT",
-                "opt_side": "CE" if bullish else "PE",
-                "target_pts": float(cfg["reversal_target_pts"]),
-                "sl_pts": float(cfg["reversal_sl_pts"]),
-                "index_price": entry_px,
-                "conviction": "MJ_SIR",
-                "paper_only": True,
-                "mj_sir_paper_only": True,
-                "fixed_8ema_entry": fixed_e8,
-                "dynamic_e8_at_entry": round(e8_dyn, 2),
-                "details": (
-                    f"{SPEC_TAG} | cross age {age} | "
-                    + (f"dynamic 8EMA {e8_dyn:.1f} @ spot {entry_px:.1f}" if dyn_on else f"fixed 8EMA {fixed_e8:.1f}")
-                    + " | "
-                    f"gap 4{'>' if bullish else '<'}8 at cross"
-                ),
-                **gate_meta("crossover"),
-            }
-        }
+            for ev in (up_eval, dn_eval):
+                if ev and ev.get("reason"):
+                    reasons.append(str(ev["reason"]))
+            if reasons:
+                rev_status = _status("NO_TRADE" if "Missed" in reasons[0] else "ARMED", block_reason=reasons[0])
+            elif cross_up is None and cross_dn is None:
+                rev_status = _status("SCANNING", block_reason="NO TRADE — No recent 4/8 cross")
+        return rev_signals, rev_status
 
-    up_eval = eval_reversal(True, cross_up)
-    dn_eval = eval_reversal(False, cross_dn)
+    from analyst.reversal_revamp_8510 import run_reversal_revamp
 
-    rev_signals: List[Dict[str, Any]] = []
-    reasons: List[str] = []
-    if up_eval and up_eval.get("signal"):
-        rev_signals.append(up_eval["signal"])
-        rev_status = _status("TRIGGERED", armed=True, extra={"reversal_side": "UP"})
-    elif dn_eval and dn_eval.get("signal"):
-        rev_signals.append(dn_eval["signal"])
-        rev_status = _status("TRIGGERED", armed=True, extra={"reversal_side": "DOWN"})
-    else:
-        for ev in (up_eval, dn_eval):
-            if ev and ev.get("reason"):
-                reasons.append(str(ev["reason"]))
-        if reasons:
-            rev_status = _status("NO_TRADE" if "Missed" in reasons[0] else "ARMED", block_reason=reasons[0])
-        elif cross_up is None and cross_dn is None:
-            rev_status = _status("SCANNING", block_reason="NO TRADE — No recent 4/8 cross")
-
+    rev_signals, rev_status = run_reversal_revamp(
+        scanner_cfg=scanner_cfg,
+        b15=b15,
+        b5=b5,
+        cfg=cfg,
+        bar_ci=bar_ci,
+        bb_cross=bb_cross,
+        party_switch_enabled=party_switch_enabled,
+        active_party=active_party,
+        mj_state=mj_state,
+        session_day=session_day,
+        dyn_on=dyn_on,
+        dynamic=dynamic,
+        touch_long=touch_long,
+        touch_short=touch_short,
+        entry_px=entry_px,
+        e8_dyn=e8_dyn,
+        early=early,
+        early_msg=early_msg,
+        wait_msg=wait_msg,
+        rev_block=rev_block,
+        ubb=ubb,
+        lbb=lbb,
+        slope_tol=slope_tol,
+        tol=tol,
+        low_15=low_15,
+        high_15=high_15,
+        gate_meta=gate_meta,
+        legacy_runner=_legacy_crossover_reversal,
+    )
     status["crossover_reversal"] = rev_status
     signals.extend(rev_signals)
 
