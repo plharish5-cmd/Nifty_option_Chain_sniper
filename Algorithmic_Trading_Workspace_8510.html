@@ -1060,6 +1060,30 @@
                             <label>Route <select id="revExecMode" style="background:#0f172a;color:#e2e8f0;font-size:10px;"><option value="PAPER_ONLY">PAPER</option><option value="LIVE_ALLOWED">LIVE</option></select></label>
                             <button type="button" class="secondary-btn" style="padding:2px 8px;font-size:10px;" onclick="saveReversalRevampCfg()">Save reversal</button>
                         </div>
+                        <div id="reversalOiPanel" style="margin-top:8px; padding:8px; background:rgba(15,23,42,0.55); border:1px solid rgba(251,191,36,0.2); border-radius:6px; font-family:var(--font-mono); font-size:10px;">
+                            <div style="font-weight:700; color:#a78bfa; margin-bottom:6px;">8600 OI Filters (optional)</div>
+                            <div style="display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin-bottom:6px;">
+                                <span style="color:#cbd5e1;">Mode:</span>
+                                <label><input type="radio" name="revOiMode" id="revOiModeLog" value="log_only" checked> Log only</label>
+                                <label><input type="radio" name="revOiMode" id="revOiModeBlock" value="block"> Block</label>
+                                <span style="color:#64748b;">| Rule:</span>
+                                <select id="revRuleSel" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;font-size:10px;">
+                                    <option value="all_agree">All agree (strict)</option>
+                                    <option value="any_agrees">Any agrees</option>
+                                    <option value="majority">Majority</option>
+                                </select>
+                                <label style="margin-left:6px;"><input type="checkbox" id="revNeutralBlocks"> Neutral blocks</label>
+                            </div>
+                            <div id="revOiSwitchGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:6px 10px; font-size:10px;">
+                                <label><input type="checkbox" class="rev-oi-sw" data-id="writer_flow"> Classic Writer Flow <span class="rev-oi-dir" data-id="writer_flow">—</span></label>
+                                <label><input type="checkbox" class="rev-oi-sw" data-id="price_oi"> Price vs OI (15m ATM) <span class="rev-oi-dir" data-id="price_oi">—</span></label>
+                                <label><input type="checkbox" class="rev-oi-sw" data-id="total_oi"> Cumulative Total OI <span class="rev-oi-dir" data-id="total_oi">—</span></label>
+                                <label><input type="checkbox" class="rev-oi-sw" data-id="fresh_oi"> Fresh Change in OI <span class="rev-oi-dir" data-id="fresh_oi">—</span></label>
+                                <label><input type="checkbox" class="rev-oi-sw" data-id="volume_oi"> Volume-backed OI <span class="rev-oi-dir" data-id="volume_oi">—</span></label>
+                            </div>
+                            <div id="revOiBlockLine" style="margin-top:6px; color:#94a3b8; font-size:10px;">OI filter verdict: —</div>
+                            <div id="revOiSaveStatus" style="margin-top:4px; color:#64748b; font-size:10px;">—</div>
+                        </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
                             Cross 4/8 · wait 2 bars · touch <b>dynamic</b> 8 EMA (checked every 3s, ±3) within 2 bars · no entry before 09:30.<br>Tgt/SL 20 spot <i>or</i> 20 option pts (whichever first) · 15:20 square-off.
                         </div>
@@ -3838,6 +3862,8 @@
                             if (revTrail) revTrail.checked = !!rv.candle_trail_enabled;
                             const revPre = document.getElementById("revPreArm");
                             if (revPre) revPre.checked = !!rv.pre_arm_15m_from_5m;
+                            applyReversalOiFilterUI(rv);
+                            renderReversalOiFilters(sc.strategies.crossover_reversal, data.desk8600_board);
                         }
                         const sDailySr = document.getElementById("stratStatus_daily_sr");
                         const sDailyTrend = document.getElementById("stratStatus_daily_trend");
@@ -4937,13 +4963,120 @@
             if (sf && cfg.supertrend_factor != null) sf.textContent = String(cfg.supertrend_factor);
         }
 
+        function collectReversalOiFiltersFromDom() {
+            return {
+                enabled: true,
+                mode: document.getElementById("revOiModeBlock")?.checked ? "block" : "log_only",
+                log_only: document.getElementById("revOiModeBlock")?.checked !== true,
+                rule: document.getElementById("revRuleSel")?.value || "all_agree",
+                neutral_blocks: document.getElementById("revNeutralBlocks")?.checked === true,
+                switches: {
+                    writer_flow: document.querySelector('.rev-oi-sw[data-id="writer_flow"]')?.checked === true,
+                    price_oi: document.querySelector('.rev-oi-sw[data-id="price_oi"]')?.checked === true,
+                    total_oi: document.querySelector('.rev-oi-sw[data-id="total_oi"]')?.checked === true,
+                    fresh_oi: document.querySelector('.rev-oi-sw[data-id="fresh_oi"]')?.checked === true,
+                    volume_oi: document.querySelector('.rev-oi-sw[data-id="volume_oi"]')?.checked === true,
+                },
+            };
+        }
+
+        function applyReversalOiFilterUI(revCfg) {
+            if (!revCfg || typeof revCfg !== "object") return;
+            const oi = revCfg.oi_filters;
+            if (!oi || typeof oi !== "object") return;
+            if ("mode" in oi) {
+                const log = document.getElementById("revOiModeLog");
+                const blk = document.getElementById("revOiModeBlock");
+                if (log && blk) {
+                    const m = String(oi.mode || "log_only").toLowerCase();
+                    log.checked = m !== "block";
+                    blk.checked = m === "block";
+                }
+            }
+            if ("rule" in oi) {
+                const sel = document.getElementById("revRuleSel");
+                if (sel) sel.value = String(oi.rule || "all_agree");
+            }
+            if ("neutral_blocks" in oi) {
+                const nb = document.getElementById("revNeutralBlocks");
+                if (nb) nb.checked = !!oi.neutral_blocks;
+            }
+            const sw = oi.switches || {};
+            document.querySelectorAll(".rev-oi-sw").forEach(el => {
+                const id = el.getAttribute("data-id");
+                if (id && id in sw) el.checked = !!sw[id];
+            });
+        }
+
+        function renderReversalOiFilters(cr, board) {
+            const color = d => {
+                const u = String(d || "").toUpperCase();
+                if (u === "CE") return "#22c55e";
+                if (u === "PE") return "#ef4444";
+                if (u === "NEUTRAL") return "#94a3b8";
+                return "#64748b";
+            };
+            const byId = {};
+            (board?.sources || []).forEach(s => { if (s?.id) byId[s.id] = s; });
+            const tel = cr?.oi_filter_telemetry || {};
+            const reads = tel.reads || {};
+            const oiCfg = cr?.oi_filters || {};
+            const momIds = new Set(["writer_flow", "total_oi", "fresh_oi"]);
+            const momLabel = { writer_flow: "Writer", total_oi: "Total OI", fresh_oi: "Fresh OI" };
+            const fmtSig = v => {
+                const n = Number(v);
+                if (!Number.isFinite(n)) return "—";
+                return (n >= 0 ? "+" : "") + n.toFixed(2);
+            };
+            document.querySelectorAll(".rev-oi-dir").forEach(span => {
+                const id = span.getAttribute("data-id");
+                const src = byId[id] || reads[id] || {};
+                const d = src.direction;
+                const age = src.age_sec;
+                const maxAge = oiCfg.max_age_sec != null ? Number(oiCfg.max_age_sec) : 420;
+                const stale = d == null || age == null || age > maxAge;
+                let text = stale ? "— stale" : String(d);
+                if (!stale && momIds.has(id) && src.S != null) {
+                    const lab = momLabel[id] || id;
+                    const b = src.B != null ? fmtSig(src.B) : "—";
+                    const cd = src.CumD_lakh != null ? fmtSig(src.CumD_lakh) + "L" : "—";
+                    const str = src.strength && src.strength !== "NEUTRAL" ? ` ${src.strength}` : "";
+                    const vb = src.volume_backing ? ` · vol: ${src.volume_backing}` : "";
+                    const pc = src.price_confirm === "agree" ? " · price agrees" : (src.price_confirm === "diverge" ? " · price diverges" : "");
+                    text = `${lab}: S ${fmtSig(src.S)} · bias ${b} · CumD ${cd}${vb}${pc} → ${d}${str}`;
+                } else if (!stale && src.detail) {
+                    span.title = String(src.detail).slice(0, 200);
+                }
+                span.textContent = text;
+                span.style.color = stale ? "#64748b" : color(d);
+                if (!stale && age != null && !span.title) span.title = `${age}s old`;
+            });
+            const line = document.getElementById("revOiBlockLine");
+            if (!line) return;
+            const arm = String(cr?.direction || "").toUpperCase();
+            const side = arm === "LONG" ? "CE" : (arm === "SHORT" ? "PE" : "—");
+            if (tel.would_block) {
+                const by = (tel.blocked_by || []).join(", ") || "oi";
+                line.textContent = `Reversal lane: armed ${side} WOULD be blocked by: ${by} (mode ${tel.mode || oiCfg.mode || "log_only"})`;
+                line.style.color = "#fbbf24";
+            } else if (arm) {
+                line.textContent = `Reversal lane: armed ${side} not blocked by OI filters (log_only unless you set Block)`;
+                line.style.color = "#94a3b8";
+            } else {
+                line.textContent = "Reversal OI filters: not armed — live reads above";
+                line.style.color = "#64748b";
+            }
+        }
+
         async function saveReversalRevampCfg() {
+            const stat = document.getElementById("revOiSaveStatus");
             const payload = {
                 timeframe_mode: document.getElementById("revTfMode")?.value || "15m",
                 pre_arm_15m_from_5m: document.getElementById("revPreArm")?.checked === true,
                 ema_separation_enabled: document.getElementById("revSep")?.checked === true,
                 candle_trail_enabled: document.getElementById("revTrail")?.checked === true,
                 execution_mode: document.getElementById("revExecMode")?.value || "PAPER_ONLY",
+                oi_filters: collectReversalOiFiltersFromDom(),
             };
             try {
                 const res = await fetch("/api/scanner/reversal", {
@@ -4953,7 +5086,29 @@
                 });
                 const d = await res.json().catch(() => ({}));
                 if (!res.ok || d.ok === false) throw new Error(d.error || "save failed");
-            } catch (e) { console.warn("reversal save", e); }
+                applyReversalOiFilterUI(d);
+                if (stat) stat.textContent = "Saved reversal OI + cockpit toggles.";
+            } catch (e) {
+                if (stat) stat.textContent = "Save failed: " + (e.message || e);
+                console.warn("reversal save", e);
+            }
+        }
+
+        function wireReversalOiFilters() {
+            const save = () => saveReversalRevampCfg().catch(() => {});
+            ["revOiModeLog", "revOiModeBlock", "revRuleSel", "revNeutralBlocks"].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener("change", save);
+            });
+            document.querySelectorAll(".rev-oi-sw").forEach(el => el.addEventListener("change", save));
+        }
+
+        async function loadReversalRevampCfg() {
+            try {
+                const res = await fetch("/api/scanner/reversal");
+                const d = await res.json().catch(() => ({}));
+                if (res.ok && d.ok !== false) applyReversalOiFilterUI(d);
+            } catch (e) { console.debug("reversal cfg load", e); }
         }
 
         async function saveEma8PrototypeFilters(payload) {
@@ -5221,8 +5376,10 @@
         }
         loadBollingerGate();
         wireEma8PrototypeFilterRadios();
+        wireReversalOiFilters();
         wireOi3mFeatureControls();
         loadEma8PrototypeFilters();
+        loadReversalRevampCfg();
         loadOi3mFeature();
 
         async function toggleScannerEngine() {

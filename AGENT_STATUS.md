@@ -23,6 +23,24 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.31-no-offhours-cleanup` | Gemini/Cursor | **done, `5c58145`** tags `pre/post-gemini-v2.0.31` | **NO — awaiting Harish** |
 | `agy/v2.0.32-reversal-revamp` | AGY/Cursor | **WIP foundation** tags `pre-agy-v2.0.32` | **NO — awaiting Harish** |
 | `gemini/v2.0.34-finish-and-enable` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.34` | **NO — awaiting Harish** |
+| `gemini/v2.0.35-reversal-oi-panel` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.35` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-18 · Gemini/Cursor · `gemini/v2.0.35-reversal-oi-panel`
+
+**Goal:** Independent **8600 OI Filters** panel on the 8 EMA Reversal card (`scanner.reversal.oi_filters` only).
+
+**Done:** Cockpit `rev*` controls + present-key guard; live telemetry on `crossover_reversal` via `_sync_reversal_crossover_desk_status` (display-only); `test_reversal_oi_panel_8510.py` (6) independence + HTML wiring.
+
+**Verify:** `verify_locks.py` 11/11; `pytest analyst/test_reversal_oi_panel_8510.py` 6/6.
+
+**Run:**
+```bash
+git checkout gemini/v2.0.35-reversal-oi-panel
+python3 scripts/verify_locks.py
+PYTHONPATH=. .venv/bin/python -m pytest analyst/test_reversal_oi_panel_8510.py -q
+```
 
 ---
 

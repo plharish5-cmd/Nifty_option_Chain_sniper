@@ -5836,6 +5836,40 @@ class QuantTerminalBackend:
         except Exception as exc:
             row["oi_filter_telemetry"] = {"error": type(exc).__name__}
 
+    def _sync_reversal_crossover_desk_status(self) -> None:
+        """Attach Reversal OI filter config + live telemetry to crossover card (display only)."""
+        from analyst.proto_oi_filters_8510 import board_reads_from_board, oi_switch_block
+        from analyst.reversal_revamp_8510 import load_reversal_cfg, reversal_oi_filters_for_gate
+
+        rev_cfg = load_reversal_cfg(self.scanner_cfg)
+        row = dict(self.strategy_status.get("crossover_reversal") or {})
+        row["name"] = row.get("name") or "4/8 MA Crossover Reversal"
+        row["oi_filters"] = dict(rev_cfg.get("oi_filters") or {})
+        try:
+            oi_gate = reversal_oi_filters_for_gate(self.scanner_cfg)
+            reads = board_reads_from_board(self.desk8600_board())
+            side = str(row.get("reversal_side") or "").upper()
+            cfg_wrap = {"oi_filters": oi_gate} if oi_gate else {"oi_filters": row["oi_filters"]}
+            if side == "UP":
+                would_block, detail = oi_switch_block(True, cfg_wrap, reads)
+                row["direction"] = "LONG"
+            elif side == "DOWN":
+                would_block, detail = oi_switch_block(False, cfg_wrap, reads)
+                row["direction"] = "SHORT"
+            else:
+                would_block, detail = False, {"reads": reads, "would_block": False}
+                row["direction"] = ""
+            row["oi_filter_telemetry"] = {
+                "would_block": would_block,
+                "blocked_by": detail.get("blocked_by") or [],
+                "reads": detail.get("reads") or reads,
+                "rule": detail.get("rule"),
+                "mode": detail.get("mode"),
+            }
+        except Exception as exc:
+            row["oi_filter_telemetry"] = {"error": type(exc).__name__}
+        self.strategy_status["crossover_reversal"] = row
+
     def _ema8_prototype_view(self) -> Dict[str, Any]:
         """Plain-language position of the Prototype in its sequence (display only). Never raises."""
         try:
@@ -6171,7 +6205,10 @@ class QuantTerminalBackend:
             cur["candle_trail_activate_pts"] = float(u["candle_trail_activate_pts"])
         if isinstance(u.get("oi_filters"), dict):
             oi = dict(cur.get("oi_filters") or {})
-            oi.update(u["oi_filters"])
+            raw_oi = u["oi_filters"]
+            oi.update({k: v for k, v in raw_oi.items() if k != "switches"})
+            if isinstance(raw_oi.get("switches"), dict):
+                oi["switches"] = {**(oi.get("switches") or {}), **raw_oi["switches"]}
             cur["oi_filters"] = oi
         for key, default in DEFAULT_REVERSAL_CFG.items():
             if key not in cur:
@@ -6183,6 +6220,7 @@ class QuantTerminalBackend:
                 json.dump(self.cfg, f, indent=2)
         except Exception as exc:
             log.warning("Could not persist reversal config: %s", exc)
+        self._sync_reversal_crossover_desk_status()
         return self.get_reversal_revamp_config()
 
     def get_ema8_prototype_filter_config(self) -> Dict[str, Any]:
@@ -6422,6 +6460,7 @@ class QuantTerminalBackend:
                     prev.update(mj_status[key])
                     prev["spec"] = "MJ_SIR_LECTURE_UNDERSTANDING"
                     self.strategy_status[key] = prev
+            self._sync_reversal_crossover_desk_status()
 
         # ── 8 EMA Prototype (paper-only lane — does not alter Stage 2 or FLAGSHIP) ──
         from analyst.ema8_prototype_8510 import evaluate_ema8_prototype, load_ema8_prototype_cfg
