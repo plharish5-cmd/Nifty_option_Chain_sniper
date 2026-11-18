@@ -3863,18 +3863,47 @@ class QuantTerminalBackend:
 
             proto = load_ema8_prototype_cfg(self.scanner_cfg)
             momentum = (proto.get("oi_filters") or {}).get("momentum")
+            now_ts = int(now.timestamp())
+            spot_bars = None
+            if isinstance(momentum, dict) and momentum.get("require_price_confirm"):
+                from analyst.oi_price_confirm_8510 import load_spot_1m_bars_for_day
+
+                w = int(momentum.get("window_min", 10))
+                spot_bars = load_spot_1m_bars_for_day(self.market_db, day=day, now_ts=now_ts, window_min=w)
             out = compute_reads(
                 rows,
                 px,
                 _cr_cfg(self.scanner_cfg),
                 day=day,
-                now_ts=int(now.timestamp()),
+                now_ts=now_ts,
                 momentum_cfg=momentum,
+                spot_window_bars=spot_bars,
             )
         except Exception as exc:
             out = {"status": "NO_DATA", "reason": f"error: {type(exc).__name__}", "reads": {}, "facts": {}}
         self._chain_reads_cache = (now_mono, out)
         return out
+
+    def _matrix_recorder_db_path(self) -> Path:
+        return ROOT / "data/terminal8510/recording.sqlite3"
+
+    def record_desk8600_matrix_if_live(self) -> None:
+        """Append one certified matrix row per bridge interval — never raises, no gating."""
+        from analyst.desk8600_matrix_recorder_8510 import record_matrix_snapshot, snapshot_from_bridge
+
+        bridge = self.__dict__.get("desk8600_bridge")
+        if bridge is None:
+            return
+        last = getattr(bridge, "last", None) or {}
+        snap = snapshot_from_bridge(last)
+        if not snap:
+            return
+        record_matrix_snapshot(self._matrix_recorder_db_path(), snap)
+
+    def desk8600_matrix_rows_today(self) -> int:
+        from analyst.desk8600_matrix_recorder_8510 import count_matrix_rows_today
+
+        return count_matrix_rows_today(self._matrix_recorder_db_path())
 
     def _compute_oi_3m_read(self) -> Dict[str, Any]:
         """3m normalized-S read from recorded chain snapshots. Never raises."""
@@ -5570,6 +5599,14 @@ class QuantTerminalBackend:
         payload["desk8600_board"] = await asyncio.to_thread(self.desk8600_board)
         payload["desk8600_ticket_lane"] = await asyncio.to_thread(self.desk8600_ticket_lane_status)
         payload["desk8600_link"] = await asyncio.to_thread(self.desk8600_link)
+        try:
+            payload["desk8600_matrix_recording"] = {
+                "rows_today": await asyncio.to_thread(self.desk8600_matrix_rows_today),
+                "advisory_only": True,
+                "provenance": "recorded_live",
+            }
+        except Exception:
+            payload["desk8600_matrix_recording"] = {"rows_today": 0, "advisory_only": True}
         self.cached_telemetry = payload
         self._telemetry_last_refresh_mono = time.monotonic()
         return payload

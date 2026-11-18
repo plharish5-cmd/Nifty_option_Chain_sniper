@@ -44,6 +44,7 @@ DEFAULT_MOMENTUM_CFG: Dict[str, Any] = {
     "sig_extreme": 0.30,
     "require_cumd_confirm": False,
     "require_volume_confirm": False,
+    "require_price_confirm": False,
     "deadzone_cr_per_min": 0.05,  # retired — ignored; kept for config back-compat
 }
 
@@ -340,6 +341,7 @@ def compute_momentum_oi_reads(
     last_t: int,
     age_sec: int,
     momentum_cfg: Optional[Dict[str, Any]] = None,
+    spot_window_bars: Optional[List[Dict[str, float]]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Normalized S = dD/T momentum for total_oi, fresh_oi, writer_flow. Missing window → None (fail OPEN)."""
     cfg = dict(DEFAULT_MOMENTUM_CFG)
@@ -350,6 +352,7 @@ def compute_momentum_oi_reads(
     sig_extreme = float(cfg.get("sig_extreme", 0.30))
     require_cumd = bool(cfg.get("require_cumd_confirm", False))
     require_vol = bool(cfg.get("require_volume_confirm", False))
+    require_price = bool(cfg.get("require_price_confirm", False))
     miss = lambda why: {
         "direction": None,
         "detail": why,
@@ -421,7 +424,16 @@ def compute_momentum_oi_reads(
     writer = dict(fresh)
     if writer.get("detail"):
         writer["detail"] = str(writer["detail"]).replace("OI chg since 09:15", "Writer flow")
-    return {"total_oi": total, "fresh_oi": fresh, "writer_flow": writer}
+    out_reads = {"total_oi": total, "fresh_oi": fresh, "writer_flow": writer}
+    if require_price:
+        from analyst.oi_price_confirm_8510 import apply_price_confirm_to_momentum_read
+
+        bars = spot_window_bars or []
+        for key in out_reads:
+            out_reads[key] = apply_price_confirm_to_momentum_read(
+                out_reads[key], require=True, window_bars=bars
+            )
+    return out_reads
 
 
 def max_pain(chain: Dict[float, Dict[str, float]]) -> Optional[float]:
@@ -459,6 +471,7 @@ def compute_reads(
     day: str,
     now_ts: int,
     momentum_cfg: Optional[Dict[str, Any]] = None,
+    spot_window_bars: Optional[List[Dict[str, float]]] = None,
 ) -> Dict[str, Any]:
     """{"status": "OK"|"NO_DATA", "reads": {id: {direction, detail, [blocks]}}, "facts": {...}}"""
     out: Dict[str, Any] = {"status": "NO_DATA", "reason": "", "reads": {}, "facts": {}}
@@ -637,6 +650,7 @@ def compute_reads(
             last_t=last_t,
             age_sec=int(age),
             momentum_cfg=momentum_cfg,
+            spot_window_bars=spot_window_bars,
         )
     except Exception:
         out["momentum_oi"] = {}

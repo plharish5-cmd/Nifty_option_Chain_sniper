@@ -111,3 +111,4 @@ def test_load_oi_filters_momentum_defaults():
     assert oi["momentum"]["sig_min"] == 0.15
     assert oi["momentum"]["sig_extreme"] == 0.30
     assert oi["momentum"]["require_cumd_confirm"] is False
+    assert oi["momentum"]["require_price_confirm"] is False

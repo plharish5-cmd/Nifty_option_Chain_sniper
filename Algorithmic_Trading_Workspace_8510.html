@@ -1233,6 +1233,7 @@
                                 <div style="margin-top:6px; color:#64748b; line-height:1.4;">
                                     Every signal is recorded with every reading. A source skips trades only when its button is ON. A source with no data never skips a trade.
                                 </div>
+                                <div id="d86MatrixRecorder" style="margin-top:6px; color:#94a3b8; font-size:10px;">8600 Matrix recording: — (ADVISORY_ONLY until backtest)</div>
                             </div>
                     </div>
                     </div>
@@ -2413,6 +2414,11 @@
                 const on = (b.apply_to || []).includes(l.prefix);
                 return d86Btn(d86Esc(l.label), on, "d86Post({lane:'" + l.prefix + "', on:" + (!on) + "})", "");
             }).join("");
+            const mrec = document.getElementById("d86MatrixRecorder");
+            if (mrec && window._deskMatrixRec) {
+                const n = window._deskMatrixRec.rows_today;
+                mrec.textContent = `8600 Matrix recording: ${n} rows today · ADVISORY_ONLY (no gate until held-out backtest)`;
+            }
         }
 
         function renderProtoView(v) {
@@ -3902,6 +3908,7 @@
                 renderStrikeMatrix(data.priority_matrix || [], data.matrix_reason || null);
 
                 renderDhanOI8510(data.dhan_oi, data.five_factor_confluence);
+                window._deskMatrixRec = data.desk8600_matrix_recording || { rows_today: 0 };
                 renderDesk8600Board(data.desk8600_board);
                 renderTicketLane(data.desk8600_ticket_lane);
                 renderDeskLink(data.desk8600_link);
@@ -4998,7 +5005,8 @@
                     const cd = src.CumD_lakh != null ? fmtSig(src.CumD_lakh) + 'L' : '—';
                     const str = src.strength && src.strength !== 'NEUTRAL' ? ` ${src.strength}` : '';
                     const vb = src.volume_backing ? ` · vol: ${src.volume_backing}` : '';
-                    text = `${lab}: S ${fmtSig(src.S)} · bias ${b} · CumD ${cd}${vb} → ${d}${str}`;
+                    const pc = src.price_confirm ? ` · price: ${src.price_confirm}` : '';
+                    text = `${lab}: S ${fmtSig(src.S)} · bias ${b} · CumD ${cd}${vb}${pc} → ${d}${str}`;
                 } else if (!stale && src.detail) {
                     span.title = String(src.detail).slice(0, 200);
                 }

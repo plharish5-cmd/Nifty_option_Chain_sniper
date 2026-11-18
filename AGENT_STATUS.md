@@ -22,6 +22,21 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.30-ema-display-audit` | Gemini/Cursor | **done, `2631903`** tags `pre/post-gemini-v2.0.30` | **NO — awaiting Harish** |
 | `gemini/v2.0.31-no-offhours-cleanup` | Gemini/Cursor | **done, `5c58145`** tags `pre/post-gemini-v2.0.31` | **NO — awaiting Harish** |
 | `agy/v2.0.32-reversal-revamp` | AGY/Cursor | **WIP foundation** tags `pre-agy-v2.0.32` | **NO — awaiting Harish** |
+| `gemini/v2.0.33-price-confirm-matrix-recorder` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.33` | **NO — awaiting Harish** |
+
+---
+
+## 2026-11-18 · Gemini/Cursor · `gemini/v2.0.33-price-confirm-matrix-recorder`
+
+**Path B (price confirm on S gate):** `scanner.ema8_prototype.oi_filters.momentum.require_price_confirm` default **false**. When on, CE/PE momentum downgrades to **NEUTRAL** if recorded 1m spot disagrees over `window_min` (fail-open on missing spot). Cockpit shows `· price: agrees|diverges` on momentum S lines.
+
+**Path A (Matrix recorder, NO gate):** After each live `SignalBridge.evaluate`, append one idempotent row to `desk8600_matrix_log` in `data/terminal8510/recording.sqlite3` (`provenance=recorded_live`). Cockpit: **8600 Matrix recording: N rows today**. **ADVISORY_ONLY** until held-out backtest — must not gate real money.
+
+**Files:** `analyst/oi_price_confirm_8510.py`, `analyst/desk8600_matrix_recorder_8510.py`, `chain_reads_8510.py`, `proto_oi_filters_8510.py`, `terminal8510_backend.py`, `engine_8510_live.py`, `scripts/patch_price_confirm_matrix_recorder_8510.py`, `test_price_confirm_matrix_8510.py`, `Algorithmic_Trading_Workspace_8510.html`.
+
+**Verify:** `python3 scripts/verify_locks.py` 11/11; `pytest analyst/test_price_confirm_matrix_8510.py analyst/test_oi_momentum_8510.py` — run full `pytest analyst/` on owner machine.
+
+**Not verified:** live 8600 bridge polling, live NSE/Dhan, matrix angle/PCR fields (bridge does not expose them → stored null).
 
 ---
 

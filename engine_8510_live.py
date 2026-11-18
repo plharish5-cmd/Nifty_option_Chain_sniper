@@ -118,6 +118,10 @@ async def startup_event():
         while True:
             try:
                 await asyncio.to_thread(app.state.ict_smc_bridge.evaluate)
+                try:
+                    await asyncio.to_thread(backend.record_desk8600_matrix_if_live)
+                except Exception:
+                    pass
             except asyncio.CancelledError:
                 break
             except Exception:
