@@ -1332,6 +1332,102 @@
         .oi-decision-board .oi-scope { font-size:10px; color:#94a3b8; margin:6px 0 0; }
     </style>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" crossorigin="anonymous"></script>
+<style id="desk-ui-v239">
+/* v239: presentation only. Existing DOM IDs, handlers and strategy rules are preserved. */
+:root { --bg-base:#080e18; --bg-panel:#0e1726; --bg-card:#111e30; --bg-elevated:#192940; --text-dim:#a9b9cd; --text-muted:#8094ae; --border-subtle:#25364c; --shadow-panel:0 3px 14px #0003; }
+body { background-image:none; font-size:13px; line-height:1.45; }
+.workspace-wrapper { max-width:1800px; padding:18px 24px 32px; }
+.quant-ribbon { position:relative; padding:9px 24px; background:#0b1422; gap:8px 20px; border-bottom:1px solid #2b3c52; }
+.ribbon-items { gap:8px 20px; }
+.ribbon-label { color:#8da3be; font-size:10px; }
+#dhanEmaCrossPanel.bnr-panel { position:relative !important; top:auto !important; z-index:1; box-shadow:none; background:#101e30; padding:12px 14px !important; }
+.bnr-row-a { gap:10px !important; }
+header { margin:16px 0 12px; padding-bottom:14px; gap:12px 24px; }
+header h1 { font-size:20px; }
+.sub-header { max-width:720px; font-size:11px; color:#8da3be; }
+.brand-logo { box-shadow:none; background:#12314a; }
+.tabs { display:flex; flex-wrap:wrap; gap:5px; padding:6px !important; border:1px solid #293c54; background:#0e1a2b !important; }
+.tab-btn { min-height:38px; padding:9px 16px; border-radius:7px; font-size:12px; flex:1 1 auto; }
+.tab-btn.active { background:#164767 !important; box-shadow:none; color:#f0faff !important; }
+.card { border:1px solid #293b52 !important; background:#101c2c !important; box-shadow:var(--shadow-panel); border-radius:12px !important; }
+.card h2 { font-size:15px; line-height:1.4; }
+.desk-terminal-layout { gap:14px; }
+.desk-chaser-panel { padding:12px 16px !important; }
+.desk-chaser-grid { gap:10px; grid-template-columns:repeat(6,minmax(0,1fr)); }
+.desk-chaser-grid .chaser-save { grid-column:auto; align-self:end; }
+.desk-chaser-grid input,.desk-chaser-grid select { width:100% !important; }
+.desk-chaser-panel .desk-chaser-note { color:#9aadc5; }
+.desk-scanner-shell { padding:16px !important; }
+.desk-scanner-top { border-bottom:1px solid #2b3e55; padding-bottom:12px; }
+.desk-scanner-title { font-size:17px; letter-spacing:-.3px; }
+#strategyCockpitGrid { display:flex !important; flex-direction:column !important; gap:14px !important; }
+.cockpit-section-tag { margin:0 !important; padding:8px 2px 0 !important; color:#a4bad4 !important; letter-spacing:1.3px; font-size:10px; text-transform:uppercase; }
+.cockpit-mini-grid { grid-template-columns:repeat(auto-fit,minmax(245px,1fr)); gap:12px; align-items:start; }
+.cockpit-mini-grid .strat-tile { min-width:0; padding:14px !important; background:#122033 !important; box-shadow:none; border:1px solid #293e57 !important; }
+.cockpit-lane-grid { display:grid !important; grid-template-columns:minmax(0,1fr) minmax(0,1fr) !important; align-items:start; gap:12px !important; padding:16px !important; border:1px solid #2d465f !important; border-left:3px solid #37b8d6 !important; background:#111f31 !important; box-shadow:none !important; }
+.cockpit-lane-grid > * { min-width:0; grid-column:1/-1; width:100%; margin:0 !important; }
+.cockpit-lane-grid .lane-row-head { padding:0 0 12px !important; border-bottom:1px solid #30465f !important; gap:8px; }
+.lane-row-head .lane-title { font-size:17px; color:#e6effa; }
+.lane-row-head .status-badge { font-size:11px; padding:5px 9px; }
+.lane-row-status { padding:6px 9px; border-left:2px solid #587693; background:#0c1726; color:#b5c7dc; border-radius:3px; line-height:1.5; }
+.lane-row-status:empty { padding:0; border:0; }
+.lane-ctrl-bar { padding:10px 12px !important; gap:8px 18px !important; background:#0b1829; border:1px solid #2a435e; }
+#protoView { margin:0 !important; padding:12px !important; background:#13283e !important; border:1px solid #2a536c !important; box-shadow:none; }
+#protoViewHeadline { font-size:15px !important; }
+#protoViewSteps { flex-wrap:wrap; gap:5px !important; }
+#protoViewSteps > div { flex:1 1 125px; padding:6px 8px !important; font-size:10px !important; }
+#protoViewNums { gap:8px 20px !important; }
+#protoOiStrip,#reversalOiPanel { padding:12px !important; background:#0c192b; border:1px solid #304d6c; border-radius:8px; gap:10px 16px !important; }
+#protoOiSwitchGrid,#revOiSwitchGrid { display:grid !important; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px !important; }
+#protoOiSwitchGrid > label,#revOiSwitchGrid > label { white-space:normal !important; padding:7px 8px !important; background:#12243a; border:1px solid #2a425e; border-radius:5px; font-size:11px; }
+.cockpit-lane-grid > .lane-panel-section:has(#proto-config-panel) { grid-column:1; }
+.cockpit-lane-grid > .lane-panel-section:has(#protoOiDecisionBoard) { grid-column:2; }
+.cockpit-lane-grid > .lane-panel-section:has(#revOiDecisionBoard) { grid-column:1; }
+.strat-lane-reversal > .strat-rules-section { grid-column:2; }
+.lane-panel-section,.strat-rules-section { padding:12px !important; border-radius:8px; background:#0d1929 !important; border:1px solid #2b4059 !important; }
+.panel-heading { font-family:var(--font-sans); color:#bdd0e6 !important; font-size:11px !important; font-weight:700; margin-bottom:9px; letter-spacing:.2px; }
+#proto-config-panel { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px !important; border:0; background:transparent; padding:0; }
+#proto-config-panel > .filter-group { display:flex; flex-wrap:wrap; gap:5px 10px; border:1px solid #2a405a; border-radius:7px; background:#132339; padding:9px !important; }
+#proto-config-panel .filter-group-title { flex:1 1 100%; color:#a8c2de; font-size:11px; }
+#proto-config-panel > .lane-ctrl-bar,#oi3mContextGrid,#oi3mSaveStatus,#protoFilterSaveStatus { grid-column:1/-1; }
+#proto-config-panel label { white-space:normal !important; padding:3px 0 !important; font-size:11px; }
+#reversalCockpitToggles { gap:9px 14px; }
+#reversalCockpitToggles label { padding:7px 10px; font-size:11px; }
+.oi-decision-board { margin:0 !important; padding:0 !important; border:0 !important; background:transparent !important; font-size:11px; }
+.oi-decision-board h4 { font-size:13px; line-height:1.5; }
+.oi-decision-board table { font-size:10px !important; width:100%; table-layout:fixed; }
+.oi-decision-board th,.oi-decision-board td { padding:8px 5px !important; white-space:normal !important; overflow-wrap:anywhere; }
+.oi-decision-board .oi-sides { gap:8px; }
+.oi-decision-board .oi-side { background:#13273a; padding:10px !important; }
+.oi-decision-board .oi-scope { display:block; font-size:10px; line-height:1.5; color:#8ca6c2; }
+.oi-decision-board .oi-warning { opacity:1; font-size:11px; }
+.oi-board-oneline { padding:8px 10px; background:#132a3e; border-radius:5px; color:#c5d8eb; }
+#d86Rows { display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px !important; }
+#d86Rows > div { min-width:0; border:1px solid #2a4059; padding:9px !important; border-radius:6px; background:#122137; overflow-wrap:anywhere; }
+#d86Rows .d86-source-row { display:block; }
+#desk8600Board { padding:12px !important; background:#0d1b2c !important; border-color:#2b445e !important; }
+#desk8600Board .desk8600-help { display:block; color:#9bb0c9 !important; }
+table { font-variant-numeric:tabular-nums; }
+.table-container,.proto-audit-wrap { border:1px solid #2a4059; border-radius:8px; }
+.proto-audit-wrap { max-height:260px !important; }
+input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible { outline:2px solid #5ccfe6; outline-offset:3px; }
+input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
+@media(min-width:1500px) { .desk-chaser-grid { grid-template-columns:repeat(7,minmax(0,1fr)); } }
+@media(max-width:1100px) { .workspace-wrapper { padding:12px; } .desk-chaser-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } #d86Rows { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:800px) { .cockpit-lane-grid { grid-template-columns:minmax(0,1fr) !important; padding:12px !important; } .cockpit-lane-grid > * { grid-column:1/-1 !important; } .desk-chaser-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .tab-btn { flex:1 1 45%; } #d86Rows { grid-template-columns:minmax(0,1fr); } .quant-ribbon { padding:8px 12px; } #persistentMarketHeader { max-width:100%; white-space:normal; } }
+@media(max-width:480px) { #proto-config-panel { grid-template-columns:minmax(0,1fr); } #protoOiSwitchGrid,#revOiSwitchGrid { grid-template-columns:minmax(0,1fr); } .cockpit-mini-grid { grid-template-columns:minmax(0,1fr); } .oi-decision-board .oi-sides { grid-template-columns:1fr; } }
+
+
+.header-toolbar { min-width:0; width:100%; max-width:100%; flex:1 1 680px; grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr)); }
+.header-toolbar > * { min-width:0; max-width:100%; white-space:normal; }
+#realMoneyReason { overflow-wrap:anywhere; text-align:left; }
+#liveHeaderState { justify-self:stretch; }
+.proto-audit-wrap { overflow:auto; }
+.proto-audit-wrap td { white-space:normal; overflow-wrap:anywhere; }
+
+.lane-panel-section > .strat-rules-section { margin-top:12px !important; }
+#oi3mContextGrid:empty { display:none; }
+</style>
 </head>
 <body>
 
@@ -1721,7 +1817,7 @@
                     <div>
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:600;">[ ] Dhan Access Token:</label>
-                            
+
                         </div>
                         <input type="password" id="dhanAccessTokenInput" name="dhan-access-token-no-autofill" value="" autocapitalize="off" spellcheck="false" placeholder="Paste a fresh token — never pre-filled" style="width:100%; margin-top:4px;" autocomplete="off">
                     </div>
@@ -1778,7 +1874,7 @@
                         <button type="button" class="secondary-btn" onclick="saveDhanApiConfig()" style="padding:8px 18px; font-size:12px; font-weight:700;">💾 Save API Config</button>
                         <button type="button" class="cyan-btn" onclick="retryDhanConnection()" style="padding:8px 14px; font-size:12px; font-weight:700;">🔄 Retry Connection</button>
                         <button type="button" class="crimson-btn" onclick="logoutDhanApiConfig()" style="padding:8px 14px; font-size:12px; font-weight:700;">🚪 Logout / Clear API Config</button>
-                        
+
                     </div>
                     <div style="font-size:12px; color:#38bdf8; font-family:var(--font-mono); font-weight:700;" id="dhanActionFeedback">
                         Ready to connect
@@ -2122,15 +2218,7 @@
                         <div class="lane-panel-section" style="margin-top:4px;">
                             <div class="panel-heading">Prototype OI decision matrix (telemetry)</div>
                             <section id="protoOiDecisionBoard" class="oi-decision-board" aria-label="Prototype OI filter decision board"><p>Waiting for OI decision telemetry…</p></section>
-                        </div>
-                        <div class="strat-rules-section">
-                            <div class="panel-heading">Prototype lane rules</div>
-                            <div class="strat-rules-body">
-                            15m <b>close cross</b> 8 EMA → <b>ARM</b> → price <b>2 pts away</b> → entry on <b>touch</b> (±3) every <b>3s</b>.<br>
-                            CE/PE ≥ ₹200 · Tgt/SL 40 · 09:30–15:20 square-off · one trade at a time · replay tag <b>EMA8_PROTOTYPE</b>.
-                            </div>
-                        </div>
-                        <div class="strat-rules-section">
+<div class="strat-rules-section">
                             <div class="panel-heading">Signal audit log</div>
                             <div class="proto-audit-wrap">
                             <table>
@@ -2139,7 +2227,16 @@
                             </table>
                             </div>
                         </div>
-                    <div class="proto-8600-strip lane-panel-section">
+
+                        </div>
+                        <div class="strat-rules-section">
+                            <div class="panel-heading">Prototype lane rules</div>
+                            <div class="strat-rules-body">
+                            15m <b>close cross</b> 8 EMA → <b>ARM</b> → price <b>2 pts away</b> → entry on <b>touch</b> (±3) every <b>3s</b>.<br>
+                            CE/PE ≥ ₹200 · Tgt/SL 40 · 09:30–15:20 square-off · one trade at a time · replay tag <b>EMA8_PROTOTYPE</b>.
+                            </div>
+                        </div>
+                        <div class="proto-8600-strip lane-panel-section">
                             <div class="panel-heading" id="d86FoldSummary">8600 board — option-chain reads</div>
                             <div id="desk8600Board" style="padding:8px 10px; background:rgba(15,23,42,0.65); border:1px solid rgba(251,191,36,0.25); border-radius:6px; font-family:var(--font-mono); font-size:10.5px;">
                                 <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px;">
@@ -2325,7 +2422,7 @@
                     </div>
                     <span style="font-size:11px; color:#38bdf8; font-family:var(--font-mono);">SEBI POST-MARCH 2026 PROTECTED LIMIT EXIT ROUTING (OCO)</span>
                 </h2>
-                
+
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-bottom:14px;">
                     <!-- Part A: Trailing Stop Loss -->
                     <div style="background:var(--bg-input); padding:12px; border-radius:6px; border:1px solid var(--border-subtle);">
@@ -4792,7 +4889,7 @@
             if (stkEl) stkEl.textContent = opt.dataset.strike || "--";
         }
 
-        
+
 
         async function toggleAlgoStrike(contractId, isChecked) {
             try {
@@ -4812,7 +4909,7 @@
             }
         }
 
-        
+
 
         function showOrderConfirmationToast(symbol, price, side, source = "AUTO ALGO 🤖", strategy = "Stage 2 8 EMA Touch") {
             const toast = document.getElementById("orderConfirmationToast");
@@ -5361,17 +5458,17 @@
         }
 
         // ── 6. EXECUTION MODE, KILL SWITCH & CHASING CONFIG ────────────────────
-        
 
-        
+
+
 
         // ALGO ONLY blocks discretionary orders at the engine, not just here, so
         // the scanner and strike matrix cannot route around it either.
-        
 
-        
 
-        
+
+
+
 
         async function triggerEmergencyKillSwitch() {
             if (!confirm("⚠️ ARE YOU SURE? This will immediately cancel all Dhan pending orders, square off all open positions, and lock execution in STANDBY.")) return;
@@ -7260,7 +7357,7 @@
             globalCachedEodSummary = summary;
             const t1 = document.getElementById("tab1EodSummaryContent");
             const t7 = document.getElementById("tab7EodSummaryContent");
-            
+
             const pnlColor = (summary.net_pnl_inr && summary.net_pnl_inr.startsWith("-")) ? "var(--crimson)" : "var(--emerald)";
             const textHtml = `
                 <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center; margin-bottom:6px;">
@@ -7385,7 +7482,7 @@
             if (!data) return;
             const spotCount = data.spot_candles_1m ? data.spot_candles_1m.length : (data.checks && data.checks.spot_candles ? data.checks.spot_candles.count : 0);
             const futCount = data.future_candles_1m ? data.future_candles_1m.length : (data.checks && data.checks.future_candles ? data.checks.future_candles.count : 0);
-            
+
             const spotDetail = document.getElementById("chk_spot_detail");
             if (spotDetail) spotDetail.textContent = `${spotCount} closed candles (09:15 to 15:29)`;
             const futDetail = document.getElementById("chk_fut_detail");
