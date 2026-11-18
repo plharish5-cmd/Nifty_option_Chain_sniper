@@ -40,6 +40,7 @@ DEFAULT_OI_FILTERS: Dict[str, Any] = {
         "sig_extreme": 0.30,
         "require_cumd_confirm": False,
         "require_volume_confirm": False,
+        "require_price_confirm": False,
     },
 }
 
@@ -87,6 +88,8 @@ def load_oi_filters_cfg(proto_cfg: Dict[str, Any]) -> Dict[str, Any]:
             m["require_cumd_confirm"] = bool(mom["require_cumd_confirm"])
         if "require_volume_confirm" in mom:
             m["require_volume_confirm"] = bool(mom["require_volume_confirm"])
+        if "require_price_confirm" in mom:
+            m["require_price_confirm"] = bool(mom["require_price_confirm"])
         if "deadzone_cr_per_min" in mom:
             pass  # retired — ignored
         out["momentum"] = m
@@ -254,8 +257,22 @@ def backtest_board_reads_at(
         if rows:
             spot = float(rows[-1].get("spot") or rows[-1].get("underlying") or 0)
         momentum = (load_ema8_prototype_cfg(scanner_cfg or {}).get("oi_filters") or {}).get("momentum")
+        spot_bars = None
+        if isinstance(momentum, dict) and momentum.get("require_price_confirm"):
+            from analyst.oi_price_confirm_8510 import load_spot_1m_bars_for_day
+
+            w = int(momentum.get("window_min", 10))
+            spot_bars = load_spot_1m_bars_for_day(market_db, day=day, now_ts=asof_ts, window_min=w)
         cr = (
-            compute_reads(rows, spot, cr_cfg(scanner_cfg or {}), day=day, now_ts=asof_ts, momentum_cfg=momentum)
+            compute_reads(
+                rows,
+                spot,
+                cr_cfg(scanner_cfg or {}),
+                day=day,
+                now_ts=asof_ts,
+                momentum_cfg=momentum,
+                spot_window_bars=spot_bars,
+            )
             if rows
             else {
                 "status": "NO_DATA",

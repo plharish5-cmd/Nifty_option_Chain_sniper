@@ -118,6 +118,10 @@ async def startup_event():
         while True:
             try:
                 await asyncio.to_thread(app.state.ict_smc_bridge.evaluate)
+                try:
+                    await asyncio.to_thread(backend.record_desk8600_matrix_if_live)
+                except Exception:
+                    pass
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -919,6 +923,27 @@ async def api_oi_3m_feature_post(req: Request):
         return JSONResponse(content=backend.update_oi_3m_feature_config(data))
     except Exception as exc:
         log.exception("[OI_3M] feature update failed: %s", exc)
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(exc)})
+
+
+@app.get("/api/scanner/reversal")
+async def api_reversal_cfg_get():
+    try:
+        return JSONResponse(content=backend.get_reversal_revamp_config())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(exc)})
+
+
+@app.post("/api/scanner/reversal")
+async def api_reversal_cfg_post(req: Request):
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    try:
+        return JSONResponse(content=backend.update_reversal_revamp_config(data))
+    except Exception as exc:
+        log.exception("[REVERSAL] config update failed: %s", exc)
         return JSONResponse(status_code=500, content={"ok": False, "error": str(exc)})
 
 

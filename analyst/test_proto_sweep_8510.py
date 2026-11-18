@@ -12,6 +12,7 @@ from analyst.proto_sweep_8510 import (  # noqa: E402
     block_bootstrap_total,
     build_candidate_combos,
     merge_overrides,
+    reversal_stage_variants,
     stage1_variants,
     trade_key,
 )
@@ -25,6 +26,14 @@ def _trade(day: str, gross: float, hm: str = "10:00") -> dict:
         "entry": 25000.0,
         "gross": gross,
     }
+
+
+def test_reversal_stage_variants_exposed_for_lab():
+    v = reversal_stage_variants()
+    assert len(v) >= 6
+    ids = {x[0] for x in v}
+    assert "reversal_rev_trail_on" in ids
+    assert all("reversal" in ov for _, _, ov in v)
 
 
 def test_stage1_has_factors_not_explosion():

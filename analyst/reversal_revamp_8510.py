@@ -19,6 +19,7 @@ from analyst.mj_sir_stage_reversal_8510 import (
 from analyst.nse_spot_candles_8510 import ema4_ema8 as _ema_shared
 
 DEFAULT_REVERSAL_CFG: Dict[str, Any] = {
+    "enabled": True,
     "timeframe_mode": "15m",
     "pre_arm_15m_from_5m": False,
     "ema_separation_enabled": False,
@@ -29,12 +30,53 @@ DEFAULT_REVERSAL_CFG: Dict[str, Any] = {
     "oi_filters": {
         "enabled": False,
         "log_only": True,
+        "mode": "log_only",
+        "rule": "all_agree",
+        "neutral_blocks": False,
         "all_agree": False,
         "momentum_window": 10,
         "momentum_sig_bull": 0.15,
         "momentum_sig_bear": 0.30,
+        "require_price_confirm": False,
+        "switches": {
+            "writer_flow": False,
+            "total_oi": False,
+            "fresh_oi": False,
+            "price_oi": False,
+            "volume_oi": False,
+        },
     },
 }
+
+
+def reversal_oi_filters_for_gate(scanner_cfg: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Merge Reversal OI toggles onto Prototype filter defaults for oi_switch_block."""
+    rev = load_reversal_cfg(scanner_cfg)
+    raw = rev.get("oi_filters") or {}
+    if not raw.get("enabled"):
+        return None
+    from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
+    from analyst.proto_oi_filters_8510 import load_oi_filters_cfg
+
+    base = load_oi_filters_cfg(load_ema8_prototype_cfg(scanner_cfg or {}))
+    mode = str(raw.get("mode") or ("log_only" if raw.get("log_only", True) else "block")).lower()
+    base["mode"] = mode if mode in ("log_only", "block") else "log_only"
+    if raw.get("rule"):
+        base["rule"] = raw["rule"]
+    if "neutral_blocks" in raw:
+        base["neutral_blocks"] = bool(raw.get("neutral_blocks"))
+    sw = dict(base.get("switches") or {})
+    for k, v in (raw.get("switches") or {}).items():
+        sw[k] = bool(v)
+    base["switches"] = sw
+    mom = dict(base.get("momentum") or {})
+    mom["window_min"] = int(raw.get("momentum_window", mom.get("window_min", 10)))
+    mom["sig_min"] = float(raw.get("momentum_sig_bull", raw.get("sig_min", mom.get("sig_min", 0.15))))
+    mom["sig_extreme"] = float(raw.get("momentum_sig_bear", raw.get("sig_extreme", mom.get("sig_extreme", 0.30))))
+    if "require_price_confirm" in raw:
+        mom["require_price_confirm"] = bool(raw.get("require_price_confirm"))
+    base["momentum"] = mom
+    return base
 
 
 def load_reversal_cfg(scanner_cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -57,6 +99,10 @@ def needs_reversal_revamp(scanner_cfg: Optional[Dict[str, Any]]) -> bool:
     if bool(rc.get("pre_arm_15m_from_5m")):
         return True
     if bool(rc.get("ema_separation_enabled")):
+        return True
+    if bool(rc.get("candle_trail_enabled")):
+        return True
+    if str(rc.get("execution_mode", "PAPER_ONLY")).upper() in ("LIVE_ALLOWED", "LIVE", "REAL"):
         return True
     return False
 

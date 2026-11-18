@@ -1049,9 +1049,17 @@
                             <span style="font-weight:700; color:#fbbf24; font-size:13px;">3. 8 EMA Reversal Up / Down</span>
                             <span id="stratStatus_crossover" class="status-badge badge-gold">SCANNING</span>
                         </div>
-                        <span class="strat-money-badge paper-only" title="MJ Sir fixed 8 EMA after cross — paper only.">MJ Sir · Paper only</span>
+                        <span id="reversalExecBadge" class="strat-money-badge paper-only" title="Reversal route from scanner.reversal.execution_mode">MJ Sir · Paper only</span>
                         <div id="stratBlock_crossover" style="font-size:10.5px; color:#94a3b8; margin:4px 0; min-height:1.2em; font-family:var(--font-mono);"></div>
                         <div id="reversalRevampNote" style="font-size:10px; color:#94a3b8; margin-top:4px; font-family:var(--font-mono);"></div>
+                        <div id="reversalCockpitToggles" style="margin-top:6px; font-size:10px; color:#cbd5e1; display:flex; flex-wrap:wrap; gap:8px 12px; font-family:var(--font-mono);">
+                            <label>TF <select id="revTfMode" style="background:#0f172a;color:#e2e8f0;font-size:10px;"><option value="15m">15m</option><option value="5m">5m</option><option value="both">both</option></select></label>
+                            <label><input type="checkbox" id="revPreArm"> pre-arm 15m from 5m</label>
+                            <label><input type="checkbox" id="revSep"> EMA separation</label>
+                            <label><input type="checkbox" id="revTrail"> candle trail @+20</label>
+                            <label>Route <select id="revExecMode" style="background:#0f172a;color:#e2e8f0;font-size:10px;"><option value="PAPER_ONLY">PAPER</option><option value="LIVE_ALLOWED">LIVE</option></select></label>
+                            <button type="button" class="secondary-btn" style="padding:2px 8px;font-size:10px;" onclick="saveReversalRevampCfg()">Save reversal</button>
+                        </div>
                         <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">
                             Cross 4/8 · wait 2 bars · touch <b>dynamic</b> 8 EMA (checked every 3s, ±3) within 2 bars · no entry before 09:30.<br>Tgt/SL 20 spot <i>or</i> 20 option pts (whichever first) · 15:20 square-off.
                         </div>
@@ -3814,6 +3822,22 @@
                                 const pre = rv.pre_arm_15m_from_5m ? " · 5m pre-arms 15m" : "";
                                 elRv.textContent = `Reversal TF: ${tf}${pre} | Lock: ${lk.note || "—"}`;
                             }
+                            const rBadge = document.getElementById("reversalExecBadge");
+                            if (rBadge && rv.execution_mode) {
+                                const live = String(rv.execution_mode).toUpperCase() === "LIVE_ALLOWED";
+                                rBadge.textContent = live ? "MJ Sir · LIVE_ALLOWED" : "MJ Sir · Paper only";
+                                rBadge.className = "strat-money-badge " + (live ? "live-eligible" : "paper-only");
+                            }
+                            const revTf = document.getElementById("revTfMode");
+                            if (revTf && rv.timeframe_mode && !revTf.dataset.userTouched) revTf.value = rv.timeframe_mode;
+                            const revExec = document.getElementById("revExecMode");
+                            if (revExec && rv.execution_mode && !revExec.dataset.userTouched) revExec.value = rv.execution_mode;
+                            const revSep = document.getElementById("revSep");
+                            if (revSep) revSep.checked = !!rv.ema_separation_enabled;
+                            const revTrail = document.getElementById("revTrail");
+                            if (revTrail) revTrail.checked = !!rv.candle_trail_enabled;
+                            const revPre = document.getElementById("revPreArm");
+                            if (revPre) revPre.checked = !!rv.pre_arm_15m_from_5m;
                         }
                         const sDailySr = document.getElementById("stratStatus_daily_sr");
                         const sDailyTrend = document.getElementById("stratStatus_daily_trend");
@@ -4911,6 +4935,25 @@
             const sf = document.getElementById('protoStFac');
             if (sl && cfg.supertrend_length != null) sl.textContent = String(cfg.supertrend_length);
             if (sf && cfg.supertrend_factor != null) sf.textContent = String(cfg.supertrend_factor);
+        }
+
+        async function saveReversalRevampCfg() {
+            const payload = {
+                timeframe_mode: document.getElementById("revTfMode")?.value || "15m",
+                pre_arm_15m_from_5m: document.getElementById("revPreArm")?.checked === true,
+                ema_separation_enabled: document.getElementById("revSep")?.checked === true,
+                candle_trail_enabled: document.getElementById("revTrail")?.checked === true,
+                execution_mode: document.getElementById("revExecMode")?.value || "PAPER_ONLY",
+            };
+            try {
+                const res = await fetch("/api/scanner/reversal", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok || d.ok === false) throw new Error(d.error || "save failed");
+            } catch (e) { console.warn("reversal save", e); }
         }
 
         async function saveEma8PrototypeFilters(payload) {

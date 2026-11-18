@@ -486,6 +486,10 @@ def evaluate_mj_sir_four_pack(
             sid = "CROSSOVER_BULLISH" if bullish else "CROSSOVER_BEARISH"
             name = "8 EMA Reversal Upside" if bullish else "8 EMA Reversal Downside"
             mj_state["reversal_fired_key"] = fired_key
+            from analyst.reversal_revamp_8510 import _execution_labels, load_reversal_cfg
+
+            _rc = load_reversal_cfg(scanner_cfg)
+            _paper, _exec = _execution_labels(_rc)
             return {
                 "signal": {
                     "strategy_id": sid,
@@ -496,8 +500,9 @@ def evaluate_mj_sir_four_pack(
                     "sl_pts": float(cfg["reversal_sl_pts"]),
                     "index_price": entry_px,
                     "conviction": "MJ_SIR",
-                    "paper_only": True,
-                    "mj_sir_paper_only": True,
+                    "paper_only": _paper,
+                    "mj_sir_paper_only": _paper,
+                    "execution_mode": _exec,
                     "fixed_8ema_entry": fixed_e8,
                     "dynamic_e8_at_entry": round(e8_dyn, 2),
                     "details": (

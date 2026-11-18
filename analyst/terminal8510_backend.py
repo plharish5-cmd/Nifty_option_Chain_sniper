@@ -3391,6 +3391,10 @@ class QuantTerminalBackend:
                         ("spot_stop_level", "REAL"), ("spot_target_pts", "REAL"),
                         ("spot_stop_pts", "REAL"), ("engine_risk_pts", "REAL"),
                         ("sr_interaction", "TEXT"),
+                        ("reversal_candle_trail", "INTEGER"),
+                        ("reversal_trail_tf", "TEXT"),
+                        ("reversal_trail_activate_pts", "REAL"),
+                        ("spot_trail_armed", "INTEGER"),
                     ):
                         if col not in pcols:
                             cur.execute("ALTER TABLE positions ADD COLUMN {} {}".format(col, decl))
@@ -3835,6 +3839,27 @@ class QuantTerminalBackend:
             pass
         return ctx
 
+    def _matrix_recorder_db_path(self) -> Path:
+        return ROOT / "data/terminal8510/recording.sqlite3"
+
+    def record_desk8600_matrix_if_live(self) -> None:
+        """Append one certified matrix row per bridge interval — never raises, no gating."""
+        from analyst.desk8600_matrix_recorder_8510 import record_matrix_snapshot, snapshot_from_bridge
+
+        bridge = self.__dict__.get("desk8600_bridge")
+        if bridge is None:
+            return
+        last = getattr(bridge, "last", None) or {}
+        snap = snapshot_from_bridge(last)
+        if not snap:
+            return
+        record_matrix_snapshot(self._matrix_recorder_db_path(), snap)
+
+    def desk8600_matrix_rows_today(self) -> int:
+        from analyst.desk8600_matrix_recorder_8510 import count_matrix_rows_today
+
+        return count_matrix_rows_today(self._matrix_recorder_db_path())
+
     # ── 8600 BOARD (every option-chain read, one switch each) ───────────────
     def desk8600_board(self) -> Dict[str, Any]:
         """All 8600 / option-chain sources with their current reading. Never raises."""
@@ -4146,7 +4171,13 @@ class QuantTerminalBackend:
             log.info("[5-FACTOR GATE] Blocked batch: score %s < %s mode=%s (%s)",
                      conf.get("score"), ff.get("scanner_min_score"), ff.get("scanner_gate_mode"), conf.get("grade"))
             return []
-        return list(signals)
+        try:
+            from analyst.ema_lane_entry_gate_8510 import filter_signals_one_ema_trade
+
+            n_open = len(self.get_active_positions())
+            return filter_signals_one_ema_trade(list(signals), self._ema_lane_lock, open_position_count=n_open)
+        except Exception:
+            return list(signals)
 
     def _confluence_gate_blocks(self, live_armed: bool) -> bool:
         ff = self.cfg.get("five_factor_confluence") or {}
@@ -6113,6 +6144,47 @@ class QuantTerminalBackend:
         out["ok"] = True
         return out
 
+    def get_reversal_revamp_config(self) -> Dict[str, Any]:
+        from analyst.reversal_revamp_8510 import load_reversal_cfg
+
+        return {"ok": True, **load_reversal_cfg(self.scanner_cfg)}
+
+    def update_reversal_revamp_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        from analyst.reversal_revamp_8510 import DEFAULT_REVERSAL_CFG, load_reversal_cfg
+
+        cur = load_reversal_cfg(self.scanner_cfg)
+        u = updates or {}
+        for k in (
+            "enabled",
+            "timeframe_mode",
+            "pre_arm_15m_from_5m",
+            "ema_separation_enabled",
+            "candle_trail_enabled",
+            "execution_mode",
+        ):
+            if k in u:
+                if isinstance(u[k], bool) or k.endswith("_enabled") or k == "enabled":
+                    cur[k] = u[k] is True or str(u[k]).lower() in ("true", "1", "on", "yes")
+                else:
+                    cur[k] = u[k]
+        if "candle_trail_activate_pts" in u:
+            cur["candle_trail_activate_pts"] = float(u["candle_trail_activate_pts"])
+        if isinstance(u.get("oi_filters"), dict):
+            oi = dict(cur.get("oi_filters") or {})
+            oi.update(u["oi_filters"])
+            cur["oi_filters"] = oi
+        for key, default in DEFAULT_REVERSAL_CFG.items():
+            if key not in cur:
+                cur[key] = default
+        self.scanner_cfg["reversal"] = cur
+        self.cfg["scanner"] = self.scanner_cfg
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(self.cfg, f, indent=2)
+        except Exception as exc:
+            log.warning("Could not persist reversal config: %s", exc)
+        return self.get_reversal_revamp_config()
+
     def get_ema8_prototype_filter_config(self) -> Dict[str, Any]:
         from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
 
@@ -7190,6 +7262,7 @@ class QuantTerminalBackend:
         now_ts = time.time()
         for sig in signals:
             placed = False
+            lane_reserved: Optional[str] = None
             try:
                 d = str(sig.get("direction", "")).upper()
                 opt = str(sig.get("opt_side", "")).upper()
@@ -7214,27 +7287,35 @@ class QuantTerminalBackend:
                 )
 
                 if sid_u.startswith("CROSSOVER") or sid_u.startswith("EMA8_PROTOTYPE"):
-                    lane = LANE_REVERSAL if sid_u.startswith("CROSSOVER") else LANE_PROTOTYPE
-                    blocked_lane, why_lane = lane_lock_blocks_entry(
-                        self._ema_lane_lock, lane, open_position_count=n_open
+                    from analyst.ema_lane_entry_gate_8510 import try_reserve_lane_for_signal
+
+                    ok_res, why_lane = try_reserve_lane_for_signal(
+                        self._ema_lane_lock,
+                        strat_id,
+                        open_position_count=n_open,
+                        note=str(sig.get("setup_name") or "")[:120],
                     )
-                    if blocked_lane:
+                    if not ok_res:
                         log.info("[LANE LOCK] %s — %s", sig.get("setup_name"), why_lane)
                         continue
+                    lane_reserved = (
+                        LANE_REVERSAL if sid_u.startswith("CROSSOVER") else LANE_PROTOTYPE
+                    )
                 if sid_u.startswith("CROSSOVER"):
                     try:
-                        from analyst.reversal_revamp_8510 import load_reversal_cfg
-                        from analyst.proto_oi_filters_8510 import board_reads_from_board, load_oi_filters_cfg, oi_switch_block
+                        from analyst.proto_oi_filters_8510 import board_reads_from_board, oi_switch_block
+                        from analyst.reversal_revamp_8510 import load_reversal_cfg, reversal_oi_filters_for_gate
 
                         rev_oi = load_reversal_cfg(self.scanner_cfg).get("oi_filters") or {}
-                        if bool(rev_oi.get("enabled")):
-                            oi_cfg = load_oi_filters_cfg(self.scanner_cfg)
-                            oi_cfg = {**oi_cfg, **rev_oi, "switches": {**(oi_cfg.get("switches") or {}), **(rev_oi.get("switches") or {})}}
+                        oi_cfg = reversal_oi_filters_for_gate(self.scanner_cfg)
+                        if oi_cfg:
                             board = self.desk8600_board()
                             reads = board_reads_from_board(board)
                             bullish = str(sig.get("direction", "")).upper() == "LONG"
                             oi_block, oi_det = oi_switch_block(bullish, oi_cfg, reads)
-                            if oi_block and not bool(rev_oi.get("log_only", True)):
+                            sig["reversal_oi_telemetry"] = oi_det
+                            blocking = oi_block and str(oi_cfg.get("mode") or "log_only").lower() == "block"
+                            if blocking and not bool(rev_oi.get("log_only", True)):
                                 log.info("[REVERSAL OI] blocked %s — %s", sig.get("setup_name"), oi_det)
                                 continue
                     except Exception as exc:
@@ -7326,7 +7407,8 @@ class QuantTerminalBackend:
                 opt_side = sig["opt_side"]
                 target_contract = None
                 is_proto_sig = str(strat_id).upper().startswith("EMA8_PROTOTYPE")
-                if is_proto_sig:
+                is_crossover_sig = sid_u.startswith("CROSSOVER")
+                if is_proto_sig or is_crossover_sig:
                     from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
 
                     pcfg = load_ema8_prototype_cfg(self.scanner_cfg)
@@ -7402,7 +7484,11 @@ class QuantTerminalBackend:
                         "spot_target_level": round(spot_entry + tgt_pts_sig, 2) if is_long else round(spot_entry - tgt_pts_sig, 2),
                         "spot_stop_level": round(spot_entry - sl_pts_sig, 2) if is_long else round(spot_entry + sl_pts_sig, 2),
                     }
-                elif (is_proto_sig or uses_fixed_spot_or_option_exit(strat_id)) and spot_entry > 0:
+                elif (is_proto_sig or is_crossover_sig or uses_fixed_spot_or_option_exit(strat_id)) and spot_entry > 0:
+                    from analyst.reversal_revamp_8510 import load_reversal_cfg
+
+                    rev_cfg = load_reversal_cfg(self.scanner_cfg)
+                    trail_act = float(rev_cfg.get("candle_trail_activate_pts", 20.0))
                     spot_ctx = {
                         "strategy_id": sig.get("strategy_id"),
                         "spot_entry": spot_entry,
@@ -7416,6 +7502,9 @@ class QuantTerminalBackend:
                         "spot_stop_level": round(spot_entry - sl_pts_sig, 2)
                         if is_long
                         else round(spot_entry + sl_pts_sig, 2),
+                        "reversal_candle_trail": bool(sig.get("reversal_candle_trail")),
+                        "reversal_trail_tf": sig.get("reversal_timeframe") or "15m",
+                        "reversal_trail_activate_pts": trail_act,
                     }
 
                 # Trigger execution with chaser
@@ -7425,8 +7514,8 @@ class QuantTerminalBackend:
                     "FLAGSHIP" in sid_u
                     or sid_u.startswith("STAGE_2")
                     or sid_u.startswith("STAGE_3")
-                    or sid_u.startswith("CROSSOVER")
-                    or sig.get("mj_sir_paper_only")
+                    or (sid_u.startswith("CROSSOVER") and bool(sig.get("mj_sir_paper_only")))
+                    or sig.get("mj_sir_paper_only") and not sid_u.startswith("CROSSOVER")
                     or (sid_u.startswith("EMA8_PROTOTYPE") and proto_paper)
                     or (sid_u.startswith("DESK8600_TICKET") and bool(sig.get("paper_only")))
                     or sig.get("matrix_scalp")
@@ -7458,15 +7547,7 @@ class QuantTerminalBackend:
                 if res.get("ok"):
                     placed = True
                     self.strategy_cooldowns[strat_id] = now_ts
-                    try:
-                        from analyst.ema_lane_lock_8510 import LANE_PROTOTYPE, LANE_REVERSAL, try_acquire_lane_lock
-
-                        if sid_u.startswith("CROSSOVER"):
-                            try_acquire_lane_lock(self._ema_lane_lock, LANE_REVERSAL, note=sig.get("setup_name", ""))
-                        elif sid_u.startswith("EMA8_PROTOTYPE"):
-                            try_acquire_lane_lock(self._ema_lane_lock, LANE_PROTOTYPE, note=sig.get("setup_name", ""))
-                    except Exception:
-                        pass
+                    lane_reserved = None
                 self.mark_signal_outcome(
                     signal_uid,
                     executed=bool(res.get("ok")),
@@ -7478,6 +7559,13 @@ class QuantTerminalBackend:
                     self._sync_open_ema8_prototype_position()
                     self._save_ema8_prototype_state()
             finally:
+                if not placed and lane_reserved:
+                    try:
+                        from analyst.ema_lane_entry_gate_8510 import release_lane_reservation
+
+                        release_lane_reservation(self._ema_lane_lock, strat_id)
+                    except Exception:
+                        pass
                 # A signal that did not become an order must not use up its setup:
                 # the next touch tick tries again (owner, 12 Nov: "do not miss trades").
                 if not placed:
@@ -7690,6 +7778,8 @@ class QuantTerminalBackend:
         eod_hm = str(self.scanner_cfg.get("flagship_eod_square_off", "15:20"))
         if not hasattr(self, "_flagship_trail_bar_ts"):
             self._flagship_trail_bar_ts = {}
+        if not hasattr(self, "_reversal_trail_bar_ts"):
+            self._reversal_trail_bar_ts = {}
         with sqlite3.connect(self.ledger_db) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
@@ -7797,7 +7887,50 @@ class QuantTerminalBackend:
                         symbol=str(p.get("symbol") or ""),
                     )
                     if spot_ent > 0 and spot_tgt > 0 and spot_sl > 0:
-                        if is_long_spot and spot_idx >= spot_tgt:
+                        sid_pos = str(p.get("strategy_id") or "").upper()
+                        use_rev_trail = sid_pos.startswith("CROSSOVER") and bool(
+                            int(p.get("reversal_candle_trail") or 0)
+                        )
+                        if use_rev_trail:
+                            from analyst.reversal_spot_exit_8510 import (
+                                parse_reversal_trail_fields,
+                                reversal_spot_exit_tick,
+                            )
+
+                            trail = parse_reversal_trail_fields(p)
+                            tf = str(trail.get("tf") or "15m")
+                            bar = self._latest_closed_5m_bar() if tf == "5m" else self._latest_closed_15m_bar()
+                            pid = str(p.get("position_id") or "")
+                            if bar and pid and int(bar["ts"]) != int(self._reversal_trail_bar_ts.get(pid, 0)):
+                                self._reversal_trail_bar_ts[pid] = int(bar["ts"])
+                            else:
+                                bar = None
+                            spot_tgt, spot_sl, hit, hit_reason = reversal_spot_exit_tick(
+                                is_long=is_long_spot,
+                                spot_entry=spot_ent,
+                                spot_idx=spot_idx,
+                                spot_tgt=spot_tgt,
+                                spot_sl=spot_sl,
+                                trail=trail,
+                                bar=bar,
+                            )
+                            if hit:
+                                should_close = True
+                                exit_reason = hit_reason
+                            elif bar or trail.get("armed"):
+                                cur.execute(
+                                    "UPDATE positions SET spot_stop_level=?, spot_target_level=?, spot_trail_armed=? WHERE position_id=?",
+                                    (
+                                        spot_sl,
+                                        spot_tgt,
+                                        1 if trail.get("armed") else 0,
+                                        pid,
+                                    ),
+                                )
+                                p["spot_stop_level"] = spot_sl
+                                p["spot_target_level"] = spot_tgt
+                                p["spot_trail_armed"] = 1 if trail.get("armed") else 0
+                        elif is_long_spot and spot_idx >= spot_tgt:
                             should_close = True
                             exit_reason = "SPOT_TARGET_HIT"
                         elif is_long_spot and spot_idx <= spot_sl:
@@ -9217,7 +9350,8 @@ class QuantTerminalBackend:
                         exit_reason, partial_step, remaining_qty,
                         placed_by, source, strategy_setup,
                         strategy_id, spot_entry, spot_target_level, spot_stop_level,
-                        spot_target_pts, spot_stop_pts, engine_risk_pts, sr_interaction
+                        spot_target_pts, spot_stop_pts, engine_risk_pts, sr_interaction,
+                        reversal_candle_trail, reversal_trail_tf, reversal_trail_activate_pts, spot_trail_armed
                     ) VALUES (
                         ?, ?, ?, ?, 1, ?, ?, ?,
                         ?, ?, ?, NULL, NULL, '00h 00m 00s',
@@ -9228,7 +9362,7 @@ class QuantTerminalBackend:
                         ?, ?, '', ?,
                         '', 0, ?,
                         ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                     """, (
                         pos_id, symbol, sec_id, side, qty, base_fill,
@@ -9256,6 +9390,10 @@ class QuantTerminalBackend:
                         (spot_context or {}).get("spot_stop_pts"),
                         (spot_context or {}).get("engine_risk_pts"),
                         (spot_context or {}).get("sr_interaction"),
+                        1 if (spot_context or {}).get("reversal_candle_trail") else 0,
+                        (spot_context or {}).get("reversal_trail_tf"),
+                        (spot_context or {}).get("reversal_trail_activate_pts"),
+                        0,
                     ))
 
                     # Whether a real BUY filled at Dhan for this position. The
@@ -9716,6 +9854,39 @@ class QuantTerminalBackend:
         self._pa_sr_pending = kept
         self.strategy_status["pa_sr_homework"]["pending"] = len(kept)
         return out
+
+    def _latest_closed_5m_bar(self) -> Optional[Dict[str, float]]:
+        if not Path(self.market_db).exists():
+            return None
+        try:
+            from analyst.nse_spot_candles_8510 import resample_nse_5m
+
+            with sqlite3.connect(f"file:{self.market_db}?mode=ro", uri=True, timeout=3) as conn:
+                q = """
+                    SELECT ts, o, h, l, c FROM candles_1m
+                    WHERE sec_id='13' ORDER BY ts DESC LIMIT ?
+                """
+                df = pd.read_sql_query(q, conn, params=(EMA_WARMUP_1M_BARS,))
+            if df.empty:
+                return None
+            df = df.iloc[::-1]
+            df["dt"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
+            b5 = resample_nse_5m(
+                df.set_index("dt").rename(columns={"o": "open", "h": "high", "l": "low", "c": "close"})
+            )
+            if len(b5) < 2:
+                return None
+            row = b5.iloc[-2]
+            return {
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "ts": int(b5.index[-2].timestamp()),
+            }
+        except Exception as exc:
+            log.debug("Latest 5m bar unavailable: %s", exc)
+            return None
 
     def _latest_closed_15m_bar(self) -> Optional[Dict[str, float]]:
         if not Path(self.market_db).exists():

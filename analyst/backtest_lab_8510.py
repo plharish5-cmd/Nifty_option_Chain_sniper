@@ -627,6 +627,10 @@ def merge_proto_overrides(cfg: Dict[str, Any], proto_overrides: Dict[str, Any]) 
         if isinstance(proto_overrides["oi_3m_feature"].get("gate"), dict):
             merged_feat["gate"] = {**(feat.get("gate") or {}), **proto_overrides["oi_3m_feature"]["gate"]}
         sc["oi_3m_feature"] = merged_feat
+    if isinstance(proto_overrides.get("reversal"), dict):
+        from analyst.reversal_sweep_8510 import merge_into_scanner_cfg
+
+        cfg["scanner"] = merge_into_scanner_cfg(cfg.get("scanner") or {}, proto_overrides["reversal"])
 
 
 def _private_backend(tmp: Path, proto_overrides: Optional[Dict[str, Any]] = None):

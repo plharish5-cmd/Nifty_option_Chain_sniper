@@ -83,6 +83,12 @@ def _momentum_switches_log() -> Dict[str, Any]:
     return {"oi_filters": oi}
 
 
+def reversal_stage_variants() -> List[Tuple[str, str, Dict[str, Any]]]:
+    from analyst.reversal_sweep_8510 import reversal_factor_rows
+
+    return [(f"reversal_{rid}", lbl, {"reversal": overrides}) for rid, lbl, overrides in reversal_factor_rows()]
+
+
 def stage1_variants() -> List[Tuple[str, str, Dict[str, Any]]]:
     """(id, label, proto_overrides) — one factor vs baseline."""
     out: List[Tuple[str, str, Dict[str, Any]]] = []
@@ -550,11 +556,17 @@ def run_sweep(
         )
     )
 
+    reversal_factors = [
+        {"id": cid, "label": lbl, "overrides": ov}
+        for cid, lbl, ov in reversal_stage_variants()
+    ]
+
     payload = {
         "from": from_day,
         "to": to_day,
         "cost_pts": cost_pts,
         "holdout_frac": holdout_frac,
+        "reversal_factors": reversal_factors,
         "coverage": {
             "spot_trading_days": len(days),
             "spot": cov_spot,
