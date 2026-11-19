@@ -1502,3 +1502,13 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 - **Part 4:** `analyst/engine_exit_log_8510.py` → `data/terminal8510/engine_exits.log` (startup/heartbeat/exception/signal/clean shutdown); port-conflict note on bind fail. Prior unexpected stop on v242: **no exit line in v242_engine.log** (likely external kill or second-instance port race — not proven in-repo).
 - Tests: `analyst/test_finish_line_v240_8510.py`; oi board armed-string tweak; locks **11/11**. Full suite not re-run.
 - Paths: `replay_marked_opportunities_8510.py`, `engine_exit_log_8510.py`, `engine_8510_live.py`, `oi_decision_board_8510.py`, `cockpit_views_8510.py`.
+
+
+## Gemini (Cursor) — v2.0.41 arm reconstruct — 19 Nov 2026
+
+- Branch `gemini/v2.0.41-arm-reconstruct` off `v2.0.40-finish-line`; tags `pre-gemini-v2.0.41-arm-reconstruct` / `post-gemini-v2.0.41-arm-reconstruct`. **Do not merge.**
+- **Startup (09:15–15:45):** Dhan read-only intraday backfill (`analyst/dhan_session_backfill_8510.py`) → market `candles_1m`, then session replay through existing `backtest_ema8_prototype_at_bar` + `backtest_mj_dynamic_at_bar` (same EMA via `nse_spot_candles_8510`). Reconstruction **wins** over SQLite persistence on disagreement; logs **ARM RESUMED (persisted, confirmed by candles)** vs **ARM REBUILT FROM DHAN HISTORY**; **MISSED WHILE OFFLINE** for completed touches in the dead window (no retro fill). Dhan failure → **RECONSTRUCT DEGRADED** and legacy bootstrap/persisted arm only; desk does not crash.
+- Hook: `terminal8510_backend.py` prototype worker bootstrap calls `reconstruct_arms_on_startup` before persistence-only bootstrap when replay did not apply.
+- Tests: `analyst/test_arm_reconstruct_8510.py` **6/6**; `verify_locks` **11/11**. No entry/EMA/exit/OI logic changes; `terminal8510_config.json` not staged.
+- Run: `python3 -m pytest analyst/test_arm_reconstruct_8510.py -q`; `python scripts/verify_locks.py`.
+- Full paths: `analyst/arm_reconstruct_8510.py`, `analyst/dhan_session_backfill_8510.py`, `analyst/test_arm_reconstruct_8510.py`, `analyst/terminal8510_backend.py` (bootstrap hook only).

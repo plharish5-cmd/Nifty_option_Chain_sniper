@@ -5184,10 +5184,15 @@ class QuantTerminalBackend:
                 b15, _bar_ci = ensure_forming_b15_bar(b15, bar_open_ts=bar_open_ts, live_spot=spot)
                 session_day = datetime.now(IST).strftime("%Y-%m-%d")
                 if not getattr(self, "_proto_arm_bootstrap_done", False):
+                    from analyst.arm_reconstruct_8510 import reconstruct_arms_on_startup
                     from analyst.ema_arm_persistence_8510 import bootstrap_prototype_arm, bootstrap_reversal_runtime
 
-                    bootstrap_prototype_arm(self, b15, proto_cfg, session_day)
-                    bootstrap_reversal_runtime(self, session_day)
+                    recon = reconstruct_arms_on_startup(self, session_day)
+                    if recon and recon.applied:
+                        bootstrap_reversal_runtime(self, session_day)
+                    else:
+                        bootstrap_prototype_arm(self, b15, proto_cfg, session_day)
+                        bootstrap_reversal_runtime(self, session_day)
                     self._proto_arm_bootstrap_done = True
                 if not self._ema8_prototype_state.get("arm"):
                     await asyncio.sleep(refresh)
