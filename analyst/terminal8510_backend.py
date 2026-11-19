@@ -5419,6 +5419,13 @@ class QuantTerminalBackend:
                 if sigs:
                     sigs = await asyncio.to_thread(self.apply_signal_gates, sigs)
                     if sigs:
+                        try:
+                            from analyst.missed_trade_watchdog_8510 import note_signals_submitted, run_watchdog_timeouts
+
+                            note_signals_submitted(self, sigs)
+                            run_watchdog_timeouts(self)
+                        except Exception as _wd_exc:
+                            log.debug("miss watchdog (reversal): %s", _wd_exc)
                         await self._process_strategy_signals(sigs)
             except asyncio.CancelledError:
                 raise

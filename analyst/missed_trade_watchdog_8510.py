@@ -86,7 +86,13 @@ def note_signals_submitted(backend: Any, signals: List[Dict[str, Any]]) -> None:
         return
     for sig in signals or []:
         sid = str(sig.get("strategy_id") or "").upper()
-        setup = "prototype" if sid.startswith("EMA8_PROTOTYPE") else "reversal" if sid.startswith("CROSSOVER") else ""
+        setup = (
+            "prototype"
+            if sid.startswith("EMA8_PROTOTYPE")
+            else "reversal"
+            if sid.startswith("CROSSOVER") or sid.startswith("STAGE_")
+            else ""
+        )
         if not setup:
             continue
         side = "CE" if str(sig.get("direction")).upper() == "LONG" else "PE"
