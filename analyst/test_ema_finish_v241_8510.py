@@ -94,3 +94,17 @@ def test_newer_opposite_cross_replaces_old_setup(route,latest_side):
  row=status['crossover_reversal']
  assert 'Wait' in row['block_reason']
  assert row['reversal_side']==latest_side
+
+def test_cockpit_route_flags_agree_when_live_lanes_but_desk_disarmed(tmp_path):
+ from analyst.test_reversal_oi_panel_8510 import _backend_stub
+ cfg={'scanner':{k:{'enabled':True,'execution_mode':'LIVE_ALLOWED','live_trade_enabled':True} for k in ['ema8_prototype','reversal']}}
+ b,_=_backend_stub(tmp_path,cfg)
+ b._real_money_enabled=False;b.scanner_enabled=True;b.scanner_running=True;b.active_party='NEUTRAL';b.directional_bias='BOTH'
+ b.last_crossover_event={};b.kill_switch_active=False;b.recent_signals=[];b.algo_strike_selection={};b.algo_allowlist_cfg={}
+ b.get_ema8_prototype_log=lambda **kw:[];b._ema8_prototype_view=lambda:{};b.get_scanner_gate_config=lambda:{}
+ b._matrix_scalp_scanner_active=lambda:False;b._pa_sr_live_scanner_active=lambda:False
+ result=b.get_scanner_status(positions=[])
+ for key in ['ema8_prototype','crossover_reversal']:
+  row=result['strategies'][key]
+  assert row['execution_mode']=='LIVE_ALLOWED' and row['live_trade_capable']
+  assert row['paper_only_lane'] and 'PAPER now' in row['route_hint']
