@@ -156,6 +156,12 @@ def _eval_on_frame(
     lookback = int(cfg["reversal_lookback_bars"])
     cross_up = _find_cross_index(e4, e8, b_df["close"], True, i)
     cross_dn = _find_cross_index(e4, e8, b_df["close"], False, i)
+    # A newer opposite cross supersedes the previous setup.
+    if cross_up is not None and cross_dn is not None:
+        if cross_up > cross_dn:
+            cross_dn = None
+        else:
+            cross_up = None
     t_i = (n - 1) if dyn_on else i
     rev_status = _status("SCANNING", block_reason=rev_block or "", extra={"timeframe": timeframe})
     sep_on = bool(rev_cfg.get("ema_separation_enabled"))
@@ -272,7 +278,7 @@ def _eval_on_frame(
             if ev and ev.get("reason"):
                 reasons.append(str(ev["reason"]))
         if reasons:
-            rev_status = _status("NO_TRADE" if "Missed" in reasons[0] else "ARMED", block_reason=reasons[0], extra={"timeframe": timeframe})
+            rev_status = _status("NO_TRADE" if "Missed" in reasons[0] else "ARMED", block_reason=reasons[0], extra={"timeframe": timeframe, "reversal_side": "UP" if up_eval else "DOWN"})
         elif cross_up is None and cross_dn is None:
             rev_status = _status("SCANNING", block_reason="NO TRADE — No recent 4/8 cross", extra={"timeframe": timeframe})
     pre = mj_state.get("reversal_pre_arm_15m")
@@ -313,10 +319,10 @@ def run_reversal_revamp(
     gate_meta: Callable[[str], Dict[str, Any]],
     legacy_runner: Callable[[], Tuple[List[Dict[str, Any]], Dict[str, Any]]],
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    if not needs_reversal_revamp(scanner_cfg):
-        return legacy_runner()
     if not bool(load_reversal_cfg(scanner_cfg).get("enabled", True)):
         return [], _status("OFF", block_reason="Reversal manually disabled", armed=False)
+    if not needs_reversal_revamp(scanner_cfg):
+        return legacy_runner()
     rev_cfg = load_reversal_cfg(scanner_cfg)
     mode = str(rev_cfg.get("timeframe_mode", "15m")).lower()
     shared = dict(

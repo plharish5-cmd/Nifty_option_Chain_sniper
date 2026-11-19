@@ -5993,7 +5993,7 @@ class QuantTerminalBackend:
             row["phase"] = "WAITING FOR CLOSE"
             row["block_reason"] = ""
         row["desc"] = (
-            "Close cross 8 EMA · 30s retouch · dual ±40 spot+option · opposite 15m close exit"
+            f"Close cross 8 EMA · {float(cfg.get('e8_refresh_seconds', 3.0)):g}s retouch · dual ±40 spot+option · opposite 15m close exit"
         )
         self.strategy_status["ema8_prototype"] = row
 
@@ -7415,22 +7415,36 @@ class QuantTerminalBackend:
         except Exception as exc:
             log.debug("release of unfilled setup skipped (%s)", type(exc).__name__)
 
+    def _record_ema_entry_decision(self, sig, stage, reason):
+        """Read-only cockpit explanation of the most recent order attempt."""
+        sid = str(sig.get("strategy_id") or "").upper()
+        key = "ema8_prototype" if sid.startswith("EMA8_PROTOTYPE") else "crossover_reversal" if sid.startswith("CROSSOVER") else None
+        if key:
+            self.__dict__.setdefault("_ema_entry_decisions", {})[key] = {
+                "time": datetime.now(IST).isoformat(), "strategy_id": sid,
+                "stage": stage, "reason": str(reason)[:300],
+            }
+
     async def _process_strategy_signals(self, signals: List[Dict[str, Any]]) -> None:
         """Processes actionable strategy signals with cooldown deduplication and triggers orders."""
         now_ts = time.time()
         for sig in signals:
             placed = False
+            order_attempted = False
             lane_reserved: Optional[str] = None
             try:
                 d = str(sig.get("direction", "")).upper()
                 opt = str(sig.get("opt_side", "")).upper()
 
+                self._record_ema_entry_decision(sig, "EVALUATING", "Candidate received; not an order")
                 # Directional Bias Enforcement Gate:
                 if self.directional_bias == "LONG_ONLY" and (d == "SHORT" or opt == "PE"):
+                    self._record_ema_entry_decision(sig, "BLOCKED", f"Directional bias {self.directional_bias}")
                     log.warning("[DIRECTIONAL BIAS REJECTED] Signal %s (%s / %s) blocked: LONG_ONLY bias blocks all PE / Short trades.",
                                 sig.get("setup_name"), d, opt)
                     continue
                 if self.directional_bias == "SHORT_ONLY" and (d == "LONG" or opt == "CE"):
+                    self._record_ema_entry_decision(sig, "BLOCKED", f"Directional bias {self.directional_bias}")
                     log.warning("[DIRECTIONAL BIAS REJECTED] Signal %s (%s / %s) blocked: SHORT_ONLY bias blocks all CE / Long trades.",
                                 sig.get("setup_name"), d, opt)
                     continue
@@ -7454,6 +7468,7 @@ class QuantTerminalBackend:
                         note=str(sig.get("setup_name") or "")[:120],
                     )
                     if not ok_res:
+                        self._record_ema_entry_decision(sig, "WAITING", why_lane)
                         log.info("[LANE LOCK] %s — %s", sig.get("setup_name"), why_lane)
                         continue
                     lane_reserved = (
@@ -7474,12 +7489,14 @@ class QuantTerminalBackend:
                             sig["reversal_oi_telemetry"] = oi_det
                             blocking = oi_block and str(oi_cfg.get("mode") or "log_only").lower() == "block"
                             if blocking and not bool(rev_oi.get("log_only", True)):
+                                self._record_ema_entry_decision(sig, "BLOCKED", "Reversal OI: " + ", ".join(oi_det.get("blocked_by") or []))
                                 log.info("[REVERSAL OI] blocked %s — %s", sig.get("setup_name"), oi_det)
                                 continue
                     except Exception as exc:
                         log.warning("Reversal OI filter skipped (%s)", type(exc).__name__)
 
                 if not self.algo_strategy_execution_allowed(strat_id):
+                    self._record_ema_entry_decision(sig, "BLOCKED", "Strategy not in algo allowlist")
                     log.info(
                         "[ALLOWLIST BLOCKED] %s (%s) — not in algo_execution_allowlist",
                         sig.get("setup_name"),
@@ -7495,6 +7512,7 @@ class QuantTerminalBackend:
 
                 retry_at = self.__dict__.setdefault("_skip_retry_at", {})
                 if now_ts < float(retry_at.get(strat_id, 0.0)):
+                    self._record_ema_entry_decision(sig, "WAITING", "Unfilled-signal retry interval")
                     continue
                 retry_at[strat_id] = now_ts + float(
                     self.scanner_cfg.get("skipped_signal_retry_seconds", 5.0)
@@ -7504,6 +7522,7 @@ class QuantTerminalBackend:
                 cool_min = float(self.scanner_cfg.get("signal_cooldown_5m_min", 5.0))
                 cool_sec = max(0.0, cool_min) * 60.0  # 5m wait between signals — NOT an entry timeframe
                 if cool_sec and (now_ts - last_ts) < cool_sec:
+                    self._record_ema_entry_decision(sig, "WAITING", f"Order cooldown: {max(0.0, cool_sec - (now_ts - last_ts)):.1f}s remaining")
                     continue
 
                 # The 5-minute wait starts only when an order is actually placed
@@ -7557,6 +7576,7 @@ class QuantTerminalBackend:
                         }
                         if verdict["blocked"]:
                             why = "8600 board: " + "; ".join(verdict["reasons"])
+                            self._record_ema_entry_decision(sig, "BLOCKED", why)
                             log.info("[8600 BOARD] %s (%s) not taken — %s", sig.get("setup_name"), strat_id, why)
                             self.mark_signal_outcome(signal_uid, False, skip_reason=why[:300])
                             continue
@@ -7599,6 +7619,7 @@ class QuantTerminalBackend:
                                 break
 
                 if not target_contract:
+                    self._record_ema_entry_decision(sig, "BLOCKED", "Contract selection: " + contract_why)
                     log.info("No enabled priority contract found for %s (%s) %s", sig["setup_name"], opt_side, contract_why)
                     self.mark_signal_outcome(signal_uid, False,
                                              skip_reason=("NO_ENABLED_CONTRACT: " + contract_why)[:200] if contract_why else "NO_ENABLED_CONTRACT")
@@ -7613,6 +7634,7 @@ class QuantTerminalBackend:
                             (target_contract["symbol"],)
                         ).fetchone()
                         if r and r[0] > 0:
+                            self._record_ema_entry_decision(sig, "BLOCKED", "Identical contract position already open")
                             log.info("Position already OPEN for %s — skipping duplicate execution", target_contract["symbol"])
                             self.mark_signal_outcome(signal_uid, False,
                                                      skip_reason="DUPLICATE_POSITION_OPEN")
@@ -7693,6 +7715,7 @@ class QuantTerminalBackend:
                     )
                     continue
 
+                order_attempted = True
                 res = await self.execute_order_with_chaser(
                     contract=target_contract,
                     side="BUY",
@@ -7705,6 +7728,8 @@ class QuantTerminalBackend:
                     source="REAL_ALGO_PAPER" if paper_algo else None,
                     spot_context=spot_ctx,
                 )
+                self._record_ema_entry_decision(sig, "ORDER_ACCEPTED" if res.get("ok") else "ORDER_REJECTED",
+                    res.get("rejection_reason") or res.get("error") or res.get("status") or "Execution response received; check broker fill status")
                 log.info("Strategy %s execution result: %s", sig["setup_name"], res.get("status", "SUBMITTED"))
                 if res.get("ok"):
                     placed = True
@@ -7720,6 +7745,14 @@ class QuantTerminalBackend:
                 if is_proto_sig and res.get("ok"):
                     self._sync_open_ema8_prototype_position()
                     self._save_ema8_prototype_state()
+            except Exception as exc:
+                self._record_ema_entry_decision(sig, "ERROR", f"{type(exc).__name__}: {exc}")
+                log.exception("Strategy candidate failed; unfilled setup cleanup follows")
+                if order_attempted:
+                    # A transport/programming exception after submission can have
+                    # an unknown broker outcome. Preserve batch abort rather than
+                    # risk immediately submitting a second live order.
+                    raise
             finally:
                 if not placed and lane_reserved:
                     try:
@@ -7821,6 +7854,9 @@ class QuantTerminalBackend:
     def get_scanner_status(self, positions=None) -> Dict[str, Any]:
         """Scanner status plus read-only, two-sided OI decision boards."""
         strategies = {k: dict(v) if isinstance(v, dict) else v for k, v in self.strategy_status.items()}
+        for key, decision in (self.__dict__.get("_ema_entry_decisions") or {}).items():
+            if key in strategies:
+                strategies[key]["execution_decision"] = dict(decision)
         try:
             from analyst.oi_decision_board_8510 import enrich_strategy_rows
 
@@ -8080,11 +8116,14 @@ class QuantTerminalBackend:
                             from analyst.reversal_spot_exit_8510 import (
                                 parse_reversal_trail_fields,
                                 reversal_spot_exit_tick,
+                                trail_bar_belongs_to_position,
                             )
 
                             trail = parse_reversal_trail_fields(p)
                             tf = str(trail.get("tf") or "15m")
                             bar = self._latest_closed_5m_bar() if tf == "5m" else self._latest_closed_15m_bar()
+                            if bar and not trail_bar_belongs_to_position(bar, p.get("entry_time"), tf):
+                                bar = None
                             pid = str(p.get("position_id") or "")
                             if bar and pid and int(bar["ts"]) != int(self._reversal_trail_bar_ts.get(pid, 0)):
                                 self._reversal_trail_bar_ts[pid] = int(bar["ts"])
