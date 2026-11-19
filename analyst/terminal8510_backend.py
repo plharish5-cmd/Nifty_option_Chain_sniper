@@ -5193,6 +5193,11 @@ class QuantTerminalBackend:
                     else:
                         bootstrap_prototype_arm(self, b15, proto_cfg, session_day)
                         bootstrap_reversal_runtime(self, session_day)
+                    if not getattr(self, "_desk_self_audit_startup_done", False):
+                        from analyst.missed_trade_watchdog_8510 import run_desk_self_audit_startup
+
+                        run_desk_self_audit_startup(self)
+                        self._desk_self_audit_startup_done = True
                     self._proto_arm_bootstrap_done = True
                 if not self._ema8_prototype_state.get("arm"):
                     await asyncio.sleep(refresh)
@@ -5294,6 +5299,13 @@ class QuantTerminalBackend:
                     pass
                 self._handle_ema8_prototype_actions(st.get("actions"))
                 self._save_ema8_prototype_state()
+                try:
+                    from analyst.missed_trade_watchdog_8510 import on_proto_evaluation, run_watchdog_timeouts
+
+                    on_proto_evaluation(self, sigs, st)
+                    run_watchdog_timeouts(self)
+                except Exception as _wd_exc:
+                    log.debug("miss watchdog tick skipped: %s", _wd_exc)
                 if sigs:
                     from analyst.ema8_display_audit_8510 import format_ema_touch_audit
 
@@ -7998,6 +8010,16 @@ class QuantTerminalBackend:
                         log.info("[POSITION CLEANUP] closed %d open position(s)", len(closed))
                 except Exception as exc:
                     log.error("Position cleanup check failed: %s", exc)
+                try:
+                    from analyst.open_position_exit_sweep_8510 import sweep_open_positions
+
+                    recovered = await asyncio.to_thread(
+                        sweep_open_positions, self, now=datetime.now(IST), enforce_market_hours=False
+                    )
+                    if recovered:
+                        log.warning("[EXIT SWEEP] recovered %d position(s)", len(recovered))
+                except Exception as exc:
+                    log.debug("exit sweep skipped: %s", exc)
 
                 if self.scanner_enabled and not self.kill_switch_active:
                     spot = self.cached_telemetry.get("spot", {}).get("price")

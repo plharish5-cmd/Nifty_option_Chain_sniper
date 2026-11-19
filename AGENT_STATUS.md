@@ -1512,3 +1512,15 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 - Tests: `analyst/test_arm_reconstruct_8510.py` **6/6**; `verify_locks` **11/11**. No entry/EMA/exit/OI logic changes; `terminal8510_config.json` not staged.
 - Run: `python3 -m pytest analyst/test_arm_reconstruct_8510.py -q`; `python scripts/verify_locks.py`.
 - Full paths: `analyst/arm_reconstruct_8510.py`, `analyst/dhan_session_backfill_8510.py`, `analyst/test_arm_reconstruct_8510.py`, `analyst/terminal8510_backend.py` (bootstrap hook only).
+
+
+## Gemini (Cursor) — v2.0.42 self-audit — 19 Nov 2026
+
+- Branch `gemini/v2.0.42-selfaudit` off `v2.0.41-arm-reconstruct`; tags `pre-gemini-v2.0.42-selfaudit` / `post-gemini-v2.0.42-selfaudit`. **Do not merge.**
+- **Part A:** After reconstruct, `run_desk_self_audit_startup` → `reconcile_lane_lock_on_startup` (holder + zero OPEN → **LANE LOCK AUTO-RELEASED**, SQLite cleared) + `sweep_open_positions` (**EXIT RECOVERED**, lane + `proto_state.open` sync). Scanner loop runs periodic exit sweep alongside EOD cleanup.
+- **Part B:** `missed_trade_watchdog_8510` on prototype 3s path — **WOULD_TAKE_UNFILLED** → `data/terminal8510/missed_trades.log` + optional Telegram; **ARMED_IDLE** heartbeat; legitimate blocks silent (open pos, SL-block, out-of-window, cooldown). **Observe only** — no orders.
+- **Part C:** `analyst/reports/SELF_AUDIT_C1_C2_8510.md` — C1 PASS (1s range tracking, residual feed-stall risk); C2 PASS on IST 09:15 anchor consumers.
+- **Part D:** **NOT included** — **S2′ Flagship reconstruct remains ⚠️.**
+- Config patch (not committed): `scripts/patch_selfaudit_8510.py` (`miss_watchdog_enabled`, `armed_idle_heartbeat_min`, `quote_retry_max`).
+- Tests: `analyst/test_self_audit_8510.py` **9/9**; `verify_locks` **11/11**. No entry/EMA/exit-threshold changes.
+- Run: `python3 -m pytest analyst/test_self_audit_8510.py -q`; `python scripts/verify_locks.py`.
