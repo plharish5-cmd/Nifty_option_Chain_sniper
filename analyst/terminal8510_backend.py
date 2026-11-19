@@ -3498,6 +3498,35 @@ class QuantTerminalBackend:
                     cur.execute("ALTER TABLE ema8_prototype_state ADD COLUMN last_traded_direction TEXT")
                 except Exception:
                     pass
+                for col, typ in (
+                    ("session_day", "TEXT"),
+                    ("last_touch_ts", "REAL"),
+                    ("last_exit_reason", "TEXT"),
+                    ("open_position_id", "TEXT"),
+                ):
+                    try:
+                        cur.execute(f"ALTER TABLE ema8_prototype_state ADD COLUMN {col} {typ}")
+                    except Exception:
+                        pass
+
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS crossover_mj_sir_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    session_day TEXT,
+                    payload TEXT,
+                    updated_at TEXT
+                );
+                """)
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS ema_lane_lock_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    holder TEXT,
+                    since_ist TEXT,
+                    note TEXT,
+                    session_day TEXT,
+                    updated_at TEXT
+                );
+                """)
 
                 cur.execute("""
                 CREATE TABLE IF NOT EXISTS ema8_prototype_log (
@@ -3580,6 +3609,8 @@ class QuantTerminalBackend:
                     bf.get("skipped_invalid"),
                 )
             self._load_ema8_prototype_state()
+            self._load_mj_sir_runtime_state()
+            self._load_ema_lane_lock_state()
             self._sync_open_ema8_prototype_position()
         except Exception as e:
             log.error("Error initializing SQLite ledger: %s", e)
@@ -3619,6 +3650,7 @@ class QuantTerminalBackend:
 
     def _load_ema8_prototype_state(self) -> None:
         """Loads persisted arm & consumed cross state from ema8_prototype_state table."""
+        self._proto_arm_loaded_from_db = False
         try:
             if not hasattr(self, "_ema8_prototype_state"):
                 self._ema8_prototype_state = {}
@@ -3636,6 +3668,7 @@ class QuantTerminalBackend:
                             "cross_e8": float(row["cross_e8"] or 0.0),
                             "away_seen": away,
                         }
+                        self._proto_arm_loaded_from_db = True
                     if row["consumed_cross_ts"]:
                         self._ema8_prototype_state["consumed_cross_ts"] = int(row["consumed_cross_ts"])
                     if row["last_flip"]:
@@ -3644,6 +3677,13 @@ class QuantTerminalBackend:
                         self._ema8_prototype_state["last_traded_direction"] = str(row["last_traded_direction"])
                     if "sl_blocked_side" in row.keys() and row["sl_blocked_side"]:
                         self._ema8_prototype_state["sl_blocked_side"] = str(row["sl_blocked_side"])
+                    keys = row.keys()
+                    if "session_day" in keys and row["session_day"]:
+                        self._ema8_prototype_state["day"] = str(row["session_day"])
+                    if "last_touch_ts" in keys and row["last_touch_ts"] is not None:
+                        self._ema8_prototype_state["last_touch_ts"] = float(row["last_touch_ts"])
+                    if "last_exit_reason" in keys and row["last_exit_reason"]:
+                        self._ema8_prototype_state["last_exit_reason"] = str(row["last_exit_reason"])
         except Exception as exc:
             log.warning("Could not load ema8_prototype_state: %s", exc)
 
@@ -3660,15 +3700,35 @@ class QuantTerminalBackend:
             consumed_cross_ts = self._ema8_prototype_state.get("consumed_cross_ts")
             last_flip = self._ema8_prototype_state.get("last_flip")
             last_traded_dir = self._ema8_prototype_state.get("last_traded_direction")
+            session_day = self._ema8_prototype_state.get("day")
+            last_touch = self._ema8_prototype_state.get("last_touch_ts")
+            last_exit = self._ema8_prototype_state.get("last_exit_reason")
+            open_pos = self._ema8_prototype_state.get("open") or {}
+            open_pid = open_pos.get("position_id")
             now_str = datetime.now(IST).isoformat()
             with sqlite3.connect(self.ledger_db) as conn:
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO ema8_prototype_state (
-                        id, direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, away_seen, last_traded_direction, updated_at
-                    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                        id, direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip,
+                        away_seen, last_traded_direction, session_day, last_touch_ts, last_exit_reason,
+                        open_position_id, updated_at
+                    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (direction, cross_bar_open_ts, cross_e8, consumed_cross_ts, last_flip, away_seen, last_traded_dir, now_str),
+                    (
+                        direction,
+                        cross_bar_open_ts,
+                        cross_e8,
+                        consumed_cross_ts,
+                        last_flip,
+                        away_seen,
+                        last_traded_dir,
+                        session_day,
+                        last_touch,
+                        last_exit,
+                        open_pid,
+                        now_str,
+                    ),
                 )
                 try:
                     conn.execute(
@@ -3680,6 +3740,101 @@ class QuantTerminalBackend:
                 conn.commit()
         except Exception as exc:
             log.warning("Could not persist ema8_prototype_state: %s", exc)
+
+    def _load_mj_sir_runtime_state(self) -> None:
+        self._mj_sir_loaded_from_db = False
+        if not hasattr(self, "_mj_sir_state"):
+            self._mj_sir_state = {}
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute("SELECT * FROM crossover_mj_sir_state WHERE id=1").fetchone()
+                if not row or not row["payload"]:
+                    return
+                from analyst.ema_arm_persistence_8510 import apply_mj_persist_slice
+                import json as _json
+
+                payload = _json.loads(str(row["payload"]))
+                apply_mj_persist_slice(self._mj_sir_state, payload)
+                if row["session_day"]:
+                    self._mj_sir_state.setdefault("day", str(row["session_day"]))
+                self._mj_sir_loaded_from_db = bool(payload)
+        except Exception as exc:
+            log.warning("Could not load crossover_mj_sir_state: %s", exc)
+
+    def _save_mj_sir_runtime_state(self) -> None:
+        try:
+            if not hasattr(self, "_mj_sir_state"):
+                return
+            from analyst.ema_arm_persistence_8510 import mj_state_persist_slice
+            import json as _json
+
+            payload = mj_state_persist_slice(self._mj_sir_state)
+            if not payload:
+                return
+            session_day = str(self._mj_sir_state.get("day") or datetime.now(IST).strftime("%Y-%m-%d"))
+            now_str = datetime.now(IST).isoformat()
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO crossover_mj_sir_state (id, session_day, payload, updated_at)
+                    VALUES (1, ?, ?, ?)
+                    """,
+                    (session_day, _json.dumps(payload, separators=(",", ":")), now_str),
+                )
+                conn.commit()
+        except Exception as exc:
+            log.warning("Could not persist crossover_mj_sir_state: %s", exc)
+
+    def _load_ema_lane_lock_state(self) -> None:
+        if not hasattr(self, "_ema_lane_lock"):
+            self._ema_lane_lock = {}
+        try:
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute("SELECT * FROM ema_lane_lock_state WHERE id=1").fetchone()
+                if not row or not row["holder"]:
+                    return
+                today = datetime.now(IST).strftime("%Y-%m-%d")
+                if row["session_day"] and str(row["session_day"]) != today:
+                    return
+                self._ema_lane_lock = {
+                    "holder": str(row["holder"]),
+                    "since_ist": row["since_ist"],
+                    "note": row["note"] or "",
+                }
+        except Exception as exc:
+            log.warning("Could not load ema_lane_lock_state: %s", exc)
+
+    def _save_ema_lane_lock_state(self) -> None:
+        try:
+            lock = getattr(self, "_ema_lane_lock", {}) or {}
+            holder = lock.get("holder")
+            if not holder:
+                with sqlite3.connect(self.ledger_db) as conn:
+                    conn.execute("DELETE FROM ema_lane_lock_state WHERE id=1")
+                    conn.commit()
+                return
+            now_str = datetime.now(IST).isoformat()
+            session_day = datetime.now(IST).strftime("%Y-%m-%d")
+            with sqlite3.connect(self.ledger_db) as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO ema_lane_lock_state
+                    (id, holder, since_ist, note, session_day, updated_at)
+                    VALUES (1, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(holder),
+                        lock.get("since_ist") or now_str,
+                        lock.get("note") or "",
+                        session_day,
+                        now_str,
+                    ),
+                )
+                conn.commit()
+        except Exception as exc:
+            log.warning("Could not persist ema_lane_lock_state: %s", exc)
 
     def log_ema8_prototype_event(
         self,
@@ -4989,8 +5144,10 @@ class QuantTerminalBackend:
                 if not bool(proto_cfg.get("enabled", True)):
                     await asyncio.sleep(refresh)
                     continue
-                if (not self._ema8_prototype_state.get("arm")
-                        and getattr(self, "_proto_arm_recovery_checked", False)):
+                if (
+                    not self._ema8_prototype_state.get("arm")
+                    and getattr(self, "_proto_arm_bootstrap_done", False)
+                ):
                     await asyncio.sleep(refresh)
                     continue
                 spot = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
@@ -5009,6 +5166,8 @@ class QuantTerminalBackend:
                     audit = dict(getattr(self, "_proto_ema_audit", None) or {})
                     audit["stale"] = True
                     self._proto_ema_audit = audit
+                    # Pause touch evaluation only — arm and away_seen stay in memory + SQLite.
+                    self._save_ema8_prototype_state()
                     await asyncio.sleep(refresh)
                     continue
                 df1 = await asyncio.to_thread(self._load_spot_1m_for_scanner)
@@ -5023,19 +5182,13 @@ class QuantTerminalBackend:
                     continue
                 bar_open_ts = current_nse_15m_open_ts(datetime.now(IST))
                 b15, _bar_ci = ensure_forming_b15_bar(b15, bar_open_ts=bar_open_ts, live_spot=spot)
-                if not getattr(self, "_proto_arm_recovery_checked", False):
-                    from analyst.prototype_arm_recovery_8510 import recover_missing_arm
-                    recovered = recover_missing_arm(
-                        b15, state=self._ema8_prototype_state, cfg=proto_cfg,
-                        session_day=datetime.now(IST).strftime("%Y-%m-%d"),
-                    )
-                    self._proto_arm_recovery_checked = True
-                    if recovered:
-                        self._save_ema8_prototype_state()
-                        self.log_ema8_prototype_event(
-                            event="ARM RECOVERED", direction=self._ema8_prototype_state["arm"]["direction"],
-                            reason="Recovered missing arm from completed session cross; no historical entry placed",
-                        )
+                session_day = datetime.now(IST).strftime("%Y-%m-%d")
+                if not getattr(self, "_proto_arm_bootstrap_done", False):
+                    from analyst.ema_arm_persistence_8510 import bootstrap_prototype_arm, bootstrap_reversal_runtime
+
+                    bootstrap_prototype_arm(self, b15, proto_cfg, session_day)
+                    bootstrap_reversal_runtime(self, session_day)
+                    self._proto_arm_bootstrap_done = True
                 if not self._ema8_prototype_state.get("arm"):
                     await asyncio.sleep(refresh)
                     continue
@@ -5244,6 +5397,8 @@ class QuantTerminalBackend:
                         prev.update(mj_status[key])
                         prev["spec"] = "MJ_SIR_LECTURE_UNDERSTANDING"
                         self.strategy_status[key] = prev
+                self._mj_sir_state.setdefault("day", now.strftime("%Y-%m-%d"))
+                self._save_mj_sir_runtime_state()
                 if sigs:
                     sigs = await asyncio.to_thread(self.apply_signal_gates, sigs)
                     if sigs:
@@ -6164,6 +6319,8 @@ class QuantTerminalBackend:
                 )
                 self._save_ema8_prototype_state()
             elif atype == "RETOUCH_SEEN":
+                self._ema8_prototype_state["last_touch_ts"] = time.time()
+                self._save_ema8_prototype_state()
                 seen = self.__dict__.setdefault("_proto_retouch_logged", {})
                 key = str(act.get("direction"))
                 if time.time() - float(seen.get(key, 0.0)) < 30.0:
@@ -6617,6 +6774,8 @@ class QuantTerminalBackend:
                     prev["spec"] = "MJ_SIR_LECTURE_UNDERSTANDING"
                     self.strategy_status[key] = prev
             self._sync_reversal_crossover_desk_status()
+            self._mj_sir_state.setdefault("day", session_day)
+            self._save_mj_sir_runtime_state()
 
         # ── 8 EMA Prototype (paper-only lane — does not alter Stage 2 or FLAGSHIP) ──
         from analyst.ema8_prototype_8510 import evaluate_ema8_prototype, load_ema8_prototype_cfg
@@ -7508,6 +7667,7 @@ class QuantTerminalBackend:
                         self._record_ema_entry_decision(sig, "WAITING", why_lane)
                         log.info("[LANE LOCK] %s — %s", sig.get("setup_name"), why_lane)
                         continue
+                    self._save_ema_lane_lock_state()
                     lane_reserved = (
                         LANE_REVERSAL if sid_u.startswith("CROSSOVER") else LANE_PROTOTYPE
                     )
@@ -7765,8 +7925,16 @@ class QuantTerminalBackend:
                     source="REAL_ALGO_PAPER" if paper_algo else None,
                     spot_context=spot_ctx,
                 )
-                self._record_ema_entry_decision(sig, "ORDER_ACCEPTED" if res.get("ok") else "ORDER_REJECTED",
-                    res.get("rejection_reason") or res.get("error") or res.get("status") or "Execution response received; check broker fill status")
+                from analyst.ema_arm_persistence_8510 import format_broker_rejection
+
+                rej_txt = format_broker_rejection(
+                    res.get("rejection_reason") or res.get("error") or res.get("status") or ""
+                )
+                self._record_ema_entry_decision(
+                    sig,
+                    "ORDER_ACCEPTED" if res.get("ok") else "ORDER_REJECTED",
+                    rej_txt or "Execution response received; check broker fill status",
+                )
                 log.info("Strategy %s execution result: %s", sig["setup_name"], res.get("status", "SUBMITTED"))
                 if res.get("ok"):
                     placed = True
@@ -7776,8 +7944,9 @@ class QuantTerminalBackend:
                     signal_uid,
                     executed=bool(res.get("ok")),
                     position_id=str(res.get("position_id", "") or ""),
-                    skip_reason="" if res.get("ok") else str(
-                        res.get("rejection_reason") or res.get("error") or "")[:200],
+                    skip_reason="" if res.get("ok") else format_broker_rejection(
+                        res.get("rejection_reason") or res.get("error") or ""
+                    )[:200],
                 )
                 if is_proto_sig and res.get("ok"):
                     self._sync_open_ema8_prototype_position()
@@ -7796,6 +7965,7 @@ class QuantTerminalBackend:
                         from analyst.ema_lane_entry_gate_8510 import release_lane_reservation
 
                         release_lane_reservation(self._ema_lane_lock, strat_id)
+                        self._save_ema_lane_lock_state()
                     except Exception:
                         pass
                 # A signal that did not become an order must not use up its setup:
@@ -8912,6 +9082,7 @@ class QuantTerminalBackend:
             from analyst.ema_lane_lock_8510 import release_lane_lock
 
             release_lane_lock(getattr(self, "_ema_lane_lock", {}))
+            self._save_ema_lane_lock_state()
         except Exception:
             pass
 
@@ -9070,6 +9241,10 @@ class QuantTerminalBackend:
                 o["source"] = o.get("source") or o.get("placed_by") or "AUTO ALGO 🤖"
                 o["placed_by"] = o["source"]
                 o["strategy_setup"] = o.get("strategy_setup") or o.get("strategy_name") or "Manual — No Strategy"
+                if o.get("rejection_reason"):
+                    from analyst.ema_arm_persistence_8510 import format_broker_rejection
+
+                    o["rejection_reason_display"] = format_broker_rejection(o["rejection_reason"])
                 o["structured_contract"] = get_contract_structured_fields(o["symbol"])
                 pos_link = o.get("position_id") or o.get("correlation_id")
                 prow = None
@@ -9731,6 +9906,10 @@ class QuantTerminalBackend:
                         position_id=pos_id,
                         reason=audit_line or f"ENTRY @ ₹{base_fill:.2f}",
                     )
+
+            from analyst.ema_arm_persistence_8510 import format_broker_rejection as _fmt_rej
+
+            rejection_reason = _fmt_rej(rejection_reason)
 
             # Record in Orders Book
             limit_sent = round_to_tick(signal_ltp + buf, 0.05)

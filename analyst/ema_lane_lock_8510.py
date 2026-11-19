@@ -46,6 +46,14 @@ def try_acquire_lane_lock(lock: Dict[str, Any], lane: str, *, note: str = "") ->
     lock["holder"] = lane_u
     lock["since_mono"] = time.monotonic()
     lock["note"] = note or f"{lane_u} armed touch"
+    try:
+        from zoneinfo import ZoneInfo
+
+        lock["since_ist"] = __import__("datetime").datetime.now(ZoneInfo("Asia/Kolkata")).strftime(
+            "%Y-%m-%d %H:%M:%S IST"
+        )
+    except Exception:
+        pass
     return True
 
 
