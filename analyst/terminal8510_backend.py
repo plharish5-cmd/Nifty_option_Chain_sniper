@@ -7854,6 +7854,20 @@ class QuantTerminalBackend:
     def get_scanner_status(self, positions=None) -> Dict[str, Any]:
         """Scanner status plus read-only, two-sided OI decision boards."""
         strategies = {k: dict(v) if isinstance(v, dict) else v for k, v in self.strategy_status.items()}
+        # Evaluators describe lane capability; cockpit routing must describe the
+        # CURRENT desk route, even before the next market-hours scanner tick.
+        from analyst.lane_live_routing_8510 import cockpit_route_tuple
+        from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
+        from analyst.reversal_revamp_8510 import load_reversal_cfg
+        for key, lane, cfg in (
+            ("ema8_prototype", "prototype", load_ema8_prototype_cfg(self.scanner_cfg)),
+            ("crossover_reversal", "reversal", load_reversal_cfg(self.scanner_cfg)),
+        ):
+            row = strategies.setdefault(key, {})
+            paper, capable, hint = cockpit_route_tuple(self, lane)
+            row.update(paper_only_lane=paper, live_trade_capable=capable, route_hint=hint,
+                       execution_mode=cfg.get("execution_mode"), enabled=bool(cfg.get("enabled", True)),
+                       live_trade_enabled=bool(cfg.get("live_trade_enabled", False)))
         for key, decision in (self.__dict__.get("_ema_entry_decisions") or {}).items():
             if key in strategies:
                 strategies[key]["execution_decision"] = dict(decision)

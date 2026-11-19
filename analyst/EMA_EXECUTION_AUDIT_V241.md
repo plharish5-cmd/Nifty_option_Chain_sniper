@@ -23,6 +23,8 @@ Reversal LIVE_ALLOWED duplicate-argument crash; nested OI configuration; zero co
 5. **A newer opposite crossover supersedes the older Reversal setup.** Old directions no longer fire after a newer opposite cross; the waiting status reports the current armed side.
 6. **Prototype cadence description follows its actual configured value**, rather than always claiming 30 seconds.
 
+7. **Route telemetry is normalized from the current desk and lane settings on every status response.** A live-eligible lane correctly reports paper execution while the desk is disarmed, rather than carrying a stale evaluator capability flag. This is display-only; execution routing is unchanged.
+
 ## Important setup differences
 
 | Feature | Prototype | Reversal |
