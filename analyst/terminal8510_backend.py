@@ -4986,7 +4986,8 @@ class QuantTerminalBackend:
                 if not bool(proto_cfg.get("enabled", True)):
                     await asyncio.sleep(refresh)
                     continue
-                if not self._ema8_prototype_state.get("arm"):
+                if (not self._ema8_prototype_state.get("arm")
+                        and getattr(self, "_proto_arm_recovery_checked", False)):
                     await asyncio.sleep(refresh)
                     continue
                 spot = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
@@ -5019,6 +5020,22 @@ class QuantTerminalBackend:
                     continue
                 bar_open_ts = current_nse_15m_open_ts(datetime.now(IST))
                 b15, _bar_ci = ensure_forming_b15_bar(b15, bar_open_ts=bar_open_ts, live_spot=spot)
+                if not getattr(self, "_proto_arm_recovery_checked", False):
+                    from analyst.prototype_arm_recovery_8510 import recover_missing_arm
+                    recovered = recover_missing_arm(
+                        b15, state=self._ema8_prototype_state, cfg=proto_cfg,
+                        session_day=datetime.now(IST).strftime("%Y-%m-%d"),
+                    )
+                    self._proto_arm_recovery_checked = True
+                    if recovered:
+                        self._save_ema8_prototype_state()
+                        self.log_ema8_prototype_event(
+                            event="ARM RECOVERED", direction=self._ema8_prototype_state["arm"]["direction"],
+                            reason="Recovered missing arm from completed session cross; no historical entry placed",
+                        )
+                if not self._ema8_prototype_state.get("arm"):
+                    await asyncio.sleep(refresh)
+                    continue
                 form_high = form_low = None
                 tick_high = tick_low = None
                 try:
@@ -6106,7 +6123,9 @@ class QuantTerminalBackend:
                 except RuntimeError:
                     asyncio.run(self._square_off_open_ema8_prototype_positions(reason))
                 self._ema8_prototype_state.pop("open", None)
-                self._ema8_prototype_state.pop("arm", None)
+                # The evaluator already cleared the exited side and may have
+                # armed its opposite in this same action batch. Do not erase
+                # that new arm while routing the old position's exit.
                 self._save_ema8_prototype_state()
             elif atype == "ARM":
                 self.log_ema8_prototype_event(

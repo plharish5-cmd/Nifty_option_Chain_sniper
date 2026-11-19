@@ -368,7 +368,11 @@ def compute_momentum_oi_reads(
             "fresh_oi": miss(f"no snapshot in {w_min}±2 min window for momentum"),
             "writer_flow": miss(f"no snapshot in {w_min}±2 min window for momentum"),
         }
-    base_t = _snapshot_at(ts_sorted, _hm_ts(day, "09:15"), at_or_before=True)
+    session_open = _hm_ts(day, "09:15")
+    # Recorded snapshots carry seconds; requiring <=09:15:00 loses an
+    # entire session when the first real observation was 09:15:16.
+    # Use the actual first session observation and disclose its timestamp.
+    base_t = next((t for t in ts_sorted if session_open <= t <= last_t), None)
     if base_t is None or base_t >= last_t:
         return {
             "total_oi": miss("waiting for 09:15 baseline snapshot"),
@@ -419,12 +423,17 @@ def compute_momentum_oi_reads(
             volume_label=vol_lbl,
             volume_backed=vol_backed,
             age_sec=age_sec,
-            label="OI chg since 09:15",
+            label="OI chg since recorded " + datetime.fromtimestamp(base_t, IST).strftime("%H:%M:%S"),
         )
     writer = dict(fresh)
     if writer.get("detail"):
-        writer["detail"] = str(writer["detail"]).replace("OI chg since 09:15", "Writer flow")
+        writer["detail"] = str(writer["detail"]).replace("OI chg since recorded", "Writer flow since recorded")
     out_reads = {"total_oi": total, "fresh_oi": fresh, "writer_flow": writer}
+    for read in out_reads.values():
+        read["baseline_ts"] = base_t
+        read["baseline_kind"] = "FIRST_RECORDED_SESSION_SNAPSHOT"
+        read["baseline_delay_sec"] = base_t - session_open
+        read["detail"] += " · baseline recorded " + datetime.fromtimestamp(base_t, IST).strftime("%H:%M:%S")
     if require_price:
         from analyst.oi_price_confirm_8510 import apply_price_confirm_to_momentum_read
 

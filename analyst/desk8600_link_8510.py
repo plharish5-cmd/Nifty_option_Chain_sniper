@@ -67,7 +67,11 @@ def link_status(bridge: Any, oi_ctx: Optional[Dict[str, Any]], now: datetime, *,
             reason = str(act.get("reason") or "")
             if str(act.get("verdict") or "UNAVAILABLE") == "UNAVAILABLE":
                 low = reason.lower()
-                if any(k in low for k in ("refused", "urlerror", "timed out", "timeout", "connection", "unreachable", "errno")):
+                if "timed out" in low or "timeout" in low:
+                    d.update(state="TIMEOUT", headline="8600 local request timed out — app may be busy",
+                             detail=reason[:160],
+                             fix="A timeout does not prove the app is stopped or the internet is slow. Check the 8600 page and server load; source signals remain unavailable until a fresh response arrives.")
+                elif any(k in low for k in ("refused", "urlerror", "connection", "unreachable", "errno")):
                     d.update(state="NOT_ANSWERING", headline="8600 app is NOT answering",
                              detail=reason[:160],
                              fix=f"Start the 8600 app and check it opens at {d['base_url']} in the browser. This card turns LIVE within 20 seconds.")
