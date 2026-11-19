@@ -108,3 +108,5 @@ def test_cockpit_route_flags_agree_when_live_lanes_but_desk_disarmed(tmp_path):
   row=result['strategies'][key]
   assert row['execution_mode']=='LIVE_ALLOWED' and row['live_trade_capable']
   assert row['paper_only_lane'] and 'PAPER now' in row['route_hint']
+ assert 'wait 2 bars' in result['strategies']['crossover_reversal']['desc']
+ assert 'within 2 bars' in result['strategies']['crossover_reversal']['desc']

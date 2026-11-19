@@ -7868,6 +7868,18 @@ class QuantTerminalBackend:
             row.update(paper_only_lane=paper, live_trade_capable=capable, route_hint=hint,
                        execution_mode=cfg.get("execution_mode"), enabled=bool(cfg.get("enabled", True)),
                        live_trade_enabled=bool(cfg.get("live_trade_enabled", False)))
+        try:
+            from analyst.mj_sir_stage_reversal_8510 import load_mj_cfg
+
+            mj_cfg = load_mj_cfg(self.scanner_cfg)
+            cr = strategies.setdefault("crossover_reversal", {})
+            cr["desc"] = (
+                f"4/8 cross · wait {int(mj_cfg['reversal_wait_bars_after_cross'])} bars · "
+                f"{'dynamic' if mj_cfg.get('dynamic_8ema_entry', True) else 'fixed'} 8 EMA touch "
+                f"within {int(mj_cfg['reversal_touch_window_bars'])} bars"
+            )
+        except Exception:
+            pass
         for key, decision in (self.__dict__.get("_ema_entry_decisions") or {}).items():
             if key in strategies:
                 strategies[key]["execution_decision"] = dict(decision)

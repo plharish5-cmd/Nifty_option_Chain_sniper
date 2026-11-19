@@ -33,8 +33,17 @@ def main() -> int:
     rev["live_trade_enabled"] = True
     rev["candle_trail_enabled"] = True
     rev["candle_trail_activate_pts"] = 20.0
-    rev.setdefault("oi_filters", {})["mode"] = "log_only"
-    rev.setdefault("oi_filters", {})["log_only"] = True
+    rev_oi = rev.setdefault("oi_filters", {})
+    rev_oi["enabled"] = True
+    rev_oi["mode"] = "log_only"
+    rev_oi["log_only"] = True
+    rev_oi.setdefault("switches", {})
+    for sw in ("writer_flow", "total_oi", "fresh_oi", "price_oi", "volume_oi"):
+        rev_oi["switches"][sw] = True
+    proto_oi = proto.setdefault("oi_filters", {})
+    proto_oi.setdefault("switches", {})
+    for sw in ("writer_flow", "total_oi", "fresh_oi", "price_oi", "volume_oi"):
+        proto_oi["switches"][sw] = True
 
     board = sc.setdefault("desk8600_board", {})
     board["sources"] = {
