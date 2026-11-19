@@ -47,9 +47,13 @@ def armed_status(lane, row, state, positions):
     if not armed:
         return {'state':'NONE','side':None,'waiting_for':phase or str(row.get('block_reason') or 'no setup'),'line':'none · '+(phase.lower() or str(row.get('block_reason') or 'no setup'))}
     if lane=='prototype' and arm and row.get('retouch_requires_away',True) and not arm.get('away_seen'):
-        wait='waiting for away'
-    elif 'WAIT' in phase.upper() and phase:wait=phase.lower()
-    else:wait=str(row.get('block_reason') or 'waiting for touch')
+        wait='waiting for away from 8 EMA'
+    elif row.get('ema_stale') or 'STALE' in str(row.get('block_reason') or '').upper():
+        wait='stale spot — touch paused (arm kept)'
+    elif 'WAIT' in phase.upper() and phase:
+        wait=phase.lower()
+    else:
+        wait=str(row.get('block_reason') or 'waiting for touch ±3')
     return {'state':'ARMED','side':direction,'waiting_for':wait,'line':(direction or 'side not reported')+' · '+wait}
 
 
@@ -103,12 +107,24 @@ def build_oi_decision_board(lane: str, scanner_cfg: Dict[str,Any], board: Dict[s
                   'live_detail':str(x.get('price_confirm') or '— not reported by source')+'; upstream context, not a separate vote','counted':False})
     def verdict(block,detail):
         would=bool(block and enabled);actual=would and mode=='block'
-        return {'would_block':would,'actual_block':actual,'verdict':'BLOCKED' if would else 'ALLOWED',
+        if would and mode=='log_only':
+            word='WOULD BLOCK (trading still allowed)'
+        elif actual:
+            word='BLOCKED'
+        else:
+            word='ALLOWED'
+        return {'would_block':would,'actual_block':actual,'verdict':word,
           'blockers':detail.get('blocked_by',[]) if would else [],'opposing_filters':detail.get('blocked_by',[]),
           'agree':detail.get('agree',0),'oppose':detail.get('oppose',0),'gate_detail':detail}
     bv=verdict(buy_block,buy);sv=verdict(sell_block,sell)
     def brief(name,v):
-        return name+(' would-block' if mode=='log_only' and v['would_block'] else ' blocked' if v['actual_block'] else ' allowed')+(' by '+', '.join(PROTO_OI_READ_LABELS.get(i,i) for i in v['blockers']) if v['blockers'] else '')
+        if mode=='log_only' and v['would_block']:
+            tail='would block — trading still allowed'
+        elif v['actual_block']:
+            tail='blocked'
+        else:
+            tail='allowed'
+        return name+' '+tail+(' by '+', '.join(PROTO_OI_READ_LABELS.get(i,i) for i in v['blockers']) if v['blockers'] else '')
     return {'version':'OI_DECISION_BOARD_V241','lane':lane,'title':'8 EMA Prototype' if lane=='prototype' else '8 EMA Reversal',
       'armed':armed_status(lane,row,state,positions),'mode':mode,'configured_mode':configured['mode'],
       'rule':buy.get('rule',configured['rule']),'configured_rule':configured['rule'],'enabled':enabled,

@@ -1492,3 +1492,13 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 - **Broker rejection surfacing:** `format_broker_rejection` → human text in orders row, `rejection_reason_display` on order book API, `signal_observations.skip_reason`, and cockpit `execution_decision` (e.g. **DH-905: Invalid IP** from 19 Nov ledger). No retry/auto-place.
 - Tests: `analyst/test_arm_persistence_8510.py` **7/7**; v241+v242 bundle **25/25**; `verify_locks` **11/11**. Full analyst suite not re-run this session.
 - Full paths: `/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/analyst/ema_arm_persistence_8510.py`, `analyst/test_arm_persistence_8510.py`, `analyst/terminal8510_backend.py` (ledger tables + load/save), `analyst/ema_lane_lock_8510.py` (`since_ist` on acquire).
+
+
+## Gemini (Cursor) — v2.0.40 finish-line — 19 Nov 2026
+
+- Branch `gemini/v2.0.40-finish-line` off `v2.0.39-arm-persistence`; tags `pre-gemini-v2.0.40-finish-line` / `post-gemini-v2.0.40-finish-line`. **Do not merge.**
+- **Part 1:** `analyst/replay_marked_opportunities_8510.py` + report `analyst/reports/MARKED_OPP_REPLAY_2026-11-19.md` — spot replay from recorded 1m + live-shaped config; **4/9** owner marks = **WOULD TAKE** (Prototype 09:41 PE, 13:00 CE, 15:00 CE; Reversal 10:30 CE). Honest NOs: mid-hold at 10:15/10:30, 14:00 no touch, Reversal 09:45/13:15 window miss. No option quotes fabricated.
+- **Part 2–3:** OI board `log_only` → **WOULD BLOCK (trading still allowed)**; armed wait strings (`waiting for away from 8 EMA`, `stale spot — touch paused (arm kept)`).
+- **Part 4:** `analyst/engine_exit_log_8510.py` → `data/terminal8510/engine_exits.log` (startup/heartbeat/exception/signal/clean shutdown); port-conflict note on bind fail. Prior unexpected stop on v242: **no exit line in v242_engine.log** (likely external kill or second-instance port race — not proven in-repo).
+- Tests: `analyst/test_finish_line_v240_8510.py`; oi board armed-string tweak; locks **11/11**. Full suite not re-run.
+- Paths: `replay_marked_opportunities_8510.py`, `engine_exit_log_8510.py`, `engine_8510_live.py`, `oi_decision_board_8510.py`, `cockpit_views_8510.py`.

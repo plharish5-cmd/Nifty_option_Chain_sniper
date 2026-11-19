@@ -48,6 +48,10 @@ from analyst.terminal8510_backend import QuantTerminalBackend, load_env_safe
 
 load_env_safe()
 
+from analyst.engine_exit_log_8510 import install_engine_exit_logging
+
+ENGINE_EXIT_LOG = install_engine_exit_logging(label="8510")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] 8510_engine: %(message)s"
@@ -1397,6 +1401,9 @@ def main() -> int:
         sock.bind((host, port))
     except OSError as exc:
         sock.close()
+        from analyst.engine_exit_log_8510 import note_abnormal_exit
+
+        note_abnormal_exit(ENGINE_EXIT_LOG, f"Port {port} bind failed: {exc}", kind="PORT_CONFLICT")
         log.error("Port %d on %s is already in use (%s).", port, host, exc)
         log.error("8510 is ALREADY RUNNING. Nothing was started: no scanner, "
                   "no broker call, no order placed.")

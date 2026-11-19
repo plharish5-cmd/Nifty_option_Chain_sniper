@@ -79,7 +79,7 @@ def prototype_view(
     e8_closed = audit.get("e8_closed")
     stale = bool(audit.get("stale") or row.get("ema_stale"))
     if stale:
-        out["sub"] = (out["sub"] + " · " if out["sub"] else "") + "EMA STALE — spot feed not fresh"
+        out["sub"] = (out["sub"] + " · " if out["sub"] else "") + "stale spot — touch paused (arm kept)"
     from analyst.ema8_display_audit_8510 import EMA_CONVERGENCE_NOTE, enrich_prototype_view
 
     return enrich_prototype_view(

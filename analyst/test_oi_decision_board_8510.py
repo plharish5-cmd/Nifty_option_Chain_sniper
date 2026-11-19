@@ -71,7 +71,7 @@ def test_per_lane_config_independence_and_new_read_updates():
 
 def test_armed_waiting_and_in_trade_do_not_infer_from_oi():
  s=armed_status('prototype',{'armed':True},{'arm':{'direction':'SHORT','away_seen':False}},[])
- assert s['side']=='PE';assert s['waiting_for']=='waiting for away'
+ assert s['side']=='PE';assert s['waiting_for']=='waiting for away from 8 EMA'
  s=armed_status('prototype',{'armed':True},{'arm':{'direction':'LONG','away_seen':True}},[]);assert s['waiting_for']=='waiting for touch'
  assert armed_status('reversal',{'state':'ARMED','reversal_side':'UP'},{},[])['side']=='CE'
  assert armed_status('reversal',{'state':'ARMED'},{},[])['side']is None
