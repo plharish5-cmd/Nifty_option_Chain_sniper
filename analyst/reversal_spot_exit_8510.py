@@ -35,7 +35,10 @@ def apply_reversal_candle_trail_to_stop(
     candle_l: float,
     candle_c: float,
 ) -> float:
-    return _flagship_candle_trail_update(is_long, spot_stop, candle_o, candle_h, candle_l, candle_c)
+    """Trail spot stop on completed bar extremes — no candle-color filter."""
+    if is_long:
+        return max(spot_stop, candle_l)
+    return min(spot_stop, candle_h)
 
 
 def disabled_spot_target_for_trail(is_long: bool, spot_entry: float) -> float:

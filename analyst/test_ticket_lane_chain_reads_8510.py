@@ -474,6 +474,21 @@ def test_prototype_contract_walks_deeper_itm_until_premium_qualifies(tmp_path):
     c, why = asyncio.run(b._select_ema8_prototype_contract_any_strike("PE", 200.0, 25270.0))
     assert c is None and "≥ ₹200" in why and "@ 150.00" in why
 
+    # fallback floor ₹150 when ₹200 nothing qualifies (e.g. 165 on deeper ITM)
+    b.broker.get_marketfeed_ltp = quotes
+    b.priority_contracts = [
+        {"id": "LONG_PE_ITM", "opt_type": "PE", "strike": 25400.0, "ltp": 188.0, "algo_enabled": True},
+    ]
+    ltps_fb = {"253002": 140.0, "253502": 165.0, "254002": 188.0}
+    async def quotes_fb(req):
+        return {str(sid): ltps_fb.get(str(sid), 0.0) for sid in req["NSE_FNO"]}
+    b.broker.get_marketfeed_ltp = quotes_fb
+    c, why = asyncio.run(
+        b._select_ema8_prototype_contract_any_strike("PE", 200.0, 25270.0, min_floor_inr=150.0)
+    )
+    assert c and c["ltp"] == 188.0
+    assert "fallback" in why or c["strike"] == 25400.0
+
     # a qualifying matrix contract is still taken first, no search
     b.priority_contracts[0]["ltp"] = 248.85
     c, why = asyncio.run(b._select_ema8_prototype_contract_any_strike("PE", 200.0, 25300.0))

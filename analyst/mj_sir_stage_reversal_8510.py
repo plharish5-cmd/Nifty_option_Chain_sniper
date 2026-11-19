@@ -258,8 +258,8 @@ def evaluate_mj_sir_four_pack(
 
     status: Dict[str, Dict[str, Any]] = {}
 
-    def common_blocks(ribbon: bool = True) -> Optional[str]:
-        if width_val < bb_min:
+    def common_blocks(ribbon: bool = True, apply_bb_width: bool = True) -> Optional[str]:
+        if apply_bb_width and width_val < bb_min:
             return "NO TRADE — BB width < 60 pts"
         if ribbon and ribbon_attached(e4_val, e8_val, atr_val, cfg):
             return "NO TRADE — 4-8 EMA attached (ribbon)"
@@ -431,7 +431,10 @@ def evaluate_mj_sir_four_pack(
                 mj_state["stage3_fired_key"] = setup_key_s3
 
     # ── REVERSALS (15m legacy or revamp lanes) ─────────────────────────────
-    rev_block = common_blocks(ribbon=bool(cfg.get("reversal_ribbon_block", False)))
+    rev_block = common_blocks(
+        ribbon=bool(cfg.get("reversal_ribbon_block", False)),
+        apply_bb_width=bb_cross,
+    )
 
     def _legacy_crossover_reversal() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         wait_bars = int(cfg["reversal_wait_bars_after_cross"])

@@ -3253,7 +3253,7 @@ class QuantTerminalBackend:
             "block_ce_when_bearish": False,
             "advisory_only": True,
             "fail_open": True,
-            "show_pe_ce_table_in_tab1": True,
+            "show_pe_ce_table_in_tab1": False,
         }
         _dhan_oi_synergy_defaults.update(self.cfg.get("dhan_oi_synergy") or {})
         self.dhan_oi_synergy_cfg = _dhan_oi_synergy_defaults
@@ -3289,6 +3289,34 @@ class QuantTerminalBackend:
         except Exception as e:
             log.warning("Could not initialize EmaProximityEngine: %s", e)
             self.ema_proximity_engine = None
+
+    def ema_proximity_matrix_enabled(self) -> bool:
+        """v1.8 homework matrix / tier radar (display only). Off does not affect live strategies."""
+        block = self.cfg.get("ema_proximity_radar") or {}
+        return block.get("enabled", True) is not False
+
+    def _desk_trend_watchlist_enabled(self) -> bool:
+        ui = self.cfg.get("desk_ui") or {}
+        return ui.get("show_trend_watchlist", True) is not False
+
+    def _desk_five_factor_enabled(self) -> bool:
+        ui = self.cfg.get("desk_ui") or {}
+        if ui.get("show_five_factor_confluence", True) is False:
+            return False
+        ff = self.cfg.get("five_factor_confluence") or {}
+        return ff.get("enabled", True) is not False
+
+    def _five_factor_telemetry_stub(self) -> Dict[str, Any]:
+        return {
+            "enabled": False,
+            "score": 0,
+            "grade": "OFF",
+            "scanner_gate_mode": "off",
+            "scanner_min_score": 0,
+            "scanner_gate_active": False,
+            "pillars": {},
+            "note": "Five-factor UI disabled",
+        }
 
     @property
     def lock(self) -> asyncio.Lock:
@@ -4185,15 +4213,14 @@ class QuantTerminalBackend:
             return []
         try:
             from analyst.desk_scope_8510 import strategy_id_allowed
-            from analyst.ema_lane_entry_gate_8510 import filter_signals_one_ema_trade
 
-            scoped = [
+            # Keep every candidate until _process_strategy_signals reserves a lane.
+            # Dropping here consumed setups before retry / contract-failure cleanup.
+            return [
                 s
                 for s in signals
                 if strategy_id_allowed(self.scanner_cfg, str(s.get("strategy_id") or ""))
             ]
-            n_open = len(self.get_active_positions())
-            return filter_signals_one_ema_trade(list(scoped), self._ema_lane_lock, open_position_count=n_open)
         except Exception:
             return list(signals)
 
@@ -4792,6 +4819,8 @@ class QuantTerminalBackend:
 
     def get_ema_proximity_table(self, date_str: str = "LIVE", timeframe: str = "1m", filter_state: str = "ALL") -> Dict[str, Any]:
         """Calculates and returns the minute-by-minute 4-EMA & 8-EMA Proximity Matrix (v1.8)."""
+        if not self.ema_proximity_matrix_enabled():
+            return {"ok": False, "disabled": True, "rows": [], "error": "ema_proximity_radar disabled"}
         if not self.ema_proximity_engine:
             from analyst.ema_proximity_engine import ema_proximity_engine
             self.ema_proximity_engine = ema_proximity_engine
@@ -5500,10 +5529,12 @@ class QuantTerminalBackend:
         pe_ce_gap_cr = -oi_state['ce_pe_oi_diff']/1e7 if pcr_available else 0.0
         pcr_tag = oi_state['bias'] if pcr_available else 'NO DATA'
 
-        # 6. Trend Confluence Mini-Watchlist (7 Indicators)
-        trend_watchlist = await asyncio.to_thread(
-            self._calculate_trend_watchlist, spot, pcr, pcr_available
-        )
+        if self._desk_trend_watchlist_enabled():
+            trend_watchlist = await asyncio.to_thread(
+                self._calculate_trend_watchlist, spot, pcr, pcr_available
+            )
+        else:
+            trend_watchlist = {"disabled": True, "regime_banner": "", "regime_badge": "OFF", "items": []}
 
         # 7. Funds & Paper Wallet
         paper_wallet = self.get_paper_wallet()
@@ -5524,19 +5555,21 @@ class QuantTerminalBackend:
 
 
 
-        # 4/8 EMA Proximity Radar (v1.8)
         live_spot_for_radar = float(self.broker._ltp_cache.get("13", 0.0) or spot or 0.0)
-        ema_radar = self.ema_proximity_engine.get_latest_radar_status(live_spot=live_spot_for_radar) if self.ema_proximity_engine else {
-            "ok": True,
-            "tier": "ZONE_FAR",
-            "pill_text": "🎯 4/8 EMA Radar: -- [WAITING]",
-            "proximity_state": "ZONE_FAR",
-        }
+        if self.ema_proximity_matrix_enabled() and self.ema_proximity_engine:
+            ema_radar = self.ema_proximity_engine.get_latest_radar_status(live_spot=live_spot_for_radar)
+        else:
+            ema_radar = {"ok": True, "disabled": True, "tier": "OFF", "proximity_state": "OFF"}
 
         ema_live_cross = dict(self._ema_live_cross_cache) if self._ema_live_cross_cache.get("ok") else {"ok": False}
 
         recorder = getattr(self, 'recording_service', None)
-        if recorder and not is_stale and live_spot_for_radar > 0:
+        if (
+            self.ema_proximity_matrix_enabled()
+            and recorder
+            and not is_stale
+            and live_spot_for_radar > 0
+        ):
             recorder.enqueue('radar', dict(ema_radar), live_spot_for_radar, time.time())
 
         payload = {
@@ -5612,9 +5645,12 @@ class QuantTerminalBackend:
             "exit_failure_banner": getattr(self, "exit_failure_banner", None),
         }
         payload['dhan_oi'] = self.dhan_oi.cached_snapshot()
-        payload["five_factor_confluence"] = await asyncio.to_thread(
-            self.get_five_factor_confluence, spot, not is_stale
-        )
+        if self._desk_five_factor_enabled():
+            payload["five_factor_confluence"] = await asyncio.to_thread(
+                self.get_five_factor_confluence, spot, not is_stale
+            )
+        else:
+            payload["five_factor_confluence"] = self._five_factor_telemetry_stub()
         payload["oi_context"] = await asyncio.to_thread(self.oi_context, spot)
         payload["desk8600_board"] = await asyncio.to_thread(self.desk8600_board)
         payload["desk8600_ticket_lane"] = await asyncio.to_thread(self.desk8600_ticket_lane_status)
@@ -5886,6 +5922,16 @@ class QuantTerminalBackend:
             }
         except Exception as exc:
             row["oi_filter_telemetry"] = {"error": type(exc).__name__}
+        try:
+            from analyst.lane_live_routing_8510 import cockpit_route_tuple
+
+            paper, live_cap, route_hint = cockpit_route_tuple(self, "reversal")
+            row["route_hint"] = route_hint
+            row["live_trade_enabled"] = bool((rev_cfg or {}).get("live_trade_enabled", False))
+            row["live_trade_capable"] = live_cap
+            row["paper_only_lane"] = paper
+        except Exception:
+            pass
         self.strategy_status["crossover_reversal"] = row
 
     def _ema8_prototype_view(self) -> Dict[str, Any]:
@@ -5893,9 +5939,16 @@ class QuantTerminalBackend:
         try:
             from analyst.cockpit_views_8510 import prototype_view
 
-            route = "LIVE" if str(getattr(self, "execution_mode", "")) == "BOTH" else ""
+            from analyst.lane_live_routing_8510 import cockpit_route_tuple
+
+            ep = dict(self.strategy_status.get("ema8_prototype") or {})
+            paper, live_cap, route_hint = cockpit_route_tuple(self, "prototype")
+            ep["paper_only_lane"] = paper
+            ep["route_hint"] = route_hint
+            ep["live_trade_capable"] = live_cap
+            route = "LIVE" if live_cap and str(getattr(self, "execution_mode", "")) == "BOTH" else ""
             return prototype_view(
-                self.strategy_status.get("ema8_prototype"),
+                ep,
                 self.__dict__.get("_ema8_prototype_state"),
                 (self.cached_telemetry.get("spot") or {}).get("price"),
                 route,
@@ -5907,12 +5960,18 @@ class QuantTerminalBackend:
     def _sync_ema8_prototype_desk_status(self) -> None:
         from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg, _execution_mode_labels
 
+        from analyst.lane_live_routing_8510 import cockpit_route_tuple
+
         cfg = load_ema8_prototype_cfg(self.scanner_cfg)
-        paper_only, exec_label = _execution_mode_labels(cfg)
+        _, exec_label = _execution_mode_labels(cfg)
+        paper_only, live_cap, route_hint = cockpit_route_tuple(self, "prototype")
         row = dict(self.strategy_status.get("ema8_prototype") or {})
         row["name"] = "8 EMA Prototype"
         row["execution_mode"] = exec_label
         row["paper_only_lane"] = paper_only
+        row["live_trade_enabled"] = bool(cfg.get("live_trade_enabled", False))
+        row["route_hint"] = route_hint
+        row["live_trade_capable"] = live_cap
         row["enabled"] = bool(cfg.get("enabled", True))
         # Carry the full filter set so the cockpit's per-second telemetry reflects the
         # saved toggles instead of resetting them (the re-entry radios in particular).
@@ -5961,16 +6020,10 @@ class QuantTerminalBackend:
                 return c
         return None
 
-    async def _select_ema8_prototype_contract_any_strike(
+    async def _select_at_premium_threshold(
         self, opt_side: str, min_premium_inr: float, spot: float
     ) -> Tuple[Optional[Dict[str, Any]], str]:
-        """The Prototype's rule is "CE/PE ≥ ₹200, current week" — not "one of the four
-        matrix strikes". When none of the four priority contracts is at or above the
-        minimum (afternoon decay, or a stale quote), walk deeper in the money in
-        50-point steps and take the nearest strike whose fresh quote qualifies.
-
-        Returns (contract, reason). reason explains a None.
-        """
+        """One pass: matrix four, then ITM walk up to 500 pts at min_premium_inr."""
         side = str(opt_side).upper()
         first = self._select_ema8_prototype_contract(side, min_premium_inr)
         if first is not None:
@@ -6019,6 +6072,28 @@ class QuantTerminalBackend:
             return None, f"no {side} with premium ≥ ₹{int(min_premium_inr)} up to 500 pts ITM (best {int(best_k) if best_k else '—'} @ {best_ltp:.2f})"
         except Exception as exc:
             return None, f"contract search failed: {type(exc).__name__}"
+
+    async def _select_ema8_prototype_contract_any_strike(
+        self, opt_side: str, min_premium_inr: float, spot: float,
+        min_floor_inr: Optional[float] = None,
+    ) -> Tuple[Optional[Dict[str, Any]], str]:
+        """Prefer min_premium_inr (default ₹200); if nothing qualifies, try min_floor_inr (e.g. ₹150)."""
+        preferred = float(min_premium_inr)
+        floor = float(min_floor_inr if min_floor_inr is not None else preferred)
+        if floor > preferred:
+            floor = preferred
+        contract, why = await self._select_at_premium_threshold(opt_side, preferred, spot)
+        if contract is not None:
+            return contract, why
+        if floor < preferred - 1e-6:
+            contract, why2 = await self._select_at_premium_threshold(opt_side, floor, spot)
+            if contract is not None:
+                return contract, (
+                    f"premium fallback ≥ ₹{int(floor)} "
+                    f"(preferred ≥ ₹{int(preferred)} unavailable; {why2 or why})"
+                ).strip()
+            return None, why2 or why
+        return None, why
 
     def _handle_ema8_prototype_actions(self, actions: List[Dict[str, Any]]) -> None:
         for act in actions or []:
@@ -6154,6 +6229,7 @@ class QuantTerminalBackend:
     def get_scanner_gate_config(self) -> Dict[str, Any]:
         raw = self.scanner_cfg.get("bollinger_enabled", True)
         enabled = raw is True or raw == "true" or raw == 1
+        fp = dict(self.scanner_cfg.get("flagship_1h_pa") or {})
         return {
             "ok": True,
             "bollinger_enabled": bool(enabled),
@@ -6165,6 +6241,10 @@ class QuantTerminalBackend:
             "flagship_or_8ema_require_trend": bool(
                 self.scanner_cfg.get("flagship_or_8ema_require_trend", True)
             ),
+            "flagship_1h_pa": {
+                "execution_mode": str(fp.get("execution_mode") or "LIVE_ALLOWED"),
+                "live_trade_enabled": bool(fp.get("live_trade_enabled", False)),
+            },
         }
 
     def update_scanner_gate_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -6178,6 +6258,16 @@ class QuantTerminalBackend:
             "flagship_or_8ema_require_trend",
         }
         prev_bb = self.scanner_cfg.get("bollinger_enabled", True)
+        fp_u = (updates or {}).get("flagship_1h_pa")
+        if isinstance(fp_u, dict):
+            fp = dict(self.scanner_cfg.get("flagship_1h_pa") or {})
+            if "execution_mode" in fp_u:
+                fp["execution_mode"] = str(fp_u["execution_mode"] or "LIVE_ALLOWED")
+            if "live_trade_enabled" in fp_u:
+                fp["live_trade_enabled"] = fp_u["live_trade_enabled"] is True or str(
+                    fp_u["live_trade_enabled"]
+                ).lower() in ("true", "1", "on", "yes")
+            self.scanner_cfg["flagship_1h_pa"] = fp
         for k, v in (updates or {}).items():
             if k not in allowed:
                 continue
@@ -6221,6 +6311,7 @@ class QuantTerminalBackend:
             "ema_separation_enabled",
             "candle_trail_enabled",
             "execution_mode",
+            "live_trade_enabled",
         ):
             if k in u:
                 if isinstance(u[k], bool) or k.endswith("_enabled") or k == "enabled":
@@ -6257,6 +6348,7 @@ class QuantTerminalBackend:
             "ok": True,
             "enabled": bool(c.get("enabled", True)),
             "execution_mode": str(c.get("execution_mode", "LIVE_ALLOWED")),
+            "live_trade_enabled": bool(c.get("live_trade_enabled", False)),
             "ribbon_filter_enabled": bool(c.get("ribbon_filter_enabled", False)),
             "ribbon_max_pts": float(c.get("ribbon_max_pts", 3.0)),
             "ema_separation_enabled": bool(c.get("ema_separation_enabled", False)),
@@ -6276,6 +6368,7 @@ class QuantTerminalBackend:
         allowed = {
             "enabled",
             "execution_mode",
+            "live_trade_enabled",
             "ribbon_filter_enabled",
             "ribbon_max_pts",
             "ema_separation_enabled",
@@ -7377,7 +7470,7 @@ class QuantTerminalBackend:
                             board = self.desk8600_board()
                             reads = board_reads_from_board(board)
                             bullish = str(sig.get("direction", "")).upper() == "LONG"
-                            oi_block, oi_det = oi_switch_block(bullish, oi_cfg, reads)
+                            oi_block, oi_det = oi_switch_block(bullish, {"oi_filters": oi_cfg}, reads)
                             sig["reversal_oi_telemetry"] = oi_det
                             blocking = oi_block and str(oi_cfg.get("mode") or "log_only").lower() == "block"
                             if blocking and not bool(rev_oi.get("log_only", True)):
@@ -7403,10 +7496,12 @@ class QuantTerminalBackend:
                 retry_at = self.__dict__.setdefault("_skip_retry_at", {})
                 if now_ts < float(retry_at.get(strat_id, 0.0)):
                     continue
-                retry_at[strat_id] = now_ts + float(self.scanner_cfg.get("skipped_signal_retry_seconds", 5.0) or 5.0)
+                retry_at[strat_id] = now_ts + float(
+                    self.scanner_cfg.get("skipped_signal_retry_seconds", 5.0)
+                )
 
                 last_ts = self.strategy_cooldowns.get(strat_id, 0.0)
-                cool_min = float(self.scanner_cfg.get("signal_cooldown_5m_min", 5.0) or 5.0)
+                cool_min = float(self.scanner_cfg.get("signal_cooldown_5m_min", 5.0))
                 cool_sec = max(0.0, cool_min) * 60.0  # 5m wait between signals — NOT an entry timeframe
                 if cool_sec and (now_ts - last_ts) < cool_sec:
                     continue
@@ -7480,8 +7575,9 @@ class QuantTerminalBackend:
                     min_prem = float(
                         sig.get("min_option_premium_inr") or pcfg.get("min_option_premium_inr") or 200.0
                     )
+                    min_floor = float(pcfg.get("min_option_premium_floor_inr", min_prem))
                     target_contract, contract_why = await self._select_ema8_prototype_contract_any_strike(
-                        opt_side, min_prem, float(_spot or 0.0)
+                        opt_side, min_prem, float(_spot or 0.0), min_floor_inr=min_floor
                     )
                 else:
                     candidate_ids = [f"LONG_{opt_side}_ATM", f"LONG_{opt_side}_ITM"]
@@ -7574,18 +7670,19 @@ class QuantTerminalBackend:
 
                 # Trigger execution with chaser
                 sid_u = str(sig.get("strategy_id", "")).upper()
-                proto_paper = bool(sig.get("ema8_prototype_paper_only")) or bool(sig.get("paper_only"))
+                from analyst.lane_live_routing_8510 import order_will_be_paper
+
+                proto_paper = order_will_be_paper(self, strat_id) or bool(sig.get("ema8_prototype_paper_only"))
                 paper_algo = (
-                    "FLAGSHIP" in sid_u
+                    order_will_be_paper(self, strat_id)
                     or sid_u.startswith("STAGE_2")
                     or sid_u.startswith("STAGE_3")
-                    or (sid_u.startswith("CROSSOVER") and bool(sig.get("mj_sir_paper_only")))
-                    or sig.get("mj_sir_paper_only") and not sid_u.startswith("CROSSOVER")
+                    or (sid_u.startswith("CROSSOVER") and order_will_be_paper(self, strat_id))
                     or (sid_u.startswith("EMA8_PROTOTYPE") and proto_paper)
                     or (sid_u.startswith("DESK8600_TICKET") and bool(sig.get("paper_only")))
                     or sig.get("matrix_scalp")
-                    or sig.get("pa_homework")
-                    or sid_u.startswith("PA_SR")
+                    or (sig.get("pa_homework") and order_will_be_paper(self, strat_id))
+                    or (sid_u.startswith("PA_SR") and order_will_be_paper(self, strat_id))
                     or sid_u.startswith("RIBBON_SCALP")
                 )
                 if not self.algo_strategy_execution_allowed(strat_id):
@@ -8965,12 +9062,10 @@ class QuantTerminalBackend:
             if mode != "PAPER_ONLY" and str(
                 (spot_context or {}).get("strategy_id") or strategy_id or ""
             ).upper().startswith("EMA8_PROTOTYPE"):
-                from analyst.ema8_prototype_8510 import (
-                    _execution_mode_labels,
-                    load_ema8_prototype_cfg,
-                )
+                from analyst.lane_live_routing_8510 import order_will_be_paper
 
-                if _execution_mode_labels(load_ema8_prototype_cfg(self.scanner_cfg))[0]:
+                sid = str((spot_context or {}).get("strategy_id") or strategy_id or "")
+                if order_will_be_paper(self, sid):
                     mode = "PAPER_ONLY"
                     proto_lane_paper = True
 

@@ -315,12 +315,13 @@ def run_reversal_revamp(
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     if not needs_reversal_revamp(scanner_cfg):
         return legacy_runner()
+    if not bool(load_reversal_cfg(scanner_cfg).get("enabled", True)):
+        return [], _status("OFF", block_reason="Reversal manually disabled", armed=False)
     rev_cfg = load_reversal_cfg(scanner_cfg)
     mode = str(rev_cfg.get("timeframe_mode", "15m")).lower()
     shared = dict(
         cfg=cfg,
         rev_cfg=rev_cfg,
-        bar_ci=bar_ci,
         bb_cross=bb_cross,
         party_switch_enabled=party_switch_enabled,
         active_party=active_party,

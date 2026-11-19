@@ -32,6 +32,7 @@ DEFAULT_CFG: Dict[str, Any] = {
     "e8_refresh_seconds": 3.0,        # live: the 8 EMA and the touch are checked this often (owner, 12 Nov: "as soon as it touches")
     "backtest_tick_seconds": 30.0,    # backtest/replay grid inside a 15m bar (1-minute data cannot be read finer than this honestly)
     "min_option_premium_inr": 200.0,
+    "min_option_premium_floor_inr": 150.0,
     "ribbon_filter_enabled": False,
     "ribbon_max_pts": 3.0,
     "ema_separation_enabled": False,

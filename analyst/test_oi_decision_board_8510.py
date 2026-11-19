@@ -28,7 +28,8 @@ def test_both_sides_match_exact_execution_call(lane,mode,rule,neutral):
  # Exhaust the enabled sources across directional, neutral and missing readings.
  for values in itertools.product(('CE','PE','NEUTRAL',None),repeat=3):
   board=source((*values,'CE','PE'));reads=board_reads_from_board(board)
-  call=load_ema8_prototype_cfg(cfg)if lane=='prototype'else reversal_oi_filters_for_gate(cfg)
+  gate=reversal_oi_filters_for_gate(cfg) if lane=='reversal' else None
+  call=load_ema8_prototype_cfg(cfg) if lane=='prototype' else {'oi_filters': gate or {}}
   view=build_oi_decision_board(lane,cfg,board)
   for bullish,key in ((True,'buy'),(False,'sell')):
    blocked,detail=oi_switch_block(bullish,call,reads)
@@ -50,19 +51,19 @@ def test_default_and_off_have_no_votes_and_do_not_write_inputs():
  cfg=config();cfg['reversal']['oi_filters']['enabled']=False
  view=build_oi_decision_board('reversal',cfg,board);assert not view['enabled'];assert not view['buy']['would_block']
 
-def test_reversal_wiring_mismatch_is_reported_not_silently_fixed():
+def test_reversal_display_matches_nested_execution_call():
  cfg=config();view=build_oi_decision_board('reversal',cfg,source(['PE']*5))
- assert any('CONFIG/GATE MISMATCH'in w for w in view['warnings'])
- assert all(r['vote_buy']=='OFF'and not r['counted']for r in view['rows'])
- assert view['buy']['verdict']=='ALLOWED' # Current actual flat-config call consumes zero switches.
+ assert not any('CONFIG/GATE MISMATCH'in w for w in view['warnings'])
+ assert view['buy']['would_block'] and view['mode']=='block'
  cfg['reversal']['oi_filters']['log_only']=True
+ cfg['reversal']['oi_filters']['mode']='log_only'
  view=build_oi_decision_board('reversal',cfg,source(['PE']*5));assert view['mode']=='log_only'
 
 def test_per_lane_config_independence_and_new_read_updates():
  cfg=config();board=source(['PE']*5);before=copy.deepcopy(cfg)
  rows={'ema8_prototype':{'state':'ARMED','direction':'LONG'},'crossover_reversal':{'state':'ARMED','reversal_side':'DOWN'}}
  result=enrich_strategy_rows(cfg,rows,board);assert result['ema8_prototype']['oi_decision_board']['buy']['actual_block']
- assert not result['crossover_reversal']['oi_decision_board']['buy']['actual_block']
+ assert result['crossover_reversal']['oi_decision_board']['buy']['would_block']
  cfg['ema8_prototype']['oi_filters']['switches']=dict.fromkeys(PROTO_OI_READ_IDS,False)
  other=enrich_strategy_rows(cfg,rows,board)
  assert result['crossover_reversal']==other['crossover_reversal'];assert cfg!=before;assert 'oi_decision_board'not in rows['ema8_prototype']
@@ -120,4 +121,6 @@ def test_reversal_missing_switches_preserve_existing_inheritance():
  second=build_oi_decision_board('reversal',cfg,source(['CE']*5))
  assert 'total_oi' in [r['id'] for r in first['rows']]
  assert 'total_oi' not in [r['id'] for r in second['rows']]
- assert first['buy']['gate_detail']==second['buy']['gate_detail']
+ gd1 = first['buy']['gate_detail']
+ gd2 = second['buy']['gate_detail']
+ assert gd1.get('switches_on') != gd2.get('switches_on')

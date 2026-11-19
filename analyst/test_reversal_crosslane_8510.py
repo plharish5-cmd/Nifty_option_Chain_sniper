@@ -198,6 +198,21 @@ def test_reversal_oi_log_only_never_blocks_real_route():
     assert not blocking
 
 
+def test_reversal_trail_uses_bar_extreme_not_candle_color():
+    from analyst.reversal_spot_exit_8510 import apply_reversal_candle_trail_to_stop
+
+    # Long + red candle (close < open): still trails stop to candle low
+    sl = apply_reversal_candle_trail_to_stop(
+        is_long=True, spot_stop=98.0, candle_o=105.0, candle_h=106.0, candle_l=99.0, candle_c=101.0
+    )
+    assert sl == 99.0
+    # Short + green candle: still trails stop to candle high
+    sl = apply_reversal_candle_trail_to_stop(
+        is_long=False, spot_stop=102.0, candle_o=98.0, candle_h=101.0, candle_l=97.0, candle_c=100.0
+    )
+    assert sl == 101.0
+
+
 def test_crossover_uses_prototype_contract_router():
     src = Path("analyst/terminal8510_backend.py").read_text()
     i = src.index("is_crossover_sig = sid_u.startswith")

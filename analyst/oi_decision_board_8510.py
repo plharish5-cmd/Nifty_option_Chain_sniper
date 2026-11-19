@@ -1,7 +1,6 @@
 """Display-only two-sided OI eligibility. Never evaluates/changes an entry.
 
-The execution call shape is deliberately preserved, including the existing
-Reversal flat-config mismatch. A board must reveal a wiring fault, not fix one.
+Reversal uses the same nested `oi_filters` shape as the execution gate.
 """
 from __future__ import annotations
 
@@ -66,8 +65,7 @@ def build_oi_decision_board(lane: str, scanner_cfg: Dict[str,Any], board: Dict[s
     else:
         rev=load_reversal_cfg(scanner_cfg);raw=rev.get('oi_filters') or {};gate=reversal_oi_filters_for_gate(scanner_cfg)
         configured=load_oi_filters_cfg({'oi_filters':gate or raw});enabled=gate is not None
-        # EXACT argument currently passed by _process_strategy_signals; do not wrap/fix here.
-        call_cfg=gate or {};mode='block' if gate and str(gate.get('mode') or 'log_only').lower()=='block' and not bool(raw.get('log_only',True)) else 'log_only'
+        call_cfg={'oi_filters': gate or {}};mode='block' if gate and str(gate.get('mode') or 'log_only').lower()=='block' and not bool(raw.get('log_only',True)) else 'log_only'
         if raw.get('mode')=='block' and bool(raw.get('log_only',True)):
             warnings.append('Reversal log_only override is ON: configured Block is observational only.')
     buy_block,buy=oi_switch_block(True,call_cfg,reads);sell_block,sell=oi_switch_block(False,call_cfg,reads)

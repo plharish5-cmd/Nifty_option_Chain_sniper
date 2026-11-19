@@ -32,6 +32,8 @@ def try_reserve_lane_for_signal(
     lane = ema_lane_for_strategy(strategy_id)
     if not lane:
         return True, ""
+    if lock.get("holder"):
+        return False, f"Standing down — {lock.get('holder')} holds the trade lock"
     blocked, why = lane_lock_blocks_entry(lock, lane, open_position_count=open_position_count)
     if blocked:
         return False, why

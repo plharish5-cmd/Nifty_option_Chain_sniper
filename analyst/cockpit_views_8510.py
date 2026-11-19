@@ -26,15 +26,20 @@ def prototype_view(
     opened = st.get("open") or {}
     side = lambda d: "CE" if str(d).upper() == "LONG" else "PE"
     paper_lane = bool(row.get("paper_only_lane"))
-    if paper_lane:
+    live_cap = bool(row.get("live_trade_capable"))
+    route_hint = str(row.get("route_hint") or "")
+    if route_hint:
+        route = route_hint
+    elif paper_lane:
         route = "Paper only — this lane never sends a real order"
     elif str(live_route).upper() == "LIVE":
         route = "REAL ORDERS — desk is armed live"
     else:
         route = "Paper now — real orders when the desk is armed live"
     e8 = row.get("dynamic_e8")
+    route_live = live_cap and str(live_route).upper() == "LIVE" and not paper_lane
     out: Dict[str, Any] = {
-        "steps": PROTO_STEPS, "step": 0, "tone": "wait", "route": route, "route_live": (not paper_lane and str(live_route).upper() == "LIVE"),
+        "steps": PROTO_STEPS, "step": 0, "tone": "wait", "route": route, "route_live": route_live,
         "headline": "Waiting for a 15-minute candle to close across the 8 EMA",
         "sub": "", "ema8": e8, "spot": spot,
         "gap_pts": None if (e8 is None or not spot) else round(float(spot) - float(e8), 1),
