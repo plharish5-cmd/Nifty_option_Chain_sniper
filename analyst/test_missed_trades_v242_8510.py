@@ -76,3 +76,26 @@ def test_recovery_uses_closed_session_cross_not_forming_or_past_entry():
     for block in [{'sl_blocked_side':'LONG'},{'consumed_cross_ts':10},{'open':{'direction':'SHORT'}}]:
         assert not recover_missing_arm(bars,state=block,cfg={},session_day=DAY)
     assert not recover_missing_arm(bars,state={},cfg={},session_day='2026-11-19')
+
+
+def test_autonomous_telemetry_refresh_does_not_need_browser(monkeypatch):
+    async def run():
+        b=QuantTerminalBackend.__new__(QuantTerminalBackend)
+        b._telemetry_bg_refresh_min_sec=1
+        b.get_live_telemetry_stale_ok=AsyncMock(return_value={})
+        async def stop(_):
+            raise asyncio.CancelledError()
+        monkeypatch.setattr(asyncio,'sleep',stop)
+        try:
+            await b.start_telemetry_refresh_worker()
+        except asyncio.CancelledError:
+            pass
+        assert b.get_live_telemetry_stale_ok.await_count==1
+    asyncio.run(run())
+
+
+def test_autonomous_worker_is_started_and_cancelled():
+    from pathlib import Path
+    source=(Path(__file__).parents[1]/'engine_8510_live.py').read_text()
+    assert 'asyncio.create_task(backend.start_telemetry_refresh_worker())' in source
+    assert "getattr(app.state,'telemetry_refresh_task',None)" in source

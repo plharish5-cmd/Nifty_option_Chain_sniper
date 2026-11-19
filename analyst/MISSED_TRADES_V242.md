@@ -12,3 +12,6 @@ Verified from the running app and recorded database:
 - A 09:30-labelled 15m candle completes at 09:45. Closed-candle arming cannot honestly promise an entry at its opening timestamp. Chart arrows alone cannot prove executable option fills or all configured entry conditions.
 
 Broker follow-up: confirm the actual current outbound IP is registered in Dhan's broker settings. No broker allowlist, credentials, arming, targets, stops, routes, filters or caps were changed by this repair.
+
+## Browser-independent telemetry
+The original engine refreshed once at startup, then only through UI GET telemetry calls. A closed browser could therefore starve the scanner of current spot observations. A background task now calls the existing cache-guarded refresh path at its configured refresh cadence and is cancelled on shutdown. No new REST endpoint/source or relaxed age threshold was introduced. The broker's caching/backoff and slow requests can still cause a stale-data pause; a 3-second evaluation cadence is not a guarantee of new exchange ticks every three seconds.

@@ -5259,6 +5259,21 @@ class QuantTerminalBackend:
         async with self._telemetry_lock:
             return await self._build_live_telemetry()
 
+    async def start_telemetry_refresh_worker(self) -> None:
+        """Keep the existing quote refresh alive without an open browser.
+
+        Uses the same cache/lock/inflight guards as the UI; no second quote
+        source, no stale timestamp renewal and no overlapping refresh loop.
+        """
+        while True:
+            try:
+                await self.get_live_telemetry_stale_ok()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("Autonomous telemetry refresh failed: %s", exc)
+            await asyncio.sleep(max(1.0, float(self._telemetry_bg_refresh_min_sec)))
+
     async def get_live_telemetry_stale_ok(self) -> Dict[str, Any]:
         """Return last good payload immediately; refresh in background (prevents UI pile-up)."""
         if self.cached_telemetry:

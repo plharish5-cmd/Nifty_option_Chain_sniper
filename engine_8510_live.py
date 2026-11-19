@@ -148,6 +148,7 @@ async def startup_event():
         except Exception as e:
             log.warning("⚠ Dhan connection check exception on startup: %s", e)
 
+    app.state.telemetry_refresh_task = asyncio.create_task(backend.start_telemetry_refresh_worker())
     app.state.ema_live_cross_task = asyncio.create_task(backend.start_ema_live_cross_worker())
     app.state.ema8_proto_task = asyncio.create_task(backend.start_ema8_prototype_intrabar_worker())
     app.state.mj_dynamic_task = asyncio.create_task(backend.start_mj_dynamic_intrabar_worker())
@@ -1337,7 +1338,7 @@ async def stop_background_tasks():
     if recorder: recorder.stop()
     bridge=getattr(backend,'institutional_telemetry_bridge',None)
     if bridge:await asyncio.to_thread(bridge.close)
-    for task in (getattr(app.state,'institutional_task',None),getattr(app.state,'ict_smc_task',None),getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
+    for task in (getattr(app.state,'telemetry_refresh_task',None),getattr(app.state,'institutional_task',None),getattr(app.state,'ict_smc_task',None),getattr(app.state,'dhan_oi_task',None),getattr(app.state,'archive_task',None),backend.scanner_task):
         if task:task.cancel()
 
 @app.get("/api/dhan/config")
