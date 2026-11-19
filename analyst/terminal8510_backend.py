@@ -3840,7 +3840,10 @@ class QuantTerminalBackend:
 
     # ── OPTION-CHAIN CONTEXT (day OI bias, walls) ───────────────────────────
     def _oi_context_db_paths(self) -> List[Path]:
-        return [ROOT / "data/terminal8510/recording.sqlite3", Path(self.market_db)]
+        # The 8600 market database is canonical and keeps the continuous
+        # session while 8510 restarts. The shadow recorder is a fallback;
+        # preferring it can hide valid history behind a recording gap.
+        return [Path(self.market_db), ROOT / "data/terminal8510/recording.sqlite3"]
 
     def oi_context(self, spot: Optional[float] = None, max_age_sec: float = 20.0) -> Dict[str, Any]:
         """Day OI bias, 3-minute / 15-minute flow and walls from the recorded chain snapshots.

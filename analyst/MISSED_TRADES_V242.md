@@ -15,3 +15,7 @@ Broker follow-up: confirm the actual current outbound IP is registered in Dhan's
 
 ## Browser-independent telemetry
 The original engine refreshed once at startup, then only through UI GET telemetry calls. A closed browser could therefore starve the scanner of current spot observations. A background task now calls the existing cache-guarded refresh path at its configured refresh cadence and is cancelled on shutdown. No new REST endpoint/source or relaxed age threshold was introduced. The broker's caching/backoff and slow requests can still cause a stale-data pause; a 3-second evaluation cadence is not a guarantee of new exchange ticks every three seconds.
+
+## Final source and 8600 wrapper checks
+The later browser check found a restart gap (shadow recorder15:06:59→15:23:44) hiding continuous market snapshots, including15:15. The database preference now uses the canonical market history first and the 8510 shadow recorder only as fallback. Separate datasets are not spliced together.
+The /api/oclab/flow async handler called synchronous writer-flow analytics directly, blocking the event loop. Only that wrapper is offloaded with asyncio.to_thread; protected calculations are unchanged. A concurrent-coroutine regression verifies event-loop responsiveness and unchanged returned data.

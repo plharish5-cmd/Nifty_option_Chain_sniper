@@ -1534,7 +1534,10 @@ async def oclab(
         h = _h()
         if hasattr(h, "chain") and hasattr(h.chain, "get_writer_flow"):
             scope_val = "atm_10" if mode == "auto" and n == 10 else ("atm_5" if mode == "auto" and n == 5 else "all")
-            return h.chain.get_writer_flow(exp=opt_expiry, fut_src=fut_contract or "combined", tf=tf, hub=h, scope=scope_val)
+            # This is synchronous analytics. Do not stall every quote/health
+            # request on the ASGI event loop while writer flow is computed.
+            return await asyncio.to_thread(h.chain.get_writer_flow, exp=opt_expiry,
+                                           fut_src=fut_contract or "combined", tf=tf, hub=h, scope=scope_val)
 
     from ..oclab import run
     return await run(what, tf, mode, max(3, min(int(n), 25)), day)

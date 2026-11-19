@@ -99,3 +99,31 @@ def test_autonomous_worker_is_started_and_cancelled():
     source=(Path(__file__).parents[1]/'engine_8510_live.py').read_text()
     assert 'asyncio.create_task(backend.start_telemetry_refresh_worker())' in source
     assert "getattr(app.state,'telemetry_refresh_task',None)" in source
+
+
+def test_continuous_market_history_precedes_restart_gapped_shadow(tmp_path):
+    b=QuantTerminalBackend.__new__(QuantTerminalBackend)
+    b.market_db=tmp_path/'market.sqlite3'
+    assert b._oi_context_db_paths()[0]==b.market_db
+    assert b._oi_context_db_paths()[1].name=='recording.sqlite3'
+
+
+def test_8600_flow_wrapper_does_not_block_event_loop():
+    import ast,time,typing
+    from pathlib import Path
+    from types import SimpleNamespace
+    path=Path(__file__).parents[1]/'ict_smc_app/backend/app/api/main.py'
+    node=next(x for x in ast.parse(path.read_text()).body if isinstance(x,ast.AsyncFunctionDef) and x.name=='oclab')
+    node.decorator_list=[]
+    def slow(**kwargs):
+        time.sleep(.1)
+        return {'unchanged':True}
+    ns={'asyncio':asyncio,'Optional':typing.Optional,'Query':lambda x:x,
+        '_h':lambda:SimpleNamespace(chain=SimpleNamespace(get_writer_flow=slow))}
+    exec(compile(ast.Module(body=[node],type_ignores=[]),str(path),'exec'),ns)
+    async def run():
+        task=asyncio.create_task(ns['oclab']('flow'))
+        await asyncio.sleep(.01)
+        assert not task.done(), 'synchronous flow computation blocked the event loop'
+        assert await task=={'unchanged':True}
+    asyncio.run(run())
