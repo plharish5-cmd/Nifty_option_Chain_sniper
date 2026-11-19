@@ -59,6 +59,9 @@ def build_oi_decision_board(lane: str, scanner_cfg: Dict[str,Any], board: Dict[s
     scanner_cfg=copy.deepcopy(scanner_cfg or {});board=copy.deepcopy(board or {});row=copy.deepcopy(row or {})
     reads=board_reads_from_board(board);raw_sources={s.get('id'):s for s in board.get('sources',[]) if isinstance(s,dict)}
     warnings=[]
+    attempt=row.get('execution_decision') or {}
+    if attempt:
+        warnings.append("Last entry attempt " + str(attempt.get('time') or '') + " · " + str(attempt.get('stage') or '') + ": " + str(attempt.get('reason') or '') + "; separate from the OI vote below.")
     if lane=='prototype':
         call_cfg=load_ema8_prototype_cfg(scanner_cfg);configured=load_oi_filters_cfg(call_cfg)
         enabled=True;mode=configured['mode']
@@ -106,7 +109,7 @@ def build_oi_decision_board(lane: str, scanner_cfg: Dict[str,Any], board: Dict[s
     bv=verdict(buy_block,buy);sv=verdict(sell_block,sell)
     def brief(name,v):
         return name+(' would-block' if mode=='log_only' and v['would_block'] else ' blocked' if v['actual_block'] else ' allowed')+(' by '+', '.join(PROTO_OI_READ_LABELS.get(i,i) for i in v['blockers']) if v['blockers'] else '')
-    return {'version':'OI_DECISION_BOARD_V238','lane':lane,'title':'8 EMA Prototype' if lane=='prototype' else '8 EMA Reversal',
+    return {'version':'OI_DECISION_BOARD_V241','lane':lane,'title':'8 EMA Prototype' if lane=='prototype' else '8 EMA Reversal',
       'armed':armed_status(lane,row,state,positions),'mode':mode,'configured_mode':configured['mode'],
       'rule':buy.get('rule',configured['rule']),'configured_rule':configured['rule'],'enabled':enabled,
       'rows':rows,'context_rows':contexts,'buy':bv,'sell':sv,'warnings':warnings,'as_of':board.get('as_of'),

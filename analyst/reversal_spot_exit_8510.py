@@ -104,3 +104,16 @@ def reversal_spot_exit_tick(
         if sl > 0 and spot_idx >= sl:
             return tgt, sl, True, "SPOT_SL_HIT"
     return tgt, sl, False, ""
+
+def trail_bar_belongs_to_position(bar: Dict[str, Any], entry_time: Any, timeframe: str) -> bool:
+    """A pre-entry closed candle cannot tighten a newly opened trade's stop."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    try:
+        entry = datetime.fromisoformat(str(entry_time).replace(' IST', '').replace('Z', '+00:00'))
+        if entry.tzinfo is None:
+            entry = entry.replace(tzinfo=ZoneInfo('Asia/Kolkata'))
+        seconds = 300 if timeframe == '5m' else 900
+        return float(bar['ts']) + seconds > entry.timestamp()
+    except (ValueError, TypeError, KeyError, OverflowError):
+        return False

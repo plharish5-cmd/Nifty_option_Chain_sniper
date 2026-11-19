@@ -443,6 +443,12 @@ def evaluate_mj_sir_four_pack(
 
         cross_up = _find_cross_index(e4, e8, b15["close"], True, i)
         cross_dn = _find_cross_index(e4, e8, b15["close"], False, i)
+        # A newer opposite cross supersedes the previous setup.
+        if cross_up is not None and cross_dn is not None:
+            if cross_up > cross_dn:
+                cross_dn = None
+            else:
+                cross_up = None
 
         rev_status = _status("SCANNING", block_reason=rev_block or "")
         t_i = (n - 1) if dyn_on else i
@@ -546,7 +552,7 @@ def evaluate_mj_sir_four_pack(
                 if ev and ev.get("reason"):
                     reasons.append(str(ev["reason"]))
             if reasons:
-                rev_status = _status("NO_TRADE" if "Missed" in reasons[0] else "ARMED", block_reason=reasons[0])
+                rev_status = _status("NO_TRADE" if "Missed" in reasons[0] else "ARMED", block_reason=reasons[0], extra={"reversal_side": "UP" if up_eval else "DOWN"})
             elif cross_up is None and cross_dn is None:
                 rev_status = _status("SCANNING", block_reason="NO TRADE — No recent 4/8 cross")
         return rev_signals, rev_status
