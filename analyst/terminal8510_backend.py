@@ -896,12 +896,16 @@ def simulate_prototype_spot_exit(
         threshold_ts = int(entry_ts) if (entry_ts is not None and entry_ts > 0) else int(bars[start_idx].get("ts") or 0)
         candles = day_1m[day_1m["ts"] > threshold_ts].sort_values("ts")
         checked_15m_closes = set()
-        # trail state (only used when trail_after_target): armed once price reaches trigger_spot,
-        # then the stop ratchets monotonically to the prior CLOSED candle extreme; exit on a candle
-        # that CLOSES through the trail. prev_ext holds the prior candle's low (long) / high (short).
+        # Trail state (owner spec, confirmed 20 Nov): after +40 the stop ratchets monotonically to the
+        # prior COMPLETED 15-MINUTE candle's low (long) / high (short), and the trade exits the instant
+        # price TOUCHES the stop (intrabar), not on a close. _prev15_ext holds that 15m extreme; the
+        # current 15m window is accumulated across the 1-minute walk and rolled over on each boundary.
         _trail_armed = False
         _trail_stop = stop_spot
-        _prev_ext: Optional[float] = None
+        _prev15_ext: Optional[float] = None
+        _cur15_key: Optional[int] = None
+        _cur15_lo = float("inf")
+        _cur15_hi = float("-inf")
 
         for _, row in candles.iterrows():
             m_ts = int(row["ts"])
@@ -915,6 +919,18 @@ def simulate_prototype_spot_exit(
             m_day = str(row.get("day") or "")
             if not m_day and m_ts > 0:
                 m_day = pd.to_datetime(m_ts, unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%Y-%m-%d")
+            # Roll the 15-minute window: when this 1m candle enters a new 15m bucket, the window just
+            # completed becomes the trail reference (_prev15_ext).
+            _bucket = (m_ts // 900) * 900
+            if _cur15_key is None:
+                _cur15_key = _bucket
+            elif _bucket != _cur15_key:
+                _prev15_ext = (_cur15_lo if is_long else _cur15_hi)
+                _cur15_key = _bucket
+                _cur15_lo = float("inf")
+                _cur15_hi = float("-inf")
+            _cur15_lo = min(_cur15_lo, m_lo)
+            _cur15_hi = max(_cur15_hi, m_hi)
             if not m_day:
                 m_day = entry_day
 
@@ -1027,18 +1043,16 @@ def simulate_prototype_spot_exit(
                         _trail_armed = True
                         _trail_stop = entry_spot if trail_move_to_breakeven else stop_spot
                 if _trail_armed:
-                    if _prev_ext is not None:
-                        _trail_stop = (max(_trail_stop, _prev_ext) if is_long
-                                       else min(_trail_stop, _prev_ext))
-                    if (is_long and m_c <= _trail_stop) or (not is_long and m_c >= _trail_stop):
-                        # Gap-aware fill: a stop fills at the stop only if the bar actually TRADED
-                        # through it; if the bar gapped past the stop (never reached it), the fill is
-                        # the bar's open (first executable price), not the un-traded stop. Prevents
-                        # overstating profit on a gap-through (ChatGPT review P1#4).
-                        if is_long:
-                            fill = _trail_stop if m_hi >= _trail_stop else min(_trail_stop, m_o)
-                        else:
-                            fill = _trail_stop if m_lo <= _trail_stop else max(_trail_stop, m_o)
+                    # ratchet to the prior COMPLETED 15m candle extreme (monotonic)
+                    if _prev15_ext is not None:
+                        _trail_stop = (max(_trail_stop, _prev15_ext) if is_long
+                                       else min(_trail_stop, _prev15_ext))
+                    # exit the INSTANT price TOUCHES the stop intrabar (owner spec: touch, not close)
+                    if (is_long and m_lo <= _trail_stop) or (not is_long and m_hi >= _trail_stop):
+                        # Gap-aware fill: fill AT the stop when the bar traded through it; if the bar
+                        # GAPPED past the stop (open already beyond it), the fill is the open — the
+                        # first executable price — not the un-traded stop (ChatGPT review P1#4).
+                        fill = min(_trail_stop, m_o) if is_long else max(_trail_stop, m_o)
                         _t = round(fill, 2)
                         pnl = round((_t - entry_spot) if is_long else (entry_spot - _t), 2)
                         return {
@@ -1056,7 +1070,6 @@ def simulate_prototype_spot_exit(
                             "exit_ts": m_ts,
                             "is_ambiguous": False,
                         }
-                _prev_ext = m_lo if is_long else m_hi
 
             # 5. Check opposite 8 EMA close at 15m candle close ONLY
             for c_ts, b15 in b15_by_close_ts.items():
@@ -8726,7 +8739,15 @@ class QuantTerminalBackend:
                                 should_close = True
                                 exit_reason = "SPOT_SL_HIT"
                 if is_proto_pos and not should_close:
-                    proto_eod_hm = str(self.cfg.get("eod_square_off_time", "15:20")).strip()[:5]
+                    # Owner spec: the 8 EMA Prototype squares off at its own time (15:15 by default);
+                    # Stage 2/3/Reversal keep the global eod time.
+                    if str(p.get("strategy_id") or "").upper().startswith("EMA8_PROTOTYPE"):
+                        proto_eod_hm = str(
+                            (self.scanner_cfg.get("ema8_prototype") or {}).get("square_off_time")
+                            or self.cfg.get("eod_square_off_time", "15:20")
+                        ).strip()[:5]
+                    else:
+                        proto_eod_hm = str(self.cfg.get("eod_square_off_time", "15:20")).strip()[:5]
                     if now_dt.strftime("%H:%M") >= proto_eod_hm:
                         should_close = True
                         exit_reason = f"EOD_SQUARE_OFF_{proto_eod_hm}"

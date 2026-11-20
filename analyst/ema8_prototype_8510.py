@@ -29,13 +29,16 @@ DEFAULT_CFG: Dict[str, Any] = {
     "slow_market_exact_line": False,
     "target_pts": 40.0,
     "sl_pts": 40.0,
-    # v2.0.44 — "+40 then trail" (owner decision 20 Nov 2026): when ON, target_pts is the TRIGGER,
-    # not the exit. On reaching it the stop moves to breakeven and then trails the prior CLOSED 1m
-    # candle low/high (ratchet-only); the trade exits when a candle CLOSES through the trail
-    # (SPOT_TRAIL_EXIT). Opposite-15m-close and 15:20 still override. OFF = the old fixed +40.
+    # v2.0.44 — "+40 then trail" (owner decision 20 Nov 2026, confirmed to ChatGPT): when ON,
+    # target_pts is the TRIGGER, not the exit. On reaching it the stop moves to breakeven, then
+    # trails the previous COMPLETED 15-MINUTE candle's low (CE) / high (PE), ratchet-only, and the
+    # trade exits the INSTANT price TOUCHES that stop (not on a candle close). Opposite-15m-close and
+    # the square-off still override. OFF = the old fixed +40.
     "trail_after_target_enabled": True,
     "trail_trigger_pts": 40.0,
     "trail_move_to_breakeven": True,
+    # Owner: square the Prototype off at 15:15 (the rest of the desk may differ).
+    "square_off_time": "15:15",
     "e8_refresh_seconds": 3.0,        # live: the 8 EMA and the touch are checked this often (owner, 12 Nov: "as soon as it touches")
     "backtest_tick_seconds": 30.0,    # backtest/replay grid inside a 15m bar (1-minute data cannot be read finer than this honestly)
     "min_option_premium_inr": 200.0,
@@ -481,13 +484,15 @@ def prototype_trail_tick(
 ) -> Tuple[float, bool, bool, str]:
     """Live "+40 then trail" tick for the Prototype. Returns (new_stop, new_armed, hit, reason).
 
-    Mirrors the replay trail (simulate_prototype_spot_exit) for runtime position management:
-      - Pre-trigger: the fixed stop applies on the live tick (intratick, like the replay's intrabar SL).
-        reaching `trigger_level` ARMS the trail and moves the stop to breakeven (entry).
-      - Armed: on each NEW CLOSED `bar`, ratchet the stop to the bar's low (long) / high (short),
-        monotonic; exit when that bar CLOSES through the stop (SPOT_TRAIL_EXIT). A gap that closes
-        through books the stop here because the fill uses the live tick downstream, not this level.
-      - `bar` must be passed ONLY once per newly-closed candle (caller de-dupes by bar ts), else None.
+    Owner spec (20 Nov 2026, confirmed to ChatGPT): after +40 NIFTY points, trail the previous
+    COMPLETED 15-minute candle's low (CE) / high (PE), stop never loosens, and exit IMMEDIATELY the
+    moment price TOUCHES the stop (not on a candle close):
+      - Pre-trigger: the fixed stop applies on the live tick; reaching `trigger_level` ARMS the trail
+        and moves the stop to breakeven (entry).
+      - Armed: on each NEW completed 15m `bar`, ratchet the stop to the bar's low/high (monotonic);
+        then exit on the live tick the instant it touches the stop (SPOT_TRAIL_EXIT).
+      - `bar` is the latest COMPLETED 15m candle, passed ONLY once per new bar (caller de-dupes by
+        bar ts), else None. The tick-touch check runs every call regardless of `bar`.
     Pure; never raises on well-formed inputs.
     """
     new_stop, new_armed = float(stop_level), bool(armed)
@@ -499,14 +504,17 @@ def prototype_trail_tick(
         if (is_long and spot_idx >= trigger_level) or ((not is_long) and spot_idx <= trigger_level):
             new_armed = True
             new_stop = float(spot_entry) if move_to_breakeven else float(stop_level)
-    if new_armed and bar is not None:
-        try:
-            ext = float(bar["low"]) if is_long else float(bar["high"])
-            close = float(bar["close"])
-        except (KeyError, TypeError, ValueError):
-            return new_stop, new_armed, False, ""
-        new_stop = max(new_stop, ext) if is_long else min(new_stop, ext)
-        if (is_long and close <= new_stop) or ((not is_long) and close >= new_stop):
+    if new_armed:
+        # ratchet the stop to the prior completed 15m candle's low (long) / high (short)
+        if bar is not None:
+            try:
+                ext = float(bar["low"]) if is_long else float(bar["high"])
+            except (KeyError, TypeError, ValueError):
+                ext = None
+            if ext is not None:
+                new_stop = max(new_stop, ext) if is_long else min(new_stop, ext)
+        # exit the INSTANT the live tick TOUCHES the stop (owner spec: touch, not close-through)
+        if (is_long and spot_idx <= new_stop) or ((not is_long) and spot_idx >= new_stop):
             return new_stop, new_armed, True, "SPOT_TRAIL_EXIT"
     return new_stop, new_armed, False, ""
 

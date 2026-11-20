@@ -43,8 +43,12 @@ def _series_long(entry_ts):
         (25569, 25548, 25552),   # closes below trail (trail ~25558) -> SPOT_TRAIL_EXIT
         (25560, 25545, 25558),
     ]
+    # 15-minute candles (900s apart) so the owner's 15m trail ratchets once per bar.
+    base_min = 0
     for i, (h, l, c) in enumerate(path):
-        out.append(_m(entry_ts + 60 * (i + 1), d, f"{hm}{i+1}", c, h, l, c))
+        tot = base_min + 15 * (i + 1)
+        hm = f"10:{tot:02d}" if tot < 60 else f"11:{tot-60:02d}"
+        out.append(_m(entry_ts + 900 * (i + 1), d, hm, c, h, l, c))
     return out
 
 
