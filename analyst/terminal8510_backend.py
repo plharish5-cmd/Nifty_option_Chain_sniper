@@ -4161,6 +4161,46 @@ class QuantTerminalBackend:
 
         return count_matrix_rows_today(self._matrix_recorder_db_path())
 
+    # ── REAL-ORDER PREFLIGHT (readiness check — places NOTHING) ──────────────
+    async def real_order_preflight(self, lot_qty: int = 65, est_premium: float = 0.0) -> Dict[str, Any]:
+        """Would a real order be ACCEPTED right now? Read-only; places no order. v2.0.47.
+
+        Aggregates the pieces that decide a real Dhan order's fate (connected, token, IP allowlist,
+        funds vs cost) plus whether the desk is LIVE-armed. Never raises.
+        """
+        from analyst.real_order_preflight_8510 import build_order_preflight
+        try:
+            masked = self.broker.get_masked_config()
+        except Exception:
+            masked = {}
+        bal = 0.0
+        try:
+            funds = await self.broker.get_fundlimit()
+            bal = float((funds or {}).get("availabelBalance",
+                        (funds or {}).get("availableBalance", 0)) or 0.0)
+        except Exception:
+            bal = 0.0
+        prem = float(est_premium or 0.0)
+        if prem <= 0:
+            try:
+                prem = float((self.scanner_cfg.get("ema8_prototype") or {}).get("min_option_premium_inr") or 0.0)
+            except Exception:
+                prem = 0.0
+        if prem <= 0:
+            prem = 250.0  # rough ATM premium estimate for the funds check
+        est_cost = round(prem * int(lot_qty), 2)
+        try:
+            desk_live = self.execution_mode == "BOTH"
+        except Exception:
+            desk_live = False
+        report = build_order_preflight(masked, bal, est_cost, desk_live_armed=desk_live, lane_live=True)
+        report["est_order_cost"] = est_cost
+        report["est_premium"] = prem
+        report["lot_qty"] = int(lot_qty)
+        report["funds_available"] = round(bal, 2)
+        report["places_order"] = False
+        return report
+
     # ── 8600 BOARD (every option-chain read, one switch each) ───────────────
     def desk8600_board(self) -> Dict[str, Any]:
         """All 8600 / option-chain sources with their current reading. Never raises."""
