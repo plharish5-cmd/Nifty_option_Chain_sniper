@@ -4180,7 +4180,9 @@ class QuantTerminalBackend:
 
     def desk8600_link(self) -> Dict[str, Any]:
         """Is the 8600 app connected and live, are chain snapshots live, and which build is running."""
-        from analyst.desk8600_link_8510 import BUILD_LABEL, WHATS_NEW, build_id, link_status
+        from analyst.desk8600_link_8510 import (
+            BUILD_LABEL, WHATS_NEW, build_id, link_status, stale_banner, log_staleness_transition,
+        )
 
         try:
             mkt = None
@@ -4198,6 +4200,20 @@ class QuantTerminalBackend:
             self._build_id = build_id(ROOT)
         out["build"] = {"label": BUILD_LABEL, "commit": self._build_id}
         out["whats_new"] = WHATS_NEW
+        # v2.0.45: one loud, actionable banner when 8600 can't be trusted (display only; OI stays
+        # fail-open and never gates), plus a staleness onset/offset log for diagnosis. The market-
+        # closed case is expected, not an alarm, so suppress the banner then.
+        try:
+            if out.get("market_open") is False:
+                out["stale_banner"] = None
+            else:
+                out["stale_banner"] = stale_banner(out)
+            prev = self.__dict__.get("_desk8600_prev_state")
+            log_staleness_transition(prev, out, datetime.now(IST),
+                                     ROOT / "data" / "terminal8510" / "desk8600_staleness.log")
+            self._desk8600_prev_state = str((out.get("desk8600") or {}).get("state") or "")
+        except Exception:
+            out["stale_banner"] = out.get("stale_banner")  # never break the link payload
         return out
 
     # ── 8600 TICKET LANE ────────────────────────────────────────────────────

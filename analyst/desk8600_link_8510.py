@@ -121,3 +121,100 @@ def link_status(bridge: Any, oi_ctx: Optional[Dict[str, Any]], now: datetime, *,
             if x["state"] != "LIVE":
                 x["fix"] = "Market is closed now — this is expected. It turns LIVE after 09:15 when the 8600 app is running."
     return {"desk8600": d, "chain": c, "market_open": market_open, "checked_at": now.strftime("%H:%M:%S")}
+
+
+# --- v2.0.45: one loud, actionable stale banner + staleness transition log -------------------
+# Display + observability only. The OI filters remain LOG mode / fail-open: a stale read is
+# ignored and never blocks, skips, or exits a trade. These helpers only decide what to SHOW the
+# owner and what to LOG — they take no trade decision.
+
+STALE_FIX_CMD = "sudo systemctl restart paperdesk-ict.service"
+# States that mean "8600 data cannot be trusted right now" (for the headline banner only).
+_BANNER_STATES = {"STALE", "NOT_ANSWERING", "TIMEOUT", "NO_SESSION"}
+
+
+def _minutes_from_age(age_sec: Optional[int], detail: str) -> Optional[int]:
+    """Best-effort age in whole minutes: prefer a numeric age, else parse 'N min old' text."""
+    if isinstance(age_sec, (int, float)) and age_sec >= 0:
+        return int(age_sec) // 60
+    low = str(detail or "").lower()
+    if "min old" in low:
+        for tok in low.replace("(", " ").replace(")", " ").split():
+            if tok.isdigit():
+                return int(tok)
+    return None
+
+
+def stale_banner(status: Dict[str, Any], *, staleness_alert_min: int = 3) -> Optional[Dict[str, Any]]:
+    """One headline banner when the 8600 feed cannot be trusted, else None.
+
+    Replaces five quiet '— stale' rows as the only signal. Returns:
+      {level, state, age_min, text, fix_cmd}
+    level: 'warn' (stale/old data) or 'error' (not answering / down).
+    Never raises; display only; does not change any trade decision.
+    """
+    try:
+        desk = (status or {}).get("desk8600") or {}
+        chain = (status or {}).get("chain") or {}
+        dstate = str(desk.get("state") or "")
+        cstate = str(chain.get("state") or "")
+        if dstate == "LIVE" and cstate == "LIVE":
+            return None
+        if dstate not in _BANNER_STATES and cstate != "STALE":
+            return None
+
+        age_min = _minutes_from_age(desk.get("bar_age_sec"), desk.get("detail") or "")
+        chain_min = _minutes_from_age(None, chain.get("detail") or "")
+        if chain_min is not None and (age_min is None or chain_min > age_min):
+            age_min = chain_min
+
+        # Threshold applies when we actually know the age; a down link (NOT_ANSWERING) always shows.
+        down = dstate in {"NOT_ANSWERING", "TIMEOUT"}
+        if not down and age_min is not None and age_min < staleness_alert_min:
+            return None
+
+        if down:
+            level, state = "error", dstate
+            head = "⚠ 8600 app is NOT answering"
+        else:
+            level, state = "warn", "STALE"
+            age_txt = f"last snapshot {age_min} min old" if age_min is not None else "data is OLD"
+            head = f"⚠ 8600 data is STALE ({age_txt})"
+        text = (f"{head}. OI filters are being IGNORED (fail-open) — trades still run. "
+                f"To restore: restart the 8600 app ({STALE_FIX_CMD}) and check its Dhan token.")
+        return {"level": level, "state": state, "age_min": age_min, "text": text, "fix_cmd": STALE_FIX_CMD}
+    except Exception:
+        return None
+
+
+def log_staleness_transition(prev_state: Optional[str], status: Dict[str, Any], now: datetime,
+                             log_path: Any) -> Optional[str]:
+    """Append a STALE START / STALE END line on a transition; return the line written, else None.
+
+    prev_state is the caller-held previous desk8600 state ('' / None on first call). Pure I/O:
+    the caller passes the log path (so tests can inject a temp file). Never raises.
+    """
+    try:
+        desk = (status or {}).get("desk8600") or {}
+        cur = str(desk.get("state") or "")
+        prev = str(prev_state or "")
+        was_bad = prev in _BANNER_STATES
+        is_bad = cur in _BANNER_STATES
+        if was_bad == is_bad:
+            return None  # no transition
+        ts = now.strftime("%H:%M:%S")
+        if is_bad:
+            bar = desk.get("bar_time") or "?"
+            line = f"STALE START {ts} (state {cur}, last bar {bar}, age {desk.get('bar_age_sec')}s)"
+        else:
+            line = f"STALE END {ts} (recovered, state {cur})"
+        try:
+            p = Path(log_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with p.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+        except Exception:
+            pass  # logging must never break the caller
+        return line
+    except Exception:
+        return None

@@ -3262,8 +3262,41 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             el.querySelector("span:last-child").style.color = col;
             el.title = text;
         }
+        // v2.0.45: one loud, dismissible banner when 8600 data can't be trusted. Display only —
+        // the OI filters stay fail-open and never block a trade; this just stops the owner guessing.
+        let _staleBannerDismissed = "";
+        function renderStaleBanner(b) {
+            let el = document.getElementById("desk8600StaleBanner");
+            if (!b || !b.text) { if (el) el.style.display = "none"; return; }
+            if (_staleBannerDismissed === b.text) { if (el) el.style.display = "none"; return; }
+            if (!el) {
+                el = document.createElement("div");
+                el.id = "desk8600StaleBanner";
+                el.style.cssText = "position:sticky; top:0; z-index:9999; margin:0 0 8px 0; padding:9px 12px;" +
+                    "border-radius:6px; font-family:var(--font-mono); font-size:12px; font-weight:700;" +
+                    "display:flex; align-items:center; gap:10px; justify-content:space-between;";
+                const host = document.querySelector(".proto-8600-strip") || document.body;
+                host.insertBefore(el, host.firstChild);
+            }
+            const err = b.level === "error";
+            el.style.background = err ? "#3b1012" : "#3a2a06";
+            el.style.border = "1px solid " + (err ? "#f87171" : "#fbbf24");
+            el.style.color = err ? "#fecaca" : "#fde68a";
+            el.style.display = "flex";
+            const msg = document.createElement("span");
+            msg.textContent = b.text;
+            const x = document.createElement("button");
+            x.textContent = "✕";
+            x.title = "Dismiss (reappears if still stale)";
+            x.style.cssText = "background:transparent; border:0; color:inherit; cursor:pointer; font-size:14px; font-weight:800;";
+            x.onclick = function () { _staleBannerDismissed = b.text; el.style.display = "none"; };
+            el.innerHTML = "";
+            el.appendChild(msg);
+            el.appendChild(x);
+        }
         let _deskLinkSeen = 0;
         function renderDeskLink(l) {
+            if (l) renderStaleBanner(l.stale_banner);
             if (l && l.desk8600) {
                 const short = { LIVE: "LIVE", STALE: "OLD DATA", NO_SESSION: "no bars yet", STARTING: "starting", NOT_ANSWERING: "DEAD — not answering", OFF: "off" };
                 bnrLink("bnrLink8510", "LIVE", "LIVE · build " + ((l.build || {}).commit || "?"));
