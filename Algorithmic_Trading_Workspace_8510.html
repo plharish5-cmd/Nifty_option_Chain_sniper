@@ -5421,7 +5421,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     <td>${fmtOptionPrem(o.option_exit)}</td>
                     <td style="color:var(--text-dim);">${formatDeskTimestamp(o.created_at)}</td>
                     <td>${exitCell}</td>
-                    <td><span class="status-badge ${o.order_status === 'FILLED' ? 'badge-bull' : (o.order_status === 'CANCELLED' ? 'badge-side' : 'badge-bear')}">${o.order_status}</span></td>
+                    <td><span class="status-badge ${o.order_status === 'FILLED' ? 'badge-bull' : (o.order_status === 'CANCELLED' ? 'badge-side' : 'badge-bear')}">${o.order_status}</span>${(/REJECT|FAIL/i.test(String(o.order_status || '')) && (o.rejection_reason_display || o.rejection_reason)) ? `<div style="margin-top:3px; font-size:10px; font-family:var(--font-mono); color:${o.rejection_origin === 'LOCAL' ? '#fbbf24' : '#f87171'};" title="LOCAL = the app blocked it before Dhan · BROKER = Dhan rejected it">${String(o.rejection_reason_display || o.rejection_reason).replace(/</g,'&lt;')}</div>` : ''}</td>
                 </tr>
             `;
             }).join("");
