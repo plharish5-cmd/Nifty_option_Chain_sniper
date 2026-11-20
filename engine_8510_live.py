@@ -851,6 +851,12 @@ async def api_desk8600_link_get():
     return JSONResponse(content={"ok": True, **backend.desk8600_link()})
 
 
+@app.get("/api/real-order/preflight")
+async def api_real_order_preflight_get():
+    """Readiness check for a real order (connected/token/IP/funds/live-arm). Places NOTHING."""
+    return JSONResponse(content={"ok": True, **(await backend.real_order_preflight())})
+
+
 @app.get("/api/desk8600/ticket-lane")
 async def api_desk8600_ticket_lane_get():
     """8600 Ticket lane: switches and what the lane sees now."""

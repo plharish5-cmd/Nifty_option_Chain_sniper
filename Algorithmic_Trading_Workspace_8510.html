@@ -1788,6 +1788,13 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
 <div id="dhanApiConfigCard" class="card" style="margin:12px 0;border:1px solid #334155">
 <div class="panel-heading" style="padding:12px;"><b>🔒 Dhan API — Live Data + Order Placement</b> | <span id="dhanShutterConnected">Connected = checking</span> | Token Valid Till: <span id="dhanShutterExpiry">—</span> | <span id="dhanShutterLive">Live Data: —</span> | <span id="dhanShutterOrders">Order Placement: DISABLED (PAPER)</span> | <span id="dhanShutterHint">always visible</span></div>
 <div data-dhan-inner="1" style="padding:14px">
+                <div id="preflightBox" style="margin-bottom:12px; padding:10px 12px; border:1px solid #334155; border-radius:6px; background:rgba(15,23,42,0.6);">
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <button id="preflightBtn" onclick="runRealOrderPreflight()" style="padding:7px 14px; background:#1d4ed8; color:#fff; border:0; border-radius:5px; font-weight:700; cursor:pointer; font-family:var(--font-mono); font-size:12px;">🔎 Check Real-Order Readiness</button>
+                        <span id="preflightVerdict" style="font-family:var(--font-mono); font-size:12px; color:#94a3b8;">Checks IP · token · funds · live-arm. Places no order.</span>
+                    </div>
+                    <div id="preflightChecks" style="margin-top:8px; font-family:var(--font-mono); font-size:11.5px; line-height:1.7;"></div>
+                </div>
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
                     <div style="display:flex; align-items:center; gap:10px;">
                         <span style="font-size:16px; font-weight:800; color:#f8fafc;">⚡ Dhan API Connection — Live Data + Order Placement</span>
@@ -3289,6 +3296,31 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 '<div style="font-size:11px;">checked ' + d86Esc(l.checked_at || "") + '</div>';
             const w = document.getElementById("deskWhatsNew");
             if (w && Array.isArray(l.whats_new)) w.innerHTML = l.whats_new.map((r) => '<div>• <b style="color:#e2e8f0;">' + d86Esc(r[0]) + '</b> — ' + d86Esc(r[1]) + '</div>').join("");
+        }
+        // v2.0.47: real-order readiness preflight — places NOTHING, just reports whether a real
+        // order would be accepted (connected/token/IP/funds) and whether it would route real vs paper.
+        async function runRealOrderPreflight() {
+            const btn = document.getElementById("preflightBtn");
+            const vEl = document.getElementById("preflightVerdict");
+            const cEl = document.getElementById("preflightChecks");
+            if (btn) { btn.disabled = true; btn.textContent = "Checking…"; }
+            try {
+                const r = await fetch("/api/real-order/preflight", { cache: "no-store" });
+                const d = await r.json();
+                const col = d.verdict === "READY_REAL" ? "#34d399" : (d.verdict === "READY_PAPER" ? "#fbbf24" : "#f87171");
+                if (vEl) { vEl.textContent = d.summary || ""; vEl.style.color = col; vEl.style.fontWeight = "800"; }
+                if (cEl) {
+                    cEl.innerHTML = (d.checks || []).map(function (c) {
+                        const mk = c.ok ? '<span style="color:#34d399;">✓</span>' : '<span style="color:#f87171;">✗</span>';
+                        return mk + ' <b style="color:#e2e8f0;">' + String(c.label).replace(/</g, "&lt;") + '</b> — '
+                             + String(c.detail || "").replace(/</g, "&lt;");
+                    }).join("<br>");
+                }
+            } catch (e) {
+                if (vEl) { vEl.textContent = "Preflight failed: " + e; vEl.style.color = "#f87171"; }
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = "🔎 Check Real-Order Readiness"; }
+            }
         }
         // Asked directly, so the cards fill even when the main telemetry stream is not delivering.
         async function pollDesk8600Direct() {
