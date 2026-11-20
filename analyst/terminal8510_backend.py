@@ -820,6 +820,24 @@ def synthesize_option_premium_from_spot(
     return opt_entry, opt_exit
 
 
+def select_paper_exit_ltp(fresh_ltp: Any, cache_ltp: Any) -> float:
+    """Pick the option price to book for a PAPER exit, or 0.0 to leave it pending.
+
+    v2.0.46 — the -90/-84 fake-P&L fix. Prefer a FRESH broker quote; fall back only to the live
+    tick cache (same-tick source); NEVER the stored row current_ltp, which is the stale value that
+    made a +40 index move book as a tiny option loss. Returns 0.0 when no fresh/live price exists,
+    so the caller leaves the position pending instead of inventing a P&L. Pure; never raises.
+    """
+    for v in (fresh_ltp, cache_ltp):
+        try:
+            f = float(v or 0.0)
+        except (TypeError, ValueError):
+            f = 0.0
+        if f > 0:
+            return f
+    return 0.0
+
+
 def _proto_trail_cfg() -> Tuple[bool, Optional[float], bool]:
     """Effective Prototype trail settings (enabled, trigger_pts, move_to_breakeven).
 
@@ -8785,20 +8803,24 @@ class QuantTerminalBackend:
                 return await self._close_live_position(row, reason, spot_exit, ledger_qty=qty)
 
             else:
-                # 3. Paper position: close at current quote
-                ltp = None
+                # 3. Paper position: book a FRESH quote for THIS contract, or leave pending.
+                # v2.0.46 — the -90/-84 fix. Previously this booked the cached quote and then the
+                # stored current_ltp (a stale value) BEFORE trying a fresh fetch, so a +40 index
+                # move could book as a tiny option loss. Now: fresh broker quote first, then the
+                # live tick cache; never the stale stored row LTP; pend if neither is available.
+                fresh_ltp = 0.0
                 if sec_id:
-                    ltp = float((self.cached_telemetry.get("quotes") or {}).get(sec_id) or 0.0)
-                if not ltp or ltp <= 0:
-                    ltp = float(cur_row["current_ltp"] or pos.get("current_ltp") or 0.0)
-                if not ltp or ltp <= 0:
                     try:
                         quotes = await self.broker.get_marketfeed_ltp({"NSE_FNO": [int(sec_id)]})
-                        ltp = float(quotes.get(sec_id) or 0.0)
+                        fresh_ltp = float(quotes.get(sec_id) or 0.0)
                     except Exception:
-                        pass
+                        fresh_ltp = 0.0
+                cache_ltp = 0.0
+                if sec_id:
+                    cache_ltp = float((self.cached_telemetry.get("quotes") or {}).get(sec_id) or 0.0)
+                ltp = select_paper_exit_ltp(fresh_ltp, cache_ltp)
                 if not ltp or ltp <= 0:
-                    log.error("No valid quote for paper position %s. Leaving OPEN to retry.", pos_id)
+                    log.error("No FRESH quote for paper exit %s — leaving pending (no stale fill).", pos_id)
                     with sqlite3.connect(self.ledger_db) as conn:
                         conn.execute("UPDATE positions SET status='OPEN', exit_reason='' WHERE position_id=?", (pos_id,))
                     return {"ok": False, "error": "MISSING_QUOTE_RETRY"}
