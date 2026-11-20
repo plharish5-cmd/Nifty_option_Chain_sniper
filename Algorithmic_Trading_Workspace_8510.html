@@ -1857,11 +1857,11 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <span style="color:var(--text-dim);">Dhan Whitelisted IP:</span>
-                            <input type="text" id="dhanWhitelistedIpInput" placeholder="e.g. 49.205.39.195" style="width:160px; padding:3px 8px; font-size:12px; font-family:var(--font-mono);" onchange="checkIpMatchStatus()">
+                            <input type="text" id="dhanWhitelistedIpInput" placeholder="e.g. 49.205.39.195" style="width:160px; padding:3px 8px; font-size:12px; font-family:var(--font-mono);" onchange="refreshPublicIpCheck(true)">
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <span style="color:var(--text-dim);">Status:</span>
-                            <span id="dhanIpMatchBadge" class="status-badge badge-bull">MATCHED ✅</span>
+                            <button type="button" onclick="refreshPublicIpCheck(true)">Check IP now</button><span id="dhanIpMatchBadge" class="status-badge badge-side">NOT CHECKED</span>
                         </div>
                     </div>
                 </div>
@@ -3915,7 +3915,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     document.getElementById("dhanCurrentIpDisplay").textContent = data.current_ip || "--";
                 }
                 if (document.getElementById("dhanWhitelistedIpInput")) {
-                    document.getElementById("dhanWhitelistedIpInput").value = data.whitelisted_ip || data.current_ip || "";
+                    document.getElementById("dhanWhitelistedIpInput").value = data.whitelisted_ip || "";
                 }
                 if (data.allow_off_hours_paper_testing !== undefined) {
                     cachedAllowOffHours = Boolean(data.allow_off_hours_paper_testing);
@@ -3927,7 +3927,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                         bd.style.color = cachedAllowOffHours ? "var(--emerald)" : "var(--crimson)";
                     }
                 }
-                checkIpMatchStatus();
+                refreshPublicIpCheck();
 
                 if (data.configured && !data.is_expired) {
                     console.log("Auto-loaded saved Dhan API — No need to re-enter.");
@@ -3951,6 +3951,29 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 console.error("loadDhanConfig error:", e);
             }
         }
+
+        let publicIpCheckBusy = false;
+        async function refreshPublicIpCheck(force = false) {
+            if (publicIpCheckBusy) return;
+            publicIpCheckBusy = true;
+            const badge = document.getElementById("dhanIpMatchBadge");
+            try {
+                const res = await fetch("/api/dhan/ip-check?force=" + force, {cache:"no-store"});
+                if (!res.ok) throw new Error("IP check unavailable");
+                const data = await res.json();
+                document.getElementById("dhanCurrentIpDisplay").textContent = data.current_ip || "Unavailable";
+                const labels = {MATCH:"MATCH ✅", MISMATCH:"MISMATCH ❌", NOT_CONFIGURED:"SAVED IP NOT SET", CHECK_FAILED:"CHECK FAILED"};
+                badge.textContent = labels[data.status] || "UNKNOWN";
+                badge.className = "status-badge " + (data.status === "MATCH" ? "badge-bull" : "badge-bear");
+                badge.title = "Compared with saved app IP: " + (data.saved_ip || "not set") + ". Checked: " + data.checked_at + ". Does not verify Dhan registration or order eligibility.";
+            } catch (_) {
+                badge.textContent = "IP CHECK UNAVAILABLE";
+                badge.className = "status-badge badge-side";
+                document.getElementById("dhanCurrentIpDisplay").textContent = "Unavailable";
+            } finally { publicIpCheckBusy = false; }
+        }
+        setInterval(() => refreshPublicIpCheck(), 30000);
+        window.addEventListener("online", () => refreshPublicIpCheck(true));
 
         function checkIpMatchStatus() {
             const currIpEl = document.getElementById("dhanCurrentIpDisplay");

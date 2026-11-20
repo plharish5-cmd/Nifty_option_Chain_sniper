@@ -1351,6 +1351,13 @@ async def api_dhan_get_config():
     return JSONResponse(content=backend.get_dhan_config())
 
 
+@app.get("/api/dhan/ip-check")
+async def api_public_ip_check(force: bool = False):
+    from analyst.public_ip_check_8510 import public_ip_status
+    result = await public_ip_status(backend.broker.whitelisted_ip, force=force)
+    return JSONResponse(content=result, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/dhan/status")
 async def api_dhan_status():
     """Returns Dhan status, masked credentials, token validity and auto-load details."""
