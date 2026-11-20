@@ -1538,3 +1538,9 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 ## ChatGPT — v246 stale IP placeholder clarification — 20 Nov 2026
 - Verified env and runtime config whitelist both49.205.36.145. Old49.205.39.195 only matched HTML example placeholder among active files searched; removed example. Running daemon GET /api/dhan/ip-check returns404: v245 endpoint not loaded yet. Existing /api/dhan/status omits IP fields. No config mutation or broker operation.
 - HTML-only explanatory update; diff check passes. No restart sent during market activity. v245 required restart remains outstanding; not a new IP rejection fix or verified broker order acceptance.
+
+## ChatGPT — v247 OI freshness/direction display — 20 Nov 2026
+- HTML-only change on owned branch: blue usable-freshness dot/yellow stale-or-missing; separate green bullish/red bearish direction and muted unavailable direction. Clarifies existing stale fail-open and log-only semantics. No trading gate/policy changes.
+- Dhan OI panel now populates existing four numeric pills, dominance and receipt-age from the actual /api/dhan_oi/bias schema; stale values remain visibly stale. Receipt is not called exchange time. No fabricated values or directional verdict.
+- Read-only host investigation: three chain momentum sources have no recorded snapshot10±2min before latest; these reads are computed locally from load_day_snapshots, despite board origin8600 label. Dhan API returns STALE/availablefalse with retained numeric values and age~592s at observation. Missing history/collection cause not repaired by UI; no freshness threshold widened.
+- Filter suite12passed/0failed, JS full-inline syntax passes, locks11/11 vs prior11/11. No existing assertions modified; full suite/parity not rerun. No restart, arming, config/database mutation or broker orders.

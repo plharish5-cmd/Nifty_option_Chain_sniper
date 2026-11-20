@@ -5803,7 +5803,17 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 const tr = make("tr"); tr.append(make("td", r.label));
                 [r.vote_buy, r.vote_sell].forEach(v => { const [text, cls] = vote(v); tr.append(make("td", text, cls)); });
                 const age = r.age_sec == null || !Number.isFinite(Number(r.age_sec)) ? "" : ` · ${Number(r.age_sec).toFixed(0)}s old`;
-                tr.append(make("td", (r.live_detail || "— no data") + age)); body.append(tr);
+                const unavailable = [r.vote_buy, r.vote_sell].includes("STALE") || r.direction == null;
+                const detail = make("td");
+                const freshness = make("span", unavailable ? "● STALE / MISSING " : "● FRESH ");
+                freshness.style.color = unavailable ? "#fbbf24" : "#38bdf8";
+                detail.append(freshness);
+                const direction = String(r.direction || "").toUpperCase();
+                const label = ["CE", "LONG", "BULLISH", "BUY"].includes(direction) ? "BULLISH" : ["PE", "SHORT", "BEARISH", "SELL"].includes(direction) ? "BEARISH" : "NO DIRECTION";
+                const bias = make("span", label + " · ");
+                bias.style.color = unavailable ? "#94a3b8" : label === "BULLISH" ? "#34d399" : label === "BEARISH" ? "#f87171" : "#94a3b8";
+                detail.append(bias, document.createTextNode((r.live_detail || "— no data") + age));
+                tr.append(detail); body.append(tr);
             });
             if (!(board.rows || []).length) {
                 const tr = make("tr"), cell = make("td", board.enabled ? "No OI switches enabled — these filters do not block either side." : "OI filter feature is OFF — no votes applied.", "oi-muted");
@@ -5815,6 +5825,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 tr.append(make("td", r.live_detail, "oi-muted")); body.append(tr);
             });
             table.append(body); det.append(table);
+            det.append(make("p", "Blue = usable freshness; yellow = stale/missing. Green/red = bullish/bearish inference, separate from freshness. Stale votes are ignored: even Block mode allows a trade if no usable vote opposes it. Log mode never blocks. OI permission does not create an EMA setup.", "oi-warning"));
             host.append(det);
         }
 
@@ -7623,6 +7634,24 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 const status=document.getElementById('dhanOiStatus');if(status)status.textContent=oi.reason||'Observation time is API receipt; exchange timestamp is not supplied.';
                 const fields={tab1TotalOiSummaryText:oi.ce_pe_oi_diff==null?'—':value(-oi.ce_pe_oi_diff/1e7)+' Cr PE−CE',tab1DayOiSummaryText:oi.oi_change_pe==null?'—':value((oi.oi_change_pe-oi.oi_change_ce)/1e5)+' L PE−CE',tab1SynergyStatusBadge:oi.bias||'UNKNOWN',tab1LastSyncText:oi.timestamp||'No observation',tab1AllowedNowText:'See strategy and risk gates',tab1BlockedNowText:oi.status==='OK'?'No OI-only trade authorization':'OI pillar unavailable',tab1WriterDomBadge:oi.bias||'UNKNOWN'};
                 for(const [id,text] of Object.entries(fields)){const el=document.getElementById(id);if(el)el.textContent=text;}
+                const fresh = oi.status === 'OK' && oi.available !== false;
+                const number = n => n == null || !Number.isFinite(Number(n)) ? '—' : value(Number(n)/1e7);
+                const dominant = (ce, pe) => ce == null || pe == null ? 'Not available' : pe > ce ? 'Put OI greater' : ce > pe ? 'Call OI greater' : 'Equal';
+                const pills = {
+                    tab1PillCallOiChg: 'Call change: '+number(oi.oi_change_ce)+' Cr',
+                    tab1PillPutOiChg: 'Put change: '+number(oi.oi_change_pe)+' Cr',
+                    tab1PillPutOiTot: 'Put total: '+number(oi.total_oi_pe)+' Cr',
+                    tab1PillCallOiTot: 'Call total: '+number(oi.total_oi_ce)+' Cr',
+                    tab1WhoMoreChg: dominant(oi.oi_change_ce,oi.oi_change_pe),
+                    tab1WhoMoreTot: dominant(oi.total_oi_ce,oi.total_oi_pe),
+                    tab1JwtLastPing: 'Last API receipt: '+(oi.timestamp || 'not recorded')+' · '+(oi.age_seconds == null ? 'age unknown' : Math.round(oi.age_seconds)+'s old'),
+                    tab1SynergyStatusBadge: (fresh ? '● FRESH · ' : '● STALE / UNAVAILABLE · ')+(oi.bias || 'UNKNOWN'),
+                    tab1BlockedNowText: fresh ? 'See strategy gates; OI is context' : 'OI unavailable — not proof that trades are blocked'
+                };
+                for (const [id,text] of Object.entries(pills)) { const el=document.getElementById(id); if(el)el.textContent=text; }
+                const freshnessBadge=document.getElementById('tab1SynergyStatusBadge');
+                if(freshnessBadge)freshnessBadge.style.color=fresh?'#38bdf8':'#fbbf24';
+
             }
             if(confluence){
                 const pill=document.getElementById('pillFiveFactorConfluence');
