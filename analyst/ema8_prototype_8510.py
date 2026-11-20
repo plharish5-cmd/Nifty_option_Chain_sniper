@@ -29,6 +29,13 @@ DEFAULT_CFG: Dict[str, Any] = {
     "slow_market_exact_line": False,
     "target_pts": 40.0,
     "sl_pts": 40.0,
+    # v2.0.44 — "+40 then trail" (owner decision 20 Nov 2026): when ON, target_pts is the TRIGGER,
+    # not the exit. On reaching it the stop moves to breakeven and then trails the prior CLOSED 1m
+    # candle low/high (ratchet-only); the trade exits when a candle CLOSES through the trail
+    # (SPOT_TRAIL_EXIT). Opposite-15m-close and 15:20 still override. OFF = the old fixed +40.
+    "trail_after_target_enabled": True,
+    "trail_trigger_pts": 40.0,
+    "trail_move_to_breakeven": True,
     "e8_refresh_seconds": 3.0,        # live: the 8 EMA and the touch are checked this often (owner, 12 Nov: "as soon as it touches")
     "backtest_tick_seconds": 30.0,    # backtest/replay grid inside a 15m bar (1-minute data cannot be read finer than this honestly)
     "min_option_premium_inr": 200.0,

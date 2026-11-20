@@ -820,6 +820,24 @@ def synthesize_option_premium_from_spot(
     return opt_entry, opt_exit
 
 
+def _proto_trail_cfg() -> Tuple[bool, Optional[float], bool]:
+    """Effective Prototype trail settings (enabled, trigger_pts, move_to_breakeven).
+
+    Reads the Prototype DEFAULT_CFG so the shipped default (trail ON) drives the replay/backtest
+    exit, and tests can monkeypatch it. Never raises.
+    """
+    try:
+        from analyst.ema8_prototype_8510 import DEFAULT_CFG as _P
+        trig = _P.get("trail_trigger_pts")
+        return (
+            bool(_P.get("trail_after_target_enabled", True)),
+            (float(trig) if trig is not None else None),
+            bool(_P.get("trail_move_to_breakeven", True)),
+        )
+    except Exception:
+        return (True, None, True)
+
+
 def simulate_prototype_spot_exit(
     bars: List[Dict[str, Any]],
     start_idx: int,
@@ -832,6 +850,9 @@ def simulate_prototype_spot_exit(
     day_1m: Optional[pd.DataFrame] = None,
     entry_ts: Optional[int] = None,
     exit_on_opposite_close: bool = True,
+    trail_after_target: bool = False,
+    trail_trigger_pts: Optional[float] = None,
+    trail_move_to_breakeven: bool = True,
 ) -> Dict[str, Any]:
     """
     exit_on_opposite_close=False gives the same 1-minute walk without rule 4,
@@ -848,6 +869,12 @@ def simulate_prototype_spot_exit(
     entry_hm = str(bars[start_idx].get("hm") or "") if 0 <= start_idx < len(bars) else ""
     target_spot = round(entry_spot + tgt_pts, 2) if is_long else round(entry_spot - tgt_pts, 2)
     stop_spot = round(entry_spot - sl_pts, 2) if is_long else round(entry_spot + sl_pts, 2)
+    # v2.0.44 Prototype "+40 then trail": the trigger point at which the fixed target stops being an
+    # exit and a trailing stop takes over (default trigger = tgt_pts). Only the 1m-resolution walk
+    # trails; on 15m-only data the fixed target still applies (documented). Reversal/Stage callers
+    # pass trail_after_target=False and are unaffected.
+    _trig_pts = float(trail_trigger_pts) if trail_trigger_pts is not None else float(tgt_pts)
+    trigger_spot = round(entry_spot + _trig_pts, 2) if is_long else round(entry_spot - _trig_pts, 2)
 
     # 15m candle boundary map: close_ts -> 15m bar
     b15_by_close_ts: Dict[int, Dict[str, Any]] = {}
@@ -869,6 +896,12 @@ def simulate_prototype_spot_exit(
         threshold_ts = int(entry_ts) if (entry_ts is not None and entry_ts > 0) else int(bars[start_idx].get("ts") or 0)
         candles = day_1m[day_1m["ts"] > threshold_ts].sort_values("ts")
         checked_15m_closes = set()
+        # trail state (only used when trail_after_target): armed once price reaches trigger_spot,
+        # then the stop ratchets monotonically to the prior CLOSED candle extreme; exit on a candle
+        # that CLOSES through the trail. prev_ext holds the prior candle's low (long) / high (short).
+        _trail_armed = False
+        _trail_stop = stop_spot
+        _prev_ext: Optional[float] = None
 
         for _, row in candles.iterrows():
             m_ts = int(row["ts"])
@@ -906,64 +939,112 @@ def simulate_prototype_spot_exit(
                     "is_ambiguous": False,
                 }
 
-            # 2. Ambiguous candle: touched both target and stop on single 1m candle
-            is_amb = False
-            if is_long:
-                if m_hi >= target_spot and m_lo <= stop_spot:
-                    is_amb = True
+            if not trail_after_target:
+                # 2. Ambiguous candle: touched both target and stop on single 1m candle
+                is_amb = False
+                if is_long:
+                    if m_hi >= target_spot and m_lo <= stop_spot:
+                        is_amb = True
+                else:
+                    if m_lo <= target_spot and m_hi >= stop_spot:
+                        is_amb = True
+
+                if is_amb:
+                    return {
+                        "st_pnl_pts": -sl_pts,
+                        "fx_pnl_pts": -sl_pts,
+                        "exit_spot": stop_spot,
+                        "exit_reason": "AMBIGUOUS",
+                        "trail_steps": [f"SL {int(sl_pts)}", "AMBIGUOUS 1m bar"],
+                        "mfe_pts": tgt_pts,
+                        "entry_day": entry_day,
+                        "entry_hm": entry_hm,
+                        "exit_day": m_day,
+                        "exit_hm": m_hm,
+                        "exit_ts": m_ts,
+                        "is_ambiguous": True,
+                    }
+
+                # 3. Stop check on 1m candle
+                if (is_long and m_lo <= stop_spot) or (not is_long and m_hi >= stop_spot):
+                    return {
+                        "st_pnl_pts": -sl_pts,
+                        "fx_pnl_pts": -sl_pts,
+                        "exit_spot": stop_spot,
+                        "exit_reason": "SPOT_SL_HIT",
+                        "trail_steps": [f"SL {int(sl_pts)}", f"SL hit {stop_spot:.1f}"],
+                        "mfe_pts": 0.0,
+                        "entry_day": entry_day,
+                        "entry_hm": entry_hm,
+                        "exit_day": m_day,
+                        "exit_hm": m_hm,
+                        "exit_ts": m_ts,
+                        "is_ambiguous": False,
+                    }
+
+                # 4. Target check on 1m candle
+                if (is_long and m_hi >= target_spot) or (not is_long and m_lo <= target_spot):
+                    return {
+                        "st_pnl_pts": tgt_pts,
+                        "fx_pnl_pts": tgt_pts,
+                        "exit_spot": target_spot,
+                        "exit_reason": "SPOT_TARGET_HIT",
+                        "trail_steps": [f"SL {int(sl_pts)}", f"Target hit {target_spot:.1f}"],
+                        "mfe_pts": tgt_pts,
+                        "entry_day": entry_day,
+                        "entry_hm": entry_hm,
+                        "exit_day": m_day,
+                        "exit_hm": m_hm,
+                        "exit_ts": m_ts,
+                        "is_ambiguous": False,
+                    }
             else:
-                if m_lo <= target_spot and m_hi >= stop_spot:
-                    is_amb = True
-
-            if is_amb:
-                return {
-                    "st_pnl_pts": -sl_pts,
-                    "fx_pnl_pts": -sl_pts,
-                    "exit_spot": stop_spot,
-                    "exit_reason": "AMBIGUOUS",
-                    "trail_steps": [f"SL {int(sl_pts)}", "AMBIGUOUS 1m bar"],
-                    "mfe_pts": tgt_pts,
-                    "entry_day": entry_day,
-                    "entry_hm": entry_hm,
-                    "exit_day": m_day,
-                    "exit_hm": m_hm,
-                    "exit_ts": m_ts,
-                    "is_ambiguous": True,
-                }
-
-            # 3. Stop check on 1m candle
-            if (is_long and m_lo <= stop_spot) or (not is_long and m_hi >= stop_spot):
-                return {
-                    "st_pnl_pts": -sl_pts,
-                    "fx_pnl_pts": -sl_pts,
-                    "exit_spot": stop_spot,
-                    "exit_reason": "SPOT_SL_HIT",
-                    "trail_steps": [f"SL {int(sl_pts)}", f"SL hit {stop_spot:.1f}"],
-                    "mfe_pts": 0.0,
-                    "entry_day": entry_day,
-                    "entry_hm": entry_hm,
-                    "exit_day": m_day,
-                    "exit_hm": m_hm,
-                    "exit_ts": m_ts,
-                    "is_ambiguous": False,
-                }
-
-            # 4. Target check on 1m candle
-            if (is_long and m_hi >= target_spot) or (not is_long and m_lo <= target_spot):
-                return {
-                    "st_pnl_pts": tgt_pts,
-                    "fx_pnl_pts": tgt_pts,
-                    "exit_spot": target_spot,
-                    "exit_reason": "SPOT_TARGET_HIT",
-                    "trail_steps": [f"SL {int(sl_pts)}", f"Target hit {target_spot:.1f}"],
-                    "mfe_pts": tgt_pts,
-                    "entry_day": entry_day,
-                    "entry_hm": entry_hm,
-                    "exit_day": m_day,
-                    "exit_hm": m_hm,
-                    "exit_ts": m_ts,
-                    "is_ambiguous": False,
-                }
+                # v2.0.44 trail: +40 is the TRIGGER, not the exit.
+                # Pre-arm: the fixed -40 stop still protects (intrabar). On reaching the trigger the
+                # stop jumps to breakeven, then ratchets to the prior CLOSED candle extreme; exit when
+                # a candle CLOSES through the trail (SPOT_TRAIL_EXIT). Opposite-close / 15:20 still win.
+                if not _trail_armed:
+                    if (is_long and m_lo <= stop_spot) or (not is_long and m_hi >= stop_spot):
+                        return {
+                            "st_pnl_pts": -sl_pts,
+                            "fx_pnl_pts": -sl_pts,
+                            "exit_spot": stop_spot,
+                            "exit_reason": "SPOT_SL_HIT",
+                            "trail_steps": [f"SL {int(sl_pts)}", f"SL hit {stop_spot:.1f}"],
+                            "mfe_pts": 0.0,
+                            "entry_day": entry_day,
+                            "entry_hm": entry_hm,
+                            "exit_day": m_day,
+                            "exit_hm": m_hm,
+                            "exit_ts": m_ts,
+                            "is_ambiguous": False,
+                        }
+                    if (is_long and m_hi >= trigger_spot) or (not is_long and m_lo <= trigger_spot):
+                        _trail_armed = True
+                        _trail_stop = entry_spot if trail_move_to_breakeven else stop_spot
+                if _trail_armed:
+                    if _prev_ext is not None:
+                        _trail_stop = (max(_trail_stop, _prev_ext) if is_long
+                                       else min(_trail_stop, _prev_ext))
+                    if (is_long and m_c <= _trail_stop) or (not is_long and m_c >= _trail_stop):
+                        _t = round(_trail_stop, 2)
+                        pnl = round((_t - entry_spot) if is_long else (entry_spot - _t), 2)
+                        return {
+                            "st_pnl_pts": pnl,
+                            "fx_pnl_pts": pnl,
+                            "exit_spot": _t,
+                            "exit_reason": "SPOT_TRAIL_EXIT",
+                            "trail_steps": [f"SL {int(sl_pts)}", f"Trigger +{int(_trig_pts)}",
+                                            f"Trail exit {_t:.1f}"],
+                            "mfe_pts": max(0.0, pnl),
+                            "entry_day": entry_day,
+                            "entry_hm": entry_hm,
+                            "exit_day": m_day,
+                            "exit_hm": m_hm,
+                            "exit_ts": m_ts,
+                            "is_ambiguous": False,
+                        }
+                _prev_ext = m_lo if is_long else m_hi
 
             # 5. Check opposite 8 EMA close at 15m candle close ONLY
             for c_ts, b15 in b15_by_close_ts.items():
@@ -1292,6 +1373,7 @@ def simulate_backtest_spot_exit(
     *,
     day_1m: Optional[pd.DataFrame] = None,
     entry_ts: Optional[int] = None,
+    trail_after_target: Optional[bool] = None,
 ) -> Tuple[float, float, float, str, List[str], float, str, str, str, str]:
     """
     Forward-walk spot exit on 15m bars.
@@ -1299,6 +1381,9 @@ def simulate_backtest_spot_exit(
              entry_day, entry_hm, exit_day, exit_hm).
     """
     if exit_on_opposite_8ema_close:
+        _cfg_on, _tr_trig, _tr_be = _proto_trail_cfg()
+        # Explicit override wins (backtests comparing fixed vs trail); else the cfg default.
+        _tr_on = _cfg_on if trail_after_target is None else bool(trail_after_target)
         res = simulate_prototype_spot_exit(
             bars=bars,
             start_idx=start_idx,
@@ -1309,6 +1394,9 @@ def simulate_backtest_spot_exit(
             eod_hm=eod_hm,
             day_1m=day_1m,
             entry_ts=entry_ts,
+            trail_after_target=_tr_on,
+            trail_trigger_pts=_tr_trig,
+            trail_move_to_breakeven=_tr_be,
         )
         return (
             res["st_pnl_pts"],
@@ -11325,9 +11413,12 @@ class QuantTerminalBackend:
                                     sl_pts=float(sl_pts),
                                     tgt_pts=float(tgt_pts),
                                     eod_hm=eod_hm,
-                                    day_1m=day_to_1m.get(day_key),
+                                day_1m=day_to_1m.get(day_key),
                                     entry_ts=int(meta.get("entry_ts") or 0),
                                     exit_on_opposite_close=is_proto,
+                                    trail_after_target=bool(is_proto and _proto_trail_cfg()[0]),
+                                    trail_trigger_pts=_proto_trail_cfg()[1],
+                                    trail_move_to_breakeven=_proto_trail_cfg()[2],
                                 )
                                 st_pnl_pts = proto_res["st_pnl_pts"]
                                 fx_pnl_pts = proto_res["fx_pnl_pts"]
