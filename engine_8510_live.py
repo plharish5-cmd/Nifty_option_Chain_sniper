@@ -857,6 +857,19 @@ async def api_real_order_preflight_get():
     return JSONResponse(content={"ok": True, **(await backend.real_order_preflight())})
 
 
+@app.post("/api/real-order/test")
+async def api_real_order_test_post(req: Request):
+    """Place ONE 1-lot test order (BUY CE/PE). Requires body {opt_side, confirm:'PLACE'}.
+    Respects every live gate — real only if the desk is LIVE-armed, else paper."""
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    opt_side = str((data or {}).get("opt_side") or "CE")
+    confirm = str((data or {}).get("confirm") or "")
+    return JSONResponse(content=await backend.place_real_test_order(opt_side=opt_side, confirm=confirm))
+
+
 @app.get("/api/desk8600/ticket-lane")
 async def api_desk8600_ticket_lane_get():
     """8600 Ticket lane: switches and what the lane sees now."""

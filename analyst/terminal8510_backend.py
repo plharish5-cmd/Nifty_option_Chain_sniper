@@ -4201,6 +4201,60 @@ class QuantTerminalBackend:
         report["places_order"] = False
         return report
 
+    async def place_real_test_order(self, opt_side: str = "CE", confirm: str = "") -> Dict[str, Any]:
+        """Place ONE 1-lot test order through the proven execute_order_with_chaser path. v2.0.47.
+
+        Safety: requires an explicit typed confirmation ("PLACE"). Respects every live gate — it goes
+        to REAL money ONLY if the desk is LIVE-armed; otherwise it fills as PAPER (and says so). One
+        lot, BUY, ATM-ish contract at the configured min premium. Never bypasses kill-switch/arming.
+        """
+        if str(confirm).strip().upper() != "PLACE":
+            return {"ok": False, "error": "confirmation required: type PLACE", "need_confirm": "PLACE"}
+        side = "PE" if str(opt_side).upper() == "PE" else "CE"
+        spot = 0.0
+        try:
+            spot = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
+        except Exception:
+            spot = 0.0
+        if spot <= 0:
+            return {"ok": False, "error": "no live spot price — cannot resolve a contract"}
+        try:
+            min_prem = float((self.scanner_cfg.get("ema8_prototype") or {}).get("min_option_premium_inr") or 200.0)
+        except Exception:
+            min_prem = 200.0
+        try:
+            contract, why = await self._select_ema8_prototype_contract_any_strike(side, min_prem, spot)
+        except Exception as exc:
+            return {"ok": False, "error": f"contract resolution failed: {exc}"}
+        if not contract:
+            return {"ok": False, "error": f"no tradable contract found: {why}"}
+        try:
+            res = await self.execute_order_with_chaser(
+                contract=contract, side="BUY", strategy_name="REAL TEST ORDER",
+                is_algo_trade=False, source="MANUAL TEST 🧪",
+                strategy_setup="Real-order test (1 lot)",
+            )
+        except Exception as exc:
+            return {"ok": False, "error": f"order path error: {exc}"}
+        res = dict(res or {})
+        # Tag the rejection origin so the UI shows [LOCAL]/[BROKER] like the orders book.
+        reason = res.get("rejection_reason") or res.get("error")
+        if not res.get("ok") and reason:
+            try:
+                from analyst.ema_arm_persistence_8510 import classify_rejection
+                _c = classify_rejection(reason)
+                res["rejection_origin"] = _c["origin"]
+                res["rejection_reason_display"] = _c["display"]
+            except Exception:
+                pass
+        res["opt_side"] = side
+        res["contract_symbol"] = contract.get("symbol")
+        try:
+            res["routed_real"] = (self.execution_mode == "BOTH")
+        except Exception:
+            res["routed_real"] = False
+        return res
+
     # ── 8600 BOARD (every option-chain read, one switch each) ───────────────
     def desk8600_board(self) -> Dict[str, Any]:
         """All 8600 / option-chain sources with their current reading. Never raises."""
