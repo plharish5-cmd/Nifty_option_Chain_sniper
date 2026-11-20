@@ -262,6 +262,7 @@ def test_6_no_fake_delta_or_option_prices_in_backtest_report():
         exit_on_opposite_8ema_close=True,
         day_1m=day_1m,
         entry_ts=1000,
+        trail_after_target=False,  # this check exercises the classic fixed-target delegation
     )
     assert st_reason == "SPOT_TARGET_HIT"
     assert st_pnl == 40.0
