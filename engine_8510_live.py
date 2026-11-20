@@ -298,6 +298,15 @@ async def api_heartbeat():
     return JSONResponse(content={"ok": True, "ts": int(time.time()), "port": 8510})
 
 
+@app.get("/api/scanner/decision-audit")
+async def api_decision_audit(day: str = "", lane: str = "", limit: int = 100):
+    """v254: why each lane (Prototype / Reversal / 1H Flagship) took or skipped a
+    trade — recorded decisions only. Missing past diagnostics are not invented."""
+    from analyst.decision_audit_8510 import read
+    return JSONResponse(content={"ok": True, "rows": read(backend.ledger_db, day or None, lane or None, limit),
+        "note": "Recorded decisions only. Log-only OI is not a blocker. An accepted order response is not proof of a real broker fill."})
+
+
 @app.get("/api/health")
 async def api_health():
     m_status = backend.is_nse_market_open()

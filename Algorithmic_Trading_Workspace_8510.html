@@ -2251,6 +2251,15 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                             <section id="protoOiDecisionBoard" class="oi-decision-board" aria-label="Prototype OI filter decision board"><p>Waiting for OI decision telemetry…</p></section>
 <div class="strat-rules-section">
                             <div class="panel-heading">Signal audit log</div>
+                            <details style="margin:8px 0;padding:10px;border:1px solid #334155;border-radius:6px;">
+                              <summary style="cursor:pointer;color:#38bdf8;">Why trades were taken / skipped · Prototype, Reversal, 1H Flagship</summary>
+                              <p style="color:#94a3b8;font-size:11px;">Recorded decisions only. Log-only OI is not a blocker. Missing data is not bearish. An accepted order response is not proof of a real broker fill.</p>
+                              <label>Session <input type="date" id="decisionAuditDay"></label>
+                              <select id="decisionAuditLane"><option value="">All three lanes</option><option value="prototype">Prototype</option><option value="reversal">Reversal</option><option value="flagship">1H Flagship</option></select>
+                              <button type="button" onclick="loadDecisionAudit()">Refresh decisions</button>
+                              <button type="button" onclick="downloadDecisionAudit()">Download CSV</button>
+                              <div style="max-height:420px;overflow:auto;"><table><thead><tr><th>Time</th><th>Lane / side</th><th>Decision</th><th>Actual reason / selected settings</th></tr></thead><tbody id="decisionAuditRows"><tr><td colspan="4">No diagnostics loaded.</td></tr></tbody></table></div>
+                            </details>
                             <div class="proto-audit-wrap">
                             <table>
                                 <thead><tr><th>Time</th><th>Side</th><th>Event</th><th>EMA</th></tr></thead>
@@ -3998,6 +4007,40 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
 
         // ── DHAN API CONNECTION & LIVE GATEWAY HANDLERS (Problem 1) ───────────
         let cachedDhanConfig = null;
+
+        let decisionAuditRows = [], decisionAuditLoading = false;
+        async function loadDecisionAudit() {
+            if (decisionAuditLoading) return;
+            decisionAuditLoading=true;
+            const body=document.getElementById('decisionAuditRows');
+            try {
+                const query=new URLSearchParams({limit:'2000',day:document.getElementById('decisionAuditDay').value,lane:document.getElementById('decisionAuditLane').value});
+                const response=await fetch('/api/scanner/decision-audit?'+query,{cache:'no-store'});
+                if (!response.ok) throw new Error('Decision audit unavailable — backend update may need activation');
+                const data=await response.json(); decisionAuditRows=data.rows || []; body.replaceChildren();
+                for(const r of decisionAuditRows) {
+                    const tr=document.createElement('tr');
+                    for(const text of [formatDeskTimestamp(r.recorded_at),r.lane+' / '+(r.side || '—'),r.stage]) {
+                        const td=document.createElement('td');td.textContent=text;tr.append(td);
+                    }
+                    const td=document.createElement('td');td.style.whiteSpace='normal';td.style.minWidth='300px';
+                    const reason=document.createElement('div');reason.textContent=r.reason;td.append(reason);
+                    const details=document.createElement('details'), summary=document.createElement('summary'), pre=document.createElement('pre');
+                    summary.textContent='Settings and readings at this decision';pre.textContent=JSON.stringify(r.context,null,2);pre.style.whiteSpace='pre-wrap';
+                    details.append(summary,pre);td.append(details);tr.append(td);body.append(tr);
+                }
+                if(!decisionAuditRows.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=4;td.textContent='No recorded diagnostics for this selection. Past reasons are not invented.';tr.append(td);body.append(tr);}
+            } catch(error) {
+                body.replaceChildren();const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=4;td.textContent=error.message;tr.append(td);body.append(tr);
+            } finally {decisionAuditLoading=false;}
+        }
+        function downloadDecisionAudit() {
+            const cell=x=>'"'+String(x ?? '').replaceAll('"','""')+'"';
+            const rows=[['Time','Lane','Side','Decision','Reason','Settings and readings'],...decisionAuditRows.map(r=>[r.recorded_at,r.lane,r.side,r.stage,r.reason,JSON.stringify(r.context)])];
+            const blob=new Blob(['﻿'+rows.map(r=>r.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
+            const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='trade_decision_audit.csv';a.click();URL.revokeObjectURL(url);
+        }
+        setInterval(()=>{const el=document.getElementById('decisionAuditRows');if(el && el.closest('details')?.open)loadDecisionAudit();},15000);
 
         async function loadDhanConfig() {
             try {

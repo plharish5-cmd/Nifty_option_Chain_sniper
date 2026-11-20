@@ -5547,6 +5547,11 @@ class QuantTerminalBackend:
                 prev_proto.update(st)
                 prev_proto["ema_stale"] = False
                 self.strategy_status["ema8_prototype"] = prev_proto
+                try:
+                    from analyst.decision_audit_8510 import record_evaluation
+                    record_evaluation(self, "prototype", st, sigs)
+                except Exception:
+                    pass
                 # What the algo itself just used, for the banner: the line, the spot it
                 # compared, the touch band, and when. Display only.
                 try:
@@ -7107,6 +7112,11 @@ class QuantTerminalBackend:
             elif prev_proto.get("last_exit_reason") == "OPPOSITE_8EMA_CLOSE":
                 prev_proto["block_reason"] = "Opposite Close — Exited"
             self.strategy_status["ema8_prototype"] = prev_proto
+            try:
+                from analyst.decision_audit_8510 import record_evaluation
+                record_evaluation(self, "prototype", proto_st, proto_sigs)
+            except Exception:
+                pass
             self._handle_ema8_prototype_actions(proto_st.get("actions"))
             self._save_ema8_prototype_state()
             for ps in proto_sigs:
@@ -7906,6 +7916,14 @@ class QuantTerminalBackend:
 
     def _record_ema_entry_decision(self, sig, stage, reason):
         """Read-only cockpit explanation of the most recent order attempt."""
+        # v254 gate diagnostics: mirror every gate/block/accept/reject decision to
+        # the durable strategy_decision_audit table. Observability only — swallows
+        # all failures so it can never affect execution.
+        try:
+            from analyst.decision_audit_8510 import record
+            record(self, sig, stage, reason)
+        except Exception:
+            pass
         sid = str(sig.get("strategy_id") or "").upper()
         key = "ema8_prototype" if sid.startswith("EMA8_PROTOTYPE") else "crossover_reversal" if sid.startswith("CROSSOVER") else None
         if key:
