@@ -1548,3 +1548,6 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 ## ChatGPT — v248 remove redundant OI panels from visible UI — 20 Nov 2026
 - Owner asked to remove Dhan OI Master Filter & Trigger and standalone15-source8600board. Narrow CSS hides only tab1DhanOICard and proto-8600-strip lane panel; DOM preserved for existing JS bindings. Strategy-specific OI matrices untouched; no execution/config/filter changes.
 - Diff check and unique DOM-target assertions pass; no backend restart required. Existing configured filters remain effective even though these redundant configuration panels are hidden. Full suite not rerun for4-line CSS-only change.
+
+## ChatGPT — v249 hide unused desk heading/EOD summary — 20 Nov 2026
+- Owner requested removal of Desk management heading and Post-Market Daily Summary card. Narrow2-selector CSS addition hides just heading/card. Parent wrapper is retained because it also contains Dhan API controls; those remain visible. No execution, settings or JS bindings changed. Diff check passes; no restart required.
