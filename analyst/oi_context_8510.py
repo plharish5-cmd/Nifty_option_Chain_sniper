@@ -66,28 +66,38 @@ def _hm_ts(day: str, hm: str) -> int:
 
 
 def load_day_snapshots(db_paths: Iterable[Path], day: str, asof_ts: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Rows of `chain_snap` for one IST day from the first database that has any, oldest first.
+    """Nearest recorded expiry, freshest source for it; never splice histories.
 
-    Uses the nearest expiry on or after `day` that has rows that day ("this week").
+    Compare source timestamps before loading rows. A canonical DB with older
+    nearest-expiry data must not hide a fresh same-expiry shadow recording.
+    Caller order breaks ties, preserving canonical preference when equally fresh.
     """
     lo, hi = _day_bounds(day)
     if asof_ts is not None:
         hi = min(hi, int(asof_ts) + 1)
+    candidates = []
     for path in db_paths:
         try:
             if not Path(path).is_file():
                 continue
             with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5) as conn:
+                for expiry, latest in conn.execute(
+                    "SELECT expiry, MAX(ts) FROM chain_snap WHERE ts >= ? AND ts < ? GROUP BY expiry",
+                    (lo, hi),
+                ):
+                    candidates.append((str(expiry), float(latest), Path(path)))
+        except sqlite3.Error:
+            continue
+    if not candidates:
+        return []
+    expiries = sorted({x[0] for x in candidates})
+    expiry = next((e for e in expiries if e[:10] >= day), expiries[0])
+    # Stable ordering means equal-age sources retain the supplied preference.
+    sources = sorted((x for x in candidates if x[0] == expiry), key=lambda x: -x[1])
+    for _, _, path in sources:
+        try:
+            with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5) as conn:
                 conn.row_factory = sqlite3.Row
-                expiries = [
-                    str(r[0]) for r in conn.execute(
-                        "SELECT DISTINCT expiry FROM chain_snap WHERE ts >= ? AND ts < ? ORDER BY expiry", (lo, hi)
-                    )
-                ]
-                if not expiries:
-                    continue
-                upcoming = [e for e in expiries if e[:10] >= day] or expiries
-                expiry = upcoming[0]
                 rows = conn.execute(
                     "SELECT ts, strike, ce_oi, pe_oi, ce_vol, pe_vol, ce_ltp, pe_ltp FROM chain_snap "
                     "WHERE expiry = ? AND ts >= ? AND ts < ? ORDER BY ts, strike",
