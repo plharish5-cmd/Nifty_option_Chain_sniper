@@ -1544,3 +1544,7 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 - Dhan OI panel now populates existing four numeric pills, dominance and receipt-age from the actual /api/dhan_oi/bias schema; stale values remain visibly stale. Receipt is not called exchange time. No fabricated values or directional verdict.
 - Read-only host investigation: three chain momentum sources have no recorded snapshot10±2min before latest; these reads are computed locally from load_day_snapshots, despite board origin8600 label. Dhan API returns STALE/availablefalse with retained numeric values and age~592s at observation. Missing history/collection cause not repaired by UI; no freshness threshold widened.
 - Filter suite12passed/0failed, JS full-inline syntax passes, locks11/11 vs prior11/11. No existing assertions modified; full suite/parity not rerun. No restart, arming, config/database mutation or broker orders.
+
+## ChatGPT — v248 remove redundant OI panels from visible UI — 20 Nov 2026
+- Owner asked to remove Dhan OI Master Filter & Trigger and standalone15-source8600board. Narrow CSS hides only tab1DhanOICard and proto-8600-strip lane panel; DOM preserved for existing JS bindings. Strategy-specific OI matrices untouched; no execution/config/filter changes.
+- Diff check and unique DOM-target assertions pass; no backend restart required. Existing configured filters remain effective even though these redundant configuration panels are hidden. Full suite not rerun for4-line CSS-only change.

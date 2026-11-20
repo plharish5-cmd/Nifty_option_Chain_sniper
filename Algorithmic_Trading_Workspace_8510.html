@@ -1330,6 +1330,10 @@
         .oi-decision-board .oi-sides { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
         .oi-decision-board .oi-side { padding:7px; border:1px solid #334155; border-radius:5px; }
         .oi-decision-board .oi-scope { font-size:10px; color:#94a3b8; margin:6px 0 0; }
+        /* Owner-requested UI removal. Keep DOM bindings/settings intact so
+           hiding redundant panels cannot alter strategy filter execution. */
+        #tab1DhanOICard,
+        .proto-8600-strip.lane-panel-section { display: none !important; }
     </style>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" crossorigin="anonymous"></script>
 <style id="desk-ui-v239">
