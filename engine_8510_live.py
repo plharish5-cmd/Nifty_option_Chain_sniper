@@ -84,8 +84,18 @@ app.include_router(algo_execution_router)
 
 
 # STOCKMOJO_RESEARCH_V199_BEGIN: no broker, downloader or model startup
-from analyst.stockmojo_workspace_8510 import router_for
-app.include_router(router_for(ROOT_DIR))
+# Resilience (v2.0.48): this is an OPTIONAL research/workspace router. If its
+# module is missing from the working tree (e.g. an untracked file not restored
+# after a pull/stash), a missing optional router must NEVER crash-loop the live
+# trading engine — it only cost a 9-min outage on 2026-11-20 (13:22-13:31).
+try:
+    from analyst.stockmojo_workspace_8510 import router_for
+    app.include_router(router_for(ROOT_DIR))
+except Exception as _stockmojo_exc:  # pragma: no cover - optional router
+    log.warning(
+        "Optional stockmojo research router unavailable (%s) — live engine "
+        "continues without it.", _stockmojo_exc,
+    )
 # STOCKMOJO_RESEARCH_V199_END
 
 
