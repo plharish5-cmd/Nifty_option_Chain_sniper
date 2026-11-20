@@ -9263,9 +9263,12 @@ class QuantTerminalBackend:
                 o["placed_by"] = o["source"]
                 o["strategy_setup"] = o.get("strategy_setup") or o.get("strategy_name") or "Manual — No Strategy"
                 if o.get("rejection_reason"):
-                    from analyst.ema_arm_persistence_8510 import format_broker_rejection
+                    from analyst.ema_arm_persistence_8510 import classify_rejection
 
-                    o["rejection_reason_display"] = format_broker_rejection(o["rejection_reason"])
+                    _rej = classify_rejection(o["rejection_reason"])
+                    # [LOCAL] = the 8510 app blocked it before Dhan; [BROKER] = Dhan rejected it.
+                    o["rejection_reason_display"] = _rej["display"]
+                    o["rejection_origin"] = _rej["origin"]
                 o["structured_contract"] = get_contract_structured_fields(o["symbol"])
                 pos_link = o.get("position_id") or o.get("correlation_id")
                 prow = None

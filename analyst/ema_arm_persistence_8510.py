@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 log = logging.getLogger("ema_arm_persist_8510")
 
@@ -42,6 +42,51 @@ def format_broker_rejection(raw: Any) -> str:
         except (json.JSONDecodeError, TypeError):
             pass
     return s
+
+
+# Markers that identify who rejected an order. LOCAL = the 8510 app blocked it before Dhan
+# (it never reaches the broker); BROKER = Dhan said no. Lets the owner tell "the app stopped it"
+# from "my broker stopped it" at a glance in the orders book.
+_LOCAL_REJECT_MARKERS = (
+    "available cash below",
+    "not aligned to instrument tick size",
+    "explicit live confirmation required",
+    "directional bias",
+    "funds snapshot unavailable",
+    "already submitted",
+    "option stop price would be non-positive",
+    "daily gross loss limit",
+)
+_BROKER_REJECT_MARKERS = (
+    "dh-",            # Dhan error codes, e.g. DH-905
+    "invalid ip",
+    "rms",
+    "margin",
+    "insufficient",
+    "omserror",
+    "exchange",
+    "order param",
+    "square off",
+    "freeze",
+)
+
+
+def classify_rejection(raw: Any) -> Dict[str, str]:
+    """Return {origin, reason, display} for an order rejection.
+
+    origin: 'LOCAL' (8510 blocked it before Dhan), 'BROKER' (Dhan rejected it), or 'UNKNOWN'.
+    reason: the cleaned human reason (format_broker_rejection). display: '[ORIGIN] reason'.
+    Pure, never raises; does not change any trade decision.
+    """
+    reason = format_broker_rejection(raw)
+    low = reason.lower()
+    origin = "UNKNOWN"
+    if any(m in low for m in _LOCAL_REJECT_MARKERS):
+        origin = "LOCAL"
+    elif any(m in low for m in _BROKER_REJECT_MARKERS):
+        origin = "BROKER"
+    display = (f"[{origin}] {reason}" if reason else f"[{origin}]") if origin != "UNKNOWN" else reason
+    return {"origin": origin, "reason": reason, "display": display}
 
 
 def mj_state_persist_slice(mj_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
