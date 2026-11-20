@@ -5322,6 +5322,57 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 table("By exit reason", group(r => r.reason)) + table("By entry hour", group(hourOf), (a, b) => a.localeCompare(b)) + table("By side", group(r => r.side)) + dayBlock + '</div>';
         }
 
+        // Presentation only: keep the broker message; never infer a rejection
+        // from its numeric code alone (DH-905 covers multiple input errors).
+        function orderRejectionDetails(order) {
+            function unpack(value, depth = 0) {
+                if (value == null || depth > 5) return "";
+                if (typeof value === "string") {
+                    const text = value.trim();
+                    if (text.startsWith("{")) {
+                        try { return unpack(JSON.parse(text), depth + 1); } catch (_) { /* retain original */ }
+                    }
+                    return text;
+                }
+                if (typeof value !== "object") return String(value);
+                const code = value.errorCode || value.error_code || "";
+                const message = value.errorMessage || value.error_message || value.omsErrorDescription || value.message;
+                if (message) return [code, unpack(message, depth + 1)].filter(Boolean).join(": ");
+                for (const key of ["remarks", "error", "data"]) {
+                    const nested = unpack(value[key], depth + 1);
+                    if (nested) return [code, nested].filter(Boolean).join(": ");
+                }
+                return code || JSON.stringify(value);
+            }
+            const reason = unpack(order.rejection_reason_display || order.rejection_reason || order.omsErrorDescription);
+            const text = reason.toLowerCase();
+            let category = "Other / unclassified";
+            if (/invalid ip|whitelist|static ip/.test(text)) category = "IP / access";
+            else if (/token|authentication|credential|dh-901/.test(text)) category = "Authentication";
+            else if (/insufficient|fund|margin|balance/.test(text)) category = "Funds / margin";
+            else if (/quantity|lot size|freeze qty/.test(text)) category = "Quantity / lot size";
+            else if (/security.?id|instrument|contract|expiry|product/.test(text)) category = "Contract / product";
+            else if (/price|tick size|circuit/.test(text)) category = "Price / execution";
+            else if (/market closed|session|trading hours/.test(text)) category = "Market / session";
+            else if (/rate limit|too many|dh-904/.test(text)) category = "Rate limit";
+            else if (/network|timeout|server|dh-908|dh-909/.test(text)) category = "Network / broker service";
+            else if (/access|permission|segment|dh-902|dh-903/.test(text)) category = "Account / access";
+            else if (/blocked|allowlist|guard|stale/.test(text)) category = "App eligibility";
+            return { reason, category };
+        }
+
+        function orderRejectionStatusHtml(order) {
+            const escape = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[ch]));
+            const status = String(order.order_status || "—");
+            const badge = status === "FILLED" ? "badge-bull" : (status === "CANCELLED" ? "badge-side" : "badge-bear");
+            let html = `<span class="status-badge ${badge}">${escape(status)}</span>`;
+            if (status === "REJECTED") {
+                const detail = orderRejectionDetails(order);
+                html += `<div style="margin-top:6px;color:var(--crimson);font-size:11px;white-space:normal;overflow-wrap:anywhere;min-width:180px;max-width:320px;"><b>${escape(detail.category)}</b><br>${escape(detail.reason || "Exact rejection reason was not recorded.")}</div>`;
+            }
+            return html;
+        }
+
         function renderOrdersTable(orders) {
             const raw = (orders || []).filter(o => !deskJunkOrderRow(o));
             lastOrdersPayload = raw;
@@ -5388,7 +5439,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     <td>${fmtOptionPrem(o.option_exit)}</td>
                     <td style="color:var(--text-dim);">${formatDeskTimestamp(o.created_at)}</td>
                     <td>${exitCell}</td>
-                    <td><span class="status-badge ${o.order_status === 'FILLED' ? 'badge-bull' : (o.order_status === 'CANCELLED' ? 'badge-side' : 'badge-bear')}">${o.order_status}</span></td>
+                    <td>${orderRejectionStatusHtml(o)}</td>
                 </tr>
             `;
             }).join("");

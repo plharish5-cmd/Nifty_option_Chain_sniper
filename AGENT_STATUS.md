@@ -1524,3 +1524,8 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 - Config patch (not committed): `scripts/patch_selfaudit_8510.py` (`miss_watchdog_enabled`, `armed_idle_heartbeat_min`, `quote_retry_max`).
 - Tests: `analyst/test_self_audit_8510.py` **9/9**; `verify_locks` **11/11**. No entry/EMA/exit-threshold changes.
 - Run: `python3 -m pytest analyst/test_self_audit_8510.py -q`; `python scripts/verify_locks.py`.
+
+## ChatGPT — v244 order-book rejection display — 20 Nov 2026
+- Branch chatgpt/v244-order-rejection-display from f33276e; active branch was gemini/v2.0.43-reject-reason but no committed repair or dirty HTML was present. Owner explicitly requested implementation. Only HTML presentation changed; runtime config and execution/backend untouched.
+- Rejected rows display exact stored broker reason plus message-derived category, nested JSON response handling, HTML escaping and explicit missing-reason fallback. DH-905 alone does not imply Invalid IP. No change to paper/live mode labels in this narrow patch.
+- Node renderer checks 8 passed/0 failed, including 3 actual rejected20-Nov ledger rows; no prior equivalent renderer baseline. Locks11/11 vs prior11/11. Actual running GET / serves new helper. Full suite/parity not repeated for this HTML-only change; no full-suite claim or browser visual acceptance claim. No broker order, cancel, arming, restart, DB write or config edit performed.
