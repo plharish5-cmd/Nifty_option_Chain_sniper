@@ -10100,10 +10100,21 @@ class QuantTerminalBackend:
                 except Exception as exc:
                     log.warning("Paper entry quote unavailable for %s: %s", symbol, type(exc).__name__)
                 if paper_ask is None and not real_entry_filled:
-                    log.warning("No paper fill for %s: fresh executable ask unavailable", symbol)
-                    if mode == "PAPER_ONLY":
-                        order_status = "REJECTED"
-                        rejection_reason = "MISSING_FRESH_PAPER_ASK: paper entry not filled"
+                    # Paper is a SIMULATION of a genuine setup — never skip the trade just because
+                    # live depth is momentarily missing. Prefer the fresh executable ask (above); when
+                    # it's unavailable, fall back to the signal LTP (the fresh tick that TRIGGERED this
+                    # entry) so the paper trade still fills. The -90/-84 fix was about the EXIT reusing
+                    # a STALE STORED LTP — it must not block entries. Only skip if there's no price at
+                    # all. (Fix for "paper not taking trades every day".)
+                    if signal_ltp and float(signal_ltp) > 0:
+                        paper_ask = float(signal_ltp)
+                        log.warning("Paper entry: no fresh ask for %s — filling at signal LTP %.2f (estimated).",
+                                    symbol, paper_ask)
+                    else:
+                        log.warning("No paper fill for %s: no fresh ask AND no signal LTP", symbol)
+                        if mode == "PAPER_ONLY":
+                            order_status = "REJECTED"
+                            rejection_reason = "NO_PRICE: paper entry not filled (no quote and no signal LTP)"
             if mode in ("PAPER_ONLY", "BOTH") and self.paper_execution_enabled and (paper_ask is not None or real_entry_filled):
                 paper_order_id = f"P_{order_id}"
                 # A successful broker fill remains authoritative. Otherwise use
