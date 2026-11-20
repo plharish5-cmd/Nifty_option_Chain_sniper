@@ -1794,6 +1794,24 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                         <span id="preflightVerdict" style="font-family:var(--font-mono); font-size:12px; color:#94a3b8;">Checks IP · token · funds · live-arm. Places no order.</span>
                     </div>
                     <div id="preflightChecks" style="margin-top:8px; font-family:var(--font-mono); font-size:11.5px; line-height:1.7;"></div>
+                    <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #334155;">
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <span style="font-size:11.5px; color:#94a3b8; font-family:var(--font-mono);">Side:</span>
+                            <label style="font-size:11.5px;"><input type="radio" name="testOrdSide" value="CE" checked> CE</label>
+                            <label style="font-size:11.5px;"><input type="radio" name="testOrdSide" value="PE"> PE</label>
+                            <button id="testOrdBtn" onclick="revealTestOrderConfirm()" style="padding:7px 14px; background:#b45309; color:#fff; border:0; border-radius:5px; font-weight:700; cursor:pointer; font-family:var(--font-mono); font-size:12px;">🧪 Place 1-Lot REAL Test Order</button>
+                        </div>
+                        <div id="testOrdConfirm" style="display:none; margin-top:8px; padding:9px 11px; border:1px solid #b45309; border-radius:5px; background:rgba(180,83,9,0.12);">
+                            <div id="testOrdWarn" style="font-size:11.5px; color:#fcd34d; font-family:var(--font-mono); line-height:1.6;"></div>
+                            <div style="margin-top:7px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                <span style="font-size:11.5px; color:#e2e8f0;">Type <b>PLACE</b> to confirm:</span>
+                                <input id="testOrdConfirmInput" type="text" autocomplete="off" style="padding:5px 8px; width:120px; font-family:var(--font-mono); background:#0f172a; color:#e2e8f0; border:1px solid #475569; border-radius:4px;">
+                                <button onclick="submitTestOrder()" style="padding:6px 12px; background:#dc2626; color:#fff; border:0; border-radius:4px; font-weight:700; cursor:pointer; font-size:12px;">Confirm &amp; Place</button>
+                                <button onclick="document.getElementById('testOrdConfirm').style.display='none';" style="padding:6px 10px; background:#334155; color:#cbd5e1; border:0; border-radius:4px; cursor:pointer; font-size:12px;">Cancel</button>
+                            </div>
+                        </div>
+                        <div id="testOrdResult" style="margin-top:8px; font-family:var(--font-mono); font-size:11.5px; line-height:1.6;"></div>
+                    </div>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
                     <div style="display:flex; align-items:center; gap:10px;">
@@ -3307,6 +3325,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             try {
                 const r = await fetch("/api/real-order/preflight", { cache: "no-store" });
                 const d = await r.json();
+                window._lastPreflight = d;
                 const col = d.verdict === "READY_REAL" ? "#34d399" : (d.verdict === "READY_PAPER" ? "#fbbf24" : "#f87171");
                 if (vEl) { vEl.textContent = d.summary || ""; vEl.style.color = col; vEl.style.fontWeight = "800"; }
                 if (cEl) {
@@ -3320,6 +3339,58 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 if (vEl) { vEl.textContent = "Preflight failed: " + e; vEl.style.color = "#f87171"; }
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = "🔎 Check Real-Order Readiness"; }
+            }
+        }
+        // v2.0.47: real 1-lot test order. Reveals a typed-PLACE confirm first; respects every live
+        // gate (goes REAL only if the desk is LIVE-armed, else fills as paper). Reuses the proven path.
+        function _testOrdSide() {
+            const el = document.querySelector('input[name="testOrdSide"]:checked');
+            return el ? el.value : "CE";
+        }
+        function revealTestOrderConfirm() {
+            const box = document.getElementById("testOrdConfirm");
+            const warn = document.getElementById("testOrdWarn");
+            const armed = (window._lastPreflight && window._lastPreflight.would_be_real);
+            const side = _testOrdSide();
+            if (warn) {
+                warn.innerHTML = armed
+                    ? ("⚠ The desk is LIVE-armed — this places a <b>REAL</b> 1-lot BUY " + side + " with real money. "
+                       + "Run the readiness check first if you haven't.")
+                    : ("The desk is PAPER — this places a <b>paper</b> 1-lot BUY " + side + " (no real money). "
+                       + "It becomes real only when the desk is LIVE-armed.");
+            }
+            if (box) box.style.display = "block";
+            const inp = document.getElementById("testOrdConfirmInput");
+            if (inp) { inp.value = ""; inp.focus(); }
+        }
+        async function submitTestOrder() {
+            const inp = document.getElementById("testOrdConfirmInput");
+            const out = document.getElementById("testOrdResult");
+            const confirm = inp ? inp.value : "";
+            if (String(confirm).trim().toUpperCase() !== "PLACE") {
+                if (out) { out.textContent = "Type PLACE to confirm."; out.style.color = "#f87171"; }
+                return;
+            }
+            if (out) { out.textContent = "Placing…"; out.style.color = "#94a3b8"; }
+            try {
+                const r = await fetch("/api/real-order/test", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ opt_side: _testOrdSide(), confirm: confirm }),
+                });
+                const d = await r.json();
+                document.getElementById("testOrdConfirm").style.display = "none";
+                if (d && d.ok) {
+                    const real = d.routed_real ? "REAL" : "PAPER";
+                    out.innerHTML = '<span style="color:#34d399;">✓ Order placed (' + real + ') — '
+                        + String(d.contract_symbol || d.opt_side || "").replace(/</g, "&lt;")
+                        + (d.position_id ? ' · pos ' + String(d.position_id).replace(/</g, "&lt;") : "") + '</span>';
+                } else {
+                    const reason = (d && (d.rejection_reason_display || d.error || d.rejection_reason)) || "rejected";
+                    const col = (d && d.rejection_origin === "LOCAL") ? "#fbbf24" : "#f87171";
+                    out.innerHTML = '<span style="color:' + col + ';">✗ ' + String(reason).replace(/</g, "&lt;") + '</span>';
+                }
+            } catch (e) {
+                if (out) { out.textContent = "Request failed: " + e; out.style.color = "#f87171"; }
             }
         }
         // Asked directly, so the cards fill even when the main telemetry stream is not delivering.
