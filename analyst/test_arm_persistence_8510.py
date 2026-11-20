@@ -172,3 +172,35 @@ def test_recovered_only_when_no_persisted_arm(tmp_path: Path):
     assert mode in ("recovered", "none")
     if mode == "recovered":
         assert "ARM RECOVERED" in events
+
+def test_recovered_arm_reconstructs_away_seen_so_next_touch_trades():
+    """2026-11-20 14:45 miss: after a mid-session restart the arm is rebuilt from the
+    last cross. It must reconstruct away_seen=True from completed bars that already
+    pulled away from the 8EMA, so the FIRST live touch after restart trades instead
+    of being consumed just priming away_seen."""
+    from analyst.prototype_arm_recovery_8510 import recover_missing_arm
+
+    cfg = {"enabled": True, "reentry_same_side": True, "away_min_pts": 2.0}
+    # Flat ~25000 (e8 settles), then a clear LONG cross up to 25100 and two bars that
+    # hold up there (high = close+5 = 25105, well > e8 + 2). Last bar is "forming".
+    closes = [25000.0] * 8 + [25100.0, 25100.0, 25100.0, 25100.0]
+    b15 = _mk_b15(closes)
+    state: dict = {}
+    assert recover_missing_arm(b15, state=state, cfg=cfg, session_day="2026-11-19") is True
+    arm = state["arm"]
+    assert arm["direction"] == "LONG"
+    assert arm["away_seen"] is True  # the fix: was False before, wasting the next touch
+
+
+def test_recovered_arm_without_moveaway_stays_unprimed():
+    """Negative: if price never demonstrably pulled away after the cross, away_seen
+    stays False — the rebuild can never fabricate an entry at the cross itself."""
+    from analyst.prototype_arm_recovery_8510 import recover_missing_arm
+
+    cfg = {"enabled": True, "reentry_same_side": True, "away_min_pts": 500.0}
+    # away_min_pts is huge (500): no bar high ever clears e8 + 500, so no away.
+    closes = [25000.0] * 8 + [25100.0, 25100.0, 25100.0, 25100.0]
+    b15 = _mk_b15(closes)
+    state: dict = {}
+    assert recover_missing_arm(b15, state=state, cfg=cfg, session_day="2026-11-19") is True
+    assert state["arm"]["away_seen"] is False
