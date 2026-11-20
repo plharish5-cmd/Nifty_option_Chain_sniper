@@ -1534,3 +1534,7 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 - Own branch chatgpt/v245-public-ip-check from f9347ad; pre/post tags. New read-only /api/dhan/ip-check uses bounded asynchronous curl -4 to api.ipify.org, 30s cache, public IPv4 validation. Missing configured whitelist is NOT_CONFIGURED; lookup failure never substitutes localhost or old success.
 - Header refresh every30s, browser online-event refresh, manual button; compares backend saved broker whitelist (not unsaved input). Explicitly does not verify Dhan registration, change network/IP settings or gate execution.
 - Focused regression1pass/0fail (new coverage, no prior equivalent); live resolver check MATCH49.205.36.145; locks11/11 vs11/11. Compile/diff checks pass. Full suite/parity not rerun. Running trading daemon not restarted; endpoint activates on next scoped restart, no live-browser acceptance claimed. No config/database/order operations.
+
+## ChatGPT — v246 stale IP placeholder clarification — 20 Nov 2026
+- Verified env and runtime config whitelist both49.205.36.145. Old49.205.39.195 only matched HTML example placeholder among active files searched; removed example. Running daemon GET /api/dhan/ip-check returns404: v245 endpoint not loaded yet. Existing /api/dhan/status omits IP fields. No config mutation or broker operation.
+- HTML-only explanatory update; diff check passes. No restart sent during market activity. v245 required restart remains outstanding; not a new IP rejection fix or verified broker order acceptance.

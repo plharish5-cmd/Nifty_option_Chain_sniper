@@ -1857,7 +1857,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <span style="color:var(--text-dim);">Dhan Whitelisted IP:</span>
-                            <input type="text" id="dhanWhitelistedIpInput" placeholder="e.g. 49.205.39.195" style="width:160px; padding:3px 8px; font-size:12px; font-family:var(--font-mono);" onchange="refreshPublicIpCheck(true)">
+                            <input type="text" id="dhanWhitelistedIpInput" placeholder="Saved whitelisted IPv4" style="width:160px; padding:3px 8px; font-size:12px; font-family:var(--font-mono);" onchange="refreshPublicIpCheck(true)">
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <span style="color:var(--text-dim);">Status:</span>
@@ -3967,7 +3967,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 badge.className = "status-badge " + (data.status === "MATCH" ? "badge-bull" : "badge-bear");
                 badge.title = "Compared with saved app IP: " + (data.saved_ip || "not set") + ". Checked: " + data.checked_at + ". Does not verify Dhan registration or order eligibility.";
             } catch (_) {
-                badge.textContent = "IP CHECK UNAVAILABLE";
+                badge.textContent = "IP CHECK UNAVAILABLE — backend restart needed if newly installed";
                 badge.className = "status-badge badge-side";
                 document.getElementById("dhanCurrentIpDisplay").textContent = "Unavailable";
             } finally { publicIpCheckBusy = false; }
