@@ -1,0 +1,13 @@
+{
+  "endpoint": "https://data.stockmojo.in/live/oi/pcr",
+  "payload": {"symbol": 1, "dt": null, "expiries": [215]},
+  "option_expiry": "2026-11-09",
+  "instrument_label": "NIFTY_OWNER_VERIFIED_CHART_SELECTION",
+  "expiry_label": "2026-11-09_OWNER_METADATA_KEY_1_215",
+  "selection_provenance": "Owner authenticated NIFTY chart, 9 Nov expiry, All strikes; request captured 8 Nov 2026",
+  "mapping_provenance": "Decoded response final CE=145332135 PE=240203665; screenshot labels and header deltas match",
+  "interval_min_seconds": 150,
+  "interval_max_seconds": 180,
+  "session_end": "15:40",
+  "special_sessions": {"2026-11-08": ["14:20", "15:40"]}
+}

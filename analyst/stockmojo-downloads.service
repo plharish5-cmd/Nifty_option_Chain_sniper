@@ -1,0 +1,17 @@
+[Unit]
+Description=StockMojo raw market-data downloader (no trading)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/harish/Documents/Swathi K N/1 Trading/option chain/OC
+ExecStart="/home/harish/Documents/Swathi K N/1 Trading/option chain/OC/.venv/bin/python" -m analyst.stockmojo_downloader_8510
+Restart=on-failure
+RestartPreventExitStatus=2
+RestartSec=30
+TimeoutStopSec=30
+UMask=0077
+
+[Install]
+WantedBy=default.target

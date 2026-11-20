@@ -1,0 +1,60 @@
+{
+  "version": "v199-paper-only",
+  "min_history": 6,
+  "window": 5,
+  "persistence": 2,
+  "cooldown_seconds": 180,
+  "entry_score": 50,
+  "exit_score": 10,
+  "price_return_min": 0.0003,
+  "pcr_pivot": 1.0,
+  "gap_max_seconds": 180,
+  "fresh_seconds": 180,
+  "quote_age_seconds": 60,
+  "session_start": "09:15",
+  "session_end": "15:30",
+  "paper": {
+    "enabled": false,
+    "capital": 100000,
+    "max_positions": 1,
+    "daily_loss_limit": 3000,
+    "lots": 1,
+    "premium_stop_points": 15,
+    "premium_target_points": 25,
+    "slippage_points": 0.1
+  },
+  "qwen": {
+    "url": "http://127.0.0.1:11434/api/generate",
+    "model": "qwen2.5:3b",
+    "timeout_seconds": 15,
+    "cache_entries": 128,
+    "num_predict": 350,
+    "num_ctx": 2048
+  },
+  "fees": {
+    "brokerage_per_order": 20,
+    "stt_sell_rate": 0.0015,
+    "exchange_txn_fee_rate": 0.0003503,
+    "sebi_turnover_rate": 1e-06,
+    "stamp_duty_buy_rate": 3e-05,
+    "ipft_rate": 5e-06,
+    "gst_rate": 0.18
+  },
+  "_evidence": "User explicitly requested bounded opt-in paper-only replay accounts, cooldown and daily loss guard. These do not modify existing live risk settings. Seven existing combo gates remain unchanged; this is a separate research feature.",
+  "score_weights": {
+    "price": 40,
+    "flow": 40,
+    "pcr": 20
+  },
+  "lab_variants": [
+    {
+      "name": "baseline",
+      "entry_score": 50
+    },
+    {
+      "name": "strict",
+      "entry_score": 80
+    }
+  ],
+  "quote_database_underlying": "NIFTY"
+}

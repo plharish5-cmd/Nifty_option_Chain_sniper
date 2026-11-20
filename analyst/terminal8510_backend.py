@@ -8710,23 +8710,17 @@ class QuantTerminalBackend:
                 return await self._close_live_position(row, reason, spot_exit, ledger_qty=qty)
 
             else:
-                # 3. Paper position: close at current quote
-                ltp = None
-                if sec_id:
-                    ltp = float((self.cached_telemetry.get("quotes") or {}).get(sec_id) or 0.0)
-                if not ltp or ltp <= 0:
-                    ltp = float(cur_row["current_ltp"] or pos.get("current_ltp") or 0.0)
-                if not ltp or ltp <= 0:
-                    try:
-                        quotes = await self.broker.get_marketfeed_ltp({"NSE_FNO": [int(sec_id)]})
-                        ltp = float(quotes.get(sec_id) or 0.0)
-                    except Exception:
-                        pass
-                if not ltp or ltp <= 0:
-                    log.error("No valid quote for paper position %s. Leaving OPEN to retry.", pos_id)
-                    with sqlite3.connect(self.ledger_db) as conn:
-                        conn.execute("UPDATE positions SET status='OPEN', exit_reason='' WHERE position_id=?", (pos_id,))
-                    return {"ok": False, "error": "MISSING_QUOTE_RETRY"}
+                # Fresh executable bid only; position/current cached LTP is not a fill.
+                from analyst.paper_quote_8510 import executable_paper_quote
+                try:
+                    ltp = await executable_paper_quote(self.broker, sec_id, "SELL") if sec_id else None
+                except Exception as exc:
+                    log.warning("Paper exit quote unavailable for %s: %s", pos_id, type(exc).__name__)
+                    ltp = None
+                if ltp is None:
+                    log.warning("Paper exit pending for %s: fresh executable bid unavailable", pos_id)
+                    # Retain EXIT_PENDING and original exit reason for retry.
+                    return {"ok": False, "status": "EXIT_PENDING", "error": "MISSING_FRESH_PAPER_BID"}
 
                 return await self._finalize_closed_position(
                     dict(cur_row), ltp, qty, reason, spot_exit=spot_exit
@@ -9790,21 +9784,24 @@ class QuantTerminalBackend:
                                 companion_sl_order_id = sl_res.get("order_id")
 
             # ── 2. PAPER TRADE EXECUTION (if PAPER_ONLY or BOTH) ────────────
+            paper_ask = None
+            real_entry_filled = bool(live_order_id) and order_status == "FILLED"
             if mode in ("PAPER_ONLY", "BOTH") and self.paper_execution_enabled:
+                from analyst.paper_quote_8510 import executable_paper_quote
+                try:
+                    paper_ask = await executable_paper_quote(self.broker, sec_id, "BUY")
+                except Exception as exc:
+                    log.warning("Paper entry quote unavailable for %s: %s", symbol, type(exc).__name__)
+                if paper_ask is None and not real_entry_filled:
+                    log.warning("No paper fill for %s: fresh executable ask unavailable", symbol)
+                    if mode == "PAPER_ONLY":
+                        order_status = "REJECTED"
+                        rejection_reason = "MISSING_FRESH_PAPER_ASK: paper entry not filled"
+            if mode in ("PAPER_ONLY", "BOTH") and self.paper_execution_enabled and (paper_ask is not None or real_entry_filled):
                 paper_order_id = f"P_{order_id}"
-                # Simulated slippage, DETERMINISTIC per order.
-                #
-                # This was np.random.choice([0.05,0.10,0.15,0.20]) with no seed,
-                # so the same signal produced different P&L on every re-run and
-                # replay could never reconcile against the live ledger. Deriving
-                # the pick from the order id instead gives a stable value per
-                # order without a global seed, which would only make the whole
-                # sequence identical and break as soon as the order count moved.
-                #
-                # The values themselves are ASSUMED, not measured — see the
-                # paper_execution._evidence note in the config.
-                sim_slippage = self._simulated_slippage_pts(order_id)
-                paper_fill_price = round(signal_ltp + sim_slippage, 2)
+                # A successful broker fill remains authoritative. Otherwise use
+                # the newly observed ask, without synthetic slippage.
+                paper_fill_price = float(fill_price) if real_entry_filled else float(paper_ask)
                 # The orders book must agree with the position about the fill.
                 # Previously the order row kept fill_price = signal_ltp while the
                 # position booked signal_ltp + sim_slippage, so the two ledgers

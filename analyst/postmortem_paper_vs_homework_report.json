@@ -1,0 +1,153 @@
+{
+  "window": [
+    "2026-11-02",
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06"
+  ],
+  "daily": [
+    {
+      "day": "2026-11-02",
+      "homework_signals": 19,
+      "system_backtest_signals": 2,
+      "homework_blocked_by_system_rules": 1,
+      "blocked_samples": [
+        "14:15 SHORT:BOLLINGER_SLOPE_OR_WIDTH"
+      ],
+      "block_reasons": {
+        "BOLLINGER_SLOPE_OR_WIDTH": 1
+      },
+      "paper_trades_all": 0,
+      "paper_trades_stage2_3": 0,
+      "paper_trades_manual_noise": 0,
+      "paper_inr_all": 0,
+      "paper_inr_stage": 0,
+      "paper_premium_pts_stage": 0,
+      "paper_nifty_pts_est_stage": 0,
+      "PURE_8EMA_40_40_nifty_pts": 0.0,
+      "CURRENT_SYSTEM_super_trail_pts": 40.0,
+      "CURRENT_SYSTEM_fixed_40_40_pts": 40.0,
+      "CURRENT_SYSTEM_signal_count_stage": 1
+    },
+    {
+      "day": "2026-11-03",
+      "homework_signals": 21,
+      "system_backtest_signals": 1,
+      "homework_blocked_by_system_rules": 2,
+      "blocked_samples": [
+        "14:15 LONG:BOLLINGER_SLOPE_OR_WIDTH",
+        "14:45 LONG:BOLLINGER_SLOPE_OR_WIDTH"
+      ],
+      "block_reasons": {
+        "BOLLINGER_SLOPE_OR_WIDTH": 2
+      },
+      "paper_trades_all": 0,
+      "paper_trades_stage2_3": 0,
+      "paper_trades_manual_noise": 0,
+      "paper_inr_all": 0,
+      "paper_inr_stage": 0,
+      "paper_premium_pts_stage": 0,
+      "paper_nifty_pts_est_stage": 0,
+      "PURE_8EMA_40_40_nifty_pts": 120.0,
+      "CURRENT_SYSTEM_super_trail_pts": 40.0,
+      "CURRENT_SYSTEM_fixed_40_40_pts": 40.0,
+      "CURRENT_SYSTEM_signal_count_stage": 1
+    },
+    {
+      "day": "2026-11-04",
+      "homework_signals": 19,
+      "system_backtest_signals": 0,
+      "homework_blocked_by_system_rules": 3,
+      "blocked_samples": [
+        "14:15 LONG:BOLLINGER_SLOPE_OR_WIDTH",
+        "14:30 LONG:TOUCH_TOLERANCE_3PT_VS_HOMEWORK_20PT",
+        "14:45 LONG:TOUCH_TOLERANCE_3PT_VS_HOMEWORK_20PT"
+      ],
+      "block_reasons": {
+        "BOLLINGER_SLOPE_OR_WIDTH": 1,
+        "TOUCH_TOLERANCE_3PT_VS_HOMEWORK_20PT": 2
+      },
+      "paper_trades_all": 17,
+      "paper_trades_stage2_3": 0,
+      "paper_trades_manual_noise": 17,
+      "paper_inr_all": 46396.95,
+      "paper_inr_stage": 0,
+      "paper_premium_pts_stage": 0,
+      "paper_nifty_pts_est_stage": 0,
+      "PURE_8EMA_40_40_nifty_pts": 80.0,
+      "CURRENT_SYSTEM_super_trail_pts": 0.0,
+      "CURRENT_SYSTEM_fixed_40_40_pts": 0.0,
+      "CURRENT_SYSTEM_signal_count_stage": 0
+    },
+    {
+      "day": "2026-11-05",
+      "homework_signals": 16,
+      "system_backtest_signals": 2,
+      "homework_blocked_by_system_rules": 0,
+      "blocked_samples": [],
+      "block_reasons": {},
+      "paper_trades_all": 161,
+      "paper_trades_stage2_3": 25,
+      "paper_trades_manual_noise": 136,
+      "paper_inr_all": 162502.04,
+      "paper_inr_stage": -1606.78,
+      "paper_premium_pts_stage": -0.2,
+      "paper_nifty_pts_est_stage": -0.4,
+      "PURE_8EMA_40_40_nifty_pts": 40.0,
+      "CURRENT_SYSTEM_super_trail_pts": 37.2,
+      "CURRENT_SYSTEM_fixed_40_40_pts": 40.0,
+      "CURRENT_SYSTEM_signal_count_stage": 2
+    },
+    {
+      "day": "2026-11-06",
+      "homework_signals": 11,
+      "system_backtest_signals": 0,
+      "homework_blocked_by_system_rules": 0,
+      "blocked_samples": [],
+      "block_reasons": {},
+      "paper_trades_all": 67,
+      "paper_trades_stage2_3": 15,
+      "paper_trades_manual_noise": 48,
+      "paper_inr_all": 36292.78,
+      "paper_inr_stage": 19317.74,
+      "paper_premium_pts_stage": 312.8,
+      "paper_nifty_pts_est_stage": 521.3,
+      "PURE_8EMA_40_40_nifty_pts": 0.0,
+      "CURRENT_SYSTEM_super_trail_pts": 0.0,
+      "CURRENT_SYSTEM_fixed_40_40_pts": 0.0,
+      "CURRENT_SYSTEM_signal_count_stage": 0
+    }
+  ],
+  "block_reason_counts": {
+    "BOLLINGER_SLOPE_OR_WIDTH": 4,
+    "TOUCH_TOLERANCE_3PT_VS_HOMEWORK_20PT": 2
+  },
+  "block_reason_pct": {
+    "BOLLINGER_SLOPE_OR_WIDTH": 66.7,
+    "TOUCH_TOLERANCE_3PT_VS_HOMEWORK_20PT": 33.3
+  },
+  "totals": {
+    "homework_signals": 86,
+    "homework_blocked": 6,
+    "PURE_8EMA_40_40_pts": 240.0,
+    "CURRENT_super_trail_pts": 117.2,
+    "CURRENT_fixed_40_40_pts": 120.0,
+    "paper_inr_all": 245191.77,
+    "paper_inr_stage": 17710.960000000003
+  },
+  "exit_analysis": {
+    "stage_trades": 40,
+    "trail_sl_on_premium": 0,
+    "spot_est_30plus_but_prem_under_20pts": 1,
+    "exit_reason_mix": {
+      "": 2,
+      "FIXED_TARGET_HIT": 34,
+      "TRAIL_SL_HIT": 1,
+      "MANUAL_CLOSE": 190,
+      "TRAIL_TARGET_PULLBACK_HIT": 10,
+      "INITIAL_SL_HIT": 8
+    },
+    "manual_trade_count": 201
+  }
+}

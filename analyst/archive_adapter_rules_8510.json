@@ -1,0 +1,19 @@
+{
+  "archive_relative": "data/stockmojo_downloads",
+  "max_raw_bytes": 20000000,
+  "max_metadata_bytes": 65536,
+  "max_age_seconds": 180,
+  "max_clock_skew_seconds": 0,
+  "session_start": "09:15",
+  "session_end": "15:30",
+  "weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "target_underlying": "NIFTY",
+  "paper_connection_enabled": false,
+  "_evidence": "Read-only paper-preview preparation only. No signal generation, order APIs or paper ledger writes. Identity, expiry, field meanings/units and timestamp semantics require reviewed provider evidence."
+}

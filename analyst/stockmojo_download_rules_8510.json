@@ -1,0 +1,31 @@
+{
+  "endpoint": "https://data.stockmojo.in/live/multi-strike/ce-pe-oi-diff",
+  "origin": "https://stockmojo.in",
+  "payload": {
+    "symbol": 1,
+    "expiry": 215,
+    "range": 10
+  },
+  "instrument_label": "UNVERIFIED_REQUEST_MAPPING",
+  "expiry_label": "UNVERIFIED_OPTIONS_EXPIRY",
+  "interval_min_seconds": 150,
+  "interval_max_seconds": 180,
+  "request_timeout_seconds": 20,
+  "max_response_bytes": 20000000,
+  "market_hours_only": true,
+  "session_start": "09:15",
+  "session_end": "15:30",
+  "weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "backoff_initial_seconds": 180,
+  "backoff_max_seconds": 1800,
+  "freshness_max_seconds": 180,
+  "output_relative": "data/stockmojo_downloads",
+  "_evidence": "Owner requested a standalone authenticated downloader on 7 Nov 2026. This raw compact-array response is NOT the named-column NIFTY telemetry format. No mappings, unit assumptions or trading integration are authorized by this archive.",
+  "max_credential_input_bytes": 65536
+}

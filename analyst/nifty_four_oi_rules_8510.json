@@ -1,0 +1,54 @@
+{
+  "version": "NIFTY_FOUR_OI_V1",
+  "instrument": "NIFTY",
+  "warmup_rows": 6,
+  "window_seconds": 900,
+  "checkpoint_seconds": 180,
+  "session_start": "09:15",
+  "display_end": "15:40",
+  "entry_cutoff": "15:20",
+  "squareoff_time": "15:25",
+  "fresh_seconds": 240,
+  "max_gap_seconds": 240,
+  "min_oi_change": 100,
+  "persistence": 2,
+  "dominance_threshold": 0.05,
+  "spike_multiplier": 6,
+  "spike_min_history": 5,
+  "cooldown_seconds": 180,
+  "pcr_bands": [
+    0.5,
+    0.8,
+    1.2,
+    1.5
+  ],
+  "min_price_return": 0.0002,
+  "maximum_export_bytes": 20000000,
+  "fill_latency_seconds": 1,
+  "max_fill_delay_seconds": 180,
+  "field_mapping": {
+    "total_call_oi": 1,
+    "total_put_oi": 2,
+    "futures_ltp": 3
+  },
+  "export_folder": "analyst/nifty_oi_exports",
+  "archive_folder": "data/stockmojo_four_oi",
+  "breadth_enabled": false,
+  "_evidence": "Owner 8-Nov four-input specification. Bands are descriptive hypotheses, not entry rules. OI and derived PCR count as one correlated family. Mapping is provisional until reviewed.",
+  "max_quote_events_per_tick": 1000,
+  "paper_tick_seconds": 5,
+  "comparison_variants": [
+    {
+      "name": "registered-base",
+      "persistence": 2
+    },
+    {
+      "name": "registered-persistent",
+      "persistence": 3
+    }
+  ],
+  "max_private_input_bytes": 65536,
+  "baseline_rounding_tolerance": 0,
+  "exit_min_oi_change": 50,
+  "price_exit_return": 0.0002
+}

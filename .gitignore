@@ -127,3 +127,11 @@ analyst/*_regime_cache.tmp
 
 # Local exported institutional observations
 analyst/institutional_drops/
+analyst/nifty_oi_exports/
+analyst/proximity_data/
+analyst/replay_data/
+analyst/reports/*.csv
+algo_execution_engine_backup_*/
+analyst/*.before_*.json
+0]
+os
