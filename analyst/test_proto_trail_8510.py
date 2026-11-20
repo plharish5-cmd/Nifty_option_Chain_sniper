@@ -105,3 +105,63 @@ def test_eod_squareoff_still_overrides():
     candles = [_m(ts + 60, d, "15:21", 25510, 25512, 25505, 25508)]
     r = _run(candles, trail_after_target=True)
     assert r["exit_reason"].startswith("EOD_SQUARE_OFF")
+
+
+def test_gap_through_trail_books_open_not_untraded_stop():
+    """P1#4 (ChatGPT review): if the exit candle gaps past the trail (never trades at the stop),
+    the fill is the bar OPEN, not the un-traded stop price — no overstated profit."""
+    ts = 1_700_000_000
+    d = "2026-11-20"
+    candles = [
+        _m(ts + 60, d, "10:01", 25515, 25545, 25515, 25542),   # arm (+40 trigger), prev_ext low 25515
+        _m(ts + 120, d, "10:02", 25542, 25560, 25540, 25555),  # armed; prev_ext becomes 25540
+        # gap-down bar: high 25525 < trail stop (ratcheted to 25540); closes through -> exit
+        _m(ts + 180, d, "10:03", 25520, 25525, 25500, 25505),
+    ]
+    r = _run(candles, trail_after_target=True)
+    assert r["exit_reason"] == "SPOT_TRAIL_EXIT"
+    # must NOT book the un-traded 25540 stop; books the open 25520 (gap fill)
+    assert r["exit_spot"] <= 25520.0
+    assert r["exit_spot"] < 25540.0
+
+
+# --- P1#1: runtime live-monitor trail tick (ChatGPT review) ---
+from analyst.ema8_prototype_8510 import prototype_trail_tick
+
+
+def test_tick_pre_trigger_sl_intratick():
+    assert prototype_trail_tick(is_long=True, spot_entry=25500, spot_idx=25459,
+                                trigger_level=25540, stop_level=25460, armed=False)[2:] == (True, "SPOT_SL_HIT")
+
+
+def test_tick_arms_at_trigger_moves_to_breakeven_no_exit():
+    ns, na, hit, r = prototype_trail_tick(is_long=True, spot_entry=25500, spot_idx=25541,
+                                          trigger_level=25540, stop_level=25460, armed=False)
+    assert na is True and ns == 25500 and hit is False
+
+
+def test_tick_armed_bar_ratchets_and_exits_on_close_through():
+    ns, na, hit, r = prototype_trail_tick(is_long=True, spot_entry=25500, spot_idx=25555,
+                                          trigger_level=25540, stop_level=25500, armed=True,
+                                          bar={"low": 25560, "high": 25590, "close": 25558})
+    assert ns == 25560 and hit is True and r == "SPOT_TRAIL_EXIT"
+
+
+def test_tick_armed_no_bar_holds():
+    assert prototype_trail_tick(is_long=True, spot_entry=25500, spot_idx=25600,
+                                trigger_level=25540, stop_level=25520, armed=True, bar=None) == (25520, True, False, "")
+
+
+def test_tick_short_mirror():
+    ns, na, hit, r = prototype_trail_tick(is_long=False, spot_entry=25500, spot_idx=25470,
+                                          trigger_level=25460, stop_level=25500, armed=True,
+                                          bar={"low": 25400, "high": 25440, "close": 25445})
+    assert ns == 25440 and hit is True and r == "SPOT_TRAIL_EXIT"
+
+
+def test_tick_ratchet_is_monotonic():
+    # a worse (higher-low) bial cannot loosen a long stop
+    ns, _, _, _ = prototype_trail_tick(is_long=True, spot_entry=25500, spot_idx=25600,
+                                       trigger_level=25540, stop_level=25570, armed=True,
+                                       bar={"low": 25550, "high": 25620, "close": 25600})
+    assert ns == 25570  # stays at 25570, not lowered to 25550

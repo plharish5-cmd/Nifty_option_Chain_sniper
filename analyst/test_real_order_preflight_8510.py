@@ -56,3 +56,17 @@ def test_garbage_inputs_never_raise():
     r = build_order_preflight(None, None, None)
     assert r["verdict"] == "NOT_READY"
     assert isinstance(r["checks"], list)
+
+
+def test_kill_switch_blocks_ready(  ):
+    r = build_order_preflight(GOOD, 25047.0, 16335.0, desk_live_armed=True,
+                              lane_live=True, kill_switch_active=True)
+    assert r["ready_to_place"] is False
+    assert "Kill switch off" in r["blockers"]
+
+
+def test_summary_does_not_promise_broker_acceptance():
+    r = build_order_preflight(GOOD, 25047.0, 16335.0, desk_live_armed=True, lane_live=True)
+    # must not claim the broker WILL accept; only that local checks pass
+    assert "ACCEPTED and routed" not in r["summary"]
+    assert "likely" in r["summary"].lower() or "local checks" in r["summary"].lower()

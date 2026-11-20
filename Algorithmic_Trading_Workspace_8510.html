@@ -3379,7 +3379,9 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 });
                 const d = await r.json();
                 document.getElementById("testOrdConfirm").style.display = "none";
-                if (d && d.ok) {
+                if (d && d.blocked === "ALGO_ONLY") {
+                    out.innerHTML = '<span style="color:#fbbf24;">⛔ ' + String(d.message || "Blocked: algo-only desk").replace(/</g, "&lt;") + '</span>';
+                } else if (d && d.ok) {
                     const real = d.routed_real ? "REAL" : "PAPER";
                     out.innerHTML = '<span style="color:#34d399;">✓ Order placed (' + real + ') — '
                         + String(d.contract_symbol || d.opt_side || "").replace(/</g, "&lt;")

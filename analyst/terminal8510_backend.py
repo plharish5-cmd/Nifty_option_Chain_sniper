@@ -908,6 +908,10 @@ def simulate_prototype_spot_exit(
             m_hi = float(row["high"])
             m_lo = float(row["low"])
             m_c = float(row["close"])
+            try:
+                m_o = float(row["open"])
+            except (KeyError, TypeError, ValueError):
+                m_o = m_c
             m_day = str(row.get("day") or "")
             if not m_day and m_ts > 0:
                 m_day = pd.to_datetime(m_ts, unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%Y-%m-%d")
@@ -1027,7 +1031,15 @@ def simulate_prototype_spot_exit(
                         _trail_stop = (max(_trail_stop, _prev_ext) if is_long
                                        else min(_trail_stop, _prev_ext))
                     if (is_long and m_c <= _trail_stop) or (not is_long and m_c >= _trail_stop):
-                        _t = round(_trail_stop, 2)
+                        # Gap-aware fill: a stop fills at the stop only if the bar actually TRADED
+                        # through it; if the bar gapped past the stop (never reached it), the fill is
+                        # the bar's open (first executable price), not the un-traded stop. Prevents
+                        # overstating profit on a gap-through (ChatGPT review P1#4).
+                        if is_long:
+                            fill = _trail_stop if m_hi >= _trail_stop else min(_trail_stop, m_o)
+                        else:
+                            fill = _trail_stop if m_lo <= _trail_stop else max(_trail_stop, m_o)
+                        _t = round(fill, 2)
                         pnl = round((_t - entry_spot) if is_long else (entry_spot - _t), 2)
                         return {
                             "st_pnl_pts": pnl,
@@ -4158,8 +4170,16 @@ class QuantTerminalBackend:
         bal = 0.0
         try:
             funds = await self.broker.get_fundlimit()
-            bal = float((funds or {}).get("availabelBalance",
-                        (funds or {}).get("availableBalance", 0)) or 0.0)
+            _f = funds or {}
+            # get_fundlimit NORMALIZES Dhan's availabelBalance -> margin_avail (raw kept under 'raw').
+            # Read the normalized key first; fall back to total_avail, then the raw provider keys.
+            _raw = _f.get("raw") or {}
+            bal = float(
+                _f.get("margin_avail",
+                       _f.get("total_avail",
+                              _raw.get("availabelBalance", _raw.get("availableBalance", 0))))
+                or 0.0
+            )
         except Exception:
             bal = 0.0
         prem = float(est_premium or 0.0)
@@ -4171,16 +4191,33 @@ class QuantTerminalBackend:
         if prem <= 0:
             prem = 250.0  # rough ATM premium estimate for the funds check
         est_cost = round(prem * int(lot_qty), 2)
+        # Use the REAL execution gates, not execution_mode alone (ChatGPT review P2): real money is
+        # armed only when _real_money_enabled AND the kill switch is off; the Prototype lane must also
+        # be routed LIVE. Kill switch is a separate hard block surfaced as its own check.
         try:
-            desk_live = self.execution_mode == "BOTH"
+            kill = bool(self.kill_switch_active)
+        except Exception:
+            kill = False
+        try:
+            desk_live = bool(getattr(self, "_real_money_enabled", False)) and not kill
         except Exception:
             desk_live = False
-        report = build_order_preflight(masked, bal, est_cost, desk_live_armed=desk_live, lane_live=True)
+        lane_live = True
+        try:
+            from analyst.lane_live_routing_8510 import cockpit_route_tuple
+            _route = cockpit_route_tuple(self.scanner_cfg, "ema8_prototype")
+            lane_live = str(_route[0] if isinstance(_route, (list, tuple)) else _route).upper() in ("LIVE", "LIVE_ALLOWED", "REAL", "BOTH")
+        except Exception:
+            lane_live = bool(desk_live)  # fall back conservatively to the desk gate
+        report = build_order_preflight(masked, bal, est_cost, desk_live_armed=desk_live,
+                                       lane_live=lane_live, kill_switch_active=kill)
         report["est_order_cost"] = est_cost
         report["est_premium"] = prem
         report["lot_qty"] = int(lot_qty)
         report["funds_available"] = round(bal, 2)
+        report["kill_switch_active"] = kill
         report["places_order"] = False
+        report["note"] = "Preliminary LOCAL checks only — broker acceptance is confirmed only on an actual submit."
         return report
 
     async def place_real_test_order(self, opt_side: str = "CE", confirm: str = "") -> Dict[str, Any]:
@@ -4210,31 +4247,68 @@ class QuantTerminalBackend:
             return {"ok": False, "error": f"contract resolution failed: {exc}"}
         if not contract:
             return {"ok": False, "error": f"no tradable contract found: {why}"}
+        # This is an ALGO-ONLY desk: execute_order_with_chaser rejects non-algo orders, so a manual
+        # test order is BLOCKED by design unless the owner explicitly opts in via the
+        # allow_manual_test_orders policy flag. That flag is an explicitly authorized testing policy,
+        # NOT a silent bypass — the kill-switch, LIVE arming and per-lane gates still decide real-vs-
+        # paper and can still refuse the order. (ChatGPT review P1#3.)
+        try:
+            algo_only = bool(self.algo_only_execution)
+        except Exception:
+            algo_only = True
+        try:
+            manual_allowed = bool((self.cfg or {}).get("allow_manual_test_orders", False))
+        except Exception:
+            manual_allowed = False
+        if algo_only and not manual_allowed:
+            return {
+                "ok": False,
+                "blocked": "ALGO_ONLY",
+                "routed_real": False,
+                "opt_side": side,
+                "contract_symbol": contract.get("symbol"),
+                "message": ("Blocked by design — this is an algo-only desk, so manual test orders do "
+                            "not execute (real fills come from algo signals). To allow an owner-"
+                            "authorized manual test, set allow_manual_test_orders=true in config; the "
+                            "kill-switch and LIVE arming still apply."),
+            }
+        # Owner-authorized manual test: route through the algo path so the algo-only filter permits it.
+        # Arming / kill-switch / per-lane gates are UNCHANGED and still decide real-vs-paper.
         try:
             res = await self.execute_order_with_chaser(
-                contract=contract, side="BUY", strategy_name="REAL TEST ORDER",
-                is_algo_trade=False, source="MANUAL TEST 🧪",
-                strategy_setup="Real-order test (1 lot)",
+                contract=contract, side="BUY", strategy_name="MANUAL TEST ORDER",
+                is_algo_trade=True, source="MANUAL TEST 🧪",
+                strategy_setup="Owner-authorized real-order test (1 lot)",
             )
         except Exception as exc:
-            return {"ok": False, "error": f"order path error: {exc}"}
+            return {"ok": False, "error": f"order path error: {exc}", "routed_real": False}
         res = dict(res or {})
-        # Tag the rejection origin so the UI shows [LOCAL]/[BROKER] like the orders book.
+        # Honest rejection label (format_broker_rejection exists on this branch; classify inline —
+        # classify_rejection is not on the consolidated branch).
         reason = res.get("rejection_reason") or res.get("error")
         if not res.get("ok") and reason:
             try:
-                from analyst.ema_arm_persistence_8510 import classify_rejection
-                _c = classify_rejection(reason)
-                res["rejection_origin"] = _c["origin"]
-                res["rejection_reason_display"] = _c["display"]
+                from analyst.ema_arm_persistence_8510 import format_broker_rejection
+                txt = format_broker_rejection(reason)
             except Exception:
-                pass
+                txt = str(reason)
+            low = txt.lower()
+            if any(m in low for m in ("dh-", "invalid ip", "rms", "margin", "insufficient", "exchange")):
+                origin = "BROKER"
+            elif any(m in low for m in ("cash", "tick", "confirmation", "bias", "algo", "funds snapshot", "kill switch")):
+                origin = "LOCAL"
+            else:
+                origin = "UNKNOWN"
+            res["rejection_origin"] = origin
+            res["rejection_reason_display"] = f"[{origin}] {txt}" if origin != "UNKNOWN" else txt
         res["opt_side"] = side
         res["contract_symbol"] = contract.get("symbol")
-        try:
-            res["routed_real"] = (self.execution_mode == "BOTH")
-        except Exception:
-            res["routed_real"] = False
+        # routed_real reflects the ACTUAL outcome, not desk mode: true ONLY if a real order was placed.
+        res["routed_real"] = bool(
+            res.get("ok")
+            and (res.get("live_filled") or res.get("is_live") or res.get("live")
+                 or str(res.get("route") or res.get("mode") or "").upper() in ("LIVE", "REAL", "BOTH"))
+        )
         return res
 
     # ── 8600 BOARD (every option-chain read, one switch each) ───────────────
@@ -8603,18 +8677,54 @@ class QuantTerminalBackend:
                                 p["spot_stop_level"] = spot_sl
                                 p["spot_target_level"] = spot_tgt
                                 p["spot_trail_armed"] = 1 if trail.get("armed") else 0
-                        elif is_long_spot and spot_idx >= spot_tgt:
-                            should_close = True
-                            exit_reason = "SPOT_TARGET_HIT"
-                        elif is_long_spot and spot_idx <= spot_sl:
-                            should_close = True
-                            exit_reason = "SPOT_SL_HIT"
-                        elif (not is_long_spot) and spot_idx <= spot_tgt:
-                            should_close = True
-                            exit_reason = "SPOT_TARGET_HIT"
-                        elif (not is_long_spot) and spot_idx >= spot_sl:
-                            should_close = True
-                            exit_reason = "SPOT_SL_HIT"
+                        else:
+                            # v2.0.44 "+40 then trail" — RUNTIME wiring (ChatGPT review P1#1). Only the
+                            # 8 EMA Prototype trails; Stage 2/3 keep the fixed target below. When the
+                            # toggle is off, the Prototype also uses the fixed target (identical to before).
+                            proto_trail_on = sid_pos.startswith("EMA8_PROTOTYPE") and bool(
+                                (self.scanner_cfg.get("ema8_prototype") or {}).get("trail_after_target_enabled", True)
+                            )
+                            if proto_trail_on:
+                                from analyst.ema8_prototype_8510 import prototype_trail_tick
+
+                                pid = str(p.get("position_id") or "")
+                                armed = bool(int(p.get("spot_trail_armed") or 0))
+                                if not hasattr(self, "_proto_trail_bar_ts"):
+                                    self._proto_trail_bar_ts = {}
+                                bar = self._latest_closed_15m_bar()
+                                use_bar = None
+                                if bar and pid and int(bar["ts"]) != int(self._proto_trail_bar_ts.get(pid, 0)):
+                                    self._proto_trail_bar_ts[pid] = int(bar["ts"])
+                                    use_bar = bar
+                                new_sl, new_armed, hit, hit_reason = prototype_trail_tick(
+                                    is_long=is_long_spot, spot_entry=spot_ent, spot_idx=spot_idx,
+                                    trigger_level=spot_tgt, stop_level=spot_sl, armed=armed, bar=use_bar,
+                                    move_to_breakeven=bool(
+                                        (self.scanner_cfg.get("ema8_prototype") or {}).get("trail_move_to_breakeven", True)
+                                    ),
+                                )
+                                if hit:
+                                    should_close = True
+                                    exit_reason = hit_reason
+                                elif (new_armed != armed) or (abs(new_sl - spot_sl) > 1e-6):
+                                    cur.execute(
+                                        "UPDATE positions SET spot_stop_level=?, spot_trail_armed=? WHERE position_id=?",
+                                        (new_sl, 1 if new_armed else 0, pid),
+                                    )
+                                    p["spot_stop_level"] = new_sl
+                                    p["spot_trail_armed"] = 1 if new_armed else 0
+                            elif is_long_spot and spot_idx >= spot_tgt:
+                                should_close = True
+                                exit_reason = "SPOT_TARGET_HIT"
+                            elif is_long_spot and spot_idx <= spot_sl:
+                                should_close = True
+                                exit_reason = "SPOT_SL_HIT"
+                            elif (not is_long_spot) and spot_idx <= spot_tgt:
+                                should_close = True
+                                exit_reason = "SPOT_TARGET_HIT"
+                            elif (not is_long_spot) and spot_idx >= spot_sl:
+                                should_close = True
+                                exit_reason = "SPOT_SL_HIT"
                 if is_proto_pos and not should_close:
                     proto_eod_hm = str(self.cfg.get("eod_square_off_time", "15:20")).strip()[:5]
                     if now_dt.strftime("%H:%M") >= proto_eod_hm:

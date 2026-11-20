@@ -24,6 +24,7 @@ def build_order_preflight(
     *,
     desk_live_armed: bool = False,
     lane_live: bool = True,
+    kill_switch_active: bool = False,
 ) -> Dict[str, Any]:
     """Return a structured readiness report. Does NOT place an order.
 
@@ -49,29 +50,40 @@ def build_order_preflight(
         {"key": "ip", "label": "Machine IP allowlisted", "ok": ip_ok,
          "detail": (f"IP {cfg.get('current_ip', '?')} matches allowlist" if ip_ok
                     else f"IP {cfg.get('current_ip', '?')} NOT in Dhan allowlist "
-                         f"(allowlisted: {cfg.get('whitelisted_ip', '?')}) — DH-905 will reject")},
+                         f"(allowlisted: {cfg.get('whitelisted_ip', '?')}) — DH-905 would reject")},
         {"key": "funds", "label": "Sufficient funds", "ok": funds_ok,
          "detail": (f"₹{bal:,.2f} available vs ₹{cost:,.2f} needed" if funds_ok
                     else (f"₹{bal:,.2f} available, need ₹{cost:,.2f}" if bal > 0
                           else "funds read ₹0 — check the Dhan funds feed / key"))},
     ]
+    # Kill switch is a local hard block on all execution.
+    checks.append({
+        "key": "kill_switch", "label": "Kill switch off", "ok": not bool(kill_switch_active),
+        "detail": "kill switch is OFF" if not kill_switch_active
+                  else "KILL SWITCH ACTIVE — all execution is locked",
+    })
     blockers = [c["label"] for c in checks if not c["ok"]]
     ready = not blockers
 
     live_armed = bool(desk_live_armed) and bool(lane_live)
     checks.append({
         "key": "live_armed", "label": "Desk LIVE-armed (else paper)", "ok": live_armed,
-        "detail": "desk + lane are LIVE — order would route REAL" if live_armed
+        "detail": "desk + lane are LIVE — a real order would route to real money" if live_armed
                   else "desk/lane is PAPER — a test order would fill as PAPER, not real money",
     })
 
+    # Honest wording: these are LOCAL pre-checks. They do not prove broker registration or that Dhan
+    # will accept the order — only an actual submit confirms that.
     if ready and live_armed:
-        verdict, summary = "READY_REAL", "✅ A real order would be ACCEPTED and routed to real money."
+        verdict = "READY_REAL"
+        summary = ("✅ Local checks pass and the desk is LIVE-armed — a real order is likely to be "
+                   "accepted. Broker acceptance is only confirmed on an actual submit.")
     elif ready and not live_armed:
-        verdict, summary = "READY_PAPER", "✅ Order checks pass, but the desk is PAPER — it would fill as paper, not real."
+        verdict = "READY_PAPER"
+        summary = "✅ Local checks pass, but the desk is PAPER — an order would fill as paper, not real."
     else:
         verdict = "NOT_READY"
-        summary = "🔴 A real order would be REJECTED: " + ", ".join(blockers) + "."
+        summary = "🔴 Local checks FAIL: " + ", ".join(blockers) + ". A real order would likely be refused."
 
     return {
         "ready_to_place": ready,

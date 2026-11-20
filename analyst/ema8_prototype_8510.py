@@ -468,6 +468,49 @@ def ensure_forming_b15_bar(
     return b15, -1
 
 
+def prototype_trail_tick(
+    *,
+    is_long: bool,
+    spot_entry: float,
+    spot_idx: float,
+    trigger_level: float,
+    stop_level: float,
+    armed: bool,
+    bar: Optional[Dict[str, Any]] = None,
+    move_to_breakeven: bool = True,
+) -> Tuple[float, bool, bool, str]:
+    """Live "+40 then trail" tick for the Prototype. Returns (new_stop, new_armed, hit, reason).
+
+    Mirrors the replay trail (simulate_prototype_spot_exit) for runtime position management:
+      - Pre-trigger: the fixed stop applies on the live tick (intratick, like the replay's intrabar SL).
+        reaching `trigger_level` ARMS the trail and moves the stop to breakeven (entry).
+      - Armed: on each NEW CLOSED `bar`, ratchet the stop to the bar's low (long) / high (short),
+        monotonic; exit when that bar CLOSES through the stop (SPOT_TRAIL_EXIT). A gap that closes
+        through books the stop here because the fill uses the live tick downstream, not this level.
+      - `bar` must be passed ONLY once per newly-closed candle (caller de-dupes by bar ts), else None.
+    Pure; never raises on well-formed inputs.
+    """
+    new_stop, new_armed = float(stop_level), bool(armed)
+    if not new_armed:
+        # pre-trigger fixed stop (intratick)
+        if (is_long and spot_idx <= stop_level) or ((not is_long) and spot_idx >= stop_level):
+            return new_stop, new_armed, True, "SPOT_SL_HIT"
+        # arm on reaching the trigger (the old fixed target); do NOT exit
+        if (is_long and spot_idx >= trigger_level) or ((not is_long) and spot_idx <= trigger_level):
+            new_armed = True
+            new_stop = float(spot_entry) if move_to_breakeven else float(stop_level)
+    if new_armed and bar is not None:
+        try:
+            ext = float(bar["low"]) if is_long else float(bar["high"])
+            close = float(bar["close"])
+        except (KeyError, TypeError, ValueError):
+            return new_stop, new_armed, False, ""
+        new_stop = max(new_stop, ext) if is_long else min(new_stop, ext)
+        if (is_long and close <= new_stop) or ((not is_long) and close >= new_stop):
+            return new_stop, new_armed, True, "SPOT_TRAIL_EXIT"
+    return new_stop, new_armed, False, ""
+
+
 def prototype_spot_is_long(
     spot_entry: float,
     spot_target: float,
