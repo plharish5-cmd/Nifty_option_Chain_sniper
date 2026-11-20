@@ -8831,6 +8831,21 @@ class QuantTerminalBackend:
         except Exception as exc:
             log.debug("Error in _check_broker_sl_fills: %s", exc)
 
+    async def execute_position_exit(
+        self,
+        pos: Dict[str, Any],
+        reason: str,
+        spot_exit: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Public exit entrypoint (ChatGPT v251 paper-executable-quotes API).
+
+        Completes ChatGPT's paper-executable-quotes work: the exit books only a FRESH executable
+        bid (via executable_paper_quote); when none is available the position stays EXIT_PENDING —
+        never a stale cached/stored LTP — and a later call fills at the fresh bid. Thin alias over
+        the unified close path so both the test suite and callers use one name.
+        """
+        return await self._close_position_with_broker(pos, reason, spot_exit=spot_exit)
+
     async def _close_position_with_broker(
         self,
         pos: Dict[str, Any],

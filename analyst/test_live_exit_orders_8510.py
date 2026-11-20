@@ -94,6 +94,20 @@ class FakeBroker:
     async def get_marketfeed_ltp(self, payload: Dict[str, Any]) -> Dict[str, float]:
         return dict(self.quotes)
 
+    async def get_marketfeed_quote(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # Fresh REST depth for ChatGPT's executable_paper_quote: an uncrossed book (bid==ask==quote)
+        # derived from self.quotes, so a paper exit books the quote as a fresh bid. Empty quotes ->
+        # empty depth -> executable_paper_quote returns None -> exit stays pending (test_7).
+        out: Dict[str, Any] = {}
+        for sid, px in self.quotes.items():
+            try:
+                p = float(px)
+            except (TypeError, ValueError):
+                continue
+            if p > 0:
+                out[str(sid)] = {"bid": p, "ask": p, "last_price": p}
+        return out
+
 
 def make_test_backend(tmp_path: Path, fake_broker: FakeBroker) -> QuantTerminalBackend:
     """Instantiate an isolated QuantTerminalBackend in tmp_path with a fake broker."""
