@@ -26,6 +26,7 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.35-reversal-oi-panel` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.35` | **NO — awaiting Harish** |
 | `gemini/v2.0.36-clean-and-scope` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.36` | **NO — awaiting Harish** |
 | `gemini/v2.0.37-oi-filter-backtest` | Gemini/Cursor | **done** (run job + backtest path fix) tags `pre/post-gemini-v2.0.37` | **NO — awaiting Harish** |
+| `gemini/v2.6.1-wide-test-harness` | Gemini | **done**, tags `pre/post-gemini-v2.6.1` | **NO — awaiting Harish** |
 
 ---
 
@@ -1556,3 +1557,19 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 - Root cause proven read-only: canonical DB nearest expiry23-Nov last snapshot11:29 while December expiry advanced; shadow recorder same23-Nov updated11:51. First-nonempty source lookup selected old nearest-expiry history and hid fresh shadow. Changed load_day_snapshots to select nearest expiry globally, then freshest source for that exact expiry, caller-order tie break; full history from one DB only, no splicing/future/asof leakage. No protected modules modified.
 - Actual revised loader:23-Nov68snapshots,97s old at check. Momentum10±2min still unavailable due genuine snapshot gaps (11:35→11:46); not fabricated or relaxed. This patch fixes stale source preference, not upstream recording continuity or certified missing8600source events.
 - New tempDB regression pass (fresh source, expiry isolation, asof). Combined60pass/3fail; failures test_prototype_view_says_where_the_lane_is, test_link_is_served_and_shown, test_equity_guys_view_classifier are the same3 prior v242 ticket/UI baseline failures (prior34pass/3fail narrower selection). Locks11/11 vs11/11. No assertions changed. No full-suite claim. Backend patch requires scoped restart; running daemon not interrupted during market/open position activity. Runtime settings unchanged by this agent.
+
+## 2026-11-21 · Gemini (Argon) · `gemini/v2.6.1-wide-test-harness`
+
+**Goal:** Part A — Wide testing harness & independent adversarial audit of Cursor (Part B) and AGY (Part C).
+
+**Harness Built:**
+- `scripts/run_baseline_diff_tests.py`: Automates headless execution of wide test suite across `analyst/` and `ict_smc_app/backend/tests/` on target HEAD and detached worktree at `/tmp/base_verify` on baseline SHA (`origin/reconcile/v2.6.0-consolidated`), symlinking untracked data folders for execution parity, and outputting clean diff: `Total | Passed | Failed | Pre-existing Reds | NEW Regressions (must be 0)`.
+
+**Audit Findings:**
+- **Cursor (`cursor/v2.6.1-realtime-10s-feeds`):** 0 commits ahead of baseline (`883ec265f7`), tagged `pre-cursor-v2.6.1`. Part B not committed yet.
+- **AGY (`agy/v2.6.1-resume-gating-trail`):**
+  - Lock verification: **11/11 PASSED** intact. Zero protected modules touched.
+  - Baseline diff test: 3 regressions identified and repaired (`test_stale_persist_logs_rebuilt`, `test_stuck_open_at_target_sweep_closes_and_frees_lane`, `test_recovery_uses_closed_session_cross_not_forming_or_past_entry`). Post-repair: **0 new regressions**.
+  - Red-team failure modes: 1,000-tick cooldown dedupes to 1 audit row (0 log spam); stale feed fails open with `"feed stale — not blocking"`; gap-through trail books open; historical downtime touch is not back-traded.
+  - Final Verdict: **PASS**.
+
