@@ -4,7 +4,7 @@ No historical entry is submitted. Existing consumed/stop/position state wins.
 """
 from analyst.ema8_prototype_8510 import (
     _close_crossed_above, _close_crossed_below, _ribbon_blocks,
-    _arm_new, bar_open_timestamp, reentry_enabled,
+    _arm_new, bar_open_timestamp, reentry_enabled, DEFAULT_CFG,
 )
 from analyst.nse_spot_candles_8510 import ema4_ema8
 
@@ -38,18 +38,30 @@ def recover_missing_arm(b15, *, state, cfg, session_day):
     # after a mid-session restart is consumed just priming away_seen instead of
     # trading (the 14:45 miss on 2026-11-20). Requiring a demonstrated move-away on
     # a completed bar means this can never fabricate an entry at the cross itself.
-    away_min = float(cfg.get('away_min_pts', 0.0) or 0.0)
+    # Default away_min to the evaluator's own default (DEFAULT_CFG), never 0.0 — a
+    # 0 default would arm a touch one bar earlier than the live engine if ever handed
+    # an unmerged cfg. The whole reconstruction is also crash-proofed: it reads extra
+    # columns (high/low) the original recovery never used, and a recovery helper must
+    # NEVER break bootstrap. On any missing column or error, away_seen stays False
+    # (the prior, safe behaviour) and the arm is still rebuilt.
+    away_min = float(cfg.get('away_min_pts', DEFAULT_CFG.get('away_min_pts', 0.0)) or 0.0)
     away_seen = False
-    for j in range(i + 1, len(b15) - 1):
-        if b15.index[j].strftime('%Y-%m-%d') != session_day:
-            continue
-        ej = float(e8.iloc[j])
-        if side == 'LONG' and float(b15['high'].iloc[j]) > ej + away_min:
-            away_seen = True
-            break
-        if side == 'SHORT' and float(b15['low'].iloc[j]) < ej - away_min:
-            away_seen = True
-            break
+    try:
+        has_hl = ('high' in b15.columns) and ('low' in b15.columns)
+        for j in range(i + 1, len(b15) - 1):
+            if b15.index[j].strftime('%Y-%m-%d') != session_day:
+                continue
+            ej = float(e8.iloc[j])
+            hi = float(b15['high'].iloc[j]) if has_hl else float(b15['close'].iloc[j])
+            lo = float(b15['low'].iloc[j]) if has_hl else float(b15['close'].iloc[j])
+            if side == 'LONG' and hi > ej + away_min:
+                away_seen = True
+                break
+            if side == 'SHORT' and lo < ej - away_min:
+                away_seen = True
+                break
+    except Exception:
+        away_seen = False
     _arm_new(state,direction=side,cross_bar_open_ts=bar_open_timestamp(b15,i),e8=line,away_seen=away_seen)
     state['day']=session_day
     return True
