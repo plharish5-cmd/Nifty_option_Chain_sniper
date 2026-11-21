@@ -52,3 +52,38 @@ def test_diagnostic_failure_never_raises_into_execution(tmp_path):
     b = backend(tmp_path)
     b.ledger_db = tmp_path / 'missing' / 'no.sqlite3'
     assert record(b, {'strategy_id': 'CROSSOVER_BULLISH'}, 'BLOCKED', 'lane filter') is False
+
+
+def test_waiting_cooldown_does_not_flood_db_or_user_log(tmp_path):
+    """Red-team (2026-11-21): WAITING/cooldown fires every tick with changing
+    seconds. It must (a) collapse in the audit DB despite volatile numbers, and
+    (b) NOT spam the user-facing Signal audit log (legacy mirror)."""
+    b = backend(tmp_path)
+    b.log_ema8_prototype_event = Mock()
+    sig = {'strategy_id': 'EMA8_PROTOTYPE_LONG', 'direction': 'LONG'}
+    # Same cooldown state, different trailing seconds each tick -> one row, no legacy spam.
+    for secs in ('12.3', '11.8', '11.1', '9.9'):
+        record(b, sig, 'WAITING', f'Order cooldown: {secs}s remaining')
+    rows = [r for r in read(b.ledger_db) if r['stage'] == 'WAITING']
+    assert len(rows) == 1, f"WAITING flooded the audit DB: {len(rows)} rows"
+    b.log_ema8_prototype_event.assert_not_called()  # WAITING never reaches the user log
+
+
+def test_touch_blocked_and_order_outcomes_do_reach_user_log(tmp_path):
+    """The gate reason the owner asked for (a blocked touch) and real order
+    outcomes DO mirror to the Signal audit log."""
+    b = backend(tmp_path)
+    b.log_ema8_prototype_event = Mock()
+    record(b, {'strategy_id': 'EMA8_PROTOTYPE_LONG', 'direction': 'LONG'}, 'TOUCH_BLOCKED', 'OI OPPOSE')
+    record(b, {'strategy_id': 'EMA8_PROTOTYPE_LONG', 'direction': 'LONG'}, 'ORDER_REJECTED', 'DH-905')
+    assert b.log_ema8_prototype_event.call_count == 2
+
+
+def test_genuinely_different_block_reason_is_not_collapsed(tmp_path):
+    """Dedup must not hide a different gate: two different reasons within the
+    window both persist (only identical-modulo-numbers repeats collapse)."""
+    b = backend(tmp_path)
+    sig = {'strategy_id': 'EMA8_PROTOTYPE_LONG', 'direction': 'LONG'}
+    record(b, sig, 'BLOCKED', 'Directional bias LONG_ONLY')
+    record(b, sig, 'BLOCKED', 'Strategy not in algo allowlist')
+    assert len([r for r in read(b.ledger_db) if r['stage'] == 'BLOCKED']) == 2

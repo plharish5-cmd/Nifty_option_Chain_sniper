@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import sqlite3
 import time
 from datetime import datetime
@@ -84,10 +85,15 @@ def record(backend, sig, stage, reason, *, lane=None, state=None):
         outcome = sig.get('execution_result') or {}
         if stage == 'ORDER_REJECTED' and outcome.get('position_id'):
             text += ' | Execution rejected; separate paper position recorded: ' + str(outcome['position_id'])
-        signature = hashlib.sha256(json.dumps([lane, sig.get('direction'), stage, text, settings], sort_keys=True, default=str).encode()).hexdigest()
+        # Dedup signature ignores volatile numbers (cooldown "12.3s remaining",
+        # OI "age 3s") so an unchanged repeating state collapses to one row per
+        # window, while a genuinely different reason (different gate/filter) still
+        # writes. The STORED text keeps full detail; only the dedup key is normalized.
+        reason_key = re.sub(r'\d+(?:\.\d+)?', '#', text)
+        signature = hashlib.sha256(json.dumps([lane, sig.get('direction'), stage, reason_key, settings], sort_keys=True, default=str).encode()).hexdigest()
         last = backend.__dict__.setdefault('_decision_audit_seen', {})
         now = time.monotonic()
-        if stage in ('STATE', 'TOUCH_BLOCKED') and now - last.get(signature, -1e20) < RULES['repeat_state_seconds']:
+        if stage in ('STATE', 'TOUCH_BLOCKED', 'WAITING', 'BLOCKED') and now - last.get(signature, -1e20) < RULES['repeat_state_seconds']:
             return False
         at = datetime.now(IST)
         with sqlite3.connect(backend.ledger_db, timeout=RULES['db_timeout_seconds']) as c:
@@ -97,8 +103,12 @@ def record(backend, sig, stage, reason, *, lane=None, state=None):
                        str(sig.get('direction') or row.get('direction') or ''), stage, text,
                        json.dumps(context, default=str, allow_nan=False)))
         last[signature] = now
+        # Mirror to the user-facing Signal audit log ONLY the meaningful, mostly-terminal
+        # events — a gate that blocked an actual touch, and real order outcomes. WAITING
+        # (cooldown/retry) and generic per-tick BLOCKED fire every tick and would bury the
+        # ARM / ENTRY / TARGET lines the owner reads; they stay in the audit DB only.
         legacy = getattr(backend, 'log_ema8_prototype_event', None)
-        if lane == 'prototype' and stage in ('TOUCH_BLOCKED', 'BLOCKED', 'WAITING', 'ORDER_REJECTED', 'ORDER_ACCEPTED') and callable(legacy):
+        if lane == 'prototype' and stage in ('TOUCH_BLOCKED', 'ORDER_REJECTED', 'ORDER_ACCEPTED') and callable(legacy):
             legacy(event=stage, direction=sig.get('direction') or row.get('direction'),
                    reason=at.date().isoformat() + ' | ' + text)
         return True
