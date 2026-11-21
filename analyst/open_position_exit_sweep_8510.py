@@ -49,8 +49,8 @@ def spot_exit_should_close(
         )
         use_rev_trail = sid_pos.startswith("CROSSOVER") and bool(int(p.get("reversal_candle_trail") or 0))
         proto_cfg = (getattr(backend, "scanner_cfg", {}) or {}).get("ema8_prototype") or {}
-        proto_trail_on = sid_pos.startswith("EMA8_PROTOTYPE") and bool(
-            proto_cfg.get("trail_after_target_enabled", True)
+        proto_trail_on = sid_pos.startswith("EMA8_PROTOTYPE") and (
+            bool(p.get("spot_trail_armed")) or bool(proto_cfg.get("trail_after_target_enabled", False))
         )
         if use_rev_trail:
             from analyst.reversal_spot_exit_8510 import parse_reversal_trail_fields, reversal_spot_exit_tick

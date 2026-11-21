@@ -21,6 +21,7 @@ def recover_missing_arm(b15, *, state, cfg, session_day):
     has_hl = ('high' in b15.columns) and ('low' in b15.columns)
 
     sl_blocked_side = str(state.get('sl_blocked_side') or '').upper() or None
+    initial_sl_block = sl_blocked_side
     active_side = None
     cross_idx = None
     cross_line = None
@@ -110,6 +111,12 @@ def recover_missing_arm(b15, *, state, cfg, session_day):
                 elif lo <= pos_tgt:
                     # Profit target hit: arm retained for re-entry
                     in_pos = False
+
+    if initial_sl_block and active_side == initial_sl_block:
+        state['sl_blocked_side'] = initial_sl_block
+        state.pop('arm', None)
+        state['day'] = session_day
+        return False
 
     if sl_blocked_side:
         state['sl_blocked_side'] = sl_blocked_side
