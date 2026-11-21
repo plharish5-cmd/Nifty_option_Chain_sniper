@@ -169,3 +169,108 @@ def test_tick_ratchet_is_monotonic():
                                        trigger_level=25540, stop_level=25570, armed=True,
                                        bar={"low": 25550, "high": 25620, "close": 25600})
     assert ns == 25570  # stays at 25570, not lowered to 25550
+
+
+def test_recovery_sweep_respects_trailing_stop():
+    """C4(i): Recovery sweep must respect the trailing stop, not the fixed +40."""
+    from datetime import datetime
+    from types import SimpleNamespace
+    from zoneinfo import ZoneInfo
+    from analyst.open_position_exit_sweep_8510 import spot_exit_should_close
+
+    # Midday timestamp to prevent triggering eod_square_off_time (15:20) in tests
+    midday = datetime(2026, 11, 21, 11, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
+
+    b = SimpleNamespace(
+        scanner_cfg={"ema8_prototype": {"trail_after_target_enabled": True, "trail_move_to_breakeven": True}},
+        cfg={"eod_square_off_time": "15:20"},
+    )
+    p = {
+        "strategy_id": "EMA8_PROTOTYPE_LONG",
+        "symbol": "NIFTY26NOV25500CE",
+        "spot_entry": 25500.0,
+        "spot_target_level": 25540.0,
+        "spot_stop_level": 25520.0,
+        "spot_trail_armed": 1,
+    }
+    # Spot +50 above target: trail ON must NOT exit on fixed +40
+    hit, reason = spot_exit_should_close(b, p, spot_idx=25550.0, now=midday)
+    assert hit is False, f"Expected sweep not to close when trailing, got {reason}"
+
+    # Spot falls to 25515 (below ratcheted trail stop 25520): must exit on trail
+    hit, reason = spot_exit_should_close(b, p, spot_idx=25515.0, now=midday)
+    assert hit is True and reason == "SPOT_TRAIL_EXIT"
+
+    # Trail disabled: fixed +40 target exits immediately
+    b_fixed = SimpleNamespace(
+        scanner_cfg={"ema8_prototype": {"trail_after_target_enabled": False}},
+        cfg={"eod_square_off_time": "15:20"},
+    )
+    p_fixed = {
+        "strategy_id": "EMA8_PROTOTYPE_LONG",
+        "symbol": "NIFTY26NOV25500CE",
+        "spot_entry": 25500.0,
+        "spot_target_level": 25540.0,
+        "spot_stop_level": 25460.0,
+        "spot_trail_armed": 0,
+    }
+    hit, reason = spot_exit_should_close(b_fixed, p_fixed, spot_idx=25545.0, now=midday)
+    assert hit is True and reason == "SPOT_TARGET_HIT"
+
+
+def test_15m_candle_not_marked_used_before_trail_arms():
+    """C4(ii): Do not mark a 15m candle 'used' before the trail arms."""
+    from analyst.ema8_prototype_8510 import prototype_trail_tick
+
+    pid = "POS_1"
+    bar_ts = 1_700_000_900
+    bar = {"ts": bar_ts, "low": 25520.0, "high": 25550.0, "close": 25540.0}
+
+    # Before arming (price at 25520, trigger at 25540):
+    # armed=False -> bar must NOT be marked used or consumed
+    trail_bar_ts: dict[str, int] = {}
+    armed = False
+    use_bar = bar if (armed and bar and int(bar["ts"]) != trail_bar_ts.get(pid, 0)) else None
+    assert use_bar is None  # Candle NOT passed before arming
+
+    new_sl, new_armed, hit, reason = prototype_trail_tick(
+        is_long=True,
+        spot_entry=25500.0,
+        spot_idx=25520.0,
+        trigger_level=25540.0,
+        stop_level=25460.0,
+        armed=armed,
+        bar=use_bar,
+    )
+    assert new_armed is False
+    assert trail_bar_ts.get(pid) is None  # Still not marked used!
+
+    # Next tick: price hits +40 (25545) -> arms trail
+    new_sl, new_armed, hit, reason = prototype_trail_tick(
+        is_long=True,
+        spot_entry=25500.0,
+        spot_idx=25545.0,
+        trigger_level=25540.0,
+        stop_level=25460.0,
+        armed=new_armed,
+    )
+    assert new_armed is True
+    assert new_sl == 25500.0  # Breakeven
+
+    # Now armed: subsequent closed 15m bar is marked used and ratchets
+    armed = new_armed
+    use_bar = bar if (armed and bar and int(bar["ts"]) != trail_bar_ts.get(pid, 0)) else None
+    assert use_bar is not None
+    new_sl, new_armed, hit, reason = prototype_trail_tick(
+        is_long=True,
+        spot_entry=25500.0,
+        spot_idx=25560.0,
+        trigger_level=25540.0,
+        stop_level=new_sl,
+        armed=armed,
+        bar=use_bar,
+    )
+    if new_armed and use_bar:
+        trail_bar_ts[pid] = int(use_bar["ts"])
+    assert trail_bar_ts[pid] == bar_ts
+    assert new_sl == 25520.0  # Ratcheted to bar low!

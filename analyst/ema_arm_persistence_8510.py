@@ -62,7 +62,10 @@ def bootstrap_prototype_arm(
     session_day: str,
 ) -> str:
     """Resume persisted arm or fall back to cross recovery. Returns bootstrap mode."""
-    state = getattr(backend, "_ema8_prototype_state", None) or {}
+    state = getattr(backend, "_ema8_prototype_state", None)
+    if state is None:
+        state = {}
+        backend._ema8_prototype_state = state
     resumed = bool(getattr(backend, "_proto_arm_loaded_from_db", False))
     arm = state.get("arm")
     persisted_day = str(state.get("day") or "").strip()
@@ -78,17 +81,20 @@ def bootstrap_prototype_arm(
             reason="ARM RESUMED (persisted) — evaluating live touches from current tick",
         )
         state["day"] = session_day
+        backend._ema8_prototype_state = state
         backend._save_ema8_prototype_state()
         return "resumed"
 
     if arm:
         state.setdefault("day", session_day)
+        backend._ema8_prototype_state = state
         return "live"
 
     from analyst.prototype_arm_recovery_8510 import recover_missing_arm
 
     if recover_missing_arm(b15, state=state, cfg=proto_cfg, session_day=session_day):
         state["day"] = session_day
+        backend._ema8_prototype_state = state
         backend._save_ema8_prototype_state()
         backend.log_ema8_prototype_event(
             event="ARM RECOVERED",

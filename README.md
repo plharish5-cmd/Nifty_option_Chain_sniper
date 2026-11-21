@@ -158,6 +158,14 @@ To eliminate dual-writer race conditions, schema divergence, and data corruption
 
 ---
 
+## Operational Guardrails & Production Restarts
+
+- **Engine Freeze Hours:** Freeze the engine during live market hours `09:15→15:30 IST`. Do not push ad-hoc edits, patches, or engine restarts during active sessions.
+- **Maintenance Window:** Apply code updates, configurations, deployments, and restarts after `15:30 IST`.
+- **Static IP & Broker Auth:** For Dhan static IP authentication (DH-905 compliance), run via systemd / VPS auto-restart to preserve IP consistency across service cycles.
+
+---
+
 ## What this is not
 
 It is a complete algorithmic decision-support and simulated execution system. It provides high-probability setups, exact spoon-fed entries, stop losses, targets, and paper execution to eliminate emotional impulse trading. Always manage risk and preserve trading capital.

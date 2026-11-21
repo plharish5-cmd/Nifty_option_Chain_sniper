@@ -32,7 +32,7 @@ def lane_for(sid):
     sid = str(sid or '').upper()
     if sid.startswith('EMA8_PROTOTYPE'):
         return 'prototype'
-    if sid.startswith('CROSSOVER'):
+    if sid.startswith(('CROSSOVER', 'STAGE_2', 'STAGE_3')):
         return 'reversal'
     if 'FLAGSHIP' in sid or sid.startswith(('H1_', 'PA_1H')):
         return 'flagship'
@@ -82,6 +82,18 @@ def record(backend, sig, stage, reason, *, lane=None, state=None):
             text += ' | OI ' + str(oi.get('mode') or 'unknown mode') + '/' + str(oi.get('rule') or '') + ': ' + '; '.join(votes)
             if str(oi.get('mode')) == 'log_only':
                 text += '; informational only — OI did not block'
+        stale_feed = False
+        if isinstance(oi, dict) and oi.get('reads'):
+            for r in oi['reads'].values():
+                if isinstance(r, dict) and r.get('switch_on') and r.get('vote') == 'STALE':
+                    stale_feed = True
+                    break
+        oi3 = extra.get('oi_3m') or {}
+        if isinstance(oi3, dict) and (oi3.get('stale') or oi3.get('feed_stale')):
+            stale_feed = True
+        if row.get('feed_stale') or sig.get('feed_stale') or row.get('ema_stale') or row.get('stale') or stale_feed or 'stale' in text.lower():
+            if 'not blocking' not in text.lower():
+                text += ' | feed stale — not blocking'
         outcome = sig.get('execution_result') or {}
         if stage == 'ORDER_REJECTED' and outcome.get('position_id'):
             text += ' | Execution rejected; separate paper position recorded: ' + str(outcome['position_id'])
@@ -120,10 +132,10 @@ def record(backend, sig, stage, reason, *, lane=None, state=None):
 def record_evaluation(backend, lane, row, signals=()):
     row = row or {}
     side = row.get('direction') or row.get('reversal_side') or row.get('pre_arm_side')
-    sid = {'prototype': 'EMA8_PROTOTYPE', 'reversal': 'CROSSOVER', 'flagship': 'FLAGSHIP_1H'}[lane]
+    sid = {'prototype': 'EMA8_PROTOTYPE', 'reversal': 'CROSSOVER', 'flagship': 'FLAGSHIP_1H'}.get(lane, 'EMA8_PROTOTYPE')
     sig = {'strategy_id': sid, 'direction': side}
     touch = any(x.get('type') == 'RETOUCH_SEEN' for x in row.get('actions', []) if isinstance(x, dict))
-    stage = 'CANDIDATE' if signals else 'TOUCH_BLOCKED' if touch else 'STATE'
+    stage = 'CANDIDATE' if signals else 'TOUCH_BLOCKED' if touch else 'WAITING' if (row.get('state') == 'WAITING' or row.get('stage') == 'WAITING') else 'STATE'
     reason = (row.get('block_reason') or row.get('mj_no_trade') or row.get('diagnostic_reason')
               or row.get('phase') or row.get('state') or 'Evaluator supplied no setup reason')
     if signals:
