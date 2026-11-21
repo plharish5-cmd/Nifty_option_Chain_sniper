@@ -140,7 +140,14 @@ async def startup_event():
                 break
             except Exception:
                 log.exception('ICT SMC Desk Signals evaluation unavailable')
-            await asyncio.sleep(backend.cfg['ict_smc_desk_signals']['cache_seconds'])
+            ics = backend.cfg.get('ict_smc_desk_signals') or {}
+            try:
+                from analyst.feed_freshness_8510 import load_feed_cfg
+
+                interval = float(load_feed_cfg(backend.cfg).get('fast_feed_seconds', ics.get('fast_feed_seconds', ics.get('cache_seconds', 10))))
+            except Exception:
+                interval = float(ics.get('fast_feed_seconds', ics.get('cache_seconds', 20)))
+            await asyncio.sleep(interval)
     app.state.ict_smc_task = asyncio.create_task(ict_signal_poller())
     try:
         await backend.get_live_telemetry()
@@ -291,6 +298,13 @@ async def ict_smc_settings(req: Request):
         return JSONResponse({'ok':False,'error':'Unvalidated advisory: algo use remains OFF'},status_code=409)
     backend.cfg['ict_smc_desk_signals']['use_for_algo_trades']=False
     return {'ok':True,'use_for_algo_trades':False}
+
+@app.get("/api/feeds/health")
+async def api_feeds_health():
+    from analyst.feed_freshness_8510 import build_feeds_health
+
+    return JSONResponse(content=await asyncio.to_thread(build_feeds_health, backend))
+
 
 @app.get("/api/heartbeat")
 async def api_heartbeat():

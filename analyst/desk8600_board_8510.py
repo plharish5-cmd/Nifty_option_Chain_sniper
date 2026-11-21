@@ -147,28 +147,43 @@ def _age(stamp: Any, now: datetime) -> Optional[float]:
         return None
 
 
-def _bridge_sources(last: Dict[str, Any], now: datetime, max_age: float) -> Dict[str, Dict[str, Any]]:
+def _bridge_sources(last: Dict[str, Any], now: datetime, max_age: float, stale_after: float = 30.0) -> Dict[str, Dict[str, Any]]:
     rows = {str(r.get("signal_group")): r for r in ((last or {}).get("rows") or []) if isinstance(r, dict)}
     out: Dict[str, Dict[str, Any]] = {}
     for src in SOURCES:
         if src["origin"] != "8600":
             continue
         r = rows.get(src["group"])
-        item: Dict[str, Any] = {"direction": None, "detail": "8600 app not answering", "age_sec": None}
+        item: Dict[str, Any] = {
+            "direction": None,
+            "detail": "8600 app not answering",
+            "age_sec": None,
+            "source_ts": None,
+            "feed_state": "WAITING_FOR_SYNC",
+        }
         if r is not None:
+            item["source_ts"] = r.get("source_ts")
             age = _age(r.get("source_ts"), now)
             verdict = str(r.get("verdict") or "")
             if verdict == "UNAVAILABLE" or age is None:
                 item["detail"] = str(r.get("reason") or "not available")[:120]
+                item["feed_state"] = "WAITING_FOR_SYNC"
+            elif age > stale_after:
+                item.update(
+                    age_sec=round(age),
+                    detail=f"STALE — last source {int(age)}s old (>{int(stale_after)}s)",
+                    feed_state="STALE",
+                    direction=None,
+                )
             elif age > max_age:
-                item.update(age_sec=round(age), detail=f"last closed bar is {int(age // 60)} min old")
+                item.update(age_sec=round(age), detail=f"last closed bar is {int(age // 60)} min old", feed_state="STALE", direction=None)
             else:
                 d = str(r.get("direction") or "NEUTRAL").upper()
                 d = d if d in ("CE", "PE") else "NEUTRAL"
                 if src["id"] in TICKET_SOURCES and not bool(r.get("significant")):
-                    item.update(direction="NEUTRAL", detail=f"no ticket on the latest bar ({verdict})")
+                    item.update(direction="NEUTRAL", detail=f"no ticket on the latest bar ({verdict})", feed_state="LIVE")
                 else:
-                    item.update(direction=d, detail=verdict)
+                    item.update(direction=d, detail=verdict, feed_state="LIVE")
                 item["age_sec"] = round(age)
         out[src["id"]] = item
     return out
@@ -291,7 +306,13 @@ def build_board(bridge_last: Optional[Dict[str, Any]], oi_ctx: Optional[Dict[str
     cfg = load_cfg(scanner_cfg)
     try:
         merged_cfg = dict(cfg, min_room_pts=((scanner_cfg or {}).get("oi_context") or {}).get("min_room_pts", 40.0))
-        vals = _bridge_sources(bridge_last or {}, now, float(cfg.get("max_age_sec", 420)))
+        try:
+            from analyst.feed_freshness_8510 import load_feed_cfg
+
+            stale_after = float(load_feed_cfg(scanner_cfg).get("stale_after_seconds", 30))
+        except Exception:
+            stale_after = 30.0
+        vals = _bridge_sources(bridge_last or {}, now, float(cfg.get("max_age_sec", 420)), stale_after=stale_after)
         vals.update(_chain_sources(oi_ctx or {}, merged_cfg))
         cr = chain_reads or {}
         why = str(cr.get("reason") or "no option-chain snapshots")

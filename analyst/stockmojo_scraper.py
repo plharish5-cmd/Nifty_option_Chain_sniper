@@ -1451,6 +1451,7 @@ class StockMojoScraper:
             })
 
         synergy = self.evaluate_synergy_status()
+        src_ts = self.last_sync_time
         return {
             "ok": True,
             "total_oi_rows": t_rows,
@@ -1459,6 +1460,14 @@ class StockMojoScraper:
             "synergy": synergy,
             "last_sync_time": self.last_sync_time,
             "last_sync_status": self.last_sync_status,
+            "source_ts": src_ts,
+            "positional_columns": [
+                "put_oi_total", "call_oi_total", "pe_ce_oi_total", "pe_ce_bar_total",
+            ],
+            "intraday_columns": [
+                "put_oi_change", "call_oi_change", "pe_ce_oi_change",
+                "put_oi_change_day", "call_oi_change_day", "pe_minus_ce_day", "pe_minus_ce_interval",
+            ],
         }
 
     # ── 04 NOV AUDIT VERIFICATION DATA ENGINE ─────────────────────────────────
