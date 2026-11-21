@@ -99,6 +99,16 @@ def create_detached_worktree(worktree_dir: Path, commit_sha: str) -> None:
         remove_worktree(worktree_dir)
     worktree_dir.parent.mkdir(parents=True, exist_ok=True)
     run_cmd(["git", "worktree", "add", "--detach", str(worktree_dir), commit_sha])
+    # Symlink untracked data folders so data-dependent tests have parity
+    for folder in ("data", "analyst/replay_data"):
+        src = REPO_ROOT / folder
+        dst = worktree_dir / folder
+        if src.exists() and not dst.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.symlink(str(src), str(dst))
+            except OSError:
+                pass
 
 
 def remove_worktree(worktree_dir: Path) -> None:
