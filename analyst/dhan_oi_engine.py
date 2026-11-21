@@ -164,8 +164,22 @@ class DhanOIEngine:
                    'Put OI Change':None,'Call OI Change':None,'PE-CE OI Change':None,
                    'Future LTP':None,'Future OI Change (Day)':None}))
         synergy=self.evaluate_synergy_status()
-        return dict(ok=True,source='DHAN_API',status=snap['status'],available=snap['available'],rows=rows,
-            combined_rows=rows,oi_change_day_rows=rows,total_oi_rows=rows,synergy=synergy,last_sync_time=snap.get('timestamp'))
+        source_ts=snap.get('timestamp')
+        age_sec=snap.get('age_seconds')
+        out=dict(ok=True,source='DHAN_API',status=snap['status'],available=snap['available'],rows=rows,
+            combined_rows=rows,oi_change_day_rows=rows,total_oi_rows=rows,synergy=synergy,last_sync_time=snap.get('timestamp'),
+            source_ts=source_ts,age_sec=round(float(age_sec),1) if age_sec is not None else None,
+            intraday_columns=['Put OI Change (Day)','Call OI Change (Day)','PE-CE OI Change (Day)'],
+            positional_columns=['Put OI Total','Call OI Total','PE-CE OI Total'],
+            positional_note='Totals from latest Dhan chain snapshot when present; intraday from CE/PE day change fields')
+        try:
+            from analyst.feed_freshness_8510 import apply_source_freshness_meta
+
+            stale = float(self.cfg.get("stale_after_seconds", 30))
+            out = apply_source_freshness_meta(out, source_ts=source_ts, stale_after=stale)
+        except Exception:
+            pass
+        return out
 
 _DEFAULT=None
 

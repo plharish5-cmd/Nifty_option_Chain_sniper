@@ -2284,6 +2284,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                             <div id="desk8600Board" style="padding:8px 10px; background:rgba(15,23,42,0.65); border:1px solid rgba(251,191,36,0.25); border-radius:6px; font-family:var(--font-mono); font-size:10.5px;">
                                 <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px;">
                                     <span id="d86Status" style="color:#94a3b8;">waiting…</span>
+                                    <span id="feedHealthBadges" style="color:#64748b; font-size:9.5px;"></span>
                                 </div>
                                 <div id="d86Facts" style="margin-top:5px; color:#cbd5e1;"></div>
                                 <div id="d86Preview" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;"></div>
@@ -3206,7 +3207,8 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 const on = s.mode === "FILTER";
                 const nodata = !s.direction;
                 const age = (s.age_sec === null || s.age_sec === undefined) ? "" : " · " + (s.age_sec < 90 ? s.age_sec + "s" : Math.round(s.age_sec / 60) + "m");
-                const staleHint = nodata ? '<span style="color:#475569;font-size:9.5px;">' + d86Esc((s.detail || "no data").slice(0, 72)) + age + "</span>" : "";
+                const fstate = s.feed_state ? " · " + s.feed_state : "";
+                const staleHint = nodata ? '<span style="color:#475569;font-size:9.5px;">' + d86Esc((s.detail || "no data").slice(0, 72)) + age + fstate + "</span>" : "";
                 return '<div class="d86-source-row' + (on ? " filter-on" : "") + (nodata ? " d86-nodata" : "") + '">' +
                     '<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">' +
                     d86Btn(on ? "ON" : "OFF", on, "d86Post({source:'" + s.id + "', on:" + (!on) + "})", "Skip trades this source is against") +
@@ -3215,7 +3217,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     (nodata ? staleHint : "") + "</div>" +
                     (nodata ? "" : ('<div class="d86-detail">' +
                     (s.direction === "ROOM" && (s.blocks || []).length ? '<b style="color:#f87171;">no room for ' + s.blocks.join(" / ") + '</b> · ' : "") +
-                    d86Esc(s.detail) + '<span style="color:#475569;">' + age + ' · ' + (s.origin === "8600" ? "8600" : "chain") + '</span></div>')) +
+                    d86Esc(s.detail) + '<span style="color:#475569;">' + age + fstate + ' · ' + (s.origin === "8600" ? "8600" : "chain") + '</span></div>')) +
                     "</div>";
             }).join("");
             const f = b.facts || {}, fx = document.getElementById("d86Facts");
@@ -3425,6 +3427,19 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 if (r2.ok) renderTicketLane(await r2.json());
                 const r3 = await fetch("/api/desk8600/board", { cache: "no-store" });
                 if (r3.ok) renderDesk8600Board(await r3.json());
+                const r4 = await fetch("/api/feeds/health", { cache: "no-store" });
+                if (r4.ok) {
+                    const fh = await r4.json();
+                    const el = document.getElementById("feedHealthBadges");
+                    if (el && Array.isArray(fh.feeds)) {
+                        const col = (s) => (s === "LIVE" ? "#38bdf8" : s === "STALE" ? "#fbbf24" : "#94a3b8");
+                        el.innerHTML = fh.feeds.map((f) => {
+                            const age = f.age_sec == null ? "—" : f.age_sec + "s";
+                            return '<span style="margin-right:6px; color:' + col(f.state) + ';">' +
+                                d86Esc(String(f.feed_id).replace(/_/g, " ")) + " " + age + " · " + f.state + "</span>";
+                        }).join("");
+                    }
+                }
             } catch (e) {
                 bnrLink("bnrLink8510", "NOT_ANSWERING", "DEAD — not answering this page");
                 bnrLink("bnrLink8600", "STARTING", "unknown (8510 down)");
