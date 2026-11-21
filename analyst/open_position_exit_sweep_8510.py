@@ -48,6 +48,10 @@ def spot_exit_should_close(
             symbol=str(p.get("symbol") or ""),
         )
         use_rev_trail = sid_pos.startswith("CROSSOVER") and bool(int(p.get("reversal_candle_trail") or 0))
+        proto_cfg = (getattr(backend, "scanner_cfg", {}) or {}).get("ema8_prototype") or {}
+        proto_trail_on = sid_pos.startswith("EMA8_PROTOTYPE") and bool(
+            proto_cfg.get("trail_after_target_enabled", True)
+        )
         if use_rev_trail:
             from analyst.reversal_spot_exit_8510 import parse_reversal_trail_fields, reversal_spot_exit_tick
 
@@ -60,6 +64,23 @@ def spot_exit_should_close(
                 spot_sl=spot_sl,
                 trail=trail,
                 bar=None,
+            )
+            if hit:
+                return True, hit_reason
+        elif proto_trail_on:
+            from analyst.ema8_prototype_8510 import prototype_trail_tick
+
+            armed = bool(int(p.get("spot_trail_armed") or 0))
+            move_be = bool(proto_cfg.get("trail_move_to_breakeven", True))
+            _, _, hit, hit_reason = prototype_trail_tick(
+                is_long=is_long,
+                spot_entry=spot_ent,
+                spot_idx=spot_idx,
+                trigger_level=spot_tgt,
+                stop_level=spot_sl,
+                armed=armed,
+                bar=None,
+                move_to_breakeven=move_be,
             )
             if hit:
                 return True, hit_reason

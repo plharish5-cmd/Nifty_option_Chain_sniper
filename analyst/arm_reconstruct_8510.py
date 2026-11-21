@@ -313,11 +313,20 @@ def apply_reconstructed_state(backend: Any, result: ReconstructResult) -> None:
     recon_mj = mj_state_persist_slice(result.mj_state or {})
 
     if result.proto_arm:
-        backend._ema8_prototype_state = copy.deepcopy(result.proto_arm)
         arm = (result.proto_arm.get("arm") or {})
-        if _proto_arm_equal(persisted_proto, result.proto_arm) and getattr(
+        if getattr(backend, "_proto_arm_loaded_from_db", False) and (persisted_proto.get("arm") or {}).get("direction"):
+            backend._ema8_prototype_state = copy.deepcopy(persisted_proto)
+            arm = (persisted_proto.get("arm") or {})
+            backend.log_ema8_prototype_event(
+                event="ARM RESUMED",
+                direction=arm.get("direction"),
+                dynamic_8ema=arm.get("cross_e8"),
+                reason="ARM RESUMED (persisted) — evaluating live touches from current tick",
+            )
+        elif _proto_arm_equal(persisted_proto, result.proto_arm) and getattr(
             backend, "_proto_arm_loaded_from_db", False
         ):
+            backend._ema8_prototype_state = copy.deepcopy(result.proto_arm)
             backend.log_ema8_prototype_event(
                 event="ARM RESUMED",
                 direction=arm.get("direction"),
@@ -325,6 +334,7 @@ def apply_reconstructed_state(backend: Any, result: ReconstructResult) -> None:
                 reason="ARM RESUMED (persisted, confirmed by candles)",
             )
         elif arm:
+            backend._ema8_prototype_state = copy.deepcopy(result.proto_arm)
             side = str(arm.get("direction") or "").upper()
             backend.log_ema8_prototype_event(
                 event="ARM REBUILT",

@@ -4637,17 +4637,32 @@ class QuantTerminalBackend:
             ff = self.cfg.get("five_factor_confluence") or {}
             log.info("[5-FACTOR GATE] Blocked batch: score %s < %s mode=%s (%s)",
                      conf.get("score"), ff.get("scanner_min_score"), ff.get("scanner_gate_mode"), conf.get("grade"))
+            for s in signals:
+                try:
+                    self._record_ema_entry_decision(
+                        s,
+                        "BLOCKED",
+                        f"Five-factor score {conf.get('score')} < {ff.get('scanner_min_score')} (grade {conf.get('grade')}, mode {ff.get('scanner_gate_mode')})",
+                    )
+                except Exception:
+                    pass
             return []
         try:
             from analyst.desk_scope_8510 import strategy_id_allowed
 
             # Keep every candidate until _process_strategy_signals reserves a lane.
             # Dropping here consumed setups before retry / contract-failure cleanup.
-            return [
-                s
-                for s in signals
-                if strategy_id_allowed(self.scanner_cfg, str(s.get("strategy_id") or ""))
-            ]
+            allowed = []
+            for s in signals:
+                sid = str(s.get("strategy_id") or "")
+                if strategy_id_allowed(self.scanner_cfg, sid):
+                    allowed.append(s)
+                else:
+                    try:
+                        self._record_ema_entry_decision(s, "BLOCKED", f"Strategy {sid} disabled in desk scope")
+                    except Exception:
+                        pass
+            return allowed
         except Exception:
             return list(signals)
 
@@ -5435,6 +5450,14 @@ class QuantTerminalBackend:
                     audit = dict(getattr(self, "_proto_ema_audit", None) or {})
                     audit["stale"] = True
                     self._proto_ema_audit = audit
+                    try:
+                        self._record_ema_entry_decision(
+                            {"strategy_id": "EMA8_PROTOTYPE"},
+                            "WAITING",
+                            f"feed stale — not blocking (spot age {age_txt})",
+                        )
+                    except Exception:
+                        pass
                     # Pause touch evaluation only — arm and away_seen stay in memory + SQLite.
                     self._save_ema8_prototype_state()
                     await asyncio.sleep(refresh)
@@ -5456,12 +5479,19 @@ class QuantTerminalBackend:
                     from analyst.arm_reconstruct_8510 import reconstruct_arms_on_startup
                     from analyst.ema_arm_persistence_8510 import bootstrap_prototype_arm, bootstrap_reversal_runtime
 
-                    recon = reconstruct_arms_on_startup(self, session_day)
-                    if recon and recon.applied:
-                        bootstrap_reversal_runtime(self, session_day)
-                    else:
+                    # C1: Clean restart must RESUME the persisted arm from ema8_prototype_state
+                    # (verifying _proto_arm_loaded_from_db is set); only genuinely absent/invalid
+                    # state triggers RECOVER (rebuild from cross).
+                    if getattr(self, "_proto_arm_loaded_from_db", False) and (self._ema8_prototype_state.get("arm") or {}).get("direction"):
                         bootstrap_prototype_arm(self, b15, proto_cfg, session_day)
                         bootstrap_reversal_runtime(self, session_day)
+                    else:
+                        recon = reconstruct_arms_on_startup(self, session_day)
+                        if recon and recon.applied:
+                            bootstrap_reversal_runtime(self, session_day)
+                        else:
+                            bootstrap_prototype_arm(self, b15, proto_cfg, session_day)
+                            bootstrap_reversal_runtime(self, session_day)
                     if not getattr(self, "_desk_self_audit_startup_done", False):
                         from analyst.missed_trade_watchdog_8510 import run_desk_self_audit_startup
 
@@ -5690,6 +5720,13 @@ class QuantTerminalBackend:
                         self.strategy_status[key] = prev
                 self._mj_sir_state.setdefault("day", now.strftime("%Y-%m-%d"))
                 self._save_mj_sir_runtime_state()
+                try:
+                    from analyst.decision_audit_8510 import record_evaluation
+                    rev_row = mj_status.get("crossover_reversal") or {}
+                    rev_sigs = [s for s in sigs if str(s.get("strategy_id") or "").startswith("CROSSOVER")]
+                    record_evaluation(self, "reversal", rev_row, rev_sigs)
+                except Exception:
+                    pass
                 if sigs:
                     sigs = await asyncio.to_thread(self.apply_signal_gates, sigs)
                     if sigs:
@@ -8015,6 +8052,7 @@ class QuantTerminalBackend:
                 if "FLAGSHIP" in str(strat_id).upper():
                     ok_risk, risk_reason = self._flagship_risk_allows_entry()
                     if not ok_risk:
+                        self._record_ema_entry_decision(sig, "BLOCKED", f"Flagship risk: {risk_reason}")
                         log.info("[FLAGSHIP BLOCKED] %s — %s", sig.get("setup_name"), risk_reason)
                         continue
 
@@ -8724,8 +8762,8 @@ class QuantTerminalBackend:
                                     self._proto_trail_bar_ts = {}
                                 bar = self._latest_closed_15m_bar()
                                 use_bar = None
-                                if bar and pid and int(bar["ts"]) != int(self._proto_trail_bar_ts.get(pid, 0)):
-                                    self._proto_trail_bar_ts[pid] = int(bar["ts"])
+                                # C4(ii): Do not mark a 15m candle "used" before the trail arms
+                                if armed and bar and pid and int(bar["ts"]) != int(self._proto_trail_bar_ts.get(pid, 0)):
                                     use_bar = bar
                                 new_sl, new_armed, hit, hit_reason = prototype_trail_tick(
                                     is_long=is_long_spot, spot_entry=spot_ent, spot_idx=spot_idx,
@@ -8737,13 +8775,16 @@ class QuantTerminalBackend:
                                 if hit:
                                     should_close = True
                                     exit_reason = hit_reason
-                                elif (new_armed != armed) or (abs(new_sl - spot_sl) > 1e-6):
-                                    cur.execute(
-                                        "UPDATE positions SET spot_stop_level=?, spot_trail_armed=? WHERE position_id=?",
-                                        (new_sl, 1 if new_armed else 0, pid),
-                                    )
-                                    p["spot_stop_level"] = new_sl
-                                    p["spot_trail_armed"] = 1 if new_armed else 0
+                                else:
+                                    if new_armed and use_bar:
+                                        self._proto_trail_bar_ts[pid] = int(use_bar["ts"])
+                                    if (new_armed != armed) or (abs(new_sl - spot_sl) > 1e-6):
+                                        cur.execute(
+                                            "UPDATE positions SET spot_stop_level=?, spot_trail_armed=? WHERE position_id=?",
+                                            (new_sl, 1 if new_armed else 0, pid),
+                                        )
+                                        p["spot_stop_level"] = new_sl
+                                        p["spot_trail_armed"] = 1 if new_armed else 0
                             elif is_long_spot and spot_idx >= spot_tgt:
                                 should_close = True
                                 exit_reason = "SPOT_TARGET_HIT"

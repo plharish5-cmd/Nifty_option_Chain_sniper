@@ -26,6 +26,7 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.35-reversal-oi-panel` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.35` | **NO — awaiting Harish** |
 | `gemini/v2.0.36-clean-and-scope` | Gemini/Cursor | **done** tags `pre/post-gemini-v2.0.36` | **NO — awaiting Harish** |
 | `gemini/v2.0.37-oi-filter-backtest` | Gemini/Cursor | **done** (run job + backtest path fix) tags `pre/post-gemini-v2.0.37` | **NO — awaiting Harish** |
+| `agy/v2.6.1-resume-gating-trail` | Antigravity | **done**, tags `pre/post-agy-v2.6.1` | **NO — awaiting Harish** |
 
 ---
 
@@ -1556,3 +1557,22 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 - Root cause proven read-only: canonical DB nearest expiry23-Nov last snapshot11:29 while December expiry advanced; shadow recorder same23-Nov updated11:51. First-nonempty source lookup selected old nearest-expiry history and hid fresh shadow. Changed load_day_snapshots to select nearest expiry globally, then freshest source for that exact expiry, caller-order tie break; full history from one DB only, no splicing/future/asof leakage. No protected modules modified.
 - Actual revised loader:23-Nov68snapshots,97s old at check. Momentum10±2min still unavailable due genuine snapshot gaps (11:35→11:46); not fabricated or relaxed. This patch fixes stale source preference, not upstream recording continuity or certified missing8600source events.
 - New tempDB regression pass (fresh source, expiry isolation, asof). Combined60pass/3fail; failures test_prototype_view_says_where_the_lane_is, test_link_is_served_and_shown, test_equity_guys_view_classifier are the same3 prior v242 ticket/UI baseline failures (prior34pass/3fail narrower selection). Locks11/11 vs11/11. No assertions changed. No full-suite claim. Backend patch requires scoped restart; running daemon not interrupted during market/open position activity. Runtime settings unchanged by this agent.
+
+## Antigravity (AGY) — Part C: Resume-on-Open, Exhaustive Gating/Logging & Deferred Trail Fixes — 21 Nov 2026
+
+- Branch `agy/v2.6.1-resume-gating-trail` off `origin/reconcile/v2.6.0-consolidated`; tags `pre-agy-v2.6.1` / `post-agy-v2.6.1`.
+- **C1 — RESUMED vs RECOVERED Semantics:** Clean restart resumes persisted arm from `ema8_prototype_state` table (verifying `_proto_arm_loaded_from_db` is True). Absence of persisted state falls back to `ARM RECOVERED` from intraday cross candles.
+- **C2 — Assess Previous Candles on Open:** Reconstructed arm derives `away_seen` and `sl_blocked_side` from today's completed 15m candles. If SL was hit earlier today, the side stays SL-blocked until an opposite 15m close. If `away_seen` was already primed on historical bars, the very first valid live touch trades immediately without back-trading historical downtime touches.
+- **C3 — Exhaustive Gate & Decision Audit Logging:** Every gating decision across Prototype, Reversal, and 1H Flagship logs to `decision_audit_8510.py` with concrete reasons (directional bias, allowlist, cooldown/retry, 5-factor score, flagship risk, and stale feed `"feed stale — not blocking"`). Reversal and Flagship per-tick WAITING states are deduplicated (1,000 ticks = 1 audit row, zero Signal audit log spam).
+- **C4 — Deferred Trail Fixes:**
+  (i) Recovery sweep (`open_position_exit_sweep_8510.py`) delegates to `prototype_trail_tick` when `proto_trail_on` is active, respecting trailing stops instead of exiting on fixed `+40`.
+  (ii) 15m bars are not passed to trail ratcheting or marked "used" in `_proto_trail_bar_ts` until the trail has armed.
+- **C5 — Operational Guardrail (Docs/UI text only, no code gate):** Added operational freeze notice (`09:15→15:30 IST`) and systemd/VPS static IP auto-restart guidance to `Algorithmic_Trading_Workspace_8510.html` and `README.md`.
+- **Adversarial Tests:**
+  - `analyst/test_resume_on_open_8510.py` (5 tests)
+  - `analyst/test_gating_truthtable_8510.py` (8 tests)
+  - `analyst/test_decision_audit_8510.py` (7 tests)
+  - `analyst/test_arm_persistence_8510.py` (11 tests)
+  - `analyst/test_proto_trail_8510.py` (15 tests)
+  - Verification: 46/46 passed; `scripts/verify_locks.py` 11/11 locked core modules intact.
+
