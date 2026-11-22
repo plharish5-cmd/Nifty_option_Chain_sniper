@@ -95,6 +95,26 @@ def test_executable_paper_quote_detail_and_bid_ask():
     assert age >= 0.0
 
 
+def test_desk_parity_direct_fetch_when_broker_quote_wrapper_empty(monkeypatch):
+    """8504 issues POST /marketfeed/quote on click; 8510 must not stop at broker backoff {}."""
+    import analyst.paper_quote_8510 as pq
+    from unittest.mock import AsyncMock, MagicMock
+
+    broker = MagicMock()
+    broker.get_marketfeed_quote = AsyncMock(return_value={})  # back-off short-circuit
+
+    async def _fake_desk_parity(_broker, sec_int, _timeout):
+        assert sec_int == 77777
+        return {"bid": 187.5, "ask": 189.0, "last_price": 188.0}
+
+    monkeypatch.setattr(pq, "_desk_parity_marketfeed_quote", _fake_desk_parity)
+
+    ask, src, age = asyncio.run(executable_paper_quote(broker, "77777", "BUY", detail=True))
+    assert ask == 189.0
+    assert src == "REAL_QUOTE"
+    assert age >= 0.0
+
+
 def test_missing_quote_returns_none_in_detail_mode():
     broker = FakeBroker()
     broker.get_marketfeed_quote = AsyncMock(return_value={})
