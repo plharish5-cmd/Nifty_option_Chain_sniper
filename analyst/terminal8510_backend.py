@@ -5586,7 +5586,24 @@ class QuantTerminalBackend:
                     board_reads=board_reads,
                     oi_3m_read=oi3_read,
                     oi_3m_feature=oi3_feat,
+                    desk8600_sources=board.get("sources"),
+                    scanner_cfg=self.scanner_cfg,
                 )
+                try:
+                    from analyst.desk8600_lane_gating_8510 import record_gating_audits
+
+                    track2 = (st.get("extra") or {}).get("desk8600_lane_gating")
+                    touched = bool(sigs) or any(
+                        isinstance(a, dict) and a.get("type") == "RETOUCH_SEEN"
+                        for a in (st.get("actions") or [])
+                    )
+                    if touched and isinstance(track2, dict):
+                        arm = (self._ema8_prototype_state.get("arm") or {})
+                        bull = str(arm.get("direction") or st.get("direction") or "").upper() == "LONG"
+                        sid = "EMA8_PROTOTYPE_LONG" if bull else "EMA8_PROTOTYPE_SHORT"
+                        record_gating_audits(self, "prototype", bull, track2, strategy_id=sid)
+                except Exception:
+                    pass
                 prev_proto = dict(self.strategy_status.get("ema8_prototype") or {})
                 prev_proto.update(st)
                 prev_proto["ema_stale"] = False
@@ -8000,6 +8017,7 @@ class QuantTerminalBackend:
                 opt = str(sig.get("opt_side", "")).upper()
 
                 self._record_ema_entry_decision(sig, "EVALUATING", "Candidate received; not an order")
+
                 # Directional Bias Enforcement Gate:
                 if self.directional_bias == "LONG_ONLY" and (d == "SHORT" or opt == "PE"):
                     self._record_ema_entry_decision(sig, "BLOCKED", f"Directional bias {self.directional_bias}")
@@ -8014,6 +8032,16 @@ class QuantTerminalBackend:
 
                 strat_id = str(sig.get("strategy_id", "") or "")
                 sid_u = strat_id.upper()
+
+                if sid_u.startswith("CROSSOVER") or "FLAGSHIP" in sid_u:
+                    try:
+                        from analyst.desk8600_lane_gating_8510 import apply_execution_lane_gating
+
+                        if apply_execution_lane_gating(self, sig, self.desk8600_board()):
+                            continue
+                    except Exception as exc:
+                        log.warning("8600 lane gating skipped (%s)", type(exc).__name__)
+
                 n_open = len(self.get_active_positions())
                 from analyst.ema_lane_lock_8510 import (
                     LANE_PROTOTYPE,

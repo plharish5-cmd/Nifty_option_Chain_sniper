@@ -1618,4 +1618,13 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 - **Verification:**
   - `python -m pytest analyst/test_paper_real_price_8510.py analyst/test_real_trade_cancel_bughunt_8510.py analyst/test_decision_audit_8510.py -q -p no:cacheprovider`: **20/20 PASSED**.
   - `python scripts/verify_locks.py`: **11/11 PASSED** intact. Zero protected modules touched.
+## 2026-11-22 · Cursor · `cursor/v2.6.2-track2-8600-gating`
+
+**Goal:** Track 2 only — per-lane `BLOCK` vs `LOG_ONLY` on four 8600 desk reads (PE-CE change, Fresh ΔOI, Cumulative Total OI, Classic Writer Flow) for Prototype, Reversal, and 1H Flagship. Defaults `LOG_ONLY` everywhere.
+
+**Done:** `desk8600_lane_gating_8510.py`; touch path in `ema8_prototype_8510.py` + audit on proto tick; execution path for Reversal/Flagship in `terminal8510_backend.py`; `oi_decision_board_8510.py` flagship lane + `track2_gating` panel; `scripts/patch_desk8600_lane_gating_8510.py` (config not staged). Stale feeds fail open with `feed stale — not blocking`. Existing `scanner.*.oi_filters` untouched.
+
+**Verify:** `pytest analyst/test_8600_gating_truthtable_8510.py analyst/test_gating_truthtable_8510.py analyst/test_decision_audit_8510.py analyst/test_feed_freshness_8510.py -q` **99/99**; `verify_locks.py` **11/11**; zero protected modules touched.
+
+**Tags:** `pre-cursor-v2.6.2` / `post-cursor-v2.6.2`.
 
