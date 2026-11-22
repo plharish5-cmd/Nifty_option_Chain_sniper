@@ -553,7 +553,7 @@ export default function PcrTrinitySuite({
     });
 
     const peCeDiffLine = ch.addSeries(LineSeries, {
-      priceScaleId: "right",
+      priceScaleId: "pe_ce_diff",
       color: "#a855f7",
       lineWidth: 2,
       lineStyle: LineStyle.Solid,
@@ -563,13 +563,26 @@ export default function PcrTrinitySuite({
       lastValueVisible: true,
     });
 
-    // Zero reference line
     putChg.createPriceLine({ price: 0, color: "#475569", lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "0 Flat" });
+    peCeDiffLine.createPriceLine({
+      price: 0,
+      color: "rgba(168, 85, 247, 0.65)",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: "0",
+    });
 
     ch.priceScale("right").applyOptions({
       visible: true,
       autoScale: true,
       scaleMargins: { top: 0.1, bottom: 0.05 },
+      borderVisible: true,
+    });
+    ch.priceScale("pe_ce_diff").applyOptions({
+      visible: true,
+      autoScale: true,
+      scaleMargins: { top: 0.12, bottom: 0.12 },
       borderVisible: true,
     });
 
@@ -724,7 +737,7 @@ export default function PcrTrinitySuite({
 
     // Series 2 (Fresh OI Change — StockMojo 1:1 Parity)
     if (chart2Ref.current) {
-      const { fut, putChg, callChg, peCeDiffLine, spreadHist } = chart2Ref.current;
+      const { ch, fut, putChg, callChg, peCeDiffLine, spreadHist } = chart2Ref.current;
       fut.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.fut_close })));
       putChg.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.put_oi_chg })));
       callChg.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.call_oi_chg })));
@@ -736,13 +749,14 @@ export default function PcrTrinitySuite({
 
       // Clean Y-axis: Only render histogram or diff line if explicitly toggled on
       const peCeChgDay = (p: PcrPoint) => (p.put_oi_chg ?? 0) - (p.call_oi_chg ?? 0);
+      ch.priceScale("pe_ce_diff").applyOptions({ visible: showPeCeDiff });
       if (showPeCeDiff) {
         peCeDiffLine.applyOptions({ visible: true, lastValueVisible: true });
         peCeDiffLine.setData(
           activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: peCeChgDay(p) })),
         );
       } else {
-        peCeDiffLine.applyOptions({ visible: false });
+        peCeDiffLine.applyOptions({ visible: false, lastValueVisible: false });
         peCeDiffLine.setData([]);
       }
 
