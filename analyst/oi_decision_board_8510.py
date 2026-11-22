@@ -14,6 +14,11 @@ from analyst.proto_oi_filters_8510 import (
     load_oi_filters_cfg, oi_switch_block,
 )
 from analyst.reversal_revamp_8510 import load_reversal_cfg, reversal_oi_filters_for_gate
+from analyst.desk8600_lane_gating_8510 import (
+    TRACK2_SIGNALS,
+    evaluate_lane_gating,
+    load_desk8600_lane_gating,
+)
 
 
 def _number(value):
@@ -57,8 +62,35 @@ def armed_status(lane, row, state, positions):
     return {'state':'ARMED','side':direction,'waiting_for':wait,'line':(direction or 'side not reported')+' · '+wait}
 
 
+def build_track2_gating_panel(lane: str, scanner_cfg: Dict[str, Any], board: Dict[str, Any], *, bullish: bool = True) -> Dict[str, Any]:
+    modes = load_desk8600_lane_gating(scanner_cfg).get(lane) or {}
+    gating = evaluate_lane_gating(lane, bullish, board.get("sources"), scanner_cfg)
+    rows = []
+    for item in gating.get("signals") or []:
+        rows.append({
+            "id": item.get("signal_id"),
+            "label": item.get("label"),
+            "mode": item.get("mode"),
+            "vote": item.get("vote"),
+            "direction": item.get("direction"),
+            "age_sec": item.get("age_sec"),
+            "feed_state": item.get("feed_state"),
+            "would_block": item.get("blocks_trade") or (item.get("vote") == "OPPOSE" and item.get("mode") == "BLOCK"),
+            "actual_block": bool(item.get("blocks_trade")),
+            "audit_reason": item.get("audit_reason"),
+        })
+    return {
+        "title": "8600 lane gating (4 feeds)",
+        "lane": lane,
+        "modes": modes,
+        "rows": rows,
+        "blocked": gating.get("blocked"),
+        "summary": "; ".join(gating.get("audit_lines") or [])[:400],
+    }
+
+
 def build_oi_decision_board(lane: str, scanner_cfg: Dict[str,Any], board: Dict[str,Any], row=None, state=None, positions=None):
-    if lane not in ('prototype','reversal'):raise ValueError('Unknown OI lane')
+    if lane not in ('prototype','reversal','flagship'):raise ValueError('Unknown OI lane')
     # Copy inputs so this display path cannot mutate scanner config/state or a cached board.
     scanner_cfg=copy.deepcopy(scanner_cfg or {});board=copy.deepcopy(board or {});row=copy.deepcopy(row or {})
     reads=board_reads_from_board(board);raw_sources={s.get('id'):s for s in board.get('sources',[]) if isinstance(s,dict)}
@@ -66,6 +98,22 @@ def build_oi_decision_board(lane: str, scanner_cfg: Dict[str,Any], board: Dict[s
     attempt=row.get('execution_decision') or {}
     if attempt:
         warnings.append("Last entry attempt " + str(attempt.get('time') or '') + " · " + str(attempt.get('stage') or '') + ": " + str(attempt.get('reason') or '') + "; separate from the OI vote below.")
+    if lane == 'flagship':
+        panel = build_track2_gating_panel('flagship', scanner_cfg, board, bullish=True)
+        return {
+            'version': 'OI_DECISION_BOARD_V262',
+            'lane': 'flagship',
+            'title': '1H Flagship',
+            'armed': armed_status('reversal', row, state, positions),
+            'mode': 'mixed',
+            'enabled': True,
+            'track2_gating': panel,
+            'buy': {'would_block': panel.get('blocked'), 'actual_block': panel.get('blocked'), 'verdict': 'see track2_gating'},
+            'sell': {'would_block': panel.get('blocked'), 'actual_block': panel.get('blocked'), 'verdict': 'see track2_gating'},
+            'rows': panel.get('rows') or [],
+            'summary': panel.get('summary') or '',
+            'scope': '8600 lane gating display for Flagship; execution uses desk8600_lane_gating config.',
+        }
     if lane=='prototype':
         call_cfg=load_ema8_prototype_cfg(scanner_cfg);configured=load_oi_filters_cfg(call_cfg)
         enabled=True;mode=configured['mode']
@@ -125,7 +173,9 @@ def build_oi_decision_board(lane: str, scanner_cfg: Dict[str,Any], board: Dict[s
         else:
             tail='allowed'
         return name+' '+tail+(' by '+', '.join(PROTO_OI_READ_LABELS.get(i,i) for i in v['blockers']) if v['blockers'] else '')
+    track2 = build_track2_gating_panel(lane, scanner_cfg, board, bullish=True)
     return {'version':'OI_DECISION_BOARD_V241','lane':lane,'title':'8 EMA Prototype' if lane=='prototype' else '8 EMA Reversal',
+      'track2_gating': track2,
       'armed':armed_status(lane,row,state,positions),'mode':mode,'configured_mode':configured['mode'],
       'rule':buy.get('rule',configured['rule']),'configured_rule':configured['rule'],'enabled':enabled,
       'rows':rows,'context_rows':contexts,'buy':bv,'sell':sv,'warnings':warnings,'as_of':board.get('as_of'),
@@ -135,8 +185,15 @@ def build_oi_decision_board(lane: str, scanner_cfg: Dict[str,Any], board: Dict[s
 
 def enrich_strategy_rows(scanner_cfg, strategy_status, board, proto_state=None, positions=None):
     out={k:dict(v) if isinstance(v,dict) else v for k,v in (strategy_status or {}).items()}
-    for key,lane in (('ema8_prototype','prototype'),('crossover_reversal','reversal')):
-        row=dict(out.get(key) or {})
-        row['oi_decision_board']=build_oi_decision_board(lane,scanner_cfg,board,row,proto_state if lane=='prototype' else {},positions)
-        out[key]=row
+    mapping = (
+        ('ema8_prototype', 'prototype', proto_state),
+        ('crossover_reversal', 'reversal', {}),
+        ('flagship_1h', 'flagship', {}),
+    )
+    for key, lane, state in mapping:
+        row = dict(out.get(key) or {})
+        row['oi_decision_board'] = build_oi_decision_board(
+            lane, scanner_cfg, board, row, state if lane == 'prototype' else state, positions,
+        )
+        out[key] = row
     return out

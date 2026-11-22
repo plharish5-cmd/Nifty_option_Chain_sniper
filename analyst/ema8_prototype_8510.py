@@ -778,6 +778,8 @@ def evaluate_ema8_prototype(
     board_reads: Optional[Dict[str, Dict[str, Any]]] = None,
     oi_3m_read: Optional[Dict[str, Any]] = None,
     oi_3m_feature: Optional[Dict[str, Any]] = None,
+    desk8600_sources: Optional[Any] = None,
+    scanner_cfg: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Closed-bar cross/flip + optional intrabar touch on dynamic 8 EMA."""
     gate_meta = gate_meta or (lambda _k: {})
@@ -1021,6 +1023,17 @@ def evaluate_ema8_prototype(
         "oi_3m_would_block": bool(oi3_detail.get("would_block")),
     }
 
+    if touched and desk8600_sources is not None:
+        try:
+            from analyst.desk8600_lane_gating_8510 import evaluate_lane_gating
+
+            track2 = evaluate_lane_gating("prototype", bullish, desk8600_sources, scanner_cfg)
+            oi_extra["desk8600_lane_gating"] = track2
+            if track2.get("blocked") and not hold:
+                hold = f"NO TRADE — {track2.get('block_reason') or '8600 lane gating'}"
+        except Exception:
+            pass
+
     if hold:
         st = _status(
             "ARMED",
@@ -1101,6 +1114,8 @@ def evaluate_ema8_prototype_intrabar(
     board_reads: Optional[Dict[str, Dict[str, Any]]] = None,
     oi_3m_read: Optional[Dict[str, Any]] = None,
     oi_3m_feature: Optional[Dict[str, Any]] = None,
+    desk8600_sources: Optional[Any] = None,
+    scanner_cfg: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     if live_spot <= 0:
         return [], _status("SCANNING", phase="WAITING_FOR_CLOSE", cfg=cfg)
@@ -1121,6 +1136,8 @@ def evaluate_ema8_prototype_intrabar(
         board_reads=board_reads,
         oi_3m_read=oi_3m_read,
         oi_3m_feature=oi_3m_feature,
+        desk8600_sources=desk8600_sources,
+        scanner_cfg=scanner_cfg,
     )
 
 

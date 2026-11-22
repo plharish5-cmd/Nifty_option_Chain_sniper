@@ -60,7 +60,7 @@ def record(backend, sig, stage, reason, *, lane=None, state=None):
     try:
         cfg = getattr(backend, 'scanner_cfg', {}) or {}
         settings = {k: v for k, v in cfg.items() if not isinstance(v, (dict, list))}
-        for key in ('ema8_prototype', 'reversal', 'mj_sir', 'desk_scope_8510', 'oi_3m_feature', 'desk8600_board'):
+        for key in ('ema8_prototype', 'reversal', 'mj_sir', 'desk_scope_8510', 'oi_3m_feature', 'desk8600_board', 'desk8600_lane_gating'):
             if key in cfg:
                 settings[key] = cfg[key]
         row = state or {}
