@@ -3238,6 +3238,8 @@ class QuantTerminalBackend:
         self._scanner_heavy_lock = asyncio.Lock()
         self._position_close_locks: Dict[str, asyncio.Lock] = {}
         self.exit_failure_banner: Optional[Dict[str, Any]] = None
+        self.contract_selection_alarm: Optional[Dict[str, Any]] = None
+        self._lock: Optional[asyncio.Lock] = None
         self._mj_sir_state: Dict[str, Any] = {}
         self._ema_lane_lock: Dict[str, Any] = {}
         self._ema8_prototype_state: Dict[str, Any] = {}
@@ -3433,7 +3435,7 @@ class QuantTerminalBackend:
 
     @property
     def lock(self) -> asyncio.Lock:
-        if self._lock is None:
+        if getattr(self, "_lock", None) is None:
             self._lock = asyncio.Lock()
         return self._lock
 
@@ -3553,11 +3555,22 @@ class QuantTerminalBackend:
                         ("live_filled", "INTEGER"), ("live_order_id", "TEXT"),
                         ("live_fill_qty", "INTEGER"), ("exit_order_id", "TEXT"),
                         ("exit_filled_qty", "INTEGER"), ("exit_filled_value", "REAL"),
+                        ("price_source", "TEXT"), ("quote_age", "REAL"),
+                        ("exit_price_source", "TEXT"), ("exit_quote_age", "REAL"),
                     ):
                         if col not in pcols:
                             cur.execute("ALTER TABLE positions ADD COLUMN {} {}".format(col, decl))
                 except sqlite3.Error:
                     log.exception("Could not add live-exit columns to positions")
+                try:
+                    ocols = {r[1] for r in cur.execute("PRAGMA table_info(orders)")}
+                    for col, decl in (
+                        ("price_source", "TEXT"), ("quote_age", "REAL"),
+                    ):
+                        if col not in ocols:
+                            cur.execute("ALTER TABLE orders ADD COLUMN {} {}".format(col, decl))
+                except sqlite3.Error:
+                    log.exception("Could not add price_source/quote_age columns to orders")
                 cur.execute("""
                 CREATE TABLE IF NOT EXISTS paper_wallet (
                     id INTEGER PRIMARY KEY,
@@ -4736,7 +4749,8 @@ class QuantTerminalBackend:
 
     def is_nse_market_open(self, dt: Optional[datetime] = None) -> Tuple[bool, str]:
         """Validates if NSE market is open (09:15 to 15:30 IST Mon-Fri)."""
-        return is_nse_market_open(dt=dt, holidays=self.nse_holidays)
+        holidays = getattr(self, "nse_holidays", set())
+        return is_nse_market_open(dt=dt, holidays=holidays)
 
     def position_cleanup_status(self) -> Dict[str, Any]:
         """Cockpit telemetry: last auto-close note and today's cleanup count."""
@@ -6326,7 +6340,7 @@ class QuantTerminalBackend:
 
     # ── 4-CORE STRATEGIES LIVE SCANNER & PARTY-SWITCH ENGINE ───────────────────
     def _allowed_algo_strategy_id_set(self) -> Optional[set]:
-        if not bool(self.algo_allowlist_cfg.get("enabled", False)):
+        if not bool(getattr(self, "algo_allowlist_cfg", {}).get("enabled", False)):
             return None
         raw = self.algo_allowlist_cfg.get("strategy_ids") or []
         return {str(x).strip().upper() for x in raw if str(x).strip()}
@@ -6336,7 +6350,12 @@ class QuantTerminalBackend:
             return
         raw = list(self.algo_allowlist_cfg.get("strategy_ids") or [])
         upper = {str(x).strip().upper() for x in raw}
-        for sid in ("EMA8_PROTOTYPE_LONG", "EMA8_PROTOTYPE_SHORT"):
+        # Ensure all 3 desk strategies are covered so allowlist never silently excludes enabled strategies
+        for sid in (
+            "EMA8_PROTOTYPE_LONG", "EMA8_PROTOTYPE_SHORT",
+            "CROSSOVER_BULLISH", "CROSSOVER_BEARISH",
+            "FLAGSHIP_1H_LONG", "FLAGSHIP_1H_SHORT",
+        ):
             if sid not in upper:
                 raw.append(sid)
                 upper.add(sid)
@@ -8166,7 +8185,14 @@ class QuantTerminalBackend:
 
                 if not target_contract:
                     self._record_ema_entry_decision(sig, "BLOCKED", "Contract selection: " + contract_why)
-                    log.info("No enabled priority contract found for %s (%s) %s", sig["setup_name"], opt_side, contract_why)
+                    err_msg = f"Contract selection failed for {sig.get('setup_name')} ({opt_side}): {contract_why}"
+                    log.error("🚨 %s", err_msg)
+                    self.contract_selection_alarm = {
+                        "setup": str(sig.get("setup_name") or ""),
+                        "opt_side": str(opt_side),
+                        "reason": contract_why,
+                        "time": datetime.now(IST).strftime("%H:%M:%S IST"),
+                    }
                     self.mark_signal_outcome(signal_uid, False,
                                              skip_reason=("NO_ENABLED_CONTRACT: " + contract_why)[:200] if contract_why else "NO_ENABLED_CONTRACT")
                     continue
@@ -9075,8 +9101,6 @@ class QuantTerminalBackend:
             st = str(cur_row["status"]).upper()
             if st == "CLOSED":
                 return {"ok": True, "status": "ALREADY_CLOSED"}
-            if st == "EXIT_PENDING" and pos.get("status") != "EXIT_PENDING":
-                return {"ok": False, "status": "EXIT_PENDING"}
 
             # Mark EXIT_PENDING in database, with the reason, so an exit that
             # is interrupted can be resumed for the same reason.
@@ -9100,17 +9124,41 @@ class QuantTerminalBackend:
                 # Fresh executable bid only; position/current cached LTP is not a fill.
                 from analyst.paper_quote_8510 import executable_paper_quote
                 try:
-                    ltp = await executable_paper_quote(self.broker, sec_id, "SELL") if sec_id else None
+                    res_quote = await executable_paper_quote(self.broker, sec_id, "SELL", detail=True) if sec_id else (None, None, 0.0)
+                    if isinstance(res_quote, tuple):
+                        ltp, exit_price_source, exit_quote_age = res_quote
+                    else:
+                        ltp, exit_price_source, exit_quote_age = res_quote, "REAL_QUOTE" if res_quote else None, 0.0
                 except Exception as exc:
                     log.warning("Paper exit quote unavailable for %s: %s", pos_id, type(exc).__name__)
-                    ltp = None
+                    ltp, exit_price_source, exit_quote_age = None, None, 0.0
                 if ltp is None:
-                    log.warning("Paper exit pending for %s: fresh executable bid unavailable", pos_id)
+                    self._exit_pending_attempts = getattr(self, "_exit_pending_attempts", {})
+                    self._exit_pending_attempts[pos_id] = self._exit_pending_attempts.get(pos_id, 0) + 1
+                    if self._exit_pending_attempts[pos_id] >= 3:
+                        err_msg = f"EXIT_PENDING ALARM: fresh bid unavailable after {self._exit_pending_attempts[pos_id]} attempts for {pos_id}"
+                        log.error(err_msg)
+                        self.exit_failure_banner = {
+                            "position_id": pos_id,
+                            "symbol": symbol,
+                            "error": err_msg,
+                            "time": datetime.now(IST).strftime("%H:%M:%S IST"),
+                        }
+                    else:
+                        log.warning("Paper exit pending for %s: fresh executable bid unavailable (attempt %d)", pos_id, self._exit_pending_attempts[pos_id])
                     # Retain EXIT_PENDING and original exit reason for retry.
                     return {"ok": False, "status": "EXIT_PENDING", "error": "MISSING_FRESH_PAPER_BID"}
 
+                # Fresh bid arrived — clear alarm banner and attempts
+                if hasattr(self, "_exit_pending_attempts") and pos_id in self._exit_pending_attempts:
+                    del self._exit_pending_attempts[pos_id]
+                if getattr(self, "exit_failure_banner", None) and self.exit_failure_banner.get("position_id") == pos_id:
+                    self.exit_failure_banner = None
+
                 return await self._finalize_closed_position(
-                    dict(cur_row), ltp, qty, reason, spot_exit=spot_exit
+                    dict(cur_row), ltp, qty, reason, spot_exit=spot_exit,
+                    price_source=exit_price_source or "REAL_QUOTE",
+                    quote_age=exit_quote_age or 0.0,
                 )
 
     # ── LIVE EXIT: one real position, one real sell ──────────────────────────
@@ -9445,6 +9493,8 @@ class QuantTerminalBackend:
         qty: int,
         exit_reason: str,
         spot_exit: Optional[float] = None,
+        price_source: Optional[str] = None,
+        quote_age: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Finalizes position closure in positions, paper_wallet, orders, and master table."""
         pos_id = str(pos["position_id"])
@@ -9460,9 +9510,11 @@ class QuantTerminalBackend:
             cur.execute("""
                 UPDATE positions SET
                     exit_price=?, exit_time=?, status='CLOSED', gross_pnl=?, net_pnl=?,
-                    exit_reason=?, current_ltp=?, spot_exit=COALESCE(?, spot_exit)
+                    exit_reason=?, current_ltp=?, spot_exit=COALESCE(?, spot_exit),
+                    exit_price_source=?, exit_quote_age=?
                 WHERE position_id=?
-            """, (exit_price, exit_time, gross, net, exit_reason, exit_price, spot_exit, pos_id))
+            """, (exit_price, exit_time, gross, net, exit_reason, exit_price, spot_exit,
+                  str(price_source or "REAL_QUOTE"), float(quote_age or 0.0), pos_id))
 
             # Update paper wallet margin, balance, and realized pnl
             req_margin = entry * qty
@@ -9476,7 +9528,8 @@ class QuantTerminalBackend:
             """, (net, req_margin, net, now_dt.isoformat()))
 
             self._record_exit_order(
-                cur, pos, exit_price, qty, exit_reason, net, charges, nifty_spot_exit=spot_exit
+                cur, pos, exit_price, qty, exit_reason, net, charges, nifty_spot_exit=spot_exit,
+                price_source=price_source or "REAL_QUOTE", quote_age=float(quote_age or 0.0)
             )
             conn.commit()
 
@@ -9559,6 +9612,8 @@ class QuantTerminalBackend:
         net_pnl: float,
         charges: float,
         nifty_spot_exit: Optional[float] = None,
+        price_source: Optional[str] = None,
+        quote_age: Optional[float] = None,
     ) -> str:
         """Write the SELL leg of a closed position into the orders book.
 
@@ -9611,6 +9666,13 @@ class QuantTerminalBackend:
                 float(fld("spot_entry") or 0.0) or None,
                 float(nifty_spot_exit) if nifty_spot_exit and nifty_spot_exit > 0 else None,
             ))
+            try:
+                cur.execute(
+                    "UPDATE orders SET price_source=?, quote_age=? WHERE order_id=?",
+                    (str(price_source or "REAL_QUOTE"), float(quote_age or 0.0), order_id)
+                )
+            except sqlite3.Error:
+                pass
         except sqlite3.Error as exc:
             # A failed book entry must not abort the square-off itself.
             log.error("Could not record exit order for %s: %s", pos_id, exc)
@@ -9730,8 +9792,8 @@ class QuantTerminalBackend:
           7. Supports DUAL execution: Real Dhan API + Parallel Paper Sync.
         """
         async with self.lock:
-            mode = self.execution_mode
-            if self.kill_switch_active:
+            mode = getattr(self, "execution_mode", "PAPER_ONLY")
+            if bool(getattr(self, "kill_switch_active", False)):
                 return {"ok": False, "error": "KILL SWITCH ACTIVE: All execution locked in STANDBY"}
 
             # ── v1.9.4b LIVE ROUTING GATE ────────────────────────────────────
@@ -9959,7 +10021,16 @@ class QuantTerminalBackend:
             lot = contract.get('lot_size')
             premium = contract.get('ltp')
             if not isinstance(lot,int) or isinstance(lot,bool) or lot<=0 or not sec_id.isdigit():
-                return {'ok':False,'status':'REJECTED','error':'Verified instrument and dynamic lot size required'}
+                err_msg = 'Verified instrument and dynamic lot size required'
+                log.error("🚨 Contract selection / instrument failure for %s (sec_id=%s, lot=%s): %s", symbol, sec_id, lot, err_msg)
+                self.contract_selection_alarm = {
+                    "symbol": symbol,
+                    "sec_id": sec_id,
+                    "lot": lot,
+                    "error": err_msg,
+                    "time": datetime.now(IST).strftime("%H:%M:%S IST"),
+                }
+                return {'ok':False,'status':'REJECTED','error':err_msg}
             if not isinstance(premium,(int,float)) or not math.isfinite(premium) or premium<=0:
                 return {'ok':False,'status':'REJECTED','error':'Real positive Dhan option quote required'}
             qty = lot
@@ -10172,23 +10243,30 @@ class QuantTerminalBackend:
 
             # ── 2. PAPER TRADE EXECUTION (if PAPER_ONLY or BOTH) ────────────
             paper_ask = None
+            paper_source = None
+            paper_quote_age = 0.0
             real_entry_filled = bool(live_order_id) and order_status == "FILLED"
             if mode in ("PAPER_ONLY", "BOTH") and self.paper_execution_enabled:
                 from analyst.paper_quote_8510 import executable_paper_quote
                 try:
-                    paper_ask = await executable_paper_quote(self.broker, sec_id, "BUY")
+                    res_quote = await executable_paper_quote(self.broker, sec_id, "BUY", detail=True)
+                    if isinstance(res_quote, tuple):
+                        paper_ask, paper_source, paper_quote_age = res_quote
+                    else:
+                        paper_ask = res_quote
+                        paper_source = "REAL_QUOTE" if res_quote is not None else None
                 except Exception as exc:
                     log.warning("Paper entry quote unavailable for %s: %s", symbol, type(exc).__name__)
+                    paper_ask, paper_source, paper_quote_age = None, None, 0.0
                 if paper_ask is None and not real_entry_filled:
                     # Paper is a SIMULATION of a genuine setup — never skip the trade just because
                     # live depth is momentarily missing. Prefer the fresh executable ask (above); when
                     # it's unavailable, fall back to the signal LTP (the fresh tick that TRIGGERED this
-                    # entry) so the paper trade still fills. The -90/-84 fix was about the EXIT reusing
-                    # a STALE STORED LTP — it must not block entries. Only skip if there's no price at
-                    # all. (Fix for "paper not taking trades every day".)
+                    # entry) so the paper trade still fills. Explicitly mark ESTIMATED_SIGNAL_LTP.
                     if signal_ltp and float(signal_ltp) > 0:
                         paper_ask = float(signal_ltp)
-                        log.warning("Paper entry: no fresh ask for %s — filling at signal LTP %.2f (estimated).",
+                        paper_source = "ESTIMATED_SIGNAL_LTP"
+                        log.warning("Paper entry: no fresh ask for %s — filling at signal LTP %.2f (ESTIMATED_SIGNAL_LTP).",
                                     symbol, paper_ask)
                     else:
                         log.warning("No paper fill for %s: no fresh ask AND no signal LTP", symbol)
@@ -10301,11 +10379,13 @@ class QuantTerminalBackend:
                     # stored mode says what the desk was set to, not what Dhan did.
                     real_fill = bool(live_order_id) and order_status == "FILLED" and mode in ("ALGO_LIVE_ONLY", "BOTH")
                     cur.execute(
-                        "UPDATE positions SET live_filled=?, live_order_id=?, live_fill_qty=? WHERE position_id=?",
+                        "UPDATE positions SET live_filled=?, live_order_id=?, live_fill_qty=?, price_source=?, quote_age=? WHERE position_id=?",
                         (
                             1 if real_fill else 0,
                             str(live_order_id or "") if real_fill else "",
                             int(live_filled_qty or qty) if real_fill else 0,
+                            str("REAL_QUOTE" if real_fill else (paper_source or "ESTIMATED_SIGNAL_LTP")),
+                            float(paper_quote_age or 0.0),
                             pos_id,
                         ),
                     )
@@ -10367,6 +10447,12 @@ class QuantTerminalBackend:
                       placed_source, placed_source, strategy_setup,
                       (live_order_id if live_route["route"] == "LIVE" else None),
                       nifty_entry, ledger_position_id or None))
+                try:
+                    cur.execute("UPDATE orders SET price_source=?, quote_age=? WHERE order_id=?",
+                                (str("REAL_QUOTE" if (real_fill or paper_source == "REAL_QUOTE") else (paper_source or "ESTIMATED_SIGNAL_LTP")),
+                                 float(paper_quote_age or 0.0), order_id))
+                except sqlite3.Error:
+                    pass
                 conn.commit()
 
             res_dict = {
@@ -10374,6 +10460,8 @@ class QuantTerminalBackend:
                 "order_id": order_id,
                 "position_id": ledger_position_id,
                 "status": order_status,
+                "price_source": str("REAL_QUOTE" if (real_fill or paper_source == "REAL_QUOTE") else (paper_source or "ESTIMATED_SIGNAL_LTP")),
+                "quote_age": float(paper_quote_age or 0.0),
                 "symbol": symbol,
                 "source": placed_source,
                 "placed_by": placed_source,
@@ -10424,7 +10512,7 @@ class QuantTerminalBackend:
         with sqlite3.connect(self.ledger_db) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
-            pos = cur.execute("SELECT * FROM positions WHERE position_id=? AND status='OPEN'", (position_id,)).fetchone()
+            pos = cur.execute("SELECT * FROM positions WHERE position_id=? AND status IN ('OPEN', 'EXIT_PENDING', 'EXIT_FAILED')", (position_id,)).fetchone()
             if not pos:
                 return {"ok": False, "error": "Open position not found"}
 

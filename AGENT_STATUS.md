@@ -28,6 +28,7 @@ Trunk: **`integrate/v1.9`**
 | `gemini/v2.0.37-oi-filter-backtest` | Gemini/Cursor | **done** (run job + backtest path fix) tags `pre/post-gemini-v2.0.37` | **NO — awaiting Harish** |
 | `gemini/v2.6.1-wide-test-harness` | Gemini | **done**, tags `pre/post-gemini-v2.6.1` | **NO — awaiting Harish** |
 | `agy/v2.6.1-resume-gating-trail` | Antigravity | **done**, tags `pre/post-agy-v2.6.1` | **NO — awaiting Harish** |
+| `agy/v2.6.2-track1-3-paper-fills-bughunt` | Antigravity | **done**, tags `pre/post-agy-v2.6.2` | **NO — awaiting Harish** |
 
 ---
 
@@ -1590,4 +1591,31 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
   - `analyst/test_arm_persistence_8510.py` (11 tests)
   - `analyst/test_proto_trail_8510.py` (15 tests)
   - Verification: 46/46 passed; `scripts/verify_locks.py` 11/11 locked core modules intact.
+
+---
+
+## Antigravity (AGY) — Track 1 (Real-Price Paper Fills) + Track 3 (Real-Trade-Cancel Bug Hunt) — 22 Nov 2026
+
+- **Branch:** `agy/v2.6.2-track1-3-paper-fills-bughunt` off `origin/reconcile/v2.6.0-consolidated` (`ad4eadf`); tags `pre-agy-v2.6.2` / `post-agy-v2.6.2`.
+- **Scope Lock:** Strict execution of Track 1 and Track 3 ONLY. Track 2 (8600 gating) and Track 4 (resume-on-open) were not touched.
+- **Track 1 Deliverables (Real-Price Paper Fills):**
+  - Root-caused `executable_paper_quote` returning `None` during live hours: lack of on-demand quote fetch retry, rigid string key lookups, and unhandled transient depth timeouts.
+  - Implemented on-demand live quote fetch with retry and `detail: bool = True` returning `(price, price_source, quote_age)`.
+  - Paper fill equals real option ask (BUY) or bid (SELL) of exact traded `security_id`.
+  - When quote is unavailable after on-demand fetch, paper entry falls back to `signal_ltp` explicitly marked `price_source = "ESTIMATED_SIGNAL_LTP"` (never silently labeled `REAL_QUOTE`).
+  - Exit symmetry: exit fills on real bid of same `security_id`. If bid is unavailable, increments `_exit_pending_attempts`; on 3rd attempt, raises `exit_failure_banner` alarm; on fresh bid arrival, resolves `EXIT_PENDING` to `CLOSED` at real bid, clears banner, and records `exit_price_source = "REAL_QUOTE"`.
+  - EOD diagnostic: `price_source` and `quote_age` persisted in `orders` and `positions` schemas and exposed in order book API.
+  - Test suite: `analyst/test_paper_real_price_8510.py` (7 tests, 100% pass).
+- **Track 3 Deliverables (Bug Hunt across All 3 Strategies):**
+  - Investigated all 6 suspects and delivered failure-mode table:
+    1. Suspect 1 (DH-905 Invalid IP): **NOT A BUG** — Surfaced via `format_broker_rejection`, saved in `orders.rejection_reason`, logged, audited in `decision_audit`, and checked by preflight.
+    2. Suspect 2 (Lane lock / EXIT_PENDING): **REAL BUG** — Stuck `EXIT_PENDING` previously kept `open_position_count > 0` freezing re-entry on the lane, while `modify_open_position` rejected manual close due to `status='OPEN'` filter. Fixed: retry alarm raised after 3 attempts, `modify_open_position` status filter expanded to `status IN ('OPEN', 'EXIT_PENDING', 'EXIT_FAILED')`, and fresh bid resolution cleans up lane lock and banner.
+    3. Suspect 3 (Algo allowlist): **REAL BUG** — `_ensure_ema8_prototype_allowlist_ids` only ensured Prototype IDs; when allowlist was enabled, Reversal and 1H Flagship were silently excluded. Fixed: ensures all enabled strategies (`EMA8_PROTOTYPE_LONG`, `EMA8_PROTOTYPE_SHORT`, `CROSSOVER_BULLISH`, `CROSSOVER_BEARISH`, `FLAGSHIP_1H_LONG`, `FLAGSHIP_1H_SHORT`).
+    4. Suspect 4 (Cooldown / retry interval): **NOT A BUG** — `strategy_cooldowns` is keyed by `strat_id` and stamped only on successful execution (`res.get("ok")`), allowing distinct setups and retries on failure.
+    5. Suspect 5 (Arm clearing / note_prototype_exit): **NOT A BUG** — SL on one side records `sl_blocked_side` for that side only without blocking opposite direction; target exits preserve arm and re-entry.
+    6. Suspect 6 (Contract selection): **REAL BUG** — Contract selection failure or invalid `security_id` was previously logged at `info` level and silently swallowed. Fixed: raises `self.contract_selection_alarm` with full error context and logs `error`.
+  - Test suite: `analyst/test_real_trade_cancel_bughunt_8510.py` (6 repro/acceptance tests, 100% pass).
+- **Verification:**
+  - `python -m pytest analyst/test_paper_real_price_8510.py analyst/test_real_trade_cancel_bughunt_8510.py analyst/test_decision_audit_8510.py -q -p no:cacheprovider`: **20/20 PASSED**.
+  - `python scripts/verify_locks.py`: **11/11 PASSED** intact. Zero protected modules touched.
 
