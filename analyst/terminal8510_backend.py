@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import httpx
+
+from analyst.dhan_ipv4_guard_8510 import ipv4_async_client
 import numpy as np
 import pandas as pd
 
@@ -1792,9 +1794,11 @@ class DhanBroker:
             "https://ifconfig.me/ip",
             "https://icanhazip.com"
         ]
+        from analyst.dhan_ipv4_guard_8510 import ipv4_sync_client
+
         for url in urls:
             try:
-                with httpx.Client(timeout=3.0) as client:
+                with ipv4_sync_client(3.0) as client:
                     resp = client.get(url)
                     if resp.status_code == 200:
                         ip = resp.json().get("ip", "").strip() if "json" in url else resp.text.strip()
@@ -1817,7 +1821,9 @@ class DhanBroker:
             "https://ifconfig.me/ip",
             "https://icanhazip.com"
         ]
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        from analyst.dhan_ipv4_guard_8510 import ipv4_async_client
+
+        async with ipv4_async_client(3.0) as client:
             for url in urls:
                 try:
                     resp = await client.get(url)
@@ -1843,9 +1849,12 @@ class DhanBroker:
         masked_token = f"****{token[-4:]}" if len(token) >= 4 else ("****" if token else "")
         masked_secret = f"****{api_sec[-4:]}" if len(api_sec) >= 4 else ("****" if api_sec else "")
 
-        curr_ip = self.get_current_ip()
-        whitelisted = self.whitelisted_ip or curr_ip
-        ip_matched = bool(whitelisted and curr_ip and (whitelisted.strip() == curr_ip.strip()))
+        from analyst.dhan_ipv4_guard_8510 import broker_ip_guard_status
+
+        guard = broker_ip_guard_status(self)
+        curr_ip = str(guard.get("current_public_ipv4") or self.get_current_ip())
+        whitelisted = str(guard.get("whitelisted_ipv4") or "")
+        ip_matched = bool(guard.get("ip_matched"))
 
         is_cfg = bool(token and len(token) > 20)
         exp_info = decode_token_expiry(token) if is_cfg else {
@@ -1869,7 +1878,10 @@ class DhanBroker:
             "secret_configured": bool(api_sec),
             "environment": self.environment,
             "current_ip": curr_ip,
-            "whitelisted_ip": whitelisted,
+            "current_public_ipv4": curr_ip,
+            "whitelisted_ip": whitelisted or None,
+            "whitelisted_ipv4": whitelisted or None,
+            "ip_mismatch": bool(guard.get("ip_mismatch")),
             "ip_matched": ip_matched,
             "dhan_connected": self.is_configured(),
             "last_status": self.last_connected_status,
@@ -2095,7 +2107,7 @@ class DhanBroker:
         exp_info = decode_token_expiry(token)
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with ipv4_async_client(10.0) as client:
                 res_funds = await asyncio.wait_for(
                     client.get(f"{self.base_url}/fundlimit", headers=self._headers()),
                     timeout=10.0
@@ -2280,7 +2292,7 @@ class DhanBroker:
             }
         try:
             self._last_funds_call = now
-            async with httpx.AsyncClient(timeout=6.0) as client:
+            async with ipv4_async_client(6.0) as client:
                 res = await client.get(f"{self.base_url}/fundlimit", headers=self._headers())
                 if res.status_code == 200:
                     d = res.json()
@@ -2315,7 +2327,7 @@ class DhanBroker:
         if not self.is_configured():
             return []
         try:
-            async with httpx.AsyncClient(timeout=6.0) as client:
+            async with ipv4_async_client(6.0) as client:
                 res = await client.get(f"{self.base_url}/orders", headers=self._headers())
                 if res.status_code == 200:
                     data = res.json()
@@ -2337,7 +2349,7 @@ class DhanBroker:
         if not self.is_configured():
             return []
         try:
-            async with httpx.AsyncClient(timeout=6.0) as client:
+            async with ipv4_async_client(6.0) as client:
                 res = await client.get(f"{self.base_url}/positions", headers=self._headers())
                 if res.status_code == 200:
                     data = res.json()
@@ -2381,7 +2393,7 @@ class DhanBroker:
         if now < getattr(self, "_backoff_until", 0.0):
             return out
         try:
-            async with httpx.AsyncClient(timeout=4.0) as client:
+            async with ipv4_async_client(4.0) as client:
                 res = await client.post(f"{self.base_url}/marketfeed/quote",
                                         json=segment_ids, headers=self._headers())
             if res.status_code == 429:
@@ -2458,7 +2470,7 @@ class DhanBroker:
         # 2. Outbound HTTP Request wrapped in robust try/except with 429 Rate Limit Handler
         try:
             self._last_ltp_call = now
-            async with httpx.AsyncClient(timeout=4.0) as client:
+            async with ipv4_async_client(4.0) as client:
                 res = await client.post(f"{self.base_url}/marketfeed/ltp", json=segment_ids, headers=self._headers())
                 if res.status_code == 200:
                     d = res.json().get("data", {})
@@ -2514,7 +2526,7 @@ class DhanBroker:
             return {"ok": False, "error": "Dhan credentials not configured in .env"}
         try:
             payload["dhanClientId"] = os.environ.get("DHAN_CLIENT_ID", "")
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with ipv4_async_client(10.0) as client:
                 res = await client.post(f"{self.base_url}/orders", json=payload, headers=self._headers())
                 data = res.json() if res.status_code == 200 else {}
                 if res.status_code == 200 and data.get("status") != "failure":
@@ -2533,7 +2545,7 @@ class DhanBroker:
         try:
             payload["dhanClientId"] = os.environ.get("DHAN_CLIENT_ID", "")
             payload["orderId"] = order_id
-            async with httpx.AsyncClient(timeout=8.0) as client:
+            async with ipv4_async_client(8.0) as client:
                 res = await client.put(f"{self.base_url}/orders/{order_id}", json=payload, headers=self._headers())
                 data = res.json() if res.status_code == 200 else {}
                 if res.status_code == 200 and data.get("status") != "failure":
@@ -2549,7 +2561,7 @@ class DhanBroker:
         if not self.is_configured():
             return {"ok": False, "error": "Dhan credentials not configured"}
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
+            async with ipv4_async_client(8.0) as client:
                 res = await client.delete(f"{self.base_url}/orders/{order_id}", headers=self._headers())
                 data = res.json() if res.status_code == 200 else {}
                 if res.status_code == 200:
@@ -4244,6 +4256,12 @@ class QuantTerminalBackend:
         report["kill_switch_active"] = kill
         report["places_order"] = False
         report["note"] = "Preliminary LOCAL checks only — broker acceptance is confirmed only on an actual submit."
+        try:
+            from analyst.dhan_ipv4_guard_8510 import ip_guard_payload
+
+            report.update(ip_guard_payload(self))
+        except Exception as e:
+            log.debug("ip_guard_payload in preflight failed: %s", e)
         return report
 
     async def place_real_test_order(self, opt_side: str = "CE", confirm: str = "") -> Dict[str, Any]:
