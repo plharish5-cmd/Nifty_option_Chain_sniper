@@ -277,9 +277,9 @@ export default function PcrTrinitySuite({
 
   const [showPeCeDiff, setShowPeCeDiff] = useState<boolean>(() => {
     try {
-      return localStorage.getItem("ict_pcr_show_pece_diff") === "1";
+      return localStorage.getItem("ict_pcr_show_pece_diff") !== "0";
     } catch {
-      return false;
+      return true;
     }
   });
 
@@ -554,11 +554,13 @@ export default function PcrTrinitySuite({
 
     const peCeDiffLine = ch.addSeries(LineSeries, {
       priceScaleId: "right",
-      color: "#a855f7", // Purple #a855f7 Net PE - CE
+      color: "#a855f7",
       lineWidth: 2,
-      title: "PE - CE",
+      lineStyle: LineStyle.Solid,
+      title: "PE-CE (Chg Day)",
       priceFormat: { type: "custom", formatter: (p: number) => inr(p, true) },
       priceLineVisible: false,
+      lastValueVisible: true,
     });
 
     // Zero reference line
@@ -733,9 +735,12 @@ export default function PcrTrinitySuite({
         showBubbles);
 
       // Clean Y-axis: Only render histogram or diff line if explicitly toggled on
+      const peCeChgDay = (p: PcrPoint) => (p.put_oi_chg ?? 0) - (p.call_oi_chg ?? 0);
       if (showPeCeDiff) {
-        peCeDiffLine.applyOptions({ visible: true });
-        peCeDiffLine.setData(activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: p.pe_ce_diff ?? p.net_oi_chg })));
+        peCeDiffLine.applyOptions({ visible: true, lastValueVisible: true });
+        peCeDiffLine.setData(
+          activeSeries.map((p) => ({ time: p.time as UTCTimestamp, value: peCeChgDay(p) })),
+        );
       } else {
         peCeDiffLine.applyOptions({ visible: false });
         peCeDiffLine.setData([]);
@@ -1295,6 +1300,14 @@ export default function PcrTrinitySuite({
             <span className="text-slate-400 text-[10px]">
               (PE-CE <b className={currentPt && currentPt.net_oi_chg >= 0 ? "text-emerald-400" : "text-rose-400"}>{inr(currentPt?.net_oi_chg, true)}</b>)
             </span>
+            {showPeCeDiff && currentPt && (
+              <span className="text-[#a855f7] text-[10px] ml-1 font-mono">
+                · line{" "}
+                <b>
+                  {inr((currentPt.put_oi_chg ?? 0) - (currentPt.call_oi_chg ?? 0), true)}
+                </b>
+              </span>
+            )}
           </span>
 
           <span className="text-slate-700">|</span>
@@ -1403,6 +1416,20 @@ export default function PcrTrinitySuite({
               <span className="text-purple-300">
                 Net (PE−CE): <b>{inr((currentPt?.put_oi_chg ?? 0) - (currentPt?.call_oi_chg ?? 0), true)}</b>
               </span>
+              {showPeCeDiff && (
+                <>
+                  <span className="text-slate-600">|</span>
+                  <span className="text-[#a855f7]">
+                    PE-CE (Chg Day):{" "}
+                    <b>
+                      {inr(
+                        currentPt ? (currentPt.put_oi_chg ?? 0) - (currentPt.call_oi_chg ?? 0) : undefined,
+                        true,
+                      )}
+                    </b>
+                  </span>
+                </>
+              )}
             </div>
             <div className="mt-0.5 font-medium text-gold-300 text-[10.5px]">
               {tab2Verdict}
@@ -1414,8 +1441,33 @@ export default function PcrTrinitySuite({
             <label className="flex items-center gap-1 cursor-pointer text-slate-400 hover:text-slate-200">
               <input
                 type="checkbox"
+                checked={showPeCeDiff}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setShowPeCeDiff(on);
+                  try {
+                    localStorage.setItem("ict_pcr_show_pece_diff", on ? "1" : "0");
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+                className="rounded border-slate-700 bg-slate-900 text-purple-500 focus:ring-0 cursor-pointer h-3 w-3"
+              />
+              <span className="text-purple-300">Show PE-CE Line</span>
+            </label>
+            <label className="flex items-center gap-1 cursor-pointer text-slate-400 hover:text-slate-200">
+              <input
+                type="checkbox"
                 checked={showNetHist}
-                onChange={(e) => setShowNetHist(e.target.checked)}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setShowNetHist(on);
+                  try {
+                    localStorage.setItem("ict_pcr_show_net_hist", on ? "1" : "0");
+                  } catch {
+                    /* ignore */
+                  }
+                }}
                 className="rounded border-slate-700 bg-slate-900 text-purple-500 focus:ring-0 cursor-pointer h-3 w-3"
               />
               <span>Show Net Histogram</span>

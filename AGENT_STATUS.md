@@ -1591,3 +1591,13 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
   - `analyst/test_proto_trail_8510.py` (15 tests)
   - Verification: 46/46 passed; `scripts/verify_locks.py` 11/11 locked core modules intact.
 
+## 2026-11-22 · Cursor · `cursor/v2.6.2-8600-pe-ce-overlay`
+
+**Goal:** 8600 Trinity Pane 2 — purple `PE-CE (Chg Day)` line (`putChg − callChg`), toggle default ON, hover readout; frontend-only.
+
+**Done:** `ict_smc_app/frontend/src/components/PcrTrinitySuite.tsx` — `#a855f7` solid 2px series, `Show PE-CE Line` checkbox beside Net Histogram, right-axis last value, pane/crosshair telemetry.
+
+**Verify:** `npm run build` (`ict_smc_app/frontend`) — **0 TS/build errors**. `verify_locks.py`: **Trinity `PcrTrinitySuite.tsx` hash mismatch** — expected for this owner-authorized pane-2 UI edit; other locked modules unchanged.
+
+**Tags:** `pre-cursor-v2.6.2-pece` / `post-cursor-v2.6.2-pece`.
+
