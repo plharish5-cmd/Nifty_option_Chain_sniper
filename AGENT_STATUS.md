@@ -1664,3 +1664,13 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 
 **Tags:** `pre-cursor-v2.6.2-pece` / `post-cursor-v2.6.2-pece`.
 
+## 2026-11-22 · Cursor · `cursor/v2.6.2-ip-guard-ui-readability`
+
+**Goal:** DH-905 guard — force IPv4 on Dhan HTTP clients, expose IP allowlist fields on `/api/health` + preflight, top-bar IPv4 pill + red DH-905 banner; 8510 UI typography lift (all tabs).
+
+**Done:** `analyst/dhan_ipv4_guard_8510.py`; IPv4 clients in `terminal8510_backend.py` (DhanBroker) + desk-parity quote in `paper_quote_8510.py`; `engine_8510_live.py` health payload; `Algorithmic_Trading_Workspace_8510.html` banner/pill + base 14–15px table/tab CSS. `get_masked_config` no longer masks IP mismatch when an explicit allowlist is set.
+
+**Tests:** `verify_locks.py` **11/11**; `test_real_trade_cancel_bughunt_8510.py` + `test_feed_freshness_8510.py` **14 passed**. Protected modules: **0**. `terminal8510_config.json` not committed.
+
+**Tags:** `pre-cursor-v2.6.2-ui` / `post-cursor-v2.6.2-ui`.
+

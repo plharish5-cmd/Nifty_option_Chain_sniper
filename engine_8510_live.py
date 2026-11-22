@@ -324,7 +324,7 @@ async def api_decision_audit(day: str = "", lane: str = "", limit: int = 100):
 @app.get("/api/health")
 async def api_health():
     m_status = backend.is_nse_market_open()
-    return JSONResponse(content={
+    payload = {
         "status": "ONLINE",
         "port": 8510,
         "dhan_connected": backend.broker.is_configured(),
@@ -337,7 +337,14 @@ async def api_health():
         "kill_switch_active": backend.kill_switch_active,
         "market": m_status,
         "allow_off_hours_paper_testing": backend.allow_off_hours_paper_testing,
-    })
+    }
+    try:
+        from analyst.dhan_ipv4_guard_8510 import ip_guard_payload
+
+        payload.update(ip_guard_payload(backend))
+    except Exception:
+        pass
+    return JSONResponse(content=payload)
 
 
 @app.get("/api/market/status")

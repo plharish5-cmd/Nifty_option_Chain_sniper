@@ -35,6 +35,11 @@
             --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.35);
             --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             --font-mono: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Consolas, monospace;
+            --font-base: 15px;
+            --font-table: 14px;
+            --font-table-head: 15px;
+            --font-tab: 15px;
+            --font-ribbon: 14px;
         }
         .gate-scope { font-size: 10px; margin-right: 5px; opacity: 0.95; vertical-align: middle; }
         .shutter-panel > summary { list-style: disclosure-closed; }
@@ -54,6 +59,8 @@
             padding: 0;
             overflow-x: hidden;
             -webkit-font-smoothing: antialiased;
+            font-size: var(--font-base);
+            line-height: 1.48;
         }
 
         /* Live Flash Animations */
@@ -1433,6 +1440,60 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
 
 .lane-panel-section > .strat-rules-section { margin-top:12px !important; }
 #oi3mContextGrid:empty { display:none; }
+
+        /* v2.6.2 — workspace readability (all tabs) */
+        .quant-ribbon { font-size: var(--font-ribbon); padding: 10px 22px; gap: 14px 20px; }
+        .ribbon-label { font-size: 12px; }
+        .ribbon-val { font-size: var(--font-ribbon); font-variant-numeric: tabular-nums; }
+        .tab-btn { font-size: var(--font-tab) !important; padding: 11px 18px !important; min-height: 42px !important; }
+        .sub-tab-btn { font-size: 14px !important; padding: 8px 16px !important; }
+        .workspace-wrapper table th,
+        .workspace-wrapper table td,
+        .tab-content table th,
+        .tab-content table td {
+            font-size: var(--font-table) !important;
+            line-height: 1.45;
+            padding: 8px 10px !important;
+            font-variant-numeric: tabular-nums;
+        }
+        .workspace-wrapper table th,
+        .tab-content table th { font-size: var(--font-table-head) !important; font-weight: 700; }
+        .status-badge { font-size: 13px !important; }
+        .workspace-wrapper { padding: 22px 26px; }
+        header h1 { font-size: 1.35rem; }
+        .card-panel, .panel-card, .bnr-tile { padding: 10px 12px; }
+
+        /* v2.6.2 — DH-905 IP mismatch banner (real / paper+real desk) */
+        .dh905-ip-banner {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 11px 18px;
+            background: #7f1d1d;
+            border-bottom: 2px solid #fecaca;
+            color: #fff;
+            font-weight: 800;
+            font-size: 15px;
+            letter-spacing: 0.02em;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 1105;
+            font-family: var(--font-sans);
+        }
+        .dh905-ip-banner .dh905-copy-btn {
+            font-size: 14px;
+            font-weight: 700;
+            padding: 6px 14px;
+            border-radius: 6px;
+            border: 1px solid #fecaca;
+            background: rgba(0, 0, 0, 0.28);
+            color: #fff;
+            cursor: pointer;
+        }
+        .ribbon-ipv4-pill { font-family: var(--font-mono); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -1460,6 +1521,10 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 <span class="ribbon-label">PORT 8510 STATUS:</span>
                 <span class="ribbon-val" id="ribbonStatus" style="color:var(--emerald);">● ONLINE</span>
             </div>
+            <div class="ribbon-item" id="ribbonIpv4Wrap" style="display:none;">
+                <span class="ribbon-label">PUBLIC IPv4:</span>
+                <span class="ribbon-val ribbon-ipv4-pill up" id="ribbonIpv4Pill" title="Outbound IPv4 seen by Dhan (DH-905 allowlist)">--</span>
+            </div>
             <div class="ribbon-item">
                 <span class="ribbon-label">MARKET INDICATOR:</span>
                 <span class="ribbon-val" id="persistentMarketHeader" style="font-family:var(--font-mono); font-weight:700; color:#f87171;">
@@ -1478,6 +1543,11 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
     <!-- ⚠️ Testing Mode Banner (When Market Closed & Override Active) -->
     <div id="testingModeBanner" style="display:none; padding:7px 16px; background:rgba(245, 158, 11, 0.18); border-bottom:1px solid rgba(245, 158, 11, 0.5); color:#fbbf24; font-weight:700; font-size:12.5px; text-align:center; font-family:var(--font-mono); letter-spacing:0.3px;">
         ⚠️ Testing Mode — Market is Closed.
+    </div>
+
+    <div id="dh905IpMismatchBanner" class="dh905-ip-banner" role="alert" aria-live="assertive">
+        <span>DH-905 IP MISMATCH — Update Dhan Static IP before 09:15</span>
+        <button type="button" id="dh905CopyIpv4Btn" class="dh905-copy-btn" onclick="copyPublicIpv4ForDhan()">Copy IPv4</button>
     </div>
 
     <div class="workspace-wrapper">
@@ -4147,6 +4217,55 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
         setInterval(() => refreshPublicIpCheck(), 30000);
         window.addEventListener("online", () => refreshPublicIpCheck(true));
 
+        let ipGuardSnapshot = { ipv4: null, mismatch: false, dh905Ledger: false, dh905Orders: false };
+
+        function isDeskRealOrBothMode() {
+            return currentExecutionMode === "BOTH" || !!document.getElementById("enableRealMoney")?.checked;
+        }
+
+        function renderIpGuardChrome() {
+            const showDesk = isDeskRealOrBothMode();
+            const wrap = document.getElementById("ribbonIpv4Wrap");
+            const pill = document.getElementById("ribbonIpv4Pill");
+            const banner = document.getElementById("dh905IpMismatchBanner");
+            const alertOn = !!(ipGuardSnapshot.mismatch || ipGuardSnapshot.dh905Ledger || ipGuardSnapshot.dh905Orders);
+            if (wrap) wrap.style.display = showDesk ? "" : "none";
+            if (pill) {
+                pill.textContent = ipGuardSnapshot.ipv4 || "--";
+                pill.className = "ribbon-val ribbon-ipv4-pill " + (alertOn ? "down" : "up");
+            }
+            if (banner) banner.style.display = showDesk && alertOn ? "flex" : "none";
+        }
+
+        async function refreshIpGuardFromHealth() {
+            try {
+                const res = await fetch("/api/health", { cache: "no-store" });
+                if (!res.ok) return;
+                const h = await res.json();
+                ipGuardSnapshot.ipv4 = h.current_public_ipv4 || h.current_ip || null;
+                ipGuardSnapshot.mismatch = !!h.ip_mismatch;
+                ipGuardSnapshot.dh905Ledger = !!h.dh905_rejection_recent;
+                renderIpGuardChrome();
+            } catch (_) { /* health poll optional */ }
+        }
+
+        function copyPublicIpv4ForDhan() {
+            const ip = ipGuardSnapshot.ipv4 || "";
+            if (!ip) return;
+            navigator.clipboard.writeText(ip).then(() => {
+                const btn = document.getElementById("dh905CopyIpv4Btn");
+                if (btn) {
+                    const prev = btn.textContent;
+                    btn.textContent = "Copied ✓";
+                    setTimeout(() => { btn.textContent = prev; }, 1600);
+                }
+            }).catch(() => alert("IPv4: " + ip));
+        }
+
+        window.copyPublicIpv4ForDhan = copyPublicIpv4ForDhan;
+        setInterval(() => refreshIpGuardFromHealth(), 30000);
+        refreshIpGuardFromHealth();
+
         function checkIpMatchStatus() {
             const currIpEl = document.getElementById("dhanCurrentIpDisplay");
             const whiteIpEl = document.getElementById("dhanWhitelistedIpInput");
@@ -4952,6 +5071,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 if (data.execution) {
                     currentExecutionMode = data.execution.mode;
                     syncRealMoneyUI(data.execution.mode === "BOTH");
+                    renderIpGuardChrome();
                     isPaperExecutionEnabled = data.execution.paper_enabled;
                     isPaperExecutionEnabled = true;
 
@@ -5568,9 +5688,20 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             return html;
         }
 
+        function noteDh905FromOrders(orders) {
+            if (!Array.isArray(orders)) return;
+            ipGuardSnapshot.dh905Orders = orders.some(o => {
+                const d = orderRejectionDetails(o);
+                const t = String(d.reason || "").toUpperCase();
+                return t.includes("DH-905") || t.includes("INVALID IP");
+            });
+            renderIpGuardChrome();
+        }
+
         function renderOrdersTable(orders) {
             const raw = (orders || []).filter(o => !deskJunkOrderRow(o));
             lastOrdersPayload = raw;
+            noteDh905FromOrders(raw);
             const tbody = document.getElementById("ordersTableBody");
             if (!tbody) return;
 
@@ -7894,7 +8025,7 @@ document.addEventListener('DOMContentLoaded',()=>{const rf=document.getElementBy
 // says, including the server's own refusal wording. The checkbox is forced
 // unchecked before every request and only re-checked from the response, so a
 // refused arm can never leave the header claiming LIVE.
-function syncRealMoneyUI(enabled){const box=document.getElementById('enableRealMoney');if(box)box.checked=!!enabled;}
+function syncRealMoneyUI(enabled){const box=document.getElementById('enableRealMoney');if(box)box.checked=!!enabled;if(typeof renderIpGuardChrome==='function')renderIpGuardChrome();}
 
 function renderStrategyMoneyBadges(s){
  const armed=!!(s&&s.live_armed);

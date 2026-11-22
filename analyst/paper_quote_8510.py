@@ -81,9 +81,9 @@ async def _desk_parity_marketfeed_quote(broker: Any, sec_int: int, timeout: floa
     if not base or not headers:
         return {}
     try:
-        import httpx
+        from analyst.dhan_ipv4_guard_8510 import ipv4_async_client
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with ipv4_async_client(timeout) as client:
             res = await client.post(
                 f"{base}/marketfeed/quote",
                 json={"NSE_FNO": [sec_int]},
