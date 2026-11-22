@@ -1642,6 +1642,18 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 - `analyst/test_resume_all3_strategies_8510.py` — adversarial all-three suite.
 
 **Tests:** `pytest analyst/test_resume_all3_strategies_8510.py analyst/test_resume_on_open_8510.py analyst/test_arm_persistence_8510.py` → **25 passed, 1 skipped** / 26 total. `verify_locks.py` **11/11**. **0 protected modules** touched.
+
+---
+
+## 2026-11-22 · Cursor · `cursor/v2.6.2-8504-quote-parity`
+
+**Goal:** Align 8510 paper fills with Port 8504 (Paper Desk) on-demand option quote fetch.
+
+**Audit:** 8504 (`paper_desk._quotes_fetch`) POSTs `api.dhan.co/v2/marketfeed/quote` with `{"NSE_FNO":[sec_id]}`, reads `depth.buy[0].price` / `depth.sell[0].price`. 8510 already routed paper entry/exit through `executable_paper_quote` → `DhanBroker.get_marketfeed_quote`, but that wrapper can return `{}` during 429 backoff without retrying the same REST call the desk makes on Buy/Sell.
+
+**Fix:** `analyst/paper_quote_8510.py` — desk-parity direct fetch when the wrapper book is missing; shared depth parsing with 8504; config knobs in `paper_quote_rules_8510.json`. Test: backoff `{}` → still `REAL_QUOTE` when desk-parity returns depth.
+
+**Tests:** `pytest analyst/test_paper_real_price_8510.py` → **8/8**; `verify_locks.py` **11/11**. Protected modules: **0**.
 ## 2026-11-22 · Cursor · `cursor/v2.6.2-8600-pe-ce-overlay`
 
 **Goal:** 8600 Trinity Pane 2 — purple `PE-CE (Chg Day)` line (`putChg − callChg`), toggle default ON, hover readout; frontend-only.

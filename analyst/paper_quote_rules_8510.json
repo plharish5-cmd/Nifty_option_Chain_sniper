@@ -1,1 +1,5 @@
-{"max_request_seconds": 5.0}
+{
+  "max_request_seconds": 5.0,
+  "max_retries": 1,
+  "desk_parity_direct_on_miss": true
+}
