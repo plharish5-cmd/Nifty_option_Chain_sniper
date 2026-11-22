@@ -1591,3 +1591,21 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
   - `analyst/test_proto_trail_8510.py` (15 tests)
   - Verification: 46/46 passed; `scripts/verify_locks.py` 11/11 locked core modules intact.
 
+---
+
+## 2026-11-22 · Cursor · `cursor/v2.6.2-track4-resume-all3` · Track 4
+
+**Goal:** RESUMED vs RECOVERED on open for **Prototype + Reversal + 1H Flagship**; assess completed candles; decision-audit rows; no downtime back-trades.
+
+**Branch / tags:** `pre-cursor-v2.6.2-t4` → commit → `post-cursor-v2.6.2-t4` (off `origin/reconcile/v2.6.0-consolidated` @ `ad4eadf`).
+
+**Code:**
+- `analyst/resume_all3_8510.py` — unified `bootstrap_all_strategies_on_open`, `record_lane_resume`.
+- `analyst/reversal_arm_recovery_8510.py`, `analyst/flagship_arm_recovery_8510.py` — candle-assessed RECOVER (no retro fills).
+- `analyst/ema_arm_persistence_8510.py` — `bootstrap_reversal_arm`, `bootstrap_flagship_arm`; MJ persist slice extended; prototype audit on resume/recover.
+- `analyst/terminal8510_backend.py` — scanner worker calls unified bootstrap.
+- `analyst/decision_audit_8510.py` — `session_day` from evaluator state (fixes resume rows on replay days).
+- `analyst/test_resume_all3_strategies_8510.py` — adversarial all-three suite.
+
+**Tests:** `pytest analyst/test_resume_all3_strategies_8510.py analyst/test_resume_on_open_8510.py analyst/test_arm_persistence_8510.py` → **25 passed, 1 skipped** / 26 total. `verify_locks.py` **11/11**. **0 protected modules** touched.
+
