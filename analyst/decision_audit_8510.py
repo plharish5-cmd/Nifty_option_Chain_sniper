@@ -108,10 +108,16 @@ def record(backend, sig, stage, reason, *, lane=None, state=None):
         if stage in ('STATE', 'TOUCH_BLOCKED', 'WAITING', 'BLOCKED') and now - last.get(signature, -1e20) < RULES['repeat_state_seconds']:
             return False
         at = datetime.now(IST)
+        session_day = str(
+            (state or {}).get('session_day')
+            or row.get('session_day')
+            or row.get('day')
+            or at.date().isoformat()
+        )
         with sqlite3.connect(backend.ledger_db, timeout=RULES['db_timeout_seconds']) as c:
             c.execute(SCHEMA)
             c.execute('INSERT INTO strategy_decision_audit(recorded_at,session_day,lane,strategy_id,side,stage,reason,context_json) VALUES(?,?,?,?,?,?,?,?)',
-                      (at.isoformat(), at.date().isoformat(), lane, str(sig.get('strategy_id') or ''),
+                      (at.isoformat(), session_day, lane, str(sig.get('strategy_id') or ''),
                        str(sig.get('direction') or row.get('direction') or ''), stage, text,
                        json.dumps(context, default=str, allow_nan=False)))
         last[signature] = now
