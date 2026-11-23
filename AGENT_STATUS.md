@@ -1694,3 +1694,23 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 
 **Tests:** `test_ema8_sl_reentry_8510.py` **6 passed**; `verify_locks.py` **11/11**.
 
+## 2026-11-23 · Cursor · `feature/ema8-arm-mode-option`
+
+**Goal:** Optional Prototype **Arm mode** UI — **Cross only** (default, unchanged) vs **Any close** — without changing SL, trail, OI, or touch logic.
+
+**Done:** `arm_mode` in `ema8_prototype_8510.py` (`bar_close_arm_triggers`, `_maybe_flip_arm` same-side dedupe); cockpit radios + filter API persist; `test_ema8_arm_mode_8510.py` (5).
+
+**Note:** `test_live_close_applies_the_rule_and_saves_it` fails on frozen `reconcile/v2.6.0-consolidated` @ `27f3cd9` too (paper exit pending / arm not cleared) — pre-existing, not arm-mode.
+
+**Do not merge** until Harish reviews Any-close replay vs Cross only.
+
+## 2026-11-23 · Cursor · `feature/ema8-arm-mode-option`
+
+**Goal:** Optional Prototype **Arm mode** UI — **Cross only** (default, unchanged) vs **Any close** — without changing SL, trail, OI, or touch logic.
+
+**Done:** `arm_mode` in `ema8_prototype_8510.py` (`bar_close_arm_triggers`, `_maybe_flip_arm` same-side dedupe); cockpit radios + filter API persist; `test_ema8_arm_mode_8510.py` (5).
+
+**Note:** `test_live_close_applies_the_rule_and_saves_it` fails on frozen `reconcile/v2.6.0-consolidated` @ `27f3cd9` too (paper exit pending / arm not cleared) — pre-existing, not arm-mode.
+
+**Do not merge** until Harish reviews Any-close replay vs Cross only.
+
