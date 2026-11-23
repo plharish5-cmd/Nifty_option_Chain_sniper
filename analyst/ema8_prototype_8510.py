@@ -102,6 +102,11 @@ def get_effective_touch_tolerance(cfg: Dict[str, Any]) -> float:
     return float(cfg.get("touch_tol_pts", 3.0) or 3.0)
 
 
+def live_spot_within_touch_tolerance(spot: float, e8_val: float, tol: float) -> bool:
+    """Orders fill at live spot — wicks inside the 15m bar cannot count as entry if spot is far away."""
+    return abs(float(spot) - float(e8_val)) <= max(0.0, float(tol)) + 1e-6
+
+
 def load_ema8_prototype_cfg(scanner_cfg: Dict[str, Any]) -> Dict[str, Any]:
     from analyst.proto_oi_filters_8510 import DEFAULT_OI_FILTERS, load_oi_filters_cfg
 
@@ -398,28 +403,33 @@ def check_retouch(
         For PE (bearish): tick_high >= dynamic_e8 - tol
     If retouch_requires_away is False:
       - Uses legacy overlap check on candle_high and candle_low (or tick).
+    Entry always requires live spot within tol of dynamic 8 EMA (orders execute at spot).
     """
     if not retouch_requires_away:
         lo = candle_low if candle_low is not None else (tick_low if tick_low is not None else spot)
         hi = candle_high if candle_high is not None else (tick_high if tick_high is not None else spot)
-        return _touch_retest(bullish=bullish, low=lo, high=hi, e8=e8_val, tol=tol)
-
-    chk_high = float(tick_high) if tick_high is not None else float(spot)
-    chk_low = float(tick_low) if tick_low is not None else float(spot)
-
-    away = float(tol if away_pts is None else away_pts)
-    if bullish:
-        if not arm.get("away_seen", False):
-            if chk_high > e8_val + away:
-                arm["away_seen"] = True
-            return False
-        return chk_low <= e8_val + tol
+        touched = _touch_retest(bullish=bullish, low=lo, high=hi, e8=e8_val, tol=tol)
     else:
-        if not arm.get("away_seen", False):
-            if chk_low < e8_val - away:
-                arm["away_seen"] = True
-            return False
-        return chk_high >= e8_val - tol
+        chk_high = float(tick_high) if tick_high is not None else float(spot)
+        chk_low = float(tick_low) if tick_low is not None else float(spot)
+
+        away = float(tol if away_pts is None else away_pts)
+        if bullish:
+            if not arm.get("away_seen", False):
+                if chk_high > e8_val + away:
+                    arm["away_seen"] = True
+                return False
+            touched = chk_low <= e8_val + tol
+        else:
+            if not arm.get("away_seen", False):
+                if chk_low < e8_val - away:
+                    arm["away_seen"] = True
+                return False
+            touched = chk_high >= e8_val - tol
+
+    if touched and not live_spot_within_touch_tolerance(spot, e8_val, tol):
+        return False
+    return touched
 
 
 def current_nse_15m_open_ts(now: Optional[datetime] = None) -> int:
@@ -610,6 +620,79 @@ def _arm_new(
         "cross_e8": float(e8),
         "away_seen": bool(away_seen),
     }
+
+
+SL_FLIP_ARM_BLOCK_REASON = {
+    "LONG": "LONG blocked after SL (Flip only mode)",
+    "SHORT": "SHORT blocked after SL (Flip only mode)",
+}
+
+
+def cross_arm_blocked_by_sl(
+    cfg: Dict[str, Any],
+    proto_state: Dict[str, Any],
+    *,
+    bull_cross: bool,
+    bear_cross: bool,
+) -> Optional[str]:
+    """When flip-only SL memory is on, same-side re-arm on a new close is blocked."""
+    if bool(cfg.get("reentry_after_stop_loss", False)):
+        return None
+    sl_side = str(proto_state.get("sl_blocked_side") or "").upper()
+    if bull_cross and sl_side == "LONG":
+        return "LONG"
+    if bear_cross and sl_side == "SHORT":
+        return "SHORT"
+    return None
+
+
+def append_cross_arm_actions(
+    actions: List[Dict[str, Any]],
+    *,
+    cfg: Dict[str, Any],
+    proto_state: Dict[str, Any],
+    bull_cross: bool,
+    bear_cross: bool,
+    cross_open_ts: int,
+    e8_val: float,
+    spot: float,
+) -> None:
+    """Emit ARM only when state actually armed; otherwise ARM_BLOCKED for flip-only SL."""
+    blocked = cross_arm_blocked_by_sl(cfg, proto_state, bull_cross=bull_cross, bear_cross=bear_cross)
+    if blocked:
+        actions.append(
+            {
+                "type": "ARM_BLOCKED",
+                "direction": blocked,
+                "reason": SL_FLIP_ARM_BLOCK_REASON.get(blocked, f"{blocked} blocked after SL (Flip only mode)"),
+                "cross_bar_open_ts": cross_open_ts,
+                "dynamic_8ema": e8_val,
+                "spot": spot,
+            }
+        )
+        return
+    arm = proto_state.get("arm") or {}
+    arm_dir = str(arm.get("direction") or "").upper()
+    if bull_cross and arm_dir == "LONG":
+        actions.append(
+            {
+                "type": "ARM",
+                "direction": "LONG",
+                "cross_bar_open_ts": cross_open_ts,
+                "dynamic_8ema": e8_val,
+                "spot": spot,
+            }
+        )
+    elif bear_cross and arm_dir == "SHORT":
+        actions.append(
+            {
+                "type": "ARM",
+                "direction": "SHORT",
+                "cross_bar_open_ts": cross_open_ts,
+                "dynamic_8ema": e8_val,
+                "spot": spot,
+            }
+        )
 
 
 def _maybe_flip_arm(
@@ -866,16 +949,30 @@ def evaluate_ema8_prototype(
                 return [], st
             cross_open_ts = bar_open_timestamp(b15, bar_ci)
             _maybe_flip_arm(proto_state, bull_cross, bear_cross, cross_open_ts, e8_val, session_day, actions=actions, spot=c)
-            if bull_cross:
-                actions.append({"type": "ARM", "direction": "LONG", "cross_bar_open_ts": cross_open_ts, "dynamic_8ema": e8_val, "spot": c})
-            elif bear_cross:
-                actions.append({"type": "ARM", "direction": "SHORT", "cross_bar_open_ts": cross_open_ts, "dynamic_8ema": e8_val, "spot": c})
+            append_cross_arm_actions(
+                actions,
+                cfg=cfg,
+                proto_state=proto_state,
+                bull_cross=bull_cross,
+                bear_cross=bear_cross,
+                cross_open_ts=cross_open_ts,
+                e8_val=e8_val,
+                spot=c,
+            )
 
     arm = proto_state.get("arm")
     if not arm:
         last_exit = proto_state.get("last_exit_reason")
         ph = f"EXITED — {last_exit}" if last_exit else "WAITING FOR CLOSE"
         br = "Opposite Close — Exited" if last_exit == "OPPOSITE_8EMA_CLOSE" else ""
+        sl_blk = str(proto_state.get("sl_blocked_side") or "").upper()
+        if not br and sl_blk:
+            for act in reversed(actions or []):
+                if isinstance(act, dict) and str(act.get("type")).upper() == "ARM_BLOCKED":
+                    br = str(act.get("reason") or br)
+                    break
+            if not br:
+                br = SL_FLIP_ARM_BLOCK_REASON.get(sl_blk, f"{sl_blk} blocked after SL (Flip only mode)")
         st = _status(
             "SCANNING",
             phase=ph,

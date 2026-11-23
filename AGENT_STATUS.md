@@ -1674,3 +1674,13 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 
 **Tags:** `pre-cursor-v2.6.2-ui` / `post-cursor-v2.6.2-ui`.
 
+## 2026-11-23 · Cursor · `cursor/v2.6.3-sl-reentry-and-header-fix`
+
+**Goal:** Stop phantom `ARMED SHORT` when `sl_blocked_side` is active; keep prototype header `8EMA (15m close)` + live EMA fresh when unarmed/SL-blocked; block distant chase entries off bar wicks.
+
+**Done:** `ema8_prototype_8510.py` — `ARM_BLOCKED` vs `ARM`, `live_spot_within_touch_tolerance` on retouch; `terminal8510_backend.py` — `_refresh_proto_ema_audit()`, intrabar EMA refresh without arm; `test_ema8_sl_reentry_8510.py`.
+
+**Tests:** `pytest analyst/test_ema8_sl_reentry_8510.py`; `verify_locks.py` **11/11**. Protected modules: **0**.
+
+**Tags:** `post-cursor-v2.6.3-sl`.
+

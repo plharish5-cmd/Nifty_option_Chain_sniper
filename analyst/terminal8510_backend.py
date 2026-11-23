@@ -5435,6 +5435,42 @@ class QuantTerminalBackend:
         hi, lo = self.__dict__.setdefault("_tick_spot_range", {}).pop(key, (0.0, 0.0))
         return (max(hi, spot) if hi > 0 else spot, min(lo, spot) if lo > 0 else spot)
 
+    def _refresh_proto_ema_audit(
+        self,
+        b15: pd.DataFrame,
+        spot: float,
+        *,
+        form_high: Optional[float] = None,
+        form_low: Optional[float] = None,
+    ) -> None:
+        """Update closed + live 8 EMA for the cockpit header (independent of arm / SL block)."""
+        if spot <= 0 or b15 is None or getattr(b15, "empty", True):
+            return
+        try:
+            from analyst.nse_spot_candles_8510 import (
+                compute_dynamic_emas_on_forming_bar,
+                last_closed_bar_emas,
+            )
+
+            _, _, e8_closed, _ = last_closed_bar_emas(b15, offset=-2)
+            _, e8_live, _, _ = compute_dynamic_emas_on_forming_bar(
+                b15, live_spot=float(spot), form_high=form_high, form_low=form_low
+            )
+            self._proto_ema_audit = {
+                "e8_live": round(float(e8_live), 2),
+                "e8_closed": round(float(e8_closed), 2) if e8_closed else None,
+                "stale": False,
+                "spot": round(float(spot), 2),
+                "at": datetime.now(IST).strftime("%H:%M:%S"),
+            }
+            prev = dict(self.strategy_status.get("ema8_prototype") or {})
+            prev["dynamic_e8"] = round(float(e8_live), 2)
+            if e8_closed:
+                prev["e8_closed"] = round(float(e8_closed), 2)
+            self.strategy_status["ema8_prototype"] = prev
+        except Exception as exc:
+            log.debug("proto ema audit refresh: %s", exc)
+
     async def start_ema8_prototype_intrabar_worker(self) -> None:
         """30s (config) refresh: armed prototype checks touch vs dynamic 8 EMA on forming 15m bar."""
         from analyst.ema8_prototype_8510 import (
@@ -5458,12 +5494,6 @@ class QuantTerminalBackend:
                 # cadence follows the config live, so a change needs no restart
                 refresh = max(2.0, min(float(proto_cfg.get("e8_refresh_seconds", 3.0) or 3.0), 60.0))
                 if not bool(proto_cfg.get("enabled", True)):
-                    await asyncio.sleep(refresh)
-                    continue
-                if (
-                    not self._ema8_prototype_state.get("arm")
-                    and getattr(self, "_proto_arm_bootstrap_done", False)
-                ):
                     await asyncio.sleep(refresh)
                     continue
                 spot = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
@@ -5518,9 +5548,6 @@ class QuantTerminalBackend:
                         run_desk_self_audit_startup(self)
                         self._desk_self_audit_startup_done = True
                     self._proto_arm_bootstrap_done = True
-                if not self._ema8_prototype_state.get("arm"):
-                    await asyncio.sleep(refresh)
-                    continue
                 form_high = form_low = None
                 tick_high = tick_low = None
                 try:
@@ -5546,22 +5573,13 @@ class QuantTerminalBackend:
                 seen_hi, seen_lo = self._take_tick_spot_range("ema8_proto", spot)
                 tick_high = max(float(tick_high or spot), seen_hi)
                 tick_low = min(float(tick_low or spot), seen_lo)
-                from analyst.nse_spot_candles_8510 import (
-                    compute_dynamic_emas_on_forming_bar,
-                    last_closed_bar_emas,
-                )
-
-                _, _, e8_closed, _ = last_closed_bar_emas(b15, offset=-2)
-                _, e8_live, _, _ = compute_dynamic_emas_on_forming_bar(
-                    b15, live_spot=spot, form_high=form_high, form_low=form_low
-                )
-                self._proto_ema_audit = {
-                    "e8_live": round(float(e8_live), 2),
-                    "e8_closed": round(float(e8_closed), 2) if e8_closed else None,
-                    "stale": False,
-                    "spot": round(float(spot), 2),
-                    "at": datetime.now(IST).strftime("%H:%M:%S"),
-                }
+                self._refresh_proto_ema_audit(b15, spot, form_high=form_high, form_low=form_low)
+                if (
+                    not self._ema8_prototype_state.get("arm")
+                    and getattr(self, "_proto_arm_bootstrap_done", False)
+                ):
+                    await self._sleep_tracking_spot("ema8_proto", refresh)
+                    continue
                 session_day = datetime.now(IST).strftime("%Y-%m-%d")
                 self._sync_open_ema8_prototype_position()
                 from analyst.proto_oi_filters_8510 import board_reads_from_board
@@ -6686,6 +6704,15 @@ class QuantTerminalBackend:
                     reason=f"ARMED {act.get('direction')}",
                 )
                 self._save_ema8_prototype_state()
+            elif atype == "ARM_BLOCKED":
+                self.log_ema8_prototype_event(
+                    event="ARM_BLOCKED",
+                    direction=act.get("direction"),
+                    dynamic_8ema=act.get("dynamic_8ema"),
+                    spot=act.get("spot"),
+                    reason=str(act.get("reason") or "ARM blocked after SL (Flip only mode)"),
+                )
+                self._save_ema8_prototype_state()
             elif atype == "FLIP":
                 self.log_ema8_prototype_event(
                     event=f"FLIPPED TO EMA {act.get('direction')}",
@@ -7164,6 +7191,11 @@ class QuantTerminalBackend:
             pass
         elif bool(proto_cfg.get("enabled", True)):
             self._sync_open_ema8_prototype_position()
+            _live_spot = float(spot_price or 0.0)
+            if _live_spot <= 0:
+                _live_spot = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
+            if _live_spot > 0:
+                self._refresh_proto_ema_audit(b15, _live_spot)
             from analyst.proto_oi_filters_8510 import board_reads_from_board
 
             _brd = board_reads_from_board(self.desk8600_board())
