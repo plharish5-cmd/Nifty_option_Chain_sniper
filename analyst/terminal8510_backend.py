@@ -3749,6 +3749,14 @@ class QuantTerminalBackend:
             self._load_ema8_prototype_state()
             self._load_mj_sir_runtime_state()
             self._load_ema_lane_lock_state()
+            try:
+                from analyst.prior_session_position_reconcile_8510 import (
+                    reconcile_prior_session_paper_positions,
+                )
+
+                reconcile_prior_session_paper_positions(self)
+            except Exception as exc:
+                log.warning("Prior-session paper reconcile at ledger init: %s", exc)
             self._sync_open_ema8_prototype_position()
         except Exception as e:
             log.error("Error initializing SQLite ledger: %s", e)
@@ -3758,13 +3766,16 @@ class QuantTerminalBackend:
         try:
             with sqlite3.connect(self.ledger_db) as conn:
                 conn.row_factory = sqlite3.Row
+                today = datetime.now(IST).strftime("%Y-%m-%d")
                 row = conn.execute(
                     """
                     SELECT * FROM positions
                     WHERE status='OPEN'
                       AND upper(coalesce(strategy_id,'')) LIKE 'EMA8_PROTOTYPE%'
+                      AND coalesce(entry_time,'') LIKE ?
                     ORDER BY entry_time DESC LIMIT 1
-                    """
+                    """,
+                    (f"{today}%",),
                 ).fetchone()
             if not hasattr(self, "_ema8_prototype_state"):
                 self._ema8_prototype_state = {}
