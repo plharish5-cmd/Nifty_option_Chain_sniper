@@ -62,6 +62,9 @@ DEFAULT_CFG: Dict[str, Any] = {
     # that side: its arm is removed and it cannot arm again until a 15m close
     # has armed the opposite side. An opposite 15m close does the same.
     "reentry_after_stop_loss": False,
+    # cross_only (default): arm only on 15m close *cross* of 8 EMA.
+    # any_close: arm when unarmed and completed 15m close is on that side of 8 EMA (no prior-side required).
+    "arm_mode": "cross_only",
     # No entry before this time (owner: 09:30 for now).
     "no_entry_before_hm": "09:30",
     # PLACEHOLDER — not built. A later feed (CE/PE change in OI, total change
@@ -362,6 +365,37 @@ def _close_crossed_below(
     if open_p is not None and open_p >= e8 and c < e8:
         return True
     return False
+
+
+ARM_MODES = frozenset({"cross_only", "any_close"})
+
+
+def normalize_arm_mode(cfg: Dict[str, Any]) -> str:
+    """Return validated arm_mode; unknown values fall back to cross_only (shipped default)."""
+    raw = str((cfg or {}).get("arm_mode") or "cross_only").lower().replace("-", "_")
+    if raw in ("crossonly", "cross"):
+        return "cross_only"
+    if raw in ("anyclose", "any"):
+        return "any_close"
+    return raw if raw in ARM_MODES else "cross_only"
+
+
+def bar_close_arm_triggers(
+    cfg: Dict[str, Any],
+    *,
+    prev_c: float,
+    prev_e8: float,
+    c: float,
+    e8: float,
+    open_p: Optional[float] = None,
+) -> Tuple[bool, bool]:
+    """(bull_arm_signal, bear_arm_signal) at completed 15m close — respects arm_mode."""
+    if normalize_arm_mode(cfg) == "any_close":
+        return c > e8, c < e8
+    return (
+        _close_crossed_above(prev_c, prev_e8, c, e8, open_p),
+        _close_crossed_below(prev_c, prev_e8, c, e8, open_p),
+    )
 
 
 def _touch_retest(*, bullish: bool, low: float, high: float, e8: float, tol: float) -> bool:
@@ -716,6 +750,8 @@ def _maybe_flip_arm(
     if bull_cross:
         if last_dir == "LONG":
             return
+        if arm and str(arm.get("direction")).upper() == "LONG":
+            return
         if arm and str(arm.get("direction")).upper() == "SHORT":
             proto_state["last_flip"] = "FLIPPED_TO_LONG_ARM"
             if actions is not None:
@@ -724,6 +760,8 @@ def _maybe_flip_arm(
         _arm_new(proto_state, direction="LONG", cross_bar_open_ts=cross_bar_open_ts, e8=e8, away_seen=False, day=day)
     elif bear_cross:
         if last_dir == "SHORT":
+            return
+        if arm and str(arm.get("direction")).upper() == "SHORT":
             return
         if arm and str(arm.get("direction")).upper() == "LONG":
             proto_state["last_flip"] = "FLIPPED_TO_SHORT_ARM"
@@ -932,8 +970,9 @@ def evaluate_ema8_prototype(
             proto_state.pop("arm", None)
 
         o_bar = float(b15["open"].iloc[bar_ci]) if "open" in b15.columns else None
-        bull_cross = _close_crossed_above(prev_c, prev_e8, c, e8_val, o_bar)
-        bear_cross = _close_crossed_below(prev_c, prev_e8, c, e8_val, o_bar)
+        bull_cross, bear_cross = bar_close_arm_triggers(
+            cfg, prev_c=prev_c, prev_e8=prev_e8, c=c, e8=e8_val, open_p=o_bar
+        )
         if bull_cross or bear_cross:
             proto_state.pop("last_exit_reason", None)
             if _ribbon_blocks(e4_val, e8_val, cfg):
@@ -1502,8 +1541,9 @@ def backtest_ema8_prototype_at_bar(
     # At the close of this 15m bar: check close-cross of 8 EMA to arm / flip for subsequent bars
     e4_cross = float(b.get("e4") or c)
     o_bar = float(b.get("open") or c)
-    bull_cross = _close_crossed_above(prev_c, prev_e8, c, e8, o_bar)
-    bear_cross = _close_crossed_below(prev_c, prev_e8, c, e8, o_bar)
+    bull_cross, bear_cross = bar_close_arm_triggers(
+        cfg, prev_c=prev_c, prev_e8=prev_e8, c=c, e8=e8, open_p=o_bar
+    )
     if bull_cross or bear_cross:
         if _ribbon_blocks(e4_cross, e8, cfg):
             proto_state.pop("arm", None)

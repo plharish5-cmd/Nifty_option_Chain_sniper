@@ -6437,7 +6437,7 @@ class QuantTerminalBackend:
     def _enrich_proto_oi_telemetry(self, row: Dict[str, Any]) -> None:
         """Attach live 8600 read directions + would-block for the armed side. Never raises."""
         try:
-            from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
+            from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg, normalize_arm_mode
             from analyst.proto_oi_filters_8510 import board_reads_from_board, oi_switch_block
 
             cfg = load_ema8_prototype_cfg(self.scanner_cfg)
@@ -6456,6 +6456,7 @@ class QuantTerminalBackend:
                 "reads": detail.get("reads") or reads,
                 "rule": detail.get("rule"),
                 "mode": detail.get("mode"),
+                "arm_mode": normalize_arm_mode(cfg),
             }
             from analyst.oi_3m_gate_8510 import (
                 format_oi_3m_line,
@@ -6578,6 +6579,9 @@ class QuantTerminalBackend:
         row["slow_market_exact_line"] = bool(cfg.get("slow_market_exact_line", False))
         row["reentry_same_side"] = bool(cfg.get("reentry_same_side", True))
         row["reentry_after_stop_loss"] = bool(cfg.get("reentry_after_stop_loss", False))
+        from analyst.ema8_prototype_8510 import normalize_arm_mode
+
+        row["arm_mode"] = normalize_arm_mode(cfg)
         row["oi_filters"] = dict(cfg.get("oi_filters") or {})
         self._enrich_proto_oi_telemetry(row)
         if not row["enabled"]:
@@ -6950,7 +6954,7 @@ class QuantTerminalBackend:
         return self.get_reversal_revamp_config()
 
     def get_ema8_prototype_filter_config(self) -> Dict[str, Any]:
-        from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
+        from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg, normalize_arm_mode
 
         c = load_ema8_prototype_cfg(self.scanner_cfg)
         return {
@@ -6968,6 +6972,7 @@ class QuantTerminalBackend:
             "slow_market_exact_line": bool(c.get("slow_market_exact_line", False)),
             "reentry_same_side": bool(c.get("reentry_same_side", True)),
             "reentry_after_stop_loss": bool(c.get("reentry_after_stop_loss", False)),
+            "arm_mode": normalize_arm_mode(c),
             "touch_tol_pts": float(c.get("touch_tol_pts", 3.0)),
             "touch_tol_slow_pts": float(c.get("touch_tol_slow_pts", 0.0)),
             "oi_filters": dict(c.get("oi_filters") or {}),
@@ -6988,6 +6993,7 @@ class QuantTerminalBackend:
             "slow_market_exact_line",
             "reentry_same_side",
             "reentry_after_stop_loss",
+            "arm_mode",
             "touch_tol_pts",
             "touch_tol_slow_pts",
             "oi_filters",
@@ -7016,6 +7022,10 @@ class QuantTerminalBackend:
                 block[k] = float(v)
             elif k == "supertrend_length":
                 block[k] = int(v)
+            elif k == "arm_mode":
+                from analyst.ema8_prototype_8510 import normalize_arm_mode
+
+                block[k] = normalize_arm_mode({"arm_mode": v})
             elif k == "oi_filters" and isinstance(v, dict):
                 cur_oi = block.get("oi_filters") if isinstance(block.get("oi_filters"), dict) else {}
                 merged = dict(cur_oi)

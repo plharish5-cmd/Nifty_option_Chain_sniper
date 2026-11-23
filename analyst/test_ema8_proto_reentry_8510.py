@@ -70,6 +70,7 @@ def test_defaults_are_the_owner_rules():
     assert DEFAULT_CFG["away_min_pts"] == 2.0                 # "GO AHEAD 2"
     assert DEFAULT_CFG["reentry_same_side"] is True
     assert DEFAULT_CFG["reentry_after_stop_loss"] is False
+    assert DEFAULT_CFG["arm_mode"] == "cross_only"
     assert DEFAULT_CFG["no_entry_before_hm"] == "09:30"
     assert DEFAULT_CFG["oi_direction_filter_enabled"] is False
     assert DEFAULT_CFG["no_entry_from_hm"] == "15:20"

@@ -2304,6 +2304,11 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                                 <label><input type="radio" name="protoReSl" id="protoReSlOff" value="off" checked> Flip only</label>
                                 <label><input type="radio" name="protoReSl" id="protoReSlOn" value="on"> Same side ON</label>
                             </div>
+                            <div class="filter-group">
+                                <span class="filter-group-title">Arm mode</span>
+                                <label><input type="radio" name="protoArmMode" id="protoArmCross" value="cross_only" checked> Cross only</label>
+                                <label><input type="radio" name="protoArmMode" id="protoArmAny" value="any_close"> Any close</label>
+                            </div>
                             <div class="lane-ctrl-bar" style="margin-top:6px;">
                                 <span style="font-weight:700; color:#38bdf8;">OI 3m</span>
                                 <label style="font-size:10px;"><input type="checkbox" id="oi3mFeatureOn"> Feature</label>
@@ -6021,6 +6026,13 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             setRadio('slow_market_exact_line', 'protoSlowOn', 'protoSlowOff', v => !!v);
             setRadio('reentry_same_side', 'protoReProfitOn', 'protoReProfitOff', v => v !== false);
             setRadio('reentry_after_stop_loss', 'protoReSlOn', 'protoReSlOff', v => !!v);
+            {
+                const am = String(cfg.arm_mode || 'cross_only').toLowerCase();
+                const cross = document.getElementById('protoArmCross');
+                const any = document.getElementById('protoArmAny');
+                if (cross) cross.checked = am !== 'any_close';
+                if (any) any.checked = am === 'any_close';
+            }
             if ("live_trade_enabled" in cfg) {
                 const plt = document.getElementById("protoLiveTrade");
                 if (plt && !plt.dataset.userTouched) plt.checked = !!cfg.live_trade_enabled;
@@ -6084,6 +6096,13 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             const det = make("div", null, "oi-matrix-panel");
             det.append(make("div", "Full matrix + engine warnings", "panel-heading"));
             det.append(make("div", `Mode: ${mode} · Rule: ${board.rule} · ${board.summary || ""}`, "oi-muted"));
+            if (lane.arm_mode) {
+                const am = String(lane.arm_mode).toLowerCase() === "any_close" ? "Any Close" : "Cross Only";
+                det.append(make("div", `Arm mode: ${am}`, "oi-muted"));
+            } else if (lane.oi_filter_telemetry && lane.oi_filter_telemetry.arm_mode) {
+                const am = String(lane.oi_filter_telemetry.arm_mode).toLowerCase() === "any_close" ? "Any Close" : "Cross Only";
+                det.append(make("div", `Arm mode: ${am}`, "oi-muted"));
+            }
             if (board.configured_rule !== board.rule || board.configured_mode !== board.mode) {
                 det.append(make("div", `Configured ${board.configured_mode}/${board.configured_rule} vs effective above.`, "oi-warning"));
             }
@@ -6326,6 +6345,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     slow_market_exact_line: document.getElementById('protoSlowOn')?.checked === true,
                     reentry_same_side: document.getElementById('protoReProfitOn')?.checked === true,
                     reentry_after_stop_loss: document.getElementById('protoReSlOn')?.checked === true,
+                    arm_mode: document.getElementById('protoArmAny')?.checked === true ? 'any_close' : 'cross_only',
                     oi_filters: {
                         mode: document.getElementById('protoOiModeBlock')?.checked ? 'block' : 'log_only',
                         rule: document.getElementById('protoOiRule')?.value || 'all_agree',
@@ -6342,7 +6362,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 saveEma8PrototypeFilters(payload).catch(() => {});
             };
             const protoOiIds = new Set(['protoOiModeLog', 'protoOiModeBlock', 'protoOiRule', 'protoOiNeutralBlock']);
-            ['protoEnabledOn', 'protoEnabledOff', 'protoExecLive', 'protoExecPaper', 'protoLiveTrade', 'protoRibbonOff', 'protoRibbonOn', 'protoEmaSepOff', 'protoEmaSepOn', 'protoStOff', 'protoStOn', 'protoAwayOff', 'protoAwayOn', 'protoSlowOff', 'protoSlowOn', 'protoReProfitOn', 'protoReProfitOff', 'protoReSlOff', 'protoReSlOn', 'protoOiModeLog', 'protoOiModeBlock', 'protoOiRule', 'protoOiNeutralBlock'].forEach(id => {
+            ['protoEnabledOn', 'protoEnabledOff', 'protoExecLive', 'protoExecPaper', 'protoLiveTrade', 'protoRibbonOff', 'protoRibbonOn', 'protoEmaSepOff', 'protoEmaSepOn', 'protoStOff', 'protoStOn', 'protoAwayOff', 'protoAwayOn', 'protoSlowOff', 'protoSlowOn', 'protoReProfitOn', 'protoReProfitOff', 'protoReSlOff', 'protoReSlOn', 'protoArmCross', 'protoArmAny', 'protoOiModeLog', 'protoOiModeBlock', 'protoOiRule', 'protoOiNeutralBlock'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('change', () => {
                     if (id === 'protoLiveTrade') el.dataset.userTouched = '1';
