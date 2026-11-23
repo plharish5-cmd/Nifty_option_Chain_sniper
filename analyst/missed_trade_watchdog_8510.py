@@ -197,8 +197,16 @@ def run_desk_self_audit_startup(backend: Any) -> Dict[str, Any]:
     """Part A: lane reconcile + exit sweep once after reconstruct."""
     from analyst.ema_lane_reconcile_8510 import reconcile_lane_lock_on_startup
     from analyst.open_position_exit_sweep_8510 import run_startup_exit_sweep
+    from analyst.prior_session_position_reconcile_8510 import reconcile_prior_session_paper_positions
 
+    prior = reconcile_prior_session_paper_positions(backend)
     max_min = float(getattr(backend, "scanner_cfg", {}).get("lane_reservation_max_min", 15) or 15)
     released = reconcile_lane_lock_on_startup(backend, max_reservation_min=max_min)
     closed = run_startup_exit_sweep(backend)
-    return {"lane_released": released, "exits_recovered": len(closed), "closed": closed}
+    return {
+        "prior_session_closed": len(prior),
+        "prior_session": prior,
+        "lane_released": released,
+        "exits_recovered": len(closed),
+        "closed": closed,
+    }

@@ -1684,3 +1684,13 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 
 **Tags:** `post-cursor-v2.6.3-sl`.
 
+## 2026-11-23 · Cursor · `cursor/v2.6.3-stale-open-pos-guard`
+
+**Goal:** Stop prior-day `OPEN`/`EXIT_PENDING` paper rows from blocking `Open position exists — no second entry` on morning Prototype/Reversal (2026-11-23 09:32).
+
+**Root cause:** `get_active_positions()` and `lane_lock_blocks_entry()` count any session’s OPEN paper row; startup exit sweep only closed rows that already hit spot target/SL, so yesterday’s OPEN PE lingered after reboot until manual sweep ~09:36.
+
+**Done:** `prior_session_position_reconcile_8510.py` closes paper rows with `entry_time` date &lt; today at ledger init + desk self-audit; `_sync_open_ema8_prototype_position` only mirrors today’s OPEN.
+
+**Tests:** `test_ema8_sl_reentry_8510.py` **6 passed**; `verify_locks.py` **11/11**.
+

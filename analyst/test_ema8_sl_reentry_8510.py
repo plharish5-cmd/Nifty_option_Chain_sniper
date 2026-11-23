@@ -1,6 +1,7 @@
 """SL flip-only arm logging + prototype header EMA refresh (v2.6.3)."""
 from __future__ import annotations
 
+import sqlite3
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -179,6 +180,60 @@ def test_nov23_chase_blocked_when_spot_far_from_e8_despite_bar_wick():
     )
     assert sigs == []
     assert "RETOUCH" not in str(st.get("actions") or st.get("phase") or "")
+
+
+def test_prior_day_open_paper_does_not_block_fresh_session_entry(tmp_path: Path):
+    """2026-11-23 09:32 — stale 2026-11-22 OPEN row must not block EMA8_PROTOTYPE entry."""
+    from analyst.ema_lane_entry_gate_8510 import try_reserve_lane_for_signal
+    from analyst.prior_session_position_reconcile_8510 import reconcile_prior_session_paper_positions
+
+    b = make_test_backend(tmp_path, FakeBroker(configured=False))
+    yesterday = "2026-11-22"
+    with sqlite3.connect(b.ledger_db) as conn:
+        conn.execute(
+            """
+            INSERT INTO positions (
+                position_id, symbol, status, mode, entry_time, strategy_id,
+                qty, entry_price, side, lots, security_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "STALE_PE",
+                "NIFTY 26000 PE",
+                "OPEN",
+                "PAPER_ONLY",
+                f"{yesterday} 15:00:00 IST",
+                "EMA8_PROTOTYPE_SHORT",
+                65,
+                200.0,
+                "BUY",
+                1,
+                "54321",
+            ),
+        )
+        conn.commit()
+    assert len(b.get_active_positions()) == 1
+    ok_before, why_before = try_reserve_lane_for_signal(
+        b._ema_lane_lock,
+        "EMA8_PROTOTYPE_SHORT",
+        open_position_count=len(b.get_active_positions()),
+    )
+    assert ok_before is False
+    assert "no second entry" in why_before.lower()
+
+    closed = reconcile_prior_session_paper_positions(b, today="2026-11-23")
+    assert len(closed) == 1
+    assert len(b.get_active_positions()) == 0
+    assert b._ema8_prototype_state.get("open") is None
+
+    ok, why2 = try_reserve_lane_for_signal(
+        b._ema_lane_lock,
+        "EMA8_PROTOTYPE_SHORT",
+        open_position_count=len(b.get_active_positions()),
+        note="retouch",
+    )
+    assert ok is True
+    assert "no second entry" not in why2.lower()
 
 
 def test_proto_ema_audit_refreshes_without_arm(tmp_path: Path):
