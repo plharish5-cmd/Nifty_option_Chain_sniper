@@ -32,15 +32,32 @@ def _explicit_whitelist(broker: Any) -> str:
 
 def broker_ip_guard_status(broker: Any, *, current_ipv4: Optional[str] = None) -> Dict[str, Any]:
     """IPv4 allowlist snapshot for health / preflight (no secrets)."""
-    curr = str(current_ipv4 or broker.get_current_ip() or "").strip()
+    from analyst.dhan_whitelist_ips_8510 import (
+        allowlist_from_cfg,
+        ip_whitelist_enabled,
+        match_current_ip,
+        parse_public_ipv4,
+    )
+
+    curr = parse_public_ipv4(current_ipv4 or broker.get_current_ip())
     wl = _explicit_whitelist(broker)
-    ip_mismatch = bool(wl and curr and wl != curr)
-    ip_matched = (not wl) or (wl == curr)
+    cfg = getattr(broker, "cfg", None) or {}
+    dhan_cfg = cfg.get("dhan") if isinstance(cfg, dict) else {}
+    if not isinstance(dhan_cfg, dict):
+        dhan_cfg = {}
+    enabled = ip_whitelist_enabled(dhan_cfg)
+    allowed = allowlist_from_cfg(dhan_cfg, wl)
+    matched, matched_against = match_current_ip(curr, allowlist=allowed, enabled=enabled)
+    ip_mismatch = bool(enabled and curr and allowed and not matched)
+    ip_matched = matched if (curr and enabled) else (not wl) or matched
     return {
-        "current_public_ipv4": curr or None,
-        "current_ip": curr or None,
+        "current_public_ipv4": curr,
+        "current_ip": curr,
         "whitelisted_ipv4": wl or None,
         "whitelisted_ip": wl or None,
+        "allowlist_ips": sorted(allowed),
+        "ip_whitelist_enabled": enabled,
+        "matched_against": matched_against,
         "ip_mismatch": ip_mismatch,
         "ip_matched": ip_matched,
     }

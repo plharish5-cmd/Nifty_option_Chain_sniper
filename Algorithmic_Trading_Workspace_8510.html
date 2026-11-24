@@ -1955,13 +1955,15 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 <div style="background:var(--bg-input); border:1px solid var(--border-subtle); border-radius:8px; padding:10px 14px; margin-bottom:14px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; font-size:12px;">
                         <div style="display:flex; align-items:center; gap:8px;">
-                            <span style="color:var(--text-dim); font-weight:600;">[ ] IP Whitelisted:</span>
+                            <label style="display:flex; align-items:center; gap:6px; color:var(--text-dim); font-weight:600; cursor:pointer;">
+                                <input type="checkbox" id="dhanIpWhitelistEnabled" checked onchange="onDhanWhitelistUiChanged()"> IP Whitelist enabled
+                            </label>
                             <span style="color:var(--text-dim);">My Current IP:</span>
                             <span id="dhanCurrentIpDisplay" style="font-family:var(--font-mono); font-weight:700; color:#38bdf8;">Detecting...</span>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <span style="color:var(--text-dim);">Dhan Whitelisted IP:</span>
-                            <input type="text" id="dhanWhitelistedIpInput" placeholder="Saved whitelisted IPv4" style="width:160px; padding:3px 8px; font-size:12px; font-family:var(--font-mono);" onchange="refreshPublicIpCheck(true)">
+                            <input type="text" id="dhanWhitelistedIpInput" placeholder="Saved whitelisted IPv4" style="width:160px; padding:3px 8px; font-size:12px; font-family:var(--font-mono);" oninput="onDhanWhitelistUiChanged()" onblur="saveWhitelistedIpOnly(false)">
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <span style="color:var(--text-dim);">Status:</span>
@@ -4164,6 +4166,10 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 if (document.getElementById("dhanWhitelistedIpInput")) {
                     document.getElementById("dhanWhitelistedIpInput").value = data.whitelisted_ip || "";
                 }
+                const wlChk = document.getElementById("dhanIpWhitelistEnabled");
+                if (wlChk && data.ip_whitelist_enabled !== undefined) {
+                    wlChk.checked = !!data.ip_whitelist_enabled;
+                }
                 if (data.allow_off_hours_paper_testing !== undefined) {
                     cachedAllowOffHours = Boolean(data.allow_off_hours_paper_testing);
                     const chk = document.getElementById("chkOffHoursPaperTesting");
@@ -4200,19 +4206,70 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
         }
 
         let publicIpCheckBusy = false;
+        let whitelistSaveTimer = null;
+        let whitelistPersistBusy = false;
+
+        function dhanWhitelistQueryParams() {
+            const ipEl = document.getElementById("dhanWhitelistedIpInput");
+            const enEl = document.getElementById("dhanIpWhitelistEnabled");
+            const qs = new URLSearchParams();
+            if (ipEl) qs.set("saved_ip", (ipEl.value || "").trim());
+            if (enEl) qs.set("ip_whitelist_enabled", enEl.checked ? "true" : "false");
+            return qs;
+        }
+
+        function onDhanWhitelistUiChanged() {
+            scheduleWhitelistedIpSave();
+            refreshPublicIpCheck(true);
+        }
+
+        function scheduleWhitelistedIpSave() {
+            clearTimeout(whitelistSaveTimer);
+            whitelistSaveTimer = setTimeout(() => saveWhitelistedIpOnly(false), 450);
+        }
+
+        async function saveWhitelistedIpOnly(showFeedback = false) {
+            if (whitelistPersistBusy) return null;
+            whitelistPersistBusy = true;
+            const fb = document.getElementById("dhanActionFeedback");
+            try {
+                const body = {
+                    whitelisted_ip: document.getElementById("dhanWhitelistedIpInput").value.trim(),
+                    ip_whitelist_enabled: !!document.getElementById("dhanIpWhitelistEnabled")?.checked,
+                };
+                const res = await fetch("/api/dhan/whitelisted-ip", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+                const d = await res.json();
+                if (!res.ok || d.ok === false) throw new Error(d.error || "Whitelist save rejected");
+                if (showFeedback && fb) fb.textContent = "💾 Whitelisted IP saved";
+                return d;
+            } catch (e) {
+                if (showFeedback && fb) fb.textContent = "❌ IP save: " + e.message;
+                return null;
+            } finally {
+                whitelistPersistBusy = false;
+            }
+        }
+
         async function refreshPublicIpCheck(force = false) {
             if (publicIpCheckBusy) return;
             publicIpCheckBusy = true;
             const badge = document.getElementById("dhanIpMatchBadge");
             try {
-                const res = await fetch("/api/dhan/ip-check?force=" + force, {cache:"no-store"});
+                const qs = dhanWhitelistQueryParams();
+                qs.set("force", force ? "true" : "false");
+                const res = await fetch("/api/dhan/ip-check?" + qs.toString(), {cache:"no-store"});
                 if (!res.ok) throw new Error("IP check unavailable");
                 const data = await res.json();
                 document.getElementById("dhanCurrentIpDisplay").textContent = data.current_ip || "Unavailable";
                 const labels = {MATCH:"MATCH ✅", MISMATCH:"MISMATCH ❌", NOT_CONFIGURED:"SAVED IP NOT SET", CHECK_FAILED:"CHECK FAILED"};
                 badge.textContent = labels[data.status] || "UNKNOWN";
                 badge.className = "status-badge " + (data.status === "MATCH" ? "badge-bull" : "badge-bear");
-                badge.title = "Compared with saved app IP: " + (data.saved_ip || "not set") + ". Checked: " + data.checked_at + ". Does not verify Dhan registration or order eligibility.";
+                const allow = (data.allowlist_ips || []).join(", ");
+                badge.title = "Saved: " + (data.saved_ip || "not set") + ". Allowlist: " + (allow || "defaults") + ". Checked: " + data.checked_at + ". Does not verify Dhan console registration.";
             } catch (_) {
                 badge.textContent = "IP CHECK UNAVAILABLE — backend restart needed if newly installed";
                 badge.className = "status-badge badge-side";
@@ -4316,6 +4373,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     api_secret: document.getElementById("dhanApiSecretInput").value.trim(),
                     environment: document.getElementById("dhanEnvironmentSelect").value,
                     whitelisted_ip: document.getElementById("dhanWhitelistedIpInput").value.trim(),
+                    ip_whitelist_enabled: !!document.getElementById("dhanIpWhitelistEnabled")?.checked,
                 };
 
                 if (typedToken) body.access_token = typedToken;

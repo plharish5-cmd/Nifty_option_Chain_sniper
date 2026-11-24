@@ -23,7 +23,7 @@ Endpoints:
 """
 import asyncio
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 import json
 import logging
@@ -1411,10 +1411,31 @@ async def api_dhan_get_config():
 
 
 @app.get("/api/dhan/ip-check")
-async def api_public_ip_check(force: bool = False):
+async def api_public_ip_check(
+    force: bool = False,
+    saved_ip: str = "",
+    ip_whitelist_enabled: Optional[bool] = None,
+):
     from analyst.public_ip_check_8510 import public_ip_status
-    result = await public_ip_status(backend.broker.whitelisted_ip, force=force)
+
+    dhan_cfg = (backend.cfg or {}).get("dhan") or {}
+    saved = (saved_ip or "").strip() or backend.broker.whitelisted_ip
+    result = await public_ip_status(
+        saved,
+        force=force,
+        dhan_cfg=dhan_cfg,
+        ip_whitelist_enabled_flag=ip_whitelist_enabled,
+    )
     return JSONResponse(content=result, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/dhan/whitelisted-ip")
+async def api_dhan_whitelisted_ip(req: Request):
+    """Save Dhan static IPv4 allowlist fields only (no token rotation)."""
+    body = await req.json()
+    res = backend.update_dhan_whitelist_only(body)
+    status = 200 if res.get("ok") else 400
+    return JSONResponse(content=res, status_code=status)
 
 
 @app.get("/api/dhan/status")

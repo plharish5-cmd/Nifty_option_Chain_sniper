@@ -1774,6 +1774,11 @@ class DhanBroker:
 
         self.environment: str = os.environ.get("DHAN_ENVIRONMENT") or dhan_cfg.get("environment", "LIVE")
         self.whitelisted_ip: str = os.environ.get("DHAN_WHITELISTED_IP") or dhan_cfg.get("whitelisted_ip", "")
+        self.ip_whitelist_enabled: bool = (
+            bool(dhan_cfg["ip_whitelist_enabled"])
+            if "ip_whitelist_enabled" in dhan_cfg
+            else True
+        )
         self._cached_ip: str = ""
         self._last_ip_check: float = 0.0
         self.last_connected_status: Dict[str, Any] = {
@@ -1881,6 +1886,8 @@ class DhanBroker:
             "current_public_ipv4": curr_ip,
             "whitelisted_ip": whitelisted or None,
             "whitelisted_ipv4": whitelisted or None,
+            "ip_whitelist_enabled": bool(getattr(self, "ip_whitelist_enabled", True)),
+            "allowlist_ips": guard.get("allowlist_ips") or [],
             "ip_mismatch": bool(guard.get("ip_mismatch")),
             "ip_matched": ip_matched,
             "dhan_connected": self.is_configured(),
@@ -1895,6 +1902,7 @@ class DhanBroker:
         api_secret: Optional[str] = None,
         environment: Optional[str] = None,
         whitelisted_ip: Optional[str] = None,
+        ip_whitelist_enabled: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """Updates and persists credentials permanently on disk (terminal8510_config.json & .env)."""
         load_env_safe()
@@ -1926,8 +1934,11 @@ class DhanBroker:
             updates["DHAN_ENVIRONMENT"] = self.environment
 
         if whitelisted_ip is not None:
-            self.whitelisted_ip = whitelisted_ip.strip()
+            self.whitelisted_ip = str(whitelisted_ip).strip()
             updates["DHAN_WHITELISTED_IP"] = self.whitelisted_ip
+
+        if ip_whitelist_enabled is not None:
+            self.ip_whitelist_enabled = bool(ip_whitelist_enabled)
 
         # Calculate exact Token Valid Till
         exp_info = decode_token_expiry(clean_tok) if clean_tok else {}
@@ -1965,8 +1976,10 @@ class DhanBroker:
                 cfg_data["dhan"]["token_expiry_utc"] = updates["TOKEN_EXPIRY_UTC"]
             if environment:
                 cfg_data["dhan"]["environment"] = self.environment
-            if whitelisted_ip:
+            if whitelisted_ip is not None:
                 cfg_data["dhan"]["whitelisted_ip"] = self.whitelisted_ip
+            if ip_whitelist_enabled is not None:
+                cfg_data["dhan"]["ip_whitelist_enabled"] = self.ip_whitelist_enabled
 
             config_path.write_text(json.dumps(cfg_data, indent=2), encoding="utf-8")
             self.cfg = cfg_data
@@ -4956,16 +4969,35 @@ class QuantTerminalBackend:
         token = body.get('access_token', body.get('DHAN_ACCESS_TOKEN'))
         if token is not None and (not str(token).strip() or str(token).strip().startswith(('****','••'))):
             return {'ok': False, 'error': 'Paste a fresh Dhan Access Token; stored token placeholders are not accepted'}
-        res = self.broker.update_credentials(
+        cred_kw: Dict[str, Any] = dict(
             client_id=None,
             access_token=body.get("access_token") or body.get("DHAN_ACCESS_TOKEN"),
             api_key=body.get("api_key") or body.get("DHAN_API_KEY"),
             api_secret=body.get("api_secret") or body.get("DHAN_API_SECRET"),
             environment=body.get("environment") or body.get("DHAN_ENVIRONMENT"),
-            whitelisted_ip=body.get("whitelisted_ip") or body.get("DHAN_WHITELISTED_IP"),
         )
+        if "whitelisted_ip" in body or "DHAN_WHITELISTED_IP" in body:
+            cred_kw["whitelisted_ip"] = body.get("whitelisted_ip", body.get("DHAN_WHITELISTED_IP"))
+        if "ip_whitelist_enabled" in body:
+            cred_kw["ip_whitelist_enabled"] = bool(body["ip_whitelist_enabled"])
+        res = self.broker.update_credentials(**cred_kw)
         self.cfg = self.broker.cfg
         return self._public_dhan_status(res)
+
+    def update_dhan_whitelist_only(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist whitelisted IPv4 and enable flag without touching tokens or keys."""
+        kw: Dict[str, Any] = {}
+        if "whitelisted_ip" in body or "DHAN_WHITELISTED_IP" in body:
+            kw["whitelisted_ip"] = body.get("whitelisted_ip", body.get("DHAN_WHITELISTED_IP"))
+        if "ip_whitelist_enabled" in body:
+            kw["ip_whitelist_enabled"] = bool(body["ip_whitelist_enabled"])
+        if not kw:
+            return {"ok": False, "error": "No whitelist fields to update"}
+        res = self.broker.update_credentials(**kw)
+        self.cfg = self.broker.cfg
+        out = self._public_dhan_status(res)
+        out["ok"] = True
+        return out
 
     async def test_dhan_connection(self) -> Dict[str, Any]:
         """Runs live connection test against Dhan HQ v2 API with strict 10s timeout."""
