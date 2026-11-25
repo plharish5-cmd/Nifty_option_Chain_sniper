@@ -562,6 +562,68 @@ def test_partial_exit_then_dead_order_then_rest(tmp_path: Path):
 
 
 # 11 ──────────────────────────────────────────────────────────────────────────
+def test_live_exit_skips_sell_when_broker_net_qty_zero(tmp_path: Path):
+    class FlatBroker(WorkingBroker):
+        async def get_positions(self) -> List[Dict[str, Any]]:
+            return [{"securityId": SEC, "netQty": 0, "sellAvg": 220.5}]
+
+    async def _run():
+        broker = FlatBroker()
+        broker.quotes[SEC] = 230.0
+        b = make_test_backend(tmp_path, broker)
+        pos = insert_test_position(b, "POS_FLAT", mode="LIVE", sl_order_id="")
+        _set(b, "POS_FLAT", live_filled=1, live_fill_qty=65)
+
+        res = await b._close_position_with_broker(pos, "TRAIL_TARGET_PULLBACK_HIT", 25800.0)
+
+        assert res["ok"] is True
+        assert broker.limit_sells() == []
+        row = _row(b, "POS_FLAT")
+        assert row["status"] == "CLOSED"
+        assert "ALREADY_CLOSED_ON_BROKER" in str(row["exit_reason"])
+        assert float(row["exit_price"]) == pytest.approx(220.5)
+
+    asyncio.run(_run())
+
+
+def test_live_exit_circuit_breaker_halts_after_three_sell_failures(tmp_path: Path):
+    class RejectSell(WorkingBroker):
+        async def get_positions(self) -> List[Dict[str, Any]]:
+            return [{"securityId": SEC, "netQty": 65}]
+
+        async def place_order(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+            if str(payload.get("transactionType")).upper() == "SELL" and payload.get("orderType") == "LIMIT":
+                return {"ok": False, "error": "DH-905: OMS margin shortage"}
+            return await super().place_order(payload)
+
+    async def _run():
+        broker = RejectSell()
+        broker.quotes[SEC] = 230.0
+        b = make_test_backend(tmp_path, broker)
+        pos = insert_test_position(b, "POS_CB", mode="LIVE", sl_order_id="")
+        _set(b, "POS_CB", live_filled=1, live_fill_qty=65)
+
+        for _ in range(2):
+            res = await b._close_position_with_broker(
+                _row(b, "POS_CB"), "TRAIL_TARGET_PULLBACK_HIT", 25800.0
+            )
+            assert res["status"] == "EXIT_FAILED"
+            _set(b, "POS_CB", status="OPEN", exit_reason="")
+
+        res = await b._close_position_with_broker(_row(b, "POS_CB"), "TRAIL_TARGET_PULLBACK_HIT", 25800.0)
+        assert res["status"] == "EXIT_HALTED_MANUAL"
+        assert "DH-905" in res["error"]
+        row = _row(b, "POS_CB")
+        assert row["status"] == "EXIT_HALTED_MANUAL"
+        assert int(row.get("exit_sell_fail_count") or 0) == 3
+
+        res2 = await b._close_position_with_broker(_row(b, "POS_CB"), "RETRY", 25800.0)
+        assert res2["status"] == "EXIT_HALTED_MANUAL"
+        assert len(broker.limit_sells()) == 0
+
+    asyncio.run(_run())
+
+
 def test_expired_exit_order_is_not_polled_forever(tmp_path: Path):
     async def _run():
         broker = WorkingBroker()

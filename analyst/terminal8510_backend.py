@@ -3602,6 +3602,8 @@ class QuantTerminalBackend:
                         ("exit_filled_qty", "INTEGER"), ("exit_filled_value", "REAL"),
                         ("price_source", "TEXT"), ("quote_age", "REAL"),
                         ("exit_price_source", "TEXT"), ("exit_quote_age", "REAL"),
+                        ("exit_sell_fail_count", "INTEGER"),
+                        ("exit_halt_detail", "TEXT"),
                     ):
                         if col not in pcols:
                             cur.execute("ALTER TABLE positions ADD COLUMN {} {}".format(col, decl))
@@ -9245,6 +9247,17 @@ class QuantTerminalBackend:
             st = str(cur_row["status"]).upper()
             if st == "CLOSED":
                 return {"ok": True, "status": "ALREADY_CLOSED"}
+            if st == "EXIT_HALTED_MANUAL":
+                halt_row = dict(cur_row)
+                return {
+                    "ok": False,
+                    "status": "EXIT_HALTED_MANUAL",
+                    "error": str(
+                        halt_row.get("exit_halt_detail")
+                        or halt_row.get("exit_reason")
+                        or "manual intervention required"
+                    ),
+                }
 
             # Mark EXIT_PENDING in database, with the reason, so an exit that
             # is interrupted can be resumed for the same reason.
@@ -9381,6 +9394,92 @@ class QuantTerminalBackend:
             )
         return {"ok": False, "status": "EXIT_FAILED", "error": err}
 
+    def _halt_live_exit_after_failures(
+        self, row: Dict[str, Any], err: str, spot_exit: Optional[float], *, fail_count: int
+    ) -> Dict[str, Any]:
+        pos_id = str(row["position_id"])
+        detail = (err or "unknown")[:500]
+        log.critical(
+            "Live exit halted for %s after %d sell failures: %s",
+            pos_id,
+            fail_count,
+            detail,
+        )
+        self._update_position(
+            pos_id,
+            status="EXIT_HALTED_MANUAL",
+            exit_reason=f"EXIT_HALTED_MANUAL after {fail_count} failures: {detail}",
+            exit_halt_detail=detail,
+            exit_order_id="",
+        )
+        self.exit_failure_banner = {
+            "position_id": pos_id,
+            "symbol": str(row.get("symbol") or ""),
+            "error": f"EXIT_HALTED_MANUAL — {detail}",
+            "time": datetime.now(IST).strftime("%H:%M:%S IST"),
+        }
+        return {"ok": False, "status": "EXIT_HALTED_MANUAL", "error": detail}
+
+    async def _record_live_exit_sell_failure(
+        self, row: Dict[str, Any], err: str, spot_exit: Optional[float], *, max_attempts: int = 3
+    ) -> Dict[str, Any]:
+        pos_id = str(row["position_id"])
+        with sqlite3.connect(self.ledger_db) as conn:
+            cur = conn.execute(
+                "SELECT COALESCE(exit_sell_fail_count, 0) FROM positions WHERE position_id=?",
+                (pos_id,),
+            )
+            r = cur.fetchone()
+            count = int(r[0] if r else 0) + 1
+            conn.execute(
+                "UPDATE positions SET exit_sell_fail_count=? WHERE position_id=?",
+                (count, pos_id),
+            )
+            conn.commit()
+        if count >= max_attempts:
+            return self._halt_live_exit_after_failures(row, err, spot_exit, fail_count=count)
+        return self._flag_exit_failed(row, err, spot_exit)
+
+    async def _close_live_if_flat_at_broker(
+        self,
+        row: Dict[str, Any],
+        reason: str,
+        spot_exit: Optional[float],
+        *,
+        ledger_qty: int,
+    ) -> Optional[Dict[str, Any]]:
+        from analyst.dhan_live_exit_guard_8510 import broker_net_qty, broker_sell_avg
+
+        sec_id = str(row.get("security_id") or "")
+        try:
+            positions = await self.broker.get_positions()
+        except Exception as exc:
+            log.warning(
+                "Broker positions pre-exit check failed for %s: %s",
+                row.get("position_id"),
+                exc,
+            )
+            return None
+        net = broker_net_qty(positions, sec_id)
+        if net > 0:
+            return None
+        sell_px = broker_sell_avg(positions, sec_id)
+        entry = float(row.get("entry_price") or 0.0)
+        exit_px = float(sell_px or row.get("exit_price") or entry or 0.0)
+        pos_id = str(row["position_id"])
+        log.warning(
+            "Broker flat for %s (netQty=%s) — closing ledger as ALREADY_CLOSED_ON_BROKER",
+            pos_id,
+            net,
+        )
+        self._update_position(pos_id, exit_order_id="", sl_order_id="")
+        close_reason = "ALREADY_CLOSED_ON_BROKER"
+        if reason and reason != close_reason:
+            close_reason = f"{close_reason} ({reason})"
+        return await self._finalize_closed_position(
+            row, exit_px, ledger_qty, close_reason, spot_exit=spot_exit
+        )
+
     async def _replace_protective_stop(self, row: Dict[str, Any], qty: int, buf: float) -> None:
         """Put the stop back for the quantity still held after a failed sell."""
         pos_id = str(row["position_id"])
@@ -9434,6 +9533,17 @@ class QuantTerminalBackend:
         sec_id = str(row.get("security_id") or "")
         symbol = str(row.get("symbol") or "")
         entry = float(row.get("entry_price") or 0.0)
+        if str(row.get("status") or "").upper() == "EXIT_HALTED_MANUAL":
+            return {
+                "ok": False,
+                "status": "EXIT_HALTED_MANUAL",
+                "error": str(row.get("exit_halt_detail") or row.get("exit_reason") or "halted"),
+            }
+        flat_close = await self._close_live_if_flat_at_broker(
+            row, reason, spot_exit, ledger_qty=ledger_qty
+        )
+        if flat_close is not None:
+            return flat_close
         chase = self.cfg.get("chasing", {}) or {}
         buf = float(chase.get("aggressive_limit_buffer_pts", 2.0))
         interval_s = float(chase.get("auto_modify_interval_ms", 800)) / 1000.0
@@ -9545,8 +9655,9 @@ class QuantTerminalBackend:
                 })
                 if not res.get("ok"):
                     err = str(res.get("error") or res.get("rejection_reason") or "Sell order rejected")
-                    out = self._flag_exit_failed(row, err, spot_exit)
-                    await self._replace_protective_stop(row, remaining, buf)
+                    out = await self._record_live_exit_sell_failure(row, err, spot_exit)
+                    if out.get("status") != "EXIT_HALTED_MANUAL":
+                        await self._replace_protective_stop(row, remaining, buf)
                     return out
                 order_id = str(res.get("order_id") or "")
                 mods = 0
@@ -9596,8 +9707,9 @@ class QuantTerminalBackend:
                 if left <= 0:
                     continue
                 err = str(order.get("omsErrorDescription") or st)
-                out = self._flag_exit_failed(row, err, spot_exit)
-                await self._replace_protective_stop(row, left, buf)
+                out = await self._record_live_exit_sell_failure(row, err, spot_exit)
+                if out.get("status") != "EXIT_HALTED_MANUAL":
+                    await self._replace_protective_stop(row, left, buf)
                 return out
 
             # Still working: follow the price, but only when it has moved.
