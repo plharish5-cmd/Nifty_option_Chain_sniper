@@ -30,3 +30,10 @@ def test_cockpit_label_opt_in_missing():
     paper, cap, label = cockpit_route_tuple(b, "prototype")
     assert paper is True
     assert "Real money for this lane" in label
+
+
+def test_ribbon_always_paper_even_when_desk_live():
+    b = _Be()
+    b.execution_mode = "BOTH"
+    b._real_money_enabled = True
+    assert order_will_be_paper(b, "ribbon_scalp_long") is True

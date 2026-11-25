@@ -1737,6 +1737,7 @@ class DhanBroker:
         self._backoff_delay: float = 3.0
         self.LTP_TTL: float = 5.0
         self.market_db = ROOT / self.cfg.get("market_db_path", "ict_smc_app/backend/data/ict_smc.sqlite3")
+        self._live_gate_backend: Any = None
 
         # Dhan Connection & IP Config state
         dhan_cfg = self.cfg.get("dhan", {})
@@ -2533,10 +2534,28 @@ class DhanBroker:
         """Returns exchange last trade timestamp (LTT) if provided by Dhan feed."""
         return self._ltt_cache.get(str(sec_id))
 
-    async def place_order(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def place_order(
+        self,
+        payload: Dict[str, Any],
+        *,
+        strategy_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Places order on Dhan v2."""
         if not self.is_configured():
             return {"ok": False, "error": "Dhan credentials not configured in .env"}
+        tx = str(payload.get("transactionType") or "").upper()
+        if tx == "BUY" and self._live_gate_backend is not None:
+            from analyst.dhan_live_lane_gateway_8510 import live_dhan_entry_allowed
+
+            gate = live_dhan_entry_allowed(self._live_gate_backend, strategy_id)
+            if not gate.get("ok"):
+                log.critical("%s — Dhan POST /orders aborted", gate.get("reason"))
+                return {
+                    "ok": False,
+                    "error": gate.get("reason"),
+                    "rejection_reason": gate.get("reason"),
+                    "lane_live_blocked": True,
+                }
         try:
             payload["dhanClientId"] = os.environ.get("DHAN_CLIENT_ID", "")
             async with ipv4_async_client(10.0) as client:
@@ -3140,6 +3159,7 @@ class QuantTerminalBackend:
         self.cfg['ict_smc_desk_signals']['use_for_algo_trades'] = False
         self.inst_mgr = InstrumentManager(self.cfg["instrument_master_path"], self.cfg["scrip_master_url"])
         self.broker = DhanBroker(self.cfg.get("dhan_base_url", "https://api.dhan.co/v2"), cfg=self.cfg)
+        self.broker._live_gate_backend = self
         self.market_db = ROOT / self.cfg["market_db_path"]
         self.ledger_db = ROOT / self.cfg["ledger_db_path"]
         from analyst.ledger_guard_8510 import assert_not_production_ledger_under_pytest
@@ -9927,20 +9947,21 @@ class QuantTerminalBackend:
             if live_route["route"] != "LIVE":
                 mode = "PAPER_ONLY"
 
-            # 8 EMA Prototype route switch. The cockpit's PAPER_ONLY setting
-            # for this lane previously changed only the label on the order;
-            # the order itself still followed the desk and went to Dhan when
-            # LIVE was armed. Downgrade only, and only for this lane.
+            # Per-lane downgrade: only Prototype / Reversal / 1H PA with desk arm +
+            # lane LIVE_ALLOWED + live_trade_enabled may keep mode live. Ribbon,
+            # Matrix, unknown ids, and explicit REAL_ALGO_PAPER stay paper-only.
             proto_lane_paper = False
-            if mode != "PAPER_ONLY" and str(
-                (spot_context or {}).get("strategy_id") or strategy_id or ""
-            ).upper().startswith("EMA8_PROTOTYPE"):
+            if mode != "PAPER_ONLY":
                 from analyst.lane_live_routing_8510 import order_will_be_paper
 
                 sid = str((spot_context or {}).get("strategy_id") or strategy_id or "")
-                if order_will_be_paper(self, sid):
+                force_paper = (
+                    str(source or "").upper() == "REAL_ALGO_PAPER"
+                    or order_will_be_paper(self, sid)
+                )
+                if force_paper:
                     mode = "PAPER_ONLY"
-                    proto_lane_paper = True
+                    proto_lane_paper = sid.upper().startswith("EMA8_PROTOTYPE")
 
             # 8600 Ticket lane route switch: PAPER_ONLY for this lane never sends
             # a real order. Downgrade only, and only for this lane.
@@ -10265,7 +10286,9 @@ class QuantTerminalBackend:
                         "afterMarketOrder": False,
                     }
 
-                    res = await self.broker.place_order(payload)
+                    res = await self.broker.place_order(
+                        payload, strategy_id=str(strategy_id or "")
+                    )
                     if not res.get("ok"):
                         order_status = "REJECTED"
                         rejection_reason = res.get("error", "Order placement failed")

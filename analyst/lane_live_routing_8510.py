@@ -63,9 +63,12 @@ def strategy_id_to_lane(strategy_id: str) -> Optional[str]:
 
 def order_will_be_paper(backend: Any, strategy_id: str) -> bool:
     """True = no real broker leg (paper logging only)."""
+    sid = str(strategy_id or "").upper()
+    if sid.startswith("RIBBON_SCALP") or sid.startswith("MATRIX_SCALP"):
+        return True
     lane = strategy_id_to_lane(strategy_id)
     if not lane:
-        return not _desk_live_armed(backend)
+        return True
     block = _lane_block(getattr(backend, "scanner_cfg", None), lane)
     if not lane_route_allows_live(block):
         return True
