@@ -1,0 +1,10 @@
+{
+  "writer_bias": {
+    "oi_window_strikes": 6,
+    "oi_regime_band": 0.2,
+    "oi_slope_window_sec": 180,
+    "oi_use_delta_weight": true,
+    "oi_use_premium_weight": true,
+    "oi_writing_requires_price_confirm": true
+  }
+}

@@ -4,7 +4,10 @@ Pure functions where possible; stale feeds never block (fail-open).
 """
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, List, Optional, Tuple
+
+from analyst.feed_freshness_8510 import load_feed_cfg
 
 LANES = ("prototype", "reversal", "flagship")
 
@@ -84,10 +87,7 @@ def _format_oppose_label(label: str, source: Dict[str, Any], vote: str) -> str:
     age = source.get("age_sec")
     age_txt = f"age {int(age)}s" if age is not None else "age —"
     if vote == "OPPOSE":
-        writers = "PE writers heavier" if "PE" in detail.upper() or "PUT" in detail.upper() else ""
-        if not writers and "CALL" in detail.upper():
-            writers = "CE writers heavier"
-        tail = f" ({writers}, {age_txt})" if writers else f" ({age_txt})"
+        tail = f" ({detail[:240]}, {age_txt})" if detail else f" ({age_txt})"
         return f"{label} OPPOSE{tail}"
     return f"{label} {vote}"
 
@@ -111,7 +111,15 @@ def evaluate_lane_gating(
 
     for sig_key, board_id, label in TRACK2_SIGNALS:
         src = by_id.get(board_id) or {}
-        vote = _vote(src.get("direction"), bullish, src.get("feed_state"))
+        age = src.get("age_sec")
+        usable = (
+            isinstance(age, (int, float))
+            and not isinstance(age, bool)
+            and math.isfinite(age)
+            and 0 <= age <= float(load_feed_cfg(scanner_cfg)["stale_after_seconds"])
+            and str(src.get("feed_state") or "").upper() == "LIVE"
+        )
+        vote = _vote(src.get("direction"), bullish, "LIVE" if usable else "STALE")
         mode = str(modes.get(sig_key) or "LOG_ONLY").upper()
         item = {
             "signal_id": sig_key,
@@ -122,6 +130,8 @@ def evaluate_lane_gating(
             "direction": src.get("direction"),
             "age_sec": src.get("age_sec"),
             "feed_state": src.get("feed_state"),
+            "source_ts": src.get("source_ts"),
+            "detail": src.get("detail"),
         }
         if vote == "STALE":
             line = f"{label}: feed stale — not blocking"

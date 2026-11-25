@@ -255,6 +255,7 @@ def compute_context(rows: List[Dict[str, Any]], spot: float, cfg: Dict[str, Any]
         baseline_time=datetime.fromtimestamp(base_t, IST).strftime("%H:%M"),
         snapshot_time=datetime.fromtimestamp(last_t, IST).strftime("%H:%M:%S"),
         snapshot_age_sec=int(age),
+        snapshot_ts=datetime.fromtimestamp(last_t, IST).isoformat(),
         spot=round(float(spot), 2),
     )
     return ctx

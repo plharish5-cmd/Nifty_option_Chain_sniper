@@ -364,7 +364,7 @@ def compute_momentum_oi_reads(
     spot_window_bars: Optional[List[Dict[str, float]]] = None,
     desk8600_regime: Optional[str] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Normalized S = dD/T momentum for total_oi, fresh_oi, writer_flow. Missing window → None (fail OPEN)."""
+    """Normalized S = dD/T momentum for total_oi and fresh_oi. Classic Writer Flow stays on the 8600 bridge."""
     cfg = dict(DEFAULT_MOMENTUM_CFG)
     if isinstance(momentum_cfg, dict):
         cfg.update({k: v for k, v in momentum_cfg.items() if not k.startswith("_")})
@@ -387,7 +387,6 @@ def compute_momentum_oi_reads(
         return {
             "total_oi": miss(f"no snapshot in {w_min}±2 min window for momentum"),
             "fresh_oi": miss(f"no snapshot in {w_min}±2 min window for momentum"),
-            "writer_flow": miss(f"no snapshot in {w_min}±2 min window for momentum"),
         }
     session_open = _hm_ts(day, "09:15")
     # Recorded snapshots carry seconds; requiring <=09:15:00 loses an
@@ -398,7 +397,6 @@ def compute_momentum_oi_reads(
         return {
             "total_oi": miss("waiting for 09:15 baseline snapshot"),
             "fresh_oi": miss("waiting for 09:15 baseline snapshot"),
-            "writer_flow": miss("waiting for 09:15 baseline snapshot"),
         }
     vol_backed: Optional[bool] = None
     vol_lbl = ""
@@ -414,7 +412,6 @@ def compute_momentum_oi_reads(
         return {
             "total_oi": miss("zero total OI — cannot normalize"),
             "fresh_oi": miss("zero total OI — cannot normalize"),
-            "writer_flow": miss("zero total OI — cannot normalize"),
         }
     total = _momentum_item(
         metrics=total_m,
@@ -447,10 +444,7 @@ def compute_momentum_oi_reads(
             label="OI chg since recorded " + datetime.fromtimestamp(base_t, IST).strftime("%H:%M:%S"),
         )
         _apply_fresh_oi_regime(fresh, desk8600_regime)
-    writer = dict(fresh)
-    if writer.get("detail"):
-        writer["detail"] = str(writer["detail"]).replace("OI chg since recorded", "Writer flow since recorded")
-    out_reads = {"total_oi": total, "fresh_oi": fresh, "writer_flow": writer}
+    out_reads = {"total_oi": total, "fresh_oi": fresh}
     for read in out_reads.values():
         read["baseline_ts"] = base_t
         read["baseline_kind"] = "FIRST_RECORDED_SESSION_SNAPSHOT"
@@ -529,6 +523,7 @@ def compute_reads(
         return out
     out["status"] = "OK"
     out["snapshot_age_sec"] = int(age)
+    out["snapshot_ts"] = datetime.fromtimestamp(last_t, IST).isoformat()
     band = float(cfg.get("band_pts", 1000.0))
     now_chain = {k: v for k, v in by_ts[last_t].items() if abs(k - spot) <= band}
     reads: Dict[str, Dict[str, Any]] = {}
@@ -687,4 +682,28 @@ def compute_reads(
         )
     except Exception:
         out["momentum_oi"] = {}
+    try:
+        from analyst.writer_bias_live_reads_8510 import apply_writer_bias_to_board_reads
+
+        expiry = str(rows[0].get("expiry") or "") if rows else ""
+        wb = apply_writer_bias_to_board_reads(
+            by_ts=by_ts,
+            ts_sorted=ts_sorted,
+            spot=spot,
+            band=band,
+            day=day,
+            now_ts=now_ts,
+            last_t=last_t,
+            age_sec=int(age),
+            scanner_cfg=None,
+            momentum_oi=out.get("momentum_oi") or {},
+            expiry=expiry,
+        )
+        out["writer_bias"] = wb
+        for key, patch in (wb.get("momentum_patch") or {}).items():
+            if key in out["momentum_oi"] and isinstance(patch, dict):
+                out["momentum_oi"][key] = {**(out["momentum_oi"][key] or {}), **patch}
+        out["facts"].update(wb.get("facts") or {})
+    except Exception:
+        out.setdefault("writer_bias", {})
     return out

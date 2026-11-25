@@ -8151,7 +8151,7 @@ class QuantTerminalBackend:
                 strat_id = str(sig.get("strategy_id", "") or "")
                 sid_u = strat_id.upper()
 
-                if sid_u.startswith("CROSSOVER") or "FLAGSHIP" in sid_u:
+                if sid_u.startswith("CROSSOVER") or sid_u.startswith("EMA8_PROTOTYPE") or "FLAGSHIP" in sid_u:
                     try:
                         from analyst.desk8600_lane_gating_8510 import apply_execution_lane_gating
 

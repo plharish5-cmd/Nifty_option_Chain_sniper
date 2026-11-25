@@ -319,11 +319,35 @@ def build_board(bridge_last: Optional[Dict[str, Any]], oi_ctx: Optional[Dict[str
         for rid in CHAIN_READ_IDS:
             vals[rid] = dict((cr.get("reads") or {}).get(rid) or {"direction": None, "detail": why, "age_sec": None})
         mom = (chain_reads or {}).get("momentum_oi") or {}
-        for rid in ("writer_flow", "fresh_oi", "total_oi"):
+        # Classic Writer Flow must remain the actual bridge output, not the
+        # fresh-OI momentum alias returned by compute_momentum_oi_reads.
+        for rid in ("fresh_oi", "total_oi"):
             if rid in mom and isinstance(mom[rid], dict):
                 vals[rid] = dict(mom[rid])
+        wb_day = ((chain_reads or {}).get("writer_bias") or {}).get("day_oi")
+        if isinstance(wb_day, dict) and wb_day.get("detail"):
+            vals["day_oi"] = {**vals.get("day_oi", {}), **wb_day}
     except Exception as exc:  # a broken read must never stop a trade
         vals = {i: {"direction": None, "detail": f"error: {type(exc).__name__}", "age_sec": None} for i in SOURCE_IDS}
+    # Propagate the observed snapshot timestamp, not a refreshed cache timestamp.
+    try:
+        from analyst.feed_freshness_8510 import parse_source_ts, load_feed_cfg
+
+        budget = float(load_feed_cfg(scanner_cfg)["stale_after_seconds"])
+        for rid, payload in vals.items():
+            if rid in ("day_oi", "oi_15m", "oi_3m", "walls"):
+                payload["source_ts"] = (oi_ctx or {}).get("snapshot_ts")
+            elif rid in CHAIN_READ_IDS or rid in ("fresh_oi", "total_oi"):
+                payload["source_ts"] = (chain_reads or {}).get("snapshot_ts")
+            stamp = parse_source_ts(payload.get("source_ts"), now)
+            if stamp is not None:
+                age = (now - stamp).total_seconds()
+                payload["age_sec"] = age
+                payload["feed_state"] = "LIVE" if 0 <= age <= budget and payload.get("direction") is not None else "STALE"
+            elif "feed_state" not in payload:
+                payload["feed_state"] = "WAITING_FOR_SYNC"
+    except Exception:
+        pass
     sources = []
     for src in SOURCES:
         v = vals.get(src["id"]) or {"direction": None, "detail": "", "age_sec": None}

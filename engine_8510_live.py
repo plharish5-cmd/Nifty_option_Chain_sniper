@@ -931,6 +931,13 @@ async def api_desk8600_board_get():
     return JSONResponse(content={"ok": True, **backend.desk8600_board()})
 
 
+@app.get("/api/dhan-live-sheet/gates")
+async def api_dhan_live_sheet_gates():
+    from analyst.dhan_live_sheet_gates_8510 import snapshot
+
+    return await asyncio.to_thread(snapshot, backend)
+
+
 @app.post("/api/desk8600/board")
 async def api_desk8600_board_post(req: Request):
     try:
