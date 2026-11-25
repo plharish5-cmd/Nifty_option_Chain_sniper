@@ -5,6 +5,7 @@ import math
 from datetime import datetime,timedelta
 from pathlib import Path
 from statistics import median
+from typing import Any, Optional
 from analyst.stockmojo_research_8510 import number,digest,parse_time,IST
 
 RULES=Path(__file__).with_name('nifty_four_oi_rules_8510.json')
@@ -190,3 +191,36 @@ def analyze_four(rows,decision_time,cfg=None,mode='IDEAL_REPLAY',position=None):
         'four_inputs':factors|{'unit_status':last['unit_status']},'metadata':{k:last.get(k) for k in ('baseline_type','baseline_provenance','source_interval','retrieved_at_ist','aggregation_scope','option_expiry','futures_expiry','unit_status')}}
     result['input_id']=digest({'events':[x['event_id'] for x in recent],'config':r,'mode':mode,'state':state,'action':action,'flags':flags})
     return result
+
+
+def desk8600_regime_from_banner(banner: Any) -> Optional[str]:
+    """Parse 8600 / trend panel regime banner into BULLISH | BEARISH | None."""
+    text = str(banner or "").upper()
+    if "BEARISH REGIME" in text or "STRONG BEARISH" in text:
+        return "BEARISH"
+    if "BULLISH REGIME" in text or "STRONG BULLISH" in text:
+        return "BULLISH"
+    return None
+
+
+def classify_fresh_oi_regime(
+    s: float,
+    bias: float,
+    *,
+    desk8600_regime: Optional[str] = None,
+) -> str:
+    """Fresh Change in OI regime for 8510 badges and 8600 lane gating alignment."""
+    regime = str(desk8600_regime or "").upper()
+    if s >= 0.15 or bias >= 0.20:
+        return "BULLISH"
+    if regime == "BULLISH" and bias > 0:
+        return "BULLISH"
+    if s <= -0.15 or bias <= -0.20:
+        return "BEARISH"
+    if regime == "BEARISH" and bias < 0:
+        return "BEARISH"
+    return "NEUTRAL"
+
+
+def fresh_oi_regime_to_direction(regime: str) -> str:
+    return {"BULLISH": "CE", "BEARISH": "PE"}.get(str(regime or "").upper(), "NEUTRAL")

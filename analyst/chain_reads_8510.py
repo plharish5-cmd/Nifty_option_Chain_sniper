@@ -289,6 +289,26 @@ def _momentum_significance(
     return {"C": c, "P": p, "T": t, "D": d, "S": s, "B": b, "CumD": cumd}
 
 
+def _apply_fresh_oi_regime(read: Dict[str, Any], desk8600_regime: Optional[str]) -> None:
+    """Align Fresh OI direction/gate with S, bias, and optional 8600 regime banner."""
+    from analyst.nifty_four_oi_8510 import (
+        classify_fresh_oi_regime,
+        fresh_oi_regime_to_direction,
+    )
+
+    if read.get("S") is None or read.get("B") is None:
+        return
+    regime = classify_fresh_oi_regime(
+        float(read["S"]), float(read["B"]), desk8600_regime=desk8600_regime
+    )
+    read["regime"] = regime
+    read["direction"] = fresh_oi_regime_to_direction(regime)
+    detail = str(read.get("detail") or "")
+    if "→" in detail:
+        head = detail.split("→", 1)[0].rstrip()
+        read["detail"] = f"{head} → {regime}"
+
+
 def _momentum_item(
     *,
     metrics: Dict[str, float],
@@ -342,6 +362,7 @@ def compute_momentum_oi_reads(
     age_sec: int,
     momentum_cfg: Optional[Dict[str, Any]] = None,
     spot_window_bars: Optional[List[Dict[str, float]]] = None,
+    desk8600_regime: Optional[str] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Normalized S = dD/T momentum for total_oi, fresh_oi, writer_flow. Missing window → None (fail OPEN)."""
     cfg = dict(DEFAULT_MOMENTUM_CFG)
@@ -425,6 +446,7 @@ def compute_momentum_oi_reads(
             age_sec=age_sec,
             label="OI chg since recorded " + datetime.fromtimestamp(base_t, IST).strftime("%H:%M:%S"),
         )
+        _apply_fresh_oi_regime(fresh, desk8600_regime)
     writer = dict(fresh)
     if writer.get("detail"):
         writer["detail"] = str(writer["detail"]).replace("OI chg since recorded", "Writer flow since recorded")
@@ -481,6 +503,7 @@ def compute_reads(
     now_ts: int,
     momentum_cfg: Optional[Dict[str, Any]] = None,
     spot_window_bars: Optional[List[Dict[str, float]]] = None,
+    desk8600_regime: Optional[str] = None,
 ) -> Dict[str, Any]:
     """{"status": "OK"|"NO_DATA", "reads": {id: {direction, detail, [blocks]}}, "facts": {...}}"""
     out: Dict[str, Any] = {"status": "NO_DATA", "reason": "", "reads": {}, "facts": {}}
@@ -660,6 +683,7 @@ def compute_reads(
             age_sec=int(age),
             momentum_cfg=momentum_cfg,
             spot_window_bars=spot_window_bars,
+            desk8600_regime=desk8600_regime,
         )
     except Exception:
         out["momentum_oi"] = {}

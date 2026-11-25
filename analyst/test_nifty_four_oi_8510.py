@@ -4,7 +4,17 @@ import json
 from datetime import datetime,timedelta
 from pathlib import Path
 import pytest
-from analyst.nifty_four_oi_8510 import normalize,analyze_four,rules,parse_time,checkpoint,IST
+from analyst.nifty_four_oi_8510 import (
+    normalize,
+    analyze_four,
+    rules,
+    parse_time,
+    checkpoint,
+    IST,
+    classify_fresh_oi_regime,
+    fresh_oi_regime_to_direction,
+)
+from analyst.chain_reads_8510 import _apply_fresh_oi_regime
 from analyst.nifty_four_collector_8510 import collect_exports
 from analyst.nifty_four_paper_8510 import FourPaper
 from analyst.nifty_four_workspace_8510 import FourWorkspace,FourCommentary
@@ -206,6 +216,38 @@ def test_risk_limits_reused_at_deferred_fill(tmp_path):
     p.quotes.next=lambda c,a,b:{**c,'timestamp':a+1,'bid':199,'ask':200,'verified':True,'source':'RECORDED_CHAIN_SNAP_BID_ASK'} if b>a+1 else None
     p.handle('replay:four-cap',s,'2026-11-06T09:21:00+05:30',True)
     assert p.handle('replay:four-cap',s,'2026-11-06T09:21:10+05:30',True)['reason']=='CAPITAL_OR_POSITION_LIMIT'
+
+
+def test_fresh_oi_regime_bias_overrides_weak_s():
+    assert classify_fresh_oi_regime(0.09, 0.29) == "BULLISH"
+    assert fresh_oi_regime_to_direction("BULLISH") == "CE"
+    assert classify_fresh_oi_regime(-0.09, -0.29) == "BEARISH"
+    assert fresh_oi_regime_to_direction("BEARISH") == "PE"
+    assert classify_fresh_oi_regime(0.03, 0.05, desk8600_regime=None) == "NEUTRAL"
+
+
+def test_fresh_oi_regime_8600_banner_with_bias_sign():
+    assert classify_fresh_oi_regime(0.09, 0.29, desk8600_regime="BULLISH") == "BULLISH"
+    assert classify_fresh_oi_regime(0.03, 0.12, desk8600_regime="BULLISH") == "BULLISH"
+    assert classify_fresh_oi_regime(0.03, 0.05, desk8600_regime="BULLISH") == "BULLISH"
+    assert classify_fresh_oi_regime(0.03, -0.02, desk8600_regime="BULLISH") == "NEUTRAL"
+    assert classify_fresh_oi_regime(-0.03, -0.12, desk8600_regime="BEARISH") == "BEARISH"
+
+
+def test_fresh_oi_regime_detail_string_keeps_s_bias_cumd():
+    read = {
+        "S": 0.09,
+        "B": 0.29,
+        "CumD_lakh": 198.61,
+        "detail": "OI chg since recorded 09:15:16: S +0.09 · bias +0.29 · CumD +199L (C 100 P 200) → NEUTRAL",
+        "direction": "NEUTRAL",
+        "strength": "NEUTRAL",
+    }
+    _apply_fresh_oi_regime(read, None)
+    assert read["regime"] == "BULLISH"
+    assert read["direction"] == "CE"
+    assert "S +0.09 · bias +0.29" in read["detail"]
+    assert read["detail"].endswith("→ BULLISH")
 
 
 def test_router_nifty_four_schema_and_background_lifecycle(tmp_path):

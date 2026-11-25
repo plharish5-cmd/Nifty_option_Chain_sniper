@@ -6262,8 +6262,8 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
         function renderReversalOiFilters(cr, board) {
             const color = d => {
                 const u = String(d || "").toUpperCase();
-                if (u === "CE") return "#22c55e";
-                if (u === "PE") return "#ef4444";
+                if (u === "CE" || u === "BULLISH") return "#22c55e";
+                if (u === "PE" || u === "BEARISH") return "#ef4444";
                 if (u === "NEUTRAL") return "#94a3b8";
                 return "#64748b";
             };
@@ -6279,6 +6279,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 if (!Number.isFinite(n)) return "—";
                 return (n >= 0 ? "+" : "") + n.toFixed(2);
             };
+            const freshArrow = (src, id, d) => (id === "fresh_oi" && src.regime) ? src.regime : d;
             document.querySelectorAll(".rev-oi-dir").forEach(span => {
                 const id = span.getAttribute("data-id");
                 const src = byId[id] || reads[id] || {};
@@ -6291,15 +6292,16 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     const lab = momLabel[id] || id;
                     const b = src.B != null ? fmtSig(src.B) : "—";
                     const cd = src.CumD_lakh != null ? fmtSig(src.CumD_lakh) + "L" : "—";
-                    const str = src.strength && src.strength !== "NEUTRAL" ? ` ${src.strength}` : "";
+                    const str = id !== "fresh_oi" && src.strength && src.strength !== "NEUTRAL" ? ` ${src.strength}` : "";
                     const vb = src.volume_backing ? ` · vol: ${src.volume_backing}` : "";
                     const pc = src.price_confirm === "agree" ? " · price agrees" : (src.price_confirm === "diverge" ? " · price diverges" : "");
-                    text = `${lab}: S ${fmtSig(src.S)} · bias ${b} · CumD ${cd}${vb}${pc} → ${d}${str}`;
+                    const arrow = freshArrow(src, id, d);
+                    text = `${lab}: S ${fmtSig(src.S)} · bias ${b} · CumD ${cd}${vb}${pc} → ${arrow}${str}`;
                 } else if (!stale && src.detail) {
                     span.title = String(src.detail).slice(0, 200);
                 }
                 span.textContent = text;
-                span.style.color = stale ? "#64748b" : color(d);
+                span.style.color = stale ? "#64748b" : color(freshArrow(src, id, d));
                 if (!stale && age != null && !span.title) span.title = `${age}s old`;
             });
             syncLaneOiOneline("revOiBlockLine", cr);
@@ -6434,8 +6436,8 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
         function renderProtoOiFilters(ep, board) {
             const color = d => {
                 const u = String(d || '').toUpperCase();
-                if (u === 'CE') return '#22c55e';
-                if (u === 'PE') return '#ef4444';
+                if (u === 'CE' || u === 'BULLISH') return '#22c55e';
+                if (u === 'PE' || u === 'BEARISH') return '#ef4444';
                 if (u === 'NEUTRAL') return '#94a3b8';
                 return '#64748b';
             };
@@ -6450,6 +6452,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 if (!Number.isFinite(n)) return '—';
                 return (n >= 0 ? '+' : '') + n.toFixed(2);
             };
+            const freshArrow = (src, id, d) => (id === 'fresh_oi' && src.regime) ? src.regime : d;
             document.querySelectorAll('.proto-oi-dir').forEach(span => {
                 const id = span.getAttribute('data-id');
                 const src = byId[id] || reads[id] || {};
@@ -6461,14 +6464,15 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     const lab = momLabel[id] || id;
                     const b = src.B != null ? fmtSig(src.B) : '—';
                     const cd = src.CumD_lakh != null ? fmtSig(src.CumD_lakh) + 'L' : '—';
-                    const str = src.strength && src.strength !== 'NEUTRAL' ? ` ${src.strength}` : '';
+                    const str = id !== 'fresh_oi' && src.strength && src.strength !== 'NEUTRAL' ? ` ${src.strength}` : '';
                     const vb = src.volume_backing ? ` · vol: ${src.volume_backing}` : '';
-                    text = `${lab}: S ${fmtSig(src.S)} · bias ${b} · CumD ${cd}${vb} → ${d}${str}`;
+                    const arrow = freshArrow(src, id, d);
+                    text = `${lab}: S ${fmtSig(src.S)} · bias ${b} · CumD ${cd}${vb} → ${arrow}${str}`;
                 } else if (!stale && src.detail) {
                     span.title = String(src.detail).slice(0, 200);
                 }
                 span.textContent = text;
-                span.style.color = stale ? '#64748b' : color(d);
+                span.style.color = stale ? '#64748b' : color(freshArrow(src, id, d));
                 if (!stale && age != null && !span.title) span.title = `${age}s old`;
             });
             syncLaneOiOneline("protoOiBlockLine", ep);

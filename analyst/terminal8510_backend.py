@@ -4427,6 +4427,10 @@ class QuantTerminalBackend:
 
             proto = load_ema8_prototype_cfg(self.scanner_cfg)
             momentum = (proto.get("oi_filters") or {}).get("momentum")
+            from analyst.nifty_four_oi_8510 import desk8600_regime_from_banner
+
+            tw = (self.cached_telemetry or {}).get("trend_watchlist") or {}
+            desk8600_regime = desk8600_regime_from_banner(tw.get("regime_banner"))
             out = compute_reads(
                 rows,
                 px,
@@ -4434,6 +4438,7 @@ class QuantTerminalBackend:
                 day=day,
                 now_ts=int(now.timestamp()),
                 momentum_cfg=momentum,
+                desk8600_regime=desk8600_regime,
             )
         except Exception as exc:
             out = {"status": "NO_DATA", "reason": f"error: {type(exc).__name__}", "reads": {}, "facts": {}}
