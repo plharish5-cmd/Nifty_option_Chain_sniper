@@ -498,6 +498,7 @@ def compute_reads(
     momentum_cfg: Optional[Dict[str, Any]] = None,
     spot_window_bars: Optional[List[Dict[str, float]]] = None,
     desk8600_regime: Optional[str] = None,
+    scanner_cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """{"status": "OK"|"NO_DATA", "reads": {id: {direction, detail, [blocks]}}, "facts": {...}}"""
     out: Dict[str, Any] = {"status": "NO_DATA", "reason": "", "reads": {}, "facts": {}}
@@ -695,7 +696,7 @@ def compute_reads(
             now_ts=now_ts,
             last_t=last_t,
             age_sec=int(age),
-            scanner_cfg=None,
+            scanner_cfg=scanner_cfg,
             momentum_oi=out.get("momentum_oi") or {},
             expiry=expiry,
         )

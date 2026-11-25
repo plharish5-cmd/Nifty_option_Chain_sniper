@@ -4441,6 +4441,7 @@ class QuantTerminalBackend:
                 now_ts=int(now.timestamp()),
                 momentum_cfg=momentum,
                 desk8600_regime=desk8600_regime,
+                scanner_cfg=self.scanner_cfg,
             )
         except Exception as exc:
             out = {"status": "NO_DATA", "reason": f"error: {type(exc).__name__}", "reads": {}, "facts": {}}
