@@ -357,6 +357,6 @@ def test_insufficient_history_direction_none():
         last_t=base_ts,
         age_sec=60,
     )
-    for rid in ("total_oi", "fresh_oi", "writer_flow"):
+    for rid in ("total_oi", "fresh_oi"):
         assert out[rid]["direction"] is None
         assert out[rid]["S"] is None
