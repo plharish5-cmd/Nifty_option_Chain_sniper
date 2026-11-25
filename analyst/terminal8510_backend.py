@@ -4424,7 +4424,11 @@ class QuantTerminalBackend:
             px = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
             now = datetime.now(IST)
             day = now.strftime("%Y-%m-%d")
-            rows = load_day_snapshots(self._oi_context_db_paths(), day)
+            paths = self._oi_context_db_paths()
+            rows = load_day_snapshots(paths, day)
+            from analyst.oi_context_8510 import prior_day_close_chain
+
+            prior_close = prior_day_close_chain(paths, day, asof_ts=int(now.timestamp()))
             from analyst.ema8_prototype_8510 import load_ema8_prototype_cfg
 
             proto = load_ema8_prototype_cfg(self.scanner_cfg)
@@ -4442,6 +4446,7 @@ class QuantTerminalBackend:
                 momentum_cfg=momentum,
                 desk8600_regime=desk8600_regime,
                 scanner_cfg=self.scanner_cfg,
+                prior_day_close=prior_close,
             )
         except Exception as exc:
             out = {"status": "NO_DATA", "reason": f"error: {type(exc).__name__}", "reads": {}, "facts": {}}

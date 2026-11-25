@@ -143,6 +143,7 @@ def apply_writer_bias_to_board_reads(
     scanner_cfg: Optional[Dict[str, Any]],
     momentum_oi: Dict[str, Dict[str, Any]],
     expiry: str = "",
+    prior_day_close: Optional[Dict[float, Dict[str, float]]] = None,
 ) -> Dict[str, Any]:
     """Return patches for board: day_oi, momentum fresh/total enrichments, facts."""
     cfg = load_writer_bias_cfg(scanner_cfg)
@@ -164,6 +165,17 @@ def apply_writer_bias_to_board_reads(
     r = float(((scanner_cfg or {}).get("chain_reads") or {}).get("risk_free_rate", 0.065))
 
     out: Dict[str, Any] = {"day_oi": None, "momentum_patch": {}, "facts": {}, "unclassified_poll": False}
+    if prior_day_close:
+        ce_d = pe_d = 0.0
+        for k, v in (by_ts.get(last_t) or {}).items():
+            if abs(k - spot) > band:
+                continue
+            p = prior_day_close.get(k) or {}
+            ce_d += float(v.get("ce_oi") or 0) - float(p.get("ce_oi") or 0)
+            pe_d += float(v.get("pe_oi") or 0) - float(p.get("pe_oi") or 0)
+        out["facts"]["previous_day_pe_minus_ce_oi"] = round(pe_d - ce_d, 0)
+        out["facts"]["previous_day_ce_oi_delta"] = round(ce_d, 0)
+        out["facts"]["previous_day_pe_oi_delta"] = round(pe_d, 0)
 
     if base_t is None or base_t >= last_t or len(session_ts) < 2:
         out["unclassified_poll"] = True
@@ -189,30 +201,37 @@ def apply_writer_bias_to_board_reads(
         sess_rows = _contract_rows(
             by_ts[last_t], by_ts[base_t], baseline_kind="SESSION_SINCE_0915", spot=spot, band=band, t_years=t_years, r=r, cfg=cfg
         )
-        poll_agg: Dict[str, Any] = aggregate(poll_rows, spot, cfg)
+        poll_agg_full = aggregate(poll_rows, spot, cfg)
         sess_agg = aggregate(sess_rows, spot, cfg)
-        if poll_agg.get("state") != "RESEARCH_ONLY":
+        poll_agg = poll_agg_full if poll_agg_full.get("state") == "RESEARCH_ONLY" else {}
+        if sess_agg.get("state") != "RESEARCH_ONLY":
             out["day_oi"] = {
                 "direction": None,
-                "detail": "PE-CE writer poll aggregate unavailable",
+                "detail": "PE-CE intraday writing unavailable (session baseline unmatched)",
                 "age_sec": age_sec,
                 "feed_state": "STALE",
             }
         else:
-            w = poll_agg["writing"]
+            w = sess_agg["writing"]
             regime = w.get("regime") or "UNAVAILABLE"
             score = w.get("score")
-            scope = str(poll_agg.get("scope"))
+            scope = str(sess_agg.get("scope"))
             sl = _slope_for(day, "pe_ce_change", scope, last_t, score, cfg)
             out["day_oi"] = {
                 "direction": _direction_from_regime(regime),
-                "detail": _fmt_detail("PE-CE change", regime, score, sl, f"net writing {w.get('net'):.0f}"),
+                "detail": _fmt_detail(
+                    "PE-CE change",
+                    regime,
+                    score,
+                    sl,
+                    f"net_intraday writing {w.get('net'):.0f} (since 09:15, poll Δ separate)",
+                ),
                 "age_sec": age_sec,
                 "feed_state": "LIVE" if _direction_from_regime(regime) is not None else "STALE",
                 "writer_bias_score": score,
                 "writer_bias_slope": sl,
                 "writer_bias_regime": regime,
-                "divergence": bool(poll_agg.get("divergence")),
+                "divergence": bool(sess_agg.get("divergence")),
             }
         if sess_agg.get("state") == "RESEARCH_ONLY":
             pos = sess_agg.get("positional") or {}
@@ -233,12 +252,23 @@ def apply_writer_bias_to_board_reads(
                 patched["feed_state"] = "LIVE"
             out["momentum_patch"]["total_oi"] = patched
 
-            fresh_w = wr
+            fresh_w = sess_agg.get("fresh") or wr
             sl_f = _slope_for(day, "fresh_change_oi", scope_s, last_t, fresh_w.get("score"), cfg)
             fresh = momentum_oi.get("fresh_oi") or {}
             patched_f = dict(fresh)
             freg = fresh_w.get("regime") or "UNAVAILABLE"
-            patched_f["direction"] = _direction_from_regime(freg) or patched_f.get("direction")
+            try:
+                from analyst.nifty_four_oi_8510 import classify_fresh_oi_regime, fresh_oi_regime_to_direction
+
+                nf_regime = classify_fresh_oi_regime(
+                    float(fresh_w.get("score") or 0),
+                    float((sess_agg.get("writing") or {}).get("score") or 0),
+                    desk8600_regime=None,
+                )
+                patched_f["direction"] = fresh_oi_regime_to_direction(nf_regime) or _direction_from_regime(freg)
+                freg = nf_regime if nf_regime != "NEUTRAL" else freg
+            except Exception:
+                patched_f["direction"] = _direction_from_regime(freg) or patched_f.get("direction")
             labels = [lb for lb in poll_agg.get("labels") or [] if lb.get("writing")]
             buildup_txt = ", ".join(f"{lb['side']} {lb['strike']} {lb['buildup']}" for lb in labels[:6])
             patched_f["detail"] = (

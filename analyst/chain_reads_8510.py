@@ -499,6 +499,7 @@ def compute_reads(
     spot_window_bars: Optional[List[Dict[str, float]]] = None,
     desk8600_regime: Optional[str] = None,
     scanner_cfg: Optional[Dict[str, Any]] = None,
+    prior_day_close: Optional[Dict[float, Dict[str, float]]] = None,
 ) -> Dict[str, Any]:
     """{"status": "OK"|"NO_DATA", "reads": {id: {direction, detail, [blocks]}}, "facts": {...}}"""
     out: Dict[str, Any] = {"status": "NO_DATA", "reason": "", "reads": {}, "facts": {}}
@@ -699,6 +700,7 @@ def compute_reads(
             scanner_cfg=scanner_cfg,
             momentum_oi=out.get("momentum_oi") or {},
             expiry=expiry,
+            prior_day_close=prior_day_close,
         )
         out["writer_bias"] = wb
         for key, patch in (wb.get("momentum_patch") or {}).items():

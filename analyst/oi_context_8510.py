@@ -110,6 +110,28 @@ def load_day_snapshots(db_paths: Iterable[Path], day: str, asof_ts: Optional[int
     return []
 
 
+def prior_day_close_chain(
+    db_paths: Iterable[Path], day: str, *, asof_ts: Optional[int] = None
+) -> Optional[Dict[float, Dict[str, float]]]:
+    """Last recorded strike map for the calendar day before `day` (oi minus prior-day close)."""
+    try:
+        prev = (datetime.strptime(day[:10], "%Y-%m-%d").replace(tzinfo=IST) - timedelta(days=1)).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+    rows = load_day_snapshots(db_paths, prev, asof_ts=asof_ts)
+    if not rows:
+        return None
+    last_ts = max(int(float(r["ts"])) for r in rows)
+    out: Dict[float, Dict[str, float]] = {}
+    for r in rows:
+        if int(float(r["ts"])) != last_ts:
+            continue
+        out[float(r["strike"])] = {
+            key: float(r.get(key) or 0.0) for key in ("ce_oi", "pe_oi", "ce_vol", "pe_vol", "ce_ltp", "pe_ltp")
+        }
+    return out or None
+
+
 def _snapshot_at(by_ts: Dict[int, Dict[float, Dict[str, float]]], ts_sorted: List[int], want: int,
                  first_at_or_after: bool) -> Optional[int]:
     if first_at_or_after:

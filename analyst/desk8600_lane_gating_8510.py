@@ -86,7 +86,14 @@ def _format_oppose_label(label: str, source: Dict[str, Any], vote: str) -> str:
     detail = str(source.get("detail") or "").strip()
     age = source.get("age_sec")
     age_txt = f"age {int(age)}s" if age is not None else "age —"
+    regime = str(source.get("writer_bias_regime") or "").strip()
+    score = source.get("writer_bias_score")
+    slope = source.get("writer_bias_slope")
+    score_txt = f"{float(score):+.2f}" if isinstance(score, (int, float)) and not isinstance(score, bool) else "—"
+    slope_txt = f"{float(slope):+.4f}/s" if isinstance(slope, (int, float)) and not isinstance(slope, bool) else "—"
     if vote == "OPPOSE":
+        if regime and regime not in ("UNAVAILABLE", ""):
+            return f"{label} {regime} (score {score_txt}, slope {slope_txt}, {age_txt})"
         tail = f" ({detail[:240]}, {age_txt})" if detail else f" ({age_txt})"
         return f"{label} OPPOSE{tail}"
     return f"{label} {vote}"
@@ -132,6 +139,9 @@ def evaluate_lane_gating(
             "feed_state": src.get("feed_state"),
             "source_ts": src.get("source_ts"),
             "detail": src.get("detail"),
+            "writer_bias_score": src.get("writer_bias_score"),
+            "writer_bias_slope": src.get("writer_bias_slope"),
+            "writer_bias_regime": src.get("writer_bias_regime"),
         }
         if vote == "STALE":
             line = f"{label}: feed stale — not blocking"
