@@ -8160,20 +8160,23 @@ class QuantTerminalBackend:
                     except Exception as exc:
                         log.warning("8600 lane gating skipped (%s)", type(exc).__name__)
 
-                n_open = len(self.get_active_positions())
+                active_for_lane = self.get_active_positions()
                 from analyst.ema_lane_lock_8510 import (
                     LANE_PROTOTYPE,
                     LANE_REVERSAL,
-                    lane_lock_blocks_entry,
                 )
 
                 if sid_u.startswith("CROSSOVER") or sid_u.startswith("EMA8_PROTOTYPE"):
-                    from analyst.ema_lane_entry_gate_8510 import try_reserve_lane_for_signal
+                    from analyst.ema_lane_entry_gate_8510 import (
+                        open_position_count_for_strategy,
+                        try_reserve_lane_for_signal,
+                    )
 
+                    n_open_lane = open_position_count_for_strategy(active_for_lane, strat_id)
                     ok_res, why_lane = try_reserve_lane_for_signal(
                         self._ema_lane_lock,
                         strat_id,
-                        open_position_count=n_open,
+                        open_position_count=n_open_lane,
                         note=str(sig.get("setup_name") or "")[:120],
                     )
                     if not ok_res:

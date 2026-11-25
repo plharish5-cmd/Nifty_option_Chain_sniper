@@ -57,13 +57,12 @@ def test_ema_separation_blocks_tight_ribbon():
     assert ema_separation_ok(25000.0, 24990.0, 5.0) is True
 
 
-def test_lane_lock_blocks_second_lane():
+def test_lane_lock_does_not_block_other_lane_on_holder():
     lock: dict = {}
     assert try_acquire_lane_lock(lock, LANE_REVERSAL) is True
     blocked, _ = lane_lock_blocks_entry(lock, LANE_PROTOTYPE, open_position_count=0)
-    assert blocked is True
+    assert blocked is False
     release_lane_lock(lock)
-    assert lane_lock_blocks_entry(lock, LANE_PROTOTYPE, open_position_count=0)[0] is False
 
 
 def test_lane_lock_blocks_when_position_open():

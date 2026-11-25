@@ -1,4 +1,4 @@
-"""One open setup at a time across 8 EMA Prototype and Reversal lanes."""
+"""Per-lane entry lock for 8 EMA Prototype and Reversal (isolated from other strategies)."""
 from __future__ import annotations
 
 import time
@@ -24,25 +24,25 @@ def lane_lock_blocks_entry(
     *,
     open_position_count: int = 0,
 ) -> Tuple[bool, str]:
-    """True when this lane must not open a new position."""
+    """True when this lane must not open a new position (lane-scoped open count only)."""
     if open_position_count > 0:
         return True, "Open position exists — no second entry"
-    if not isinstance(lock, dict):
-        return False, ""
-    holder = str(lock.get("holder") or "").upper()
-    if not holder:
-        return False, ""
-    if holder == lane.upper():
-        return False, ""
-    other = LANE_PROTOTYPE if lane.upper() == LANE_REVERSAL else LANE_REVERSAL
-    return True, f"Standing down — {other} holds the trade lock"
+    return False, ""
+
+
+def _lane_holders(lock: Dict[str, Any]) -> Dict[str, bool]:
+    holders: Dict[str, bool] = dict(lock.get("holders") or {})
+    legacy = str(lock.get("holder") or "").upper()
+    if legacy and legacy not in holders:
+        holders[legacy] = True
+    return holders
 
 
 def try_acquire_lane_lock(lock: Dict[str, Any], lane: str, *, note: str = "") -> bool:
     lane_u = lane.upper()
-    holder = str(lock.get("holder") or "").upper()
-    if holder and holder != lane_u:
-        return False
+    holders = _lane_holders(lock)
+    holders[lane_u] = True
+    lock["holders"] = holders
     lock["holder"] = lane_u
     lock["since_mono"] = time.monotonic()
     lock["note"] = note or f"{lane_u} armed touch"
@@ -60,8 +60,17 @@ def try_acquire_lane_lock(lock: Dict[str, Any], lane: str, *, note: str = "") ->
 def release_lane_lock(lock: Dict[str, Any], lane: Optional[str] = None) -> None:
     if not isinstance(lock, dict):
         return
-    if lane is not None and str(lock.get("holder") or "").upper() != str(lane).upper():
-        return
-    lock.pop("holder", None)
-    lock.pop("since_mono", None)
-    lock["note"] = "flat — both lanes eligible"
+    holders = _lane_holders(lock)
+    if lane is not None:
+        lane_u = str(lane).upper()
+        holders.pop(lane_u, None)
+    else:
+        holders.clear()
+    if holders:
+        lock["holders"] = holders
+        lock["holder"] = next(iter(holders.keys()))
+    else:
+        lock.pop("holders", None)
+        lock.pop("holder", None)
+        lock.pop("since_mono", None)
+        lock["note"] = "flat — both lanes eligible"

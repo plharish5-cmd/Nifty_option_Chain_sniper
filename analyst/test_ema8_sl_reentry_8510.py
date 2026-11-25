@@ -184,7 +184,10 @@ def test_nov23_chase_blocked_when_spot_far_from_e8_despite_bar_wick():
 
 def test_prior_day_open_paper_does_not_block_fresh_session_entry(tmp_path: Path):
     """2026-11-23 09:32 — stale 2026-11-22 OPEN row must not block EMA8_PROTOTYPE entry."""
-    from analyst.ema_lane_entry_gate_8510 import try_reserve_lane_for_signal
+    from analyst.ema_lane_entry_gate_8510 import (
+        open_position_count_for_strategy,
+        try_reserve_lane_for_signal,
+    )
     from analyst.prior_session_position_reconcile_8510 import reconcile_prior_session_paper_positions
 
     b = make_test_backend(tmp_path, FakeBroker(configured=False))
@@ -213,10 +216,11 @@ def test_prior_day_open_paper_does_not_block_fresh_session_entry(tmp_path: Path)
         )
         conn.commit()
     assert len(b.get_active_positions()) == 1
+    active = b.get_active_positions()
     ok_before, why_before = try_reserve_lane_for_signal(
         b._ema_lane_lock,
         "EMA8_PROTOTYPE_SHORT",
-        open_position_count=len(b.get_active_positions()),
+        open_position_count=open_position_count_for_strategy(active, "EMA8_PROTOTYPE_SHORT"),
     )
     assert ok_before is False
     assert "no second entry" in why_before.lower()
@@ -229,7 +233,7 @@ def test_prior_day_open_paper_does_not_block_fresh_session_entry(tmp_path: Path)
     ok, why2 = try_reserve_lane_for_signal(
         b._ema_lane_lock,
         "EMA8_PROTOTYPE_SHORT",
-        open_position_count=len(b.get_active_positions()),
+        open_position_count=open_position_count_for_strategy(b.get_active_positions(), "EMA8_PROTOTYPE_SHORT"),
         note="retouch",
     )
     assert ok is True

@@ -127,7 +127,10 @@ def test_suspect2_stuck_exit_pending_alarms_and_resolves_without_lane_freeze(tmp
     assert b.exit_failure_banner is None
 
     # Verify lane lock is eligible
-    blocks, reason = lane_lock_blocks_entry(b._ema_lane_lock, "PROTOTYPE", open_position_count=len(b.get_active_positions()))
+    from analyst.ema_lane_entry_gate_8510 import open_position_count_for_strategy
+
+    n_proto = open_position_count_for_strategy(b.get_active_positions(), "EMA8_PROTOTYPE_LONG")
+    blocks, reason = lane_lock_blocks_entry(b._ema_lane_lock, "PROTOTYPE", open_position_count=n_proto)
     assert blocks is False
     assert reason == ""
 

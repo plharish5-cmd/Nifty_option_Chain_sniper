@@ -52,28 +52,30 @@ def _proto_sig() -> Dict[str, Any]:
     }
 
 
-def test_no_second_lane_while_lock_held():
+def test_other_lane_may_reserve_while_lock_held():
     lock: Dict[str, Any] = {}
     assert try_reserve_lane_for_signal(lock, "CROSSOVER_BULLISH", open_position_count=0)[0] is True
-    ok, why = try_reserve_lane_for_signal(lock, "EMA8_PROTOTYPE_LONG", open_position_count=0)
-    assert ok is False and "Standing down" in why
-    release_lane_lock(lock)
-    assert try_reserve_lane_for_signal(lock, "EMA8_PROTOTYPE_LONG", open_position_count=0)[0] is True
+    ok, _ = try_reserve_lane_for_signal(lock, "EMA8_PROTOTYPE_LONG", open_position_count=0)
+    assert ok is True
+    release_lane_lock(lock, LANE_REVERSAL)
+    release_lane_lock(lock, LANE_PROTOTYPE)
 
 
-def test_open_position_blocks_all_ema_lanes():
+def test_open_position_blocks_only_same_lane():
     lock: Dict[str, Any] = {}
     blocked, why = lane_lock_blocks_entry(lock, LANE_REVERSAL, open_position_count=1)
     assert blocked and "Open position" in why
-    blocked2, _ = lane_lock_blocks_entry(lock, LANE_PROTOTYPE, open_position_count=1)
-    assert blocked2
+    blocked2, _ = lane_lock_blocks_entry(lock, LANE_PROTOTYPE, open_position_count=0)
+    assert not blocked2
 
 
 def test_batch_filter_one_ema_signal():
     lock: Dict[str, Any] = {}
     sigs = [_cross_sig("5m"), _cross_sig("15m"), _proto_sig()]
     out = filter_signals_one_ema_trade(sigs, lock, open_position_count=0)
-    assert len(out) == 1 and out[0]["strategy_id"].startswith("CROSSOVER")
+    assert len(out) == 2
+    assert sum(1 for s in out if str(s["strategy_id"]).startswith("CROSSOVER")) == 1
+    assert any(str(s["strategy_id"]).startswith("EMA8_PROTOTYPE") for s in out)
 
 
 def test_unfilled_order_releases_reservation():
@@ -133,7 +135,7 @@ def test_stage2_stage3_emit_signals_still_paper_only():
 
 
 def test_process_signals_second_crossover_blocked_after_first_reserves(tmp_path: Path):
-    """Integration: first crossover reserves lock; second cannot pass reservation."""
+    """Integration: second crossover in the same lane is blocked; prototype may run in parallel."""
     from analyst.terminal8510_backend import QuantTerminalBackend
 
     b = QuantTerminalBackend.__new__(QuantTerminalBackend)
@@ -176,9 +178,11 @@ def test_process_signals_second_crossover_blocked_after_first_reserves(tmp_path:
         asyncio.run(QuantTerminalBackend._process_strategy_signals(b, [sig]))
 
     run_one(_cross_sig("15m"))
-    assert b._ema_lane_lock.get("holder") == LANE_REVERSAL
+    assert LANE_REVERSAL in (b._ema_lane_lock.get("holders") or {b._ema_lane_lock.get("holder"): True})
     run_one(_proto_sig())
-    assert b.execute_order_with_chaser.await_count == 1
+    assert b.execute_order_with_chaser.await_count == 2
+    run_one(_cross_sig("5m"))
+    assert b.execute_order_with_chaser.await_count == 2
 
 
 def test_reversal_oi_log_only_never_blocks_real_route():
