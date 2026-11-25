@@ -1,0 +1,10 @@
+{
+  "stale_after_seconds": 30,
+  "gate_cache_seconds": 3,
+  "gate_timeout_seconds": 1.0,
+  "risk_free_rate": 0.065,
+  "expiry_time": "15:30",
+  "day_count": 365,
+  "session_open": "09:15",
+  "session_close": "15:30"
+}

@@ -4,10 +4,14 @@ Pure functions where possible; stale feeds never block (fail-open).
 """
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from analyst.feed_freshness_8510 import load_feed_cfg
+
+_LIVE_SHEET_RULES = Path(__file__).with_name("live_sheet_rules.json")
 
 LANES = ("prototype", "reversal", "flagship")
 
@@ -28,21 +32,42 @@ DEFAULT_DESK8600_LANE_GATING: Dict[str, Dict[str, str]] = {
 }
 
 
-def load_desk8600_lane_gating(scanner_cfg: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
-    root = {lane: dict(_DEFAULT_LANE) for lane in LANES}
-    raw = (scanner_cfg or {}).get("desk8600_lane_gating")
+def _lane_gating_from_mapping(raw: Any) -> Dict[str, Dict[str, str]]:
+    out = {lane: dict(_DEFAULT_LANE) for lane in LANES}
     if not isinstance(raw, dict):
-        return root
+        return out
     for lane in LANES:
         block = raw.get(lane)
         if not isinstance(block, dict):
             continue
         for sig_key, _, _ in TRACK2_SIGNALS:
-            mode = str(block.get(sig_key) or "LOG_ONLY").upper().replace("-", "_")
+            mode = str(block.get(sig_key) or out[lane][sig_key]).upper().replace("-", "_")
             if mode == "LOG":
                 mode = "LOG_ONLY"
-            root[lane][sig_key] = mode if mode in GATE_MODES else "LOG_ONLY"
-    return root
+            if mode in GATE_MODES:
+                out[lane][sig_key] = mode
+    return out
+
+
+def _file_lane_gating_defaults() -> Dict[str, Dict[str, str]]:
+    try:
+        doc = json.loads(_LIVE_SHEET_RULES.read_text())
+        return _lane_gating_from_mapping(doc.get("desk8600_lane_gating"))
+    except Exception:
+        return {lane: dict(_DEFAULT_LANE) for lane in LANES}
+
+
+def load_desk8600_lane_gating(scanner_cfg: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
+    """File defaults from live_sheet_rules.json; scanner_cfg.desk8600_lane_gating overrides per key."""
+    root = _file_lane_gating_defaults()
+    raw = dict((scanner_cfg or {}).get("desk8600_lane_gating") or {})
+    wb = (scanner_cfg or {}).get("writer_bias") or {}
+    if isinstance(wb.get("desk8600_lane_gating"), dict):
+        for lane, block in wb["desk8600_lane_gating"].items():
+            if lane in LANES and isinstance(block, dict):
+                raw.setdefault(lane, {}).update(block)
+    merged = _lane_gating_from_mapping({lane: {**root[lane], **(raw.get(lane) or {})} for lane in LANES})
+    return merged
 
 
 def lane_for_strategy_id(strategy_id: str) -> Optional[str]:
@@ -162,7 +187,15 @@ def evaluate_lane_gating(
                 item["audit_reason"] = line
                 item["blocks_trade"] = False
         elif vote == "AGREE":
-            line = f"{label} AGREE — allowed"
+            regime = str(src.get("writer_bias_regime") or "").strip()
+            score = src.get("writer_bias_score")
+            age = src.get("age_sec")
+            age_txt = f"age {int(age)}s" if age is not None else "age —"
+            if regime and regime not in ("UNAVAILABLE", ""):
+                sc = f"{float(score):+.2f}" if isinstance(score, (int, float)) and not isinstance(score, bool) else "—"
+                line = f"{side_word} allowed — {label} {regime} (score {sc}, slope —, {age_txt})"
+            else:
+                line = f"{label} AGREE — allowed ({age_txt})"
             audit_lines.append(line)
             item["audit_reason"] = line
             item["blocks_trade"] = False

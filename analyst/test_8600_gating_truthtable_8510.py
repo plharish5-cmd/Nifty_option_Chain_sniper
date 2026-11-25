@@ -75,11 +75,42 @@ def test_lane_signal_mode_vote_matrix(lane, sig_key, mode, vote):
         assert item["blocks_trade"] is False
 
 
-def test_default_config_is_log_only_all_lanes():
+def test_file_defaults_block_all_lanes():
     cfg = load_desk8600_lane_gating({})
     for lane in LANES:
         for sk, _, _ in TRACK2_SIGNALS:
-            assert cfg[lane][sk] == "LOG_ONLY"
+            assert cfg[lane][sk] == "BLOCK"
+
+
+def test_scanner_cfg_can_flip_one_signal_to_log_only():
+    cfg = load_desk8600_lane_gating({"desk8600_lane_gating": {"prototype": {"pe_ce_change": "LOG_ONLY"}}})
+    assert cfg["prototype"]["pe_ce_change"] == "LOG_ONLY"
+    assert cfg["prototype"]["fresh_change_oi"] == "BLOCK"
+
+
+@pytest.mark.parametrize(
+    ("strategy_id", "lane"),
+    (
+        ("EMA8_PROTOTYPE_LONG", "prototype"),
+        ("CROSSOVER_REVERSAL_LONG", "reversal"),
+        ("FLAGSHIP_1H_LONG", "flagship"),
+    ),
+)
+def test_block_mode_fresh_oppose_blocks_each_strategy(strategy_id, lane):
+    from analyst.desk8600_lane_gating_8510 import apply_execution_lane_gating, lane_for_strategy_id
+
+    assert lane_for_strategy_id(strategy_id) == lane
+    sources = _board_for_signal("pe_ce_change", "OPPOSE")
+    b = SimpleNamespace(
+        scanner_cfg={},
+        ledger_db=None,
+        cfg={},
+        _decision_audit_seen={},
+        _record_ema_entry_decision=Mock(),
+    )
+    board = {"sources": sources}
+    sig = {"strategy_id": strategy_id, "direction": "LONG"}
+    assert apply_execution_lane_gating(b, sig, board) is True
 
 
 def test_stale_never_blocks_even_in_block_mode(tmp_path: Path):

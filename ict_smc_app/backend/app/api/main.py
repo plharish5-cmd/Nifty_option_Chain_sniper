@@ -2042,6 +2042,10 @@ app.include_router(_setup_log_router)
 # swallowed by it and served index.html.
 from .kronos_api import router as _kronos_router
 app.include_router(_kronos_router)
+from .live_sheet import bind as bind_live_sheet, router as live_sheet_router
+
+bind_live_sheet(_h)
+app.include_router(live_sheet_router)
 # ── the built frontend ───────────────────────────────────────────────────────
 if (config.FRONTEND_DIST / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=str(config.FRONTEND_DIST / "assets")), name="assets")

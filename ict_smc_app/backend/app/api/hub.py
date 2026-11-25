@@ -501,6 +501,12 @@ class Hub:
             log.exception("rvol alerts")
 
     async def on_chain(self, expiry: str, ch: Dict[str, Any]) -> None:
+        try:
+            from .live_sheet import record_observation
+
+            await asyncio.to_thread(record_observation, ch, market_open=market_open_now(), hub=self)
+        except Exception:
+            log.exception("Dhan live-sheet observation recording failed")
         if self.chain.expiries and expiry == self.chain.expiries[0]:
             try:
                 self.activity.ingest(ch)

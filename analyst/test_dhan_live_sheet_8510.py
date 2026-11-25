@@ -7,7 +7,13 @@ import pytest
 
 from analyst.dhan_live_sheet_gates_8510 import snapshot
 from analyst.desk8600_board_8510 import build_board
-from analyst.desk8600_lane_gating_8510 import TRACK2_SIGNALS, evaluate_lane_gating
+from analyst.desk8600_lane_gating_8510 import LANES, TRACK2_SIGNALS, evaluate_lane_gating
+
+_LOG_ONLY_SCANNER = {
+    "desk8600_lane_gating": {
+        lane: {sig: "LOG_ONLY" for sig, _, _ in TRACK2_SIGNALS} for lane in LANES
+    }
+}
 
 
 @pytest.mark.parametrize("lane", ["prototype", "reversal", "flagship"])
@@ -24,11 +30,14 @@ def test_mirror_is_actual_evaluator_and_default_log_only(lane, signal, side):
             detail="observed OI",
         )
     ]
-    backend = SimpleNamespace(scanner_cfg={}, desk8600_board=lambda: dict(sources=sources))
+    backend = SimpleNamespace(scanner_cfg=dict(_LOG_ONLY_SCANNER), desk8600_board=lambda: dict(sources=sources))
     result = snapshot(backend)["lanes"][lane][side]
-    assert result == evaluate_lane_gating(lane, side == "CE", sources, {})
+    assert result == evaluate_lane_gating(lane, side == "CE", sources, backend.scanner_cfg)
     assert not result["blocked"]
-    backend.scanner_cfg = {"desk8600_lane_gating": {lane: {signal: "BLOCK"}}}
+    block_cfg = dict(_LOG_ONLY_SCANNER)
+    block_cfg["desk8600_lane_gating"] = dict(block_cfg["desk8600_lane_gating"])
+    block_cfg["desk8600_lane_gating"][lane] = {**block_cfg["desk8600_lane_gating"][lane], signal: "BLOCK"}
+    backend.scanner_cfg = block_cfg
     before = copy.deepcopy(backend.scanner_cfg)
     assert snapshot(backend)["lanes"][lane][side]["blocked"]
     assert backend.scanner_cfg == before
@@ -77,3 +86,10 @@ def test_board_uses_original_classic_and_snapshot_timestamp():
         old["sources"],
         {"desk8600_lane_gating": {"prototype": {"fresh_change_oi": "BLOCK"}}},
     )["blocked"]
+
+
+def test_live_sheet_module_has_no_order_paths():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    src = (root / "ict_smc_app/backend/app/api/live_sheet.py").read_text()
+    assert "/v2/orders" not in src
+    assert "client.post" not in src

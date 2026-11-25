@@ -5,6 +5,27 @@
     "oi_slope_window_sec": 180,
     "oi_use_delta_weight": true,
     "oi_use_premium_weight": true,
-    "oi_writing_requires_price_confirm": true
+    "oi_writing_requires_price_confirm": true,
+    "desk8600_lane_gating_note": "Per-lane×signal LOG_ONLY overrides go in scanner_cfg.desk8600_lane_gating or writer_bias.desk8600_lane_gating"
+  },
+  "desk8600_lane_gating": {
+    "prototype": {
+      "pe_ce_change": "BLOCK",
+      "fresh_change_oi": "BLOCK",
+      "cumulative_total_oi": "BLOCK",
+      "classic_writer_flow": "BLOCK"
+    },
+    "reversal": {
+      "pe_ce_change": "BLOCK",
+      "fresh_change_oi": "BLOCK",
+      "cumulative_total_oi": "BLOCK",
+      "classic_writer_flow": "BLOCK"
+    },
+    "flagship": {
+      "pe_ce_change": "BLOCK",
+      "fresh_change_oi": "BLOCK",
+      "cumulative_total_oi": "BLOCK",
+      "classic_writer_flow": "BLOCK"
+    }
   }
 }
