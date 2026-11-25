@@ -10185,6 +10185,27 @@ class QuantTerminalBackend:
                 }
 
             if str(side).upper() == "BUY":
+                is_open_entry, _ = self.is_nse_market_open()
+                try:
+                    from analyst.dhan_spot_rest_fallback_8510 import recover_nifty_spot_for_entry
+
+                    ok_spot, spot_audit = await recover_nifty_spot_for_entry(
+                        self, market_open=bool(is_open_entry)
+                    )
+                except Exception as exc:
+                    log.warning("Spot REST fallback skipped (%s)", type(exc).__name__)
+                    ok_spot, spot_audit = True, ""
+                if not ok_spot:
+                    log.warning("[ENTRY BLOCKED] %s — %s", contract.get("symbol"), spot_audit)
+                    return {
+                        "ok": False,
+                        "status": "REJECTED",
+                        "error": spot_audit,
+                        "rejection_reason": spot_audit,
+                        "entry_guard": True,
+                    }
+                if spot_audit:
+                    log.info("[ENTRY AUDIT] %s", spot_audit)
                 ok_entry, why_entry = self.new_position_entry_allowed()
                 if not ok_entry:
                     log.warning("[ENTRY BLOCKED] %s — %s", contract.get("symbol"), why_entry)
@@ -10291,7 +10312,17 @@ class QuantTerminalBackend:
                     "time": datetime.now(IST).strftime("%H:%M:%S IST"),
                 }
                 return {'ok':False,'status':'REJECTED','error':err_msg}
-            if not isinstance(premium,(int,float)) or not math.isfinite(premium) or premium<=0:
+            if not isinstance(premium, (int, float)) or not math.isfinite(premium) or premium <= 0:
+                try:
+                    from analyst.dhan_spot_rest_fallback_8510 import recover_option_ltp_for_entry
+
+                    rest_px, _ = await recover_option_ltp_for_entry(self.broker, sec_id)
+                    if rest_px and rest_px > 0:
+                        premium = float(rest_px)
+                        contract["ltp"] = premium
+                except Exception as exc:
+                    log.debug("Option REST LTP fallback skipped (%s)", type(exc).__name__)
+            if not isinstance(premium, (int, float)) or not math.isfinite(premium) or premium <= 0:
                 return {'ok':False,'status':'REJECTED','error':'Real positive Dhan option quote required'}
             qty = lot
             signal_ltp = float(premium)
