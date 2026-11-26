@@ -183,12 +183,17 @@ def evaluate_lane_gating(
     for sig_key, board_id, label in TRACK2_SIGNALS:
         src = by_id.get(board_id) or {}
         age = src.get("age_sec")
+        _sts = src.get("source_ts")
         usable = (
             isinstance(age, (int, float))
             and not isinstance(age, bool)
             and math.isfinite(age)
             and 0 <= age <= float(load_feed_cfg(scanner_cfg)["stale_after_seconds"])
             and str(src.get("feed_state") or "").upper() == "LIVE"
+            # Require real provenance: a source with no/blank source_ts can NEVER block
+            # (missing provenance is treated like STALE — fail-open).
+            and _sts is not None
+            and str(_sts).strip().lower() not in ("", "n/a", "none")
         )
         vote = _vote(src.get("direction"), bullish, "LIVE" if usable else "STALE")
         mode = str(modes.get(sig_key) or "LOG_ONLY").upper()

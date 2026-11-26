@@ -344,6 +344,22 @@ async def api_writer_bias_gate_post(req: Request):
     # apply at runtime so the toggle takes effect without a restart
     try:
         backend.scanner_cfg["desk8600_lane_gating"] = modes
+        # Clear the nested writer_bias override that used to silently win over the
+        # toggle (a LOG_ONLY toggle could otherwise stay BLOCK in effect).
+        wb = backend.scanner_cfg.get("writer_bias")
+        if isinstance(wb, dict) and "desk8600_lane_gating" in wb:
+            wb.pop("desk8600_lane_gating", None)
+    except Exception:
+        pass
+    # Verify the EFFECTIVE mode equals what we set; if the overlay still wins, say so.
+    try:
+        from analyst.desk8600_lane_gating_8510 import load_desk8600_lane_gating
+        effective = load_desk8600_lane_gating(getattr(backend, "scanner_cfg", {}) or {})
+        if effective != modes:
+            return JSONResponse(status_code=409, content={"ok": False,
+                "error": "Effective modes do not match the toggle; a config override is winning.",
+                "requested": modes, "effective": effective})
+        modes = effective
     except Exception:
         pass
     return JSONResponse(content={"ok": True, "modes": modes})

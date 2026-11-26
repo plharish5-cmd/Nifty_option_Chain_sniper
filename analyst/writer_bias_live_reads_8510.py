@@ -48,10 +48,13 @@ def _hm_ts(day: str, hm: str) -> int:
 
 
 def _direction_from_regime(regime: Optional[str]) -> Optional[str]:
+    # BULLISH (PE-writers dominant = support) favours a CE entry; BEARISH favours PE.
+    # This was reversed (BULLISH->PE), which blocked the correct side and contradicted
+    # fresh_oi_regime_to_direction. Aligned here so all sources agree.
     if regime == "BULLISH":
-        return "PE"
-    if regime == "BEARISH":
         return "CE"
+    if regime == "BEARISH":
+        return "PE"
     if regime == "NEUTRAL":
         return "NEUTRAL"
     return None
@@ -68,7 +71,11 @@ def _estimate_delta(spot: float, strike: float, ltp: float, call: bool, t_years:
     if not iv or iv <= 0:
         return 0.5
     d1 = (math.log(spot / strike) + (r + 0.5 * iv * iv) * t_years) / (iv * math.sqrt(t_years))
-    return max(0.01, min(0.99, _cdf(d1) if call else _cdf(d1) - 1.0))
+    # Put delta is negative (cdf(d1)-1 in [-1,0]). Clamping BEFORE abs floored every put
+    # to 0.01, destroying put weighting. Take |delta| first, then clamp to [0.01, 0.99]
+    # so a near-ATM put keeps its true ~0.5 weight.
+    raw = _cdf(d1) if call else _cdf(d1) - 1.0
+    return max(0.01, min(0.99, abs(raw)))
 
 
 def _contract_rows(
