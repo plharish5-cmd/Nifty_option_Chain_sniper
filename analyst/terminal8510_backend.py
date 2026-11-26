@@ -3280,6 +3280,7 @@ class QuantTerminalBackend:
         self._last_live_eval_closed_1m_ts: int = 0
         self._ema_live_cross_cache: Dict[str, Any] = {"ok": False}
         self._ema_live_cross_worker_started: bool = False
+        self._spot_keepalive_worker_started: bool = False
         self._scanner_heavy_lock = asyncio.Lock()
         self._position_close_locks: Dict[str, asyncio.Lock] = {}
         self.exit_failure_banner: Optional[Dict[str, Any]] = None
@@ -5484,6 +5485,30 @@ class QuantTerminalBackend:
                 raise
             except Exception as exc:
                 log.debug("EMA live-cross worker: %s", exc)
+            await asyncio.sleep(refresh)
+
+    async def start_spot_keepalive_worker(self) -> None:
+        """Background NIFTY spot keep-alive. When the WebSocket spot goes stale
+        (>3s), pull a fresh Dhan REST LTP every ~1.5s so spot is already fresh when
+        a touch arrives. Root fix for the 2026-11-25 missed trades: 47/51 entries
+        fail-closed on 'Spot feed STALE' because the only REST recovery was a single
+        cold at-entry attempt. Off the hot path; never raises into the engine."""
+        if getattr(self, "_spot_keepalive_worker_started", False):
+            return
+        self._spot_keepalive_worker_started = True
+        refresh = float(self.scanner_cfg.get("spot_keepalive_refresh_seconds", 1.5) or 1.5)
+        refresh = max(1.0, min(refresh, 5.0))
+        log.info("Spot keep-alive worker started (%.1fs refresh)", refresh)
+        while True:
+            try:
+                is_open, _ = self.is_nse_market_open()
+                if is_open:
+                    from analyst.dhan_spot_rest_fallback_8510 import keepalive_nifty_spot
+                    await keepalive_nifty_spot(self, market_open=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.debug("Spot keep-alive worker: %s", exc)
             await asyncio.sleep(refresh)
 
     async def _sleep_tracking_spot(self, key: str, seconds: float) -> None:

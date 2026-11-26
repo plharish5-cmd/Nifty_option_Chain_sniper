@@ -116,11 +116,23 @@ class Feed:
                     rev=self.revision;items=list(set(self.instruments.values()))
                 self.ws.send(json.dumps(dict(RequestCode=21,InstrumentCount=len(items),InstrumentList=[dict(ExchangeSegment=s,SecurityId=i) for s,i in items])))
                 self.status='CONNECTED — event-driven ticks, not synthetic1sec changes'
+                consecutive_timeouts=0
+                max_timeouts=int(self.cfg.get('feed_max_consecutive_timeouts',3) or 3)
                 while not self.quit.is_set():
                     with self.lock:
                         if rev!=self.revision:break
                     try:raw=self.ws.recv()
-                    except websocket.WebSocketTimeoutException:continue
+                    except websocket.WebSocketTimeoutException:
+                        # A half-dead socket (server stopped sending, no clean close) used to
+                        # loop here forever, so spot aged to 200s+ and every entry fail-closed.
+                        # During market hours NIFTY ticks many times a second, so N consecutive
+                        # timeouts means the socket is dead -> break out to force a reconnect.
+                        consecutive_timeouts+=1
+                        if consecutive_timeouts>=max_timeouts:
+                            self.status='Feed silent ('+str(consecutive_timeouts)+' timeouts); forcing reconnect'
+                            break
+                        continue
+                    consecutive_timeouts=0
                     if not raw:raise ValueError('Feed closed')
                     if isinstance(raw,bytes):self.ingest(raw)
             except Exception as ex:

@@ -171,6 +171,7 @@ async def startup_event():
 
     app.state.telemetry_refresh_task = asyncio.create_task(backend.start_telemetry_refresh_worker())
     app.state.ema_live_cross_task = asyncio.create_task(backend.start_ema_live_cross_worker())
+    app.state.spot_keepalive_task = asyncio.create_task(backend.start_spot_keepalive_worker())
     app.state.ema8_proto_task = asyncio.create_task(backend.start_ema8_prototype_intrabar_worker())
     app.state.mj_dynamic_task = asyncio.create_task(backend.start_mj_dynamic_intrabar_worker())
     backend.scanner_task = asyncio.create_task(backend.start_strategy_scanner_loop())

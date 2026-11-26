@@ -18,6 +18,9 @@ MIN_REST_INTERVAL_SEC = 1.5
 REST_CACHE_TTL_SEC = 2.0
 REST_TIMEOUT_SEC = 2.5
 SPOT_MAX_AGE_SEC = 5.0
+# Keep-alive refreshes BEFORE the entry-block threshold so spot is already fresh
+# when a touch arrives, instead of a single cold at-entry REST attempt.
+SPOT_KEEPALIVE_AGE_SEC = 3.0
 
 _lock = threading.Lock()
 _last_http_mono: float = 0.0
@@ -170,6 +173,54 @@ async def recover_nifty_spot_for_entry(
         broker._cache_timestamps[str(NIFTY_IDX_SEC_ID)] = now
     log.info("Spot recovered via Dhan REST fallback (%.2f)", spot)
     return True, "Spot recovered via Dhan REST fallback"
+
+
+def _apply_spot_to_backend(backend: Any, spot: float) -> None:
+    """Write a recovered spot into cached_telemetry + broker LTP cache as a LIVE quote."""
+    now = time.time()
+    telem = getattr(backend, "cached_telemetry", None)
+    if not isinstance(telem, dict):
+        telem = {}
+        backend.cached_telemetry = telem
+    prev = telem.get("spot") if isinstance(telem.get("spot"), dict) else {}
+    telem["spot"] = {
+        **prev,
+        "price": spot,
+        "is_stale": False,
+        "status": "LIVE",
+        "updated_epoch": now,
+        "time_ist": datetime.now(IST).strftime("%H:%M:%S IST"),
+        "rest_fallback_recovered": True,
+    }
+    broker = getattr(backend, "broker", None)
+    if broker is not None:
+        try:
+            broker._ltp_cache[str(NIFTY_IDX_SEC_ID)] = spot
+            broker._cache_timestamps[str(NIFTY_IDX_SEC_ID)] = now
+        except Exception:
+            pass
+
+
+async def keepalive_nifty_spot(backend: Any, *, market_open: bool) -> bool:
+    """Proactive background spot refresh: when the WebSocket spot is older than
+    SPOT_KEEPALIVE_AGE_SEC (3s), pull a fresh REST LTP so spot never reaches the 5s
+    entry-block threshold. Called continuously from a background worker, NOT at entry.
+    Returns True when a refresh was applied. Silent/throttled misses are ignored —
+    the entry-time recover_nifty_spot_for_entry remains the hard fail-closed guard."""
+    if not market_open:
+        return False
+    blob = (getattr(backend, "cached_telemetry", None) or {}).get("spot")
+    stale, _age = spot_quote_stale(blob if isinstance(blob, dict) else {}, max_age_sec=SPOT_KEEPALIVE_AGE_SEC)
+    if not stale and not (isinstance(blob, dict) and blob.get("is_stale") is True):
+        return False
+    prices, err = await entry_rest_ltp_lookup(backend.broker, {"IDX_I": [NIFTY_IDX_SEC_ID]})
+    if err:
+        return False
+    spot = float(prices.get(str(NIFTY_IDX_SEC_ID)) or prices.get(NIFTY_IDX_SEC_ID) or 0.0)
+    if spot <= 0:
+        return False
+    _apply_spot_to_backend(backend, spot)
+    return True
 
 
 async def recover_option_ltp_for_entry(broker: Any, security_id: str) -> Tuple[Optional[float], Optional[str]]:
