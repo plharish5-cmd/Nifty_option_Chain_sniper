@@ -313,6 +313,42 @@ async def api_heartbeat():
     return JSONResponse(content={"ok": True, "ts": int(time.time()), "port": 8510})
 
 
+@app.get("/api/scanner/writer-bias-gate")
+async def api_writer_bias_gate_get():
+    """Current modes of the DELTA-WEIGHTED writer-bias gate (the one that actually blocks),
+    per lane x signal, for the screen toggle + comparison panel."""
+    from analyst.desk8600_lane_gating_8510 import load_desk8600_lane_gating, TRACK2_SIGNALS, LANES
+    modes = load_desk8600_lane_gating(getattr(backend, "scanner_cfg", {}) or {})
+    return JSONResponse(content={"ok": True, "label": "Delta-weighted (writer bias)",
+        "lanes": list(LANES),
+        "signals": [{"key": k, "name": n} for k, _, n in TRACK2_SIGNALS],
+        "modes": modes,
+        "note": "Delta-weighted, price-confirmed OI gate. Controls real + paper. STALE never blocks."})
+
+
+@app.post("/api/scanner/writer-bias-gate")
+async def api_writer_bias_gate_post(req: Request):
+    """Set the delta-weighted gate mode (BLOCK/LOG_ONLY). Body: {all_mode} | {lane,signal,mode} | {modes}."""
+    from analyst.desk8600_lane_gating_8510 import (
+        set_lane_gating_mode, set_all_lane_gating_mode, write_lane_gating_modes)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    if body.get("all_mode"):
+        modes = set_all_lane_gating_mode(body["all_mode"])
+    elif isinstance(body.get("modes"), dict):
+        modes = write_lane_gating_modes(body["modes"])
+    else:
+        modes = set_lane_gating_mode(body.get("lane"), body.get("signal"), body.get("mode"))
+    # apply at runtime so the toggle takes effect without a restart
+    try:
+        backend.scanner_cfg["desk8600_lane_gating"] = modes
+    except Exception:
+        pass
+    return JSONResponse(content={"ok": True, "modes": modes})
+
+
 @app.get("/api/scanner/decision-audit")
 async def api_decision_audit(day: str = "", lane: str = "", limit: int = 100):
     """v254: why each lane (Prototype / Reversal / 1H Flagship) took or skipped a

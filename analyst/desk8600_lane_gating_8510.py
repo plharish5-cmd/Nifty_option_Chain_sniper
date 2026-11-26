@@ -70,6 +70,45 @@ def load_desk8600_lane_gating(scanner_cfg: Optional[Dict[str, Any]]) -> Dict[str
     return merged
 
 
+def write_lane_gating_modes(modes: Any) -> Dict[str, Dict[str, str]]:
+    """Persist the delta-weighted writer-bias gate modes to live_sheet_rules.json so a
+    UI/screen toggle survives restart. Preserves all other keys in the file. Returns the
+    normalized modes."""
+    norm = _lane_gating_from_mapping(modes)
+    doc: Dict[str, Any] = {}
+    try:
+        if _LIVE_SHEET_RULES.exists():
+            doc = json.loads(_LIVE_SHEET_RULES.read_text())
+            if not isinstance(doc, dict):
+                doc = {}
+    except Exception:
+        doc = {}
+    doc["desk8600_lane_gating"] = norm
+    _LIVE_SHEET_RULES.write_text(json.dumps(doc, indent=2))
+    return norm
+
+
+def set_lane_gating_mode(lane: str, signal: str, mode: str) -> Dict[str, Dict[str, str]]:
+    """Set one lane x signal to BLOCK or LOG_ONLY and persist. No-op on bad input."""
+    current = _file_lane_gating_defaults()
+    m = str(mode or "").upper().replace("-", "_")
+    if m == "LOG":
+        m = "LOG_ONLY"
+    if lane in LANES and signal in TRACK2_SIGNAL_KEYS and m in GATE_MODES:
+        current[lane][signal] = m
+    return write_lane_gating_modes(current)
+
+
+def set_all_lane_gating_mode(mode: str) -> Dict[str, Dict[str, str]]:
+    """Set every lane x signal to one mode (a single screen-level BLOCK/LOG switch)."""
+    m = str(mode or "").upper().replace("-", "_")
+    if m == "LOG":
+        m = "LOG_ONLY"
+    if m not in GATE_MODES:
+        m = "LOG_ONLY"
+    return write_lane_gating_modes({lane: {k: m for k in TRACK2_SIGNAL_KEYS} for lane in LANES})
+
+
 def lane_for_strategy_id(strategy_id: str) -> Optional[str]:
     sid = str(strategy_id or "").upper()
     if sid.startswith("EMA8_PROTOTYPE"):
