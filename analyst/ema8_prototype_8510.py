@@ -37,6 +37,9 @@ DEFAULT_CFG: Dict[str, Any] = {
     "trail_after_target_enabled": True,
     "trail_trigger_pts": 40.0,
     "trail_move_to_breakeven": True,
+    # Owner (27 Nov 2026): after +40, trail ONLY on confirming-colour candles —
+    # green-candle low for CE, red-candle high for PE (Rule D). OFF = trail every candle.
+    "trail_confirming_color_only": True,
     # Owner: square the Prototype off at 15:15 (the rest of the desk may differ).
     "square_off_time": "15:15",
     "e8_refresh_seconds": 3.0,        # live: the 8 EMA and the touch are checked this often (owner, 12 Nov: "as soon as it touches")
@@ -525,12 +528,18 @@ def prototype_trail_tick(
     armed: bool,
     bar: Optional[Dict[str, Any]] = None,
     move_to_breakeven: bool = True,
+    confirming_color_only: bool = False,
 ) -> Tuple[float, bool, bool, str]:
     """Live "+40 then trail" tick for the Prototype. Returns (new_stop, new_armed, hit, reason).
 
     Owner spec (20 Nov 2026, confirmed to ChatGPT): after +40 NIFTY points, trail the previous
     COMPLETED 15-minute candle's low (CE) / high (PE), stop never loosens, and exit IMMEDIATELY the
     moment price TOUCHES the stop (not on a candle close):
+
+    Owner update (27 Nov 2026): when `confirming_color_only` is True, ratchet ONLY on a
+    confirming-colour candle — a GREEN candle's low for CE/long, a RED candle's high for
+    PE/short (Rule D: Green-Candle-Low / Red-Candle-High TSL). A counter-colour candle is
+    skipped; the stop holds at its prior ratchet (never loosens).
       - Pre-trigger: the fixed stop applies on the live tick; reaching `trigger_level` ARMS the trail
         and moves the stop to breakeven (entry).
       - Armed: on each NEW completed 15m `bar`, ratchet the stop to the bar's low/high (monotonic);
@@ -555,7 +564,17 @@ def prototype_trail_tick(
                 ext = float(bar["low"]) if is_long else float(bar["high"])
             except (KeyError, TypeError, ValueError):
                 ext = None
-            if ext is not None:
+            confirming = True
+            if confirming_color_only:
+                try:
+                    _o = float(bar["open"])
+                    _c = float(bar["close"])
+                    # Green (close>open) confirms a long; red (close<open) confirms a short.
+                    # A doji or counter-colour candle does NOT ratchet.
+                    confirming = (_c > _o) if is_long else (_c < _o)
+                except (KeyError, TypeError, ValueError):
+                    confirming = False  # cannot verify colour -> do not trail (stop holds)
+            if ext is not None and confirming:
                 new_stop = max(new_stop, ext) if is_long else min(new_stop, ext)
         # exit the INSTANT the live tick TOUCHES the stop (owner spec: touch, not close-through)
         if (is_long and spot_idx <= new_stop) or ((not is_long) and spot_idx >= new_stop):

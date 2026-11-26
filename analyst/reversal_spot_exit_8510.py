@@ -34,8 +34,17 @@ def apply_reversal_candle_trail_to_stop(
     candle_h: float,
     candle_l: float,
     candle_c: float,
+    confirming_color_only: bool = False,
 ) -> float:
-    """Trail spot stop on completed bar extremes — no candle-color filter."""
+    """Trail spot stop on completed bar extremes.
+
+    confirming_color_only=True (owner, 27 Nov 2026 — Rule D): ratchet ONLY on a
+    confirming-colour candle — green-candle low for CE/long, red-candle high for
+    PE/short. A counter-colour or doji candle holds the stop (never loosens).
+    False: trail every candle's extreme (legacy).
+    """
+    if confirming_color_only:
+        return _flagship_candle_trail_update(is_long, spot_stop, candle_o, candle_h, candle_l, candle_c)
     if is_long:
         return max(spot_stop, candle_l)
     return min(spot_stop, candle_h)
@@ -66,10 +75,13 @@ def reversal_spot_exit_tick(
     spot_sl: float,
     trail: Dict[str, Any],
     bar: Optional[Dict[str, Any]],
+    confirming_color_only: bool = True,
 ) -> Tuple[float, float, bool, str]:
     """
     Returns (spot_tgt, spot_sl, should_close, reason) for one monitor tick.
     `bar` is a completed candle dict with open/high/low/close.
+    confirming_color_only (default True, owner Rule D): trail only green-candle
+    lows (CE) / red-candle highs (PE).
     """
     if spot_entry <= 0 or spot_idx <= 0:
         return spot_tgt, spot_sl, False, ""
@@ -92,6 +104,7 @@ def reversal_spot_exit_tick(
                 candle_h=float(bar["high"]),
                 candle_l=float(bar["low"]),
                 candle_c=float(bar["close"]),
+                confirming_color_only=confirming_color_only,
             )
     if is_long:
         if tgt > 0 and spot_idx >= tgt:

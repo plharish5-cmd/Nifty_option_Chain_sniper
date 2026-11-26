@@ -8955,6 +8955,12 @@ class QuantTerminalBackend:
                                 spot_sl=spot_sl,
                                 trail=trail,
                                 bar=bar,
+                                confirming_color_only=bool(
+                                    (self.scanner_cfg.get("reversal") or {}).get(
+                                        "trail_confirming_color_only",
+                                        (self.scanner_cfg.get("ema8_prototype") or {}).get("trail_confirming_color_only", True),
+                                    )
+                                ),
                             )
                             if hit:
                                 should_close = True
@@ -8996,6 +9002,9 @@ class QuantTerminalBackend:
                                     trigger_level=spot_tgt, stop_level=spot_sl, armed=armed, bar=use_bar,
                                     move_to_breakeven=bool(
                                         (self.scanner_cfg.get("ema8_prototype") or {}).get("trail_move_to_breakeven", True)
+                                    ),
+                                    confirming_color_only=bool(
+                                        (self.scanner_cfg.get("ema8_prototype") or {}).get("trail_confirming_color_only", True)
                                     ),
                                 )
                                 if hit:
