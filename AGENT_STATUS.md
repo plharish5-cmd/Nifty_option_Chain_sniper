@@ -1714,3 +1714,13 @@ Final source keeps both original script blocks byte-for-byte, after restoring wh
 
 **Do not merge** until Harish reviews Any-close replay vs Cross only.
 
+
+## 2026-11-26 · ChatGPT · chatgpt/v266-independent-review
+
+Independent **report-only** audit of Claude candidate 99e22ca against reconcile base a54c3c2. No production source/config changes, merges, daemon restarts, live arming or broker orders. Report: analyst/INDEPENDENT_V266_REVIEW.md; explicit acceptance probes: analyst/independent_v266_review_probes.py (not auto-collected as ordinary branch regressions).
+
+**Verdict NO for Friday real-money BLOCK acceptance.** Supplied suites 27 passed / 0 failed. Independent probes 26 passed / 12 failed (38 total), exposing reversed direction, put delta 0.01 clamp, wrong period selection, late baseline, absent slope enforcement, missing-source-time acceptance, ineffective nested-mode toggle, concurrency/429 throttle bypass and global quote-cache age renewal. The helper throttle/cache problems are inherited from base but amplified by continuous consumption, not falsely attributed as new helper regressions. WS actual-loop reconnect and 208-second entry guard pass. Explicit STALE all 3×4 source combinations passes; missing provenance does not.
+
+CSV: Prototype before11:30 105 rows; 57 re-touch waits, all armed with away requirement OFF and **30-second checks**; two candidates/rejections confirmed (6.8-second stale spot and Invalid IP). Stale pause is confirmed; stale spot as the sole sufficient explanation for every marked missed chart trade is unproved.
+
+**Matched fixture baseline**: board + decision audit + feed freshness, base26pass/1fail vs candidate26pass/1fail, 0new regressions; same missing StockMojo table failure. Full harness attempted, incomplete after240s (124); no full-suite zero-regression claim. Previous earlier v265 totals concern different fixtures and are not compared as like-for-like. Locks11/11, parity9059×17/0mismatches. Production unchanged.
