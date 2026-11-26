@@ -6511,7 +6511,7 @@ class QuantTerminalBackend:
             cfg = load_ema8_prototype_cfg(self.scanner_cfg)
             last = dict(self.__dict__.get("_ema8_proto_last_check") or {})
             armed = bool(self._ema8_prototype_state.get("arm")) if hasattr(self, "_ema8_prototype_state") else False
-            refresh = float(cfg.get("e8_refresh_seconds", 30.0) or 30.0)
+            refresh = float(cfg.get("e8_refresh_seconds", 3.0) or 3.0)
             out = {
                 "armed": armed, "enabled": bool(cfg.get("enabled", True)), "refresh_sec": refresh,
                 "tol_pts": float(get_effective_touch_tolerance(cfg)),
