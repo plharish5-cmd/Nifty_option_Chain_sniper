@@ -1,10 +1,20 @@
 """Homework-vs-algo scorecard: matching + every verdict class."""
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from analyst.homework_scorecard_8510 import (
-    AlgoTrade, HomeworkTrade, match_and_score, normalize_algo_trades,
-    parse_homework_csv, render_scorecard,
+    AlgoTrade, HomeworkTrade, build_spot_index, enrich_algo_nifty_points,
+    match_and_score, normalize_algo_trades, parse_homework_csv, render_scorecard,
+    spot_at,
 )
 
 D = "2026-11-26"
+IST = ZoneInfo("Asia/Kolkata")
+
+
+def _ts(hm):
+    h, m = hm.split(":")
+    return int(datetime(2026, 11, 26, int(h), int(m), tzinfo=IST).timestamp())
 
 
 def _hw(side, et, el, xt, xl, strat="prototype"):
@@ -91,6 +101,41 @@ def test_render_runs():
     algo = [_algo("CE", "09:16", "11:00", "SPOT_TRAIL_EXIT", nifty=150.0)]
     txt = render_scorecard(match_and_score(hw, algo))
     assert "Homework vs Algo" in txt and "MATCH" in txt
+
+
+def test_spot_index_and_lookup():
+    candles = [
+        {"ts": _ts("09:15"), "close": 25768.0},
+        {"ts": _ts("11:00"), "close": 25927.0},
+        {"ts": _ts("14:00"), "close": 25838.0},
+    ]
+    idx = build_spot_index(candles)
+    assert spot_at(idx, "09:15") == 25768.0
+    assert spot_at(idx, "11:01", tol_min=3) == 25927.0   # nearest within tolerance
+    assert spot_at(idx, "12:30", tol_min=3) is None      # nothing close
+
+
+def test_enrich_fills_nifty_points():
+    candles = [
+        {"ts": _ts("09:16"), "close": 25770.0},
+        {"ts": _ts("11:00"), "close": 25920.0},
+    ]
+    idx = build_spot_index(candles)
+    algo = [_algo("CE", "09:16", "11:00", "SPOT_TRAIL_EXIT", nifty=None)]
+    enrich_algo_nifty_points(algo, idx)
+    assert algo[0].nifty_points == 150.0  # 25920 - 25770
+
+
+def test_enrich_turns_unknown_into_under_captured():
+    # Algo entered the morning CE but held to EOD for little NIFTY gain vs homework +159.
+    candles = [{"ts": _ts("09:16"), "close": 25770.0}, {"ts": _ts("15:20"), "close": 25805.0}]
+    idx = build_spot_index(candles)
+    hw = [_hw("CE", "09:15", 25768, "11:00", 25927)]  # +159
+    algo = [_algo("CE", "09:16", "15:20", "EOD_SQUARE_OFF_15:20", nifty=None)]
+    enrich_algo_nifty_points(algo, idx)  # algo kept 35 NIFTY
+    card = match_and_score(hw, algo)
+    assert card.verdicts[0].verdict == "UNDER_CAPTURED"
+    assert "35" in card.verdicts[0].detail
 
 
 def test_parse_csv(tmp_path):

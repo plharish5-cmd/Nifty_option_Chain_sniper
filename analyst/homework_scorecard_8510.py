@@ -37,7 +37,11 @@ from __future__ import annotations
 import csv
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
+
+IST = ZoneInfo("Asia/Kolkata")
 
 HOMEWORK_HEADER = [
     "date", "strategy", "side", "entry_time", "entry_level",
@@ -185,6 +189,47 @@ def normalize_algo_trades(rows: List[Dict[str, Any]]) -> List[AlgoTrade]:
     return out
 
 
+def build_spot_index(candles: List[Dict[str, Any]]) -> Dict[int, float]:
+    """Map minute-of-day (IST) -> NIFTY 1m close, from recorded candles_1m (sec_id 13).
+
+    `candles` are rows as RecordedHistory.candles returns them (ts unix epoch, close).
+    """
+    out: Dict[int, float] = {}
+    for c in candles:
+        try:
+            dt = datetime.fromtimestamp(int(c["ts"]), IST)
+            out[dt.hour * 60 + dt.minute] = float(c["close"])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+    return out
+
+
+def spot_at(index: Dict[int, float], hm: str, *, tol_min: int = 3) -> Optional[float]:
+    """NIFTY close at HH:MM, or the nearest minute within tol_min. None if nothing close."""
+    target = _min_of(hm)
+    if target is None or not index:
+        return None
+    if target in index:
+        return index[target]
+    best, best_gap = None, None
+    for m, px in index.items():
+        gap = abs(m - target)
+        if gap <= tol_min and (best_gap is None or gap < best_gap):
+            best, best_gap = px, gap
+    return best
+
+
+def enrich_algo_nifty_points(algo: List[AlgoTrade], index: Dict[int, float]) -> List[AlgoTrade]:
+    """Fill each algo trade's nifty_points from the NIFTY index at its entry/exit times.
+    Leaves nifty_points as-is when a level can't be found (keeps the honest 'unknown')."""
+    for at in algo:
+        ie = spot_at(index, at.entry_hm)
+        ix = spot_at(index, at.exit_hm)
+        if ie is not None and ix is not None:
+            at.nifty_points = round((ix - ie) if at.side == "CE" else (ie - ix), 1)
+    return algo
+
+
 def _is_stop_exit(reason: str) -> bool:
     return bool(re.search(r"\bSL\b|STOP|SL_HIT", str(reason or "").upper()))
 
@@ -270,12 +315,28 @@ def render_scorecard(card: ScoreCard) -> str:
 
 
 def score_date_from_ledger(csv_path: str, target_date: str) -> ScoreCard:
-    """CLI helper: read homework CSV, pull algo trades for the date from the recorded ledger."""
-    from analyst.terminal8510_backend import get_replay_trades_for_date
+    """CLI helper: read homework CSV, pull algo trades for the date from the recorded
+    ledger, and enrich them with NIFTY index levels from recorded candles_1m so the
+    scorecard reports exact NIFTY-point capture."""
+    import json
+
+    from analyst.terminal8510_backend import ROOT, get_replay_trades_for_date
 
     hw_all = parse_homework_csv(csv_path)
     hw = [h for h in hw_all if h.date == target_date]
     algo = normalize_algo_trades(get_replay_trades_for_date(target_date))
+
+    # Enrich with NIFTY 1m index levels (best-effort; silent if market DB unavailable).
+    try:
+        from analyst.recorded_history_8510 import RecordedHistory
+
+        cfg = json.loads((ROOT / "analyst/terminal8510_config.json").read_text())
+        rh = RecordedHistory(ROOT / cfg["ledger_db_path"], ROOT / cfg["market_db_path"])
+        index = build_spot_index(rh.candles(target_date, "13"))
+        enrich_algo_nifty_points(algo, index)
+    except Exception:
+        pass
+
     return match_and_score(hw, algo)
 
 
