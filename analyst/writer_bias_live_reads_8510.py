@@ -211,19 +211,25 @@ def apply_writer_bias_to_board_reads(
         poll_agg_full = aggregate(poll_rows, spot, cfg)
         sess_agg = aggregate(sess_rows, spot, cfg)
         poll_agg = poll_agg_full if poll_agg_full.get("state") == "RESEARCH_ONLY" else {}
-        if sess_agg.get("state") != "RESEARCH_ONLY":
+        # Headline PE-CE change gates off the MATCHED-POLL baseline (Harish's
+        # "Option 1 — matched last-poll changes"), NOT since-09:15. The
+        # since-09:15 leg is still reported separately for context.
+        if not poll_agg:
             out["day_oi"] = {
                 "direction": None,
-                "detail": "PE-CE intraday writing unavailable (session baseline unmatched)",
+                "detail": "PE-CE matched-poll writing unavailable (poll baseline unmatched)",
                 "age_sec": age_sec,
                 "feed_state": "STALE",
             }
         else:
-            w = sess_agg["writing"]
+            w = poll_agg["writing"]
             regime = w.get("regime") or "UNAVAILABLE"
             score = w.get("score")
-            scope = str(sess_agg.get("scope"))
+            scope = str(poll_agg.get("scope"))
             sl = _slope_for(day, "pe_ce_change", scope, last_t, score, cfg)
+            sess_w = (sess_agg.get("writing") or {}) if sess_agg.get("state") == "RESEARCH_ONLY" else {}
+            sess_net = sess_w.get("net")
+            sess_txt = f"; since-09:15 net {sess_net:.0f}" if isinstance(sess_net, (int, float)) else ""
             out["day_oi"] = {
                 "direction": _direction_from_regime(regime),
                 "detail": _fmt_detail(
@@ -231,14 +237,16 @@ def apply_writer_bias_to_board_reads(
                     regime,
                     score,
                     sl,
-                    f"net_intraday writing {w.get('net'):.0f} (since 09:15, poll Δ separate)",
+                    f"net matched-poll writing {w.get('net'):.0f} (poll Δ {int(last_t - poll_prev)}s{sess_txt})",
                 ),
                 "age_sec": age_sec,
                 "feed_state": "LIVE" if _direction_from_regime(regime) is not None else "STALE",
                 "writer_bias_score": score,
                 "writer_bias_slope": sl,
                 "writer_bias_regime": regime,
-                "divergence": bool(sess_agg.get("divergence")),
+                "writer_bias_net": w.get("net"),
+                "writer_bias_net_since_0915": sess_net,
+                "divergence": bool(poll_agg.get("divergence")),
             }
         if sess_agg.get("state") == "RESEARCH_ONLY":
             pos = sess_agg.get("positional") or {}
