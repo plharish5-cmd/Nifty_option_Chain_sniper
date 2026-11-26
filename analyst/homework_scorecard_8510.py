@@ -204,13 +204,23 @@ def build_spot_index(candles: List[Dict[str, Any]]) -> Dict[int, float]:
     return out
 
 
-def spot_at(index: Dict[int, float], hm: str, *, tol_min: int = 3) -> Optional[float]:
-    """NIFTY close at HH:MM, or the nearest minute within tol_min. None if nothing close."""
+def spot_at(index: Dict[int, float], hm: str, *, tol_min: int = 3, clamp: bool = False) -> Optional[float]:
+    """NIFTY close at HH:MM, or the nearest minute within tol_min. None if nothing close.
+
+    clamp=True: a time before the first / after the last recorded candle resolves to
+    that boundary candle (e.g. an after-hours EOD square-off prices at the 15:2x close),
+    instead of returning None.
+    """
     target = _min_of(hm)
     if target is None or not index:
         return None
     if target in index:
         return index[target]
+    lo, hi = min(index), max(index)
+    if clamp and target > hi:
+        return index[hi]
+    if clamp and target < lo:
+        return index[lo]
     best, best_gap = None, None
     for m, px in index.items():
         gap = abs(m - target)
@@ -223,8 +233,10 @@ def enrich_algo_nifty_points(algo: List[AlgoTrade], index: Dict[int, float]) -> 
     """Fill each algo trade's nifty_points from the NIFTY index at its entry/exit times.
     Leaves nifty_points as-is when a level can't be found (keeps the honest 'unknown')."""
     for at in algo:
-        ie = spot_at(index, at.entry_hm)
-        ix = spot_at(index, at.exit_hm)
+        # Clamp out-of-session times (e.g. an after-hours force-close) to the
+        # boundary candle so a held-to-EOD trade still shows its true capture.
+        ie = spot_at(index, at.entry_hm, clamp=True)
+        ix = spot_at(index, at.exit_hm, clamp=True)
         if ie is not None and ix is not None:
             at.nifty_points = round((ix - ie) if at.side == "CE" else (ie - ix), 1)
     return algo

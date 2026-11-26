@@ -113,6 +113,9 @@ def test_spot_index_and_lookup():
     assert spot_at(idx, "09:15") == 25768.0
     assert spot_at(idx, "11:01", tol_min=3) == 25927.0   # nearest within tolerance
     assert spot_at(idx, "12:30", tol_min=3) is None      # nothing close
+    # clamp: an after-hours exit prices at the last candle (session-end level)
+    assert spot_at(idx, "20:29", clamp=True) == 25838.0
+    assert spot_at(idx, "20:29", clamp=False) is None
 
 
 def test_enrich_fills_nifty_points():
