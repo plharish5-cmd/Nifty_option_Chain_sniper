@@ -1,0 +1,4 @@
+date,strategy,side,entry_time,entry_level,ema8_at_entry,exit_time,exit_level,notes
+2026-11-26,prototype,CE,09:15,25768,25760,11:00,25927,8EMA touch then trailed to 11:00 candle
+2026-11-26,prototype,PE,12:45,25945,25950,14:00,25838,PE arm after opp close; blocked if OI on
+2026-11-26,reversal,PE,14:00,25878,25880,14:30,25838,+40 easy if no block
