@@ -66,6 +66,10 @@ def test_audit_reason_includes_score_slope_age():
         id="day_oi",
         direction="PE",
         feed_state="LIVE",
+        # Provenance is now required to block: a source with no source_ts
+        # fails open (ChatGPT provenance-freshness fix). Supply a valid one
+        # so this test exercises the actual BLOCK/audit path.
+        source_ts="2026-11-26T11:00:00+05:30",
         age_sec=4,
         writer_bias_regime="BEARISH",
         writer_bias_score=-0.34,
