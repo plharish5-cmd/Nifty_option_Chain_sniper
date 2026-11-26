@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import threading
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -22,18 +21,10 @@ SPOT_MAX_AGE_SEC = 5.0
 # when a touch arrives, instead of a single cold at-entry REST attempt.
 SPOT_KEEPALIVE_AGE_SEC = 3.0
 
-_lock = threading.Lock()
-_last_http_mono: float = 0.0
-_cached_prices: Dict[str, float] = {}
-_cached_at_mono: float = 0.0
-
-
 def _reset_throttle_for_tests() -> None:
-    global _last_http_mono, _cached_prices, _cached_at_mono
-    with _lock:
-        _last_http_mono = 0.0
-        _cached_prices = {}
-        _cached_at_mono = 0.0
+    from analyst.marketfeed_scheduler_8510 import _reset_for_tests
+
+    _reset_for_tests()
 
 
 def _parse_ltp_payload(data: Any) -> Dict[str, float]:
@@ -74,16 +65,16 @@ async def entry_rest_ltp_lookup(
     broker: Any,
     segment_ids: Dict[str, List[int]],
 ) -> Tuple[Dict[str, float], Optional[str]]:
-    """Rate-limited POST /v2/marketfeed/ltp for entry recovery. Returns ({sec_id: price}, error)."""
-    global _last_http_mono, _cached_prices, _cached_at_mono
-    now = time.monotonic()
-    with _lock:
-        if _cached_at_mono > 0 and (now - _cached_at_mono) <= REST_CACHE_TTL_SEC and _cached_prices:
-            return dict(_cached_prices), None
-        if _last_http_mono > 0 and (now - _last_http_mono) < MIN_REST_INTERVAL_SEC:
-            if _cached_prices and (now - _cached_at_mono) <= REST_CACHE_TTL_SEC:
-                return dict(_cached_prices), None
-            return {}, "rate limited (throttle)"
+    """Rate-limited POST /v2/marketfeed/ltp for entry recovery. Returns ({sec_id: price}, error).
+
+    Serialised through the shared per-account marketfeed arbiter so the spot
+    keep-alive, entry recovery, paper quotes and broker LTP calls all share one
+    1-req/s budget. Cache freshness is PER-SYMBOL, so a spot refresh never
+    renews an option quote's age.
+    """
+    from analyst.marketfeed_scheduler_8510 import get_gate
+
+    req_sids = [str(s) for sids in segment_ids.values() if isinstance(sids, list) for s in sids]
 
     if not callable(getattr(broker, "is_configured", None)) or not broker.is_configured():
         return {}, "broker not configured"
@@ -93,31 +84,46 @@ async def entry_rest_ltp_lookup(
     if not base or not callable(headers_fn):
         return {}, "broker not configured"
 
+    gate = get_gate(broker, min_interval=MIN_REST_INTERVAL_SEC)
+
+    # Fresh per-symbol cache for exactly the requested ids → no HTTP.
+    cached = gate.cached_prices(req_sids, REST_CACHE_TTL_SEC) if req_sids else None
+    if cached is not None:
+        return dict(cached), None
+
+    # Shared 429 backoff — serve cache if any, else report throttle without hitting the API.
+    if gate.in_backoff():
+        return {}, "rate limited (backoff)"
+
     try:
         from analyst.dhan_ipv4_guard_8510 import ipv4_async_client
 
-        async with ipv4_async_client(REST_TIMEOUT_SEC) as client:
-            res = await client.post(
-                f"{base}/marketfeed/ltp",
-                json=segment_ids,
-                headers=headers_fn(),
-            )
-        body = {}
-        try:
-            body = res.json()
-        except Exception:
+        # Reservation is held across the await: a second coroutine blocks here
+        # and then spaces off THIS send, instead of both firing in one second.
+        async with gate.slot():
+            async with ipv4_async_client(REST_TIMEOUT_SEC) as client:
+                res = await client.post(
+                    f"{base}/marketfeed/ltp",
+                    json=segment_ids,
+                    headers=headers_fn(),
+                )
             body = {}
-        if res.status_code != 200:
-            return {}, _error_from_body(body, res.status_code)
-        data = body.get("data") if isinstance(body, dict) else None
-        prices = _parse_ltp_payload(data)
-        if not prices:
-            return {}, _error_from_body(body, res.status_code)
-        with _lock:
-            _last_http_mono = time.monotonic()
-            _cached_at_mono = _last_http_mono
-            _cached_prices.update(prices)
-        return dict(prices), None
+            try:
+                body = res.json()
+            except Exception:
+                body = {}
+            if res.status_code == 429:
+                gate.note_rate_limited()
+                return {}, _error_from_body(body, res.status_code)
+            if res.status_code != 200:
+                return {}, _error_from_body(body, res.status_code)
+            data = body.get("data") if isinstance(body, dict) else None
+            prices = _parse_ltp_payload(data)
+            if not prices:
+                return {}, _error_from_body(body, res.status_code)
+            gate.note_success()
+            gate.store_prices(prices)
+            return dict(prices), None
     except Exception as exc:
         log.warning("Entry REST LTP fallback failed: %s", exc)
         return {}, "timeout" if "timeout" in str(exc).lower() else str(exc)

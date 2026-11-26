@@ -4,10 +4,17 @@ import json
 import logging
 import math
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
 log = logging.getLogger("paper_quote_8510")
+
+
+@asynccontextmanager
+async def _nullslot():
+    """No-op async slot used when the shared marketfeed gate is unavailable."""
+    yield
 
 
 def _rules() -> Dict[str, Any]:
@@ -80,18 +87,35 @@ async def _desk_parity_marketfeed_quote(broker: Any, sec_int: int, timeout: floa
     headers = getattr(broker, "_headers", lambda: {})()
     if not base or not headers:
         return {}
+    # Share the per-account marketfeed budget (v266 #3): skip during a shared
+    # 429 backoff and space off other callers' sends.
+    _gate = None
+    try:
+        from analyst.marketfeed_scheduler_8510 import get_gate
+
+        _gate = get_gate(broker)
+        if _gate.in_backoff():
+            return {}
+    except Exception:
+        _gate = None
     try:
         from analyst.dhan_ipv4_guard_8510 import ipv4_async_client
 
-        async with ipv4_async_client(timeout) as client:
-            res = await client.post(
-                f"{base}/marketfeed/quote",
-                json={"NSE_FNO": [sec_int]},
-                headers=headers,
-            )
-        if res.status_code != 200:
-            log.debug("Desk-parity quote HTTP %s for %s", res.status_code, sec_int)
-            return {}
+        async with (_gate.slot() if _gate is not None else _nullslot()):
+            async with ipv4_async_client(timeout) as client:
+                res = await client.post(
+                    f"{base}/marketfeed/quote",
+                    json={"NSE_FNO": [sec_int]},
+                    headers=headers,
+                )
+            if res.status_code == 429 and _gate is not None:
+                _gate.note_rate_limited()
+                return {}
+            if res.status_code != 200:
+                log.debug("Desk-parity quote HTTP %s for %s", res.status_code, sec_int)
+                return {}
+            if _gate is not None:
+                _gate.note_success()
         data = res.json().get("data") or {}
         if not isinstance(data, dict):
             return {}

@@ -2481,9 +2481,23 @@ class DhanBroker:
         if not self.is_configured():
             return self._ltp_cache
 
+        # Shared per-account marketfeed budget (v266 #3): honour a 429 backoff
+        # or min-interval spacing set by any other caller (spot keep-alive,
+        # paper quotes), and register this send so they space off it in turn.
+        try:
+            from analyst.marketfeed_scheduler_8510 import get_gate
+
+            _gate = get_gate(self)
+            if _gate.in_backoff() or _gate.seconds_until_slot() > 0:
+                return self._ltp_cache
+        except Exception:
+            _gate = None
+
         # 2. Outbound HTTP Request wrapped in robust try/except with 429 Rate Limit Handler
         try:
             self._last_ltp_call = now
+            if _gate is not None:
+                _gate.note_external_send()
             async with ipv4_async_client(4.0) as client:
                 res = await client.post(f"{self.base_url}/marketfeed/ltp", json=segment_ids, headers=self._headers())
                 if res.status_code == 200:
@@ -2504,11 +2518,15 @@ class DhanBroker:
                     # Reset backoff upon successful response
                     self._backoff_delay = 3.0
                     self._backoff_until = 0.0
+                    if _gate is not None:
+                        _gate.note_success()
                     return self._ltp_cache
                 elif res.status_code == 429:
                     log.warning("[WARNING] Dhan API Rate Limit Hit (429) — serving cached prices and backing off.")
                     self._backoff_until = now + self._backoff_delay
                     self._backoff_delay = min(self._backoff_delay + 2.0, 15.0)  # Exponential backoff (3s to 5s to 15s)
+                    if _gate is not None:
+                        _gate.note_rate_limited()
                     return self._ltp_cache
                 else:
                     log.debug("Marketfeed LTP returned status %s", res.status_code)
@@ -2518,6 +2536,8 @@ class DhanBroker:
                 log.warning("[WARNING] Dhan API Rate Limit Hit (429) — serving cached prices and backing off.")
                 self._backoff_until = now + self._backoff_delay
                 self._backoff_delay = min(self._backoff_delay + 2.0, 15.0)
+                if _gate is not None:
+                    _gate.note_rate_limited()
             else:
                 log.warning("Marketfeed LTP HTTPStatusError: %s", e)
             return self._ltp_cache
