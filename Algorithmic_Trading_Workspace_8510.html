@@ -2724,8 +2724,8 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                                 <th>Side</th>
                                 <th>Qty</th>
                                 <th>Signal LTP</th>
-                                <th>NIFTY 50 Spot (Entry)</th>
-                                <th>NIFTY 50 Spot (Exit)</th>
+                                <th>SPOT ENTRY</th>
+                                <th>SPOT EXIT</th>
                                 <th>Option Entry</th>
                                 <th>Option Exit</th>
                                 <th>Timestamp</th>
@@ -4791,6 +4791,27 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             if (/FLAGSHIP|H1_8EMA|1H 8 ?EMA|1 ?HR/.test(s)) return "1H 8 EMA";
             return "Other";
         }
+        /** View Every Order table only — short Prototype BUY/SELL labels (display). */
+        function isEma8PrototypeOrderRow(o) {
+            const sid = String(o.strategy_id || "").toUpperCase();
+            if (/EMA8_PROTOTYPE/.test(sid)) return true;
+            const setup = String(o.strategy_setup || o.strategy_name || "");
+            return /8 EMA Prototype/i.test(setup) || /\bPrototype\b/i.test(setup);
+        }
+        function ordersEveryRowStrategyLabel(o) {
+            if (!isEma8PrototypeOrderRow(o)) {
+                return o.strategy_setup || o.strategy_name || "Manual — No Strategy";
+            }
+            let side = String(o.side || "").toUpperCase();
+            if (!side) {
+                const dir = String(o.direction || "").toUpperCase();
+                if (dir === "LONG") side = "BUY";
+                else if (dir === "SHORT") side = "SELL";
+            }
+            if (side === "BUY") return "Prototype BUY";
+            if (side === "SELL") return "Prototype SELL";
+            return o.strategy_setup || o.strategy_name || "Manual — No Strategy";
+        }
         let EQUITY_GUYS_LANES = ["8 EMA Prototype", "4/8 Crossover", "1H 8 EMA"];
         let currentGroupView = "ALL";
         function deskJunkOrderRow(o) {
@@ -5861,7 +5882,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     <td><span class="status-badge ${bookBadge}" style="font-size:10px;">${bookLabel}</span></td>
                     <td><b style="font-family:var(--font-mono);">${o.symbol}</b></td>
                     <td><span class="status-badge ${(o.source || o.placed_by || '').includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${o.source || o.placed_by || 'MANUAL MATRIX ✋'}</span></td>
-                    <td><span style="font-family:var(--font-mono); font-size:11.5px;">${o.strategy_setup || o.strategy_name || 'Manual — No Strategy'}</span></td>
+                    <td><span style="font-family:var(--font-mono); font-size:11.5px;">${ordersEveryRowStrategyLabel(o)}</span></td>
                     <td style="color:${o.side === 'BUY' ? 'var(--emerald)' : 'var(--crimson)'}; font-weight:700;">${o.side}</td>
                     <td><b>${o.qty}</b></td>
                     <td>₹${Number(o.signal_ltp || 0).toFixed(2)}</td>
@@ -7842,9 +7863,9 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
 
         function exportOrdersToExcel() {
             fetch('/api/orders').then(r => r.json()).then(rows => {
-                const headers = ['Order ID', 'Book', 'Symbol', 'Source', 'Strategy / Setup', 'Side', 'Qty', 'Signal LTP', 'NIFTY 50 Spot (Entry)', 'NIFTY 50 Spot (Exit)', 'Option Entry', 'Option Exit', 'Timestamp', 'Exit Reason', 'Net PnL', 'Status'];
+                const headers = ['Order ID', 'Book', 'Symbol', 'Source', 'Strategy / Setup', 'Side', 'Qty', 'Signal LTP', 'SPOT ENTRY', 'SPOT EXIT', 'Option Entry', 'Option Exit', 'Timestamp', 'Exit Reason', 'Net PnL', 'Status'];
                 const data = rows.map(o => [
-                    o.order_id, o.mode, o.symbol, (o.source || o.placed_by), (o.strategy_setup || o.strategy_name),
+                    o.order_id, o.mode, o.symbol, (o.source || o.placed_by), ordersEveryRowStrategyLabel(o),
                     o.side, o.qty, o.signal_ltp, o.nifty_spot_entry, o.nifty_spot_exit,
                     o.option_entry, o.option_exit, formatDeskTimestamp(o.created_at),
                     o.exit_reason, o.net_pnl, o.order_status,
