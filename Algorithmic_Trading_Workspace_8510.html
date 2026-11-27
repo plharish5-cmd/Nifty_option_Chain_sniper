@@ -1448,7 +1448,6 @@
         #tab1DhanOICard,
         .proto-8600-strip.lane-panel-section { display: none !important; }
     </style>
-    <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" crossorigin="anonymous"></script>
 <style id="desk-ui-v239">
 /* v239: presentation only. Existing DOM IDs, handlers and strategy rules are preserved. */
 :root { --bg-base:#080e18; --bg-panel:#0e1726; --bg-card:#111e30; --bg-elevated:#192940; --text-dim:#a9b9cd; --text-muted:#8094ae; --border-subtle:#25364c; --shadow-panel:0 3px 14px #0003; }
@@ -3024,19 +3023,6 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     <pre id="replayHomeworkText" style="display:none; margin:0;"></pre>
                 </div>
 
-                <div id="replayAlgoChartWrap" style="display:none; margin-bottom:16px; border:1px solid var(--border-subtle); border-radius:8px; padding:8px 10px 4px; background:rgba(9,14,26,0.85);">
-                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap;">
-                        <span style="font-size:12px; font-weight:700; color:#38bdf8;">ALGO CHART — 15m Nifty spot + 4/8 EMA</span>
-                        <span id="replayAlgoChartSubtitle" style="font-size:10px; color:var(--text-muted);">Bright Red = 8 EMA · Cyan = 4 EMA · Yellow ✕ #N = Entry · Red/Green ✕ #N = Exit (exact 8 EMA Prototype spot levels — hover any ✕ for details)</span>
-                    </div>
-                    <div id="replayAlgoChart" style="position:relative; width:100%; height:420px;">
-                        <div id="replayAlgoChartHost" style="position:relative; width:100%; height:100%; overflow:hidden;">
-                            <canvas id="replayAlgoChartOverlay" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:20;"></canvas>
-                        </div>
-                        <div id="replayChartHoverTip" style="display:none; position:absolute; z-index:25; pointer-events:none; max-width:340px; padding:8px 10px; border-radius:6px; border:1px solid rgba(56,189,248,0.45); background:rgba(11,18,32,0.94); font-size:10px; line-height:1.4; color:#e2e8f0; font-family:var(--font-mono); box-shadow:0 4px 16px rgba(0,0,0,0.45);"></div>
-                    </div>
-                </div>
-
                 <!-- Replay Trades Table -->
                 <div style="overflow-x:auto;">
                     <table>
@@ -3106,15 +3092,10 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 </div>
                 <div id="btlVerdict" style="display:none; margin-top:16px;"></div>
                 <div id="btlSummary" style="display:none; margin-top:14px;"></div>
-                <div id="btlEquityWrap" style="display:none; margin-top:14px; padding:10px 12px; border:1px solid rgba(148,163,184,0.2); border-radius:8px; background:rgba(9,14,26,0.85);">
-                    <div style="font-size:11px; color:#94a3b8; margin-bottom:4px;">Running net total, trade by trade (spot points). The amber line is where the held-out days begin.</div>
-                    <svg id="btlEquity" viewBox="0 0 1000 170" preserveAspectRatio="none" style="width:100%; height:170px; display:block;"></svg>
-                </div>
                 <div id="btlLaneTable" style="display:none; margin-top:16px;"></div>
                 <div id="btlBreakdowns" style="display:none; margin-top:16px;"></div>
                 <div id="btlDayWrap" style="display:none; margin-top:16px;">
-                    <div style="font-size:12px; font-weight:800; color:#e2e8f0; margin-bottom:6px;">Day detail <span style="font-weight:500; color:#64748b;">— click a day in the table below to load its 15-minute chart and trades</span></div>
-                    <div id="btlDayChart" style="width:100%; height:360px; border:1px solid var(--border-subtle); border-radius:8px;"></div>
+                    <div style="font-size:12px; font-weight:800; color:#e2e8f0; margin-bottom:6px;">Day detail <span style="font-weight:500; color:#64748b;">— click a day below to load its trades</span></div>
                     <div id="btlDayTrades" style="overflow-x:auto; margin-top:8px;"></div>
                 </div>
                 <div id="btlDaysWrap" style="display:none; margin-top:16px;"></div>
@@ -5934,9 +5915,6 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             const gw = wins.reduce((a, r) => a + r.pts, 0), gl = Math.abs(losses.reduce((a, r) => a + r.pts, 0));
             const best = Math.max(...rows.map(r => r.pts)), worst = Math.min(...rows.map(r => r.pts));
             const p = (v) => (v >= 0 ? "+" : "") + v.toFixed(1);
-            const W = 900, H = 120, lo = Math.min(...curve), hi = Math.max(...curve), span = (hi - lo) || 1;
-            const X = (i) => (i / (curve.length - 1 || 1)) * W, Y = (v) => H - 6 - ((v - lo) / span) * (H - 12);
-            const path = curve.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
             const group = (keyFn) => {
                 const m = {};
                 rows.forEach(r => { const k = keyFn(r); if (!k) return; m[k] = m[k] || { n: 0, w: 0, pts: 0 }; m[k].n += 1; m[k].w += r.pts > 0 ? 1 : 0; m[k].pts += r.pts; });
@@ -5969,11 +5947,6 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 deskCard("Losing streak", String(worstStreak), "#e2e8f0", "longest run of losers") +
                 deskCard("Profit factor", gl > 0 ? (gw / gl).toFixed(2) : "—", "#e2e8f0", "avg win " + (wins.length ? p(gw / wins.length) : "—") + " · avg loss " + (losses.length ? p(-gl / losses.length) : "—")) +
                 deskCard("Best / worst", p(best) + " / " + p(worst), "#e2e8f0", "single trade") + '</div>' +
-                '<div style="border:1px solid rgba(148,163,184,0.2); border-radius:8px; background:rgba(9,14,26,0.85); padding:6px 8px;">' +
-                '<div style="font-size:10.5px; color:#94a3b8; margin-bottom:2px;">Running total, trade by trade (points)</div>' +
-                '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="width:100%; height:' + H + 'px; display:block;">' +
-                '<line x1="0" x2="' + W + '" y1="' + Y(0).toFixed(1) + '" y2="' + Y(0).toFixed(1) + '" stroke="#475569" stroke-dasharray="4 4" stroke-width="1"/>' +
-                '<path d="' + path + '" fill="none" stroke="' + (eq >= 0 ? "#34d399" : "#f87171") + '" stroke-width="2" vector-effect="non-scaling-stroke"/></svg></div>' +
                 '<div style="display:flex; flex-wrap:wrap; gap:14px; margin-top:10px;">' +
                 table("By exit reason", group(r => r.reason)) + table("By entry hour", group(hourOf), (a, b) => a.localeCompare(b)) + table("By side", group(r => r.side)) + dayBlock + '</div>';
         }
@@ -6998,362 +6971,6 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             speakVoiceAlert("Order has been executed for NIFTY 23800 Call for Long, at Entry Price 222 rupees, at time 09:30 AM.");
         }
 
-        let _replayAlgoChart = null;
-        let _replayCandleSeries = null;
-        let _replayEma4Series = null;
-        let _replayEma8Series = null;
-        let _replayOverlayCanvas = null;
-        let _replayOverlayTrades = [];
-        let _replayChartBars = [];
-        let _replayOverlayHitPoints = [];
-        let _replayOverlayRangeUnsub = null;
-        let _replayChartResizeObs = null;
-        const REPLAY_SESSION_OPEN_MINS = 9 * 60 + 15;
-
-        function replayIsEma8PrototypeTrade(t) {
-            const sid = String(t.strategy_id || "").toUpperCase();
-            const setup = String(t.setup_name || t.setup || "");
-            const blob = sid + " " + setup;
-            return /EMA8_PROTOTYPE|8 EMA PROTOTYPE/.test(blob);
-        }
-
-        function replayIstSessionMins(raw) {
-            const s = String(raw || "");
-            const m = s.match(/(\d{1,2}):(\d{2})/);
-            if (!m) return null;
-            let h = parseInt(m[1], 10);
-            const min = parseInt(m[2], 10);
-            if (/PM/i.test(s) && h < 12) h += 12;
-            if (/AM/i.test(s) && h === 12) h = 0;
-            return h * 60 + min;
-        }
-
-        function replayBarIndexForIst(bars, istRaw) {
-            const M = replayIstSessionMins(istRaw);
-            if (M == null || !(bars || []).length) return -1;
-            let idx = Math.floor((M - REPLAY_SESSION_OPEN_MINS) / 15);
-            if (idx < 0) idx = 0;
-            if (idx >= bars.length) idx = bars.length - 1;
-            return idx;
-        }
-
-        function replayBarForIst(bars, istRaw) {
-            const idx = replayBarIndexForIst(bars, istRaw);
-            return idx >= 0 ? bars[idx] : null;
-        }
-
-        function replayIstHmShort(raw) {
-            const m = String(raw || "").match(/(\d{1,2}):(\d{2})/);
-            if (!m) return "—";
-            return `${String(parseInt(m[1], 10)).padStart(2, "0")}:${m[2]}`;
-        }
-
-        function replayChartSide(t) {
-            const d = String(t.direction || "").toUpperCase();
-            if (d === "LONG" || d === "BUY") return "CE";
-            if (d === "SHORT" || d === "SELL") return "PE";
-            const sym = String(t.contract_symbol || t.symbol || "").toUpperCase();
-            if (/\bPE\b/.test(sym)) return "PE";
-            return "CE";
-        }
-
-        function replayChartExitText(t) {
-            return String(t.outcome || t.result || t.exit_reason || "EXIT").trim().toUpperCase();
-        }
-
-        function replayParseTradeUnix(raw, fallbackUnix) {
-            const u = Number(fallbackUnix);
-            if (Number.isFinite(u) && u > 0) return u;
-            const s = String(raw || "");
-            const m = s.match(/(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/);
-            if (m) {
-                const sec = m[6] ? m[6] : "00";
-                return Math.floor(new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${sec}+05:30`).getTime() / 1000);
-            }
-            return null;
-        }
-
-        function replayOutMarkerColor(t) {
-            const outcome = String(t.outcome || t.result || t.exit_reason || "").toUpperCase();
-            const np = Number(t.net_pnl);
-            if (/SPOT_SL_HIT|OPTION_SL_HIT|INITIAL_SL_HIT|SL_HIT/.test(outcome)) return "#ff2a2a";
-            if (Number.isFinite(np) && np < 0) return "#ff2a2a";
-            if (/OPTION_TARGET_HIT|SPOT_TRAIL_EXIT|TARGET/.test(outcome)) return "#34d399";
-            if (Number.isFinite(np) && np >= 0) return "#34d399";
-            return "#fbbf24";
-        }
-
-        function replayDrawCrossMarkHiContrast(ctx, x, y, innerColor, sizePx) {
-            const h = sizePx / 2;
-            ctx.lineCap = "round";
-            const strokeX = () => {
-                ctx.beginPath();
-                ctx.moveTo(x - h, y - h);
-                ctx.lineTo(x + h, y + h);
-                ctx.moveTo(x + h, y - h);
-                ctx.lineTo(x - h, y + h);
-                ctx.stroke();
-            };
-            ctx.strokeStyle = "rgba(15, 23, 42, 0.95)";
-            ctx.lineWidth = 3.5;
-            strokeX();
-            ctx.strokeStyle = innerColor;
-            ctx.lineWidth = 2.2;
-            strokeX();
-        }
-
-        function replayMeasureLabel(ctx, text) {
-            ctx.font = "600 10px var(--font-mono, monospace)";
-            const padX = 4;
-            const w = ctx.measureText(text).width + padX * 2;
-            return { w, h: 14, padX };
-        }
-
-        function replayDrawSpotLabelAt(ctx, x, y, text, color) {
-            const { w, padX } = replayMeasureLabel(ctx, text);
-            ctx.fillStyle = "rgba(11, 18, 32, 0.88)";
-            ctx.fillRect(x, y - 10, w, 14);
-            ctx.fillStyle = color;
-            ctx.fillText(text, x + padX, y);
-            return { x, y: y - 10, w, h: 14 };
-        }
-
-        function replayLabelOverlaps(placed, box) {
-            return placed.some(p => p.x < box.x + box.w && p.x + p.w > box.x && p.y < box.y + box.h && p.y + p.h > box.y);
-        }
-
-        function replayPlaceSpotLabel(ctx, placed, anchorX, anchorY, text, color, mode) {
-            const { w, h } = replayMeasureLabel(ctx, text);
-            let lx = mode === "entry" ? anchorX - w - 6 : anchorX + 8;
-            let ly = mode === "entry" ? anchorY - h - 8 : anchorY + 10;
-            for (let step = 0; step < 12; step++) {
-                const box = { x: lx, y: ly, w, h };
-                if (!replayLabelOverlaps(placed, box)) {
-                    placed.push(box);
-                    replayDrawSpotLabelAt(ctx, lx, ly + 10, text, color);
-                    return;
-                }
-                ly += (step % 2 === 0 ? -13 : 13);
-            }
-            placed.push({ x: lx, y: ly, w, h });
-            replayDrawSpotLabelAt(ctx, lx, ly + 10, text, color);
-        }
-
-        function replayEnsureOverlayCanvasInHost() {
-            const host = document.getElementById("replayAlgoChartHost");
-            const canvas = document.getElementById("replayAlgoChartOverlay");
-            if (!host || !canvas) return;
-            if (canvas.parentElement !== host) host.appendChild(canvas);
-        }
-
-        function drawReplaySpotOverlay() {
-            if (!_replayAlgoChart || !_replayCandleSeries || !_replayOverlayCanvas) return;
-            const host = document.getElementById("replayAlgoChartHost");
-            if (!host) return;
-            replayEnsureOverlayCanvasInHost();
-            const canvas = _replayOverlayCanvas;
-            const cw = host.clientWidth;
-            const ch = host.clientHeight;
-            if (cw < 8 || ch < 8) return;
-            const dpr = window.devicePixelRatio || 1;
-            canvas.width = Math.floor(cw * dpr);
-            canvas.height = Math.floor(ch * dpr);
-            canvas.style.width = `${cw}px`;
-            canvas.style.height = `${ch}px`;
-            const ctx = canvas.getContext("2d");
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            ctx.clearRect(0, 0, cw, ch);
-
-            _replayOverlayHitPoints = [];
-            const placedLabels = [];
-            const sorted = _replayOverlayTrades.slice().sort((a, b) => {
-                const ka = replayParseTradeUnix(a.entry_ist || a.entry_time, a.entry_unix);
-                const kb = replayParseTradeUnix(b.entry_ist || b.entry_time, b.entry_unix);
-                return (ka || 0) - (kb || 0);
-            });
-
-            const marks = [];
-            sorted.forEach((t, i) => {
-                const n = i + 1;
-                const entryIst = t.entry_ist || t.entry_time;
-                const exitIst = t.exit_ist || t.exit_time;
-                const spotIn = Number(t.index_entry ?? t.spot_entry ?? 0);
-                const spotOut = Number(t.index_exit ?? t.spot_exit ?? 0);
-                if (!(spotIn > 0)) return;
-                const barIn = replayBarForIst(_replayChartBars, entryIst);
-                if (!barIn) return;
-                const xIn = _replayAlgoChart.timeScale().timeToCoordinate(barIn.time);
-                const yIn = _replayCandleSeries.priceToCoordinate(spotIn);
-                if (xIn == null || yIn == null) return;
-                let xOut = null;
-                let yOut = null;
-                const barOut = exitIst ? replayBarForIst(_replayChartBars, exitIst) : null;
-                if (barOut && spotOut > 0) {
-                    xOut = _replayAlgoChart.timeScale().timeToCoordinate(barOut.time);
-                    yOut = _replayCandleSeries.priceToCoordinate(spotOut);
-                }
-                marks.push({ t, n, xIn, yIn, xOut, yOut, spotIn, spotOut, entryIst, exitIst });
-            });
-
-            marks.forEach(m => {
-                if (m.xOut != null && m.yOut != null) {
-                    const np = Number(m.t.net_pnl);
-                    const lineColor = Number.isFinite(np) && np < 0 ? "#ff2a2a" : "#34d399";
-                    ctx.setLineDash([5, 4]);
-                    ctx.strokeStyle = lineColor;
-                    ctx.lineWidth = 1.5;
-                    ctx.beginPath();
-                    ctx.moveTo(m.xIn, m.yIn);
-                    ctx.lineTo(m.xOut, m.yOut);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                }
-            });
-
-            marks.forEach(m => {
-                const inColor = "#fde047";
-                replayDrawCrossMarkHiContrast(ctx, m.xIn, m.yIn, inColor, 10);
-                replayPlaceSpotLabel(ctx, placedLabels, m.xIn, m.yIn, `#${m.n}`, inColor, "entry");
-                _replayOverlayHitPoints.push({ x: m.xIn, y: m.yIn, trade: m.t, n: m.n });
-
-                if (m.xOut != null && m.yOut != null) {
-                    const outColor = replayOutMarkerColor(m.t);
-                    const exitReason = replayChartExitText(m.t);
-                    const exitBadge = /SL/.test(exitReason) ? `SL#${m.n}` : `✕#${m.n}`;
-                    replayDrawCrossMarkHiContrast(ctx, m.xOut, m.yOut, outColor, 10);
-                    replayPlaceSpotLabel(ctx, placedLabels, m.xOut, m.yOut, exitBadge, outColor, "exit");
-                    _replayOverlayHitPoints.push({ x: m.xOut, y: m.yOut, trade: m.t, n: m.n });
-                }
-            });
-        }
-
-        function replayAttachChartHover() {
-            const box = document.getElementById("replayAlgoChart");
-            const tip = document.getElementById("replayChartHoverTip");
-            const host = document.getElementById("replayAlgoChartHost");
-            if (!box || !tip || !host || box._replayHoverBound) return;
-            box._replayHoverBound = true;
-            box.addEventListener("mousemove", (ev) => {
-                if (!_replayOverlayHitPoints.length) {
-                    tip.style.display = "none";
-                    return;
-                }
-                const hostRect = host.getBoundingClientRect();
-                const lx = ev.clientX - hostRect.left;
-                const ly = ev.clientY - hostRect.top;
-                const hit = _replayOverlayHitPoints.find(p => Math.hypot(lx - p.x, ly - p.y) <= 14);
-                if (!hit) {
-                    tip.style.display = "none";
-                    return;
-                }
-                const t = hit.trade;
-                const side = replayChartSide(t);
-                const entHm = replayIstHmShort(t.entry_ist || t.entry_time);
-                const exHm = replayIstHmShort(t.exit_ist || t.exit_time);
-                const spotIn = Number(t.index_entry ?? t.spot_entry ?? 0);
-                const spotOut = Number(t.index_exit ?? t.spot_exit ?? 0);
-                const exitReason = replayChartExitText(t);
-                const np = Number(t.net_pnl);
-                const pnlTxt = Number.isFinite(np)
-                    ? `${np >= 0 ? "+" : ""}${Math.round(np)} INR`
-                    : "—";
-                tip.textContent = `#${hit.n} ${side} | IN: ${spotIn.toFixed(2)} @ ${entHm} -> OUT: ${spotOut > 0 ? spotOut.toFixed(2) : "—"} @ ${exHm} | ${exitReason} | P&L: ${pnlTxt}`;
-                const boxRect = box.getBoundingClientRect();
-                const tx = Math.min(Math.max(8, ev.clientX - boxRect.left + 12), boxRect.width - 20);
-                const ty = Math.min(Math.max(8, ev.clientY - boxRect.top - 28), boxRect.height - 40);
-                tip.style.left = `${tx}px`;
-                tip.style.top = `${ty}px`;
-                tip.style.display = "block";
-            });
-            box.addEventListener("mouseleave", () => {
-                tip.style.display = "none";
-            });
-        }
-
-        function replayEnsureChartOverlayHooks() {
-            if (!_replayAlgoChart) return;
-            replayEnsureOverlayCanvasInHost();
-            replayAttachChartHover();
-            if (_replayOverlayRangeUnsub) {
-                _replayOverlayRangeUnsub();
-                _replayOverlayRangeUnsub = null;
-            }
-            _replayOverlayRangeUnsub = _replayAlgoChart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-                requestAnimationFrame(drawReplaySpotOverlay);
-            });
-            const host = document.getElementById("replayAlgoChartHost");
-            if (!host) return;
-            if (_replayChartResizeObs) _replayChartResizeObs.disconnect();
-            _replayChartResizeObs = new ResizeObserver(() => {
-                if (_replayAlgoChart) _replayAlgoChart.resize(host.clientWidth, host.clientHeight);
-                requestAnimationFrame(drawReplaySpotOverlay);
-            });
-            _replayChartResizeObs.observe(host);
-        }
-
-        async function renderReplayAlgoChart(sessionDate, trades, chartMarkers) {
-            const wrap = document.getElementById("replayAlgoChartWrap");
-            const host = document.getElementById("replayAlgoChartHost");
-            _replayOverlayCanvas = document.getElementById("replayAlgoChartOverlay");
-            if (!wrap || !host || typeof LightweightCharts === "undefined") return;
-            const protoTrades = (trades || []).filter(replayIsEma8PrototypeTrade);
-            if (!protoTrades.length) {
-                wrap.style.display = "none";
-                _replayOverlayTrades = [];
-                _replayChartBars = [];
-                return;
-            }
-            try {
-                const cr = await fetch(`/api/replay/candles?date=${encodeURIComponent(sessionDate)}&tf=15m`);
-                const cd = await cr.json();
-                if (!cd.ok || !(cd.candles || []).length) {
-                    wrap.style.display = "none";
-                    return;
-                }
-                wrap.style.display = "block";
-                replayEnsureOverlayCanvasInHost();
-                if (!_replayAlgoChart) {
-                    _replayAlgoChart = LightweightCharts.createChart(host, {
-                        layout: { background: { color: "#0b1220" }, textColor: "#94a3b8" },
-                        grid: { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
-                        timeScale: { timeVisible: true, secondsVisible: true, borderColor: "#334155" },
-                        rightPriceScale: { borderColor: "#334155" },
-                    });
-                    _replayCandleSeries = _replayAlgoChart.addCandlestickSeries({
-                        upColor: "#22c55e", downColor: "#ef4444", borderVisible: false,
-                        wickUpColor: "#22c55e", wickDownColor: "#ef4444",
-                    });
-                    _replayEma4Series = _replayAlgoChart.addLineSeries({ color: "#38bdf8", lineWidth: 2, title: "4 EMA" });
-                    _replayEma8Series = _replayAlgoChart.addLineSeries({ color: "#ff1e38", lineWidth: 2, title: "8 EMA" });
-                    replayEnsureChartOverlayHooks();
-                } else {
-                    _replayEma4Series.applyOptions({ color: "#38bdf8", lineWidth: 2 });
-                    _replayEma8Series.applyOptions({ color: "#ff1e38", lineWidth: 2 });
-                    _replayAlgoChart.resize(host.clientWidth, host.clientHeight);
-                }
-                const candles = cd.candles.map(c => ({
-                    time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
-                }));
-                const e4 = cd.candles.filter(c => c.e4 != null).map(c => ({ time: c.time, value: c.e4 }));
-                const e8 = cd.candles.filter(c => c.e8 != null).map(c => ({ time: c.time, value: c.e8 }));
-                _replayChartBars = candles;
-                _replayCandleSeries.setData(candles);
-                _replayEma4Series.setData(e4);
-                _replayEma8Series.setData(e8);
-                _replayCandleSeries.setMarkers([]);
-                _replayOverlayTrades = protoTrades;
-                _replayAlgoChart.timeScale().fitContent();
-                replayEnsureOverlayCanvasInHost();
-                requestAnimationFrame(() => {
-                    drawReplaySpotOverlay();
-                    requestAnimationFrame(drawReplaySpotOverlay);
-                });
-            } catch (err) {
-                console.warn("replay chart", err);
-                wrap.style.display = "none";
-            }
-        }
-
         // ── 8. HISTORICAL DATE REPLAY LOGIC ───────────────────────────────────
         const REPLAY_STRATEGY_PILLS = [
             { id: "ALL", label: "All Strategies" },
@@ -7794,8 +7411,6 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     : "";
                 tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; color:var(--text-muted); padding:16px;">No trades on ${dt} for this filter.${hint}</td></tr>`;
                 renderTradeAnalysis("replayAnalysis", []);
-                const wrap = document.getElementById("replayAlgoChartWrap");
-                if (wrap) wrap.style.display = "none";
                 return;
             }
 
@@ -7832,7 +7447,6 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             }).join("");
 
             renderTradeAnalysis("replayAnalysis", trades);
-            renderReplayAlgoChart(dt, trades, _replayLastPayload?.chart_markers);
         }
 
         async function runHistoricalReplay() {
@@ -8014,7 +7628,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
         // ══════════════════════════════════════════════════════════════════
         //  BACKTEST LAB — background jobs, held-out verdict, spot points
         // ══════════════════════════════════════════════════════════════════
-        let btlMeta = null, btlActiveId = null, btlPoll = null, btlResult = null, btlDayChart = null, btlDayCandles = null, btlDayLine = null;
+        let btlMeta = null, btlActiveId = null, btlPoll = null, btlResult = null;
 
         function btlFmt(v, d = 1) { return (v === null || v === undefined || Number.isNaN(Number(v))) ? "—" : Number(v).toFixed(d); }
         function btlSignedCol(v) { return Number(v || 0) >= 0 ? "var(--emerald)" : "var(--crimson)"; }
@@ -8062,7 +7676,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 const d = await r.json();
                 if (!d.ok) { alert(d.error || "Could not start the backtest."); document.getElementById("btlRunBtn").disabled = false; return; }
                 btlActiveId = d.id; btlResult = null;
-                ["btlVerdict", "btlSummary", "btlEquityWrap", "btlLaneTable", "btlBreakdowns", "btlDayWrap", "btlDaysWrap"].forEach(id => document.getElementById(id).style.display = "none");
+                ["btlVerdict", "btlSummary", "btlLaneTable", "btlBreakdowns", "btlDayWrap", "btlDaysWrap"].forEach(id => document.getElementById(id).style.display = "none");
                 btlStartPolling();
             } catch (e) { alert("Could not reach the engine."); document.getElementById("btlRunBtn").disabled = false; }
         }
@@ -8156,22 +7770,8 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             btlRenderDays(rep.days);
         }
 
-        function btlRenderEquity(curve, splitIdx) {
-            const wrap = document.getElementById("btlEquityWrap"), svg = document.getElementById("btlEquity");
-            if (!curve || curve.length < 2) { wrap.style.display = "none"; return; }
-            wrap.style.display = "block";
-            const W = 1000, H = 170, lo = Math.min(...curve.map(p => p.net)), hi = Math.max(...curve.map(p => p.net)), span = (hi - lo) || 1;
-            const n = curve.length - 1;
-            const X = i => (i / n) * W, Y = val => H - 8 - ((val - lo) / span) * (H - 16);
-            const path = curve.map((p, i) => (i ? "L" : "M") + X(p.i).toFixed(1) + " " + Y(p.net).toFixed(1)).join(" ");
-            const last = curve[curve.length - 1].net;
-            let splitX = null;
-            if (splitIdx && splitIdx > 0 && splitIdx < curve[curve.length - 1].i) splitX = X(splitIdx);
-            svg.innerHTML =
-                '<line x1="0" x2="' + W + '" y1="' + Y(0).toFixed(1) + '" y2="' + Y(0).toFixed(1) + '" stroke="#475569" stroke-dasharray="4 4"/>' +
-                (splitX !== null ? '<line x1="' + splitX.toFixed(1) + '" x2="' + splitX.toFixed(1) + '" y1="0" y2="' + H + '" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="3 3"/>' +
-                    '<text x="' + (splitX + 5).toFixed(1) + '" y="14" fill="#fbbf24" font-size="11">held-out →</text>' : '') +
-                '<path d="' + path + '" fill="none" stroke="' + (last >= 0 ? "#34d399" : "#f87171") + '" stroke-width="2" vector-effect="non-scaling-stroke"/>';
+        function btlRenderEquity(_curve, _splitIdx) {
+            /* equity curve chart removed — tables only */
         }
 
         function btlRenderLaneTable(lanes) {
@@ -8218,7 +7818,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             const el = document.getElementById("btlDaysWrap");
             if (!days || !days.length) { el.style.display = "none"; return; }
             el.style.display = "block";
-            el.innerHTML = '<div style="font-size:12px; font-weight:800; color:#e2e8f0; margin-bottom:6px;">By day <span style="font-weight:500; color:#64748b;">— click a day to see its chart and trades above</span></div>' +
+            el.innerHTML = '<div style="font-size:12px; font-weight:800; color:#e2e8f0; margin-bottom:6px;">By day <span style="font-weight:500; color:#64748b;">— click a day to see its trades above</span></div>' +
                 '<div style="display:flex; flex-wrap:wrap; gap:4px;">' + days.map(d =>
                     '<button type="button" onclick="btlLoadDay(\'' + d.day + '\')" title="' + d.trades + ' trades" style="cursor:pointer; padding:3px 7px; border-radius:4px; font-size:10.5px; font-family:var(--font-mono); border:1px solid ' +
                     (d.held_out ? "#fbbf24" : "rgba(148,163,184,0.3)") + '; background:' + (d.net_pts >= 0 ? "rgba(16,185,129,0.15)" : "rgba(244,63,94,0.15)") + '; color:' + btlSignedCol(d.net_pts) + ';">' +
@@ -8234,7 +7834,6 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 const r = await fetch("/api/backtest_lab/day?id=" + encodeURIComponent(btlActiveId) + "&day=" + day);
                 const d = await r.json();
                 if (!d.ok) return;
-                btlRenderDayChart(d.chart, d.trades);
                 const tb = document.getElementById("btlDayTrades");
                 tb.innerHTML = !d.trades.length ? '<div style="color:#64748b; padding:8px;">No trades this day.</div>' :
                     '<table style="font-size:11.5px;"><thead><tr>' + ['Entry', 'Exit', 'Strategy', 'Side', 'Spot in → out', 'Net pts', 'Exit reason'].map(h => '<th>' + h + '</th>').join("") + '</tr></thead><tbody>' +
@@ -8243,32 +7842,6 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                         '<td style="color:' + btlSignedCol(t.net) + '; font-weight:700;">' + btlPts(t.net) + '</td><td style="font-family:var(--font-mono); font-size:10px; color:#94a3b8;">' + d86Esc(t.reason) + '</td></tr>').join("") +
                     '</tbody></table>';
             } catch (e) { console.error("btlLoadDay", e); }
-        }
-
-        function btlRenderDayChart(chart, trades) {
-            const el = document.getElementById("btlDayChart");
-            if (!chart || !chart.ok || typeof LightweightCharts === "undefined") { el.innerHTML = '<div style="padding:16px; color:#64748b;">Chart unavailable for this day.</div>'; return; }
-            el.innerHTML = "";
-            btlDayChart = LightweightCharts.createChart(el, {
-                layout: { background: { color: "#0b1220" }, textColor: "#94a3b8" },
-                grid: { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
-                timeScale: { timeVisible: true, borderColor: "#334155" }, rightPriceScale: { borderColor: "#334155" }, height: 360,
-            });
-            const cs = btlDayChart.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", borderVisible: false, wickUpColor: "#22c55e", wickDownColor: "#ef4444" });
-            cs.setData(chart.candles.map(c => ({ time: c.t, open: c.o, high: c.h, low: c.l, close: c.c })));
-            const e8 = btlDayChart.addLineSeries({ color: "#fbbf24", lineWidth: 2, priceLineVisible: false });
-            e8.setData(chart.candles.map(c => ({ time: c.t, value: c.e8 })));
-            const e4 = btlDayChart.addLineSeries({ color: "#38bdf8", lineWidth: 1, priceLineVisible: false });
-            e4.setData(chart.candles.map(c => ({ time: c.t, value: c.e4 })));
-            const byHm = {}; chart.candles.forEach(c => { byHm[c.hm] = c.t; });
-            const markers = [];
-            (trades || []).forEach(t => {
-                const et = byHm[t.entry_hm] || byHm[(t.entry_hm || "").slice(0, 4) + "0"];
-                if (et) markers.push({ time: et, position: t.side === "CE" ? "belowBar" : "aboveBar", color: t.side === "CE" ? "#22c55e" : "#ef4444", shape: t.side === "CE" ? "arrowUp" : "arrowDown", text: t.side + " " + btlPts(t.net) });
-            });
-            markers.sort((a, b) => a.time - b.time);
-            cs.setMarkers(markers);
-            btlDayChart.timeScale().fitContent();
         }
 
         function btlRenderRuns(runs) {
